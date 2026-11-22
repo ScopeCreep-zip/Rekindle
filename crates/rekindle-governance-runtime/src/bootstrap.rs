@@ -125,7 +125,7 @@ async fn build_bootstrap_response_v2<D: GovernanceRuntimeDeps>(
     let admission = deps.admission_lock(anchor);
     let admitting = admission.lock().await;
     for dep in admitted_deps(deps, anchor, &op).await? {
-        deps.store_governance_op(anchor, &dep).await?;
+        deps.op_store().store_governance_op(anchor, &dep).await?;
     }
     let joined_op = op.clone();
     op_log::receive_op(deps, anchor, op.encoded).await?;
@@ -145,7 +145,8 @@ async fn build_bootstrap_response_v2<D: GovernanceRuntimeDeps>(
     let cert = deps
         .genesis_cert(anchor)
         .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(anchor.to_owned()))?;
-    let set = op_log::verify_held_with(deps, anchor, &deps.governance_ops(anchor).await?);
+    let set =
+        op_log::verify_held_with(deps, anchor, &deps.op_store().governance_ops(anchor).await?);
     let payload = ControlPayload::BootstrapResponseV2 {
         anchor: anchor.to_owned(),
         frontier: op_log::frontier_refs(&cert, &state, &set),
@@ -177,7 +178,7 @@ async fn admitted_deps<D: GovernanceRuntimeDeps>(
     let cert = deps
         .genesis_cert(anchor)
         .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(anchor.to_owned()))?;
-    let mut held = deps.governance_ops(anchor).await?;
+    let mut held = deps.op_store().governance_ops(anchor).await?;
     held.push(op.clone());
     let logs = op_log::WalkLogCache::default();
     let mut tried = std::collections::BTreeSet::new();

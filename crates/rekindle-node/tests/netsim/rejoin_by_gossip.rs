@@ -26,6 +26,7 @@ use std::time::Duration;
 
 use rekindle_codec::governance_op::decode_op;
 use rekindle_governance_runtime::anti_entropy::SWEEP_PERIOD;
+use rekindle_governance_runtime::deps::GovernanceOpStore as _;
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, MemberRequest};
 use rekindle_netsim::Fault;

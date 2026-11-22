@@ -11,7 +11,7 @@
 use std::time::Duration;
 
 use rekindle_governance_runtime::anti_entropy::SWEEP_PERIOD;
-use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
+use rekindle_governance_runtime::deps::GovernanceOpStore as _;
 use rekindle_governance_runtime::op_log::OpFate;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, MemberRequest};
 use rekindle_netsim::Fault;

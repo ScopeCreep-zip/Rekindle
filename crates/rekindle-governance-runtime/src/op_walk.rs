@@ -45,7 +45,7 @@ struct AuthorLog {
 
 /// The op logs one walk has read, by author member record. Created per
 /// [`walk`] (and per rebuild or sweep) and passed down to
-/// `GovernanceRuntimeDeps::fetch_governance_op`; dropped with it, so a
+/// `GovernanceOpStore::fetch_governance_op`; dropped with it, so a
 /// later walk reads the logs afresh.
 #[derive(Debug, Default)]
 pub struct WalkLogCache {
@@ -96,7 +96,7 @@ impl WalkLogCache {
 /// seq `author_seq + 1`), through `logs`: the log is read with
 /// `rekindle_records::chain::read_log_after` once per walk, from its start,
 /// and continued after its last read seq when a later op is asked for.
-/// What `GovernanceRuntimeDeps::fetch_governance_op` runs on the Host.
+/// What `GovernanceOpStore::fetch_governance_op` runs on the Host.
 ///
 /// # Errors
 /// A read failed, a page is missing, or a value is malformed.

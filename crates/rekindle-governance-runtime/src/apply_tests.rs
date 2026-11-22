@@ -218,6 +218,7 @@ async fn an_op_written_through_the_write_path_judges_effective_in_the_merged_vie
     state.devices.seed_genesis(COMMUNITY, &cert);
 
     let mut deps = MockGovernanceRuntimeDeps::new();
+    let mut ops = crate::deps::MockGovernanceOpStore::new();
     let lock = Arc::new(tokio::sync::Mutex::new(()));
     deps.expect_rebuild_lock()
         .returning(move |_| Arc::clone(&lock));
@@ -243,7 +244,7 @@ async fn an_op_written_through_the_write_path_judges_effective_in_the_merged_vie
     let pinned = cert.clone();
     deps.expect_genesis_cert()
         .returning(move |_| Some(pinned.clone()));
-    deps.expect_governance_ops().returning(|_| Ok(Vec::new()));
+    ops.expect_governance_ops().returning(|_| Ok(Vec::new()));
     deps.expect_op_verify_cache()
         .returning(|_| Arc::new(crate::verify_cache::OpVerifyCache::default()));
     deps.expect_identity_secret()
@@ -255,11 +256,14 @@ async fn an_op_written_through_the_write_path_judges_effective_in_the_merged_vie
         .returning(|| Arc::new(rekindle_utils::SystemClock));
     let stored = Arc::new(Mutex::new(Vec::new()));
     let into = Arc::clone(&stored);
-    deps.expect_store_signed_governance_op()
+    ops.expect_store_signed_governance_op()
         .returning(move |_, op| {
             into.lock().push(op.clone());
             Ok(())
         });
+    let ops: std::sync::Arc<dyn crate::deps::GovernanceOpStore> = std::sync::Arc::new(ops);
+    deps.expect_op_store()
+        .returning(move || std::sync::Arc::clone(&ops));
     deps.expect_gossip_governance_op().return_const(());
     let merged = Arc::new(Mutex::new(None));
     let installed = Arc::clone(&merged);

@@ -91,7 +91,8 @@ pub async fn record<D: crate::deps::GovernanceRuntimeDeps>(
     ops: &[VerifiedOp],
     outcome: &MergeOutcome,
 ) -> Result<(), crate::error::GovernanceRuntimeError> {
-    deps.record_governance_checkpoints(community_id, checkpoint_facts(ops, outcome))
+    deps.op_store()
+        .record_governance_checkpoints(community_id, checkpoint_facts(ops, outcome))
         .await?;
     if let Some(latest) = outcome.hints.latest() {
         deps.warm_checkpoint_pages(community_id, &latest.checkpoint);

@@ -10,8 +10,8 @@ use rekindle_governance::checkpoint::{
 use rekindle_governance::merge::merge_cut;
 use rekindle_governance::op::{op_hash, op_signing_bytes};
 use rekindle_governance_runtime::checkpoint_state::snapshot_at;
+use rekindle_governance_runtime::deps::GovernanceOpStore as _;
 use rekindle_governance_runtime::op_log::{rebuild_ops, verify_held, HeldOp, OpFate};
-use rekindle_governance_runtime::GovernanceRuntimeDeps;
 use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_types::governance::{
     AdmissionMode, Checkpoint, GenesisCert, GovernanceEntry, GovernanceOp, OpRef,

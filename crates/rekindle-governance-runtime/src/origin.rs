@@ -497,7 +497,7 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
         let _installing = lock.lock().await;
         deps.insert_community(insert);
         for op in &genesis_ops {
-            deps.store_governance_op(&anchor_key, op).await?;
+            deps.op_store().store_governance_op(&anchor_key, op).await?;
         }
     }
 

@@ -160,7 +160,7 @@ impl HostGovernance {
 
     /// Store `op` and advance its device key's head when it is newer;
     /// `signed_here` only from the local signer
-    /// (`GovernanceRuntimeDeps::store_signed_governance_op`).
+    /// (`GovernanceOpStore::store_signed_governance_op`).
     pub(super) async fn store_governance_op_impl(
         &self,
         community_id: &str,
@@ -460,7 +460,7 @@ impl HostGovernance {
             )
         };
         let held = self
-            .governance_ops(community_id)
+            .governance_ops_impl(community_id)
             .await
             .map_err(|e| format!("read op store: {e}"))?;
         let set = op_log::verify_held_with(self, community_id, &held);

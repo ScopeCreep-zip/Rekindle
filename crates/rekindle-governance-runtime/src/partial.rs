@@ -41,7 +41,7 @@ pub struct PartialJoin {
 /// a node that cannot tell refuses rather than serve a state it cannot
 /// vouch for.
 pub async fn is_partial<D: GovernanceRuntimeDeps>(deps: &D, community_id: &str) -> bool {
-    match deps.governance_partial(community_id).await {
+    match deps.op_store().governance_partial(community_id).await {
         Ok(hint) => hint.is_some(),
         Err(error) => {
             tracing::warn!(community = community_id, %error, "partial flag unreadable: held partial");
@@ -82,7 +82,7 @@ pub async fn finish_backfill<D: GovernanceRuntimeDeps>(
     cert: &GenesisCert,
     set: &VerifiedSet,
 ) -> Result<(), GovernanceRuntimeError> {
-    let Some(hint) = deps.governance_partial(community_id).await? else {
+    let Some(hint) = deps.op_store().governance_partial(community_id).await? else {
         return Ok(());
     };
     if !set.missing.is_empty() || !set.pending.is_empty() {
@@ -114,5 +114,7 @@ pub async fn finish_backfill<D: GovernanceRuntimeDeps>(
             digest: hint.digest,
         });
     }
-    deps.set_governance_partial(community_id, None).await
+    deps.op_store()
+        .set_governance_partial(community_id, None)
+        .await
 }

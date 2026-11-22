@@ -9,10 +9,14 @@
 //! `RoutingContext`) are exchanged as opaque `String` / `Vec<u8>` here.
 //! The crate never imports `veilid-core`.
 
+mod op_store;
 mod roles;
 mod runtime_deps;
 mod types;
 
+pub use op_store::GovernanceOpStore;
+#[cfg(test)]
+pub use op_store::MockGovernanceOpStore;
 pub use roles::RoleTable;
 pub use runtime_deps::GovernanceRuntimeDeps;
 #[cfg(test)]

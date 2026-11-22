@@ -97,7 +97,7 @@ impl HostGovernance {
         // cut (plan E3.2 S7c.8 (1)), marked before any op is stored so a
         // restart mid-backfill stays partial.
         if let Some(hint) = outcome.partial {
-            use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
+            use rekindle_governance_runtime::deps::GovernanceOpStore as _;
             self.set_governance_partial(&id, Some(hint))
                 .await
                 .map_err(|e| format!("community joined, partial flag not stored: {e}"))?;
@@ -395,7 +395,7 @@ impl HostGovernance {
         community: &str,
         outcome: &rekindle_governance_runtime::join_flow::JoinStagesOutcome,
     ) -> Result<(), String> {
-        use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
+        use rekindle_governance_runtime::deps::GovernanceOpStore as _;
         for op in outcome
             .walked
             .iter()

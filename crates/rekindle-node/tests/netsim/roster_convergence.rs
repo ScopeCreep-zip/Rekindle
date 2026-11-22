@@ -10,6 +10,7 @@ use std::collections::BTreeSet;
 use std::time::Duration;
 
 use rekindle_governance::checksum::roster_checksum;
+use rekindle_governance_runtime::deps::GovernanceOpStore as _;
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, MemberRequest};
 use rekindle_types::governance::OpHash;

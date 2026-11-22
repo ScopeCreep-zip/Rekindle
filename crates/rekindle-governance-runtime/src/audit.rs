@@ -32,7 +32,7 @@ pub async fn read_audit_entries<D: GovernanceRuntimeDeps>(
     community_id: &str,
 ) -> Result<Vec<(PseudonymKey, Vec<(u64, GovernanceEntry)>)>, GovernanceRuntimeError> {
     deps.require_permission(community_id, VIEW_AUDIT_LOG)?;
-    let held = deps.governance_ops(community_id).await?;
+    let held = deps.op_store().governance_ops(community_id).await?;
     let verified = crate::op_log::verify_held_with(deps, community_id, &held);
     let mut authored: Vec<(PseudonymKey, Vec<(u64, GovernanceEntry)>)> = Vec::new();
     for op in &verified.ops {

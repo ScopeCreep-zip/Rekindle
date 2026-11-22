@@ -18,6 +18,7 @@ use std::time::Duration;
 use rekindle_codec::capnp_envelope::encode_community_envelope;
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_governance::op::invite_proof_bytes;
+use rekindle_governance_runtime::deps::GovernanceOpStore as _;
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
 use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_secrets::member_record::{dflt_opaque_record_key, sign_member_record_binding};

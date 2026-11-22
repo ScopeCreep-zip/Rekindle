@@ -127,7 +127,7 @@ pub async fn store_received_op<D: GovernanceRuntimeDeps>(
     };
     let decoded = *decoded;
     let hash = op_hash(&decoded.unsigned, &decoded.op.sig);
-    let mut held = deps.governance_ops(community_id).await?;
+    let mut held = deps.op_store().governance_ops(community_id).await?;
     if held.iter().any(|op| op.hash == hash) {
         return Ok(None);
     }
@@ -171,7 +171,9 @@ pub async fn store_received_op<D: GovernanceRuntimeDeps>(
     if let Some(verified) = set.ops.iter().find(|v| v.hash() == hash) {
         op.lamport = verified.lamport();
     }
-    deps.store_governance_op(community_id, &op).await?;
+    deps.op_store()
+        .store_governance_op(community_id, &op)
+        .await?;
     Ok(Some(hash))
 }
 
@@ -187,7 +189,7 @@ async fn receive_uninterpretable<D: GovernanceRuntimeDeps>(
     let Some(envelope) = OpEnvelope::read(&encoded) else {
         return Ok(false);
     };
-    let held = deps.governance_ops(community_id).await?;
+    let held = deps.op_store().governance_ops(community_id).await?;
     if held.iter().any(|op| op.hash == envelope.hash) {
         return Ok(false);
     }
@@ -199,7 +201,8 @@ async fn receive_uninterpretable<D: GovernanceRuntimeDeps>(
     else {
         return Ok(false);
     };
-    deps.store_governance_op(community_id, &envelope.held(record, encoded))
+    deps.op_store()
+        .store_governance_op(community_id, &envelope.held(record, encoded))
         .await?;
     crate::dht_hydration::rebuild_governance(deps, community_id).await;
     Ok(true)

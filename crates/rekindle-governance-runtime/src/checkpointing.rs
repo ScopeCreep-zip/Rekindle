@@ -67,7 +67,7 @@ pub async fn tick<D: GovernanceRuntimeDeps>(
     let set = verify_held_with(
         deps,
         community_id,
-        &deps.governance_ops(community_id).await?,
+        &deps.op_store().governance_ops(community_id).await?,
     );
     let quiet = clock.ops_seen.replace(set.ops.len()) == Some(set.ops.len());
     let outcome = merge_outcome(&cert, &set.ops);

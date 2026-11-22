@@ -76,7 +76,7 @@ async fn own_held<D: GovernanceRuntimeDeps>(
     anchor: &str,
     joiner: &PseudonymKey,
 ) -> Result<Vec<HeldOp>, GovernanceRuntimeError> {
-    let mut held = deps.governance_ops(anchor).await?;
+    let mut held = deps.op_store().governance_ops(anchor).await?;
     held.retain(|op| op.author == *joiner);
     Ok(held)
 }

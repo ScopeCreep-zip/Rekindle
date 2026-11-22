@@ -84,7 +84,7 @@ pub(super) async fn seed_governance(
     ops: &[rekindle_governance_runtime::op_log::HeldOp],
 ) -> rekindle_types::governance::GenesisCert {
     use rekindle_codec::governance_op::genesis::{encode_genesis, SignedGenesis};
-    use rekindle_governance_runtime::GovernanceRuntimeDeps;
+    use rekindle_governance_runtime::deps::GovernanceOpStore as _;
 
     let cert = rekindle_governance::fixture::cert(
         &rekindle_types::id::PseudonymKey(creator.verifying_key().to_bytes()),

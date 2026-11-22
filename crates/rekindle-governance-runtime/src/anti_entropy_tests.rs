@@ -31,6 +31,7 @@ fn frontier() -> Vec<u8> {
 /// read `reads` times.
 fn deps(reads: usize) -> MockGovernanceRuntimeDeps {
     let mut deps = MockGovernanceRuntimeDeps::new();
+    let mut ops = crate::deps::MockGovernanceOpStore::new();
     deps.expect_acquire_record()
         .returning(|_, _, _| Ok(LeaseId(1)));
     deps.expect_release_record().returning(|_| ());
@@ -43,7 +44,10 @@ fn deps(reads: usize) -> MockGovernanceRuntimeDeps {
     deps.expect_get_dht_value()
         .times(reads)
         .returning(|_, _, _| Ok(Some(frontier())));
-    deps.expect_fetch_governance_op().returning(|_, _| Ok(None));
+    ops.expect_fetch_governance_op().returning(|_, _| Ok(None));
+    let ops: std::sync::Arc<dyn crate::deps::GovernanceOpStore> = std::sync::Arc::new(ops);
+    deps.expect_op_store()
+        .returning(move || std::sync::Arc::clone(&ops));
     deps
 }
 
@@ -108,6 +112,7 @@ fn fetchable() -> (Vec<u8>, Vec<u8>) {
 async fn a_head_that_fetches_on_a_later_read_is_stored_and_then_the_seq_is_read() {
     let (encoded, frontier) = fetchable();
     let mut deps = MockGovernanceRuntimeDeps::new();
+    let mut ops = crate::deps::MockGovernanceOpStore::new();
     deps.expect_acquire_record()
         .returning(|_, _, _| Ok(LeaseId(1)));
     deps.expect_release_record().returning(|_| ());
@@ -121,13 +126,16 @@ async fn a_head_that_fetches_on_a_later_read_is_stored_and_then_the_seq_is_read(
         .times(2)
         .returning(move |_, _, _| Ok(Some(frontier.clone())));
     let fetches = std::sync::atomic::AtomicUsize::new(0);
-    deps.expect_fetch_governance_op().returning(move |_, _| {
+    ops.expect_fetch_governance_op().returning(move |_, _| {
         let first = fetches.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0;
         Ok((!first).then(|| encoded.clone()))
     });
-    deps.expect_store_governance_op()
+    ops.expect_store_governance_op()
         .times(1)
         .returning(|_, _| Ok(()));
+    let ops: std::sync::Arc<dyn crate::deps::GovernanceOpStore> = std::sync::Arc::new(ops);
+    deps.expect_op_store()
+        .returning(move || std::sync::Arc::clone(&ops));
     let seen = SeenFrontiers::new();
     let mut known = BTreeSet::new();
     let mut stored = Vec::new();
@@ -220,6 +228,7 @@ fn converging_as(
     };
     let bytes = rekindle_codec::governance_op::encode_frontier(&served).expect("frontier encodes");
     let mut deps = MockGovernanceRuntimeDeps::new();
+    let mut ops = crate::deps::MockGovernanceOpStore::new();
     deps.expect_acquire_record()
         .returning(|_, _, _| Ok(LeaseId(1)));
     deps.expect_release_record().returning(|_| ());
@@ -241,15 +250,18 @@ fn converging_as(
         .returning(move |_| std::sync::Arc::clone(&rebuild));
     deps.expect_governance_state()
         .returning(move |_| Some(state.clone()));
-    deps.expect_governance_ops()
+    ops.expect_governance_ops()
         .returning(move |_| Ok(vec![held.clone()]));
-    deps.expect_governance_partial().returning(move |_| {
+    ops.expect_governance_partial().returning(move |_| {
         Ok(partial.then_some(crate::partial::PartialJoin {
             height: 1,
             digest: [1; 32],
             state_root: [2; 32],
         }))
     });
+    let ops: std::sync::Arc<dyn crate::deps::GovernanceOpStore> = std::sync::Arc::new(ops);
+    deps.expect_op_store()
+        .returning(move || std::sync::Arc::clone(&ops));
     let verdicts = std::sync::Arc::new(crate::verify_cache::OpVerifyCache::default());
     deps.expect_op_verify_cache()
         .returning(move |_| std::sync::Arc::clone(&verdicts));
@@ -364,6 +376,7 @@ fn our_frontier_carries_the_checksum_of_its_heads_merge() {
 #[tokio::test]
 async fn a_hinted_frontier_read_never_inspects_first() {
     let mut deps = MockGovernanceRuntimeDeps::new();
+    let mut ops = crate::deps::MockGovernanceOpStore::new();
     deps.expect_acquire_record()
         .returning(|_, _, _| Ok(LeaseId(1)));
     deps.expect_release_record().returning(|_| ());
@@ -375,7 +388,10 @@ async fn a_hinted_frontier_read_never_inspects_first() {
             assert_eq!(subkey, member_record::FRONTIER);
             Ok(Some((6, frontier())))
         });
-    deps.expect_fetch_governance_op().returning(|_, _| Ok(None));
+    ops.expect_fetch_governance_op().returning(|_, _| Ok(None));
+    let ops: std::sync::Arc<dyn crate::deps::GovernanceOpStore> = std::sync::Arc::new(ops);
+    deps.expect_op_store()
+        .returning(move || std::sync::Arc::clone(&ops));
     let seen = SeenFrontiers::new();
     seen.mark_read("VLD0:m", 5);
     let mut known = BTreeSet::new();

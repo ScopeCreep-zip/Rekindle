@@ -102,6 +102,7 @@ mod checkpoint_rows;
 mod checkpoint_state;
 mod head_advanced;
 pub mod moderation;
+mod op_store;
 pub mod role_ops;
 mod roles;
 pub(crate) mod slot_heads;

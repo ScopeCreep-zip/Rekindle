@@ -82,6 +82,7 @@ fn deps_for(
     device: [u8; 32],
 ) -> (MockGovernanceRuntimeDeps, Arc<Mutex<Vec<HeldOp>>>) {
     let mut deps = MockGovernanceRuntimeDeps::new();
+    let mut ops = crate::deps::MockGovernanceOpStore::new();
     let lock = Arc::new(tokio::sync::Mutex::new(()));
     deps.expect_rebuild_lock()
         .returning(move |_| Arc::clone(&lock));
@@ -103,7 +104,7 @@ fn deps_for(
     });
     deps.expect_genesis_cert()
         .returning(move |_| Some(cert.clone()));
-    deps.expect_governance_ops().returning(|_| Ok(Vec::new()));
+    ops.expect_governance_ops().returning(|_| Ok(Vec::new()));
     deps.expect_op_verify_cache()
         .returning(|_| Arc::new(crate::verify_cache::OpVerifyCache::default()));
     deps.expect_identity_secret().returning(|| Some(SECRET));
@@ -113,11 +114,14 @@ fn deps_for(
         .returning(|| Arc::new(rekindle_utils::SystemClock));
     let stored = Arc::new(Mutex::new(Vec::new()));
     let into = Arc::clone(&stored);
-    deps.expect_store_signed_governance_op()
+    ops.expect_store_signed_governance_op()
         .returning(move |_, op| {
             into.lock().push(op.clone());
             Ok(())
         });
+    let ops: std::sync::Arc<dyn crate::deps::GovernanceOpStore> = std::sync::Arc::new(ops);
+    deps.expect_op_store()
+        .returning(move || std::sync::Arc::clone(&ops));
     deps.expect_gossip_governance_op().return_const(());
     deps.expect_set_governance_state().return_const(());
     deps.expect_emit_event().return_const(());

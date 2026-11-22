@@ -113,7 +113,7 @@ pub async fn answer_hint_request<D: GovernanceRuntimeDeps>(
     let cert = deps
         .genesis_cert(community)
         .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(community.to_owned()))?;
-    let held = deps.governance_ops(community).await?;
+    let held = deps.op_store().governance_ops(community).await?;
     let set = verify_held_with(deps, community, &held);
     let outcome = merge_outcome(&cert, &set.ops);
     let response = hint_response(

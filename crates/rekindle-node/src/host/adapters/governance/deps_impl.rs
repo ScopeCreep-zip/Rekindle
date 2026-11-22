@@ -10,14 +10,14 @@ use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance_runtime::deps::{
     CommunityDhtOpenSetup, CommunityInsert, CommunityMembership, DhtRecordInfo, DiscoveredMember,
-    GovernanceRuntimeDeps, MekSnapshot, OnlineMemberSnapshot, RoleTable, UserStatusKind,
+    GovernanceOpStore, GovernanceRuntimeDeps, MekSnapshot, OnlineMemberSnapshot, RoleTable,
+    UserStatusKind,
 };
 use rekindle_governance_runtime::event::GovernanceRuntimeEvent;
-use rekindle_governance_runtime::op_log::{HeldOp, OpVerdict};
 use rekindle_governance_runtime::GovernanceRuntimeError;
 use rekindle_records::lease::{CommunityLeases, LeaseId};
 use rekindle_records::port::RecordSchema;
-use rekindle_types::governance::{GenesisCert, OpRef};
+use rekindle_types::governance::GenesisCert;
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::subscription_events::{MembershipEvent, SubscriptionEvent};
 
@@ -425,46 +425,6 @@ impl GovernanceRuntimeDeps for HostGovernance {
             .map_err(|e| GovernanceRuntimeError::Adapter(format!("record pool: {e}")))
     }
 
-    async fn governance_ops(
-        &self,
-        community_id: &str,
-    ) -> Result<Vec<HeldOp>, GovernanceRuntimeError> {
-        self.governance_ops_impl(community_id).await
-    }
-
-    async fn store_governance_op(
-        &self,
-        community_id: &str,
-        op: &HeldOp,
-    ) -> Result<(), GovernanceRuntimeError> {
-        self.store_governance_op_impl(community_id, op, false).await
-    }
-
-    async fn store_signed_governance_op(
-        &self,
-        community_id: &str,
-        op: &HeldOp,
-    ) -> Result<(), GovernanceRuntimeError> {
-        self.store_governance_op_impl(community_id, op, true).await
-    }
-
-    async fn set_governance_op_fates(
-        &self,
-        community_id: &str,
-        fates: Vec<OpVerdict>,
-    ) -> Result<(), GovernanceRuntimeError> {
-        self.set_governance_op_fates_impl(community_id, fates).await
-    }
-
-    async fn record_governance_checkpoints(
-        &self,
-        community_id: &str,
-        facts: Vec<rekindle_governance_runtime::checkpoint_rows::CheckpointFact>,
-    ) -> Result<(), GovernanceRuntimeError> {
-        self.record_governance_checkpoints_impl(community_id, facts)
-            .await
-    }
-
     fn warm_checkpoint_pages(
         &self,
         community_id: &str,
@@ -480,51 +440,6 @@ impl GovernanceRuntimeDeps for HostGovernance {
         self.ctx
             .communities
             .warm_checkpoint_pages(community_id, checkpoint, me.as_ref());
-    }
-
-    async fn usable_checkpoint_snapshot(
-        &self,
-        community_id: &str,
-        height: u64,
-        digest: [u8; 32],
-    ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError> {
-        self.usable_checkpoint_snapshot_impl(community_id, height, digest)
-            .await
-    }
-
-    async fn keep_checkpoint_snapshot(
-        &self,
-        community_id: &str,
-        height: u64,
-        digest: [u8; 32],
-        snapshot: Vec<u8>,
-    ) -> Result<(), GovernanceRuntimeError> {
-        self.keep_checkpoint_snapshot_impl(community_id, height, digest, snapshot)
-            .await
-    }
-
-    async fn governance_partial(
-        &self,
-        community_id: &str,
-    ) -> Result<Option<rekindle_governance_runtime::partial::PartialJoin>, GovernanceRuntimeError>
-    {
-        self.governance_partial_impl(community_id).await
-    }
-
-    async fn set_governance_partial(
-        &self,
-        community_id: &str,
-        hint: Option<rekindle_governance_runtime::partial::PartialJoin>,
-    ) -> Result<(), GovernanceRuntimeError> {
-        self.set_governance_partial_impl(community_id, hint).await
-    }
-
-    async fn fetch_governance_op(
-        &self,
-        op_ref: &OpRef,
-        logs: &rekindle_governance_runtime::op_walk::WalkLogCache,
-    ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError> {
-        self.fetch_governance_op_impl(op_ref, logs).await
     }
 
     fn gossip_governance_op(&self, community_id: &str, encoded: &[u8]) {
@@ -555,6 +470,10 @@ impl GovernanceRuntimeDeps for HostGovernance {
     ) -> Result<Vec<rekindle_types::governance::SlotHead>, GovernanceRuntimeError> {
         self.departed_slot_heads_impl(community_id, target_hex)
             .await
+    }
+
+    fn op_store(&self) -> std::sync::Arc<dyn GovernanceOpStore> {
+        std::sync::Arc::new(self.clone())
     }
 
     // ---------- Role mutations ----------

@@ -224,7 +224,7 @@ async fn a_claimed_root_keeps_state_out_of_backups() {
 /// warm restore reads it beside the other authors' ops, which stay.
 #[tokio::test]
 async fn an_own_governance_op_lands_in_the_op_store() {
-    use rekindle_governance_runtime::GovernanceRuntimeDeps;
+    use rekindle_governance_runtime::deps::GovernanceOpStore as _;
 
     let dir = tempfile::tempdir().unwrap();
     let host = offline_host(&dir).await;

@@ -4,6 +4,7 @@
 //! state's alone), decided in the same state the leave's op would be
 //! built on.
 
+use rekindle_governance_runtime::deps::GovernanceOpStore as _;
 use rekindle_governance_runtime::moderation::{leave, LeaveOutcome};
 use rekindle_governance_runtime::op_log::verify_held;
 use rekindle_governance_runtime::GovernanceRuntimeDeps as _;

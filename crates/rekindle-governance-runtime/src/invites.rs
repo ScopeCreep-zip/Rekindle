@@ -199,7 +199,7 @@ async fn own_invite_op<D: GovernanceRuntimeDeps>(
     me: &rekindle_types::id::PseudonymKey,
     invite_id: [u8; 16],
 ) -> Result<(rekindle_types::governance::OpHash, u64), GovernanceRuntimeError> {
-    let held = deps.governance_ops(community_id).await?;
+    let held = deps.op_store().governance_ops(community_id).await?;
     let set = crate::op_log::verify_held_with(deps, community_id, &held);
     (set.ops.iter())
         .filter(|op| op.author() == me)

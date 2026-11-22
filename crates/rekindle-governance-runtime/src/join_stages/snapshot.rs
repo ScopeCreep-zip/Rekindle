@@ -43,7 +43,7 @@ pub async fn load_governance_snapshot<D: GovernanceRuntimeDeps>(
     // Merge under the anchor's pinned cert: the ops we hold (S6's
     // bootstrapResponseV2 delivers the rest).
     let (cert, _) = crate::genesis::read_pinned(deps, anchor_str).await?;
-    let held = deps.governance_ops(anchor_str).await?;
+    let held = deps.op_store().governance_ops(anchor_str).await?;
     let ops = crate::op_log::verify_held_with(deps, anchor_str, &held).ops;
     let gov_state_v1 = merge::merge(&cert, &ops);
 

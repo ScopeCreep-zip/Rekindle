@@ -1,5 +1,6 @@
 //! The [`GovernanceRuntimeDeps`] trait itself; its vocabulary is in
-//! [`super::types`], its role table in [`super::roles`].
+//! [`super::types`], its role table in [`super::roles`], its op store in
+//! [`super::op_store`].
 
 use std::sync::Arc;
 
@@ -9,6 +10,7 @@ use rekindle_governance::state::GovernanceState;
 use rekindle_records::lease::{CommunityLeases, LeaseId};
 use rekindle_types::id::PseudonymKey;
 
+use super::op_store::GovernanceOpStore;
 use super::roles::RoleTable;
 use super::types::{
     CommunityDhtOpenSetup, CommunityInsert, CommunityMembership, DhtRecordInfo, DiscoveredMember,
@@ -454,42 +456,6 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     fn note_member_card_name(&self, community_id: &str, pseudonym: &PseudonymKey, name: String);
     /// Our pseudonym in the community, `None` while we hold none.
     fn my_pseudonym(&self, community_id: &str) -> Option<PseudonymKey>;
-    /// Every op `governance_ops` holds for the community.
-    async fn governance_ops(
-        &self,
-        community_id: &str,
-    ) -> Result<Vec<crate::op_log::HeldOp>, GovernanceRuntimeError>;
-    /// Store an op ingested from anywhere but our own signer (gossip, the
-    /// DAG fetch, a bootstrap or the barrier's walk; an op already held
-    /// keeps its row) and advance its device key's `governance_heads` row.
-    /// Never marks the op `signed_here`.
-    async fn store_governance_op(
-        &self,
-        community_id: &str,
-        op: &crate::op_log::HeldOp,
-    ) -> Result<(), GovernanceRuntimeError>;
-    /// Store an op this device just signed, marked `signed_here`: the local
-    /// signed log self-detection checks every ingested op of our device key
-    /// against (ADR 0022 rule 4, plan S7d-keys.3/.9). Only the local signer
-    /// calls it.
-    async fn store_signed_governance_op(
-        &self,
-        community_id: &str,
-        op: &crate::op_log::HeldOp,
-    ) -> Result<(), GovernanceRuntimeError>;
-    /// Record each op's fate in the last merge.
-    async fn set_governance_op_fates(
-        &self,
-        community_id: &str,
-        fates: Vec<crate::op_log::OpVerdict>,
-    ) -> Result<(), GovernanceRuntimeError>;
-    /// Write each checkpoint digest's state after the last merge
-    /// (`governance_checkpoints`, plan E3.2 S7c.6); a kept snapshot stays.
-    async fn record_governance_checkpoints(
-        &self,
-        community_id: &str,
-        facts: Vec<crate::checkpoint_rows::CheckpointFact>,
-    ) -> Result<(), GovernanceRuntimeError>;
     /// Keep `checkpoint`'s sealed directory pages warm (plan E3.2 S7
     /// record warming): called with the latest endorsed checkpoint after
     /// every merge, and with our own proposal once its pages are sealed;
@@ -499,46 +465,6 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
         community_id: &str,
         checkpoint: &rekindle_types::governance::Checkpoint,
     );
-    /// The snapshot kept for the checkpoint at `height` with `digest`, only
-    /// while its row is usable.
-    async fn usable_checkpoint_snapshot(
-        &self,
-        community_id: &str,
-        height: u64,
-        digest: [u8; 32],
-    ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError>;
-    /// Keep `snapshot`, verified against its checkpoint's `stateRoot`, on
-    /// that checkpoint's row when the row is usable.
-    async fn keep_checkpoint_snapshot(
-        &self,
-        community_id: &str,
-        height: u64,
-        digest: [u8; 32],
-        snapshot: Vec<u8>,
-    ) -> Result<(), GovernanceRuntimeError>;
-    /// The hint `community_id` was joined from while its backfill has not
-    /// ended (`governance_partial`, plan E3.2 S7c.8 (1)); `None` once the
-    /// community is whole.
-    async fn governance_partial(
-        &self,
-        community_id: &str,
-    ) -> Result<Option<crate::partial::PartialJoin>, GovernanceRuntimeError>;
-    /// Mark `community_id` partial from `hint`, or whole with `None`.
-    async fn set_governance_partial(
-        &self,
-        community_id: &str,
-        hint: Option<crate::partial::PartialJoin>,
-    ) -> Result<(), GovernanceRuntimeError>;
-    /// The encoded op `op_ref` names, read from its author's op log
-    /// (`rekindle_records::chain::read_log_after` on
-    /// `op_ref.author_record`/`GOV_HEAD`, chain seq `author_seq + 1`),
-    /// through `logs` ([`WalkLogCache::entry`](crate::op_walk::WalkLogCache::entry)):
-    /// one read per author log per walk, rebuild or sweep (plan S7c.1).
-    async fn fetch_governance_op(
-        &self,
-        op_ref: &rekindle_types::governance::OpRef,
-        logs: &crate::op_walk::WalkLogCache,
-    ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError>;
     /// Gossip our stored op (`governanceOp @74`) before its install, which
     /// prunes a removed member that must still hear the op removing it.
     fn gossip_governance_op(&self, community_id: &str, encoded: &[u8]);
@@ -588,6 +514,10 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
         community_id: &str,
         target_hex: &str,
     ) -> Result<Vec<rekindle_types::governance::SlotHead>, GovernanceRuntimeError>;
+
+    /// The store of the community's governance ops ([`GovernanceOpStore`]):
+    /// held ops, fates, checkpoint rows and snapshots, the partial mark.
+    fn op_store(&self) -> Arc<dyn GovernanceOpStore>;
 
     // ---------- Role mutations (Phase 23.D.15) ----------
 

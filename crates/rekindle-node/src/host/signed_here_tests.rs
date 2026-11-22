@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 
-use rekindle_governance_runtime::GovernanceRuntimeDeps;
+use rekindle_governance_runtime::deps::GovernanceOpStore as _;
 use rekindle_secrets::ed25519_dalek::SigningKey;
 
 use super::{

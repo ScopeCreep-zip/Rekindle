@@ -449,7 +449,7 @@ pub async fn rebuild_ops<D: GovernanceRuntimeDeps>(
     let cert = deps
         .genesis_cert(community_id)
         .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(community_id.to_owned()))?;
-    let mut held = deps.governance_ops(community_id).await?;
+    let mut held = deps.op_store().governance_ops(community_id).await?;
     let mut tried: BTreeSet<(OpHash, String)> = BTreeSet::new();
     let logs = WalkLogCache::default();
     loop {
@@ -471,7 +471,9 @@ pub async fn rebuild_ops<D: GovernanceRuntimeDeps>(
             let Some(op) = fetch_held(deps, &op_ref, &logs).await? else {
                 continue;
             };
-            deps.store_governance_op(community_id, &op).await?;
+            deps.op_store()
+                .store_governance_op(community_id, &op)
+                .await?;
             held.push(op);
             fetched = true;
         }
@@ -488,7 +490,9 @@ pub async fn rebuild_ops<D: GovernanceRuntimeDeps>(
             }
             let verdicts = fates(&set, &outcome);
             warn_newly_dropped(community_id, &held, &verdicts);
-            deps.set_governance_op_fates(community_id, verdicts).await?;
+            deps.op_store()
+                .set_governance_op_fates(community_id, verdicts)
+                .await?;
             crate::checkpoint_rows::record(deps, community_id, &set.ops, &outcome).await?;
             crate::partial::finish_backfill(deps, community_id, &cert, &set).await?;
             let quarantined = crate::quarantine::newly_quarantined(community_id, &held, &outcome);
@@ -535,7 +539,7 @@ pub async fn fetch_held<D: GovernanceRuntimeDeps>(
     op_ref: &OpRef,
     logs: &WalkLogCache,
 ) -> Result<Option<HeldOp>, GovernanceRuntimeError> {
-    let Some(encoded) = deps.fetch_governance_op(op_ref, logs).await? else {
+    let Some(encoded) = deps.op_store().fetch_governance_op(op_ref, logs).await? else {
         return Ok(None);
     };
     Ok(held_from_encoded(op_ref, encoded))
@@ -582,7 +586,7 @@ pub async fn rebuild_at<D: GovernanceRuntimeDeps>(
     let cert = deps
         .genesis_cert(community_id)
         .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(community_id.to_owned()))?;
-    let held = deps.governance_ops(community_id).await?;
+    let held = deps.op_store().governance_ops(community_id).await?;
     let set = verify_held_with(deps, community_id, &held);
     Ok(merge::merge(&cert, &causal_past(&set.ops, frontier)))
 }

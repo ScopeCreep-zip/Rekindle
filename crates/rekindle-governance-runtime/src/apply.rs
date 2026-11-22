@@ -308,7 +308,7 @@ async fn write_with<D: GovernanceRuntimeDeps>(
     let (mut entry, built_on) = match entry {
         WriteEntry::Ready(ready) => (*ready, None),
         WriteEntry::Built(build) => {
-            let held = deps.governance_ops(community_id).await?;
+            let held = deps.op_store().governance_ops(community_id).await?;
             let set = op_log::verify_held_with(deps, community_id, &held);
             let on = BuiltOn {
                 state: &gov_state,
@@ -335,7 +335,7 @@ async fn write_with<D: GovernanceRuntimeDeps>(
         None => op_log::verify_held_with(
             deps,
             community_id,
-            &deps.governance_ops(community_id).await?,
+            &deps.op_store().governance_ops(community_id).await?,
         ),
     };
     let ours = Ours {
@@ -351,11 +351,12 @@ async fn write_with<D: GovernanceRuntimeDeps>(
     // ADR 0022 rules 3 and 10): a `MemberJoined` under the endorsement it
     // carries, any later op under the state's.
     let record = device_signer::op_record_of(deps, community_id, &gov_state, op.op())?;
-    deps.store_signed_governance_op(
-        community_id,
-        &op_log::held(&op, record, encoded.clone(), op_log::OpFate::Applied),
-    )
-    .await?;
+    deps.op_store()
+        .store_signed_governance_op(
+            community_id,
+            &op_log::held(&op, record, encoded.clone(), op_log::OpFate::Applied),
+        )
+        .await?;
     deps.gossip_governance_op(community_id, &encoded);
 
     // The state every reader merges from the op set with this op in it.

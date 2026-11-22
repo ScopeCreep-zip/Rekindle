@@ -9,6 +9,7 @@ use std::collections::BTreeSet;
 
 use rekindle_codec::member_record::head_advanced::RELAYED_SUBKEYS;
 use rekindle_governance_runtime::anti_entropy::{self, FrontierRead, SeenFrontiers};
+use rekindle_governance_runtime::deps::GovernanceOpStore as _;
 use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
 use rekindle_governance_runtime::GovernanceRuntimeError;
 use rekindle_types::dht_layout::member_record::{BEAT, FRONTIER, GOV_HEAD, OUTBOX, ROUTES};

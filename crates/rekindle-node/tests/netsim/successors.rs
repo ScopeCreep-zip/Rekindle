@@ -14,6 +14,7 @@ use std::time::Duration;
 use rekindle_codec::governance_op::decode_op;
 use rekindle_governance::op::invite_proof_bytes;
 use rekindle_governance::permissions::compute_permissions;
+use rekindle_governance_runtime::deps::GovernanceOpStore as _;
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, LifecycleRequest, MemberRequest};
 use rekindle_secrets::ed25519_dalek::SigningKey;

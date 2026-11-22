@@ -10,6 +10,7 @@ use rekindle_governance::checkpoint::checkpoint_digest;
 use rekindle_governance_runtime::checkpoint_hint::answer_hint_request;
 use rekindle_governance_runtime::checkpoint_state::answer_state_request;
 use rekindle_governance_runtime::checkpointing::{tick, CheckpointClock, CheckpointStep};
+use rekindle_governance_runtime::deps::GovernanceOpStore as _;
 use rekindle_governance_runtime::op_log::{rebuild_ops, verify_held};
 use rekindle_governance_runtime::partial::{finish_backfill, PartialJoin};
 use rekindle_governance_runtime::{GovernanceRuntimeDeps, GovernanceRuntimeError};

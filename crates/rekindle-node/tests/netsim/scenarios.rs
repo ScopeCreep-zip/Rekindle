@@ -9,6 +9,7 @@ use rekindle_codec::capnp_envelope::encode_community_envelope;
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload, MekTransferPayload};
 use rekindle_codec::governance_op::{encode_op, op_unsigned_bytes};
 use rekindle_governance::op::{invite_proof_bytes, op_hash, op_signing_bytes};
+use rekindle_governance_runtime::deps::GovernanceOpStore as _;
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
 use rekindle_ipc::protocol::{ChannelMessageRequest, MemberRequest};
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};

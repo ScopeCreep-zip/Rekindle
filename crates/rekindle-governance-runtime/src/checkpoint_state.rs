@@ -61,12 +61,13 @@ pub async fn snapshot_at<D: GovernanceRuntimeDeps>(
         .genesis_cert(community_id)
         .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(community_id.to_owned()))?;
     if let Some(kept) = deps
+        .op_store()
         .usable_checkpoint_snapshot(community_id, height, *digest)
         .await?
     {
         return Ok(kept);
     }
-    let held = deps.governance_ops(community_id).await?;
+    let held = deps.op_store().governance_ops(community_id).await?;
     let set = verify_held_with(deps, community_id, &held);
     let checkpoint = set
         .ops
@@ -85,7 +86,8 @@ pub async fn snapshot_at<D: GovernanceRuntimeDeps>(
     if state_root_of(&preimage) != checkpoint.state_root {
         return Err(no_state("our merge of the cut misses its stateRoot"));
     }
-    deps.keep_checkpoint_snapshot(community_id, height, *digest, preimage.clone())
+    deps.op_store()
+        .keep_checkpoint_snapshot(community_id, height, *digest, preimage.clone())
         .await?;
     Ok(preimage)
 }

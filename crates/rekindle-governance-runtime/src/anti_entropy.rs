@@ -95,6 +95,7 @@ pub async fn sweep<D: GovernanceRuntimeDeps>(
         Sweep::Sample => sample(deps, records, SWEEP_SAMPLE),
     };
     let mut known: BTreeSet<OpHash> = deps
+        .op_store()
         .governance_ops(community_id)
         .await?
         .iter()
@@ -227,7 +228,9 @@ async fn store_frontier_heads<D: GovernanceRuntimeDeps>(
             continue;
         }
         if let Some(op) = op_log::fetch_held(deps, op_ref, &logs).await? {
-            deps.store_governance_op(community_id, &op).await?;
+            deps.op_store()
+                .store_governance_op(community_id, &op)
+                .await?;
             known.insert(op_ref.op_hash);
             stored += 1;
         }
@@ -239,7 +242,9 @@ async fn store_frontier_heads<D: GovernanceRuntimeDeps>(
         }
         match op_log::fetch_held(deps, op_ref, &logs).await? {
             Some(op) => {
-                deps.store_governance_op(community_id, &op).await?;
+                deps.op_store()
+                    .store_governance_op(community_id, &op)
+                    .await?;
                 known.insert(op_ref.op_hash);
                 stored += 1;
             }
@@ -291,7 +296,7 @@ async fn check_convergence<D: GovernanceRuntimeDeps>(
     let (held, installed) = {
         let lock = deps.rebuild_lock(community_id);
         let _installing = lock.lock().await;
-        let held = deps.governance_ops(community_id).await?;
+        let held = deps.op_store().governance_ops(community_id).await?;
         let installed = deps
             .governance_state(community_id)
             .map(|state| roster_checksum(&state));

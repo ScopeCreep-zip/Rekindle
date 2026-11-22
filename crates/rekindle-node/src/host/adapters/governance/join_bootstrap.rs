@@ -165,7 +165,7 @@ impl HostGovernance {
         inviter_record: &str,
         joined: &HeldOp,
     ) -> Exchange {
-        use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
+        use rekindle_governance_runtime::deps::GovernanceOpStore as _;
         if inviter_route.is_empty() {
             return Exchange::Unanswered("the inviter holds no route".into());
         }
@@ -214,7 +214,7 @@ impl HostGovernance {
 
     /// Our held `MemberJoined` of `community` whose hash is `hash`.
     pub(crate) async fn held_joined(&self, community: &str, hash: &[u8; 32]) -> Option<HeldOp> {
-        use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
+        use rekindle_governance_runtime::deps::GovernanceOpStore as _;
         let held = self.governance_ops(community).await.ok()?;
         held.into_iter().find(|op| op.hash.0 == *hash)
     }
