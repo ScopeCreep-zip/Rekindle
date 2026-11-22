@@ -40,8 +40,10 @@ use std::sync::Arc;
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
-use rekindle_record_pool::{as_port, RecordCloser, RecordPool};
-use rekindle_records::port::{PortError, RecordPort, RecordSchema, RecordStore, RecordValue};
+use rekindle_record_pool::{as_port, ChangeSink, RecordCloser, RecordPool};
+use rekindle_records::port::{
+    PortError, PortEvent, RecordPort, RecordSchema, RecordStore, RecordValue,
+};
 use rekindle_utils::RandomSource;
 
 use crate::clock::SimRandom;
@@ -135,7 +137,25 @@ impl RecordStore for FakeRecords {
             "record pool",
             Arc::new(|task| tracing::error!(task, "record pool task panicked")),
         );
-        let pool = RecordPool::new(Arc::new(backend), scope, ready, Arc::clone(&self.closer));
+        // A change a read found goes where the node's watch reports go: its
+        // own event queue, local and never lost (as a watch death is).
+        let (net, node) = (Arc::clone(&self.net), self.node);
+        let changes: ChangeSink = Arc::new(move |change| {
+            net.send(
+                node,
+                node,
+                "ReadChange",
+                PortEvent::ValueChange(change),
+                false,
+            );
+        });
+        let pool = RecordPool::new(
+            Arc::new(backend),
+            scope,
+            ready,
+            Arc::clone(&self.closer),
+            changes,
+        );
         if let Some(slot) = self.net.inner.lock().nodes.get_mut(self.node) {
             slot.pools.push(Arc::downgrade(&pool));
         }

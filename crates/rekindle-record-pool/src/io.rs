@@ -34,19 +34,49 @@ impl RecordPool {
     ///
     /// # Errors
     /// The lease is not held, or the read failed within the retry budget.
+    ///
+    /// A read of a watched subkey that stored a newer value than the local
+    /// copy held before it publishes the change it absorbed (`changed.rs`).
     pub async fn get(
         &self,
         id: LeaseId,
         subkey: u32,
         force_refresh: bool,
     ) -> Result<Option<RecordValue>, PortError> {
+        self.get_publishing(id, subkey, force_refresh, true).await
+    }
+
+    /// [`get`](Self::get); `publish` is false only for a hinted read, the
+    /// handler of the change that named the subkey.
+    pub(crate) async fn get_publishing(
+        &self,
+        id: LeaseId,
+        subkey: u32,
+        force_refresh: bool,
+        publish: bool,
+    ) -> Result<Option<RecordValue>, PortError> {
         let (key, _) = self.lookup(id)?;
-        self.run_retrying("dht get", move |backend| {
-            let k = key.clone();
-            async move { backend.get(&k, subkey, force_refresh).await }
-        })
-        .await
-        .map_err(|e| to_port(&e))
+        let before = if publish && self.watches_subkey(&key, subkey) {
+            Some(
+                self.local_seq(&key, subkey)
+                    .await
+                    .map_err(|e| to_port(&e))?,
+            )
+        } else {
+            None
+        };
+        let k = key.clone();
+        let value = self
+            .run_retrying("dht get", move |backend| {
+                let k = k.clone();
+                async move { backend.get(&k, subkey, force_refresh).await }
+            })
+            .await
+            .map_err(|e| to_port(&e))?;
+        if let (Some(before), Some(value)) = (before, value.as_ref()) {
+            self.publish_if_newer(&key, subkey, before, value);
+        }
+        Ok(value)
     }
 
     /// Read a subkey through a read-only DHT transaction: the newest value

@@ -220,7 +220,7 @@ impl RecordPool {
             let sem = &sem;
             reads.push(async move {
                 let _permit = sem.acquire().await;
-                (subkey, self.get(id, subkey, true).await)
+                (subkey, self.get_publishing(id, subkey, true, false).await)
             });
         }
         let mut values = Vec::new();

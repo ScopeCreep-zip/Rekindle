@@ -79,6 +79,7 @@ pub async fn initialize_node(
             transport_config.safety.dht.clone(),
             rekindle_route::ordered_watch::Follow::shared(state.network_ready.subscribe()),
             rekindle_protocol::dht::pool::RecordCloser::new(),
+            read_change_sink(app_handle),
         )),
         routes: Arc::new(rekindle_protocol::ports::VeilidRoutes::new(
             Arc::clone(&route_imports),
@@ -109,4 +110,18 @@ pub async fn initialize_node(
 
     tracing::info!("rekindle node started and attached");
     Ok(update_rx)
+}
+
+/// The desktop's [`ChangeSink`](rekindle_protocol::dht::pool::ChangeSink):
+/// a change the record pool's read found is handled as a watch report is
+/// (`dht_watch`), off the reader's path (lead decision 57).
+fn read_change_sink(app_handle: &tauri::AppHandle) -> rekindle_protocol::dht::pool::ChangeSink {
+    let handle = app_handle.clone();
+    Arc::new(move |change| {
+        let handle = handle.clone();
+        tauri::async_runtime::spawn(async move {
+            let state = Arc::clone(handle.state::<crate::state::SharedState>().inner());
+            crate::services::veilid::dht_watch::handle_port_value_change(&state, change).await;
+        });
+    })
 }

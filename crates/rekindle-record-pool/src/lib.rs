@@ -40,6 +40,9 @@
 //!   off the user's path; no call is ever aborted (C7.6i, C7.6j).
 
 mod call;
+mod changed;
+#[cfg(test)]
+mod changed_tests;
 mod closer;
 mod durable;
 #[cfg(test)]
@@ -68,6 +71,7 @@ mod watch;
 /// (0.5.8 `set_value.rs:741-746`), so every round writes above what it lost to.
 pub const CAS_ROUNDS: usize = 3;
 
+pub use changed::{ChangeSink, READ_CHANGE_COUNT};
 pub use closer::RecordCloser;
 pub use io::set_failed;
 pub use port::as_port;
@@ -165,6 +169,9 @@ pub struct RecordPool {
     /// The node's closer: ends this pool's records, and holds a re-open of
     /// a record an ended session is still closing.
     closer: Arc<RecordCloser>,
+    /// The node's consumer of value changes, for a change a read found
+    /// (`changed.rs`, lead decision 57).
+    changes: ChangeSink,
     /// This pool, for the tasks it starts on its own scope.
     this: std::sync::Weak<RecordPool>,
 }
@@ -205,13 +212,15 @@ pub(crate) fn range(subkeys: &SubkeySet) -> Vec<u32> {
 impl RecordPool {
     /// A pool over `backend`. `scope` runs the pool's calls (ended by
     /// [`end`](Self::end), never aborted); `ready` follows
-    /// `public_internet_ready`; `closer` is the node's.
+    /// `public_internet_ready`; `closer` is the node's; `changes` is the
+    /// node's consumer of value changes (`changed.rs`).
     #[must_use]
     pub fn new(
         backend: Arc<dyn DhtBackend>,
         scope: Arc<SessionScope>,
         ready: tokio::sync::watch::Receiver<bool>,
         closer: Arc<RecordCloser>,
+        changes: ChangeSink,
     ) -> Arc<Self> {
         Arc::new_cyclic(|this| Self {
             this: this.clone(),
@@ -233,6 +242,7 @@ impl RecordPool {
             waits: Mutex::new(CancellationToken::new()),
             repush_stop: CancellationToken::new(),
             closer,
+            changes,
         })
     }
 

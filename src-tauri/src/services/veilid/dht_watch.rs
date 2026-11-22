@@ -4,7 +4,15 @@ use crate::state::AppState;
 
 pub async fn handle_value_change(state: &Arc<AppState>, change: veilid_core::VeilidValueChange) {
     // The port's form of the change (plan C9.1): keys as text, seqs whole.
-    let change = rekindle_protocol::dht::pool::value_change(&change);
+    handle_port_value_change(state, rekindle_protocol::dht::pool::value_change(&change)).await;
+}
+
+/// A value change in the port's form: a watch report, or one the record
+/// pool's own read found (its `ChangeSink`, lead decision 57).
+pub async fn handle_port_value_change(
+    state: &Arc<AppState>,
+    change: rekindle_records::port::ValueChange,
+) {
     let key = change.key.clone();
 
     // The pool is the one owner of watch death (plan C7.8): it re-arms the

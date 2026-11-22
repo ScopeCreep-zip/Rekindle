@@ -19,7 +19,7 @@ use veilid_core::{
 };
 
 use crate::dht::backend::VeilidDht;
-use crate::dht::pool::{safety_selection, value_change, RecordCloser, RecordPool};
+use crate::dht::pool::{safety_selection, value_change, ChangeSink, RecordCloser, RecordPool};
 use crate::dht::route_imports::RouteImports;
 use crate::error::ProtocolError;
 use crate::node::{log_dropped, startup, veilid_update_name, NodeConfig, UPDATE_QUEUE};
@@ -32,25 +32,42 @@ pub struct VeilidRecords {
     profile: SafetyProfile,
     ready: Follow<bool>,
     closer: Arc<RecordCloser>,
+    changes: ChangeSink,
 }
 
 impl VeilidRecords {
     /// Pools over `api` with the DHT safety `profile`; `ready` follows
-    /// `public_internet_ready`; `closer` is the node's.
+    /// `public_internet_ready`; `closer` is the node's; `changes` is the
+    /// node's consumer of value changes, where a pool publishes one its
+    /// read found (lead decision 57).
     #[must_use]
     pub fn new(
         api: VeilidAPI,
         profile: SafetyProfile,
         ready: Follow<bool>,
         closer: Arc<RecordCloser>,
+        changes: ChangeSink,
     ) -> Self {
         Self {
             api,
             profile,
             ready,
             closer,
+            changes,
         }
     }
+}
+
+/// The node's update queue as a [`ChangeSink`]: a change a read found goes
+/// where Veilid's own watch reports go, under the same rule (a full queue
+/// drops it rather than block the reader, as the update callback does).
+#[must_use]
+pub fn update_queue_sink(events: mpsc::Sender<PortEvent>) -> ChangeSink {
+    Arc::new(move |change| {
+        if events.try_send(PortEvent::ValueChange(change)).is_err() {
+            log_dropped("ValueChange");
+        }
+    })
 }
 
 impl RecordStore for VeilidRecords {
@@ -71,6 +88,7 @@ impl RecordStore for VeilidRecords {
             scope,
             self.ready.follow(),
             Arc::clone(&self.closer),
+            Arc::clone(&self.changes),
         ))
     }
 }
@@ -450,6 +468,7 @@ impl VeilidPorts {
         ready: Follow<bool>,
     ) -> Result<(PortSet, mpsc::Receiver<PortEvent>), ProtocolError> {
         let (event_tx, event_rx) = mpsc::channel::<PortEvent>(UPDATE_QUEUE);
+        let changes = update_queue_sink(event_tx.clone());
         let api = startup(
             config,
             Arc::new(move |update| {
@@ -470,6 +489,7 @@ impl VeilidPorts {
                 dht,
                 ready,
                 RecordCloser::new(),
+                changes,
             )),
             routes: Arc::new(VeilidRoutes::new(Arc::clone(&imports), Arc::clone(&own))),
             messages: Arc::new(VeilidMessages::new(api.clone(), own, imports)),

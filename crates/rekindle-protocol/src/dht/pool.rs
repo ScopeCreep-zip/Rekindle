@@ -6,5 +6,6 @@ pub use crate::dht::backend::{
     dht_schema, parse_keypair, record_report, safety_selection, value_change,
 };
 pub use rekindle_record_pool::{
-    as_port, keepalive, set_failed, to_port, RecordCloser, RecordPool, CAS_ROUNDS, RETRY_BUDGET,
+    as_port, keepalive, set_failed, to_port, ChangeSink, RecordCloser, RecordPool, CAS_ROUNDS,
+    RETRY_BUDGET,
 };

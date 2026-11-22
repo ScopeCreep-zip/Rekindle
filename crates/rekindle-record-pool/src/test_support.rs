@@ -14,7 +14,7 @@ use parking_lot::Mutex;
 use rekindle_lifecycle::SessionScope;
 use rekindle_records::port::{
     DhtBackend, DhtCallError, DhtErrorKind, OpenIntent, RecordDescriptor, RecordReport,
-    RecordSchema, RecordValue, ReportScope, WriterKey,
+    RecordSchema, RecordValue, ReportScope, ValueChange, WriterKey,
 };
 
 use crate::{RecordCloser, RecordPool};
@@ -54,6 +54,10 @@ struct MemState {
     /// Network seqs an inspect claims with no value behind them (a poisoned
     /// 0.5.7 storage node, threat model D8), by `(key, subkey)`.
     claims: HashMap<(String, u32), u32>,
+    /// Values another node wrote that the network holds and our local copy
+    /// does not yet, by `(key, subkey)`: a get that reaches the network
+    /// stores one locally (0.5.8 `get_value.rs:199-205`).
+    remote: HashMap<(String, u32), RecordValue>,
     /// The seq a rival holds under [`Contest::Ours`], by `(key, subkey)`.
     rivals: HashMap<(String, u32), u32>,
     /// Subkeys the network holds none of while the local copy has them (a
@@ -77,6 +81,8 @@ pub struct MemDht {
     ready: Mutex<Option<tokio::sync::watch::Sender<bool>>>,
     /// Every set the backend was asked for.
     sets: Mutex<u32>,
+    /// Every change the pool over this backend published (its sink).
+    published: Mutex<Vec<ValueChange>>,
 }
 
 fn writer_key(text: &str) -> WriterKey {
@@ -146,6 +152,31 @@ impl MemDht {
     #[must_use]
     pub fn gets(&self) -> Vec<(String, u32, bool)> {
         self.state.lock().gets.clone()
+    }
+
+    /// Another node writes `data` as `writer` to `key`'s `subkey`: the
+    /// network holds it at the next seq, our local copy does not.
+    pub fn write_remote(&self, key: &str, subkey: u32, data: &[u8], writer: &str) {
+        let mut state = self.state.lock();
+        let at = (key.to_string(), subkey);
+        let local = (state.records.get(key)).and_then(|r| r.values.get(&subkey).map(|v| v.seq));
+        let seq = local
+            .max(state.remote.get(&at).map(|v| v.seq))
+            .map_or(0, |seq| seq + 1);
+        state.remote.insert(
+            at,
+            RecordValue {
+                seq,
+                data: data.to_vec(),
+                writer: writer.to_string(),
+            },
+        );
+    }
+
+    /// Every change the pool over this backend published, in order.
+    #[must_use]
+    pub fn published(&self) -> Vec<ValueChange> {
+        self.published.lock().clone()
     }
 
     /// The stored value of `key`'s `subkey`.
@@ -235,10 +266,23 @@ impl DhtBackend for MemDht {
         subkey: u32,
         force_refresh: bool,
     ) -> Result<Option<RecordValue>, DhtCallError> {
-        self.state
-            .lock()
-            .gets
-            .push((key.to_string(), subkey, force_refresh));
+        let mut guard = self.state.lock();
+        let state = &mut *guard;
+        state.gets.push((key.to_string(), subkey, force_refresh));
+        let at = (key.to_string(), subkey);
+        if let Some(record) = state.records.get_mut(key) {
+            let local = record.values.get(&subkey).map(|v| v.seq);
+            // Only a get that reaches the network (forced, or with no local
+            // copy, `get_value.rs:159-171`) stores the network's newer value.
+            if force_refresh || local.is_none() {
+                if let Some(remote) = state.remote.remove(&at) {
+                    if Some(remote.seq) > local {
+                        record.values.insert(subkey, remote);
+                    }
+                }
+            }
+        }
+        drop(guard);
         Ok(self.value(key, subkey))
     }
 
@@ -306,7 +350,8 @@ impl DhtBackend for MemDht {
                     return None;
                 }
                 let claim = state.claims.get(&at).copied();
-                (*local).max(claim)
+                let remote = state.remote.get(&at).map(|v| v.seq);
+                (*local).max(claim).max(remote)
             })
             .collect();
         Ok(RecordReport {
@@ -341,11 +386,13 @@ impl DhtBackend for MemDht {
 pub fn pool_on(backend: Arc<MemDht>) -> Arc<RecordPool> {
     let (ready_tx, ready) = tokio::sync::watch::channel(true);
     *backend.ready.lock() = Some(ready_tx);
+    let sink = Arc::clone(&backend);
     RecordPool::new(
         backend,
         SessionScope::new("mem pool", Arc::new(|_| {})),
         ready,
         RecordCloser::new(),
+        Arc::new(move |change| sink.published.lock().push(change)),
     )
 }
 

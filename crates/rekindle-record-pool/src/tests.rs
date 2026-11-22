@@ -159,6 +159,7 @@ fn pool_on(backend: Arc<TestDht>) -> Arc<RecordPool> {
         SessionScope::new("pool test", Arc::new(|_| {})),
         ready,
         RecordCloser::new(),
+        Arc::new(|_| {}),
     )
 }
 
