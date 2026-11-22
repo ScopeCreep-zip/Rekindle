@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use super::message::AgentType;
 use rekindle_types::passphrase::Passphrase;
 
+// ── Subscription filter (re-exported from rekindle-types) ──────────────
 pub use rekindle_types::subscription_events::{
     EventCategory, SubscriptionFilter, MAX_FILTERS_PER_CONNECTION,
 };
@@ -403,23 +404,8 @@ pub enum IpcRequest {
         server: Option<rekindle_types::game_server::ServerAddress>,
         source: rekindle_types::game_server::JoinSource,
     },
-    /// Our favourite game servers (plan E7.2), each with whether an invite
-    /// may name it (`invitable`: not a hidden game, current-game sharing on).
-    FavouriteServersGet,
-    /// Add a favourite game server, or relabel one (plan E7.2): `server` is
-    /// parsed on deserialize, `label` at most 64 characters. The list comes
-    /// back.
-    FavouriteServerAdd {
-        game_id: u32,
-        server: rekindle_types::game_server::ServerAddress,
-        label: String,
-    },
-    /// Remove a favourite game server (plan E7.2). The list comes back.
-    FavouriteServerRemove {
-        game_id: u32,
-        server: rekindle_types::game_server::ServerAddress,
-    },
-    /// The Servers view (plan E7.2 G3): the view, and forgetting a visit.
+    /// The Servers view (plan E7.2 G3): the view, forgetting a visit, and
+    /// our favourite servers.
     Servers(ServersRequest),
     /// Invite an accepted friend to join us on a game server (plan E7.2): a
     /// ratchet-sealed `GameInvite` (0x0170) through the outbox. `server`

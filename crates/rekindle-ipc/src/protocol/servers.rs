@@ -24,6 +24,22 @@ pub enum ServersRequest {
     /// Forget a recently visited server. The view comes back.
     #[serde(rename = "RecentServerRemove")]
     RecentRemove { game_id: u32, server: ServerAddress },
+    /// Our favourite game servers (plan E7.2), each with whether an invite
+    /// may name it (`invitable`: not a hidden game, current-game sharing on).
+    #[serde(rename = "FavouriteServersGet")]
+    FavouritesGet,
+    /// Add a favourite game server, or relabel one (plan E7.2): `server` is
+    /// parsed on deserialize, `label` at most 64 characters. The list comes
+    /// back.
+    #[serde(rename = "FavouriteServerAdd")]
+    FavouriteAdd {
+        game_id: u32,
+        server: ServerAddress,
+        label: String,
+    },
+    /// Remove a favourite game server (plan E7.2). The list comes back.
+    #[serde(rename = "FavouriteServerRemove")]
+    FavouriteRemove { game_id: u32, server: ServerAddress },
 }
 
 impl ServersRequest {
@@ -39,17 +55,21 @@ impl ServersRequest {
         match self {
             Self::View => ("ServersView", Query, Authenticated),
             Self::RecentRemove { .. } => ("RecentServerRemove", Write, Authenticated),
+            Self::FavouritesGet => ("FavouriteServersGet", Query, Authenticated),
+            Self::FavouriteAdd { .. } => ("FavouriteServerAdd", Write, Authenticated),
+            Self::FavouriteRemove { .. } => ("FavouriteServerRemove", Write, Authenticated),
         }
     }
 
-    /// The view reads what our own identity holds (as
-    /// `FavouriteServersGet`); which servers we keep is the user's own, so
-    /// no agent forgets one (as `FavouriteServerRemove`).
+    /// The view and the favourites read what our own identity holds; which
+    /// servers we keep is the user's own, so no agent adds or forgets one.
     #[must_use]
     pub fn agent_capability(&self) -> Option<AgentCapability> {
         match self {
-            Self::View => Some(AgentCapability::IdentityRead),
-            Self::RecentRemove { .. } => None,
+            Self::View | Self::FavouritesGet => Some(AgentCapability::IdentityRead),
+            Self::RecentRemove { .. }
+            | Self::FavouriteAdd { .. }
+            | Self::FavouriteRemove { .. } => None,
         }
     }
 }
@@ -59,7 +79,10 @@ impl std::fmt::Debug for ServersRequest {
         let mut d = f.debug_struct(self.name());
         // A server address is a peer's network location: only the game is
         // logged.
-        if let Self::RecentRemove { game_id, .. } = self {
+        if let Self::RecentRemove { game_id, .. }
+        | Self::FavouriteAdd { game_id, .. }
+        | Self::FavouriteRemove { game_id, .. } = self
+        {
             d.field("game_id", game_id);
         }
         d.finish()

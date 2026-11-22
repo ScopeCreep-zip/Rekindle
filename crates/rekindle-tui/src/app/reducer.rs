@@ -360,15 +360,15 @@ impl App {
                 server,
                 label,
             } => self.spawn_favourites(
-                IpcRequest::FavouriteServerAdd {
+                IpcRequest::Servers(ServersRequest::FavouriteAdd {
                     game_id,
                     server,
                     label,
-                },
+                }),
                 "add favourite server",
             ),
             Action::RemoveFavourite { game_id, server } => self.spawn_favourites(
-                IpcRequest::FavouriteServerRemove { game_id, server },
+                IpcRequest::Servers(ServersRequest::FavouriteRemove { game_id, server }),
                 "remove favourite server",
             ),
             _ => {}

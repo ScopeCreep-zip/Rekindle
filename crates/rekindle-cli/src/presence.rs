@@ -122,21 +122,25 @@ pub fn game_request(cmd: &GameCmd) -> IpcRequest {
         GameCmd::Hidden => IpcRequest::HiddenGamesGet,
         GameCmd::Hide { id } => IpcRequest::GameHide { game_id: *id },
         GameCmd::Unhide { id } => IpcRequest::GameUnhide { game_id: *id },
-        GameCmd::Favourites => IpcRequest::FavouriteServersGet,
+        GameCmd::Favourites => IpcRequest::Servers(ServersRequest::FavouritesGet),
         GameCmd::Servers => IpcRequest::Servers(ServersRequest::View),
         GameCmd::RecentRemove { id, server } => IpcRequest::Servers(ServersRequest::RecentRemove {
             game_id: *id,
             server: server.clone(),
         }),
-        GameCmd::FavouriteAdd { id, server, label } => IpcRequest::FavouriteServerAdd {
-            game_id: *id,
-            server: server.clone(),
-            label: label.clone(),
-        },
-        GameCmd::FavouriteRemove { id, server } => IpcRequest::FavouriteServerRemove {
-            game_id: *id,
-            server: server.clone(),
-        },
+        GameCmd::FavouriteAdd { id, server, label } => {
+            IpcRequest::Servers(ServersRequest::FavouriteAdd {
+                game_id: *id,
+                server: server.clone(),
+                label: label.clone(),
+            })
+        }
+        GameCmd::FavouriteRemove { id, server } => {
+            IpcRequest::Servers(ServersRequest::FavouriteRemove {
+                game_id: *id,
+                server: server.clone(),
+            })
+        }
         GameCmd::Invite { friend, id, server } => IpcRequest::GameInviteSend {
             public_key: friend.clone(),
             game_id: *id,

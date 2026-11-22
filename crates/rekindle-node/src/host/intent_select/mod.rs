@@ -197,8 +197,8 @@ pub(crate) async fn select(
         // (plan E7.2).
         IpcRequest::SkinSelect { .. }
         | IpcRequest::SkinKeep { .. }
-        | IpcRequest::FavouriteServerAdd { .. }
-        | IpcRequest::FavouriteServerRemove { .. } => {
+        | IpcRequest::Servers(ServersRequest::FavouriteAdd { .. })
+        | IpcRequest::Servers(ServersRequest::FavouriteRemove { .. }) => {
             s.subject = unlocked_identity(ctx);
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::SetPreferences);
         }
@@ -261,7 +261,7 @@ pub(crate) async fn select(
         | IpcRequest::ActivityList { .. }
         | IpcRequest::InfoviewGet { .. }
         | IpcRequest::InstalledGamesGet
-        | IpcRequest::FavouriteServersGet
+        | IpcRequest::Servers(ServersRequest::FavouritesGet)
         | IpcRequest::Servers(ServersRequest::View)
         | IpcRequest::FriendGameTotalsGet { .. }
         | IpcRequest::ProfileBioGet

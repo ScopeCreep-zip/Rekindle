@@ -34,11 +34,11 @@ async fn view(host: &Host) -> ServersView {
 }
 
 async fn add_favourite(host: &Host) {
-    let add = IpcRequest::FavouriteServerAdd {
+    let add = IpcRequest::Servers(ServersRequest::FavouriteAdd {
         game_id: CS2,
         server: ServerAddress::parse(FAV).unwrap(),
         label: "Scrims".into(),
-    };
+    });
     call(host, add).await;
 }
 
@@ -166,10 +166,10 @@ async fn each_trigger_pushes_the_view_once_per_period() {
         1
     );
 
-    let remove = IpcRequest::FavouriteServerRemove {
+    let remove = IpcRequest::Servers(ServersRequest::FavouriteRemove {
         game_id: CS2,
         server: ServerAddress::parse(FAV).unwrap(),
-    };
+    });
     call(&host, remove).await;
     let seen = pushes(&mut stream, Duration::from_millis(900)).await;
     assert_eq!(seen.len(), 1, "a removed favourite pushes the view once");

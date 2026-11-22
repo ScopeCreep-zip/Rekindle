@@ -10,7 +10,7 @@
 
 use std::collections::BTreeMap;
 
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse, TransferRequest};
+use rekindle_ipc::protocol::{IpcRequest, IpcResponse, ServersRequest, TransferRequest};
 use rekindle_types::dto::skin_action::{MenuRegistry, SkinAction as A};
 use rekindle_types::dto::skin_run::{CallOp, ShellOp, ShellPanel, SkinRun, SkinSelection};
 use rekindle_types::dto::transfer::TransferTarget;
@@ -122,11 +122,13 @@ fn add_server(server: Option<&(u32, String)>) -> Result<Mapped, IpcResponse> {
     })?;
     let server = ServerAddress::parse(address)
         .map_err(|e| IpcResponse::error(400, format!("AddServer: {address}: {e}")))?;
-    Ok(Mapped::Request(Box::new(IpcRequest::FavouriteServerAdd {
-        game_id: *game_id,
-        server,
-        label: String::new(),
-    })))
+    Ok(Mapped::Request(Box::new(IpcRequest::Servers(
+        ServersRequest::FavouriteAdd {
+            game_id: *game_id,
+            server,
+            label: String::new(),
+        },
+    ))))
 }
 
 /// The table. `selected` holds the window's selected friend, transfer

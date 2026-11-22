@@ -152,7 +152,7 @@ fn skin_subcommands_parse_to_their_requests() {
 
 #[test]
 fn favourite_server_subcommands_parse_to_their_requests() {
-    use rekindle_ipc::protocol::IpcRequest;
+    use rekindle_ipc::protocol::{IpcRequest, ServersRequest};
 
     let request = |args: &[&str]| match parse(args).command {
         Some(Command::Game(cmd)) => crate::presence::game_request(&cmd),
@@ -160,15 +160,15 @@ fn favourite_server_subcommands_parse_to_their_requests() {
     };
     assert!(matches!(
         request(&["game", "favourites"]),
-        IpcRequest::FavouriteServersGet
+        IpcRequest::Servers(ServersRequest::FavouritesGet)
     ));
     assert!(matches!(
         request(&["game", "servers"]),
-        IpcRequest::Servers(rekindle_ipc::protocol::ServersRequest::View)
+        IpcRequest::Servers(ServersRequest::View)
     ));
     assert!(matches!(
         request(&["game", "recent-remove", "4181", "203.0.113.7:27015"]),
-        IpcRequest::Servers(rekindle_ipc::protocol::ServersRequest::RecentRemove {
+        IpcRequest::Servers(ServersRequest::RecentRemove {
             game_id: 4181,
             ref server
         })
@@ -176,12 +176,12 @@ fn favourite_server_subcommands_parse_to_their_requests() {
     ));
     assert!(matches!(
         request(&["game", "favourite-add", "4181", "203.0.113.7:27015", "--label", "Scrims"]),
-        IpcRequest::FavouriteServerAdd { game_id: 4181, ref server, ref label }
+        IpcRequest::Servers(ServersRequest::FavouriteAdd { game_id: 4181, ref server, ref label })
             if server.as_str() == "203.0.113.7:27015" && label == "Scrims"
     ));
     assert!(matches!(
         request(&["game", "favourite-remove", "4181", "203.0.113.7:27015"]),
-        IpcRequest::FavouriteServerRemove { game_id: 4181, ref server }
+        IpcRequest::Servers(ServersRequest::FavouriteRemove { game_id: 4181, ref server })
             if server.as_str() == "203.0.113.7:27015"
     ));
     assert!(

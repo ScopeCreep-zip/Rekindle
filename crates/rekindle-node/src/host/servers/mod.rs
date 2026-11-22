@@ -72,14 +72,20 @@ impl ServersState {
     }
 }
 
-/// Route `ServersView` (Query) or `RecentServerRemove` (Write): both answer
-/// the view.
+/// Route `ServersView` (Query) or `RecentServerRemove` (Write), which
+/// answer the view; the favourites trio answers its own list.
 pub(crate) async fn route(
     ctx: &DaemonContext,
     state: DaemonState,
     request: ServersRequest,
 ) -> IpcResponse {
     match request {
+        request @ (ServersRequest::FavouritesGet
+        | ServersRequest::FavouriteAdd { .. }
+        | ServersRequest::FavouriteRemove { .. }) => {
+            return crate::daemon::dispatch::own_favourite_servers::route(ctx, state, request)
+                .await;
+        }
         ServersRequest::View => {
             if !state.can_query() {
                 return state_error(state, "query");

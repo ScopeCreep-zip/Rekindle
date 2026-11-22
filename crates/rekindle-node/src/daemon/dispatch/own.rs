@@ -60,11 +60,6 @@ pub(crate) async fn route(
         request @ (IpcRequest::InstalledGamesGet | IpcRequest::GameLaunch { .. }) => {
             super::own_game_launch::route(ctx, state, request).await
         }
-        request @ (IpcRequest::FavouriteServersGet
-        | IpcRequest::FavouriteServerAdd { .. }
-        | IpcRequest::FavouriteServerRemove { .. }) => {
-            super::own_favourite_servers::route(ctx, state, request).await
-        }
         IpcRequest::Servers(request) => crate::host::servers::route(ctx, state, request).await,
         IpcRequest::ProfileSetAvatar { image, kind } => {
             handle_avatar(ctx, state, image, kind).await

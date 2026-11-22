@@ -177,9 +177,6 @@ async fn route(
         | IpcRequest::GameHide { .. }
         | IpcRequest::GameUnhide { .. }
         | IpcRequest::GameInviteSend { .. }
-        | IpcRequest::FavouriteServersGet
-        | IpcRequest::FavouriteServerAdd { .. }
-        | IpcRequest::FavouriteServerRemove { .. }
         | IpcRequest::Servers(_)
         | IpcRequest::ProfileSetAvatar { .. }
         | IpcRequest::AvatarGet { .. }

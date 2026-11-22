@@ -170,9 +170,6 @@ impl std::fmt::Debug for IpcRequest {
             | Self::InstalledGamesGet
             | Self::GameLaunch { .. }
             | Self::GameInviteSend { .. }
-            | Self::FavouriteServersGet
-            | Self::FavouriteServerAdd { .. }
-            | Self::FavouriteServerRemove { .. }
             | Self::ProfileSetAvatar { .. }
             | Self::AvatarGet { .. }
             | Self::AuditVerify
@@ -270,15 +267,6 @@ impl IpcRequest {
                 .field("enabled", enabled)
                 .finish(),
             Self::HiddenGamesGet => write!(f, "HiddenGamesGet"),
-            Self::FavouriteServersGet => write!(f, "FavouriteServersGet"),
-            Self::FavouriteServerAdd { game_id, .. } => f
-                .debug_struct("FavouriteServerAdd")
-                .field("game_id", game_id)
-                .finish_non_exhaustive(),
-            Self::FavouriteServerRemove { game_id, .. } => f
-                .debug_struct("FavouriteServerRemove")
-                .field("game_id", game_id)
-                .finish_non_exhaustive(),
             Self::GameHide { game_id } => f
                 .debug_struct("GameHide")
                 .field("game_id", game_id)

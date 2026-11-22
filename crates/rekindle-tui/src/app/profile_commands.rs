@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::{IpcRequest, ServersRequest};
 use rekindle_types::dto::presence::{FavouriteServerView, GameTotalView};
 
 use super::super::action::{Action, CommandResult};
@@ -58,7 +58,10 @@ impl App {
 
     /// Our favourite servers.
     pub(crate) fn load_favourites(&self) {
-        self.spawn_favourites(IpcRequest::FavouriteServersGet, "favourite servers");
+        self.spawn_favourites(
+            IpcRequest::Servers(ServersRequest::FavouritesGet),
+            "favourite servers",
+        );
     }
 
     /// A favourites request; each answers the list as it now stands.
