@@ -3456,7 +3456,7 @@ checksum = "accd4ea62f7bb7a82fe23066fb0957d48ef677f6eeb8215f372f52e48bb32426"
 [[package]]
 name = "veilid-core"
 version = "0.5.8"
-source = "git+https://github.com/radicalkjax/veilid.git?rev=bc7416334ee0b94fe30ac9fec14dee98493aea4a#bc7416334ee0b94fe30ac9fec14dee98493aea4a"
+source = "git+https://github.com/radicalkjax/veilid.git?rev=18b3cbdf2c43caf53f12d6c2e0ce4ff354663eba#18b3cbdf2c43caf53f12d6c2e0ce4ff354663eba"
 dependencies = [
  "arc-swap",
  "async-trait",
@@ -3518,7 +3518,7 @@ dependencies = [
 [[package]]
 name = "veilid-core-optimized"
 version = "0.5.8"
-source = "git+https://github.com/radicalkjax/veilid.git?rev=bc7416334ee0b94fe30ac9fec14dee98493aea4a#bc7416334ee0b94fe30ac9fec14dee98493aea4a"
+source = "git+https://github.com/radicalkjax/veilid.git?rev=18b3cbdf2c43caf53f12d6c2e0ce4ff354663eba#18b3cbdf2c43caf53f12d6c2e0ce4ff354663eba"
 dependencies = [
  "argon2",
  "blake2 0.11.0",
@@ -3547,7 +3547,7 @@ dependencies = [
 [[package]]
 name = "veilid-tools"
 version = "0.5.8"
-source = "git+https://github.com/radicalkjax/veilid.git?rev=bc7416334ee0b94fe30ac9fec14dee98493aea4a#bc7416334ee0b94fe30ac9fec14dee98493aea4a"
+source = "git+https://github.com/radicalkjax/veilid.git?rev=18b3cbdf2c43caf53f12d6c2e0ce4ff354663eba#18b3cbdf2c43caf53f12d6c2e0ce4ff354663eba"
 dependencies = [
  "android_logger",
  "async-lock",

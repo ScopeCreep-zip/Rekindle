@@ -262,7 +262,9 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// row's named dependency; `activity_log` and `activity_seen`; `app_settings.keep_activity_log`;
 /// and the veilid-core pin moves to fork rev `bc741633`, so the DB, vault and Veilid storage
 /// reset together.
-pub const SCHEMA_VERSION: i64 = 153;
+/// 154 (ADR 0017 2026-11-22, VF5): the veilid-core pin moves to fork rev `18b3cbdf` (a failed
+/// remote route test releases only its import), so the DB, vault and Veilid storage reset together.
+pub const SCHEMA_VERSION: i64 = 154;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

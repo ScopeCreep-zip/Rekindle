@@ -188,20 +188,23 @@ undocumented-unsafe-blocks = "deny" # every unsafe block needs // SAFETY: commen
 print-stdout = "warn"               # prefer tracing over println!
 print-stderr = "warn"               # prefer tracing over eprintln!
 
-# veilid-core 0.5.8 plus three fixes, pinned by commit, until a Veilid release
+# veilid-core 0.5.8 plus six fixes, pinned by commit, until a Veilid release
 # carries them (ADR 0017): a route chosen for a reply or a safety route is held
 # until it is used, and a release of a held route drains instead of removing
 # it ("Invalid target: route key does not exist", dropped rehydration
 # requests); a route marked for release is not saved (91453e97). Safety route
 # selection takes only automatic routes, never an API-allocated one
 # (e1158844), and API-allocated routes are still tested after a peer info
-# change (bc741633). Branch rekindle/v0.5.8-route-pool = the upstream v0.5.8
+# change (bc741633). A failed remote route test releases only its import
+# (a2c01232), a release takes an import, live or expired, before an allocated
+# route with the same id (a48b66aa), and deferred route tests are typed
+# (18b3cbdf). Branch rekindle/v0.5.8-route-pool = the upstream v0.5.8
 # tree (snapshot dcf0b315) + those commits; held from upstream (Policy 1). Keep
 # deny.toml's allow-git and .cargo/config.toml in sync. 0.5.8's table-store
 # migration is one-way: a 0.5.7 build cannot open its storage (SCHEMA_VERSION
 # resets all three stores together on the bump).
 [patch.crates-io]
-veilid-core = { git = "https://github.com/radicalkjax/veilid.git", rev = "bc7416334ee0b94fe30ac9fec14dee98493aea4a" }
+veilid-core = { git = "https://github.com/radicalkjax/veilid.git", rev = "18b3cbdf2c43caf53f12d6c2e0ce4ff354663eba" }
 # libdbus-sys 0.2.7's vendored build (Linux; vendored is forced by
 # keyring-manager, a veilid-core dependency) omits HAVE_POLL, so libdbus
 # emulates poll() with select() and FD_SET of a descriptor >= 1024 writes

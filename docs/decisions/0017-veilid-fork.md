@@ -31,6 +31,19 @@
   `test_preferred_manual_route_is_selected`, `test_automatic_route_is_selected_beside_manual`,
   `test_manual_route_is_tested_after_peer_info_change`. Upstream contact (MR, push to any Veilid remote) is held
   per Policy 1. `SCHEMA_VERSION` 152 → 153 in the same change (Consequences).
+- **Amended 2026-11-22** (VF5, three more fix commits on `rekindle/v0.5.8-route-pool`, pin
+  `18b3cbdf2c43caf53f12d6c2e0ce4ff354663eba`). Evidence: Linux real-app runs on round 23 (Veilid debug) logged five
+  General-route deaths in two runs, each `Remote route test failed (no response): <id>` → `releasing allocated route
+  <id>` → `own route died death=class=General cause=veilid` within about 1 s, while that allocated route's loopback test
+  passed every ~10 s. The id is shared because Rekindle's self-test imports our own route blob, so a failed test of the
+  import released the allocated route. `a2c01232` "Release only the tested import when a remote route test fails";
+  `a48b66aa` "Release an expired import before an allocated route with the same id" (`release_route` removes the
+  remote cache entry, live or expired, before it releases an allocated route); `18b3cbdf` "Type deferred route tests
+  so a remote retest never tests an allocated route" (`RouteTestTarget` Allocated/Remote). Tests in
+  `tests_route_spec_store/test_remote_routes.rs`: `test_failed_remote_test_releases_only_the_import`,
+  `test_failed_remote_test_after_release_keeps_allocated_route`, `test_release_of_expired_import_keeps_allocated_route`,
+  `test_deferred_retests_target_only_their_own_route_set`. Upstream contact held per Policy 1. `SCHEMA_VERSION`
+  153 → 154 in the same change (Consequences).
 
 ## Context and problem statement
 
@@ -47,13 +60,14 @@ at the source, to be contributed back.
 **Build veilid-core from a private fork, pinned by commit:**
 
 - `Cargo.toml` `[patch.crates-io]` → `veilid-core = { git = "https://github.com/radicalkjax/veilid.git",
-  rev = "bc7416334ee0b94fe30ac9fec14dee98493aea4a" }` (since the 2026-11-22 amendment; `91453e97…` from the
+  rev = "18b3cbdf2c43caf53f12d6c2e0ce4ff354663eba" }` (since the 2026-11-22 VF5 amendment; `bc741633…` from the
+  first 2026-11-22 amendment; `91453e97…` from the
   2026-11-14 amendment; originally `0cd847debfaee427eeceeb5046ad48cd85540d63`).
 - Branch `rekindle/v0.5.8-route-drain` = commit `dcf0b315` "Veilid v0.5.8 source snapshot" (the upstream
   v0.5.8 tree, `759da70b`, identical tree hash; history is not carried because upstream history holds a 266 MB
   file GitHub refuses) plus **one** fix commit, `91453e97` "Hold a selected route until it is used; a release
-  drains a held route" (since 2026-11-22 branch `rekindle/v0.5.8-route-pool` adds `e1158844` and `bc741633`,
-  see the amendment above). Before the 2026-11-14 amendment: branch `rekindle/v0.5.7-route-drain` = `1cabfbe1` (the v0.5.7
+  drains a held route" (since 2026-11-22 branch `rekindle/v0.5.8-route-pool` adds `e1158844`, `bc741633`,
+  `a2c01232`, `a48b66aa` and `18b3cbdf`, see the amendments above). Before the 2026-11-14 amendment: branch `rekindle/v0.5.7-route-drain` = `1cabfbe1` (the v0.5.7
   tree, `f5cdcca3`) plus `0cd847de`.
 - The same change on upstream history is `c9e29651` on branch `fix/route-select-holds-ref` in `~/veilid`
   (remote `origin` = `gitlab.com/veilid/veilid`), ready for the upstream merge request.
@@ -103,6 +117,6 @@ returns an `Arc`), i2pd `eTunnelStateExpiring`.
 
 ## More information
 
-- [Veilid developer book](https://veilid.gitlab.io/developer-book), the fork at `bc741633` (worktree
+- [Veilid developer book](https://veilid.gitlab.io/developer-book), the fork at `18b3cbdf` (worktree
   `~/veilid-wt-vf2`; `91453e97` in `~/veilid-wt-058`; `~/veilid` at `0cd847de` for 0.5.7)
 - `.claude/plans/standards-remediation/00-integration-plan.md` C7.21
