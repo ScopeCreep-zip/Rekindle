@@ -57,6 +57,7 @@ pub mod signal_identities;
 pub mod skins;
 pub mod stream_cursors;
 pub mod threads;
+pub mod transfers;
 pub mod unprocessed;
 
 #[cfg(test)]

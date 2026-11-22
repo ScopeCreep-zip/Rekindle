@@ -23,5 +23,6 @@ pub mod skin_signals;
 pub mod skin_title;
 pub mod skin_tree;
 pub mod skin_tree_role;
+pub mod transfer;
 
 pub use command::{CommandError, Done};

@@ -946,6 +946,28 @@ CREATE TABLE IF NOT EXISTS favourite_servers (
     PRIMARY KEY (owner_key, game_id, address)
 );
 
+-- File transfers (plan E7.2 G12, SK2-G design §4; `rekindle_db::repo::transfers`):
+-- the Downloads view. `target` is plan E5.1's AttachmentTarget as JSON (G12:
+-- the channel arm). `chunks_done`/`bytes_done` are the resume checkpoint: the
+-- held chunks stay in the chunk cache, and a resumed fetch asks only for the
+-- rest. Never sent.
+CREATE TABLE IF NOT EXISTS transfers (
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    attachment_id TEXT NOT NULL,
+    target_json TEXT NOT NULL,
+    direction TEXT NOT NULL CHECK(direction IN ('download')),
+    state TEXT NOT NULL CHECK(state IN ('queued', 'active', 'paused', 'done', 'failed')),
+    chunks_done INTEGER NOT NULL DEFAULT 0 CHECK(chunks_done >= 0),
+    chunk_count INTEGER NOT NULL DEFAULT 0 CHECK(chunk_count >= 0),
+    bytes_done INTEGER NOT NULL DEFAULT 0 CHECK(bytes_done >= 0),
+    total INTEGER NOT NULL DEFAULT 0 CHECK(total >= 0),
+    dest_name TEXT NOT NULL,
+    dest_path TEXT NOT NULL,
+    started_at INTEGER NOT NULL,
+    finished_at INTEGER,
+    PRIMARY KEY (owner_key, attachment_id)
+);
+
 -- A friend's game totals (plan E7.2; `rekindle_db::repo::friend_game_totals`),
 -- as their last `GameTotals` DmFrame stated them; a new frame replaces
 -- them all. Unfriend and block remove the friend row, and these with it.
