@@ -883,7 +883,16 @@
       "fingerprint": "abcd 0123"
     }
   },
-  "intent.fact.ipAddressLeaves": "ipAddressLeaves",
+  "intent.fact.ipAddressLeaves": {
+    "ipAddressLeaves": {
+      "to": {
+        "gameServer": {
+          "address": "192.0.2.10:25565",
+          "game": "Team Fortress 2"
+        }
+      }
+    }
+  },
   "intent.fact.keyChanged": {
     "keyChanged": {
       "newFingerprint": "4567 89ef",
@@ -954,6 +963,7 @@
     "typed": "general"
   },
   "intent.intentReview": {
+    "acknowledgement": null,
     "cancelSends": true,
     "class": "destructive",
     "escalations": [
@@ -997,8 +1007,26 @@
   "intent.proofRequired.none": "none",
   "intent.proofRequired.passphrase": "passphrase",
   "intent.proofRequired.typeSubject": "typeSubject",
+  "intent.recipient.gameServer": {
+    "gameServer": {
+      "address": "192.0.2.10:25565",
+      "game": "Team Fortress 2"
+    }
+  },
+  "intent.recipient.site": {
+    "site": {
+      "host": "example.org"
+    }
+  },
   "intent.reversibility.needsOthers": "needsOthers",
   "intent.reversibility.never": "never",
+  "intent.reversibility.neverBecause": {
+    "neverBecause": {
+      "disclosureCannotBeRecalled": {
+        "to": "gameServer"
+      }
+    }
+  },
   "intent.reversibility.reversibleByInverse": {
     "reversibleByInverse": "unblockUser"
   },
@@ -1051,6 +1079,7 @@
   },
   "intentPending.intentPending": {
     "intentPending": {
+      "acknowledgement": null,
       "cancelSends": true,
       "class": "destructive",
       "escalations": [

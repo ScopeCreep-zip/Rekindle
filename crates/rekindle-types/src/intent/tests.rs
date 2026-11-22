@@ -198,6 +198,7 @@ fn the_review_serializes_in_camel_case() {
             "notifies": {"members": 57},
             "proof": "typeSubject",
             "expiresAtMs": 1,
+            "acknowledgement": null,
             "cancelSends": false
         })
     );

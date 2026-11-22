@@ -102,6 +102,7 @@
   },
   "command.error.intentRequired": {
     "data": {
+      "acknowledgement": null,
       "cancelSends": false,
       "class": "protected",
       "escalations": [],
