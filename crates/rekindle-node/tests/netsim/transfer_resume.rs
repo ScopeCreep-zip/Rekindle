@@ -49,7 +49,7 @@ async fn attach(community: &Community, dir: &tempfile::TempDir) -> (String, Tran
 }
 
 fn start(id: &str, target: &TransferTarget, dest: Option<String>) -> IpcRequest {
-    transfer(TransferRequest::TransferStart {
+    transfer(TransferRequest::Start {
         attachment_id: id.to_owned(),
         target: target.clone(),
         dest,
@@ -75,12 +75,9 @@ fn below(events: &Events, id: &str, chunks: u32) -> usize {
 }
 
 async fn row(community: &Community, i: usize, id: &str) -> TransferRow {
-    let rows: Vec<TransferRow> = serde_json::from_value(
-        community.nodes[i]
-            .ok(transfer(TransferRequest::TransferList))
-            .await,
-    )
-    .expect("transfer rows");
+    let rows: Vec<TransferRow> =
+        serde_json::from_value(community.nodes[i].ok(transfer(TransferRequest::List)).await)
+            .expect("transfer rows");
     rows.into_iter()
         .find(|r| r.attachment_id == id)
         .expect("the transfer is listed")
@@ -147,7 +144,7 @@ async fn a_stopped_transfer_resumes_from_its_checkpoint() {
         for _ in 0..2_400 {
             if midway(&seen, &id, 2) {
                 return bea
-                    .call(transfer(TransferRequest::TransferStop {
+                    .call(transfer(TransferRequest::Stop {
                         attachment_id: id.clone(),
                     }))
                     .await;

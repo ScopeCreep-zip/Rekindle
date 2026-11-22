@@ -1,20 +1,8 @@
 //! `rekindle skin …` (plan E7.7.2), one request each.
 
-use rekindle_client::DaemonClient;
 use rekindle_ipc::protocol::IpcRequest;
 
 use crate::cli::SkinCmd;
-use crate::helpers;
-use crate::output::{format, OutputMode};
-
-pub async fn dispatch(
-    cmd: &SkinCmd,
-    client: &DaemonClient,
-    mode: OutputMode,
-) -> anyhow::Result<()> {
-    let value = helpers::send(client, request(cmd)?).await?;
-    format::print_structured(&value, mode)
-}
 
 /// The request `cmd` sends.
 pub fn request(cmd: &SkinCmd) -> anyhow::Result<IpcRequest> {

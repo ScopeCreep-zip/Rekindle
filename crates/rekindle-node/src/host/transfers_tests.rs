@@ -4,15 +4,15 @@
 
 use rekindle_types::dto::transfer::{TransferRow, TransferState, TransferTarget};
 
-use super::{revealable, Checkpoint, Run, TransferRuns, PROGRESS_INTERVAL_MS};
+use super::{revealable, Run, TransferCheckpoint, TransferRuns, PROGRESS_INTERVAL_MS};
 
-const ID: &str = "aa11";
+const ATTACHMENT_ID: &str = "aa11";
 
 fn running() -> TransferRuns {
     let runs = TransferRuns::default();
     let (abort, _registration) = futures::future::AbortHandle::new_pair();
     runs.0.lock().insert(
-        ID.to_owned(),
+        ATTACHMENT_ID.to_owned(),
         Run {
             abort,
             seen: None,
@@ -22,8 +22,8 @@ fn running() -> TransferRuns {
     runs
 }
 
-fn at(chunks_done: u32) -> Checkpoint {
-    Checkpoint {
+fn at(chunks_done: u32) -> TransferCheckpoint {
+    TransferCheckpoint {
         chunks_done,
         chunk_count: 1_000,
         bytes_done: u64::from(chunks_done) * 28_672,
@@ -38,7 +38,7 @@ fn progress_is_capped_at_four_a_second() {
     let sent: Vec<u64> = (0..200u32)
         .filter_map(|i| {
             let now = u64::from(i) * 10;
-            runs.observe(ID, at(i + 1), now).map(|_| now)
+            runs.observe(ATTACHMENT_ID, at(i + 1), now).map(|_| now)
         })
         .collect();
     assert_eq!(sent.len(), 8, "four a second over two seconds: {sent:?}");
@@ -47,25 +47,33 @@ fn progress_is_capped_at_four_a_second() {
         "no two within {PROGRESS_INTERVAL_MS} ms: {sent:?}"
     );
     // The unsent newest checkpoint is written when the download ends.
-    assert_eq!(runs.end(ID), Some(at(200)));
+    assert_eq!(runs.end(ATTACHMENT_ID), Some(at(200)));
 }
 
 #[test]
 fn the_last_chunk_is_always_published() {
     let runs = running();
-    let whole = Checkpoint {
+    let whole = TransferCheckpoint {
         chunks_done: 1_000,
         ..at(0)
     };
-    assert!(runs.observe(ID, at(1), 0).is_some());
-    assert_eq!(runs.observe(ID, whole, 1), Some(whole));
-    assert_eq!(runs.end(ID), None, "the final checkpoint was written");
-    assert_eq!(runs.observe(ID, at(2), 500), None, "no run, no progress");
+    assert!(runs.observe(ATTACHMENT_ID, at(1), 0).is_some());
+    assert_eq!(runs.observe(ATTACHMENT_ID, whole, 1), Some(whole));
+    assert_eq!(
+        runs.end(ATTACHMENT_ID),
+        None,
+        "the final checkpoint was written"
+    );
+    assert_eq!(
+        runs.observe(ATTACHMENT_ID, at(2), 500),
+        None,
+        "no run, no progress"
+    );
 }
 
 fn done_at(path: &std::path::Path) -> TransferRow {
     TransferRow {
-        attachment_id: ID.to_owned(),
+        attachment_id: ATTACHMENT_ID.to_owned(),
         target: TransferTarget::Channel {
             community: "c".into(),
             channel_id: "ch".into(),

@@ -25,14 +25,14 @@ pub(crate) const PROGRESS_INTERVAL_MS: u64 = 250;
 struct Run {
     abort: futures::future::AbortHandle,
     /// The newest `ChunkCached` counts, and whether they are written.
-    seen: Option<(Checkpoint, bool)>,
+    seen: Option<(TransferCheckpoint, bool)>,
     /// When the last progress event went out (Host clock, ms).
     last_sent_ms: Option<u64>,
 }
 
 /// A transfer's checkpoint: chunks held of `chunk_count`, bytes of `total`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Checkpoint {
+pub struct TransferCheckpoint {
     pub chunks_done: u32,
     pub chunk_count: u32,
     pub bytes_done: u64,
@@ -57,7 +57,12 @@ impl TransferRuns {
     /// progress to publish when the last went out at least
     /// [`PROGRESS_INTERVAL_MS`] ago or the download is complete. `None`
     /// for an attachment no transfer runs (a voice message, an expression).
-    fn observe(&self, attachment_id: &str, at: Checkpoint, now_ms: u64) -> Option<Checkpoint> {
+    fn observe(
+        &self,
+        attachment_id: &str,
+        at: TransferCheckpoint,
+        now_ms: u64,
+    ) -> Option<TransferCheckpoint> {
         let mut runs = self.0.lock();
         let run = runs.get_mut(attachment_id)?;
         let due = at.chunks_done == at.chunk_count
@@ -72,7 +77,7 @@ impl TransferRuns {
     }
 
     /// Forget a download that ended: its last checkpoint when unwritten.
-    fn end(&self, attachment_id: &str) -> Option<Checkpoint> {
+    fn end(&self, attachment_id: &str) -> Option<TransferCheckpoint> {
         let run = self.0.lock().remove(attachment_id)?;
         run.seen.and_then(|(at, written)| (!written).then_some(at))
     }
@@ -81,7 +86,7 @@ impl TransferRuns {
 /// `FilesEvent::ChunkCached` (the one subscriber, lead decision 51): a
 /// running transfer's checkpoint is written and its progress published,
 /// throttled to [`PROGRESS_INTERVAL_MS`].
-pub(crate) fn chunk_cached(ctx: &DaemonContext, attachment_id: &str, at: Checkpoint) {
+pub(crate) fn chunk_cached(ctx: &DaemonContext, attachment_id: &str, at: TransferCheckpoint) {
     let now = u64::try_from(ctx.clock.now_ms_i64()).unwrap_or(0);
     let Some(at) = ctx.transfers.observe(attachment_id, at, now) else {
         return;
@@ -99,17 +104,19 @@ pub(crate) fn chunk_cached(ctx: &DaemonContext, attachment_id: &str, at: Checkpo
     let (Ok(db), Ok(owner)) = (ctx.require_db(), ctx.require_owner()) else {
         return;
     };
+    // On the unlock's scope, so a lock cancels a write still queued.
     let id = attachment_id.to_owned();
-    tokio::spawn(checkpoint_into(db, owner, id, at));
+    ctx.unlock_scope_or_closed()
+        .spawn_or_drop("transfer checkpoint", checkpoint_into(db, owner, id, at));
 }
 
-async fn write_checkpoint(ctx: &DaemonContext, attachment_id: &str, at: Checkpoint) {
+async fn write_checkpoint(ctx: &DaemonContext, attachment_id: &str, at: TransferCheckpoint) {
     if let (Ok(db), Ok(owner)) = (ctx.require_db(), ctx.require_owner()) {
         checkpoint_into(db, owner, attachment_id.to_owned(), at).await;
     }
 }
 
-async fn checkpoint_into(db: rekindle_db::Db, owner: String, id: String, at: Checkpoint) {
+async fn checkpoint_into(db: rekindle_db::Db, owner: String, id: String, at: TransferCheckpoint) {
     let wrote = db
         .call(move |conn| {
             rekindle_db::repo::transfers::checkpoint(
@@ -144,7 +151,7 @@ pub(crate) async fn pause_interrupted(ctx: &DaemonContext) {
 
 /// How a download ended.
 #[derive(Debug)]
-pub(crate) enum Ended {
+pub(crate) enum DownloadEnd {
     Done,
     /// Stopped by `TransferStop` or `TransferRemove`.
     Stopped,
@@ -153,7 +160,7 @@ pub(crate) enum Ended {
 
 /// What a transfer step failed on, before any download ran.
 #[derive(Debug)]
-pub(crate) enum Refused {
+pub(crate) enum TransferRefused {
     Locked,
     Db(String),
 }
@@ -187,15 +194,15 @@ async fn set_state(ctx: &DaemonContext, attachment_id: &str, state: TransferStat
 /// (a row already present keeps its checkpoint), and wait for it to end.
 ///
 /// # Errors
-/// [`Refused`] when no identity is unlocked or the row is unwritten.
+/// [`TransferRefused`] when no identity is unlocked or the row is unwritten.
 pub(crate) async fn download(
     ctx: &DaemonContext,
     target: TransferTarget,
     attachment_id: &str,
     dest: PathBuf,
-) -> Result<Ended, Refused> {
+) -> Result<DownloadEnd, TransferRefused> {
     let (Ok(db), Ok(owner)) = (ctx.require_db(), ctx.require_owner()) else {
-        return Err(Refused::Locked);
+        return Err(TransferRefused::Locked);
     };
     let TransferTarget::Channel {
         community,
@@ -219,7 +226,7 @@ pub(crate) async fn download(
     };
     db.call(move |conn| rekindle_db::repo::transfers::begin(conn, &owner, &row))
         .await
-        .map_err(|e| Refused::Db(e.to_string()))?;
+        .map_err(|e| TransferRefused::Db(e.to_string()))?;
     publish(
         ctx,
         TransferEvent::StateChanged {
@@ -248,15 +255,15 @@ pub(crate) async fn download(
         registration,
     );
     let ended = match fetch.await {
-        Ok(Ok(())) => Ended::Done,
-        Ok(Err(e)) => Ended::Failed(e),
-        Err(futures::future::Aborted) => Ended::Stopped,
+        Ok(Ok(())) => DownloadEnd::Done,
+        Ok(Err(e)) => DownloadEnd::Failed(e),
+        Err(futures::future::Aborted) => DownloadEnd::Stopped,
     };
     if let Some(at) = ctx.transfers.end(attachment_id) {
         write_checkpoint(ctx, attachment_id, at).await;
     }
     match &ended {
-        Ended::Done => {
+        DownloadEnd::Done => {
             set_state(ctx, attachment_id, TransferState::Done).await;
             publish(
                 ctx,
@@ -265,9 +272,9 @@ pub(crate) async fn download(
                 },
             );
         }
-        Ended::Failed(_) => set_state(ctx, attachment_id, TransferState::Failed).await,
+        DownloadEnd::Failed(_) => set_state(ctx, attachment_id, TransferState::Failed).await,
         // Paused by `stop` (or forgotten by `remove`, which wrote the end).
-        Ended::Stopped => {
+        DownloadEnd::Stopped => {
             if get(ctx, attachment_id).await.is_ok_and(|row| row.is_some()) {
                 set_state(ctx, attachment_id, TransferState::Paused).await;
             }
@@ -288,21 +295,22 @@ pub(crate) async fn remove(
     ctx: &DaemonContext,
     row: &TransferRow,
     delete_file: bool,
-) -> Result<(), Refused> {
+) -> Result<(), TransferRefused> {
     ctx.transfers.stop(&row.attachment_id);
     if delete_file {
         let path = Path::new(&row.dest_path);
         if std::fs::symlink_metadata(path).is_ok_and(|m| m.is_file()) {
-            std::fs::remove_file(path).map_err(|e| Refused::Db(format!("delete file: {e}")))?;
+            std::fs::remove_file(path)
+                .map_err(|e| TransferRefused::Db(format!("delete file: {e}")))?;
         }
     }
     let (Ok(db), Ok(owner)) = (ctx.require_db(), ctx.require_owner()) else {
-        return Err(Refused::Locked);
+        return Err(TransferRefused::Locked);
     };
     let id = row.attachment_id.clone();
     db.call(move |conn| rekindle_db::repo::transfers::remove(conn, &owner, &id))
         .await
-        .map_err(|e| Refused::Db(e.to_string()))?;
+        .map_err(|e| TransferRefused::Db(e.to_string()))?;
     publish(
         ctx,
         TransferEvent::Removed {
@@ -316,24 +324,24 @@ pub(crate) async fn remove(
 pub(crate) async fn get(
     ctx: &DaemonContext,
     attachment_id: &str,
-) -> Result<Option<TransferRow>, Refused> {
+) -> Result<Option<TransferRow>, TransferRefused> {
     let (Ok(db), Ok(owner)) = (ctx.require_db(), ctx.require_owner()) else {
-        return Err(Refused::Locked);
+        return Err(TransferRefused::Locked);
     };
     let id = attachment_id.to_owned();
     db.call(move |conn| rekindle_db::repo::transfers::get(conn, &owner, &id))
         .await
-        .map_err(|e| Refused::Db(e.to_string()))
+        .map_err(|e| TransferRefused::Db(e.to_string()))
 }
 
 /// Every transfer, newest first.
-pub(crate) async fn list(ctx: &DaemonContext) -> Result<Vec<TransferRow>, Refused> {
+pub(crate) async fn list(ctx: &DaemonContext) -> Result<Vec<TransferRow>, TransferRefused> {
     let (Ok(db), Ok(owner)) = (ctx.require_db(), ctx.require_owner()) else {
-        return Err(Refused::Locked);
+        return Err(TransferRefused::Locked);
     };
     db.call(move |conn| rekindle_db::repo::transfers::list(conn, &owner))
         .await
-        .map_err(|e| Refused::Db(e.to_string()))
+        .map_err(|e| TransferRefused::Db(e.to_string()))
 }
 
 /// The finished file `row` saved, to reveal: `None` unless it is `done`

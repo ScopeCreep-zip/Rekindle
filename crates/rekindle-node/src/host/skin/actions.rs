@@ -107,19 +107,19 @@ pub(crate) fn map(
         // a reveal; "Search for Files" lists our transfers.
         A::StartDownload => {
             let (attachment_id, target) = transfer_selected()?;
-            transfer_request(TransferRequest::TransferStart {
+            transfer_request(TransferRequest::Start {
                 attachment_id,
                 target,
                 dest: None,
             })
         }
-        A::StopDownload => transfer_request(TransferRequest::TransferStop {
+        A::StopDownload => transfer_request(TransferRequest::Stop {
             attachment_id: transfer_selected()?.0,
         }),
-        A::OpenDownload => transfer_request(TransferRequest::TransferOpen {
+        A::OpenDownload => transfer_request(TransferRequest::Open {
             attachment_id: transfer_selected()?.0,
         }),
-        A::DownloadInfo => transfer_request(TransferRequest::TransferList),
+        A::DownloadInfo => transfer_request(TransferRequest::List),
         A::LogOff => Ok(Request(Box::new(IpcRequest::Logout))),
         A::SetStatus(status) => Ok(Request(Box::new(IpcRequest::PresenceSet {
             status: *status,

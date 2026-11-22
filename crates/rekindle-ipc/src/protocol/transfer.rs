@@ -1,7 +1,10 @@
 //! The file transfers (plan E7.2 G12, SK2-G design §4), carried as
 //! `IpcRequest::Transfer`: the Downloads view's list, and Start (resume),
 //! Stop (pause), Open (reveal, never execute) and Remove of one transfer,
-//! keyed by its attachment id. Every leaf keeps its own name.
+//! keyed by its attachment id. Every leaf keeps its own name: the variants
+//! are short (`TransferRequest::List`) but each is renamed on the wire, in
+//! `name()` and so in every registry (`COMMAND_TABLE`, the shell's command
+//! map) to its `Transfer…` leaf name, which is unique across `IpcRequest`.
 
 use serde::{Deserialize, Serialize};
 
@@ -14,26 +17,31 @@ use crate::protocol::{AgentCapability, Lane};
 #[derive(Clone, Serialize, Deserialize)]
 pub enum TransferRequest {
     /// Every transfer, newest first (`TransferRow`s).
-    TransferList,
+    #[serde(rename = "TransferList")]
+    List,
     /// Resume a paused or failed download from its checkpoint, or start
     /// a never-fetched attachment of `target`: without `dest` the Host
     /// answers `SkinRun::Shell(ShellOp::ChooseDownloadDest)`, the shell
     /// asks the user where to save (the native save dialog
     /// `download_attachment` uses), then sends this again with `dest`.
     /// The answer is `None` once the download has finished.
-    TransferStart {
+    #[serde(rename = "TransferStart")]
+    Start {
         attachment_id: String,
         target: TransferTarget,
         dest: Option<String>,
     },
     /// Pause a running download; its held chunks stay cached.
-    TransferStop { attachment_id: String },
+    #[serde(rename = "TransferStop")]
+    Stop { attachment_id: String },
     /// The finished file to reveal in the OS file manager
     /// (`TransferReveal`); never opened or executed.
-    TransferOpen { attachment_id: String },
+    #[serde(rename = "TransferOpen")]
+    Open { attachment_id: String },
     /// Forget a transfer (stopping it first); `delete_file` also deletes
     /// the saved file.
-    TransferRemove {
+    #[serde(rename = "TransferRemove")]
+    Remove {
         attachment_id: String,
         delete_file: bool,
     },
@@ -50,11 +58,11 @@ impl TransferRequest {
         use Lane::{Query, Write};
         use SecurityLevel::Authenticated;
         match self {
-            Self::TransferList => ("TransferList", Query, Authenticated),
-            Self::TransferStart { .. } => ("TransferStart", Write, Authenticated),
-            Self::TransferStop { .. } => ("TransferStop", Write, Authenticated),
-            Self::TransferOpen { .. } => ("TransferOpen", Query, Authenticated),
-            Self::TransferRemove { .. } => ("TransferRemove", Write, Authenticated),
+            Self::List => ("TransferList", Query, Authenticated),
+            Self::Start { .. } => ("TransferStart", Write, Authenticated),
+            Self::Stop { .. } => ("TransferStop", Write, Authenticated),
+            Self::Open { .. } => ("TransferOpen", Query, Authenticated),
+            Self::Remove { .. } => ("TransferRemove", Write, Authenticated),
         }
     }
 
@@ -64,11 +72,11 @@ impl TransferRequest {
     #[must_use]
     pub fn agent_capability(&self) -> Option<AgentCapability> {
         match self {
-            Self::TransferList
-            | Self::TransferStart { .. }
-            | Self::TransferStop { .. }
-            | Self::TransferOpen { .. }
-            | Self::TransferRemove { .. } => None,
+            Self::List
+            | Self::Start { .. }
+            | Self::Stop { .. }
+            | Self::Open { .. }
+            | Self::Remove { .. } => None,
         }
     }
 
@@ -76,11 +84,11 @@ impl TransferRequest {
     #[must_use]
     pub fn attachment_id(&self) -> Option<&str> {
         match self {
-            Self::TransferList => None,
-            Self::TransferStart { attachment_id, .. }
-            | Self::TransferStop { attachment_id }
-            | Self::TransferOpen { attachment_id }
-            | Self::TransferRemove { attachment_id, .. } => Some(attachment_id),
+            Self::List => None,
+            Self::Start { attachment_id, .. }
+            | Self::Stop { attachment_id }
+            | Self::Open { attachment_id }
+            | Self::Remove { attachment_id, .. } => Some(attachment_id),
         }
     }
 }
@@ -93,10 +101,10 @@ impl std::fmt::Debug for TransferRequest {
         }
         // A destination is a local path (it names the OS user): only
         // whether one was given is logged.
-        if let Self::TransferStart { dest, .. } = self {
+        if let Self::Start { dest, .. } = self {
             d.field("dest", &dest.is_some());
         }
-        if let Self::TransferRemove { delete_file, .. } = self {
+        if let Self::Remove { delete_file, .. } = self {
             d.field("delete_file", delete_file);
         }
         d.finish()

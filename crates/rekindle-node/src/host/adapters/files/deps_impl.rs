@@ -214,7 +214,7 @@ impl FilesDeps for HostFiles {
                 crate::host::transfers::chunk_cached(
                     self.gov.context(),
                     &attachment_id_hex,
-                    crate::host::transfers::Checkpoint {
+                    crate::host::transfers::TransferCheckpoint {
                         chunks_done,
                         chunk_count,
                         bytes_done,

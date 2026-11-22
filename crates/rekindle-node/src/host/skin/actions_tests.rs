@@ -244,7 +244,7 @@ fn each_download_action_reaches_its_transfer_request() {
     // The shell asks where to save, then sends the destination.
     assert!(matches!(
         *start,
-        IpcRequest::Transfer(T::TransferStart { ref attachment_id, ref target, dest: None })
+        IpcRequest::Transfer(T::Start { ref attachment_id, ref target, dest: None })
             if attachment_id == id && *target == selected.1
     ));
     let Ok(Mapped::Request(stop)) = map(&A::StopDownload, None, Some(&selected), &Rooms::default()) else {
@@ -252,7 +252,7 @@ fn each_download_action_reaches_its_transfer_request() {
     };
     assert!(matches!(
         *stop,
-        IpcRequest::Transfer(T::TransferStop { ref attachment_id }) if attachment_id == id
+        IpcRequest::Transfer(T::Stop { ref attachment_id }) if attachment_id == id
     ));
     for action in [A::StartDownload, A::StopDownload, A::OpenDownload] {
         let refused = map(&action, Some(SELECTED_FRIEND_KEY), None, &Rooms::default()).expect_err("no transfer");

@@ -35,7 +35,7 @@ fn reject(label: &str, e: &KeyFormatError) -> IpcResponse {
 /// destination (a file path) within their bounds.
 fn transfer(request: &rekindle_ipc::protocol::TransferRequest) -> Checked {
     request.attachment_id().map_or(Ok(()), attachment_id)?;
-    if let rekindle_ipc::protocol::TransferRequest::TransferStart { target, dest, .. } = request {
+    if let rekindle_ipc::protocol::TransferRequest::Start { target, dest, .. } = request {
         if !crate::host::skin::ids::target_fits(target) {
             return Err(IpcResponse::error(400, "transfer place out of bounds"));
         }

@@ -13,6 +13,7 @@ use anyhow::{anyhow, Context, Result};
 const INVOKE: &str = "src-tauri/src/invoke.rs";
 const IPC_PROTOCOL: &str = "crates/rekindle-ipc/src/protocol/mod.rs";
 const IPC_COMMUNITY: &str = "crates/rekindle-ipc/src/protocol/community";
+const IPC_TRANSFER: &str = "crates/rekindle-ipc/src/protocol/transfer.rs";
 const TABLE: &str = "crates/rekindle-types/src/intent/table";
 
 /// The command names in `invoke.rs`'s domain lists.
@@ -44,13 +45,49 @@ fn enum_variants(src: &str, name: &str, path: &str) -> Result<Vec<String>> {
         .ok_or_else(|| anyhow!("no `enum {name}` in {path}"))
 }
 
+/// A variant's wire name: its `#[serde(rename = "…")]`, else its ident.
+fn wire_name(variant: &syn::Variant) -> Result<String> {
+    let mut name = variant.ident.to_string();
+    for attr in variant.attrs.iter().filter(|a| a.path().is_ident("serde")) {
+        attr.parse_nested_meta(|meta| {
+            if meta.path.is_ident("rename") {
+                name = meta.value()?.parse::<syn::LitStr>()?.value();
+            } else if meta.input.peek(syn::Token![=]) {
+                meta.value()?.parse::<syn::Expr>()?;
+            }
+            Ok(())
+        })
+        .with_context(|| format!("reading the serde attribute of `{}`", variant.ident))?;
+    }
+    Ok(name)
+}
+
+/// The leaf names of `pub enum TransferRequest` in `src`: each variant's
+/// wire name, which `IpcRequest::name` answers (`TransferList`, …).
+fn transfer_requests(src: &str) -> Result<Vec<String>> {
+    let file = syn::parse_file(src).with_context(|| format!("parsing {IPC_TRANSFER}"))?;
+    let e = file
+        .items
+        .iter()
+        .find_map(|item| match item {
+            syn::Item::Enum(e) if e.ident == "TransferRequest" => Some(e),
+            _ => None,
+        })
+        .ok_or_else(|| anyhow!("no `enum TransferRequest` in {IPC_TRANSFER}"))?;
+    e.variants.iter().map(wire_name).collect()
+}
+
 /// The leaf names of `pub enum IpcRequest`: its `Community` variant stands
-/// for every leaf of every domain sub-enum `CommunityRequest` carries, which
-/// `IpcRequest::name` answers. `community` is each file of `IPC_COMMUNITY`.
-fn ipc_requests(protocol: &str, community: &[String]) -> Result<Vec<String>> {
+/// for every leaf of every domain sub-enum `CommunityRequest` carries, and
+/// its `Transfer` variant for every leaf of `TransferRequest` (`transfer`),
+/// which `IpcRequest::name` answers. `community` is each file of
+/// `IPC_COMMUNITY`.
+fn ipc_requests(protocol: &str, community: &[String], transfer: &str) -> Result<Vec<String>> {
     let top = enum_variants(protocol, "IpcRequest", IPC_PROTOCOL)?;
-    if !top.iter().any(|v| v == "Community") {
-        return Err(anyhow!("no `IpcRequest::Community` in {IPC_PROTOCOL}"));
+    for carrier in ["Community", "Transfer"] {
+        if !top.iter().any(|v| v == carrier) {
+            return Err(anyhow!("no `IpcRequest::{carrier}` in {IPC_PROTOCOL}"));
+        }
     }
     let mut enums = Vec::new();
     for src in community {
@@ -87,8 +124,9 @@ fn ipc_requests(protocol: &str, community: &[String]) -> Result<Vec<String>> {
     }
     Ok(top
         .into_iter()
-        .filter(|v| v != "Community")
+        .filter(|v| v != "Community" && v != "Transfer")
         .chain(nested)
+        .chain(transfer_requests(transfer)?)
         .collect())
 }
 
@@ -202,7 +240,11 @@ pub(crate) fn check_intent_table(root: &Path) -> Result<()> {
     };
     let problems = compare(
         &tauri_commands(&read(INVOKE)?),
-        &ipc_requests(&read(IPC_PROTOCOL)?, &community_sources(root)?)?,
+        &ipc_requests(
+            &read(IPC_PROTOCOL)?,
+            &community_sources(root)?,
+            &read(IPC_TRANSFER)?,
+        )?,
         &table_parts(root)?,
     );
     if problems.is_empty() {
@@ -232,13 +274,14 @@ mod tests {
             tauri_commands(invoke),
             names(&["login", "pqxdh_bundle_info"])
         );
-        let ipc =
-            "pub enum IpcRequest { Unlock { passphrase: String }, Community(CommunityRequest), Lock }";
+        let ipc = "pub enum IpcRequest { Unlock { passphrase: String }, \
+             Community(CommunityRequest), Transfer(TransferRequest), Lock }";
         let community = "pub enum CommunityRequest { Moderation(ModerationRequest) } \
              pub enum ModerationRequest { Kick { target: String }, BanList }";
+        let transfer = r#"pub enum TransferRequest { #[serde(rename = "TransferList")] List, Stop { id: String } }"#;
         assert_eq!(
-            ipc_requests(ipc, &[community.to_string()]).unwrap(),
-            names(&["Unlock", "Lock", "Kick", "BanList"])
+            ipc_requests(ipc, &[community.to_string()], transfer).unwrap(),
+            names(&["Unlock", "Lock", "Kick", "BanList", "TransferList", "Stop"])
         );
         let table = r#"pub(crate) const CORE_ROWS: &[(&str, Option<IntentKind>)] = &[("login", Some(IntentKind::Login)), ("Lock", None)]; pub const COMMAND_TABLE: &[&[(&str, Option<IntentKind>)]] = &[CORE_ROWS];"#;
         assert_eq!(table_names(table).unwrap(), names(&["login", "Lock"]));

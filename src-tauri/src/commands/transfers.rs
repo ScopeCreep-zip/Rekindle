@@ -23,7 +23,7 @@ fn transfer(request: TransferRequest) -> IpcRequest {
 pub async fn transfer_list(
     state: State<'_, SharedState>,
 ) -> Result<Done<Vec<TransferRow>>, CommandError> {
-    host_call::call(&state, transfer(TransferRequest::TransferList)).await
+    host_call::call(&state, transfer(TransferRequest::List)).await
 }
 
 /// Start a download: a paused or failed one resumes from its checkpoint;
@@ -38,7 +38,7 @@ pub async fn transfer_start(
     state: State<'_, SharedState>,
 ) -> Result<Done<bool>, CommandError> {
     let start = |dest| {
-        transfer(TransferRequest::TransferStart {
+        transfer(TransferRequest::Start {
             attachment_id: attachment_id.clone(),
             target: target.clone(),
             dest,
@@ -71,11 +71,7 @@ pub async fn transfer_stop(
     attachment_id: String,
     state: State<'_, SharedState>,
 ) -> Result<Done<()>, CommandError> {
-    host_call::call(
-        &state,
-        transfer(TransferRequest::TransferStop { attachment_id }),
-    )
-    .await
+    host_call::call(&state, transfer(TransferRequest::Stop { attachment_id })).await
 }
 
 /// Show a finished download in the OS file manager. The Host answers only
@@ -87,11 +83,8 @@ pub async fn transfer_open(
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
 ) -> Result<Done<()>, CommandError> {
-    let reveal: Done<TransferReveal> = host_call::call(
-        &state,
-        transfer(TransferRequest::TransferOpen { attachment_id }),
-    )
-    .await?;
+    let reveal: Done<TransferReveal> =
+        host_call::call(&state, transfer(TransferRequest::Open { attachment_id })).await?;
     app.opener()
         .reveal_item_in_dir(&reveal.value.path)
         .map_err(|e| CommandError::internal(e.to_string()))?;
@@ -111,7 +104,7 @@ pub async fn transfer_remove(
 ) -> Result<Done<()>, CommandError> {
     host_call::call(
         &state,
-        transfer(TransferRequest::TransferRemove {
+        transfer(TransferRequest::Remove {
             attachment_id,
             delete_file,
         }),

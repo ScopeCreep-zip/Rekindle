@@ -7,21 +7,23 @@ use rekindle_types::dto::transfer::{TransferReveal, TransferTarget};
 
 use super::DaemonContext;
 use crate::host::adapters::files::HostFiles;
-use crate::host::transfers::{self, Ended, Refused};
+use crate::host::transfers::{self, DownloadEnd, TransferRefused};
 
-fn refused(r: &Refused, what: &str) -> IpcResponse {
+fn refused(r: &TransferRefused, what: &str) -> IpcResponse {
     match r {
-        Refused::Locked => IpcResponse::error(423, format!("{what}: no identity is unlocked")),
-        Refused::Db(e) => IpcResponse::error(500, format!("{what}: {e}")),
+        TransferRefused::Locked => {
+            IpcResponse::error(423, format!("{what}: no identity is unlocked"))
+        }
+        TransferRefused::Db(e) => IpcResponse::error(500, format!("{what}: {e}")),
     }
 }
 
 /// A finished download's answer.
-pub(super) fn answer(ended: Result<Ended, Refused>, what: &str) -> IpcResponse {
+pub(super) fn answer(ended: Result<DownloadEnd, TransferRefused>, what: &str) -> IpcResponse {
     match ended {
-        Ok(Ended::Done) => IpcResponse::ok(&()),
-        Ok(Ended::Stopped) => IpcResponse::error(409, format!("{what}: stopped")),
-        Ok(Ended::Failed(e)) => super::attachments::refused(&e, what),
+        Ok(DownloadEnd::Done) => IpcResponse::ok(&()),
+        Ok(DownloadEnd::Stopped) => IpcResponse::error(409, format!("{what}: stopped")),
+        Ok(DownloadEnd::Failed(e)) => super::attachments::refused(&e, what),
         Err(r) => refused(&r, what),
     }
 }
@@ -66,7 +68,7 @@ async fn start(
         (None, None) => return choose_dest(ctx, attachment_id, target).await,
     };
     match transfers::download(ctx, target, &attachment_id, dest.into()).await {
-        Ok(Ended::Done) => IpcResponse::ok(&None::<SkinRun>),
+        Ok(DownloadEnd::Done) => IpcResponse::ok(&None::<SkinRun>),
         ended => answer(ended, what),
     }
 }
@@ -98,16 +100,16 @@ async fn choose_dest(
 /// One transfer request.
 pub(super) async fn route(ctx: &DaemonContext, request: TransferRequest) -> IpcResponse {
     match request {
-        TransferRequest::TransferList => match transfers::list(ctx).await {
+        TransferRequest::List => match transfers::list(ctx).await {
             Ok(rows) => IpcResponse::ok(&rows),
             Err(r) => refused(&r, "transfer list"),
         },
-        TransferRequest::TransferStart {
+        TransferRequest::Start {
             attachment_id,
             target,
             dest,
         } => start(ctx, attachment_id, target, dest).await,
-        TransferRequest::TransferStop { attachment_id } => {
+        TransferRequest::Stop { attachment_id } => {
             if transfers::stop(ctx, &attachment_id) {
                 IpcResponse::ok(&())
             } else {
@@ -117,7 +119,7 @@ pub(super) async fn route(ctx: &DaemonContext, request: TransferRequest) -> IpcR
                 )
             }
         }
-        TransferRequest::TransferOpen { attachment_id } => {
+        TransferRequest::Open { attachment_id } => {
             match transfers::get(ctx, &attachment_id).await {
                 Ok(Some(row)) => match transfers::revealable(&row) {
                     Some(path) => IpcResponse::ok(&TransferReveal { path }),
@@ -130,7 +132,7 @@ pub(super) async fn route(ctx: &DaemonContext, request: TransferRequest) -> IpcR
                 Err(r) => refused(&r, "open transfer"),
             }
         }
-        TransferRequest::TransferRemove {
+        TransferRequest::Remove {
             attachment_id,
             delete_file,
         } => match transfers::get(ctx, &attachment_id).await {

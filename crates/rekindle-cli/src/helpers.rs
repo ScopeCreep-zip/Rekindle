@@ -179,6 +179,21 @@ mod prove;
 
 pub use prove::{offer_passphrase, send, set_passphrase_file, set_proof_flags};
 
+/// Send `request` (proving it when the host asks) and print its answer:
+/// the whole command for a family with one request per subcommand
+/// (`rekindle skin …`, `rekindle transfer …`).
+///
+/// # Errors
+/// The request failed or was refused, or its answer could not be printed.
+pub async fn send_and_print(
+    client: &rekindle_client::DaemonClient,
+    request: rekindle_ipc::protocol::IpcRequest,
+    mode: crate::output::OutputMode,
+) -> anyhow::Result<()> {
+    let value = send(client, request).await?;
+    crate::output::format::print_structured(&value, mode)
+}
+
 #[cfg(test)]
 #[path = "helpers/tests.rs"]
 mod tests;
