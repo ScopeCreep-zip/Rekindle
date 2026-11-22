@@ -218,6 +218,9 @@ pub enum KeyRefusal {
     OverCap,
     /// It answers a fork with no matching `DeviceReadmit` (rules 7, 10).
     NeedsReadmit,
+    /// Its `deviceRecord` is bound by an earlier `(incarnation, key)`
+    /// endorsement of another key: one record per device (rule 3).
+    RecordTaken,
 }
 
 /// An op's device key judged at its causal deps.
@@ -265,6 +268,9 @@ pub fn judge_key(md: &MemberDevices, key: &[u8; 32], seq: u64) -> KeyJudgement {
     if inert(e) {
         return KeyJudgement::Refused(KeyRefusal::Inert);
     }
+    if record_taken(md, (*incarnation, *key), &e.device_record) {
+        return KeyJudgement::Refused(KeyRefusal::RecordTaken);
+    }
     let live = (md.endorsements.iter())
         .filter(|((_, k), e)| md.void_from(k).is_none() && !inert(e))
         .map(|((inc, k), _)| (*inc, *k))
@@ -284,6 +290,15 @@ pub fn judge_key(md: &MemberDevices, key: &[u8; 32], seq: u64) -> KeyJudgement {
     KeyJudgement::Effective
 }
 
+/// Whether an endorsement of another key, earlier in rule 6's
+/// `(incarnation, key)` order than `at`, binds `record` (rule 3: each key
+/// has its own `M(p,d)`, and the first device's is `M(p)`, so a later key
+/// naming `M(p)` or a sibling's record is refused). A pure function of the
+/// set, so every reader holding it judges the same, in any arrival order.
+fn record_taken(md: &MemberDevices, at: (u64, [u8; 32]), record: &str) -> bool {
+    (md.endorsements.range(..at)).any(|((_, k), other)| *k != at.1 && other.device_record == record)
+}
+
 /// Whether `e`'s own extended set already holds six live keys (rule 6).
 fn inert(e: &DeviceEndorsement) -> bool {
     let retired: BTreeSet<[u8; 32]> = (e.extends_elements.iter())
@@ -300,3 +315,7 @@ fn inert(e: &DeviceEndorsement) -> bool {
 #[cfg(test)]
 #[path = "device_judge_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "device_enrol_tests.rs"]
+mod enrol_tests;
