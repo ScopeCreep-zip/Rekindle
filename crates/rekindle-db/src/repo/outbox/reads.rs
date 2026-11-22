@@ -8,7 +8,7 @@ use super::Row;
 
 const COLS: &str = "o.stream, o.stream_seq, o.client_id, o.kind, o.payload, o.state, o.attempts, \
                     o.next_at, o.deadline, o.wedge_reason, \
-                    (SELECT e.timestamp FROM messages e WHERE e.id = o.echo_id)";
+                    (SELECT e.timestamp FROM messages e WHERE e.id = o.echo_id), o.depends_on";
 
 /// Whether the failed row `h` still holds its stream: any failed row
 /// does, except on a `dm` stream (D22 corrected 2026-10-23: a DM is never
@@ -23,29 +23,64 @@ macro_rules! holds_chain {
     };
 }
 
-/// A row whose stream has no earlier row wedged (`failed`) or still to
-/// send (`queued`) and not due at `?2`: the stream's run of due rows from
-/// its head, which the engine attempts together in `stream_seq` order and
-/// stops at the first that stays behind (so a batch, the `dm` chain's
-/// page, carries them at once, plan E2.B F2), and the rows already past
-/// it.
+/// A row of a stream whose rows wait only for what they name (plan HOL1,
+/// lead decision 47): a peer's `friend_handshake` stream, whose frames need
+/// no order among themselves (the receiver gates each on what it really
+/// needs: the friendship, the session), so one unreceipted frame never
+/// holds the unrelated ones behind it.
+macro_rules! by_dependency {
+    () => {
+        "o.stream LIKE 'friend_handshake:%'"
+    };
+}
+
+/// The row `o` names as its dependency has settled (left the table), or it
+/// names none. A `failed` dependency still holds it: the engine fails its
+/// dependents with it, and the user's Retry queues them again together.
+macro_rules! dependency_settled {
+    () => {
+        "(o.depends_on IS NULL OR NOT EXISTS (SELECT 1 FROM outbox d \
+         WHERE d.owner_key = o.owner_key AND d.client_id = o.depends_on))"
+    };
+}
+
+/// A row due at `?2` that nothing holds: on a dependency stream
+/// ([`by_dependency`]) its named dependency settled; on any other stream no
+/// earlier row is wedged (`failed`) or still to send (`queued`) and not due
+/// at `?2`: the stream's run of due rows from its head, which the engine
+/// attempts together in `stream_seq` order and stops at the first that
+/// stays behind (so a batch, the `dm` chain's page, carries them at once,
+/// plan E2.B F2), and the rows already past it.
 const DUE_UNBLOCKED: &str = concat!(
-    "NOT EXISTS (SELECT 1 FROM outbox h WHERE h.owner_key = o.owner_key \
+    "((",
+    by_dependency!(),
+    " AND ",
+    dependency_settled!(),
+    ") OR (NOT ",
+    by_dependency!(),
+    " AND NOT EXISTS (SELECT 1 FROM outbox h WHERE h.owner_key = o.owner_key \
      AND h.stream = o.stream AND h.stream_seq < o.stream_seq \
      AND ((h.state = 'failed' AND ",
     holds_chain!(),
-    ") OR (h.state = 'queued' AND h.next_at > ?2)))"
+    ") OR (h.state = 'queued' AND h.next_at > ?2)))))"
 );
 
-/// A row whose stream has no earlier row still to send (`queued`) or
-/// wedged (`failed`): the stream head and the rows already past it, whose
-/// `next_at` is when the engine next has work.
+/// A row nothing holds whatever its time: on a dependency stream its named
+/// dependency settled; on any other no earlier row still to send
+/// (`queued`) or wedged (`failed`): the stream head and the rows already
+/// past it, whose `next_at` is when the engine next has work.
 const UNBLOCKED: &str = concat!(
-    "NOT EXISTS (SELECT 1 FROM outbox h WHERE h.owner_key = o.owner_key \
+    "((",
+    by_dependency!(),
+    " AND ",
+    dependency_settled!(),
+    ") OR (NOT ",
+    by_dependency!(),
+    " AND NOT EXISTS (SELECT 1 FROM outbox h WHERE h.owner_key = o.owner_key \
      AND h.stream = o.stream AND h.stream_seq < o.stream_seq \
      AND (h.state = 'queued' OR (h.state = 'failed' AND ",
     holds_chain!(),
-    ")))"
+    ")))))"
 );
 
 pub(super) fn parse_state(stored: &str, column: usize) -> rusqlite::Result<SendState> {
@@ -73,6 +108,7 @@ fn read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Row> {
         deadline: row.get(8)?,
         wedge_reason: row.get(9)?,
         sent_at: row.get(10)?,
+        depends_on: row.get(11)?,
     })
 }
 
@@ -222,4 +258,34 @@ pub fn waiting_for_key(conn: &Connection, owner_key: &str) -> rusqlite::Result<V
          ORDER BY o.stream, o.stream_seq",
         params![owner_key],
     )
+}
+
+/// The newest row of `stream` still in the table whose client id starts
+/// with one of `prefixes`: the row a new one waits for (plan HOL1, decision
+/// 47: a friend-gated frame waits for our unsettled first contact). `None`
+/// when there is none, and the new row waits for nothing.
+///
+/// # Errors
+/// The query failed.
+pub fn latest_with_prefix(
+    conn: &Connection,
+    owner_key: &str,
+    stream: &str,
+    prefixes: &[String],
+) -> rusqlite::Result<Option<String>> {
+    if prefixes.is_empty() {
+        return Ok(None);
+    }
+    let mut stmt = conn.prepare(
+        "SELECT client_id FROM outbox WHERE owner_key = ?1 AND stream = ?2 \
+         ORDER BY stream_seq DESC",
+    )?;
+    let ids = stmt.query_map(params![owner_key, stream], |r| r.get::<_, String>(0))?;
+    for id in ids {
+        let id = id?;
+        if prefixes.iter().any(|p| id.starts_with(p.as_str())) {
+            return Ok(Some(id));
+        }
+    }
+    Ok(None)
 }

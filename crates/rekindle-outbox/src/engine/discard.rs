@@ -28,6 +28,7 @@ impl<D: OutboxDeps> Outbox<D> {
             SendState::Failed,
             row.wedge_reason.clone(),
         ));
+        self.fail_dependents(&row).await?;
         self.wake.notify_one();
         Ok(true)
     }

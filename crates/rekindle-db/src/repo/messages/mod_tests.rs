@@ -217,6 +217,7 @@ fn a_channel_post_row_projects_its_settle_onto_the_post() {
         payload: b"{}",
         next_at: 0,
         deadline: i64::MAX,
+        depends_on: None,
     };
     let seq = super::super::outbox::enqueue_for_message(&conn, &row, "m1").unwrap();
     let rows = super::super::outbox::stream_rows(&conn, OWNER, "channel_post:rk:4").unwrap();

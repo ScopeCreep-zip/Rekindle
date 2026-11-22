@@ -63,6 +63,7 @@ impl ChannelPosts {
                 payload: &row.payload,
                 next_at: row.next_at,
                 deadline: row.deadline,
+                depends_on: None,
             };
             repo::enqueue_for_message(conn, &new, &row.client_id)
         })
@@ -98,6 +99,7 @@ impl ChannelPosts {
                     payload: &row.payload,
                     next_at: row.next_at,
                     deadline: row.deadline,
+                    depends_on: None,
                 };
                 repo::enqueue_with_echo(conn, &new, None)
             })
@@ -135,6 +137,7 @@ impl ChannelPosts {
                 payload: &row.payload,
                 next_at: row.next_at,
                 deadline: row.deadline,
+                depends_on: None,
             };
             repo::enqueue_waiting_for_message(conn, &new, &row.client_id)
         })

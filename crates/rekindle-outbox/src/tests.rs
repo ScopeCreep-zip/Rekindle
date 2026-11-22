@@ -63,6 +63,14 @@ struct Fake {
 }
 
 fn blocked(rows: &[OutboxRow], row: &OutboxRow) -> bool {
+    // A dependency stream (plan HOL1): only the named row holds it, as the
+    // store's `DUE_UNBLOCKED` reads.
+    if !row.kind.ordered() {
+        return row
+            .depends_on
+            .as_ref()
+            .is_some_and(|d| rows.iter().any(|h| &h.client_id == d));
+    }
     rows.iter().any(|h| {
         h.stream == row.stream
             && h.stream_seq < row.stream_seq
@@ -88,6 +96,15 @@ impl OutboxDeps for Fake {
         let seq = s.last_seq.entry(row.stream.clone()).or_insert(0);
         *seq += 1;
         let stream_seq = *seq;
+        let depends_on = (s.rows.iter().rev())
+            .find(|h| {
+                h.stream == row.stream
+                    && row
+                        .waits_for
+                        .iter()
+                        .any(|p| h.client_id.starts_with(p.as_str()))
+            })
+            .map(|h| h.client_id.clone());
         s.rows.push(OutboxRow {
             stream: row.stream,
             stream_seq,
@@ -100,6 +117,7 @@ impl OutboxDeps for Fake {
             deadline: row.deadline,
             wedge_reason: None,
             sent_at: None,
+            depends_on,
         });
         Ok(stream_seq)
     }

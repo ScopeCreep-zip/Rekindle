@@ -24,7 +24,7 @@ pub trait StreamSender: Send + Sync {
         let mut outcomes = Vec::with_capacity(rows.len());
         for row in rows {
             let outcome = self.send(row).await;
-            let stop = rekindle_outbox::holds_back(&outcome);
+            let stop = rekindle_outbox::stops_stream(row, &outcome);
             outcomes.push(outcome);
             if stop {
                 break;
@@ -74,7 +74,7 @@ impl Senders {
         let mut outcomes = Vec::with_capacity(rows.len());
         for row in rows {
             let outcome = self.send(row).await;
-            let stop = rekindle_outbox::holds_back(&outcome);
+            let stop = rekindle_outbox::stops_stream(row, &outcome);
             outcomes.push(outcome);
             if stop {
                 break;

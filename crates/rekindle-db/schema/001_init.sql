@@ -1115,6 +1115,11 @@ CREATE TABLE IF NOT EXISTS outbox (
     -- The local echo this row projects onto (`messages.send_state`);
     -- NULL for a send with no echo (a DHT write).
     echo_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
+    -- The client id of the row of the same stream this one waits for (plan
+    -- HOL1, lead decision 47): a `friend_handshake` row is attempted once
+    -- that row has settled (left the table), never because of its place in
+    -- the stream; NULL when it waits for none. Other streams keep their order.
+    depends_on TEXT,
     PRIMARY KEY (owner_key, stream, stream_seq),
     UNIQUE (owner_key, client_id)
 );

@@ -34,6 +34,7 @@ async fn waiting_row(host: &Host, owner: [u8; 32], bob: [u8; 32], due: i64) {
                 payload: b"frame",
                 next_at: due,
                 deadline: i64::MAX,
+                depends_on: None,
             };
             rekindle_db::repo::outbox::enqueue_with_echo(conn, &row, None)?;
             let backing_off = rekindle_db::repo::outbox::Update {

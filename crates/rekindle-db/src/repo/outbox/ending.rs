@@ -99,6 +99,7 @@ pub fn queue_friend_list(
             payload: &[],
             next_at: list.due,
             deadline: list.deadline,
+            depends_on: None,
         },
     )
 }

@@ -18,8 +18,8 @@ pub mod state;
 mod stream;
 
 pub use deps::{
-    holds_back, AttemptOutcome, Cover, Landed, NewOutboxRow, OutboxDeps, OutboxError, OutboxRow,
-    RowUpdate, StateChange,
+    holds_back, stops_stream, AttemptOutcome, Cover, Landed, NewOutboxRow, OutboxDeps, OutboxError,
+    OutboxRow, RowUpdate, StateChange,
 };
 pub use engine::{
     Deadline, Enqueued, Entry, Outbox, DEADLINE_REASON, KEY_DID_NOT_ARRIVE, OUTBOX_DEADLINE,

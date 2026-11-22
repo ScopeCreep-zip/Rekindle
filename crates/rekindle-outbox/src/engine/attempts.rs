@@ -195,7 +195,7 @@ impl<D: OutboxDeps> Outbox<D> {
             for row in rows {
                 let at = row.next_at.max(ahead);
                 wake = Some(wake.map_or(at, |w| w.min(at)));
-                if row.state == rekindle_types::message::SendState::Queued {
+                if row.kind.ordered() && row.state == rekindle_types::message::SendState::Queued {
                     ahead = ahead.max(row.next_at);
                 }
             }

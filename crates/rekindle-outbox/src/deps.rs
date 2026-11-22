@@ -31,6 +31,11 @@ pub struct NewOutboxRow {
     pub payload: Vec<u8>,
     pub next_at: i64,
     pub deadline: i64,
+    /// The client-id prefixes of the row of its stream this one waits for
+    /// (plan HOL1, lead decision 47): the newest row of the stream still
+    /// unsettled whose client id starts with one of them, resolved when the
+    /// row is stored; empty when it waits for none.
+    pub waits_for: Vec<String>,
 }
 
 /// What a cumulative `DmAck` covers (register 2026-10-24).
@@ -58,6 +63,10 @@ pub struct OutboxRow {
     /// When the message was written (its local echo's time), which each
     /// attempt's frame carries; `None` for a send with no echo.
     pub sent_at: Option<i64>,
+    /// The client id of the row of its stream this one waits for (plan
+    /// HOL1): it is not attempted while that row is unsettled, and fails
+    /// with it.
+    pub depends_on: Option<String>,
 }
 
 /// A row's state and schedule after the engine decided.
@@ -143,6 +152,16 @@ pub fn holds_back(outcome: &AttemptOutcome) -> bool {
         outcome,
         AttemptOutcome::Deferred | AttemptOutcome::Wedged(_)
     )
+}
+
+/// Whether the rows of `row`'s stream after it must wait after `outcome`:
+/// on an ordered stream ([`StreamKind::ordered`]) a row that stays behind
+/// ([`holds_back`]) stops the run; on a dependency stream (`friend_handshake`,
+/// plan HOL1) nothing in a run waits for another row of it (a row whose
+/// dependency is unsettled is never due), so the run goes on.
+#[must_use]
+pub fn stops_stream(row: &OutboxRow, outcome: &AttemptOutcome) -> bool {
+    row.kind.ordered() && holds_back(outcome)
 }
 
 /// How a landing left a row ([`OutboxDeps::land`]).
@@ -253,7 +272,7 @@ pub trait OutboxDeps: Send + Sync {
     /// Send `row` once.
     async fn attempt(&self, row: &OutboxRow) -> AttemptOutcome;
     /// Send `rows`, the due rows of one stream in `stream_seq` order, once
-    /// each, stopping after the first that stays behind ([`holds_back`]):
+    /// each, stopping after the first that stays behind ([`stops_stream`]):
     /// the outcomes of the rows attempted, a prefix of `rows`; the rest
     /// were not attempted. A host whose send carries several rows at once
     /// (the `dm` chain's page, plan E2.B F2) overrides it.
@@ -261,7 +280,7 @@ pub trait OutboxDeps: Send + Sync {
         let mut outcomes = Vec::with_capacity(rows.len());
         for row in rows {
             let outcome = self.attempt(row).await;
-            let stop = holds_back(&outcome);
+            let stop = stops_stream(row, &outcome);
             outcomes.push(outcome);
             if stop {
                 break;

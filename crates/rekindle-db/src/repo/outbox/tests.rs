@@ -14,6 +14,7 @@ fn row<'a>(stream: &'a str, client_id: &'a str, next_at: i64) -> NewRow<'a> {
         payload: b"frame",
         next_at,
         deadline: 1_000,
+        depends_on: None,
     }
 }
 

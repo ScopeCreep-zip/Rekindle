@@ -115,6 +115,7 @@ impl HostOutbox {
                 payload: &unfriended.payload,
                 next_at: unfriended.next_at,
                 deadline: unfriended.deadline,
+                depends_on: None,
             };
             rekindle_db::repo::friends::changing_list(conn, &owner, list, |conn| {
                 rekindle_db::repo::friends::mark_removing(conn, &owner, &peer, &row)
@@ -135,6 +136,8 @@ impl HostOutbox {
         let stored = row.clone();
         let seq = db
             .call(move |conn| {
+                let dep =
+                    repo::latest_with_prefix(conn, &owner, &stored.stream, &stored.waits_for)?;
                 repo::enqueue_once(
                     conn,
                     &repo::NewRow {
@@ -145,6 +148,7 @@ impl HostOutbox {
                         payload: &stored.payload,
                         next_at: stored.next_at,
                         deadline: stored.deadline,
+                        depends_on: dep.as_deref(),
                     },
                 )
             })
@@ -184,6 +188,7 @@ impl HostOutbox {
                         payload: &row.payload,
                         next_at: row.next_at,
                         deadline: row.deadline,
+                        depends_on: None,
                     })
                     .collect();
                 repo::enqueue_all(conn, &new)
@@ -229,6 +234,7 @@ pub(super) fn row_of(row: repo::Row) -> Result<OutboxRow, OutboxError> {
         deadline: row.deadline,
         wedge_reason: row.wedge_reason,
         sent_at: row.sent_at,
+        depends_on: row.depends_on,
     })
 }
 
@@ -251,6 +257,7 @@ impl OutboxDeps for HostOutbox {
     async fn insert(&self, row: NewOutboxRow, echo: Option<DmEcho>) -> Result<i64, OutboxError> {
         let (db, owner) = self.db()?;
         db.call(move |conn| {
+            let dep = repo::latest_with_prefix(conn, &owner, &row.stream, &row.waits_for)?;
             let new = repo::NewRow {
                 owner_key: &owner,
                 stream: &row.stream,
@@ -259,6 +266,7 @@ impl OutboxDeps for HostOutbox {
                 payload: &row.payload,
                 next_at: row.next_at,
                 deadline: row.deadline,
+                depends_on: dep.as_deref(),
             };
             let dm = echo.as_ref().map(|e| NewDm {
                 owner_key: &owner,

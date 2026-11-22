@@ -65,6 +65,7 @@ async fn a_cancelled_request_takes_its_request_row_with_it() {
             payload: b"frame",
             next_at: 0,
             deadline: i64::MAX,
+            depends_on: None,
         };
         rekindle_db::repo::outbox::enqueue_with_echo(conn, &row, None)?;
         let wedged = rekindle_db::repo::outbox::Update {
@@ -120,6 +121,7 @@ async fn a_cancel_whose_outbox_is_gone_after_the_commit_leaves_no_row() {
                 payload: b"frame",
                 next_at: 0,
                 deadline: i64::MAX,
+                depends_on: None,
             };
             rekindle_db::repo::outbox::enqueue_with_echo(conn, &row, None)?;
         }

@@ -16,6 +16,7 @@ use crate::state::{merge, PeerAck, StateInput};
 use crate::stream::StreamKind;
 
 mod attempts;
+mod depends;
 mod discard;
 mod forward;
 mod landed;
@@ -130,7 +131,15 @@ impl<D: OutboxDeps> Outbox<D> {
     /// # Errors
     /// The storage failed; nothing was queued.
     pub async fn enqueue(&self, entry: Entry, echo: D::Echo) -> Result<Enqueued, OutboxError> {
-        let row = self.new_row(entry);
+        self.enqueue_row(self.new_row(entry), echo).await
+    }
+
+    /// Store `row` with its local `echo`, `queued`, and wake the engine.
+    pub(crate) async fn enqueue_row(
+        &self,
+        row: NewOutboxRow,
+        echo: D::Echo,
+    ) -> Result<Enqueued, OutboxError> {
         let (stream, client_id, kind) = (row.stream.clone(), row.client_id.clone(), row.kind);
         let stream_seq = self.deps.insert(row, echo).await?;
         self.deps.publish(StateChange {
@@ -162,6 +171,7 @@ impl<D: OutboxDeps> Outbox<D> {
             payload: entry.payload,
             next_at: self.next_due(entry.kind, 0, now, deadline),
             deadline,
+            waits_for: Vec::new(),
         }
     }
 
@@ -170,7 +180,17 @@ impl<D: OutboxDeps> Outbox<D> {
         self.wake.notify_one();
     }
 
+    /// Fail `row` with `reason`, and the rows waiting for it with it.
     pub(crate) async fn fail(&self, row: &OutboxRow, reason: String) -> Result<(), OutboxError> {
+        self.fail_one(row, reason).await?;
+        self.fail_dependents(row).await
+    }
+
+    pub(crate) async fn fail_one(
+        &self,
+        row: &OutboxRow,
+        reason: String,
+    ) -> Result<(), OutboxError> {
         let state = merge(row.state, StateInput::Failed);
         let update = RowUpdate {
             state,
@@ -261,6 +281,7 @@ impl<D: OutboxDeps> Outbox<D> {
                 self.deps.settle(&row.client_id, SendState::Failed).await?;
                 self.deps
                     .publish(StateChange::of(row, SendState::Failed, Some(reason)));
+                self.fail_dependents(row).await?;
                 self.wake.notify_one();
             }
         }
@@ -409,6 +430,16 @@ impl<D: OutboxDeps> Outbox<D> {
         if !matches!(row.state, SendState::Failed | SendState::Queued) {
             return Ok(false);
         }
+        self.requeue(&row).await?;
+        self.retry_dependents(&row).await?;
+        self.wake.notify_one();
+        Ok(true)
+    }
+
+    /// Queue `row` (failed or queued) again under its client id with a
+    /// fresh deadline, due now.
+    pub(crate) async fn requeue(&self, row: &OutboxRow) -> Result<(), OutboxError> {
+        let client_id = row.client_id.as_str();
         let now = self.now();
         let deadline = now.saturating_add(horizon_ms());
         let update = RowUpdate {
@@ -421,10 +452,9 @@ impl<D: OutboxDeps> Outbox<D> {
         self.deps.update(client_id, &update).await?;
         if row.state != SendState::Queued {
             self.deps
-                .publish(StateChange::of(&row, SendState::Queued, None));
+                .publish(StateChange::of(row, SendState::Queued, None));
         }
-        self.wake.notify_one();
-        Ok(true)
+        Ok(())
     }
 
     /// A frame `client_id` arrived on the peer's `stream`: `true` the

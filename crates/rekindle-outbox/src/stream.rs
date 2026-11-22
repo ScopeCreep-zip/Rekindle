@@ -163,6 +163,17 @@ impl StreamKind {
         }
     }
 
+    /// Whether a row of this kind waits for every earlier row of its
+    /// stream. A peer's `friend_handshake` frames do not (plan HOL1, lead
+    /// decision 47): each waits only for the row it names
+    /// ([`crate::OutboxRow::depends_on`]), as Signal's sends name their
+    /// `dependsOn` jobs and MLS messages the epoch they need, and the
+    /// receiver gates each frame on the friendship or session it needs.
+    #[must_use]
+    pub fn ordered(self) -> bool {
+        !matches!(self, Self::FriendHandshake)
+    }
+
     /// Whether the user may Retry a failed row of this kind. A call media
     /// key may not: the session's end discards it, and a key is never
     /// given a fresh deadline past the call it keys.

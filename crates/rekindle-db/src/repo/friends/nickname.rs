@@ -108,6 +108,7 @@ mod tests {
             payload: b"{}",
             next_at: 2,
             deadline: 9,
+            depends_on: None,
         };
         friends::mark_removing(&conn, OWNER, BOB, &row).unwrap();
         assert_eq!(nickname_of(&conn, BOB), None, "gone while removing");

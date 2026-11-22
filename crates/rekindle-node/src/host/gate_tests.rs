@@ -551,6 +551,7 @@ async fn a_person_is_confirmed_by_fingerprint_and_a_removal_drops_the_nickname()
             payload: b"{}",
             next_at: 2,
             deadline: 9,
+            depends_on: None,
         };
         rekindle_db::repo::friends::mark_removing(conn, &owner, &peer, &row)?;
         rekindle_db::repo::friends::names(conn, &owner, &peer)

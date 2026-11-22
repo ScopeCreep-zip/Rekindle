@@ -156,6 +156,7 @@ mod tests {
             deadline: 0,
             wedge_reason: reason.map(str::to_owned),
             sent_at: None,
+            depends_on: None,
         }
     }
 

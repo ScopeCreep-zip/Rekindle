@@ -414,8 +414,9 @@ impl DmOutbox for DmStream {
         client_id: String,
         payload: Vec<u8>,
     ) -> Result<i64, FriendError> {
+        let waits_for = handshake::waits_for(&client_id);
         let entry = handshake_entry(to, client_id, payload);
-        let enqueued = self.0.enqueue(entry, None).await;
+        let enqueued = self.0.enqueue_waiting(entry, waits_for, None).await;
         enqueued.map(|e| e.stream_seq).map_err(|e| failed(&e))
     }
 
@@ -426,11 +427,12 @@ impl DmOutbox for DmStream {
         payload: Vec<u8>,
         deadline_ms: i64,
     ) -> Result<i64, FriendError> {
+        let waits_for = handshake::waits_for(&client_id);
         let entry = Entry {
             deadline: Deadline::At(deadline_ms),
             ..handshake_entry(to, client_id, payload)
         };
-        let enqueued = self.0.enqueue(entry, None).await;
+        let enqueued = self.0.enqueue_waiting(entry, waits_for, None).await;
         enqueued.map(|e| e.stream_seq).map_err(|e| failed(&e))
     }
 

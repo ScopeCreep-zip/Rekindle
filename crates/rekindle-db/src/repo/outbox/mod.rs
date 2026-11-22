@@ -20,6 +20,9 @@ pub struct NewRow<'a> {
     pub payload: &'a [u8],
     pub next_at: i64,
     pub deadline: i64,
+    /// The client id of the row of the same stream this one waits for
+    /// (plan HOL1, decision 47; `friend_handshake` streams only).
+    pub depends_on: Option<&'a str>,
 }
 
 /// One stored send intent.
@@ -40,6 +43,8 @@ pub struct Row {
     /// it by when it was written, not by the attempt that reached them
     /// (E2.B F3); `None` for a send with no echo.
     pub sent_at: Option<i64>,
+    /// The row of the same stream this one waits for (plan HOL1).
+    pub depends_on: Option<String>,
 }
 
 /// A row's new scheduling and state, as the engine settled one attempt.
@@ -217,8 +222,8 @@ fn insert_row(
 ) -> rusqlite::Result<()> {
     conn.execute(
         "INSERT INTO outbox (owner_key, stream, stream_seq, client_id, kind, payload, state, \
-         attempts, next_at, deadline, wedge_reason, echo_id) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'queued', 0, ?7, ?8, NULL, ?9)",
+         attempts, next_at, deadline, wedge_reason, echo_id, depends_on) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'queued', 0, ?7, ?8, NULL, ?9, ?10)",
         params![
             row.owner_key,
             row.stream,
@@ -228,7 +233,8 @@ fn insert_row(
             row.payload,
             row.next_at,
             row.deadline,
-            echo_id
+            echo_id,
+            row.depends_on
         ],
     )?;
     Ok(())
@@ -423,7 +429,8 @@ pub fn unsettled_count(conn: &Connection, owner_key: &str) -> rusqlite::Result<i
 mod reads;
 use reads::parse_state;
 pub use reads::{
-    due, expired, get, get_by_seq, next_wake, prefix_rows, stream_rows, waiting_for_key,
+    due, expired, get, get_by_seq, latest_with_prefix, next_wake, prefix_rows, stream_rows,
+    waiting_for_key,
 };
 
 mod waiting;
@@ -459,6 +466,7 @@ pub(crate) fn queue_for_test(
         payload,
         next_at: 0,
         deadline: i64::MAX,
+        depends_on: None,
     };
     enqueue_with_echo(conn, &row, None).unwrap()
 }

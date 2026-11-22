@@ -298,6 +298,7 @@ async fn open_ratchet(
         Ok(_) => {
             crate::operations::prekeys::acknowledged(host, &sender_hex);
             crate::operations::dm::route_health::heard(host, &sender_hex);
+            crate::operations::dm::handshake::settle_first_contact(host, &sender_hex).await;
         }
         // User content that did not open is asked for again after their
         // CaughtUp (plan E2.5, D24).

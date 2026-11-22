@@ -95,6 +95,7 @@ mod tests {
                 payload: &[1],
                 next_at: 0,
                 deadline: 1,
+                depends_on: None,
             },
             None,
         )

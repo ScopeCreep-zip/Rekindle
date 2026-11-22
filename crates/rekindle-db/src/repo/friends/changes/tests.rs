@@ -163,6 +163,7 @@ fn a_failed_removal_leaves_the_friend_accepted() {
         payload: b"{}",
         next_at: 2,
         deadline: 9,
+        depends_on: None,
     };
     fail_on(&conn, "outbox");
     assert!(mark_removing(&conn, OWNER, BOB, &row).is_err());
@@ -224,6 +225,7 @@ fn every_ending_change_fails_its_rows_in_its_own_commit() {
             payload: b"{}",
             next_at: 0,
             deadline: i64::MAX,
+            depends_on: None,
         };
         mark_removing(c, OWNER, BOB, &row)
     };
