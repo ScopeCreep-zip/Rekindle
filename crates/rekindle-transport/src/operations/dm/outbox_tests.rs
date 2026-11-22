@@ -13,6 +13,6 @@ fn a_payload_round_trips_its_body() {
         reply_to: None,
         expire_seconds: 0,
     });
-    assert_eq!(decode(&payload(&body).unwrap()).unwrap(), body);
-    assert!(decode(b"{}").is_err());
+    assert_eq!(decode_payload(&payload(&body).unwrap()).unwrap(), body);
+    assert!(decode_payload(b"{}").is_err());
 }

@@ -7,10 +7,11 @@
 
 use async_trait::async_trait;
 use rekindle_codec::capnp_codec::direct::{DirectBody, DmTypeId};
-use serde::{Deserialize, Serialize};
 
 use rekindle_types::message::SendState;
 
+pub(crate) use super::outbox_payload::decode_payload;
+pub use super::outbox_payload::payload;
 use super::send;
 use crate::operations::friend::{FriendError, FriendHost};
 
@@ -210,42 +211,6 @@ pub async fn peer_heard(host: &dyn FriendHost, peer: &str) {
         },
         Err(e) => tracing::debug!(error = %e, "no outbox: re-ask not brought forward"),
     }
-}
-
-/// A `dm` row's payload: the body, framed afresh at each attempt.
-#[derive(Debug, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Payload {
-    type_id: u16,
-    #[serde(with = "rekindle_types::base64_bytes")]
-    body: Vec<u8>,
-}
-
-/// `body` as a `dm` row stores it.
-///
-/// # Errors
-/// The payload could not be serialized.
-pub fn payload(body: &DirectBody) -> Result<Vec<u8>, FriendError> {
-    serde_json::to_vec(&Payload {
-        type_id: body.type_id().as_u16(),
-        body: body.encode(),
-    })
-    .map_err(|e| FriendError::Failed(format!("serialize the outbox payload: {e}")))
-}
-
-/// A `dm` or `group_dm` row's payload read back.
-///
-/// # Errors
-/// It is not a stored payload of an allocated kind.
-pub(crate) fn decode_payload(payload: &[u8]) -> Result<DirectBody, String> {
-    decode(payload)
-}
-
-fn decode(payload: &[u8]) -> Result<DirectBody, String> {
-    let stored: Payload = serde_json::from_slice(payload).map_err(|e| e.to_string())?;
-    let type_id = DmTypeId::from_u16(stored.type_id)
-        .ok_or_else(|| format!("typeId {:#06x}", stored.type_id))?;
-    DirectBody::decode(type_id, &stored.body).map_err(|e| e.to_string())
 }
 
 /// How one attempt of a `dm` row went.
@@ -476,7 +441,8 @@ pub(crate) fn landing(n: usize, landed: usize, appended: Result<(), FriendError>
 /// Whether `row` is a chain entry whose append already landed: a
 /// `StreamRecord` is not on the chain and is sent again until its ack.
 pub(crate) fn landed(row: &RowAttempt<'_>) -> bool {
-    row.state == SendState::Sent && !matches!(decode(row.payload), Ok(DirectBody::StreamRecord(_)))
+    row.state == SendState::Sent
+        && !matches!(decode_payload(row.payload), Ok(DirectBody::StreamRecord(_)))
 }
 
 /// How an attempt that failed with `e` ends: a locked, not-ready or
@@ -542,7 +508,7 @@ async fn frame_row(
     row: &RowAttempt<'_>,
     assign: bool,
 ) -> Result<Framed, Attempt> {
-    let body = decode(row.payload).map_err(|e| Attempt::Wedged(format!("payload: {e}")))?;
+    let body = decode_payload(row.payload).map_err(|e| Attempt::Wedged(format!("payload: {e}")))?;
     let seq = u64::try_from(row.stream_seq).unwrap_or(0);
     let sent_at_ms = row
         .sent_at
