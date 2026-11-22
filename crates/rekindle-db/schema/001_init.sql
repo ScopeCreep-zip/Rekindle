@@ -115,6 +115,10 @@ CREATE TABLE IF NOT EXISTS group_dms (
     created_at INTEGER NOT NULL,
     -- Plan E7.1: the group's disappearing-message timer (0 = off).
     disappearing_seconds INTEGER NOT NULL DEFAULT 0 CHECK(disappearing_seconds >= 0),
+    -- SK2-G §6 (plan E7.2 G7): the friend whose chat this group was created
+    -- from (`EnterAttachedRoom` opens it), and our own "Chat Rooms" flag.
+    origin_peer TEXT CHECK(origin_peer IS NULL OR length(origin_peer) = 64),
+    favourite INTEGER NOT NULL DEFAULT 0 CHECK(favourite IN (0, 1)),
     PRIMARY KEY (owner_key, group_id)
 );
 

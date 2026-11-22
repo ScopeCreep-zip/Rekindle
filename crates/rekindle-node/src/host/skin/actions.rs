@@ -13,6 +13,8 @@ use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 use rekindle_types::dto::skin_action::{MenuRegistry, SkinAction as A};
 use rekindle_types::dto::skin_run::{CallOp, ShellOp, ShellPanel, SkinRun, SkinSelection};
 
+use super::rooms::{self, Rooms};
+
 /// Each window's selection (`SkinSelectionSet`), by window label (lead
 /// decision 48): a chat window's is its own peer, the buddy list's its
 /// selected friend; one shared per kind would act on, and show the
@@ -55,11 +57,13 @@ pub(crate) enum Mapped {
     Run(SkinRun),
 }
 
-/// The table. `friend` is the window's selected friend.
+/// The table. `friend` is the window's selected friend, `rooms` what the
+/// room actions read ([`rooms::load`]).
 ///
 /// # Errors
-/// 409 for a selection-dependent action while no friend is selected.
-pub(crate) fn map(action: &A, friend: Option<&str>) -> Result<Mapped, IpcResponse> {
+/// 409 for a selection-dependent action while nothing it acts on is
+/// selected.
+pub(crate) fn map(action: &A, friend: Option<&str>, rooms: &Rooms) -> Result<Mapped, IpcResponse> {
     use Mapped::{Request, Run};
     let shell = |op| Ok(Run(SkinRun::Shell(op)));
     let panel = |p| shell(ShellOp::OpenPanel(p));
@@ -107,6 +111,11 @@ pub(crate) fn map(action: &A, friend: Option<&str>) -> Result<Mapped, IpcRespons
         A::AddFriend => panel(ShellPanel::AddFriend),
         A::NewChat => panel(ShellPanel::NewChat),
         A::NewGroup => panel(ShellPanel::NewGroup),
+        // Rooms are group DMs (SK2-G §6).
+        A::NewRoom | A::CreateRoom => shell(ShellOp::NewRoom {
+            peer: friend.map(str::to_owned),
+        }),
+        A::EnterRoom | A::JoinRoom | A::EnterAttachedRoom => rooms::enter(action, rooms),
         A::GroupVoiceChat | A::HostGroupVoiceChat => panel(ShellPanel::StartGroupCall),
         A::CreateCommunity => panel(ShellPanel::CreateCommunity),
         A::JoinCommunity => panel(ShellPanel::JoinCommunity),
@@ -163,11 +172,6 @@ pub(crate) fn map(action: &A, friend: Option<&str>) -> Result<Mapped, IpcRespons
         | A::StopDownload
         | A::OpenDownload
         | A::DownloadInfo
-        | A::NewRoom
-        | A::CreateRoom
-        | A::EnterRoom
-        | A::EnterAttachedRoom
-        | A::JoinRoom
         | A::InviteUsersToRoom
         | A::DeleteSelected
         | A::OpenSelected
@@ -200,12 +204,13 @@ fn gap(action: &A) -> Mapped {
 /// gate); any other stays `RunSkinAction`, answered by [`answer`].
 pub(crate) fn resolve(
     selections: &Selections,
+    rooms: &Rooms,
     request: IpcRequest,
 ) -> Result<IpcRequest, IpcResponse> {
     let IpcRequest::RunSkinAction { window, action, .. } = &request else {
         return Ok(request);
     };
-    match map(action, selections.friend(window).as_deref())? {
+    match map(action, selections.friend(window).as_deref(), rooms)? {
         Mapped::Request(mapped) => Ok(*mapped),
         Mapped::Run(_) => Ok(request),
     }
@@ -213,10 +218,10 @@ pub(crate) fn resolve(
 
 /// The router's answer to a `RunSkinAction` that is not a request, and to
 /// `SkinSelectionSet`.
-pub(crate) fn answer(selections: &Selections, request: IpcRequest) -> IpcResponse {
+pub(crate) fn answer(selections: &Selections, rooms: &Rooms, request: IpcRequest) -> IpcResponse {
     match request {
         IpcRequest::RunSkinAction { window, action, .. } => {
-            match map(&action, selections.friend(&window).as_deref()) {
+            match map(&action, selections.friend(&window).as_deref(), rooms) {
                 Ok(Mapped::Run(run)) => IpcResponse::ok(&run),
                 Ok(Mapped::Request(r)) => {
                     IpcResponse::error(500, format!("{} reached the router unresolved", r.name()))

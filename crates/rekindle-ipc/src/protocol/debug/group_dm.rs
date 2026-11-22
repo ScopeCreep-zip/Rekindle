@@ -8,10 +8,15 @@ impl IpcRequest {
     /// The group-DM requests' `Debug`.
     pub(super) fn fmt_group_dm(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::GroupDmCreate { name, members } => f
+            Self::GroupDmCreate {
+                name,
+                members,
+                origin_peer,
+            } => f
                 .debug_struct("GroupDmCreate")
                 .field("name_len", &name.chars().count())
                 .field("members", members)
+                .field("origin_peer", &origin_peer.as_ref().map(|_| "<redacted>"))
                 .finish(),
             Self::GroupDmAccept { group_id } => f
                 .debug_struct("GroupDmAccept")

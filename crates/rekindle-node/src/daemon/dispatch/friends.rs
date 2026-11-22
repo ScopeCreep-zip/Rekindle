@@ -175,9 +175,11 @@ pub(crate) async fn route(
             done(dm::retry_send(&host, &client_id, acknowledged.key_change).await)
         }
         IpcRequest::OutboxDiscard { client_id } => done(dm::discard_send(&host, &client_id).await),
-        IpcRequest::GroupDmCreate { name, members } => {
-            answer(group_dm::create(&host, &name, &members).await)
-        }
+        IpcRequest::GroupDmCreate {
+            name,
+            members,
+            origin_peer,
+        } => answer(group_dm::create_from(&host, &name, &members, origin_peer.as_deref()).await),
         IpcRequest::GroupDmAccept { group_id } => done(group_dm::accept(&host, &group_id).await),
         IpcRequest::GroupDmDecline { group_id } => done(group_dm::decline(&host, &group_id).await),
         IpcRequest::GroupDmLeave { group_id } => done(group_dm::leave(&host, &group_id).await),

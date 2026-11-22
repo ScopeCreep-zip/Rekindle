@@ -13,6 +13,9 @@ pub enum GroupDmCmd {
         /// A member's public key (repeat for each, 2-7).
         #[arg(long = "member", short = 'm', required = true)]
         members: Vec<String>,
+        /// The member whose chat it comes from (its attached room).
+        #[arg(long = "from")]
+        origin_peer: Option<String>,
     },
     /// Accept a pending invite.
     Accept {

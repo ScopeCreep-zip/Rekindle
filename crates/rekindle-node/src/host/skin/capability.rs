@@ -98,6 +98,8 @@ pub(crate) struct SkinWorld {
     /// Our `favourite_servers`, as (game id, `host:port`).
     pub favourites: BTreeSet<(u32, String)>,
     pub groups: BTreeMap<String, Group>,
+    /// The friends whose chat a group was created from (SK2-G §6).
+    pub attached: BTreeSet<String>,
     pub communities: usize,
     /// Our shown game's id.
     pub own_game: Option<u32>,
@@ -223,7 +225,11 @@ pub(crate) fn allows(
         },
         // A group needs us and two accepted friends (`MIN_MEMBERS` 3).
         C::CreateRoom => world.accepted_friends >= 2,
-        C::EnterRoom => group.is_some(),
+        // A selected group, or the room attached to the selected chat.
+        C::EnterRoom => {
+            group.is_some()
+                || matches!(selected, Selected::Friend { key, .. } if world.attached.contains(key))
+        }
         C::OpenSelected => media_exists(selected),
         // Deleting a room is leaving it (SK2-G §6).
         C::DeleteSelected => media_exists(selected) || matches!(group, Some(Group::Joined { .. })),

@@ -15,6 +15,8 @@ mod pairwise;
 pub mod receive;
 pub mod retire;
 mod review;
+mod room;
+pub use room::create_from;
 mod view;
 
 pub use admission::admitted;

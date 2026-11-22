@@ -16,6 +16,7 @@ mod capability_tests;
 mod draft;
 pub(crate) mod ids;
 pub(crate) mod login;
+pub(crate) mod rooms;
 mod serve;
 mod shown;
 pub(crate) mod signals;

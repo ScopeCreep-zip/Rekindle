@@ -280,6 +280,10 @@ pub(crate) async fn load_world(ctx: &DaemonContext) -> SkinWorld {
             let favourites = favourite_servers::list(conn, &owner)?;
             let groups = group_dms::list(conn, &owner)?;
             let invites = group_dm_invites::list(conn, &owner, now)?;
+            let attached: BTreeSet<String> = groups
+                .iter()
+                .filter_map(|g| g.origin_peer.clone())
+                .collect();
             let joined = groups.into_iter().map(|g| {
                 let others = g.roster.iter().filter(|m| m.identity != owner).count();
                 (g.group_id, Group::Joined { others })
@@ -290,13 +294,14 @@ pub(crate) async fn load_world(ctx: &DaemonContext) -> SkinWorld {
                 .map(|f| (f.game_id, f.address))
                 .collect();
             let groups: BTreeMap<String, Group> = pending.chain(joined).collect();
-            Ok((favourites, groups))
+            Ok((favourites, groups, attached))
         })
         .await;
     match read {
-        Ok((favourites, groups)) => {
+        Ok((favourites, groups, attached)) => {
             world.favourites = favourites;
             world.groups = groups;
+            world.attached = attached;
         }
         Err(e) => tracing::warn!(error = %e, "skin signals: database state unread"),
     }

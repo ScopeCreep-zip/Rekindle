@@ -67,6 +67,8 @@ export type ShellOp =
   | { kind: "openProfile"; arg: { friend: string } }
   | { kind: "openSafetyNumber"; arg: { friend: string } }
   | { kind: "openGameInvite"; arg: { friend: string } }
+  | { kind: "newRoom"; arg: { peer: string | null } }
+  | { kind: "openGroupChat"; arg: { groupId: string } }
   | { kind: "call"; arg: CallOp }
   | { kind: "showSettings"; arg: ArgOf<"showSettings"> }
   | { kind: "reportBug" }

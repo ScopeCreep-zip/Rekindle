@@ -16,9 +16,18 @@ use crate::state::SharedState;
 pub async fn group_dm_create(
     name: String,
     members: Vec<String>,
+    origin_peer: Option<String>,
     state: State<'_, SharedState>,
 ) -> Result<Done<String>, CommandError> {
-    host_call::call(&state, IpcRequest::GroupDmCreate { name, members }).await
+    host_call::call(
+        &state,
+        IpcRequest::GroupDmCreate {
+            name,
+            members,
+            origin_peer,
+        },
+    )
+    .await
 }
 
 /// Accept a pending group invite (`IpcRequest::GroupDmAccept`).

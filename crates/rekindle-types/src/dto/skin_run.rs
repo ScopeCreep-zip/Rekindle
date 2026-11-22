@@ -90,6 +90,17 @@ pub enum ShellOp {
     OpenGameInvite {
         friend: String,
     },
+    /// The New Group panel, prefilled with `peer` when the window has a
+    /// friend (SK2-G §6: `NewRoom`/`CreateRoom`); the group it creates
+    /// records `peer` as the chat it came from.
+    NewRoom {
+        peer: Option<String>,
+    },
+    /// The group window of `group_id` (`EnterRoom`, `JoinRoom`,
+    /// `EnterAttachedRoom` on a joined group).
+    OpenGroupChat {
+        group_id: String,
+    },
     Call(CallOp),
     ShowSettings(SkinSettingsTab),
     ReportBug,

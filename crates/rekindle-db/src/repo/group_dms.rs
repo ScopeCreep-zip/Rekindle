@@ -15,6 +15,10 @@ pub struct GroupDmRow {
     /// Our own sending key's current epoch.
     pub epoch: u32,
     pub created_at: i64,
+    /// The friend whose chat the group was created from (SK2-G §6).
+    pub origin_peer: Option<String>,
+    /// In our "Chat Rooms" favourites (local only).
+    pub favourite: bool,
 }
 
 fn roster_json(roster: &[GroupDmRosterMember]) -> rusqlite::Result<String> {
@@ -28,10 +32,12 @@ fn read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<GroupDmRow> {
         roster: crate::row::get_json(row, "roster")?,
         epoch: crate::row::get(row, "epoch")?,
         created_at: crate::row::get(row, "created_at")?,
+        origin_peer: crate::row::get(row, "origin_peer")?,
+        favourite: crate::row::get(row, "favourite")?,
     })
 }
 
-const COLS: &str = "group_id, name, roster, epoch, created_at";
+const COLS: &str = "group_id, name, roster, epoch, created_at, origin_peer, favourite";
 
 /// Store a group we joined or created.
 ///
@@ -39,15 +45,18 @@ const COLS: &str = "group_id, name, roster, epoch, created_at";
 /// The write failed (the group is already held, or a column is refused).
 pub fn insert(conn: &Connection, owner_key: &str, group: &GroupDmRow) -> rusqlite::Result<()> {
     conn.execute(
-        "INSERT INTO group_dms (owner_key, group_id, name, roster, epoch, created_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        "INSERT INTO group_dms \
+         (owner_key, group_id, name, roster, epoch, created_at, origin_peer, favourite) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
         params![
             owner_key,
             group.group_id,
             group.name,
             roster_json(&group.roster)?,
             group.epoch,
-            group.created_at
+            group.created_at,
+            group.origin_peer,
+            group.favourite
         ],
     )?;
     Ok(())
@@ -80,6 +89,43 @@ pub fn list(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<GroupDmR
     ))?;
     let rows = stmt.query_map(params![owner_key], read_row)?;
     rows.collect()
+}
+
+/// Record the friend whose chat `group_id` was created from (SK2-G §6).
+/// `false` when we are not in the group.
+///
+/// # Errors
+/// The write failed (the key is refused).
+pub fn set_origin_peer(
+    conn: &Connection,
+    owner_key: &str,
+    group_id: &str,
+    peer: &str,
+) -> rusqlite::Result<bool> {
+    let changed = conn.execute(
+        "UPDATE group_dms SET origin_peer = ?3 WHERE owner_key = ?1 AND group_id = ?2",
+        params![owner_key, group_id, peer],
+    )?;
+    Ok(changed > 0)
+}
+
+/// The group most recently created from `peer`'s chat, the room attached
+/// to it (`EnterAttachedRoom`).
+///
+/// # Errors
+/// The query failed.
+pub fn attached(
+    conn: &Connection,
+    owner_key: &str,
+    peer: &str,
+) -> rusqlite::Result<Option<String>> {
+    conn.query_row(
+        "SELECT group_id FROM group_dms WHERE owner_key = ?1 AND origin_peer = ?2 \
+         ORDER BY created_at DESC, group_id DESC LIMIT 1",
+        params![owner_key, peer],
+        |row| row.get(0),
+    )
+    .optional()
 }
 
 /// Replace a group's roster and our epoch (a leave or a block rotates our
@@ -283,6 +329,8 @@ mod tests {
             roster: vec![member('a'), member('b'), member('c')],
             epoch: 0,
             created_at: 5,
+            origin_peer: None,
+            favourite: false,
         }
     }
 
@@ -368,5 +416,27 @@ mod tests {
             None,
             "cascade"
         );
+    }
+
+    #[test]
+    fn the_attached_room_is_the_latest_created_from_that_chat() {
+        let conn = fixture::conn();
+        let peer = "b".repeat(64);
+        assert_eq!(attached(&conn, OWNER, &peer).unwrap(), None);
+        let mut older = group();
+        older.created_at = 1;
+        insert(&conn, OWNER, &older).unwrap();
+        assert!(set_origin_peer(&conn, OWNER, G, &peer).unwrap());
+        let mut newer = group();
+        newer.group_id = "f".repeat(32);
+        newer.created_at = 2;
+        newer.origin_peer = Some(peer.clone());
+        insert(&conn, OWNER, &newer).unwrap();
+        assert_eq!(attached(&conn, OWNER, &peer).unwrap(), Some("f".repeat(32)));
+        assert_eq!(
+            get(&conn, OWNER, G).unwrap().unwrap().origin_peer,
+            Some(peer)
+        );
+        assert!(!set_origin_peer(&conn, OWNER, &"e".repeat(32), &"c".repeat(64)).unwrap());
     }
 }

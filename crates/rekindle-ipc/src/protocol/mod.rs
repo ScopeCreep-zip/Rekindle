@@ -227,8 +227,13 @@ pub enum IpcRequest {
 
     // ── Group DMs (plan E2.6) ──────────────────────────────────────
     /// Create a group named `name` of us and `members` (2-7 friends'
-    /// keys); the answer is its id.
-    GroupDmCreate { name: String, members: Vec<String> },
+    /// keys); the answer is its id. `origin_peer`: the member whose chat it
+    /// was created from (SK2-G §6, the room attached to that chat).
+    GroupDmCreate {
+        name: String,
+        members: Vec<String>,
+        origin_peer: Option<String>,
+    },
     /// Accept the pending invite to `group_id` (32 hex).
     GroupDmAccept { group_id: String },
     /// Decline the pending invite to `group_id`.

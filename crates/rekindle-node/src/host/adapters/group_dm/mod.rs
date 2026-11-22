@@ -112,6 +112,8 @@ fn row_of(state: &GroupState) -> GroupDmRow {
         roster: state.roster.members().to_vec(),
         epoch: state.epoch,
         created_at: i64::try_from(state.created_at_ms).unwrap_or(i64::MAX),
+        origin_peer: None,
+        favourite: false,
     }
 }
 

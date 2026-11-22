@@ -40,7 +40,13 @@ fn disappearing(conversation: &str, seconds: u32) -> Checked {
     }
 }
 
-fn create(name: &str, members: &[String]) -> Checked {
+fn create(name: &str, members: &[String], origin_peer: Option<&str>) -> Checked {
+    if origin_peer.is_some_and(|peer| !members.iter().any(|m| m == peer)) {
+        return Err(IpcResponse::error(
+            400,
+            "invalid group: the chat it comes from must be a member's",
+        ));
+    }
     let chars = name.chars().count();
     if name.trim().is_empty() || chars > MAX_NAME_CHARS {
         return Err(IpcResponse::error(
@@ -73,7 +79,11 @@ fn create(name: &str, members: &[String]) -> Checked {
 
 pub(super) fn check(request: &IpcRequest) -> Checked {
     match request {
-        IpcRequest::GroupDmCreate { name, members } => create(name, members),
+        IpcRequest::GroupDmCreate {
+            name,
+            members,
+            origin_peer,
+        } => create(name, members, origin_peer.as_deref()),
         IpcRequest::GroupDmAccept { group_id: id }
         | IpcRequest::GroupDmDecline { group_id: id }
         | IpcRequest::GroupDmLeave { group_id: id }
@@ -111,14 +121,16 @@ mod tests {
     #[test]
     fn create_bounds_name_and_members() {
         let two = vec![key('a'), key('b')];
-        assert!(create("raid", &two).is_ok());
-        assert!(create("  ", &two).is_err());
-        assert!(create(&"x".repeat(MAX_NAME_CHARS + 1), &two).is_err());
-        assert!(create("raid", &[key('a')]).is_err());
-        assert!(create("raid", &vec![key('a'); 2]).is_err());
+        assert!(create("raid", &two, None).is_ok());
+        assert!(create("  ", &two, None).is_err());
+        assert!(create(&"x".repeat(MAX_NAME_CHARS + 1), &two, None).is_err());
+        assert!(create("raid", &[key('a')], None).is_err());
+        assert!(create("raid", &vec![key('a'); 2], None).is_err());
         let eight: Vec<String> = "abcdef01".chars().map(key).collect();
-        assert!(create("raid", &eight).is_err());
-        assert!(create("raid", &eight[..7]).is_ok());
+        assert!(create("raid", &eight, None).is_err());
+        assert!(create("raid", &eight[..7], None).is_ok());
+        assert!(create("raid", &two, Some(&key('a'))).is_ok());
+        assert!(create("raid", &two, Some(&key('c'))).is_err());
     }
 
     #[test]

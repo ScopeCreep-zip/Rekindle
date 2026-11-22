@@ -25,7 +25,7 @@ pub(super) async fn selection(
     s: &mut Selection,
 ) -> Result<(), IpcResponse> {
     let group_id = match request {
-        IpcRequest::GroupDmCreate { name, members } => {
+        IpcRequest::GroupDmCreate { name, members, .. } => {
             s.subject = Subject::Named { name: name.clone() };
             s.notifies = count(members.len());
             s.reversibility = Reversibility::NeedsOthers;

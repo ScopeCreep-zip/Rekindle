@@ -22,8 +22,9 @@ export interface GroupDmView {
 
 export const groupDmCommands = {
   /** The new group's id (32 hex). */
-  groupDmCreate: (name: string, members: string[]) =>
-    hostInvoke<string>("group_dm_create", { name, members }),
+  /** `originPeer`: the member whose chat it comes from (its attached room). */
+  groupDmCreate: (name: string, members: string[], originPeer?: string) =>
+    hostInvoke<string>("group_dm_create", { name, members, originPeer: originPeer ?? null }),
   groupDmAccept: (groupId: string) => hostInvoke<unknown>("group_dm_accept", { groupId }),
   groupDmDecline: (groupId: string) => hostInvoke<unknown>("group_dm_decline", { groupId }),
   groupDmLeave: (groupId: string) => hostInvoke<unknown>("group_dm_leave", { groupId }),

@@ -449,6 +449,7 @@ async fn posts_right_after_accepting_reach_every_member() {
             .ok(IpcRequest::GroupDmCreate {
                 name: "raid night".to_string(),
                 members: vec![key(&nodes[1]), key(&nodes[2])],
+                origin_peer: None,
             })
             .await,
     )

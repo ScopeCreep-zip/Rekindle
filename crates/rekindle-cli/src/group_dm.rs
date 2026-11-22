@@ -11,9 +11,14 @@ use crate::output::OutputMode;
 
 fn request(cmd: &GroupDmCmd) -> IpcRequest {
     match cmd {
-        GroupDmCmd::Create { name, members } => IpcRequest::GroupDmCreate {
+        GroupDmCmd::Create {
+            name,
+            members,
+            origin_peer,
+        } => IpcRequest::GroupDmCreate {
             name: name.clone(),
             members: members.clone(),
+            origin_peer: origin_peer.clone(),
         },
         GroupDmCmd::Accept { group_id } => IpcRequest::GroupDmAccept {
             group_id: group_id.clone(),

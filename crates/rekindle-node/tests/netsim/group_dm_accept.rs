@@ -41,6 +41,7 @@ async fn a_member_chain_is_on_the_network_before_its_key_leaves() {
             .ok(IpcRequest::GroupDmCreate {
                 name: "raid night".to_string(),
                 members: vec![key(&nodes[1]), key(&nodes[2])],
+                origin_peer: None,
             })
             .await,
     )
@@ -84,6 +85,7 @@ async fn a_post_that_arrives_before_the_posters_accept_is_shown_once_it_lands() 
             .ok(IpcRequest::GroupDmCreate {
                 name: "raid night".to_string(),
                 members: vec![key(&nodes[1]), key(&nodes[2])],
+                origin_peer: None,
             })
             .await,
     )
@@ -154,6 +156,7 @@ async fn a_lost_invite_is_sent_again_until_received() {
             .ok(IpcRequest::GroupDmCreate {
                 name: "raid night".to_string(),
                 members: vec![key(&nodes[1]), key(&nodes[2])],
+                origin_peer: None,
             })
             .await,
     )
@@ -203,6 +206,7 @@ async fn an_accept_waits_for_a_members_unreadable_prekeys() {
             .ok(IpcRequest::GroupDmCreate {
                 name: "raid night".to_string(),
                 members: vec![key(&nodes[1]), key(&nodes[2])],
+                origin_peer: None,
             })
             .await,
     )

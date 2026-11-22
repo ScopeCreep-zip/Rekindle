@@ -8,18 +8,19 @@ use rekindle_types::dto::skin_run::{CallOp, ShellOp, ShellPanel, SkinRun, SkinSe
 use rekindle_types::presence::SessionStatus;
 
 use super::actions::{map, resolve, Mapped, Selections};
+use super::rooms::{Room, Rooms};
 
 const SELECTED_FRIEND_KEY: &str = "bobkey";
 
 fn run(action: &A) -> SkinRun {
-    match map(action, Some(SELECTED_FRIEND_KEY)) {
+    match map(action, Some(SELECTED_FRIEND_KEY), &Rooms::default()) {
         Ok(Mapped::Run(r)) => r,
         other => panic!("{action:?}: {other:?}"),
     }
 }
 
 fn request(action: &A) -> IpcRequest {
-    match map(action, Some(SELECTED_FRIEND_KEY)) {
+    match map(action, Some(SELECTED_FRIEND_KEY), &Rooms::default()) {
         Ok(Mapped::Request(r)) => *r,
         other => panic!("{action:?}: {other:?}"),
     }
@@ -106,7 +107,7 @@ fn shell_actions_yield_their_operation_on_the_selected_friend() {
 
 #[test]
 fn a_selection_action_is_refused_while_nothing_is_selected() {
-    let refused = map(&A::ChatFriend, None).expect_err("no selection");
+    let refused = map(&A::ChatFriend, None, &Rooms::default()).expect_err("no selection");
     assert!(matches!(refused, IpcResponse::Error { code: 409, .. }));
 }
 
@@ -116,7 +117,7 @@ fn gap_actions_yield_not_built_yet() {
         A::JoinFriend,
         A::AddServer,
         A::StartDownload,
-        A::CreateRoom,
+        A::InviteUsersToRoom,
         A::SearchFor,
     ] {
         assert_eq!(
@@ -143,7 +144,7 @@ fn resolve_takes_the_selection_from_the_host() {
         node: "ChatButton".into(),
         action: A::ChatFriend,
     };
-    assert!(resolve(&selections, chat()).is_err());
+    assert!(resolve(&selections, &Rooms::default(), chat()).is_err());
     selections.set(
         "buddy-list",
         Some(SkinSelection::Friend {
@@ -151,7 +152,7 @@ fn resolve_takes_the_selection_from_the_host() {
         }),
     );
     assert!(matches!(
-        resolve(&selections, chat()),
+        resolve(&selections, &Rooms::default(), chat()),
         Ok(IpcRequest::RunSkinAction { .. })
     ));
     let logoff = IpcRequest::RunSkinAction {
@@ -160,7 +161,58 @@ fn resolve_takes_the_selection_from_the_host() {
         action: A::LogOff,
     };
     assert!(matches!(
-        resolve(&selections, logoff),
+        resolve(&selections, &Rooms::default(), logoff),
         Ok(IpcRequest::Logout)
     ));
+}
+
+fn room(action: &A, friend: Option<&str>, rooms: &Rooms) -> Result<Mapped, IpcResponse> {
+    map(action, friend, rooms)
+}
+
+#[test]
+fn room_actions_reach_their_group_dm_ops() {
+    let g = "0f".repeat(16);
+    let open = SkinRun::Shell(ShellOp::OpenGroupChat {
+        group_id: g.clone(),
+    });
+    for action in [A::NewRoom, A::CreateRoom] {
+        assert_eq!(
+            run(&action),
+            SkinRun::Shell(ShellOp::NewRoom {
+                peer: Some(SELECTED_FRIEND_KEY.to_owned())
+            })
+        );
+    }
+    let joined = Rooms {
+        selected: Some(Room::Joined(g.clone())),
+        attached: None,
+    };
+    let pending = Rooms {
+        selected: Some(Room::Pending(g.clone())),
+        attached: None,
+    };
+    let attached = Rooms {
+        selected: None,
+        attached: Some(g.clone()),
+    };
+    for action in [A::EnterRoom, A::JoinRoom] {
+        assert!(matches!(room(&action, None, &joined), Ok(Mapped::Run(r)) if r == open));
+        assert!(matches!(
+            room(&action, None, &pending),
+            Ok(Mapped::Request(r)) if matches!(&*r, IpcRequest::GroupDmAccept { group_id } if *group_id == g)
+        ));
+    }
+    for action in [A::EnterAttachedRoom, A::EnterRoom] {
+        assert!(
+            matches!(room(&action, Some(SELECTED_FRIEND_KEY), &attached), Ok(Mapped::Run(r)) if r == open)
+        );
+    }
+    for action in [A::EnterRoom, A::JoinRoom, A::EnterAttachedRoom] {
+        assert!(matches!(
+            room(&action, Some(SELECTED_FRIEND_KEY), &Rooms::default()),
+            Err(IpcResponse::Error { code: 409, .. })
+        ));
+    }
+    assert!(room(&A::EnterAttachedRoom, None, &pending).is_err());
 }

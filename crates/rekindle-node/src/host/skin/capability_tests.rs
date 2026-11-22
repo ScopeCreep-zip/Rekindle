@@ -150,6 +150,24 @@ fn rooms_need_two_friends_to_create_and_a_known_group_to_enter() {
 }
 
 #[test]
+fn a_chat_enters_the_room_created_from_it() {
+    let i = Inputs::default();
+    let mut w = SkinWorld::default();
+    let bob = Selected::Friend {
+        key: "bob",
+        friend: None,
+    };
+    assert!(!can(C::EnterRoom, &i, &w, bob));
+    w.attached.insert("bob".into());
+    assert!(can(C::EnterRoom, &i, &w, bob));
+    let cat = Selected::Friend {
+        key: "cat",
+        friend: None,
+    };
+    assert!(!can(C::EnterRoom, &i, &w, cat));
+}
+
+#[test]
 fn media_actions_need_the_file_and_a_share_target() {
     let i = Inputs::default();
     let mut w = SkinWorld::default();
