@@ -438,12 +438,14 @@ pub use waiting::{enqueue_waiting_for_message, release_waiting};
 
 mod ending;
 mod receipts;
+mod takeover;
 pub use ending::{
     fail_to_peer, queue_friend_list, supersede, Ended, ListWrite, FRIEND_LIST_STREAM,
 };
 pub use receipts::{
     deliver_chain_through, deliver_seq, land, note_ack, read_through, reschedule_queued, Landing,
 };
+pub use takeover::take_over_dependents;
 
 #[cfg(test)]
 mod tests;

@@ -36,6 +36,13 @@ pub struct NewOutboxRow {
     /// unsettled whose client id starts with one of them, resolved when the
     /// row is stored; empty when it waits for none.
     pub waits_for: Vec<String>,
+    /// The client-id prefixes of the rows of its stream whose dependents
+    /// this row takes over when stored: a row waiting for one of them waits
+    /// for this row instead (plan HOL1: a first contact still waiting for
+    /// the peer's prekey record settles `sent` once it commits its
+    /// PreKeyInit, so what waited for it waits for that PreKeyInit's
+    /// receipt). Empty for any other row.
+    pub takes_over: Vec<String>,
 }
 
 /// What a cumulative `DmAck` covers (register 2026-10-24).

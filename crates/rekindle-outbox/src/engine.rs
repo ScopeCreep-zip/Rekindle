@@ -176,6 +176,7 @@ impl<D: OutboxDeps> Outbox<D> {
             next_at: self.next_due(entry.kind, 0, now, deadline),
             deadline,
             waits_for: Vec::new(),
+            takes_over: Vec::new(),
         }
     }
 

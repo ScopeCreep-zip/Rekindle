@@ -26,7 +26,9 @@ use super::send::{self, Framed};
 use crate::operations::friend::{FriendError, FriendHost};
 use crate::operations::prekeys::Rejection;
 
-pub use super::handshake_order::{restore_first_contacts, settle_first_contact, waits_for};
+pub use super::handshake_order::{
+    restore_first_contacts, settle_first_contact, takes_over, waits_for,
+};
 
 /// The client id of our `Unfriended` row to `peer`: the one row their
 /// `UnfriendedAck` settles.

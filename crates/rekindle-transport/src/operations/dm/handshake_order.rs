@@ -84,6 +84,24 @@ pub fn waits_for(client_id: &str) -> Vec<String> {
     FIRST_CONTACT.iter().map(|k| client_prefix(*k)).collect()
 }
 
+/// The client-id prefixes of the rows whose dependents a handshake row
+/// `client_id` takes over when stored (plan HOL1): a PreKeyInit, the first
+/// contact a waiting `FriendAccept` or `SessionResetAccept` row hands off
+/// to as it settles `sent` (`handshake::attempt_first_contact`), takes over
+/// what waited for that row, so a friend-gated frame queued while the first
+/// contact waited for the peer's prekey record waits for the PreKeyInit's
+/// receipt, not for the hand-off. Every other row takes over nothing.
+#[must_use]
+pub fn takes_over(client_id: &str) -> Vec<String> {
+    if !client_id.starts_with(&client_prefix(DmTypeId::PreKeyInit)) {
+        return Vec::new();
+    }
+    [DmTypeId::FriendAccept, DmTypeId::SessionResetAccept]
+        .iter()
+        .map(|k| client_prefix(*k))
+        .collect()
+}
+
 /// Whether `client_id` is a first contact's row.
 fn is_first_contact(client_id: &str) -> bool {
     FIRST_CONTACT

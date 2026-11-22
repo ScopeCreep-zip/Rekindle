@@ -21,7 +21,9 @@ pub const DEPENDENCY_FAILED: &str = "the frame it waits for failed";
 impl<D: OutboxDeps> Outbox<D> {
     /// Store `entry` with `echo`, waiting for the newest unsettled row of
     /// its stream whose client id starts with one of `waits_for` (none:
-    /// it waits for nothing), and wake the engine.
+    /// it waits for nothing), taking over the dependents of the rows whose
+    /// client ids start with one of `takes_over`
+    /// ([`crate::NewOutboxRow::takes_over`]), and wake the engine.
     ///
     /// # Errors
     /// The storage failed; nothing was queued.
@@ -29,10 +31,12 @@ impl<D: OutboxDeps> Outbox<D> {
         &self,
         entry: Entry,
         waits_for: Vec<String>,
+        takes_over: Vec<String>,
         echo: D::Echo,
     ) -> Result<Enqueued, OutboxError> {
         let mut row = self.new_row(entry);
         row.waits_for = waits_for;
+        row.takes_over = takes_over;
         self.enqueue_row(row, echo).await
     }
 

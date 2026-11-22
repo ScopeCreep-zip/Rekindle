@@ -138,7 +138,7 @@ impl HostOutbox {
             .call(move |conn| {
                 let dep =
                     repo::latest_with_prefix(conn, &owner, &stored.stream, &stored.waits_for)?;
-                repo::enqueue_once(
+                let seq = repo::enqueue_once(
                     conn,
                     &repo::NewRow {
                         owner_key: &owner,
@@ -150,7 +150,12 @@ impl HostOutbox {
                         deadline: stored.deadline,
                         depends_on: dep.as_deref(),
                     },
-                )
+                )?;
+                if seq.is_some() {
+                    let (stream, id) = (&stored.stream, &stored.client_id);
+                    repo::take_over_dependents(conn, &owner, stream, &stored.takes_over, id)?;
+                }
+                Ok(seq)
             })
             .await
             .map_err(|e| storage(&e))?;
@@ -283,7 +288,9 @@ impl OutboxDeps for HostOutbox {
                 send_state: SendState::Queued,
                 stream_seq: None,
             });
-            repo::enqueue_with_echo(conn, &new, dm.as_ref())
+            let seq = repo::enqueue_with_echo(conn, &new, dm.as_ref())?;
+            repo::take_over_dependents(conn, &owner, &row.stream, &row.takes_over, &row.client_id)?;
+            Ok(seq)
         })
         .await
         .map_err(|e| storage(&e))

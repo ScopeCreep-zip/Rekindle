@@ -315,3 +315,60 @@ async fn a_media_key_queued_again_is_not_queued_twice() {
     let row = outbox.deps().row(client_id).await.unwrap();
     assert_eq!(row.map(|r| r.payload), Some(b"sealed".to_vec()));
 }
+
+/// Plan HOL1: a presence key queued while our `FriendAccept` waits for the
+/// peer's prekey record waits for that row; when the first contact hands
+/// off to its PreKeyInit (committed, and the waiting row settles `sent`),
+/// the key waits for the PreKeyInit's receipt, never goes on the hand-off.
+#[tokio::test]
+async fn a_frame_waiting_for_a_handed_off_first_contact_waits_for_its_prekey_init() {
+    use rekindle_transport::operations::dm::handshake;
+    let dir = tempfile::tempdir().unwrap();
+    let outbox = Outbox::new(host(dir.path(), Arc::new(Senders::default())).await);
+    let commit = |id: &'static str| {
+        let entry = Entry {
+            kind: StreamKind::FriendHandshake,
+            scope: "bob".into(),
+            client_id: id.into(),
+            payload: b"frame".to_vec(),
+            deadline: Deadline::Horizon,
+        };
+        let order = (handshake::waits_for(id), handshake::takes_over(id));
+        let outbox = &outbox;
+        async move {
+            outbox
+                .enqueue_waiting(entry, order.0, order.1, None)
+                .await
+                .unwrap();
+        }
+    };
+    commit("FriendAccept:1").await;
+    commit("FriendsKey:1").await;
+    let key = || async { outbox.deps().row("FriendsKey:1").await.unwrap().unwrap() };
+    assert_eq!(key().await.depends_on.as_deref(), Some("FriendAccept:1"));
+    // The hand-off: the PreKeyInit is committed, then the waiting row settles.
+    commit("PreKeyInit:1").await;
+    outbox
+        .deps()
+        .settle("FriendAccept:1", SendState::Sent)
+        .await
+        .unwrap();
+    assert_eq!(key().await.depends_on.as_deref(), Some("PreKeyInit:1"));
+    assert_eq!(due_ids(&outbox).await, ["PreKeyInit:1"], "the key waits");
+    let receipt = outbox
+        .deps()
+        .settle("PreKeyInit:1", SendState::Delivered)
+        .await;
+    receipt.unwrap();
+    assert_eq!(
+        due_ids(&outbox).await,
+        ["FriendsKey:1"],
+        "the receipt frees it"
+    );
+}
+
+/// The client ids of the rows due at any time.
+async fn due_ids(outbox: &Outbox<HostOutbox>) -> Vec<String> {
+    let rows = outbox.deps().due(i64::MAX / 2).await.unwrap();
+    rows.into_iter().map(|r| r.client_id).collect()
+}

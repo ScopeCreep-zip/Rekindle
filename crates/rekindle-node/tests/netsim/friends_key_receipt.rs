@@ -77,11 +77,14 @@ async fn a_status_that_lands_before_the_key_is_shown_when_the_key_does() {
             record: None,
         },
     });
-    // Rae takes Ann's accept but her answer is lost, so Ann's FriendsKey
-    // (behind the accept in her handshake stream) waits.
-    sim.fault(Fault::Unanswered {
+    // Rae takes Ann's accept but her answer is lost, and so is every frame
+    // of hers: Ann's FriendsKey waits for her first contact to be proven
+    // (plan HOL1, lead decision 47: the receipt, or Rae's first frame
+    // under the session, `handshake_order::settle_first_contact`), so a
+    // frame of Rae's that arrived would rightly free it.
+    sim.fault(Fault::DropFrom {
         node: 0,
-        unanswered: true,
+        per_mille: 1000,
     });
     accept(&nodes[1], &nodes[0]).await;
     assert!(eventually(&sim, LIMIT, || is_accepted_friend(&nodes[0], &ann)).await);
@@ -90,9 +93,9 @@ async fn a_status_that_lands_before_the_key_is_shown_when_the_key_does() {
         !saw(&events, &ann, "online"),
         "without Ann's key, Rae cannot open her status"
     );
-    sim.fault(Fault::Unanswered {
+    sim.fault(Fault::DropFrom {
         node: 0,
-        unanswered: false,
+        per_mille: 0,
     });
     assert!(
         eventually(&sim, LIMIT, || async { saw(&events, &ann, "online") }).await,

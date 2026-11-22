@@ -11,7 +11,7 @@ fn fh() -> StreamKind {
 
 async fn waiting(o: &Outbox<Fake>, id: &str, waits_for: &[&str]) {
     let waits = waits_for.iter().map(|p| (*p).to_owned()).collect();
-    o.enqueue_waiting(entry(fh(), "bob", id), waits, ())
+    o.enqueue_waiting(entry(fh(), "bob", id), waits, Vec::new(), ())
         .await
         .unwrap();
 }
@@ -115,9 +115,14 @@ async fn a_wake_the_store_does_not_honour_is_not_looped_on() {
     let now = o.deps().clock().now_ms_i64();
     let later = now + 3_600_000;
     o.deps().store.lock().rows[0].next_at = later;
-    o.enqueue_waiting(entry(StreamKind::Dm, "bob", "m"), Vec::new(), ())
-        .await
-        .unwrap();
+    o.enqueue_waiting(
+        entry(StreamKind::Dm, "bob", "m"),
+        Vec::new(),
+        Vec::new(),
+        (),
+    )
+    .await
+    .unwrap();
     // The dm stream's attempt is running, so the stored wake (its row,
     // due now) is read again without it.
     let runs = o.claim_due(now, None).await.unwrap();

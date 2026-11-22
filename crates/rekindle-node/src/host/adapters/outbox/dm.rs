@@ -415,8 +415,12 @@ impl DmOutbox for DmStream {
         payload: Vec<u8>,
     ) -> Result<i64, FriendError> {
         let waits_for = handshake::waits_for(&client_id);
+        let takes_over = handshake::takes_over(&client_id);
         let entry = handshake_entry(to, client_id, payload);
-        let enqueued = self.0.enqueue_waiting(entry, waits_for, None).await;
+        let enqueued = self
+            .0
+            .enqueue_waiting(entry, waits_for, takes_over, None)
+            .await;
         enqueued.map(|e| e.stream_seq).map_err(|e| failed(&e))
     }
 
@@ -428,11 +432,15 @@ impl DmOutbox for DmStream {
         deadline_ms: i64,
     ) -> Result<i64, FriendError> {
         let waits_for = handshake::waits_for(&client_id);
+        let takes_over = handshake::takes_over(&client_id);
         let entry = Entry {
             deadline: Deadline::At(deadline_ms),
             ..handshake_entry(to, client_id, payload)
         };
-        let enqueued = self.0.enqueue_waiting(entry, waits_for, None).await;
+        let enqueued = self
+            .0
+            .enqueue_waiting(entry, waits_for, takes_over, None)
+            .await;
         enqueued.map(|e| e.stream_seq).map_err(|e| failed(&e))
     }
 
@@ -566,38 +574,5 @@ impl DmOutbox for DmStream {
 }
 
 #[cfg(test)]
-mod tests {
-    use rekindle_types::message::SendState;
-
-    use super::*;
-
-    #[test]
-    fn only_dm_rows_publish_a_send_status() {
-        let change = StateChange {
-            stream: "dm:bob".into(),
-            stream_seq: 1,
-            client_id: "c1".into(),
-            kind: StreamKind::Dm,
-            state: SendState::Delivered,
-            wedge_reason: None,
-        };
-        let Some(SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DmSendStatus {
-            conversation_id,
-            client_id,
-            state,
-        })) = send_status(&change)
-        else {
-            panic!("a dm row publishes DmSendStatus");
-        };
-        assert_eq!(
-            (conversation_id.as_str(), client_id.as_str(), state),
-            ("bob", "c1", SendState::Delivered)
-        );
-        let other = StateChange {
-            kind: StreamKind::DhtWrite,
-            stream: "dht_write:r".into(),
-            ..change
-        };
-        assert!(send_status(&other).is_none());
-    }
-}
+#[path = "dm_tests.rs"]
+mod tests;

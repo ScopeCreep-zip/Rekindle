@@ -117,6 +117,13 @@ impl OutboxDeps for Fake {
                         .any(|p| h.client_id.starts_with(p.as_str()))
             })
             .map(|h| h.client_id.clone());
+        for r in s.rows.iter_mut().filter(|r| r.stream == row.stream) {
+            let taken = (r.depends_on.as_deref())
+                .is_some_and(|d| row.takes_over.iter().any(|p| d.starts_with(p.as_str())));
+            if taken {
+                r.depends_on = Some(row.client_id.clone());
+            }
+        }
         s.rows.push(OutboxRow {
             stream: row.stream,
             stream_seq,
