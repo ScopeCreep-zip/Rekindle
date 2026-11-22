@@ -94,6 +94,11 @@ pub trait RoutePort: Send + Sync {
     /// names it.
     fn own_id(&self, class: RouteClass) -> Option<String>;
 
+    /// Whether our route of `class` has its warm standby up (plan LF9c):
+    /// the outside self-test of General goes out over the `Sending`
+    /// standby and waits while there is none.
+    fn own_standby_up(&self, class: RouteClass) -> bool;
+
     /// Our route of `class`, to follow.
     fn own_state(&self, class: RouteClass) -> watch::Receiver<RouteState>;
 

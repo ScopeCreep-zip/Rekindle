@@ -248,6 +248,18 @@ impl<A: RouteAllocator> OwnRoutes<A> {
             .map(|live| live.id.clone())
     }
 
+    /// The class's warm standby route id, if it keeps one and it is up
+    /// ([`keeps_standby`]): never handed to a peer, so a send over it as
+    /// its safety route charges nothing to the live route (plan LF9c).
+    #[must_use]
+    pub fn standby_id(&self, class: RouteClass) -> Option<A::Id> {
+        self.slot(class)
+            .standby
+            .lock()
+            .as_ref()
+            .map(|live| live.id.clone())
+    }
+
     /// How long the class's live route has been up, if one is.
     #[must_use]
     pub fn age(&self, class: RouteClass) -> Option<Duration> {

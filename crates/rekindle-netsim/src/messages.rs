@@ -345,12 +345,23 @@ impl AppMessagePort for FakeMessages {
             }
         }
         self.net.import_route(self.node, &own);
-        // From outside the call takes our Sending route as its safety
-        // route, as `VeilidMessages` does (plan LF9), and enters as a peer's.
+        // From outside the call takes our Sending route's standby as its
+        // safety route, as `VeilidMessages` does (plans LF9, LF9c), and
+        // enters as a peer's.
         let sending = match path {
             rekindle_records::port::OwnPath::Loopback => None,
-            rekindle_records::port::OwnPath::Outside => Some(self.pinned(RouteClass::Sending)?),
+            rekindle_records::port::OwnPath::Outside => {
+                let standby = self.own.standby_id(RouteClass::Sending).ok_or_else(|| {
+                    PortError::Routing("our Sending standby route is not available".into())
+                })?;
+                Some(standby)
+            }
         };
+        if sending.is_some() && sending == self.own.id(RouteClass::Sending) {
+            if let Some(slot) = self.net.inner.lock().nodes.get_mut(self.node) {
+                slot.outside_over_live_sending += 1;
+            }
+        }
         let safety = sending.as_deref().or(Some(own.as_str()));
         // Drawn from the class's own self-test stream: the self-test task
         // wakes beside the node's other tasks in the order tokio wakes them
@@ -416,5 +427,12 @@ impl crate::Netsim {
             .get(&class)
             .copied()
             .unwrap_or(0)
+    }
+
+    /// Of those, the ones whose safety route was our live `Sending` route
+    /// (plan LF9c: the outside test rides the standby, so this stays 0).
+    #[must_use]
+    pub fn outside_calls_over_live_sending(&self, node: usize) -> u64 {
+        self.net.inner.lock().nodes[node].outside_over_live_sending
     }
 }

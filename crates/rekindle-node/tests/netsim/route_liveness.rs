@@ -316,3 +316,31 @@ async fn a_general_route_dead_from_outside_is_found_by_its_outside_test_and_repl
         );
     }
 }
+
+/// Plan LF9c (Linux r23): the outside self-test of General was pinned to
+/// our live `Sending` route as safety and reply route, so each lost question
+/// or failed send was charged to the route every pinned send rides
+/// (veilid-core 0.5.8 `route_compile.rs:565-570`, kill thresholds
+/// `route_spec_store/mod.rs:48-54`). It rides the `Sending` standby
+/// instead: General is tested from outside every period, and never once
+/// over the live `Sending` route.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn the_outside_test_rides_the_sending_standby_never_the_live_route() {
+    let (sim, _nodes) = friends(128).await;
+    let outside_before = sim.outside_calls(0, RouteClass::General);
+    assert!(
+        eventually(&sim, Duration::from_secs(120), || {
+            let outside = sim.outside_calls(0, RouteClass::General);
+            async move { outside >= outside_before + 2 }
+        })
+        .await,
+        "Ada tested General from outside, twice, within 120 s"
+    );
+    for node in 0..2 {
+        assert_eq!(
+            sim.outside_calls_over_live_sending(node),
+            0,
+            "node {node}'s outside tests never ride its live Sending route"
+        );
+    }
+}

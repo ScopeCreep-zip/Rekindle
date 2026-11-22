@@ -179,6 +179,9 @@ pub(crate) struct NodeSlot {
     pub own_calls: HashMap<RouteClass, u64>,
     /// Of those, the calls from outside (`OwnPath::Outside`, plan LF7).
     pub outside_calls: HashMap<RouteClass, u64>,
+    /// Of those, the calls whose safety route was the live `Sending` route
+    /// (plan LF9c): an observation, never a behaviour.
+    pub outside_over_live_sending: u64,
     /// The node's live record sessions (the production pool).
     pub pools: Vec<Weak<RecordPool>>,
     /// The attachment state last queued for the node ([`crate::attach`]).
@@ -239,6 +242,7 @@ impl NodeSlot {
             app_calls: 0,
             own_calls: HashMap::new(),
             outside_calls: HashMap::new(),
+            outside_over_live_sending: 0,
             pools: Vec::new(),
             state: "detached",
             public_ready: false,

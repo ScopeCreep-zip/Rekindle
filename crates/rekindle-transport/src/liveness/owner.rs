@@ -68,8 +68,30 @@ impl Liveness {
         Some(ok)
     }
 
-    /// Whether `class` is due a self-test at `now`.
+    /// Whether the outside test of General can run: its safety and reply
+    /// route, our `Sending` standby, is up (plan LF9c). It never falls back
+    /// onto the live `Sending` route, whose failures Veilid would charge to
+    /// the route every pinned send rides (veilid-core 0.5.8
+    /// `route_compile.rs:565-570`, kill thresholds
+    /// `route_spec_store/mod.rs:48-54`); the test waits for the standby.
+    fn outside_ready(&self) -> bool {
+        self.routes.own_standby_up(RouteClass::Sending)
+    }
+
+    /// Wait until [`outside_ready`](Self::outside_ready), checking each
+    /// [`SELF_TEST_TICK`] as the self-test loop does.
+    async fn outside_safety_up(&self) {
+        while !self.outside_ready() {
+            tokio::time::sleep(SELF_TEST_TICK).await;
+        }
+    }
+
+    /// Whether `class` is due a self-test at `now`; General waits, still
+    /// due, while its outside test has no standby to ride (plan LF9c).
     fn due(&self, class: RouteClass, now: Instant) -> bool {
+        if class == RouteClass::General && !self.outside_ready() {
+            return false;
+        }
         let expecting = class == RouteClass::General && self.expecting();
         let mut classes = self.classes.lock();
         let Some(state) = classes.get_mut(&class) else {
@@ -188,6 +210,20 @@ pub(crate) async fn run_publisher(
             continue;
         };
         let heal = live.heal_pending.lock().remove(&RouteClass::General);
+        if heal && live.self_tests {
+            // The replacement's outside test rides our Sending standby
+            // (plan LF9c): wait for it; a newer blob supersedes this one.
+            tokio::select! {
+                biased;
+                changed = offers.changed() => {
+                    if changed.is_err() { return }
+                    live.heal_pending.lock().insert(RouteClass::General);
+                    offers.mark_changed();
+                    continue;
+                }
+                () = live.outside_safety_up() => {}
+            }
+        }
         let tested = if heal && live.self_tests {
             live.self_test(RouteClass::General).await
         } else {

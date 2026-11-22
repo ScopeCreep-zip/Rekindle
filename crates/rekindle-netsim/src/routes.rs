@@ -368,6 +368,10 @@ impl RoutePort for FakeRoutes {
         self.own.age(class)
     }
 
+    fn own_standby_up(&self, class: RouteClass) -> bool {
+        self.own.standby_id(class).is_some()
+    }
+
     fn want_own(&self) {
         self.own.want_all();
     }

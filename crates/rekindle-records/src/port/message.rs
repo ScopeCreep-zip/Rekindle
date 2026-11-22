@@ -15,12 +15,13 @@ pub enum OwnPath {
     /// `rpc_processor/mod.rs:895-897`) right before it measures it.
     Loopback,
     /// From outside, as a peer's call arrives: our route's blob over our
-    /// `Sending` route as the safety route, apart from the route (the shape
-    /// of Veilid's remote-route test, `route_test.rs:345-388`), so it enters
-    /// by the blob's entry hop and reaches us through the hop next to us
-    /// unprompted; the answer returns over `Sending`
-    /// (`rpc_processor/destination.rs:498-516`), which its own loopback
-    /// vouches for (plan LF9).
+    /// `Sending` route's warm standby as the safety route, apart from the
+    /// route (the shape of Veilid's remote-route test,
+    /// `route_test.rs:345-388`), so it enters by the blob's entry hop and
+    /// reaches us through the hop next to us unprompted; the answer returns
+    /// over the standby (`rpc_processor/destination.rs:498-516`), never over
+    /// the live `Sending` route our pinned sends ride, so a failing test
+    /// charges nothing to it (plans LF9, LF9c).
     Outside,
 }
 

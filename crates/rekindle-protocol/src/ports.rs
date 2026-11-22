@@ -154,6 +154,10 @@ impl RoutePort for VeilidRoutes {
         self.own.age(class)
     }
 
+    fn own_standby_up(&self, class: RouteClass) -> bool {
+        self.own.standby_id(class).is_some()
+    }
+
     fn want_own(&self) {
         self.own.want_all();
     }
@@ -347,13 +351,20 @@ impl AppMessagePort for VeilidMessages {
         };
         let context = match path {
             rekindle_records::port::OwnPath::Loopback => self.pinned(profile, class)?,
-            // Over our Sending route, apart from the route under test: the
-            // answer returns over Sending too (veilid-core 0.5.8
+            // Over our Sending route's warm standby, apart from the route
+            // under test: the answer returns over it too (veilid-core 0.5.8
             // `destination.rs:498-516`), so a failing pool route cannot fail
-            // it (plan LF9).
-            rekindle_records::port::OwnPath::Outside => {
-                self.pinned(profile, RouteClass::Sending)?
-            }
+            // it (plan LF9). Never the live Sending route (plan LF9c): a
+            // question lost or a send failed is charged to the safety route
+            // it compiled over (`route_compile.rs:565-570`), and enough of
+            // them kill it (`route_spec_store/mod.rs:48-54`), which would
+            // take the route every pinned send rides. `Routing` while no
+            // standby is up; the owner waits for one ([`RoutePort::own_standby_up`]).
+            rekindle_records::port::OwnPath::Outside => self.with_safety(pinned_safety(
+                profile,
+                RouteClass::Sending,
+                self.own.standby_id(RouteClass::Sending),
+            )?)?,
         };
         crate::own_routes::loopback_call(&self.api, &self.imports, &context, &blob, message).await
     }
