@@ -23,6 +23,7 @@ export type SkinTokenId =
   | "text.on-fill"
   | "text.base"
   | "text.dim"
+  | "text.disabled"
   | "text.clan"
   | "text.status"
   | "text.timestamp"
@@ -83,6 +84,7 @@ const CSS_PROPERTY: Readonly<Record<SkinTokenId, string>> = {
   "text.on-fill": "--color-xfire-text-on-fill",
   "text.base": "--color-xfire-text",
   "text.dim": "--color-xfire-text-dim",
+  "text.disabled": "--color-xfire-text-disabled",
   "text.clan": "--color-xfire-text-clan",
   "text.status": "--color-xfire-text-status",
   "text.timestamp": "--color-xfire-text-timestamp",

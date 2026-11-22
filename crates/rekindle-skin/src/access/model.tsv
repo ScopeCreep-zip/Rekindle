@@ -241,8 +241,8 @@
 .context-menu-item-danger	icon hovered	var(--color-xfire-danger-text)	--color-xfire-busy 12% over --color-xfire-bg-panel	0.7	true
 .context-menu-item-danger	text	var(--color-xfire-danger-text)	--color-xfire-bg-panel	1.0	false
 .context-menu-item-danger	text hovered	var(--color-xfire-danger-text)	--color-xfire-busy 12% over --color-xfire-bg-panel	1.0	false
-.context-menu-item-reason	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
-.context-menu-item[data-disabled]	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
+.context-menu-item-reason	text	var(--color-xfire-text-disabled)	--color-xfire-bg-panel	1.0	false
+.context-menu-item[data-disabled]	text	var(--color-xfire-text-disabled)	--color-xfire-bg-panel	1.0	false
 .dm-history-gap	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
 .dm-timer-notice	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
 .edit-indicator	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
@@ -609,7 +609,8 @@
 .profile-popup-game-server	text	var(--color-xfire-text-dim)	--color-xfire-bg-primary	1.0	false
 .profile-popup-join-btn	text	var(--color-xfire-bg)	--color-xfire-ingame	1.0	false
 .profile-popup-join-btn	text hovered	var(--color-xfire-bg)	--color-xfire-ingame 85% over --color-xfire-overlay	1.0	false
-.profile-popup-join-reason	text	var(--color-xfire-text-dim)	--color-xfire-bg-primary	1.0	false
+.profile-popup-join-btn:disabled	text	var(--color-xfire-text-disabled)	--color-xfire-bg-primary	1.0	false
+.profile-popup-join-reason	text	var(--color-xfire-text-disabled)	--color-xfire-bg-primary	1.0	false
 .profile-popup-key	text	var(--color-xfire-text-dim)	--color-xfire-bg-primary	1.0	false
 .profile-popup-lastseen	text	var(--color-xfire-text-secondary)	--color-xfire-bg-primary	1.0	false
 .profile-popup-name	text	var(--color-xfire-text-primary)	--color-xfire-bg-primary	1.0	false

@@ -204,6 +204,7 @@
 '.profile-popup-game-server' = { on = ["--color-xfire-bg-primary"] }
 '.profile-popup-join-reason' = { on = ["--color-xfire-bg-primary"] }
 '.profile-popup-join-btn' = { on = ["--color-xfire-ingame"], on_hover = ["--color-xfire-ingame 85% over --color-xfire-overlay"] }
+'.profile-popup-join-btn:disabled' = { on = ["--color-xfire-bg-primary"] }
 '.member-game-info' = { on = ["--color-xfire-bg-dark"] }
 '.member-game-server' = { on = ["--color-xfire-bg-dark"] }
 '.avatar' = { on = ["--color-xfire-accent"] }

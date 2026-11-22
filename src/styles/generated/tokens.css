@@ -108,6 +108,11 @@
   inherits: true;
   initial-value: #8fb9d7;
 }
+@property --color-xfire-text-disabled {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #9a9a9a;
+}
 @property --color-xfire-text-clan {
   syntax: "<color>";
   inherits: true;
@@ -301,6 +306,7 @@
   --color-xfire-text-on-fill: #ffffff;
   --color-xfire-text: #e7e7e7;
   --color-xfire-text-dim: #8fb9d7;
+  --color-xfire-text-disabled: #9a9a9a;
   --color-xfire-text-clan: #1ba1fd;
   --color-xfire-text-status: #969696;
   --color-xfire-text-timestamp: #a0a0a0;
@@ -357,6 +363,7 @@
     --color-xfire-danger-text: #b00019;
     --color-xfire-text: #1a1a1a;
     --color-xfire-text-dim: #0d4363;
+    --color-xfire-text-disabled: #5b5b5b;
     --color-xfire-text-clan: #0a5a9c;
     --color-xfire-text-status: #595959;
     --color-xfire-text-timestamp: #545454;

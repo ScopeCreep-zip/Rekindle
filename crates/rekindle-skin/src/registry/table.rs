@@ -110,6 +110,12 @@ const fn fraction(id: &'static str, css: &'static str, dark: i64) -> TokenEntry 
     }
 }
 
+/// Follows `derivation` when a skin sets its sources and omits this token.
+const fn derived(mut e: TokenEntry, derivation: Derivation) -> TokenEntry {
+    e.derivation = Some(derivation);
+    e
+}
+
 /// Follows `of` when a skin sets `of` and omits this token.
 const fn same_as(mut e: TokenEntry, of: &'static str) -> TokenEntry {
     e.derivation = Some(Derivation::Mix {
@@ -308,6 +314,26 @@ pub const ENTRIES: &[TokenEntry] = &[
         "--color-xfire-text-dim",
         c4("#8fb9d7", "#0d4363", "#ffffff", "#000000"),
         TEXT,
+    ),
+    // A control the Host says cannot run now (a disabled menu item, its
+    // reason, a disabled button): grey, readable, never read as a link or
+    // an accent. The values of the review surfaces' `--sec-disabled-fg`,
+    // which stay their own (unskinnable, `@layer sec`).
+    derived(
+        row(
+            "text.disabled",
+            "--color-xfire-text-disabled",
+            c4("#9a9a9a", "#5b5b5b", "#a0a0a0", "#5b5b5b"),
+            TEXT,
+        ),
+        // A pack's own text toward its own ground, so it stays grey and
+        // readable on that pack's colours (Alloy's light #bcbcbc ground
+        // takes the fixed #5b5b5b to 3.57:1).
+        Derivation::Mix {
+            a: "text.primary",
+            b: "bg.primary",
+            a_weight: 850,
+        },
     ),
     row(
         "text.clan",
