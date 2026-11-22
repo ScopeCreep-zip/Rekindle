@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "app-buddy-list",
-  "description": "App-command grants for the `buddy-list` window: friend list management, invites, blocking, community create/join, status/presence, game launch, opening other windows, DM list, group DMs (create, the pending invites' accept and decline, the list), strand-relay volunteering, the deep-link consent dialog, `open_external_url` for the menu bar's links, and the call shell it alone hosts (incoming-call modal, call waiting, outgoing and group panels, missed calls) plus the session-reset prompt — the app's home base. No plugin grants.",
+  "description": "App-command grants for the `buddy-list` window: friend list management, invites, blocking, community create/join, status/presence, game launch and the installed games it lists (`get_installed_games`, the Host's `InstalledGamesGet`), opening other windows, DM list, group DMs (create, the pending invites' accept and decline, the list), strand-relay volunteering, the deep-link consent dialog, `open_external_url` for the menu bar's links, and the call shell it alone hosts (incoming-call modal, call waiting, outgoing and group panels, missed calls) plus the session-reset prompt — the app's home base. No plugin grants.",
   "windows": [
     "buddy-list"
   ],
@@ -31,6 +31,7 @@
     "allow-get-co-creation",
     "allow-get-communities",
     "allow-get-game-status",
+    "allow-get-installed-games",
     "allow-get-network-status",
     "allow-get-outgoing-invites",
     "allow-get-pending-requests",
