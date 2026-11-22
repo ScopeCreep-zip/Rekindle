@@ -102,16 +102,36 @@
     background: transparent;
     font: inherit;
     font-size: 11px;
-    color: var(--color-xfire-link);
     text-decoration: underline;
     cursor: pointer;
+  }
+
+  .infoview-link {
+    color: var(--color-xfire-link);
+  }
+
+  /* A server row's action takes the row's own text colours, which hold on
+   * each of its grounds (plain, hover, selected): the skin's link colour on
+   * the row's tints falls under 4.5:1 (Symbiosis selected 4.00:1, Onyx
+   * hovered 4.41:1; WCAG 1.4.3). The underline still marks it an action. */
+  .servers-view-action {
+    color: var(--color-xfire-text);
   }
 
   /* A Join the Host refuses (plan E7.15 IV3c): disabled text, still focusable. */
   .infoview-link[aria-disabled="true"],
   .servers-view-action[aria-disabled="true"] {
-    color: var(--color-xfire-text-disabled);
     text-decoration: none;
     cursor: not-allowed;
+  }
+
+  .infoview-link[aria-disabled="true"] {
+    color: var(--color-xfire-text-disabled);
+  }
+
+  /* In a server row, the row's dim text: disabled text on its selected tint
+   * is 3.22:1 in Symbiosis. */
+  .servers-view-action[aria-disabled="true"] {
+    color: var(--color-xfire-text-dim);
   }
 }
