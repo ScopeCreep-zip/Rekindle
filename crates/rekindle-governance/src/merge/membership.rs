@@ -22,6 +22,9 @@ pub(super) fn apply_membership(
             invite_proof,
             ..
         } => {
+            // Read before the op log is noted, which marks a creator that
+            // never joined as departed (decision (53)).
+            let seated = crate::permissions::holds_creator_seat(author, state);
             state
                 .op_log_records
                 .insert(author.clone(), member_record.clone());
@@ -33,9 +36,8 @@ pub(super) fn apply_membership(
                 member_record_owner: member_record_owner.clone(),
                 joined: stamp,
             };
-            let needs_approval = state.effective_admission_mode()
-                == AdmissionMode::ApprovalRequired
-                && !state.is_creator(author);
+            let needs_approval =
+                state.effective_admission_mode() == AdmissionMode::ApprovalRequired && !seated;
             match state.admitted.get(author).map(|d| d.approved) {
                 _ if !needs_approval => {
                     state.members.insert(author.clone(), member);

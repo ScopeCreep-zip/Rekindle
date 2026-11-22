@@ -120,12 +120,13 @@ pub async fn segment_roster<D: GovernanceRuntimeDeps>(
 
 /// Has this pseudonym been admitted?
 ///
-/// The creator is admitted by construction — they wrote the genesis
+/// A seated creator (decision (53): one who left re-joins like any
+/// member) is admitted by construction — they wrote the genesis
 /// entries, so requiring an approval they could only give themselves
 /// would lock them out of their own community on the first merge.
 fn is_admitted(gov_state: &GovernanceState, pseudonym_hex: &str) -> bool {
     let key = rekindle_types::id::PseudonymKey::from_hex_lossy(pseudonym_hex);
-    if gov_state.is_creator(&key) {
+    if rekindle_governance::permissions::holds_creator_seat(&key, gov_state) {
         return true;
     }
     gov_state

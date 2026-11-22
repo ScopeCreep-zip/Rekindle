@@ -124,6 +124,12 @@ fn approval_gate(cert: &GenesisCert, set: &OpSet<'_>, round: &Round, invalid: &m
             _ => {}
         }
     }
+    let mut left: HashMap<&PseudonymKey, u64> = HashMap::new();
+    for (o, op) in set.ops.iter().enumerate() {
+        if round.applied[o] && matches!(op.body(), GovernanceEntry::MemberLeft { .. }) {
+            note_leave(&mut left, op.author(), op.op().seq);
+        }
+    }
     for (o, op) in set.ops.iter().enumerate() {
         let self_membership = matches!(
             op.body(),
@@ -135,10 +141,36 @@ fn approval_gate(cert: &GenesisCert, set: &OpSet<'_>, round: &Round, invalid: &m
                 .and_then(|d| d.iter().rev().find(|(at, _)| *at <= anchor))
                 .is_some_and(|(_, approved)| *approved)
         });
-        if !cert.is_creator(op.author()) && !self_membership && !approved {
+        let seated = seated_at(cert, &left, op.author(), op.op().seq);
+        if !seated && !self_membership && !approved {
             invalid[o] = true;
         }
     }
+}
+
+/// Note `author`'s applied `MemberLeft` at `seq`, keeping its earliest.
+pub(super) fn note_leave<'a>(
+    left: &mut HashMap<&'a PseudonymKey, u64>,
+    author: &'a PseudonymKey,
+    seq: u64,
+) {
+    left.entry(author)
+        .and_modify(|s| *s = (*s).min(seq))
+        .or_insert(seq);
+}
+
+/// Whether `author`'s op at `seq` holds a creator seat for the approval
+/// gate: a creator of the cert, at a seq below its first applied
+/// `MemberLeft` (lead decision (53): leaving gives the seat up, so a
+/// creator's ops after it, a re-join's included, need an approval like any
+/// member's). An author's ops chain along `prev`, so the seq orders them.
+pub(super) fn seated_at(
+    cert: &GenesisCert,
+    left: &HashMap<&PseudonymKey, u64>,
+    author: &PseudonymKey,
+    seq: u64,
+) -> bool {
+    cert.is_creator(author) && left.get(author).is_none_or(|l| seq < *l)
 }
 
 /// A `MemberJoined` whose `issued_at` is earlier than the latest

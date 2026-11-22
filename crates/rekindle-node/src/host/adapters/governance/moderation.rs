@@ -147,10 +147,15 @@ pub fn permitted(
         }
         ModerationAction::Remove => {
             let perms = rekindle_governance::permissions::compute_permissions(me, None, state, now);
-            state.is_creator(me)
-                || (perms & KICK_MEMBERS != 0
-                    && !state.is_creator(&target)
-                    && state.member_max_position(&target) < state.member_max_position(me))
+            // The validator's rule (decision (53)): a seated creator on
+            // anyone but another seated creator, else rank-strict.
+            if rekindle_governance::permissions::holds_creator_seat(me, state) {
+                rekindle_governance::validate::target::creator_may_target(me, &target, state)
+            } else {
+                perms & KICK_MEMBERS != 0
+                    && !rekindle_governance::permissions::holds_creator_seat(&target, state)
+                    && state.member_max_position(&target) < state.member_max_position(me)
+            }
         }
     };
     if ok {

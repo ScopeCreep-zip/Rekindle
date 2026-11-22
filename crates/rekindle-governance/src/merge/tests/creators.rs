@@ -207,14 +207,142 @@ fn both_co_creators_hold_the_seat() {
     assert!(holds_creator_seat(&pseudo(2), &state));
 }
 
+fn left() -> GovernanceEntry {
+    GovernanceEntry::MemberLeft { heads: Vec::new() }
+}
+
+fn ops_channel() -> GovernanceEntry {
+    GovernanceEntry::ChannelCreated {
+        channel_id: channel_id(7),
+        name: "ops".into(),
+        channel_type: "text".into(),
+        category_id: None,
+        position: 0,
+        parent_voice_channel_id: None,
+    }
+}
+
+/// Lead decision (53): leaving gives the seat up, through a real merged
+/// `MemberLeft` (the cert's set is unchanged).
 #[test]
-fn a_removed_co_creator_no_longer_holds_the_seat() {
-    let mut state =
-        merge_entries_under(&cert_with(1, &[2]), &[(pseudo(2), vec![at(5, joined(2))])]);
-    // What the merge's `MemberRemoved` arm leaves (`merge/membership.rs`).
-    state.members.remove(&pseudo(2));
-    state.removed.insert(pseudo(2), crate::fixture::stamp(9));
+fn a_co_creator_who_left_no_longer_holds_the_seat() {
+    let state = merge_entries_under(
+        &cert_with(1, &[2]),
+        &[(pseudo(2), vec![at(5, joined(2)), at(6, left())])],
+    );
     assert!(state.is_creator(&pseudo(2)), "the cert's set is unchanged");
     assert!(!holds_creator_seat(&pseudo(2), &state));
     assert!(holds_creator_seat(&pseudo(1), &state));
+}
+
+/// Decision (53): a creator who left has no `ALL` and can't act, and its
+/// re-join without an invite is refused, so the seat stays given up.
+#[test]
+fn a_creator_who_left_has_no_power_and_cannot_act() {
+    let state = merge_entries_under(
+        &cert_with(1, &[2]),
+        &[(
+            pseudo(2),
+            vec![
+                at(5, joined(2)),
+                at(6, left()),
+                at(7, ops_channel()),
+                at(8, joined(2)),
+            ],
+        )],
+    );
+    assert_ne!(compute_permissions(&pseudo(2), None, &state, 0), ALL);
+    assert!(
+        !state.channels.contains_key(&channel_id(7)),
+        "a creator's op after its leave is refused"
+    );
+    assert!(
+        !state.is_counted_member(&pseudo(2)),
+        "a re-join without an invite is refused after the seat is given up"
+    );
+    assert!(!holds_creator_seat(&pseudo(2), &state));
+    assert!(!validate_write(&pseudo(2), &ops_channel(), &state));
+}
+
+/// Decision (53): equal rank can't remove, ban or time out equal rank,
+/// whichever creator writes it.
+#[test]
+fn a_co_creator_cannot_remove_ban_or_time_out_another() {
+    let target = |t: u8| -> [GovernanceEntry; 3] {
+        [
+            GovernanceEntry::MemberRemoved {
+                target: pseudo(t),
+                reason: None,
+                heads: Vec::new(),
+                target_seq_frontier: 1,
+            },
+            GovernanceEntry::BanEntry {
+                target: pseudo(t),
+                reason: None,
+                target_seq_frontier: 1,
+            },
+            GovernanceEntry::TimeoutEntry {
+                target: pseudo(t),
+                duration_seconds: 60,
+                reason: None,
+                started_at: 6,
+            },
+        ]
+    };
+    for (writer, victim) in [(1, 2), (2, 1)] {
+        for entry in target(victim) {
+            let state = merge_entries_under(
+                &cert_with(1, &[2]),
+                &[
+                    (pseudo(2), vec![at(5, joined(2))]),
+                    (pseudo(writer), vec![at(6, entry.clone())]),
+                ],
+            );
+            assert!(
+                state.is_counted_member(&pseudo(victim))
+                    && holds_creator_seat(&pseudo(victim), &state),
+                "{entry:?} by a co-creator is refused"
+            );
+            assert!(!state.bans.contains(&pseudo(victim)));
+            assert!(!state.timeouts.contains_key(&pseudo(victim)));
+            assert_eq!(compute_permissions(&pseudo(victim), None, &state, 0), ALL);
+            assert!(!may_moderate(
+                &pseudo(writer),
+                &pseudo(victim),
+                TargetAction::Kick,
+                &state
+            ));
+            assert!(!outranks(&pseudo(writer), &pseudo(victim), &state));
+        }
+    }
+}
+
+/// A non-creator still can't act on a seated creator, and once that
+/// creator left it is an ordinary target (decision (53)).
+#[test]
+fn a_non_creator_acts_on_a_creator_only_after_it_left() {
+    let mut state = admin_state();
+    let kick = GovernanceEntry::MemberRemoved {
+        target: pseudo(2),
+        reason: None,
+        heads: Vec::new(),
+        target_seq_frontier: 1,
+    };
+    assert!(!validate_write(&pseudo(5), &kick, &state));
+    assert!(!may_moderate(
+        &pseudo(5),
+        &pseudo(2),
+        TargetAction::Ban,
+        &state
+    ));
+    // What the merge's `MemberLeft` fold leaves (`merge::fold`).
+    state.departed_heads.insert(pseudo(2), Default::default());
+    assert!(!holds_creator_seat(&pseudo(2), &state));
+    assert!(validate_write(&pseudo(5), &kick, &state));
+    assert!(may_moderate(
+        &pseudo(5),
+        &pseudo(2),
+        TargetAction::Ban,
+        &state
+    ));
 }

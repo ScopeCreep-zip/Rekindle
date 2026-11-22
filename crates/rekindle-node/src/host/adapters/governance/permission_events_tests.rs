@@ -109,13 +109,26 @@ fn a_timeout_moves_the_member_and_its_expiry_between_merges_does_not() {
     assert!(permission_transitions(&next, &next.clone(), 500).is_empty());
 }
 
+/// A co-creator's seat ends only by its own leave (lead decision (53)),
+/// merged as a real `MemberLeft`: the member is named.
 #[test]
-fn a_removed_co_creator_is_named() {
-    let mut prev = base();
-    prev.creators.extend([key(1), key(2)]);
-    let mut next = prev.clone();
-    next.members.remove(&key(2));
-    next.removed.insert(key(2), stamp(9));
+fn a_co_creator_who_left_is_named() {
+    use rekindle_governance::fixture::{at, cert, merge_entries_under};
+    use rekindle_types::governance::{AdmissionMode, GenesisCert, GovernanceEntry};
+    let cert = GenesisCert {
+        additional_creators: vec![key(2)],
+        ..cert(&key(1), AdmissionMode::default())
+    };
+    let joined = GovernanceEntry::MemberJoined {
+        member_record: "VLD0:record-2".into(),
+        member_record_owner: "owner-2".into(),
+        invite_proof: None,
+        owner_proof: vec![0; 64],
+        first_device: None,
+    };
+    let left = GovernanceEntry::MemberLeft { heads: Vec::new() };
+    let prev = merge_entries_under(&cert, &[(key(2), vec![at(5, joined.clone())])]);
+    let next = merge_entries_under(&cert, &[(key(2), vec![at(5, joined), at(6, left)])]);
     assert_eq!(
         permission_transitions(&prev, &next, 0).members,
         vec![key(2).to_hex()]

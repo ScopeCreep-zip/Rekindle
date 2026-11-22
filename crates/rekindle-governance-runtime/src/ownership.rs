@@ -98,7 +98,8 @@ pub async fn grant_administration<D: GovernanceRuntimeDeps>(
         .community_membership(community_id)
         .and_then(|m| m.my_pseudonym_hex)
         .map(|hex| PseudonymKey::from_hex_lossy(&hex));
-    let still_creator = me.as_ref().is_some_and(|me| state.is_creator(me));
+    let still_creator = (me.as_ref())
+        .is_some_and(|me| rekindle_governance::permissions::holds_creator_seat(me, &state));
     let holds_role = me
         .as_ref()
         .and_then(|me| state.role_assignments.get(me))

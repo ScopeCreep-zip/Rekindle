@@ -19,7 +19,7 @@ use rekindle_types::permissions::{
     MANAGE_ROLES, MANAGE_THREADS, TIMEOUT_MEMBERS,
 };
 
-use crate::permissions::compute_permissions;
+use crate::permissions::{compute_permissions, holds_creator_seat};
 use crate::state::GovernanceState;
 
 mod automod;
@@ -63,10 +63,12 @@ pub fn well_formed(
         // Self-authored only. If the creator could forge a request in
         // someone else's name, "pending members" would stop meaning
         // "people who asked".
-        // Only the `GenesisCert` creator joins without an invite proof.
+        // Only a seated creator joins without an invite proof: one who
+        // left gave the seat up, so its re-join needs an invite (decision
+        // (53)).
         GovernanceEntry::MemberJoined {
             invite_proof: None, ..
-        } if !state.is_creator(writer) => {
+        } if !holds_creator_seat(writer, state) => {
             return false;
         }
         // Invite caps are ceilings on the protocol, not a permission the
@@ -125,6 +127,18 @@ pub fn well_formed(
     true
 }
 
+/// The member a removal, ban, timeout or role unassignment acts on: the
+/// entries no seated creator writes against another (decision (53)).
+fn moderation_target(entry: &GovernanceEntry) -> Option<&PseudonymKey> {
+    match entry {
+        GovernanceEntry::MemberRemoved { target, .. }
+        | GovernanceEntry::BanEntry { target, .. }
+        | GovernanceEntry::TimeoutEntry { target, .. }
+        | GovernanceEntry::RoleUnassignment { target, .. } => Some(target),
+        _ => None,
+    }
+}
+
 /// The permission half of [`validate_write`], for a well-formed entry.
 fn permitted(writer: &PseudonymKey, entry: &GovernanceEntry, state: &GovernanceState) -> bool {
     // A checkpoint is endorsed by an eligible member only: counted and not
@@ -142,7 +156,7 @@ fn permitted(writer: &PseudonymKey, entry: &GovernanceEntry, state: &GovernanceS
     // (`merge::gates::successor_gate`, plan E3.2 S7s.3e).
     if let GovernanceEntry::CommunitySuccessor(s) = entry {
         let acceptance = s.shape() == Some(SuccessorShape::Acceptance);
-        return state.is_creator(writer)
+        return holds_creator_seat(writer, state)
             || (acceptance
                 && state.members.contains_key(writer)
                 && !state.is_departed(writer)
@@ -161,9 +175,12 @@ fn permitted(writer: &PseudonymKey, entry: &GovernanceEntry, state: &GovernanceS
         return true;
     }
 
-    // Creator always passes validation
-    if state.is_creator(writer) {
-        return true;
+    // A seated creator passes validation (decision (53)), except against
+    // another seated creator: equal rank never removes, bans, times out
+    // or demotes equal rank (Matrix power levels: strictly higher only).
+    if holds_creator_seat(writer, state) {
+        return moderation_target(entry)
+            .is_none_or(|target| target::creator_may_target(writer, target, state));
     }
 
     // Banned members can't write valid governance entries
@@ -250,7 +267,7 @@ fn permitted(writer: &PseudonymKey, entry: &GovernanceEntry, state: &GovernanceS
             // unassigned by the creator themselves. Defense-in-depth on
             // top of the rank check; even if an attacker somehow climbs
             // above the creator's rank, this still blocks them.
-            if state.is_creator(target) && writer != target {
+            if holds_creator_seat(target, state) && writer != target {
                 return false;
             }
             // Self-unassign always allowed (you can step down).

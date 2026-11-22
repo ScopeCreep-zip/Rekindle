@@ -213,3 +213,37 @@ fn roles_sharing_their_low_four_bytes_never_collide_in_the_view() {
     assert_eq!(alpha_id, serde_json::json!(alpha.to_hex()));
     assert_eq!(json["myRole"], "Beta", "{json}");
 }
+
+/// Lead decision (53): `weAreCreator` follows our seat, so a co-creator's
+/// view loses it on a real merged `MemberLeft`.
+#[test]
+fn we_are_creator_is_false_after_we_leave() {
+    use rekindle_governance::fixture::{at, cert, merge_entries_under};
+    use rekindle_types::governance::{AdmissionMode, GenesisCert, GovernanceEntry};
+    use rekindle_types::id::PseudonymKey;
+    let (primary, us) = (PseudonymKey([0x01; 32]), PseudonymKey([0xab; 32]));
+    let cert = GenesisCert {
+        additional_creators: vec![us.clone()],
+        ..cert(&primary, AdmissionMode::default())
+    };
+    let joined = GovernanceEntry::MemberJoined {
+        member_record: "VLD0:record-ab".into(),
+        member_record_owner: "owner-ab".into(),
+        invite_proof: None,
+        owner_proof: vec![0; 64],
+        first_device: None,
+    };
+    let left = GovernanceEntry::MemberLeft { heads: Vec::new() };
+    let mut state = CommunityState::new("gk");
+    state.my_pseudonym_key = Some("ab".repeat(32));
+    state.governance_state = Some(merge_entries_under(
+        &cert,
+        &[(us.clone(), vec![at(5, joined.clone())])],
+    ));
+    assert!(community_view(&state, 0, None).we_are_creator);
+    state.governance_state = Some(merge_entries_under(
+        &cert,
+        &[(us, vec![at(5, joined), at(6, left)])],
+    ));
+    assert!(!community_view(&state, 0, None).we_are_creator);
+}

@@ -188,7 +188,8 @@ pub async fn create_successor<D: GovernanceRuntimeDeps>(
         .community_membership(community_id)
         .and_then(|m| m.my_pseudonym_hex)
         .ok_or_else(|| GovernanceRuntimeError::PseudonymKeyMissing(community_id.to_owned()))?;
-    if !state.is_creator(&PseudonymKey::from_hex_lossy(&me)) {
+    let me_key = PseudonymKey::from_hex_lossy(&me);
+    if !rekindle_governance::permissions::holds_creator_seat(&me_key, &state) {
         return Err(GovernanceRuntimeError::PermissionDenied);
     }
     let name = (state.metadata.as_ref())

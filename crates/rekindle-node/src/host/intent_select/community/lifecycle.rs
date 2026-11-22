@@ -107,7 +107,7 @@ pub(super) fn selection(
                 .ok_or_else(|| unavailable("the community's governance", "not loaded"))?;
             let me = pseudonym(&ctx.my_pseudonym(&id))
                 .ok_or_else(|| unavailable("our pseudonym", "not in the community"))?;
-            if !state.is_creator(&me) {
+            if !rekindle_governance::permissions::holds_creator_seat(&me, &state) {
                 return Err(IpcResponse::error(
                     403,
                     "only a creator of this community can publish its successor",

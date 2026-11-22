@@ -143,6 +143,16 @@ fn approval_gate(ctx: &Ctx<'_>, set: &RestSet<'_>, round: &RestRound, invalid: &
             _ => {}
         }
     }
+    // A `MemberLeft` is not a power op: one in the cut is read from the
+    // snapshot's `departed_heads` (every op of its author in `rest` is at a
+    // higher seq, the author's ops chaining along `prev`), one in `rest`
+    // from the round, as `gates::approval_gate` reads it.
+    let mut left = HashMap::new();
+    for (o, op) in set.ops.iter().enumerate() {
+        if round.applied[o] && matches!(op.body(), GovernanceEntry::MemberLeft { .. }) {
+            super::gates::note_leave(&mut left, op.author(), op.op().seq);
+        }
+    }
     for (o, op) in set.ops.iter().enumerate() {
         let self_membership = matches!(
             op.body(),
@@ -153,7 +163,9 @@ fn approval_gate(ctx: &Ctx<'_>, set: &RestSet<'_>, round: &RestRound, invalid: &
                 .and_then(|d| d.iter().rev().find(|(at, _)| *at <= anchor))
                 .is_some_and(|(_, approved)| *approved)
         });
-        if !ctx.cert.is_creator(op.author()) && !self_membership && !approved {
+        let seated = !ctx.snap.state.departed_heads.contains_key(op.author())
+            && super::gates::seated_at(ctx.cert, &left, op.author(), op.op().seq);
+        if !seated && !self_membership && !approved {
             invalid[o] = true;
         }
     }

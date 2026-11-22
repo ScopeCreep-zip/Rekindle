@@ -142,3 +142,41 @@ fn a_further_creator_passes_the_resume_approval_gate() {
     assert!(resumed.state.is_counted_member(&pk(7)));
     assert!(!resumed.state.pending_members.contains_key(&pk(7)));
 }
+
+/// Lead decision (53): a creator's leave in the cut gives its seat up for
+/// the resume's approval gate as for the full merge's, so its op after the
+/// leave needs an approval (the `@everyone` role would otherwise let it
+/// through), and a co-creator's post-cut kick of a seated creator is
+/// refused by both.
+#[test]
+fn a_creator_who_left_in_the_cut_is_unseated_in_the_resume() {
+    use rekindle_types::governance::AdmissionMode;
+    let mut cert = crate::fixture::cert(&pk(1), AdmissionMode::ApprovalRequired);
+    cert.additional_creators = vec![pk(7), pk(8)];
+    let c0 = op(&pk(1), 0, &[], 0, joined(1, None));
+    let c1 = op(&pk(1), 1, &[&c0], 1, super::super::op_proptests::role(0, 0));
+    let f0 = op(&pk(7), 0, &[&c1], 2, joined(7, None));
+    let f1 = op(
+        &pk(7),
+        1,
+        &[&f0],
+        3,
+        GovernanceEntry::MemberLeft { heads: Vec::new() },
+    );
+    let g0 = op(&pk(8), 0, &[&f1], 4, joined(8, None));
+    let f2 = op(&pk(7), 2, &[&g0], 5, meta("after leaving"));
+    let k = op(&pk(1), 2, &[&f2], 6, kick(8, 1));
+    let (late, kicked) = (f2.hash(), k.hash());
+    let ops = vec![c0, c1, f0, f1, g0, f2, k];
+    let heads = [&ops[4]];
+    let resumed = resume(&cert, &ops, &heads).expect("on top");
+    assert!(
+        !resumed.applied.contains(&late),
+        "a creator's op after its leave needs an approval"
+    );
+    assert!(
+        !resumed.applied.contains(&kicked),
+        "a co-creator's kick of a seated creator is refused"
+    );
+    assert!(resumed.state.is_counted_member(&pk(8)));
+}

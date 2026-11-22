@@ -28,13 +28,21 @@ pub fn may_rotate_mek(member: &PseudonymKey, state: &GovernanceState) -> bool {
 }
 
 /// Whether `member` holds a creator seat now (plan E3.2 S7s, lead
-/// decisions (17), (25)): one of the cert's creator set
-/// ([`GovernanceState::is_creator`]) and not departed, so a co-creator
-/// removed, banned or gone no longer shows as a creator. A successor
-/// community pins its own cert, so its seats are its own creator set.
+/// decisions (17), (25), (53)): one of the cert's creator set
+/// ([`GovernanceState::is_creator`]), not departed, and never departed.
+/// Creator power is granted by this, never by cert membership alone: a
+/// creator who left gave the seat up for good, a re-join included (its
+/// `MemberLeft` folds a `departed_heads` entry, which a re-join keeps and
+/// the state root covers), and the creator set changes only through a
+/// successor (decisions (24)–(26)). No creator removes, bans or times out
+/// another (decision (53)), so a seat ends only by its holder's leave. A
+/// successor community pins its own cert, so its seats are its own
+/// creator set.
 #[must_use]
 pub fn holds_creator_seat(member: &PseudonymKey, state: &GovernanceState) -> bool {
-    state.is_creator(member) && !state.is_departed(member)
+    state.is_creator(member)
+        && !state.departed_heads.contains_key(member)
+        && !state.is_departed(member)
 }
 
 /// Compute effective permissions for a member in a specific context.
@@ -53,8 +61,8 @@ pub fn compute_permissions(
     state: &GovernanceState,
     now_unix: u64,
 ) -> u64 {
-    // Step 0: Creator always has all permissions
-    if state.is_creator(member) {
+    // Step 0: a seated creator has all permissions (decision (53))
+    if holds_creator_seat(member, state) {
         return ALL;
     }
 
