@@ -404,6 +404,8 @@ mod tests {
             }],
             epoch: 0,
             pending,
+            origin_peer: None,
+            favourite: false,
         }
     }
 

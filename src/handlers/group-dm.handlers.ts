@@ -29,6 +29,8 @@ function applyListEvent(event: GroupDmEvent): void {
       members: i.members.map(memberView),
       epoch: 0,
       pending: true,
+      originPeer: null,
+      favourite: false,
     });
     return;
   }

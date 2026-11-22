@@ -18,6 +18,10 @@ export interface GroupDmView {
   members: GroupDmMemberView[];
   epoch: number;
   pending: boolean;
+  /** The friend whose chat the group was created from (its attached room). */
+  originPeer: string | null;
+  /** In our "Chat Rooms" favourites (local only). */
+  favourite: boolean;
 }
 
 export const groupDmCommands = {

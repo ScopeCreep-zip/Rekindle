@@ -41,18 +41,41 @@ pub async fn list(host: &dyn FriendHost) -> Result<Vec<GroupDmView>, FriendError
             members: members(deps, &invite.roster).await,
             epoch: invite.epoch,
             pending: true,
+            origin_peer: None,
+            favourite: false,
         });
     }
+    let local = local_flags(host).await?;
     for group in groups {
+        let group_id = rekindle_dm::group::group_id_hex(&group.group_id);
+        let (origin_peer, favourite) = local.get(&group_id).cloned().unwrap_or_default();
         views.push(GroupDmView {
-            group_id: rekindle_dm::group::group_id_hex(&group.group_id),
+            group_id,
             name: group.name,
             members: members(deps, group.roster.members()).await,
             epoch: group.epoch,
             pending: false,
+            origin_peer,
+            favourite,
         });
     }
     Ok(views)
+}
+
+/// Each held group's local columns (G7): the chat it came from and
+/// whether it is a favourite, by group id.
+async fn local_flags(
+    host: &dyn FriendHost,
+) -> Result<std::collections::HashMap<String, (Option<String>, bool)>, FriendError> {
+    let owner = state::owner(host)?;
+    state::db_call!(host, "read the groups' local columns", move |conn| {
+        rekindle_db::repo::group_dms::list(conn, &owner).map(|rows| {
+            rows.into_iter()
+                .map(|r| (r.group_id, (r.origin_peer, r.favourite)))
+                .collect()
+        })
+    })
+    .await
 }
 
 /// The group or pending invite `group_id`, as [`list`] shows it.

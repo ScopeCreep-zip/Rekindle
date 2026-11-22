@@ -27,4 +27,9 @@ pub struct GroupDmView {
     pub epoch: u32,
     /// An invite we have not accepted or declined.
     pub pending: bool,
+    /// The friend whose chat the group was created from, whose chat's
+    /// `EnterAttachedRoom` opens it (SK2-G §6); none for an invite.
+    pub origin_peer: Option<String>,
+    /// In our "Chat Rooms" favourites (local only); never for an invite.
+    pub favourite: bool,
 }

@@ -477,6 +477,8 @@ fn friend_samples(add: &mut impl FnMut(&str, Value)) {
             ],
             epoch: 0,
             pending: true,
+            origin_peer: None,
+            favourite: false,
         }),
     );
     add(

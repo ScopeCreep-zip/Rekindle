@@ -336,6 +336,7 @@
   },
   "groupDm.view.pending": {
     "epoch": 0,
+    "favourite": false,
     "groupId": "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f",
     "members": [
       {
@@ -352,6 +353,7 @@
       }
     ],
     "name": "raid night",
+    "originPeer": null,
     "pending": true
   },
   "identity.shown": {
