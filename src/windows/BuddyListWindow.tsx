@@ -8,6 +8,8 @@ import Titlebar from "../components/titlebar/Titlebar";
 import MenuBar from "../components/buddy-list/MenuBar";
 import UserIdentityBar from "../components/buddy-list/UserIdentityBar";
 import TabBar from "../components/buddy-list/TabBar";
+import DownloadsTab from "../components/buddy-list/DownloadsTab";
+import ServersView from "../components/skin-tree/ServersView";
 import SearchBar, { focusSearchInput } from "../components/buddy-list/SearchBar";
 import PendingRequests from "../components/buddy-list/PendingRequests";
 import CoCreatorInvites from "../components/buddy-list/CoCreatorInvites";
@@ -69,6 +71,12 @@ function handleKeyboardShortcuts(e: KeyboardEvent): void {
   } else if (e.altKey && e.key === "2") {
     e.preventDefault();
     switchTab("communities");
+  } else if (e.altKey && e.key === "3") {
+    e.preventDefault();
+    switchTab("servers");
+  } else if (e.altKey && e.key === "4") {
+    e.preventDefault();
+    switchTab("files");
   } else if ((e.ctrlKey || e.metaKey) && e.key === "f") {
     e.preventDefault();
     focusSearchInput();
@@ -100,6 +108,12 @@ function BuddyContent(): JSX.Element {
       </Show>
       <Show when={buddyListUI.activeTab === "communities"}>
         <CommunityListCompact />
+      </Show>
+      <Show when={buddyListUI.activeTab === "servers"}>
+        <ServersView />
+      </Show>
+      <Show when={buddyListUI.activeTab === "files"}>
+        <DownloadsTab />
       </Show>
     </>
   );
@@ -248,7 +262,10 @@ const BuddyListWindow: Component = () => {
             </Show>
             <UserIdentityBar />
             <TabBar />
-            <SearchBar />
+            {/* Search filters the Friends and Communities lists only. */}
+            <Show when={buddyListUI.activeTab === "friends" || buddyListUI.activeTab === "communities"}>
+              <SearchBar />
+            </Show>
             <PairingLinkNotice />
             <div id="main-content" tabindex="-1" class="window-main">
               <BuddyContent />

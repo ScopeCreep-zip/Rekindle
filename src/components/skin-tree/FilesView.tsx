@@ -1,6 +1,5 @@
 import { Component, For, Show, createEffect, createSignal, onMount } from "solid-js";
 import { sendSkinSelection } from "../../actions/skin.actions";
-import type { SkinAction } from "../../ipc/commands/dto_skin_tree";
 import type { TransferRow, TransferState } from "../../ipc/commands/dto_transfer";
 import { loadTransfers } from "../../handlers/transfer.handlers";
 import { transfersState } from "../../stores/transfers.store";
@@ -25,7 +24,10 @@ function statusText(row: TransferRow): string {
   return `${STATE_TEXT.active} ${Math.floor((row.bytesDone * 100) / row.total)}%`;
 }
 
-const FilesView: Component<{ run: (action: SkinAction) => void }> = (props) => {
+/// `onExecute`: Execute for the selected row (a skin tree runs its pack's
+/// OpenDownload; the app's own layout calls the Host's `transfer_open`).
+/// `onSelect`: the row the user selected, or null once it is gone.
+const FilesView: Component<{ onExecute: (row: TransferRow) => void; onSelect?: (row: TransferRow | null) => void }> = (props) => {
   const [selected, setSelected] = createSignal<string | null>(null);
 
   onMount(() => {
@@ -38,12 +40,14 @@ const FilesView: Component<{ run: (action: SkinAction) => void }> = (props) => {
     if (id !== null && !transfersState.rows[id]) {
       setSelected(null);
       void sendSkinSelection(null);
+      props.onSelect?.(null);
     }
   });
 
   // Execute runs on the selection, so the Host holds it before the press.
   const select = (row: TransferRow): Promise<void> => {
     setSelected(row.attachmentId);
+    props.onSelect?.(row);
     return sendSkinSelection({ kind: "transfer", arg: { attachmentId: row.attachmentId, target: row.target } });
   };
 
@@ -71,14 +75,14 @@ const FilesView: Component<{ run: (action: SkinAction) => void }> = (props) => {
                     aria-selected={selected() === id}
                     data-state={r().state}
                     onClick={() => void select(r())}
-                    onDblClick={() => void select(r()).then(() => props.run({ kind: "openDownload" }))}
+                    onDblClick={() => void select(r()).then(() => props.onExecute(r()))}
                     onKeyDown={(e) => {
                       if (e.key === " ") {
                         e.preventDefault();
                         void select(r());
                       } else if (e.key === "Enter") {
                         e.preventDefault();
-                        void select(r()).then(() => props.run({ kind: "openDownload" }));
+                        void select(r()).then(() => props.onExecute(r()));
                       }
                     }}
                   >

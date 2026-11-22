@@ -1,15 +1,20 @@
 @layer components {
 
-  /* The Downloads view (plan E7.2 G12, `skin-tree/FilesView.tsx`): the
-   * Host's transfers as a three-column list on the views node's ground
-   * (bg-dark); a selected row takes the buddy list's selection tint. */
-  .files-view {
+  /* The pack views' lists (`skin-tree/FilesView.tsx`, plan E7.2 G12, and
+   * `skin-tree/ServersView.tsx`, plan SK2-G): rows on the views node's
+   * ground (bg-dark); a selected row takes the buddy list's selection tint. */
+  .files-view,
+  .servers-view {
     display: flex;
     flex: 1;
     flex-direction: column;
     min-height: 0;
     font-family: var(--font-family-xfire);
     font-size: 11px;
+  }
+
+  .servers-view {
+    overflow-y: auto;
   }
 
   .files-view-head,
@@ -21,9 +26,44 @@
     padding: 2px 6px;
   }
 
-  .files-view-head {
+  .servers-view-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px;
+    align-items: center;
+    padding: 2px 6px;
+  }
+
+  .files-view-head,
+  .servers-view-title {
     color: var(--color-xfire-text-dim);
     border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-offline) 30%, transparent);
+  }
+
+  .servers-view-title {
+    padding: 4px 6px 2px;
+  }
+
+  /* What the last Refresh learned (plan E7.2 G4), and the row's Join, Add
+   * to Favorites and Remove: each on its own line. */
+  .servers-view-info,
+  .servers-view-actions {
+    grid-column: 1 / -1;
+  }
+
+  .servers-view-info {
+    color: var(--color-xfire-text-dim);
+  }
+
+  .servers-view-toolbar {
+    padding: 4px 6px;
+  }
+
+  /* The app's own Downloads tab: Start, Stop and Execute under the list. */
+  .downloads-tab-actions {
+    display: flex;
+    gap: 6px;
+    padding: 4px 6px;
   }
 
   .files-view-rows {
@@ -32,26 +72,31 @@
     overflow-y: auto;
   }
 
-  .files-view-row {
+  .files-view-row,
+  .servers-view-row {
     color: var(--color-xfire-text);
     cursor: default;
   }
 
-  .files-view-row:hover {
+  .files-view-row:hover,
+  .servers-view-row:hover {
     background-color: color-mix(in srgb, var(--color-xfire-overlay) 5%, transparent);
   }
 
-  .files-view-row[aria-selected="true"] {
+  .files-view-row[aria-selected="true"],
+  .servers-view-row[aria-selected="true"] {
     background-color: color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
   }
 
   .files-view-size,
-  .files-view-status {
+  .files-view-status,
+  .servers-view-address {
     color: var(--color-xfire-text-dim);
     white-space: nowrap;
   }
 
-  .files-view-empty {
+  .files-view-empty,
+  .servers-view-empty {
     padding: 8px 6px;
     color: var(--color-xfire-text-dim);
   }

@@ -95,7 +95,8 @@
     gap: 6px;
   }
 
-  .infoview-link {
+  .infoview-link,
+  .servers-view-action {
     padding: 0;
     border: 0;
     background: transparent;
@@ -107,7 +108,8 @@
   }
 
   /* A Join the Host refuses (plan E7.15 IV3c): disabled text, still focusable. */
-  .infoview-link[aria-disabled="true"] {
+  .infoview-link[aria-disabled="true"],
+  .servers-view-action[aria-disabled="true"] {
     color: var(--color-xfire-text-disabled);
     text-decoration: none;
     cursor: not-allowed;

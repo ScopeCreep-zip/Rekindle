@@ -11,6 +11,7 @@ import { PackContextMenu, PackMenu, PackMenuBar } from "./PackMenus";
 import { StatusList, StatusText } from "./StatusField";
 import AdArea from "./AdArea";
 import FilesView from "./FilesView";
+import ServersView from "./ServersView";
 
 /** What every node of one window's tree reads. */
 interface Tree {
@@ -283,11 +284,19 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
           <div class="skin-tree-view-content">{tree.communities()}</div>
         </div>
       </Match>
+      <Match when={role().kind === "view" && viewKey() === "servers"}>
+        <div {...attrs}>
+          {children()}
+          <div class="skin-tree-view-content">
+            <ServersView />
+          </div>
+        </div>
+      </Match>
       <Match when={role().kind === "view" && viewKey() === "files"}>
         <div {...attrs}>
           {children()}
           <div class="skin-tree-view-content">
-            <FilesView run={(a) => tree.run(n().id, a)} />
+            <FilesView onExecute={() => tree.run(n().id, { kind: "openDownload" })} />
           </div>
         </div>
       </Match>
