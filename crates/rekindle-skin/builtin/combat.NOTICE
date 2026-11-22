@@ -72,24 +72,11 @@ Dropped
   other skin files (chat, group chat, in-game): 4
   text styles: 90
   window layout: 615
-  lines Windows reads no value from (16):
-    combat.ini: [Knob01] Action.lbtndown (line 351)
-    combat.ini: [Knob01] Action.doubleclick (line 354)
-    combat.ini: [Knob02] Action.lbtndown (line 367)
-    combat.ini: [Knob02] Action.doubleclick (line 370)
-    combat.ini: [Knob03] Action.lbtndown (line 383)
-    combat.ini: [Knob03] Action.doubleclick (line 386)
-    combat.ini: [Knob04] Action.lbtndown (line 397)
-    combat.ini: [Knob04] Action.doubleclick (line 400)
-    combat.ini: [DownloadBlink] Action.DownloadComplete (line 410)
-    combat.ini: [DownloadBlink] Action.onfilesfocus (line 412)
-    combat.ini: [DownloadBlink] Action.onfileskillfocus (line 414)
+  lines Windows reads no value from (3):
     combat.ini: [StatusEdit] Text.bold (line 557)
-    combat.ini: [InfoViewSwitchIn] Action.click (line 807)
     combat.ini: [InfoViewSwitchIn] Skin.X (line 815)
-    combat.ini: [InfoviewSwitchOut] Action.click (line 830)
     combat.ini: [InfoviewSwitchOut] Skin.X (line 838)
-  files not read (96):
+  files not read (82):
     CombatGroupChatInfoSkin.ini
     CombatInGameMainSkin.ini
     CombatInGamePopUp.ini
@@ -154,22 +141,8 @@ Dropped
     chat/c_chat_top_right.gif
     chat/c_chat_x_hover.gif
     chat/c_chat_x_norm.gif
-    infoview/c_infoview_bottomleft.gif
-    infoview/c_infoview_bottommiddle.gif
-    infoview/c_infoview_bottomright.gif
     infoview/c_infoview_button_join_disabled.gif
-    infoview/c_infoview_button_join_down.gif
-    infoview/c_infoview_button_join_hover.gif
-    infoview/c_infoview_button_join_norm.gif
     infoview/c_infoview_button_voicechat_disabled.gif
-    infoview/c_infoview_button_voicechat_down.gif
-    infoview/c_infoview_button_voicechat_hover.gif
-    infoview/c_infoview_button_voicechat_norm.gif
-    infoview/c_infoview_leftmiddle.gif
-    infoview/c_infoview_rightmiddle.gif
-    infoview/c_infoview_topleft.gif
-    infoview/c_infoview_topmiddle.gif
-    infoview/c_infoview_topright.gif
     infoview/icon_mic_green.gif
     infoview/icon_mic_grey.gif
     infoview/icon_speaker_green.gif

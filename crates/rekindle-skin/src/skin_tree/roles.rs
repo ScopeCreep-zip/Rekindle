@@ -186,12 +186,12 @@ fn tab(k: &str) -> Option<()> {
 fn grip(k: &str) -> Option<&str> {
     k.strip_prefix("mainresizegripper")
         .or_else(|| k.strip_prefix("popupresizegripper"))
-        // The info popup's grips: Classic's `InfoInfoResizeRight` on its
-        // `InfoResizeRight` tile (`xfirepopups.xml`), Combat's
-        // `[InfoGripperTR]`/`[InfoGripperBR]` (`CombatInfoSkin.ini:111,117`).
+        // The info popup's grip: Classic's `InfoInfoResizeRight` on its
+        // `InfoResizeRight` tile (`xfirepopups.xml`, `ResizeR`,
+        // `xfirecomponents.xml:1862-1870`); its `InfoGripperTR`/`BR` are
+        // corner art ([`named_shown`]).
         .or_else(|| k.strip_prefix("infoinforesize"))
         .or_else(|| k.strip_prefix("inforesize"))
-        .or_else(|| k.strip_prefix("infogripper"))
         .or_else(|| k.strip_prefix("resizegripper"))
         .or_else(|| k.strip_prefix("resize"))
         .or_else(|| k.strip_prefix("gripper"))
@@ -359,6 +359,21 @@ fn named_shown(k: &str, f: &Facts<'_>) -> Option<NodeRole> {
         // `c_background.gif`): window art, its bitmap absent from the pack
         // (spec A8: an undefined bitmap lays nothing).
         | "backdrop" => Some(R::Decor),
+        // The info popup's corner art, not a grip (SK2-P1f): Classic's
+        // `InfoInfoGripperTR`/`BR` (`xfirecomponents.xml:1962-1977`),
+        // xSLIMFIRE's (`xSLIMFIREcomponents.xml:1450-1468`) and Combat's
+        // `[InfoGripperTR]`/`[InfoGripperBR]` (`CombatInfoSkin.ini:111-121`)
+        // are `Hilight` art with no trigger and no `Cursor`, where every
+        // grip Xfire resizes by wires its own (`InfoInfoResizeRight`
+        // `ResizeR`, `xfirecomponents.xml:1862-1870`; Symbiosis's
+        // `MainResizeGripperTL` `ResizeUL`, `Components/MainWindow.xml:62-66`),
+        // and `Xfire.exe` names no grip tile outside its embedded skin.
+        // Combat's `INFOVIEWGRIPPERTOPRIGHT` is defined neither by the pack
+        // nor by that embedded skin (`shadowthemes.xml`), so it lays nothing
+        // (spec A8).
+        "infogrippertr" | "infogripperbr" | "infoinfogrippertr" | "infoinfogripperbr" => {
+            Some(R::Decor)
+        }
         "tabheader" | "tabs" | "tabbuttonbar" => Some(R::TabStrip),
         "tabcontrol" if f.children.iter().any(|c| key(c) == "knob") => Some(R::TabStrip),
         // Symbiosis's one list for every tab (lead decision 9): the views,

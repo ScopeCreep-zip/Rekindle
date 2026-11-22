@@ -62,3 +62,31 @@ fn an_unknown_edge_is_refused_unless_the_pack_wires_the_grip() {
     // Never a guessed corner: the name implies no trigger at all.
     assert_eq!(implied("Gripper"), Some(Role::Acts(NodeRole::Button, None)));
 }
+
+/// SK2-P1f: the info popup's `InfoGripperTR`/`BR` are corner art, not
+/// grips: every pack draws them with no trigger and no `Cursor` (Classic's
+/// `InfoInfoGripperTR`, `xfirecomponents.xml:1962-1977`; Combat's
+/// `CombatInfoSkin.ini:111-121`), while the popup's resize is its own wired
+/// `InfoResizeRight` (`ResizeR`).
+#[test]
+fn info_popup_grippers_are_corner_art() {
+    for (name, component) in [
+        ("InfoGripperTR", "InfoInfoGripperTR"),
+        ("InfoGripperBR", "InfoInfoGripperBR"),
+        ("InfoGripperTR", "InfoGripperTR"),
+        ("InfoGripperBR", "InfoGripperBR"),
+    ] {
+        let facts = Facts {
+            has_art: true,
+            class: Some("Tile"),
+            children: &[],
+        };
+        assert_eq!(
+            role(name, Some(component), None, &facts),
+            Some(Role::Shows(NodeRole::Decor)),
+            "{name} {component}"
+        );
+        assert_eq!(check_grip(name, Some(component), &[]), Ok(()), "{name}");
+    }
+    assert_eq!(implied("InfoInfoResizeRight"), Some(resizes(Edge::Right)));
+}
