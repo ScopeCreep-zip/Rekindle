@@ -1,8 +1,8 @@
-import { Component, For, JSX, createEffect, createSignal } from "solid-js";
+import { Component, For, JSX, Show, createEffect, createSignal } from "solid-js";
 import { DropdownMenu } from "@kobalte/core/dropdown-menu";
 import { authState } from "../../stores/auth.store";
 import { handleSetStatusMessage } from "../../actions/auth.actions";
-import { isNetworkConnected, networkLabel, trackNetworkStatus } from "../../stores/network.store";
+import { isNetworkConnected, networkLabel, networkState, routePausedText, trackNetworkStatus } from "../../stores/network.store";
 import StatusDot from "../status/StatusDot";
 import { handleSelectStatus, statusOptions } from "../status/StatusPicker";
 
@@ -10,11 +10,21 @@ import { handleSelectStatus, statusOptions } from "../status/StatusPicker";
  * N3 (design §3), the pack's `StatusEdit`: type an away message and press
  * Enter to set it. While the node is detached from the network the field
  * says so ("Connecting...", Xfire showed connecting in the status field),
- * which replaces the network banner.
+ * which replaces the network banner. While the Host says our inbound route
+ * is paused (owner decision 65, plan RV1) the field says that instead, in
+ * the app layout's status line words and ground, with no dismiss, until the
+ * Host lifts it: the pack's status field is the tree's status area. The
+ * field is the tree's only way to set an away message, so the input stays
+ * (decision 49): a press passes through the line to it, and the line steps
+ * aside while the input has focus.
  */
 export const StatusText: Component<{ attrs: Record<string, unknown> }> = (props) => {
   trackNetworkStatus();
   const [value, setValue] = createSignal("");
+  // The input has focus: the paused line steps aside while the away message
+  // is typed (focus events, not :focus-within, which WebKit leaves unmatched
+  // while the window lacks system focus).
+  const [editing, setEditing] = createSignal(false);
   createEffect(() => setValue(authState.statusMessage ?? ""));
   const shown = (): string =>
     isNetworkConnected()
@@ -22,8 +32,14 @@ export const StatusText: Component<{ attrs: Record<string, unknown> }> = (props)
       : networkLabel();
   return (
     <div {...props.attrs} class="skin-status">
+      <Show when={networkState.routePaused && !editing()}>
+        <div class="skin-status-paused" role="alert">
+          <span class="skin-status-paused-text">{routePausedText(networkState.routePauseCause)}</span>
+        </div>
+      </Show>
       <input
         class="skin-status-edit"
+        title={networkState.routePaused ? routePausedText(networkState.routePauseCause) : undefined}
         aria-label="Status message"
         placeholder={shown()}
         value={value()}
@@ -32,7 +48,11 @@ export const StatusText: Component<{ attrs: Record<string, unknown> }> = (props)
           if (e.key === "Enter") void handleSetStatusMessage(value());
           else if (e.key === "Escape") setValue(authState.statusMessage ?? "");
         }}
-        onBlur={() => setValue(authState.statusMessage ?? "")}
+        onFocus={() => setEditing(true)}
+        onBlur={() => {
+          setEditing(false);
+          setValue(authState.statusMessage ?? "");
+        }}
       />
     </div>
   );

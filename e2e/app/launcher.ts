@@ -59,13 +59,18 @@ export interface AppCapability {
    * WL2, 2026-11-20).
    */
   display: "native" | "x11";
+  /**
+   * More environment for the app: a debug build's test knob a spec's whole
+   * config needs (`REKINDLE_ROUTE_BUDGET_CAPACITY`, wdio.budget.conf.ts).
+   */
+  env?: Record<string, string>;
 }
 
-/** The environment `caps`' app launches with (`AppCapability.display`). */
+/** The environment `caps`' app launches with (`AppCapability.display`, `.env`). */
 function displayEnv(where: string, caps: AppCaps): Record<string, string> {
   const wanted = caps[APP_CAPABILITY];
   if (!wanted) throw new Error(`${where}: capability "${APP_CAPABILITY}" is missing`);
-  return wanted.display === "x11" && process.platform === "linux" ? { GDK_BACKEND: "x11" } : {};
+  return { ...(wanted.display === "x11" && process.platform === "linux" ? { GDK_BACKEND: "x11" } : {}), ...(wanted.env ?? {}) };
 }
 
 /** Connection options the runner reads from a capability (standalone) or an instance (multiremote). */

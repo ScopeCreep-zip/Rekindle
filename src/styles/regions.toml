@@ -163,6 +163,7 @@
 '.skin-name-edit' = { on = ["--color-xfire-bg-input"] }
 '.skin-status-edit' = { on = ["--color-xfire-bg-status"] }
 '.skin-status-edit::placeholder' = { on = ["--color-xfire-bg-status"] }
+'.skin-status-paused-text' = { on = ["--color-xfire-danger 30% over --color-xfire-bg-dark"] }
 '.skin-ad-banner' = { on = ["--color-xfire-accent"] }
 # The Downloads view (plan E7.2 G12, theme/24-files-view.css): rows on the
 # views node's bg-dark, a selected row on the buddy list's accent tint.
