@@ -168,6 +168,9 @@ fn login_window_is_pre_auth_only() {
         "lifecycle_current",
         "list_identities",
         "login",
+        // A device login skin that fails to apply reports itself (SK2-T1);
+        // before unlock nothing is reverted, the Host only logs it.
+        "report_skin_apply_failed",
         "show_buddy_list",
         // The login window's event stream; its audience is lifecycle
         // transitions only (`event_dispatch::WebviewEvent::audience`).

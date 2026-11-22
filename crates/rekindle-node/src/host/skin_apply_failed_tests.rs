@@ -17,7 +17,7 @@ use crate::host::direct_call_tests::{capture, Captured};
 use crate::host::Host;
 
 // No 16-hex run, which the log scrubber would cut.
-const WINDOW: &str = "chat-ann";
+const REPORTING_WINDOW: &str = "chat-ann";
 
 fn image() -> SkinApplyFailure {
     SkinApplyFailure::ImageDecode {
@@ -81,17 +81,17 @@ async fn a_report_out_of_bounds_is_refused() {
     for request in [
         failed("", builtin::DEFAULT, image()),
         failed(&long, builtin::DEFAULT, image()),
-        failed(WINDOW, "", image()),
-        failed(WINDOW, &"p".repeat(129), image()),
+        failed(REPORTING_WINDOW, "", image()),
+        failed(REPORTING_WINDOW, &"p".repeat(129), image()),
         failed(
-            WINDOW,
+            REPORTING_WINDOW,
             builtin::DEFAULT,
             SkinApplyFailure::ImageDecode {
                 path: String::new(),
             },
         ),
         failed(
-            WINDOW,
+            REPORTING_WINDOW,
             builtin::DEFAULT,
             SkinApplyFailure::SheetError {
                 detail: "d".repeat(1025),
@@ -130,11 +130,16 @@ async fn a_report_without_a_trial_is_told_and_reverts_nothing() {
     create_ann(&host).await;
     let before = library(&host).await.active;
     let mut events = host.ctx.journal.subscribe(None);
-    let unlocked = report(&host, failed(WINDOW, builtin::DEFAULT, image())).await;
+    let unlocked = report(&host, failed(REPORTING_WINDOW, builtin::DEFAULT, image())).await;
     assert_eq!(status_of(&unlocked), None, "{unlocked:?}");
     assert_eq!(
         next_failed(&mut events).await,
-        (WINDOW.into(), builtin::DEFAULT.into(), image(), false)
+        (
+            REPORTING_WINDOW.into(),
+            builtin::DEFAULT.into(),
+            image(),
+            false
+        )
     );
     assert_eq!(library(&host).await.active, before);
 }
@@ -174,12 +179,12 @@ async fn a_skin_on_trial_that_fails_is_reverted_and_logged() {
     let captured = Captured::default();
     let answer = {
         let _armed = capture(&captured);
-        report(&host, failed(WINDOW, &id, image())).await
+        report(&host, failed(REPORTING_WINDOW, &id, image())).await
     };
     assert_eq!(status_of(&answer), None, "{answer:?}");
     assert_eq!(
         next_failed(&mut events).await,
-        (WINDOW.into(), id.clone(), image(), true)
+        (REPORTING_WINDOW.into(), id.clone(), image(), true)
     );
     let after = library(&host).await;
     assert!(after.trial.is_none(), "the trial ended");
@@ -191,5 +196,5 @@ async fn a_skin_on_trial_that_fails_is_reverted_and_logged() {
         .find(|l| l.contains("a window could not apply a skin"))
         .unwrap_or_else(|| panic!("no WARN line in {log}"));
     assert!(line.contains("WARN"), "{line}");
-    assert!(line.contains(WINDOW), "{line}");
+    assert!(line.contains(REPORTING_WINDOW), "{line}");
 }
