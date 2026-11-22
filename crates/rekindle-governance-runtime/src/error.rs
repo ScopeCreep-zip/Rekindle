@@ -24,6 +24,12 @@ pub enum GovernanceRuntimeError {
     #[error("this device holds no op key for community {0}")]
     DeviceOpKeyMissing(String),
 
+    /// The merged device set holds no endorsement of this device's op key
+    /// in the community, so no record is ours to write its ops to (ADR
+    /// 0022 rule 3): refused, never written to `M(p)` instead.
+    #[error("this device's op key is not endorsed in community {0}")]
+    DeviceUnendorsed(String),
+
     #[error("not attached to Veilid")]
     NotAttached,
 

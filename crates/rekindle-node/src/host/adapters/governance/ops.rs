@@ -270,8 +270,9 @@ impl HostGovernance {
         rekindle_governance_runtime::op_walk::fetch_from_log(&*pool, logs, op_ref).await
     }
 
-    /// Publish `encoded` on our member record's op log (the cert's record
-    /// for the creator, else our `MemberJoined`'s) and wait for what
+    /// Publish `encoded` on our device's op record (ADR 0022 rule 3,
+    /// `device_signer::own_op_record`: `M(p)` for the first device, else
+    /// the `M(p,d)` our key's endorsement binds) and wait for what
     /// `landing` names: its first attempt (a queued op stands; community
     /// create only), its landing on `M`/2 and `M`/3 within the command's
     /// deadline, or only its row on the stream.
@@ -282,10 +283,8 @@ impl HostGovernance {
         landing: rekindle_governance_runtime::OpLanding,
     ) -> Result<rekindle_governance_runtime::OpOutcome, GovernanceRuntimeError> {
         let state = self.governance_state_impl(community_id).unwrap_or_default();
-        let me = op_log::own_member(self, community_id, &state)?;
-        let record = me
-            .record
-            .ok_or(GovernanceRuntimeError::MemberRecordMissing(me.hex))?;
+        let record =
+            rekindle_governance_runtime::device_signer::own_op_record(self, community_id, &state)?;
         let ops = self
             .ctx
             .outbox
@@ -362,14 +361,15 @@ impl HostGovernance {
     }
 
     /// The `governance_op` stream's send: append `op` to `record`'s op log
-    /// with `K_M(p)` from the vault.
+    /// with that record's owner (`op_record_writer`: `K_M(p,d)` from the
+    /// device vault for a second device's `M(p,d)`, else `K_M(p)`).
     pub(crate) async fn append_own_op(
         &self,
         community_id: &str,
         record: &str,
         op: Vec<u8>,
     ) -> Result<(), String> {
-        let writer = self.member_record_writer(community_id)?;
+        let writer = self.op_record_writer(community_id, record)?;
         let pool = self
             .transport()
             .map_err(|e| e.to_string())?

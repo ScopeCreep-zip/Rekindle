@@ -211,7 +211,11 @@ async fn an_op_written_through_the_write_path_judges_effective_in_the_merged_vie
             device_signer::first_endorsement(&p, COMMUNITY, &d, record, owner).unwrap(),
         ),
     };
-    let state = merge::merge(&cert, &[]);
+    // A held genesis op seeds the cert's device in a merge (the write
+    // lands on the record that endorsement binds); with none held, the
+    // fixture seeds it as that merge would.
+    let mut state = merge::merge(&cert, &[]);
+    state.devices.seed_genesis(COMMUNITY, &cert);
 
     let mut deps = MockGovernanceRuntimeDeps::new();
     let lock = Arc::new(tokio::sync::Mutex::new(()));

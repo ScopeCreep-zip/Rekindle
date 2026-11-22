@@ -291,9 +291,10 @@ async fn write_with<D: GovernanceRuntimeDeps>(
         .governance_state(community_id)
         .ok_or_else(|| GovernanceRuntimeError::GovernanceStateMissing(community_id.to_string()))?;
 
-    // Our member record M(p), where our op log lives: the cert's for the
-    // creator, our `MemberJoined` for a joiner (S6), in the state this
-    // write builds on. A join the merge never admitted has none: its
+    // Our member record M(p): the cert's for the creator, our
+    // `MemberJoined` for a joiner (S6), in the state this write builds on;
+    // it answers admission only, the op's record is our device's (below).
+    // A join the merge never admitted has none: its
     // leave withdraws before the entry's validation, authoring nothing
     // (plan SU1); any other op is validated first (a malformed entry is
     // refused as such, F3h), then refused for the missing record.
@@ -321,8 +322,16 @@ async fn write_with<D: GovernanceRuntimeDeps>(
     };
     refuse_invalid(&pseudo, &entry, &gov_state)?;
     let me = op_log::own_member(deps, community_id, &gov_state)?;
-    let Some(record) = me.record else {
+    if me.record.is_none() {
         return Ok(Written::NotAdmitted(me.hex));
+    }
+    // The record this device's op chain lives on (ADR 0022 rule 3): a
+    // `MemberJoined`, the device's first op, carries its own endorsement
+    // of the record it names; any later op lands on the record our key's
+    // endorsement binds in the state ([`device_signer::own_op_record`]).
+    let record = match &entry {
+        GovernanceEntry::MemberJoined { member_record, .. } => member_record.clone(),
+        _ => device_signer::own_op_record(deps, community_id, &gov_state)?,
     };
 
     // The pinned GenesisCert names the creator; S5 writes it at origin
@@ -475,3 +484,7 @@ fn refuse_invalid(
 #[cfg(test)]
 #[path = "apply_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "device_record_tests.rs"]
+mod device_record_tests;

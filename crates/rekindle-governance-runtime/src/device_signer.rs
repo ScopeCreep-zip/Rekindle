@@ -12,6 +12,7 @@
 //! paths); re-enrolment is the `ReEnrolDevice` intent's (S7d-keys.10).
 
 use rekindle_governance::device_writer::{self, DeviceRecord};
+use rekindle_governance::state::GovernanceState;
 use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_types::governance::DeviceEndorsement;
 use rekindle_types::id::PseudonymKey;
@@ -45,6 +46,38 @@ pub fn device_op_key<D: GovernanceRuntimeDeps + ?Sized>(
     deps.rng().fill(secret.as_mut_slice());
     deps.store_device_op_key(community, &secret)?;
     Ok(SigningKey::from_bytes(&secret))
+}
+
+/// Our op record in `community`: the record our device key's endorsement
+/// binds in `state`'s device set (ADR 0022 rule 3), where this device's
+/// op chain lives: `M(p)` for the member's first device (its endorsement,
+/// [`first_endorsement`], names `M(p)`), `M(p,d)` for any other. The
+/// write path stores our ops under it and the outbox publishes them on it.
+///
+/// # Errors
+/// No membership or pseudonym, no stored device key
+/// ([`GovernanceRuntimeError::DeviceOpKeyMissing`]), or no endorsement of
+/// it in `state` ([`GovernanceRuntimeError::DeviceUnendorsed`]): an
+/// unendorsed key's ops land nowhere, never on `M(p)` by default.
+pub fn own_op_record<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community: &str,
+    state: &GovernanceState,
+) -> Result<String, GovernanceRuntimeError> {
+    let (p, _) = crate::op_log::own_pseudonym(deps, community)?;
+    let device = device_op_key(deps, community, false)?;
+    op_record_of(state, &p, &device.verifying_key().to_bytes())
+        .ok_or_else(|| GovernanceRuntimeError::DeviceUnendorsed(community.to_string()))
+}
+
+/// The record `p`'s endorsement of device key `key` binds in `state`, the
+/// lowest incarnation's (rule 6's order; rule 3 gives a key one record).
+#[must_use]
+pub fn op_record_of(state: &GovernanceState, p: &PseudonymKey, key: &[u8; 32]) -> Option<String> {
+    let md = state.devices.member(p)?;
+    (md.endorsements.iter())
+        .find(|((_, k), _)| k == key)
+        .map(|(_, e)| e.device_record.clone())
 }
 
 /// The stored key, `None` when one may be minted (this device's first op
