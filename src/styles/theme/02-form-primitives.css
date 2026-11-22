@@ -396,6 +396,12 @@
     white-space: nowrap;
   }
 
+  /* A member's custom status from their card (plan E3.4 S6). */
+  .member-custom-status {
+    font-size: 0.65rem;
+    color: var(--color-xfire-text-dim);
+  }
+
   .member-game-server {
     font-size: 0.6rem;
     color: var(--color-xfire-text-dim);

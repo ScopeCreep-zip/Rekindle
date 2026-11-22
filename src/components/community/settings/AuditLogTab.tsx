@@ -1,6 +1,6 @@
 import { Component, For, Show, createSignal, createEffect } from "solid-js";
 import { handleGetAuditLog } from "../../../actions/community.actions";
-import { truncateKey, formatDateTimeSecs, formatAction } from "../../../utils/formatting";
+import { formatDateTimeSecs, formatAction } from "../../../utils/formatting";
 import type { CommunityAuditEntry } from "../../../ipc/commands/dto";
 
 interface AuditLogTabProps {
@@ -50,9 +50,9 @@ const AuditLogTab: Component<AuditLogTabProps> = (props) => {
             <div class="audit-log-entry">
               <div class="audit-log-action">{formatAction(entry.action)}</div>
               <div class="audit-log-meta">
-                <span class="audit-log-actor">{truncateKey(entry.actorPseudonym)}</span>
-                <Show when={entry.target}>
-                  <span class="audit-log-target">{truncateKey(entry.target!)}</span>
+                <span class="audit-log-actor">{entry.actorName}</span>
+                <Show when={entry.targetName}>
+                  {(name) => <span class="audit-log-target">{name()}</span>}
                 </Show>
                 <Show when={entry.details}>
                   <span class="audit-log-details">{entry.details}</span>

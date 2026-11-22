@@ -9,7 +9,6 @@ import type { DeviceStatus } from "../ipc/commands/community";
 import type { Message } from "../stores/chat.store";
 import type { AutoModRule, Community, Channel, Expression, Member, MemberLocation } from "../stores/community.store";
 import type { MemberGroup, TargetModeration } from "../ipc/commands/dto";
-import { truncateKey } from "./formatting";
 
 /** Convert a single backend FriendInfo to a frontend Friend. */
 export function transformFriend(f: FriendInfo): Friend {
@@ -181,6 +180,9 @@ export function transformCommunityDetail(c: {
   onboardingComplete?: boolean;
   weAreCreator: boolean;
   deviceStatus: DeviceStatus;
+  myDisplayName: string;
+  myCardName?: string;
+  myCustomStatus?: string;
   myBio?: string | null; myPronouns?: string | null;
   myThemeColor?: number | null; myBadges?: string[];
   removed?: {
@@ -207,6 +209,9 @@ export function transformCommunityDetail(c: {
     onboardingComplete: c.onboardingComplete ?? true,
     weAreCreator: c.weAreCreator,
     deviceStatus: c.deviceStatus,
+    myDisplayName: c.myDisplayName,
+    myCardName: c.myCardName ?? null,
+    myCustomStatus: c.myCustomStatus ?? null,
     expressions: [],
     automodRules: [],
     myBio: c.myBio ?? null,
@@ -228,7 +233,7 @@ export function transformCommunityMap(
 
 /** Backend member DTO → store Member. */
 export function transformMember(m: {
-  pseudonymKey: string; displayName: string; roleIds: string[];
+  pseudonymKey: string; displayName: string; fingerprint: string; customStatus?: string; roleIds: string[];
   displayRole: string; status: string; timeoutUntil: number | null;
   gameInfo?: GameInfo | null;
   bio?: string | null; pronouns?: string | null;
@@ -240,9 +245,10 @@ export function transformMember(m: {
   outranks: boolean;
 }): Member {
   return {
-    // A member whose card is not read yet shows its short pseudonym, as
-    // Matrix shows the user id without a displayname (plan E3.2 F9-2).
-    pseudonymKey: m.pseudonymKey, displayName: m.displayName || truncateKey(m.pseudonymKey),
+    // The Host's name, never empty: the card name, else the short
+    // fingerprint (plan E3.4 S6); the window computes no name.
+    pseudonymKey: m.pseudonymKey, displayName: m.displayName, fingerprint: m.fingerprint,
+    customStatus: m.customStatus ?? null,
     roleIds: m.roleIds,
     displayRole: m.displayRole, status: m.status, timeoutUntil: m.timeoutUntil ?? null,
     gameInfo: m.gameInfo ?? null,

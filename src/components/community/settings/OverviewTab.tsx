@@ -6,6 +6,7 @@ import { ICON_SAVE, ICON_COPY } from "../../../icons";
 import FormField from "../../common/FormField";
 import SuccessorSection from "./SuccessorSection";
 import CommunityDeviceStatus from "../CommunityDeviceStatus";
+import MyNameSection from "./MyNameSection";
 
 interface OverviewTabProps {
   community: Community;
@@ -87,6 +88,7 @@ const OverviewTab: Component<OverviewTabProps> = (props) => {
           </button>
         </div>
       </FormField>
+      <MyNameSection communityId={props.community.id} />
       <SuccessorSection communityId={props.community.id} />
       <div class="settings-section-title">This device</div>
       <CommunityDeviceStatus communityId={props.community.id} />

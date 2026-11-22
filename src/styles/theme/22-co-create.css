@@ -33,4 +33,9 @@
     background: color-mix(in srgb, var(--color-xfire-success) 30%, transparent);
     color: var(--color-xfire-success);
   }
+
+  /* Our name in a community (Settings, Overview: MyNameSection): the field takes the row. */
+  .my-name-row .form-input {
+    flex: 1;
+  }
 }

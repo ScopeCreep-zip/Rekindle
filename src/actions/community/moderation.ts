@@ -1,5 +1,5 @@
 import { commands } from "../../ipc/commands";
-import type { CommunityBanView } from "../../ipc/commands/dto";
+import type { CommunityAuditEntry, CommunityBanView } from "../../ipc/commands/dto";
 import { setCommunityState, communityState } from "../../stores/community.store";
 import { addToast } from "../../stores/toast.store";
 
@@ -132,7 +132,7 @@ export async function handleGetAuditLog(
   communityId: string,
   beforeTimestamp?: number,
   limit: number = 50,
-): Promise<{ action: string; actorPseudonym: string; target: string | null; details: string | null; timestamp: number }[]> {
+): Promise<CommunityAuditEntry[]> {
   try {
     return await commands.getAuditLog(communityId, beforeTimestamp, limit);
   } catch (e) {

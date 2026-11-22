@@ -86,6 +86,12 @@ export const communityCommands = {
       onboardingComplete: boolean;
       /** We hold a creator seat now (`CommunityView::we_are_creator`); re-read on `effectivePermissionsChanged` naming us. */
       weAreCreator: boolean;
+      /** Our name here, never empty: our per-community name, else our short fingerprint (plan E3.4 S6). */
+      myDisplayName: string;
+      /** Our per-community name as set; absent when unset (the set-name form's prefill). */
+      myCardName?: string;
+      /** Our card's custom status; absent when none. */
+      myCustomStatus?: string;
       myBio?: string | null;
       myPronouns?: string | null;
       myThemeColor?: number | null;
@@ -104,7 +110,12 @@ export const communityCommands = {
   getCommunityMembers: (communityId: string) =>
     hostInvoke<{
       pseudonymKey: string;
+      /** Never empty: the member's per-community name, else their short fingerprint (plan E3.4 S6). */
       displayName: string;
+      /** Always the short pseudonym fingerprint ("a1b2 c3d4"), for a secondary line or tooltip. */
+      fingerprint: string;
+      /** Their card's custom status; absent when none. */
+      customStatus?: string;
       roleIds: string[];
       displayRole: string;
       status: string;
@@ -147,7 +158,7 @@ export const communityCommands = {
     bio: string | null,
     pronouns: string | null,
     themeColor: number | null,
-    badges: string[],
+    badges: string[] | null,
     avatarRef: string | null,
     bannerRef: string | null,
     customStatus: string | null,
@@ -161,8 +172,8 @@ export const communityCommands = {
     bannerRef,
     customStatus,
   }),
-  /** Our name in this community, on our card (plan E3.4 S6); `""` clears
-   *  it (the Host then shows our short pseudonym fingerprint). */
+  /** Our name in this community (`CommunitySetDisplayName`, the Host's review
+   *  SetCommunityDisplayName); `""` clears it and the fingerprint shows. */
   setCommunityDisplayName: (communityId: string, displayName: string) =>
     hostInvoke<void>("set_community_display_name", { communityId, displayName }),
   createCommunity: (name: string) =>

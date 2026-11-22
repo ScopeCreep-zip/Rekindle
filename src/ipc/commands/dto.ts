@@ -30,7 +30,11 @@ export interface GameInfo {
 export interface CommunityAuditEntry {
   action: string;
   actorPseudonym: string;
+  /** The actor's name as the Host states it, never empty (card name, else short fingerprint; E3.4 S6d). */
+  actorName: string;
   target: string | null;
+  /** The target's name as the Host states it; absent when the target is not a counted member. */
+  targetName?: string;
   details: string | null;
   timestamp: number;
 }

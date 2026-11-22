@@ -8,7 +8,6 @@ import type { GameInfo } from "../../ipc/commands/dto";
 import { EVERYONE_ROLE_ID, communityState } from "../../stores/community.store";
 import StatusDot from "../status/StatusDot";
 import RoleTag from "./RoleTag";
-import { truncateKey } from "../../utils/formatting";
 import { commands } from "../../ipc/commands";
 import { handleLaunchGame } from "../../actions/game.actions";
 import { notJoinableText } from "../../utils/joinable_text";
@@ -76,11 +75,13 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
   const myCommunity = () => communityState.communities[props.communityId];
   const initialBio = () => myCommunity()?.myBio ?? "";
   const initialPronouns = () => myCommunity()?.myPronouns ?? "";
+  const initialCustomStatus = () => myCommunity()?.myCustomStatus ?? "";
   const initialThemeColorHex = () => formatColorHex(myCommunity()?.myThemeColor ?? null);
   const initialBadges = () => (myCommunity()?.myBadges ?? []).join(", ");
 
   const [bioDraft, setBioDraft] = createSignal(initialBio());
   const [pronounsDraft, setPronounsDraft] = createSignal(initialPronouns());
+  const [customStatusDraft, setCustomStatusDraft] = createSignal(initialCustomStatus());
   const [themeColorDraft, setThemeColorDraft] = createSignal(initialThemeColorHex());
   const [badgesDraft, setBadgesDraft] = createSignal(initialBadges());
 
@@ -197,6 +198,7 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
   function startEditing(): void {
     setBioDraft(initialBio());
     setPronounsDraft(initialPronouns());
+    setCustomStatusDraft(initialCustomStatus());
     setThemeColorDraft(initialThemeColorHex());
     setBadgesDraft(initialBadges());
     setAvatarRefDraft(myCommunity()?.myAvatarRef ?? null);
@@ -227,17 +229,25 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
       return;
     }
     const themeColor = parseColorHex(themeColorDraft());
+    // Only what changed goes to the Host (plan E3.4 S6b): null keeps a
+    // field, an empty value clears it; the card is the Host's.
+    const c = myCommunity();
+    const text = (next: string, was: string | null | undefined): string | null => (next === (was ?? "") ? null : next);
+    const ref = (next: string | null, was: string | null | undefined): string | null =>
+      next === (was ?? null) ? null : (next ?? "");
+    const wasBadges = c?.myBadges ?? [];
     setSaving(true);
     try {
-      const ok = await handleUpdateCommunityProfile(
-        props.communityId,
-        bio.length > 0 ? bio : null,
-        pronouns.length > 0 ? pronouns : null,
-        themeColor,
-        badges,
-        avatarRefDraft(),
-        bannerRefDraft(),
-      );
+      const ok = await handleUpdateCommunityProfile(props.communityId, {
+        bio: text(bio, c?.myBio),
+        pronouns: text(pronouns, c?.myPronouns),
+        // A theme colour has no clear form: only a new colour is sent.
+        themeColor: themeColor !== null && themeColor !== (c?.myThemeColor ?? null) ? themeColor : null,
+        badges: badges.length === wasBadges.length && badges.every((b, i) => b === wasBadges[i]) ? null : badges,
+        avatarRef: ref(avatarRefDraft(), c?.myAvatarRef),
+        bannerRef: ref(bannerRefDraft(), c?.myBannerRef),
+        customStatus: text(customStatusDraft().trim(), c?.myCustomStatus),
+      });
       if (ok) setEditing(false);
     } finally {
       setSaving(false);
@@ -253,13 +263,16 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
     <Popover.Portal>
       <Popover.Content class="profile-popup" style={accentStyle()}>
         <div class="profile-popup-name">{props.member.displayName}</div>
-        <div class="profile-popup-key">{truncateKey(props.member.pseudonymKey)}</div>
+        <div class="profile-popup-key">{props.member.fingerprint}</div>
         <div class="profile-popup-status">
           <StatusDot status={props.member.status || "online"} />
           <span>{props.member.status || "online"}</span>
         </div>
         <Show when={props.member.status === "offline" && (props.member.lastActive ?? 0) > 0}>
           <div class="profile-popup-lastseen">Last seen {formatLastSeen(props.member.lastActive!)}</div>
+        </Show>
+        <Show when={props.member.customStatus}>
+          <div class="profile-popup-custom-status">{props.member.customStatus}</div>
         </Show>
         <Show when={props.member.pronouns}>
           <div class="profile-popup-pronouns">{props.member.pronouns}</div>
@@ -419,6 +432,16 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
                     </button>
                   </Show>
                 </div>
+              </label>
+              <label class="profile-popup-edit-label">
+                <span>Custom status</span>
+                <input
+                  class="profile-popup-edit-input"
+                  type="text"
+                  value={customStatusDraft()}
+                  onInput={(e) => setCustomStatusDraft(e.currentTarget.value)}
+                  placeholder="What are you up to?"
+                />
               </label>
               <label class="profile-popup-edit-label">
                 <span>Pronouns</span>
