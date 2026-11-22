@@ -224,7 +224,14 @@ fn shell(add: &mut impl FnMut(&str, Value)) {
             vec![node("Plain", NodeRole::Group, None, Vec::new())],
         )],
     };
-    add("skin.shell", super::to(tree.shell(SkinWindow::Main)));
+    add(
+        "skin.shell",
+        super::to(tree.shell(
+            SkinWindow::Main,
+            (368, 400),
+            vec!["skin://app/0123/abcd.png".to_owned()],
+        )),
+    );
 }
 
 /// Every `SkinSelection` variant (design §2.2): its fields are camelCase

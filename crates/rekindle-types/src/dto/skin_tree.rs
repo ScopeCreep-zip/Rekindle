@@ -322,6 +322,16 @@ pub struct SkinShell {
     /// (design §2.6), so the shell draws a pressed menu from the same
     /// answer that laid its button.
     pub menus: super::skin_action::MenuRegistry,
+    /// The window's served minimum (logical px), the frame's outsets
+    /// included: what the desktop shell's fit holds the window to (plan
+    /// SK4); a popup's is its frame's at the launching window's minimum.
+    pub min_width: u16,
+    pub min_height: u16,
+    /// The `skin://` href of every image this tree's own rules draw that
+    /// `SkinApplied::images` (the shared sheet's) does not list, so only a
+    /// window binding this shell decodes them before it shows the sheet
+    /// (plan SK4).
+    pub images: Vec<String>,
 }
 
 /// A popup outline's name (its key in the window's `popups`) and its
@@ -387,14 +397,19 @@ impl SkinNode {
 }
 
 impl SkinTree {
-    /// The tree's outline for `window`'s shell: ids, roles and nesting.
+    /// The tree's outline for `window`'s shell: ids, roles and nesting,
+    /// with the window's served minimum `min` (width, height) and the
+    /// tree's own `images`.
     #[must_use]
-    pub fn shell(&self, window: SkinWindow) -> SkinShell {
+    pub fn shell(&self, window: SkinWindow, min: (u16, u16), images: Vec<String>) -> SkinShell {
         SkinShell {
             window,
             popup: None,
             root: self.root.iter().map(SkinNode::shell).collect(),
             menus: super::skin_action::MenuRegistry::rekindle(),
+            min_width: min.0,
+            min_height: min.1,
+            images,
         }
     }
 }

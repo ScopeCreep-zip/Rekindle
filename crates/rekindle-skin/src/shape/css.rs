@@ -162,6 +162,16 @@ fn window_rules(
     Some(())
 }
 
+/// One component tree's rules (plan SK2): a window kind's tree, or a popup
+/// it launches (`popup` its name), apart from the shared frame rules so
+/// each tree's art is served on its own shell (plan SK4).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TreeSheet {
+    pub window: SkinWindow,
+    pub popup: Option<String>,
+    pub css: String,
+}
+
 /// The frame rules of every window kind `manifest` lays, images under
 /// `base` (the Host's serving origin and path); empty when it lays none.
 /// `None` for a tile image `images` lacks, a layout past
@@ -173,10 +183,36 @@ pub fn frame_css(
     images: &BTreeMap<String, Vec<u8>>,
     base: &str,
 ) -> Option<String> {
-    if manifest.windows.is_empty() {
-        return Some(String::new());
+    let (shared, trees) = frame_parts(manifest, images, base)?;
+    Some(layered(&shared, &trees))
+}
+
+/// [`frame_css`]'s rules wrapped in its `@layer shape` (empty when the
+/// skin lays no window).
+#[must_use]
+pub fn layered(shared: &str, trees: &[TreeSheet]) -> String {
+    if shared.is_empty() && trees.is_empty() {
+        return String::new();
     }
     let mut out = String::from("@layer shape {\n");
+    out.push_str(shared);
+    for t in trees {
+        out.push_str(&t.css);
+    }
+    out.push_str("}\n");
+    out
+}
+
+/// [`frame_css`] in its parts: the rules every window shares (frames and
+/// title strips) and each component tree's own rules, in emission order.
+/// `None` as [`frame_css`].
+#[must_use]
+pub fn frame_parts(
+    manifest: &SkinManifest,
+    images: &BTreeMap<String, Vec<u8>>,
+    base: &str,
+) -> Option<(String, Vec<TreeSheet>)> {
+    let mut out = String::new();
     for (&window, layout) in &manifest.windows {
         window_rules(&mut out, window, layout, images, base)?;
     }
@@ -200,28 +236,46 @@ pub fn frame_css(
         out.push_str(&super::title::title_css(&root, title, top, images, base)?);
     }
     // The pack's component trees (plan SK2): one rule per node.
+    let mut trees = Vec::new();
     for (&window, layout) in &manifest.windows {
         let Some(tree) = &layout.tree else { continue };
         let root = format!(".app-frame[data-skin-window=\"{}\"]", window_attr(window));
-        out.push_str(&crate::skin_tree::css::tree_css(
-            &root, tree, layout, images, base,
-        )?);
+        trees.push(TreeSheet {
+            window,
+            popup: None,
+            css: crate::skin_tree::css::tree_css(&root, tree, layout, images, base)?,
+        });
         // Each popup the window launches: its frame carries
         // `data-skin-popup="<name>"` (plan SK2 P1).
         for (name, popup) in &layout.popups {
             let root = format!(".app-frame[data-skin-popup=\"{name}\"]");
             let frame = crate::skin_tree::popup::frame(popup, layout.min_height);
-            out.push_str(&crate::skin_tree::css::tree_css(
-                &root,
-                &popup.tree,
-                &frame,
-                images,
-                base,
-            )?);
+            trees.push(TreeSheet {
+                window,
+                popup: Some(name.clone()),
+                css: crate::skin_tree::css::tree_css(&root, &popup.tree, &frame, images, base)?,
+            });
         }
     }
-    out.push_str("}\n");
-    Some(out)
+    Some((out, trees))
+}
+
+/// The smallest window (logical px) that holds `layout`: its `min_*` (the
+/// smallest frame its tiles fit, plan SK0 S1) grown by its `outsets`, as
+/// the window is the frame grown by them. The one source of the minimum
+/// the Host serves on a shell and the desktop's fit applies (plan SK4).
+/// `None` past `u16` (never for a validated package: [`super::check`]
+/// bounds a window by [`super::MAX_WINDOW_WIDTH`]/[`super::MAX_WINDOW_HEIGHT`]).
+#[must_use]
+pub fn min_window(layout: &WindowLayout) -> Option<(u16, u16)> {
+    let o = &layout.outsets;
+    Some((
+        layout.min_width.checked_add(o.left)?.checked_add(o.right)?,
+        layout
+            .min_height
+            .checked_add(o.top)?
+            .checked_add(o.bottom)?,
+    ))
 }
 
 #[cfg(test)]

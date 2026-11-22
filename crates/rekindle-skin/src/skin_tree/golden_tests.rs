@@ -154,7 +154,7 @@ fn classics_button_container_carries_its_control_group() {
                 .or_else(|| shell_node(&n.children, id))
         })
     }
-    let shell = tree.shell(SkinWindow::Main);
+    let shell = tree.shell(SkinWindow::Main, (0, 0), Vec::new());
     let area = shell_node(&shell.root, "ButtonArea").unwrap();
     assert_eq!(area.control_group, Some(1));
 }

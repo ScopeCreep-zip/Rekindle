@@ -404,7 +404,11 @@ fn an_art_label_clone_carries_its_own_label() {
             "{id}: {cover:?} covers the word band"
         );
         // The window reads the served shell: the label rides it.
-        let shell = main.tree.as_ref().unwrap().shell(SkinWindow::Main);
+        let shell = main
+            .tree
+            .as_ref()
+            .unwrap()
+            .shell(SkinWindow::Main, (0, 0), Vec::new());
         let mut stack: Vec<&ShellNode> = shell.root.iter().collect();
         let mut found = None;
         while let Some(n) = stack.pop() {
