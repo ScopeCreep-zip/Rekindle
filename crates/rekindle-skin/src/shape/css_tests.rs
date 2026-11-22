@@ -218,3 +218,32 @@ fn a_shaped_window_without_a_frame_keeps_square_corners() {
         "22-skin-frame.css must square a shaped window: {css}"
     );
 }
+
+/// The pack-laid title strip lays only the windows the pack frames (the
+/// desktop's `frame_of`: buddy list and chat, the roots carrying
+/// `data-skin-window`), so Settings and the skin editor (an `.app-frame`
+/// with no `data-skin-window`) keep the app's titlebar: no title-strip
+/// selector of any built-in matches an unframed root.
+#[test]
+fn the_title_strip_lays_only_framed_windows() {
+    let mut strips = 0;
+    for b in builtin::PACKS {
+        let id = format!("{}{}", builtin::PREFIX, b.id);
+        let (m, files) = pack(&id);
+        let css = frame_css(&m, &files, BASE).unwrap();
+        for sel in css
+            .lines()
+            .map(str::trim)
+            .filter(|l| l.contains(".xfire-titlebar") && (l.ends_with('{') || l.ends_with(',')))
+        {
+            assert!(
+                sel.starts_with(".app-frame[data-skin-window]")
+                    || sel.starts_with(".app-frame[data-skin-window=\"main\"]")
+                    || sel.starts_with(".app-frame[data-skin-window=\"chat\"]"),
+                "{id}: `{sel}` reaches an unframed window"
+            );
+            strips += 1;
+        }
+    }
+    assert!(strips > 0, "no built-in lays a title strip");
+}
