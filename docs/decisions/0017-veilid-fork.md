@@ -84,6 +84,15 @@ returns an `Arc`), i2pd `eTunnelStateExpiring`.
    `.cargo/config.toml` `net.git-fetch-with-cli = true` (the repository is private).
 5. **Source of truth.** Veilid facts are read from `~/veilid` at the pinned rev, never from the registry copy
    in `~/.cargo/registry`, which lacks the patch (since 2026-11-14 the 0.5.8 fork worktree `~/veilid-wt-058`).
+6. **The fork is frozen: no changes to Veilid (owner hard rule, 2026-11-22).** Owner: "we shouldn't be constantly
+   making changes to veilid" and "we also need to make it a hard rule that you're not allowed to make changes to
+   veilid." No new fork commit, no edit to Veilid source, and no fork patch proposed as a fix. When Rekindle meets
+   a Veilid behaviour that breaks it, the fix is in Rekindle: find how Veilid intends the app to do it (its own
+   route testing and `RouteChange`, its safety-route pool, its documented API, read from the fork source) and
+   change Rekindle's usage to match. Policy 2's "a new fork commit needs its own plan step" no longer applies; the
+   existing commits are reviewed only for **removal** (each one Rekindle can stop needing goes, per Policy 3's
+   rebase rules), never extended. A genuine Veilid defect that a Veilid-as-built usage still hits is reported
+   upstream with the owner's go-ahead (Policy 1); it is never patched here.
 
 ## Consequences
 
