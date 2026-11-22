@@ -233,6 +233,7 @@ mod tests {
             window,
             popup,
             root: Vec::new(),
+            menus: rekindle_types::dto::skin_action::MenuRegistry { menus: Vec::new() },
         };
         let info = popup(PopupEdge::Right, -13, STRETCH);
         let shells = vec![

@@ -45,12 +45,6 @@
     background-color: color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
   }
 
-  .files-view-name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
   .files-view-size,
   .files-view-status {
     color: var(--color-xfire-text-dim);

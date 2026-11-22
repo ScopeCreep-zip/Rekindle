@@ -19,6 +19,7 @@
   .category-name,
   .channel-name,
   .community-name,
+  .files-view-name,
   .member-group-header,
   .voice-participant-name {
     overflow: hidden;
