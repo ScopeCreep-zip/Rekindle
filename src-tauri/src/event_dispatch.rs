@@ -25,8 +25,7 @@ use std::sync::Arc;
 
 use rekindle_types::subscription_events::{
     CallEvent, ChannelMessageEvent, EventScope, FriendEvent, NetworkEvent, SubscriptionEvent,
-    SystemEvent,
-    TypingContext, TypingEvent,
+    SystemEvent, TypingContext, TypingEvent,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
