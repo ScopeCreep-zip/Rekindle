@@ -129,6 +129,7 @@ const REKINDLE_ISOLATION_COMMANDS = Object.freeze([
   "group_dm_accept",
   "group_dm_create",
   "group_dm_decline",
+  "group_dm_invite",
   "group_dm_leave",
   "group_dm_list",
   "group_dm_mark_read",

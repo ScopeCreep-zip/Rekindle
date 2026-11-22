@@ -247,10 +247,7 @@ pub enum IpcRequest {
     /// Rename `group_id` (its creator only; 1-`MAX_NAME_CHARS`
     /// characters); every member is told through our group chain.
     GroupDmRename { group_id: String, name: String },
-    /// Invite `members` (our friends, none on the roster) into `group_id`
-    /// (its creator only; at most `MAX_MEMBERS` in all; plan E7.2 G8):
-    /// each gets an invite it accepts or declines, and every member
-    /// already on it learns the grown roster and rotates its key.
+    /// Invite friends into `group_id` (creator only, at most 8; E7.2 G8).
     GroupDmInvite {
         group_id: String,
         members: Vec<String>,
