@@ -409,13 +409,13 @@ impl HostGovernance {
     /// the sweep and a joiner's walk read it to find heads they lack, so a
     /// frontier written only after our own appends hid every op we merged
     /// since (a member that joined before `X` never learned `X`). Written
-    /// only when the heads differ from the subkey's local value.
+    /// only when the heads differ from the subkey's local value. Written
+    /// on our device's op record with its owner (`own_op_record_writer`:
+    /// `M(p,d)` with `K_M(p,d)` for a second device, `M(p)` with `K_M(p)`
+    /// for the first), the record `append_own_op` writes the same subkey on.
     pub(crate) async fn republish_own_frontier(&self, community_id: &str) {
-        let Some(record) = self.own_member_record(community_id) else {
-            return;
-        };
-        let written = match self.member_record_writer(community_id) {
-            Ok(writer) => {
+        let written = match self.own_op_record_writer(community_id) {
+            Ok((record, writer)) => {
                 self.write_own_frontier(community_id, &record, &writer)
                     .await
             }

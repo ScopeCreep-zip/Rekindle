@@ -51,6 +51,8 @@ mod mek_transfer_tests;
 mod membership;
 #[path = "onboarding_bounds_tests.rs"]
 mod onboarding_bounds;
+#[path = "own_frontier_record_tests.rs"]
+mod own_frontier_record;
 #[path = "own_member_record_tests.rs"]
 mod own_member_record;
 #[path = "own_records_events_tests.rs"]

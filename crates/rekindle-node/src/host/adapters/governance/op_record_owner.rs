@@ -39,6 +39,28 @@ pub(super) fn op_record_owner(
 }
 
 impl HostGovernance {
+    /// Our op record in `community_id` and its owner keypair: the record
+    /// our device key's endorsement binds in our merged state
+    /// (`device_signer::own_op_record`, the resolver the op write path
+    /// takes), and that record's owner ([`Self::op_record_writer`]). The
+    /// one resolution for a write of our op chain's frontier (`M`/3) that
+    /// no queued op names a record for.
+    ///
+    /// # Errors
+    /// As `own_op_record` (no membership, cert, device key or endorsement
+    /// of it) or [`Self::op_record_writer`].
+    pub(crate) fn own_op_record_writer(
+        &self,
+        community_id: &str,
+    ) -> Result<(String, Zeroizing<String>), String> {
+        let state = self.governance_state_impl(community_id).unwrap_or_default();
+        let record =
+            rekindle_governance_runtime::device_signer::own_op_record(self, community_id, &state)
+                .map_err(|e| format!("own op record: {e}"))?;
+        let writer = self.op_record_writer(community_id, &record)?;
+        Ok((record, writer))
+    }
+
     /// The owner keypair of our op record `record`
     /// ([`op_record_owner`]).
     pub(super) fn op_record_writer(
