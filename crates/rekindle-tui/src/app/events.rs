@@ -425,6 +425,7 @@ impl App {
                 | FriendEvent::GroupChanged { .. }
                 | FriendEvent::NicknameChanged { .. }
                 | FriendEvent::DisplayNameChanged { .. }
+                | FriendEvent::BioChanged { .. }
                 | FriendEvent::KeyChanged { .. }
                 | FriendEvent::VerificationChanged { .. }
                 | FriendEvent::Added { .. }

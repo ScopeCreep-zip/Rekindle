@@ -141,6 +141,10 @@ fn membership(event: &MembershipEvent) -> (&str, String) {
             community,
             format!("{} joined", member(pseudonym, display_name.as_deref())),
         ),
+        MembershipEvent::SelfJoined { community, name } => (
+            community,
+            format!("we joined {}", sanitize_for_display(name)),
+        ),
         MembershipEvent::MemberCardChanged {
             community,
             pseudonym,
