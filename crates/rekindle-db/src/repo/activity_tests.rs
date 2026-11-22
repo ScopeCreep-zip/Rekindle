@@ -3,7 +3,7 @@ use rusqlite::params;
 use super::*;
 use crate::repo::fixture::{self, OWNER};
 
-const NOW: i64 = 100 * MAX_AGE_MS;
+const FEED_NOW: i64 = 100 * MAX_AGE_MS;
 
 fn friend(conn: &Connection, key: &str) {
     conn.execute(
@@ -49,7 +49,7 @@ fn entries_round_trip_newest_first_and_page_by_cursor() {
     friend(&conn, "bob");
     let all = vec![
         ActivityEntry {
-            at: NOW - 50,
+            at: FEED_NOW - 50,
             kind: ActivityKind::StartedGame {
                 friend: "bob".into(),
                 game_id: 4181,
@@ -57,7 +57,7 @@ fn entries_round_trip_newest_first_and_page_by_cursor() {
             },
         },
         ActivityEntry {
-            at: NOW - 40,
+            at: FEED_NOW - 40,
             kind: ActivityKind::StoppedGame {
                 friend: "bob".into(),
                 game_id: 4181,
@@ -65,14 +65,14 @@ fn entries_round_trip_newest_first_and_page_by_cursor() {
             },
         },
         ActivityEntry {
-            at: NOW - 40,
+            at: FEED_NOW - 40,
             kind: ActivityKind::FirstPlayed {
                 friend: "bob".into(),
                 game_id: 12,
             },
         },
         ActivityEntry {
-            at: NOW - 30,
+            at: FEED_NOW - 30,
             kind: ActivityKind::RenamedSelf {
                 friend: "bob".into(),
                 from: "b".into(),
@@ -80,33 +80,33 @@ fn entries_round_trip_newest_first_and_page_by_cursor() {
             },
         },
         ActivityEntry {
-            at: NOW - 20,
+            at: FEED_NOW - 20,
             kind: ActivityKind::StatusMessage {
                 friend: "bob".into(),
                 text: "afk".into(),
             },
         },
-        bio("bob", NOW - 10),
+        bio("bob", FEED_NOW - 10),
         ActivityEntry {
-            at: NOW - 5,
+            at: FEED_NOW - 5,
             kind: ActivityKind::NowFriends {
                 friend: "bob".into(),
             },
         },
         ActivityEntry {
-            at: NOW - 2,
+            at: FEED_NOW - 2,
             kind: ActivityKind::FavouriteAdded {
                 game_id: 4181,
                 address: "203.0.113.7:27015".into(),
                 label: "LAN".into(),
             },
         },
-        joined(NOW - 1),
+        joined(FEED_NOW - 1),
     ];
-    insert(&mut conn, OWNER, &all, NOW).unwrap();
+    insert(&mut conn, OWNER, &all, FEED_NOW).unwrap();
     let mut newest_first = all.clone();
     newest_first.reverse();
-    // The two at NOW - 40: the later insert reads first.
+    // The two at FEED_NOW - 40: the later insert reads first.
     assert_eq!(entries(&conn), newest_first);
 
     let first = page(&conn, OWNER, None, 4).unwrap();
@@ -129,18 +129,21 @@ fn insert_prunes_to_thirty_days_and_five_hundred_rows() {
     insert(
         &mut conn,
         OWNER,
-        &[joined(NOW - MAX_AGE_MS - 1), joined(NOW - MAX_AGE_MS)],
-        NOW,
+        &[
+            joined(FEED_NOW - MAX_AGE_MS - 1),
+            joined(FEED_NOW - MAX_AGE_MS),
+        ],
+        FEED_NOW,
     )
     .unwrap();
-    assert_eq!(entries(&conn), [joined(NOW - MAX_AGE_MS)]);
+    assert_eq!(entries(&conn), [joined(FEED_NOW - MAX_AGE_MS)]);
 
-    let many: Vec<_> = (1..=505).map(|i| joined(NOW - 1000 + i)).collect();
-    insert(&mut conn, OWNER, &many, NOW).unwrap();
+    let many: Vec<_> = (1..=505).map(|i| joined(FEED_NOW - 1000 + i)).collect();
+    insert(&mut conn, OWNER, &many, FEED_NOW).unwrap();
     let kept = entries(&conn);
     assert_eq!(i64::try_from(kept.len()).unwrap(), MAX_ROWS);
-    assert_eq!(kept.first(), Some(&joined(NOW - 1000 + 505)));
-    assert_eq!(kept.last(), Some(&joined(NOW - 1000 + 6)));
+    assert_eq!(kept.first(), Some(&joined(FEED_NOW - 1000 + 505)));
+    assert_eq!(kept.last(), Some(&joined(FEED_NOW - 1000 + 6)));
 }
 
 /// A friend's removal or block purges their rows, ours and other friends'
@@ -154,24 +157,31 @@ fn purge_by_friend_keeps_the_rest_and_the_friend_row_cascades() {
     insert(
         &mut conn,
         OWNER,
-        &[bio("bob", NOW - 3), bio("carol", NOW - 2), joined(NOW - 1)],
-        NOW,
+        &[
+            bio("bob", FEED_NOW - 3),
+            bio("carol", FEED_NOW - 2),
+            joined(FEED_NOW - 1),
+        ],
+        FEED_NOW,
     )
     .unwrap();
     purge_friend(&conn, OWNER, "bob").unwrap();
-    assert_eq!(entries(&conn), [joined(NOW - 1), bio("carol", NOW - 2)]);
+    assert_eq!(
+        entries(&conn),
+        [joined(FEED_NOW - 1), bio("carol", FEED_NOW - 2)]
+    );
 
     conn.execute("DELETE FROM friends WHERE public_key = 'carol'", [])
         .unwrap();
-    assert_eq!(entries(&conn), [joined(NOW - 1)]);
+    assert_eq!(entries(&conn), [joined(FEED_NOW - 1)]);
 
     assert!(
-        insert(&mut conn, OWNER, &[bio("dave", NOW)], NOW).is_err(),
+        insert(&mut conn, OWNER, &[bio("dave", FEED_NOW)], FEED_NOW).is_err(),
         "only a friend's entries are kept"
     );
     assert_eq!(
         entries(&conn),
-        [joined(NOW - 1)],
+        [joined(FEED_NOW - 1)],
         "the refused insert left nothing"
     );
 }

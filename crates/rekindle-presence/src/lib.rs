@@ -8,6 +8,7 @@
 
 #![forbid(unsafe_code)]
 
+pub mod activity;
 pub mod community;
 pub mod deps;
 pub mod friend;
@@ -17,6 +18,7 @@ pub mod idle;
 pub mod poll_buckets;
 pub mod status;
 
+pub use activity::{favourite_added, friend_entries, joined_community, FriendActivitySnapshot};
 pub use community::{
     compute_profile_diff, compute_rebuild_plan, discovered_member_row, gossip_degree,
     parse_and_classify_row, persist_discovered_registry_members, presence_poll_tick,
