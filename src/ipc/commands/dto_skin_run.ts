@@ -26,7 +26,9 @@ export type SkinSelection =
   | { kind: "server"; arg: { gameId: number; address: string } }
   | { kind: "transfer"; arg: { attachmentId: string; target: TransferTarget } }
   | { kind: "media"; arg: { path: string } }
-  | { kind: "group"; arg: { groupId: string } };
+  | { kind: "group"; arg: { groupId: string } }
+  /** A friend group's header (plan E7.15 IV5); null is the default group. */
+  | { kind: "friendGroup"; arg: { groupId: number | null } };
 
 export type ShellPanel =
   | "addFriend"

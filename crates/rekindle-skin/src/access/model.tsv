@@ -95,6 +95,7 @@
 .buddy-game-info	text	var(--color-xfire-ingame-text)	--color-xfire-accent 30% over --color-xfire-bg-dark	1.0	false
 .buddy-game-info	text	var(--color-xfire-ingame-text)	--color-xfire-bg-dark	1.0	false
 .buddy-group-header	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
+.buddy-group-header	text selected	var(--color-xfire-text-dim)	--color-xfire-accent 30% over --color-xfire-bg-dark	1.0	false
 .buddy-group-pending .buddy-group-header	text	var(--color-xfire-away-text)	--color-xfire-bg-dark	1.0	false
 .buddy-group-pending .buddy-name	text	var(--color-xfire-text-dim)	--color-xfire-accent 30% over --color-xfire-bg-dark	1.0	false
 .buddy-group-pending .buddy-name	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false

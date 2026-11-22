@@ -98,7 +98,7 @@
 '.form-tab-active' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.form-tab[aria-selected="true"]' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.form-tab.active' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
-'.buddy-group-header' = { on = ["--color-xfire-bg-dark"] }
+'.buddy-group-header' = { on = ["--color-xfire-bg-dark"], on_selected = ["--color-xfire-accent 30% over --color-xfire-bg-dark"] }
 '.buddy-subgroup-header' = { on = ["--color-xfire-bg-dark"] }
 '.buddy-name-offline' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark", "--color-xfire-bg-panel", "--color-xfire-bg-status"] }
 '.buddy-game-info' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
