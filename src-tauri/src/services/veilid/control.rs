@@ -25,7 +25,11 @@ pub(crate) async fn handle_relayed_control(
         }
         payload @ (ControlPayload::ReactionAdded { .. }
         | ControlPayload::ReactionRemoved { .. }) => {
-            handle_channel_event_payload(app_handle, community_id, payload);
+            // The Host's one ingest (plan GI3, the daemon's `ingest_gossip`
+            // calls it too) gates, meters and journals the event.
+            if let Ok(host) = crate::state_helpers::host_governance(state) {
+                host.ingest_reaction(community_id, sender_pseudonym, 0, &payload);
+            }
         }
         payload @ (ControlPayload::RequestMEK { .. }
         | ControlPayload::RequestSegmentExpansion { .. }) => {
@@ -41,56 +45,6 @@ pub(crate) async fn handle_relayed_control(
             )
             .await;
         }
-    }
-}
-
-fn handle_channel_event_payload(
-    app_handle: &tauri::AppHandle,
-    community_id: &str,
-    payload: rekindle_codec::community::envelope::ControlPayload,
-) {
-    use rekindle_codec::community::envelope::ControlPayload;
-
-    match payload {
-        ControlPayload::ReactionAdded {
-            channel_id,
-            message_id,
-            emoji,
-            reactor_pseudonym,
-        } => {
-            crate::event_dispatch::emit_subscription(
-                app_handle,
-                &rekindle_types::subscription_events::SubscriptionEvent::Social(
-                    rekindle_types::subscription_events::SocialEvent::ReactionAdded {
-                        community: community_id.to_string(),
-                        channel: channel_id,
-                        message_id,
-                        emoji,
-                        reactor_pseudonym,
-                    },
-                ),
-            );
-        }
-        ControlPayload::ReactionRemoved {
-            channel_id,
-            message_id,
-            emoji,
-            reactor_pseudonym,
-        } => {
-            crate::event_dispatch::emit_subscription(
-                app_handle,
-                &rekindle_types::subscription_events::SubscriptionEvent::Social(
-                    rekindle_types::subscription_events::SocialEvent::ReactionRemoved {
-                        community: community_id.to_string(),
-                        channel: channel_id,
-                        message_id,
-                        emoji,
-                        reactor_pseudonym,
-                    },
-                ),
-            );
-        }
-        _ => {}
     }
 }
 

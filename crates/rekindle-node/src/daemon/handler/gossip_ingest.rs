@@ -59,6 +59,24 @@ impl DaemonHandler {
             return;
         }
 
+        // A reaction (plan GI3) is the Host's: its one ingest gates, meters
+        // and journals the event, the same on the desktop's relay path.
+        if let Some(
+            payload @ (ControlPayload::ReactionAdded { .. }
+            | ControlPayload::ReactionRemoved { .. }),
+        ) = envelope.as_control()
+        {
+            if let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) {
+                crate::host::adapters::governance::HostGovernance::new(ctx).ingest_reaction(
+                    community_id,
+                    sender_pseudonym,
+                    lamport_ts,
+                    payload,
+                );
+            }
+            return;
+        }
+
         // The membership control messages (plan E3.1 B2e): onboarding
         // answers, a member's own departure and a relayed kick (GI3: the
         // Host checks the kicker's authority, then forgets and rotates).
