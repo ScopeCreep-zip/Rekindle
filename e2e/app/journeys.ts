@@ -536,7 +536,11 @@ export async function showSkinView(b: Browser, view: string): Promise<void> {
       await press(b, await b.$(`[data-skin-node="${launcher}"]`));
       await b.switchToWindow(await waitForHandle(b, (h) => h.startsWith("popup-") && !before.includes(h), 10_000));
     }
-    await press(b, await shown(b, `[data-skin-role="tab:${view}"], [data-skin-role="knob:${view}"]`));
+    // The rail's control, by the node that listens for its press (as in the
+    // main window: a control may carry its press on a child Part).
+    const item = await shown(b, `[data-skin-role="tab:${view}"], [data-skin-role="knob:${view}"]`);
+    const id = (await item.getAttribute("data-skin-node")) ?? "";
+    await press(b, await b.$(`[data-skin-node="${await pressNode(b, id)}"]`));
     await switchTo(b, BUDDY);
   }
   await waitUntil(() => skinViewShown(b, view), 10_000, `the ${view} view did not show`);
