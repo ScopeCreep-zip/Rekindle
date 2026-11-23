@@ -372,7 +372,7 @@ fn a_join_citing_an_older_checkpoint_is_replayed() {
     let own_invite = world.op_at(&inviter, 1);
     let joined = world.author(
         &newcomer,
-        newcomer.joined("code2"),
+        newcomer.joined("code2", &world.state),
         Deps::Join(vec![cp1.hash(), own_invite]),
     );
     let store = Store::of(&world);
@@ -468,7 +468,11 @@ fn a_join_racing_the_checkpoint_resumes_with_its_exact_lamport() {
     let racing_deps = world.deps_of(&racer, &inviter);
     let body = world.checkpoint_body();
     let cp = world.endorse(&creator, body);
-    let raced = world.author(&racer, racer.joined("code2"), Deps::Join(racing_deps));
+    let raced = world.author(
+        &racer,
+        racer.joined("code2", &world.state),
+        Deps::Join(racing_deps),
+    );
     world.join(&Member::new(31), &inviter, "code2");
     let (_, snap) = snapshot_at(&world, &cp_body(&cp).cut);
     assert!(

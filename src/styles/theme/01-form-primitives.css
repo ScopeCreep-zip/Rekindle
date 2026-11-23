@@ -394,6 +394,14 @@
     overflow-wrap: anywhere;
   }
 
+  /* A skin's target sizes (plan SK14), on its own line under the name. */
+  .skin-access {
+    flex-basis: 100%;
+    padding-left: 24px;
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+  }
+
   .skin-badge {
     font-size: 11px;
     color: var(--color-xfire-text-dim);

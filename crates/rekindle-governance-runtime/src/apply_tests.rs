@@ -187,7 +187,7 @@ fn classify_role_assignment_affects_nothing() {
 async fn an_op_written_through_the_write_path_judges_effective_in_the_merged_view() {
     use crate::deps::{CommunityMembership, MockGovernanceRuntimeDeps, OpOutcome};
     use parking_lot::Mutex;
-    use rekindle_governance::device_judge::{judge_op, KeyJudgement};
+    use rekindle_governance::device_judge::{judge_op_at, KeyJudgement};
     use rekindle_secrets::ed25519_dalek::SigningKey;
     use std::sync::Arc;
 
@@ -284,8 +284,10 @@ async fn an_op_written_through_the_write_path_judges_effective_in_the_merged_vie
     };
     assert_eq!(op.op().author, author, "p stays the author");
     let merged = merged.lock().take().expect("the write installed a state");
+    let md = (merged.devices.member(&author).cloned()).unwrap_or_default();
+    let record = md.latest_join.as_ref().map(|(_, r, _)| r.as_str());
     assert_eq!(
-        judge_op(COMMUNITY, &merged.devices, op.op()),
+        judge_op_at(COMMUNITY, &md, record, op.op()),
         KeyJudgement::Effective,
         "an honest member's own op is effective in the merged view"
     );

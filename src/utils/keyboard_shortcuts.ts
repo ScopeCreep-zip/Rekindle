@@ -27,6 +27,11 @@ export const SHORTCUT_SECTIONS: ShortcutSection[] = [
     ],
   },
   {
+    // src/hooks/useAppearanceChord.ts: in every window but the login.
+    title: "Any window",
+    rows: [{ keys: [["Mod", ","]], action: "Appearance settings: skins, among them an accessible one" }],
+  },
+  {
     // src/windows/BuddyListWindow.tsx handleKeyboardShortcuts.
     title: "Buddy list",
     rows: [
@@ -80,6 +85,15 @@ export function isMac(): boolean {
 export function keyLabel(key: string): string {
   if (key !== "Mod") return key;
   return isMac() ? "Cmd" : "Ctrl";
+}
+
+/**
+ * The chord that opens Settings at Appearance from any window: `Mod` + `,`,
+ * the platforms' settings chord (plan SK14: the accessible skin is one step
+ * from every skin, whatever its menus).
+ */
+export function isAppearanceChord(e: KeyboardEvent): boolean {
+  return (isMac() ? e.metaKey : e.ctrlKey) && !e.altKey && !e.shiftKey && e.key === ",";
 }
 
 /** The chord that opens the help dialog: `Mod` + `/`. */

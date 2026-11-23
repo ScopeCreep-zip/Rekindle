@@ -31,12 +31,20 @@ use rekindle_types::governance::{
 use rekindle_types::id::PseudonymKey;
 
 use crate::device::{endorsement_holds, retirement_holds};
-use crate::op::VerifiedOp;
+use crate::op::{OpStamp, VerifiedOp};
 use crate::state::GovernanceState;
 
 /// Most effective device keys per member, the first included (ADR 0022
 /// rule 6, Signal-Server `MAX_DEVICES`).
 pub const MAX_EFFECTIVE_DEVICE_KEYS: usize = 6;
+
+/// Where one endorsement was carried: each carrier key's lowest seq
+/// (`None` for the cert).
+pub type Carriers = BTreeMap<Option<[u8; 32]>, u64>;
+
+/// A member's latest join: its stamp, the member record it names, and the
+/// join op's `(device key, seq)` (`None` for the creator's cert).
+pub type JoinNote = (OpStamp, String, Option<([u8; 32], u64)>);
 
 /// One member's device-key elements in a view.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -44,8 +52,24 @@ pub struct MemberDevices {
     /// `M(p)`, from the member's `MemberJoined`: the context its
     /// endorsements and retirements are signed in (rule 10).
     pub member_record: Option<String>,
+    /// The highest-stamp `MemberJoined` of the member held and the record
+    /// it names, ties broken by the record (a pure max, so order-free): the
+    /// member record current for an op whose causal past holds every op
+    /// this view was harvested from (lead decision K4b Q4), so a resume
+    /// judges an op on top of a cut from the snapshot alone. The third part
+    /// is the join op's `(device key, seq)`, so a resume can ask whether an
+    /// op beside the cut has that join in its past (a seq numbers its key's
+    /// chain, rule 1); the creator's cert seeds it at [`OpStamp::MIN`] with
+    /// none, since the cert is in every op's past.
+    pub latest_join: Option<JoinNote>,
     /// Valid endorsements by `(incarnation, device key)`, rule 6's order.
     pub endorsements: BTreeMap<(u64, [u8; 32]), DeviceEndorsement>,
+    /// Per endorsement, where it was carried (rule 2: any op may carry
+    /// it): each carrier key's lowest seq that did (`None`, the cert, in
+    /// every op's past), so a resume can ask whether an op beside the cut
+    /// has the endorsement in its past (a seq numbers its key's chain,
+    /// rule 1).
+    pub carriers: BTreeMap<(u64, [u8; 32]), Carriers>,
     /// Valid retirements by `(device key, incarnation)`: the lowest
     /// `lastSeq` signed for it (rule 5).
     pub retirements: BTreeMap<([u8; 32], u64), u64>,
@@ -57,6 +81,17 @@ pub struct MemberDevices {
 }
 
 impl MemberDevices {
+    /// Raise [`Self::latest_join`] to the join at `stamp` naming `record`,
+    /// written at `at` (`None` for the cert), when it is the higher
+    /// `(stamp, record, at)`: a pure max, so order-free.
+    pub fn note_join(&mut self, stamp: OpStamp, record: &str, at: Option<([u8; 32], u64)>) {
+        let higher = (self.latest_join.as_ref())
+            .is_none_or(|(s, r, a)| (stamp, record, at) > (*s, r.as_str(), *a));
+        if higher {
+            self.latest_join = Some((stamp, record.to_owned(), at));
+        }
+    }
+
     /// The element ids this member's set holds (rule 10).
     #[must_use]
     pub fn elements(&self) -> BTreeSet<DeviceSetElement> {
@@ -144,8 +179,16 @@ impl DeviceView {
             if ours.member_record.is_none() {
                 ours.member_record.clone_from(&theirs.member_record);
             }
+            if let Some((stamp, record, at)) = &theirs.latest_join {
+                ours.note_join(*stamp, record, *at);
+            }
             for (k, e) in &theirs.endorsements {
                 ours.endorsements.entry(*k).or_insert_with(|| e.clone());
+            }
+            for (k, at) in &theirs.carriers {
+                for (carrier, seq) in at {
+                    note_carrier(ours, *k, *carrier, *seq);
+                }
             }
             for (k, last) in &theirs.retirements {
                 let mine = ours.retirements.entry(*k).or_insert(*last);
@@ -173,7 +216,10 @@ impl DeviceView {
         let md = self.members.entry(p.clone()).or_default();
         md.member_record
             .get_or_insert_with(|| cert.creator_member_record.clone());
-        take_endorsement(md, p, anchor, e);
+        if md.latest_join.is_none() {
+            md.latest_join = Some((OpStamp::MIN, cert.creator_member_record.clone(), None));
+        }
+        take_endorsement(md, p, anchor, e, None);
     }
 
     /// Record fork evidence for `member`'s `key` at `seq` (rule 5).
@@ -186,8 +232,16 @@ impl DeviceView {
     /// Harvest the device elements `op` of community `anchor` carries
     /// (rule 2: from any op that carries them). An element whose `p`
     /// signature does not hold in its context is not taken. An op carrying
-    /// none leaves the view as it was.
+    /// none leaves the view as it was. The op's stamp is not known here,
+    /// so a join is noted at [`OpStamp::MIN`]; a merge harvests through
+    /// [`Self::harvest`], which notes the op's own stamp.
     pub fn absorb(&mut self, anchor: &str, op: &GovernanceOp) {
+        self.absorb_at(anchor, op, OpStamp::MIN);
+    }
+
+    /// [`Self::absorb`] of `op` at `stamp`, the stamp its `MemberJoined`
+    /// raises [`MemberDevices::latest_join`] to.
+    fn absorb_at(&mut self, anchor: &str, op: &GovernanceOp, stamp: OpStamp) {
         let p = &op.author;
         match &op.body {
             GovernanceEntry::MemberJoined {
@@ -198,19 +252,21 @@ impl DeviceView {
                 let md = self.members.entry(p.clone()).or_default();
                 md.member_record
                     .get_or_insert_with(|| member_record.clone());
+                md.note_join(stamp, member_record, Some((op.device_key, op.seq)));
                 // A first device's endorsement is signed for the record its
                 // own `MemberJoined` names (rules 3 and 10), a re-join's new
                 // `M(p)` included (lead decision 63).
                 if let Some(e) = first_device {
                     if endorsement_holds(p, anchor, member_record, e) {
-                        (md.endorsements)
-                            .entry((e.incarnation, e.device_key))
-                            .or_insert_with(|| e.clone());
+                        let k = (e.incarnation, e.device_key);
+                        (md.endorsements).entry(k).or_insert_with(|| e.clone());
+                        note_carrier(md, k, Some(op.device_key), op.seq);
                     }
                 }
             }
             GovernanceEntry::DeviceKey(e) => {
-                take_endorsement(self.members.entry(p.clone()).or_default(), p, anchor, e);
+                let md = self.members.entry(p.clone()).or_default();
+                take_endorsement(md, p, anchor, e, Some((op.device_key, op.seq)));
             }
             GovernanceEntry::DeviceRetired(r) => {
                 let md = self.members.entry(p.clone()).or_default();
@@ -236,7 +292,7 @@ impl DeviceView {
     /// for: how a merge harvests the view its state carries (plan E3.2
     /// K-CP).
     pub fn harvest(&mut self, op: &VerifiedOp) {
-        self.absorb(op.anchor(), op.op());
+        self.absorb_at(op.anchor(), op.op(), op.stamp());
     }
 }
 
@@ -264,13 +320,34 @@ impl GovernanceState {
     }
 }
 
-fn take_endorsement(md: &mut MemberDevices, p: &PseudonymKey, anchor: &str, e: &DeviceEndorsement) {
+/// Take `e` into `md` when its signature holds for one of the member's
+/// records, noting its carrier `at` (`None`: the cert).
+fn take_endorsement(
+    md: &mut MemberDevices,
+    p: &PseudonymKey,
+    anchor: &str,
+    e: &DeviceEndorsement,
+    at: Option<([u8; 32], u64)>,
+) {
     let held = (md.member_records(p, anchor).iter()).any(|r| endorsement_holds(p, anchor, r, e));
     if held {
-        (md.endorsements)
-            .entry((e.incarnation, e.device_key))
-            .or_insert_with(|| e.clone());
+        let k = (e.incarnation, e.device_key);
+        (md.endorsements).entry(k).or_insert_with(|| e.clone());
+        let (carrier, seq) = at.map_or((None, 0), |(key, seq)| (Some(key), seq));
+        note_carrier(md, k, carrier, seq);
     }
+}
+
+/// Lower the endorsement `k`'s carrier `carrier` to `seq` (a pure min, so
+/// the view stays an order-free union).
+fn note_carrier(md: &mut MemberDevices, k: (u64, [u8; 32]), carrier: Option<[u8; 32]>, seq: u64) {
+    let at = md
+        .carriers
+        .entry(k)
+        .or_default()
+        .entry(carrier)
+        .or_insert(seq);
+    *at = (*at).min(seq);
 }
 
 /// Why an op's key is not judged yet.
@@ -306,33 +383,79 @@ pub enum KeyJudgement {
     Refused(KeyRefusal),
 }
 
-/// Judge `op`'s device key at `at_deps`, the view of its causal past. The
-/// key is the op's signer's; a device op's subject is never consulted.
+/// Judge `op`'s device key at `at_deps`, its author's elements in its
+/// causal past, for `record`, the author's member record at its deps (the
+/// highest-stamp `MemberJoined` of the author there, the cert's for the
+/// creator with none; a `MemberJoined` op is judged for the record it
+/// names). The key is the op's signer's; a device op's subject is never
+/// consulted. No record at the deps: the key is unendorsed for any.
 #[must_use]
-pub fn judge_op(anchor: &str, at_deps: &DeviceView, op: &GovernanceOp) -> KeyJudgement {
-    let mut view = at_deps.clone();
-    // An endorsement the op carries at seq 0 counts for the op itself.
-    let carries = matches!(
-        &op.body,
-        GovernanceEntry::MemberJoined { first_device: Some(e), .. } | GovernanceEntry::DeviceKey(e)
-            if e.device_key == op.device_key
-    );
-    if op.seq == 0 && carries {
-        view.absorb(anchor, op);
-    }
-    let Some(md) = view.member(&op.author) else {
+pub fn judge_op_at(
+    anchor: &str,
+    at_deps: &MemberDevices,
+    record: Option<&str>,
+    op: &GovernanceOp,
+) -> KeyJudgement {
+    let record = match &op.body {
+        GovernanceEntry::MemberJoined { member_record, .. } => Some(member_record.as_str()),
+        _ => record,
+    };
+    let Some(record) = record else {
         return KeyJudgement::Pending(KeyPending::Unendorsed);
     };
-    judge_key(md, &op.device_key, op.seq)
+    // An endorsement of its own key the op carries counts for the op
+    // itself: a `DeviceKey`'s at seq 0 (rule 3), a `MemberJoined`'s at any
+    // seq, since a re-join keeps the held key, whose chain goes on, and its
+    // `MemberJoined` carries that key's endorsement for the new `M(p)`,
+    // signed by `p` (rules 3 and 10, lead decision 63; `device_signer`).
+    let carries = match &op.body {
+        GovernanceEntry::MemberJoined {
+            first_device: Some(e),
+            ..
+        } => e.device_key == op.device_key,
+        GovernanceEntry::DeviceKey(e) => op.seq == 0 && e.device_key == op.device_key,
+        _ => false,
+    };
+    if carries {
+        let mut view = DeviceView::default();
+        view.members.insert(op.author.clone(), at_deps.clone());
+        view.absorb(anchor, op);
+        let md = view.members.remove(&op.author).unwrap_or_default();
+        return judge_key(&md, &op.author, anchor, record, &op.device_key, op.seq);
+    }
+    judge_key(at_deps, &op.author, anchor, record, &op.device_key, op.seq)
 }
 
-/// Judge `key` of a member whose elements at the op's deps are `md`, for
-/// an op at `seq`.
+/// [`judge_op_at`] over a whole view, for this crate's rule tests: the
+/// view alone names no current record, so the key is judged for whichever
+/// of the author's records endorses it.
+#[cfg(test)]
+pub(crate) fn judge_op(anchor: &str, at_deps: &DeviceView, op: &GovernanceOp) -> KeyJudgement {
+    let md = at_deps.member(&op.author).cloned().unwrap_or_default();
+    let endorsing = (md.member_records(&op.author, anchor).into_iter())
+        .find(|r| (md.endorsement_for(&op.author, anchor, r, &op.device_key)).is_some());
+    let record = endorsing.or_else(|| md.member_record.clone());
+    judge_op_at(anchor, &md, record.as_deref(), op)
+}
+
+/// Judge `key` of member `p` whose elements at the op's deps are `md`,
+/// for an op at `seq` under member record `record` of community `anchor`:
+/// the key's endorsement is the one signed for `record`
+/// ([`MemberDevices::endorsement_for`]), so a key endorsed only under an
+/// ended membership is pending for the current one (ADR 0022 rule 6).
 #[must_use]
-pub fn judge_key(md: &MemberDevices, key: &[u8; 32], seq: u64) -> KeyJudgement {
-    let Some(((incarnation, _), e)) = md.endorsements.iter().find(|((_, k), _)| k == key) else {
+pub fn judge_key(
+    md: &MemberDevices,
+    p: &PseudonymKey,
+    anchor: &str,
+    record: &str,
+    key: &[u8; 32],
+    seq: u64,
+) -> KeyJudgement {
+    let Some(e) = md.endorsement_for(p, anchor, record, key) else {
         return KeyJudgement::Pending(KeyPending::Unendorsed);
     };
+    let incarnation = &e.incarnation;
     let held = md.elements();
     if let Some(missing) = e.extends_elements.iter().find(|x| !held.contains(x)) {
         return KeyJudgement::Pending(KeyPending::ExtendedSet(*missing));

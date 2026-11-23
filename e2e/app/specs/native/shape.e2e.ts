@@ -45,12 +45,14 @@ import { BUDDY, SETTINGS, openSettings } from "../../../walk/nav.ts";
 import { type Peer, startFleet, stopFleet } from "../../fleet.ts";
 import { createIdentity, newUser, openChat, type User } from "../../journeys.ts";
 import { decodePng, encodePng, over, type Rgba } from "../../png.ts";
-import { builtinPacks, type SkinPack } from "../../skin-pack.ts";
+import { ACCESSIBLE_VARIANT, builtinPacks, type SkinPack } from "../../skin-pack.ts";
 import { befriendFleet } from "../../social.ts";
 import { BUDDY_LIST, sizeWindow } from "../../windows.ts";
 
 const OUT = path.join(import.meta.dirname, "..", "..", "out", "shape");
-const PACKS = builtinPacks();
+// The accessible variant (plan SK14) re-lays only Symbiosis's controls: its
+// window shape is Symbiosis's, and xtask's silhouette reads pack files only.
+const PACKS = builtinPacks().filter((p) => p.file !== ACCESSIBLE_VARIANT.file);
 const NATIVE_WAYLAND = process.platform === "linux" && Boolean(process.env.WAYLAND_DISPLAY) && process.env.GDK_BACKEND !== "x11";
 
 interface Box {

@@ -40,6 +40,7 @@ use std::collections::{BTreeMap, HashMap};
 use rekindle_types::governance::{GenesisCert, GovernanceEntry, OpHash};
 use rekindle_types::id::PseudonymKey;
 
+use super::judge::RestJudge;
 use super::resolve::Ancestry;
 use super::{fold, genesis_state, try_apply, MergeOutcome, QuarantineReason};
 use crate::checkpoint::{CutSnapshot, Hints};
@@ -76,6 +77,11 @@ pub enum NotOnTop {
     /// (a): a device op in `rest`; the device phase resolves before every
     /// cut power op (ADR 0022 rule 6, plan E3.2 S7d-keys.1).
     DeviceOp(OpHash),
+    /// The device-key judge (ADR 0022 rule 6, `judge`) finds this op's key
+    /// not effective for its author, or the snapshot cannot answer for its
+    /// author's elements at its deps (`judge::RestJudge`): the full merge
+    /// judges it over the whole op set (plan E3.2 S7d-keys K4b.1).
+    DeviceJudged(OpHash),
 }
 
 /// Where an op's dep is.
@@ -164,7 +170,7 @@ pub fn merge_from(
     rest: &[VerifiedOp],
 ) -> Result<MergeOutcome, NotOnTop> {
     let ctx = context(cert, snapshot, cut_power)?;
-    let set = prepare_rest(snapshot, rest)?;
+    let set = prepare_rest(cert, snapshot, rest)?;
     beside_anchored(&ctx, &set)?;
     let n = set.ops.len();
     let (mut round, gated) = super::fixpoint::settle(
@@ -254,8 +260,13 @@ fn context<'a>(
 /// a device key forked in the cut or among `rest`'s own ops (`resolve::prepare`
 /// keeps its ops from the fork on as ancestry over the whole set), each
 /// op's deps
-/// resolved, (c) and (a′) checked.
-fn prepare_rest<'a>(snap: &CutSnapshot, rest: &'a [VerifiedOp]) -> Result<RestSet<'a>, NotOnTop> {
+/// resolved, (c) and (a′) checked, and each op's device key judged
+/// effective for its author (`NotOnTop::DeviceJudged`).
+fn prepare_rest<'a>(
+    cert: &GenesisCert,
+    snap: &CutSnapshot,
+    rest: &'a [VerifiedOp],
+) -> Result<RestSet<'a>, NotOnTop> {
     // Per device key: a seq numbers its key's chain (ADR 0022 rule 1).
     let cut_seq = |key: &[u8; 32]| snap.cut.authors.get(key).map(|top| top.seq);
     let cut_top = |key: &[u8; 32]| {
@@ -335,6 +346,15 @@ fn prepare_rest<'a>(snap: &CutSnapshot, rest: &'a [VerifiedOp]) -> Result<RestSe
                 Dep::Cut => None,
             })
             .collect();
+        let judge = RestJudge {
+            cert,
+            snap: &snap.state.devices,
+            ops: &set.ops,
+            past: &set.past,
+        };
+        if !judge.effective(&in_rest, op, reach.as_ref()) {
+            return Err(NotOnTop::DeviceJudged(op.hash()));
+        }
         set.index.insert(op.hash(), set.ops.len());
         set.devices.harvest(op);
         set.ops.push(op);

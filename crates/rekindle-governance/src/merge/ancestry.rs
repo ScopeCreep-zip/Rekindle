@@ -38,13 +38,16 @@ pub(super) struct Settlement {
 /// Resolve `set` with its forked ops kept as ancestry.
 pub(super) fn settle(cert: &GenesisCert, set: &OpSet<'_>) -> Settlement {
     let n = set.ops.len();
+    // An op whose device key is refused for its author is ancestry only in
+    // both rounds (ADR 0022 rule 6, `merge::judge`).
+    let judged_out = set.judged_out();
     if !set.forked.contains(&true) {
         return Settlement {
-            settled: resolve_stable(cert, set, &vec![false; n]),
+            settled: resolve_stable(cert, set, &judged_out),
             cascade: BTreeMap::new(),
         };
     }
-    let (counted, counted_mask, _, _) = resolve_stable(cert, set, &vec![false; n]);
+    let (counted, counted_mask, _, _) = resolve_stable(cert, set, &judged_out);
     let stood = |q: usize| set.forked[q] && counted.applied[q];
     let in_past = |i: usize| (0..i).filter(move |&q| stood(q) && set.past.contains(i, q));
     let held: Vec<bool> = (0..n)
@@ -57,7 +60,9 @@ pub(super) fn settle(cert: &GenesisCert, set: &OpSet<'_>) -> Settlement {
                 .any(|q| set.fork_cause[q].is_none_or(|c| !set.past.contains(i, c)))
         })
         .collect();
-    let exclude: Vec<bool> = (0..n).map(|i| set.forked[i] || held[i]).collect();
+    let exclude: Vec<bool> = (0..n)
+        .map(|i| set.forked[i] || held[i] || judged_out[i])
+        .collect();
     let settled = resolve_stable(cert, set, &exclude);
     let (round, masked_by, _, record_refusals) = &settled;
     let cascade = (0..n)

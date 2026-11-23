@@ -188,7 +188,27 @@ function shippedFiles(): string[] {
   return files;
 }
 
-/** Every built-in skin the app ships, in its order, as its manifest and tokens declare it. */
+/**
+ * A pack's name as the Host serves it (plan BR, rekindle-skin
+ * skin_tree/brand.rs `name`): without the word "Xfire" (or "Xfire's"), any
+ * case, and "Xfire" alone is "Classic". Settings lists skins by this name.
+ */
+export function servedName(name: string): string {
+  const plain = name
+    .split(/\s+/)
+    .filter((w) => w !== "")
+    .filter((w) => {
+      const stem = w.replace(/[^A-Za-z0-9]+$/, "");
+      return (stem.endsWith("'s") ? stem.slice(0, -2) : stem).toLowerCase() !== "xfire";
+    })
+    .join(" ");
+  return plain === "" ? "Classic" : plain;
+}
+
+/** The conforming alternate the Host serves after Symbiosis (plan SK14): Symbiosis re-laid at serve time, no file of its own. */
+export const ACCESSIBLE_VARIANT = { file: "symbiosis-access", name: "Symbiosis (Accessible)", after: "symbiosis" };
+
+/** Every built-in skin the app ships, in its order, as its manifest and tokens declare it, by its served name. */
 export function builtinPacks(): SkinPack[] {
   const packs: SkinPack[] = [];
   for (const entry of shippedFiles()) {
@@ -203,7 +223,10 @@ export function builtinPacks(): SkinPack[] {
       colourLeaves(JSON.parse(tokens.toString("utf8")) as Record<string, unknown>, "", colours);
       return { base: v.base, colours };
     });
-    packs.push({ file: entry.replace(/\.rkskin$/, ""), name: manifest.name, variants });
+    const file = entry.replace(/\.rkskin$/, "");
+    packs.push({ file, name: servedName(manifest.name), variants });
+    // Its tokens are Symbiosis's; only the layout is re-laid.
+    if (file === ACCESSIBLE_VARIANT.after) packs.push({ file: ACCESSIBLE_VARIANT.file, name: ACCESSIBLE_VARIANT.name, variants });
   }
   return packs;
 }

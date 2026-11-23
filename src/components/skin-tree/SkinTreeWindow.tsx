@@ -14,6 +14,8 @@ import AdArea from "./AdArea";
 import FilesView from "./FilesView";
 import Infoview from "../infoview/Infoview";
 import ServersView from "./ServersView";
+import { BrandGlyph } from "./BrandGlyphs";
+import type { BrandGlyphName } from "../../ipc/commands/dto";
 
 /** What every node of one window's tree reads. */
 interface Tree {
@@ -168,7 +170,7 @@ const NodeLabelView: Component<{ label: NodeLabel }> = (props) => {
   );
 };
 
-/** A built-in glyph (plan SK3), in the current colour, sized by its box. */
+/** A built-in glyph (plan SK3), sized by its box: an icon in the current colour, or the Rekindle mark. */
 const NodeGlyphView: Component<{ glyph: NodeGlyph }> = (props) => (
   <Switch>
     <Match when={props.glyph === "communities"}>
@@ -182,14 +184,10 @@ const NodeGlyphView: Component<{ glyph: NodeGlyph }> = (props) => (
         <path d="M23 18.5c0-2.4-1.8-4.2-4-4.2-1 0-1.9.3-2.6.9 1.2 1 2 2.3 2.3 3.8z" fill="currentColor" opacity="0.8" />
       </svg>
     </Match>
-    <Match when={props.glyph === "rekindle"}>
-      {/* The app's flame: the Rekindle mark, one colour. */}
-      <svg class="skin-node-glyph-svg" viewBox="0 0 24 24" aria-hidden="true">
-        <path
-          d="M12 1.5c.6 3.2 2.6 5 4.4 7 1.9 2.1 3.1 4.3 3.1 7A7.5 7.5 0 0 1 12 23a7.5 7.5 0 0 1-7.5-7.5c0-2.6 1.2-4.6 2.7-6.3.3 1.6 1.1 2.8 2.3 3.5C9.2 8.6 10.3 4.6 12 1.5zm0 11.2c-.9 1.6-2.6 2.8-2.6 4.9a2.6 2.6 0 0 0 5.2 0c0-2.1-1.7-3.3-2.6-4.9z"
-          fill="currentColor"
-        />
-      </svg>
+    {/* The Rekindle mark (plan BR), in full colour, centred in the cover
+        with its aspect kept. */}
+    <Match when={props.glyph !== "communities" && props.glyph}>
+      {(brand) => <BrandGlyph glyph={brand() as BrandGlyphName} />}
     </Match>
   </Switch>
 );
@@ -306,7 +304,11 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
   Object.defineProperties(buttonAttrs, {
     role: { get: () => "button", enumerable: true },
     tabindex: { get: () => (hidden() ? undefined : 0), enumerable: true },
-    "aria-label": { get: () => tree.label(press()!), enumerable: true },
+    // The words the node shows are its name (plan SK14, WCAG 2.5.3): a served
+    // label names it, else its action; the label is also its tooltip, so words
+    // the box cuts short read in full on hover (focus: skin-tree.css).
+    "aria-label": { get: () => n().label?.text ?? tree.label(press()!), enumerable: true },
+    title: { get: () => n().label?.text, enumerable: true },
     class: { get: () => "skin-tree-button", enumerable: true },
     onKeyDown: {
       value: (e: KeyboardEvent) => {

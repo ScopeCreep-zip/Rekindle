@@ -18,7 +18,15 @@ fn cert(key: &SigningKey) -> GenesisCert {
         created_at: 1,
         additional_creators: Vec::new(),
         predecessor: None,
-        creator_device: None,
+        // The creator's device endorsed for its record, as genesis writes it
+        // (ADR 0022 rule 3), under the anchor "A" these tests sign for.
+        creator_device: Some(crate::device_signer::first_endorsement(
+            key,
+            "A",
+            &crate::test_member::device_of(key),
+            "VLD0:m",
+            "o",
+        )),
     }
 }
 
@@ -130,13 +138,17 @@ fn a_refused_op_is_quarantined_and_a_verified_op_carries_its_lamport() {
         5,
     )
     .unwrap();
-    // A non-member's write verifies (signature, chain) but the merge refuses it.
+    // A non-member's write verifies (signature, chain) but the merge refuses
+    // it. It signs with its pseudonym, a key the judge accepts as its own
+    // (lead decision K4b Q1), so the refusal is the membership check's; an
+    // unendorsed device key would leave it pending instead (Q5, pinned by
+    // `merge::judge` tests).
     let (theirs, theirs_bytes) = build_op(
         "A",
         &cert,
         &state,
         &empty,
-        crate::test_member::signer(&stranger, &crate::test_member::device_of(&stranger)),
+        crate::test_member::signer(&stranger, &stranger),
         meta("b"),
         Deps::Frontier,
         5,
