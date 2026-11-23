@@ -405,52 +405,12 @@ async fn handle_relayed_envelope(
             content_hash,
             observer_pseudonym,
         } => {
-            // Mutual Aid (architecture §14.3 / §11.7): a peer with a live
-            // watch slot is telling us a record's subkey changed. Fetch
-            // the new value via the existing presence/value pipeline so
-            // we don't depend on holding a DHT watch slot ourselves.
-            let _ = observer_pseudonym;
-
-            // W11.1 — if we have our OWN active watch on this record, our
-            // direct value-change callback will fire (or has already
-            // fired) for the same change. Skipping the relay fetch here
-            // saves a redundant `get_dht_value` round-trip per gossip
-            // notice in the steady state where most members hold their
-            // own watch slots. Members who couldn't get a slot still
-            // fall through to the fetch path below.
-            let we_already_watch = {
-                let communities = state.communities.read();
-                communities
-                    .values()
-                    .any(|cs| cs.watched_records.contains(&record_key))
-            };
-            if we_already_watch {
-                tracing::trace!(
-                    record_key = %record_key,
-                    subkey,
-                    "WatchRelay: skipping fetch — own watch covers this record"
-                );
-                return;
-            }
-
-            if let Ok(pool) = state_helpers::record_pool(state) {
-                if let Ok(Some(value)) = pool.read_once(&record_key, subkey, true).await {
-                    let actual = blake3::hash(&value.data).to_hex().to_string();
-                    if actual == content_hash {
-                        state_helpers::friend_presence_change(
-                            state,
-                            &record_key,
-                            &[subkey],
-                            &value.data,
-                        );
-                    } else {
-                        tracing::debug!(
-                            record_key = %record_key,
-                            subkey,
-                            "WatchRelay content hash mismatch — dropping"
-                        );
-                    }
-                }
+            // Mutual Aid §14.3: the Host's one ingest (plan GI3, the
+            // daemon's `ingest_gossip` calls it too) reads the record,
+            // checks the hash and applies the value.
+            if let Ok(host) = state_helpers::host_governance(state) {
+                host.on_watch_relay(&record_key, subkey, &content_hash, &observer_pseudonym)
+                    .await;
             }
         }
     }

@@ -11,7 +11,6 @@ mod control;
 mod control_event_records;
 mod control_events;
 pub(crate) mod control_ingress;
-mod control_membership;
 mod control_moderation;
 mod dht_watch;
 mod inbound_unported;

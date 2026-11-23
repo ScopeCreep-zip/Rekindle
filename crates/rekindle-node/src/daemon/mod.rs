@@ -24,7 +24,6 @@ pub(crate) mod keepalive;
 pub mod mek_rotation;
 pub mod presence_adapter;
 pub mod shutdown;
-mod watch_relay;
 
 pub use rekindle_lifecycle::{
     AppLifecycle as DaemonLifecycle, LifecycleError, LifecycleState as DaemonState, TransportGuard,

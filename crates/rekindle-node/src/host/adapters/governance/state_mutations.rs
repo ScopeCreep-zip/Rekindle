@@ -72,6 +72,7 @@ impl HostGovernance {
         if let Some(shell) = &self.ctx.shell {
             shell.on_governance_projected(community_id, &projected);
         }
+        self.rotate_for_departures(community_id, &transitions, me.as_ref());
         self.publish_member_transitions(transitions);
         self.publish_thread_creations(community_id, prev.as_ref(), now_secs);
         self.publish_thread_archive_changes(community_id, archives);

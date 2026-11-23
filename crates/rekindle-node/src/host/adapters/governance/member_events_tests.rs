@@ -6,7 +6,7 @@ use rekindle_governance::state::{GovernanceState, MemberState};
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::subscription_events::MembershipEvent;
 
-use super::member_transitions;
+use super::{departures_to_rotate, member_transitions};
 
 const C: &str = "community";
 
@@ -129,6 +129,31 @@ fn a_leave_is_one_left_on_every_member_the_leaver_included() {
         left,
         "the leaver's own frontends see its leave"
     );
+}
+
+/// ADR 0018: a merged leave of another member starts exactly one departure
+/// rotation (the plain, non-holding kind); our own leave, a kick or a ban
+/// (the moderation path's rotation) and a join start none.
+#[test]
+fn a_merged_leave_of_another_member_is_the_one_departure_rotated() {
+    let prev = with(&[1, 2, 3]);
+    let mut next = departed(&prev, 2);
+    next.members.remove(&key(3));
+    next.removed.insert(key(3), OpStamp::MIN);
+    next.removed_by.insert(key(3), key(1));
+    let events = member_transitions(C, &prev, &next, Some(&key(1)), names, names);
+    let leaver = key(2).to_hex();
+    assert_eq!(
+        departures_to_rotate(&events, Some(&key(1))),
+        vec![leaver.as_str()]
+    );
+    let own = member_transitions(C, &prev, &departed(&prev, 1), Some(&key(1)), names, names);
+    assert!(
+        departures_to_rotate(&own, Some(&key(1))).is_empty(),
+        "our own leave rotates nothing of ours"
+    );
+    let join = member_transitions(C, &with(&[2]), &with(&[1, 2]), Some(&key(2)), names, names);
+    assert!(departures_to_rotate(&join, Some(&key(2))).is_empty());
 }
 
 #[test]

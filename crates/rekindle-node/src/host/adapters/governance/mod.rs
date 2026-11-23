@@ -99,6 +99,7 @@ mod relayed_ingest;
 pub(crate) mod removal_posts;
 mod removal_watch;
 pub(crate) mod search;
+mod segment_request;
 mod thread_events;
 mod timeout_events;
 
@@ -116,6 +117,7 @@ mod state_reads;
 pub(crate) mod unread;
 mod views;
 mod watch;
+mod watch_relay;
 pub mod watch_ring;
 
 /// The Host, as the governance runtime sees it.
