@@ -27,6 +27,15 @@ export interface DmSendStatus {
   conversationId: string;
   clientId: string;
   state: SendState;
+  /** Set while the send goes unanswered and the Host keeps trying (plan SR2):
+   *  each unanswered attempt publishes it; delivery or failure clears it. */
+  retry: DeliveryRetry | null;
+}
+
+/** `DeliveryRetry` (plan SR2): attempts so far and when the next one goes (ms since epoch). */
+export interface DeliveryRetry {
+  attempts: number;
+  nextAttemptAt: number;
 }
 
 /** The peer's DM chain retired entries we never fetched: their stream to

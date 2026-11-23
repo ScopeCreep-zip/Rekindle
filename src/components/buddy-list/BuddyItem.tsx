@@ -8,6 +8,8 @@ import { formatRelativeTime } from "../../utils/time";
 import { identityPinMismatchText } from "../../utils/identity_pin";
 import { handleRetryHandshake } from "../../actions/buddy.actions";
 import GameIcon from "../game/GameIcon";
+import type { DeliveryRetry } from "../../ipc/channels/chat_events";
+import { deliveryRetryText } from "../../utils/delivery_retry";
 
 interface BuddyItemProps {
   publicKey: string;
@@ -24,6 +26,8 @@ interface BuddyItemProps {
   voiceChannel: string | null;
   friendshipState?: string;
   requestSendState?: string;
+  /** Our request goes unanswered and the Host keeps trying (plan SR2). */
+  requestRetry?: DeliveryRetry | null;
   handshakeError: string | null;
   handshakeRetrying: boolean;
   unreachable: boolean;
@@ -109,6 +113,9 @@ const BuddyItem: Component<BuddyItemProps> = (props) => {
         </Show>
         <Show when={props.friendshipState === "pendingOut" && props.requestSendState}>
           {(state) => <div class="buddy-request-state">Request {state()}</div>}
+        </Show>
+        <Show when={props.friendshipState === "pendingOut" && props.requestRetry}>
+          {(retry) => <div class="buddy-request-state">{deliveryRetryText(retry())}</div>}
         </Show>
         <Show when={!gameDisplay() && props.statusMessage}>
           <div class="buddy-status-message">{props.statusMessage}</div>

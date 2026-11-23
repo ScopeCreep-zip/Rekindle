@@ -19,6 +19,7 @@ function applyMessageState(state: DmSendStatus): void {
   if (state.clientId.startsWith("FriendRequest:")) {
     if (friendsState.friends[state.conversationId]) {
       setFriendsState("friends", state.conversationId, "requestSendState", state.state);
+      setFriendsState("friends", state.conversationId, "requestRetry", state.retry);
     }
     return;
   }
@@ -27,6 +28,7 @@ function applyMessageState(state: DmSendStatus): void {
   const idx = convo.messages.findIndex((m) => m.serverMessageId === state.clientId);
   if (idx < 0) return;
   setChatState("conversations", state.conversationId, "messages", idx, "status", state.state);
+  setChatState("conversations", state.conversationId, "messages", idx, "retry", state.retry);
 }
 
 // The peer's stream lost entries we never fetched (`dmHistoryGap`): the
