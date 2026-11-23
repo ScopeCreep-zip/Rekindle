@@ -379,3 +379,42 @@ async fn an_unlisted_typist_is_named_by_the_fingerprint() {
     assert!(noted);
     assert_eq!(gov.typist_name("c1", &carol), "Carol");
 }
+
+/// The one ingest both modes call (the daemon's `ingest_gossip`, the
+/// desktop's relay; Linux real-app finding GI1): an accepted relayed frame
+/// reaches the Host's typing state.
+#[tokio::test]
+async fn the_shared_ingest_turns_a_relayed_frame_into_typing() {
+    let (_dir, host, mut events) = seeded().await;
+    let bob = typist_key(9);
+    let tag = channel_tag(&TEXT_KEY, EDIT_CHANNEL);
+    (host.governance()).ingest_typing("c1", &bob, 0, &bob, &tag, CHANNEL_TYPING_TTL_MS);
+    let started = next_typing(&mut events, Duration::from_millis(500)).await;
+    let started = started.expect("the relayed frame becomes a Started");
+    assert!(
+        started.contains("Started") && started.contains(EDIT_CHANNEL),
+        "{started}"
+    );
+}
+
+/// The ingest takes the daemon's gate: no typing from a community we were
+/// removed from.
+#[tokio::test]
+async fn the_shared_ingest_drops_typing_after_our_removal() {
+    let (_dir, host, mut events) = seeded().await;
+    if let Some(community) = host.ctx.communities.map().write().get_mut("c1") {
+        community.own_removal = Some(crate::host::community::OwnRemoval {
+            banned: false,
+            by: None,
+            by_name: None,
+            reason: None,
+        });
+    }
+    let bob = typist_key(9);
+    let tag = channel_tag(&TEXT_KEY, EDIT_CHANNEL);
+    (host.governance()).ingest_typing("c1", &bob, 0, &bob, &tag, CHANNEL_TYPING_TTL_MS);
+    assert_eq!(
+        next_typing(&mut events, Duration::from_millis(500)).await,
+        None
+    );
+}

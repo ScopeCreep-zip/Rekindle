@@ -37,27 +37,24 @@ impl DaemonHandler {
             return;
         }
 
-        // Channel typing (plan E3.4 S9) is the Host's: it names the channel
-        // behind the tag and lapses the start. Metered like all gossip; the
-        // Host drops a frame naming someone other than its signer.
+        // Channel typing (plan E3.4 S9) is the Host's: its one ingest gates,
+        // meters, names the channel behind the tag and lapses the start, the
+        // same on the desktop's relay path.
         if let CommunityEnvelope::TypingIndicator {
             channel_tag,
             ttl_ms,
             ref pseudonym_key,
         } = envelope
         {
-            let admitted = (self.subscriptions.read().as_ref())
-                .is_none_or(|sub| sub.admit(community_id, sender_pseudonym, lamport_ts));
-            if admitted {
-                if let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) {
-                    crate::host::adapters::governance::HostGovernance::new(ctx).on_typing_frame(
-                        community_id,
-                        sender_pseudonym,
-                        pseudonym_key,
-                        &channel_tag,
-                        ttl_ms,
-                    );
-                }
+            if let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) {
+                crate::host::adapters::governance::HostGovernance::new(ctx).ingest_typing(
+                    community_id,
+                    sender_pseudonym,
+                    lamport_ts,
+                    pseudonym_key,
+                    &channel_tag,
+                    ttl_ms,
+                );
             }
             return;
         }

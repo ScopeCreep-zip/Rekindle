@@ -324,8 +324,24 @@ async fn handle_relayed_envelope(
     match envelope {
         // Channel typing is the Host's (plan E3.4 S9): the frame names its
         // channel by a tag under the text key only the Host holds, and the
-        // Host lapses the start, so this relay surfaces nothing.
-        CommunityEnvelope::TypingIndicator { .. } => {}
+        // Host gates and lapses the start, through the one ingest the
+        // daemon's gossip path calls. The envelope carries no Lamport
+        // stamp; the transport's gossip dispatch passes 0 as well.
+        CommunityEnvelope::TypingIndicator {
+            channel_tag,
+            ttl_ms,
+            pseudonym_key,
+        } => match state_helpers::host_governance(state) {
+            Ok(host) => host.ingest_typing(
+                &community_id,
+                &signed.sender_pseudonym,
+                0,
+                &pseudonym_key,
+                &channel_tag,
+                ttl_ms,
+            ),
+            Err(_) => tracing::trace!("typing frame before the host started — dropped"),
+        },
         CommunityEnvelope::Control(payload) => {
             if state.db.current().is_err() {
                 tracing::debug!("inbound message: no identity database — dropped");
