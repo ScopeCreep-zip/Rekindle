@@ -538,7 +538,8 @@ export interface SkinApplied {
   /// skin lays none (the built-in default keeps the app's own layout).
   shells?: SkinShell[];
   /// The brand glyph the shell draws inline in the title strip's logo box
-  /// (the first strip logo's, Main before Chat); absent with no strip logo.
+  /// (the first strip logo's, Main before Chat), chosen by the Host from that
+  /// box (plan BR); absent with no strip logo.
   titleLogo?: BrandGlyphName;
 }
 
