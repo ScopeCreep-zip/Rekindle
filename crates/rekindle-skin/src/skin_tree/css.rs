@@ -240,8 +240,9 @@ const fn cut(t: NodeTarget) -> bool {
 /// A cut press area (plan SK12): the node keeps its art box, which draws in
 /// the pack's order and takes no press, and its `::before`, laid at the
 /// served area, takes the press for it (as a grip's band, [`grip_band`]),
-/// so a press in the two arts' overlap reaches only the node whose half it
-/// is. Listening nodes under it take their presses again.
+/// so a press in the two arts' overlap reaches only the node drawn on top
+/// there ([`super::target`]'s `under`). Listening nodes under it take their
+/// presses again.
 fn press_band(sel: &str, t: NodeTarget) -> String {
     let [left, top, width, height] = t.area;
     format!(

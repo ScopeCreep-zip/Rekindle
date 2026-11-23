@@ -173,11 +173,9 @@ fn stops(n: &SkinNode, up: &[String], all: &[Obstacle]) -> Vec<[i32; 4]> {
     all.iter()
         .filter(|o| {
             let apart = o.shows.is_some() && mine.is_some() && o.shows != mine;
-            o.id != n.id
-                && !o.up.contains(&n.id)
-                && !up.contains(&o.id)
-                && !apart
-                && !(o.blocker && o.up == up)
+            let kin = o.id == n.id || o.up.contains(&n.id) || up.contains(&o.id);
+            let sibling_blocker = o.blocker && o.up == up;
+            !(kin || apart || sibling_blocker)
         })
         .map(|o| o.b)
         .collect()
