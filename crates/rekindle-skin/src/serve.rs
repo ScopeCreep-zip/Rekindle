@@ -181,7 +181,7 @@ fn files(p: &Package<'_>) -> BTreeMap<String, Vec<u8>> {
 /// not emit (never for a package the helper returned).
 pub fn stylesheet(bytes: &[u8], address: &str) -> Result<Stylesheet, SkinError> {
     let p = package::read(bytes)?;
-    let m = manifest::served(&p)?;
+    let m = crate::conform::served(bytes, &p, address)?;
     let (v, resolved) = active_resolved(&p, &m)?;
     let mut css = tokens_css(&resolved).ok_or_else(|| unreadable("tokens do not emit"))?;
     let base = format!("{}/{address}", origin());
@@ -286,14 +286,15 @@ fn sheet_images(css: &str, base: &str) -> Vec<String> {
 
 /// The window frames of the canonical package `bytes`: each window kind's
 /// layout with its tiles' masks decoded from the package's images (plan
-/// SK0 S3, what the shell cuts its windows by).
+/// SK0 S3, what the shell cuts its windows by), served at `address` (the
+/// accessible alternate's is laid as [`crate::conform::served`] lays it).
 ///
 /// # Errors
 /// The package or its manifest does not read, or a tile's image does not
 /// decode at its declared size (never for a package the helper returned).
-pub fn frames(bytes: &[u8]) -> Result<Vec<SkinWindowFrame>, SkinError> {
+pub fn frames(bytes: &[u8], address: &str) -> Result<Vec<SkinWindowFrame>, SkinError> {
     let p = package::read(bytes)?;
-    let m = manifest::served(&p)?;
+    let m = crate::conform::served(bytes, &p, address)?;
     let images = files(&p);
     m.windows
         .iter()

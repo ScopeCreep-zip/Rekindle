@@ -29,7 +29,7 @@ mod trial;
 use rekindle_db::repo::{preferences, skins};
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 use rekindle_skin::helper::{self, HelperError, HelperOpts};
-use rekindle_skin::{builtin, manifest, package};
+use rekindle_skin::{builtin, conform, manifest, package};
 use rekindle_types::dto::skin::SkinManifest;
 use rekindle_types::dto::skin_library::{SkinEntry, SkinLibrary};
 
@@ -151,13 +151,19 @@ fn manifest_of(bytes: &[u8]) -> Answer<SkinManifest> {
 async fn import(ctx: &DaemonContext, bytes: Vec<u8>) -> Answer<SkinEntry> {
     let (db, owner) = (ctx.require_db()?, ctx.require_owner()?);
     let opts = helper_opts(ctx)?;
-    let canonical = rekindle_lifecycle::run_blocking(move || helper::validate(&bytes, &opts))
-        .await
-        .map_err(|e| failed("skin helper task", e))?
-        .map_err(|e| match e {
-            HelperError::Refused(rule) => IpcResponse::error(400, format!("skin refused: {rule}")),
-            other => failed("skin not validated", other),
-        })?;
+    let (canonical, shorts) = rekindle_lifecycle::run_blocking(move || {
+        helper::validate(&bytes, &opts).map(|c| {
+            let shorts = conform::short_targets_of(&c.bytes);
+            (c, shorts)
+        })
+    })
+    .await
+    .map_err(|e| failed("skin helper task", e))?
+    .map_err(|e| match e {
+        HelperError::Refused(rule) => IpcResponse::error(400, format!("skin refused: {rule}")),
+        other => failed("skin not validated", other),
+    })?;
+    let short_targets = shorts.map_err(|e| failed("skin targets unreadable", e))?;
     let m = manifest_of(&canonical.bytes)?;
     let manifest_json = serde_json::to_string(&m).map_err(|e| failed("skin manifest", e))?;
     let hash = canonical.address();
@@ -189,6 +195,8 @@ async fn import(ctx: &DaemonContext, bytes: Vec<u8>) -> Answer<SkinEntry> {
         name: m.name,
         imported_at: Some(imported_at),
         credits: m.credits,
+        short_targets,
+        conforming: short_targets == 0,
     })
 }
 
@@ -240,7 +248,7 @@ fn in_use(id: &str) -> IpcResponse {
 /// ("Keep this skin?", [`trial`]) and is stored only when kept.
 async fn select(ctx: &DaemonContext, id: String) -> Answer<IpcResponse> {
     let parsed = ids::parse(&id).ok_or_else(|| not_found(&id))?;
-    if matches!(parsed, SkinId::Builtin(_)) && builtin::find(&id).is_none() {
+    if matches!(parsed, SkinId::Builtin(_)) && !conform::is_builtin(&id) {
         return Err(not_found(&id));
     }
     let (db, owner) = (ctx.require_db()?, ctx.require_owner()?);
@@ -278,7 +286,7 @@ async fn select(ctx: &DaemonContext, id: String) -> Answer<IpcResponse> {
 async fn set_login(ctx: &DaemonContext, id: String) -> Answer<IpcResponse> {
     match ids::parse(&id).ok_or_else(|| not_found(&id))? {
         SkinId::Builtin(_) => {
-            if builtin::find(&id).is_none() {
+            if !conform::is_builtin(&id) {
                 return Err(not_found(&id));
             }
             login::set_builtin(&ctx.root, &id).map_err(|e| failed("login skin", e))?;
@@ -299,39 +307,82 @@ async fn set_login(ctx: &DaemonContext, id: String) -> Answer<IpcResponse> {
     list(ctx).await.map(|l| IpcResponse::ok(&l))
 }
 
-/// `SkinList`: the built-ins, then the library; the choice and login skin.
-async fn list(ctx: &DaemonContext) -> Answer<SkinLibrary> {
-    let (db, owner) = (ctx.require_db()?, ctx.require_owner()?);
-    let mut skins_out = Vec::new();
+/// The built-ins (the conforming alternate right after Symbiosis), then the
+/// library rows, each with its short-target count from the package as
+/// served: a library skin's from its bytes, never its stored manifest.
+fn entries(rows: Vec<(skins::SkinRow, Option<Vec<u8>>)>) -> Answer<Vec<SkinEntry>> {
+    let mut out = Vec::new();
     for pack in &builtin::PACKS {
         let m = manifest_of(pack.bytes)?;
-        skins_out.push(SkinEntry {
-            id: format!("{}{}", builtin::PREFIX, pack.id),
-            name: rekindle_skin::skin_tree::brand::name(&m.name),
-            imported_at: None,
-            credits: m.credits,
-        });
+        let id = format!("{}{}", builtin::PREFIX, pack.id);
+        let alternate = (id == conform::SOURCE).then(|| m.credits.clone());
+        let name = rekindle_skin::skin_tree::brand::name(&m.name);
+        out.push(builtin_entry(id, name, m.credits)?);
+        if let Some(credits) = alternate {
+            out.push(builtin_entry(
+                conform::ID.to_owned(),
+                conform::NAME.to_owned(),
+                credits,
+            )?);
+        }
     }
-    let trial = ctx.skin.trial.current(&owner);
-    let (rows, choice) = db
-        .call(move |conn| {
-            Ok((
-                skins::list(conn, &owner)?,
-                preferences::skin_choice(conn, &owner)?,
-            ))
-        })
-        .await
-        .map_err(|e| failed("skins unreadable", e))?;
-    for row in rows {
+    for (row, bytes) in rows {
+        let id = format!("{PKG}{}", row.hash);
         let m: SkinManifest =
             serde_json::from_str(&row.manifest_json).map_err(|e| failed("skin manifest", e))?;
-        skins_out.push(SkinEntry {
-            id: format!("{PKG}{}", row.hash),
+        let bytes = bytes.ok_or_else(|| failed("skin unreadable", &id))?;
+        let short_targets =
+            conform::short_targets_of(&bytes).map_err(|e| failed("skin targets unreadable", e))?;
+        out.push(SkinEntry {
+            id,
             name: rekindle_skin::skin_tree::brand::name(&m.name),
             imported_at: Some(row.imported_at),
             credits: m.credits,
+            short_targets,
+            conforming: short_targets == 0,
         });
     }
+    Ok(out)
+}
+
+/// A built-in's entry, its short-target count as served.
+fn builtin_entry(
+    id: String,
+    name: String,
+    credits: Option<rekindle_types::dto::skin::SkinCredits>,
+) -> Answer<SkinEntry> {
+    let short_targets = conform::builtin_short_targets(&id)
+        .map_err(|e| failed("skin targets unreadable", e))?
+        .ok_or_else(|| not_found(&id))?;
+    Ok(SkinEntry {
+        id,
+        name,
+        imported_at: None,
+        credits,
+        short_targets,
+        conforming: short_targets == 0,
+    })
+}
+
+/// `SkinList`: the built-ins, then the library; the choice and login skin.
+async fn list(ctx: &DaemonContext) -> Answer<SkinLibrary> {
+    let (db, owner) = (ctx.require_db()?, ctx.require_owner()?);
+    let trial = ctx.skin.trial.current(&owner);
+    let (rows, choice) = db
+        .call(move |conn| {
+            let mut held = Vec::new();
+            for row in skins::list(conn, &owner)? {
+                let bytes = skins::bytes(conn, &owner, &row.hash)?;
+                held.push((row, bytes));
+            }
+            Ok((held, preferences::skin_choice(conn, &owner)?))
+        })
+        .await
+        .map_err(|e| failed("skins unreadable", e))?;
+    // Counting a package's short targets lays it out: off the async workers.
+    let skins_out = rekindle_lifecycle::run_blocking(move || entries(rows))
+        .await
+        .map_err(|e| failed("skin list task", e))??;
     let login = login::read(&ctx.root).map_err(|e| failed("login skin", e))?;
     Ok(SkinLibrary {
         skins: skins_out,
