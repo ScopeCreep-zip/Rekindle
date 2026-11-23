@@ -176,3 +176,5 @@ windows = { version = "0.62", features = [ "Win32_Foundation", "Win32_Graphics_G
 rekindle-utils = { path = "../crates/rekindle-utils", features = [ "test-support" ] }
 proptest = "1"
 tempfile = "3"
+# `host::test_fixtures`: the relay tests start a real offline Host (plan GI3).
+rekindle-node = { path = "../crates/rekindle-node", features = [ "test-fixtures" ] }

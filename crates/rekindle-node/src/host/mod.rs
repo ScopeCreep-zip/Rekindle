@@ -94,6 +94,8 @@ pub(crate) mod unlocked;
 pub(crate) mod fixture;
 pub mod panic_shortcut;
 pub mod signals;
+#[cfg(any(test, feature = "test-fixtures"))]
+pub mod test_fixtures;
 mod wake;
 pub mod watchdog;
 pub mod wipe;
