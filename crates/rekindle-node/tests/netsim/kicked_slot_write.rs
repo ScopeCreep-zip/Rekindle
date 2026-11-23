@@ -65,18 +65,6 @@ async fn a_kicked_members_slot_write_is_stored_by_no_member() {
     }
 }
 
-/// Whether node `i`'s history page holds an entry by `author` within the
-/// scenario limit.
-async fn holds_entry_of(community: &Community, i: usize, author: &str) -> bool {
-    crate::harness::eventually(&community.sim, Duration::from_secs(120), || async {
-        community
-            .history(i, None, 100)
-            .await
-            .is_ok_and(|page| page.iter().any(|m| m["senderId"].as_str() == Some(author)))
-    })
-    .await
-}
-
 /// A/B finding R3-8: a kicked member back-dates a post into its slot after
 /// the kick (its clock an hour behind, so the post's `sent_at` precedes the
 /// removal). The history keeps a departed author's post by its causal
@@ -125,10 +113,11 @@ async fn a_kicked_members_back_dated_slot_write_is_kept_by_no_member() {
     }
     // Plan E3.3: the member's posts are entries of its own outbox, linked
     // to a channel only by a tag derived from their generation's text key.
-    // A member joining after the kick holds no key of the pre-kick
-    // generation (plan S9 item (iii)), so it cannot link the genuine post,
-    // as the slot record's position once did without a key; it is held to
-    // the same refusal of the back-dated post as every reader below.
+    // A member joining after the kick receives every generation its role may
+    // read (plan D16, the joiner bundle), which closes plan S9 item (iii)
+    // ("a late joiner cannot decrypt a departed member's pre-rotation
+    // text"): it reads the genuine pre-kick post like every other reader,
+    // and is held to the same refusal of the back-dated post.
     community.join(3).await;
     community.sim.fault(Fault::ClockSkew {
         node: 1,
@@ -155,17 +144,11 @@ async fn a_kicked_members_back_dated_slot_write_is_kept_by_no_member() {
             "node {reader} holds no back-dated post: {page:?}"
         );
         assert!(
-            reader == 3
-                || page
-                    .iter()
-                    .any(|m| m["body"].as_str() == Some("bea before the kick")),
-            "node {reader} still shows the genuine pre-kick post: {page:?}"
+            page.iter()
+                .any(|m| m["body"].as_str() == Some("bea before the kick")),
+            "node {reader} shows the genuine pre-kick post: {page:?}"
         );
     }
-    assert!(
-        !holds_entry_of(&community, 3, &bea).await,
-        "a member joining after the kick holds no entry of the member it cannot link"
-    );
 }
 
 /// Node `i`'s own post `body` from its history: its stored send state and

@@ -170,16 +170,18 @@ fn converging(
     stale: bool,
     rebuilds: usize,
 ) -> (MockGovernanceRuntimeDeps, BTreeSet<OpHash>, Frontier) {
-    converging_as(peer, stale, rebuilds, false)
+    converging_as(peer, stale, rebuilds, false, 5)
 }
 
 /// [`converging`], partial (joined from a hint, backfill not ended) when
-/// `partial` is set.
+/// `partial` is set, with the inspect reporting the frontier at
+/// `inspect_seq` (the read still returns the value at seq 5).
 fn converging_as(
     peer: &Peer,
     stale: bool,
     rebuilds: usize,
     partial: bool,
+    inspect_seq: u64,
 ) -> (MockGovernanceRuntimeDeps, BTreeSet<OpHash>, Frontier) {
     use rekindle_secrets::ed25519_dalek::SigningKey;
     let key = SigningKey::from_bytes(&[9; 32]);
@@ -233,9 +235,9 @@ fn converging_as(
         .returning(|_, _, _| Ok(LeaseId(1)));
     deps.expect_release_record().returning(|_| ());
     deps.expect_inspect_dht_record_update_get_seqs()
-        .returning(|_| {
+        .returning(move |_| {
             let mut seqs = vec![None; member_record::SUBKEY_COUNT as usize];
-            seqs[member_record::FRONTIER as usize] = Some(5);
+            seqs[member_record::FRONTIER as usize] = Some(inspect_seq);
             Ok(seqs)
         });
     deps.expect_read_hinted_value()
@@ -290,13 +292,30 @@ async fn a_peer_mismatch_with_equal_heads_does_not_rebuild() {
 /// checksum, so equal heads with another checksum do not rebuild it.
 #[tokio::test]
 async fn a_partial_community_compares_no_roster_checksum() {
-    let (deps, mut known, _) = converging_as(&Peer::Other, false, 0, true);
+    let (deps, mut known, _) = converging_as(&Peer::Other, false, 0, true, 5);
     let seen = SeenFrontiers::new();
     let stored = inspect_one(&deps, "A", "VLD0:m", &seen, &mut known, FrontierRead::Sweep)
         .await
         .expect("inspected");
     assert_eq!(stored, 0);
     assert_eq!(seen.get("VLD0:m"), Some(5));
+}
+
+/// The inspect and the read are separate fanouts: an inspect that reports
+/// the frontier at seq 6 while the read settles on the value at seq 5 marks
+/// read seq 5, the seq of the bytes stored, so the next pass reads seq 6.
+/// Before 8bcc16881 the sweep marked the inspect's seq 6 read against the
+/// seq-5 bytes and never read seq 6.
+#[tokio::test]
+async fn a_read_older_than_the_inspect_marks_read_the_seq_it_returned() {
+    let (deps, mut known, _) = converging_as(&Peer::Merged, false, 0, false, 6);
+    let seen = SeenFrontiers::new();
+    let stored = inspect_one(&deps, "A", "VLD0:m", &seen, &mut known, FrontierRead::Sweep)
+        .await
+        .expect("inspected");
+    assert_eq!(stored, 0);
+    assert_eq!(seen.get("VLD0:m"), Some(5), "the read returned seq 5");
+    assert!(seen.unread("VLD0:m", 6), "seq 6 is still to be read");
 }
 
 /// Equal heads with our own checksum: nothing to rebuild.

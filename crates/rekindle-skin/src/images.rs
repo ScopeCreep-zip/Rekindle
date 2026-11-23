@@ -219,6 +219,12 @@ fn still_limits(frames: Frames, max_alloc: u64) -> DecodeLimits {
 /// What the decoder refuses within the still-image limits.
 pub(crate) fn decode_png(bytes: &[u8]) -> Result<rekindle_image::RgbaImage, SkinRule> {
     let limits = still_limits(Frames::First, MAX_IMAGE_ALLOC);
+    #[cfg(test)]
+    {
+        use crate::work::{add, DECODED_FRAMES, DECODES};
+        add(&DECODES, 1);
+        add(&DECODED_FRAMES, 1);
+    }
     Ok(decode_limited(bytes, ImageKind::Png, &limits)
         .map_err(rule_of)?
         .into_first()

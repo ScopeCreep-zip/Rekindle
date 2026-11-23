@@ -44,6 +44,7 @@
 pub mod access;
 pub mod builtin;
 mod colour;
+pub mod conform;
 pub mod draft;
 pub mod flash;
 pub mod generate;
@@ -58,11 +59,15 @@ pub mod regions;
 pub mod registry;
 pub mod role_tag;
 pub mod serve;
+#[cfg(test)]
+mod serve_tests;
 pub mod shape;
 pub mod skin_tree;
 pub mod sounds;
 pub mod tokens;
 pub mod validate;
+#[cfg(test)]
+mod work;
 
 /// The package, image and sound bounds of the §6 limits ledger.
 pub mod limits {

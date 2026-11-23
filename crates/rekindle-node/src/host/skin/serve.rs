@@ -10,8 +10,8 @@
 
 use rekindle_db::repo::{preferences, skins};
 use rekindle_ipc::protocol::IpcResponse;
-use rekindle_skin::builtin;
 use rekindle_skin::serve::{self, Cache};
+use rekindle_skin::{builtin, conform};
 use rekindle_types::dto::skin_library::{SkinApplied, SkinFrames, SkinServed};
 use rekindle_types::subscription_events::{SubscriptionEvent, SystemEvent};
 
@@ -26,17 +26,23 @@ struct Held {
     cache: Cache,
 }
 
-/// The built-in `id`'s helper-validated canonical package.
+/// The built-in `id`'s helper-validated canonical package: for the
+/// accessible alternate (plan SK14), Symbiosis's, at the alternate's own
+/// address ([`conform::address`]), which serves it re-laid.
 async fn builtin_package(ctx: &DaemonContext, id: &str) -> Answer<Held> {
     let opts = helper_opts(ctx)?;
-    let owned = id.to_owned();
+    let owned = conform::pack_id(id).to_owned();
     let canonical = rekindle_lifecycle::run_blocking(move || builtin::validated(&owned, &opts))
         .await
         .map_err(|e| failed("skin helper task", e))?
         .map_err(|e| failed("built-in skin not validated", e))?
         .ok_or_else(|| not_found(id))?;
     Ok(Held {
-        address: canonical.address(),
+        address: if id == conform::ID {
+            conform::address().to_owned()
+        } else {
+            canonical.address()
+        },
         bytes: canonical.bytes,
         cache: Cache::Immutable,
     })
@@ -157,6 +163,7 @@ pub(super) async fn get(ctx: &DaemonContext, id: Option<String>) -> Answer<SkinA
         images: applied.images,
         palette: applied.palette,
         shells: applied.shells,
+        title_logo: applied.title_logo,
     })
 }
 
@@ -165,10 +172,11 @@ pub(super) async fn get(ctx: &DaemonContext, id: Option<String>) -> Answer<SkinA
 pub(super) async fn frames(ctx: &DaemonContext) -> Answer<SkinFrames> {
     let id = resolved(ctx).await?;
     let held = package_of(ctx, &id).await?;
-    let windows = rekindle_lifecycle::run_blocking(move || serve::frames(&held.bytes))
-        .await
-        .map_err(|e| failed("skin frames task", e))?
-        .map_err(|e| failed("skin frames", e))?;
+    let windows =
+        rekindle_lifecycle::run_blocking(move || serve::frames(&held.bytes, &held.address))
+            .await
+            .map_err(|e| failed("skin frames task", e))?
+            .map_err(|e| failed("skin frames", e))?;
     Ok(SkinFrames { id, windows })
 }
 
@@ -187,11 +195,13 @@ pub(super) async fn file(ctx: &DaemonContext, path: &str) -> Answer<SkinServed> 
 async fn file_answer(ctx: &DaemonContext, path: &str) -> Answer<SkinServed> {
     let missing = || IpcResponse::error(404, "no such skin file");
     let (address, _) = serve::parse_path(path).ok_or_else(missing)?;
-    // A built-in is found by its address and only that pack is validated.
+    // A built-in is found by its address and only that pack is validated;
+    // the accessible alternate's address names Symbiosis (plan SK14).
     let mut held = match builtin::by_address(address) {
         Some((_, pack)) => {
             Some(builtin_package(ctx, &format!("{}{}", builtin::PREFIX, pack.id)).await?)
         }
+        None if address == conform::address() => Some(builtin_package(ctx, conform::ID).await?),
         None => None,
     };
     if held.is_none() {

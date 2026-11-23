@@ -13,12 +13,12 @@ BRGripper Button target [1, 1, 24, 24] art [-1, -1, 25, 25] Size
 BottomLeft Decor target [0, 0, 83, 117] art [0, 0, 83, 117] Frame
 Bottom Decor target [0, 0, 218, 117] art [0, 0, 218, 117] Frame
 BottomRight Decor target [0, 0, 83, 117] art [0, 0, 83, 117] Frame
-Logo2 Decor
+Logo2 Decor label "Rekindle" cover [0, 0, 194, 44] glyph RekindleWordmark
 LeftEdge Decor target [0, 0, 83, 75] art [0, 0, 83, 75] Frame
 RightEdge Decor target [0, 0, 83, 75] art [0, 0, 83, 75] Frame
 Middle Decor
 MainTitleBar Drag
-  Logo Logo target [-4, -4, 22, 21] art [4, 4, 16, 16] Short
+  Logo Logo label "Rekindle" cover [0, 0, 16, 16] glyph RekindleMarkSmall target [-4, -4, 22, 21] art [4, 4, 16, 16] Short
   Title NameField
 TopButtonBar Group
   Minimize Button target [-4, -4, 20, 20] art [4, 4, 15, 15] Short

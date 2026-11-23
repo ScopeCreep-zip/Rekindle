@@ -468,9 +468,9 @@ export interface SkinEntry {
   importedAt: number | null;
   /// Who made it, as the skin states it; a library skin's are self-claimed.
   credits: SkinCredits | null;
-  /// The controls it serves under 24 px, in every window and popup (plan SK14).
+  /// Controls served under 24 CSS px with no spacing exception (WCAG 2.2 SC 2.5.8).
   shortTargets: number;
-  /// It serves none under 24 px (`shortTargets == 0`): a conforming alternate.
+  /// `shortTargets === 0`: every control meets SC 2.5.8.
   conforming: boolean;
 }
 
@@ -537,7 +537,14 @@ export interface SkinApplied {
   /// Each tree-laid window kind's outline (plan SK2-S2); absent when the
   /// skin lays none (the built-in default keeps the app's own layout).
   shells?: SkinShell[];
+  /// The brand glyph the shell draws inline in the title strip's logo box
+  /// (the first strip logo's, Main before Chat); absent with no strip logo.
+  titleLogo?: BrandGlyphName;
 }
+
+/** The brand glyphs a title-strip logo box takes (the `NodeGlyph`s
+ *  `skin_tree::brand::glyph` returns). */
+export type BrandGlyphName = "rekindle" | "rekindleMarkSmall" | "rekindleWordmark";
 
 /** The member-list group the Host put a member in (Tier 1 `MemberGroup`):
  *  every frontend renders it as given. */

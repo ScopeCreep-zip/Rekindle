@@ -204,6 +204,16 @@ fn worst_contrast(
     backing: [u8; 4],
     text: [u8; 4],
 ) -> f64 {
+    #[cfg(test)]
+    {
+        use crate::work::{add, CONTRAST_CALLS, CONTRAST_PIXELS, CONTRAST_VISITS};
+        add(&CONTRAST_CALLS, 1);
+        add(
+            &CONTRAST_PIXELS,
+            u64::from(image.width()) * u64::from(image.height()),
+        );
+        add(&CONTRAST_VISITS, (rows.len() * cols.len()) as u64);
+    }
     let mut worst = f64::INFINITY;
     let mut seen = std::collections::HashSet::new();
     for y in rows {
@@ -246,13 +256,20 @@ pub(crate) fn frames(name: &str, bytes: &[u8]) -> Result<Vec<RgbaImage>, SkinErr
             },
         )
     })?;
-    Ok(match decoded {
+    let out: Vec<RgbaImage> = match decoded {
         Decoded::Still(image) => vec![image.into_rgba8()],
         Decoded::Animated { first, rest } => std::iter::once(first)
             .chain(rest)
             .map(rekindle_image::Frame::into_buffer)
             .collect(),
-    })
+    };
+    #[cfg(test)]
+    {
+        use crate::work::{add, DECODED_FRAMES, DECODES};
+        add(&DECODES, 1);
+        add(&DECODED_FRAMES, out.len() as u64);
+    }
+    Ok(out)
 }
 
 /// The colour token `id` names, or a refusal of the manifest field.
@@ -494,6 +511,8 @@ impl Measure<'_> {
     fn check(&self) -> Result<(), SkinRule> {
         for win in &WINDOWS {
             for ((side_w, side_h), at_max) in [(win.min, false), (win.max, true)] {
+                #[cfg(test)]
+                crate::work::add(&crate::work::REGION_CASES, 1);
                 let bw = self.tokens.side(self.slot.width, side_w, at_max);
                 let bh = self.tokens.side(self.slot.height, side_h, at_max);
                 let (cols, rows) = self.under_backing(win.kind, bw, bh)?;

@@ -210,7 +210,10 @@ async fn skin_frames_are_the_shown_skins_validated_layouts() {
         !shown.windows.is_empty(),
         "the default skin frames its windows"
     );
-    assert_eq!(shown.windows, serve::frames(&canonical.bytes).unwrap());
+    assert_eq!(
+        shown.windows,
+        serve::frames(&canonical.bytes, &canonical.address()).unwrap()
+    );
 }
 
 #[tokio::test]

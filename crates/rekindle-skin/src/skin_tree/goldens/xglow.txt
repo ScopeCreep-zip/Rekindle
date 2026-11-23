@@ -2,7 +2,7 @@ Top Decor
 FileMenu MenuTitle label "Rekindle" cover [1, 0, 21, 22] glyph Rekindle target [0, -1, 24, 24] art [0, 1, 24, 22] Size
 ToolMenu MenuTitle target [0, -1, 32, 24] art [0, 1, 32, 22] Size
 HelpMenu MenuTitle target [0, -1, 27, 24] art [0, 1, 27, 22] Size
-XfireLogo Logo target [0, 0, 48, 24] art [0, 0, 48, 23] Size
+XfireLogo Logo label "Rekindle" cover [0, 0, 48, 23] glyph RekindleWordmark
 MinimizeButton Button target [-5, -5, 24, 24] art [5, 5, 13, 13] Size
 Left Decor
 Right Decor

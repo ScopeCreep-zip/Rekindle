@@ -16,6 +16,12 @@ pub struct SkinEntry {
     /// The manifest's credits; a library skin's are as the skin states
     /// them (self-claimed, not verified).
     pub credits: Option<crate::dto::skin::SkinCredits>,
+    /// How many controls the skin serves under 24 CSS px with no spacing
+    /// exception (WCAG 2.2 SC 2.5.8, `TargetRule::Short`), counted from
+    /// the package as served.
+    pub short_targets: u32,
+    /// `short_targets == 0`: every control meets SC 2.5.8.
+    pub conforming: bool,
 }
 
 /// Every skin, the identity's choice and the device login skin.
@@ -92,6 +98,12 @@ pub struct SkinApplied {
     /// and binds each role; a window kind absent here keeps its own layout.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shells: Vec<crate::dto::skin_tree::SkinShell>,
+    /// The brand glyph the shell draws inline in the title strip's logo
+    /// box (design `br`): the first pack strip logo's, Main before Chat,
+    /// by the box rule (`skin_tree::brand::glyph`); absent when no strip
+    /// lays a logo. The stylesheet only places that box.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title_logo: Option<crate::dto::skin_tree::NodeGlyph>,
 }
 
 /// One TUI colour role and its opaque sRGB value (a translucent token is

@@ -24,3 +24,35 @@ pub fn open_seeded_db() -> Connection {
     .expect("seed identity");
     conn
 }
+
+/// A real offline Host running on a fresh `AppState` (plan GI3): started
+/// over the state's own stores (`AppState::host_stores`), so the Host and
+/// the shell share one community store and database, and installed in the
+/// state's host slot, so every `state_helpers::host_*` path reaches it.
+pub struct TestHost {
+    _dir: tempfile::TempDir,
+    pub state: std::sync::Arc<crate::state::AppState>,
+    pub host: std::sync::Arc<rekindle_node::host::Host>,
+}
+
+impl TestHost {
+    /// Start the Host with no node and set it.
+    pub async fn start() -> Self {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let state = std::sync::Arc::new(crate::state::AppState::default());
+        let host =
+            rekindle_node::host::test_fixtures::offline_host_on(&dir, state.host_stores(), None)
+                .await;
+        state.host.set(std::sync::Arc::clone(&host));
+        Self {
+            _dir: dir,
+            state,
+            host,
+        }
+    }
+
+    /// Stop the Host.
+    pub async fn shutdown(self) {
+        self.host.shutdown().await.expect("host shuts down");
+    }
+}

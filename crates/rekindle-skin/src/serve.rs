@@ -21,7 +21,7 @@ use rekindle_types::dto::skin::{
 };
 use rekindle_types::dto::skin_action::{MenuRegistry, PackUrl, SkinAction};
 use rekindle_types::dto::skin_library::{SkinPaletteColour, SkinTileMask, SkinWindowFrame};
-use rekindle_types::dto::skin_tree::{SkinNode, SkinShell};
+use rekindle_types::dto::skin_tree::{NodeGlyph, SkinNode, SkinShell};
 
 use crate::generate::tui_colours;
 use crate::output::tokens_css;
@@ -141,14 +141,14 @@ pub struct Stylesheet {
     pub base: SkinBase,
     pub css: String,
     pub regions: Vec<String>,
-    /// [`sheet_images`] of the shared rules (regions, titles, labels,
-    /// frames): every image href any window's sheet may draw; each tree's
-    /// own art is on its shell (plan SK4).
+    /// [`sheet_images`] of the shared rules: every image href any window's sheet may draw (SK4).
     pub images: Vec<String>,
     /// [`crate::generate::tui_colours`] of the active variant.
     pub palette: Vec<SkinPaletteColour>,
     /// Each tree-laid window kind's shell outline (plan SK2-S2).
     pub shells: Vec<SkinShell>,
+    /// [`crate::skin_tree::brand::title_logo`]: the strip logo's brand glyph (design `br`).
+    pub title_logo: Option<NodeGlyph>,
 }
 
 /// The active variant of the read package `p` and its tokens after the
@@ -173,17 +173,15 @@ fn files(p: &Package<'_>) -> BTreeMap<String, Vec<u8>> {
     p.files().map(|(n, b)| (n.to_owned(), b.to_vec())).collect()
 }
 
-/// The stylesheet of the canonical package `bytes` at `address`: the
-/// active variant's resolved tokens, then the region rules with images
-/// under `{origin}/{address}`, then the window frames
-/// ([`shape::frame_css`], plan SK0 S2).
+/// The stylesheet of the canonical package `bytes` at `address`: resolved tokens, the region rules
+/// (images under `{origin}/{address}`), then the window frames ([`shape::frame_css`], SK0 S2).
 ///
 /// # Errors
 /// The package, its manifest or its tokens do not read, or a region does
 /// not emit (never for a package the helper returned).
 pub fn stylesheet(bytes: &[u8], address: &str) -> Result<Stylesheet, SkinError> {
     let p = package::read(bytes)?;
-    let m = manifest::served(&p)?;
+    let m = crate::conform::served(bytes, &p, address)?;
     let (v, resolved) = active_resolved(&p, &m)?;
     let mut css = tokens_css(&resolved).ok_or_else(|| unreadable("tokens do not emit"))?;
     let base = format!("{}/{address}", origin());
@@ -204,6 +202,7 @@ pub fn stylesheet(bytes: &[u8], address: &str) -> Result<Stylesheet, SkinError> 
         css,
         regions: m.regions.keys().cloned().collect(),
         palette: tui_colours(&resolved),
+        title_logo: crate::skin_tree::brand::title_logo(&m),
     })
 }
 
@@ -287,14 +286,15 @@ fn sheet_images(css: &str, base: &str) -> Vec<String> {
 
 /// The window frames of the canonical package `bytes`: each window kind's
 /// layout with its tiles' masks decoded from the package's images (plan
-/// SK0 S3, what the shell cuts its windows by).
+/// SK0 S3, what the shell cuts its windows by), served at `address` (the
+/// accessible alternate's is laid as [`crate::conform::served`] lays it).
 ///
 /// # Errors
 /// The package or its manifest does not read, or a tile's image does not
 /// decode at its declared size (never for a package the helper returned).
-pub fn frames(bytes: &[u8]) -> Result<Vec<SkinWindowFrame>, SkinError> {
+pub fn frames(bytes: &[u8], address: &str) -> Result<Vec<SkinWindowFrame>, SkinError> {
     let p = package::read(bytes)?;
-    let m = manifest::served(&p)?;
+    let m = crate::conform::served(bytes, &p, address)?;
     let images = files(&p);
     m.windows
         .iter()
@@ -570,6 +570,17 @@ mod tests {
             } else {
                 assert_eq!(want, registry, "{}: a menu without a link", pack.id);
             }
+        }
+        // The real set (design `br`): Total Chaos's `TCLink` and Space
+        // Cowboy's `SCLogo`; the packs whose logo ran xfire.com serve none.
+        let mut ids: Vec<&str> = linked.iter().map(|(id, ..)| *id).collect();
+        ids.sort_unstable();
+        assert_eq!(ids, ["spacecowboy", "total-chaos"]);
+        for (id, _, run) in &linked {
+            let SkinAction::LaunchUrl(u) = run else {
+                panic!("{id}: the website item runs {run:?}");
+            };
+            assert!(!crate::skin_tree::brand::is_xfire_url(&u.url), "{id}");
         }
         let chaos = linked.iter().find(|(id, ..)| *id == "total-chaos");
         let (_, label, run) = chaos.expect("Total Chaos's Help menu serves its website");

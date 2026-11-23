@@ -212,6 +212,8 @@ fn sides(extent: Extent, chrome: u32, width: bool) -> Vec<(u32, u32)> {
                 } else {
                     (w.min.1, w.max.1)
                 };
+                #[cfg(test)]
+                crate::work::add(&crate::work::LABEL_SPANS, u64::from(hi.max(lo) - lo + 1));
                 (lo, hi.max(lo))
             })
             .collect(),

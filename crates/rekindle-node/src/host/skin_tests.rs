@@ -7,7 +7,7 @@
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 use rekindle_ipc::{Caller, HostApi};
 use rekindle_skin::helper::{frame, HelperOpts};
-use rekindle_skin::{builtin, validate};
+use rekindle_skin::{builtin, conform, validate};
 use rekindle_types::dto::skin_library::{SkinEntry, SkinLibrary};
 use rekindle_types::intent::{Escalation, IntentClass, IntentProof};
 
@@ -116,7 +116,61 @@ async fn a_package_the_helper_refuses_is_refused_with_its_typed_error() {
         other => panic!("expected the helper's refusal, got {other:?}"),
     }
     let library: SkinLibrary = data(host.call(Caller::shell(), IpcRequest::SkinList).await);
-    assert_eq!(library.skins.len(), builtin::PACKS.len(), "nothing stored");
+    // The committed packs and the conforming alternate.
+    assert_eq!(
+        library.skins.len(),
+        builtin::PACKS.len() + 1,
+        "nothing stored"
+    );
+}
+
+/// Plan SK14: the conforming alternate is listed right after Symbiosis,
+/// counts no short target where Symbiosis counts four, and is selectable
+/// and settable as the device login skin.
+#[tokio::test]
+async fn the_conforming_alternate_is_listed_selectable_and_a_login_skin() {
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    create_ann(&host).await;
+    let library: SkinLibrary = data(host.call(Caller::shell(), IpcRequest::SkinList).await);
+    let at = library
+        .skins
+        .iter()
+        .position(|s| s.id == builtin::DEFAULT)
+        .expect("Symbiosis is listed");
+    let (symbiosis, alternate) = (&library.skins[at], &library.skins[at + 1]);
+    assert_eq!(alternate.id, conform::ID);
+    assert_eq!(alternate.name, conform::NAME);
+    assert_eq!((alternate.short_targets, alternate.conforming), (0, true));
+    assert_eq!((symbiosis.short_targets, symbiosis.conforming), (4, false));
+    assert_eq!(alternate.credits, symbiosis.credits);
+
+    let (answer, _) = run(
+        &host,
+        IpcRequest::SkinSelect {
+            id: conform::ID.into(),
+        },
+    )
+    .await;
+    let library: SkinLibrary = data(answer);
+    assert_eq!(library.active, conform::ID);
+    assert!(library.trial.is_none(), "a built-in is stored at once");
+
+    let (answer, review) = run(
+        &host,
+        IpcRequest::SkinSetLogin {
+            id: conform::ID.into(),
+        },
+    )
+    .await;
+    assert!(review.is_none(), "a built-in login skin is Routine");
+    assert_eq!(data::<SkinLibrary>(answer).login, conform::ID);
+    let library: SkinLibrary = data(host.call(Caller::shell(), IpcRequest::SkinList).await);
+    assert_eq!(
+        library.login,
+        conform::ID,
+        "login.json names it and reads back"
+    );
 }
 
 #[tokio::test]
@@ -139,6 +193,12 @@ async fn import_select_set_login_and_remove_round_trip() {
     .await;
     let entry: SkinEntry = data(answer);
     assert_eq!(entry.id, format!("pkg:{}", canonical.address()));
+    // Plan SK14: an imported pack's count comes from its bytes as served.
+    let shorts = conform::short_targets_of(&canonical.bytes).unwrap();
+    assert_eq!(
+        (entry.short_targets, entry.conforming),
+        (shorts, shorts == 0)
+    );
     // Plan E7.7.3d: the import answers the manifest's credits.
     let credited = entry.credits.clone().expect("Symbiosis states its credits");
     assert_eq!(credited.authors, ["Xfire, Inc."]);
@@ -159,6 +219,10 @@ async fn import_select_set_login_and_remove_round_trip() {
     }
     let library_row = library.skins.iter().find(|s| s.id == entry.id).unwrap();
     assert_eq!(library_row.credits.as_ref(), Some(&credited));
+    assert_eq!(
+        library_row.short_targets, shorts,
+        "the row's count, from its bytes"
+    );
     let (answer, review) = run(
         &host,
         IpcRequest::SkinKeep {

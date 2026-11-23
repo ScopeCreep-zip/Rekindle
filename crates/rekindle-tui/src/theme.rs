@@ -244,6 +244,7 @@ mod tests {
             images: Vec::new(),
             palette,
             shells: Vec::new(),
+            title_logo: None,
         }
     }
 
