@@ -147,6 +147,9 @@ impl StreamSender for MekTransferSender {
                     generation,
                     "community key delivered (D16)"
                 );
+                // Delivered: its copy leaves our key drop (plan RV2d), so
+                // no wrapped key of a settled row stays at rest.
+                self.0.spawn_key_drop_refresh(community, member);
                 AttemptOutcome::Receipted
             }
             Ok(_) => AttemptOutcome::Deferred,
@@ -203,6 +206,25 @@ impl MekTransfers {
         (self.0.deps())
             .prefix_rows(&StreamKind::MekTransfer.stream(&scope(community, "")))
             .await
+    }
+
+    /// The (member, sealed envelope) of every unsettled row of
+    /// `community`: what our key drop holds (plan RV2d).
+    ///
+    /// # Errors
+    /// The storage failed.
+    pub async fn sealed(&self, community: &str) -> Result<Vec<(String, Vec<u8>)>, OutboxError> {
+        let prefix = format!("mek_transfer:{community}:");
+        Ok(self
+            .rows(community)
+            .await?
+            .iter()
+            .filter_map(|row| {
+                let member = row.stream.strip_prefix(&prefix)?;
+                let (_, sealed) = decode(&row.payload)?;
+                Some((member.to_owned(), sealed.to_vec()))
+            })
+            .collect())
     }
 
     /// The (member, route) of every row of `community` whose sealed key

@@ -168,6 +168,10 @@ impl HostGovernance {
         let queued = self
             .queue_sealed_key(deps, community_id, &joiner.pseudonym, &joiner.route, &mek)
             .await?;
+        // The durable copy (plan RV2d): the same sealed envelope on our key
+        // drop, raced with the call; the joiner installs whichever lands
+        // first and the other is idempotent.
+        self.refresh_key_drop(community_id, None).await;
         if queued {
             tracing::info!(community = community_id, joiner = %joiner.pseudonym, "community key queued for the joiner (D16)");
         }

@@ -104,6 +104,11 @@ pub struct CommunityState {
     /// who may remove our remover, each held read-only and watched on its frontier, by record key.
     #[serde(skip)]
     pub removal_watch: std::collections::BTreeMap<String, rekindle_records::lease::LeaseId>,
+    /// The key drop watch (plan RV2d): while we hold no community key after
+    /// our join, our inviter's member record, held read-only and watched on
+    /// its key drop (`M`/7), with its record key.
+    #[serde(skip)]
+    pub key_drop: Option<(String, rekindle_records::lease::LeaseId)>,
     /// What each member's beat shows (plan E3.4 S3): fed by the ring's
     /// beat changes, `HeadAdvanced` hints and reads, expired locally by the
     /// 15-minute rule. Its state transitions are what the ring relays as

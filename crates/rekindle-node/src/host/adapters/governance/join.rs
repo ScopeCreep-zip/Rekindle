@@ -149,6 +149,9 @@ impl HostGovernance {
                     .await;
             }
         }
+        // The inviter's key drop (plan RV2d): the durable copy of our key,
+        // watched until we hold one, whichever path brings it.
+        self.arm_key_drop(&id, inviter_record).await;
         self.audit_joined(&id, &outcome.invite.community_name);
         // The joined community's records handed over as an unlock's stage
         // hands each one over (finding IB1): held, watched, and its loops
