@@ -146,7 +146,11 @@ pub fn samples() -> Vec<Sample> {
             ChannelMessageEvent::DmSendStatus {
                 client_id: text("01900000-0000-7000-8000-000000000002"),
                 conversation_id: pk('b'),
-                state: rekindle_types::message::SendState::Failed,
+                state: rekindle_types::message::SendState::Sent,
+                retry: Some(rekindle_types::message::DeliveryRetry {
+                    attempts: 3,
+                    next_attempt_at: 1_700_000_004_000,
+                }),
             },
         ),
         ev(

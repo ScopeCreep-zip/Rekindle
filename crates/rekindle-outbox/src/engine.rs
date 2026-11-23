@@ -153,6 +153,7 @@ impl<D: OutboxDeps> Outbox<D> {
             kind,
             state: SendState::Queued,
             wedge_reason: None,
+            retry: None,
         });
         self.wake.notify_one();
         Ok(Enqueued { stream, stream_seq })
@@ -277,9 +278,11 @@ impl<D: OutboxDeps> Outbox<D> {
                     wedge_reason: None,
                 };
                 self.deps.update(&row.client_id, &update).await?;
-                if state != row.state {
-                    self.deps.publish(StateChange::of(row, state, None));
-                }
+                // Every unanswered attempt is published, its state changed
+                // or not: the send reads not delivered yet, still trying,
+                // with its count and next attempt (plan §3.0 lane 1).
+                self.deps
+                    .publish(StateChange::retrying(row, state, attempts, update.next_at));
             }
             AttemptOutcome::Wedged(reason) => self.fail(row, reason).await?,
             AttemptOutcome::Superseded(reason) => {

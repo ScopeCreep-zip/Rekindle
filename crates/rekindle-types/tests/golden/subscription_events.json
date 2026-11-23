@@ -232,7 +232,11 @@
       "dmSendStatus": {
         "clientId": "01900000-0000-7000-8000-000000000002",
         "conversationId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        "state": "failed"
+        "retry": {
+          "attempts": 3,
+          "nextAttemptAt": 1700000004000
+        },
+        "state": "sent"
       }
     }
   },

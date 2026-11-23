@@ -203,6 +203,7 @@ fn send_status(change: &StateChange) -> Option<SubscriptionEvent> {
             conversation_id: peer.to_owned(),
             client_id: change.client_id.clone(),
             state: change.state,
+            retry: change.retry,
         },
     ))
 }

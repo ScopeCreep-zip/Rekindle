@@ -58,6 +58,7 @@ impl<D: OutboxDeps> Outbox<D> {
                 kind,
                 state: SendState::Delivered,
                 wedge_reason: None,
+                retry: None,
             });
         }
         if !raised.is_empty() {
@@ -89,6 +90,7 @@ impl<D: OutboxDeps> Outbox<D> {
                 kind,
                 state: SendState::Read,
                 wedge_reason: None,
+                retry: None,
             });
         }
         if !raised.is_empty() {

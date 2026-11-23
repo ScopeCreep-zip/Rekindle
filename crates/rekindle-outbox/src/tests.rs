@@ -40,6 +40,8 @@ struct Store {
     last_seq: HashMap<String, i64>,
     received: HashSet<(String, String)>,
     published: Vec<(String, SendState)>,
+    /// Every published change in full (its retry, plan §3.0 lane 1).
+    changes: Vec<StateChange>,
     /// Acks noted on rows not yet landed, by client id.
     acks: HashMap<String, PeerAck>,
     /// Settled entries as their echo keeps them: stream, seq, id, state.
@@ -336,10 +338,9 @@ impl OutboxDeps for Fake {
         s.outcomes.pop_front().unwrap_or(AttemptOutcome::Sent)
     }
     fn publish(&self, change: StateChange) {
-        self.store
-            .lock()
-            .published
-            .push((change.client_id, change.state));
+        let mut s = self.store.lock();
+        s.changes.push(change.clone());
+        s.published.push((change.client_id, change.state));
     }
 }
 
@@ -396,4 +397,6 @@ mod independence;
 
 mod lifecycle;
 mod mek_transfer;
+#[cfg(test)]
+mod retrying;
 mod settle_landed;

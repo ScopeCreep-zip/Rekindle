@@ -124,8 +124,13 @@ pub(super) fn hash_channel_message(h: &mut blake3::Hasher, msg: &ChannelMessageE
             client_id,
             conversation_id,
             state,
+            retry,
         } => {
             h.update(b"dm_state|");
+            // Each retry is its own change: the attempt count tells them apart.
+            if let Some(retry) = retry {
+                h.update(&retry.attempts.to_le_bytes());
+            }
             h.update(conversation_id.as_bytes());
             h.update(b"|");
             h.update(client_id.as_bytes());

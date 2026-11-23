@@ -199,6 +199,11 @@ pub enum ChannelMessageEvent {
         /// `server_message_id` name it.
         client_id: String,
         state: crate::message::SendState,
+        /// `Some` while the send went unanswered and is being retried (the
+        /// message reads "Not delivered yet — still trying", with the
+        /// attempt count and the next attempt's time); `None` on every
+        /// other change, so the first answer (`delivered`) clears it.
+        retry: Option<crate::message::DeliveryRetry>,
     },
 
     /// The peer's DM chain retired entries we never fetched: every entry

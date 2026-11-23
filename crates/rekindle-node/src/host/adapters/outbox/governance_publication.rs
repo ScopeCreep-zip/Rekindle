@@ -122,6 +122,7 @@ mod tests {
             kind: StreamKind::GovernanceOp,
             state,
             wedge_reason: reason.map(str::to_owned),
+            retry: None,
         }
     }
 

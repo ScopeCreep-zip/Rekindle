@@ -236,6 +236,17 @@ impl MessageClass {
     }
 }
 
+/// A receipted send that went unanswered and is being tried again (plan
+/// §3.0 lane 1): how many attempts have gone out and when the next one is
+/// due (ms since the epoch). The UI shows the message as not delivered yet,
+/// still trying; the first answer clears it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DeliveryRetry {
+    pub attempts: u32,
+    pub next_attempt_at: i64,
+}
+
 /// A sent message's delivery state: D22's one vocabulary, stored in
 /// `messages.send_state` (plan D1, C7.14). A channel post moves `Queued`
 /// (written locally, not yet at consensus) → `Sent` (its record slot
