@@ -273,7 +273,8 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// `pending_friend_requests.reply_inbox_key`/`reply_writer`: a request's reply inbox.
 /// 160 (plan RV2e): `route_budget.kind`, keyed `(owner_key, kind)`: the friend code slot's
 /// roll budget is persisted beside the route budget.
-pub const SCHEMA_VERSION: i64 = 160;
+/// 161 (plan E7.2 G6): `group_lobbies` and `group_lobby_members`, each group's game lobbies.
+pub const SCHEMA_VERSION: i64 = 161;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

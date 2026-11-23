@@ -22,7 +22,7 @@ pub mod ports;
 pub mod sender_key;
 pub mod video;
 
-pub use admission::{admit, AcceptedGroup, Admission, GroupFrame};
+pub use admission::{admit, is_lobby_kind, AcceptedGroup, Admission, GroupFrame};
 pub use error::DmError;
 pub use group::{build_invite, invite_refused, rename_refused, verify_invite, KeyUpdate, Roster};
 pub use lifecycle::{

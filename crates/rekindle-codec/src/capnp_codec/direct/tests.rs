@@ -169,6 +169,23 @@ fn samples() -> Vec<DirectBody> {
             epoch: 3,
             sealed: vec![0xC1; 48],
         }),
+        DirectBody::LobbyOpen(LobbyOpen {
+            lobby_id: [0x1B; 16],
+            game_id: 4181,
+        }),
+        DirectBody::LobbyJoin(LobbyRef {
+            lobby_id: [0x1B; 16],
+        }),
+        DirectBody::LobbyLeave(LobbyRef {
+            lobby_id: [0x1B; 16],
+        }),
+        DirectBody::LobbyLaunch(LobbyLaunch {
+            lobby_id: [0x1B; 16],
+            server: rekindle_types::game_server::ServerAddress::parse("203.0.113.7:27015").unwrap(),
+        }),
+        DirectBody::LobbyClose(LobbyRef {
+            lobby_id: [0x1B; 16],
+        }),
         DirectBody::RelayOffer(RelayOffer {
             relay_route_blob: vec![6; 40],
             relay_pseudonym: "cd".repeat(32),
