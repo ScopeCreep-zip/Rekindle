@@ -79,13 +79,14 @@ impl HostGovernance {
                 bundle.push(current.clone());
                 continue;
             }
-            match Self::held_generation(deps, community_id, generation).await {
-                Some(mek) => bundle.push(mek),
-                None => tracing::debug!(
+            if let Some(mek) = Self::held_generation(deps, community_id, generation).await {
+                bundle.push(mek);
+            } else {
+                tracing::debug!(
                     community = community_id,
                     generation,
                     "an older community key we never held is not in the joiner's bundle"
-                ),
+                );
             }
         }
         bundle
