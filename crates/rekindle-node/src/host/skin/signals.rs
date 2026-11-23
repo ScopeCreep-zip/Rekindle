@@ -15,12 +15,12 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-use rekindle_types::dto::skin_run::SkinSelection;
+use rekindle_types::dto::skin_run::{CallTarget, SkinSelection};
 use rekindle_types::dto::skin_signals::{SkinSignalSet, EVERY_CAPABILITY};
 use rekindle_types::friend::{FriendState, FriendshipState};
 use rekindle_types::subscription_events::{
     CallEvent, NetworkEvent, StreamFrame, SubscriptionEvent, SystemEvent, TypingContext,
-    TypingEvent, VoiceEvent,
+    TypingEvent, VoiceEvent, VoiceScope,
 };
 
 use super::capability::{allows, Group, Selected, SkinWorld};
@@ -50,6 +50,12 @@ pub(crate) struct Inputs {
     self_muted: bool,
     disconnected: bool,
     unseen_notification: BTreeSet<String>,
+    /// Our voice session, from `VoiceEvent::LocalJoined`; cleared by the
+    /// `VoiceEvent::Left` that names us (`own`), as our own leave does
+    /// (`rekindle_voice::session::leave_voice`).
+    voice: Option<VoiceScope>,
+    /// Our identity key, which tells our own `Left` from a peer's.
+    own: Option<String>,
 }
 
 impl Inputs {
@@ -97,6 +103,17 @@ impl Inputs {
                 ..
             }) => self.typing.remove(peer_key),
             SubscriptionEvent::Call(call) => self.fold_call(call),
+            SubscriptionEvent::Voice(VoiceEvent::LocalJoined { scope }) => {
+                self.voice = Some(scope.clone());
+                true
+            }
+            SubscriptionEvent::Voice(VoiceEvent::Left { scope, pseudonym }) => {
+                let ours = self.own.as_deref() == Some(pseudonym.as_str());
+                if ours && self.voice.as_ref() == Some(scope) {
+                    self.voice = None;
+                }
+                false
+            }
             SubscriptionEvent::Voice(VoiceEvent::SpeakingChanged {
                 pseudonym,
                 speaking,
@@ -187,6 +204,35 @@ impl Inputs {
             _ => return false,
         }
         true
+    }
+
+    /// Our identity key (the session's owner), to tell our own voice
+    /// `Left` from a peer's.
+    pub(crate) fn set_own(&mut self, own: Option<String>) {
+        self.own = own;
+    }
+
+    /// `ShowVoiceWindow`'s window: the active call (a connected one before
+    /// a ringing one), else our community voice session. A DM voice scope
+    /// is a call, whose window the call branch names.
+    pub(crate) fn show_call(&self) -> Option<CallTarget> {
+        let call = self
+            .calls
+            .iter()
+            .find(|(_, c)| !c.ringing)
+            .or_else(|| self.calls.iter().next());
+        if let Some((call_id, _)) = call {
+            return Some(CallTarget::Call {
+                call_id: call_id.clone(),
+            });
+        }
+        match self.voice.as_ref()? {
+            VoiceScope::Community { community, channel } => Some(CallTarget::Voice {
+                community: community.clone(),
+                channel: channel.clone(),
+            }),
+            VoiceScope::Dm { .. } => None,
+        }
     }
 
     pub(crate) fn call_with(&self, peer: &str) -> Option<&Call> {
@@ -331,6 +377,11 @@ impl SignalState {
         self.inputs.lock().set_focus(window, focused);
         self.poke();
     }
+
+    /// `ShowVoiceWindow`'s window ([`Inputs::show_call`]).
+    pub(crate) fn show_call(&self) -> Option<CallTarget> {
+        self.inputs.lock().show_call()
+    }
 }
 
 /// Each window's set that differs from the one last published.
@@ -373,7 +424,10 @@ pub(crate) async fn run_worker(ctx: Arc<DaemonContext>) {
             () = ctx.shutdown.requested() => return,
             frame = stream.next() => match frame {
                 Some(StreamFrame::Event(s)) => {
-                    if !ctx.skin.signals.inputs.lock().fold(&s.event) {
+                    let own = ctx.require_owner().ok();
+                    let mut inputs = ctx.skin.signals.inputs.lock();
+                    inputs.set_own(own);
+                    if !inputs.fold(&s.event) {
                         continue;
                     }
                 }

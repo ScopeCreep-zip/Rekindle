@@ -47,9 +47,8 @@ export type CallOp =
   | { kind: "mute" }
   | { kind: "unmute" };
 
-/** What the skin's Show Voice brings forward (plan E7.2 A, `CallTarget`):
- *  the active call's window, or the community window on the voice channel
- *  the user is in. */
+/** `CallTarget`: the window `ShowVoiceWindow` brings up (plan E7.2 G-item
+ *  A), the active call's, else the community voice session's. */
 export type CallTarget =
   | { kind: "call"; arg: { callId: string } }
   | { kind: "voice"; arg: { community: string; channel: string } };
@@ -96,8 +95,8 @@ export type ShellOp =
 
 export type SkinRun =
   | { kind: "shell"; arg: ShellOp }
-  /** No Rekindle feature for `action` yet (lead decision 49): the button
-   *  stays, and the window shows the Host's `message`. */
+  /** No Rekindle feature yet: `message` is the Host's words for the
+   *  window to show (the action's name and its plan row). */
   | { kind: "notBuiltYet"; arg: { action: SkinAction; message: string } }
   /** The operation ran in the window labelled `window` (a view switch
    *  pressed in a popup runs in its launcher, plan SK2-N4); this window
