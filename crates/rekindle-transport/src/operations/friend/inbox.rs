@@ -119,17 +119,12 @@ pub(crate) async fn reply_slot(
     .await;
     let key = match key {
         Ok(Some(key)) => key,
-        // A request is never sent without its reply slot.
-        Ok(None) => return Some(Attempt::Wedged("our request has no reply inbox".to_owned())),
+        Ok(None) => return unslotted(host, to, "our request has no reply inbox").await,
         Err(e) => return Some(deferred(&e)),
     };
     let writer = match host.reply_inbox_owner(&key) {
         Ok(Some(writer)) => writer,
-        Ok(None) => {
-            return Some(Attempt::Wedged(
-                "the reply inbox's owner is gone".to_owned(),
-            ))
-        }
+        Ok(None) => return unslotted(host, to, "the reply inbox's owner is gone").await,
         Err(e) => return Some(deferred(&e)),
     };
     let pool = match records(host) {
@@ -164,6 +159,41 @@ pub(crate) async fn reply_slot(
             tracing::debug!(error = %e, "reply inbox write missed — request deferred");
             Some(Attempt::Deferred)
         }
+    }
+}
+
+/// Our request to `to` found no reply slot to write (`why`). The higher
+/// side of a crossing (`accept_crossing_request`) is the one case where it
+/// still goes: its row turned `accepted`, which released the inbox, while
+/// its request goes on until it lands (finding 56 corrected) and the
+/// peer's accept settles it; that accept is the crossing's own first
+/// contact, which never writes our reply inbox (a crossing keeps no peer
+/// reply), so no slot is needed. Read from the row itself, so a crossing
+/// stored a moment before this attempt is seen. Any other request is never
+/// sent without its reply slot.
+async fn unslotted(
+    host: &dyn FriendHost,
+    to: &str,
+    why: &str,
+) -> Option<crate::operations::dm::outbox::Attempt> {
+    let owner = match state::owner(host) {
+        Ok(owner) => owner,
+        Err(e) => return Some(deferred(&e)),
+    };
+    let peer = to.to_owned();
+    let crossed = state::db_call!(host, "read crossed request", move |conn| {
+        rekindle_db::repo::friends::is_accepted_row(conn, &owner, &peer)
+    })
+    .await;
+    match crossed {
+        Ok(true) => None,
+        Ok(false) => {
+            tracing::debug!(to = %to, why, "request wedged: no reply slot");
+            Some(crate::operations::dm::outbox::Attempt::Wedged(
+                why.to_owned(),
+            ))
+        }
+        Err(e) => Some(deferred(&e)),
     }
 }
 
