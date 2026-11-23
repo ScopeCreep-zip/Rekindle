@@ -55,17 +55,14 @@ total-chaos Main: Minimize art [409, 11, 12, 12] target [403, 5, 18, 24]
 total-chaos Main: Maximize art [421, 11, 12, 12] target [421, 5, 12, 24]
 total-chaos Main: Close art [433, 11, 12, 12] target [433, 5, 18, 24]
 xslimfire Main: ResizeTopRight art [334, 0, 8, 8] target [318, 0, 24, 24] (grip)
-xslimfire Main: XfireLogo art [20, 38, 67, 19] target [20, 37, 67, 23]
 xslimfire Main: CloseBox art [314, 0, 9, 5] target [313, 0, 18, 24]
 xslimfire Main: MinimizeBox art [303, 0, 9, 5] target [296, 0, 17, 24]
 xslimfire Main: StatusEdit art [96, 45, 180, 12] target [96, 40, 180, 23]
-xslimfire Main: FileMenu art [36, 23, 54, 12] target [36, 17, 54, 19]
 xslimfire Main: ToolsMenu art [104, 23, 54, 12] target [104, 17, 54, 23]
 xslimfire Main: HelpMenu art [172, 23, 54, 12] target [172, 17, 54, 23]
 alloy Main: MinimizeBox art [296, 13, 18, 18] target [293, 10, 21, 24]
 alloy Main: MaximizeBox art [314, 13, 18, 18] target [314, 10, 18, 24]
 alloy Main: CloseBox art [332, 13, 18, 18] target [332, 10, 21, 24]
-simple-x Main: ResizeUp art [0, 0, 407, 10] target [0, 0, 407, 24] (grip)
 simple-x Main: GripperBR art [369, 235, 25, 25] target [370, 236, 24, 24] (grip)
 simple-x Main: HelpMenu art [152, 97, 64, 23] target [187, 97, 6, 23]
 simple-x Main: MinimizeBox art [338, 5, 16, 16] target [334, 1, 20, 24]

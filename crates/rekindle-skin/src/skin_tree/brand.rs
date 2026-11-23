@@ -224,7 +224,7 @@ mod tests {
         assert_eq!(name("Xfire Default sound pack"), "Default sound pack");
         assert_eq!(name("xSLIMFIRE"), "xSLIMFIRE");
         assert_eq!(glyph(87, 19), NodeGlyph::RekindleWordmark);
-        assert_eq!(glyph(16, 16), NodeGlyph::Rekindle);
+        assert_eq!(glyph(16, 16), NodeGlyph::RekindleMarkSmall);
     }
 
     fn check(nodes: &[SkinNode], id: &str) {
