@@ -331,17 +331,20 @@ async fn handle_relayed_envelope(
             channel_tag,
             ttl_ms,
             pseudonym_key,
-        } => match state_helpers::host_governance(state) {
-            Ok(host) => host.ingest_typing(
-                &community_id,
-                &signed.sender_pseudonym,
-                0,
-                &pseudonym_key,
-                &channel_tag,
-                ttl_ms,
-            ),
-            Err(_) => tracing::trace!("typing frame before the host started — dropped"),
-        },
+        } => {
+            if let Ok(host) = state_helpers::host_governance(state) {
+                host.ingest_typing(
+                    &community_id,
+                    &signed.sender_pseudonym,
+                    0,
+                    &pseudonym_key,
+                    &channel_tag,
+                    ttl_ms,
+                );
+            } else {
+                tracing::trace!("typing frame before the host started — dropped");
+            }
+        }
         CommunityEnvelope::Control(payload) => {
             if state.db.current().is_err() {
                 tracing::debug!("inbound message: no identity database — dropped");
