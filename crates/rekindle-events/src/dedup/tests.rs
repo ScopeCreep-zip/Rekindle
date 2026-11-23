@@ -129,3 +129,28 @@ fn two_bio_changes_in_one_bucket_are_both_kept() {
         "the same change is not"
     );
 }
+
+/// SR2b: successive retries of one group send are distinct changes, not
+/// one change repeated, so the dedup window never merges them.
+#[test]
+fn successive_group_send_retries_are_not_merged() {
+    use rekindle_types::message::{DeliveryRetry, SendState};
+    use rekindle_types::subscription_events::GroupDmEvent;
+    let retry = |attempts| {
+        SubscriptionEvent::GroupDm(GroupDmEvent::SendStatus {
+            group_id: "g1".into(),
+            client_id: "c1".into(),
+            state: SendState::Sent,
+            retry: Some(DeliveryRetry {
+                attempts,
+                next_attempt_at: 9_000,
+            }),
+        })
+    };
+    let mut dedup = EventDedup::new(100, 300);
+    assert!(dedup.check(&retry(1), NOW_MS));
+    assert!(
+        dedup.check(&retry(2), NOW_MS),
+        "the second retry is published"
+    );
+}

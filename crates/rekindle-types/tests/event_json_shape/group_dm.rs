@@ -94,6 +94,10 @@ pub fn samples() -> Vec<Sample> {
                 group_id: group(),
                 client_id: text("0192f0c4-7b3a-7c1e-9a55-1f0e2d3c4b5a"),
                 state: SendState::Sent,
+                retry: Some(rekindle_types::message::DeliveryRetry {
+                    attempts: 2,
+                    next_attempt_at: 1_700_000_003_000,
+                }),
             },
         ),
         ev(
