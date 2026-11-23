@@ -100,7 +100,9 @@ pub(crate) fn skin_silhouette(args: &Args) -> Result<()> {
         .iter()
         .find(|b| b.id == pack)
         .ok_or_else(|| anyhow!("no built-in pack {pack:?} in rekindle_skin::builtin::PACKS"))?;
-    let windows = frames(builtin.bytes).with_context(|| format!("frames of {pack}"))?;
+    let address = blake3::hash(builtin.bytes).to_hex();
+    let windows =
+        frames(builtin.bytes, address.as_str()).with_context(|| format!("frames of {pack}"))?;
     let mut content = None;
     let rects = match windows.into_iter().find(|w| w.window == wanted) {
         None => None,

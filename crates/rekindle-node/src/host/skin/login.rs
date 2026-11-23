@@ -54,7 +54,7 @@ pub(crate) fn read(root: &DataRoot) -> Result<String, LoginSkinError> {
     let file: LoginFile = serde_json::from_slice(&text)?;
     let known = match file.skin.strip_prefix(DEV) {
         Some(hash) => ids::is_hash(hash) && root.skins().join(copy_name(hash)).is_file(),
-        None => builtin::find(&file.skin).is_some(),
+        None => rekindle_skin::conform::is_builtin(&file.skin),
     };
     if known {
         Ok(file.skin)

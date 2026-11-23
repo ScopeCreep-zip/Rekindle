@@ -124,22 +124,33 @@ fn overlaps(name: &str, tree: &SkinTree, at: (i32, i32), out: &mut Vec<String>) 
 /// Every built-in window and popup, at its served minimum.
 fn all_overlaps() -> Vec<String> {
     let mut out = Vec::new();
-    for b in builtin::PACKS {
-        let package = package::read(b.bytes).unwrap();
-        let m = manifest::served(&package).unwrap();
+    // Plan SK14: the accessible alternate, laid from Symbiosis's bytes at
+    // its own address, keeps the invariant too.
+    let symbiosis = builtin::find(crate::conform::SOURCE).unwrap().1.bytes;
+    let alternate = crate::conform::served(
+        symbiosis,
+        &package::read(symbiosis).unwrap(),
+        crate::conform::address(),
+    )
+    .unwrap();
+    let served = builtin::PACKS
+        .iter()
+        .map(|b| {
+            (
+                b.id,
+                manifest::served(&package::read(b.bytes).unwrap()).unwrap(),
+            )
+        })
+        .chain(std::iter::once(("symbiosis-access", alternate)));
+    for (id, m) in served {
         for (window, l) in &m.windows {
             if let Some(t) = &l.tree {
-                overlaps(
-                    &format!("{} {window:?}", b.id),
-                    t,
-                    target::window(l),
-                    &mut out,
-                );
+                overlaps(&format!("{id} {window:?}"), t, target::window(l), &mut out);
             }
             for (p, pop) in &l.popups {
                 let at = target::window(&popup::frame(pop, l.min_height));
                 overlaps(
-                    &format!("{} {window:?} popup {p}", b.id),
+                    &format!("{id} {window:?} popup {p}"),
                     &pop.tree,
                     at,
                     &mut out,

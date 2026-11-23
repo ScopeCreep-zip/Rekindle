@@ -40,6 +40,8 @@ pub(super) fn samples(add: &mut impl FnMut(&str, Value)) {
                 url: Some("http://www.xfire.com/".into()),
                 licence: OriginalLicence::NoneStated,
             }),
+            short_targets: 4,
+            conforming: false,
         }),
     );
     add(
@@ -54,6 +56,8 @@ pub(super) fn samples(add: &mut impl FnMut(&str, Value)) {
                 url: None,
                 licence: OriginalLicence::Text("Free to share.".into()),
             }),
+            short_targets: 0,
+            conforming: true,
         }),
     );
     add(
@@ -63,6 +67,8 @@ pub(super) fn samples(add: &mut impl FnMut(&str, Value)) {
             name: "Plain".into(),
             imported_at: Some(1_760_000_000_001),
             credits: None,
+            short_targets: 2,
+            conforming: false,
         }),
     );
     actions(add);

@@ -16,6 +16,12 @@ pub struct SkinEntry {
     /// The manifest's credits; a library skin's are as the skin states
     /// them (self-claimed, not verified).
     pub credits: Option<crate::dto::skin::SkinCredits>,
+    /// How many controls the skin serves under 24 CSS px with no spacing
+    /// exception (WCAG 2.2 SC 2.5.8, `TargetRule::Short`), counted from
+    /// the package as served.
+    pub short_targets: u32,
+    /// `short_targets == 0`: every control meets SC 2.5.8.
+    pub conforming: bool,
 }
 
 /// Every skin, the identity's choice and the device login skin.

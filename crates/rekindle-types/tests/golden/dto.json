@@ -1015,6 +1015,7 @@
     "type": "sheetError"
   },
   "skin.entry.builtin": {
+    "conforming": false,
     "credits": {
       "authors": [
         "Xfire, Inc."
@@ -1027,9 +1028,11 @@
     },
     "id": "builtin:xfire-classic",
     "importedAt": null,
-    "name": "Xfire"
+    "name": "Xfire",
+    "shortTargets": 4
   },
   "skin.entry.library": {
+    "conforming": true,
     "credits": {
       "authors": [],
       "contributors": [],
@@ -1040,13 +1043,16 @@
     },
     "id": "pkg:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
     "importedAt": 1760000000000,
-    "name": "Night"
+    "name": "Night",
+    "shortTargets": 0
   },
   "skin.entry.uncredited": {
+    "conforming": false,
     "credits": null,
     "id": "pkg:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
     "importedAt": 1760000000001,
-    "name": "Plain"
+    "name": "Plain",
+    "shortTargets": 2
   },
   "skin.event.samples": [
     {

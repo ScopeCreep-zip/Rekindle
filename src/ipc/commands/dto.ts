@@ -468,6 +468,10 @@ export interface SkinEntry {
   importedAt: number | null;
   /// Who made it, as the skin states it; a library skin's are self-claimed.
   credits: SkinCredits | null;
+  /// Controls served under 24 CSS px with no spacing exception (WCAG 2.2 SC 2.5.8).
+  shortTargets: number;
+  /// `shortTargets === 0`: every control meets SC 2.5.8.
+  conforming: boolean;
 }
 
 /// A skin's human credits (`rekindle_types::dto::skin::SkinCredits`).
