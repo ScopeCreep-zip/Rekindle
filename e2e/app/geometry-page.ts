@@ -98,10 +98,32 @@ export function geometryLib(): void {
     }
     return box;
   };
+  /**
+   * Where a control takes its press: its own box, or, when the element takes
+   * no pointer events and its `::before` does, that pseudo-element's box. A
+   * served cut press area (plan SK12) and a grip's band (SK11) keep the node
+   * at its art box with `pointer-events: none` and take the press on a
+   * `::before` laid at the served area, so the art box is not the target.
+   */
+  const pressBox = (el: Element): DOMRect | Box => {
+    const r = el.getBoundingClientRect();
+    const s = getComputedStyle(el);
+    if (s.pointerEvents !== "none") return r;
+    const b = getComputedStyle(el, "::before");
+    if (b.content === "none" || b.pointerEvents === "none" || b.position !== "absolute") return r;
+    // An absolute pseudo-element is placed from its element's padding box.
+    return {
+      x: r.left + parseFloat(s.borderLeftWidth) + parseFloat(b.left),
+      y: r.top + parseFloat(s.borderTopWidth) + parseFloat(b.top),
+      w: parseFloat(b.width),
+      h: parseFloat(b.height),
+    };
+  };
   w.__geo = {
     describe,
     shown,
     visibleRect,
+    pressBox,
     /** Visible interactive and text elements under `root`, outside the overlays. */
     candidates(root: Element, skip: string[]): { el: Element; box: Box }[] {
       const out: { el: Element; box: Box }[] = [];
@@ -109,7 +131,7 @@ export function geometryLib(): void {
       for (const el of Array.from(root.querySelectorAll("*"))) {
         if (skipSel && el.closest(skipSel)) continue;
         if (!shown(el)) continue;
-        const own = el.matches(INTERACTIVE) ? el.getBoundingClientRect() : textBox(el);
+        const own = el.matches(INTERACTIVE) ? pressBox(el) : textBox(el);
         if (!own) continue;
         const box = visibleRect(el, own);
         if (box) out.push({ el, box });
@@ -118,6 +140,47 @@ export function geometryLib(): void {
     },
     INTERACTIVE,
   };
+}
+
+/**
+ * Of the controls `sels` names inside a skin tree, those that meet WCAG
+ * 2.5.8 at the box they take presses on (`pressBox`): at least 24×24, or a
+ * 24 px circle centred on it meets no other control's press box and no
+ * other undersized control's circle. Axe measures an element's own box, which
+ * for a cut press area (plan SK12) is the art, not the target.
+ */
+export function targetsMet(rootEl: Element, sels: string[]): string[] {
+  const g = (window as any).__geo;
+  const R = 12;
+  const controls: { el: Element; box: Box }[] = [];
+  for (const el of Array.from(rootEl.querySelectorAll(g.INTERACTIVE)) as Element[]) {
+    if (!g.shown(el)) continue;
+    const box = g.visibleRect(el, g.pressBox(el)) as Box | null;
+    if (box) controls.push({ el, box });
+  }
+  const small = (b: Box): boolean => b.w < 2 * R || b.h < 2 * R;
+  const centre = (b: Box): [number, number] => [b.x + b.w / 2, b.y + b.h / 2];
+  // Whether the circle at (cx, cy) reaches into box b (strictly: touching is no hit).
+  const reaches = (cx: number, cy: number, b: Box): boolean => {
+    const dx = Math.max(b.x - cx, 0, cx - (b.x + b.w));
+    const dy = Math.max(b.y - cy, 0, cy - (b.y + b.h));
+    return dx * dx + dy * dy < R * R;
+  };
+  return sels.filter((sel) => {
+    const el = document.querySelector(sel);
+    if (!el?.closest(".skin-tree")) return false;
+    const me = controls.find((c) => c.el === el);
+    if (!me) return false;
+    if (!small(me.box)) return true;
+    const [cx, cy] = centre(me.box);
+    return controls.every((c) => {
+      if (c.el === el || c.el.contains(el) || el.contains(c.el)) return true;
+      if (reaches(cx, cy, c.box)) return false;
+      if (!small(c.box)) return true;
+      const [ox, oy] = centre(c.box);
+      return (ox - cx) ** 2 + (oy - cy) ** 2 >= (2 * R) ** 2;
+    });
+  });
 }
 
 /**
