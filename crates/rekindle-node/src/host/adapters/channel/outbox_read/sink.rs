@@ -2,10 +2,12 @@
 //! (split from `outbox_read.rs` at its 600-line ceiling).
 
 use async_trait::async_trait;
+use rekindle_channel::ChannelMessagingDeps as _;
 use rekindle_codec::member_record::entry_hash;
 use rekindle_records::chain::ChainEntry;
 use rekindle_sync::stream::{Held, SinkError, StreamSink};
 use rekindle_types::dht_layout::member_record::OUTBOX;
+use rekindle_types::id::PseudonymKey;
 
 use super::super::received::OutboxHead;
 use super::super::HostChannel;
@@ -49,7 +51,8 @@ impl StreamSink for OutboxSink<'_> {
         writer: &str,
         entry: &ChainEntry,
     ) -> Result<Held, SinkError> {
-        let departure_head = match &self.standing {
+        let standing = self.current_standing().await;
+        let departure_head = match &standing {
             Standing::Departed(Some(head)) if entry.seq <= u64::from(head.seq) => {
                 Some(head.clone())
             }
@@ -60,7 +63,7 @@ impl StreamSink for OutboxSink<'_> {
             author: &self.author,
             member_record: self.member_record,
             backfill: self.backfill,
-            departed: matches!(self.standing, Standing::Departed(_)),
+            departed: matches!(standing, Standing::Departed(_)),
             departure_head,
             before: self.before(entry.seq).await,
         };
@@ -145,7 +148,31 @@ impl OutboxSink<'_> {
     }
 }
 
+impl OutboxSink<'_> {
+    /// The author's standing for the entry about to be applied. The read
+    /// took it when it started; a departure merged since (the leave of an
+    /// author whose withheld last write this read applies) makes the ingest
+    /// gate judge the author departed, so a member standing is taken again
+    /// and the entry is kept at or below the departure's head the chain
+    /// reproduces, as every later read keeps it, never dropped as from a
+    /// non-member with the cursor moved past it (ADR 0011: a leaver's
+    /// writes before its leave stay valid).
+    async fn current_standing(&self) -> Standing {
+        let author = PseudonymKey(self.author);
+        let stale = matches!(self.standing, Standing::Member)
+            && (self.channel.governance_state(self.community_id))
+                .is_some_and(|state| state.is_departed(&author));
+        if !stale {
+            return self.standing.clone();
+        }
+        (self.channel)
+            .standing(self.port, self.community_id, &author, self.member_record)
+            .await
+    }
+}
+
 /// An outbox author's standing in the merged state.
+#[derive(Clone)]
 pub(super) enum Standing {
     Member,
     /// Departed: the highest of its departure heads of this outbox that
