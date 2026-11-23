@@ -161,13 +161,18 @@ impl HostGovernance {
         if !self.member_reads_keys(community_id, &joiner.pseudonym) {
             return Err(format!("{} is not a member", joiner.pseudonym));
         }
-        let mek = deps
+        let current = deps
             .cache()
             .current(community_id, KeyScope::Community)
             .ok_or_else(|| format!("no community key for {community_id}"))?;
-        let queued = self
-            .queue_sealed_key(deps, community_id, &joiner.pseudonym, &joiner.route, &mek)
-            .await?;
+        // Every generation the joiner's role may read, oldest first (D16,
+        // `key_history.rs`), one row each: the stream sends them in order.
+        let mut queued = false;
+        for mek in (self.key_bundle(deps, community_id, &joiner.pseudonym, current)).await {
+            queued |= self
+                .queue_sealed_key(deps, community_id, &joiner.pseudonym, &joiner.route, &mek)
+                .await?;
+        }
         // The durable copy (plan RV2d): the same sealed envelope on our key
         // drop, raced with the call; the joiner installs whichever lands
         // first and the other is idempotent.

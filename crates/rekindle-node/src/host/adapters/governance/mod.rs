@@ -66,6 +66,7 @@ mod join_bootstrap;
 pub(crate) use join::JoinLocks;
 pub(crate) use join_bootstrap::{Exchange, JoinFailure};
 pub(crate) mod key_drop;
+mod key_history;
 mod lifecycle;
 pub(crate) mod loader;
 pub(crate) mod login_stage;
