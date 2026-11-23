@@ -44,6 +44,25 @@ pub fn reply_inbox_of(
     .map(Option::flatten)
 }
 
+/// Whether our row with `public_key` is `accepted` (plan RV2): the higher
+/// side of a crossing, whose request still goes once its reply inbox is
+/// released.
+///
+/// # Errors
+/// The query failed.
+pub fn is_accepted_row(
+    conn: &Connection,
+    owner_key: &str,
+    public_key: &str,
+) -> rusqlite::Result<bool> {
+    conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM friends \
+         WHERE owner_key = ?1 AND public_key = ?2 AND friendship_state = 'accepted')",
+        params![owner_key, public_key],
+        |row| row.get(0),
+    )
+}
+
 /// The reply inboxes of our open requests (rows still `pending_out`), in
 /// key order: the ones held and watched.
 ///
@@ -128,6 +147,9 @@ mod tests {
         assert_eq!(reply_inboxes(&conn, OWNER).unwrap(), ["VLD0:a", "VLD0:b"]);
         set_state(&conn, OWNER, "bo", FriendshipState::Accepted).unwrap();
         assert_eq!(reply_inboxes(&conn, OWNER).unwrap(), ["VLD0:a"]);
+        assert!(is_accepted_row(&conn, OWNER, "bo").unwrap());
+        assert!(!is_accepted_row(&conn, OWNER, "ada").unwrap());
+        assert!(!is_accepted_row(&conn, OWNER, "nobody").unwrap());
     }
 
     #[test]

@@ -8,7 +8,7 @@
 
 use std::time::Duration;
 
-use rekindle_netsim::Fault;
+use rekindle_netsim::{Fault, Writes};
 use rekindle_transport::broadcast::deadline::app_call_deadline;
 use rekindle_types::config::{
     SafetyProfile, SequencingPreference, StabilityPreference, ANONYMITY_HOP_FLOOR,
@@ -31,6 +31,16 @@ async fn a_call_that_never_resolves_times_out_and_the_row_lands() {
         node: 0,
         hangs: true,
     });
+    // The accept's second path (plan RV2) is held back too, so the accept
+    // depends on the call under test: Ann's write of it into Rae's reply
+    // inbox lands below consensus until the calls heal.
+    sim.fault(Fault::WriteFails {
+        node: 1,
+        of: Writes::Subkey {
+            subkey: rekindle_types::dht_layout::request_inbox::REQUEST,
+            record: None,
+        },
+    });
     accept(&nodes[1], &nodes[0]).await;
     tokio::time::sleep(Duration::from_secs(60)).await;
     assert!(
@@ -41,6 +51,7 @@ async fn a_call_that_never_resolves_times_out_and_the_row_lands() {
         node: 0,
         hangs: false,
     });
+    sim.fault(Fault::Heal);
     // The attempt in flight ends at our deadline, and the next one lands.
     let bound = app_call_deadline(&SafetyProfile {
         hop_count: ANONYMITY_HOP_FLOOR,
