@@ -228,6 +228,8 @@ export function flexContract(el: Element): FlexContract {
 export interface TreeFit {
   /** The tree's box lies inside the viewport. */
   inWindow: boolean;
+  /** The tree's box and the viewport, px, so a finding says where it sticks out. */
+  box: { left: number; top: number; right: number; bottom: number; viewport: [number, number] };
   /** The window's width and height beyond the tree's (the frame's outsets). */
   gapWidth: number;
   gapHeight: number;
@@ -251,6 +253,13 @@ export function treeFit(root: Element): TreeFit | null {
   const v = views ? views.getBoundingClientRect() : null;
   return {
     inWindow: r.left >= -0.5 && r.top >= -0.5 && r.right <= window.innerWidth + 0.5 && r.bottom <= window.innerHeight + 0.5,
+    box: {
+      left: Math.round(r.left),
+      top: Math.round(r.top),
+      right: Math.round(r.right),
+      bottom: Math.round(r.bottom),
+      viewport: [window.innerWidth, window.innerHeight],
+    },
     gapWidth: Math.round(window.innerWidth - r.width),
     gapHeight: Math.round(window.innerHeight - r.height),
     viewsGapHeight: v && v.height > 0 ? Math.round(window.innerHeight - v.height) : null,

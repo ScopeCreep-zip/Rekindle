@@ -41,6 +41,7 @@ function keysOf(found: Record<string, unknown>): string[] {
     const [where, check] = [key.slice(0, key.indexOf(": ")).replace(/ \d+x\d+$/, ""), key.slice(key.indexOf(": ") + 2)];
     if (check === "axe") for (const v of value as Violation[]) keys.push(`${where}: axe ${v.rule}`);
     else if (check === "focus indicators") for (const f of value as { el: string; why: string }[]) keys.push(`${where}: focus ${f.el} ${f.why}`);
+    else if (check === "target-size short" || check === "target-size") for (const id of value as string[]) keys.push(`${where}: ${check} ${id}`);
     else keys.push(`${where}: ${check}`);
   }
   return keys.sort();
@@ -146,6 +147,32 @@ describe("every built-in skin keeps the app accessible and laid out", function (
     await openSettings(browser, "Appearance");
   });
 
+  /**
+   * Axe's undersized targets split by the rule the Host serves each one
+   * (plan SK7 `NodeTarget.rule`): `short` nodes by their skin node id, the
+   * rest by id or, outside the tree, their selector.
+   */
+  async function targetNodes(selectors: string[]): Promise<{ short: string[]; other: string[] }> {
+    return (await browser.execute(async (sels: string[]) => {
+      type Node = { id: string; target?: { rule: string }; children?: Node[] };
+      const w = window as unknown as { __TAURI_INTERNALS__: { invoke(cmd: string, args: unknown): Promise<{ value: { shells?: { root: Node[] }[] } }> } };
+      const rules = new Map<string, string>();
+      const walk = (n: Node): void => {
+        if (n.target) rules.set(n.id, n.target.rule);
+        for (const c of n.children ?? []) walk(c);
+      };
+      for (const shell of (await w.__TAURI_INTERNALS__.invoke("get_skin", { id: null })).value.shells ?? []) shell.root.forEach(walk);
+      const short: string[] = [];
+      const other: string[] = [];
+      for (const sel of sels) {
+        const id = document.querySelector(sel)?.closest<HTMLElement>("[data-skin-node]")?.dataset.skinNode;
+        if (id && rules.get(id) === "short") short.push(id);
+        else other.push(id ?? sel);
+      }
+      return { short: short.sort(), other: other.sort() };
+    }, selectors)) as { short: string[]; other: string[] };
+  }
+
   /** Axe and geometry findings in the window `browser` is in, at each of `w`'s sizes, keyed by window and size. */
   async function audit(pack: SkinPack, w: WindowCase, withData: boolean): Promise<Record<string, unknown>> {
     const found: Record<string, unknown> = {};
@@ -156,8 +183,18 @@ describe("every built-in skin keeps the app accessible and laid out", function (
       await sizeWindow(browser, size);
       await browser.saveScreenshot(path.join(dir, `${w.name}-${sizeName}.png`));
       const where = `${w.name} ${sizeName} ${size.width}x${size.height}`;
-      const axe = await violations(browser);
+      const all = await violations(browser);
+      // Target size per node (plan SK7): a node the Host serves `short` (its
+      // 24 px target would cross a neighbour's, pinned in targets-short.txt)
+      // is named as such; any other undersized node is a regression.
+      const axe = all.filter((v) => v.rule !== "target-size");
       if (axe.length > 0) found[`${where}: axe`] = axe;
+      const small = all.find((v) => v.rule === "target-size");
+      if (small) {
+        const { short, other } = await targetNodes(small.nodes);
+        if (short.length > 0) found[`${where}: target-size short`] = short;
+        if (other.length > 0) found[`${where}: target-size`] = other;
+      }
       const fit = await treeFitIn(browser, ".app-frame");
       if (fit) fits.push([where, fit]);
       const geometry = await checkGeometry(browser, ".app-frame", {
