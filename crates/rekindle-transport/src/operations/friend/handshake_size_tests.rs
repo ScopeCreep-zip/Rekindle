@@ -109,7 +109,9 @@ async fn init_len(from: &Party, to: &Party, first: &DirectBody) -> usize {
 #[tokio::test]
 async fn friend_request_fits_by_app_call_with_either_admission() {
     let (alice, bob) = (Party::new(1), Party::new(2));
-    let token = rekindle_secrets::friend_token::mint().as_str().to_string();
+    let token = rekindle_secrets::friend_token::mint(&rekindle_utils::OsRandom)
+        .as_str()
+        .to_string();
     let invite = uuid::Uuid::new_v4().to_string();
     for auth in [RequestAuth::Token(token), RequestAuth::Invite(invite)] {
         let request = DirectBody::FriendRequest(FriendRequest {
@@ -167,7 +169,7 @@ fn the_friend_code_and_the_invite_url_round_trip_through_deep_link_parse() {
             .verifying_key()
             .to_bytes(),
     );
-    let token = rekindle_secrets::friend_token::mint();
+    let token = rekindle_secrets::friend_token::mint(&rekindle_utils::OsRandom);
     let url = format!(
         "rekindle://add/{public_key}/{}/{}",
         dht_key(),

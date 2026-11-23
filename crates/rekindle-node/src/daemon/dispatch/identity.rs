@@ -158,6 +158,7 @@ pub(crate) async fn handle_import(
         &bytes,
         passphrase,
         ctx.clock.now_ms(),
+        ctx.rng.as_ref(),
     )
     .await
     {

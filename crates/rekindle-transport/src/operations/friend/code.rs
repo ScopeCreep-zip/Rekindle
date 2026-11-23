@@ -42,7 +42,7 @@ pub async fn own(host: &dyn FriendHost) -> Result<FriendCodeView, FriendError> {
 /// RV2e, the token is then kept), or the write failed.
 pub async fn rotate_token(host: &dyn FriendHost) -> Result<FriendCodeView, FriendError> {
     let own = published_identity(host).await?;
-    let token = rekindle_secrets::friend_token::mint();
+    let token = rekindle_secrets::friend_token::mint(host.rng());
     // The new token's slot first (plan RV2e): the old token's holders can
     // no longer derive its writer, and a stored token always has its slot.
     super::code_inbox::roll_for(host, &token).await?;
