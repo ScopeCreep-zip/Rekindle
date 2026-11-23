@@ -1,5 +1,5 @@
 import { Component, Show, createMemo, createSignal, onCleanup } from "solid-js";
-import { ICON_TIMER_SAND } from "../../icons";
+import SkinGlyph from "../common/SkinGlyph";
 import { remainingShort, remainingText } from "../../utils/disappearing";
 
 // One clock for every indicator on the page, running only while one is
@@ -38,14 +38,14 @@ const ExpiryIndicator: Component<{ expireAt?: number; expireSeconds?: number }> 
       fallback={
         <Show when={(props.expireSeconds ?? 0) > 0}>
           <span class="message-expiry" title="Disappears once read">
-            <span class="nf-icon" aria-hidden="true">{ICON_TIMER_SAND}</span>
+            <SkinGlyph name="timer-sand" />
             <span class="sr-only">Disappears once read</span>
           </span>
         </Show>
       }
     >
       <span class="message-expiry" title={`Disappears in ${remainingText(left()!)}`}>
-        <span class="nf-icon" aria-hidden="true">{ICON_TIMER_SAND}</span>
+        <SkinGlyph name="timer-sand" />
         <span aria-hidden="true">{remainingShort(left()!)}</span>
         <span class="sr-only">Disappears in {remainingText(left()!)}</span>
       </span>

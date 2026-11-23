@@ -1,14 +1,8 @@
 import { Component, For, Show } from "solid-js";
+import SkinGlyph from "../common/SkinGlyph";
 import { voiceState } from "../../stores/voice.store";
 import VoiceParticipantItem from "./VoiceParticipant";
 import { handleToggleMute, handleToggleDeafen, handleLeaveVoice } from "../../actions/voice.actions";
-import {
-  ICON_MIC,
-  ICON_MIC_OFF,
-  ICON_HEADPHONES,
-  ICON_HEADPHONES_OFF,
-  ICON_HANGUP,
-} from "../../icons";
 
 /// Compact sidebar "connected" strip. Quick mute / deafen / leave plus the
 /// participant list — reachable from any channel while in a call. The full
@@ -45,9 +39,7 @@ const VoicePanel: Component = () => {
               aria-label={voiceState.isMuted ? "Unmute microphone" : "Mute microphone"}
               aria-pressed={voiceState.isMuted}
             >
-              <span class="nf-icon" aria-hidden="true">
-                {voiceState.isMuted ? ICON_MIC_OFF : ICON_MIC}
-              </span>
+              <SkinGlyph name={voiceState.isMuted ? "mic.off" : "mic.on"} />
             </button>
             <button
               class={`voice-btn ${voiceState.isDeafened ? "voice-btn-active" : ""}`}
@@ -56,9 +48,7 @@ const VoicePanel: Component = () => {
               aria-label={voiceState.isDeafened ? "Undeafen output" : "Deafen output"}
               aria-pressed={voiceState.isDeafened}
             >
-              <span class="nf-icon" aria-hidden="true">
-                {voiceState.isDeafened ? ICON_HEADPHONES_OFF : ICON_HEADPHONES}
-              </span>
+              <SkinGlyph name={voiceState.isDeafened ? "speaker.off" : "speaker.on"} />
             </button>
             <button
               class="voice-btn voice-btn-disconnect"
@@ -66,7 +56,7 @@ const VoicePanel: Component = () => {
               title="Disconnect"
               aria-label="Leave voice channel"
             >
-              <span class="nf-icon" aria-hidden="true">{ICON_HANGUP}</span>
+              <SkinGlyph name="hangup" />
             </button>
           </div>
         </Show>
