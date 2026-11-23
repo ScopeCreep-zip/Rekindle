@@ -32,15 +32,21 @@ async function status(): Promise<string> {
 /** Wait until the status line reads `want` (a string, exactly, or a pattern). */
 async function statusIs(want: string | RegExp): Promise<void> {
   let last = "(never read)";
-  await waitUntil(
-    async () => {
-      // A failed read is kept too: run 4 failed with every read throwing and no reason shown.
-      last = await status().catch((err: unknown) => `read failed: ${err instanceof Error ? err.message : String(err)}`);
-      return typeof want === "string" ? last === want : want.test(last);
-    },
-    NET_WAIT_MS,
-    `the status never read ${String(want)} (last: ${JSON.stringify(last)})`,
-  );
+  try {
+    await waitUntil(
+      async () => {
+        // A failed read is kept too: run 4 failed with every read throwing and no reason shown.
+        last = await status().catch((err: unknown) => `read failed: ${err instanceof Error ? err.message : String(err)}`);
+        return typeof want === "string" ? last === want : want.test(last);
+      },
+      NET_WAIT_MS,
+      "",
+    );
+  } catch {
+    // The status read last, once the wait is over (a message built before
+    // the wait always said "(never read)", r24 on Linux and Mac).
+    throw new Error(`the status never read ${String(want)} (last: ${JSON.stringify(last)})`);
+  }
 }
 
 /** Whether the bar's Export… button (not Export JSON Schema…) is enabled. */
