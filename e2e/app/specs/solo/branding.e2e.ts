@@ -49,7 +49,7 @@ async function logosUnbranded(): Promise<string[]> {
     const nodes = Array.from(document.querySelectorAll<HTMLElement>(".skin-tree [data-skin-node]")).filter(
       (el) => el.dataset.skinRole === "logo" || DECOR.includes(el.dataset.skinNode ?? ""),
     );
-    return nodes.flatMap((el) => {
+    const out: string[] = nodes.flatMap((el) => {
       if (!el.checkVisibility()) return [];
       const id = el.dataset.skinNode ?? "?";
       const mark = el.querySelector<SVGElement>(":scope > .skin-node-label .skin-node-glyph-brand");
@@ -59,6 +59,15 @@ async function logosUnbranded(): Promise<string[]> {
       const inside = m.width > 0 && m.height > 0 && m.left >= n.left - 0.5 && m.top >= n.top - 0.5 && m.right <= n.right + 0.5 && m.bottom <= n.bottom + 0.5;
       return inside ? [] : [`${id}'s mark lies outside its box`];
     });
+    // The title strip's logo, where the skin shows one: the mark drawn inside
+    // it (SkinApplied.titleLogo), and no pack art behind it.
+    const strip = document.querySelector<HTMLElement>(".xfire-titlebar-logo");
+    if (strip && strip.checkVisibility()) {
+      const art = getComputedStyle(strip).backgroundImage;
+      if (art && art !== "none") out.push(`the title strip's logo draws "${art.slice(0, 80)}"`);
+      if (!strip.querySelector(".skin-node-glyph-brand")) out.push("the title strip's logo draws no Rekindle mark");
+    }
+    return out;
   })) as string[];
 }
 
