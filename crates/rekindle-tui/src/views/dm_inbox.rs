@@ -24,6 +24,8 @@ use ratatui::Frame;
 
 use rekindle_types::disappearing::notice_text;
 use rekindle_types::display::{DmMessageDisplay, DmThreadDisplay};
+use rekindle_types::dto::dm::DmMessage;
+use rekindle_types::message::{DeliveryRetry, SendState};
 use rekindle_types::subscription_events::{
     ChannelMessageEvent, ConversationContext, SubscriptionEvent, UnreadContext,
 };
@@ -55,6 +57,9 @@ pub struct DmInboxView {
     scroll_positions: std::collections::HashMap<String, usize>,
     /// Panel rects from last draw for click-to-focus.
     click_rects: std::collections::HashMap<FocusId, Rect>,
+    /// Our sent messages' delivery, by client id: from the stored rows
+    /// (`DmHistory`), then the outbox's `DmSendStatus` (plan E2.5, SR2).
+    delivery: std::collections::HashMap<String, (SendState, Option<DeliveryRetry>)>,
 }
 
 impl DmInboxView {
@@ -73,6 +78,7 @@ impl DmInboxView {
             use_unicode,
             scroll_positions: std::collections::HashMap::new(),
             click_rects: std::collections::HashMap::new(),
+            delivery: std::collections::HashMap::new(),
         }
     }
 
@@ -163,29 +169,7 @@ impl DmInboxView {
             return;
         }
 
-        let lines: Vec<Line<'_>> = thread
-            .messages
-            .iter()
-            .map(|msg| {
-                if msg.notice {
-                    return Line::styled(
-                        format!("  -- {} --", helpers::sanitize_for_display(&msg.body)),
-                        Style::new().dim().italic(),
-                    );
-                }
-                let sender = if msg.is_self { "you" } else { &msg.sender_name };
-                let sender = helpers::sanitize_for_display(sender);
-                let body = helpers::sanitize_for_display(&msg.body);
-                Line::from(vec![
-                    Span::styled(
-                        format!("  [{}] ", helpers::format_time_short(msg.timestamp)),
-                        Style::new().dim(),
-                    ),
-                    Span::styled(format!("{sender}: "), Style::new().bold()),
-                    Span::raw(body),
-                ])
-            })
-            .collect();
+        let lines = self.thread_lines(thread);
 
         let para = Paragraph::new(lines).block(block);
         frame.render_widget(para, area);
@@ -239,6 +223,110 @@ impl DmInboxView {
             }
             _ => false,
         }
+    }
+}
+
+impl DmInboxView {
+    /// The thread's lines: each message, our own with its delivery state
+    /// and, while the Host retries it, the retry line (plan SR2).
+    fn thread_lines(&self, thread: &DmThreadDisplay) -> Vec<Line<'static>> {
+        let mut lines: Vec<Line<'static>> = Vec::new();
+        for msg in &thread.messages {
+            if msg.notice {
+                lines.push(Line::styled(
+                    format!("  -- {} --", helpers::sanitize_for_display(&msg.body)),
+                    Style::new().dim().italic(),
+                ));
+                continue;
+            }
+            let sender = if msg.is_self { "you" } else { &msg.sender_name };
+            let sender = helpers::sanitize_for_display(sender);
+            let body = helpers::sanitize_for_display(&msg.body);
+            let delivery = msg
+                .is_self
+                .then(|| msg.client_id.as_ref().and_then(|id| self.delivery.get(id)))
+                .flatten();
+            let mut spans = vec![
+                Span::styled(
+                    format!("  [{}] ", helpers::format_time_short(msg.timestamp)),
+                    Style::new().dim(),
+                ),
+                Span::styled(format!("{sender}: "), Style::new().bold()),
+                Span::raw(body),
+            ];
+            if let Some((state, _)) = delivery {
+                spans.push(Span::styled(
+                    format!(" ({})", state_word(*state)),
+                    Style::new().dim(),
+                ));
+            }
+            lines.push(Line::from(spans));
+            if let Some((_, Some(retry))) = delivery {
+                lines.push(Line::styled(
+                    format!("      {}", helpers::delivery_retry_text(retry)),
+                    Style::new().italic(),
+                ));
+            }
+        }
+        lines
+    }
+
+    /// A thread's stored messages replace what it showed, oldest first, and
+    /// seed our messages' delivery (their stored `send_state`; a retry is
+    /// live only, so it comes with the next unanswered attempt).
+    fn set_history(&mut self, peer_key: &str, mut messages: Vec<DmMessage>) {
+        let Some(thread) = self.threads.iter_mut().find(|t| t.peer_key == peer_key) else {
+            return;
+        };
+        messages.sort_by_key(|m| m.timestamp);
+        let peer_name = thread.peer_name.clone();
+        thread.messages = messages
+            .into_iter()
+            .map(|m| {
+                let who = if m.is_own {
+                    "You".to_string()
+                } else {
+                    peer_name.clone()
+                };
+                if let (true, Some(id)) = (m.is_own, m.message_id.as_ref()) {
+                    self.delivery
+                        .entry(id.clone())
+                        .or_insert((m.send_state, None));
+                }
+                let (body, notice) = match (m.timer_notice_seconds, m.history_gap_through) {
+                    (Some(seconds), _) => (notice_text(&who, seconds), true),
+                    (None, Some(_)) => (
+                        "Earlier messages from this conversation are gone".to_string(),
+                        true,
+                    ),
+                    (None, None) => (m.body, false),
+                };
+                DmMessageDisplay {
+                    sender_key: m.sender_id,
+                    sender_name: who,
+                    body,
+                    timestamp: m.timestamp.cast_unsigned(),
+                    is_self: m.is_own,
+                    client_id: m.message_id,
+                    notice,
+                }
+            })
+            .collect();
+        if let Some(last) = thread.messages.last() {
+            thread.last_message_at = thread.last_message_at.max(last.timestamp);
+        }
+    }
+}
+
+/// A delivery state as the thread words it.
+fn state_word(state: SendState) -> &'static str {
+    match state {
+        SendState::AwaitingKey => "waiting for a key",
+        SendState::Queued => "sending",
+        SendState::Sent => "sent",
+        SendState::Delivered => "delivered",
+        SendState::Read => "read",
+        SendState::Failed => "failed",
     }
 }
 
@@ -321,10 +409,12 @@ impl View for DmInboxView {
             Action::Select if self.focus.is_focused(FocusId::DmList) => {
                 // Save position before switching, restore target's position
                 self.save_scroll_position();
-                if let Some(peer_key) = self.selected_peer_key().map(str::to_string) {
-                    self.restore_scroll_position(&peer_key);
-                }
+                let opened = self.selected_peer_key().map(str::to_string);
                 self.focus.set(FocusId::MessageList);
+                if let Some(peer_key) = opened {
+                    self.restore_scroll_position(&peer_key);
+                    return Ok(Some(Action::LoadDmHistory { peer_key }));
+                }
             }
             Action::InputSubmit => {
                 let text = self.input_box.content();
@@ -375,6 +465,18 @@ impl View for DmInboxView {
         }
         if let SubscriptionEvent::ChannelMessage(event) = event {
             if self.on_disappearing(event) {
+                return Ok(());
+            }
+            // Our message's delivery changed: its state, and while the send
+            // goes unanswered, the Host's retry (plan SR2).
+            if let ChannelMessageEvent::DmSendStatus {
+                client_id,
+                state,
+                retry,
+                ..
+            } = event
+            {
+                self.delivery.insert(client_id.clone(), (*state, *retry));
                 return Ok(());
             }
         }
@@ -435,6 +537,10 @@ impl View for DmInboxView {
     }
 
     fn on_command_result(&mut self, result: CommandResult) -> Result<()> {
+        if let CommandResult::DmHistoryLoaded { peer_key, messages } = result {
+            self.set_history(&peer_key, messages);
+            return Ok(());
+        }
         if let CommandResult::DmInboxLoaded { threads } = result {
             self.threads = threads;
             self.threads
@@ -451,3 +557,7 @@ impl View for DmInboxView {
         &mut self.focus
     }
 }
+
+#[cfg(test)]
+#[path = "dm_inbox_tests.rs"]
+mod tests;

@@ -83,6 +83,21 @@ pub fn format_time_short(epoch_ms: u64) -> String {
     }
 }
 
+/// A send the Host keeps retrying, worded (plan SR2): the attempts so
+/// far and the next try's local `HH:MM:SS` (retries back off 1-300 s).
+#[must_use]
+pub fn delivery_retry_text(retry: &rekindle_types::message::DeliveryRetry) -> String {
+    use chrono::{Local, TimeZone};
+    let at = match Local.timestamp_millis_opt(retry.next_attempt_at).single() {
+        Some(t) => t.format("%H:%M:%S").to_string(),
+        None => "??:??:??".to_string(),
+    };
+    format!(
+        "Not delivered yet \u{2014} still trying (attempt {}, next try at {at})",
+        retry.attempts
+    )
+}
+
 /// Bytes as "42 B", "1.2 KB", "3.4 MB", "1.1 GB".
 #[must_use]
 pub fn format_bytes(bytes: u64) -> String {
@@ -143,6 +158,20 @@ mod tests {
         assert_eq!(format_duration_ago(Duration::from_secs(300)), "5m ago");
         assert_eq!(format_duration_ago(Duration::from_secs(7380)), "2h 3m ago");
         assert_eq!(format_duration_ago(Duration::from_secs(90000)), "1d 1h ago");
+    }
+
+    #[test]
+    fn delivery_retry() {
+        use chrono::{Local, TimeZone};
+        let at = Local.with_ymd_and_hms(2026, 11, 22, 14, 5, 9).unwrap();
+        let retry = rekindle_types::message::DeliveryRetry {
+            attempts: 3,
+            next_attempt_at: at.timestamp_millis(),
+        };
+        assert_eq!(
+            delivery_retry_text(&retry),
+            "Not delivered yet \u{2014} still trying (attempt 3, next try at 14:05:09)"
+        );
     }
 
     #[test]

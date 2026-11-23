@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use rekindle_ipc::protocol::IpcRequest;
 use rekindle_types::display as dt;
-use rekindle_types::dto::dm::DmInboxEntry;
+use rekindle_types::dto::dm::{DmInboxEntry, DmMessage};
 use rekindle_types::dto::friends::{BlockedUser, Friend, OutgoingInvite, PendingRequest};
 
 use super::super::action::{Action, CommandResult, ToastLevel};
@@ -89,6 +89,36 @@ impl App {
                     }
                 },
                 Err(e) => report_failure(&tx, "dm inbox", e),
+            }
+        });
+    }
+
+    /// The newest stored messages of the DM with `peer_key`, with their
+    /// delivery states (plan SR2).
+    pub(crate) fn load_dm_history(&self, peer_key: String) {
+        let tx = self.action_tx.clone();
+        let client = Arc::clone(&self.client);
+        tokio::spawn(async move {
+            let request = IpcRequest::DmHistory {
+                peer_key: peer_key.clone(),
+                limit: 50,
+                before: None,
+            };
+            match client.request_ok(request).await {
+                Ok(value) => match serde_json::from_value::<Vec<DmMessage>>(value) {
+                    Ok(messages) => {
+                        let _ = tx.send(Action::CommandComplete(Box::new(
+                            CommandResult::DmHistoryLoaded { peer_key, messages },
+                        )));
+                    }
+                    Err(e) => {
+                        let _ = tx.send(Action::CommandFailed {
+                            context: "dm history parse".into(),
+                            error: e.to_string(),
+                        });
+                    }
+                },
+                Err(e) => report_failure(&tx, "dm history", e),
             }
         });
     }

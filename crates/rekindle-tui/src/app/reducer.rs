@@ -146,8 +146,13 @@ impl App {
                 self.load_dm_inbox();
             }
             Action::ShowDmThread { peer_key } => {
-                self.nav
-                    .navigate(ViewKind::DmThread { peer_key }, self.theme.use_unicode());
+                self.nav.navigate(
+                    ViewKind::DmThread {
+                        peer_key: peer_key.clone(),
+                    },
+                    self.theme.use_unicode(),
+                );
+                self.load_dm_history(peer_key);
             }
             Action::ShowFriendList => {
                 self.nav
@@ -160,6 +165,7 @@ impl App {
                 self.load_group_dms();
             }
             Action::ShowGroupMessages { group_id } => self.load_group_messages(group_id),
+            Action::LoadDmHistory { peer_key } => self.load_dm_history(peer_key),
             Action::AcceptGroupInvite { group_id } => {
                 self.spawn_group_request(IpcRequest::GroupDmAccept { group_id }, "accept group");
             }
