@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use super::ingest_outcome::{Ingested, ShellFollowUp};
+use super::ingest_outcome::{IngestOutcome, ShellFollowUp};
 use crate::state::AppState;
 
 /// The media, preview and moderation arms of a relayed Control (plan GI4):
@@ -11,13 +11,13 @@ pub(crate) fn moderation_core(
     community_id: &str,
     sender_pseudonym: &str,
     payload: rekindle_codec::community::envelope::ControlPayload,
-) -> Ingested {
+) -> IngestOutcome {
     use rekindle_codec::community::envelope::ControlPayload;
 
     let (community_id, sender) = (community_id.to_owned(), sender_pseudonym.to_owned());
     match payload {
         payload if rekindle_voice::signaling::is_voice_signaling(&payload) => {
-            Ingested::follow_up(ShellFollowUp::VoiceSignaling {
+            IngestOutcome::follow_up(ShellFollowUp::VoiceSignaling {
                 community_id,
                 sender_pseudonym: sender,
                 payload,
@@ -28,7 +28,7 @@ pub(crate) fn moderation_core(
         | ControlPayload::KeyframeRequest { .. }
         | ControlPayload::TopologyChange { .. }
         | ControlPayload::MediaCapabilities { .. }) => {
-            Ingested::follow_up(ShellFollowUp::VideoPayload {
+            IngestOutcome::follow_up(ShellFollowUp::VideoPayload {
                 community_id,
                 sender_pseudonym: sender,
                 payload,
@@ -42,7 +42,7 @@ pub(crate) fn moderation_core(
             description,
             site_name,
             fetched_at,
-        } => Ingested::follow_up(ShellFollowUp::LinkPreview {
+        } => IngestOutcome::follow_up(ShellFollowUp::LinkPreview {
             community_id,
             sender_pseudonym: sender,
             channel_id,
@@ -57,7 +57,7 @@ pub(crate) fn moderation_core(
         }),
         other => {
             handle_gossip_moderation(state, &community_id, &sender, other);
-            Ingested::default()
+            IngestOutcome::default()
         }
     }
 }

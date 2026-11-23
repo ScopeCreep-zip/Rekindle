@@ -1,8 +1,8 @@
 //! What one ingested datagram produced (plan GI4): the webview events the
 //! shell shows and the follow-ups that still need the Tauri handle. The
 //! ingest cores (`app_message::ingest_item` and the control cores under it)
-//! take only the state and return an [`Ingested`]; the worker's
-//! `process_ingress_item` hands it to [`Ingested::deliver`], which emits the
+//! take only the state and return an [`IngestOutcome`]; the worker's
+//! `process_ingress_item` hands it to [`IngestOutcome::deliver`], which emits the
 //! events through `event_dispatch::emit_from_state` and runs each follow-up
 //! through the adapter that owns it, so the cores are tested without an
 //! `AppHandle`.
@@ -56,12 +56,12 @@ pub(crate) enum ShellFollowUp {
 
 /// The events and follow-ups one ingested datagram produced.
 #[derive(Default)]
-pub(crate) struct Ingested {
+pub(crate) struct IngestOutcome {
     pub events: Vec<WebviewEvent>,
     pub shell: Vec<ShellFollowUp>,
 }
 
-impl Ingested {
+impl IngestOutcome {
     /// One event, nothing else.
     pub(crate) fn event(event: WebviewEvent) -> Self {
         Self {

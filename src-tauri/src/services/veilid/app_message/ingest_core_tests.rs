@@ -15,7 +15,7 @@ use rekindle_node::host::test_fixtures::{create_ann, seat_creator, seed_registry
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::subscription_events::{SocialEvent, SubscriptionEvent};
 
-use super::{Ingested, ShellFollowUp, WebviewEvent};
+use super::{IngestOutcome, ShellFollowUp, WebviewEvent};
 use crate::test_support::TestHost;
 
 const SEATED_MEMBER: PseudonymKey = PseudonymKey([3; 32]);
@@ -30,7 +30,7 @@ async fn host_with_member() -> TestHost {
 }
 
 /// `payload` relayed by `SEATED_MEMBER` in `c1`, through the relayed core.
-async fn ingest(test: &TestHost, payload: ControlPayload) -> Ingested {
+async fn ingest(test: &TestHost, payload: ControlPayload) -> IngestOutcome {
     let signed = SignedEnvelope {
         community_id: "c1".into(),
         sender_pseudonym: SEATED_MEMBER.to_hex(),

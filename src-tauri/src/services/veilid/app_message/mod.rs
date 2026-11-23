@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use tauri::AppHandle;
 
-use super::ingest_outcome::{Ingested, ShellFollowUp};
+use super::ingest_outcome::{IngestOutcome, ShellFollowUp};
 use crate::event_dispatch::WebviewEvent;
 use crate::state::AppState;
 use crate::state_helpers;
@@ -79,30 +79,30 @@ pub(crate) async fn process_ingress_item(
 pub(crate) async fn ingest_item(
     state: &Arc<AppState>,
     item: crate::services::veilid::ingress_queue::IngressItem,
-) -> Ingested {
+) -> IngestOutcome {
     use crate::services::veilid::ingress_queue::IngressItem;
     match item {
         IngressItem::Gossip { signed, .. } => gossip_core(state, signed).await,
         IngressItem::Direct(message) => {
             let Some(host) = state.host.current() else {
                 tracing::debug!("1:1 message before the host started — dropped");
-                return Ingested::default();
+                return IngestOutcome::default();
             };
             let rekindle_transport::operations::direct::Routed::Unported(opened) =
                 host.receive_direct(&message).await
             else {
-                return Ingested::default();
+                return IngestOutcome::default();
             };
             let Ok(pool) = state.db.current() else {
                 tracing::debug!("unported 1:1 message: no identity database — dropped");
-                return Ingested::default();
+                return IngestOutcome::default();
             };
-            Ingested::follow_up(ShellFollowUp::Unported { pool, opened })
+            IngestOutcome::follow_up(ShellFollowUp::Unported { pool, opened })
         }
     }
 }
 
-async fn gossip_core(state: &Arc<AppState>, signed: SignedEnvelope) -> Ingested {
+async fn gossip_core(state: &Arc<AppState>, signed: SignedEnvelope) -> IngestOutcome {
     let community_id = &signed.community_id;
 
     // Signature verification BEFORE any state mutation (audit P7-W26).
@@ -131,7 +131,7 @@ async fn gossip_core(state: &Arc<AppState>, signed: SignedEnvelope) -> Ingested 
         if video_payload_channel_from_bytes(&signed.envelope_bytes)
             .is_some_and(|ch| local_in_channel(state, community_id, &ch))
         {
-            return Ingested::event(WebviewEvent::Community(
+            return IngestOutcome::event(WebviewEvent::Community(
                 crate::services::video_adapter::rejection_event(
                     community_id.clone(),
                     signed.sender_pseudonym.clone(),
@@ -139,7 +139,7 @@ async fn gossip_core(state: &Arc<AppState>, signed: SignedEnvelope) -> Ingested 
                 ),
             ));
         }
-        return Ingested::default();
+        return IngestOutcome::default();
     }
 
     let kind = encoded_envelope_kind(&signed.envelope_bytes);
@@ -148,7 +148,7 @@ async fn gossip_core(state: &Arc<AppState>, signed: SignedEnvelope) -> Ingested 
         let mut cache = state.dedup_cache.lock();
         if cache.check_and_insert(community_id, &signed.sender_pseudonym, &dedup_key) {
             tracing::debug!(kind, outcome = "duplicate", "gossip received");
-            return Ingested::default();
+            return IngestOutcome::default();
         }
     }
 
@@ -178,7 +178,7 @@ async fn gossip_core(state: &Arc<AppState>, signed: SignedEnvelope) -> Ingested 
     {
         // Trace: a flood must not become a log storm (M10.4 above).
         tracing::trace!(kind, outcome = "rate_limited", "gossip received");
-        return Ingested::default();
+        return IngestOutcome::default();
     }
 
     {
@@ -212,7 +212,7 @@ async fn gossip_core(state: &Arc<AppState>, signed: SignedEnvelope) -> Ingested 
             if passed && signed.ttl > 0 {
                 gossip_forward(state, &signed);
             }
-            return Ingested::default();
+            return IngestOutcome::default();
         }
     }
 
@@ -233,7 +233,7 @@ async fn gossip_core(state: &Arc<AppState>, signed: SignedEnvelope) -> Ingested 
     };
     if is_from_self {
         tracing::debug!(kind, outcome = "own", "gossip received");
-        Ingested::default()
+        IngestOutcome::default()
     } else {
         tracing::debug!(
             kind,
@@ -365,9 +365,9 @@ fn admitted_relay(state: &AppState, signed: &SignedEnvelope) -> Option<Community
 /// A relayed envelope from another member, after the gossip checks: what
 /// the Host ingests itself returns nothing; an admitted Control returns
 /// `relayed_control_core`'s outcome (plan GI4).
-async fn relayed_core(state: &Arc<AppState>, signed: SignedEnvelope) -> Ingested {
+async fn relayed_core(state: &Arc<AppState>, signed: SignedEnvelope) -> IngestOutcome {
     let Some(envelope) = admitted_relay(state, &signed) else {
-        return Ingested::default();
+        return IngestOutcome::default();
     };
     let community_id = signed.community_id.clone();
 
@@ -394,12 +394,12 @@ async fn relayed_core(state: &Arc<AppState>, signed: SignedEnvelope) -> Ingested
             } else {
                 tracing::trace!("typing frame before the host started — dropped");
             }
-            Ingested::default()
+            IngestOutcome::default()
         }
         CommunityEnvelope::Control(payload) => {
             if state.db.current().is_err() {
                 tracing::debug!("inbound message: no identity database — dropped");
-                return Ingested::default();
+                return IngestOutcome::default();
             }
             super::control::relayed_control_core(
                 state,
@@ -422,7 +422,7 @@ async fn relayed_core(state: &Arc<AppState>, signed: SignedEnvelope) -> Ingested
                 host.on_watch_relay(&record_key, subkey, &content_hash, &observer_pseudonym)
                     .await;
             }
-            Ingested::default()
+            IngestOutcome::default()
         }
     }
 }

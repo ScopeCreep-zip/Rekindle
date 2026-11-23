@@ -3,7 +3,7 @@ use std::sync::Arc;
 use crate::state::AppState;
 
 use super::control_events::control_events_core;
-use super::ingest_outcome::{Ingested, ShellFollowUp};
+use super::ingest_outcome::{IngestOutcome, ShellFollowUp};
 
 /// A relayed Control the Host's community gate admitted (plan GI4): what
 /// the Host ingests itself returns nothing, a `RequestMEK` a follow-up for
@@ -13,7 +13,7 @@ pub(crate) async fn relayed_control_core(
     community_id: &str,
     sender_pseudonym: &str,
     payload: rekindle_codec::community::envelope::ControlPayload,
-) -> Ingested {
+) -> IngestOutcome {
     use rekindle_codec::community::envelope::ControlPayload;
 
     match payload {
@@ -23,7 +23,7 @@ pub(crate) async fn relayed_control_core(
         // follow the merged governance (`member_events.rs`), never the frame.
         payload @ (ControlPayload::MemberJoined { .. } | ControlPayload::MemberLeave { .. }) => {
             host_membership(state, community_id, sender_pseudonym, &payload).await;
-            Ingested::default()
+            IngestOutcome::default()
         }
         payload @ (ControlPayload::ReactionAdded { .. }
         | ControlPayload::ReactionRemoved { .. }) => {
@@ -32,10 +32,10 @@ pub(crate) async fn relayed_control_core(
             if let Ok(host) = crate::state_helpers::host_governance(state) {
                 host.ingest_reaction(community_id, sender_pseudonym, 0, &payload);
             }
-            Ingested::default()
+            IngestOutcome::default()
         }
         payload @ ControlPayload::RequestMEK { .. } => {
-            Ingested::follow_up(ShellFollowUp::MekRequest {
+            IngestOutcome::follow_up(ShellFollowUp::MekRequest {
                 community_id: community_id.to_owned(),
                 payload,
             })
@@ -47,7 +47,7 @@ pub(crate) async fn relayed_control_core(
                 host.on_segment_expansion_request(community_id, &payload)
                     .await;
             }
-            Ingested::default()
+            IngestOutcome::default()
         }
         other => control_events_core(state, community_id, sender_pseudonym, other).await,
     }
