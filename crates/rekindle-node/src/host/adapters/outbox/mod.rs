@@ -169,6 +169,7 @@ impl HostOutbox {
             kind: row.kind,
             state: SendState::Queued,
             wedge_reason: None,
+            retry: None,
         });
         Ok(true)
     }
@@ -208,6 +209,7 @@ impl HostOutbox {
                 kind: row.kind,
                 state: SendState::Queued,
                 wedge_reason: None,
+                retry: None,
             });
         }
         Ok(())

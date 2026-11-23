@@ -124,8 +124,13 @@ pub(super) fn hash_channel_message(h: &mut blake3::Hasher, msg: &ChannelMessageE
             client_id,
             conversation_id,
             state,
+            retry,
         } => {
             h.update(b"dm_state|");
+            // Each retry is its own change: the attempt count tells them apart.
+            if let Some(retry) = retry {
+                h.update(&retry.attempts.to_le_bytes());
+            }
             h.update(conversation_id.as_bytes());
             h.update(b"|");
             h.update(client_id.as_bytes());
@@ -299,9 +304,16 @@ pub(super) fn hash_group_dm(
             h.update(&epoch.to_be_bytes());
         }
         GroupDmEvent::SendStatus {
-            client_id, state, ..
+            client_id,
+            state,
+            retry,
+            ..
         } => {
             h.update(b"send|");
+            // Each retry is its own change: the attempt count tells them apart.
+            if let Some(retry) = retry {
+                h.update(&retry.attempts.to_le_bytes());
+            }
             h.update(client_id.as_bytes());
             h.update(state.as_str().as_bytes());
         }

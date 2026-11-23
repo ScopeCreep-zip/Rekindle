@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::message::SendState;
+use crate::message::{DeliveryRetry, SendState};
 
 /// A member as we show them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -54,6 +54,10 @@ pub enum GroupDmEvent {
         group_id: String,
         client_id: String,
         state: SendState,
+        /// `Some` while an attempt went unanswered and the row is retried
+        /// (attempt count, next attempt), as on `DmSendStatus`; `None` on
+        /// every other change, so the row's settling change clears it.
+        retry: Option<DeliveryRetry>,
     },
     /// A member's message, stored under the group's conversation.
     /// Triggered by: an entry of the member's group chain that opened.

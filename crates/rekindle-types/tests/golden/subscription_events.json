@@ -232,7 +232,11 @@
       "dmSendStatus": {
         "clientId": "01900000-0000-7000-8000-000000000002",
         "conversationId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-        "state": "failed"
+        "retry": {
+          "attempts": 3,
+          "nextAttemptAt": 1700000004000
+        },
+        "state": "sent"
       }
     }
   },
@@ -841,6 +845,10 @@
       "sendStatus": {
         "clientId": "0192f0c4-7b3a-7c1e-9a55-1f0e2d3c4b5a",
         "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
+        "retry": {
+          "attempts": 2,
+          "nextAttemptAt": 1700000003000
+        },
         "state": "sent"
       }
     }

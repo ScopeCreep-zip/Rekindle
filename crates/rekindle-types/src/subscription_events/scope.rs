@@ -290,6 +290,7 @@ mod tests {
             client_id: "m".into(),
             conversation_id: "pk".into(),
             state: crate::message::SendState::Sent,
+            retry: None,
         });
         assert_eq!(ack.scope(), EventScope::Peer("pk".into()));
         let gap = SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DmHistoryGap {

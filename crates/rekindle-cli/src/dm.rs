@@ -124,6 +124,7 @@ async fn watch_dms(
             conversation_id,
             client_id,
             state,
+            ..
         }) if friend.is_none_or(|f| f == conversation_id) => Some(format!(
             "message {} to {}: {}",
             rekindle_client::fmt::abbreviate_key(client_id),

@@ -4,7 +4,7 @@
 //! `rekindle-node/src/host/adapters/outbox/`.
 
 use async_trait::async_trait;
-use rekindle_types::message::SendState;
+use rekindle_types::message::{DeliveryRetry, SendState};
 use rekindle_utils::random::RandomSource;
 use rekindle_utils::time::Clock;
 
@@ -135,6 +135,9 @@ pub struct StateChange {
     pub kind: StreamKind,
     pub state: SendState,
     pub wedge_reason: Option<String>,
+    /// Set on an unanswered attempt's change: the row is retried, with
+    /// this count and next attempt (plan §3.0 lane 1); `None` otherwise.
+    pub retry: Option<DeliveryRetry>,
 }
 
 impl StateChange {
@@ -146,6 +149,19 @@ impl StateChange {
             kind: row.kind,
             state,
             wedge_reason,
+            retry: None,
+        }
+    }
+
+    /// `row` at `state` after its `attempts`th attempt went unanswered,
+    /// due again at `next_at`.
+    pub(crate) fn retrying(row: &OutboxRow, state: SendState, attempts: u32, next_at: i64) -> Self {
+        Self {
+            retry: Some(DeliveryRetry {
+                attempts,
+                next_attempt_at: next_at,
+            }),
+            ..Self::of(row, state, None)
         }
     }
 }

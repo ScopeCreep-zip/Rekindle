@@ -342,6 +342,7 @@ impl View for GroupDmListView {
                 group_id,
                 client_id,
                 state,
+                ..
             } if group_id == open => {
                 for m in messages
                     .iter_mut()
