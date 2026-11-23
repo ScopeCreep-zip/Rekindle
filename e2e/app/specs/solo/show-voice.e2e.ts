@@ -11,6 +11,7 @@ import { NET_WAIT_MS, press, shown, switchTo, waitUntil } from "../../../walk/he
 import { BUDDY, SETTINGS, openSettings } from "../../../walk/nav.ts";
 import { createIdentity, friendsView, importAndKeepSkin, newUser, skinShown, type User } from "../../journeys.ts";
 import { SHOW_VOICE_PACK, showVoicePack } from "../../skin-pack.ts";
+import { shot } from "../../shots.ts";
 
 describe("Show Voice with no call or voice session", function () {
   this.timeout(600_000);
@@ -42,6 +43,8 @@ describe("Show Voice with no call or voice session", function () {
       throw new Error(`the window never showed the Host's answer; its toasts: ${said || "none"}`);
     });
     expect(said).toContain("no call or voice session");
+    // The asserted state: the derived skin's buddy list with the Host's answer showing.
+    await shot("host-answer");
     // Still there and pressable: the window says so, the button stays.
     expect(await (await browser.$(node)).isDisplayed()).toBe(true);
     // The derived skin is still the one in use (its trial was kept).
