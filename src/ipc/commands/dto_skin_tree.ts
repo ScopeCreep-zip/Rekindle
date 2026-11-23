@@ -387,7 +387,9 @@ export interface SkinShell {
   images: string[];
 }
 
-/** `Anchor` (serde `tag = "kind"`, `content = "offset"`). */
+/** `Anchor` (serde `tag = "kind"`, `content = "offset"`), as served: a stored pack's
+ *  `after` chain (plan SK15b) is resolved by the Host into `start`/`end`/`centre` before any
+ *  tree or popup reaches the shell. */
 export type NodeAnchor =
   | { kind: "start"; offset: number }
   | { kind: "end"; offset: number }

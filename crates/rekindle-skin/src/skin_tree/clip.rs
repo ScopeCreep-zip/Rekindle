@@ -43,8 +43,9 @@ pub(super) struct Art<'a> {
 /// How much of a fixed `span` lies before its parent's start and past its
 /// end (a parent `len` px long, or one that stretches with the window,
 /// `None`, where only the offset can lay it outside), at most its size.
-fn cut(span: NodeSpan, len: Option<u16>) -> (u16, u16) {
-    let NodeSpan::Fixed { at, size } = span else {
+fn cut(span: &NodeSpan, len: Option<u16>) -> (u16, u16) {
+    let span = span.clone();
+    let NodeSpan::Fixed { at, size } = span.clone() else {
         return (0, 0);
     };
     let (before, after) = match (len, at) {
@@ -52,7 +53,7 @@ fn cut(span: NodeSpan, len: Option<u16>) -> (u16, u16) {
             let (s, l) = span.place(i32::from(len));
             ((-s).max(0), (s + l - i32::from(len)).max(0))
         }
-        (None, Anchor::Start(o)) => ((-i32::from(o)).max(0), 0),
+        (None, Anchor::Start(o) | Anchor::After { gap: o, .. }) => ((-i32::from(o)).max(0), 0),
         (None, Anchor::End(o)) => (0, (-i32::from(o)).max(0)),
         (None, Anchor::Centre { .. }) => (0, 0),
     };
@@ -61,14 +62,38 @@ fn cut(span: NodeSpan, len: Option<u16>) -> (u16, u16) {
     (b, a)
 }
 
+/// How wide a fixed `span` can grow inside a parent `len` px long without
+/// leaving it: to the parent's end from a start anchor, to its start from
+/// an end anchor, evenly both ways from a centred one; `None` for a
+/// stretched span or a symbolic chain (held resolved while the importer
+/// clips, [`super::content::hold`]).
+fn room(span: &NodeSpan, len: u16) -> Option<u16> {
+    let NodeSpan::Fixed { at, .. } = span else {
+        return None;
+    };
+    let len = i32::from(len);
+    let (s, l) = span.place(len);
+    let room = match at {
+        Anchor::Start(_) => len - s,
+        Anchor::End(_) => s + l,
+        Anchor::Centre { .. } => l + 2 * s.min(len - s - l),
+        Anchor::After { .. } => return None,
+    };
+    Some(u16::try_from(room.max(0)).unwrap_or(u16::MAX))
+}
+
 /// `span` less `cut` (in a parent `len` px long, when fixed).
 fn clipped(span: NodeSpan, (b, a): (u16, u16), len: Option<u16>) -> NodeSpan {
-    let NodeSpan::Fixed { at, size } = span else {
+    let NodeSpan::Fixed { at, size } = span.clone() else {
         return span;
     };
     let size_left = size - b - a;
     let at = match (at, len) {
         (Anchor::Start(o), _) => Anchor::Start(o.saturating_add_unsigned(b)),
+        (Anchor::After { sibling, gap }, _) => Anchor::After {
+            sibling,
+            gap: gap.saturating_add_unsigned(b),
+        },
         (Anchor::End(o), _) => Anchor::End(o.saturating_add_unsigned(a)),
         (Anchor::Centre { .. }, Some(len)) => {
             let start = span.place(i32::from(len)).0 + i32::from(b);
@@ -104,6 +129,11 @@ fn shifted(span: NodeSpan, (b, a): (u16, u16), len: u16) -> NodeSpan {
             at: Anchor::End(o.saturating_sub(a16)),
             size,
         },
+        // Its sibling moves with it: the gap stays.
+        after @ NodeSpan::Fixed {
+            at: Anchor::After { .. },
+            ..
+        } => after,
         NodeSpan::Fixed {
             at: Anchor::Centre { .. },
             size,
@@ -342,23 +372,34 @@ pub(super) fn clip(
         // (xSLIMFIRE's `FileMenu` `ResizeY="100"`, its 12 px text in the
         // 2 px `XfireMenuText`, `xSLIMFIREmainwindow.xml:48-50`, whose
         // menu the original shows), so only a wholly fixed one is.
-        let fixed = matches!((n.x, n.y), (NodeSpan::Fixed { .. }, NodeSpan::Fixed { .. }));
+        let fixed = matches!(
+            (n.x.clone(), n.y.clone()),
+            (NodeSpan::Fixed { .. }, NodeSpan::Fixed { .. })
+        );
         let cuts = if fixed || n.art.is_some() {
-            [cut(n.x, parent.0), cut(n.y, parent.1)]
+            [cut(&n.x, parent.0), cut(&n.y, parent.1)]
         } else {
             [(0, 0); 2]
         };
         if cuts[0] != (0, 0) {
-            n.x = clipped(n.x, cuts[0], parent.0);
+            n.x = clipped(n.x.clone(), cuts[0], parent.0);
+        }
+        // A content text is served no wider than its parent's room (plan
+        // SK15b, [`super::content`]): StealthX's `MinWidth="110"` tab words
+        // at x 1 in the 110 px `TabHeader` rail are cut to 109 here, and
+        // serving them 110 would push the rail's art out 1 px.
+        if let (Some(f), Some(room)) = (n.fit.as_mut(), parent.0.and_then(|l| room(&n.x, l))) {
+            f.min = f.min.min(room);
+            f.max = Some(f.max.map_or(room, |m| m.min(room)));
         }
         if cuts[1] != (0, 0) {
-            n.y = clipped(n.y, cuts[1], parent.1);
+            n.y = clipped(n.y.clone(), cuts[1], parent.1);
         }
         let len = |s: NodeSpan| match s {
             NodeSpan::Fixed { size, .. } => Some(size),
             NodeSpan::Stretch { .. } => None,
         };
-        let own = (len(n.x), len(n.y));
+        let own = (len(n.x.clone()), len(n.y.clone()));
         if cuts != [(0, 0); 2] {
             if let Some(a) = n.art.take() {
                 n.art = match own {
@@ -371,10 +412,10 @@ pub(super) fn clip(
             }
             for c in &mut n.children {
                 if let Some(w) = own.0 {
-                    c.x = shifted(c.x, cuts[0], w);
+                    c.x = shifted(c.x.clone(), cuts[0], w);
                 }
                 if let Some(h) = own.1 {
-                    c.y = shifted(c.y, cuts[1], h);
+                    c.y = shifted(c.y.clone(), cuts[1], h);
                 }
             }
         }

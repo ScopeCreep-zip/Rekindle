@@ -25,7 +25,8 @@ use crate::shape;
 
 /// How far a stretched `span` lies before its parent's start and past its
 /// end (its negative insets, the `Outdent*`s).
-fn outdent(span: NodeSpan) -> (u16, u16) {
+fn outdent(span: &NodeSpan) -> (u16, u16) {
+    let span = span.clone();
     let NodeSpan::Stretch { start, end } = span else {
         return (0, 0);
     };
@@ -67,6 +68,11 @@ fn shift_child(span: NodeSpan, (b, a): (u16, u16)) -> NodeSpan {
             at: Anchor::End(o.saturating_sub(i(a))),
             size,
         },
+        // Its sibling moves with it: the gap stays.
+        after @ NodeSpan::Fixed {
+            at: Anchor::After { .. },
+            ..
+        } => after,
         NodeSpan::Fixed {
             at: Anchor::Centre { by, before, after },
             size,
@@ -215,26 +221,26 @@ fn cut_art(
 /// clipped every tile to its parent.
 fn clip_node(n: &mut SkinNode, art: &mut Art<'_>) -> Result<(), ImportError> {
     for x in [true, false] {
-        let o = outdent(if x { n.x } else { n.y });
+        let o = outdent(if x { &n.x } else { &n.y });
         if o == (0, 0) {
             continue;
         }
         if x {
-            n.x = inside(n.x);
+            n.x = inside(n.x.clone());
         } else {
-            n.y = inside(n.y);
+            n.y = inside(n.y.clone());
         }
         if let Some(a) = n.art.take() {
             n.art = cut_art(art, a, x, o)?;
         }
         for c in &mut n.children {
-            let was = outdent(if x { c.x } else { c.y });
+            let was = outdent(if x { &c.x } else { &c.y });
             if x {
-                c.x = shift_child(c.x, o);
+                c.x = shift_child(c.x.clone(), o);
             } else {
-                c.y = shift_child(c.y, o);
+                c.y = shift_child(c.y.clone(), o);
             }
-            if outdent(if x { c.x } else { c.y }) != was {
+            if outdent(if x { &c.x } else { &c.y }) != was {
                 clip_node(c, art)?;
             }
         }
