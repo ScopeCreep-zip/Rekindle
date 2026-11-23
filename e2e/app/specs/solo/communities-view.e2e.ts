@@ -17,7 +17,7 @@ import { builtinPacks } from "../../skin-pack.ts";
 type View = "friends" | "communities";
 
 /** The control for `view`: its box inside its parent's, and its own words. */
-async function controlFacts(view: View): Promise<{ inStrip: boolean; text: string } | null> {
+async function controlFacts(view: View): Promise<{ inStrip: boolean; text: string; art: number[]; strip: number[] } | null> {
   return (await browser.execute((v: string) => {
     const n = Array.from(document.querySelectorAll<HTMLElement>(`[data-skin-role="tab:${v}"]`)).find(
       (e) => e.getBoundingClientRect().width > 0,
@@ -35,8 +35,14 @@ async function controlFacts(view: View): Promise<{ inStrip: boolean; text: strin
     };
     const p = n.parentElement?.getBoundingClientRect();
     const inStrip = !!p && r.left >= p.left - 1 && r.right <= p.right + 1 && r.top >= p.top - 1 && r.bottom <= p.bottom + 1;
-    return { inStrip, text: (n.textContent ?? "").trim() };
-  }, view)) as { inStrip: boolean; text: string } | null;
+    const round = (v: number): number => Math.round(v * 10) / 10;
+    return {
+      inStrip,
+      text: (n.textContent ?? "").trim(),
+      art: [r.left, r.top, r.right, r.bottom].map(round),
+      strip: p ? [p.left, p.top, p.right, p.bottom].map(round) : [],
+    };
+  }, view)) as { inStrip: boolean; text: string; art: number[]; strip: number[] } | null;
 }
 
 /**
@@ -82,7 +88,8 @@ describe("every skin's Communities control (SK2-N4)", function () {
       // The control the Host cloned sits inside its strip and says its own name.
       const facts = await controlFacts("communities");
       if (facts) {
-        expect(facts.inStrip).toBe(true);
+        // Its art box [left, top, right, bottom] inside its strip's, named when not.
+        if (!facts.inStrip) throw new Error(`the cloned Communities tab lies outside its strip: art ${JSON.stringify(facts.art)}, strip ${JSON.stringify(facts.strip)}`);
         expect(facts.text).not.toMatch(/^(files|downloads)$/i);
       }
       // A user's click on the pack's Friends control reaches a node that
