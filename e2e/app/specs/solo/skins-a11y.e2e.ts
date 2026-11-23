@@ -12,8 +12,8 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { browser, expect } from "@wdio/globals";
-import { switchTo } from "../../../walk/helpers.ts";
-import { BUDDY, openSettings } from "../../../walk/nav.ts";
+import { MOD_KEY, byText, switchTo } from "../../../walk/helpers.ts";
+import { BUDDY, SETTINGS, expectOnlySelectedTab, openSettings } from "../../../walk/nav.ts";
 import { type Violation, violations } from "../../axe.ts";
 import { checkGeometry, targetsMetIn, treeFitIn } from "../../geometry.ts";
 import type { TreeFit } from "../../geometry-page.ts";
@@ -175,6 +175,47 @@ describe("every built-in skin keeps the app accessible and laid out", function (
     }, selectors, met)) as { short: string[]; other: string[] };
   }
 
+  /**
+   * The buddy list's labelled controls whose name or tooltip is not the
+   * label's words (plan SK14, WCAG 2.5.3): a pressable node and a menu title
+   * the Host labels are named by those words, and a pressable node's title
+   * repeats them (the full words where its box cuts them short).
+   */
+  async function labelNames(): Promise<string[]> {
+    return (await browser.execute(() =>
+      Array.from(document.querySelectorAll<HTMLElement>(".skin-tree [data-skin-node]")).flatMap((el) => {
+        if (!el.matches(".skin-tree-button, .skin-menu")) return [];
+        const label = el.querySelector(":scope > .skin-node-label");
+        const words = (label?.querySelector(".skin-node-label-text, .sr-only")?.textContent ?? "").trim();
+        if (!words) return [];
+        const id = el.dataset.skinNode ?? "?";
+        const out: string[] = [];
+        const name = el.getAttribute("aria-label") ?? "";
+        if (name !== words) out.push(`${id} named "${name}", shows "${words}"`);
+        if (el.matches(".skin-tree-button") && el.getAttribute("title") !== words) out.push(`${id} titled "${el.getAttribute("title") ?? ""}"`);
+        return out;
+      }),
+    )) as string[];
+  }
+
+  /**
+   * Whether Mod+, in the buddy list opens Settings at Appearance (plan SK14):
+   * Settings is moved to About first, so only the chord can bring it back.
+   */
+  async function appearanceChordOpens(): Promise<boolean> {
+    await switchTo(browser, SETTINGS);
+    await (await byText(browser, ".form-tab", "About")).click();
+    await switchTo(browser, BUDDY);
+    await browser.keys([MOD_KEY, ","]);
+    await switchTo(browser, SETTINGS);
+    try {
+      await expectOnlySelectedTab(browser, "Appearance");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /** Axe and geometry findings in the window `browser` is in, at each of `w`'s sizes, keyed by window and size. */
   async function audit(pack: SkinPack, w: WindowCase, withData: boolean): Promise<Record<string, unknown>> {
     const found: Record<string, unknown> = {};
@@ -221,6 +262,11 @@ describe("every built-in skin keeps the app accessible and laid out", function (
       await switchTo(browser, BUDDY);
       await skinShown(browser, href);
       Object.assign(found, await audit(pack, BUDDY_LIST, false));
+      // Plan SK14: label words name their control, and the accessible skin
+      // is one keyboard step away.
+      const misnamed = await labelNames();
+      if (misnamed.length > 0) found["buddy-list: label words not the control's name"] = misnamed;
+      if (!(await appearanceChordOpens())) found["buddy-list: Mod+, does not open Appearance"] = true;
       await browser.switchToWindow(communityHandle);
       await skinShown(browser, href);
       Object.assign(found, await audit(pack, COMMUNITY, true));
