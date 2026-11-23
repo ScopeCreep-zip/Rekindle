@@ -88,6 +88,26 @@ impl HostGovernance {
         }
     }
 
+    /// The key rotation each merged departure in `events` requires (ADR
+    /// 0018): a member who left still holds the current keys. Kicks and
+    /// bans rotate from the moderation path; ours rotates nothing of ours.
+    /// Every member asks, and the election inside picks the rotator
+    /// (`blake3(departed || own)`), on both modes. The request is a plain
+    /// departure (`MekRotationRequest::departure`), which holds no sends:
+    /// a voluntary leave keeps sending under the old generation until the
+    /// new one is confirmed (ADR 0018, 2026-10-24 amendment).
+    pub(super) fn rotate_for_departures(
+        &self,
+        community_id: &str,
+        events: &[MembershipEvent],
+        me: Option<&PseudonymKey>,
+    ) {
+        use rekindle_governance_runtime::GovernanceRuntimeDeps;
+        for departed in departures_to_rotate(events, me) {
+            self.spawn_text_mek_rotation_for_ban(community_id, departed);
+        }
+    }
+
     /// The `RaidDetected` alerts the `Joined`s in `events` raise.
     fn observe_raid_joins(&self, events: &[MembershipEvent]) -> Vec<SystemEvent> {
         let now_secs = self.ctx.clock.now_secs();
@@ -258,6 +278,27 @@ pub(super) fn member_transitions(
         }
     }
     out
+}
+
+/// The members whose merged `Left` in `events` needs a key rotation: every
+/// leaver but us. A `Kicked` or `Banned` is the moderation path's rotation,
+/// and a gossip notice never reaches here (only merged transitions do).
+fn departures_to_rotate<'a>(
+    events: &'a [MembershipEvent],
+    me: Option<&PseudonymKey>,
+) -> Vec<&'a str> {
+    let me = me.map(PseudonymKey::to_hex);
+    events
+        .iter()
+        .filter_map(|event| match event {
+            MembershipEvent::Left { pseudonym, .. }
+                if me.as_deref() != Some(pseudonym.as_str()) =>
+            {
+                Some(pseudonym.as_str())
+            }
+            _ => None,
+        })
+        .collect()
 }
 
 #[cfg(test)]

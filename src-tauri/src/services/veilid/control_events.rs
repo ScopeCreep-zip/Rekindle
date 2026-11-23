@@ -51,44 +51,16 @@ pub(crate) async fn handle_control_events_and_threads(
             handle_game_server_payload(app_handle, state, community_id, sender_pseudonym, payload)
                 .await;
         }
-        ControlPayload::MEKRotated {
-            channel_id,
-            new_generation,
-            ..
-        } => {
-            tracing::debug!(
-                community = %community_id,
-                "MEKRotated: v2.0 uses invite-time MEK distribution — vault read skipped"
-            );
-            crate::event_dispatch::emit_subscription(
-                app_handle,
-                &rekindle_types::subscription_events::SubscriptionEvent::Crypto(
-                    rekindle_types::subscription_events::CryptoEvent::MekRotated {
-                        community: community_id.to_string(),
-                        channel: channel_id,
-                        generation: new_generation,
-                        // The gossip payload names no rotator.
-                        rotator_pseudonym: None,
-                    },
-                ),
-            );
-        }
         payload @ ControlPayload::SubmitOnboardingAnswers { .. } => {
             super::control::host_membership(state, community_id, sender_pseudonym, &payload).await;
         }
-        ControlPayload::OnboardingComplete {
-            ref pseudonym_key,
-            ref role_ids,
-        } => {
-            crate::event_dispatch::emit_membership(
-                app_handle,
-                rekindle_types::subscription_events::MembershipEvent::OnboardingCompleted {
-                    community: community_id.to_string(),
-                    pseudonym: pseudonym_key.clone(),
-                    role_ids: role_ids.iter().map(|id| id.to_hex()).collect(),
-                },
-            );
-        }
+        // Unauthenticated notices the shell shows nothing from: a window's
+        // `MekRotated` comes from the Host installing the key
+        // (`mek_transfer.rs`) or from our own rotation (`mek_adapter.rs`),
+        // and `OnboardingCompleted` from the Host's own validation of the
+        // answers (`membership_events/onboarding.rs`), with the roles it
+        // assigned merging as `RolesChanged`.
+        ControlPayload::MEKRotated { .. } | ControlPayload::OnboardingComplete { .. } => {}
         other => {
             handle_gossip_control_payloads(
                 app_handle,

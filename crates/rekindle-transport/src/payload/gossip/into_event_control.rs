@@ -35,16 +35,6 @@ pub fn control_into_event(
 
     Some(match payload {
         // ── MEK management ──────────────────────────────────
-        ControlPayload::MEKRotated {
-            channel_id,
-            new_generation,
-            rotator_pseudonym,
-        } => SubscriptionEvent::Crypto(CryptoEvent::MekRotated {
-            community: c(),
-            channel: channel_id,
-            generation: new_generation,
-            rotator_pseudonym,
-        }),
         ControlPayload::RequestMEK {
             channel_id,
             needed_generation,
@@ -70,14 +60,6 @@ pub fn control_into_event(
         }
 
         // ── Onboarding ──────────────────────────────────────
-        ControlPayload::OnboardingComplete {
-            pseudonym_key,
-            role_ids,
-        } => SubscriptionEvent::Membership(MembershipEvent::OnboardingCompleted {
-            community: c(),
-            pseudonym: pseudonym_key,
-            role_ids: role_ids.iter().map(|id| id.to_hex()).collect(),
-        }),
         ControlPayload::SubmitOnboardingAnswers { answers } => {
             SubscriptionEvent::Membership(MembershipEvent::OnboardingAnswersSubmitted {
                 community: c(),
@@ -187,6 +169,13 @@ pub fn control_into_event(
         ControlPayload::MemberJoined { .. }
         | ControlPayload::MemberLeave { .. }
         | ControlPayload::Kick { .. }
+        // A key's arrival and an onboarding verdict are the Host's to say
+        // too: `MekRotated` when it installs the key (`mek_transfer.rs`) or
+        // mints it (`mek_rotation`), `OnboardingCompleted` from its own
+        // check of the answers (`membership_events/onboarding.rs`). The
+        // notice is unauthenticated as to either and is a hint only.
+        | ControlPayload::MEKRotated { .. }
+        | ControlPayload::OnboardingComplete { .. }
         | ControlPayload::ThreadMessageReceived { .. }
         | ControlPayload::MekTransferAck(_)
         | ControlPayload::RequestSegmentExpansion { .. }

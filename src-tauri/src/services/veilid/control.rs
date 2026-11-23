@@ -14,14 +14,12 @@ pub(crate) async fn handle_relayed_control(
     use rekindle_codec::community::envelope::ControlPayload;
 
     match payload {
+        // A member's own join notice or departure: the Host's one ingest, as
+        // on the daemon (`gossip_ingest.rs`). The notice is a hint; the
+        // Joined/Left a window shows and the departure rotation (ADR 0018)
+        // follow the merged governance (`member_events.rs`), never the frame.
         payload @ (ControlPayload::MemberJoined { .. } | ControlPayload::MemberLeave { .. }) => {
             host_membership(state, community_id, sender_pseudonym, &payload).await;
-            super::control_membership::handle_membership_payload(
-                app_handle,
-                state,
-                community_id,
-                payload,
-            );
         }
         payload @ (ControlPayload::ReactionAdded { .. }
         | ControlPayload::ReactionRemoved { .. }) => {
