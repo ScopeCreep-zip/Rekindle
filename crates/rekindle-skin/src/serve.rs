@@ -571,6 +571,17 @@ mod tests {
                 assert_eq!(want, registry, "{}: a menu without a link", pack.id);
             }
         }
+        // The real set (design `br`): Total Chaos's `TCLink` and Space
+        // Cowboy's `SCLogo`; the packs whose logo ran xfire.com serve none.
+        let mut ids: Vec<&str> = linked.iter().map(|(id, ..)| *id).collect();
+        ids.sort_unstable();
+        assert_eq!(ids, ["spacecowboy", "total-chaos"]);
+        for (id, _, run) in &linked {
+            let SkinAction::LaunchUrl(u) = run else {
+                panic!("{id}: the website item runs {run:?}");
+            };
+            assert!(!crate::skin_tree::brand::is_xfire_url(&u.url), "{id}");
+        }
         let chaos = linked.iter().find(|(id, ..)| *id == "total-chaos");
         let (_, label, run) = chaos.expect("Total Chaos's Help menu serves its website");
         assert_eq!(label, "Total Chaos's website");

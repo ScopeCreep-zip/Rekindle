@@ -1,8 +1,8 @@
 MainTitleBar Drag
   Vent Decor
-  XfireLogo Logo target [32, -2, 55, 24] art [-32, 2, 87, 19] Size
-    TheX Decor
-      TheXCover Decor target [0, -2, 32, 24] art [0, 2, 32, 19] Size
+  XfireLogo Logo label "Rekindle" cover [0, 0, 87, 19] glyph RekindleWordmark
+    TheX Decor label "Rekindle" cover [0, 0, 32, 19] glyph Rekindle
+      TheXCover Decor label "Rekindle" cover [0, 0, 32, 19] glyph Rekindle target [0, -2, 32, 24] art [0, 2, 32, 19] Size
   UserNameField NameField target [0, -3, 169, 24] art [0, 3, 169, 17] Size
     UserNameText Part
   CloseBox Button target [0, -3, 21, 24] art [0, 3, 18, 17] Short
@@ -65,7 +65,7 @@ InnerBevel Decor
     TabbedControl.Communities View(Communities)
 BottomBar Group
   PartnerGraphic Decor
-    PartnerFrame Decor target [-8, -2, 24, 23] art [8, 2, 8, 18] Spacing
+    PartnerFrame Decor
 InfoViewButton Button target [-11, 0, 24, 70] art [11, 0, 13, 70] Size
 popup MainInfoViewPopup
   InfoTopRow Decor

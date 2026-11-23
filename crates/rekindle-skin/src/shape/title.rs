@@ -280,14 +280,15 @@ pub fn title_css(
     );
     for p in &title.parts {
         match p.role {
+            // The pack's logo box draws Rekindle's brand art, never the
+            // pack's Xfire logo (design `br`, `skin_tree::brand`).
             TitleRole::Logo => {
-                let h = href(base, p.image.as_deref()?, images)?;
+                let glyph = crate::skin_tree::brand::glyph(p.width, p.height);
+                let var = crate::skin_tree::brand::css_var(glyph);
                 let _ = writeln!(
                     out,
-                    "  {root} .xfire-titlebar-logo {{\n    {} background: url(\"{h}\") 0 0 / {}px {}px no-repeat;\n  }}",
-                    placed(p),
-                    p.width,
-                    p.height
+                    "  {root} .xfire-titlebar-logo {{\n    {} background: var({var}) center / contain no-repeat;\n  }}",
+                    placed(p)
                 );
             }
             TitleRole::Name => name(&mut out, root, p, images, base)?,
