@@ -284,9 +284,13 @@ impl InboundHandler for DaemonHandler {
                     // refusal; the joiner asks another member. Refused: the
                     // merge does not admit the join, answered with its typed
                     // reason so the joiner can say why (plan E3.2, IJ2).
+                    // RetryLater (JN1): a dep of the join is not fetchable
+                    // yet, so the join is not judged; the `RETRY_LATER` byte
+                    // BR1 answers past the deadline, sent as is.
                     Ok(
                         rekindle_governance_runtime::BootstrapAnswer::Partial(bytes)
-                        | rekindle_governance_runtime::BootstrapAnswer::Refused(bytes),
+                        | rekindle_governance_runtime::BootstrapAnswer::Refused(bytes)
+                        | rekindle_governance_runtime::BootstrapAnswer::RetryLater(bytes),
                     ) => CallResponse::Ok(bytes),
                     Err(e) => CallResponse::Rejected {
                         reason: e.to_string(),
