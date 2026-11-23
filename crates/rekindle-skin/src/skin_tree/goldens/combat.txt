@@ -15,7 +15,7 @@ CenterConsole Group
     Knob01 Knob(Friends)
     Knob02 Knob(Servers)
     Knob03 Knob(Files)
-    Knob04 Part
+    Knob04 Knob(Servers)
     Knob03.Communities Knob(Communities)
   DownloadBlink Lamp(Files)
     WhiteBlinkNoAnimation Part

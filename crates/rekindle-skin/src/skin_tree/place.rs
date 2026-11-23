@@ -20,9 +20,9 @@
 //!     a row spread over a fixed bar (Alloy's start/centre/end tabs) has
 //!     no slot after its last tab, so its tabs pack edge to edge from the
 //!     bar's start and the bar, and the window, widen to hold them;
-//!   - with Combat's knob: a `Knob(Communities)` stop after the last
-//!     stop, which now turns to it, and which turns on where the last
-//!     stop turned;
+//!   - with Combat's knob: a `Knob(Communities)` stop after the stop of
+//!     the last view (Files), which now turns to it, and which turns on
+//!     where that stop turned (the return sweep's `Knob04`);
 //!   - with neither: a `Tab(Communities)` above the views node.
 //! - The switch is a served trigger: `ShowView(Communities)`, and when the
 //!   views node is a paged control group, its `GroupPage` to the new view.
@@ -374,11 +374,20 @@ fn fit(tree: &mut SkinTree, w: i32, h: i32, id: &str) -> i32 {
     across
 }
 
-/// A `Knob(Communities)` stop after the last stop of `knob`.
+/// A `Knob(Communities)` stop after the stop of the last view `knob`
+/// turns to: the last stop whose view no earlier stop shows. A later stop
+/// that shows an earlier view is the dial's return sweep (Combat's
+/// `Knob04`, back through Servers to Friends) and stays where the pack
+/// put it, so the clone turns on to it as the stop it follows did:
+/// Friends, Servers, Files, Communities, Servers, Friends.
 fn add_knob(knob: &mut Vec<SkinNode>, knob_group: Option<u16>, at: Target) {
-    let Some(last) = knob
-        .iter()
-        .rposition(|c| matches!(c.role, NodeRole::Knob(_)))
+    let key = |c: &SkinNode| match c.role {
+        NodeRole::Knob(k) => Some(k),
+        _ => None,
+    };
+    let Some(last) = (0..knob.len())
+        .rev()
+        .find(|&i| key(&knob[i]).is_some_and(|k| !knob[..i].iter().any(|c| key(c) == Some(k))))
     else {
         return;
     };

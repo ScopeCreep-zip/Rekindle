@@ -320,7 +320,7 @@ fn an_ini_tab_control_slot_is_a_group_of_buttons() {
     );
     assert_eq!(tc, Some(Role::Shows(NodeRole::TabStrip)));
     let fourth = role("Knob04", Some("Knob04"), tc.as_ref(), &plain);
-    assert_eq!(fourth, Some(Role::Shows(NodeRole::Part)));
+    assert_eq!(fourth, Some(Role::Shows(NodeRole::Knob(ViewKey::Servers))));
 }
 
 /// StealthX's rail `InfoJoinChatTab` (`Component="ChatTab"`,

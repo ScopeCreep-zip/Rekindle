@@ -247,10 +247,13 @@ fn views_of<'a>(
     }
 }
 
-/// Each node's pages: for every button bar above it, the bar's id and the
-/// index of the bar's child it lies under. A button bar is a tab control
-/// (the importer makes one only from `Class=TabControl`/`TabbedControl`
-/// or from INI slots grouped per view) and shows one child at a time.
+/// Each node's pages: for every paged node above it, the node's id and the
+/// index of its child the node lies under. A paged node shows one child at
+/// a time: a button bar (a tab control: the importer makes one only from
+/// `Class=TabControl`/`TabbedControl` or from INI slots grouped per view)
+/// or any node of a control group, whose shown child is the group's page
+/// (the shell's `offPage`, `SkinTreeWindow.tsx`; Combat's knob stops,
+/// `combat.ini` `[TabControl]` `ControlGroupId=2`, all at X15 Y36).
 fn pages_of<'a>(
     nodes: &'a [SkinNode],
     inherited: &[(&'a str, usize)],
@@ -259,7 +262,7 @@ fn pages_of<'a>(
     for n in nodes {
         out.insert(n.id.as_str(), inherited.to_vec());
         let mut below = inherited.to_vec();
-        if n.role == NodeRole::ButtonBar {
+        if n.role == NodeRole::ButtonBar || n.control_group.is_some() {
             for (i, c) in n.children.iter().enumerate() {
                 below.push((n.id.as_str(), i));
                 pages_of(std::slice::from_ref(c), &below, out);

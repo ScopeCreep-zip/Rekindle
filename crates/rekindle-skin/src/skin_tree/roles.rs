@@ -112,7 +112,18 @@ fn view(name: &str) -> Option<ViewKey> {
     .find_map(|(k, v)| n.contains(k).then_some(v))
 }
 
-const KNOBS: [ViewKey; 3] = [ViewKey::Friends, ViewKey::Servers, ViewKey::Files];
+/// Combat's knob stops in rotation order (`combat.ini` `[Knob01]`-`[Knob04]`,
+/// each a sticky `PushButton` of `GroupId=2`): Friends, Servers, Files, and
+/// the return sweep through Servers to Friends. `Knob03` turns to `Knob04`
+/// with the Servers view (`GroupMessage(3)`, `GroupMessage(1,1)`), `Knob04`
+/// draws the Servers pointer (`c_knob_02.gif`, `Knob02`'s art) and turns on
+/// to Friends (`GroupMessage(0)`, `GroupMessage(0,1)`).
+const KNOBS: [ViewKey; 4] = [
+    ViewKey::Friends,
+    ViewKey::Servers,
+    ViewKey::Files,
+    ViewKey::Servers,
+];
 
 fn button(k: &str) -> Option<SkinAction> {
     use SkinAction as A;
@@ -508,9 +519,9 @@ pub fn role(
                     .trim_start_matches(|c: char| !c.is_ascii_digit())
                     .parse()
                     .ok()?;
-                // Combat's four knob rotations share one place
-                // (`combat.ini` `[TabControl]`, all at X15 Y36) for three
-                // tabs: the fourth is a piece of the strip's art.
+                // Combat's four knob stops share one place (`combat.ini`
+                // `[TabControl]`, all at X15 Y36); the fourth is the return
+                // sweep through Servers, a stop like the other three.
                 shows(
                     KNOBS
                         .get(n.checked_sub(1)?)
