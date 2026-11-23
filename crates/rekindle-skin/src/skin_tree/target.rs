@@ -3,8 +3,13 @@
 //! the element's own box, so the 24 px area is the node's box, never a
 //! pseudo-element, and the art keeps its own size inside it.
 //!
-//! - A candidate is a node that takes input ([`SkinNode::interactive`]),
-//!   is not an edge grip (its own box takes no pointer events; its
+//! - A candidate is a node that listens itself ([`listens`]: it carries a
+//!   press trigger of its own, or takes typed input as a text field or the
+//!   status list, the nodes the shell marks `data-skin-on`): a node
+//!   interactive only through a part (a text-drawn tab over the
+//!   `TabNormalButton` part that carries its press) lets the press fall
+//!   through to that part, so a target box on it would catch nothing and
+//!   its part serves its own. It is not an edge grip (its own box takes no pointer events; its
 //!   `::before` grip area stays, [`super::validate::grip_area`]) and is not
 //!   text-sized (a menu, tab or edit field sized by its text at render,
 //!   [`text_sized`]), with a box, laid at the window's served minimum.
@@ -23,12 +28,16 @@
 //!   no undersized neighbour's circle (the criterion's spacing exception;
 //!   a box cut at a neighbour touches it, so its art box is tried as the
 //!   undersized target instead);
+//! - A listening node the pack lays over its art (not a neighbour) keeps
+//!   its centre: the box is cut back to the art's edge on that side
+//!   ([`yield_to`]), so a press at that node's centre reaches it.
 //!   else `Short`, neither holds: a pack-layout finding the Host still serves
 //!   (the box it could grow to) and reports.
 //! - A node already at least 24 x 24 is unchanged and serves no target.
 
 use rekindle_types::dto::skin::WindowLayout;
-use rekindle_types::dto::skin_tree::{NodeTarget, SkinNode, SkinTree, TargetRule};
+use rekindle_types::dto::skin_action::NodeTrigger;
+use rekindle_types::dto::skin_tree::{NodeRole, NodeTarget, SkinNode, SkinTree, TargetRule};
 
 use super::validate::{hit_area, overlap, text_sized, Apart, HIT};
 
@@ -42,6 +51,18 @@ pub struct Laid {
     pub area: [i32; 4],
     /// How it meets SC 2.5.8.
     pub rule: TargetRule,
+}
+
+/// Whether `n` takes a press on its own box: a press trigger of its own,
+/// or the typed input of a text field or the status list (the shell's
+/// `data-skin-on`, `SkinTreeWindow.tsx`), never only through a part.
+#[must_use]
+pub fn listens(n: &SkinNode) -> bool {
+    n.triggers.iter().any(NodeTrigger::presses)
+        || matches!(
+            n.role,
+            NodeRole::NameField | NodeRole::StatusText | NodeRole::StatusList
+        )
 }
 
 /// The target box in the window of a node at `art` serving `t`.
@@ -103,6 +124,31 @@ fn clip(g: &mut [i32; 4], a: [i32; 4], b: [i32; 4], want_b: [i32; 4]) {
     }
 }
 
+/// Cuts `g` (the target box of the node at `a`) back to `a`'s edge on the
+/// side where the centre of `b`, a listening node the pack lays over or
+/// under `a`'s art, lies outside `a`: a target box never takes a press
+/// meant for another listening node's art (Symbiosis's `StatusChanger` on
+/// its `Status` field). Where `a`'s art holds that centre, the pack's
+/// stacking decides (rule 4).
+fn yield_to(g: &mut [i32; 4], a: [i32; 4], b: [i32; 4]) {
+    for axis in 0..2 {
+        let c = 2 * b[axis] + b[axis + 2];
+        let (lo, hi) = (a[axis], a[axis] + a[axis + 2]);
+        let other = 1 - axis;
+        let across = 2 * g[other] <= 2 * b[other] + b[other + 2]
+            && 2 * b[other] + b[other + 2] < 2 * (g[other] + g[other + 2]);
+        if !across {
+            continue;
+        }
+        if c < 2 * lo && 2 * g[axis] <= c {
+            g[axis + 2] -= lo - g[axis];
+            g[axis] = lo;
+        } else if c >= 2 * hi && c < 2 * (g[axis] + g[axis + 2]) {
+            g[axis + 2] = hi - g[axis];
+        }
+    }
+}
+
 /// The squared distance, in half pixels, from the centre of `c` to `r`.
 fn far(c: [i32; 4], r: [i32; 4]) -> i64 {
     let gap = |at: i32, len: i32, lo: i32, size: i32| {
@@ -135,7 +181,7 @@ pub fn targets(tree: &SkinTree, window: (i32, i32)) -> Vec<Laid> {
         .boxes(window.0, window.1)
         .into_iter()
         .filter(|(n, b)| {
-            n.interactive() && n.resize_edge().is_none() && !text_sized(n) && b[2] > 0 && b[3] > 0
+            listens(n) && n.resize_edge().is_none() && !text_sized(n) && b[2] > 0 && b[3] > 0
         })
         .collect();
     let want: Vec<[i32; 4]> = live.iter().map(|(_, b)| hit_area(*b, window)).collect();
@@ -147,6 +193,14 @@ pub fn targets(tree: &SkinTree, window: (i32, i32)) -> Vec<Laid> {
             let mut g = want[i];
             for j in (0..live.len()).filter(|&j| near(i, j)) {
                 clip(&mut g, live[i].1, live[j].1, want[j]);
+            }
+            let laid_over = |j: usize| {
+                i != j
+                    && !apart.apart(&live[i].0.id, &live[j].0.id)
+                    && overlap(live[i].1, live[j].1)
+            };
+            for j in (0..live.len()).filter(|&j| laid_over(j)) {
+                yield_to(&mut g, live[i].1, live[j].1);
             }
             g
         })

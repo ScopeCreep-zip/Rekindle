@@ -25,23 +25,23 @@ TopButtonBar Group
   Maximize Button target [-1, -4, 17, 20] art [1, 4, 15, 15] Short
   Close Button target [-1, -4, 21, 20] art [1, 4, 15, 15] Short
 MenuBar MenuBar
-  XfireMenuText MenuTitle label "Rekindle" target [-10, -4, 19, 24] art [10, 4, 4, 16] Short
-    FileMenu Part
-  ToolsMenuText MenuTitle label "Tools" target [-5, -4, 14, 24] art [5, 4, 4, 16] Short
-    ToolsMenu Part
-  HelpMenuText MenuTitle label "Help" target [-5, -4, 17, 24] art [5, 4, 4, 16] Short
-    HelpMenu Part
+  XfireMenuText MenuTitle label "Rekindle"
+    FileMenu Part target [-6, -1, 19, 24] art [6, 1, 12, 22] Short
+  ToolsMenuText MenuTitle label "Tools"
+    ToolsMenu Part target [-1, -1, 14, 24] art [1, 1, 12, 22] Short
+  HelpMenuText MenuTitle label "Help"
+    HelpMenu Part target [-1, -1, 15, 24] art [1, 1, 12, 22] Short
   MenuDiv0 Decor
   MenuDiv1 Decor
   MenuDiv2 Decor
   MenuDiv3 Decor
-  TabNormalText Tab(Friends) label "Friends" target [-2, -4, 24, 24] art [2, 4, 20, 16] Size
-    TabNormalButton Part
-  TabServerText Tab(Servers) label "Servers" target [-2, -4, 24, 24] art [2, 4, 20, 16] Size
-    TabServerButton Part
-  TabDownloadText Tab(Files) label "Downloads" target [-2, -4, 24, 24] art [2, 4, 20, 16] Size
-    TabDownloadButton Part
-  TabDownloadText.Communities Tab(Communities) label "Communities" target [-2, -4, 24, 24] art [2, 4, 20, 16] Size
+  TabNormalText Tab(Friends) label "Friends"
+    TabNormalButton Part target [0, -2, 28, 24] art [0, 2, 28, 19] Size
+  TabServerText Tab(Servers) label "Servers"
+    TabServerButton Part target [0, -2, 28, 24] art [0, 2, 28, 19] Size
+  TabDownloadText Tab(Files) label "Downloads"
+    TabDownloadButton Part target [0, -2, 28, 24] art [0, 2, 28, 19] Size
+  TabDownloadText.Communities Tab(Communities) label "Communities" target [0, -4, 233, 24] art [0, 4, 233, 16] Size
     TabDownloadButton.Communities Part
   MenuDiv4 Decor
   MenuDiv5 Decor

@@ -185,3 +185,128 @@ fn every_builtin_interactive_node_meets_size_or_spacing() {
     let got = short.join("\n") + "\n";
     assert_eq!(got, include_str!("goldens/targets-short.txt"), "{got}");
 }
+
+/// Whether the shell marks `n` `data-skin-on` (`SkinTreeWindow.tsx`): a
+/// pointer trigger of its own, or a role taking input.
+fn shell_listens(n: &SkinNode) -> bool {
+    n.triggers.iter().any(|t| t.on.pointer())
+        || matches!(
+            n.role,
+            NodeRole::NameField
+                | NodeRole::StatusText
+                | NodeRole::StatusList
+                | NodeRole::MenuBar
+                | NodeRole::Views
+                | NodeRole::View(_)
+                | NodeRole::AdArea
+                | NodeRole::InfoView
+        )
+}
+
+/// Every node of `nodes` laid in `parent`: it, its box, its ancestors' ids.
+fn laid_all<'a>(
+    nodes: &'a [SkinNode],
+    parent: [i32; 4],
+    up: &[&'a str],
+    out: &mut Vec<(&'a SkinNode, [i32; 4], Vec<&'a str>)>,
+) {
+    for n in nodes {
+        let b = super::titles::place(n, parent);
+        out.push((n, b, up.to_vec()));
+        let mut path = up.to_vec();
+        path.push(&n.id);
+        laid_all(&n.children, b, &path, out);
+    }
+}
+
+/// The box `tree`'s roots are laid in, in a `window` as the stylesheet
+/// lays it ([`SkinTree::boxes`]): the window less the tree's outsets.
+fn pack_box(tree: &SkinTree, (w, h): (i32, i32)) -> [i32; 4] {
+    let o = tree.outsets;
+    let (left, top) = (i32::from(o.left), i32::from(o.top));
+    [
+        left,
+        top,
+        w - left - i32::from(o.right),
+        h - top - i32::from(o.bottom),
+    ]
+}
+
+/// The served target boxes of `tree` (laid in `pack`, its outsets taken
+/// off) that cover the centre of another listening node's art box shown
+/// with it: a press there would land on the covering node (its target box
+/// over its neighbour's art) or on a node that never listens.
+fn covered(tree: &SkinTree, pack: [i32; 4]) -> Vec<String> {
+    let apart = validate::Apart::new(&tree.root);
+    let mut all = Vec::new();
+    laid_all(&tree.root, pack, &[], &mut all);
+    // A target box on a node that never listens catches the press and
+    // drops it (the real-app Friends tab: `TabNormalText` over the
+    // `TabNormalButton` part that carries the press).
+    let mut out: Vec<String> = all
+        .iter()
+        .filter(|(n, _, _)| n.target.is_some() && !shell_listens(n))
+        .map(|(n, b, _)| format!("{} {b:?} serves a target and never listens", n.id))
+        .collect();
+    let at = |b: [i32; 4], (cx, cy): (i32, i32)| {
+        2 * b[0] <= cx && cx < 2 * (b[0] + b[2]) && 2 * b[1] <= cy && cy < 2 * (b[1] + b[3])
+    };
+    let inside = |a: [i32; 4], b: [i32; 4]| {
+        b[0] <= a[0] && a[0] + a[2] <= b[0] + b[2] && b[1] <= a[1] && a[1] + a[3] <= b[1] + b[3]
+    };
+    // A grip's own box takes no press (its `::before` does); a node whose
+    // art holds `m`'s art is `m`'s backdrop, under it; where `m`'s art
+    // already holds the centre, the pack's stacking decides (rule 4).
+    let listening = all
+        .iter()
+        .filter(|(n, b, _)| shell_listens(n) && n.resize_edge().is_none() && b[2] > 0 && b[3] > 0);
+    for (l, lb, up) in listening {
+        let c = (2 * lb[0] + lb[2], 2 * lb[1] + lb[3]);
+        for (m, mb, _) in &all {
+            let Some(t) = m.target else { continue };
+            let skip = m.id == l.id
+                || up.contains(&m.id.as_str())
+                || apart.apart(&l.id, &m.id)
+                || inside(*mb, *lb)
+                || at(*mb, c);
+            if skip {
+                continue;
+            }
+            let g = target::outer(*mb, t);
+            if at(g, c) {
+                out.push(format!("{} {g:?} covers {} {lb:?}", m.id, l.id));
+            }
+        }
+    }
+    out
+}
+
+/// Plan SK9 (the real-app regression after SK7: a click at the centre of
+/// the shown Friends tab of seven packs landed on no listening node): at
+/// the centre of every listening node's art box in the eleven built-ins'
+/// trees and popups, the only target box is its own or an ancestor's
+/// (which it paints over), so the press reaches it.
+#[test]
+fn no_target_box_covers_another_listening_nodes_centre() {
+    let mut found = Vec::new();
+    for b in builtin::PACKS {
+        let package = package::read(b.bytes).unwrap();
+        let m = manifest::served(&package).unwrap();
+        for (window, l) in &m.windows {
+            let mut trees = Vec::new();
+            if let Some(t) = &l.tree {
+                trees.push((String::new(), t, pack_box(t, target::window(l))));
+            }
+            for (name, p) in &l.popups {
+                let at = target::window(&super::popup::frame(p, l.min_height));
+                trees.push((format!(" popup {name}"), &p.tree, pack_box(&p.tree, at)));
+            }
+            for (popup, tree, at) in trees {
+                for c in covered(tree, at) {
+                    found.push(format!("{} {window:?}{popup}: {c}", b.id));
+                }
+            }
+        }
+    }
+    assert!(found.is_empty(), "{}", found.join("\n"));
+}

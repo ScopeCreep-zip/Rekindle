@@ -37,23 +37,23 @@ InnerBevel Decor
   BottomBevel Decor
   MiddleBevel Decor
   MenuBar MenuBar
-    XfireMenuText MenuTitle label "Rekindle" target [0, -4, 100, 24] art [0, 4, 100, 16] Size
-      FileMenu Part
-    ToolsMenuText MenuTitle label "Tools" target [0, -4, 100, 24] art [0, 4, 100, 16] Size
-      ToolsMenu Part
-    HelpMenuText MenuTitle label "Help" target [0, -4, 100, 24] art [0, 4, 100, 16] Size
-      HelpMenu Part
+    XfireMenuText MenuTitle label "Rekindle"
+      FileMenu Part target [0, 0, 104, 24] art [0, 0, 104, 23] Size
+    ToolsMenuText MenuTitle label "Tools"
+      ToolsMenu Part target [0, 0, 104, 24] art [0, 0, 104, 23] Size
+    HelpMenuText MenuTitle label "Help"
+      HelpMenu Part target [0, 0, 104, 24] art [0, 0, 104, 23] Size
   AdArea AdArea
     AdView Part
   Divider Decor
   TabHeader TabStrip
-    TabNormalText Tab(Friends) label "Friends" target [0, -4, 40, 24] art [0, 4, 40, 15] Size
-      TabNormalButton Part
-    TabServerText Tab(Servers) label "Servers" target [0, -4, 40, 24] art [0, 4, 40, 15] Size
-      TabServerButton Part
-    TabDownloadText Tab(Files) label "Downloads" target [0, -4, 40, 24] art [0, 4, 40, 15] Size
-      TabDownloadButton Part
-    TabDownloadText.Communities Tab(Communities) label "Communities" target [0, -4, 40, 24] art [0, 4, 40, 15] Size
+    TabNormalText Tab(Friends) label "Friends"
+      TabNormalButton Part target [0, -4, 62, 24] art [0, 4, 62, 16] Size
+    TabServerText Tab(Servers) label "Servers"
+      TabServerButton Part target [0, -4, 62, 24] art [0, 4, 62, 16] Size
+    TabDownloadText Tab(Files) label "Downloads"
+      TabDownloadButton Part target [0, -4, 62, 24] art [0, 4, 62, 16] Size
+    TabDownloadText.Communities Tab(Communities) label "Communities" target [0, -4, 156, 24] art [0, 4, 156, 15] Size
       TabDownloadButton.Communities Part
   TabbedControl Views
     BuddyView View(Friends)

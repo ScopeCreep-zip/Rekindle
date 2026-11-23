@@ -65,7 +65,7 @@ TabsButtonsContainer ButtonBar
     FriendAddButton Button
   ChatRoomsButtonBar ButtonRow(ChatRooms)
     RoomEditBG Decor
-      ChatRoomEdit RoomName target [0, -4, 85, 24] art [0, 4, 85, 16] Size
+      ChatRoomEdit RoomName
     ChatRoomEnter Button
     ChatRoomsButtonBar.Separator1 Decor
     ChatRoomDelete Button

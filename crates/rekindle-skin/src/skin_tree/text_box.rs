@@ -18,7 +18,15 @@
 //! - stopped at the near edge of an interactive sibling that meets its line
 //!   (the node's rows, at least one) and lies wholly past the anchor: the
 //!   siblings [`super::inset`] counts (it takes input, is no text field, no
-//!   resize grip, not another view's), so the text runs under none;
+//!   resize grip, not another view's), so the text runs under none. The
+//!   sibling's edge is its target box's ([`super::target`], WCAG 2.2 SC
+//!   2.5.8, laid on the pack's boxes before any text grows), not its art's:
+//!   the 24 px target takes precedence over the text's ellipsis room, so a
+//!   name field beside an 18 px button stops 3 px short of the button's
+//!   art. The final targets are laid after the text grows (a text-drawn
+//!   title that listens itself serves its own target over its grown box);
+//!   a button's target then reaches the same edge, since the grown text
+//!   stops where it began;
 //! - laid at the window's served minimum.
 //!
 //! A pack box reaching past its parent is served its usable box too, so no
@@ -31,11 +39,50 @@
 //! A node with art keeps its box: the art is the box (Alloy's 48 px file
 //! title), and its words live in its cover.
 
+use std::collections::HashMap;
+
 use rekindle_types::dto::skin::WindowLayout;
-use rekindle_types::dto::skin_tree::{Anchor, NodeSpan, SkinNode};
+use rekindle_types::dto::skin_tree::{Anchor, NodeSpan, SkinNode, SkinTree};
 
 use super::inset::is_text;
-use super::titles::{each_laid, place};
+use super::titles::{laid_window, place};
+
+/// Each small interactive node's target box on the pack's boxes, relative
+/// to its art: `[dx, dy, w, h]` by node id.
+type Targets = HashMap<String, [i32; 4]>;
+
+fn union(a: [i32; 4], b: [i32; 4]) -> [i32; 4] {
+    let (x0, y0) = (a[0].min(b[0]), a[1].min(b[1]));
+    let (x1, y1) = (
+        (a[0] + a[2]).max(b[0] + b[2]),
+        (a[1] + a[3]).max(b[1] + b[3]),
+    );
+    [x0, y0, x1 - x0, y1 - y0]
+}
+
+/// The target boxes [`super::target`] lays for `tree` in `window`, before
+/// any text grows.
+fn targets(tree: &SkinTree, window: (i32, i32)) -> Targets {
+    super::target::targets(tree, window)
+        .into_iter()
+        .map(|l| {
+            let off = [
+                l.area[0] - l.art[0],
+                l.area[1] - l.art[1],
+                l.area[2],
+                l.area[3],
+            ];
+            (l.id, off)
+        })
+        .collect()
+}
+
+/// The box `b` of `n` grown over its target box, if it serves one.
+fn reach(n: &SkinNode, b: [i32; 4], targets: &Targets) -> [i32; 4] {
+    targets
+        .get(&n.id)
+        .map_or(b, |t| union(b, [b[0] + t[0], b[1] + t[1], t[2], t[3]]))
+}
 
 /// Whether `n` draws text the shell must fit: a text field, or words the
 /// Host serves over it. An art node keeps its box.
@@ -55,15 +102,9 @@ fn blocks(n: &SkinNode, by: &SkinNode) -> bool {
 /// `Stretch` -4/-4 around its 4 px `ToolsMenuText`), and the text runs
 /// under neither.
 fn extent(n: &SkinNode, b: [i32; 4]) -> [i32; 4] {
-    n.children.iter().fold(b, |e, c| {
-        let k = extent(c, place(c, b));
-        let (x0, y0) = (e[0].min(k[0]), e[1].min(k[1]));
-        let (x1, y1) = (
-            (e[0] + e[2]).max(k[0] + k[2]),
-            (e[1] + e[3]).max(k[1] + k[3]),
-        );
-        [x0, y0, x1 - x0, y1 - y0]
-    })
+    n.children
+        .iter()
+        .fold(b, |e, c| union(e, extent(c, place(c, b))))
 }
 
 /// Keeps each child of a node that grew from `was` to `now` at its pack
@@ -85,7 +126,13 @@ fn pin_children(n: &mut SkinNode, was: [i32; 4], now: [i32; 4]) {
 
 /// The usable x span of `nodes[i]` in `parent`, laid at `boxes`, or
 /// `None` when the pack's box already fills it.
-fn usable(i: usize, nodes: &[SkinNode], boxes: &[[i32; 4]], parent: [i32; 4]) -> Option<NodeSpan> {
+fn usable(
+    i: usize,
+    nodes: &[SkinNode],
+    boxes: &[[i32; 4]],
+    parent: [i32; 4],
+    targets: &Targets,
+) -> Option<NodeSpan> {
     let NodeSpan::Fixed { at, size } = nodes[i].x else {
         return None;
     };
@@ -97,7 +144,7 @@ fn usable(i: usize, nodes: &[SkinNode], boxes: &[[i32; 4]], parent: [i32; 4]) ->
         .zip(boxes)
         .enumerate()
         .filter(|(j, (s, _))| *j != i && blocks(&nodes[i], s))
-        .map(|(_, (s, sb))| (s, extent(s, *sb)))
+        .map(|(_, (s, sb))| (s, reach(s, extent(s, *sb), targets)))
         .filter(|(_, sb)| sb[1] < line[1] && line[0] < sb[1] + sb[3])
         .collect();
     let fixed = |len: i32| {
@@ -190,12 +237,12 @@ fn usable(i: usize, nodes: &[SkinNode], boxes: &[[i32; 4]], parent: [i32; 4]) ->
     }
 }
 
-fn walk(nodes: &mut [SkinNode], parent: [i32; 4]) {
+fn walk(nodes: &mut [SkinNode], parent: [i32; 4], targets: &Targets) {
     let boxes: Vec<[i32; 4]> = nodes.iter().map(|n| place(n, parent)).collect();
     let spans: Vec<Option<NodeSpan>> = (0..nodes.len())
         .map(|i| {
             draws_text(&nodes[i])
-                .then(|| usable(i, nodes, &boxes, parent))
+                .then(|| usable(i, nodes, &boxes, parent, targets))
                 .flatten()
         })
         .collect();
@@ -205,12 +252,28 @@ fn walk(nodes: &mut [SkinNode], parent: [i32; 4]) {
             pin_children(n, was, place(n, parent));
         }
         let b = place(n, parent);
-        walk(&mut n.children, b);
+        walk(&mut n.children, b, targets);
     }
 }
 
 /// Serves every text-drawing node of `layout`'s tree and popups its usable
 /// box (see the module doc), laid at the window's minimum size.
 pub fn lay(layout: &mut WindowLayout) {
-    each_laid(layout, walk);
+    let at = super::target::window(layout);
+    let min = [layout.min_width, layout.min_height];
+    if let Some(tree) = layout.tree.as_mut() {
+        let targets = targets(tree, at);
+        walk(&mut tree.root, laid_window(tree.outsets, min), &targets);
+    }
+    let min_height = layout.min_height;
+    for popup in layout.popups.values_mut() {
+        let at = super::target::window(&super::popup::frame(popup, min_height));
+        let targets = targets(&popup.tree, at);
+        let min = [popup.min_width, popup.min_height];
+        walk(
+            &mut popup.tree.root,
+            laid_window(popup.tree.outsets, min),
+            &targets,
+        );
+    }
 }
