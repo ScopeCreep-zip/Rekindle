@@ -22,6 +22,8 @@ pub(crate) struct IncomingFriendRequest<'a> {
     pub mailbox_dht_key: &'a str,
     /// The friend-code token or the invite that admits it.
     pub auth: &'a rekindle_codec::capnp_codec::direct::RequestAuth,
+    /// The requester's reply inbox (plan RV2).
+    pub reply: &'a rekindle_codec::message::envelope::InboxCapability,
 }
 
 /// An incoming friend accept: the first payload of the PreKeyInit that

@@ -148,6 +148,8 @@ pub(super) async fn accept_crossing_request(
             "cross-request auto-accept: storing the accepted state failed; not answering");
         return;
     }
+    // Our crossing request settled: its reply inbox is released (plan RV2).
+    host.sync_reply_inboxes().await;
     state::update(host, req.sender_hex, |f| {
         f.friendship_state = FriendshipState::Accepted;
         f.display_name = req.display_name.to_string();

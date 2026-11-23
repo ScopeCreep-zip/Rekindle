@@ -288,6 +288,10 @@ pub(super) fn sealed_request_with(
         route_blob: Vec::new(),
         mailbox_dht_key: format!("VLD0:{}", "B".repeat(43)),
         auth,
+        reply: rekindle_codec::message::envelope::InboxCapability {
+            record_key: format!("VLD0:{}", "C".repeat(43)),
+            writer: "w".repeat(93),
+        },
     });
     rekindle_transport::operations::dm::frame::seal_presession(from, &to, &body, nonce, sent_at)
         .unwrap()

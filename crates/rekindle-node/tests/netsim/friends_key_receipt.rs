@@ -70,13 +70,7 @@ async fn a_status_that_lands_before_the_key_is_shown_when_the_key_does() {
     let (rae, ann) = (key(&nodes[0]), key(&nodes[1]));
     let events = nodes[0].events().await;
     request(&sim, &nodes[0], &nodes[1]).await;
-    sim.fault(Fault::WriteFails {
-        node: 1,
-        of: Writes::Subkey {
-            subkey: rekindle_types::dht_layout::profile::STATUS,
-            record: None,
-        },
-    });
+    sim.fault(status_fails(1));
     // Rae takes Ann's accept but her answer is lost, and so is every frame
     // of hers: Ann's FriendsKey waits for her first contact to be proven
     // (plan HOL1, lead decision 47: the receipt, or Rae's first frame
@@ -86,6 +80,10 @@ async fn a_status_that_lands_before_the_key_is_shown_when_the_key_does() {
         node: 0,
         per_mille: 1000,
     });
+    // The accept's second path (plan RV2) is held back too: Ann's write of
+    // it into Rae's reply inbox lands below consensus, so the stored write
+    // cannot prove her first contact either.
+    sim.fault(reply_slot_fails(1));
     accept(&nodes[1], &nodes[0]).await;
     assert!(eventually(&sim, LIMIT, || is_accepted_friend(&nodes[0], &ann)).await);
     tokio::time::sleep(Duration::from_secs(20)).await;
@@ -97,9 +95,32 @@ async fn a_status_that_lands_before_the_key_is_shown_when_the_key_does() {
         node: 0,
         per_mille: 0,
     });
+    // Heal ends the reply-slot fault; Ann's STATUS writes keep failing.
+    sim.fault(Fault::Heal);
+    sim.fault(status_fails(1));
     assert!(
         eventually(&sim, LIMIT, || async { saw(&events, &ann, "online") }).await,
         "Rae shows Ann online once her key lands"
     );
     assert!(is_accepted_friend(&nodes[1], &rae).await);
+}
+
+fn status_fails(node: usize) -> Fault {
+    Fault::WriteFails {
+        node,
+        of: Writes::Subkey {
+            subkey: rekindle_types::dht_layout::profile::STATUS,
+            record: None,
+        },
+    }
+}
+
+fn reply_slot_fails(node: usize) -> Fault {
+    Fault::WriteFails {
+        node,
+        of: Writes::Subkey {
+            subkey: rekindle_types::dht_layout::request_inbox::REQUEST,
+            record: None,
+        },
+    }
 }

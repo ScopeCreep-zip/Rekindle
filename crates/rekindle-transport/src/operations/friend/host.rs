@@ -283,6 +283,29 @@ pub trait FriendHost: Send + Sync {
     /// Drop an invite's request inbox: stop watching it, release it and
     /// forget its owner keypair.
     async fn drop_request_inbox(&self, record_key: &str);
+    /// Hold our request's reply inbox (plan RV2): keep its owner keypair in
+    /// the vault, and watch its writer's subkey on `lease`; what lands there
+    /// is opened by `inbox::received_reply`.
+    async fn keep_reply_inbox(
+        &self,
+        record_key: &str,
+        owner_keypair: &str,
+        lease: rekindle_records::lease::LeaseId,
+    ) -> Result<(), FriendError>;
+    /// Hold and watch exactly the reply inboxes of our open requests
+    /// (`repo::friends::reply_inboxes`): one not held is reopened (an
+    /// unlock), and one whose request settled (accepted, cancelled,
+    /// expired) is released and its owner keypair forgotten.
+    async fn sync_reply_inboxes(&self);
+    /// The owner keypair of our reply inbox `record_key`, kept in the vault
+    /// by [`Self::keep_reply_inbox`] (plan RV2): the writer of its owner
+    /// subkey's one write, which puts it on the network before our request
+    /// is sent (`inbox::reply_slot`).
+    ///
+    /// # Errors
+    /// The vault is locked or could not be read.
+    fn reply_inbox_owner(&self, record_key: &str)
+        -> Result<Option<Zeroizing<String>>, FriendError>;
     /// Move our profile to a new record under a fresh owner key (block),
     /// as the Host's own-records stage writes one; the new record's key.
     ///

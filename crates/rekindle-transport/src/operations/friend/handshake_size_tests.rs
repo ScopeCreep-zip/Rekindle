@@ -119,6 +119,10 @@ async fn friend_request_fits_by_app_call_with_either_admission() {
             route_blob: vec![0xAB; ROUTE_BLOB_LEN],
             mailbox_dht_key: dht_key(),
             auth: auth.clone(),
+            reply: rekindle_codec::message::envelope::InboxCapability {
+                record_key: dht_key(),
+                writer: "w".repeat(93),
+            },
         });
         let len = sealed_len(&alice, &bob, &request);
         assert!(len <= MAX_APP_MESSAGE_LEN, "FriendRequest {auth:?} {len} B");
@@ -140,6 +144,10 @@ fn an_inbox_write_fits_the_smpl_subkey_cap() {
         route_blob: vec![0xAB; ROUTE_BLOB_LEN],
         mailbox_dht_key: dht_key(),
         auth: RequestAuth::Invite(uuid::Uuid::new_v4().to_string()),
+        reply: rekindle_codec::message::envelope::InboxCapability {
+            record_key: dht_key(),
+            writer: "w".repeat(93),
+        },
     });
     let len = sealed_len(&alice, &bob, &request);
     let cap = rekindle_types::dht_layout::request_inbox::MAX_SUBKEY_VALUE_LEN;

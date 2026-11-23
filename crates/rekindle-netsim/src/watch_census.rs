@@ -28,6 +28,23 @@ impl Netsim {
             .collect()
     }
 
+    /// The records `node` holds a watch of on any replica, with their
+    /// schemas, by record key.
+    #[must_use]
+    pub fn watched_by(&self, node: usize) -> BTreeMap<String, RecordSchema> {
+        let inner = self.net.inner.lock();
+        inner
+            .records
+            .iter()
+            .filter(|(_, r)| {
+                r.replicas
+                    .iter()
+                    .any(|x| x.watches.iter().any(|w| w.node == node))
+            })
+            .map(|(key, r)| (key.clone(), r.schema.clone()))
+            .collect()
+    }
+
     /// Watches a replica refused at its watch limit, since the start.
     #[must_use]
     pub fn watch_refusals(&self) -> u64 {

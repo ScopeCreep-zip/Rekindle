@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use rekindle_ipc::protocol::IpcRequest;
 use rekindle_netsim::latency::MESSAGE;
-use rekindle_netsim::Fault;
+use rekindle_netsim::{Fault, Writes};
 use rekindle_types::message::{SendState, CALL_TIMEOUT_MS, DM_ACK_DELAY_MAX_MS};
 
 use crate::harness::{eventually, start, SimNode};
@@ -66,6 +66,15 @@ async fn a_message_sent_before_the_accept_lands_is_held_and_shown_at_the_accept(
         node: 0,
         hangs: true,
     });
+    // The accept's second path (plan RV2) is held back too: Jon's write of
+    // it into Ida's reply inbox lands below consensus until the calls heal.
+    sim.fault(Fault::WriteFails {
+        node: 1,
+        of: Writes::Subkey {
+            subkey: rekindle_types::dht_layout::request_inbox::REQUEST,
+            record: None,
+        },
+    });
     accept(&nodes[1], &nodes[0]).await;
     let sent = tokio::time::Instant::now();
     send(&nodes[1], &ida, BODY).await;
@@ -80,6 +89,7 @@ async fn a_message_sent_before_the_accept_lands_is_held_and_shown_at_the_accept(
         node: 0,
         hangs: false,
     });
+    sim.fault(Fault::Heal);
     assert!(
         eventually(&sim, LIMIT, || is_accepted_friend(&nodes[0], &jon)).await,
         "the accept's retry reached Ida"

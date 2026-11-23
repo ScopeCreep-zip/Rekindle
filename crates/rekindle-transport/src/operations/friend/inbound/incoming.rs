@@ -27,6 +27,7 @@ async fn persist_request(
     let pdk = req.profile_dht_key.to_string();
     let rb = req.route_blob.to_vec();
     let mdk = req.mailbox_dht_key.to_string();
+    let (rik, rw) = (req.reply.record_key.clone(), req.reply.writer.clone());
     let iid = match req.auth {
         RequestAuth::Invite(id) => Some(id.clone()),
         RequestAuth::Token(_) => None,
@@ -45,6 +46,8 @@ async fn persist_request(
                 route_blob: &rb,
                 mailbox_dht_key: &mdk,
                 invite_id: iid.as_deref(),
+                reply_inbox_key: &rik,
+                reply_writer: &rw,
             },
         )
     })
@@ -263,6 +266,8 @@ pub(crate) async fn on_friend_accept(host: &dyn FriendHost, a: &IncomingFriendAc
         f.friendship_state = FriendshipState::Accepted;
     });
     state::settle_answered_request(host, a.sender_hex).await;
+    // Our request settled: its reply inbox is released (plan RV2).
+    host.sync_reply_inboxes().await;
     if !a.profile_dht_key.is_empty() {
         host.watch_friend(a.sender_hex, a.profile_dht_key).await;
     }

@@ -86,6 +86,17 @@ CREATE TABLE IF NOT EXISTS friends (
     -- Plan E7.1: the conversation's disappearing-message timer, seconds
     -- (0 = off), set by either side with a `DisappearingTimer` (0x0160).
     disappearing_seconds INTEGER NOT NULL DEFAULT 0 CHECK(disappearing_seconds >= 0),
+    -- Plan RV2: our request's reply inbox (`rekindle_records::schema::request_inbox`,
+    -- its owner keypair in the vault), held and watched while the row is
+    -- `pending_out`: the accepter writes its first contact there as well as
+    -- by `app_call`.
+    reply_inbox_key TEXT,
+    -- Plan RV2: the reply inbox their request carried and its one-time
+    -- writer, kept from our accept until our first contact is committed (the
+    -- outbox row then holds it, ruling R2), then cleared.
+    peer_reply_inbox_key TEXT,
+    peer_reply_writer TEXT,
+    CHECK((peer_reply_inbox_key IS NULL) = (peer_reply_writer IS NULL)),
     CHECK((presence_epoch IS NULL) = (presence_key IS NULL)),
     PRIMARY KEY (owner_key, public_key)
 );
@@ -460,6 +471,9 @@ CREATE TABLE IF NOT EXISTS pending_friend_requests (
     route_blob BLOB,
     mailbox_dht_key TEXT,
     invite_id TEXT,
+    -- Plan RV2: the reply inbox the request carried and its one-time writer.
+    reply_inbox_key TEXT NOT NULL,
+    reply_writer TEXT NOT NULL,
     PRIMARY KEY (owner_key, public_key)
 );
 

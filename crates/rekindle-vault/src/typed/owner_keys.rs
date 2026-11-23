@@ -88,6 +88,26 @@ pub fn persist_inbox_owner(vault: &VaultStore, entry: &OwnerEntry) -> Result<(),
     stored
 }
 
+/// A request or reply inbox's owner keypair entry, if one is stored under
+/// `record_key` ([`persist_inbox_owner`]).
+///
+/// # Errors
+/// The vault read failed, or the stored value is not an entry.
+pub fn load_inbox_owner(
+    vault: &VaultStore,
+    record_key: &str,
+) -> Result<Option<OwnerEntry>, VaultError> {
+    vault
+        .get(&VaultKey::RequestInboxOwnerKeypair {
+            record: record_key.to_string(),
+        })?
+        .map(|bytes| {
+            serde_json::from_slice(&bytes)
+                .map_err(|_| VaultError::Schema("owner entry is not an entry".into()))
+        })
+        .transpose()
+}
+
 /// Save our dm participant record's owner keypair for the conversation
 /// with `conversation` (plan E2.5, MSR), before the record key is stored.
 ///

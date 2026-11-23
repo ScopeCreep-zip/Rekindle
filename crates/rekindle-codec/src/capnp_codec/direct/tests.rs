@@ -6,6 +6,7 @@
 
 use super::frame::tests::init;
 use super::*;
+use crate::message::envelope::InboxCapability;
 use rekindle_types::dht_layout::MAX_APP_MESSAGE_LEN;
 
 /// ML-KEM-768 ciphertext.
@@ -50,6 +51,10 @@ fn samples() -> Vec<DirectBody> {
             route_blob: vec![9; 64],
             mailbox_dht_key: dht_key(),
             auth: RequestAuth::Invite(s("inv_01")),
+            reply: InboxCapability {
+                record_key: dht_key(),
+                writer: "w".repeat(93),
+            },
         }),
         DirectBody::RelayEnvelope(RelayEnvelope {
             target_pubkey: "ab".repeat(32),
@@ -349,6 +354,10 @@ fn absent_optionals_round_trip_and_bad_lengths_are_refused() {
         route_blob: Vec::new(),
         mailbox_dht_key: dht_key(),
         auth: RequestAuth::Token("a".repeat(26)),
+        reply: InboxCapability {
+            record_key: dht_key(),
+            writer: "w".repeat(93),
+        },
     });
     assert_eq!(
         DirectBody::decode(DmTypeId::FriendRequest, &request.encode()),
@@ -438,6 +447,10 @@ fn every_sealed_handshake_frame_fits() {
             route_blob: vec![0xAB; ROUTE_BLOB_LEN],
             mailbox_dht_key: dht_key(),
             auth: RequestAuth::Invite("0f".repeat(18)),
+            reply: InboxCapability {
+                record_key: dht_key(),
+                writer: "w".repeat(93),
+            },
         })),
         sealed(&DirectBody::SessionResetRequest(SessionResetRequest {
             reason: widest(256),
@@ -466,6 +479,10 @@ fn bodies_a_peer_could_abuse_are_refused() {
             route_blob: Vec::new(),
             mailbox_dht_key: String::new(),
             auth: RequestAuth::Token("a".repeat(26)),
+            reply: InboxCapability {
+                record_key: dht_key(),
+                writer: "w".repeat(93),
+            },
         })
     };
     let max_name = rekindle_types::presence::limits::MAX_DISPLAY_NAME_LEN;

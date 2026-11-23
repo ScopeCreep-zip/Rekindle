@@ -56,6 +56,17 @@ pub enum Framed {
         #[serde(with = "rekindle_types::base64_bytes")]
         frame: Vec<u8>,
     },
+    /// A first contact to a requester who named a reply inbox (plan RV2):
+    /// the PreKeyInit's datagram, sent by `app_call` and written into the
+    /// inbox as its one-time `writer`, the same bytes both ways; the row
+    /// settles on the first to land (`first_contact_durable`). The writer is
+    /// in the row as [`Self::Inbox`]'s is (ruling R2).
+    FirstContactDurable {
+        #[serde(with = "rekindle_types::base64_bytes")]
+        datagram: Vec<u8>,
+        record_key: String,
+        writer: String,
+    },
     /// A group control frame to a member whose session cannot be opened
     /// yet (their prekey record not readable; plan E2.6, finding GA1): its
     /// body, framed at an attempt once the session opens and committed
@@ -471,13 +482,27 @@ pub(super) async fn call_datagram(
 ///
 /// # Errors
 /// The stored frame does not decode, or the sealed kind does not re-seal.
+impl Framed {
+    /// Whether this row is our friend request (plan RV2): a redemption's
+    /// inbox write or a request sealed for `app_call`, which goes only once
+    /// the reply inbox it carries is on the network
+    /// (`friend::inbox::reply_slot`).
+    pub(super) fn is_request(&self) -> bool {
+        match self {
+            Self::Inbox { .. } => true,
+            Self::Sealed { type_id, .. } => *type_id == DmTypeId::FriendRequest.as_u16(),
+            _ => false,
+        }
+    }
+}
+
 pub(super) fn datagram_of(
     host: &dyn FriendHost,
     to: &str,
     framed: &Framed,
 ) -> Result<(Vec<u8>, DmTypeId), FriendError> {
     match framed {
-        Framed::Wire { datagram } => {
+        Framed::Wire { datagram } | Framed::FirstContactDurable { datagram, .. } => {
             let frame = super::unwire(datagram)
                 .and_then(|bytes| DmFrame::decode(bytes).ok())
                 .ok_or_else(|| FriendError::Invalid("stored frame does not decode".into()))?;

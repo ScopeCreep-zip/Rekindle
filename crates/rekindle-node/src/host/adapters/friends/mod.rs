@@ -47,6 +47,8 @@ pub struct FriendWatches {
     leases: Mutex<BTreeMap<String, LeaseId>>,
     /// Each open invite's request inbox lease, by record key (plan E2.5).
     inboxes: Mutex<BTreeMap<String, LeaseId>>,
+    /// Each open request's reply inbox lease, by record key (plan RV2).
+    replies: Mutex<BTreeMap<String, LeaseId>>,
     /// Each friend's participant record (key, lease), by friend (plan E2.5).
     participants: Mutex<BTreeMap<String, (String, LeaseId)>>,
     /// Whether the network was ready at its last change.
@@ -60,6 +62,31 @@ pub struct HostFriends {
 }
 
 impl HostFriends {
+    /// Keep a request inbox's owner keypair in the vault (an invite's, or
+    /// one of our requests' reply inboxes, plan RV2).
+    fn keep_inbox_owner(&self, record_key: &str, owner_keypair: &str) -> Result<(), FriendError> {
+        let guard = self.ctx.vault.lock();
+        let vault = guard
+            .as_ref()
+            .ok_or_else(|| FriendError::NotReady("the vault is locked".to_string()))?;
+        let entry = rekindle_vault::typed::owner_keys::OwnerEntry {
+            record_key: record_key.to_string(),
+            keypair: owner_keypair.to_string(),
+        };
+        rekindle_vault::typed::owner_keys::persist_inbox_owner(vault, &entry)
+            .map_err(|e| FriendError::Failed(format!("inbox owner not saved: {e}")))
+    }
+
+    /// Forget a request inbox's owner keypair: the inbox was dropped.
+    pub(super) fn forget_inbox_owner(&self, record_key: &str) {
+        if let Some(vault) = self.ctx.vault.lock().as_ref() {
+            if let Err(e) = rekindle_vault::typed::owner_keys::forget_inbox_owner(vault, record_key)
+            {
+                tracing::warn!(error = %e, "request inbox owner keypair not forgotten");
+            }
+        }
+    }
+
     /// The Host over `ctx`.
     pub(crate) fn of(ctx: &DaemonContext) -> Self {
         Self {
@@ -262,20 +289,7 @@ impl FriendHost for HostFriends {
         owner_keypair: &str,
         lease: LeaseId,
     ) -> Result<(), FriendError> {
-        let kept = {
-            let guard = self.ctx.vault.lock();
-            guard
-                .as_ref()
-                .ok_or_else(|| FriendError::NotReady("the vault is locked".to_string()))
-                .and_then(|vault| {
-                    let entry = rekindle_vault::typed::owner_keys::OwnerEntry {
-                        record_key: record_key.to_string(),
-                        keypair: owner_keypair.to_string(),
-                    };
-                    rekindle_vault::typed::owner_keys::persist_inbox_owner(vault, &entry)
-                        .map_err(|e| FriendError::Failed(format!("inbox owner not saved: {e}")))
-                })
-        };
+        let kept = self.keep_inbox_owner(record_key, owner_keypair);
         let pool = self
             .node()?
             .require_records()
@@ -288,14 +302,44 @@ impl FriendHost for HostFriends {
         Ok(())
     }
 
+    async fn keep_reply_inbox(
+        &self,
+        record_key: &str,
+        owner_keypair: &str,
+        lease: LeaseId,
+    ) -> Result<(), FriendError> {
+        let pool = self
+            .node()?
+            .require_records()
+            .map_err(|e| FriendError::NotReady(format!("records: {e}")))?;
+        if let Err(e) = self.keep_inbox_owner(record_key, owner_keypair) {
+            pool.release(lease).await;
+            return Err(e);
+        }
+        inbox_watch::hold_reply(self, &pool, record_key, lease).await;
+        Ok(())
+    }
+
+    async fn sync_reply_inboxes(&self) {
+        inbox_watch::rewatch_open_requests(self).await;
+    }
+
+    fn reply_inbox_owner(
+        &self,
+        record_key: &str,
+    ) -> Result<Option<zeroize::Zeroizing<String>>, FriendError> {
+        let guard = self.ctx.vault.lock();
+        let vault = guard
+            .as_ref()
+            .ok_or_else(|| FriendError::NotReady("the vault is locked".to_string()))?;
+        rekindle_vault::typed::owner_keys::load_inbox_owner(vault, record_key)
+            .map(|entry| entry.map(|entry| zeroize::Zeroizing::new(entry.keypair.clone())))
+            .map_err(|e| FriendError::Failed(format!("reply inbox owner not read: {e}")))
+    }
+
     async fn drop_request_inbox(&self, record_key: &str) {
         inbox_watch::release(self, record_key).await;
-        if let Some(vault) = self.ctx.vault.lock().as_ref() {
-            if let Err(e) = rekindle_vault::typed::owner_keys::forget_inbox_owner(vault, record_key)
-            {
-                tracing::warn!(error = %e, "invite inbox owner keypair not forgotten");
-            }
-        }
+        self.forget_inbox_owner(record_key);
     }
 
     async fn reseal_own_presence(&self) {

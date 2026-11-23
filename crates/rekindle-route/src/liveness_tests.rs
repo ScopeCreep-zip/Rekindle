@@ -183,3 +183,49 @@ fn a_chain_ahead_of_its_hints_rotates() {
         "the friend holds the old blob"
     );
 }
+
+/// Plan RV2, the sixth evidence source: a durable first contact whose call
+/// copy never arrives over the route within the window rotates it, once
+/// per peer cooldown; a call copy before or after it, or a route too young
+/// for the peer to hold, does not.
+#[test]
+fn a_reply_without_its_call_rotates() {
+    let start = Instant::now();
+    let mut rules = InboundLiveness::new(start);
+    let old = at(start, REPORT_ROTATE_AGE.as_secs());
+    rules.call_seen([1; 32], old);
+    rules.reply_landed("ann", [1; 32], old + Duration::from_secs(5));
+    assert_eq!(
+        rules.reply_ahead(old + HINT_WINDOW * 2),
+        None,
+        "called first"
+    );
+    rules.reply_landed("ann", [2; 32], old);
+    rules.call_seen([2; 32], old + Duration::from_secs(29));
+    assert_eq!(
+        rules.reply_ahead(old + HINT_WINDOW * 2),
+        None,
+        "called after"
+    );
+    let lost = old + HINT_WINDOW * 3;
+    rules.reply_landed("ann", [3; 32], lost);
+    assert_eq!(rules.reply_ahead(lost), None, "the call may still come");
+    assert_eq!(
+        rules.reply_ahead(lost + HINT_WINDOW),
+        Some("ann".to_owned())
+    );
+    rules.rotated_for("ann", lost + HINT_WINDOW);
+    rules.reply_landed("ann", [4; 32], lost + HINT_WINDOW);
+    assert_eq!(
+        rules.reply_ahead(lost + HINT_WINDOW * 3),
+        None,
+        "ann is cooling"
+    );
+    let mut young = InboundLiveness::new(start);
+    young.reply_landed("ann", [5; 32], start);
+    assert_eq!(
+        young.reply_ahead(start + HINT_WINDOW),
+        None,
+        "ann may hold the old blob"
+    );
+}

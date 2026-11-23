@@ -184,6 +184,30 @@ impl Liveness {
         }
     }
 
+    /// A call carrying the frame with digest `frame` arrived over our route
+    /// `route` (plan RV2, evidence source 6): counted only over our live
+    /// General route, it clears a durable copy of the same frame.
+    pub fn call_seen(&self, frame: [u8; 32], route: Option<&str>) {
+        let Some(route) = route else {
+            return;
+        };
+        if let Some(state) = self.general.lock().as_mut() {
+            if state.id.as_deref() == Some(route) {
+                state.rules.call_seen(frame, Instant::now());
+            }
+        }
+    }
+
+    /// A durable first contact from `peer` with digest `frame` opened from
+    /// one of our reply inboxes (plan RV2, evidence source 6): the owner
+    /// task rotates our General route unless the call copy arrives over it
+    /// within [`rekindle_route::liveness::HINT_WINDOW`].
+    pub fn reply_landed(&self, peer: &str, frame: [u8; 32]) {
+        if let Some(state) = self.general.lock().as_mut() {
+            state.rules.reply_landed(peer, frame, Instant::now());
+        }
+    }
+
     /// Rotate our General route on evidence that it is dead from outside
     /// (plan RV1): `OwnRoutes::replace` allocates a new one (Veilid tests
     /// it at allocation, 0.5.8 `veilid_api/api.rs:831`) and keeps the old

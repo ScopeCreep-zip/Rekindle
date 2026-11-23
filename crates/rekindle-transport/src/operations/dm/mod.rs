@@ -7,6 +7,7 @@ pub mod call_invite;
 mod chain_seq;
 mod chat;
 pub mod disappearing;
+mod first_contact_durable;
 pub mod frame;
 pub mod handshake;
 mod handshake_order;

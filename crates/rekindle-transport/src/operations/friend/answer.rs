@@ -52,6 +52,7 @@ pub async fn accept(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
         named(&answer.profile_dht_key),
         named(&answer.mailbox_dht_key),
     );
+    let reply = answer.reply.clone();
     let list = super::list_record::list_write(host);
     let ended = state::db_call!(host, "store accepted friend", move |conn| {
         rekindle_db::repo::friends::changing_list(conn, &ok, list, |conn| {
@@ -59,7 +60,12 @@ pub async fn accept(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
                 profile: profile_key.as_deref(),
                 mailbox: mailbox_key.as_deref(),
             };
-            rekindle_db::repo::friends::accept_request(conn, &ok, &pk, &dn, now, keys)
+            let ended = rekindle_db::repo::friends::accept_request(conn, &ok, &pk, &dn, now, keys)?;
+            // Their reply inbox, for our first contact (plan RV2).
+            if let Some((key, writer)) = &reply {
+                rekindle_db::repo::friends::set_peer_reply(conn, &ok, &pk, key, writer)?;
+            }
+            Ok(ended)
         })
     })
     .await?;
@@ -165,6 +171,7 @@ pub async fn cancel(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
     .await?;
     state::take(host, public_key);
     state::echo_failed(host, public_key, failed, "the request was cancelled");
+    host.sync_reply_inboxes().await;
     super::list_record::queued(host, "a cancel");
     host.publish(SubscriptionEvent::Friend(FriendEvent::Removed {
         peer_key: public_key.to_string(),
@@ -203,6 +210,8 @@ pub async fn expire_stale_requests(host: &dyn FriendHost) -> Result<(), FriendEr
         }));
     }
     if !outgoing.is_empty() {
+        // The expired requests' reply inboxes are released (plan RV2).
+        host.sync_reply_inboxes().await;
         super::list_record::queued(host, "an expiry");
         tracing::info!(count = outgoing.len(), "expired stale pending-out friends");
     }

@@ -99,6 +99,9 @@ pub(crate) struct Faults {
     pub unanswered: HashSet<usize>,
     /// Nodes a call to whose route never resolves ([`crate::Fault::CallHangs`]).
     pub hung: HashSet<usize>,
+    /// How long a call to each node's routes is stuck before it is sent
+    /// ([`crate::Fault::CallStalls`]).
+    pub call_stall: HashMap<usize, std::time::Duration>,
     /// Nodes an app message to whose route is never dispatched
     /// ([`crate::Fault::SendHangs`]).
     pub send_hung: HashSet<usize>,
