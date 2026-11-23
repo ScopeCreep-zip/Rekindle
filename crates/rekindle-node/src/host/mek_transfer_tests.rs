@@ -61,6 +61,63 @@ async fn a_members_transfer_installs_and_is_acked() {
     host.shutdown().await.expect("the host stops");
 }
 
+/// Counts the events above debug (info, warn, error).
+struct LoudEvents(std::sync::Arc<std::sync::atomic::AtomicUsize>);
+
+impl<S: tracing::Subscriber> tracing_subscriber::Layer<S> for LoudEvents {
+    fn on_event(&self, event: &tracing::Event<'_>, _: tracing_subscriber::layer::Context<'_, S>) {
+        if *event.metadata().level() <= tracing::Level::INFO {
+            self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_key_drop_entry_for_another_joiner_installs_nothing_quietly() {
+    use rekindle_codec::capnp_envelope::encode_community_envelope;
+    use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
+    use tracing_subscriber::layer::SubscriberExt as _;
+
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    let ann = create_ann(&host).await;
+    seed_registry_community(&host, &ann.public_key).await;
+    // The inviter's drop holds a key wrapped for another member's pseudonym.
+    let other = derive_community_pseudonym(&[3; 32], "c1");
+    let rotator = derive_community_pseudonym(&ROTATOR_SECRET, "c1");
+    let key = Mek::from_bytes([7; 32], 2);
+    let wrapped = wrap_mek(
+        &rotator,
+        &other.verifying_key().to_bytes(),
+        &key.to_wire_bytes(),
+    )
+    .expect("wrapped");
+    let envelope = encode_community_envelope(&CommunityEnvelope::control(
+        ControlPayload::MekTransfer(MekTransferPayload {
+            community_id: "c1".into(),
+            channel_id: None,
+            generation: 2,
+            sender_pseudonym: hex::encode(rotator.verifying_key().to_bytes()),
+            wrapped_mek: wrapped,
+            transfer_id: vec![1; 16],
+        }),
+    ))
+    .expect("encoded");
+    let drop = crate::host::adapters::governance::key_drop::encode(&[envelope]);
+    let loud = std::sync::Arc::default();
+    let subscriber = tracing_subscriber::registry().with(LoudEvents(std::sync::Arc::clone(&loud)));
+    tracing::subscriber::with_default(subscriber, || {
+        host.governance().take_dropped_key("c1", &drop);
+    });
+    assert_eq!(held(&host), None, "another joiner's key is not ours");
+    assert_eq!(
+        loud.load(std::sync::atomic::Ordering::SeqCst),
+        0,
+        "a copy for another joiner is skipped at debug or below"
+    );
+    host.shutdown().await.expect("the host stops");
+}
+
 #[tokio::test]
 async fn a_transfer_for_a_community_we_are_not_in_is_refused() {
     let dir = tempfile::tempdir().unwrap();

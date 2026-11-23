@@ -5,11 +5,18 @@
 //! on it: its bootstrap answer and its first pushes), the joiner's join
 //! still stands from the DHT; once the loss ends, a retry delivers the
 //! key. A one-shot push left the joiner with no key for good.
+//!
+//! Plan RV2d gives the key a second, durable path: the inviter's key drop
+//! (its member record's subkey `KEY_DROP`). This scenario's subject is the
+//! call retry, so the drop's write is held below consensus for as long as
+//! the pushes are lost (`Fault::WriteFails` on that subkey of the
+//! inviter's own `DFLT(8)` record) and healed with them.
 
 use std::time::Duration;
 
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, LifecycleRequest};
-use rekindle_netsim::Fault;
+use rekindle_netsim::{Fault, Records, Writes};
+use rekindle_types::dht_layout::member_record::KEY_DROP;
 
 use crate::harness::{eventually, Community};
 
@@ -26,6 +33,13 @@ async fn a_lost_key_push_to_a_joiner_is_retried_until_it_lands() {
     community.sim.fault(Fault::DropFrom {
         node: 0,
         per_mille: 1000,
+    });
+    community.sim.fault(Fault::WriteFails {
+        node: 0,
+        of: Writes::Subkey {
+            subkey: KEY_DROP,
+            record: Some(Records::CreatedDflt(8)),
+        },
     });
     community.nodes[1]
         .ok(IpcRequest::Community(CommunityRequest::Lifecycle(
@@ -54,6 +68,7 @@ async fn a_lost_key_push_to_a_joiner_is_retried_until_it_lands() {
         node: 0,
         per_mille: 0,
     });
+    community.sim.fault(Fault::Heal);
     assert!(
         eventually(&community.sim, Duration::from_secs(300), || async {
             holds_a_key(&community.mek_list(1).await)
