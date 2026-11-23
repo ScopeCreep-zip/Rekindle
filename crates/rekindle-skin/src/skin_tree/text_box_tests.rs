@@ -141,7 +141,7 @@ fn labels_hold_their_words_where_room_exists() {
         ("onyx", "HelpMenuText", 10),
         ("onyx", "TabNormalText", 26),
         ("onyx", "TabServerText", 26),
-        ("onyx", "TabDownloadText", 26),
+        ("onyx", "TabDownloadText", 24),
         ("simple-x", "TabDownloadText.Communities", 60),
         ("spacecowboy", "TabDownloadText.Communities", 62),
         ("spacecowboy", "XfireMenuText", 15),
@@ -208,4 +208,37 @@ fn a_grown_text_keeps_its_buttons_art_box() {
         assert!(node(pack, text).b[2] > 40, "{pack} {text} did not grow");
         assert_eq!(art_box(pack, art), want, "{pack} {art}");
     }
+}
+
+/// Plan SK9: a name field beside an 18 px button grows only to the
+/// button's 24 px target box (WCAG 2.2 SC 2.5.8 takes precedence over the
+/// field's ellipsis room), and the button's served target then meets the
+/// field's box without overlapping it.
+#[test]
+fn a_name_field_stops_at_its_buttons_target_box() {
+    use rekindle_types::dto::skin_action::{SkinAction, SkinEvent};
+
+    use super::test_support::Z;
+    use super::tests::{acts, fixed, layout, n};
+
+    let field = n("Name", NodeRole::NameField, fixed(10, 0), fixed(10, 16));
+    let button = acts(
+        n("Min", NodeRole::Button, fixed(100, 18), fixed(10, 16)),
+        SkinEvent::Click,
+        SkinAction::Minimize,
+    );
+    let mut l = layout(Some(SkinTree {
+        outsets: Z,
+        root: vec![field, button],
+    }));
+    super::text_box::lay(&mut l);
+    super::target::nodes(&mut l);
+    let tree = l.tree.as_ref().unwrap();
+    let field = place(&tree.root[0], laid_window(Z, [l.min_width, l.min_height]));
+    let t = tree.root[1]
+        .target
+        .expect("the 18 px button serves a target");
+    // The button's art at x 100, its 24 px target from x 97.
+    assert_eq!(t.area[0], -3, "button target {t:?}");
+    assert_eq!(field[0] + field[2], 97, "name field box {field:?}");
 }

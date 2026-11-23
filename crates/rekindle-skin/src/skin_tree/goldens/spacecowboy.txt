@@ -20,12 +20,12 @@ StatusWrapper Group
   StatusEdit StatusText target [0, -2, 228, 22] art [0, 2, 228, 16] Spacing
   DownArrow StatusList target [0, -2, 20, 23] art [0, 2, 15, 18] Short
 TabHeader TabStrip
-  TabNormalText Tab(Friends) label "Friends" target [0, -2, 62, 24] art [0, 2, 62, 19] Size
-    TabNormalButton Part
-  TabServerText Tab(Servers) label "Servers" target [0, -2, 62, 24] art [0, 2, 62, 19] Size
-    TabServerButton Part
-  TabDownloadText Tab(Files) label "Downloads" target [0, -2, 62, 24] art [0, 2, 62, 19] Size
-    TabDownloadButton Part
+  TabNormalText Tab(Friends) label "Friends"
+    TabNormalButton Part target [0, -2, 70, 24] art [0, 2, 70, 20] Size
+  TabServerText Tab(Servers) label "Servers"
+    TabServerButton Part target [0, -2, 70, 24] art [0, 2, 70, 20] Size
+  TabDownloadText Tab(Files) label "Downloads"
+    TabDownloadButton Part target [0, -2, 70, 24] art [0, 2, 70, 20] Size
   TabDownloadText.Communities Tab(Communities) label "Communities" target [0, -2, 62, 24] art [0, 2, 62, 19] Size
     TabDownloadButton.Communities Part
 TopButtonBar Group
@@ -34,11 +34,11 @@ TopButtonBar Group
   Close Button target [-1, -5, 20, 24] art [1, 5, 14, 14] Short
 MenuBar MenuBar
   XfireMenuText MenuTitle label "Rekindle"
-    FileMenu Part
+    FileMenu Part target [-9, -11, 21, 24] art [9, 11, 6, 1] Short
   ToolsMenuText MenuTitle label "Tools"
-    ToolsMenu Part
+    ToolsMenu Part target [-6, -11, 18, 24] art [6, 11, 6, 1] Short
   HelpMenuText MenuTitle label "Help"
-    HelpMenu Part
+    HelpMenu Part target [-6, -11, 21, 24] art [6, 11, 6, 1] Short
 ListViewBG Decor
 TabbedControl Views
   BuddyView View(Friends)

@@ -1,12 +1,12 @@
 Top Decor
 Logo Logo target [0, -1, 89, 24] art [0, 1, 89, 21] Size
 MenuBar MenuBar
-  XfireMenuText MenuTitle label "Rekindle" target [0, -3, 60, 24] art [0, 3, 60, 18] Size
-    FileMenu Part
-  ToolsMenuText MenuTitle label "Tools" target [0, -3, 60, 24] art [0, 3, 60, 18] Size
-    ToolsMenu Part
-  HelpMenuText MenuTitle label "Help" target [0, -3, 60, 24] art [0, 3, 60, 18] Size
-    HelpMenu Part
+  XfireMenuText MenuTitle label "Rekindle"
+    FileMenu Part target [0, 0, 64, 24] art [0, 0, 64, 23] Size
+  ToolsMenuText MenuTitle label "Tools"
+    ToolsMenu Part target [0, 0, 64, 24] art [0, 0, 64, 23] Size
+  HelpMenuText MenuTitle label "Help"
+    HelpMenu Part target [0, 0, 64, 24] art [0, 0, 64, 23] Size
 UserNameField NameField target [0, -1, 252, 24] art [0, 1, 252, 22] Size
   UserNameText Part
 StatusWrapper Group
@@ -27,12 +27,12 @@ TabbedControl Views
     DownloadView.BvBk Part
   TabbedControl.Communities View(Communities)
 TabHeader TabStrip
-  TabNormalText Tab(Friends) label "Friends" target [0, -4, 60, 24] art [0, 4, 60, 15] Size
-    TabNormalButton Part
-  TabServerText Tab(Servers) label "Servers" target [0, -4, 60, 24] art [0, 4, 60, 15] Size
-    TabServerButton Part
-  TabDownloadText Tab(Files) label "Downloads" target [0, -4, 60, 24] art [0, 4, 60, 15] Size
-    TabDownloadButton Part
+  TabNormalText Tab(Friends) label "Friends"
+    TabNormalButton Part target [0, -2, 64, 24] art [0, 2, 64, 20] Size
+  TabServerText Tab(Servers) label "Servers"
+    TabServerButton Part target [0, -2, 64, 24] art [0, 2, 64, 20] Size
+  TabDownloadText Tab(Files) label "Downloads"
+    TabDownloadButton Part target [0, -2, 64, 24] art [0, 2, 64, 20] Size
   TabDownloadText.Communities Tab(Communities) label "Communities" cover [6, 3, 48, 9] target [0, -4, 60, 24] art [0, 4, 60, 15] Size
     TabDownloadButton.Communities Part
 Bottom Decor

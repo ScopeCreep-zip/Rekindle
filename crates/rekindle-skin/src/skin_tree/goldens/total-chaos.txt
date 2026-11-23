@@ -10,7 +10,7 @@ AdBar AdArea
   AdArea Part
 MenuBar MenuBar
   MenuBg Part
-    FileMenu MenuTitle label "Rekindle" cover [15, 0, 47, 18] target [0, -3, 65, 24] art [0, 3, 65, 18] Size
+    FileMenu MenuTitle label "Rekindle" cover [15, 0, 47, 18] target [0, -3, 67, 24] art [0, 3, 67, 18] Size
     ToolsMenu MenuTitle target [0, -3, 65, 24] art [0, 3, 65, 18] Size
     HelpMenu MenuTitle target [0, -3, 65, 24] art [0, 3, 65, 18] Size
 Content Group
