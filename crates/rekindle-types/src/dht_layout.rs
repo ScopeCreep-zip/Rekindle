@@ -382,6 +382,7 @@ mod tests {
             profile::ROUTE_BLOB,
             profile::METADATA,
             profile::RELAY_POOL,
+            profile::CODE_INBOX,
         ]
         .into_iter()
         .max()
@@ -408,7 +409,9 @@ mod tests {
         assert_eq!(profile::ROUTE_BLOB, 6);
         assert_eq!(profile::METADATA, 7);
         assert_eq!(profile::RELAY_POOL, 8);
-        assert_eq!(profile::SUBKEY_COUNT, 9);
+        // The friend code's write slot (plan RV2e, SCHEMA_VERSION 159).
+        assert_eq!(profile::CODE_INBOX, 9);
+        assert_eq!(profile::SUBKEY_COUNT, 10);
     }
 
     /// The manifest table is duplicated nowhere now, but its indices are
