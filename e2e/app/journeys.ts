@@ -5,7 +5,7 @@ import { randomBytes } from "node:crypto";
 import { expect } from "@wdio/globals";
 import type { Browser } from "webdriverio";
 import { NETWORK_LABEL, NET_WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, sleep, switchTo, typeAndSend, typeInto, untilPublished, waitForHandle, waitUntil } from "../walk/helpers.ts";
-import { BUDDY, LOGIN, SETTINGS, inBuddy, menu, openAddFriend, setValue, submitJoin, underTree } from "../walk/nav.ts";
+import { BUDDY, LOGIN, SETTINGS, closeModal, inBuddy, menu, openAddFriend, setValue, submitJoin, underTree } from "../walk/nav.ts";
 
 /** A throwaway identity: its name and passphrase live only in this run. */
 export interface User {
@@ -249,12 +249,45 @@ export async function openCommunity(b: Browser, name: string): Promise<void> {
   await shown(b, ".community-sidebar", NET_WAIT_MS);
 }
 
-/** In the open community window, `user` creates a text channel `name`, and it is listed. */
+/** How many channel rows in the open community window show `name`. */
+export async function channelCount(b: Browser, name: string): Promise<number> {
+  return (await b.execute(
+    (n: string) => Array.from(document.querySelectorAll(".channel-item")).filter((r) => (r.textContent ?? "").includes(n)).length,
+    name.slice(0, 24),
+  )) as number;
+}
+
+/**
+ * In the open community window, `user` creates a text channel `name`, and it
+ * is listed: one more row with its name than before (a match alone passed on
+ * the genesis #general when a spec created a second "general").
+ */
 export async function createTextChannel(b: Browser, user: User, name: string): Promise<void> {
+  const before = await channelCount(b, name);
   await (await shown(b, '[title="Create Channel"]')).click();
   await typeInto(await shown(b, 'input[placeholder="Channel name..."]'), name);
   await submitModal(b, user, 'input[placeholder="Channel name..."]');
-  await byText(b, ".channel-item", name.slice(0, 24), NET_WAIT_MS);
+  await waitUntil(async () => (await channelCount(b, name)) === before + 1, NET_WAIT_MS, `#${name.slice(0, 24)} was never added (still ${before} rows)`);
+}
+
+/**
+ * In the open community window, `user` sets their name in this community
+ * (Community Settings, Overview, MyNameSection: SetCommunityDisplayName), and
+ * the section says members see that name.
+ */
+export async function setCommunityName(b: Browser, user: User, name: string): Promise<void> {
+  await communitySettings(b, "Overview");
+  const input = await shown(b, ".my-name-section input.form-input");
+  await input.clearValue();
+  await typeInto(input, name);
+  await (await shown(b, ".my-name-section button[type=submit]")).click();
+  await resolveIntent(b, { passphrase: user.passphrase, appearMs: 1500 });
+  await waitUntil(
+    async () => ((await (await b.$("#my-name-hint")).getText().catch(() => "")) ?? "").includes(name),
+    NET_WAIT_MS,
+    `the community name never became ${name}`,
+  );
+  await closeModal(b);
 }
 
 /** In the open community window, select channel `name`. */
