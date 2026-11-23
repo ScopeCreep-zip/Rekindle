@@ -15,7 +15,7 @@ import { browser, expect } from "@wdio/globals";
 import { switchTo } from "../../../walk/helpers.ts";
 import { BUDDY, openSettings } from "../../../walk/nav.ts";
 import { type Violation, violations } from "../../axe.ts";
-import { checkGeometry, treeFitIn } from "../../geometry.ts";
+import { checkGeometry, targetsMetIn, treeFitIn } from "../../geometry.ts";
 import type { TreeFit } from "../../geometry-page.ts";
 import { applySkin, createCommunity, createIdentity, createTextChannel, newUser, openCommunity, postMessage, selectChannel, skinShown, type User } from "../../journeys.ts";
 import { builtinPacks, type SkinPack } from "../../skin-pack.ts";
@@ -150,10 +150,12 @@ describe("every built-in skin keeps the app accessible and laid out", function (
   /**
    * Axe's undersized targets split by the rule the Host serves each one
    * (plan SK7 `NodeTarget.rule`): `short` nodes by their skin node id, the
-   * rest by id or, outside the tree, their selector.
+   * rest by id or, outside the tree, their selector. A tree control axe
+   * flags whose press box (plan SK12: a cut area takes its press on a
+   * `::before`, its art box none) meets WCAG 2.5.8 (`met`) is no finding.
    */
-  async function targetNodes(selectors: string[]): Promise<{ short: string[]; other: string[] }> {
-    return (await browser.execute(async (sels: string[]) => {
+  async function targetNodes(selectors: string[], met: string[]): Promise<{ short: string[]; other: string[] }> {
+    return (await browser.execute(async (sels: string[], met: string[]) => {
       type Node = { id: string; target?: { rule: string }; children?: Node[] };
       const w = window as unknown as { __TAURI_INTERNALS__: { invoke(cmd: string, args: unknown): Promise<{ value: { shells?: { root: Node[] }[] } }> } };
       const rules = new Map<string, string>();
@@ -167,10 +169,10 @@ describe("every built-in skin keeps the app accessible and laid out", function (
       for (const sel of sels) {
         const id = document.querySelector(sel)?.closest<HTMLElement>("[data-skin-node]")?.dataset.skinNode;
         if (id && rules.get(id) === "short") short.push(id);
-        else other.push(id ?? sel);
+        else if (!met.includes(sel)) other.push(id ?? sel);
       }
       return { short: short.sort(), other: other.sort() };
-    }, selectors)) as { short: string[]; other: string[] };
+    }, selectors, met)) as { short: string[]; other: string[] };
   }
 
   /** Axe and geometry findings in the window `browser` is in, at each of `w`'s sizes, keyed by window and size. */
@@ -191,7 +193,7 @@ describe("every built-in skin keeps the app accessible and laid out", function (
       if (axe.length > 0) found[`${where}: axe`] = axe;
       const small = all.find((v) => v.rule === "target-size");
       if (small) {
-        const { short, other } = await targetNodes(small.nodes);
+        const { short, other } = await targetNodes(small.nodes, await targetsMetIn(browser, ".app-frame", small.nodes));
         if (short.length > 0) found[`${where}: target-size short`] = short;
         if (other.length > 0) found[`${where}: target-size`] = other;
       }
