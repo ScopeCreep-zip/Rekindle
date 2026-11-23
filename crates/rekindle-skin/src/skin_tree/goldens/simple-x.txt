@@ -7,10 +7,10 @@ MenuBar MenuBar
     ToolsMenu Part target [0, 0, 41, 23] art [0, 0, 64, 23] Spacing
   HelpMenuText MenuTitle label "Help"
     HelpMenu Part target [35, 0, 6, 23] art [-35, 0, 64, 23] Short
-UserNameField NameField target [0, -1, 236, 24] art [0, 1, 252, 22] Size
+UserNameField NameField inset [0, 16] target [0, -1, 236, 24] art [0, 1, 252, 22] Size
   UserNameText Part
 StatusWrapper Group
-StatusEdit StatusText inset [0, 9] target [0, -6, 317, 24] art [0, 6, 327, 12] Size
+StatusEdit StatusText inset [0, 10] target [0, -6, 317, 24] art [0, 6, 327, 12] Size
 DownArrow StatusList target [-1, -1, 24, 24] art [1, 1, 22, 22] Size
 TopButtonBar Group
   MinimizeBox Button target [-4, -4, 20, 24] art [4, 4, 16, 16] Short

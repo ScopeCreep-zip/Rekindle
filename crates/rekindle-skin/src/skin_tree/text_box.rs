@@ -46,6 +46,7 @@ use rekindle_types::dto::skin_tree::{Anchor, NodeRole, NodeSpan, SkinNode, SkinT
 
 use super::inset::is_text;
 use super::titles::{each_laid, laid_window, place};
+use super::validate::Apart;
 
 /// Each small interactive node's target box on the pack's boxes, relative
 /// to its art: `[dx, dy, w, h]` by node id.
@@ -480,7 +481,25 @@ fn lay_tree(tree: &mut SkinTree, window: (i32, i32)) {
     for path in paths {
         let mut all = Vec::new();
         obstacles(&tree.root, at, &[], (&targets, None), &mut all);
+        // A node on another page of a button bar or control group is
+        // never shown with the text ([`Apart`], the overlap invariant's
+        // own rule 4): StealthX's `HostChatButton`, `JoinChatButton` and
+        // `LeaveChatButton` share one place in the `InfoJoinChatTab` bar,
+        // one shown at a time, so each label keeps its own button's room.
+        let apart = Apart::new(&tree.root);
+        let id = node_at(&tree.root, &path).id.as_str();
+        all.retain(|o| !apart.apart(id, &o.id));
         cut_one(&mut tree.root, &path, at, &[], &all);
+    }
+}
+
+/// The node at index path `path` (non-empty) under `nodes`.
+fn node_at<'a>(nodes: &'a [SkinNode], path: &[usize]) -> &'a SkinNode {
+    let (&i, rest) = path.split_first().expect("a text path is never empty");
+    if rest.is_empty() {
+        &nodes[i]
+    } else {
+        node_at(&nodes[i].children, rest)
     }
 }
 
