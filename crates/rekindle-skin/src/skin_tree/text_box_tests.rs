@@ -1,0 +1,211 @@
+//! Plan SK8: every node that draws text is served a usable box on x
+//! ([`super::text_box`]), measured on the eleven built-ins at each window's
+//! served minimum.
+
+use rekindle_types::dto::skin_tree::{NodeRole, SkinNode, SkinTree};
+
+use super::golden_tests::main_layout;
+use super::titles::{laid_window, place};
+
+const PACKS: [&str; 11] = [
+    "alloy",
+    "combat",
+    "onyx",
+    "simple-x",
+    "spacecowboy",
+    "stealthx",
+    "symbiosis",
+    "total-chaos",
+    "xfire-classic",
+    "xglow",
+    "xslimfire",
+];
+
+/// A text node laid at its window's minimum: id, its box, its parent's.
+struct Laid {
+    id: String,
+    words: Option<String>,
+    b: [i32; 4],
+    parent: [i32; 4],
+}
+
+fn texts(nodes: &[SkinNode], parent: [i32; 4], out: &mut Vec<Laid>) {
+    for n in nodes {
+        let b = place(n, parent);
+        let field = matches!(
+            n.role,
+            NodeRole::NameField | NodeRole::StatusText | NodeRole::RoomName
+        );
+        let words = n
+            .label
+            .as_ref()
+            .filter(|l| l.glyph.is_none())
+            .map(|l| l.text.clone());
+        if n.art.is_none() && (field || words.is_some()) {
+            out.push(Laid {
+                id: n.id.clone(),
+                words,
+                b,
+                parent,
+            });
+        }
+        texts(&n.children, b, out);
+    }
+}
+
+/// Every text node of the pack's main window and its popups.
+fn laid(id: &str) -> Vec<Laid> {
+    let main = main_layout(id);
+    let mut trees: Vec<(&SkinTree, [u16; 2])> = Vec::new();
+    if let Some(t) = main.tree.as_ref() {
+        trees.push((t, [main.min_width, main.min_height]));
+    }
+    for p in main.popups.values() {
+        trees.push((&p.tree, [p.min_width, p.min_height]));
+    }
+    let mut out = Vec::new();
+    for (t, min) in trees {
+        texts(&t.root, laid_window(t.outsets, min), &mut out);
+    }
+    out
+}
+
+fn node(id: &str, node: &str) -> Laid {
+    laid(id)
+        .into_iter()
+        .find(|l| l.id == node)
+        .unwrap_or_else(|| panic!("{id}: no text node {node}"))
+}
+
+/// The width of `word` in the shell's label face (`skin-tree.css`
+/// `.skin-node-label`, Tahoma bold) at its 10 px floor, px: Tahoma Bold's
+/// advances at 10 px, rounded up (narrow i/l/j/t/f/r 4, wide m/w 9,
+/// capitals 7, the rest 6).
+fn word_width(word: &str) -> i32 {
+    word.chars()
+        .map(|c| match c {
+            'i' | 'l' | 'j' | 't' | 'f' | 'r' | ' ' => 4,
+            'm' | 'w' | 'M' | 'W' => 9,
+            c if c.is_ascii_uppercase() => 7,
+            _ => 6,
+        })
+        .sum()
+}
+
+/// Finding 1: Combat's name field `Title` (x at 55, size 0) and Onyx's
+/// `MainTitleBar/Title` (x at 20, size 0) are served a positive width
+/// that ends at their parent's end (no interactive sibling meets their
+/// line past the anchor), so a long name ellipsizes inside it.
+#[test]
+fn zero_width_title_anchors_get_their_usable_width() {
+    for (pack, start, end) in [("combat", 55, 340), ("onyx", 25, 185)] {
+        let t = node(pack, "Title");
+        assert_eq!(t.b[0], start, "{pack}: the anchor stays");
+        assert!(t.b[2] > 0, "{pack}: Title {:?} cannot ellipsize", t.b);
+        assert_eq!(
+            t.b[0] + t.b[2],
+            end,
+            "{pack}: Title {:?} in {:?}",
+            t.b,
+            t.parent
+        );
+    }
+}
+
+/// Finding 2: Onyx's menu titles (4 px boxes) grow to the next title's
+/// button art, the room there is (Rekindle's `FileMenu` part ends at x 22,
+/// `ToolsMenu` starts at x 24): 10 px each.
+#[test]
+fn onyxs_menu_titles_take_the_room_up_to_the_next_title() {
+    for (title, end) in [
+        ("XfireMenuText", 24),
+        ("ToolsMenuText", 38),
+        ("HelpMenuText", 52),
+    ] {
+        let t = node("onyx", title);
+        assert_eq!(t.b[0] + t.b[2], end, "onyx {title} {:?}", t.b);
+        assert!(t.b[2] > 4, "onyx {title} kept its 4 px box");
+    }
+}
+
+/// Every served label's box holds its word at the 10 px floor wherever the
+/// pack leaves room; the labels listed have no room at the pack's places
+/// (pack-layout findings for the lead), each at its served width.
+#[test]
+fn labels_hold_their_words_where_room_exists() {
+    let no_room: &[(&str, &str, i32)] = &[
+        ("combat", "FileMenuText", 26),
+        ("combat", "ToolsMenuText", 26),
+        ("onyx", "XfireMenuText", 10),
+        ("onyx", "ToolsMenuText", 10),
+        ("onyx", "HelpMenuText", 10),
+        ("onyx", "TabNormalText", 26),
+        ("onyx", "TabServerText", 26),
+        ("onyx", "TabDownloadText", 26),
+        ("simple-x", "TabDownloadText.Communities", 60),
+        ("spacecowboy", "TabDownloadText.Communities", 62),
+        ("spacecowboy", "XfireMenuText", 15),
+        ("spacecowboy", "ToolsMenuText", 15),
+        ("xfire-classic", "TabDownloadText", 51),
+    ];
+    let mut short = Vec::new();
+    for pack in PACKS {
+        for l in laid(pack) {
+            if let Some(w) = l.words.as_deref() {
+                if l.b[2] < word_width(w) {
+                    short.push((pack, l.id, l.b[2], w.to_owned(), word_width(w)));
+                }
+            }
+        }
+    }
+    let got: Vec<(&str, &str, i32)> = short.iter().map(|s| (s.0, s.1.as_str(), s.2)).collect();
+    assert_eq!(got, no_room, "labels short of their word: {short:?}");
+}
+
+/// No served text box reaches past its parent's box on x.
+#[test]
+fn no_text_box_exceeds_its_parent() {
+    let mut past = Vec::new();
+    for pack in PACKS {
+        for l in laid(pack) {
+            let grew = l.b[2] > 0;
+            if grew && !(l.b[0] >= l.parent[0] && l.b[0] + l.b[2] <= l.parent[0] + l.parent[2]) {
+                past.push((pack, l.id, l.b, l.parent));
+            }
+        }
+    }
+    assert!(past.is_empty(), "text boxes past their parent: {past:?}");
+}
+
+/// The box of `node` in the pack's main tree laid at its minimum.
+fn art_box(pack: &str, node: &str) -> [i32; 4] {
+    let main = main_layout(pack);
+    let t = main.tree.as_ref().unwrap();
+    let o = t.outsets;
+    let w = i32::from(main.min_width) + i32::from(o.left) + i32::from(o.right);
+    let h = i32::from(main.min_height) + i32::from(o.top) + i32::from(o.bottom);
+    t.boxes(w, h)
+        .into_iter()
+        .find_map(|(n, b)| (n.id == node).then_some(b))
+        .unwrap_or_else(|| panic!("{pack}: no node {node}"))
+}
+
+/// A grown text node's button art keeps the pack's box: Classic's
+/// `TabNormalButton` (`Stretch` -4/-18 around its 40 px `TabNormalText`)
+/// stays at x 18-79, Combat's `HelpMenu` part at x 112-143, while their
+/// text boxes grow.
+#[test]
+fn a_grown_text_keeps_its_buttons_art_box() {
+    for (pack, text, art, want) in [
+        (
+            "xfire-classic",
+            "TabNormalText",
+            "TabNormalButton",
+            [18, 146, 62, 16],
+        ),
+        ("combat", "HelpMenuText", "HelpMenu", [112, 171, 32, 22]),
+    ] {
+        assert!(node(pack, text).b[2] > 40, "{pack} {text} did not grow");
+        assert_eq!(art_box(pack, art), want, "{pack} {art}");
+    }
+}
