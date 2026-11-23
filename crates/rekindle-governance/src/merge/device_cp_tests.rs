@@ -93,13 +93,17 @@ pub(super) fn device_op(a: u8, kind: usize, key: u8, last_seq: u64, about: u8) -
 }
 
 /// The creator's community, then member 8's join with a first device and
-/// each of its three kinds of device op, one op per step.
+/// each of its three kinds of device op, one op per step. The readmit is
+/// member 8's own: a readmit enters the set only once applied (ADR 0022
+/// rules 7 and 8, plan E3.2 K4b BUG), and member 8 has no authority over
+/// another member; it is signed by key 4, endorsed before the retirement
+/// (rule 7's pre-fork co-signer, K4b Q7).
 fn steps() -> Vec<VerifiedOp> {
     let c0 = op(&pk(1), 0, &[], 0, joined(1, None));
     let j = op(&who(8), 0, &[&c0], 1, joined_with_device(8, 3));
     let k = op(&who(8), 1, &[&j], 2, device_op(8, 0, 4, 0, 8));
     let r = op(&who(8), 2, &[&k], 3, device_op(8, 1, 3, 1, 8));
-    let m = op(&who(8), 3, &[&r], 4, device_op(8, 2, 5, 0, 9));
+    let m = op_on(&who(8), [4; 32], 0, &[&r], 4, device_op(8, 2, 5, 0, 8));
     vec![c0, j, k, r, m]
 }
 
@@ -120,7 +124,7 @@ fn the_state_root_changes_when_a_member_s_device_set_changes() {
     assert_eq!(md.endorsements.len(), 2);
     assert_eq!(md.retirements.len(), 1);
     assert_eq!(
-        state.devices.member(&who(9)).map(|m| m.readmits.len()),
+        state.devices.member(&who(8)).map(|m| m.readmits.len()),
         Some(1)
     );
 }
