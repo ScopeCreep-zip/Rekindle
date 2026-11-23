@@ -23,14 +23,25 @@ const SHA = (() => {
   }
 })();
 
-/** The test the next shots belong to (set by base.conf.ts beforeTest). */
-let current = { spec: "spec", test: "test" };
+/**
+ * The test the next shots belong to (set by base.conf.ts beforeTest), on
+ * globalThis: the config and the specs load this module as separate
+ * instances, so a module variable set from the config was never seen by a
+ * spec's shot() (its shots went to spec/test).
+ */
+interface Current {
+  spec: string;
+  test: string;
+}
+const KEY = "__rekindleShotsCurrent";
+const holder = globalThis as unknown as Record<string, Current | undefined>;
+const current = (): Current => holder[KEY] ?? { spec: "spec", test: "test" };
 
 const slug = (s: string): string => s.replace(/[^\w-]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 80) || "_";
 
 /** Name the test the following shots belong to: its spec file and its full title. */
 export function shotsFor(file: string, parent: string, title: string): void {
-  current = { spec: slug(path.basename(file).replace(/\.e2e\.ts$/, "")), test: slug(parent ? `${parent} ${title}` : title) };
+  holder[KEY] = { spec: slug(path.basename(file).replace(/\.e2e\.ts$/, "")), test: slug(parent ? `${parent} ${title}` : title) };
 }
 
 /** Every user's session: one standalone, or each multiremote instance by name. */
@@ -51,7 +62,8 @@ interface ShotEntry {
 
 /** Save session `b`'s current window as `file` in the test's folder, and index it. */
 async function save(b: Browser, user: string, file: string): Promise<void> {
-  const dir = path.join(SHOTS, current.spec, current.test);
+  const now = current();
+  const dir = path.join(SHOTS, now.spec, now.test);
   mkdirSync(dir, { recursive: true });
   const window = await b.getWindowHandle().catch(() => "none");
   // The window's linked skin sheet (useSkin.ts LINK_ID): which skin it shows.
@@ -61,7 +73,7 @@ async function save(b: Browser, user: string, file: string): Promise<void> {
   await b.saveScreenshot(path.join(dir, file));
   const index = path.join(dir, "index.json");
   const entries: ShotEntry[] = existsSync(index) ? (JSON.parse(readFileSync(index, "utf8")) as ShotEntry[]) : [];
-  entries.push({ file, test: current.test, user, window, skin, sha: SHA });
+  entries.push({ file, test: now.test, user, window, skin, sha: SHA });
   writeFileSync(index, `${JSON.stringify(entries, null, 2)}\n`);
 }
 
