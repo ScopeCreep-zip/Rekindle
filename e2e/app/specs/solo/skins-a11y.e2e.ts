@@ -101,9 +101,157 @@ const KNOWN_DARWIN_ONLY: Record<string, string[]> = {
     "community min: axe color-contrast",
   ],
 };
+/**
+ * Faithful skin; conforming alternate = builtin:symbiosis-access (plan SK14,
+ * WCAG 2.2 5.2.1 conforming alternate version). The Xfire skins keep their
+ * art's small controls: each served-short control's 24 px target would cross
+ * a neighbour's, and none meets 2.5.8's spacing exception at its press box
+ * (targetsMet). The accessible variant, one keyboard step from every skin
+ * (Mod+,), holds none and must fully pass. Pinned from round 26's run
+ * (3b260dba2, 2026-11-23); a changed list is a reviewed edit.
+ */
+const KNOWN_FAITHFUL_SHORT: Record<string, string[]> = {
+  "symbiosis": [
+    "buddy-list default: target-size short ButtonClose",
+    "buddy-list default: target-size short ButtonMaximize",
+    "buddy-list default: target-size short StatusChanger",
+    "buddy-list large: target-size short ButtonClose",
+    "buddy-list large: target-size short ButtonMaximize",
+    "buddy-list large: target-size short StatusChanger",
+    "buddy-list min: target-size short ButtonClose",
+    "buddy-list min: target-size short ButtonMaximize",
+    "buddy-list min: target-size short StatusChanger",
+  ],
+  "xfire-classic": [
+    "buddy-list default: target-size short DownArrow",
+    "buddy-list large: target-size short DownArrow",
+    "buddy-list min: target-size short DownArrow",
+  ],
+  "combat": [
+    "buddy-list default: target-size short DownArrow",
+    "buddy-list large: target-size short DownArrow",
+    "buddy-list min: target-size short DownArrow",
+  ],
+  "onyx": [
+    "buddy-list default: target-size short Close",
+    "buddy-list default: target-size short DownArrow",
+    "buddy-list default: target-size short ExpandButton",
+    "buddy-list default: target-size short FileMenu",
+    "buddy-list default: target-size short HelpMenu",
+    "buddy-list default: target-size short Maximize",
+    "buddy-list default: target-size short Minimize",
+    "buddy-list default: target-size short TabNormalButton",
+    "buddy-list default: target-size short ToolsMenu",
+    "buddy-list large: target-size short Close",
+    "buddy-list large: target-size short DownArrow",
+    "buddy-list large: target-size short ExpandButton",
+    "buddy-list large: target-size short FileMenu",
+    "buddy-list large: target-size short HelpMenu",
+    "buddy-list large: target-size short Maximize",
+    "buddy-list large: target-size short Minimize",
+    "buddy-list large: target-size short TabNormalButton",
+    "buddy-list large: target-size short ToolsMenu",
+    "buddy-list min: target-size short Close",
+    "buddy-list min: target-size short DownArrow",
+    "buddy-list min: target-size short ExpandButton",
+    "buddy-list min: target-size short FileMenu",
+    "buddy-list min: target-size short HelpMenu",
+    "buddy-list min: target-size short Maximize",
+    "buddy-list min: target-size short Minimize",
+    "buddy-list min: target-size short TabNormalButton",
+    "buddy-list min: target-size short ToolsMenu",
+  ],
+  "spacecowboy": [
+    "buddy-list default: target-size short Close",
+    "buddy-list default: target-size short DownArrow",
+    "buddy-list default: target-size short FileMenu",
+    "buddy-list default: target-size short HelpMenu",
+    "buddy-list default: target-size short Maximize",
+    "buddy-list default: target-size short Minimize",
+    "buddy-list default: target-size short ToolsMenu",
+    "buddy-list large: target-size short Close",
+    "buddy-list large: target-size short DownArrow",
+    "buddy-list large: target-size short FileMenu",
+    "buddy-list large: target-size short HelpMenu",
+    "buddy-list large: target-size short Maximize",
+    "buddy-list large: target-size short Minimize",
+    "buddy-list large: target-size short ToolsMenu",
+    "buddy-list min: target-size short Close",
+    "buddy-list min: target-size short DownArrow",
+    "buddy-list min: target-size short FileMenu",
+    "buddy-list min: target-size short HelpMenu",
+    "buddy-list min: target-size short Maximize",
+    "buddy-list min: target-size short Minimize",
+    "buddy-list min: target-size short ToolsMenu",
+  ],
+  "stealthx": [
+    "buddy-list default: target-size short StatusBtn",
+    "buddy-list default: target-size short WndClose",
+    "buddy-list default: target-size short WndMax",
+    "buddy-list default: target-size short WndMin",
+    "buddy-list large: target-size short StatusBtn",
+    "buddy-list large: target-size short WndClose",
+    "buddy-list large: target-size short WndMax",
+    "buddy-list large: target-size short WndMin",
+    "buddy-list min: target-size short StatusBtn",
+    "buddy-list min: target-size short WndClose",
+    "buddy-list min: target-size short WndMax",
+    "buddy-list min: target-size short WndMin",
+  ],
+  "total-chaos": [
+    "buddy-list default: target-size short Close",
+    "buddy-list default: target-size short Maximize",
+    "buddy-list default: target-size short Minimize",
+    "buddy-list large: target-size short Close",
+    "buddy-list large: target-size short Maximize",
+    "buddy-list large: target-size short Minimize",
+    "buddy-list min: target-size short Close",
+    "buddy-list min: target-size short Maximize",
+    "buddy-list min: target-size short Minimize",
+  ],
+  "xslimfire": [
+    "buddy-list default: target-size short CloseBox",
+    "buddy-list default: target-size short MinimizeBox",
+    "buddy-list default: target-size short StatusEdit",
+    "buddy-list large: target-size short CloseBox",
+    "buddy-list large: target-size short MinimizeBox",
+    "buddy-list large: target-size short StatusEdit",
+    "buddy-list min: target-size short CloseBox",
+    "buddy-list min: target-size short MinimizeBox",
+    "buddy-list min: target-size short StatusEdit",
+  ],
+  "alloy": [
+    "buddy-list default: target-size short CloseBox",
+    "buddy-list default: target-size short MaximizeBox",
+    "buddy-list default: target-size short MinimizeBox",
+    "buddy-list large: target-size short CloseBox",
+    "buddy-list large: target-size short MaximizeBox",
+    "buddy-list large: target-size short MinimizeBox",
+    "buddy-list min: target-size short CloseBox",
+    "buddy-list min: target-size short MaximizeBox",
+    "buddy-list min: target-size short MinimizeBox",
+  ],
+  "simple-x": [
+    "buddy-list default: target-size short CloseBox",
+    "buddy-list default: target-size short HelpMenu",
+    "buddy-list default: target-size short MaximizeBox",
+    "buddy-list default: target-size short MinimizeBox",
+    "buddy-list large: target-size short CloseBox",
+    "buddy-list large: target-size short HelpMenu",
+    "buddy-list large: target-size short MaximizeBox",
+    "buddy-list large: target-size short MinimizeBox",
+    "buddy-list min: target-size short CloseBox",
+    "buddy-list min: target-size short HelpMenu",
+    "buddy-list min: target-size short MaximizeBox",
+    "buddy-list min: target-size short MinimizeBox",
+  ],
+};
 for (const [file, keys] of Object.entries(KNOWN_BOTH)) {
   KNOWN_ON.darwin[file] = [...keys];
   KNOWN_ON.linux[file] = [...keys];
+}
+for (const [file, keys] of Object.entries(KNOWN_FAITHFUL_SHORT)) {
+  for (const os of ["darwin", "linux"] as const) KNOWN_ON[os][file] = [...(KNOWN_ON[os][file] ?? []), ...keys].sort();
 }
 for (const [file, keys] of Object.entries(KNOWN_DARWIN_ONLY)) KNOWN_ON.darwin[file] = [...(KNOWN_ON.darwin[file] ?? []), ...keys].sort();
 
@@ -123,7 +271,10 @@ const KNOWN: Record<string, string[]> = process.platform === "darwin" || process
 const UNSETTLED = new Set(
   ["min", "default", "large"]
     .map((size) => `buddy-list ${size}: focus button.menu-bar-item "Rekindle" no indicator`)
-    .concat([`buddy-list min: focus button.xfire-titlebar-btn.xfire-titlebar-btn-minimize "\u2014" not focusable`]),
+    .concat([`buddy-list min: focus button.xfire-titlebar-btn.xfire-titlebar-btn-minimize "\u2014" not focusable`])
+    // The same take-back in a skin's tree: Symbiosis's first control after
+    // the menu bar (its logo is a label since plan BR), round 26.
+    .concat([`buddy-list min: focus div.skin-tree-button[ButtonMinimize] not focusable`]),
 );
 
 const LONG_URL = `https://example.com/${"averyveryverylongpathsegment".repeat(12)}?q=${"x".repeat(80)}`;
