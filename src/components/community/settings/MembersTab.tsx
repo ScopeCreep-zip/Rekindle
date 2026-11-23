@@ -1,4 +1,5 @@
 import { Component, For, Show, createSignal } from "solid-js";
+import SkinGlyph from "../../common/SkinGlyph";
 import StatusDot from "../../status/StatusDot";
 import RoleTag from "../RoleTag";
 import GovernancePublicationStatus from "../GovernancePublicationStatus";
@@ -13,12 +14,6 @@ import {
   handleRemoveTimeout,
   handleExpandCommunitySegment,
 } from "../../../actions/community.actions";
-import {
-  ICON_SHIELD,
-  ICON_TIMEOUT,
-  ICON_ACCOUNT_REMOVE,
-  ICON_BAN,
-} from "../../../icons";
 
 interface MembersTabProps {
   community: Community;
@@ -162,7 +157,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
                 </For>
               </div>
               <Show when={member.timeoutUntil}>
-                <span class="nf-icon timeout-indicator" title="Timed out">{ICON_TIMEOUT}</span>
+                <SkinGlyph name="timeout" class="timeout-indicator" title="Timed out" label="Timed out" />
               </Show>
             </div>
             <Show when={canManageMember(member)}>
@@ -174,7 +169,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
                       rolePickerTarget() === member.pseudonymKey ? null : member.pseudonymKey
                     )}
                   >
-                    <span class="nf-icon">{ICON_SHIELD}</span> Roles
+                    <SkinGlyph name="shield" /> Roles
                   </button>
                 </Show>
                 <Show when={member.timeoutUntil ? props.canModerate : member.canModerateTarget.timeout}>
@@ -183,7 +178,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
                       class="form-btn-secondary"
                       onClick={() => handleRemoveTimeout(props.community.id, member.pseudonymKey)}
                     >
-                      <span class="nf-icon">{ICON_TIMEOUT}</span> Untimeout
+                      <SkinGlyph name="timeout" /> Untimeout
                     </button>
                   }>
                     <select
@@ -211,7 +206,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
                     class="form-btn-secondary"
                     onClick={() => kickMember(member)}
                   >
-                    <span class="nf-icon">{ICON_ACCOUNT_REMOVE}</span> Kick
+                    <SkinGlyph name="account-remove" /> Kick
                   </button>
                 </Show>
                 <Show when={member.canModerateTarget.ban}>
@@ -219,7 +214,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
                     class="form-btn-danger"
                     onClick={() => banMember(member)}
                   >
-                    <span class="nf-icon">{ICON_BAN}</span> Ban
+                    <SkinGlyph name="ban" /> Ban
                   </button>
                 </Show>
               </div>

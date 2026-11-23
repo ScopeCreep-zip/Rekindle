@@ -1,8 +1,8 @@
 import { Component, Show, createSignal, createEffect } from "solid-js";
+import SkinGlyph from "../../common/SkinGlyph";
 import type { Community } from "../../../stores/community.store";
 import { handleUpdateCommunityInfo } from "../../../actions/community.actions";
 import { addToast } from "../../../stores/toast.store";
-import { ICON_SAVE, ICON_COPY } from "../../../icons";
 import FormField from "../../common/FormField";
 import SuccessorSection from "./SuccessorSection";
 import CommunityDeviceStatus from "../CommunityDeviceStatus";
@@ -84,7 +84,7 @@ const OverviewTab: Component<OverviewTabProps> = (props) => {
         <div class="form-field-row">
           <span class="settings-value settings-value-mono">{props.community.id}</span>
           <button class="settings-copy-btn" onClick={handleCopyId}>
-            <span class="nf-icon">{ICON_COPY}</span> {copied() ? "Copied" : "Copy"}
+            <SkinGlyph name="copy" /> {copied() ? "Copied" : "Copy"}
           </button>
         </div>
       </FormField>
@@ -95,7 +95,7 @@ const OverviewTab: Component<OverviewTabProps> = (props) => {
       <Show when={props.canManage}>
         <div class="settings-actions-sticky">
           <button class="form-btn-primary" onClick={handleSaveOverview} disabled={savingOverview()}>
-            <span class="nf-icon">{ICON_SAVE}</span> {savingOverview() ? "Saving..." : "Save Changes"}
+            <SkinGlyph name="save" /> {savingOverview() ? "Saving..." : "Save Changes"}
           </button>
         </div>
       </Show>

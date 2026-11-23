@@ -8,6 +8,14 @@ import type { SkinShell } from "../ipc/commands/dto_skin_tree";
 /// places their nodes, so the nested divs and their rules always belong to
 /// the same skin.
 const [skinShells, setSkinShells] = createSignal<SkinShell[]>([]);
+/// How many sheets this window has linked: what reads the shown skin's
+/// custom properties (a pack-served icon, plan SK17-7a) reads them again.
+const [sheetsLinked, setSheetsLinked] = createSignal(0);
+
+/** Bumps each time this window links a skin's sheet (its custom properties may have changed). */
+export function skinSheetLinked(): number {
+  return sheetsLinked();
+}
 
 /** The shown skin's outline for `window`, if it lays that window as a tree. */
 export function skinShell(window: SkinShell["window"]): SkinShell | undefined {
@@ -147,6 +155,7 @@ function linkSheet(skin: SkinApplied, mine: number, images: HTMLImageElement[]):
     next.id = LINK_ID;
     document.documentElement.dataset.skinBase = skin.base;
     setSkinShells(skin.shells ?? []);
+    setSheetsLinked((n) => n + 1);
     images.length = 0;
   });
   next.addEventListener("error", () => {
