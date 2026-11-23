@@ -9,5 +9,6 @@
 # DUPLICATE_BODY_EXCEPTIONS in main.rs) when the duplication is
 # deliberate and permanent — those carry a reason; this file does not.
 type rekindle (src-tauri)::AppState vendor::AppState
+type rekindle (src-tauri)::Ingested rekindle-node::Ingested
 type rekindle-db::Origin vendor::Origin
 type rekindle-transport::Session vendor::Session

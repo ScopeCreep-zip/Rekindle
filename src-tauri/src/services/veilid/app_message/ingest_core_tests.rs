@@ -8,7 +8,9 @@
 //! validation, plan GI3b).
 
 use rekindle_codec::capnp_envelope::encode_community_envelope;
-use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload, SignedEnvelope};
+use rekindle_codec::community::envelope::{
+    CommunityEnvelope, ControlPayload, MediaSessionKey, SignedEnvelope,
+};
 use rekindle_node::host::test_fixtures::{create_ann, seat_creator, seed_registry_community};
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::subscription_events::{SocialEvent, SubscriptionEvent};
@@ -16,22 +18,22 @@ use rekindle_types::subscription_events::{SocialEvent, SubscriptionEvent};
 use super::{Ingested, ShellFollowUp, WebviewEvent};
 use crate::test_support::TestHost;
 
-const MEMBER: PseudonymKey = PseudonymKey([3; 32]);
+const SEATED_MEMBER: PseudonymKey = PseudonymKey([3; 32]);
 
-/// A Host holding Ann's community `c1`, with `MEMBER` seated as a creator.
+/// A Host holding Ann's community `c1`, with `SEATED_MEMBER` seated as a creator.
 async fn host_with_member() -> TestHost {
     let test = TestHost::start().await;
     let owner = create_ann(&test.host).await.public_key;
     seed_registry_community(&test.host, &owner).await;
-    seat_creator(&test.host, "c1", &MEMBER);
+    seat_creator(&test.host, "c1", &SEATED_MEMBER);
     test
 }
 
-/// `payload` relayed by `MEMBER` in `c1`, through the relayed core.
+/// `payload` relayed by `SEATED_MEMBER` in `c1`, through the relayed core.
 async fn ingest(test: &TestHost, payload: ControlPayload) -> Ingested {
     let signed = SignedEnvelope {
         community_id: "c1".into(),
-        sender_pseudonym: MEMBER.to_hex(),
+        sender_pseudonym: SEATED_MEMBER.to_hex(),
         message_id: [1; rekindle_codec::envelope::MESSAGE_ID_LEN],
         envelope_bytes: encode_community_envelope(&CommunityEnvelope::control(payload))
             .expect("encodes"),
@@ -49,7 +51,7 @@ async fn a_pin_the_host_accepts_is_exactly_one_social_event() {
         ControlPayload::MessagePinned {
             channel_id: "general".into(),
             message_id: "m1".into(),
-            pinned_by: MEMBER.to_hex(),
+            pinned_by: SEATED_MEMBER.to_hex(),
         },
     )
     .await;
@@ -91,7 +93,7 @@ async fn shell_arms_are_one_follow_up_and_no_event() {
             ControlPayload::ThreadMessageReceived {
                 thread_id: "t1".into(),
                 message_id: "m1".into(),
-                sender_pseudonym: MEMBER.to_hex(),
+                sender_pseudonym: SEATED_MEMBER.to_hex(),
                 timestamp: 1,
                 reply_to_id: None,
             },
@@ -102,7 +104,7 @@ async fn shell_arms_are_one_follow_up_and_no_event() {
                 channel_id: "voice".into(),
                 route_blob: vec![1],
                 display_name: None,
-                session_key: Default::default(),
+                session_key: MediaSessionKey::default(),
             },
             "voice",
         ),
@@ -122,7 +124,7 @@ async fn shell_arms_are_one_follow_up_and_no_event() {
             ControlPayload::RequestMEK {
                 channel_id: "general".into(),
                 needed_generation: 1,
-                requester_pseudonym: MEMBER.to_hex(),
+                requester_pseudonym: SEATED_MEMBER.to_hex(),
                 cascade_index: 0,
             },
             "mek",
@@ -142,7 +144,7 @@ async fn shell_arms_are_one_follow_up_and_no_event() {
                     ..
                 },
                 "voice",
-            ) => community_id == "c1" && *sender_pseudonym == MEMBER.to_hex(),
+            ) => community_id == "c1" && *sender_pseudonym == SEATED_MEMBER.to_hex(),
             (
                 ShellFollowUp::LinkPreview {
                     channel_id,
@@ -165,10 +167,10 @@ async fn mek_rotated_and_onboarding_complete_show_nothing() {
         ControlPayload::MEKRotated {
             channel_id: None,
             new_generation: 2,
-            rotator_pseudonym: Some(MEMBER.to_hex()),
+            rotator_pseudonym: Some(SEATED_MEMBER.to_hex()),
         },
         ControlPayload::OnboardingComplete {
-            pseudonym_key: MEMBER.to_hex(),
+            pseudonym_key: SEATED_MEMBER.to_hex(),
             role_ids: Vec::new(),
         },
     ] {
