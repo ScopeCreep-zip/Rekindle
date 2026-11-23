@@ -9,7 +9,7 @@
 
 use rekindle_ipc::protocol::IpcRequest;
 use rekindle_netsim::latency::MESSAGE;
-use rekindle_netsim::Fault;
+use rekindle_netsim::{Fault, Writes};
 use rekindle_types::dto::group_dm::GroupDmView;
 
 use crate::group_dm::{reads, send, view};
@@ -38,6 +38,16 @@ async fn an_invite_sent_right_after_the_accept_lands_once_the_accept_does() {
         node: 0,
         per_mille: 1000,
     });
+    // The accept's second path (plan RV2) is held back too, until the
+    // invite has reached Bea: Ann's write of it into Bea's reply inbox
+    // lands below consensus.
+    sim.fault(Fault::WriteFails {
+        node: 0,
+        of: Writes::Subkey {
+            subkey: rekindle_types::dht_layout::request_inbox::REQUEST,
+            record: None,
+        },
+    });
     accept(&nodes[0], &nodes[1]).await;
     tokio::time::sleep(MESSAGE.max * 2).await;
     sim.fault(Fault::DropFrom {
@@ -59,6 +69,7 @@ async fn an_invite_sent_right_after_the_accept_lands_once_the_accept_does() {
         !is_accepted_friend(&nodes[1], &key(&nodes[0])).await,
         "the invite reached Bea before the accept did"
     );
+    sim.fault(Fault::Heal);
     for node in &nodes[1..] {
         assert!(
             eventually(&sim, LIMIT * 2, || async {

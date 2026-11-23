@@ -7,11 +7,13 @@
 //! the friendship from its reply inbox and rotates its General route once
 //! (evidence source 6); with both paths up, one acceptance and no rotation.
 
+use std::collections::BTreeSet;
 use std::time::Duration;
 
-use rekindle_netsim::Fault;
-use rekindle_records::port::RouteClass;
+use rekindle_netsim::{Fault, Netsim};
+use rekindle_records::port::{RecordSchema, RouteClass};
 use rekindle_route::liveness::{HINT_WINDOW, REPORT_ROTATE_AGE};
+use rekindle_types::dht_layout::request_inbox;
 use rekindle_types::subscription_events::FriendEvent;
 
 use crate::harness::{eventually, start};
@@ -74,7 +76,17 @@ async fn both_paths_up_accept_once_and_rotate_nothing() {
         node.unlock_new_identity(name).await;
     }
     let ann = key(&nodes[1]);
+    let before = inboxes_watched_by(&sim, 0);
     request(&sim, &nodes[0], &nodes[1]).await;
+    let replies: BTreeSet<String> = inboxes_watched_by(&sim, 0)
+        .difference(&before)
+        .cloned()
+        .collect();
+    assert_eq!(
+        replies.len(),
+        1,
+        "Rae watches the reply inbox of her open request"
+    );
     tokio::time::sleep(REPORT_ROTATE_AGE + Duration::from_secs(10)).await;
     let general = nodes[0].routes.own_id(RouteClass::General);
     let events = nodes[0].events().await;
@@ -82,6 +94,13 @@ async fn both_paths_up_accept_once_and_rotate_nothing() {
     assert!(
         eventually(&sim, LIMIT, || is_accepted_friend(&nodes[0], &ann)).await,
         "Rae is accepted"
+    );
+    assert!(
+        eventually(&sim, LIMIT, || async {
+            inboxes_watched_by(&sim, 0).is_disjoint(&replies)
+        })
+        .await,
+        "the settled request released its reply inbox and the watch on it"
     );
     // Past the window a lone durable copy rotates on (evidence source 6),
     // and short of the inbound-silence trigger.
@@ -97,4 +116,17 @@ async fn both_paths_up_accept_once_and_rotate_nothing() {
         1,
         "one acceptance, two copies"
     );
+}
+
+/// The request-inbox-shaped records (one owner subkey, one one-time
+/// writer) the node watches: an open request's reply inbox among them.
+fn inboxes_watched_by(sim: &Netsim, node: usize) -> BTreeSet<String> {
+    sim.watched_by(node)
+        .into_iter()
+        .filter(|(_, schema)| {
+            matches!(schema, RecordSchema::Smpl { owner_subkeys, members }
+                if *owner_subkeys == request_inbox::OWNER_SUBKEY_COUNT && members.len() == 1)
+        })
+        .map(|(key, _)| key)
+        .collect()
 }
