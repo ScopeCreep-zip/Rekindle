@@ -365,6 +365,7 @@ fn frontier_holds(set: &resolve::OpSet<'_>, i: usize) -> bool {
     ) else {
         return true;
     };
+    tally!(frontier_steps, i as u64);
     let counted = (0..i)
         .filter(|&o| set.ops[o].author() == target && set.past.contains(i, o))
         .map(|o| set.ops[o].op().seq + 1)
@@ -374,6 +375,7 @@ fn frontier_holds(set: &resolve::OpSet<'_>, i: usize) -> bool {
 }
 
 fn try_apply(op: &VerifiedOp, state: &mut GovernanceState) -> bool {
+    tally!(try_apply, 1);
     if !validate_write(op.author(), op.body(), state) {
         return false;
     }
