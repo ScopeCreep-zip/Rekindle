@@ -11,7 +11,8 @@
 use std::collections::BTreeMap;
 
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse, ServersRequest, TransferRequest};
-use rekindle_types::dto::skin_action::{MenuRegistry, SkinAction as A};
+use rekindle_types::dto::local_search::LocalSearchScope;
+use rekindle_types::dto::skin_action::{EngineView, MenuRegistry, SkinAction as A};
 use rekindle_types::dto::skin_run::{CallOp, ShellOp, ShellPanel, SkinRun, SkinSelection};
 use rekindle_types::dto::transfer::TransferTarget;
 use rekindle_types::friend::GameInfoState;
@@ -74,6 +75,69 @@ impl Selections {
     }
 }
 
+/// Each window's current view, by window label (SK2-G §8): the last
+/// `ShowView` the Host admitted for it, recorded on the window that shows
+/// it (a view switch pressed in a popup is its launcher's, [`addressed`]).
+/// `SearchFor` searches what that view lists.
+#[derive(Debug, Default)]
+pub(crate) struct Views(parking_lot::Mutex<BTreeMap<String, EngineView>>);
+
+impl Views {
+    /// Record the view `run` shows: in `elsewhere`'s window when it was
+    /// handed on, else in `window`, the window pressed.
+    pub(crate) fn record(
+        &self,
+        window: &str,
+        run: &SkinRun,
+        elsewhere: Option<&(String, ShellOp)>,
+    ) {
+        let (shown_in, op) = match (elsewhere, run) {
+            (Some((to, op)), _) => (to.as_str(), op),
+            (None, SkinRun::Shell(op)) => (window, op),
+            (None, _) => return,
+        };
+        if let ShellOp::ShowView(view) = op {
+            self.0.lock().insert(shown_in.to_owned(), *view);
+        }
+    }
+
+    /// What `SearchFor` pressed in `window` searches. A chat window
+    /// (`chat-g<group id>`, or `chat-…` whose selection is its own peer,
+    /// lead decision 48) searches its conversation; any other window the
+    /// view it (or, for a popup, its `launcher`) shows, the buddy list's
+    /// Friends until a view was shown. `None` for a view with nothing local
+    /// to search yet (the pictures and videos, plan E7.2 G14).
+    pub(crate) fn scope(
+        &self,
+        window: &str,
+        launcher: Option<&str>,
+        selections: &Selections,
+    ) -> Option<LocalSearchScope> {
+        if let Some(chat) = window.strip_prefix("chat-") {
+            let conversation_id = match chat.strip_prefix('g') {
+                Some(group) => group.to_owned(),
+                None => selections.friend(window)?,
+            };
+            return Some(LocalSearchScope::Conversation { conversation_id });
+        }
+        let shown = self.0.lock().get(launcher.unwrap_or(window)).copied();
+        match shown.unwrap_or(EngineView::Friends) {
+            EngineView::Servers => Some(LocalSearchScope::Servers),
+            EngineView::Files => Some(LocalSearchScope::Files),
+            EngineView::Videos | EngineView::Screenshots => None,
+            EngineView::Home
+            | EngineView::Friends
+            | EngineView::Chats
+            | EngineView::ChatRooms
+            | EngineView::Notifications
+            | EngineView::Options
+            | EngineView::Help
+            | EngineView::InviteUsersToRoom
+            | EngineView::Communities => Some(LocalSearchScope::Friends),
+        }
+    }
+}
+
 /// Each open popup's launcher, by popup label (plan SK2-N4), as the shell
 /// said when it opened the popup (`Host::skin_window_opened`).
 #[derive(Debug, Default)]
@@ -126,6 +190,8 @@ pub(crate) struct Selected<'a> {
     pub friend: Option<&'a str>,
     pub transfer: Option<&'a (String, TransferTarget)>,
     pub server: Option<&'a (u32, String)>,
+    /// What `SearchFor` searches ([`Views::scope`]).
+    pub search: Option<&'a LocalSearchScope>,
 }
 
 /// `JoinFriend` (SK2-G §1, lead decision 49): the selected friend's game
@@ -186,6 +252,7 @@ pub(crate) fn map(
         friend,
         transfer,
         server,
+        search,
     } = selected;
     let rooms = &reads.rooms;
     use Mapped::{Request, Run};
@@ -227,6 +294,13 @@ pub(crate) fn map(
             attachment_id: transfer_selected()?.0,
         }),
         A::DownloadInfo => transfer_request(TransferRequest::List),
+        // SK2-G §8: the local search, scoped by the window's view.
+        A::SearchFor => match search {
+            Some(scope) => shell(ShellOp::OpenSearch {
+                scope: scope.clone(),
+            }),
+            None => Ok(gap(action)),
+        },
         A::LogOff => Ok(Request(Box::new(IpcRequest::Logout))),
         A::SetStatus(status) => Ok(Request(Box::new(IpcRequest::PresenceSet {
             status: *status,
@@ -330,7 +404,6 @@ pub(crate) fn map(
         | A::RefreshServer
         | A::OpenSelected
         | A::UploadSelected
-        | A::SearchFor
         | A::ShowWindow
         | A::HideWindow
         | A::DialogOk
@@ -369,20 +442,24 @@ pub(crate) enum Resolved {
 /// becomes its request (which then meets its own clearance and the intent
 /// gate); any other stays `RunSkinAction` with its run.
 pub(crate) fn resolve(
-    selections: &Selections,
+    skin: &super::SkinState,
     reads: &Reads,
     request: IpcRequest,
 ) -> Result<Resolved, IpcResponse> {
     let IpcRequest::RunSkinAction { window, action, .. } = &request else {
         return Ok(Resolved::Request(request));
     };
+    let selections = &skin.selection;
     let friend = selections.friend(window);
     let transfer = selections.transfer(window);
     let server = selections.server(window);
+    let launcher = skin.launchers.of(window);
+    let search = skin.views.scope(window, launcher.as_deref(), selections);
     let selected = Selected {
         friend: friend.as_deref(),
         transfer: transfer.as_ref(),
         server: server.as_ref(),
+        search: search.as_ref(),
     };
     match map(action, selected, reads)? {
         Mapped::Request(mapped) => Ok(Resolved::Request(*mapped)),

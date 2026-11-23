@@ -12,7 +12,7 @@ use super::{community, Checked};
 const MAX_PIN_ID_LEN: usize = 128;
 
 /// The longest search query, in bytes.
-const MAX_SEARCH_QUERY_LEN: usize = 1024;
+pub(super) const MAX_SEARCH_QUERY_LEN: usize = 1024;
 
 /// The longest local path an upload or download names, in bytes.
 const MAX_PATH_LEN: usize = 4096;

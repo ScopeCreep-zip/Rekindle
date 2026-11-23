@@ -395,6 +395,7 @@ macro_rules! dm_commands {
 macro_rules! search_commands {
     ($next:ident [$($done:tt)*] $($rest:ident)*) => { $next!([$($done)*
         commands::search::search_messages,
+        commands::search::local_search,
     ] $($rest)*) };
 }
 

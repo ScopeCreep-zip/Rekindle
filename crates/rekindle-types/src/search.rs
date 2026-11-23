@@ -46,6 +46,11 @@ pub struct SearchFilters {
     pub in_channel: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub in_thread: Option<String>,
+    /// SK2-G §8 (plan E7.2 G11): only the messages of this direct
+    /// conversation (a friend's key or a group DM's id); threads and
+    /// channels are not searched.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub in_conversation: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub has: Vec<HasFilter>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

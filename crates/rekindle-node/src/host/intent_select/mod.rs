@@ -275,6 +275,7 @@ pub(crate) async fn select(
         | IpcRequest::FriendCode
         | IpcRequest::PresenceGet
         | IpcRequest::GameTotalsGet
+        | IpcRequest::LocalSearch { .. }
         | IpcRequest::HiddenGamesGet
         | IpcRequest::ActivityList { .. }
         | IpcRequest::InfoviewGet { .. }

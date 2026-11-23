@@ -240,6 +240,10 @@ impl IpcRequest {
             | Self::GameLaunch { .. }
             | Self::AgentRegister { .. }
             | Self::AgentRevoke { .. }
+            // One local search reads friends, members, direct history and
+            // the user's held files at once, more than any one read
+            // capability grants.
+            | Self::LocalSearch { .. }
             | Self::PolicyReload => None,
         }
     }

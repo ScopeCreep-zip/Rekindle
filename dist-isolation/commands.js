@@ -163,6 +163,7 @@ const REKINDLE_ISOLATION_COMMANDS = Object.freeze([
   "list_received_relay_offers",
   "list_skins",
   "list_volunteered_relay_friends",
+  "local_search",
   "login",
   "logout",
   "mark_channel_read",
