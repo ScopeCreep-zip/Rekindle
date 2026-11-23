@@ -45,7 +45,7 @@ use rekindle_types::dto::skin::WindowLayout;
 use rekindle_types::dto::skin_tree::{Anchor, NodeRole, NodeSpan, SkinNode, SkinTree, ViewKey};
 
 use super::inset::is_text;
-use super::titles::{laid_window, place, popup_window};
+use super::titles::{each_laid, laid_window, place};
 
 /// Each small interactive node's target box on the pack's boxes, relative
 /// to its art: `[dx, dy, w, h]` by node id.
@@ -165,7 +165,8 @@ fn obstacles(
 /// The obstacles that stop `n`'s text (see [`Obstacle`]): not `n`, its
 /// ancestors (`up`) or descendants, not another view's, and not a
 /// blocking sibling (counted by [`usable`] with its span).
-fn stops(n: &SkinNode, up: &[String], all: &[Obstacle]) -> Vec<[i32; 4]> {
+/// With `siblings`, the blocking siblings count too (the plan SK13 cut).
+fn stops(n: &SkinNode, up: &[String], all: &[Obstacle], siblings: bool) -> Vec<[i32; 4]> {
     let mine = all
         .iter()
         .find(|o| o.id == n.id && o.up == up)
@@ -174,7 +175,7 @@ fn stops(n: &SkinNode, up: &[String], all: &[Obstacle]) -> Vec<[i32; 4]> {
         .filter(|o| {
             let apart = o.shows.is_some() && mine.is_some() && o.shows != mine;
             let kin = o.id == n.id || o.up.contains(&n.id) || up.contains(&o.id);
-            let sibling_blocker = o.blocker && o.up == up;
+            let sibling_blocker = !siblings && o.blocker && o.up == up;
             !(kin || apart || sibling_blocker)
         })
         .map(|o| o.b)
@@ -182,19 +183,135 @@ fn stops(n: &SkinNode, up: &[String], all: &[Obstacle]) -> Vec<[i32; 4]> {
 }
 
 /// Keeps each child of a node that grew from `was` to `now` at its pack
-/// box on x: the button art a text-drawn tab or title lays around its
-/// words (Classic's `TabNormalButton`, `Stretch` -4/-18 around its 40 px
-/// text) keeps the pack's size and place; only the text box grows.
-fn pin_children(n: &mut SkinNode, was: [i32; 4], now: [i32; 4]) {
+/// box on x (`axis` 0) or y (`axis` 1): the button art a text-drawn tab or
+/// title lays around its words (Classic's `TabNormalButton`, `Stretch`
+/// -4/-18 around its 40 px text) keeps the pack's size and place; only the
+/// text box changes.
+fn pin_children(n: &mut SkinNode, axis: usize, was: [i32; 4], now: [i32; 4]) {
     for c in &mut n.children {
-        let (start, size) = c.x.place(was[2]);
-        let rel = was[0] + start - now[0];
+        let span = if axis == 0 { &mut c.x } else { &mut c.y };
+        let (start, size) = span.place(was[axis + 2]);
+        let rel = was[axis] + start - now[axis];
         if let (Ok(o), Ok(size)) = (i16::try_from(rel), u16::try_from(size)) {
-            c.x = NodeSpan::Fixed {
+            *span = NodeSpan::Fixed {
                 at: Anchor::Start(o),
                 size,
             };
         }
+    }
+}
+
+/// Whether `a` and `b` share a positive area.
+const fn meets(a: [i32; 4], b: [i32; 4]) -> bool {
+    a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3]
+}
+
+/// `t` cut back off `o` on one axis (0 x, 1 y): the larger of the parts
+/// before and after `o`, at least 0 long.
+fn cut_on(t: [i32; 4], o: [i32; 4], axis: usize) -> [i32; 4] {
+    let (s, e) = (t[axis], t[axis] + t[axis + 2]);
+    let before = (s, o[axis].min(e));
+    let after = ((o[axis] + o[axis + 2]).max(s), e);
+    let (a, b) = if before.1 - before.0 >= after.1 - after.0 {
+        before
+    } else {
+        after
+    };
+    let mut c = t;
+    c[axis] = a;
+    c[axis + 2] = (b - a).max(0);
+    c
+}
+
+/// `t` cut off each of `stops` it meets on the axis that keeps it largest
+/// (x on a tie: a single-line label keeps its row).
+fn cut(mut t: [i32; 4], stops: &[[i32; 4]]) -> [i32; 4] {
+    for o in stops {
+        if meets(t, *o) {
+            let (x, y) = (cut_on(t, *o, 0), cut_on(t, *o, 1));
+            t = if y[2] * y[3] > x[2] * x[3] { y } else { x };
+        }
+    }
+    t
+}
+
+/// The span of a node that moved from `was` to `now` (start, length) in a
+/// parent `len` px long, kept on the same anchor where it has one.
+fn respan(span: NodeSpan, len: i32, was: (i32, i32), now: (i32, i32)) -> Option<NodeSpan> {
+    let (ds, de) = (now.0 - was.0, was.0 + was.1 - now.0 - now.1);
+    let size = u16::try_from(now.1).ok()?;
+    let add = |o: i16, d: i32| i16::try_from(i32::from(o) + d).ok();
+    Some(match span {
+        NodeSpan::Stretch { start, end } => NodeSpan::Stretch {
+            start: add(start, ds)?,
+            end: add(end, de)?,
+        },
+        NodeSpan::Fixed {
+            at: Anchor::End(o), ..
+        } => NodeSpan::Fixed {
+            at: Anchor::End(add(o, de)?),
+            size,
+        },
+        NodeSpan::Fixed { .. } => NodeSpan::Fixed {
+            at: Anchor::Start(i16::try_from(span.place(len).0 + ds).ok()?),
+            size,
+        },
+    })
+}
+
+/// Plan SK13: cuts the text node at index path `path` off every press area
+/// and text box it still meets (see [`stops`], the blocking siblings
+/// included), on both axes, even where the pack's arts overlap.
+fn cut_one(
+    nodes: &mut [SkinNode],
+    path: &[usize],
+    parent: [i32; 4],
+    up: &[String],
+    all: &[Obstacle],
+) {
+    let Some((&i, rest)) = path.split_first() else {
+        return;
+    };
+    let b = place(&nodes[i], parent);
+    if !rest.is_empty() {
+        let mut own = up.to_vec();
+        own.push(nodes[i].id.clone());
+        return cut_one(&mut nodes[i].children, rest, b, &own, all);
+    }
+    let row = [b[0], b[1], b[2], b[3].max(1)];
+    let t = cut(row, &stops(&nodes[i], up, all, true));
+    let n = &mut nodes[i];
+    for axis in [0, 1] {
+        if t[axis] == row[axis] && t[axis + 2] == row[axis + 2] {
+            continue;
+        }
+        let was = place(n, parent);
+        let span = if axis == 0 { n.x } else { n.y };
+        let len = parent[axis + 2];
+        let moved = (t[axis] - parent[axis], t[axis + 2]);
+        let from = (was[axis] - parent[axis], was[axis + 2]);
+        if let Some(s) = respan(span, len, from, moved) {
+            if axis == 0 {
+                n.x = s;
+            } else {
+                n.y = s;
+            }
+            pin_children(n, axis, was, place(n, parent));
+        }
+    }
+}
+
+/// The index paths of `nodes`' text-drawing nodes, in tree order.
+fn text_paths(nodes: &[SkinNode], at: &mut Vec<usize>, out: &mut Vec<Vec<usize>>) {
+    for (i, n) in nodes.iter().enumerate() {
+        at.push(i);
+        // A text field keeps its box and stops through its inset
+        // ([`super::inset`]), so its press area stays whole.
+        if draws_text(n) && !is_text(n.role) {
+            out.push(at.clone());
+        }
+        text_paths(&n.children, at, out);
+        at.pop();
     }
 }
 
@@ -331,7 +448,7 @@ fn walk(
         .map(|i| {
             draws_text(&nodes[i])
                 .then(|| {
-                    let extra = stops(&nodes[i], up, all);
+                    let extra = stops(&nodes[i], up, all, false);
                     usable(i, nodes, &boxes, parent, targets, &extra)
                 })
                 .flatten()
@@ -340,7 +457,7 @@ fn walk(
     for ((n, span), was) in nodes.iter_mut().zip(spans).zip(boxes) {
         if let Some(x) = span {
             n.x = x;
-            pin_children(n, was, place(n, parent));
+            pin_children(n, 0, was, place(n, parent));
         }
         let b = place(n, parent);
         let mut own = up.to_vec();
@@ -356,18 +473,19 @@ fn lay_tree(tree: &mut SkinTree, window: (i32, i32)) {
     let mut all = Vec::new();
     obstacles(&tree.root, at, &[], (&targets, None), &mut all);
     walk(&mut tree.root, at, &[], &targets, &all);
+    // Plan SK13: each text, in tree order, then stops at what it still
+    // meets, laid on the boxes the texts before it were cut to.
+    let mut paths = Vec::new();
+    text_paths(&tree.root, &mut Vec::new(), &mut paths);
+    for path in paths {
+        let mut all = Vec::new();
+        obstacles(&tree.root, at, &[], (&targets, None), &mut all);
+        cut_one(&mut tree.root, &path, at, &[], &all);
+    }
 }
 
 /// Serves every text-drawing node of `layout`'s tree and popups its usable
 /// box (see the module doc), laid at the window's minimum size.
 pub fn lay(layout: &mut WindowLayout) {
-    let at = super::target::window(layout);
-    if let Some(tree) = layout.tree.as_mut() {
-        lay_tree(tree, at);
-    }
-    let min_height = layout.min_height;
-    for popup in layout.popups.values_mut() {
-        let at = popup_window(popup, min_height);
-        lay_tree(&mut popup.tree, at);
-    }
+    each_laid(layout, lay_tree);
 }

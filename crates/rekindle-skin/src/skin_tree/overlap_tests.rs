@@ -5,11 +5,13 @@
 //! search field). Two press areas never overlap, even where the pack's arts
 //! do (lead decision: the node drawn above keeps its press area and the one
 //! below loses the part it covers, `target::under`).
-//! A text box over an art the pack itself overlaps it with keeps the pack's
-//! stacking (rule 4) and is not compared.
+//! A text box never overlaps another node's press area or text box either,
+//! even where the pack's arts overlap (plan SK13: the text box stops at it,
+//! `text_box::usable`).
 
 use rekindle_types::dto::skin_tree::{NodeRole, SkinNode, SkinTree};
 
+use super::inset::is_text;
 use super::target::{listens, meet, outer};
 use super::validate::{overlap, Apart, HIT};
 use super::{popup, target, text_box};
@@ -49,7 +51,9 @@ fn walk<'a>(nodes: &'a [SkinNode], parent: [i32; 4], up: &[&'a str], out: &mut V
         }
         // A text the pack lays 0 px tall draws a line from its top (Combat's
         // name `Title`): its rows, at least one, as the text pass lays it.
-        if b[2] > 0 && text_box::draws_text(n) {
+        // A text field with art types its text over the art less its inset
+        // (Alloy's 205 px name field).
+        if b[2] > 0 && (text_box::draws_text(n) || is_text(n.role)) {
             let i = n
                 .inset
                 .map_or((0, 0), |i| (i32::from(i.left), i32::from(i.right)));
@@ -105,8 +109,7 @@ fn overlaps(name: &str, tree: &SkinTree, at: (i32, i32), out: &mut Vec<String>) 
                 };
                 meet(o.area, v.area).is_some_and(|m| meet(m, o.art) != Some(m))
             } else {
-                let presses = pair == (Kind::Press, Kind::Press);
-                overlap(a.area, b.area) && (presses || !overlap(a.art, b.art))
+                overlap(a.area, b.area)
             };
             if over {
                 out.push(format!(

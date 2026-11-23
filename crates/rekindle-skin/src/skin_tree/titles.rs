@@ -50,7 +50,7 @@ use rekindle_image::RgbaImage;
 use rekindle_types::dto::skin::{Insets, SkinError, SkinRule, WindowLayout};
 use rekindle_types::dto::skin_action::{EngineMenu, SkinAction};
 use rekindle_types::dto::skin_layout::PopupLayout;
-use rekindle_types::dto::skin_tree::{NodeGlyph, NodeLabel, NodeRole, SkinNode};
+use rekindle_types::dto::skin_tree::{NodeGlyph, NodeLabel, NodeRole, SkinNode, SkinTree};
 
 use super::cover::{differing, edge_connected, icon_box, seen, ICON_TOLERANCE};
 use crate::package::Package;
@@ -453,18 +453,18 @@ pub(super) fn popup_window(popup: &PopupLayout, window_min_height: u16) -> (i32,
     super::target::window(&super::popup::frame(popup, window_min_height))
 }
 
-/// Runs `pass` over `layout`'s tree and each popup's, each laid at its
-/// window's served minimum (the inset and text-box passes, plan SK5/SK8),
-/// the same window the stylesheet and the targets lay (plan SK11).
-pub(super) fn each_laid(layout: &mut WindowLayout, pass: fn(&mut [SkinNode], [i32; 4])) {
+/// Runs `pass` over `layout`'s tree and each popup's, each in its window's
+/// served minimum (the inset and text-box passes, plan SK5/SK8/SK13), the
+/// same window the stylesheet and the targets lay (plan SK11).
+pub(super) fn each_laid(layout: &mut WindowLayout, pass: fn(&mut SkinTree, (i32, i32))) {
     let at = super::target::window(layout);
     let min_height = layout.min_height;
     if let Some(tree) = layout.tree.as_mut() {
-        pass(&mut tree.root, laid_window(tree.outsets, at));
+        pass(tree, at);
     }
     for popup in layout.popups.values_mut() {
         let at = popup_window(popup, min_height);
-        pass(&mut popup.tree.root, laid_window(popup.tree.outsets, at));
+        pass(&mut popup.tree, at);
     }
 }
 
