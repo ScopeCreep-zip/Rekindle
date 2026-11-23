@@ -114,6 +114,12 @@
  * 4.34 / 21. */
 @layer sec {
   :root {
+    /* The Rekindle mark (plan BR) for the title strip's logo, which the Host
+     * draws as `background: var(--rekindle-…) center / contain no-repeat`.
+     * In this layer, so a skin cannot put its own logo back. */
+    --rekindle-mark: url("../assets/brand/rekindle-mark.svg");
+    --rekindle-mark-small: url("../assets/brand/rekindle-mark-small.svg");
+    --rekindle-wordmark: url("../assets/brand/rekindle-wordmark.svg");
     --sec-font-family: "Segoe UI", "Tahoma", sans-serif;
     --sec-commit-bg: #1565a8;
     --sec-commit-fg: #ffffff;

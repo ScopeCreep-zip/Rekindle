@@ -347,8 +347,8 @@ export interface NodeLabel {
 /** `communities`: the icon tab N4 places; the Rekindle mark (plan BR) on every logo node,
  *  the branded decor and a renamed icon-sized menu title: `rekindleWordmark` (flame and
  *  word, a box at least 15 px tall and over twice as wide), `rekindleMarkSmall` (a box of
- *  16 px or less) or `rekindleMark`. */
-export type NodeGlyph = "communities" | "rekindleMark" | "rekindleMarkSmall" | "rekindleWordmark";
+ *  16 px or less) or `rekindle` (the full mark). */
+export type NodeGlyph = "communities" | "rekindle" | "rekindleMarkSmall" | "rekindleWordmark";
 
 /** `MenuItem`: one item of an engine menu. */
 export interface MenuItem {

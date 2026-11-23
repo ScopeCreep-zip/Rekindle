@@ -190,7 +190,7 @@ const NodeGlyphView: Component<{ glyph: NodeGlyph }> = (props) => (
     </Match>
     {/* The Rekindle mark (plan BR), in full colour, centred in the cover
         with its aspect kept. */}
-    <Match when={props.glyph === "rekindleMark"}>
+    <Match when={props.glyph === "rekindle"}>
       <RekindleMark />
     </Match>
     <Match when={props.glyph === "rekindleMarkSmall"}>
