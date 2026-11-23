@@ -113,12 +113,33 @@ const NodeLabelView: Component<{ label: NodeLabel }> = (props) => {
       ? { "--label-x": `${c[0]}px`, "--label-y": `${c[1]}px`, "--label-w": `${c[2]}px`, "--label-h": `${c[3]}px` }
       : undefined;
   };
+  // A word one size too wide for its box (SK5: "Rekindle" in Symbiosis's
+  // and Alloy's 44-45 px titles at 11 px) is drawn a size smaller; a box too
+  // narrow even then still ellipsizes. Measured at 11 px, again on resize.
+  const [tight, setTight] = createSignal(false);
+  const fitText = (el: HTMLSpanElement): void => {
+    const measure = (): void => {
+      setTight(false);
+      queueMicrotask(() => setTight(el.scrollWidth > el.clientWidth + 0.5));
+    };
+    const ro = new ResizeObserver(measure);
+    ro.observe(el.parentElement ?? el);
+    onCleanup(() => ro.disconnect());
+  };
   return (
     <Show
       when={props.label.glyph}
       fallback={
-        <span class="skin-node-label" data-cover={props.label.cover ? "" : undefined} style={box()} aria-hidden="true">
-          <span class="skin-node-label-text">{props.label.text}</span>
+        <span
+          class="skin-node-label"
+          data-cover={props.label.cover ? "" : undefined}
+          data-tight={tight() ? "" : undefined}
+          style={box()}
+          aria-hidden="true"
+        >
+          <span class="skin-node-label-text" ref={fitText}>
+            {props.label.text}
+          </span>
         </span>
       }
     >
@@ -149,6 +170,15 @@ const NodeGlyphView: Component<{ glyph: NodeGlyph }> = (props) => (
         <path d="M1 18.5c0-2.4 1.8-4.2 4-4.2 1 0 1.9.3 2.6.9-1.2 1-2 2.3-2.3 3.8z" fill="currentColor" opacity="0.8" />
         <circle cx="19" cy="9.5" r="2.3" fill="currentColor" opacity="0.8" />
         <path d="M23 18.5c0-2.4-1.8-4.2-4-4.2-1 0-1.9.3-2.6.9 1.2 1 2 2.3 2.3 3.8z" fill="currentColor" opacity="0.8" />
+      </svg>
+    </Match>
+    <Match when={props.glyph === "rekindle"}>
+      {/* The app's flame: the Rekindle mark, one colour. */}
+      <svg class="skin-node-glyph-svg" viewBox="0 0 24 24" aria-hidden="true">
+        <path
+          d="M12 1.5c.6 3.2 2.6 5 4.4 7 1.9 2.1 3.1 4.3 3.1 7A7.5 7.5 0 0 1 12 23a7.5 7.5 0 0 1-7.5-7.5c0-2.6 1.2-4.6 2.7-6.3.3 1.6 1.1 2.8 2.3 3.5C9.2 8.6 10.3 4.6 12 1.5zm0 11.2c-.9 1.6-2.6 2.8-2.6 4.9a2.6 2.6 0 0 0 5.2 0c0-2.1-1.7-3.3-2.6-4.9z"
+          fill="currentColor"
+        />
       </svg>
     </Match>
   </Switch>
@@ -228,6 +258,12 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
     },
     get "data-state"() {
       return fx()?.state;
+    },
+    // A text field's served inset (plan SK5): its text keeps clear of the
+    // pack's controls laid over it.
+    get style() {
+      const i = n().inset;
+      return i ? { "--field-inset-left": `${i.left}px`, "--field-inset-right": `${i.right}px` } : undefined;
     },
     get "aria-disabled"() {
       return disabled() ? "true" : undefined;

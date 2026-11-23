@@ -43,6 +43,13 @@
     display: flex;
     align-items: center;
   }
+  /* A text field keeps its text inside the inset the Host serves where the
+   * pack lays a control over the field (plan SK5; Symbiosis's notifications
+   * tab over the name's end). */
+  .skin-name,
+  .skin-status {
+    padding-inline: var(--field-inset-left, 0px) var(--field-inset-right, 0px);
+  }
   /* A flex item shrinks below its text only with min-width: 0, so a long
    * name ellipsizes inside the pack's name box instead of running off. */
   .skin-name-text {
@@ -155,6 +162,9 @@
     height: var(--label-h);
     font-size: min(11px, calc(var(--label-h) - 2px));
     background-color: var(--color-xfire-bg-secondary);
+  }
+  .skin-node-label[data-tight] {
+    font-size: min(10px, calc(var(--label-h, 12px) - 2px));
   }
 
   /* A built-in glyph on an icon tab the Host placed (plan SK3): it takes the

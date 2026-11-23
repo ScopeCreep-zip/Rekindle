@@ -304,14 +304,24 @@ export interface ShellNode {
   children?: ShellNode[];
   /** Words the Host draws on a node it placed (plan SK2-N4d): the Communities tab. */
   label?: NodeLabel;
+  /** How far the pack's interactive siblings reach into this text field from each edge at
+   *  the window's served minimum (plan SK5): its text keeps inside them. Absent: none do. */
+  inset?: NodeInset;
+}
+
+/** `NodeInset`: px from the field's left and right edges (plan SK5). */
+export interface NodeInset {
+  left: number;
+  right: number;
 }
 
 /** A Host-placed node's words (`NodeLabel`, plan SK2-N4d). */
 export interface NodeLabel {
   /** The words to draw: "Communities" for N4. */
   text: string;
-  /** [x, y, width, height] in px of the node's own box holding the copied art's baked-in word,
-   *  which the label covers; absent when the art carries no word. */
+  /** [x, y, width, height] in px of the node's own box: the copied art's baked-in word on a
+   *  tab, a renamed menu title's usable box (the node less its drawn frame, plan SK5); the
+   *  label covers it and lays its text in it. Absent when the art carries no word. */
   cover?: [number, number, number, number];
   /** A built-in glyph drawn instead of text (an icon tab, plan SK3), centred in `cover`
    *  (the source icon's box); `text` is then its accessible name and tooltip. */
@@ -319,7 +329,9 @@ export interface NodeLabel {
 }
 
 /** The built-in glyphs the shell draws (`NodeGlyph`). */
-export type NodeGlyph = "communities";
+/** `communities`: the icon tab N4 places; `rekindle`: the app mark on a renamed, icon-sized
+ *  menu title (plan SK5, XGlow's 24x22 file menu). */
+export type NodeGlyph = "communities" | "rekindle";
 
 /** `MenuItem`: one item of an engine menu. */
 export interface MenuItem {
