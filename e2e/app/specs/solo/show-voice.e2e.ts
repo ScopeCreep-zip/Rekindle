@@ -8,7 +8,7 @@
 
 import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, press, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
-import { BUDDY, openSettings } from "../../../walk/nav.ts";
+import { BUDDY, SETTINGS, openSettings } from "../../../walk/nav.ts";
 import { createIdentity, friendsView, importAndKeepSkin, newUser, skinShown, type User } from "../../journeys.ts";
 import { SHOW_VOICE_PACK, showVoicePack } from "../../skin-pack.ts";
 
@@ -27,19 +27,25 @@ describe("Show Voice with no call or voice session", function () {
     const button = await shown(browser, node, NET_WAIT_MS);
     expect(await button.getAttribute("aria-disabled")).not.toBe("true");
     await press(browser, button);
+    // Every toast the window shows, so a failure names what it said instead.
     let said = "";
     await waitUntil(
       async () => {
         said = ((await browser.execute(() =>
-          Array.from(document.querySelectorAll(".toast-item.toast-error")).map((t) => (t.textContent ?? "").trim()).join(" | "),
+          Array.from(document.querySelectorAll(".toast-item")).map((t) => `${t.className}: ${(t.textContent ?? "").trim()}`).join(" | "),
         )) as string);
         return /no call or voice session/.test(said);
       },
       NET_WAIT_MS,
-      "the window never showed the Host's answer",
-    );
+      "the Host's answer",
+    ).catch(() => {
+      throw new Error(`the window never showed the Host's answer; its toasts: ${said || "none"}`);
+    });
     expect(said).toContain("no call or voice session");
     // Still there and pressable: the window says so, the button stays.
     expect(await (await browser.$(node)).isDisplayed()).toBe(true);
+    // The derived skin is still the one in use (its trial was kept).
+    await switchTo(browser, SETTINGS);
+    expect((await (await browser.$(".skin-row-shown .skin-name")).getText()).trim()).toBe(SHOW_VOICE_PACK.name);
   });
 });

@@ -12,6 +12,8 @@ import { type TransferRow, transferCommands } from "../ipc/commands/dto_transfer
 import type { Edge, SkinAction } from "../ipc/commands/dto_skin_tree";
 import type { ShellOp, SkinRun, SkinSelection } from "../ipc/commands/dto_skin_run";
 import { addToast } from "../stores/toast.store";
+import { errorMessage } from "../utils/error";
+import { isCancelled } from "../ipc/commands/dto";
 import { callsState } from "../stores/calls.store";
 import { handleEndDmCall, handleStartDmCall } from "./calls.actions";
 import { handleSetMuted } from "./voice.actions";
@@ -74,7 +76,7 @@ const common: ShellRunner = (op) => {
       return true;
     case "chooseDownloadDest":
       // `transfer_start` asks where to save in Rust; no path reaches the webview.
-      transferCommands.start(op.arg.attachmentId, op.arg.target).catch((e) => addToast(String(e), "error"));
+      transferCommands.start(op.arg.attachmentId, op.arg.target).catch((e) => addToast(errorMessage(e), "error"));
       return true;
     case "openGroupChat":
       handleOpenGroupChat(op.arg.groupId);
@@ -82,7 +84,7 @@ const common: ShellRunner = (op) => {
     case "launchPopup":
       // The shell opens (or closes, when open) the pack popup beside this
       // window; its place and size come from the Host's shell (popup_place.rs).
-      commands.openSkinPopup(op.arg.popup).catch((e) => addToast(String(e), "error"));
+      commands.openSkinPopup(op.arg.popup).catch((e) => addToast(errorMessage(e), "error"));
       return true;
     case "call":
       runCall(op.arg);
@@ -91,10 +93,10 @@ const common: ShellRunner = (op) => {
       // The skin's Show Voice (plan E7.2 A): the call window forward, or the
       // community window on the voice channel the user is in.
       if (op.arg.target.kind === "call") {
-        commands.openCallWindow(op.arg.target.arg.callId).catch((e) => addToast(String(e), "error"));
+        commands.openCallWindow(op.arg.target.arg.callId).catch((e) => addToast(errorMessage(e), "error"));
       } else {
         const { community, channel } = op.arg.target.arg;
-        commands.openCommunityWindow(community, channel).catch((e) => addToast(String(e), "error"));
+        commands.openCommunityWindow(community, channel).catch((e) => addToast(errorMessage(e), "error"));
       }
       return true;
     case "showSettings":
@@ -174,7 +176,9 @@ export async function dispatchSkinAction(node: string, action: SkinAction): Prom
   try {
     answer = await commands.runSkinAction(node, action);
   } catch (e) {
-    addToast(String(e), "error");
+    // The Host's refusal in its words (a CommandError, never "[object
+    // Object]"); a review the user cancelled is no error.
+    if (!isCancelled(e)) addToast(errorMessage(e), "error");
     return;
   }
   if (isSkinRun(answer)) {
@@ -195,7 +199,7 @@ export function sendSkinSelection(selection: SkinSelection | null): Promise<void
   return commands.setSkinSelection(selection).then(
     () => undefined,
     (e) => {
-      addToast(String(e), "error");
+      addToast(errorMessage(e), "error");
     },
   );
 }
