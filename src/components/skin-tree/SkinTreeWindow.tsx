@@ -261,8 +261,13 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
   // A node holding other controls is no button either (Xfire Classic's
   // logo holds its window menu): a button may hold no control (axe
   // nested-interactive). Its pointer triggers still run.
+  // Any node that drags the window on a press is a grip like a drag strip,
+  // whatever its role (SpaceCowboy's frame pieces are decor with leftDown →
+  // dragWindow and doubleClick → maximize): it rendered as a "Maximize"
+  // button, a target and a focus stop the size of the frame.
+  const drags = (): boolean => (n().triggers ?? []).some((t) => t.run.kind === "dragWindow");
   const pressable = (): boolean =>
-    press() !== undefined && !role().kind.startsWith("menu") && role().kind !== "drag" && !holdsControls(n());
+    press() !== undefined && !role().kind.startsWith("menu") && role().kind !== "drag" && !drags() && !holdsControls(n());
   // Inside a menu bar every element is a menu title or presentational
   // (ARIA menubar's required owned elements).
   const inBar = useContext(InBar);
