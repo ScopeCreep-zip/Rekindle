@@ -59,24 +59,27 @@ impl DaemonHandler {
             return;
         }
 
-        // A kick rotates the keys the kicked member holds (plan D20). The
-        // worker checks the sender's authority before acting.
-        if let Some(ControlPayload::Kick { target_pseudonym }) = envelope.as_control() {
-            let request = crate::daemon::mek_rotation::MekRotationRequest::kick(
-                community_id,
-                target_pseudonym.clone(),
-                sender_pseudonym,
-            );
-            if self.mek_rotation_tx.send(request).is_err() {
-                debug!(
-                    community = community_id,
-                    "MEK rotation worker stopped — kick not rotated"
+        // A reaction (plan GI3) is the Host's: its one ingest gates, meters
+        // and journals the event, the same on the desktop's relay path.
+        if let Some(
+            payload @ (ControlPayload::ReactionAdded { .. }
+            | ControlPayload::ReactionRemoved { .. }),
+        ) = envelope.as_control()
+        {
+            if let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) {
+                crate::host::adapters::governance::HostGovernance::new(ctx).ingest_reaction(
+                    community_id,
+                    sender_pseudonym,
+                    lamport_ts,
+                    payload,
                 );
             }
+            return;
         }
 
         // The membership control messages (plan E3.1 B2e): onboarding
-        // answers and a member's own departure.
+        // answers, a member's own departure and a relayed kick (GI3: the
+        // Host checks the kicker's authority, then forgets and rotates).
         if let Some(payload) = envelope.as_control() {
             if let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) {
                 crate::host::adapters::governance::HostGovernance::new(ctx)

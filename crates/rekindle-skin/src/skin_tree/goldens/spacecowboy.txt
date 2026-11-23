@@ -26,7 +26,7 @@ TabHeader TabStrip
     TabServerButton Part target [0, -2, 70, 22] art [0, 2, 70, 20] Spacing
   TabDownloadText Tab(Files) label "Downloads"
     TabDownloadButton Part target [0, -2, 70, 22] art [0, 2, 70, 20] Spacing
-  TabDownloadText.Communities Tab(Communities) label "Communities" target [0, -2, 62, 21] art [0, 2, 62, 19] Spacing
+  TabDownloadText.Communities Tab(Communities) label "Communities" target [0, -4, 62, 20] art [0, 4, 62, 16] Spacing
     TabDownloadButton.Communities Part
 TopButtonBar Group
   Minimize Button target [-5, -5, 20, 24] art [5, 5, 14, 14] Short

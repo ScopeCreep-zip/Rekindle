@@ -97,8 +97,11 @@ impl StreamSender for MekTransferSender {
         if !self.0.member_reads_keys(community, member) {
             return AttemptOutcome::Superseded(DEPARTED.to_owned());
         }
+        // A member whose role reads history is owed every generation (D16,
+        // `key_history.rs`); only one without it is owed just the newest.
         if (self.0.current_key_generation(community, sealed_key.scope))
             .is_some_and(|current| current > generation)
+            && !self.0.member_reads_history(community, member)
         {
             return AttemptOutcome::Superseded(SUPERSEDED.to_owned());
         }

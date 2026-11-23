@@ -155,9 +155,16 @@ impl HostGovernance {
     /// told to the shell, stored in the vault, and every outbox caught up
     /// again. Both hosts' `MekTransfer` handlers install through here
     /// (finding CB3: the desktop's own install started no catch-up).
-    /// Returns whether the cache took it.
+    /// A generation older than the key we send under is a joiner's history
+    /// (plan D16): kept at its own generation, never as the current key
+    /// ([`Self::install_history_key`]). Returns whether the cache took it
+    /// as the current key.
     pub fn install_transferred_mek(&self, community_id: &str, scope: KeyScope, mek: &Mek) -> bool {
         let generation = mek.generation();
+        if (self.current_key_generation(community_id, scope)).is_some_and(|c| c > generation) {
+            self.install_history_key(community_id, scope, mek);
+            return false;
+        }
         let snapshot = MekSnapshot {
             generation,
             key_bytes: *mek.as_bytes(),

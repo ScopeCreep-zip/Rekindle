@@ -117,7 +117,24 @@ impl HostGovernance {
         if entries.is_empty() && exclude.is_none() {
             return;
         }
-        if let Err(error) = self.write_key_drop(community_id, encode(&entries)).await {
+        // Newest generation first (D16 history bundle): the bound is one
+        // subkey value (`MAX_SUBKEY_VALUE_LEN`, Veilid's 32,768 B), so what
+        // fits always holds the key a joiner sends under; an older one past
+        // the bound stays a queued row the call path delivers.
+        let mut entries = entries;
+        entries.sort_by_key(|entry| {
+            std::cmp::Reverse(transfer_of(entry, community_id).map_or(0, |t| t.generation))
+        });
+        let value = encode(&entries);
+        let left = entries.len() - decode(&value).len();
+        if left > 0 {
+            tracing::warn!(
+                community = community_id,
+                left,
+                "key drop full: the older keys past it go by call only"
+            );
+        }
+        if let Err(error) = self.write_key_drop(community_id, value).await {
             tracing::warn!(community = community_id, %error, "key drop not written");
         } else {
             tracing::info!(
@@ -319,10 +336,15 @@ impl HostGovernance {
         let Some(secret) = self.identity_secret_impl() else {
             return;
         };
-        for envelope in decode(value) {
-            let Some(transfer) = transfer_of(envelope, community_id) else {
-                continue;
-            };
+        // Oldest generation first: the first installs as our key and each
+        // newer one raises it, so no older key arrives as history behind a
+        // catch-up that passed its entries (D16, `key_history.rs`).
+        let mut transfers: Vec<MekTransferPayload> = decode(value)
+            .into_iter()
+            .filter_map(|envelope| transfer_of(envelope, community_id))
+            .collect();
+        transfers.sort_by_key(|t| t.generation);
+        for transfer in transfers {
             let Some(scope) = KeyScope::from_wire(transfer.channel_id.as_deref()) else {
                 continue;
             };

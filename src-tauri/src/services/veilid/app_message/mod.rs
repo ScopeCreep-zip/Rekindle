@@ -187,6 +187,25 @@ async fn handle_gossip_envelope(
         }
     }
 
+    // A ring watcher's hint (plan E3.2 S7, GI3) passes the Host's one ingest
+    // (the community gate, the member gate, its signature; this ingress
+    // metered it above) before it is relayed, never relayed first (register
+    // S7l), as the daemon's `dispatch_gossip` orders it.
+    if let Ok(Some(CommunityEnvelope::Control(payload))) =
+        try_decode_community_envelope(&signed.envelope_bytes)
+    {
+        if let rekindle_codec::community::envelope::ControlPayload::HeadAdvanced { hint } = *payload
+        {
+            let passed = state_helpers::host_governance(state).is_ok_and(|host| {
+                host.ingest_head_advanced(community_id, &signed.sender_pseudonym, &hint)
+            });
+            if passed && signed.ttl > 0 {
+                gossip_forward(state, &signed);
+            }
+            return;
+        }
+    }
+
     // §10.6 — channel media is directed, never epidemic: video
     // payloads are excluded from gossip forwarding even if a
     // non-compliant sender ships them with ttl > 0, so honest nodes

@@ -33,6 +33,7 @@ import {
   horizontalOverflow,
   overlaps,
   spacingOffScale,
+  targetsMet,
   textOverflows,
   type TreeFit,
   treeFit,
@@ -91,6 +92,11 @@ export interface GeometryOptions {
 /** How the window's skin tree sits in it (`treeFit`), or null when it lays none. */
 export async function treeFitIn(b: Browser, rootSelector: string): Promise<TreeFit | null> {
   return inPage(b, rootSelector, treeFit, null);
+}
+
+/** Of `sels`, the skin tree controls meeting WCAG 2.5.8 at their press box (`targetsMet`). */
+export async function targetsMetIn(b: Browser, rootSelector: string, sels: string[]): Promise<string[]> {
+  return inPage(b, rootSelector, targetsMet, sels);
 }
 
 /** Every check's findings, keyed by check; `{}` when the window passes. */

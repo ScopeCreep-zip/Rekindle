@@ -39,11 +39,11 @@ popup MainMenuPopup
         TabServerButton Part target [0, 0, 110, 21] art [0, 0, 110, 25] Short
       TabDownloadText Tab(Files) label "Downloads"
         TabDownloadButton Part
-      TabDownloadText.Communities Tab(Communities) label "Communities" target [0, 0, 109, 15] art [0, 0, 109, 21] Short
+      TabDownloadText.Communities Tab(Communities) label "Communities" target [0, 0, 109, 15] art [0, 0, 109, 15] Short
         TabDownloadButton.Communities Part
     ButtonArea ButtonBar
       FriendsButtons ButtonRow(Friends)
-        AddFriendButton Button target [0, -1, 110, 22] art [0, 1, 110, 21] Short
+        AddFriendButton Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
           AddFriendButtonText Part label "Add Friend"
         ChatButton Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
           ChatButtonText Part label "Chat"
@@ -52,7 +52,7 @@ popup MainMenuPopup
         InfoButton1 Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
           InfoButton1.InfoButtonText Part label "Profile"
       ServersButtons ButtonRow(Servers)
-        AddServerButton Button target [0, -1, 110, 22] art [0, 1, 110, 21] Short
+        AddServerButton Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
           AddServerButtonText Part label "Add Server"
         RefreshButton Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
           RefreshButtonText Part label "Refresh"
@@ -61,7 +61,7 @@ popup MainMenuPopup
         InfoButton2 Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
           InfoButton2.InfoButtonText Part label "Profile"
       FilesButtons ButtonRow(Files)
-        FindButton Button target [0, -1, 110, 22] art [0, 1, 110, 21] Short
+        FindButton Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
           FindButtonText Part label "Find"
         DownloadButton Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
           DownloadButtonText Part label "Start"
