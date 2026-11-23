@@ -183,6 +183,15 @@
     font-size: min(11px, calc(var(--label-h) - 2px));
     background-color: var(--color-xfire-bg-secondary);
   }
+  /* A branded node's cover (plan BR: a logo node, its whole art box) is not
+   * filled: the Host serves such a node no art of its own, so the art under
+   * it (its parent's) shows, and the mark sits on it as the pack's logo sat.
+   * The list ground filled it as a visible box wherever the frame differs
+   * from the list (Combat's white box, r26 shots). The wordmark's word is
+   * logotype, outside WCAG 1.4.3's contrast minimum. */
+  .skin-node-glyph[data-cover]:has(> .skin-node-glyph-brand) {
+    background-color: transparent;
+  }
   .skin-node-label[data-tight] {
     font-size: min(10px, calc(var(--label-h, 12px) - 2px));
   }
