@@ -10,7 +10,7 @@ use rekindle_types::dto::skin_tree::{Anchor, Edge, NodeRole, NodeSpan, SkinTree,
 
 use super::roles::{role, Facts, Role};
 use super::tests::{acts, checked, fixed, good, layout, n, refused, whole};
-use super::{css, passes, validate};
+use super::{css, passes};
 
 /// Lead decision 6: interactive nodes may overlap, stacked by `Z` then the
 /// pack's document order; a node another wholly covers is unreachable.
@@ -50,32 +50,10 @@ fn rule_4_overlap_stacks_by_document_order() {
     assert!(e.contains("t.Min") && e.contains("rule 4"), "{e}");
 }
 
-/// Lead decision 6: an edge grip's hit area yields to an interactive node
-/// it overlaps, never past the grip's own box.
+/// Lead decision 6, plan SK11: an edge grip is served a target box that
+/// stops at the target box of a button it lies above, and holds its art.
 #[test]
-fn rule_4_an_edge_grips_hit_area_yields() {
-    // A 5 px left-edge strip and a button 10 px in: the 24 px area stops at
-    // the button.
-    assert_eq!(
-        validate::grip_area([0, 0, 5, 300], (200, 300), &[[10, 100, 30, 16]]),
-        [0, 0, 10, 300]
-    );
-    // A button over the strip itself (lead decision 10): the strip is cut
-    // short of it along its length, the larger piece kept, and grown.
-    assert_eq!(
-        validate::grip_area([0, 0, 5, 300], (200, 300), &[[2, 100, 30, 16]]),
-        [0, 116, 24, 184]
-    );
-    // A bottom strip: trimmed upward-facing, toward the bottom edge.
-    assert_eq!(
-        validate::grip_area([0, 295, 200, 5], (200, 300), &[[50, 270, 30, 20]]),
-        [0, 290, 200, 10]
-    );
-    // Nothing near: the full 24 px area.
-    assert_eq!(
-        validate::grip_area([0, 0, 5, 300], (200, 300), &[]),
-        validate::hit_area([0, 0, 5, 300], (200, 300))
-    );
+fn rule_4_an_edge_grips_target_stops_at_a_button() {
     let mut t = good();
     t.push(acts(
         n("ResizeLeft", NodeRole::Button, fixed(0, 5), whole()),
@@ -88,26 +66,27 @@ fn rule_4_an_edge_grips_hit_area_yields() {
         SkinAction::ChatFriend,
     ));
     assert_eq!(checked(t.clone(), &BTreeMap::new()), Ok(()));
-    let out = css::tree_css(
-        ".app-frame",
-        &SkinTree {
-            outsets: rekindle_types::dto::skin::Insets {
-                top: 0,
-                right: 0,
-                bottom: 0,
-                left: 0,
-            },
-            root: t,
-        },
-        &layout(None),
-        &BTreeMap::new(),
-        "x",
-    )
-    .unwrap();
-    assert!(
-        out.contains("[data-skin-node=\"ResizeLeft\"]::before {\n    content: \"\";\n    position: absolute;\n    left: 0px;\n    top: 0px;\n    width: 10px;"),
-        "{out}"
+    let served = |t: Vec<rekindle_types::dto::skin_tree::SkinNode>| {
+        let mut l = layout(Some(frame_tree(t)));
+        super::target::nodes(&mut l);
+        let tree = l.tree.unwrap();
+        let grip = tree.root.iter().find(|n| n.id == "ResizeLeft").unwrap();
+        grip.target.expect("the 5 px edge grip serves a target")
+    };
+    // Below the button (z -2 under 0): the full 24 px strip, the button
+    // stacked above it keeps its press.
+    let low = served(t.clone());
+    assert_eq!(
+        (low.area[0], low.area[1], low.area[2]),
+        (0, 0, 24),
+        "{low:?}"
     );
+    assert_eq!(low.art[..3], [0, 0, 5], "{low:?}");
+    // Above the button (pack `Z=1`): cut at the button's target box, x 10.
+    let last = t.len() - 2;
+    t[last].z = 1;
+    let high = served(t);
+    assert_eq!((high.area[0], high.area[2]), (0, 10), "{high:?}");
 }
 
 fn frame_tree(root: Vec<rekindle_types::dto::skin_tree::SkinNode>) -> SkinTree {
@@ -144,17 +123,19 @@ fn rule_4_a_grip_yields_by_effective_z() {
     t.push(grip);
     assert_eq!(checked(t.clone(), &BTreeMap::new()), Ok(()));
     let tree = frame_tree(t.clone());
-    let out = css::tree_css(".app-frame", &tree, &layout(None), &BTreeMap::new(), "x").unwrap();
+    let out = css::tree_css(".app-frame", &tree, &BTreeMap::new(), "x").unwrap();
     let w = i32::from(layout(None).min_width);
     let boxes = tree.boxes(w, 300);
     let at = |id: &str| boxes.iter().find(|(n, _)| n.id == id).map(|(_, b)| *b);
     let (grip, close) = (at("ResizeUp").unwrap(), at("CloseBox").unwrap());
-    let want = format!(
-        "[data-skin-node=\"ResizeUp\"]::before {{\n    content: \"\";\n    position: absolute;\n    left: 0px;\n    top: 0px;\n    width: {}px;",
-        close[0] - grip[0]
+    // Plan SK11: the grip's own box is its pointer target, stacked below
+    // the close box (z 3 x 3 - 2 = 4 under 9), never a `::before` area.
+    assert!(grip[3] >= 24 && close[0] > grip[0], "{grip:?} {close:?}");
+    assert!(out.contains("height: 24px; z-index: 4;\n"), "{out}");
+    assert!(
+        !out.contains("::before") && !out.contains("pointer-events"),
+        "{out}"
     );
-    assert!(out.contains(&want), "{out}");
-    assert!(out.contains("z-index: 3; pointer-events: none;"), "{out}");
     // The close box lowered below the grip: the grip wholly covers it.
     if let Some(c) = t[0].children.first_mut() {
         c.z = 0;

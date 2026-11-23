@@ -128,7 +128,7 @@ fn css_lays_one_rule_per_node_with_its_target_box() {
     }));
     super::target::nodes(&mut l);
     let tree = l.tree.clone().unwrap();
-    let out = css::tree_css(".app-frame", &tree, &l, &BTreeMap::new(), "x").unwrap();
+    let out = css::tree_css(".app-frame", &tree, &BTreeMap::new(), "x").unwrap();
     assert_eq!(
         out.matches(" {\n    position: absolute;").count(),
         6,

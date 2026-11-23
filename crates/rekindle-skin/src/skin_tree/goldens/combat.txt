@@ -59,10 +59,10 @@ FilesButtons ButtonRow(Files)
     StopButton Button
   FilesButtons.AddDownloadTab Group
     StartDownloadButton Button
-TopOuterEdge Decor
-LeftOuterEdge Decor
-BottomOuterEdge Decor
-RightOuterEdge Decor
+TopOuterEdge Decor target [0, 0, 340, 24] art [0, 0, 340, 5] Size
+LeftOuterEdge Decor target [0, 0, 24, 490] art [0, 0, 11, 490] Size
+BottomOuterEdge Decor target [0, -19, 340, 24] art [0, 19, 340, 5] Size
+RightOuterEdge Decor target [-13, 0, 24, 490] art [13, 0, 11, 490] Size
 XfireLogo Logo
 InfoViewSwitch Button
   InfoViewSwitchIn Part
@@ -76,6 +76,6 @@ popup CombatInfoSkin
   InfoView InfoView
   InfoGripperTR Decor
   InfoGripperBR Decor
-  ResizeRight Button
+  ResizeRight Button target [-13, 0, 18, 370] art [13, 0, 5, 370] Spacing
   JoinButton Button
   JoinChatButton Button

@@ -9,8 +9,8 @@
 //!   interactive only through a part (a text-drawn tab over the
 //!   `TabNormalButton` part that carries its press) lets the press fall
 //!   through to that part, so a target box on it would catch nothing and
-//!   its part serves its own. It is not an edge grip (its own box takes no pointer events; its
-//!   `::before` grip area stays, [`super::validate::grip_area`]) and is not
+//!   its part serves its own. It is not a resize grip (served by
+//!   [`grip_targets`], after every other candidate) and is not
 //!   text-sized (a menu, tab or edit field sized by its text at render,
 //!   [`text_sized`]), with a box, laid at the window's served minimum.
 //! - Its wanted box is its art box grown to 24 px on each short axis about
@@ -39,7 +39,7 @@ use rekindle_types::dto::skin::WindowLayout;
 use rekindle_types::dto::skin_action::NodeTrigger;
 use rekindle_types::dto::skin_tree::{NodeRole, NodeTarget, SkinNode, SkinTree, TargetRule};
 
-use super::validate::{hit_area, overlap, text_sized, Apart, HIT};
+use super::validate::{hit_area, overlap, text_sized, Apart, Stack, HIT};
 
 /// One candidate laid in the window.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -246,6 +246,73 @@ pub fn targets(tree: &SkinTree, window: (i32, i32)) -> Vec<Laid> {
         .collect()
 }
 
+/// Cuts `g`, the wanted box of a grip at `a`, back toward `a` on each
+/// side whose part beyond the art meets `o` (a listener's target box the
+/// grip would lie above): to `o`'s near edge when `o` lies wholly past the
+/// art on that side, else to the art's edge. The box always holds the art.
+fn cut_bands(g: &mut [i32; 4], a: [i32; 4], o: [i32; 4]) {
+    for axis in 0..2 {
+        let (a_lo, a_hi) = (a[axis], a[axis] + a[axis + 2]);
+        let (o_lo, o_hi) = (o[axis], o[axis] + o[axis + 2]);
+        let mut before = *g;
+        before[axis + 2] = a_lo - g[axis];
+        if before[axis + 2] > 0 && overlap(before, o) {
+            let start = if o_hi <= a_lo { o_hi } else { a_lo };
+            g[axis + 2] -= start - g[axis];
+            g[axis] = start;
+        }
+        let mut after = *g;
+        after[axis] = a_hi;
+        after[axis + 2] = g[axis] + g[axis + 2] - a_hi;
+        if after[axis + 2] > 0 && overlap(after, o) {
+            let end = if o_lo >= a_hi { o_lo } else { a_hi };
+            g[axis + 2] = end - g[axis];
+        }
+    }
+}
+
+/// The target of every resize grip of `tree` in `window` (plan SK11, lead
+/// decision: a frameless window resizes only by dragging its frame, so a
+/// grip is a pointer target like any control). Its wanted box is its art
+/// grown to 24 px on each short axis ([`hit_area`]: a corner 24 x 24, an
+/// edge 24 px thick along its whole length), cut ([`cut_bands`]) where it
+/// meets the target box of a candidate in `laid` that it would lie above
+/// ([`Stack::yields`] false); one it yields to stacks above it and keeps
+/// its press. A grip never cuts another grip: a corner stacks above the
+/// edges ([`super::validate::stack_z`]). Its rule: `Size` at 24 x 24, else
+/// `Spacing` when the 24 px circle on its box meets no candidate's target
+/// box, else `Short`.
+#[must_use]
+pub fn grip_targets(tree: &SkinTree, window: (i32, i32), laid: &[Laid]) -> Vec<Laid> {
+    let apart = Apart::new(&tree.root);
+    let stack = Stack::new(&tree.root);
+    let r2 = i64::from(HIT) * i64::from(HIT);
+    tree.boxes(window.0, window.1)
+        .into_iter()
+        .filter(|(n, b)| n.resize_edge().is_some() && !text_sized(n) && b[2] > 0 && b[3] > 0)
+        .map(|(n, art)| {
+            let shown: Vec<&Laid> = laid.iter().filter(|l| !apart.apart(&n.id, &l.id)).collect();
+            let mut g = hit_area(art, window);
+            for l in shown.iter().filter(|l| !stack.yields(&n.id, &l.id)) {
+                cut_bands(&mut g, art, l.area);
+            }
+            let rule = if !small(g) {
+                TargetRule::Size
+            } else if shown.iter().all(|l| far(g, l.area) >= r2) {
+                TargetRule::Spacing
+            } else {
+                TargetRule::Short
+            };
+            Laid {
+                id: n.id.clone(),
+                art,
+                area: g,
+                rule,
+            }
+        })
+        .collect()
+}
+
 /// The target `l` serves its node: none for a node already 24 x 24.
 fn serve(l: &Laid) -> Option<NodeTarget> {
     if !small(l.art) {
@@ -282,13 +349,15 @@ pub fn window(layout: &WindowLayout) -> (i32, i32) {
 pub fn nodes(layout: &mut WindowLayout) {
     let at = window(layout);
     if let Some(tree) = layout.tree.as_mut() {
-        let laid = targets(tree, at);
+        let mut laid = targets(tree, at);
+        laid.extend(grip_targets(tree, at, &laid));
         set(&mut tree.root, &laid);
     }
     let min_height = layout.min_height;
     for popup in layout.popups.values_mut() {
         let at = window(&super::popup::frame(popup, min_height));
-        let laid = targets(&popup.tree, at);
+        let mut laid = targets(&popup.tree, at);
+        laid.extend(grip_targets(&popup.tree, at, &laid));
         set(&mut popup.tree.root, &laid);
     }
 }

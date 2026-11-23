@@ -252,17 +252,16 @@ pub fn frame_parts(
         trees.push(TreeSheet {
             window,
             popup: None,
-            css: crate::skin_tree::css::tree_css(&root, tree, layout, images, base)?,
+            css: crate::skin_tree::css::tree_css(&root, tree, images, base)?,
         });
         // Each popup the window launches: its frame carries
         // `data-skin-popup="<name>"` (plan SK2 P1).
         for (name, popup) in &layout.popups {
             let root = format!(".app-frame[data-skin-popup=\"{name}\"]");
-            let frame = crate::skin_tree::popup::frame(popup, layout.min_height);
             trees.push(TreeSheet {
                 window,
                 popup: Some(name.clone()),
-                css: crate::skin_tree::css::tree_css(&root, &popup.tree, &frame, images, base)?,
+                css: crate::skin_tree::css::tree_css(&root, &popup.tree, images, base)?,
             });
         }
     }

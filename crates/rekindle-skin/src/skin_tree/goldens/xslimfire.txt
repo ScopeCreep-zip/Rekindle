@@ -19,14 +19,14 @@ BaseBoard Group
       StopDownloadButton Button
       ExecuteDownloadButton Button
       DownloadInfoButton Button
-ResizeTopLeft Button
-ResizeTopRight Button
-ResizeBottomLeft Button
-ResizeBottomRight Button
-ResizeUp Button
-ResizeLeft Button
-ResizeRight Button
-ResizeDown Button
+ResizeTopLeft Button target [0, 0, 24, 24] art [0, 0, 8, 8] Size
+ResizeTopRight Button target [-3, 0, 11, 24] art [3, 0, 8, 8] Short
+ResizeBottomLeft Button target [0, -14, 24, 24] art [0, 14, 10, 10] Size
+ResizeBottomRight Button target [-14, -14, 24, 24] art [14, 14, 10, 10] Size
+ResizeUp Button target [0, 0, 342, 24] art [0, 0, 342, 5] Size
+ResizeLeft Button target [0, 0, 20, 492] art [0, 0, 5, 492] Spacing
+ResizeRight Button target [-19, 0, 24, 492] art [19, 0, 5, 492] Size
+ResizeDown Button target [0, -11, 342, 16] art [0, 11, 342, 5] Spacing
 Middle Decor
 StatusWrapper Group
 StatusEdit StatusText target [0, -5, 180, 23] art [0, 5, 180, 12] Short
@@ -71,4 +71,4 @@ popup MainInfoViewPopup
   InfoViewButton Button target [-9, 0, 24, 42] art [9, 0, 15, 42] Size
   InfoView InfoView
   InfoBackDrop Decor
-  InfoResizeRight Button
+  InfoResizeRight Button target [-15, 0, 24, 385] art [15, 0, 9, 385] Size

@@ -60,6 +60,17 @@ pub enum Edge {
     BottomRight,
 }
 
+impl Edge {
+    /// Whether the edge is a corner (it resizes on both axes).
+    #[must_use]
+    pub const fn corner(self) -> bool {
+        matches!(
+            self,
+            Self::TopLeft | Self::TopRight | Self::BottomLeft | Self::BottomRight
+        )
+    }
+}
+
 /// An activity lamp (Combat's `DownloadBlink`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

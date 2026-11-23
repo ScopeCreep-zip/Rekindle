@@ -61,10 +61,10 @@ ButtonHolder ButtonBar
     FilesButtons.TabAddButton Group
       SearchFiles Button target [0, -1, 239, 24] art [0, 1, 239, 22] Size
         BigBrowseFileText Part label "Find"
-ResizeUp Button
-ResizeLeft Button
-ResizeRight Button
-ResizeDown Button
+ResizeUp Button target [0, 0, 407, 24] art [0, 0, 407, 10] Size
+ResizeLeft Button target [0, 0, 24, 260] art [0, 0, 10, 260] Size
+ResizeRight Button target [0, 0, 10, 260] art [0, 0, 10, 260] Short
+ResizeDown Button target [0, -14, 407, 24] art [0, 14, 407, 10] Size
 GripperBR Button
 popup Infoskin
   XfireTopRow Decor
@@ -73,7 +73,7 @@ popup Infoskin
   InfoViewButton Button target [-11, 0, 24, 60] art [11, 0, 13, 60] Size
   BackDrop Decor
   InfoView InfoView
-  ResizeRight Button
+  ResizeRight Button target [-7, 0, 24, 260] art [7, 0, 10, 260] Size
   ButtonHolder Group
     JoinChatTab ButtonBar
       HostChatButton Button target [0, -1, 59, 24] art [0, 1, 59, 22] Size

@@ -58,10 +58,10 @@ ButtonHolder ButtonBar
 IVButtonHolder Decor
 RightDetail Decor
 MAINBG Decor
-ResizeUp Button
-ResizeLeft Button
-ResizeRight Button
-ResizeDown Button
+ResizeUp Button target [0, 0, 376, 24] art [0, 0, 376, 10] Size
+ResizeLeft Button target [0, 0, 20, 430] art [0, 0, 10, 430] Spacing
+ResizeRight Button target [-14, 0, 24, 430] art [14, 0, 10, 430] Size
+ResizeDown Button target [0, -14, 376, 24] art [0, 14, 376, 10] Size
 GripperBR Button
 popup Infoskin
   XfireTopRow Decor
@@ -70,7 +70,7 @@ popup Infoskin
   InfoViewButton Button target [0, -1, 41, 24] art [0, 1, 41, 21] Size
   BackDrop Decor
   InfoView InfoView
-  ResizeRight Button
+  ResizeRight Button target [-14, 0, 24, 410] art [14, 0, 10, 410] Size
   ButtonHolder Group
     JoinChatTab ButtonBar
       HostChatButton Button target [0, -1, 75, 24] art [0, 1, 75, 21] Size

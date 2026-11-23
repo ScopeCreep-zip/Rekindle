@@ -52,7 +52,7 @@ StatusMiddle Decor
 StatusRight Decor
 Status StatusText target [0, -5, 186, 24] art [0, 5, 186, 14] Size
 ViewInfo Button target [-3, -3, 24, 24] art [3, 3, 17, 17] Size
-Gripper Button
+Gripper Button target [-4, -4, 24, 24] art [4, 4, 20, 20] Size
 popup XGlowInfoSkin
   Top Decor
   Left Decor
@@ -60,7 +60,7 @@ popup XGlowInfoSkin
   Right Decor
   InfoView InfoView
   Bottom Decor
-  Gripper Button
+  Gripper Button target [-6, -4, 24, 24] art [6, 4, 18, 20] Size
   Bump Decor
   Voice Button target [0, -3, 51, 24] art [0, 3, 51, 18] Size
   Join Button target [0, -3, 51, 24] art [0, 3, 51, 18] Size

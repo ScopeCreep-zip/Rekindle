@@ -19,8 +19,9 @@ use std::collections::BTreeMap;
 use rekindle_types::dto::skin::{
     SkinBase, SkinContrast, SkinError, SkinManifest, SkinRule, SkinVariant, TokenValue,
 };
+use rekindle_types::dto::skin_action::{MenuRegistry, PackUrl, SkinAction};
 use rekindle_types::dto::skin_library::{SkinPaletteColour, SkinTileMask, SkinWindowFrame};
-use rekindle_types::dto::skin_tree::SkinShell;
+use rekindle_types::dto::skin_tree::{SkinNode, SkinShell};
 
 use crate::generate::tui_colours;
 use crate::output::tokens_css;
@@ -222,11 +223,12 @@ fn shells(
             .filter(|h| !shared.contains(h))
             .collect()
     };
+    let menus = MenuRegistry::for_pack(&m.name, pack_link(m).as_ref());
     trees
         .iter()
         .map(|t| {
             let layout = m.windows.get(&t.window).ok_or_else(|| unreadable("tree"))?;
-            let shell = match &t.popup {
+            let mut shell = match &t.popup {
                 None => {
                     let tree = layout.tree.as_ref().ok_or_else(|| unreadable("tree"))?;
                     let min = shape::min_window(layout).ok_or_else(|| unreadable("minimum"))?;
@@ -239,9 +241,34 @@ fn shells(
                     popup.shell(t.window, name, min, own(&t.css))
                 }
             };
+            shell.menus = menus.clone();
             Ok(shell)
         })
         .collect()
+}
+
+/// The pack's own link (plan SK10): the first `LaunchUrl` a node of its
+/// trees runs (Total Chaos's logo, `AppLaunchUrl(http://www.totalchaos.org.uk/)`),
+/// in window then document order; the Help menu serves it as
+/// "<pack>'s website" ([`MenuRegistry::for_pack`]).
+fn pack_link(m: &SkinManifest) -> Option<PackUrl> {
+    fn find(nodes: &[SkinNode]) -> Option<PackUrl> {
+        nodes.iter().find_map(|n| {
+            n.triggers
+                .iter()
+                .find_map(|t| match &t.run {
+                    SkinAction::LaunchUrl(u) => Some(u.clone()),
+                    _ => None,
+                })
+                .or_else(|| find(&n.children))
+        })
+    }
+    m.windows.values().find_map(|l| {
+        l.tree
+            .as_ref()
+            .and_then(|t| find(&t.root))
+            .or_else(|| l.popups.values().find_map(|p| find(&p.tree.root)))
+    })
 }
 
 /// Every distinct image href under `base` that `css` draws, in order: read
@@ -517,19 +544,42 @@ mod tests {
     }
 
     /// Design §2.6: a pressed menu's items come from the served shell, so
-    /// every shell a built-in serves carries Rekindle's menu registry.
+    /// every shell a built-in serves carries Rekindle's menu registry for
+    /// that pack (plan SK10: with "<pack>'s website" in Help when the pack
+    /// declares a link, as Total Chaos's logo does; Rekindle's menus
+    /// unchanged otherwise).
     #[test]
     fn a_served_shell_carries_the_registrys_menus() {
-        let registry = rekindle_types::dto::skin_action::MenuRegistry::rekindle();
+        use rekindle_types::dto::skin_action::EngineMenu;
+        let registry = MenuRegistry::rekindle();
         assert!(!registry.menus.is_empty());
+        let mut linked = Vec::new();
         for pack in &builtin::PACKS {
             let c = validate::run(pack.bytes).unwrap();
+            let m = manifest::served(&package::read(&c.bytes).unwrap()).unwrap();
+            let want = MenuRegistry::for_pack(&m.name, pack_link(&m).as_ref());
             let sheet = stylesheet(&c.bytes, &c.address()).unwrap();
             assert!(!sheet.shells.is_empty(), "{}", pack.id);
             for shell in &sheet.shells {
-                assert_eq!(shell.menus, registry, "{} {:?}", pack.id, shell.window);
+                assert_eq!(shell.menus, want, "{} {:?}", pack.id, shell.window);
+            }
+            let help = want.items(EngineMenu::Help);
+            let site = help.iter().find(|i| i.label.ends_with("'s website"));
+            if let Some(site) = site {
+                linked.push((pack.id, site.label.clone(), site.run.clone()));
+            } else {
+                assert_eq!(want, registry, "{}: a menu without a link", pack.id);
             }
         }
+        let chaos = linked.iter().find(|(id, ..)| *id == "total-chaos");
+        let (_, label, run) = chaos.expect("Total Chaos's Help menu serves its website");
+        assert_eq!(label, "Total Chaos's website");
+        assert_eq!(
+            *run,
+            SkinAction::LaunchUrl(PackUrl {
+                url: "http://www.totalchaos.org.uk/".to_owned()
+            })
+        );
     }
 
     #[test]

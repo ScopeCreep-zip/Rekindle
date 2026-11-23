@@ -259,7 +259,6 @@ fn rule_5_a_text_sized_menu_is_sized_at_render() {
             },
             root: t,
         },
-        &layout(None),
         &BTreeMap::new(),
         "x",
     )

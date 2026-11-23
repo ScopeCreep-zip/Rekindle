@@ -16,13 +16,13 @@ MainBackground Decor
   WndXfire Logo
   StatusEdit StatusText target [0, -4, 232, 24] art [0, 4, 232, 15] Size
   StatusBtn StatusList target [-2, -6, 20, 24] art [2, 6, 12, 12] Short
-  ResizeRight Button
-  ResizeBottom Button
+  ResizeRight Button target [-16, 0, 24, 400] art [16, 0, 8, 400] Size
+  ResizeBottom Button target [0, -16, 288, 24] art [0, 16, 288, 8] Size
   ResizeBottomRight Button
 popup MainInfoViewPopup
   MainInfoBackground Decor
     InfoView InfoView
-    ResizeRight Button
+    ResizeRight Button target [-16, 0, 24, 360] art [16, 0, 8, 360] Size
 popup MainMenuPopup
   MainMenuBackground Decor
     MenuBar MenuBar

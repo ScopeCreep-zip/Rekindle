@@ -64,10 +64,10 @@ TabButtonArea ButtonBar
     StopDownloadButton Button target [0, -3, 54, 23] art [0, 3, 54, 18] Spacing
     ExecuteDownloadButton Button target [0, -3, 54, 23] art [0, 3, 54, 18] Spacing
     DownloadInfoButton Button target [0, -3, 54, 23] art [0, 3, 54, 18] Spacing
-ResizeLeft Button
-ResizeRight Button
-ResizeUp Button
-ResizeDown Button
+ResizeLeft Button target [0, 0, 5, 555] art [0, 0, 5, 555] Spacing
+ResizeRight Button target [-1, 0, 6, 555] art [1, 0, 5, 555] Short
+ResizeUp Button target [0, 0, 335, 5] art [0, 0, 335, 5] Short
+ResizeDown Button target [0, -9, 335, 24] art [0, 9, 335, 5] Size
 BRGripper Button
 popup InfoPopup
   InfoViewBG Decor
@@ -79,7 +79,7 @@ popup InfoPopup
   ListViewBG Decor
   BackDrop Decor
   InfoView InfoView
-  ResizeRight Button
+  ResizeRight Button target [-9, 0, 14, 470] art [9, 0, 5, 470] Short
   JoinButton Button target [0, -3, 54, 24] art [0, 3, 54, 18] Size
   JoinChatTab ButtonBar
     HostChatButton Button target [0, -3, 54, 24] art [0, 3, 54, 18] Size

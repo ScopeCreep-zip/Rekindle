@@ -5,9 +5,9 @@
 //! its normal, hover, down and disabled states; an interactive node smaller than 24×24 is its
 //! served target box (plan SK7, [`super::target`]: margins grow the box,
 //! a transparent border of the art's inset keeps the art, its children and
-//! its text at their own place and size); an edge grip gets a `::before`
-//! grip area that yields to the interactive nodes it overlaps
-//! ([`grip_area`], lead decision 6); every node is
+//! its text at their own place and size), a resize grip's too (plan SK11:
+//! its node box is its pointer target, stacked below the interactive nodes
+//! it meets, lead decision 6); every node is
 //! stacked by its `Z` and then the pack's document order (the shell nests
 //! the divs in that order, so a later sibling draws above); a text-sized node is as wide and tall as
 //! its text (`max-content`); the views node draws opaque (lead decision 3:
@@ -18,14 +18,13 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use rekindle_types::dto::skin::RegionState;
-use rekindle_types::dto::skin::WindowLayout;
 use rekindle_types::dto::skin_tree::{
     Anchor, NodePieces, NodeRole, NodeSpan, NodeTarget, SkinNode, SkinTree,
 };
 
 use super::pieces::{self, Band};
 
-use super::validate::{grip_area, stack_z, text_sized, Stack};
+use super::validate::{stack_z, text_sized};
 use crate::regions::css::href;
 
 fn axis(s: NodeSpan, (start, end, len): (&str, &str, &str), text: bool) -> String {
@@ -79,38 +78,6 @@ struct Ctx<'a> {
     root: &'a str,
     images: &'a BTreeMap<String, Vec<u8>>,
     base: &'a str,
-    boxes: BTreeMap<&'a str, [i32; 4]>,
-    window: (i32, i32),
-    /// The interactive nodes that are not grips, with their target boxes.
-    live: Vec<(&'a str, [i32; 4])>,
-    stack: Stack<'a>,
-}
-
-/// The `::before` grip area of an edge grip, at its offset from the node's
-/// box: its own box takes no pointer events (lead decision 10), only this
-/// area, which leaves the target boxes of the nodes it yields to, does.
-fn grip_rule(out: &mut String, sel: &str, n: &SkinNode, ctx: &Ctx<'_>) {
-    if n.resize_edge().is_none() || !n.interactive() || text_sized(n) {
-        return;
-    }
-    let Some(area) = ctx.boxes.get(n.id.as_str()) else {
-        return;
-    };
-    let yields: Vec<_> = ctx
-        .live
-        .iter()
-        .filter(|(id, _)| ctx.stack.yields(&n.id, id))
-        .map(|(_, b)| *b)
-        .collect();
-    let hit = grip_area(*area, ctx.window, &yields);
-    let _ = writeln!(
-        out,
-        "  {sel}::before {{\n    content: \"\";\n    position: absolute;\n    left: {}px;\n    top: {}px;\n    width: {}px;\n    height: {}px;\n    pointer-events: auto;\n  }}",
-        hit[0] - area[0],
-        hit[1] - area[1],
-        hit[2],
-        hit[3]
-    );
 }
 
 /// One state's background layers on the node itself and on its `::after`
@@ -234,9 +201,6 @@ fn node(out: &mut String, n: &SkinNode, ctx: &Ctx<'_>) -> Option<()> {
     if n.role == NodeRole::Views {
         decls.push_str(" background-color: var(--color-xfire-bg-dark);");
     }
-    if n.resize_edge().is_some() {
-        decls.push_str(" pointer-events: none;");
-    }
     let outer = match n.target {
         Some(t) => {
             target(&mut decls, n, t);
@@ -277,7 +241,6 @@ fn node(out: &mut String, n: &SkinNode, ctx: &Ctx<'_>) -> Option<()> {
             None => {}
         }
     }
-    grip_rule(out, &sel, n, ctx);
     for c in &n.children {
         node(out, c, ctx)?;
     }
@@ -285,37 +248,16 @@ fn node(out: &mut String, n: &SkinNode, ctx: &Ctx<'_>) -> Option<()> {
 }
 
 /// The rules of `tree` under `root` (the window's `.app-frame` selector),
-/// laid in `layout`'s window; `None` for an art image `images` lacks
+/// laid from its spans and served targets at any window size; `None` for an art image `images` lacks
 /// (never for a validated package).
 #[must_use]
 pub fn tree_css(
     root: &str,
     tree: &SkinTree,
-    layout: &WindowLayout,
     images: &BTreeMap<String, Vec<u8>>,
     base: &str,
 ) -> Option<String> {
-    let o = layout.outsets;
-    let w = i32::from(layout.min_width) + i32::from(o.left) + i32::from(o.right);
-    let h = i32::from(layout.min_height) + i32::from(o.top) + i32::from(o.bottom);
-    let boxes = tree.boxes(w, h);
-    let live = boxes
-        .iter()
-        .filter(|(n, _)| n.interactive() && n.resize_edge().is_none())
-        .map(|(n, b)| {
-            let area = n.target.map_or(*b, |t| super::target::outer(*b, t));
-            (n.id.as_str(), area)
-        })
-        .collect();
-    let ctx = Ctx {
-        root,
-        images,
-        base,
-        boxes: boxes.iter().map(|(n, b)| (n.id.as_str(), *b)).collect(),
-        window: (w, h),
-        live,
-        stack: Stack::new(&tree.root),
-    };
+    let ctx = Ctx { root, images, base };
     // The shell's tree container (`.skin-tree`) is the pack's window: the
     // whole window less the outsets every root node is laid in.
     let to = tree.outsets;

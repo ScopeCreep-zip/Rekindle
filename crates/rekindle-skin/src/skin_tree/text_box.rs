@@ -45,7 +45,7 @@ use rekindle_types::dto::skin::WindowLayout;
 use rekindle_types::dto::skin_tree::{Anchor, NodeSpan, SkinNode, SkinTree};
 
 use super::inset::is_text;
-use super::titles::{laid_window, place};
+use super::titles::{laid_window, place, popup_window};
 
 /// Each small interactive node's target box on the pack's boxes, relative
 /// to its art: `[dx, dy, w, h]` by node id.
@@ -260,19 +260,17 @@ fn walk(nodes: &mut [SkinNode], parent: [i32; 4], targets: &Targets) {
 /// box (see the module doc), laid at the window's minimum size.
 pub fn lay(layout: &mut WindowLayout) {
     let at = super::target::window(layout);
-    let min = [layout.min_width, layout.min_height];
     if let Some(tree) = layout.tree.as_mut() {
         let targets = targets(tree, at);
-        walk(&mut tree.root, laid_window(tree.outsets, min), &targets);
+        walk(&mut tree.root, laid_window(tree.outsets, at), &targets);
     }
     let min_height = layout.min_height;
     for popup in layout.popups.values_mut() {
-        let at = super::target::window(&super::popup::frame(popup, min_height));
+        let at = popup_window(popup, min_height);
         let targets = targets(&popup.tree, at);
-        let min = [popup.min_width, popup.min_height];
         walk(
             &mut popup.tree.root,
-            laid_window(popup.tree.outsets, min),
+            laid_window(popup.tree.outsets, at),
             &targets,
         );
     }

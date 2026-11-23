@@ -550,6 +550,26 @@ impl MenuRegistry {
         Self { menus }
     }
 
+    /// Rekindle's menus for the active pack named `pack` (plan SK10,
+    /// decision 49): [`Self::rekindle`], with one more Help item,
+    /// "<pack>'s website", running the pack's own link `site` (its logo's
+    /// `LaunchUrl`, which is pointer-only once the logo is no button around
+    /// the window menu), so a keyboard user reaches it too. No item when the
+    /// pack declares no link.
+    #[must_use]
+    pub fn for_pack(pack: &str, site: Option<&PackUrl>) -> Self {
+        let mut reg = Self::rekindle();
+        if let Some(site) = site {
+            if let Some(help) = reg.menus.iter_mut().find(|m| m.menu == EngineMenu::Help) {
+                help.items.push(apart(item(
+                    &format!("{pack}'s website"),
+                    SkinAction::LaunchUrl(site.clone()),
+                )));
+            }
+        }
+        reg
+    }
+
     /// `menu`'s items (empty for a [`Self::FEATURE_GAPS`] menu).
     #[must_use]
     pub fn items(&self, menu: EngineMenu) -> &[MenuItem] {
@@ -573,6 +593,26 @@ mod tests {
             assert_eq!(reg.items(menu).is_empty(), gap, "{menu:?}");
             assert_eq!(reg.menus.iter().filter(|m| m.menu == menu).count(), 1);
         }
+    }
+
+    /// Plan SK10: a pack that declares a link gets "<pack>'s website" last
+    /// in Help, running that link; a pack without one gets Rekindle's menus.
+    #[test]
+    fn a_packs_link_is_served_in_the_help_menu() {
+        use super::{PackUrl, SkinAction};
+        let site = PackUrl {
+            url: "http://www.totalchaos.org.uk/".to_owned(),
+        };
+        let reg = MenuRegistry::for_pack("Total Chaos", Some(&site));
+        let last = reg.items(EngineMenu::Help).last().unwrap();
+        assert_eq!(last.label, "Total Chaos's website");
+        assert_eq!(last.run, SkinAction::LaunchUrl(site));
+        let plain = MenuRegistry::rekindle();
+        assert_eq!(
+            reg.items(EngineMenu::Help).len(),
+            plain.items(EngineMenu::Help).len() + 1
+        );
+        assert_eq!(MenuRegistry::for_pack("Onyx", None), plain);
     }
 
     /// Lead decision 7: only the file menu is renamed ("Xfire" → "Rekindle").
