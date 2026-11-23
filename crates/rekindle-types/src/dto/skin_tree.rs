@@ -245,13 +245,18 @@ pub enum NodeGlyph {
 /// and no other undersized target's circle (the criterion's spacing
 /// exception); `Short`, neither holds (the pack lays its neighbours too
 /// close): a pack-layout finding, served with the box the node could grow
-/// to.
+/// to. `Frame`: a window-drag area ([`SkinNode::drag_area`]), served its
+/// pointer area with the holes cut over the controls it meets but no 2.5.8
+/// rule (plan SK11 lead decision): the criterion's targets are controls,
+/// and a title bar or a window's ground is no control (no OS sets a
+/// minimum for it). A resize grip is a control and takes the rule.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TargetRule {
     Size,
     Spacing,
     Short,
+    Frame,
 }
 
 /// The target box the Host serves a small interactive node (plan SK7, WCAG

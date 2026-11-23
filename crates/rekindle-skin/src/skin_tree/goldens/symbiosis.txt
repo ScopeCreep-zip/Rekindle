@@ -1,11 +1,11 @@
 ResizeGripperTL Button target [0, 0, 24, 24] art [0, 0, 10, 10] Size
 ResizeTop Button target [0, 0, 335, 24] art [0, 0, 335, 10] Size
-ResizeGripperTR Button target [-7, 0, 24, 24] art [7, 0, 10, 10] Short
+ResizeGripperTR Button target [-14, 0, 24, 24] art [14, 0, 10, 10] Short
 ResizeL Button target [0, 0, 24, 535] art [0, 0, 10, 535] Size
-ResizeR Button target [-7, 0, 24, 535] art [7, 0, 10, 535] Size
+ResizeR Button target [-14, 0, 24, 535] art [14, 0, 10, 535] Size
 ResizeGripperBL Button target [0, -14, 24, 24] art [0, 14, 10, 10] Size
 ResizeBottom Button target [0, -14, 335, 24] art [0, 14, 335, 10] Size
-ResizeGripperBR Button target [-7, -14, 24, 24] art [7, 14, 10, 10] Size
+ResizeGripperBR Button target [-14, -14, 24, 24] art [14, 14, 10, 10] Size
 WindowDraggerTop Drag
 TopRow Decor
 LeftSide Decor
@@ -106,7 +106,7 @@ TabsButtonsContainer ButtonBar
     NotificationsButtonBar.Separator2 Decor
 MainInfoViewButton Button target [-5, 0, 18, 115] art [5, 0, 13, 115] Spacing
 popup MainInfoViewPopup
-  MainInfoResizeR Button target [-7, 0, 24, 509] art [7, 0, 10, 509] Size
+  MainInfoResizeR Button target [-14, 0, 24, 509] art [14, 0, 10, 509] Size
   MainInfoTopRow Decor
   MainInfoLeftSide Decor
   MainInfoBackground Decor

@@ -52,7 +52,7 @@ StatusMiddle Decor
 StatusRight Decor
 Status StatusText target [0, -5, 186, 24] art [0, 5, 186, 14] Size
 ViewInfo Button target [-3, -3, 24, 24] art [3, 3, 17, 17] Size
-Gripper Button target [-4, -4, 24, 24] art [4, 4, 20, 20] Size
+Gripper Button target [-4, -4, 24, 24] art [4, 4, 20, 20] Short
 popup XGlowInfoSkin
   Top Decor
   Left Decor

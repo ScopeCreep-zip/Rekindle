@@ -16,7 +16,7 @@ TopButtonBar Group
   MinimizeBox Button target [-4, -4, 20, 24] art [4, 4, 16, 16] Short
   MaximizeBox Button target [0, -4, 16, 24] art [0, 4, 16, 16] Short
   CloseBox Button target [0, -4, 20, 24] art [0, 4, 16, 16] Short
-Middle Decor
+Middle Decor target [0, 0, 394, 8] art [0, 0, 394, 8] Frame
 InfoViewButton Button target [-11, 0, 24, 60] art [11, 0, 13, 60] Size
 TabbedControl Views
   BuddyView View(Friends)
@@ -35,7 +35,7 @@ TabHeader TabStrip
     TabDownloadButton Part target [0, -2, 64, 24] art [0, 2, 64, 20] Size
   TabDownloadText.Communities Tab(Communities) label "Communities" cover [6, 3, 48, 9] target [0, -4, 60, 24] art [0, 4, 60, 15] Size
     TabDownloadButton.Communities Part
-Bottom Decor
+Bottom Decor target [0, 0, 394, 170] art [0, 0, 394, 170] Frame
 AdArea AdArea
   AdView Part
 ButtonHolder ButtonBar
@@ -61,19 +61,19 @@ ButtonHolder ButtonBar
     FilesButtons.TabAddButton Group
       SearchFiles Button target [0, -1, 239, 24] art [0, 1, 239, 22] Size
         BigBrowseFileText Part label "Find"
-ResizeUp Button target [0, 0, 407, 24] art [0, 0, 407, 10] Size
+ResizeUp Button target [0, 0, 407, 24] art [0, 0, 407, 10] Short
 ResizeLeft Button target [0, 0, 24, 260] art [0, 0, 10, 260] Size
-ResizeRight Button target [-7, 0, 24, 260] art [7, 0, 10, 260] Size
+ResizeRight Button target [-14, 0, 24, 260] art [14, 0, 10, 260] Size
 ResizeDown Button target [0, -14, 407, 24] art [0, 14, 407, 10] Size
-GripperBR Button
+GripperBR Button target [1, 1, 24, 24] art [-1, -1, 25, 25] Short
 popup Infoskin
-  XfireTopRow Decor
-  XfireMiddleRow Decor
-  XfireBottomRow Decor
+  XfireTopRow Decor target [0, 0, 137, 126] art [0, 0, 137, 126] Frame
+  XfireMiddleRow Decor target [0, 0, 137, 8] art [0, 0, 137, 8] Frame
+  XfireBottomRow Decor target [0, 0, 137, 126] art [0, 0, 137, 126] Frame
   InfoViewButton Button target [-11, 0, 24, 60] art [11, 0, 13, 60] Size
   BackDrop Decor
   InfoView InfoView
-  ResizeRight Button target [-7, 0, 24, 260] art [7, 0, 10, 260] Size
+  ResizeRight Button target [-14, 0, 24, 260] art [14, 0, 10, 260] Size
   ButtonHolder Group
     JoinChatTab ButtonBar
       HostChatButton Button target [0, -1, 59, 24] art [0, 1, 59, 22] Size

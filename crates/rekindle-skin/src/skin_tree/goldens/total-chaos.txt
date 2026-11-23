@@ -1,8 +1,8 @@
 MainTitleBar Drag
-  TopLeft Decor target [-4, 0, 24, 46] art [4, 0, 16, 46] Short
-  TopRight Decor target [-4, 0, 24, 46] art [4, 0, 16, 46] Short
+  TopLeft Decor target [0, 0, 24, 24] art [0, 0, 16, 46] Short
+  TopRight Decor target [-8, 0, 24, 24] art [8, 0, 16, 46] Short
   Logo Logo target [0, -7, 24, 24] art [0, 7, 23, 9] Size
-  Title Decor
+  Title Decor target [0, 0, 206, 52] art [0, 0, 206, 52] Frame
   Minimize Button target [-6, -6, 18, 24] art [6, 6, 12, 12] Short
   Maximize Button target [0, -6, 12, 24] art [0, 6, 12, 12] Short
   Close Button target [0, -6, 18, 24] art [0, 6, 12, 12] Short
@@ -26,8 +26,8 @@ Content Group
     DownloadView View(Files)
     TabbedControl.Communities View(Communities)
 BottomBar Group
-  BottomLeft Decor
-  BottomRight Decor
+  BottomLeft Decor target [0, 17, 24, 24] art [0, -17, 60, 41] Size
+  BottomRight Decor target [37, 17, 24, 24] art [-37, -17, 61, 41] Size
   BottomCenter Decor
     TCLink Button target [0, -8, 113, 24] art [0, 8, 113, 8] Size
   TabButtonArea ButtonBar
@@ -50,7 +50,7 @@ popup InfoPopup
   XfireTopRow Decor
   InfoMiddle Decor
     InfoTopLeft Decor
-    InfoTopRight Decor
+    InfoTopRight Decor target [9, 0, 24, 195] art [-9, 0, 33, 195] Size
     InfoBG Decor
       InfoOutline Decor
         InfoView InfoView

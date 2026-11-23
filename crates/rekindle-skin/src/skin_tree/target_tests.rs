@@ -160,6 +160,17 @@ fn every_builtin_interactive_node_meets_size_or_spacing() {
                 let laid = target::targets(tree, at);
                 for g in target::grip_targets(tree, at, &laid) {
                     seen += 1;
+                    // Plan SK11 lead decision: a drag area is no control
+                    // (`Frame`, no 2.5.8 rule, never listed); a resize grip
+                    // is one and takes the rule.
+                    assert_eq!(
+                        g.rule == TargetRule::Frame,
+                        grip_edge(tree, &g.id).is_none(),
+                        "{} {window:?}{popup}: {} {:?}",
+                        b.id,
+                        g.id,
+                        g.rule
+                    );
                     if g.rule == TargetRule::Short {
                         short.push(format!(
                             "{} {window:?}{popup}: {} art {:?} target {:?} (grip)",
@@ -420,8 +431,8 @@ fn every_builtin_grip_is_a_served_target() {
         }
     }
     // SpaceCowboy's four resize edges and its corner grip (its frame
-    // corners and side pieces are Decor art, no listener): the side edges
-    // run past the list's small controls and stay pinned short.
+    // corners and side pieces are drag areas, no control): each band lies
+    // on the window's frame side, clear of the list's small controls.
     let rule = |id: &str| cowboy.iter().find(|(g, _)| g == id).map(|(_, r)| *r);
     assert_eq!(cowboy.len(), 5, "{cowboy:?}");
     for (id, want) in [
@@ -485,6 +496,7 @@ fn onyx_top_left_drag_area_leaves_the_friends_tab_its_centre() {
         .into_iter()
         .find(|g| g.laid.id == "TopLeft")
         .expect("TopLeft is served a pointer area with holes");
+    assert_eq!(drag.laid.rule, TargetRule::Frame, "{:?}", drag.laid);
     let (cx, cy) = (2 * tab[0] + tab[2], 2 * tab[1] + tab[3]);
     let holds = |r: [i32; 4]| {
         2 * r[0] <= cx && cx < 2 * (r[0] + r[2]) && 2 * r[1] <= cy && cy < 2 * (r[1] + r[3])

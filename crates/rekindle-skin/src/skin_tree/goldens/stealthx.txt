@@ -1,4 +1,4 @@
-MainBackground Decor
+MainBackground Decor target [0, 0, 288, 400] art [0, 0, 288, 400] Frame
   MainBackgroundCol Decor
   MenuButton Button target [-4, 0, 24, 89] art [4, 0, 15, 89] Size
   InfoViewButton Button target [-8, 0, 24, 89] art [8, 0, 15, 89] Size
@@ -17,14 +17,14 @@ MainBackground Decor
   StatusEdit StatusText target [0, -4, 232, 24] art [0, 4, 232, 15] Size
   StatusBtn StatusList target [-2, -6, 20, 24] art [2, 6, 12, 12] Short
   ResizeRight Button target [-16, 0, 24, 400] art [16, 0, 8, 400] Size
-  ResizeBottom Button target [0, -16, 288, 24] art [0, 16, 288, 8] Size
-  ResizeBottomRight Button
+  ResizeBottom Button target [0, -16, 288, 24] art [0, 16, 288, 8] Short
+  ResizeBottomRight Button target [0, 0, 24, 24] art [0, 0, 24, 24] Short
 popup MainInfoViewPopup
-  MainInfoBackground Decor
+  MainInfoBackground Decor target [0, 0, 250, 360] art [0, 0, 250, 360] Frame
     InfoView InfoView
     ResizeRight Button target [-16, 0, 24, 360] art [16, 0, 8, 360] Size
 popup MainMenuPopup
-  MainMenuBackground Decor
+  MainMenuBackground Decor target [0, 0, 114, 360] art [0, 0, 114, 360] Frame
     MenuBar MenuBar
       XfireMenuText MenuTitle label "Rekindle"
         FileMenu Part

@@ -19,6 +19,7 @@ pub mod skin_action;
 pub mod skin_draft;
 pub mod skin_layout;
 pub mod skin_library;
+pub mod skin_menu;
 pub mod skin_run;
 pub mod skin_signals;
 pub mod skin_title;

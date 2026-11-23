@@ -1,7 +1,8 @@
-symbiosis Main: ResizeGripperTR art [345, 0, 10, 10] target [338, 0, 24, 24] (grip)
+symbiosis Main: ResizeGripperTR art [345, 0, 10, 10] target [331, 0, 24, 24] (grip)
 symbiosis Main: ButtonMaximize art [307, 8, 18, 16] target [304, 4, 22, 24]
 symbiosis Main: ButtonClose art [327, 8, 18, 16] target [326, 4, 22, 24]
 symbiosis Main: StatusChanger art [332, 105, 18, 18] target [332, 102, 21, 24]
+xfire-classic Main: GripperTopRight art [333, 36, 25, 44] target [334, 36, 24, 24] (grip)
 xfire-classic Main: CloseBox art [297, 22, 18, 17] target [297, 19, 21, 24]
 xfire-classic Main: DownArrow art [276, 408, 16, 14] target [276, 403, 20, 24]
 combat Main: DownArrow art [269, 62, 20, 20] target [269, 60, 22, 24]
@@ -14,8 +15,6 @@ onyx Main: Close art [362, 5, 15, 15] target [361, 1, 21, 20]
 onyx Main: FileMenu art [10, 110, 12, 22] target [4, 109, 19, 24]
 onyx Main: ToolsMenu art [24, 110, 12, 22] target [23, 109, 14, 24]
 onyx Main: HelpMenu art [38, 110, 12, 22] target [37, 109, 15, 24]
-spacecowboy Main: ResizeLeft art [15, 0, 5, 555] target [6, 0, 24, 555] (grip)
-spacecowboy Main: ResizeRight art [311, 0, 5, 555] target [302, 0, 24, 555] (grip)
 spacecowboy Main: DownArrow art [273, 447, 15, 18] target [273, 445, 20, 23]
 spacecowboy Main: Minimize art [257, 45, 14, 14] target [252, 40, 20, 24]
 spacecowboy Main: Maximize art [274, 45, 14, 14] target [273, 40, 16, 24]
@@ -23,7 +22,8 @@ spacecowboy Main: Close art [291, 45, 14, 14] target [290, 40, 20, 24]
 spacecowboy Main: FileMenu art [26, 72, 6, 1] target [17, 61, 21, 24]
 spacecowboy Main: ToolsMenu art [44, 72, 6, 1] target [38, 61, 18, 24]
 spacecowboy Main: HelpMenu art [62, 72, 6, 1] target [56, 61, 21, 24]
-spacecowboy Main popup InfoPopup: ResizeRight art [213, 0, 5, 470] target [204, 0, 24, 470] (grip)
+stealthx Main: ResizeBottom art [112, 392, 288, 8] target [112, 376, 288, 24] (grip)
+stealthx Main: ResizeBottomRight art [376, 376, 24, 24] target [376, 376, 24, 24] (grip)
 stealthx Main: WndClose art [367, 7, 12, 12] target [366, 1, 19, 24]
 stealthx Main: WndMax art [352, 7, 12, 12] target [351, 1, 14, 24]
 stealthx Main: WndMin art [337, 7, 12, 12] target [331, 1, 19, 24]
@@ -44,8 +44,8 @@ stealthx Main popup MainMenuPopup: ExecuteButton art [2, 239, 110, 21] target [2
 stealthx Main popup MainMenuPopup: HostChatButton art [2, 260, 110, 21] target [2, 260, 110, 23]
 stealthx Main popup MainMenuPopup: JoinChatButton art [2, 260, 110, 21] target [2, 260, 110, 23]
 stealthx Main popup MainMenuPopup: LeaveChatButton art [2, 260, 110, 21] target [2, 260, 110, 23]
-total-chaos Main: TopLeft art [11, 6, 16, 46] target [7, 6, 24, 46] (grip)
-total-chaos Main: TopRight art [442, 6, 16, 46] target [438, 6, 24, 46] (grip)
+total-chaos Main: TopLeft art [11, 6, 16, 46] target [11, 6, 24, 24] (grip)
+total-chaos Main: TopRight art [442, 6, 16, 46] target [434, 6, 24, 24] (grip)
 total-chaos Main: Minimize art [409, 11, 12, 12] target [403, 5, 18, 24]
 total-chaos Main: Maximize art [421, 11, 12, 12] target [421, 5, 12, 24]
 total-chaos Main: Close art [433, 11, 12, 12] target [433, 5, 18, 24]
@@ -60,7 +60,10 @@ xslimfire Main: HelpMenu art [172, 23, 54, 12] target [172, 17, 54, 23]
 alloy Main: MinimizeBox art [296, 13, 18, 18] target [293, 10, 21, 24]
 alloy Main: MaximizeBox art [314, 13, 18, 18] target [314, 10, 18, 24]
 alloy Main: CloseBox art [332, 13, 18, 18] target [332, 10, 21, 24]
+simple-x Main: ResizeUp art [0, 0, 407, 10] target [0, 0, 407, 24] (grip)
+simple-x Main: GripperBR art [369, 235, 25, 25] target [370, 236, 24, 24] (grip)
 simple-x Main: MinimizeBox art [338, 5, 16, 16] target [334, 1, 20, 24]
 simple-x Main: MaximizeBox art [355, 5, 16, 16] target [355, 1, 16, 24]
 simple-x Main: CloseBox art [372, 5, 16, 16] target [372, 1, 20, 24]
+xglow Main: Gripper art [267, 359, 20, 20] target [263, 355, 24, 24] (grip)
 xglow Main: DownArrow art [19, 233, 17, 17] target [16, 230, 23, 24]

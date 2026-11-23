@@ -372,8 +372,12 @@ pub struct Grip {
 /// or drag area is no press control to a grip; a drag area yields to a
 /// grip).
 ///
-/// Its rule: `Size` while 24 x 24 of the area is left, else `Spacing` when
-/// the 24 px circle on it meets no listening node's box, else `Short`.
+/// A grip's rule (WCAG 2.5.8: a grip is a control): `Size` while 24 x 24
+/// of the area is left, else `Spacing` when the 24 px circle on it meets
+/// no listening node's box, else `Short` (a control the pack lays over its
+/// band takes that stretch). A drag area's rule is `Frame` (lead decision:
+/// a window-drag area is no control, so 2.5.8 sets it no size or spacing,
+/// and it is never a short-list finding).
 #[must_use]
 pub fn grips(tree: &SkinTree, window: (i32, i32), laid: &[Laid]) -> Vec<Grip> {
     let apart = Apart::new(&tree.root);
@@ -443,7 +447,9 @@ pub fn grips(tree: &SkinTree, window: (i32, i32), laid: &[Laid]) -> Vec<Grip> {
             if !grip && holes.is_empty() {
                 return None;
             }
-            let rule = if free_square(g, &holes) {
+            let rule = if !grip {
+                TargetRule::Frame
+            } else if free_square(g, &holes) {
                 TargetRule::Size
             } else if shown.iter().all(|o| far(g, *o) >= r2) {
                 TargetRule::Spacing

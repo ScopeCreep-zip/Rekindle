@@ -1,13 +1,13 @@
-TopLeft Decor
-Top Decor
-TopRight Decor
+TopLeft Decor target [0, 0, 16, 34] art [0, 0, 16, 34] Frame
+Top Decor target [0, 0, 299, 34] art [0, 0, 299, 34] Frame
+TopRight Decor target [0, 0, 20, 34] art [0, 0, 20, 34] Frame
 SCLogo Decor
-LeftEdge Decor
-RightEdge Decor
-Middle Decor
-BottomLeft Decor
-Bottom Decor
-BottomRight Decor
+LeftEdge Decor target [0, 0, 16, 468] art [0, 0, 16, 468] Frame
+RightEdge Decor target [0, 0, 20, 468] art [0, 0, 20, 468] Frame
+Middle Decor target [0, 0, 299, 468] art [0, 0, 299, 468] Frame
+BottomLeft Decor target [0, 0, 16, 53] art [0, 0, 16, 53] Frame
+Bottom Decor target [0, 0, 299, 53] art [0, 0, 299, 53] Frame
+BottomRight Decor target [0, 0, 20, 53] art [0, 0, 20, 53] Frame
 AdAreaBG AdArea
   AdArea Part
 ExpandButton Button target [-4, 0, 24, 47] art [4, 0, 20, 47] Size
@@ -64,22 +64,22 @@ TabButtonArea ButtonBar
     StopDownloadButton Button target [0, -3, 54, 23] art [0, 3, 54, 18] Spacing
     ExecuteDownloadButton Button target [0, -3, 54, 23] art [0, 3, 54, 18] Spacing
     DownloadInfoButton Button target [0, -3, 54, 23] art [0, 3, 54, 18] Spacing
-ResizeLeft Button target [-9, 0, 24, 555] art [9, 0, 5, 555] Short
-ResizeRight Button target [-9, 0, 24, 555] art [9, 0, 5, 555] Short
-ResizeUp Button target [0, -9, 335, 24] art [0, 9, 335, 5] Size
-ResizeDown Button target [0, -9, 335, 24] art [0, 9, 335, 5] Size
-BRGripper Button
+ResizeLeft Button target [0, 0, 24, 555] art [0, 0, 5, 555] Size
+ResizeRight Button target [-19, 0, 24, 555] art [19, 0, 5, 555] Size
+ResizeUp Button target [0, 0, 335, 24] art [0, 0, 335, 5] Size
+ResizeDown Button target [0, -19, 335, 24] art [0, 19, 335, 5] Size
+BRGripper Button target [14, 14, 24, 24] art [-14, -14, 38, 38] Size
 popup InfoPopup
-  InfoViewBG Decor
-  InfoViewTop Decor
+  InfoViewBG Decor target [0, 0, 240, 470] art [0, 0, 240, 470] Frame
+  InfoViewTop Decor target [0, 0, 217, 1] art [0, 0, 217, 1] Frame
   InfoViewLeft Decor
-  InfoViewMiddle Decor
-  InfoViewRight Decor
-  InfoViewBottom Decor
+  InfoViewMiddle Decor target [0, 0, 217, 468] art [0, 0, 217, 468] Frame
+  InfoViewRight Decor target [0, 0, 22, 468] art [0, 0, 22, 468] Frame
+  InfoViewBottom Decor target [0, 0, 217, 1] art [0, 0, 217, 1] Frame
   ListViewBG Decor
   BackDrop Decor
   InfoView InfoView
-  ResizeRight Button target [-9, 0, 24, 470] art [9, 0, 5, 470] Short
+  ResizeRight Button target [-19, 0, 24, 470] art [19, 0, 5, 470] Size
   JoinButton Button target [0, -3, 54, 24] art [0, 3, 54, 18] Size
   JoinChatTab ButtonBar
     HostChatButton Button target [0, -3, 54, 24] art [0, 3, 54, 18] Size
