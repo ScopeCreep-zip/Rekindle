@@ -18,21 +18,26 @@ type View = "friends" | "communities";
 
 /** The control for `view`: its box inside its parent's, and its own words. */
 async function controlFacts(view: View): Promise<{ inStrip: boolean; text: string; art: number[]; strip: number[] } | null> {
-  return (await browser.execute((v: string) => {
+  return (await browser.execute(async (v: string) => {
     const n = Array.from(document.querySelectorAll<HTMLElement>(`[data-skin-role="tab:${v}"]`)).find(
       (e) => e.getBoundingClientRect().width > 0,
     );
     if (!n) return null;
     // Its art box, not its box: SK7 grows a small control's box to a 24 px
-    // target about its art (the art on the padding box), past a 16 px strip.
-    const b = n.getBoundingClientRect();
-    const cs = getComputedStyle(n);
-    const r = {
-      left: b.left + parseFloat(cs.paddingLeft),
-      right: b.right - parseFloat(cs.paddingRight),
-      top: b.top + parseFloat(cs.paddingTop),
-      bottom: b.bottom - parseFloat(cs.paddingBottom),
+    // target about its art, past a 16 px strip. The served target names the
+    // art's rect inside that box (NodeTarget.art [x, y, w, h]).
+    type Node = { id: string; target?: { art: [number, number, number, number] }; children?: Node[] };
+    const w = window as unknown as { __TAURI_INTERNALS__: { invoke(c: string, a: unknown): Promise<{ value: { shells?: { root: Node[] }[] } }> } };
+    let art: [number, number, number, number] | undefined;
+    const find = (x: Node): void => {
+      if (x.id === n.dataset.skinNode) art = x.target?.art;
+      (x.children ?? []).forEach(find);
     };
+    for (const sh of (await w.__TAURI_INTERNALS__.invoke("get_skin", { id: null })).value.shells ?? []) sh.root.forEach(find);
+    const b = n.getBoundingClientRect();
+    const r = art
+      ? { left: b.left + art[0], top: b.top + art[1], right: b.left + art[0] + art[2], bottom: b.top + art[1] + art[3] }
+      : { left: b.left, top: b.top, right: b.right, bottom: b.bottom };
     const p = n.parentElement?.getBoundingClientRect();
     const inStrip = !!p && r.left >= p.left - 1 && r.right <= p.right + 1 && r.top >= p.top - 1 && r.bottom <= p.bottom + 1;
     const round = (v: number): number => Math.round(v * 10) / 10;
