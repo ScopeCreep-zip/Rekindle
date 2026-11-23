@@ -1,15 +1,19 @@
 // Plan E7.14 for SK2-N4's window fit (round 24): a tree-laid window is held
 // to its skin's served frame minimum (min_* plus outsets, shape::fit). A
 // window narrower than a skin needs grows to it when the skin is applied; a
-// user's larger window is never shrunk by a skin change; and the window cannot
-// be resized below the skin's minimum (the OS clamps to the min size the shell
-// set).
+// user's larger window is never shrunk by a skin change; and the size a skin
+// grows the window to is the minimum the Host serves for it. A user's drag
+// below that minimum is the OS's to refuse (the min size the shell sets);
+// WebDriver's resize is no drag and macOS does not clamp it (Tauri set_size,
+// r24 896e58096: 200 px kept), so what the spec drives is the shell's own
+// promise: a window found below its skin's minimum is grown back to it.
 
 import { browser, expect } from "@wdio/globals";
 import { shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
 import { BUDDY, openSettings } from "../../../walk/nav.ts";
 import { applySkin, createIdentity, newUser, type User } from "../../journeys.ts";
 import { builtinPacks } from "../../skin-pack.ts";
+import { treeMinimum } from "../../windows.ts";
 
 const packName = (file: string): string => {
   const pack = builtinPacks().find((p) => p.file === file);
@@ -42,6 +46,11 @@ describe("a skin's window size (SK2-N4 fit)", function () {
     await applySkin(browser, me, packName("total-chaos"));
     await waitUntil(async () => (await buddySize()).width > before.width, 10_000, "the window did not grow to Total Chaos");
     const grown = await buddySize();
+    // It grew to the minimum the Host serves for Total Chaos's tree (SK4), no further.
+    const served = await treeMinimum(browser);
+    if (!served) throw new Error("Total Chaos lays no tree in the buddy list");
+    const inner = (await browser.execute(() => ({ width: window.innerWidth, height: window.innerHeight }))) as { width: number; height: number };
+    expect(inner.width).toBe(served.width);
 
     // The user makes the window larger still; a skin with a smaller frame keeps it.
     await switchTo(browser, BUDDY);
@@ -54,11 +63,12 @@ describe("a skin's window size (SK2-N4 fit)", function () {
     expect(kept.width).toBeGreaterThanOrEqual(larger.width);
     expect(kept.height).toBeGreaterThanOrEqual(larger.height);
 
-    // Back on Total Chaos, a resize below its frame stops at its minimum.
-    await applySkin(browser, me, packName("total-chaos"));
+    // A window below a skin's minimum is grown back to it when that skin
+    // is applied: squeezed under Symbiosis, Total Chaos restores its size.
     await switchTo(browser, BUDDY);
     await browser.setWindowSize(200, 300);
-    const clamped = await buddySize();
-    expect(clamped.width).toBeGreaterThanOrEqual(grown.width);
+    await applySkin(browser, me, packName("total-chaos"));
+    await switchTo(browser, BUDDY);
+    await waitUntil(async () => (await buddySize()).width >= grown.width, 10_000, "Total Chaos did not grow a squeezed window back to its minimum");
   });
 });
