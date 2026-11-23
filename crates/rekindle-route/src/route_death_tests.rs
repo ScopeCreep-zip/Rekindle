@@ -4,6 +4,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use tracing::field::{Field, Visit};
 use tracing::span::{Attributes, Id, Record};
+use tracing::subscriber::Interest;
 use tracing::{Event, Metadata, Subscriber};
 
 use super::*;
@@ -44,9 +45,41 @@ impl Subscriber for Deaths {
     fn exit(&self, _: &Id) {}
 }
 
+/// The test binary's global default: it records nothing and answers every
+/// callsite `sometimes`, so each event asks the thread's own dispatcher.
+/// Without it, a test on another thread that first reaches the death
+/// callsite while one dispatcher is registered caches that thread's
+/// `NoSubscriber` answer, `never`, for every thread (tracing-core 0.1.36
+/// `callsite.rs`: `Dispatchers::rebuilder` takes the `JustOne` path and
+/// `Rebuilder::for_each` asks only `dispatcher::get_default`), and a
+/// scoped [`Deaths`] then sees no event. With it, every rebuild includes a
+/// `sometimes`, so no thread can cache `never`.
+struct Dynamic;
+
+impl Subscriber for Dynamic {
+    fn register_callsite(&self, _: &'static Metadata<'static>) -> Interest {
+        Interest::sometimes()
+    }
+    fn enabled(&self, _: &Metadata<'_>) -> bool {
+        false
+    }
+    fn new_span(&self, _: &Attributes<'_>) -> Id {
+        Id::from_u64(1)
+    }
+    fn record(&self, _: &Id, _: &Record<'_>) {}
+    fn record_follows_from(&self, _: &Id, _: &Id) {}
+    fn event(&self, _: &Event<'_>) {}
+    fn enter(&self, _: &Id) {}
+    fn exit(&self, _: &Id) {}
+}
+
 impl Deaths {
     /// The death events `f` emits on this thread.
     pub(crate) fn during(f: impl FnOnce()) -> Vec<String> {
+        static DYNAMIC: std::sync::Once = std::sync::Once::new();
+        DYNAMIC.call_once(|| {
+            tracing::subscriber::set_global_default(Dynamic).expect("no other global default");
+        });
         let deaths = Self::default();
         tracing::subscriber::with_default(deaths.clone(), f);
         let got = deaths.0.lock().clone();
