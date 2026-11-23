@@ -26,14 +26,29 @@ export async function handleSendMessage(to: string, body: string): Promise<void>
 
   try {
     const sent = transformDmMessage(await afterDraftReports(`dm:${to}`, () => commands.sendMessage(to, trimmed)));
-    setChatState("conversations", to, "messages", (msgs) =>
-      msgs.map((m) => (m.id === tempId ? sent : m)),
-    );
+    upsertSent(to, tempId, sent);
   } catch {
     // The Host stored the row as failed: show it as the Host holds it, so
-    // its Retry names the stored message.
+    // its Retry names the stored message (the stored row replaces ours).
+    setChatState("conversations", to, "messages", (msgs) => (msgs ?? []).filter((m) => m.id !== tempId));
     await handleLoadHistory(to, 50);
   }
+}
+
+/**
+ * Our sent message in place of its optimistic row (peer finding F-echo): the
+ * row `tempId` and any row already holding the same stored message (a
+ * history load during the send's review brings it in) give way to `sent`, in
+ * time order. A `.map` over `tempId` found nothing once a load had replaced
+ * the list, and the message vanished.
+ */
+function upsertSent(to: string, tempId: number, sent: Message): void {
+  setChatState("conversations", to, "messages", (msgs) => {
+    const rest = (msgs ?? []).filter(
+      (m) => m.id !== tempId && !(sent.serverMessageId && m.serverMessageId === sent.serverMessageId),
+    );
+    return [...rest, sent].sort((a, b) => a.timestamp - b.timestamp);
+  });
 }
 
 /// Whether a draft can be sent: it holds more than whitespace. The Send
@@ -127,10 +142,14 @@ export async function handleLoadHistory(
     const messages = await commands.getMessageHistory(peerId, limit);
     const mapped = messages.map(transformDmMessage);
     const existing = chatState.conversations[peerId];
-    if (mapped.length > 0 || !existing || existing.messages.length === 0) {
+    // Our own sends not yet stored (no serverMessageId) stay: the history
+    // cannot hold them yet, and replacing the list dropped them while a send
+    // waited on its review (peer finding F-echo).
+    const pending = (existing?.messages ?? []).filter((m) => m.isOwn && !m.serverMessageId);
+    if (mapped.length > 0 || pending.length > 0 || !existing || existing.messages.length === 0) {
       setChatState("conversations", peerId, {
         peerId,
-        messages: mapped,
+        messages: [...mapped, ...pending].sort((a, b) => a.timestamp - b.timestamp),
         isTyping: existing?.isTyping ?? false,
         lastRead: existing?.lastRead ?? 0,
       });
