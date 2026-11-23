@@ -89,9 +89,8 @@
     .xfire-titlebar-btn-close:disabled, .xfire-titlebar-btn-close[aria-disabled="true"] {
       border-image: none;
     }
-    .xfire-titlebar-text,
-    .xfire-titlebar-btn {
-      background-image: none;
+    .xfire-titlebar::before {
+      content: none;
     }
   }
 }

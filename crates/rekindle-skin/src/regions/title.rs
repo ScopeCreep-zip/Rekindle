@@ -2,11 +2,10 @@
 //! owner's "every skinned title text sits on an opaque dark box even
 //! where the strip already gives it contrast, which hides the strip art").
 //!
-//! The titlebar is a labelled slot ([`super::slots`]): each label paints
-//! the slot's `textBacking` behind its own content box
-//! (`docs/architecture/ui-skin.md`, `background-clip: content-box`), so
-//! the text never depends on a bitmap it was not measured against (WCAG
-//! 2.2 F83). That backing exists for one pair of the contrast model: the
+//! The titlebar is a labelled slot ([`super::slots`]): where its art fails
+//! the title, the strip paints the slot's `textBacking` once, as a band
+//! behind its text row ([`super::css`]), so the text never depends on a
+//! bitmap it was not measured against (WCAG 2.2 F83). That backing exists for one pair of the contrast model: the
 //! title colour (`titlebar.text`) over the strip, held to SC 1.4.3 (the
 //! title is 11 px semibold, `00-primitives.css` `.xfire-titlebar-text`,
 //! so 4.5:1). Here the strip's own pixels are measured for that pair: the
@@ -14,9 +13,9 @@
 //! chrome height ([`super::css`]'s strip), every window width from its
 //! minimum to its maximum, every image (normal and inactive), every frame,
 //! over a black and a white desktop. When the worst of them meets the
-//! floor the title's backing is `transparent` for that skin; otherwise it
-//! stays (still only the label's content box). The titlebar buttons keep
-//! the slot backing either way: this measures only the title.
+//! floor the strip has no band for that skin; otherwise the band is set
+//! (a shaped window frame always sets it, `crate::shape`). The titlebar
+//! buttons' glyphs share the band's row: this measures only the title.
 //!
 //! The title's box (`00-rules.css` `.xfire-titlebar`, `00-primitives.css`
 //! `.xfire-titlebar-text`): it starts at the bar's 8 px padding and is at
@@ -30,7 +29,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use rekindle_image::RgbaImage;
 use rekindle_types::dto::skin::{RegionFit, SkinManifest, TokenValue};
 
-use super::css::{backing_property, property};
+use super::css::{backing_property, band_property};
 use super::{frames, slot_of, worst_contrast, Tokens, WINDOWS};
 use crate::access::scaled;
 use crate::registry::TokenEntry;
@@ -252,39 +251,25 @@ pub fn title_ground(
     })
 }
 
-/// The custom property holding a strip's title backing: `transparent`
-/// from [`title_css`] when the strip's own pixels carry the title, else
-/// unset (the slot's backing shows).
-#[must_use]
-pub fn title_backing_property(slot: &str) -> String {
-    format!("{}-title-backing", property(slot, None))
-}
-
-/// The app rule giving a strip's title label `label` its own backing,
-/// falling back to the slot's.
-pub(super) fn title_rule(slot: &str, label: &str) -> String {
-    let fill = format!(
-        "var({}, var({}))",
-        title_backing_property(slot),
-        backing_property(slot)
-    );
-    format!("  {label} {{\n    background-image: linear-gradient({fill}, {fill});\n  }}\n")
-}
-
-/// The skin layer dropping the title's backing when the strip carries
-/// the title on `resolved`, else nothing.
+/// The skin layer setting the titlebar's band (the title's backing, once
+/// behind its text row: [`super::css`]) unless the strip carries the title
+/// on `resolved`; nothing for a skin without a titlebar strip.
 #[must_use]
 pub fn title_css(
     manifest: &SkinManifest,
     images: &BTreeMap<String, Vec<u8>>,
     resolved: &[(&TokenEntry, TokenValue)],
 ) -> String {
+    if !manifest.regions.contains_key(TITLE_REGION) {
+        return String::new();
+    }
     match title_ground(manifest, images, resolved) {
-        Some(g) if g.bare() => format!(
-            "@layer skin {{\n  :root {{\n    {}: transparent;\n  }}\n}}\n",
-            title_backing_property(TITLE_REGION)
+        Some(g) if g.bare() => String::new(),
+        _ => format!(
+            "@layer skin {{\n  :root {{\n    {}: var({});\n  }}\n}}\n",
+            band_property(TITLE_REGION),
+            backing_property(TITLE_REGION)
         ),
-        _ => String::new(),
     }
 }
 

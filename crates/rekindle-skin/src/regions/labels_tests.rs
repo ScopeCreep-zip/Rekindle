@@ -33,28 +33,54 @@ fn builtin_labels(b: &str) -> (BTreeMap<String, TitleGround>, String) {
 }
 
 #[test]
-fn the_skin_layer_drops_a_label_backing_only_where_the_art_carries_it() {
+fn the_skin_layer_sets_a_band_only_where_the_art_fails_its_labels() {
     for b in BUILTINS {
         let (grounds, css) = builtin_labels(b);
         for (id, g) in &grounds {
-            let decl = format!("{}: transparent;", backing_property(id));
-            assert_eq!(g.bare(), css.contains(&decl), "{b} {id} {g:?}");
+            let n = css.matches(&format!("{}:", band_property(id))).count();
+            assert_eq!(n, usize::from(!g.bare()), "{b} {id} {g:?}");
         }
         assert_eq!(
             css.is_empty(),
-            !grounds.values().any(TitleGround::bare),
+            grounds.values().all(TitleGround::bare),
             "{b}"
         );
     }
-    // The served stylesheet carries it after the regions it overrides.
+}
+
+/// Symbiosis's status bar art meets 4.5:1 under its labels (6.00:1): the
+/// served sheet sets no band for it, so nothing is drawn behind its text.
+#[test]
+fn a_label_over_art_that_meets_its_floor_serves_no_backing() {
     let (_, builtin) = crate::builtin::find("builtin:symbiosis").expect("a built-in");
     let sheet = crate::serve::stylesheet(builtin.bytes, &"0".repeat(64)).expect("sheet");
-    let decl = format!("{}: transparent;", backing_property("statusbar"));
-    assert!(sheet.css.contains(&decl));
+    assert!(
+        !sheet.css.contains(&band_property("statusbar")),
+        "{}",
+        sheet.css
+    );
+}
+
+/// Symbiosis's community sidebar header art fails under its labels
+/// (1.42:1): the served sheet sets its band exactly once, to the slot's
+/// backing, which the container paints once behind its text row.
+#[test]
+fn a_label_over_failing_art_serves_one_band_for_the_region() {
+    let (_, builtin) = crate::builtin::find("builtin:symbiosis").expect("a built-in");
+    let sheet = crate::serve::stylesheet(builtin.bytes, &"0".repeat(64)).expect("sheet");
+    let id = "community.sidebar-header";
+    let decl = format!("{}: var({});", band_property(id), backing_property(id));
+    assert_eq!(
+        sheet.css.matches(&band_property(id)).count(),
+        1,
+        "{}",
+        sheet.css
+    );
+    assert!(sheet.css.contains(&decl), "{}", sheet.css);
 }
 
 #[test]
-fn each_builtin_drops_the_label_backings_its_art_carries() {
+fn each_builtin_bands_only_the_labelled_slots_its_art_fails() {
     let got: Vec<String> = BUILTINS
         .iter()
         .map(|b| {
@@ -70,7 +96,9 @@ fn each_builtin_drops_the_label_backings_its_art_carries() {
         })
         .collect();
     // Worst pixel x100 under each labelled slot's labels (SC 1.4.3 floor
-    // 450, 300 large): Xfire Classic's header art keeps every backing (its
+    // 450, 300 large); `kept` is a slot whose band the skin layer sets (one
+    // band behind its text row), `bare` one with none. Xfire Classic's
+    // header art keeps every band (its
     // worst pixels under the label rows, over a white desktop or its light
     // fill, are 1.00-4.06:1 under its label colours).
     let want = [

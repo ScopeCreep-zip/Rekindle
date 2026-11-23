@@ -85,21 +85,15 @@
     .buddy-list-window .action-bar-icon-btn:disabled, .buddy-list-window .action-bar-icon-btn[aria-disabled="true"] {
       border-image: none;
     }
+    .buddy-list-window .menu-bar::before,
+    .buddy-list-window .identity-bar::before,
     .buddy-tab::before,
+    .buddy-group-header::before,
+    .buddy-list-window .pending-header::before,
+    .buddy-list-window .buddy-item-selected::before,
+    .buddy-list-window .action-bar::before,
     .buddy-list-window .action-bar-icon-btn::before {
       content: none;
-    }
-    .buddy-list-window .menu-bar-item,
-    .buddy-list-window .identity-bar-name,
-    .buddy-list-window .identity-bar-key,
-    .buddy-list-window .identity-bar-game,
-    .buddy-list-window .identity-bar-status-msg,
-    .buddy-group-header > span,
-    .buddy-list-window .pending-header > span,
-    .buddy-list-window .buddy-item-selected .buddy-item-content,
-    .buddy-list-window .action-bar-icon-btn,
-    .buddy-list-window .logout-icon-btn {
-      background-image: none;
     }
   }
 }

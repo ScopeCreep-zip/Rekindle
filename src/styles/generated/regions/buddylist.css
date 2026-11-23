@@ -7,20 +7,37 @@
     border-image: var(--skin-region-buddylist-menubar);
     image-rendering: pixelated;
   }
-  .buddy-list-window .menu-bar-item {
-    background-image: linear-gradient(var(--skin-region-buddylist-menubar-backing), var(--skin-region-buddylist-menubar-backing));
-    background-clip: content-box;
+  :where(.buddy-list-window .menu-bar) {
+    position: relative;
+    isolation: isolate;
+  }
+  .buddy-list-window .menu-bar::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    padding: inherit;
+    border-radius: inherit;
+    background: linear-gradient(var(--skin-region-buddylist-menubar-band), var(--skin-region-buddylist-menubar-band)) 0 50% / 100% 16.5px no-repeat content-box;
+    pointer-events: none;
   }
   .buddy-list-window .identity-bar {
     border-image: var(--skin-region-buddylist-infobar);
     image-rendering: pixelated;
   }
-  .buddy-list-window .identity-bar-name,
-  .buddy-list-window .identity-bar-key,
-  .buddy-list-window .identity-bar-game,
-  .buddy-list-window .identity-bar-status-msg {
-    background-image: linear-gradient(var(--skin-region-buddylist-infobar-backing), var(--skin-region-buddylist-infobar-backing));
-    background-clip: content-box;
+  :where(.buddy-list-window .identity-bar) {
+    position: relative;
+    isolation: isolate;
+  }
+  .buddy-list-window .identity-bar::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    padding: inherit;
+    border-radius: inherit;
+    background: linear-gradient(var(--skin-region-buddylist-infobar-band), var(--skin-region-buddylist-infobar-band)) 0 0 / 100% 100% no-repeat content-box;
+    pointer-events: none;
   }
   .buddy-tab {
     border-image: var(--skin-region-buddylist-tab);
@@ -60,10 +77,21 @@
     border-image: var(--skin-region-buddylist-group-header);
     image-rendering: pixelated;
   }
-  .buddy-group-header > span,
-  .buddy-list-window .pending-header > span {
-    background-image: linear-gradient(var(--skin-region-buddylist-group-header-backing), var(--skin-region-buddylist-group-header-backing));
-    background-clip: content-box;
+  :where(.buddy-group-header),
+  :where(.buddy-list-window .pending-header) {
+    position: relative;
+    isolation: isolate;
+  }
+  .buddy-group-header::before,
+  .buddy-list-window .pending-header::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    padding: inherit;
+    border-radius: inherit;
+    background: linear-gradient(var(--skin-region-buddylist-group-header-band), var(--skin-region-buddylist-group-header-band)) 0 0 / 100% 16.5px no-repeat content-box;
+    pointer-events: none;
   }
   .buddy-group-header:hover,
   .buddy-list-window .pending-header:hover {
@@ -73,18 +101,37 @@
     border-image: var(--skin-region-buddylist-row-selected);
     image-rendering: pixelated;
   }
-  .buddy-list-window .buddy-item-selected .buddy-item-content {
-    background-image: linear-gradient(var(--skin-region-buddylist-row-selected-backing), var(--skin-region-buddylist-row-selected-backing));
-    background-clip: content-box;
+  :where(.buddy-list-window .buddy-item-selected) {
+    position: relative;
+    isolation: isolate;
+  }
+  .buddy-list-window .buddy-item-selected::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    padding: inherit;
+    border-radius: inherit;
+    background: linear-gradient(var(--skin-region-buddylist-row-selected-band), var(--skin-region-buddylist-row-selected-band)) 0 0 / 100% 100% no-repeat content-box;
+    pointer-events: none;
   }
   .buddy-list-window .action-bar {
     border-image: var(--skin-region-buddylist-actionbar);
     image-rendering: pixelated;
   }
-  .buddy-list-window .action-bar-icon-btn,
-  .buddy-list-window .logout-icon-btn {
-    background-image: linear-gradient(var(--skin-region-buddylist-actionbar-backing), var(--skin-region-buddylist-actionbar-backing));
-    background-clip: content-box;
+  :where(.buddy-list-window .action-bar) {
+    position: relative;
+    isolation: isolate;
+  }
+  .buddy-list-window .action-bar::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    padding: inherit;
+    border-radius: inherit;
+    background: linear-gradient(var(--skin-region-buddylist-actionbar-band), var(--skin-region-buddylist-actionbar-band)) 0 0 / 100% 100% no-repeat content-box;
+    pointer-events: none;
   }
   .buddy-list-window .action-bar-icon-btn {
     border-image: var(--skin-region-buddylist-action-button);
