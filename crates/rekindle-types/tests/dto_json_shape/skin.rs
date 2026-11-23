@@ -206,6 +206,7 @@ fn shell(add: &mut impl FnMut(&str, Value)) {
         text: None,
         label: None,
         inset: None,
+        target: None,
         shows_with: None,
         control_group,
         triggers: Vec::new(),

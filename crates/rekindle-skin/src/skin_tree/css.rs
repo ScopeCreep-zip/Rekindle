@@ -2,10 +2,12 @@
 //! `[data-skin-node="<id>"]` placed absolutely in its parent's node by its
 //! resolved spans, at its `Z`, with its art's piece sets ([`layers`]: caps
 //! at their own size, edges and middle tiled from the caps' end edges) for
-//! its normal, hover, down and disabled states; an interactive node smaller than 24×24 gets a
-//! 24×24 hit area (`::before`, centred, shifted inward at the window's
-//! edges as [`hit_area`] lays it; an edge grip's yields to the interactive
-//! nodes it overlaps, [`grip_area`], lead decision 6); every node is
+//! its normal, hover, down and disabled states; an interactive node smaller than 24×24 is its
+//! served target box (plan SK7, [`super::target`]: margins grow the box,
+//! a transparent border of the art's inset keeps the art, its children and
+//! its text at their own place and size); an edge grip gets a `::before`
+//! grip area that yields to the interactive nodes it overlaps
+//! ([`grip_area`], lead decision 6); every node is
 //! stacked by its `Z` and then the pack's document order (the shell nests
 //! the divs in that order, so a later sibling draws above); a text-sized node is as wide and tall as
 //! its text (`max-content`); the views node draws opaque (lead decision 3:
@@ -17,11 +19,13 @@ use std::fmt::Write as _;
 
 use rekindle_types::dto::skin::RegionState;
 use rekindle_types::dto::skin::WindowLayout;
-use rekindle_types::dto::skin_tree::{Anchor, NodePieces, NodeRole, NodeSpan, SkinNode, SkinTree};
+use rekindle_types::dto::skin_tree::{
+    Anchor, NodePieces, NodeRole, NodeSpan, NodeTarget, SkinNode, SkinTree,
+};
 
 use super::pieces::{self, Band};
 
-use super::validate::{grip_area, hit_area, stack_z, text_sized, Stack, HIT};
+use super::validate::{grip_area, stack_z, text_sized, Stack};
 use crate::regions::css::href;
 
 fn axis(s: NodeSpan, (start, end, len): (&str, &str, &str), text: bool) -> String {
@@ -77,43 +81,31 @@ struct Ctx<'a> {
     base: &'a str,
     boxes: BTreeMap<&'a str, [i32; 4]>,
     window: (i32, i32),
-    /// The interactive nodes that are not grips, with their boxes.
+    /// The interactive nodes that are not grips, with their target boxes.
     live: Vec<(&'a str, [i32; 4])>,
     stack: Stack<'a>,
 }
 
-/// The `::before` hit area of an interactive node smaller than 24×24, at
-/// its offset from the node's box (shifted inward at the window's edges).
-fn hit_rule(out: &mut String, sel: &str, n: &SkinNode, ctx: &Ctx<'_>) {
-    let small = |s: NodeSpan| size(s).is_some_and(|v| i32::from(v) < HIT);
-    let grip = n.resize_edge().is_some();
-    if !n.interactive() || !(grip || small(n.x) || small(n.y)) || text_sized(n) {
+/// The `::before` grip area of an edge grip, at its offset from the node's
+/// box: its own box takes no pointer events (lead decision 10), only this
+/// area, which leaves the target boxes of the nodes it yields to, does.
+fn grip_rule(out: &mut String, sel: &str, n: &SkinNode, ctx: &Ctx<'_>) {
+    if n.resize_edge().is_none() || !n.interactive() || text_sized(n) {
         return;
     }
     let Some(area) = ctx.boxes.get(n.id.as_str()) else {
         return;
     };
-    let hit = if grip {
-        let yields: Vec<_> = ctx
-            .live
-            .iter()
-            .filter(|(id, _)| ctx.stack.yields(&n.id, id))
-            .map(|(_, b)| *b)
-            .collect();
-        grip_area(*area, ctx.window, &yields)
-    } else {
-        hit_area(*area, ctx.window)
-    };
-    // A grip's own box takes no pointer events (lead decision 10): only its
-    // hit area, which leaves the nodes it yields to, does.
-    let events = if grip {
-        "\n    pointer-events: auto;"
-    } else {
-        ""
-    };
+    let yields: Vec<_> = ctx
+        .live
+        .iter()
+        .filter(|(id, _)| ctx.stack.yields(&n.id, id))
+        .map(|(_, b)| *b)
+        .collect();
+    let hit = grip_area(*area, ctx.window, &yields);
     let _ = writeln!(
         out,
-        "  {sel}::before {{\n    content: \"\";\n    position: absolute;\n    left: {}px;\n    top: {}px;\n    width: {}px;\n    height: {}px;{events}\n  }}",
+        "  {sel}::before {{\n    content: \"\";\n    position: absolute;\n    left: {}px;\n    top: {}px;\n    width: {}px;\n    height: {}px;\n    pointer-events: auto;\n  }}",
         hit[0] - area[0],
         hit[1] - area[1],
         hit[2],
@@ -128,11 +120,14 @@ fn hit_rule(out: &mut String, sel: &str, n: &SkinNode, ctx: &Ctx<'_>) {
 /// column band); the `::after` is laid at the row band and inset by the
 /// corner rows, so its content box is the middle band. Every layer is laid
 /// from its band's start or end ([`pieces::cell`]) and clipped to the band,
-/// exactly as [`pieces::draw`] lays it for the outline.
+/// exactly as [`pieces::draw`] lays it for the outline. `outer` is the box
+/// that is the art's whole box: the border box, or the padding box of a
+/// node grown to its target (its border is the art's inset, [`target`]).
 fn layers(
     set: &NodePieces,
     images: &BTreeMap<String, Vec<u8>>,
     base: &str,
+    outer: &str,
 ) -> Option<(String, Option<String>)> {
     let [left, right, top, bottom] = pieces::insets(set);
     let has = |band: Band| set.keys().any(|s| pieces::cell(*s).band == band);
@@ -154,11 +149,11 @@ fn layers(
             (false, true) => "repeat-y",
             (false, false) => "no-repeat",
         };
-        let inner = if padded { "content-box" } else { "border-box" };
+        let inner = if padded { "content-box" } else { outer };
         let (list, area) = match c.band {
             Band::Row if after => (&mut over, "padding-box"),
             Band::Middle if after => (&mut over, "content-box"),
-            Band::Box | Band::Row => (&mut own, "border-box"),
+            Band::Box | Band::Row => (&mut own, outer),
             Band::Column | Band::Middle => (&mut own, inner),
         };
         list.push([
@@ -204,6 +199,28 @@ fn layers(
     Some((main, over))
 }
 
+/// The declarations that make the node's box its served target box (plan
+/// SK7): margins grow it from where its axes lay its art, a fixed axis
+/// takes the target's length, and a transparent border of the art's inset
+/// keeps the art (drawn on the padding box), its children and its text at
+/// their own place and size.
+fn target(decls: &mut String, n: &SkinNode, t: NodeTarget) {
+    let [ax, ay, aw, ah] = t.art;
+    let right = t.area[2] - ax - aw;
+    let bottom = t.area[3] - ay - ah;
+    let _ = write!(
+        decls,
+        " box-sizing: border-box; margin: {}px {}px {}px {}px; border: solid transparent; border-width: {ay}px {right}px {bottom}px {ax}px;",
+        -ay, -right, -bottom, -ax
+    );
+    if size(n.x).is_some() {
+        let _ = write!(decls, " width: {}px;", t.area[2]);
+    }
+    if size(n.y).is_some() {
+        let _ = write!(decls, " height: {}px;", t.area[3]);
+    }
+}
+
 fn node(out: &mut String, n: &SkinNode, ctx: &Ctx<'_>) -> Option<()> {
     let (root, images, base) = (ctx.root, ctx.images, ctx.base);
     let text = text_sized(n);
@@ -220,9 +237,16 @@ fn node(out: &mut String, n: &SkinNode, ctx: &Ctx<'_>) -> Option<()> {
     if n.resize_edge().is_some() {
         decls.push_str(" pointer-events: none;");
     }
+    let outer = match n.target {
+        Some(t) => {
+            target(&mut decls, n, t);
+            "padding-box"
+        }
+        None => "border-box",
+    };
     let mut after = None;
     if let Some(art) = &n.art {
-        let (main, over) = layers(&art.normal, images, base)?;
+        let (main, over) = layers(&art.normal, images, base, outer)?;
         let _ = write!(decls, " {main}");
         after = over;
     }
@@ -238,7 +262,7 @@ fn node(out: &mut String, n: &SkinNode, ctx: &Ctx<'_>) -> Option<()> {
             RegionState::Disabled => "[aria-disabled=\"true\"]",
             _ => continue,
         };
-        let (main, over) = layers(set, images, base)?;
+        let (main, over) = layers(set, images, base, outer)?;
         let _ = writeln!(out, "  {sel}{pseudo} {{\n    {main}\n  }}");
         match over {
             Some(over) => {
@@ -253,7 +277,7 @@ fn node(out: &mut String, n: &SkinNode, ctx: &Ctx<'_>) -> Option<()> {
             None => {}
         }
     }
-    hit_rule(out, &sel, n, ctx);
+    grip_rule(out, &sel, n, ctx);
     for c in &n.children {
         node(out, c, ctx)?;
     }
@@ -278,7 +302,10 @@ pub fn tree_css(
     let live = boxes
         .iter()
         .filter(|(n, _)| n.interactive() && n.resize_edge().is_none())
-        .map(|(n, b)| (n.id.as_str(), *b))
+        .map(|(n, b)| {
+            let area = n.target.map_or(*b, |t| super::target::outer(*b, t));
+            (n.id.as_str(), area)
+        })
         .collect();
     let ctx = Ctx {
         root,

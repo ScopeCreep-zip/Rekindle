@@ -307,6 +307,20 @@ export interface ShellNode {
   /** How far the pack's interactive siblings reach into this text field from each edge at
    *  the window's served minimum (plan SK5): its text keeps inside them. Absent: none do. */
   inset?: NodeInset;
+  /** The Host's target box for a small interactive node (plan SK7). */
+  target?: NodeTarget;
+}
+
+/**
+ * `NodeTarget` (plan SK7, WCAG 2.5.8): the node's box is this target box
+ * (the Host's stylesheet lays it); `box` is offset from the art box's
+ * top-left, `art` is the art's rect inside the box, both at the window's
+ * served minimum. `short`: neither 24 px nor the spacing exception holds.
+ */
+export interface NodeTarget {
+  box: [number, number, number, number];
+  art: [number, number, number, number];
+  rule: "size" | "spacing" | "short";
 }
 
 /** `NodeInset`: px from the field's left and right edges (plan SK5). */

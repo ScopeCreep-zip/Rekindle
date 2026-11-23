@@ -10,28 +10,28 @@ Bottom Decor
 BottomRight Decor
 AdAreaBG AdArea
   AdArea Part
-ExpandButton Button
+ExpandButton Button target [-4, 0, 24, 47] art [4, 0, 20, 47] Size
 MainTitleBar Drag
-  Logo Logo
+  Logo Logo target [-4, -4, 24, 24] art [4, 4, 16, 16] Size
   Title NameField
 AGEAR Decor
 IGEAR Decor
 StatusWrapper Group
-  StatusEdit StatusText
-  DownArrow StatusList
+  StatusEdit StatusText target [0, -2, 228, 22] art [0, 2, 228, 16] Spacing
+  DownArrow StatusList target [0, -2, 20, 23] art [0, 2, 15, 18] Short
 TabHeader TabStrip
-  TabNormalText Tab(Friends)
+  TabNormalText Tab(Friends) target [0, -2, 62, 24] art [0, 2, 62, 19] Size
     TabNormalButton Part
-  TabServerText Tab(Servers)
+  TabServerText Tab(Servers) target [0, -2, 62, 24] art [0, 2, 62, 19] Size
     TabServerButton Part
-  TabDownloadText Tab(Files)
+  TabDownloadText Tab(Files) target [0, -2, 62, 24] art [0, 2, 62, 19] Size
     TabDownloadButton Part
-  TabDownloadText.Communities Tab(Communities) label "Communities"
+  TabDownloadText.Communities Tab(Communities) label "Communities" target [0, -2, 62, 24] art [0, 2, 62, 19] Size
     TabDownloadButton.Communities Part
 TopButtonBar Group
-  Minimize Button
-  Maximize Button
-  Close Button
+  Minimize Button target [-5, -5, 20, 24] art [5, 5, 14, 14] Short
+  Maximize Button target [-1, -5, 16, 24] art [1, 5, 14, 14] Short
+  Close Button target [-1, -5, 20, 24] art [1, 5, 14, 14] Short
 MenuBar MenuBar
   XfireMenuText MenuTitle label "Rekindle"
     FileMenu Part
@@ -50,20 +50,20 @@ TabbedControl Views
   TabbedControl.Communities View(Communities)
 TabButtonArea ButtonBar
   FriendsButtons ButtonRow(Friends)
-    AddButton Button
-    ImButton Button
-    JoinFriendButton Button
-    InfoButton1 Button
+    AddButton Button target [0, -3, 54, 23] art [0, 3, 54, 18] Spacing
+    ImButton Button target [0, -3, 54, 23] art [0, 3, 54, 18] Spacing
+    JoinFriendButton Button target [0, -3, 54, 23] art [0, 3, 54, 18] Spacing
+    InfoButton1 Button target [0, -3, 54, 23] art [0, 3, 54, 18] Spacing
   ServerButtons ButtonRow(Servers)
-    AddServerButton Button
-    RefreshButton Button
-    JoinServerButton Button
-    InfoButton2 Button
+    AddServerButton Button target [0, -3, 54, 23] art [0, 3, 54, 18] Spacing
+    RefreshButton Button target [0, -3, 54, 23] art [0, 3, 54, 18] Spacing
+    JoinServerButton Button target [0, -3, 54, 23] art [0, 3, 54, 18] Spacing
+    InfoButton2 Button target [0, -3, 54, 23] art [0, 3, 54, 18] Spacing
   FilesButtons ButtonRow(Files)
-    StartDownloadButton Button
-    StopDownloadButton Button
-    ExecuteDownloadButton Button
-    DownloadInfoButton Button
+    StartDownloadButton Button target [0, -3, 54, 23] art [0, 3, 54, 18] Spacing
+    StopDownloadButton Button target [0, -3, 54, 23] art [0, 3, 54, 18] Spacing
+    ExecuteDownloadButton Button target [0, -3, 54, 23] art [0, 3, 54, 18] Spacing
+    DownloadInfoButton Button target [0, -3, 54, 23] art [0, 3, 54, 18] Spacing
 ResizeLeft Button
 ResizeRight Button
 ResizeUp Button
@@ -80,10 +80,10 @@ popup InfoPopup
   BackDrop Decor
   InfoView InfoView
   ResizeRight Button
-  JoinButton Button
+  JoinButton Button target [0, -3, 54, 24] art [0, 3, 54, 18] Size
   JoinChatTab ButtonBar
-    HostChatButton Button
-    JoinChatButton Button
-    LeaveChatButton Button
+    HostChatButton Button target [0, -3, 54, 24] art [0, 3, 54, 18] Size
+    JoinChatButton Button target [0, -3, 54, 24] art [0, 3, 54, 18] Size
+    LeaveChatButton Button target [0, -3, 54, 24] art [0, 3, 54, 18] Size
       TalkingStateButton Part
-  CloseInfoView Button
+  CloseInfoView Button target [-2, 0, 24, 47] art [2, 0, 20, 47] Size

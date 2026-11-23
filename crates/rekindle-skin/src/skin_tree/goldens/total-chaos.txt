@@ -1,25 +1,25 @@
 MainTitleBar Drag
   TopLeft Decor
   TopRight Decor
-  Logo Logo
+  Logo Logo target [0, -7, 24, 24] art [0, 7, 23, 9] Size
   Title Decor
-  Minimize Button
-  Maximize Button
-  Close Button
+  Minimize Button target [-6, -6, 18, 24] art [6, 6, 12, 12] Short
+  Maximize Button target [0, -6, 12, 24] art [0, 6, 12, 12] Short
+  Close Button target [0, -6, 18, 24] art [0, 6, 12, 12] Short
 AdBar AdArea
   AdArea Part
 MenuBar MenuBar
   MenuBg Part
-    FileMenu MenuTitle label "Rekindle" cover [15, 0, 47, 18]
-    ToolsMenu MenuTitle
-    HelpMenu MenuTitle
+    FileMenu MenuTitle label "Rekindle" cover [15, 0, 47, 18] target [0, -3, 65, 24] art [0, 3, 65, 18] Size
+    ToolsMenu MenuTitle target [0, -3, 65, 24] art [0, 3, 65, 18] Size
+    HelpMenu MenuTitle target [0, -3, 65, 24] art [0, 3, 65, 18] Size
 Content Group
-  ExpandButton Button
+  ExpandButton Button target [-8, -1, 24, 24] art [8, 1, 16, 21] Size
   TabHeader TabStrip
-    TabNormalButton Tab(Friends)
-    TabServerButton Tab(Servers)
-    TabDownloadButton Tab(Files)
-    TabDownloadButton.Communities Tab(Communities) label "Communities" cover [7, 3, 60, 11]
+    TabNormalButton Tab(Friends) target [0, -3, 74, 24] art [0, 3, 74, 17] Size
+    TabServerButton Tab(Servers) target [0, -3, 74, 24] art [0, 3, 74, 17] Size
+    TabDownloadButton Tab(Files) target [0, -3, 74, 24] art [0, 3, 74, 17] Size
+    TabDownloadButton.Communities Tab(Communities) label "Communities" cover [7, 3, 60, 11] target [0, -3, 74, 24] art [0, 3, 74, 17] Size
   TabbedControl Views
     BuddyView View(Friends)
     ServerView View(Servers)
@@ -29,7 +29,7 @@ BottomBar Group
   BottomLeft Decor
   BottomRight Decor
   BottomCenter Decor
-    TCLink Button
+    TCLink Button target [0, -8, 113, 24] art [0, 8, 113, 8] Size
   TabButtonArea ButtonBar
     FriendsButtons ButtonRow(Friends)
       AddButton Button
@@ -55,9 +55,9 @@ popup InfoPopup
       InfoOutline Decor
         InfoView InfoView
   InfoBottomRow Decor
-    CloseInfoView Button
-    InfoJoinButton Button
+    CloseInfoView Button target [0, -11, 31, 24] art [0, 11, 31, 2] Size
+    InfoJoinButton Button target [0, -11, 30, 24] art [0, 11, 30, 2] Size
     JoinChatTab ButtonBar
-      HostChatButton Button
-      JoinChatButton Button
-      LeaveChatButton Button
+      HostChatButton Button target [0, -9, 30, 24] art [0, 9, 30, 13] Size
+      JoinChatButton Button target [0, -9, 30, 24] art [0, 9, 30, 13] Size
+      LeaveChatButton Button target [0, -9, 30, 24] art [0, 9, 30, 13] Size

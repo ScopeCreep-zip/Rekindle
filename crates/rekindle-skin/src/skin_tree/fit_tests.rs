@@ -248,6 +248,7 @@ fn button(id: &str, key: SkinAction) -> SkinNode {
         text: None,
         label: None,
         inset: None,
+        target: None,
         shows_with: None,
         control_group: None,
         triggers: vec![NodeTrigger {
@@ -260,19 +261,14 @@ fn button(id: &str, key: SkinAction) -> SkinNode {
 
 fn row(id: &str, v: ViewKey, child: SkinNode) -> SkinNode {
     SkinNode {
-        id: id.to_owned(),
         role: NodeRole::ButtonRow(v),
         x: NodeSpan::Stretch { start: 0, end: 0 },
         y: NodeSpan::Stretch { start: 0, end: 0 },
         z: 0,
-        art: None,
-        text: None,
-        label: None,
-        inset: None,
         shows_with: Some(v),
-        control_group: None,
         triggers: Vec::new(),
         children: vec![child],
+        ..button(id, SkinAction::Minimize)
     }
 }
 

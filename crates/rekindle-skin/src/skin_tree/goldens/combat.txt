@@ -1,11 +1,11 @@
 OuterFrame Decor
 CombatDragBar Drag
-  Minimizebox Button
-FileMenuText MenuTitle label "Rekindle"
+  Minimizebox Button target [-6, -6, 24, 24] art [6, 6, 12, 12] Size
+FileMenuText MenuTitle label "Rekindle" target [-2, -4, 24, 24] art [2, 4, 20, 16] Size
   FileMenu Part
-ToolsMenuText MenuTitle label "Tools"
+ToolsMenuText MenuTitle label "Tools" target [-2, -4, 24, 24] art [2, 4, 20, 16] Size
   ToolsMenu Part
-HelpMenuText MenuTitle label "Help"
+HelpMenuText MenuTitle label "Help" target [-2, -4, 24, 24] art [2, 4, 20, 16] Size
   HelpMenu Part
 AdArea AdArea
 BackgroundArea Decor
@@ -30,8 +30,8 @@ MainTabbedArea Views
   DownloadView View(Files)
   MainTabbedArea.Communities View(Communities)
 Title NameField
-StatusEdit StatusText
-DownArrow StatusList
+StatusEdit StatusText target [0, -4, 219, 24] art [0, 4, 219, 15] Size
+DownArrow StatusList target [0, -2, 22, 24] art [0, 2, 20, 20] Short
 FriendsButtons ButtonRow(Friends)
   FriendsButtons.JoinPlayTab Group
     JoinButton@Friends Button
@@ -67,7 +67,7 @@ XfireLogo Logo
 InfoViewSwitch Button
   InfoViewSwitchIn Part
   InfoviewSwitchOut Part
-SystemMenu Button
+SystemMenu Button target [0, 0, 24, 24] art [0, 0, 10, 10] Size
 popup CombatInfoSkin
   XfireTopRow Decor
   XfireBottomRow Decor

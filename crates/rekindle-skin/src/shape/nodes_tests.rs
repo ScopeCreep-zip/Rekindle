@@ -44,6 +44,7 @@ fn node(id: &str, role: NodeRole, (x, y, w, h): (i16, i16, u16, u16)) -> SkinNod
         text: None,
         label: None,
         inset: None,
+        target: None,
         shows_with: None,
         control_group: None,
         triggers: Vec::new(),

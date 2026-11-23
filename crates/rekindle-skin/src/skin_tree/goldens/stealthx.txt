@@ -1,7 +1,7 @@
 MainBackground Decor
   MainBackgroundCol Decor
-  MenuButton Button
-  InfoViewButton Button
+  MenuButton Button target [-4, 0, 24, 89] art [4, 0, 15, 89] Size
+  InfoViewButton Button target [-8, 0, 24, 89] art [8, 0, 15, 89] Size
   ListBackground Decor
     TabbedControl Views
       BuddyView View(Friends)
@@ -10,12 +10,12 @@ MainBackground Decor
       TabbedControl.Communities View(Communities)
   AdArea AdArea
     AdView Part
-  WndClose Button
-  WndMax Button
-  WndMin Button
+  WndClose Button target [-1, -6, 19, 24] art [1, 6, 12, 12] Short
+  WndMax Button target [-1, -6, 14, 24] art [1, 6, 12, 12] Short
+  WndMin Button target [-6, -6, 19, 24] art [6, 6, 12, 12] Short
   WndXfire Logo
-  StatusEdit StatusText
-  StatusBtn StatusList
+  StatusEdit StatusText target [0, -4, 232, 24] art [0, 4, 232, 15] Size
+  StatusBtn StatusList target [-2, -6, 20, 24] art [2, 6, 12, 12] Short
   ResizeRight Button
   ResizeBottom Button
   ResizeBottomRight Button
@@ -26,53 +26,53 @@ popup MainInfoViewPopup
 popup MainMenuPopup
   MainMenuBackground Decor
     MenuBar MenuBar
-      XfireMenuText MenuTitle label "Rekindle"
+      XfireMenuText MenuTitle label "Rekindle" target [0, -1, 110, 22] art [0, 1, 110, 21] Short
         FileMenu Part
-      ToolsMenuText MenuTitle label "Tools"
+      ToolsMenuText MenuTitle label "Tools" target [0, 0, 110, 21] art [0, 0, 110, 21] Short
         ToolsMenu Part
-      HelpMenuText MenuTitle label "Help"
+      HelpMenuText MenuTitle label "Help" target [0, 0, 110, 23] art [0, 0, 110, 21] Short
         HelpMenu Part
     TabHeader TabStrip
-      TabNormalText Tab(Friends)
+      TabNormalText Tab(Friends) target [0, -1, 109, 22] art [0, 1, 109, 21] Short
         TabNormalButton Part
-      TabServerText Tab(Servers)
+      TabServerText Tab(Servers) target [0, 0, 109, 21] art [0, 0, 109, 21] Short
         TabServerButton Part
-      TabDownloadText Tab(Files)
+      TabDownloadText Tab(Files) target [0, 0, 109, 21] art [0, 0, 109, 21] Short
         TabDownloadButton Part
-      TabDownloadText.Communities Tab(Communities) label "Communities"
+      TabDownloadText.Communities Tab(Communities) label "Communities" target [0, 0, 109, 23] art [0, 0, 109, 21] Short
         TabDownloadButton.Communities Part
     ButtonArea ButtonBar
       FriendsButtons ButtonRow(Friends)
-        AddFriendButton Button
+        AddFriendButton Button target [0, -1, 110, 22] art [0, 1, 110, 21] Short
           AddFriendButtonText Part
-        ChatButton Button
+        ChatButton Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
           ChatButtonText Part
-        GameButton1 Button
+        GameButton1 Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
           GameButton1.GameButtonText Part
-        InfoButton1 Button
+        InfoButton1 Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
           InfoButton1.InfoButtonText Part
       ServersButtons ButtonRow(Servers)
-        AddServerButton Button
+        AddServerButton Button target [0, -1, 110, 22] art [0, 1, 110, 21] Short
           AddServerButtonText Part
-        RefreshButton Button
+        RefreshButton Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
           RefreshButtonText Part
-        GameButton2 Button
+        GameButton2 Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
           GameButton2.GameButtonText Part
-        InfoButton2 Button
+        InfoButton2 Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
           InfoButton2.InfoButtonText Part
       FilesButtons ButtonRow(Files)
-        FindButton Button
+        FindButton Button target [0, -1, 110, 22] art [0, 1, 110, 21] Short
           FindButtonText Part
-        DownloadButton Button
+        DownloadButton Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
           DownloadButtonText Part
-        StopButton Button
+        StopButton Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
           StopButtonText Part
-        ExecuteButton Button
+        ExecuteButton Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
           ExecuteButtonText Part
     InfoJoinChatTab ButtonBar
-      HostChatButton Button
+      HostChatButton Button target [0, 0, 110, 23] art [0, 0, 110, 21] Short
         HostChatButtonText Part
-      JoinChatButton Button
+      JoinChatButton Button target [0, 0, 110, 23] art [0, 0, 110, 21] Short
         JoinChatButtonText Part
-      LeaveChatButton Button
+      LeaveChatButton Button target [0, 0, 110, 23] art [0, 0, 110, 21] Short
         LeaveChatButtonText Part

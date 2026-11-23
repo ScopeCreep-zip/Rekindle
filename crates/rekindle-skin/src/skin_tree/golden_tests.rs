@@ -25,6 +25,9 @@ fn lines(nodes: &[SkinNode], depth: usize, out: &mut String) {
         if let Some(i) = n.inset {
             let _ = write!(out, " inset [{}, {}]", i.left, i.right);
         }
+        if let Some(t) = n.target {
+            let _ = write!(out, " target {:?} art {:?} {:?}", t.area, t.art, t.rule);
+        }
         out.push('\n');
         lines(&n.children, depth + 1, out);
     }

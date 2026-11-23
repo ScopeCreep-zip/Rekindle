@@ -111,9 +111,13 @@ fn rule_2_an_anchor_that_does_not_resolve_is_refused() {
     assert!(e.to_string().contains("no sibling Nowhere"), "{e}");
 }
 
+/// Plan SK7 (replacing the `::before` hit area, same promise: a 24 px
+/// target): CloseBox (18x16 at right 4, top 4) is its served 24x24 target
+/// box, grown 3 px each side and shifted inward (down) at the top edge, its
+/// art kept 18x16 inside by the border; no node draws a pseudo hit area.
 #[test]
-fn css_lays_one_rule_per_node_with_a_hit_area() {
-    let tree = SkinTree {
+fn css_lays_one_rule_per_node_with_its_target_box() {
+    let mut l = layout(Some(SkinTree {
         outsets: rekindle_types::dto::skin::Insets {
             top: 0,
             right: 0,
@@ -121,22 +125,17 @@ fn css_lays_one_rule_per_node_with_a_hit_area() {
             left: 0,
         },
         root: good(),
-    };
-    let out = css::tree_css(".app-frame", &tree, &layout(None), &BTreeMap::new(), "x").unwrap();
+    }));
+    super::target::nodes(&mut l);
+    let tree = l.tree.clone().unwrap();
+    let out = css::tree_css(".app-frame", &tree, &l, &BTreeMap::new(), "x").unwrap();
     assert_eq!(
         out.matches(" {\n    position: absolute;").count(),
         6,
         "{out}"
     );
-    assert!(out.contains("[data-skin-node=\"CloseBox\"] {\n    position: absolute; right: 4px; width: 18px; top: 4px; height: 16px; z-index: 0;"), "{out}");
-    assert!(
-        out.contains("[data-skin-node=\"CloseBox\"]::before"),
-        "{out}"
-    );
-    assert!(!out.contains("[data-skin-node=\"Views\"]::before"), "{out}");
-    // Lead decision 2: CloseBox (18x16 at right 4, top 4) grows to 24x24
-    // shifted inward: 3 px left of centre would leave the top edge.
-    assert!(out.contains("[data-skin-node=\"CloseBox\"]::before {\n    content: \"\";\n    position: absolute;\n    left: -3px;\n    top: -4px;\n    width: 24px;\n    height: 24px;"), "{out}");
+    assert!(out.contains("[data-skin-node=\"CloseBox\"] {\n    position: absolute; right: 4px; width: 18px; top: 4px; height: 16px; z-index: 0; box-sizing: border-box; margin: -4px -3px -4px -3px; border: solid transparent; border-width: 4px 3px 4px 3px; width: 24px; height: 24px;"), "{out}");
+    assert!(!out.contains("::before"), "{out}");
     // Lead decision 3: the views node draws opaque over the window art.
     assert!(out.contains("[data-skin-node=\"Views\"] {\n    position: absolute; left: 10px; right: 10px; top: 40px; bottom: 60px; z-index: 0; background-color: var(--color-xfire-bg-dark);"), "{out}");
 }

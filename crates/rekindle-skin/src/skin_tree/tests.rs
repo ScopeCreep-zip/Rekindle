@@ -56,6 +56,7 @@ pub(super) fn n(id: &str, role: NodeRole, x: NodeSpan, y: NodeSpan) -> SkinNode 
         text: None,
         label: None,
         inset: None,
+        target: None,
         shows_with: None,
         control_group: None,
         triggers: Vec::new(),
