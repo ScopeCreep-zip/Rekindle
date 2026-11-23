@@ -7,7 +7,7 @@
 
 use std::time::Duration;
 
-use rekindle_netsim::Fault;
+use rekindle_netsim::{Fault, Writes};
 use rekindle_types::subscription_events::FriendEvent;
 
 use crate::harness::{eventually, start};
@@ -29,8 +29,16 @@ async fn a_lost_accept_is_attempted_again_until_it_lands() {
     let ann = key(&nodes[1]);
     request(&sim, &nodes[0], &nodes[1]).await;
     let events = nodes[0].events().await;
-    // Every app message and call is lost while Ann accepts.
+    // Every app message and call is lost while Ann accepts, and her write
+    // into Rae's reply inbox (plan RV2) lands below consensus: both paths.
     sim.fault(Fault::DropMessages { per_mille: 1000 });
+    sim.fault(Fault::WriteFails {
+        node: 1,
+        of: Writes::Subkey {
+            subkey: rekindle_types::dht_layout::request_inbox::REQUEST,
+            record: None,
+        },
+    });
     accept(&nodes[1], &nodes[0]).await;
     tokio::time::sleep(Duration::from_secs(60)).await;
     assert!(
@@ -38,6 +46,7 @@ async fn a_lost_accept_is_attempted_again_until_it_lands() {
         "the accept was lost"
     );
     sim.fault(Fault::DropMessages { per_mille: 0 });
+    sim.fault(Fault::Heal);
     assert!(
         eventually(&sim, LIMIT * 20, || is_accepted_friend(&nodes[0], &ann)).await,
         "the outbox attempted the accept again and Rae is accepted"

@@ -42,6 +42,7 @@ pub(crate) async fn build(
             "our profile is not published yet — try again in a moment".to_string(),
         ));
     }
+    let reply = super::inbox::create_reply(host).await?;
     let routes = host.node()?.routes();
     let route_blob = if let Ok(blob) =
         tokio::time::timeout(ROUTE_WAIT, routes.available_own(RouteClass::General)).await
@@ -58,5 +59,29 @@ pub(crate) async fn build(
         route_blob,
         mailbox_dht_key: own.mailbox_dht_key,
         auth,
+        reply,
     }))
+}
+
+/// Record on `peer`'s row the reply inbox `request` carries (plan RV2),
+/// once the row exists, and hold exactly the open requests' inboxes.
+///
+/// # Errors
+/// The row could not be written.
+pub(crate) async fn remember_reply(
+    host: &dyn FriendHost,
+    peer: &str,
+    request: &DirectBody,
+) -> Result<(), FriendError> {
+    let DirectBody::FriendRequest(request) = request else {
+        return Ok(());
+    };
+    let owner = state::owner(host)?;
+    let (pk, key) = (peer.to_owned(), request.reply.record_key.clone());
+    state::db_call!(host, "store reply inbox", move |conn| {
+        rekindle_db::repo::friends::set_reply_inbox(conn, &owner, &pk, &key)
+    })
+    .await?;
+    host.sync_reply_inboxes().await;
+    Ok(())
 }

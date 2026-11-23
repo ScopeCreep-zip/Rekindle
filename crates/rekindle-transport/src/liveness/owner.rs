@@ -21,8 +21,10 @@ pub(crate) type SharedSession = Arc<parking_lot::RwLock<Option<crate::session::S
 
 /// Rotate our General route on inbound silence while a peer should be
 /// answering us (O2, plan RV1), when a friend's DM chain runs ahead of the
-/// hints that should have reached us over it, or when a friend re-sent a
-/// call we receipted over it (plan RV2), until shutdown. A route Veilid
+/// hints that should have reached us over it, when a friend re-sent a
+/// call we receipted over it (plan RV2), or when a first contact reached us
+/// only through its reply inbox (plan RV2, evidence source 6), until
+/// shutdown. A route Veilid
 /// reports dead is `OwnRoutes::on_dead`'s.
 pub(crate) async fn run_rotations(live: Arc<Liveness>, mut offers: Offers) {
     loop {
@@ -53,6 +55,11 @@ pub(crate) async fn run_rotations(live: Arc<Liveness>, mut offers: Offers) {
             .lock()
             .as_ref()
             .and_then(|s| s.rules.receipt_lost(now));
+        let reply = live
+            .general
+            .lock()
+            .as_ref()
+            .and_then(|s| s.rules.reply_ahead(now));
         if silent {
             live.rotate("inbound silence while a peer should answer");
         } else if ahead {
@@ -63,6 +70,11 @@ pub(crate) async fn run_rotations(live: Arc<Liveness>, mut offers: Offers) {
                 state.rules.rotated_for(&peer, now);
             }
             live.rotate("a friend re-sent a call we receipted");
+        } else if let Some(peer) = reply {
+            if let Some(state) = live.general.lock().as_mut() {
+                state.rules.rotated_for(&peer, now);
+            }
+            live.rotate("a first contact reached us only through its reply inbox");
         }
     }
 }

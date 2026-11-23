@@ -68,6 +68,7 @@ mod group_dm_invite;
 mod group_dm_invite_race;
 mod group_dm_rename;
 mod handshake_head_of_line;
+mod handshake_question_leg_lost;
 mod harness;
 mod host_shutdown;
 mod hung_call;

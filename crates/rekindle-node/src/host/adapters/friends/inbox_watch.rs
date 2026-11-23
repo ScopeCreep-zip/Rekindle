@@ -2,6 +2,10 @@
 //! D17): a lease per inbox, watched on the one-time writer's subkey, held
 //! while the invite is `pending` and re-watched at unlock. A change is
 //! opened as any inbound 1:1 frame (`operations::friend::inbox::received`).
+//! Our open requests' reply inboxes (plan RV2) are held the same way in
+//! their own map, re-held at unlock and released when the request settles
+//! ([`rewatch_open_requests`]); what lands there is opened by
+//! `inbox::received_reply`.
 
 use rekindle_records::port::OpenIntent;
 use std::sync::Arc;
@@ -20,15 +24,30 @@ pub(super) async fn hold(
     record_key: &str,
     lease: LeaseId,
 ) {
+    hold_in(&host.ctx().friend_watches.inboxes, pool, record_key, lease).await;
+}
+
+/// Hold `lease` on our request's reply inbox `record_key` and watch its
+/// writer's subkey (plan RV2).
+pub(super) async fn hold_reply(
+    host: &HostFriends,
+    pool: &Arc<dyn RecordPort>,
+    record_key: &str,
+    lease: LeaseId,
+) {
+    hold_in(&host.ctx().friend_watches.replies, pool, record_key, lease).await;
+}
+
+async fn hold_in(
+    map: &parking_lot::Mutex<std::collections::BTreeMap<String, LeaseId>>,
+    pool: &Arc<dyn RecordPort>,
+    record_key: &str,
+    lease: LeaseId,
+) {
     if let Err(e) = pool.watch(lease, &[request_inbox::REQUEST]).await {
-        tracing::warn!(error = %e, "invite inbox not watched");
+        tracing::warn!(error = %e, "request inbox not watched");
     }
-    let previous = host
-        .ctx()
-        .friend_watches
-        .inboxes
-        .lock()
-        .insert(record_key.to_string(), lease);
+    let previous = map.lock().insert(record_key.to_string(), lease);
     if let Some(previous) = previous.filter(|p| *p != lease) {
         pool.release(previous).await;
     }
@@ -63,6 +82,41 @@ pub(super) async fn rewatch_pending(host: &HostFriends) {
     }
 }
 
+/// Hold and watch exactly our open requests' reply inboxes (plan RV2): one
+/// not held is reopened (an unlock), and one whose request settled is
+/// released and its owner keypair forgotten.
+pub(super) async fn rewatch_open_requests(host: &HostFriends) {
+    let (Ok(owner), Ok(db)) = (host.ctx().require_owner(), host.ctx().db.current()) else {
+        return;
+    };
+    let keys = db
+        .call(move |conn| rekindle_db::repo::friends::reply_inboxes(conn, &owner))
+        .await;
+    let (Ok(keys), Some(pool)) = (keys, host.node().ok().and_then(|node| node.records())) else {
+        return;
+    };
+    let settled: Vec<(String, LeaseId)> = {
+        let mut held = host.ctx().friend_watches.replies.lock();
+        let gone: Vec<String> = held.keys().filter(|k| !keys.contains(k)).cloned().collect();
+        gone.into_iter()
+            .filter_map(|k| held.remove(&k).map(|lease| (k, lease)))
+            .collect()
+    };
+    for (key, lease) in settled {
+        pool.release(lease).await;
+        host.forget_inbox_owner(&key);
+    }
+    for key in keys {
+        if host.ctx().friend_watches.replies.lock().contains_key(&key) {
+            continue;
+        }
+        match pool.acquire(&key, None, OpenIntent::Hold).await {
+            Ok(lease) => hold_reply(host, &pool, &key, lease).await,
+            Err(e) => tracing::warn!(error = %e, "reply inbox not reopened"),
+        }
+    }
+}
+
 impl HostFriends {
     /// A watched record changed: when it is one of our invites' inboxes,
     /// open what its writer wrote; whether it was. `value` is the inline
@@ -73,15 +127,24 @@ impl HostFriends {
         subkeys: &[u32],
         value: Option<&[u8]>,
     ) -> bool {
-        let Some(lease) = self
+        let invite = self
             .ctx()
             .friend_watches
             .inboxes
             .lock()
             .get(record_key)
-            .copied()
-        else {
-            return false;
+            .copied();
+        let reply = self
+            .ctx()
+            .friend_watches
+            .replies
+            .lock()
+            .get(record_key)
+            .copied();
+        let (lease, is_reply) = match (invite, reply) {
+            (Some(lease), _) => (lease, false),
+            (None, Some(lease)) => (lease, true),
+            (None, None) => return false,
         };
         if !subkeys.contains(&request_inbox::REQUEST) {
             return true;
@@ -95,12 +158,22 @@ impl HostFriends {
                 // The carried value first; the network read always runs, so
                 // Veilid's report mark clears (`ValueChange`'s contract), and
                 // a newer request it finds is handled too.
+                let open = |value: Vec<u8>| {
+                    let host = host.clone();
+                    async move {
+                        if is_reply {
+                            inbox::received_reply(&host, &value).await;
+                        } else {
+                            inbox::received(&host, &value).await;
+                        }
+                    }
+                };
                 if let Some(value) = &inline {
-                    inbox::received(&host, value).await;
+                    open(value.clone()).await;
                 }
                 if let Some(value) = read(&host, lease).await {
                     if inline.as_ref() != Some(&value) {
-                        inbox::received(&host, &value).await;
+                        open(value).await;
                     }
                 }
             });

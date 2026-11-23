@@ -269,7 +269,9 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// `custom_status` are the member's verified card, written only from `read_card`.
 /// 156 (plan E7.2 G3): `recent_servers`, the servers we visited, for the Servers view.
 /// 157 (plan RV1): `route_budget`, the identity's persisted new-route budget.
-pub const SCHEMA_VERSION: i64 = 157;
+/// 158 (plan RV2): `friends.reply_inbox_key`, `friends.peer_reply_inbox_key`/`peer_reply_writer`,
+/// `pending_friend_requests.reply_inbox_key`/`reply_writer`: a request's reply inbox.
+pub const SCHEMA_VERSION: i64 = 158;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

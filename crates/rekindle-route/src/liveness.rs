@@ -12,8 +12,10 @@
 //! - [`InboundLiveness`], the owner: rotate the General route on inbound
 //!   silence while a peer should be answering, when a friend's DM chain
 //!   runs ahead of the hints that should have reached us over the route,
-//!   or when a friend re-sends a call we receipted over it (plan RV2: our
-//!   receipt was lost); pace the republish (O3). A peer's `'L'` probe is
+//!   when a friend re-sends a call we receipted over it (plan RV2: our
+//!   receipt was lost), or when a first contact reaches us only through
+//!   its reply inbox (plan RV2: the call path to us is lost); pace the
+//!   republish (O3). A peer's `'L'` probe is
 //!   no evidence: it names no sender, so anyone holding our blob could
 //!   send it (plan RV2). Each rotation
 //!   draws a new route and so spends from the new-route budget
@@ -114,6 +116,12 @@ pub struct InboundLiveness {
     /// `dm::ack` digest) and how many copies of it arrived: one entry per
     /// peer, a new frame replacing the last (plan RV2).
     lost_receipts: std::collections::HashMap<String, ([u8; 32], u32)>,
+    /// The call copies that arrived over the route, by `dm::ack` digest,
+    /// for [`HINT_WINDOW`] (plan RV2, evidence source 6).
+    calls: std::collections::HashMap<[u8; 32], Instant>,
+    /// Per peer, the durable first contact (digest, when it opened) whose
+    /// call copy has not arrived over the route (plan RV2).
+    replies: std::collections::HashMap<String, ([u8; 32], Instant)>,
     /// Per peer, when their evidence last rotated a route: kept across
     /// [`Self::route_replaced`], for [`REPORT_PEER_COOLDOWN`].
     peer_rotated: std::collections::HashMap<String, Instant>,
@@ -130,6 +138,8 @@ impl InboundLiveness {
             hints: std::collections::HashMap::new(),
             ahead: std::collections::HashMap::new(),
             lost_receipts: std::collections::HashMap::new(),
+            calls: std::collections::HashMap::new(),
+            replies: std::collections::HashMap::new(),
             peer_rotated: std::collections::HashMap::new(),
         }
     }
@@ -187,6 +197,54 @@ impl InboundLiveness {
     pub fn rotated_for(&mut self, peer: &str, now: Instant) {
         self.peer_rotated.insert(peer.to_owned(), now);
         self.lost_receipts.remove(peer);
+        self.replies.remove(peer);
+    }
+
+    /// A call copy of the frame with digest `frame` arrived over the route
+    /// at `now` (plan RV2): a durable copy of it is no evidence.
+    pub fn call_seen(&mut self, frame: [u8; 32], now: Instant) {
+        self.calls
+            .retain(|_, at| now.duration_since(*at) < HINT_WINDOW);
+        self.calls.insert(frame, now);
+        self.replies.retain(|_, (digest, _)| *digest != frame);
+    }
+
+    /// `peer`'s durable first contact with digest `frame` opened at `now`
+    /// (plan RV2, evidence source 6): evidence against the route unless its
+    /// call copy arrived over it within [`HINT_WINDOW`]. A copy on a route
+    /// younger than [`REPORT_ROTATE_AGE`] is not counted: the peer may have
+    /// called the route this one replaced. Each request's reply inbox takes
+    /// one write, so a peer gives at most one per request we sent.
+    pub fn reply_landed(&mut self, peer: &str, frame: [u8; 32], now: Instant) {
+        if now.duration_since(self.came_up) < REPORT_ROTATE_AGE {
+            return;
+        }
+        let called = self
+            .calls
+            .get(&frame)
+            .is_some_and(|at| now.duration_since(*at) < HINT_WINDOW);
+        if !called {
+            self.replies.insert(peer.to_owned(), (frame, now));
+        }
+    }
+
+    /// The peer whose durable first contact opened at least [`HINT_WINDOW`]
+    /// before `now` with no call copy over the route since, and who is out
+    /// of its [`REPORT_PEER_COOLDOWN`], if any: the route rotates on their
+    /// evidence ([`Self::rotated_for`]).
+    #[must_use]
+    pub fn reply_ahead(&self, now: Instant) -> Option<String> {
+        let mut ahead: Vec<&String> = self
+            .replies
+            .iter()
+            .filter(|(peer, (_, at))| {
+                now.duration_since(*at) >= HINT_WINDOW && !self.cooling(peer, now)
+            })
+            .map(|(peer, _)| peer)
+            .collect();
+        // The least key, never the map's order: one seed, one schedule.
+        ahead.sort();
+        ahead.first().map(|peer| (*peer).clone())
     }
 
     /// Whether `peer`'s evidence rotated a route less than

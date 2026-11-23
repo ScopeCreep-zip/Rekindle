@@ -31,6 +31,7 @@ pub(crate) fn watch_friends(ctx: &DaemonContext, scope: &Arc<rekindle_lifecycle:
     scope.spawn_or_drop("friend watches", async move {
         host.rewatch().await;
         inbox_watch::rewatch_pending(&host).await;
+        inbox_watch::rewatch_open_requests(&host).await;
     });
 }
 

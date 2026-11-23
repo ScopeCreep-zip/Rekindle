@@ -80,6 +80,19 @@ pub enum Called {
 /// E2.5, D23): it is applied as it comes, and the sender's chain, which
 /// is authoritative, is diffed for anything before it that was lost.
 pub async fn receive(host: &dyn FriendHost, datagram: &[u8]) -> Routed {
+    receive_from(host, datagram, false).await
+}
+
+/// [`receive`] for what landed in one of our requests' reply inboxes (plan
+/// RV2): the same admission ([`frame::open`]); a copy that opens is told to
+/// the route owner as a durable first contact (evidence source 6,
+/// `Liveness::reply_landed`), which rotates our General route unless its
+/// call copy arrives over the route within the hint window.
+pub async fn receive_reply(host: &dyn FriendHost, datagram: &[u8]) -> Routed {
+    receive_from(host, datagram, true).await
+}
+
+async fn receive_from(host: &dyn FriendHost, datagram: &[u8], reply: bool) -> Routed {
     let Some(bytes) = dm::unwire(datagram) else {
         tracing::warn!(len = datagram.len(), "dropping untagged 1:1 message");
         return Routed::Handled;
@@ -92,6 +105,11 @@ pub async fn receive(host: &dyn FriendHost, datagram: &[u8]) -> Routed {
             return Routed::Handled;
         }
     };
+    if reply {
+        if let Ok(node) = host.node() {
+            node.liveness().reply_landed(&opened.sender_hex, digest);
+        }
+    }
     // Held: neither acknowledged nor remembered for a copy's re-ack.
     if opened.held {
         held::keep(host, opened).await;
@@ -231,9 +249,13 @@ pub async fn receive_call(host: &dyn FriendHost, datagram: &[u8], route: Option<
         return Called::Answered(NAK.to_vec());
     };
     let opened = match frame::open(host, bytes).await {
-        Ok(opened) => opened,
+        Ok(opened) => {
+            call_seen(host, bytes, route);
+            opened
+        }
         // The silent receipt: a block is never told (LV23 review H1/H2).
         Err(Dropped::Duplicate { from }) => {
+            call_seen(host, bytes, route);
             re_sent(host, &from, bytes, route).await;
             return Called::Answered(Vec::new());
         }
@@ -315,6 +337,15 @@ pub async fn answer_call(host: &dyn FriendHost, datagram: &[u8], route: Option<&
             tracing::warn!("1:1 app_call exceeded its deadline — answered retry later");
             Called::RetryLater
         }
+    }
+}
+
+/// An authenticated call copy of `frame` arrived over our route `route`: a
+/// durable copy of the same frame is no evidence against our General route
+/// (plan RV2, evidence source 6).
+fn call_seen(host: &dyn FriendHost, frame: &[u8], route: Option<&str>) {
+    if let Ok(node) = host.node() {
+        node.liveness().call_seen(dm::ack::digest(frame), route);
     }
 }
 

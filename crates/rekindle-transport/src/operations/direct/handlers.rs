@@ -91,6 +91,7 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
                 route_blob: &r.route_blob,
                 mailbox_dht_key: &r.mailbox_dht_key,
                 auth: &r.auth,
+                reply: &r.reply,
             };
             match inbound::on_friend_request(host, &req).await {
                 Ok(()) => {}

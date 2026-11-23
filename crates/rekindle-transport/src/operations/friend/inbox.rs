@@ -44,6 +44,38 @@ pub(crate) fn records(
 /// # Errors
 /// The record could not be created or its owner keypair kept.
 pub(crate) async fn create(host: &dyn FriendHost) -> Result<InboxCapability, FriendError> {
+    let (record_key, owner, lease, writer) = open_inbox(host).await?;
+    host.keep_request_inbox(&record_key, &owner, lease).await?;
+    Ok(InboxCapability { record_key, writer })
+}
+
+/// Create our request's reply inbox (plan RV2): the same shape as an
+/// invite's, a fresh one-time writer the request carries sealed to its
+/// addressee, so only they can write it, once. The Host holds and watches
+/// it while the request is open (`FriendHost::keep_reply_inbox`) and
+/// releases it when the request settles (`FriendHost::sync_reply_inboxes`).
+///
+/// # Errors
+/// The record could not be created or its owner keypair kept.
+pub(crate) async fn create_reply(host: &dyn FriendHost) -> Result<InboxCapability, FriendError> {
+    let (record_key, owner, lease, writer) = open_inbox(host).await?;
+    host.keep_reply_inbox(&record_key, &owner, lease).await?;
+    Ok(InboxCapability { record_key, writer })
+}
+
+/// A new request inbox on the network: its key, owner keypair, lease and
+/// the one-time writer's keypair text.
+async fn open_inbox(
+    host: &dyn FriendHost,
+) -> Result<
+    (
+        String,
+        Zeroizing<String>,
+        rekindle_records::lease::LeaseId,
+        String,
+    ),
+    FriendError,
+> {
     let mut secret = Zeroizing::new([0u8; 32]);
     host.rng().fill(secret.as_mut_slice());
     let signing = rekindle_secrets::ed25519_dalek::SigningKey::from_bytes(&secret);
@@ -71,8 +103,7 @@ pub(crate) async fn create(host: &dyn FriendHost) -> Result<InboxCapability, Fri
             "request inbox not opened: {e}"
         )));
     }
-    host.keep_request_inbox(&record_key, &owner, lease).await?;
-    Ok(InboxCapability { record_key, writer })
+    Ok((record_key, owner, lease, writer))
 }
 
 /// Redeem `blob`: our sealed `FriendRequest`, admitted by `invite_id`,
@@ -91,6 +122,7 @@ pub(crate) async fn redeem(
     message: &str,
 ) -> Result<(), FriendError> {
     let request = super::request::build(host, message, RequestAuth::Invite(invite_id)).await?;
+    super::request::remember_reply(host, &blob.public_key, &request).await?;
     let frame = dm::reply_frame(host, &blob.public_key, &request).await?;
     if frame.len() > request_inbox::MAX_SUBKEY_VALUE_LEN {
         return Err(FriendError::Failed(format!(
@@ -118,6 +150,18 @@ pub async fn received(host: &dyn FriendHost, value: &[u8]) {
         crate::operations::direct::receive(host, value).await
     {
         tracing::debug!(kind = ?opened.type_id, "unported kind in a request inbox — dropped");
+    }
+}
+
+/// What landed in one of our requests' reply inboxes (plan RV2): the
+/// accepter's first contact, opened through the same admission as its call
+/// copy (`direct::receive_reply`); a copy arriving both ways is a duplicate
+/// there.
+pub async fn received_reply(host: &dyn FriendHost, value: &[u8]) {
+    if let crate::operations::direct::Routed::Unported(opened) =
+        crate::operations::direct::receive_reply(host, value).await
+    {
+        tracing::debug!(kind = ?opened.type_id, "unported kind in a reply inbox — dropped");
     }
 }
 

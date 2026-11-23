@@ -173,7 +173,9 @@ async fn attempt_pending(host: &dyn FriendHost, to: &str, type_id: u16, body: &[
     }
 }
 
-/// Commit a frame built elsewhere (a PreKeyInit opened from a bundle).
+/// Commit a frame built elsewhere (a PreKeyInit opened from a bundle); a
+/// `FriendAccept` init to a requester that named a reply inbox is written
+/// there too (plan RV2, `first_contact_durable`).
 ///
 /// # Errors
 /// The frame is over the cap, or the row could not be stored.
@@ -182,10 +184,9 @@ pub async fn enqueue_frame(
     to: &str,
     frame: &DmFrame,
 ) -> Result<String, FriendError> {
-    let payload = encode(&Framed::Wire {
-        datagram: super::frame::wire(frame)?,
-    })?;
-    commit(host, to, client_id(host, frame.type_id), payload).await
+    let datagram = super::frame::wire(frame)?;
+    let framed = super::first_contact_durable::framed(host, to, frame, datagram).await?;
+    commit(host, to, client_id(host, frame.type_id), encode(&framed)?).await
 }
 
 /// Commit an invite's redemption to our handshake stream to `to`, the
@@ -258,7 +259,7 @@ pub const INBOX_TAKEN: &str = "the invite was already used";
 /// `sent`; a miss is attempted again; an inbox holding another value
 /// fails it visibly ([`INBOX_TAKEN`]), as does a write the schema or
 /// writer refuses ([`refuses`]); any other error is attempted again.
-async fn attempt_inbox(
+pub(super) async fn attempt_inbox(
     host: &dyn FriendHost,
     record_key: &str,
     writer: &str,
@@ -457,7 +458,8 @@ fn answer_outcome(answer: &Result<send::CallAnswer, FriendError>) -> &'static st
 }
 
 /// One attempt of a handshake row to `to`: a request or a first contact
-/// ([`receipted`]) goes by `app_call` only, over the cached route or one
+/// ([`receipted`]) goes by `app_call` (a first contact to a requester that
+/// named a reply inbox also by its write there, plan RV2), over the cached route or one
 /// refreshed from their profile, and is attempted again until its empty
 /// return (the receipt) comes back, a judged refusal ends it ([`answered`]),
 /// or its deadline passes; any other frame
@@ -475,6 +477,14 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
     {
         return attempt_inbox(host, record_key, writer, frame).await;
     }
+    if let Framed::FirstContactDurable {
+        datagram,
+        record_key,
+        writer,
+    } = &framed
+    {
+        return super::first_contact_durable::attempt(host, to, datagram, record_key, writer).await;
+    }
     if let Framed::FirstContact { first_type_id } = &framed {
         return attempt_first_contact(host, to, *first_type_id).await;
     }
@@ -490,56 +500,7 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
         Err(e) => return Attempt::Wedged(e.to_string()),
     };
     if receipted(kind) {
-        let answer = send::call_datagram_answer(host, to, datagram).await;
-        let applied = match &answer {
-            Ok(send::CallAnswer::Reply(reply)) if kind != DmTypeId::FriendRequest => {
-                crate::operations::direct::on_first_contact_reply(host, to, reply).await
-            }
-            _ => Rejection::NotOurs,
-        };
-        return match answered(kind, &answer, applied) {
-            Answered::Receipt => {
-                if kind == DmTypeId::FriendRequest {
-                    crate::operations::prekeys::request_delivered(host, to);
-                    host.publish(SubscriptionEvent::Friend(
-                        FriendEvent::RequestAcknowledged {
-                            peer_key: to.to_string(),
-                        },
-                    ));
-                }
-                Attempt::Receipted
-            }
-            Answered::Rejected => Attempt::Superseded(format!("{kind:?} prekeys refused by {to}")),
-            Answered::Refused => {
-                if matches!(kind, DmTypeId::FriendAccept | DmTypeId::SessionResetAccept) {
-                    crate::operations::prekeys::refused(host, to, kind);
-                }
-                Attempt::Superseded(format!("{kind:?} refused by {to}"))
-            }
-            Answered::Undelivered => {
-                tracing::debug!(to = %to, "friend request answered with a NAK — attempted again");
-                crate::operations::prekeys::request_undelivered(host, to);
-                Attempt::Deferred
-            }
-            Answered::Again => {
-                if kind == DmTypeId::FriendRequest {
-                    // Identifier-free at INFO (live finding LF5): a request
-                    // that does not land is seen retrying, never silent.
-                    tracing::info!(
-                        outcome = answer_outcome(&answer),
-                        "friend request attempt failed — attempted again"
-                    );
-                }
-                if let Err(e) = &answer {
-                    tracing::debug!(to = %to, ?kind, error = %e,
-                        "handshake frame not receipted by app_call — attempted again");
-                } else {
-                    tracing::debug!(to = %to, ?kind,
-                        "friend request answered with a reply — attempted again");
-                }
-                Attempt::Deferred
-            }
-        };
+        return attempt_call(host, to, datagram, kind).await;
     }
     match send::route_send_datagram(host, to, &datagram, kind).await {
         Ok(true) if awaits_answer(kind) => Attempt::Awaiting,
@@ -553,6 +514,66 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
             Attempt::Deferred
         }
         Err(e) => Attempt::Wedged(e.to_string()),
+    }
+}
+
+/// One `app_call` of a receipted row's `datagram` of `kind` to `to`, and
+/// what its answer comes to ([`answered`]).
+pub(super) async fn attempt_call(
+    host: &dyn FriendHost,
+    to: &str,
+    datagram: Vec<u8>,
+    kind: DmTypeId,
+) -> Attempt {
+    let answer = send::call_datagram_answer(host, to, datagram).await;
+    let applied = match &answer {
+        Ok(send::CallAnswer::Reply(reply)) if kind != DmTypeId::FriendRequest => {
+            crate::operations::direct::on_first_contact_reply(host, to, reply).await
+        }
+        _ => Rejection::NotOurs,
+    };
+    match answered(kind, &answer, applied) {
+        Answered::Receipt => {
+            if kind == DmTypeId::FriendRequest {
+                crate::operations::prekeys::request_delivered(host, to);
+                host.publish(SubscriptionEvent::Friend(
+                    FriendEvent::RequestAcknowledged {
+                        peer_key: to.to_string(),
+                    },
+                ));
+            }
+            Attempt::Receipted
+        }
+        Answered::Rejected => Attempt::Superseded(format!("{kind:?} prekeys refused by {to}")),
+        Answered::Refused => {
+            if matches!(kind, DmTypeId::FriendAccept | DmTypeId::SessionResetAccept) {
+                crate::operations::prekeys::refused(host, to, kind);
+            }
+            Attempt::Superseded(format!("{kind:?} refused by {to}"))
+        }
+        Answered::Undelivered => {
+            tracing::debug!(to = %to, "friend request answered with a NAK — attempted again");
+            crate::operations::prekeys::request_undelivered(host, to);
+            Attempt::Deferred
+        }
+        Answered::Again => {
+            if kind == DmTypeId::FriendRequest {
+                // Identifier-free at INFO (live finding LF5): a request
+                // that does not land is seen retrying, never silent.
+                tracing::info!(
+                    outcome = answer_outcome(&answer),
+                    "friend request attempt failed — attempted again"
+                );
+            }
+            if let Err(e) = &answer {
+                tracing::debug!(to = %to, ?kind, error = %e,
+                    "handshake frame not receipted by app_call — attempted again");
+            } else {
+                tracing::debug!(to = %to, ?kind,
+                    "friend request answered with a reply — attempted again");
+            }
+            Attempt::Deferred
+        }
     }
 }
 

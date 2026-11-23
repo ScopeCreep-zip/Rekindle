@@ -11,6 +11,7 @@ use crate::direct_capnp::{
     profile_key_rotated, retry_request, session_reset_decline, session_reset_request,
     stream_record,
 };
+use crate::message::envelope::InboxCapability;
 
 /// What admits a friend request (plan E2.5, D17): exactly one of the
 /// target's friend-code token or one of its invites. The two paths stay
@@ -33,8 +34,15 @@ impl std::fmt::Debug for RequestAuth {
     }
 }
 
+/// The longest one-time writer's keypair text a request's reply inbox
+/// names (`VLD0:<public>:<secret>`, 93 characters).
+const MAX_WRITER_LEN: usize = 128;
+
 /// 0x0002 FriendRequest (sealed, by `app_call`). It carries no bundle:
-/// the accepter reads our prekey record (plan E2.4).
+/// the accepter reads our prekey record (plan E2.4). It carries our reply
+/// inbox (plan RV2): the accepter writes its first contact there as well as
+/// by `app_call`, so a call path lost on the wire leaves a durable copy we
+/// watch. Sealed, so only the addressee learns the writer.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FriendRequest {
     pub display_name: String,
@@ -44,6 +52,8 @@ pub struct FriendRequest {
     pub mailbox_dht_key: String,
     /// The token or the invite that admits it.
     pub auth: RequestAuth,
+    /// Our reply inbox and its one-time writer (plan RV2).
+    pub reply: InboxCapability,
 }
 
 impl FriendRequest {
@@ -57,6 +67,8 @@ impl FriendRequest {
             RequestAuth::Token(token) => b.set_request_token(token),
             RequestAuth::Invite(id) => b.set_invite_id(id),
         }
+        b.set_reply_inbox_key(&self.reply.record_key);
+        b.set_reply_writer(&self.reply.writer);
     }
 
     pub(super) fn read(r: friend_request::Reader<'_>) -> Result<Self, CodecError> {
@@ -69,8 +81,22 @@ impl FriendRequest {
             route_blob: data(r.get_route_blob())?,
             mailbox_dht_key: opt_record_key(r.get_mailbox_dht_key(), "mailbox key")?,
             auth: request_auth(r)?,
+            reply: reply_inbox(r)?,
         })
     }
+}
+
+/// The reply inbox a request names: a record key and a writer, both
+/// required (plan RV2).
+fn reply_inbox(r: friend_request::Reader<'_>) -> Result<InboxCapability, CodecError> {
+    let record_key = record_key(r.get_reply_inbox_key(), "reply inbox key")?;
+    let writer = bounded_text(r.get_reply_writer(), MAX_WRITER_LEN, "reply writer")?;
+    if writer.is_empty() {
+        return Err(CodecError::Deserialization(
+            "friend request names no reply writer".into(),
+        ));
+    }
+    Ok(InboxCapability { record_key, writer })
 }
 
 /// The one admission a request names: a token of the friend-code shape,

@@ -12,6 +12,7 @@ mod nickname;
 mod participant;
 mod presence;
 mod records;
+mod reply;
 pub use changes::{
     accept_request, accept_with_records, add_by_code, block, cancel_request, changing_list,
     expire_pending_out, forget, forget_removed, mark_removing, reject_request,
@@ -26,6 +27,7 @@ pub use participant::{
 };
 pub use presence::{clear_presence_key, presence_keys, set_presence_key};
 pub use records::{active_records, record, record_by_profile_key, records};
+pub use reply::{reply_inboxes, set_peer_reply, set_reply_inbox, take_peer_reply};
 
 /// A friend as the buddy list loads it, with its group's name.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -335,6 +337,8 @@ mod tests {
             route_blob: &[],
             mailbox_dht_key: "m",
             invite_id: None,
+            reply_inbox_key: "r",
+            reply_writer: "w",
         };
         crate::repo::pending_requests::upsert(&conn, OWNER, &request).unwrap();
         for (peer, open) in [
