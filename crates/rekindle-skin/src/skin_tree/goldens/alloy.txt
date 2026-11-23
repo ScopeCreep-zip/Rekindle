@@ -1,7 +1,7 @@
 Top Decor
-Logo Logo
+Logo Logo label "Rekindle" cover [0, 0, 67, 40] glyph Rekindle
 MenuBar MenuBar
-  FileMenu MenuTitle label "Rekindle" cover [2, 0, 44, 15] target [1, -4, 47, 24] art [-1, 4, 48, 15] Size
+  FileMenu MenuTitle label "Rekindle" cover [2, 0, 44, 15] target [0, -4, 48, 24] art [0, 4, 48, 15] Size
   ToolsMenu MenuTitle target [0, -4, 54, 24] art [0, 4, 54, 15] Size
   HelpMenu MenuTitle target [0, -4, 44, 24] art [0, 4, 44, 15] Size
 UserNameField NameField inset [0, 54] target [0, -3, 151, 20] art [0, 3, 205, 17] Spacing
@@ -78,5 +78,5 @@ popup Infoskin
       LeaveChatButton Button target [0, -1, 75, 24] art [0, 1, 75, 21] Size
         TalkingStateButton Part
     JoinButton Button target [0, -1, 35, 24] art [0, 1, 75, 21] Size
-  InfoLogo Decor
+  InfoLogo Decor label "Rekindle" cover [0, 0, 34, 21] glyph Rekindle
   MAINBG Decor target [0, 0, 175, 400] art [0, 0, 175, 400] Frame

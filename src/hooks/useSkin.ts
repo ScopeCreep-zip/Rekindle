@@ -1,8 +1,8 @@
 import { createSignal, onCleanup } from "solid-js";
 import { commands } from "../ipc/commands";
 import { subscribeSkinEvents } from "../ipc/channels";
-import type { SkinApplied, SkinApplyFailure } from "../ipc/commands/dto";
-import type { BrandGlyphName, SkinShell } from "../ipc/commands/dto_skin_tree";
+import type { BrandGlyphName, SkinApplied, SkinApplyFailure } from "../ipc/commands/dto";
+import type { SkinShell } from "../ipc/commands/dto_skin_tree";
 
 /// The shown skin's window outlines (plan SK2-S2): set with the sheet that
 /// places their nodes, so the nested divs and their rules always belong to

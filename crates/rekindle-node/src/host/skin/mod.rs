@@ -307,7 +307,7 @@ async fn list(ctx: &DaemonContext) -> Answer<SkinLibrary> {
         let m = manifest_of(pack.bytes)?;
         skins_out.push(SkinEntry {
             id: format!("{}{}", builtin::PREFIX, pack.id),
-            name: m.name,
+            name: rekindle_skin::skin_tree::brand::name(&m.name),
             imported_at: None,
             credits: m.credits,
         });
@@ -327,7 +327,7 @@ async fn list(ctx: &DaemonContext) -> Answer<SkinLibrary> {
             serde_json::from_str(&row.manifest_json).map_err(|e| failed("skin manifest", e))?;
         skins_out.push(SkinEntry {
             id: format!("{PKG}{}", row.hash),
-            name: m.name,
+            name: rekindle_skin::skin_tree::brand::name(&m.name),
             imported_at: Some(row.imported_at),
             credits: m.credits,
         });

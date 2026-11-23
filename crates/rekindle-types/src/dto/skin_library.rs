@@ -92,6 +92,12 @@ pub struct SkinApplied {
     /// and binds each role; a window kind absent here keeps its own layout.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub shells: Vec<crate::dto::skin_tree::SkinShell>,
+    /// The brand glyph the shell draws inline in the title strip's logo
+    /// box (design `br`): the first pack strip logo's, Main before Chat,
+    /// by the box rule (`skin_tree::brand::glyph`); absent when no strip
+    /// lays a logo. The stylesheet only places that box.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub title_logo: Option<crate::dto::skin_tree::NodeGlyph>,
 }
 
 /// One TUI colour role and its opaque sRGB value (a translucent token is

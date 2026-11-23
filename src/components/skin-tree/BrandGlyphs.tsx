@@ -3,7 +3,7 @@
 // it draws in full colour with no innerHTML (threat model 5b W1). A change
 // to the art is made in the .svg and transcribed again.
 import { type Component, Match, Switch } from "solid-js";
-import type { BrandGlyphName } from "../../ipc/commands/dto_skin_tree";
+import type { BrandGlyphName } from "../../ipc/commands/dto";
 
 /** The full flame. */
 export const RekindleMark: Component = () => (

@@ -1,7 +1,7 @@
 MainTitleBar Drag
   TopLeft Decor target [0, 0, 24, 24] art [0, 0, 16, 46] Short
   TopRight Decor target [-8, 0, 24, 24] art [8, 0, 16, 46] Short
-  Logo Logo target [0, -7, 24, 24] art [0, 7, 23, 9] Size
+  Logo Logo label "Rekindle" cover [0, 0, 23, 9] glyph RekindleMarkSmall target [0, -7, 24, 24] art [0, 7, 23, 9] Size
   Title Decor target [0, 0, 206, 52] art [0, 0, 206, 52] Frame
   Minimize Button target [-6, -6, 18, 24] art [6, 6, 12, 12] Short
   Maximize Button target [0, -6, 12, 24] art [0, 6, 12, 12] Short

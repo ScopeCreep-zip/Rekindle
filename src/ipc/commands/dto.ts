@@ -13,7 +13,6 @@ import type { SkinShell } from "./dto_skin_tree";
 // `lifecycleCurrent()` and the channel subscription need to name it.
 
 import type { NotJoinableReason, SendState } from "./types";
-import type { BrandGlyphName } from "./dto_skin_tree";
 
 export interface GameInfo {
   gameName: string;
@@ -534,10 +533,15 @@ export interface SkinApplied {
   /// Each tree-laid window kind's outline (plan SK2-S2); absent when the
   /// skin lays none (the built-in default keeps the app's own layout).
   shells?: SkinShell[];
-  /// The Rekindle mark the title strip's logo draws (plan BR), chosen by the
-  /// Host from the logo's box; absent when the skin's strip has no logo.
+  /// The brand glyph the shell draws inline in the title strip's logo box
+  /// (the first strip logo's, Main before Chat), chosen by the Host from that
+  /// box (plan BR); absent with no strip logo.
   titleLogo?: BrandGlyphName;
 }
+
+/** The brand glyphs a title-strip logo box takes (the `NodeGlyph`s
+ *  `skin_tree::brand::glyph` returns). */
+export type BrandGlyphName = "rekindle" | "rekindleMarkSmall" | "rekindleWordmark";
 
 /** The member-list group the Host put a member in (Tier 1 `MemberGroup`):
  *  every frontend renders it as given. */

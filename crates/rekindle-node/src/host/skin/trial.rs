@@ -106,7 +106,7 @@ pub(super) async fn begin(ctx: &DaemonContext, id: String, hash: String) -> Answ
         .map_or(stored, |t| t.previous);
     let trial = SkinTrial {
         id,
-        name: m.name,
+        name: rekindle_skin::skin_tree::brand::name(&m.name),
         previous,
         reverts_at_ms: ctx.clock.now_ms().saturating_add(SKIN_TRIAL_MS),
     };

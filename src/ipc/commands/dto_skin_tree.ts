@@ -344,14 +344,11 @@ export interface NodeLabel {
 }
 
 /** The built-in glyphs the shell draws (`NodeGlyph`). */
-/** `communities`: the icon tab N4 places; the Rekindle mark (plan BR) on every logo node,
- *  the branded decor and a renamed icon-sized menu title: `rekindleWordmark` (flame and
- *  word, a box at least 15 px tall and over twice as wide), `rekindleMarkSmall` (a box of
- *  16 px or less) or `rekindle` (the full mark). */
-export type NodeGlyph = "communities" | BrandGlyphName;
-
-/** The Rekindle mark's three drawings (plan BR): on logo nodes and the title strip. */
-export type BrandGlyphName = "rekindle" | "rekindleMarkSmall" | "rekindleWordmark";
+/** `communities`: the icon tab N4 places; `rekindle`: the app mark on a renamed, icon-sized
+ *  menu title (plan SK5, XGlow's 24x22 file menu) and the brand mark over a pack's logo in a box
+ *  at most 2:1; `rekindleWordmark`: the brand wordmark (flame and word) over a pack's logo or
+ *  Xfire decor in a wider box, its cover the whole art box (design `br`). */
+export type NodeGlyph = "communities" | "rekindle" | "rekindleWordmark" | "rekindleMarkSmall";
 
 /** `MenuItem`: one item of an engine menu. */
 export interface MenuItem {

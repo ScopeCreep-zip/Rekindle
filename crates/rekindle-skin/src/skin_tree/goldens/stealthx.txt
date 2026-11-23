@@ -13,7 +13,7 @@ MainBackground Decor target [0, 0, 288, 400] art [0, 0, 288, 400] Frame
   WndClose Button target [-1, -6, 19, 24] art [1, 6, 12, 12] Short
   WndMax Button target [-1, -6, 14, 24] art [1, 6, 12, 12] Short
   WndMin Button target [-6, -6, 19, 24] art [6, 6, 12, 12] Short
-  WndXfire Logo
+  WndXfire Logo label "Rekindle" cover [0, 0, 103, 12] glyph RekindleMarkSmall
   StatusEdit StatusText target [0, -4, 232, 24] art [0, 4, 232, 15] Size
   StatusBtn StatusList target [-2, -6, 20, 24] art [2, 6, 12, 12] Short
   ResizeRight Button target [-16, 0, 24, 400] art [16, 0, 8, 400] Size

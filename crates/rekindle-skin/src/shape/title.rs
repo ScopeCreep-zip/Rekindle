@@ -280,14 +280,14 @@ pub fn title_css(
     );
     for p in &title.parts {
         match p.role {
+            // The pack's logo box only places the shell's inline brand
+            // glyph (`SkinApplied::title_logo`), never the pack's Xfire
+            // logo (design `br`, `skin_tree::brand`).
             TitleRole::Logo => {
-                let h = href(base, p.image.as_deref()?, images)?;
                 let _ = writeln!(
                     out,
-                    "  {root} .xfire-titlebar-logo {{\n    {} background: url(\"{h}\") 0 0 / {}px {}px no-repeat;\n  }}",
-                    placed(p),
-                    p.width,
-                    p.height
+                    "  {root} .xfire-titlebar-logo {{\n    {}\n  }}",
+                    placed(p)
                 );
             }
             TitleRole::Name => name(&mut out, root, p, images, base)?,

@@ -1,5 +1,5 @@
 Top Decor
-Logo Logo target [0, -1, 89, 24] art [0, 1, 89, 21] Size
+Logo Logo label "Rekindle" cover [0, 0, 89, 21] glyph RekindleWordmark
 MenuBar MenuBar
   XfireMenuText MenuTitle label "Rekindle"
     FileMenu Part target [0, 0, 64, 23] art [0, 0, 64, 23] Spacing
@@ -61,7 +61,7 @@ ButtonHolder ButtonBar
     FilesButtons.TabAddButton Group
       SearchFiles Button target [0, -1, 239, 24] art [0, 1, 239, 22] Size
         BigBrowseFileText Part label "Find"
-ResizeUp Button target [0, 0, 407, 24] art [0, 0, 407, 10] Short
+ResizeUp Button target [0, 0, 407, 24] art [0, 0, 407, 10] Size
 ResizeLeft Button target [0, 0, 24, 260] art [0, 0, 10, 260] Size
 ResizeRight Button target [-14, 0, 24, 260] art [14, 0, 10, 260] Size
 ResizeDown Button target [0, -14, 407, 24] art [0, 14, 407, 10] Size

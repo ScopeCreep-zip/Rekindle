@@ -1,6 +1,6 @@
 import { Component, For, JSX, Match, Show, Switch, createContext, createEffect, createSignal, onCleanup, untrack, useContext } from "solid-js";
 import { createStore, produce } from "solid-js/store";
-import type { BrandGlyphName, EngineMenu, MenuItem, NodeGlyph, NodeLabel, NodeTrigger, ShellNode, SkinAction, SkinEvent, SkinShell, ViewKey } from "../../ipc/commands/dto_skin_tree";
+import type { EngineMenu, MenuItem, NodeGlyph, NodeLabel, NodeTrigger, ShellNode, SkinAction, SkinEvent, SkinShell, ViewKey } from "../../ipc/commands/dto_skin_tree";
 import type { SkinSignalSet } from "../../ipc/commands/dto_skin_run";
 import { skinSignals } from "../../stores/skin-signals.store";
 import { applyTreeOp, fired, initialTreeState, pageView, type TreeState } from "./signalEffects";
@@ -14,6 +14,7 @@ import FilesView from "./FilesView";
 import Infoview from "../infoview/Infoview";
 import ServersView from "./ServersView";
 import { BrandGlyph } from "./BrandGlyphs";
+import type { BrandGlyphName } from "../../ipc/commands/dto";
 
 /** What every node of one window's tree reads. */
 interface Tree {
