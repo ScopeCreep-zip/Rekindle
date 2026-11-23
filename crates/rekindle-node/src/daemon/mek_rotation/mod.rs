@@ -240,7 +240,7 @@ pub async fn run_worker(ctx: Arc<DaemonContext>, mut rx: MekRotationReceiver) {
 /// Whether `kicker` holds KICK_MEMBERS under the merged governance: gossip
 /// is unauthenticated as to authority, so an unchecked kick would let
 /// anyone force rotations (and mark a departure rotated for).
-fn may_kick(ctx: &DaemonContext, community_id: &str, kicker_hex: &str) -> bool {
+pub(crate) fn may_kick(ctx: &DaemonContext, community_id: &str, kicker_hex: &str) -> bool {
     let kicker = rekindle_types::id::PseudonymKey::from_hex_lossy(kicker_hex);
     ctx.communities
         .governance_state(community_id)

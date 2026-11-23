@@ -64,13 +64,12 @@ pub(crate) fn handle_gossip_control_payloads(
             );
         }
         other => {
-            handle_gossip_moderation(app_handle, state, community_id, sender_pseudonym, other);
+            handle_gossip_moderation(state, community_id, sender_pseudonym, other);
         }
     }
 }
 
 fn handle_gossip_moderation(
-    app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     community_id: &str,
     sender_pseudonym: &str,
@@ -78,30 +77,24 @@ fn handle_gossip_moderation(
 ) {
     use rekindle_codec::community::envelope::ControlPayload;
 
-    if crate::state_helpers::current_owner_key(state).is_err() {
-        tracing::debug!("gossip moderation: not logged in — dropped");
-        return;
-    }
-
-    if !check_gossip_moderation_permission(state, community_id, sender_pseudonym, &payload) {
-        return;
-    }
-
     match payload {
+        // A relayed kick is the Host's, the same on both hosts (GI3): it
+        // checks the kicker's authority under the merged governance, forgets
+        // the member and starts the departure rotation; the membership event
+        // is the merge's. The gossip dispatcher stays sync.
         ControlPayload::Kick { target_pseudonym } => {
-            remove_member_from_local_state(
-                app_handle,
-                state,
-                community_id,
-                target_pseudonym.clone(),
-                "kick_member_remove",
-            );
-            // A kicked member still holds the current keys (plan D20).
-            crate::services::community::spawn_departure_rotations(
-                app_handle,
-                state,
-                community_id,
-                &target_pseudonym,
+            let Some(host) = state.host.current() else {
+                tracing::debug!(community = %community_id, "relayed kick: the Host is not up — dropped");
+                return;
+            };
+            let (community, kicker) = (community_id.to_owned(), sender_pseudonym.to_owned());
+            crate::state_helpers::login_scope_or_closed(state).spawn_or_drop(
+                "relayed kick",
+                async move {
+                    host.governance()
+                        .on_relayed_kick(&community, &target_pseudonym, &kicker)
+                        .await;
+                },
             );
         }
         other => {
@@ -111,94 +104,5 @@ fn handle_gossip_moderation(
                 "received unhandled moderation/structural payload"
             );
         }
-    }
-}
-
-fn remove_member_from_local_state(
-    app_handle: &tauri::AppHandle,
-    state: &Arc<AppState>,
-    community_id: &str,
-    target_pseudonym: String,
-    label: &'static str,
-) {
-    let my_pseudonym = {
-        let communities = state.communities.read();
-        communities
-            .get(community_id)
-            .and_then(|cs| cs.my_pseudonym_key.clone())
-    };
-
-    // Our own removal is the Host's, from the merged governance (plan E3.2
-    // S9 own removal): unauthenticated gossip naming us changes nothing.
-    if my_pseudonym.as_deref() == Some(&target_pseudonym) {
-        return;
-    }
-
-    {
-        let mut communities = state.communities.write();
-        if let Some(cs) = communities.get_mut(community_id) {
-            cs.known_members.remove(&target_pseudonym);
-            if let Some(ref mut gossip) = cs.gossip {
-                gossip.online_members.remove(&target_pseudonym);
-                gossip.peers.remove(&target_pseudonym);
-            }
-        }
-    }
-    match state.host.current() {
-        // The gossip dispatcher stays sync; the Host's departure awaits its
-        // own key-transfer discard (review S7m part 1 F3).
-        Some(host) => {
-            let (community, member) = (community_id.to_owned(), target_pseudonym.clone());
-            crate::state_helpers::login_scope_or_closed(state).spawn_or_drop(
-                "kicked member forgotten",
-                async move {
-                    host.governance().forget_member(&community, &member).await;
-                },
-            );
-        }
-        None => {
-            tracing::debug!(community = %community_id, "{label}: the Host is not up, the roster row stays");
-        }
-    }
-    crate::event_dispatch::emit_membership(
-        app_handle,
-        rekindle_types::subscription_events::MembershipEvent::Removed {
-            community: community_id.to_string(),
-            pseudonym: target_pseudonym,
-        },
-    );
-}
-
-/// Whether `sender_pseudonym` holds the permission a gossip moderation
-/// payload needs (a `Kick` needs `KICK_MEMBERS`); other payloads pass.
-fn check_gossip_moderation_permission(
-    state: &Arc<AppState>,
-    community_id: &str,
-    sender_pseudonym: &str,
-    payload: &rekindle_codec::community::envelope::ControlPayload,
-) -> bool {
-    use rekindle_codec::community::envelope::ControlPayload;
-    use rekindle_types::permissions;
-
-    let required: u64 = match payload {
-        ControlPayload::Kick { .. } => permissions::KICK_MEMBERS,
-        _ => return true,
-    };
-
-    let Some(perms) =
-        crate::state_helpers::permissions_for(state, community_id, sender_pseudonym, None)
-    else {
-        return false;
-    };
-    if rekindle_governance::permissions::has_capability(perms, required) {
-        true
-    } else {
-        tracing::warn!(
-            community = %community_id,
-            sender = %sender_pseudonym,
-            required = format!("{required:#x}"),
-            "gossip moderation: sender lacks required permission — ignoring"
-        );
-        false
     }
 }
