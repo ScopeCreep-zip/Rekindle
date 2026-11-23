@@ -295,30 +295,51 @@ fn gossip_forward(state: &Arc<AppState>, signed: &SignedEnvelope) {
     }
 }
 
-async fn handle_relayed_envelope(
-    app_handle: &AppHandle,
-    state: &Arc<AppState>,
-    signed: SignedEnvelope,
-) {
-    // Forward-compat: `try_decode_community_envelope` returns `Ok(None)`
-    // for unknown union variants. The signature has already been
-    // verified and the envelope already forwarded by `gossip_forward`,
-    // so we simply skip local dispatch in that case.
-    let envelope: CommunityEnvelope = match try_decode_community_envelope(&signed.envelope_bytes) {
-        Ok(Some(e)) => e,
+/// The relayed envelope local dispatch may act on, or `None`. First the
+/// Host's one community gate (`HostGovernance::takes_traffic_from`, the
+/// daemon's `takes_traffic`): nothing once we were removed, nothing from a
+/// departed author, for every arm; a relay keeps its author's signature, so
+/// the author is who is judged. Before the Host is up nothing is taken.
+///
+/// Forward-compat: `try_decode_community_envelope` returns `Ok(None)` for
+/// unknown union variants. The signature has already been verified and the
+/// envelope already forwarded by `gossip_forward`, so local dispatch skips
+/// it.
+fn admitted_relay(state: &AppState, signed: &SignedEnvelope) -> Option<CommunityEnvelope> {
+    let author = rekindle_types::id::PseudonymKey::from_hex_lossy(&signed.sender_pseudonym);
+    let taken = state_helpers::host_governance(state)
+        .is_ok_and(|host| host.takes_traffic_from(&signed.community_id, &author));
+    if !taken {
+        tracing::debug!(
+            community = %signed.community_id,
+            "relayed envelope from traffic we do not take — dropped"
+        );
+        return None;
+    }
+    match try_decode_community_envelope(&signed.envelope_bytes) {
+        Ok(Some(envelope)) => Some(envelope),
         Ok(None) => {
             tracing::debug!(
                 community = %signed.community_id,
                 "relayed envelope has unknown variant — forwarded only"
             );
-            return;
+            None
         }
         Err(e) => {
             tracing::warn!(error = %e, "invalid relayed envelope");
-            return;
+            None
         }
-    };
+    }
+}
 
+async fn handle_relayed_envelope(
+    app_handle: &AppHandle,
+    state: &Arc<AppState>,
+    signed: SignedEnvelope,
+) {
+    let Some(envelope) = admitted_relay(state, &signed) else {
+        return;
+    };
     let community_id = signed.community_id.clone();
 
     match envelope {
@@ -418,3 +439,5 @@ async fn handle_relayed_envelope(
 
 #[cfg(test)]
 mod dedup_tests;
+#[cfg(test)]
+mod relay_gate_tests;
