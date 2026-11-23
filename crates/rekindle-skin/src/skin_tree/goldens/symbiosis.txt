@@ -18,10 +18,10 @@ InfoBar Group
   ButtonMaximize Button
   ButtonClose Button
 MenuBackground MenuBar
-  XfireMenu MenuTitle label "Rekindle" cover [12, 4, 22, 10]
+  XfireMenu MenuTitle label "Rekindle" cover [0, 0, 45, 20]
   ToolsMenu MenuTitle
   HelpMenu MenuTitle
-UsernameContainer NameField
+UsernameContainer NameField inset [0, 28]
   Username Part
 StatusBarContainer Group
   Status StatusText

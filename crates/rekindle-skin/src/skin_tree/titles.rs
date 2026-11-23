@@ -10,12 +10,20 @@
 //! title words ([`EngineMenu::title`]):
 //!
 //! - the art bakes a word and the Host renames the menu: `{text, cover}`,
-//!   the cover the word's box, so the shell fills it with the art's ground
-//!   and draws Rekindle's name there;
+//!   the cover the title's usable box (plan SK5, [`usable`]): the word's
+//!   box grown to the art's edge or its drawn frame, so the shell fills it
+//!   with the art's ground and draws Rekindle's name in all of it (SK4b's
+//!   cover was the word's box alone, 22 px on Symbiosis, and "Rekindle"
+//!   showed "Re..."). Served at the window's minimum: Symbiosis
+//!   `[0, 0, 45, 20]` (no frame: the whole 45 x 20 title), Alloy
+//!   `[2, 0, 44, 15]` (the transparent columns beside its "E" read as
+//!   frame in the rows the "E" fills), Total Chaos `[15, 0, 47, 18]` (its gauge art left
+//!   of x 15 and right of x 61 is frame), XGlow `[1, 0, 21, 22]` (its rim
+//!   at x 0 and x 22-23, rows 5-6);
 //! - the art bakes a word the Host keeps (Tools, Help): no label;
 //! - no word in the art: `{text}`, no cover.
 //!
-//! The word's box starts as [`super::cover::icon_box`] on the art under the
+//! The word's box (the part of the cover that must hide) starts as [`super::cover::icon_box`] on the art under the
 //! title's box (what stands off each row's ground, the frame dropped), then
 //! grows (see [`word_cover`]): that measure takes each row's ground from
 //! its outer quarters, so a word reaching into a flank is read as ground
@@ -71,7 +79,7 @@ fn whole(n: &SkinNode, b: [i32; 4]) -> Option<Pic> {
 }
 
 /// The box of `node` in its parent's box `parent`.
-fn place(node: &SkinNode, parent: [i32; 4]) -> [i32; 4] {
+pub(super) fn place(node: &SkinNode, parent: [i32; 4]) -> [i32; 4] {
     let (left, wide) = node.x.place(parent[2]);
     let (top, high) = node.y.place(parent[3]);
     [parent[0] + left, parent[1] + top, wide, high]
@@ -130,7 +138,51 @@ fn word_box(
     let under = RgbaImage::from_fn(cols, rows, |col, row| {
         *image.get_pixel(left + col, top + row)
     });
-    Ok(word_cover(&under))
+    Ok(word_cover(&under).map(|word| usable(&under, word)))
+}
+
+/// The title's usable box (plan SK5): the word's box `word` grown a column
+/// or row at a time, up to the art's edge, while the next one across the
+/// box holds no frame pixel (the differing pixels edge-connected, as
+/// [`super::cover::icon_box`] drops them), so "Rekindle" gets all the room
+/// the old word's rim leaves and the frame stays drawn.
+fn usable(image: &RgbaImage, word: [u16; 4]) -> [u16; 4] {
+    let (Ok(cols), Ok(rows)) = (
+        usize::try_from(image.width()),
+        usize::try_from(image.height()),
+    ) else {
+        return word;
+    };
+    let frame = edge_connected(&differing(image, cols), cols, rows);
+    let [left, top, wide, high] = word.map(usize::from);
+    let mut e = [left, top, left + wide - 1, top + high - 1];
+    let column = |col: usize, e: [usize; 4]| (e[1]..=e[3]).all(|row| !frame[row * cols + col]);
+    let line = |row: usize, e: [usize; 4]| (e[0]..=e[2]).all(|col| !frame[row * cols + col]);
+    loop {
+        let before = e;
+        if e[0] > 0 && column(e[0] - 1, e) {
+            e[0] -= 1;
+        }
+        if e[2] + 1 < cols && column(e[2] + 1, e) {
+            e[2] += 1;
+        }
+        if e[1] > 0 && line(e[1] - 1, e) {
+            e[1] -= 1;
+        }
+        if e[3] + 1 < rows && line(e[3] + 1, e) {
+            e[3] += 1;
+        }
+        if e == before {
+            break;
+        }
+    }
+    let side = |v: usize| u16::try_from(v).unwrap_or(u16::MAX);
+    [
+        side(e[0]),
+        side(e[1]),
+        side(e[2] - e[0] + 1),
+        side(e[3] - e[1] + 1),
+    ]
 }
 
 /// Within [`ICON_TOLERANCE`] of `ink` on every channel.
@@ -269,16 +321,21 @@ fn label_tree(
     min: [u16; 2],
     package: &Package<'_>,
 ) -> Result<(), SkinError> {
+    walk(root, laid_window(outsets, min), None, package)
+}
+
+/// The pack's window `[x, y, w, h]` in a tree laid at the minimum `min`
+/// with the frame's `outsets` around it.
+pub(super) fn laid_window(outsets: Insets, min: [u16; 2]) -> [i32; 4] {
     let w = i32::from(min[0]) + i32::from(outsets.left) + i32::from(outsets.right);
     let h = i32::from(min[1]) + i32::from(outsets.top) + i32::from(outsets.bottom);
     let (left, top) = (i32::from(outsets.left), i32::from(outsets.top));
-    let window = [
+    [
         left,
         top,
         w - left - i32::from(outsets.right),
         h - top - i32::from(outsets.bottom),
-    ];
-    walk(root, window, None, package)
+    ]
 }
 
 /// Labels every menu title in `layout`'s tree and popups (see the module

@@ -1,13 +1,13 @@
 Top Decor
 Logo Logo
 MenuBar MenuBar
-  FileMenu MenuTitle label "Rekindle" cover [2, 2, 44, 11]
+  FileMenu MenuTitle label "Rekindle" cover [2, 0, 44, 15]
   ToolsMenu MenuTitle
   HelpMenu MenuTitle
 UserNameField NameField
   UserNameText Part
 StatusWrapper Group
-StatusEdit StatusText
+StatusEdit StatusText inset [0, 19]
 DownArrow StatusList
 TopButtonBar Group
   MinimizeBox Button

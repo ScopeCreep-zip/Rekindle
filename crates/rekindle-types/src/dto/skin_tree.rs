@@ -214,6 +214,18 @@ pub struct NodeLabel {
     pub glyph: Option<NodeGlyph>,
 }
 
+/// The part of a text field's box its pack's interactive siblings cover
+/// (plan SK5): px from the field's left and right edges, measured in the
+/// tree laid at the window's served minimum (Symbiosis's notifications
+/// gear over the end of its name field). The shell lays the field's text
+/// and its ellipsis between them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NodeInset {
+    pub left: u16,
+    pub right: u16,
+}
+
 /// The shell's built-in glyphs a [`NodeLabel`] may name.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -241,6 +253,10 @@ pub struct SkinNode {
     /// whose art is a clone of another tab's): never a pack's own.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<NodeLabel>,
+    /// How far the pack's interactive siblings reach into a text field
+    /// (plan SK5): the shell lays the field's text inside it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inset: Option<NodeInset>,
     /// The tab whose view shows this node (a view's button row).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shows_with: Option<ViewKey>,
@@ -314,6 +330,10 @@ pub struct ShellNode {
     /// The Host's words over the node (rule N4), drawn by the shell.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<NodeLabel>,
+    /// How far the pack's interactive siblings reach into a text field
+    /// (plan SK5): the shell lays the field's text inside it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub inset: Option<NodeInset>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub triggers: Vec<NodeTrigger>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -403,6 +423,7 @@ impl SkinNode {
             shows_with: self.shows_with,
             control_group: self.control_group,
             label: self.label.clone(),
+            inset: self.inset,
             triggers: self.triggers.clone(),
             children: self.children.iter().map(Self::shell).collect(),
         }
