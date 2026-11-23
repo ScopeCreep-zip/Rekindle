@@ -525,9 +525,17 @@ export async function showSkinView(b: Browser, view: string): Promise<void> {
   } else {
     const launcher = await visibleSkinNode(b, '[data-skin-action^="launchPopup"]');
     if (!launcher) throw new Error(`no control for ${view} in the main window, a knob or a popup`);
+    // The launcher toggles its popup (Xfire's MENU, shell popup.rs
+    // close_if_open), and a choice in the rail leaves it open: use the
+    // popup already open, else open it.
     const before = await b.getWindowHandles();
-    await press(b, await b.$(`[data-skin-node="${launcher}"]`));
-    await b.switchToWindow(await waitForHandle(b, (h) => h.startsWith("popup-") && !before.includes(h), 10_000));
+    const open = before.find((h) => h.startsWith(`popup-${BUDDY}-`));
+    if (open) {
+      await b.switchToWindow(open);
+    } else {
+      await press(b, await b.$(`[data-skin-node="${launcher}"]`));
+      await b.switchToWindow(await waitForHandle(b, (h) => h.startsWith("popup-") && !before.includes(h), 10_000));
+    }
     await press(b, await shown(b, `[data-skin-role="tab:${view}"], [data-skin-role="knob:${view}"]`));
     await switchTo(b, BUDDY);
   }
