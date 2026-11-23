@@ -13,6 +13,12 @@
 //! (`operations::typing::channel_frame`), so a lost stop costs at most that.
 //! Per-edit reports never become per-edit sends.
 //!
+//! A start that cannot be sent (a joiner whose text key has not arrived,
+//! D16) does not count as sent: the session stays as if no start went out,
+//! so the next report tries again, and when a key of the community is
+//! installed (`mek.rs` `install`) every draft still holding text there
+//! sends its start once, through the same path. No timer waits for the key.
+//!
 //! The channel travels as its tag under the current text key of its scope
 //! (`rekindle_secrets::channel_body::channel_tag`, the outbox entry's tag),
 //! never in clear: only a holder of that key can tell which channel it is.
@@ -90,18 +96,42 @@ impl HostGovernance {
         let friends = HostFriends::of(&self.ctx);
         let now = friends.clock().now_ms();
         let ctx = context(community_id, channel_id);
-        let draft = decide(&mut friends.stores().typing_out.lock(), ctx, typing, now);
+        let (draft, sent_before) = {
+            let mut sessions = friends.stores().typing_out.lock();
+            let sent_before = sessions.last_sent(&ctx);
+            (decide(&mut sessions, ctx.clone(), typing, now), sent_before)
+        };
         tracing::debug!(community = %community_id, ?draft, typing, "channel typing draft");
-        match draft {
-            Draft::Started => {
-                self.watch_channel_idle(&friends, community_id, channel_id);
-                self.send_typing_frame(community_id, channel_id, CHANNEL_TYPING_TTL_MS)
+        let ttl_ms = match draft {
+            Draft::Started | Draft::Refresh => CHANNEL_TYPING_TTL_MS,
+            Draft::Stopped => 0,
+            Draft::Quiet => return Ok(()),
+        };
+        let sent = self.send_typing_frame(community_id, channel_id, ttl_ms);
+        match (&sent, draft) {
+            (Ok(()), Draft::Started) => self.watch_channel_idle(&friends, community_id, channel_id),
+            (Err(e), Draft::Started | Draft::Refresh) => {
+                (friends.stores().typing_out.lock()).unsent(ctx, sent_before);
+                tracing::debug!(community = %community_id, error = %e, "channel typing start not sent");
             }
-            Draft::Refresh => {
-                self.send_typing_frame(community_id, channel_id, CHANNEL_TYPING_TTL_MS)
+            _ => {}
+        }
+        sent
+    }
+
+    /// A key of `community_id` was installed: every draft there still
+    /// holding text whose start could not be sent sends it now, once.
+    pub(crate) fn resend_waiting_channel_typing(&self, community_id: &str) {
+        let friends = HostFriends::of(&self.ctx);
+        let waiting = (friends.stores().typing_out.lock()).take_waiting(|ctx| {
+            matches!(ctx, TypingContext::Channel { community, .. } if community == community_id)
+        });
+        for ctx in waiting {
+            if let TypingContext::Channel { channel, .. } = ctx {
+                if let Err(e) = self.report_channel_draft(community_id, &channel, true) {
+                    tracing::debug!(community = %community_id, error = %e, "channel typing start still not sent");
+                }
             }
-            Draft::Stopped => self.send_typing_frame(community_id, channel_id, 0),
-            Draft::Quiet => Ok(()),
         }
     }
 

@@ -15,7 +15,7 @@
 //! and channel typing (E3.4, with its own per-start TTL) share them; each
 //! host drives the deadlines with its own timer.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use rekindle_types::subscription_events::TypingContext;
 
@@ -105,6 +105,10 @@ struct Session {
 #[derive(Debug, Default)]
 pub struct TypingSessions {
     sessions: HashMap<TypingContext, Session>,
+    /// Drafts that hold text but whose start could not be sent (the
+    /// channel's key had not arrived): no session, so the next input
+    /// starts one, and the host sends their start when the key lands.
+    waiting: HashSet<TypingContext>,
 }
 
 impl TypingSessions {
@@ -112,6 +116,7 @@ impl TypingSessions {
     pub fn input(&mut self, context: TypingContext, now_ms: u64) -> Input {
         match self.sessions.get_mut(&context) {
             None => {
+                self.waiting.remove(&context);
                 self.sessions.insert(
                     context,
                     Session {
@@ -134,9 +139,43 @@ impl TypingSessions {
     }
 
     /// End the session in `context` now (the draft was cleared, or the
-    /// message was sent). True when one was open.
+    /// message was sent); a draft waiting to start is forgotten. True when
+    /// a session was open (its start went out, so its stop is due).
     pub fn end(&mut self, context: &TypingContext) -> bool {
+        self.waiting.remove(context);
         self.sessions.remove(context).is_some()
+    }
+
+    /// When the start in `context` last went out, if a session is open.
+    #[must_use]
+    pub fn last_sent(&self, context: &TypingContext) -> Option<u64> {
+        self.sessions.get(context).map(|s| s.last_sent_ms)
+    }
+
+    /// The start [`Self::input`] asked for in `context` was not sent:
+    /// undo it, `sent_before` being [`Self::last_sent`] before that input.
+    /// A refresh that failed leaves the session as its last real send left
+    /// it, so the next input tries again; a first start that failed leaves
+    /// no session (the next input starts one) and waits in
+    /// [`Self::take_waiting`] for the host to retry it.
+    pub fn unsent(&mut self, context: TypingContext, sent_before: Option<u64>) {
+        if let Some(sent) = sent_before {
+            if let Some(session) = self.sessions.get_mut(&context) {
+                session.last_sent_ms = sent;
+            }
+        } else {
+            self.sessions.remove(&context);
+            self.waiting.insert(context);
+        }
+    }
+
+    /// Take the waiting drafts `pick` selects: their starts are due now.
+    pub fn take_waiting(&mut self, pick: impl Fn(&TypingContext) -> bool) -> Vec<TypingContext> {
+        let taken: Vec<TypingContext> = self.waiting.iter().filter(|c| pick(c)).cloned().collect();
+        for context in &taken {
+            self.waiting.remove(context);
+        }
+        taken
     }
 
     /// Where the session in `context` stands at `now_ms`: ended once
@@ -157,6 +196,7 @@ impl TypingSessions {
     /// Forget everything (lock).
     pub fn clear(&mut self) {
         self.sessions.clear();
+        self.waiting.clear();
     }
 }
 
@@ -245,5 +285,32 @@ mod tests {
         sessions.input(dm("c"), 0);
         sessions.clear();
         assert_eq!(sessions.idle(&dm("c"), 0), Lapse::Gone);
+    }
+
+    #[test]
+    fn an_unsent_start_leaves_no_session_and_waits_until_taken_or_ended() {
+        let mut sessions = TypingSessions::default();
+        let before = sessions.last_sent(&dm("b"));
+        assert_eq!(sessions.input(dm("b"), 0), Input::Started);
+        sessions.unsent(dm("b"), before);
+        assert_eq!(sessions.last_sent(&dm("b")), None);
+        assert_eq!(sessions.idle(&dm("b"), 10_000), Lapse::Gone);
+        assert_eq!(sessions.input(dm("b"), 1_000), Input::Started);
+        sessions.unsent(dm("b"), None);
+        assert_eq!(sessions.take_waiting(|_| true), vec![dm("b")]);
+        assert!(sessions.take_waiting(|_| true).is_empty());
+        sessions.unsent(dm("c"), None);
+        assert!(!sessions.end(&dm("c")));
+        assert!(sessions.take_waiting(|_| true).is_empty());
+    }
+
+    #[test]
+    fn an_unsent_refresh_is_due_again_at_the_next_input() {
+        let mut sessions = TypingSessions::default();
+        sessions.input(dm("b"), 0);
+        let before = sessions.last_sent(&dm("b"));
+        assert_eq!(sessions.input(dm("b"), 3_000), Input::Refresh);
+        sessions.unsent(dm("b"), before);
+        assert_eq!(sessions.input(dm("b"), 3_100), Input::Refresh);
     }
 }
