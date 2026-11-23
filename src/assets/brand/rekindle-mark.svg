@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="219 178 580 580" width="580" height="580" role="img" aria-label="Rekindle">
+  <title>Rekindle</title>
+  <defs>
+    <linearGradient id="rk-outer" gradientUnits="userSpaceOnUse" x1="650" y1="250" x2="390" y2="745">
+      <stop offset="0" stop-color="#ff59c3"/>
+      <stop offset="0.26" stop-color="#ff4ec0"/>
+      <stop offset="0.4" stop-color="#dc4ddc"/>
+      <stop offset="0.54" stop-color="#9658f0"/>
+      <stop offset="0.64" stop-color="#3e6cfd"/>
+      <stop offset="0.8" stop-color="#1270fd"/>
+      <stop offset="1" stop-color="#0256ee"/>
+    </linearGradient>
+    <linearGradient id="rk-middle" gradientUnits="userSpaceOnUse" x1="430" y1="450" x2="470" y2="740">
+      <stop offset="0" stop-color="#b8e4ff"/>
+      <stop offset="0.55" stop-color="#7fcdff"/>
+      <stop offset="1" stop-color="#38aaff"/>
+    </linearGradient>
+    <linearGradient id="rk-inner" gradientUnits="userSpaceOnUse" x1="600" y1="320" x2="480" y2="744">
+      <stop offset="0" stop-color="#ffbff0"/>
+      <stop offset="0.28" stop-color="#ffd8f9"/>
+      <stop offset="0.55" stop-color="#fffdff"/>
+      <stop offset="0.8" stop-color="#e6f4ff"/>
+      <stop offset="1" stop-color="#bfe5ff"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#rk-outer)" d="M497 188C530 215 590 270 612 330C622 365 628 400 632 440C640 415 648 395 655 375C690 420 713 490 713 575C713 680 630 748 520 748C400 748 312 680 312 585C312 500 360 440 420 390C470 348 505 290 497 188Z"/>
+  <path fill="url(#rk-middle)" d="M435 443C400 480 381 530 381 585C381 670 440 744 515 744C560 700 520 560 480 500C460 470 445 455 435 443Z"/>
+  <path fill="url(#rk-inner)" d="M527 303C560 360 595 430 593 510C592 540 588 560 584 575C605 545 628 510 640 478C655 520 655 590 645 630C630 700 575 744 515 744C470 725 445 690 438 640C428 590 432 520 466 480C495 445 525 380 527 303Z"/>
+</svg>
