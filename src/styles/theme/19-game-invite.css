@@ -33,8 +33,10 @@
 @layer components {
 
   /* Favourite servers (plan E7.2, Settings → Application): game, host:port
-   * and label on one wrapping row. */
-  .favourite-server-form {
+   * and label on one wrapping row; a group lobby's four actions (plan E7.2
+   * G6, GameLobbyCard) wrap the same way. */
+  .favourite-server-form,
+  .game-lobby-actions {
     display: flex;
     flex-wrap: wrap;
     align-items: center;

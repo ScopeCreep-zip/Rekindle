@@ -5,6 +5,7 @@
  */
 
 import type { SendState } from "../commands/types";
+import type { LobbyView } from "../commands/dto_lobby";
 
 /** DM / conversation message from the daemon vocabulary. */
 export interface DirectMessageReceived {
@@ -114,6 +115,8 @@ export type GroupDmEvent =
   | { left: { groupId: string; member: GroupDmMember } }
   | { keyRotated: { groupId: string; member: GroupDmMember; epoch: number } }
   | { renamed: { groupId: string; name: string } }
+  /** The group's lobby changed (plan E7.2 G6); null when there is none. */
+  | { lobby: { groupId: string; lobby: LobbyView | null } }
   /** A group send's state; `retry` while unanswered attempts are retried (plan SR2b). */
   | { sendStatus: { groupId: string; clientId: string; state: SendState; retry: DeliveryRetry | null } }
   | {

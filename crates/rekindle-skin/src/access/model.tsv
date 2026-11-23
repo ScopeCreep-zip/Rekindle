@@ -383,6 +383,10 @@
 .game-icon-generic	text	var(--color-xfire-ingame-text)	--color-xfire-bg-panel	1.0	true
 .game-invite	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
 .game-invite	text	var(--color-xfire-text)	--color-xfire-bg-panel	1.0	false
+.game-lobby-host	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
+.game-lobby-launched	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
+.game-lobby-members	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
+.game-lobby-title	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
 .game-server-address	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .game-server-group-header	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .game-server-icon	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
