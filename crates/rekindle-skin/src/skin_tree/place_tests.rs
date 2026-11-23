@@ -483,3 +483,70 @@ fn a_worded_tab_clone_keeps_its_words() {
         })
     );
 }
+
+/// Combat (plan SK2-N4): the knob's stops share one box, so the visible
+/// pressable stop is pressed round, each press applied as the shell does
+/// (`applyTreeOp`, then `offPage`/`offView`). From Friends the dial turns
+/// through Servers, Files, the placed Communities stop, the pack's return
+/// sweep through Servers (`combat.ini` `[Knob03]` `GroupMessage(3)`,
+/// `GroupMessage(1,1)`; `[Knob04]` `GroupMessage(0)`, `GroupMessage(0,1)`)
+/// and back to Friends, every stop pressable.
+#[test]
+fn combat_knob_turns_through_communities_and_back_to_friends() {
+    let combat = served_main("combat");
+    let root = &combat.tree.as_ref().unwrap().root;
+    let views_at = path_to(root, &|n| n.role == NodeRole::Views).unwrap();
+    let views = root[views_at[0]].clone();
+    let mut knobs = Vec::new();
+    all(root, &mut knobs);
+    let strip = knobs
+        .into_iter()
+        .find(|n| {
+            n.children
+                .iter()
+                .any(|c| matches!(c.role, NodeRole::Knob(_)))
+        })
+        .expect("Combat's knob strip");
+    let (mut view, mut pages) = (Some(ViewKey::Friends), std::collections::BTreeMap::new());
+    let mut walk = vec![("start".to_owned(), view)];
+    for _ in 0..5 {
+        let shown: Vec<&SkinNode> = strip
+            .children
+            .iter()
+            .filter(|k| {
+                let p = path_to(root, &|n| n.id == k.id).unwrap();
+                k.role.interactive(&k.triggers) && shows(root, &p, view, &pages)
+            })
+            .collect();
+        assert_eq!(shown.len(), 1, "one pressable stop shows at {walk:?}");
+        for t in shown[0].triggers.iter().filter(|t| t.presses()) {
+            match t.run {
+                SkinAction::ShowView(EngineView::Communities) => view = Some(C),
+                SkinAction::GroupPage { group, page } => {
+                    pages.insert(group, page);
+                    if Some(group) == views.control_group {
+                        view = match views.children[usize::from(page)].role {
+                            NodeRole::View(k) => Some(k),
+                            _ => None,
+                        };
+                    }
+                }
+                _ => {}
+            }
+        }
+        walk.push((shown[0].id.clone(), view));
+    }
+    let want = [
+        ("start", ViewKey::Friends),
+        ("Knob01", ViewKey::Servers),
+        ("Knob02", ViewKey::Files),
+        ("Knob03", C),
+        ("Knob03.Communities", ViewKey::Servers),
+        ("Knob04", ViewKey::Friends),
+    ];
+    let want: Vec<(String, Option<ViewKey>)> = want
+        .iter()
+        .map(|(id, v)| ((*id).to_owned(), Some(*v)))
+        .collect();
+    assert_eq!(walk, want);
+}
