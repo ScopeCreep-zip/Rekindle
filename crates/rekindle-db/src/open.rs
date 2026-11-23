@@ -271,7 +271,9 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// 157 (plan RV1): `route_budget`, the identity's persisted new-route budget.
 /// 158 (plan RV2): `friends.reply_inbox_key`, `friends.peer_reply_inbox_key`/`peer_reply_writer`,
 /// `pending_friend_requests.reply_inbox_key`/`reply_writer`: a request's reply inbox.
-pub const SCHEMA_VERSION: i64 = 159;
+/// 160 (plan RV2e): `route_budget.kind`, keyed `(owner_key, kind)`: the friend code slot's
+/// roll budget is persisted beside the route budget.
+pub const SCHEMA_VERSION: i64 = 160;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

@@ -21,8 +21,11 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use rekindle_db::repo::route_budget::BudgetKind;
 use rekindle_lifecycle::SessionScope;
-use rekindle_records::port::{RouteBudgetState, RouteClass, RoutePauseCause, RoutePort};
+use rekindle_records::port::{
+    RouteBudgetState, RouteClass, RoutePauseCause, RoutePort, SaveBudget,
+};
 use rekindle_route::budget::{
     DeathRate, RouteBudget, BUDGET_CAPACITY, DEATH_WARN_ABOVE, DEATH_WINDOW,
 };
@@ -41,6 +44,7 @@ const DEATH_CHECK: Duration = Duration::from_secs(30);
 /// for, every class stays down and the pause shows its cause `Unreadable`
 /// (fail-closed and visible, never a full budget in its place).
 pub(crate) async fn attach(ctx: &DaemonContext, scope: &Arc<SessionScope>, owner: &str) {
+    attach_code_rolls(ctx, owner).await;
     let Some(transport) = ctx.transport.read().clone() else {
         return;
     };
@@ -116,22 +120,55 @@ fn attach_seeded(_: &DaemonContext, _: &dyn RoutePort) -> bool {
 /// Attach the identity `owner`'s stored budget (a full one, saved, at its
 /// first unlock); `false` when no database is open.
 async fn attach_stored(ctx: &DaemonContext, routes: &dyn RoutePort, owner: &str) -> bool {
-    let Ok(db) = ctx.db.current() else {
+    let Some((state, save)) = stored(ctx, owner, BudgetKind::Routes).await else {
         return false;
     };
+    match state {
+        Some(state) => {
+            let clock = Arc::clone(&ctx.clock);
+            routes.attach_budget(state, Arc::new(move || clock.now_ms()), save);
+        }
+        None => routes.attach_unreadable_budget(),
+    }
+    true
+}
+
+/// Unlock: the code slot's roll budget (plan RV2e) from the identity
+/// `owner`'s database, persisted as the route budget is, so a restart
+/// never refills it. With no database, or a row that cannot be read, no
+/// roll is paid for (fail-closed, never a full bucket in its place).
+async fn attach_code_rolls(ctx: &DaemonContext, owner: &str) {
+    let friends = super::adapters::friends::HostFriends::of(ctx);
+    friends.set_code_rolls(None);
+    if let Some((Some(state), save)) = stored(ctx, owner, BudgetKind::CodeRolls).await {
+        friends.set_code_rolls(Some((RouteBudget::from(state), save)));
+    }
+}
+
+/// The identity `owner`'s stored bucket `kind` and the save each spend
+/// calls: a full bucket, saved, at its first unlock, `None` in place of
+/// the state when its row cannot be read (logged); `None` when no
+/// database is open.
+async fn stored(
+    ctx: &DaemonContext,
+    owner: &str,
+    kind: BudgetKind,
+) -> Option<(Option<RouteBudgetState>, SaveBudget)> {
+    let db = ctx.db.current().ok()?;
     let now = ctx.clock.now_ms();
     let o = owner.to_string();
     let row = db
-        .call(move |conn| rekindle_db::repo::route_budget::load(conn, &o))
+        .call(move |conn| rekindle_db::repo::route_budget::load(conn, &o, kind))
         .await;
     let save_db = db.clone();
     let save_owner = owner.to_string();
-    let save: rekindle_records::port::SaveBudget = Arc::new(move |s: RouteBudgetState| {
+    let save: SaveBudget = Arc::new(move |s: RouteBudgetState| {
         let o = save_owner.clone();
         save_db.fire("route budget", move |conn| {
             rekindle_db::repo::route_budget::save(
                 conn,
                 &o,
+                kind,
                 (s.tokens, s.refilled_ms, s.week_start_ms, s.week_spent),
             )
         });
@@ -150,18 +187,11 @@ async fn attach_stored(ctx: &DaemonContext, routes: &dyn RoutePort, owner: &str)
             Some(full)
         }
         Err(e) => {
-            tracing::error!(error = %e, "route budget unreadable; every route class stays down");
+            tracing::error!(error = %e, ?kind, "budget unreadable; nothing is paid from it");
             None
         }
     };
-    match state {
-        Some(state) => {
-            let clock = Arc::clone(&ctx.clock);
-            routes.attach_budget(state, Arc::new(move || clock.now_ms()), save);
-        }
-        None => routes.attach_unreadable_budget(),
-    }
-    true
+    Some((state, save))
 }
 
 /// Lock: the identity's budget is no longer the route owner's to spend.

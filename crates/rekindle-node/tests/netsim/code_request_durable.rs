@@ -221,6 +221,46 @@ async fn a_junk_writing_holder_gets_no_more_rolls_than_the_budget() {
     );
 }
 
+/// The roll budget is the identity's, stored with it (plan RV2e): a holder
+/// who spent it gets no fresh bucket from the owner's restart; the next
+/// roll still waits for the day's refill.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_restart_does_not_refill_the_roll_budget() {
+    use rekindle_route::budget::BUDGET_CAPACITY;
+    let (sim, mut nodes) = start(2, 88).await;
+    for (node, name) in nodes.iter_mut().zip(["Rae", "Ann"]) {
+        node.unlock_new_identity(name).await;
+    }
+    let (code, mut slot) = issue(&sim, &nodes[1]).await;
+    for n in 0..BUDGET_CAPACITY {
+        slot = junk_roll(&sim, 1, &code, &slot, LIMIT)
+            .await
+            .unwrap_or_else(|| panic!("roll {n} is within the budget"));
+    }
+    let ann = nodes.remove(1).restart(&sim, Duration::from_secs(30)).await;
+    ann.ok(IpcRequest::Unlock {
+        identity: key(&ann),
+        passphrase: crate::harness::PASSPHRASE.into(),
+    })
+    .await;
+    let slot = only_slot(&sim, 1).await;
+    assert!(
+        junk_roll(&sim, 1, &code, &slot, Duration::from_secs(30 * 60))
+            .await
+            .is_none(),
+        "after the restart the spent budget still holds the written slot"
+    );
+    tokio::time::sleep(Duration::from_secs(23 * 60 * 60)).await;
+    assert!(
+        eventually(&sim, Duration::from_secs(3 * 60 * 60), || async {
+            let watched = inboxes_watched_by(&sim, 1);
+            !watched.contains(&slot) && watched.len() == 1
+        })
+        .await,
+        "the paced roll comes with the day's refill"
+    );
+}
+
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_block_moves_the_profile_and_publishes_a_fresh_slot_on_it() {
     let (sim, mut nodes) = start(2, 89).await;

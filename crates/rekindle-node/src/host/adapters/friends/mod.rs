@@ -53,8 +53,16 @@ pub struct FriendWatches {
     codes: Mutex<BTreeMap<String, LeaseId>>,
     /// The code slot's roll budget (plan RV2e): a route's bucket, since a
     /// roll costs a record create and two writes, as a route costs a
-    /// creation; full at the first roll of a session.
-    code_rolls: Mutex<Option<rekindle_route::budget::RouteBudget>>,
+    /// creation. Read from the identity's database at unlock with the save
+    /// each spend calls (`host::route_budget`), so a restart never refills
+    /// it; `None` (no roll paid for) until then or when its row is
+    /// unreadable.
+    code_rolls: Mutex<
+        Option<(
+            rekindle_route::budget::RouteBudget,
+            rekindle_records::port::SaveBudget,
+        )>,
+    >,
     /// Each friend's participant record (key, lease), by friend (plan E2.5).
     participants: Mutex<BTreeMap<String, (String, LeaseId)>>,
     /// Whether the network was ready at its last change.
@@ -73,14 +81,30 @@ pub struct HostFriends {
 
 impl HostFriends {
     /// Spend one of the code slot's roll tokens (plan RV2e).
+    /// A spend is saved at once; with no budget attached nothing is spent.
     pub(super) fn spend_code_roll(&self) -> bool {
         let now = self.ctx.clock.now_ms();
-        self.ctx
-            .friend_watches
-            .code_rolls
-            .lock()
-            .get_or_insert_with(|| rekindle_route::budget::RouteBudget::full(now))
-            .try_spend(now)
+        let mut rolls = self.ctx.friend_watches.code_rolls.lock();
+        let Some((budget, save)) = rolls.as_mut() else {
+            return false;
+        };
+        if !budget.try_spend(now) {
+            return false;
+        }
+        save(budget.state());
+        true
+    }
+
+    /// Unlock: the identity's stored roll budget and its save (plan RV2e),
+    /// or `None` while it is being read or when it cannot be.
+    pub(crate) fn set_code_rolls(
+        &self,
+        rolls: Option<(
+            rekindle_route::budget::RouteBudget,
+            rekindle_records::port::SaveBudget,
+        )>,
+    ) {
+        *self.ctx.friend_watches.code_rolls.lock() = rolls;
     }
 
     /// Keep a request inbox's owner keypair in the vault (an invite's, or
