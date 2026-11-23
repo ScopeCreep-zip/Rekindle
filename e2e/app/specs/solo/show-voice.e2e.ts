@@ -45,14 +45,27 @@ describe("Show Voice with no call or voice session", function () {
     expect(said).toContain("no call or voice session");
     // The answer is seen, not only in the DOM: the toast is inside the window
     // and on top at its centre (a shot of the first run showed no toast).
-    const seen = (await browser.execute(() => {
+    // Seen means once its entrance has run (the slide-in starts at opacity 0,
+    // 20 px right): the toast is then inside the window, opaque, and on top
+    // at its centre. The first run measured its first frame (outside by the
+    // 20 px, and the shot showed no toast), so the report names the
+    // animation's state and the toast's age.
+    const seen = (await browser.execute(() => new Promise<string>((done) => {
       const toast = Array.from(document.querySelectorAll<HTMLElement>(".toast-item")).find((t) => /no call or voice session/.test(t.textContent ?? ""));
-      if (!toast) return "no toast";
-      const r = toast.getBoundingClientRect();
-      if (r.width === 0 || r.bottom > innerHeight || r.right > innerWidth || r.left < 0 || r.top < 0) return `outside the window: ${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)} in ${innerWidth}x${innerHeight}`;
-      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-      return top && toast.contains(top) ? "" : `covered by ${top ? (top as HTMLElement).dataset.skinNode ?? top.className : "nothing"}`;
-    })) as string;
+      if (!toast) return done("no toast");
+      const settle = Promise.all(toast.getAnimations().map((a) => a.finished));
+      const timeout = new Promise((r) => setTimeout(r, 2_000));
+      void Promise.race([settle.then(() => "finished"), timeout.then(() => "unfinished")]).then((ran) => {
+        const anims = toast.getAnimations().map((a) => `${a.playState}@${Math.round(Number(a.currentTime ?? -1))}`).join(",");
+        const opacity = getComputedStyle(toast).opacity;
+        const r = toast.getBoundingClientRect();
+        const state = `animation ${ran} [${anims}], opacity ${opacity}, at ${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)} in ${innerWidth}x${innerHeight}`;
+        if (ran !== "finished" || opacity !== "1") return done(`not shown: ${state}`);
+        if (r.width === 0 || r.bottom > innerHeight || r.right > innerWidth || r.left < 0 || r.top < 0) return done(`outside the window: ${state}`);
+        const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        done(top && toast.contains(top) ? "" : `covered by ${top ? ((top as HTMLElement).dataset.skinNode ?? top.className) : "nothing"}: ${state}`);
+      });
+    }))) as string;
     // The asserted state: the derived skin's buddy list with the Host's answer showing.
     await shot("host-answer");
     expect(seen).toBe("");
