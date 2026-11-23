@@ -89,6 +89,13 @@ const picker = (id: string): string => `input.skin-token-picker[aria-label="${id
  * next edit (run 3: the live-apply colour never landed).
  */
 async function restart(): Promise<void> {
+  // A state the fresh draft undoes, so its waits read the restart's report:
+  // an editor just opened already reads "add your name" with no author, and
+  // both waits passed on it; "Bea" then went into the old draft and the
+  // restart's authorless draft landed after it (c5802aa26, load ~30).
+  // Any report but the authorless one (a draft left failing reads its count).
+  await setValue(browser, AUTHOR, "restart");
+  await statusIs(/^(?!Every check passes; add your name)/);
   await press(browser, await byText(browser, ".skin-editor-bar button", "Start from the current skin"));
   await statusIs("Every check passes; add your name as the author to export.");
   await waitUntil(async () => (await (await browser.$(AUTHOR)).getValue()) === "", NET_WAIT_MS, "the fresh draft kept the last author");
