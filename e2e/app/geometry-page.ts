@@ -47,7 +47,10 @@ export function geometryLib(): void {
       ? "." + el.className.trim().split(/\s+/).slice(0, 3).join(".")
       : "";
     const text = (el.textContent ?? "").trim().slice(0, 24);
-    return `${el.tagName.toLowerCase()}${cls}${text ? ` "${text}"` : ""}`;
+    // A skin tree's node by its id too, so a finding names it (a class says
+    // only "skin-tree-button").
+    const node = el.getAttribute("data-skin-node");
+    return `${el.tagName.toLowerCase()}${cls}${node ? `[${node}]` : ""}${text ? ` "${text}"` : ""}`;
   };
   const shown = (el: Element): boolean => {
     // Also false under a closed <details> or other content-visibility: hidden.
