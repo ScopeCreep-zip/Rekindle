@@ -4,7 +4,7 @@ import { groupDmState, setGroupDmState } from "../stores/group-dm.store";
 import { transformDmMessage } from "../utils/transformers";
 import { errorMessage } from "../utils/error";
 import { awaitsExpiry } from "./disappearing.actions";
-import { sendDraftReport } from "../utils/draft_reports";
+import { afterDraftReports, sendDraftReport } from "../utils/draft_reports";
 
 // Group DMs (plan E2.6). Each action calls the Host and renders what it
 // answers; validation, the member caps and the review are the Host's.
@@ -103,7 +103,7 @@ export function handleGroupDisplayed(groupId: string): void {
  *  follows `sendStatus`. `null` on success, else the Host's error. */
 export async function handleSendGroupDm(groupId: string, body: string): Promise<string | null> {
   try {
-    await commands.groupDmSend(groupId, body);
+    await afterDraftReports(`group:${groupId}`, () => commands.groupDmSend(groupId, body));
     await handleLoadGroupMessages(groupId, 50);
     return null;
   } catch (e) {

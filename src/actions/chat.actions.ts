@@ -5,7 +5,7 @@ import { friendsState, setFriendsState } from "../stores/friends.store";
 import type { Message } from "../stores/chat.store";
 import { transformDmMessage } from "../utils/transformers";
 import { awaitsExpiry } from "./disappearing.actions";
-import { sendDraftReport } from "../utils/draft_reports";
+import { afterDraftReports, sendDraftReport } from "../utils/draft_reports";
 
 export async function handleSendMessage(to: string, body: string): Promise<void> {
   const trimmed = body.trim();
@@ -25,7 +25,7 @@ export async function handleSendMessage(to: string, body: string): Promise<void>
   handleIncomingMessage(to, message);
 
   try {
-    const sent = transformDmMessage(await commands.sendMessage(to, trimmed));
+    const sent = transformDmMessage(await afterDraftReports(`dm:${to}`, () => commands.sendMessage(to, trimmed)));
     setChatState("conversations", to, "messages", (msgs) =>
       msgs.map((m) => (m.id === tempId ? sent : m)),
     );
