@@ -44,8 +44,10 @@ async function statusIs(want: string | RegExp): Promise<void> {
     );
   } catch {
     // The status read last, once the wait is over (a message built before
-    // the wait always said "(never read)", r24 on Linux and Mac).
-    throw new Error(`the status never read ${String(want)} (last: ${JSON.stringify(last)})`);
+    // the wait always said "(never read)", r24 on Linux and Mac), and the
+    // editor's error when a check threw (the report then stays the last one).
+    const shown = (await browser.execute(() => document.querySelector(".skin-editor .skin-error")?.textContent?.trim() ?? "")) as string;
+    throw new Error(`the status never read ${String(want)} (last: ${JSON.stringify(last)}${shown ? `; editor error: ${JSON.stringify(shown)}` : ""})`);
   }
 }
 
