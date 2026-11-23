@@ -17,6 +17,7 @@ import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, byText, present, resolveIntent, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
 import { SETTINGS, openSettings, pickNextFile } from "../../../walk/nav.ts";
 import { createIdentity, newUser, type User } from "../../journeys.ts";
+import { shot } from "../../shots.ts";
 
 const PACKAGE = path.join(import.meta.dirname, "..", "..", "..", "..", "crates", "rekindle-skin", "builtin", "onyx.rkskin");
 /** The trial's length (rekindle_types SKIN_TRIAL_MS); the deadline itself is read from the prompt. */
@@ -85,10 +86,12 @@ describe("a chosen imported skin is on trial until kept, and reverts when the tr
       NET_WAIT_MS,
       "the trial's sheet was never applied",
     );
+    await shot("on-trial");
     // Not answered: the Host reverts at its deadline.
     await waitUntil(async () => (await browser.execute(SHEET)) === stored, TRIAL_MS + MARGIN_MS, "the skin did not revert when the trial ran out");
     expect(Date.now() - chosenAt).toBeGreaterThanOrEqual(TRIAL_MS - 1_000);
     expect(await present(browser, ".skin-trial")).toBe(false);
+    await shot("reverted");
   });
 
   it("kept, the skin stays past the trial's end", async () => {
@@ -103,5 +106,6 @@ describe("a chosen imported skin is on trial until kept, and reverts when the tr
     expect(kept).not.toBe(stored);
     await new Promise((r) => setTimeout(r, TRIAL_MS + MARGIN_MS));
     expect(await browser.execute(SHEET)).toBe(kept);
+    await shot("kept-past-trial");
   });
 });

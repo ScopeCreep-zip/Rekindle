@@ -9,6 +9,7 @@ import { byText, press, shown, sleep, switchTo } from "../../../walk/helpers.ts"
 import { BUDDY, SETTINGS, openSettings } from "../../../walk/nav.ts";
 import { applySkin, createIdentity, newUser, skinShown, type User } from "../../journeys.ts";
 import { builtinPacks } from "../../skin-pack.ts";
+import { shot } from "../../shots.ts";
 
 /**
  * Where the window `browser` is in shows Xfire: each finding names the place
@@ -102,9 +103,11 @@ describe("no Xfire branding where the user sees", function () {
     await switchTo(browser, SETTINGS);
     await (await byText(browser, ".form-tab", "About")).click();
     await shown(browser, ".settings-about-text");
+    await shot("about");
     expect(await xfireShown()).toEqual([]);
     await (await byText(browser, ".form-tab", "Appearance")).click();
     await shown(browser, ".skin-row .skin-name");
+    await shot("appearance");
     expect(await xfireShown()).toEqual([]);
   });
 
@@ -113,6 +116,7 @@ describe("no Xfire branding where the user sees", function () {
       const href = await applySkin(browser, me, pack.name);
       await switchTo(browser, BUDDY);
       await skinShown(browser, href);
+      await shot("title-strip");
       const found = [...(await xfireShown()), ...(await logosUnbranded()), ...(await menusShowXfire())];
       expect(found).toEqual([]);
     });
