@@ -45,9 +45,8 @@ describe("Show Voice with no call or voice session", function () {
     expect(said).toContain("no call or voice session");
     // The answer is seen, not only in the DOM: the toast is inside the window
     // and on top at its centre (a shot of the first run showed no toast).
-    // Seen means once its entrance has run (the slide-in starts at opacity 0,
-    // 20 px right): the toast is then inside the window, opaque, and on top
-    // at its centre. The first run measured its first frame (outside by the
+    // Seen means inside the window, opaque, and on top at its centre, after
+    // at most 2 s for its entrance. The first run measured its first frame (outside by the
     // 20 px, and the shot showed no toast), so the report names the
     // animation's state and the toast's age.
     const seen = (await browser.execute(() => new Promise<string>((done) => {
@@ -60,7 +59,11 @@ describe("Show Voice with no call or voice session", function () {
         const opacity = getComputedStyle(toast).opacity;
         const r = toast.getBoundingClientRect();
         const state = `animation ${ran} [${anims}], opacity ${opacity}, at ${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)} in ${innerWidth}x${innerHeight}`;
-        if (ran !== "finished" || opacity !== "1") return done(`not shown: ${state}`);
+        // Seen is what the user sees: opaque, inside, on top; whether the
+        // entrance animation has finished is not (2bce3f11b: a timeline at
+        // "running@0" left the old fade-in at opacity 0, the bug fixed in
+        // the toast).
+        if (opacity !== "1") return done(`not shown: ${state}`);
         if (r.width === 0 || r.bottom > innerHeight || r.right > innerWidth || r.left < 0 || r.top < 0) return done(`outside the window: ${state}`);
         const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
         done(top && toast.contains(top) ? "" : `covered by ${top ? ((top as HTMLElement).dataset.skinNode ?? top.className) : "nothing"}: ${state}`);
