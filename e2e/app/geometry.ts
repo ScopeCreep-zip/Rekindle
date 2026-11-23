@@ -28,6 +28,7 @@ import {
   OVERLAYS,
   flexContract,
   focusIndicators,
+  footerGap,
   geometryLib,
   horizontalOverflow,
   overlaps,
@@ -112,7 +113,11 @@ export async function checkGeometry(b: Browser, rootSelector: string, opts: Geom
   const fit = await treeFitIn(b, rootSelector);
   // The box rides along in a finding only (the pass value stays `true`).
   if (fit) record("tree inside the window", fit.inWindow ? true : fit.box, true);
-  else record("window flex contract", await inPage(b, rootSelector, flexContract, null), FLEX_CONTRACT);
+  else {
+    const flex = await inPage(b, rootSelector, flexContract, null);
+    // A failing contract carries where the foot is (footerGap).
+    record("window flex contract", isDeepStrictEqual(flex, FLEX_CONTRACT) ? flex : { ...flex, foot: await inPage(b, rootSelector, footerGap, null) }, FLEX_CONTRACT);
+  }
   record("horizontal overflow (px)", await inPage(b, rootSelector, horizontalOverflow, null), { document: 0, root: 0 });
   if (!opts.onScreen) record("overlapping elements", await inPage(b, rootSelector, overlaps, [...skip, ...(opts.overlapAllow ?? [])]), []);
   if (!opts.onScreen) record("text that neither fits nor ellipsizes", await inPage(b, rootSelector, textOverflows, skip), []);

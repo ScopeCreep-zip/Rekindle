@@ -224,6 +224,28 @@ export function flexContract(el: Element): FlexContract {
   };
 }
 
+/**
+ * Where the window root's foot is, when the flex contract fails: its last
+ * in-flow child and that child's bottom against the root's bottom, border
+ * and padding, so the finding says by how much and against what.
+ */
+export function footerGap(el: Element): { last: string; lastBottom: number; rootBottom: number; borderBottom: number; paddingBottom: number } | null {
+  const s = getComputedStyle(el);
+  const flow = Array.from(el.children).filter((c) => {
+    const cs = getComputedStyle(c);
+    return cs.display !== "none" && cs.position !== "absolute" && cs.position !== "fixed" && c.getBoundingClientRect().height > 0;
+  });
+  const last = flow[flow.length - 1];
+  if (!last) return null;
+  return {
+    last: `${last.tagName.toLowerCase()}.${(last.className || "").toString().split(" ").join(".")}`,
+    lastBottom: Math.round(last.getBoundingClientRect().bottom * 10) / 10,
+    rootBottom: Math.round(el.getBoundingClientRect().bottom * 10) / 10,
+    borderBottom: parseFloat(s.borderBottomWidth),
+    paddingBottom: parseFloat(s.paddingBottom),
+  };
+}
+
 /** How a skin's tree sits in its window (plan SK4), at one size. */
 export interface TreeFit {
   /** The tree's box lies inside the viewport. */
