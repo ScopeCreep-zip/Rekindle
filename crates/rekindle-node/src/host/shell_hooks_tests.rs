@@ -40,7 +40,9 @@ impl shell_hooks::ShellHooks for Recorder {
         self.0.lock().push("own gossip".into());
     }
     fn community_left(&self, _community_id: &str) {}
-    fn spawn_departure_rotation(&self, _community_id: &str, _departed: &str) {}
+    fn spawn_departure_rotation(&self, _community_id: &str, departed: &str) {
+        self.0.lock().push(format!("rotation {departed}"));
+    }
     fn require_permission(&self, _community_id: &str, _perm_bits: u64) -> Result<(), String> {
         Ok(())
     }
@@ -77,6 +79,89 @@ impl shell_hooks::ShellHooks for Recorder {
         _projected: &crate::host::adapters::governance::projection::GovernanceProjected,
     ) {
     }
+}
+
+const KICKER: [u8; 32] = [0xbe; 32];
+const KICKED: &str = "kicked-member";
+
+/// A shell Host holding `c1`, where `KICKED` is a known member and
+/// `@everyone` holds `everyone_perms`; the shell's recorder.
+async fn kick_host(dir: &tempfile::TempDir, everyone_perms: u64) -> (Arc<Host>, Arc<Recorder>) {
+    let recorder = Arc::new(Recorder::default());
+    let host = offline_host_with(dir, Some(recorder.clone())).await;
+    let owner = create_ann(&host).await.public_key;
+    seed_registry_community(&host, &owner).await;
+    let mut gov = rekindle_governance::state::GovernanceState::default();
+    gov.roles.insert(
+        rekindle_types::id::RoleId([0; 16]),
+        rekindle_governance::state::RoleState {
+            name: "@everyone".into(),
+            permissions: everyone_perms,
+            position: 0,
+            color: 0,
+            hoist: false,
+            mentionable: false,
+            self_assignable: false,
+            exclusion_group: None,
+            stamp: rekindle_governance::fixture::stamp(0),
+        },
+    );
+    host.ctx.communities.set_governance_state("c1", gov);
+    if let Some(c) = host.ctx.communities.map().write().get_mut("c1") {
+        c.known_members.insert(KICKED.into());
+    }
+    (host, recorder)
+}
+
+/// The relayed `Kick` the desktop's gossip relay hands the Host (GI3).
+async fn relay_kick(host: &Host) {
+    let kick = rekindle_codec::community::envelope::ControlPayload::Kick {
+        target_pseudonym: KICKED.into(),
+    };
+    let governance = crate::host::adapters::governance::HostGovernance::new(Arc::clone(&host.ctx));
+    assert!(
+        governance
+            .on_membership_control("c1", &hex::encode(KICKER), &kick)
+            .await
+    );
+}
+
+fn knows_kicked(host: &Host) -> bool {
+    host.ctx
+        .communities
+        .map()
+        .read()
+        .get("c1")
+        .is_some_and(|c| c.known_members.contains(KICKED))
+}
+
+/// A relayed kick from a member without KICK_MEMBERS changes nothing: the
+/// member stays and no rotation starts (gossip is unauthenticated as to
+/// authority).
+#[tokio::test]
+async fn a_relayed_kick_without_authority_changes_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, recorder) = kick_host(&dir, 0).await;
+    relay_kick(&host).await;
+    assert!(knows_kicked(&host));
+    assert!(!recorder.0.lock().iter().any(|h| h.starts_with("rotation")));
+    host.shutdown().await.unwrap();
+}
+
+/// An authorized relayed kick forgets the member and starts exactly one
+/// departure rotation, through the Host to the shell's MEK stage.
+#[tokio::test]
+async fn an_authorized_relayed_kick_forgets_and_rotates_once() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, recorder) = kick_host(&dir, rekindle_types::permissions::KICK_MEMBERS).await;
+    relay_kick(&host).await;
+    assert!(!knows_kicked(&host));
+    let rotations: Vec<String> = (recorder.0.lock().iter())
+        .filter(|h| h.starts_with("rotation"))
+        .cloned()
+        .collect();
+    assert_eq!(rotations, [format!("rotation {KICKED}")]);
+    host.shutdown().await.unwrap();
 }
 
 /// The Host calls the shell at its fixed points: after its own stages,
