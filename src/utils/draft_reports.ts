@@ -39,3 +39,24 @@ export function sendDraftReport(key: string, send: () => Promise<unknown>): Prom
   });
   return next;
 }
+
+/**
+ * Run a conversation's send after the draft reports queued before it, and
+ * hold later reports behind it (the same chain as sendDraftReport): the Host
+ * ends our typing on a send, so a report issued before the send must reach
+ * it first. Sent concurrently, a "typing" from the last edit landed 3 ms
+ * after the send and opened a session nothing stopped (r24 channel-typing on
+ * Linux, 36f624b15). The send's own result and error go to the caller.
+ */
+export function afterDraftReports<T>(key: string, send: () => Promise<T>): Promise<T> {
+  const result = (chains.get(key) ?? Promise.resolve()).then(send);
+  const settled = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  chains.set(key, settled);
+  void settled.then(() => {
+    if (chains.get(key) === settled) chains.delete(key);
+  });
+  return result;
+}

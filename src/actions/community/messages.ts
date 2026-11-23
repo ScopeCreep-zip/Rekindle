@@ -6,7 +6,7 @@ import { transformMessages } from "../../utils/transformers";
 import { mergeRead } from "../../utils/message_merge";
 import { isCommandError } from "../../ipc/commands/dto";
 import { errorMessage } from "../../utils/error";
-import { sendDraftReport } from "../../utils/draft_reports";
+import { afterDraftReports, sendDraftReport } from "../../utils/draft_reports";
 
 export async function handleSendChannelMessage(
   channelId: string,
@@ -19,7 +19,7 @@ export async function handleSendChannelMessage(
   // here, and the row's state is the Host's (`ChannelSendStatus`, and the
   // send's own answer by message id).
   try {
-    const result = await commands.sendChannelMessage(channelId, body.trim(), replyToId);
+    const result = await afterDraftReports(`channel:${channelId}`, () => commands.sendChannelMessage(channelId, body.trim(), replyToId));
     const status = result.status;
     setCommunityState("channelMessages", channelId, (msgs) =>
       (msgs ?? []).map((m) => (m.serverMessageId === result.messageId ? { ...m, status } : m)),
@@ -337,5 +337,5 @@ export async function handleGetChannelPins(
  * (utils/draft_reports.ts).
  */
 export function handleSendChannelTyping(communityId: string, channelId: string, typing: boolean): Promise<void> {
-  return sendDraftReport(`channel:${communityId}:${channelId}`, () => commands.sendChannelTyping(communityId, channelId, typing));
+  return sendDraftReport(`channel:${channelId}`, () => commands.sendChannelTyping(communityId, channelId, typing));
 }
