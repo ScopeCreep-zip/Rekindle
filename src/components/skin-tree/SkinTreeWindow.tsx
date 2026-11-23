@@ -66,6 +66,21 @@ function isPointer(on: SkinEvent): on is { kind: PointerEvent } {
   return on.kind === "click" || on.kind === "doubleClick" || on.kind === "leftDown" || on.kind === "rightDown" || on.kind === "rightClick";
 }
 
+/** Whether any node under `n` takes a press (its own pointer trigger),
+ *  menu titles included: a control inside `n`. */
+function holdsControls(n: ShellNode): boolean {
+  return (n.children ?? []).some((c) => (c.triggers ?? []).some((t) => isPointer(t.on)) || holdsControls(c));
+}
+
+/** Whether a node under `n` takes a press but is no menu title: what an
+ *  ARIA menubar may not own (Onyx lays its tab strip inside its MenuBar). */
+function holdsNonMenuControls(n: ShellNode): boolean {
+  return (n.children ?? []).some(
+    (c) =>
+      (c.role.kind !== "menuTitle" && pressAction(c) !== undefined) || holdsNonMenuControls(c),
+  );
+}
+
 /** The node's own press (click or button down, not the window drag or a
  *  resize): what it does, for its accessible name and `data-skin-action`. */
 function pressAction(n: ShellNode): SkinAction | undefined {
@@ -238,7 +253,11 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
   // buttons and menus. As a button it would hold those controls inside one
   // named "Maximize" (axe nested-interactive, label-content-name-mismatch)
   // and take a focus ring the size of the window.
-  const pressable = (): boolean => press() !== undefined && !role().kind.startsWith("menu") && role().kind !== "drag";
+  // A node holding other controls is no button either (Xfire Classic's
+  // logo holds its window menu): a button may hold no control (axe
+  // nested-interactive). Its pointer triggers still run.
+  const pressable = (): boolean =>
+    press() !== undefined && !role().kind.startsWith("menu") && role().kind !== "drag" && !holdsControls(n());
   // Inside a menu bar every element is a menu title or presentational
   // (ARIA menubar's required owned elements).
   const inBar = useContext(InBar);
@@ -333,7 +352,9 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
           {children()}
         </NameField>
       </Match>
-      <Match when={role().kind === "menuBar"}>
+      {/* A bar holding other controls is no ARIA menubar (it may own only
+       *  menu items): its titles are each their own one-menu bar. */}
+      <Match when={role().kind === "menuBar" && !holdsNonMenuControls(n())}>
         <PackMenuBar attrs={attrs}>{children()}</PackMenuBar>
       </Match>
       <Match when={role().kind === "statusText"}>
@@ -392,7 +413,9 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
       <Match when={pressable()}>
         <div {...buttonAttrs}>{children()}</div>
       </Match>
-      <Match when={role().kind === "logo" || role().kind === "part" || role().kind === "decor"}>
+      {/* Art is hidden from assistive tech, unless it holds a control
+       *  (a control under aria-hidden is unreachable, axe aria-hidden-focus). */}
+      <Match when={(role().kind === "logo" || role().kind === "part" || role().kind === "decor") && !holdsControls(n())}>
         <div {...attrs} aria-hidden="true">
           {children()}
         </div>
