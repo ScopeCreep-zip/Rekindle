@@ -380,6 +380,10 @@ export function spacingOffScale(rootEl: Element, containers: string[]): string[]
         if (v !== "normal" && !onScale(parseFloat(v))) out.push(`${sel} ${p} ${v}`);
       }
       for (const child of Array.from(c.children)) {
+        // A visually hidden announcer (`.sr-only`, 00-rules.css: 1 px,
+        // clipped, its -1px margin part of the pattern) draws no spacing;
+        // the other checks skip it too (OVERLAYS).
+        if (child.matches(".sr-only")) continue;
         // The computed (not resolved) value keeps `auto`, which
         // distributes free space and is not a gap.
         const map = child.computedStyleMap();
