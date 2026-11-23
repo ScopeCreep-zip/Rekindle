@@ -120,13 +120,17 @@ CREATE TABLE IF NOT EXISTS presence_keys (
 
 -- Plan RV1 (owner decision 2026-11-22, threat model L2 bounded exposure):
 -- the identity's new-route budget, a token bucket every route whose blob
--- leaves the device spends from (`rekindle_route::budget`).
+-- leaves the device spends from (`rekindle_route::budget`). Plan RV2e: the
+-- friend code slot's roll budget is a second bucket of the same shape,
+-- one row per (identity, `kind`).
 CREATE TABLE IF NOT EXISTS route_budget (
-    owner_key TEXT PRIMARY KEY NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK(kind IN ('routes', 'code_rolls')),
     tokens INTEGER NOT NULL CHECK(tokens >= 0),
     refilled_ms INTEGER NOT NULL CHECK(refilled_ms >= 0),
     week_start_ms INTEGER NOT NULL CHECK(week_start_ms >= 0),
-    week_spent INTEGER NOT NULL CHECK(week_spent >= 0)
+    week_spent INTEGER NOT NULL CHECK(week_spent >= 0),
+    PRIMARY KEY (owner_key, kind)
 );
 
 -- Plan E2.6: a group DM (3-8 members, no governance). `group_id` is the
