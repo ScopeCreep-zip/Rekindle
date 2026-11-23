@@ -108,6 +108,7 @@ fn sync() -> Vec<Sample> {
                         rgb: [0x34, 0x91, 0xd8],
                     }],
                     shells: Vec::new(),
+                    title_logo: None,
                 },
             },
         ),

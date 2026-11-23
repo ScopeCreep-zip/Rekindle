@@ -13,7 +13,7 @@ Background Decor
 RightSide Decor
 BottomRow Decor
 InfoBar Group
-  XfireLogo Logo
+  XfireLogo Logo label "Rekindle" cover [0, 0, 121, 37] glyph RekindleWordmark
   ButtonMinimize Button target [-3, -4, 24, 24] art [3, 4, 18, 16] Size
   ButtonMaximize Button target [-3, -4, 22, 24] art [3, 4, 18, 16] Short
   ButtonClose Button target [-1, -4, 22, 24] art [1, 4, 18, 16] Short

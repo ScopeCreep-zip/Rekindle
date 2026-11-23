@@ -183,8 +183,13 @@ pub fn import(id: &str, zip: &[u8]) -> Result<Bank> {
         .filter(|(t, _)| !CUES.iter().any(|(_, ty)| ty == t))
         .cloned()
         .collect();
-    let name = format!("Xfire {long_name}");
-    let m = manifest(id, &name, blake3::hash(zip).to_hex().to_string(), &cues);
+    // Served names never say Xfire (design `br`): "Classic sound pack".
+    let m = manifest(
+        id,
+        &long_name,
+        blake3::hash(zip).to_hex().to_string(),
+        &cues,
+    );
     let tokens = BTreeMap::from([(TOKENS.to_owned(), BTreeMap::new())]);
     let built = output::package(&m, &tokens, &BTreeMap::new(), &wavs)
         .map_err(|e| anyhow!("{id}: package: {e:?}"))?;

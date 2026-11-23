@@ -345,8 +345,10 @@ export interface NodeLabel {
 
 /** The built-in glyphs the shell draws (`NodeGlyph`). */
 /** `communities`: the icon tab N4 places; `rekindle`: the app mark on a renamed, icon-sized
- *  menu title (plan SK5, XGlow's 24x22 file menu). */
-export type NodeGlyph = "communities" | "rekindle";
+ *  menu title (plan SK5, XGlow's 24x22 file menu) and the brand mark over a pack's logo in a box
+ *  at most 2:1; `rekindleWordmark`: the brand wordmark (flame and word) over a pack's logo or
+ *  Xfire decor in a wider box, its cover the whole art box (design `br`). */
+export type NodeGlyph = "communities" | "rekindle" | "rekindleWordmark" | "rekindleMarkSmall";
 
 /** `MenuItem`: one item of an engine menu. */
 export interface MenuItem {

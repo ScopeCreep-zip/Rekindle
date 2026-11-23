@@ -235,8 +235,19 @@ pub enum NodeGlyph {
     Communities,
     /// The app mark (plan SK5): a renamed menu title whose node is
     /// icon-shaped (XGlow's 24 x 22 file title), where no legible
-    /// "Rekindle" fits.
+    /// "Rekindle" fits; and the brand mark (flame) the Host serves over a
+    /// pack's logo in a box at most twice as wide as tall (design `br`).
     Rekindle,
+    /// The brand wordmark (flame and word) the Host serves over a pack's
+    /// logo or Xfire decor in a box more than twice as wide as tall
+    /// (design `br`: Xfire Classic's 87 x 19 logo).
+    #[serde(rename = "rekindleWordmark")]
+    RekindleWordmark,
+    /// The small brand mark (flame drawn for small sizes) over a pack's
+    /// logo at most 16 px tall that takes no wordmark (Total Chaos's
+    /// 23 x 9, the 16 x 16 logos).
+    #[serde(rename = "rekindleMarkSmall")]
+    RekindleMarkSmall,
 }
 
 /// How a node's served target meets WCAG 2.5.8 (plan SK7): `Size`, its
