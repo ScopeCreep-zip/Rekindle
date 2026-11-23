@@ -53,6 +53,16 @@ async function logosUnbranded(): Promise<string[]> {
     const out: string[] = nodes.flatMap((el) => {
       if (!el.checkVisibility()) return [];
       const id = el.dataset.skinNode ?? "?";
+      // Inside a branded node (Classic's TheX and TheXCover in its
+      // XfireLogo, BR-E): the ancestor's mark covers it, so it draws neither
+      // its own mark nor any art of its own.
+      const branded = el.parentElement?.closest<HTMLElement>("[data-skin-node]:has(> .skin-node-label .skin-node-glyph-brand)");
+      if (branded) {
+        const own = el.querySelector(":scope > .skin-node-label .skin-node-glyph-brand");
+        const art = getComputedStyle(el).backgroundImage;
+        if (own) return [`${id} draws a second mark inside ${branded.dataset.skinNode ?? "?"}`];
+        return art && art !== "none" ? [`${id} draws art inside ${branded.dataset.skinNode ?? "?"}`] : [];
+      }
       const mark = el.querySelector<SVGElement>(":scope > .skin-node-label .skin-node-glyph-brand");
       if (!mark || !mark.checkVisibility()) return [`${id} draws no Rekindle mark`];
       const n = el.getBoundingClientRect();
