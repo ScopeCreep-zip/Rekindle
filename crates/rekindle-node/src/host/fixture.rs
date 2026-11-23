@@ -18,10 +18,8 @@ pub struct Fixture {
     pub attempts: AttemptLimiter<String>,
 }
 
-/// A data root laid out under `dir` (nothing created).
-pub fn temp_root(dir: &tempfile::TempDir) -> DataRoot {
-    DataRoot::under(dir.path())
-}
+// The temp root lives in the public test fixture (plan GI3).
+pub use super::test_fixtures::temp_root;
 
 impl Fixture {
     pub fn new() -> Self {

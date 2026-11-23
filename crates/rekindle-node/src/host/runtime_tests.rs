@@ -87,50 +87,15 @@ mod skin_trial;
 #[path = "withdrawal_tests.rs"]
 mod withdrawal;
 
-pub(crate) async fn offline_host(dir: &tempfile::TempDir) -> Arc<Host> {
-    offline_host_with(dir, None).await
-}
-
-async fn offline_host_with(
-    dir: &tempfile::TempDir,
-    shell: Option<Arc<dyn shell_hooks::ShellHooks>>,
-) -> Arc<Host> {
-    Host::start(HostConfig {
-        root: claim(temp_root(dir)).unwrap(),
-        stores: HostStores::default(),
-        transport: TransportSource::Offline,
-        serve_bus: false,
-        clock: std::sync::Arc::new(rekindle_utils::SystemClock),
-        rng: std::sync::Arc::new(rekindle_utils::OsRandom),
-        idle: std::sync::Arc::new(rekindle_idle::OsIdle),
-        server_query: std::sync::Arc::new(rekindle_game_detect::server_query::UdpServerQuery),
-        shell,
-    })
-    .await
-    .unwrap()
-}
+// The offline Host and its seeds live in the public test fixture (plan
+// GI3), which the desktop's relay tests call too.
+use crate::host::test_fixtures::offline_host_with;
+pub(crate) use crate::host::test_fixtures::{create_ann, offline_host, seed_registry_community};
 
 fn status_of(response: &IpcResponse) -> Option<u32> {
     match response {
         IpcResponse::Error { code, .. } => Some(*code),
         _ => None,
-    }
-}
-
-/// Create Ann through the window, which unlocks her.
-pub(crate) async fn create_ann(host: &Host) -> rekindle_types::dto::identity::IdentityView {
-    let answer = host
-        .call(
-            Caller::shell(),
-            IpcRequest::IdentityCreate {
-                display_name: Some("Ann".into()),
-                passphrase: "pass".into(),
-            },
-        )
-        .await;
-    match answer {
-        IpcResponse::Ok { data, .. } => serde_json::from_value(data).unwrap(),
-        other => panic!("create refused: {other:?}"),
     }
 }
 
@@ -253,39 +218,6 @@ async fn an_own_governance_op_lands_in_the_op_store() {
     expected.sort_unstable();
     assert_eq!(authors, expected);
     host.shutdown().await.unwrap();
-}
-
-/// Ann's community `c1` in the store with a member registry, and its row.
-pub(crate) async fn seed_registry_community(host: &Host, owner: &str) {
-    host.ctx.communities.map().write().insert(
-        "c1".into(),
-        crate::host::community::CommunityState {
-            member_registry_key: Some("registry".into()),
-            ..crate::host::community::CommunityState::new("c1")
-        },
-    );
-    let owner = owner.to_string();
-    host.ctx
-        .db
-        .current()
-        .unwrap()
-        .call(move |conn| {
-            rekindle_db::repo::communities::insert_if_absent(
-                conn,
-                &owner,
-                &rekindle_db::repo::communities::NewCommunity {
-                    id: "c1",
-                    name: "C",
-                    joined_at: 1,
-                    my_pseudonym_key: "",
-                    mek_generation: 0,
-                    member_registry_key: Some("registry"),
-                    my_subkey_index: None,
-                },
-            )
-        })
-        .await
-        .unwrap();
 }
 
 /// Hydration recovers the stored registry owner keypair (plan E3.1 B2d):
