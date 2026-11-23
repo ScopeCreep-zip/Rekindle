@@ -38,14 +38,50 @@ pub fn published(class: RouteClass, route_id: Option<&str>, blob: &[u8], landed:
     );
 }
 
+/// The scrubbed `route` and `blob` fields of a line about a call to
+/// `target`, imported from `blob`: the same tags on every call line, so
+/// one route instance matches across them and the publisher's line.
+fn call_route(target: &PeerTarget, blob: &[u8]) -> (String, String) {
+    (scrub(target.as_str()).into_owned(), blob_tag(blob))
+}
+
 /// We imported `peer`'s route `blob` as `target` to call them.
 pub fn imported(peer: &str, target: &PeerTarget, blob: &[u8]) {
+    let (route, blob_tag) = call_route(target, blob);
     tracing::info!(
         peer = %scrub(peer),
-        route = %scrub(target.as_str()),
-        blob = %blob_tag(blob),
+        route = %route,
+        blob = %blob_tag,
         blob_len = blob.len(),
         "peer route blob imported for a call"
+    );
+}
+
+/// We `app_call` a bare community envelope (the join's bootstrap
+/// exchange, a member call, a MEK delivery) to `target`, imported from
+/// `blob`, over a safety route of `hops` hops (live finding AB1).
+pub fn envelope_call_sent(target: &PeerTarget, blob: &[u8], hops: u8) {
+    let (route, blob_tag) = call_route(target, blob);
+    tracing::info!(
+        route = %route,
+        blob = %blob_tag,
+        blob_len = blob.len(),
+        hops,
+        "community-envelope RPC sent"
+    );
+}
+
+/// The community-envelope call to `target` (imported from `blob`, over
+/// `hops` hops) got no answer before its deadline.
+pub fn envelope_call_timed_out(target: &PeerTarget, blob: &[u8], hops: u8, reason: &str) {
+    let (route, blob_tag) = call_route(target, blob);
+    tracing::info!(
+        route = %route,
+        blob = %blob_tag,
+        blob_len = blob.len(),
+        hops,
+        reason,
+        "community-envelope RPC timed out"
     );
 }
 

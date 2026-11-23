@@ -4,6 +4,7 @@
 use rekindle_ipc::protocol::IpcRequest;
 
 use crate::cli::DmCmd;
+use crate::friend_ref;
 use crate::helpers;
 use crate::output::format;
 use crate::output::OutputMode;
@@ -17,7 +18,7 @@ pub async fn dispatch(cmd: &DmCmd, client: &DaemonClient, mode: OutputMode) -> a
             let value = helpers::send(
                 client,
                 IpcRequest::DmSend {
-                    peer_key: friend.clone(),
+                    peer_key: friend_ref::resolve(client, friend).await?,
                     body: message.clone(),
                     reply_to: None,
                 },
@@ -35,7 +36,10 @@ pub async fn dispatch(cmd: &DmCmd, client: &DaemonClient, mode: OutputMode) -> a
             .await?;
             format::print_structured(&value, mode)
         }
-        DmCmd::Watch { friend } => watch_dms(client, friend.as_deref(), mode).await,
+        DmCmd::Watch { friend } => {
+            let friend = friend_ref::resolve_opt(client, friend.as_deref()).await?;
+            watch_dms(client, friend.as_deref(), mode).await
+        }
         DmCmd::History {
             friend,
             limit,
@@ -44,7 +48,7 @@ pub async fn dispatch(cmd: &DmCmd, client: &DaemonClient, mode: OutputMode) -> a
             let value = helpers::send(
                 client,
                 IpcRequest::DmHistory {
-                    peer_key: friend.clone(),
+                    peer_key: friend_ref::resolve(client, friend).await?,
                     limit: *limit,
                     before: *before,
                 },
@@ -56,7 +60,7 @@ pub async fn dispatch(cmd: &DmCmd, client: &DaemonClient, mode: OutputMode) -> a
             let value = helpers::send(
                 client,
                 IpcRequest::DmMarkRead {
-                    peer_key: friend.clone(),
+                    peer_key: friend_ref::resolve(client, friend).await?,
                     rendered_through: None,
                 },
             )
@@ -79,7 +83,7 @@ pub async fn dispatch(cmd: &DmCmd, client: &DaemonClient, mode: OutputMode) -> a
 }
 
 /// `dm watch`: stream incoming DMs until Ctrl-C, optionally from one
-/// friend (public key or display name).
+/// friend, by the key [`friend_ref::resolve`] gave.
 async fn watch_dms(
     client: &DaemonClient,
     friend: Option<&str>,
@@ -100,7 +104,7 @@ async fn watch_dms(
             decryption_failed,
             is_own,
             ..
-        }) if friend.is_none_or(|f| f == peer_key || sender_name.as_deref() == Some(f)) => {
+        }) if friend.is_none_or(|f| f == peer_key) => {
             let who = if *is_own {
                 "you".to_owned()
             } else {
@@ -165,7 +169,7 @@ async fn watch_dms(
         SubscriptionEvent::Friend(FriendEvent::IdentityPinMismatch {
             peer_key,
             display_name,
-        }) if friend.is_none_or(|f| f == peer_key || f == display_name) => Some(format!(
+        }) if friend.is_none_or(|f| f == peer_key) => Some(format!(
             "! {}'s keys are not signed by the identity you know. Nothing was sent; verify \
              their safety number.",
             rekindle_utils::text::sanitize_for_display(display_name)

@@ -1,24 +1,28 @@
 //! Group DM commands (plan E2.6): create, accept, decline, leave, rename, invite, send,
-//! list and messages, each one Host request.
+//! list and messages, each one Host request; members are named as
+//! [`friend_ref`] reads them.
 
 use rekindle_client::DaemonClient;
 use rekindle_ipc::protocol::IpcRequest;
 
 use crate::cli::GroupDmCmd;
+use crate::friend_ref;
 use crate::helpers;
 use crate::output::format;
 use crate::output::OutputMode;
 
-fn request(cmd: &GroupDmCmd) -> IpcRequest {
-    match cmd {
+/// The request a subcommand makes, its friends named by key
+/// ([`friend_ref::resolve_all`]).
+async fn request(client: &DaemonClient, cmd: &GroupDmCmd) -> anyhow::Result<IpcRequest> {
+    Ok(match cmd {
         GroupDmCmd::Create {
             name,
             members,
             origin_peer,
         } => IpcRequest::GroupDmCreate {
             name: name.clone(),
-            members: members.clone(),
-            origin_peer: origin_peer.clone(),
+            members: friend_ref::resolve_all(client, members).await?,
+            origin_peer: friend_ref::resolve_opt(client, origin_peer.as_deref()).await?,
         },
         GroupDmCmd::Accept { group_id } => IpcRequest::GroupDmAccept {
             group_id: group_id.clone(),
@@ -35,7 +39,7 @@ fn request(cmd: &GroupDmCmd) -> IpcRequest {
         },
         GroupDmCmd::Invite { group_id, members } => IpcRequest::GroupDmInvite {
             group_id: group_id.clone(),
-            members: members.clone(),
+            members: friend_ref::resolve_all(client, members).await?,
         },
         GroupDmCmd::Send { group_id, text } => IpcRequest::GroupDmSend {
             group_id: group_id.clone(),
@@ -51,7 +55,7 @@ fn request(cmd: &GroupDmCmd) -> IpcRequest {
             limit: *limit,
             before: *before,
         },
-    }
+    })
 }
 
 pub async fn dispatch(
@@ -59,5 +63,8 @@ pub async fn dispatch(
     client: &DaemonClient,
     mode: OutputMode,
 ) -> anyhow::Result<()> {
-    format::print_structured(&helpers::send(client, request(cmd)).await?, mode)
+    format::print_structured(
+        &helpers::send(client, request(client, cmd).await?).await?,
+        mode,
+    )
 }

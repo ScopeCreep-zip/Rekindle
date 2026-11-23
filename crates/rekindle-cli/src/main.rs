@@ -23,6 +23,7 @@ mod channel_message;
 mod community;
 mod community_watch;
 mod dm;
+mod friend_ref;
 mod friends;
 mod governance;
 mod group_dm;

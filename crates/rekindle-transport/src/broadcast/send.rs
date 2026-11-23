@@ -193,16 +193,33 @@ impl AppCaller {
     /// That reasoning does **not** generalise. Every other RPC carries
     /// its authority in plaintext fields and must keep going through
     /// `call`, which signs and verifies.
+    ///
+    /// `route_blob` is the blob `target` was imported from: the send and a
+    /// timeout each log a `route_trace` line naming that route instance
+    /// (live finding AB1).
     pub async fn call_community_envelope(
         &self,
         target: &PeerTarget,
+        route_blob: &[u8],
         envelope_bytes: Vec<u8>,
     ) -> Result<Vec<u8>> {
+        let profile = &self.config.safety.rpc;
+        crate::route_trace::envelope_call_sent(target, route_blob, profile.hop_count);
         let response = self
             .messages
-            .call(target, &self.config.safety.rpc, envelope_bytes)
+            .call(target, profile, envelope_bytes)
             .await
-            .map_err(|e| send_failure(self.routes.as_ref(), target, e))?;
+            .map_err(|e| {
+                if let PortError::Timeout(reason) = &e {
+                    crate::route_trace::envelope_call_timed_out(
+                        target,
+                        route_blob,
+                        profile.hop_count,
+                        reason,
+                    );
+                }
+                send_failure(self.routes.as_ref(), target, e)
+            })?;
 
         debug!(
             response_len = response.len(),

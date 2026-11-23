@@ -168,7 +168,7 @@ impl HostGovernance {
             .import_route(target_route_blob)
             .map_err(|_| RouteCallError::Unusable)?;
         node.caller()
-            .call_community_envelope(&target, payload)
+            .call_community_envelope(&target, target_route_blob, payload)
             .await
             .map_err(|e| match e {
                 rekindle_transport::TransportError::RouteUnusable { .. } => {

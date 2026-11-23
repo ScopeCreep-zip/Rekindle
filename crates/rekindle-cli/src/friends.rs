@@ -7,6 +7,7 @@ use rekindle_ipc::protocol::IpcRequest;
 use rekindle_types::dto::friends::{qr_text, FriendCodeView, SafetyNumberView};
 
 use crate::cli::{FriendCmd, FriendCodeCmd, FriendInviteCmd, GroupCmd};
+use crate::friend_ref;
 use crate::helpers;
 use crate::output::OutputMode;
 use crate::output::{format, table};
@@ -32,7 +33,7 @@ pub async fn dispatch(
             public_key: friend.clone(),
         },
         FriendCmd::Remove { friend } => IpcRequest::FriendRemove {
-            public_key: friend.clone(),
+            public_key: friend_ref::resolve(client, friend).await?,
         },
         FriendCmd::List { status, .. } => return list(client, status.as_deref(), mode).await,
         FriendCmd::Requests => IpcRequest::FriendRequests,
@@ -44,12 +45,12 @@ pub async fn dispatch(
         },
         FriendCmd::Blocked => IpcRequest::FriendBlockedList,
         FriendCmd::Nickname { friend, name } => IpcRequest::FriendSetNickname {
-            public_key: friend.clone(),
+            public_key: friend_ref::resolve(client, friend).await?,
             nickname: name.clone(),
         },
         FriendCmd::Code { action } => return friend_code(client, action.as_ref(), mode).await,
         FriendCmd::Invite(invite) => invite_request(invite),
-        FriendCmd::Group(group) => group_request(group),
+        FriendCmd::Group(group) => group_request(client, group).await?,
         FriendCmd::ResetSession { friend } => IpcRequest::SessionResetStart {
             public_key: friend.clone(),
         },
@@ -78,8 +79,10 @@ fn invite_request(cmd: &FriendInviteCmd) -> IpcRequest {
     }
 }
 
-fn group_request(cmd: &GroupCmd) -> IpcRequest {
-    match cmd {
+/// The request a group subcommand makes, its friend named by key
+/// ([`friend_ref::resolve`]).
+async fn group_request(client: &DaemonClient, cmd: &GroupCmd) -> anyhow::Result<IpcRequest> {
+    Ok(match cmd {
         GroupCmd::Create { name } => IpcRequest::FriendGroupCreate { name: name.clone() },
         GroupCmd::Rename { group_id, name } => IpcRequest::FriendGroupRename {
             group_id: *group_id,
@@ -89,10 +92,10 @@ fn group_request(cmd: &GroupCmd) -> IpcRequest {
             group_id: *group_id,
         },
         GroupCmd::Move { friend, group_id } => IpcRequest::FriendGroupMove {
-            public_key: friend.clone(),
+            public_key: friend_ref::resolve(client, friend).await?,
             group_id: *group_id,
         },
-    }
+    })
 }
 
 /// `friend list`: the buddy list, filtered by status.
