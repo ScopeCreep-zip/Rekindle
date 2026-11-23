@@ -21,8 +21,8 @@ const AboutTab: Component = () => {
     <>
       <div class="settings-section-title">Rekindle</div>
       <div class="settings-about-text">
-        A faithful recreation of the classic Xfire gaming chat client,
-        rebuilt with modern technology for the decentralized era.
+        A faithful recreation of a classic gaming chat client, rebuilt with
+        modern technology for the decentralized era.
       </div>
       <div class="settings-about-row">
         <span class="form-field-label">Version</span>
