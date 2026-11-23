@@ -74,7 +74,8 @@
     font-size: 12px;
     font-weight: 700;
     white-space: nowrap;
-    overflow: hidden;
+    overflow-x: clip;
+    overflow-y: visible;
     text-overflow: ellipsis;
     color: var(--color-xfire-titlebar-text);
   }
@@ -119,7 +120,8 @@
   .skin-status-paused-text {
     min-width: 0;
     color: var(--color-xfire-danger-text);
-    overflow: hidden;
+    overflow-x: clip;
+    overflow-y: visible;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -155,6 +157,9 @@
    * NodeLabelView): over the art; with a cover, that rectangle takes the
    * skin's ground so the copied art's own word (xslimfire's "Files") is
    * hidden. Presses pass through to the node. */
+  /* Text the pack draws in a box with no height (SK8: Combat's, Onyx's and
+   * SpaceCowboy's Title, SpaceCowboy's menus, XGlow's UserName serve 0 px)
+   * clips sideways only, so it shows and still ends in its ellipsis. */
   .skin-node-label {
     position: absolute;
     inset: 0;
@@ -167,7 +172,8 @@
     font-weight: 700;
     color: var(--color-xfire-accent-text);
     pointer-events: none;
-    overflow: hidden;
+    overflow-x: clip;
+    overflow-y: visible;
   }
 
   .skin-node-label[data-cover] {
@@ -194,7 +200,8 @@
 
   .skin-node-label-text {
     max-width: 100%;
-    overflow: hidden;
+    overflow-x: clip;
+    overflow-y: visible;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
