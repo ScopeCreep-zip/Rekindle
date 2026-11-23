@@ -59,7 +59,9 @@ pub fn fit_fork_proof(mut frontier: Frontier) -> Frontier {
     frontier
 }
 
-fn op_ref_of(op: &HeldOp) -> OpRef {
+/// The locator other ops cite a held op by.
+#[must_use]
+pub fn op_ref_of(op: &HeldOp) -> OpRef {
     OpRef {
         op_hash: op.hash,
         device_key: op.device_key,

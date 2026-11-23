@@ -23,7 +23,7 @@ use super::{create_ann, meta, offline_host, seed_governance, seed_registry_commu
 use super::{signed_chain, CREATOR_RECORD};
 use crate::host::Host;
 
-const CODE: &str = "join-code";
+const JN1_INVITE_CODE: &str = "join-code";
 
 fn vld0(bytes: &[u8; 32]) -> String {
     use base64::Engine as _;
@@ -36,7 +36,7 @@ fn vld0(bytes: &[u8; 32]) -> String {
 fn invite() -> GovernanceEntry {
     GovernanceEntry::InviteCreated {
         invite_id: [7; 16],
-        code_hash: rekindle_secrets::invite::hash_invite_code(CODE),
+        code_hash: rekindle_secrets::invite::hash_invite_code(JN1_INVITE_CODE),
         max_uses: 100,
         expires_at: None,
         secrets_record_key: "VLD0:s".into(),
@@ -57,16 +57,6 @@ fn creator_chain(creator: &SigningKey) -> Vec<HeldOp> {
     )
 }
 
-fn op_ref(op: &HeldOp) -> OpRef {
-    OpRef {
-        op_hash: op.hash,
-        device_key: op.device_key,
-        author: op.author.clone(),
-        author_record: op.author_record.clone(),
-        author_seq: op.seq,
-    }
-}
-
 /// A joiner's signed `MemberJoined` on the invite, citing `dep`.
 fn joiner_citing(dep: &HeldOp) -> BootstrapJoiner {
     use rekindle_codec::governance_op::{encode_op, op_unsigned_bytes};
@@ -80,20 +70,20 @@ fn joiner_citing(dep: &HeldOp) -> BootstrapJoiner {
         .verifying_key()
         .to_bytes();
     let record = vld0(&dflt_opaque_record_key(&owner, member_record::SUBKEY_COUNT));
-    let code_hash = rekindle_secrets::invite::hash_invite_code(CODE);
+    let code_hash = rekindle_secrets::invite::hash_invite_code(JN1_INVITE_CODE);
     let proof = invite_proof_bytes("c1", &author, &record, &code_hash);
     let mut op = GovernanceOp {
         device_key: author.0,
         author: author.clone(),
         seq: 0,
         prev: None,
-        deps: vec![op_ref(dep)],
+        deps: vec![rekindle_governance_runtime::own_frontier::op_ref_of(dep)],
         issued_at: 10,
         body: GovernanceEntry::MemberJoined {
             member_record: record.clone(),
             member_record_owner: vld0(&owner),
             invite_proof: Some(InviteProof {
-                sig: rekindle_secrets::invite::sign_invite_join(CODE, &proof).to_vec(),
+                sig: rekindle_secrets::invite::sign_invite_join(JN1_INVITE_CODE, &proof).to_vec(),
                 code_hash,
             }),
             owner_proof: sign_member_record_binding(&[0xB8; 32], "c1", &author.0, &record).to_vec(),
