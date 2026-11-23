@@ -54,6 +54,16 @@ pub enum Fault {
     DropFrom { node: usize, per_mille: u32 },
     /// The node never answers app calls; its callers time out.
     Unanswered { node: usize, unanswered: bool },
+    /// Every answer the node gives to an app call is lost on its way back
+    /// (or no longer is): the question reaches the node, its handler runs
+    /// and its `reply` succeeds, while the caller hears nothing and times
+    /// out at its deadline. Veilid's app reply only completes the local
+    /// waiter (fork `rpc_app_call.rs:160-170`); `answer` then renders the
+    /// answer to the question's reply private route and hands it to the
+    /// first hop (`rpc_processor/mod.rs:2328-2425`), and nothing tells the
+    /// answerer of a loss past that hop; the caller's `wait_for_reply`
+    /// ends in `Timeout` (`:708-729`), the callee having acted.
+    AnswerLost { node: usize, lost: bool },
     /// A call to the node's routes never resolves: no answer and no
     /// Veilid `Timeout`, as a call stuck before Veilid's answer wait
     /// (route resolution, rendering, the first hop's send, none bounded:
@@ -335,6 +345,9 @@ impl Netsim {
                     node,
                     unanswered,
                 );
+            }
+            Fault::AnswerLost { node, lost } => {
+                toggle(&mut self.net.inner.lock().faults.answer_lost, node, lost);
             }
             Fault::CallHangs { node, hangs } => {
                 toggle(&mut self.net.inner.lock().faults.hung, node, hangs);

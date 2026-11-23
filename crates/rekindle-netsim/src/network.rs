@@ -97,6 +97,9 @@ pub(crate) struct Faults {
     pub drop_from: HashMap<usize, u32>,
     /// Nodes whose app calls are never answered (the caller times out).
     pub unanswered: HashSet<usize>,
+    /// Nodes whose answers to app calls are lost on the reply route after
+    /// the handler ran and answered ([`crate::Fault::AnswerLost`]).
+    pub answer_lost: HashSet<usize>,
     /// Nodes a call to whose route never resolves ([`crate::Fault::CallHangs`]).
     pub hung: HashSet<usize>,
     /// How long a call to each node's routes is stuck before it is sent
