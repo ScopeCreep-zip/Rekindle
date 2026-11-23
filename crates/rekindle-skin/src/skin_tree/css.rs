@@ -5,10 +5,11 @@
 //! its normal, hover, down and disabled states; an interactive node smaller than 24×24 is its
 //! served target box (plan SK7, [`super::target`]: margins grow the box,
 //! a transparent border of the art's inset keeps the art, its children and
-//! its text at their own place and size); a resize grip keeps its art box
-//! and takes presses only on its `::before`, laid at its frame band (plan
-//! SK11, [`grip_band`]), stacked below the interactive nodes it meets (lead
-//! decision 6); every node is
+//! its text at their own place and size); a resize grip, and a drag area
+//! with holes, keeps its art box and takes presses only on its `::before`,
+//! laid at its frame band or art box less the press boxes of the controls
+//! it would lie over (plan SK11, [`grip_band`], [`super::target::grips`]),
+//! so it takes no press over a control (lead decision 6); every node is
 //! stacked by its `Z` and then the pack's document order (the shell nests
 //! the divs in that order, so a later sibling draws above); a text-sized node is as wide and tall as
 //! its text (`max-content`); the views node draws opaque (lead decision 3:
@@ -240,7 +241,7 @@ fn node(out: &mut String, n: &SkinNode, ctx: &Ctx<'_>) -> Option<()> {
     if n.role == NodeRole::Views {
         decls.push_str(" background-color: var(--color-xfire-bg-dark);");
     }
-    let grip = n.resize_edge().is_some();
+    let grip = n.frame_node();
     let outer = match n.target {
         Some(t) if !grip => {
             target(&mut decls, n, t);

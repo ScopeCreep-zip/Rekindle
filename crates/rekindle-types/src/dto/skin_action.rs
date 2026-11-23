@@ -427,6 +427,21 @@ impl NodeTrigger {
         matches!(self.on, SkinEvent::Click | SkinEvent::LeftDown)
             && self.run != SkinAction::DragWindow
     }
+
+    /// Whether the trigger is a pointer gesture on the window's frame, as
+    /// a title bar takes it in every OS (Tauri's `data-tauri-drag-region`):
+    /// a drag that moves the window, a double click that maximizes it, or
+    /// a drag that resizes it. A click or button down that maximizes is a
+    /// maximize button, not a gesture.
+    #[must_use]
+    pub fn frame_gesture(&self) -> bool {
+        self.on.pointer()
+            && match self.run {
+                SkinAction::DragWindow | SkinAction::Resize(_) => true,
+                SkinAction::Maximize => self.on == SkinEvent::DoubleClick,
+                _ => false,
+            }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

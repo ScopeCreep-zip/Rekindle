@@ -459,6 +459,27 @@ impl SkinNode {
         })
     }
 
+    /// Whether the node is a window drag area: it takes the pointer, and
+    /// only for the window's frame gestures
+    /// ([`NodeTrigger::frame_gesture`]: move, double-click maximize), with
+    /// no resize (a resize grip, [`Self::resize_edge`]). Onyx's `TopLeft`
+    /// (`leftDown` drags, `doubleClick` maximizes) is one.
+    #[must_use]
+    pub fn drag_area(&self) -> bool {
+        let mut pointer = self.triggers.iter().filter(|t| t.on.pointer()).peekable();
+        pointer.peek().is_some()
+            && pointer.all(NodeTrigger::frame_gesture)
+            && self.resize_edge().is_none()
+    }
+
+    /// Whether the node is a frame node: a resize grip or a drag area,
+    /// whose pointer area never takes a press over a press control
+    /// (plan SK11, the skin's `target::grips`).
+    #[must_use]
+    pub fn frame_node(&self) -> bool {
+        self.resize_edge().is_some() || self.drag_area()
+    }
+
     fn shell(&self) -> ShellNode {
         ShellNode {
             id: self.id.clone(),

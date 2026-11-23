@@ -37,11 +37,9 @@
 
 use rekindle_types::dto::skin::WindowLayout;
 use rekindle_types::dto::skin_action::NodeTrigger;
-use rekindle_types::dto::skin_tree::{
-    Edge, NodeRole, NodeTarget, SkinNode, SkinTree, TargetRule,
-};
+use rekindle_types::dto::skin_tree::{Edge, NodeRole, NodeTarget, SkinNode, SkinTree, TargetRule};
 
-use super::validate::{hit_area, overlap, text_sized, Apart, Stack, HIT};
+use super::validate::{hit_area, overlap, text_sized, Apart, HIT};
 
 /// One candidate laid in the window.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -354,26 +352,37 @@ pub struct Grip {
 /// grip is a pointer target like any control). Its pointer area is its
 /// frame band ([`band`]: a corner 24 x 24, an edge 24 px thick along its
 /// whole length), never its art box: the art draws and takes no press.
-/// Where the band meets the box (its served target, else its art) of a
-/// listening node it would lie above ([`Stack::yields`] false: a node it
-/// yields to stacks above it and keeps its press) and that is not its
-/// backdrop (its box holding the grip's art), the stretch of the band over
-/// its press box ([`press_box`]) is cut out, as a hole the stylesheet clips
-/// from the band ([`super::css`]), over the grip's art too (the art takes
-/// no press). A grip never cuts another grip: a corner stacks above the
-/// edges ([`super::validate::stack_z`]). Its rule: `Size` while 24 x 24 of
-/// the band is left, else `Spacing` when the 24 px circle on its band meets
-/// no listening node's box, else `Short`.
+/// A frame node never takes a press over a press control, whatever the
+/// pack's order (lead decision, title-bar semantics): where the band meets
+/// the press box ([`press_box`]) of a listening node shown with it, that
+/// stretch is cut out, as a hole the stylesheet clips from the band
+/// ([`super::css`]), over the grip's art too (the art takes no press). A
+/// grip never cuts another grip: a corner stacks above the edges
+/// ([`super::validate::stack_z`]).
+///
+/// A drag area ([`SkinNode::drag_area`]: only move and double-click
+/// maximize, Onyx's `TopLeft` over its Friends tab) is a frame node like a
+/// grip, as a title bar is in every OS (Tauri's `data-tauri-drag-region`
+/// takes only the presses no control takes): it never takes a press over
+/// a press control, whatever the pack's order. Its pointer area is its art
+/// box in the window, cut over the press box of every listening node and
+/// the band of every grip it would lie above; the art still draws in the
+/// pack's order. A drag area with no hole keeps its own box and is not
+/// listed. A frame node never cuts another's area for a drag area (a grip
+/// or drag area is no press control to a grip; a drag area yields to a
+/// grip).
+///
+/// Its rule: `Size` while 24 x 24 of the area is left, else `Spacing` when
+/// the 24 px circle on it meets no listening node's box, else `Short`.
 #[must_use]
 pub fn grips(tree: &SkinTree, window: (i32, i32), laid: &[Laid]) -> Vec<Grip> {
     let apart = Apart::new(&tree.root);
-    let stack = Stack::new(&tree.root);
     let r2 = i64::from(HIT) * i64::from(HIT);
     let boxes = tree.boxes(window.0, window.1);
     let others: Vec<(&str, [i32; 4], [i32; 4])> = boxes
         .iter()
         .filter(|(n, b)| {
-            n.resize_edge().is_none()
+            !n.frame_node()
                 && b[2] > 0
                 && b[3] > 0
                 && (listens(n) || n.triggers.iter().any(|t| t.on.pointer()))
@@ -383,31 +392,56 @@ pub fn grips(tree: &SkinTree, window: (i32, i32), laid: &[Laid]) -> Vec<Grip> {
             (n.id.as_str(), area, press_box(*b, area))
         })
         .collect();
-    boxes
+    let frames: Vec<(&SkinNode, [i32; 4], [i32; 4], bool)> = boxes
         .iter()
-        .filter(|(n, b)| n.resize_edge().is_some() && !text_sized(n) && b[2] > 0 && b[3] > 0)
-        .filter_map(|(n, art)| Some((n, art, n.resize_edge()?)))
-        .map(|(n, art, edge)| {
-            let g = band(*art, edge, window);
+        .filter(|(n, b)| n.frame_node() && !text_sized(n) && b[2] > 0 && b[3] > 0)
+        .filter_map(|(n, art)| {
+            let g = match n.resize_edge() {
+                Some(edge) => band(*art, edge, window),
+                None => meet(*art, [0, 0, window.0, window.1])?,
+            };
+            Some((*n, *art, g, n.resize_edge().is_some()))
+        })
+        .collect();
+    frames
+        .iter()
+        .filter_map(|&(n, art, g, grip)| {
             let shown: Vec<[i32; 4]> = others
                 .iter()
                 .filter(|(id, ..)| !apart.apart(&n.id, id))
                 .map(|(_, o, _)| *o)
                 .collect();
             let mut holes: Vec<[i32; 4]> = Vec::new();
-            // A listening node whose box holds the grip's art is its
-            // backdrop (a whole-window drag area): the pack lays the grip
-            // over it on purpose, so it cuts no hole.
-            let backdrop = |o: [i32; 4]| meet(o, *art) == Some(*art);
-            for (_, _, press) in others.iter().filter(|(id, o, _)| {
-                !apart.apart(&n.id, id) && !stack.yields(&n.id, id) && !backdrop(*o)
-            }) {
-                let Some(m) = meet(g, *press) else { continue };
+            // Every press control shown with it is cut, whatever the
+            // pack's order: the served stack nests each node's z inside
+            // its parent's (CSS stacking contexts), so a control's
+            // effective z ([`Stack::yields`]) does not lift it over a
+            // frame node; Onyx's `TabNormalButton` (inside `TabNormalText`)
+            // lies under `TopLeft` (`Z=2`) though its own `Z` is higher. A
+            // hole over a control already above is a no-op.
+            let mut cuts: Vec<[i32; 4]> = others
+                .iter()
+                .filter(|(id, ..)| !apart.apart(&n.id, id))
+                .map(|(.., press)| *press)
+                .collect();
+            if !grip {
+                cuts.extend(
+                    frames
+                        .iter()
+                        .filter(|(m, .., is_grip)| *is_grip && !apart.apart(&n.id, &m.id))
+                        .map(|(_, _, b, _)| *b),
+                );
+            }
+            for press in cuts {
+                let Some(m) = meet(g, press) else { continue };
                 let mut parts = vec![m];
                 for h in &holes {
                     parts = parts.into_iter().flat_map(|p| minus(p, *h)).collect();
                 }
                 holes.extend(parts);
+            }
+            if !grip && holes.is_empty() {
+                return None;
             }
             let rule = if free_square(g, &holes) {
                 TargetRule::Size
@@ -416,15 +450,15 @@ pub fn grips(tree: &SkinTree, window: (i32, i32), laid: &[Laid]) -> Vec<Grip> {
             } else {
                 TargetRule::Short
             };
-            Grip {
+            Some(Grip {
                 laid: Laid {
                     id: n.id.clone(),
-                    art: *art,
+                    art,
                     area: g,
                     rule,
                 },
                 holes,
-            }
+            })
         })
         .collect()
 }
@@ -475,7 +509,7 @@ fn serve(l: &Laid, grip: bool) -> Option<NodeTarget> {
 
 fn set(nodes: &mut [SkinNode], laid: &[Laid]) {
     for n in nodes {
-        let grip = n.resize_edge().is_some();
+        let grip = n.frame_node();
         n.target = laid
             .iter()
             .find(|l| l.id == n.id)

@@ -282,14 +282,16 @@ fn covered(tree: &SkinTree, window: (i32, i32)) -> Vec<String> {
     let stack = validate::Stack::new(&tree.root);
     let listening = all
         .iter()
-        .filter(|(n, b, _)| shell_listens(n) && n.resize_edge().is_none() && b[2] > 0 && b[3] > 0);
+        // A frame node (grip or drag area) is no press control: a grip's
+        // band may lie over a drag area (plan SK11 lead decision).
+        .filter(|(n, b, _)| shell_listens(n) && !n.frame_node() && b[2] > 0 && b[3] > 0);
     for (l, lb, up) in listening {
         let c = (2 * lb[0] + lb[2], 2 * lb[1] + lb[3]);
         for (m, mb, _) in &all {
             let Some(t) = m.target else { continue };
             // A grip's art takes no press (its band does, plan SK11), so
             // its art holding the centre excuses nothing.
-            let grip = m.resize_edge().is_some();
+            let grip = m.frame_node();
             let skip = m.id == l.id
                 || up.contains(&m.id.as_str())
                 || apart.apart(&l.id, &m.id)
@@ -362,11 +364,16 @@ fn every_builtin_grip_is_a_served_target() {
                 let stack = validate::Stack::new(&tree.root);
                 let apart = validate::Apart::new(&tree.root);
                 for g in target::grips(tree, at, &laid) {
+                    let (a, r) = (g.laid.art, g.laid.area);
+                    // A drag area's pointer area is its art in the window.
+                    let Some(edge) = grip_edge(tree, &g.laid.id) else {
+                        assert_eq!(Some(r), target::meet(a, [0, 0, at.0, at.1]));
+                        assert!(!g.holes.is_empty(), "{} {}", b.id, g.laid.id);
+                        continue;
+                    };
                     // The pointer area is the frame band: 24 px on each
                     // axis it resizes, from the art's dragged side (it lies
                     // in the window), never the art box.
-                    let (a, r) = (g.laid.art, g.laid.area);
-                    let edge = grip_edge(tree, &g.laid.id);
                     assert_eq!(r, target::band(a, edge, at), "{} {}", b.id, g.laid.id);
                     let thick = |ax: usize| r[ax + 2] == validate::HIT;
                     let banded = match edge {
@@ -374,7 +381,11 @@ fn every_builtin_grip_is_a_served_target() {
                         Edge::Top | Edge::Bottom => thick(1),
                         _ => thick(0) && thick(1),
                     };
-                    assert!(banded, "{} {}: {r:?} is not a band of {a:?}", b.id, g.laid.id);
+                    assert!(
+                        banded,
+                        "{} {}: {r:?} is not a band of {a:?}",
+                        b.id, g.laid.id
+                    );
                     assert!(
                         target::meet(r, a).is_some(),
                         "{} {}: {r:?} leaves its art {a:?}",
@@ -414,8 +425,8 @@ fn every_builtin_grip_is_a_served_target() {
     let rule = |id: &str| cowboy.iter().find(|(g, _)| g == id).map(|(_, r)| *r);
     assert_eq!(cowboy.len(), 5, "{cowboy:?}");
     for (id, want) in [
-        ("ResizeLeft", TargetRule::Short),
-        ("ResizeRight", TargetRule::Short),
+        ("ResizeLeft", TargetRule::Size),
+        ("ResizeRight", TargetRule::Size),
         ("ResizeUp", TargetRule::Size),
         ("ResizeDown", TargetRule::Size),
         ("BRGripper", TargetRule::Size),
@@ -424,38 +435,64 @@ fn every_builtin_grip_is_a_served_target() {
     }
 }
 
-/// The resize edge of the grip `id` in `tree`.
-fn grip_edge(tree: &SkinTree, id: &str) -> Edge {
-    tree.boxes(0, 0)
+/// The resize edge of the frame node `id` in `tree`: `None` for a drag
+/// area.
+fn grip_edge(tree: &SkinTree, id: &str) -> Option<Edge> {
+    let (n, _) = tree
+        .boxes(0, 0)
         .into_iter()
         .find(|(n, _)| n.id == id)
-        .and_then(|(n, _)| n.resize_edge())
-        .unwrap()
+        .unwrap();
+    assert!(n.frame_node(), "{id}");
+    n.resize_edge()
 }
 
-/// Plan SK11 (the real-app hit stack): Onyx's `TopLeft` corner (Decor art
-/// 83 x 128 carrying `Resize(TopLeft)`) took the press over its whole art,
-/// on top of the Friends tab's `TabNormalButton`, so a click on the tab
-/// grabbed the window corner. Its pointer area is the 24 x 24 at the
-/// window corner, which holds no part of the tab's centre.
+/// Plan SK11 (the real-app hit stack): Onyx's `TopLeft` (Decor art 83 x 128,
+/// `leftDown` drags the window, `doubleClick` maximizes it: a drag area,
+/// no resize) lies above the Friends tab's `TabNormalButton` in the pack's
+/// order and took the press over its whole art, so a click on the tab
+/// grabbed the window. A drag area takes no press over a press control:
+/// its pointer area is cut over the tab's press box, so the tab's centre
+/// is pressed by the tab.
 #[test]
-fn onyx_top_left_band_leaves_the_friends_tab_its_centre() {
+fn onyx_top_left_drag_area_leaves_the_friends_tab_its_centre() {
+    use rekindle_types::dto::skin_action::{SkinAction, SkinEvent};
     let l = super::golden_tests::main_layout("onyx");
     let tree = l.tree.as_ref().unwrap();
     let at = target::window(&l);
-    let laid = target::targets(tree, at);
-    let grip = target::grips(tree, at, &laid)
-        .into_iter()
-        .find(|g| g.laid.id == "TopLeft")
-        .unwrap();
-    assert_eq!(grip.laid.area, [0, 0, 24, 24], "{:?}", grip.laid);
-    let (_, tab) = tree
-        .boxes(at.0, at.1)
-        .into_iter()
+    let boxes = tree.boxes(at.0, at.1);
+    let (top_left, _) = boxes.iter().find(|(n, _)| n.id == "TopLeft").unwrap();
+    assert!(top_left.drag_area() && top_left.resize_edge().is_none());
+    let gestures: Vec<(SkinEvent, SkinAction)> = top_left
+        .triggers
+        .iter()
+        .filter(|t| t.on.pointer())
+        .map(|t| (t.on, t.run.clone()))
+        .collect();
+    assert_eq!(
+        gestures,
+        [
+            (SkinEvent::LeftDown, SkinAction::DragWindow),
+            (SkinEvent::DoubleClick, SkinAction::Maximize)
+        ]
+    );
+    let (_, tab) = boxes
+        .iter()
         .find(|(n, _)| n.id == "TabNormalButton")
         .unwrap();
-    let r = grip.laid.area;
+    let laid = target::targets(tree, at);
+    let drag = target::grips(tree, at, &laid)
+        .into_iter()
+        .find(|g| g.laid.id == "TopLeft")
+        .expect("TopLeft is served a pointer area with holes");
     let (cx, cy) = (2 * tab[0] + tab[2], 2 * tab[1] + tab[3]);
-    let held = 2 * r[0] <= cx && cx < 2 * (r[0] + r[2]) && 2 * r[1] <= cy && cy < 2 * (r[1] + r[3]);
-    assert!(!held, "TopLeft {r:?} holds TabNormalButton {tab:?}'s centre");
+    let holds = |r: [i32; 4]| {
+        2 * r[0] <= cx && cx < 2 * (r[0] + r[2]) && 2 * r[1] <= cy && cy < 2 * (r[1] + r[3])
+    };
+    assert!(holds(drag.laid.area), "{:?}", drag.laid);
+    assert!(
+        drag.holes.iter().any(|h| holds(*h)),
+        "TopLeft {:?} takes TabNormalButton {tab:?}'s centre",
+        drag.laid
+    );
 }
