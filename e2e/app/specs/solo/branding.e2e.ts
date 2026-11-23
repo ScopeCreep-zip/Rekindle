@@ -111,6 +111,23 @@ describe("no Xfire branding where the user sees", function () {
     expect(await xfireShown()).toEqual([]);
   });
 
+  // The owner's credits ruling (2026-11-23): a pack's credits keep the
+  // "Xfire, Inc." attribution as text, and no xfire.com address is served.
+  it("Classic's credits attribute Xfire, Inc. as text, with no xfire.com", async () => {
+    await switchTo(browser, SETTINGS);
+    await (await byText(browser, ".form-tab", "Appearance")).click();
+    const info = await shown(browser, '.skin-info[aria-label="Credits for Classic"]');
+    await info.scrollIntoView({ block: "center" });
+    await press(browser, info);
+    const credits = await shown(browser, '.skin-credits[aria-label="Credits for Classic"]');
+    await credits.scrollIntoView({ block: "center" });
+    await shot("classic-credits");
+    const text = await credits.getText();
+    expect(text).toContain("Xfire, Inc.");
+    expect(text.toLowerCase()).not.toContain("xfire.com");
+    await press(browser, info);
+  });
+
   for (const pack of builtinPacks()) {
     it(`${pack.file}: the buddy list and its menus show no Xfire`, async () => {
       const href = await applySkin(browser, me, pack.name);
