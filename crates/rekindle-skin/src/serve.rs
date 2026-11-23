@@ -284,10 +284,8 @@ fn sheet_images(css: &str, base: &str) -> Vec<String> {
         .collect()
 }
 
-/// The window frames of the canonical package `bytes`: each window kind's
-/// layout with its tiles' masks decoded from the package's images (plan
-/// SK0 S3, what the shell cuts its windows by), served at `address` (the
-/// accessible alternate's is laid as [`crate::conform::served`] lays it).
+/// The window frames of the canonical package `bytes` served at `address`: each window kind's
+/// layout with its tiles' masks (SK0 S3), laid as [`crate::conform::served`] lays it.
 ///
 /// # Errors
 /// The package or its manifest does not read, or a tile's image does not
