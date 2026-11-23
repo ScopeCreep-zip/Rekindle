@@ -85,7 +85,8 @@ const KICKER: [u8; 32] = [0xbe; 32];
 const KICKED: &str = "kicked-member";
 
 /// A shell Host holding `c1`, where `KICKED` is a known member and
-/// `@everyone` holds `everyone_perms`; the shell's recorder.
+/// `@everyone` holds `everyone_perms` (with VIEW_CHANNELS: without it
+/// `compute_permissions` grants nothing); the shell's recorder.
 async fn kick_host(dir: &tempfile::TempDir, everyone_perms: u64) -> (Arc<Host>, Arc<Recorder>) {
     let recorder = Arc::new(Recorder::default());
     let host = offline_host_with(dir, Some(recorder.clone())).await;
@@ -141,7 +142,7 @@ fn knows_kicked(host: &Host) -> bool {
 #[tokio::test]
 async fn a_relayed_kick_without_authority_changes_nothing() {
     let dir = tempfile::tempdir().unwrap();
-    let (host, recorder) = kick_host(&dir, 0).await;
+    let (host, recorder) = kick_host(&dir, rekindle_types::permissions::VIEW_CHANNELS).await;
     relay_kick(&host).await;
     assert!(knows_kicked(&host));
     assert!(!recorder.0.lock().iter().any(|h| h.starts_with("rotation")));
@@ -153,7 +154,11 @@ async fn a_relayed_kick_without_authority_changes_nothing() {
 #[tokio::test]
 async fn an_authorized_relayed_kick_forgets_and_rotates_once() {
     let dir = tempfile::tempdir().unwrap();
-    let (host, recorder) = kick_host(&dir, rekindle_types::permissions::KICK_MEMBERS).await;
+    let (host, recorder) = kick_host(
+        &dir,
+        rekindle_types::permissions::VIEW_CHANNELS | rekindle_types::permissions::KICK_MEMBERS,
+    )
+    .await;
     relay_kick(&host).await;
     assert!(!knows_kicked(&host));
     let rotations: Vec<String> = (recorder.0.lock().iter())
