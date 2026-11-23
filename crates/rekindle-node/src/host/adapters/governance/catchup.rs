@@ -22,4 +22,33 @@ impl HostGovernance {
             },
         );
     }
+
+    /// An older community key arrived (plan D16, `key_history.rs`): forget
+    /// the community's outbox cursors, so the entries a catch-up passed for
+    /// want of that key are read again, then catch every outbox up.
+    pub(super) fn spawn_outbox_reread(&self, community_id: &str) {
+        let channel = crate::host::adapters::channel::HostChannel::new(&self.ctx);
+        let owner_and_db = self.owner_and_db();
+        let community = community_id.to_string();
+        self.ctx.community_scope(community_id).spawn_or_drop(
+            "channel outbox re-read",
+            async move {
+                let Some((owner, db)) = owner_and_db else {
+                    return;
+                };
+                let stream = crate::host::adapters::channel::outbox_stream(&community);
+                if let Err(error) = db
+                    .call(move |conn| {
+                        rekindle_db::repo::stream_cursors::reset_stream(conn, &owner, &stream)
+                    })
+                    .await
+                {
+                    tracing::warn!(community_id = %community, %error, "outbox cursors not reset");
+                    return;
+                }
+                let (authors, applied) = channel.catch_up_outboxes(&community).await;
+                tracing::info!(community_id = %community, authors, applied, "channel outbox re-read ended (D16)");
+            },
+        );
+    }
 }

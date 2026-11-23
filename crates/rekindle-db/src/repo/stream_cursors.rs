@@ -157,6 +157,23 @@ pub fn reset(
     Ok(())
 }
 
+/// Forget every writer's cursor on `stream`, with the seqs remembered past
+/// their gaps: an older community key arrived (plan D16, a joiner's
+/// history), so every entry passed for want of it is read again. An entry
+/// already applied comes back as a duplicate its ingest drops.
+///
+/// # Errors
+/// The write failed.
+pub fn reset_stream(conn: &Connection, owner_key: &str, stream: &str) -> rusqlite::Result<()> {
+    for sql in [
+        "DELETE FROM stream_cursors WHERE owner_key = ?1 AND stream = ?2",
+        "DELETE FROM stream_applied WHERE owner_key = ?1 AND stream = ?2",
+    ] {
+        conn.execute(sql, params![owner_key, stream])?;
+    }
+    Ok(())
+}
+
 /// D23's receiver rule on an applied entry's chain `seq` from `writer` on
 /// `stream` (live A/B finding 71 refined; E2.5i R1-3), whatever path
 /// brought it: one at or below the cursor is a duplicate and changes
