@@ -9,7 +9,6 @@
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { commands } from "../ipc/commands";
 import { type TransferRow, transferCommands } from "../ipc/commands/dto_transfer";
-import { actionLabel } from "../utils/skin_action_words";
 import type { Edge, SkinAction } from "../ipc/commands/dto_skin_tree";
 import type { ShellOp, SkinRun, SkinSelection } from "../ipc/commands/dto_skin_run";
 import { addToast } from "../stores/toast.store";
@@ -182,7 +181,7 @@ export async function dispatchSkinAction(node: string, action: SkinAction): Prom
     if (answer.kind === "shell") runShellOp(answer.arg, node);
     // A feature with no Rekindle operation yet (lead decision 49): the
     // button stays, and the window says so.
-    else if (answer.kind === "notBuiltYet") addToast(`${actionLabel(answer.arg.action)} isn't built yet`, "info");
+    else if (answer.kind === "notBuiltYet") addToast(answer.arg.message, "info");
     return;
   }
   // A feature action answered with its request's value. Downloads' info
