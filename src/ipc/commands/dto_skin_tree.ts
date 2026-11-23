@@ -306,11 +306,11 @@ export interface ShellNode {
   label?: NodeLabel;
   /** How far the pack's interactive siblings reach into this text field from each edge at
    *  the window's served minimum (plan SK5): its text keeps inside them. Absent: none do. */
-  inset?: FieldInset;
+  inset?: NodeInset;
 }
 
-/** `FieldInset`: px from the field's left and right edges (plan SK5). */
-export interface FieldInset {
+/** `NodeInset`: px from the field's left and right edges (plan SK5). */
+export interface NodeInset {
   left: number;
   right: number;
 }
