@@ -414,6 +414,24 @@ export async function applySkin(b: Browser, user: User, name: string): Promise<s
 /** The href of the window's linked, loaded skin sheet (useSkin.ts LINK_ID), or "". */
 export const LINKED_SHEET = 'var l = document.getElementById("rekindle-skin"); return l && l.sheet ? l.getAttribute("href") : "";';
 
+/**
+ * Wait until the window `b` is in shows the skin sheet `href` (applySkin's
+ * answer). Each window links a new skin itself, after decoding its own
+ * trees' art (plan SK4), and swaps its tree with that link (useSkin
+ * setSkinShells), so until then it still draws the previous skin's tree.
+ */
+export async function skinShown(b: Browser, href: string): Promise<void> {
+  let now = "";
+  await waitUntil(
+    async () => {
+      now = (await b.execute(LINKED_SHEET)) as string;
+      return now === href;
+    },
+    NET_WAIT_MS,
+    `the window never showed the applied skin (shows ${now || "no sheet"})`,
+  );
+}
+
 /** In the open Settings → Appearance, `user` makes built-in skin `name` the login skin (its "Use as login skin", then the review), and its row says so. */
 export async function setLoginSkin(b: Browser, user: User, name: string): Promise<void> {
   for (const row of await b.$$(".skin-row")) {

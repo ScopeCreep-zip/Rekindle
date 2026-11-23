@@ -17,7 +17,7 @@ import { BUDDY, openSettings } from "../../../walk/nav.ts";
 import { type Violation, violations } from "../../axe.ts";
 import { checkGeometry, treeFitIn } from "../../geometry.ts";
 import type { TreeFit } from "../../geometry-page.ts";
-import { applySkin, createCommunity, createIdentity, createTextChannel, newUser, openCommunity, postMessage, selectChannel, type User } from "../../journeys.ts";
+import { applySkin, createCommunity, createIdentity, createTextChannel, newUser, openCommunity, postMessage, selectChannel, skinShown, type User } from "../../journeys.ts";
 import { builtinPacks, type SkinPack } from "../../skin-pack.ts";
 import { BUDDY_LIST, COMMUNITY, SETTINGS_APPEARANCE, type WindowCase, sizeWindow, sizesIn, spacingOf, treeGrowth } from "../../windows.ts";
 
@@ -212,12 +212,15 @@ describe("every built-in skin keeps the app accessible and laid out", function (
   for (const pack of PACKS) {
     const held = (KNOWN[pack.file] ?? []).length;
     it(`${pack.name}: axe and geometry hold in the buddy list, Appearance and a community window${held ? ` (${held} known failure${held === 1 ? "" : "s"})` : ""}`, async () => {
-      await applySkin(browser, me, pack.name);
+      const href = await applySkin(browser, me, pack.name);
       const found: Record<string, unknown> = {};
       Object.assign(found, await audit(pack, SETTINGS_APPEARANCE, true));
+      // Each window is audited once it shows this skin (its own link, SK4).
       await switchTo(browser, BUDDY);
+      await skinShown(browser, href);
       Object.assign(found, await audit(pack, BUDDY_LIST, false));
       await browser.switchToWindow(communityHandle);
+      await skinShown(browser, href);
       Object.assign(found, await audit(pack, COMMUNITY, true));
       const all = keysOf(found);
       // The run's findings as keys, to re-baseline from (no silent widening: a changed hold is a reviewed edit).

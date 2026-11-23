@@ -11,7 +11,7 @@
 import { browser, expect } from "@wdio/globals";
 import { shown, switchTo } from "../../../walk/helpers.ts";
 import { BUDDY, openSettings } from "../../../walk/nav.ts";
-import { applySkin, createIdentity, newUser, showSkinView, skinViewShown, type User } from "../../journeys.ts";
+import { applySkin, createIdentity, newUser, showSkinView, skinShown, skinViewShown, type User } from "../../journeys.ts";
 import { builtinPacks } from "../../skin-pack.ts";
 
 type View = "friends" | "communities";
@@ -60,8 +60,10 @@ describe("every skin's Communities control (SK2-N4)", function () {
 
   for (const pack of builtinPacks()) {
     it(`${pack.file}: shows Communities, then Friends again`, async () => {
-      await applySkin(browser, me, pack.name);
+      const href = await applySkin(browser, me, pack.name);
       await switchTo(browser, BUDDY);
+      // Its tree is the new skin's only once it shows the new sheet.
+      await skinShown(browser, href);
       await shown(browser, ".skin-tree");
       await showSkinView(browser, "communities");
       expect(await skinViewShown(browser, "friends")).toBe(false);
