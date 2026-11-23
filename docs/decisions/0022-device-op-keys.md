@@ -223,7 +223,10 @@ as today's does.
    "is never applied"); it is quarantined with a visible reason and never dropped silently (plan D15's quarantine
    rule), so a copied data root's race (rule 4) stays visible. Readers never prefer the last writer of `d`
    (*amended 2026-10-24, prod research batch 10*): when the set holds more than one `DeviceRetired` for one key,
-   the lowest `lastSeq` counts, and a `DeviceRetired` retires the key only above its effective `lastSeq`, the highest of its signed
+   the lowest *effective* `lastSeq` over every `DeviceRetired` and every carrier of it counts (*amended 2026-11-23,
+   Reading A, plan E3.2 K4b Q2:* it read "the lowest `lastSeq` counts"; one `DeviceRetired` carried by several ops
+   keeps the highest of its carriers' floors, so a later carrier that saw less never lowers it, and a carrier of a
+   `DeviceRetired` of the key is not a witness of it), and a `DeviceRetired` retires the key only above its effective `lastSeq`, the highest of its signed
    `lastSeq`, the key's highest seq in the causal past of any op of another key in the converged set, and the key's
    highest seq in its carrier's causal past (*Corrected 2026-10-24 (pass 3):* it read "a `DeviceRetired` whose `lastSeq` is below the key's
    highest seq in its carrier's causal past is invalid and quarantined", which a carrier with genesis-only deps

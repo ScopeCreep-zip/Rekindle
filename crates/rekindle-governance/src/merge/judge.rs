@@ -35,13 +35,14 @@ pub(super) fn carrier_of(op: &VerifiedOp) -> Option<&PseudonymKey> {
 
 /// `author`'s elements over `base` (the cert's seed for the creator, or a
 /// snapshot's entry) with `carriers`, `author`'s carriers in stamp order,
-/// absorbed.
+/// absorbed, each with what it saw of the key a `DeviceRetired` retires
+/// ([`DeviceView::harvest_seen`]).
 pub(super) fn member_view<'v>(
     cert: &GenesisCert,
     anchor: &str,
     author: &PseudonymKey,
     base: Option<&MemberDevices>,
-    carriers: impl Iterator<Item = &'v VerifiedOp>,
+    carriers: impl Iterator<Item = (&'v VerifiedOp, Option<u64>)>,
 ) -> MemberDevices {
     let mut view = DeviceView::default();
     match base {
@@ -51,8 +52,8 @@ pub(super) fn member_view<'v>(
         None if *author == cert.creator_pseudonym => view.seed_genesis(anchor, cert),
         None => {}
     }
-    for op in carriers {
-        view.harvest(op);
+    for (op, seen) in carriers {
+        view.harvest_seen(op, seen);
     }
     view.members.remove(author).unwrap_or_default()
 }
@@ -71,6 +72,9 @@ pub(super) struct Judge<'c> {
     cert: &'c GenesisCert,
     /// Per member: the kept indices of its carriers, in stamp order.
     carriers: HashMap<PseudonymKey, Vec<usize>>,
+    /// Per `DeviceRetired` carrier's index: the retired key's highest seq
+    /// in its strict causal past (its carrier floor, rule 5).
+    seen: HashMap<usize, u64>,
     memo: HashMap<(PseudonymKey, Vec<usize>), Rc<MemberDevices>>,
 }
 
@@ -79,6 +83,7 @@ impl<'c> Judge<'c> {
         Self {
             cert,
             carriers: HashMap::new(),
+            seen: HashMap::new(),
             memo: HashMap::new(),
         }
     }
@@ -103,19 +108,24 @@ impl<'c> Judge<'c> {
             .filter(|&j| in_past(j))
             .collect();
         let cert = self.cert;
+        let seen = &self.seen;
         let md = (self.memo.entry((author.clone(), held)))
             .or_insert_with_key(|(_, held)| {
-                let carriers = held.iter().map(|&j| kept[j]);
+                let carriers = held.iter().map(|&j| (kept[j], seen.get(&j).copied()));
                 Rc::new(member_view(cert, op.anchor(), author, None, carriers))
             })
             .clone();
         judge_in_view(cert, &md, op)
     }
 
-    /// Note `op`, kept at index `i`, as a carrier when it is one.
-    pub(super) fn note(&mut self, i: usize, op: &VerifiedOp) {
+    /// Note `op`, kept at index `i`, as a carrier when it is one, with
+    /// `seen`, what it saw of the key it retires.
+    pub(super) fn note(&mut self, i: usize, op: &VerifiedOp, seen: Option<u64>) {
         if let Some(member) = carrier_of(op) {
             self.carriers.entry(member.clone()).or_default().push(i);
+        }
+        if let Some(seq) = seen {
+            self.seen.insert(i, seq);
         }
     }
 }
@@ -190,10 +200,39 @@ impl RestJudge<'_, '_> {
         let carriers: Vec<usize> = (0..self.ops.len())
             .filter(|&j| carrier_of(self.ops[j]) == Some(author) && in_past(j))
             .collect();
-        let held = carriers.iter().map(|&j| self.ops[j]);
+        // `rest` holds no device op (`NotOnTop::DeviceOp`), so no
+        // `DeviceRetired` carrier and nothing seen.
+        let held = carriers.iter().map(|&j| (self.ops[j], None));
         let md = member_view(self.cert, op.anchor(), author, entry, held);
         matches!(judge_in_view(self.cert, &md, op), KeyJudgement::Effective)
     }
+}
+
+/// Whether the snapshot's retirements, `snap`, leave the `rest` op `op`
+/// undecided (rule 5 on the converged set, lead decision K4b Q2): its
+/// author retired its key at or below its seq, or the cut holds a member's
+/// ops on a key it retired, above the retirement (`cut_top(p, key)`, the
+/// highest seq of `p`'s cut ops on `key`), which `op` may witness, even
+/// through a `DeviceRetired` carrier, lifting the floor over ops the
+/// snapshot quarantined. A retirement voids only its member's ops of the
+/// key (`resolve::retire_on_converged_set`). The snapshot keeps no
+/// witness, so the full merge judges (`NotOnTop::DeviceJudged`).
+pub(super) fn retirement_open(
+    snap: &DeviceView,
+    cut_top: impl Fn(&PseudonymKey, &[u8; 32]) -> Option<u64>,
+    op: &VerifiedOp,
+) -> bool {
+    let own = &op.op().device_key;
+    let retired = |md: &MemberDevices, key: &[u8; 32], seq: u64| {
+        md.retired_from(key).is_some_and(|from| seq >= from)
+    };
+    let own_retired = (snap.member(op.author())).is_some_and(|md| retired(md, own, op.op().seq));
+    own_retired
+        || (snap.members.iter()).any(|(p, md)| {
+            (md.retirements.keys()).any(|(k, _, _)| {
+                (p, k) != (op.author(), own) && cut_top(p, k).is_some_and(|top| retired(md, k, top))
+            })
+        })
 }
 
 /// `md` as an op beside the cut that reaches `reach` holds it: only the

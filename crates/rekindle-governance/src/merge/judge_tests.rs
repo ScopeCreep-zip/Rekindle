@@ -184,21 +184,29 @@ fn an_op_beside_the_cut_that_sees_its_authors_join_resumes() {
 /// judge it effective from the snapshot; it answers `DeviceJudged`.
 #[test]
 fn an_endorsement_carried_where_an_op_beside_the_cut_never_looked_is_not_its() {
-    let c = cert(&pk(1), AdmissionMode::Open);
+    let genesis = cert(&pk(1), AdmissionMode::Open);
     let c0 = op(&pk(1), 0, &[], 0, joined(1, None));
-    let j = op(&who(8), 0, &[&c0], 1, joined_with_device(8, 3));
+    let joined_op = op(&who(8), 0, &[&c0], 1, joined_with_device(8, 3));
     // The pseudonym carries key 4's endorsement in an op of its own.
-    let k = op(&who(8), 1, &[&j], 2, device_op(8, 0, 4, 0, 8));
+    let carrier = op(&who(8), 1, &[&joined_op], 2, device_op(8, 0, 4, 0, 8));
     // Key 4's first op cites only the join, never the endorsement.
-    let b = op_on(&who(8), [4; 32], 0, &[&j], 3, meta("b"));
-    let all = [c0.clone(), j.clone(), k.clone(), b.clone()];
-    let full = merge_outcome(&c, &all);
-    assert!(full.pending.contains(&b.hash()), "unendorsed at its deps");
-    let (snap, power, rest) = split(&c, &all, &[&k]);
+    let beside = op_on(&who(8), [4; 32], 0, &[&joined_op], 3, meta("b"));
+    let all = [
+        c0.clone(),
+        joined_op.clone(),
+        carrier.clone(),
+        beside.clone(),
+    ];
+    let full = merge_outcome(&genesis, &all);
+    assert!(
+        full.pending.contains(&beside.hash()),
+        "unendorsed at its deps"
+    );
+    let (snap, power, rest) = split(&genesis, &all, &[&carrier]);
     assert_eq!(rest.len(), 1, "only key 4's op is past the cut");
     assert!(matches!(
-        merge_from(&c, &snap, &power, &rest),
-        Err(NotOnTop::DeviceJudged(h)) if h == b.hash()
+        merge_from(&genesis, &snap, &power, &rest),
+        Err(NotOnTop::DeviceJudged(h)) if h == beside.hash()
     ));
 }
 
