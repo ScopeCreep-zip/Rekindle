@@ -20,6 +20,8 @@ log-scrub = [ "dep:regex", "dep:tracing", "dep:tracing-subscriber" ]
 config = [ "dep:toml", "dep:serde", "paths" ]
 # `DataRoot`: the directories every host and frontend shares.
 paths = [ "dep:dirs", "dep:thiserror", "dep:rustix" ]
+# `log_capture`: a log sink tests read back. Only dev-dependencies enable it.
+test-support = []
 
 [dependencies]
 rand = { workspace = true }

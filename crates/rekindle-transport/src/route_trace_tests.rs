@@ -1,32 +1,15 @@
-use std::io;
-use std::sync::Arc;
-
-use parking_lot::Mutex;
 use rekindle_records::port::{PeerTarget, RouteClass};
-
-#[derive(Clone, Default)]
-struct Lines(Arc<Mutex<Vec<u8>>>);
-
-impl io::Write for Lines {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.lock().extend_from_slice(buf);
-        Ok(buf.len())
-    }
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
+use rekindle_utils::log_capture::CapturedLines;
 
 fn capture(f: impl FnOnce()) -> String {
-    let lines = Lines::default();
+    let lines = CapturedLines::default();
     let sink = lines.clone();
     let subscriber = tracing_subscriber::fmt()
         .with_writer(move || sink.clone())
         .with_ansi(false)
         .finish();
     tracing::subscriber::with_default(subscriber, f);
-    let bytes = lines.0.lock().clone();
-    String::from_utf8(bytes).expect("utf8")
+    lines.text()
 }
 
 fn field<'a>(line: &'a str, name: &str) -> &'a str {

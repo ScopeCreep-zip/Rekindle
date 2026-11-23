@@ -1,34 +1,16 @@
 //! Plan T2: the per-request debug line names the request's variant, never
 //! its fields (threat model: no telemetry, no payload in logs).
 
-use std::io::Write;
-use std::sync::Arc;
-
-use parking_lot::Mutex;
 use std::time::{Duration, Instant};
 
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_utils::log_capture::CapturedLines;
 
 use super::Traced;
 
-/// A writer that keeps what the subscriber formats.
-#[derive(Clone, Default)]
-struct Kept(Arc<Mutex<Vec<u8>>>);
-
-impl Write for Kept {
-    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
-        self.0.lock().extend_from_slice(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> std::io::Result<()> {
-        Ok(())
-    }
-}
-
 /// The line `request` and `response` log, as formatted.
 fn logged(request: &IpcRequest, response: &IpcResponse) -> String {
-    let kept = Kept::default();
+    let kept = CapturedLines::default();
     let writer = kept.clone();
     let subscriber = tracing_subscriber::fmt()
         .with_max_level(tracing::Level::DEBUG)
@@ -39,8 +21,7 @@ fn logged(request: &IpcRequest, response: &IpcResponse) -> String {
         Traced::new(request, "buddy-list", Instant::now())
             .finish(response, Duration::from_millis(7));
     });
-    let bytes = kept.0.lock().clone();
-    String::from_utf8(bytes).unwrap()
+    kept.text()
 }
 
 #[test]

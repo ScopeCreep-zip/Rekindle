@@ -10,6 +10,9 @@ pub mod retry;
 #[cfg(feature = "log-scrub")]
 pub mod log_scrub;
 
+#[cfg(feature = "test-support")]
+pub mod log_capture;
+
 #[cfg(feature = "config")]
 pub mod config_layers;
 
