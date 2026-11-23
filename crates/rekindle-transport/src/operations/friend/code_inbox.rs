@@ -50,12 +50,14 @@ async fn current(host: &dyn FriendHost) -> Result<Option<String>, FriendError> {
     .await
 }
 
-/// Make sure the code being issued has its inbox: the code is shown only
-/// once its inbox can be written, as an invite is (`inbox::create`).
+/// Make sure our live code has its inbox. The token, and so the code, is
+/// live from the identity's creation (`friend_token::mint`), so the Host
+/// issues the slot once our profile is held (the own-records stage), not
+/// when the code is first shown.
 ///
 /// # Errors
 /// The inbox could not be created, opened, kept or published.
-pub(crate) async fn issue(host: &dyn FriendHost) -> Result<(), FriendError> {
+pub async fn issue(host: &dyn FriendHost) -> Result<(), FriendError> {
     if current(host).await?.is_some() {
         return Ok(());
     }
@@ -69,7 +71,20 @@ pub(crate) async fn issue(host: &dyn FriendHost) -> Result<(), FriendError> {
 /// # Errors
 /// The slot could not be created, opened, kept or published.
 pub(crate) async fn roll(host: &dyn FriendHost) -> Result<(), FriendError> {
-    let signing = rekindle_secrets::friend_token::inbox_writer(&token(host).await?);
+    roll_for(host, &token(host).await?).await
+}
+
+/// [`roll`] for `token`: a token rotation rolls the slot to the new token's
+/// writer before the token is stored, so a stored token always has its
+/// slot.
+///
+/// # Errors
+/// As [`roll`].
+pub(crate) async fn roll_for(
+    host: &dyn FriendHost,
+    token: &FriendRequestToken,
+) -> Result<(), FriendError> {
+    let signing = rekindle_secrets::friend_token::inbox_writer(token);
     let (record_key, owner_keypair, lease, _writer) = inbox::new_inbox_for(host, &signing).await?;
     inbox::open(host, lease).await?;
     host.keep_code_inbox(&record_key, &owner_keypair, lease)
@@ -92,18 +107,48 @@ pub(crate) async fn roll(host: &dyn FriendHost) -> Result<(), FriendError> {
     Ok(())
 }
 
+/// What [`landed`] came to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CodeRoll {
+    /// The slot was rolled, or was already replaced (nothing to do).
+    Done,
+    /// The roll budget is spent: the slot stays taken (a holder's request
+    /// still goes by call) and the roll is attempted again later.
+    Paced,
+    /// The roll failed; attempted again later.
+    Missed,
+}
+
 /// A write landed in our code's slot `record_key` and was opened: roll it,
 /// once (the slot holds one write; a slot already replaced is not rolled
-/// again).
-pub async fn landed(host: &dyn FriendHost, record_key: &str) {
+/// again), if `spend` grants a roll. Each roll costs a record create and
+/// two writes, and any holder of the code can force one with a junk
+/// write, so the Host spends a token of a route-style budget per roll
+/// (`rekindle_route::budget::RouteBudget`).
+pub async fn landed(
+    host: &dyn FriendHost,
+    record_key: &str,
+    spend: impl FnOnce() -> bool,
+) -> CodeRoll {
     match current(host).await {
         Ok(Some(key)) if key == record_key => {
-            if let Err(e) = roll(host).await {
-                tracing::warn!(error = %e, "friend code inbox not rolled");
+            if !spend() {
+                tracing::warn!("friend code inbox roll budget spent — the slot stays taken");
+                return CodeRoll::Paced;
+            }
+            match roll(host).await {
+                Ok(()) => CodeRoll::Done,
+                Err(e) => {
+                    tracing::warn!(error = %e, "friend code inbox not rolled");
+                    CodeRoll::Missed
+                }
             }
         }
-        Ok(_) => {}
-        Err(e) => tracing::warn!(error = %e, "friend code inbox not read"),
+        Ok(_) => CodeRoll::Done,
+        Err(e) => {
+            tracing::warn!(error = %e, "friend code inbox not read");
+            CodeRoll::Missed
+        }
     }
 }
 

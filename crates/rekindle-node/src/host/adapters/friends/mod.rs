@@ -51,11 +51,19 @@ pub struct FriendWatches {
     replies: Mutex<BTreeMap<String, LeaseId>>,
     /// Our friend code's request inbox lease, by record key (plan RV2e).
     codes: Mutex<BTreeMap<String, LeaseId>>,
+    /// The code slot's roll budget (plan RV2e): a route's bucket, since a
+    /// roll costs a record create and two writes, as a route costs a
+    /// creation; full at the first roll of a session.
+    code_rolls: Mutex<Option<rekindle_route::budget::RouteBudget>>,
     /// Each friend's participant record (key, lease), by friend (plan E2.5).
     participants: Mutex<BTreeMap<String, (String, LeaseId)>>,
     /// Whether the network was ready at its last change.
     network_ready: std::sync::atomic::AtomicBool,
 }
+
+/// How long an unissued code slot waits before it is attempted again
+/// (plan RV2e): the network missed its create or writes.
+pub(crate) const CODE_SLOT_RETRY: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// The Host, as the friend operations see it.
 #[derive(Clone)]
@@ -64,6 +72,17 @@ pub struct HostFriends {
 }
 
 impl HostFriends {
+    /// Spend one of the code slot's roll tokens (plan RV2e).
+    pub(super) fn spend_code_roll(&self) -> bool {
+        let now = self.ctx.clock.now_ms();
+        self.ctx
+            .friend_watches
+            .code_rolls
+            .lock()
+            .get_or_insert_with(|| rekindle_route::budget::RouteBudget::full(now))
+            .try_spend(now)
+    }
+
     /// Keep a request inbox's owner keypair in the vault (an invite's, or
     /// one of our requests' reply inboxes, plan RV2).
     fn keep_inbox_owner(&self, record_key: &str, owner_keypair: &str) -> Result<(), FriendError> {

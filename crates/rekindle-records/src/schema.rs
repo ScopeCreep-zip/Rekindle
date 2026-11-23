@@ -147,7 +147,8 @@ mod tests {
 
     #[test]
     fn layouts_size_their_records() {
-        assert_eq!(profile().subkey_count(), 9);
+        // Nine subkeys and the friend code's CODE_INBOX (plan RV2e).
+        assert_eq!(profile().subkey_count(), 10);
         assert_eq!(mailbox().subkey_count(), 1);
         assert_eq!(prekeys().subkey_count(), 101);
         assert_eq!(request_inbox(&[3u8; 32]).subkey_count(), 2);

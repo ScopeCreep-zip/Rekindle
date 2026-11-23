@@ -224,10 +224,27 @@ impl HostFriends {
                 }
                 // The slot took its one write: the next redeemer's is a new one.
                 if let Some(slot) = rolls {
-                    rekindle_transport::operations::friend::code_inbox::landed(&host, &slot).await;
+                    roll_code(&host, &slot).await;
                 }
             });
         true
+    }
+}
+
+/// How long a paced or missed code-slot roll waits before it is attempted
+/// again (plan RV2e).
+pub(crate) const CODE_ROLL_RETRY: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+
+/// Roll our code's slot `slot` that took a write, within the roll budget;
+/// a paced or missed roll is attempted again after [`CODE_ROLL_RETRY`],
+/// in the unlock's scope (the lock ends it).
+async fn roll_code(host: &HostFriends, slot: &str) {
+    use rekindle_transport::operations::friend::code_inbox::{landed, CodeRoll};
+    loop {
+        if landed(host, slot, || host.spend_code_roll()).await == CodeRoll::Done {
+            return;
+        }
+        tokio::time::sleep(CODE_ROLL_RETRY).await;
     }
 }
 

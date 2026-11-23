@@ -82,6 +82,16 @@ async fn both_paths_up_the_call_settles_first_and_nothing_rotates() {
         node.unlock_new_identity(name).await;
     }
     let ann = key(&nodes[1]);
+    // Rae's friend-code slot (plan RV2e) is issued once her own records
+    // are held, after unlock: it is in place before the snapshot, so the
+    // only new inbox the request adds is its reply inbox.
+    assert!(
+        eventually(&sim, LIMIT, || async {
+            inboxes_watched_by(&sim, 0).len() == 1
+        })
+        .await,
+        "Rae watches her friend-code slot"
+    );
     let before = inboxes_watched_by(&sim, 0);
     request(&sim, &nodes[0], &nodes[1]).await;
     let replies: BTreeSet<String> = inboxes_watched_by(&sim, 0)
