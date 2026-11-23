@@ -46,6 +46,6 @@ rustflags = ["-C", "target-feature=+crt-static"]
 
 [net]
 # The patched veilid-core 0.5.8 (root Cargo.toml [patch.crates-io], branch
-# rekindle/v0.5.8-route-drain, ADR 0017) is a private GitHub repository: fetch git dependencies with the git CLI so its
+# rekindle/v0.5.8-route-pool at e1158844, ADR 0017) is a private GitHub repository: fetch git dependencies with the git CLI so its
 # credentials (credential helper / gh) are used.
 git-fetch-with-cli = true

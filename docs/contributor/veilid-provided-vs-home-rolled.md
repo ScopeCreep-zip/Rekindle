@@ -1,7 +1,7 @@
 # What we hand-roll that veilid-core already provides
 
 > **Historical (2026-11-15).** This document was written against veilid-core 0.5.7. Rekindle now pins
-> veilid-core 0.5.8 plus three fixes from the fork (ADR 0017, rev `bc741633`); the 0.5.8 analysis is
+> veilid-core 0.5.8 plus two fixes from the fork (ADR 0017, rev `e1158844`); the 0.5.8 analysis is
 > `.claude/plans/standards-remediation/evidence/veilid-0.5.8/` (synthesis and slice reports 1–6) and plan step VU.
 > Line citations here are 0.5.7's.
 
