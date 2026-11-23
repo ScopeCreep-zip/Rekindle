@@ -329,7 +329,9 @@ export interface NodeLabel {
 }
 
 /** The built-in glyphs the shell draws (`NodeGlyph`). */
-export type NodeGlyph = "communities";
+/** `communities`: the icon tab N4 places; `rekindle`: the app mark on a renamed, icon-sized
+ *  menu title (plan SK5, XGlow's 24x22 file menu). */
+export type NodeGlyph = "communities" | "rekindle";
 
 /** `MenuItem`: one item of an engine menu. */
 export interface MenuItem {

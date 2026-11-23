@@ -172,6 +172,15 @@ const NodeGlyphView: Component<{ glyph: NodeGlyph }> = (props) => (
         <path d="M23 18.5c0-2.4-1.8-4.2-4-4.2-1 0-1.9.3-2.6.9 1.2 1 2 2.3 2.3 3.8z" fill="currentColor" opacity="0.8" />
       </svg>
     </Match>
+    <Match when={props.glyph === "rekindle"}>
+      {/* The app's flame: the Rekindle mark, one colour. */}
+      <svg class="skin-node-glyph-svg" viewBox="0 0 24 24" aria-hidden="true">
+        <path
+          d="M12 1.5c.6 3.2 2.6 5 4.4 7 1.9 2.1 3.1 4.3 3.1 7A7.5 7.5 0 0 1 12 23a7.5 7.5 0 0 1-7.5-7.5c0-2.6 1.2-4.6 2.7-6.3.3 1.6 1.1 2.8 2.3 3.5C9.2 8.6 10.3 4.6 12 1.5zm0 11.2c-.9 1.6-2.6 2.8-2.6 4.9a2.6 2.6 0 0 0 5.2 0c0-2.1-1.7-3.3-2.6-4.9z"
+          fill="currentColor"
+        />
+      </svg>
+    </Match>
   </Switch>
 );
 
