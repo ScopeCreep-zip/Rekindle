@@ -18,6 +18,7 @@ pub mod place;
 pub mod popup;
 pub mod roles;
 pub mod target;
+pub mod text_box;
 pub mod titles;
 mod triggers;
 pub mod validate;
@@ -42,5 +43,7 @@ mod target_tests;
 mod test_support;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod text_box_tests;
 #[cfg(test)]
 mod triggers_tests;

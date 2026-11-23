@@ -32,10 +32,10 @@
 use rekindle_types::dto::skin::WindowLayout;
 use rekindle_types::dto::skin_tree::{NodeInset, NodeRole, SkinNode};
 
-use super::titles::{laid_window, place};
+use super::titles::{each_laid, place};
 
 /// An editable text role (the name, status and room fields).
-const fn is_text(role: NodeRole) -> bool {
+pub(super) const fn is_text(role: NodeRole) -> bool {
     matches!(
         role,
         NodeRole::NameField | NodeRole::StatusText | NodeRole::RoomName
@@ -100,12 +100,5 @@ fn walk(nodes: &mut [SkinNode], parent: [i32; 4]) {
 /// Sets the inset of every text field in `layout`'s tree and popups (see
 /// the module doc), laid at the window's minimum size.
 pub fn fields(layout: &mut WindowLayout) {
-    let min = [layout.min_width, layout.min_height];
-    if let Some(tree) = layout.tree.as_mut() {
-        walk(&mut tree.root, laid_window(tree.outsets, min));
-    }
-    for popup in layout.popups.values_mut() {
-        let min = [popup.min_width, popup.min_height];
-        walk(&mut popup.tree.root, laid_window(popup.tree.outsets, min));
-    }
+    each_laid(layout, walk);
 }

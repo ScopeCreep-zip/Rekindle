@@ -34,7 +34,7 @@ fn lines(nodes: &[SkinNode], depth: usize, out: &mut String) {
 }
 
 /// The built-in's main window layout, its package validated.
-fn main_layout(id: &str) -> WindowLayout {
+pub(super) fn main_layout(id: &str) -> WindowLayout {
     let (_, b) = builtin::find(&format!("builtin:{id}")).unwrap();
     let package = package::read(b.bytes).unwrap();
     let mut m = manifest::served(&package).unwrap();

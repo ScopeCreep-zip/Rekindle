@@ -445,6 +445,19 @@ pub(super) fn laid_window(outsets: Insets, min: [u16; 2]) -> [i32; 4] {
     ]
 }
 
+/// Runs `pass` over `layout`'s tree and each popup's, each laid at its
+/// window's served minimum (the inset and text-box passes, plan SK5/SK8).
+pub(super) fn each_laid(layout: &mut WindowLayout, pass: fn(&mut [SkinNode], [i32; 4])) {
+    let min = [layout.min_width, layout.min_height];
+    if let Some(tree) = layout.tree.as_mut() {
+        pass(&mut tree.root, laid_window(tree.outsets, min));
+    }
+    for popup in layout.popups.values_mut() {
+        let min = [popup.min_width, popup.min_height];
+        pass(&mut popup.tree.root, laid_window(popup.tree.outsets, min));
+    }
+}
+
 /// Labels every menu title in `layout`'s tree and popups (see the module
 /// doc), laid at the window's minimum size, and every tab the pack
 /// draws as text ([`tab_words`]) and every button's text component
