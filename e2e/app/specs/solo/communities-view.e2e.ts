@@ -23,7 +23,16 @@ async function controlFacts(view: View): Promise<{ inStrip: boolean; text: strin
       (e) => e.getBoundingClientRect().width > 0,
     );
     if (!n) return null;
-    const r = n.getBoundingClientRect();
+    // Its art box, not its box: SK7 grows a small control's box to a 24 px
+    // target about its art (the art on the padding box), past a 16 px strip.
+    const b = n.getBoundingClientRect();
+    const cs = getComputedStyle(n);
+    const r = {
+      left: b.left + parseFloat(cs.paddingLeft),
+      right: b.right - parseFloat(cs.paddingRight),
+      top: b.top + parseFloat(cs.paddingTop),
+      bottom: b.bottom - parseFloat(cs.paddingBottom),
+    };
     const p = n.parentElement?.getBoundingClientRect();
     const inStrip = !!p && r.left >= p.left - 1 && r.right <= p.right + 1 && r.top >= p.top - 1 && r.bottom <= p.bottom + 1;
     return { inStrip, text: (n.textContent ?? "").trim() };
@@ -32,7 +41,7 @@ async function controlFacts(view: View): Promise<{ inStrip: boolean; text: strin
 
 /**
  * Whether the element at the centre of the shown Friends tab or knob (where
- * a user clicks) is inside a node listening for a press. A knob shared by
+ * a user clicks) is inside a node of that control listening for a press. A knob shared by
  * every stop (Combat) shows no Friends knob on another view: true then, as
  * the press there is the shown knob's own.
  */
@@ -45,7 +54,9 @@ async function friendsHitListens(): Promise<boolean> {
     const r = control.getBoundingClientRect();
     const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
     const listener = hit?.closest("[data-skin-on]");
-    return !!listener && /\b(leftDown|click)\b/.test(listener.getAttribute("data-skin-on") ?? "");
+    // The control's own press (itself or a part of it), not a neighbour's or
+    // a resize grip laid over it (Onyx's TopLeft grip over its Friends tab).
+    return !!listener && control.contains(listener) && /\b(leftDown|click)\b/.test(listener.getAttribute("data-skin-on") ?? "");
   })) as boolean;
 }
 
