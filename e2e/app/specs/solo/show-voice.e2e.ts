@@ -43,8 +43,19 @@ describe("Show Voice with no call or voice session", function () {
       throw new Error(`the window never showed the Host's answer; its toasts: ${said || "none"}`);
     });
     expect(said).toContain("no call or voice session");
+    // The answer is seen, not only in the DOM: the toast is inside the window
+    // and on top at its centre (a shot of the first run showed no toast).
+    const seen = (await browser.execute(() => {
+      const toast = Array.from(document.querySelectorAll<HTMLElement>(".toast-item")).find((t) => /no call or voice session/.test(t.textContent ?? ""));
+      if (!toast) return "no toast";
+      const r = toast.getBoundingClientRect();
+      if (r.width === 0 || r.bottom > innerHeight || r.right > innerWidth || r.left < 0 || r.top < 0) return `outside the window: ${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)} in ${innerWidth}x${innerHeight}`;
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return top && toast.contains(top) ? "" : `covered by ${top ? (top as HTMLElement).dataset.skinNode ?? top.className : "nothing"}`;
+    })) as string;
     // The asserted state: the derived skin's buddy list with the Host's answer showing.
     await shot("host-answer");
+    expect(seen).toBe("");
     // Still there and pressable: the window says so, the button stays.
     expect(await (await browser.$(node)).isDisplayed()).toBe(true);
     // The derived skin is still the one in use (its trial was kept).
