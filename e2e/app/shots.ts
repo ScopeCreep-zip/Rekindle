@@ -7,6 +7,7 @@
 // test, window, skin sheet and the build's commit. e2e/app/out is git-ignored.
 
 import { execSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { browser } from "@wdio/globals";
@@ -41,7 +42,13 @@ const slug = (s: string): string => s.replace(/[^\w-]+/g, "_").replace(/^_+|_+$/
 
 /** Name the test the following shots belong to: its spec file and its full title. */
 export function shotsFor(file: string, parent: string, title: string): void {
-  holder[KEY] = { spec: slug(path.basename(file).replace(/\.e2e\.ts$/, "")), test: slug(parent ? `${parent} ${title}` : title) };
+  // The test's own title leads (the describe title is shared by every test
+  // and filled the 80 characters, so two tests of one spec shared a folder
+  // and the second's shots replaced the first's); a short hash of the full
+  // title keeps two long titles apart.
+  const full = parent ? `${parent} ${title}` : title;
+  const tag = createHash("sha256").update(full).digest("hex").slice(0, 6);
+  holder[KEY] = { spec: slug(path.basename(file).replace(/\.e2e\.ts$/, "")), test: `${slug(title).slice(0, 72)}-${tag}` };
 }
 
 /** Every user's session: one standalone, or each multiremote instance by name. */
