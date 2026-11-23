@@ -41,9 +41,9 @@ fn deps(reads: usize) -> MockGovernanceRuntimeDeps {
             seqs[member_record::FRONTIER as usize] = Some(5);
             Ok(seqs)
         });
-    deps.expect_get_dht_value()
+    deps.expect_read_hinted_value()
         .times(reads)
-        .returning(|_, _, _| Ok(Some(frontier())));
+        .returning(|_, _| Ok(Some((5, frontier()))));
     ops.expect_fetch_governance_op().returning(|_, _| Ok(None));
     let ops: std::sync::Arc<dyn crate::deps::GovernanceOpStore> = std::sync::Arc::new(ops);
     deps.expect_op_store()
@@ -122,9 +122,9 @@ async fn a_head_that_fetches_on_a_later_read_is_stored_and_then_the_seq_is_read(
             seqs[member_record::FRONTIER as usize] = Some(5);
             Ok(seqs)
         });
-    deps.expect_get_dht_value()
+    deps.expect_read_hinted_value()
         .times(2)
-        .returning(move |_, _, _| Ok(Some(frontier.clone())));
+        .returning(move |_, _| Ok(Some((5, frontier.clone()))));
     let fetches = std::sync::atomic::AtomicUsize::new(0);
     ops.expect_fetch_governance_op().returning(move |_, _| {
         let first = fetches.fetch_add(1, std::sync::atomic::Ordering::SeqCst) == 0;
@@ -238,9 +238,9 @@ fn converging_as(
             seqs[member_record::FRONTIER as usize] = Some(5);
             Ok(seqs)
         });
-    deps.expect_get_dht_value()
+    deps.expect_read_hinted_value()
         .times(1)
-        .returning(move |_, _, _| Ok(Some(bytes.clone())));
+        .returning(move |_, _| Ok(Some((5, bytes.clone()))));
     deps.expect_genesis_cert()
         .returning(move |_| Some(cert.clone()));
     // The op set and the installed state are read under the lock every

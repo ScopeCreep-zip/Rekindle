@@ -169,17 +169,18 @@ pub async fn inspect_one<D: GovernanceRuntimeDeps>(
                 .copied()
                 .flatten()
         });
+    // The inspect and the read are separate fanouts (0.5.8
+    // `inspect_record.rs:672-705`, `get_value.rs`): the read may settle on an
+    // older value than the inspect's seq, so what counts as read is the seq
+    // of the value the read returned, never the inspect's.
     let read = match seq {
         Some(seq) if seen.unread(record, seq) => {
-            let bytes = deps
-                .get_dht_value(lease, member_record::FRONTIER, true)
-                .await;
-            Some((seq, bytes))
+            Some(deps.read_hinted_value(lease, member_record::FRONTIER).await)
         }
         _ => None,
     };
     deps.release_record(lease).await;
-    let Some((seq, Ok(Some(bytes)))) = read else {
+    let Some(Ok(Some((seq, bytes)))) = read else {
         return Ok(0);
     };
     store_frontier_heads(deps, community_id, record, seen, known, seq, &bytes).await
