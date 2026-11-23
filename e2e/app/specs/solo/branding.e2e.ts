@@ -38,6 +38,30 @@ async function xfireShown(): Promise<string[]> {
   })) as string[];
 }
 
+/**
+ * The buddy list's logo nodes and branded decor (plan BR) that do not draw
+ * the Rekindle mark in their box: each must hold a visible brand glyph
+ * (`.skin-node-glyph-brand`) inside its own box, over the pack's art.
+ */
+async function logosUnbranded(): Promise<string[]> {
+  return (await browser.execute(() => {
+    const DECOR = ["TheX", "TheXCover", "InfoLogo", "Logo2"];
+    const nodes = Array.from(document.querySelectorAll<HTMLElement>(".skin-tree [data-skin-node]")).filter(
+      (el) => el.dataset.skinRole === "logo" || DECOR.includes(el.dataset.skinNode ?? ""),
+    );
+    return nodes.flatMap((el) => {
+      if (!el.checkVisibility()) return [];
+      const id = el.dataset.skinNode ?? "?";
+      const mark = el.querySelector<SVGElement>(":scope > .skin-node-label .skin-node-glyph-brand");
+      if (!mark || !mark.checkVisibility()) return [`${id} draws no Rekindle mark`];
+      const n = el.getBoundingClientRect();
+      const m = mark.getBoundingClientRect();
+      const inside = m.width > 0 && m.height > 0 && m.left >= n.left - 0.5 && m.top >= n.top - 0.5 && m.right <= n.right + 0.5 && m.bottom <= n.bottom + 0.5;
+      return inside ? [] : [`${id}'s mark lies outside its box`];
+    });
+  })) as string[];
+}
+
 /** Each menu the buddy list's tree opens (a pack's menu titles), by its served action, with its items' Xfire words. */
 async function menusShowXfire(): Promise<string[]> {
   const out: string[] = [];
@@ -80,7 +104,7 @@ describe("no Xfire branding where the user sees", function () {
       const href = await applySkin(browser, me, pack.name);
       await switchTo(browser, BUDDY);
       await skinShown(browser, href);
-      const found = [...(await xfireShown()), ...(await menusShowXfire())];
+      const found = [...(await xfireShown()), ...(await logosUnbranded()), ...(await menusShowXfire())];
       expect(found).toEqual([]);
     });
   }

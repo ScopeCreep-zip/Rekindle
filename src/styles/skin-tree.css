@@ -195,6 +195,12 @@
     height: 100%;
     padding: 1px;
   }
+  /* The Rekindle mark (plan BR) keeps its own colours; its word takes the
+   * label's colour (accent.text on the cover's bg.secondary, a checked
+   * pair), so it reads on a light skin as on a dark one. */
+  .skin-node-glyph-brand [id="rk-word"] {
+    fill: currentColor;
+  }
 
   .skin-node-label-text {
     max-width: 100%;
