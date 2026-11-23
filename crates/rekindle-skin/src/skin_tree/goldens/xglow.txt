@@ -15,34 +15,34 @@ TabbedControl Views
 Bottom Decor
 FriendsButtons ButtonRow(Friends)
   FriendsButtons.Add Group
-    AddFriend Button target [0, -3, 53, 24] art [0, 3, 54, 18] Size
+    AddFriend Button target [0, -3, 52, 24] art [0, 3, 54, 18] Size
   FriendsButtons.Chat Group
-    ChatButton Button target [1, -3, 55, 24] art [-1, 3, 56, 18] Size
+    ChatButton Button target [0, -3, 56, 24] art [0, 3, 56, 18] Size
   FriendsButtons.Join Group
     JoinGame@Friends Button target [0, -3, 56, 24] art [0, 3, 56, 18] Size
   FriendsButtons.Info Group
     InfoButton Button target [0, -3, 56, 24] art [0, 3, 56, 18] Size
 ServersButtons ButtonRow(Servers)
   ServersButtons.Add Group
-    AddServer Button target [0, -3, 53, 24] art [0, 3, 54, 18] Size
+    AddServer Button target [0, -3, 52, 24] art [0, 3, 54, 18] Size
   ServersButtons.Chat Group
-    RefreshButton Button target [1, -3, 55, 24] art [-1, 3, 56, 18] Size
+    RefreshButton Button target [0, -3, 56, 24] art [0, 3, 56, 18] Size
   ServersButtons.Join Group
     JoinGame@Servers Button target [0, -3, 56, 24] art [0, 3, 56, 18] Size
   ServersButtons.Info Group
     InfoButton2 Button target [0, -3, 56, 24] art [0, 3, 56, 18] Size
 FilesButtons ButtonRow(Files)
   FilesButtons.Add Group
-    StartDownload Button target [0, -3, 53, 24] art [0, 3, 54, 18] Size
+    StartDownload Button target [0, -3, 52, 24] art [0, 3, 54, 18] Size
   FilesButtons.Chat Group
-    StopDownloadButton Button target [1, -3, 55, 24] art [-1, 3, 56, 18] Size
+    StopDownloadButton Button target [0, -3, 56, 24] art [0, 3, 56, 18] Size
   FilesButtons.Join Group
     ExecuteDownload Button target [0, -3, 56, 24] art [0, 3, 56, 18] Size
   FilesButtons.Info Group
     DownloadInfo Button target [0, -3, 56, 24] art [0, 3, 56, 18] Size
 ButtonDivider Decor
-Friends Tab(Friends) target [0, -3, 64, 21] art [0, 3, 65, 18] Spacing
-Servers Tab(Servers) target [1, -3, 64, 21] art [-1, 3, 65, 18] Spacing
+Friends Tab(Friends) target [0, -3, 63, 21] art [0, 3, 65, 18] Spacing
+Servers Tab(Servers) target [0, -3, 65, 21] art [0, 3, 65, 18] Spacing
 Downloads Tab(Files) target [0, -3, 65, 21] art [0, 3, 65, 18] Spacing
 Downloads.Communities Tab(Communities) label "Communities" cover [6, 3, 53, 12] target [0, -3, 65, 21] art [0, 3, 65, 18] Spacing
 AdArea AdArea

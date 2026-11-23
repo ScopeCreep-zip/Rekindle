@@ -228,9 +228,10 @@ fn grip_band(
     rule
 }
 
-/// Whether target `t` lies inside its art on some side: a target cut at the
-/// midpoint of two overlapping arts (plan SK12, [`super::target`]), which no
-/// border can draw, as a border only grows the box.
+/// Whether target `t` lies inside its art on some side: a target cut clear
+/// of the press area of a listening node drawn over its art (plan SK12,
+/// [`super::target`]), which no border can draw, as a border only grows the
+/// box.
 const fn cut(t: NodeTarget) -> bool {
     let [ax, ay, aw, ah] = t.art;
     ax < 0 || ay < 0 || t.area[2] - ax - aw < 0 || t.area[3] - ay - ah < 0

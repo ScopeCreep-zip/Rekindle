@@ -32,20 +32,20 @@ BottomBar Group
     TCLink Button target [0, -8, 113, 24] art [0, 8, 113, 8] Size
   TabButtonArea ButtonBar
     FriendsButtons ButtonRow(Friends)
-      AddButton Button target [0, 0, 38, 30] art [0, 0, 43, 30] Size
-      ImButton Button target [5, 0, 52, 30] art [-5, 0, 57, 30] Size
-      InfoButton Button target [0, 0, 52, 30] art [0, 0, 57, 30] Size
-      JoinFriendButton Button target [5, 0, 38, 30] art [-5, 0, 43, 30] Size
+      AddButton Button target [0, 0, 33, 30] art [0, 0, 43, 30] Size
+      ImButton Button
+      InfoButton Button target [0, 0, 47, 30] art [0, 0, 57, 30] Size
+      JoinFriendButton Button
     ServersButtons ButtonRow(Servers)
-      AddServerButton Button target [0, 0, 38, 29] art [0, 0, 43, 29] Size
-      RefreshButton Button target [5, 0, 52, 29] art [-5, 0, 57, 29] Size
+      AddServerButton Button target [0, 0, 33, 29] art [0, 0, 43, 29] Size
+      RefreshButton Button
       PlaceHolder Decor
       JoinServerButton Button
     FilesButtons ButtonRow(Files)
-      StartDownloadButton Button target [0, 0, 38, 29] art [0, 0, 43, 29] Size
-      StopDownloadButton Button target [5, 0, 52, 29] art [-5, 0, 57, 29] Size
-      ExecuteDownloadButton Button target [0, 0, 52, 29] art [0, 0, 57, 29] Size
-      DownloadInfoButton Button target [5, 0, 38, 29] art [-5, 0, 43, 29] Size
+      StartDownloadButton Button target [0, 0, 33, 29] art [0, 0, 43, 29] Size
+      StopDownloadButton Button
+      ExecuteDownloadButton Button target [0, 0, 47, 29] art [0, 0, 57, 29] Size
+      DownloadInfoButton Button
 popup InfoPopup
   XfireTopRow Decor
   InfoMiddle Decor

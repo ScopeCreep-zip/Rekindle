@@ -1,7 +1,7 @@
 TopLeft Decor target [0, 0, 16, 34] art [0, 0, 16, 34] Frame
 Top Decor target [0, 0, 299, 34] art [0, 0, 299, 34] Frame
 TopRight Decor target [0, 0, 20, 34] art [0, 0, 20, 34] Frame
-SCLogo Decor target [0, 0, 174, 54] art [0, 0, 174, 59] Size
+SCLogo Decor target [0, 0, 174, 45] art [0, 0, 174, 59] Size
 LeftEdge Decor target [0, 0, 16, 468] art [0, 0, 16, 468] Frame
 RightEdge Decor target [0, 0, 20, 468] art [0, 0, 20, 468] Frame
 Middle Decor target [0, 0, 299, 468] art [0, 0, 299, 468] Frame
@@ -12,7 +12,7 @@ AdAreaBG AdArea
   AdArea Part
 ExpandButton Button target [-4, 0, 24, 47] art [4, 0, 20, 47] Size
 MainTitleBar Drag
-  Logo Logo target [-4, 5, 24, 15] art [4, -5, 16, 16] Short
+  Logo Logo target [-4, -4, 22, 24] art [4, 4, 16, 16] Spacing
   Title NameField
 AGEAR Decor
 IGEAR Decor
