@@ -21,7 +21,7 @@ use rekindle_types::dto::skin::{
 };
 use rekindle_types::dto::skin_action::{MenuRegistry, PackUrl, SkinAction};
 use rekindle_types::dto::skin_library::{SkinPaletteColour, SkinTileMask, SkinWindowFrame};
-use rekindle_types::dto::skin_tree::{SkinNode, SkinShell};
+use rekindle_types::dto::skin_tree::{NodeGlyph, SkinNode, SkinShell};
 
 use crate::generate::tui_colours;
 use crate::output::tokens_css;
@@ -141,14 +141,14 @@ pub struct Stylesheet {
     pub base: SkinBase,
     pub css: String,
     pub regions: Vec<String>,
-    /// [`sheet_images`] of the shared rules (regions, titles, labels,
-    /// frames): every image href any window's sheet may draw; each tree's
-    /// own art is on its shell (plan SK4).
+    /// [`sheet_images`] of the shared rules: every image href any window's sheet may draw (SK4).
     pub images: Vec<String>,
     /// [`crate::generate::tui_colours`] of the active variant.
     pub palette: Vec<SkinPaletteColour>,
     /// Each tree-laid window kind's shell outline (plan SK2-S2).
     pub shells: Vec<SkinShell>,
+    /// [`crate::skin_tree::brand::title_logo`]: the strip logo's brand glyph (design `br`).
+    pub title_logo: Option<NodeGlyph>,
 }
 
 /// The active variant of the read package `p` and its tokens after the
@@ -173,10 +173,8 @@ fn files(p: &Package<'_>) -> BTreeMap<String, Vec<u8>> {
     p.files().map(|(n, b)| (n.to_owned(), b.to_vec())).collect()
 }
 
-/// The stylesheet of the canonical package `bytes` at `address`: the
-/// active variant's resolved tokens, then the region rules with images
-/// under `{origin}/{address}`, then the window frames
-/// ([`shape::frame_css`], plan SK0 S2).
+/// The stylesheet of the canonical package `bytes` at `address`: resolved tokens, the region rules
+/// (images under `{origin}/{address}`), then the window frames ([`shape::frame_css`], SK0 S2).
 ///
 /// # Errors
 /// The package, its manifest or its tokens do not read, or a region does
@@ -204,6 +202,7 @@ pub fn stylesheet(bytes: &[u8], address: &str) -> Result<Stylesheet, SkinError> 
         css,
         regions: m.regions.keys().cloned().collect(),
         palette: tui_colours(&resolved),
+        title_logo: crate::skin_tree::brand::title_logo(&m),
     })
 }
 

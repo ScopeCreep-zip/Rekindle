@@ -19,9 +19,10 @@
 //!   and licence text are attribution and stay as written.
 //!
 //! The title strip's logo (`TitleRole::Logo`) is drawn from the same glyph:
-//! `shape::title` gives its box `background: var(--rekindle-mark)` or
-//! `var(--rekindle-wordmark)` ([`css_var`]), the shell's brand art, in place
-//! of the pack's `title-logo.png`.
+//! `shape::title` only places its box, and `serve::stylesheet` names the
+//! glyph for the first strip logo (`SkinApplied::title_logo`), which the
+//! shell draws inline in that box; the pack's `title-logo.png` is never
+//! served.
 
 use rekindle_types::dto::skin::{SkinManifest, WindowLayout};
 use rekindle_types::dto::skin_action::SkinAction;
@@ -51,14 +52,18 @@ pub fn glyph(width: u16, height: u16) -> NodeGlyph {
     }
 }
 
-/// The CSS custom property that holds the shell's art for a brand glyph.
+/// The brand glyph of the first pack title strip's logo box, Main before
+/// Chat ([`glyph`] of its size); `None` when no strip lays a logo. The
+/// shell draws it inline (`SkinApplied::title_logo`); the sheet only
+/// places the box, so the pack's Xfire logo is never served.
 #[must_use]
-pub const fn css_var(glyph: NodeGlyph) -> &'static str {
-    match glyph {
-        NodeGlyph::RekindleWordmark => "--rekindle-wordmark",
-        NodeGlyph::RekindleMarkSmall => "--rekindle-mark-small",
-        NodeGlyph::Rekindle | NodeGlyph::Communities => "--rekindle-mark",
-    }
+pub fn title_logo(m: &SkinManifest) -> Option<NodeGlyph> {
+    m.windows
+        .values()
+        .filter_map(|w| w.title.as_ref())
+        .flat_map(|t| &t.parts)
+        .find(|p| p.role == rekindle_types::dto::skin_title::TitleRole::Logo)
+        .map(|p| glyph(p.width, p.height))
 }
 
 /// The glyph each built-in logo box serves (lead pin): Total Chaos's
@@ -279,6 +284,41 @@ mod tests {
             }
         }
         assert!(logos > 0, "the built-ins serve logo nodes");
+    }
+
+    fn served_of(id: &str) -> rekindle_types::dto::skin::SkinManifest {
+        let pack = builtin::PACKS.iter().find(|p| p.id == id).expect(id);
+        let c = validate::run(pack.bytes).unwrap();
+        manifest::served(&package::read(&c.bytes).unwrap()).unwrap()
+    }
+
+    /// The title strip's logo is the brand glyph its box takes (the
+    /// shell draws it inline): Symbiosis's 121 x 37 the wordmark, Onyx's
+    /// 16 x 16 the small mark, Combat's strip none.
+    #[test]
+    fn the_title_logo_takes_its_boxs_glyph() {
+        assert_eq!(
+            super::title_logo(&served_of("symbiosis")),
+            Some(NodeGlyph::RekindleWordmark)
+        );
+        assert_eq!(
+            super::title_logo(&served_of("onyx")),
+            Some(NodeGlyph::RekindleMarkSmall)
+        );
+        assert_eq!(super::title_logo(&served_of("combat")), None);
+    }
+
+    /// No served stylesheet draws a pack's logo image or a brand variable:
+    /// the shell draws the served glyph itself.
+    #[test]
+    fn no_stylesheet_draws_a_title_logo_image() {
+        for pack in &builtin::PACKS {
+            let c = validate::run(pack.bytes).unwrap();
+            let address = blake3::hash(&c.bytes).to_hex().to_string();
+            let sheet = crate::serve::stylesheet(&c.bytes, &address).unwrap();
+            assert!(!sheet.css.contains("title-logo"), "{}", pack.id);
+            assert!(!sheet.css.contains("--rekindle-"), "{}", pack.id);
+        }
     }
 
     fn count_logos(nodes: &[SkinNode]) -> usize {
