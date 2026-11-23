@@ -179,11 +179,7 @@ async fn seeded() -> (
     std::sync::Arc<crate::host::Host>,
     rekindle_events::EventStream,
 ) {
-    let dir = tempfile::tempdir().unwrap();
-    let host = offline_host(&dir).await;
-    let owner = create_ann(&host).await.public_key;
-    seed_registry_community(&host, &owner).await;
-    (host.ctx.communities).set_governance_state("c1", with_channel());
+    let (dir, host) = keyless().await;
     let cache = crate::daemon::mek_rotation::MekCacheAdapter::new(std::sync::Arc::clone(
         &host.ctx.mek_cache,
     ));
@@ -191,6 +187,91 @@ async fn seeded() -> (
     rekindle_mek_rotation::ChannelMekCache::insert(&cache, "c1", KeyScope::Community, key);
     let events = host.ctx.journal.subscribe(None);
     (dir, host, events)
+}
+
+/// A Host holding community `c1` with `EDIT_CHANNEL` and no text key yet
+/// (a joiner before the D16 transfer).
+async fn keyless() -> (tempfile::TempDir, std::sync::Arc<crate::host::Host>) {
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    let owner = create_ann(&host).await.public_key;
+    seed_registry_community(&host, &owner).await;
+    if let Some(c) = host.ctx.communities.map().write().get_mut("c1") {
+        c.my_pseudonym_key = Some(typist_key(7));
+    }
+    (host.ctx.communities).set_governance_state("c1", with_channel());
+    (dir, host)
+}
+
+/// When our start in `EDIT_CHANNEL` last went out, if a session is open.
+fn last_sent(host: &crate::host::Host) -> Option<u64> {
+    let friends = HostFriends::of(&host.ctx);
+    let sent = (friends.stores().typing_out.lock()).last_sent(&context("c1", EDIT_CHANNEL));
+    sent
+}
+
+/// The community text key arriving by transfer (D16), installed as every
+/// transferred key is.
+fn key_lands(gov: &HostGovernance) {
+    let key = rekindle_transport::crypto::mek::Mek::from_bytes(TEXT_KEY, 1);
+    assert!(gov.install_transferred_mek("c1", KeyScope::Community, &key));
+}
+
+/// The number of starts decided while `run` ran on this thread.
+fn starts_during(run: impl FnOnce()) -> usize {
+    let captured = crate::host::direct_call_tests::Captured::default();
+    {
+        let _armed = crate::host::direct_call_tests::capture(&captured);
+        run();
+    }
+    let log = String::from_utf8(captured.0.lock().clone()).unwrap();
+    log.lines()
+        .filter(|l| l.contains("channel typing draft") && l.contains("draft=Started"))
+        .count()
+}
+
+/// A start that fails for want of the key leaves the session unstarted,
+/// so the next edit tries again instead of staying Quiet.
+#[tokio::test]
+async fn a_start_without_the_key_leaves_the_session_unstarted() {
+    let (_dir, host) = keyless().await;
+    let gov = HostGovernance::new(host.ctx.clone());
+    assert!(gov.report_channel_draft("c1", EDIT_CHANNEL, true).is_err());
+    assert_eq!(last_sent(&host), None, "a failed start is not a sent one");
+    let starts = starts_during(|| {
+        assert!(gov.report_channel_draft("c1", EDIT_CHANNEL, true).is_err());
+    });
+    assert_eq!(starts, 1, "the next edit tries the start again");
+}
+
+/// The key landing while the composer still holds text sends exactly one
+/// start; a later key sends none.
+#[tokio::test]
+async fn the_key_landing_while_typing_sends_one_start() {
+    let (_dir, host) = keyless().await;
+    let gov = HostGovernance::new(host.ctx.clone());
+    assert!(gov.report_channel_draft("c1", EDIT_CHANNEL, true).is_err());
+    let starts = starts_during(|| key_lands(&gov));
+    assert_eq!(starts, 1, "the waiting draft sends its start once");
+    assert!(last_sent(&host).is_some(), "the start went out");
+    let again = starts_during(|| {
+        let next = rekindle_transport::crypto::mek::Mek::from_bytes([9; 32], 2);
+        assert!(gov.install_transferred_mek("c1", KeyScope::Community, &next));
+    });
+    assert_eq!(again, 0, "a later key sends no second start");
+}
+
+/// The key landing with no live draft (never typed, or the composer was
+/// cleared while the start waited) sends nothing.
+#[tokio::test]
+async fn the_key_landing_with_no_live_draft_sends_nothing() {
+    let (_dir, host) = keyless().await;
+    let gov = HostGovernance::new(host.ctx.clone());
+    assert!(gov.report_channel_draft("c1", EDIT_CHANNEL, true).is_err());
+    assert!(gov.report_channel_draft("c1", EDIT_CHANNEL, false).is_ok());
+    let starts = starts_during(|| key_lands(&gov));
+    assert_eq!(starts, 0, "a cleared composer is owed no start");
+    assert_eq!(last_sent(&host), None);
 }
 
 /// The next typing event in `stream` within `limit`, as debug text.
