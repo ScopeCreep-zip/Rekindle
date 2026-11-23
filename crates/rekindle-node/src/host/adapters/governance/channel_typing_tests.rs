@@ -418,3 +418,35 @@ async fn the_shared_ingest_drops_typing_after_our_removal() {
         None
     );
 }
+
+/// Plan GI2: the Host's one community gate, which the daemon's gossip
+/// ingest and the desktop's relay dispatch (every arm) both call, refuses
+/// a departed author's traffic and, once we were removed, everyone's.
+#[tokio::test]
+async fn the_host_gate_refuses_a_departed_author_and_all_after_our_removal() {
+    let (_dir, host) = keyless().await;
+    let gov = host.governance();
+    let member = rekindle_types::id::PseudonymKey([3; 32]);
+    let departed = rekindle_types::id::PseudonymKey([4; 32]);
+    let mut state = with_channel();
+    state.bans.insert(departed.clone());
+    (host.ctx.communities).set_governance_state("c1", state);
+    assert!(gov.takes_traffic_from("c1", &member), "a member's traffic");
+    assert!(
+        !gov.takes_traffic_from("c1", &departed),
+        "a departed author's relayed Control"
+    );
+    host.ctx.communities.note_own_removal(
+        "c1",
+        crate::host::community::OwnRemoval {
+            banned: false,
+            by: None,
+            by_name: None,
+            reason: None,
+        },
+    );
+    assert!(
+        !gov.takes_traffic_from("c1", &member),
+        "nothing once we were removed"
+    );
+}

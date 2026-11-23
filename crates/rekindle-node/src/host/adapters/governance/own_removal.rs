@@ -314,7 +314,12 @@ impl HostGovernance {
     /// Whether we take `author`'s traffic for the community: not once we
     /// were removed, nor a departed member's
     /// ([`crate::host::community::store::CommunityStore::takes_traffic_from`]).
-    pub(crate) fn takes_traffic_from(
+    /// The one gate of every community ingest on both modes: the daemon's
+    /// gossip ingest (`DaemonHandler::takes_traffic`), the desktop's relay
+    /// dispatch (`handle_relayed_envelope`, every arm), typing
+    /// ([`Self::ingest_typing`]) and key transfers.
+    #[must_use]
+    pub fn takes_traffic_from(
         &self,
         community_id: &str,
         author: &rekindle_types::id::PseudonymKey,
