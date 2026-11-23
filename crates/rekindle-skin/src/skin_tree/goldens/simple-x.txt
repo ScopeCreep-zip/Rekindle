@@ -1,23 +1,23 @@
 Top Decor
-Logo Logo
+Logo Logo target [0, -1, 89, 24] art [0, 1, 89, 21] Size
 MenuBar MenuBar
-  XfireMenuText MenuTitle label "Rekindle"
+  XfireMenuText MenuTitle label "Rekindle" target [0, -3, 60, 24] art [0, 3, 60, 18] Size
     FileMenu Part
-  ToolsMenuText MenuTitle label "Tools"
+  ToolsMenuText MenuTitle label "Tools" target [0, -3, 60, 24] art [0, 3, 60, 18] Size
     ToolsMenu Part
-  HelpMenuText MenuTitle label "Help"
+  HelpMenuText MenuTitle label "Help" target [0, -3, 60, 24] art [0, 3, 60, 18] Size
     HelpMenu Part
-UserNameField NameField
+UserNameField NameField target [0, -1, 252, 24] art [0, 1, 252, 22] Size
   UserNameText Part
 StatusWrapper Group
-StatusEdit StatusText inset [0, 9]
-DownArrow StatusList
+StatusEdit StatusText inset [0, 9] target [0, -6, 327, 24] art [0, 6, 327, 12] Size
+DownArrow StatusList target [-1, -1, 24, 24] art [1, 1, 22, 22] Size
 TopButtonBar Group
-  MinimizeBox Button
-  MaximizeBox Button
-  CloseBox Button
+  MinimizeBox Button target [-4, -4, 20, 24] art [4, 4, 16, 16] Short
+  MaximizeBox Button target [0, -4, 16, 24] art [0, 4, 16, 16] Short
+  CloseBox Button target [0, -4, 20, 24] art [0, 4, 16, 16] Short
 Middle Decor
-InfoViewButton Button
+InfoViewButton Button target [-11, 0, 24, 60] art [11, 0, 13, 60] Size
 TabbedControl Views
   BuddyView View(Friends)
     BuddyView.BvBk Part
@@ -27,13 +27,13 @@ TabbedControl Views
     DownloadView.BvBk Part
   TabbedControl.Communities View(Communities)
 TabHeader TabStrip
-  TabNormalText Tab(Friends) label "Friends"
+  TabNormalText Tab(Friends) label "Friends" target [0, -4, 60, 24] art [0, 4, 60, 15] Size
     TabNormalButton Part
-  TabServerText Tab(Servers) label "Servers"
+  TabServerText Tab(Servers) label "Servers" target [0, -4, 60, 24] art [0, 4, 60, 15] Size
     TabServerButton Part
-  TabDownloadText Tab(Files) label "Downloads"
+  TabDownloadText Tab(Files) label "Downloads" target [0, -4, 60, 24] art [0, 4, 60, 15] Size
     TabDownloadButton Part
-  TabDownloadText.Communities Tab(Communities) label "Communities" cover [6, 3, 48, 9]
+  TabDownloadText.Communities Tab(Communities) label "Communities" cover [6, 3, 48, 9] target [0, -4, 60, 24] art [0, 4, 60, 15] Size
     TabDownloadButton.Communities Part
 Bottom Decor
 AdArea AdArea
@@ -41,25 +41,25 @@ AdArea AdArea
 ButtonHolder ButtonBar
   FriendsButtons ButtonRow(Friends)
     FriendsButtons.TabAddButton Group
-      AddButton Button
+      AddButton Button target [0, -1, 59, 24] art [0, 1, 59, 22] Size
     FriendsButtons.TabChatRefreshButton Group
-      ChatButton Button
+      ChatButton Button target [0, -1, 59, 24] art [0, 1, 59, 22] Size
     FriendsButtons.TabGameDownloadButton Group
-      GameButton@Friends Button
+      GameButton@Friends Button target [0, -1, 59, 24] art [0, 1, 59, 22] Size
     FriendsButtons.TabInfoButton Group
-      InfoButton@Friends Button
+      InfoButton@Friends Button target [0, -1, 59, 24] art [0, 1, 59, 22] Size
   ServersButtons ButtonRow(Servers)
     ServersButtons.TabAddButton Group
-      AddServerButton Button
+      AddServerButton Button target [0, -1, 59, 24] art [0, 1, 59, 22] Size
     ServersButtons.TabChatRefreshButton Group
-      RefreshButton Button
+      RefreshButton Button target [0, -1, 59, 24] art [0, 1, 59, 22] Size
     ServersButtons.TabGameDownloadButton Group
-      GameButton@Servers Button
+      GameButton@Servers Button target [0, -1, 59, 24] art [0, 1, 59, 22] Size
     ServersButtons.TabInfoButton Group
-      InfoButton@Servers Button
+      InfoButton@Servers Button target [0, -1, 59, 24] art [0, 1, 59, 22] Size
   FilesButtons ButtonRow(Files)
     FilesButtons.TabAddButton Group
-      SearchFiles Button
+      SearchFiles Button target [0, -1, 239, 24] art [0, 1, 239, 22] Size
         BigBrowseFileText Part label "Find"
 ResizeUp Button
 ResizeLeft Button
@@ -70,14 +70,14 @@ popup Infoskin
   XfireTopRow Decor
   XfireMiddleRow Decor
   XfireBottomRow Decor
-  InfoViewButton Button
+  InfoViewButton Button target [-11, 0, 24, 60] art [11, 0, 13, 60] Size
   BackDrop Decor
   InfoView InfoView
   ResizeRight Button
   ButtonHolder Group
     JoinChatTab ButtonBar
-      HostChatButton Button
-      JoinChatButton Button
-      LeaveChatButton Button
+      HostChatButton Button target [0, -1, 59, 24] art [0, 1, 59, 22] Size
+      JoinChatButton Button target [0, -1, 59, 24] art [0, 1, 59, 22] Size
+      LeaveChatButton Button target [0, -1, 59, 24] art [0, 1, 59, 22] Size
         TalkingStateButton Part
-    JoinButton Button
+    JoinButton Button target [0, -1, 59, 24] art [0, 1, 59, 22] Size

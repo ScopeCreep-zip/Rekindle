@@ -239,6 +239,37 @@ pub enum NodeGlyph {
     Rekindle,
 }
 
+/// How a node's served target meets WCAG 2.5.8 (plan SK7): `Size`, its
+/// target box is at least 24 x 24 px; `Spacing`, a neighbour left no room
+/// for 24 px, but the 24 px circle centred on its box meets no other target
+/// and no other undersized target's circle (the criterion's spacing
+/// exception); `Short`, neither holds (the pack lays its neighbours too
+/// close): a pack-layout finding, served with the box the node could grow
+/// to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TargetRule {
+    Size,
+    Spacing,
+    Short,
+}
+
+/// The target box the Host serves a small interactive node (plan SK7, WCAG
+/// 2.5.8): its box grown about its art to 24 x 24 px (clamped to the
+/// window, stopped at its neighbours' targets), its art drawn at its own
+/// size inside. Measured at the window's served minimum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct NodeTarget {
+    /// The target box `[x, y, w, h]`, `x` and `y` from the art box's
+    /// top-left (never positive).
+    #[serde(rename = "box")]
+    pub area: [i32; 4],
+    /// The art's rect `[x, y, w, h]` inside the target box.
+    pub art: [i32; 4],
+    pub rule: TargetRule,
+}
+
 /// One component of the pack's tree.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -263,6 +294,9 @@ pub struct SkinNode {
     /// (plan SK5): the shell lays the field's text inside it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inset: Option<NodeInset>,
+    /// The Host's target box for a small interactive node (plan SK7).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<NodeTarget>,
     /// The tab whose view shows this node (a view's button row).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shows_with: Option<ViewKey>,
@@ -340,6 +374,9 @@ pub struct ShellNode {
     /// (plan SK5): the shell lays the field's text inside it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inset: Option<NodeInset>,
+    /// The Host's target box for a small interactive node (plan SK7).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target: Option<NodeTarget>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub triggers: Vec<NodeTrigger>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -430,6 +467,7 @@ impl SkinNode {
             control_group: self.control_group,
             label: self.label.clone(),
             inset: self.inset,
+            target: self.target,
             triggers: self.triggers.clone(),
             children: self.children.iter().map(Self::shell).collect(),
         }

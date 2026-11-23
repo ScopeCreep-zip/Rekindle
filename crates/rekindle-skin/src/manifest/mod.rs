@@ -120,7 +120,8 @@ pub fn served(package: &Package<'_>) -> Result<SkinManifest, SkinError> {
 /// each glyph label from the package's art (plan SK3: the icon the
 /// Communities clone copied, [`crate::skin_tree::cover`]), then every
 /// window's menu-title labels (plan SK4b, [`crate::skin_tree::titles`]) and
-/// text-field insets (plan SK5, [`crate::skin_tree::inset`]).
+/// text-field insets (plan SK5, [`crate::skin_tree::inset`]) and the target
+/// boxes of small interactive nodes (plan SK7, [`crate::skin_tree::target`]).
 ///
 /// # Errors
 /// A glyph label's or menu title's picture missing from `package` or not
@@ -136,6 +137,7 @@ pub fn place(manifest: &mut SkinManifest, package: &Package<'_>) -> Result<(), S
     for layout in manifest.windows.values_mut() {
         crate::skin_tree::titles::menus(layout, package)?;
         crate::skin_tree::inset::fields(layout);
+        crate::skin_tree::target::nodes(layout);
     }
     Ok(())
 }

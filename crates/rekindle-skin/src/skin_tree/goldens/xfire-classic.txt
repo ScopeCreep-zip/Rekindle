@@ -1,11 +1,11 @@
 MainTitleBar Drag
   Vent Decor
-  XfireLogo Logo
+  XfireLogo Logo target [0, -2, 87, 24] art [0, 2, 87, 19] Size
     TheX Decor
-      TheXCover Decor
-  UserNameField NameField
+      TheXCover Decor target [0, -2, 32, 24] art [0, 2, 32, 19] Size
+  UserNameField NameField target [0, -3, 169, 24] art [0, 3, 169, 17] Size
     UserNameText Part
-  CloseBox Button
+  CloseBox Button target [0, -3, 21, 24] art [0, 3, 18, 17] Short
   ResizeUp Button
 GripperTopLeft Button
 GripperTopRight Button
@@ -25,8 +25,8 @@ BaseBoard Group
       BigBrowseFileButton Button
         BigBrowseFileText Part label "Find"
   StatusWrapper Group
-  StatusEdit StatusText
-  DownArrow StatusList
+  StatusEdit StatusText target [0, -4, 209, 24] art [0, 4, 209, 15] Size
+  DownArrow StatusList target [0, -5, 20, 24] art [0, 5, 16, 14] Short
   ResizeDown Button
 LeftOuterEdge Decor
 MainRightOuterEdge Decor
@@ -37,23 +37,23 @@ InnerBevel Decor
   BottomBevel Decor
   MiddleBevel Decor
   MenuBar MenuBar
-    XfireMenuText MenuTitle label "Rekindle"
+    XfireMenuText MenuTitle label "Rekindle" target [0, -4, 100, 24] art [0, 4, 100, 16] Size
       FileMenu Part
-    ToolsMenuText MenuTitle label "Tools"
+    ToolsMenuText MenuTitle label "Tools" target [0, -4, 100, 24] art [0, 4, 100, 16] Size
       ToolsMenu Part
-    HelpMenuText MenuTitle label "Help"
+    HelpMenuText MenuTitle label "Help" target [0, -4, 100, 24] art [0, 4, 100, 16] Size
       HelpMenu Part
   AdArea AdArea
     AdView Part
   Divider Decor
   TabHeader TabStrip
-    TabNormalText Tab(Friends) label "Friends"
+    TabNormalText Tab(Friends) label "Friends" target [0, -4, 40, 24] art [0, 4, 40, 15] Size
       TabNormalButton Part
-    TabServerText Tab(Servers) label "Servers"
+    TabServerText Tab(Servers) label "Servers" target [0, -4, 40, 24] art [0, 4, 40, 15] Size
       TabServerButton Part
-    TabDownloadText Tab(Files) label "Downloads"
+    TabDownloadText Tab(Files) label "Downloads" target [0, -4, 40, 24] art [0, 4, 40, 15] Size
       TabDownloadButton Part
-    TabDownloadText.Communities Tab(Communities) label "Communities"
+    TabDownloadText.Communities Tab(Communities) label "Communities" target [0, -4, 40, 24] art [0, 4, 40, 15] Size
       TabDownloadButton.Communities Part
   TabbedControl Views
     BuddyView View(Friends)
@@ -65,20 +65,20 @@ InnerBevel Decor
     TabbedControl.Communities View(Communities)
 BottomBar Group
   PartnerGraphic Decor
-    PartnerFrame Decor
-InfoViewButton Button
+    PartnerFrame Decor target [-8, -3, 24, 24] art [8, 3, 8, 18] Size
+InfoViewButton Button target [-11, 0, 24, 70] art [11, 0, 13, 70] Size
 popup MainInfoViewPopup
   InfoTopRow Decor
   InfoBottomRow Decor
     InfoBottomRowBG Decor
-    InfoJoinGameButton Button
+    InfoJoinGameButton Button target [0, -1, 35, 24] art [0, 1, 35, 21] Size
     InfoJoinChatTab ButtonBar
-      InfoHostChatButton Button
-      InfoJoinChatButton Button
-      InfoLeaveChatButton Button
+      InfoHostChatButton Button target [0, -1, 35, 24] art [0, 1, 35, 21] Size
+      InfoJoinChatButton Button target [0, -1, 35, 24] art [0, 1, 35, 21] Size
+      InfoLeaveChatButton Button target [0, -1, 35, 24] art [0, 1, 35, 21] Size
         InfoTalkingStateButton Part
   InfoMiddleRow Decor
-  InfoViewButton Button
+  InfoViewButton Button target [-11, 0, 24, 70] art [11, 0, 13, 70] Size
   InfoView InfoView
   InfoBackDrop Decor
   InfoGripperTR Decor

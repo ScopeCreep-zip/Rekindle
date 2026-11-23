@@ -17,6 +17,7 @@ pub mod pieces;
 pub mod place;
 pub mod popup;
 pub mod roles;
+pub mod target;
 pub mod titles;
 mod triggers;
 pub mod validate;
@@ -35,6 +36,8 @@ mod place_tests;
 mod rail_tests;
 #[cfg(test)]
 mod stack_tests;
+#[cfg(test)]
+mod target_tests;
 #[cfg(test)]
 mod test_support;
 #[cfg(test)]

@@ -14,18 +14,18 @@ RightSide Decor
 BottomRow Decor
 InfoBar Group
   XfireLogo Logo
-  ButtonMinimize Button
-  ButtonMaximize Button
-  ButtonClose Button
+  ButtonMinimize Button target [-3, -4, 24, 24] art [3, 4, 18, 16] Size
+  ButtonMaximize Button target [-3, -4, 22, 24] art [3, 4, 18, 16] Short
+  ButtonClose Button target [-1, -4, 22, 24] art [1, 4, 18, 16] Short
 MenuBackground MenuBar
-  XfireMenu MenuTitle label "Rekindle" cover [0, 0, 45, 20]
-  ToolsMenu MenuTitle
-  HelpMenu MenuTitle
-UsernameContainer NameField inset [0, 28]
+  XfireMenu MenuTitle label "Rekindle" cover [0, 0, 45, 20] target [0, -2, 45, 24] art [0, 2, 45, 20] Size
+  ToolsMenu MenuTitle target [0, -2, 46, 24] art [0, 2, 46, 20] Size
+  HelpMenu MenuTitle target [0, -2, 47, 24] art [0, 2, 47, 20] Size
+UsernameContainer NameField inset [0, 28] target [0, -5, 343, 24] art [0, 5, 343, 13] Size
   Username Part
 StatusBarContainer Group
-  Status StatusText
-  StatusChanger StatusList
+  Status StatusText target [0, -6, 322, 24] art [0, 6, 322, 12] Size
+  StatusChanger StatusList target [0, -3, 21, 24] art [0, 3, 18, 18] Short
 AdView AdArea
 TabsContainer Decor
   ButtonFriendsTab Tab(Friends)
@@ -65,7 +65,7 @@ TabsButtonsContainer ButtonBar
     FriendAddButton Button
   ChatRoomsButtonBar ButtonRow(ChatRooms)
     RoomEditBG Decor
-      ChatRoomEdit RoomName
+      ChatRoomEdit RoomName target [0, -4, 85, 24] art [0, 4, 85, 16] Size
     ChatRoomEnter Button
     ChatRoomsButtonBar.Separator1 Decor
     ChatRoomDelete Button
@@ -104,7 +104,7 @@ TabsButtonsContainer ButtonBar
     NotificationsButtonBar.Separator1 Decor
     DeleteNotification Button
     NotificationsButtonBar.Separator2 Decor
-MainInfoViewButton Button
+MainInfoViewButton Button target [-5, 0, 18, 115] art [5, 0, 13, 115] Spacing
 popup MainInfoViewPopup
   MainInfoResizeR Button
   MainInfoTopRow Decor
@@ -114,4 +114,4 @@ popup MainInfoViewPopup
   MainInfoBottomRow Decor
   MainInfoContentContainer Decor
     MainInfoContent InfoView
-  MainInfoViewButton Button
+  MainInfoViewButton Button target [-11, 0, 24, 115] art [11, 0, 13, 115] Size

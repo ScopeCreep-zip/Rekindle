@@ -23,9 +23,10 @@
 //!    it stacks below its siblings at its `Z` ([`stack_z`]), its own box
 //!    takes no pointer events and its hit area leaves their boxes
 //!    ([`grip_area`]);
-//! 5. every interactive node has a box, and its 24×24 hit area (the
-//!    stylesheet's, grown about its centre and shifted inward at the window's
-//!    edges: lead decision 2, an edge grip's area stays in the window) lies
+//! 5. every interactive node has a box, and its target (the Host's served
+//!    target box, plan SK7 [`super::target`], else its box grown to 24×24
+//!    about its centre and shifted inward at the window's edges: lead
+//!    decision 2, an edge grip's area stays in the window) lies
 //!    inside the window; a text-sized node (a menu, tab or edit field, no
 //!    art) is sized by its text at render, so its target is checked on the
 //!    rendered window, not on its 0 px import box;
@@ -63,7 +64,9 @@ fn bad(field: &str, expected: &str) -> SkinError {
     )
 }
 
-fn overlap(a: [i32; 4], b: [i32; 4]) -> bool {
+/// Whether boxes `a` and `b` share a positive area.
+#[must_use]
+pub fn overlap(a: [i32; 4], b: [i32; 4]) -> bool {
     a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3]
 }
 
@@ -274,6 +277,41 @@ fn pages_of<'a>(
     }
 }
 
+/// Which nodes are never shown together (rule 4): two of different views
+/// ([`views_of`]) or on different pages of one paged node ([`pages_of`]).
+pub struct Apart<'a> {
+    shown: BTreeMap<&'a str, Option<ViewKey>>,
+    pages: BTreeMap<&'a str, Vec<(&'a str, usize)>>,
+}
+
+impl<'a> Apart<'a> {
+    /// The views and pages of every node under `root`.
+    #[must_use]
+    pub fn new(root: &'a [SkinNode]) -> Self {
+        let mut shown = BTreeMap::new();
+        views_of(root, None, &mut shown);
+        let mut pages = BTreeMap::new();
+        pages_of(root, &[], &mut pages);
+        Self { shown, pages }
+    }
+
+    /// Whether `a` and `b` are never shown together.
+    #[must_use]
+    pub fn apart(&self, a: &str, b: &str) -> bool {
+        let other_page = match (self.pages.get(a), self.pages.get(b)) {
+            (Some(pa), Some(pb)) => pa
+                .iter()
+                .any(|(bar, i)| pb.iter().any(|(bar2, j)| bar == bar2 && i != j)),
+            _ => false,
+        };
+        other_page
+            || match (self.shown.get(a), self.shown.get(b)) {
+                (Some(Some(x)), Some(Some(y))) => x != y,
+                _ => false,
+            }
+    }
+}
+
 /// Refuses `tree` (laid in `layout`) when it breaks a rule above.
 ///
 /// # Errors
@@ -323,10 +361,14 @@ pub fn check_in(
             return Err(bad(&at, "rule 3: a node inside the window"));
         }
         let sized = b[2] > 0 && b[3] > 0;
-        if n.interactive() && !text_sized(n) && (!sized || !inside(hit_area(*b, (w, h)), w, h)) {
+        // The served target (plan SK7), else the 24x24 area it grows to.
+        let target = n
+            .target
+            .map_or_else(|| hit_area(*b, (w, h)), |t| super::target::outer(*b, t));
+        if n.interactive() && !text_sized(n) && (!sized || !inside(target, w, h)) {
             return Err(bad(
                 &at,
-                "rule 5: an interactive node with a 24x24 hit area in the window",
+                "rule 5: an interactive node with a 24x24 target in the window",
             ));
         }
         if n.role.singleton() && !singles.insert(n.role) {
@@ -337,24 +379,8 @@ pub fn check_in(
             return Err(bad(&at, "rule 9: art in the package"));
         }
     }
-    let mut shown = BTreeMap::new();
-    views_of(&tree.root, None, &mut shown);
-    let mut pages = BTreeMap::new();
-    pages_of(&tree.root, &[], &mut pages);
-    let other_page = |a: &str, b: &str| {
-        let (Some(pa), Some(pb)) = (pages.get(a), pages.get(b)) else {
-            return false;
-        };
-        pa.iter()
-            .any(|(bar, i)| pb.iter().any(|(bar2, j)| bar == bar2 && i != j))
-    };
-    let apart = |a: &str, b: &str| {
-        other_page(a, b)
-            || match (shown.get(a), shown.get(b)) {
-                (Some(Some(x)), Some(Some(y))) => x != y,
-                _ => false,
-            }
-    };
+    let apart = Apart::new(&tree.root);
+    let apart = |a: &str, b: &str| apart.apart(a, b);
     let stack = Stack::new(&tree.root);
     // A grip covers a node only when it does not yield to it (lead
     // decision 10): its hit area then leaves the node's box.

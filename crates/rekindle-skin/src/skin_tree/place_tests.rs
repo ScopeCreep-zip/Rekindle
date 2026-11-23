@@ -172,6 +172,7 @@ fn bare(views_group: Option<u16>) -> WindowLayout {
         text: None,
         label: None,
         inset: None,
+        target: None,
         shows_with: None,
         control_group: views_group,
         triggers: Vec::new(),
