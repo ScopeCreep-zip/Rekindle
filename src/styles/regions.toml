@@ -278,6 +278,10 @@
 '.group-call-tile-name' = { on = ["--color-xfire-bg-tertiary"] }
 '.group-call-tile-status' = { on = ["--color-xfire-bg-tertiary"] }
 '.modal-title' = { on = ["--color-xfire-bg-panel"] }
+# The local search's results (plan E7.2 G11) on the modal's bg.panel; a row
+# tints accent 12% on hover and keyboard focus.
+'.local-search-hit' = { on = ["--color-xfire-bg-panel"], on_hover = ["--color-xfire-accent 12% over --color-xfire-bg-panel"] }
+'.local-search-hit-kind' = { on = ["--color-xfire-bg-panel"], on_hover = ["--color-xfire-accent 12% over --color-xfire-bg-panel"] }
 '.modal-close-btn' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.modal-close-btn:hover' = { on = ["--color-xfire-overlay 10% over --color-xfire-bg-dark", "--color-xfire-overlay 10% over --color-xfire-bg-panel"] }
 # The keyboard-shortcuts dialog (E7.3) sits in the Modal's panel.

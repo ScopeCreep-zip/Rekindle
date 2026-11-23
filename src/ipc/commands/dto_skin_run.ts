@@ -2,6 +2,7 @@
 // `rekindle_types::dto::skin_run`. The Host decides; the shell only runs
 // the operation it is handed.
 import type { Capability, EngineMenu, SkinAction } from "./dto_skin_tree";
+import type { LocalSearchScope } from "./dto_local_search";
 import type { TransferTarget } from "./dto_transfer";
 
 type ArgOf<K extends SkinAction["kind"]> = Extract<SkinAction, { kind: K; arg: unknown }>["arg"];
@@ -75,6 +76,8 @@ export type ShellOp =
   | { kind: "inviteToRoom"; arg: { groupId: string } }
   | { kind: "call"; arg: CallOp }
   | { kind: "showSettings"; arg: ArgOf<"showSettings"> }
+  /** Open the local search in `scope`, the Host's pick from the window's view (plan E7.2 G11). */
+  | { kind: "openSearch"; arg: { scope: LocalSearchScope } }
   /** A never-fetched attachment: run `transfer_start` for it, which asks
    *  where to save in Rust (plan E7.2 G12); no path reaches the webview. */
   | {
