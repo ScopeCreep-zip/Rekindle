@@ -1,8 +1,8 @@
 MainTitleBar Drag
   Vent Decor
   XfireLogo Logo label "Rekindle" cover [0, 0, 87, 19] glyph RekindleWordmark
-    TheX Decor label "Rekindle" cover [0, 0, 32, 19] glyph Rekindle
-      TheXCover Decor label "Rekindle" cover [0, 0, 32, 19] glyph Rekindle target [0, -2, 32, 24] art [0, 2, 32, 19] Size
+    TheX Decor
+      TheXCover Decor target [0, -2, 32, 24] art [0, 2, 32, 19] Size
   UserNameField NameField target [0, -3, 169, 24] art [0, 3, 169, 17] Size
     UserNameText Part
   CloseBox Button target [0, -3, 21, 24] art [0, 3, 18, 17] Short

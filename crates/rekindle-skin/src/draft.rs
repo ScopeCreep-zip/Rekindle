@@ -150,7 +150,8 @@ fn build(draft: &SkinDraft, assets: Option<&Assets>) -> Result<Canonical, SkinEr
 
 /// "Start from the current skin": the active variant of the canonical
 /// package `id` as a draft. Its credits carry forward (the source's
-/// authors, contributors and URL, and the licence it was made under), its
+/// authors, contributors and URL, less a URL that is Xfire's, and the
+/// licence it was made under), its
 /// licence is offered as the draft's, and its regions, icons and sounds
 /// stay with it through `from`.
 ///
@@ -178,7 +179,8 @@ pub fn from_package(id: &str, bytes: &[u8]) -> Result<SkinDraft, SkinError> {
     let license = match &m.license {
         SkinLicense::Spdx(s) | SkinLicense::Text(s) => s.clone(),
     };
-    let carried = m.credits.clone().unwrap_or(SkinCredits {
+    // The served credits (a URL that is Xfire's is never served or carried).
+    let carried = crate::skin_tree::brand::credits(m.credits.clone()).unwrap_or(SkinCredits {
         authors: Vec::new(),
         contributors: Vec::new(),
         url: None,
