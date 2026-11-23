@@ -82,6 +82,8 @@
 //!                                      Write the Xfire game icons, the game
 //!                                      id mapping and the built-in sound
 //!                                      banks (plan E7.7.3).
+//!     cargo xtask perf                 Run the ignored wall-clock reports in
+//!                                      release, by hand; never in `check`.
 //!     cargo xtask retrofit-allow-reasons
 //!                                      Add `reason = "TODO: justify"`
 //!                                      placeholders to existing allows
@@ -138,6 +140,7 @@ mod no_managed_db;
 mod no_shape_ipc;
 mod overlay_layers;
 mod pair_model;
+mod perf;
 mod platform_floor;
 mod release_build;
 mod role_ids;
@@ -291,6 +294,8 @@ enum Command {
     BaselineDuplication,
     /// Verify every workspace member inherits `[workspace.lints]`.
     CheckWorkspaceLints,
+    /// Run the `#[ignore]`d wall-clock reports in release (by hand; not part of `check`).
+    Perf,
     /// One-shot helper: add `reason = "TODO: justify"` to bare allows.
     RetrofitAllowReasons {
         /// Print what would change without writing files.
@@ -537,6 +542,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
         }
         Command::BaselineDuplication => duplication::write_baseline(&root),
         Command::CheckWorkspaceLints => duplication::check_workspace_lints(&root),
+        Command::Perf => perf::perf(&root),
         Command::RetrofitAllowReasons { dry_run } => {
             allow_reasons::retrofit_allow_reasons(&root, *dry_run)
         }
@@ -563,11 +569,6 @@ fn workspace_root() -> Result<PathBuf> {
 
 /// Walk `dir` for files with any of `exts`, honouring .gitignore and
 /// skipping build/dependency trees.
-///
-/// `check_file_sizes` and `find_bare_allows` each hand-rolled this same
-/// WalkBuilder + is_file + extension filter. (`check_boundaries` is a
-/// flat, non-recursive `read_dir` over `crates/*` — a different shape,
-/// deliberately left alone.)
 pub(crate) fn walk_source_files(dir: &Path, exts: &[&str]) -> Result<Vec<PathBuf>> {
     if !dir.exists() {
         return Ok(Vec::new());

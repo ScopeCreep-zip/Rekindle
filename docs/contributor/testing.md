@@ -100,6 +100,28 @@ proves it). Run them with
 to run the scenarios a later plan step fixes; `RUST_LOG=... -- --nocapture`
 shows the Hosts' logs). One seed gives one trace (`Trace::hash`).
 
+### Wall-clock reports (`cargo xtask perf`)
+
+A time bound fails under machine load, so no gating test measures wall
+time (FLK3): the gate counts operations (e.g.
+`crates/rekindle-skin/src/serve_tests.rs`), and the time bound is an
+`#[ignore]`d test whose reason names `cargo xtask perf` (e.g.
+`crates/rekindle-skin/tests/serve_budget.rs`). Run them by hand on an
+idle machine:
+
+```bash
+cargo xtask perf
+```
+
+It runs each one in release, alone, with
+`cargo test --release -p <crate> --test <target> -- --ignored --nocapture --exact <test>`,
+prints its libtest lines (the result line carries the time; a failed
+bound names what it took) and exits non-zero if any fails. It is not part
+of `cargo xtask check` or CI. A new wall-clock test goes in the table
+`REPORTS` in `xtask/src/perf.rs`; `cargo test -p xtask` fails until the
+table names exactly the ignored tests whose reason mentions
+`cargo xtask perf`.
+
 ### Where to put new tests
 
 | Test target | Location |
