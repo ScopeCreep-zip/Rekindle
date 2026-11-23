@@ -51,7 +51,10 @@ fn pack_of(bytes: &[u8]) -> Pack {
     let mut images = 0;
     let mut pixels = 0;
     for (name, b) in p.files() {
-        if name.ends_with(".png") || name.ends_with(".gif") {
+        let image = std::path::Path::new(name)
+            .extension()
+            .is_some_and(|e| e.eq_ignore_ascii_case("png") || e.eq_ignore_ascii_case("gif"));
+        if image {
             images += 1;
             for f in frames(name, b).expect("frames") {
                 pixels += u64::from(f.width()) * u64::from(f.height());
