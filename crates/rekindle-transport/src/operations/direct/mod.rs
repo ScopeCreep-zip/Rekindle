@@ -132,7 +132,7 @@ fn by_message(host: &dyn FriendHost, dropped: Dropped, digest: &[u8; 32]) {
         Dropped::Rejected { to, frame } => {
             crate::operations::prekeys::send_rejection(host, &to, *frame);
         }
-        Dropped::Duplicate { from } => dm::ack::duplicate(host, &from, digest),
+        Dropped::Duplicate { from, .. } => dm::ack::duplicate(host, &from, digest),
         // A blocked sender is never acked (LV23 review H1/H2); an in-flight
         // copy's first copy settles the receipt.
         Dropped::Blocked
@@ -254,9 +254,13 @@ pub async fn receive_call(host: &dyn FriendHost, datagram: &[u8], route: Option<
             opened
         }
         // The silent receipt: a block is never told (LV23 review H1/H2).
-        Err(Dropped::Duplicate { from }) => {
+        Err(Dropped::Duplicate { from, nonce }) => {
             call_seen(host, bytes, route);
-            re_sent(host, &from, bytes, route).await;
+            let copy = match nonce {
+                Some(nonce) => sealed_copy(&from, &nonce),
+                None => dm::ack::digest(bytes),
+            };
+            re_sent(host, &from, copy, route).await;
             return Called::Answered(Vec::new());
         }
         Err(Dropped::Blocked) => return Called::Answered(Vec::new()),
@@ -349,12 +353,26 @@ fn call_seen(host: &dyn FriendHost, frame: &[u8], route: Option<&str>) {
     }
 }
 
-/// `from` re-sent `frame`, a call we receipted, over our route `route`
-/// (plan RV2): the copy is authenticated (a sealed frame's signature is
-/// verified before the replay store sees it, a ratchet copy needs the
-/// session's AEAD: [`frame::open`]), so it counts against our live General
-/// route when `from` is a friend or a peer with an open handshake.
-async fn re_sent(host: &dyn FriendHost, from: &str, frame: &[u8], route: Option<&str>) {
+/// The identity every copy of `from`'s sealed frame with `nonce` shares
+/// (plan RV2): a sealed row is re-sealed per attempt with a fresh
+/// `sent_at` (`dm::send::Framed::Sealed`), so no two copies share their
+/// bytes, and the replay guard knows them by sender and nonce
+/// ([`replay`]). Domain-separated from [`dm::ack::digest`], the identity of
+/// a byte-exact (ratchet or PreKeyInit) copy.
+fn sealed_copy(from: &str, nonce: &dm::frame::Nonce) -> [u8; 32] {
+    let mut hasher = blake3::Hasher::new_derive_key("rekindle 2026-11-22 sealed frame copy");
+    hasher.update(from.as_bytes());
+    hasher.update(nonce);
+    hasher.finalize().into()
+}
+
+/// `from` re-sent a call we receipted, `copy` its identity across copies,
+/// over our route `route` (plan RV2): the copy is authenticated (a sealed
+/// frame's signature is verified before the replay store sees it, a
+/// ratchet copy needs the session's AEAD: [`frame::open`]), so it counts
+/// against our live General route when `from` is a friend or a peer with
+/// an open handshake.
+async fn re_sent(host: &dyn FriendHost, from: &str, copy: [u8; 32], route: Option<&str>) {
     let Ok(node) = host.node() else {
         return;
     };
@@ -362,7 +380,7 @@ async fn re_sent(host: &dyn FriendHost, from: &str, frame: &[u8], route: Option<
     if !live.over_general(route) || !host.open_handshake_or_friend(from).await {
         return;
     }
-    live.duplicate_call(from, dm::ack::digest(frame), route);
+    live.duplicate_call(from, copy, route);
 }
 
 /// Replay what was decrypted but never applied (a crash between the

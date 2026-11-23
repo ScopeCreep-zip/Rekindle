@@ -76,7 +76,11 @@ pub enum Dropped {
     /// by its header alone): its receipt stands, and an exact copy of an
     /// entry we applied is acknowledged again
     /// ([`crate::operations::dm::ack::duplicate`]; live A/B finding 73).
-    Duplicate { from: String },
+    /// `nonce` is a sealed frame's: its sender re-seals each attempt with a
+    /// fresh `sent_at` (`dm::send::Framed::Sealed`), so its copies match by
+    /// the nonce the replay guard knew it by, never by their bytes; a
+    /// ratchet or PreKeyInit copy is byte-exact (`None`).
+    Duplicate { from: String, nonce: Option<Nonce> },
     /// A copy of a sealed frame whose first copy is still being applied
     /// (its nonce tentative, review RV5 H1): nothing is stored yet, so no
     /// receipt; a call is answered [`super::RETRY_LATER`].
@@ -235,6 +239,7 @@ fn open_sealed(
             tracing::debug!(from = %sender_hex, ?type_id, "dropping duplicate sealed frame");
             return Err(Dropped::Duplicate {
                 from: sender_hex.clone(),
+                nonce: Some(content.nonce),
             });
         }
         Sighting::InFlight => {
@@ -346,6 +351,7 @@ async fn open_ephemeral(
             tracing::debug!(from = %sender_hex, ?type_id, "dropping duplicate 1:1 message");
             return Err(Dropped::Duplicate {
                 from: sender_hex.clone(),
+                nonce: None,
             });
         }
         Err(e) => {
@@ -477,6 +483,7 @@ fn recorded(
             tracing::debug!(from = %sender_hex, ?type_id, "dropping duplicate 1:1 message");
             return Err(Dropped::Duplicate {
                 from: sender_hex.clone(),
+                nonce: None,
             });
         }
         Err(e) => {
