@@ -398,6 +398,87 @@
   "infoview.subject.selection": {
     "type": "selection"
   },
+  "localSearch.hit.file": {
+    "arg": {
+      "attachmentId": "att-1",
+      "name": "map.zip",
+      "target": {
+        "channelId": "ch",
+        "community": "VLD0:community",
+        "kind": "channel"
+      }
+    },
+    "kind": "file"
+  },
+  "localSearch.hit.friend": {
+    "arg": {
+      "name": "Alice",
+      "publicKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "kind": "friend"
+  },
+  "localSearch.hit.groupDm": {
+    "arg": {
+      "groupId": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+      "name": "Raid night"
+    },
+    "kind": "groupDm"
+  },
+  "localSearch.hit.member": {
+    "arg": {
+      "community": "VLD0:community",
+      "name": "Bob",
+      "pseudonym": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "kind": "member"
+  },
+  "localSearch.hit.message": {
+    "arg": {
+      "afterBody": "ok",
+      "body": "see you at nine",
+      "conversationId": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "messageId": "m1",
+      "rank": 1.5,
+      "scope": "dm",
+      "senderKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "timestamp": 1700000000000
+    },
+    "kind": "message"
+  },
+  "localSearch.hit.server": {
+    "arg": {
+      "address": "203.0.113.7:27015",
+      "gameId": 4100,
+      "label": "Clan server"
+    },
+    "kind": "server"
+  },
+  "localSearch.result": {
+    "hits": [
+      {
+        "arg": {
+          "name": "Alice",
+          "publicKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "kind": "friend"
+      }
+    ]
+  },
+  "localSearch.scope.conversation": {
+    "arg": {
+      "conversationId": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "kind": "conversation"
+  },
+  "localSearch.scope.files": {
+    "kind": "files"
+  },
+  "localSearch.scope.friends": {
+    "kind": "friends"
+  },
+  "localSearch.scope.servers": {
+    "kind": "servers"
+  },
   "onboarding.config.default": {
     "defaultChannels": [],
     "enabled": false,
@@ -1593,6 +1674,14 @@
       }
     ],
     "window": "main"
+  },
+  "skin.shell.openSearch": {
+    "arg": {
+      "scope": {
+        "kind": "files"
+      }
+    },
+    "kind": "openSearch"
   },
   "skin.trigger": {
     "on": {
