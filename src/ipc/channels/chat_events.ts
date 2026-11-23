@@ -114,7 +114,8 @@ export type GroupDmEvent =
   | { left: { groupId: string; member: GroupDmMember } }
   | { keyRotated: { groupId: string; member: GroupDmMember; epoch: number } }
   | { renamed: { groupId: string; name: string } }
-  | { sendStatus: { groupId: string; clientId: string; state: SendState } }
+  /** A group send's state; `retry` while unanswered attempts are retried (plan SR2b). */
+  | { sendStatus: { groupId: string; clientId: string; state: SendState; retry: DeliveryRetry | null } }
   | {
       message: {
         groupId: string;

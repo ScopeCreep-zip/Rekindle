@@ -8,6 +8,7 @@ import {
 } from "../ipc/channels/chat_events";
 import { applyTimerChanged, withoutExpired } from "../actions/disappearing.actions";
 import type { GroupDmMemberView, SendState } from "../ipc/commands";
+import type { DeliveryRetry } from "../ipc/channels/chat_events";
 import { groupDmState, setGroupDmState } from "../stores/group-dm.store";
 import { handleLoadGroupDms } from "../actions/group-dm.actions";
 import { transformDmMessage, transformHistoryGap } from "../utils/transformers";
@@ -51,12 +52,13 @@ export function subscribeBuddyListGroupDmEvents(): Promise<UnlistenFn> {
   return subscribeGroupDmEvents(applyListEvent);
 }
 
-function applySendStatus(groupId: string, clientId: string, state: SendState): void {
+function applySendStatus(groupId: string, clientId: string, state: SendState, retry: DeliveryRetry | null): void {
   const convo = groupDmState.conversations[groupId];
   if (!convo) return;
   const idx = convo.messages.findIndex((m) => m.serverMessageId === clientId);
   if (idx < 0) return;
   setGroupDmState("conversations", groupId, "messages", idx, "status", state);
+  setGroupDmState("conversations", groupId, "messages", idx, "retry", retry);
 }
 
 // A live member message carries no row id: it takes a local negative one
@@ -145,7 +147,7 @@ export function subscribeGroupChatEvents(
   const lifecycle = subscribeGroupDmEvents((event) => {
     applyListEvent(event);
     if ("sendStatus" in event && event.sendStatus.groupId === groupId) {
-      applySendStatus(groupId, event.sendStatus.clientId, event.sendStatus.state);
+      applySendStatus(groupId, event.sendStatus.clientId, event.sendStatus.state, event.sendStatus.retry);
     }
     if ("message" in event && event.message.groupId === groupId) {
       appendMessage(groupId, event.message);

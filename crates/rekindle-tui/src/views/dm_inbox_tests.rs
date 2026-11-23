@@ -3,7 +3,7 @@
 
 use super::*;
 
-const PEER: &str = "peer";
+const THREAD_PEER: &str = "peer";
 
 fn own(id: &str, body: &str, state: SendState) -> DmMessage {
     DmMessage {
@@ -25,7 +25,7 @@ fn view_with_thread() -> DmInboxView {
     let mut view = DmInboxView::new(true);
     view.on_command_result(CommandResult::DmInboxLoaded {
         threads: vec![DmThreadDisplay {
-            peer_key: PEER.into(),
+            peer_key: THREAD_PEER.into(),
             peer_name: "bob".into(),
             last_message_at: 0,
             unread_count: 0,
@@ -45,7 +45,7 @@ fn lines(view: &DmInboxView) -> Vec<String> {
 
 fn status(state: SendState, retry: Option<DeliveryRetry>) -> SubscriptionEvent {
     SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DmSendStatus {
-        conversation_id: PEER.into(),
+        conversation_id: THREAD_PEER.into(),
         client_id: "c1".into(),
         state,
         retry,
@@ -56,7 +56,7 @@ fn status(state: SendState, retry: Option<DeliveryRetry>) -> SubscriptionEvent {
 fn a_loaded_message_shows_its_stored_state() {
     let mut view = view_with_thread();
     view.on_command_result(CommandResult::DmHistoryLoaded {
-        peer_key: PEER.into(),
+        peer_key: THREAD_PEER.into(),
         messages: vec![own("c1", "hi", SendState::Sent)],
     })
     .unwrap();
@@ -71,7 +71,7 @@ fn a_loaded_message_shows_its_stored_state() {
 fn an_unanswered_send_says_still_trying_until_it_is_delivered() {
     let mut view = view_with_thread();
     view.on_command_result(CommandResult::DmHistoryLoaded {
-        peer_key: PEER.into(),
+        peer_key: THREAD_PEER.into(),
         messages: vec![own("c1", "hi", SendState::Queued)],
     })
     .unwrap();
