@@ -52,7 +52,12 @@ impl HostGovernance {
             next,
             me,
             |p| communities.member_card_name(community_id, p),
-            |p| communities.removal_name_of(community_id, p),
+            |p| {
+                Some(super::community_profile::shown_name(
+                    communities.removal_name_of(community_id, p),
+                    p,
+                ))
+            },
         )
     }
 

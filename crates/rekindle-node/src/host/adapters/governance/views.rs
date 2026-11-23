@@ -163,7 +163,9 @@ pub(crate) fn removal_display(
 ) -> Option<rekindle_types::display::CommunityRemovalDisplay> {
     let removal = communities.own_removal(community)?;
     let by_name = removal.by_name.clone().or_else(|| {
-        (removal.by.as_ref()).and_then(|by| communities.removal_name_of(community, by))
+        (removal.by.as_ref()).map(|by| {
+            super::community_profile::shown_name(communities.removal_name_of(community, by), by)
+        })
     });
     Some(rekindle_types::display::CommunityRemovalDisplay {
         banned: removal.banned,

@@ -25,18 +25,14 @@ impl CommunityStore {
         })
     }
 
-    /// The display name `by` goes by in the community as we know it now:
-    /// its verified card, else its profile (A/B R5-2: the remover is not
-    /// always a member whose card the admission queue read).
+    /// The verified card name `by` goes by in the community as we know it
+    /// now (plan E3.4 S6: names come only from verified cards, never a
+    /// peer-supplied profile name). `None` without a card; the removal path
+    /// then tries the roster name the member knew, and the display falls back
+    /// to the short fingerprint (`community_profile::shown_name`).
     #[must_use]
     pub fn removal_name_of(&self, community_id: &str, by: &PseudonymKey) -> Option<String> {
-        self.member_card_name(community_id, by).or_else(|| {
-            self.read(community_id, |c| {
-                (c.member_profiles.get(&by.to_hex())).and_then(|p| p.display_name.clone())
-            })
-            .flatten()
-            .filter(|name| !name.is_empty())
-        })
+        self.member_card_name(community_id, by)
     }
 
     /// Clear our removal mark: the merged state no longer removes us (the
