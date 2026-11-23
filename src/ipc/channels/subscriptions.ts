@@ -497,6 +497,12 @@ export function subscribePairingLinkRefused(onRefused: () => void): Promise<Unli
   });
 }
 
+/// The open community window was asked to show a channel (plan E7.2 A: the
+/// skin's Show Voice on a community voice session), as settings switches tab.
+export function subscribeCommunityFocusChannel(onChannel: (channel: string) => void): Promise<UnlistenFn> {
+  return on<string>("community-focus-channel", onChannel);
+}
+
 /// The open settings window was asked to show a tab.
 export function subscribeSettingsTab(onTab: (tab: SettingsTab) => void): Promise<UnlistenFn> {
   return on<SettingsTab>("settings-switch-tab", onTab);

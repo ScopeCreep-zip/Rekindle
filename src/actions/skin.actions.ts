@@ -8,7 +8,8 @@
 // which must start inside the pointer event that began them.
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { commands } from "../ipc/commands";
-import { transferCommands } from "../ipc/commands/dto_transfer";
+import { type TransferRow, transferCommands } from "../ipc/commands/dto_transfer";
+import { actionLabel } from "../utils/skin_action_words";
 import type { Edge, SkinAction } from "../ipc/commands/dto_skin_tree";
 import type { ShellOp, SkinRun, SkinSelection } from "../ipc/commands/dto_skin_run";
 import { addToast } from "../stores/toast.store";
@@ -87,6 +88,16 @@ const common: ShellRunner = (op) => {
     case "call":
       runCall(op.arg);
       return true;
+    case "showCall":
+      // The skin's Show Voice (plan E7.2 A): the call window forward, or the
+      // community window on the voice channel the user is in.
+      if (op.arg.target.kind === "call") {
+        commands.openCallWindow(op.arg.target.arg.callId).catch((e) => addToast(String(e), "error"));
+      } else {
+        const { community, channel } = op.arg.target.arg;
+        commands.openCommunityWindow(community, channel).catch((e) => addToast(String(e), "error"));
+      }
+      return true;
     case "showSettings":
       openSettingsTab(op.arg);
       return true;
@@ -138,6 +149,13 @@ export function runAddressedShellOp(op: ShellOp): void {
   runShellOp(op, "");
 }
 
+/** The transfer list in one line: how many, and each one's name and state. */
+function transferSummary(rows: TransferRow[]): string {
+  if (rows.length === 0) return "No transfers";
+  const each = rows.slice(0, 5).map((r) => `${r.destName} (${r.state})`).join(", ");
+  return `${rows.length} transfer${rows.length === 1 ? "" : "s"}: ${each}${rows.length > 5 ? ", …" : ""}`;
+}
+
 function isSkinRun(value: unknown): value is SkinRun {
   if (typeof value !== "object" || value === null || !("kind" in value)) return false;
   const kind = (value as { kind: unknown }).kind;
@@ -160,10 +178,16 @@ export async function dispatchSkinAction(node: string, action: SkinAction): Prom
     addToast(String(e), "error");
     return;
   }
-  // A feature action answered with its request's value; a feature with
-  // no Rekindle operation yet (its plan G row) runs nothing.
-  if (!isSkinRun(answer) || answer.kind !== "shell") return;
-  runShellOp(answer.arg, node);
+  if (isSkinRun(answer)) {
+    if (answer.kind === "shell") runShellOp(answer.arg, node);
+    // A feature with no Rekindle operation yet (lead decision 49): the
+    // button stays, and the window says so.
+    else if (answer.kind === "notBuiltYet") addToast(`${actionLabel(answer.arg.action)} isn't built yet`, "info");
+    return;
+  }
+  // A feature action answered with its request's value. Downloads' info
+  // (the transfer list) is shown until its search view (plan G11) takes it.
+  if (action.kind === "downloadInfo" && Array.isArray(answer)) addToast(transferSummary(answer as TransferRow[]), "info");
 }
 
 /** This window's selection for its skin's selection-dependent actions and

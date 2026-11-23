@@ -47,6 +47,13 @@ export type CallOp =
   | { kind: "mute" }
   | { kind: "unmute" };
 
+/** What the skin's Show Voice brings forward (plan E7.2 A, `CallTarget`):
+ *  the active call's window, or the community window on the voice channel
+ *  the user is in. */
+export type CallTarget =
+  | { kind: "call"; arg: { callId: string } }
+  | { kind: "voice"; arg: { community: string; channel: string } };
+
 export type ShellOp =
   | { kind: "dragWindow" }
   | { kind: "minimize" }
@@ -74,6 +81,7 @@ export type ShellOp =
   | { kind: "openGroupChat"; arg: { groupId: string } }
   | { kind: "inviteToRoom"; arg: { groupId: string } }
   | { kind: "call"; arg: CallOp }
+  | { kind: "showCall"; arg: { target: CallTarget } }
   | { kind: "showSettings"; arg: ArgOf<"showSettings"> }
   /** A never-fetched attachment: run `transfer_start` for it, which asks
    *  where to save in Rust (plan E7.2 G12); no path reaches the webview. */
