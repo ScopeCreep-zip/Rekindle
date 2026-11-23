@@ -47,6 +47,10 @@ fn request(action: &A) -> IpcRequest {
 fn feature_actions_yield_the_handlers_requests() {
     assert!(matches!(request(&A::LogOff), IpcRequest::Logout));
     assert!(matches!(
+        request(&A::RefreshServer),
+        IpcRequest::Servers(ServersRequest::Refresh)
+    ));
+    assert!(matches!(
         request(&A::SetStatus(SessionStatus::Away)),
         IpcRequest::PresenceSet {
             status: SessionStatus::Away
@@ -131,7 +135,7 @@ fn a_selection_action_is_refused_while_nothing_is_selected() {
 
 #[test]
 fn unbuilt_actions_yield_not_built_yet() {
-    for action in [A::SearchFor, A::RefreshServer, A::DeleteSelected] {
+    for action in [A::SearchFor, A::DeleteSelected] {
         assert_eq!(
             run(&action),
             SkinRun::NotBuiltYet {

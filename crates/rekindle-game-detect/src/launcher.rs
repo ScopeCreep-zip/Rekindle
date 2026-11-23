@@ -1,17 +1,21 @@
 //! Game launch support via URI schemes, the one launch path (lead decision
 //! (50)): the Host's `GameLaunch` calls [`launch`] for every frontend.
 //!
-//! Uses `steam://connect/{addr}` for Steam games and custom `connect_template`
-//! URIs from the game database for non-Steam games, and
-//! `steam://rungameid/{appid}` to start a game without a server. The `open`
-//! crate invokes the OS default handler, so Steam handles `steam://` URIs
-//! cross-platform.
+//! To a server: the game's own `connect_template` URI from the database
+//! (Counter-Strike's `steam://connect/{addr}`: `steam://connect` reaches
+//! only Source and GoldSrc games), else, for a Steam game with Xfire's
+//! `LauncherNetworkArgs` ([`GameEntry::network_args`]), `steam://run` with
+//! those arguments; any other game cannot be launched to a server (plan
+//! E7.2 G2). Without a server: `steam://rungameid/{appid}`, else the OS's
+//! native copy. The `open` crate invokes the OS default handler, so Steam
+//! handles `steam://` URIs cross-platform.
 //!
 //! The address comes from a peer (presence, a community's server list), so
 //! only a parsed [`ServerAddress`] is ever substituted into the URI (plan
 //! E1.1): a raw string could carry a path, a query or a `+exec` argument
 //! into what the OS opens.
 
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use rekindle_utils::paths::AppRoots;
@@ -36,11 +40,50 @@ pub enum LaunchTarget {
     Exec(PathBuf),
 }
 
+/// `args` percent-encoded for a `steam://run` path segment: every byte
+/// but ASCII letters, digits and `-._~+:` (a space becomes `%20`).
+fn steam_args(args: &str) -> String {
+    let mut out = String::with_capacity(args.len());
+    for b in args.bytes() {
+        if b.is_ascii_alphanumeric() || b"-._~+:".contains(&b) {
+            out.push(char::from(b));
+        } else {
+            let _ = write!(out, "%{b:02X}");
+        }
+    }
+    out
+}
+
+/// The URI that puts `entry` on `server`, `None` when it has no way.
+///
+/// `steam://run/<id>//<args>/` is the Steam browser protocol's "run with
+/// arguments" form (Valve Developer Community, "Steam browser protocol",
+/// <https://developer.valvesoftware.com/wiki/Steam_browser_protocol>): the
+/// empty segment between the two slashes is the language, the next the
+/// URL-encoded command line. The form is corroborated by community reports,
+/// pending verification on a Steam install (owner, 2026-11-23).
+fn server_uri(entry: &GameEntry, server: &ServerAddress) -> Option<String> {
+    if let Some(template) = &entry.connect_template {
+        return Some(template.replace("{addr}", server.as_str()));
+    }
+    let (app_id, args) = (entry.steam_app_id?, entry.network_args.as_ref()?);
+    let args = steam_args(&args.replace("{addr}", server.as_str()));
+    Some(format!("steam://run/{app_id}//{args}/"))
+}
+
+/// Whether `entry` can be launched to a server: a connect template, or a
+/// Steam id with Xfire's network arguments ([`launch_target`]'s condition).
+#[must_use]
+pub fn joins_servers(entry: &GameEntry) -> bool {
+    entry.connect_template.is_some()
+        || (entry.steam_app_id.is_some() && entry.network_args.is_some())
+}
+
 /// What launches `game_id` on `layout`'s OS, connected to `server` when
 /// given.
 ///
-/// With a server: the entry's `connect_template`, else
-/// `steam://connect/{addr}` when it has a Steam id. Without one:
+/// With a server: the entry's `connect_template`, else `steam://run` with
+/// its network arguments ([`server_uri`]). Without one:
 /// `steam://rungameid/{appid}`, else the OS's native copy from the
 /// database ([`GameEntry::native`]).
 ///
@@ -55,16 +98,10 @@ pub fn launch_target(
     let entry = db
         .lookup_by_id(game_id)
         .ok_or_else(|| GameDetectError::DatabaseError(format!("unknown game_id {game_id}")))?;
-    let target = match (server, &entry.connect_template, entry.steam_app_id) {
-        (Some(server), Some(template), _) => Some(LaunchTarget::Uri(
-            template.replace("{addr}", server.as_str()),
-        )),
-        (Some(server), None, Some(_)) => {
-            Some(LaunchTarget::Uri(format!("steam://connect/{server}")))
-        }
-        (None, _, Some(app_id)) => Some(LaunchTarget::Uri(format!("steam://rungameid/{app_id}"))),
-        (None, _, None) => native_target(entry, layout),
-        (Some(_), None, None) => None,
+    let target = match (server, entry.steam_app_id) {
+        (Some(server), _) => server_uri(entry, server).map(LaunchTarget::Uri),
+        (None, Some(app_id)) => Some(LaunchTarget::Uri(format!("steam://rungameid/{app_id}"))),
+        (None, None) => native_target(entry, layout),
     };
     target.ok_or_else(|| GameDetectError::DatabaseError("no launch method for this game".into()))
 }
@@ -181,6 +218,9 @@ mod tests {
     /// The Chess entry's id: the database's free range (Xfire's own list
     /// has no native Chess; its 5034 is Windows' Chess Titans).
     const CHESS: u32 = 6200;
+    const CS2: u32 = 4181;
+    const DOTA2: u32 = 4102;
+    const TERRARIA: u32 = 5002;
 
     fn db() -> GameDatabase {
         GameDatabase::from_json(
@@ -223,13 +263,36 @@ mod tests {
         assert!(uri(&GameDatabase::empty(), 9999, Some(&server())).is_err());
     }
 
+    /// A Steam id alone starts the game, never joins a server:
+    /// `steam://connect` reaches only Source and GoldSrc games (plan E7.2
+    /// G2), so no blanket connect URI is made up.
     #[test]
-    fn a_steam_game_connects_or_runs_by_app_id() {
+    fn a_steam_id_alone_runs_but_joins_no_server() {
+        assert!(uri(&db(), 1, Some(&server())).is_err());
+        assert_eq!(uri(&db(), 1, None).unwrap(), "steam://rungameid/730");
+    }
+
+    /// Dota 2 joins with Xfire's `+connect {addr}` over `steam://run`;
+    /// Terraria (a Steam id, no network arguments) cannot; Counter-Strike 2
+    /// keeps its own connect template.
+    #[test]
+    fn a_server_launch_uses_the_template_or_xfire_network_args() {
+        let db = GameDatabase::bundled();
         assert_eq!(
-            uri(&db(), 1, Some(&server())).unwrap(),
+            uri(&db, DOTA2, Some(&server())).unwrap(),
+            "steam://run/570//+connect%201.2.3.4:27015/"
+        );
+        assert!(uri(&db, TERRARIA, Some(&server())).is_err());
+        assert_eq!(
+            not_joinable(&db, TERRARIA, Some("1.2.3.4:7777")),
+            Some(NotJoinableReason::CannotLaunch)
+        );
+        assert_eq!(
+            uri(&db, CS2, Some(&server())).unwrap(),
             "steam://connect/1.2.3.4:27015"
         );
-        assert_eq!(uri(&db(), 1, None).unwrap(), "steam://rungameid/730");
+        assert!(joins_servers(db.lookup_by_id(DOTA2).unwrap()));
+        assert!(!joins_servers(db.lookup_by_id(TERRARIA).unwrap()));
     }
 
     #[test]

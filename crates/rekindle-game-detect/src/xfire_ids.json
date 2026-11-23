@@ -2,6 +2,7 @@
   "games": [
     {
       "id": 4102,
+      "network_args": "+connect {addr}",
       "xfire_id": 6957
     },
     {
@@ -14,6 +15,7 @@
     },
     {
       "id": 4300,
+      "network_args": "{addr}",
       "xfire_id": 6216
     },
     {

@@ -228,6 +228,9 @@ pub(crate) fn map(
         }),
         A::DownloadInfo => transfer_request(TransferRequest::List),
         A::LogOff => Ok(Request(Box::new(IpcRequest::Logout))),
+        A::RefreshServer => Ok(Request(Box::new(IpcRequest::Servers(
+            ServersRequest::Refresh,
+        )))),
         A::SetStatus(status) => Ok(Request(Box::new(IpcRequest::PresenceSet {
             status: *status,
         }))),
@@ -327,7 +330,6 @@ pub(crate) fn map(
         | A::JoinGameLobby
         | A::LeaveGameLobby
         | A::LaunchGameLobby
-        | A::RefreshServer
         | A::OpenSelected
         | A::UploadSelected
         | A::SearchFor

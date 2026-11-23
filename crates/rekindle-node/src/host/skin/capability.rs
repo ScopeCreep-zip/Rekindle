@@ -107,12 +107,13 @@ pub(crate) struct SkinWorld {
     pub records_held: bool,
 }
 
-/// The game has a launch method (`launcher::launch_to_server`'s own
-/// condition): a connect template or a Steam app id.
+/// The game can be launched to a server (`launcher::joins_servers`, the
+/// launcher's own condition): a connect template, or a Steam app id with
+/// Xfire's network arguments (plan E7.2 G2).
 pub(crate) fn launchable(game_id: u32) -> bool {
     GameDatabase::shared()
         .lookup_by_id(game_id)
-        .is_some_and(|g| g.connect_template.is_some() || g.steam_app_id.is_some())
+        .is_some_and(rekindle_game_detect::launcher::joins_servers)
 }
 
 fn media_exists(selected: Selected<'_>) -> bool {
