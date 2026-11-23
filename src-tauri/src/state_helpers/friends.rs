@@ -25,17 +25,3 @@ pub fn is_friend(state: &Arc<AppState>, public_key: &str) -> bool {
 pub fn friend_display_name(state: &Arc<AppState>, key: &str) -> Option<String> {
     friend_field(state, key, |f| Some(f.display_name.clone()))
 }
-
-/// A watched record changed: when it is a friend's profile, the Host's
-/// friend presence applies it (plan E2.1).
-pub fn friend_presence_change(state: &AppState, record_key: &str, subkeys: &[u32], value: &[u8]) {
-    let Some(host) = state.host.current() else {
-        return;
-    };
-    rekindle_presence::handle_value_change(
-        host.friend_presence().as_ref(),
-        record_key,
-        subkeys,
-        value,
-    );
-}
