@@ -27,11 +27,11 @@ TabbedControl Views
     DownloadView.BvBk Part
   TabbedControl.Communities View(Communities)
 TabHeader TabStrip
-  TabNormalText Tab(Friends)
+  TabNormalText Tab(Friends) label "Friends"
     TabNormalButton Part
-  TabServerText Tab(Servers)
+  TabServerText Tab(Servers) label "Servers"
     TabServerButton Part
-  TabDownloadText Tab(Files)
+  TabDownloadText Tab(Files) label "Downloads"
     TabDownloadButton Part
   TabDownloadText.Communities Tab(Communities) label "Communities" cover [6, 3, 48, 9]
     TabDownloadButton.Communities Part

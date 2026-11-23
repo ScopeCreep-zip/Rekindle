@@ -47,11 +47,11 @@ InnerBevel Decor
     AdView Part
   Divider Decor
   TabHeader TabStrip
-    TabNormalText Tab(Friends)
+    TabNormalText Tab(Friends) label "Friends"
       TabNormalButton Part
-    TabServerText Tab(Servers)
+    TabServerText Tab(Servers) label "Servers"
       TabServerButton Part
-    TabDownloadText Tab(Files)
+    TabDownloadText Tab(Files) label "Downloads"
       TabDownloadButton Part
     TabDownloadText.Communities Tab(Communities) label "Communities"
       TabDownloadButton.Communities Part

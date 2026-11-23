@@ -35,7 +35,7 @@ use rekindle_types::dto::skin_tree::{
 use rekindle_types::dto::skin_tree_role::ViewKey;
 
 const C: ViewKey = ViewKey::Communities;
-const WORDS: &str = "Communities";
+const WORDS: &str = C.title();
 
 fn find_mut<'a>(
     nodes: &'a mut [SkinNode],

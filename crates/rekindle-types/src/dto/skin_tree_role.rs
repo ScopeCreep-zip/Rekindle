@@ -24,6 +24,28 @@ pub enum ViewKey {
     Communities,
 }
 
+impl ViewKey {
+    /// The Host's name for the view (plan SK6), the words the shell draws on
+    /// a tab whose pack draws its word as text (Classic's `TabNormalText`,
+    /// `Class="Text"`, whose `FriendsTitle` string is a resource of the Xfire
+    /// binary, `strings.xml:21`): the app's own tab bar's labels
+    /// (`src/components/buddy-list/TabBar.tsx:6-11`), which keep Xfire's
+    /// "Downloads" for the files view.
+    #[must_use]
+    pub const fn title(self) -> &'static str {
+        match self {
+            Self::Friends => "Friends",
+            Self::Servers => "Servers",
+            Self::Files => "Downloads",
+            Self::ChatRooms => "Chat Rooms",
+            Self::Pictures => "Pictures",
+            Self::Videos => "Videos",
+            Self::Notifications => "Notifications",
+            Self::Communities => "Communities",
+        }
+    }
+}
+
 /// A resize edge or corner (Xfire's `Resize*` strips and `Gripper*` art).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
