@@ -125,7 +125,11 @@ pub(crate) async fn reply_slot(
     };
     let writer = match host.reply_inbox_owner(&key) {
         Ok(Some(writer)) => writer,
-        Ok(None) => return Some(Attempt::Wedged("the reply inbox's owner is gone".to_owned())),
+        Ok(None) => {
+            return Some(Attempt::Wedged(
+                "the reply inbox's owner is gone".to_owned(),
+            ))
+        }
         Err(e) => return Some(deferred(&e)),
     };
     let pool = match records(host) {
@@ -134,7 +138,12 @@ pub(crate) async fn reply_slot(
     };
     let subkey = request_inbox::OWNER_SUBKEY;
     match pool
-        .write_once(&key, subkey, request_inbox::OPENED.to_vec(), Some(writer.as_str()))
+        .write_once(
+            &key,
+            subkey,
+            request_inbox::OPENED.to_vec(),
+            Some(writer.as_str()),
+        )
         .await
     {
         Ok(SetOutcome::Landed | SetOutcome::Unchanged) => None,
@@ -142,7 +151,10 @@ pub(crate) async fn reply_slot(
             "the reply inbox holds another owner's value".to_owned(),
         )),
         Ok(outcome @ SetOutcome::Offline) => {
-            tracing::debug!(?outcome, "reply inbox not on the network yet — request deferred");
+            tracing::debug!(
+                ?outcome,
+                "reply inbox not on the network yet — request deferred"
+            );
             Some(Attempt::Deferred)
         }
         Err(e) if dm::handshake::refuses(&e) => {

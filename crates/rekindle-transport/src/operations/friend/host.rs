@@ -304,7 +304,8 @@ pub trait FriendHost: Send + Sync {
     ///
     /// # Errors
     /// The vault is locked or could not be read.
-    fn reply_inbox_owner(&self, record_key: &str) -> Result<Option<Zeroizing<String>>, FriendError>;
+    fn reply_inbox_owner(&self, record_key: &str)
+        -> Result<Option<Zeroizing<String>>, FriendError>;
     /// Move our profile to a new record under a fresh owner key (block),
     /// as the Host's own-records stage writes one; the new record's key.
     ///

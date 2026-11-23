@@ -117,11 +117,7 @@ async fn both_paths_up_the_call_settles_first_and_nothing_rotates() {
         "the call copy came over General: no evidence"
     );
     talk(&sim, &nodes[0], &nodes[1], "after the accept").await;
-    assert_eq!(
-        events.count(&ann, accepted),
-        1,
-        "one acceptance"
-    );
+    assert_eq!(events.count(&ann, accepted), 1, "one acceptance");
 }
 
 /// How long Ann's call to Rae is stuck before it is sent: long enough for

@@ -27,9 +27,7 @@ pub use participant::{
 };
 pub use presence::{clear_presence_key, presence_keys, set_presence_key};
 pub use records::{active_records, record, record_by_profile_key, records};
-pub use reply::{
-    reply_inbox_of, reply_inboxes, set_peer_reply, set_reply_inbox, take_peer_reply,
-};
+pub use reply::{reply_inbox_of, reply_inboxes, set_peer_reply, set_reply_inbox, take_peer_reply};
 
 /// A friend as the buddy list loads it, with its group's name.
 #[derive(Debug, Clone, PartialEq, Eq)]
