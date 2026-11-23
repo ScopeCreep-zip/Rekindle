@@ -303,7 +303,9 @@ describe("every built-in skin keeps the app accessible and laid out", function (
    * (plan SK7 `NodeTarget.rule`): `short` nodes by their skin node id, the
    * rest by id or, outside the tree, their selector. A tree control axe
    * flags whose press box (plan SK12: a cut area takes its press on a
-   * `::before`, its art box none) meets WCAG 2.5.8 (`met`) is no finding.
+   * `::before`, its art box none) meets WCAG 2.5.8 (`met`) is no finding,
+   * a short one too: short says why it is under 24 px, and 2.5.8's spacing
+   * exception may still hold for it.
    */
   async function targetNodes(selectors: string[], met: string[]): Promise<{ short: string[]; other: string[] }> {
     return (await browser.execute(async (sels: string[], met: string[]) => {
@@ -319,8 +321,10 @@ describe("every built-in skin keeps the app accessible and laid out", function (
       const other: string[] = [];
       for (const sel of sels) {
         const id = document.querySelector(sel)?.closest<HTMLElement>("[data-skin-node]")?.dataset.skinNode;
+        // A control meeting 2.5.8 at its press box is no finding, served short or not.
+        if (met.includes(sel)) continue;
         if (id && rules.get(id) === "short") short.push(id);
-        else if (!met.includes(sel)) other.push(id ?? sel);
+        else other.push(id ?? sel);
       }
       return { short: short.sort(), other: other.sort() };
     }, selectors, met)) as { short: string[]; other: string[] };
