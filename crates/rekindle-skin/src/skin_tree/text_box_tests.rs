@@ -94,11 +94,13 @@ fn word_width(word: &str) -> i32 {
 
 /// Finding 1: Combat's name field `Title` (x at 55, size 0) and Onyx's
 /// `MainTitleBar/Title` (x at 20, size 0) are served a positive width
-/// that ends at their parent's end (no interactive sibling meets their
-/// line past the anchor), so a long name ellipsizes inside it.
+/// that ends at the first press area or text box on their line (plan SK12:
+/// Combat's at x 269, the `DownArrow` button's target, as the real app
+/// lays it; Onyx's at its parent's end), so a long name ellipsizes inside
+/// it and runs under no button.
 #[test]
 fn zero_width_title_anchors_get_their_usable_width() {
-    for (pack, start, end) in [("combat", 55, 340), ("onyx", 25, 185)] {
+    for (pack, start, end) in [("combat", 55, 269), ("onyx", 25, 185)] {
         let t = node(pack, "Title");
         assert_eq!(t.b[0], start, "{pack}: the anchor stays");
         assert!(t.b[2] > 0, "{pack}: Title {:?} cannot ellipsize", t.b);
@@ -113,13 +115,13 @@ fn zero_width_title_anchors_get_their_usable_width() {
 }
 
 /// Finding 2: Onyx's menu titles (4 px boxes) grow to the next title's
-/// button art, the room there is (Rekindle's `FileMenu` part ends at x 22,
-/// `ToolsMenu` starts at x 24): 10 px each.
+/// button's press area (plan SK12: `ToolsMenu`'s 12 px art at x 24 serves
+/// a target from x 23, `HelpMenu`'s from x 37): 9 px for the first two.
 #[test]
 fn onyxs_menu_titles_take_the_room_up_to_the_next_title() {
     for (title, end) in [
-        ("XfireMenuText", 24),
-        ("ToolsMenuText", 38),
+        ("XfireMenuText", 23),
+        ("ToolsMenuText", 37),
         ("HelpMenuText", 52),
     ] {
         let t = node("onyx", title);
@@ -136,16 +138,18 @@ fn labels_hold_their_words_where_room_exists() {
     let no_room: &[(&str, &str, i32)] = &[
         ("combat", "FileMenuText", 26),
         ("combat", "ToolsMenuText", 26),
-        ("onyx", "XfireMenuText", 10),
-        ("onyx", "ToolsMenuText", 10),
+        // Plan SK12: each stops at the next title's target, not its art.
+        ("onyx", "XfireMenuText", 9),
+        ("onyx", "ToolsMenuText", 9),
         ("onyx", "HelpMenuText", 10),
         ("onyx", "TabNormalText", 26),
         ("onyx", "TabServerText", 26),
         ("onyx", "TabDownloadText", 24),
         ("simple-x", "TabDownloadText.Communities", 60),
         ("spacecowboy", "TabDownloadText.Communities", 62),
-        ("spacecowboy", "XfireMenuText", 15),
-        ("spacecowboy", "ToolsMenuText", 15),
+        // Plan SK12: each stops at the next title's target (x 38, x 56).
+        ("spacecowboy", "XfireMenuText", 9),
+        ("spacecowboy", "ToolsMenuText", 9),
         ("xfire-classic", "TabDownloadText", 51),
     ];
     let mut short = Vec::new();

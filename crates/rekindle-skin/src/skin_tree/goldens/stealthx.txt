@@ -27,19 +27,19 @@ popup MainMenuPopup
   MainMenuBackground Decor target [0, 0, 114, 360] art [0, 0, 114, 360] Frame
     MenuBar MenuBar
       XfireMenuText MenuTitle label "Rekindle"
-        FileMenu Part
+        FileMenu Part target [0, 0, 110, 21] art [0, 0, 110, 25] Short
       ToolsMenuText MenuTitle label "Tools"
-        ToolsMenu Part
+        ToolsMenu Part target [0, 0, 110, 21] art [0, 0, 110, 25] Short
       HelpMenuText MenuTitle label "Help"
         HelpMenu Part
     TabHeader TabStrip
       TabNormalText Tab(Friends) label "Friends"
-        TabNormalButton Part
+        TabNormalButton Part target [0, 0, 110, 21] art [0, 0, 110, 25] Short
       TabServerText Tab(Servers) label "Servers"
-        TabServerButton Part
+        TabServerButton Part target [0, 0, 110, 21] art [0, 0, 110, 25] Short
       TabDownloadText Tab(Files) label "Downloads"
         TabDownloadButton Part
-      TabDownloadText.Communities Tab(Communities) label "Communities" target [0, 0, 109, 23] art [0, 0, 109, 21] Short
+      TabDownloadText.Communities Tab(Communities) label "Communities" target [0, 0, 109, 15] art [0, 0, 109, 21] Short
         TabDownloadButton.Communities Part
     ButtonArea ButtonBar
       FriendsButtons ButtonRow(Friends)

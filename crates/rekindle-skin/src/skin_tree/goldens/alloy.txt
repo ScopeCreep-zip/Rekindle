@@ -1,14 +1,14 @@
 Top Decor
 Logo Logo
 MenuBar MenuBar
-  FileMenu MenuTitle label "Rekindle" cover [2, 0, 44, 15] target [0, -4, 48, 24] art [0, 4, 48, 15] Size
+  FileMenu MenuTitle label "Rekindle" cover [2, 0, 44, 15] target [1, -4, 47, 24] art [-1, 4, 48, 15] Size
   ToolsMenu MenuTitle target [0, -4, 54, 24] art [0, 4, 54, 15] Size
   HelpMenu MenuTitle target [0, -4, 44, 24] art [0, 4, 44, 15] Size
-UserNameField NameField target [0, -3, 205, 24] art [0, 3, 205, 17] Size
+UserNameField NameField target [0, -3, 151, 20] art [0, 3, 205, 17] Spacing
   UserNameText Part
 StatusWrapper Group
-StatusEdit StatusText inset [0, 19] target [0, -4, 187, 24] art [0, 4, 187, 15] Size
-DownArrow StatusList target [-3, -3, 24, 24] art [3, 3, 18, 17] Size
+StatusEdit StatusText inset [0, 19] target [0, -4, 165, 20] art [0, 4, 187, 15] Spacing
+DownArrow StatusList target [-3, -3, 24, 20] art [3, 3, 18, 17] Spacing
 TopButtonBar Group
   MinimizeBox Button target [-3, -3, 21, 24] art [3, 3, 18, 18] Short
   MaximizeBox Button target [0, -3, 18, 24] art [0, 3, 18, 18] Short
@@ -77,6 +77,6 @@ popup Infoskin
       JoinChatButton Button target [0, -1, 75, 24] art [0, 1, 75, 21] Size
       LeaveChatButton Button target [0, -1, 75, 24] art [0, 1, 75, 21] Size
         TalkingStateButton Part
-    JoinButton Button target [0, -1, 75, 24] art [0, 1, 75, 21] Size
+    JoinButton Button target [0, -1, 35, 24] art [0, 1, 75, 21] Size
   InfoLogo Decor
   MAINBG Decor target [0, 0, 175, 400] art [0, 0, 175, 400] Frame

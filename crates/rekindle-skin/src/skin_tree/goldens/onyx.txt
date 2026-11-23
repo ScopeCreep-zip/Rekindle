@@ -18,7 +18,7 @@ LeftEdge Decor target [0, 0, 83, 75] art [0, 0, 83, 75] Frame
 RightEdge Decor target [0, 0, 83, 75] art [0, 0, 83, 75] Frame
 Middle Decor
 MainTitleBar Drag
-  Logo Logo target [-4, -4, 24, 21] art [4, 4, 16, 16] Short
+  Logo Logo target [-4, -4, 22, 21] art [4, 4, 16, 16] Short
   Title NameField
 TopButtonBar Group
   Minimize Button target [-4, -4, 20, 20] art [4, 4, 15, 15] Short
@@ -26,22 +26,22 @@ TopButtonBar Group
   Close Button target [-1, -4, 21, 20] art [1, 4, 15, 15] Short
 MenuBar MenuBar
   XfireMenuText MenuTitle label "Rekindle"
-    FileMenu Part target [-6, -1, 19, 24] art [6, 1, 12, 22] Short
+    FileMenu Part target [-6, -1, 19, 22] art [6, 1, 12, 22] Short
   ToolsMenuText MenuTitle label "Tools"
-    ToolsMenu Part target [-1, -1, 14, 24] art [1, 1, 12, 22] Short
+    ToolsMenu Part target [-1, -1, 14, 22] art [1, 1, 12, 22] Short
   HelpMenuText MenuTitle label "Help"
-    HelpMenu Part target [-1, -1, 15, 24] art [1, 1, 12, 22] Short
+    HelpMenu Part target [-1, -1, 15, 22] art [1, 1, 12, 22] Short
   MenuDiv0 Decor
   MenuDiv1 Decor
   MenuDiv2 Decor
   MenuDiv3 Decor
   TabNormalText Tab(Friends) label "Friends"
-    TabNormalButton Part target [0, -2, 28, 24] art [0, 2, 28, 19] Size
+    TabNormalButton Part target [0, -2, 28, 23] art [0, 2, 28, 19] Short
   TabServerText Tab(Servers) label "Servers"
-    TabServerButton Part target [0, -2, 28, 24] art [0, 2, 28, 19] Size
+    TabServerButton Part target [0, -2, 28, 23] art [0, 2, 28, 19] Spacing
   TabDownloadText Tab(Files) label "Downloads"
-    TabDownloadButton Part target [0, -2, 28, 24] art [0, 2, 28, 19] Size
-  TabDownloadText.Communities Tab(Communities) label "Communities" target [0, -4, 233, 24] art [0, 4, 233, 16] Size
+    TabDownloadButton Part target [0, -2, 28, 23] art [0, 2, 28, 19] Spacing
+  TabDownloadText.Communities Tab(Communities) label "Communities" target [0, -4, 233, 23] art [0, 4, 233, 16] Spacing
     TabDownloadButton.Communities Part
   MenuDiv4 Decor
   MenuDiv5 Decor

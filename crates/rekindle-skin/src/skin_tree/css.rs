@@ -228,6 +228,28 @@ fn grip_band(
     rule
 }
 
+/// Whether target `t` lies inside its art on some side: a target cut clear
+/// of the press area of a listening node drawn over its art (plan SK12,
+/// [`super::target`]), which no border can draw, as a border only grows the
+/// box.
+const fn cut(t: NodeTarget) -> bool {
+    let [ax, ay, aw, ah] = t.art;
+    ax < 0 || ay < 0 || t.area[2] - ax - aw < 0 || t.area[3] - ay - ah < 0
+}
+
+/// A cut press area (plan SK12): the node keeps its art box, which draws in
+/// the pack's order and takes no press, and its `::before`, laid at the
+/// served area, takes the press for it (as a grip's band, [`grip_band`]),
+/// so a press in the two arts' overlap reaches only the node drawn on top
+/// there ([`super::target`]'s `under`). Listening nodes under it take their
+/// presses again.
+fn press_band(sel: &str, t: NodeTarget) -> String {
+    let [left, top, width, height] = t.area;
+    format!(
+        "  {sel}::before {{\n    content: \"\"; position: absolute; left: {left}px; top: {top}px; width: {width}px; height: {height}px; pointer-events: auto;\n  }}\n  {sel} [data-skin-on] {{\n    pointer-events: auto;\n  }}\n"
+    )
+}
+
 fn node(out: &mut String, n: &SkinNode, ctx: &Ctx<'_>) -> Option<()> {
     let (root, images, base) = (ctx.root, ctx.images, ctx.base);
     let text = text_sized(n);
@@ -243,16 +265,19 @@ fn node(out: &mut String, n: &SkinNode, ctx: &Ctx<'_>) -> Option<()> {
     }
     let grip = n.frame_node();
     let outer = match n.target {
-        Some(t) if !grip => {
+        Some(t) if !grip && !cut(t) => {
             target(&mut decls, n, t);
             "padding-box"
         }
         _ => "border-box",
     };
-    let band = n
-        .target
-        .filter(|_| grip)
-        .map(|t| grip_band(&sel, n, t, ctx.holes.get(&n.id)));
+    let band = n.target.and_then(|t| {
+        if grip {
+            Some(grip_band(&sel, n, t, ctx.holes.get(&n.id)))
+        } else {
+            cut(t).then(|| press_band(&sel, t))
+        }
+    });
     if band.is_some() {
         decls.push_str(" pointer-events: none;");
     }

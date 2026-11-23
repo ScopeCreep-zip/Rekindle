@@ -28,18 +28,23 @@
 //!   no undersized neighbour's circle (the criterion's spacing exception;
 //!   a box cut at a neighbour touches it, so its art box is tried as the
 //!   undersized target instead);
-//! - A listening node the pack lays over its art (not a neighbour) keeps
-//!   its centre: the box is cut back to the art's edge on that side
-//!   ([`yield_to`]), so a press at that node's centre reaches it.
 //!   else `Short`, neither holds: a pack-layout finding the Host still serves
 //!   (the box it could grow to) and reports.
-//! - A node already at least 24 x 24 is unchanged and serves no target.
+//! - A listening node the pack lays over its art (not a neighbour): the one
+//!   drawn above in the served stack ([`Stack::above`]) keeps its whole
+//!   press area and the one below loses the part that area covers
+//!   ([`under`], plan SK12), so the two press areas never overlap and a
+//!   press lands on the art the user sees on top; the arts draw in the
+//!   pack's order.
+//! - A node already at least 24 x 24 is unchanged and serves no target,
+//!   unless [`under`] cuts it.
 
 use rekindle_types::dto::skin::WindowLayout;
 use rekindle_types::dto::skin_action::NodeTrigger;
 use rekindle_types::dto::skin_tree::{Edge, NodeRole, NodeTarget, SkinNode, SkinTree, TargetRule};
 
-use super::validate::{hit_area, overlap, text_sized, Apart, HIT};
+use super::keep;
+use super::validate::{hit_area, overlap, text_sized, Apart, Stack, HIT};
 
 /// One candidate laid in the window.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,7 +78,7 @@ pub fn outer(art: [i32; 4], t: NodeTarget) -> [i32; 4] {
 
 /// Where `b` lies from `a` along `axis`: after it (`true`) or before it,
 /// and the gap between them; `None` when they meet along it.
-fn side(a: [i32; 4], b: [i32; 4], axis: usize) -> Option<(bool, i32)> {
+pub(super) fn side(a: [i32; 4], b: [i32; 4], axis: usize) -> Option<(bool, i32)> {
     let (a0, a1) = (a[axis], a[axis] + a[axis + 2]);
     let (b0, b1) = (b[axis], b[axis] + b[axis + 2]);
     if b0 >= a1 {
@@ -124,28 +129,34 @@ fn clip(g: &mut [i32; 4], a: [i32; 4], b: [i32; 4], want_b: [i32; 4]) {
     }
 }
 
-/// Cuts `g` (the target box of the node at `a`) back to `a`'s edge on the
-/// side where the centre of `b`, a listening node the pack lays over or
-/// under `a`'s art, lies outside `a`: a target box never takes a press
-/// meant for another listening node's art (Symbiosis's `StatusChanger` on
-/// its `Status` field). Where `a`'s art holds that centre, the pack's
-/// stacking decides (rule 4).
-fn yield_to(g: &mut [i32; 4], a: [i32; 4], b: [i32; 4]) {
-    for axis in 0..2 {
-        let c = 2 * b[axis] + b[axis + 2];
-        let (lo, hi) = (a[axis], a[axis] + a[axis + 2]);
-        let other = 1 - axis;
-        let across = 2 * g[other] <= 2 * b[other] + b[other + 2]
-            && 2 * b[other] + b[other + 2] < 2 * (g[other] + g[other + 2]);
-        if !across {
-            continue;
-        }
-        if c < 2 * lo && 2 * g[axis] <= c {
-            g[axis + 2] -= lo - g[axis];
-            g[axis] = lo;
-        } else if c >= 2 * hi && c < 2 * (g[axis] + g[axis + 2]) {
-            g[axis + 2] = hi - g[axis];
-        }
+/// Cuts `g` (the target box of the node at `a`) clear of `top`, the press
+/// area of a listening node drawn above it whose art overlaps `a`'s (plan
+/// SK12, lead decision: the press goes to what the user sees on top, so
+/// press areas never overlap even where the arts do; Classic's slanted tabs
+/// overlap by 7 px). `g` keeps the largest of its strips beside `top`
+/// (left of it, right, above, below: the cut along the axis that keeps it
+/// largest) that still meets `a`, the first in that order on a tie; the
+/// upper node keeps its whole area. A `top` that leaves no such strip (two
+/// arts in one box, Symbiosis's `FriendChatButton` and `OpenFiles`) leaves
+/// `g` as the pack has it. The arts still draw in the pack's order (rule 4).
+fn under(g: &mut [i32; 4], a: [i32; 4], top: [i32; 4]) {
+    if !overlap(*g, top) {
+        return;
+    }
+    let (g1, g3, t1, t3) = (g[0] + g[2], g[1] + g[3], top[0] + top[2], top[1] + top[3]);
+    let strips = [
+        [g[0], g[1], top[0] - g[0], g[3]],
+        [t1, g[1], g1 - t1, g[3]],
+        [g[0], g[1], g[2], top[1] - g[1]],
+        [g[0], t3, g[2], g3 - t3],
+    ];
+    if let Some(s) = strips
+        .into_iter()
+        .filter(|s| s[2] > 0 && s[3] > 0 && overlap(*s, a))
+        .rev()
+        .max_by_key(|s| i64::from(s[2]) * i64::from(s[3]))
+    {
+        *g = s;
     }
 }
 
@@ -185,42 +196,67 @@ pub fn targets(tree: &SkinTree, window: (i32, i32)) -> Vec<Laid> {
         })
         .collect();
     let want: Vec<[i32; 4]> = live.iter().map(|(_, b)| hit_area(*b, window)).collect();
+    // Plan SK12: no target grows over the views or a served text box.
+    let kept = keep::boxes(tree, window);
     let near = |i: usize, j: usize| {
         i != j && !apart.apart(&live[i].0.id, &live[j].0.id) && !overlap(live[i].1, live[j].1)
     };
-    let area: Vec<[i32; 4]> = (0..live.len())
+    let laid_over = |i: usize, j: usize| {
+        i != j && !apart.apart(&live[i].0.id, &live[j].0.id) && overlap(live[i].1, live[j].1)
+    };
+    let mut area: Vec<[i32; 4]> = (0..live.len())
         .map(|i| {
             let mut g = want[i];
             for j in (0..live.len()).filter(|&j| near(i, j)) {
                 clip(&mut g, live[i].1, live[j].1, want[j]);
             }
-            let laid_over = |j: usize| {
-                i != j
-                    && !apart.apart(&live[i].0.id, &live[j].0.id)
-                    && overlap(live[i].1, live[j].1)
-            };
-            for j in (0..live.len()).filter(|&j| laid_over(j)) {
-                yield_to(&mut g, live[i].1, live[j].1);
+            for (id, o, views) in &kept {
+                if !apart.apart(&live[i].0.id, id) && !keep::kin(&tree.root, live[i].0, id) {
+                    keep::keep_out(&mut g, live[i].1, *o, *views);
+                }
             }
             g
         })
         .collect();
+    // Plan SK12: top of the served stack first, so each node is cut clear
+    // of the final press areas of the nodes drawn over its art.
+    let stack = Stack::new(&tree.root);
+    let mut order: Vec<usize> = (0..live.len()).collect();
+    order.sort_by(|&i, &j| {
+        let (a, b) = (&live[i].0.id, &live[j].0.id);
+        if stack.above(a, b) {
+            std::cmp::Ordering::Less
+        } else if stack.above(b, a) {
+            std::cmp::Ordering::Greater
+        } else {
+            std::cmp::Ordering::Equal
+        }
+    });
+    for (k, &i) in order.iter().enumerate() {
+        for &j in order[..k].iter().filter(|&&j| laid_over(i, j)) {
+            let top = area[j];
+            under(&mut area[i], live[i].1, top);
+        }
+    }
     // The spacing exception's circle: 24 px across, 12 px (24 half
     // pixels) from its centre.
     let r2 = i64::from(HIT) * i64::from(HIT);
     let spaced = |i: usize, own: [i32; 4], area: &[[i32; 4]]| {
         (0..live.len())
-            .filter(|&j| near(i, j))
+            .filter(|&j| near(i, j) || laid_over(i, j))
             .all(|j| far(own, area[j]) >= r2 && !(small(area[j]) && centres(own, area[j]) < 4 * r2))
     };
     // A box cut short of 24 px meets its neighbour's, so its circle never
     // clears it: the node then keeps its art box as its (undersized)
     // target when that clears every neighbour (the spacing exception on
-    // the art, as the criterion measures an undersized target).
+    // the art, as the criterion measures an undersized target). A node
+    // whose art meets another listening art keeps its box: its art box
+    // would meet the other's press area ([`under`]).
     let area: Vec<[i32; 4]> = (0..live.len())
         .map(|i| {
             let art = live[i].1;
-            if small(area[i]) && !spaced(i, area[i], &area) && spaced(i, art, &area) {
+            let whole = !(0..live.len()).any(|j| laid_over(i, j));
+            if whole && small(area[i]) && !spaced(i, area[i], &area) && spaced(i, art, &area) {
                 art
             } else {
                 area[i]
@@ -500,9 +536,9 @@ pub fn grip_holes(tree: &SkinTree, window: (i32, i32)) -> Vec<(String, [i32; 4],
 
 /// The target `l` serves its node: none for a node already 24 x 24 that
 /// is not a grip (a grip's band is its pointer area whatever its art's
-/// size, [`band`]).
+/// size, [`band`]) and keeps its art box (one [`under`] cuts serves it).
 fn serve(l: &Laid, grip: bool) -> Option<NodeTarget> {
-    if !grip && !small(l.art) {
+    if !grip && !small(l.art) && l.area == l.art {
         return None;
     }
     let (a, g) = (l.art, l.area);

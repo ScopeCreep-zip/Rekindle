@@ -56,7 +56,7 @@ TabbedControl Views
   DownloadView View(Files)
     BvBk3 Part
   TabbedControl.Communities View(Communities)
-InfoViewButton Button target [-8, 0, 24, 54] art [8, 0, 16, 54] Size
+InfoViewButton Button target [-7, 0, 23, 54] art [7, 0, 16, 54] Spacing
 popup MainInfoViewPopup
   InfoTopRow Decor
   InfoBottomRow Decor

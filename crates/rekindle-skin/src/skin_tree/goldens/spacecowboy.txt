@@ -1,7 +1,7 @@
 TopLeft Decor target [0, 0, 16, 34] art [0, 0, 16, 34] Frame
 Top Decor target [0, 0, 299, 34] art [0, 0, 299, 34] Frame
 TopRight Decor target [0, 0, 20, 34] art [0, 0, 20, 34] Frame
-SCLogo Decor
+SCLogo Decor target [0, 0, 174, 45] art [0, 0, 174, 59] Size
 LeftEdge Decor target [0, 0, 16, 468] art [0, 0, 16, 468] Frame
 RightEdge Decor target [0, 0, 20, 468] art [0, 0, 20, 468] Frame
 Middle Decor target [0, 0, 299, 468] art [0, 0, 299, 468] Frame
@@ -12,7 +12,7 @@ AdAreaBG AdArea
   AdArea Part
 ExpandButton Button target [-4, 0, 24, 47] art [4, 0, 20, 47] Size
 MainTitleBar Drag
-  Logo Logo target [-4, -4, 24, 24] art [4, 4, 16, 16] Size
+  Logo Logo target [-4, -4, 22, 24] art [4, 4, 16, 16] Spacing
   Title NameField
 AGEAR Decor
 IGEAR Decor
@@ -21,12 +21,12 @@ StatusWrapper Group
   DownArrow StatusList target [0, -2, 20, 23] art [0, 2, 15, 18] Short
 TabHeader TabStrip
   TabNormalText Tab(Friends) label "Friends"
-    TabNormalButton Part target [0, -2, 70, 24] art [0, 2, 70, 20] Size
+    TabNormalButton Part target [0, -2, 70, 22] art [0, 2, 70, 20] Spacing
   TabServerText Tab(Servers) label "Servers"
-    TabServerButton Part target [0, -2, 70, 24] art [0, 2, 70, 20] Size
+    TabServerButton Part target [0, -2, 70, 22] art [0, 2, 70, 20] Spacing
   TabDownloadText Tab(Files) label "Downloads"
-    TabDownloadButton Part target [0, -2, 70, 24] art [0, 2, 70, 20] Size
-  TabDownloadText.Communities Tab(Communities) label "Communities" target [0, -2, 62, 24] art [0, 2, 62, 19] Size
+    TabDownloadButton Part target [0, -2, 70, 22] art [0, 2, 70, 20] Spacing
+  TabDownloadText.Communities Tab(Communities) label "Communities" target [0, -2, 62, 21] art [0, 2, 62, 19] Spacing
     TabDownloadButton.Communities Part
 TopButtonBar Group
   Minimize Button target [-5, -5, 20, 24] art [5, 5, 14, 14] Short

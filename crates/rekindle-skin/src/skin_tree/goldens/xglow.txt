@@ -15,7 +15,7 @@ TabbedControl Views
 Bottom Decor
 FriendsButtons ButtonRow(Friends)
   FriendsButtons.Add Group
-    AddFriend Button target [0, -3, 54, 24] art [0, 3, 54, 18] Size
+    AddFriend Button target [0, -3, 52, 24] art [0, 3, 54, 18] Size
   FriendsButtons.Chat Group
     ChatButton Button target [0, -3, 56, 24] art [0, 3, 56, 18] Size
   FriendsButtons.Join Group
@@ -24,7 +24,7 @@ FriendsButtons ButtonRow(Friends)
     InfoButton Button target [0, -3, 56, 24] art [0, 3, 56, 18] Size
 ServersButtons ButtonRow(Servers)
   ServersButtons.Add Group
-    AddServer Button target [0, -3, 54, 24] art [0, 3, 54, 18] Size
+    AddServer Button target [0, -3, 52, 24] art [0, 3, 54, 18] Size
   ServersButtons.Chat Group
     RefreshButton Button target [0, -3, 56, 24] art [0, 3, 56, 18] Size
   ServersButtons.Join Group
@@ -33,7 +33,7 @@ ServersButtons ButtonRow(Servers)
     InfoButton2 Button target [0, -3, 56, 24] art [0, 3, 56, 18] Size
 FilesButtons ButtonRow(Files)
   FilesButtons.Add Group
-    StartDownload Button target [0, -3, 54, 24] art [0, 3, 54, 18] Size
+    StartDownload Button target [0, -3, 52, 24] art [0, 3, 54, 18] Size
   FilesButtons.Chat Group
     StopDownloadButton Button target [0, -3, 56, 24] art [0, 3, 56, 18] Size
   FilesButtons.Join Group
@@ -41,13 +41,13 @@ FilesButtons ButtonRow(Files)
   FilesButtons.Info Group
     DownloadInfo Button target [0, -3, 56, 24] art [0, 3, 56, 18] Size
 ButtonDivider Decor
-Friends Tab(Friends) target [0, -3, 65, 24] art [0, 3, 65, 18] Size
-Servers Tab(Servers) target [0, -3, 65, 24] art [0, 3, 65, 18] Size
-Downloads Tab(Files) target [0, -3, 65, 24] art [0, 3, 65, 18] Size
-Downloads.Communities Tab(Communities) label "Communities" cover [6, 3, 53, 12] target [0, -3, 65, 24] art [0, 3, 65, 18] Size
+Friends Tab(Friends) target [0, -3, 63, 21] art [0, 3, 65, 18] Spacing
+Servers Tab(Servers) target [0, -3, 65, 21] art [0, 3, 65, 18] Spacing
+Downloads Tab(Files) target [0, -3, 65, 21] art [0, 3, 65, 18] Spacing
+Downloads.Communities Tab(Communities) label "Communities" cover [6, 3, 53, 12] target [0, -3, 65, 21] art [0, 3, 65, 18] Spacing
 AdArea AdArea
 UserName NameField
-DownArrow StatusList target [-3, -3, 23, 24] art [3, 3, 17, 17] Short
+DownArrow StatusList target [-3, -1, 23, 22] art [3, 1, 17, 17] Short
 StatusMiddle Decor
 StatusRight Decor
 Status StatusText target [0, -5, 186, 24] art [0, 5, 186, 14] Size

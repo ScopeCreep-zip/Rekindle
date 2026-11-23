@@ -11,6 +11,7 @@ pub mod css;
 mod fit;
 pub mod import;
 pub mod inset;
+mod keep;
 mod outdent;
 mod passes;
 pub mod pieces;
@@ -31,6 +32,8 @@ mod fit_tests;
 mod golden_tests;
 #[cfg(test)]
 mod grip_tests;
+#[cfg(test)]
+mod overlap_tests;
 #[cfg(test)]
 mod place_tests;
 #[cfg(test)]

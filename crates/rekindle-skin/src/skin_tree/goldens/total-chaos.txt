@@ -32,19 +32,19 @@ BottomBar Group
     TCLink Button target [0, -8, 113, 24] art [0, 8, 113, 8] Size
   TabButtonArea ButtonBar
     FriendsButtons ButtonRow(Friends)
-      AddButton Button
+      AddButton Button target [0, 0, 33, 30] art [0, 0, 43, 30] Size
       ImButton Button
-      InfoButton Button
+      InfoButton Button target [0, 0, 47, 30] art [0, 0, 57, 30] Size
       JoinFriendButton Button
     ServersButtons ButtonRow(Servers)
-      AddServerButton Button
+      AddServerButton Button target [0, 0, 33, 29] art [0, 0, 43, 29] Size
       RefreshButton Button
       PlaceHolder Decor
       JoinServerButton Button
     FilesButtons ButtonRow(Files)
-      StartDownloadButton Button
+      StartDownloadButton Button target [0, 0, 33, 29] art [0, 0, 43, 29] Size
       StopDownloadButton Button
-      ExecuteDownloadButton Button
+      ExecuteDownloadButton Button target [0, 0, 47, 29] art [0, 0, 57, 29] Size
       DownloadInfoButton Button
 popup InfoPopup
   XfireTopRow Decor
