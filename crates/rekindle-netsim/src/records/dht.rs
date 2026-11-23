@@ -30,8 +30,8 @@
 //!   `TryAgain` offline (`inspect_record.rs:312-313`) or with no replica
 //!   reached (0.5.8 `inspect_record.rs:346-349`); UpdateSet reports
 //!   each local seq + 1, and the Update scopes' network seqs start from the
-//!   local result, the Sync ones' from nothing (`:316-332`), then take the
-//!   newest seq of the replicas the node reaches; `offline_subkeys` is the
+//!   local result, the Sync ones' from nothing (`:316-332`), then stop at the
+//!   first seq a scope's count of reached replicas agree on; `offline_subkeys` is the
 //!   node's own push queue plus its sets in flight (`:284-290`);
 //! - a create checks the schema as Veilid ([`super::validate_schema`]); a
 //!   watch's expiration is absolute: too soon on the node's own clock (its
@@ -477,13 +477,28 @@ impl DhtBackend for SimDht {
         // The fanout starts from the local result for the Update scopes,
         // from nothing for the Sync ones (`:328-332`); Local reports none.
         let from_local = matches!(scope, ReportScope::UpdateGet | ReportScope::UpdateSet);
+        // The set scopes count `set_value_count` holders, the get scopes
+        // `get_value_count` (0.5.8 `inspect_record.rs:426-450`).
+        let count = if matches!(scope, ReportScope::UpdateSet | ReportScope::SyncSet) {
+            replicas::SET_COUNT
+        } else {
+            replicas::GET_COUNT
+        };
         let network_seqs = subkeys
             .iter()
             .zip(&local_seqs)
             .map(|(s, l)| match scope {
                 ReportScope::Local => None,
-                _ => replicas::newest_seq(&record.replicas, &reach, *s as usize)
-                    .max(l.filter(|_| from_local)),
+                _ => {
+                    replicas::consensus(
+                        &record.replicas,
+                        &reach,
+                        *s as usize,
+                        l.filter(|_| from_local),
+                        count,
+                    )
+                    .0
+                }
             })
             .collect();
         // Its own offline queue, queued or in flight, and the sets in

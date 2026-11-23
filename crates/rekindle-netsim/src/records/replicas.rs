@@ -384,8 +384,10 @@ pub(crate) fn refresh(
     }
 }
 
-/// The newest seq the `reach` replicas hold at `subkey` (an inspect's
-/// network seq).
+/// The newest seq the `reach` replicas hold at `subkey`: a transaction
+/// begin's network seq, which keeps the newest of every accepter
+/// (0.5.8 `transaction_begin.rs:338-347`); an inspect stops at consensus
+/// instead ([`consensus`]).
 pub(crate) fn newest_seq(replicas: &[Replica], reach: &[usize], subkey: usize) -> Option<u32> {
     reach
         .iter()
@@ -398,6 +400,45 @@ pub(crate) fn newest_seq(replicas: &[Replica], reach: &[usize], subkey: usize) -
                 .map(|v| v.seq)
         })
         .max()
+}
+
+/// An inspect fanout's seq at `subkey` over the `reach` replicas, from
+/// `start` (the local seq for the Update scopes, none for the Sync ones),
+/// asked in closeness order as a get is ([`settle`]): a newer seq is taken
+/// with its answering node as the only holder, an equal one adds a holder,
+/// and once `count` holders agree (`set_value_count` for the set scopes,
+/// `get_value_count` for the get scopes, 0.5.8 `inspect_record.rs:426-450`)
+/// a newer seq answered after is discarded (`:672-705`). A local start is
+/// no holder (`:478-485` seeds it with no consensus node, `:638-652` counts
+/// only a node's returned seq). Returns the seq and its holders (the
+/// subkey's `consensus_nodes`, at most `count`).
+pub(crate) fn consensus(
+    replicas: &[Replica],
+    reach: &[usize],
+    subkey: usize,
+    start: Option<u32>,
+    count: usize,
+) -> (Option<u32>, usize) {
+    let mut seq = start;
+    let mut holders = 0usize;
+    for r in reach {
+        if holders >= count {
+            break;
+        }
+        let Some(answer) = replicas
+            .get(*r)
+            .and_then(|x| x.values.get(subkey)?.as_ref().map(|v| v.seq))
+        else {
+            continue;
+        };
+        if seq.is_none_or(|s| answer > s) {
+            seq = Some(answer);
+            holders = 1;
+        } else if Some(answer) == seq {
+            holders += 1;
+        }
+    }
+    (seq, holders)
 }
 
 /// Whether any of the `reach` replicas holds a value at any of `subkeys`

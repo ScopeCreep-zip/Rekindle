@@ -2,10 +2,12 @@
 //! (split from `outbox_read.rs` at its 600-line ceiling).
 
 use async_trait::async_trait;
+use rekindle_channel::ChannelMessagingDeps as _;
 use rekindle_codec::member_record::entry_hash;
 use rekindle_records::chain::ChainEntry;
 use rekindle_sync::stream::{Held, SinkError, StreamSink};
 use rekindle_types::dht_layout::member_record::OUTBOX;
+use rekindle_types::id::PseudonymKey;
 
 use super::super::received::OutboxHead;
 use super::super::HostChannel;
@@ -49,26 +51,17 @@ impl StreamSink for OutboxSink<'_> {
         writer: &str,
         entry: &ChainEntry,
     ) -> Result<Held, SinkError> {
-        let departure_head = match &self.standing {
-            Standing::Departed(Some(head)) if entry.seq <= u64::from(head.seq) => {
-                Some(head.clone())
-            }
-            _ => None,
-        };
-        let read = OutboxRead {
-            community_id: self.community_id,
-            author: &self.author,
-            member_record: self.member_record,
-            backfill: self.backfill,
-            departed: matches!(self.standing, Standing::Departed(_)),
-            departure_head,
-            before: self.before(entry.seq).await,
-        };
-        let held = self
-            .channel
-            .apply_outbox_entry(&read, entry)
-            .await
-            .map_err(sink_error)?;
+        let standing = self.current_standing().await;
+        let mut held = self.apply_under(&standing, entry).await?;
+        if held == Held::Pending && matches!(standing, Standing::Member) && self.departed_now() {
+            // The author's departure merged between the standing and the
+            // gate's judgement, which held the entry (`apply_outbox_entry`):
+            // it is read again now under the departed standing, kept at or
+            // below the departure's head the chain reproduces, so no later
+            // trigger is owed for it. A second hold is a real wait.
+            let standing = self.current_standing().await;
+            held = self.apply_under(&standing, entry).await?;
+        }
         if held == Held::Pending {
             // Waiting for its key: the cursor stays on it, and a trigger
             // that landed meanwhile (the key's install) reads again (CB1).
@@ -145,7 +138,64 @@ impl OutboxSink<'_> {
     }
 }
 
+impl OutboxSink<'_> {
+    /// The author's standing for the entry about to be applied. The read
+    /// took it when it started; a departure merged since (the leave of an
+    /// author whose withheld last write this read applies) makes the ingest
+    /// gate judge the author departed, so a member standing is taken again
+    /// and the entry is kept at or below the departure's head the chain
+    /// reproduces, as every later read keeps it, never dropped as from a
+    /// non-member with the cursor moved past it (ADR 0011: a leaver's
+    /// writes before its leave stay valid).
+    async fn current_standing(&self) -> Standing {
+        let stale = matches!(self.standing, Standing::Member) && self.departed_now();
+        if !stale {
+            return self.standing.clone();
+        }
+        let author = PseudonymKey(self.author);
+        (self.channel)
+            .standing(self.port, self.community_id, &author, self.member_record)
+            .await
+    }
+
+    /// Whether the merged state has the author departed now.
+    fn departed_now(&self) -> bool {
+        let author = PseudonymKey(self.author);
+        (self.channel.governance_state(self.community_id))
+            .is_some_and(|state| state.is_departed(&author))
+    }
+
+    /// Apply `entry` under `standing`: departed, its departure head keeps
+    /// the entry only at or below the head's seq.
+    async fn apply_under(
+        &self,
+        standing: &Standing,
+        entry: &ChainEntry,
+    ) -> Result<Held, SinkError> {
+        let departure_head = match standing {
+            Standing::Departed(Some(head)) if entry.seq <= u64::from(head.seq) => {
+                Some(head.clone())
+            }
+            _ => None,
+        };
+        let read = OutboxRead {
+            community_id: self.community_id,
+            author: &self.author,
+            member_record: self.member_record,
+            backfill: self.backfill,
+            departed: matches!(standing, Standing::Departed(_)),
+            departure_head,
+            before: self.before(entry.seq).await,
+        };
+        (self.channel)
+            .apply_outbox_entry(&read, entry)
+            .await
+            .map_err(sink_error)
+    }
+}
+
 /// An outbox author's standing in the merged state.
+#[derive(Clone)]
 pub(super) enum Standing {
     Member,
     /// Departed: the highest of its departure heads of this outbox that

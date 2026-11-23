@@ -21,10 +21,13 @@
 //! - **which subkeys:** an inspect in the set scope over the replicas the
 //!   node reaches (`inspect_record.rs:425-434`): with no reached replica
 //!   holding the record, every local subkey; else each local subkey newer
-//!   than the network's newest seq, or at it or older with fewer than
-//!   [`SET_COUNT`] replicas at that seq (`rehydrate.rs:241-255,371-405`).
-//!   A replica with no value at a subkey is no evidence for it: it counts
-//!   toward no seq (`inspect_record.rs:638-652,695-705`);
+//!   than the network's seq, or at it or older with fewer than
+//!   [`SET_COUNT`] consensus nodes at that seq (`rehydrate.rs:241-255,371-405`).
+//!   The inspect starts from nothing and stops at [`SET_COUNT`] agreeing
+//!   replicas (`rehydrate.rs:197-206`, [`replicas::consensus`]), so a newer
+//!   seq answered after it is not seen. A replica with no value at a subkey
+//!   is no evidence for it: it counts toward no seq
+//!   (`inspect_record.rs:638-652,695-705`);
 //! - **the push:** a queued subkey is sent as a set of its local copy
 //!   (`tasks/offline_subkey_writes.rs:47-99`); a replica holding a newer value
 //!   restarts the fanout on it ([`super::fanout`]), and a value the
@@ -40,7 +43,7 @@
 //! that keeps it short does not keep the network busy; it still retries at
 //! every tick.
 
-use super::replicas::{self, newest_seq, SET_COUNT};
+use super::replicas::{self, SET_COUNT};
 use super::{candidates, reachable, stores, subkey_count, watches};
 use crate::network::{Inner, Network};
 
@@ -117,13 +120,9 @@ fn rehydrate(inner: &mut Inner, node: usize, key: &str) {
             let Some(held) = local.get(&(key.to_string(), *s)) else {
                 return false;
             };
-            let net = newest_seq(&record.replicas, &reach, *s as usize);
-            let at_newest = reach
-                .iter()
-                .filter_map(|r| record.replicas.get(*r)?.values.get(*s as usize)?.as_ref())
-                .filter(|v| Some(v.seq) == net)
-                .count();
-            !online || Some(held.seq) > net || at_newest < SET_COUNT
+            let (net, agreeing) =
+                replicas::consensus(&record.replicas, &reach, *s as usize, None, SET_COUNT);
+            !online || Some(held.seq) > net || agreeing < SET_COUNT
         })
         .collect();
     stores::touch(inner, key, &reach);
