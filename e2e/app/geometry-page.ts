@@ -389,10 +389,10 @@ export function treeFit(root: Element): TreeFit | null {
  * app draws its own ring for every element (`*:focus-visible`,
  * src/styles/regions.toml), so no UA rule is needed.
  */
-export function focusIndicators(rootEl: Element, skip: string[]): { el: string; why: string }[] {
+export function focusIndicators(rootEl: Element, skip: string[]): { el: string; why: string; to?: string }[] {
   const g = (window as any).__geo;
   const skipSel = skip.join(", ");
-  const out: { el: string; why: string }[] = [];
+  const out: { el: string; why: string; to?: string }[] = [];
   const FOCUS = "data-geo-focus";
   const WITHIN = "data-geo-focus-within";
   const swap = (sel: string): string =>
@@ -439,7 +439,13 @@ export function focusIndicators(rootEl: Element, skip: string[]): { el: string; 
       // focus), and that change is an indicator too.
       const before = look(el);
       el.focus();
-      if (document.activeElement !== el) { out.push({ el: g.describe(el), why: "not focusable" }); continue; }
+      if (document.activeElement !== el) {
+        // Where focus went instead, and any inert or aria-hidden ancestor (detail only: keys read el and why).
+        const shut = el.closest("[inert], [aria-hidden='true']");
+        const to = document.activeElement ? g.describe(document.activeElement) : "none";
+        out.push({ el: g.describe(el), why: "not focusable", to: shut ? `${to}; under ${g.describe(shut)}` : to });
+        continue;
+      }
       force(el, true);
       const s = getComputedStyle(el);
       const after = look(el);
