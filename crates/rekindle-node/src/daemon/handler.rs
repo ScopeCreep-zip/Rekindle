@@ -219,9 +219,10 @@ impl InboundHandler for DaemonHandler {
         crate::daemon::gossip::forward(&self.gossip_tx, envelope.clone());
     }
 
-    /// A ring watcher's hint (plan E3.2 S7, `headAdvanced @76`): the
-    /// member gate, then the sender's rate limit, then the hint's own
-    /// signature; the verified read runs after, off the relay.
+    /// A ring watcher's hint (plan E3.2 S7, `headAdvanced @76`): the Host's
+    /// one ingest (plan GI3, the desktop's relay calls it too): the
+    /// community gate, the member gate, the sender's rate limit, then the
+    /// hint's own signature; the verified read runs after, off the relay.
     async fn on_head_advanced(
         &self,
         community_id: &str,
@@ -231,12 +232,11 @@ impl InboundHandler for DaemonHandler {
         let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) else {
             return false;
         };
-        let governance = crate::host::adapters::governance::HostGovernance::new(ctx);
-        let admit = |sender: &str| match *self.subscriptions.read() {
-            Some(ref sub_mgr) => sub_mgr.admit(community_id, sender, 0),
-            None => false,
-        };
-        governance.on_head_advanced(community_id, sender_pseudonym, hint, admit)
+        crate::host::adapters::governance::HostGovernance::new(ctx).ingest_head_advanced(
+            community_id,
+            sender_pseudonym,
+            hint,
+        )
     }
 
     async fn on_call(&self, _sender_pseudonym: Option<&str>, request: InboundCall) -> CallResponse {

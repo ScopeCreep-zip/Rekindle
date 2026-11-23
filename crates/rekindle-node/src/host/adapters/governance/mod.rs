@@ -94,6 +94,7 @@ pub mod projection;
 mod publication;
 mod registry;
 mod registry_watch;
+mod relayed_ingest;
 pub(crate) mod removal_posts;
 mod removal_watch;
 pub(crate) mod search;
