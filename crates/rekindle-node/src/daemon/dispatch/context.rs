@@ -271,12 +271,12 @@ impl DaemonContext {
         };
         // The action resolves here only (with its reads made once): a run
         // is the answer once the request is admitted.
-        let (request, run) =
-            match crate::host::skin::actions::resolve(&self.skin.selection, &reads, request) {
-                Ok(Resolved::Request(request)) => (request, None),
-                Ok(Resolved::Run { request, run }) => (request, Some(run)),
-                Err(refused) => return refused,
-            };
+        let (request, run) = match crate::host::skin::actions::resolve(&self.skin, &reads, request)
+        {
+            Ok(Resolved::Request(request)) => (request, None),
+            Ok(Resolved::Run { request, run }) => (request, Some(run)),
+            Err(refused) => return refused,
+        };
         let pressed_in = match &request {
             IpcRequest::RunSkinAction { window, .. } => Some(window.clone()),
             _ => None,
@@ -320,6 +320,7 @@ impl DaemonContext {
             (Some(run), Some(window), IpcResponse::Ok { .. }) => {
                 let (run, elsewhere) =
                     crate::host::skin::actions::addressed(&self.skin.launchers, &window, run);
+                self.skin.views.record(&window, &run, elsewhere.as_ref());
                 if let Some((window, op)) = elsewhere {
                     self.publish_event(SubscriptionEvent::System(SystemEvent::SkinShell {
                         window,
