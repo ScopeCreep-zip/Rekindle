@@ -20,6 +20,7 @@ mod channel_edit_both_ways;
 mod channel_move;
 mod channel_post_both_ways;
 mod co_creators;
+mod code_request_durable;
 mod code_route_silent_death;
 mod community_block_drops;
 mod community_info_counts;

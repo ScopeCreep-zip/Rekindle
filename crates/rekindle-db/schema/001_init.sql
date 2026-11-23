@@ -30,6 +30,11 @@ CREATE TABLE IF NOT EXISTS identity (
     -- sent with the old code.
     friend_request_token TEXT NOT NULL CHECK(length(friend_request_token) = 26
         AND friend_request_token NOT GLOB '*[^a-z2-7]*'),
+    -- Our friend code's current request inbox (plan RV2e): an
+    -- SMPL(o_cnt 1, [writer]) record whose writer is derived from the token,
+    -- published in our profile's CODE_INBOX subkey and rolled after each
+    -- request lands; its owner keypair is in the vault. NULL: no code issued.
+    code_inbox_key TEXT,
     -- Our bio (plan E7.2), sent to each accepted friend as a ratchet-sealed
     -- `ProfileBio` (0x0171), never in the profile record (its key travels in
     -- every invite and friend code). NULL: none. 190 characters at most

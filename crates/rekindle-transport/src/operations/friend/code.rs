@@ -17,7 +17,7 @@ use super::state::{self, OwnIdentity};
 /// # Errors
 /// `Locked`; `Failed` when our profile was not published (waits while it is
 /// being published); the token
-/// could not be read.
+/// could not be read; the code's request inbox could not be made (plan RV2e).
 pub async fn own(host: &dyn FriendHost) -> Result<FriendCodeView, FriendError> {
     let own = published_identity(host).await?;
     let owner = own.public_key.clone();
@@ -29,6 +29,7 @@ pub async fn own(host: &dyn FriendHost) -> Result<FriendCodeView, FriendError> {
     let token = key_format::friend_request_token(&token)
         .map_err(|e| FriendError::store("friend token", e))?;
     let code = view(&own, token)?;
+    super::code_inbox::issue(host).await?;
     tracing::info!("friend code issued");
     Ok(code)
 }
@@ -48,7 +49,10 @@ pub async fn rotate_token(host: &dyn FriendHost) -> Result<FriendCodeView, Frien
         rekindle_db::repo::identity::set_friend_request_token(conn, &owner, &spelled)
     })
     .await?;
-    view(&own, token)
+    let code = view(&own, token)?;
+    // The old token's holders can no longer derive the slot's writer.
+    super::code_inbox::roll(host).await?;
+    Ok(code)
 }
 
 /// The code `own` and `token` make, with its QR.

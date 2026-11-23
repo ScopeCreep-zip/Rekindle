@@ -49,6 +49,8 @@ pub struct FriendWatches {
     inboxes: Mutex<BTreeMap<String, LeaseId>>,
     /// Each open request's reply inbox lease, by record key (plan RV2).
     replies: Mutex<BTreeMap<String, LeaseId>>,
+    /// Our friend code's request inbox lease, by record key (plan RV2e).
+    codes: Mutex<BTreeMap<String, LeaseId>>,
     /// Each friend's participant record (key, lease), by friend (plan E2.5).
     participants: Mutex<BTreeMap<String, (String, LeaseId)>>,
     /// Whether the network was ready at its last change.
@@ -318,6 +320,40 @@ impl FriendHost for HostFriends {
         }
         inbox_watch::hold_reply(self, &pool, record_key, lease).await;
         Ok(())
+    }
+
+    async fn keep_code_inbox(
+        &self,
+        record_key: &str,
+        owner_keypair: &str,
+        lease: LeaseId,
+    ) -> Result<(), FriendError> {
+        let pool = self
+            .node()?
+            .require_records()
+            .map_err(|e| FriendError::NotReady(format!("records: {e}")))?;
+        if let Err(e) = self.keep_inbox_owner(record_key, owner_keypair) {
+            pool.release(lease).await;
+            return Err(e);
+        }
+        inbox_watch::hold_code(self, &pool, record_key, lease).await;
+        Ok(())
+    }
+
+    async fn drop_code_inbox(&self, record_key: &str) {
+        inbox_watch::release_code(self, record_key).await;
+        self.forget_inbox_owner(record_key);
+    }
+
+    async fn publish_code_inbox(&self, record_key: &str) -> Result<(), FriendError> {
+        self.ctx
+            .own_presence
+            .write_profile(
+                rekindle_types::dht_layout::profile::CODE_INBOX,
+                record_key.as_bytes().to_vec(),
+            )
+            .await
+            .map_err(FriendError::Failed)
     }
 
     async fn sync_reply_inboxes(&self) {

@@ -5,7 +5,9 @@
 //! Our open requests' reply inboxes (plan RV2) are held the same way in
 //! their own map, re-held at unlock and released when the request settles
 //! ([`rewatch_open_requests`]); what lands there is opened by
-//! `inbox::received_reply`.
+//! `inbox::received_reply`. Our friend code's request inbox (plan RV2e) is
+//! held in a third map, reopened at unlock; what lands there is opened by
+//! `inbox::received_reply` too, and the slot rolled (`code_inbox::landed`).
 
 use rekindle_records::port::OpenIntent;
 use std::sync::Arc;
@@ -36,6 +38,26 @@ pub(super) async fn hold_reply(
     lease: LeaseId,
 ) {
     hold_in(&host.ctx().friend_watches.replies, pool, record_key, lease).await;
+}
+
+/// Hold `lease` on our friend code's request inbox `record_key` and watch
+/// its writer's subkey (plan RV2e).
+pub(super) async fn hold_code(
+    host: &HostFriends,
+    pool: &Arc<dyn RecordPort>,
+    record_key: &str,
+    lease: LeaseId,
+) {
+    hold_in(&host.ctx().friend_watches.codes, pool, record_key, lease).await;
+}
+
+/// Stop watching our friend code's inbox `record_key` (rolled).
+pub(super) async fn release_code(host: &HostFriends, record_key: &str) {
+    let lease = host.ctx().friend_watches.codes.lock().remove(record_key);
+    let pool = host.node().ok().and_then(|node| node.records());
+    if let (Some(lease), Some(pool)) = (lease, pool) {
+        pool.release(lease).await;
+    }
 }
 
 async fn hold_in(
@@ -78,6 +100,21 @@ pub(super) async fn rewatch_pending(host: &HostFriends) {
         match pool.acquire(&key, None, OpenIntent::Hold).await {
             Ok(lease) => hold(host, &pool, &key, lease).await,
             Err(e) => tracing::warn!(error = %e, "invite inbox not reopened"),
+        }
+    }
+    let owner = host.ctx().require_owner();
+    let code = match owner {
+        Ok(owner) => db
+            .call(move |conn| rekindle_db::repo::outgoing_invites::code_inbox_key(conn, &owner))
+            .await
+            .ok()
+            .flatten(),
+        Err(_) => None,
+    };
+    if let Some(key) = code {
+        match pool.acquire(&key, None, OpenIntent::Hold).await {
+            Ok(lease) => hold_code(host, &pool, &key, lease).await,
+            Err(e) => tracing::warn!(error = %e, "friend code inbox not reopened"),
         }
     }
 }
@@ -141,11 +178,20 @@ impl HostFriends {
             .lock()
             .get(record_key)
             .copied();
-        let (lease, is_reply) = match (invite, reply) {
+        let code = self
+            .ctx()
+            .friend_watches
+            .codes
+            .lock()
+            .get(record_key)
+            .copied();
+        // A code's request is a first contact's durable copy, as a reply is.
+        let (lease, is_reply) = match (invite, reply.or(code)) {
             (Some(lease), _) => (lease, false),
             (None, Some(lease)) => (lease, true),
             (None, None) => return false,
         };
+        let rolls = code.is_some().then(|| record_key.to_owned());
         if !subkeys.contains(&request_inbox::REQUEST) {
             return true;
         }
@@ -175,6 +221,10 @@ impl HostFriends {
                     if inline.as_ref() != Some(&value) {
                         open(value).await;
                     }
+                }
+                // The slot took its one write: the next redeemer's is a new one.
+                if let Some(slot) = rolls {
+                    rekindle_transport::operations::friend::code_inbox::landed(&host, &slot).await;
                 }
             });
         true

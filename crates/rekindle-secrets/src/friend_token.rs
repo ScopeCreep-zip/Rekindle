@@ -29,9 +29,33 @@ pub fn matches(ours: &FriendRequestToken, presented: &str) -> bool {
     bool::from(ours.as_str().as_bytes().ct_eq(presented.as_bytes()))
 }
 
+/// The derivation context of a friend code's request-inbox writer (plan
+/// RV2e).
+const INBOX_WRITER_CONTEXT: &str = "rekindle friend-code request inbox writer v1";
+
+/// The one-time writer of our friend code's request inbox (plan RV2e): an
+/// Ed25519 key derived from the code's token, so exactly the code's holders
+/// can write the inbox, and rotating the token changes the writer. The code
+/// itself carries nothing more.
+#[must_use]
+pub fn inbox_writer(token: &FriendRequestToken) -> ed25519_dalek::SigningKey {
+    let seed = zeroize::Zeroizing::new(blake3::derive_key(
+        INBOX_WRITER_CONTEXT,
+        token.as_str().as_bytes(),
+    ));
+    ed25519_dalek::SigningKey::from_bytes(&seed)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{matches, mint};
+    use super::{inbox_writer, matches, mint};
+
+    #[test]
+    fn the_inbox_writer_follows_the_token() {
+        let (a, b) = (mint(), mint());
+        assert_eq!(inbox_writer(&a).to_bytes(), inbox_writer(&a).to_bytes());
+        assert_ne!(inbox_writer(&a).to_bytes(), inbox_writer(&b).to_bytes());
+    }
 
     #[test]
     fn minted_tokens_are_valid_distinct_and_compare() {

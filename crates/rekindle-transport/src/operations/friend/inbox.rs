@@ -45,8 +45,21 @@ pub(crate) fn records(
 /// The record could not be created or its owner keypair kept.
 pub(crate) async fn create(host: &dyn FriendHost) -> Result<InboxCapability, FriendError> {
     let (record_key, owner, lease, writer) = new_inbox(host).await?;
-    // The owner subkey's one write puts the record on the network: the
-    // invite is shown only once its inbox can be written.
+    open(host, lease).await?;
+    host.keep_request_inbox(&record_key, &owner, lease).await?;
+    Ok(InboxCapability { record_key, writer })
+}
+
+/// Put a new inbox on the network by its owner subkey's one write (an
+/// invite's is shown, and a friend code's published, only once its inbox
+/// can be written); a write that misses releases `lease`.
+///
+/// # Errors
+/// The write did not reach consensus.
+pub(crate) async fn open(
+    host: &dyn FriendHost,
+    lease: rekindle_records::lease::LeaseId,
+) -> Result<(), FriendError> {
     let pool = records(host)?;
     let opened = pool
         .set(
@@ -63,8 +76,7 @@ pub(crate) async fn create(host: &dyn FriendHost) -> Result<InboxCapability, Fri
             "request inbox not opened: {e}"
         )));
     }
-    host.keep_request_inbox(&record_key, &owner, lease).await?;
-    Ok(InboxCapability { record_key, writer })
+    Ok(())
 }
 
 /// Create our request's reply inbox (plan RV2): the same shape as an
@@ -172,23 +184,34 @@ fn deferred(e: &dyn std::fmt::Display) -> crate::operations::dm::outbox::Attempt
     crate::operations::dm::outbox::Attempt::Deferred
 }
 
-/// A new request inbox, created locally: its key, owner keypair, lease and
-/// the one-time writer's keypair text.
-async fn new_inbox(
-    host: &dyn FriendHost,
-) -> Result<
-    (
-        String,
-        Zeroizing<String>,
-        rekindle_records::lease::LeaseId,
-        String,
-    ),
-    FriendError,
-> {
+/// A new request inbox with a fresh one-time writer, created locally: its
+/// key, owner keypair, lease and the writer's keypair text.
+async fn new_inbox(host: &dyn FriendHost) -> Result<NewInbox, FriendError> {
     let mut secret = Zeroizing::new([0u8; 32]);
     host.rng().fill(secret.as_mut_slice());
     let signing = rekindle_secrets::ed25519_dalek::SigningKey::from_bytes(&secret);
-    let writer = rekindle_crypto::keypair_text::keypair_text_from_signing(&signing);
+    new_inbox_for(host, &signing).await
+}
+
+/// A new inbox, created locally: its key, owner keypair, lease and the
+/// keypair text of its one-time writer `signing`.
+pub(crate) type NewInbox = (
+    String,
+    Zeroizing<String>,
+    rekindle_records::lease::LeaseId,
+    String,
+);
+
+/// [`new_inbox`] for a given writer: a friend code's (plan RV2e) is derived
+/// from its token, so every slot of one code has the same writer.
+///
+/// # Errors
+/// The record could not be created.
+pub(crate) async fn new_inbox_for(
+    host: &dyn FriendHost,
+    signing: &rekindle_secrets::ed25519_dalek::SigningKey,
+) -> Result<NewInbox, FriendError> {
+    let writer = rekindle_crypto::keypair_text::keypair_text_from_signing(signing);
     let schema = rekindle_records::schema::request_inbox(&signing.verifying_key().to_bytes());
     let pool = records(host)?;
     let (lease, record_key, owner) = pool

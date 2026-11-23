@@ -457,13 +457,10 @@ fn answer_outcome(answer: &Result<send::CallAnswer, FriendError>) -> &'static st
     }
 }
 
-/// One attempt of a handshake row to `to`: a request or a first contact
-/// ([`receipted`]) goes by `app_call` (a first contact to a requester that
-/// named a reply inbox also by its write there, plan RV2), over the cached route or one
-/// refreshed from their profile, and is attempted again until its empty
-/// return (the receipt) comes back, a judged refusal ends it ([`answered`]),
-/// or its deadline passes; any other frame
-/// is sent once over the route.
+/// One attempt of a handshake row to `to`: a request or a first contact ([`receipted`]) goes by
+/// `app_call` (also by its write into the requester's reply inbox or the code's slot: RV2, RV2e),
+/// over the cached route or one refreshed from their profile, again until its receipt comes back,
+/// a judged refusal ends it ([`answered`]) or its deadline passes; any other frame goes once.
 pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt {
     let framed: Framed = match serde_json::from_slice(payload) {
         Ok(framed) => framed,
@@ -504,6 +501,11 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
         }
         Err(e) => return Attempt::Wedged(e.to_string()),
     };
+    if let Some(done) =
+        super::first_contact_durable::code_request(host, to, &framed, &datagram).await
+    {
+        return done;
+    }
     if receipted(kind) {
         return attempt_call(host, to, datagram, kind).await;
     }
