@@ -66,6 +66,11 @@ pub enum Action {
     ShowGroupMessages {
         group_id: String,
     },
+    /// Load a DM thread's stored messages (`DmHistory`), with their
+    /// delivery states, into the open DM view (plan SR2).
+    LoadDmHistory {
+        peer_key: String,
+    },
     ShowVoiceSession {
         community: String,
         channel: String,
@@ -300,6 +305,11 @@ pub enum CommandResult {
     },
     DmInboxLoaded {
         threads: Vec<rekindle_types::display::DmThreadDisplay>,
+    },
+    /// A DM thread's stored messages (`DmHistory`).
+    DmHistoryLoaded {
+        peer_key: String,
+        messages: Vec<rekindle_types::dto::dm::DmMessage>,
     },
     /// Our groups and unanswered invites (`GroupDmList`, plan E2.6).
     GroupDmsLoaded {

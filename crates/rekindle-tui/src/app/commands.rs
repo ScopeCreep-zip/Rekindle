@@ -287,14 +287,10 @@ impl App {
                 })
                 .await
             {
+                // Committed: the thread reloads with its queued echo, and
+                // the outbox's states then stream (plan E2.5, SR2).
                 Ok(_) => {
-                    let _ = tx.send(Action::ShowToast {
-                        message: format!(
-                            "DM sent to {}",
-                            crate::helpers::abbreviate_key(&peer_key)
-                        ),
-                        level: ToastLevel::Success,
-                    });
+                    let _ = tx.send(Action::LoadDmHistory { peer_key });
                 }
                 Err(e) => report_failure(&tx, "send DM", e),
             }
