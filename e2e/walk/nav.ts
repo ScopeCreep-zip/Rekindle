@@ -23,7 +23,9 @@ export async function inBuddy(b: Browser): Promise<void> {
       (await b.execute(() => {
         const l = document.getElementById("rekindle-skin") as HTMLLinkElement | null;
         if (!l?.sheet) return false;
-        return !!document.querySelector('.skin-tree [data-skin-role="nameField"]') || !!document.querySelector(".identity-bar");
+        // A tree with its nodes laid (not every pack lays a name field: Total
+        // Chaos and xSLIMFIRE have none), or the app's own bar.
+        return !!document.querySelector(".skin-tree [data-skin-node]") || !!document.querySelector(".identity-bar");
       })) as boolean,
     NET_WAIT_MS,
     "the buddy list showed neither its skin's tree nor its own bar",

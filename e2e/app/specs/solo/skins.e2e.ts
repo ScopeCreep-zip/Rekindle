@@ -27,15 +27,6 @@ import { BUDDY_LIST, CHAT_DM, CHAT_GROUP, COMMUNITY, PROFILE, SETTINGS_APPEARANC
 const OUT = path.join(import.meta.dirname, "..", "..", "out", "skins");
 const PACKS = builtinPacks();
 
-/**
- * Known failure, held strictly: these packages declare no colours yet, so
- * they look like the default theme with their images swapped. Plan E7.7.7
- * imports each skin's own colours (wt/e777l onward; with it all 11 pass,
- * S5 run on 423ff2d53, 2026-11-20). Until it lands, each must show exactly
- * the `changes` finding; one that declares colours fails, saying to drop
- * it from this list.
- */
-const KNOWN_UNCOLOURED = new Set(["onyx", "spacecowboy", "stealthx", "total-chaos", "xglow"]);
 
 function slug(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -144,17 +135,10 @@ describe("every built-in skin, applied for real", function () {
   });
 
   for (const pack of PACKS) {
-    const known = KNOWN_UNCOLOURED.has(pack.file);
-    it(`${pack.name}: every window shows the colours it declares, and it changes its base${known ? " (known failure: no colours until E7.7.7)" : ""}`, async () => {
-      const found = await applyAndCheck(pack);
-      if (!known) {
-        expect(found).toEqual({});
-        return;
-      }
-      if (pack.variants.some((v) => Object.keys(v.colours).length > 0)) {
-        throw new Error(`${pack.file}.rkskin now declares colours: drop it from KNOWN_UNCOLOURED in skins.e2e.ts`);
-      }
-      expect(Object.keys(found)).toEqual(["changes"]);
+    // Every built-in declares its own colours (plan E7.7.7: the last five,
+    // Onyx, SpaceCowboy, StealthX, Total Chaos and XGlow, on the r24 trunk).
+    it(`${pack.name}: every window shows the colours it declares, and it changes its base`, async () => {
+      expect(await applyAndCheck(pack)).toEqual({});
     });
   }
 
