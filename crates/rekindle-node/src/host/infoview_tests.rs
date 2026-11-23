@@ -239,21 +239,14 @@ async fn a_group_page_lists_its_members() {
     assert_eq!(all, [bob.as_str()]);
 }
 
-/// Two shown events in one period push the open window's view once.
-#[tokio::test]
-async fn shown_events_push_the_open_window_once() {
-    let (_dirs, host, _owner, bob) = ann_and_bob().await;
-    let mut stream = host.ctx.journal.subscribe(None);
-    get(&host, InfoviewSubject::Own, "main").await;
-    for nick in ["A", "B"] {
-        host.ctx
-            .publish_event(SubscriptionEvent::Friend(FriendEvent::NicknameChanged {
-                peer_key: bob.clone(),
-                nickname: Some(nick.into()),
-            }));
-    }
+/// The Infoview pushes the journal shows: each `(window, subject)` that
+/// arrives before `end`, stopping at the first when `first`.
+async fn pushes_until(
+    stream: &mut rekindle_events::EventStream,
+    end: tokio::time::Instant,
+    first: bool,
+) -> Vec<(String, InfoviewSubject)> {
     let mut pushes = Vec::new();
-    let end = tokio::time::Instant::now() + Duration::from_millis(900);
     while let Ok(Some(frame)) = tokio::time::timeout_at(end, stream.next()).await {
         if let StreamFrame::Event(s) = frame {
             if let SubscriptionEvent::System(SystemEvent::Infoview(InfoviewEvent::Updated {
@@ -262,9 +255,42 @@ async fn shown_events_push_the_open_window_once() {
             })) = s.event
             {
                 pushes.push((window, view.subject));
+                if first {
+                    break;
+                }
             }
         }
     }
+    pushes
+}
+
+/// Two shown events in one period push the open window's view once. The
+/// worker reads both on the paused clock, so no time passes between them
+/// (a loaded machine cannot split the period); the setup's own shown
+/// events are let come due first, while no window is open.
+#[tokio::test]
+async fn shown_events_push_the_open_window_once() {
+    let (_dirs, host, _owner, bob) = ann_and_bob().await;
+    tokio::time::pause();
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    tokio::time::resume();
+    let mut stream = host.ctx.journal.subscribe(None);
+    get(&host, InfoviewSubject::Own, "main").await;
+    tokio::time::pause();
+    for nick in ["A", "B"] {
+        host.ctx
+            .publish_event(SubscriptionEvent::Friend(FriendEvent::NicknameChanged {
+                peer_key: bob.clone(),
+                nickname: Some(nick.into()),
+            }));
+    }
+    for _ in 0..8 {
+        tokio::task::yield_now().await;
+    }
+    tokio::time::resume();
+    let now = tokio::time::Instant::now;
+    let mut pushes = pushes_until(&mut stream, now() + Duration::from_secs(30), true).await;
+    pushes.extend(pushes_until(&mut stream, now() + Duration::from_secs(1), false).await);
     assert_eq!(pushes, [("main".to_owned(), InfoviewSubject::Own)]);
 }
 
