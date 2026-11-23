@@ -52,8 +52,8 @@ InnerBevel Decor
     TabServerText Tab(Servers) label "Servers"
       TabServerButton Part target [0, -4, 55, 20] art [0, 4, 62, 16] Spacing
     TabDownloadText Tab(Files) label "Downloads"
-      TabDownloadButton Part target [0, -4, 59, 20] art [0, 4, 62, 16] Spacing
-    TabDownloadText.Communities Tab(Communities) label "Communities" target [0, -4, 156, 19] art [0, 4, 156, 15] Spacing
+      TabDownloadButton Part target [0, -4, 62, 20] art [0, 4, 62, 16] Spacing
+    TabDownloadText.Communities Tab(Communities) label "Communities" target [0, -4, 153, 19] art [0, 4, 153, 15] Spacing
       TabDownloadButton.Communities Part
   TabbedControl Views
     BuddyView View(Friends)

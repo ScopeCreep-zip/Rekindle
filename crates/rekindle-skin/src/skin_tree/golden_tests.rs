@@ -6,7 +6,7 @@
 use std::fmt::Write as _;
 
 use rekindle_types::dto::skin::{SkinWindow, WindowLayout};
-use rekindle_types::dto::skin_tree::{NodeRole, ShellNode, SkinNode, SkinTree};
+use rekindle_types::dto::skin_tree::{NodeInset, NodeRole, ShellNode, SkinNode, SkinTree};
 
 use crate::{builtin, images, manifest, package};
 
@@ -314,9 +314,14 @@ fn a_name_field_under_a_button_serves_its_inset() {
 /// Plan SK5: a name field no button, tab or menu meets serves no inset
 /// (Alloy's `UserNameField`; its status field is a text field, never a
 /// covering sibling).
+/// Plan SK13: a field's text stops at every press area it meets, not only
+/// its siblings'. Alloy's `UserNameField` (205 px art) is no longer clear:
+/// a press area covers its right 54 px, where its own target already
+/// stops (151 px, plan SK12), so its words stop there too.
 #[test]
 fn a_clear_name_field_serves_no_inset() {
-    assert_eq!(name_field("alloy").inset, None);
+    let alloy = name_field("alloy").inset;
+    assert_eq!(alloy, Some(NodeInset { left: 0, right: 54 }));
     assert_eq!(name_field("xfire-classic").inset, None);
 }
 

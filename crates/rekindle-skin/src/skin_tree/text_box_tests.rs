@@ -145,12 +145,20 @@ fn labels_hold_their_words_where_room_exists() {
         ("onyx", "TabNormalText", 26),
         ("onyx", "TabServerText", 26),
         ("onyx", "TabDownloadText", 24),
+        // Plan SK13: Simple-X lays its `TabHeader` tabs over its menu row
+        // at the minimum (`HelpMenuText` at x 154-214, `TabNormalText`'s
+        // press at x 123-187, both from y 95-100): each stops at the
+        // other's press, a neighbour's, never its own button's.
+        ("simple-x", "HelpMenuText", 6),
+        ("simple-x", "TabNormalText", 6),
         ("simple-x", "TabDownloadText.Communities", 60),
         ("spacecowboy", "TabDownloadText.Communities", 62),
         // Plan SK12: each stops at the next title's target (x 38, x 56).
         ("spacecowboy", "XfireMenuText", 9),
         ("spacecowboy", "ToolsMenuText", 9),
-        ("xfire-classic", "TabDownloadText", 51),
+        // Plan SK13: the text starts at x 132, inside `TabServerText`'s
+        // press (its `TabServerButton` reaches x 135), and stops there.
+        ("xfire-classic", "TabDownloadText", 48),
     ];
     let mut short = Vec::new();
     for pack in PACKS {
