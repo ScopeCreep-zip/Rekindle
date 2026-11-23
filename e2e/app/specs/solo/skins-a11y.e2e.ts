@@ -12,13 +12,13 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { browser, expect } from "@wdio/globals";
-import { MOD_KEY, byText, switchTo } from "../../../walk/helpers.ts";
+import { MOD_KEY, NET_WAIT_MS, byText, press, resolveIntent, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
 import { BUDDY, SETTINGS, expectOnlySelectedTab, openSettings } from "../../../walk/nav.ts";
 import { type Violation, violations } from "../../axe.ts";
 import { checkGeometry, targetsMetIn, treeFitIn } from "../../geometry.ts";
 import type { TreeFit } from "../../geometry-page.ts";
 import { applySkin, createCommunity, createIdentity, createTextChannel, newUser, openCommunity, postMessage, selectChannel, skinShown, type User } from "../../journeys.ts";
-import { builtinPacks, type SkinPack } from "../../skin-pack.ts";
+import { ACCESSIBLE_VARIANT, builtinPacks, type SkinPack } from "../../skin-pack.ts";
 import { BUDDY_LIST, COMMUNITY, SETTINGS_APPEARANCE, type WindowCase, sizeWindow, sizesIn, spacingOf, treeGrowth } from "../../windows.ts";
 
 const OUT = path.join(import.meta.dirname, "..", "..", "out", "skins-a11y");
@@ -350,6 +350,32 @@ describe("every built-in skin keeps the app accessible and laid out", function (
   }
 
   /**
+   * What the Appearance picker gets wrong about the shown skin (plan SK14):
+   * the accessible variant's row reads "Meets target sizes" and no pointer
+   * shows; a faithful skin shows the pointer naming the accessible skin.
+   */
+  async function pickerSays(conforming: boolean): Promise<string[]> {
+    return (await browser.execute(
+      (conforming: boolean, alt: string) => {
+        const out: string[] = [];
+        const pointer = document.querySelector(".skin-alternate");
+        const access = document.querySelector(".skin-row-shown .skin-access")?.textContent?.trim() ?? "";
+        if (conforming) {
+          if (pointer) out.push("a pointer shows on the conforming skin");
+          if (!access.startsWith("Meets target sizes")) out.push(`its line reads "${access}"`);
+        } else {
+          if (!pointer) out.push("no pointer to the accessible skin");
+          else if (!(pointer.textContent ?? "").includes(alt)) out.push(`the pointer reads "${(pointer.textContent ?? "").trim()}"`);
+          if (!/control(s)? under 24 px/.test(access)) out.push(`its line reads "${access}"`);
+        }
+        return out;
+      },
+      conforming,
+      ACCESSIBLE_VARIANT.name,
+    )) as string[];
+  }
+
+  /**
    * Whether Mod+, in the buddy list opens Settings at Appearance (plan SK14):
    * Settings is moved to About first, so only the chord can bring it back.
    */
@@ -403,11 +429,28 @@ describe("every built-in skin keeps the app accessible and laid out", function (
     return found;
   }
 
+  it("a faithful skin's pointer selects the accessible skin in one action (plan SK14)", async () => {
+    const faithful = PACKS.find((p) => p.file !== ACCESSIBLE_VARIANT.file);
+    if (!faithful) throw new Error("no faithful skin");
+    await applySkin(browser, me, faithful.name);
+    await press(browser, await shown(browser, ".skin-alternate button"));
+    await resolveIntent(browser, { passphrase: me.passphrase, appearMs: 1500 });
+    await waitUntil(
+      async () => (await (await browser.$(".skin-row-shown .skin-name")).getText()).trim() === ACCESSIBLE_VARIANT.name,
+      NET_WAIT_MS,
+      `${ACCESSIBLE_VARIANT.name} never became the skin in use`,
+    );
+  });
+
   for (const pack of PACKS) {
     const held = (KNOWN[pack.file] ?? []).length;
     it(`${pack.name}: axe and geometry hold in the buddy list, Appearance and a community window${held ? ` (${held} known failure${held === 1 ? "" : "s"})` : ""}`, async () => {
       const href = await applySkin(browser, me, pack.name);
       const found: Record<string, unknown> = {};
+      // Plan SK14: the picker says how the shown skin sizes its controls and,
+      // for a faithful skin, points one action away to the accessible one.
+      const picker = await pickerSays(pack.file === ACCESSIBLE_VARIANT.file);
+      if (picker.length > 0) found["appearance: picker"] = picker;
       Object.assign(found, await audit(pack, SETTINGS_APPEARANCE, true));
       // Each window is audited once it shows this skin (its own link, SK4).
       await switchTo(browser, BUDDY);
