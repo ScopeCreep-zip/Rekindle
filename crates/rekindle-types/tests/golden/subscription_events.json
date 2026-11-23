@@ -853,6 +853,27 @@
       }
     }
   },
+  "groupDm.messageSent": {
+    "groupDm": {
+      "messageSent": {
+        "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
+        "message": {
+          "body": "gg group",
+          "expireAt": null,
+          "expireSeconds": 0,
+          "historyGapThrough": null,
+          "id": 43,
+          "isOwn": true,
+          "messageId": "0192f0c4-7b3a-7c1e-9a55-1f0e2d3c4b5c",
+          "sendState": "queued",
+          "senderId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "timerNoticeSeconds": null,
+          "timestamp": 1700000000000
+        },
+        "replyToId": null
+      }
+    }
+  },
   "groupDm.renamed": {
     "groupDm": {
       "renamed": {

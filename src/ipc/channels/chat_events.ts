@@ -137,6 +137,10 @@ export type GroupDmEvent =
         replyTo: string | null;
       };
     }
+  /** Our own message exactly as stored, once committed (plan E6.11): every
+   *  window of the group upserts it by `message.messageId`. Never a member's
+   *  message, so it never notifies or counts unread. */
+  | { messageSent: { groupId: string; replyToId: string | null; message: DmMessage } }
   | { historyGap: { groupId: string; member: GroupDmMember; throughSeq: number } };
 
 export type TypingEvent =

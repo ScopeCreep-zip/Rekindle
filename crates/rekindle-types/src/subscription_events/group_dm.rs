@@ -71,6 +71,20 @@ pub enum GroupDmEvent {
         timestamp: i64,
         reply_to: Option<String>,
     },
+    /// Our own message to the group, exactly as stored, once it is
+    /// committed to the group's outbox stream with its local echo (plan
+    /// E2.5, E6.11): every window of the group upserts it by
+    /// `message.message_id`, so a send no window rendered still shows.
+    /// Distinct from [`Self::Message`] by type: never a member's words, so
+    /// no consumer can notify for it or count it unread.
+    /// Triggered by: `group_dm::content::send` committing our message.
+    MessageSent {
+        group_id: String,
+        /// The client id of the message it replies to, if any.
+        reply_to_id: Option<String>,
+        /// The stored row, as the group's history answers it.
+        message: crate::dto::dm::DmMessage,
+    },
     /// The group's creator renamed it. Triggered by: our rename, or the
     /// creator's `GroupDmRename` entry that opened (never a non-creator's).
     Renamed { group_id: String, name: String },
@@ -97,6 +111,7 @@ impl GroupDmEvent {
             | Self::KeyRotated { group_id, .. }
             | Self::SendStatus { group_id, .. }
             | Self::Message { group_id, .. }
+            | Self::MessageSent { group_id, .. }
             | Self::HistoryGap { group_id, .. }
             | Self::Renamed { group_id, .. } => group_id,
         }

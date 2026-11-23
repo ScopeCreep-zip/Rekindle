@@ -335,6 +335,11 @@ pub(super) fn hash_group_dm(
             h.update(sender.public_key.as_bytes());
             h.update(message_id.as_bytes());
         }
+        GroupDmEvent::MessageSent { message, .. } => {
+            // One stored row per client id: its id names it.
+            h.update(b"sent|");
+            h.update(&message.id.to_le_bytes());
+        }
         GroupDmEvent::Renamed { name, .. } => {
             h.update(b"name|");
             h.update(name.as_bytes());

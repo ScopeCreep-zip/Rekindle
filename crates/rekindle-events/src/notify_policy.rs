@@ -382,6 +382,35 @@ mod tests {
         assert_eq!(os_notification_for(&sent, &all_on), None);
     }
 
+    /// Our own group message (plan E6.11) is never a notification either.
+    #[test]
+    fn our_own_sent_group_message_never_notifies() {
+        use rekindle_types::subscription_events::GroupDmEvent;
+        let sent = SubscriptionEvent::GroupDm(GroupDmEvent::MessageSent {
+            group_id: "6d".repeat(16),
+            reply_to_id: None,
+            message: rekindle_types::dto::dm::DmMessage {
+                id: 1,
+                message_id: Some("01900000-0000-7000-8000-000000000003".into()),
+                sender_id: "me".into(),
+                body: "hi".into(),
+                timestamp: 1,
+                is_own: true,
+                send_state: rekindle_types::message::SendState::Queued,
+                history_gap_through: None,
+                expire_seconds: 0,
+                expire_at: None,
+                timer_notice_seconds: None,
+            },
+        });
+        assert!(!is_candidate(&sent));
+        let all_on = NotifyInputs {
+            content: NotificationContent::NameAndMessage,
+            ..on()
+        };
+        assert_eq!(os_notification_for(&sent, &all_on), None);
+    }
+
     #[test]
     fn disabled_or_dnd_shows_nothing() {
         for inputs in [

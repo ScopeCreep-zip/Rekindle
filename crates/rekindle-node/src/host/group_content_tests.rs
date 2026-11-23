@@ -124,6 +124,58 @@ async fn a_send_commits_its_row_and_echo_and_waits_for_its_chain_entry() {
     );
 }
 
+/// Plan E6.11: our group send publishes its stored row once, through the
+/// journal, as `MessageSent` (never `Message`, a member's words).
+#[tokio::test]
+async fn our_group_send_publishes_its_stored_row_once() {
+    use rekindle_types::subscription_events::{GroupDmEvent, StreamFrame, SubscriptionEvent};
+    let dir = tempfile::tempdir().unwrap();
+    let (host, owner) = ann(&dir).await;
+    let friends = HostFriends::of(&host.ctx);
+    group(&friends, owner).await;
+    let gid = hex::encode(GID);
+    let mut events = host.ctx.journal.subscribe(None);
+
+    let id = content::send(&friends, &gid, "gg group").await.unwrap();
+
+    let mut own = Vec::new();
+    while let Ok(Some(frame)) =
+        tokio::time::timeout(std::time::Duration::from_millis(50), events.next()).await
+    {
+        if let StreamFrame::Event(seq) = frame {
+            match seq.event {
+                SubscriptionEvent::GroupDm(e @ GroupDmEvent::MessageSent { .. }) => own.push(e),
+                SubscriptionEvent::GroupDm(e @ GroupDmEvent::Message { .. }) => {
+                    panic!("our send is never a member's message: {e:?}")
+                }
+                _ => {}
+            }
+        }
+    }
+    assert_eq!(own.len(), 1, "one own row per send: {own:?}");
+    let GroupDmEvent::MessageSent {
+        group_id,
+        reply_to_id,
+        message,
+    } = &own[0]
+    else {
+        unreachable!("filtered above")
+    };
+    assert_eq!(group_id, &gid);
+    assert_eq!(reply_to_id, &None);
+    assert_eq!(message.message_id.as_deref(), Some(id.as_str()));
+    assert!(message.is_own);
+    assert_eq!(message.sender_id, hex::encode(owner));
+    let history = rekindle_transport::operations::group_dm::messages(&friends, &gid, 50, None)
+        .await
+        .unwrap();
+    let stored = history
+        .iter()
+        .find(|m| m.message_id == message.message_id)
+        .expect("the row is stored");
+    assert_eq!(stored, message, "the event carries the stored row");
+}
+
 #[tokio::test]
 async fn a_members_entries_store_in_order_and_a_wrong_epoch_is_refused() {
     let dir = tempfile::tempdir().unwrap();
