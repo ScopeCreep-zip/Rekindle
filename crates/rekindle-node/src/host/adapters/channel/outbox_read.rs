@@ -41,6 +41,7 @@
 //! thread reply's tag names a thread, not a channel, so it maps to no
 //! channel here and is read by the thread view (`read_author_outboxes`).
 
+use rekindle_channel::ingest::GateReason;
 use rekindle_channel::outbox_seal::stream_of_tag;
 use rekindle_channel::ChannelMessagingDeps as _;
 use rekindle_codec::community::channel_record::{
@@ -379,6 +380,21 @@ impl HostChannel {
             forwarded_from_author,
         };
         match self.ingest_as(post, read.backfill).await? {
+            // The gate judged the author departed while this read took it
+            // as a member: its departure merged after the standing was
+            // taken, so the entry was judged without the departure head
+            // that may keep it. Held, not dropped: the cursor stays on it
+            // and it is read again under the departed standing
+            // (`OutboxSink::apply`), never passed as from a non-member
+            // (ADR 0011: a leaver's writes before its leave stay valid).
+            Ingested::Dropped(GateReason::NotMember) if !read.departed => {
+                tracing::debug!(
+                    community_id,
+                    channel_id,
+                    "outbox post judged under a standing its departure overtook: read again"
+                );
+                return Ok(Held::Pending);
+            }
             Ingested::Dropped(reason) => {
                 tracing::debug!(community_id, channel_id, ?reason, "outbox post dropped");
             }
