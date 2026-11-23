@@ -118,6 +118,11 @@ pub enum ShellOp {
         target: super::transfer::TransferTarget,
         suggested_name: String,
     },
+    /// The local search panel, scoped to the view it was opened from
+    /// (`SearchFor`, SK2-G §8); its query is one `LocalSearch`.
+    OpenSearch {
+        scope: super::local_search::LocalSearchScope,
+    },
     ReportBug,
     CopyKey,
     EditName,

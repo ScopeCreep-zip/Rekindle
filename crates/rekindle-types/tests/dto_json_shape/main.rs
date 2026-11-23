@@ -7,6 +7,7 @@
 mod dm;
 #[path = "../common/json.rs"]
 mod json;
+mod local_search;
 mod servers;
 mod skin;
 
@@ -263,6 +264,7 @@ fn samples() -> Map<String, Value> {
     skin::samples(&mut add);
     dm::samples(&mut add);
     servers::samples(&mut add, &pk('b'));
+    local_search::samples(&mut add, &pk('c'));
     out
 }
 
