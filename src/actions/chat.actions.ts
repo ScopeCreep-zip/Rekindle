@@ -5,6 +5,7 @@ import { friendsState, setFriendsState } from "../stores/friends.store";
 import type { Message } from "../stores/chat.store";
 import { transformDmMessage } from "../utils/transformers";
 import { awaitsExpiry } from "./disappearing.actions";
+import { sendDraftReport } from "../utils/draft_reports";
 
 export async function handleSendMessage(to: string, body: string): Promise<void> {
   const trimmed = body.trim();
@@ -68,8 +69,10 @@ export function handleKeyDown(
 /// The backend decides what the peer sees (the start, its refresh, the
 /// idle stop; plan E2.3), so the window keeps no typing state. Typing is
 /// best effort, so a failed report is dropped.
+/** Our 1:1 composer changed: whether it holds text, in edit order and never
+ *  swallowed (utils/draft_reports.ts). */
 export function handleDraftChanged(to: string, body: string): void {
-  commands.sendTyping(to, body.trim().length > 0).catch(() => {});
+  void sendDraftReport(`dm:${to}`, () => commands.sendTyping(to, body.trim().length > 0));
 }
 
 export function handleIncomingMessage(

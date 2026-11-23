@@ -4,6 +4,7 @@ import { groupDmState, setGroupDmState } from "../stores/group-dm.store";
 import { transformDmMessage } from "../utils/transformers";
 import { errorMessage } from "../utils/error";
 import { awaitsExpiry } from "./disappearing.actions";
+import { sendDraftReport } from "../utils/draft_reports";
 
 // Group DMs (plan E2.6). Each action calls the Host and renders what it
 // answers; validation, the member caps and the review are the Host's.
@@ -113,8 +114,10 @@ export async function handleSendGroupDm(groupId: string, body: string): Promise<
 /** Report the draft to the group after each edit: whether it holds text.
  *  The Host decides what the members see, as for a peer; typing is best
  *  effort, so a failed report is dropped. */
+/** Our group composer changed: whether it holds text, in edit order and
+ *  never swallowed (utils/draft_reports.ts). */
 export function handleGroupDraftChanged(groupId: string, body: string): void {
-  commands.groupDmTyping(groupId, body.trim().length > 0).catch(() => {});
+  void sendDraftReport(`group:${groupId}`, () => commands.groupDmTyping(groupId, body.trim().length > 0));
 }
 
 function failedClientId(groupId: string, messageId: number): string | undefined {
