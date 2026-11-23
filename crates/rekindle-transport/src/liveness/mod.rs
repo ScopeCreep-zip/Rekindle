@@ -7,9 +7,10 @@
 //!   0.5.8 `private_route_management.rs:7`) and a death arrives as
 //!   `RouteChange.dead_routes`, which `OwnRoutes::on_dead` handles. A
 //!   General route dead only from outside is rotated on evidence (plan
-//!   RV1): inbound silence while a peer should be answering, or a peer's
-//!   `'L'` report; the replacement is republished under the DHT's next seq
-//!   and the old route released once that lands (O3, O4).
+//!   RV1, RV2): inbound silence while a peer should be answering, a
+//!   friend's DM chain ahead of its hints, or a friend re-sending a call we
+//!   receipted over it; the replacement is republished under the DHT's next
+//!   seq and the old route released once that lands (O3, O4).
 //! - **Sender** ([`peer`]): a peer's route is suspected from missing acks,
 //!   re-read from their profile at a bounded rate and probed, and the peer
 //!   shown unreachable after six rounds (S1–S5).
@@ -18,7 +19,11 @@
 //!
 //! The probe is `'L'` ‖ 16 random bytes (`rekindle_codec::ingress`
 //! `LIVENESS_TAG`). Our dispatch answers every probe with a NAK, which tells
-//! a prober only that its call arrived, and takes it as that peer's report.
+//! a prober only that its call arrived. A probe is no evidence about our
+//! route (plan RV2): it names no sender, and Veilid names none for a call
+//! over a private route (0.5.8 `veilid_api/types/app_message_call.rs`,
+//! `sender` is `None` then), so anyone who read our published blob could
+//! send it and drain the route budget.
 
 pub mod owner;
 pub mod peer;
@@ -41,13 +46,14 @@ use tokio::time::Instant;
 pub enum ProbeAnswer {
     /// Not a probe: dispatch it as any call.
     NotProbe,
-    /// A peer's probe, its report that our route failed it: NAK it.
+    /// A peer's probe of our route: NAK it, which proves only that it
+    /// arrived; it counts as no evidence (plan RV2).
     Refuse,
 }
 
 /// What to answer an inbound call `raw` that may be a liveness probe: every
 /// probe is a peer's (RV1 removed our own self-test probes, so none is ours)
-/// and is refused. It reads only the datagram, so it needs no node state.
+/// and is refused, unattributed and so never counted (plan RV2). It reads only the datagram, so it needs no node state.
 #[must_use]
 pub fn answer_probe(raw: &[u8]) -> ProbeAnswer {
     if raw.len() == LIVENESS_PROBE_LEN && raw.first() == Some(&LIVENESS_TAG) {
@@ -150,22 +156,32 @@ impl Liveness {
         }
     }
 
-    /// A peer reported our route failed it: its suspect round's probe
-    /// reached us (S2), and the reporter is online. Our General route is
-    /// rotated unless it is younger than one re-fetch gap
-    /// ([`rekindle_route::liveness::REPORT_ROTATE_AGE`]: the report is about
-    /// the route it replaced). Returns whether it is rotated.
-    pub fn route_reported(&self) -> bool {
-        let rotate = self.sees_inbound
-            && self
-                .general
+    /// Whether `route` (an inbound event's route id) is our live General
+    /// route.
+    #[must_use]
+    pub fn over_general(&self, route: Option<&str>) -> bool {
+        route.is_some_and(|route| {
+            self.general
                 .lock()
                 .as_ref()
-                .is_some_and(|s| s.id.is_some() && s.rules.reported(Instant::now()));
-        if rotate {
-            self.rotate("a peer reported it");
+                .is_some_and(|s| s.id.as_deref() == Some(route))
+        })
+    }
+
+    /// Friend or open-handshake `peer` re-sent over our route `route` the
+    /// call with digest `frame` that we had receipted (plan RV2, the fifth
+    /// evidence source): counted only over our live General route; the
+    /// owner task rotates it on [`rekindle_route::liveness::RECEIPT_LOST_REPEATS`]
+    /// copies ([`owner::run_rotations`]).
+    pub fn duplicate_call(&self, peer: &str, frame: [u8; 32], route: Option<&str>) {
+        let Some(route) = route else {
+            return;
+        };
+        if let Some(state) = self.general.lock().as_mut() {
+            if state.id.as_deref() == Some(route) {
+                state.rules.duplicate_call(peer, frame, Instant::now());
+            }
         }
-        rotate
     }
 
     /// Rotate our General route on evidence that it is dead from outside
@@ -200,3 +216,7 @@ impl Liveness {
         id.is_some()
     }
 }
+
+#[cfg(test)]
+#[path = "receipt_tests.rs"]
+mod receipt_tests;

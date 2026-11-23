@@ -20,9 +20,9 @@ const EVIDENCE_TICK: std::time::Duration = std::time::Duration::from_secs(1);
 pub(crate) type SharedSession = Arc<parking_lot::RwLock<Option<crate::session::Session>>>;
 
 /// Rotate our General route on inbound silence while a peer should be
-/// answering us (O2, plan RV1), or when a friend's DM chain runs ahead of
-/// the hints that should have reached us over it, until shutdown. A peer's report rotates it
-/// from the dispatch loop ([`Liveness::route_reported`]); a route Veilid
+/// answering us (O2, plan RV1), when a friend's DM chain runs ahead of the
+/// hints that should have reached us over it, or when a friend re-sent a
+/// call we receipted over it (plan RV2), until shutdown. A route Veilid
 /// reports dead is `OwnRoutes::on_dead`'s.
 pub(crate) async fn run_rotations(live: Arc<Liveness>, mut offers: Offers) {
     loop {
@@ -48,10 +48,21 @@ pub(crate) async fn run_rotations(live: Arc<Liveness>, mut offers: Offers) {
             .lock()
             .as_ref()
             .is_some_and(|s| s.rules.chain_ahead(now));
+        let lost = live
+            .general
+            .lock()
+            .as_ref()
+            .and_then(|s| s.rules.receipt_lost(now));
         if silent {
             live.rotate("inbound silence while a peer should answer");
         } else if ahead {
             live.rotate("a friend's DM chain ran ahead of its hints");
+        } else if let Some(peer) = lost {
+            // The peer's cooldown starts before the route changes.
+            if let Some(state) = live.general.lock().as_mut() {
+                state.rules.rotated_for(&peer, now);
+            }
+            live.rotate("a friend re-sent a call we receipted");
         }
     }
 }

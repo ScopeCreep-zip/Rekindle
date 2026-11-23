@@ -57,7 +57,7 @@ impl InboundHandler for Recorder {
         self.seen.lock().push(Seen::Direct(datagram.to_vec()));
     }
 
-    async fn on_direct_call(&self, datagram: &[u8]) -> Option<Vec<u8>> {
+    async fn on_direct_call(&self, datagram: &[u8], _route: Option<&str>) -> Option<Vec<u8>> {
         self.seen.lock().push(Seen::DirectCall(datagram.to_vec()));
         // `[DIRECT_TAG, 0]` stands for a call the Host left unanswered.
         (datagram.get(1) != Some(&0)).then(|| b"reply".to_vec())
@@ -238,12 +238,13 @@ async fn a_direct_call_is_answered_and_a_gossip_call_is_refused() {
     let handler = Arc::new(Recorder::default());
     let replies = Replies::default();
     let datagram = [DIRECT_TAG, 9];
-    dispatch_app_call(&handler, &replies, AppCallId(1), &datagram).await;
+    dispatch_app_call(&handler, &replies, AppCallId(1), &datagram, None).await;
     dispatch_app_call(
         &handler,
         &replies,
         AppCallId(2),
         &gossip_datagram(&signed(5)),
+        None,
     )
     .await;
     assert_eq!(handler.seen(), [Seen::DirectCall(datagram.to_vec())]);
@@ -261,7 +262,7 @@ async fn a_direct_call_left_unanswered_gets_no_reply() {
     let handler = Arc::new(Recorder::default());
     let replies = Replies::default();
     let datagram = [DIRECT_TAG, 0];
-    dispatch_app_call(&handler, &replies, AppCallId(1), &datagram).await;
+    dispatch_app_call(&handler, &replies, AppCallId(1), &datagram, None).await;
     assert_eq!(handler.seen(), [Seen::DirectCall(datagram.to_vec())]);
     assert!(replies.0.lock().is_empty());
 }
@@ -279,7 +280,7 @@ async fn a_gossip_call_is_refused_before_any_decode() {
         .into_iter()
         .enumerate()
     {
-        dispatch_app_call(&handler, &replies, AppCallId(n as u64), &datagram).await;
+        dispatch_app_call(&handler, &replies, AppCallId(n as u64), &datagram, None).await;
     }
     assert_eq!(handler.seen(), []);
     assert_eq!(

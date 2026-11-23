@@ -10,9 +10,12 @@
 //! already handles (plan RV1). What a loopback cannot see is a route dead
 //! only from outside, so the owner acts on evidence instead of testing:
 //! - [`InboundLiveness`], the owner: rotate the General route on inbound
-//!   silence while a peer should be answering, on a peer's `'L'` report,
-//!   or when a friend's DM chain runs ahead of the hints that should have
-//!   reached us over the route; pace the republish (O3). Each rotation
+//!   silence while a peer should be answering, when a friend's DM chain
+//!   runs ahead of the hints that should have reached us over the route,
+//!   or when a friend re-sends a call we receipted over it (plan RV2: our
+//!   receipt was lost); pace the republish (O3). A peer's `'L'` probe is
+//!   no evidence: it names no sender, so anyone holding our blob could
+//!   send it (plan RV2). Each rotation
 //!   draws a new route and so spends from the new-route budget
 //!   ([`crate::budget`]): a forged-signal storm stops at its cap;
 //! - [`PeerLiveness`], a sender: suspect a peer's route from missing acks
@@ -41,12 +44,27 @@ pub const PUBLISH_RETRY_MIN: Duration = Duration::from_secs(20);
 /// The publish retry jitter's bound, ms.
 pub const PUBLISH_RETRY_JITTER_MS: u64 = 20_000;
 
-/// The least age of our General route before a peer's `'L'` report
-/// rotates it (plan RV1): a report is evidence, but peers that suspected
-/// the old route keep probing until their re-fetch (at most one per
-/// [`REFETCH_GAP`]) finds the new blob, so a report on a route this young
-/// is about the one it replaced.
+/// The least age of our General route before a peer's evidence rotates it
+/// (plans RV1, RV2): peers that suspected the old route keep retrying
+/// until their re-fetch (at most one per [`REFETCH_GAP`]) finds the new
+/// blob, so evidence on a route this young is about the one it replaced.
 pub const REPORT_ROTATE_AGE: Duration = REFETCH_GAP;
+
+/// The duplicates of one receipted call from one peer, over our live
+/// General route, that show our receipt was lost on it (plan RV2): the
+/// first copy may cross our receipt in flight; a second means the caller
+/// timed out again with the route answering nothing back.
+pub const RECEIPT_LOST_REPEATS: u32 = 2;
+
+/// The least gap between two rotations on one peer's evidence (plan RV2):
+/// one day over [`crate::budget::BUDGET_DAILY_REFILL`], so one peer can
+/// spend at most one budget token per refill.
+pub const REPORT_PEER_COOLDOWN: Duration =
+    match Duration::from_secs(24 * 60 * 60).checked_div(crate::budget::BUDGET_DAILY_REFILL) {
+        Some(gap) => gap,
+        // A compile error: the refill is a nonzero constant.
+        None => panic!("BUDGET_DAILY_REFILL is zero"),
+    };
 
 /// How long after a friend's DM chain shows a new entry its hint may still
 /// arrive over our General route (plan RV1): the sender appends before the
@@ -92,6 +110,13 @@ pub struct InboundLiveness {
     hints: std::collections::HashMap<String, Instant>,
     /// Per friend, when their chain first showed an entry no hint carried.
     ahead: std::collections::HashMap<String, Instant>,
+    /// Per peer, the receipted call they last re-sent over the route (its
+    /// `dm::ack` digest) and how many copies of it arrived: one entry per
+    /// peer, a new frame replacing the last (plan RV2).
+    lost_receipts: std::collections::HashMap<String, ([u8; 32], u32)>,
+    /// Per peer, when their evidence last rotated a route: kept across
+    /// [`Self::route_replaced`], for [`REPORT_PEER_COOLDOWN`].
+    peer_rotated: std::collections::HashMap<String, Instant>,
 }
 
 impl InboundLiveness {
@@ -104,6 +129,8 @@ impl InboundLiveness {
             last_publish: None,
             hints: std::collections::HashMap::new(),
             ahead: std::collections::HashMap::new(),
+            lost_receipts: std::collections::HashMap::new(),
+            peer_rotated: std::collections::HashMap::new(),
         }
     }
 
@@ -111,17 +138,63 @@ impl InboundLiveness {
     /// the publish pacing carries on.
     pub fn route_replaced(&mut self, now: Instant) {
         let last_publish = self.last_publish;
+        let peer_rotated = std::mem::take(&mut self.peer_rotated);
         *self = Self::new(now);
         self.last_publish = last_publish;
+        self.peer_rotated = peer_rotated;
     }
 
-    /// A peer reported at `now` that our route failed it (its suspect
-    /// round's `'L'` probe reached us, plan RH1r-c S2): whether to rotate
-    /// the route. The reporter is a peer online now; a report on a route
-    /// younger than [`REPORT_ROTATE_AGE`] is about the route it replaced.
+    /// `peer` (a friend or open-handshake peer, authenticated by the frame)
+    /// re-sent at `now` the call with digest `frame` that we had receipted,
+    /// over this route (plan RV2). A copy arriving on a route younger than
+    /// [`REPORT_ROTATE_AGE`] is not counted: it may be a retry aimed at the
+    /// route this one replaced.
+    pub fn duplicate_call(&mut self, peer: &str, frame: [u8; 32], now: Instant) {
+        if now.duration_since(self.came_up) < REPORT_ROTATE_AGE {
+            return;
+        }
+        let entry = self
+            .lost_receipts
+            .entry(peer.to_owned())
+            .or_insert((frame, 0));
+        if entry.0 != frame {
+            *entry = (frame, 0);
+        }
+        entry.1 = entry.1.saturating_add(1);
+    }
+
+    /// The peer whose re-sent calls show at `now` that our receipts are lost
+    /// on this route ([`RECEIPT_LOST_REPEATS`] copies of one frame) and who
+    /// is out of its [`REPORT_PEER_COOLDOWN`], if any: the route rotates on
+    /// their evidence ([`Self::rotated_for`]).
     #[must_use]
-    pub fn reported(&self, now: Instant) -> bool {
-        now.duration_since(self.came_up) >= REPORT_ROTATE_AGE
+    pub fn receipt_lost(&self, now: Instant) -> Option<String> {
+        let mut lost: Vec<&String> = self
+            .lost_receipts
+            .iter()
+            .filter(|(peer, (_, copies))| {
+                *copies >= RECEIPT_LOST_REPEATS && !self.cooling(peer, now)
+            })
+            .map(|(peer, _)| peer)
+            .collect();
+        // The least key, never the map's order: one seed, one schedule.
+        lost.sort();
+        lost.first().map(|peer| (*peer).clone())
+    }
+
+    /// The route rotates at `now` on `peer`'s evidence: their cooldown
+    /// starts.
+    pub fn rotated_for(&mut self, peer: &str, now: Instant) {
+        self.peer_rotated.insert(peer.to_owned(), now);
+        self.lost_receipts.remove(peer);
+    }
+
+    /// Whether `peer`'s evidence rotated a route less than
+    /// [`REPORT_PEER_COOLDOWN`] before `now`.
+    fn cooling(&self, peer: &str, now: Instant) -> bool {
+        self.peer_rotated
+            .get(peer)
+            .is_some_and(|at| now.duration_since(*at) < REPORT_PEER_COOLDOWN)
     }
 
     /// A hint from friend `peer` arrived over the route at `now`: their

@@ -167,26 +167,27 @@ async fn a_forced_death_storm_spends_the_budget_and_the_class_stays_down() {
     );
 }
 
-/// A forged-signal storm: an attacker who holds Ada's route calls it with
-/// `'L'` probes, each a report that rotates her General route once it is
-/// older than [`REPORT_ROTATE_AGE`]. Each rotation spends a token, and the
-/// storm stops at the cap with the class down and the pause shown.
+/// Plan RV2: a `'L'` probe names no sender (Veilid names none for a call
+/// over a private route, 0.5.8 `veilid_api/types/app_message_call.rs`), so
+/// anyone who read Ada's published blob could send one. A storm of them,
+/// one per [`REPORT_ROTATE_AGE`] past the budget's capacity (the RV1 drain:
+/// each probe used to rotate her General route and spend a token), is
+/// refused and rotates nothing: her General route is the one she started
+/// with, nothing new is drawn and no pause is shown.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn a_forged_signal_storm_stops_at_the_cap() {
+async fn a_probe_storm_rotates_nothing() {
     let (sim, nodes) = friends(133).await;
+    let general = nodes[0].routes.own_id(RouteClass::General);
+    assert!(general.is_some(), "Ada's General route is up");
+    let drawn = sim.route_blobs(0).len();
     let mut probe = vec![LIVENESS_TAG];
     probe.resize(LIVENESS_PROBE_LEN, 7);
-    let mut rounds = 0;
-    while paused(&nodes[0]).is_none() && rounds <= BUDGET_CAPACITY + 1 {
+    for _ in 0..=BUDGET_CAPACITY {
         tokio::time::sleep(REPORT_ROTATE_AGE + Duration::from_secs(5)).await;
         sim.stray_call(1, 0, probe.clone());
         tokio::time::sleep(Duration::from_secs(5)).await;
-        rounds += 1;
     }
-    assert_eq!(paused(&nodes[0]), Some(RoutePauseCause::Exhausted));
-    assert!(
-        rounds <= BUDGET_CAPACITY + 1,
-        "stopped at the cap ({rounds} rounds)"
-    );
-    assert_eq!(nodes[0].routes.own_id(RouteClass::General), None);
+    assert_eq!(paused(&nodes[0]), None);
+    assert_eq!(nodes[0].routes.own_id(RouteClass::General), general);
+    assert_eq!(sim.route_blobs(0).len(), drawn, "no route drawn");
 }

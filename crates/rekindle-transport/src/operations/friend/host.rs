@@ -306,4 +306,31 @@ pub trait FriendHost: Send + Sync {
     fn clock(&self) -> &dyn rekindle_utils::Clock;
     /// The Host's id and nonce source (C9.2); never an AEAD nonce.
     fn rng(&self) -> &dyn rekindle_utils::RandomSource;
+    /// Whether `peer` is a friend or a peer with an open handshake (our
+    /// request pending, or theirs waiting for our answer): only such a
+    /// peer's evidence rotates our General route (plan RV2). Locked, or a
+    /// read that failed, is `false`: unattributed evidence never counts.
+    async fn open_handshake_or_friend(&self, peer: &str) -> bool {
+        let owner = self
+            .session()
+            .read()
+            .as_ref()
+            .map(|s| s.identity.public_key_hex.clone());
+        let (Some(owner), Ok(db)) = (owner, self.db()) else {
+            return false;
+        };
+        let peer = peer.to_owned();
+        match db
+            .call(move |conn| {
+                rekindle_db::repo::friends::open_handshake_or_friend(conn, &owner, &peer)
+            })
+            .await
+        {
+            Ok(open) => open,
+            Err(e) => {
+                tracing::warn!(error = %e, "friendship read failed: evidence not counted");
+                false
+            }
+        }
+    }
 }

@@ -38,7 +38,7 @@ impl InboundHandler for Gated {
 
     async fn on_direct(&self, _datagram: &[u8]) {}
 
-    async fn on_direct_call(&self, _datagram: &[u8]) -> Option<Vec<u8>> {
+    async fn on_direct_call(&self, _datagram: &[u8], _route: Option<&str>) -> Option<Vec<u8>> {
         None
     }
 

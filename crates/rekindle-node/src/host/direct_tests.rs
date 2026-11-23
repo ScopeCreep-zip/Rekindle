@@ -304,7 +304,7 @@ pub(super) async fn call(
 
 /// `datagram` by `app_call` to `host`; its reply.
 async fn reply(host: &Host, datagram: &[u8]) -> Vec<u8> {
-    match host.receive_direct_call(datagram).await {
+    match host.receive_direct_call(datagram, None).await {
         direct::Called::Answered(reply) => reply,
         direct::Called::Unported(opened) => panic!("unported {:?}", opened.type_id),
         direct::Called::RetryLater => panic!("retry later"),
@@ -425,7 +425,7 @@ async fn a_request_whose_store_fails_is_told_to_retry_and_its_retry_lands() {
     // Our store failing is no refusal (RV5 R2, M2): retry later, so the
     // caller attempts it again; a NAK would end its row.
     assert!(matches!(
-        host.receive_direct_call(&datagram).await,
+        host.receive_direct_call(&datagram, None).await,
         direct::Called::RetryLater
     ));
 

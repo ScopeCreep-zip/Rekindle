@@ -221,8 +221,11 @@ pub async fn receive_entry(host: &dyn FriendHost, writer: &str, datagram: &[u8])
 /// before the answer, and only a stored one is receipted (G4). A ratchet
 /// kind is answered once open — its step and `unprocessed` row are
 /// committed — and applied after (D24: the ack follows the commit, the
-/// apply follows the ack, the replay covers a crash between).
-pub async fn receive_call(host: &dyn FriendHost, datagram: &[u8]) -> Called {
+/// apply follows the ack, the replay covers a crash between). A copy of a
+/// call we receipted, from a friend or open-handshake peer over our live
+/// General route `route`, is evidence our receipt was lost on it (plan
+/// RV2, [`re_sent`]).
+pub async fn receive_call(host: &dyn FriendHost, datagram: &[u8], route: Option<&str>) -> Called {
     let Some(bytes) = dm::unwire(datagram) else {
         tracing::warn!(len = datagram.len(), "dropping untagged 1:1 call");
         return Called::Answered(NAK.to_vec());
@@ -230,7 +233,11 @@ pub async fn receive_call(host: &dyn FriendHost, datagram: &[u8]) -> Called {
     let opened = match frame::open(host, bytes).await {
         Ok(opened) => opened,
         // The silent receipt: a block is never told (LV23 review H1/H2).
-        Err(Dropped::Duplicate { .. } | Dropped::Blocked) => return Called::Answered(Vec::new()),
+        Err(Dropped::Duplicate { from }) => {
+            re_sent(host, &from, bytes, route).await;
+            return Called::Answered(Vec::new());
+        }
+        Err(Dropped::Blocked) => return Called::Answered(Vec::new()),
         Err(Dropped::Refused) => return Called::Answered(NAK.to_vec()),
         // Not judged, or refused only until the accept of our request
         // lands (finding GDI1): the caller attempts it again.
@@ -290,12 +297,13 @@ pub async fn receive_call(host: &dyn FriendHost, datagram: &[u8]) -> Called {
 /// settles when its store commits or is forgotten when it fails, and its
 /// retry is judged on that. Each host answers its 1:1 `app_call`s through
 /// this.
-pub async fn answer_call(host: &dyn FriendHost, datagram: &[u8]) -> Called {
+pub async fn answer_call(host: &dyn FriendHost, datagram: &[u8], route: Option<&str>) -> Called {
     let (answer, answered) = tokio::sync::oneshot::channel();
     let (owned, datagram) = (host.owned(), datagram.to_vec());
+    let route = route.map(str::to_owned);
     host.scope().spawn_or_drop("answer 1:1 call", async move {
         // Past the deadline the answer has no taker; the work is done.
-        let _ = answer.send(receive_call(owned.as_ref(), &datagram).await);
+        let _ = answer.send(receive_call(owned.as_ref(), &datagram, route.as_deref()).await);
     });
     match tokio::time::timeout(CALL_DEADLINE, answered).await {
         Ok(Ok(called)) => called,
@@ -308,6 +316,22 @@ pub async fn answer_call(host: &dyn FriendHost, datagram: &[u8]) -> Called {
             Called::RetryLater
         }
     }
+}
+
+/// `from` re-sent `frame`, a call we receipted, over our route `route`
+/// (plan RV2): the copy is authenticated (a sealed frame's signature is
+/// verified before the replay store sees it, a ratchet copy needs the
+/// session's AEAD: [`frame::open`]), so it counts against our live General
+/// route when `from` is a friend or a peer with an open handshake.
+async fn re_sent(host: &dyn FriendHost, from: &str, frame: &[u8], route: Option<&str>) {
+    let Ok(node) = host.node() else {
+        return;
+    };
+    let live = node.liveness();
+    if !live.over_general(route) || !host.open_handshake_or_friend(from).await {
+        return;
+    }
+    live.duplicate_call(from, dm::ack::digest(frame), route);
 }
 
 /// Replay what was decrypted but never applied (a crash between the

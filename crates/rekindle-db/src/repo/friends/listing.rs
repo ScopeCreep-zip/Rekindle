@@ -14,3 +14,24 @@ pub fn added_at(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<(Str
         .collect();
     rows
 }
+
+/// Whether `peer` is `owner_key`'s friend, or a handshake with them is
+/// open: our request to them waits for their accept (`pending_out`), or
+/// theirs waits in `pending_friend_requests` for our answer (plan RV2). Only such
+/// a peer's evidence about our route counts; a peer we are removing does
+/// not.
+///
+/// # Errors
+/// The query failed.
+pub fn open_handshake_or_friend(
+    conn: &Connection,
+    owner_key: &str,
+    peer: &str,
+) -> rusqlite::Result<bool> {
+    conn.prepare_cached(
+        "SELECT EXISTS (SELECT 1 FROM friends WHERE owner_key = ?1 AND public_key = ?2 \
+           AND friendship_state IN ('accepted', 'pending_out')) \
+         OR EXISTS (SELECT 1 FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2)",
+    )?
+    .query_row(params![owner_key, peer], |row| row.get(0))
+}
