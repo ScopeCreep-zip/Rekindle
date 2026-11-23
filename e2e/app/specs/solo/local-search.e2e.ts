@@ -4,10 +4,12 @@
 // searchPack: a Search on its Friends and Servers rows, which no built-in lays)
 // Search on Friends finds the friend and opens their chat, Search on Servers
 // and on Files (Symbiosis's own SearchFiles, Downloads' info) open the field
-// scoped to that view. Each asserted state is a shot.
+// scoped to that view; in the friend's chat window Mod+F (the same Search,
+// through the Host) finds her message in that conversation. Each asserted
+// state is a shot.
 
 import { browser, expect } from "@wdio/globals";
-import { NET_WAIT_MS, press, shown, switchTo, typeInto, waitForHandle, waitUntil } from "../../../walk/helpers.ts";
+import { MOD_KEY, NET_WAIT_MS, press, shown, switchTo, typeInto, waitForHandle, waitUntil } from "../../../walk/helpers.ts";
 import { BUDDY, openSettings } from "../../../walk/nav.ts";
 import { type Peer, peerSendDm, startFleet, stopFleet } from "../../fleet.ts";
 import { createIdentity, friendsView, importAndKeepSkin, newUser, showSkinView, skinShown, type User } from "../../journeys.ts";
@@ -60,6 +62,19 @@ describe("the skin's Search opens a local search in the view's scope", function 
     await browser.switchToWindow(await waitForHandle(browser, (h) => h.startsWith("chat-") && !before.includes(h), NET_WAIT_MS));
     await shown(browser, ".message-input-field", NET_WAIT_MS);
     await shot("friend-chat-opened");
+  });
+
+  it("in the friend's chat window Mod+F searches the conversation", async () => {
+    // No pack lays a chat-window tree: Mod+F dispatches the skin's Search
+    // through the Host, which scopes it to this conversation.
+    await browser.keys([MOD_KEY, "f"]);
+    await shown(browser, ".local-search-input", NET_WAIT_MS);
+    expect((await (await browser.$(".modal-title")).getText()).trim()).toBe("Search this conversation");
+    await typeInto(await shown(browser, ".local-search-input"), "raid");
+    const message = await shown(browser, ".local-search-hit", NET_WAIT_MS);
+    await waitUntil(async () => (await message.getText()).includes("raid at nine"), NET_WAIT_MS, "the conversation search did not find Bea's message");
+    await shot("chat-search");
+    await closeSearch();
     await browser.closeWindow();
     await switchTo(browser, BUDDY);
   });

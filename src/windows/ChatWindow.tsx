@@ -3,6 +3,7 @@ import SkinFrame from "../components/common/SkinFrame";
 import Titlebar from "../components/titlebar/Titlebar";
 import DirectChat from "./chat_window/DirectChat";
 import GroupChat from "./chat_window/GroupChat";
+import { useChatSearchChord } from "../hooks/useChatSearchChord";
 
 /// The one chat window (plan E2.3): `?peer=<identity key>` is a 1:1
 /// conversation, `?group=<group id>` a group DM (32 hex, plan E2.6
@@ -11,6 +12,7 @@ const ChatWindow: Component = () => {
   const params = new URLSearchParams(window.location.search);
   const peer = params.get("peer") ?? "";
   const group = params.get("group") ?? "";
+  useChatSearchChord(group ? null : peer || null);
 
   return (
     // `chat-window` scopes the chat window's skin surfaces (plan E7.7.7).
