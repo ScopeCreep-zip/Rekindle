@@ -322,6 +322,31 @@ fn walk(
     Ok(())
 }
 
+/// Labels every tab the pack draws as text (plan SK6): a `Tab` node with no
+/// art of its own is a text component, its word drawn by the engine from
+/// the pack's strings over its button part (Classic's `TabNormalText`,
+/// `Class="Text"` 40 x 15, `<Text>FriendsTitle</Text>`,
+/// `xfirecomponents.xml:1071-1079`, laid over `TabNormalButton`,
+/// `xfiremainwindow.xml:73-75`). Those strings are resource ids of the
+/// Xfire binary (`strings.xml:21`), so the words are the Host's names for
+/// the views ([`ViewKey::title`](rekindle_types::dto::skin_tree_role::ViewKey::title)): `{text}`, no cover, no glyph. A tab
+/// whose art draws its word (Alloy's, Symbiosis's icons) and the Host's
+/// own Communities tab, labelled already (rule N4), keep theirs.
+fn tab_words(nodes: &mut [SkinNode]) {
+    for n in nodes {
+        if let NodeRole::Tab(view) = n.role {
+            if n.art.is_none() && n.label.is_none() {
+                n.label = Some(NodeLabel {
+                    text: view.title().to_owned(),
+                    cover: None,
+                    glyph: None,
+                });
+            }
+        }
+        tab_words(&mut n.children);
+    }
+}
+
 fn label_tree(
     root: &mut [SkinNode],
     outsets: Insets,
@@ -346,7 +371,8 @@ pub(super) fn laid_window(outsets: Insets, min: [u16; 2]) -> [i32; 4] {
 }
 
 /// Labels every menu title in `layout`'s tree and popups (see the module
-/// doc), laid at the window's minimum size.
+/// doc), laid at the window's minimum size, and every tab the pack
+/// draws as text ([`tab_words`]).
 ///
 /// # Errors
 /// A title's picture missing from the package or not decoding.
@@ -354,10 +380,12 @@ pub fn menus(layout: &mut WindowLayout, package: &Package<'_>) -> Result<(), Ski
     let min = [layout.min_width, layout.min_height];
     if let Some(tree) = layout.tree.as_mut() {
         label_tree(&mut tree.root, tree.outsets, min, package)?;
+        tab_words(&mut tree.root);
     }
     for popup in layout.popups.values_mut() {
         let min = [popup.min_width, popup.min_height];
         label_tree(&mut popup.tree.root, popup.tree.outsets, min, package)?;
+        tab_words(&mut popup.tree.root);
     }
     Ok(())
 }

@@ -331,3 +331,42 @@ fn an_icon_shaped_renamed_title_carries_the_app_mark() {
     );
     assert_eq!(label.cover, Some([1, 0, 21, 22]));
 }
+
+/// Plan SK6: a tab the pack draws as text (Classic's `TabNormalText`,
+/// `Class="Text"`, its word a string of the Xfire binary) carries the
+/// Host's name for its view, no cover and no glyph; a tab whose art draws
+/// its word carries none.
+#[test]
+fn text_tabs_carry_the_hosts_words() {
+    let words = |id: &str, node: &str| {
+        menu_label(id, node).map(|l| {
+            assert_eq!((l.cover, l.glyph), (None, None), "{id} {node}");
+            l.text
+        })
+    };
+    for id in ["xfire-classic", "onyx", "simple-x"] {
+        assert_eq!(
+            words(id, "TabNormalText").as_deref(),
+            Some("Friends"),
+            "{id}"
+        );
+        assert_eq!(
+            words(id, "TabServerText").as_deref(),
+            Some("Servers"),
+            "{id}"
+        );
+        assert_eq!(
+            words(id, "TabDownloadText").as_deref(),
+            Some("Downloads"),
+            "{id}"
+        );
+    }
+    for (id, node) in [
+        ("alloy", "TabNormalButton"),
+        ("total-chaos", "TabServerButton"),
+        ("symbiosis", "ButtonFriendsTab"),
+        ("xglow", "Downloads"),
+    ] {
+        assert_eq!(menu_label(id, node), None, "{id} {node}");
+    }
+}
