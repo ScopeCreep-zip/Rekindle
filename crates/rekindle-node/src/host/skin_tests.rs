@@ -132,6 +132,17 @@ async fn the_conforming_alternate_is_listed_selectable_and_a_login_skin() {
     let dir = tempfile::tempdir().unwrap();
     let host = offline_host(&dir).await;
     create_ann(&host).await;
+    // Selecting it validates Symbiosis through the helper: a stand-in
+    // answers Symbiosis's canonical package, as the round trip's does.
+    let source = (builtin::PACKS.iter())
+        .find(|p| format!("{}{}", builtin::PREFIX, p.id) == conform::SOURCE)
+        .expect("Symbiosis is a built-in");
+    let canonical = validate::run(source.bytes).unwrap();
+    host.ctx
+        .skin
+        .helper
+        .set(stand_in(&dir, &Ok(canonical)))
+        .unwrap();
     let library: SkinLibrary = data(host.call(Caller::shell(), IpcRequest::SkinList).await);
     let at = library
         .skins
