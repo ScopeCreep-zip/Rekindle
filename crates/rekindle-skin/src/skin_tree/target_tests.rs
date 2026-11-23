@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 
 use rekindle_types::dto::skin::WindowLayout;
 use rekindle_types::dto::skin_action::{SkinAction, SkinEvent};
-use rekindle_types::dto::skin_tree::{NodeRole, NodeTarget, SkinNode, SkinTree, TargetRule};
+use rekindle_types::dto::skin_tree::{Edge, NodeRole, NodeTarget, SkinNode, SkinTree, TargetRule};
 
 use super::test_support::Z;
 use super::tests::{acts, fixed, layout, n};
@@ -287,12 +287,14 @@ fn covered(tree: &SkinTree, window: (i32, i32)) -> Vec<String> {
         let c = (2 * lb[0] + lb[2], 2 * lb[1] + lb[3]);
         for (m, mb, _) in &all {
             let Some(t) = m.target else { continue };
+            // A grip's art takes no press (its band does, plan SK11), so
+            // its art holding the centre excuses nothing.
+            let grip = m.resize_edge().is_some();
             let skip = m.id == l.id
                 || up.contains(&m.id.as_str())
                 || apart.apart(&l.id, &m.id)
-                || inside(*mb, *lb)
-                || at(*mb, c)
-                || (m.resize_edge().is_some() && (stack.yields(&m.id, &l.id) || in_hole(&m.id, c)));
+                || (!grip && (inside(*mb, *lb) || at(*mb, c)))
+                || (grip && (stack.yields(&m.id, &l.id) || in_hole(&m.id, c)));
             if skip {
                 continue;
             }
@@ -360,21 +362,32 @@ fn every_builtin_grip_is_a_served_target() {
                 let stack = validate::Stack::new(&tree.root);
                 let apart = validate::Apart::new(&tree.root);
                 for g in target::grips(tree, at, &laid) {
-                    // The box holds the art and grows it (or keeps it at 24 px).
+                    // The pointer area is the frame band: 24 px on each
+                    // axis it resizes, from the art's dragged side (it lies
+                    // in the window), never the art box.
                     let (a, r) = (g.laid.art, g.laid.area);
-                    let holds = r[0] <= a[0]
-                        && r[1] <= a[1]
-                        && a[0] + a[2] <= r[0] + r[2]
-                        && a[1] + a[3] <= r[1] + r[3];
-                    assert!(holds, "{} {}: {r:?} drops its art {a:?}", b.id, g.laid.id);
+                    let edge = grip_edge(tree, &g.laid.id);
+                    assert_eq!(r, target::band(a, edge, at), "{} {}", b.id, g.laid.id);
+                    let thick = |ax: usize| r[ax + 2] == validate::HIT;
+                    let banded = match edge {
+                        Edge::Left | Edge::Right => thick(0),
+                        Edge::Top | Edge::Bottom => thick(1),
+                        _ => thick(0) && thick(1),
+                    };
+                    assert!(banded, "{} {}: {r:?} is not a band of {a:?}", b.id, g.laid.id);
+                    assert!(
+                        target::meet(r, a).is_some(),
+                        "{} {}: {r:?} leaves its art {a:?}",
+                        b.id,
+                        g.laid.id
+                    );
                     for u in laid.iter().filter(|u| !apart.apart(&g.laid.id, &u.id)) {
-                        // Above `u`, the grip's box meets `u`'s press box
+                        // Above `u`, the grip's band meets `u`'s press box
                         // (its target, or the 24 px square on its centre)
-                        // only on the grip's own art (the pack's layout,
-                        // rule 4) or in a hole the stylesheet clips out.
+                        // only in a hole the stylesheet clips out (its art
+                        // takes no press).
                         let (r, o) = (g.laid.area, target::press_box(u.art, u.area));
-                        let mut left =
-                            target::meet(r, o).map_or(Vec::new(), |m| target::minus(m, g.laid.art));
+                        let mut left = target::meet(r, o).map_or(Vec::new(), |m| vec![m]);
                         for h in &g.holes {
                             left = left
                                 .into_iter()
@@ -409,4 +422,40 @@ fn every_builtin_grip_is_a_served_target() {
     ] {
         assert_eq!(rule(id), Some(want), "{id}: {cowboy:?}");
     }
+}
+
+/// The resize edge of the grip `id` in `tree`.
+fn grip_edge(tree: &SkinTree, id: &str) -> Edge {
+    tree.boxes(0, 0)
+        .into_iter()
+        .find(|(n, _)| n.id == id)
+        .and_then(|(n, _)| n.resize_edge())
+        .unwrap()
+}
+
+/// Plan SK11 (the real-app hit stack): Onyx's `TopLeft` corner (Decor art
+/// 83 x 128 carrying `Resize(TopLeft)`) took the press over its whole art,
+/// on top of the Friends tab's `TabNormalButton`, so a click on the tab
+/// grabbed the window corner. Its pointer area is the 24 x 24 at the
+/// window corner, which holds no part of the tab's centre.
+#[test]
+fn onyx_top_left_band_leaves_the_friends_tab_its_centre() {
+    let l = super::golden_tests::main_layout("onyx");
+    let tree = l.tree.as_ref().unwrap();
+    let at = target::window(&l);
+    let laid = target::targets(tree, at);
+    let grip = target::grips(tree, at, &laid)
+        .into_iter()
+        .find(|g| g.laid.id == "TopLeft")
+        .unwrap();
+    assert_eq!(grip.laid.area, [0, 0, 24, 24], "{:?}", grip.laid);
+    let (_, tab) = tree
+        .boxes(at.0, at.1)
+        .into_iter()
+        .find(|(n, _)| n.id == "TabNormalButton")
+        .unwrap();
+    let r = grip.laid.area;
+    let (cx, cy) = (2 * tab[0] + tab[2], 2 * tab[1] + tab[3]);
+    let held = 2 * r[0] <= cx && cx < 2 * (r[0] + r[2]) && 2 * r[1] <= cy && cy < 2 * (r[1] + r[3]);
+    assert!(!held, "TopLeft {r:?} holds TabNormalButton {tab:?}'s centre");
 }

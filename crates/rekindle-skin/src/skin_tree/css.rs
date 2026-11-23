@@ -5,9 +5,10 @@
 //! its normal, hover, down and disabled states; an interactive node smaller than 24×24 is its
 //! served target box (plan SK7, [`super::target`]: margins grow the box,
 //! a transparent border of the art's inset keeps the art, its children and
-//! its text at their own place and size), a resize grip's too (plan SK11:
-//! its node box is its pointer target, stacked below the interactive nodes
-//! it meets, lead decision 6); every node is
+//! its text at their own place and size); a resize grip keeps its art box
+//! and takes presses only on its `::before`, laid at its frame band (plan
+//! SK11, [`grip_band`]), stacked below the interactive nodes it meets (lead
+//! decision 6); every node is
 //! stacked by its `Z` and then the pack's document order (the shell nests
 //! the divs in that order, so a later sibling draws above); a text-sized node is as wide and tall as
 //! its text (`max-content`); the views node draws opaque (lead decision 3:
@@ -201,6 +202,31 @@ fn clip(a: [i32; 4], holes: &[[i32; 4]]) -> String {
     format!(" clip-path: path(evenodd, \"{path}\");")
 }
 
+/// A grip's pointer area (plan SK11, [`super::target::band`]): the grip's
+/// node keeps its art box and takes no press (`pointer-events: none`), and
+/// its `::before`, laid at the served band and clipped by its holes, takes
+/// the press for it (a press on a pseudo-element reaches its element). The
+/// grip's own child nodes take their presses again.
+fn grip_band(
+    sel: &str,
+    n: &SkinNode,
+    t: NodeTarget,
+    holes: Option<&([i32; 4], Vec<[i32; 4]>)>,
+) -> String {
+    let [x, y, w, h] = t.area;
+    let cut = holes.map_or(String::new(), |(a, hs)| clip(*a, hs));
+    let mut rule = format!(
+        "  {sel}::before {{\n    content: \"\"; position: absolute; left: {x}px; top: {y}px; width: {w}px; height: {h}px; pointer-events: auto;{cut}\n  }}\n"
+    );
+    if !n.children.is_empty() {
+        let _ = writeln!(
+            rule,
+            "  {sel} > [data-skin-node] {{\n    pointer-events: auto;\n  }}"
+        );
+    }
+    rule
+}
+
 fn node(out: &mut String, n: &SkinNode, ctx: &Ctx<'_>) -> Option<()> {
     let (root, images, base) = (ctx.root, ctx.images, ctx.base);
     let text = text_sized(n);
@@ -214,15 +240,20 @@ fn node(out: &mut String, n: &SkinNode, ctx: &Ctx<'_>) -> Option<()> {
     if n.role == NodeRole::Views {
         decls.push_str(" background-color: var(--color-xfire-bg-dark);");
     }
+    let grip = n.resize_edge().is_some();
     let outer = match n.target {
-        Some(t) => {
+        Some(t) if !grip => {
             target(&mut decls, n, t);
             "padding-box"
         }
-        None => "border-box",
+        _ => "border-box",
     };
-    if let Some((a, holes)) = ctx.holes.get(&n.id) {
-        decls.push_str(&clip(*a, holes));
+    let band = n
+        .target
+        .filter(|_| grip)
+        .map(|t| grip_band(&sel, n, t, ctx.holes.get(&n.id)));
+    if band.is_some() {
+        decls.push_str(" pointer-events: none;");
     }
     let mut after = None;
     if let Some(art) = &n.art {
@@ -231,6 +262,9 @@ fn node(out: &mut String, n: &SkinNode, ctx: &Ctx<'_>) -> Option<()> {
         after = over;
     }
     let _ = writeln!(out, "  {sel} {{\n    {decls}\n  }}");
+    if let Some(band) = band {
+        out.push_str(&band);
+    }
     let normal_after = after.is_some();
     if let Some(over) = after {
         let _ = writeln!(out, "  {sel}::after {{\n    {over}\n  }}");
