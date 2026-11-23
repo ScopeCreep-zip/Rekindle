@@ -1,8 +1,8 @@
 MainTitleBar Drag
   Vent Decor
-  XfireLogo Logo target [0, -2, 87, 24] art [0, 2, 87, 19] Size
+  XfireLogo Logo target [16, -2, 71, 24] art [-16, 2, 87, 19] Size
     TheX Decor
-      TheXCover Decor target [0, -2, 32, 24] art [0, 2, 32, 19] Size
+      TheXCover Decor target [0, -2, 16, 24] art [0, 2, 32, 19] Short
   UserNameField NameField target [0, -3, 169, 24] art [0, 3, 169, 17] Size
     UserNameText Part
   CloseBox Button target [0, -3, 21, 24] art [0, 3, 18, 17] Short
@@ -48,12 +48,12 @@ InnerBevel Decor
   Divider Decor
   TabHeader TabStrip
     TabNormalText Tab(Friends) label "Friends"
-      TabNormalButton Part target [0, -4, 62, 20] art [0, 4, 62, 16] Spacing
+      TabNormalButton Part target [0, -4, 58, 20] art [0, 4, 62, 16] Spacing
     TabServerText Tab(Servers) label "Servers"
-      TabServerButton Part target [0, -4, 62, 20] art [0, 4, 62, 16] Spacing
+      TabServerButton Part target [3, -4, 55, 20] art [-3, 4, 62, 16] Spacing
     TabDownloadText Tab(Files) label "Downloads"
-      TabDownloadButton Part target [0, -4, 62, 20] art [0, 4, 62, 16] Spacing
-    TabDownloadText.Communities Tab(Communities) label "Communities" target [0, -4, 156, 19] art [0, 4, 156, 15] Spacing
+      TabDownloadButton Part target [3, -4, 57, 20] art [-3, 4, 62, 16] Spacing
+    TabDownloadText.Communities Tab(Communities) label "Communities" target [1, -4, 155, 19] art [-1, 4, 156, 15] Spacing
       TabDownloadButton.Communities Part
   TabbedControl Views
     BuddyView View(Friends)

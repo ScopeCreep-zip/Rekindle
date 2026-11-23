@@ -4,16 +4,16 @@ MenuBar MenuBar
   XfireMenuText MenuTitle label "Rekindle"
     FileMenu Part target [0, 0, 64, 23] art [0, 0, 64, 23] Spacing
   ToolsMenuText MenuTitle label "Tools"
-    ToolsMenu Part target [0, 0, 64, 23] art [0, 0, 64, 23] Spacing
+    ToolsMenu Part target [0, 0, 52, 23] art [0, 0, 64, 23] Spacing
   HelpMenuText MenuTitle label "Help"
-    HelpMenu Part target [0, 0, 64, 23] art [0, 0, 64, 23] Spacing
-UserNameField NameField target [0, -1, 252, 24] art [0, 1, 252, 22] Size
+    HelpMenu Part target [17, 0, 35, 23] art [-17, 0, 64, 23] Spacing
+UserNameField NameField target [0, -1, 246, 24] art [0, 1, 252, 22] Size
   UserNameText Part
 StatusWrapper Group
-StatusEdit StatusText inset [0, 9] target [0, -6, 327, 24] art [0, 6, 327, 12] Size
-DownArrow StatusList target [-1, -1, 24, 24] art [1, 1, 22, 22] Size
+StatusEdit StatusText inset [0, 9] target [0, -6, 322, 24] art [0, 6, 327, 12] Size
+DownArrow StatusList target [4, -1, 19, 24] art [-4, 1, 22, 22] Short
 TopButtonBar Group
-  MinimizeBox Button target [-4, -4, 20, 24] art [4, 4, 16, 16] Short
+  MinimizeBox Button target [6, -4, 10, 24] art [-6, 4, 16, 16] Short
   MaximizeBox Button target [0, -4, 16, 24] art [0, 4, 16, 16] Short
   CloseBox Button target [0, -4, 20, 24] art [0, 4, 16, 16] Short
 Middle Decor target [0, 0, 394, 8] art [0, 0, 394, 8] Frame
@@ -28,9 +28,9 @@ TabbedControl Views
   TabbedControl.Communities View(Communities)
 TabHeader TabStrip
   TabNormalText Tab(Friends) label "Friends"
-    TabNormalButton Part target [0, -2, 64, 22] art [0, 2, 64, 20] Spacing
+    TabNormalButton Part target [11, -2, 35, 22] art [-11, 2, 64, 20] Spacing
   TabServerText Tab(Servers) label "Servers"
-    TabServerButton Part target [0, -2, 64, 22] art [0, 2, 64, 20] Spacing
+    TabServerButton Part target [11, -2, 53, 22] art [-11, 2, 64, 20] Spacing
   TabDownloadText Tab(Files) label "Downloads"
     TabDownloadButton Part target [0, -2, 64, 22] art [0, 2, 64, 20] Spacing
   TabDownloadText.Communities Tab(Communities) label "Communities" cover [6, 3, 48, 9] target [0, -4, 60, 19] art [0, 4, 60, 15] Spacing

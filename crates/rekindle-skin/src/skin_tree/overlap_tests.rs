@@ -2,8 +2,10 @@
 //! at each window's served minimum: no two press areas, and no text box over
 //! another node's press area or text box, except a node's own descendants;
 //! none of them over the views (the app's content: the buddy list, its
-//! search field). Two arts the pack itself overlaps keep the pack's
-//! stacking (rule 4) and are not compared.
+//! search field). Two press areas never overlap, even where the pack's arts
+//! do (lead decision: each ends at the overlap's midpoint, `target::split`).
+//! A text box over an art the pack itself overlaps it with keeps the pack's
+//! stacking (rule 4) and is not compared.
 
 use rekindle_types::dto::skin_tree::{NodeRole, SkinNode, SkinTree};
 
@@ -93,7 +95,8 @@ fn overlaps(name: &str, tree: &SkinTree, at: (i32, i32), out: &mut Vec<String>) 
                 let (o, v) = if a.kind == Kind::Views { (b, a) } else { (a, b) };
                 meet(o.area, v.area).is_some_and(|m| meet(m, o.art) != Some(m))
             } else {
-                !overlap(a.art, b.art) && overlap(a.area, b.area)
+                let presses = pair == (Kind::Press, Kind::Press);
+                overlap(a.area, b.area) && (presses || !overlap(a.art, b.art))
             };
             if over {
                 out.push(format!(

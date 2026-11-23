@@ -1,14 +1,14 @@
 Top Decor
-Logo Logo
+Logo Logo target [0, 0, 66, 40] art [0, 0, 67, 40] Size
 MenuBar MenuBar
   FileMenu MenuTitle label "Rekindle" cover [2, 0, 44, 15] target [0, -4, 48, 24] art [0, 4, 48, 15] Size
   ToolsMenu MenuTitle target [0, -4, 54, 24] art [0, 4, 54, 15] Size
   HelpMenu MenuTitle target [0, -4, 44, 24] art [0, 4, 44, 15] Size
-UserNameField NameField target [0, -3, 205, 20] art [0, 3, 205, 17] Spacing
+UserNameField NameField target [0, -3, 178, 20] art [0, 3, 205, 17] Spacing
   UserNameText Part
 StatusWrapper Group
-StatusEdit StatusText inset [0, 19] target [0, -4, 187, 20] art [0, 4, 187, 15] Spacing
-DownArrow StatusList target [-3, -3, 24, 20] art [3, 3, 18, 17] Spacing
+StatusEdit StatusText inset [0, 19] target [27, -4, 150, 20] art [-27, 4, 187, 15] Spacing
+DownArrow StatusList target [9, -3, 12, 20] art [-9, 3, 18, 17] Short
 TopButtonBar Group
   MinimizeBox Button target [-3, -3, 21, 24] art [3, 3, 18, 18] Short
   MaximizeBox Button target [0, -3, 18, 24] art [0, 3, 18, 18] Short
@@ -67,7 +67,7 @@ popup Infoskin
   XfireTopRow Decor target [0, 0, 180, 171] art [0, 0, 180, 171] Frame
   XfireMiddleRow Decor target [0, 0, 180, 149] art [0, 0, 180, 149] Frame
   XfireBottomRow Decor target [0, 0, 180, 90] art [0, 0, 180, 90] Frame
-  InfoViewButton Button target [0, -1, 41, 24] art [0, 1, 41, 21] Size
+  InfoViewButton Button target [20, -1, 21, 24] art [-20, 1, 41, 21] Short
   BackDrop Decor
   InfoView InfoView
   ResizeRight Button target [-14, 0, 24, 410] art [14, 0, 10, 410] Size
@@ -77,6 +77,6 @@ popup Infoskin
       JoinChatButton Button target [0, -1, 75, 24] art [0, 1, 75, 21] Size
       LeaveChatButton Button target [0, -1, 75, 24] art [0, 1, 75, 21] Size
         TalkingStateButton Part
-    JoinButton Button target [0, -1, 75, 24] art [0, 1, 75, 21] Size
+    JoinButton Button target [0, -1, 55, 24] art [0, 1, 75, 21] Size
   InfoLogo Decor
   MAINBG Decor target [0, 0, 175, 400] art [0, 0, 175, 400] Frame
