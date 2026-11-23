@@ -42,7 +42,7 @@
 use std::collections::HashMap;
 
 use rekindle_types::dto::skin::WindowLayout;
-use rekindle_types::dto::skin_tree::{Anchor, NodeSpan, SkinNode, SkinTree};
+use rekindle_types::dto::skin_tree::{Anchor, NodeRole, NodeSpan, SkinNode, SkinTree, ViewKey};
 
 use super::inset::is_text;
 use super::titles::{laid_window, place, popup_window};
@@ -86,7 +86,7 @@ fn reach(n: &SkinNode, b: [i32; 4], targets: &Targets) -> [i32; 4] {
 
 /// Whether `n` draws text the shell must fit: a text field, or words the
 /// Host serves over it. An art node keeps its box.
-fn draws_text(n: &SkinNode) -> bool {
+pub(super) fn draws_text(n: &SkinNode) -> bool {
     n.art.is_none() && (is_text(n.role) || n.label.as_ref().is_some_and(|l| l.glyph.is_none()))
 }
 
@@ -101,10 +101,79 @@ fn blocks(n: &SkinNode, by: &SkinNode) -> bool {
 /// title's button art overhangs its text (Onyx's `ToolsMenu` part,
 /// `Stretch` -4/-4 around its 4 px `ToolsMenuText`), and the text runs
 /// under neither.
-fn extent(n: &SkinNode, b: [i32; 4]) -> [i32; 4] {
-    n.children
-        .iter()
-        .fold(b, |e, c| union(e, extent(c, place(c, b))))
+/// Each descendant counts with its own target box (plan SK12: Onyx's
+/// `ToolsMenu` part serves a target 1 px left of its art, and the
+/// `XfireMenuText` before it stops there).
+fn extent(n: &SkinNode, b: [i32; 4], targets: &Targets) -> [i32; 4] {
+    n.children.iter().fold(b, |e, c| {
+        let cb = place(c, b);
+        union(e, extent(c, reach(c, cb, targets), targets))
+    })
+}
+
+/// A box no text may run over (plan SK12), laid on the pack's boxes: a
+/// blocking node's press area ([`reach`] over [`extent`]), another text's
+/// box (its rows, at least one), or the views (the app's content, the
+/// buddy list and its search field). The served text stops at the near
+/// edge of any of them on its line, wherever it lies in the tree, except
+/// its own ancestors and descendants.
+struct Obstacle {
+    id: String,
+    up: Vec<String>,
+    shows: Option<ViewKey>,
+    /// A blocking node, which [`usable`] already counts among its
+    /// siblings.
+    blocker: bool,
+    b: [i32; 4],
+}
+
+fn obstacles(
+    nodes: &[SkinNode],
+    parent: [i32; 4],
+    up: &[String],
+    targets: &Targets,
+    out: &mut Vec<Obstacle>,
+) {
+    for n in nodes {
+        let b = place(n, parent);
+        let blocker = n.interactive() && !is_text(n.role) && n.resize_edge().is_none();
+        let area = if blocker {
+            Some(reach(n, extent(n, b, targets), targets))
+        } else if draws_text(n) {
+            Some(reach(n, [b[0], b[1], b[2], b[3].max(1)], targets))
+        } else {
+            (n.role == NodeRole::Views).then_some(b)
+        };
+        if let Some(b) = area {
+            out.push(Obstacle {
+                id: n.id.clone(),
+                up: up.to_vec(),
+                shows: n.shows_with,
+                blocker,
+                b,
+            });
+        }
+        let mut own = up.to_vec();
+        own.push(n.id.clone());
+        obstacles(&n.children, b, &own, targets, out);
+    }
+}
+
+/// The obstacles that stop `n`'s text (see [`Obstacle`]): not `n`, its
+/// ancestors (`up`) or descendants, not another view's, and not a
+/// blocking sibling (counted by [`usable`] with its span).
+fn stops(n: &SkinNode, up: &[String], all: &[Obstacle]) -> Vec<[i32; 4]> {
+    all.iter()
+        .filter(|o| {
+            let apart = o.shows.is_some() && n.shows_with.is_some() && o.shows != n.shows_with;
+            o.id != n.id
+                && !o.up.contains(&n.id)
+                && !up.contains(&o.id)
+                && !apart
+                && !(o.blocker && o.up == up)
+        })
+        .map(|o| o.b)
+        .collect()
 }
 
 /// Keeps each child of a node that grew from `was` to `now` at its pack
@@ -132,6 +201,7 @@ fn usable(
     boxes: &[[i32; 4]],
     parent: [i32; 4],
     targets: &Targets,
+    extra: &[[i32; 4]],
 ) -> Option<NodeSpan> {
     let NodeSpan::Fixed { at, size } = nodes[i].x else {
         return None;
@@ -139,12 +209,15 @@ fn usable(
     let b = boxes[i];
     let (lo, hi) = (parent[0], parent[0] + parent[2]);
     let line = [b[1], b[1] + b[3].max(1)];
-    let near: Vec<(&SkinNode, [i32; 4])> = nodes
+    // A whole-tree obstacle has no span beside this node: it never moves
+    // with the parent's far edge, so the box stays `Fixed`.
+    let near: Vec<(Option<&SkinNode>, [i32; 4])> = nodes
         .iter()
         .zip(boxes)
         .enumerate()
         .filter(|(j, (s, _))| *j != i && blocks(&nodes[i], s))
-        .map(|(_, (s, sb))| (s, reach(s, extent(s, *sb), targets)))
+        .map(|(_, (s, sb))| (Some(s), reach(s, extent(s, *sb, targets), targets)))
+        .chain(extra.iter().map(|e| (None, *e)))
         .filter(|(_, sb)| sb[1] < line[1] && line[0] < sb[1] + sb[3])
         .collect();
     let fixed = |len: i32| {
@@ -161,13 +234,15 @@ fn usable(
             let past: Vec<_> = near.iter().filter(|(_, sb)| sb[0] >= b[0]).collect();
             let end = past.iter().map(|(_, sb)| sb[0]).fold(hi, i32::min);
             let moves = past.iter().all(|(s, _)| {
-                matches!(
-                    s.x,
-                    NodeSpan::Fixed {
-                        at: Anchor::End(_),
-                        ..
-                    }
-                )
+                s.is_some_and(|s| {
+                    matches!(
+                        s.x,
+                        NodeSpan::Fixed {
+                            at: Anchor::End(_),
+                            ..
+                        }
+                    )
+                })
             });
             if !serve(end - b[0]) {
                 return None;
@@ -190,13 +265,15 @@ fn usable(
                 .map(|(_, sb)| sb[0] + sb[2])
                 .fold(lo, i32::max);
             let moves = before.iter().all(|(s, _)| {
-                matches!(
-                    s.x,
-                    NodeSpan::Fixed {
-                        at: Anchor::Start(_),
-                        ..
-                    }
-                )
+                s.is_some_and(|s| {
+                    matches!(
+                        s.x,
+                        NodeSpan::Fixed {
+                            at: Anchor::Start(_),
+                            ..
+                        }
+                    )
+                })
             });
             if !serve(right - start) {
                 return None;
@@ -237,12 +314,21 @@ fn usable(
     }
 }
 
-fn walk(nodes: &mut [SkinNode], parent: [i32; 4], targets: &Targets) {
+fn walk(
+    nodes: &mut [SkinNode],
+    parent: [i32; 4],
+    up: &[String],
+    targets: &Targets,
+    all: &[Obstacle],
+) {
     let boxes: Vec<[i32; 4]> = nodes.iter().map(|n| place(n, parent)).collect();
     let spans: Vec<Option<NodeSpan>> = (0..nodes.len())
         .map(|i| {
             draws_text(&nodes[i])
-                .then(|| usable(i, nodes, &boxes, parent, targets))
+                .then(|| {
+                    let extra = stops(&nodes[i], up, all);
+                    usable(i, nodes, &boxes, parent, targets, &extra)
+                })
                 .flatten()
         })
         .collect();
@@ -252,8 +338,19 @@ fn walk(nodes: &mut [SkinNode], parent: [i32; 4], targets: &Targets) {
             pin_children(n, was, place(n, parent));
         }
         let b = place(n, parent);
-        walk(&mut n.children, b, targets);
+        let mut own = up.to_vec();
+        own.push(n.id.clone());
+        walk(&mut n.children, b, &own, targets, all);
     }
+}
+
+/// Lays `tree`'s text boxes in `window` (see the module doc).
+fn lay_tree(tree: &mut SkinTree, window: (i32, i32)) {
+    let targets = targets(tree, window);
+    let at = laid_window(tree.outsets, window);
+    let mut all = Vec::new();
+    obstacles(&tree.root, at, &[], &targets, &mut all);
+    walk(&mut tree.root, at, &[], &targets, &all);
 }
 
 /// Serves every text-drawing node of `layout`'s tree and popups its usable
@@ -261,17 +358,11 @@ fn walk(nodes: &mut [SkinNode], parent: [i32; 4], targets: &Targets) {
 pub fn lay(layout: &mut WindowLayout) {
     let at = super::target::window(layout);
     if let Some(tree) = layout.tree.as_mut() {
-        let targets = targets(tree, at);
-        walk(&mut tree.root, laid_window(tree.outsets, at), &targets);
+        lay_tree(tree, at);
     }
     let min_height = layout.min_height;
     for popup in layout.popups.values_mut() {
         let at = popup_window(popup, min_height);
-        let targets = targets(&popup.tree, at);
-        walk(
-            &mut popup.tree.root,
-            laid_window(popup.tree.outsets, at),
-            &targets,
-        );
+        lay_tree(&mut popup.tree, at);
     }
 }
