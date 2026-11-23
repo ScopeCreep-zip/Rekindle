@@ -348,7 +348,10 @@ export interface NodeLabel {
  *  the branded decor and a renamed icon-sized menu title: `rekindleWordmark` (flame and
  *  word, a box at least 15 px tall and over twice as wide), `rekindleMarkSmall` (a box of
  *  16 px or less) or `rekindle` (the full mark). */
-export type NodeGlyph = "communities" | "rekindle" | "rekindleMarkSmall" | "rekindleWordmark";
+export type NodeGlyph = "communities" | BrandGlyphName;
+
+/** The Rekindle mark's three drawings (plan BR): on logo nodes and the title strip. */
+export type BrandGlyphName = "rekindle" | "rekindleMarkSmall" | "rekindleWordmark";
 
 /** `MenuItem`: one item of an engine menu. */
 export interface MenuItem {

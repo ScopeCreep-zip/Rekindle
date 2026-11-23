@@ -1,6 +1,6 @@
 import { Component, For, JSX, Match, Show, Switch, createContext, createEffect, createSignal, onCleanup, untrack, useContext } from "solid-js";
 import { createStore, produce } from "solid-js/store";
-import type { EngineMenu, MenuItem, NodeGlyph, NodeLabel, NodeTrigger, ShellNode, SkinAction, SkinEvent, SkinShell, ViewKey } from "../../ipc/commands/dto_skin_tree";
+import type { BrandGlyphName, EngineMenu, MenuItem, NodeGlyph, NodeLabel, NodeTrigger, ShellNode, SkinAction, SkinEvent, SkinShell, ViewKey } from "../../ipc/commands/dto_skin_tree";
 import type { SkinSignalSet } from "../../ipc/commands/dto_skin_run";
 import { skinSignals } from "../../stores/skin-signals.store";
 import { applyTreeOp, fired, initialTreeState, pageView, type TreeState } from "./signalEffects";
@@ -13,7 +13,7 @@ import AdArea from "./AdArea";
 import FilesView from "./FilesView";
 import Infoview from "../infoview/Infoview";
 import ServersView from "./ServersView";
-import { RekindleMark, RekindleMarkSmall, RekindleWordmark } from "./BrandGlyphs";
+import { BrandGlyph } from "./BrandGlyphs";
 
 /** What every node of one window's tree reads. */
 interface Tree {
@@ -190,14 +190,8 @@ const NodeGlyphView: Component<{ glyph: NodeGlyph }> = (props) => (
     </Match>
     {/* The Rekindle mark (plan BR), in full colour, centred in the cover
         with its aspect kept. */}
-    <Match when={props.glyph === "rekindle"}>
-      <RekindleMark />
-    </Match>
-    <Match when={props.glyph === "rekindleMarkSmall"}>
-      <RekindleMarkSmall />
-    </Match>
-    <Match when={props.glyph === "rekindleWordmark"}>
-      <RekindleWordmark />
+    <Match when={props.glyph !== "communities" && props.glyph}>
+      {(brand) => <BrandGlyph glyph={brand() as BrandGlyphName} />}
     </Match>
   </Switch>
 );

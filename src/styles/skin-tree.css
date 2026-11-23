@@ -201,6 +201,18 @@
   .skin-node-glyph-brand [id="rk-word"] {
     fill: currentColor;
   }
+  /* The title strip's logo (plan BR) draws the mark in its served box; its
+   * word takes the strip's text colour (titlebar.text on the strip, the
+   * pair the title text already uses). The drawing takes no press, so a
+   * press lands on the drag region itself (Tauri drags only from it). */
+  .xfire-titlebar-logo {
+    color: var(--color-xfire-titlebar-text);
+  }
+  .xfire-titlebar-logo > .skin-node-glyph-brand {
+    display: block;
+    padding: 0;
+    pointer-events: none;
+  }
 
   .skin-node-label-text {
     max-width: 100%;

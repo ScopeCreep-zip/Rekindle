@@ -2,12 +2,19 @@ import { createSignal, onCleanup } from "solid-js";
 import { commands } from "../ipc/commands";
 import { subscribeSkinEvents } from "../ipc/channels";
 import type { SkinApplied, SkinApplyFailure } from "../ipc/commands/dto";
-import type { SkinShell } from "../ipc/commands/dto_skin_tree";
+import type { BrandGlyphName, SkinShell } from "../ipc/commands/dto_skin_tree";
 
 /// The shown skin's window outlines (plan SK2-S2): set with the sheet that
 /// places their nodes, so the nested divs and their rules always belong to
 /// the same skin.
 const [skinShells, setSkinShells] = createSignal<SkinShell[]>([]);
+/// The mark the shown skin's title strip draws (plan BR), set with its sheet.
+const [skinTitleLogo, setSkinTitleLogo] = createSignal<BrandGlyphName | undefined>();
+
+/** The Rekindle mark the shown skin's title strip draws, if its strip has a logo. */
+export function titleLogo(): BrandGlyphName | undefined {
+  return skinTitleLogo();
+}
 
 /** The shown skin's outline for `window`, if it lays that window as a tree. */
 export function skinShell(window: SkinShell["window"]): SkinShell | undefined {
@@ -147,6 +154,7 @@ function linkSheet(skin: SkinApplied, mine: number, images: HTMLImageElement[]):
     next.id = LINK_ID;
     document.documentElement.dataset.skinBase = skin.base;
     setSkinShells(skin.shells ?? []);
+    setSkinTitleLogo(skin.titleLogo);
     images.length = 0;
   });
   next.addEventListener("error", () => {
