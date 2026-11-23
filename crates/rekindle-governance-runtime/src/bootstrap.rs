@@ -64,6 +64,13 @@ pub enum BootstrapAnswer {
     /// (`JoinRefusal`). The answer itself, so every host forwards it as is
     /// and none can drop the reason to a bare NAK.
     Refused(Vec<u8>),
+    /// `RETRY_LATER` (`rekindle_types::message::CALL_RETRY_LATER`, plan
+    /// E3.2 JN1): the joiner's `MemberJoined` waits on a dep we hold not
+    /// and could not fetch yet, so we cannot judge it (BR1's vocabulary: a
+    /// call we cannot judge is no refusal). We merged and stored nothing;
+    /// the joiner retries (`bootstrap_peers`: `PeerRetryLater`). The answer
+    /// itself, so every host forwards it as is, never a bare NAK.
+    RetryLater(Vec<u8>),
 }
 
 /// Answer a joiner's `BootstrapRequest`: while we are partial, with
@@ -74,8 +81,10 @@ pub enum BootstrapAnswer {
 ///
 /// # Errors
 /// We are not in the community, the op is not the joiner's `MemberJoined`
-/// or does not match its `OpRef`, the merged state does not hold the joiner as a member,
-/// or the store or the encode failed. The caller NAKs.
+/// or does not match its `OpRef`, or the store or the encode failed. The
+/// caller NAKs. A join the merge does not admit is answered
+/// [`BootstrapAnswer::Refused`], one we cannot judge yet (a dep not
+/// fetchable) [`BootstrapAnswer::RetryLater`].
 pub async fn answer_bootstrap_request<D: GovernanceRuntimeDeps>(
     deps: &D,
     anchor: &str,
@@ -96,6 +105,16 @@ pub async fn answer_bootstrap_request<D: GovernanceRuntimeDeps>(
                 "bootstrap request refused: the merge does not admit the joiner"
             );
             encode_refusal(anchor, reason).map(BootstrapAnswer::Refused)
+        }
+        Err(GovernanceRuntimeError::JoinUnresolved { missing }) => {
+            tracing::info!(
+                community = anchor,
+                missing,
+                "bootstrap request unresolved: a dep of the joiner's op is not fetchable yet; answered retry-later"
+            );
+            Ok(BootstrapAnswer::RetryLater(
+                rekindle_types::message::CALL_RETRY_LATER.to_vec(),
+            ))
         }
         Err(e) => Err(e),
     }
@@ -167,9 +186,17 @@ async fn build_bootstrap_response_v2<D: GovernanceRuntimeDeps>(
 /// `ApprovalRequired` join is a knock readers keep). Nothing is stored
 /// before this answers.
 ///
+/// The merge judges `op` only once its whole causal past is held: when a
+/// dep it waits on (transitively) is neither held nor fetchable yet, it
+/// answers [`GovernanceRuntimeError::JoinUnresolved`] (plan E3.2 JN1), not
+/// a refusal, since a merge missing the op's past cannot apply it whatever
+/// its merit.
+///
 /// # Errors
-/// The merge does not admit `op` (the caller NAKs and stores nothing), no
-/// cert is pinned, or the op store or a fetch failed.
+/// `op` waits on an unheld dep ([`GovernanceRuntimeError::JoinUnresolved`]:
+/// the caller answers retry later and stores nothing), the merge does not
+/// admit `op` (the caller refuses and stores nothing), no cert is pinned,
+/// or the op store failed. A dep fetch that fails leaves that dep unheld.
 async fn admitted_deps<D: GovernanceRuntimeDeps>(
     deps: &D,
     anchor: &str,
@@ -191,13 +218,30 @@ async fn admitted_deps<D: GovernanceRuntimeDeps>(
             .collect();
         let before = fetched.len();
         for op_ref in wanted {
-            if let Some(dep) = op_log::fetch_held(deps, &op_ref, &logs).await? {
-                held.push(dep.clone());
-                fetched.push(dep);
+            // A dep we cannot fetch now (not yet on the replicas we reach,
+            // or the read failed) leaves the op unjudged: answered retry
+            // later below, never a refusal.
+            match op_log::fetch_held(deps, &op_ref, &logs).await {
+                Ok(Some(dep)) => {
+                    held.push(dep.clone());
+                    fetched.push(dep);
+                }
+                Ok(None) => {}
+                Err(e) => tracing::debug!(
+                    community = anchor,
+                    error = %e,
+                    "bootstrap: a dep of the joiner's op is not fetchable now"
+                ),
             }
         }
         if fetched.len() > before {
             continue;
+        }
+        let unheld = unheld_ancestry(op, &held);
+        if !unheld.is_empty() {
+            return Err(GovernanceRuntimeError::JoinUnresolved {
+                missing: unheld.len(),
+            });
         }
         let outcome = rekindle_governance::merge::merge_outcome(&cert, &set.ops);
         let state = &outcome.state;
@@ -211,6 +255,39 @@ async fn admitted_deps<D: GovernanceRuntimeDeps>(
             Err(GovernanceRuntimeError::JoinNotAdmitted(reason))
         };
     }
+}
+
+/// The hashes `op` waits on, directly or through held ops, that we do not
+/// hold (`held` includes `op`): its deps and its `prev` (a re-join's own
+/// chain), as `verify_cache::waits_on` reads them. A dep we hold but refused
+/// (quarantined) is held, so the merge judges the op without it.
+fn unheld_ancestry(
+    op: &HeldOp,
+    held: &[HeldOp],
+) -> std::collections::BTreeSet<rekindle_types::governance::OpHash> {
+    let by_hash: std::collections::HashMap<_, _> = held.iter().map(|h| (h.hash, h)).collect();
+    let mut seen = std::collections::BTreeSet::from([op.hash]);
+    let mut queue = vec![op];
+    let mut unheld = std::collections::BTreeSet::new();
+    while let Some(next) = queue.pop() {
+        let Ok(decoded) = rekindle_codec::governance_op::decode_op(&next.encoded) else {
+            continue;
+        };
+        let prev = decoded.op.prev.filter(|_| decoded.op.seq > 0);
+        let waits = (decoded.op.deps.iter().map(|d| d.op_hash)).chain(prev);
+        for hash in waits {
+            if !seen.insert(hash) {
+                continue;
+            }
+            match by_hash.get(&hash) {
+                Some(dep) => queue.push(dep),
+                None => {
+                    unheld.insert(hash);
+                }
+            }
+        }
+    }
+    unheld
 }
 
 /// When the join we just admitted (`joined`) takes the last use of an

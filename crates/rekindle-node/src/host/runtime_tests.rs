@@ -17,6 +17,8 @@ mod attachment_limit;
 mod audit_export;
 #[path = "automod_malformed_tests.rs"]
 mod automod_malformed;
+#[path = "bootstrap_unresolved_tests.rs"]
+mod bootstrap_unresolved;
 #[path = "channel_change_tests.rs"]
 pub(crate) mod channel_change_tests;
 #[path = "channel_gap_tests.rs"]

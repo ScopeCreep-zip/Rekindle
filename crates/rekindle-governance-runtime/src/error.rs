@@ -142,6 +142,12 @@ pub enum GovernanceRuntimeError {
     /// answer to its `BootstrapRequest` is `bootstrapRefused`.
     #[error("the merge does not admit the joiner: {0}")]
     JoinNotAdmitted(rekindle_types::join_refusal::JoinRefusal),
+    /// A joiner's `MemberJoined` waits on `missing` deps (its causal past)
+    /// we neither hold nor could fetch yet, so no merge of ours can judge
+    /// it (plan E3.2 JN1). Not a refusal: the answer to its
+    /// `BootstrapRequest` is `RETRY_LATER`, and nothing is stored.
+    #[error("the joiner's op waits on {missing} deps not fetchable yet: retry later")]
+    JoinUnresolved { missing: usize },
     /// Our own join's walk of the op DAG holds the invite not live, and
     /// why (`join_flow::check_invite`): the reason the inviter's merge
     /// would answer, so the join is refused the same either way.
