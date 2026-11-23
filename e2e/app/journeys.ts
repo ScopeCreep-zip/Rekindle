@@ -111,6 +111,15 @@ export async function friendsView(b: Browser): Promise<void> {
   }
 }
 
+/** The Communities list on screen: a tree's Communities view, else the app's Communities tab. */
+export async function communitiesView(b: Browser): Promise<void> {
+  if (await underTree(b)) {
+    if (!(await skinViewShown(b, "communities"))) await showSkinView(b, "communities");
+  } else {
+    await (await b.$('.buddy-tab[title^="Communities"]')).click();
+  }
+}
+
 /** The Friends tab's row for `name`, once listed. */
 export async function friendRow(b: Browser, name: string): Promise<Awaited<ReturnType<Browser["$"]>>> {
   await inBuddy(b);

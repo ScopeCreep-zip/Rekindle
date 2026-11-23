@@ -185,6 +185,10 @@ describe("every built-in skin keeps the app accessible and laid out", function (
       const all = keysOf(found);
       // The run's findings as keys, to re-baseline from (no silent widening: a changed hold is a reviewed edit).
       console.log(`[keys] ${pack.file} ${JSON.stringify(all)}`);
+      // The values behind each finding not held, so a failure names its elements.
+      const held = new Set(KNOWN[pack.file] ?? []);
+      const detail = Object.entries(found).filter(([k, v]) => keysOf({ [k]: v }).some((key) => !held.has(key)));
+      if (detail.length > 0) console.log(`[detail] ${pack.file} ${JSON.stringify(Object.fromEntries(detail)).slice(0, 20_000)}`);
       const unsettled = all.filter((k) => UNSETTLED.has(k));
       if (unsettled.length > 0) console.log(`[unsettled] ${pack.file} ${JSON.stringify(unsettled)}`);
       expect(all.filter((k) => !UNSETTLED.has(k))).toEqual(KNOWN[pack.file] ?? []);

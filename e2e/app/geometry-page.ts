@@ -157,6 +157,10 @@ export function textOverflows(rootEl: Element, skip: string[]): { el: string; sc
   const out: { el: string; scrollWidth: number; clientWidth: number }[] = [];
   for (const { el } of g.candidates(rootEl, skip) as { el: HTMLElement }[]) {
     if (el.matches("input, textarea, select")) continue;
+    // Text that does not fit needs text: a box holding none overflows only
+    // by what the skin draws past it on purpose (a served ::before hit area
+    // growing an 18 px button to 24 px, WCAG 2.5.8; a frame's ::after art).
+    if ((el.textContent ?? "").trim() === "") continue;
     const s = getComputedStyle(el);
     if (s.display.startsWith("inline") && s.display !== "inline-block" && s.display !== "inline-flex") continue;
     if (s.overflowX === "auto" || s.overflowX === "scroll") continue;
@@ -380,6 +384,10 @@ export function spacingOffScale(rootEl: Element, containers: string[]): string[]
         if (v !== "normal" && !onScale(parseFloat(v))) out.push(`${sel} ${p} ${v}`);
       }
       for (const child of Array.from(c.children)) {
+        // A visually hidden announcer (`.sr-only`, 00-rules.css: 1 px,
+        // clipped, its -1px margin part of the pattern) draws no spacing;
+        // the other checks skip it too (OVERLAYS).
+        if (child.matches(".sr-only")) continue;
         // The computed (not resolved) value keeps `auto`, which
         // distributes free space and is not a gap.
         const map = child.computedStyleMap();

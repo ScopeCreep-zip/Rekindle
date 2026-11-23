@@ -34,12 +34,13 @@ describe("our card in a community (E3.4 S6)", function () {
     await createCommunity(browser, me, TOWN);
     await openCommunity(browser, TOWN);
 
-    // Our name here, through the Host's review.
+    // Our name here. The Host classes it Routine (IntentKind::SetCommunityDisplayName,
+    // rekindle-types intent/kind.rs base_class), so it commits with no review.
     await press(browser, await shown(browser, '[title="Community Settings"]'));
     await press(browser, await byText(browser, ".modal-container .form-tab", "Overview"));
     await typeInto(await shown(browser, ".my-name-section input"), NAME);
     await press(browser, await shown(browser, '.my-name-section button[type="submit"]'));
-    expect(await resolveIntent(browser, { passphrase: me.passphrase, appearMs: 5000 })).toBe("committed");
+    expect(await resolveIntent(browser, { passphrase: me.passphrase, appearMs: 5000 })).toBe("none");
     await byText(browser, ".my-name-section .settings-hint", `see you as ${NAME}`, NET_WAIT_MS);
     await browser.keys("Escape");
 

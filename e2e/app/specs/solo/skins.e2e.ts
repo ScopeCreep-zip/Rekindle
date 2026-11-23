@@ -19,21 +19,7 @@ import { type SkinTokenId, tokenVar } from "../../../../src/styles/generated/tok
 import { NET_WAIT_MS, WAIT_MS, byText, press, resolveIntent, shown, switchTo, typeAndSend, waitForHandle, waitUntil } from "../../../walk/helpers.ts";
 import { BUDDY, SETTINGS, openSettings } from "../../../walk/nav.ts";
 import { type Peer, peerAcceptGroup, peerSendDm, peerSendGroup, startFleet, stopFleet } from "../../fleet.ts";
-import {
-  createCommunity,
-  createGroup,
-  createIdentity,
-  createTextChannel,
-  friendRow,
-  newUser,
-  openChat,
-  openCommunity,
-  openGroup,
-  postMessage,
-  seesMessage,
-  selectChannel,
-  type User,
-} from "../../journeys.ts";
+import { communitiesView, createCommunity, createGroup, createIdentity, createTextChannel, friendRow, friendsView, newUser, openChat, openCommunity, openGroup, postMessage, seesMessage, selectChannel, type User } from "../../journeys.ts";
 import { type SkinPack, baseDefaults, builtinPacks } from "../../skin-pack.ts";
 import { befriendFleet } from "../../social.ts";
 import { BUDDY_LIST, CHAT_DM, CHAT_GROUP, COMMUNITY, PROFILE, SETTINGS_APPEARANCE, SETTINGS_PROFILE, type WindowCase, sizeWindow } from "../../windows.ts";
@@ -183,7 +169,11 @@ describe("every built-in skin, applied for real", function () {
     // list renders once the list loads: wait for the row in use.
     await shown(browser, ".skin-row-shown .skin-name", NET_WAIT_MS);
     const inUse = async (): Promise<string> => (await (await browser.$(".skin-row-shown .skin-name")).getText()).trim();
+    // The sheet shown before a change: the chosen one links only once its
+    // images decode, after the row says "in use" (journeys applySkin).
+    let before = "";
     if ((await inUse()) !== pack.name) {
+      before = (await windowShows(browser, [])).href;
       for (const r of await browser.$$(".skin-row")) {
         if ((await (await r.$(".skin-name")).getText()).trim() !== pack.name) continue;
         await (await r.$("input[type=radio]")).click();
@@ -200,7 +190,7 @@ describe("every built-in skin, applied for real", function () {
     await waitUntil(
       async () => {
         settingsNow = await windowShows(browser, []);
-        return settingsNow.href.startsWith("skin://") && settingsNow.loaded;
+        return settingsNow.href.startsWith("skin://") && settingsNow.href !== before && settingsNow.loaded;
       },
       NET_WAIT_MS,
       "Settings never linked a skin sheet",
@@ -247,9 +237,9 @@ describe("every built-in skin, applied for real", function () {
     await switchTo(browser, BUDDY);
     await (await friendRow(browser, peers[0].displayName)).click();
     await check("buddy-list-friends", BUDDY_LIST);
-    await (await browser.$('.buddy-tab[title^="Communities"]')).click();
+    await communitiesView(browser);
     await check("buddy-list-communities", BUDDY_LIST);
-    await (await browser.$('.buddy-tab[title^="Friends"]')).click();
+    await friendsView(browser);
 
     for (const [name, file, w] of [
       ["dm", "chat-dm", CHAT_DM],
