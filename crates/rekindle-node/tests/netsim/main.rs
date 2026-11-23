@@ -48,6 +48,7 @@ mod first_contact_retry;
 mod first_contact_waits;
 mod first_login;
 mod forward_cross_audience;
+mod founder_online;
 mod fresh_invite_join;
 mod friend_list_record;
 mod friend_name;

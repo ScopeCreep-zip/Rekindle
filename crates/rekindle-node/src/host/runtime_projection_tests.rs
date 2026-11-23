@@ -220,3 +220,126 @@ async fn a_key_the_merge_never_admitted_is_never_on_the_member_list() {
     assert_eq!(listed, [bea.to_hex()], "only the admitted member is listed");
     host.shutdown().await.unwrap();
 }
+
+/// A founder never announces a join, so the gossip mesh never holds her
+/// online; her beats do (finding F2, plan E3.4 premise check). A joiner's
+/// member list shows her as her beats show her: online in her hoisted
+/// role's group while she beats, offline once her beat expires.
+#[tokio::test]
+async fn a_founder_is_listed_as_her_beats_show_her_without_a_join_announce() {
+    use rekindle_codec::member_record::{BeatState, PresenceBeat};
+    use rekindle_governance::state::{GovernanceState, MemberState, RoleState};
+    use rekindle_governance_runtime::GovernanceRuntimeDeps;
+    use rekindle_types::dto::community::MemberGroup;
+    use rekindle_types::id::{PseudonymKey, RoleId};
+
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    let owner = create_ann(&host).await.public_key;
+    seed_registry_community(&host, &owner).await;
+    let (founder, joiner) = (PseudonymKey([7; 32]), PseudonymKey([0xbb; 32]));
+    let owner_role = RoleId([5; 16]);
+    let mut merged = GovernanceState::default();
+    for key in [&founder, &joiner] {
+        merged.members.insert(
+            key.clone(),
+            MemberState {
+                member_record: "record".into(),
+                member_record_owner: "owner".into(),
+                joined: rekindle_governance::op::OpStamp::MIN,
+            },
+        );
+    }
+    merged.roles.insert(
+        owner_role,
+        RoleState {
+            name: "Owner".into(),
+            permissions: 8,
+            position: 10,
+            color: 0,
+            hoist: true,
+            mentionable: false,
+            self_assignable: false,
+            exclusion_group: None,
+            stamp: rekindle_governance::fixture::stamp(1),
+        },
+    );
+    merged.role_assignments.insert(
+        founder.clone(),
+        std::collections::HashSet::from([owner_role]),
+    );
+    let governance = host.governance();
+    governance
+        .apply_governance_rebuild_result("c1", merged)
+        .await;
+    host.ctx
+        .communities
+        .map()
+        .write()
+        .get_mut("c1")
+        .unwrap()
+        .my_pseudonym_key = Some(joiner.to_hex());
+    for key in [founder.to_hex(), joiner.to_hex()] {
+        let owner = owner.clone();
+        host.ctx
+            .db
+            .current()
+            .unwrap()
+            .call(move |conn| {
+                rekindle_db::repo::members::insert_if_absent(conn, &owner, "c1", &key, 1)
+            })
+            .await
+            .unwrap();
+    }
+    let founder_row = |list: Vec<rekindle_types::dto::community::CommunityMemberView>| {
+        list.into_iter()
+            .find(|m| m.pseudonym_key == founder.to_hex())
+            .map(|m| (m.status, m.group))
+            .expect("the founder is listed")
+    };
+
+    // Her beat reaches the joiner; no MemberJoined ever did.
+    let now = host.ctx.clock.now_ms();
+    crate::host::adapters::presence::view::observe(
+        &host.ctx,
+        "c1",
+        &founder,
+        &PresenceBeat {
+            seq: 1,
+            state: BeatState::Online,
+            voice_channel: None,
+            beat_number: now / rekindle_codec::member_record::beat::BEAT_PERIOD_MS,
+            extras: None,
+        },
+        Some(now),
+    );
+    assert_eq!(
+        founder_row(governance.community_members("c1").await.unwrap()),
+        (
+            "online".to_owned(),
+            MemberGroup::Role {
+                id: owner_role.to_hex(),
+                name: "Owner".into(),
+            }
+        ),
+        "the founder shows online in her hoisted group"
+    );
+
+    // Her beats stop: the 15-minute rule turns her offline.
+    let expired = host
+        .ctx
+        .communities
+        .map()
+        .write()
+        .get_mut("c1")
+        .unwrap()
+        .beat_view
+        .expire(now + 60 * 60 * 1000);
+    assert_eq!(expired, [founder.to_hex()]);
+    assert_eq!(
+        founder_row(governance.community_members("c1").await.unwrap()),
+        ("offline".to_owned(), MemberGroup::Offline),
+        "the founder shows offline once her beat expires"
+    );
+    host.shutdown().await.unwrap();
+}

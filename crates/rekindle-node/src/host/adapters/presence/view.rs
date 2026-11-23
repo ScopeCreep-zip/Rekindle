@@ -134,7 +134,7 @@ fn publish(ctx: &DaemonContext, community: &str, member: String, shown: BeatStat
 }
 
 /// The member list's status for what a beat shows.
-fn shown_status(shown: BeatState) -> &'static str {
+pub(crate) fn shown_status(shown: BeatState) -> &'static str {
     match shown {
         BeatState::Online => "online",
         BeatState::Away => "away",
