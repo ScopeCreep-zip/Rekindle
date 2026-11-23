@@ -10,15 +10,19 @@
 //! op's past (D15 "pure effects"), so every reader judges each op alike in
 //! any arrival order. Views are memoised by (author, carriers held).
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 
-use rekindle_types::governance::{GenesisCert, GovernanceEntry};
+use rekindle_types::governance::{DeviceEndorsement, GenesisCert, GovernanceEntry};
 use rekindle_types::id::PseudonymKey;
 
+use super::prefork::{after_fork, endorsers, fork_events};
 use super::resolve::Ancestry;
 use super::resume::{reaches, Reach};
-use crate::device_judge::{judge_op_at, DeviceView, KeyJudgement, MemberDevices};
+use crate::device_judge::{
+    judge_op_at, judged_endorsement, readmitted, DeviceView, KeyJudgement, KeyRefusal,
+    MemberDevices,
+};
 use crate::op::VerifiedOp;
 
 /// The member whose view `op` carries device elements for, if any: its
@@ -70,6 +74,8 @@ pub(super) fn pseudonym_signed(op: &VerifiedOp) -> bool {
 /// `prepare`'s judge: the carriers seen so far and the memoised views.
 pub(super) struct Judge<'c> {
     cert: &'c GenesisCert,
+    /// Per forked device key, its fork seq (`resolve::prepare`).
+    fork_at: &'c BTreeMap<[u8; 32], u64>,
     /// Per member: the kept indices of its carriers, in stamp order.
     carriers: HashMap<PseudonymKey, Vec<usize>>,
     /// Per `DeviceRetired` carrier's index: the retired key's highest seq
@@ -79,9 +85,10 @@ pub(super) struct Judge<'c> {
 }
 
 impl<'c> Judge<'c> {
-    pub(super) fn new(cert: &'c GenesisCert) -> Self {
+    pub(super) fn new(cert: &'c GenesisCert, fork_at: &'c BTreeMap<[u8; 32], u64>) -> Self {
         Self {
             cert,
+            fork_at,
             carriers: HashMap::new(),
             seen: HashMap::new(),
             memo: HashMap::new(),
@@ -115,7 +122,29 @@ impl<'c> Judge<'c> {
                 Rc::new(member_view(cert, op.anchor(), author, None, carriers))
             })
             .clone();
-        judge_in_view(cert, &md, op)
+        let verdict = judge_in_view(cert, &md, op);
+        if verdict != KeyJudgement::Effective {
+            return verdict;
+        }
+        let record = record_of(cert, &md, op);
+        let Some(e) = judged_endorsement(op.anchor(), &md, record.as_deref(), op.op()) else {
+            return verdict;
+        };
+        // Rule 7 (plan E3.2 K4b.4): after the member's first fork event in
+        // the op's past, a key endorsed after it needs an applied readmit.
+        let held = |j: usize| in_past(j) && kept[j].author() == author;
+        let events = fork_events(kept, kept.len(), &held, self.fork_at, &md);
+        if events.is_empty() || readmitted(&md, e) {
+            return verdict;
+        }
+        let at = (e.incarnation, e.device_key);
+        let carriers = endorsers(kept, kept.len(), &held, &md, |c| {
+            (c.incarnation, c.device_key) == at
+        });
+        if after_fork(past, &events, &carriers, in_cert(cert, author, e)) {
+            return KeyJudgement::Refused(KeyRefusal::NeedsReadmit);
+        }
+        verdict
     }
 
     /// Note `op`, kept at index `i`, as a carrier when it is one, with
@@ -159,12 +188,25 @@ pub(super) struct RestJudge<'s, 'a> {
 /// `MemberJoined`, else the cert's record for the creator. Both judges
 /// decide through this one function.
 fn judge_in_view(cert: &GenesisCert, md: &MemberDevices, op: &VerifiedOp) -> KeyJudgement {
-    let record = (md.latest_join.as_ref())
+    judge_op_at(op.anchor(), md, record_of(cert, md, op).as_deref(), op.op())
+}
+
+/// The member record current at `md` for `op`'s author (lead decision K4b
+/// Q4): the view's highest-stamp join, else the cert's for the creator.
+fn record_of(cert: &GenesisCert, md: &MemberDevices, op: &VerifiedOp) -> Option<String> {
+    (md.latest_join.as_ref())
         .map(|(_, record, _)| record.clone())
         .or_else(|| {
             (*op.author() == cert.creator_pseudonym).then(|| cert.creator_member_record.clone())
-        });
-    judge_op_at(op.anchor(), md, record.as_deref(), op.op())
+        })
+}
+
+/// Whether `e` is the creator's first device, carried by the cert, in
+/// every op's past and so before every fork.
+fn in_cert(cert: &GenesisCert, author: &PseudonymKey, e: &DeviceEndorsement) -> bool {
+    *author == cert.creator_pseudonym
+        && (cert.creator_device.as_ref())
+            .is_some_and(|c| (c.incarnation, c.device_key) == (e.incarnation, e.device_key))
 }
 
 impl RestJudge<'_, '_> {
@@ -204,7 +246,16 @@ impl RestJudge<'_, '_> {
         // `DeviceRetired` carrier and nothing seen.
         let held = carriers.iter().map(|&j| (self.ops[j], None));
         let md = member_view(self.cert, op.anchor(), author, entry, held);
-        matches!(judge_in_view(self.cert, &md, op), KeyJudgement::Effective)
+        if judge_in_view(self.cert, &md, op) != KeyJudgement::Effective {
+            return false;
+        }
+        // Rule 7 (plan E3.2 K4b.4): the snapshot keeps no fork event's
+        // position, so after a fork or retirement of the member only a
+        // readmitted or cert key is decided; the full merge judges the rest.
+        let forked = !md.retirements.is_empty() || !md.forks.is_empty();
+        let record = record_of(self.cert, &md, op);
+        let e = judged_endorsement(op.anchor(), &md, record.as_deref(), op.op());
+        !forked || e.is_some_and(|e| readmitted(&md, e) || in_cert(self.cert, author, e))
     }
 }
 

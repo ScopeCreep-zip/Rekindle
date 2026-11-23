@@ -514,14 +514,45 @@ pub fn judge_key(
     if !live && md.void_from(key).is_none() {
         return KeyJudgement::Refused(KeyRefusal::OverCap);
     }
-    if e.answers_fork()
-        && !md
-            .readmits
-            .contains(&(*key, e.incarnation, e.fork_evidence))
-    {
+    if e.answers_fork() && !readmitted(md, e) {
         return KeyJudgement::Refused(KeyRefusal::NeedsReadmit);
     }
     KeyJudgement::Effective
+}
+
+/// Whether an applied `DeviceReadmit` in `md` names `e`'s key, incarnation
+/// and fork evidence (rule 7).
+#[must_use]
+pub fn readmitted(md: &MemberDevices, e: &DeviceEndorsement) -> bool {
+    (md.readmits).contains(&(e.device_key, e.incarnation, e.fork_evidence))
+}
+
+/// The endorsement [`judge_op_at`] judges `op`'s key by, at `md` for
+/// `record`: the one `op` carries of its own key, else the view's
+/// ([`MemberDevices::endorsement_for`]), the lowest incarnation of the
+/// two, so a merge can ask rule 7 of it.
+#[must_use]
+pub fn judged_endorsement<'a>(
+    anchor: &str,
+    md: &'a MemberDevices,
+    record: Option<&'a str>,
+    op: &'a GovernanceOp,
+) -> Option<&'a DeviceEndorsement> {
+    let (record, carried) = match &op.body {
+        GovernanceEntry::MemberJoined {
+            member_record,
+            first_device,
+            ..
+        } => (Some(member_record.as_str()), first_device.as_ref()),
+        GovernanceEntry::DeviceKey(e) if op.seq == 0 => (record, Some(e)),
+        _ => (record, None),
+    };
+    let record = record?;
+    let own = carried.filter(|e| {
+        e.device_key == op.device_key && endorsement_holds(&op.author, anchor, record, e)
+    });
+    let held = md.endorsement_for(&op.author, anchor, record, &op.device_key);
+    own.into_iter().chain(held).min_by_key(|e| e.incarnation)
 }
 
 /// Whether an endorsement of another key, earlier in rule 6's

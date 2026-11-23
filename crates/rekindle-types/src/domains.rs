@@ -245,6 +245,11 @@ labels! {
     /// community ‖ device key ‖ incarnation ‖ last seq ‖ the `GovHead` op
     /// hash the barrier read (ADR 0022 rule 8).
     GOV_RESTORE_EVIDENCE = "rekindle-gov-restore-evidence-v1";
+    /// BLAKE3 `derive_key` context: a `DeviceRetired`'s evidence, the fork
+    /// event a post-fork endorsement and its `DeviceReadmit` may name, over
+    /// community ‖ member record ‖ device key ‖ incarnation ‖ last seq (ADR
+    /// 0022 rules 7 and 10, amended 2026-11-23).
+    GOV_RETIREMENT_EVIDENCE = "rekindle-gov-retirement-evidence-v1";
     /// Ed25519 context: a creator pseudonym's own successor (ADR 0022 rule
     /// 10): label ‖ community ‖ cut ‖ new anchor ‖ fork evidence (S7d-keys K8).
     GOV_SUCCESSOR = "rekindle-gov-successor-v1";

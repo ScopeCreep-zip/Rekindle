@@ -353,8 +353,8 @@ fn resolve_round(cert: &GenesisCert, set: &resolve::OpSet<'_>, invalid: &[bool])
         fold(set.ops[p], &mut state);
     }
     state.devices.clone_from(&set.devices);
-    // The creator's first device is the cert's (S7d-keys.5); every op of
-    // the set was verified for the one anchor.
+    // The cert's creator device (S7d-keys.5), as `prepare` seeded it
+    // (idempotent); every op of the set was verified for the one anchor.
     if let Some(op) = set.ops.first() {
         state.devices.seed_genesis(op.anchor(), cert);
     }
@@ -561,6 +561,7 @@ mod membership;
 mod moderation;
 mod onboarding;
 mod prefork;
+pub use prefork::first_fork_evidence;
 mod resolve;
 mod resume;
 mod resume_gates;
