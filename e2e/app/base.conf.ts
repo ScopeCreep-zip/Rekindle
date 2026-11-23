@@ -9,6 +9,7 @@ import { browser } from "@wdio/globals";
 import type { Browser } from "webdriverio";
 import { keepDir } from "./keep.ts";
 import { RekindleAppLauncher } from "./launcher.ts";
+import { shotAllWindows, shotsFor } from "./shots.ts";
 import { timingAfter, timingBefore, timingTest } from "./timing.ts";
 
 /** The driver's script bound per session (see `before`). */
@@ -71,8 +72,9 @@ export const base = {
     }
   },
   // Each command's duration, printed when slow or timed out (timing.ts).
-  beforeTest(test: { title: string }) {
+  beforeTest(test: { title: string; parent: string; file: string }) {
     timingTest(test.title);
+    shotsFor(test.file, test.parent, test.title);
   },
   beforeCommand(commandName: string) {
     timingBefore(commandName);
@@ -80,7 +82,10 @@ export const base = {
   afterCommand(commandName: string, _args: unknown[], _result: unknown, error?: Error) {
     timingAfter(commandName, error);
   },
+  // Every test's end state as screenshots of each window it left open, on a
+  // pass as on a failure (shots.ts: a green assertion alone validates nothing).
   async afterTest(test: { title: string }, _context: unknown, result: { passed: boolean }) {
+    await shotAllWindows();
     if (!result.passed) await recordFailure(test.title);
   },
 } satisfies Partial<WebdriverIO.Config>;
