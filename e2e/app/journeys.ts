@@ -462,6 +462,24 @@ async function visibleSkinNode(b: Browser, selector: string): Promise<string> {
 }
 
 /**
+ * The node a press on control `id` lands on: the control when it listens
+ * for presses, else its first shown descendant that does (Xfire Classic's
+ * tab is a text node over its button Part, which carries the press). A user
+ * presses what they see; this presses what listens there.
+ */
+async function pressNode(b: Browser, id: string): Promise<string> {
+  return (await b.execute((control: string) => {
+    const pressable = (n: Element): boolean => /\b(leftDown|click)\b/.test(n.getAttribute("data-skin-on") ?? "");
+    const root = document.querySelector(`[data-skin-node="${control}"]`);
+    if (!root || pressable(root)) return control;
+    const inner = Array.from(root.querySelectorAll<HTMLElement>("[data-skin-on]")).find(
+      (n) => pressable(n) && n.getBoundingClientRect().width > 0,
+    );
+    return inner?.dataset.skinNode ?? control;
+  }, id)) as string;
+}
+
+/**
  * Under a skin's tree, press the pack's control for `view` wherever the Host
  * placed it (plan SK2-N4) and wait for the view: a tab or knob node; a knob
  * whose stops share one box (Combat), pressed round to the view; or a control
@@ -471,7 +489,7 @@ export async function showSkinView(b: Browser, view: string): Promise<void> {
   await switchTo(b, BUDDY);
   const control = await visibleSkinNode(b, `[data-skin-role="tab:${view}"], [data-skin-role="knob:${view}"]`);
   if (control) {
-    await press(b, await b.$(`[data-skin-node="${control}"]`));
+    await press(b, await b.$(`[data-skin-node="${await pressNode(b, control)}"]`));
   } else if (await visibleSkinNode(b, '[data-skin-role^="knob:"]')) {
     for (let i = 0; i < 4 && !(await skinViewShown(b, view)); i++) {
       await press(b, await b.$(`[data-skin-node="${await visibleSkinNode(b, '[data-skin-role^="knob:"]')}"]`));

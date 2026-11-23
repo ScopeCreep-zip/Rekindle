@@ -30,6 +30,25 @@ async function controlFacts(view: View): Promise<{ inStrip: boolean; text: strin
   }, view)) as { inStrip: boolean; text: string } | null;
 }
 
+/**
+ * Whether the element at the centre of the shown Friends tab or knob (where
+ * a user clicks) is inside a node listening for a press. A knob shared by
+ * every stop (Combat) shows no Friends knob on another view: true then, as
+ * the press there is the shown knob's own.
+ */
+async function friendsHitListens(): Promise<boolean> {
+  return (await browser.execute(() => {
+    const control = Array.from(document.querySelectorAll<HTMLElement>('[data-skin-role="tab:friends"], [data-skin-role="knob:friends"]')).find(
+      (n) => n.getBoundingClientRect().width > 0,
+    );
+    if (!control) return true;
+    const r = control.getBoundingClientRect();
+    const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+    const listener = hit?.closest("[data-skin-on]");
+    return !!listener && /\b(leftDown|click)\b/.test(listener.getAttribute("data-skin-on") ?? "");
+  })) as boolean;
+}
+
 describe("every skin's Communities control (SK2-N4)", function () {
   this.timeout(600_000);
   const me: User = newUser("n4view");
@@ -53,6 +72,10 @@ describe("every skin's Communities control (SK2-N4)", function () {
         expect(facts.inStrip).toBe(true);
         expect(facts.text).not.toMatch(/^(files|downloads)$/i);
       }
+      // A user's click on the pack's Friends control reaches a node that
+      // listens for presses (no text or decor laid over it takes the press:
+      // Xfire Classic's tab text over its button, r24 896e58096).
+      expect(await friendsHitListens()).toBe(true);
       await showSkinView(browser, "friends");
       expect(await skinViewShown(browser, "communities")).toBe(false);
     });
