@@ -370,3 +370,78 @@ fn text_tabs_carry_the_hosts_words() {
         assert_eq!(menu_label(id, node), None, "{id} {node}");
     }
 }
+
+/// Plan SK6b: a button's text component (StealthX's `ChatButtonText`,
+/// Classic's `BigBrowseFileText`: `Class="Text"`, its word a string of the
+/// Xfire binary) carries the Host's words for the action the button runs,
+/// no cover and no glyph.
+#[test]
+fn button_text_parts_carry_the_hosts_words() {
+    let words = |id: &str, node: &str| {
+        menu_label(id, node).map(|l| {
+            assert_eq!((l.cover, l.glyph), (None, None), "{id} {node}");
+            l.text
+        })
+    };
+    let want = [
+        ("xfire-classic", "BigBrowseFileText", "Find"),
+        ("simple-x", "BigBrowseFileText", "Find"),
+        ("stealthx", "AddFriendButtonText", "Add Friend"),
+        ("stealthx", "ChatButtonText", "Chat"),
+        ("stealthx", "GameButton1.GameButtonText", "Join"),
+        ("stealthx", "InfoButton1.InfoButtonText", "Profile"),
+        ("stealthx", "AddServerButtonText", "Add Server"),
+        ("stealthx", "RefreshButtonText", "Refresh"),
+        ("stealthx", "GameButton2.GameButtonText", "Join"),
+        ("stealthx", "InfoButton2.InfoButtonText", "Profile"),
+        ("stealthx", "FindButtonText", "Find"),
+        ("stealthx", "DownloadButtonText", "Start"),
+        ("stealthx", "StopButtonText", "Stop"),
+        ("stealthx", "ExecuteButtonText", "Execute"),
+        ("stealthx", "HostChatButtonText", "Host Voice"),
+        ("stealthx", "JoinChatButtonText", "Join Voice"),
+        ("stealthx", "LeaveChatButtonText", "Leave Voice"),
+    ];
+    for (id, node, text) in want {
+        assert_eq!(words(id, node).as_deref(), Some(text), "{id} {node}");
+    }
+}
+
+/// Plan SK6b: a button whose art draws its word (Classic's `AddButton`,
+/// `ChatButton`) serves no words, nor does a button's art-less state tile
+/// (the info popup's `TalkingStateButton`).
+#[test]
+fn art_worded_buttons_serve_no_words() {
+    for (id, node) in [
+        ("xfire-classic", "AddButton"),
+        ("xfire-classic", "ChatButton"),
+        ("xfire-classic", "InfoTalkingStateButton"),
+        ("alloy", "TalkingStateButton"),
+    ] {
+        assert_eq!(menu_label(id, node), None, "{id} {node}");
+    }
+}
+
+/// Plan SK6b: across the 11 built-ins, no text component of a button is
+/// left blank: every art-less `…Text` part under a button carries words,
+/// so every pressed action of such a button has a name.
+#[test]
+fn no_button_text_part_is_left_blank() {
+    fn blank(nodes: &[SkinNode], under_button: bool, id: &str, out: &mut Vec<String>) {
+        for n in nodes {
+            let text = n.id.to_ascii_lowercase().ends_with("text");
+            let part = under_button && n.role == NodeRole::Part && n.art.is_none();
+            if part && text && n.label.as_ref().is_none_or(|l| l.text.is_empty()) {
+                out.push(format!("{id} {}", n.id));
+            }
+            blank(&n.children, n.role == NodeRole::Button, id, out);
+        }
+    }
+    let mut left = Vec::new();
+    for id in builtin::PACKS.iter().map(|b| b.id) {
+        for t in main_and_popup_trees(id) {
+            blank(&t.root, false, id, &mut left);
+        }
+    }
+    assert!(left.is_empty(), "{left:?}");
+}
