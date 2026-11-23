@@ -3,7 +3,7 @@
 
 use rusqlite::{params, Connection};
 
-use super::messages::{dm_row, DmRow, DM_COLS, HISTORY_ORDER};
+use super::messages::{dm_row, own_message, DmRow, OwnDm, DM_COLS, HISTORY_ORDER};
 
 /// The newest `limit` messages of group `group_id` before `before` (a
 /// timestamp, ms; all when `None`), oldest first (plan E2.6).
@@ -30,4 +30,20 @@ pub fn group_dm_history(
         .collect::<rusqlite::Result<Vec<_>>>()?;
     rows.reverse();
     Ok(rows)
+}
+
+/// Our message to group `group_id` whose client id is `message_id`, as
+/// stored with its parent's client id (plan E6.11: the row our send
+/// publishes); `None` when we sent none with that id to that group.
+///
+/// # Errors
+/// The query failed.
+pub fn own_group_dm(
+    conn: &Connection,
+    owner_key: &str,
+    group_id: &str,
+    message_id: &str,
+) -> rusqlite::Result<Option<OwnDm>> {
+    Ok(own_message(conn, owner_key, message_id, "group_dm")?
+        .filter(|own| own.row.peer_key == group_id))
 }
