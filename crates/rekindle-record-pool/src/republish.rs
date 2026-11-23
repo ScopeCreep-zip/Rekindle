@@ -22,15 +22,23 @@
 //! subkey); the newest write replaces the older one's entry.
 //!
 //! Each round is inspect-first (lead decision OW2): the due entries are
-//! grouped by record and each record gets one set-scope inspect of its due
-//! subkeys, the check Veilid's own rehydration makes before it writes
-//! (0.5.8 `rehydrate.rs:170-215`, `:371-405`). Only a subkey whose network
-//! seq is behind ours, or that the network holds none of, is re-sent; one
-//! the network holds at our seq costs nothing more, one it holds newer
-//! ends the entry. Veilid's public report carries the seq the set-scope
-//! fanout settled on, not its holder count (`dht_record_report.rs:9-20`),
-//! so a seq too few hold shows as behind only once `set_value_count`
-//! holders of an older one answer first (`inspect_record.rs:672-705`). An
+//! grouped by record and each record gets one inspect of its due subkeys,
+//! the check Veilid's own rehydration makes before it writes (0.5.8
+//! `rehydrate.rs:170-215`, `:371-405`). Only a subkey whose network seq is
+//! behind ours, or that the network holds none of, is re-sent; one the
+//! network holds at our seq costs nothing more, one it holds newer ends
+//! the entry. Rehydration also re-sends a seq the network holds with fewer
+//! than `set_value_count` consensus nodes (`rehydrate.rs:388-394`), but
+//! Veilid's public report carries only the seq the fanout settled on, not
+//! its holder count (`dht_record_report.rs:9-20`). So the inspect is in the
+//! get scope (`inspect_record.rs:426-450`): it stops, as a reader's get
+//! does, at `get_value_count` holders of the first seq they agree on and
+//! discards a newer seq answered after (`inspect_record.rs:672-705`), so
+//! it reports our seq only when a reader would settle on it, and an older
+//! seq whenever `get_value_count` holders of it answer before ours. A set
+//! scope inspect waits for `set_value_count` holders, so it reports our
+//! seq as held while a reader's get has already settled on the older one
+//! (a write that stored on one side of a split, plan E3.4 LV1). An
 //! inspect that fails sends nothing and leaves every subkey due for the
 //! next round. A fully landed record costs one inspect per round.
 //!
@@ -299,13 +307,13 @@ impl RecordPool {
         };
         let subkeys: Vec<u32> = due.iter().map(|d| d.subkey).collect();
         let k = key.to_owned();
-        // Set scope: the fanout a set uses, counting `set_value_count`
-        // holders, starting from nothing local (0.5.8
-        // `inspect_record.rs:322-330`, `:426-436`).
+        // Get scope: the fanout a reader's get uses, counting
+        // `get_value_count` holders, starting from nothing local (0.5.8
+        // `inspect_record.rs:322-330`, `:438-449`; see the module notes).
         let report = self
             .run("dht republish inspect", move |backend| async move {
                 backend
-                    .inspect(&k, Some(&subkeys), ReportScope::SyncSet)
+                    .inspect(&k, Some(&subkeys), ReportScope::SyncGet)
                     .await
             })
             .await;
@@ -398,8 +406,8 @@ enum Standing {
 }
 
 /// `subkey`'s standing in an inspect `report`. Veilid reports, per subkey,
-/// the seq the set-scope fanout settled on: the first seq
-/// `set_value_count` holders agreed on, a newer one seen after that
+/// the seq the get-scope fanout settled on: the first seq
+/// `get_value_count` holders agreed on, a newer one seen after that
 /// discarded (0.5.8 `inspect_record.rs:672-705`). A subkey the report
 /// leaves out is behind (a re-send checks the local copy first).
 fn standing(report: &RecordReport, subkey: u32) -> Standing {

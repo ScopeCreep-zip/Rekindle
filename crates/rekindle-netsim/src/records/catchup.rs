@@ -17,8 +17,10 @@
 //!   failure up to [`MAX_INSPECT_INTERVAL`] (`requeue_failed_change_inspect`,
 //!   `watch_value.rs:2403-2435`; `failure_backoff`,
 //!   `network_manager/online_detector.rs:117-131`, survival 1);
-//! - **what:** an inspect of the watched subkeys over the replicas the node
-//!   reaches gives the subkeys where the network is ahead of the local copy
+//! - **what:** an inspect of the watched subkeys in the SyncGet scope over
+//!   the replicas the node reaches, stopping at `get_value_count` agreeing
+//!   replicas (`watch_value.rs:1445-1451`, [`replicas::consensus`]), gives
+//!   the subkeys where the network is ahead of the local copy
 //!   (`newer_online_subkeys`), which backs the silence timer off or resets
 //!   it. One newer subkey is read (a network get, stored locally when its
 //!   seq moved) and reported with its value when newer than the local seq;
@@ -35,7 +37,7 @@ use std::time::Duration;
 use rekindle_records::port::{PortEvent, ValueChange};
 
 use super::outbound::{self, micros, MAX_INSPECT_INTERVAL};
-use super::replicas::{self, newest_seq};
+use super::replicas::{self, GET_COUNT};
 use super::{reachable, watches};
 use crate::latency::{self, Latency};
 use crate::network::{Inner, Network};
@@ -196,7 +198,7 @@ fn inspect(
             .into_iter()
             .filter(|s| {
                 let held = local.get(&(key.to_string(), *s)).map(|v| v.seq);
-                newest_seq(&record.replicas, &reach, *s as usize) > held
+                replicas::consensus(&record.replicas, &reach, *s as usize, None, GET_COUNT).0 > held
             })
             .collect()
     };
