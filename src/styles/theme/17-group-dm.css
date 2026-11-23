@@ -60,34 +60,39 @@
     gap: 8px;
   }
 
+  /* The member list wraps onto its own line, the window's width, when the
+     controls beside it would leave it less than 14em (a narrow window). */
   .group-chat-header {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
+    gap: 4px 8px;
     padding: 4px 8px;
     background: var(--color-xfire-bg-dark);
   }
 
-  /* One line (plan E2.6 GC1): the names comma-separated, each ellipsised
-     as the header narrows; the full list is the element's title. */
+  /* The names comma-separated (plan E2.6 GC1), each ellipsised as the
+     header narrows; a name that would shrink past its floor moves to the
+     next line rather than hiding a member. The full list is the title. */
   .group-chat-members {
     display: flex;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     overflow: hidden;
-    gap: 4px;
+    gap: 0 4px;
     margin: 0;
     padding: 0;
     list-style: none;
-    flex: 1;
+    flex: 1 1 14em;
     min-width: 0;
   }
 
-  /* A name shrinks no further than five characters' width (four letters and
-     the ellipsis, or a short name such as "You" with its comma), so every
-     member stays identifiable; the full list is the element's title. */
+  /* A name shrinks no further than four wide letters, the ellipsis and its
+     comma (5.5em: "WWWW…," at 11px; 5ch, the width of five digits, showed
+     three), so every member stays identifiable (r24 layout-friends, Linux,
+     group chat at 380x400). */
   .group-chat-member {
     flex: 0 1 auto;
-    min-width: 5ch;
+    min-width: 5.5em;
     font-size: 11px;
     color: var(--color-xfire-text-dim);
     max-width: 100%;
