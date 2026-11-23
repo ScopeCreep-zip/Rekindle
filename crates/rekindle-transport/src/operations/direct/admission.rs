@@ -129,6 +129,9 @@ pub(crate) async fn init_admitted(
     if !admitted && not_yet(status) {
         tracing::info!(from = %sender_hex, ?status, ?kind,
             "PreKeyInit not admitted yet: our request to the sender is outstanding — retry later");
+    } else if !admitted && invited_member(host, sender_hex, kind).await {
+        tracing::info!(from = %sender_hex, ?kind,
+            "PreKeyInit not admitted yet: we have not answered the group's invite — retry later");
     } else if !admitted {
         tracing::info!(from = %sender_hex, ?status, ?kind,
             "dropping PreKeyInit: sender may not open a session with this kind");
@@ -147,6 +150,31 @@ pub(crate) async fn init_admitted(
 /// and every other status stay refused.
 pub(crate) fn not_yet(status: Status) -> bool {
     status == Some(FriendshipState::PendingOut)
+}
+
+/// [`crate::operations::group_dm`]'s `invited_member`: a PreKeyInit whose
+/// first payload is a pairwise group control kind, from a member of an
+/// invite we have not answered, is refused only for now (real-app finding
+/// GD1), as [`not_yet`] is for a sender we asked.
+pub(crate) async fn invited_member(
+    host: &dyn FriendHost,
+    sender_hex: &str,
+    kind: DmTypeId,
+) -> bool {
+    crate::operations::group_dm::invited_member(host, sender_hex, kind).await
+}
+
+/// Whether a frame the gate refused (`init`: a PreKeyInit whose first
+/// payload is `kind`) is refused only for now: [`not_yet`], or an init
+/// from a member of a group invite we have not answered ([`invited_member`]).
+pub(crate) async fn refused_for_now(
+    host: &dyn FriendHost,
+    sender_hex: &str,
+    kind: DmTypeId,
+    status: Status,
+    init: bool,
+) -> bool {
+    not_yet(status) || (init && invited_member(host, sender_hex, kind).await)
 }
 
 /// The sender's friendship as the identity's database holds it.

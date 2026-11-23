@@ -61,3 +61,30 @@ pub async fn admitted(host: &dyn FriendHost, sender: &str, kind: DmTypeId, init:
     }
     admitted
 }
+
+/// Whether a session `sender` opens with the pairwise group control `kind`
+/// is refused only for now (real-app finding GD1): they are on the
+/// creator-signed roster of an invite we hold and have not answered. E2.6
+/// admits a member's session only for a group we accepted, so nothing is
+/// opened or stored; the call is answered retry later, and the sender's
+/// receipted `friend_handshake` stream sends it again once our accept
+/// commits (our decline or the invite's expiry ends it: then refused). A
+/// sender on no invite we hold stays refused. Fails closed (`false`) when
+/// the invites are unreadable.
+pub(crate) async fn invited_member(host: &dyn FriendHost, sender: &str, kind: DmTypeId) -> bool {
+    if !super::opens_member_session(kind) {
+        return false;
+    }
+    let Ok(deps) = host.group_dm() else {
+        return false;
+    };
+    match deps.invites().await {
+        Ok(invites) => invites
+            .iter()
+            .any(|p| p.invite.roster.iter().any(|m| m.identity == sender)),
+        Err(e) => {
+            tracing::warn!(error = %e, "group invites unreadable; failing closed");
+            false
+        }
+    }
+}

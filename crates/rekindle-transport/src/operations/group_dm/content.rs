@@ -306,15 +306,39 @@ fn spawn_hints(host: &dyn FriendHost, id: &GroupId, contents: Vec<GroupContent>)
             return;
         };
         let others = group.roster.others(&deps.own_identity());
+        let mut answered = Vec::with_capacity(others.len());
+        for to in &others {
+            match session_answered(owned.as_ref(), to).await {
+                Ok(true) => answered.push(to.clone()),
+                Ok(false) => tracing::debug!(to = %to,
+                    "group hint not sent: the member has not answered our session; our chain carries it"),
+                Err(e) => tracing::debug!(to = %to, error = %e, "group hint not sent"),
+            }
+        }
         for content in contents {
             let body = DirectBody::GroupContent(content);
-            for to in &others {
+            for to in &answered {
                 if let Err(e) = send_to_peer(owned.as_ref(), to, &body).await {
                     tracing::debug!(to = %to, error = %e, "group hint not sent");
                 }
             }
         }
     });
+}
+
+/// Whether a hint to `to` can open on their side (real-app finding GD1):
+/// something decrypted under our pairwise session with them. A
+/// `GroupContent` may not open a session (`DmTypeId::is_first_payload`),
+/// so on our unanswered init it rides as a bare ratchet message, which a
+/// member who refused or has not yet admitted the init (an invite they
+/// have not answered) can never open. The hint waits for the session; the
+/// chain is authoritative (D23) and the next attempt hints again.
+async fn session_answered(host: &dyn FriendHost, to: &str) -> Result<bool, FriendError> {
+    let owner = host.local_party()?.owner();
+    let peer = crate::operations::dm::frame::peer_address(to)?;
+    rekindle_db::ratchet::is_established(&host.db()?, &owner, &peer)
+        .await
+        .map_err(|e| crate::operations::dm::frame::ratchet_error(to, e))
 }
 
 fn typing_context(group_id: &str) -> TypingContext {
