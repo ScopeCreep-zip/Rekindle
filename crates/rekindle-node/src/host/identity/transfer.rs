@@ -55,6 +55,7 @@ pub async fn import(
     archive_bytes: &[u8],
     passphrase: &str,
     now_ms: u64,
+    rng: &dyn rekindle_utils::RandomSource,
 ) -> Result<IdentityEntry, IdentityError> {
     let archive = archive::Archive::decode(archive_bytes)?;
     let entry = archive.entry;
@@ -73,7 +74,7 @@ pub async fn import(
         &archive.vault,
         &archive.header,
     )?;
-    let installed = install_imported(root, attempts, &entry, passphrase, now_ms).await;
+    let installed = install_imported(root, attempts, &entry, passphrase, now_ms, rng).await;
     if installed.is_err() {
         let _ = remove_files(root, &public_key);
     }
@@ -86,6 +87,7 @@ async fn install_imported(
     entry: &IdentityEntry,
     passphrase: &str,
     now_ms: u64,
+    rng: &dyn rekindle_utils::RandomSource,
 ) -> Result<(), IdentityError> {
     let public_key = &entry.public_key;
     let super::Opened {
@@ -111,7 +113,7 @@ async fn install_imported(
     );
     // A fresh token: the archive does not carry one, and a moved identity
     // starts with a new friend code.
-    let token = rekindle_secrets::friend_token::mint().into_string();
+    let token = rekindle_secrets::friend_token::mint(rng).into_string();
     db.call(move |conn| rekindle_db::repo::identity::insert(conn, &pk, &dn, at, &token))
         .await
         .map_err(|e| IdentityError::Storage(e.to_string()))?;

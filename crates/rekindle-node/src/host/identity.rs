@@ -253,6 +253,7 @@ pub async fn create(
         &secret,
         passphrase,
         now_ms,
+        rng,
     )
     .await;
     let (vault, db) = match created {
@@ -272,12 +273,13 @@ async fn create_files(
     secret: &[u8; 32],
     passphrase: &str,
     now_ms: i64,
+    rng: &dyn rekindle_utils::RandomSource,
 ) -> Result<(VaultStore, Db), IdentityError> {
     let (vault, app_db_key) = VaultStore::create(&root.identity_vault(public_key), passphrase)?;
     vault.put(&VaultKey::IdentityEd25519, secret)?;
     let db = rekindle_db::open(&root.identity_db(public_key), app_db_key.as_bytes())?;
     let (pk, dn) = (public_key.to_string(), display_name.to_string());
-    let token = rekindle_secrets::friend_token::mint().into_string();
+    let token = rekindle_secrets::friend_token::mint(rng).into_string();
     db.call(move |conn| rekindle_db::repo::identity::insert(conn, &pk, &dn, now_ms, &token))
         .await
         .map_err(|e| IdentityError::Storage(e.to_string()))?;

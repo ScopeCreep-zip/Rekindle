@@ -203,19 +203,42 @@ async fn an_exported_identity_imports_on_another_root_and_unlocks() {
 
     let b = Fixture::new();
     assert!(matches!(
-        import(&b.root, &b.attempts, &archive, "wrong", 4).await,
+        import(
+            &b.root,
+            &b.attempts,
+            &archive,
+            "wrong",
+            4,
+            &rekindle_utils::random::OsRandom
+        )
+        .await,
         Err(IdentityError::WrongPassphrase)
     ));
     assert!(
         !b.root.identity_vault(&pk).exists(),
         "a failed import leaves nothing"
     );
-    let entry = import(&b.root, &b.attempts, &archive, "pass", 5)
-        .await
-        .unwrap();
+    let entry = import(
+        &b.root,
+        &b.attempts,
+        &archive,
+        "pass",
+        5,
+        &rekindle_utils::random::OsRandom,
+    )
+    .await
+    .unwrap();
     assert_eq!(entry.display_name, "Mover");
     assert!(matches!(
-        import(&b.root, &b.attempts, &archive, "pass", 6).await,
+        import(
+            &b.root,
+            &b.attempts,
+            &archive,
+            "pass",
+            6,
+            &rekindle_utils::random::OsRandom
+        )
+        .await,
         Err(IdentityError::Exists)
     ));
     let unlocked = unlock(&b.root, &b.stores(), &pk, "pass", 7).await.unwrap();
@@ -242,7 +265,15 @@ async fn an_archive_naming_a_path_is_refused() {
     parsed.entry.public_key = "../escape".into();
     let b = Fixture::new();
     assert!(matches!(
-        import(&b.root, &b.attempts, &parsed.encode().unwrap(), "pass", 3).await,
+        import(
+            &b.root,
+            &b.attempts,
+            &parsed.encode().unwrap(),
+            "pass",
+            3,
+            &rekindle_utils::random::OsRandom
+        )
+        .await,
         Err(IdentityError::Corrupt(_))
     ));
 }

@@ -9,12 +9,15 @@
 //! again, and on the second copy of the receipted call over her General
 //! route (`RECEIPT_LOST_REPEATS`) rotates that route once; further copies
 //! within `REPORT_PEER_COOLDOWN` rotate nothing. Ann's accept settles Rae's
-//! request.
+//! request. The request's durable copy in Ann's code slot (plan RV2e)
+//! settles it `Sent` once it lands, which would end the re-sends, so the
+//! write is held below consensus (`Fault::WriteFails`) until the receipts
+//! heal: this scenario is about the call path alone.
 
 use std::time::Duration;
 
 use rekindle_ipc::protocol::IpcRequest;
-use rekindle_netsim::Fault;
+use rekindle_netsim::{Fault, Writes};
 use rekindle_records::port::RouteClass;
 use rekindle_route::liveness::{RECEIPT_LOST_REPEATS, REPORT_PEER_COOLDOWN, REPORT_ROTATE_AGE};
 use rekindle_types::message::SendState;
@@ -62,6 +65,13 @@ async fn lost_receipts_dedup_rotate_once_and_the_accept_settles() {
         node: 1,
         lost: true,
     });
+    sim.fault(Fault::WriteFails {
+        node: 0,
+        of: Writes::Subkey {
+            subkey: rekindle_types::dht_layout::request_inbox::REQUEST,
+            record: None,
+        },
+    });
     nodes[0]
         .ok(IpcRequest::FriendAddFromCode {
             code: code.url,
@@ -103,6 +113,7 @@ async fn lost_receipts_dedup_rotate_once_and_the_accept_settles() {
         node: 1,
         lost: false,
     });
+    sim.fault(Fault::Heal);
     accept(&nodes[1], &nodes[0]).await;
     assert!(eventually(&sim, LIMIT, || is_accepted_friend(&nodes[0], &ann)).await);
     assert!(

@@ -135,7 +135,7 @@ async fn adding_a_friend_waits_for_our_published_profile() {
     let code = rekindle_types::friend_code::FriendCode::parse(&format!(
         "rekindle://add/{bob}/VLD0:{}/{}",
         "a".repeat(43),
-        rekindle_secrets::friend_token::mint()
+        rekindle_secrets::friend_token::mint(&rekindle_utils::OsRandom)
     ))
     .unwrap();
     let stored = || {

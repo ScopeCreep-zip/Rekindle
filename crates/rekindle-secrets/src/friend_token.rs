@@ -2,16 +2,18 @@
 //! 26 characters of unpadded lowercase RFC 4648 base32, carried by our
 //! friend code and checked against every incoming `FriendRequest`.
 
-use rand::RngCore as _;
 use rekindle_types::key_format::{self, FriendRequestToken};
+use rekindle_utils::RandomSource;
 use subtle::ConstantTimeEq as _;
 
-/// Mint a fresh token from the OS generator, like the identity key it is
-/// created with.
+/// Mint a fresh token from `rng`, the Host's generator, which the identity
+/// key it is created with also comes from (plan C9.2): the code slot's
+/// writer is derived from the token ([`inbox_writer`]), so the slot's
+/// record key is as reproducible under one seed as every other key.
 #[must_use]
-pub fn mint() -> FriendRequestToken {
+pub fn mint(rng: &dyn RandomSource) -> FriendRequestToken {
     let mut bytes = [0u8; 16];
-    rand::rngs::OsRng.fill_bytes(&mut bytes);
+    rng.fill(&mut bytes);
     let spelled = data_encoding::BASE32_NOPAD
         .encode(&bytes)
         .to_ascii_lowercase();
@@ -49,17 +51,18 @@ pub fn inbox_writer(token: &FriendRequestToken) -> ed25519_dalek::SigningKey {
 #[cfg(test)]
 mod tests {
     use super::{inbox_writer, matches, mint};
+    use rekindle_utils::OsRandom;
 
     #[test]
     fn the_inbox_writer_follows_the_token() {
-        let (a, b) = (mint(), mint());
+        let (a, b) = (mint(&OsRandom), mint(&OsRandom));
         assert_eq!(inbox_writer(&a).to_bytes(), inbox_writer(&a).to_bytes());
         assert_ne!(inbox_writer(&a).to_bytes(), inbox_writer(&b).to_bytes());
     }
 
     #[test]
     fn minted_tokens_are_valid_distinct_and_compare() {
-        let (a, b) = (mint(), mint());
+        let (a, b) = (mint(&OsRandom), mint(&OsRandom));
         assert_ne!(a, b);
         assert!(matches(&a, a.as_str()));
         assert!(!matches(&a, b.as_str()));
