@@ -21,6 +21,7 @@ use rekindle_skin::{builtin, serve, validate};
 const SERVE_BUDGET: Duration = Duration::from_millis(1500);
 
 #[test]
+#[ignore = "wall-clock spec (1.5 s/pack, client 5 s timeout); cargo xtask perf"]
 fn every_builtin_serves_its_stylesheet_in_time() {
     for pack in &builtin::PACKS {
         let c = validate::run(pack.bytes).unwrap_or_else(|e| panic!("{}: {e:?}", pack.id));

@@ -66,7 +66,7 @@ thread_local! {
     /// title's column work, which tests hold to the strip's width per
     /// window width (`mark_title_cols` steps per source column, never per
     /// output column).
-    static COL_EVALS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    pub(crate) static COL_EVALS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
 /// The source column under output column `x` of a strip `iw` px wide
