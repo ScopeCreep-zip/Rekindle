@@ -2,6 +2,7 @@ import { createSignal } from "solid-js";
 import { createStore } from "solid-js/store";
 
 import type { Message as IpcMessage } from "../ipc/commands/types";
+import type { DeliveryRetry } from "../ipc/channels/chat_events";
 
 export type MessageStatus =
   | "sending"
@@ -49,6 +50,8 @@ export interface Message extends Omit<IpcMessage, "sendState"> {
   /** Delivery state: from the backend's `sendState` when a message is
    *  loaded (our own only), then updated locally as a send resolves. */
   status?: MessageStatus;
+  /** Our send goes unanswered and the Host keeps trying (plan SR2), else null. */
+  retry?: DeliveryRetry | null;
   /** Why our failed post was not sent, as the backend words it (a key that
    *  never came, or written after our removal), live or from the stored
    *  row; absent when the network superseded it. */

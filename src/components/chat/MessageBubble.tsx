@@ -17,6 +17,7 @@ import { messageAnnouncement } from "../../utils/message_announcement";
 import { linkPreviewKey, linkPreviews } from "../../stores/link_preview.store";
 import { commands } from "../../ipc/commands";
 import { ICON_DOTS, ICON_CHECK, ICON_CLOSE_CIRCLE, ICON_REFRESH, ICON_REPLY, ICON_EMOTICON, ICON_PIN, ICON_THREAD, ICON_PENCIL, ICON_DELETE, ICON_TIMEOUT, ICON_PLUS_BOX, ICON_FORWARD, ICON_CHECK_ALL, ICON_EYE} from "../../icons";
+import { deliveryRetryText } from "../../utils/delivery_retry";
 
 interface MessageBubbleProps {
   communityId?: string;
@@ -201,6 +202,9 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
         </Show>
         <Show when={props.message.isOwn && props.message.status === "awaiting_key"}>
           <span class="message-status-note">Waiting for the community key</span>
+        </Show>
+        <Show when={props.message.isOwn && props.message.retry}>
+          {(retry) => <span class="message-status-note">{deliveryRetryText(retry())}</span>}
         </Show>
         <Show when={props.message.isOwn && props.message.status === "failed" && props.message.failureReason}>
           <span class="message-status-note message-status-note-failed">{props.message.failureReason}</span>

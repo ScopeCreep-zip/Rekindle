@@ -102,6 +102,7 @@ const BuddyGroup: Component<BuddyGroupProps> = (props) => {
         voiceChannel={friend.voiceChannel}
         friendshipState={friend.friendshipState}
         requestSendState={friend.requestSendState}
+        requestRetry={friend.requestRetry}
         handshakeError={friend.handshakeError}
         handshakeRetrying={friend.handshakeRetrying}
         unreachable={friend.unreachable}

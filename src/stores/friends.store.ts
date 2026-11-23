@@ -1,4 +1,5 @@
 import type { SendState } from "../ipc/commands/types";
+import type { DeliveryRetry } from "../ipc/channels/chat_events";
 import { createStore } from "solid-js/store";
 import type { UserStatus } from "./auth.store";
 import type { GameInfo } from "../ipc/commands/dto";
@@ -25,6 +26,8 @@ export interface Friend {
   friendshipState: FriendshipState;
   /** Our friend request's delivery, while it is pending out (plan E2.5). */
   requestSendState?: SendState;
+  /** Our friend request goes unanswered and the Host keeps trying (plan SR2), else null. */
+  requestRetry?: DeliveryRetry | null;
   /** Why the secure session could not be set up, while it is failed (C7.25). */
   handshakeError: string | null;
   /** Our first contact is being resent from a fresh key (plan E2.4, B6). */
