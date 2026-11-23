@@ -82,11 +82,18 @@ fn rule_4_an_edge_grips_target_stops_at_a_button() {
         "{low:?}"
     );
     assert_eq!(low.art[..3], [0, 0, 5], "{low:?}");
-    // Above the button (pack `Z=1`): cut at the button's target box, x 10.
+    // Above the button (pack `Z=1`): still 24 px thick, with only the
+    // stretch over the button's target box cut out as a hole.
     let last = t.len() - 2;
     t[last].z = 1;
-    let high = served(t);
-    assert_eq!((high.area[0], high.area[2]), (0, 10), "{high:?}");
+    let high = served(t.clone());
+    assert_eq!((high.area[0], high.area[2]), (0, 24), "{high:?}");
+    let tree = frame_tree(t);
+    let window = super::target::window(&layout(None));
+    let holes = super::target::grip_holes(&tree, window);
+    let (_, _, h) = holes.iter().find(|(id, ..)| id == "ResizeLeft").unwrap();
+    // The button's 24 px target box (y 86-110) over the band x 10-24.
+    assert_eq!(h, &vec![[10, 86, 14, 24]], "{holes:?}");
 }
 
 fn frame_tree(root: Vec<rekindle_types::dto::skin_tree::SkinNode>) -> SkinTree {
@@ -123,7 +130,7 @@ fn rule_4_a_grip_yields_by_effective_z() {
     t.push(grip);
     assert_eq!(checked(t.clone(), &BTreeMap::new()), Ok(()));
     let tree = frame_tree(t.clone());
-    let out = css::tree_css(".app-frame", &tree, &BTreeMap::new(), "x").unwrap();
+    let out = css::tree_css(".app-frame", &tree, &layout(None), &BTreeMap::new(), "x").unwrap();
     let w = i32::from(layout(None).min_width);
     let boxes = tree.boxes(w, 300);
     let at = |id: &str| boxes.iter().find(|(n, _)| n.id == id).map(|(_, b)| *b);

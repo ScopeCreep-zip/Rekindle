@@ -35,7 +35,7 @@ fn target_of(l: &WindowLayout, id: &str) -> Option<NodeTarget> {
 }
 
 fn sheet(l: &WindowLayout) -> String {
-    css::tree_css(".f", l.tree.as_ref().unwrap(), &BTreeMap::new(), "x").unwrap()
+    css::tree_css(".f", l.tree.as_ref().unwrap(), l, &BTreeMap::new(), "x").unwrap()
 }
 
 #[test]
@@ -245,7 +245,19 @@ fn pack_box(tree: &SkinTree, (w, h): (i32, i32)) -> [i32; 4] {
 /// off) that cover the centre of another listening node's art box shown
 /// with it: a press there would land on the covering node (its target box
 /// over its neighbour's art) or on a node that never listens.
-fn covered(tree: &SkinTree, pack: [i32; 4]) -> Vec<String> {
+fn covered(tree: &SkinTree, window: (i32, i32)) -> Vec<String> {
+    let pack = pack_box(tree, window);
+    // A grip's holes (plan SK11): clipped out of its box, so a press there
+    // reaches the node under it.
+    let holes = target::grip_holes(tree, window);
+    let in_hole = |id: &str, (cx, cy): (i32, i32)| {
+        holes.iter().filter(|(g, ..)| g == id).any(|(_, a, hs)| {
+            hs.iter().any(|h| {
+                let (x, y) = (a[0] + h[0], a[1] + h[1]);
+                2 * x <= cx && cx < 2 * (x + h[2]) && 2 * y <= cy && cy < 2 * (y + h[3])
+            })
+        })
+    };
     let apart = validate::Apart::new(&tree.root);
     let mut all = Vec::new();
     laid_all(&tree.root, pack, &[], &mut all);
@@ -280,7 +292,7 @@ fn covered(tree: &SkinTree, pack: [i32; 4]) -> Vec<String> {
                 || apart.apart(&l.id, &m.id)
                 || inside(*mb, *lb)
                 || at(*mb, c)
-                || (m.resize_edge().is_some() && stack.yields(&m.id, &l.id));
+                || (m.resize_edge().is_some() && (stack.yields(&m.id, &l.id) || in_hole(&m.id, c)));
             if skip {
                 continue;
             }
@@ -307,11 +319,11 @@ fn no_target_box_covers_another_listening_nodes_centre() {
         for (window, l) in &m.windows {
             let mut trees = Vec::new();
             if let Some(t) = &l.tree {
-                trees.push((String::new(), t, pack_box(t, target::window(l))));
+                trees.push((String::new(), t, target::window(l)));
             }
             for (name, p) in &l.popups {
                 let at = target::window(&super::popup::frame(p, l.min_height));
-                trees.push((format!(" popup {name}"), &p.tree, pack_box(&p.tree, at)));
+                trees.push((format!(" popup {name}"), &p.tree, at));
             }
             for (popup, tree, at) in trees {
                 for c in covered(tree, at) {
@@ -347,43 +359,54 @@ fn every_builtin_grip_is_a_served_target() {
                 let laid = target::targets(tree, at);
                 let stack = validate::Stack::new(&tree.root);
                 let apart = validate::Apart::new(&tree.root);
-                for g in target::grip_targets(tree, at, &laid) {
+                for g in target::grips(tree, at, &laid) {
                     // The box holds the art and grows it (or keeps it at 24 px).
-                    let (a, r) = (g.art, g.area);
+                    let (a, r) = (g.laid.art, g.laid.area);
                     let holds = r[0] <= a[0]
                         && r[1] <= a[1]
                         && a[0] + a[2] <= r[0] + r[2]
                         && a[1] + a[3] <= r[1] + r[3];
-                    assert!(holds, "{} {}: {r:?} drops its art {a:?}", b.id, g.id);
-                    for u in laid.iter().filter(|u| !apart.apart(&g.id, &u.id)) {
-                        // Above `u`, the grip's box meets `u`'s only on the
-                        // grip's own art (the pack's layout, rule 4).
-                        let (r, o) = (g.area, u.area);
-                        let meet = [
-                            r[0].max(o[0]),
-                            r[1].max(o[1]),
-                            (r[0] + r[2]).min(o[0] + o[2]),
-                            (r[1] + r[3]).min(o[1] + o[3]),
-                        ];
-                        let a = g.art;
-                        let on_art = meet[0] >= a[0]
-                            && meet[1] >= a[1]
-                            && meet[2] <= a[0] + a[2]
-                            && meet[3] <= a[1] + a[3];
-                        let over =
-                            validate::overlap(r, o) && !stack.yields(&g.id, &u.id) && !on_art;
+                    assert!(holds, "{} {}: {r:?} drops its art {a:?}", b.id, g.laid.id);
+                    for u in laid.iter().filter(|u| !apart.apart(&g.laid.id, &u.id)) {
+                        // Above `u`, the grip's box meets `u`'s press box
+                        // (its target, or the 24 px square on its centre)
+                        // only on the grip's own art (the pack's layout,
+                        // rule 4) or in a hole the stylesheet clips out.
+                        let (r, o) = (g.laid.area, target::press_box(u.art, u.area));
+                        let mut left =
+                            target::meet(r, o).map_or(Vec::new(), |m| target::minus(m, g.laid.art));
+                        for h in &g.holes {
+                            left = left
+                                .into_iter()
+                                .flat_map(|p| target::minus(p, *h))
+                                .collect();
+                        }
+                        let over = !left.is_empty() && !stack.yields(&g.laid.id, &u.id);
                         assert!(
                             !over,
                             "{} {window:?}{popup}: grip {} {r:?} over {} {o:?}",
-                            b.id, g.id, u.id
+                            b.id, g.laid.id, u.id
                         );
                     }
                     if b.id == "spacecowboy" && popup.is_empty() {
-                        cowboy.push((g.id.clone(), g.area, g.rule));
+                        cowboy.push((g.laid.id.clone(), g.laid.rule));
                     }
                 }
             }
         }
     }
-    println!("SPACECOWBOY {cowboy:?}");
+    // SpaceCowboy's four resize edges and its corner grip (its frame
+    // corners and side pieces are Decor art, no listener): the side edges
+    // run past the list's small controls and stay pinned short.
+    let rule = |id: &str| cowboy.iter().find(|(g, _)| g == id).map(|(_, r)| *r);
+    assert_eq!(cowboy.len(), 5, "{cowboy:?}");
+    for (id, want) in [
+        ("ResizeLeft", TargetRule::Short),
+        ("ResizeRight", TargetRule::Short),
+        ("ResizeUp", TargetRule::Size),
+        ("ResizeDown", TargetRule::Size),
+        ("BRGripper", TargetRule::Size),
+    ] {
+        assert_eq!(rule(id), Some(want), "{id}: {cowboy:?}");
+    }
 }

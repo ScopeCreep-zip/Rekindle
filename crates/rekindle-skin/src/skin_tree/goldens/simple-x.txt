@@ -63,7 +63,7 @@ ButtonHolder ButtonBar
         BigBrowseFileText Part label "Find"
 ResizeUp Button target [0, 0, 407, 24] art [0, 0, 407, 10] Size
 ResizeLeft Button target [0, 0, 24, 260] art [0, 0, 10, 260] Size
-ResizeRight Button target [0, 0, 10, 260] art [0, 0, 10, 260] Short
+ResizeRight Button target [-7, 0, 24, 260] art [7, 0, 10, 260] Size
 ResizeDown Button target [0, -14, 407, 24] art [0, 14, 407, 10] Size
 GripperBR Button
 popup Infoskin

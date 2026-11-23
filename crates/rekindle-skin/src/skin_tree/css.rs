@@ -17,7 +17,7 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
-use rekindle_types::dto::skin::RegionState;
+use rekindle_types::dto::skin::{RegionState, WindowLayout};
 use rekindle_types::dto::skin_tree::{
     Anchor, NodePieces, NodeRole, NodeSpan, NodeTarget, SkinNode, SkinTree,
 };
@@ -78,6 +78,8 @@ struct Ctx<'a> {
     root: &'a str,
     images: &'a BTreeMap<String, Vec<u8>>,
     base: &'a str,
+    /// Each grip's box and the holes cut from it ([`super::target::grips`]).
+    holes: BTreeMap<String, ([i32; 4], Vec<[i32; 4]>)>,
 }
 
 /// One state's background layers on the node itself and on its `::after`
@@ -188,6 +190,17 @@ fn target(decls: &mut String, n: &SkinNode, t: NodeTarget) {
     }
 }
 
+/// A grip's clip (plan SK11): its box with each hole cut out (even-odd,
+/// the holes disjoint), so a press in a hole reaches the listening node
+/// under it while the rest of the band, 24 px thick, takes the resize.
+fn clip(a: [i32; 4], holes: &[[i32; 4]]) -> String {
+    let mut path = format!("M0 0 H{} V{} H0 Z", a[2], a[3]);
+    for h in holes {
+        let _ = write!(path, " M{} {} h{} v{} h{} Z", h[0], h[1], h[2], h[3], -h[2]);
+    }
+    format!(" clip-path: path(evenodd, \"{path}\");")
+}
+
 fn node(out: &mut String, n: &SkinNode, ctx: &Ctx<'_>) -> Option<()> {
     let (root, images, base) = (ctx.root, ctx.images, ctx.base);
     let text = text_sized(n);
@@ -208,6 +221,9 @@ fn node(out: &mut String, n: &SkinNode, ctx: &Ctx<'_>) -> Option<()> {
         }
         None => "border-box",
     };
+    if let Some((a, holes)) = ctx.holes.get(&n.id) {
+        decls.push_str(&clip(*a, holes));
+    }
     let mut after = None;
     if let Some(art) = &n.art {
         let (main, over) = layers(&art.normal, images, base, outer)?;
@@ -248,16 +264,28 @@ fn node(out: &mut String, n: &SkinNode, ctx: &Ctx<'_>) -> Option<()> {
 }
 
 /// The rules of `tree` under `root` (the window's `.app-frame` selector),
-/// laid from its spans and served targets at any window size; `None` for an art image `images` lacks
+/// laid from its spans and served targets, a grip's holes measured in
+/// `layout`'s window at its served minimum; `None` for an art image `images` lacks
 /// (never for a validated package).
 #[must_use]
 pub fn tree_css(
     root: &str,
     tree: &SkinTree,
+    layout: &WindowLayout,
     images: &BTreeMap<String, Vec<u8>>,
     base: &str,
 ) -> Option<String> {
-    let ctx = Ctx { root, images, base };
+    let window = super::target::window(layout);
+    let holes = super::target::grip_holes(tree, window)
+        .into_iter()
+        .map(|(id, a, h)| (id, (a, h)))
+        .collect();
+    let ctx = Ctx {
+        root,
+        images,
+        base,
+        holes,
+    };
     // The shell's tree container (`.skin-tree`) is the pack's window: the
     // whole window less the outsets every root node is laid in.
     let to = tree.outsets;

@@ -76,6 +76,6 @@ popup CombatInfoSkin
   InfoView InfoView
   InfoGripperTR Decor
   InfoGripperBR Decor
-  ResizeRight Button target [-13, 0, 18, 370] art [13, 0, 5, 370] Spacing
+  ResizeRight Button target [-19, 0, 24, 370] art [19, 0, 5, 370] Size
   JoinButton Button
   JoinChatButton Button

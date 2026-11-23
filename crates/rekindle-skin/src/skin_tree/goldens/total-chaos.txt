@@ -1,6 +1,6 @@
 MainTitleBar Drag
-  TopLeft Decor target [-4, 0, 20, 46] art [4, 0, 16, 46] Short
-  TopRight Decor target [0, 0, 20, 46] art [0, 0, 16, 46] Short
+  TopLeft Decor target [-4, 0, 24, 46] art [4, 0, 16, 46] Short
+  TopRight Decor target [-4, 0, 24, 46] art [4, 0, 16, 46] Short
   Logo Logo target [0, -7, 24, 24] art [0, 7, 23, 9] Size
   Title Decor
   Minimize Button target [-6, -6, 18, 24] art [6, 6, 12, 12] Short

@@ -59,7 +59,7 @@ IVButtonHolder Decor
 RightDetail Decor
 MAINBG Decor
 ResizeUp Button target [0, 0, 376, 24] art [0, 0, 376, 10] Size
-ResizeLeft Button target [0, 0, 20, 430] art [0, 0, 10, 430] Spacing
+ResizeLeft Button target [0, 0, 24, 430] art [0, 0, 10, 430] Size
 ResizeRight Button target [-14, 0, 24, 430] art [14, 0, 10, 430] Size
 ResizeDown Button target [0, -14, 376, 24] art [0, 14, 376, 10] Size
 GripperBR Button

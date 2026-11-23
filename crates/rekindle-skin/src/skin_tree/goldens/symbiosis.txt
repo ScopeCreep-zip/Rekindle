@@ -1,6 +1,6 @@
 ResizeGripperTL Button target [0, 0, 24, 24] art [0, 0, 10, 10] Size
 ResizeTop Button target [0, 0, 335, 24] art [0, 0, 335, 10] Size
-ResizeGripperTR Button target [0, 0, 17, 10] art [0, 0, 10, 10] Short
+ResizeGripperTR Button target [-7, 0, 24, 24] art [7, 0, 10, 10] Short
 ResizeL Button target [0, 0, 24, 535] art [0, 0, 10, 535] Size
 ResizeR Button target [-7, 0, 24, 535] art [7, 0, 10, 535] Size
 ResizeGripperBL Button target [0, -14, 24, 24] art [0, 14, 10, 10] Size

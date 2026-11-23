@@ -6,7 +6,7 @@ MainTitleBar Drag
   UserNameField NameField target [0, -3, 169, 24] art [0, 3, 169, 17] Size
     UserNameText Part
   CloseBox Button target [0, -3, 21, 24] art [0, 3, 18, 17] Short
-  ResizeUp Button target [0, 0, 330, 18] art [0, 0, 330, 5] Short
+  ResizeUp Button target [0, 0, 330, 24] art [0, 0, 330, 5] Size
 GripperTopLeft Button
 GripperTopRight Button
 BaseBoard Group
@@ -27,9 +27,9 @@ BaseBoard Group
   StatusWrapper Group
   StatusEdit StatusText target [0, -4, 209, 24] art [0, 4, 209, 15] Size
   DownArrow StatusList target [0, -5, 20, 24] art [0, 5, 16, 14] Short
-  ResizeDown Button target [0, 0, 336, 5] art [0, 0, 336, 5] Short
+  ResizeDown Button target [0, -19, 336, 24] art [0, 19, 336, 5] Size
 LeftOuterEdge Decor target [0, 0, 24, 289] art [0, 0, 9, 289] Size
-MainRightOuterEdge Decor target [0, 0, 9, 289] art [0, 0, 9, 289] Short
+MainRightOuterEdge Decor target [-7, 0, 24, 289] art [7, 0, 9, 289] Size
 GripperBottomLeft Button
 GripperBottomRight Button
 InnerBevel Decor
@@ -83,4 +83,4 @@ popup MainInfoViewPopup
   InfoBackDrop Decor
   InfoGripperTR Decor
   InfoGripperBR Decor
-  InfoResizeRight Button target [0, 0, 9, 281] art [0, 0, 9, 281] Short
+  InfoResizeRight Button target [-7, 0, 24, 281] art [7, 0, 9, 281] Size

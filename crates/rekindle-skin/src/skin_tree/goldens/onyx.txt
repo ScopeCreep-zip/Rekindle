@@ -5,10 +5,10 @@ StatusWrapper Group
 StatusEdit StatusText target [0, -1, 162, 21] art [0, 1, 162, 16] Spacing
 DownArrow StatusList target [0, -3, 20, 24] art [0, 3, 15, 18] Short
 ExpandButton Button target [0, -1, 47, 23] art [0, 1, 47, 20] Short
-ResizeLeft Button target [0, 0, 5, 320] art [0, 0, 5, 320] Spacing
-ResizeRight Button target [0, 0, 5, 320] art [0, 0, 5, 320] Spacing
-ResizeUp Button target [0, 0, 384, 5] art [0, 0, 384, 5] Spacing
-ResizeDown Button target [0, 0, 384, 5] art [0, 0, 384, 5] Short
+ResizeLeft Button target [0, 0, 24, 320] art [0, 0, 5, 320] Size
+ResizeRight Button target [-19, 0, 24, 320] art [19, 0, 5, 320] Size
+ResizeUp Button target [0, 0, 384, 24] art [0, 0, 384, 5] Size
+ResizeDown Button target [0, -19, 384, 24] art [0, 19, 384, 5] Size
 BRGripper Button
 BottomLeft Decor
 Bottom Decor
@@ -81,7 +81,7 @@ popup InfoPopup
   XfireMiddleRow Decor
   BackDrop Decor
   InfoView InfoView
-  ResizeRight Button target [-1, 0, 6, 320] art [1, 0, 5, 320] Spacing
+  ResizeRight Button target [-19, 0, 24, 320] art [19, 0, 5, 320] Size
   JoinButton Button target [0, -2, 47, 24] art [0, 2, 47, 20] Size
   JoinChatTab ButtonBar
     HostChatButton Button target [0, -2, 47, 24] art [0, 2, 47, 20] Size
