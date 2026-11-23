@@ -24,6 +24,26 @@ pub fn set_reply_inbox(
     Ok(())
 }
 
+/// The reply inbox our request to `public_key` carries, while the row is
+/// `pending_out`.
+///
+/// # Errors
+/// The query failed.
+pub fn reply_inbox_of(
+    conn: &Connection,
+    owner_key: &str,
+    public_key: &str,
+) -> rusqlite::Result<Option<String>> {
+    conn.query_row(
+        "SELECT reply_inbox_key FROM friends \
+         WHERE owner_key = ?1 AND public_key = ?2 AND friendship_state = 'pending_out'",
+        params![owner_key, public_key],
+        |row| row.get::<_, Option<String>>(0),
+    )
+    .optional()
+    .map(Option::flatten)
+}
+
 /// The reply inboxes of our open requests (rows still `pending_out`), in
 /// key order: the ones held and watched.
 ///

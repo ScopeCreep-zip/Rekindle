@@ -482,6 +482,20 @@ pub(super) async fn call_datagram(
 ///
 /// # Errors
 /// The stored frame does not decode, or the sealed kind does not re-seal.
+impl Framed {
+    /// Whether this row is our friend request (plan RV2): a redemption's
+    /// inbox write or a request sealed for `app_call`, which goes only once
+    /// the reply inbox it carries is on the network
+    /// (`friend::inbox::reply_slot`).
+    pub(super) fn is_request(&self) -> bool {
+        match self {
+            Self::Inbox { .. } => true,
+            Self::Sealed { type_id, .. } => *type_id == DmTypeId::FriendRequest.as_u16(),
+            _ => false,
+        }
+    }
+}
+
 pub(super) fn datagram_of(
     host: &dyn FriendHost,
     to: &str,

@@ -324,6 +324,19 @@ impl FriendHost for HostFriends {
         inbox_watch::rewatch_open_requests(self).await;
     }
 
+    fn reply_inbox_owner(
+        &self,
+        record_key: &str,
+    ) -> Result<Option<zeroize::Zeroizing<String>>, FriendError> {
+        let guard = self.ctx.vault.lock();
+        let vault = guard
+            .as_ref()
+            .ok_or_else(|| FriendError::NotReady("the vault is locked".to_string()))?;
+        rekindle_vault::typed::owner_keys::load_inbox_owner(vault, record_key)
+            .map(|entry| entry.map(|entry| zeroize::Zeroizing::new(entry.keypair.clone())))
+            .map_err(|e| FriendError::Failed(format!("reply inbox owner not read: {e}")))
+    }
+
     async fn drop_request_inbox(&self, record_key: &str) {
         inbox_watch::release(self, record_key).await;
         self.forget_inbox_owner(record_key);

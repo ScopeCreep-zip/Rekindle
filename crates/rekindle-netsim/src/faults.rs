@@ -60,6 +60,16 @@ pub enum Fault {
     /// Veilid 0.5.8 `rpc_processor/mod.rs:2038-2104`; live finding 78). The question is
     /// lost; only the caller's own deadline ends it.
     CallHangs { node: usize, hangs: bool },
+    /// A call to the node's routes is stuck for `stall` before it is sent
+    /// (the same unbounded stages as [`Fault::CallHangs`]: route
+    /// resolution, rendering, the first hop's send, Veilid 0.5.8
+    /// `rpc_processor/mod.rs:2038-2104`), then goes as any call does; the
+    /// answer wait starts once it is sent, as Veilid's does. A slow path,
+    /// not a lost one. `None` ends it.
+    CallStalls {
+        node: usize,
+        stall: Option<std::time::Duration>,
+    },
     /// An app message to the node's routes is never dispatched: the send
     /// neither returns nor fails, as a send stuck in the stages before the
     /// first hop takes it (destination, render and safety-route compile,
@@ -328,6 +338,13 @@ impl Netsim {
             }
             Fault::CallHangs { node, hangs } => {
                 toggle(&mut self.net.inner.lock().faults.hung, node, hangs);
+            }
+            Fault::CallStalls { node, stall } => {
+                let stalls = &mut self.net.inner.lock().faults.call_stall;
+                match stall {
+                    Some(stall) => stalls.insert(node, stall),
+                    None => stalls.remove(&node),
+                };
             }
             Fault::SendHangs { node, hangs } => {
                 toggle(&mut self.net.inner.lock().faults.send_hung, node, hangs);

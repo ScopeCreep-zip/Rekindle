@@ -5,7 +5,13 @@
 //! call to the requester lost (`Fault::CallHangs`: the question never
 //! reaches it, Veilid 0.5.8 `rpc_processor/mod.rs:2038-2104`), it completes
 //! the friendship from its reply inbox and rotates its General route once
-//! (evidence source 6); with both paths up, one acceptance and no rotation.
+//! (evidence source 6). With both paths up the call's receipt settles the
+//! row first and the write's wait is dropped
+//! (`first_contact_durable::attempt`): one acceptance, no rotation. With
+//! the call stalled on its way (`Fault::CallStalls`) the durable copy lands
+//! first and the call copy follows within `HINT_WINDOW`: one acceptance,
+//! and the call copy withdraws the evidence (`InboundLiveness::call_seen`),
+//! so nothing rotates.
 
 use std::collections::BTreeSet;
 use std::time::Duration;
@@ -70,7 +76,7 @@ async fn the_requester_completes_from_its_reply_inbox_and_rotates_once() {
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn both_paths_up_accept_once_and_rotate_nothing() {
+async fn both_paths_up_the_call_settles_first_and_nothing_rotates() {
     let (sim, mut nodes) = start(2, 73).await;
     for (node, name) in nodes.iter_mut().zip(["Rae", "Ann"]) {
         node.unlock_new_identity(name).await;
@@ -109,6 +115,51 @@ async fn both_paths_up_accept_once_and_rotate_nothing() {
         nodes[0].routes.own_id(RouteClass::General),
         general,
         "the call copy came over General: no evidence"
+    );
+    talk(&sim, &nodes[0], &nodes[1], "after the accept").await;
+    assert_eq!(
+        events.count(&ann, accepted),
+        1,
+        "one acceptance"
+    );
+}
+
+/// How long Ann's call to Rae is stuck before it is sent: long enough for
+/// her reply inbox write to reach Rae first, well inside [`HINT_WINDOW`].
+const CALL_STALL: Duration = Duration::from_secs(6);
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn the_durable_copy_first_then_the_call_copy_rotates_nothing() {
+    let (sim, mut nodes) = start(2, 75).await;
+    for (node, name) in nodes.iter_mut().zip(["Rae", "Ann"]) {
+        node.unlock_new_identity(name).await;
+    }
+    let ann = key(&nodes[1]);
+    request(&sim, &nodes[0], &nodes[1]).await;
+    tokio::time::sleep(REPORT_ROTATE_AGE + Duration::from_secs(10)).await;
+    let general = nodes[0].routes.own_id(RouteClass::General);
+    assert!(general.is_some(), "Rae's General route is up");
+    let events = nodes[0].events().await;
+    // Ann's call is slow on its way to Rae, not lost: her write lands first.
+    sim.fault(Fault::CallStalls {
+        node: 0,
+        stall: Some(CALL_STALL),
+    });
+    accept(&nodes[1], &nodes[0]).await;
+    assert!(
+        eventually(&sim, LIMIT, || is_accepted_friend(&nodes[0], &ann)).await,
+        "Rae is accepted"
+    );
+    // Past the window a lone durable copy would rotate (evidence source 6).
+    tokio::time::sleep(HINT_WINDOW + Duration::from_secs(5)).await;
+    sim.fault(Fault::CallStalls {
+        node: 0,
+        stall: None,
+    });
+    assert_eq!(
+        nodes[0].routes.own_id(RouteClass::General),
+        general,
+        "the call copy came over General within the window: no evidence"
     );
     talk(&sim, &nodes[0], &nodes[1], "after the accept").await;
     assert_eq!(

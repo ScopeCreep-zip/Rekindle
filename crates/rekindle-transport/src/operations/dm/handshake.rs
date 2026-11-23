@@ -296,7 +296,7 @@ pub(super) async fn attempt_inbox(
 /// `transient`; the netsim's `SimDht` refuses the same way, plan E2.B S3),
 /// or a value that can never be written. The network's misses, a closed pool
 /// and the node not being ready are attempted again.
-fn refuses(e: &rekindle_records::port::PortError) -> bool {
+pub(crate) fn refuses(e: &rekindle_records::port::PortError) -> bool {
     use rekindle_records::port::PortError;
     matches!(
         e,
@@ -469,6 +469,11 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
         Ok(framed) => framed,
         Err(e) => return Attempt::Wedged(format!("payload: {e}")),
     };
+    if framed.is_request() {
+        if let Some(stopped) = crate::operations::friend::inbox::reply_slot(host, to).await {
+            return stopped;
+        }
+    }
     if let Framed::Inbox {
         record_key,
         writer,

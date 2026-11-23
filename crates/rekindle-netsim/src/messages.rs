@@ -176,6 +176,11 @@ impl FakeMessages {
             // Stuck before the answer wait: nothing is sent, nothing ends it.
             return std::future::pending().await;
         }
+        let stall = self.net.inner.lock().faults.call_stall.get(&to).copied();
+        if let Some(stall) = stall {
+            // Stuck before it is sent, then sent: the answer wait starts after.
+            tokio::time::sleep(stall).await;
+        }
         let (tx, rx) = oneshot::channel();
         let call_id = {
             let mut inner = self.net.inner.lock();

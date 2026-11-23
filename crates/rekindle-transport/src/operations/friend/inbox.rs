@@ -44,7 +44,25 @@ pub(crate) fn records(
 /// # Errors
 /// The record could not be created or its owner keypair kept.
 pub(crate) async fn create(host: &dyn FriendHost) -> Result<InboxCapability, FriendError> {
-    let (record_key, owner, lease, writer) = open_inbox(host).await?;
+    let (record_key, owner, lease, writer) = new_inbox(host).await?;
+    // The owner subkey's one write puts the record on the network: the
+    // invite is shown only once its inbox can be written.
+    let pool = records(host)?;
+    let opened = pool
+        .set(
+            lease,
+            request_inbox::OWNER_SUBKEY,
+            request_inbox::OPENED.to_vec(),
+            None,
+        )
+        .await
+        .and_then(|outcome| outcome.require_stored(request_inbox::OWNER_SUBKEY));
+    if let Err(e) = opened {
+        pool.release(lease).await;
+        return Err(FriendError::Failed(format!(
+            "request inbox not opened: {e}"
+        )));
+    }
     host.keep_request_inbox(&record_key, &owner, lease).await?;
     Ok(InboxCapability { record_key, writer })
 }
@@ -55,17 +73,96 @@ pub(crate) async fn create(host: &dyn FriendHost) -> Result<InboxCapability, Fri
 /// it while the request is open (`FriendHost::keep_reply_inbox`) and
 /// releases it when the request settles (`FriendHost::sync_reply_inboxes`).
 ///
+/// It is created locally, which needs no network (Veilid's `create_record`
+/// stores the new record in the local store only,
+/// `storage_manager/create_record.rs`), so a request made offline is
+/// committed as before; the owner subkey's write that puts the inbox on
+/// the network is the first step of the request's own outbox row
+/// ([`reply_slot`]), so the request is never sent before its reply slot
+/// exists.
+///
 /// # Errors
 /// The record could not be created or its owner keypair kept.
 pub(crate) async fn create_reply(host: &dyn FriendHost) -> Result<InboxCapability, FriendError> {
-    let (record_key, owner, lease, writer) = open_inbox(host).await?;
+    let (record_key, owner, lease, writer) = new_inbox(host).await?;
     host.keep_reply_inbox(&record_key, &owner, lease).await?;
     Ok(InboxCapability { record_key, writer })
 }
 
-/// A new request inbox on the network: its key, owner keypair, lease and
+/// Put the reply inbox our open request to `to` carries on the network
+/// (plan RV2): its owner subkey's one write, as its owner, the first step
+/// of each attempt of the request's row. `None` once it is stored (Veilid
+/// stored it at consensus: `Landed`, or `Unchanged` when an earlier attempt
+/// did), so the request goes; otherwise what the attempt comes to.
+///
+/// The pool writes with `allow_offline: false` (`rekindle-record-pool`
+/// lib docs, V20): offline, or below consensus, Veilid stores and queues
+/// nothing and answers `TryAgain` (`storage_manager/set_value.rs:248-256`,
+/// `:731-738` → `handle_offline_set_single_local_value_with_subkey_lock`),
+/// reported `Offline`, so this row's own backoff re-attempts it and the
+/// outbox stays the one owner of durability (D22): no second queue in
+/// Veilid's `offline_subkey_writes` beside the row.
+pub(crate) async fn reply_slot(
+    host: &dyn FriendHost,
+    to: &str,
+) -> Option<crate::operations::dm::outbox::Attempt> {
+    use crate::operations::dm::outbox::Attempt;
+    use rekindle_records::port::SetOutcome;
+    let owner = match state::owner(host) {
+        Ok(owner) => owner,
+        Err(e) => return Some(deferred(&e)),
+    };
+    let peer = to.to_owned();
+    let key = state::db_call!(host, "read reply inbox", move |conn| {
+        rekindle_db::repo::friends::reply_inbox_of(conn, &owner, &peer)
+    })
+    .await;
+    let key = match key {
+        Ok(Some(key)) => key,
+        // A request is never sent without its reply slot.
+        Ok(None) => return Some(Attempt::Wedged("our request has no reply inbox".to_owned())),
+        Err(e) => return Some(deferred(&e)),
+    };
+    let writer = match host.reply_inbox_owner(&key) {
+        Ok(Some(writer)) => writer,
+        Ok(None) => return Some(Attempt::Wedged("the reply inbox's owner is gone".to_owned())),
+        Err(e) => return Some(deferred(&e)),
+    };
+    let pool = match records(host) {
+        Ok(pool) => pool,
+        Err(e) => return Some(deferred(&e)),
+    };
+    let subkey = request_inbox::OWNER_SUBKEY;
+    match pool
+        .write_once(&key, subkey, request_inbox::OPENED.to_vec(), Some(writer.as_str()))
+        .await
+    {
+        Ok(SetOutcome::Landed | SetOutcome::Unchanged) => None,
+        Ok(SetOutcome::Superseded(_)) => Some(Attempt::Wedged(
+            "the reply inbox holds another owner's value".to_owned(),
+        )),
+        Ok(outcome @ SetOutcome::Offline) => {
+            tracing::debug!(?outcome, "reply inbox not on the network yet — request deferred");
+            Some(Attempt::Deferred)
+        }
+        Err(e) if dm::handshake::refuses(&e) => {
+            Some(Attempt::Wedged(format!("reply inbox write refused: {e}")))
+        }
+        Err(e) => {
+            tracing::debug!(error = %e, "reply inbox write missed — request deferred");
+            Some(Attempt::Deferred)
+        }
+    }
+}
+
+fn deferred(e: &dyn std::fmt::Display) -> crate::operations::dm::outbox::Attempt {
+    tracing::debug!(reason = %e, "request deferred: its reply inbox cannot be written yet");
+    crate::operations::dm::outbox::Attempt::Deferred
+}
+
+/// A new request inbox, created locally: its key, owner keypair, lease and
 /// the one-time writer's keypair text.
-async fn open_inbox(
+async fn new_inbox(
     host: &dyn FriendHost,
 ) -> Result<
     (
@@ -86,24 +183,7 @@ async fn open_inbox(
         .create(&schema, None)
         .await
         .map_err(|e| FriendError::Failed(format!("request inbox not created: {e}")))?;
-    let owner = Zeroizing::new(owner);
-    // The owner subkey's one write puts the record on the network.
-    let opened = pool
-        .set(
-            lease,
-            request_inbox::OWNER_SUBKEY,
-            request_inbox::OPENED.to_vec(),
-            None,
-        )
-        .await
-        .and_then(|outcome| outcome.require_stored(request_inbox::OWNER_SUBKEY));
-    if let Err(e) = opened {
-        pool.release(lease).await;
-        return Err(FriendError::Failed(format!(
-            "request inbox not opened: {e}"
-        )));
-    }
-    Ok((record_key, owner, lease, writer))
+    Ok((record_key, Zeroizing::new(owner), lease, writer))
 }
 
 /// Redeem `blob`: our sealed `FriendRequest`, admitted by `invite_id`,
