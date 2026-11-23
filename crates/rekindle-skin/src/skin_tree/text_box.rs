@@ -46,7 +46,7 @@ use rekindle_types::dto::skin_tree::{Anchor, NodeRole, NodeSpan, SkinNode, SkinT
 
 use super::inset::is_text;
 use super::titles::{each_laid, laid_window, place};
-use super::validate::Apart;
+use super::validate::{overlap, Apart};
 
 /// Each small interactive node's target box on the pack's boxes, relative
 /// to its art: `[dx, dy, w, h]` by node id.
@@ -202,33 +202,28 @@ fn pin_children(n: &mut SkinNode, axis: usize, was: [i32; 4], now: [i32; 4]) {
     }
 }
 
-/// Whether `a` and `b` share a positive area.
-const fn meets(a: [i32; 4], b: [i32; 4]) -> bool {
-    a[0] < b[0] + b[2] && b[0] < a[0] + a[2] && a[1] < b[1] + b[3] && b[1] < a[1] + a[3]
-}
-
-/// `t` cut back off `o` on one axis (0 x, 1 y): the larger of the parts
-/// before and after `o`, at least 0 long.
-fn cut_on(t: [i32; 4], o: [i32; 4], axis: usize) -> [i32; 4] {
-    let (s, e) = (t[axis], t[axis] + t[axis + 2]);
-    let before = (s, o[axis].min(e));
-    let after = ((o[axis] + o[axis + 2]).max(s), e);
-    let (a, b) = if before.1 - before.0 >= after.1 - after.0 {
+/// `text` cut back off `stop` on one axis (0 x, 1 y): the larger of the
+/// parts before and after `stop`, at least 0 long.
+fn cut_on(text: [i32; 4], stop: [i32; 4], axis: usize) -> [i32; 4] {
+    let (start, end) = (text[axis], text[axis] + text[axis + 2]);
+    let before = (start, stop[axis].min(end));
+    let after = ((stop[axis] + stop[axis + 2]).max(start), end);
+    let (kept_start, kept_end) = if before.1 - before.0 >= after.1 - after.0 {
         before
     } else {
         after
     };
-    let mut c = t;
-    c[axis] = a;
-    c[axis + 2] = (b - a).max(0);
-    c
+    let mut kept = text;
+    kept[axis] = kept_start;
+    kept[axis + 2] = (kept_end - kept_start).max(0);
+    kept
 }
 
 /// `t` cut off each of `stops` it meets on the axis that keeps it largest
 /// (x on a tie: a single-line label keeps its row).
 fn cut(mut t: [i32; 4], stops: &[[i32; 4]]) -> [i32; 4] {
     for o in stops {
-        if meets(t, *o) {
+        if overlap(t, *o) {
             let (x, y) = (cut_on(t, *o, 0), cut_on(t, *o, 1));
             t = if y[2] * y[3] > x[2] * x[3] { y } else { x };
         }
