@@ -6,6 +6,7 @@ import { transformMessages } from "../../utils/transformers";
 import { mergeRead } from "../../utils/message_merge";
 import { isCommandError } from "../../ipc/commands/dto";
 import { errorMessage } from "../../utils/error";
+import { sendDraftReport } from "../../utils/draft_reports";
 
 export async function handleSendChannelMessage(
   channelId: string,
@@ -330,28 +331,11 @@ export async function handleGetChannelPins(
   }
 }
 
-/// When we last said a typing report failed (ms): a report goes per composer
-/// edit, so one failure would otherwise toast on every key.
-let typingFailureShownAt = 0;
-const TYPING_FAILURE_EVERY_MS = 30_000;
-
 /**
  * Our composer changed: whether it holds text, for the Host to decide what
- * typing to send (plan E3.4 S9). A refusal is said, at most once per 30 s,
- * never swallowed: an unseen failure looked like typing that never arrived.
+ * typing to send (plan E3.4 S9), in edit order and never swallowed
+ * (utils/draft_reports.ts).
  */
-export async function handleSendChannelTyping(
-  communityId: string,
-  channelId: string,
-  typing: boolean,
-): Promise<void> {
-  try {
-    await commands.sendChannelTyping(communityId, channelId, typing);
-  } catch (e) {
-    if (isCommandError(e) && e.type === "cancelled") return;
-    const now = Date.now();
-    if (now - typingFailureShownAt < TYPING_FAILURE_EVERY_MS) return;
-    typingFailureShownAt = now;
-    addToast(`Typing not sent: ${errorMessage(e)}`, "error");
-  }
+export function handleSendChannelTyping(communityId: string, channelId: string, typing: boolean): Promise<void> {
+  return sendDraftReport(`channel:${communityId}:${channelId}`, () => commands.sendChannelTyping(communityId, channelId, typing));
 }
