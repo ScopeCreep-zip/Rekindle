@@ -53,8 +53,13 @@ impl Host {
         direct::receive(&HostFriends::of(&self.ctx), datagram).await
     }
 
-    /// Handle a `'D'` app call the GUI's Veilid loop received.
-    pub async fn receive_direct_call(&self, datagram: &[u8]) -> direct::Called {
-        direct::answer_call(&HostFriends::of(&self.ctx), datagram).await
+    /// Handle a `'D'` app call the GUI's Veilid loop received over our
+    /// route `route` (Veilid's route id).
+    pub async fn receive_direct_call(
+        &self,
+        datagram: &[u8],
+        route: Option<&str>,
+    ) -> direct::Called {
+        direct::answer_call(&HostFriends::of(&self.ctx), datagram, route).await
     }
 }

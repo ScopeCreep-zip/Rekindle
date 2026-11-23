@@ -171,9 +171,9 @@ impl InboundHandler for DaemonHandler {
         }
     }
 
-    async fn on_direct_call(&self, datagram: &[u8]) -> Option<Vec<u8>> {
+    async fn on_direct_call(&self, datagram: &[u8], route: Option<&str>) -> Option<Vec<u8>> {
         let host = self.friends()?;
-        match direct::answer_call(&host, datagram).await {
+        match direct::answer_call(&host, datagram, route).await {
             direct::Called::Answered(reply) => Some(reply),
             // A `CallEnd` (plan CE4) is receipted and ignored: the daemon
             // holds no call (E4.1), as a desktop ignores an unknown call id.

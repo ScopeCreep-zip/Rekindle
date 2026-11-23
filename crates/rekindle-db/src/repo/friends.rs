@@ -17,7 +17,7 @@ pub use changes::{
     expire_pending_out, forget, forget_removed, mark_removing, reject_request,
     replace_with_invited, unfriended, RecordKeys,
 };
-pub use listing::added_at;
+pub use listing::{added_at, open_handshake_or_friend};
 pub(crate) use nickname::rekey as rekey_nickname;
 pub use nickname::{for_previous_key, set_nickname, PREVIOUS_KEY_SUFFIX};
 pub use participant::{
@@ -312,6 +312,45 @@ pub fn set_record_keys(
 mod tests {
     use super::*;
     use crate::repo::fixture::{self, OWNER};
+
+    /// Plan RV2: a friend, our pending request's peer and a requester we
+    /// hold count as open; a stranger and a peer we are removing do not.
+    #[test]
+    fn only_friends_and_open_handshakes_are_open() {
+        let conn = fixture::conn();
+        insert_accepted(&conn, OWNER, "ada", "Ada", 1).unwrap();
+        insert_pending_out(&conn, OWNER, "bo", "Bo", 1).unwrap();
+        insert_accepted(&conn, OWNER, "dee", "Dee", 1).unwrap();
+        conn.execute(
+            "UPDATE friends SET friendship_state = 'removing' WHERE public_key = 'dee'",
+            [],
+        )
+        .unwrap();
+        let request = crate::repo::pending_requests::Incoming {
+            public_key: "cy",
+            display_name: "Cy",
+            message: "hi",
+            received_at: 1,
+            profile_dht_key: "p",
+            route_blob: &[],
+            mailbox_dht_key: "m",
+            invite_id: None,
+        };
+        crate::repo::pending_requests::upsert(&conn, OWNER, &request).unwrap();
+        for (peer, open) in [
+            ("ada", true),
+            ("bo", true),
+            ("cy", true),
+            ("dee", false),
+            ("zed", false),
+        ] {
+            assert_eq!(
+                open_handshake_or_friend(&conn, OWNER, peer).unwrap(),
+                open,
+                "{peer}"
+            );
+        }
+    }
 
     #[test]
     fn an_outgoing_request_loads_as_pending_out_and_accept_does_not_overwrite_it() {

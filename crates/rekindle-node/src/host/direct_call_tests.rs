@@ -21,7 +21,7 @@ async fn a_call_the_host_cannot_judge_is_told_to_retry_later() {
     let datagram = rekindle_transport::operations::dm::wire(&frame).unwrap();
     assert!(
         matches!(
-            host.receive_direct_call(&datagram).await,
+            host.receive_direct_call(&datagram, None).await,
             direct::Called::RetryLater
         ),
         "an internal error is no refusal"
@@ -215,7 +215,7 @@ fn receive_on_another_thread(host: &std::sync::Arc<super::Host>, owner: [u8; 32]
             .enable_all()
             .build()
             .unwrap()
-            .block_on(async move { drop(host.receive_direct_call(&datagram).await) });
+            .block_on(async move { drop(host.receive_direct_call(&datagram, None).await) });
     })
     .join()
     .unwrap();
@@ -238,7 +238,7 @@ async fn the_frame_received_line_holds_no_raw_sender_key() {
     {
         let _armed = capture(&captured);
         receive_on_another_thread(&host, owner, 11);
-        drop(host.receive_direct_call(&datagram).await);
+        drop(host.receive_direct_call(&datagram, None).await);
     }
     let log = String::from_utf8(captured.0.lock().clone()).unwrap();
     let line = log

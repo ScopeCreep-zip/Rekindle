@@ -29,17 +29,38 @@ fn silence_rotates_only_while_a_peer_should_answer() {
     );
 }
 
-/// Plan RV1: a peer's report rotates a route, unless the route is younger
-/// than one re-fetch gap (the report is about the route it replaced).
+/// Plan RV2: two copies of one receipted call from a peer, over a route
+/// older than one re-fetch gap, rotate it once; that peer cannot rotate it
+/// again within its cooldown, across the new route; copies of different
+/// frames and copies on a young route never count.
 #[test]
-fn a_report_rotates_a_route_older_than_a_refetch_gap() {
+fn re_sent_calls_rotate_once_per_peer_cooldown() {
     let start = Instant::now();
     let mut route = InboundLiveness::new(start);
-    assert!(!route.reported(at(start, 59)));
-    assert!(route.reported(at(start, 60)));
-    route.route_replaced(at(start, 60));
-    assert!(!route.reported(at(start, 90)), "about the replaced route");
-    assert!(route.reported(at(start, 120)));
+    route.duplicate_call("ada", [1; 32], at(start, 30));
+    route.duplicate_call("ada", [1; 32], at(start, 40));
+    assert_eq!(route.receipt_lost(at(start, 61)), None, "a young route");
+    route.duplicate_call("ada", [1; 32], at(start, 61));
+    assert_eq!(route.receipt_lost(at(start, 61)), None, "one copy");
+    route.duplicate_call("ada", [2; 32], at(start, 62));
+    assert_eq!(route.receipt_lost(at(start, 62)), None, "another frame");
+    route.duplicate_call("ada", [2; 32], at(start, 63));
+    assert_eq!(route.receipt_lost(at(start, 63)).as_deref(), Some("ada"));
+    route.rotated_for("ada", at(start, 63));
+    route.route_replaced(at(start, 63));
+    route.duplicate_call("ada", [3; 32], at(start, 200));
+    route.duplicate_call("ada", [3; 32], at(start, 201));
+    assert_eq!(route.receipt_lost(at(start, 201)), None, "ada is cooling");
+    route.duplicate_call("bea", [3; 32], at(start, 202));
+    route.duplicate_call("bea", [3; 32], at(start, 203));
+    assert_eq!(
+        route.receipt_lost(at(start, 203)).as_deref(),
+        Some("bea"),
+        "another peer's evidence still counts"
+    );
+    let cooled = at(start, 63) + REPORT_PEER_COOLDOWN;
+    assert_eq!(route.receipt_lost(cooled).as_deref(), Some("ada"));
+    assert_eq!(REPORT_PEER_COOLDOWN, Duration::from_secs(2 * 60 * 60));
 }
 
 #[test]

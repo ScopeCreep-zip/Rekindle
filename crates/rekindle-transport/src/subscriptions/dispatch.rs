@@ -134,17 +134,16 @@ async fn dispatch_event<H: InboundHandler>(
         } => {
             match crate::liveness::answer_probe(&message) {
                 ProbeAnswer::NotProbe => {}
-                // A peer's probe: its suspect round, its report that our
-                // route failed it (plan LF6): evidence that rotates our
-                // General route (plan RV1).
+                // A peer's probe (its suspect round, plan LF6): the NAK
+                // tells it the call arrived. It names no sender, so it is
+                // no evidence about our route (plan RV2).
                 ProbeAnswer::Refuse => {
-                    routes.liveness.route_reported();
                     reply_nak(messages, call_id).await;
                     return;
                 }
             }
             routes.liveness.heard_over(route.as_deref());
-            dispatch_app_call(handler, messages, call_id, &message).await;
+            dispatch_app_call(handler, messages, call_id, &message, route.as_deref()).await;
         }
         PortEvent::ValueChange(change) => {
             dispatch_value_change(shared, value_changes, change);
@@ -211,6 +210,7 @@ async fn dispatch_app_call<H: InboundHandler>(
     messages: &dyn AppMessagePort,
     call_id: AppCallId,
     raw: &[u8],
+    route: Option<&str>,
 ) {
     let ingress = rekindle_codec::ingress::classify(raw);
     if let Ingress::Gossip(_) = ingress {
@@ -224,8 +224,9 @@ async fn dispatch_app_call<H: InboundHandler>(
         // The handler answers within the deadline itself
         // (`operations::direct::answer_call`); a call it leaves unanswered
         // gets no reply, so the caller's `app_call` times out and is
-        // attempted again (a NAK would be a refusal, RV2).
-        let Some(reply) = handler.on_direct_call(raw).await else {
+        // attempted again (a NAK would be a refusal, RV2). The route it
+        // arrived over lets a re-sent call count against ours (plan RV2).
+        let Some(reply) = handler.on_direct_call(raw, route).await else {
             return;
         };
         if let Err(e) = messages.reply(call_id, reply).await {

@@ -66,7 +66,7 @@ async fn a_sealed_call_held_past_its_deadline_is_stored_once_then_receipted() {
         tokio::time::sleep(direct::CALL_DEADLINE + Duration::from_millis(500)).await;
         held
     };
-    let (called, held) = tokio::join!(host.receive_direct_call(&datagram), driver);
+    let (called, held) = tokio::join!(host.receive_direct_call(&datagram, None), driver);
     assert!(
         later(&called),
         "past the deadline our own delay answers retry later, not {called:?}"
@@ -83,7 +83,7 @@ async fn a_sealed_call_held_past_its_deadline_is_stored_once_then_receipted() {
                 held.send(()).unwrap();
             }
         };
-        let (answer, ()) = tokio::join!(host.receive_direct_call(&datagram), release);
+        let (answer, ()) = tokio::join!(host.receive_direct_call(&datagram, None), release);
         match answer {
             direct::Called::Answered(reply) if reply.is_empty() => {
                 assert_eq!(requests(&host, owner).await, 1, "receipted once stored");
