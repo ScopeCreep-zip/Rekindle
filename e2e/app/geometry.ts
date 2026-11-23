@@ -110,7 +110,8 @@ export async function checkGeometry(b: Browser, rootSelector: string, opts: Geom
   // place of the flex contract (its growth is compared across sizes by
   // the caller, `treeFitIn`).
   const fit = await treeFitIn(b, rootSelector);
-  if (fit) record("tree inside the window", fit.inWindow, true);
+  // The box rides along in a finding only (the pass value stays `true`).
+  if (fit) record("tree inside the window", fit.inWindow ? true : fit.box, true);
   else record("window flex contract", await inPage(b, rootSelector, flexContract, null), FLEX_CONTRACT);
   record("horizontal overflow (px)", await inPage(b, rootSelector, horizontalOverflow, null), { document: 0, root: 0 });
   if (!opts.onScreen) record("overlapping elements", await inPage(b, rootSelector, overlaps, [...skip, ...(opts.overlapAllow ?? [])]), []);
