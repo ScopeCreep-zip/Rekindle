@@ -22,9 +22,9 @@ impl DaemonHandler {
             return;
         }
 
-        // Mutual Aid §14.3 — plumbing, not news. Acted on by fetching
-        // the record, never surfaced as a subscription event, so it is
-        // intercepted before the pipeline.
+        // Mutual Aid §14.3 — plumbing, not news. The Host's one ingest (plan
+        // GI3, the desktop's relay path calls it too) reads the record and
+        // checks the hash; never surfaced as a subscription event.
         if let CommunityEnvelope::WatchRelay {
             ref record_key,
             subkey,
@@ -32,9 +32,24 @@ impl DaemonHandler {
             ref observer_pseudonym,
         } = envelope
         {
-            self.on_watch_relay(record_key, subkey, content_hash, observer_pseudonym)
-                .await;
+            if let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) {
+                crate::host::adapters::governance::HostGovernance::new(ctx)
+                    .on_watch_relay(record_key, subkey, content_hash, observer_pseudonym)
+                    .await;
+            }
             return;
+        }
+
+        // A joiner's Plate Gate request (plan GI3): the Host expands when we
+        // hold MANAGE_COMMUNITY, the same on the desktop's relay path.
+        if let Some(payload @ ControlPayload::RequestSegmentExpansion { .. }) =
+            envelope.as_control()
+        {
+            if let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) {
+                crate::host::adapters::governance::HostGovernance::new(ctx)
+                    .on_segment_expansion_request(community_id, payload)
+                    .await;
+            }
         }
 
         // Channel typing (plan E3.4 S9) is the Host's: its one ingest gates,
