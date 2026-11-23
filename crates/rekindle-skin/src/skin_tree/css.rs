@@ -5,9 +5,11 @@
 //! its normal, hover, down and disabled states; an interactive node smaller than 24×24 is its
 //! served target box (plan SK7, [`super::target`]: margins grow the box,
 //! a transparent border of the art's inset keeps the art, its children and
-//! its text at their own place and size); an edge grip gets a `::before`
-//! grip area that yields to the interactive nodes it overlaps
-//! ([`grip_area`], lead decision 6); every node is
+//! its text at their own place and size); a resize grip, and a drag area
+//! with holes, keeps its art box and takes presses only on its `::before`,
+//! laid at its frame band or art box less the press boxes of the controls
+//! it would lie over (plan SK11, [`grip_band`], [`super::target::grips`]),
+//! so it takes no press over a control (lead decision 6); every node is
 //! stacked by its `Z` and then the pack's document order (the shell nests
 //! the divs in that order, so a later sibling draws above); a text-sized node is as wide and tall as
 //! its text (`max-content`); the views node draws opaque (lead decision 3:
@@ -17,15 +19,14 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
-use rekindle_types::dto::skin::RegionState;
-use rekindle_types::dto::skin::WindowLayout;
+use rekindle_types::dto::skin::{RegionState, WindowLayout};
 use rekindle_types::dto::skin_tree::{
     Anchor, NodePieces, NodeRole, NodeSpan, NodeTarget, SkinNode, SkinTree,
 };
 
 use super::pieces::{self, Band};
 
-use super::validate::{grip_area, stack_z, text_sized, Stack};
+use super::validate::{stack_z, text_sized};
 use crate::regions::css::href;
 
 fn axis(s: NodeSpan, (start, end, len): (&str, &str, &str), text: bool) -> String {
@@ -79,38 +80,8 @@ struct Ctx<'a> {
     root: &'a str,
     images: &'a BTreeMap<String, Vec<u8>>,
     base: &'a str,
-    boxes: BTreeMap<&'a str, [i32; 4]>,
-    window: (i32, i32),
-    /// The interactive nodes that are not grips, with their target boxes.
-    live: Vec<(&'a str, [i32; 4])>,
-    stack: Stack<'a>,
-}
-
-/// The `::before` grip area of an edge grip, at its offset from the node's
-/// box: its own box takes no pointer events (lead decision 10), only this
-/// area, which leaves the target boxes of the nodes it yields to, does.
-fn grip_rule(out: &mut String, sel: &str, n: &SkinNode, ctx: &Ctx<'_>) {
-    if n.resize_edge().is_none() || !n.interactive() || text_sized(n) {
-        return;
-    }
-    let Some(area) = ctx.boxes.get(n.id.as_str()) else {
-        return;
-    };
-    let yields: Vec<_> = ctx
-        .live
-        .iter()
-        .filter(|(id, _)| ctx.stack.yields(&n.id, id))
-        .map(|(_, b)| *b)
-        .collect();
-    let hit = grip_area(*area, ctx.window, &yields);
-    let _ = writeln!(
-        out,
-        "  {sel}::before {{\n    content: \"\";\n    position: absolute;\n    left: {}px;\n    top: {}px;\n    width: {}px;\n    height: {}px;\n    pointer-events: auto;\n  }}",
-        hit[0] - area[0],
-        hit[1] - area[1],
-        hit[2],
-        hit[3]
-    );
+    /// Each grip's box and the holes cut from it ([`super::target::grips`]).
+    holes: BTreeMap<String, ([i32; 4], Vec<[i32; 4]>)>,
 }
 
 /// One state's background layers on the node itself and on its `::after`
@@ -221,6 +192,42 @@ fn target(decls: &mut String, n: &SkinNode, t: NodeTarget) {
     }
 }
 
+/// A grip's clip (plan SK11): its box with each hole cut out (even-odd,
+/// the holes disjoint), so a press in a hole reaches the listening node
+/// under it while the rest of the band, 24 px thick, takes the resize.
+fn clip(a: [i32; 4], holes: &[[i32; 4]]) -> String {
+    let mut path = format!("M0 0 H{} V{} H0 Z", a[2], a[3]);
+    for h in holes {
+        let _ = write!(path, " M{} {} h{} v{} h{} Z", h[0], h[1], h[2], h[3], -h[2]);
+    }
+    format!(" clip-path: path(evenodd, \"{path}\");")
+}
+
+/// A grip's pointer area (plan SK11, [`super::target::band`]): the grip's
+/// node keeps its art box and takes no press (`pointer-events: none`), and
+/// its `::before`, laid at the served band and clipped by its holes, takes
+/// the press for it (a press on a pseudo-element reaches its element). The
+/// grip's own child nodes take their presses again.
+fn grip_band(
+    sel: &str,
+    grip: &SkinNode,
+    target: NodeTarget,
+    holes: Option<&([i32; 4], Vec<[i32; 4]>)>,
+) -> String {
+    let [left, top, width, height] = target.area;
+    let cut = holes.map_or(String::new(), |(area, cuts)| clip(*area, cuts));
+    let mut rule = format!(
+        "  {sel}::before {{\n    content: \"\"; position: absolute; left: {left}px; top: {top}px; width: {width}px; height: {height}px; pointer-events: auto;{cut}\n  }}\n"
+    );
+    if !grip.children.is_empty() {
+        let _ = writeln!(
+            rule,
+            "  {sel} > [data-skin-node] {{\n    pointer-events: auto;\n  }}"
+        );
+    }
+    rule
+}
+
 fn node(out: &mut String, n: &SkinNode, ctx: &Ctx<'_>) -> Option<()> {
     let (root, images, base) = (ctx.root, ctx.images, ctx.base);
     let text = text_sized(n);
@@ -234,16 +241,21 @@ fn node(out: &mut String, n: &SkinNode, ctx: &Ctx<'_>) -> Option<()> {
     if n.role == NodeRole::Views {
         decls.push_str(" background-color: var(--color-xfire-bg-dark);");
     }
-    if n.resize_edge().is_some() {
-        decls.push_str(" pointer-events: none;");
-    }
+    let grip = n.frame_node();
     let outer = match n.target {
-        Some(t) => {
+        Some(t) if !grip => {
             target(&mut decls, n, t);
             "padding-box"
         }
-        None => "border-box",
+        _ => "border-box",
     };
+    let band = n
+        .target
+        .filter(|_| grip)
+        .map(|t| grip_band(&sel, n, t, ctx.holes.get(&n.id)));
+    if band.is_some() {
+        decls.push_str(" pointer-events: none;");
+    }
     let mut after = None;
     if let Some(art) = &n.art {
         let (main, over) = layers(&art.normal, images, base, outer)?;
@@ -251,6 +263,9 @@ fn node(out: &mut String, n: &SkinNode, ctx: &Ctx<'_>) -> Option<()> {
         after = over;
     }
     let _ = writeln!(out, "  {sel} {{\n    {decls}\n  }}");
+    if let Some(band) = band {
+        out.push_str(&band);
+    }
     let normal_after = after.is_some();
     if let Some(over) = after {
         let _ = writeln!(out, "  {sel}::after {{\n    {over}\n  }}");
@@ -277,7 +292,6 @@ fn node(out: &mut String, n: &SkinNode, ctx: &Ctx<'_>) -> Option<()> {
             None => {}
         }
     }
-    grip_rule(out, &sel, n, ctx);
     for c in &n.children {
         node(out, c, ctx)?;
     }
@@ -285,7 +299,8 @@ fn node(out: &mut String, n: &SkinNode, ctx: &Ctx<'_>) -> Option<()> {
 }
 
 /// The rules of `tree` under `root` (the window's `.app-frame` selector),
-/// laid in `layout`'s window; `None` for an art image `images` lacks
+/// laid from its spans and served targets, a grip's holes measured in
+/// `layout`'s window at its served minimum; `None` for an art image `images` lacks
 /// (never for a validated package).
 #[must_use]
 pub fn tree_css(
@@ -295,26 +310,16 @@ pub fn tree_css(
     images: &BTreeMap<String, Vec<u8>>,
     base: &str,
 ) -> Option<String> {
-    let o = layout.outsets;
-    let w = i32::from(layout.min_width) + i32::from(o.left) + i32::from(o.right);
-    let h = i32::from(layout.min_height) + i32::from(o.top) + i32::from(o.bottom);
-    let boxes = tree.boxes(w, h);
-    let live = boxes
-        .iter()
-        .filter(|(n, _)| n.interactive() && n.resize_edge().is_none())
-        .map(|(n, b)| {
-            let area = n.target.map_or(*b, |t| super::target::outer(*b, t));
-            (n.id.as_str(), area)
-        })
+    let window = super::target::window(layout);
+    let holes = super::target::grip_holes(tree, window)
+        .into_iter()
+        .map(|(id, a, h)| (id, (a, h)))
         .collect();
     let ctx = Ctx {
         root,
         images,
         base,
-        boxes: boxes.iter().map(|(n, b)| (n.id.as_str(), *b)).collect(),
-        window: (w, h),
-        live,
-        stack: Stack::new(&tree.root),
+        holes,
     };
     // The shell's tree container (`.skin-tree`) is the pack's window: the
     // whole window less the outsets every root node is laid in.

@@ -5,7 +5,7 @@
 use rekindle_types::dto::skin_tree::{NodeRole, SkinNode, SkinTree};
 
 use super::golden_tests::main_layout;
-use super::titles::{laid_window, place};
+use super::titles::{laid_window, place, popup_window};
 
 const PACKS: [&str; 11] = [
     "alloy",
@@ -56,16 +56,16 @@ fn texts(nodes: &[SkinNode], parent: [i32; 4], out: &mut Vec<Laid>) {
 /// Every text node of the pack's main window and its popups.
 fn laid(id: &str) -> Vec<Laid> {
     let main = main_layout(id);
-    let mut trees: Vec<(&SkinTree, [u16; 2])> = Vec::new();
+    let mut trees: Vec<(&SkinTree, (i32, i32))> = Vec::new();
     if let Some(t) = main.tree.as_ref() {
-        trees.push((t, [main.min_width, main.min_height]));
+        trees.push((t, super::target::window(&main)));
     }
     for p in main.popups.values() {
-        trees.push((&p.tree, [p.min_width, p.min_height]));
+        trees.push((&p.tree, popup_window(p, main.min_height)));
     }
     let mut out = Vec::new();
-    for (t, min) in trees {
-        texts(&t.root, laid_window(t.outsets, min), &mut out);
+    for (t, at) in trees {
+        texts(&t.root, laid_window(t.outsets, at), &mut out);
     }
     out
 }
@@ -234,11 +234,59 @@ fn a_name_field_stops_at_its_buttons_target_box() {
     super::text_box::lay(&mut l);
     super::target::nodes(&mut l);
     let tree = l.tree.as_ref().unwrap();
-    let field = place(&tree.root[0], laid_window(Z, [l.min_width, l.min_height]));
+    let field = place(&tree.root[0], laid_window(Z, super::target::window(&l)));
     let t = tree.root[1]
         .target
         .expect("the 18 px button serves a target");
     // The button's art at x 100, its 24 px target from x 97.
     assert_eq!(t.area[0], -3, "button target {t:?}");
     assert_eq!(field[0] + field[2], 97, "name field box {field:?}");
+}
+
+/// Plan SK11: the text-box pass lays the tree in the window the
+/// stylesheet and the targets lay it in, the served minimum with the
+/// layout's outsets (`shape::min_window`), never the bare minimum: a name
+/// field at x 10 stops exactly at the 24 px target box of an 18 px button
+/// anchored 10 px from the window's end, with a 13 px right overhang
+/// (Symbiosis's), as the targets lay that button.
+#[test]
+fn a_text_box_is_laid_at_the_minimum_with_the_outsets() {
+    use rekindle_types::dto::skin_action::{SkinAction, SkinEvent};
+    use rekindle_types::dto::skin_tree::{Anchor, NodeSpan};
+
+    use super::tests::{acts, fixed, layout, n};
+
+    let field = n("Name", NodeRole::NameField, fixed(10, 0), fixed(10, 16));
+    let end = NodeSpan::Fixed {
+        at: Anchor::End(10),
+        size: 18,
+    };
+    let button = acts(
+        n("Min", NodeRole::Button, end, fixed(10, 16)),
+        SkinEvent::Click,
+        SkinAction::Minimize,
+    );
+    let mut l = layout(Some(SkinTree {
+        outsets: super::test_support::Z,
+        root: vec![field, button],
+    }));
+    l.outsets.right = 13;
+    let served = crate::shape::min_window(&l).unwrap();
+    assert_eq!(
+        super::target::window(&l),
+        (served.0.into(), served.1.into())
+    );
+    super::text_box::lay(&mut l);
+    let tree = l.tree.as_ref().unwrap();
+    let field = place(
+        &tree.root[0],
+        laid_window(tree.outsets, super::target::window(&l)),
+    );
+    // The button's art at W - 28, its 24 px target from W - 31.
+    let w = i32::from(served.0);
+    assert_eq!(
+        field[0] + field[2],
+        w - 31,
+        "name field box {field:?} in {w}"
+    );
 }

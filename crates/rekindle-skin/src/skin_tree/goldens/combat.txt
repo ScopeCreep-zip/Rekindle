@@ -9,7 +9,7 @@ HelpMenuText MenuTitle label "Help"
   HelpMenu Part target [0, -1, 32, 24] art [0, 1, 32, 22] Size
 AdArea AdArea
 BackgroundArea Decor
-ResizeUlbr Button
+ResizeUlbr Button target [23, 23, 24, 24] art [-23, -23, 47, 47] Size
 CenterConsole Group
   TabControl TabStrip
     Knob01 Knob(Friends)
@@ -59,10 +59,10 @@ FilesButtons ButtonRow(Files)
     StopButton Button
   FilesButtons.AddDownloadTab Group
     StartDownloadButton Button
-TopOuterEdge Decor
-LeftOuterEdge Decor
-BottomOuterEdge Decor
-RightOuterEdge Decor
+TopOuterEdge Decor target [0, 0, 340, 24] art [0, 0, 340, 5] Size
+LeftOuterEdge Decor target [0, 0, 24, 490] art [0, 0, 11, 490] Size
+BottomOuterEdge Decor target [0, -19, 340, 24] art [0, 19, 340, 5] Size
+RightOuterEdge Decor target [-13, 0, 24, 490] art [13, 0, 11, 490] Size
 XfireLogo Logo
 InfoViewSwitch Button
   InfoViewSwitchIn Part
@@ -76,6 +76,6 @@ popup CombatInfoSkin
   InfoView InfoView
   InfoGripperTR Decor
   InfoGripperBR Decor
-  ResizeRight Button
+  ResizeRight Button target [-19, 0, 24, 370] art [19, 0, 5, 370] Size
   JoinButton Button
   JoinChatButton Button

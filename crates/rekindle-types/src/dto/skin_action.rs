@@ -11,10 +11,11 @@
 //! Menu *items* were engine resources, not pack content (`v3/strings.xml`
 //! `XfireMenu` 228, `ToolsMenu` 229, `HelpMenu` 231, `GCActionsMenu` 436):
 //! a pack names which [`EngineMenu`] a tile opens, and [`MenuRegistry`]
-//! holds Rekindle's items for it.
+//! holds Rekindle's items for it ([`super::skin_menu`], re-exported here).
 
 use serde::{Deserialize, Serialize};
 
+pub use super::skin_menu::{EngineMenuItems, MenuItem, MenuRegistry};
 use super::skin_tree_role::Edge;
 use crate::presence::SessionStatus;
 
@@ -394,7 +395,6 @@ pub enum SkinEvent {
     App(AppSignal),
 }
 
-/// One `(event, action)` pair of a node, in the pack's order.
 impl SkinEvent {
     /// Whether the event is a pointer press on the node (click, double
     /// click, button down, right click): what makes a node interactive.
@@ -407,6 +407,7 @@ impl SkinEvent {
     }
 }
 
+/// One `(event, action)` pair of a node, in the pack's order.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct NodeTrigger {
@@ -414,7 +415,6 @@ pub struct NodeTrigger {
     pub run: SkinAction,
 }
 
-/// One item of an engine menu.
 impl NodeTrigger {
     /// Whether the trigger makes its node a control: a primary press
     /// (click or button down) that runs anything but the window drag. The
@@ -427,160 +427,19 @@ impl NodeTrigger {
         matches!(self.on, SkinEvent::Click | SkinEvent::LeftDown)
             && self.run != SkinAction::DragWindow
     }
-}
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct MenuItem {
-    pub label: String,
-    pub run: SkinAction,
-    /// A separator above the item.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub apart: bool,
-    /// A destructive item, drawn as such.
-    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
-    pub danger: bool,
-}
-
-/// One engine menu's items.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct EngineMenuItems {
-    pub menu: EngineMenu,
-    pub items: Vec<MenuItem>,
-}
-
-/// Rekindle's items for each engine menu a pack opens.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct MenuRegistry {
-    pub menus: Vec<EngineMenuItems>,
-}
-
-fn item(label: &str, run: SkinAction) -> MenuItem {
-    MenuItem {
-        label: label.to_owned(),
-        run,
-        apart: false,
-        danger: false,
-    }
-}
-
-fn apart(mut i: MenuItem) -> MenuItem {
-    i.apart = true;
-    i
-}
-
-impl MenuRegistry {
-    /// The engine menus with no Rekindle items yet: the chat window's
-    /// (`CwActions`, `CwHelp`) and the group chat window's (`GcSystem`,
-    /// `GcActions`, `GcHelp`) menus. They are planned feature gaps (design
-    /// §2.2: built from the chat windows' existing actions); the pack's
-    /// buttons for them stay.
-    pub const FEATURE_GAPS: [EngineMenu; 5] = [
-        EngineMenu::CwActions,
-        EngineMenu::CwHelp,
-        EngineMenu::GcSystem,
-        EngineMenu::GcActions,
-        EngineMenu::GcHelp,
-    ];
-
-    /// Rekindle's menus: File = the buddy list's first menu
-    /// (`PackMenus.tsx` `first` + `MenuBar.tsx` Settings tabs and Quit),
-    /// Tool = `tools` + `MenuBar.tsx` "Calls", Help = `help`, Status = the
-    /// four presence choices, Sys = the window's system menu.
+    /// Whether the trigger is a pointer gesture on the window's frame, as
+    /// a title bar takes it in every OS (Tauri's `data-tauri-drag-region`):
+    /// a drag that moves the window, a double click that maximizes it, or
+    /// a drag that resizes it. A click or button down that maximizes is a
+    /// maximize button, not a gesture.
     #[must_use]
-    pub fn rekindle() -> Self {
-        use SkinAction as A;
-        let file = vec![
-            item("Add Friend…", A::AddFriend),
-            item("New Chat…", A::NewChat),
-            item("New Group…", A::NewGroup),
-            apart(item("Create Community…", A::CreateCommunity)),
-            item("Join Community…", A::JoinCommunity),
-            apart(item("Profile", A::ShowSettings(SkinSettingsTab::Profile))),
-            item("Privacy", A::ShowSettings(SkinSettingsTab::Privacy)),
-            item("About", A::ShowSettings(SkinSettingsTab::About)),
-            apart(item("Log Off", A::LogOff)),
-            MenuItem {
-                danger: true,
-                ..item("Exit", A::Quit)
-            },
-        ];
-        let tool = vec![
-            item("Options", A::ShowSettings(SkinSettingsTab::Application)),
-            item(
-                "Notifications",
-                A::ShowSettings(SkinSettingsTab::Notifications),
-            ),
-            item("Audio", A::ShowSettings(SkinSettingsTab::Audio)),
-            item("Skins", A::ShowSettings(SkinSettingsTab::Appearance)),
-            apart(item("Start Group Call…", A::HostGroupVoiceChat)),
-            item("Keyboard Shortcuts", A::ShowShortcuts),
-        ];
-        let help = vec![
-            item("Documentation", A::ShowView(EngineView::Help)),
-            item("Report Bug", A::ReportBug),
-        ];
-        let status = vec![
-            item("Online", A::SetStatus(SessionStatus::Online)),
-            item("Away", A::SetStatus(SessionStatus::Away)),
-            item("Busy", A::SetStatus(SessionStatus::Busy)),
-            item("Appear Offline", A::SetStatus(SessionStatus::Invisible)),
-        ];
-        let sys = vec![
-            item("Minimize", A::Minimize),
-            item("Maximize", A::Maximize),
-            apart(item("Close", A::Close)),
-        ];
-        let mut menus: Vec<EngineMenuItems> = [
-            (EngineMenu::File, file),
-            (EngineMenu::Tool, tool),
-            (EngineMenu::Help, help),
-            (EngineMenu::Status, status),
-            (EngineMenu::Sys, sys),
-        ]
-        .into_iter()
-        .map(|(menu, items)| EngineMenuItems { menu, items })
-        .collect();
-        menus.extend(Self::FEATURE_GAPS.map(|menu| EngineMenuItems {
-            menu,
-            items: Vec::new(),
-        }));
-        Self { menus }
-    }
-
-    /// `menu`'s items (empty for a [`Self::FEATURE_GAPS`] menu).
-    #[must_use]
-    pub fn items(&self, menu: EngineMenu) -> &[MenuItem] {
-        self.menus
-            .iter()
-            .find(|m| m.menu == menu)
-            .map_or(&[][..], |m| m.items.as_slice())
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{EngineMenu, MenuRegistry};
-
-    /// Every engine menu has Rekindle items or is a recorded feature gap.
-    #[test]
-    fn every_engine_menu_is_populated_or_a_recorded_gap() {
-        let reg = MenuRegistry::rekindle();
-        for menu in EngineMenu::ALL {
-            let gap = MenuRegistry::FEATURE_GAPS.contains(&menu);
-            assert_eq!(reg.items(menu).is_empty(), gap, "{menu:?}");
-            assert_eq!(reg.menus.iter().filter(|m| m.menu == menu).count(), 1);
-        }
-    }
-
-    /// Lead decision 7: only the file menu is renamed ("Xfire" → "Rekindle").
-    #[test]
-    fn only_the_file_menu_title_is_renamed() {
-        for menu in EngineMenu::ALL {
-            assert_eq!(menu.title().renamed(), menu == EngineMenu::File, "{menu:?}");
-        }
-        assert_eq!(EngineMenu::File.title().ours, "Rekindle");
+    pub fn frame_gesture(&self) -> bool {
+        self.on.pointer()
+            && match self.run {
+                SkinAction::DragWindow | SkinAction::Resize(_) => true,
+                SkinAction::Maximize => self.on == SkinEvent::DoubleClick,
+                _ => false,
+            }
     }
 }

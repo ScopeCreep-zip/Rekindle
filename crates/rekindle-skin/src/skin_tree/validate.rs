@@ -20,9 +20,8 @@
 //!    `components.xml:705-712`); an edge grip yields to the
 //!    interactive nodes above it in the window's global order (lead
 //!    decision 10: effective z through the parent chain, [`Stack::yields`]):
-//!    it stacks below its siblings at its `Z` ([`stack_z`]), its own box
-//!    takes no pointer events and its hit area leaves their boxes
-//!    ([`grip_area`]);
+//!    it stacks below its siblings at its `Z` ([`stack_z`]), so its served
+//!    target box ([`super::target::grip_targets`]) never takes their press;
 //! 5. every interactive node has a box, and its target (the Host's served
 //!    target box, plan SK7 [`super::target`], else its box grown to 24×24
 //!    about its centre and shifted inward at the window's edges: lead
@@ -112,63 +111,20 @@ pub fn hit_area(area: [i32; 4], (win_w, win_h): (i32, i32)) -> [i32; 4] {
     [left, top, width, height]
 }
 
-/// An edge grip's hit area (lead decisions 6 and 10): its own box less,
-/// along its long axis, each node in `live` (the interactive nodes the grip
-/// yields to, [`Stack::yields`]) that lies over it (the larger piece kept:
-/// xSLIMFIRE's `ResizeUp` stops short of the `CloseBox` over its strip),
-/// then [`hit_area`], trimmed back toward that box along each axis the grip
-/// is thinner than 24 px so it never lies over a node in `live`. Empty
-/// when the nodes it yields to cover the whole strip.
-#[must_use]
-pub fn grip_area(area: [i32; 4], window: (i32, i32), live: &[[i32; 4]]) -> [i32; 4] {
-    let mut own = area;
-    for other in live {
-        if overlap(own, *other) {
-            let axis = usize::from(own[2] < own[3]);
-            let (lo, hi) = (own[axis], own[axis] + own[axis + 2]);
-            let before = other[axis].clamp(lo, hi) - lo;
-            let after = hi - (other[axis] + other[axis + 2]).clamp(lo, hi);
-            if before >= after {
-                own[axis + 2] = before;
-            } else {
-                own[axis] = hi - after;
-                own[axis + 2] = after;
-            }
-        }
-    }
-    if own[2] <= 0 || own[3] <= 0 {
-        return [own[0], own[1], 0, 0];
-    }
-    let mut hit = hit_area(own, window);
-    for other in live {
-        for axis in [0, 1] {
-            if own[axis + 2] >= HIT || !overlap(hit, *other) {
-                continue;
-            }
-            let (lo, hi) = (hit[axis], hit[axis] + hit[axis + 2]);
-            let (own_lo, own_hi) = (own[axis], own[axis] + own[axis + 2]);
-            let (o_lo, o_hi) = (other[axis], other[axis] + other[axis + 2]);
-            // Keep the side of the grip's own box away from the node.
-            let (new_lo, new_hi) = if o_lo >= own_hi {
-                (lo, o_lo.max(own_hi))
-            } else if o_hi <= own_lo {
-                (o_hi.min(own_lo), hi)
-            } else {
-                (own_lo, own_hi)
-            };
-            hit[axis] = new_lo;
-            hit[axis + 2] = new_hi - new_lo;
-        }
-    }
-    hit
-}
-
-/// A node's z-index in the stylesheet (lead decision 6): twice its `Z`, less
-/// one for an edge grip, so a grip stacks below its siblings at its `Z`
-/// (its hit area yields to the nodes it overlaps) and above those below it.
+/// A node's z-index in the stylesheet (lead decision 6): three times its
+/// `Z`, less one for a corner grip and two for an edge grip, so a grip
+/// stacks below its siblings at its `Z` (its target box yields to the nodes
+/// it overlaps) and above those below it, and a corner above the edges it
+/// meets (plan SK11: the corner's 24 x 24 box takes the window's corner,
+/// as a window manager's hit test checks the corners before the edges).
 #[must_use]
 pub fn stack_z(n: &SkinNode) -> i32 {
-    2 * i32::from(n.z) - i32::from(n.resize_edge().is_some())
+    let rank = match n.resize_edge() {
+        None => 0,
+        Some(e) if e.corner() => 1,
+        Some(_) => 2,
+    };
+    3 * i32::from(n.z) - rank
 }
 
 /// The window's global stacking order (lead decisions 6 and 10).

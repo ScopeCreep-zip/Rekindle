@@ -1,21 +1,21 @@
-TopLeft Decor
-Top Decor
-TopRight Decor
+TopLeft Decor target [0, 0, 83, 128] art [0, 0, 83, 128] Frame
+Top Decor target [0, 0, 218, 128] art [0, 0, 218, 128] Frame
+TopRight Decor target [0, 0, 83, 128] art [0, 0, 83, 128] Frame
 StatusWrapper Group
 StatusEdit StatusText target [0, -1, 162, 21] art [0, 1, 162, 16] Spacing
 DownArrow StatusList target [0, -3, 20, 24] art [0, 3, 15, 18] Short
 ExpandButton Button target [0, -1, 47, 23] art [0, 1, 47, 20] Short
-ResizeLeft Button
-ResizeRight Button
-ResizeUp Button
-ResizeDown Button
-BRGripper Button
-BottomLeft Decor
-Bottom Decor
-BottomRight Decor
+ResizeLeft Button target [0, 0, 24, 320] art [0, 0, 5, 320] Size
+ResizeRight Button target [-19, 0, 24, 320] art [19, 0, 5, 320] Size
+ResizeUp Button target [0, 0, 384, 24] art [0, 0, 384, 5] Size
+ResizeDown Button target [0, -19, 384, 24] art [0, 19, 384, 5] Size
+BRGripper Button target [1, 1, 24, 24] art [-1, -1, 25, 25] Size
+BottomLeft Decor target [0, 0, 83, 117] art [0, 0, 83, 117] Frame
+Bottom Decor target [0, 0, 218, 117] art [0, 0, 218, 117] Frame
+BottomRight Decor target [0, 0, 83, 117] art [0, 0, 83, 117] Frame
 Logo2 Decor
-LeftEdge Decor
-RightEdge Decor
+LeftEdge Decor target [0, 0, 83, 75] art [0, 0, 83, 75] Frame
+RightEdge Decor target [0, 0, 83, 75] art [0, 0, 83, 75] Frame
 Middle Decor
 MainTitleBar Drag
   Logo Logo target [-4, -4, 24, 21] art [4, 4, 16, 16] Short
@@ -76,12 +76,12 @@ BottomBar Group
       ExecuteDownloadButton Button target [0, -2, 47, 24] art [0, 2, 47, 20] Size
       DownloadInfoButton Button target [0, -2, 47, 24] art [0, 2, 47, 20] Size
 popup InfoPopup
-  XfireTopRow Decor
-  XfireBottomRow Decor
-  XfireMiddleRow Decor
+  XfireTopRow Decor target [0, 0, 200, 117] art [0, 0, 200, 117] Frame
+  XfireBottomRow Decor target [0, 0, 200, 117] art [0, 0, 200, 117] Frame
+  XfireMiddleRow Decor target [0, 0, 200, 86] art [0, 0, 200, 86] Frame
   BackDrop Decor
   InfoView InfoView
-  ResizeRight Button
+  ResizeRight Button target [-19, 0, 24, 320] art [19, 0, 5, 320] Size
   JoinButton Button target [0, -2, 47, 24] art [0, 2, 47, 20] Size
   JoinChatTab ButtonBar
     HostChatButton Button target [0, -2, 47, 24] art [0, 2, 47, 20] Size

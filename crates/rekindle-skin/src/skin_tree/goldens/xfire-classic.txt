@@ -6,9 +6,9 @@ MainTitleBar Drag
   UserNameField NameField target [0, -3, 169, 24] art [0, 3, 169, 17] Size
     UserNameText Part
   CloseBox Button target [0, -3, 21, 24] art [0, 3, 18, 17] Short
-  ResizeUp Button
-GripperTopLeft Button
-GripperTopRight Button
+  ResizeUp Button target [0, 0, 330, 24] art [0, 0, 330, 5] Size
+GripperTopLeft Button target [0, 0, 24, 24] art [0, 0, 25, 44] Size
+GripperTopRight Button target [1, 0, 24, 24] art [-1, 0, 25, 44] Short
 BaseBoard Group
   ButtonArea ButtonBar
     FriendsButtons ButtonRow(Friends)
@@ -27,11 +27,11 @@ BaseBoard Group
   StatusWrapper Group
   StatusEdit StatusText target [0, -4, 209, 24] art [0, 4, 209, 15] Size
   DownArrow StatusList target [0, -5, 20, 24] art [0, 5, 16, 14] Short
-  ResizeDown Button
-LeftOuterEdge Decor
-MainRightOuterEdge Decor
-GripperBottomLeft Button
-GripperBottomRight Button
+  ResizeDown Button target [0, -19, 336, 24] art [0, 19, 336, 5] Size
+LeftOuterEdge Decor target [0, 0, 24, 289] art [0, 0, 9, 289] Size
+MainRightOuterEdge Decor target [-15, 0, 24, 289] art [15, 0, 9, 289] Size
+GripperBottomLeft Button target [0, 24, 24, 24] art [0, -24, 31, 48] Size
+GripperBottomRight Button target [8, 24, 24, 24] art [-8, -24, 32, 48] Size
 InnerBevel Decor
   TopBevel Decor
   BottomBevel Decor
@@ -83,4 +83,4 @@ popup MainInfoViewPopup
   InfoBackDrop Decor
   InfoGripperTR Decor
   InfoGripperBR Decor
-  InfoResizeRight Button
+  InfoResizeRight Button target [-15, 0, 24, 281] art [15, 0, 9, 281] Size

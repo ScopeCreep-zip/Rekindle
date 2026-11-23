@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 
 use rekindle_types::dto::skin::WindowLayout;
 use rekindle_types::dto::skin_action::{SkinAction, SkinEvent};
-use rekindle_types::dto::skin_tree::{NodeRole, NodeTarget, SkinNode, SkinTree, TargetRule};
+use rekindle_types::dto::skin_tree::{Edge, NodeRole, NodeTarget, SkinNode, SkinTree, TargetRule};
 
 use super::test_support::Z;
 use super::tests::{acts, fixed, layout, n};
@@ -158,6 +158,26 @@ fn every_builtin_interactive_node_meets_size_or_spacing() {
             }
             for (popup, tree, at) in trees {
                 let laid = target::targets(tree, at);
+                for g in target::grip_targets(tree, at, &laid) {
+                    seen += 1;
+                    // Plan SK11 lead decision: a drag area is no control
+                    // (`Frame`, no 2.5.8 rule, never listed); a resize grip
+                    // is one and takes the rule.
+                    assert_eq!(
+                        g.rule == TargetRule::Frame,
+                        grip_edge(tree, &g.id).is_none(),
+                        "{} {window:?}{popup}: {} {:?}",
+                        b.id,
+                        g.id,
+                        g.rule
+                    );
+                    if g.rule == TargetRule::Short {
+                        short.push(format!(
+                            "{} {window:?}{popup}: {} art {:?} target {:?} (grip)",
+                            b.id, g.id, g.art, g.area
+                        ));
+                    }
+                }
                 for (i, t) in laid.iter().enumerate() {
                     seen += 1;
                     for u in &laid[i + 1..] {
@@ -236,7 +256,19 @@ fn pack_box(tree: &SkinTree, (w, h): (i32, i32)) -> [i32; 4] {
 /// off) that cover the centre of another listening node's art box shown
 /// with it: a press there would land on the covering node (its target box
 /// over its neighbour's art) or on a node that never listens.
-fn covered(tree: &SkinTree, pack: [i32; 4]) -> Vec<String> {
+fn covered(tree: &SkinTree, window: (i32, i32)) -> Vec<String> {
+    let pack = pack_box(tree, window);
+    // A grip's holes (plan SK11): clipped out of its box, so a press there
+    // reaches the node under it.
+    let holes = target::grip_holes(tree, window);
+    let in_hole = |id: &str, (cx, cy): (i32, i32)| {
+        holes.iter().filter(|(g, ..)| g == id).any(|(_, a, hs)| {
+            hs.iter().any(|h| {
+                let (x, y) = (a[0] + h[0], a[1] + h[1]);
+                2 * x <= cx && cx < 2 * (x + h[2]) && 2 * y <= cy && cy < 2 * (y + h[3])
+            })
+        })
+    };
     let apart = validate::Apart::new(&tree.root);
     let mut all = Vec::new();
     laid_all(&tree.root, pack, &[], &mut all);
@@ -254,21 +286,28 @@ fn covered(tree: &SkinTree, pack: [i32; 4]) -> Vec<String> {
     let inside = |a: [i32; 4], b: [i32; 4]| {
         b[0] <= a[0] && a[0] + a[2] <= b[0] + b[2] && b[1] <= a[1] && a[1] + a[3] <= b[1] + b[3]
     };
-    // A grip's own box takes no press (its `::before` does); a node whose
+    // A grip's served box lies under the nodes it yields to (plan SK11),
+    // so their press reaches them; a node whose
     // art holds `m`'s art is `m`'s backdrop, under it; where `m`'s art
     // already holds the centre, the pack's stacking decides (rule 4).
+    let stack = validate::Stack::new(&tree.root);
     let listening = all
         .iter()
-        .filter(|(n, b, _)| shell_listens(n) && n.resize_edge().is_none() && b[2] > 0 && b[3] > 0);
+        // A frame node (grip or drag area) is no press control: a grip's
+        // band may lie over a drag area (plan SK11 lead decision).
+        .filter(|(n, b, _)| shell_listens(n) && !n.frame_node() && b[2] > 0 && b[3] > 0);
     for (l, lb, up) in listening {
         let c = (2 * lb[0] + lb[2], 2 * lb[1] + lb[3]);
         for (m, mb, _) in &all {
             let Some(t) = m.target else { continue };
+            // A grip's art takes no press (its band does, plan SK11), so
+            // its art holding the centre excuses nothing.
+            let grip = m.frame_node();
             let skip = m.id == l.id
                 || up.contains(&m.id.as_str())
                 || apart.apart(&l.id, &m.id)
-                || inside(*mb, *lb)
-                || at(*mb, c);
+                || (!grip && (inside(*mb, *lb) || at(*mb, c)))
+                || (grip && (stack.yields(&m.id, &l.id) || in_hole(&m.id, c)));
             if skip {
                 continue;
             }
@@ -295,11 +334,11 @@ fn no_target_box_covers_another_listening_nodes_centre() {
         for (window, l) in &m.windows {
             let mut trees = Vec::new();
             if let Some(t) = &l.tree {
-                trees.push((String::new(), t, pack_box(t, target::window(l))));
+                trees.push((String::new(), t, target::window(l)));
             }
             for (name, p) in &l.popups {
                 let at = target::window(&super::popup::frame(p, l.min_height));
-                trees.push((format!(" popup {name}"), &p.tree, pack_box(&p.tree, at)));
+                trees.push((format!(" popup {name}"), &p.tree, at));
             }
             for (popup, tree, at) in trees {
                 for c in covered(tree, at) {
@@ -309,4 +348,163 @@ fn no_target_box_covers_another_listening_nodes_centre() {
         }
     }
     assert!(found.is_empty(), "{}", found.join("\n"));
+}
+
+/// Plan SK11: every resize grip of the eleven built-ins is a pointer
+/// target: under 24 px it is served a target box, which never lies over the
+/// target box of a listening node it stacks above (it may lie under one,
+/// which then keeps its press); SpaceCowboy's frame grips (the real app's
+/// list) each serve one, the corners 24 x 24.
+#[test]
+fn every_builtin_grip_is_a_served_target() {
+    let mut cowboy = Vec::new();
+    for b in builtin::PACKS {
+        let package = package::read(b.bytes).unwrap();
+        let m = manifest::served(&package).unwrap();
+        for (window, l) in &m.windows {
+            let mut trees = Vec::new();
+            if let Some(t) = &l.tree {
+                trees.push((String::new(), t, target::window(l)));
+            }
+            for (name, p) in &l.popups {
+                let at = target::window(&super::popup::frame(p, l.min_height));
+                trees.push((format!(" popup {name}"), &p.tree, at));
+            }
+            for (popup, tree, at) in trees {
+                let laid = target::targets(tree, at);
+                let stack = validate::Stack::new(&tree.root);
+                let apart = validate::Apart::new(&tree.root);
+                for g in target::grips(tree, at, &laid) {
+                    let (a, r) = (g.laid.art, g.laid.area);
+                    // A drag area's pointer area is its art in the window.
+                    let Some(edge) = grip_edge(tree, &g.laid.id) else {
+                        assert_eq!(Some(r), target::meet(a, [0, 0, at.0, at.1]));
+                        assert!(!g.holes.is_empty(), "{} {}", b.id, g.laid.id);
+                        continue;
+                    };
+                    // The pointer area is the frame band: 24 px on each
+                    // axis it resizes, from the art's dragged side (it lies
+                    // in the window), never the art box.
+                    assert_eq!(r, target::band(a, edge, at), "{} {}", b.id, g.laid.id);
+                    let thick = |ax: usize| r[ax + 2] == validate::HIT;
+                    let banded = match edge {
+                        Edge::Left | Edge::Right => thick(0),
+                        Edge::Top | Edge::Bottom => thick(1),
+                        _ => thick(0) && thick(1),
+                    };
+                    assert!(
+                        banded,
+                        "{} {}: {r:?} is not a band of {a:?}",
+                        b.id, g.laid.id
+                    );
+                    assert!(
+                        target::meet(r, a).is_some(),
+                        "{} {}: {r:?} leaves its art {a:?}",
+                        b.id,
+                        g.laid.id
+                    );
+                    for u in laid.iter().filter(|u| !apart.apart(&g.laid.id, &u.id)) {
+                        // Above `u`, the grip's band meets `u`'s press box
+                        // (its target, or the 24 px square on its centre)
+                        // only in a hole the stylesheet clips out (its art
+                        // takes no press).
+                        let (r, o) = (g.laid.area, target::press_box(u.art, u.area));
+                        let mut left = target::meet(r, o).map_or(Vec::new(), |m| vec![m]);
+                        for h in &g.holes {
+                            left = left
+                                .into_iter()
+                                .flat_map(|p| target::minus(p, *h))
+                                .collect();
+                        }
+                        let over = !left.is_empty() && !stack.yields(&g.laid.id, &u.id);
+                        assert!(
+                            !over,
+                            "{} {window:?}{popup}: grip {} {r:?} over {} {o:?}",
+                            b.id, g.laid.id, u.id
+                        );
+                    }
+                    if b.id == "spacecowboy" && popup.is_empty() {
+                        cowboy.push((g.laid.id.clone(), g.laid.rule));
+                    }
+                }
+            }
+        }
+    }
+    // SpaceCowboy's four resize edges and its corner grip (its frame
+    // corners and side pieces are drag areas, no control): each band lies
+    // on the window's frame side, clear of the list's small controls.
+    let rule = |id: &str| cowboy.iter().find(|(g, _)| g == id).map(|(_, r)| *r);
+    assert_eq!(cowboy.len(), 5, "{cowboy:?}");
+    for (id, want) in [
+        ("ResizeLeft", TargetRule::Size),
+        ("ResizeRight", TargetRule::Size),
+        ("ResizeUp", TargetRule::Size),
+        ("ResizeDown", TargetRule::Size),
+        ("BRGripper", TargetRule::Size),
+    ] {
+        assert_eq!(rule(id), Some(want), "{id}: {cowboy:?}");
+    }
+}
+
+/// The resize edge of the frame node `id` in `tree`: `None` for a drag
+/// area.
+fn grip_edge(tree: &SkinTree, id: &str) -> Option<Edge> {
+    let (n, _) = tree
+        .boxes(0, 0)
+        .into_iter()
+        .find(|(n, _)| n.id == id)
+        .unwrap();
+    assert!(n.frame_node(), "{id}");
+    n.resize_edge()
+}
+
+/// Plan SK11 (the real-app hit stack): Onyx's `TopLeft` (Decor art 83 x 128,
+/// `leftDown` drags the window, `doubleClick` maximizes it: a drag area,
+/// no resize) lies above the Friends tab's `TabNormalButton` in the pack's
+/// order and took the press over its whole art, so a click on the tab
+/// grabbed the window. A drag area takes no press over a press control:
+/// its pointer area is cut over the tab's press box, so the tab's centre
+/// is pressed by the tab.
+#[test]
+fn onyx_top_left_drag_area_leaves_the_friends_tab_its_centre() {
+    use rekindle_types::dto::skin_action::{SkinAction, SkinEvent};
+    let l = super::golden_tests::main_layout("onyx");
+    let tree = l.tree.as_ref().unwrap();
+    let at = target::window(&l);
+    let boxes = tree.boxes(at.0, at.1);
+    let (top_left, _) = boxes.iter().find(|(n, _)| n.id == "TopLeft").unwrap();
+    assert!(top_left.drag_area() && top_left.resize_edge().is_none());
+    let gestures: Vec<(SkinEvent, SkinAction)> = top_left
+        .triggers
+        .iter()
+        .filter(|t| t.on.pointer())
+        .map(|t| (t.on, t.run.clone()))
+        .collect();
+    assert_eq!(
+        gestures,
+        [
+            (SkinEvent::LeftDown, SkinAction::DragWindow),
+            (SkinEvent::DoubleClick, SkinAction::Maximize)
+        ]
+    );
+    let (_, tab) = boxes
+        .iter()
+        .find(|(n, _)| n.id == "TabNormalButton")
+        .unwrap();
+    let laid = target::targets(tree, at);
+    let drag = target::grips(tree, at, &laid)
+        .into_iter()
+        .find(|g| g.laid.id == "TopLeft")
+        .expect("TopLeft is served a pointer area with holes");
+    assert_eq!(drag.laid.rule, TargetRule::Frame, "{:?}", drag.laid);
+    let (cx, cy) = (2 * tab[0] + tab[2], 2 * tab[1] + tab[3]);
+    let holds = |r: [i32; 4]| {
+        2 * r[0] <= cx && cx < 2 * (r[0] + r[2]) && 2 * r[1] <= cy && cy < 2 * (r[1] + r[3])
+    };
+    assert!(holds(drag.laid.area), "{:?}", drag.laid);
+    assert!(
+        drag.holes.iter().any(|h| holds(*h)),
+        "TopLeft {:?} takes TabNormalButton {tab:?}'s centre",
+        drag.laid
+    );
 }

@@ -245,13 +245,18 @@ pub enum NodeGlyph {
 /// and no other undersized target's circle (the criterion's spacing
 /// exception); `Short`, neither holds (the pack lays its neighbours too
 /// close): a pack-layout finding, served with the box the node could grow
-/// to.
+/// to. `Frame`: a window-drag area ([`SkinNode::drag_area`]), served its
+/// pointer area with the holes cut over the controls it meets but no 2.5.8
+/// rule (plan SK11 lead decision): the criterion's targets are controls,
+/// and a title bar or a window's ground is no control (no OS sets a
+/// minimum for it). A resize grip is a control and takes the rule.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TargetRule {
     Size,
     Spacing,
     Short,
+    Frame,
 }
 
 /// The target box the Host serves a small interactive node (plan SK7, WCAG
@@ -457,6 +462,27 @@ impl SkinNode {
             super::skin_action::SkinAction::Resize(e) if t.on.pointer() => Some(e),
             _ => None,
         })
+    }
+
+    /// Whether the node is a window drag area: it takes the pointer, and
+    /// only for the window's frame gestures
+    /// ([`NodeTrigger::frame_gesture`]: move, double-click maximize), with
+    /// no resize (a resize grip, [`Self::resize_edge`]). Onyx's `TopLeft`
+    /// (`leftDown` drags, `doubleClick` maximizes) is one.
+    #[must_use]
+    pub fn drag_area(&self) -> bool {
+        let mut pointer = self.triggers.iter().filter(|t| t.on.pointer()).peekable();
+        pointer.peek().is_some()
+            && pointer.all(NodeTrigger::frame_gesture)
+            && self.resize_edge().is_none()
+    }
+
+    /// Whether the node is a frame node: a resize grip or a drag area,
+    /// whose pointer area never takes a press over a press control
+    /// (plan SK11, the skin's `target::grips`).
+    #[must_use]
+    pub fn frame_node(&self) -> bool {
+        self.resize_edge().is_some() || self.drag_area()
     }
 
     fn shell(&self) -> ShellNode {

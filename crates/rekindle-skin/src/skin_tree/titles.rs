@@ -49,6 +49,7 @@
 use rekindle_image::RgbaImage;
 use rekindle_types::dto::skin::{Insets, SkinError, SkinRule, WindowLayout};
 use rekindle_types::dto::skin_action::{EngineMenu, SkinAction};
+use rekindle_types::dto::skin_layout::PopupLayout;
 use rekindle_types::dto::skin_tree::{NodeGlyph, NodeLabel, NodeRole, SkinNode};
 
 use super::cover::{differing, edge_connected, icon_box, seen, ICON_TOLERANCE};
@@ -425,36 +426,45 @@ fn button_text_words(nodes: &mut [SkinNode]) {
 fn label_tree(
     root: &mut [SkinNode],
     outsets: Insets,
-    min: [u16; 2],
+    window: (i32, i32),
     package: &Package<'_>,
 ) -> Result<(), SkinError> {
-    walk(root, laid_window(outsets, min), None, package)
+    walk(root, laid_window(outsets, window), None, package)
 }
 
-/// The pack's window `[x, y, w, h]` in a tree laid at the minimum `min`
-/// with the frame's `outsets` around it.
-pub(super) fn laid_window(outsets: Insets, min: [u16; 2]) -> [i32; 4] {
-    let w = i32::from(min[0]) + i32::from(outsets.left) + i32::from(outsets.right);
-    let h = i32::from(min[1]) + i32::from(outsets.top) + i32::from(outsets.bottom);
+/// The pack's box `[x, y, w, h]` in a `window` (width, height) for a tree
+/// with the frame's `outsets`: the window less them, as
+/// `SkinTree::boxes` and the stylesheet's `.skin-tree` lay it.
+pub(super) fn laid_window(outsets: Insets, window: (i32, i32)) -> [i32; 4] {
     let (left, top) = (i32::from(outsets.left), i32::from(outsets.top));
     [
         left,
         top,
-        w - left - i32::from(outsets.right),
-        h - top - i32::from(outsets.bottom),
+        window.0 - left - i32::from(outsets.right),
+        window.1 - top - i32::from(outsets.bottom),
     ]
 }
 
+/// The window (width, height) each tree of `layout` is laid in, one source
+/// for every Host pass (plan SK11): the served minimum with the outsets
+/// ([`super::target::window`], equal to `shape::min_window`, plan SK4) for
+/// the window's tree, and its frame's for each popup ([`super::popup::frame`]).
+pub(super) fn popup_window(popup: &PopupLayout, window_min_height: u16) -> (i32, i32) {
+    super::target::window(&super::popup::frame(popup, window_min_height))
+}
+
 /// Runs `pass` over `layout`'s tree and each popup's, each laid at its
-/// window's served minimum (the inset and text-box passes, plan SK5/SK8).
+/// window's served minimum (the inset and text-box passes, plan SK5/SK8),
+/// the same window the stylesheet and the targets lay (plan SK11).
 pub(super) fn each_laid(layout: &mut WindowLayout, pass: fn(&mut [SkinNode], [i32; 4])) {
-    let min = [layout.min_width, layout.min_height];
+    let at = super::target::window(layout);
+    let min_height = layout.min_height;
     if let Some(tree) = layout.tree.as_mut() {
-        pass(&mut tree.root, laid_window(tree.outsets, min));
+        pass(&mut tree.root, laid_window(tree.outsets, at));
     }
     for popup in layout.popups.values_mut() {
-        let min = [popup.min_width, popup.min_height];
-        pass(&mut popup.tree.root, laid_window(popup.tree.outsets, min));
+        let at = popup_window(popup, min_height);
+        pass(&mut popup.tree.root, laid_window(popup.tree.outsets, at));
     }
 }
 
@@ -466,15 +476,16 @@ pub(super) fn each_laid(layout: &mut WindowLayout, pass: fn(&mut [SkinNode], [i3
 /// # Errors
 /// A title's picture missing from the package or not decoding.
 pub fn menus(layout: &mut WindowLayout, package: &Package<'_>) -> Result<(), SkinError> {
-    let min = [layout.min_width, layout.min_height];
+    let at = super::target::window(layout);
+    let min_height = layout.min_height;
     if let Some(tree) = layout.tree.as_mut() {
-        label_tree(&mut tree.root, tree.outsets, min, package)?;
+        label_tree(&mut tree.root, tree.outsets, at, package)?;
         tab_words(&mut tree.root);
         button_text_words(&mut tree.root);
     }
     for popup in layout.popups.values_mut() {
-        let min = [popup.min_width, popup.min_height];
-        label_tree(&mut popup.tree.root, popup.tree.outsets, min, package)?;
+        let at = popup_window(popup, min_height);
+        label_tree(&mut popup.tree.root, popup.tree.outsets, at, package)?;
         tab_words(&mut popup.tree.root);
         button_text_words(&mut popup.tree.root);
     }
