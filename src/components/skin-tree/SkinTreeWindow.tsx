@@ -216,7 +216,7 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
       .map((on) => on.kind)
       .join(" ");
   const inputRole = (): boolean =>
-    ["nameField", "statusText", "statusList", "menuBar", "views", "view", "adArea"].includes(role().kind);
+    ["nameField", "statusText", "statusList", "menuBar", "views", "view", "adArea", "infoView"].includes(role().kind);
 
   /** This node takes a pointer event only when it is the nearest node
    *  that listens (a press on a button is never its frame's window drag). */

@@ -11,6 +11,19 @@
     color: var(--color-xfire-text);
   }
 
+  /* A node with no pointer trigger takes no press: one laid over a control
+   * (Xfire Classic's tab text, TabNormalText, over its TabNormalButton,
+   * which carries the press) let the click die on the text. Presses fall
+   * through to the node that listens (data-skin-on: its triggers, or a role
+   * taking input), which takes them back; the served shape rules (a grip's
+   * hit area, a resize edge) come after these and still decide theirs. */
+  .skin-tree [data-skin-node]:not([data-skin-on]) {
+    pointer-events: none;
+  }
+  .skin-tree [data-skin-on] {
+    pointer-events: auto;
+  }
+
   .skin-tree-button,
   .skin-menu,
   .skin-status-list {
