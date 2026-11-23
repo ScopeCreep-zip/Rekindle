@@ -126,10 +126,20 @@ export function overlaps(rootEl: Element, skip: string[]): Clash[] {
   const g = (window as any).__geo;
   const items = g.candidates(rootEl, skip) as { el: Element; box: Box }[];
   const out: Clash[] = [];
+  // Whether `label` is a Host label (`.skin-node-label`) of the skin node
+  // holding `other` (defined here: a check crosses to the page as its source).
+  const ownLabel = (label: Element, other: Element): boolean => {
+    const owner = label.closest(".skin-node-label")?.parentElement?.closest("[data-skin-node]");
+    return !!owner && owner.contains(other);
+  };
   for (let i = 0; i < items.length; i++) {
     for (let j = i + 1; j < items.length; j++) {
       const a = items[i], b = items[j];
       if (a.el.contains(b.el) || b.el.contains(a.el)) continue;
+      // A Host label is its own control's words: it overlaps that control's
+      // pressing part on purpose (a text-drawn pack's menu title carries
+      // the label, its Part child the press), not a neighbour's.
+      if (ownLabel(a.el, b.el) || ownLabel(b.el, a.el)) continue;
       const ix = Math.min(a.box.x + a.box.w, b.box.x + b.box.w) - Math.max(a.box.x, b.box.x);
       const iy = Math.min(a.box.y + a.box.h, b.box.y + b.box.h) - Math.max(a.box.y, b.box.y);
       if (ix > 1 && iy > 1) out.push({ a: g.describe(a.el), b: g.describe(b.el), boxA: a.box, boxB: b.box });
