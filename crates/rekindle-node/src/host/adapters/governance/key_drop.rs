@@ -94,6 +94,15 @@ impl HostGovernance {
         let Some(transfers) = self.ctx.outbox.mek_transfers() else {
             return;
         };
+        // Read the rows and write the subkey under the community's one
+        // writer lock, so a later row set is never overwritten by an older.
+        let Some(writer) = (self.ctx.communities.map().read())
+            .get(community_id)
+            .map(|c| std::sync::Arc::clone(&c.key_drop_writer))
+        else {
+            return;
+        };
+        let _writing = writer.lock().await;
         let entries: Vec<Vec<u8>> = match transfers.sealed(community_id).await {
             Ok(rows) => rows
                 .into_iter()
@@ -201,6 +210,76 @@ impl HostGovernance {
         self.read_key_drop(community_id).await;
     }
 
+    /// Arm the key drop watch again after an unlock (the watch is not
+    /// persisted): a community we hold no key for watches its inviter's
+    /// drop, the inviter named by the merged state itself.
+    pub(crate) async fn rearm_key_drop(&self, community_id: &str) {
+        if self.holds_community_key(community_id) {
+            return;
+        }
+        if let Some(record) = self.inviter_record_of(community_id).await {
+            self.arm_key_drop(community_id, &record).await;
+        } else {
+            tracing::debug!(community_id, "key drop not re-armed: no inviter known");
+        }
+    }
+
+    /// Our inviter's member record in `community_id`: our `MemberJoined`
+    /// (from our op store) proves the invite by its code hash, the merged
+    /// `InviteCreated` with that hash names its creator, and the creator's
+    /// `MemberJoined` names its record (ADR 0011).
+    async fn inviter_record_of(&self, community_id: &str) -> Option<String> {
+        let joined = {
+            let map = self.ctx.communities.map().read();
+            let c = map.get(community_id)?;
+            let me = super::watch_ring::my_pseudonym(c)?;
+            c.governance_state.as_ref()?.members.get(&me)?.joined.hash
+        };
+        let (owner, db) = self.owner_and_db()?;
+        let community = community_id.to_owned();
+        let stored = db
+            .call(move |conn| {
+                rekindle_db::repo::governance_ops::get_op(conn, &owner, &community, &joined.0)
+            })
+            .await
+            .ok()??;
+        let op = rekindle_codec::governance_op::decode_op(&stored.op)
+            .ok()?
+            .op;
+        let rekindle_types::governance::GovernanceEntry::MemberJoined {
+            invite_proof: Some(proof),
+            ..
+        } = op.body
+        else {
+            return None;
+        };
+        let map = self.ctx.communities.map().read();
+        let state = map.get(community_id)?.governance_state.as_ref()?;
+        let inviter = state
+            .invites
+            .values()
+            .find(|invite| invite.code_hash == proof.code_hash)?
+            .creator_pseudonym
+            .clone();
+        Some(state.members.get(&inviter)?.member_record.clone())
+    }
+
+    /// Release `community_id`'s key drop watch, off the caller's task, once
+    /// we hold a key of it by any path.
+    pub(crate) fn spawn_key_drop_release(&self, community_id: &str) {
+        let armed = (self.ctx.communities.map().read())
+            .get(community_id)
+            .is_some_and(|c| c.key_drop.is_some());
+        if !armed || !self.holds_community_key(community_id) {
+            return;
+        }
+        let host = self.clone();
+        let community = community_id.to_owned();
+        self.scope().spawn_or_drop("key drop release", async move {
+            host.release_key_drop(&community).await;
+        });
+    }
+
     /// Release `community_id`'s key drop watch.
     pub(crate) async fn release_key_drop(&self, community_id: &str) {
         let lease = (self.ctx.communities.map().write())
@@ -236,7 +315,7 @@ impl HostGovernance {
         }
     }
 
-    fn take_dropped_key(&self, community_id: &str, value: &[u8]) {
+    pub(crate) fn take_dropped_key(&self, community_id: &str, value: &[u8]) {
         let Some(secret) = self.identity_secret_impl() else {
             return;
         };

@@ -109,6 +109,11 @@ pub struct CommunityState {
     /// its key drop (`M`/7), with its record key.
     #[serde(skip)]
     pub key_drop: Option<(String, rekindle_records::lease::LeaseId)>,
+    /// One writer of our own key drop at a time (plan RV2d): each write
+    /// reads the unsettled rows and replaces the whole subkey, so two
+    /// interleaved writes could publish the older row set last.
+    #[serde(skip)]
+    pub key_drop_writer: std::sync::Arc<tokio::sync::Mutex<()>>,
     /// What each member's beat shows (plan E3.4 S3): fed by the ring's
     /// beat changes, `HeadAdvanced` hints and reads, expired locally by the
     /// 15-minute rule. Its state transitions are what the ring relays as

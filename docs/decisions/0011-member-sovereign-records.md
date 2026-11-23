@@ -29,6 +29,12 @@
 - **Amended 2026-10-24** (plan E3.2 S7c and S7d-keys premise check; ADR 0022, Proposed): directory pages hold 128
   entries (Discovery), conflicting pseudonym-signed successors are not offered (Successor community), record data is
   checked against its device key (Binding), and each device also watches its own record (Notification).
+- **Amended 2026-11-23** (plan RV2d, D16): the MemberRecord's reserved subkeys are taken. Subkey 6 holds the
+  member's routes (plan E3.2 S7c.8) and subkey 7 is its **key drop**: the durable copy of each first community key
+  the member owes a joiner, the same D16 seal (an ECDH wrap to the joiner's pseudonym, no recipient field) the
+  `app_call` carries. Only `K_M(p)` writes it; a joiner watches its inviter's subkey 7 only until it holds a key,
+  tries each entry (another joiner's fails the unwrap quietly) and installs through the call path's own receive;
+  a delivered key leaves the drop.
 
 ## Context and problem statement
 
@@ -129,7 +135,8 @@ key only that member holds (vault `MemberRecordOwner{community}`).
 | 3 | DAG frontier |
 | 4 | channel outbox (blinded channel tags + spill table) |
 | 5 | history advertisement |
-| 6–7 | reserved |
+| 6 | member routes (the general private route blob every `app_call` to the member uses; plan E3.2 S7c.8) |
+| 7 | key drop: the sealed `MekTransfer` envelopes the member still owes joiners (plan RV2d, D16) |
 
 Veilid accepts writes only from the owner, so nobody else can erase or lock `M(p)`.
 

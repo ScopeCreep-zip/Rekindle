@@ -39,7 +39,11 @@ pub(crate) fn handle_mek_transfer(
         };
     };
     match governance.receive_mek_transfer(transfer) {
-        Ok(ack) => CallResponse::Ok(ack),
+        Ok(ack) => {
+            // Keyed by the call: the key drop watch is done (plan RV2d).
+            governance.spawn_key_drop_release(&transfer.community_id);
+            CallResponse::Ok(ack)
+        }
         Err(refusal) => CallResponse::Rejected {
             reason: refusal.reason().into(),
         },
