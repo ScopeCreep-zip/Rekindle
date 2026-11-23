@@ -210,16 +210,16 @@ fn clip(a: [i32; 4], holes: &[[i32; 4]]) -> String {
 /// grip's own child nodes take their presses again.
 fn grip_band(
     sel: &str,
-    n: &SkinNode,
-    t: NodeTarget,
+    grip: &SkinNode,
+    target: NodeTarget,
     holes: Option<&([i32; 4], Vec<[i32; 4]>)>,
 ) -> String {
-    let [x, y, w, h] = t.area;
-    let cut = holes.map_or(String::new(), |(a, hs)| clip(*a, hs));
+    let [left, top, width, height] = target.area;
+    let cut = holes.map_or(String::new(), |(area, cuts)| clip(*area, cuts));
     let mut rule = format!(
-        "  {sel}::before {{\n    content: \"\"; position: absolute; left: {x}px; top: {y}px; width: {w}px; height: {h}px; pointer-events: auto;{cut}\n  }}\n"
+        "  {sel}::before {{\n    content: \"\"; position: absolute; left: {left}px; top: {top}px; width: {width}px; height: {height}px; pointer-events: auto;{cut}\n  }}\n"
     );
-    if !n.children.is_empty() {
+    if !grip.children.is_empty() {
         let _ = writeln!(
             rule,
             "  {sel} > [data-skin-node] {{\n    pointer-events: auto;\n  }}"
