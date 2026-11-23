@@ -4,6 +4,7 @@
  * Calls, friend lifecycle, DMs, typing and acks all arrive this way.
  */
 
+import type { DmMessage } from "../commands/dto_dm";
 import type { SendState } from "../commands/types";
 
 /** DM / conversation message from the daemon vocabulary. */
@@ -18,6 +19,15 @@ export interface DirectMessageReceived {
   serverMessageId: string | null;
   replyToId: string | null;
   isOwn: boolean;
+}
+
+/** Our own direct message exactly as stored, once committed (plan E6.11):
+ *  every window of the conversation upserts it by `message.messageId`. Never
+ *  a peer's message, so it never notifies or counts unread. */
+export interface DirectMessageSent {
+  conversationId: string;
+  replyToId: string | null;
+  message: DmMessage;
 }
 
 /** A direct message we sent changed delivery state (the outbox's one
@@ -73,6 +83,7 @@ export interface MessagesExpired {
 
 export type ChannelMessageEvent =
   | { directMessageReceived: DirectMessageReceived }
+  | { directMessageSent: DirectMessageSent }
   | { disappearingTimerChanged: DisappearingTimerChanged }
   | { messagesExpired: MessagesExpired }
   | { dmSendStatus: DmSendStatus }

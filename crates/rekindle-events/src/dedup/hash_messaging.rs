@@ -120,6 +120,17 @@ pub(super) fn hash_channel_message(h: &mut blake3::Hasher, msg: &ChannelMessageE
             // Bucketize to 1-second granularity to tolerate clock skew across pathways
             h.update(&(timestamp / 1000).to_le_bytes());
         }
+        ChannelMessageEvent::DirectMessageSent {
+            conversation_id,
+            message,
+            ..
+        } => {
+            // One stored row per client id: its id names it.
+            h.update(b"dm_sent|");
+            h.update(conversation_id.as_bytes());
+            h.update(b"|");
+            h.update(&message.id.to_le_bytes());
+        }
         ChannelMessageEvent::DmSendStatus {
             client_id,
             conversation_id,

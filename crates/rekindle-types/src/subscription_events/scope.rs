@@ -184,7 +184,10 @@ fn channel_message_scope(e: &ChannelMessageEvent) -> EventScope {
             conversation_id,
             ..
         } => EventScope::direct(peer_key, conversation_id),
-        ChannelMessageEvent::DmSendStatus {
+        ChannelMessageEvent::DirectMessageSent {
+            conversation_id, ..
+        }
+        | ChannelMessageEvent::DmSendStatus {
             conversation_id, ..
         } => EventScope::Peer(conversation_id.clone()),
         ChannelMessageEvent::DmHistoryGap { peer_key, .. } => EventScope::Peer(peer_key.clone()),
