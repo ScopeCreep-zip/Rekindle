@@ -60,6 +60,15 @@ impl TitleGround {
     }
 }
 
+#[cfg(test)]
+thread_local! {
+    /// The [`strip_col`] evaluations on this thread: the unit of the
+    /// title's column work, which tests hold to the strip's width per
+    /// window width (`mark_title_cols` steps per source column, never per
+    /// output column).
+    static COL_EVALS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
 /// The source column under output column `x` of a strip `iw` px wide
 /// and `ih` tall with caps `left` and `right`, drawn `out` × `chrome` px
 /// with its caps scaled by `chrome / ih` (CSS Backgrounds 3 §6.3 shrinks
@@ -72,6 +81,8 @@ fn strip_col(
     (left, right): (u32, u32),
     chrome: u32,
 ) -> u32 {
+    #[cfg(test)]
+    COL_EVALS.with(|n| n.set(n.get() + 1));
     let (iw64, ih64, ch) = (u64::from(iw), u64::from(ih), u64::from(chrome));
     let w = 2 * u64::from(out) * ih64;
     let (mut lw, mut rw) = (2 * u64::from(left) * ch, 2 * u64::from(right) * ch);

@@ -107,21 +107,93 @@ fn xslimfire_measures_its_title_on_the_cropped_strip() {
     assert_eq!(g.bare(), css.contains("-title-backing: transparent"));
 }
 
+/// Strips drawn wider and narrower than their source, caps that overlap
+/// at a narrow width, and the built-ins' shapes (xSLIMFIRE's 266 × 37
+/// strip at a 28 px chrome scales its caps down): `((iw, ih), (left,
+/// right), chrome)`.
+const SHAPES: [((u32, u32), (u32, u32), u32); 6] = [
+    ((40, 56), (10, 10), 28),
+    ((266, 37), (120, 120), 28),
+    ((266, 37), (3, 200), 24),
+    ((9, 30), (2, 3), 60),
+    ((500, 20), (0, 0), 28),
+    ((100, 10), (40, 1), 40),
+];
+
+/// The output widths the column tests draw each shape at.
+fn outs() -> impl Iterator<Item = u32> {
+    (1u32..700).chain([1024, 1999, 4096])
+}
+
+/// The [`strip_col`] evaluations `f` makes on this thread.
+fn col_evals(f: impl FnOnce()) -> u64 {
+    COL_EVALS.with(|n| n.set(0));
+    f();
+    COL_EVALS.with(std::cell::Cell::get)
+}
+
+/// The most [`strip_col`] evaluations one window width may cost a strip
+/// `iw` px wide: a piece drawn at least as wide as its source evaluates
+/// its two ends, a narrower one each of its output columns, which are no
+/// more than its source columns; so the three pieces cost at most the
+/// strip's width plus their six ends, whatever the window's width.
+fn per_width_bound(iw: u32) -> u64 {
+    u64::from(iw) + 6
+}
+
+#[test]
+fn one_width_of_title_columns_costs_the_strips_width_not_the_windows() {
+    // The regression this guards (plan E7.7.7, `serve.rs` SERVE_BUDGET):
+    // one evaluation per output column, over every window width, took
+    // Xfire Classic 2.8 s and xSLIMFIRE 3.6 s per stylesheet.
+    for ((iw, ih), (left, right), chrome) in SHAPES {
+        for out in outs() {
+            let span = out.saturating_sub(2 * PAD_X) / 2;
+            let mut hit = vec![false; iw as usize];
+            let xs = PAD_X..PAD_X + span;
+            let evals = col_evals(|| {
+                mark_title_cols(&mut hit, xs, out, (iw, ih), (left, right), chrome);
+            });
+            assert!(
+                evals <= per_width_bound(iw),
+                "{iw}x{ih} caps {left}/{right} chrome {chrome} out {out}: {evals} evaluations"
+            );
+        }
+    }
+}
+
+#[test]
+fn the_title_measure_over_every_window_width_is_bounded_by_the_strip() {
+    // `strip_worst` marks the title's columns at every width of every
+    // window (`WINDOWS`), so its whole column work is bounded by the
+    // widths times the strip's width, never by the widths' own columns.
+    let widths: u64 = WINDOWS
+        .iter()
+        .map(|w| u64::from(w.max.0.max(w.min.0) - w.min.0 + 1))
+        .sum();
+    for ((iw, ih), (left, right), chrome) in SHAPES {
+        let insets = |v: u32| u16::try_from(v).expect("a cap");
+        let fit = RegionFit::NineSlice(Insets {
+            top: 0,
+            right: insets(right),
+            bottom: 0,
+            left: insets(left),
+        });
+        let image = RgbaImage::from_fn(iw, ih, |_, _| Rgba([16, 16, 16, 255]));
+        let evals = col_evals(|| {
+            strip_worst(&image, fit, chrome, None, WHITE).expect("a strip");
+        });
+        assert!(
+            evals <= widths * per_width_bound(iw),
+            "{iw}x{ih} caps {left}/{right} chrome {chrome}: {evals} evaluations over {widths} widths"
+        );
+    }
+}
+
 #[test]
 fn the_piecewise_columns_are_the_per_column_walk() {
-    // Strips drawn wider and narrower than their source, caps that
-    // overlap at a narrow width, and the built-ins' shapes (xSLIMFIRE's
-    // 266 × 37 strip at a 28 px chrome scales its caps down).
-    let shapes = [
-        ((40, 56), (10, 10), 28),
-        ((266, 37), (120, 120), 28),
-        ((266, 37), (3, 200), 24),
-        ((9, 30), (2, 3), 60),
-        ((500, 20), (0, 0), 28),
-        ((100, 10), (40, 1), 40),
-    ];
-    for ((iw, ih), (left, right), chrome) in shapes {
-        for out in (1u32..700).chain([1024, 1999, 4096]) {
+    for ((iw, ih), (left, right), chrome) in SHAPES {
+        for out in outs() {
             let span = out.saturating_sub(2 * PAD_X) / 2;
             let xs = PAD_X..PAD_X + span;
             let walked: BTreeSet<u32> = xs

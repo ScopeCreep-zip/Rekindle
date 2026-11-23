@@ -498,24 +498,16 @@ mod tests {
         assert_eq!(super::body(&c.bytes, &a, missing).unwrap(), None);
     }
 
-    /// The time one window's stylesheet may take in a debug build: the
-    /// Host answers `SkinGet` and every `tokens.css` fetch with it, every
-    /// window at once on a skin change, inside the client's 5 s
-    /// `DEFAULT_TIMEOUT` (`rekindle-client` `client.rs`). Measured at
-    /// e777t: at most about 0.6 s; before, Xfire Classic took 2.8 s and
-    /// xSLIMFIRE 3.6 s (the title's per-column walk over every window
-    /// width), so the windows kept the previous skin and the skin list
-    /// came back empty.
-    const SERVE_BUDGET: std::time::Duration = std::time::Duration::from_millis(1500);
-
+    /// Every built-in serves a stylesheet with balanced braces,
+    /// parentheses and strings and no comment. Its time is held in its
+    /// own test binary (`tests/serve_budget.rs`), and the title's column
+    /// work, the regression that budget caught, by an operation count
+    /// (`regions/title_tests.rs`).
     #[test]
-    fn every_builtin_validates_and_serves_a_balanced_sheet_in_time() {
+    fn every_builtin_validates_and_serves_a_balanced_sheet() {
         for pack in &builtin::PACKS {
             let c = validate::run(pack.bytes).unwrap_or_else(|e| panic!("{}: {e:?}", pack.id));
-            let started = std::time::Instant::now();
             let sheet = stylesheet(&c.bytes, &c.address()).expect("a stylesheet");
-            let took = started.elapsed();
-            assert!(took < SERVE_BUDGET, "{} served in {took:?}", pack.id);
             let count = |ch: char| sheet.css.matches(ch).count();
             assert_eq!(count('{'), count('}'), "{}: braces", pack.id);
             assert_eq!(count('('), count(')'), "{}: parentheses", pack.id);
