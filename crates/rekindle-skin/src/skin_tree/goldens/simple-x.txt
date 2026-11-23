@@ -2,11 +2,11 @@ Top Decor
 Logo Logo target [0, -1, 89, 24] art [0, 1, 89, 21] Size
 MenuBar MenuBar
   XfireMenuText MenuTitle label "Rekindle"
-    FileMenu Part target [0, 0, 64, 24] art [0, 0, 64, 23] Size
+    FileMenu Part target [0, 0, 64, 23] art [0, 0, 64, 23] Spacing
   ToolsMenuText MenuTitle label "Tools"
-    ToolsMenu Part target [0, 0, 64, 24] art [0, 0, 64, 23] Size
+    ToolsMenu Part target [0, 0, 64, 23] art [0, 0, 64, 23] Spacing
   HelpMenuText MenuTitle label "Help"
-    HelpMenu Part target [0, 0, 64, 24] art [0, 0, 64, 23] Size
+    HelpMenu Part target [0, 0, 64, 23] art [0, 0, 64, 23] Spacing
 UserNameField NameField target [0, -1, 252, 24] art [0, 1, 252, 22] Size
   UserNameText Part
 StatusWrapper Group
@@ -17,7 +17,7 @@ TopButtonBar Group
   MaximizeBox Button target [0, -4, 16, 24] art [0, 4, 16, 16] Short
   CloseBox Button target [0, -4, 20, 24] art [0, 4, 16, 16] Short
 Middle Decor target [0, 0, 394, 8] art [0, 0, 394, 8] Frame
-InfoViewButton Button target [-11, 0, 24, 60] art [11, 0, 13, 60] Size
+InfoViewButton Button target [0, 0, 13, 60] art [0, 0, 13, 60] Spacing
 TabbedControl Views
   BuddyView View(Friends)
     BuddyView.BvBk Part
@@ -28,12 +28,12 @@ TabbedControl Views
   TabbedControl.Communities View(Communities)
 TabHeader TabStrip
   TabNormalText Tab(Friends) label "Friends"
-    TabNormalButton Part target [0, -2, 64, 24] art [0, 2, 64, 20] Size
+    TabNormalButton Part target [0, -2, 64, 22] art [0, 2, 64, 20] Spacing
   TabServerText Tab(Servers) label "Servers"
-    TabServerButton Part target [0, -2, 64, 24] art [0, 2, 64, 20] Size
+    TabServerButton Part target [0, -2, 64, 22] art [0, 2, 64, 20] Spacing
   TabDownloadText Tab(Files) label "Downloads"
-    TabDownloadButton Part target [0, -2, 64, 24] art [0, 2, 64, 20] Size
-  TabDownloadText.Communities Tab(Communities) label "Communities" cover [6, 3, 48, 9] target [0, -4, 60, 24] art [0, 4, 60, 15] Size
+    TabDownloadButton Part target [0, -2, 64, 22] art [0, 2, 64, 20] Spacing
+  TabDownloadText.Communities Tab(Communities) label "Communities" cover [6, 3, 48, 9] target [0, -4, 60, 19] art [0, 4, 60, 15] Spacing
     TabDownloadButton.Communities Part
 Bottom Decor target [0, 0, 394, 170] art [0, 0, 394, 170] Frame
 AdArea AdArea

@@ -48,12 +48,12 @@ InnerBevel Decor
   Divider Decor
   TabHeader TabStrip
     TabNormalText Tab(Friends) label "Friends"
-      TabNormalButton Part target [0, -4, 62, 24] art [0, 4, 62, 16] Size
+      TabNormalButton Part target [0, -4, 62, 20] art [0, 4, 62, 16] Spacing
     TabServerText Tab(Servers) label "Servers"
-      TabServerButton Part target [0, -4, 62, 24] art [0, 4, 62, 16] Size
+      TabServerButton Part target [0, -4, 62, 20] art [0, 4, 62, 16] Spacing
     TabDownloadText Tab(Files) label "Downloads"
-      TabDownloadButton Part target [0, -4, 62, 24] art [0, 4, 62, 16] Size
-    TabDownloadText.Communities Tab(Communities) label "Communities" target [0, -4, 156, 24] art [0, 4, 156, 15] Size
+      TabDownloadButton Part target [0, -4, 62, 20] art [0, 4, 62, 16] Spacing
+    TabDownloadText.Communities Tab(Communities) label "Communities" target [0, -4, 156, 19] art [0, 4, 156, 15] Spacing
       TabDownloadButton.Communities Part
   TabbedControl Views
     BuddyView View(Friends)
@@ -65,7 +65,7 @@ InnerBevel Decor
     TabbedControl.Communities View(Communities)
 BottomBar Group
   PartnerGraphic Decor
-    PartnerFrame Decor target [-8, -3, 24, 24] art [8, 3, 8, 18] Size
+    PartnerFrame Decor target [-8, -2, 24, 23] art [8, 2, 8, 18] Spacing
 InfoViewButton Button target [-11, 0, 24, 70] art [11, 0, 13, 70] Size
 popup MainInfoViewPopup
   InfoTopRow Decor

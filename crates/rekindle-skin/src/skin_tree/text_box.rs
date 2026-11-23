@@ -131,11 +131,14 @@ fn obstacles(
     nodes: &[SkinNode],
     parent: [i32; 4],
     up: &[String],
-    targets: &Targets,
+    (targets, view): (&Targets, Option<ViewKey>),
     out: &mut Vec<Obstacle>,
 ) {
     for n in nodes {
         let b = place(n, parent);
+        // A node shows with its own view or its nearest ancestor's (Simple-X's
+        // `BigBrowseFileText` under the Files row's `SearchFiles`).
+        let shows = n.shows_with.or(view);
         let blocker = n.interactive() && !is_text(n.role) && n.resize_edge().is_none();
         let area = if blocker {
             Some(reach(n, extent(n, b, targets), targets))
@@ -148,14 +151,14 @@ fn obstacles(
             out.push(Obstacle {
                 id: n.id.clone(),
                 up: up.to_vec(),
-                shows: n.shows_with,
+                shows,
                 blocker,
                 b,
             });
         }
         let mut own = up.to_vec();
         own.push(n.id.clone());
-        obstacles(&n.children, b, &own, targets, out);
+        obstacles(&n.children, b, &own, (targets, shows), out);
     }
 }
 
@@ -163,9 +166,13 @@ fn obstacles(
 /// ancestors (`up`) or descendants, not another view's, and not a
 /// blocking sibling (counted by [`usable`] with its span).
 fn stops(n: &SkinNode, up: &[String], all: &[Obstacle]) -> Vec<[i32; 4]> {
+    let mine = all
+        .iter()
+        .find(|o| o.id == n.id && o.up == up)
+        .map_or(n.shows_with, |o| o.shows);
     all.iter()
         .filter(|o| {
-            let apart = o.shows.is_some() && n.shows_with.is_some() && o.shows != n.shows_with;
+            let apart = o.shows.is_some() && mine.is_some() && o.shows != mine;
             o.id != n.id
                 && !o.up.contains(&n.id)
                 && !up.contains(&o.id)
@@ -349,7 +356,7 @@ fn lay_tree(tree: &mut SkinTree, window: (i32, i32)) {
     let targets = targets(tree, window);
     let at = laid_window(tree.outsets, window);
     let mut all = Vec::new();
-    obstacles(&tree.root, at, &[], &targets, &mut all);
+    obstacles(&tree.root, at, &[], (&targets, None), &mut all);
     walk(&mut tree.root, at, &[], &targets, &all);
 }
 

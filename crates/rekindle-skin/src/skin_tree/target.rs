@@ -39,6 +39,7 @@ use rekindle_types::dto::skin::WindowLayout;
 use rekindle_types::dto::skin_action::NodeTrigger;
 use rekindle_types::dto::skin_tree::{Edge, NodeRole, NodeTarget, SkinNode, SkinTree, TargetRule};
 
+use super::keep;
 use super::validate::{hit_area, overlap, text_sized, Apart, HIT};
 
 /// One candidate laid in the window.
@@ -73,7 +74,7 @@ pub fn outer(art: [i32; 4], t: NodeTarget) -> [i32; 4] {
 
 /// Where `b` lies from `a` along `axis`: after it (`true`) or before it,
 /// and the gap between them; `None` when they meet along it.
-fn side(a: [i32; 4], b: [i32; 4], axis: usize) -> Option<(bool, i32)> {
+pub(super) fn side(a: [i32; 4], b: [i32; 4], axis: usize) -> Option<(bool, i32)> {
     let (a0, a1) = (a[axis], a[axis] + a[axis + 2]);
     let (b0, b1) = (b[axis], b[axis] + b[axis + 2]);
     if b0 >= a1 {
@@ -149,64 +150,6 @@ fn yield_to(g: &mut [i32; 4], a: [i32; 4], b: [i32; 4]) {
     }
 }
 
-/// Whether the node `id` of `root` is `n`, lies under it, or holds it
-/// (a text-drawn title over its button part).
-fn kin(root: &[SkinNode], n: &SkinNode, id: &str) -> bool {
-    fn holds(n: &SkinNode, id: &str) -> bool {
-        n.id == id || n.children.iter().any(|c| holds(c, id))
-    }
-    fn find<'a>(nodes: &'a [SkinNode], id: &str) -> Option<&'a SkinNode> {
-        nodes
-            .iter()
-            .find_map(|m| (m.id == id).then_some(m).or_else(|| find(&m.children, id)))
-    }
-    holds(n, id) || find(root, id).is_some_and(|m| holds(m, &n.id))
-}
-
-/// Cuts `g` (the target box of the node at `a`) back so it meets `o` no
-/// further than `a`'s art does (plan SK12): `o` is the views (`views`, the
-/// app's content: Simple-X's menu buttons end 5 px into it, over the
-/// buddy search field, so their targets stop at the art) or a served text
-/// box (Onyx's `Title` starts 2 px inside its `Logo`'s 24 px target). The
-/// cut is along the axis `a` and `o` are apart on (the larger gap, x on a
-/// tie), the whole gap `a`'s: `o` serves no target into it. An art laid
-/// over a text keeps the pack's stacking; an art over the views is cut on
-/// the axis it sticks out of them on; one inside them is theirs.
-fn keep_out(g: &mut [i32; 4], a: [i32; 4], o: [i32; 4], views: bool) {
-    if !overlap(*g, o) {
-        return;
-    }
-    let (axis, after) = match (side(a, o, 0), side(a, o, 1)) {
-        (Some((ax, gx)), Some((ay, gy))) if gy > gx => (1, ay),
-        (Some((ax, _)), _) => (0, ax),
-        (None, Some((ay, _))) => (1, ay),
-        (None, None) if views => {
-            let out = (0..2).rev().find_map(|axis| {
-                if a[axis] < o[axis] {
-                    Some((axis, true))
-                } else if a[axis] + a[axis + 2] > o[axis] + o[axis + 2] {
-                    Some((axis, false))
-                } else {
-                    None
-                }
-            });
-            let Some(out) = out else { return };
-            out
-        }
-        (None, None) => return,
-    };
-    if after {
-        let end = o[axis].max(a[axis] + a[axis + 2]);
-        g[axis + 2] = g[axis + 2].min(end - g[axis]);
-    } else {
-        let start = (o[axis] + o[axis + 2]).min(a[axis]);
-        if g[axis] < start {
-            g[axis + 2] -= start - g[axis];
-            g[axis] = start;
-        }
-    }
-}
-
 /// The squared distance, in half pixels, from the centre of `c` to `r`.
 fn far(c: [i32; 4], r: [i32; 4]) -> i64 {
     let gap = |at: i32, len: i32, lo: i32, size: i32| {
@@ -243,20 +186,8 @@ pub fn targets(tree: &SkinTree, window: (i32, i32)) -> Vec<Laid> {
         })
         .collect();
     let want: Vec<[i32; 4]> = live.iter().map(|(_, b)| hit_area(*b, window)).collect();
-    // Plan SK12: the boxes no target grows over: the views (the app's
-    // content) and every served text box (its rows, at least one).
-    let keep: Vec<(&str, [i32; 4], bool)> = tree
-        .boxes(window.0, window.1)
-        .into_iter()
-        .filter_map(|(n, b)| {
-            if n.role == NodeRole::Views {
-                Some((n.id.as_str(), b, true))
-            } else {
-                let text = super::text_box::draws_text(n) && b[2] > 0;
-                text.then_some((n.id.as_str(), [b[0], b[1], b[2], b[3].max(1)], false))
-            }
-        })
-        .collect();
+    // Plan SK12: no target grows over the views or a served text box.
+    let kept = keep::boxes(tree, window);
     let near = |i: usize, j: usize| {
         i != j && !apart.apart(&live[i].0.id, &live[j].0.id) && !overlap(live[i].1, live[j].1)
     };
@@ -274,9 +205,9 @@ pub fn targets(tree: &SkinTree, window: (i32, i32)) -> Vec<Laid> {
             for j in (0..live.len()).filter(|&j| laid_over(j)) {
                 yield_to(&mut g, live[i].1, live[j].1);
             }
-            for (id, o, views) in &keep {
-                if !apart.apart(&live[i].0.id, id) && !kin(&tree.root, live[i].0, id) {
-                    keep_out(&mut g, live[i].1, *o, *views);
+            for (id, o, views) in &kept {
+                if !apart.apart(&live[i].0.id, id) && !keep::kin(&tree.root, live[i].0, id) {
+                    keep::keep_out(&mut g, live[i].1, *o, *views);
                 }
             }
             g
