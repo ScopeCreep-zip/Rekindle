@@ -309,6 +309,7 @@ fn manifest(tree: &Tree, id: &str, read: &Read, source: &str, base: SkinBase) ->
             .collect()
     };
     SkinManifest {
+        text: BTreeMap::new(),
         format: format!("{SKIN_FORMAT_PREFIX}{SKIN_FORMAT_MAJOR}"),
         id: id.to_owned(),
         name: id.to_owned(),

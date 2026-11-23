@@ -99,6 +99,7 @@ fn slug(name: &str) -> String {
 
 fn manifest_of(draft: &SkinDraft, carried: assets::Carried) -> SkinManifest {
     SkinManifest {
+        text: BTreeMap::new(),
         format: format!("{SKIN_FORMAT_PREFIX}{SKIN_FORMAT_MAJOR}"),
         id: slug(&draft.name),
         name: draft.name.clone(),

@@ -1093,6 +1093,21 @@
       "kind": "app"
     }
   ],
+  "skin.layout_source.chat": "chat",
+  "skin.layout_source.main": "main",
+  "skin.layout_source.room": "room",
+  "skin.manifest.text": {
+    "listHeader": {
+      "bold": true,
+      "colour": "#C8D7E6",
+      "font": "Arial",
+      "size": 11
+    },
+    "menu": {
+      "font": "Tahoma",
+      "size": 11
+    }
+  },
   "skin.menuRegistry": {
     "menus": [
       {
@@ -1606,5 +1621,8 @@
       "arg": "disabled",
       "kind": "setState"
     }
-  }
+  },
+  "skin.window.chat": "chat",
+  "skin.window.community": "community",
+  "skin.window.main": "main"
 }

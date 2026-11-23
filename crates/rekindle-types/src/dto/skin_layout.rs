@@ -15,6 +15,83 @@ pub enum SkinWindow {
     Main,
     /// A conversation window (Xfire's `<ChatSkin>`).
     Chat,
+    /// The Community window, which Xfire never drew: composed from the
+    /// pack's room window (`<GroupChatSkin>`), else its chat, else its buddy
+    /// list (plan SK17).
+    Community,
+}
+
+/// The pack component a window's layout was composed from (plan SK17), in
+/// the Community window's source order. It becomes `WindowLayout.source`
+/// when the importers write it and regenerate the built-ins (SK17-2/-3):
+/// a committed built-in is the pipeline's fixed point, so a field it lacks
+/// cannot be added without rewriting it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum LayoutSource {
+    /// The pack's room window (`<GroupChatSkin>`, INI `GroupChatSkin=`).
+    Room,
+    /// The pack's conversation window (`<ChatSkin>`).
+    Chat,
+    /// The pack's buddy list (`<MainSkin>`).
+    Main,
+}
+
+/// A text role whose face a pack declares (plan SK17-4): the key of the
+/// manifest's `text`, served as `--skin-text-<role>-*`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum TextRole {
+    /// A window's title lettering.
+    Title,
+    /// A list row (a buddy, a channel, a member).
+    ListItem,
+    /// A list's group or category header.
+    ListHeader,
+    /// The menu row.
+    Menu,
+    /// The composer and other text fields.
+    Input,
+    /// A sender's name in a conversation.
+    ChatName,
+}
+
+/// The `manifest.icons` keys the importers fill for the Community window
+/// (plan SK17-5): the one source of the names, never spelled again.
+pub mod community_icon {
+    /// A voice channel (Xfire's `VoiceServer` icon).
+    pub const VOICE_SERVER: &str = "voice.server";
+    /// The microphone open.
+    pub const MIC_ON: &str = "mic.on";
+    /// The microphone muted.
+    pub const MIC_OFF: &str = "mic.off";
+    /// The speaker on.
+    pub const SPEAKER_ON: &str = "speaker.on";
+    /// The speaker muted.
+    pub const SPEAKER_MUTED: &str = "speaker.muted";
+    /// The speaker off (deafened).
+    pub const SPEAKER_OFF: &str = "speaker.off";
+    /// A category's fold arrow, open.
+    pub const FOLD_OPEN: &str = "fold.open";
+    /// A category's fold arrow, closed.
+    pub const FOLD_CLOSED: &str = "fold.closed";
+    /// A room (the community itself).
+    pub const ROOM: &str = "room";
+    /// A text channel.
+    pub const CHAT: &str = "chat";
+    /// Every name above, in plan order.
+    pub const ALL: [&str; 10] = [
+        VOICE_SERVER,
+        MIC_ON,
+        MIC_OFF,
+        SPEAKER_ON,
+        SPEAKER_MUTED,
+        SPEAKER_OFF,
+        FOLD_OPEN,
+        FOLD_CLOSED,
+        ROOM,
+        CHAT,
+    ];
 }
 
 /// How a frame tile is placed along one axis of its box (plan SK0 S1):
