@@ -8,6 +8,7 @@ import ToastContainer from "./components/common/Toast";
 import KeyboardShortcutsDialog from "./components/common/KeyboardShortcutsDialog";
 import { useWindowInactive } from "./hooks/useWindowInactive";
 import { useSkin } from "./hooks/useSkin";
+import { useAppearanceChord } from "./hooks/useAppearanceChord";
 
 // Lazy-load window components so each webview only compiles
 // the module tree it actually renders (login → 1 tree, not 6).
@@ -32,6 +33,8 @@ function App() {
   useWindowInactive();
   // Every window shows the device's skin and follows its changes.
   useSkin();
+  // Mod+, opens Appearance from any window (plan SK14).
+  useAppearanceChord(route);
 
   onMount(() => {
     setRoute(window.location.pathname);

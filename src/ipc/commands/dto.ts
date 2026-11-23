@@ -468,6 +468,10 @@ export interface SkinEntry {
   importedAt: number | null;
   /// Who made it, as the skin states it; a library skin's are self-claimed.
   credits: SkinCredits | null;
+  /// The controls it serves under 24 px, in every window and popup (plan SK14).
+  shortTargets: number;
+  /// It serves none under 24 px (`shortTargets == 0`): a conforming alternate.
+  conforming: boolean;
 }
 
 /// A skin's human credits (`rekindle_types::dto::skin::SkinCredits`).

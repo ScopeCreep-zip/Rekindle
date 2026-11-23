@@ -103,10 +103,20 @@ const AppearanceTab: Component = () => {
           type="radio"
           name="skin"
           checked={shown() === skin.id}
+          aria-describedby={`skin-access-${index()}`}
           onChange={() => void run(() => commands.selectSkin(skin.id))}
         />
         <span class="buddy-name skin-name">{skin.name}</span>
       </label>
+      {/* How the skin sizes its controls (plan SK14): a faithful skin keeps
+          its art's small controls; a conforming one serves none under 24 px.
+          An imported pack is the author's, unchecked by us. */}
+      <span class="skin-access" id={`skin-access-${index()}`}>
+        {skin.conforming
+          ? "Meets target sizes"
+          : `${skin.shortTargets} control${skin.shortTargets === 1 ? "" : "s"} under 24 px`}
+        {skin.importedAt !== null ? "; an imported skin may not meet accessibility sizes" : ""}
+      </span>
       <Show when={library()?.login === skin.id}>
         <span class="skin-badge">Login skin</span>
       </Show>

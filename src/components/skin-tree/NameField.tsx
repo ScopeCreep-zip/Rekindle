@@ -29,7 +29,7 @@ const NameField: Component<{ attrs: Record<string, unknown>; edit: number; child
       <Show
         when={editing()}
         fallback={
-          <span class="skin-name-text" role="heading" aria-level="1">
+          <span class="skin-name-text" role="heading" aria-level="1" title={authState.displayName ?? undefined}>
             {authState.displayName ?? "Unknown"}
           </span>
         }
