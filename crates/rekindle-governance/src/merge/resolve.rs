@@ -5,10 +5,11 @@ use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, HashMap};
 use std::hash::{Hash, Hasher};
 
-use rekindle_types::governance::OpHash;
+use rekindle_types::governance::{GenesisCert, OpHash};
 use rekindle_types::id::PseudonymKey;
 
-use crate::device_judge::DeviceView;
+use super::judge::Judge;
+use crate::device_judge::{DeviceView, KeyJudgement, KeyRefusal};
 use crate::op::VerifiedOp;
 
 /// The op set `merge` resolves: complete (every dep present), in stamp
@@ -26,7 +27,15 @@ pub(super) struct OpSet<'a> {
     /// its device key at the fork seq outside its own causal past (the op a
     /// reader must hold to have seen the fork).
     pub fork_cause: Vec<Option<usize>>,
-    /// Ops whose deps are missing from the set (`pending_deps`).
+    /// Per op: why its device key is not effective for its author at its
+    /// deps (`merge::judge`, ADR 0022 rule 6). Such an op stays in the set
+    /// as ancestry only, its device elements harvested (rule 2), and is
+    /// left out of every round.
+    pub device_refused: Vec<Option<KeyRefusal>>,
+    /// Ops whose deps are missing from the set (`pending_deps`), and ops
+    /// whose device key is pending for their author at their deps (an
+    /// unendorsed key is treated as a missing dep, rule 6), with every op
+    /// that cites one.
     pub pending: Vec<OpHash>,
     /// Device keys that signed two different ops at one seq of their
     /// chain, each with its author and the lowest such seq (its fork).
@@ -132,7 +141,16 @@ impl Hash for IndexKey {
     }
 }
 
-pub(super) fn prepare(ops: &[VerifiedOp]) -> OpSet<'_> {
+impl OpSet<'_> {
+    /// Per op: left out of every round besides the gates' (its device key
+    /// refused, `device_refused`).
+    pub(super) fn judged_out(&self) -> Vec<bool> {
+        self.device_refused.iter().map(Option::is_some).collect()
+    }
+}
+
+/// Prepare `ops` of the community `cert` pins (module doc).
+pub(super) fn prepare<'a>(cert: &GenesisCert, ops: &'a [VerifiedOp]) -> OpSet<'a> {
     let mut sorted: Vec<&VerifiedOp> = ops.iter().collect();
     sorted.sort_by_key(|op| op.stamp());
     sorted.dedup_by_key(|op| op.hash());
@@ -159,18 +177,19 @@ pub(super) fn prepare(ops: &[VerifiedOp]) -> OpSet<'_> {
             *slot = (*slot).min(seq);
         }
     }
-    let author_of: HashMap<[u8; 32], PseudonymKey> = (sorted.iter())
-        .filter(|op| fork_at.contains_key(&op.op().device_key))
-        .map(|op| (op.op().device_key, op.author().clone()))
-        .collect();
-
     let mut index: HashMap<IndexKey, usize> = HashMap::with_capacity(sorted.len());
     let mut kept: Vec<&VerifiedOp> = Vec::with_capacity(sorted.len());
     let mut past = Ancestry::with_capacity(sorted.len());
     let mut deps: Vec<usize> = Vec::new();
     let mut pending = Vec::new();
     let mut forked = Vec::with_capacity(sorted.len());
+    let mut device_refused = Vec::with_capacity(sorted.len());
     let mut devices = DeviceView::default();
+    let mut judge = Judge::new(cert);
+    // A forked key's author, from an op whose key is not judged pending
+    // (an op whose key no one endorsed for its claimed author names no
+    // equivocator).
+    let mut author_of: HashMap<[u8; 32], PseudonymKey> = HashMap::new();
     for op in sorted {
         // An out-of-bounds or forked op stays in the DAG (validation
         // refuses the one, `forked` leaves the other out of every round),
@@ -182,17 +201,36 @@ pub(super) fn prepare(ops: &[VerifiedOp]) -> OpSet<'_> {
                 .map(|&i| deps.push(i))
                 .is_some()
         });
+        let note_fork = |author_of: &mut HashMap<[u8; 32], PseudonymKey>| {
+            if fork_at.contains_key(&op.op().device_key) {
+                (author_of.entry(op.op().device_key)).or_insert_with(|| op.author().clone());
+            }
+        };
         if !complete {
+            note_fork(&mut author_of);
             pending.push(op.hash());
             continue;
         }
+        // Judged after `complete`: a key pending for its author is a
+        // missing dep, never harvested (lead decision K4b Q5).
+        let refused = match judge.judge(&kept, &past, &deps, op) {
+            KeyJudgement::Effective => None,
+            KeyJudgement::Pending(_) => {
+                pending.push(op.hash());
+                continue;
+            }
+            KeyJudgement::Refused(why) => Some(why),
+        };
+        note_fork(&mut author_of);
         index.insert(IndexKey(op.hash()), kept.len());
         forked.push(
             fork_at
                 .get(&op.op().device_key)
                 .is_some_and(|seq| op.op().seq >= *seq),
         );
+        device_refused.push(refused);
         devices.harvest(op);
+        judge.note(kept.len(), op);
         kept.push(op);
         past.push(&deps);
     }
@@ -202,6 +240,7 @@ pub(super) fn prepare(ops: &[VerifiedOp]) -> OpSet<'_> {
         past,
         forked,
         fork_cause,
+        device_refused,
         pending,
         equivocators: (fork_at.into_iter())
             .filter_map(|(key, seq)| Some((author_of.get(&key)?.clone(), key, seq)))
@@ -279,7 +318,9 @@ mod tests {
             order in proptest::collection::vec(any::<u32>(), 1..400),
         ) {
             let ops = dag(n, &picks);
-            let set = prepare(&ops);
+            let creator = PseudonymKey([0; 32]);
+            let cert = crate::fixture::cert(&creator, rekindle_types::governance::AdmissionMode::Open);
+            let set = prepare(&cert, &ops);
             let at = |h| set.ops.iter().position(|o| o.hash() == h);
             let mut reach = vec![vec![false; set.ops.len()]; set.ops.len()];
             for i in 0..set.ops.len() {

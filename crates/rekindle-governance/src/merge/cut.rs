@@ -16,12 +16,13 @@ use crate::state::GovernanceState;
 /// (`checkpoint::state_root`).
 #[must_use]
 pub fn merge_cut(cert: &GenesisCert, cut_ops: &[VerifiedOp]) -> (GovernanceState, CutIndex) {
-    let set = resolve::prepare(cut_ops);
+    let set = resolve::prepare(cert, cut_ops);
     let (round, _, _, _) = ancestry::settle(cert, &set).settled;
-    // A forked op is ancestry only (ADR 0022 rule 5): the cut index counts
+    // A forked op is ancestry only (ADR 0022 rule 5), as is an op whose
+    // device key is refused for its author (rule 6): the cut index counts
     // the merged ops, and `forks` names the fork. Every map is per device
     // key: a seq numbers its key's chain (ADR 0022 rule 1).
-    let merged = |i: &usize| !set.forked[*i];
+    let merged = |i: &usize| !set.forked[*i] && set.device_refused[*i].is_none();
     let mut authors: BTreeMap<[u8; 32], CutOp> = BTreeMap::new();
     let mut lamports: BTreeMap<[u8; 32], u64> = BTreeMap::new();
     for op in (0..set.ops.len()).filter(merged).map(|i| set.ops[i]) {

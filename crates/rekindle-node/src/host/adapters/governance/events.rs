@@ -41,6 +41,16 @@ fn op_quarantined(
             QuarantineReason::AuthorityQuarantined { .. } => {
                 OpQuarantineReason::AuthorityQuarantined
             }
+            QuarantineReason::DeviceKey { refusal } => {
+                use rekindle_governance::device_judge::KeyRefusal;
+                match refusal {
+                    KeyRefusal::Retired => OpQuarantineReason::DeviceKeyRetired,
+                    KeyRefusal::Inert => OpQuarantineReason::DeviceKeyInert,
+                    KeyRefusal::OverCap => OpQuarantineReason::DeviceKeyOverCap,
+                    KeyRefusal::NeedsReadmit => OpQuarantineReason::DeviceKeyNeedsReadmit,
+                    KeyRefusal::RecordTaken => OpQuarantineReason::DeviceKeyRecordTaken,
+                }
+            }
         },
         cause: reason.cause().map(|cause| hex::encode(cause.0)),
     }
