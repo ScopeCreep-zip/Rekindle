@@ -91,6 +91,7 @@ impl HostGovernance {
         let now = friends.clock().now_ms();
         let ctx = context(community_id, channel_id);
         let draft = decide(&mut friends.stores().typing_out.lock(), ctx, typing, now);
+        tracing::debug!(community = %community_id, ?draft, typing, "channel typing draft");
         match draft {
             Draft::Started => {
                 self.watch_channel_idle(&friends, community_id, channel_id);
