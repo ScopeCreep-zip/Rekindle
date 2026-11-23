@@ -23,7 +23,7 @@ BaseBoard Group
       InfoButton2 Button
     FilesButtons ButtonRow(Files)
       BigBrowseFileButton Button
-        BigBrowseFileText Part
+        BigBrowseFileText Part label "Find"
   StatusWrapper Group
   StatusEdit StatusText
   DownArrow StatusList

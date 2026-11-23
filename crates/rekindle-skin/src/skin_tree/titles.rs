@@ -347,6 +347,81 @@ fn tab_words(nodes: &mut [SkinNode]) {
     }
 }
 
+/// The Host's words for a button by the action its press runs (plan SK6b):
+/// the one names table for the button rows a pack draws as text. The
+/// app's own wording where the shell already names the action
+/// (`src/components/buddy-list/BottomActionBar.tsx:46` "Add Friend";
+/// `DownloadsTab.tsx:64-66` "Start", "Stop", "Execute"); else the Xfire
+/// string the pack's component names (`ChatButton`, `GameButton`,
+/// `InfoButton`, `AddServerButton`, `RefreshButton`, `FindButton`, the info
+/// popup's `HostChatButton`/`JoinChatButton`/`LeaveChatButton`), worded for
+/// the Rekindle action it runs (`ProfileFriend` opens the profile;
+/// the voice buttons host, join and leave a voice chat). `None`: an action
+/// no built-in's text button runs.
+#[must_use]
+pub const fn button_words(action: &SkinAction) -> Option<&'static str> {
+    Some(match action {
+        SkinAction::AddFriend => "Add Friend",
+        SkinAction::ChatFriend => "Chat",
+        SkinAction::JoinFriend => "Join",
+        SkinAction::ProfileFriend => "Profile",
+        SkinAction::AddServer => "Add Server",
+        SkinAction::RefreshServer => "Refresh",
+        SkinAction::DownloadInfo => "Find",
+        SkinAction::StartDownload => "Start",
+        SkinAction::StopDownload => "Stop",
+        SkinAction::OpenDownload => "Execute",
+        SkinAction::HostVoiceChat => "Host Voice",
+        SkinAction::VoiceChat => "Join Voice",
+        SkinAction::LeaveVoiceChat => "Leave Voice",
+        _ => return None,
+    })
+}
+
+/// Whether `n` is a text component of a button: a [`NodeRole::Part`] with
+/// no art and no label, named for its text (the packs' `Class="Text"`
+/// components are `<Name>Text`: StealthX's `ChatButtonText`, Classic's
+/// `BigBrowseFileText`, as their tabs' `TabNormalText`,
+/// `xfirecomponents.xml:1071-1079`). The importer keeps no class, and the
+/// role table types tiles by name ([`super::roles`]); a button's other
+/// art-less part, the info popup's `TalkingStateButton` (a state tile the
+/// engine draws while the user talks), is not named for text.
+fn is_button_text(n: &SkinNode) -> bool {
+    let name = n.id.rsplit('.').next().unwrap_or(&n.id);
+    n.role == NodeRole::Part
+        && n.art.is_none()
+        && n.label.is_none()
+        && name.len() > 4
+        && name.as_bytes()[name.len() - 4..].eq_ignore_ascii_case(b"text")
+}
+
+/// Labels every button's text component (plan SK6b): the button's word is
+/// a string of the Xfire binary (the `.rkskin` carries none, as with
+/// [`tab_words`]), so the text part serves the Host's words for the action
+/// the button's press runs ([`button_words`]): `{text}`, no cover, no
+/// glyph. A button whose art draws its word has no such part.
+fn button_text_words(nodes: &mut [SkinNode]) {
+    for n in nodes {
+        if n.role == NodeRole::Button {
+            let words = n
+                .triggers
+                .iter()
+                .find(|t| t.presses())
+                .and_then(|t| button_words(&t.run));
+            if let Some(words) = words {
+                for c in n.children.iter_mut().filter(|c| is_button_text(c)) {
+                    c.label = Some(NodeLabel {
+                        text: words.to_owned(),
+                        cover: None,
+                        glyph: None,
+                    });
+                }
+            }
+        }
+        button_text_words(&mut n.children);
+    }
+}
+
 fn label_tree(
     root: &mut [SkinNode],
     outsets: Insets,
@@ -372,7 +447,8 @@ pub(super) fn laid_window(outsets: Insets, min: [u16; 2]) -> [i32; 4] {
 
 /// Labels every menu title in `layout`'s tree and popups (see the module
 /// doc), laid at the window's minimum size, and every tab the pack
-/// draws as text ([`tab_words`]).
+/// draws as text ([`tab_words`]) and every button's text component
+/// ([`button_text_words`]).
 ///
 /// # Errors
 /// A title's picture missing from the package or not decoding.
@@ -381,11 +457,13 @@ pub fn menus(layout: &mut WindowLayout, package: &Package<'_>) -> Result<(), Ski
     if let Some(tree) = layout.tree.as_mut() {
         label_tree(&mut tree.root, tree.outsets, min, package)?;
         tab_words(&mut tree.root);
+        button_text_words(&mut tree.root);
     }
     for popup in layout.popups.values_mut() {
         let min = [popup.min_width, popup.min_height];
         label_tree(&mut popup.tree.root, popup.tree.outsets, min, package)?;
         tab_words(&mut popup.tree.root);
+        button_text_words(&mut popup.tree.root);
     }
     Ok(())
 }

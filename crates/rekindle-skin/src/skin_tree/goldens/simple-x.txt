@@ -60,7 +60,7 @@ ButtonHolder ButtonBar
   FilesButtons ButtonRow(Files)
     FilesButtons.TabAddButton Group
       SearchFiles Button
-        BigBrowseFileText Part
+        BigBrowseFileText Part label "Find"
 ResizeUp Button
 ResizeLeft Button
 ResizeRight Button

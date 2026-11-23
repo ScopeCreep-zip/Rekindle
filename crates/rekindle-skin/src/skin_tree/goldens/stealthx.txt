@@ -44,35 +44,35 @@ popup MainMenuPopup
     ButtonArea ButtonBar
       FriendsButtons ButtonRow(Friends)
         AddFriendButton Button
-          AddFriendButtonText Part
+          AddFriendButtonText Part label "Add Friend"
         ChatButton Button
-          ChatButtonText Part
+          ChatButtonText Part label "Chat"
         GameButton1 Button
-          GameButton1.GameButtonText Part
+          GameButton1.GameButtonText Part label "Join"
         InfoButton1 Button
-          InfoButton1.InfoButtonText Part
+          InfoButton1.InfoButtonText Part label "Profile"
       ServersButtons ButtonRow(Servers)
         AddServerButton Button
-          AddServerButtonText Part
+          AddServerButtonText Part label "Add Server"
         RefreshButton Button
-          RefreshButtonText Part
+          RefreshButtonText Part label "Refresh"
         GameButton2 Button
-          GameButton2.GameButtonText Part
+          GameButton2.GameButtonText Part label "Join"
         InfoButton2 Button
-          InfoButton2.InfoButtonText Part
+          InfoButton2.InfoButtonText Part label "Profile"
       FilesButtons ButtonRow(Files)
         FindButton Button
-          FindButtonText Part
+          FindButtonText Part label "Find"
         DownloadButton Button
-          DownloadButtonText Part
+          DownloadButtonText Part label "Start"
         StopButton Button
-          StopButtonText Part
+          StopButtonText Part label "Stop"
         ExecuteButton Button
-          ExecuteButtonText Part
+          ExecuteButtonText Part label "Execute"
     InfoJoinChatTab ButtonBar
       HostChatButton Button
-        HostChatButtonText Part
+        HostChatButtonText Part label "Host Voice"
       JoinChatButton Button
-        JoinChatButtonText Part
+        JoinChatButtonText Part label "Join Voice"
       LeaveChatButton Button
-        LeaveChatButtonText Part
+        LeaveChatButtonText Part label "Leave Voice"
