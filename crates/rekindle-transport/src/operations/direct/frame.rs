@@ -168,11 +168,13 @@ pub async fn open(host: &dyn FriendHost, bytes: &[u8]) -> Result<Opened, Dropped
     // its session and is held (plan E2.5i R2-2); a sealed one never is.
     let hold = super::held::holds(kind, status) && !matches!(frame.body, FrameBody::Sealed(_));
     if !hold && !admission::frame_admitted(host, &sender_hex, kind, status, init).await {
-        return Err(if admission::not_yet(status) {
-            Dropped::NotYet
-        } else {
-            Dropped::Refused
-        });
+        return Err(
+            if admission::refused_for_now(host, &sender_hex, kind, status, init).await {
+                Dropped::NotYet
+            } else {
+                Dropped::Refused
+            },
+        );
     }
     let mut opened = match frame.body {
         FrameBody::Sealed(sealed) => {

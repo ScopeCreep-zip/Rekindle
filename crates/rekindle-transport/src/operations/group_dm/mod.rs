@@ -22,6 +22,7 @@ pub use room::create_from;
 mod view;
 
 pub use admission::admitted;
+pub(crate) use admission::invited_member;
 pub use content::{report_draft, send};
 pub use inbound::apply;
 pub(crate) use inbound::on_stream_record;
