@@ -4,7 +4,9 @@
 //! `test-support` feature, which only dev-dependencies enable.
 
 use std::io;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::Arc;
+
+use parking_lot::Mutex;
 
 /// A cloneable writer whose clones share one buffer: hand a clone to the
 /// subscriber (`.with_writer(move || lines.clone())`), read [`Self::text`].
@@ -18,14 +20,14 @@ impl CapturedLines {
     /// When the bytes are not UTF-8 (a `fmt` subscriber writes only UTF-8).
     #[must_use]
     pub fn text(&self) -> String {
-        let bytes = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        let bytes = self.0.lock();
         String::from_utf8(bytes.clone()).expect("a fmt subscriber writes UTF-8")
     }
 }
 
 impl io::Write for CapturedLines {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        let mut bytes = self.0.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut bytes = self.0.lock();
         bytes.extend_from_slice(buf);
         Ok(buf.len())
     }
