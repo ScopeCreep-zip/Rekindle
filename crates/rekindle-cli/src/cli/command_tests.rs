@@ -412,3 +412,48 @@ fn parse_community_set_name() {
         Some(Command::Community(crate::cli::CommunityCmd::SetName { ref name, .. })) if name.is_empty()
     ));
 }
+
+/// Friend flags take a display name or nickname as given; `friend_ref`
+/// turns it into a key against the Host's friend list (live finding AB2).
+#[test]
+fn parse_friend_flags_by_name() {
+    let cli = Cli::try_parse_from([
+        "rekindle",
+        "group",
+        "create",
+        "-n",
+        "raid",
+        "-m",
+        "alice",
+        "-m",
+        "Bob Smith",
+        "--from",
+        "alice",
+    ])
+    .unwrap();
+    let Some(Command::Group(GroupDmCmd::Create {
+        members,
+        origin_peer,
+        ..
+    })) = cli.command
+    else {
+        panic!("expected group create");
+    };
+    assert_eq!(members, ["alice", "Bob Smith"]);
+    assert_eq!(origin_peer.as_deref(), Some("alice"));
+    for args in [
+        ["rekindle", "dm", "history", "-f", "alice"],
+        ["rekindle", "dm", "read", "-f", "alice"],
+        ["rekindle", "friend", "remove", "-f", "alice"],
+    ] {
+        let cli = Cli::try_parse_from(args).unwrap();
+        let Some(
+            Command::Dm(DmCmd::History { friend, .. } | DmCmd::Read { friend })
+            | Command::Friend(FriendCmd::Remove { friend }),
+        ) = cli.command
+        else {
+            panic!("{args:?}");
+        };
+        assert_eq!(friend, "alice", "{args:?}");
+    }
+}

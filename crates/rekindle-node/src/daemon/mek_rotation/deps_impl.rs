@@ -115,7 +115,7 @@ impl MekDistributeDeps for DaemonMekAdapter {
         // so the sender is authenticated by whether it decrypts at all.
         // See `Caller::call_community_envelope`.
         node.caller()
-            .call_community_envelope(&target, envelope_bytes)
+            .call_community_envelope(&target, route_blob, envelope_bytes)
             .await
             .map_err(|e| {
                 MekRotationError::Transport(format!("MEK app_call to {peer_pseudonym_hex}: {e}"))

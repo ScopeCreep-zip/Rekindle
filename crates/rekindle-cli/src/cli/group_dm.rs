@@ -10,10 +10,12 @@ pub enum GroupDmCmd {
         /// The group's name.
         #[arg(long, short = 'n')]
         name: String,
-        /// A member's public key (repeat for each, 2-7).
+        /// A friend's display name, nickname or public key (repeat for each,
+        /// 2-7).
         #[arg(long = "member", short = 'm', required = true)]
         members: Vec<String>,
-        /// The member whose chat it comes from (its attached room).
+        /// The member whose chat it comes from (its attached room): display
+        /// name, nickname or public key.
         #[arg(long = "from")]
         origin_peer: Option<String>,
     },
@@ -44,7 +46,7 @@ pub enum GroupDmCmd {
     Invite {
         /// The group id (32 hex).
         group_id: String,
-        /// Each friend's identity key (64 hex).
+        /// Each friend's display name, nickname or public key.
         #[arg(required = true)]
         members: Vec<String>,
     },

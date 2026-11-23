@@ -49,7 +49,7 @@ pub enum FriendCmd {
 
     /// Remove a friend (the host asks to confirm).
     Remove {
-        /// The friend's public key.
+        /// The friend's display name, nickname or public key.
         #[arg(long, short = 'f')]
         friend: String,
     },
@@ -76,7 +76,7 @@ pub enum FriendCmd {
 
     /// Set (or clear, with no `--name`) our nickname for a friend.
     Nickname {
-        /// The friend's public key.
+        /// The friend's display name, nickname or public key.
         #[arg(long, short = 'f')]
         friend: String,
         /// The nickname; omit to clear it.
@@ -183,7 +183,7 @@ pub enum GroupCmd {
     },
     /// Move a friend into a group, or out of any with no `--group-id`.
     Move {
-        /// The friend's public key.
+        /// The friend's display name, nickname or public key.
         #[arg(long, short = 'f')]
         friend: String,
         #[arg(long, short = 'g')]
@@ -196,7 +196,7 @@ pub enum GroupCmd {
 pub enum DmCmd {
     /// Send a DM.
     Send {
-        /// Friend identifier (display name or public key).
+        /// The friend's display name, nickname or public key.
         #[arg(long, short = 'f')]
         friend: String,
         /// Message body.
@@ -222,14 +222,14 @@ pub enum DmCmd {
 
     /// Live-stream incoming DMs.
     Watch {
-        /// Filter to one friend.
+        /// Filter to one friend: display name, nickname or public key.
         #[arg(long, short = 'f')]
         friend: Option<String>,
     },
 
     /// Read a conversation's history, newest last.
     History {
-        /// The friend's public key.
+        /// The friend's display name, nickname or public key.
         #[arg(long, short = 'f')]
         friend: String,
         /// Max messages.
@@ -242,7 +242,7 @@ pub enum DmCmd {
 
     /// Mark everything from a friend read.
     Read {
-        /// The friend's public key.
+        /// The friend's display name, nickname or public key.
         #[arg(long, short = 'f')]
         friend: String,
     },
