@@ -7,47 +7,39 @@ import { transformDmMessage } from "../utils/transformers";
 import { awaitsExpiry } from "./disappearing.actions";
 import { afterDraftReports, sendDraftReport } from "../utils/draft_reports";
 
+/**
+ * Send `body` to `to`. Nothing is drawn here: once the send commits, the
+ * Host publishes our own row (`directMessageSent`, plan E6.11) to this
+ * window and every other that shows the conversation, and a window opened
+ * later replays it from the journal; the command's answer is that same row,
+ * upserted alike. A failed send's row is the Host's stored one, read back so
+ * its Retry names the stored message.
+ */
 export async function handleSendMessage(to: string, body: string): Promise<void> {
   const trimmed = body.trim();
   if (!trimmed) return;
-
-  const tempId = Date.now();
-
-  // Optimistic insert with "sending" status
-  const message: Message = {
-    id: tempId,
-    senderId: authState.publicKey ?? "",
-    body: trimmed,
-    timestamp: Date.now(),
-    isOwn: true,
-    status: "sending",
-  };
-  handleIncomingMessage(to, message);
-
   try {
-    const sent = transformDmMessage(await afterDraftReports(`dm:${to}`, () => commands.sendMessage(to, trimmed)));
-    upsertSent(to, tempId, sent);
+    upsertOwnMessage(to, transformDmMessage(await afterDraftReports(`dm:${to}`, () => commands.sendMessage(to, trimmed))));
   } catch {
-    // The Host stored the row as failed: show it as the Host holds it, so
-    // its Retry names the stored message (the stored row replaces ours).
-    setChatState("conversations", to, "messages", (msgs) => (msgs ?? []).filter((m) => m.id !== tempId));
     await handleLoadHistory(to, 50);
   }
 }
 
 /**
- * Our sent message in place of its optimistic row (peer finding F-echo): the
- * row `tempId` and any row already holding the same stored message (a
- * history load during the send's review brings it in) give way to `sent`, in
- * time order. A `.map` over `tempId` found nothing once a load had replaced
- * the list, and the message vanished.
+ * Our own committed 1:1 row into the conversation `to`, by its stored
+ * message id (`serverMessageId`): the row holding it is replaced, else it
+ * joins in time order. The Host's event and the send's answer both land
+ * here, in either order, and leave one row.
  */
-function upsertSent(to: string, tempId: number, sent: Message): void {
+export function upsertOwnMessage(to: string, message: Message): void {
+  const existing = chatState.conversations[to];
+  if (!existing) {
+    setChatState("conversations", to, { peerId: to, messages: [message], isTyping: false, lastRead: 0 });
+    return;
+  }
   setChatState("conversations", to, "messages", (msgs) => {
-    const rest = (msgs ?? []).filter(
-      (m) => m.id !== tempId && !(sent.serverMessageId && m.serverMessageId === sent.serverMessageId),
-    );
-    return [...rest, sent].sort((a, b) => a.timestamp - b.timestamp);
+    const rest = msgs.filter((m) => !(message.serverMessageId && m.serverMessageId === message.serverMessageId));
+    return [...rest, message].sort((x, y) => x.timestamp - y.timestamp);
   });
 }
 
@@ -142,14 +134,20 @@ export async function handleLoadHistory(
     const messages = await commands.getMessageHistory(peerId, limit);
     const mapped = messages.map(transformDmMessage);
     const existing = chatState.conversations[peerId];
-    // Our own sends not yet stored (no serverMessageId) stay: the history
-    // cannot hold them yet, and replacing the list dropped them while a send
-    // waited on its review (peer finding F-echo).
-    const pending = (existing?.messages ?? []).filter((m) => m.isOwn && !m.serverMessageId);
-    if (mapped.length > 0 || pending.length > 0 || !existing || existing.messages.length === 0) {
+    // Rows that arrived live after the history was read stay (peer finding
+    // F-echo): a row the snapshot lacks and newer than its newest row cannot
+    // be one the snapshot dropped (a page of the newest `limit`), and
+    // replacing the list lost our own sent row when the read began before
+    // its commit and answered after the Host's event.
+    const newest = mapped.reduce((t, m) => Math.max(t, m.timestamp), 0);
+    const stored = new Set(mapped.map((m) => m.serverMessageId).filter(Boolean));
+    const live = (existing?.messages ?? []).filter(
+      (m) => m.serverMessageId && !stored.has(m.serverMessageId) && m.timestamp > newest,
+    );
+    if (mapped.length > 0 || live.length > 0 || !existing || existing.messages.length === 0) {
       setChatState("conversations", peerId, {
         peerId,
-        messages: [...mapped, ...pending].sort((a, b) => a.timestamp - b.timestamp),
+        messages: [...mapped, ...live],
         isTyping: existing?.isTyping ?? false,
         lastRead: existing?.lastRead ?? 0,
       });

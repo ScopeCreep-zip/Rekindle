@@ -2,11 +2,36 @@
 // this machine (multiremote, wdio.peers.conf.ts). Alice befriends Bob by
 // friend code, Bob accepts, and a DM goes each way: friend handshake,
 // PQXDH, the Double Ratchet, the outbox and Veilid private routes, all
-// real.
+// real. Each sender's own row is the Host's committed one, shown once,
+// and its clock reaches Delivered (plan E6.11); each state is a shot.
 
-import { multiRemoteBrowser } from "@wdio/globals";
+import { expect, multiRemoteBrowser } from "@wdio/globals";
+import type { Browser } from "webdriverio";
 import { acceptRequest, createIdentity, friendCode, friendRow, newUser, openChat, pendingRequest, requestFriend, seesMessage } from "../../journeys.ts";
-import { resolveIntent, typeAndSend } from "../../../walk/helpers.ts";
+import { NET_WAIT_MS, resolveIntent, typeAndSend, waitUntil } from "../../../walk/helpers.ts";
+import { shot } from "../../shots.ts";
+
+/**
+ * The sender's own row for `text` (plan E6.11: the Host's committed row, no
+ * optimistic copy): exactly one in `b`'s open chat, and its clock reaches
+ * Delivered (or Read) once the peer's receipt lands.
+ */
+async function ownRowDelivered(b: Browser, text: string): Promise<void> {
+  let seen = "";
+  await waitUntil(
+    async () => {
+      seen = (await b.execute((t: string) => {
+        const rows = Array.from(document.querySelectorAll(".chat-message")).filter((m) => (m.textContent ?? "").includes(t));
+        if (rows.length !== 1) return `${rows.length} rows`;
+        return rows[0].querySelector(".message-status")?.getAttribute("class") ?? "no status";
+      }, text.slice(0, 40))) as string;
+      return /message-status-(delivered|read)\b/.test(seen);
+    },
+    NET_WAIT_MS,
+    `the sender's own "${text.slice(0, 24)}" never showed once as delivered (last: ${seen})`,
+  );
+  expect(seen).toMatch(/message-status-(delivered|read)/);
+}
 
 describe("friend request, then a DM each way", () => {
   const alice = newUser("alice");
@@ -25,6 +50,7 @@ describe("friend request, then a DM each way", () => {
     const b = multiRemoteBrowser.getInstance("bob");
     await requestFriend(a, alice, await friendCode(b), hello);
     await pendingRequest(b, hello);
+    await shot("request-pending");
   });
 
   it("lists each as the other's friend once Bob accepts", async () => {
@@ -33,6 +59,7 @@ describe("friend request, then a DM each way", () => {
     await acceptRequest(b, bob, hello);
     await friendRow(b, alice.displayName);
     await friendRow(a, bob.displayName);
+    await shot("friends");
   });
 
   it("delivers a DM from Alice to Bob", async () => {
@@ -45,6 +72,8 @@ describe("friend request, then a DM each way", () => {
     await seesMessage(a, alice, text);
     await openChat(b, alice.displayName);
     await seesMessage(b, bob, text);
+    await ownRowDelivered(a, text);
+    await shot("dm-a-to-b");
   });
 
   it("delivers Bob's reply to Alice", async () => {
@@ -55,5 +84,7 @@ describe("friend request, then a DM each way", () => {
     await resolveIntent(b, { passphrase: bob.passphrase, appearMs: 1500 });
     await seesMessage(b, bob, text);
     await seesMessage(a, alice, text);
+    await ownRowDelivered(b, text);
+    await shot("dm-b-to-a");
   });
 });
