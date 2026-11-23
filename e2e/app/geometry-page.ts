@@ -201,8 +201,12 @@ export const FLEX_CONTRACT: FlexContract = {
  * 1 px for the token look. The frame insets every child by that edge, the
  * footer included, so a footer held down ends `border-bottom-width` above
  * the root's outer bottom (measured 2026-11-20: 437 vs 450, 537 vs 550 on
- * Symbiosis's 13 px edge). A footer that stops short of the frame's inner
- * edge (a margin, a wrapper that breaks the flex chain) still fails.
+ * Symbiosis's 13 px edge). A frame laid as padding instead (the chat
+ * window's pack frame under the app titlebar, SK3/SK5: 0 border, 13 px
+ * padding, r24 DM at 720x825) insets it the same way, so the foot is
+ * measured against the content box: border and padding off. A footer that
+ * stops short of the frame's inner edge (a margin, a wrapper that breaks
+ * the flex chain) still fails.
  */
 export function flexContract(el: Element): FlexContract {
   const s = getComputedStyle(el);
@@ -219,8 +223,30 @@ export function flexContract(el: Element): FlexContract {
     fillsWindow: Math.abs(r.height - window.innerHeight) <= 1,
     growing: flow.filter((c) => Number(getComputedStyle(c).flexGrow) > 0).length,
     footerAtBottom: last
-      ? Math.abs(last.getBoundingClientRect().bottom - (r.bottom - parseFloat(s.borderBottomWidth))) <= 1
+      ? Math.abs(last.getBoundingClientRect().bottom - (r.bottom - parseFloat(s.borderBottomWidth) - parseFloat(s.paddingBottom))) <= 1
       : false,
+  };
+}
+
+/**
+ * Where the window root's foot is, when the flex contract fails: its last
+ * in-flow child and that child's bottom against the root's bottom, border
+ * and padding, so the finding says by how much and against what.
+ */
+export function footerGap(el: Element): { last: string; lastBottom: number; rootBottom: number; borderBottom: number; paddingBottom: number } | null {
+  const s = getComputedStyle(el);
+  const flow = Array.from(el.children).filter((c) => {
+    const cs = getComputedStyle(c);
+    return cs.display !== "none" && cs.position !== "absolute" && cs.position !== "fixed" && c.getBoundingClientRect().height > 0;
+  });
+  const last = flow[flow.length - 1];
+  if (!last) return null;
+  return {
+    last: `${last.tagName.toLowerCase()}.${(last.className || "").toString().split(" ").join(".")}`,
+    lastBottom: Math.round(last.getBoundingClientRect().bottom * 10) / 10,
+    rootBottom: Math.round(el.getBoundingClientRect().bottom * 10) / 10,
+    borderBottom: parseFloat(s.borderBottomWidth),
+    paddingBottom: parseFloat(s.paddingBottom),
   };
 }
 
