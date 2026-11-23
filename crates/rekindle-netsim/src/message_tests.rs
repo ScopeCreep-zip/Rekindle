@@ -121,6 +121,58 @@ async fn an_unanswered_call_times_out_and_a_partition_drops() {
     }
 }
 
+/// A lost answer (Veilid's reply private route failing past the callee's
+/// first hop): the callee gets the call and its reply succeeds, the caller
+/// times out at its deadline; once the fault ends, answers come back.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_lost_answer_reaches_the_callee_and_times_the_caller_out() {
+    let (sim, mut nodes) = Netsim::nodes(2, 6);
+    let _pump = sim.start();
+    nodes[1].ports.routes.want_own();
+    let blob = nodes[1]
+        .ports
+        .routes
+        .available_own(RouteClass::General)
+        .await;
+    attached(&mut nodes[1]).await;
+    let target = nodes[0].ports.routes.import(&blob).unwrap();
+    let profile = SafetyProfile::default_dht();
+    sim.fault(Fault::AnswerLost {
+        node: 1,
+        lost: true,
+    });
+    for (body, lost) in [(b"one", true), (b"two", false)] {
+        let caller = nodes[0].ports.messages.clone();
+        let (to, asked) = (target.clone(), profile.clone());
+        let started = tokio::time::Instant::now();
+        let call = tokio::spawn(async move { caller.call(&to, &asked, body.to_vec()).await });
+        let PortEvent::AppCall {
+            call_id, message, ..
+        } = recv(&mut nodes[1]).await
+        else {
+            panic!("expected a call");
+        };
+        assert_eq!(message, body, "the question reached the callee");
+        nodes[1]
+            .ports
+            .messages
+            .reply(call_id, b"done".to_vec())
+            .await
+            .expect("the callee's answer is sent");
+        let answer = call.await.unwrap();
+        if lost {
+            assert!(matches!(answer, Err(PortError::Timeout(_))), "{answer:?}");
+            assert!(started.elapsed() >= call_timeout(&profile));
+            sim.fault(Fault::AnswerLost {
+                node: 1,
+                lost: false,
+            });
+        } else {
+            assert_eq!(answer.unwrap(), b"done");
+        }
+    }
+}
+
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn route_death_reaches_the_owner_only() {
     let (sim, mut nodes) = Netsim::nodes(2, 8);

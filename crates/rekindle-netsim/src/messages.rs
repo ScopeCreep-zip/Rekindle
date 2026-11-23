@@ -211,9 +211,12 @@ impl FakeMessages {
         // lost reply leaves the caller waiting out the timeout.
         let answered = tokio::time::timeout(call_timeout(profile), async {
             let reply = rx.await;
+            // An answer lost past the callee's first hop
+            // ([`crate::Fault::AnswerLost`]): the callee answered.
             let lost_on_the_way = {
                 let inner = self.net.inner.lock();
-                self.net.lost_in_transit(&inner, to, self.node)
+                inner.faults.answer_lost.contains(&to)
+                    || self.net.lost_in_transit(&inner, to, self.node)
             };
             tokio::time::sleep(back).await;
             if lost_on_the_way || self.reply_route_gone(profile) {
