@@ -10,7 +10,7 @@ MenuBar MenuBar
 UserNameField NameField inset [0, 16] target [0, -1, 236, 24] art [0, 1, 252, 22] Size
   UserNameText Part
 StatusWrapper Group
-StatusEdit StatusText inset [0, 10] target [0, -6, 317, 24] art [0, 6, 327, 12] Size
+StatusEdit StatusText inset [0, 10] target [0, -4, 317, 23] art [0, 4, 327, 14] Short
 DownArrow StatusList target [-1, -1, 24, 24] art [1, 1, 22, 22] Size
 TopButtonBar Group
   MinimizeBox Button target [-4, -4, 20, 24] art [4, 4, 16, 16] Short

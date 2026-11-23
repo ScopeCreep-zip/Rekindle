@@ -24,6 +24,7 @@ const PACKS: [&str; 11] = [
 /// A text node laid at its window's minimum: id, its box, its parent's.
 struct Laid {
     id: String,
+    role: NodeRole,
     words: Option<String>,
     b: [i32; 4],
     parent: [i32; 4],
@@ -44,6 +45,7 @@ fn texts(nodes: &[SkinNode], parent: [i32; 4], out: &mut Vec<Laid>) {
         if n.art.is_none() && (field || words.is_some()) {
             out.push(Laid {
                 id: n.id.clone(),
+                role: n.role,
                 words,
                 b,
                 parent,
@@ -96,8 +98,9 @@ fn word_width(word: &str) -> i32 {
 /// `MainTitleBar/Title` (x at 20, size 0) are served a positive width
 /// that ends at the first press area or text box on their line (plan SK12:
 /// Combat's at x 269, the `DownArrow` button's target, as the real app
-/// lays it; Onyx's at its parent's end), so a long name ellipsizes inside
-/// it and runs under no button.
+/// lays it; Onyx's at its parent's end: plan SK15a serves it its 15 px line
+/// box, y 6-21, which only touches its `DownArrow`'s target, from y 21), so
+/// a long name ellipsizes inside it and runs under no button.
 #[test]
 fn zero_width_title_anchors_get_their_usable_width() {
     for (pack, start, end) in [("combat", 55, 269), ("onyx", 25, 185)] {
@@ -172,6 +175,25 @@ fn labels_hold_their_words_where_room_exists() {
     }
     let got: Vec<(&str, &str, i32)> = short.iter().map(|s| (s.0, s.1.as_str(), s.2)).collect();
     assert_eq!(got, no_room, "labels short of their word: {short:?}");
+}
+
+/// Plan SK15a: no served text box is shorter than the shell's line box for
+/// its text (15 px for the name, 14 px for the rest), so the text pass and
+/// the overlap invariant measure the line the shell draws.
+#[test]
+fn every_text_box_is_as_tall_as_its_line() {
+    let mut short = Vec::new();
+    for pack in PACKS {
+        for l in laid(pack) {
+            if l.b[3] < i32::from(super::text_box::line_box(l.role)) {
+                short.push((pack, l.id, l.b));
+            }
+        }
+    }
+    assert!(
+        short.is_empty(),
+        "text boxes shorter than their line: {short:?}"
+    );
 }
 
 /// No served text box reaches past its parent's box on x.

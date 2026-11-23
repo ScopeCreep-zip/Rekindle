@@ -462,8 +462,50 @@ fn walk(
     }
 }
 
+/// The height of the shell's line box for the text `role` draws, px (plan
+/// SK15a): the name at 12 px bold (`skin-tree.css` `.skin-name-text`,
+/// `font-size: 12px; font-weight: 700`) takes 15 px; every other text, the
+/// status line and the Host's labels at 11 px (`.skin-name-edit`,
+/// `.skin-status-edit` and `.skin-node-label`, `font-size: 11px`), 14 px.
+pub(super) const fn line_box(role: NodeRole) -> u16 {
+    match role {
+        NodeRole::NameField => 15,
+        _ => 14,
+    }
+}
+
+/// The y span serving `n` its line box when it draws text in a box shorter
+/// than that (Onyx's `MainTitleBar/Title` is 0 px tall): the same anchor at
+/// the line's height, so it grows away from its anchor (down from a top,
+/// up from a bottom, about a centre), as the engine drew the string from
+/// that point.
+fn line_span(n: &SkinNode) -> Option<NodeSpan> {
+    let NodeSpan::Fixed { at, size } = n.y else {
+        return None;
+    };
+    let line = line_box(n.role);
+    (draws_text(n) && size < line).then_some(NodeSpan::Fixed { at, size: line })
+}
+
+/// Serves every text node shorter than its line box that line box
+/// ([`line_span`]), before any obstacle is measured, so the text pass
+/// (SK8), the targets and the overlap invariant (SK12) see the line the
+/// shell draws, not a 0 px row.
+fn lines(nodes: &mut [SkinNode], parent: [i32; 4]) {
+    for n in nodes {
+        let was = place(n, parent);
+        if let Some(y) = line_span(n) {
+            n.y = y;
+            pin_children(n, 1, was, place(n, parent));
+        }
+        let b = place(n, parent);
+        lines(&mut n.children, b);
+    }
+}
+
 /// Lays `tree`'s text boxes in `window` (see the module doc).
 fn lay_tree(tree: &mut SkinTree, window: (i32, i32)) {
+    lines(&mut tree.root, laid_window(tree.outsets, window));
     let targets = targets(tree, window);
     let at = laid_window(tree.outsets, window);
     let mut all = Vec::new();

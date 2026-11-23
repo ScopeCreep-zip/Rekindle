@@ -29,7 +29,7 @@ ResizeRight Button target [-19, 0, 24, 492] art [19, 0, 5, 492] Size
 ResizeDown Button target [0, -19, 342, 24] art [0, 19, 342, 5] Size
 Middle Decor
 StatusWrapper Group
-StatusEdit StatusText target [0, -5, 180, 23] art [0, 5, 180, 12] Short
+StatusEdit StatusText target [0, -5, 180, 22] art [0, 5, 180, 14] Short
 DownArrow StatusList target [0, -3, 44, 24] art [0, 3, 44, 17] Size
 MenuBar MenuBar
   XfireMenuText MenuTitle label "Rekindle"
