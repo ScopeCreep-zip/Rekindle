@@ -19,7 +19,8 @@
 //!   `[2, 0, 44, 15]` (the transparent columns beside its "E" read as
 //!   frame in the rows the "E" fills), Total Chaos `[15, 0, 47, 18]` (its gauge art left
 //!   of x 15 and right of x 61 is frame), XGlow `[1, 0, 21, 22]` (its rim
-//!   at x 0 and x 22-23, rows 5-6);
+//!   at x 0 and x 22-23, rows 5-6), where the title is icon-shaped and
+//!   carries the app mark glyph instead of the word (see [`title_label`]);
 //! - the art bakes a word the Host keeps (Tools, Help): no label;
 //! - no word in the art: `{text}`, no cover.
 //!
@@ -48,7 +49,7 @@
 use rekindle_image::RgbaImage;
 use rekindle_types::dto::skin::{Insets, SkinError, SkinRule, WindowLayout};
 use rekindle_types::dto::skin_action::{EngineMenu, SkinAction};
-use rekindle_types::dto::skin_tree::{NodeLabel, NodeRole, SkinNode};
+use rekindle_types::dto::skin_tree::{NodeGlyph, NodeLabel, NodeRole, SkinNode};
 
 use super::cover::{differing, edge_connected, icon_box, seen, ICON_TOLERANCE};
 use crate::package::Package;
@@ -278,13 +279,17 @@ fn word_cover(image: &RgbaImage) -> Option<[u16; 4]> {
 }
 
 /// The Host's label for a menu title opening `menu` whose art's word, if
-/// any, lies at `word`.
-fn title_label(menu: EngineMenu, word: Option<[u16; 4]>) -> Option<NodeLabel> {
+/// any, lies at `word`. A renamed title whose node is icon-shaped (`icon`:
+/// one whole picture, its box at most twice as wide as tall, SK3's test
+/// for an icon tab in [`super::place`]) gets the app mark glyph over the
+/// cover, its words the accessible name (plan SK5, lead decision: XGlow's
+/// 24 x 22 file title leaves 21 px, where no legible "Rekindle" fits).
+fn title_label(menu: EngineMenu, word: Option<[u16; 4]>, icon: bool) -> Option<NodeLabel> {
     let words = menu.title();
     let label = |cover| NodeLabel {
         text: words.ours.to_owned(),
         cover,
-        glyph: None,
+        glyph: (icon && word.is_some()).then_some(NodeGlyph::Rekindle),
     };
     match word {
         Some(cover) => words.renamed().then(|| label(Some(cover))),
@@ -302,11 +307,13 @@ fn walk(
         let b = place(n, parent);
         if n.role == NodeRole::MenuTitle {
             if let Some(menu) = menu_of(n) {
-                let word = match own_or_part(n, b).as_ref().or(under) {
+                let own = own_or_part(n, b);
+                let word = match own.as_ref().or(under) {
                     Some(pic) => word_box(pic, b, package)?,
                     None => None,
                 };
-                n.label = title_label(menu, word);
+                let icon = own.is_some() && b[2] <= 2 * b[3];
+                n.label = title_label(menu, word, icon);
             }
         }
         let own = whole(n, b);

@@ -212,6 +212,7 @@ fn menu_titles_carry_the_hosts_words() {
     );
     assert_eq!(menu_label("symbiosis", "ToolsMenu"), None);
     assert_eq!(menu_label("symbiosis", "HelpMenu"), None);
+    assert_eq!(file.glyph, None, "symbiosis's 45 x 20 title is worded");
     let classic = menu_label("xfire-classic", "XfireMenuText").expect("text label");
     assert_eq!((classic.text.as_str(), classic.cover), ("Rekindle", None));
 }
@@ -314,4 +315,19 @@ fn a_name_field_under_a_button_serves_its_inset() {
 fn a_clear_name_field_serves_no_inset() {
     assert_eq!(name_field("alloy").inset, None);
     assert_eq!(name_field("xfire-classic").inset, None);
+}
+
+/// Plan SK5 (lead decision): XGlow's file title is icon-shaped (one whole
+/// 24 x 22 picture, at most 2:1), and its usable box (21 px) holds no
+/// legible "Rekindle", so it carries the app mark glyph over that box, the
+/// words its accessible name.
+#[test]
+fn an_icon_shaped_renamed_title_carries_the_app_mark() {
+    let label = menu_label("xglow", "FileMenu").expect("xglow file label");
+    assert_eq!(label.text, "Rekindle");
+    assert_eq!(
+        label.glyph,
+        Some(rekindle_types::dto::skin_tree::NodeGlyph::Rekindle)
+    );
+    assert_eq!(label.cover, Some([1, 0, 21, 22]));
 }

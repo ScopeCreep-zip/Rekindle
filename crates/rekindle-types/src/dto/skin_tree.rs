@@ -209,7 +209,9 @@ pub struct NodeLabel {
     /// A built-in glyph the shell draws in place of `text` when the copied
     /// art is an icon button (Symbiosis's 46 x 48 `ButtonVideosTab`): drawn
     /// in the node's box in the strip's icon colour, `text` its accessible
-    /// name and tooltip. Never with `cover`. `None` for a worded tab.
+    /// name and tooltip. `cover`, when served, is the box the glyph
+    /// replaces (the copied icon, or a renamed icon title's usable box,
+    /// plan SK5). `None` for a worded tab or title.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub glyph: Option<NodeGlyph>,
 }
@@ -231,6 +233,10 @@ pub struct NodeInset {
 #[serde(rename_all = "lowercase")]
 pub enum NodeGlyph {
     Communities,
+    /// The app mark (plan SK5): a renamed menu title whose node is
+    /// icon-shaped (XGlow's 24 x 22 file title), where no legible
+    /// "Rekindle" fits.
+    Rekindle,
 }
 
 /// One component of the pack's tree.
