@@ -172,18 +172,15 @@ pub struct TreeSheet {
     pub css: String,
 }
 
-/// The root a window kind's title strip lays: its own framed windows, and
-/// the chat window too for the main strip when chat lays none. Never an
-/// unframed window (no `data-skin-window`).
-fn title_root(manifest: &SkinManifest, window: SkinWindow) -> String {
-    let own_chat = manifest
-        .windows
-        .get(&SkinWindow::Chat)
-        .is_some_and(|l| l.title.is_some());
-    match (window, own_chat) {
-        (SkinWindow::Main, false) => ".app-frame[data-skin-window]".to_owned(),
-        _ => format!(".app-frame[data-skin-window=\"{}\"]", window_attr(window)),
-    }
+/// The root a window kind's title strip lays: only its own framed windows
+/// (plan SK5, lead decision): the buddy list's strip lays
+/// `data-skin-window="main"` alone, so a pack with no chat strip never
+/// lays its logo tile and window buttons over the chat window's header
+/// (Symbiosis's 18 x 16 buttons over call and video); that chat window
+/// keeps the app's titlebar inside its pack frame. Never an unframed
+/// window (no `data-skin-window`).
+fn title_root(window: SkinWindow) -> String {
+    format!(".app-frame[data-skin-window=\"{}\"]", window_attr(window))
 }
 
 /// The frame rules of every window kind `manifest` lays, images under
@@ -233,13 +230,14 @@ pub fn frame_parts(
     // The pack-laid title strips (plan SK1-S1), only in the windows the
     // pack frames (the desktop's `frame_of`: the buddy list and chat, the
     // roots carrying `data-skin-window`); every other window (Settings, the
-    // skin editor, a popup) keeps the app's own titlebar. The buddy list's
-    // strip also lays the chat window when chat has none of its own.
+    // skin editor, a popup) keeps the app's own titlebar. Each strip lays
+    // only its own window kind: a chat window gets a pack strip only from
+    // the pack's chat strip (plan SK5).
     for (&window, layout) in &manifest.windows {
         let Some(title) = &layout.title else { continue };
         let top = layout.outsets.top.saturating_add(layout.content.top);
         out.push_str(&super::title::title_css(
-            &title_root(manifest, window),
+            &title_root(window),
             title,
             top,
             images,
