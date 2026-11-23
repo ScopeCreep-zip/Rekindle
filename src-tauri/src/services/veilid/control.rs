@@ -2,15 +2,18 @@ use std::sync::Arc;
 
 use crate::state::AppState;
 
-use super::control_events::handle_control_events_and_threads;
+use super::control_events::control_events_core;
+use super::ingest_outcome::{Ingested, ShellFollowUp};
 
-pub(crate) async fn handle_relayed_control(
-    app_handle: &tauri::AppHandle,
+/// A relayed Control the Host's community gate admitted (plan GI4): what
+/// the Host ingests itself returns nothing, a `RequestMEK` a follow-up for
+/// the `MekAdapter`, the rest `control_events_core`'s outcome.
+pub(crate) async fn relayed_control_core(
     state: &Arc<AppState>,
     community_id: &str,
     sender_pseudonym: &str,
     payload: rekindle_codec::community::envelope::ControlPayload,
-) {
+) -> Ingested {
     use rekindle_codec::community::envelope::ControlPayload;
 
     match payload {
@@ -20,6 +23,7 @@ pub(crate) async fn handle_relayed_control(
         // follow the merged governance (`member_events.rs`), never the frame.
         payload @ (ControlPayload::MemberJoined { .. } | ControlPayload::MemberLeave { .. }) => {
             host_membership(state, community_id, sender_pseudonym, &payload).await;
+            Ingested::default()
         }
         payload @ (ControlPayload::ReactionAdded { .. }
         | ControlPayload::ReactionRemoved { .. }) => {
@@ -28,9 +32,13 @@ pub(crate) async fn handle_relayed_control(
             if let Ok(host) = crate::state_helpers::host_governance(state) {
                 host.ingest_reaction(community_id, sender_pseudonym, 0, &payload);
             }
+            Ingested::default()
         }
         payload @ ControlPayload::RequestMEK { .. } => {
-            handle_mek_request(app_handle, state, community_id, payload).await;
+            Ingested::follow_up(ShellFollowUp::MekRequest {
+                community_id: community_id.to_owned(),
+                payload,
+            })
         }
         payload @ ControlPayload::RequestSegmentExpansion { .. } => {
             // The Host's one ingest (plan GI3, the daemon's `ingest_gossip`
@@ -39,21 +47,13 @@ pub(crate) async fn handle_relayed_control(
                 host.on_segment_expansion_request(community_id, &payload)
                     .await;
             }
+            Ingested::default()
         }
-        other => {
-            handle_control_events_and_threads(
-                app_handle,
-                state,
-                community_id,
-                sender_pseudonym,
-                other,
-            )
-            .await;
-        }
+        other => control_events_core(state, community_id, sender_pseudonym, other).await,
     }
 }
 
-async fn handle_mek_request(
+pub(super) async fn handle_mek_request(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     community_id: &str,

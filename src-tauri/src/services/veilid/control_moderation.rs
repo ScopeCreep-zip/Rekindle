@@ -1,42 +1,38 @@
 use std::sync::Arc;
 
-// Voice signaling dispatch now goes through
-// `crate::services::voice_signaling_adapter::handle_voice_signaling`.
+use super::ingest_outcome::{Ingested, ShellFollowUp};
 use crate::state::AppState;
 
-pub(crate) fn handle_gossip_control_payloads(
-    app_handle: &tauri::AppHandle,
+/// The media, preview and moderation arms of a relayed Control (plan GI4):
+/// voice signaling, channel video and link previews become follow-ups for
+/// the adapters that keep an `AppHandle`; a kick goes to the Host here.
+pub(crate) fn moderation_core(
     state: &Arc<AppState>,
     community_id: &str,
     sender_pseudonym: &str,
     payload: rekindle_codec::community::envelope::ControlPayload,
-) {
+) -> Ingested {
     use rekindle_codec::community::envelope::ControlPayload;
 
+    let (community_id, sender) = (community_id.to_owned(), sender_pseudonym.to_owned());
     match payload {
         payload if rekindle_voice::signaling::is_voice_signaling(&payload) => {
-            // Voice signaling adapter handles the spawn-and-forget
-            // dispatch internally — the gossip dispatcher stays sync.
-            crate::services::voice_signaling_adapter::handle_voice_signaling(
-                app_handle,
-                state,
+            Ingested::follow_up(ShellFollowUp::VoiceSignaling {
                 community_id,
-                sender_pseudonym,
+                sender_pseudonym: sender,
                 payload,
-            );
+            })
         }
-        ControlPayload::VideoFragment { .. }
+        payload @ (ControlPayload::VideoFragment { .. }
         | ControlPayload::VideoParityFragment { .. }
         | ControlPayload::KeyframeRequest { .. }
         | ControlPayload::TopologyChange { .. }
-        | ControlPayload::MediaCapabilities { .. } => {
-            crate::services::community::video::handle_video_payload(
-                app_handle,
-                state,
+        | ControlPayload::MediaCapabilities { .. }) => {
+            Ingested::follow_up(ShellFollowUp::VideoPayload {
                 community_id,
-                sender_pseudonym,
+                sender_pseudonym: sender,
                 payload,
-            );
+            })
         }
         ControlPayload::LinkPreview {
             channel_id,
@@ -46,25 +42,22 @@ pub(crate) fn handle_gossip_control_payloads(
             description,
             site_name,
             fetched_at,
-        } => {
-            crate::services::community::link_previews::handle_incoming_link_preview(
-                app_handle,
-                state,
-                community_id,
-                sender_pseudonym,
-                channel_id,
-                rekindle_types::link_preview::LinkPreview {
-                    message_id,
-                    url,
-                    title,
-                    description,
-                    site_name,
-                    fetched_at,
-                },
-            );
-        }
+        } => Ingested::follow_up(ShellFollowUp::LinkPreview {
+            community_id,
+            sender_pseudonym: sender,
+            channel_id,
+            preview: rekindle_types::link_preview::LinkPreview {
+                message_id,
+                url,
+                title,
+                description,
+                site_name,
+                fetched_at,
+            },
+        }),
         other => {
-            handle_gossip_moderation(state, community_id, sender_pseudonym, other);
+            handle_gossip_moderation(state, &community_id, &sender, other);
+            Ingested::default()
         }
     }
 }

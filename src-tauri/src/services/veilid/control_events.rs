@@ -6,44 +6,51 @@ use crate::state_helpers;
 use super::control_event_records::{
     handle_event_payload, handle_game_server_payload, handle_pin_payload,
 };
-use super::control_moderation::handle_gossip_control_payloads;
+use super::control_moderation::moderation_core;
+use super::ingest_outcome::{Ingested, ShellFollowUp};
 
-pub(crate) async fn handle_control_events_and_threads(
-    app_handle: &tauri::AppHandle,
+/// The record, thread and governance arms of a relayed Control (plan GI4):
+/// the Host's accepted pin, event and game-server changes become events, a
+/// thread reply a follow-up; the rest goes to `moderation_core`.
+pub(crate) async fn control_events_core(
     state: &Arc<AppState>,
     community_id: &str,
     sender_pseudonym: &str,
     payload: rekindle_codec::community::envelope::ControlPayload,
-) {
+) -> Ingested {
     use rekindle_codec::community::envelope::ControlPayload;
 
     match payload {
         payload @ (ControlPayload::MessagePinned { .. }
-        | ControlPayload::MessageUnpinned { .. }) => {
-            handle_pin_payload(app_handle, state, community_id, sender_pseudonym, payload).await;
-        }
+        | ControlPayload::MessageUnpinned { .. }) => Ingested::social(
+            handle_pin_payload(state, community_id, sender_pseudonym, payload).await,
+        ),
         payload @ (ControlPayload::EventCreated { .. }
         | ControlPayload::EventUpdated { .. }
         | ControlPayload::EventDeleted { .. }
-        | ControlPayload::EventRsvpChanged { .. }) => {
-            handle_event_payload(app_handle, state, community_id, sender_pseudonym, payload).await;
-        }
+        | ControlPayload::EventRsvpChanged { .. }) => Ingested::social(
+            handle_event_payload(state, community_id, sender_pseudonym, payload).await,
+        ),
         payload @ ControlPayload::ThreadMessageReceived { .. } => {
-            handle_thread_payload(app_handle, state, community_id, payload);
+            Ingested::follow_up(ShellFollowUp::ThreadControl {
+                community_id: community_id.to_owned(),
+                payload,
+            })
         }
         ControlPayload::GovernanceOp { op } => {
             // The Host's op store and rebuild (plan E3.2).
             if let Some(host) = state.host.current() {
                 host.governance().on_governance_op(community_id, op).await;
             }
+            Ingested::default()
         }
         payload @ (ControlPayload::GameServerAdded { .. }
-        | ControlPayload::GameServerRemoved { .. }) => {
-            handle_game_server_payload(app_handle, state, community_id, sender_pseudonym, payload)
-                .await;
-        }
+        | ControlPayload::GameServerRemoved { .. }) => Ingested::social(
+            handle_game_server_payload(state, community_id, sender_pseudonym, payload).await,
+        ),
         payload @ ControlPayload::SubmitOnboardingAnswers { .. } => {
             super::control::host_membership(state, community_id, sender_pseudonym, &payload).await;
+            Ingested::default()
         }
         // Unauthenticated notices the shell shows nothing from: a window's
         // `MekRotated` comes from the Host installing the key
@@ -51,16 +58,10 @@ pub(crate) async fn handle_control_events_and_threads(
         // and `OnboardingCompleted` from the Host's own validation of the
         // answers (`membership_events/onboarding.rs`), with the roles it
         // assigned merging as `RolesChanged`.
-        ControlPayload::MEKRotated { .. } | ControlPayload::OnboardingComplete { .. } => {}
-        other => {
-            handle_gossip_control_payloads(
-                app_handle,
-                state,
-                community_id,
-                sender_pseudonym,
-                other,
-            );
+        ControlPayload::MEKRotated { .. } | ControlPayload::OnboardingComplete { .. } => {
+            Ingested::default()
         }
+        other => moderation_core(state, community_id, sender_pseudonym, other),
     }
 }
 
@@ -68,7 +69,7 @@ pub(crate) async fn handle_control_events_and_threads(
 /// which reads its body from the thread record; the shell shows the event
 /// it returns. A thread's opening and archive are signed governance ops
 /// (plan E3.2 S8-E).
-fn handle_thread_payload(
+pub(super) fn handle_thread_payload(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     community_id: &str,
