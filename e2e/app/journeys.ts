@@ -387,7 +387,11 @@ export async function applySkin(b: Browser, user: User, name: string): Promise<s
   // "in use", so any skin:// sheet before then is the old skin's.
   let before = "";
   if ((await inUse()) !== name) {
-    before = await linked();
+    // A window just opened links its current sheet only once its images
+    // decode, so wait for it: read early, `before` was "" and the old skin's
+    // sheet, linking late, passed as the new one (skin-login on c5802aa26,
+    // both tests one skin behind after a fresh Settings window).
+    await waitUntil(async () => (before = await linked()).startsWith("skin://"), NET_WAIT_MS, "Settings never linked its current skin's sheet");
     let found = false;
     for (const row of await b.$$(".skin-row")) {
       if ((await (await row.$(".skin-name")).getText()).trim() !== name) continue;
