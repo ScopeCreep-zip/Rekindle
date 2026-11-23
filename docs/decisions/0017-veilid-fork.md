@@ -31,6 +31,14 @@
   `test_preferred_manual_route_is_selected`, `test_automatic_route_is_selected_beside_manual`,
   `test_manual_route_is_tested_after_peer_info_change`. Upstream contact (MR, push to any Veilid remote) is held
   per Policy 1. `SCHEMA_VERSION` 152 → 153 in the same change (Consequences).
+- **Amended 2026-11-22, removal** (lead decision 64; Policy 6, existing commits are reviewed only for removal):
+  the pin moves back one commit, to `e1158844e181f311db3747367254f06cf8d2a760`, dropping `bc741633`. Rekindle
+  does not need it (findings record F2, branch `rekindle/findings` `REKINDLE_FINDINGS.md`): the 10 s loopback
+  keepalive (`private_route_management.rs:7`, `get_allocated_routes_to_loopback_keepalive` at `:168-205`) tests
+  every allocated route not marked for release, published or not, automatic or not, so an API route whose
+  `published` flag a peer info change cleared is still tested. `e1158844` stays: it is a defect fix Rekindle
+  needs. No fork commit is made; both commits remain on `rekindle/v0.5.8-route-pool`. The route spec store's
+  saved form is the same at both commits, so no `SCHEMA_VERSION` bump is needed for this move.
 
 ## Context and problem statement
 
@@ -47,13 +55,14 @@ at the source, to be contributed back.
 **Build veilid-core from a private fork, pinned by commit:**
 
 - `Cargo.toml` `[patch.crates-io]` → `veilid-core = { git = "https://github.com/radicalkjax/veilid.git",
-  rev = "bc7416334ee0b94fe30ac9fec14dee98493aea4a" }` (since the 2026-11-22 amendment; `91453e97…` from the
+  rev = "e1158844e181f311db3747367254f06cf8d2a760" }` (since the 2026-11-22 removal amendment;
+  `bc7416334ee0b94fe30ac9fec14dee98493aea4a` from the first 2026-11-22 amendment; `91453e97…` from the
   2026-11-14 amendment; originally `0cd847debfaee427eeceeb5046ad48cd85540d63`).
 - Branch `rekindle/v0.5.8-route-drain` = commit `dcf0b315` "Veilid v0.5.8 source snapshot" (the upstream
   v0.5.8 tree, `759da70b`, identical tree hash; history is not carried because upstream history holds a 266 MB
   file GitHub refuses) plus **one** fix commit, `91453e97` "Hold a selected route until it is used; a release
-  drains a held route" (since 2026-11-22 branch `rekindle/v0.5.8-route-pool` adds `e1158844` and `bc741633`,
-  see the amendment above). Before the 2026-11-14 amendment: branch `rekindle/v0.5.7-route-drain` = `1cabfbe1` (the v0.5.7
+  drains a held route" (since 2026-11-22 branch `rekindle/v0.5.8-route-pool` adds `e1158844` and `bc741633`;
+  the pin is `e1158844`, see the amendments above). Before the 2026-11-14 amendment: branch `rekindle/v0.5.7-route-drain` = `1cabfbe1` (the v0.5.7
   tree, `f5cdcca3`) plus `0cd847de`.
 - The same change on upstream history is `c9e29651` on branch `fix/route-select-holds-ref` in `~/veilid`
   (remote `origin` = `gitlab.com/veilid/veilid`), ready for the upstream merge request.
@@ -112,6 +121,6 @@ returns an `Arc`), i2pd `eTunnelStateExpiring`.
 
 ## More information
 
-- [Veilid developer book](https://veilid.gitlab.io/developer-book), the fork at `bc741633` (worktree
-  `~/veilid-wt-vf2`; `91453e97` in `~/veilid-wt-058`; `~/veilid` at `0cd847de` for 0.5.7)
+- [Veilid developer book](https://veilid.gitlab.io/developer-book), the fork at `e1158844` (worktree
+  `~/veilid-wt-vf2`, read at that rev with `git show e1158844:<path>`; `91453e97` in `~/veilid-wt-058`; `~/veilid` at `0cd847de` for 0.5.7)
 - `.claude/plans/standards-remediation/00-integration-plan.md` C7.21

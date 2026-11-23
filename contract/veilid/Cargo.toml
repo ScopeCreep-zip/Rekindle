@@ -47,6 +47,6 @@ opt-level = 3
 opt-level = 3
 
 # Mirrors the root Cargo.toml `[patch.crates-io]` (ADR 0017): veilid-core
-# 0.5.8 plus the route-drain and route-pool fixes. Keep the two revs equal.
+# 0.5.8 plus the route-drain and route-pool fixes (e1158844). Keep the two revs equal.
 [patch.crates-io]
-veilid-core = { git = "https://github.com/radicalkjax/veilid.git", rev = "bc7416334ee0b94fe30ac9fec14dee98493aea4a" }
+veilid-core = { git = "https://github.com/radicalkjax/veilid.git", rev = "e1158844e181f311db3747367254f06cf8d2a760" }

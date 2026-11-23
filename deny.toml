@@ -260,7 +260,7 @@ allow-git = [
     # with `[patch.crates-io]` and any `git = "..."` entries.
     "https://github.com/mcginty/snow",
     # veilid-core 0.5.8 + the route drain and route pool fixes (branch
-    # rekindle/v0.5.8-route-pool, rev bc741633), until a Veilid release
+    # rekindle/v0.5.8-route-pool, rev e1158844), until a Veilid release
     # carries them (ADR 0017, root Cargo.toml [patch.crates-io]).
     "https://github.com/radicalkjax/veilid.git",
     # libdbus-sys at dbus-rs commit dd78d826 (HAVE_POLL in the vendored

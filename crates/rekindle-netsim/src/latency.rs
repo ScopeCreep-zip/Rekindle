@@ -10,7 +10,7 @@
 //! the live A/B round 2 log of 2026-11-15
 //! (`evidence/runs/2026-11-15-ab2-macA2-rekindled.log`, from 02:55:37;
 //! veilid-core 0.5.8 at Rekindle's fork rev `91453e97`, ADR 0017; the pin
-//! is `bc741633` since 2026-11-22);
+//! is `e1158844` since 2026-11-22);
 //! "derived" numbers come from the 0.5.8 source in `veilid-core/src` and
 //! have no measurement yet.
 //!
