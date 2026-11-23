@@ -22,7 +22,7 @@ use std::path::Path;
 
 use anyhow::{anyhow, Context, Result};
 
-const CRATE: &str = "tauri-plugin-wdio-webdriver";
+pub(crate) const CRATE: &str = "tauri-plugin-wdio-webdriver";
 const CRATE_DIR: &str = "crates/vendor/tauri-plugin-wdio-webdriver";
 const HOST: &str = "rekindle-desktop";
 const FEATURE: &str = "webdriver-test";

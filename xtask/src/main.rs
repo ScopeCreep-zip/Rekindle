@@ -16,16 +16,15 @@
 //!                                      through event_dispatch (ADR 0007).
 //!     cargo xtask check-no-shape-ipc  No IPC command takes a window region
 //!                                      or a cursor-ignore flag (SK0 S4).
-//!     cargo xtask check-log-scrub      Every tracing subscriber writes
-//!                                      through ScrubbingMakeWriter and
-//!                                      every binary installs the
-//!                                      scrubbing panic hook (B19).
+//!     cargo xtask check-log-scrub      Every tracing subscriber writes through
+//!                                      ScrubbingMakeWriter; every binary installs the scrubbing panic hook (B19).
 //!     cargo xtask check-capnp-bounds   Every Cap'n Proto read has a
 //!                                      traversal bound (plan F4).
 //!     cargo xtask check-key-erasure    Key-material rows are deleted only
 //!                                      through rekindle_db::erase (I14).
 //!     cargo xtask check-webdriver-release
 //!                                      The WebDriver driver never builds in release.
+//!     cargo xtask check-release        The workspace compiles in release (REL1).
 //!     cargo xtask check-role-ids       Role ids are written only by the
 //!                                      governance projection (RV7 M1).
 //!     cargo xtask check-veilid-dht-calls
@@ -140,6 +139,7 @@ mod no_shape_ipc;
 mod overlay_layers;
 mod pair_model;
 mod platform_floor;
+mod release_build;
 mod role_ids;
 mod sec_styles;
 mod sec_surfaces;
@@ -196,6 +196,8 @@ enum Command {
     CheckKeyErasure,
     /// Verify the WebDriver walk's driver cannot reach a release build.
     CheckWebdriverRelease,
+    /// Verify every workspace library and binary compiles under the release profile.
+    CheckRelease,
     /// Verify role ids are written only by the governance projection (no caches).
     CheckRoleIds,
     /// Verify every Veilid DHT and private-route call stays in its owner.
@@ -362,6 +364,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
                     "webdriver-release",
                     Box::new(|| webdriver_release::check_webdriver_release(&root)),
                 ),
+                ("release", Box::new(|| release_build::check_release(&root))),
                 (
                     "veilid-dht-calls",
                     Box::new(|| veilid_dht_calls::check_veilid_dht_calls(&root)),
@@ -476,6 +479,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
         Command::CheckCapnpBounds => capnp_bounds::check_capnp_bounds(&root),
         Command::CheckKeyErasure => key_erasure::check_key_erasure(&root),
         Command::CheckWebdriverRelease => webdriver_release::check_webdriver_release(&root),
+        Command::CheckRelease => release_build::check_release(&root),
         Command::CheckRoleIds => role_ids::check_role_ids(&root),
         Command::CheckVeilidDhtCalls => veilid_dht_calls::check_veilid_dht_calls(&root),
         Command::CheckSqlite => sqlite::check_sqlite(&root),

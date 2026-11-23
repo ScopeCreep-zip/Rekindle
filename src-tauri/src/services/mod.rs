@@ -1,7 +1,6 @@
 // Phase 14.p — `calls`, `voice`, `group_calls` modules deleted.
 // All voice / call protocol logic lives in `rekindle-voice` /
 // `rekindle-calls` crates; the adapters below bridge AppState ↔ crate.
-#[cfg(debug_assertions)]
 pub mod call_runtime; // Phase 23.C — mid-call signaling orchestration lifted from commands/calls.rs.
 pub mod calls_adapter; // Phase 14 — CallSignalingDeps impl + calls free-fn facades.
 pub mod community;
