@@ -216,6 +216,11 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
   const offPage = (): boolean => {
     const p = tree.parent.get(n().id);
     if (p?.controlGroup === undefined) return false;
+    // A page of its own group pages nothing: Symbiosis's FriendsButtonBar is
+    // page 0 of TabsButtonsContainer's group 1 and carries group 1 too, and
+    // paging its buttons by it left only its first (Chat) shown, Add Friend,
+    // Info and Join hidden.
+    if (tree.parent.get(p.id)?.controlGroup === p.controlGroup) return false;
     return (p.children ?? []).indexOf(n()) !== (tree.state.pages[p.controlGroup] ?? 0);
   };
   const offView = (): boolean => {
