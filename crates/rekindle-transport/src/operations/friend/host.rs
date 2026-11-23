@@ -283,6 +283,25 @@ pub trait FriendHost: Send + Sync {
     /// Drop an invite's request inbox: stop watching it, release it and
     /// forget its owner keypair.
     async fn drop_request_inbox(&self, record_key: &str);
+    /// Hold our friend code's request inbox (plan RV2e): keep its owner
+    /// keypair in the vault, and watch its writer's subkey on `lease`; what
+    /// lands there is opened by `inbox::received_reply` and the slot rolled
+    /// (`code_inbox::landed`).
+    async fn keep_code_inbox(
+        &self,
+        record_key: &str,
+        owner_keypair: &str,
+        lease: rekindle_records::lease::LeaseId,
+    ) -> Result<(), FriendError>;
+    /// Drop a friend code's request inbox: stop watching it, release it and
+    /// forget its owner keypair.
+    async fn drop_code_inbox(&self, record_key: &str);
+    /// Publish our code's current request inbox in our profile's
+    /// `CODE_INBOX` subkey (plan RV2e).
+    ///
+    /// # Errors
+    /// The write failed.
+    async fn publish_code_inbox(&self, record_key: &str) -> Result<(), FriendError>;
     /// Hold our request's reply inbox (plan RV2): keep its owner keypair in
     /// the vault, and watch its writer's subkey on `lease`; what lands there
     /// is opened by `inbox::received_reply`.

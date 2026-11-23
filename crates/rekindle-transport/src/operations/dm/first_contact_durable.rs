@@ -80,7 +80,42 @@ pub(super) async fn attempt(
     record_key: &str,
     writer: &str,
 ) -> Attempt {
-    let call = attempt_call(host, to, datagram.to_vec(), DmTypeId::FriendAccept);
+    attempt_as(
+        host,
+        to,
+        datagram,
+        record_key,
+        writer,
+        DmTypeId::FriendAccept,
+    )
+    .await
+}
+
+/// One attempt of our request to `to` sent with their friend code (plan
+/// RV2e): the call and the write into the slot their profile publishes go
+/// together, as an accept's do ([`attempt`]). `None`: not a code's request,
+/// or no slot published, so the row's call goes as before.
+pub(super) async fn code_request(
+    host: &dyn FriendHost,
+    to: &str,
+    framed: &super::send::Framed,
+    datagram: &[u8],
+) -> Option<Attempt> {
+    let (key, writer) = crate::operations::friend::code_inbox::slot(host, to, framed).await?;
+    let kind = DmTypeId::FriendRequest;
+    Some(attempt_as(host, to, datagram, &key, &writer, kind).await)
+}
+
+/// [`attempt`] for a first contact of `kind`.
+async fn attempt_as(
+    host: &dyn FriendHost,
+    to: &str,
+    datagram: &[u8],
+    record_key: &str,
+    writer: &str,
+    kind: DmTypeId,
+) -> Attempt {
+    let call = attempt_call(host, to, datagram.to_vec(), kind);
     let write = attempt_inbox(host, record_key, writer, datagram);
     tokio::pin!(call, write);
     let (mut called, mut written) = (None, None);

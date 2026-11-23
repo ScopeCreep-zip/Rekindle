@@ -63,9 +63,13 @@ pub mod profile {
     /// `Vec<Vec<u8>>` of opaque relay route blobs from friends, padded
     /// with dummies for size privacy.
     pub const RELAY_POOL: u32 = 8;
+    /// The record key of our friend code's current request inbox (plan
+    /// RV2e): its writer is derived from the code's token, so only the
+    /// code's holders can write it; rolled after each request lands.
+    pub const CODE_INBOX: u32 = 9;
 
     /// Total subkeys to allocate when creating a profile record.
-    pub const SUBKEY_COUNT: u16 = 9;
+    pub const SUBKEY_COUNT: u16 = 10;
 
     /// Status byte encoding for [`STATUS`].
     pub const STATUS_ONLINE: u8 = 0;

@@ -38,11 +38,14 @@ pub async fn own(host: &dyn FriendHost) -> Result<FriendCodeView, FriendError> {
 ///
 /// # Errors
 /// `Locked`; `Failed` when our profile was not published (waits while it is
-/// being published); the write
-/// failed.
+/// being published); the new token's code slot could not be made (plan
+/// RV2e, the token is then kept), or the write failed.
 pub async fn rotate_token(host: &dyn FriendHost) -> Result<FriendCodeView, FriendError> {
     let own = published_identity(host).await?;
     let token = rekindle_secrets::friend_token::mint();
+    // The new token's slot first (plan RV2e): the old token's holders can
+    // no longer derive its writer, and a stored token always has its slot.
+    super::code_inbox::roll_for(host, &token).await?;
     let (owner, spelled) = (own.public_key.clone(), token.as_str().to_string());
     state::db_call!(host, "rotate friend token", move |conn| {
         rekindle_db::repo::identity::set_friend_request_token(conn, &owner, &spelled)

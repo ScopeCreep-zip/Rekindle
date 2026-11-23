@@ -49,11 +49,21 @@ pub struct FriendWatches {
     inboxes: Mutex<BTreeMap<String, LeaseId>>,
     /// Each open request's reply inbox lease, by record key (plan RV2).
     replies: Mutex<BTreeMap<String, LeaseId>>,
+    /// Our friend code's request inbox lease, by record key (plan RV2e).
+    codes: Mutex<BTreeMap<String, LeaseId>>,
+    /// The code slot's roll budget (plan RV2e): a route's bucket, since a
+    /// roll costs a record create and two writes, as a route costs a
+    /// creation; full at the first roll of a session.
+    code_rolls: Mutex<Option<rekindle_route::budget::RouteBudget>>,
     /// Each friend's participant record (key, lease), by friend (plan E2.5).
     participants: Mutex<BTreeMap<String, (String, LeaseId)>>,
     /// Whether the network was ready at its last change.
     network_ready: std::sync::atomic::AtomicBool,
 }
+
+/// How long an unissued code slot waits before it is attempted again
+/// (plan RV2e): the network missed its create or writes.
+pub(crate) const CODE_SLOT_RETRY: std::time::Duration = std::time::Duration::from_secs(60);
 
 /// The Host, as the friend operations see it.
 #[derive(Clone)]
@@ -62,6 +72,17 @@ pub struct HostFriends {
 }
 
 impl HostFriends {
+    /// Spend one of the code slot's roll tokens (plan RV2e).
+    pub(super) fn spend_code_roll(&self) -> bool {
+        let now = self.ctx.clock.now_ms();
+        self.ctx
+            .friend_watches
+            .code_rolls
+            .lock()
+            .get_or_insert_with(|| rekindle_route::budget::RouteBudget::full(now))
+            .try_spend(now)
+    }
+
     /// Keep a request inbox's owner keypair in the vault (an invite's, or
     /// one of our requests' reply inboxes, plan RV2).
     fn keep_inbox_owner(&self, record_key: &str, owner_keypair: &str) -> Result<(), FriendError> {
@@ -318,6 +339,40 @@ impl FriendHost for HostFriends {
         }
         inbox_watch::hold_reply(self, &pool, record_key, lease).await;
         Ok(())
+    }
+
+    async fn keep_code_inbox(
+        &self,
+        record_key: &str,
+        owner_keypair: &str,
+        lease: LeaseId,
+    ) -> Result<(), FriendError> {
+        let pool = self
+            .node()?
+            .require_records()
+            .map_err(|e| FriendError::NotReady(format!("records: {e}")))?;
+        if let Err(e) = self.keep_inbox_owner(record_key, owner_keypair) {
+            pool.release(lease).await;
+            return Err(e);
+        }
+        inbox_watch::hold_code(self, &pool, record_key, lease).await;
+        Ok(())
+    }
+
+    async fn drop_code_inbox(&self, record_key: &str) {
+        inbox_watch::release_code(self, record_key).await;
+        self.forget_inbox_owner(record_key);
+    }
+
+    async fn publish_code_inbox(&self, record_key: &str) -> Result<(), FriendError> {
+        self.ctx
+            .own_presence
+            .write_profile(
+                rekindle_types::dht_layout::profile::CODE_INBOX,
+                record_key.as_bytes().to_vec(),
+            )
+            .await
+            .map_err(FriendError::Failed)
     }
 
     async fn sync_reply_inboxes(&self) {

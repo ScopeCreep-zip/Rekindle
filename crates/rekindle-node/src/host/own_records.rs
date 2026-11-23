@@ -87,6 +87,18 @@ pub(crate) async fn tell_stage(
     }
 }
 
+/// Issue our live friend code's slot once our profile is held (plan RV2e),
+/// attempted again while the network misses it.
+async fn issue_code_slot(friends: &super::adapters::friends::HostFriends) {
+    loop {
+        match rekindle_transport::operations::friend::code_inbox::issue(friends).await {
+            Ok(()) => return,
+            Err(e) => tracing::warn!(error = %e, "friend code slot not issued — attempted again"),
+        }
+        tokio::time::sleep(super::adapters::friends::CODE_SLOT_RETRY).await;
+    }
+}
+
 /// The records' keys as the identity row and the vault hold them.
 pub(super) struct Stored {
     profile: StoredRecord,
@@ -103,8 +115,12 @@ impl OwnRecords {
     /// lock resets it, `FriendStores::clear`).
     pub(crate) async fn run(self, stop: CancellationToken) {
         let outcome = self.outcome.clone();
-        match self.hold(stop).await {
-            Some(Ok(())) => outcome.send_replace(OwnRecordsStage::Held),
+        let friends = self.friends.clone();
+        match self.hold(stop.clone()).await {
+            Some(Ok(())) => {
+                outcome.send_replace(OwnRecordsStage::Held);
+                stop.run_until_cancelled(issue_code_slot(&friends)).await;
+            }
             Some(Err(why)) => outcome.send_replace(OwnRecordsStage::Failed(why)),
             None => {}
         }

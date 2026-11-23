@@ -191,6 +191,39 @@ pub fn open(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<Outgoing
     rows
 }
 
+/// Our friend code's current request inbox, kept on the identity row
+/// beside the invites' inboxes (plan RV2e); `None` when no
+/// code was issued.
+///
+/// # Errors
+/// The query failed.
+pub fn code_inbox_key(conn: &Connection, public_key: &str) -> rusqlite::Result<Option<String>> {
+    conn.query_row(
+        "SELECT code_inbox_key FROM identity WHERE public_key = ?1",
+        params![public_key],
+        |row| row.get(0),
+    )
+    .optional()
+    .map(Option::flatten)
+}
+
+/// Replace our friend code's request inbox (plan RV2e: issued, rolled
+/// after a request landed, or the token rotated).
+///
+/// # Errors
+/// The write failed.
+pub fn set_code_inbox_key(
+    conn: &Connection,
+    public_key: &str,
+    record_key: &str,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE identity SET code_inbox_key = ?2 WHERE public_key = ?1",
+        params![public_key, record_key],
+    )?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
