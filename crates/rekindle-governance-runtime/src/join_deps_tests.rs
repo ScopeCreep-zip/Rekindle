@@ -75,7 +75,11 @@ fn a_fold_join_cites_at_most_sixty_four_deps() {
     for seed in 10..80 {
         let member = Member::new(seed);
         let deps = world.deps_of(&member, &creator);
-        concurrent.push(world.build(&member, member.joined("code"), Deps::Join(deps)));
+        concurrent.push(world.build(
+            &member,
+            member.joined("code", &world.state),
+            Deps::Join(deps),
+        ));
     }
     assert_eq!(world.held, before);
     for (op, encoded) in concurrent {
@@ -161,7 +165,11 @@ fn a_join_concurrent_with_the_inviters_removal_is_still_filtered() {
     // The joiner signs before it sees the removal.
     let joiner = Member::new(20);
     let deps = world.deps_of(&joiner, &inviter);
-    let (joined, encoded) = world.build(&joiner, joiner.joined("code2"), Deps::Join(deps));
+    let (joined, encoded) = world.build(
+        &joiner,
+        joiner.joined("code2", &world.state),
+        Deps::Join(deps),
+    );
     // The removal follows the inviter's join, not its invite.
     let removal = GovernanceEntry::MemberRemoved {
         target: inviter.author(),

@@ -2,7 +2,7 @@
 //! every reader judges them effective with the real key, and a key the
 //! vault lost is refused, never minted again (rule 4, threat model T7).
 
-use rekindle_governance::device_judge::{judge_op, DeviceView, KeyJudgement};
+use rekindle_governance::device_judge::{judge_op_at, DeviceView, KeyJudgement};
 use rekindle_governance::fixture::meta;
 use rekindle_governance::state::GovernanceState;
 use rekindle_secrets::ed25519_dalek::SigningKey;
@@ -67,7 +67,13 @@ fn ops_built_under_the_device_key_judge_effective_with_the_real_key() {
         view.absorb(ANCHOR, op.op());
     }
     for op in &set.ops {
-        assert_eq!(judge_op(ANCHOR, &view, op.op()), KeyJudgement::Effective);
+        // Judged for the author's latest join, as the merge judges it (Q4).
+        let md = view.member(&op.op().author).cloned().unwrap_or_default();
+        let record = md.latest_join.as_ref().map(|(_, r, _)| r.as_str());
+        assert_eq!(
+            judge_op_at(ANCHOR, &md, record, op.op()),
+            KeyJudgement::Effective
+        );
     }
 }
 

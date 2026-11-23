@@ -30,13 +30,17 @@ impl Canon for MemberDevices {
     fn put(&self, out: &mut Vec<u8>) {
         let Self {
             member_record,
+            latest_join,
             endorsements,
+            carriers,
             retirements,
             forks,
             readmits,
         } = self;
         member_record.put(out);
+        latest_join.put(out);
         endorsements.put(out);
+        carriers.put(out);
         retirements.put(out);
         forks.put(out);
         readmits.put(out);
@@ -47,7 +51,9 @@ impl Decanon for MemberDevices {
     fn take(r: &mut CanonReader<'_>) -> Option<Self> {
         Some(Self {
             member_record: Decanon::take(r)?,
+            latest_join: Decanon::take(r)?,
             endorsements: Decanon::take(r)?,
+            carriers: Decanon::take(r)?,
             retirements: Decanon::take(r)?,
             forks: Decanon::take(r)?,
             readmits: Decanon::take(r)?,

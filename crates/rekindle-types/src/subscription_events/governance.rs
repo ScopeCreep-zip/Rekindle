@@ -219,6 +219,17 @@ pub enum OpQuarantineReason {
     /// quarantined after its author's fork, and fails without it (ADR 0022
     /// rule 5, plan E3.2 S7d-keys.2a).
     AuthorityQuarantined,
+    /// "its device key was retired or forked before it" (ADR 0022 rules
+    /// 4, 5): its key is not effective for its author at its deps.
+    DeviceKeyRetired,
+    /// "its device key was endorsed past six devices" (rule 6).
+    DeviceKeyInert,
+    /// "its device key is not among its author's first six" (rule 6).
+    DeviceKeyOverCap,
+    /// "its device key answers a fork with no re-admission" (rules 7, 10).
+    DeviceKeyNeedsReadmit,
+    /// "its device key names another device's record" (rule 3).
+    DeviceKeyRecordTaken,
     /// A validly signed op of a kind this reader's schema does not have
     /// (D15): the community is quarantined, likely by a newer version's
     /// op; `cause` is `None`.

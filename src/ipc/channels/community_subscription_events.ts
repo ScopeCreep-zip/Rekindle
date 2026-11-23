@@ -279,6 +279,11 @@ export type OpQuarantineReason =
   | "twoCheckpointEndorsementsInOneRound"
   | "recordClaimed"
   | "authorityQuarantined"
+  | "deviceKeyRetired"
+  | "deviceKeyInert"
+  | "deviceKeyOverCap"
+  | "deviceKeyNeedsReadmit"
+  | "deviceKeyRecordTaken"
   | "checkpointEquivocation"
   | "unknownOpKind"
   | "unknownOpVersion";

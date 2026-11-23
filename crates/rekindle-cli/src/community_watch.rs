@@ -356,6 +356,19 @@ fn governance(event: &GovernanceEvent) -> String {
                 OpQuarantineReason::AuthorityQuarantined => {
                     "quarantined because the op its authority came from was"
                 }
+                OpQuarantineReason::DeviceKeyRetired => {
+                    "its device key was retired or forked before it"
+                }
+                OpQuarantineReason::DeviceKeyInert => "its device key was endorsed past six devices",
+                OpQuarantineReason::DeviceKeyOverCap => {
+                    "its device key is not among its author's first six"
+                }
+                OpQuarantineReason::DeviceKeyNeedsReadmit => {
+                    "its device key answers a fork with no re-admission"
+                }
+                OpQuarantineReason::DeviceKeyRecordTaken => {
+                    "its device key names another device's record"
+                }
                 OpQuarantineReason::UnknownOpKind => {
                     "a kind of change this version cannot read; the community is quarantined"
                 }
