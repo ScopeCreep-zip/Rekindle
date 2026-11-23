@@ -309,7 +309,11 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
   Object.defineProperties(buttonAttrs, {
     role: { get: () => "button", enumerable: true },
     tabindex: { get: () => (hidden() ? undefined : 0), enumerable: true },
-    "aria-label": { get: () => tree.label(press()!), enumerable: true },
+    // The words the node shows are its name (plan SK14, WCAG 2.5.3): a served
+    // label names it, else its action; the label is also its tooltip, so words
+    // the box cuts short read in full on hover (focus: skin-tree.css).
+    "aria-label": { get: () => n().label?.text ?? tree.label(press()!), enumerable: true },
+    title: { get: () => n().label?.text, enumerable: true },
     class: { get: () => "skin-tree-button", enumerable: true },
     onKeyDown: {
       value: (e: KeyboardEvent) => {
