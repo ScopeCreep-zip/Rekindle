@@ -27,7 +27,8 @@ export async function violations(b: Browser): Promise<Violation[]> {
   .run(document, { runOnly: { type: "tag", values: ${JSON.stringify(TAGS)} }, resultTypes: ["violations"] })
   .then(function (r) {
     return r.violations.map(function (v) {
-      return { rule: v.id, impact: v.impact, nodes: v.nodes.map(function (n) { return n.target.join(" "); }).slice(0, 8) };
+      // Every undersized target, so each is named (plan SK7); other rules keep eight.
+      return { rule: v.id, impact: v.impact, nodes: v.nodes.map(function (n) { return n.target.join(" "); }).slice(0, v.id === "target-size" ? 500 : 8) };
     });
   });`;
   return (await b.execute(script)) as Violation[];
