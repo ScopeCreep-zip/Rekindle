@@ -148,6 +148,8 @@
 '.settings-hint' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel", "--color-xfire-bg-primary"] }
 # The Settings window's `.app-frame` (bg-dark); `.skin-row-shown` tints it.
 '.skin-badge' = { on = ["--color-xfire-bg-dark", "--color-xfire-accent 12% over --color-xfire-bg-dark"] }
+# A skin's target-size line under its name (plan SK14), in the same row.
+'.skin-access' = { on = ["--color-xfire-bg-dark", "--color-xfire-accent 12% over --color-xfire-bg-dark"] }
 '.skin-credits' = { on = ["--color-xfire-bg-dark", "--color-xfire-accent 12% over --color-xfire-bg-dark"] }
 '.skin-credits-stated' = { on = ["--color-xfire-bg-dark", "--color-xfire-accent 12% over --color-xfire-bg-dark"] }
 '.skin-credits-term' = { on = ["--color-xfire-bg-dark", "--color-xfire-accent 12% over --color-xfire-bg-dark"] }
@@ -160,6 +162,13 @@
 '.skin-tree' = { on = ["--color-xfire-bg-dark"] }
 '.skin-node-label' = { on = ["--color-xfire-bg-secondary", "--color-xfire-bg-dark"] }
 '.skin-name-text' = { on = ["--color-xfire-titlebar-start", "--color-xfire-titlebar-end"] }
+# Cut-short words read in full on keyboard focus (plan SK14): on their own
+# ground, the cover's pair (accent.text on bg.secondary).
+'.skin-name:is(:focus-visible, :has(:focus-visible)) .skin-name-text' = { on = ["--color-xfire-bg-secondary"] }
+'.skin-tree [data-skin-node]:is(:focus-visible, :has(:focus-visible)) > .skin-node-label .skin-node-label-text' = { on = ["--color-xfire-bg-secondary"] }
+# The title strip's Rekindle mark (plan BR): its word in titlebar.text on the
+# strip, as `.xfire-titlebar-text`.
+'.xfire-titlebar-logo' = { on = ["--color-xfire-titlebar-start", "--color-xfire-titlebar-end"] }
 '.skin-name-edit' = { on = ["--color-xfire-bg-input"] }
 '.skin-status-edit' = { on = ["--color-xfire-bg-status"] }
 '.skin-status-edit::placeholder' = { on = ["--color-xfire-bg-status"] }
