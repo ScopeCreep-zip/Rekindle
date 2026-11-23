@@ -223,7 +223,8 @@ fn a_shaped_window_without_a_frame_keeps_square_corners() {
 /// desktop's `frame_of`: buddy list and chat, the roots carrying
 /// `data-skin-window`), so Settings and the skin editor (an `.app-frame`
 /// with no `data-skin-window`) keep the app's titlebar: no title-strip
-/// selector of any built-in matches an unframed root.
+/// selector of any built-in matches an unframed root, and each names its
+/// own window kind (plan SK5: never the bare `[data-skin-window]`).
 #[test]
 fn the_title_strip_lays_only_framed_windows() {
     let mut strips = 0;
@@ -237,8 +238,7 @@ fn the_title_strip_lays_only_framed_windows() {
             .filter(|l| l.contains(".xfire-titlebar") && (l.ends_with('{') || l.ends_with(',')))
         {
             assert!(
-                sel.starts_with(".app-frame[data-skin-window]")
-                    || sel.starts_with(".app-frame[data-skin-window=\"main\"]")
+                sel.starts_with(".app-frame[data-skin-window=\"main\"]")
                     || sel.starts_with(".app-frame[data-skin-window=\"chat\"]"),
                 "{id}: `{sel}` reaches an unframed window"
             );
@@ -246,4 +246,32 @@ fn the_title_strip_lays_only_framed_windows() {
         }
     }
     assert!(strips > 0, "no built-in lays a title strip");
+}
+
+/// Plan SK5 (lead decision): the main strip lays only the buddy list.
+/// Symbiosis lays a main strip and no chat strip, so no served title-strip
+/// rule may match `data-skin-window="chat"` (its logo tile and 18 x 16
+/// window buttons had covered the chat header, over call and video); the
+/// chat window keeps the app titlebar inside its pack frame.
+#[test]
+fn a_main_strip_never_lays_the_chat_window() {
+    let (m, files) = pack(&format!("{}symbiosis", builtin::PREFIX));
+    assert!(m.windows[&SkinWindow::Main].title.is_some());
+    assert!(m
+        .windows
+        .get(&SkinWindow::Chat)
+        .is_none_or(|l| l.title.is_none()));
+    let css = frame_css(&m, &files, BASE).unwrap();
+    let strips: Vec<&str> = css
+        .lines()
+        .map(str::trim)
+        .filter(|l| l.contains(".xfire-titlebar") && (l.ends_with('{') || l.ends_with(',')))
+        .collect();
+    assert!(!strips.is_empty(), "symbiosis lays no title strip");
+    for sel in strips {
+        assert!(
+            sel.starts_with(".app-frame[data-skin-window=\"main\"]"),
+            "`{sel}` can match the chat window"
+        );
+    }
 }

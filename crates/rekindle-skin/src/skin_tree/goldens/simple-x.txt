@@ -10,7 +10,7 @@ MenuBar MenuBar
 UserNameField NameField
   UserNameText Part
 StatusWrapper Group
-StatusEdit StatusText
+StatusEdit StatusText inset [0, 9]
 DownArrow StatusList
 TopButtonBar Group
   MinimizeBox Button

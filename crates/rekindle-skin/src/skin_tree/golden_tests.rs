@@ -22,6 +22,9 @@ fn lines(nodes: &[SkinNode], depth: usize, out: &mut String) {
                 let _ = write!(out, " glyph {g:?}");
             }
         }
+        if let Some(i) = n.inset {
+            let _ = write!(out, " inset [{}, {}]", i.left, i.right);
+        }
         out.push('\n');
         lines(&n.children, depth + 1, out);
     }
@@ -180,10 +183,12 @@ fn menu_label(id: &str, node: &str) -> Option<rekindle_types::dto::skin_tree::No
 }
 
 /// Plan SK4b, lead decision 7: Symbiosis's file title art bakes "Xfire"
-/// (47 x 20 `node-xfiremenu-topleft.png`), so its label is "Rekindle" over
-/// the word's box, inside the 45 x 20 node; its Tools and Help art reads
-/// right and carries no label; Xfire Classic draws its titles as text, so
-/// its file title is "Rekindle" with no cover.
+/// (47 x 20 `node-xfiremenu-topleft.png`), so its label is "Rekindle"; its
+/// Tools and Help art reads right and carries no label; Xfire Classic
+/// draws its titles as text, so its file title is "Rekindle" with no
+/// cover. Plan SK5: the cover is the title's usable box, not the word's
+/// 22 px ("Re..."): the art draws no frame around "Xfire" (x 12-33,
+/// y 4-13), so the cover is the whole 45 x 20 node, the word inside it.
 #[test]
 fn menu_titles_carry_the_hosts_words() {
     let file = menu_label("symbiosis", "XfireMenu").expect("file label");
@@ -194,9 +199,20 @@ fn menu_titles_carry_the_hosts_words() {
         "{:?}",
         file.cover
     );
-    assert_eq!(file.cover, Some([12, 4, 22, 10]));
+    let word = [12, 4, 22, 10];
+    assert!(
+        x <= word[0] && y <= word[1] && x + w >= word[0] + word[2] && y + h >= word[1] + word[3],
+        "cover {:?} misses the word {word:?}",
+        file.cover
+    );
+    assert!(
+        w >= 45,
+        "cover {:?} narrower than the 45 px frameless node",
+        file.cover
+    );
     assert_eq!(menu_label("symbiosis", "ToolsMenu"), None);
     assert_eq!(menu_label("symbiosis", "HelpMenu"), None);
+    assert_eq!(file.glyph, None, "symbiosis's 45 x 20 title is worded");
     let classic = menu_label("xfire-classic", "XfireMenuText").expect("text label");
     assert_eq!((classic.text.as_str(), classic.cover), ("Rekindle", None));
 }
@@ -226,6 +242,10 @@ fn file_covers_hide_the_whole_baked_word() {
             holds(cover, word),
             "{pack}: cover {cover:?} misses the word {word:?}"
         );
+        assert!(
+            cover[2] >= word[2],
+            "{pack}: cover {cover:?} narrower than its word"
+        );
         assert_eq!(menu_label(pack, tools), None, "{pack} tools");
         assert_eq!(menu_label(pack, "HelpMenu"), None, "{pack} help");
     }
@@ -251,4 +271,63 @@ fn file_covers_hide_the_whole_baked_word() {
             );
         }
     }
+}
+
+fn name_field(id: &str) -> SkinNode {
+    let tree = main_layout(id).tree.unwrap();
+    let mut stack: Vec<&SkinNode> = tree.root.iter().collect();
+    while let Some(n) = stack.pop() {
+        if n.role == NodeRole::NameField {
+            return n.clone();
+        }
+        stack.extend(&n.children);
+    }
+    panic!("{id}: no name field");
+}
+
+/// Plan SK5: Symbiosis lays its notifications gear `ButtonNotificationsTab`
+/// (x 309-334 at the 355 px minimum) over the end of its name field
+/// `UsernameContainer` (x 7-336), so the field serves a right inset of at
+/// least the gear's reach, 337 - 309 = 28 px, and the shell carries it.
+#[test]
+fn a_name_field_under_a_button_serves_its_inset() {
+    let field = name_field("symbiosis");
+    let inset = field.inset.expect("symbiosis name field inset");
+    assert!(inset.right >= 28, "{inset:?}");
+    assert_eq!(inset.left, 0, "{inset:?}");
+    let tree = main_layout("symbiosis").tree.unwrap();
+    let shell = tree.shell(SkinWindow::Main, (0, 0), Vec::new());
+    let mut stack: Vec<&ShellNode> = shell.root.iter().collect();
+    let mut served = None;
+    while let Some(n) = stack.pop() {
+        if n.id == field.id {
+            served = n.inset;
+        }
+        stack.extend(&n.children);
+    }
+    assert_eq!(served, Some(inset));
+}
+
+/// Plan SK5: a name field no button, tab or menu meets serves no inset
+/// (Alloy's `UserNameField`; its status field is a text field, never a
+/// covering sibling).
+#[test]
+fn a_clear_name_field_serves_no_inset() {
+    assert_eq!(name_field("alloy").inset, None);
+    assert_eq!(name_field("xfire-classic").inset, None);
+}
+
+/// Plan SK5 (lead decision): XGlow's file title is icon-shaped (one whole
+/// 24 x 22 picture, at most 2:1), and its usable box (21 px) holds no
+/// legible "Rekindle", so it carries the app mark glyph over that box, the
+/// words its accessible name.
+#[test]
+fn an_icon_shaped_renamed_title_carries_the_app_mark() {
+    let label = menu_label("xglow", "FileMenu").expect("xglow file label");
+    assert_eq!(label.text, "Rekindle");
+    assert_eq!(
+        label.glyph,
+        Some(rekindle_types::dto::skin_tree::NodeGlyph::Rekindle)
+    );
+    assert_eq!(label.cover, Some([1, 0, 21, 22]));
 }

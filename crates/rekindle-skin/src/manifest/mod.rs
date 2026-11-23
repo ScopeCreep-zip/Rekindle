@@ -119,7 +119,8 @@ pub fn served(package: &Package<'_>) -> Result<SkinManifest, SkinError> {
 /// The Host's placements in `manifest` (see [`served`]), then the cover of
 /// each glyph label from the package's art (plan SK3: the icon the
 /// Communities clone copied, [`crate::skin_tree::cover`]), then every
-/// window's menu-title labels (plan SK4b, [`crate::skin_tree::titles`]).
+/// window's menu-title labels (plan SK4b, [`crate::skin_tree::titles`]) and
+/// text-field insets (plan SK5, [`crate::skin_tree::inset`]).
 ///
 /// # Errors
 /// A glyph label's or menu title's picture missing from `package` or not
@@ -134,6 +135,7 @@ pub fn place(manifest: &mut SkinManifest, package: &Package<'_>) -> Result<(), S
     }
     for layout in manifest.windows.values_mut() {
         crate::skin_tree::titles::menus(layout, package)?;
+        crate::skin_tree::inset::fields(layout);
     }
     Ok(())
 }

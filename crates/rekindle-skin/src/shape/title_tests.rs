@@ -93,22 +93,24 @@ fn a_valid_strip_passes_and_lays_the_pack_images_without_glyphs() {
     let (m, files) = laid();
     crate::shape::check(&m, &files).unwrap();
     let css = crate::shape::frame_css(&m, &files, "skin://x").unwrap();
-    assert!(css.contains("  .app-frame[data-skin-window] .xfire-titlebar-btn-close {\n    display: block; position: absolute; right: 23px; top: 8px;"), "{css}");
+    assert!(css.contains("  .app-frame[data-skin-window=\"main\"] .xfire-titlebar-btn-close {\n    display: block; position: absolute; right: 23px; top: 8px;"), "{css}");
     assert!(css.contains(
-        ".app-frame[data-skin-window] .xfire-titlebar-btn-close > .xfire-titlebar-glyph {\n    display: none;"
+        ".app-frame[data-skin-window=\"main\"] .xfire-titlebar-btn-close > .xfire-titlebar-glyph {\n    display: none;"
     ));
     assert!(css.contains(
-        ".app-frame[data-skin-window] .xfire-titlebar-btn-close:hover {\n    background-image: url(\"skin://x/"
+        ".app-frame[data-skin-window=\"main\"] .xfire-titlebar-btn-close:hover {\n    background-image: url(\"skin://x/"
     ));
     assert!(css.contains(
-        ".app-frame[data-skin-window] .xfire-titlebar-btn-close:active {\n    background-image: url(\"skin://x/"
+        ".app-frame[data-skin-window=\"main\"] .xfire-titlebar-btn-close:active {\n    background-image: url(\"skin://x/"
     ));
     assert!(css.contains("width: max(100%, 24px);"));
     assert!(css.contains("font-family: \"Arial\"; font-size: 12px; font-weight: bold;"));
     // The strip row reaches the strip's bottom (51) from the content top; under
     // SK2 the content is the views box (top 237), so the strip lies wholly
     // above it and the row reserves nothing.
-    assert!(css.contains(".app-frame[data-skin-window] .xfire-titlebar {\n    height: 0px;"));
+    assert!(
+        css.contains(".app-frame[data-skin-window=\"main\"] .xfire-titlebar {\n    height: 0px;")
+    );
 }
 
 #[test]

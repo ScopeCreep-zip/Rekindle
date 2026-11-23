@@ -10,6 +10,7 @@ pub mod cover;
 pub mod css;
 mod fit;
 pub mod import;
+pub mod inset;
 mod outdent;
 mod passes;
 pub mod pieces;

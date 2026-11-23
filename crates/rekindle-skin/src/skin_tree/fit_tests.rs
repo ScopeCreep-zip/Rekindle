@@ -247,6 +247,7 @@ fn button(id: &str, key: SkinAction) -> SkinNode {
         art: None,
         text: None,
         label: None,
+        inset: None,
         shows_with: None,
         control_group: None,
         triggers: vec![NodeTrigger {
@@ -267,6 +268,7 @@ fn row(id: &str, v: ViewKey, child: SkinNode) -> SkinNode {
         art: None,
         text: None,
         label: None,
+        inset: None,
         shows_with: Some(v),
         control_group: None,
         triggers: Vec::new(),
