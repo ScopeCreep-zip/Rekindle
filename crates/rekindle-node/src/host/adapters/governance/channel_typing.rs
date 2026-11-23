@@ -147,8 +147,34 @@ impl HostGovernance {
         }
     }
 
-    /// The gossip ingest's hook for a typing frame the meter admitted
-    /// (`DaemonHandler::ingest_gossip`): `sender` is the envelope's verified
+    /// The one ingest of a relayed typing frame, on both modes (the daemon's
+    /// `DaemonHandler::ingest_gossip`, the desktop's `handle_relayed_envelope`):
+    /// nothing from a community we were removed from nor from a departed
+    /// author (`takes_traffic_from`), then the gossip meter's admission
+    /// (`SubscriptionManager::admit`, the daemon's overlay; the desktop
+    /// meters before relay dispatch), then [`Self::on_typing_frame`].
+    pub fn ingest_typing(
+        &self,
+        community_id: &str,
+        sender: &str,
+        lamport_ts: u64,
+        pseudonym_key: &str,
+        tag: &[u8; CHANNEL_TAG_LEN],
+        ttl_ms: u32,
+    ) {
+        if !self.takes_traffic_from(community_id, &PseudonymKey::from_hex_lossy(sender)) {
+            tracing::debug!(community = %community_id, "typing frame from traffic we do not take");
+            return;
+        }
+        let admitted = (self.ctx.subscriptions.read().as_ref())
+            .is_none_or(|sub| sub.admit(community_id, sender, lamport_ts));
+        if admitted {
+            self.on_typing_frame(community_id, sender, pseudonym_key, tag, ttl_ms);
+        }
+    }
+
+    /// A typing frame the gossip meter admitted ([`Self::ingest_typing`]):
+    /// `sender` is the envelope's verified
     /// signer and `pseudonym_key` the typist the frame names. A frame naming
     /// anyone but its signer is dropped, so no member can type as another.
     pub(crate) fn on_typing_frame(
