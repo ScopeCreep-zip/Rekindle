@@ -44,23 +44,6 @@ export function transformFriendMap(friends: FriendInfo[]): Record<string, Friend
   return map;
 }
 
-/**
- * A friends snapshot (`getFriends`) folded over the rows the window holds
- * (peer finding F5, 2026-11-23): the snapshot decides who is listed and
- * every other field, but a row already held keeps its live presence
- * (`status`, `gameInfo`, `statusMessage`): those come from FriendChanged
- * events, and a snapshot read before the presence read lands after it and
- * would put a friend back offline. A new row takes the snapshot's.
- */
-export function foldFriendSnapshot(friends: FriendInfo[], held: Record<string, Friend>): Record<string, Friend> {
-  const next = transformFriendMap(friends);
-  for (const [key, row] of Object.entries(next)) {
-    const live = held[key];
-    if (live) next[key] = { ...row, status: live.status, gameInfo: live.gameInfo, statusMessage: live.statusMessage };
-  }
-  return next;
-}
-
 /** Backend Message DTO → store Message: our own message's `status` comes
  *  from its stored `sendState`; optimistic sends set it themselves. */
 export function transformMessage(m: IpcMessage): Message {
