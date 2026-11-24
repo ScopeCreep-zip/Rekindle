@@ -113,6 +113,11 @@ describe("dialogs take focus, close on Esc and give focus back", function () {
   it("a forwarded message says so under its own sender and time, above its text", async () => {
     await browser.switchToWindow(communityHandle);
     const before = (await browser.execute(() => document.querySelectorAll(".community-main .message-forwarded-header").length)) as number;
+    // A message's action bar is collapsed until hover or focus within it: the
+    // test reveals Forward itself (run alone, no earlier test has focused it).
+    const forward = await browser.$('.community-main .chat-message [aria-label="Forward message"]');
+    await forward.waitForExist({ timeout: NET_WAIT_MS, timeoutMsg: "the message's Forward never existed" });
+    await browser.execute((node: HTMLElement) => node.focus(), forward as unknown as HTMLElement);
     await press(browser, await shown(browser, '.community-main .chat-message [aria-label="Forward message"]'));
     await shown(browser, ".forward-dialog");
     // This community's #general: the forward lands in the channel shown.
