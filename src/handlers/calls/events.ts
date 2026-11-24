@@ -112,7 +112,7 @@ export function subscribeCallEvents({ owner }: { owner: boolean }): Promise<Unli
             displayName,
             kind: kind as "audio" | "video",
             participants,
-            groupId: groupId ?? null,
+            groupId,
             accepted: [],
             startedAtMs: Date.now(),
             expiresAtMs,
@@ -161,7 +161,8 @@ export function subscribeCallEvents({ owner }: { owner: boolean }): Promise<Unli
         // has no single peer, which is exactly what `direct: null` says.
         const head = callsState.incomingGroupCalls.find((c) => c.callId === callId);
         if (head) {
-          setCallsState("activeGroupCall", { ...head, groupId: groupId ?? head.groupId, accepted: [head.initiatorKey] });
+          // The connect's group as the Host sends it, never the ring's in its place.
+          setCallsState("activeGroupCall", { ...head, groupId, accepted: [head.initiatorKey] });
           setCallsState("incomingGroupCalls", (p) => p.filter((c) => c.callId !== callId));
         }
         return;
