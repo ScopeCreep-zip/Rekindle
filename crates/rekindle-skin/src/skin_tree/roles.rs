@@ -89,7 +89,9 @@ pub struct Facts<'a> {
     pub children: &'a [String],
 }
 
-fn key(name: &str) -> String {
+/// A pack name's table key: lower case, its trailing digits dropped
+/// (`MenuDiv0`…`MenuDiv3`, `Separator1`); the main and chat tables share it.
+pub(super) fn key(name: &str) -> String {
     name.trim_end_matches(|c: char| c.is_ascii_digit())
         .to_ascii_lowercase()
 }

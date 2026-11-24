@@ -9,14 +9,7 @@
 use rekindle_types::dto::skin_action::{EngineMenu, NodeTrigger, SkinAction, SkinEvent};
 use rekindle_types::dto::skin_tree::{NodeRole, SlotKey, WindowButtonKind};
 
-use super::roles::{Facts, Role};
-
-/// A pack name's table key: lower case, its trailing digits dropped
-/// (`MenuDiv0`…`MenuDiv3`, `Separator1`).
-fn key(name: &str) -> String {
-    name.trim_end_matches(|c: char| c.is_ascii_digit())
-        .to_ascii_lowercase()
-}
+use super::roles::{key, Facts, Role};
 
 fn acts(shown: NodeRole, on: SkinEvent, run: SkinAction) -> Role {
     Role::Acts(shown, Some(NodeTrigger { on, run }))
