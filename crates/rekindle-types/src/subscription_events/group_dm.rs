@@ -74,6 +74,14 @@ pub enum GroupDmEvent {
     /// The group's creator renamed it. Triggered by: our rename, or the
     /// creator's `GroupDmRename` entry that opened (never a non-creator's).
     Renamed { group_id: String, name: String },
+    /// The group's game lobby changed (plan E7.2 G6, SK2-G §5): its view as
+    /// we see it now, or `None` when the group holds none. Triggered by:
+    /// our lobby request, or a roster member's lobby entry that opened and
+    /// changed the fold.
+    Lobby {
+        group_id: String,
+        lobby: Option<crate::dto::group_lobby::LobbyView>,
+    },
     /// `member`'s group chain was retired past our cursor: their entries
     /// through `through_seq` were never read. It is stored as the group's
     /// history-gap row (`messages.history_gap_through`, the 1:1 marker's
@@ -98,7 +106,8 @@ impl GroupDmEvent {
             | Self::SendStatus { group_id, .. }
             | Self::Message { group_id, .. }
             | Self::HistoryGap { group_id, .. }
-            | Self::Renamed { group_id, .. } => group_id,
+            | Self::Renamed { group_id, .. }
+            | Self::Lobby { group_id, .. } => group_id,
         }
     }
 }

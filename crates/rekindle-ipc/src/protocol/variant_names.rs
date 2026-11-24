@@ -80,6 +80,7 @@ fn every_leaf_name_has_a_command_table_row() {
         variants::<ExpressionRequest>(),
         variants::<super::TransferRequest>(),
         variants::<super::ServersRequest>(),
+        variants::<super::LobbyRequest>(),
     ]
     .concat();
     assert!(top.contains(&"Community"), "{top:?}");
@@ -88,7 +89,7 @@ fn every_leaf_name_has_a_command_table_row() {
         .iter()
         .chain(&community)
         .copied()
-        .filter(|name| !matches!(*name, "Community" | "Transfer" | "Servers"))
+        .filter(|name| !matches!(*name, "Community" | "Transfer" | "Servers" | "Lobby"))
         .filter(|name| rekindle_types::intent::kind_of(name).is_none())
         .collect();
     assert!(

@@ -7,7 +7,10 @@
 //!   stored as the sender's own chain there, never another member's);
 //! - 0x0160 `DisappearingTimer` naming that group (plan E7.1);
 //! - the `PreKeyInit` that opens the pair's session, when its first
-//!   payload is itself admitted.
+//!   payload is itself admitted;
+//! - a lobby kind 0x0127-0x012B (plan E7.2 G6) opened from an entry of
+//!   that group's chain ([`GroupFrame::Lobby`]); never as a frame of its
+//!   own, nor as a `PreKeyInit`'s first payload.
 //!
 //! Never friendship, presence or profile frames, and never a blocked
 //! sender. Leaving deletes the group (so it is no longer accepted) and a
@@ -40,6 +43,14 @@ pub enum GroupFrame<'a> {
     DisappearingTimer { group_id: Option<&'a GroupId> },
     /// A `PreKeyInit` whose first payload is `first`.
     PreKeyInit { first: &'a GroupFrame<'a> },
+    /// A lobby kind (plan E7.2 G6) opened from the sender's entry on its
+    /// chain in `group_id` (the `GroupContent` entry's group). The sender
+    /// must be on that group's roster now: a member who left, or a writer
+    /// never on it, is dropped, so no row is ever folded for them.
+    Lobby {
+        kind: DmTypeId,
+        group_id: &'a GroupId,
+    },
 }
 
 /// Admission's answer.
@@ -65,6 +76,20 @@ pub fn is_group_kind(kind: DmTypeId) -> bool {
             | DmTypeId::GroupDmLeave
             | DmTypeId::GroupDmRosterGrow
             | DmTypeId::GroupContent
+    )
+}
+
+/// Whether `kind` is one of the lobby kinds 0x0127-0x012B (plan E7.2 G6),
+/// which travel only inside a `GroupContent` entry's inner.
+#[must_use]
+pub fn is_lobby_kind(kind: DmTypeId) -> bool {
+    matches!(
+        kind,
+        DmTypeId::LobbyOpen
+            | DmTypeId::LobbyJoin
+            | DmTypeId::LobbyLeave
+            | DmTypeId::LobbyLaunch
+            | DmTypeId::LobbyClose
     )
 }
 
@@ -108,8 +133,18 @@ pub fn admit(
                 Admission::NotOnRoster
             }
         }
+        GroupFrame::Lobby { kind, group_id } => {
+            if !is_lobby_kind(*kind) {
+                return Admission::KindRefused;
+            }
+            if group_of(groups, group_id).is_some_and(|g| g.roster.contains(sender)) {
+                Admission::Admit
+            } else {
+                Admission::NotOnRoster
+            }
+        }
         GroupFrame::PreKeyInit { first } => match first {
-            GroupFrame::PreKeyInit { .. } => Admission::KindRefused,
+            GroupFrame::PreKeyInit { .. } | GroupFrame::Lobby { .. } => Admission::KindRefused,
             inner => admit(sender, blocked, inner, groups),
         },
     }

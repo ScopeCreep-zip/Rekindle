@@ -4,7 +4,7 @@
 
 use std::collections::HashSet;
 
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_ipc::protocol::{IpcRequest, IpcResponse, LobbyRequest};
 use rekindle_types::group_dm::{MAX_MEMBERS, MAX_NAME_CHARS, MIN_MEMBERS};
 
 use super::{message_body, page, public_key, Checked};
@@ -120,11 +120,33 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
         | IpcRequest::GroupDmTyping {
             group_id: id,
             typing: _,
-        } => group_id(id),
+        }
+        | IpcRequest::Lobby(
+            LobbyRequest::Host { group_id: id } | LobbyRequest::Get { group_id: id },
+        ) => group_id(id),
         IpcRequest::GroupDmInvite {
             group_id: id,
             members,
         } => invite(id, members),
+        IpcRequest::Lobby(
+            LobbyRequest::Join {
+                group_id: id,
+                lobby_id,
+            }
+            | LobbyRequest::Leave {
+                group_id: id,
+                lobby_id,
+            }
+            | LobbyRequest::Close {
+                group_id: id,
+                lobby_id,
+            }
+            | LobbyRequest::Launch {
+                group_id: id,
+                lobby_id,
+                server: _,
+            },
+        ) => group_id(id).and_then(|()| group_id(lobby_id)),
         IpcRequest::GroupDmRename { group_id: id, name } => {
             group_id(id).and_then(|()| group_name(name))
         }

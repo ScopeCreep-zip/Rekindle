@@ -15,12 +15,14 @@ const IPC_PROTOCOL: &str = "crates/rekindle-ipc/src/protocol/mod.rs";
 const IPC_COMMUNITY: &str = "crates/rekindle-ipc/src/protocol/community";
 const IPC_TRANSFER: &str = "crates/rekindle-ipc/src/protocol/transfer.rs";
 const IPC_SERVERS: &str = "crates/rekindle-ipc/src/protocol/servers.rs";
+const IPC_LOBBY: &str = "crates/rekindle-ipc/src/protocol/lobby.rs";
 /// The `IpcRequest` variants that each carry one sub-enum in its own file
 /// (variant, sub-enum, file): the variant stands for every leaf of the
 /// sub-enum, each named on the wire by its `#[serde(rename)]`.
 const CARRIERS: &[(&str, &str, &str)] = &[
     ("Transfer", "TransferRequest", IPC_TRANSFER),
     ("Servers", "ServersRequest", IPC_SERVERS),
+    ("Lobby", "LobbyRequest", IPC_LOBBY),
 ];
 const TABLE: &str = "crates/rekindle-types/src/intent/table";
 

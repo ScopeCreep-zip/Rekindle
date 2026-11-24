@@ -23,8 +23,9 @@ use rekindle_types::subscription_events::{
     TypingEvent, VoiceEvent,
 };
 
-use super::capability::{allows, Group, Selected, SkinWorld};
+use super::capability::{allows, Group, LobbyCaps, Selected, SkinWorld};
 use crate::daemon::dispatch::DaemonContext;
+use rekindle_transport::operations::group_dm;
 
 /// A call the Host has seen on its stream, by call id.
 #[derive(Debug, Clone)]
@@ -273,7 +274,9 @@ pub(crate) async fn load_world(ctx: &DaemonContext) -> SkinWorld {
     let now = ctx.clock.now_ms_i64();
     let read = db
         .call(move |conn| {
-            use rekindle_db::repo::{favourite_servers, group_dm_invites, group_dms, transfers};
+            use rekindle_db::repo::{
+                favourite_servers, group_dm_invites, group_dms, group_lobby, transfers,
+            };
             let favourites = favourite_servers::list(conn, &owner)?;
             let groups = group_dms::list(conn, &owner)?;
             let invites = group_dm_invites::list(conn, &owner, now)?;
@@ -281,11 +284,28 @@ pub(crate) async fn load_world(ctx: &DaemonContext) -> SkinWorld {
                 .iter()
                 .filter_map(|g| g.origin_peer.clone())
                 .collect();
-            let joined = groups.into_iter().map(|g| {
+            let mut joined = Vec::with_capacity(groups.len());
+            for g in groups {
                 let others = g.roster.iter().filter(|m| m.identity != owner).count();
                 let creator = g.roster.first().is_some_and(|m| m.identity == owner);
-                (g.group_id, Group::Joined { others, creator })
-            });
+                let lobby = group_lobby::current(conn, &owner, &g.group_id)?.map(|row| {
+                    let [join, leave, launch, _] = group_dm::lobby::verdicts(&row, &owner);
+                    LobbyCaps {
+                        open: row.state == group_lobby::LobbyState::Open,
+                        join: join.allowed(),
+                        leave: leave.allowed(),
+                        launch: launch.allowed(),
+                    }
+                });
+                joined.push((
+                    g.group_id,
+                    Group::Joined {
+                        others,
+                        creator,
+                        lobby,
+                    },
+                ));
+            }
             let pending = invites.into_iter().map(|i| (i.group_id, Group::Pending));
             let favourites: BTreeSet<(u32, String)> = favourites
                 .into_iter()

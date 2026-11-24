@@ -8,7 +8,7 @@ use rekindle_types::friend::{FriendState, FriendshipState, GameInfoState, UserSt
 
 use rekindle_types::dto::transfer::{TransferRow, TransferState, TransferTarget};
 
-use super::capability::{allows, Group, Selected, SkinWorld};
+use super::capability::{allows, Group, LobbyCaps, Selected, SkinWorld};
 use super::signals::Inputs;
 
 /// Team Fortress 2: a connect template.
@@ -145,6 +145,7 @@ fn a_lobby_is_hosted_in_a_group_with_a_member_while_in_a_launchable_game() {
         Group::Joined {
             others: 1,
             creator: false,
+            lobby: None,
         },
     );
     w.own_game = Some(TF2);
@@ -157,6 +158,7 @@ fn a_lobby_is_hosted_in_a_group_with_a_member_while_in_a_launchable_game() {
         Group::Joined {
             others: 0,
             creator: false,
+            lobby: None,
         },
     );
     assert!(!can(C::HostGameLobby, &i, &w, g));
@@ -168,6 +170,7 @@ fn a_lobby_is_hosted_in_a_group_with_a_member_while_in_a_launchable_game() {
         Group::Joined {
             others: 3,
             creator: false,
+            lobby: None,
         },
     );
     for c in [C::JoinGameLobby, C::LeaveGameLobby, C::LaunchGameLobby] {
@@ -195,6 +198,7 @@ fn rooms_need_two_friends_to_create_and_a_known_group_to_enter() {
         Group::Joined {
             others: 2,
             creator: false,
+            lobby: None,
         },
     );
     assert!(
@@ -216,6 +220,7 @@ fn only_the_creator_renames_a_room() {
         Group::Joined {
             others: 2,
             creator: false,
+            lobby: None,
         },
     );
     assert!(!can(C::RenameRoom, &i, &w, g), "another member's room");
@@ -224,6 +229,7 @@ fn only_the_creator_renames_a_room() {
         Group::Joined {
             others: 2,
             creator: true,
+            lobby: None,
         },
     );
     assert!(can(C::RenameRoom, &i, &w, g), "our room");
@@ -264,4 +270,52 @@ fn media_actions_need_the_file_and_a_share_target() {
     for c in [C::OpenSelected, C::DeleteSelected, C::UploadSelected] {
         assert!(!can(c, &i, &w, m), "{c:?}");
     }
+}
+
+fn with_lobby(lobby: LobbyCaps) -> SkinWorld {
+    let mut w = SkinWorld {
+        own_game: Some(TF2),
+        ..SkinWorld::default()
+    };
+    w.groups.insert(
+        "g1".into(),
+        Group::Joined {
+            others: 2,
+            creator: false,
+            lobby: Some(lobby),
+        },
+    );
+    w
+}
+
+/// SK2-G §5 (5): Join, Leave and Launch follow the Host's lobby verdicts,
+/// and an open lobby stops a second Host.
+#[test]
+fn the_lobby_actions_follow_the_group_lobby() {
+    let (i, g) = (Inputs::default(), Selected::Group { group_id: "g1" });
+    let none = LobbyCaps {
+        open: true,
+        join: false,
+        leave: false,
+        launch: false,
+    };
+    let w = with_lobby(LobbyCaps { join: true, ..none });
+    assert!(can(C::JoinGameLobby, &i, &w, g));
+    assert!(!can(C::LeaveGameLobby, &i, &w, g) && !can(C::LaunchGameLobby, &i, &w, g));
+    assert!(!can(C::HostGameLobby, &i, &w, g));
+    let w = with_lobby(LobbyCaps {
+        leave: true,
+        ..none
+    });
+    assert!(can(C::LeaveGameLobby, &i, &w, g) && !can(C::JoinGameLobby, &i, &w, g));
+    let w = with_lobby(LobbyCaps {
+        launch: true,
+        ..none
+    });
+    assert!(can(C::LaunchGameLobby, &i, &w, g));
+    let w = with_lobby(LobbyCaps {
+        open: false,
+        ..none
+    });
+    assert!(can(C::HostGameLobby, &i, &w, g));
 }

@@ -234,13 +234,19 @@ pub enum JoinSource {
     Invite,
     /// A community's game-server list.
     Community,
+    /// A group DM's game lobby its host launched (plan E7.2 G6, SK2-G §5):
+    /// the host chose the address.
+    Lobby,
 }
 
 impl JoinSource {
     /// Whether a peer chose the server address (TrustChanging).
     #[must_use]
     pub const fn peer_supplied(self) -> bool {
-        matches!(self, Self::FriendPresence | Self::Invite | Self::Community)
+        matches!(
+            self,
+            Self::FriendPresence | Self::Invite | Self::Community | Self::Lobby
+        )
     }
 
     /// Whether a launch from this source names a server: every source but

@@ -110,3 +110,69 @@ fn admission_table() {
         Admission::NotOnRoster
     );
 }
+
+/// Plan E7.2 G6: a lobby kind opened from a group entry is admitted only
+/// from a writer on that group's roster now; never as a frame of its own,
+/// never as a `PreKeyInit`'s first payload, and never a non-lobby kind.
+#[test]
+fn a_lobby_kind_is_admitted_only_from_the_roster() {
+    let roster = roster();
+    let gid = [5u8; 16];
+    let other_gid = [6u8; 16];
+    let groups = [AcceptedGroup {
+        group_id: &gid,
+        roster: &roster,
+    }];
+    let bea = roster.members()[1].identity.clone();
+    let stranger = member_of(&signer(9)).identity;
+    let shrunk = roster.without(&bea).expect("on it");
+    let after = [AcceptedGroup {
+        group_id: &gid,
+        roster: &shrunk,
+    }];
+    for kind in [
+        DmTypeId::LobbyOpen,
+        DmTypeId::LobbyJoin,
+        DmTypeId::LobbyLeave,
+        DmTypeId::LobbyLaunch,
+        DmTypeId::LobbyClose,
+    ] {
+        assert!(is_lobby_kind(kind));
+        let lobby = GroupFrame::Lobby {
+            kind,
+            group_id: &gid,
+        };
+        assert_eq!(admit(&bea, false, &lobby, &groups), Admission::Admit);
+        assert_eq!(admit(&bea, true, &lobby, &groups), Admission::Blocked);
+        assert_eq!(
+            admit(&stranger, false, &lobby, &groups),
+            Admission::NotOnRoster,
+            "{kind:?} from a writer never on the roster"
+        );
+        assert_eq!(
+            admit(&bea, false, &lobby, &after),
+            Admission::NotOnRoster,
+            "{kind:?} from a member who left"
+        );
+        let elsewhere = GroupFrame::Lobby {
+            kind,
+            group_id: &other_gid,
+        };
+        assert_eq!(
+            admit(&bea, false, &elsewhere, &groups),
+            Admission::NotOnRoster
+        );
+        let frame = GroupFrame::Kind {
+            kind,
+            group_id: Some(&gid),
+        };
+        assert_eq!(admit(&bea, false, &frame, &groups), Admission::KindRefused);
+        let init = GroupFrame::PreKeyInit { first: &lobby };
+        assert_eq!(admit(&bea, false, &init, &groups), Admission::KindRefused);
+    }
+    let text = GroupFrame::Lobby {
+        kind: DmTypeId::DmText,
+        group_id: &gid,
+    };
+    assert_eq!(admit(&bea, false, &text, &groups), Admission::KindRefused);
+}
