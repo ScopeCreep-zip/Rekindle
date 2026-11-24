@@ -124,6 +124,19 @@ fn a_group_message_resolves_to_its_group_page() {
             },
         ]
     );
+    // SK15d: a sticky button's radio message to its own group (Symbiosis's
+    // tabs, `GroupId="8765"` `GroupMessage(8765)`, `MainWindow.xml:910-915`)
+    // selects no page: it imports as no trigger, the shell's shown tab
+    // being the radio.
+    let radio = r#"<Trigger Type="OnLeftButtonDown">GroupMessage(4)</Trigger><Trigger Type="OnClick">GroupMessage(1)</Trigger>"#;
+    let tree = tree_from("", radio).unwrap();
+    assert_eq!(
+        find(&tree.root, "TabArt").unwrap().triggers,
+        [NodeTrigger {
+            on: SkinEvent::Click,
+            run: SkinAction::GroupPage { group: 4, page: 1 },
+        }]
+    );
     // A group no component declares is refused.
     let stray = r#"<Trigger Type="OnClick">GroupMessage(0,77)</Trigger>"#;
     assert!(tree_from("", stray).is_err());
