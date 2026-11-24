@@ -1,13 +1,15 @@
 import { type Component, type JSX, Show, createContext, createSignal, useContext } from "solid-js";
 import { Portal } from "solid-js/web";
+import type { SlotKey } from "../../ipc/commands/dto_skin_tree";
 
 /**
  * The places a skin tree lays for the shell's own content (plan SK17-2, the
  * chat window as a skin tree): the pack's ChatWindow tiles `TypingMessage`,
  * `ChatArea`, `ChatEdit`, its send button and its InfoView button. The Host
- * serves a node for each it lays; the shell mounts its part there.
+ * serves a node for each it lays (`NodeRole` `slot`); the shell mounts its
+ * part there.
  */
-export type SlotKey = "typingNotice" | "chatArea" | "chatEdit" | "chatSend" | "infoviewButton";
+export type { SlotKey };
 
 interface SlotTargets {
   target: (key: SlotKey) => HTMLElement | undefined;

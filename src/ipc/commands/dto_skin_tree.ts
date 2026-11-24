@@ -27,8 +27,13 @@ export type Edge =
 
 /** `NodeRole` (serde `tag = "kind"`, `content = "key"`; plan SK2-A3: what a
  *  node shows; what it does is its `triggers`). */
+/** A place a chat tree lays for the shell's own content (plan SK17-2). */
+export type SlotKey = "typingNotice" | "chatArea" | "chatEdit" | "chatSend" | "infoviewButton";
+
 export type NodeRole =
   | { kind: "tab" | "knob" | "view" | "buttonRow"; key: ViewKey }
+  /** The shell mounts its part for `key` here (components/skin-tree/slots.tsx). */
+  | { kind: "slot"; key: SlotKey }
   | { kind: "lamp"; key: string }
   | {
       kind:
@@ -52,7 +57,10 @@ export type NodeRole =
         | "gameLogo"
         | "group"
         | "part"
-        | "decor";
+        | "decor"
+        /** The chat window's title, in the pack's font and colour; its words
+         *  are the conversation title the Host serves the window. */
+        | "chatTitle";
     };
 
 /** `rekindle_types::dto::skin_action::EngineMenu`. */

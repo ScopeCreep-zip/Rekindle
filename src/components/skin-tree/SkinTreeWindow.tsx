@@ -1,6 +1,7 @@
 import { Component, For, JSX, Match, Show, Switch, createContext, createEffect, createSignal, onCleanup, untrack, useContext } from "solid-js";
 import { createStore, produce } from "solid-js/store";
-import type { EngineMenu, MenuItem, NodeGlyph, NodeLabel, NodeTrigger, ShellNode, SkinAction, SkinEvent, SkinShell, ViewKey } from "../../ipc/commands/dto_skin_tree";
+import type { EngineMenu, MenuItem, NodeGlyph, NodeLabel, NodeTrigger, ShellNode, SkinAction, SkinEvent, SkinShell, SlotKey, ViewKey } from "../../ipc/commands/dto_skin_tree";
+import { useSlotRegister } from "./slots";
 import type { SkinSignalSet } from "../../ipc/commands/dto_skin_run";
 import { skinSignals } from "../../stores/skin-signals.store";
 import { applyTreeOp, fired, initialTreeState, pageView, type TreeState } from "./signalEffects";
@@ -22,6 +23,9 @@ interface Tree {
   /** What the Communities view shows (plan SK2-N4); null where a window has none. */
   communities: () => JSX.Element;
   hasFriendsView: boolean;
+  /** The conversation title a chat window's `chatTitle` node shows (the
+   *  Host's, as the window's title); "" in a window without one. */
+  chatTitle: () => string;
   state: TreeState;
   /** Each node's parent, for a control group's pages. */
   parent: Map<string, ShellNode>;
@@ -206,6 +210,11 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
   const press = (): SkinAction | undefined => pressAction(n());
   const fx = () => tree.state.nodes[n().id];
   const disabled = (): boolean => fx()?.state === "disabled";
+  const slotKey = (): SlotKey | undefined => {
+    const r = role();
+    return r.kind === "slot" ? r.key : undefined;
+  };
+  const registerSlot = useSlotRegister();
   const viewKey = (): ViewKey | undefined => {
     const r = role();
     return r.kind === "view" || r.kind === "buttonRow" ? r.key : undefined;
@@ -384,6 +393,29 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
           {!tree.hasFriendsView && <div class="skin-tree-view-content">{tree.views()}</div>}
         </div>
       </Match>
+      {/* A place the pack lays for the shell's own content (plan SK17-2): the
+       *  node registers itself; the chat's part mounts into it (slots.tsx). */}
+      <Match when={slotKey()}>
+        {(key) => (
+          <div
+            {...attrs}
+            ref={(el) => {
+              registerSlot?.(key(), el);
+              onCleanup(() => registerSlot?.(key(), undefined));
+            }}
+          >
+            {children()}
+          </div>
+        )}
+      </Match>
+      {/* The chat window's title in the pack's font and colour: the
+       *  conversation title the Host serves this window, never pack words. */}
+      <Match when={role().kind === "chatTitle"}>
+        <div {...attrs}>
+          {children()}
+          <span class="skin-chat-title">{tree.chatTitle()}</span>
+        </div>
+      </Match>
       <Match when={role().kind === "view" && viewKey() === "friends"}>
         <div {...attrs}>
           {children()}
@@ -446,7 +478,13 @@ const Children: Component<{ node: ShellNode }> = (props) => (
  * Every box comes from the Host's rules under `.skin-tree`; what a node
  * does is its triggers, run through the one dispatcher.
  */
-const SkinTreeWindow: Component<{ shell: SkinShell; views: () => JSX.Element; communities: () => JSX.Element }> = (props) => {
+const SkinTreeWindow: Component<{
+  shell: SkinShell;
+  views: () => JSX.Element;
+  communities: () => JSX.Element;
+  /** A chat window's conversation title, for its `chatTitle` node. */
+  chatTitle?: () => string;
+}> = (props) => {
   const [state, setState] = createStore<TreeState>(initialTreeState());
   const [nameEdits, setNameEdits] = createSignal(0);
   const root = (): ShellNode[] => props.shell.root;
@@ -508,6 +546,7 @@ const SkinTreeWindow: Component<{ shell: SkinShell; views: () => JSX.Element; co
       value={{
         views: props.views,
         communities: props.communities,
+        chatTitle: () => props.chatTitle?.() ?? "",
         hasFriendsView: hasFriendsView(props.shell.root),
         state,
         parent: parents(props.shell.root),
