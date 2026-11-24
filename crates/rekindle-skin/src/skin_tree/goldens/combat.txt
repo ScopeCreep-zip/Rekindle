@@ -29,7 +29,7 @@ MainTabbedArea Views
   ServerView View(Servers)
   DownloadView View(Files)
   MainTabbedArea.Communities View(Communities)
-Title NameField
+Title NameField target [0, -4, 214, 24] art [0, 4, 214, 15] Size
 StatusEdit StatusText target [0, -4, 219, 24] art [0, 4, 219, 15] Size
 DownArrow StatusList target [0, -2, 22, 24] art [0, 2, 20, 20] Short
 FriendsButtons ButtonRow(Friends)

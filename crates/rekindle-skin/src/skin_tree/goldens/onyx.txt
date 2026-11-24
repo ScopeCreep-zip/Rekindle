@@ -3,7 +3,7 @@ Top Decor target [0, 0, 218, 128] art [0, 0, 218, 128] Frame
 TopRight Decor target [0, 0, 83, 128] art [0, 0, 83, 128] Frame
 StatusWrapper Group
 StatusEdit StatusText target [0, -1, 162, 21] art [0, 1, 162, 16] Spacing
-DownArrow StatusList target [0, -3, 20, 24] art [0, 3, 15, 18] Short
+DownArrow StatusList target [0, -1, 20, 22] art [0, 1, 15, 18] Short
 ExpandButton Button target [0, -1, 47, 23] art [0, 1, 47, 20] Short
 ResizeLeft Button target [0, 0, 24, 320] art [0, 0, 5, 320] Size
 ResizeRight Button target [-19, 0, 24, 320] art [19, 0, 5, 320] Size
@@ -19,7 +19,7 @@ RightEdge Decor target [0, 0, 83, 75] art [0, 0, 83, 75] Frame
 Middle Decor
 MainTitleBar Drag
   Logo Logo label "Rekindle" cover [0, 0, 16, 16] glyph RekindleMarkSmall target [-4, -4, 22, 21] art [4, 4, 16, 16] Short
-  Title NameField
+  Title NameField target [0, -4, 160, 20] art [0, 4, 160, 15] Spacing
 TopButtonBar Group
   Minimize Button target [-4, -4, 20, 20] art [4, 4, 15, 15] Short
   Maximize Button target [-1, -4, 17, 20] art [1, 4, 15, 15] Short

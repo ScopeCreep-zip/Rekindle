@@ -12,8 +12,8 @@ AdAreaBG AdArea
   AdArea Part
 ExpandButton Button target [-4, 0, 24, 47] art [4, 0, 20, 47] Size
 MainTitleBar Drag
-  Logo Logo label "Rekindle" cover [0, 0, 16, 16] glyph RekindleMarkSmall target [-4, -4, 22, 24] art [4, 4, 16, 16] Spacing
-  Title NameField
+  Logo Logo label "Rekindle" cover [0, 0, 16, 16] glyph RekindleMarkSmall target [-4, -4, 22, 24] art [4, 4, 16, 16] Short
+  Title NameField target [0, -4, 128, 24] art [0, 4, 128, 15] Size
 AGEAR Decor
 IGEAR Decor
 StatusWrapper Group

@@ -21,10 +21,10 @@ MenuBackground MenuBar
   XfireMenu MenuTitle label "Rekindle" cover [0, 0, 45, 20] target [0, -2, 45, 24] art [0, 2, 45, 20] Size
   ToolsMenu MenuTitle target [0, -2, 46, 24] art [0, 2, 46, 20] Size
   HelpMenu MenuTitle target [0, -2, 47, 24] art [0, 2, 47, 20] Size
-UsernameContainer NameField inset [0, 28] target [0, -5, 315, 24] art [0, 5, 343, 13] Size
+UsernameContainer NameField inset [0, 28] target [0, -4, 315, 24] art [0, 4, 343, 15] Size
   Username Part
 StatusBarContainer Group
-  Status StatusText target [0, -6, 322, 24] art [0, 6, 322, 12] Size
+  Status StatusText target [0, -5, 322, 24] art [0, 5, 322, 14] Size
   StatusChanger StatusList target [0, -3, 21, 24] art [0, 3, 18, 18] Short
 AdView AdArea
 TabsContainer Decor
