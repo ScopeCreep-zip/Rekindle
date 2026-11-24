@@ -16,6 +16,7 @@ pub const NAMES: &[&str] = &[
     "attachmentDownloaded",
     "expressionAssetReady",
     "directMessageReceived",
+    "directMessageSent",
     "dmSendStatus",
     "dmHistoryGap",
     "disappearingTimerChanged",
@@ -34,6 +35,7 @@ pub fn variant_name(e: &ChannelMessageEvent) -> &'static str {
         ChannelMessageEvent::AttachmentDownloaded { .. } => "attachmentDownloaded",
         ChannelMessageEvent::ExpressionAssetReady { .. } => "expressionAssetReady",
         ChannelMessageEvent::DirectMessageReceived { .. } => "directMessageReceived",
+        ChannelMessageEvent::DirectMessageSent { .. } => "directMessageSent",
         ChannelMessageEvent::DmSendStatus { .. } => "dmSendStatus",
         ChannelMessageEvent::DmHistoryGap { .. } => "dmHistoryGap",
         ChannelMessageEvent::DisappearingTimerChanged { .. } => "disappearingTimerChanged",
@@ -139,6 +141,26 @@ pub fn samples() -> Vec<Sample> {
             ChannelMessageEvent::ExpressionAssetReady {
                 community: community(),
                 expression_id: id("exp_", '1'),
+            },
+        ),
+        ev(
+            "directMessageSent",
+            ChannelMessageEvent::DirectMessageSent {
+                conversation_id: pk('b'),
+                reply_to_id: Some(text("01900000-0000-7000-8000-000000000001")),
+                message: rekindle_types::dto::dm::DmMessage {
+                    id: 42,
+                    message_id: Some(text("01900000-0000-7000-8000-000000000002")),
+                    sender_id: pk('a'),
+                    body: text("gg"),
+                    timestamp: 1_700_000_000_000,
+                    is_own: true,
+                    send_state: rekindle_types::message::SendState::Queued,
+                    history_gap_through: None,
+                    expire_seconds: 300,
+                    expire_at: Some(1_700_000_300_000),
+                    timer_notice_seconds: None,
+                },
             },
         ),
         ev(

@@ -204,6 +204,27 @@
       }
     }
   },
+  "channelMessage.directMessageSent": {
+    "channelMessage": {
+      "directMessageSent": {
+        "conversationId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "message": {
+          "body": "gg",
+          "expireAt": 1700000300000,
+          "expireSeconds": 300,
+          "historyGapThrough": null,
+          "id": 42,
+          "isOwn": true,
+          "messageId": "01900000-0000-7000-8000-000000000002",
+          "sendState": "queued",
+          "senderId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "timerNoticeSeconds": null,
+          "timestamp": 1700000000000
+        },
+        "replyToId": "01900000-0000-7000-8000-000000000001"
+      }
+    }
+  },
   "channelMessage.disappearingTimerChanged": {
     "channelMessage": {
       "disappearingTimerChanged": {
