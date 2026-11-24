@@ -20,6 +20,12 @@
 //!   entry unused for 5 minutes has expired and does not resolve
 //!   (`mod.rs:44`, `remote_route_cache_entry.rs:131-135`,
 //!   `route_spec_store_cache.rs:331-343`), nor does one never imported:
+//!   "unused" means untouched by the private route management task too,
+//!   whose listing touches every unexpired entry on each of its ticks
+//!   ([`crate::loopback`] `tick_remote_route_tests`, `mod.rs:313-324`,
+//!   `route_spec_store_cache.rs:348-357`), so an import expires only
+//!   while that task is stopped (the node detached, offline, not ready
+//!   or asleep) for 5 minutes;
 //!   that send fails `NoConnection` (`rpc_processor/destination.rs:362-371`,
 //!   `rpc_processor/error.rs:81`), which our port maps to `RouteUnusable`
 //!   (`rekindle-protocol` `ports.rs:233-245`).
@@ -149,8 +155,11 @@ pub(crate) struct CacheEntry {
     pub touched: u64,
     /// LRU order.
     pub used: u64,
-    /// When a remote route test last proved it (µs); `None` before its
-    /// first: a new or unexpired entry starts with fresh stats
+    /// When it was last known valid (µs): a remote route test passed
+    /// (`route_stats.rs:685-692` `record_remote_test_pass`) or a call over
+    /// it was answered (`rpc_processor/mod.rs:1821-1827`,
+    /// `route_stats.rs:489-498` `record_answer_received`); `None` before
+    /// either: a new or unexpired entry starts with fresh stats
     /// (Veilid 0.5.8 `remote_route_cache_entry.rs:138-143` `unexpire`) and
     /// needs testing at once (`route_stats.rs:672-681` `remote_needs_testing`).
     pub valid: Option<u64>,
@@ -533,6 +542,30 @@ impl Network {
     /// (Veilid 0.5.8 `route_stats.rs:31-35`, `route_compile.rs:672`).
     pub(crate) fn first_hop_failed(&self, node: usize) -> bool {
         self.inner.lock().faults.link_failure.remove(&node)
+    }
+
+    /// An answer to `node`'s call over its imported route `id` came back:
+    /// the remote route is known valid now, which puts off its next remote
+    /// route test by [`ROUTE_MIN_IDLE`](crate::loopback::ROUTE_MIN_IDLE)
+    /// (Veilid 0.5.8 `rpc_processor/mod.rs:1821-1827` records the answer on
+    /// the remote private route, `route_stats.rs:489-498`
+    /// `record_answer_received` sets `last_known_valid_ts`, which
+    /// `remote_needs_testing` reads, `:672-681`). An entry gone or expired
+    /// meanwhile takes nothing: Veilid holds the answer on the route ref
+    /// it sent with, and an expired entry is not listed for a test.
+    pub(crate) fn remote_route_answered(&self, node: usize, id: &str) {
+        let now = self.now_us();
+        if let Some(entry) = self
+            .inner
+            .lock()
+            .nodes
+            .get_mut(node)
+            .and_then(|s| s.imported.get_mut(id))
+        {
+            if !entry.expired(now) {
+                entry.valid = Some(now);
+            }
+        }
     }
 
     /// An answer reached `node`: the pool reply route it came over

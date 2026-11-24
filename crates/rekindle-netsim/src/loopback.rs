@@ -57,10 +57,22 @@
 //!   importer alone as `dead_remote` (`mod.rs:235-251`). While the
 //!   importer's blame is suppressed (its detector Offline) the failure is
 //!   deferred and retested (`ping_validator.rs:733-739`); a node that is
-//!   detached, DHT-offline, not ready or asleep runs no test. Not modelled:
-//!   a test lost to a partition or a drop, and the touch the listing gives
-//!   every entry each tick (`mod.rs:313-324` peeks, and `peek_remote_route`
-//!   touches, `route_spec_store_cache.rs:348-357`).
+//!   detached, DHT-offline, not ready or asleep runs no test. An answered
+//!   call over the route proves it as a passed test does
+//!   (`rpc_processor/mod.rs:1821-1827`, `route_stats.rs:489-498`
+//!   `record_answer_received` sets `last_known_valid_ts`), so its next
+//!   test waits [`ROUTE_MIN_IDLE`] from that answer
+//!   ([`Network::remote_route_answered`]).
+//! - **the listing touches:** each tick lists the cache
+//!   (`mod.rs:313-324` `list_remote_routes`), which skips expired entries
+//!   (`route_spec_store_cache.rs:315-326`) and peeks every other one, and
+//!   `peek_remote_route` touches it (`route_spec_store_cache.rs:348-357`).
+//!   So while the task runs no import expires; one expires only when the
+//!   task has not run for 5 minutes ([`crate::routes`]). The task runs only
+//!   at the stages past published peer info
+//!   (`public_internet/controller/tasks.rs:113-122`), here a node that is
+//!   attached, DHT-online, ready and awake. Not modelled: a test lost to a
+//!   partition or a drop.
 
 use std::time::Duration;
 
@@ -196,6 +208,8 @@ impl Network {
                     if entry.expired(now) {
                         continue;
                     }
+                    // `peek_remote_route` touches without LRU action.
+                    entry.touched = now;
                     match entry.failing {
                         Some(at) if now >= at => {
                             entry.failing = None;
