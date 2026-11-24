@@ -258,7 +258,7 @@ impl HostGovernance {
         self.discard_key_transfers(id, None).await;
         self.discard_bootstrap(id);
         crate::host::adapters::channel::discard_waiting_posts(self, id);
-        self.ctx.communities.remove(id);
+        self.drop_community_entry(id);
         crate::host::session::forget_membership(
             &self.ctx.session,
             &self.ctx.db,
@@ -270,6 +270,24 @@ impl HostGovernance {
         self.audit_left(id);
         tracing::info!(community = %id, "left community");
         Ok(())
+    }
+
+    /// Drop `id`'s store entry and tell every frontend: the one step of
+    /// each self-removal that ends our hold of a community (a leave, a
+    /// withdrawn join, a Forget after a removal). `Forgotten` is
+    /// device-scoped (`EventScope::Device`), so it reaches the buddy list,
+    /// every community window, the CLI and the TUI although the
+    /// community's subscription state is already torn down. A repeat for a
+    /// community already gone is a no-op on every frontend.
+    fn drop_community_entry(&self, id: &str) {
+        self.ctx.communities.remove(id);
+        self.ctx.publish_event(
+            rekindle_types::subscription_events::SubscriptionEvent::Membership(
+                rekindle_types::subscription_events::MembershipEvent::Forgotten {
+                    community: id.to_owned(),
+                },
+            ),
+        );
     }
 
     /// Gossip our departure (or our quit's hint) to the mesh before the
@@ -361,7 +379,7 @@ impl HostGovernance {
         }
         self.forget_keys(community);
         self.ctx.mek_cache.write().remove_community(community);
-        self.ctx.communities.remove(community);
+        self.drop_community_entry(community);
         crate::host::session::forget_membership(
             &self.ctx.session,
             &self.ctx.db,

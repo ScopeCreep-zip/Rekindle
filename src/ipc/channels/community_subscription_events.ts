@@ -30,8 +30,7 @@ export type MembershipEvent =
   /** The name on a member's verified card, first read or changed (plan E3.2 F9-2). */
   | { memberCardChanged: { community: string; pseudonym: string; displayName: string; customStatus?: string } }
   | { left: { community: string; pseudonym: string } }
-  /** We are no longer in `community` (a leave, any self-removal): the Host
-   *  has forgotten it, so every window holding the list drops it (plan LF1). */
+  /** We no longer hold the community: our leave, withdrawn join or Forget (plan E3.2). Device-scoped; a repeat is a no-op. */
   | { forgotten: { community: string } }
   | { removed: { community: string; pseudonym: string } }
   | {
