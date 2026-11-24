@@ -103,7 +103,12 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
   // verdict (`renameRefused`, `inviteRefused`) disables each with its reason.
   const renameRefused = (): string | null => group()?.renameRefused ?? "This group is not in your list.";
   const inviteRefused = (): string | null => group()?.inviteRefused ?? "This group is not in your list.";
-  const callRefused = (): string | null => group()?.callRefused ?? "This group is not in your list.";
+  // The Host's verdict on calling (GroupDmView.callRefused); the stand-in
+  // is only for a group no longer listed, never for the verdict itself.
+  const callRefused = (): string | null => {
+    const g = group();
+    return g ? g.callRefused : "This group is not in your list.";
+  };
   // The group's call in every layout (never hidden): this group's call when
   // active (Leave), ringing (Join), else Call, which opens Start Group Call
   // for the group, its other members ticked (GV2).
