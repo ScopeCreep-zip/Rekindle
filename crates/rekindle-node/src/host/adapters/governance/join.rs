@@ -139,9 +139,11 @@ impl HostGovernance {
             super::join_bootstrap::Exchange::Merged => self.announce_standing_join(&id, &outcome),
             super::join_bootstrap::Exchange::Refused(refused) => {
                 tracing::warn!(community = %id, error = %refused, "join refused by the inviter, withdrawn");
-                self.leave(&recorded).await.map_err(|e| {
-                    format!("community join refused ({refused}), withdrawal failed: {e}")
-                })?;
+                self.leave(&recorded, super::HoldEnd::JoinRefusedAtOnce)
+                    .await
+                    .map_err(|e| {
+                        format!("community join refused ({refused}), withdrawal failed: {e}")
+                    })?;
                 return Err(super::join_bootstrap::JoinFailure::Refused(refused));
             }
             super::join_bootstrap::Exchange::Unanswered(reason) => {

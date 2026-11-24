@@ -18,9 +18,13 @@ import { applySuccessorEvent } from "../../stores/successor.store";
 export function subscribeBuddyListCommunityEvents(): Promise<UnlistenFn> {
   return subscribeCommunityEvents((event) => {
     if (isLegacyCommunityEvent(event)) return;
-    // A community we are no longer in (LF1): the list drops it.
-    if ("membership" in event && "forgotten" in event.membership) {
-      reduceSubscriptionMembership(event);
+    // A kick, a ban or a withdrawn join: this window owns their notices
+    // (plan JW lead ruling). A community we are no longer in (LF1): the list
+    // drops it. The other membership events are the community windows'.
+    if ("membership" in event) {
+      const m = event.membership;
+      if ("kicked" in m || "banned" in m || "joinWithdrawn" in m) reduceSubscriptionMembership(event, true);
+      else if ("forgotten" in m) reduceSubscriptionMembership(event);
       return;
     }
     if (!("governance" in event)) return;

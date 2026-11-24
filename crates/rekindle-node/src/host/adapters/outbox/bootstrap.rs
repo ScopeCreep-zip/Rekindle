@@ -66,6 +66,13 @@ impl StreamSender for BootstrapSender {
         };
         let governance = &self.0;
         if !governance.holds_community(community) {
+            // Our leave or removal discards the row; one reaching here met
+            // a community we do not hold (finding JW2: attempted before the
+            // unlock restored it), so it is said, not settled silently.
+            tracing::warn!(
+                community,
+                "bootstrap row of a community we do not hold: settled left"
+            );
             return AttemptOutcome::Superseded(LEFT.to_owned());
         }
         let Some(joined) = governance.held_joined(community, &hash).await else {
@@ -141,8 +148,30 @@ impl OutboxSlot {
         self.current.read().clone().map(Bootstraps)
     }
 
-    pub(super) fn install_bootstrap_sender(&self, governance: HostGovernance) {
+    /// Hand the community streams (`mek_transfer`, `bootstrap`) to their
+    /// senders once the unlock restored every community and its stored keys
+    /// (unlock step 3e'''). Both read the community from that cache: one
+    /// attempted while it is still empty finds no community and would
+    /// settle as left or departed, so the exchange the last lock left
+    /// unanswered was dropped for good (finding JW2). Until then their rows
+    /// defer (`Senders::send` with no sender, kept with their backoff).
+    /// Each held community's `bootstrap` row is then made due at once: the
+    /// unlock re-drives the exchange rather than waiting out its backoff.
+    pub(crate) async fn hand_over_communities(&self, governance: HostGovernance) {
+        let communities = governance.held_communities();
+        self.install_mek_transfer_sender(governance.clone());
         (self.senders).install(StreamKind::Bootstrap, Arc::new(BootstrapSender(governance)));
+        let Some(outbox) = self.current.read().clone() else {
+            return;
+        };
+        for community in communities {
+            if let Err(error) = outbox
+                .bring_forward(StreamKind::Bootstrap, &community)
+                .await
+            {
+                tracing::warn!(%error, "bootstrap exchange not brought forward at unlock");
+            }
+        }
     }
 }
 

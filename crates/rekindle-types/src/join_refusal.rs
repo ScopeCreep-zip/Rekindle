@@ -72,6 +72,18 @@ impl JoinRefusal {
         }
     }
 
+    /// What the user is told when a join that already returned is
+    /// withdrawn for this refusal (`MembershipEvent::JoinWithdrawn`): who
+    /// refused, why, and what to do.
+    #[must_use]
+    pub fn withdrawn_text(self) -> String {
+        format!(
+            "The inviter refused this join. {} {}",
+            self.message(),
+            self.remediation()
+        )
+    }
+
     /// The reason's wire byte in `bootstrapRefused`.
     #[must_use]
     pub const fn to_wire(self) -> u8 {

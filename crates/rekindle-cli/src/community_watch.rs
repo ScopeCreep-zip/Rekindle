@@ -145,6 +145,17 @@ fn membership(event: &MembershipEvent) -> (&str, String) {
             community,
             format!("we joined {}", sanitize_for_display(name)),
         ),
+        MembershipEvent::JoinWithdrawn {
+            community,
+            reason_text,
+            ..
+        } => (
+            community,
+            format!(
+                "our join was withdrawn: {}",
+                sanitize_for_display(reason_text)
+            ),
+        ),
         MembershipEvent::MemberCardChanged {
             community,
             pseudonym,

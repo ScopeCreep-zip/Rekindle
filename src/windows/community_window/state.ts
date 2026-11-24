@@ -169,8 +169,10 @@ export function createCommunityWindowState() {
   /// Our own removal as the backend reports it (plan E3.2 S9): the
   /// community stays as read-only history.
   const ownRemoval = createMemo(() => activeCommunity()?.removed ?? null);
+  /// A join the inviter refused after it returned (plan JW): the Host's words.
+  const joinWithdrawn = createMemo(() => activeCommunity()?.withdrawn?.reasonText ?? null);
   const canPostInChannel = createMemo(() => {
-    if (ownRemoval()) return false;
+    if (ownRemoval() || joinWithdrawn()) return false;
     if (!isAnnouncementChannel()) return canSendMessages();
     return canManageCommunity();
   });
@@ -241,7 +243,7 @@ export function createCommunityWindowState() {
     myPerms, canManageChannels, canManageMessages, canRequestToSpeak,
     canManageCommunity, canSendMessages, canBypassSlowmode, gameServers,
     isAnnouncementChannel, isForumChannel, isStageChannel, isVoiceChannel,
-    isTextPaneVisible, ownRemoval, canPostInChannel, activeVoiceChannelState, isConnectedToActiveStage,
+    isTextPaneVisible, ownRemoval, joinWithdrawn, canPostInChannel, activeVoiceChannelState, isConnectedToActiveStage,
     channelTypingUsers, upcomingEvents, shouldShowOnboarding, shouldShowWelcome,
     sidebarServerList, formatTimeUntilEvent,
   };

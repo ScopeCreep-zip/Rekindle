@@ -74,6 +74,23 @@ pub enum MembershipEvent {
     /// governance lists them.
     /// Triggered by: the Host's join, once the community is installed.
     SelfJoined { community: String, name: String },
+    /// Our join of `community` was withdrawn after it returned: the
+    /// inviter answered a retried bootstrap exchange and refused our
+    /// `MemberJoined` (plan E3.1/JN1, ADR 0019's outcome rule), so the Host
+    /// left and forgot the community. A refusal at once is the join call's
+    /// error instead; this is the only word of a deferred one.
+    /// Triggered by: the Host's `withdraw_refused_join`, once, when the
+    /// withdrawal drops the community's store entry (`create_leave.rs`
+    /// `drop_community_entry`), in place of `Forgotten`; never for a
+    /// refusal of a join a later re-join superseded.
+    JoinWithdrawn {
+        community: String,
+        /// The inviter's typed refusal.
+        reason: crate::join_refusal::JoinRefusal,
+        /// What the user is told, in the Host's words
+        /// ([`crate::join_refusal::JoinRefusal::withdrawn_text`]).
+        reason_text: String,
+    },
     /// The name on a member's verified card (`M`/0, signed by the
     /// pseudonym, its owner pinned to the member's `MemberJoined`), on the
     /// first read of that card and on each change (plan E3.2 F9-2).
@@ -98,8 +115,9 @@ pub enum MembershipEvent {
         community: String,
         pseudonym: String,
     },
-    /// We no longer hold `community`: our leave, our withdrawn join, or
-    /// our Forget of a community we were removed from dropped its store
+    /// We no longer hold `community`: our leave (a withdrawn join publishes
+    /// `JoinWithdrawn` instead), or our Forget of a community we were
+    /// removed from dropped its store
     /// entry and stored membership (plan E3.2). Not a governance change:
     /// published by the Host on the one path that drops the entry
     /// (`create_leave.rs` `drop_community_entry`), device-scoped, so it

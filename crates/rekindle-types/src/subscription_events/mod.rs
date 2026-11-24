@@ -226,6 +226,7 @@ impl SubscriptionEvent {
                 MembershipEvent::JoinRequested { community, .. }
                 | MembershipEvent::Joined { community, .. }
                 | MembershipEvent::SelfJoined { community, .. }
+                | MembershipEvent::JoinWithdrawn { community, .. }
                 | MembershipEvent::MemberCardChanged { community, .. }
                 | MembershipEvent::Left { community, .. }
                 | MembershipEvent::Removed { community, .. }

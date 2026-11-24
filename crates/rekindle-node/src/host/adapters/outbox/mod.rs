@@ -5,6 +5,8 @@
 //! Host's event mapping subscribes to.
 
 mod bootstrap;
+#[cfg(test)]
+mod bootstrap_tests;
 mod channel_post;
 pub(crate) mod dht_write;
 mod dm;
