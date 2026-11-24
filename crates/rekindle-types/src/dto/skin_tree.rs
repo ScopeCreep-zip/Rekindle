@@ -249,6 +249,14 @@ pub struct NodeLabel {
 pub struct NodeInset {
     pub left: u16,
     pub right: u16,
+    /// The text's maximum width in px from its start (the field's left
+    /// edge plus `left`), when the press area its text stops at does not
+    /// move with the field's far edge as the window grows (plan SK15:
+    /// Alloy's name field stretches while its status field's press area
+    /// stays at x 171, so a constant `right` would run the name under it
+    /// at a wider window); `None` when `right` holds at every width.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_width: Option<u16>,
 }
 
 /// The shell's built-in glyphs a [`NodeLabel`] may name.

@@ -328,6 +328,13 @@ export interface NodeTarget {
 export interface NodeInset {
   left: number;
   right: number;
+  /**
+   * The text's maximum width in px from its start (left edge + `left`)
+   * when its stop does not move with the field's far edge (plan SK15:
+   * Alloy's name field under its fixed status field); absent when `right`
+   * holds at every width.
+   */
+  maxWidth?: number;
 }
 
 /** A Host-placed node's words (`NodeLabel`, plan SK2-N4d). */
