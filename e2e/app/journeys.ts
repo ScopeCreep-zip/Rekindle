@@ -262,7 +262,7 @@ async function submitModal(b: Browser, user: User, input: string): Promise<void>
  * (the Host places one in every tree, plan SK2-N4: `tab:communities` or
  * `knob:communities`) shows its Communities view; else the app's tab.
  */
-async function communitiesTab(b: Browser): Promise<void> {
+export async function communitiesTab(b: Browser): Promise<void> {
   if (await underTree(b)) {
     await press(b, await shown(b, '[data-skin-role="tab:communities"], [data-skin-role="knob:communities"]'));
     await shown(b, '[data-skin-role="view:communities"]:not([hidden])');
