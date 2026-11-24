@@ -567,6 +567,9 @@ export interface MemberModeration {
   ban: string | null;
   timeout: string | null;
   manageRoles: string | null;
+  /** Server mute: per target (rank, and only for a member in a voice channel). */
+  mute: string | null;
+  deafen: string | null;
 }
 
 export interface TargetModeration {

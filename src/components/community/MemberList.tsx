@@ -20,13 +20,6 @@ import {
   handleSetCommunityBlock,
   loadCommunityBlocks,
 } from "../../actions/community.actions";
-import {
-  servedPermissions,
-  hasPermission,
-  MANAGE_ROLES,
-  MUTE_MEMBERS,
-  DEAFEN_MEMBERS,
-} from "../../ipc/permissions";
 
 interface MemberListProps {
   members: Member[];
@@ -74,11 +67,6 @@ const MemberList: Component<MemberListProps> = (props) => {
     if (next) set.add(key);
     else set.delete(key);
     setBlocked(set);
-  }
-
-  /** The backend's base flags (plan E3.2 S9). */
-  function myPerms(): bigint {
-    return servedPermissions(communityState.communities[props.communityId]);
   }
 
   // Architecture §10 — server-mute / server-deafen apply only when the
@@ -157,14 +145,12 @@ const MemberList: Component<MemberListProps> = (props) => {
   });
 
   function memberMenu(member: Member): JSX.Element {
-    // Each action shows exactly when the Host would accept it: its
-    // per-member verdicts (plan E3.2 S9), never a rank compared here.
+    // Never-hide: every action is drawn; one the Host would refuse for
+    // this member is disabled with its reason (`member.moderation`: rank,
+    // permission, self, not in a voice channel), never a rank compared here.
     // Every read is an accessor (MM1): the row outlives the Host's
-    // re-reads, so the menu follows the verdicts, our permissions and the
-    // roles as they change instead of keeping the row's first values.
-    const perms = () => myPerms();
-    const manage = () => member.outranks;
-    const may = () => member.canModerateTarget;
+    // re-reads, so the menu follows the verdicts as they change.
+    const mod = () => member.moderation;
     const voiceChannelId = () => memberVoiceChannelId(member);
     const assignableRoles = () =>
       props.roles
@@ -174,124 +160,120 @@ const MemberList: Component<MemberListProps> = (props) => {
     return (
       <ContextMenu.Portal>
         <ContextMenu.Content class="context-menu">
-          <Show when={manage() && hasPermission(perms(), MANAGE_ROLES) && assignableRoles().length > 0}>
-            <ContextMenu.Sub>
-              <ContextMenu.SubTrigger class="context-menu-item">
-                <SkinGlyph name="shield" class="context-menu-icon" />
-                Manage Roles
-              </ContextMenu.SubTrigger>
-              <ContextMenu.Portal>
-                <ContextMenu.SubContent class="context-menu">
-                  <For each={assignableRoles()}>
-                    {(role) => {
-                      const hasRole = () => member.roleIds.includes(role.id);
-                      return (
-                        <ContextMenu.CheckboxItem
-                          class="context-menu-item"
-                          checked={hasRole()}
-                          onChange={() =>
-                            toggleRole(member.pseudonymKey, role.id, hasRole())
-                          }
-                        >
-                          <ContextMenu.ItemIndicator class="context-menu-indicator">
-                            ✓
-                          </ContextMenu.ItemIndicator>
-                          {role.name}
-                        </ContextMenu.CheckboxItem>
-                      );
-                    }}
-                  </For>
-                </ContextMenu.SubContent>
-              </ContextMenu.Portal>
-            </ContextMenu.Sub>
-          </Show>
-
-          <Show when={may().timeout}>
-            <ContextMenu.Sub>
-              <ContextMenu.SubTrigger class="context-menu-item">
-                <SkinGlyph name="timeout" class="context-menu-icon" />
-                Timeout
-              </ContextMenu.SubTrigger>
-              <ContextMenu.Portal>
-                <ContextMenu.SubContent class="context-menu">
-                  <For each={TIMEOUT_PRESETS}>
-                    {(t) => (
-                      <ContextMenu.Item
+          {/* Never-hide: drawn always, disabled with this member's reason. */}
+          <ContextMenu.Sub>
+            <ContextMenu.SubTrigger class="context-menu-item" disabled={mod().manageRoles !== null}
+            title={mod().manageRoles ?? undefined}>
+              <SkinGlyph name="shield" class="context-menu-icon" />
+              Manage Roles
+            </ContextMenu.SubTrigger>
+            <ContextMenu.Portal>
+              <ContextMenu.SubContent class="context-menu">
+                <For each={assignableRoles()}>
+                  {(role) => {
+                    const hasRole = () => member.roleIds.includes(role.id);
+                    return (
+                      <ContextMenu.CheckboxItem
                         class="context-menu-item"
-                        onSelect={() =>
-                          handleTimeoutMember(
-                            props.communityId,
-                            member.pseudonymKey,
-                            t.seconds,
-                            null,
-                          )
+                        checked={hasRole()}
+                        onChange={() =>
+                          toggleRole(member.pseudonymKey, role.id, hasRole())
                         }
                       >
-                        {t.label}
-                      </ContextMenu.Item>
-                    )}
-                  </For>
-                </ContextMenu.SubContent>
-              </ContextMenu.Portal>
-            </ContextMenu.Sub>
-          </Show>
+                        <ContextMenu.ItemIndicator class="context-menu-indicator">
+                          ✓
+                        </ContextMenu.ItemIndicator>
+                        {role.name}
+                      </ContextMenu.CheckboxItem>
+                    );
+                  }}
+                </For>
+              </ContextMenu.SubContent>
+            </ContextMenu.Portal>
+          </ContextMenu.Sub>
 
-          <Show when={manage() && hasPermission(perms(), MUTE_MEMBERS) && voiceChannelId()}>
-            <ContextMenu.Item
-              class="context-menu-item"
-              onSelect={() =>
-                handleServerMuteMember(
-                  props.communityId,
-                  voiceChannelId()!,
-                  member.pseudonymKey,
-                  true,
-                )
-              }
-            >
-              <SkinGlyph name="mic.off" class="context-menu-icon" />
-              Server Mute
-            </ContextMenu.Item>
-          </Show>
-          <Show when={manage() && hasPermission(perms(), DEAFEN_MEMBERS) && voiceChannelId()}>
-            <ContextMenu.Item
-              class="context-menu-item"
-              onSelect={() =>
-                handleServerDeafenMember(
-                  props.communityId,
-                  voiceChannelId()!,
-                  member.pseudonymKey,
-                  true,
-                )
-              }
-            >
-              <SkinGlyph name="speaker.off" class="context-menu-icon" />
-              Server Deafen
-            </ContextMenu.Item>
-          </Show>
+          {/* Never-hide. */}
+          <ContextMenu.Sub>
+            <ContextMenu.SubTrigger class="context-menu-item" disabled={mod().timeout !== null}
+            title={mod().timeout ?? undefined}>
+              <SkinGlyph name="timeout" class="context-menu-icon" />
+              Timeout
+            </ContextMenu.SubTrigger>
+            <ContextMenu.Portal>
+              <ContextMenu.SubContent class="context-menu">
+                <For each={TIMEOUT_PRESETS}>
+                  {(t) => (
+                    <ContextMenu.Item
+                      class="context-menu-item"
+                      onSelect={() =>
+                        handleTimeoutMember(
+                          props.communityId,
+                          member.pseudonymKey,
+                          t.seconds,
+                          null,
+                        )
+                      }
+                    >
+                      {t.label}
+                    </ContextMenu.Item>
+                  )}
+                </For>
+              </ContextMenu.SubContent>
+            </ContextMenu.Portal>
+          </ContextMenu.Sub>
 
-          <Show when={may().kick}>
-            <ContextMenu.Item
-              class="context-menu-item context-menu-item-danger"
-              onSelect={() =>
-                void handleRemoveCommunityMember(props.communityId, member.pseudonymKey)
-              }
-            >
-              <SkinGlyph name="account-remove" class="context-menu-icon" />
-              Kick Member
-            </ContextMenu.Item>
-          </Show>
+          {/* Never-hide. */}
+          <ContextMenu.Item
+            class="context-menu-item"
+            disabled={mod().mute !== null}
+            title={mod().mute ?? undefined}
+            onSelect={() => {
+              const channel = voiceChannelId();
+              if (channel) handleServerMuteMember(props.communityId, channel, member.pseudonymKey, true);
+            }}
+          >
+            <SkinGlyph name="mic.off" class="context-menu-icon" />
+            Server Mute
+          </ContextMenu.Item>
+          {/* Never-hide. */}
+          <ContextMenu.Item
+            class="context-menu-item"
+            disabled={mod().deafen !== null}
+            title={mod().deafen ?? undefined}
+            onSelect={() => {
+              const channel = voiceChannelId();
+              if (channel) handleServerDeafenMember(props.communityId, channel, member.pseudonymKey, true);
+            }}
+          >
+            <SkinGlyph name="speaker.off" class="context-menu-icon" />
+            Server Deafen
+          </ContextMenu.Item>
 
-          <Show when={may().ban}>
-            <ContextMenu.Item
-              class="context-menu-item context-menu-item-danger"
-              onSelect={() =>
-                void handleBanMember(props.communityId, member.pseudonymKey)
-              }
-            >
-              <SkinGlyph name="ban" class="context-menu-icon" />
-              Ban Member
-            </ContextMenu.Item>
-          </Show>
+          {/* Never-hide. */}
+          <ContextMenu.Item
+            class="context-menu-item context-menu-item-danger"
+            disabled={mod().kick !== null}
+            title={mod().kick ?? undefined}
+            onSelect={() =>
+              void handleRemoveCommunityMember(props.communityId, member.pseudonymKey)
+            }
+          >
+            <SkinGlyph name="account-remove" class="context-menu-icon" />
+            Kick Member
+          </ContextMenu.Item>
+
+          {/* Never-hide. */}
+          <ContextMenu.Item
+            class="context-menu-item context-menu-item-danger"
+            disabled={mod().ban !== null}
+            title={mod().ban ?? undefined}
+            onSelect={() =>
+              void handleBanMember(props.communityId, member.pseudonymKey)
+            }
+          >
+            <SkinGlyph name="ban" class="context-menu-icon" />
+            Ban Member
+          </ContextMenu.Item>
 
           <ContextMenu.Item
             class="context-menu-item context-menu-item-danger"
