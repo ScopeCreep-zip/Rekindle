@@ -1014,6 +1014,10 @@
     },
     "type": "sheetError"
   },
+  "skin.contentFit": {
+    "max": 80,
+    "min": 25
+  },
   "skin.entry.builtin": {
     "conforming": false,
     "credits": {
@@ -1324,6 +1328,17 @@
         "menu": "gcHelp"
       }
     ]
+  },
+  "skin.nodeSpan.after": {
+    "at": {
+      "kind": "after",
+      "offset": {
+        "gap": 10,
+        "sibling": "XfireMenuText"
+      }
+    },
+    "kind": "fixed",
+    "size": 26
   },
   "skin.selection.friend": {
     "arg": {

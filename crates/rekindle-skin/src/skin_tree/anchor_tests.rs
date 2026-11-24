@@ -72,10 +72,10 @@ fn classic_anchors_resolve_parent_relative() {
     let [logo, name, close] = &bar.children[..] else {
         panic!("{:?}", bar.children)
     };
-    assert_eq!((logo.role, logo.x), (NodeRole::Logo, fixed(20, 40)));
+    assert_eq!((logo.role, logo.x.clone()), (NodeRole::Logo, fixed(20, 40)));
     // `X="XfireLogo.RIGHT+6"`: 20 + 40 + 6.
     assert_eq!(
-        (name.role, name.x),
+        (name.role, name.x.clone()),
         (
             NodeRole::NameField,
             NodeSpan::Stretch { start: 66, end: 48 }
@@ -221,8 +221,14 @@ fn a_stretch_is_capped_by_its_components_max_width() {
         panic!("{:?}", tree.root)
     };
     assert_eq!(normal.role, NodeRole::Tab(ViewKey::Friends));
-    assert_eq!((normal.x, normal.y), (fixed(0, 65), fixed(0, 19)));
-    assert_eq!((server.x, server.y), (fixed(77, 65), fixed(1, 19)));
+    assert_eq!(
+        (normal.x.clone(), normal.y.clone()),
+        (fixed(0, 65), fixed(0, 19))
+    );
+    assert_eq!(
+        (server.x.clone(), server.y.clone()),
+        (fixed(77, 65), fixed(1, 19))
+    );
 }
 
 /// Simple X's `AdArea` (`SimpleX.ini:121-127`, `[AdArea]` `MaxWidth=240`):

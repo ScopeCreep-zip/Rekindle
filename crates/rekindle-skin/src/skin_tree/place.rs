@@ -57,7 +57,7 @@ fn fill_view(views: &SkinNode, v: ViewKey) -> SkinNode {
     SkinNode {
         id: format!("{}.{v:?}", views.id),
         role: NodeRole::View(v),
-        x: fill,
+        x: fill.clone(),
         y: fill,
         z: views.z,
         art: None,
@@ -65,6 +65,7 @@ fn fill_view(views: &SkinNode, v: ViewKey) -> SkinNode {
         label: None,
         inset: None,
         target: None,
+        fit: None,
         shows_with: Some(v),
         control_group: None,
         triggers: Vec::new(),
@@ -154,33 +155,6 @@ fn retarget(n: &mut SkinNode, views_group: Option<u16>) {
     }
 }
 
-fn step(last: NodeSpan, prev: Option<NodeSpan>) -> NodeSpan {
-    let NodeSpan::Fixed { at, size } = last else {
-        return last;
-    };
-    let pitch =
-        |a: i16, p: Option<i16>| p.map_or_else(|| i16::try_from(size).unwrap_or(0), |p| a - p);
-    let at = match (at, prev) {
-        (
-            Anchor::Start(a),
-            Some(NodeSpan::Fixed {
-                at: Anchor::Start(p),
-                ..
-            }),
-        ) => Anchor::Start(a + pitch(a, Some(p))),
-        (Anchor::Start(a), _) => Anchor::Start(a + pitch(a, None)),
-        (
-            Anchor::End(a),
-            Some(NodeSpan::Fixed {
-                at: Anchor::End(p), ..
-            }),
-        ) => Anchor::End(a + pitch(a, Some(p))),
-        (Anchor::End(a), _) => Anchor::End(a - pitch(a, None)),
-        (other, _) => other,
-    };
-    NodeSpan::Fixed { at, size }
-}
-
 /// A `Tab(Communities)` cloned from the last tab of `strip`; its id.
 fn clone_tab(strip: &mut Vec<SkinNode>, at: Target) -> Option<String> {
     let tabs: Vec<usize> = (0..strip.len())
@@ -194,8 +168,13 @@ fn clone_tab(strip: &mut Vec<SkinNode>, at: Target) -> Option<String> {
     tab.shows_with = None;
     // A rail stacks its tabs (StealthX's `TabHeader`: one x, 21 px apart).
     match prev {
-        Some(p) if p.x == tab.x && p.y != tab.y => tab.y = step(tab.y, Some(p.y)),
-        _ => tab.x = step(tab.x, prev.map(|p| p.x)),
+        Some(p) if p.x == tab.x && p.y != tab.y => {
+            tab.y = super::tab_step::step(tab.y, Some(p.y.clone()));
+        }
+        _ => tab.x = super::tab_step::step(tab.x, prev.map(|p| p.x.clone())),
+    }
+    if let Some(fit) = tab.fit {
+        tab.x = super::tab_step::follow(&strip[last].x, prev.map(|p| &p.x), tab.x, fit);
     }
     retarget(&mut tab, at.group);
     tab.triggers.extend(at.press());
@@ -237,7 +216,7 @@ fn whole_picture(n: &SkinNode, w: u16) -> bool {
 ///   part, Spacecowboy's) draws the words with no cover.
 fn label(tab: &SkinNode) -> NodeLabel {
     let text = WORDS.to_owned();
-    match (tab.x, tab.y) {
+    match (tab.x.clone(), tab.y.clone()) {
         (NodeSpan::Fixed { size: w, .. }, NodeSpan::Fixed { size: h, .. })
             if whole_picture(tab, w) =>
         {
@@ -267,8 +246,8 @@ fn label(tab: &SkinNode) -> NodeLabel {
 /// and the one before it not (Alloy's `TabButtonBar`: start, centre, end),
 /// so no slot follows the last tab.
 fn spread(strip: &[SkinNode]) -> bool {
-    let anchor = |n: &SkinNode| match n.x {
-        NodeSpan::Fixed { at, .. } => Some(at),
+    let anchor = |n: &SkinNode| match &n.x {
+        NodeSpan::Fixed { at, .. } => Some(at.clone()),
         NodeSpan::Stretch { .. } => None,
     };
     let mut tabs = strip.iter().filter(|n| matches!(n.role, NodeRole::Tab(_)));
@@ -299,7 +278,7 @@ fn pack_row(strip: &mut SkinNode) {
             at = at.saturating_add(size);
         }
     }
-    if let NodeSpan::Fixed { at: anchor, .. } = strip.x {
+    if let NodeSpan::Fixed { at: anchor, .. } = strip.x.clone() {
         strip.x = NodeSpan::Fixed {
             at: anchor,
             size: at,
@@ -314,11 +293,19 @@ fn regrow(span: NodeSpan, len: i32, start: i32, size: i32) -> NodeSpan {
         return span;
     };
     let size = u16::try_from(size).unwrap_or(u16::MAX);
-    let (placed, _) = NodeSpan::Fixed { at, size }.place(len);
+    let (placed, _) = NodeSpan::Fixed {
+        at: at.clone(),
+        size,
+    }
+    .place(len);
     let by = i16::try_from(start - placed).unwrap_or(0);
     let at = match at {
         Anchor::Start(o) => Anchor::Start(o + by),
         Anchor::End(o) => Anchor::End(o - by),
+        Anchor::After { sibling, gap } => Anchor::After {
+            sibling,
+            gap: gap + by,
+        },
         Anchor::Centre {
             by: b,
             before,
@@ -364,7 +351,7 @@ fn fit(tree: &mut SkinTree, w: i32, h: i32, id: &str) -> i32 {
         }
         if matches!(grown[axis], NodeSpan::Fixed { .. }) {
             let (a, b) = (s0.min(t0), s1.max(t1));
-            grown[axis] = regrow(grown[axis], pb[axis + 2], a - pb[axis], b - a);
+            grown[axis] = regrow(grown[axis].clone(), pb[axis + 2], a - pb[axis], b - a);
         } else if axis == 0 {
             across = run;
         }
@@ -440,7 +427,7 @@ fn host_tab(views: &SkinNode, at: Target) -> SkinNode {
     SkinNode {
         id: format!("{}.CommunitiesTab", views.id),
         role: NodeRole::Tab(C),
-        x: views.x,
+        x: views.x.clone(),
         y: NodeSpan::Fixed {
             at: Anchor::Start((top - lift).max(0)),
             size: H,
@@ -457,6 +444,7 @@ fn host_tab(views: &SkinNode, at: Target) -> SkinNode {
         shows_with: None,
         inset: None,
         target: None,
+        fit: None,
         control_group: None,
         triggers: at.press(),
         children: Vec::new(),

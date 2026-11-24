@@ -26,22 +26,22 @@ TopButtonBar Group
   Close Button target [-1, -4, 21, 20] art [1, 4, 15, 15] Short
 MenuBar MenuBar
   XfireMenuText MenuTitle label "Rekindle"
-    FileMenu Part target [-6, -1, 19, 22] art [6, 1, 12, 22] Short
+    FileMenu Part target [0, -1, 54, 23] art [0, 1, 54, 22] Spacing
   ToolsMenuText MenuTitle label "Tools"
-    ToolsMenu Part target [-1, -1, 14, 22] art [1, 1, 12, 22] Short
+    ToolsMenu Part target [0, -1, 38, 23] art [0, 1, 38, 22] Spacing
   HelpMenuText MenuTitle label "Help"
-    HelpMenu Part target [-1, -1, 15, 22] art [1, 1, 12, 22] Short
+    HelpMenu Part target [0, -1, 32, 23] art [0, 1, 32, 22] Spacing
   MenuDiv0 Decor
   MenuDiv1 Decor
   MenuDiv2 Decor
   MenuDiv3 Decor
   TabNormalText Tab(Friends) label "Friends"
-    TabNormalButton Part target [0, -2, 28, 23] art [0, 2, 28, 19] Short
+    TabNormalButton Part target [0, -2, 48, 23] art [0, 2, 48, 19] Spacing
   TabServerText Tab(Servers) label "Servers"
-    TabServerButton Part target [0, -2, 28, 23] art [0, 2, 28, 19] Spacing
+    TabServerButton Part target [0, -2, 48, 23] art [0, 2, 48, 19] Spacing
   TabDownloadText Tab(Files) label "Downloads"
-    TabDownloadButton Part target [0, -2, 28, 23] art [0, 2, 28, 19] Spacing
-  TabDownloadText.Communities Tab(Communities) label "Communities" target [0, -4, 233, 23] art [0, 4, 233, 16] Spacing
+    TabDownloadButton Part target [0, -2, 65, 23] art [0, 2, 65, 19] Spacing
+  TabDownloadText.Communities Tab(Communities) label "Communities" target [0, -4, 68, 23] art [0, 4, 68, 16] Spacing
     TabDownloadButton.Communities Part
   MenuDiv4 Decor
   MenuDiv5 Decor

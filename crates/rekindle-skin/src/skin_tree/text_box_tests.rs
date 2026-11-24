@@ -79,20 +79,7 @@ fn node(id: &str, node: &str) -> Laid {
         .unwrap_or_else(|| panic!("{id}: no text node {node}"))
 }
 
-/// The width of `word` in the shell's label face (`skin-tree.css`
-/// `.skin-node-label`, Tahoma bold) at its 10 px floor, px: Tahoma Bold's
-/// advances at 10 px, rounded up (narrow i/l/j/t/f/r 4, wide m/w 9,
-/// capitals 7, the rest 6).
-fn word_width(word: &str) -> i32 {
-    word.chars()
-        .map(|c| match c {
-            'i' | 'l' | 'j' | 't' | 'f' | 'r' | ' ' => 4,
-            'm' | 'w' | 'M' | 'W' => 9,
-            c if c.is_ascii_uppercase() => 7,
-            _ => 6,
-        })
-        .sum()
-}
+use super::content::word_width;
 
 /// Finding 1: Combat's name field `Title` (x at 55, size 0) and Onyx's
 /// `MainTitleBar/Title` (x at 20, size 0) are served a positive width
@@ -117,19 +104,32 @@ fn zero_width_title_anchors_get_their_usable_width() {
     }
 }
 
-/// Finding 2: Onyx's menu titles (4 px boxes) grow to the next title's
-/// button's press area (plan SK12: `ToolsMenu`'s 12 px art at x 24 serves
-/// a target from x 23, `HelpMenu`'s from x 37): 9 px for the first two.
+/// Finding 2, plan SK15b: Onyx's menu titles (`Class=Text
+/// Stretch=ToContent`, `components.xml:268-273`) are as wide as the words
+/// the Host serves plus 1 px, and each next title starts 10 px past that
+/// (`X="XfireMenuText.RIGHT+10"`, `mainwindow.xml:42`); each box holds
+/// its word.
 #[test]
 fn onyxs_menu_titles_take_the_room_up_to_the_next_title() {
-    for (title, end) in [
-        ("XfireMenuText", 23),
-        ("ToolsMenuText", 37),
-        ("HelpMenuText", 52),
-    ] {
-        let t = node("onyx", title);
-        assert_eq!(t.b[0] + t.b[2], end, "onyx {title} {:?}", t.b);
-        assert!(t.b[2] > 4, "onyx {title} kept its 4 px box");
+    let titles = ["XfireMenuText", "ToolsMenuText", "HelpMenuText"].map(|t| node("onyx", t));
+    for pair in titles.windows(2) {
+        let words = pair[0].words.as_deref().unwrap();
+        let end = pair[0].b[0] + word_width(words) + 1;
+        assert_eq!(
+            pair[1].b[0],
+            end + 10,
+            "onyx {} after {words:?}",
+            pair[1].id
+        );
+    }
+    for t in &titles {
+        let words = t.words.as_deref().unwrap();
+        assert!(
+            t.b[2] >= word_width(words),
+            "onyx {} {:?} cuts {words:?}",
+            t.id,
+            t.b
+        );
     }
 }
 
@@ -139,26 +139,14 @@ fn onyxs_menu_titles_take_the_room_up_to_the_next_title() {
 #[test]
 fn labels_hold_their_words_where_room_exists() {
     let no_room: &[(&str, &str, i32)] = &[
-        ("combat", "FileMenuText", 26),
-        ("combat", "ToolsMenuText", 26),
-        // Plan SK12: each stops at the next title's target, not its art.
-        ("onyx", "XfireMenuText", 9),
-        ("onyx", "ToolsMenuText", 9),
-        ("onyx", "HelpMenuText", 10),
-        ("onyx", "TabNormalText", 26),
-        ("onyx", "TabServerText", 26),
-        ("onyx", "TabDownloadText", 24),
-        // Plan SK13: Simple-X lays its `TabHeader` tabs over its menu row
-        // at the minimum (`HelpMenuText` at x 154-214, `TabNormalText`'s
-        // press at x 123-187, both from y 95-100): each stops at the
-        // other's press, a neighbour's, never its own button's.
-        ("simple-x", "HelpMenuText", 6),
-        ("simple-x", "TabNormalText", 6),
-        ("simple-x", "TabDownloadText.Communities", 60),
-        ("spacecowboy", "TabDownloadText.Communities", 62),
-        // Plan SK12: each stops at the next title's target (x 38, x 56).
-        ("spacecowboy", "XfireMenuText", 9),
-        ("spacecowboy", "ToolsMenuText", 9),
+        // Plan SK15b: Simple-X's menu row (`MenuBar` X 14) meets its
+        // `TabHeader` (X 125, the same Y 100, `SimpleX.ini:106-107`):
+        // Xfire's "File" fit; "Rekindle" (46 px) carries `HelpMenuText`
+        // to x 110-134, into `TabNormalText`'s press from x 125, and each
+        // stops at the other's press (the Simple-X File glyph rule of
+        // design SK15b clears the row).
+        ("simple-x", "HelpMenuText", 13),
+        ("simple-x", "TabNormalText", 37),
         // Plan SK13: the text starts at x 132, inside `TabServerText`'s
         // press (its `TabServerButton` reaches x 135), and stops there.
         ("xfire-classic", "TabDownloadText", 48),
@@ -226,7 +214,8 @@ fn art_box(pack: &str, node: &str) -> [i32; 4] {
 
 /// A grown text node's button art keeps the pack's box: Classic's
 /// `TabNormalButton` (`Stretch` -4/-18 around its 40 px `TabNormalText`)
-/// stays at x 18-79, Combat's `HelpMenu` part at x 112-143, while their
+/// stays at x 18-79, Combat's `HelpMenu` part at x 148-183 (its chained place past the
+/// served words, plan SK15b), while their
 /// text boxes grow.
 #[test]
 fn a_grown_text_keeps_its_buttons_art_box() {
@@ -237,7 +226,9 @@ fn a_grown_text_keeps_its_buttons_art_box() {
             "TabNormalButton",
             [18, 146, 62, 16],
         ),
-        ("combat", "HelpMenuText", "HelpMenu", [112, 171, 32, 22]),
+        // Plan SK15b: past the served "Rekindle" and "Tools" on the
+        // pack's chains, 4 px wider for "Help".
+        ("combat", "HelpMenuText", "HelpMenu", [148, 171, 36, 22]),
     ] {
         assert!(node(pack, text).b[2] > 40, "{pack} {text} did not grow");
         assert_eq!(art_box(pack, art), want, "{pack} {art}");

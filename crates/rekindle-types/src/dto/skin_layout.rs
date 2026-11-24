@@ -211,7 +211,7 @@ impl PopupLayout {
                 width: self.width,
                 min_width: self.min_width,
                 min_height: self.min_height,
-                y: self.y,
+                y: self.y.clone(),
             }),
             ..self.tree.shell(window, min, images)
         }

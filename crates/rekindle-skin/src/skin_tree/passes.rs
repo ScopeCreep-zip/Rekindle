@@ -137,14 +137,15 @@ pub(super) fn tab_views(root: &mut [SkinNode]) {
                     n.children.push(SkinNode {
                         id: format!("{}.{v:?}", n.id),
                         role: NodeRole::View(*v),
-                        x: fill,
-                        y: fill,
+                        x: fill.clone(),
+                        y: fill.clone(),
                         z: n.z,
                         art: None,
                         text: None,
                         label: None,
                         inset: None,
                         target: None,
+                        fit: None,
                         shows_with: Some(*v),
                         control_group: None,
                         triggers: Vec::new(),
@@ -232,7 +233,7 @@ pub(super) fn rows_by_view(nodes: &mut Vec<SkinNode>) -> Result<(), ImportError>
                 rows.push(SkinNode {
                     id: format!("{v:?}Buttons"),
                     role: NodeRole::ButtonRow(v),
-                    x: fill,
+                    x: fill.clone(),
                     y: fill,
                     z: w.z,
                     art: None,
@@ -240,6 +241,7 @@ pub(super) fn rows_by_view(nodes: &mut Vec<SkinNode>) -> Result<(), ImportError>
                     label: None,
                     inset: None,
                     target: None,
+                    fit: None,
                     shows_with: Some(v),
                     control_group: None,
                     triggers: Vec::new(),
@@ -327,9 +329,16 @@ mod tests {
                         let kids: Vec<_> = w
                             .children
                             .iter()
-                            .map(|c| (c.id.as_str(), c.x, c.y))
+                            .map(|c| (c.id.as_str(), c.x.clone(), c.y.clone()))
                             .collect();
-                        (w.id.as_str(), w.role, w.shows_with, w.x, w.y, kids)
+                        (
+                            w.id.as_str(),
+                            w.role,
+                            w.shows_with,
+                            w.x.clone(),
+                            w.y.clone(),
+                            kids,
+                        )
                     })
                     .collect();
                 (r.role, r.shows_with, slots)
@@ -344,7 +353,7 @@ mod tests {
                 Some(v),
                 x,
                 fixed(3, 20),
-                vec![(b, own.0, own.1)],
+                vec![(b, own.0.clone(), own.1.clone())],
             )
         };
         let (f, s) = (ViewKey::Friends, ViewKey::Servers);
@@ -353,7 +362,7 @@ mod tests {
                 NodeRole::ButtonRow(f),
                 Some(f),
                 vec![
-                    slot("TabAddButton", f, add_x, "AddButton"),
+                    slot("TabAddButton", f, add_x.clone(), "AddButton"),
                     slot("TabChatRefreshButton", f, fixed(53, 40), "ChatButton"),
                 ],
             ),
@@ -379,7 +388,7 @@ mod tests {
             at: Anchor::centre(0),
             size: 37,
         };
-        let mut slot = n("Slot", NodeRole::Group, span, fixed(0, 20));
+        let mut slot = n("Slot", NodeRole::Group, span.clone(), fixed(0, 20));
         slot.art = Some(NodeArt::middle("slot.png".into(), 37, 20));
         let mut b = acts(
             n("ChatButton", NodeRole::Button, fixed(0, 36), fixed(0, 20)),
@@ -396,9 +405,12 @@ mod tests {
             .as_ref()
             .and_then(|a| a.images().next())
             .map(String::as_str);
-        assert_eq!((w.id.as_str(), w.x, art), ("Slot", span, Some("slot.png")));
         assert_eq!(
-            (w.children[0].id.as_str(), w.children[0].x),
+            (w.id.as_str(), w.x.clone(), art),
+            ("Slot", span, Some("slot.png"))
+        );
+        assert_eq!(
+            (w.children[0].id.as_str(), w.children[0].x.clone()),
             ("ChatButton", fixed(0, 36))
         );
     }

@@ -2,11 +2,11 @@ OuterFrame Decor
 CombatDragBar Drag
   Minimizebox Button target [-6, -6, 24, 24] art [6, 6, 12, 12] Size
 FileMenuText MenuTitle label "Rekindle"
-  FileMenu Part target [0, -1, 32, 24] art [0, 1, 32, 22] Size
+  FileMenu Part target [0, -1, 58, 24] art [0, 1, 58, 22] Size
 ToolsMenuText MenuTitle label "Tools"
-  ToolsMenu Part target [0, -1, 32, 24] art [0, 1, 32, 22] Size
+  ToolsMenu Part target [0, -1, 42, 24] art [0, 1, 42, 22] Size
 HelpMenuText MenuTitle label "Help"
-  HelpMenu Part target [0, -1, 32, 24] art [0, 1, 32, 22] Size
+  HelpMenu Part target [0, -1, 36, 24] art [0, 1, 36, 22] Size
 AdArea AdArea
 BackgroundArea Decor
 ResizeUlbr Button target [23, 23, 24, 24] art [-23, -23, 47, 47] Size

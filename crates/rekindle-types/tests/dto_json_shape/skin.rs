@@ -10,7 +10,7 @@ use rekindle_types::dto::skin_layout::{LayoutSource, TextRole};
 use rekindle_types::dto::skin_library::{SkinApplyFailure, SkinEntry};
 use rekindle_types::dto::skin_run::SkinSelection;
 use rekindle_types::dto::skin_title::TitleText;
-use rekindle_types::dto::skin_tree::{NodeRole, NodeSpan, SkinNode, SkinTree};
+use rekindle_types::dto::skin_tree::{Anchor, ContentFit, NodeRole, NodeSpan, SkinNode, SkinTree};
 use rekindle_types::dto::skin_tree_role::Edge;
 use rekindle_types::presence::SessionStatus;
 use serde_json::Value;
@@ -235,6 +235,29 @@ fn actions(add: &mut impl FnMut(&str, Value)) {
     );
     add("skin.menuRegistry", super::to(MenuRegistry::rekindle()));
     shell(add);
+    content_samples(add);
+}
+
+/// A stored pack's chain on a content text and the text's fit (plan
+/// SK15b): the Host resolves both before it serves the tree.
+fn content_samples(add: &mut impl FnMut(&str, Value)) {
+    add(
+        "skin.nodeSpan.after",
+        to(NodeSpan::Fixed {
+            at: Anchor::After {
+                sibling: "XfireMenuText".into(),
+                gap: 10,
+            },
+            size: 26,
+        }),
+    );
+    add(
+        "skin.contentFit",
+        to(ContentFit {
+            min: 25,
+            max: Some(80),
+        }),
+    );
 }
 
 /// A served shell (design §2.6): a tab control's node with its
@@ -244,14 +267,15 @@ fn shell(add: &mut impl FnMut(&str, Value)) {
     let node = |id: &str, role, control_group, children| SkinNode {
         id: id.to_owned(),
         role,
-        x: fill,
-        y: fill,
+        x: fill.clone(),
+        y: fill.clone(),
         z: 0,
         art: None,
         text: None,
         label: None,
         inset: None,
         target: None,
+        fit: None,
         shows_with: None,
         control_group,
         triggers: Vec::new(),

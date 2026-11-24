@@ -2,21 +2,21 @@ Top Decor
 Logo Logo label "Rekindle" cover [0, 0, 89, 21] glyph RekindleWordmark
 MenuBar MenuBar
   XfireMenuText MenuTitle label "Rekindle"
-    FileMenu Part target [0, 0, 64, 23] art [0, 0, 64, 23] Spacing
+    FileMenu Part target [0, 0, 50, 23] art [0, 0, 50, 23] Spacing
   ToolsMenuText MenuTitle label "Tools"
-    ToolsMenu Part target [0, 0, 41, 23] art [0, 0, 64, 23] Spacing
+    ToolsMenu Part target [0, 0, 34, 23] art [0, 0, 34, 23] Spacing
   HelpMenuText MenuTitle label "Help"
-    HelpMenu Part target [35, 0, 6, 23] art [-35, 0, 64, 23] Short
-UserNameField NameField inset [0, 16] target [0, -1, 236, 24] art [0, 1, 252, 22] Size
+    HelpMenu Part target [0, 0, 15, 23] art [0, 0, 28, 23] Short
+UserNameField NameField inset [0, 16] target [0, -1, 201, 24] art [0, 1, 217, 22] Size
   UserNameText Part
 StatusWrapper Group
-StatusEdit StatusText inset [0, 10] target [0, -4, 317, 23] art [0, 4, 327, 14] Short
+StatusEdit StatusText inset [0, 10] target [0, -4, 282, 23] art [0, 4, 292, 14] Short
 DownArrow StatusList target [-1, -1, 24, 24] art [1, 1, 22, 22] Size
 TopButtonBar Group
   MinimizeBox Button target [-4, -4, 20, 24] art [4, 4, 16, 16] Short
   MaximizeBox Button target [0, -4, 16, 24] art [0, 4, 16, 16] Short
   CloseBox Button target [0, -4, 20, 24] art [0, 4, 16, 16] Short
-Middle Decor target [0, 0, 394, 8] art [0, 0, 394, 8] Frame
+Middle Decor target [0, 0, 359, 8] art [0, 0, 359, 8] Frame
 InfoViewButton Button target [0, 0, 13, 60] art [0, 0, 13, 60] Spacing
 TabbedControl Views
   BuddyView View(Friends)
@@ -28,14 +28,14 @@ TabbedControl Views
   TabbedControl.Communities View(Communities)
 TabHeader TabStrip
   TabNormalText Tab(Friends) label "Friends"
-    TabNormalButton Part target [0, -2, 64, 22] art [0, 2, 64, 20] Spacing
+    TabNormalButton Part target [0, -2, 44, 22] art [0, 2, 44, 20] Spacing
   TabServerText Tab(Servers) label "Servers"
-    TabServerButton Part target [0, -2, 64, 22] art [0, 2, 64, 20] Spacing
+    TabServerButton Part target [0, -2, 44, 22] art [0, 2, 44, 20] Spacing
   TabDownloadText Tab(Files) label "Downloads"
-    TabDownloadButton Part target [0, -2, 64, 22] art [0, 2, 64, 20] Spacing
-  TabDownloadText.Communities Tab(Communities) label "Communities" cover [6, 3, 48, 9] target [0, -4, 60, 19] art [0, 4, 60, 15] Spacing
+    TabDownloadButton Part target [0, -2, 61, 22] art [0, 2, 61, 20] Spacing
+  TabDownloadText.Communities Tab(Communities) label "Communities" target [0, -4, 68, 19] art [0, 4, 68, 15] Spacing
     TabDownloadButton.Communities Part
-Bottom Decor target [0, 0, 394, 170] art [0, 0, 394, 170] Frame
+Bottom Decor target [0, 0, 359, 170] art [0, 0, 359, 170] Frame
 AdArea AdArea
   AdView Part
 ButtonHolder ButtonBar
@@ -61,10 +61,10 @@ ButtonHolder ButtonBar
     FilesButtons.TabAddButton Group
       SearchFiles Button target [0, -1, 239, 24] art [0, 1, 239, 22] Size
         BigBrowseFileText Part label "Find"
-ResizeUp Button target [0, 0, 407, 24] art [0, 0, 407, 10] Size
+ResizeUp Button target [0, 0, 372, 24] art [0, 0, 372, 10] Size
 ResizeLeft Button target [0, 0, 24, 260] art [0, 0, 10, 260] Size
 ResizeRight Button target [-14, 0, 24, 260] art [14, 0, 10, 260] Size
-ResizeDown Button target [0, -14, 407, 24] art [0, 14, 407, 10] Size
+ResizeDown Button target [0, -14, 372, 24] art [0, 14, 372, 10] Size
 GripperBR Button target [1, 1, 24, 24] art [-1, -1, 25, 25] Short
 popup Infoskin
   XfireTopRow Decor target [0, 0, 137, 126] art [0, 0, 137, 126] Frame
