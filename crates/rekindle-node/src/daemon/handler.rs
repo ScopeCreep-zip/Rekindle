@@ -115,10 +115,16 @@ impl DaemonHandler {
             .is_some_and(|ctx| ctx.lifecycle.state().can_write())
     }
 
-    /// Whether we hold a personal route, and what the media route is doing
-    /// (plan C7.9c): the route facts the network status carries. Route
-    /// state lives on the transport's route owner, not the manager.
-    fn route_status(&self) -> (bool, rekindle_types::subscription_events::RouteAvailability) {
+    /// What the general and the media route are doing (plan C7.9c, RV1g):
+    /// the route facts the network status carries (`has_route` is the
+    /// general route `Available`). Route state lives on the transport's
+    /// route owner, not the manager.
+    fn route_status(
+        &self,
+    ) -> (
+        rekindle_types::subscription_events::RouteAvailability,
+        rekindle_types::subscription_events::RouteAvailability,
+    ) {
         use rekindle_records::port::RouteClass;
         let routes = self
             .transport
@@ -128,12 +134,16 @@ impl DaemonHandler {
             .map(|t| t.routes());
         let Some(routes) = routes else {
             return (
-                false,
+                rekindle_types::subscription_events::RouteAvailability::Idle,
                 rekindle_types::subscription_events::RouteAvailability::Idle,
             );
         };
+        let general = routes
+            .own_state(RouteClass::General)
+            .borrow()
+            .availability();
         let media = routes.own_state(RouteClass::Media).borrow().availability();
-        (routes.own_blob(RouteClass::General).is_some(), media)
+        (general, media)
     }
 }
 
@@ -414,7 +424,9 @@ impl InboundHandler for DaemonHandler {
                     is_attached,
                     public_internet_ready,
                 } => {
-                    let (has_route, media_route) = self.route_status();
+                    let (general, media_route) = self.route_status();
+                    let has_route = general
+                        == rekindle_types::subscription_events::RouteAvailability::Available;
                     sub_mgr.on_attachment_change(
                         rekindle_types::subscription_events::NetworkEvent::AttachmentChanged {
                             attachment_state: state,
@@ -436,7 +448,9 @@ impl InboundHandler for DaemonHandler {
                         return;
                     };
                     let shared = transport.shared();
-                    let (has_route, media_route) = self.route_status();
+                    let (general, media_route) = self.route_status();
+                    let has_route = general
+                        == rekindle_types::subscription_events::RouteAvailability::Available;
                     sub_mgr.on_attachment_change(
                         rekindle_types::subscription_events::NetworkEvent::AttachmentChanged {
                             attachment_state: shared.attachment_state().to_string(),

@@ -5,15 +5,29 @@ use std::sync::Arc;
 use crate::state::AppState;
 use rekindle_lifecycle::LifecycleState;
 
-/// Whether we hold a general route, and what the media route is doing
-/// (plan C7.9c): the two route facts a status indicator shows.
-pub fn route_status(state: &AppState) -> (bool, RouteAvailability) {
+/// What the general and the media route are doing (plan C7.9c, RV1g):
+/// the route facts a status indicator shows (`has_route` is the general
+/// route `Available`).
+pub fn route_status(state: &AppState) -> (RouteAvailability, RouteAvailability) {
     use rekindle_records::port::RouteClass;
     let Some(routes) = state.own_routes.read().clone() else {
-        return (false, RouteAvailability::Idle);
+        return (RouteAvailability::Idle, RouteAvailability::Idle);
     };
+    let general = routes.state(RouteClass::General).borrow().availability();
     let media = routes.state(RouteClass::Media).borrow().availability();
-    (routes.blob(RouteClass::General).is_some(), media)
+    (general, media)
+}
+
+/// Which own route classes are down, and since when (plan RV1g), read
+/// from the route owner the Host's `RoutePort::own_down` follows; none
+/// with no node.
+pub fn route_down(state: &AppState) -> rekindle_types::subscription_events::OwnRouteDownSet {
+    state
+        .own_routes
+        .read()
+        .clone()
+        .map(|routes| routes.down().borrow().clone())
+        .unwrap_or_default()
 }
 
 /// Why a route class is down with no new route (plan RV1), read from the
@@ -38,7 +52,8 @@ pub fn route_paused(
 /// The FSM rejects same-state and invalid-edge calls internally, so we
 /// can fire transitions on every status update without churn or noise.
 pub fn emit_network_status(app_handle: &tauri::AppHandle, state: &AppState) {
-    let (has_route, media_route) = route_status(state);
+    let (general, media_route) = route_status(state);
+    let has_route = general == RouteAvailability::Available;
     let mut event = {
         let node = state.node.read();
         match node.as_ref() {

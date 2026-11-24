@@ -129,6 +129,10 @@ fn status_response(
         route_allocated: snap.as_ref().is_some_and(|s| s.route_allocated),
         route_age_secs: snap.as_ref().and_then(|s| s.route_age_secs),
         route_paused: snap.as_ref().and_then(|s| s.route_paused),
+        own_route_down: snap
+            .as_ref()
+            .map(|s| s.own_route_down.clone())
+            .unwrap_or_default(),
         gossip_meshes,
         gossip_mesh_peers,
         unread_channels,

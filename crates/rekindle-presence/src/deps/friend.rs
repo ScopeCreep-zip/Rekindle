@@ -117,6 +117,10 @@ pub trait FriendPresenceDeps: Send + Sync + 'static {
 
     // === Route and watch state ===
     fn cache_route_blob(&self, friend_key: &str, blob: Vec<u8>);
+    /// Their profile's route subkey went empty (they withdrew a route
+    /// that is down, plan RV2 F9 A3): drop the route we cached for them,
+    /// so nothing is sent over the dead blob.
+    fn drop_route_blob(&self, friend_key: &str);
     /// Their profile names a new device list (subkey 5): a first contact
     /// waiting for their prekey record is attempted now (live finding
     /// L-FR3; the watch drives it, no poll, D4).

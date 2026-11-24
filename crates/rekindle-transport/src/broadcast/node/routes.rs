@@ -163,7 +163,14 @@ pub(super) async fn run_route_publisher(
                 if let Some(on_change) = &on_change {
                     on_change().await;
                 }
-                if let RouteState::Available { blob } = state {
+                // A withdrawal publishes the empty route (plan RV1g):
+                // readers take an empty blob as no route.
+                let blob = match state {
+                    RouteState::Available { blob } => Some(blob),
+                    RouteState::Withdrawn => Some(Vec::new()),
+                    _ => None,
+                };
+                if let Some(blob) = blob {
                     // The publisher's first, then the self-tests': one
                     // order every run (RK1).
                     for offer in &offers {

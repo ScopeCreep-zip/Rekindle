@@ -208,6 +208,8 @@ pub struct TransportSnapshot {
     /// Why a route class is down with no new route (plan RV1), if one is:
     /// the budget is spent or the stored budget is unreadable.
     pub route_paused: Option<crate::subscription_events::RoutePauseCause>,
+    /// Which own route classes are down, and since when (plan RV1g).
+    pub own_route_down: crate::subscription_events::OwnRouteDownSet,
 }
 
 /// Complete daemon status — single response type for `IpcRequest::Status`.
@@ -239,6 +241,10 @@ pub struct StatusSnapshot {
     /// Why a route class is down with no new route (plan RV1), if one is:
     /// the budget is spent or the stored budget is unreadable.
     pub route_paused: Option<crate::subscription_events::RoutePauseCause>,
+    /// Which own route classes are down, and since when (plan RV1g): a
+    /// frontend opened mid-outage shows it; later changes arrive as
+    /// `NetworkEvent::OwnRouteDown` / `OwnRouteUp`.
+    pub own_route_down: crate::subscription_events::OwnRouteDownSet,
 
     // ── Subscription system ─────────────────────────────────
     pub gossip_meshes: usize,

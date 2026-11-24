@@ -46,8 +46,12 @@ impl RouteAllocator for Arc<Fake> {
 
 fn owner(fake: &Arc<Fake>, ready: bool) -> (Arc<OwnRoutes<Arc<Fake>>>, Arc<OrderedWatch<bool>>) {
     let ready = Arc::new(OrderedWatch::new(ready));
-    let routes =
-        OwnRoutes::with_backoff(Arc::clone(fake), ready.follower(), Duration::from_millis(1));
+    let routes = OwnRoutes::with_backoff(
+        Arc::clone(fake),
+        ready.follower(),
+        Duration::from_millis(1),
+        Arc::new(|| 1_000),
+    );
     (routes, ready)
 }
 
@@ -400,4 +404,79 @@ async fn no_allocation_happens_on_a_timer() {
     tokio::time::sleep(Duration::from_secs(3 * 24 * 60 * 60)).await;
     assert_eq!(fake.calls.load(Ordering::SeqCst), calls);
     assert_eq!(routes.id(RouteClass::General), Some(1));
+}
+
+/// Every state `class` passes through from now on, as a follower sees it.
+fn record_states(
+    routes: &Arc<OwnRoutes<Arc<Fake>>>,
+    class: RouteClass,
+) -> Arc<Mutex<Vec<RouteState>>> {
+    let seen = Arc::new(Mutex::new(Vec::new()));
+    let mut rx = routes.state(class);
+    let sink = Arc::clone(&seen);
+    tokio::spawn(async move {
+        while rx.changed().await.is_ok() {
+            let state = rx.borrow_and_update().clone();
+            sink.lock().push(state);
+        }
+    });
+    seen
+}
+
+fn failing_tests(n: usize) -> Vec<Result<(u32, Vec<u8>), AllocError>> {
+    let mut script = vec![Ok((1, b"blob".to_vec()))];
+    script.extend((0..n).map(|_| {
+        Err(AllocError::TryAgain(
+            "allocated route failed to test".into(),
+        ))
+    }));
+    script
+}
+
+/// Plan RV1g A3: a route Veilid reported dead is withdrawn once the class
+/// has been down past the grace; a failed test records no death (A4).
+#[tokio::test(start_paused = true)]
+async fn a_veilid_reported_death_withdraws_the_route_after_the_grace() {
+    let fake = Arc::new(Fake::new(failing_tests(40)));
+    let (routes, _ready) = owner(&fake, true);
+    routes.want(RouteClass::General);
+    settle().await;
+    let seen = record_states(&routes, RouteClass::General);
+    routes.on_dead(&[1]);
+    tokio::time::sleep(crate::own_route_down::WITHDRAW_GRACE - Duration::from_secs(1)).await;
+    assert!(
+        !seen.lock().contains(&RouteState::Withdrawn),
+        "withdrawn before the grace"
+    );
+    tokio::time::sleep(Duration::from_secs(20)).await;
+    let withdrawals = seen
+        .lock()
+        .iter()
+        .filter(|s| **s == RouteState::Withdrawn)
+        .count();
+    assert_eq!(withdrawals, 1, "withdrawn once after the grace");
+    assert_eq!(
+        routes.deaths(RouteClass::General).total,
+        1,
+        "failed tests count no death"
+    );
+    assert!(routes.down().borrow().general.is_some());
+}
+
+/// Plan RV1g A3: our own rotation never withdraws the route, however long
+/// the replacement keeps failing.
+#[tokio::test(start_paused = true)]
+async fn a_rotation_never_withdraws_the_route() {
+    let fake = Arc::new(Fake::new(failing_tests(40)));
+    let (routes, _ready) = owner(&fake, true);
+    routes.want(RouteClass::General);
+    settle().await;
+    let seen = record_states(&routes, RouteClass::General);
+    routes.replace(RouteClass::General);
+    tokio::time::sleep(Duration::from_secs(120)).await;
+    assert!(
+        !seen.lock().contains(&RouteState::Withdrawn),
+        "a rotation withdrew the route"
+    );
+    assert!(routes.down().borrow().general.is_some());
 }

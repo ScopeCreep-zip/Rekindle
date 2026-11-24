@@ -219,6 +219,7 @@ impl TransportNode {
             route_allocated: route_age.is_some(),
             route_age_secs: route_age.map(|d| d.as_secs()),
             route_paused: *self.routes().own_paused().borrow(),
+            own_route_down: self.routes().own_down().borrow().clone(),
         }
     }
 

@@ -216,6 +216,10 @@ impl RoutePort for VeilidRoutes {
         self.own.paused()
     }
 
+    fn own_down(&self) -> watch::Receiver<rekindle_types::subscription_events::OwnRouteDownSet> {
+        self.own.down()
+    }
+
     fn own_deaths(&self, class: RouteClass) -> rekindle_records::port::OwnDeaths {
         self.own.deaths(class)
     }
@@ -442,7 +446,11 @@ impl VeilidPorts {
             }),
         )
         .await?;
-        let own = OwnRoutes::new(VeilidRouteAllocator::new(api.clone()), ready.clone());
+        let own = OwnRoutes::new(
+            VeilidRouteAllocator::new(api.clone()),
+            ready.clone(),
+            Arc::new(rekindle_utils::time::timestamp_ms),
+        );
         let imports = Arc::new(RouteImports::new(api.clone()));
         let ports = PortSet {
             records: Arc::new(VeilidRecords::new(

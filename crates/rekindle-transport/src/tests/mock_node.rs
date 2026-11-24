@@ -171,6 +171,7 @@ impl MockNode {
             route_allocated,
             route_age_secs: None, // No real route to measure age of
             route_paused: None,   // No budget on the mock
+            own_route_down: rekindle_types::subscription_events::OwnRouteDownSet::default(),
         }
     }
 

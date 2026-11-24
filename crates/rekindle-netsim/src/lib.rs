@@ -138,7 +138,7 @@ impl Netsim {
         self.clocks.lock().push(Arc::clone(&clock));
         let idle = Arc::new(SimIdle::new(Arc::clone(&clock)));
         self.idles.lock().push(Arc::clone(&idle));
-        let ports = self.ports(index, &rng, ready_rx);
+        let ports = self.ports(index, &rng, ready_rx, &clock);
         Node {
             index,
             ports,
@@ -151,8 +151,19 @@ impl Netsim {
 
     /// Node `index`'s ports over the network, its route set following
     /// `ready`.
-    fn ports(&self, index: usize, rng: &Arc<SimRandom>, ready: Follow<bool>) -> PortSet {
-        let own = OwnRoutes::new(FakeAllocator::new(index, Arc::clone(&self.net)), ready);
+    fn ports(
+        &self,
+        index: usize,
+        rng: &Arc<SimRandom>,
+        ready: Follow<bool>,
+        clock: &Arc<SimClock>,
+    ) -> PortSet {
+        let wall_clock = Arc::clone(clock);
+        let own = OwnRoutes::new(
+            FakeAllocator::new(index, Arc::clone(&self.net)),
+            ready,
+            Arc::new(move || rekindle_utils::Clock::now_ms(wall_clock.as_ref())),
+        );
         PortSet {
             records: Arc::new(FakeRecords::new(
                 index,

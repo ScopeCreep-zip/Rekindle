@@ -1487,6 +1487,38 @@
       }
     }
   },
+  "network.ownRouteDown.general": {
+    "network": {
+      "ownRouteDown": {
+        "class": "general",
+        "reason": "allocated route failed to test",
+        "sinceMs": 1700000000000
+      }
+    }
+  },
+  "network.ownRouteDown.media": {
+    "network": {
+      "ownRouteDown": {
+        "class": "media",
+        "reason": "allocated route failed to test",
+        "sinceMs": 1700000060000
+      }
+    }
+  },
+  "network.ownRouteUp.general": {
+    "network": {
+      "ownRouteUp": {
+        "class": "general"
+      }
+    }
+  },
+  "network.ownRouteUp.media": {
+    "network": {
+      "ownRouteUp": {
+        "class": "media"
+      }
+    }
+  },
   "network.remoteRoutesDied": {
     "network": {
       "remoteRoutesDied": {

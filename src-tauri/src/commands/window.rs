@@ -32,6 +32,10 @@ pub struct NetworkStatus {
     /// reads; later changes arrive as `NetworkEvent::RoutePaused` /
     /// `RouteResumed`.
     pub route_paused: Option<rekindle_types::subscription_events::RoutePauseCause>,
+    /// Which own route classes are down, and since when (plan RV1g): the
+    /// Host's `StatusSnapshot.own_route_down`; later changes arrive as
+    /// `NetworkEvent::OwnRouteDown` / `OwnRouteUp`.
+    pub own_route_down: rekindle_types::subscription_events::OwnRouteDownSet,
     pub profile_dht_key: Option<String>,
     pub friend_list_dht_key: Option<String>,
 }

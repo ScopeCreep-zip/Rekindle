@@ -47,6 +47,20 @@ pub(super) fn hash_network(h: &mut blake3::Hasher, n: &NetworkEvent) {
         NetworkEvent::RouteResumed {} => {
             h.update(b"route_resumed|");
         }
+        NetworkEvent::OwnRouteDown {
+            class,
+            since_ms,
+            reason,
+        } => {
+            h.update(b"own_route_down|");
+            h.update(&[*class as u8]);
+            h.update(&since_ms.to_le_bytes());
+            h.update(reason.as_bytes());
+        }
+        NetworkEvent::OwnRouteUp { class } => {
+            h.update(b"own_route_up|");
+            h.update(&[*class as u8]);
+        }
         NetworkEvent::RouteDeathsAboveBaseline {
             class,
             deaths,
