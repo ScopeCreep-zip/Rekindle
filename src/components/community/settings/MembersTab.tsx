@@ -55,8 +55,8 @@ const MembersTab: Component<MembersTabProps> = (props) => {
   // What we may do to a member is the Host's per-member verdict (plan
   // E3.2 S9): the validator's rank rule, never a rank compared here.
   function canManageMember(member: Member): boolean {
-    const may = member.canModerateTarget;
-    return member.outranks || may.kick || may.ban || may.timeout;
+    const may = member.moderation;
+    return member.outranks || may.kick === null || may.ban === null || may.timeout === null;
   }
 
   function kickMember(member: Member): void {
@@ -172,7 +172,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
                     <SkinGlyph name="shield" /> Roles
                   </button>
                 </Show>
-                <Show when={member.timeoutUntil ? props.canModerate : member.canModerateTarget.timeout}>
+                <Show when={member.timeoutUntil ? props.canModerate : member.moderation.timeout === null}>
                   <Show when={!member.timeoutUntil} fallback={
                     <button
                       class="form-btn-secondary"
@@ -201,7 +201,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
                     </select>
                   </Show>
                 </Show>
-                <Show when={member.canModerateTarget.kick}>
+                <Show when={member.moderation.kick === null}>
                   <button
                     class="form-btn-secondary"
                     onClick={() => kickMember(member)}
@@ -209,7 +209,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
                     <SkinGlyph name="account-remove" /> Kick
                   </button>
                 </Show>
-                <Show when={member.canModerateTarget.ban}>
+                <Show when={member.moderation.ban === null}>
                   <button
                     class="form-btn-danger"
                     onClick={() => banMember(member)}

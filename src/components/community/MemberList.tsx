@@ -164,7 +164,7 @@ const MemberList: Component<MemberListProps> = (props) => {
     // roles as they change instead of keeping the row's first values.
     const perms = () => myPerms();
     const manage = () => member.outranks;
-    const may = () => member.canModerateTarget;
+    const may = () => member.moderation;
     const voiceChannelId = () => memberVoiceChannelId(member);
     const assignableRoles = () =>
       props.roles
@@ -206,7 +206,7 @@ const MemberList: Component<MemberListProps> = (props) => {
             </ContextMenu.Sub>
           </Show>
 
-          <Show when={may().timeout}>
+          <Show when={may().timeout === null}>
             <ContextMenu.Sub>
               <ContextMenu.SubTrigger class="context-menu-item">
                 <SkinGlyph name="timeout" class="context-menu-icon" />
@@ -269,7 +269,7 @@ const MemberList: Component<MemberListProps> = (props) => {
             </ContextMenu.Item>
           </Show>
 
-          <Show when={may().kick}>
+          <Show when={may().kick === null}>
             <ContextMenu.Item
               class="context-menu-item context-menu-item-danger"
               onSelect={() =>
@@ -281,7 +281,7 @@ const MemberList: Component<MemberListProps> = (props) => {
             </ContextMenu.Item>
           </Show>
 
-          <Show when={may().ban}>
+          <Show when={may().ban === null}>
             <ContextMenu.Item
               class="context-menu-item context-menu-item-danger"
               onSelect={() =>

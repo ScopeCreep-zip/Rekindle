@@ -70,7 +70,7 @@ pub fn group_members<'a>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dto::community::TargetModeration;
+    use crate::dto::community::MemberModeration;
 
     fn member(name: &str, status: &str, role_ids: &[u8]) -> CommunityMemberView {
         CommunityMemberView {
@@ -91,7 +91,7 @@ mod tests {
             location: None,
             last_active: 0,
             group: MemberGroup::Offline,
-            can_moderate_target: TargetModeration::default(),
+            moderation: MemberModeration::refused("You can't moderate yourself."),
             outranks: false,
         }
     }

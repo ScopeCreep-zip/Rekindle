@@ -16,7 +16,7 @@ export interface VoiceMessageAudioView {
 import type {
   AutoModRuleInfo, CommunityPolicy, ExpressionInfo, Message, QuietHoursSettings, SendChannelMessageResult,
 } from "./types";
-import type { CommunityBanView, MemberGroup, TargetModeration } from "./dto";
+import type { CommunityBanView, DeniedCapabilities, MemberGroup, MemberModeration } from "./dto";
 
 /** `SuccessorOffer` (rekindle-types `dto::community`): a successor both
  *  sides link, as `communitySuccessorOffered` carries it. */
@@ -86,6 +86,8 @@ export const communityCommands = {
       onboardingComplete: boolean;
       /** We hold a creator seat now (`CommunityView::we_are_creator`); re-read on `effectivePermissionsChanged` naming us. */
       weAreCreator: boolean;
+      /** The controls we may not use, each with the Host's reason (`CommunityView::denied`); replaced from `effectivePermissionsChanged` naming us. */
+      denied: DeniedCapabilities;
       /** Our name here, never empty: our per-community name, else our short fingerprint (plan E3.4 S6). */
       myDisplayName: string;
       /** Our per-community name as set; absent when unset (the set-name form's prefill). */
@@ -129,7 +131,7 @@ export const communityCommands = {
       location?: { kind: "text" | "voice"; channelId: string } | null;
       lastActive: number;
       group: MemberGroup;
-      canModerateTarget: TargetModeration;
+      moderation: MemberModeration;
       outranks: boolean;
     }[]>(
       "get_community_members", { communityId },

@@ -1,7 +1,9 @@
 //! A community's window view (plan E3.1 D1b).
 
 use super::{community_view, moderation_of, own_card_view, role_view};
+use crate::host::adapters::governance::capability_words::{JOIN_UNFINISHED, YOURSELF};
 use crate::host::community::{CommunityState, RoleDefinition};
+use rekindle_types::dto::community::MemberModeration;
 
 fn owner_role() -> RoleDefinition {
     RoleDefinition {
@@ -99,7 +101,7 @@ fn each_member_rows_flags_are_the_validators_verdicts() {
             if me == target {
                 assert_eq!(
                     (flags, outranks),
-                    Default::default(),
+                    (MemberModeration::refused(YOURSELF), false),
                     "nothing to ourselves"
                 );
                 continue;
@@ -123,13 +125,17 @@ fn each_member_rows_flags_are_the_validators_verdicts() {
             };
             let at = format!("{me} on {target}");
             assert_eq!(
-                flags.kick,
+                flags.kick.is_none(),
                 validate_write(&pk(me), &kick, &gov),
                 "kick {at}"
             );
-            assert_eq!(flags.ban, validate_write(&pk(me), &ban, &gov), "ban {at}");
             assert_eq!(
-                flags.timeout,
+                flags.ban.is_none(),
+                validate_write(&pk(me), &ban, &gov),
+                "ban {at}"
+            );
+            assert_eq!(
+                flags.timeout.is_none(),
                 validate_write(&pk(me), &timeout, &gov),
                 "timeout {at}"
             );
@@ -137,10 +143,50 @@ fn each_member_rows_flags_are_the_validators_verdicts() {
     }
     // The moderator may ban below its rank only: never the admin above it.
     let (flags, outranks) = moderation_of(&gov, Some(&pk(5)), &pk(6));
-    assert!(flags.kick && flags.ban && flags.timeout && outranks);
+    assert!(flags.kick.is_none() && flags.ban.is_none() && flags.timeout.is_none() && outranks);
     let (flags, outranks) = moderation_of(&gov, Some(&pk(6)), &pk(5));
-    assert!(!flags.ban && !outranks);
-    assert_eq!(moderation_of(&gov, None, &pk(6)), Default::default());
+    assert!(flags.ban.is_some() && !outranks);
+    assert_eq!(
+        moderation_of(&gov, None, &pk(6)),
+        (MemberModeration::refused(JOIN_UNFINISHED), false)
+    );
+}
+
+/// The role menu is refused with its real cause when the moderator holds
+/// Manage Roles but no role can be given (plan E3.2 S9): none exist, or
+/// every one sits at or above the moderator's highest role.
+#[test]
+fn manage_roles_names_why_no_role_can_be_given() {
+    use rekindle_types::id::{PseudonymKey, RoleId};
+    use rekindle_types::permissions::{MANAGE_ROLES, VIEW_CHANNELS};
+    let pk = |b: u8| PseudonymKey([b; 32]);
+    let creator_only = rekindle_governance::state::GovernanceState {
+        creators: std::collections::BTreeSet::from([pk(1)]),
+        ..Default::default()
+    };
+    let (flags, _) = moderation_of(&creator_only, Some(&pk(1)), &pk(9));
+    assert_eq!(
+        flags.manage_roles.as_deref(),
+        Some("This community has no roles yet.")
+    );
+    // A manager whose only role is the lowest: it outranks a bare member
+    // but no role ranks below its own.
+    let mut gov = hierarchy();
+    let mut manager = gov.roles[&RoleId([2; 16])].clone();
+    manager.permissions = VIEW_CHANNELS | MANAGE_ROLES;
+    manager.position = 1;
+    gov.roles.insert(RoleId([1; 16]), manager);
+    gov.role_assignments
+        .insert(pk(7), std::collections::HashSet::from([RoleId([1; 16])]));
+    let (flags, outranks) = moderation_of(&gov, Some(&pk(7)), &pk(9));
+    assert!(outranks);
+    assert_eq!(
+        flags.manage_roles.as_deref(),
+        Some("There are no roles you can assign.")
+    );
+    // The admin has roles below its own to give.
+    let (flags, _) = moderation_of(&gov, Some(&pk(5)), &pk(9));
+    assert_eq!(flags.manage_roles, None);
 }
 
 /// A member just admitted (or just rejoined) holds no role assignment yet:
@@ -158,7 +204,7 @@ fn a_just_admitted_members_row_carries_its_verdicts() {
     for me in [1u8, 5] {
         let (flags, outranks) = moderation_of(&gov, Some(&pk(me)), &fresh);
         assert!(
-            flags.kick && flags.ban && flags.timeout && outranks,
+            flags.kick.is_none() && flags.ban.is_none() && flags.timeout.is_none() && outranks,
             "{me} on a just-admitted member"
         );
     }
@@ -247,4 +293,42 @@ fn we_are_creator_is_false_after_we_leave() {
         &[(us, vec![at(5, joined), at(6, left)])],
     ));
     assert!(!community_view(&state, own_card_view(&state, None), 0, None).we_are_creator);
+}
+
+/// Server mute and deafen carry the Host's reasons (plan E3.2 S9): the
+/// missing permission, and a target at or above our highest role. No
+/// voice-state reason: the Host learns other members' voice state in
+/// E3.4 S8b.
+#[test]
+fn mute_and_deafen_name_the_permission_and_the_rank() {
+    use rekindle_types::id::{PseudonymKey, RoleId};
+    use rekindle_types::permissions::{CONNECT, DEAFEN_MEMBERS, MUTE_MEMBERS, VIEW_CHANNELS};
+    let pk = |b: u8| PseudonymKey([b; 32]);
+    let mut gov = hierarchy();
+    let mut voice = gov.roles[&RoleId([2; 16])].clone();
+    voice.permissions = VIEW_CHANNELS | CONNECT | MUTE_MEMBERS | DEAFEN_MEMBERS;
+    voice.position = 3;
+    gov.roles.insert(RoleId([3; 16]), voice);
+    gov.role_assignments
+        .insert(pk(7), std::collections::HashSet::from([RoleId([3; 16])]));
+    let rank = Some("You can't moderate someone at or above your highest role.");
+    let (flags, _) = moderation_of(&gov, Some(&pk(7)), &pk(5));
+    assert_eq!(
+        (flags.mute.as_deref(), flags.deafen.as_deref()),
+        (rank, rank)
+    );
+    let (flags, _) = moderation_of(&gov, Some(&pk(7)), &pk(6));
+    assert_eq!((flags.mute, flags.deafen), (None, None));
+    // The ban-only moderator lacks both voice permissions.
+    let (flags, _) = moderation_of(&gov, Some(&pk(6)), &pk(9));
+    assert_eq!(
+        (flags.mute.as_deref(), flags.deafen.as_deref()),
+        (
+            Some("You need the Mute Members permission."),
+            Some("You need the Deafen Members permission.")
+        )
+    );
+    // The admin may do both to the voice moderator below it.
+    let (flags, _) = moderation_of(&gov, Some(&pk(5)), &pk(7));
+    assert_eq!((flags.mute, flags.deafen), (None, None));
 }

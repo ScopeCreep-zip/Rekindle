@@ -68,6 +68,9 @@ rekindle-outbox = { path = "../rekindle-outbox" }
 rekindle-crypto = { path = "../rekindle-crypto" }
 rekindle-dm = { path = "../rekindle-dm" }
 rekindle-vault = { path = "../rekindle-vault" }
+# Local wall-clock time for the Host's words ("You're timed out until
+# 14:05."): the reason a disabled community control shows (plan E3.2 S9).
+chrono = { version = "0.4", features = [ "clock" ], default-features = false }
 rekindle-idempotency = { path = "../rekindle-idempotency" }
 # Our own presence's stages (plan E1.1): OS idle time for auto-away, the
 # game detector, and the https check `LinkOpen` validates with.
