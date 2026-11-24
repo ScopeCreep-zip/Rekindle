@@ -19,27 +19,50 @@ import { CHAT_DM } from "../../windows.ts";
 const PACKS = ["onyx", "xslimfire", "symbiosis", "spacecowboy", "stealthx"];
 const GROUP = "Night Raid";
 
-/** The chat window `handle` draws the pack's tree with `title` in its chatTitle node and the chat in its slots. */
-async function treeLaid(handle: string, title: string): Promise<void> {
+/** The chatArea slot's box, each child's (the portals' wrappers), the list's and each message's (`[slot]` evidence). */
+async function slotBoxes(): Promise<string> {
+  return (await browser.execute(() => {
+    const r = (e: Element | null): string => {
+      if (!e) return "none";
+      const b = e.getBoundingClientRect();
+      return `${Math.round(b.left)},${Math.round(b.top)} ${Math.round(b.width)}x${Math.round(b.height)}`;
+    };
+    const slot = document.querySelector('[data-skin-role="slot:chatArea"]');
+    const kids = slot ? Array.from(slot.children).map((c) => `${c.tagName.toLowerCase()}.${Array.from(c.classList).join(".")}[${r(c)} ${getComputedStyle(c).display}]`) : [];
+    const msgs = Array.from(document.querySelectorAll(".chat-message")).map((m) => r(m));
+    return `slot ${r(slot)} overflow=${slot ? getComputedStyle(slot).overflow : ""}; children ${kids.join(" | ")}; list ${r(document.querySelector(".chat-message-area"))}; messages ${msgs.join(" ; ") || "none"}`;
+  })) as string;
+}
+
+/** The chat window `handle` draws the pack's tree with `title` in its chatTitle node and the chat in its slots; `text`, when given, is a message drawn inside the chatArea slot's box. */
+async function treeLaid(handle: string, title: string, text?: string): Promise<void> {
   await browser.switchToWindow(handle);
   let last = "";
   await waitUntil(
     async () => {
-      last = (await browser.execute((want: string) => {
+      last = (await browser.execute((want: string, seen: string) => {
         const w = document.querySelector(".chat-window");
         if (!w?.querySelector(".skin-tree")) return "no chat tree";
         const t = w.querySelector(".skin-chat-title")?.textContent?.trim() ?? "";
         if (t !== want) return `chatTitle reads "${t}"`;
         if (!w.querySelector('[data-skin-role="slot:chatEdit"] .message-input-field')) return "the composer is not in chatEdit";
         if (!w.querySelector('[data-skin-role="slot:chatArea"] .chat-message-area')) return "the messages are not in chatArea";
+        if (seen) {
+          const slot = w.querySelector('[data-skin-role="slot:chatArea"]')!.getBoundingClientRect();
+          const msg = Array.from(w.querySelectorAll(".chat-message")).find((m) => (m.textContent ?? "").includes(seen));
+          if (!msg) return `no message "${seen}"`;
+          const b = msg.getBoundingClientRect();
+          if (b.width === 0 || b.height === 0) return `"${seen}" has no box`;
+          if (b.top < slot.top || b.bottom > slot.bottom + 1 || b.left < slot.left || b.right > slot.right + 1) return `"${seen}" is outside the chatArea slot`;
+        }
         return "";
-      }, title)) as string;
+      }, title, text ?? "")) as string;
       return last === "";
     },
     NET_WAIT_MS,
     `the chat tree for ${title}`,
-  ).catch(() => {
-    throw new Error(`chat window for ${title}: ${last}`);
+  ).catch(async () => {
+    throw new Error(`chat window for ${title}: ${last} [slot] ${await slotBoxes()}`);
   });
 }
 
@@ -84,18 +107,19 @@ describe("a pack's chat tree draws the chat window, the chat in its slots", func
       const pack = builtinPacks().find((p) => p.file === file);
       if (!pack) throw new Error(`no built-in pack ${file}`);
       const href = await applySkin(browser, me, pack.name);
-      for (const [handle, title, kind] of [
-        [dm, "Bea", "dm"],
-        [group, GROUP, "group"],
+      for (const [handle, title, kind, text] of [
+        [dm, "Bea", "dm", "hey, up for a game"],
+        [group, GROUP, "group", undefined],
       ] as const) {
         await browser.switchToWindow(handle);
         await skinShown(browser, href);
-        await treeLaid(handle, title);
+        await treeLaid(handle, title, text);
+        console.log(`[slot] ${file} ${kind}: ${await slotBoxes()}`);
         const def = await sizeTo(CHAT_DM.def.width, CHAT_DM.def.height);
-        await treeLaid(handle, title);
+        await treeLaid(handle, title, text);
         await shot(`${kind}-default-${def}`);
         const min = await sizeTo(CHAT_DM.min.width, CHAT_DM.min.height);
-        await treeLaid(handle, title);
+        await treeLaid(handle, title, text);
         await shot(`${kind}-min-${min}`);
         expect(min).not.toBe("");
       }
