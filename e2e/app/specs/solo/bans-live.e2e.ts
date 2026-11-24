@@ -49,12 +49,14 @@ describe("Settings → Bans shows a ban made while it is open (BansChanged)", fu
     await communitySettings(browser, "Overview");
     const tab = (await browser.execute(() => {
       const t = Array.from(document.querySelectorAll<HTMLButtonElement>(".modal-container .form-tab")).find((b) => (b.textContent ?? "").trim() === "Bans");
-      return t ? { disabled: t.disabled, reason: t.getAttribute("aria-description") ?? t.title ?? "" } : null;
-    })) as { disabled: boolean; reason: string } | null;
+      return t ? { disabled: t.disabled, reason: t.getAttribute("aria-description") ?? t.title ?? "", opacity: Number(getComputedStyle(t).opacity) } : null;
+    })) as { disabled: boolean; reason: string; opacity: number } | null;
     console.log(`[bans] Bans tab before the grant: ${JSON.stringify(tab)}`);
     expect(tab).not.toBeNull();
     expect(tab!.disabled).toBe(true);
     expect(tab!.reason.trim().length).toBeGreaterThan(0);
+    // Disabled looks disabled (dimmed), not only in the accessibility tree.
+    expect(tab!.opacity).toBeLessThan(1);
     await shot("bans-tab-denied");
     await browser.keys("Escape");
   });

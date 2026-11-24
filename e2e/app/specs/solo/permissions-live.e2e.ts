@@ -21,25 +21,29 @@ interface ControlState {
   drawn: boolean;
   disabled: boolean;
   reason: string;
+  /** Its computed opacity: a disabled control must look disabled. */
+  opacity: number;
 }
 
 /** The MANAGE_CHANNELS control as drawn: present, disabled, and its reason (title / aria-description). */
 async function control(): Promise<ControlState> {
   return (await browser.execute((sel: string) => {
     const el = document.querySelector<HTMLButtonElement>(sel);
-    if (!el || el.getBoundingClientRect().width === 0) return { drawn: false, disabled: false, reason: "" };
+    if (!el || el.getBoundingClientRect().width === 0) return { drawn: false, disabled: false, reason: "", opacity: 1 };
     const disabled = el.disabled || el.getAttribute("aria-disabled") === "true";
-    return { drawn: true, disabled, reason: disabled ? (el.getAttribute("aria-description") ?? el.title ?? "") : "" };
+    const opacity = Number(getComputedStyle(el).opacity);
+    return { drawn: true, disabled, reason: disabled ? (el.getAttribute("aria-description") ?? el.title ?? "") : "", opacity };
   }, CONTROL)) as ControlState;
 }
 
 /** Wait until the control is drawn and `enabled` or disabled with a reason. */
 async function controlIs(enabled: boolean, what: string): Promise<ControlState> {
-  let last: ControlState = { drawn: false, disabled: false, reason: "" };
+  let last: ControlState = { drawn: false, disabled: false, reason: "", opacity: 1 };
   await waitUntil(
     async () => {
       last = await control();
-      return last.drawn && (enabled ? !last.disabled : last.disabled && last.reason.trim().length > 0);
+      // Enabled: drawn at full opacity. Disabled: a reason, and visibly dimmed.
+      return last.drawn && (enabled ? !last.disabled && last.opacity === 1 : last.disabled && last.reason.trim().length > 0 && last.opacity < 1);
     },
     NET_WAIT_MS * 2,
     "",

@@ -126,6 +126,14 @@
   }
 
   /* A menu item the Host says cannot run now stays listed, with why. */
+  /* Never-hide: a control we may not use is drawn, and must look disabled
+   * (dimmed, as Xfire's greyed buttons were), its reason as tooltip and
+   * accessible description. Zero specificity beyond the state, so a
+   * control's own disabled rule still wins. */
+  :where(button, [role="tab"], .form-tab, .channel-topic, input, textarea, select):is(:disabled, [aria-disabled="true"]) {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
   .context-menu-item[data-disabled] {
     color: var(--color-xfire-text-disabled);
     cursor: default;
