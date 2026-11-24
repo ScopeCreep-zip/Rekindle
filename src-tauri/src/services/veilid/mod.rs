@@ -14,6 +14,7 @@ pub(crate) mod control_ingress;
 mod control_moderation;
 mod dht_watch;
 mod inbound_unported;
+mod ingest_outcome;
 pub(crate) mod ingress_queue;
 mod lifecycle;
 mod network;
