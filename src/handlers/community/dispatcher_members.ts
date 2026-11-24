@@ -261,6 +261,7 @@ function governanceRowCommunity(g: GovernanceEvent): string | null {
   if ("effectivePermissionsChanged" in g) return g.effectivePermissionsChanged.community;
   if ("governanceRebuilt" in g) return g.governanceRebuilt.community;
   if ("keyStatus" in g) return g.keyStatus.community;
+  if ("bansChanged" in g) return g.bansChanged.community;
   return null;
 }
 
@@ -270,6 +271,15 @@ function applyGovernance(g: GovernanceEvent): void {
   if ("keyStatus" in g) {
     const { community, status } = g.keyStatus;
     if (communityState.communities[community]) setCommunityState("communities", community, "keyStatus", status);
+    return;
+  }
+  // The ban list changed (plan E3.2 S9): a shown ban list reads it again
+  // from the Host (`bansRevision`), which holds the list.
+  if ("bansChanged" in g) {
+    const { community } = g.bansChanged;
+    if (communityState.communities[community]) {
+      setCommunityState("communities", community, "bansRevision", (n) => (n ?? 0) + 1);
+    }
     return;
   }
   if ("rolesChanged" in g) {

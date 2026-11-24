@@ -239,6 +239,8 @@ export interface Community {
   myPseudonymKey: string | null;
   /** Whether we hold the community's current key (FX3). */
   keyStatus?: KeyStatus | null;
+  /** Bumped on each `BansChanged` (plan E3.2 S9): a shown ban list re-reads on it. */
+  bansRevision?: number;
   /** Set when we were removed (plan E3.2 S9 own removal): the community
    *  stays as read-only history. */
   /** Set when the inviter refused our join after it returned (plan JW):
