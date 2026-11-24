@@ -40,6 +40,14 @@ impl GovernanceOpStore for HostGovernance {
         self.store_governance_op_impl(community_id, op, true).await
     }
 
+    async fn signed_here_head(
+        &self,
+        community_id: &str,
+        device_key: &[u8; 32],
+    ) -> Result<Option<u64>, GovernanceRuntimeError> {
+        self.signed_here_head_impl(community_id, device_key).await
+    }
+
     async fn set_governance_op_fates(
         &self,
         community_id: &str,

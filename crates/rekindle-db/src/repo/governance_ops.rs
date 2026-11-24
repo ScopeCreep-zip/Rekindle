@@ -271,6 +271,29 @@ pub fn heads(
     rows.collect()
 }
 
+/// The highest `device_seq` this device signed under `device_key` in
+/// `community_id`: `signed_here` rows only (plan E3.2 S7d-keys.3), never
+/// our own ops re-learnt from peers, so the unlock barrier (S7d-keys.8)
+/// reads a restored copy as behind its key's DHT head.
+///
+/// # Errors
+/// The query failed or the stored seq is negative.
+pub fn signed_here_head(
+    conn: &Connection,
+    owner_key: &str,
+    community_id: &str,
+    device_key: &str,
+) -> rusqlite::Result<Option<u64>> {
+    let seq: Option<i64> = conn.query_row(
+        "SELECT MAX(device_seq) FROM governance_ops WHERE owner_key = ?1 AND community_id = ?2 \
+         AND device_key = ?3 AND signed_here = 1",
+        params![owner_key, community_id, device_key],
+        |row| row.get(0),
+    )?;
+    seq.map(|seq| u64::try_from(seq).map_err(|_| rusqlite::Error::IntegralValueOutOfRange(0, seq)))
+        .transpose()
+}
+
 /// Write `head` as its device key's head in `community_id`.
 ///
 /// # Errors
@@ -391,5 +414,23 @@ mod tests {
             .map(|(_, op)| op.signed_here)
             .collect();
         assert_eq!(loaded, vec![true, false]);
+    }
+
+    #[test]
+    fn the_signed_here_head_never_counts_ops_re_learnt_from_peers() {
+        let conn = fixture::conn();
+        fixture::community(&conn, "c1");
+        assert_eq!(signed_here_head(&conn, OWNER, "c1", "dd").unwrap(), None);
+        let mine = |byte| StoredOp {
+            signed_here: true,
+            ..op(byte, u64::from(byte), OpState::Applied)
+        };
+        insert(&conn, OWNER, "c1", &mine(1)).unwrap();
+        insert(&conn, OWNER, "c1", &mine(2)).unwrap();
+        // Our key's later ops, echoed back by a peer: signed by another copy.
+        insert(&conn, OWNER, "c1", &op(5, 5, OpState::Applied)).unwrap();
+        insert(&conn, OWNER, "c1", &op(6, 6, OpState::Applied)).unwrap();
+        assert_eq!(signed_here_head(&conn, OWNER, "c1", "dd").unwrap(), Some(2));
+        assert_eq!(signed_here_head(&conn, OWNER, "c1", "ee").unwrap(), None);
     }
 }

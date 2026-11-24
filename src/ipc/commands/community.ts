@@ -8,6 +8,14 @@ import type { CatchUpView, OpPublicationState } from "../channels/community_subs
  *  `needsReenrol` while it holds no key endorsed for our current member record. */
 export type DeviceStatus = "enrolled" | "needsReenrol";
 
+/** A governance write's answer (`OpOutcome`, plan E3.2 S7d-keys.8): `pending` while the
+ *  outbox has not landed the op; `heldOpId` names a write the unlock barrier holds, unsigned,
+ *  as the community's `CatchUp` pending list lists it (null once signed). */
+export interface GovernanceWriteAnswer {
+  pending: boolean;
+  heldOpId: string | null;
+}
+
 export interface VoiceMessageAudioView {
   audio: string;
   durationMs: number;
@@ -434,7 +442,9 @@ export const communityCommands = {
   leaveCommunity: (communityId: string) =>
     hostInvoke<unknown>("leave_community", { communityId }).then(() => undefined),
   deleteChannel: (communityId: string, channelId: string) =>
-    hostInvoke<unknown>("delete_channel", { communityId, channelId }).then(() => undefined),
+    hostInvoke<GovernanceWriteAnswer & { deleted: string }>("delete_channel", { communityId, channelId }).then(
+      () => undefined,
+    ),
   renameChannel: (communityId: string, channelId: string, newName: string) =>
     hostInvoke<void>("rename_channel", { communityId, channelId, newName }),
   /**

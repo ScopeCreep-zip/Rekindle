@@ -310,6 +310,7 @@ pub(crate) async fn handle_delete(
             IpcResponse::ok(&serde_json::json!({
                 "deleted": hex_id,
                 "pending": outcome == rekindle_governance_runtime::OpOutcome::Pending,
+                "heldOpId": outcome.held_op_id(),
             }))
         }
         Err(e) => IpcResponse::error(500, format!("channel delete failed: {e}")),
@@ -370,6 +371,7 @@ pub(crate) async fn handle_update(
             "name": update.name,
             "topic": update.topic,
             "pending": outcome == rekindle_governance_runtime::OpOutcome::Pending,
+            "heldOpId": outcome.held_op_id(),
         })),
         Err(e) => IpcResponse::error(500, format!("channel update failed: {e}")),
     }

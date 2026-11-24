@@ -115,6 +115,7 @@ pub(crate) mod slot_heads;
 mod state_builder;
 pub(crate) mod state_mutations;
 mod state_reads;
+mod unlock_barrier_loop;
 pub(crate) mod unread;
 mod views;
 mod watch;

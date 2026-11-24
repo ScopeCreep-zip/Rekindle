@@ -179,3 +179,75 @@ async fn the_next_write_waits_until_our_signed_op_landed() {
     waiting.await.unwrap();
     assert_ne!(barrier.next_op_id(), barrier.next_op_id());
 }
+
+/// Lead decision 1 (plan E3.2 S7d-keys.8): a copy that holds its own key's
+/// later ops, echoed back by the unlock sweep, but whose `signed_here` head
+/// is behind the DHT `GovHead` is a restore.
+#[tokio::test]
+async fn a_copy_holding_its_own_echoed_ops_but_behind_its_signed_head_is_a_restore() {
+    use crate::op_log::{HeldOp, OpFate};
+    let device = [7u8; 32];
+    let echoed: Vec<HeldOp> = (0..=5)
+        .map(|seq| HeldOp {
+            hash: rekindle_types::governance::OpHash([u8::try_from(seq).unwrap(); 32]),
+            device_key: device,
+            author: rekindle_types::id::PseudonymKey([1; 32]),
+            author_record: "VLD0:m".into(),
+            seq,
+            lamport: seq,
+            issued_at: 0,
+            encoded: Vec::new(),
+            fate: OpFate::Applied,
+        })
+        .collect();
+    let mut store = crate::deps::MockGovernanceOpStore::new();
+    store
+        .expect_governance_ops()
+        .returning(move |_| Ok(echoed.clone()));
+    store
+        .expect_signed_here_head()
+        .returning(|_, _| Ok(Some(2)));
+    let local = local_head(&store, "c1", &device).await.unwrap();
+    let verdict = judge_round(&round(local, Some(5), true, &[Some(5)]));
+    assert_eq!(
+        verdict,
+        Some(BarrierPhase::Restored(RestoreDetected {
+            last_seq: 5,
+            local_head: Some(2),
+        })),
+        "ops echoed back never stand for what this copy signed"
+    );
+}
+
+/// A write signs at once only once the barrier passed with nothing held;
+/// held writes queue in arrival order (ticket n + 1 after ticket n).
+#[tokio::test]
+async fn held_writes_queue_in_arrival_order_behind_the_barrier() {
+    let barrier = Arc::new(UnlockBarrier::default());
+    assert!(barrier.try_turn_now().is_none(), "catching up: held");
+    let (first, t0) = barrier.hold_next(|id| PendingGovOp {
+        op_id: id,
+        ..held("")
+    });
+    let (_, t1) = barrier.hold_next(|id| PendingGovOp {
+        op_id: id,
+        ..held("")
+    });
+    barrier.complete(Some(BarrierPhase::Passed));
+    assert!(barrier.try_turn_now().is_none(), "a held write goes first");
+    let second = {
+        let barrier = Arc::clone(&barrier);
+        tokio::spawn(async move { barrier.serve(t1).await })
+    };
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    assert!(!second.is_finished(), "ticket 1 waits for ticket 0");
+    barrier.serve(t0).await;
+    barrier.served(t0);
+    tokio::time::timeout(Duration::from_secs(1), second)
+        .await
+        .expect("ticket 1 queues once ticket 0 holds the turn")
+        .unwrap();
+    barrier.release(&first);
+    barrier.release("held-1");
+    assert!(barrier.try_turn_now().is_some(), "passed, nothing held");
+}

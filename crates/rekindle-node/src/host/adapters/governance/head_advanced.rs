@@ -198,6 +198,9 @@ impl HostGovernance {
             return false;
         }
         tracing::debug!(subkey = hint.subkey, "head hint received");
+        // A round with no answer is retried on every `HeadAdvanced` (plan
+        // E3.2 S7d-keys.8).
+        self.ctx.communities.unlock_barriers().poke(community_id);
         let worth = self
             .ctx
             .communities

@@ -15,6 +15,7 @@
 
 use std::time::Duration;
 
+use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, LifecycleRequest, MemberRequest};
 
 use crate::harness::{eventually, Community, Refused, PASSPHRASE};
@@ -34,7 +35,7 @@ async fn unlock(community: &Community, i: usize) {
     .await;
 }
 
-async fn self_assignable_role(community: &Community, name: &str) -> String {
+pub(crate) async fn self_assignable_role(community: &Community, name: &str) -> String {
     let role = community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::RoleCreate {
@@ -53,7 +54,7 @@ async fn self_assignable_role(community: &Community, name: &str) -> String {
 }
 
 /// Node `i` takes `role_id` itself: a governance op of its own.
-async fn self_assign(
+pub(crate) async fn self_assign(
     community: &Community,
     i: usize,
     role_id: &str,
@@ -69,7 +70,12 @@ async fn self_assign(
 }
 
 /// Whether node `reader` lists `member` holding `role_id`, within the limit.
-async fn sees_role(community: &Community, reader: usize, member: &str, role_id: &str) -> bool {
+pub(crate) async fn sees_role(
+    community: &Community,
+    reader: usize,
+    member: &str,
+    role_id: &str,
+) -> bool {
     eventually(&community.sim, LIMIT, || async {
         community.nodes[reader]
             .call(IpcRequest::Community(CommunityRequest::Lifecycle(
@@ -113,7 +119,12 @@ async fn device_status(community: &Community, i: usize, status: &str) -> bool {
 }
 
 /// Whether node `reader` lists `member`, within the limit.
-async fn lists(community: &Community, reader: usize, member: &str, listed: bool) -> bool {
+pub(crate) async fn lists(
+    community: &Community,
+    reader: usize,
+    member: &str,
+    listed: bool,
+) -> bool {
     eventually(&community.sim, LIMIT, || async {
         community.nodes[reader]
             .call(IpcRequest::Community(CommunityRequest::Lifecycle(
@@ -188,6 +199,23 @@ async fn a_second_device_enrols_then_re_enrols_after_its_person_rejoins() {
         "another member sees B's op as p's"
     );
 
+    // B goes off-line once its op landed on its `M(p,d)`: a write made
+    // while the previous op's append is still in flight is held and
+    // answered at once (plan E3.2 S7d-keys.8), and an op that never landed
+    // is not on the record a later joiner walks.
+    let barrier = community.nodes[B]
+        .host
+        .governance()
+        .unlock_barrier(&community.anchor);
+    assert!(
+        eventually(&community.sim, LIMIT, || async {
+            tokio::time::timeout(Duration::ZERO, barrier.landed())
+                .await
+                .is_ok()
+        })
+        .await,
+        "B's op lands on its own record"
+    );
     // B goes off-line; A leaves and re-joins under a fresh member record.
     community.nodes[B].ok(IpcRequest::Lock).await;
     community.nodes[A]

@@ -154,19 +154,128 @@ impl HostGovernance {
         // community's state and our pseudonym are still here (plan E3.2),
         // unless our merged state never admitted our join (decided in the
         // state the op would be built on, `apply::write_departure`).
+        use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
+        use rekindle_governance_runtime::moderation::LeaveOutcome;
         let departure = rekindle_governance_runtime::moderation::leave(self, &id)
             .await
             .map_err(|e| format!("community leave op: {e}"))?;
-        if departure == rekindle_governance_runtime::moderation::LeaveOutcome::Withdrawn {
-            tracing::warn!(
-                community = %id,
-                "our join is not admitted by our merged state: withdrawn locally, nothing authored"
-            );
-            self.stop_community_tasks(&id).await;
-            self.ctx.mek_cache.write().remove_community(&id);
-            self.discard_governance_ops(&id);
-            return self.forget_community(&transport, &id).await;
+        match departure {
+            LeaveOutcome::Withdrawn => {
+                tracing::warn!(
+                    community = %id,
+                    "our join is not admitted by our merged state: withdrawn locally, nothing authored"
+                );
+                self.stop_community_tasks(&id).await;
+                self.ctx.mek_cache.write().remove_community(&id);
+                self.discard_governance_ops(&id);
+                return self.forget_community(&transport, &id).await;
+            }
+            // Catching up (plan E3.2 S7d-keys.8; lead rulings 2026-11-24: a
+            // leave is never refused while catching up, and it takes effect
+            // locally at once and durably): the community leaves every list
+            // and its content keys go now, the departure is persisted, and
+            // our held `MemberLeft` is signed in the background; the rest
+            // of the leave runs once it signed, or at once on a restore
+            // (the op is never signed, and the person has left locally). A
+            // restart before then resumes it ([`Self::resume_departure`]).
+            LeaveOutcome::Held { op_id } => {
+                self.leave_locally(&id).await?;
+                let barrier = self.ctx.communities.unlock_barriers().of(&id);
+                let governance = self.clone();
+                let membership = membership.clone();
+                self.scope().spawn_or_drop("held leave", async move {
+                    if let Err(fact) = barrier.written(&op_id).await {
+                        tracing::warn!(
+                            community = %membership.anchor,
+                            last_seq = fact.last_seq,
+                            "leave: a restore was detected, our MemberLeft is never signed"
+                        );
+                    }
+                    if let Err(error) = governance.depart_and_forget(&membership).await {
+                        tracing::warn!(community = %membership.anchor, %error, "leave not completed");
+                    }
+                });
+                return Ok(());
+            }
+            LeaveOutcome::Left => {}
         }
+        self.depart_and_forget(membership).await
+    }
+
+    /// The leave's local half, at once and durably (plan E3.2 S7d-keys.8,
+    /// lead ruling 2026-11-24): the community is marked departing in the
+    /// store and on its row (awaited: a restart finds it), drops out of
+    /// the session's list (the list, the views and every request resolve
+    /// through it), and loses its content keys, queued key transfers,
+    /// bootstrap answers and waiting posts. What signs and publishes our
+    /// `MemberLeft` stays until the leave completes: the governance state,
+    /// the device key, the member record and the registry slot keys.
+    ///
+    /// # Errors
+    /// No identity is unlocked, or the row could not be written.
+    async fn leave_locally(&self, id: &str) -> Result<(), String> {
+        if let Some(state) = self.ctx.communities.map().write().get_mut(id) {
+            state.departing = true;
+            state.departure_running = true;
+        }
+        let owner = self
+            .ctx
+            .require_owner()
+            .map_err(|_| "no identity is unlocked")?;
+        let db = self.ctx.db.current().map_err(|e| e.to_string())?;
+        let cid = id.to_owned();
+        db.call(move |conn| {
+            use rekindle_db::repo::communities::{set, Column};
+            set(conn, &owner, &cid, Column::Departing, 1_i64)
+        })
+        .await
+        .map_err(|e| format!("the leave was not stored: {e}"))?;
+        if let Some(session) = self.ctx.session.write().as_mut() {
+            session.leave_community(id);
+        }
+        self.forget_content_keys(id);
+        self.ctx.mek_cache.write().remove_community(id);
+        self.discard_key_transfers(id, None).await;
+        self.discard_bootstrap(id);
+        crate::host::adapters::channel::discard_waiting_posts(self, id);
+        tracing::info!(community = %id, "left locally; our MemberLeft is held");
+        Ok(())
+    }
+
+    /// Resume a leave that took effect locally before this unlock (plan
+    /// E3.2 S7d-keys.8): once per unlock, the leave runs again in the
+    /// background (its `MemberLeft` held until the barrier passed, then
+    /// the community forgotten). False for a community we are not leaving.
+    pub(super) fn resume_departure(&self, id: &str) -> bool {
+        use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
+        let membership = {
+            let mut map = self.ctx.communities.map().write();
+            let Some(state) = map.get_mut(id).filter(|state| state.departing) else {
+                return false;
+            };
+            if std::mem::replace(&mut state.departure_running, true) {
+                return true;
+            }
+            super::loader::membership(state)
+        };
+        let governance = self.clone();
+        self.scope().spawn_or_drop("resumed leave", async move {
+            if let Err(error) = governance.leave(&membership).await {
+                tracing::warn!(community = %membership.anchor, %error, "resumed leave not completed");
+            }
+        });
+        true
+    }
+
+    /// The leave past our `MemberLeft`: our `Departed` beat, the
+    /// community's loops stopped, the departure notice, then the
+    /// community forgotten.
+    async fn depart_and_forget(
+        &self,
+        membership: &rekindle_transport::CommunityMembership,
+    ) -> Result<(), String> {
+        let id = membership.anchor.clone();
+        let transport = self.transport().map_err(|e| e.to_string())?;
         // Then our `Departed` beat, which ends the community's beats.
         crate::host::adapters::presence::depart(&self.ctx, &id).await;
         let signing_key = self
@@ -290,6 +399,22 @@ impl HostGovernance {
     /// the shell's: a member who left keeps nothing that opens the
     /// community's past or future traffic.
     pub(super) fn forget_keys(&self, community: &str) {
+        self.forget_content_keys(community);
+        if let Some(vault) = self.ctx.vault.lock().as_ref() {
+            let slot = rekindle_vault::VaultKey::SlotKeypair {
+                community: community.to_owned(),
+            };
+            if let Err(e) = vault.delete(&slot) {
+                tracing::warn!(community, error = %e, "slot keypair not deleted");
+            }
+        }
+    }
+
+    /// Every content key of `community`: each scope's MEKs and our member
+    /// HPKE secret (which opens the key transfers sealed to us), stored and
+    /// the shell's. A departing member drops these at once; the slot
+    /// keypair stays until its registry slot is released.
+    fn forget_content_keys(&self, community: &str) {
         let mut scopes = vec![KeyScope::Community];
         if let Some(c) = self.ctx.communities.map().read().get(community) {
             scopes.extend(
@@ -301,12 +426,6 @@ impl HostGovernance {
         if let Some(vault) = self.ctx.vault.lock().as_ref() {
             for scope in scopes {
                 rekindle_vault::typed::mek::delete_scope_meks(vault, community, scope);
-            }
-            let slot = rekindle_vault::VaultKey::SlotKeypair {
-                community: community.to_owned(),
-            };
-            if let Err(e) = vault.delete(&slot) {
-                tracing::warn!(community, error = %e, "slot keypair not deleted");
             }
             rekindle_vault::typed::community_keys::delete_member_hpke_secret(vault, community);
         }

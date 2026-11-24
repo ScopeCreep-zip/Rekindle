@@ -311,6 +311,9 @@ impl HostGovernance {
             .map()
             .read()
             .values()
+            // A community we are leaving is listed nowhere (plan E3.2
+            // S7d-keys.8).
+            .filter(|c| !c.departing)
             .map(|c| {
                 let card = (c.my_pseudonym_key.as_deref())
                     .map(PseudonymKey::from_hex_lossy)

@@ -226,15 +226,7 @@ impl PendingGovOp {
     /// A held write of `kind` naming `target`.
     #[must_use]
     pub fn held_as(op_id: String, kind: PendingGovKind, target: PendingGovTarget) -> Self {
-        let mut label = String::new();
-        for (i, c) in format!("{kind:?}").chars().enumerate() {
-            if i > 0 && c.is_ascii_uppercase() {
-                label.push(' ');
-                label.push(c.to_ascii_lowercase());
-            } else {
-                label.push(c);
-            }
-        }
+        let mut label = kind_words(kind);
         let named = [&target.member, &target.channel, &target.role];
         if let Some(id) = named.into_iter().flatten().next() {
             label.push(' ');
@@ -248,6 +240,28 @@ impl PendingGovOp {
             state: PendingGovState::CatchingUp,
         }
     }
+
+    /// Relabel with what the target shows as (a member's card name, a
+    /// channel's or a role's name): "<kind in words> <name>".
+    #[must_use]
+    pub fn with_name(mut self, name: &str) -> Self {
+        self.label = format!("{} {name}", kind_words(self.kind));
+        self
+    }
+}
+
+/// `kind` in words: "Kick", "Role edited".
+fn kind_words(kind: PendingGovKind) -> String {
+    let mut words = String::new();
+    for (i, c) in format!("{kind:?}").chars().enumerate() {
+        if i > 0 && c.is_ascii_uppercase() {
+            words.push(' ');
+            words.push(c.to_ascii_lowercase());
+        } else {
+            words.push(c);
+        }
+    }
+    words
 }
 
 #[cfg(test)]

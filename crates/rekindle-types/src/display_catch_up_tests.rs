@@ -82,3 +82,19 @@ fn a_held_kick_names_its_member_in_its_label() {
     assert_eq!(op.label, format!("Unban {}", &target.to_hex()[..8]));
     assert_eq!(op.state, PendingGovState::CatchingUp);
 }
+
+#[test]
+fn a_held_write_relabelled_shows_its_target_by_name() {
+    let entry = GovernanceEntry::UnbanEntry {
+        target: crate::id::PseudonymKey([0xcd; 32]),
+    };
+    let op = PendingGovOp::held("held-0".into(), &entry).with_name("Bea");
+    assert_eq!(op.label, "Unban Bea");
+    let role = PendingGovOp::held_as(
+        "held-1".into(),
+        PendingGovKind::RoleEdited,
+        PendingGovTarget::default(),
+    )
+    .with_name("Mods");
+    assert_eq!(role.label, "Role edited Mods");
+}

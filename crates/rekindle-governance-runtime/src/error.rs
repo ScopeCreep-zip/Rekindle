@@ -67,6 +67,20 @@ pub enum GovernanceRuntimeError {
     /// An op's author has no member record in the merged state.
     #[error("no member record is known for {0}")]
     MemberRecordMissing(String),
+    /// The unlock barrier found our device key ahead of this copy of the
+    /// data root (plan E3.2 S7d-keys.8): an older copy was restored, and
+    /// nothing is signed under the key again.
+    #[error("{community}: this device's key signed seq {last_seq} from another copy of this data")]
+    RestoreDetected { community: String, last_seq: u64 },
+    /// A write whose answer needs the op signed (an invite link, which is
+    /// handed out only once it landed) while the unlock barrier holds our
+    /// writes (plan E3.2 S7d-keys.8): refused at once, nothing signed. The
+    /// text is the window's reason until the denied-capability view
+    /// (CAPR, `CommunityCapability::CreateInvite`) carries it.
+    #[error(
+        "This community is catching up; invites resume once a member confirms where this device left off."
+    )]
+    CatchingUp(String),
     /// Our own op failed the verification every reader runs.
     #[error("our governance op was refused: {0}")]
     OpRefused(String),

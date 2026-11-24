@@ -378,6 +378,12 @@ CREATE TABLE IF NOT EXISTS communities (
     -- merged, so the banner names who removed us after the teardown and a
     -- restart. NULL while we are a member or the name was never known.
     removed_by_name TEXT,
+    -- Our leave, taken effect locally while our `MemberLeft` waits behind
+    -- the unlock barrier (plan E3.2 S7d-keys.8, lead ruling 2026-11-24):
+    -- the community is hidden and its content keys are gone; each unlock
+    -- signs the op once the barrier passes (or drops it on a restore) and
+    -- then forgets the row.
+    departing INTEGER NOT NULL DEFAULT 0 CHECK(departing IN (0, 1)),
     PRIMARY KEY (owner_key, id)
 );
 

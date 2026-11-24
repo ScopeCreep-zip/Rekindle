@@ -58,6 +58,11 @@ pub fn device_op_key<D: GovernanceRuntimeDeps + ?Sized>(
     let mut secret = zeroize::Zeroizing::new([0u8; 32]);
     deps.rng().fill(secret.as_mut_slice());
     deps.store_device_op_key(community, &secret)?;
+    // A key generated now was never held by any other copy of this data
+    // root, so nothing was signed under it elsewhere: the unlock barrier
+    // (plan E3.2 S7d-keys.8) has nothing to catch up for it.
+    deps.unlock_barrier(community)
+        .complete(Some(crate::unlock_barrier::BarrierPhase::Passed));
     Ok(SigningKey::from_bytes(&secret))
 }
 

@@ -16,6 +16,8 @@ use crate::device_signer;
 use crate::error::GovernanceRuntimeError;
 use crate::event::GovernanceRuntimeEvent;
 use crate::op_log;
+use crate::unlock_hold;
+use rekindle_types::display_catch_up::{PendingGovKind, PendingGovOp, PendingGovTarget};
 
 /// Architecture §6 — classify a governance entry by which UI snapshot
 /// it invalidates so we can emit the right event after a successful
@@ -168,10 +170,11 @@ pub(crate) struct BuiltOn<'a> {
 pub(crate) type Build<D> =
     Box<dyn FnOnce(&D, &BuiltOn<'_>) -> Result<GovernanceEntry, GovernanceRuntimeError> + Send>;
 
-/// The entry [`write_with`] writes: given, or built under its lock.
+/// The entry [`write_with`] writes: given, or built under its lock (with
+/// the kind the unlock barrier lists it as while it is held).
 pub(crate) enum WriteEntry<D> {
     Ready(Box<GovernanceEntry>),
-    Built(Build<D>),
+    Built(Build<D>, PendingGovKind),
 }
 
 /// Our op for the entry `build` returns under the rebuild lock, answered
@@ -180,11 +183,12 @@ pub(crate) async fn write_built<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
     build: Build<D>,
+    kind: PendingGovKind,
 ) -> Result<OpOutcome, GovernanceRuntimeError> {
     write(
         deps,
         community_id,
-        WriteEntry::Built(build),
+        WriteEntry::Built(build, kind),
         OpLanding::FirstAttempt,
         op_log::Deps::Frontier,
     )
@@ -249,6 +253,7 @@ pub(crate) async fn write_departure<D: GovernanceRuntimeDeps>(
     )
     .await?;
     Ok(match written {
+        Written::Op(OpOutcome::Held { op_id }) => LeaveOutcome::Held { op_id },
         Written::Op(_) => LeaveOutcome::Left,
         Written::NotAdmitted(_) => LeaveOutcome::Withdrawn,
     })
@@ -278,8 +283,89 @@ async fn write_with<D: GovernanceRuntimeDeps>(
 ) -> Result<Written, GovernanceRuntimeError> {
     if let WriteEntry::Ready(ready) = &entry {
         refuse_out_of_bounds(ready)?;
+        // Validation precedes the barrier: a malformed entry answers 400
+        // at once and is never held (a withdrawn join's leave is decided
+        // before validation, in `write_signed`).
+        if matches!(not_admitted, NotAdmitted::Refuse) {
+            refuse_malformed_now(deps, community_id, ready).await?;
+        }
     }
+    // The unlock barrier (plan E3.2 S7d-keys.8): nothing is signed before
+    // it passed, held writes sign in arrival order, each after our
+    // previous op's append landed; a restore signs nothing. A held write
+    // is answered at once and signed in the background, a leave too (it
+    // takes effect locally at once, lead ruling 2026-11-24); an invite
+    // link (handed out only once landed) is refused instead, unsigned.
+    let (kind, target) = match &entry {
+        WriteEntry::Ready(ready) => (PendingGovKind::of(ready), PendingGovTarget::of(ready)),
+        WriteEntry::Built(_, kind) => (*kind, PendingGovTarget::default()),
+    };
+    let may_hold = matches!(landing, OpLanding::FirstAttempt | OpLanding::Queued);
+    let slot = unlock_hold::take_slot(deps, community_id, may_hold, |id| {
+        let name = deps.pending_target_name(community_id, &target);
+        let op = PendingGovOp::held_as(id, kind, target);
+        match name {
+            Some(name) => op.with_name(&name),
+            None => op,
+        }
+    })?;
+    match slot {
+        unlock_hold::BarrierSlot::Now(turn) => {
+            let written = write_signed(
+                deps,
+                community_id,
+                entry,
+                landing,
+                op_deps,
+                not_admitted,
+                &turn,
+            )
+            .await;
+            turn.finish(deps, community_id);
+            written
+        }
+        unlock_hold::BarrierSlot::Held(held) => {
+            let op_id = held.op_id().to_owned();
+            let owned = deps.handle();
+            let community = community_id.to_owned();
+            deps.spawn_held_write(
+                community_id,
+                Box::pin(async move {
+                    let signed = async {
+                        let turn = held.turn(&owned, &community).await?;
+                        let written = write_signed(
+                            &owned,
+                            &community,
+                            entry,
+                            landing,
+                            op_deps,
+                            not_admitted,
+                            &turn,
+                        )
+                        .await;
+                        turn.finish(&owned, &community);
+                        written
+                    };
+                    if let Err(error) = signed.await {
+                        tracing::warn!(community, %error, "held governance write not made");
+                    }
+                }),
+            );
+            Ok(Written::Op(OpOutcome::Held { op_id }))
+        }
+    }
+}
 
+/// [`write_with`] past the unlock barrier, in `turn`.
+async fn write_signed<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    entry: WriteEntry<D>,
+    landing: OpLanding,
+    op_deps: op_log::Deps,
+    not_admitted: NotAdmitted,
+    turn: &unlock_hold::SigningTurn,
+) -> Result<Written, GovernanceRuntimeError> {
     // Serialized with the rebuild (`dht_hydration`) from the state and
     // op-set reads to the install (D15: the state is a pure function of a
     // grow-only op set, so whoever reads last installs last; register S7l,
@@ -307,7 +393,7 @@ async fn write_with<D: GovernanceRuntimeDeps>(
     let (pseudo, _) = op_log::own_pseudonym(deps, community_id)?;
     let (mut entry, built_on) = match entry {
         WriteEntry::Ready(ready) => (*ready, None),
-        WriteEntry::Built(build) => {
+        WriteEntry::Built(build, _) => {
             let held = deps.op_store().governance_ops(community_id).await?;
             let set = op_log::verify_held_with(deps, community_id, &held);
             let on = BuiltOn {
@@ -357,6 +443,7 @@ async fn write_with<D: GovernanceRuntimeDeps>(
             &op_log::held(&op, record, encoded.clone(), op_log::OpFate::Applied),
         )
         .await?;
+    turn.signed(&hex::encode(op.hash().0));
     deps.gossip_governance_op(community_id, &encoded);
 
     // The state every reader merges from the op set with this op in it.
@@ -457,6 +544,30 @@ fn refuse_out_of_bounds(entry: &GovernanceEntry) -> Result<(), GovernanceRuntime
     match validate::bounds::out_of_bounds_field(entry) {
         Some(field) => Err(GovernanceRuntimeError::OutOfBounds { field }),
         None => Ok(()),
+    }
+}
+
+/// [`refuse_invalid`]'s structural half before the unlock barrier, read
+/// under the rebuild lock (register S7l, HIGH-2): a malformed entry is
+/// `Malformed` (400) at once, never held. Permission is judged in the
+/// state the op is signed on, past the barrier.
+async fn refuse_malformed_now<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    entry: &GovernanceEntry,
+) -> Result<(), GovernanceRuntimeError> {
+    let gov_state = {
+        let lock = deps.rebuild_lock(community_id);
+        let _installing = lock.lock().await;
+        deps.governance_state(community_id).ok_or_else(|| {
+            GovernanceRuntimeError::GovernanceStateMissing(community_id.to_string())
+        })?
+    };
+    let (pseudo, _) = op_log::own_pseudonym(deps, community_id)?;
+    if validate::well_formed(&pseudo, entry, &gov_state) {
+        Ok(())
+    } else {
+        Err(GovernanceRuntimeError::Malformed)
     }
 }
 

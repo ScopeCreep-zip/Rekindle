@@ -149,13 +149,29 @@ pub enum OpLanding {
 /// How a published governance op stands when its command answers (plan
 /// E3.2 S6b): both are successes, since the op is applied, gossiped and
 /// queued and nothing cancels it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OpOutcome {
     /// On our `M`/2 with our frontier on `M`/3.
     Landed,
     /// Queued on the governance-op stream; the outbox lands it, and the
     /// backend announces the landing.
     Pending,
+    /// Held behind the unlock barrier (plan E3.2 S7d-keys.8), unsigned:
+    /// listed under `op_id` in the community's `CatchUp` pending list, it
+    /// is signed in the background once the barrier passed, and its
+    /// landing or refusal reaches the window as any op's.
+    Held { op_id: String },
+}
+
+impl OpOutcome {
+    /// The held write's id in the `CatchUp` pending list, when held.
+    #[must_use]
+    pub fn held_op_id(&self) -> Option<&str> {
+        match self {
+            Self::Held { op_id } => Some(op_id),
+            Self::Landed | Self::Pending => None,
+        }
+    }
 }
 
 /// What a member's verified card (`M`/0) says that the community renders

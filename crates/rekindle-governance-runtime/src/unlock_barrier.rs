@@ -109,6 +109,16 @@ pub struct UnlockBarrier {
     /// is signed only after seq n's append landed").
     unlanded: watch::Sender<BTreeSet<String>>,
     next_id: AtomicU64,
+    /// The ticket (a held write's number) whose turn it is to queue for
+    /// signing: held writes sign in the order they arrived.
+    serving: watch::Sender<u64>,
+    /// Wakes a round with no answer early: a ring change or a
+    /// `HeadAdvanced` (S7d-keys.8).
+    retry: tokio::sync::Notify,
+    /// Whether this unlock's round loop was started (one per community).
+    rounds: std::sync::atomic::AtomicBool,
+    /// Bumped on every release from the held list ([`Self::written`]).
+    released: watch::Sender<u64>,
 }
 
 impl Default for UnlockBarrier {
@@ -119,6 +129,10 @@ impl Default for UnlockBarrier {
             turn: Arc::default(),
             unlanded: watch::Sender::new(BTreeSet::new()),
             next_id: AtomicU64::new(0),
+            serving: watch::Sender::new(0),
+            retry: tokio::sync::Notify::new(),
+            rounds: std::sync::atomic::AtomicBool::new(false),
+            released: watch::Sender::new(0),
         }
     }
 }
@@ -128,6 +142,60 @@ impl UnlockBarrier {
     #[must_use]
     pub fn next_op_id(&self) -> String {
         format!("held-{}", self.next_id.fetch_add(1, Ordering::Relaxed))
+    }
+
+    /// The signing turn now, without waiting: only once the barrier passed
+    /// with nothing held and every op we signed landed. Any other write is
+    /// held ([`Self::hold_next`]).
+    #[must_use]
+    pub fn try_turn_now(&self) -> Option<tokio::sync::OwnedMutexGuard<()>> {
+        let clear = self.phase() == BarrierPhase::Passed
+            && self.pending.lock().is_empty()
+            && self.unlanded.borrow().is_empty();
+        clear
+            .then(|| Arc::clone(&self.turn).try_lock_owned().ok())
+            .flatten()
+    }
+
+    /// Hold the write `held` builds (given its id) and return its id and
+    /// ticket: it queues for signing after every write held before it.
+    pub fn hold_next(&self, held: impl FnOnce(String) -> PendingGovOp) -> (String, u64) {
+        let ticket = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let op = held(format!("held-{ticket}"));
+        let id = op.op_id.clone();
+        self.pending.lock().push(op);
+        (id, ticket)
+    }
+
+    /// Wait until `ticket` may queue for the signing turn.
+    pub async fn serve(&self, ticket: u64) {
+        let mut rx = self.serving.subscribe();
+        // `wait_for` fails only once the sender drops, and it lives in
+        // `self`, borrowed for this wait.
+        let _serving = rx.wait_for(|serving| *serving == ticket).await;
+    }
+
+    /// `ticket` holds the signing turn: the next held write queues behind.
+    pub fn served(&self, ticket: u64) {
+        self.serving.send_modify(|serving| *serving = ticket + 1);
+    }
+
+    /// Claim this unlock's round loop: true once per barrier.
+    pub fn claim_rounds(&self) -> bool {
+        !self.rounds.swap(true, Ordering::AcqRel)
+    }
+
+    /// Retry a round with no answer now (a ring change, a `HeadAdvanced`).
+    pub fn poke(&self) {
+        self.retry.notify_one();
+    }
+
+    /// Wait for the next round: a poke, or `period` (one app-call timeout).
+    pub async fn next_round(&self, period: std::time::Duration) {
+        tokio::select! {
+            () = self.retry.notified() => {}
+            () = tokio::time::sleep(period) => {}
+        }
     }
 
     /// Wait for the signing turn (arrival order).
@@ -195,6 +263,32 @@ impl UnlockBarrier {
     /// Drop a held write once it is signed and handed to the outbox.
     pub fn release(&self, op_id: &str) {
         self.pending.lock().retain(|op| op.op_id != op_id);
+        self.released.send_modify(|n| *n = n.wrapping_add(1));
+    }
+
+    /// Wait until the held write `op_id` is done (signed, or refused before
+    /// signing): `Err` with the restore fact when it never will be.
+    ///
+    /// # Errors
+    /// The barrier detected a restore: the write stays unsigned.
+    pub async fn written(&self, op_id: &str) -> Result<(), RestoreDetected> {
+        let mut released = self.released.subscribe();
+        let mut phase = self.phase.subscribe();
+        loop {
+            released.borrow_and_update();
+            if let BarrierPhase::Restored(fact) = *phase.borrow_and_update() {
+                return Err(fact);
+            }
+            if !self.pending.lock().iter().any(|op| op.op_id == op_id) {
+                return Ok(());
+            }
+            // Both senders live in `self`, borrowed for this wait, so
+            // neither `changed` fails.
+            tokio::select! {
+                _ = released.changed() => {}
+                _ = phase.changed() => {}
+            }
+        }
     }
 
     /// The window's view: catching up while no round completed, and every
@@ -246,10 +340,32 @@ impl UnlockBarriers {
         self.0.lock().get(community).and_then(|b| b.view())
     }
 
+    /// Retry `community`'s round now, if its barrier exists (a ring move).
+    pub fn poke(&self, community: &str) {
+        if let Some(barrier) = self.0.lock().get(community) {
+            barrier.poke();
+        }
+    }
+
     /// Forget every barrier (lock): the next unlock starts catching up.
     pub fn clear(&self) {
         self.0.lock().clear();
     }
+}
+
+/// A round's local head of `device` (plan E3.2 S7d-keys.8): the highest
+/// seq this copy signed (`signed_here`, S7d-keys.3), never the highest
+/// held op of the key: the unlock sweep stores our own ops that peers echo
+/// back, so a restored copy would read caught up and sign a fork.
+///
+/// # Errors
+/// The op store read failed (the round gives no verdict).
+pub async fn local_head(
+    store: &dyn crate::deps::GovernanceOpStore,
+    community: &str,
+    device: &[u8; 32],
+) -> Result<Option<u64>, crate::error::GovernanceRuntimeError> {
+    store.signed_here_head(community, device).await
 }
 
 #[cfg(test)]

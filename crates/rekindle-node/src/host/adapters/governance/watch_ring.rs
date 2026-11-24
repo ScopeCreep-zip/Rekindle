@@ -104,6 +104,11 @@ impl HostGovernance {
         for lease in gone {
             dht_writes::release(&node, lease).await;
         }
+        // A round with no answer is retried on every ring change (plan
+        // E3.2 S7d-keys.8).
+        if wanted != current {
+            self.ctx.communities.unlock_barriers().poke(community_id);
+        }
         let mut opened: BTreeMap<String, LeaseId> = BTreeMap::new();
         for record in wanted.difference(&current) {
             let lease = match dht_writes::acquire_str(&node, record, None, OpenIntent::Check).await

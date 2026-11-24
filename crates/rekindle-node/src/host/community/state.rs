@@ -254,6 +254,18 @@ pub struct CommunityState {
     #[serde(skip)]
     pub removal_gate: std::sync::Arc<tokio::sync::Mutex<bool>>,
 
+    /// Our leave took effect locally while our `MemberLeft` waits behind
+    /// the unlock barrier (plan E3.2 S7d-keys.8, lead ruling 2026-11-24;
+    /// `communities.departing`): the community is listed nowhere and holds
+    /// no content key, and is kept only to sign the op.
+    #[serde(skip)]
+    pub departing: bool,
+
+    /// Whether this unlock already runs the departing community's leave
+    /// (once per unlock: a reconnect's stage re-run finds it running).
+    #[serde(skip)]
+    pub departure_running: bool,
+
     /// Our locally persisted RSVPs for scheduled events.
     #[serde(skip)]
     pub my_event_rsvps: HashMap<String, String>,
