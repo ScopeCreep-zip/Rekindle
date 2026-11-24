@@ -7,6 +7,7 @@ import { applyTreeOp, fired, initialTreeState, pageView, type TreeState } from "
 import { dispatchSkinAction, registerShellRunner } from "../../actions/skin.actions";
 import { handleOpenDocs, openSettingsTab } from "../buddy-list/MenuBar";
 import NameField from "./NameField";
+import { actionLabel } from "../../utils/skin_action_words";
 import { InBar, PackContextMenu, PackMenu, PackMenuBar } from "./PackMenus";
 import { StatusList, StatusText } from "./StatusField";
 import AdArea from "./AdArea";
@@ -110,12 +111,6 @@ function actionAttr(a: SkinAction | undefined): string | undefined {
   return "arg" in a && typeof a.arg === "string" ? `${a.kind}:${a.arg}` : a.kind;
 }
 
-/** Words for an action's accessible name (the pack draws its label as art). */
-function actionLabel(a: SkinAction): string {
-  const words = a.kind.replace(/([A-Z])/g, " $1").toLowerCase();
-  const arg = "arg" in a && typeof a.arg === "string" ? ` ${a.arg.replace(/([A-Z])/g, " $1").toLowerCase()}` : "";
-  return (words + arg).replace(/^./, (c) => c.toUpperCase());
-}
 
 /**
  * The words the Host serves on a node it placed (plan SK2-N4d): over the

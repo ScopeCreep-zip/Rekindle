@@ -5,7 +5,7 @@ import { randomBytes } from "node:crypto";
 import { expect } from "@wdio/globals";
 import type { Browser } from "webdriverio";
 import { NETWORK_LABEL, NET_WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, sleep, switchTo, typeAndSend, typeInto, untilPublished, waitForHandle, waitUntil } from "../walk/helpers.ts";
-import { BUDDY, LOGIN, SETTINGS, inBuddy, menu, openAddFriend, setValue, submitJoin, underTree } from "../walk/nav.ts";
+import { BUDDY, LOGIN, SETTINGS, inBuddy, menu, openAddFriend, pickNextFile, setValue, submitJoin, underTree } from "../walk/nav.ts";
 
 /** A throwaway identity: its name and passphrase live only in this run. */
 export interface User {
@@ -412,6 +412,36 @@ export async function applySkin(b: Browser, user: User, name: string): Promise<s
     NET_WAIT_MS,
     `Settings never linked ${name}'s sheet`,
   );
+  return href;
+}
+
+/**
+ * Import the package `bytes` (a derived pack, skin-pack.ts `derivedPack`)
+ * through Settings → Appearance → Import skin, choose it (its trial) and keep
+ * it; the href of its sheet, as `applySkin` answers it.
+ */
+export async function importAndKeepSkin(b: Browser, user: User, bytes: Buffer, name: string): Promise<string> {
+  await switchTo(b, SETTINGS);
+  await (await byText(b, ".form-tab", "Appearance")).click();
+  await pickNextFile(b, `${name}.rkskin`, "application/octet-stream", bytes.toString("base64"));
+  await (await byText(b, "button.form-btn-secondary", "Import skin")).click();
+  await resolveIntent(b, { passphrase: user.passphrase, appearMs: 3000 });
+  const listed = async (): Promise<boolean> =>
+    (await b.execute((n: string) => Array.from(document.querySelectorAll(".skin-row .skin-name")).some((e) => e.textContent?.trim() === n), name)) as boolean;
+  await waitUntil(
+    async () => {
+      const error = await b.$(".skin-error");
+      if ((await error.isExisting()) && (await error.isDisplayed())) throw new Error(`the import was refused: ${await error.getText()}`);
+      return listed();
+    },
+    NET_WAIT_MS,
+    `${name} was never listed`,
+  );
+  const href = await applySkin(b, user, name);
+  // A library skin is on trial until kept (SkinTrialPrompt).
+  await press(b, await shown(b, ".skin-trial .sec-btn-commit", NET_WAIT_MS));
+  await resolveIntent(b, { passphrase: user.passphrase, appearMs: 1500 });
+  await gone(b, ".skin-trial", NET_WAIT_MS);
   return href;
 }
 

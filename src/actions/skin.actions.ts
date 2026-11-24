@@ -8,10 +8,12 @@
 // which must start inside the pointer event that began them.
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { commands } from "../ipc/commands";
-import { transferCommands } from "../ipc/commands/dto_transfer";
+import { type TransferRow, transferCommands } from "../ipc/commands/dto_transfer";
 import type { Edge, SkinAction } from "../ipc/commands/dto_skin_tree";
 import type { ShellOp, SkinRun, SkinSelection } from "../ipc/commands/dto_skin_run";
 import { addToast } from "../stores/toast.store";
+import { errorMessage } from "../utils/error";
+import { isCancelled } from "../ipc/commands/dto";
 import { callsState } from "../stores/calls.store";
 import { handleEndDmCall, handleStartDmCall } from "./calls.actions";
 import { handleSetMuted } from "./voice.actions";
@@ -74,7 +76,7 @@ const common: ShellRunner = (op) => {
       return true;
     case "chooseDownloadDest":
       // `transfer_start` asks where to save in Rust; no path reaches the webview.
-      transferCommands.start(op.arg.attachmentId, op.arg.target).catch((e) => addToast(String(e), "error"));
+      transferCommands.start(op.arg.attachmentId, op.arg.target).catch((e) => addToast(errorMessage(e), "error"));
       return true;
     case "openGroupChat":
       handleOpenGroupChat(op.arg.groupId);
@@ -82,10 +84,20 @@ const common: ShellRunner = (op) => {
     case "launchPopup":
       // The shell opens (or closes, when open) the pack popup beside this
       // window; its place and size come from the Host's shell (popup_place.rs).
-      commands.openSkinPopup(op.arg.popup).catch((e) => addToast(String(e), "error"));
+      commands.openSkinPopup(op.arg.popup).catch((e) => addToast(errorMessage(e), "error"));
       return true;
     case "call":
       runCall(op.arg);
+      return true;
+    case "showCall":
+      // The skin's Show Voice (plan E7.2 A): the call window forward, or the
+      // community window on the voice channel the user is in.
+      if (op.arg.target.kind === "call") {
+        commands.openCallWindow(op.arg.target.arg.callId).catch((e) => addToast(errorMessage(e), "error"));
+      } else {
+        const { community, channel } = op.arg.target.arg;
+        commands.openCommunityWindow(community, channel).catch((e) => addToast(errorMessage(e), "error"));
+      }
       return true;
     case "showSettings":
       openSettingsTab(op.arg);
@@ -138,6 +150,13 @@ export function runAddressedShellOp(op: ShellOp): void {
   runShellOp(op, "");
 }
 
+/** The transfer list in one line: how many, and each one's name and state. */
+function transferSummary(rows: TransferRow[]): string {
+  if (rows.length === 0) return "No transfers";
+  const each = rows.slice(0, 5).map((r) => `${r.destName} (${r.state})`).join(", ");
+  return `${rows.length} transfer${rows.length === 1 ? "" : "s"}: ${each}${rows.length > 5 ? ", …" : ""}`;
+}
+
 function isSkinRun(value: unknown): value is SkinRun {
   if (typeof value !== "object" || value === null || !("kind" in value)) return false;
   const kind = (value as { kind: unknown }).kind;
@@ -157,13 +176,21 @@ export async function dispatchSkinAction(node: string, action: SkinAction): Prom
   try {
     answer = await commands.runSkinAction(node, action);
   } catch (e) {
-    addToast(String(e), "error");
+    // The Host's refusal in its words (a CommandError, never "[object
+    // Object]"); a review the user cancelled is no error.
+    if (!isCancelled(e)) addToast(errorMessage(e), "error");
     return;
   }
-  // A feature action answered with its request's value; a feature with
-  // no Rekindle operation yet (its plan G row) runs nothing.
-  if (!isSkinRun(answer) || answer.kind !== "shell") return;
-  runShellOp(answer.arg, node);
+  if (isSkinRun(answer)) {
+    if (answer.kind === "shell") runShellOp(answer.arg, node);
+    // A feature with no Rekindle operation yet (lead decision 49): the
+    // button stays, and the window says so.
+    else if (answer.kind === "notBuiltYet") addToast(answer.arg.message, "info");
+    return;
+  }
+  // A feature action answered with its request's value. Downloads' info
+  // (the transfer list) is shown until its search view (plan G11) takes it.
+  if (action.kind === "downloadInfo" && Array.isArray(answer)) addToast(transferSummary(answer as TransferRow[]), "info");
 }
 
 /** This window's selection for its skin's selection-dependent actions and
@@ -172,7 +199,7 @@ export function sendSkinSelection(selection: SkinSelection | null): Promise<void
   return commands.setSkinSelection(selection).then(
     () => undefined,
     (e) => {
-      addToast(String(e), "error");
+      addToast(errorMessage(e), "error");
     },
   );
 }

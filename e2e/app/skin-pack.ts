@@ -8,7 +8,7 @@
 
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
-import { inflateRawSync } from "node:zlib";
+import { crc32, inflateRawSync } from "node:zlib";
 
 const BUILTIN_DIR = path.join(import.meta.dirname, "..", "..", "crates", "rekindle-skin", "builtin");
 
@@ -47,6 +47,101 @@ function members(zip: Buffer, file: string): Map<string, Buffer> {
     else throw new Error(`${file}: ${name} uses compression method ${method}`);
   }
   return out;
+}
+
+/**
+ * `entries` as a ZIP archive, every member stored (APPNOTE §4.4.5 method 0):
+ * a local header and data per member, then the central directory and its
+ * end record (§4.3.7, §4.3.12, §4.3.16), as `members` reads them.
+ */
+function writeZip(entries: Map<string, Buffer>): Buffer {
+  const parts: Buffer[] = [];
+  const central: Buffer[] = [];
+  let offset = 0;
+  for (const [name, data] of entries) {
+    const nameBytes = Buffer.from(name, "utf8");
+    const crc = crc32(data);
+    const local = Buffer.alloc(30);
+    local.writeUInt32LE(LOCAL, 0);
+    local.writeUInt16LE(20, 4); // version needed
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(nameBytes.length, 26);
+    parts.push(local, nameBytes, data);
+    const dir = Buffer.alloc(46);
+    dir.writeUInt32LE(CENTRAL, 0);
+    dir.writeUInt16LE(20, 4); // version made by
+    dir.writeUInt16LE(20, 6); // version needed
+    dir.writeUInt32LE(crc, 16);
+    dir.writeUInt32LE(data.length, 20);
+    dir.writeUInt32LE(data.length, 24);
+    dir.writeUInt16LE(nameBytes.length, 28);
+    dir.writeUInt32LE(offset, 42);
+    central.push(dir, nameBytes);
+    offset += 30 + nameBytes.length + data.length;
+  }
+  const dirBytes = Buffer.concat(central);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(EOCD, 0);
+  end.writeUInt16LE(entries.size, 8);
+  end.writeUInt16LE(entries.size, 10);
+  end.writeUInt32LE(dirBytes.length, 12);
+  end.writeUInt32LE(offset, 16);
+  return Buffer.concat([...parts, dirBytes, end]);
+}
+
+/**
+ * A package derived from the built-in `file` for a spec to import through
+ * Settings → Import (the real library path): its manifest, renamed `name`
+ * under the id `id`, changed by `edit`; every other member as shipped.
+ */
+export function derivedPack(file: string, id: string, name: string, edit: (manifest: Record<string, unknown>) => void): Buffer {
+  const entry = `${file}.rkskin`;
+  const zip = members(readFileSync(path.join(BUILTIN_DIR, entry)), entry);
+  const bytes = zip.get("manifest.json");
+  if (!bytes) throw new Error(`${entry}: no manifest.json`);
+  const manifest = JSON.parse(bytes.toString("utf8")) as Record<string, unknown>;
+  manifest.id = id;
+  manifest.name = name;
+  edit(manifest);
+  zip.set("manifest.json", Buffer.from(JSON.stringify(manifest), "utf8"));
+  return writeZip(zip);
+}
+
+/**
+ * Symbiosis with its Friends row's Add Friend button pressing Show Voice
+ * (plan E7.2 A). No faithful pack lays a Show Voice button in its main or
+ * chat window (Xfire's ShowVoiceChatWindow lives in Symbiosis's in-game
+ * overlay only, which returns with G15), so the specs import this through
+ * Settings → Import, the real library path, and press that node.
+ */
+export const SHOW_VOICE_PACK = { name: "Show Voice Test", node: "FriendAddButton" };
+
+export function showVoicePack(): Buffer {
+  return derivedPack("symbiosis", "show-voice-test", SHOW_VOICE_PACK.name, (m) => {
+    const node = findNode((m.windows as Record<string, { tree: unknown }>).main.tree, SHOW_VOICE_PACK.node);
+    if (!node) throw new Error(`symbiosis has no ${SHOW_VOICE_PACK.node}`);
+    node.triggers = [{ on: { kind: "click" }, run: { kind: "showVoiceWindow" } }];
+  });
+}
+
+/** The node `id` in `tree` (a manifest window's `tree`), anywhere under it. */
+export function findNode(tree: unknown, id: string): Record<string, unknown> | undefined {
+  if (Array.isArray(tree)) {
+    for (const n of tree) {
+      const found = findNode(n, id);
+      if (found) return found;
+    }
+  } else if (tree !== null && typeof tree === "object") {
+    const n = tree as Record<string, unknown>;
+    if (n.id === id) return n;
+    for (const v of Object.values(n)) {
+      const found = findNode(v, id);
+      if (found) return found;
+    }
+  }
+  return undefined;
 }
 
 /** One variant of a skin: its base and every colour token it declares (DTCG path → `#rrggbb[aa]`). */

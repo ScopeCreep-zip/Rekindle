@@ -121,10 +121,16 @@ pub async fn open_skin_popup(
 #[tauri::command]
 pub async fn open_community_window(
     community_id: Option<String>,
+    channel: Option<String>,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
-    windows::open_community_window(&app, state.inner(), community_id.as_deref())
+    windows::open_community_window(
+        &app,
+        state.inner(),
+        community_id.as_deref(),
+        channel.as_deref(),
+    )
 }
 
 /// Open a profile window for a friend or community member.
