@@ -2,8 +2,8 @@ ChatTitleBar TitleBar target [0, 0, 255, 165] art [0, 0, 255, 165] Frame
   XfireLogo Logo label "Rekindle" cover [0, 0, 67, 19] glyph RekindleWordmark
   ChatUserNameField ChatTitle
     ChatUserNameText Part
-  CloseBox WindowButton(Close) target [-1, 0, 18, 24] art [1, 0, 9, 5] Short
-  MinimizeBox WindowButton(Minimize) target [-7, 0, 17, 24] art [7, 0, 9, 5] Short
+  CloseBox WindowButton(Close) target [-1, 0, 18, 15] art [1, 0, 9, 5] Short
+  MinimizeBox WindowButton(Minimize) target [-7, 0, 17, 15] art [7, 0, 9, 5] Short
 ChatMenuBar MenuBar
   SystemMenuText MenuTitle label "System"
     SystemMenuTextT Part

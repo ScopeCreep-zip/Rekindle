@@ -326,3 +326,54 @@ fn combats_chat_area_is_80_percent_of_its_content_area() {
         );
     }
 }
+
+/// The box of the node `id` in `tree` laid in `w` x `h`, and the far x
+/// edge of its press area (its target box, else its box).
+fn by_id(tree: &SkinTree, w: i32, h: i32, id: &str) -> ([i32; 4], i32) {
+    tree.boxes(w, h)
+        .into_iter()
+        .find_map(|(n, b)| {
+            let far = n
+                .target
+                .map_or(b[0] + b[2], |t| b[0] + t.area[0] + t.area[2]);
+            (n.id == id).then_some((b, far))
+        })
+        .unwrap_or_else(|| panic!("no node {id}"))
+}
+
+/// Plan SK17: the chat title a pack lays at a point as `Class=Text
+/// Stretch=ToContent` (the engine drew the name rightward from there) is
+/// served the room its parent declares past that point, as StealthX's
+/// `ResizeX=100` `UserNameText` is, never a 0 px box: Onyx's `Title` at
+/// `X="Logo.RIGHT+2"` in the `ResizeX=100` `MainTitleBar`
+/// (`chatwindow.xml:21-24`, `components.xml:1426-1430`), Symbiosis's
+/// `ChatUser` at `X="TabbedTalkingState.Right+2"` in `ChatUserContainer`
+/// (`ResizeX=100 IndentRight=93`, `ChatWindow.xml:56-62`,
+/// `Components/ChatWindow.xml:131`), which nothing else in the container
+/// meets past it. The name starts at the pack's point, or past the press
+/// area of the node before it where that reaches further (plan SK13: the
+/// 24 px target of Onyx's 16 px `Logo` ends 2 px past the point).
+#[test]
+fn a_point_laid_chat_title_spans_its_declared_room() {
+    for (id, before, parent) in [
+        ("onyx", "Logo", "MainTitleBar"),
+        ("symbiosis", "TabbedTalkingState", "ChatUserContainer"),
+    ] {
+        let layout = chat_layout(id);
+        let tree = layout.tree.as_ref().unwrap();
+        let (width, height) = min_window(&layout);
+        let title = one(tree, width, height, NodeRole::ChatTitle, id);
+        let (prev, press) = by_id(tree, width, height, before);
+        let (room, _) = by_id(tree, width, height, parent);
+        assert!(title[2] > 0, "{id}: chat title {title:?} is 0 px wide");
+        let start = (prev[0] + prev[2] + 2).max(press);
+        assert_eq!(title[0], start, "{id}: title {title:?} after {prev:?}");
+        let (end, room_end) = (title[0] + title[2], room[0] + room[2]);
+        assert!(end <= room_end, "{id}: title {title:?} past {room:?}");
+        if id == "symbiosis" {
+            assert_eq!(end, room_end, "{id}: title {title:?} in {room:?}");
+        } else {
+            assert!(title[2] >= 100, "{id}: title {title:?} in {room:?}");
+        }
+    }
+}
