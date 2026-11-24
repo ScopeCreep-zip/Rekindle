@@ -247,6 +247,14 @@ pub(crate) async fn run(
     crate::daemon::dispatch::adapter(ctx)
         .restore_stored_meks()
         .await;
+    // 3e'''. The community streams' senders (`bootstrap`, `mek_transfer`),
+    // which read the community and its keys from what 3e and 3e' restored;
+    // the outbox runs from step 1, so a row it attempted before this
+    // deferred instead of reading an empty cache as a community left
+    // (finding JW2), and each held community's `bootstrap` row is due now.
+    ctx.outbox
+        .hand_over_communities(crate::daemon::dispatch::adapter(ctx))
+        .await;
     // 3e''. The daemon's overlays (subscriptions, the gossip mesh) before
     // any stage that gossips (live R1-13).
     if ctx.mode == HostMode::Daemon {

@@ -57,6 +57,16 @@ impl HostGovernance {
             && self.ctx.communities.own_removal(community).is_none()
     }
 
+    /// Every community we hold and were not removed from: those whose
+    /// `bootstrap` row an unlock re-drives.
+    pub(crate) fn held_communities(&self) -> Vec<String> {
+        (self.ctx.communities.map().read())
+            .iter()
+            .filter(|(_, c)| c.own_removal.is_none())
+            .map(|(id, _)| id.clone())
+            .collect()
+    }
+
     /// The inviter answered a retried exchange and refused our
     /// `MemberJoined` `refused_hash`: withdraw the join as the join itself
     /// does when it is refused at once (our `MemberLeft`, the community

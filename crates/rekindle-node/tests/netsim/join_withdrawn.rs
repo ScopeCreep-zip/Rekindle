@@ -40,9 +40,12 @@ async fn holds(community: &Community, i: usize) -> bool {
         .is_ok()
 }
 
-#[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn a_join_refused_after_it_returned_is_withdrawn_with_its_reason() {
-    let mut community = Community::create(3, 4414).await;
+/// Node 1 joined and the inviter (node 0) merged it, taking the single
+/// use; node 2 then joined while the inviter answered nothing, so its join
+/// stands from the DHT and its exchange is a queued `bootstrap` row. Each
+/// joiner's events from before its join.
+async fn second_join_queued(seed: u64) -> (Community, Events, Events) {
+    let mut community = Community::create(3, seed).await;
     let link = community.invite().await;
     // The inviter's frontier never cites the first join, so the second
     // joiner's own check finds the single use still free.
@@ -82,26 +85,27 @@ async fn a_join_refused_after_it_returned_is_withdrawn_with_its_reason() {
         0,
         "nothing is withdrawn before the inviter answers"
     );
-    // The inviter answers the retried exchange and refuses it.
-    community.sim.fault(Fault::Unanswered {
-        node: 0,
-        unanswered: false,
-    });
+    (community, first_seen, second_seen)
+}
+
+/// Exactly one `JoinWithdrawn` for node 2, with the inviter's reason and
+/// the Host's words; none for node 1, whose join stands.
+async fn withdrawn_once(community: &Community, first_seen: &Events, second_seen: &Events) {
     assert!(
         eventually(&community.sim, Duration::from_secs(600), || async {
-            withdrawn(&second_seen, &community.anchor) > 0
+            withdrawn(second_seen, &community.anchor) > 0
         })
         .await,
         "the joiner hears its join was withdrawn"
     );
     assert!(
-        !holds(&community, 2).await,
+        !holds(community, 2).await,
         "the withdrawn join is forgotten"
     );
     tokio::time::sleep(rekindle_governance_runtime::anti_entropy::SWEEP_PERIOD * 2).await;
     let anchor = community.anchor.clone();
     assert_eq!(
-        withdrawn(&second_seen, &anchor),
+        withdrawn(second_seen, &anchor),
         1,
         "exactly one JoinWithdrawn"
     );
@@ -114,9 +118,54 @@ async fn a_join_refused_after_it_returned_is_withdrawn_with_its_reason() {
         "the JoinWithdrawn carries the inviter's reason and the Host's words"
     );
     assert_eq!(
-        withdrawn(&first_seen, &anchor),
+        withdrawn(first_seen, &anchor),
         0,
         "a join that stands publishes no JoinWithdrawn"
     );
-    assert!(holds(&community, 1).await, "the first join stands");
+    assert!(holds(community, 1).await, "the first join stands");
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_join_refused_after_it_returned_is_withdrawn_with_its_reason() {
+    let (community, first_seen, second_seen) = second_join_queued(4414).await;
+    // The inviter answers the retried exchange and refuses it.
+    community.sim.fault(Fault::Unanswered {
+        node: 0,
+        unanswered: false,
+    });
+    withdrawn_once(&community, &first_seen, &second_seen).await;
+}
+
+/// Finding JW2 (real app): the joiner locked while its exchange was
+/// queued, the inviter came back, and the joiner unlocked. Its outbox
+/// runs from the unlock's first step, before the communities are restored:
+/// the queued row read an empty cache as a community left and was dropped,
+/// so the retried exchange never left and the refusal never came. The row
+/// survives the lock, is re-driven once the communities are restored, the
+/// inviter refuses it, and the join is withdrawn once.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_join_queued_across_a_lock_is_retried_at_unlock_and_withdrawn_once() {
+    let (community, first_seen, second_seen) = second_join_queued(4415).await;
+    let joiner = &community.nodes[2];
+    let key = joiner.public_key.clone().expect("an identity");
+    joiner.ok(IpcRequest::Lock).await;
+    // The inviter comes back while the joiner is away; the row's backoff
+    // runs out meanwhile.
+    community.sim.fault(Fault::Unanswered {
+        node: 0,
+        unanswered: false,
+    });
+    tokio::time::sleep(Duration::from_secs(180)).await;
+    assert_eq!(
+        withdrawn(&second_seen, &community.anchor),
+        0,
+        "a locked joiner withdraws nothing"
+    );
+    joiner
+        .ok(IpcRequest::Unlock {
+            identity: key,
+            passphrase: crate::harness::PASSPHRASE.into(),
+        })
+        .await;
+    withdrawn_once(&community, &first_seen, &second_seen).await;
 }
