@@ -108,9 +108,9 @@ pub trait ShellHooks: Send + Sync {
         projected: &crate::host::adapters::governance::projection::GovernanceProjected,
     );
 
-    /// Re-acquire the community's key, which we lack or hold behind: the
-    /// shell's retrying request and last-resort mint over its own key
-    /// cache, until the MEK adapters move at E3.5.
+    /// Re-acquire the community key we hold behind: the shell's retrying
+    /// request over its own key cache, until the MEK adapters move at
+    /// E3.5. It never mints a key (FX3).
     fn spawn_community_mek_recovery(&self, community_id: &str, requester_pseudonym: &str);
 
     /// One presence poll of the community right after a slot grant: the
