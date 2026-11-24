@@ -8,7 +8,7 @@ import { applyJoinProgress, type JoinStageStatus } from "../../stores/join.store
 import { applySuccessorEvent } from "../../stores/successor.store";
 import { transformCommunityDetail } from "../../utils/transformers";
 import { handleResolveCommunityImageDataUrls } from "../../actions/community/lifecycle";
-import { setCommunityState, setCommunityMembers, communityState } from "../../stores/community.store";
+import { setCommunityState, setCommunityMembers, communityState, dropCommunity } from "../../stores/community.store";
 import { commands } from "../../ipc/commands";
 import { addToast } from "../../stores/toast.store";
 import { removalText } from "../../utils/removal_text";
@@ -195,8 +195,15 @@ function applyMembershipRow(m: MembershipEvent): void {
   }
 }
 
-/** Membership events that write no community row: join progress. */
+/** Membership events that write no community row: join progress, and our own
+ *  removal (written on no row: the row goes). */
 function applyMembershipNotice(m: MembershipEvent): void {
+  if ("forgotten" in m) {
+    // The Host forgot the community (LF1): drop its row and, when it was the
+    // shown one, the selection. Idempotent with the leave's own drop.
+    dropCommunity(m.forgotten.community);
+    return;
+  }
   if ("joinProgress" in m) {
     // Pure display: mirror the phase into the join store so the
     // stepper re-renders. No timeout logic — the backend gate owns

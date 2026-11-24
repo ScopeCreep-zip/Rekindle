@@ -24,6 +24,7 @@
 //! mesh was empty (`rekindle_gossip::MAX_PENDING_MESH`) go once it has a
 //! peer.
 
+use rekindle_codec::member_record::BeatState;
 use rekindle_gossip::PeerInfo;
 use rekindle_types::id::PseudonymKey;
 
@@ -45,7 +46,47 @@ pub(crate) fn pick(scope: &[u8], mut peers: Vec<PeerInfo>) -> Vec<PeerInfo> {
     peers
 }
 
+/// A roster member whose beat shows them present ([`HostGovernance::present_members`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PresentMember {
+    pub pseudonym_hex: String,
+    /// What their beat shows: online, away or busy.
+    pub state: BeatState,
+    /// When that beat reached us (our clock, ms).
+    pub seen_at: u64,
+    /// The route their `M`/6 published, from the member route cache.
+    pub route: Vec<u8>,
+}
+
 impl HostGovernance {
+    /// The members of `community` (us aside) shown online: the roster's
+    /// members whose beat shows them present now and whose `M`/6 route the
+    /// cache holds (plan E3.4 S5, one member source on both modes). The
+    /// mesh ([`Self::mesh_peers`]) is the same roster ∩ `M`/6 set, kept
+    /// wider by one rule: a member no beat of theirs reached yet may be
+    /// sent to (unknown is not offline) but is not shown online.
+    #[must_use]
+    pub(crate) fn present_members(&self, community: &str) -> Vec<PresentMember> {
+        let routed = self.routed_members(community);
+        let map = self.ctx.communities.map().read();
+        let Some(c) = map.get(community) else {
+            return Vec::new();
+        };
+        routed
+            .into_iter()
+            .filter_map(|(pseudonym_hex, route)| {
+                let state = c.beat_view.shown(&pseudonym_hex);
+                let seen_at = c.beat_view.seen_at(&pseudonym_hex)?;
+                state.is_present().then_some(PresentMember {
+                    pseudonym_hex,
+                    state,
+                    seen_at,
+                    route,
+                })
+            })
+            .collect()
+    }
+
     /// Our mesh in `community`: the roster's members whose beat is live and
     /// whose route the `M`/6 cache holds, picked for us. Empty when we hold
     /// no pseudonym there.
