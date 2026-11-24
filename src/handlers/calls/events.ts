@@ -98,7 +98,7 @@ export function subscribeCallEvents({ owner }: { owner: boolean }): Promise<Unli
     }
 
     if ("incoming" in call) {
-      const { callId, from, displayName, kind, participants, isGroup, expiresAtMs } =
+      const { callId, from, displayName, kind, participants, isGroup, groupId, expiresAtMs } =
         call.incoming;
 
       if (isGroup) {
@@ -112,6 +112,7 @@ export function subscribeCallEvents({ owner }: { owner: boolean }): Promise<Unli
             displayName,
             kind: kind as "audio" | "video",
             participants,
+            groupId: groupId ?? null,
             accepted: [],
             startedAtMs: Date.now(),
             expiresAtMs,
@@ -152,7 +153,7 @@ export function subscribeCallEvents({ owner }: { owner: boolean }): Promise<Unli
     }
 
     if ("connected" in call) {
-      const { callId, direct } = call.connected;
+      const { callId, direct, groupId } = call.connected;
       asOwner(stopActiveRing);
 
       if (direct == null) {
@@ -160,7 +161,7 @@ export function subscribeCallEvents({ owner }: { owner: boolean }): Promise<Unli
         // has no single peer, which is exactly what `direct: null` says.
         const head = callsState.incomingGroupCalls.find((c) => c.callId === callId);
         if (head) {
-          setCallsState("activeGroupCall", { ...head, accepted: [head.initiatorKey] });
+          setCallsState("activeGroupCall", { ...head, groupId: groupId ?? head.groupId, accepted: [head.initiatorKey] });
           setCallsState("incomingGroupCalls", (p) => p.filter((c) => c.callId !== callId));
         }
         return;

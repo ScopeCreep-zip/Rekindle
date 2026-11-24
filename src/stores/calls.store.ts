@@ -52,6 +52,8 @@ export interface GroupCallEntry {
   kind: "audio" | "video";
   /** All invited participants (hex Ed25519). Includes the initiator. */
   participants: string[];
+  /** The group the call is for (GV2), as the Host says; null outside one. */
+  groupId: string | null;
   /** Subset that have accepted so far. */
   accepted: string[];
   startedAtMs: number;

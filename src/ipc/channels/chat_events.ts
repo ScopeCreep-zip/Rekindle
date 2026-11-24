@@ -207,6 +207,8 @@ export type CallEvent =
         /** Everyone invited, for a group call. Empty for a 1:1. */
         participants: string[];
         isGroup: boolean;
+        /** The group the call is for (GV2); null for a buddy-list call or a 1:1. */
+        groupId: string | null;
         expiresAtMs: number;
       };
     }
@@ -220,7 +222,7 @@ export type CallEvent =
         expiresAtMs: number;
       };
     }
-  | { connected: { callId: string; direct: DirectCallInfo | null } }
+  | { connected: { callId: string; direct: DirectCallInfo | null; /** GV2: the call's group, null outside one. */ groupId: string | null } }
   | { declined: { callId: string; reason: string } }
   | { missed: { callId: string; from: string } }
   | { timedOut: { callId: string } }
