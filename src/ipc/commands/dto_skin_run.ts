@@ -45,6 +45,8 @@ export type CallOp =
   | { kind: "voice"; arg: { friend: string } }
   | { kind: "answer"; arg: { callId: string } }
   | { kind: "joinGroup"; arg: { groupId: string; callId: string } }
+  | { kind: "leave"; arg: { callId: string } }
+  | { kind: "leaveGroup"; arg: { groupId: string; callId: string } }
   | { kind: "video"; arg: { friend: string } }
   | { kind: "end" }
   | { kind: "mute" }

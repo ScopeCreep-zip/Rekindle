@@ -516,6 +516,24 @@ impl CallSignalingDeps for CallsAdapter {
                     },
                 );
             }
+            CallSignalEvent::GroupCallStarted {
+                call_id,
+                participants,
+                kind,
+                expires_at_ms,
+                group_id,
+            } => {
+                crate::event_dispatch::emit_call(
+                    &self.app_handle,
+                    rekindle_types::subscription_events::CallEvent::GroupStarted {
+                        call_id,
+                        kind: kind_u8_str(kind),
+                        participants,
+                        group_id,
+                        expires_at_ms,
+                    },
+                );
+            }
             CallSignalEvent::IncomingGroupCall {
                 call_id,
                 initiator_public_key,

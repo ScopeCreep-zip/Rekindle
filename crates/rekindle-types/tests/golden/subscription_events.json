@@ -38,6 +38,20 @@
       }
     }
   },
+  "call.groupStarted": {
+    "call": {
+      "groupStarted": {
+        "callId": "call_99999999999999999999999999999999",
+        "expiresAtMs": 1760000030000,
+        "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
+        "kind": "audio",
+        "participants": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ]
+      }
+    }
+  },
   "call.incoming": {
     "call": {
       "incoming": {

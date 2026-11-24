@@ -78,9 +78,28 @@ async fn a_call_in_one_of_two_same_member_groups_rings_with_its_own_group_id() {
     let same: &[&str] = &[a.as_str(), b.as_str()];
     rosters(&alice, &[("g1", same), ("g2", same)]);
     rosters(&bob, &[("g1", same), ("g2", same)]);
-    start_group_call(&*alice, vec![b.clone()], CallKind::Audio, Some("g2".into()))
+    let call_id = start_group_call(&*alice, vec![b.clone()], CallKind::Audio, Some("g2".into()))
         .await
         .expect("a member starts the group's call");
+    // The starter's own ring, with its group: what a group window's Cancel
+    // ends (plan E4.1).
+    let started: Vec<_> = alice
+        .emitted_events()
+        .into_iter()
+        .filter_map(|e| match e {
+            CallSignalEvent::GroupCallStarted {
+                call_id,
+                group_id,
+                participants,
+                ..
+            } => Some((call_id, group_id, participants)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        started,
+        vec![(call_id, Some("g2".to_owned()), vec![a.clone(), b.clone()])]
+    );
     let (to, offer) = offers(&alice).pop().expect("one offer");
     assert_eq!(to, b);
     handle_group_call_payload(&*bob, &a, offer).await;

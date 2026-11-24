@@ -1189,6 +1189,19 @@
     },
     "kind": "joinGroup"
   },
+  "skin.callOp.leave": {
+    "arg": {
+      "callId": "call-1"
+    },
+    "kind": "leave"
+  },
+  "skin.callOp.leaveGroup": {
+    "arg": {
+      "callId": "call-1",
+      "groupId": "group-1"
+    },
+    "kind": "leaveGroup"
+  },
   "skin.contentFit": {
     "max": 80,
     "min": 25

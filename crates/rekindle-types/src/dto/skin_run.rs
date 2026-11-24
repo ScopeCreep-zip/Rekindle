@@ -59,6 +59,19 @@ pub enum CallOp {
         group_id: String,
         call_id: String,
     },
+    /// Leave the 1:1 call `call_id` we are in (Xfire's `AppLeaveVoiceChat`
+    /// in a chat window, `ChatButtonLeaveCall`).
+    Leave {
+        call_id: String,
+    },
+    /// Leave the group call `call_id` of the group `group_id`, or cancel it
+    /// while it still rings out from us (Xfire's `AppLeaveGroupVoiceChat`
+    /// and `AppCancelVoiceChat` on a group window's call tab; the call
+    /// layer ends both through `end_group_call`).
+    LeaveGroup {
+        group_id: String,
+        call_id: String,
+    },
     Video {
         friend: String,
     },

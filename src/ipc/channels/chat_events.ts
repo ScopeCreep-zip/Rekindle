@@ -221,6 +221,16 @@ export type CallEvent =
         expiresAtMs: number;
       };
     }
+  | {
+      /** We started a group call; it rings out until the first accept. */
+      groupStarted: {
+        callId: string;
+        kind: string;
+        participants: string[];
+        groupId: string | null;
+        expiresAtMs: number;
+      };
+    }
   | { connected: { callId: string; direct: DirectCallInfo | null; groupId: string | null } }
   | { declined: { callId: string; reason: string } }
   | { missed: { callId: string; from: string } }

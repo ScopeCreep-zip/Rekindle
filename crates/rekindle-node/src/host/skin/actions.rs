@@ -310,6 +310,14 @@ pub(crate) fn map(
         A::SetStatus(status) => Ok(Request(Box::new(IpcRequest::PresenceSet {
             status: *status,
         }))),
+        // Leave acts on the window's call (`reads.in_call`): a group
+        // window's own (whose Cancel and End end our ring), a chat
+        // window's 1:1; anywhere else it is the community voice channel's.
+        A::LeaveVoiceChat | A::LeaveGroupVoiceChat | A::CancelVoiceChat | A::EndVoiceChat
+            if reads.in_call.is_some() =>
+        {
+            rooms::leave(reads.in_call.as_ref())
+        }
         A::LeaveVoiceChat | A::LeaveGroupVoiceChat => Ok(Request(Box::new(IpcRequest::VoiceLeave))),
         A::LaunchUrl(u) => Ok(Request(Box::new(IpcRequest::LinkOpen {
             url: u.url.clone(),

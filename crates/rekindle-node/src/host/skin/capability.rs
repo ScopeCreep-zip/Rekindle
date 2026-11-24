@@ -182,7 +182,8 @@ fn friend_allows(capability: Capability, inputs: &Inputs, selected: Selected<'_>
 /// 112-118`, WMP10/Alloy/LOTR/DiabloIILoD `GroupChatInfoskin.ini`):
 /// `HostVoiceChat` starts the group's call while it has none and another
 /// member, `VoiceChat` joins its call in progress that we are not in,
-/// `LeaveVoiceChat` holds while we are in it.
+/// `LeaveVoiceChat` holds while we are in it, `CancelVoiceChat` while our
+/// own call of it still rings out.
 fn group_call_allows(
     capability: Capability,
     inputs: &Inputs,
@@ -199,6 +200,7 @@ fn group_call_allows(
         Capability::HostVoiceChat => call.is_none(),
         Capability::VoiceChat => call.is_some_and(|c| c.ringing && !c.outgoing),
         Capability::LeaveVoiceChat => call.is_some_and(|c| !c.ringing),
+        Capability::CancelVoiceChat => call.is_some_and(|c| c.ringing && c.outgoing),
         _ => false,
     }
 }

@@ -329,6 +329,7 @@ impl CallSignalingDeps for MockDeps {
             CallSignalEvent::ConversationFocusRequested { .. } => "ConversationFocusRequested",
             CallSignalEvent::CallStarted { .. } => "CallStarted",
             CallSignalEvent::IncomingGroupCall { .. } => "IncomingGroupCall",
+            CallSignalEvent::GroupCallStarted { .. } => "GroupCallStarted",
             CallSignalEvent::GroupCallConnected { .. } => "GroupCallConnected",
             CallSignalEvent::GroupCallParticipantJoined { .. } => "GroupCallParticipantJoined",
             CallSignalEvent::GroupCallParticipantLeft { .. } => "GroupCallParticipantLeft",
