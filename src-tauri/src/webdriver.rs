@@ -76,6 +76,21 @@ const MAX_DELAY_MS: u64 = 30_000;
 
 static ANSWER_DELAYS: OnceLock<Vec<(&'static str, Duration)>> = OnceLock::new();
 
+/// The variable naming a directory a spec arms and releases held answers
+/// in, so the order is the spec's, not a timer's: `<dir>/<command>.arm`
+/// makes that command's next answer wait (the arm is consumed), and the
+/// answer goes out once `<dir>/<command>` exists (consumed in turn, so the
+/// spec sees the release land). Read once at startup, with
+/// [`ANSWER_DELAY_ENV`]; release builds hold none of it.
+pub const RELEASE_DIR_ENV: &str = "REKINDLE_WDIO_RELEASE_DIR";
+
+/// The longest an armed answer waits for its release: past it the run is
+/// broken (a spec never released), so the app stops loudly, never sends
+/// the answer as if released.
+const RELEASE_CAP: Duration = Duration::from_secs(300);
+
+static RELEASE_DIR: OnceLock<Option<std::path::PathBuf>> = OnceLock::new();
+
 /// Parse [`ANSWER_DELAY_ENV`]'s value.
 ///
 /// # Errors
@@ -113,6 +128,19 @@ fn parse_answer_delays(spec: &str) -> Result<Vec<(&'static str, Duration)>, Stri
 /// The value does not parse: the app refuses to start rather than run a
 /// spec without the order it asked for.
 pub fn load_answer_delays() -> Result<(), String> {
+    let dir = match std::env::var_os(RELEASE_DIR_ENV) {
+        None => None,
+        Some(raw) => {
+            let dir = std::path::PathBuf::from(raw);
+            if !dir.is_absolute() || !dir.is_dir() {
+                return Err(format!("{RELEASE_DIR_ENV} must name an existing absolute directory"));
+            }
+            Some(dir)
+        }
+    };
+    RELEASE_DIR
+        .set(dir)
+        .map_err(|_| format!("{RELEASE_DIR_ENV} was read twice"))?;
     let delays = match std::env::var(ANSWER_DELAY_ENV) {
         Ok(spec) => parse_answer_delays(&spec)?,
         Err(std::env::VarError::NotPresent) => Vec::new(),
@@ -126,6 +154,7 @@ pub fn load_answer_delays() -> Result<(), String> {
 /// Hold `command`'s answer for its configured delay, if any. Called after
 /// the command's work, before it returns.
 pub async fn delay_answer(command: &'static str) {
+    hold_until_released(command).await;
     let held = ANSWER_DELAYS
         .get()
         .and_then(|d| d.iter().find(|(c, _)| *c == command))
@@ -133,6 +162,27 @@ pub async fn delay_answer(command: &'static str) {
     if let Some(d) = held {
         tracing::debug!(command, ms = d.as_millis(), "holding the answer ({ANSWER_DELAY_ENV})");
         tokio::time::sleep(d).await;
+    }
+}
+
+/// When the spec armed `command` (`<dir>/<command>.arm`), consume the arm
+/// and wait until `<dir>/<command>` exists, then consume that too.
+async fn hold_until_released(command: &'static str) {
+    let Some(Some(dir)) = RELEASE_DIR.get() else { return };
+    let arm = dir.join(format!("{command}.arm"));
+    if std::fs::remove_file(&arm).is_err() {
+        return;
+    }
+    let release = dir.join(command);
+    tracing::debug!(command, "holding the answer until released ({RELEASE_DIR_ENV})");
+    let started = std::time::Instant::now();
+    while std::fs::remove_file(&release).is_err() {
+        if started.elapsed() > RELEASE_CAP {
+            tracing::error!(command, "a held answer was never released ({RELEASE_DIR_ENV}): stopping");
+            eprintln!("{RELEASE_DIR_ENV}: {command}'s held answer was never released within {}s", RELEASE_CAP.as_secs());
+            std::process::exit(101);
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
 
