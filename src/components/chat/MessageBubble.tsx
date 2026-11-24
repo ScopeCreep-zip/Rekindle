@@ -181,21 +181,6 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
           </div>
         )}
       </Show>
-      {/* Reply context */}
-      <Show when={props.replyToMessage}>
-        {(replyMsg) => (
-          <div class="reply-snippet">
-            <span class="reply-snippet-sender">{props.replyToSender ?? ""}</span>
-            {replyMsg().body.length > 60 ? replyMsg().body.slice(0, 60) + "..." : replyMsg().body}
-          </div>
-        )}
-      </Show>
-      {/* A parent this window does not hold (not loaded, or never seen):
-       *  the reply says so rather than dropping the quote or guessing it. */}
-      <Show when={props.replyUnavailable}>
-        <div class="reply-snippet reply-snippet-missing">Message unavailable</div>
-      </Show>
-
       <div class="chat-message-header">
         <span class={senderClass()}>{props.senderName}</span>
         <span class="chat-message-timestamp">
@@ -316,6 +301,21 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
           </Show>
         </div>
       </div>
+      {/* Reply context: inside the reply, under its sender and time and
+       *  above its text (Signal, Discord), so the quote has an owner. */}
+      <Show when={props.replyToMessage}>
+        {(replyMsg) => (
+          <div class="reply-snippet">
+            <span class="reply-snippet-sender">{props.replyToSender ?? ""}</span>
+            {replyMsg().body.length > 60 ? replyMsg().body.slice(0, 60) + "..." : replyMsg().body}
+          </div>
+        )}
+      </Show>
+      {/* A parent this window does not hold (not loaded, or never seen):
+       *  the reply says so rather than dropping the quote or guessing it. */}
+      <Show when={props.replyUnavailable}>
+        <div class="reply-snippet reply-snippet-missing">Message unavailable</div>
+      </Show>
 
       <Show
         when={!props.message.removedBy}

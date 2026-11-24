@@ -25,6 +25,23 @@ async function quoteOn(text: string): Promise<string> {
   }, text)) as string;
 }
 
+/**
+ * The quote belongs to the reply: it is inside the message container holding
+ * `text` and comes after that message's sender/time header (the quote was
+ * drawn above the header, so it read as trailing the previous message).
+ */
+async function quoteOwned(text: string): Promise<string> {
+  return (await browser.execute((t: string) => {
+    const bubble = Array.from(document.querySelectorAll(".chat-message")).find((m) => (m.textContent ?? "").includes(t));
+    if (!bubble) return "no message";
+    const quote = bubble.querySelector(".reply-snippet");
+    const header = bubble.querySelector(".chat-message-header");
+    if (!quote) return "no quote inside the reply's message";
+    if (!header) return "no header";
+    return header.compareDocumentPosition(quote) & Node.DOCUMENT_POSITION_FOLLOWING ? "" : "the quote comes before the reply's header";
+  }, text)) as string;
+}
+
 describe("replies in a group chat: quoted under the sender's name, or said unavailable", function () {
   this.timeout(1_800_000);
   const me: User = { ...newUser("greply"), displayName: "Ari" };
@@ -65,6 +82,7 @@ describe("replies in a group chat: quoted under the sender's name, or said unava
       NET_WAIT_MS,
       `Ari's reply never quoted Bea's message (quote: "${quote}")`,
     );
+    expect(await quoteOwned(mine)).toBe("");
     await shot("reply-quoted");
   });
 
@@ -82,6 +100,7 @@ describe("replies in a group chat: quoted under the sender's name, or said unava
       `the reply to an unseen message never said it was unavailable (quote: "${quote}")`,
     );
     expect(quote).toBe("Message unavailable");
+    expect(await quoteOwned(reply)).toBe("");
     await shot("reply-unavailable");
   });
 });
