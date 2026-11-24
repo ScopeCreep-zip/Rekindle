@@ -33,8 +33,12 @@ export function reduceMembership(event: CommunityEvent): boolean {
 
 /// Membership events on the daemon vocabulary. Same store effects as
 /// the `{ type, data }` cases they replaced; only the shape changed.
+/// `notices`: this window says membership notices (a toast for our own
+/// kick, ban or withdrawn join). Only the buddy list does (lead ruling,
+/// plan JW): every window takes the state, one says it.
 export function reduceSubscriptionMembership(
   event: CommunitySubscriptionEvent,
+  notices = false,
 ): void {
   if ("system" in event) {
     return;
@@ -49,10 +53,10 @@ export function reduceSubscriptionMembership(
   if (community !== null) {
     // Each of these writes under the community's row: one the window does
     // not hold yet is re-read first (walk 13: a write under a missing row threw).
-    withCommunity(community, () => applyMembershipRow(m));
+    withCommunity(community, () => applyMembershipRow(m, notices));
     return;
   }
-  applyMembershipNotice(m);
+  applyMembershipNotice(m, notices);
 }
 
 type MembershipEvent = Extract<CommunitySubscriptionEvent, { membership: unknown }>["membership"];
@@ -74,7 +78,7 @@ function membershipRowCommunity(m: MembershipEvent): string | null {
 }
 
 /** A membership event against a row the window holds. */
-function applyMembershipRow(m: MembershipEvent): void {
+function applyMembershipRow(m: MembershipEvent, notices: boolean): void {
   // A new member: the Host decides its group, so the list is re-read.
   if ("joined" in m) {
     refreshCommunityMembers(m.joined.community);
@@ -118,7 +122,7 @@ function applyMembershipRow(m: MembershipEvent): void {
       // the community stays as read-only history.
       const removed = { banned, by: r.removedBy, byName: r.removedByName, reason: r.reason };
       setCommunityState("communities", r.community, "removed", removed);
-      addToast(removalText(c.name, removed), "error");
+      if (notices) addToast(removalText(c.name, removed), "error");
       return;
     }
     setCommunityState("communities", r.community, "members", (prev) =>
@@ -196,22 +200,29 @@ function applyMembershipRow(m: MembershipEvent): void {
 }
 
 /** Membership events that write no community row: join progress. */
-function applyMembershipNotice(m: MembershipEvent): void {
-  // A join the inviter refused after it returned (plan JW): the community
-  // leaves the list and the Host's words say why, verbatim; the stepper ends.
+function applyMembershipNotice(m: MembershipEvent, notices: boolean): void {
+  // A join the inviter refused after it returned (plan JW, lead ruling):
+  // the buddy list drops the community, ends the stepper and says the
+  // Host's words verbatim; a community window holding it keeps it and
+  // shows the withdrawal in place (its banner, a closed composer), so the
+  // user sees why rather than a window going blank.
   if ("joinWithdrawn" in m) {
     const { community, reasonText } = m.joinWithdrawn;
-    setCommunityState("communities", (prev) => {
-      const next = { ...prev };
-      delete next[community];
-      return next;
-    });
-    if (communityState.activeCommunity === community) {
-      setCommunityState("activeCommunity", null);
-      setCommunityState("activeChannel", null);
-    }
     resetJoinProgress();
-    addToast(reasonText, "error");
+    if (notices) {
+      setCommunityState("communities", (prev) => {
+        const next = { ...prev };
+        delete next[community];
+        return next;
+      });
+      if (communityState.activeCommunity === community) {
+        setCommunityState("activeCommunity", null);
+        setCommunityState("activeChannel", null);
+      }
+      addToast(reasonText, "error");
+    } else if (communityState.communities[community]) {
+      setCommunityState("communities", community, "withdrawn", { reasonText });
+    }
     return;
   }
   if ("joinProgress" in m) {
