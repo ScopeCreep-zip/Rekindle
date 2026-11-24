@@ -26,6 +26,8 @@ export interface GroupDmView {
   renameRefused: string | null;
   /** The Host's verdict on inviting more to it: null when we may, else why not. */
   inviteRefused: string | null;
+  /** Why we may not start a call for this group, in the Host's words; null when we may. */
+  callRefused: string | null;
 }
 
 export const groupDmCommands = {

@@ -30,6 +30,8 @@ import { registerShellRunner } from "../../actions/skin.actions";
 import { SlotMount } from "../../components/skin-tree/slots";
 import SkinTreeWindow from "../../components/skin-tree/SkinTreeWindow";
 import { skinShell } from "../../hooks/useSkin";
+import { callsState } from "../../stores/calls.store";
+import { handleAcceptGroupCall, handleEndGroupCall } from "../../actions/calls.actions";
 
 /// The chat window's group mode (plan E2.6): the group's stored history
 /// (`group_dm_messages`) with members' messages as they arrive, its members
@@ -101,6 +103,28 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
   // verdict (`renameRefused`, `inviteRefused`) disables each with its reason.
   const renameRefused = (): string | null => group()?.renameRefused ?? "This group is not in your list.";
   const inviteRefused = (): string | null => group()?.inviteRefused ?? "This group is not in your list.";
+  const callRefused = (): string | null => group()?.callRefused ?? "This group is not in your list.";
+  // The group's call in every layout (never hidden): this group's call when
+  // active (Leave), ringing (Join), else Call, which opens Start Group Call
+  // for the group, its other members ticked (GV2).
+  const activeCall = (): string | null =>
+    callsState.activeGroupCall?.groupId === groupId ? callsState.activeGroupCall.callId : null;
+  const ringingCall = (): string | null =>
+    callsState.incomingGroupCalls.find((c) => c.groupId === groupId)?.callId ?? null;
+  function pressCall(): void {
+    const active = activeCall();
+    if (active) return void handleEndGroupCall(active);
+    const ringing = ringingCall();
+    if (ringing) return void handleAcceptGroupCall(ringing);
+    if (callRefused() !== null) return;
+    setCallTarget({
+      groupId,
+      groupName: name(),
+      members: members()
+        .filter((m) => m.key !== authState.publicKey)
+        .map((m) => ({ pubkey: m.key, displayName: m.label })),
+    });
+  }
   const [renaming, setRenaming] = createSignal<string | null>(null);
   const [inviting, setInviting] = createSignal(false);
   const [roomError, setRoomError] = createSignal<string | null>(null);
@@ -162,6 +186,15 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
             />
           </form>
         </Show>
+        <button
+          class="form-btn-secondary group-chat-action"
+          aria-disabled={activeCall() === null && ringingCall() === null && callRefused() !== null ? "true" : undefined}
+          title={activeCall() ? "Leave the call" : ringingCall() ? "Join the call" : (callRefused() ?? `Call ${name()}`)}
+          aria-description={activeCall() === null && ringingCall() === null ? (callRefused() ?? undefined) : undefined}
+          onClick={pressCall}
+        >
+          {activeCall() ? "Leave call" : ringingCall() ? "Join call" : "Call"}
+        </button>
         <button
           class="form-btn-secondary group-chat-action"
           aria-disabled={inviteRefused() !== null ? "true" : undefined}
