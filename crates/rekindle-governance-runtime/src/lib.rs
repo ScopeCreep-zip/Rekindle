@@ -24,6 +24,7 @@
 #![forbid(unsafe_code)]
 
 pub mod admission;
+pub mod anchor_walk;
 pub mod anti_entropy;
 pub mod apply;
 pub mod audit;
