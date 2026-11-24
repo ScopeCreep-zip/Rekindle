@@ -95,6 +95,41 @@ async function voiceTabOneOf(b: Browser, who: string, states: VoiceState[]): Pro
   return now!;
 }
 
+/**
+ * Press the Start Group Call panel's Call in `b`'s window and record what
+ * happens (lead, gv6: the panel stayed open and nothing logged): the button
+ * before, then, for up to 8 s, whether the panel is open, the button's label
+ * ("Calling…" while start_group_call is in flight) and every toast. Logged
+ * as `[gv]`; throws with that record when the panel never closes.
+ */
+async function pressPanelCall(b: Browser, who: string): Promise<void> {
+  const read = async () =>
+    (await b.execute(() => {
+      const btn = document.querySelector<HTMLButtonElement>(".modal-container .modal-footer button.form-btn-primary");
+      return {
+        open: !!document.querySelector(".modal-container"),
+        button: btn ? { text: (btn.textContent ?? "").trim(), disabled: btn.disabled } : null,
+        toasts: Array.from(document.querySelectorAll(".toast-item")).map((t) => (t.textContent ?? "").trim()),
+      };
+    })) as { open: boolean; button: { text: string; disabled: boolean } | null; toasts: string[] };
+  const before = await read();
+  console.log(`[gv] ${who} panel Call before: ${JSON.stringify(before)}`);
+  if (!before.button) throw new Error(`${who}: the Start Group Call panel has no Call button`);
+  if (before.button.disabled) throw new Error(`${who}: the panel's Call is disabled (${JSON.stringify(before)})`);
+  await press(b, await b.$(".modal-container .modal-footer button.form-btn-primary"));
+  const seen: string[] = [];
+  let last = before;
+  for (let i = 0; i < 16; i++) {
+    await b.pause(500);
+    last = await read();
+    const line = JSON.stringify(last);
+    if (seen[seen.length - 1] !== line) seen.push(line);
+    if (!last.open) break;
+  }
+  console.log(`[gv] ${who} panel Call after: ${seen.join(" → ")}`);
+  if (last.open) throw new Error(`${who}: the panel stayed open after Call (${seen.join(" → ")})`);
+}
+
 /** Press tree node `id` in `b`'s window. */
 async function pressNode(b: Browser, id: string): Promise<void> {
   await press(b, await b.$(`[data-skin-node="${id}"]`));
@@ -182,7 +217,7 @@ describe("a group's voice tab: Call, Join while its call rings, Leave once joine
     expect(listed.map((x) => x.name).sort()).toEqual([alice.displayName, "Cara"].sort());
     expect(listed.every((x) => x.ticked)).toBe(true);
     await shot("prefilled-panel");
-    await (await b.$(".modal-container .modal-footer button:not(.form-btn-secondary)")).click();
+    await pressPanelCall(b, "Bob");
     await voiceTab(a, "Alice", "Join");
     await shot("ringing-join-tab");
     // The twin group, with the same members, does not ring: its tab still reads Call.
@@ -235,7 +270,7 @@ describe("a group's voice tab: Call, Join while its call rings, Leave once joine
       NET_WAIT_MS,
       `Bob's Call tab opened no "Call ${GROUP}" panel`,
     );
-    await (await b.$(".modal-container .modal-footer button:not(.form-btn-secondary)")).click();
+    await pressPanelCall(b, "Bob");
     await voiceTab(a, "Alice", "Join");
     // Bob's own ring (groupStarted): the pack's Cancel (cancelVoiceChat), not
     // Leave, which holds only once the call is connected.
