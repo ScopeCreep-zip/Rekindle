@@ -3,7 +3,7 @@ import { commands } from "../ipc/commands";
 import { setFriendsState, friendsState } from "../stores/friends.store";
 import { authState } from "../stores/auth.store";
 import type { OutgoingInvite } from "../stores/friends.store";
-import { transformFriendMap } from "../utils/transformers";
+import { foldFriendSnapshot } from "../utils/transformers";
 import { errorMessage } from "../utils/error";
 import { isCancelled, type FriendCodeView } from "../ipc/commands/dto";
 
@@ -274,7 +274,7 @@ export async function handleRefreshFriends(): Promise<void> {
   try {
     const friends = await commands.getFriends();
     if (seq !== refreshSeq) return;
-    setFriendsState("friends", reconcile(transformFriendMap(friends)));
+    setFriendsState("friends", reconcile(foldFriendSnapshot(friends, friendsState.friends)));
   } catch (e) {
     console.error("Failed to refresh friends:", e);
   }
