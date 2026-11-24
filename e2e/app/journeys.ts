@@ -14,9 +14,9 @@ export * from "./journeys_skins.ts";
 /**
  * Create `user` on a first-run app: the Host makes the keys, vault and
  * database, Create waits for the Veilid node, and the buddy list opens
- * under the new name.
+ * under the new name. Auto-away is then turned off unless `keepAutoAway`.
  */
-export async function createIdentity(b: Browser, user: User): Promise<void> {
+export async function createIdentity(b: Browser, user: User, opts: { keepAutoAway?: boolean } = {}): Promise<void> {
   await switchTo(b, LOGIN, NET_WAIT_MS);
   // First run opens the create form without the account picker
   // (LoginWindow.tsx); the button is there only once identities exist.
@@ -34,7 +34,8 @@ export async function createIdentity(b: Browser, user: User): Promise<void> {
   // name): the tree's name field, or the app's own bar.
   const name = (await underTree(b)) ? '[data-skin-role="nameField"] .skin-name-text' : ".identity-bar-name";
   await expect(b.$(name)).toHaveText(expect.stringContaining(user.displayName), { wait: 10_000 });
-  await autoAwayOff(b, user);
+  // The auto-away spec (AA1) keeps it on, to watch it fire and be turned off.
+  if (!opts.keepAutoAway) await autoAwayOff(b, user);
 }
 
 /** Settings > Application's auto-away select. */
