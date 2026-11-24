@@ -119,6 +119,10 @@ pub struct UnlockBarrier {
     rounds: std::sync::atomic::AtomicBool,
     /// Bumped on every release from the held list ([`Self::written`]).
     released: watch::Sender<u64>,
+    /// Invites whose `InviteRevoked` is held unsigned: revoked locally at
+    /// once (a held write takes effect locally at once), the held op
+    /// their durable record once it lands.
+    withdrawn_invites: Mutex<BTreeSet<[u8; 16]>>,
 }
 
 impl Default for UnlockBarrier {
@@ -133,6 +137,7 @@ impl Default for UnlockBarrier {
             retry: tokio::sync::Notify::new(),
             rounds: std::sync::atomic::AtomicBool::new(false),
             released: watch::Sender::new(0),
+            withdrawn_invites: Mutex::new(BTreeSet::new()),
         }
     }
 }
@@ -173,6 +178,25 @@ impl UnlockBarrier {
         // `wait_for` fails only once the sender drops, and it lives in
         // `self`, borrowed for this wait.
         let _serving = rx.wait_for(|serving| *serving == ticket).await;
+    }
+
+    /// `ticket` gave up its place in line unserved or served: once its turn
+    /// comes (now, if it came), the next held write queues instead.
+    pub async fn pass_over(&self, ticket: u64) {
+        let mut rx = self.serving.subscribe();
+        // `wait_for` fails only once the sender drops, and it lives in
+        // `self`, borrowed for this wait. Its read guard drops with the
+        // condition, before the send below takes the write lock.
+        if rx.wait_for(|serving| *serving >= ticket).await.is_err() {
+            return;
+        }
+        self.serving.send_if_modified(|serving| {
+            let ours = *serving == ticket;
+            if ours {
+                *serving = ticket + 1;
+            }
+            ours
+        });
     }
 
     /// `ticket` holds the signing turn: the next held write queues behind.
@@ -241,6 +265,18 @@ impl UnlockBarrier {
             *phase = verdict;
             true
         });
+    }
+
+    /// `invite_id`'s revoke is held: it is no longer listed or handed out
+    /// here, though its `InviteRevoked` waits for our earlier ops to land.
+    pub fn withdraw_invite(&self, invite_id: [u8; 16]) {
+        self.withdrawn_invites.lock().insert(invite_id);
+    }
+
+    /// Whether `invite_id`'s revoke is held ([`Self::withdraw_invite`]).
+    #[must_use]
+    pub fn withdraws_invite(&self, invite_id: &[u8; 16]) -> bool {
+        self.withdrawn_invites.lock().contains(invite_id)
     }
 
     /// Hold `op` while the barrier catches up (the full list is the view).
@@ -332,6 +368,13 @@ impl UnlockBarriers {
     #[must_use]
     pub fn of(&self, community: &str) -> Arc<UnlockBarrier> {
         Arc::clone(self.0.lock().entry(community.to_owned()).or_default())
+    }
+
+    /// Whether `community`'s barrier holds a revoke of `invite_id`
+    /// ([`UnlockBarrier::withdraw_invite`]); no barrier creates none.
+    #[must_use]
+    pub fn withdraws_invite(&self, community: &str, invite_id: &[u8; 16]) -> bool {
+        (self.0.lock().get(community)).is_some_and(|b| b.withdraws_invite(invite_id))
     }
 
     /// The window's view of `community`'s barrier, if one is held.

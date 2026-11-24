@@ -73,14 +73,20 @@ pub enum GovernanceRuntimeError {
     #[error("{community}: this device's key signed seq {last_seq} from another copy of this data")]
     RestoreDetected { community: String, last_seq: u64 },
     /// A write whose answer needs the op signed (an invite link, which is
-    /// handed out only once it landed) while the unlock barrier holds our
-    /// writes (plan E3.2 S7d-keys.8): refused at once, nothing signed. The
+    /// handed out only once it landed) while the unlock barrier is still
+    /// catching up (plan E3.2 S7d-keys.8): refused at once, nothing signed. The
     /// text is the window's reason until the denied-capability view
     /// (CAPR, `CommunityCapability::CreateInvite`) carries it.
     #[error(
         "This community is catching up; invites resume once a member confirms where this device left off."
     )]
     CatchingUp(String),
+    /// Such a write past the barrier waited in line behind our own earlier
+    /// ops, and its turn did not come by its command's network deadline
+    /// (plan E3.2 S7d-keys.8, lead ruling 2026-11-24): refused, nothing
+    /// signed; the earlier ops still land.
+    #[error("Your earlier change is still being published; try again in a moment.")]
+    OwnOpsPending(String),
     /// Our own op failed the verification every reader runs.
     #[error("our governance op was refused: {0}")]
     OpRefused(String),

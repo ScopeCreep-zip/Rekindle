@@ -139,11 +139,40 @@ pub enum OpLanding {
     /// for what a joiner must find on the DHT before we hand it out, an
     /// invite's `InviteCreated` (S6 (4)). Stored in one transaction with a
     /// revoke of `invite_id` that the outbox writes once the op landed
-    /// unless the answer handed the link out (review RV4 M3).
-    InviteLanded { invite_id: [u8; 16] },
+    /// unless the answer handed the link out (review RV4 M3). `deadline`
+    /// bounds the wait in line and the landing together.
+    InviteLanded {
+        invite_id: [u8; 16],
+        deadline: tokio::time::Instant,
+    },
     /// Queued on the stream, not waited for: the outbox lands it behind our
     /// earlier ops (one stream per author, so the order holds).
     Queued,
+}
+
+impl OpLanding {
+    /// An invite's `InviteCreated`, answered within the command's network
+    /// deadline from now (`NETWORK_ANSWER_DEADLINE`).
+    #[must_use]
+    pub fn invite_landed(invite_id: [u8; 16]) -> Self {
+        let bound = rekindle_types::config::NETWORK_ANSWER_DEADLINE;
+        Self::InviteLanded {
+            invite_id,
+            deadline: tokio::time::Instant::now() + bound,
+        }
+    }
+
+    /// What is left of an invite's deadline (zero past it); the other
+    /// landings carry no deadline, so zero.
+    #[must_use]
+    pub fn remaining(self) -> std::time::Duration {
+        match self {
+            Self::InviteLanded { deadline, .. } => {
+                deadline.saturating_duration_since(tokio::time::Instant::now())
+            }
+            Self::FirstAttempt | Self::Queued => std::time::Duration::ZERO,
+        }
+    }
 }
 
 /// How a published governance op stands when its command answers (plan

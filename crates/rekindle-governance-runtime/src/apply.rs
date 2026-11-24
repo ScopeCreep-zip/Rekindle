@@ -111,7 +111,7 @@ pub async fn write_invite_created<D: GovernanceRuntimeDeps>(
         deps,
         community_id,
         WriteEntry::Ready(Box::new(entry)),
-        OpLanding::InviteLanded { invite_id },
+        OpLanding::invite_landed(invite_id),
         op_log::Deps::Frontier,
     )
     .await
@@ -295,20 +295,20 @@ async fn write_with<D: GovernanceRuntimeDeps>(
     // previous op's append landed; a restore signs nothing. A held write
     // is answered at once and signed in the background, a leave too (it
     // takes effect locally at once, lead ruling 2026-11-24); an invite
-    // link (handed out only once landed) is refused instead, unsigned.
+    // link (handed out only once landed) waits in line instead, bounded.
     let (kind, target) = match &entry {
         WriteEntry::Ready(ready) => (PendingGovKind::of(ready), PendingGovTarget::of(ready)),
         WriteEntry::Built(_, kind) => (*kind, PendingGovTarget::default()),
     };
-    let may_hold = matches!(landing, OpLanding::FirstAttempt | OpLanding::Queued);
-    let slot = unlock_hold::take_slot(deps, community_id, may_hold, |id| {
+    let slot = unlock_hold::take_slot(deps, community_id, landing, |id| {
         let name = deps.pending_target_name(community_id, &target);
         let op = PendingGovOp::held_as(id, kind, target);
         match name {
             Some(name) => op.with_name(&name),
             None => op,
         }
-    })?;
+    })
+    .await?;
     match slot {
         unlock_hold::BarrierSlot::Now(turn) => {
             let written = write_signed(
@@ -325,6 +325,7 @@ async fn write_with<D: GovernanceRuntimeDeps>(
             written
         }
         unlock_hold::BarrierSlot::Held(held) => {
+            held.echo(&entry);
             let op_id = held.op_id().to_owned();
             let owned = deps.handle();
             let community = community_id.to_owned();
