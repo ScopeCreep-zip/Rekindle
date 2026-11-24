@@ -57,6 +57,7 @@ mod friends_key_receipt;
 mod game_servers;
 mod gate;
 mod gossip_after_unlock;
+mod gossip_route_reread;
 mod governance_diff_events;
 mod governance_partial;
 mod governance_publication;

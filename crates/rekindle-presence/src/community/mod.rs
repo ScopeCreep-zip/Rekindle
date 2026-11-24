@@ -21,6 +21,7 @@ pub mod policy;
 pub mod poll;
 pub mod profile_diff;
 pub mod registry;
+pub mod reread_cap;
 pub mod routes;
 pub mod scan_row;
 pub mod spawn;
@@ -40,6 +41,7 @@ pub use registry::{
     discovered_member_row, persist_discovered_registry_members, write_our_presence, DiscoveredRow,
     PresenceWrite,
 };
+pub use reread_cap::{REREAD_BACKOFF_MAX, REREAD_BACKOFF_MIN};
 pub use routes::MemberRouteCache;
 pub use scan_row::{parse_and_classify_row, AcceptedRow, ClassifiedRow, SUBKEYS_PER_SEGMENT};
 pub use spawn::{

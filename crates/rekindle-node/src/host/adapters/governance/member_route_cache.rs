@@ -85,12 +85,23 @@ impl HostGovernance {
     }
 
     /// Read `member`'s routes cold from the record its merged `MemberJoined`
-    /// names, pinned to that op's owner, into the cache; the blob read.
+    /// names, pinned to that op's owner, into the cache; the blob read,
+    /// unless it is empty or the transport knows it dead (plan RV1g B1).
     pub(crate) async fn read_route_cold(
         &self,
         community: &str,
         member: &PseudonymKey,
     ) -> Option<Vec<u8>> {
+        let (_, blob) = self.read_route_pinned(community, member).await?;
+        Some(blob).filter(|b| !b.is_empty() && !self.route_declared_dead(b))
+    }
+
+    /// [`Self::read_route_cold`]'s pinned read: the seq and blob as read.
+    async fn read_route_pinned(
+        &self,
+        community: &str,
+        member: &PseudonymKey,
+    ) -> Option<(u64, Vec<u8>)> {
         let (record, owner) = {
             let state = self.ctx.communities.governance_state(community)?;
             let m = state.members.get(member)?;
@@ -101,7 +112,7 @@ impl HostGovernance {
         match read_member_route_at(&*port, community, &record, member, pin).await {
             Ok(Some((seq, blob))) => {
                 self.observe_route(community, member, seq, blob.clone());
-                Some(blob).filter(|b| !b.is_empty())
+                Some((seq, blob))
             }
             Ok(None) => None,
             Err(error) => {
@@ -183,10 +194,30 @@ impl HostGovernance {
     }
 
     /// A send to `member`'s cached route failed: forget it and read its
-    /// `M`/6 once, pinned (the one re-read a dropped hint costs).
+    /// `M`/6 once, pinned (the one re-read a dropped hint costs). The new
+    /// route, or `None` when the read holds no usable one (nothing, the
+    /// blob that failed, or one the transport knows dead); then D8's cap
+    /// (`rekindle_presence::community::reread_cap`) holds the next re-read
+    /// off the network until its window passes or a newer seq arrives.
     async fn reread_route(&self, community: &str, member: &PseudonymKey) -> Option<Vec<u8>> {
-        self.forget_route(community, member);
-        self.read_route_cold(community, member).await
+        let now = tokio::time::Instant::now();
+        let may = {
+            let map = self.ctx.communities.map().read();
+            map.get(community)
+                .is_some_and(|c| c.member_routes.may_reread(member, now))
+        };
+        if !may {
+            self.forget_route(community, member);
+            tracing::debug!(community, "a member's M/6 re-read is capped (D8)");
+            return None;
+        }
+        let failed = self.forget_route(community, member);
+        let read = self.read_route_pinned(community, member).await;
+        let mut map = self.ctx.communities.map().write();
+        let c = map.get_mut(community)?;
+        let dead = |blob: &[u8]| self.route_declared_dead(blob);
+        c.member_routes
+            .reread(member, failed.as_deref(), read, dead, now)
     }
 
     /// [`Self::reread_route`] by pseudonym hex, for the gossip mesh's
@@ -220,12 +251,12 @@ impl HostGovernance {
         futures::future::join_all(reads).await;
     }
 
-    /// Forget `member`'s cached route (the transport said it is unusable).
-    fn forget_route(&self, community: &str, member: &PseudonymKey) {
+    /// Forget `member`'s cached route (the transport said it is unusable);
+    /// the blob that was held.
+    fn forget_route(&self, community: &str, member: &PseudonymKey) -> Option<Vec<u8>> {
         let mut map = self.ctx.communities.map().write();
-        if let Some(c) = map.get_mut(community) {
-            c.member_routes.forget(member);
-        }
+        map.get_mut(community)
+            .and_then(|c| c.member_routes.forget(member))
     }
 
     /// Forget every cached route of `community` the transport knows dead
