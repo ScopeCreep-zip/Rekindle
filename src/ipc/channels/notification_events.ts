@@ -81,6 +81,11 @@ export type NetworkEvent =
   | { routePaused: { cause: RoutePauseCause } }
   /** The pause is over: a refill brought the route back (plan RV1c). */
   | { routeResumed: Record<string, never> }
+  /** Our own `class` route is down and the Host is retrying (plan F9-A): since
+   *  `sinceMs` (epoch ms), with Veilid's `reason`. */
+  | { ownRouteDown: { class: OwnRouteClass; sinceMs: number; reason: string } }
+  /** Our own `class` route is up again (plan F9-A). */
+  | { ownRouteUp: { class: OwnRouteClass } }
   /** Own-route deaths of `class` in `windowSecs` rose above `baseline`: a warning only (plan RV1). */
   | {
       routeDeathsAboveBaseline: {
