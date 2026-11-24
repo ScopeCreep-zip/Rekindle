@@ -116,8 +116,8 @@ impl DaemonHandler {
     }
 
     /// What the general and the media route are doing (plan C7.9c, RV1g):
-    /// the route facts the network status carries (`has_route` is the
-    /// general route `Available`). Route state lives on the transport's
+    /// the route facts the network status carries (`general_route` is
+    /// the general route's state). Route state lives on the transport's
     /// route owner, not the manager.
     fn route_status(
         &self,
@@ -424,15 +424,13 @@ impl InboundHandler for DaemonHandler {
                     is_attached,
                     public_internet_ready,
                 } => {
-                    let (general, media_route) = self.route_status();
-                    let has_route = general
-                        == rekindle_types::subscription_events::RouteAvailability::Available;
+                    let (general_route, media_route) = self.route_status();
                     sub_mgr.on_attachment_change(
                         rekindle_types::subscription_events::NetworkEvent::AttachmentChanged {
                             attachment_state: state,
                             is_attached,
                             public_internet_ready,
-                            has_route,
+                            general_route,
                             media_route,
                             can_write: self.can_write(),
                         },
@@ -448,15 +446,13 @@ impl InboundHandler for DaemonHandler {
                         return;
                     };
                     let shared = transport.shared();
-                    let (general, media_route) = self.route_status();
-                    let has_route = general
-                        == rekindle_types::subscription_events::RouteAvailability::Available;
+                    let (general_route, media_route) = self.route_status();
                     sub_mgr.on_attachment_change(
                         rekindle_types::subscription_events::NetworkEvent::AttachmentChanged {
                             attachment_state: shared.attachment_state().to_string(),
                             is_attached: shared.is_attached(),
                             public_internet_ready: shared.public_internet_ready(),
-                            has_route,
+                            general_route,
                             media_route,
                             can_write: self.can_write(),
                         },

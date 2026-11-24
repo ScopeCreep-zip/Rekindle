@@ -218,6 +218,12 @@ impl TransportNode {
             peer_count: peer_reg.route_count(),
             route_allocated: route_age.is_some(),
             route_age_secs: route_age.map(|d| d.as_secs()),
+            general_route: self
+                .ports
+                .routes
+                .own_state(RouteClass::General)
+                .borrow()
+                .availability(),
             route_paused: *self.routes().own_paused().borrow(),
             own_route_down: self.routes().own_down().borrow().clone(),
         }

@@ -96,7 +96,7 @@ fn attachment(
     suffix: &str,
     state: &str,
     attached: bool,
-    has_route: bool,
+    general_route: RouteAvailability,
     media_route: RouteAvailability,
 ) -> Sample {
     ev(
@@ -105,7 +105,7 @@ fn attachment(
             attachment_state: text(state),
             is_attached: attached,
             public_internet_ready: attached,
-            has_route,
+            general_route,
             media_route,
             // Attached here means unlocked and not detached: the Host
             // writes, with or without a route ("failed": no route, DHT up).
@@ -116,33 +116,39 @@ fn attachment(
 
 pub fn samples() -> Vec<Sample> {
     vec![
-        attachment("idle", "detached", false, false, RouteAvailability::Idle),
+        attachment(
+            "idle",
+            "detached",
+            false,
+            RouteAvailability::Idle,
+            RouteAvailability::Idle,
+        ),
         attachment(
             "allocating",
             "attaching",
             false,
-            false,
+            RouteAvailability::Allocating,
             RouteAvailability::Allocating,
         ),
         attachment(
             "available",
             "attached_good",
             true,
-            true,
+            RouteAvailability::Available,
             RouteAvailability::Available,
         ),
         attachment(
             "unavailable",
             "attached_weak",
             true,
-            true,
+            RouteAvailability::Available,
             RouteAvailability::Unavailable,
         ),
         attachment(
             "failed",
             "attached_weak",
             true,
-            false,
+            RouteAvailability::Failed,
             RouteAvailability::Failed,
         ),
         ev("strength", NetworkEvent::Strength { bars: 3 }),

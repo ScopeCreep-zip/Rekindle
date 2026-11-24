@@ -24,8 +24,7 @@ fn own_records(
 }
 
 pub fn get_network_status_inner(state: &SharedState) -> NetworkStatus {
-    let (general, media_route) = crate::services::veilid::route_status(state);
-    let has_route = general == rekindle_types::subscription_events::RouteAvailability::Available;
+    let (general_route, media_route) = crate::services::veilid::route_status(state);
     let own_route_down = crate::services::veilid::route_down(state);
     let can_write = state.lifecycle.state().can_write();
     let bars = state.network_strength.shown();
@@ -37,7 +36,7 @@ pub fn get_network_status_inner(state: &SharedState) -> NetworkStatus {
             attachment_state: handle.attachment_state.clone(),
             is_attached: handle.is_attached,
             public_internet_ready: handle.public_internet_ready,
-            has_route,
+            general_route,
             media_route,
             can_write,
             bars,
@@ -52,7 +51,7 @@ pub fn get_network_status_inner(state: &SharedState) -> NetworkStatus {
             attachment_state: "detached".to_string(),
             is_attached: false,
             public_internet_ready: false,
-            has_route: false,
+            general_route: rekindle_types::subscription_events::RouteAvailability::Idle,
             media_route,
             can_write,
             bars,
@@ -86,7 +85,7 @@ mod tests {
             attachment_state: "attached_good".into(),
             is_attached: true,
             public_internet_ready: true,
-            has_route: false,
+            general_route: rekindle_types::subscription_events::RouteAvailability::Idle,
             media_route: RouteAvailability::Allocating,
             can_write: true,
             bars: 3,

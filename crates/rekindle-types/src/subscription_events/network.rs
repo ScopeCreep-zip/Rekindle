@@ -111,10 +111,11 @@ pub enum NetworkEvent {
         attachment_state: String,
         is_attached: bool,
         public_internet_ready: bool,
-        /// Whether we hold an allocated private route for receiving.
-        /// Attached with no route means nobody can reach us, which is
-        /// not visible from the other three fields.
-        has_route: bool,
+        /// What our general-class route (messages, calls, the published
+        /// profile/mailbox route) is doing. Attached with no general route
+        /// means nobody can reach us, which is not visible from the other
+        /// three fields; `Allocating` and `Failed` tell a window why.
+        general_route: RouteAvailability,
         /// What our media-class route is doing. Voice and video need it,
         /// and the general route is never substituted (plan C7.9c), so a
         /// window must be able to say voice is unavailable.

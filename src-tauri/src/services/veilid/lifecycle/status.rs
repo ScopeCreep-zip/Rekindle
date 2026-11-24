@@ -6,8 +6,8 @@ use crate::state::AppState;
 use rekindle_lifecycle::LifecycleState;
 
 /// What the general and the media route are doing (plan C7.9c, RV1g):
-/// the route facts a status indicator shows (`has_route` is the general
-/// route `Available`).
+/// the route facts a status indicator shows (`general_route` is the
+/// general route's state).
 pub fn route_status(state: &AppState) -> (RouteAvailability, RouteAvailability) {
     use rekindle_records::port::RouteClass;
     let Some(routes) = state.own_routes.read().clone() else {
@@ -52,8 +52,7 @@ pub fn route_paused(
 /// The FSM rejects same-state and invalid-edge calls internally, so we
 /// can fire transitions on every status update without churn or noise.
 pub fn emit_network_status(app_handle: &tauri::AppHandle, state: &AppState) {
-    let (general, media_route) = route_status(state);
-    let has_route = general == RouteAvailability::Available;
+    let (general_route, media_route) = route_status(state);
     let mut event = {
         let node = state.node.read();
         match node.as_ref() {
@@ -61,7 +60,7 @@ pub fn emit_network_status(app_handle: &tauri::AppHandle, state: &AppState) {
                 attachment_state: nh.attachment_state.clone(),
                 is_attached: nh.is_attached,
                 public_internet_ready: nh.public_internet_ready,
-                has_route,
+                general_route,
                 media_route,
                 can_write: false,
             },
@@ -69,7 +68,7 @@ pub fn emit_network_status(app_handle: &tauri::AppHandle, state: &AppState) {
                 attachment_state: "detached".to_string(),
                 is_attached: false,
                 public_internet_ready: false,
-                has_route: false,
+                general_route: RouteAvailability::Idle,
                 media_route: RouteAvailability::Idle,
                 can_write: false,
             },

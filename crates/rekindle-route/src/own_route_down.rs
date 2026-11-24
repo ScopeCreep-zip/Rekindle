@@ -24,6 +24,8 @@ use rekindle_types::subscription_events::{OwnRouteClass, OwnRouteDownSet, OwnRou
 use tokio::sync::watch;
 use tokio::time::Instant;
 
+use crate::per_class::PerClass;
+
 /// How often "own route still down" repeats after its 10th attempt.
 pub const STILL_DOWN_EVERY: Duration = Duration::from_secs(60);
 /// A class down this long is warned about, once.
@@ -75,8 +77,7 @@ fn shown(class: RouteClass) -> OwnRouteClass {
 /// Both classes' outages and the set the Host follows.
 pub(crate) struct Downs {
     wall: WallMs,
-    general: Mutex<Track>,
-    media: Mutex<Track>,
+    tracks: PerClass<Mutex<Track>>,
     set: watch::Sender<OwnRouteDownSet>,
 }
 
@@ -84,17 +85,13 @@ impl Downs {
     pub(crate) fn new(wall: WallMs) -> Self {
         Self {
             wall,
-            general: Mutex::new(Track::default()),
-            media: Mutex::new(Track::default()),
+            tracks: PerClass::new(|_| Mutex::new(Track::default())),
             set: watch::Sender::new(OwnRouteDownSet::default()),
         }
     }
 
     fn track(&self, class: RouteClass) -> &Mutex<Track> {
-        match class {
-            RouteClass::General => &self.general,
-            RouteClass::Media => &self.media,
-        }
+        self.tracks.get(class)
     }
 
     pub(crate) fn subscribe(&self) -> watch::Receiver<OwnRouteDownSet> {

@@ -170,7 +170,12 @@ impl MockNode {
             peer_count: peer_reg.route_count(),
             route_allocated,
             route_age_secs: None, // No real route to measure age of
-            route_paused: None,   // No budget on the mock
+            general_route: if route_allocated {
+                rekindle_types::subscription_events::RouteAvailability::Available
+            } else {
+                rekindle_types::subscription_events::RouteAvailability::Idle
+            },
+            route_paused: None, // No budget on the mock
             own_route_down: rekindle_types::subscription_events::OwnRouteDownSet::default(),
         }
     }

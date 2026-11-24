@@ -422,8 +422,10 @@ impl VeilidPorts {
     /// `RekindleNode::start`) and build its ports: record sessions under the
     /// DHT safety profile `dht`, routes and route allocation gated on
     /// `ready` (`public_internet_ready`), messages, and the node's own
-    /// lifecycle. Updates arrive mapped, on a bounded channel; a full
-    /// channel drops the event rather than block the core thread.
+    /// lifecycle. `wall` is the clock port's wall time (milliseconds since
+    /// the epoch), which stamps when an own route class went down. Updates
+    /// arrive mapped, on a bounded channel; a full channel drops the event
+    /// rather than block the core thread.
     ///
     /// # Errors
     /// Veilid failed to start or attach.
@@ -431,6 +433,7 @@ impl VeilidPorts {
         config: &NodeConfig,
         dht: SafetyProfile,
         ready: Follow<bool>,
+        wall: rekindle_records::port::WallMs,
     ) -> Result<(PortSet, mpsc::Receiver<PortEvent>), ProtocolError> {
         let (event_tx, event_rx) = mpsc::channel::<PortEvent>(UPDATE_QUEUE);
         let changes = update_queue_sink(event_tx.clone());
@@ -446,11 +449,7 @@ impl VeilidPorts {
             }),
         )
         .await?;
-        let own = OwnRoutes::new(
-            VeilidRouteAllocator::new(api.clone()),
-            ready.clone(),
-            Arc::new(rekindle_utils::time::timestamp_ms),
-        );
+        let own = OwnRoutes::new(VeilidRouteAllocator::new(api.clone()), ready.clone(), wall);
         let imports = Arc::new(RouteImports::new(api.clone()));
         let ports = PortSet {
             records: Arc::new(VeilidRecords::new(

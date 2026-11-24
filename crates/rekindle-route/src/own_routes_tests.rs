@@ -443,7 +443,12 @@ async fn a_veilid_reported_death_withdraws_the_route_after_the_grace() {
     settle().await;
     let seen = record_states(&routes, RouteClass::General);
     routes.on_dead(&[1]);
-    tokio::time::sleep(crate::own_route_down::WITHDRAW_GRACE - Duration::from_secs(1)).await;
+    tokio::time::sleep(
+        crate::own_route_down::WITHDRAW_GRACE
+            .checked_sub(Duration::from_secs(1))
+            .expect("the grace is longer than a second"),
+    )
+    .await;
     assert!(
         !seen.lock().contains(&RouteState::Withdrawn),
         "withdrawn before the grace"

@@ -12,7 +12,8 @@ pub struct NetworkStatus {
     pub attachment_state: String,
     pub is_attached: bool,
     pub public_internet_ready: bool,
-    pub has_route: bool,
+    /// What the general-class route is doing (plan RV2).
+    pub general_route: rekindle_types::subscription_events::RouteAvailability,
     /// What the media-class route is doing (plan C7.9c).
     pub media_route: rekindle_types::subscription_events::RouteAvailability,
     /// Whether the Host accepts writes now (its lifecycle's `can_write`;

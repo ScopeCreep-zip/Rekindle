@@ -38,6 +38,7 @@ use tokio::sync::watch;
 use crate::ordered_watch::{Follow, OrderedWatch};
 use crate::own_route_accounts::RouteAccounts;
 use crate::own_route_down::{Downs, SLOW_BACKOFF};
+use crate::per_class::PerClass;
 use crate::route_death::{DeathCause, RouteDeath};
 
 /// Why an allocation did not produce a route.
@@ -129,8 +130,7 @@ pub struct OwnRoutes<A: RouteAllocator> {
     ready: Follow<bool>,
     scope: Arc<SessionScope>,
     backoff_min: Duration,
-    general: Slot<A::Id>,
-    media: Slot<A::Id>,
+    slots: PerClass<Slot<A::Id>>,
 }
 
 /// Every class, in the order a pass over them takes.
@@ -139,8 +139,8 @@ const CLASSES: [RouteClass; 2] = [RouteClass::General, RouteClass::Media];
 impl<A: RouteAllocator> std::fmt::Debug for OwnRoutes<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OwnRoutes")
-            .field("general", &self.general.state.get())
-            .field("media", &self.media.state.get())
+            .field("general", &self.slot(RouteClass::General).state.get())
+            .field("media", &self.slot(RouteClass::Media).state.get())
             .finish_non_exhaustive()
     }
 }
@@ -170,16 +170,12 @@ impl<A: RouteAllocator> OwnRoutes<A> {
                 Arc::new(|task| tracing::error!(task, "own route task panicked")),
             ),
             backoff_min,
-            general: Slot::new(RouteClass::General),
-            media: Slot::new(RouteClass::Media),
+            slots: PerClass::new(Slot::new),
         })
     }
 
     fn slot(&self, class: RouteClass) -> &Slot<A::Id> {
-        match class {
-            RouteClass::General => &self.general,
-            RouteClass::Media => &self.media,
-        }
+        self.slots.get(class)
     }
 
     /// The class's state, to follow.
