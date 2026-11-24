@@ -38,7 +38,13 @@ interface Tab {
  * group-tree diagnostic): art buttons with the word baked in (no label), one
  * node per state, the others hidden. Found by node id, never by text.
  */
-const VOICE_NODE = { Call: "ChatButtonCall", Join: "ChatButtonAnswerCall", Leave: "ChatButtonLeaveCall" } as const;
+const VOICE_NODE = {
+  Call: "ChatButtonCall",
+  Join: "ChatButtonAnswerCall",
+  Leave: "ChatButtonLeaveCall",
+  // Our own ring still going out (GV3, action cancelVoiceChat).
+  Cancel: "ChatButtonCancelCall",
+} as const;
 type VoiceState = keyof typeof VOICE_NODE;
 
 /** The voice control `state`'s node in `b`'s window when it is drawn (not hidden, with a box), else null. */
@@ -218,8 +224,10 @@ describe("a group's voice tab: Call, Join while its call rings, Leave once joine
     );
     await (await b.$(".modal-container .modal-footer button:not(.form-btn-secondary)")).click();
     await voiceTab(a, "Alice", "Join");
-    // Bob's own ring (groupStarted): his tab is the one that ends it (leaveGroup).
-    const cancel = await voiceTab(b, "Bob (ringing)", "Leave");
+    // Bob's own ring (groupStarted): the pack's Cancel (cancelVoiceChat), not
+    // Leave, which holds only once the call is connected.
+    const cancel = await voiceTab(b, "Bob (ringing)", "Cancel");
+    expect(await voiceNode(b, "Leave")).toBeNull();
     await shot("own-ring-cancel-tab");
     await pressNode(b, cancel.id);
     await voiceTab(a, "Alice (ring cancelled)", "Call");
