@@ -26,6 +26,8 @@ import InviteToRoomModal from "../../components/chat/InviteToRoomModal";
 import GameLobbyCard from "../../components/chat/GameLobbyCard";
 import { subscribeGroupChatEvents } from "../../handlers/group-dm.handlers";
 import { SlotMount } from "../../components/skin-tree/slots";
+import SkinTreeWindow from "../../components/skin-tree/SkinTreeWindow";
+import { skinShell } from "../../hooks/useSkin";
 
 /// The chat window's group mode (plan E2.6): the group's stored history
 /// (`group_dm_messages`) with members' messages as they arrive, its members
@@ -102,7 +104,14 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
 
   return (
     <>
-      <Titlebar title={`Chat — ${name()}`} showMaximize />
+      {/* A pack's chat tree (plan SK17-2) draws the window; the group's name
+       *  is its chatTitle; without one, the app's titlebar. */}
+      <Show when={skinShell("chat")} keyed fallback={<Titlebar title={`Chat — ${name()}`} showMaximize />}>
+        {(shell) => <SkinTreeWindow shell={shell} views={() => null} communities={() => null} chatTitle={name} />}
+      </Show>
+      {/* The group's own controls (members, timer, rename, invite, leave, its
+       *  lobby) stay reachable: above the messages, in the chat area. */}
+      <SlotMount slot="chatArea">
       <div class="group-chat-header">
         <ul
           class="group-chat-members"
@@ -167,6 +176,7 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
       <Show when={held()}>
         <GameLobbyCard groupId={groupId} memberNames={memberNames()} />
       </Show>
+      </SlotMount>
       <div id="main-content" tabindex="-1" class="window-main">
         <SlotMount slot="chatArea">
           <MessageList

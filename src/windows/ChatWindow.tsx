@@ -1,4 +1,7 @@
-import { Component, Match, Switch } from "solid-js";
+import { Component, Match, Switch, onCleanup, onMount } from "solid-js";
+import type { UnlistenFn } from "@tauri-apps/api/event";
+import { subscribeSkinSignals } from "../ipc/channels";
+import { setSkinSignals } from "../stores/skin-signals.store";
 import SkinFrame from "../components/common/SkinFrame";
 import Titlebar from "../components/titlebar/Titlebar";
 import DirectChat from "./chat_window/DirectChat";
@@ -14,6 +17,13 @@ const ChatWindow: Component = () => {
   const peer = params.get("peer") ?? "";
   const group = params.get("group") ?? "";
   useChatSearchChord(group ? null : peer || null);
+  // The Host's signals for this window (skin-signals:<label>): a chat
+  // tree's state triggers read them, its talkingState among them.
+  let unlisten: UnlistenFn | undefined;
+  onMount(async () => {
+    unlisten = await subscribeSkinSignals(setSkinSignals);
+  });
+  onCleanup(() => unlisten?.());
 
   return (
     // `chat-window` scopes the chat window's skin surfaces (plan E7.7.7).

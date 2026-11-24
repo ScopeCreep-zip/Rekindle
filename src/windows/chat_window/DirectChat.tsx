@@ -27,6 +27,8 @@ import { identityPinMismatchText } from "../../utils/identity_pin";
 import DisappearingTimerControl from "../../components/chat/DisappearingTimerControl";
 import { handleLoadDisappearingTimer } from "../../actions/disappearing.actions";
 import { SlotMount } from "../../components/skin-tree/slots";
+import SkinTreeWindow from "../../components/skin-tree/SkinTreeWindow";
+import { skinShell } from "../../hooks/useSkin";
 
 /// The chat window's 1:1 mode: a conversation with a friend or a
 /// community member, with its call controls and typing indicator.
@@ -155,7 +157,16 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
 
   return (
     <>
-      <Titlebar title={`Chat — ${peerName()}`} showMaximize />
+      {/* A pack that lays its chat window as a tree (plan SK17-2) draws it
+       *  whole: its title bar, window buttons, menu row and frame, the
+       *  conversation title in its chatTitle node; the chat's parts mount
+       *  into its slots. Without one, the app's own titlebar. */}
+      <Show when={skinShell("chat")} keyed fallback={<Titlebar title={`Chat — ${peerName()}`} showMaximize />}>
+        {(shell) => <SkinTreeWindow shell={shell} views={() => null} communities={() => null} chatTitle={peerName} />}
+      </Show>
+      {/* What the app adds that no pack lays (status, calls, safety number,
+       *  game invites) stays reachable: above the messages, in the chat area. */}
+      <SlotMount slot="chatArea">
       <div class="chat-peer-status">
         <StatusDot status={peerStatus()} />
         <span class="chat-peer-status-label">{peerStatus()}</span>
@@ -233,6 +244,7 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
           <GameInvitePicker peerId={peerId} peerName={peerName()} />
         </div>
       </Show>
+      </SlotMount>
       <div id="main-content" tabindex="-1" class="window-main">
       {/* Each part mounts into its slot when the pack's chat tree lays one
        *  (plan SK17-2, components/skin-tree/slots.tsx), else stands here. */}
