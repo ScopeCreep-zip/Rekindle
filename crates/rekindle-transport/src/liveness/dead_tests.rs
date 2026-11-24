@@ -1,5 +1,5 @@
-//! Plan RV1g B1–B3 over the ports: a peer blob Veilid declared dead, or
-//! two calls into which timed out in a row, is refused at import as
+//! Plan RV1g B1, B3 over the ports: a peer blob Veilid declared dead is
+//! refused at import as
 //! `RouteUnusable` until a strictly newer read of the peer's record or the
 //! failure cache's expiry.
 
@@ -53,18 +53,4 @@ async fn a_dead_blob_is_accepted_again_after_the_failure_cache() {
     assert!(!reaches_port(&routes, &live, b"A"));
     tokio::time::advance(std::time::Duration::from_secs(1)).await;
     assert!(reaches_port(&routes, &live, b"A"), "expired");
-}
-
-#[test]
-fn two_timeouts_in_a_row_refuse_a_blob_and_an_answer_between_resets() {
-    let (routes, live) = liveness();
-    live.route_call_timed_out(b"A");
-    live.route_call_answered(b"A");
-    live.route_call_timed_out(b"A");
-    assert!(
-        reaches_port(&routes, &live, b"A"),
-        "one timeout since the answer"
-    );
-    live.route_call_timed_out(b"A");
-    assert!(!reaches_port(&routes, &live, b"A"), "two in a row");
 }

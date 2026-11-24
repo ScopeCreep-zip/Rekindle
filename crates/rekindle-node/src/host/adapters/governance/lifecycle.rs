@@ -157,9 +157,9 @@ impl HostGovernance {
     /// [`RouteCallError::TimedOut`]; after either a member call re-reads
     /// `M`/6 ([`RouteCallError::rereads_route`]). A blob Veilid declared dead
     /// (`RouteChange`, plan RV1g B1) is refused at import as `Unusable`, with
-    /// no call. B2's timeout feed is not wired yet: a kicked member's silence
-    /// times calls out on a live route it republishes under a new record on
-    /// rejoin (netsim `rejoin_after_kick`).
+    /// no call. Timeouts declare nothing dead (B2 owed): an inviter that
+    /// answers no call keeps its live route unrepublished (netsim
+    /// `rejoin_after_kick`).
     pub(super) async fn call_route_typed(
         &self,
         target_route_blob: &[u8],
@@ -175,9 +175,6 @@ impl HostGovernance {
             .caller()
             .call_community_envelope(&target, target_route_blob, payload)
             .await;
-        if result.is_ok() {
-            node.liveness().route_call_answered(target_route_blob);
-        }
         result.map_err(|e| match e {
             rekindle_transport::TransportError::RouteUnusable { .. } => RouteCallError::Unusable,
             rekindle_transport::TransportError::Timeout { reason, .. } => {

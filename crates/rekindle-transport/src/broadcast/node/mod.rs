@@ -54,6 +54,7 @@ impl TransportNode {
             Arc::clone(&self.ports.messages),
             Arc::clone(&self.ports.routes),
             Arc::clone(&self.config),
+            Arc::clone(&self.liveness),
         )
     }
 

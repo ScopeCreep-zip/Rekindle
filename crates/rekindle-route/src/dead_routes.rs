@@ -1,11 +1,13 @@
 //! Peers' route blobs known dead (plan RH1r-c, RV1g B1–B3): the rule of
 //! when a blob is not imported or called again.
 //!
-//! A blob enters on Veilid's word, `RouteChange.dead_remote_routes` after a
-//! failed remote route test (veilid-core 0.5.8 `ping_validator.rs:731-744`,
-//! `route_spec_store_cache.rs:397-415`), or after two consecutive calls into
-//! it timed out with no answer between (a call into a released route ends
-//! as a timeout in 0.5.8, plan E3.4 S4). Veilid's import is idempotent
+//! A blob enters on Veilid's word only, `RouteChange.dead_remote_routes`
+//! after a failed remote route test (veilid-core 0.5.8
+//! `ping_validator.rs:731-744`, `route_spec_store_cache.rs:397-415`). Call
+//! timeouts do not declare a blob dead (B2 owed): a peer that answers no
+//! call on a live route (netsim `rejoin_after_kick`, the inviter unanswered
+//! during the first join) never republishes it, so no read could revive
+//! it. Veilid's import is idempotent
 //! (`route_remote.rs:21-28`), so without this rule a caller that re-reads
 //! the peer's unchanged record re-imports the same blob and Veilid tests and
 //! drops it again, once per attempt. It leaves after [`FAILURE_CACHE`] (the
@@ -24,18 +26,6 @@ use tokio::time::Instant;
 
 use crate::liveness::FAILURE_CACHE;
 
-/// Consecutive timed-out calls into one blob that declare it dead (B2).
-pub const DEAD_AFTER_TIMEOUTS: u32 = 2;
-
-/// Why a blob was declared dead.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum DeadBy {
-    /// Veilid's `RouteChange.dead_remote_routes`.
-    Veilid,
-    /// [`DEAD_AFTER_TIMEOUTS`] consecutive timed-out calls.
-    Timeouts,
-}
-
 #[derive(Debug, Clone)]
 struct Dead {
     at: Instant,
@@ -44,17 +34,15 @@ struct Dead {
     seen_seq: Option<u64>,
 }
 
-/// The node's dead peer route blobs and the timeout streaks toward one.
+/// The node's dead peer route blobs.
 #[derive(Debug, Default)]
 pub struct DeadRoutes {
     dead: HashMap<Vec<u8>, Dead>,
-    timeouts: HashMap<Vec<u8>, u32>,
 }
 
 impl DeadRoutes {
     /// Declare `blob` dead at `now`; `true` when it was not already.
     pub fn declare(&mut self, blob: &[u8], now: Instant) -> bool {
-        self.timeouts.remove(blob);
         let fresh = !self.is_dead(blob, now);
         if fresh {
             self.dead.insert(
@@ -81,6 +69,12 @@ impl DeadRoutes {
         }
     }
 
+    /// A call into `blob` was answered (the suspect round's probe): it
+    /// delivers, so it leaves. `true` when it was dead.
+    pub fn proven(&mut self, blob: &[u8]) -> bool {
+        self.dead.remove(blob).is_some()
+    }
+
     /// A read of the peer's record returned `blob` at `seq`: the first read
     /// after its death is the baseline, a strictly higher seq clears it.
     /// `true` when this read cleared it.
@@ -99,22 +93,6 @@ impl DeadRoutes {
                 false
             }
         }
-    }
-
-    /// A call into `blob` timed out at `now`; `true` when this timeout
-    /// declared it dead (B2).
-    pub fn timed_out(&mut self, blob: &[u8], now: Instant) -> bool {
-        let streak = self.timeouts.entry(blob.to_vec()).or_insert(0);
-        *streak += 1;
-        if *streak >= DEAD_AFTER_TIMEOUTS {
-            return self.declare(blob, now);
-        }
-        false
-    }
-
-    /// A call into `blob` was answered: its timeout streak ends.
-    pub fn answered(&mut self, blob: &[u8]) {
-        self.timeouts.remove(blob);
     }
 }
 
@@ -154,15 +132,12 @@ mod tests {
     }
 
     #[test]
-    fn two_consecutive_timeouts_declare_a_blob_dead_and_an_answer_resets() {
+    fn an_answered_call_proves_a_dead_blob() {
         let t0 = Instant::now();
         let mut dead = DeadRoutes::default();
-        assert!(!dead.timed_out(b"A", t0));
-        dead.answered(b"A");
-        assert!(!dead.timed_out(b"A", t0), "the answer reset the streak");
+        dead.declare(b"A", t0);
+        assert!(dead.proven(b"A"));
         assert!(!dead.is_dead(b"A", t0));
-        assert!(dead.timed_out(b"A", t0), "the second in a row");
-        assert!(dead.is_dead(b"A", t0));
-        assert!(!dead.timed_out(b"B", t0), "streaks are per blob");
+        assert!(!dead.proven(b"A"), "no longer dead");
     }
 }
