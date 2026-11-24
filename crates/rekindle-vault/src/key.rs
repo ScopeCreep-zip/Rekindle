@@ -160,6 +160,16 @@ impl VaultKey {
         }
     }
 
+    /// Whether this entry belongs to this device only, so an identity export
+    /// never carries it (ADR 0022 rule 4: a device key never travels with an
+    /// export). `DeviceVaultSecret` is the one such entry the identity vault
+    /// holds; `DeviceOpKey` lives in the device vault, which export never
+    /// reads, and is named here so no store exports it either.
+    #[must_use]
+    pub fn is_device_scoped(&self) -> bool {
+        matches!(self, Self::DeviceVaultSecret | Self::DeviceOpKey { .. })
+    }
+
     /// The variant's tag and its fields, in order.
     fn parts(&self) -> (&'static str, Vec<Cow<'_, str>>) {
         let s = |v: &str| Cow::Owned(v.to_owned());

@@ -152,8 +152,9 @@ as today's does.
    (seq 0 in its chain) is the op that carries its own `DeviceKey` endorsement.
 4. **Never backed up; catch up at every unlock.** The device key, `K_M(p,d)` and the device's seq head live in the
    vault under `DeviceOpKey{community}` and are excluded from every Rekindle backup and export: they live in a separate device vault, whose key the identity
-   vault holds and whose file identity export never reads (export copies the identity vault file whole,
-   `rekindle-vault` `export_files`), so an imported identity enrols new device keys (corrected 2026-10-24, premise
+   vault holds and whose file identity export never reads (export copies the identity vault with every device-scoped entry,
+   that key among them, deleted, `rekindle-vault` `export_files` and `VaultKey::is_device_scoped`; corrected
+   2026-11-24), so an imported identity enrols new device keys (corrected 2026-10-24, premise
    check). That cannot stop a
    whole-directory restore (Time Machine, a btrfs or VM snapshot, a copied data root; I14; E7.1's exclusion is
    best-effort), so the **unlock barrier** is the real defence and is mandatory. At every unlock, before the first
