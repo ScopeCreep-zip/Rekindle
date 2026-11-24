@@ -85,12 +85,6 @@ fn shell_actions_yield_their_operation_on_the_selected_friend() {
             },
         ),
         (
-            A::VoiceChat,
-            ShellOp::Call(CallOp::Voice {
-                friend: friend.clone(),
-            }),
-        ),
-        (
             A::HostVoiceChat,
             ShellOp::Call(CallOp::Voice {
                 friend: friend.clone(),

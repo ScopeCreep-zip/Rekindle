@@ -20,7 +20,7 @@ use rekindle_types::dto::transfer::TransferTarget;
 use rekindle_types::friend::GameInfoState;
 use rekindle_types::game_server::{JoinSource, ServerAddress};
 
-use super::reads::Reads;
+use super::reads::{GroupCall, Reads};
 use super::rooms::{self, Room};
 
 /// Each window's selection (`SkinSelectionSet`), by window label (lead
@@ -200,6 +200,33 @@ pub(crate) struct Selected<'a> {
 /// on the server their presence shares, launched by the one launch path
 /// (`GameLaunch`, TrustChanging for a peer's address). Refused with the
 /// Host's own `not_joinable` reason, the check the `Join` capability makes.
+/// A group window's join: the selected group's call in progress that we
+/// are not in, joined through the shell (`CallOp::JoinGroup`).
+///
+/// # Errors
+/// 409 when no group is selected, or the group has no call to join.
+fn join_group(group: Option<&GroupCall>) -> Result<Mapped, IpcResponse> {
+    match group {
+        Some(GroupCall {
+            group_id,
+            call_id: Some(call_id),
+        }) => Ok(Mapped::Run(SkinRun::Shell(ShellOp::Call(
+            CallOp::JoinGroup {
+                group_id: group_id.clone(),
+                call_id: call_id.clone(),
+            },
+        )))),
+        Some(_) => Err(IpcResponse::error(
+            409,
+            "No call in this group is in progress.",
+        )),
+        None => Err(IpcResponse::error(
+            409,
+            "GroupVoiceChat acts on the selected group: none is selected",
+        )),
+    }
+}
+
 fn join_friend(friend: &str, game: Option<&GameInfoState>) -> Result<Mapped, IpcResponse> {
     let refused = |why: String| IpcResponse::error(409, format!("JoinFriend: {friend} {why}"));
     let game = game.ok_or_else(|| refused("is in no game".into()))?;
@@ -327,9 +354,26 @@ pub(crate) fn map(
         A::ShowGameInvite => shell(ShellOp::OpenGameInvite {
             friend: selected()?,
         }),
-        A::VoiceChat | A::HostVoiceChat => shell(ShellOp::Call(CallOp::Voice {
+        // Xfire's `AppHostVoiceChat` places a call (`ChatButtonCall`) and
+        // `AppVoiceChat` answers the ringing one (`ChatButtonAnswerCall`,
+        // Symbiosis `ChatWindow.xml:291-293`, `Common.xml:450-452`).
+        A::HostVoiceChat => shell(ShellOp::Call(CallOp::Voice {
             friend: selected()?,
         })),
+        // A group window's join (`GroupChatButtonAnswerCall`, tip
+        // `ButtonGroupJoinVoiceChatTip`) runs `AppVoiceChat` in Symbiosis
+        // (`Components/GroupChatWindow.xml:144-147`) and
+        // `AppGroupVoiceChat` in WMP10/Alloy/LOTR/DiabloIILoD; its Host
+        // button (`GroupChatButtonCall`) runs `AppHostGroupVoiceChat`.
+        A::GroupVoiceChat => join_group(reads.group_call.as_ref()),
+        A::VoiceChat if reads.group_call.is_some() => join_group(reads.group_call.as_ref()),
+        A::VoiceChat => {
+            selected()?;
+            reads.ringing_call.clone().map_or_else(
+                || Err(IpcResponse::error(409, "No call from them is ringing.")),
+                |call_id| shell(ShellOp::Call(CallOp::Answer { call_id })),
+            )
+        }
         A::VideoChat => shell(ShellOp::Call(CallOp::Video {
             friend: selected()?,
         })),
@@ -372,7 +416,7 @@ pub(crate) fn map(
         },
         A::JoinFriend => join_friend(&selected()?, reads.friend_game.as_ref()),
         A::AddServer => add_server(server),
-        A::GroupVoiceChat | A::HostGroupVoiceChat => panel(ShellPanel::StartGroupCall),
+        A::HostGroupVoiceChat => panel(ShellPanel::StartGroupCall),
         A::CreateCommunity => panel(ShellPanel::CreateCommunity),
         A::JoinCommunity => panel(ShellPanel::JoinCommunity),
         A::ShowShortcuts => panel(ShellPanel::Shortcuts),

@@ -32,6 +32,10 @@ use rekindle_transport::operations::group_dm;
 pub(crate) struct Call {
     /// The 1:1 peer; `None` for a group call.
     peer: Option<String>,
+    /// A group call's members: its initiator and everyone invited
+    /// (`CallEvent::Incoming`), and everyone who joined
+    /// (`CallEvent::ParticipantJoined`). Empty for a 1:1.
+    members: BTreeSet<String>,
     pub(crate) ringing: bool,
     pub(crate) outgoing: bool,
 }
@@ -155,12 +159,19 @@ impl Inputs {
             CallEvent::Incoming {
                 call_id,
                 from,
+                participants,
                 is_group,
                 ..
             } => {
                 let peer = (!is_group).then(|| from.clone());
+                let members = if *is_group {
+                    std::iter::once(from).chain(participants).cloned().collect()
+                } else {
+                    BTreeSet::new()
+                };
                 let call = Call {
                     peer,
+                    members,
                     ringing: true,
                     outgoing: false,
                 };
@@ -171,6 +182,7 @@ impl Inputs {
             } => {
                 let call = Call {
                     peer: Some(peer_key.clone()),
+                    members: BTreeSet::new(),
                     ringing: true,
                     outgoing: true,
                 };
@@ -179,6 +191,7 @@ impl Inputs {
             CallEvent::Connected { call_id, direct } => {
                 let call = self.calls.entry(call_id.clone()).or_insert(Call {
                     peer: None,
+                    members: BTreeSet::new(),
                     ringing: false,
                     outgoing: false,
                 });
@@ -194,6 +207,17 @@ impl Inputs {
                 self.calls.remove(call_id);
                 if self.calls.is_empty() {
                     self.self_muted = false;
+                }
+            }
+            CallEvent::ParticipantJoined {
+                call_id,
+                participant_pubkey,
+            } => {
+                let Some(call) = self.calls.get_mut(call_id).filter(|c| c.peer.is_none()) else {
+                    return false;
+                };
+                if !call.members.insert(participant_pubkey.clone()) {
+                    return false;
                 }
             }
             CallEvent::SelfMuteChanged { muted, .. } => {
@@ -234,6 +258,35 @@ impl Inputs {
             }),
             VoiceScope::Dm { .. } => None,
         }
+    }
+
+    /// The id of the incoming 1:1 call from `peer` that is ringing, the
+    /// call Xfire's `AppVoiceChat` answers.
+    pub(crate) fn ringing_from(&self, peer: &str) -> Option<String> {
+        self.calls
+            .iter()
+            .find(|(_, c)| c.peer.as_deref() == Some(peer) && c.ringing && !c.outgoing)
+            .map(|(call_id, _)| call_id.clone())
+    }
+
+    /// The group call of the group whose members besides us are `others`:
+    /// a group call whose members are exactly them, with or without us
+    /// (a group call carries no group id; its members are the group's).
+    pub(crate) fn group_call(&self, others: &BTreeSet<String>) -> Option<(&String, &Call)> {
+        self.calls.iter().find(|(_, c)| {
+            c.peer.is_none()
+                && !others.is_empty()
+                && others.is_subset(&c.members)
+                && c.members.len() <= others.len() + 1
+        })
+    }
+
+    /// The id of the group's call in progress that we are not in (it is
+    /// ringing here), the call Xfire's group `AppGroupVoiceChat` joins.
+    pub(crate) fn joinable_group_call(&self, others: &BTreeSet<String>) -> Option<String> {
+        self.group_call(others)
+            .filter(|(_, c)| c.ringing && !c.outgoing)
+            .map(|(call_id, _)| call_id.clone())
     }
 
     pub(crate) fn call_with(&self, peer: &str) -> Option<&Call> {
@@ -331,8 +384,16 @@ pub(crate) async fn load_world(ctx: &DaemonContext) -> SkinWorld {
                 .filter_map(|g| g.origin_peer.clone())
                 .collect();
             let mut joined = Vec::with_capacity(groups.len());
+            let mut rosters = BTreeMap::new();
             for g in groups {
-                let others = g.roster.iter().filter(|m| m.identity != owner).count();
+                let members: BTreeSet<String> = g
+                    .roster
+                    .iter()
+                    .filter(|m| m.identity != owner)
+                    .map(|m| m.identity.clone())
+                    .collect();
+                let others = members.len();
+                rosters.insert(g.group_id.clone(), members);
                 let creator = g.roster.first().is_some_and(|m| m.identity == owner);
                 let lobby = group_lobby::current(conn, &owner, &g.group_id)?.map(|row| {
                     let [join, leave, launch, _] = group_dm::lobby::verdicts(&row, &owner);
@@ -362,13 +423,14 @@ pub(crate) async fn load_world(ctx: &DaemonContext) -> SkinWorld {
                 .into_iter()
                 .map(|t| (t.attachment_id.clone(), t))
                 .collect();
-            Ok((favourites, groups, attached, transfers))
+            Ok((favourites, groups, rosters, attached, transfers))
         })
         .await;
     match read {
-        Ok((favourites, groups, attached, transfers)) => {
+        Ok((favourites, groups, rosters, attached, transfers)) => {
             world.favourites = favourites;
             world.groups = groups;
+            world.rosters = rosters;
             world.attached = attached;
             world.transfers = transfers;
         }
@@ -401,6 +463,17 @@ impl SignalState {
     /// `ShowVoiceWindow`'s window ([`Inputs::show_call`]).
     pub(crate) fn show_call(&self) -> Option<CallTarget> {
         self.inputs.lock().show_call()
+    }
+
+    /// `VoiceChat`'s call ([`Inputs::ringing_from`]).
+    pub(crate) fn ringing_from(&self, peer: &str) -> Option<String> {
+        self.inputs.lock().ringing_from(peer)
+    }
+
+    /// A group window's `GroupVoiceChat` call
+    /// ([`Inputs::joinable_group_call`]).
+    pub(crate) fn joinable_group_call(&self, others: &BTreeSet<String>) -> Option<String> {
+        self.inputs.lock().joinable_group_call(others)
     }
 }
 
