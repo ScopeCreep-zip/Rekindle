@@ -454,8 +454,10 @@ function applyGovernance(g: GovernanceEvent): void {
     // Our own permissions moved (plan E3.2 S9): re-read the backend's
     // flags. Another member's change shows through its roles and the
     // member list, which re-render on their own events.
-    const { community, member } = g.effectivePermissionsChanged;
+    const { community, member, denied } = g.effectivePermissionsChanged;
     if (communityState.communities[community]?.myPseudonymKey !== member) return;
+    // What we may no longer do, and why (never-hide), straight from the event.
+    if (denied) setCommunityState("communities", community, "denied", denied);
     // Our rank may have moved, so the per-member moderation verdicts too.
     refreshCommunityMembers(community);
     commands
@@ -464,6 +466,7 @@ function applyGovernance(g: GovernanceEvent): void {
         const detail = details.find((d) => d.id === community);
         if (!detail) return;
         setCommunityState("communities", community, "myPermissions", detail.myPermissions);
+        setCommunityState("communities", community, "denied", detail.denied ?? {});
         setCommunityState(
           "communities",
           community,
@@ -500,6 +503,7 @@ function applyGovernance(g: GovernanceEvent): void {
           setCommunityState("communities", community, "categories", detail.categories ?? []);
           setCommunityState("communities", community, "myRoleIds", detail.myRoleIds);
           setCommunityState("communities", community, "myPermissions", detail.myPermissions);
+        setCommunityState("communities", community, "denied", detail.denied ?? {});
           setCommunityState(
             "communities",
             community,
