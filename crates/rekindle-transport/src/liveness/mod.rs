@@ -251,4 +251,4 @@ impl Liveness {
 mod dead_tests;
 #[cfg(test)]
 #[path = "receipt_tests.rs"]
-mod receipt_tests;
+pub(crate) mod receipt_tests;

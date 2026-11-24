@@ -166,3 +166,7 @@ pub fn reachable_again(host: &dyn FriendHost, peer: &str, why: &'static str) {
             }
         });
 }
+
+#[cfg(test)]
+#[path = "route_tests.rs"]
+mod tests;
