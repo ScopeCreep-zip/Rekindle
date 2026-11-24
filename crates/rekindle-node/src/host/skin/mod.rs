@@ -194,7 +194,7 @@ async fn import(ctx: &DaemonContext, bytes: Vec<u8>) -> Answer<SkinEntry> {
         id: format!("{PKG}{hash}"),
         name: m.name,
         imported_at: Some(imported_at),
-        credits: m.credits,
+        credits: rekindle_skin::skin_tree::brand::credits(m.credits),
         short_targets,
         conforming: short_targets == 0,
     })
@@ -337,7 +337,7 @@ fn entries(rows: Vec<(skins::SkinRow, Option<Vec<u8>>)>) -> Answer<Vec<SkinEntry
             id,
             name: rekindle_skin::skin_tree::brand::name(&m.name),
             imported_at: Some(row.imported_at),
-            credits: m.credits,
+            credits: rekindle_skin::skin_tree::brand::credits(m.credits),
             short_targets,
             conforming: short_targets == 0,
         });
@@ -358,7 +358,7 @@ fn builtin_entry(
         id,
         name,
         imported_at: None,
-        credits,
+        credits: rekindle_skin::skin_tree::brand::credits(credits),
         short_targets,
         conforming: short_targets == 0,
     })

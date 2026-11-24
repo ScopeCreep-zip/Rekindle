@@ -2,6 +2,7 @@
 //! ops verify as any reader verifies them; shared by the join and hinted
 //! walk tests.
 
+use crate::device_signer::{first_endorsement, member_first_endorsement};
 use crate::join_deps::join_deps;
 use crate::op_log::{
     build_op, frontier_refs, held, op_record, verify_held, Deps, HeldOp, OpFate, VerifiedSet,
@@ -22,8 +23,17 @@ use rekindle_types::id::ChannelId;
 pub(crate) const ANCHOR: &str = "VLD0:anchor";
 
 impl Member {
-    pub(crate) fn joined(&self, code: &str) -> GovernanceEntry {
+    /// Its `MemberJoined` on invite `code`, written over `state` as the join
+    /// flow writes it: its first device endorsed for its record.
+    pub(crate) fn joined(&self, code: &str, state: &GovernanceState) -> GovernanceEntry {
         let record = self.record();
+        let first_device = member_first_endorsement(
+            &self.pseudonym,
+            ANCHOR,
+            &self.device,
+            (&record, &self.owner_text()),
+            state,
+        );
         let code_hash = hash_invite_code(code);
         let proof = invite_proof_bytes(ANCHOR, &self.author(), &record, &code_hash);
         let sig = sign_invite_join(code, &proof).to_vec();
@@ -34,7 +44,7 @@ impl Member {
             member_record_owner: self.owner_text(),
             invite_proof: Some(InviteProof { code_hash, sig }),
             owner_proof: owner_proof.to_vec(),
-            first_device: None,
+            first_device: Some(first_device),
         }
     }
 }
@@ -71,7 +81,13 @@ impl World {
             created_at: 1,
             additional_creators: Vec::new(),
             predecessor: None,
-            creator_device: None,
+            creator_device: Some(first_endorsement(
+                &creator.pseudonym,
+                ANCHOR,
+                &creator.device,
+                &creator.record(),
+                &creator.owner_text(),
+            )),
         };
         let mut world = Self {
             cert,
@@ -135,7 +151,8 @@ impl World {
     /// `member`'s join on `inviter`'s invite `code`, with shallow deps.
     pub(crate) fn join(&mut self, member: &Member, inviter: &Member, code: &str) -> VerifiedOp {
         let deps = self.deps_of(member, inviter);
-        self.author(member, member.joined(code), Deps::Join(deps))
+        let body = member.joined(code, &self.state);
+        self.author(member, body, Deps::Join(deps))
     }
 
     /// `member`'s join deps on `inviter`'s invite, from the held set.

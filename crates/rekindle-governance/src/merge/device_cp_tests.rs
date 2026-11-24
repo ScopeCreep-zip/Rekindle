@@ -35,17 +35,24 @@ pub(super) fn who(a: u8) -> PseudonymKey {
 /// `who(a)`'s signed endorsement of `[key; 32]`, in the record `joined(a)`
 /// names.
 fn endorsement(a: u8, key: u8) -> DeviceEndorsement {
+    endorsement_in(a, key, &format!("VLD0:m{a}"), &format!("VLD0:d{key}"))
+}
+
+/// `who(a)`'s signed endorsement of `[key; 32]` on `device_record`, signed
+/// in the context of member record `member_record` (rule 10): a re-join's
+/// new `M(p)` (lead decision 63), not the record `joined(a)` names.
+fn endorsement_in(a: u8, key: u8, member_record: &str, device_record: &str) -> DeviceEndorsement {
     let mut e = DeviceEndorsement {
         device_key: [key; 32],
         incarnation: u64::from(key),
         extends_set: device_set_hash(&[]),
         extends_elements: Vec::new(),
-        device_record: format!("VLD0:d{key}"),
+        device_record: device_record.to_owned(),
         device_record_owner: format!("VLD0:o{key}"),
         fork_evidence: [0; 32],
         endorsement_sig: Vec::new(),
     };
-    let bytes = endorsement_signing_bytes(ANCHOR, &format!("VLD0:m{a}"), &e);
+    let bytes = endorsement_signing_bytes(ANCHOR, member_record, &e);
     e.endorsement_sig = signer(a).sign(&bytes).to_bytes().to_vec();
     e
 }
@@ -166,6 +173,51 @@ fn a_second_device_s_ops_past_its_own_cut_resume_as_the_full_merge() {
     let (snap, power, rest) = split(&c, &all, &[&k]);
     assert_eq!(rest.len(), 2, "the second device's ops are past the cut");
     let resumed = merge_from(&c, &snap, &power, &rest).expect("on top of the cut");
+    assert_eq!(resumed.state, full.state);
+    assert_eq!(resumed.quarantined, full.quarantined);
+}
+
+/// A re-join names a new `M(p)` (lead decision 63) before the cut, and the
+/// person's second device is endorsed under that new record. On top of the
+/// cut, the member record current at that device's ops is the re-join's
+/// (the snapshot's highest-stamp join, lead decision K4b Q4), so the resume
+/// takes them exactly as the full merge does; judged by the first join's
+/// record, the key would bind no current record and the ops would stall.
+#[test]
+fn a_rejoined_authors_second_device_resumes_on_top_of_the_cut() {
+    const M2: &str = "VLD0:n8";
+    let c = cert(&pk(1), AdmissionMode::Open);
+    let c0 = op(&pk(1), 0, &[], 0, joined(1, None));
+    let j = op(&who(8), 0, &[&c0], 1, joined_with_device(8, 3));
+    let rejoin = GovernanceEntry::MemberJoined {
+        member_record: M2.into(),
+        member_record_owner: "VLD0:owner-2".into(),
+        invite_proof: None,
+        owner_proof: vec![0; 64],
+        first_device: Some(endorsement_in(8, 6, M2, M2)),
+    };
+    let rj = op(&who(8), 1, &[&j], 2, rejoin);
+    let second = GovernanceEntry::DeviceKey(endorsement_in(8, 7, M2, "VLD0:d7"));
+    let k = op(&who(8), 2, &[&rj], 3, second);
+    // A member without MANAGE_COMMUNITY: an op of an effective key reaches
+    // validation and is refused there; an op of a key that binds no
+    // current record would stall (rule 6), never reaching validation.
+    let b0 = op_on(&who(8), [7; 32], 0, &[&k], 4, meta("b0"));
+    let b1 = op_on(&who(8), [7; 32], 1, &[&b0], 5, meta("b1"));
+    let judged = [b0.hash(), b1.hash()];
+    let all = vec![c0, j, rj, k.clone(), b0, b1];
+    let full = merge_outcome(&c, &all);
+    assert!(
+        judged.iter().all(|h| full.refused.contains(h)),
+        "the second device's key is effective under the re-join's record"
+    );
+    let (snap, power, rest) = split(&c, &all, &[&k]);
+    assert_eq!(rest.len(), 2, "the second device's ops are past the cut");
+    let resumed = merge_from(&c, &snap, &power, &rest).expect("on top of the cut");
+    assert!(
+        judged.iter().all(|h| resumed.refused.contains(h)),
+        "resume judges the key as the full merge does"
+    );
     assert_eq!(resumed.state, full.state);
     assert_eq!(resumed.quarantined, full.quarantined);
 }

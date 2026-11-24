@@ -747,6 +747,8 @@
 .sidebar-server-join-btn	text	var(--color-xfire-accent-text)	--color-xfire-bg-dark	1.0	false
 .sidebar-server-join-btn	text hovered	var(--color-xfire-accent-text)	--color-xfire-accent 15% over --color-xfire-bg-dark	1.0	false
 .sidebar-server-row	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
+.skin-access	text	var(--color-xfire-text-dim)	--color-xfire-accent 12% over --color-xfire-bg-dark	1.0	false
+.skin-access	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .skin-ad-banner	text	var(--color-xfire-text-on-fill)	--color-xfire-accent	1.0	false
 .skin-badge	text	var(--color-xfire-text-dim)	--color-xfire-accent 12% over --color-xfire-bg-dark	1.0	false
 .skin-badge	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
@@ -765,6 +767,7 @@
 .skin-name-edit:focus-visible	boundary	var(--color-xfire-focus-outline)	--color-xfire-titlebar-start	1.0	true
 .skin-name-text	text	var(--color-xfire-titlebar-text)	--color-xfire-titlebar-end	1.0	false
 .skin-name-text	text	var(--color-xfire-titlebar-text)	--color-xfire-titlebar-start	1.0	false
+.skin-name:is(:focus-visible, :has(:focus-visible)) .skin-name-text	text	var(--color-xfire-accent-text)	--color-xfire-bg-secondary	1.0	false
 .skin-node-label	text	var(--color-xfire-accent-text)	--color-xfire-bg-dark	1.0	false
 .skin-node-label	text	var(--color-xfire-accent-text)	--color-xfire-bg-secondary	1.0	false
 .skin-pair	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
@@ -779,6 +782,7 @@
 .skin-status-paused-text	text	var(--color-xfire-danger-text)	--color-xfire-danger 30% over --color-xfire-bg-dark	1.0	false
 .skin-token-id	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
 .skin-tree	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
+.skin-tree [data-skin-node]:is(:focus-visible, :has(:focus-visible)) > .skin-node-label .skin-node-label-text	text	var(--color-xfire-accent-text)	--color-xfire-bg-secondary	1.0	false
 .skin-tree-button:focus-visible	boundary	var(--color-xfire-focus-outline)	--color-xfire-bg-dark	1.0	true
 .skin-tree-button:focus-visible	boundary	var(--color-xfire-focus-outline)	--color-xfire-titlebar-end	1.0	true
 .skin-tree-button:focus-visible	boundary	var(--color-xfire-focus-outline)	--color-xfire-titlebar-start	1.0	true
@@ -879,6 +883,8 @@
 .xfire-titlebar-btn-close:hover	text	var(--color-xfire-danger-fg)	--color-xfire-danger var(--tint-fill-strong) over --color-xfire-titlebar-start	1.0	false
 .xfire-titlebar-btn:hover	text	var(--color-xfire-titlebar-text)	--color-xfire-overlay 10% over --color-xfire-titlebar-end	1.0	false
 .xfire-titlebar-btn:hover	text	var(--color-xfire-titlebar-text)	--color-xfire-overlay 10% over --color-xfire-titlebar-start	1.0	false
+.xfire-titlebar-logo	text	var(--color-xfire-titlebar-text)	--color-xfire-titlebar-end	1.0	false
+.xfire-titlebar-logo	text	var(--color-xfire-titlebar-text)	--color-xfire-titlebar-start	1.0	false
 .xfire-titlebar-text	text	var(--color-xfire-titlebar-text)	--color-xfire-titlebar-end	1.0	false
 .xfire-titlebar-text	text	var(--color-xfire-titlebar-text)	--color-xfire-titlebar-start	1.0	false
 body	icon	var(--color-xfire-text)	--color-xfire-bg-dark	0.48	true

@@ -12,14 +12,15 @@
 import { mkdirSync } from "node:fs";
 import path from "node:path";
 import { browser, expect } from "@wdio/globals";
-import { switchTo } from "../../../walk/helpers.ts";
-import { BUDDY, openSettings } from "../../../walk/nav.ts";
+import { MOD_KEY, NET_WAIT_MS, byText, press, resolveIntent, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
+import { BUDDY, SETTINGS, expectOnlySelectedTab, openSettings } from "../../../walk/nav.ts";
 import { type Violation, violations } from "../../axe.ts";
 import { checkGeometry, targetsMetIn, treeFitIn } from "../../geometry.ts";
 import type { TreeFit } from "../../geometry-page.ts";
 import { applySkin, createCommunity, createIdentity, createTextChannel, newUser, openCommunity, postMessage, selectChannel, skinShown, type User } from "../../journeys.ts";
-import { builtinPacks, type SkinPack } from "../../skin-pack.ts";
+import { ACCESSIBLE_VARIANT, builtinPacks, type SkinPack } from "../../skin-pack.ts";
 import { BUDDY_LIST, COMMUNITY, SETTINGS_APPEARANCE, type WindowCase, sizeWindow, sizesIn, spacingOf, treeGrowth } from "../../windows.ts";
+import { shot } from "../../shots.ts";
 
 const OUT = path.join(import.meta.dirname, "..", "..", "out", "skins-a11y");
 const PACKS = builtinPacks();
@@ -101,9 +102,157 @@ const KNOWN_DARWIN_ONLY: Record<string, string[]> = {
     "community min: axe color-contrast",
   ],
 };
+/**
+ * Faithful skin; conforming alternate = builtin:symbiosis-access (plan SK14,
+ * WCAG 2.2 5.2.1 conforming alternate version). The Xfire skins keep their
+ * art's small controls: each served-short control's 24 px target would cross
+ * a neighbour's, and none meets 2.5.8's spacing exception at its press box
+ * (targetsMet). The accessible variant, one keyboard step from every skin
+ * (Mod+,), holds none and must fully pass. Pinned from round 26's run
+ * (3b260dba2, 2026-11-23); a changed list is a reviewed edit.
+ */
+const KNOWN_FAITHFUL_SHORT: Record<string, string[]> = {
+  "symbiosis": [
+    "buddy-list default: target-size short ButtonClose",
+    "buddy-list default: target-size short ButtonMaximize",
+    "buddy-list default: target-size short StatusChanger",
+    "buddy-list large: target-size short ButtonClose",
+    "buddy-list large: target-size short ButtonMaximize",
+    "buddy-list large: target-size short StatusChanger",
+    "buddy-list min: target-size short ButtonClose",
+    "buddy-list min: target-size short ButtonMaximize",
+    "buddy-list min: target-size short StatusChanger",
+  ],
+  "xfire-classic": [
+    "buddy-list default: target-size short DownArrow",
+    "buddy-list large: target-size short DownArrow",
+    "buddy-list min: target-size short DownArrow",
+  ],
+  "combat": [
+    "buddy-list default: target-size short DownArrow",
+    "buddy-list large: target-size short DownArrow",
+    "buddy-list min: target-size short DownArrow",
+  ],
+  "onyx": [
+    "buddy-list default: target-size short Close",
+    "buddy-list default: target-size short DownArrow",
+    "buddy-list default: target-size short ExpandButton",
+    "buddy-list default: target-size short FileMenu",
+    "buddy-list default: target-size short HelpMenu",
+    "buddy-list default: target-size short Maximize",
+    "buddy-list default: target-size short Minimize",
+    "buddy-list default: target-size short TabNormalButton",
+    "buddy-list default: target-size short ToolsMenu",
+    "buddy-list large: target-size short Close",
+    "buddy-list large: target-size short DownArrow",
+    "buddy-list large: target-size short ExpandButton",
+    "buddy-list large: target-size short FileMenu",
+    "buddy-list large: target-size short HelpMenu",
+    "buddy-list large: target-size short Maximize",
+    "buddy-list large: target-size short Minimize",
+    "buddy-list large: target-size short TabNormalButton",
+    "buddy-list large: target-size short ToolsMenu",
+    "buddy-list min: target-size short Close",
+    "buddy-list min: target-size short DownArrow",
+    "buddy-list min: target-size short ExpandButton",
+    "buddy-list min: target-size short FileMenu",
+    "buddy-list min: target-size short HelpMenu",
+    "buddy-list min: target-size short Maximize",
+    "buddy-list min: target-size short Minimize",
+    "buddy-list min: target-size short TabNormalButton",
+    "buddy-list min: target-size short ToolsMenu",
+  ],
+  "spacecowboy": [
+    "buddy-list default: target-size short Close",
+    "buddy-list default: target-size short DownArrow",
+    "buddy-list default: target-size short FileMenu",
+    "buddy-list default: target-size short HelpMenu",
+    "buddy-list default: target-size short Maximize",
+    "buddy-list default: target-size short Minimize",
+    "buddy-list default: target-size short ToolsMenu",
+    "buddy-list large: target-size short Close",
+    "buddy-list large: target-size short DownArrow",
+    "buddy-list large: target-size short FileMenu",
+    "buddy-list large: target-size short HelpMenu",
+    "buddy-list large: target-size short Maximize",
+    "buddy-list large: target-size short Minimize",
+    "buddy-list large: target-size short ToolsMenu",
+    "buddy-list min: target-size short Close",
+    "buddy-list min: target-size short DownArrow",
+    "buddy-list min: target-size short FileMenu",
+    "buddy-list min: target-size short HelpMenu",
+    "buddy-list min: target-size short Maximize",
+    "buddy-list min: target-size short Minimize",
+    "buddy-list min: target-size short ToolsMenu",
+  ],
+  "stealthx": [
+    "buddy-list default: target-size short StatusBtn",
+    "buddy-list default: target-size short WndClose",
+    "buddy-list default: target-size short WndMax",
+    "buddy-list default: target-size short WndMin",
+    "buddy-list large: target-size short StatusBtn",
+    "buddy-list large: target-size short WndClose",
+    "buddy-list large: target-size short WndMax",
+    "buddy-list large: target-size short WndMin",
+    "buddy-list min: target-size short StatusBtn",
+    "buddy-list min: target-size short WndClose",
+    "buddy-list min: target-size short WndMax",
+    "buddy-list min: target-size short WndMin",
+  ],
+  "total-chaos": [
+    "buddy-list default: target-size short Close",
+    "buddy-list default: target-size short Maximize",
+    "buddy-list default: target-size short Minimize",
+    "buddy-list large: target-size short Close",
+    "buddy-list large: target-size short Maximize",
+    "buddy-list large: target-size short Minimize",
+    "buddy-list min: target-size short Close",
+    "buddy-list min: target-size short Maximize",
+    "buddy-list min: target-size short Minimize",
+  ],
+  "xslimfire": [
+    "buddy-list default: target-size short CloseBox",
+    "buddy-list default: target-size short MinimizeBox",
+    "buddy-list default: target-size short StatusEdit",
+    "buddy-list large: target-size short CloseBox",
+    "buddy-list large: target-size short MinimizeBox",
+    "buddy-list large: target-size short StatusEdit",
+    "buddy-list min: target-size short CloseBox",
+    "buddy-list min: target-size short MinimizeBox",
+    "buddy-list min: target-size short StatusEdit",
+  ],
+  "alloy": [
+    "buddy-list default: target-size short CloseBox",
+    "buddy-list default: target-size short MaximizeBox",
+    "buddy-list default: target-size short MinimizeBox",
+    "buddy-list large: target-size short CloseBox",
+    "buddy-list large: target-size short MaximizeBox",
+    "buddy-list large: target-size short MinimizeBox",
+    "buddy-list min: target-size short CloseBox",
+    "buddy-list min: target-size short MaximizeBox",
+    "buddy-list min: target-size short MinimizeBox",
+  ],
+  "simple-x": [
+    "buddy-list default: target-size short CloseBox",
+    "buddy-list default: target-size short HelpMenu",
+    "buddy-list default: target-size short MaximizeBox",
+    "buddy-list default: target-size short MinimizeBox",
+    "buddy-list large: target-size short CloseBox",
+    "buddy-list large: target-size short HelpMenu",
+    "buddy-list large: target-size short MaximizeBox",
+    "buddy-list large: target-size short MinimizeBox",
+    "buddy-list min: target-size short CloseBox",
+    "buddy-list min: target-size short HelpMenu",
+    "buddy-list min: target-size short MaximizeBox",
+    "buddy-list min: target-size short MinimizeBox",
+  ],
+};
 for (const [file, keys] of Object.entries(KNOWN_BOTH)) {
   KNOWN_ON.darwin[file] = [...keys];
   KNOWN_ON.linux[file] = [...keys];
+}
+for (const [file, keys] of Object.entries(KNOWN_FAITHFUL_SHORT)) {
+  for (const os of ["darwin", "linux"] as const) KNOWN_ON[os][file] = [...(KNOWN_ON[os][file] ?? []), ...keys].sort();
 }
 for (const [file, keys] of Object.entries(KNOWN_DARWIN_ONLY)) KNOWN_ON.darwin[file] = [...(KNOWN_ON.darwin[file] ?? []), ...keys].sort();
 
@@ -123,7 +272,10 @@ const KNOWN: Record<string, string[]> = process.platform === "darwin" || process
 const UNSETTLED = new Set(
   ["min", "default", "large"]
     .map((size) => `buddy-list ${size}: focus button.menu-bar-item "Rekindle" no indicator`)
-    .concat([`buddy-list min: focus button.xfire-titlebar-btn.xfire-titlebar-btn-minimize "\u2014" not focusable`]),
+    .concat([`buddy-list min: focus button.xfire-titlebar-btn.xfire-titlebar-btn-minimize "\u2014" not focusable`])
+    // The same take-back in a skin's tree: Symbiosis's first control after
+    // the menu bar (its logo is a label since plan BR), round 26.
+    .concat([`buddy-list min: focus div.skin-tree-button[ButtonMinimize] not focusable`]),
 );
 
 const LONG_URL = `https://example.com/${"averyveryverylongpathsegment".repeat(12)}?q=${"x".repeat(80)}`;
@@ -152,7 +304,9 @@ describe("every built-in skin keeps the app accessible and laid out", function (
    * (plan SK7 `NodeTarget.rule`): `short` nodes by their skin node id, the
    * rest by id or, outside the tree, their selector. A tree control axe
    * flags whose press box (plan SK12: a cut area takes its press on a
-   * `::before`, its art box none) meets WCAG 2.5.8 (`met`) is no finding.
+   * `::before`, its art box none) meets WCAG 2.5.8 (`met`) is no finding,
+   * a short one too: short says why it is under 24 px, and 2.5.8's spacing
+   * exception may still hold for it.
    */
   async function targetNodes(selectors: string[], met: string[]): Promise<{ short: string[]; other: string[] }> {
     return (await browser.execute(async (sels: string[], met: string[]) => {
@@ -168,11 +322,80 @@ describe("every built-in skin keeps the app accessible and laid out", function (
       const other: string[] = [];
       for (const sel of sels) {
         const id = document.querySelector(sel)?.closest<HTMLElement>("[data-skin-node]")?.dataset.skinNode;
+        // A control meeting 2.5.8 at its press box is no finding, served short or not.
+        if (met.includes(sel)) continue;
         if (id && rules.get(id) === "short") short.push(id);
-        else if (!met.includes(sel)) other.push(id ?? sel);
+        else other.push(id ?? sel);
       }
       return { short: short.sort(), other: other.sort() };
     }, selectors, met)) as { short: string[]; other: string[] };
+  }
+
+  /**
+   * The buddy list's labelled controls whose name or tooltip is not the
+   * label's words (plan SK14, WCAG 2.5.3): a pressable node and a menu title
+   * the Host labels are named by those words, and a pressable node's title
+   * repeats them (the full words where its box cuts them short).
+   */
+  async function labelNames(): Promise<string[]> {
+    return (await browser.execute(() =>
+      Array.from(document.querySelectorAll<HTMLElement>(".skin-tree [data-skin-node]")).flatMap((el) => {
+        if (!el.matches(".skin-tree-button, .skin-menu")) return [];
+        const label = el.querySelector(":scope > .skin-node-label");
+        const words = (label?.querySelector(".skin-node-label-text, .sr-only")?.textContent ?? "").trim();
+        if (!words) return [];
+        const id = el.dataset.skinNode ?? "?";
+        const out: string[] = [];
+        const name = el.getAttribute("aria-label") ?? "";
+        if (name !== words) out.push(`${id} named "${name}", shows "${words}"`);
+        if (el.matches(".skin-tree-button") && el.getAttribute("title") !== words) out.push(`${id} titled "${el.getAttribute("title") ?? ""}"`);
+        return out;
+      }),
+    )) as string[];
+  }
+
+  /**
+   * What the Appearance picker gets wrong about the shown skin (plan SK14):
+   * the accessible variant's row reads "Meets target sizes" and no pointer
+   * shows; a faithful skin shows the pointer naming the accessible skin.
+   */
+  async function pickerSays(conforming: boolean): Promise<string[]> {
+    return (await browser.execute(
+      (conforming: boolean, alt: string) => {
+        const out: string[] = [];
+        const pointer = document.querySelector(".skin-alternate");
+        const access = document.querySelector(".skin-row-shown .skin-access")?.textContent?.trim() ?? "";
+        if (conforming) {
+          if (pointer) out.push("a pointer shows on the conforming skin");
+          if (!access.startsWith("Meets target sizes")) out.push(`its line reads "${access}"`);
+        } else {
+          if (!pointer) out.push("no pointer to the accessible skin");
+          else if (!(pointer.textContent ?? "").includes(alt)) out.push(`the pointer reads "${(pointer.textContent ?? "").trim()}"`);
+          if (!/control(s)? under 24 px/.test(access)) out.push(`its line reads "${access}"`);
+        }
+        return out;
+      },
+      conforming,
+      ACCESSIBLE_VARIANT.name,
+    )) as string[];
+  }
+
+  /**
+   * Whether Mod+, in the buddy list opens Settings at Appearance (plan SK14):
+   * Settings is moved to About first, so only the chord can bring it back.
+   */
+  async function appearanceChordOpens(): Promise<boolean> {
+    await switchTo(browser, SETTINGS);
+    await (await byText(browser, ".form-tab", "About")).click();
+    await switchTo(browser, BUDDY);
+    await browser.keys([MOD_KEY, ","]);
+    await switchTo(browser, SETTINGS);
+    try {
+      await expectOnlySelectedTab(browser, "Appearance");
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /** Axe and geometry findings in the window `browser` is in, at each of `w`'s sizes, keyed by window and size. */
@@ -211,16 +434,43 @@ describe("every built-in skin keeps the app accessible and laid out", function (
     return found;
   }
 
+  it("a faithful skin's pointer selects the accessible skin in one action (plan SK14)", async () => {
+    const faithful = PACKS.find((p) => p.file !== ACCESSIBLE_VARIANT.file);
+    if (!faithful) throw new Error("no faithful skin");
+    await applySkin(browser, me, faithful.name);
+    await shown(browser, ".skin-alternate button");
+    // Appearance with a faithful skin in use: its "N controls under 24 px"
+    // rows and the notice pointing at the accessible skin.
+    await shot("picker-faithful");
+    await press(browser, await shown(browser, ".skin-alternate button"));
+    await resolveIntent(browser, { passphrase: me.passphrase, appearMs: 1500 });
+    await waitUntil(
+      async () => (await (await browser.$(".skin-row-shown .skin-name")).getText()).trim() === ACCESSIBLE_VARIANT.name,
+      NET_WAIT_MS,
+      `${ACCESSIBLE_VARIANT.name} never became the skin in use`,
+    );
+    await shot("picker-accessible");
+  });
+
   for (const pack of PACKS) {
     const held = (KNOWN[pack.file] ?? []).length;
     it(`${pack.name}: axe and geometry hold in the buddy list, Appearance and a community window${held ? ` (${held} known failure${held === 1 ? "" : "s"})` : ""}`, async () => {
       const href = await applySkin(browser, me, pack.name);
       const found: Record<string, unknown> = {};
+      // Plan SK14: the picker says how the shown skin sizes its controls and,
+      // for a faithful skin, points one action away to the accessible one.
+      const picker = await pickerSays(pack.file === ACCESSIBLE_VARIANT.file);
+      if (picker.length > 0) found["appearance: picker"] = picker;
       Object.assign(found, await audit(pack, SETTINGS_APPEARANCE, true));
       // Each window is audited once it shows this skin (its own link, SK4).
       await switchTo(browser, BUDDY);
       await skinShown(browser, href);
       Object.assign(found, await audit(pack, BUDDY_LIST, false));
+      // Plan SK14: label words name their control, and the accessible skin
+      // is one keyboard step away.
+      const misnamed = await labelNames();
+      if (misnamed.length > 0) found["buddy-list: label words not the control's name"] = misnamed;
+      if (!(await appearanceChordOpens())) found["buddy-list: Mod+, does not open Appearance"] = true;
       await browser.switchToWindow(communityHandle);
       await skinShown(browser, href);
       Object.assign(found, await audit(pack, COMMUNITY, true));

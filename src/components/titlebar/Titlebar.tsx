@@ -1,4 +1,6 @@
-import { Component } from "solid-js";
+import { Component, Show } from "solid-js";
+import { titleLogo } from "../../hooks/useSkin";
+import { BrandGlyph } from "../skin-tree/BrandGlyphs";
 import {
   handleMinimize,
   handleClose,
@@ -16,9 +18,12 @@ interface TitlebarProps {
 const Titlebar: Component<TitlebarProps> = (props) => {
   return (
     <div class="xfire-titlebar" data-tauri-drag-region>
-      {/* The pack's logo art (plan SK1-S1): shown and placed by the Host's
-          served stylesheet when the skin lays a title strip. */}
-      <span class="xfire-titlebar-logo" aria-hidden="true" data-tauri-drag-region />
+      {/* The logo's place (plan SK1-S1): shown and placed by the Host's served
+          stylesheet when the skin lays a title strip; it draws the Rekindle
+          mark the Host chose (plan BR), its word in the strip's text colour. */}
+      <span class="xfire-titlebar-logo" aria-hidden="true" data-tauri-drag-region>
+        <Show when={titleLogo()}>{(glyph) => <BrandGlyph glyph={glyph()} />}</Show>
+      </span>
       <span class="xfire-titlebar-text" data-tauri-drag-region>
         {props.title}
       </span>

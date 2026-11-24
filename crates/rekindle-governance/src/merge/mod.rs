@@ -40,7 +40,7 @@ use rekindle_types::id::PseudonymKey;
 use rekindle_types::join_refusal::JoinRefusal;
 
 use crate::checkpoint::{self, EndorsementFault, Hints};
-
+use crate::device_judge::KeyRefusal;
 use crate::op::{OpStamp, VerifiedOp};
 use crate::power::{class_of, OpClass};
 use crate::state::{
@@ -106,6 +106,9 @@ pub enum QuarantineReason {
     /// rule 5, plan E3.2 S7d-keys.2a); with several, the lowest
     /// `(lamport, op_hash)`.
     AuthorityQuarantined { cause: OpHash },
+    /// Its device key is not effective for its author at its deps, for
+    /// `refusal` (ADR 0022 rule 6, `judge`): kept as ancestry only.
+    DeviceKey { refusal: KeyRefusal },
 }
 
 impl QuarantineReason {
@@ -118,7 +121,7 @@ impl QuarantineReason {
             | Self::TwoCheckpointEndorsementsInOneRound { cause }
             | Self::CheckpointEquivocation { cause }
             | Self::AuthorityQuarantined { cause } => Some(*cause),
-            Self::RecordClaimed { .. } => None,
+            Self::RecordClaimed { .. } | Self::DeviceKey { .. } => None,
         }
     }
 }
@@ -126,19 +129,20 @@ impl QuarantineReason {
 /// Merge `ops` under the pinned `cert` into a canonical state.
 #[must_use]
 pub fn merge(cert: &GenesisCert, ops: &[VerifiedOp]) -> GovernanceState {
-    let set = resolve::prepare(ops);
+    let set = resolve::prepare(cert, ops);
     ancestry::settle(cert, &set).settled.0.state
 }
 
 /// [`merge`], with the fate of every op.
 #[must_use]
 pub fn merge_outcome(cert: &GenesisCert, ops: &[VerifiedOp]) -> MergeOutcome {
-    let set = resolve::prepare(ops);
+    let set = resolve::prepare(cert, ops);
     let ancestry::Settlement { settled, cascade } = ancestry::settle(cert, &set);
     let (round, masked_by, invite_refusals, record_refusals) = settled;
     // A forked op is reported once, by `equivocators` (D15); a cascade
-    // victim once, quarantined with its cause.
-    let shown = |i: usize| !set.forked[i] && !cascade.contains_key(&i);
+    // victim or a device-refused op once, quarantined with its cause.
+    let shown =
+        |i: usize| !set.forked[i] && !cascade.contains_key(&i) && set.device_refused[i].is_none();
     let join_refusals = (invite_refusals.into_iter())
         .filter(|&(i, _)| shown(i) && !round.applied[i] && masked_by[i].is_none())
         .map(|(i, r)| (set.ops[i].hash(), r))
@@ -178,6 +182,12 @@ pub fn merge_outcome(cert: &GenesisCert, ops: &[VerifiedOp]) -> MergeOutcome {
             QuarantineReason::AuthorityQuarantined { cause },
         )
     }));
+    quarantined.extend(
+        (set.device_refused.iter().enumerate()).filter_map(|(i, why)| {
+            let refusal = (*why)?;
+            (!set.forked[i]).then(|| (set.ops[i].hash(), QuarantineReason::DeviceKey { refusal }))
+        }),
+    );
     let counted: HashSet<OpHash> = applied.iter().copied().collect();
     let hints = checkpoint::hints(cert, ops, |h| counted.contains(h));
     let faulted: HashSet<OpHash> = hints.faults.iter().map(|(h, _)| *h).collect();
@@ -543,6 +553,7 @@ mod events;
 mod expression;
 mod fixpoint;
 mod gates;
+mod judge;
 mod membership;
 mod moderation;
 mod onboarding;

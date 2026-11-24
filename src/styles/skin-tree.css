@@ -183,6 +183,15 @@
     font-size: min(11px, calc(var(--label-h) - 2px));
     background-color: var(--color-xfire-bg-secondary);
   }
+  /* A branded node's cover (plan BR: a logo node, its whole art box) is not
+   * filled: the Host serves such a node no art of its own, so the art under
+   * it (its parent's) shows, and the mark sits on it as the pack's logo sat.
+   * The list ground filled it as a visible box wherever the frame differs
+   * from the list (Combat's white box, r26 shots). The wordmark's word is
+   * logotype, outside WCAG 1.4.3's contrast minimum. */
+  .skin-node-glyph[data-cover]:has(> .skin-node-glyph-brand) {
+    background-color: transparent;
+  }
   .skin-node-label[data-tight] {
     font-size: min(10px, calc(var(--label-h, 12px) - 2px));
   }
@@ -195,12 +204,47 @@
     height: 100%;
     padding: 1px;
   }
+  /* The Rekindle mark (plan BR) keeps its own colours; its word takes the
+   * label's colour (accent.text on the cover's bg.secondary, a checked
+   * pair), so it reads on a light skin as on a dark one. */
+  .skin-node-glyph-brand [id="rk-word"] {
+    fill: currentColor;
+  }
+  /* The title strip's logo (plan BR) draws the mark in its served box; its
+   * word takes the strip's text colour (titlebar.text on the strip, the
+   * pair the title text already uses). The drawing takes no press, so a
+   * press lands on the drag region itself (Tauri drags only from it). */
+  .xfire-titlebar-logo {
+    color: var(--color-xfire-titlebar-text);
+  }
+  .xfire-titlebar-logo > .skin-node-glyph-brand {
+    display: block;
+    padding: 0;
+    pointer-events: none;
+  }
 
   .skin-node-label-text {
     max-width: 100%;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  /* Words cut short read in full while their control has keyboard focus (plan
+   * SK14; the title tooltip does hover): a node's label, the control being
+   * the node or inside it (a text-drawn pack's menu title presses on its
+   * Part child), and our name in its field, over the neighbours they cross
+   * in a served label's own pair (accent.text on bg.secondary, the cover's). */
+  .skin-tree [data-skin-node]:is(:focus-visible, :has(:focus-visible)) > .skin-node-label {
+    z-index: 2;
+  }
+  .skin-tree [data-skin-node]:is(:focus-visible, :has(:focus-visible)) > .skin-node-label .skin-node-label-text,
+  .skin-name:is(:focus-visible, :has(:focus-visible)) .skin-name-text {
+    max-width: none;
+    overflow: visible;
+    text-overflow: clip;
+    color: var(--color-xfire-accent-text);
+    background-color: var(--color-xfire-bg-secondary);
   }
 
   /* A pack's InfoView (plan E7.15 IV5): the Infoview on the pack's InfoView

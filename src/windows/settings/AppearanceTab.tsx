@@ -88,6 +88,11 @@ const AppearanceTab: Component = () => {
 
   /** The skin every window shows now: the trial's, else the stored one. */
   const shown = (): string => trial()?.id ?? library()?.active ?? "";
+  // Plan SK14: the shown skin's entry, and the conforming built-in the Host
+  // lists (the accessible variant), both as served.
+  const shownEntry = (): SkinEntry | undefined => library()?.skins.find((s) => s.id === shown());
+  const conformingAlternate = (): SkinEntry | undefined =>
+    library()?.skins.find((s) => s.conforming && s.importedAt === null && s.id !== shown());
   const secondsLeft = (t: SkinTrial): number =>
     Math.max(0, Math.ceil((t.revertsAtMs - now()) / 1000));
 
@@ -103,10 +108,20 @@ const AppearanceTab: Component = () => {
           type="radio"
           name="skin"
           checked={shown() === skin.id}
+          aria-describedby={`skin-access-${index()}`}
           onChange={() => void run(() => commands.selectSkin(skin.id))}
         />
         <span class="buddy-name skin-name">{skin.name}</span>
       </label>
+      {/* How the skin sizes its controls (plan SK14): a faithful skin keeps
+          its art's small controls; a conforming one serves none under 24 px.
+          An imported pack is the author's, unchecked by us. */}
+      <span class="skin-access" id={`skin-access-${index()}`}>
+        {skin.conforming
+          ? "Meets target sizes"
+          : `${skin.shortTargets} control${skin.shortTargets === 1 ? "" : "s"} under 24 px`}
+        {skin.importedAt !== null ? "; an imported skin may not meet accessibility sizes" : ""}
+      </span>
       <Show when={library()?.login === skin.id}>
         <span class="skin-badge">Login skin</span>
       </Show>
@@ -166,6 +181,18 @@ const AppearanceTab: Component = () => {
         )}
       </Show>
       <div class="settings-section-title">Skin</div>
+      {/* A skin whose controls are smaller than 24 px points to the skin that
+          meets the size (plan SK14, WCAG 2.2 5.2.1), one action away. */}
+      <Show when={shownEntry() && !shownEntry()!.conforming && conformingAlternate()}>
+        {(alt) => (
+          <div class="settings-hint skin-alternate">
+            {`${shownEntry()!.name} has ${shownEntry()!.shortTargets} control${shownEntry()!.shortTargets === 1 ? "" : "s"} under 24 px. ${alt().name} meets target sizes.`}{" "}
+            <button class="form-btn-secondary skin-action" onClick={() => void run(() => commands.selectSkin(alt().id))}>
+              Use {alt().name}
+            </button>
+          </div>
+        )}
+      </Show>
       <div class="skin-list" role="radiogroup" aria-label="Skin">
         <For each={library()?.skins ?? []}>{row}</For>
       </div>
