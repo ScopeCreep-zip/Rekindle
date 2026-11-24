@@ -1,9 +1,9 @@
 import { Component, For, Show, createMemo, createSignal } from "solid-js";
+import SkinGlyph from "../common/SkinGlyph";
 import { communityState } from "../../stores/community.store";
 import { handleForwardChannelMessage } from "../../actions/community.actions";
 import { Dialog } from "@kobalte/core/dialog";
 import { returnFocusToOpener } from "../../utils/dialog_focus";
-import { ICON_CLOSE } from "../../icons";
 
 interface ForwardMessageDialogProps {
   sourceCommunityId: string;
@@ -66,7 +66,7 @@ const ForwardMessageDialog: Component<ForwardMessageDialogProps> = (props) => {
             disabled={submitting()}
             aria-label="Close forward dialog"
           >
-            <span class="nf-icon" aria-hidden="true">{ICON_CLOSE}</span>
+            <SkinGlyph name="close" />
           </Dialog.CloseButton>
         </div>
         <form class="forward-dialog-body" onSubmit={(e) => void handleSubmit(e)}>

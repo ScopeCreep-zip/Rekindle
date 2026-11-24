@@ -1,20 +1,11 @@
 import { Component, For, Show, createSignal, createMemo, JSX } from "solid-js";
+import SkinGlyph from "../common/SkinGlyph";
 import { ContextMenu } from "@kobalte/core/context-menu";
 import type { Channel, Category, Member } from "../../stores/community.store";
 import { voiceState } from "../../stores/voice.store";
 import CategoryHeader from "./CategoryHeader";
 import { rovingList } from "../../utils/roving_list";
-import {
-  ICON_CHANNEL_TEXT,
-  ICON_VOLUME_HIGH,
-  ICON_MEGAPHONE,
-  ICON_PHONE,
-  ICON_PENCIL,
-  ICON_DELETE,
-  ICON_PLUS_BOX,
-  ICON_BELL,
-  ICON_THREAD,
-} from "../../icons";
+import type { GlyphName } from "../common/glyph_art";
 
 interface ChannelListProps {
   channels: Channel[];
@@ -83,17 +74,19 @@ const ChannelList: Component<ChannelListProps> = (props) => {
     return groups;
   });
 
-  function channelIcon(ch: Channel): string {
-    if (ch.type === "voice") return ICON_VOLUME_HIGH;
-    if (ch.type === "stage") return ICON_PHONE;
-    if (ch.type === "announcement") return ICON_MEGAPHONE;
-    if (ch.type === "forum") return ICON_THREAD;
-    return ICON_CHANNEL_TEXT;
+  // A channel's icon by its kind (plan SK17-7a): a voice channel and a text
+  // channel are the Community icons a pack may serve.
+  function channelIcon(ch: Channel): GlyphName {
+    if (ch.type === "voice") return "voice.server";
+    if (ch.type === "stage") return "phone";
+    if (ch.type === "announcement") return "megaphone";
+    if (ch.type === "forum") return "thread";
+    return "chat";
   }
 
   function channelIconClass(ch: Channel): string {
-    if (ch.type === "announcement") return "nf-icon channel-icon announcement-icon";
-    return "nf-icon channel-icon";
+    if (ch.type === "announcement") return "channel-icon announcement-icon";
+    return "channel-icon";
   }
 
   function channelMenu(channel: Channel): JSX.Element {
@@ -105,14 +98,14 @@ const ChannelList: Component<ChannelListProps> = (props) => {
               class="context-menu-item"
               onSelect={() => props.onRename?.(channel.id, channel.name)}
             >
-              <span class="nf-icon context-menu-icon">{ICON_PENCIL}</span>
+              <SkinGlyph name="pencil" class="context-menu-icon" />
               Rename Channel
             </ContextMenu.Item>
             <ContextMenu.Item
               class="context-menu-item context-menu-item-danger"
               onSelect={() => props.onDelete?.(channel.id)}
             >
-              <span class="nf-icon context-menu-icon">{ICON_DELETE}</span>
+              <SkinGlyph name="delete" class="context-menu-icon" />
               Delete Channel
             </ContextMenu.Item>
           </Show>
@@ -121,21 +114,21 @@ const ChannelList: Component<ChannelListProps> = (props) => {
               class="context-menu-item"
               onSelect={() => props.onSetNotification!(channel.id, "all")}
             >
-              <span class="nf-icon context-menu-icon">{ICON_BELL}</span>
+              <SkinGlyph name="bell" class="context-menu-icon" />
               Notify: All
             </ContextMenu.Item>
             <ContextMenu.Item
               class="context-menu-item"
               onSelect={() => props.onSetNotification!(channel.id, "mentions")}
             >
-              <span class="nf-icon context-menu-icon">{ICON_BELL}</span>
+              <SkinGlyph name="bell" class="context-menu-icon" />
               Notify: Mentions
             </ContextMenu.Item>
             <ContextMenu.Item
               class="context-menu-item"
               onSelect={() => props.onSetNotification!(channel.id, "nothing")}
             >
-              <span class="nf-icon context-menu-icon">{ICON_BELL}</span>
+              <SkinGlyph name="bell" class="context-menu-icon" />
               Notify: Nothing
             </ContextMenu.Item>
           </Show>
@@ -155,7 +148,7 @@ const ChannelList: Component<ChannelListProps> = (props) => {
             if (e.key === "Enter" && e.target === e.currentTarget) props.onSelect(channel.id);
           }}
         >
-          <span class={channelIconClass(channel)}>{channelIcon(channel)}</span>
+          <SkinGlyph name={channelIcon(channel)} class={channelIconClass(channel)} />
           <span class="channel-name">{channel.name}</span>
           {(presenceByChannel()[channel.id] ?? 0) > 0 && (
             <span
@@ -179,7 +172,7 @@ const ChannelList: Component<ChannelListProps> = (props) => {
                 props.onVoiceJoin?.(channel.id);
               }}
             >
-              <span class="nf-icon" aria-hidden="true">{ICON_PHONE}</span>
+              <SkinGlyph name="phone" />
             </button>
           )}
         </ContextMenu.Trigger>
@@ -224,14 +217,14 @@ const ChannelList: Component<ChannelListProps> = (props) => {
                             class="context-menu-item"
                             onSelect={() => props.onRenameCategory?.(cat().id, cat().name)}
                           >
-                            <span class="nf-icon context-menu-icon">{ICON_PENCIL}</span>
+                            <SkinGlyph name="pencil" class="context-menu-icon" />
                             Rename Category
                           </ContextMenu.Item>
                           <ContextMenu.Item
                             class="context-menu-item context-menu-item-danger"
                             onSelect={() => props.onDeleteCategory?.(cat().id)}
                           >
-                            <span class="nf-icon context-menu-icon">{ICON_DELETE}</span>
+                            <SkinGlyph name="delete" class="context-menu-icon" />
                             Delete Category
                           </ContextMenu.Item>
                         </ContextMenu.Content>
@@ -256,7 +249,7 @@ const ChannelList: Component<ChannelListProps> = (props) => {
           onClick={() => props.onCreateCategory?.()}
           title="Create Category"
         >
-          <span class="nf-icon" aria-hidden="true">{ICON_PLUS_BOX}</span> Category
+          <SkinGlyph name="plus-box" /> Category
         </button>
       </Show>
     </div>

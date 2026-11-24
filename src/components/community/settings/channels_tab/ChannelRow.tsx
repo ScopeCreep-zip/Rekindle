@@ -1,4 +1,5 @@
 import { Component, For, Show, createSignal } from "solid-js";
+import SkinGlyph from "../../../common/SkinGlyph";
 import type { Channel, Community } from "../../../../stores/community.store";
 import {
   handleRenameChannel,
@@ -12,17 +13,7 @@ import {
   handleSetChannelNotificationSound,
 } from "../../../../actions/community.actions";
 import ChannelOverwriteEditor from "./ChannelOverwriteEditor";
-import {
-  ICON_SAVE,
-  ICON_PENCIL,
-  ICON_DELETE,
-  ICON_PERMS,
-  ICON_CHANNEL_TEXT,
-  ICON_VOLUME_HIGH,
-  ICON_MEGAPHONE,
-  ICON_ARROW_UP,
-  ICON_ARROW_DOWN,
-} from "../../../../icons";
+import type { GlyphName } from "../../../common/glyph_art";
 
 interface ChannelRowProps {
   community: Community;
@@ -147,18 +138,18 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
     handleReorderChannels(cid(), ids);
   }
 
-  function channelTypeIcon() {
+  function channelTypeIcon(): GlyphName {
     return props.channel.type === "voice"
-      ? ICON_VOLUME_HIGH
+      ? "voice.server"
       : props.channel.type === "announcement"
-        ? ICON_MEGAPHONE
-        : ICON_CHANNEL_TEXT;
+        ? "megaphone"
+        : "chat";
   }
 
   return (
     <div>
       <div class="channel-manage-row">
-        <span class="nf-icon channel-manage-icon">{channelTypeIcon()}</span>
+        <SkinGlyph name={channelTypeIcon()} class="channel-manage-icon" />
         <Show when={renaming()} fallback={
           <span class="channel-manage-name">{props.channel.name}</span>
         }>
@@ -181,7 +172,7 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
               onClick={startRename}
               title="Rename"
             >
-              <span class="nf-icon">{ICON_PENCIL}</span>
+              <SkinGlyph name="pencil" />
             </button>
           </Show>
           <Show when={renaming()}>
@@ -190,7 +181,7 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
               onClick={submitRename}
               title="Save"
             >
-              <span class="nf-icon">{ICON_SAVE}</span>
+              <SkinGlyph name="save" />
             </button>
           </Show>
           <button
@@ -198,14 +189,14 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
             onClick={deleteChannel}
             title="Delete"
           >
-            <span class="nf-icon">{ICON_DELETE}</span>
+            <SkinGlyph name="delete" />
           </button>
           <button
             class="form-btn-secondary channel-manage-btn"
             onClick={() => setShowOverwrite((v) => !v)}
             title="Permissions"
           >
-            <span class="nf-icon">{ICON_PERMS}</span>
+            <SkinGlyph name="perms" />
           </button>
           <button
             class="form-btn-secondary channel-manage-btn"
@@ -213,7 +204,7 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
             disabled={index() === 0}
             title="Move Up"
           >
-            <span class="nf-icon">{ICON_ARROW_UP}</span>
+            <SkinGlyph name="arrow-up" />
           </button>
           <button
             class="form-btn-secondary channel-manage-btn"
@@ -221,7 +212,7 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
             disabled={index() === props.community.channels.length - 1}
             title="Move Down"
           >
-            <span class="nf-icon">{ICON_ARROW_DOWN}</span>
+            <SkinGlyph name="arrow-down" />
           </button>
         </Show>
       </div>
@@ -278,7 +269,7 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
                 placeholder="Seconds"
               />
               <button class="form-btn-primary channel-manage-btn" onClick={submitSlowmode}>
-                <span class="nf-icon">{ICON_SAVE}</span>
+                <SkinGlyph name="save" />
               </button>
               <button class="form-btn-secondary channel-manage-btn" onClick={cancelSlowmode}>
                 Cancel
@@ -317,7 +308,7 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
                 placeholder="Channel topic..."
               />
               <button class="form-btn-primary channel-manage-btn" onClick={submitTopic}>
-                <span class="nf-icon">{ICON_SAVE}</span>
+                <SkinGlyph name="save" />
               </button>
               <button class="form-btn-secondary channel-manage-btn" onClick={cancelTopic}>
                 Cancel
@@ -388,7 +379,7 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
                 placeholder="news, updates, support"
               />
               <button class="form-btn-primary channel-manage-btn" onClick={submitForumTags}>
-                <span class="nf-icon">{ICON_SAVE}</span>
+                <SkinGlyph name="save" />
               </button>
               <button class="form-btn-secondary channel-manage-btn" onClick={cancelForumTags}>
                 Cancel

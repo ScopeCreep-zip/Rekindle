@@ -1,4 +1,5 @@
 import { Component, Show } from "solid-js";
+import SkinGlyph from "../../components/common/SkinGlyph";
 import CommunityList from "../../components/community/CommunityList";
 import ChannelList from "../../components/community/ChannelList";
 import VoicePanel from "../../components/voice/VoicePanel";
@@ -12,14 +13,6 @@ import {
   handleLeaveCommunity,
   handleSetNotificationOverride,
 } from "../../actions/community.actions";
-import {
-  ICON_COMMUNITIES,
-  ICON_PLUS,
-  ICON_PLUS_BOX,
-  ICON_SETTINGS,
-  ICON_LOGOUT,
-  ICON_SEARCH,
-} from "../../icons";
 import type { CommunityVm } from "./useCommunityWindow";
 
 /// Left navigation rail: community list, channel list, collapsible game
@@ -37,14 +30,14 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
             onClick={() => vm.setShowJoinCommunity(true)}
             title="Join Community"
           >
-            <span class="nf-icon">{ICON_COMMUNITIES}</span>
+            <SkinGlyph name="room" />
           </button>
           <button
             class="action-bar-btn header-add-btn"
             onClick={() => vm.setShowCreateCommunity(true)}
             title="Create Community"
           >
-            <span class="nf-icon">{ICON_PLUS}</span>
+            <SkinGlyph name="plus" />
           </button>
         </span>
       </div>
@@ -63,7 +56,7 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
               onClick={() => vm.setShowSettings(true)}
               title="Community Settings"
             >
-              <span class="nf-icon">{ICON_SETTINGS}</span>
+              <SkinGlyph name="settings" />
             </button>
             <Show when={vm.canManageChannels()}>
               <button
@@ -71,7 +64,7 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
                 onClick={() => vm.setShowCreateChannel(true)}
                 title="Create Channel"
               >
-                <span class="nf-icon">{ICON_PLUS_BOX}</span>
+                <SkinGlyph name="plus-box" />
               </button>
             </Show>
           </span>
@@ -173,13 +166,13 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
               vm.setShowSearch(true);
             }}
           >
-            <span class="nf-icon">{ICON_SEARCH}</span> Search
+            <SkinGlyph name="search" /> Search
           </button>
           <button
             class="community-leave-btn"
             onClick={() => void handleLeaveCommunity(vm.selectedCommunityId())}
           >
-            <span class="nf-icon">{ICON_LOGOUT}</span> Leave
+            <SkinGlyph name="logout" /> Leave
           </button>
         </div>
       </Show>

@@ -25,7 +25,7 @@ import {
   handleLoadWelcomeScreen,
 } from "../../actions/community.actions";
 import { commands } from "../../ipc/commands";
-import { ICON_CHANNEL_TEXT, ICON_MEGAPHONE } from "../../icons";
+import type { GlyphName } from "../../components/common/glyph_art";
 import type { Message } from "../../stores/chat.store";
 import type { Thread } from "../../stores/community.store";
 import { createCommunityWindowState } from "./state";
@@ -253,10 +253,10 @@ export function useCommunityWindow() {
     handleSendChannelMessage(channelId, body, replyToId);
   }
 
-  function channelHeaderIcon(): string {
+  function channelHeaderIcon(): GlyphName {
     const ch = activeChannel();
-    if (ch?.type === "announcement") return ICON_MEGAPHONE;
-    return ICON_CHANNEL_TEXT;
+    if (ch?.type === "announcement") return "megaphone";
+    return "chat";
   }
 
   function handleJumpToMessage(messageId: string): void {

@@ -1,4 +1,5 @@
 import { Component, Show, createSignal } from "solid-js";
+import SkinGlyph from "../common/SkinGlyph";
 import type { Message } from "../../stores/chat.store";
 import ExpiryIndicator from "./ExpiryIndicator";
 import { createMemo } from "solid-js";
@@ -16,7 +17,7 @@ import { formatTimestamp } from "../../utils/formatting";
 import { messageAnnouncement } from "../../utils/message_announcement";
 import { linkPreviewKey, linkPreviews } from "../../stores/link_preview.store";
 import { commands } from "../../ipc/commands";
-import { ICON_DOTS, ICON_CHECK, ICON_CLOSE_CIRCLE, ICON_REFRESH, ICON_REPLY, ICON_EMOTICON, ICON_PIN, ICON_THREAD, ICON_PENCIL, ICON_DELETE, ICON_TIMEOUT, ICON_PLUS_BOX, ICON_FORWARD, ICON_CHECK_ALL, ICON_EYE} from "../../icons";
+import type { GlyphName } from "../common/glyph_art";
 import { deliveryRetryText } from "../../utils/delivery_retry";
 
 interface MessageBubbleProps {
@@ -70,16 +71,16 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
       ? "chat-message-sender-self"
       : "chat-message-sender-other";
 
-  const statusIcon = () => {
+  const statusIcon = (): GlyphName | null => {
     if (!props.message.isOwn || !props.message.status) return null;
     switch (props.message.status) {
-      case "sending": return ICON_DOTS;
-      case "sent": return ICON_CHECK;
-      case "delivered": return ICON_CHECK_ALL;
-      case "read": return ICON_EYE;
+      case "sending": return "dots";
+      case "sent": return "check";
+      case "delivered": return "check-all";
+      case "read": return "eye";
       case "awaiting_key":
-      case "queued": return ICON_TIMEOUT;
-      case "failed": return ICON_CLOSE_CIRCLE;
+      case "queued": return "timeout";
+      case "failed": return "close-circle";
       default: return null;
     }
   };
@@ -171,7 +172,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
       <Show when={props.message.forwardedFromAuthor}>
         {(author) => (
           <div class="message-forwarded-header">
-            <span class="nf-icon message-forwarded-icon">{ICON_FORWARD}</span>
+            <SkinGlyph name="forward" class="message-forwarded-icon" />
             Forwarded from {author().slice(0, 12)}…
           </div>
         )}
@@ -198,7 +199,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
           <ExpiryIndicator expireAt={props.message.expireAt} expireSeconds={props.message.expireSeconds} />
         </Show>
         <Show when={statusIcon()}>
-          <span class={`${statusClass()} nf-icon`} title={statusText()} aria-label={statusText()} role="img">{statusIcon()}</span>
+          {(icon) => <SkinGlyph name={icon()} class={statusClass()} title={statusText()} label={statusText()} />}
         </Show>
         <Show when={props.message.isOwn && props.message.status === "awaiting_key"}>
           <span class="message-status-note">Waiting for the community key</span>
@@ -216,7 +217,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
             title="Click to retry"
             aria-label="Retry sending message"
           >
-            <span class="nf-icon" aria-hidden="true">{ICON_REFRESH}</span>
+            <SkinGlyph name="refresh" />
           </button>
           <Show when={props.onDiscard}>
             <button
@@ -225,7 +226,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
               title="Discard"
               aria-label="Discard failed message"
             >
-              <span class="nf-icon" aria-hidden="true">{ICON_DELETE}</span>
+              <SkinGlyph name="delete" />
             </button>
           </Show>
         </Show>
@@ -235,7 +236,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
         <div class="message-actions">
           <Show when={props.onReply}>
             <button class="message-action-btn" title="Reply" aria-label="Reply" onClick={() => props.onReply?.(props.message)}>
-              <span class="nf-icon" aria-hidden="true">{ICON_REPLY}</span>
+              <SkinGlyph name="reply" />
             </button>
           </Show>
           <Show when={props.onReaction}>
@@ -250,7 +251,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
                 title="React"
                 aria-label="Add reaction"
               >
-                <span class="nf-icon" aria-hidden="true">{ICON_EMOTICON}</span>
+                <SkinGlyph name="emoticon" />
               </Popover.Trigger>
               <Popover.Portal>
                 <Popover.Content class="emoji-picker-popover">
@@ -271,37 +272,37 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
               aria-label={props.message.pinned ? "Unpin message" : "Pin message"}
               onClick={() => props.onPin?.(props.message.serverMessageId!)}
             >
-              <span class="nf-icon" aria-hidden="true">{ICON_PIN}</span>
+              <SkinGlyph name="pin" />
             </button>
           </Show>
           <Show when={props.onCreateThread && props.message.serverMessageId}>
             <button class="message-action-btn" title="Create Thread" aria-label="Create thread" onClick={() => props.onCreateThread?.(props.message.serverMessageId!)}>
-              <span class="nf-icon" aria-hidden="true">{ICON_THREAD}</span>
+              <SkinGlyph name="thread" />
             </button>
           </Show>
           <Show when={props.onCreatePoll && props.message.serverMessageId && !props.message.poll}>
             <button class="message-action-btn" title="Create Poll" aria-label="Create poll" onClick={() => props.onCreatePoll?.(props.message.serverMessageId!)}>
-              <span class="nf-icon" aria-hidden="true">{ICON_PLUS_BOX}</span>
+              <SkinGlyph name="plus-box" />
             </button>
           </Show>
           <Show when={props.onForward && props.message.serverMessageId}>
             <button class="message-action-btn" title="Forward" aria-label="Forward message" onClick={() => props.onForward?.(props.message.serverMessageId!)}>
-              <span class="nf-icon" aria-hidden="true">{ICON_FORWARD}</span>
+              <SkinGlyph name="forward" />
             </button>
           </Show>
           <Show when={props.message.isOwn && props.onEdit && props.message.serverMessageId}>
             <button class="message-action-btn" title="Edit" aria-label="Edit message" onClick={() => props.onEdit?.(props.message.serverMessageId!, props.message.body)}>
-              <span class="nf-icon" aria-hidden="true">{ICON_PENCIL}</span>
+              <SkinGlyph name="pencil" />
             </button>
           </Show>
           <Show when={props.onDelete && props.message.serverMessageId}>
             <button class="message-action-btn" title="Delete" aria-label="Delete message" onClick={() => props.onDelete?.(props.message.serverMessageId!)}>
-              <span class="nf-icon" aria-hidden="true">{ICON_DELETE}</span>
+              <SkinGlyph name="delete" />
             </button>
           </Show>
           <Show when={!props.message.isOwn && props.onAdminDelete && props.message.serverMessageId}>
             <button class="message-action-btn" title="Remove as moderator" aria-label="Remove message as moderator" onClick={() => props.onAdminDelete?.(props.message.serverMessageId!)}>
-              <span class="nf-icon" aria-hidden="true">{ICON_DELETE}</span>
+              <SkinGlyph name="delete" />
             </button>
           </Show>
         </div>
@@ -328,7 +329,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
         }
       >
         <div class="message-decrypt-failed">
-          <span class="message-decrypt-failed-icon nf-icon">&#xf023;</span>
+          <SkinGlyph name="lock" class="message-decrypt-failed-icon" />
           Unable to decrypt — waiting for encryption keys
         </div>
       </Show>

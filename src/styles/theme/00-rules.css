@@ -111,6 +111,28 @@
   .nf-icon-md {
     font-size: 14px;
   }
+
+  /* The shell's own icon (SkinGlyph, plan SK17-7a): SVG in the element's
+   * colour, in the box the icon font's glyph had (1em square, its em box
+   * reaching the font's descent, 410/2048, below the baseline); a pack's
+   * served image (--skin-icon-<name>) fills the same box instead. */
+  .skin-glyph {
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+    line-height: 1;
+    vertical-align: -0.2em;
+    flex-shrink: 0;
+  }
+  .skin-glyph-svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+    fill: currentColor;
+  }
+  .skin-glyph-served {
+    background: var(--skin-glyph-image) center / contain no-repeat;
+  }
   /* Window frame */
   .app-frame {
     background: var(--color-xfire-bg-dark);

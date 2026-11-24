@@ -1,9 +1,9 @@
 import { Component, For, Show, createSignal } from "solid-js";
+import SkinGlyph from "../../../common/SkinGlyph";
 import type { Role } from "../../../../stores/community.store";
 import { commands } from "../../../../ipc/commands";
 import { togglePermBit, PERMISSION_CATEGORIES } from "../../../../ipc/permissions";
 import { addToast } from "../../../../stores/toast.store";
-import { ICON_SAVE, ICON_DELETE } from "../../../../icons";
 
 interface ChannelOverwriteEditorProps {
   communityId: string;
@@ -128,10 +128,10 @@ const ChannelOverwriteEditor: Component<ChannelOverwriteEditorProps> = (props) =
         </div>
         <div class="form-field-row">
           <button class="form-btn-primary" onClick={handleSaveOverwrite}>
-            <span class="nf-icon">{ICON_SAVE}</span> Save Overwrite
+            <SkinGlyph name="save" /> Save Overwrite
           </button>
           <button class="form-btn-danger" onClick={handleDeleteOverwrite}>
-            <span class="nf-icon">{ICON_DELETE}</span> Remove Overwrite
+            <SkinGlyph name="delete" /> Remove Overwrite
           </button>
         </div>
       </Show>
