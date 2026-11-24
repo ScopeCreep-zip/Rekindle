@@ -324,9 +324,7 @@ fn resolve_round(cert: &GenesisCert, set: &resolve::OpSet<'_>, invalid: &[bool])
         }
     }
     let power_order = order[device_order..].to_vec();
-    let anchor: Vec<Option<usize>> = (0..n)
-        .map(|i| power_order.iter().rposition(|&p| set.past.contains(i, p)))
-        .collect();
+    let anchor = set.past.latest_in_past(&positions(n, &power_order));
     let mut mainline: Vec<(Option<usize>, u64, OpHash, usize)> = rest
         .into_iter()
         .map(|i| (anchor[i], set.ops[i].op().issued_at, set.ops[i].hash(), i))
@@ -364,6 +362,16 @@ fn resolve_round(cert: &GenesisCert, set: &resolve::OpSet<'_>, invalid: &[bool])
         power_order,
         anchor,
     }
+}
+
+/// Per op of `n`, its position in `order`, when it is there: the latest
+/// such op in an op's causal past is its anchor (`Ancestry::latest_in_past`).
+fn positions(n: usize, order: &[usize]) -> Vec<Option<usize>> {
+    let mut at = vec![None; n];
+    for (k, &i) in order.iter().enumerate() {
+        at[i] = Some(k);
+    }
+    at
 }
 
 /// A `MemberRemoved` or `BanEntry` holds only when its target seq frontier
