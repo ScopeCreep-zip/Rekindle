@@ -16,7 +16,7 @@ import { errorMessage } from "../utils/error";
 import { isCancelled } from "../ipc/commands/dto";
 import { setLocalSearchScope } from "../stores/local_search.store";
 import { callsState } from "../stores/calls.store";
-import { handleAcceptIncomingCall, handleEndDmCall, handleStartDmCall } from "./calls.actions";
+import { handleAcceptGroupCall, handleAcceptIncomingCall, handleEndDmCall, handleStartDmCall } from "./calls.actions";
 import { handleSetMuted } from "./voice.actions";
 import { handleOpenGroupChat } from "./group-dm.actions";
 import { handleCopyPublicKey } from "./buddy.actions";
@@ -132,6 +132,11 @@ function runCall(op: Extract<ShellOp, { kind: "call" }>["arg"]): void {
     // accept that call, never place one.
     case "answer":
       void handleAcceptIncomingCall(op.arg.callId);
+      return;
+    // A pack's Join (GroupVoiceChat, or VoiceChat in a group window, while
+    // the group's call rings): join that call, never start one.
+    case "joinGroup":
+      void handleAcceptGroupCall(op.arg.callId);
       return;
     case "end": {
       const call = callsState.activeCall ?? callsState.outgoingCall;
