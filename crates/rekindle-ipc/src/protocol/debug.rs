@@ -128,6 +128,7 @@ impl std::fmt::Debug for IpcRequest {
             Self::Community(request) => std::fmt::Debug::fmt(request, f),
             Self::Transfer(request) => std::fmt::Debug::fmt(request, f),
             Self::Servers(request) => std::fmt::Debug::fmt(request, f),
+            Self::Lobby(request) => std::fmt::Debug::fmt(request, f),
             Self::DmTyping { .. }
             | Self::DmInbox { .. }
             | Self::DmHistory { .. }

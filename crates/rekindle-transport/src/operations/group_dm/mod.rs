@@ -11,6 +11,7 @@
 mod admission;
 pub mod content;
 mod inbound;
+pub mod lobby;
 mod pairwise;
 pub mod receive;
 mod rename;

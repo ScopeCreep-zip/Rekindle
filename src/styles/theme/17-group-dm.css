@@ -147,4 +147,57 @@
   .group-chat-error {
     padding: 2px 8px;
   }
+
+  /* A group's game lobby (plan E7.2 G6): the game and its host, the
+     members, then the four actions; a refused one is aria-disabled as
+     Rename and Invite are (their row, `.game-lobby-actions`, shares the
+     favourite-server row's rule in 19-game-invite.css). Once launched, a
+     member's one confirm. */
+  .game-lobby {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 4px 8px;
+    background: var(--color-xfire-bg-dark);
+    border-top: 1px solid var(--color-xfire-border);
+  }
+
+  .game-lobby-title,
+  .game-lobby-launched {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 8px;
+    font-size: 11px;
+    color: var(--color-xfire-text);
+  }
+
+  .game-lobby-game {
+    font-weight: 600;
+  }
+
+  .game-lobby-host,
+  .game-lobby-members {
+    color: var(--color-xfire-text-dim);
+  }
+
+  .game-lobby-members {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 2px 8px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    font-size: 11px;
+  }
+
+  .game-lobby-server {
+    width: 18ch;
+    padding: 1px 4px;
+    font-size: 11px;
+  }
+
+  .game-lobby-error {
+    padding: 2px 0;
+  }
 }

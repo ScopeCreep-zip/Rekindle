@@ -450,6 +450,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::GroupDmLeave { .. }
         | IpcRequest::GroupDmRename { .. }
         | IpcRequest::GroupDmInvite { .. }
+        | IpcRequest::Lobby(_)
         | IpcRequest::DisappearingSet { .. }
         | IpcRequest::DisappearingGet { .. }
         | IpcRequest::GroupDmSend { .. }

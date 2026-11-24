@@ -8,7 +8,7 @@
 //! E4.1/E5.1): none is a placeholder.
 
 use rekindle_idempotency::intent_gate::Selection;
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse, ServersRequest};
+use rekindle_ipc::protocol::{IpcRequest, IpcResponse, LobbyRequest, ServersRequest};
 use rekindle_types::intent::{
     Escalation, Fact, IntentKind, IrreversibleReason, Notifies, Recipient, Reversibility, Subject,
 };
@@ -123,6 +123,13 @@ pub(crate) async fn select(
         | IpcRequest::GroupDmLeave { .. }
         | IpcRequest::GroupDmRename { .. }
         | IpcRequest::GroupDmInvite { .. }
+        | IpcRequest::Lobby(
+            LobbyRequest::Host { .. }
+            | LobbyRequest::Join { .. }
+            | LobbyRequest::Leave { .. }
+            | LobbyRequest::Close { .. }
+            | LobbyRequest::Launch { .. },
+        )
         | IpcRequest::DisappearingSet { .. }
         | IpcRequest::GroupDmSend { .. } => {
             group_dm::selection(ctx, request, &mut s).await?;
@@ -306,6 +313,7 @@ pub(crate) async fn select(
         | IpcRequest::DmHistory { .. }
         | IpcRequest::DmMarkRead { .. }
         | IpcRequest::GroupDmList
+        | IpcRequest::Lobby(LobbyRequest::Get { .. })
         | IpcRequest::GroupDmMessages { .. }
         | IpcRequest::GroupDmMarkRead { .. }
         | IpcRequest::DisappearingGet { .. }

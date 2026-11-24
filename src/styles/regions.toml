@@ -622,6 +622,11 @@
 '.group-dm-picker-hint' = { on = ["--color-xfire-bg-panel"] }
 '.group-dm-picker-reason' = { on = ["--color-xfire-bg-panel"] }
 '.group-chat-member' = { on = ["--color-xfire-bg-dark"] }
+# A group's game lobby card (plan E7.2 G6) sits on the group header's ground.
+'.game-lobby-title' = { on = ["--color-xfire-bg-dark"] }
+'.game-lobby-launched' = { on = ["--color-xfire-bg-dark"] }
+'.game-lobby-host' = { on = ["--color-xfire-bg-dark"] }
+'.game-lobby-members' = { on = ["--color-xfire-bg-dark"] }
 
 # Disappearing messages (plan E7.1): the header button sits on the DM
 # header (`.chat-peer-status`) or the group header (`.group-chat-header`);

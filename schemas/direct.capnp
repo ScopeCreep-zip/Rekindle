@@ -287,6 +287,28 @@ struct GroupDmRename {
   name @1 :Text;
 }
 
+# 0x0127 (plan E7.2 G6, SK2-G §5): a member opens a game lobby in the
+# group, as its host; only ever sealed inside a 0x0124 entry (its inner),
+# whose group it is in. `gameId` is never 0.
+struct LobbyOpen {
+  lobbyId @0 :Data;                     # 16, minted by the host
+  gameId @1 :UInt32;
+}
+
+# 0x0128 LobbyJoin, 0x0129 LobbyLeave and 0x012B LobbyClose (G6): the
+# lobby they name; only ever sealed inside a 0x0124 entry.
+struct LobbyRef {
+  lobbyId @0 :Data;                     # 16
+}
+
+# 0x012A (G6): the host launches the lobby on `server` (host:port, parsed
+# on decode: an address that is not one drops the frame); only ever sealed
+# inside a 0x0124 entry.
+struct LobbyLaunch {
+  lobbyId @0 :Data;                     # 16
+  server @1 :Text;
+}
+
 # 0x0124: a content kind (0x01xx) or typing (0x0401), sealed under the
 # sender's sending key of `epoch`; an entry of the sender's group chain.
 struct GroupContent {

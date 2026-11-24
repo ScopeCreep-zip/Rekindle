@@ -179,6 +179,38 @@ CREATE TABLE IF NOT EXISTS group_dm_chains (
     FOREIGN KEY (owner_key, group_id) REFERENCES group_dms(owner_key, group_id) ON DELETE CASCADE
 );
 
+-- Plan E7.2 G6 (SK2-G §5): each game lobby in a group, folded from the
+-- lobby kinds (0x0127-0x012B) on the members' group chains. `lobby_id` is
+-- the 16 bytes its host minted, in hex; `host_key` the identity whose
+-- `LobbyOpen` made it (the only writer whose launch or close applies);
+-- `server` the `ServerAddress` text of its `LobbyLaunch`, set once
+-- launched and kept after a close.
+CREATE TABLE IF NOT EXISTS group_lobbies (
+    owner_key TEXT NOT NULL,
+    group_id TEXT NOT NULL,
+    lobby_id TEXT NOT NULL CHECK(length(lobby_id) = 32),
+    host_key TEXT NOT NULL CHECK(length(host_key) = 64),
+    game_id INTEGER NOT NULL CHECK(game_id > 0),
+    state TEXT NOT NULL CHECK(state IN ('open', 'launched', 'closed')),
+    server TEXT CHECK(server IS NULL OR length(server) > 0),
+    opened_at INTEGER NOT NULL,
+    CHECK(state != 'launched' OR server IS NOT NULL),
+    PRIMARY KEY (owner_key, group_id, lobby_id),
+    FOREIGN KEY (owner_key, group_id) REFERENCES group_dms(owner_key, group_id) ON DELETE CASCADE
+);
+
+-- Plan E7.2 G6: each member who joined a lobby and has not left it (never
+-- its host). Keyed by the group, not the lobby, so a member's join folds
+-- in whichever order its chain and the host's are read.
+CREATE TABLE IF NOT EXISTS group_lobby_members (
+    owner_key TEXT NOT NULL,
+    group_id TEXT NOT NULL,
+    lobby_id TEXT NOT NULL CHECK(length(lobby_id) = 32),
+    member_key TEXT NOT NULL CHECK(length(member_key) = 64),
+    PRIMARY KEY (owner_key, group_id, lobby_id, member_key),
+    FOREIGN KEY (owner_key, group_id) REFERENCES group_dms(owner_key, group_id) ON DELETE CASCADE
+);
+
 -- Plan E2.6: a creator's verified invite we have not answered yet, held
 -- for at most `DELIVERY_HORIZON` (D24, Q2b: 30 days) from `received_at`
 -- (milliseconds); `invite` is the encoded `GroupDmInvite` (0x0120) body.

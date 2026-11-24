@@ -838,6 +838,48 @@
       }
     }
   },
+  "groupDm.lobby": {
+    "groupDm": {
+      "lobby": {
+        "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
+        "lobby": {
+          "close": {
+            "allowed": false,
+            "reason": "notHost"
+          },
+          "gameId": 4181,
+          "hostKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+          "join": {
+            "allowed": false,
+            "reason": "notOpen"
+          },
+          "launch": {
+            "allowed": false,
+            "reason": "notHost"
+          },
+          "leave": {
+            "allowed": true
+          },
+          "lobbyId": "abababababababababababababababab",
+          "members": [
+            "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+          ],
+          "state": {
+            "kind": "launched",
+            "server": "203.0.113.7:27015"
+          }
+        }
+      }
+    }
+  },
+  "groupDm.lobby.none": {
+    "groupDm": {
+      "lobby": {
+        "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
+        "lobby": null
+      }
+    }
+  },
   "groupDm.message": {
     "groupDm": {
       "message": {

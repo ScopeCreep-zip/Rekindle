@@ -10,7 +10,9 @@
 
 use std::collections::BTreeMap;
 
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse, ServersRequest, TransferRequest};
+use rekindle_ipc::protocol::{
+    IpcRequest, IpcResponse, LobbyRequest, ServersRequest, TransferRequest,
+};
 use rekindle_types::dto::local_search::LocalSearchScope;
 use rekindle_types::dto::skin_action::{EngineView, MenuRegistry, SkinAction as A};
 use rekindle_types::dto::skin_run::{CallOp, ShellOp, ShellPanel, SkinRun, SkinSelection};
@@ -344,6 +346,20 @@ pub(crate) fn map(
         }),
         A::EnterRoom | A::JoinRoom | A::EnterAttachedRoom => rooms::enter(action, rooms),
         A::InviteUsersToRoom => rooms::invite(rooms),
+        // Game lobbies (SK2-G §5): with no room selected Host opens the
+        // new-group panel; a 1:1 window's Join is Xfire's `OnAppCanJoin`.
+        A::HostGameLobby => match &rooms.selected {
+            Some(Room::Joined(group_id)) => {
+                Ok(Request(Box::new(IpcRequest::Lobby(LobbyRequest::Host {
+                    group_id: group_id.clone(),
+                }))))
+            }
+            _ => panel(ShellPanel::NewGroup),
+        },
+        A::JoinGameLobby if rooms.selected.is_none() => {
+            join_friend(&selected()?, reads.friend_game.as_ref())
+        }
+        A::JoinGameLobby | A::LeaveGameLobby | A::LaunchGameLobby => rooms::lobby(action, rooms),
         // Deleting a room is leaving it (SK2-G §6); a picture or video's
         // delete is the media library's (E7.2 G14).
         A::DeleteSelected => match &rooms.selected {
@@ -410,11 +426,7 @@ pub(crate) fn map(
         ),
         // Not built yet, each with its plan step (lead decision 49; the
         // table in SK2-T1a's mapping): the button stays; the window says so.
-        A::HostGameLobby
-        | A::JoinGameLobby
-        | A::LeaveGameLobby
-        | A::LaunchGameLobby
-        | A::OpenSelected
+        A::OpenSelected
         | A::UploadSelected
         | A::ShowWindow
         | A::HideWindow
@@ -452,10 +464,6 @@ fn gap_name(action: &A) -> (String, Option<&'static str>) {
     const OVERLAY: Option<&str> = Some("E7.2 G15–G18");
     let name = |s: &str| s.to_owned();
     match action {
-        A::HostGameLobby => (name("Hosting a game lobby"), Some("E7.2 G6")),
-        A::JoinGameLobby => (name("Joining a game lobby"), Some("E7.2 G6")),
-        A::LeaveGameLobby => (name("Leaving a game lobby"), Some("E7.2 G6")),
-        A::LaunchGameLobby => (name("Launching a game lobby"), Some("E7.2 G6")),
         A::OpenSelected => (name("Opening a picture or video"), Some("E7.2 G14")),
         A::UploadSelected => (name("Uploading a picture or video"), Some("E7.2 G14")),
         A::DeleteSelected => (name("Deleting a picture or video"), Some("E7.2 G14")),

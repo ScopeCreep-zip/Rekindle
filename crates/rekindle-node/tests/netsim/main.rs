@@ -70,6 +70,7 @@ mod group_dm_hint_stretch;
 mod group_dm_invite;
 mod group_dm_invite_race;
 mod group_dm_rename;
+mod group_lobby;
 mod handshake_head_of_line;
 mod handshake_question_leg_lost;
 mod handshake_receipt_lost;
