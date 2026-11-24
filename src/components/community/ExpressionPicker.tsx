@@ -78,10 +78,9 @@ const ExpressionPicker: Component<ExpressionPickerProps> = (props) => {
   // The backend's base flags (plan E3.2 S9): expressions are community-wide.
   const myPerms = createMemo(() => servedPermissions(community()));
 
-  // What may be added on the shown tab, as the Host says (never-hide).
-  const uploadDenied = createMemo(() =>
-    deniedFor(community(), activeTab() === "soundboard" ? "manageExpressions" : "createExpressions"),
-  );
+  // Whether we may add an expression of any kind, sounds included, as the
+  // Host says (never-hide; the validator admits them all on one rule).
+  const uploadDenied = createMemo(() => deniedFor(community(), "createExpressions"));
 
   // Architecture §10.9 — soundboard play requires USE_SOUNDBOARD;
   // backend re-validates on every received SoundboardPlay envelope so
@@ -222,8 +221,7 @@ const ExpressionPicker: Component<ExpressionPickerProps> = (props) => {
       </div>
       <div class="emoji-picker-section-label expression-picker-header">
         <span>Community {activeTab() === "emoji" ? "Emoji" : activeTab() === "sticker" ? "Stickers" : "Sounds"}</span>
-        {/* Never-hide: drawn always, disabled with the Host's reason (sounds
-            need manageExpressions, emoji and stickers createExpressions). */}
+        {/* Never-hide: drawn always, disabled with the Host's reason. */}
         <button
           class="expression-picker-upload-btn"
           onClick={uploadCurrent}
