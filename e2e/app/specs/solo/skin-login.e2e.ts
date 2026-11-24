@@ -11,6 +11,7 @@ import { NET_WAIT_MS, switchTo, waitUntil } from "../../../walk/helpers.ts";
 import { LOGIN, openSettings } from "../../../walk/nav.ts";
 import { applySkin, createIdentity, logOut, newUser, setLoginSkin, unlock, type User } from "../../journeys.ts";
 import { builtinPacks } from "../../skin-pack.ts";
+import { shot } from "../../shots.ts";
 
 /** What the window `browser` is in applied: its base and its sheet, once loaded. */
 const APPLIED = 'var l = document.getElementById("rekindle-skin"); return { base: document.documentElement.dataset.skinBase || "", href: l && l.sheet ? l.getAttribute("href") : "" };';
@@ -49,6 +50,7 @@ describe("the login window wears the login skin and follows a change", function 
     await setLoginSkin(browser, me, light.name);
     await logOut(browser, me);
     await loginShows("light", href);
+    await shot("login-light");
   });
 
   it("a newly chosen login skin replaces it", async () => {
@@ -59,5 +61,6 @@ describe("the login window wears the login skin and follows a change", function 
     await setLoginSkin(browser, me, dark.name);
     await logOut(browser, me);
     await loginShows("dark", href);
+    await shot("login-dark");
   });
 });
