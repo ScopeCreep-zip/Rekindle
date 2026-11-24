@@ -82,6 +82,9 @@ export interface CallsState {
   /** Wave 12 W12.9 — currently-active group call (we accepted or
    *  initiated and at least one peer accepted). */
   activeGroupCall: GroupCallEntry | null;
+  /** Our own group call still ringing its invitees (the Host's
+   *  `groupStarted`, GV3): its group's window offers Cancel. */
+  outgoingGroupCall: GroupCallEntry | null;
 }
 
 const [callsState, setCallsState] = createStore<CallsState>({
@@ -92,6 +95,7 @@ const [callsState, setCallsState] = createStore<CallsState>({
   recentReactions: [],
   incomingGroupCalls: [],
   activeGroupCall: null,
+  outgoingGroupCall: null,
 });
 
 export { callsState, setCallsState };

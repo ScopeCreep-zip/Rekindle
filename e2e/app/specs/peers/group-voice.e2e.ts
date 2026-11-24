@@ -8,8 +8,9 @@
 // Alice and Cara: a call whose participants match the group's roster is the
 // group's call (wt/gv Inputs::group_call). Alice's group window then shows
 // Join (the joinGroup op); she presses it and it shows Leave. Each state a
-// shot. Starting and joining a call opens the microphone: Linux only (no
-// TCC prompt may be raised on the Mac).
+// shot. Then (GV3) Leave: Alice leaves, Bob leaves and the call ends; Bob
+// rings again and cancels his own ring. Starting and joining a call opens the
+// microphone: Linux only (no TCC prompt may be raised on the Mac).
 
 import { expect, multiRemoteBrowser } from "@wdio/globals";
 import type { Browser } from "webdriverio";
@@ -57,6 +58,26 @@ async function voiceTab(b: Browser, who: string, state: VoiceState): Promise<Tab
   await waitUntil(async () => (tab = await voiceNode(b, state)) !== null, NET_WAIT_MS, `${who}'s group window never drew ${state} (${VOICE_NODE[state]})`);
   console.log(`[gv] ${who} ${state}: ${JSON.stringify(tab)}`);
   return tab!;
+}
+
+/** The voice control state `b`'s window draws now, if any. */
+async function voiceState(b: Browser): Promise<VoiceState | null> {
+  for (const state of Object.keys(VOICE_NODE) as VoiceState[]) {
+    if ((await voiceNode(b, state)) !== null) return state;
+  }
+  return null;
+}
+
+/** Wait until `b`'s window draws one of `states`; logs it as `[gv]`. */
+async function voiceTabOneOf(b: Browser, who: string, states: VoiceState[]): Promise<VoiceState> {
+  let now: VoiceState | null = null;
+  await waitUntil(
+    async () => (now = await voiceState(b)) !== null && states.includes(now),
+    NET_WAIT_MS,
+    `${who}'s group window never drew ${states.join(" or ")} (last: ${now ?? "none"})`,
+  );
+  console.log(`[gv] ${who}: ${now}`);
+  return now!;
 }
 
 /** Press tree node `id` in `b`'s window. */
@@ -162,5 +183,47 @@ describe("a group's voice tab: Call, Join while its call rings, Leave once joine
     await pressNode(a, join.id);
     await voiceTab(a, "Alice", "Leave");
     await shot("joined-leave-tab");
+  });
+
+  it("Alice presses Leave: she is out of the call (GV3)", async () => {
+    const a = multiRemoteBrowser.getInstance("alice");
+    const leave = await voiceTab(a, "Alice", "Leave");
+    await pressNode(a, leave.id);
+    // Out of the call: Leave is gone. Bob's call goes on, so her window may
+    // offer Join again, or Call once it has ended.
+    await voiceTabOneOf(a, "Alice (after Leave)", ["Join", "Call"]);
+    expect(await voiceNode(a, "Leave")).toBeNull();
+    await shot("left-call");
+  });
+
+  it("Bob presses Leave: the group's call ends and Alice's window shows Call (GV3)", async () => {
+    const a = multiRemoteBrowser.getInstance("alice");
+    const b = multiRemoteBrowser.getInstance("bob");
+    const leave = await voiceTab(b, "Bob", "Leave");
+    await pressNode(b, leave.id);
+    await voiceTab(b, "Bob (after Leave)", "Call");
+    await voiceTab(a, "Alice (call ended)", "Call");
+    await shot("call-ended");
+  });
+
+  it("Bob rings the group again and cancels his ring: Alice's Join goes back to Call (GV3)", async () => {
+    const a = multiRemoteBrowser.getInstance("alice");
+    const b = multiRemoteBrowser.getInstance("bob");
+    const call = await voiceTab(b, "Bob", "Call");
+    await pressNode(b, call.id);
+    await waitUntil(
+      async () => (await (await b.$(".modal-title")).getText().catch(() => "")) === `Call ${GROUP}`,
+      NET_WAIT_MS,
+      `Bob's Call tab opened no "Call ${GROUP}" panel`,
+    );
+    await (await b.$(".modal-container .modal-footer button:not(.form-btn-secondary)")).click();
+    await voiceTab(a, "Alice", "Join");
+    // Bob's own ring (groupStarted): his tab is the one that ends it (leaveGroup).
+    const cancel = await voiceTab(b, "Bob (ringing)", "Leave");
+    await shot("own-ring-cancel-tab");
+    await pressNode(b, cancel.id);
+    await voiceTab(a, "Alice (ring cancelled)", "Call");
+    await voiceTab(b, "Bob (ring cancelled)", "Call");
+    await shot("ring-cancelled");
   });
 });

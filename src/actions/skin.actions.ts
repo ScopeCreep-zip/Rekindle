@@ -16,7 +16,7 @@ import { errorMessage } from "../utils/error";
 import { isCancelled } from "../ipc/commands/dto";
 import { setLocalSearchScope } from "../stores/local_search.store";
 import { callsState } from "../stores/calls.store";
-import { handleAcceptGroupCall, handleAcceptIncomingCall, handleEndDmCall, handleStartDmCall } from "./calls.actions";
+import { handleAcceptGroupCall, handleAcceptIncomingCall, handleEndDmCall, handleEndGroupCall, handleStartDmCall } from "./calls.actions";
 import { handleSetMuted } from "./voice.actions";
 import { handleOpenGroupChat } from "./group-dm.actions";
 import { handleCopyPublicKey } from "./buddy.actions";
@@ -137,6 +137,14 @@ function runCall(op: Extract<ShellOp, { kind: "call" }>["arg"]): void {
     // the group's call rings): join that call, never start one.
     case "joinGroup":
       void handleAcceptGroupCall(op.arg.callId);
+      return;
+    // A pack's Leave/Cancel in a chat window (GV3): end that 1:1 call.
+    case "leave":
+      void handleEndDmCall(op.arg.callId);
+      return;
+    // In a group window: leave the group call, or cancel our own ring.
+    case "leaveGroup":
+      void handleEndGroupCall(op.arg.callId);
       return;
     case "end": {
       const call = callsState.activeCall ?? callsState.outgoingCall;

@@ -212,6 +212,8 @@ export type CallEvent =
         expiresAtMs: number;
       };
     }
+  /** Our own group call, ringing its invitees (GV3). */
+  | { groupStarted: { callId: string; kind: string; participants: string[]; groupId: string | null; expiresAtMs: number } }
   | { ringing: { callId: string } }
   | {
       started: {

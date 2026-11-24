@@ -116,9 +116,14 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
     callsState.activeGroupCall?.groupId === groupId ? callsState.activeGroupCall.callId : null;
   const ringingCall = (): string | null =>
     callsState.incomingGroupCalls.find((c) => c.groupId === groupId)?.callId ?? null;
+  // Our own ring for this group (GV3): Cancel ends it.
+  const ourRing = (): string | null =>
+    callsState.outgoingGroupCall?.groupId === groupId ? callsState.outgoingGroupCall.callId : null;
   function pressCall(): void {
     const active = activeCall();
     if (active) return void handleEndGroupCall(active);
+    const ours = ourRing();
+    if (ours) return void handleEndGroupCall(ours);
     const ringing = ringingCall();
     if (ringing) return void handleAcceptGroupCall(ringing);
     if (callRefused() !== null) return;
@@ -193,12 +198,12 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
         </Show>
         <button
           class="form-btn-secondary group-chat-action"
-          aria-disabled={activeCall() === null && ringingCall() === null && callRefused() !== null ? "true" : undefined}
-          title={activeCall() ? "Leave the call" : ringingCall() ? "Join the call" : (callRefused() ?? `Call ${name()}`)}
-          aria-description={activeCall() === null && ringingCall() === null ? (callRefused() ?? undefined) : undefined}
+          aria-disabled={activeCall() === null && ourRing() === null && ringingCall() === null && callRefused() !== null ? "true" : undefined}
+          title={activeCall() ? "Leave the call" : ourRing() ? "Cancel the call" : ringingCall() ? "Join the call" : (callRefused() ?? `Call ${name()}`)}
+          aria-description={activeCall() === null && ourRing() === null && ringingCall() === null ? (callRefused() ?? undefined) : undefined}
           onClick={pressCall}
         >
-          {activeCall() ? "Leave call" : ringingCall() ? "Join call" : "Call"}
+          {activeCall() ? "Leave call" : ourRing() ? "Cancel call" : ringingCall() ? "Join call" : "Call"}
         </button>
         <button
           class="form-btn-secondary group-chat-action"
