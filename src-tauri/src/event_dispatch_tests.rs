@@ -15,6 +15,19 @@ fn sub(e: SubscriptionEvent) -> Audience {
     WebviewEvent::Subscription(e).audience()
 }
 
+/// Our forget reaches the buddy list and every community window, not only
+/// the window that pressed Leave, nor a chat window.
+#[test]
+fn a_forget_reaches_every_window_holding_the_community_list() {
+    let a = sub(SubscriptionEvent::Membership(MembershipEvent::Forgotten {
+        community: REC.into(),
+    }));
+    assert!(a.includes("buddy-list"));
+    assert!(a.includes("community-3f1a9c0b7e2d4f6a"));
+    assert!(a.includes("community-0000000000000000"));
+    assert!(!a.includes("chat-3f1a9c0b7e2d4f6a"));
+}
+
 #[test]
 fn notifications_belong_to_the_buddy_list_only() {
     let a = sub(SubscriptionEvent::Notification(

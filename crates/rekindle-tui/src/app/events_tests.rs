@@ -44,6 +44,34 @@ async fn app_on_test_bus() -> (tempfile::TempDir, App) {
     (dir, App::new(client, &config, theme, keymap))
 }
 
+/// Our forget drops the community from the dashboard; a repeat is a no-op.
+#[tokio::test]
+async fn our_forget_drops_the_community_from_the_dashboard() {
+    use rekindle_types::subscription_events::MembershipEvent;
+    let (_dir, mut app) = app_on_test_bus().await;
+    for anchor in ["a", "b"] {
+        app.cached_communities.push(crate::app::CachedCommunity {
+            anchor: anchor.into(),
+            name: anchor.into(),
+            our_pseudonym: "p".into(),
+        });
+    }
+    for _ in 0..2 {
+        let action = app.subscription_event_to_action(SubscriptionEvent::Membership(
+            MembershipEvent::Forgotten {
+                community: "a".into(),
+            },
+        ));
+        assert!(matches!(action, Some(Action::Render)));
+    }
+    let left: Vec<_> = app
+        .cached_communities
+        .iter()
+        .map(|c| c.anchor.as_str())
+        .collect();
+    assert_eq!(left, ["b"]);
+}
+
 #[tokio::test]
 async fn a_system_alert_is_shown_as_a_warning_toast() {
     let (_dir, mut app) = app_on_test_bus().await;
