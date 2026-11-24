@@ -13,7 +13,7 @@ fn live(sim: &Netsim, blob: &[u8]) -> bool {
     crate::routes::route_id(blob).is_some_and(|id| sim.net.inner.lock().routes.contains_key(&id))
 }
 
-async fn own_blob(node: &Node) -> Vec<u8> {
+pub(crate) async fn own_blob(node: &Node) -> Vec<u8> {
     node.ports.routes.want_own();
     node.ports.routes.available_own(RouteClass::General).await
 }
@@ -48,24 +48,33 @@ async fn a_dead_route_imports_and_swallows_sends() {
     ));
 }
 
-/// An imported route unused for 5 minutes no longer resolves (Veilid's
-/// `NoConnection`); forgotten and imported again, it resolves.
+/// An imported route expires once untouched for 5 minutes, and the private
+/// route management task's listing touches it on every tick it runs
+/// (Veilid 0.5.8 `route_spec_store/mod.rs:313-324`,
+/// `route_spec_store_cache.rs:348-357`): so it expires only while that
+/// task is stopped, here the importer detached for 5 minutes. It then no
+/// longer resolves (Veilid's `NoConnection`); forgotten and imported
+/// again, it resolves.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn an_idle_import_expires_after_five_minutes() {
+async fn an_import_expires_after_five_minutes_without_the_management_task() {
     let (sim, mut nodes) = Netsim::nodes(2, 22);
     let _pump = sim.start();
     let blob = own_blob(&nodes[1]).await;
     attached(&mut nodes[0]).await;
     let target = nodes[0].ports.routes.import(&blob).unwrap();
     let profile = SafetyProfile::default_dht();
-    tokio::time::sleep(Duration::from_secs(299)).await;
-    nodes[0]
-        .ports
-        .messages
-        .send(&target, &profile, vec![1])
-        .await
-        .unwrap();
+    sim.fault(Fault::Detach {
+        node: 0,
+        detached: true,
+    });
     tokio::time::sleep(Duration::from_secs(300)).await;
+    sim.fault(Fault::Detach {
+        node: 0,
+        detached: false,
+    });
+    while !matches!(recv(&mut nodes[0]).await, PortEvent::Attachment { state, .. } if state == "attached_good")
+    {
+    }
     assert!(matches!(
         nodes[0]
             .ports
@@ -404,7 +413,7 @@ async fn an_allocation_whose_test_fails_answers_try_again_and_leaves_no_route() 
 }
 
 /// The `dead_remote` ids `node` hears within `within`.
-async fn dead_remote_within(node: &mut Node, within: Duration) -> Vec<String> {
+pub(crate) async fn dead_remote_within(node: &mut Node, within: Duration) -> Vec<String> {
     let mut heard = Vec::new();
     let _ = tokio::time::timeout(within, async {
         while let Some(event) = node.events.recv().await {
