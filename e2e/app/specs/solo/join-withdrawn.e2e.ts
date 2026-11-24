@@ -13,7 +13,7 @@
 import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, waitUntil } from "../../../walk/helpers.ts";
 import { type Peer, peerCreateCommunity, peerInvite, peerJoinCommunity, peerMemberCount, startFleet, stopFleet } from "../../fleet.ts";
-import { communitiesTab, createIdentity, joinCommunity, logOut, newUser, unlock, type User } from "../../journeys.ts";
+import { communitiesTab, createIdentity, joinCommunity, logOut, newUser, openCommunity, unlock, type User } from "../../journeys.ts";
 import { shot } from "../../shots.ts";
 
 const COMMUNITY = `Refusal Hall ${Date.now() % 100000}`;
@@ -78,6 +78,31 @@ describe("a join the inviter refuses after it returned is withdrawn, in the Host
   it("Ari unlocks: his retried join is refused, the community leaves his list and the Host's words show once", async () => {
     await unlock(browser, me);
     await recordToasts();
+    // The community window open before the retried join is refused (a round
+    // trip to Cara): it keeps the community and shows the withdrawal in place,
+    // in the Host's words, and the banner stays (JW ruling; LF2: no Forgotten
+    // for a withdrawn join blanks it).
+    const buddy = await browser.getWindowHandle();
+    await openCommunity(browser, COMMUNITY);
+    await waitUntil(
+      async () =>
+        ((await browser.execute(() => document.querySelector(".removal-banner-text")?.textContent ?? "")) as string).includes(USED_UP),
+      NET_WAIT_MS * 2,
+      "the community window never showed the withdrawal in place",
+    );
+    await shot("withdrawn-in-place");
+    await browser.pause(5000);
+    const kept = (await browser.execute(
+      (n: string) => ({
+        banner: document.querySelector(".removal-banner-text")?.textContent ?? "",
+        held: Array.from(document.querySelectorAll(".community-sidebar .community-item")).some((r) => (r.textContent ?? "").includes(n)),
+      }),
+      COMMUNITY.slice(0, 24),
+    )) as { banner: string; held: boolean };
+    await shot("withdrawn-in-place-later");
+    expect(kept.banner).toContain(USED_UP);
+    expect(kept.held).toBe(true);
+    await browser.switchToWindow(buddy);
     await communitiesTab(browser);
     let seen: string[] = [];
     await waitUntil(
