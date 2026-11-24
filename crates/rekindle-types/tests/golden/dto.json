@@ -398,6 +398,87 @@
   "infoview.subject.selection": {
     "type": "selection"
   },
+  "lobbyGet.closed": {
+    "close": {
+      "allowed": false,
+      "reason": "noMembers"
+    },
+    "gameId": 4181,
+    "hostKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "join": {
+      "allowed": false,
+      "reason": "notOpen"
+    },
+    "launch": {
+      "allowed": false,
+      "reason": "alreadyIn"
+    },
+    "leave": {
+      "allowed": false,
+      "reason": "closed"
+    },
+    "lobbyId": "abababababababababababababababab",
+    "members": [
+      "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    ],
+    "state": {
+      "kind": "closed"
+    }
+  },
+  "lobbyGet.launched": {
+    "close": {
+      "allowed": true
+    },
+    "gameId": 4181,
+    "hostKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "join": {
+      "allowed": false,
+      "reason": "notOpen"
+    },
+    "launch": {
+      "allowed": false,
+      "reason": "notOpen"
+    },
+    "leave": {
+      "allowed": false,
+      "reason": "ownLobby"
+    },
+    "lobbyId": "abababababababababababababababab",
+    "members": [
+      "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    ],
+    "state": {
+      "kind": "launched",
+      "server": "203.0.113.7:27015"
+    }
+  },
+  "lobbyGet.none": null,
+  "lobbyGet.open": {
+    "close": {
+      "allowed": false,
+      "reason": "notHost"
+    },
+    "gameId": 4181,
+    "hostKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "join": {
+      "allowed": true
+    },
+    "launch": {
+      "allowed": false,
+      "reason": "notHost"
+    },
+    "leave": {
+      "allowed": false,
+      "reason": "notIn"
+    },
+    "lobbyId": "abababababababababababababababab",
+    "members": [
+      "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    ],
+    "state": {
+      "kind": "open"
+    }
+  },
   "onboarding.config.default": {
     "defaultChannels": [],
     "enabled": false,

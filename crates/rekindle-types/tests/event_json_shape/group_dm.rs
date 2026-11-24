@@ -26,6 +26,7 @@ pub fn variant_name(e: &GroupDmEvent) -> &'static str {
         GroupDmEvent::Message { .. } => "message",
         GroupDmEvent::HistoryGap { .. } => "historyGap",
         GroupDmEvent::Renamed { .. } => "renamed",
+        GroupDmEvent::Lobby { .. } => "lobby",
     }
 }
 
@@ -79,6 +80,41 @@ pub fn samples() -> Vec<Sample> {
                 group_id: group(),
                 member: member('b', "Bob"),
                 epoch: 2,
+            },
+        ),
+        ev(
+            "lobby",
+            GroupDmEvent::Lobby {
+                group_id: group(),
+                lobby: Some(rekindle_types::dto::group_lobby::LobbyView {
+                    lobby_id: "ab".repeat(16),
+                    host_key: "c".repeat(64),
+                    game_id: 4181,
+                    members: vec!["d".repeat(64)],
+                    state: rekindle_types::dto::group_lobby::LobbyStatus::Launched {
+                        server: rekindle_types::game_server::ServerAddress::parse(
+                            "203.0.113.7:27015",
+                        )
+                        .unwrap(),
+                    },
+                    join: rekindle_types::dto::group_lobby::LobbyVerdict::refused(
+                        rekindle_types::dto::group_lobby::LobbyRefusal::NotOpen,
+                    ),
+                    leave: rekindle_types::dto::group_lobby::LobbyVerdict::Allowed,
+                    launch: rekindle_types::dto::group_lobby::LobbyVerdict::refused(
+                        rekindle_types::dto::group_lobby::LobbyRefusal::NotHost,
+                    ),
+                    close: rekindle_types::dto::group_lobby::LobbyVerdict::refused(
+                        rekindle_types::dto::group_lobby::LobbyRefusal::NotHost,
+                    ),
+                }),
+            },
+        ),
+        ev(
+            "lobby.none",
+            GroupDmEvent::Lobby {
+                group_id: group(),
+                lobby: None,
             },
         ),
         ev(

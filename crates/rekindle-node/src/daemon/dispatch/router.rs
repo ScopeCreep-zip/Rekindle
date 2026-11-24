@@ -143,6 +143,7 @@ async fn route(
         | IpcRequest::GroupDmLeave { .. }
         | IpcRequest::GroupDmRename { .. }
         | IpcRequest::GroupDmInvite { .. }
+        | IpcRequest::Lobby(_)
         | IpcRequest::DisappearingSet { .. }
         | IpcRequest::DisappearingGet { .. }
         | IpcRequest::GroupDmSend { .. }

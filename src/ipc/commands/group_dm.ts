@@ -1,3 +1,4 @@
+import type { LobbyView } from "../channels/chat_events";
 // Group DMs (plan E2.6): the Host owns the roster, keys, validation and
 // every policy; these are thin wrappers. Create, accept, decline and leave
 // are reviewed by the Host (`hostInvoke` presents the intent dialog).
@@ -38,6 +39,16 @@ export const groupDmCommands = {
   groupDmLeave: (groupId: string) => hostInvoke<unknown>("group_dm_leave", { groupId }),
   groupDmRename: (groupId: string, name: string) =>
     hostInvoke<unknown>("group_dm_rename", { groupId, name }),
+  lobbyHost: (groupId: string) => hostInvoke<unknown>("lobby_host", { groupId }),
+  lobbyJoin: (groupId: string, lobbyId: string) =>
+    hostInvoke<unknown>("lobby_join", { groupId, lobbyId }),
+  lobbyLeave: (groupId: string, lobbyId: string) =>
+    hostInvoke<unknown>("lobby_leave", { groupId, lobbyId }),
+  lobbyClose: (groupId: string, lobbyId: string) =>
+    hostInvoke<unknown>("lobby_close", { groupId, lobbyId }),
+  lobbyLaunch: (groupId: string, lobbyId: string, server: string | null) =>
+    hostInvoke<unknown>("lobby_launch", { groupId, lobbyId, server }),
+  lobbyGet: (groupId: string) => hostInvoke<LobbyView | null>("lobby_get", { groupId }),
   /** Invite friends into a group we created (at most eight in all). */
   groupDmInvite: (groupId: string, members: string[]) =>
     hostInvoke<unknown>("group_dm_invite", { groupId, members }),

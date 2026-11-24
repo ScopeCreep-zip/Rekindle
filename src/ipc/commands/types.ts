@@ -258,7 +258,7 @@ export interface HiddenGameView {
 
 /** Where a launch's server came from (`JoinSource`, lead decision (50)):
  *  the Host reviews a peer's server first, naming it. */
-export type JoinSource = "installed" | "favourite" | "recent" | "friendPresence" | "invite" | "community";
+export type JoinSource = "installed" | "favourite" | "recent" | "friendPresence" | "invite" | "community" | "lobby";
 
 /** A game we can launch (`InstalledGamesGet`, plan E7.15 IV3). */
 export interface InstalledGameView {

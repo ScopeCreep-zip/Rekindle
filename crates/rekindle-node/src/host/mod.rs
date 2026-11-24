@@ -48,6 +48,8 @@ mod group_admission_tests;
 mod group_content_tests;
 #[cfg(test)]
 mod group_dm_tests;
+#[cfg(test)]
+mod group_lobby_tests;
 pub mod hardening;
 #[cfg(test)]
 mod history_order_tests;
@@ -60,6 +62,7 @@ pub(crate) mod infoview;
 mod infoview_tests;
 mod intent_select;
 pub(crate) mod journal_entry;
+pub(crate) mod lobby;
 pub(crate) mod own_prekeys;
 pub(crate) mod own_presence;
 pub(crate) mod own_profile;

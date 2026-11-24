@@ -114,6 +114,8 @@ export type GroupDmEvent =
   | { left: { groupId: string; member: GroupDmMember } }
   | { keyRotated: { groupId: string; member: GroupDmMember; epoch: number } }
   | { renamed: { groupId: string; name: string } }
+  /** The group's game lobby as the Host shows it, or null (plan E7.2 G6). */
+  | { lobby: { groupId: string; lobby: LobbyView | null } }
   /** A group send's state; `retry` while unanswered attempts are retried (plan SR2b). */
   | { sendStatus: { groupId: string; clientId: string; state: SendState; retry: DeliveryRetry | null } }
   | {
@@ -253,3 +255,24 @@ export type ChatSubscriptionEvent =
 
 /** Every event on the `chat-event` channel. */
 export type ChatEvent = ChatSubscriptionEvent;
+
+/** A lobby action's verdict, decided by the Host (plan E7.2 G6). */
+export type LobbyVerdict =
+  | { allowed: true }
+  | {
+      allowed: false;
+      reason: "notOpen" | "closed" | "ownLobby" | "notHost" | "alreadyIn" | "notIn" | "noMembers";
+    };
+
+/** A group DM's game lobby (`rekindle_types::dto::group_lobby::LobbyView`). */
+export interface LobbyView {
+  lobbyId: string;
+  hostKey: string;
+  gameId: number;
+  members: string[];
+  state: { kind: "open" } | { kind: "launched"; server: string } | { kind: "closed" };
+  join: LobbyVerdict;
+  leave: LobbyVerdict;
+  launch: LobbyVerdict;
+  close: LobbyVerdict;
+}

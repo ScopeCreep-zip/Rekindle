@@ -241,6 +241,30 @@ pub fn get(
     Ok(Some(lobby))
 }
 
+/// The lobby `group_id` shows now: its newest open lobby, else its newest
+/// lobby (launched or closed), or `None` when it never held one.
+///
+/// # Errors
+/// The query failed, or a row is corrupt.
+pub fn current(
+    conn: &Connection,
+    owner_key: &str,
+    group_id: &str,
+) -> rusqlite::Result<Option<LobbyRow>> {
+    let lobby_id: Option<String> = conn
+        .query_row(
+            "SELECT lobby_id FROM group_lobbies WHERE owner_key = ?1 AND group_id = ?2 \
+             ORDER BY state = 'open' DESC, opened_at DESC, lobby_id DESC LIMIT 1",
+            params![owner_key, group_id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    match lobby_id {
+        Some(id) => get(conn, owner_key, group_id, &id),
+        None => Ok(None),
+    }
+}
+
 #[cfg(test)]
 #[path = "group_lobby_tests.rs"]
 mod tests;

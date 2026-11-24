@@ -328,6 +328,13 @@ pub(super) fn hash_group_dm(
             h.update(b"name|");
             h.update(name.as_bytes());
         }
+        GroupDmEvent::Lobby { lobby, .. } => {
+            h.update(b"lobby|");
+            if let Some(l) = lobby {
+                h.update(l.lobby_id.as_bytes());
+                h.update(format!("{:?}|{}", l.state, l.members.join(",")).as_bytes());
+            }
+        }
         GroupDmEvent::HistoryGap {
             member,
             through_seq,

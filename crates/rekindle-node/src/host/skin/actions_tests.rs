@@ -213,14 +213,17 @@ fn room_actions_reach_their_group_dm_ops() {
     let joined = Rooms {
         selected: Some(Room::Joined(g.clone())),
         attached: None,
+        lobby: None,
     };
     let pending = Rooms {
         selected: Some(Room::Pending(g.clone())),
         attached: None,
+        lobby: None,
     };
     let attached = Rooms {
         selected: None,
         attached: Some(g.clone()),
+        lobby: None,
     };
     for action in [A::EnterRoom, A::JoinRoom] {
         assert!(matches!(room(&action, None, &joined), Ok(Mapped::Run(r)) if r == open));
@@ -251,6 +254,7 @@ fn invite_users_to_room_opens_the_selected_rooms_picker() {
     let joined = Rooms {
         selected: Some(Room::Joined(g.clone())),
         attached: None,
+        lobby: None,
     };
     let picker = SkinRun::Shell(ShellOp::InviteToRoom {
         group_id: g.clone(),
@@ -261,6 +265,7 @@ fn invite_users_to_room_opens_the_selected_rooms_picker() {
     let pending = Rooms {
         selected: Some(Room::Pending(g)),
         attached: None,
+        lobby: None,
     };
     for rooms in [pending, Rooms::default()] {
         assert!(matches!(
@@ -402,6 +407,7 @@ fn add_server_and_delete_room_reach_their_requests() {
         rooms: Rooms {
             selected: Some(Room::Joined(g.clone())),
             attached: None,
+            lobby: None,
         },
         ..Reads::default()
     };

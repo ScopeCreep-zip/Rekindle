@@ -172,3 +172,18 @@ fn a_lobby_needs_its_group_and_goes_with_it() {
         .unwrap();
     assert_eq!(count, 0);
 }
+
+/// The group shows its open lobby before any newer closed one, and its
+/// newest lobby once none is open.
+#[test]
+fn current_prefers_the_open_lobby_then_the_newest() {
+    let conn = conn_with_group();
+    assert_eq!(current(&conn, OWNER, G).unwrap(), None);
+    let other = "f".repeat(32);
+    assert!(open(&conn, OWNER, G, L, &key('a'), 4181, 100).unwrap());
+    assert!(open(&conn, OWNER, G, &other, &key('b'), 4181, 200).unwrap());
+    assert!(close(&conn, OWNER, G, &other, &key('b')).unwrap());
+    assert_eq!(current(&conn, OWNER, G).unwrap().unwrap().lobby_id, L);
+    assert!(close(&conn, OWNER, G, L, &key('a')).unwrap());
+    assert_eq!(current(&conn, OWNER, G).unwrap().unwrap().lobby_id, other);
+}
