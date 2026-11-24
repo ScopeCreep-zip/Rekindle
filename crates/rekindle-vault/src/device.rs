@@ -1,9 +1,10 @@
 //! The device vault (plan E3.2 S7d-keys.7, ADR 0022 rule 4): a second store
 //! beside the identity vault for the secrets that belong to this device
 //! only (`VaultKey::DeviceOpKey`, and the per-device owners moved here).
-//! Identity export copies the identity vault file whole
-//! (`VaultStore::export_files`) and never reads this one, so a device key
-//! never travels with an export and an imported identity enrols new keys.
+//! Identity export (`VaultStore::export_files`) never reads this one and
+//! strips the device-scoped entries from its copy of the identity vault
+//! (`VaultKey::is_device_scoped`, this vault's key among them), so a device
+//! key never travels with an export and an imported identity enrols new keys.
 //!
 //! Its random 32-byte key is held in the identity vault under
 //! `VaultKey::DeviceVaultSecret`, so one Argon2 unlock opens both (decided:
@@ -19,8 +20,9 @@ use crate::{VaultError, VaultKey, VaultStore};
 /// right after the identity vault opened.
 ///
 /// An identity vault holding no key and no device vault at `path` is a
-/// first unlock on this device; a key with no file is an imported identity
-/// (the export carried the key, never the file). Either mints a fresh key
+/// first unlock on this device, an imported identity among them (the export
+/// carries neither the key nor the file); a key with no file is an identity
+/// vault copied without its device vault. Either mints a fresh key
 /// and an empty device vault: this device is new to the identity, as ADR
 /// 0022 rule 4 requires.
 ///
@@ -107,6 +109,8 @@ mod tests {
         VaultStore::import_files(&imported, &vault_bytes, &header_bytes).unwrap();
         let (copy, _) = VaultStore::open(&imported, "pass").unwrap();
         assert!(copy.list("device").unwrap().is_empty());
+        // Nor the key to the exporting device's vault (ADR 0022 rule 4).
+        assert_eq!(copy.get(&VaultKey::DeviceVaultSecret).unwrap(), None);
         assert_eq!(copy.get(&op_key("c1")).unwrap(), None);
         // The imported identity has no device vault: it mints its own, under
         // a fresh key, holding nothing of the exporting device's.
