@@ -6,4 +6,4 @@ mod status;
 pub use cleanup::shutdown_app;
 pub use dispatch::start_dispatch_loop;
 pub use node::initialize_node;
-pub use status::{emit_network_status, route_paused, route_status, sample_strength};
+pub use status::{emit_network_status, route_down, route_paused, route_status, sample_strength};

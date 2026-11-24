@@ -5,15 +5,29 @@ use std::sync::Arc;
 use crate::state::AppState;
 use rekindle_lifecycle::LifecycleState;
 
-/// Whether we hold a general route, and what the media route is doing
-/// (plan C7.9c): the two route facts a status indicator shows.
-pub fn route_status(state: &AppState) -> (bool, RouteAvailability) {
+/// What the general and the media route are doing (plan C7.9c, RV1g):
+/// the route facts a status indicator shows (`general_route` is the
+/// general route's state).
+pub fn route_status(state: &AppState) -> (RouteAvailability, RouteAvailability) {
     use rekindle_records::port::RouteClass;
     let Some(routes) = state.own_routes.read().clone() else {
-        return (false, RouteAvailability::Idle);
+        return (RouteAvailability::Idle, RouteAvailability::Idle);
     };
+    let general = routes.state(RouteClass::General).borrow().availability();
     let media = routes.state(RouteClass::Media).borrow().availability();
-    (routes.blob(RouteClass::General).is_some(), media)
+    (general, media)
+}
+
+/// Which own route classes are down, and since when (plan RV1g), read
+/// from the route owner the Host's `RoutePort::own_down` follows; none
+/// with no node.
+pub fn route_down(state: &AppState) -> rekindle_types::subscription_events::OwnRouteDownSet {
+    state
+        .own_routes
+        .read()
+        .clone()
+        .map(|routes| routes.down().borrow().clone())
+        .unwrap_or_default()
 }
 
 /// Why a route class is down with no new route (plan RV1), read from the
@@ -38,7 +52,7 @@ pub fn route_paused(
 /// The FSM rejects same-state and invalid-edge calls internally, so we
 /// can fire transitions on every status update without churn or noise.
 pub fn emit_network_status(app_handle: &tauri::AppHandle, state: &AppState) {
-    let (has_route, media_route) = route_status(state);
+    let (general_route, media_route) = route_status(state);
     let mut event = {
         let node = state.node.read();
         match node.as_ref() {
@@ -46,7 +60,7 @@ pub fn emit_network_status(app_handle: &tauri::AppHandle, state: &AppState) {
                 attachment_state: nh.attachment_state.clone(),
                 is_attached: nh.is_attached,
                 public_internet_ready: nh.public_internet_ready,
-                has_route,
+                general_route,
                 media_route,
                 can_write: false,
             },
@@ -54,7 +68,7 @@ pub fn emit_network_status(app_handle: &tauri::AppHandle, state: &AppState) {
                 attachment_state: "detached".to_string(),
                 is_attached: false,
                 public_internet_ready: false,
-                has_route: false,
+                general_route: RouteAvailability::Idle,
                 media_route: RouteAvailability::Idle,
                 can_write: false,
             },

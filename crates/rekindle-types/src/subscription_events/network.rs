@@ -42,6 +42,45 @@ pub enum RoutePauseCause {
     Unreadable,
 }
 
+/// One own route class's outage (plan RV1g): when the class went down, in
+/// epoch milliseconds, and the network's latest reason. A window shows
+/// "Unreachable — retrying since <clock time>".
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnRouteOutage {
+    pub since_ms: u64,
+    pub reason: String,
+}
+
+/// Which own route classes are down now (plan RV1g), as the network
+/// status carries it, so a window opened mid-outage shows it; later
+/// changes arrive as [`NetworkEvent::OwnRouteDown`] / `OwnRouteUp`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnRouteDownSet {
+    pub general: Option<OwnRouteOutage>,
+    pub media: Option<OwnRouteOutage>,
+}
+
+impl OwnRouteDownSet {
+    /// The class's outage, if it is down.
+    #[must_use]
+    pub fn get(&self, class: OwnRouteClass) -> Option<&OwnRouteOutage> {
+        match class {
+            OwnRouteClass::General => self.general.as_ref(),
+            OwnRouteClass::Media => self.media.as_ref(),
+        }
+    }
+
+    /// The class's entry, to set or clear.
+    pub fn entry(&mut self, class: OwnRouteClass) -> &mut Option<OwnRouteOutage> {
+        match class {
+            OwnRouteClass::General => &mut self.general,
+            OwnRouteClass::Media => &mut self.media,
+        }
+    }
+}
+
 /// Where the unlocked identity's own-records stage is (plan E2.5 FC3):
 /// whether our profile and mailbox are published yet. Inviting, adding or
 /// accepting a friend and a first message name them, so each waits for
@@ -72,10 +111,11 @@ pub enum NetworkEvent {
         attachment_state: String,
         is_attached: bool,
         public_internet_ready: bool,
-        /// Whether we hold an allocated private route for receiving.
-        /// Attached with no route means nobody can reach us, which is
-        /// not visible from the other three fields.
-        has_route: bool,
+        /// What our general-class route (messages, calls, the published
+        /// profile/mailbox route) is doing. Attached with no general route
+        /// means nobody can reach us, which is not visible from the other
+        /// three fields; `Allocating` and `Failed` tell a window why.
+        general_route: RouteAvailability,
         /// What our media-class route is doing. Voice and video need it,
         /// and the general route is never substituted (plan C7.9c), so a
         /// window must be able to say voice is unavailable.
@@ -126,6 +166,18 @@ pub enum NetworkEvent {
         window_secs: u64,
         baseline: u32,
     },
+    /// One of our route classes went down and its replacement keeps
+    /// failing (plan RV1g): sent once on the down transition, never per
+    /// attempt. `since_ms` is when the class went down (epoch ms).
+    /// Triggered by: the Host following `RoutePort::own_down`.
+    OwnRouteDown {
+        class: OwnRouteClass,
+        since_ms: u64,
+        reason: String,
+    },
+    /// The class is up again (plan RV1g): sent once, after an
+    /// `OwnRouteDown`. Triggered by: the Host following `RoutePort::own_down`.
+    OwnRouteUp { class: OwnRouteClass },
     /// Remote peer routes died (imported routes expired).
     /// Triggered by: `VeilidUpdate::RouteChange` (dead_remote_routes).
     RemoteRoutesDied { peer_keys: Vec<String> },

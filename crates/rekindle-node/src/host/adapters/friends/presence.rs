@@ -243,6 +243,12 @@ impl FriendPresenceDeps for HostFriends {
         }
     }
 
+    fn drop_route_blob(&self, friend_key: &str) {
+        if let Some(node) = self.ctx().transport.read().as_ref() {
+            node.peers().write().invalidate_route(friend_key);
+        }
+    }
+
     fn prekeys_changed(&self, friend_key: &str) {
         rekindle_transport::operations::dm::route::reachable_again(
             self,
