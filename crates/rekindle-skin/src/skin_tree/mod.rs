@@ -14,6 +14,7 @@ mod fit;
 pub mod import;
 pub mod inset;
 mod keep;
+pub mod label_style;
 mod outdent;
 mod passes;
 pub mod pieces;
@@ -38,6 +39,8 @@ mod fit_tests;
 mod golden_tests;
 #[cfg(test)]
 mod grip_tests;
+#[cfg(test)]
+mod label_style_tests;
 #[cfg(test)]
 mod overlap_tests;
 #[cfg(test)]

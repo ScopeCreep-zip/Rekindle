@@ -16,6 +16,7 @@ use super::skin::{Insets, RegionState};
 use super::skin_action::NodeTrigger;
 use super::skin_layout::SkinWindow;
 pub use super::skin_title::{TitleSlices as NodeSlices, TitleText as NodeText};
+pub use super::skin_tree_label::{LabelAlign, LabelStyle};
 pub use super::skin_tree_role::{Edge, LampKey, NodeRole, ViewKey};
 
 /// Where a fixed-size node sits along one axis of its parent's box, px.
@@ -237,6 +238,10 @@ pub struct NodeLabel {
     /// plan SK5). `None` for a worded tab or title.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub glyph: Option<NodeGlyph>,
+    /// The style measured from the source tab's drawn word (plan SK15,
+    /// XGlow's `Downloads`); `None`: the shell's label style.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style: Option<LabelStyle>,
 }
 
 /// The part of a text field's box its pack's interactive siblings cover

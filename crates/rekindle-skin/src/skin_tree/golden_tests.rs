@@ -21,6 +21,13 @@ fn lines(nodes: &[SkinNode], depth: usize, out: &mut String) {
             if let Some(g) = l.glyph {
                 let _ = write!(out, " glyph {g:?}");
             }
+            if let Some(s) = &l.style {
+                let _ = write!(
+                    out,
+                    " style {}px {} {} {:?} box {:?}",
+                    s.size_px, s.weight, s.color, s.align, s.text_box
+                );
+            }
         }
         if let Some(i) = n.inset {
             let _ = write!(out, " inset [{}, {}]", i.left, i.right);

@@ -44,7 +44,7 @@ ButtonDivider Decor
 Friends Tab(Friends) target [0, -3, 63, 21] art [0, 3, 65, 18] Spacing
 Servers Tab(Servers) target [0, -3, 65, 21] art [0, 3, 65, 18] Spacing
 Downloads Tab(Files) target [0, -3, 65, 21] art [0, 3, 65, 18] Spacing
-Downloads.Communities Tab(Communities) label "Communities" cover [6, 3, 53, 12] target [0, -3, 65, 21] art [0, 3, 65, 18] Spacing
+Downloads.Communities Tab(Communities) label "Communities" cover [2, 5, 50, 7] style 9px 700 #5E90A8 Start box [2, 2, 63, 13] target [0, -3, 65, 21] art [0, 3, 65, 18] Spacing
 AdArea AdArea
 UserName NameField target [0, -8, 228, 24] art [0, 8, 228, 15] Size
 DownArrow StatusList target [-4, -1, 24, 24] art [4, 1, 17, 17] Size

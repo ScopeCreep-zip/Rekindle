@@ -47,7 +47,7 @@ TabHeader TabStrip
   TabNormalButton Tab(Friends) target [0, -2, 65, 24] art [0, 2, 65, 19] Size
   TabServerButton Tab(Servers) target [0, -3, 65, 24] art [0, 3, 65, 18] Size
   TabDownloadButton Tab(Files) target [0, -3, 65, 24] art [0, 3, 65, 18] Size
-  TabDownloadButton.Communities Tab(Communities) label "Communities" cover [6, 3, 53, 12] target [0, -3, 65, 24] art [0, 3, 65, 18] Size
+  TabDownloadButton.Communities Tab(Communities) label "Communities" cover [22, 5, 22, 8] style 8px 700 #1F76BD Centre box [6, 3, 53, 12] target [0, -3, 65, 24] art [0, 3, 65, 18] Size
 TabbedControl Views
   BuddyView View(Friends)
     BvBk1 Part
