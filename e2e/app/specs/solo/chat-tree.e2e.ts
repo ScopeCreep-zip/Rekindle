@@ -34,6 +34,34 @@ async function slotBoxes(): Promise<string> {
   })) as string;
 }
 
+/**
+ * Lead's ask (Onyx's three grey bars under the menu titles): every tree node
+ * in the top 140 px whose box is a thin strip (1-14 px high), with its id,
+ * role, box and art (background image, colour), as `[strips]`; and the
+ * chatTitle's box, visibility, opacity and colour as `[title]`.
+ */
+async function stripsAndTitle(): Promise<{ strips: string; title: string }> {
+  return (await browser.execute(() => {
+    const box = (b: DOMRect): string => `${Math.round(b.left)},${Math.round(b.top)} ${Math.round(b.width)}x${Math.round(b.height)}`;
+    const strips = Array.from(document.querySelectorAll<HTMLElement>(".chat-window [data-skin-node]"))
+      .map((e) => ({ e, b: e.getBoundingClientRect() }))
+      .filter(({ b }) => b.top < 140 && b.height >= 1 && b.height <= 14 && b.width > 0)
+      .map(({ e, b }) => {
+        const cs = getComputedStyle(e);
+        const art = cs.backgroundImage === "none" ? "no art" : cs.backgroundImage.replace(/^url\("?|"?\)$/g, "").split("/").slice(-2).join("/");
+        return `${e.dataset.skinNode} role=${e.dataset.skinRole ?? "-"} [${box(b)}] art=${art.slice(0, 70)} bg=${cs.backgroundColor}`;
+      });
+    const t = document.querySelector<HTMLElement>(".skin-chat-title");
+    let title = "no .skin-chat-title";
+    if (t) {
+      const cs = getComputedStyle(t);
+      const parent = t.parentElement;
+      title = `"${(t.textContent ?? "").trim()}" [${box(t.getBoundingClientRect())}] visibility=${cs.visibility} opacity=${cs.opacity} color=${cs.color} font=${cs.fontSize}; node ${parent?.dataset.skinNode ?? "-"} [${parent ? box(parent.getBoundingClientRect()) : ""}] overflow=${parent ? getComputedStyle(parent).overflow : ""}`;
+    }
+    return { strips: strips.join(" | ") || "none", title };
+  })) as { strips: string; title: string };
+}
+
 /** The chat window `handle` draws the pack's tree with `title` in its chatTitle node and the chat in its slots; `text`, when given, is a message drawn inside the chatArea slot's box. */
 async function treeLaid(handle: string, title: string, text?: string): Promise<void> {
   await browser.switchToWindow(handle);
@@ -119,8 +147,14 @@ describe("a pack's chat tree draws the chat window, the chat in its slots", func
       ] as const) {
         await browser.switchToWindow(handle);
         await skinShown(browser, href);
-        await treeLaid(handle, title, text);
+        // Evidence first, so a failing check below still leaves it.
+        await browser.pause(2000);
         console.log(`[slot] ${file} ${kind}: ${await slotBoxes()}`);
+        const st = await stripsAndTitle();
+        console.log(`[strips] ${file} ${kind}: ${st.strips}`);
+        console.log(`[title] ${file} ${kind}: ${st.title}`);
+        await shot(`${kind}-before-checks`);
+        await treeLaid(handle, title, text);
         const def = await sizeTo(CHAT_DM.def.width, CHAT_DM.def.height);
         await treeLaid(handle, title, text);
         await shot(`${kind}-default-${def}`);
