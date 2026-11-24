@@ -29,7 +29,9 @@ export type SkinSelection =
   | { kind: "media"; arg: { path: string } }
   | { kind: "group"; arg: { groupId: string } }
   /** A friend group's header (plan E7.15 IV5); null is the default group. */
-  | { kind: "friendGroup"; arg: { groupId: number | null } };
+  | { kind: "friendGroup"; arg: { groupId: number | null } }
+  /** A community row in the Communities view (plan E7.7), by its key. */
+  | { kind: "community"; arg: { community: string } };
 
 export type ShellPanel =
   | "addFriend"
@@ -39,7 +41,9 @@ export type ShellPanel =
   | "createCommunity"
   | "joinCommunity"
   | "shortcuts"
-  | "notifications";
+  | "notifications"
+  /** The Communities row's New (plan E7.7): a chooser, Create or Join. */
+  | "communityStart";
 
 export type CallOp =
   | { kind: "voice"; arg: { friend: string } }
@@ -91,6 +95,9 @@ export type ShellOp =
       kind: "chooseDownloadDest";
       arg: { attachmentId: string; target: TransferTarget; suggestedName: string };
     }
+  /** The Communities row (plan E7.7): the selected community's window, or its leave. */
+  | { kind: "openCommunity"; arg: { community: string } }
+  | { kind: "leaveCommunity"; arg: { community: string } }
   | { kind: "reportBug" }
   | { kind: "copyKey" }
   | { kind: "editName" }

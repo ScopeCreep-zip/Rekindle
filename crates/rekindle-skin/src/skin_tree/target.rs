@@ -198,8 +198,12 @@ pub fn targets(tree: &SkinTree, window: (i32, i32)) -> Vec<Laid> {
     let want: Vec<[i32; 4]> = live.iter().map(|(_, b)| hit_area(*b, window)).collect();
     // Plan SK12: no target grows over the views or a served text box.
     let kept = keep::boxes(tree, window);
+    // A place of a button bar's grid is taken whichever row shows
+    // ([`keep::Grid`]).
+    let grid = keep::Grid::new(&tree.root);
     let near = |i: usize, j: usize| {
-        i != j && !apart.apart(&live[i].0.id, &live[j].0.id) && !overlap(live[i].1, live[j].1)
+        let (a, b) = (&live[i].0.id, &live[j].0.id);
+        i != j && (!apart.apart(a, b) || grid.shares(a, b)) && !overlap(live[i].1, live[j].1)
     };
     let laid_over = |i: usize, j: usize| {
         i != j && !apart.apart(&live[i].0.id, &live[j].0.id) && overlap(live[i].1, live[j].1)

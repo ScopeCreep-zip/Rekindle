@@ -138,6 +138,7 @@ pub fn place(manifest: &mut SkinManifest, package: &Package<'_>) -> Result<(), S
         .get_mut(&rekindle_types::dto::skin::SkinWindow::Main)
     {
         crate::skin_tree::place::communities(main);
+        crate::skin_tree::community_row::row(main);
         crate::skin_tree::cover::glyphs(main, package)?;
     }
     for layout in manifest.windows.values_mut() {

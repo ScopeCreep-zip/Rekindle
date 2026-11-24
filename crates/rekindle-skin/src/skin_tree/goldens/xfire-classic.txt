@@ -24,6 +24,11 @@ BaseBoard Group
     FilesButtons ButtonRow(Files)
       BigBrowseFileButton Button
         BigBrowseFileText Part label "Find"
+    FriendsButtons.Communities ButtonRow(Communities)
+      CommunitiesOpen Button
+      CommunitiesLeave Button
+        CommunitiesLeaveText.Communities Part label "Leave"
+      CommunitiesNew Button
   StatusWrapper Group
   StatusEdit StatusText target [0, -4, 209, 24] art [0, 4, 209, 15] Size
   DownArrow StatusList target [0, -5, 20, 24] art [0, 5, 16, 14] Short

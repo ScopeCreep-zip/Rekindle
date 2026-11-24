@@ -64,6 +64,11 @@ TabButtonArea ButtonBar
     StopDownloadButton Button target [0, -3, 54, 23] art [0, 3, 54, 18] Spacing
     ExecuteDownloadButton Button target [0, -3, 54, 23] art [0, 3, 54, 18] Spacing
     DownloadInfoButton Button target [0, -3, 54, 23] art [0, 3, 54, 18] Spacing
+  FriendsButtons.Communities ButtonRow(Communities)
+    CommunitiesOpen Button target [0, -3, 54, 23] art [0, 3, 54, 18] Spacing
+    CommunitiesLeave Button target [0, -3, 54, 23] art [0, 3, 54, 18] Spacing
+      CommunitiesLeaveText.Communities Part label "Leave"
+    CommunitiesNew Button target [0, -3, 54, 23] art [0, 3, 54, 18] Spacing
 ResizeLeft Button target [0, 0, 24, 555] art [0, 0, 5, 555] Size
 ResizeRight Button target [-19, 0, 24, 555] art [19, 0, 5, 555] Size
 ResizeUp Button target [0, 0, 341, 24] art [0, 0, 341, 5] Size

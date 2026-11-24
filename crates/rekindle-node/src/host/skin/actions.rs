@@ -66,6 +66,14 @@ impl Selections {
         }
     }
 
+    /// The window's selected community, when its selection is one.
+    pub(crate) fn community(&self, window: &str) -> Option<String> {
+        match self.0.lock().get(window) {
+            Some(SkinSelection::Community { community }) => Some(community.clone()),
+            _ => None,
+        }
+    }
+
     /// The window's selection.
     pub(crate) fn get(&self, window: &str) -> Option<SkinSelection> {
         self.0.lock().get(window).cloned()
@@ -194,6 +202,7 @@ pub(crate) struct Selected<'a> {
     pub server: Option<&'a (u32, String)>,
     /// What `SearchFor` searches ([`Views::scope`]).
     pub search: Option<&'a LocalSearchScope>,
+    pub community: Option<&'a str>,
 }
 
 /// `JoinFriend` (SK2-G §1, lead decision 49): the selected friend's game
@@ -255,6 +264,7 @@ pub(crate) fn map(
         transfer,
         server,
         search,
+        community,
     } = selected;
     let rooms = &reads.rooms;
     use Mapped::{Request, Run};
@@ -373,6 +383,14 @@ pub(crate) fn map(
         A::JoinFriend => join_friend(&selected()?, reads.friend_game.as_ref()),
         A::AddServer => add_server(server),
         A::GroupVoiceChat | A::HostGroupVoiceChat => panel(ShellPanel::StartGroupCall),
+        // The Communities row (plan E7.7).
+        A::OpenCommunity => shell(ShellOp::OpenCommunity {
+            community: community_selected(community)?,
+        }),
+        A::LeaveCommunity => shell(ShellOp::LeaveCommunity {
+            community: community_selected(community)?,
+        }),
+        A::StartCommunity => panel(ShellPanel::CommunityStart),
         A::CreateCommunity => panel(ShellPanel::CreateCommunity),
         A::JoinCommunity => panel(ShellPanel::JoinCommunity),
         A::ShowShortcuts => panel(ShellPanel::Shortcuts),
@@ -446,6 +464,16 @@ pub(crate) fn map(
     }
 }
 
+/// The Host's reason Open and Leave are refused (and their capability is
+/// `cannot`) while no community is selected.
+pub(crate) const SELECT_COMMUNITY: &str = "Select a community first.";
+
+fn community_selected(community: Option<&str>) -> Result<String, IpcResponse> {
+    community
+        .map(str::to_owned)
+        .ok_or_else(|| IpcResponse::error(409, SELECT_COMMUNITY))
+}
+
 /// A feature gap's answer, with the words the window shows: the action's
 /// user-facing name and, where known, the plan row that builds it.
 fn gap(action: &A) -> Mapped {
@@ -514,6 +542,7 @@ pub(crate) fn resolve(
     let friend = selections.friend(window);
     let transfer = selections.transfer(window);
     let server = selections.server(window);
+    let community = selections.community(window);
     let launcher = skin.launchers.of(window);
     let search = skin.views.scope(window, launcher.as_deref(), selections);
     let selected = Selected {
@@ -521,6 +550,7 @@ pub(crate) fn resolve(
         transfer: transfer.as_ref(),
         server: server.as_ref(),
         search: search.as_ref(),
+        community: community.as_deref(),
     };
     match map(action, selected, reads)? {
         Mapped::Request(mapped) => Ok(Resolved::Request(*mapped)),

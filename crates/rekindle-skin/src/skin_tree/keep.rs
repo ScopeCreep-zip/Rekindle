@@ -1,6 +1,9 @@
 //! Plan SK12: the served boxes no target grows over, the views (the app's
 //! content) and every served text box, and the cut that keeps a target out
-//! of them (used by `target::targets`).
+//! of them (used by `target::targets`); and the places of a button bar's
+//! grid, which a row the Host composed leaves taken ([`Grid`]).
+
+use std::collections::BTreeMap;
 
 use rekindle_types::dto::skin_tree::{NodeRole, SkinNode, SkinTree};
 
@@ -87,6 +90,58 @@ pub(super) fn keep_out(g: &mut [i32; 4], a: [i32; 4], o: [i32; 4], views: bool) 
         if g[axis] < start {
             g[axis + 2] -= start - g[axis];
             g[axis] = start;
+        }
+    }
+}
+
+/// Each node under a `ButtonRow`: its row and the row's parent (`None` at
+/// the root). The rows of one parent lay their buttons on one grid, one row
+/// shown at a time (Symbiosis's `TabsButtonsContainer`, Combat's rows at
+/// the window's root). A place of that grid is taken whichever row shows:
+/// the Communities row ([`super::community_row`]) keeps three of StealthX's
+/// four stacked 21 px slots, and its New stays on the grid like its
+/// siblings instead of growing into the place of the dropped fourth (lead
+/// ruling (b), plan E7.7). The packs' own rows share their grid, so their
+/// buttons there meet (laid over one another) and none grows into another
+/// row's place.
+pub(super) struct Grid<'a>(BTreeMap<&'a str, (&'a str, Option<&'a str>)>);
+
+impl<'a> Grid<'a> {
+    pub(super) fn new(root: &'a [SkinNode]) -> Self {
+        fn under<'a>(
+            nodes: &'a [SkinNode],
+            row: (&'a str, Option<&'a str>),
+            out: &mut BTreeMap<&'a str, (&'a str, Option<&'a str>)>,
+        ) {
+            for n in nodes {
+                out.insert(n.id.as_str(), row);
+                under(&n.children, row, out);
+            }
+        }
+        fn walk<'a>(
+            nodes: &'a [SkinNode],
+            parent: Option<&'a str>,
+            out: &mut BTreeMap<&'a str, (&'a str, Option<&'a str>)>,
+        ) {
+            for n in nodes {
+                if matches!(n.role, NodeRole::ButtonRow(_)) {
+                    under(&n.children, (n.id.as_str(), parent), out);
+                } else {
+                    walk(&n.children, Some(n.id.as_str()), out);
+                }
+            }
+        }
+        let mut out = BTreeMap::new();
+        walk(root, None, &mut out);
+        Self(out)
+    }
+
+    /// Whether `a` and `b` lie in two rows of one parent: `b`'s place on
+    /// the grid is taken for `a`.
+    pub(super) fn shares(&self, a: &str, b: &str) -> bool {
+        match (self.0.get(a), self.0.get(b)) {
+            (Some((ra, pa)), Some((rb, pb))) => ra != rb && pa == pb,
+            _ => false,
         }
     }
 }
