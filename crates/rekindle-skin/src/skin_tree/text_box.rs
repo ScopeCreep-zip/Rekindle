@@ -42,9 +42,7 @@
 use std::collections::HashMap;
 
 use rekindle_types::dto::skin::WindowLayout;
-use rekindle_types::dto::skin_tree::{
-    Anchor, NodeRole, NodeSpan, SkinNode, SkinTree, SlotKey,
-};
+use rekindle_types::dto::skin_tree::{Anchor, NodeRole, NodeSpan, SkinNode, SkinTree, SlotKey};
 
 use super::inset::is_text;
 use super::titles::{each_laid, laid_window, place};
