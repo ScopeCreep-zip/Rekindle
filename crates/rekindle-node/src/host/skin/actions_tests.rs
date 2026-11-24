@@ -2,7 +2,7 @@
 //! yields the request today's handler sends, a selection-dependent one the
 //! Host's selection, and a feature gap `NotBuiltYet`.
 
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse, ServersRequest};
+use rekindle_ipc::protocol::{GroupDmRequest, IpcRequest, IpcResponse, ServersRequest};
 use rekindle_types::dto::local_search::LocalSearchScope;
 use rekindle_types::dto::skin_action::{
     EngineMenu, EngineView, PackUrl, SkinAction as A, SkinSettingsTab,
@@ -277,7 +277,7 @@ fn room_actions_reach_their_group_dm_ops() {
         assert!(matches!(room(&action, None, &joined), Ok(Mapped::Run(r)) if r == open));
         assert!(matches!(
             room(&action, None, &pending),
-            Ok(Mapped::Request(r)) if matches!(&*r, IpcRequest::GroupDmAccept { group_id } if *group_id == g)
+            Ok(Mapped::Request(r)) if matches!(&*r, IpcRequest::GroupDm(GroupDmRequest::Accept { group_id }) if *group_id == g)
         ));
     }
     for action in [A::EnterAttachedRoom, A::EnterRoom] {
@@ -461,7 +461,7 @@ fn add_server_and_delete_room_reach_their_requests() {
     };
     assert!(matches!(
         map(&A::DeleteSelected, Selected::default(), &joined),
-        Ok(Mapped::Request(r)) if matches!(&*r, IpcRequest::GroupDmLeave { group_id } if *group_id == g)
+        Ok(Mapped::Request(r)) if matches!(&*r, IpcRequest::GroupDm(GroupDmRequest::Leave { group_id }) if *group_id == g)
     ));
 }
 

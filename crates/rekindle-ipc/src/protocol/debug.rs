@@ -5,7 +5,6 @@ use super::IpcRequest;
 mod community;
 mod dm;
 mod friend;
-mod group_dm;
 
 const REDACTED: &str = "***REDACTED***";
 
@@ -81,19 +80,19 @@ impl std::fmt::Debug for IpcRequest {
                 .debug_struct("IntentCancel")
                 .field("intent_id", intent_id)
                 .finish(),
-            Self::GroupDmCreate { .. }
-            | Self::GroupDmAccept { .. }
-            | Self::GroupDmDecline { .. }
-            | Self::GroupDmLeave { .. }
-            | Self::GroupDmRename { .. }
-            | Self::GroupDmInvite { .. }
-            | Self::DisappearingSet { .. }
-            | Self::DisappearingGet { .. }
-            | Self::GroupDmSend { .. }
-            | Self::GroupDmTyping { .. }
-            | Self::GroupDmList
-            | Self::GroupDmMessages { .. }
-            | Self::GroupDmMarkRead { .. } => self.fmt_group_dm(f),
+            Self::GroupDm(request) => std::fmt::Debug::fmt(request, f),
+            Self::DisappearingSet {
+                conversation,
+                seconds,
+            } => f
+                .debug_struct("DisappearingSet")
+                .field("conversation", conversation)
+                .field("seconds", seconds)
+                .finish(),
+            Self::DisappearingGet { conversation } => f
+                .debug_struct("DisappearingGet")
+                .field("conversation", conversation)
+                .finish(),
             Self::FriendAddFromCode { .. }
             | Self::FriendAccept { .. }
             | Self::FriendReject { .. }

@@ -4,7 +4,7 @@
 
 use std::time::Duration;
 
-use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::{GroupDmRequest, IpcRequest};
 use rekindle_netsim::{Fault, Netsim};
 
 use crate::group_dm::{own_chain, reads, send, view};
@@ -38,11 +38,11 @@ async fn a_member_chain_is_on_the_network_before_its_key_leaves() {
     befriend(&sim, &nodes[2], &nodes[0]).await;
     let gid: String = serde_json::from_value(
         nodes[0]
-            .ok(IpcRequest::GroupDmCreate {
+            .ok(IpcRequest::GroupDm(GroupDmRequest::Create {
                 name: "raid night".to_string(),
                 members: vec![key(&nodes[1]), key(&nodes[2])],
                 origin_peer: None,
-            })
+            }))
             .await,
     )
     .expect("the group is created");
@@ -58,9 +58,9 @@ async fn a_member_chain_is_on_the_network_before_its_key_leaves() {
         "Bea holds the invite"
     );
     nodes[1]
-        .ok(IpcRequest::GroupDmAccept {
+        .ok(IpcRequest::GroupDm(GroupDmRequest::Accept {
             group_id: gid.clone(),
-        })
+        }))
         .await;
     assert!(
         chain_on_network(&sim, &nodes[1], &gid),
@@ -82,11 +82,11 @@ async fn a_post_that_arrives_before_the_posters_accept_is_shown_once_it_lands() 
     befriend(&sim, &nodes[2], &nodes[0]).await;
     let gid: String = serde_json::from_value(
         nodes[0]
-            .ok(IpcRequest::GroupDmCreate {
+            .ok(IpcRequest::GroupDm(GroupDmRequest::Create {
                 name: "raid night".to_string(),
                 members: vec![key(&nodes[1]), key(&nodes[2])],
                 origin_peer: None,
-            })
+            }))
             .await,
     )
     .expect("the group is created");
@@ -101,9 +101,9 @@ async fn a_post_that_arrives_before_the_posters_accept_is_shown_once_it_lands() 
         );
     }
     nodes[2]
-        .ok(IpcRequest::GroupDmAccept {
+        .ok(IpcRequest::GroupDm(GroupDmRequest::Accept {
             group_id: gid.clone(),
-        })
+        }))
         .await;
     send(&nodes[2], &gid, "from Cat").await;
     assert!(
@@ -115,9 +115,9 @@ async fn a_post_that_arrives_before_the_posters_accept_is_shown_once_it_lands() 
         hangs: true,
     });
     nodes[1]
-        .ok(IpcRequest::GroupDmAccept {
+        .ok(IpcRequest::GroupDm(GroupDmRequest::Accept {
             group_id: gid.clone(),
-        })
+        }))
         .await;
     send(&nodes[1], &gid, "from Bea").await;
     assert!(
@@ -153,11 +153,11 @@ async fn a_lost_invite_is_sent_again_until_received() {
     });
     let gid: String = serde_json::from_value(
         nodes[0]
-            .ok(IpcRequest::GroupDmCreate {
+            .ok(IpcRequest::GroupDm(GroupDmRequest::Create {
                 name: "raid night".to_string(),
                 members: vec![key(&nodes[1]), key(&nodes[2])],
                 origin_peer: None,
-            })
+            }))
             .await,
     )
     .expect("the group is created");
@@ -177,9 +177,9 @@ async fn a_lost_invite_is_sent_again_until_received() {
         );
     }
     nodes[1]
-        .ok(IpcRequest::GroupDmAccept {
+        .ok(IpcRequest::GroupDm(GroupDmRequest::Accept {
             group_id: gid.clone(),
-        })
+        }))
         .await;
     send(&nodes[1], &gid, "from Bea").await;
     assert!(
@@ -203,11 +203,11 @@ async fn an_accept_waits_for_a_members_unreadable_prekeys() {
     befriend(&sim, &nodes[2], &nodes[0]).await;
     let gid: String = serde_json::from_value(
         nodes[0]
-            .ok(IpcRequest::GroupDmCreate {
+            .ok(IpcRequest::GroupDm(GroupDmRequest::Create {
                 name: "raid night".to_string(),
                 members: vec![key(&nodes[1]), key(&nodes[2])],
                 origin_peer: None,
-            })
+            }))
             .await,
     )
     .expect("the group is created");
@@ -222,9 +222,9 @@ async fn an_accept_waits_for_a_members_unreadable_prekeys() {
         );
     }
     nodes[2]
-        .ok(IpcRequest::GroupDmAccept {
+        .ok(IpcRequest::GroupDm(GroupDmRequest::Accept {
             group_id: gid.clone(),
-        })
+        }))
         .await;
     let offline_once_chained = async {
         while own_chain(&nodes[1], &gid).is_none() {
@@ -236,9 +236,9 @@ async fn an_accept_waits_for_a_members_unreadable_prekeys() {
         });
     };
     let (accepted, ()) = tokio::join!(
-        nodes[1].call(IpcRequest::GroupDmAccept {
+        nodes[1].call(IpcRequest::GroupDm(GroupDmRequest::Accept {
             group_id: gid.clone(),
-        }),
+        })),
         offline_once_chained
     );
     let refused = accepted.err().map(|r| (r.code, r.message));

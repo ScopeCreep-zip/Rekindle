@@ -8,7 +8,9 @@
 //! E4.1/E5.1): none is a placeholder.
 
 use rekindle_idempotency::intent_gate::Selection;
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse, LobbyRequest, ServersRequest};
+use rekindle_ipc::protocol::{
+    GroupDmRequest, IpcRequest, IpcResponse, LobbyRequest, ServersRequest,
+};
 use rekindle_types::intent::{
     Escalation, Fact, IntentKind, IrreversibleReason, Notifies, Recipient, Reversibility, Subject,
 };
@@ -117,12 +119,15 @@ pub(crate) async fn select(
         | IpcRequest::GameInviteSend { .. }
         | IpcRequest::OutboxRetry { .. }
         | IpcRequest::OutboxDiscard { .. } => friends::selection(ctx, request, &mut s).await?,
-        IpcRequest::GroupDmCreate { .. }
-        | IpcRequest::GroupDmAccept { .. }
-        | IpcRequest::GroupDmDecline { .. }
-        | IpcRequest::GroupDmLeave { .. }
-        | IpcRequest::GroupDmRename { .. }
-        | IpcRequest::GroupDmInvite { .. }
+        IpcRequest::GroupDm(
+            GroupDmRequest::Create { .. }
+            | GroupDmRequest::Accept { .. }
+            | GroupDmRequest::Decline { .. }
+            | GroupDmRequest::Leave { .. }
+            | GroupDmRequest::Rename { .. }
+            | GroupDmRequest::Invite { .. }
+            | GroupDmRequest::Send { .. },
+        )
         | IpcRequest::Lobby(
             LobbyRequest::Host { .. }
             | LobbyRequest::Join { .. }
@@ -130,8 +135,7 @@ pub(crate) async fn select(
             | LobbyRequest::Close { .. }
             | LobbyRequest::Launch { .. },
         )
-        | IpcRequest::DisappearingSet { .. }
-        | IpcRequest::GroupDmSend { .. } => {
+        | IpcRequest::DisappearingSet { .. } => {
             group_dm::selection(ctx, request, &mut s).await?;
         }
         IpcRequest::Community(request) => community::selection(ctx, request, &mut s).await?,
@@ -312,13 +316,15 @@ pub(crate) async fn select(
         | IpcRequest::IdentitySafetyNumber { .. }
         | IpcRequest::DmHistory { .. }
         | IpcRequest::DmMarkRead { .. }
-        | IpcRequest::GroupDmList
+        | IpcRequest::GroupDm(
+            GroupDmRequest::List
+            | GroupDmRequest::Messages { .. }
+            | GroupDmRequest::MarkRead { .. }
+            | GroupDmRequest::Typing { .. },
+        )
         | IpcRequest::Lobby(LobbyRequest::Get { .. })
-        | IpcRequest::GroupDmMessages { .. }
-        | IpcRequest::GroupDmMarkRead { .. }
         | IpcRequest::DisappearingGet { .. }
         | IpcRequest::DmTyping { .. }
-        | IpcRequest::GroupDmTyping { .. }
         | IpcRequest::DmInbox { .. }
         | IpcRequest::IntentCommit { .. }
         | IpcRequest::IntentCancel { .. }

@@ -11,7 +11,7 @@
 use std::collections::BTreeMap;
 
 use rekindle_ipc::protocol::{
-    IpcRequest, IpcResponse, LobbyRequest, ServersRequest, TransferRequest,
+    GroupDmRequest, IpcRequest, IpcResponse, LobbyRequest, ServersRequest, TransferRequest,
 };
 use rekindle_types::dto::local_search::LocalSearchScope;
 use rekindle_types::dto::skin_action::{EngineView, MenuRegistry, SkinAction as A};
@@ -363,9 +363,11 @@ pub(crate) fn map(
         // Deleting a room is leaving it (SK2-G §6); a picture or video's
         // delete is the media library's (E7.2 G14).
         A::DeleteSelected => match &rooms.selected {
-            Some(Room::Joined(group_id)) => Ok(Request(Box::new(IpcRequest::GroupDmLeave {
-                group_id: group_id.clone(),
-            }))),
+            Some(Room::Joined(group_id)) => Ok(Request(Box::new(IpcRequest::GroupDm(
+                GroupDmRequest::Leave {
+                    group_id: group_id.clone(),
+                },
+            )))),
             _ => Ok(gap(action)),
         },
         A::JoinFriend => join_friend(&selected()?, reads.friend_game.as_ref()),
