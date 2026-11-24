@@ -60,7 +60,7 @@ const SettingsWindow: Component = () => {
   });
 
   return (
-    <div class="app-frame">
+    <div class="app-frame" data-window="settings">
       {/* Architecture §32 a11y — keyboard skip link past tab rail. */}
       <a href="#main-content" class="skip-link">Skip to settings content</a>
       <Titlebar title="Settings" />

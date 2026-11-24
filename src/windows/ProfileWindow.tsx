@@ -63,7 +63,7 @@ const ProfileWindow: Component = () => {
   });
 
   return (
-    <div class="app-frame">
+    <div class="app-frame" data-window="profile">
       <Titlebar title={`Profile — ${displayName()}`} />
       <div class="profile-content">
         <Avatar displayName={displayName()} size={64} />

@@ -35,7 +35,7 @@ const SkinPopupWindow: Component = () => {
     for (const p of unlisteners) void p.then((unlisten) => unlisten());
   });
   return (
-    <div class="app-frame" data-skin-popup={name}>
+    <div class="app-frame" data-window="popup" data-skin-popup={name}>
       <Show when={skinPopupShell(name)} keyed>
         {(shell) => <SkinTreeWindow shell={shell} views={() => null} communities={() => null} />}
       </Show>

@@ -17,7 +17,9 @@ const ChatWindow: Component = () => {
   return (
     // `chat-window` scopes the chat window's skin surfaces (plan E7.7.7).
     // `data-skin-window` names the skin's chat frame layout (plan SK0 S2).
-    <div class="app-frame chat-window" data-skin-window="chat">
+    // `data-window` is the window's kind (plan SB1), as its label names it:
+    // a group's window or a 1:1's, which the Host's pack art is scoped by.
+    <div class="app-frame chat-window" data-window={group ? "group-chat" : "chat"} data-skin-window="chat">
       <SkinFrame />
       {/* Architecture §32 a11y — keyboard skip link past the header. */}
       <a href="#main-content" class="skip-link">Skip to messages</a>

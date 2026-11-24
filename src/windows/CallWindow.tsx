@@ -70,7 +70,7 @@ const CallWindow: Component = () => {
   });
 
   return (
-    <div class="app-frame call-window-frame">
+    <div class="app-frame call-window-frame" data-window="call">
       <Titlebar title="Call" />
       <Show
         when={call()}

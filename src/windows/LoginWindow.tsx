@@ -147,7 +147,7 @@ const LoginWindow: Component = () => {
   }
 
   return (
-    <div class="app-frame">
+    <div class="app-frame" data-window="login">
       <Titlebar title="Rekindle" />
 
       {/* Picker mode — avatar bubble grid */}

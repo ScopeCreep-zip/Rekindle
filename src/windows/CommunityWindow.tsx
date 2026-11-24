@@ -10,9 +10,12 @@ import CallPipelineHost from "../components/voice/call_stage/CallPipelineHost";
 
 const CommunityWindow: Component = () => {
   const vm = useCommunityWindow();
+  // The window's kind (plan SB1), as its label names it: the browser is the
+  // community window opened with no community (`/community`, no `id`).
+  const kind = new URLSearchParams(window.location.search).get("id") ? "community" : "community-browser";
 
   return (
-    <div class="app-frame community-window">
+    <div class="app-frame community-window" data-window={kind}>
       {/* Headless: keeps the community voice/video WebCodecs pipeline alive
           across channel navigation, publishing it to the main-pane CallStage. */}
       <CallPipelineHost communityId={vm.selectedCommunityId()} />

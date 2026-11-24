@@ -15,7 +15,7 @@ const SkinEditorWindow: Component = () => {
     void startEventStream();
   });
   return (
-    <div class="app-frame">
+    <div class="app-frame" data-window="skin-editor">
       <a href="#main-content" class="skip-link">Skip to the skin editor</a>
       <Titlebar title="Skin Editor" />
       <div class="settings-content" id="main-content" tabindex="-1">
