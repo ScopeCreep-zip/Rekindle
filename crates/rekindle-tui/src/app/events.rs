@@ -303,8 +303,8 @@ impl App {
                 self.notifications.push(toast, ToastLevel::Info);
                 Some(Action::Render)
             }
-            // Our leave, withdrawal or Forget: the dashboard drops the
-            // community (a no-op for one it does not list).
+            // Our leave or Forget: the dashboard drops the community (a
+            // no-op for one it does not list).
             SubscriptionEvent::Membership(MembershipEvent::Forgotten { ref community }) => {
                 self.cached_communities.retain(|c| c.anchor != *community);
                 Some(Action::Render)
@@ -316,10 +316,15 @@ impl App {
                 );
                 Some(Action::Render)
             }
+            // Our withdrawn join (published in place of `Forgotten`): the
+            // dashboard drops the community and says why.
+            SubscriptionEvent::Membership(ref m @ MembershipEvent::JoinWithdrawn { ref community, .. }) => {
+                self.cached_communities.retain(|c| c.anchor != *community);
+                self.own_membership_toast(m);
+                Some(Action::Render)
+            }
             SubscriptionEvent::Membership(
-                ref m @ (MembershipEvent::JoinWithdrawn { .. }
-                | MembershipEvent::Kicked { .. }
-                | MembershipEvent::Banned { .. }),
+                ref m @ (MembershipEvent::Kicked { .. } | MembershipEvent::Banned { .. }),
             ) => {
                 self.own_membership_toast(m);
                 Some(Action::Render)

@@ -79,9 +79,10 @@ pub enum MembershipEvent {
     /// `MemberJoined` (plan E3.1/JN1, ADR 0019's outcome rule), so the Host
     /// left and forgot the community. A refusal at once is the join call's
     /// error instead; this is the only word of a deferred one.
-    /// Triggered by: the Host's `withdraw_refused_join`, once, after the
-    /// withdrawal's leave succeeded; never for a refusal of a join a later
-    /// re-join superseded.
+    /// Triggered by: the Host's `withdraw_refused_join`, once, when the
+    /// withdrawal drops the community's store entry (`create_leave.rs`
+    /// `drop_community_entry`), in place of `Forgotten`; never for a
+    /// refusal of a join a later re-join superseded.
     JoinWithdrawn {
         community: String,
         /// The inviter's typed refusal.
@@ -114,8 +115,9 @@ pub enum MembershipEvent {
         community: String,
         pseudonym: String,
     },
-    /// We no longer hold `community`: our leave, our withdrawn join, or
-    /// our Forget of a community we were removed from dropped its store
+    /// We no longer hold `community`: our leave (a withdrawn join publishes
+    /// `JoinWithdrawn` instead), or our Forget of a community we were
+    /// removed from dropped its store
     /// entry and stored membership (plan E3.2). Not a governance change:
     /// published by the Host on the one path that drops the entry
     /// (`create_leave.rs` `drop_community_entry`), device-scoped, so it
