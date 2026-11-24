@@ -233,11 +233,21 @@ function governanceRowCommunity(g: GovernanceEvent): string | null {
   if ("channelPermissionsChanged" in g) return g.channelPermissionsChanged.community;
   if ("effectivePermissionsChanged" in g) return g.effectivePermissionsChanged.community;
   if ("governanceRebuilt" in g) return g.governanceRebuilt.community;
+  if ("bansChanged" in g) return g.bansChanged.community;
   return null;
 }
 
 /** One governance event; a row-writing one only against a row the window holds. */
 function applyGovernance(g: GovernanceEvent): void {
+  // The ban list changed (plan E3.2 S9): a shown ban list reads it again
+  // from the Host (`bansRevision`), which holds the list.
+  if ("bansChanged" in g) {
+    const { community } = g.bansChanged;
+    if (communityState.communities[community]) {
+      setCommunityState("communities", community, "bansRevision", (n) => (n ?? 0) + 1);
+    }
+    return;
+  }
   if ("rolesChanged" in g) {
     const { community, roles } = g.rolesChanged;
     if (communityState.communities[community]) {
