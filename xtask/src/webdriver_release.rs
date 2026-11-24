@@ -16,9 +16,9 @@
 //! - in the graph `cargo metadata` resolves, nothing depends on it and no
 //!   release binary's build graph reaches it;
 //! - no release binary already built under `target/release` holds
-//!   `/wdio/eval`, or `REKINDLE_WDIO_ANSWER_DELAY` (the suite's held
-//!   answers, `src-tauri/src/webdriver.rs`), this gate's own binary aside:
-//!   they are its needles.
+//!   `/wdio/eval`, `REKINDLE_WDIO_ANSWER_DELAY` or `REKINDLE_WDIO_RELEASE_DIR`
+//!   (the suite's held answers, `src-tauri/src/webdriver.rs`), this gate's
+//!   own binary aside: they are its needles.
 
 use std::path::Path;
 
@@ -32,8 +32,10 @@ const EVAL_ROUTE: &[u8] = b"/wdio/eval";
 /// The real-app suite's held-answer switch (`webdriver.rs`): a release
 /// binary naming it would hold a command's answer on request.
 const ANSWER_DELAY_VAR: &[u8] = b"REKINDLE_WDIO_ANSWER_DELAY";
+/// The suite's held-answer release directory (`webdriver.rs`).
+const RELEASE_DIR_VAR: &[u8] = b"REKINDLE_WDIO_RELEASE_DIR";
 /// What no release binary may hold.
-const NEEDLES: [&[u8]; 2] = [EVAL_ROUTE, ANSWER_DELAY_VAR];
+const NEEDLES: [&[u8]; 3] = [EVAL_ROUTE, ANSWER_DELAY_VAR, RELEASE_DIR_VAR];
 
 /// Whether `lib` has `#[cfg(not(debug_assertions))] compile_error!`.
 fn has_release_guard(lib: &str) -> bool {
