@@ -9,10 +9,10 @@ use rekindle_types::dto::skin_tree::{NodeRole, SkinNode, SkinTree, SlotKey, Wind
 use super::golden_tests::lines;
 use crate::{builtin, images, manifest, package};
 
-/// Space Cowboy waits: its `ChatEdit` (inside `ListViewBG2`) anchors
-/// `Y="ChatArea.BOTTOM+2"` on its parent's sibling, which the anchor
-/// resolver refuses (rule 2), so its chat window serves no tree yet.
-const PACKS: [&str; 3] = ["onyx", "xslimfire", "symbiosis"];
+/// The four XML built-ins with a chat window (Space Cowboy's `ChatEdit`,
+/// inside `ListViewBG2`, anchors `Y="ChatArea.BOTTOM+2"` on its parent's
+/// sibling, which [`super::anchor::outer_for`] resolves).
+const PACKS: [&str; 4] = ["onyx", "xslimfire", "symbiosis", "spacecowboy"];
 
 /// The built-in's chat window layout, its package validated.
 fn chat_layout(id: &str) -> WindowLayout {
@@ -79,25 +79,30 @@ fn title_strips_sit_where_each_pack_places_them() {
         let (ox, oy) = (i32::from(t.outsets.left), i32::from(t.outsets.top));
         let bar = one(t, w, h, NodeRole::TitleBar, id);
         let menu = one(t, w, h, NodeRole::MenuBar, id);
-        let logo = one(t, w, h, NodeRole::Logo, id);
+        let logos = find(t, w, h, NodeRole::Logo);
+        if id == "symbiosis" {
+            // Symbiosis lays no chat logo: its `XfireLogo` tile is
+            // commented out (`ChatWindow.xml:51`).
+            assert_eq!(logos, Vec::<[i32; 4]>::new(), "{id}: a chat logo");
+        }
+        let logo = || one(t, w, h, NodeRole::Logo, id);
         match id {
             "onyx" => {
                 assert_eq!((bar[0] - ox, bar[1] - oy), (5, 5), "{id} bar");
-                assert_eq!((logo[0] - bar[0], logo[1] - bar[1]), (2, 1), "{id} logo");
+                assert_eq!((logo()[0] - bar[0], logo()[1] - bar[1]), (2, 1), "{id} logo");
                 assert_eq!((menu[0] - ox, menu[1] - oy), (7, 47), "{id} menu");
             }
             "spacecowboy" => {
                 assert_eq!((menu[0] - ox, menu[1] - oy), (30, 64), "{id} menu");
-                assert_eq!((logo[0] - bar[0], logo[1] - bar[1]), (4, 3), "{id} logo");
+                assert_eq!((logo()[0] - bar[0], logo()[1] - bar[1]), (4, 3), "{id} logo");
             }
             "xslimfire" => {
                 assert_eq!((bar[0] - ox, bar[1] - oy, bar[3]), (0, 0, 165), "{id} bar");
-                assert_eq!((logo[0] - bar[0], logo[1] - bar[1]), (20, 8), "{id} logo");
+                assert_eq!((logo()[0] - bar[0], logo()[1] - bar[1]), (20, 8), "{id} logo");
                 assert_eq!((menu[0] - ox, menu[1] - oy), (19, 33), "{id} menu");
             }
             _ => {
                 assert_eq!((bar[0] - ox, bar[1] - oy), (5, 5), "{id} bar");
-                assert_eq!((logo[0] - bar[0], logo[1] - bar[1]), (65, 2), "{id} logo");
             }
         }
         assert_eq!(

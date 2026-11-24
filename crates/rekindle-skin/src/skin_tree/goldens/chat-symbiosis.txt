@@ -23,7 +23,7 @@ InfoBar TitleBar
   ButtonClose WindowButton(Close) target [-1, -4, 22, 24] art [1, 4, 18, 16] Short
 MenuBackground MenuBar
   XfireMenu MenuTitle label "Rekindle" cover [0, 0, 45, 20] target [0, -2, 45, 24] art [0, 2, 45, 20] Size
-  ActionsMenu MenuTitle label "Tools" target [0, -2, 54, 24] art [0, 2, 54, 20] Size
+  ActionsMenu MenuTitle target [0, -2, 54, 24] art [0, 2, 54, 20] Size
   HelpMenu MenuTitle target [0, -2, 47, 24] art [0, 2, 47, 20] Size
 ChatContainer Group
   ChatArea Slot(ChatArea)

@@ -82,7 +82,7 @@ fn pack_of(bytes: &[u8]) -> Pack {
 /// so its cases are 0; a pack whose title is not a 3-slice strip walks no
 /// title columns.
 const PINNED: [(&str, [u64; 8]); 11] = [
-    ("symbiosis", [39220, 5817, 19277, 26, 0, 245_125, 30, 30]),
+    ("symbiosis", [39220, 5817, 19277, 26, 0, 245_125, 33, 33]),
     (
         "xfire-classic",
         [705_960, 40618, 79010, 24, 0, 215_710, 24, 24],

@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 
-use rekindle_types::dto::skin::WindowLayout;
+use rekindle_types::dto::skin::{SkinWindow, WindowLayout};
 use rekindle_types::dto::skin_action::{SkinAction, SkinEvent};
 use rekindle_types::dto::skin_tree::{Edge, NodeRole, NodeTarget, SkinNode, SkinTree, TargetRule};
 
@@ -424,25 +424,30 @@ fn every_builtin_grip_is_a_served_target() {
                         );
                     }
                     if b.id == "spacecowboy" && popup.is_empty() {
-                        cowboy.push((g.laid.id.clone(), g.laid.rule));
+                        cowboy.push((*window, g.laid.id.clone(), g.laid.rule));
                     }
                 }
             }
         }
     }
-    // SpaceCowboy's four resize edges and its corner grip (its frame
-    // corners and side pieces are drag areas, no control): each band lies
-    // on the window's frame side, clear of the list's small controls.
-    let rule = |id: &str| cowboy.iter().find(|(g, _)| g == id).map(|(_, r)| *r);
-    assert_eq!(cowboy.len(), 5, "{cowboy:?}");
-    for (id, want) in [
-        ("ResizeLeft", TargetRule::Size),
-        ("ResizeRight", TargetRule::Size),
-        ("ResizeUp", TargetRule::Size),
-        ("ResizeDown", TargetRule::Size),
-        ("BRGripper", TargetRule::Size),
-    ] {
-        assert_eq!(rule(id), Some(want), "{id}: {cowboy:?}");
+    // SpaceCowboy's four resize edges and its corner grip, in its buddy
+    // list and in its chat window alike (`chatwindow.xml` lays the same
+    // five; its frame corners and side pieces are drag areas, no control):
+    // each band lies on the window's frame side, clear of the small
+    // controls.
+    for window in [SkinWindow::Main, SkinWindow::Chat] {
+        let of: Vec<_> = cowboy.iter().filter(|(w, ..)| *w == window).collect();
+        let rule = |id: &str| of.iter().find(|(_, g, _)| g == id).map(|(.., r)| *r);
+        assert_eq!(of.len(), 5, "{window:?}: {of:?}");
+        for (id, want) in [
+            ("ResizeLeft", TargetRule::Size),
+            ("ResizeRight", TargetRule::Size),
+            ("ResizeUp", TargetRule::Size),
+            ("ResizeDown", TargetRule::Size),
+            ("BRGripper", TargetRule::Size),
+        ] {
+            assert_eq!(rule(id), Some(want), "{window:?} {id}: {of:?}");
+        }
     }
 }
 
