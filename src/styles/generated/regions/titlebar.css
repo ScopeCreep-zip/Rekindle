@@ -7,13 +7,19 @@
     border-image: var(--skin-region-titlebar);
     image-rendering: pixelated;
   }
-  .xfire-titlebar-text,
-  .xfire-titlebar-btn {
-    background-image: linear-gradient(var(--skin-region-titlebar-backing), var(--skin-region-titlebar-backing));
-    background-clip: content-box;
+  :where(.xfire-titlebar) {
+    position: relative;
+    isolation: isolate;
   }
-  .xfire-titlebar-text {
-    background-image: linear-gradient(var(--skin-region-titlebar-title-backing, var(--skin-region-titlebar-backing)), var(--skin-region-titlebar-title-backing, var(--skin-region-titlebar-backing)));
+  .xfire-titlebar::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    padding: inherit;
+    border-radius: inherit;
+    background: linear-gradient(var(--skin-region-titlebar-band), var(--skin-region-titlebar-band)) 0 50% / 100% 16.5px no-repeat content-box;
+    pointer-events: none;
   }
   :where(:root[data-window-inactive]) .xfire-titlebar {
     border-image: var(--skin-region-titlebar--windowinactive, var(--skin-region-titlebar));
