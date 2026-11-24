@@ -30,6 +30,10 @@ export interface Channel {
    * itself falls back to the app-global `notification_sound` toggle.
    */
   notificationSoundRef?: string | null;
+  /** A restricted channel whose roster we are not on (FX3): listed, closed. */
+  locked?: boolean;
+  /** The Host's words for why it is locked. */
+  lockedReason?: string;
   /**
    * Architecture §10.8 — text-in-voice. When set, this channel is the
    * text companion of the named voice channel; UI hides it from the
@@ -177,6 +181,7 @@ export type {
   RecurrenceRule,
   Thread,
 };
+import type { KeyStatus } from "../ipc/channels/community_subscription_events";
 
 /**
  * A scheduled community event (architecture §21) — the calendar entry
@@ -231,6 +236,8 @@ export interface Community {
   /** Our effective permissions per channel id: base plus overwrites. */
   myChannelPermissions: Record<string, string>;
   myPseudonymKey: string | null;
+  /** Whether we hold the community's current key (FX3). */
+  keyStatus?: KeyStatus | null;
   /** Set when we were removed (plan E3.2 S9 own removal): the community
    *  stays as read-only history. */
   /** Set when the inviter refused our join after it returned (plan JW):

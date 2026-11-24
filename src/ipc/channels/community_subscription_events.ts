@@ -173,6 +173,10 @@ export interface ChannelOverviewDisplay {
   logKey: string | null;
   sortOrder: number;
   slowmodeSeconds: number | null;
+  /** A restricted channel whose roster we are not on (FX3): shown, closed. */
+  locked?: boolean;
+  /** The Host's words for why it is locked. */
+  lockedReason?: string;
 }
 
 /** A channel category, as Tier 1's `CategoryDisplay`. */

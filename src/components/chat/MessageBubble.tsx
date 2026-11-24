@@ -340,10 +340,23 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
           </Show>
         }
       >
-        <div class="message-decrypt-failed">
-          <SkinGlyph name="lock" class="message-decrypt-failed-icon" />
-          Unable to decrypt — waiting for encryption keys
-        </div>
+        {/* FX3: while the community's key is pending, a message from the gap
+            is waiting, not failed; once the key is current, one still
+            unreadable is a failure. */}
+        <Show
+          when={props.communityId && communityState.communities[props.communityId]?.keyStatus?.state === "pending"}
+          fallback={
+            <div class="message-decrypt-failed">
+              <SkinGlyph name="lock" class="message-decrypt-failed-icon" />
+              Unable to decrypt — waiting for encryption keys
+            </div>
+          }
+        >
+          <div class="message-key-waiting">
+            <SkinGlyph name="lock" class="message-key-waiting-icon" />
+            Waiting for key
+          </div>
+        </Show>
       </Show>
       </Show>
 
