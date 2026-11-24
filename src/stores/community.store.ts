@@ -233,6 +233,9 @@ export interface Community {
   myPseudonymKey: string | null;
   /** Set when we were removed (plan E3.2 S9 own removal): the community
    *  stays as read-only history. */
+  /** Set when the inviter refused our join after it returned (plan JW):
+   *  the Host's words, shown in place in this community's window. */
+  withdrawn?: { reasonText: string } | null;
   removed?: {
     banned: boolean;
     by: string | null;

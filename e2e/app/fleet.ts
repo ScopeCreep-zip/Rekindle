@@ -39,6 +39,10 @@ export interface Peer {
   stop(): Promise<void>;
   /** For the process's `exit` hook, where only synchronous work runs. */
   stopSync(): void;
+  /** Stop this peer's daemon and keep its HOME: the peer is offline, its identity and state kept. */
+  pause(): Promise<void>;
+  /** Start a paused peer's daemon again, unlock its identity, and wait until it is attached. */
+  resume(): Promise<void>;
 }
 
 const started = new Set<Peer>();
@@ -191,6 +195,17 @@ async function startPeer(displayName: string): Promise<Peer> {
   };
 
   let stopped = false;
+  const attached = async (): Promise<void> => {
+    await waitUntil(
+      async () => {
+        const status = (await cli(["status"]).catch(() => null)) as { attachment?: string } | null;
+        // veilid-core AttachmentState (veilid_state.rs): good enough to use the network.
+        return ["AttachedGood", "AttachedStrong", "FullyAttached", "OverAttached"].includes(status?.attachment ?? "");
+      },
+      NET_WAIT_MS,
+      `peer ${displayName} never attached`,
+    );
+  };
   const peer: Peer = {
     displayName,
     publicKey: "",
@@ -208,6 +223,15 @@ async function startPeer(displayName: string): Promise<Peer> {
       keepLogs(home, displayName);
       if (!ended) throw new Error(`peer ${displayName}: rekindled ${lockHolder(home)} outlived SIGKILL; its HOME ${home} is kept`);
       rmSync(home, { recursive: true, force: true });
+    },
+    async pause() {
+      await run(exe, ["--no-input", "node", "stop"], { env });
+      await waitUntil(async () => !(await daemonRunning()), 30_000, `peer ${displayName} did not stop`);
+    },
+    async resume() {
+      await run(exe, ["--no-input", "node", "start"], { env });
+      await cli(["unlock", "--passphrase-file", passFile]);
+      await attached();
     },
     stopSync() {
       if (stopped) return;
@@ -244,15 +268,7 @@ async function startPeer(displayName: string): Promise<Peer> {
     const list = (await cli(["identity", "list"])) as { publicKey: string }[];
     peer.publicKey = made?.publicKey ?? list[0]?.publicKey ?? "";
     if (!peer.publicKey) throw new Error(`peer ${displayName}: no identity after init`);
-    await waitUntil(
-      async () => {
-        const status = (await cli(["status"]).catch(() => null)) as { attachment?: string } | null;
-        // veilid-core AttachmentState (veilid_state.rs): good enough to use the network.
-        return ["AttachedGood", "AttachedStrong", "FullyAttached", "OverAttached"].includes(status?.attachment ?? "");
-      },
-      NET_WAIT_MS,
-      `peer ${displayName} never attached`,
-    );
+    await attached();
   } catch (err) {
     await peer.stop();
     throw err;
@@ -379,4 +395,36 @@ export async function peerJoinCommunity(peer: Peer, invite: string): Promise<voi
   const fingerprint = /--confirm=([0-9a-f ]{64,79})$/.exec(refused?.error?.message ?? "")?.[1];
   if (!fingerprint) throw new Error(`${peer.displayName}: the join asked for no fingerprint (${JSON.stringify(refused).slice(0, 200)})`);
   await peer.cli([`--confirm=${fingerprint}`, "community", "join", "--invite", invite]);
+}
+
+/** `peer` creates community `name` (reviewed: confirmed by its name, ADR 0019); its anchor key. */
+export async function peerCreateCommunity(peer: Peer, name: string): Promise<string> {
+  const made = (await peer.cli([`--confirm=${name}`, "community", "create", name])) as { anchor?: string } | null;
+  if (!made?.anchor) throw new Error(`${peer.displayName}: community create answered no anchor (${JSON.stringify(made).slice(0, 200)})`);
+  return made.anchor;
+}
+
+/** A `uses`-use invite link to community `anchor` from `peer`. */
+export async function peerInvite(peer: Peer, anchor: string, uses = 1): Promise<string> {
+  // Reviewed (ADR 0019): confirmed by the subject its review names.
+  const made = (await peerReviewed(peer, ["community", "invite", "create", "--community", anchor, "--max-uses", String(uses)])) as { url?: string } | null;
+  if (!made?.url) throw new Error(`${peer.displayName}: invite create answered no url (${JSON.stringify(made).slice(0, 200)})`);
+  return made.url;
+}
+
+/** How many members `peer`'s view of community `anchor` counts. */
+export async function peerMemberCount(peer: Peer, anchor: string): Promise<number> {
+  const info = (await peer.cli(["community", "info", "--community", anchor])) as { member_count?: number; memberCount?: number } | null;
+  return info?.member_count ?? info?.memberCount ?? 0;
+}
+
+/**
+ * `args` as `peer`, answering its review when it asks one (D3.4): the CLI
+ * names the subject to confirm (`--confirm=<subject>`), as a CLI user reads
+ * it from their own review. A command that asks none runs as is.
+ */
+export async function peerReviewed(peer: Peer, args: string[]): Promise<unknown> {
+  const refused = (await peer.review(args)) as { error?: { message?: string } } | null;
+  const subject = /--confirm=(.+)$/.exec(refused?.error?.message ?? "")?.[1]?.trim();
+  return peer.cli(subject ? [`--confirm=${subject}`, ...args] : args);
 }
