@@ -70,6 +70,8 @@ describe("friend request, then a DM each way", () => {
   const alice = newUser("alice");
   const bob = newUser("bob");
   const hello = `hi bob, from ${alice.displayName}`;
+  /** Alice's first DM, which must stay delivered after Bob's reply lands. */
+  let first = "";
 
   it("creates an identity on each app", async () => {
     await Promise.all([
@@ -104,6 +106,7 @@ describe("friend request, then a DM each way", () => {
     const a = multiRemoteBrowser.getInstance("alice");
     const b = multiRemoteBrowser.getInstance("bob");
     const text = `dm a→b ${Date.now()}`;
+    first = text;
     await openChat(a, bob.displayName);
     await typeAndSend(a, ".message-input-field", text);
     await resolveIntent(a, { passphrase: alice.passphrase, appearMs: 1500 });
@@ -123,6 +126,11 @@ describe("friend request, then a DM each way", () => {
     await seesMessage(b, bob, text);
     await seesMessage(a, alice, text);
     await ownRowDelivered(b, text);
+    // Alice's own first message stays delivered (or read) and seen after
+    // Bob's reply lands: the history load an incoming message started used
+    // to fold delivered back to one tick (transformers.ts ownStatus).
+    await ownRowDelivered(a, first);
+    await shot("first-still-delivered");
     await shot("dm-b-to-a");
   });
 });
