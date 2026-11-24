@@ -75,6 +75,9 @@ export type ShellOp =
   | { kind: "setState"; arg: ArgOf<"setState"> }
   | { kind: "playSound"; arg: ArgOf<"playSound"> }
   | { kind: "openPanel"; arg: ShellPanel }
+  /** A group's Call (HostGroupVoiceChat, GV2): Start Group Call for that
+   *  group, its members ticked; only they may be called. */
+  | { kind: "startGroupCall"; arg: { groupId: string; groupName: string; members: string[] } }
   | { kind: "openChat"; arg: { friend: string } }
   | { kind: "openProfile"; arg: { friend: string } }
   | { kind: "openSafetyNumber"; arg: { friend: string } }

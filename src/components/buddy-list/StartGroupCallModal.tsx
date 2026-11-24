@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal } from "solid-js";
+import { Component, For, Show, createEffect, createSignal, on } from "solid-js";
 import { Dialog } from "@kobalte/core/dialog";
 import { returnFocusToOpener } from "../../utils/dialog_focus";
 import { friendsState } from "../../stores/friends.store";
@@ -7,15 +7,36 @@ import { handleStartGroupCall } from "../../actions/calls.actions";
 // Wave 12 W12.10 — friend multi-select dialog for starting a group
 // call. Audio/video toggle + checkbox list + Call button. Closes on
 // success.
+/** The group a call is started for (GV2): its id, name and members' keys. */
+export interface GroupCallTarget {
+  groupId: string;
+  groupName: string;
+  members: string[];
+}
+
 interface StartGroupCallModalProps {
   isOpen: boolean;
   onClose: () => void;
+  /** Opened from a group's Call: only its members are listed, all ticked. */
+  group?: GroupCallTarget | null;
+  /** Names for the group's members (the group window's), friend or not. */
+  names?: Record<string, string>;
 }
 
 const StartGroupCallModal: Component<StartGroupCallModalProps> = (props) => {
   const [selected, setSelected] = createSignal<Record<string, boolean>>({});
   const [video, setVideo] = createSignal(false);
   const [busy, setBusy] = createSignal(false);
+
+  // A group's Call opens with its members ticked (the user may untick).
+  createEffect(
+    on(
+      () => [props.isOpen, props.group] as const,
+      ([open, group]) => {
+        if (open && group) setSelected(Object.fromEntries(group.members.map((k) => [k, true])));
+      },
+    ),
+  );
 
   function toggle(key: string): void {
     setSelected((s) => ({ ...s, [key]: !s[key] }));
@@ -32,7 +53,7 @@ const StartGroupCallModal: Component<StartGroupCallModalProps> = (props) => {
     const keys = Object.keys(sel).filter((k) => sel[k]);
     if (keys.length === 0) return;
     setBusy(true);
-    const id = await handleStartGroupCall(keys, video());
+    const id = await handleStartGroupCall(keys, video(), props.group?.groupId ?? null);
     setBusy(false);
     if (id) {
       reset();
@@ -40,10 +61,18 @@ const StartGroupCallModal: Component<StartGroupCallModalProps> = (props) => {
     }
   }
 
-  const friendList = () =>
-    Object.values(friendsState.friends).filter(
-      (f) => f.friendshipState !== "pendingOut",
-    );
+  // A group's call lists only its members (none can be added); otherwise
+  // the friends.
+  const friendList = (): { publicKey: string; displayName: string }[] => {
+    const group = props.group;
+    if (group) {
+      return group.members.map((k) => ({
+        publicKey: k,
+        displayName: props.names?.[k] ?? friendsState.friends[k]?.displayName ?? k.slice(0, 12),
+      }));
+    }
+    return Object.values(friendsState.friends).filter((f) => f.friendshipState !== "pendingOut");
+  };
 
   return (
     <Dialog
@@ -61,7 +90,7 @@ const StartGroupCallModal: Component<StartGroupCallModalProps> = (props) => {
         <div class="modal-overlay-positioner">
           <Dialog.Content class="modal-container modal-container-md" {...returnFocusToOpener()}>
             <div class="modal-header">
-              <Dialog.Title class="modal-title">Start Group Call</Dialog.Title>
+              <Dialog.Title class="modal-title">{props.group ? `Call ${props.group.groupName}` : "Start Group Call"}</Dialog.Title>
             </div>
             <div class="modal-body">
               <div class="form-row" style="gap: 12px; align-items: center;">

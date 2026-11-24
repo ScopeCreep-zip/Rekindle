@@ -22,6 +22,8 @@ import { builtinPacks } from "../../skin-pack.ts";
 import { befriendFleet } from "../../social.ts";
 
 const GROUP = `Voice Squad ${Date.now() % 100000}`;
+/** A second group with the same members (GV2: a call is the group's by its id, never by who is in it). */
+const TWIN = `Twin Squad ${Date.now() % 100000}`;
 
 interface Tab {
   id: string;
@@ -79,6 +81,9 @@ describe("a group's voice tab: Call, Join while its call rings, Leave once joine
   let peers: Peer[] = [];
   /** Where Alice's voice tab sits (read with no call). */
   let aliceVoice = { left: 0, top: 0 };
+  /** Alice's twin group window, and where its voice tab sits. */
+  let twinHandle = "";
+  let twinVoice = { left: 0, top: 0 };
 
   before(async () => {
     const a = multiRemoteBrowser.getInstance("alice");
@@ -92,13 +97,21 @@ describe("a group's voice tab: Call, Join while its call rings, Leave once joine
     peers = await startFleet(["Cara"]);
     await befriendFleet(a, alice, peers);
     await befriendFleet(b, bob, peers);
-    await switchTo(a, BUDDY);
-    await createGroup(a, alice, GROUP, [bob.displayName, "Cara"]);
-    await peerAcceptGroup(peers[0], GROUP);
-    await switchTo(b, BUDDY);
-    await press(b, await shown(b, `[aria-label="Accept invite to ${GROUP}"]`, NET_WAIT_MS));
-    await resolveIntent(b, { passphrase: bob.passphrase, appearMs: NET_WAIT_MS });
+    for (const name of [GROUP, TWIN]) {
+      await switchTo(a, BUDDY);
+      await createGroup(a, alice, name, [bob.displayName, "Cara"]);
+      await peerAcceptGroup(peers[0], name);
+      await switchTo(b, BUDDY);
+      await press(b, await shown(b, `[aria-label="Accept invite to ${name}"]`, NET_WAIT_MS));
+      await resolveIntent(b, { passphrase: bob.passphrase, appearMs: NET_WAIT_MS });
+    }
     const [ha, hb] = await Promise.all([symbiosis(a, alice), symbiosis(b, bob)]);
+    // The twin's window first, its voice tab's place read; then the group's.
+    await openGroup(a, TWIN);
+    await skinShown(a, ha);
+    twinHandle = await a.getWindowHandle();
+    const twinCall = await voiceTab(a, "Alice (twin)", "Call");
+    twinVoice = { left: twinCall.left, top: twinCall.top };
     await openGroup(a, GROUP);
     await skinShown(a, ha);
     await openGroup(b, GROUP);
@@ -121,29 +134,34 @@ describe("a group's voice tab: Call, Join while its call rings, Leave once joine
     const b = multiRemoteBrowser.getInstance("bob");
     const call = await voiceTab(b, "Bob", "Call");
     await pressNode(b, call.id);
-    // StartGroupCall opens as a shell panel; find the window holding it.
-    let modal = "";
+    // GV2: the group's Call opens Start Group Call for this group, in this
+    // window, titled with its name and its other members ticked; only they
+    // are listed.
     await waitUntil(
-      async () => {
-        for (const h of await b.getWindowHandles()) {
-          await b.switchToWindow(h);
-          if ((await (await b.$(".modal-title")).getText().catch(() => "")) === "Start Group Call") {
-            modal = h;
-            return true;
-          }
-        }
-        return false;
-      },
+      async () => (await (await b.$(".modal-title")).getText().catch(() => "")) === `Call ${GROUP}`,
       NET_WAIT_MS,
-      "Bob's Call tab opened no Start Group Call",
+      `Bob's Call tab opened no "Call ${GROUP}" panel`,
     );
-    for (const name of [alice.displayName, "Cara"]) {
-      await (await (await byText(b, ".start-group-call-list label.settings-option", name)).$("input[type=checkbox]")).click();
-    }
+    const listed = (await b.execute(() =>
+      Array.from(document.querySelectorAll(".start-group-call-list label.settings-option")).map((l) => ({
+        name: (l.querySelector(".buddy-name")?.textContent ?? "").trim(),
+        ticked: (l.querySelector<HTMLInputElement>("input[type=checkbox]")?.checked ?? false),
+      })),
+    )) as { name: string; ticked: boolean }[];
+    console.log(`[gv] Bob's panel: ${JSON.stringify(listed)}`);
+    expect(listed.map((x) => x.name).sort()).toEqual([alice.displayName, "Cara"].sort());
+    expect(listed.every((x) => x.ticked)).toBe(true);
+    await shot("prefilled-panel");
     await (await b.$(".modal-container .modal-footer button:not(.form-btn-secondary)")).click();
-    expect(modal).not.toBe("");
     await voiceTab(a, "Alice", "Join", aliceVoice);
     await shot("ringing-join-tab");
+    // The twin group, with the same members, does not ring: its tab still reads Call.
+    const groupHandle = await a.getWindowHandle();
+    await a.switchToWindow(twinHandle);
+    await voiceTab(a, "Alice (twin)", "Call", twinVoice);
+    expect(await tabsReading(a, "Join", twinVoice)).toHaveLength(0);
+    await shot("twin-still-call");
+    await a.switchToWindow(groupHandle);
   });
 
   it("Alice presses Join and her window shows Leave", async () => {

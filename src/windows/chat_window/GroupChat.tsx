@@ -25,6 +25,8 @@ import DisappearingTimerControl from "../../components/chat/DisappearingTimerCon
 import InviteToRoomModal from "../../components/chat/InviteToRoomModal";
 import GameLobbyCard from "../../components/chat/GameLobbyCard";
 import { subscribeGroupChatEvents } from "../../handlers/group-dm.handlers";
+import StartGroupCallModal, { type GroupCallTarget } from "../../components/buddy-list/StartGroupCallModal";
+import { registerShellRunner } from "../../actions/skin.actions";
 
 /// The chat window's group mode (plan E2.6): the group's stored history
 /// (`group_dm_messages`) with members' messages as they arrive, its members
@@ -65,6 +67,16 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
     setHistoryReady(true);
     window.addEventListener("focus", onFocus);
   });
+  // GV2: this group's Call (HostGroupVoiceChat) answers with Start Group
+  // Call for this group, shown here, where it was pressed.
+  const [callTarget, setCallTarget] = createSignal<GroupCallTarget | null>(null);
+  onCleanup(
+    registerShellRunner((op) => {
+      if (op.kind !== "startGroupCall") return false;
+      setCallTarget(op.arg);
+      return true;
+    }),
+  );
   onCleanup(() => {
     window.removeEventListener("focus", onFocus);
     for (const p of unlisteners) p.then((unlisten) => unlisten());
@@ -195,6 +207,12 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
           </div>
         </Show>
       </div>
+      <StartGroupCallModal
+        isOpen={callTarget() !== null}
+        group={callTarget()}
+        names={memberNames()}
+        onClose={() => setCallTarget(null)}
+      />
     </>
   );
 };

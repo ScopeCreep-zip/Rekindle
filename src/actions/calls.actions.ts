@@ -2,6 +2,7 @@ import { commands } from "../ipc/commands";
 import { addToast } from "../stores/toast.store";
 import { callsState, setCallsState } from "../stores/calls.store";
 import { stopActiveRing } from "./calls_ring";
+import { errorMessage } from "../utils/error";
 
 /// Initiate an outgoing call. The backend returns the `call_id` once
 /// the offer has been delivered and (synchronously) the
@@ -64,16 +65,19 @@ export async function handleEndDmCall(callId: string, reason?: string): Promise<
 export async function handleStartGroupCall(
   participantPubkeys: string[],
   video: boolean,
+  groupId: string | null = null,
 ): Promise<string | null> {
   if (participantPubkeys.length === 0) {
     addToast("Group call needs at least one invitee", "error");
     return null;
   }
   try {
-    const callId = await commands.startGroupCall(participantPubkeys, video);
+    const callId = await commands.startGroupCall(participantPubkeys, video, groupId);
     return callId;
   } catch (e) {
-    addToast(`Group call failed: ${String(e)}`, "error");
+    // The Host's refusal in its words (a participant outside the group's
+    // roster, GV2), never "[object Object]".
+    addToast(`Group call failed: ${errorMessage(e)}`, "error");
     return null;
   }
 }
