@@ -66,6 +66,16 @@ pub enum ChannelMessageEvent {
         body: Option<String>,
         /// The message id of the parent this one replies to.
         reply_to_message_id: Option<String>,
+        /// The original author's pseudonym when the post is a forward (plan
+        /// E3.3 forwards): the value the stored row's
+        /// `forwarded_from_author` holds and history serves, so a live
+        /// forward renders as one before any reload. `None` otherwise.
+        forwarded_from_author: Option<String>,
+        /// That author as the community names them: the display form a
+        /// sender's header shows for that member (the member list's name,
+        /// the verified card's else the short fingerprint), never the raw
+        /// key. `None` when the post is not a forward.
+        forwarded_from_name: Option<String>,
         /// The D26 gate hid the post (an automod `BlurContent` match): it is
         /// stored with `automod_blurred` and every frontend renders it
         /// blurred.

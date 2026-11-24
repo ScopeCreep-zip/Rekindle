@@ -8,6 +8,7 @@ import { commands } from "../ipc/commands";
 import { setVoiceState } from "../stores/voice.store";
 import { startEventStream } from "../ipc/channels";
 import { initVoiceEventListener } from "../actions/voice.actions";
+import { setWindowKind } from "../utils/window_kind";
 
 /// The call window: the one place a connected 1:1 call's controls and
 /// media pipeline run. The backend opens it on connect
@@ -69,6 +70,7 @@ const CallWindow: Component = () => {
     return null;
   });
 
+  setWindowKind("call");
   return (
     <div class="app-frame call-window-frame">
       <Titlebar title="Call" />

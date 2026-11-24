@@ -781,6 +781,18 @@
 .skin-pair	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
 .skin-pair-apca	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .skin-pair-rule	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
+.skin-row-btn	text	var(--color-xfire-text)	--color-xfire-overlay 8% over --color-xfire-accent 10% over --color-xfire-bg-panel	1.0	false
+.skin-row-btn	text	var(--color-xfire-text)	--color-xfire-overlay 8% over --color-xfire-bg-dark	1.0	false
+.skin-row-btn	text	var(--color-xfire-text)	--color-xfire-overlay 8% over --color-xfire-bg-panel	1.0	false
+.skin-row-btn	text	var(--color-xfire-text)	--color-xfire-overlay 8% over --color-xfire-bg-secondary	1.0	false
+.skin-row-btn	text	var(--color-xfire-text)	--color-xfire-overlay 8% over --color-xfire-bg-secondary 96% over --color-xfire-bg-dark	1.0	false
+.skin-row-btn	text	var(--color-xfire-text)	--color-xfire-overlay 8% over --color-xfire-busy 30% over --color-xfire-bg-dark	1.0	false
+.skin-row-btn	text hovered	var(--color-xfire-text)	--color-xfire-overlay 12% over --color-xfire-accent 10% over --color-xfire-bg-panel	1.0	false
+.skin-row-btn	text hovered	var(--color-xfire-text)	--color-xfire-overlay 12% over --color-xfire-bg-dark	1.0	false
+.skin-row-btn	text hovered	var(--color-xfire-text)	--color-xfire-overlay 12% over --color-xfire-bg-panel	1.0	false
+.skin-row-btn	text hovered	var(--color-xfire-text)	--color-xfire-overlay 12% over --color-xfire-bg-secondary	1.0	false
+.skin-row-btn	text hovered	var(--color-xfire-text)	--color-xfire-overlay 12% over --color-xfire-bg-secondary 96% over --color-xfire-bg-dark	1.0	false
+.skin-row-btn	text hovered	var(--color-xfire-text)	--color-xfire-overlay 12% over --color-xfire-busy 30% over --color-xfire-bg-dark	1.0	false
 .skin-status-edit	text	var(--color-xfire-text)	--color-xfire-bg-status	1.0	false
 .skin-status-edit::placeholder	text	var(--color-xfire-text-dim)	--color-xfire-bg-status	1.0	false
 .skin-status-edit:focus-visible	boundary	var(--color-xfire-focus-outline)	--color-xfire-bg-dark	1.0	true

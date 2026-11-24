@@ -145,7 +145,15 @@ describe("dialogs take focus, close on Esc and give focus back", function () {
           const bubble = mark.closest(".chat-message");
           const header = bubble?.querySelector(".chat-message-header");
           if (!bubble || !header) return "the forwarded mark is not inside a message with a header";
-          return header.compareDocumentPosition(mark) & Node.DOCUMENT_POSITION_FOLLOWING ? "" : "the forwarded mark comes before its message's header";
+          if (!(header.compareDocumentPosition(mark) & Node.DOCUMENT_POSITION_FOLLOWING)) return "the forwarded mark comes before its message's header";
+          // FW1b: it names the original author as the community shows them,
+          // the same words as the original message's own header (we forward
+          // our own message here), never a cut key.
+          const original = document.querySelector(".community-main .chat-message:not(:has(.message-forwarded-header))");
+          const author = (original?.querySelector(".chat-message-sender-self, .chat-message-sender-other")?.textContent ?? "").trim();
+          const said = (mark.textContent ?? "").trim();
+          if (!author) return "the original message shows no sender";
+          return said === `Forwarded from ${author}` ? "" : `the forwarded mark reads "${said}", not "Forwarded from ${author}"`;
         }, before)) as string;
         return owned === "";
       },

@@ -165,10 +165,10 @@ pub(super) async fn route_frame(state: &Arc<ServerState>, sender_conn_id: u64, p
 
     // No correlation_id — route based on payload type.
     match &msg.payload {
-        BusPayload::Request(ref request) => {
+        BusPayload::Request(request) => {
             // Intercept Subscribe/Unsubscribe — handled server-side via EventRouter.
             // These never reach the daemon dispatch.
-            match request {
+            match &**request {
                 crate::protocol::IpcRequest::Subscribe { filters, from } => {
                     // Events carry the identity's private data: the same
                     // clearance every daemon request but the locked-state

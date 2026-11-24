@@ -173,6 +173,9 @@ pub struct SentChannelMessageEcho {
     pub timestamp_ms: u64,
     pub body: String,
     pub channel_id: String,
+    /// The original author's pseudonym when this is a forward: the same
+    /// value [`ChannelMessagingDeps::persist_forwarded_message`] stores.
+    pub forwarded_from_author: Option<String>,
 }
 
 // ---------- Trait ----------

@@ -65,6 +65,7 @@ import { handleToggleCreateCommunity, handleToggleJoinCommunity, handleToggleNew
 import { fetchAvatarUrl } from "../ipc/avatar";
 import { commands } from "../ipc/commands";
 import type { NetworkStatusEvent } from "../ipc/channels";
+import { setWindowKind } from "../utils/window_kind";
 
 function handleKeyboardShortcuts(e: KeyboardEvent): void {
   if (e.altKey && e.key === "1") {
@@ -88,6 +89,7 @@ function handleKeyboardShortcuts(e: KeyboardEvent): void {
 /** The Friends lists: a skin's tree shows them in its Friends view (plan
  *  SK2-S2), the app's own layout under its Friends tab. */
 function FriendsContent(): JSX.Element {
+  setWindowKind("buddy-list");
   return (
     <>
       <PendingRequests />
