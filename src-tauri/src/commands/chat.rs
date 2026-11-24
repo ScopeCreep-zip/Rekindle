@@ -49,7 +49,7 @@ pub async fn send_message(
     reply_to: Option<String>,
     state: State<'_, SharedState>,
 ) -> Result<Done<DmMessage>, CommandError> {
-    host_call::call(
+    let answer = host_call::call(
         &state,
         IpcRequest::DmSend {
             peer_key: to,
@@ -57,7 +57,11 @@ pub async fn send_message(
             reply_to,
         },
     )
-    .await
+    .await;
+    // The real-app suite's held answer (`webdriver.rs`): committed, then late.
+    #[cfg(all(feature = "webdriver-test", debug_assertions))]
+    crate::webdriver::delay_answer("send_message").await;
+    answer
 }
 
 /// Retry a send by its client id (`IpcRequest::OutboxRetry`, plan E2.5):

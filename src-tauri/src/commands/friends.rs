@@ -74,7 +74,11 @@ pub async fn accept_request(
 /// The buddy list (`IpcRequest::FriendList`).
 #[tauri::command]
 pub async fn get_friends(state: State<'_, SharedState>) -> Result<Done<Vec<Friend>>, CommandError> {
-    host_call::call(&state, IpcRequest::FriendList).await
+    let answer = host_call::call(&state, IpcRequest::FriendList).await;
+    // The real-app suite's held answer (`webdriver.rs`): read, then late.
+    #[cfg(all(feature = "webdriver-test", debug_assertions))]
+    crate::webdriver::delay_answer("get_friends").await;
+    answer
 }
 
 /// Reject a pending request (`IpcRequest::FriendReject`).

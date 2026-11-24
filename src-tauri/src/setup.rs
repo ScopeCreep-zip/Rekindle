@@ -39,6 +39,8 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
     // user's (plan E7.13; `webdriver.rs`).
     #[cfg(all(feature = "webdriver-test", debug_assertions))]
     let root = crate::webdriver::data_root()?;
+    #[cfg(all(feature = "webdriver-test", debug_assertions))]
+    crate::webdriver::load_answer_delays()?;
     #[cfg(not(all(feature = "webdriver-test", debug_assertions)))]
     let root = rekindle_db::paths::DataRoot::resolve()?;
     let claimed = match rekindle_node::host::claim(root.clone()) {
