@@ -7,6 +7,7 @@
 
 use rekindle_ipc::protocol::IpcRequest;
 use rekindle_netsim::Fault;
+use rekindle_types::friend::FriendshipState;
 use rekindle_types::message::SendState;
 use rekindle_types::presence::SessionStatus;
 use rekindle_types::subscription_events::{
@@ -40,6 +41,17 @@ fn acknowledged(event: &FriendEvent) -> Option<&str> {
     }
 }
 
+/// Whether `events` hold `peer`'s accepted row, under the default group.
+fn ann_draws_rae(events: &Events, peer: &str) -> bool {
+    events.any(|event| {
+        matches!(event, SubscriptionEvent::Friend(FriendEvent::Added {
+            peer_key, friendship_state, group_label, ..
+        }) if peer_key == peer
+            && *friendship_state == FriendshipState::Accepted
+            && group_label == rekindle_types::dto::friends::DEFAULT_FRIEND_GROUP)
+    })
+}
+
 async fn away(node: &SimNode) {
     node.ok(IpcRequest::PresenceSet {
         status: SessionStatus::Away,
@@ -71,6 +83,12 @@ async fn an_accept_settles_a_request_whose_receipts_were_lost() {
         .await;
     assert!(eventually(&sim, LIMIT, || has_request_from(&nodes[1], &rae)).await);
     accept(&nodes[1], &nodes[0]).await;
+    // Rae was a request on Ann's side, not a row: the accept draws Rae's
+    // full row, accepted and under her group, before any friends snapshot.
+    assert!(
+        eventually(&sim, LIMIT, || async { ann_draws_rae(&ann_events, &rae) }).await,
+        "the accept published Rae's row as Added"
+    );
     assert!(eventually(&sim, LIMIT, || is_accepted_friend(&nodes[0], &ann)).await);
     assert!(
         eventually(&sim, LIMIT, || async {

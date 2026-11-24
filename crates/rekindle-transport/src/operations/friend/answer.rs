@@ -87,7 +87,14 @@ pub async fn accept(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
     state::echo_failed(host, public_key, ended, "superseded by a new friendship");
     // The friendship is stored: every window shows them now (plan E2.6,
     // GC3: the New Group picker missed a friend whose accept was still
-    // opening the session below, a DHT read that can take minutes).
+    // opening the session below, a DHT read that can take minutes). On
+    // our side they were a request, not a row: `Added` carries the row the
+    // list holds for them (state accepted, under their group), so every
+    // window draws it at once, before any snapshot; `Accepted` follows for
+    // the consumers of the acknowledgement (activity, the TUI's toast).
+    if let Some(added) = super::list::added(host, public_key) {
+        host.publish(SubscriptionEvent::Friend(added));
+    }
     host.publish(SubscriptionEvent::Friend(FriendEvent::Accepted {
         peer_key: public_key.to_string(),
         display_name: Some(display_name.to_string()),

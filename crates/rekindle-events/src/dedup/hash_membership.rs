@@ -203,9 +203,17 @@ pub(super) fn hash_friend(h: &mut blake3::Hasher, f: &FriendEvent) {
             h.update(b"acc|");
             h.update(peer_key.as_bytes());
         }
-        FriendEvent::Added { peer_key, .. } => {
+        // Their row in a new state is its own event (pending, then
+        // accepted), never a duplicate of the last one.
+        FriendEvent::Added {
+            peer_key,
+            friendship_state,
+            ..
+        } => {
             h.update(b"add|");
             h.update(peer_key.as_bytes());
+            h.update(b"|");
+            h.update(friendship_state.as_str().as_bytes());
         }
         FriendEvent::Rejected { peer_key } => {
             h.update(b"rej|");

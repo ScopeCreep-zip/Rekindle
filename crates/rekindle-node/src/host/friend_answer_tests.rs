@@ -1,7 +1,7 @@
 //! Answering friend requests through the Host (review RV3): an answer to a
 //! request that is not there stores nothing (638ae37b), and a cancelled
 //! request takes its `FriendRequest` row with it (a3a553d1), in its own
-//! commit (RV5 item 3).
+//! commit (RV5 item 3), and an accept draws the new friend's full row.
 
 use rekindle_crypto::Identity;
 use rekindle_transport::operations::friend::{self, FriendError};
@@ -216,5 +216,76 @@ async fn the_list_right_after_two_accepts_names_each_friend_with_its_group_dm_el
     assert_eq!(
         block(&dave).as_deref(),
         Some("Waiting for them to accept your friend request")
+    );
+}
+
+/// On the accepter's side Bob was a request, not a row (rekindle-38):
+/// accepting him publishes `Added` with the row the list holds for him,
+/// accepted and under his group, so every window draws it before any
+/// friends snapshot.
+#[tokio::test]
+async fn accepting_a_request_publishes_his_full_row_as_added() {
+    use rekindle_types::friend::FriendshipState;
+    use rekindle_types::subscription_events::{FriendEvent, StreamFrame, SubscriptionEvent};
+    let dir = tempfile::tempdir().unwrap();
+    let (host, owner) = ann(&dir).await;
+    let o = hex::encode(owner);
+    let bob = hex::encode(Identity::generate().public_key_bytes());
+    let db = host.ctx.db.current().unwrap();
+    let b2 = bob.clone();
+    db.call(move |conn| {
+        let request = rekindle_db::repo::pending_requests::Incoming {
+            public_key: &b2,
+            display_name: "Bob",
+            message: "hi",
+            received_at: 1,
+            profile_dht_key: "VLD0:bobprofile",
+            route_blob: &[],
+            mailbox_dht_key: "",
+            invite_id: None,
+            reply_inbox_key: "VLD0:reply",
+            reply_writer: "VLD0:p:s",
+        };
+        rekindle_db::repo::pending_requests::upsert(conn, &o, &request).map(drop)
+    })
+    .await
+    .unwrap();
+    let friends = HostFriends::of(&host.ctx);
+    let mut events = host.ctx.journal.subscribe(None);
+    friend::accept(&friends, &bob).await.unwrap();
+
+    let mut added = Vec::new();
+    while let Ok(Some(frame)) =
+        tokio::time::timeout(std::time::Duration::from_millis(50), events.next()).await
+    {
+        if let StreamFrame::Event(seq) = frame {
+            if let SubscriptionEvent::Friend(e @ FriendEvent::Added { .. }) = seq.event {
+                added.push(e);
+            }
+        }
+    }
+    let [FriendEvent::Added {
+        peer_key,
+        display_name,
+        friendship_state,
+        group_label,
+    }] = added.as_slice()
+    else {
+        panic!("one Added for the accept: {added:?}");
+    };
+    assert_eq!(peer_key, &bob);
+    assert_eq!(*friendship_state, FriendshipState::Accepted);
+    assert_eq!(
+        group_label,
+        rekindle_types::dto::friends::DEFAULT_FRIEND_GROUP
+    );
+    let row = friend::friends(&friends)
+        .into_iter()
+        .find(|f| &f.public_key == peer_key)
+        .expect("his row is listed");
+    assert_eq!(
+        (display_name, friendship_state, group_label),
+        (&row.display_name, &row.friendship_state, &row.group_label),
+        "Added carries the row the list holds"
     );
 }
