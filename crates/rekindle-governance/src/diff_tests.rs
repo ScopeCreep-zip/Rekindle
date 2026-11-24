@@ -226,3 +226,30 @@ fn a_merged_kick_is_exactly_one_kicked() {
         }]
     );
 }
+
+/// A category renamed shows in `categories` alone (the channel tree's
+/// groups, which `ChannelsChanged` carries), never as a channel change.
+#[test]
+fn a_category_edit_is_exactly_one_category() {
+    use crate::state::CategoryState;
+    use rekindle_types::id::CategoryId;
+    let category = |name: &str| {
+        let mut s = GovernanceState::default();
+        s.categories.insert(
+            CategoryId([2; 16]),
+            CategoryState {
+                name: name.into(),
+                position: 0,
+                created: stamp(1),
+            },
+        );
+        s
+    };
+    assert_eq!(
+        category("Text").diff(&category("Voice")),
+        GovernanceDiff {
+            categories: vec![CategoryId([2; 16])],
+            ..GovernanceDiff::default()
+        }
+    );
+}

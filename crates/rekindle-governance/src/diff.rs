@@ -15,7 +15,7 @@
 
 use std::collections::BTreeSet;
 
-use rekindle_types::id::{ChannelId, PseudonymKey, RoleId};
+use rekindle_types::id::{CategoryId, ChannelId, PseudonymKey, RoleId};
 
 use crate::state::GovernanceState;
 
@@ -86,6 +86,9 @@ pub struct GovernanceDiff {
     pub roles: Vec<RoleId>,
     /// Channels created, deleted or edited.
     pub channels: Vec<ChannelId>,
+    /// Categories created, deleted or edited (the channel tree's groups,
+    /// which `ChannelsChanged` carries beside the channels).
+    pub categories: Vec<CategoryId>,
     /// Channels whose permission-overwrite set changed.
     pub channel_overwrites: Vec<ChannelId>,
 }
@@ -115,6 +118,7 @@ impl GovernanceState {
     pub fn diff(&self, newer: &GovernanceState) -> GovernanceDiff {
         let roles = changed_keys(&self.roles, &newer.roles, |r| r.0);
         let channels = changed_keys(&self.channels, &newer.channels, |c| c.0);
+        let categories = changed_keys(&self.categories, &newer.categories, |c| c.0);
         let member_roles = changed_keys(&self.role_assignments, &newer.role_assignments, |p| p.0);
         let overwritten: BTreeSet<[u8; 16]> = (self.overwrites.keys())
             .chain(newer.overwrites.keys())
@@ -130,6 +134,7 @@ impl GovernanceState {
             member_roles,
             roles,
             channels,
+            categories,
             channel_overwrites,
         }
     }
@@ -178,6 +183,12 @@ impl IsVacant for crate::state::RoleState {
 }
 
 impl IsVacant for crate::state::ChannelState {
+    fn is_vacant(&self) -> bool {
+        false
+    }
+}
+
+impl IsVacant for crate::state::CategoryState {
     fn is_vacant(&self) -> bool {
         false
     }

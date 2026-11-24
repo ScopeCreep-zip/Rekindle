@@ -77,6 +77,9 @@ impl HostGovernance {
         }
         self.rotate_for_departures(community_id, &transitions, me.as_ref());
         self.publish_member_transitions(transitions);
+        if let Some(diff) = &diff {
+            self.publish_table_changes(community_id, diff);
+        }
         if bans_changed {
             self.publish_bans_changed(community_id);
         }

@@ -100,6 +100,7 @@ pub(crate) mod removal_posts;
 mod removal_watch;
 pub(crate) mod search;
 mod segment_request;
+mod table_events;
 mod thread_events;
 
 mod checkpoint_rows;
