@@ -15,6 +15,7 @@ use rekindle_types::presence::SessionLocation;
 use rekindle_skin::role_tag::SkinGrounds;
 
 use super::HostGovernance;
+use crate::host::adapters::presence::view as beat_view;
 use crate::host::community::{display_role_name, CommunityState, RoleDefinition};
 
 fn role_view(role: &RoleDefinition, shown: Option<&SkinGrounds>) -> CommunityRoleView {
@@ -183,26 +184,24 @@ pub(crate) fn removal_display(
 struct RosterOverlay {
     me: Option<String>,
     roles: Vec<RoleDefinition>,
-    /// Status, location and last-active per online pseudonym.
-    online: HashMap<String, (String, Option<SessionLocation>, u64)>,
+    /// Location and last-active per pseudonym the gossip mesh announced
+    /// online: what a beat does not carry yet. A member's status is never
+    /// read here but from the beat view (plan E3.4 premise check); E3.4
+    /// removes this once the beat view carries location and last-active.
+    gossip: HashMap<String, (Option<SessionLocation>, u64)>,
     /// Peers' profiles, ours from our own fields.
     profiles: HashMap<String, CommunityMemberView>,
     my_location: Option<SessionLocation>,
 }
 
 fn overlay(c: &CommunityState) -> RosterOverlay {
-    let online = c
+    let gossip = c
         .gossip
         .as_ref()
         .map(|g| {
             g.online_members
                 .iter()
-                .map(|(pk, m)| {
-                    (
-                        pk.clone(),
-                        (m.status.clone(), m.location.clone(), m.last_active),
-                    )
-                })
+                .map(|(pk, m)| (pk.clone(), (m.location.clone(), m.last_active)))
                 .collect()
         })
         .unwrap_or_default();
@@ -239,7 +238,7 @@ fn overlay(c: &CommunityState) -> RosterOverlay {
     RosterOverlay {
         me: c.my_pseudonym_key.clone(),
         roles: c.roles.clone(),
-        online,
+        gossip,
         profiles,
         my_location: c.my_session_location.clone(),
     }
@@ -336,8 +335,11 @@ impl HostGovernance {
         views
     }
 
-    /// `community`'s members by display name: the stored roster with the
-    /// online overlay's status and location; ours from our own presence.
+    /// `community`'s members by display name: the stored roster, each
+    /// other member's status as its beats show it (plan E3.4 S3; a founder
+    /// never announces a join, so the gossip mesh never knew her online),
+    /// with the gossip overlay's location and last-active; ours from our
+    /// own presence.
     ///
     /// # Errors
     /// No identity is unlocked or the roster could not be read.
@@ -394,13 +396,19 @@ impl HostGovernance {
             .filter(|row| listed.contains(&row.pseudonym_key))
             .map(|row| {
                 let is_me = overlay.me.as_deref() == Some(row.pseudonym_key.as_str());
-                let online = overlay.online.get(&row.pseudonym_key);
                 let (status, location, last_active) = if is_me {
                     (my_status.clone(), overlay.my_location.clone(), now)
                 } else {
-                    online.map_or_else(
-                        || ("offline".to_owned(), None, 0),
-                        |(s, l, a)| (s.clone(), l.clone(), *a),
+                    let shown = beat_view::shown(&self.ctx, community, &row.pseudonym_key);
+                    let (location, last_active) = overlay
+                        .gossip
+                        .get(&row.pseudonym_key)
+                        .cloned()
+                        .unwrap_or_default();
+                    (
+                        beat_view::shown_status(shown).to_owned(),
+                        location.filter(|_| shown.is_present()),
+                        last_active,
                     )
                 };
                 let profile = overlay
