@@ -66,7 +66,7 @@ pub use network::Network;
 pub use records::FakeRecords;
 pub use routes::{
     allocation_entry, FakeAllocator, FakeRoutes, ALLOCATION_CUT, ALLOCATION_ENDS,
-    ALLOCATION_STARTS, FORGETS_PEER_ROUTE,
+    ALLOCATION_STARTS, FORGETS_PEER_ROUTE, RELEASES_PEER_ROUTE,
 };
 pub use trace::Trace;
 

@@ -126,6 +126,7 @@ mod refused_request;
 mod rejoin_after_kick;
 mod rejoin_after_leave;
 mod rejoin_by_gossip;
+mod remote_route_test;
 mod removal_ack;
 mod republish_inspect;
 mod requester_route_bounds;
