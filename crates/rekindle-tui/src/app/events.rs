@@ -312,38 +312,12 @@ impl App {
                 );
                 Some(Action::Render)
             }
-            SubscriptionEvent::Membership(MembershipEvent::Kicked {
-                ref community,
-                ref target_pseudonym,
-                ref removed_by_name,
-                ref reason,
-                ..
-            }) => {
-                let toast = self.removal_toast(
-                    community,
-                    target_pseudonym,
-                    removed_by_name.as_deref(),
-                    reason.as_deref(),
-                    "kicked",
-                );
-                self.notifications.push(toast, ToastLevel::Warning);
-                Some(Action::Render)
-            }
-            SubscriptionEvent::Membership(MembershipEvent::Banned {
-                ref community,
-                ref target_pseudonym,
-                ref removed_by_name,
-                ref reason,
-                ..
-            }) => {
-                let toast = self.removal_toast(
-                    community,
-                    target_pseudonym,
-                    removed_by_name.as_deref(),
-                    reason.as_deref(),
-                    "banned",
-                );
-                self.notifications.push(toast, ToastLevel::Warning);
+            SubscriptionEvent::Membership(
+                ref m @ (MembershipEvent::JoinWithdrawn { .. }
+                | MembershipEvent::Kicked { .. }
+                | MembershipEvent::Banned { .. }),
+            ) => {
+                self.own_membership_toast(m);
                 Some(Action::Render)
             }
             SubscriptionEvent::Friend(FriendEvent::Rejected { .. }) => {
