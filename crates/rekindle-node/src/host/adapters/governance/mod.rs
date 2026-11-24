@@ -105,6 +105,7 @@ mod timeout_events;
 
 mod checkpoint_rows;
 mod checkpoint_state;
+mod frontier;
 mod head_advanced;
 pub mod moderation;
 mod op_store;

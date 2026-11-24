@@ -40,6 +40,7 @@ pub mod device_signer;
 pub mod dht_hydration;
 pub mod error;
 pub mod event;
+pub mod frontier_exchange;
 pub mod genesis;
 pub mod hint_chain;
 pub mod hinted_walk;

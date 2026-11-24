@@ -159,8 +159,9 @@ impl HostGovernance {
 
     /// One token of `bucket`'s rate in `community`, at the 10 per second
     /// floor the gossip ingest meters a `headAdvanced` sender at
-    /// (`rekindle_transport::gossip::RateLimiter`).
-    fn admit_snapshot_request(&self, community: &str, bucket: &str) -> bool {
+    /// (`rekindle_transport::gossip::RateLimiter`); a frontier request
+    /// (S7d-keys.8) meters its asker in its own bucket.
+    pub(super) fn admit_snapshot_request(&self, community: &str, bucket: &str) -> bool {
         let mut map = self.ctx.communities.map().write();
         map.get_mut(community)
             .is_some_and(|c| c.snapshot_requests.check(bucket))

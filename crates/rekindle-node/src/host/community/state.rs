@@ -138,7 +138,8 @@ pub struct CommunityState {
     #[serde(skip)]
     pub outbox_streams: std::sync::Arc<rekindle_sync::stream::StreamEngine>,
     /// Checkpoint hint and state requests at the gossip floor (S7c.3): a
-    /// member's per pseudonym, a joiner's per invite (S7c.8 (2)).
+    /// member's per pseudonym, a joiner's per invite (S7c.8 (2)); frontier
+    /// requests (S7d-keys.8) per pseudonym in their own buckets.
     #[serde(skip)]
     pub snapshot_requests: rekindle_transport::gossip::RateLimiter,
     // ── v2.0 flat governance fields ──
