@@ -18,6 +18,25 @@ import { shot } from "../../shots.ts";
  */
 async function ownRowDelivered(b: Browser, text: string): Promise<void> {
   let seen = "";
+  // Every state the row takes, in order, recorded in the page by a
+  // MutationObserver (a poll misses a brief state): a timeout says what the
+  // row did ("reached delivered, then reverted to sent"), not only where it
+  // ended.
+  const key = text.slice(0, 40);
+  await b.execute((t: string) => {
+    const w = window as unknown as { __ownStates?: Record<string, string[]> };
+    w.__ownStates ??= {};
+    const log: string[] = [];
+    w.__ownStates[t] = log;
+    const note = (): void => {
+      const row = Array.from(document.querySelectorAll(".chat-message")).find((m) => (m.textContent ?? "").includes(t));
+      const cls = row?.querySelector(".message-status")?.getAttribute("class") ?? "";
+      const state = row ? (/message-status-([a-z_]+)/.exec(cls)?.[1] ?? "no status") : "absent";
+      if (log[log.length - 1] !== state) log.push(state);
+    };
+    note();
+    new MutationObserver(note).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["class"] });
+  }, key);
   await waitUntil(
     async () => {
       seen = (await b.execute((t: string) => {
@@ -31,8 +50,19 @@ async function ownRowDelivered(b: Browser, text: string): Promise<void> {
       return /message-status-(delivered|read)\b/.test(seen);
     },
     NET_WAIT_MS,
-    `the sender's own "${text.slice(0, 24)}" never showed once as delivered (last: ${seen})`,
-  );
+    "",
+  ).catch(async () => {
+    const states = (await b.execute(
+      (t: string) => (window as unknown as { __ownStates?: Record<string, string[]> }).__ownStates?.[t] ?? [],
+      key,
+    )) as string[];
+    const reached = states.findIndex((x) => x === "delivered" || x === "read");
+    const what =
+      reached >= 0
+        ? `reached ${states[reached]}, then reverted to ${states[states.length - 1]}`
+        : `never reached delivered (last: ${states[states.length - 1] ?? "absent"})`;
+    throw new Error(`the sender's own "${text.slice(0, 24)}" ${what}; states in order: ${states.join(" → ")}`);
+  });
   expect(seen).toMatch(/message-status-(delivered|read)/);
 }
 
