@@ -63,12 +63,12 @@ const CommunityMainPane: Component<{ vm: CommunityVm }> = (props) => {
               <Show when={true}>
                 <Show when={vm.editingTopic()} fallback={
                   <span
-                    class={`channel-topic ${vm.denied("manageChannels") === null ? "channel-topic-editable" : ""}`}
-                    title={vm.denied("manageChannels") ?? undefined}
-                    aria-disabled={vm.denied("manageChannels") !== null ? "true" : undefined}
-                    aria-description={vm.denied("manageChannels") ?? undefined}
+                    class={`channel-topic ${vm.denied("setTopic") === null ? "channel-topic-editable" : ""}`}
+                    title={vm.denied("setTopic") ?? undefined}
+                    aria-disabled={vm.denied("setTopic") !== null ? "true" : undefined}
+                    aria-description={vm.denied("setTopic") ?? undefined}
                     onClick={() => {
-                      if (vm.denied("manageChannels") === null) {
+                      if (vm.denied("setTopic") === null) {
                         vm.setTopicDraft(vm.activeChannel()?.topic ?? "");
                         vm.setEditingTopic(true);
                       }

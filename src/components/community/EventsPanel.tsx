@@ -150,6 +150,8 @@ const EventCard: Component<{
 };
 
 const EventsPanel: Component<EventsPanelProps> = (props) => {
+  // Never-hide: + New Event is drawn always, disabled with the Host's reason.
+  const createDenied = createMemo(() => deniedFor(communityState.communities[props.communityId], "createEvents"));
   const [loaded, setLoaded] = createSignal(false);
   const [filter, setFilter] = createSignal<StatusFilter>("upcoming");
 
@@ -174,7 +176,13 @@ const EventsPanel: Component<EventsPanelProps> = (props) => {
     <div class="event-list">
       <div class="form-row">
         <span class="form-label">Community Events</span>
-        <button class="form-btn-primary" onClick={props.onCreateEvent}>
+        <button
+          class="form-btn-primary"
+          onClick={props.onCreateEvent}
+          disabled={createDenied() !== null}
+          title={createDenied() ?? undefined}
+          aria-description={createDenied() ?? undefined}
+        >
           + New Event
         </button>
       </div>

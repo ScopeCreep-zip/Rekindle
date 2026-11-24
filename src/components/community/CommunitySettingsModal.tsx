@@ -77,12 +77,12 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
       { id: "invites", label: "Invites", denied: why("createInvite") },
       { id: "roles", label: "Roles", denied: why("manageRoles") },
       { id: "bans", label: "Bans", denied: why("banMembers") },
-      { id: "welcome", label: "Welcome", denied: why("manageCommunity") },
+      { id: "welcome", label: "Welcome", denied: why("manageWelcome") },
       { id: "expressions", label: "Emoji", denied: why("manageExpressions") },
-      { id: "automod", label: "AutoMod", denied: why("manageCommunity") },
+      { id: "automod", label: "AutoMod", denied: why("manageAutomod") },
       { id: "analytics", label: "Analytics", denied: why("viewInsights") },
       { id: "audit-log", label: "Audit Log", denied: why("viewAuditLog") },
-      { id: "security", label: "Security", denied: why("manageCommunity") },
+      { id: "security", label: "Security", denied: why("manageSecurity") },
     ];
   });
 
