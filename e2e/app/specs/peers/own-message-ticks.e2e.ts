@@ -19,6 +19,10 @@ async function ownState(b: Browser, text: string): Promise<string> {
   return (await b.execute((t: string) => {
     const rows = Array.from(document.querySelectorAll(".chat-message")).filter((m) => (m.textContent ?? "").includes(t));
     if (rows.length !== 1) return rows.length === 0 ? "" : `${rows.length} rows`;
+    // Seen, not only in the DOM: opaque and with a box (an entrance that
+    // started at opacity 0 left it invisible, r27 shots).
+    const r = rows[0].getBoundingClientRect();
+    if (getComputedStyle(rows[0]).opacity !== "1" || r.width === 0 || r.height === 0) return "invisible";
     const cls = rows[0].querySelector(".message-status")?.getAttribute("class") ?? "";
     return /message-status-([a-z_]+)/.exec(cls)?.[1] ?? "no status";
   }, text.slice(0, 40))) as string;

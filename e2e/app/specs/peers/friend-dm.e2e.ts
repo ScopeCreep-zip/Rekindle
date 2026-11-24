@@ -23,6 +23,9 @@ async function ownRowDelivered(b: Browser, text: string): Promise<void> {
       seen = (await b.execute((t: string) => {
         const rows = Array.from(document.querySelectorAll(".chat-message")).filter((m) => (m.textContent ?? "").includes(t));
         if (rows.length !== 1) return `${rows.length} rows`;
+        // Seen, not only in the DOM: opaque and with a box.
+        const r = rows[0].getBoundingClientRect();
+        if (getComputedStyle(rows[0]).opacity !== "1" || r.width === 0 || r.height === 0) return "invisible";
         return rows[0].querySelector(".message-status")?.getAttribute("class") ?? "no status";
       }, text.slice(0, 40))) as string;
       return /message-status-(delivered|read)\b/.test(seen);
