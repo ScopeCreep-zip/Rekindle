@@ -5,6 +5,8 @@
 //! and the stylesheet's one rule per node. The shell renders it in SK2-S2.
 
 mod anchor;
+mod anchor_client;
+mod anchor_share;
 pub mod brand;
 pub mod chat_roles;
 mod clip;
@@ -21,6 +23,7 @@ pub mod pieces;
 pub mod place;
 pub mod popup;
 pub mod roles;
+mod span_css;
 mod tab_step;
 pub mod target;
 pub mod text_box;

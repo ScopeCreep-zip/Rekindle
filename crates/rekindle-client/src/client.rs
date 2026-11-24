@@ -15,7 +15,7 @@ use uuid::Uuid;
 use rekindle_ipc::client::BusClient;
 use rekindle_ipc::message::SecurityLevel;
 use rekindle_ipc::protocol::{ChannelMessageRequest, LifecycleRequest};
-use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, IpcResponse};
+use rekindle_ipc::protocol::{CommunityRequest, GroupDmRequest, IpcRequest, IpcResponse};
 use rekindle_ipc::IpcError;
 use rekindle_types::intent::{IntentId, IntentProof, Reversibility};
 use rekindle_types::subscription_events::{Cursor, StreamFrame, SubscriptionFilter};
@@ -245,9 +245,11 @@ fn request_timeout(request: &IpcRequest) -> Duration {
         | IpcRequest::Unlock { .. }
         | IpcRequest::DmSend { .. }
         | IpcRequest::OutboxRetry { .. }
-        | IpcRequest::GroupDmCreate { .. }
-        | IpcRequest::GroupDmAccept { .. }
-        | IpcRequest::GroupDmSend { .. }
+        | IpcRequest::GroupDm(
+            GroupDmRequest::Create { .. }
+            | GroupDmRequest::Accept { .. }
+            | GroupDmRequest::Send { .. },
+        )
         | IpcRequest::DmInbox { .. } => LONG_TIMEOUT,
         IpcRequest::Community(request) if !community_local_read(request) => LONG_TIMEOUT,
         _ => DEFAULT_TIMEOUT,

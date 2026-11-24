@@ -41,7 +41,7 @@ fn a_frame_cut_at_its_middle_serves_the_packs_chat_region() {
     let fitted = fit(&layout, &components, &mut pieces);
     assert_eq!(fitted.region, Some([8, 67, 8, 8]));
     assert_eq!(fitted.declared, Some((253, 280)));
-    let (built, _) = window(&pieces, fitted).unwrap();
+    let (built, _) = window(&pieces, &fitted).unwrap();
     let c = built.content;
     assert_eq!((c.top, c.right, c.bottom, c.left), (67, 8, 8, 8));
     assert_eq!((built.min_width, built.min_height), (253, 280));
@@ -55,7 +55,7 @@ fn an_undeclared_minimum_holds_the_content_region() {
     let mut pieces = halves();
     let fitted = fit(&layout, &[], &mut pieces);
     assert_eq!(fitted.declared, None);
-    let (built, _) = window(&pieces, fitted).unwrap();
+    let (built, _) = window(&pieces, &fitted).unwrap();
     assert_eq!(
         (built.min_width, built.min_height),
         // The width is the corners' (83 + 83), wider than the content's need.
@@ -83,6 +83,70 @@ fn a_transparent_outer_margin_is_cut_from_its_side() {
     assert_eq!(trim(&mut pieces), [0, 29, 0, 55]);
     assert!(pieces[..3].iter().all(|p| p.height() == 2));
     assert!(pieces[6..].iter().all(|p| p.height() == 2));
+}
+
+/// Combat's top row: the middle piece clear on rows 0–1, the corners with
+/// knobs there. The top edge is cut to the middle's art, and the knobs are
+/// laid whole above the frame as overhang, flush with the window's ends.
+#[test]
+fn corner_knobs_above_a_clear_top_middle_are_overhang_art() {
+    let paint = |w: u32, h: u32, clear_rows: u32, knob: u32| {
+        RgbaImage::from_fn(w, h, |x, y| {
+            let art = y >= clear_rows || x < knob;
+            Rgba([90, 90, 90, if art { 255 } else { 0 }])
+        })
+    };
+    let mut pieces: [RgbaImage; 9] = std::array::from_fn(|i| match i {
+        0 => paint(10, 12, 2, 3),
+        1 => paint(4, 12, 2, 0),
+        2 => paint(10, 12, 2, 7),
+        _ => solid(10, 10),
+    });
+    let layout = parse("chatwindow.xml", ONYX).unwrap();
+    let fitted = fit(&layout, &[], &mut pieces);
+    assert!(
+        pieces[..3].iter().all(|p| p.height() == 10),
+        "top row cut by 2"
+    );
+    // The region's top is counted from the cut edge: 67 − 2.
+    assert_eq!(fitted.region.map(|r| r[1]), Some(65));
+    assert!(fitted.crest[1].is_none(), "no bottom crest");
+    let knobs = fitted.crest[0].clone().expect("the knobs are kept");
+    assert_eq!(
+        knobs.each_ref().map(|c| (c.width(), c.height())),
+        [(10, 2); 2]
+    );
+    let (built, files) = window(&pieces, &fitted).unwrap();
+    assert_eq!(built.outsets.top, 2);
+    let over: Vec<_> = built.tiles.iter().filter(|t| t.overhang).collect();
+    let ends: Vec<_> = over.iter().map(|t| (t.x, t.y, t.height)).collect();
+    let top = TileAxis::Start { offset: 0 };
+    assert_eq!(
+        ends,
+        [
+            (TileAxis::Start { offset: 0 }, top, 2),
+            (TileAxis::End { offset: 0 }, top, 2)
+        ]
+    );
+    assert!(over.iter().all(|t| files.contains_key(&t.image)));
+    // A top row whose middle is as clear as its corners keeps no crest.
+    let mut plain = halves();
+    assert!(crest(&mut plain, true).is_none());
+    // The bottom row mirrored keeps its knobs below the frame.
+    let mut flipped: [RgbaImage; 9] = std::array::from_fn(|i| match i {
+        6 => flip(&paint(10, 12, 2, 3)),
+        7 => flip(&paint(4, 12, 2, 0)),
+        8 => flip(&paint(10, 12, 2, 7)),
+        _ => solid(10, 10),
+    });
+    let (feet, rows) = crest(&mut flipped, false).expect("the bottom knobs are kept");
+    assert_eq!((feet[0].height(), rows, flipped[7].height()), (2, 2, 10));
+    assert!(feet[0].get_pixel(0, 1)[3] > 0 && feet[0].get_pixel(5, 1)[3] == 0);
+}
+
+fn flip(img: &RgbaImage) -> RgbaImage {
+    let h = img.height();
+    RgbaImage::from_fn(img.width(), h, |x, y| *img.get_pixel(x, h - 1 - y))
 }
 
 /// The extent [lo, hi) of a tile along an axis of `len` px.

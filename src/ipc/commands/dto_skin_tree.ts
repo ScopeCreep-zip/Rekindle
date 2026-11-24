@@ -405,12 +405,14 @@ export interface SkinShell {
 export type NodeAnchor =
   | { kind: "start"; offset: number }
   | { kind: "end"; offset: number }
-  | { kind: "centre"; offset: { by: number; before: number; after: number } };
+  | { kind: "centre"; offset: { by: number; before: number; after: number } }
+  | { kind: "after"; offset: { sibling: string; gap: number } };
 
 /** `NodeSpan` (serde `tag = "kind"`): one axis of a box, px. */
 export type NodeSpan =
   | { kind: "fixed"; at: NodeAnchor; size: number }
-  | { kind: "stretch"; start: number; end: number };
+  | { kind: "stretch"; start: number; end: number }
+  | { kind: "share"; at: NodeAnchor; permille: number };
 
 /** `PopupAnchor`: the popup's left side `offset` px from the launching window's `edge`. */
 export interface PopupAnchor {

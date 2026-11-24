@@ -24,7 +24,8 @@ use rekindle_types::dto::skin_tree::{
     ContentFit, NodeArt, NodePiece, NodePieces, NodeRole, NodeSpan, PieceSlot, SkinNode, SkinTree,
 };
 
-use super::anchor::{axis, chain, client_box, client_inset, outer_for, to_tile, Sibs, Sizes, X, Y};
+use super::anchor::{axis, chain, outer_for, Sibs, Sizes, X, Y};
+use super::anchor_client::{client_box, client_inset, to_tile};
 use super::clip::{clip, Art, Images};
 use super::content::{self, Link};
 use super::fit::fit;
@@ -387,8 +388,10 @@ impl Walk<'_> {
                 }
                 let refs = (&names, &sizes);
                 let slot = matches!(t.role.shown(), NodeRole::Slot(_));
-                let xy = axis(t.tile, &X, t.wh.0, t.max.0, slot, refs)
-                    .and_then(|x| Ok((x, axis(t.tile, &Y, t.wh.1, t.max.1, slot, refs)?)));
+                // A tile of the window's own layout, not of a nested tile.
+                let kind = (slot, path.is_empty());
+                let xy = axis(t.tile, &X, t.wh.0, t.max.0, kind, refs)
+                    .and_then(|x| Ok((x, axis(t.tile, &Y, t.wh.1, t.max.1, kind, refs)?)));
                 match xy {
                     Ok(xy) => {
                         names.insert(t.id.to_ascii_lowercase(), xy.clone());
@@ -569,7 +572,7 @@ pub fn add(
         files: &mut walk.files,
     };
     outdent::clip_window(&mut tree.root, &mut art)?;
-    clip(&mut tree.root, (None, None), &mut art)?;
+    clip(&mut tree.root, ((None, None), [Some(0); 2]), &mut art)?;
     let window = layout.attr_ci("Component").unwrap_or("MainWindow");
     let declared = walk.by_name.get(&window.to_ascii_lowercase()).copied();
     let pack_min = (

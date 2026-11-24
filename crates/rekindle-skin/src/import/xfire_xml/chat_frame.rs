@@ -55,19 +55,31 @@ use super::{
 };
 use crate::shape::{self, u16_of};
 
+/// A window's layout and its package images.
+pub(in crate::import) type Built = (WindowLayout, BTreeMap<String, Vec<u8>>);
+
 /// What [`fit`] read from the pack for [`window`]: the content region's
 /// insets (left, top, right, bottom) from the cut frame edges, to widen
-/// the sides and rows to, and the pack's declared minimum (width, height).
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+/// the sides and rows to, the pack's declared minimum (width, height), and
+/// the corners' crests above and below the frame ([`crest`]).
+#[derive(Debug, Clone, Default)]
 pub(super) struct Fitted {
     pub region: Option<[u32; 4]>,
     pub declared: Option<(u16, u16)>,
+    /// The corners' art beyond the top and bottom edges' own, (left, right)
+    /// per edge, laid as overhang above and below the frame.
+    pub crest: [Option<[RgbaImage; 2]>; 2],
 }
 
 /// The `MinWidth`/`MinHeight` of the component `layout`'s root names,
 /// `None` unless both are pixel counts.
 pub(super) fn declared_min(layout: &Node, components: &[Node]) -> Option<(u16, u16)> {
-    let name = layout.attr_ci("Component")?;
+    declared_of(layout.attr_ci("Component")?, components)
+}
+
+/// The `MinWidth`/`MinHeight` of the component `name`, `None` unless both
+/// are pixel counts.
+fn declared_of(name: &str, components: &[Node]) -> Option<(u16, u16)> {
     let comp = components
         .iter()
         .flat_map(|n| descendants(n, "Component"))
@@ -179,15 +191,58 @@ pub(super) fn trim(pieces: &mut [RgbaImage; 9]) -> [u32; 4] {
     [left, top, right, bottom]
 }
 
+/// Cuts a row (the top when `top`, else the bottom) to its middle piece's
+/// art when the corners carry art (knobs) in rows the middle leaves clear:
+/// Combat's `c_chat_top_middle.gif` is clear on rows 0–1 while its corners
+/// hold 3–7 px knobs there, and its bottom row likewise. Laid whole, the
+/// middle's clear rows left the window's edge open between the corners;
+/// cut to the common margin only ([`trim`]), the knobs were lost. The
+/// row's three pieces lose the middle's clear rows, and the corners' rows
+/// cut (inside their own common clear margin, which [`trim`] would cut
+/// anyway) are returned as the crest, laid beyond the frame as overhang art
+/// ([`window`]); returns the crest and the rows cut, `None` when the middle
+/// has no clear row the corners fill.
+pub(super) fn crest(pieces: &mut [RgbaImage; 9], top: bool) -> Option<([RgbaImage; 2], u32)> {
+    let [l, m, r] = if top { [0, 1, 2] } else { [6, 7, 8] };
+    let mid = clear_rows(&pieces[m], top);
+    let corners = clear_rows(&pieces[l], top).min(clear_rows(&pieces[r], top));
+    if mid <= corners {
+        return None;
+    }
+    let knob = |p: &RgbaImage| {
+        let h = p.height();
+        if top {
+            views::first_rows(&views::last_rows(p, h - corners), mid - corners)
+        } else {
+            views::last_rows(&views::first_rows(p, h - corners), mid - corners)
+        }
+    };
+    let crest = [knob(&pieces[l]), knob(&pieces[r])];
+    for i in [l, m, r] {
+        let keep = pieces[i].height() - mid;
+        pieces[i] = if top {
+            views::last_rows(&pieces[i], keep)
+        } else {
+            views::first_rows(&pieces[i], keep)
+        };
+    }
+    Some((crest, mid))
+}
+
 /// Fits the nine `pieces` the chat `layout` lays to the pack's chat
 /// content region (module docs) and reads the pack's declared minimum
 /// from `components`; the band is `None` when the layout names no numeric
 /// region.
 pub(super) fn fit(layout: &Node, components: &[Node], pieces: &mut [RgbaImage; 9]) -> Fitted {
-    let cut = trim(pieces);
+    let crests = [crest(pieces, true), crest(pieces, false)];
+    let mut cut = trim(pieces);
+    let rows = |c: &Option<([RgbaImage; 2], u32)>| c.as_ref().map_or(0, |(_, n)| *n);
+    cut[1] += rows(&crests[0]);
+    cut[3] += rows(&crests[1]);
     Fitted {
         region: fit_region(layout, pieces, cut),
         declared: declared_min(layout, components),
+        crest: crests.map(|c| c.map(|(c, _)| c)),
     }
 }
 
@@ -234,6 +289,7 @@ pub(super) fn read_frame(
     let unfitted = Fitted {
         region: None,
         declared,
+        crest: [None, None],
     };
     if layout == Layout::ClassicV3 {
         let source = "xfirecomponents.xml (the chat window's outer edges' middles, \
@@ -332,20 +388,59 @@ fn fill_rows(
     Ok(())
 }
 
+/// Lays a row's corner `crest` ([`crest`]) as overhang tiles on the
+/// window's top line (`top`) or bottom line, flush with its left and right
+/// ends, and grows that outset to hold them; a crest without art lays
+/// nothing.
+fn lay_crest(
+    built: &mut (WindowLayout, BTreeMap<String, Vec<u8>>),
+    crest: &[RgbaImage; 2],
+    top: bool,
+) -> Result<(), ImportError> {
+    let (y, names) = if top {
+        (
+            TileAxis::Start { offset: 0 },
+            ["crest-top-left", "crest-top-right"],
+        )
+    } else {
+        (
+            TileAxis::End { offset: 0 },
+            ["crest-bottom-left", "crest-bottom-right"],
+        )
+    };
+    let ends = [TileAxis::Start { offset: 0 }, TileAxis::End { offset: 0 }];
+    for ((name, x), img) in names.into_iter().zip(ends).zip(crest) {
+        let Some((t, png)) = shape::tile(SkinWindow::Chat, name, img, (x, y), true)? else {
+            continue;
+        };
+        let o = &mut built.0.outsets;
+        if top {
+            o.top = o.top.max(t.height);
+        } else {
+            o.bottom = o.bottom.max(t.height);
+        }
+        built.1.insert(t.image.clone(), png);
+        built.0.tiles.push(t);
+    }
+    Ok(())
+}
+
 /// The chat window's layout from its nine `pieces`, the rows and sides
 /// widened to `fitted`'s region with the centre fill, at least `fitted`'s declared
 /// minimum (module docs).
 ///
 /// # Errors
 /// Pieces too large for a tile, or that do not encode.
-pub(super) fn window(
-    pieces: &[RgbaImage; 9],
-    fitted: Fitted,
-) -> Result<(WindowLayout, BTreeMap<String, Vec<u8>>), ImportError> {
+pub(super) fn window(pieces: &[RgbaImage; 9], fitted: &Fitted) -> Result<Built, ImportError> {
     let mut built = shape::from_nine(SkinWindow::Chat, pieces)?;
     if let Some([left, top, right, bottom]) = fitted.region {
         fill_rows(&mut built, &pieces[4], (top, bottom))?;
         views::fill_band(SkinWindow::Chat, &mut built, &pieces[4], (left, right))?;
+    }
+    for (top, crest) in [true, false].into_iter().zip(&fitted.crest) {
+        if let Some(crest) = crest {
+            lay_crest(&mut built, crest, top)?;
+        }
     }
     let c = built.0.content;
     let (need_w, need_h) = fitted.declared.unwrap_or_else(|| {
@@ -359,6 +454,29 @@ pub(super) fn window(
     layout.min_width = layout.min_width.max(need_w);
     layout.min_height = layout.min_height.max(need_h);
     Ok(built)
+}
+
+/// The chat window an INI pack's chat file lays (plan SK17-3): its
+/// sections read as tiles ([`super::super::xfire_ini::title::tree`]), the
+/// nine frame tiles its root lays ([`tiles::pieces`]: Combat's `[TopLeft]`
+/// … `[BottomRight]`, Alloy's `[Top]`/`[Middle]`/`[Bottom]` rows) fitted to
+/// the pack's chat content region as a fan pack's ([`fit`]), at least the
+/// minimum the root section `root` declares (`[MainWindow]` `MinWidth`,
+/// `MinHeight`); `None` when the root lays no complete frame.
+///
+/// # Errors
+/// What `piece` returns, or pieces too large for a tile.
+pub(in crate::import) fn from_ini_tiles(
+    (layout, components): (&Node, &[Node]),
+    root: &str,
+    piece: impl Fn(&str, Option<&str>) -> Result<RgbaImage, ImportError>,
+) -> Result<Option<Built>, ImportError> {
+    let Some((mut pieces, _, _)) = tiles::pieces(layout, components, piece)? else {
+        return Ok(None);
+    };
+    let mut fitted = fit(layout, components, &mut pieces);
+    fitted.declared = declared_of(root, components);
+    window(&pieces, &fitted).map(Some)
 }
 
 #[cfg(test)]

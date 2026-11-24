@@ -3,9 +3,9 @@
 //! every tree numeric, each content text as wide as its served words.
 
 use rekindle_types::dto::skin::{SkinWindow, WindowLayout};
-use rekindle_types::dto::skin_tree::{SkinNode, SkinTree};
+use rekindle_types::dto::skin_tree::{Anchor, NodeSpan, SkinNode, SkinTree};
 
-use super::content::{width, word_width};
+use super::content::{chains, width, word_width, Link};
 use super::golden_tests::main_layout;
 use super::test_support::find;
 use crate::{builtin, manifest, package};
@@ -21,12 +21,43 @@ fn stored_main(id: &str) -> WindowLayout {
         .unwrap()
 }
 
+/// The first node under `nodes` served with a chain, except a chain whose
+/// base resolves through a [`NodeSpan::Share`] (plan SK17-3, lead ruling):
+/// a share's far edge depends on the window, so no px start exists to
+/// serve and the stylesheet keeps it as `calc(...)` (Combat's chat
+/// `Divider`, `Y=ChatArea.BOTTOM` under `ChatArea`'s `ResizeY=80`,
+/// `CombatChatSkin.ini:291-334`).
 fn any_after(nodes: &[SkinNode]) -> Option<&str> {
+    let axes: [fn(&SkinNode) -> &NodeSpan; 2] = [|n| &n.x, |n| &n.y];
     nodes.iter().find_map(|n| {
-        (n.x.after().is_some() || n.y.after().is_some())
+        axes.iter()
+            .any(|ax| {
+                ax(n)
+                    .after()
+                    .is_some_and(|(sib, _)| !through_share(nodes, sib, *ax))
+            })
             .then_some(n.id.as_str())
             .or_else(|| any_after(&n.children))
     })
+}
+
+/// Whether the chain on sibling `name` of `nodes` bottoms out at a share
+/// on the axis `ax` reads: `name` is one, or is chained on one.
+fn through_share(nodes: &[SkinNode], name: &str, ax: fn(&SkinNode) -> &NodeSpan) -> bool {
+    let mut name = name;
+    for _ in 0..nodes.len() {
+        let Some(sib) = nodes.iter().find(|s| s.id.eq_ignore_ascii_case(name)) else {
+            return false;
+        };
+        match ax(sib) {
+            NodeSpan::Share { .. } => return true,
+            span => match span.after() {
+                Some((next, _)) => name = next,
+                None => return false,
+            },
+        }
+    }
+    false
 }
 
 /// Onyx (`mainwindow.xml:42`, `X="XfireMenuText.RIGHT+10"`) and Combat
@@ -47,7 +78,8 @@ fn a_content_text_keeps_its_fit_and_the_chain_on_it_stays_symbolic() {
     }
 }
 
-/// No served tree of any built-in window or popup carries a chain.
+/// No served tree of any built-in window or popup carries a chain, but for
+/// one whose base resolves through a share ([`any_after`]).
 #[test]
 fn no_served_tree_carries_a_chain() {
     for b in builtin::PACKS {
@@ -99,4 +131,41 @@ fn titles_hold_their_words_and_the_next_title_follows() {
         let served = served.tree.as_ref().unwrap();
         assert_eq!(any_after(&served.root), None, "{pack}");
     }
+}
+
+/// Plan SK15b-2: XGlow's status row follows its runtime name on y
+/// (`Xglow.ini:186-217`): `StatusMiddle` at `UserName.BOTTOM+2` (a far-edge
+/// chain on the content text) and `Status` at `StatusMiddle.TOP+1` (a
+/// near-edge chain on a tile that follows it) both chain `After` the name,
+/// the near edge's offset added to its sibling's gap, whichever parent edge
+/// their numeric spans counted from.
+#[test]
+fn a_near_edge_chain_on_a_following_tile_follows_the_same_sibling() {
+    let fixed = |at| NodeSpan::Fixed { at, size: 17 };
+    let links = [
+        Link {
+            id: "UserName",
+            fit: true,
+            chain: [None, None],
+        },
+        Link {
+            id: "StatusMiddle",
+            fit: false,
+            chain: [None, Some(("UserName", 2, true))],
+        },
+        Link {
+            id: "Status",
+            fit: false,
+            chain: [None, Some(("StatusMiddle", 1, false))],
+        },
+    ];
+    let mut spans = vec![
+        (fixed(Anchor::Start(20)), fixed(Anchor::End(133))),
+        (fixed(Anchor::Start(33)), fixed(Anchor::End(114))),
+        (fixed(Anchor::Start(39)), fixed(Anchor::End(116))),
+    ];
+    chains(&links, &mut spans);
+    assert_eq!(spans[1].1.after(), Some(("UserName", 2)), "{:?}", spans[1]);
+    assert_eq!(spans[2].1.after(), Some(("UserName", 3)), "{:?}", spans[2]);
+    assert_eq!(spans[2].0, fixed(Anchor::Start(39)), "x is not chained");
 }

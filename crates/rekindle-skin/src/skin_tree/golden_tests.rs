@@ -226,7 +226,8 @@ fn menu_titles_carry_the_hosts_words() {
 /// Total Chaos "XFIRE" x 15-49, y 3-9 (its `MenuBg` from x 11, y 12);
 /// XGlow "File" x 2-19, y 2-9 and its mirrored reflection to x 21, y 17.
 /// Their Tools and Help art reads right and carries no label; the
-/// text-drawn packs carry `{text}` on all three titles.
+/// text-drawn packs carry `{text}` on all three titles (Simple-X's File drawn
+/// as the small mark, plan SK15b-2).
 #[test]
 fn file_covers_hide_the_whole_baked_word() {
     let holds = |c: [u16; 4], w: [u16; 4]| {
@@ -261,15 +262,20 @@ fn file_covers_hide_the_whole_baked_word() {
         ("spacecowboy", "XfireMenuText"),
         ("xslimfire", "XfireMenuText"),
     ] {
-        for (node, text) in [
-            (file, "Rekindle"),
-            ("ToolsMenuText", "Tools"),
-            ("HelpMenuText", "Help"),
+        // Simple-X's text-drawn File row has no room for "Rekindle" (plan
+        // SK15b-2): it is served the small mark, its words the accessible
+        // name, and still no cover, as nothing is baked under it.
+        let file_glyph = (pack == "simple-x")
+            .then_some(rekindle_types::dto::skin_tree::NodeGlyph::RekindleMarkSmall);
+        for (node, text, glyph) in [
+            (file, "Rekindle", file_glyph),
+            ("ToolsMenuText", "Tools", None),
+            ("HelpMenuText", "Help", None),
         ] {
             let label = menu_label(pack, node).expect(pack);
             assert_eq!(
                 (label.text.as_str(), label.cover, label.glyph),
-                (text, None, None),
+                (text, None, glyph),
                 "{pack} {node}"
             );
         }

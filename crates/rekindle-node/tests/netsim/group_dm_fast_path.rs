@@ -8,7 +8,7 @@
 //! member's group chain held back, each member's post reaches the other
 //! two over the direct fast path alone.
 
-use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::{GroupDmRequest, IpcRequest};
 use rekindle_netsim::latency::MESSAGE;
 use rekindle_netsim::{Fault, Writes};
 
@@ -26,11 +26,11 @@ async fn a_member_who_is_no_friend_gets_each_post_over_the_fast_path() {
     befriend(&sim, &nodes[2], &nodes[0]).await;
     let gid: String = serde_json::from_value(
         nodes[0]
-            .ok(IpcRequest::GroupDmCreate {
+            .ok(IpcRequest::GroupDm(GroupDmRequest::Create {
                 name: "fast path".to_string(),
                 members: vec![key(&nodes[1]), key(&nodes[2])],
                 origin_peer: None,
-            })
+            }))
             .await,
     )
     .expect("the group is created");
@@ -47,9 +47,9 @@ async fn a_member_who_is_no_friend_gets_each_post_over_the_fast_path() {
     // Bea accepts first: her accept to Cat arrives while Cat's invite is
     // unanswered.
     nodes[1]
-        .ok(IpcRequest::GroupDmAccept {
+        .ok(IpcRequest::GroupDm(GroupDmRequest::Accept {
             group_id: gid.clone(),
-        })
+        }))
         .await;
     tokio::time::sleep(MESSAGE.max * 4).await;
     assert!(
@@ -57,9 +57,9 @@ async fn a_member_who_is_no_friend_gets_each_post_over_the_fast_path() {
         "Bea's accept reached Cat before Cat accepted"
     );
     nodes[2]
-        .ok(IpcRequest::GroupDmAccept {
+        .ok(IpcRequest::GroupDm(GroupDmRequest::Accept {
             group_id: gid.clone(),
-        })
+        }))
         .await;
     // Every member's chain is held back: a post arrives only as a hint.
     for node in &nodes {

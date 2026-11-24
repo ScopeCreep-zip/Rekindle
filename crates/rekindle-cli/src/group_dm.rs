@@ -3,7 +3,7 @@
 //! [`friend_ref`] reads them.
 
 use rekindle_client::DaemonClient;
-use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::{GroupDmRequest, IpcRequest};
 
 use crate::cli::GroupDmCmd;
 use crate::friend_ref;
@@ -19,42 +19,42 @@ async fn request(client: &DaemonClient, cmd: &GroupDmCmd) -> anyhow::Result<IpcR
             name,
             members,
             origin_peer,
-        } => IpcRequest::GroupDmCreate {
+        } => IpcRequest::GroupDm(GroupDmRequest::Create {
             name: name.clone(),
             members: friend_ref::resolve_all(client, members).await?,
             origin_peer: friend_ref::resolve_opt(client, origin_peer.as_deref()).await?,
-        },
-        GroupDmCmd::Accept { group_id } => IpcRequest::GroupDmAccept {
+        }),
+        GroupDmCmd::Accept { group_id } => IpcRequest::GroupDm(GroupDmRequest::Accept {
             group_id: group_id.clone(),
-        },
-        GroupDmCmd::Decline { group_id } => IpcRequest::GroupDmDecline {
+        }),
+        GroupDmCmd::Decline { group_id } => IpcRequest::GroupDm(GroupDmRequest::Decline {
             group_id: group_id.clone(),
-        },
-        GroupDmCmd::Leave { group_id } => IpcRequest::GroupDmLeave {
+        }),
+        GroupDmCmd::Leave { group_id } => IpcRequest::GroupDm(GroupDmRequest::Leave {
             group_id: group_id.clone(),
-        },
-        GroupDmCmd::Rename { group_id, name } => IpcRequest::GroupDmRename {
+        }),
+        GroupDmCmd::Rename { group_id, name } => IpcRequest::GroupDm(GroupDmRequest::Rename {
             group_id: group_id.clone(),
             name: name.clone(),
-        },
-        GroupDmCmd::Invite { group_id, members } => IpcRequest::GroupDmInvite {
+        }),
+        GroupDmCmd::Invite { group_id, members } => IpcRequest::GroupDm(GroupDmRequest::Invite {
             group_id: group_id.clone(),
             members: friend_ref::resolve_all(client, members).await?,
-        },
-        GroupDmCmd::Send { group_id, text } => IpcRequest::GroupDmSend {
+        }),
+        GroupDmCmd::Send { group_id, text } => IpcRequest::GroupDm(GroupDmRequest::Send {
             group_id: group_id.clone(),
             body: text.clone(),
-        },
-        GroupDmCmd::List => IpcRequest::GroupDmList,
+        }),
+        GroupDmCmd::List => IpcRequest::GroupDm(GroupDmRequest::List),
         GroupDmCmd::Messages {
             group_id,
             limit,
             before,
-        } => IpcRequest::GroupDmMessages {
+        } => IpcRequest::GroupDm(GroupDmRequest::Messages {
             group_id: group_id.clone(),
             limit: *limit,
             before: *before,
-        },
+        }),
     })
 }
 

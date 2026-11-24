@@ -6,6 +6,7 @@ import type { Message } from "../stores/chat.store";
 import { transformDmMessage } from "../utils/transformers";
 import { awaitsExpiry } from "./disappearing.actions";
 import { afterDraftReports, sendDraftReport } from "../utils/draft_reports";
+import { withOwnRow } from "../utils/own_rows";
 
 /**
  * Send `body` to `to`. Nothing is drawn here: once the send commits, the
@@ -37,10 +38,7 @@ export function upsertOwnMessage(to: string, message: Message): void {
     setChatState("conversations", to, { peerId: to, messages: [message], isTyping: false, lastRead: 0 });
     return;
   }
-  setChatState("conversations", to, "messages", (msgs) => {
-    const rest = msgs.filter((m) => !(message.serverMessageId && m.serverMessageId === message.serverMessageId));
-    return [...rest, message].sort((x, y) => x.timestamp - y.timestamp);
-  });
+  setChatState("conversations", to, "messages", (msgs) => withOwnRow(msgs, message));
 }
 
 /// Whether a draft can be sent: it holds more than whitespace. The Send
