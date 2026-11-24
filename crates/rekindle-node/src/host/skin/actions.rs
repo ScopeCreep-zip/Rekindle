@@ -467,6 +467,8 @@ fn gap_name(action: &A) -> (String, Option<&'static str>) {
         A::OpenSelected => (name("Opening a picture or video"), Some("E7.2 G14")),
         A::UploadSelected => (name("Uploading a picture or video"), Some("E7.2 G14")),
         A::DeleteSelected => (name("Deleting a picture or video"), Some("E7.2 G14")),
+        // Search answers a gap only in the pictures and videos views (G11).
+        A::SearchFor => (name("Searching pictures and videos"), Some("E7.2 G14")),
         A::ShowWindow => (name("Showing the in-game overlay"), OVERLAY),
         A::HideWindow => (name("Hiding the in-game overlay"), OVERLAY),
         A::DialogOk | A::DialogCancel => (name("The overlay's dialogs"), OVERLAY),

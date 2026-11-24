@@ -566,7 +566,8 @@ fn search_for_searches_the_windows_recorded_view() {
     assert_eq!(
         search_for(&skin, "buddy-list"),
         SkinRun::NotBuiltYet {
-            action: A::SearchFor
+            action: A::SearchFor,
+            message: "Searching pictures and videos isn't in Rekindle yet (plan E7.2 G14)".into(),
         }
     );
 }
