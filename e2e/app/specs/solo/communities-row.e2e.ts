@@ -8,8 +8,8 @@
 import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, press, shown, switchTo, waitForHandle, waitUntil } from "../../../walk/helpers.ts";
 import { BUDDY, closeModal, openSettings } from "../../../walk/nav.ts";
-import { createCommunity, createIdentity, newUser, type User } from "../../journeys.ts";
-import { applySkin, showSkinView, skinShown } from "../../journeys_skins.ts";
+import { communitiesTab, createCommunity, createIdentity, newUser, type User } from "../../journeys.ts";
+import { applySkin, skinShown } from "../../journeys_skins.ts";
 import { shot } from "../../shots.ts";
 import { builtinPacks } from "../../skin-pack.ts";
 
@@ -64,7 +64,8 @@ describe("the Communities view's row: Open / Leave / New in every pack (CB1)", f
       const href = await applySkin(browser, me, pack.name);
       await switchTo(browser, BUDDY);
       await skinShown(browser, href);
-      await showSkinView(browser, "Communities");
+      // The tree's Communities tab (roles are lowercase: tab:communities).
+      await communitiesTab(browser);
       await waitUntil(async () => (await node(NODES.open)).shown, NET_WAIT_MS, `${file}: the Communities row's Open is not drawn`);
 
       // 1. Nothing selected: Open and Leave drawn disabled, New usable.
