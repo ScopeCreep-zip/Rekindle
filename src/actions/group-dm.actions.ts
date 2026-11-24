@@ -110,12 +110,12 @@ export function handleGroupDisplayed(groupId: string): void {
 /** Send `body` to the group; once the Host commits its row, the stored
  *  history (with our queued echo) is read again, and its state then
  *  follows `sendStatus`. `null` on success, else the Host's error. */
-export async function handleSendGroupDm(groupId: string, body: string): Promise<string | null> {
+export async function handleSendGroupDm(groupId: string, body: string, replyTo: string | null = null): Promise<string | null> {
   try {
     // Nothing is drawn here: once the send commits, the Host publishes our
     // own row (`messageSent`, plan E6.11) to this window, upserted by its
     // stored id (handlers/group-dm.handlers.ts).
-    await afterDraftReports(`group:${groupId}`, () => commands.groupDmSend(groupId, body));
+    await afterDraftReports(`group:${groupId}`, () => commands.groupDmSend(groupId, body, replyTo));
     return null;
   } catch (e) {
     return errorMessage(e);

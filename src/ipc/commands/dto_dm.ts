@@ -6,6 +6,8 @@ export interface DmMessage {
   id: number;
   /** Its client id, which a reply names; null for a row from before E2.3. */
   messageId: string | null;
+  /** The parent's client id when this is a reply (kept even when the parent is not held). */
+  replyToId: string | null;
   senderId: string;
   body: string;
   timestamp: number;

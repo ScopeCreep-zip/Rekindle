@@ -26,6 +26,10 @@ interface MessageBubbleProps {
   senderName: string;
   myPseudonymKey?: string | null;
   replyToMessage?: Message | null;
+  /** The quoted parent's sender, by name (never its key). */
+  replyToSender?: string;
+  /** A reply whose parent this window does not hold: said, never guessed. */
+  replyUnavailable?: boolean;
   threadInfo?: { name: string; messageCount: number; threadId: string; archived: boolean };
   onRetry?: (messageId: number) => void;
   onDiscard?: (messageId: number) => void;
@@ -181,10 +185,15 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
       <Show when={props.replyToMessage}>
         {(replyMsg) => (
           <div class="reply-snippet">
-            <span class="reply-snippet-sender">{replyMsg().senderId}</span>
+            <span class="reply-snippet-sender">{props.replyToSender ?? ""}</span>
             {replyMsg().body.length > 60 ? replyMsg().body.slice(0, 60) + "..." : replyMsg().body}
           </div>
         )}
+      </Show>
+      {/* A parent this window does not hold (not loaded, or never seen):
+       *  the reply says so rather than dropping the quote or guessing it. */}
+      <Show when={props.replyUnavailable}>
+        <div class="reply-snippet reply-snippet-missing">Message unavailable</div>
       </Show>
 
       <div class="chat-message-header">
