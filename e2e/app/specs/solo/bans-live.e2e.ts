@@ -7,8 +7,8 @@
 
 import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, byText, waitUntil } from "../../../walk/helpers.ts";
-import { type Peer, peerAssignRole, peerBan, peerCreateCommunity, peerCreateRole, peerInvite, peerJoinCommunity, peerMemberCount, startFleet, stopFleet } from "../../fleet.ts";
-import { communitySettings, createIdentity, joinCommunity, newUser, openCommunity, type User } from "../../journeys.ts";
+import { type Peer, peerAssignRole, peerBan, peerCreateCommunity, peerCreateRole, peerInvite, peerJoinCommunity, peerMemberCount, startFleet, stopFleet, peerOwnPseudonym } from "../../fleet.ts";
+import { communitySettings, createIdentity, joinCommunity, newUser, openCommunity, type User, ourPseudonym } from "../../journeys.ts";
 import { shot } from "../../shots.ts";
 
 const COMMUNITY = `Ban Watch ${Date.now() % 100000}`;
@@ -62,7 +62,7 @@ describe("Settings → Bans shows a ban made while it is open (BansChanged)", fu
   });
 
   it("Ari's open ban list gains Bea when Cara bans her", async () => {
-    await peerAssignRole(peers[0], anchor, me.displayName, mods);
+    await peerAssignRole(peers[0], anchor, await ourPseudonym(browser, anchor), mods);
     // The grant reaches Ari's window live: the Bans tab enables.
     await waitUntil(
       async () => {
@@ -78,7 +78,7 @@ describe("Settings → Bans shows a ban made while it is open (BansChanged)", fu
     await communitySettings(browser, "Bans");
     expect(await bannedShown()).not.toContain("Bea");
     await shot("bans-before");
-    await peerBan(peers[0], anchor, "Bea");
+    await peerBan(peers[0], anchor, await peerOwnPseudonym(peers[1], anchor));
     let shown: string[] = [];
     await waitUntil(
       async () => (shown = await bannedShown()).some((n) => n.includes("Bea")),
