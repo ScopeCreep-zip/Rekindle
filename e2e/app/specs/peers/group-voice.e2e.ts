@@ -1,6 +1,7 @@
 // Group voice split (pack-grounded: Symbiosis GroupChatWindow.xml:112-165):
 // in a group window, the pack's voice tab reads Call with no call, Join while
-// the group's call rings, and Leave once joined. Alice and Bob (two apps,
+// the group's call rings, and Leave once joined: one art node per state
+// (ChatButtonCall / ChatButtonAnswerCall / ChatButtonLeaveCall). Alice and Bob (two apps,
 // multiremote) and Cara (fleet) are a group of three, both apps under
 // Symbiosis. Bob presses his group window's Call tab (HostGroupVoiceChat,
 // which opens StartGroupCall) and ticks exactly the group's other members,
@@ -29,36 +30,32 @@ interface Tab {
   id: string;
   role: string;
   action: string;
-  left: number;
-  top: number;
 }
 
 /**
- * The tree nodes in `b`'s window whose own label reads `word`, drawn,
- * leftmost first; with `at`, only the one at that spot (the voice tab's
- * place: the pack may swap in a different node per page, so the place, not
- * the id, is the tab; a join-game "Join" sits elsewhere in the row).
+ * The pack's voice control for each state (Symbiosis GroupChatWindow, r28
+ * group-tree diagnostic): art buttons with the word baked in (no label), one
+ * node per state, the others hidden. Found by node id, never by text.
  */
-async function tabsReading(b: Browser, word: string, at?: { left: number; top: number }): Promise<Tab[]> {
-  return (await b.execute(
-    (w: string, spot: { left: number; top: number } | null) =>
-      Array.from(document.querySelectorAll<HTMLElement>("[data-skin-node]"))
-        .filter((n) => (n.querySelector(":scope > .skin-node-label .skin-node-label-text")?.textContent ?? "").trim() === w)
-        .map((n) => ({ n, r: n.getBoundingClientRect() }))
-        .filter(({ r }) => r.width > 0 && r.height > 0)
-        .filter(({ r }) => !spot || (Math.abs(r.left - spot.left) <= 2 && Math.abs(r.top - spot.top) <= 2))
-        .sort((x, y) => x.r.left - y.r.left)
-        .map(({ n, r }) => ({ id: n.dataset.skinNode ?? "", role: n.dataset.skinRole ?? "", action: n.dataset.skinAction ?? "", left: Math.round(r.left), top: Math.round(r.top) })),
-    word,
-    at ?? null,
-  )) as Tab[];
+const VOICE_NODE = { Call: "ChatButtonCall", Join: "ChatButtonAnswerCall", Leave: "ChatButtonLeaveCall" } as const;
+type VoiceState = keyof typeof VOICE_NODE;
+
+/** The voice control `state`'s node in `b`'s window when it is drawn (not hidden, with a box), else null. */
+async function voiceNode(b: Browser, state: VoiceState): Promise<Tab | null> {
+  return (await b.execute((id: string) => {
+    const n = document.querySelector<HTMLElement>(`[data-skin-node="${id}"]`);
+    if (!n || n.closest("[hidden]") !== null) return null;
+    const r = n.getBoundingClientRect();
+    if (r.width === 0 || r.height === 0) return null;
+    return { id, role: n.dataset.skinRole ?? "", action: n.dataset.skinAction ?? "" };
+  }, VOICE_NODE[state])) as Tab | null;
 }
 
-/** Wait until `b`'s window shows `word` (at `at`, when given: the voice tab's place); logs it as `[gv]`. */
-async function voiceTab(b: Browser, who: string, word: string, at?: { left: number; top: number }): Promise<Tab> {
-  let tab: Tab | undefined;
-  await waitUntil(async () => (tab = (await tabsReading(b, word, at))[0]) !== undefined, NET_WAIT_MS, `${who}'s group window never showed ${word}${at ? ` at the voice tab (${at.left},${at.top})` : ""}`);
-  console.log(`[gv] ${who} ${word}: ${JSON.stringify(tab)}`);
+/** Wait until `b`'s window draws the voice control for `state`; logs it as `[gv]`. */
+async function voiceTab(b: Browser, who: string, state: VoiceState): Promise<Tab> {
+  let tab: Tab | null = null;
+  await waitUntil(async () => (tab = await voiceNode(b, state)) !== null, NET_WAIT_MS, `${who}'s group window never drew ${state} (${VOICE_NODE[state]})`);
+  console.log(`[gv] ${who} ${state}: ${JSON.stringify(tab)}`);
   return tab!;
 }
 
@@ -79,11 +76,8 @@ describe("a group's voice tab: Call, Join while its call rings, Leave once joine
   const alice = { ...newUser("alice"), displayName: "Alice" };
   const bob = { ...newUser("bob"), displayName: "Bob" };
   let peers: Peer[] = [];
-  /** Where Alice's voice tab sits (read with no call). */
-  let aliceVoice = { left: 0, top: 0 };
-  /** Alice's twin group window, and where its voice tab sits. */
+  /** Alice's twin group window. */
   let twinHandle = "";
-  let twinVoice = { left: 0, top: 0 };
 
   before(async () => {
     const a = multiRemoteBrowser.getInstance("alice");
@@ -110,8 +104,7 @@ describe("a group's voice tab: Call, Join while its call rings, Leave once joine
     await openGroup(a, TWIN);
     await skinShown(a, ha);
     twinHandle = await a.getWindowHandle();
-    const twinCall = await voiceTab(a, "Alice (twin)", "Call");
-    twinVoice = { left: twinCall.left, top: twinCall.top };
+    await voiceTab(a, "Alice (twin)", "Call");
     await openGroup(a, GROUP);
     await skinShown(a, ha);
     await openGroup(b, GROUP);
@@ -124,8 +117,7 @@ describe("a group's voice tab: Call, Join while its call rings, Leave once joine
 
   it("with no call, Alice's group window shows Call", async () => {
     const a = multiRemoteBrowser.getInstance("alice");
-    const call = await voiceTab(a, "Alice", "Call");
-    aliceVoice = { left: call.left, top: call.top };
+    await voiceTab(a, "Alice", "Call");
     await shot("no-call-call-tab");
   });
 
@@ -153,22 +145,22 @@ describe("a group's voice tab: Call, Join while its call rings, Leave once joine
     expect(listed.every((x) => x.ticked)).toBe(true);
     await shot("prefilled-panel");
     await (await b.$(".modal-container .modal-footer button:not(.form-btn-secondary)")).click();
-    await voiceTab(a, "Alice", "Join", aliceVoice);
+    await voiceTab(a, "Alice", "Join");
     await shot("ringing-join-tab");
     // The twin group, with the same members, does not ring: its tab still reads Call.
     const groupHandle = await a.getWindowHandle();
     await a.switchToWindow(twinHandle);
-    await voiceTab(a, "Alice (twin)", "Call", twinVoice);
-    expect(await tabsReading(a, "Join", twinVoice)).toHaveLength(0);
+    await voiceTab(a, "Alice (twin)", "Call");
+    expect(await voiceNode(a, "Join")).toBeNull();
     await shot("twin-still-call");
     await a.switchToWindow(groupHandle);
   });
 
   it("Alice presses Join and her window shows Leave", async () => {
     const a = multiRemoteBrowser.getInstance("alice");
-    const join = await voiceTab(a, "Alice", "Join", aliceVoice);
+    const join = await voiceTab(a, "Alice", "Join");
     await pressNode(a, join.id);
-    await voiceTab(a, "Alice", "Leave", aliceVoice);
+    await voiceTab(a, "Alice", "Leave");
     await shot("joined-leave-tab");
   });
 });
