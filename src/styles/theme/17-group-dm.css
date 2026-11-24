@@ -191,6 +191,12 @@
     font-size: 11px;
   }
 
+  .game-lobby-server {
+    width: 18ch;
+    padding: 1px 4px;
+    font-size: 11px;
+  }
+
   .game-lobby-error {
     padding: 2px 0;
   }

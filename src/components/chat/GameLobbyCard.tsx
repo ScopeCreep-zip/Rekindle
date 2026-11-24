@@ -24,13 +24,17 @@ const refusal = (v: LobbyVerdict): string | null => (v.allowed ? null : REFUSAL[
  * the Host's reason when its verdict refuses it. Once the host launches,
  * a member joins the game with one confirm, `GameLaunch{source: lobby}`
  * through the Host, whose review names the server; nothing launches by
- * itself. With no lobby the group offers Host a game lobby (the Host picks
+ * itself. The host may name the server Launch uses (blank: the server
+ * our game reports). With no lobby the group offers Host a game lobby (the Host picks
  * the game we are shown in). `lobby_get` on mount, then the `groupDm`
  * `lobby` event.
  */
 const GameLobbyCard: Component<{ groupId: string; memberNames: Record<string, string> }> = (props) => {
   const [lobby, setLobby] = createSignal<LobbyView | null>(null);
   const [error, setError] = createSignal<string | null>(null);
+  // The server a launch names (host:port); blank lets the Host take our
+  // game's own server (lobby.rs launch_server). The Host validates it.
+  const [server, setServer] = createSignal("");
   const [gameName] = createResource(
     () => lobby()?.gameId,
     async (id) => (await commands.getGameName(id)) ?? `Game ${id}`,
@@ -107,8 +111,22 @@ const GameLobbyCard: Component<{ groupId: string; memberNames: Record<string, st
             <div class="game-lobby-actions">
               <ActionButton action="join" text="Join" verdict={view().join} run={() => commands.lobbyJoin(props.groupId, view().lobbyId)} />
               <ActionButton action="leave" text="Leave" verdict={view().leave} run={() => commands.lobbyLeave(props.groupId, view().lobbyId)} />
-              <ActionButton action="launch" text="Launch" verdict={view().launch} run={() => commands.lobbyLaunch(props.groupId, view().lobbyId, null)} />
+              <ActionButton
+                action="launch"
+                text="Launch"
+                verdict={view().launch}
+                run={() => commands.lobbyLaunch(props.groupId, view().lobbyId, server().trim() || null)}
+              />
               <ActionButton action="close" text="Stop Hosting" verdict={view().close} run={() => commands.lobbyClose(props.groupId, view().lobbyId)} />
+              <Show when={view().launch.allowed}>
+                <input
+                  class="form-input game-lobby-server"
+                  aria-label="Server to launch on (blank: your game's server)"
+                  placeholder="host:port"
+                  value={server()}
+                  onInput={(e) => setServer(e.currentTarget.value)}
+                />
+              </Show>
             </div>
             <Show when={view().state.kind === "launched" && view().hostKey !== authState.publicKey ? (view().state as { server: string }).server : null}>
               {(server) => (
