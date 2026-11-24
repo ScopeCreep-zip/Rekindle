@@ -7,11 +7,11 @@ import { handleStartGroupCall } from "../../actions/calls.actions";
 // Wave 12 W12.10 — friend multi-select dialog for starting a group
 // call. Audio/video toggle + checkbox list + Call button. Closes on
 // success.
-/** The group a call is started for (GV2): its id, name and members' keys. */
+/** The group a call is started for (GV2): its id, name and members, as the Host names them. */
 export interface GroupCallTarget {
   groupId: string;
   groupName: string;
-  members: string[];
+  members: { pubkey: string; displayName: string }[];
 }
 
 interface StartGroupCallModalProps {
@@ -19,8 +19,6 @@ interface StartGroupCallModalProps {
   onClose: () => void;
   /** Opened from a group's Call: only its members are listed, all ticked. */
   group?: GroupCallTarget | null;
-  /** Names for the group's members (the group window's), friend or not. */
-  names?: Record<string, string>;
 }
 
 const StartGroupCallModal: Component<StartGroupCallModalProps> = (props) => {
@@ -33,7 +31,7 @@ const StartGroupCallModal: Component<StartGroupCallModalProps> = (props) => {
     on(
       () => [props.isOpen, props.group] as const,
       ([open, group]) => {
-        if (open && group) setSelected(Object.fromEntries(group.members.map((k) => [k, true])));
+        if (open && group) setSelected(Object.fromEntries(group.members.map((m) => [m.pubkey, true])));
       },
     ),
   );
@@ -65,12 +63,7 @@ const StartGroupCallModal: Component<StartGroupCallModalProps> = (props) => {
   // the friends.
   const friendList = (): { publicKey: string; displayName: string }[] => {
     const group = props.group;
-    if (group) {
-      return group.members.map((k) => ({
-        publicKey: k,
-        displayName: props.names?.[k] ?? friendsState.friends[k]?.displayName ?? k.slice(0, 12),
-      }));
-    }
+    if (group) return group.members.map((m) => ({ publicKey: m.pubkey, displayName: m.displayName }));
     return Object.values(friendsState.friends).filter((f) => f.friendshipState !== "pendingOut");
   };
 

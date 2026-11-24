@@ -210,7 +210,6 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
       <StartGroupCallModal
         isOpen={callTarget() !== null}
         group={callTarget()}
-        names={memberNames()}
         onClose={() => setCallTarget(null)}
       />
     </>
