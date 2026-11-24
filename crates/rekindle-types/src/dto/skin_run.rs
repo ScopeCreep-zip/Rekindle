@@ -51,6 +51,14 @@ pub enum CallOp {
     Answer {
         call_id: String,
     },
+    /// Join the group call `call_id` in progress in the group `group_id`
+    /// (Xfire's `AppGroupVoiceChat`/`AppVoiceChat` on a group window's
+    /// `GroupChatButtonAnswerCall`, tip `ButtonGroupJoinVoiceChatTip`;
+    /// Symbiosis `Components/GroupChatWindow.xml:144-147`).
+    JoinGroup {
+        group_id: String,
+        call_id: String,
+    },
     Video {
         friend: String,
     },

@@ -110,6 +110,10 @@ pub(crate) struct SkinWorld {
     /// Our `favourite_servers`, as (game id, `host:port`).
     pub favourites: BTreeSet<(u32, String)>,
     pub groups: BTreeMap<String, Group>,
+    /// Each joined group's members besides us, by group id: a group call
+    /// carries no group id, so its members tell its group
+    /// (`signals::Inputs::group_call`).
+    pub rosters: BTreeMap<String, BTreeSet<String>>,
     /// The friends whose chat a group was created from (SK2-G §6).
     pub attached: BTreeSet<String>,
     pub communities: usize,
@@ -177,6 +181,32 @@ fn friend_allows(capability: Capability, inputs: &Inputs, selected: Selected<'_>
     }
 }
 
+/// A group window's call capabilities (Xfire pages `TabbedGCCall` by
+/// them: Host, Join, Leave; Symbiosis `Components/GroupChatWindow.xml:
+/// 112-118`, WMP10/Alloy/LOTR/DiabloIILoD `GroupChatInfoskin.ini`):
+/// `HostVoiceChat` starts the group's call while it has none and another
+/// member, `VoiceChat` joins its call in progress that we are not in,
+/// `LeaveVoiceChat` holds while we are in it.
+fn group_call_allows(
+    capability: Capability,
+    inputs: &Inputs,
+    world: &SkinWorld,
+    group_id: &str,
+) -> bool {
+    let joined =
+        matches!(world.groups.get(group_id), Some(Group::Joined { others, .. }) if *others >= 1);
+    let Some(others) = world.rosters.get(group_id).filter(|_| joined) else {
+        return false;
+    };
+    let call = inputs.group_call(others).map(|(_, c)| c);
+    match capability {
+        Capability::HostVoiceChat => call.is_none(),
+        Capability::VoiceChat => call.is_some_and(|c| c.ringing && !c.outgoing),
+        Capability::LeaveVoiceChat => call.is_some_and(|c| !c.ringing),
+        _ => false,
+    }
+}
+
 fn lobby_of(group: Option<Group>) -> Option<LobbyCaps> {
     match group {
         Some(Group::Joined { lobby, .. }) => lobby,
@@ -192,16 +222,23 @@ pub(crate) fn allows(
     selected: Selected<'_>,
 ) -> bool {
     use Capability as C;
-    let group = match selected {
-        Selected::Group { group_id } => world.groups.get(group_id).copied(),
+    let group_id = match selected {
+        Selected::Group { group_id } => Some(group_id),
         _ => None,
     };
+    let group = group_id.and_then(|g| world.groups.get(g).copied());
     match capability {
         // Xfire's Add Friend works whatever is selected (plan SKC1): it
         // holds while our profile and mailbox are published, the stage
         // every friend code, invite and request waits on and is refused
         // without (`operations::friend::invites::published_identity`).
         C::AddFriend => world.records_held,
+        // A group window's call tab (`TabbedGCCall`) follows its group.
+        C::VoiceChat | C::HostVoiceChat | C::LeaveVoiceChat | C::CancelVoiceChat
+            if group_id.is_some() =>
+        {
+            group_id.is_some_and(|g| group_call_allows(capability, inputs, world, g))
+        }
         C::Chat
         | C::Profile
         | C::Delete
