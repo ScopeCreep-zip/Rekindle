@@ -31,15 +31,32 @@ export async function applySkin(b: Browser, user: User, name: string): Promise<s
     // sheet, linking late, passed as the new one (skin-login on c5802aa26,
     // both tests one skin behind after a fresh Settings window).
     await waitUntil(async () => (before = await linked()).startsWith("skin://"), NET_WAIT_MS, "Settings never linked its current skin's sheet");
-    let found = false;
-    for (const row of await b.$$(".skin-row")) {
-      if ((await (await row.$(".skin-name")).getText()).trim() !== name) continue;
-      await (await row.$("input[type=radio]")).click();
-      await resolveIntent(b, { passphrase: user.passphrase, appearMs: 1500 });
-      found = true;
-      break;
-    }
-    if (!found) throw new Error(`Settings lists no skin named ${name}`);
+    // One fresh query per attempt for the row naming `name`: the list
+    // re-renders (its library refreshes after an apply), and a row held
+    // across that went stale ("element wasn't found" on Simple X).
+    const radio = `//*[contains(concat(" ", normalize-space(@class), " "), " skin-row ")][.//*[contains(concat(" ", normalize-space(@class), " "), " skin-name ") and normalize-space(.)="${name}"]]//input[@type="radio"]`;
+    let lastError = "";
+    await waitUntil(
+      async () => {
+        try {
+          const el = await b.$(radio);
+          if (!(await el.isExisting())) {
+            lastError = `Settings lists no skin named ${name}`;
+            return false;
+          }
+          await el.click();
+          return true;
+        } catch (e) {
+          lastError = e instanceof Error ? (e.message.split("\n")[0] ?? "") : String(e);
+          return false;
+        }
+      },
+      NET_WAIT_MS,
+      "",
+    ).catch(() => {
+      throw new Error(`could not choose ${name} in Settings: ${lastError}`);
+    });
+    await resolveIntent(b, { passphrase: user.passphrase, appearMs: 1500 });
     await waitUntil(async () => (await inUse()) === name, NET_WAIT_MS, `${name} never shown as the skin in use`);
   }
   let href = "";
