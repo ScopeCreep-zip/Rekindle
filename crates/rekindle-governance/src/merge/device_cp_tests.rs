@@ -14,7 +14,9 @@ use super::resume_tests::split;
 use super::{merge, merge_cut, merge_from, merge_outcome};
 use crate::checkpoint::{state_preimage, state_root_of, CutSnapshot};
 use crate::checksum::canonical_state;
-use crate::device::{device_set_hash, endorsement_signing_bytes, retirement_signing_bytes};
+use crate::device::{
+    device_set_hash, endorsement_signing_bytes, retirement_evidence_hash, retirement_signing_bytes,
+};
 use crate::fixture::{cert, meta, op, op_on, FIXTURE_ANCHOR as ANCHOR};
 use crate::op::VerifiedOp;
 
@@ -66,29 +68,43 @@ pub(super) fn joined_with_device(a: u8, key: u8) -> GovernanceEntry {
     entry
 }
 
+/// `who(a)`'s signed retirement of `[key; 32]` above `last_seq`.
+fn retirement(a: u8, key: u8, last_seq: u64) -> DeviceRetired {
+    let mut r = DeviceRetired {
+        device_key: [key; 32],
+        incarnation: u64::from(key),
+        last_seq,
+        retirement_sig: Vec::new(),
+    };
+    let bytes = retirement_signing_bytes(ANCHOR, &format!("VLD0:m{a}"), &r);
+    r.retirement_sig = signer(a).sign(&bytes).to_bytes().to_vec();
+    r
+}
+
+/// `about`'s readmit of `[key; 32]` answering `about`'s retirement of
+/// `[retired; 32]` above `last_seq` (ADR 0022 rule 7, amended 2026-11-23).
+fn readmit_answering(about: u8, key: u8, retired: u8, last_seq: u64) -> GovernanceEntry {
+    let record = format!("VLD0:m{about}");
+    let fork_evidence =
+        retirement_evidence_hash(ANCHOR, &record, &retirement(about, retired, last_seq));
+    GovernanceEntry::DeviceReadmit(DeviceReadmit {
+        member: who(about),
+        member_record: record,
+        new_key: [key; 32],
+        incarnation: u64::from(key),
+        fork_evidence,
+    })
+}
+
 /// A device op of `who(a)` picked by `kind`: an endorsement, a retirement
-/// above `last_seq`, or a readmit of `about`'s `[key; 32]`.
+/// above `last_seq`, or a readmit of `about`'s `[key; 32]` answering
+/// `about`'s retirement of that key above `last_seq` (counted only where
+/// such a retirement is held at its deps).
 pub(super) fn device_op(a: u8, kind: usize, key: u8, last_seq: u64, about: u8) -> GovernanceEntry {
     match kind % 3 {
         0 => GovernanceEntry::DeviceKey(endorsement(a, key)),
-        1 => {
-            let mut r = DeviceRetired {
-                device_key: [key; 32],
-                incarnation: u64::from(key),
-                last_seq,
-                retirement_sig: Vec::new(),
-            };
-            let bytes = retirement_signing_bytes(ANCHOR, &format!("VLD0:m{a}"), &r);
-            r.retirement_sig = signer(a).sign(&bytes).to_bytes().to_vec();
-            GovernanceEntry::DeviceRetired(r)
-        }
-        _ => GovernanceEntry::DeviceReadmit(DeviceReadmit {
-            member: who(about),
-            member_record: format!("VLD0:m{about}"),
-            new_key: [key; 32],
-            incarnation: u64::from(key),
-            fork_evidence: [1; 32],
-        }),
+        1 => GovernanceEntry::DeviceRetired(retirement(a, key, last_seq)),
+        _ => readmit_answering(about, key, key, last_seq),
     }
 }
 
@@ -103,7 +119,7 @@ fn steps() -> Vec<VerifiedOp> {
     let j = op(&who(8), 0, &[&c0], 1, joined_with_device(8, 3));
     let k = op(&who(8), 1, &[&j], 2, device_op(8, 0, 4, 0, 8));
     let r = op(&who(8), 2, &[&k], 3, device_op(8, 1, 3, 1, 8));
-    let m = op_on(&who(8), [4; 32], 0, &[&r], 4, device_op(8, 2, 5, 0, 8));
+    let m = op_on(&who(8), [4; 32], 0, &[&r], 4, readmit_answering(8, 5, 3, 1));
     vec![c0, j, k, r, m]
 }
 
@@ -222,6 +238,47 @@ fn a_rejoined_authors_second_device_resumes_on_top_of_the_cut() {
         judged.iter().all(|h| resumed.refused.contains(h)),
         "resume judges the key as the full merge does"
     );
+    assert_eq!(resumed.state, full.state);
+    assert_eq!(resumed.quarantined, full.quarantined);
+}
+
+/// The creator joins by the cert (S7d-keys.5), so its member record and
+/// first device are the cert's: its own `DeviceKey` endorses a second key
+/// under that record, the second key's ops apply, the merged device set
+/// holds the endorsement, and the resume reaches the full merge.
+#[test]
+fn the_creators_second_device_is_endorsed_under_the_certs_record() {
+    let creator = who(8);
+    let mut c = cert(&creator, AdmissionMode::Open);
+    c.creator_member_record = "VLD0:m8".into();
+    c.creator_device = Some(endorsement_in(8, 3, "VLD0:m8", "VLD0:m8"));
+    let c0 = op(&creator, 0, &[], 0, meta("genesis"));
+    let k = op(
+        &creator,
+        1,
+        &[&c0],
+        1,
+        GovernanceEntry::DeviceKey(endorsement(8, 4)),
+    );
+    let b0 = op_on(&creator, [4; 32], 0, &[&k], 2, meta("b0"));
+    let b1 = op_on(&creator, [4; 32], 1, &[&b0], 3, meta("b1"));
+    let second = [b0.hash(), b1.hash()];
+    let all = vec![c0, k.clone(), b0, b1];
+    let full = merge_outcome(&c, &all);
+    assert!(
+        second.iter().all(|h| full.applied.contains(h)),
+        "the creator's second device is effective: {full:?}"
+    );
+    let held = full
+        .state
+        .devices
+        .member(&creator)
+        .expect("the creator's set");
+    assert!(held.endorsements.contains_key(&(4, [4; 32])), "{held:?}");
+    let (snap, power, rest) = split(&c, &all, &[&k]);
+    assert_eq!(rest.len(), 2, "the second device's ops are past the cut");
+    let resumed = merge_from(&c, &snap, &power, &rest).expect("on top of the cut");
+    assert!(second.iter().all(|h| resumed.applied.contains(h)));
     assert_eq!(resumed.state, full.state);
     assert_eq!(resumed.quarantined, full.quarantined);
 }

@@ -176,22 +176,7 @@ pub(super) fn prepare<'a>(
     // key, seq), and it retires that key, not the person (ADR 0022 rule
     // 5). Every op of that key from the fork on is quarantined, on every
     // reader alike, and kept as ancestry.
-    // Sorted by (seq, device key, hash), two ops at one (key, seq) with
-    // different hashes sit next to each other; seq leads the key because
-    // it is a cheap compare that settles most pairs.
-    let mut by_seq: Vec<(u64, &[u8; 32], OpHash)> = sorted
-        .iter()
-        .map(|op| (op.op().seq, &op.op().device_key, op.hash()))
-        .collect();
-    by_seq.sort_unstable();
-    let mut fork_at: BTreeMap<[u8; 32], u64> = BTreeMap::new();
-    for pair in by_seq.windows(2) {
-        let ((seq, key, a), (next_seq, next_key, b)) = (pair[0], pair[1]);
-        if key == next_key && seq == next_seq && a != b {
-            let slot = fork_at.entry(*key).or_insert(u64::MAX);
-            *slot = (*slot).min(seq);
-        }
-    }
+    let fork_at = super::prefork::fork_seqs(&sorted);
     let mut index: HashMap<IndexKey, usize> = HashMap::with_capacity(sorted.len());
     let mut kept: Vec<&VerifiedOp> = Vec::with_capacity(sorted.len());
     let mut past = Ancestry::with_capacity(sorted.len());
@@ -200,7 +185,15 @@ pub(super) fn prepare<'a>(
     let mut forked = Vec::with_capacity(sorted.len());
     let mut device_refused = Vec::with_capacity(sorted.len());
     let mut devices = DeviceView::default();
-    let mut judge = Judge::new(cert);
+    // The creator's first device is the cert's (S7d-keys.5), held before
+    // any op is harvested, as `judge::member_view` holds it: the creator
+    // joins by the cert, so without it the creator's own `DeviceKey` finds
+    // no member record and its endorsement is dropped. Every op of the set
+    // was verified for the one anchor.
+    if let Some(op) = sorted.first() {
+        devices.seed_genesis(op.anchor(), cert);
+    }
+    let mut judge = Judge::new(cert, &fork_at);
     // Per device key, its kept ops' indices in stamp order.
     let mut of_key: HashMap<[u8; 32], Vec<usize>> = HashMap::new();
     // A forked key's author, from an op whose key is not judged pending

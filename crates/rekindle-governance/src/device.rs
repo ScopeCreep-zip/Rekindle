@@ -1,7 +1,7 @@
 //! The signed layouts and hashes of ADR 0022 rule 10 (plan E3.2
 //! S7d-keys.1): a pseudonym's device-key endorsement and retirement, a
-//! `DeviceReadmit`'s body, the endorsement set's `extendsSet`, fork evidence
-//! and the "retired by restore" marker. Each text field is prefixed by its
+//! `DeviceReadmit`'s body, the endorsement set's `extendsSet`, fork and
+//! retirement evidence and the "retired by restore" marker. Each text field is prefixed by its
 //! length (u32, big-endian) and each integer is big-endian, so no two field
 //! tuples share bytes. Judging an op's key at its deps is S7d-keys.2.
 
@@ -165,6 +165,28 @@ pub fn fork_evidence_hash(
     h.update(&seq.to_be_bytes());
     h.update(&lo.0);
     h.update(&hi.0);
+    *h.finalize().as_bytes()
+}
+
+/// A `DeviceRetired`'s evidence (rules 7 and 10, amended 2026-11-23): BLAKE3
+/// `derive_key(GOV_RETIREMENT_EVIDENCE)` over `community ‖ memberRecord ‖
+/// deviceKey ‖ incarnation ‖ lastSeq`, the fork event a post-fork
+/// endorsement and its `DeviceReadmit` name when the member's first fork
+/// event is a retirement.
+#[must_use]
+pub fn retirement_evidence_hash(
+    community: &str,
+    member_record: &str,
+    r: &DeviceRetired,
+) -> [u8; 32] {
+    let mut h = blake3::Hasher::new_derive_key(domains::GOV_RETIREMENT_EVIDENCE);
+    let mut c = Vec::new();
+    text(&mut c, community);
+    text(&mut c, member_record);
+    h.update(&c);
+    h.update(&r.device_key);
+    h.update(&r.incarnation.to_be_bytes());
+    h.update(&r.last_seq.to_be_bytes());
     *h.finalize().as_bytes()
 }
 
