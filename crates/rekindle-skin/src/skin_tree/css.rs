@@ -29,7 +29,8 @@ use super::pieces::{self, Band};
 use super::validate::{stack_z, text_sized};
 use crate::regions::css::href;
 
-fn axis(s: NodeSpan, (start, end, len): (&str, &str, &str), text: bool) -> String {
+fn axis(s: &NodeSpan, (start, end, len): (&str, &str, &str), text: bool) -> String {
+    let s = s.clone();
     match s {
         NodeSpan::Fixed {
             at: Anchor::Start(o) | Anchor::Centre { by: o, .. },
@@ -40,7 +41,7 @@ fn axis(s: NodeSpan, (start, end, len): (&str, &str, &str), text: bool) -> Strin
             size: 0,
         } if text => format!("{end}: {o}px; {len}: max-content;"),
         NodeSpan::Fixed {
-            at: Anchor::Start(o),
+            at: Anchor::Start(o) | Anchor::After { gap: o, .. },
             size,
         } => format!("{start}: {o}px; {len}: {size}px;"),
         NodeSpan::Fixed {
@@ -67,7 +68,8 @@ fn axis(s: NodeSpan, (start, end, len): (&str, &str, &str), text: bool) -> Strin
     }
 }
 
-fn size(s: NodeSpan) -> Option<u16> {
+fn size(s: &NodeSpan) -> Option<u16> {
+    let s = s.clone();
     match s {
         NodeSpan::Fixed { size, .. } => Some(size),
         NodeSpan::Stretch { .. } => None,
@@ -184,10 +186,10 @@ fn target(decls: &mut String, n: &SkinNode, t: NodeTarget) {
         " box-sizing: border-box; margin: {}px {}px {}px {}px; border: solid transparent; border-width: {ay}px {right}px {bottom}px {ax}px;",
         -ay, -right, -bottom, -ax
     );
-    if size(n.x).is_some() {
+    if size(&n.x).is_some() {
         let _ = write!(decls, " width: {}px;", t.area[2]);
     }
-    if size(n.y).is_some() {
+    if size(&n.y).is_some() {
         let _ = write!(decls, " height: {}px;", t.area[3]);
     }
 }
@@ -256,8 +258,8 @@ fn node(out: &mut String, n: &SkinNode, ctx: &Ctx<'_>) -> Option<()> {
     let sel = format!("{root} [data-skin-node=\"{}\"]", n.id);
     let mut decls = format!(
         "position: absolute; {} {} z-index: {};",
-        axis(n.x, ("left", "right", "width"), text),
-        axis(n.y, ("top", "bottom", "height"), text),
+        axis(&n.x, ("left", "right", "width"), text),
+        axis(&n.y, ("top", "bottom", "height"), text),
         stack_z(n)
     );
     if n.role == NodeRole::Views {
@@ -399,7 +401,7 @@ mod tests {
         let (_, wide) = n.x.place(w);
         let (_, tall) = n.y.place(h);
         if !text_sized(n) {
-            for (span, len) in [(n.x, w), (n.y, h)] {
+            for (span, len) in [(&n.x, w), (&n.y, h)] {
                 let css = axis(span, ("left", "right", "width"), false);
                 let want = span.place(len).0;
                 if start_of(&css, len) != Some(want) {
@@ -436,7 +438,7 @@ mod tests {
                     .boxes(w, h)
                     .iter()
                     .filter(|(n, _)| {
-                        [n.x, n.y].iter().any(|s| {
+                        [n.x.clone(), n.y.clone()].iter().any(|s| {
                             matches!(
                                 s,
                                 NodeSpan::Fixed {

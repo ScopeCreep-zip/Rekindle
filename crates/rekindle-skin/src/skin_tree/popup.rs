@@ -66,7 +66,8 @@ fn in_window(span: NodeSpan, before: u16, after: u16) -> NodeSpan {
 }
 
 /// The popup's left side from its `X` span in window coordinates.
-fn anchor_of(name: &str, x: NodeSpan) -> Result<PopupAnchor, ImportError> {
+fn anchor_of(name: &str, x: &NodeSpan) -> Result<PopupAnchor, ImportError> {
+    let x = x.clone();
     match x {
         NodeSpan::Fixed {
             at: Anchor::Start(o),
@@ -173,6 +174,7 @@ fn lay(
         },
         root: walk.walk(tile, None, &Sibs::new(), &[])?,
     };
+    let held = super::content::hold(&mut tree);
     pages(&mut tree.root, &walk.groups);
     qualify(&mut tree.root);
     let mut art = Art {
@@ -181,9 +183,10 @@ fn lay(
         files: &mut walk.files,
     };
     clip(&mut tree.root, (None, None), &mut art)?;
+    super::content::restore(&mut tree, held)?;
     built.1.extend(walk.files);
     let layout = PopupLayout {
-        anchor: anchor_of(&name, x)?,
+        anchor: anchor_of(&name, &x)?,
         width,
         min_width,
         min_height,
@@ -209,7 +212,7 @@ pub(super) fn add(
     let sibs: Sibs = tree
         .root
         .iter()
-        .map(|n| (n.id.to_ascii_lowercase(), (n.x, n.y)))
+        .map(|n| (n.id.to_ascii_lowercase(), (n.x.clone(), n.y.clone())))
         .collect();
     let window_name = layout.attr_ci("Component").unwrap_or("MainWindow");
     for name in names {

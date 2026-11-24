@@ -128,6 +128,11 @@ pub fn served(package: &Package<'_>) -> Result<SkinManifest, SkinError> {
 /// A glyph label's or menu title's picture missing from `package` or not
 /// decoding.
 pub fn place(manifest: &mut SkinManifest, package: &Package<'_>) -> Result<(), SkinError> {
+    // Plan SK15b: content texts sized to the served words and every chain
+    // resolved first, so each pass after lays numeric spans.
+    for layout in manifest.windows.values_mut() {
+        crate::skin_tree::content::serve(layout);
+    }
     if let Some(main) = manifest
         .windows
         .get_mut(&rekindle_types::dto::skin::SkinWindow::Main)

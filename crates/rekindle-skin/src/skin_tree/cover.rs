@@ -170,7 +170,7 @@ fn picture(n: &SkinNode, w: i32, h: i32) -> Option<(&NodePiece, i32, i32)> {
 /// The cover of a glyph label on `n` (a fixed box), from its picture.
 fn cover_of(node: &SkinNode, package: &Package<'_>) -> Result<Option<[u16; 4]>, SkinError> {
     let (NodeSpan::Fixed { size: width, .. }, NodeSpan::Fixed { size: height, .. }) =
-        (node.x, node.y)
+        (node.x.clone(), node.y.clone())
     else {
         return Ok(None);
     };
