@@ -137,28 +137,19 @@ impl HostGovernance {
         .collect()
     }
 
-    /// Snapshot the gossip overlay's online members.
-    ///
-    /// Reads through `SubscriptionManager`, which owns the meshes on
-    /// this track. Returns empty when the manager is absent (pre-unlock)
-    /// or the community has no mesh yet — both mean "nobody known
-    /// online", which is what callers do with an empty Vec anyway.
+    /// The members shown online in `community_id`, on both modes: the
+    /// roster's members whose beat shows them present, each with the route
+    /// its `M`/6 published (plan E3.4 S5,
+    /// [`HostGovernance::present_members`]). Empty before the roster or a
+    /// beat reached us: nobody known online.
     pub(super) fn online_members_impl(&self, community_id: &str) -> Vec<OnlineMemberSnapshot> {
-        let guard = self.ctx.subscriptions.read();
-        let Some(manager) = guard.as_ref() else {
-            return Vec::new();
-        };
-        let meshes = manager.meshes().read();
-        let Some(mesh) = meshes.get(community_id) else {
-            return Vec::new();
-        };
-        mesh.online_members
-            .iter()
-            .map(|(pseudonym_hex, member)| OnlineMemberSnapshot {
-                pseudonym_hex: pseudonym_hex.clone(),
-                status: member.status.clone(),
-                route_blob: member.route_blob.clone(),
-                last_seen: member.last_seen,
+        self.present_members(community_id)
+            .into_iter()
+            .map(|m| OnlineMemberSnapshot {
+                status: crate::host::adapters::presence::view::shown_status(m.state).to_owned(),
+                pseudonym_hex: m.pseudonym_hex,
+                route_blob: m.route,
+                last_seen: m.seen_at,
             })
             .collect()
     }

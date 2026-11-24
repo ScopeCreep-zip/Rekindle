@@ -220,7 +220,9 @@ impl SubscriptionEvent {
                 | PresenceEvent::SelfChanged { .. }
                 | PresenceEvent::SelfProfileChanged { .. } => None,
             },
-            Self::Membership(e) => Some(match e {
+            Self::Membership(e) => match e {
+                // Device-scoped: it passes every community filter.
+                MembershipEvent::Forgotten { .. } => None,
                 MembershipEvent::JoinRequested { community, .. }
                 | MembershipEvent::Joined { community, .. }
                 | MembershipEvent::SelfJoined { community, .. }
@@ -238,8 +240,8 @@ impl SubscriptionEvent {
                 | MembershipEvent::OnboardingAnswersSubmitted { community, .. }
                 | MembershipEvent::MembersRefreshed { community }
                 | MembershipEvent::MemberDiscovered { community, .. }
-                | MembershipEvent::JoinProgress { community, .. } => community,
-            }),
+                | MembershipEvent::JoinProgress { community, .. } => Some(community),
+            },
             Self::Crypto(e) => match e {
                 CryptoEvent::MekRotated { community, .. }
                 | CryptoEvent::MekRequested { community, .. }

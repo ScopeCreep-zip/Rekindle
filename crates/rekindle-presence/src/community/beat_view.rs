@@ -69,6 +69,8 @@ struct Entry {
     /// What the view shows of the member now: the beat's state, or
     /// `Offline` once it is not present or not live.
     shown: BeatState,
+    /// When the beat reached us (our clock, ms).
+    seen_at: u64,
 }
 
 /// What a beat changed.
@@ -115,6 +117,7 @@ impl BeatView {
                 state: beat.state,
                 live_until,
                 shown,
+                seen_at: now_ms,
             },
         );
         let was = held.map_or(BeatState::Offline, |h| h.shown);
@@ -130,6 +133,13 @@ impl BeatView {
         self.members
             .get(member)
             .map_or(BeatState::Offline, |e| e.shown)
+    }
+
+    /// When `member`'s last beat reached us (our clock, ms), `None` when
+    /// none did.
+    #[must_use]
+    pub fn seen_at(&self, member: &str) -> Option<u64> {
+        self.members.get(member).map(|e| e.seen_at)
     }
 
     /// Whether `member` may be present: no beat of theirs has reached us

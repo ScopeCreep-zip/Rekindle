@@ -1235,6 +1235,13 @@
       }
     }
   },
+  "membership.forgotten": {
+    "membership": {
+      "forgotten": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+      }
+    }
+  },
   "membership.joinProgress": {
     "membership": {
       "joinProgress": {

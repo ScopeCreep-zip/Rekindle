@@ -13,6 +13,7 @@ pub const NAMES: &[&str] = &[
     "selfJoined",
     "memberCardChanged",
     "left",
+    "forgotten",
     "removed",
     "kicked",
     "banned",
@@ -35,6 +36,7 @@ pub fn variant_name(e: &MembershipEvent) -> &'static str {
         MembershipEvent::SelfJoined { .. } => "selfJoined",
         MembershipEvent::MemberCardChanged { .. } => "memberCardChanged",
         MembershipEvent::Left { .. } => "left",
+        MembershipEvent::Forgotten { .. } => "forgotten",
         MembershipEvent::Removed { .. } => "removed",
         MembershipEvent::Kicked { .. } => "kicked",
         MembershipEvent::Banned { .. } => "banned",
@@ -126,6 +128,12 @@ fn joining() -> Vec<Sample> {
             MembershipEvent::Left {
                 community: community(),
                 pseudonym: pk('e'),
+            },
+        ),
+        ev(
+            "forgotten",
+            MembershipEvent::Forgotten {
+                community: community(),
             },
         ),
     ]

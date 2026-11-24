@@ -13,10 +13,16 @@ import { applySuccessorEvent } from "../../stores/successor.store";
 /// path; a community this window does not hold is re-read from the Host
 /// (`withCommunity`), and a held one takes the new name and images. It
 /// also hears each offered successor (lead decision (33)), for the
-/// "moved to" rows beside the co-creator invites.
+/// "moved to" rows beside the co-creator invites. And each community the Host
+/// forgot (a leave from any window, LF1), so its row goes here too.
 export function subscribeBuddyListCommunityEvents(): Promise<UnlistenFn> {
   return subscribeCommunityEvents((event) => {
     if (isLegacyCommunityEvent(event)) return;
+    // A community we are no longer in (LF1): the list drops it.
+    if ("membership" in event && "forgotten" in event.membership) {
+      reduceSubscriptionMembership(event);
+      return;
+    }
     if (!("governance" in event)) return;
     if ("metadataChanged" in event.governance) {
       reduceSubscriptionMembership(event);

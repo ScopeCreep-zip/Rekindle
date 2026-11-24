@@ -161,6 +161,9 @@ fn membership(event: &MembershipEvent) -> (&str, String) {
             community,
             pseudonym,
         } => (community, format!("{} left", abbreviate_key(pseudonym))),
+        MembershipEvent::Forgotten { community } => {
+            (community, "we no longer belong to it".to_owned())
+        }
         MembershipEvent::Removed {
             community,
             pseudonym,
@@ -441,6 +444,22 @@ mod tests {
         assert!(!json.contains('\n'), "one line per event: {json}");
         let bare = render(&kicked(None)).expect("a kick is a community event");
         assert!(bare.ends_with("was kicked by Ann"), "{bare}");
+    }
+
+    /// Our leave streams a line in text and its camelCase tag in JSONL.
+    #[test]
+    fn our_forget_streams_a_line() {
+        let event = SubscriptionEvent::Membership(MembershipEvent::Forgotten {
+            community: "c".repeat(64),
+        });
+        let line = render(&event).expect("a forget is a community event");
+        assert!(line.ends_with(": we no longer belong to it"), "{line}");
+        let json = crate::output::format::jsonl_line(&event).expect("serializes");
+        let value: serde_json::Value = serde_json::from_str(&json).expect("one JSON object");
+        assert_eq!(
+            value["membership"]["forgotten"]["community"],
+            "c".repeat(64)
+        );
     }
 
     /// A ban without a remover name falls back to the remover's key.

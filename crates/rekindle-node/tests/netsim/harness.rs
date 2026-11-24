@@ -8,10 +8,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use rekindle_ipc::message::SecurityLevel;
 use rekindle_ipc::protocol::{ChannelMessageRequest, ChannelRequest, LifecycleRequest};
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, IpcResponse};
-use rekindle_ipc::{Caller, ConnId, HostApi};
+use rekindle_ipc::HostApi;
 use rekindle_netsim::Netsim;
 use rekindle_node::host::{Host, ShellHooks};
 use rekindle_types::intent::{IntentProof, IntentReview, ProofRequired};
@@ -32,6 +31,7 @@ pub struct SimNode {
     /// The node's route port, the one its Host holds, to read our routes.
     pub routes: Arc<dyn rekindle_records::port::RoutePort>,
     pub(crate) dir: tempfile::TempDir,
+    pub mode: crate::shell_node::SimMode,
 }
 
 /// A request the host refused.
@@ -41,33 +41,19 @@ pub struct Refused {
     pub message: String,
 }
 
-pub(crate) fn temp_root(dir: &tempfile::TempDir) -> rekindle_db::paths::DataRoot {
-    rekindle_db::paths::DataRoot::under(dir.path())
-}
-
-/// The caller every scenario request comes from: a bus client with admin
-/// clearance, as the CLI on the same machine.
-fn caller() -> Caller {
-    Caller {
-        conn: ConnId::Bus(1),
-        clearance: SecurityLevel::Admin,
-        verified_name: None,
-        static_key: None,
-    }
-}
-
 /// `n` nodes on one network for run `seed`, each running a Host; the pump
 /// is started (every node attached).
 pub async fn start(n: usize, seed: u64) -> (Netsim, Vec<SimNode>) {
-    start_with(n, seed, &|_| None).await
+    start_with(n, seed, &|_| (crate::shell_node::SimMode::Daemon, None)).await
 }
 
-/// Node `i`'s shell hooks ([`start_with`]).
-pub type ShellFor<'a> = &'a dyn Fn(usize) -> Option<Arc<dyn ShellHooks>>;
+/// Node `i`'s mode and shell hooks ([`start_with`]).
+pub type NodeFor<'a> =
+    &'a dyn Fn(usize) -> (crate::shell_node::SimMode, Option<Arc<dyn ShellHooks>>);
 
-/// [`start`], node `i`'s Host handing its shell stages to `shell_for(i)`
+/// [`start`], node `i` in the mode and with the shell hooks `node_for(i)`
 /// (`HostConfig::shell`), as the desktop's.
-pub async fn start_with(n: usize, seed: u64, shell_for: ShellFor<'_>) -> (Netsim, Vec<SimNode>) {
+pub async fn start_with(n: usize, seed: u64, node_for: NodeFor<'_>) -> (Netsim, Vec<SimNode>) {
     // `RUST_LOG` shows a scenario's Host logs (`--nocapture`); the run's
     // WARN and ERROR events are counted per node ([`crate::logs`]).
     crate::logs::install();
@@ -81,13 +67,15 @@ pub async fn start_with(n: usize, seed: u64, shell_for: ShellFor<'_>) -> (Netsim
         let dir = tempfile::tempdir().expect("temp dir");
         let routes = Arc::clone(&node.ports.routes);
         let index = node.index;
-        let host = crate::restart::host_on(node, &dir, shell_for(index)).await;
+        let (mode, shell) = node_for(index);
+        let host = crate::restart::host_on(node, &dir, shell, mode).await;
         hosts.push(SimNode {
             index,
             host,
             public_key: None,
             routes,
             dir,
+            mode,
         });
     }
     let _pump = sim.start();
@@ -139,7 +127,7 @@ impl SimNode {
     }
 
     async fn call_inner(&self, request: IpcRequest) -> Result<serde_json::Value, Refused> {
-        let mut answer = self.host.call(caller(), request).await;
+        let mut answer = self.host.call(self.mode.caller(), request).await;
         loop {
             match answer {
                 IpcResponse::Ok { data, .. } => return Ok(data),
@@ -148,7 +136,7 @@ impl SimNode {
                         intent_id: review.intent_id,
                         proof: prove(&review),
                     };
-                    answer = self.host.call(caller(), commit).await;
+                    answer = self.host.call(self.mode.caller(), commit).await;
                 }
                 IpcResponse::Error { code, message, .. } => return Err(Refused { code, message }),
             }
@@ -159,7 +147,7 @@ impl SimNode {
     /// holds answers `IntentRequired` with its review.
     pub async fn answer(&self, request: IpcRequest) -> IpcResponse {
         self.host
-            .call(caller(), request)
+            .call(self.mode.caller(), request)
             .instrument(node_span(self.index))
             .await
     }
@@ -171,7 +159,7 @@ impl SimNode {
         let name = format!("{request:?}");
         let held = self
             .host
-            .call(caller(), request)
+            .call(self.mode.caller(), request)
             .instrument(node_span(self.index));
         let IpcResponse::IntentRequired(review) = held.await else {
             panic!("node {}: {name} was not held for review", self.index);
@@ -353,7 +341,11 @@ impl Community {
 
     /// `n` nodes with identities; node 0 creates "Netsim"; nobody joins.
     pub async fn create(n: usize, seed: u64) -> Self {
-        let (sim, mut nodes) = start(n, seed).await;
+        Self::create_on(start(n, seed).await).await
+    }
+
+    /// [`Self::create`] on nodes already started (`start_with`'s modes).
+    pub async fn create_on((sim, mut nodes): (Netsim, Vec<SimNode>)) -> Self {
         for (i, node) in nodes.iter_mut().enumerate() {
             node.unlock_new_identity(&format!("member{i}")).await;
         }
