@@ -3,7 +3,7 @@
 
 import { expect } from "@wdio/globals";
 import type { Browser } from "webdriverio";
-import { NETWORK_LABEL, NET_WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, switchTo, typeAndSend, typeInto, untilPublished, waitForHandle, waitUntil } from "../walk/helpers.ts";
+import { NET_WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, switchTo, typeAndSend, typeInto, untilPublished, waitForHandle, waitUntil } from "../walk/helpers.ts";
 import { BUDDY, LOGIN, closeModal, closeSettings, inBuddy, menu, openAddFriend, openSettings, setValue, submitJoin, underTree } from "../walk/nav.ts";
 import { showSkinView, skinViewShown } from "./journeys_skins.ts";
 import type { User } from "./user.ts";
@@ -192,22 +192,29 @@ export async function seesMessage(b: Browser, who: User, text: string): Promise<
   }
 }
 
-/** The buddy list's network indicator reads "Connected" (NetworkIndicator.tsx): a DHT write may land. */
+/**
+ * The Host accepts writes: a DHT write may land. Read from the Host's own
+ * network state (`get_network_status`: attached, public internet ready, and
+ * its lifecycle's `canWrite`), never inferred from text a window draws (our
+ * presence can read Away or Appear Offline while attached or detached).
+ */
 async function whenConnected(b: Browser): Promise<void> {
   await inBuddy(b);
-  // Under a skin's tree the status field says the network state while
-  // detached (StatusField.tsx, N1) and our status once attached: any of our
-  // statuses, not only Online (auto-away holds Away from unlock in the AA1
-  // spec, and the network is attached all the same).
-  const tree = await underTree(b);
+  let last = "";
   await waitUntil(
-    async () =>
-      tree
-        ? ((await (await b.$('[data-skin-role="statusText"] .skin-status-edit')).getAttribute("placeholder")) ?? "") in OWN_STATUS
-        : (await (await b.$(NETWORK_LABEL)).getText()).trim() === "Connected",
+    async () => {
+      const s = (await b.execute(async () => {
+        const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: (cmd: string) => Promise<unknown> } };
+        return (await w.__TAURI_INTERNALS__!.invoke("get_network_status")) as { isAttached: boolean; publicInternetReady: boolean; canWrite: boolean };
+      })) as { isAttached: boolean; publicInternetReady: boolean; canWrite: boolean };
+      last = JSON.stringify(s);
+      return s.isAttached && s.publicInternetReady && s.canWrite;
+    },
     NET_WAIT_MS,
-    tree ? "the skin's status field never showed our status (still the network state)" : "the network indicator never said Connected",
-  );
+    "",
+  ).catch(() => {
+    throw new Error(`the Host never accepted writes (network status: ${last})`);
+  });
 }
 
 /**
