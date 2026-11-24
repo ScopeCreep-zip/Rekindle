@@ -64,6 +64,10 @@ pub enum CallEvent {
         participants: Vec<String>,
         is_group: bool,
         expires_at_ms: u64,
+        /// The group DM a group call belongs to (`GroupCallOffer.group_id`,
+        /// checked against its roster); `None` for a 1:1 or a buddy-list
+        /// group call.
+        group_id: Option<String>,
     },
 
     /// Our outbound call reached the peer and is ringing there.
@@ -85,6 +89,8 @@ pub enum CallEvent {
         /// only the call id, because the kind and the participants were
         /// established when the call came in and have not changed.
         direct: Option<DirectCallInfo>,
+        /// The group DM of a group call, as on `Incoming`.
+        group_id: Option<String>,
     },
 
     /// The peer declined.
@@ -170,10 +176,12 @@ mod tests {
     fn a_group_call_connects_without_a_peer() {
         let group = CallEvent::Connected {
             call_id: "c1".into(),
+            group_id: None,
             direct: None,
         };
         let one_to_one = CallEvent::Connected {
             call_id: "c2".into(),
+            group_id: None,
             direct: Some(DirectCallInfo {
                 kind: "video".into(),
                 peer_key: "pk".into(),
@@ -228,6 +236,7 @@ mod tests {
 
         let connected = CallEvent::Connected {
             call_id: "c1".into(),
+            group_id: None,
             direct: Some(DirectCallInfo {
                 kind: "audio".into(),
                 peer_key: "pk".into(),
@@ -237,7 +246,7 @@ mod tests {
         };
         assert_eq!(
             serde_json::to_string(&connected).unwrap(),
-            r#"{"connected":{"callId":"c1","direct":{"kind":"audio","peerKey":"pk","peerDisplayName":"Ada","expectedLocalCamera":false}}}"#
+            r#"{"connected":{"callId":"c1","direct":{"kind":"audio","peerKey":"pk","peerDisplayName":"Ada","expectedLocalCamera":false},"groupId":null}}"#
         );
     }
 
@@ -251,6 +260,7 @@ mod tests {
                 participants: vec!["a".into(), "b".into()],
                 is_group: true,
                 expires_at_ms: 1,
+                group_id: None,
             },
             CallEvent::Ringing {
                 call_id: "c".into(),
@@ -264,6 +274,7 @@ mod tests {
             },
             CallEvent::Connected {
                 call_id: "c".into(),
+                group_id: None,
                 direct: None,
             },
             CallEvent::Declined {

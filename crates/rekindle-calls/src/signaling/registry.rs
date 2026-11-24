@@ -71,4 +71,5 @@ pub struct GroupCallSnapshot {
     pub participants: Vec<String>,
     pub accepted_count: usize,
     pub status: GroupCallStatus,
+    pub group_id: Option<String>,
 }

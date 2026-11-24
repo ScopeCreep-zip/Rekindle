@@ -110,10 +110,6 @@ pub(crate) struct SkinWorld {
     /// Our `favourite_servers`, as (game id, `host:port`).
     pub favourites: BTreeSet<(u32, String)>,
     pub groups: BTreeMap<String, Group>,
-    /// Each joined group's members besides us, by group id: a group call
-    /// carries no group id, so its members tell its group
-    /// (`signals::Inputs::group_call`).
-    pub rosters: BTreeMap<String, BTreeSet<String>>,
     /// The friends whose chat a group was created from (SK2-G §6).
     pub attached: BTreeSet<String>,
     pub communities: usize,
@@ -195,10 +191,10 @@ fn group_call_allows(
 ) -> bool {
     let joined =
         matches!(world.groups.get(group_id), Some(Group::Joined { others, .. }) if *others >= 1);
-    let Some(others) = world.rosters.get(group_id).filter(|_| joined) else {
+    if !joined {
         return false;
-    };
-    let call = inputs.group_call(others).map(|(_, c)| c);
+    }
+    let call = inputs.group_call(group_id).map(|(_, c)| c);
     match capability {
         Capability::HostVoiceChat => call.is_none(),
         Capability::VoiceChat => call.is_some_and(|c| c.ringing && !c.outgoing),

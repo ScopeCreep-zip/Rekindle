@@ -157,6 +157,7 @@ async fn group_accept_first_acceptor_transitions_to_active() {
     // Seed outgoing group call — initiator dialed, waiting for accepts.
     deps.group_registry.insert(GroupCallState {
         call_id: "group-1".into(),
+        group_id: None,
         initiator_pubkey: initiator.clone(),
         kind: 0,
         participants: vec![initiator, participant1.clone(), participant2.clone()],
@@ -217,6 +218,7 @@ async fn group_accept_second_acceptor_does_not_re_emit_connected() {
     accepted.insert(p1.clone());
     deps.group_registry.insert(GroupCallState {
         call_id: "group-2".into(),
+        group_id: None,
         initiator_pubkey: initiator.clone(),
         kind: 0,
         participants: vec![initiator, p1, p2.clone()],

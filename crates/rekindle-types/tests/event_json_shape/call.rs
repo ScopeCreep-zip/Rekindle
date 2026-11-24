@@ -48,6 +48,11 @@ fn call_id() -> String {
     id("call_", '9')
 }
 
+/// A group DM id (16 random bytes as hex), as `GroupCallOffer.group_id` carries.
+fn group_dm_id() -> String {
+    "6d".repeat(16)
+}
+
 pub fn samples() -> Vec<Sample> {
     let mut all = setup();
     all.extend(in_call());
@@ -66,6 +71,7 @@ fn setup() -> Vec<Sample> {
                 participants: vec![pk('b'), pk('c')],
                 is_group: true,
                 expires_at_ms: 1_760_000_030_000,
+                group_id: Some(group_dm_id()),
             },
         ),
         ev("ringing", CallEvent::Ringing { call_id: call_id() }),
@@ -83,6 +89,7 @@ fn setup() -> Vec<Sample> {
             "connected.direct",
             CallEvent::Connected {
                 call_id: call_id(),
+                group_id: None,
                 direct: Some(DirectCallInfo {
                     kind: text("video"),
                     peer_key: pk('b'),
@@ -95,6 +102,7 @@ fn setup() -> Vec<Sample> {
             "connected.group",
             CallEvent::Connected {
                 call_id: call_id(),
+                group_id: Some(group_dm_id()),
                 direct: None,
             },
         ),

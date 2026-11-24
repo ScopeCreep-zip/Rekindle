@@ -8,7 +8,8 @@
           "kind": "video",
           "peerDisplayName": "Bob",
           "peerKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-        }
+        },
+        "groupId": null
       }
     }
   },
@@ -16,7 +17,8 @@
     "call": {
       "connected": {
         "callId": "call_99999999999999999999999999999999",
-        "direct": null
+        "direct": null,
+        "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d"
       }
     }
   },
@@ -43,6 +45,7 @@
         "displayName": "Bob",
         "expiresAtMs": 1760000030000,
         "from": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
         "isGroup": true,
         "kind": "video",
         "participants": [

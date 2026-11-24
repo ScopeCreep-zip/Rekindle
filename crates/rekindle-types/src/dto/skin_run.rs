@@ -83,6 +83,16 @@ pub enum CallTarget {
     Voice { community: String, channel: String },
 }
 
+/// One member of [`ShellOp::StartGroupCall`]'s prefill: the identity key
+/// and the name the group's roster gives it (the group window's member
+/// list's source; a label, never an identity).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GroupCallInvitee {
+    pub pubkey: String,
+    pub display_name: String,
+}
+
 /// An operation the window's shell runs. Fields are camelCase like the
 /// variants (the TS mirror reads `groupId`, `attachmentId`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -153,6 +163,17 @@ pub enum ShellOp {
     /// verdict says when the Host refuses it.
     InviteToRoom {
         group_id: String,
+    },
+    /// The Start Group Call panel scoped to the group DM `group_id`
+    /// (a group window's `AppHostGroupVoiceChat`, Symbiosis
+    /// `Components/GroupChatWindow.xml:123`), prefilled with the group's
+    /// `members` besides us from its roster; the call it starts carries
+    /// `group_id` (`start_group_call { groupId }`). The buddy list's own
+    /// Start Group Call stays `OpenPanel(StartGroupCall)` with no group.
+    StartGroupCall {
+        group_id: String,
+        group_name: String,
+        members: Vec<GroupCallInvitee>,
     },
     Call(CallOp),
     /// Bring up the window of the active call or voice session

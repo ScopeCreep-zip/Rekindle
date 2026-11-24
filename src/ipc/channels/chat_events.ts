@@ -207,6 +207,7 @@ export type CallEvent =
         /** Everyone invited, for a group call. Empty for a 1:1. */
         participants: string[];
         isGroup: boolean;
+        groupId: string | null;
         expiresAtMs: number;
       };
     }
@@ -220,7 +221,7 @@ export type CallEvent =
         expiresAtMs: number;
       };
     }
-  | { connected: { callId: string; direct: DirectCallInfo | null } }
+  | { connected: { callId: string; direct: DirectCallInfo | null; groupId: string | null } }
   | { declined: { callId: string; reason: string } }
   | { missed: { callId: string; from: string } }
   | { timedOut: { callId: string } }

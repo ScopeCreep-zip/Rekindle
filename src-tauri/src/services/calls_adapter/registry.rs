@@ -130,6 +130,7 @@ impl GroupCallRegistry for ActiveGroupCallRegistry {
             participants: call.participants.clone(),
             accepted_count: call.accepted.len(),
             status: call.status,
+            group_id: call.group_id.clone(),
         })
     }
 }

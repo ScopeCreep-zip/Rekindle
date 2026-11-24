@@ -276,6 +276,7 @@ fn samples() -> Vec<DirectBody> {
             participants: vec!["cd".repeat(32), "ef".repeat(32)],
             wrapped_call_key: vec![5; 60],
             expires_at_ms: 60_000,
+            group_id: Some("0c".repeat(16)),
         }),
         DirectBody::GroupCallAccept(GroupCallMember {
             call_id: "0b".repeat(16),

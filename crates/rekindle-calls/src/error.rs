@@ -30,6 +30,9 @@ pub enum CallError {
     // --- Signaling (wire envelope shapes + glare) ---
     #[error("malformed signaling payload: {0}")]
     MalformedPayload(String),
+    /// A group-scoped call names someone outside that group's roster.
+    #[error("not in the group: {0}")]
+    NotInGroup(String),
     #[error("glare resolution: peer {0}")]
     GlareResolved(String),
     #[error("peer temp-muted")]

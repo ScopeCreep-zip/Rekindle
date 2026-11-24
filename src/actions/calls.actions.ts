@@ -70,7 +70,7 @@ export async function handleStartGroupCall(
     return null;
   }
   try {
-    const callId = await commands.startGroupCall(participantPubkeys, video);
+    const callId = await commands.startGroupCall(participantPubkeys, video, null);
     return callId;
   } catch (e) {
     addToast(`Group call failed: ${String(e)}`, "error");

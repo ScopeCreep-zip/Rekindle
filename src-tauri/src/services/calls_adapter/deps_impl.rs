@@ -37,6 +37,18 @@ impl CallSignalingDeps for CallsAdapter {
         Arc::clone(&self.group_registry)
     }
 
+    async fn group_roster(&self, group_id: &str) -> Result<Option<Vec<String>>, CallError> {
+        let owner = self.owner_key()?;
+        let id = group_id.to_string();
+        self.pool
+            .call(move |conn| {
+                Ok(rekindle_db::repo::group_dms::get(conn, &owner, &id)?
+                    .map(|g| g.roster.into_iter().map(|m| m.identity).collect()))
+            })
+            .await
+            .map_err(|e| CallError::InvalidState(format!("the group cannot be read: {e}")))
+    }
+
     fn is_peer_temp_muted(&self, peer_pubkey_hex: &str) -> bool {
         let now_ms = rekindle_utils::timestamp_ms();
         let guard = self.state.temp_call_muted.lock();
@@ -383,6 +395,7 @@ impl CallSignalingDeps for CallsAdapter {
                         participants: Vec::new(),
                         is_group: false,
                         expires_at_ms,
+                        group_id: None,
                     },
                 );
                 crate::event_dispatch::emit_notification(
@@ -416,6 +429,7 @@ impl CallSignalingDeps for CallsAdapter {
                     &self.app_handle,
                     rekindle_types::subscription_events::CallEvent::Connected {
                         call_id,
+                        group_id: None,
                         direct: Some(rekindle_types::subscription_events::DirectCallInfo {
                             kind: kind_str(kind),
                             peer_key: peer_public_key,
@@ -509,6 +523,7 @@ impl CallSignalingDeps for CallsAdapter {
                 participants,
                 kind,
                 expires_at_ms,
+                group_id,
             } => {
                 crate::event_dispatch::emit_call(
                     &self.app_handle,
@@ -520,6 +535,7 @@ impl CallSignalingDeps for CallsAdapter {
                         participants,
                         is_group: true,
                         expires_at_ms,
+                        group_id,
                     },
                 );
                 crate::event_dispatch::emit_notification(
@@ -537,7 +553,7 @@ impl CallSignalingDeps for CallsAdapter {
                     },
                 );
             }
-            CallSignalEvent::GroupCallConnected { call_id } => {
+            CallSignalEvent::GroupCallConnected { call_id, group_id } => {
                 crate::event_dispatch::emit_call(
                     &self.app_handle,
                     // No peer: a group call has no single other end,
@@ -545,6 +561,7 @@ impl CallSignalingDeps for CallsAdapter {
                     rekindle_types::subscription_events::CallEvent::Connected {
                         call_id,
                         direct: None,
+                        group_id,
                     },
                 );
             }
