@@ -70,9 +70,15 @@ pub struct MemberDevices {
     /// has the endorsement in its past (a seq numbers its key's chain,
     /// rule 1).
     pub carriers: BTreeMap<(u64, [u8; 32]), Carriers>,
-    /// Valid retirements by `(device key, incarnation)`: the lowest
-    /// `lastSeq` signed for it (rule 5).
-    pub retirements: BTreeMap<([u8; 32], u64), u64>,
+    /// Valid `DeviceRetired`s by `(device key, incarnation, signed
+    /// lastSeq)`: each one's carrier floor, the highest of its signed
+    /// `lastSeq` and the key's highest seq in the strict causal past of any
+    /// op that carried it (rule 5, lead decision K4b Q2), a pure max per
+    /// entry, so the view stays an order-free union and a later carrier
+    /// that saw less never lowers it (ADR 0022 pass 3: a carrier with
+    /// genesis-only deps bypassed the floor). The key is void above the
+    /// lowest floor ([`Self::retired_from`]).
+    pub retirements: BTreeMap<([u8; 32], u64, u64), u64>,
     /// Fork evidence by device key: the lowest seq it was forked at (rule 5).
     pub forks: BTreeMap<[u8; 32], u64>,
     /// `DeviceReadmit`s naming this member: `(new key, incarnation, fork
@@ -97,8 +103,9 @@ impl MemberDevices {
     pub fn elements(&self) -> BTreeSet<DeviceSetElement> {
         let endorsed = (self.endorsements.keys())
             .map(|(inc, key)| DeviceSetElement::new(DeviceSetElementKind::Endorsement, *key, *inc));
-        let retired = (self.retirements.keys())
-            .map(|(key, inc)| DeviceSetElement::new(DeviceSetElementKind::Retirement, *key, *inc));
+        let retired = (self.retirements.keys()).map(|(key, inc, _)| {
+            DeviceSetElement::new(DeviceSetElementKind::Retirement, *key, *inc)
+        });
         endorsed.chain(retired).collect()
     }
 
@@ -145,14 +152,21 @@ impl MemberDevices {
             .map(|e| e.device_record.as_str())
     }
 
-    /// The lowest seq above which `key` signs nothing valid: its lowest
-    /// retirement `lastSeq` + 1 or its fork seq, whichever is lower.
+    /// The lowest seq from which `key` is retired by the `DeviceRetired`s
+    /// held: its lowest carrier floor + 1 ([`Self::retirements`]), before
+    /// a witness of another key lifts it (rule 5, `merge::resolve`).
+    #[must_use]
+    pub fn retired_from(&self, key: &[u8; 32]) -> Option<u64> {
+        (self.retirements.iter())
+            .filter(|((k, _, _), _)| k == key)
+            .map(|(_, floor)| floor.saturating_add(1))
+            .min()
+    }
+
+    /// The lowest seq above which `key` signs nothing valid: its
+    /// [`Self::retired_from`] or its fork seq, whichever is lower.
     fn void_from(&self, key: &[u8; 32]) -> Option<u64> {
-        let retired = (self.retirements.iter())
-            .filter(|((k, _), _)| k == key)
-            .map(|(_, last)| last.saturating_add(1))
-            .min();
-        retired
+        self.retired_from(key)
             .into_iter()
             .chain(self.forks.get(key).copied())
             .min()
@@ -190,9 +204,9 @@ impl DeviceView {
                     note_carrier(ours, *k, *carrier, *seq);
                 }
             }
-            for (k, last) in &theirs.retirements {
-                let mine = ours.retirements.entry(*k).or_insert(*last);
-                *mine = (*mine).min(*last);
+            for (k, floor) in &theirs.retirements {
+                let mine = ours.retirements.entry(*k).or_insert(*floor);
+                *mine = (*mine).max(*floor);
             }
             for (k, seq) in &theirs.forks {
                 let mine = ours.forks.entry(*k).or_insert(*seq);
@@ -236,12 +250,14 @@ impl DeviceView {
     /// so a join is noted at [`OpStamp::MIN`]; a merge harvests through
     /// [`Self::harvest`], which notes the op's own stamp.
     pub fn absorb(&mut self, anchor: &str, op: &GovernanceOp) {
-        self.absorb_at(anchor, op, OpStamp::MIN);
+        self.absorb_at(anchor, op, OpStamp::MIN, None);
     }
 
     /// [`Self::absorb`] of `op` at `stamp`, the stamp its `MemberJoined`
-    /// raises [`MemberDevices::latest_join`] to.
-    fn absorb_at(&mut self, anchor: &str, op: &GovernanceOp, stamp: OpStamp) {
+    /// raises [`MemberDevices::latest_join`] to. `seen`: for a
+    /// `DeviceRetired`, the retired key's highest seq in `op`'s strict
+    /// causal past, if any (its carrier floor, rule 5).
+    fn absorb_at(&mut self, anchor: &str, op: &GovernanceOp, stamp: OpStamp, seen: Option<u64>) {
         let p = &op.author;
         match &op.body {
             GovernanceEntry::MemberJoined {
@@ -273,11 +289,12 @@ impl DeviceView {
                 let held = (md.member_record.as_deref())
                     .is_some_and(|record| retirement_holds(p, anchor, record, r));
                 if held {
-                    let last = md
+                    let floor = r.last_seq.max(seen.unwrap_or(0));
+                    let at = md
                         .retirements
-                        .entry((r.device_key, r.incarnation))
-                        .or_insert(r.last_seq);
-                    *last = (*last).min(r.last_seq);
+                        .entry((r.device_key, r.incarnation, r.last_seq))
+                        .or_insert(floor);
+                    *at = (*at).max(floor);
                 }
             }
             GovernanceEntry::DeviceReadmit(r) => {
@@ -292,7 +309,23 @@ impl DeviceView {
     /// for: how a merge harvests the view its state carries (plan E3.2
     /// K-CP).
     pub fn harvest(&mut self, op: &VerifiedOp) {
-        self.absorb_at(op.anchor(), op.op(), op.stamp());
+        self.harvest_seen(op, None);
+    }
+
+    /// [`Self::harvest`] of `op`, which saw `seen`, the key a
+    /// `DeviceRetired` retires at its highest seq in `op`'s strict causal
+    /// past (the carrier floor, rule 5; `None` for no such op).
+    pub fn harvest_seen(&mut self, op: &VerifiedOp, seen: Option<u64>) {
+        self.absorb_at(op.anchor(), op.op(), op.stamp(), seen);
+    }
+
+    /// The lowest [`MemberDevices::retired_from`] of `key` over every
+    /// member.
+    #[must_use]
+    pub fn retired_from(&self, key: &[u8; 32]) -> Option<u64> {
+        (self.members.values())
+            .filter_map(|md| md.retired_from(key))
+            .min()
     }
 }
 
