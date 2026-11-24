@@ -25,9 +25,10 @@ pub(crate) struct Reads {
     /// `VoiceChat`'s call: the incoming call from the selected friend that
     /// is ringing (`signals::Inputs::ringing_from`).
     pub ringing_call: Option<String>,
-    /// A group window's `GroupVoiceChat` (and its `VoiceChat`) and
-    /// `HostGroupVoiceChat`: the selected group, its roster, and its call
-    /// in progress that we are not in (`signals::Inputs::joinable_group_call`).
+    /// A group window's `GroupVoiceChat` (and its `VoiceChat`),
+    /// `HostGroupVoiceChat` and the `HostVoiceChat` Symbiosis draws on its
+    /// Host button: the selected group, its roster, and its call in
+    /// progress that we are not in (`signals::Inputs::joinable_group_call`).
     pub group_call: Option<GroupCall>,
     /// The call a window's Leave (and a group window's Cancel and End)
     /// acts on ([`in_call`]); `None` elsewhere, where Leave is the
@@ -92,6 +93,9 @@ pub(crate) struct GroupCall {
 
 /// [`GroupCall`] for a group window's join or host: the group from
 /// `group_dms`, and its call by the group id its signaling carries.
+/// `HostVoiceChat` is read too: Symbiosis's `GroupChatWindow` draws it on
+/// its Host button (`ChatButtonCall`), and only a `Group` selection yields
+/// a group, so a 1:1 window's `HostVoiceChat` keeps its 1:1 call.
 async fn group_call(
     ctx: &DaemonContext,
     selections: &Selections,
@@ -99,7 +103,7 @@ async fn group_call(
 ) -> Result<Option<GroupCall>, IpcResponse> {
     let IpcRequest::RunSkinAction {
         window,
-        action: A::VoiceChat | A::GroupVoiceChat | A::HostGroupVoiceChat,
+        action: A::VoiceChat | A::GroupVoiceChat | A::HostGroupVoiceChat | A::HostVoiceChat,
         ..
     } = request
     else {

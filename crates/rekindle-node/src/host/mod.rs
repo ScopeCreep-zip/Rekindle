@@ -49,6 +49,8 @@ mod group_content_tests;
 #[cfg(test)]
 mod group_dm_tests;
 #[cfg(test)]
+mod group_host_call_tests;
+#[cfg(test)]
 mod group_lobby_tests;
 pub mod hardening;
 #[cfg(test)]
