@@ -10,6 +10,7 @@ import {
   transformMember,
 } from "../../utils/transformers";
 import { handleLoadUnreadCounts } from "./channels";
+import { dropCommunity } from "../../stores/community.store";
 
 /// Create a community. A refused create (a cancelled review, a node not
 /// yet attached) rejects with the Host's error, so the form that asked
@@ -285,16 +286,7 @@ export async function handlePlaySoundboard(
 export async function handleLeaveCommunity(communityId: string): Promise<void> {
   try {
     await commands.leaveCommunity(communityId);
-    setCommunityState("communities", (prev) => {
-      const next = { ...prev };
-      delete next[communityId];
-      return next;
-    });
-    // If we were viewing this community, clear the selection
-    if (communityState.activeCommunity === communityId) {
-      setCommunityState("activeCommunity", null);
-      setCommunityState("activeChannel", null);
-    }
+    dropCommunity(communityId);
   } catch (e) {
     console.error("Failed to leave community:", e);
     addToast("Failed to leave community", "error");
