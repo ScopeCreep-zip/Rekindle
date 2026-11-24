@@ -303,6 +303,12 @@ impl App {
                 self.notifications.push(toast, ToastLevel::Info);
                 Some(Action::Render)
             }
+            // Our leave, withdrawal or Forget: the dashboard drops the
+            // community (a no-op for one it does not list).
+            SubscriptionEvent::Membership(MembershipEvent::Forgotten { ref community }) => {
+                self.cached_communities.retain(|c| c.anchor != *community);
+                Some(Action::Render)
+            }
             SubscriptionEvent::Membership(MembershipEvent::Left { ref pseudonym, .. }) => {
                 self.notifications.push(
                     crate::helpers::abbreviate_key(pseudonym).clone(),
