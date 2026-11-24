@@ -41,7 +41,7 @@ const CommunityMainPane: Component<{ vm: CommunityVm }> = (props) => {
         <GameServerList
           servers={vm.gameServers()}
           communityId={vm.selectedCommunityId()}
-          canManage={vm.canManageCommunity()}
+          manageDenied={vm.denied("manageServers")}
           onRemove={handleRemoveGameServer}
           onAdd={handleAddGameServer}
         />

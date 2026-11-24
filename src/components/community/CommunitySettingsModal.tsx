@@ -10,7 +10,6 @@ import {
   MANAGE_ROLES,
   KICK_MEMBERS,
   BAN_MEMBERS,
-  MODERATE_MEMBERS,
   CREATE_INVITES,
   VIEW_AUDIT_LOG,
   MANAGE_EXPRESSIONS,
@@ -57,7 +56,6 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
   const canManageRoles = createMemo(() => hasPermission(myPerms(), MANAGE_ROLES));
   const canKick = createMemo(() => hasPermission(myPerms(), KICK_MEMBERS));
   const canBan = createMemo(() => hasPermission(myPerms(), BAN_MEMBERS));
-  const canModerate = createMemo(() => hasPermission(myPerms(), MODERATE_MEMBERS));
   const canCreateInvite = createMemo(() => hasPermission(myPerms(), CREATE_INVITES));
   const canViewAuditLog = createMemo(() => hasPermission(myPerms(), VIEW_AUDIT_LOG));
   const canManageExpressions = createMemo(() => hasPermission(myPerms(), MANAGE_EXPRESSIONS));
@@ -121,7 +119,7 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
 
       <div class="settings-content">
         <Show when={activeTab() === "overview"}>
-          <OverviewTab community={props.community} canManage={canManageCommunity()} />
+          <OverviewTab community={props.community} manageDenied={deniedFor(props.community, "manageCommunity")} />
         </Show>
         <Show when={activeTab() === "channels"}>
           <ChannelsTab community={props.community} canManageChannels={canManageChannels()} />
@@ -129,16 +127,14 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
         <Show when={activeTab() === "members"}>
           <MembersTab
             community={props.community}
-            canManageRoles={canManageRoles()}
-            canModerate={canModerate()}
-            canManageCommunity={canManageCommunity()}
+            manageDenied={deniedFor(props.community, "manageCommunity")}
           />
         </Show>
         <Show when={activeTab() === "invites"}>
           <InvitesTab
             communityId={props.community.id}
             canCreateInvite={canCreateInvite()}
-            canManage={canManageCommunity()}
+            revokeDenied={deniedFor(props.community, "manageCommunity")}
           />
         </Show>
         <Show when={activeTab() === "roles"}>
