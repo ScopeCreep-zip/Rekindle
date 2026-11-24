@@ -13,7 +13,7 @@ use crate::dto::skin_action::Capability;
 /// Every [`Capability`] (Xfire's `OnAppCan<X>` / `OnAppCannot<X>`), in
 /// order: each is in exactly one of [`SkinSignalSet::can`] and
 /// [`SkinSignalSet::cannot`].
-pub const EVERY_CAPABILITY: [Capability; 26] = [
+pub const EVERY_CAPABILITY: [Capability; 28] = [
     Capability::AddFriend,
     Capability::Chat,
     Capability::Profile,
@@ -40,6 +40,8 @@ pub const EVERY_CAPABILITY: [Capability; 26] = [
     Capability::DeleteSelected,
     Capability::OpenSelected,
     Capability::UploadSelected,
+    Capability::OpenCommunity,
+    Capability::LeaveCommunity,
 ];
 
 /// One skin window's signals.

@@ -37,6 +37,7 @@ pub(crate) enum Selected<'a> {
     Group {
         group_id: &'a str,
     },
+    Community,
 }
 
 impl<'a> Selected<'a> {
@@ -61,6 +62,7 @@ impl<'a> Selected<'a> {
             Some(SkinSelection::Transfer { attachment_id, .. }) => Self::Transfer { attachment_id },
             Some(SkinSelection::Media { path }) => Self::Media { path },
             Some(SkinSelection::Group { group_id }) => Self::Group { group_id },
+            Some(SkinSelection::Community { .. }) => Self::Community,
         }
     }
 
@@ -276,6 +278,9 @@ pub(crate) fn allows(
         // Only the creator names the room (lead decision 1a; the others
         // drop a rename from anyone else, `group_dm/rename.rs`).
         C::RenameRoom => matches!(group, Some(Group::Joined { creator: true, .. })),
+        // The Communities row's Open and Leave act on the selected
+        // community (plan E7.7).
+        C::OpenCommunity | C::LeaveCommunity => matches!(selected, Selected::Community),
         C::OpenSelected => media_exists(selected),
         // Deleting a room is leaving it (SK2-G §6).
         C::DeleteSelected => media_exists(selected) || matches!(group, Some(Group::Joined { .. })),

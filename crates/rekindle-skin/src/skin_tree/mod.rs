@@ -7,6 +7,7 @@
 mod anchor;
 pub mod brand;
 mod clip;
+pub mod community_row;
 pub mod content;
 pub mod cover;
 pub mod css;
@@ -29,6 +30,8 @@ pub mod validate;
 
 #[cfg(test)]
 mod anchor_tests;
+#[cfg(test)]
+mod community_row_tests;
 #[cfg(test)]
 mod content_tests;
 #[cfg(test)]

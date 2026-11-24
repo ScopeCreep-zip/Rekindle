@@ -29,6 +29,8 @@ pub enum ShellPanel {
     JoinCommunity,
     Shortcuts,
     Notifications,
+    /// The Communities row's New (plan E7.7): a chooser, Create or Join.
+    CommunityStart,
 }
 
 /// A 1:1 call operation: the shell's call commands own calls until plan
@@ -155,6 +157,16 @@ pub enum ShellOp {
     OpenSearch {
         scope: super::local_search::LocalSearchScope,
     },
+    /// The window of the selected `community` (the Communities row's Open,
+    /// plan E7.7).
+    OpenCommunity {
+        community: String,
+    },
+    /// Leave the selected `community`: the shell runs the existing leave,
+    /// which goes through the Host's leave intent (ADR 0019).
+    LeaveCommunity {
+        community: String,
+    },
     ReportBug,
     CopyKey,
     EditName,
@@ -224,6 +236,10 @@ pub enum SkinSelection {
     /// default group of friends in no group.
     FriendGroup {
         group_id: Option<i64>,
+    },
+    /// A community row in the Communities view (plan E7.7), by its key.
+    Community {
+        community: String,
     },
 }
 

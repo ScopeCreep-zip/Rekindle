@@ -30,7 +30,7 @@ export type SkinSelection =
   | { kind: "group"; arg: { groupId: string } }
   /** A friend group's header (plan E7.15 IV5); null is the default group. */
   | { kind: "friendGroup"; arg: { groupId: number | null } }
-  /** A row of the Communities view (plan CB1): Open and Leave act on it. */
+  /** A community row in the Communities view (plan E7.7), by its key. */
   | { kind: "community"; arg: { community: string } };
 
 export type ShellPanel =
@@ -40,10 +40,10 @@ export type ShellPanel =
   | "startGroupCall"
   | "createCommunity"
   | "joinCommunity"
-  /** The Communities view's New (plan CB1): create one or join with an invite. */
-  | "communityStart"
   | "shortcuts"
-  | "notifications";
+  | "notifications"
+  /** The Communities row's New (plan E7.7): a chooser, Create or Join. */
+  | "communityStart";
 
 export type CallOp =
   | { kind: "voice"; arg: { friend: string } }
@@ -83,10 +83,6 @@ export type ShellOp =
   | { kind: "openGameInvite"; arg: { friend: string } }
   | { kind: "newRoom"; arg: { peer: string | null } }
   | { kind: "openGroupChat"; arg: { groupId: string } }
-  /** The Communities view's Open (plan CB1): that community's window. */
-  | { kind: "openCommunity"; arg: { community: string } }
-  /** The Communities view's Leave (plan CB1): through the Host's leave intent. */
-  | { kind: "leaveCommunity"; arg: { community: string } }
   | { kind: "inviteToRoom"; arg: { groupId: string } }
   | { kind: "call"; arg: CallOp }
   | { kind: "showCall"; arg: { target: CallTarget } }
@@ -99,6 +95,9 @@ export type ShellOp =
       kind: "chooseDownloadDest";
       arg: { attachmentId: string; target: TransferTarget; suggestedName: string };
     }
+  /** The Communities row (plan E7.7): the selected community's window, or its leave. */
+  | { kind: "openCommunity"; arg: { community: string } }
+  | { kind: "leaveCommunity"; arg: { community: string } }
   | { kind: "reportBug" }
   | { kind: "copyKey" }
   | { kind: "editName" }

@@ -98,7 +98,8 @@ fn resolved(ctx: &DaemonContext, window: &str, asked: &InfoviewSubject) -> Infov
             SkinSelection::Server { .. }
             | SkinSelection::Transfer { .. }
             | SkinSelection::Media { .. }
-            | SkinSelection::Group { .. },
+            | SkinSelection::Group { .. }
+            | SkinSelection::Community { .. },
         ) => InfoviewSubject::Own,
     }
 }

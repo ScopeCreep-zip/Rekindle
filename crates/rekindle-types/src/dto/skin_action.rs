@@ -299,6 +299,14 @@ pub enum SkinAction {
     ShowGameInvite,
     VideoChat,
     OpenNotifications,
+    /// The Communities view's row (plan E7.7): open the selected
+    /// community's window.
+    OpenCommunity,
+    /// Leave the selected community (the shell's leave, through the
+    /// Host's leave intent).
+    LeaveCommunity,
+    /// The Create or Join chooser.
+    StartCommunity,
 }
 
 /// A capability of the selected item (`OnAppCan<X>` / `OnAppCannot<X>`).
@@ -334,6 +342,9 @@ pub enum Capability {
     DeleteSelected,
     OpenSelected,
     UploadSelected,
+    /// A community is selected in the Communities view (plan E7.7).
+    OpenCommunity,
+    LeaveCommunity,
 }
 
 /// Backend-owned state an `On<X>` trigger reacts to (design §2.5).
