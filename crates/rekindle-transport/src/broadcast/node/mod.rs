@@ -16,7 +16,7 @@ use crate::error::{Result, TransportError};
 use crate::shared::{SharedState, TransportNotification, TransportSnapshot};
 
 mod lifecycle;
-mod routes;
+pub(crate) mod routes;
 
 pub(crate) use routes::publish_personal_route;
 
@@ -159,6 +159,7 @@ impl TransportNode {
         crate::subscriptions::dispatch::forget_dead_remote(
             self.ports.routes.as_ref(),
             &self.peer_registry,
+            &self.liveness,
             dead,
         )
     }

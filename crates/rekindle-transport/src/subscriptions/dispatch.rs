@@ -456,10 +456,13 @@ fn dispatch_value_change(
 /// Veilid declared these imported routes dead: the importer forgets them
 /// (the network already released them) and the peers holding one of those
 /// blobs lose it, so their next send fetches a fresh route (plan C7.9e).
-/// Returns those peers. Both hosts take a `RouteChange` through this.
+/// The blobs are declared dead, so no caller imports one again for the
+/// failure cache's span (plan RV1g B1). Returns those peers. Both hosts
+/// take a `RouteChange` through this.
 pub(crate) fn forget_dead_remote(
     routes: &dyn RoutePort,
     peers: &parking_lot::RwLock<crate::broadcast::peer_registry::PeerRegistry>,
+    liveness: &crate::liveness::Liveness,
     dead: &[String],
 ) -> Vec<String> {
     let dead: Vec<PeerTarget> = dead.iter().cloned().map(PeerTarget::new).collect();
@@ -467,6 +470,7 @@ pub(crate) fn forget_dead_remote(
     if blobs.is_empty() {
         return Vec::new();
     }
+    liveness.declare_dead_by_veilid(&blobs);
     peers.write().invalidate_blobs(&blobs)
 }
 
@@ -487,7 +491,12 @@ async fn dispatch_route_change<H: InboundHandler>(
             .await;
     }
     if !dead_remote.is_empty() {
-        let peer_keys = forget_dead_remote(routes.routes.as_ref(), &routes.peers, dead_remote);
+        let peer_keys = forget_dead_remote(
+            routes.routes.as_ref(),
+            &routes.peers,
+            &routes.liveness,
+            dead_remote,
+        );
         handler
             .on_event(TransportEvent::RemoteRoutesDied { peer_keys })
             .await;

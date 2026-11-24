@@ -17,7 +17,7 @@ use tokio::sync::watch;
 use super::{owner, Liveness};
 
 /// Our General route, a new id at each replace; replaces counted.
-struct OneRoute {
+pub(super) struct OneRoute {
     id: Mutex<u32>,
     replaces: AtomicU32,
     state: watch::Sender<RouteState>,
@@ -25,7 +25,7 @@ struct OneRoute {
 }
 
 impl OneRoute {
-    fn new() -> Arc<Self> {
+    pub(super) fn new() -> Arc<Self> {
         Arc::new(Self {
             id: Mutex::new(1),
             replaces: AtomicU32::new(0),

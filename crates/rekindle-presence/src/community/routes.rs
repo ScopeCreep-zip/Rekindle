@@ -66,6 +66,14 @@ impl MemberRouteCache {
         self.by_member.remove(&member.to_hex()).map(|r| r.blob)
     }
 
+    /// Forget every member's route whose blob `dead` names (the transport
+    /// knows it dead, plan RV1g B3); how many.
+    pub fn forget_blobs(&mut self, mut dead: impl FnMut(&[u8]) -> bool) -> usize {
+        let before = self.by_member.len();
+        self.by_member.retain(|_, r| !dead(&r.blob));
+        before - self.by_member.len()
+    }
+
     /// Keep only the members `keep` accepts (a departed member's route
     /// goes with them).
     pub fn retain(&mut self, mut keep: impl FnMut(&str) -> bool) {
@@ -119,6 +127,22 @@ mod tests {
         assert!(
             cache.observe(&member(1), 5, b"A".to_vec()),
             "re-read after forget"
+        );
+    }
+
+    #[test]
+    fn a_dead_blob_is_forgotten_for_every_member_holding_it() {
+        let mut cache = MemberRouteCache::default();
+        cache.observe(&member(1), 1, b"A".to_vec());
+        cache.observe(&member(2), 1, b"A".to_vec());
+        cache.observe(&member(3), 1, b"C".to_vec());
+        assert_eq!(cache.forget_blobs(|b| b == b"A"), 2);
+        assert_eq!(cache.get(&member(1)), None);
+        assert_eq!(cache.get(&member(2)), None);
+        assert_eq!(cache.get(&member(3)), Some(&b"C"[..]));
+        assert!(
+            cache.observe(&member(1), 1, b"B".to_vec()),
+            "re-read at any seq"
         );
     }
 
