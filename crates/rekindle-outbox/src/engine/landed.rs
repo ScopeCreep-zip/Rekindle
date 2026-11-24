@@ -1,7 +1,7 @@
 //! Rows whose send another write already carried out.
 
 use super::Outbox;
-use crate::deps::{OutboxDeps, OutboxError, OutboxRow, StateChange};
+use crate::deps::{OutboxDeps, OutboxError, OutboxRow};
 use crate::state::{is_unsettled, merge, StateInput};
 
 impl<D: OutboxDeps> Outbox<D> {
@@ -29,8 +29,8 @@ impl<D: OutboxDeps> Outbox<D> {
                 continue;
             }
             let state = merge(row.state, StateInput::LocalSent);
-            self.deps.settle(client_id, state).await?;
-            self.deps.publish(StateChange::of(&row, state, None));
+            let moved = self.deps.settle(client_id, state).await?;
+            self.publish_moved(&row, moved, None);
             settled.push(row);
         }
         if !settled.is_empty() {

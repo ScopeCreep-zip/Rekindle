@@ -68,3 +68,105 @@ pub fn merge(current: SendState, input: StateInput) -> SendState {
         _ => current,
     }
 }
+
+/// A row as stored now: its state, and the peer's ack noted on it while
+/// its send had not landed (`queued`, live A/B finding 42).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StoredSend {
+    pub state: SendState,
+    pub ack: Option<PeerAck>,
+}
+
+impl StoredSend {
+    /// The state the user sees: a noted ack is shown at once (D22).
+    #[must_use]
+    pub fn shown(self) -> SendState {
+        match self.ack {
+            Some(ack) => merge(self.state, StateInput::Peer(ack)),
+            None => self.state,
+        }
+    }
+}
+
+/// How a write moved the state a row shows: published only when changed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Moved {
+    pub before: SendState,
+    pub after: SendState,
+}
+
+impl Moved {
+    #[must_use]
+    pub fn changed(self) -> bool {
+        self.before != self.after
+    }
+}
+
+/// Which write a host applies to a stored row ([`apply`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Step {
+    /// The engine's decision after an attempt, a failure or a deadline:
+    /// the target merges forward ([`merge`]); a `queued` target moves
+    /// nothing.
+    Update,
+    /// The user's Retry: `failed` (or `queued`) goes back to `queued`, the
+    /// one move down the lattice.
+    Retry,
+    /// The row settles at the merged state and leaves its stream.
+    Settle,
+}
+
+/// What the host stores for the row ([`apply`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Write {
+    /// Keep the row, at this state.
+    Store(SendState),
+    /// Project this state and remove the row.
+    Settle(SendState),
+}
+
+fn input_of(target: SendState) -> Option<StateInput> {
+    match target {
+        SendState::Sent => Some(StateInput::LocalSent),
+        SendState::Delivered => Some(StateInput::Peer(PeerAck::Delivered)),
+        SendState::Read => Some(StateInput::Peer(PeerAck::Read)),
+        SendState::Failed => Some(StateInput::Failed),
+        SendState::Queued | SendState::AwaitingKey => None,
+    }
+}
+
+/// `target` written to the row as it is `stored` now, through the lattice,
+/// in the host's one storage call that read it: the write to store, and how
+/// the shown state moved. A row whose send left this device (past
+/// `queued`) with the peer's ack already noted settles at that ack, as the
+/// landing does ([`crate::OutboxDeps::land`]).
+#[must_use]
+pub fn apply(stored: StoredSend, target: SendState, step: Step) -> (Write, Moved) {
+    let state = match step {
+        Step::Retry if matches!(stored.state, SendState::Failed | SendState::Queued) => {
+            SendState::Queued
+        }
+        Step::Retry => stored.state,
+        Step::Update | Step::Settle => {
+            input_of(target).map_or(stored.state, |input| merge(stored.state, input))
+        }
+    };
+    let after = StoredSend {
+        state,
+        ack: stored.ack,
+    }
+    .shown();
+    let left = !matches!(state, SendState::Queued | SendState::AwaitingKey);
+    let write = if step == Step::Settle || (left && stored.ack.is_some()) {
+        Write::Settle(after)
+    } else {
+        Write::Store(state)
+    };
+    (
+        write,
+        Moved {
+            before: stored.shown(),
+            after,
+        },
+    )
+}

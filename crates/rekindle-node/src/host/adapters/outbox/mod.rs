@@ -13,6 +13,7 @@ mod governance_publication;
 mod media_key;
 pub(crate) mod mek_transfer;
 mod senders;
+mod stored;
 #[cfg(test)]
 mod tests;
 
@@ -22,6 +23,7 @@ use async_trait::async_trait;
 use rekindle_db::repo::messages::NewDm;
 use rekindle_db::repo::outbox as repo;
 use rekindle_db::{Db, DbHandle};
+use rekindle_outbox::state::{apply, Moved, Step, StoredSend, Write};
 use rekindle_outbox::{
     AttemptOutcome, Landed, NewOutboxRow, OutboxDeps, OutboxError, OutboxRow, PeerAck, RowUpdate,
     StateChange, StreamKind,
@@ -29,6 +31,8 @@ use rekindle_outbox::{
 use rekindle_types::message::SendState;
 use rekindle_utils::{Clock, RandomSource};
 use tokio::sync::broadcast;
+
+use stored::stored_of;
 
 pub use channel_post::{post_of_row, ChannelPosts};
 pub use dht_write::save_unsent;
@@ -369,39 +373,68 @@ impl OutboxDeps for HostOutbox {
         &self,
         client_id: &str,
         update: &RowUpdate,
-    ) -> Result<Option<PeerAck>, OutboxError> {
+    ) -> Result<Option<Moved>, OutboxError> {
         let (db, owner) = self.db()?;
         let (id, update) = (client_id.to_owned(), update.clone());
-        let acked = db
-            .call(move |c| {
-                let change = repo::Update {
-                    state: update.state,
-                    attempts: update.attempts,
-                    next_at: update.next_at,
-                    deadline: update.deadline,
-                    wedge_reason: update.wedge_reason.as_deref(),
-                };
-                repo::update(c, &owner, &id, &change)
-            })
-            .await
-            .map_err(|e| storage(&e))?;
-        Ok(match acked.and_then(|u| u.peer_ack) {
-            Some(SendState::Read) => Some(PeerAck::Read),
-            Some(_) => Some(PeerAck::Delivered),
-            None => None,
+        let step = if update.retry {
+            Step::Retry
+        } else {
+            Step::Update
+        };
+        // One storage call reads the row as it is now and writes it: the
+        // state merges against that, never the row an attempt began from.
+        db.call(move |c| {
+            let Some((write, moved)) = repo::stored_state(c, &owner, &id)?
+                .map(|row| apply(stored_of(row), update.state, step))
+            else {
+                return Ok(None);
+            };
+            match write {
+                Write::Settle(state) => {
+                    repo::settle(c, &owner, &id, state)?;
+                }
+                Write::Store(state) => {
+                    let change = repo::Update {
+                        state,
+                        attempts: update.attempts,
+                        next_at: update.next_at,
+                        deadline: update.deadline,
+                        wedge_reason: update.wedge_reason.as_deref(),
+                    };
+                    repo::update(c, &owner, &id, &change)?;
+                }
+            }
+            Ok(Some(moved))
         })
+        .await
+        .map_err(|e| storage(&e))
     }
 
-    async fn note_ack(&self, client_id: &str, ack: PeerAck) -> Result<bool, OutboxError> {
+    async fn note_ack(&self, client_id: &str, ack: PeerAck) -> Result<Option<Moved>, OutboxError> {
         let (db, owner) = self.db()?;
         let id = client_id.to_owned();
         let stored = match ack {
             PeerAck::Delivered => SendState::Delivered,
             PeerAck::Read => SendState::Read,
         };
-        db.call(move |c| repo::note_ack(c, &owner, &id, stored))
-            .await
-            .map_err(|e| storage(&e))
+        db.call(move |c| {
+            let Some(before) = repo::stored_state(c, &owner, &id)?.map(stored_of) else {
+                return Ok(None);
+            };
+            if !repo::note_ack(c, &owner, &id, stored)? {
+                return Ok(None);
+            }
+            let after = StoredSend {
+                state: before.state,
+                ack: before.ack.max(Some(ack)),
+            };
+            Ok(Some(Moved {
+                before: before.shown(),
+                after: after.shown(),
+            }))
+        })
+        .await
+        .map_err(|e| storage(&e))
     }
 
     async fn reschedule_queued(
@@ -460,13 +493,25 @@ impl OutboxDeps for HostOutbox {
         .map_err(|e| storage(&e))
     }
 
-    async fn settle(&self, client_id: &str, state: SendState) -> Result<(), OutboxError> {
+    async fn settle(
+        &self,
+        client_id: &str,
+        state: SendState,
+    ) -> Result<Option<Moved>, OutboxError> {
         let (db, owner) = self.db()?;
         let id = client_id.to_owned();
-        db.call(move |c| repo::settle(c, &owner, &id, state))
-            .await
-            .map(drop)
-            .map_err(|e| storage(&e))
+        db.call(move |c| {
+            let Some((write, moved)) = repo::stored_state(c, &owner, &id)?
+                .map(|row| apply(stored_of(row), state, Step::Settle))
+            else {
+                return Ok(None);
+            };
+            let (Write::Settle(state) | Write::Store(state)) = write;
+            repo::settle(c, &owner, &id, state)?;
+            Ok(Some(moved))
+        })
+        .await
+        .map_err(|e| storage(&e))
     }
 
     async fn read_through(

@@ -315,3 +315,30 @@ pub fn latest_with_prefix(
     }
     Ok(None)
 }
+
+/// `client_id`'s stored state and the peer's ack noted on it while it was
+/// `queued` ([`super::note_ack`]); `None` when no row is `client_id`. The
+/// outbox engine reads it in the same call as its write, so a state is
+/// merged against the row as it is now, never as an attempt began.
+///
+/// # Errors
+/// The query failed.
+pub fn stored_state(
+    conn: &Connection,
+    owner_key: &str,
+    client_id: &str,
+) -> rusqlite::Result<Option<(SendState, Option<SendState>)>> {
+    conn.query_row(
+        "SELECT state, peer_ack FROM outbox WHERE owner_key = ?1 AND client_id = ?2",
+        params![owner_key, client_id],
+        |r| {
+            let state: String = r.get(0)?;
+            let ack: Option<String> = r.get(1)?;
+            Ok((
+                parse_state(&state, 0)?,
+                ack.map(|a| parse_state(&a, 1)).transpose()?,
+            ))
+        },
+    )
+    .optional()
+}

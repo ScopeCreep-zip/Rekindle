@@ -12,7 +12,7 @@ use tokio_util::sync::CancellationToken;
 use crate::deps::{
     AttemptOutcome, NewOutboxRow, OutboxDeps, OutboxError, OutboxRow, RowUpdate, StateChange,
 };
-use crate::state::{merge, PeerAck, StateInput};
+use crate::state::{merge, Moved, PeerAck, StateInput};
 use crate::stream::StreamKind;
 
 mod attempts;
@@ -187,27 +187,49 @@ impl<D: OutboxDeps> Outbox<D> {
     }
 
     /// Fail `row` with `reason`, and the rows waiting for it with it.
+    /// A row the peer's ack settled meanwhile is left as it is, and so are
+    /// the rows waiting for it.
     pub(crate) async fn fail(&self, row: &OutboxRow, reason: String) -> Result<(), OutboxError> {
-        self.fail_one(row, reason).await?;
-        self.fail_dependents(row).await
+        if self.fail_one(row, reason).await? {
+            self.fail_dependents(row).await?;
+        }
+        Ok(())
     }
 
     pub(crate) async fn fail_one(
         &self,
         row: &OutboxRow,
         reason: String,
-    ) -> Result<(), OutboxError> {
-        let state = merge(row.state, StateInput::Failed);
+    ) -> Result<bool, OutboxError> {
         let update = RowUpdate {
-            state,
+            state: SendState::Failed,
             attempts: row.attempts,
             next_at: row.next_at,
             deadline: row.deadline,
             wedge_reason: Some(reason.clone()),
+            retry: false,
         };
-        self.deps.update(&row.client_id, &update).await?;
-        self.deps.publish(StateChange::of(row, state, Some(reason)));
-        Ok(())
+        let moved = self.deps.update(&row.client_id, &update).await?;
+        let moved = self.publish_moved(row, moved, Some(reason));
+        Ok(moved.is_some_and(|m| m.after == SendState::Failed))
+    }
+
+    /// Publish `row`'s shown state when a write `moved` it, never one the
+    /// row already shows or one below it (D22); wake the pump when the row
+    /// settled at the peer's ack, so its stream head moves.
+    pub(crate) fn publish_moved(
+        &self,
+        row: &OutboxRow,
+        moved: Option<Moved>,
+        reason: Option<String>,
+    ) -> Option<Moved> {
+        if let Some(m) = moved.filter(|m| m.changed()) {
+            self.deps.publish(StateChange::of(row, m.after, reason));
+            if matches!(m.after, SendState::Delivered | SendState::Read) {
+                self.wake.notify_one();
+            }
+        }
+        moved
     }
 
     /// `row`'s append is handed off: it stays `queued`, counted, and is due
@@ -232,9 +254,8 @@ impl<D: OutboxDeps> Outbox<D> {
         let attempts = row.attempts.saturating_add(1);
         match outcome {
             AttemptOutcome::Sent if !row.kind.awaits_ack() => {
-                self.deps.settle(&row.client_id, SendState::Sent).await?;
-                self.deps
-                    .publish(StateChange::of(row, SendState::Sent, None));
+                let moved = self.deps.settle(&row.client_id, SendState::Sent).await?;
+                self.publish_moved(row, moved, None);
             }
             // The receipt is the landing and the ack at once.
             AttemptOutcome::Receipted => {
@@ -260,11 +281,10 @@ impl<D: OutboxDeps> Outbox<D> {
                     next_at: self.next_after(row, state, attempts, sent_at),
                     deadline: row.deadline,
                     wedge_reason: None,
+                    retry: false,
                 };
-                self.deps.update(&row.client_id, &update).await?;
-                if state != row.state {
-                    self.deps.publish(StateChange::of(row, state, None));
-                }
+                let moved = self.deps.update(&row.client_id, &update).await?;
+                self.publish_moved(row, moved, None);
             }
             AttemptOutcome::Unanswered => {
                 let state = merge(row.state, StateInput::LocalSent);
@@ -276,20 +296,30 @@ impl<D: OutboxDeps> Outbox<D> {
                     next_at: self.now().saturating_add(wait).min(row.deadline),
                     deadline: row.deadline,
                     wedge_reason: None,
+                    retry: false,
                 };
-                self.deps.update(&row.client_id, &update).await?;
-                // Every unanswered attempt is published, its state changed
-                // or not: the send reads not delivered yet, still trying,
-                // with its count and next attempt (plan §3.0 lane 1).
-                self.deps
-                    .publish(StateChange::retrying(row, state, attempts, update.next_at));
+                let moved = self.deps.update(&row.client_id, &update).await?;
+                // Every unanswered attempt of a row still `sent` is
+                // published, its state changed or not: the send reads not
+                // delivered yet, still trying, with its count and next
+                // attempt (plan §3.0 lane 1). A row the peer's ack raised
+                // (or a deadline failed) meanwhile shows that instead.
+                match moved {
+                    Some(m) if m.after == SendState::Sent => self.deps.publish(
+                        StateChange::retrying(row, m.after, attempts, update.next_at),
+                    ),
+                    moved => {
+                        self.publish_moved(row, moved, None);
+                    }
+                }
             }
             AttemptOutcome::Wedged(reason) => self.fail(row, reason).await?,
             AttemptOutcome::Superseded(reason) => {
-                self.deps.settle(&row.client_id, SendState::Failed).await?;
-                self.deps
-                    .publish(StateChange::of(row, SendState::Failed, Some(reason)));
-                self.fail_dependents(row).await?;
+                let moved = self.deps.settle(&row.client_id, SendState::Failed).await?;
+                let moved = self.publish_moved(row, moved, Some(reason));
+                if moved.is_some_and(|m| m.after == SendState::Failed) {
+                    self.fail_dependents(row).await?;
+                }
                 self.wake.notify_one();
             }
         }
@@ -350,9 +380,8 @@ impl<D: OutboxDeps> Outbox<D> {
         };
         for row in &rows {
             let settled = merge(row.state, state);
-            self.deps.settle(&row.client_id, settled).await?;
-            self.deps
-                .publish(StateChange::of(row, settled, reason.clone()));
+            let moved = self.deps.settle(&row.client_id, settled).await?;
+            self.publish_moved(row, moved, reason.clone());
         }
         if !rows.is_empty() {
             self.wake.notify_one();
@@ -401,10 +430,11 @@ impl<D: OutboxDeps> Outbox<D> {
     /// durably, and stays until the landing comes, then goes with the state
     /// already shown (live A/B finding 42).
     async fn settle_acked(&self, row: &OutboxRow, ack: PeerAck) -> Result<(), OutboxError> {
-        if row.state == SendState::Queued && self.deps.note_ack(&row.client_id, ack).await? {
-            let shown = merge(row.state, StateInput::Peer(ack));
-            self.deps.publish(StateChange::of(row, shown, None));
-            return Ok(());
+        if row.state == SendState::Queued {
+            if let Some(moved) = self.deps.note_ack(&row.client_id, ack).await? {
+                self.publish_moved(row, Some(moved), None);
+                return Ok(());
+            }
         }
         self.settle_at(row, merge(row.state, StateInput::Peer(ack)))
             .await
@@ -415,8 +445,8 @@ impl<D: OutboxDeps> Outbox<D> {
         row: &OutboxRow,
         state: SendState,
     ) -> Result<(), OutboxError> {
-        self.deps.settle(&row.client_id, state).await?;
-        self.deps.publish(StateChange::of(row, state, None));
+        let moved = self.deps.settle(&row.client_id, state).await?;
+        self.publish_moved(row, moved, None);
         self.wake.notify_one();
         Ok(())
     }
@@ -456,12 +486,10 @@ impl<D: OutboxDeps> Outbox<D> {
             next_at: self.next_due(row.kind, 0, now, deadline),
             deadline,
             wedge_reason: None,
+            retry: true,
         };
-        self.deps.update(client_id, &update).await?;
-        if row.state != SendState::Queued {
-            self.deps
-                .publish(StateChange::of(row, SendState::Queued, None));
-        }
+        let moved = self.deps.update(client_id, &update).await?;
+        self.publish_moved(row, moved, None);
         Ok(())
     }
 
