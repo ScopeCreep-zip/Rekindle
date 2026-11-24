@@ -71,6 +71,7 @@ export function transformMessage(m: IpcMessage): Message {
     decryptionFailed, automodBlurred: m.automodBlurred ?? false,
     reactions: m.reactions, pinned: m.pinned, poll: m.poll,
     forwardedFromAuthor: m.forwardedFromAuthor ?? null,
+    forwardedFromName: m.forwardedFromName ?? null,
     attachment: m.attachment
       ? {
           attachmentId: m.attachment.attachmentId,
