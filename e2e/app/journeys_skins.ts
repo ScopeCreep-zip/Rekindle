@@ -17,9 +17,20 @@ import type { User } from "./user.ts";
  */
 export async function applySkin(b: Browser, user: User, name: string): Promise<string> {
   await switchTo(b, SETTINGS);
-  await (await byText(b, ".form-tab", "Appearance")).click();
+  // Settings on Appearance, again whenever it is not: the menu's Profile
+  // (how Settings was opened) can land after our tab click and show Profile,
+  // which hid the skin list mid-choice (Alloy, Simple X "never in use").
+  const onAppearance = async (): Promise<void> => {
+    if (!(await (await b.$(".skin-row-shown .skin-name")).isDisplayed().catch(() => false))) {
+      await (await byText(b, ".form-tab", "Appearance")).click();
+    }
+  };
+  await onAppearance();
   await shown(b, ".skin-row-shown .skin-name", NET_WAIT_MS);
-  const inUse = async (): Promise<string> => (await (await b.$(".skin-row-shown .skin-name")).getText()).trim();
+  const inUse = async (): Promise<string> => {
+    await onAppearance();
+    return (await (await b.$(".skin-row-shown .skin-name")).getText().catch(() => "")).trim();
+  };
   const linked = async (): Promise<string> => (await b.execute(LINKED_SHEET)) as string;
   // The sheet shown before the change: the new one links only after every
   // image it lists has decoded (useSkin.ts), seconds after the row says
@@ -39,6 +50,7 @@ export async function applySkin(b: Browser, user: User, name: string): Promise<s
     await waitUntil(
       async () => {
         try {
+          await onAppearance();
           const el = await b.$(radio);
           if (!(await el.isExisting())) {
             lastError = `Settings lists no skin named ${name}`;
