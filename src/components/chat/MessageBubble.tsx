@@ -172,15 +172,6 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
           onClick={(e) => e.stopPropagation()}
         />
       </Show>
-      {/* Forwarded indicator */}
-      <Show when={props.message.forwardedFromAuthor}>
-        {(author) => (
-          <div class="message-forwarded-header">
-            <SkinGlyph name="forward" class="message-forwarded-icon" />
-            Forwarded from {author().slice(0, 12)}…
-          </div>
-        )}
-      </Show>
       <div class="chat-message-header">
         <span class={senderClass()}>{props.senderName}</span>
         <span class="chat-message-timestamp">
@@ -301,6 +292,16 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
           </Show>
         </div>
       </div>
+      {/* Forwarded: its own message's, under the sender and time and above
+       *  the text (Signal), like the reply quote below. */}
+      <Show when={props.message.forwardedFromAuthor}>
+        {(author) => (
+          <div class="message-forwarded-header">
+            <SkinGlyph name="forward" class="message-forwarded-icon" />
+            Forwarded from {author().slice(0, 12)}…
+          </div>
+        )}
+      </Show>
       {/* Reply context: inside the reply, under its sender and time and
        *  above its text (Signal, Discord), so the quote has an owner. */}
       <Show when={props.replyToMessage}>
