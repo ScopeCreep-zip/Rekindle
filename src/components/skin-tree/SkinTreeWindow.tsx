@@ -412,7 +412,7 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
       {/* The chat window's title in the pack's font and colour: the
        *  conversation title the Host serves this window, never pack words. */}
       <Match when={role().kind === "chatTitle"}>
-        <div {...attrs}>
+        <div {...attrs} title={tree.chatTitle()}>
           {children()}
           <span class="skin-chat-title">{tree.chatTitle()}</span>
         </div>

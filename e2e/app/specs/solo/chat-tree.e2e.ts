@@ -99,7 +99,6 @@ describe("a pack's chat tree draws the chat window, the chat in its slots", func
         await shot(`${kind}-min-${min}`);
         expect(min).not.toBe("");
       }
-      await openSettings(browser, "Appearance");
     });
   }
 });

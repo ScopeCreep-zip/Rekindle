@@ -246,7 +246,7 @@ const MessageInput: Component<MessageInputProps> = (props) => {
                   textareaRef?.focus();
                 }}
               >
-                Send
+                <span class="message-input-send-label">Send</span>
               </button>
             </SlotMount>
           </Show>
