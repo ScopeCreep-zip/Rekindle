@@ -12,6 +12,16 @@
 //! See architecture doc §4.4 for merge rules.
 //! See rekindle-architecture-v2.md §4.4 for field specifications.
 
+/// Adds `$n` to the merge work count `$field` ([`fixture::MergeCounts`]).
+/// The statement exists only in test and `fixture` builds; elsewhere it
+/// and its operand are compiled out, so a release merge counts nothing.
+macro_rules! tally {
+    ($field:ident, $n:expr) => {
+        #[cfg(any(test, feature = "fixture"))]
+        $crate::fixture::tally(|c| c.$field += $n);
+    };
+}
+
 pub mod checkpoint;
 pub mod checksum;
 pub mod device;

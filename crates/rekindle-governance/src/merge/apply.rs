@@ -18,6 +18,7 @@ use super::onboarding::apply_onboarding;
 use super::roles::apply_roles;
 
 pub(super) fn try_apply(op: &VerifiedOp, state: &mut GovernanceState) -> bool {
+    tally!(try_apply, 1);
     if !validate_write(op.author(), op.body(), state) {
         return false;
     }

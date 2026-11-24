@@ -377,6 +377,7 @@ fn frontier_holds(set: &resolve::OpSet<'_>, i: usize) -> bool {
     ) else {
         return true;
     };
+    tally!(frontier_steps, i as u64);
     let counted = (0..i)
         .filter(|&o| set.ops[o].author() == target && set.past.contains(i, o))
         .map(|o| set.ops[o].op().seq + 1)
