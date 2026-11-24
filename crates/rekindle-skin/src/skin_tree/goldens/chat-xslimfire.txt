@@ -1,0 +1,31 @@
+ChatTitleBar TitleBar target [0, 0, 255, 165] art [0, 0, 255, 165] Frame
+  XfireLogo Logo label "Rekindle" cover [0, 0, 67, 19] glyph RekindleWordmark
+  ChatUserNameField ChatTitle
+    ChatUserNameText Part
+  CloseBox WindowButton(Close) target [-1, 0, 18, 24] art [1, 0, 9, 5] Short
+  MinimizeBox WindowButton(Minimize) target [-7, 0, 17, 24] art [7, 0, 9, 5] Short
+ChatMenuBar MenuBar
+  SystemMenuText MenuTitle label "System"
+    SystemMenuTextT Part
+    SystemMenu Part target [0, -6, 54, 24] art [0, 6, 54, 12] Size
+  ActionsMenuText MenuTitle label "Actions"
+    ActionsMenuTextT Part
+    ActionsMenu Part target [0, -6, 54, 24] art [0, 6, 54, 12] Size
+  HelpMenuText MenuTitle label "Help"
+    HelpMenuTextT Part
+    HelpMenu Part target [0, -6, 54, 24] art [0, 6, 54, 12] Size
+ChatBaseBoard Group
+  SendChatButton Slot(ChatSend)
+  ChatTypingMessage Slot(TypingNotice)
+ChatMiddleRow Decor
+InfoViewButton Slot(InfoviewButton)
+ChatArea Slot(ChatArea)
+ChatEdit Slot(ChatEdit)
+ResizeTopLeft Button target [0, 0, 24, 24] art [0, 0, 8, 8] Size
+ResizeTopRight Button target [-16, 0, 24, 24] art [16, 0, 8, 8] Short
+ResizeBottomLeft Button target [0, -14, 24, 24] art [0, 14, 10, 10] Size
+ResizeBottomRight Button target [-14, -14, 24, 24] art [14, 14, 10, 10] Size
+ResizeChatUp Button target [0, 0, 255, 24] art [0, 0, 255, 5] Size
+ResizeChatDown Button target [0, -19, 255, 24] art [0, 19, 255, 5] Size
+ResizeChatLeft Button target [0, 0, 24, 330] art [0, 0, 5, 330] Size
+ResizeChatRight Button target [-19, 0, 24, 330] art [19, 0, 5, 330] Size

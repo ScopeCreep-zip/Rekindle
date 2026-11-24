@@ -53,13 +53,50 @@ pub(super) const Y: Axis = Axis {
 /// An edge's position: from the parent's start edge, from its end edge, or
 /// from its centre (an edge of a centred sibling: Combat's `JoinPlayTab`
 /// `X="CenterConsole.RIGHT"`).
+#[derive(Clone, Copy)]
 enum At {
     Start(i32),
     End(i32),
     Centre(i32),
 }
 
-pub(super) type Sibs = BTreeMap<String, (NodeSpan, NodeSpan)>;
+/// The names a tile's anchors see, in its parent's frame: every tile
+/// placed before it in the window outside its own branch (its siblings,
+/// its ancestors' siblings), as Xfire's engine resolved a name against any
+/// tile already laid in the window. Each is its box where that is
+/// expressible in the frame, else the edges that are: Space Cowboy's
+/// `ChatEdit` `Y="ChatArea.BOTTOM+2"` (`chatwindow.xml:37`) under
+/// `ListViewBG2`, which sits on `ChatArea.BOTTOM+5` and so is fixed from
+/// the window's bottom; there `ChatArea`'s bottom is a point, its top
+/// (82 px from the window's top) is not.
+#[derive(Clone, Default)]
+pub(super) struct Sibs {
+    spans: BTreeMap<String, (NodeSpan, NodeSpan)>,
+    /// Per axis (x, y), the near and far edge, when known in the frame.
+    edges: BTreeMap<String, [[Option<At>; 2]; 2]>,
+}
+
+impl Sibs {
+    pub(super) fn new() -> Self {
+        Self::default()
+    }
+
+    /// `name` laid at `xy` in this frame; it shadows an outer tile of the
+    /// same name.
+    pub(super) fn insert(&mut self, name: String, xy: (NodeSpan, NodeSpan)) {
+        self.edges.remove(&name);
+        self.spans.insert(name, xy);
+    }
+}
+
+impl FromIterator<(String, (NodeSpan, NodeSpan))> for Sibs {
+    fn from_iter<I: IntoIterator<Item = (String, (NodeSpan, NodeSpan))>>(it: I) -> Self {
+        Self {
+            spans: it.into_iter().collect(),
+            edges: BTreeMap::new(),
+        }
+    }
+}
 
 /// Each sibling's art size, known before it is placed: XGlow's `Middle`
 /// ends `Bottom.height` above the bottom while `Bottom` sits on
@@ -67,7 +104,8 @@ pub(super) type Sibs = BTreeMap<String, (NodeSpan, NodeSpan)>;
 pub(super) type Sizes = BTreeMap<String, (u16, u16)>;
 
 fn span_of(sibs: &Sibs, name: &str, axis: &Axis) -> Option<NodeSpan> {
-    sibs.get(&name.to_ascii_lowercase())
+    sibs.spans
+        .get(&name.to_ascii_lowercase())
         .map(|s| if axis.pos == "X" { s.0 } else { s.1 })
 }
 
@@ -122,58 +160,87 @@ fn edge(value: &str, sibs: &Sibs, axis: &Axis) -> Result<Option<At>, ImportError
     if !far && !side.eq_ignore_ascii_case(axis.near) {
         return Err(bad(format!("{value}: {side} is not an edge of this axis")));
     }
-    let sib = span_of(sibs, name, axis)
-        .ok_or_else(|| bad(format!("{value}: no sibling {name} before it")))?;
-    Ok(Some(match (sib, far) {
-        (
-            NodeSpan::Fixed {
-                at: Anchor::Start(off),
-                size,
-            },
-            true,
-        ) => At::Start(i32::from(off) + i32::from(size) + by),
-        (
-            NodeSpan::Fixed {
-                at: Anchor::Start(off),
-                ..
-            },
-            false,
-        ) => At::Start(i32::from(off) + by),
-        (
-            NodeSpan::Fixed {
-                at: Anchor::End(off),
-                ..
-            },
-            true,
-        ) => At::End(i32::from(off) - by),
-        (
-            NodeSpan::Fixed {
-                at: Anchor::End(off),
-                size,
-            },
-            false,
-        ) => At::End(i32::from(off) + i32::from(size) - by),
-        (NodeSpan::Stretch { end, .. }, true) => At::End(i32::from(end) - by),
-        (NodeSpan::Stretch { start, .. }, false) => At::Start(i32::from(start) + by),
-        (
-            NodeSpan::Fixed {
-                at:
-                    Anchor::Centre {
-                        by: mid,
-                        before,
-                        after,
-                    },
-                size,
-            },
-            far,
-        ) => {
+    let key = name.to_ascii_lowercase();
+    let at = match span_of(sibs, name, axis) {
+        Some(sib) => points(sib)[usize::from(far)],
+        None => sibs
+            .edges
+            .get(&key)
+            .and_then(|e| e[usize::from(axis.pos == "Y")][usize::from(far)])
+            .ok_or_else(|| bad(format!("{value}: no tile {name} placed before it")))?,
+    };
+    Ok(Some(match at {
+        At::Start(p) => At::Start(p + by),
+        At::End(e) => At::End(e - by),
+        At::Centre(c) => At::Centre(c + by),
+    }))
+}
+
+/// A box's near and far edge as points in its frame.
+fn points(span: NodeSpan) -> [At; 2] {
+    match span {
+        NodeSpan::Fixed {
+            at: Anchor::Start(off),
+            size,
+        } => [
+            At::Start(i32::from(off)),
+            At::Start(i32::from(off) + i32::from(size)),
+        ],
+        NodeSpan::Fixed {
+            at: Anchor::End(off),
+            size,
+        } => [
+            At::End(i32::from(off) + i32::from(size)),
+            At::End(i32::from(off)),
+        ],
+        NodeSpan::Stretch { start, end } => [At::Start(i32::from(start)), At::End(i32::from(end))],
+        NodeSpan::Fixed {
+            at:
+                Anchor::Centre {
+                    by: mid,
+                    before,
+                    after,
+                },
+            size,
+        } => {
             // A point is measured from the parent's centre: the frame's
             // widening moves the centre by half its difference.
             let mid = i32::from(mid) + (i32::from(after) - i32::from(before)).div_euclid(2);
             let left = mid - i32::from(size) / 2;
-            At::Centre(if far { left + i32::from(size) } else { left } + by)
+            [At::Centre(left), At::Centre(left + i32::from(size))]
         }
-    }))
+    }
+}
+
+/// The edges of the frame of a child laid at `inner` that are known in its
+/// parent's frame: its start from the start, its end from the end.
+fn known(inner: NodeSpan) -> (Option<i16>, Option<i16>) {
+    match inner {
+        NodeSpan::Fixed {
+            at: Anchor::Start(off),
+            ..
+        } => (Some(off), None),
+        NodeSpan::Fixed {
+            at: Anchor::End(off),
+            ..
+        } => (None, Some(off)),
+        NodeSpan::Stretch { start, end } => (Some(start), Some(end)),
+        NodeSpan::Fixed {
+            at: Anchor::Centre { .. },
+            ..
+        } => (None, None),
+    }
+}
+
+/// A point of the parent's frame in the frame of a child laid at `inner`,
+/// when the child's edge it is measured from is known there.
+fn into_frame(at: At, inner: NodeSpan) -> Option<At> {
+    let (start, end) = known(inner);
+    match at {
+        At::Start(p) => start.map(|s| At::Start(p - i32::from(s))),
+        At::End(e) => end.map(|o| At::End(e - i32::from(o))),
+        At::Centre(_) => None,
+    }
 }
 
 fn i16_of(v: i32) -> Result<i16, ImportError> {
@@ -294,21 +361,7 @@ pub(super) fn axis(
 /// `span` (in a parent's frame) in the frame of a child laid at `inner`,
 /// when its edges are known there.
 fn shift(span: NodeSpan, inner: NodeSpan) -> Option<NodeSpan> {
-    let (start, end) = match inner {
-        NodeSpan::Fixed {
-            at: Anchor::Start(off),
-            ..
-        } => (Some(off), None),
-        NodeSpan::Fixed {
-            at: Anchor::End(off),
-            ..
-        } => (None, Some(off)),
-        NodeSpan::Stretch { start, end } => (Some(start), Some(end)),
-        NodeSpan::Fixed {
-            at: Anchor::Centre { .. },
-            ..
-        } => (None, None),
-    };
+    let (start, end) = known(inner);
     let by = |val: i16, off: Option<i16>| off.and_then(|off| val.checked_sub(off));
     Some(match span {
         NodeSpan::Fixed {
@@ -340,10 +393,25 @@ fn shift(span: NodeSpan, inner: NodeSpan) -> Option<NodeSpan> {
 /// siblings and their outer names (Total Chaos's `AdArea`
 /// `Y="MainTitleBar.BOTTOM"` inside `AdBar`), in the child's frame.
 pub(super) fn outer_for(names: &Sibs, x: NodeSpan, y: NodeSpan) -> Sibs {
-    names
-        .iter()
-        .filter_map(|(k, (sx, sy))| Some((k.clone(), (shift(*sx, x)?, shift(*sy, y)?))))
-        .collect()
+    let frame = [x, y];
+    let moved = |pts: [[Option<At>; 2]; 2]| {
+        let m = [0, 1].map(|a| pts[a].map(|p| p.and_then(|p| into_frame(p, frame[a]))));
+        m.iter().flatten().any(Option::is_some).then_some(m)
+    };
+    let mut out = Sibs::new();
+    for (k, (sx, sy)) in &names.spans {
+        if let (Some(a), Some(b)) = (shift(*sx, x), shift(*sy, y)) {
+            out.spans.insert(k.clone(), (a, b));
+        } else if let Some(e) = moved([points(*sx).map(Some), points(*sy).map(Some)]) {
+            out.edges.insert(k.clone(), e);
+        }
+    }
+    for (k, e) in &names.edges {
+        if let Some(e) = moved(*e) {
+            out.edges.insert(k.clone(), e);
+        }
+    }
+    out
 }
 
 /// A fixed tile's client inset on each axis (x, y), `Indent*` less

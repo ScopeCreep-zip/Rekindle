@@ -1,0 +1,50 @@
+ResizeGripperTL Button target [0, 0, 24, 24] art [0, 0, 10, 10] Short
+ResizeTop Button target [0, 0, 299, 24] art [0, 0, 299, 10] Short
+ResizeGripperTR Button target [-14, 0, 24, 24] art [14, 0, 10, 10] Short
+ResizeL Button target [0, 0, 24, 270] art [0, 0, 10, 270] Size
+ResizeR Button target [-14, 0, 24, 270] art [14, 0, 10, 270] Size
+ResizeGripperBL Button target [0, -14, 24, 24] art [0, 14, 10, 10] Size
+ResizeBottom Button target [0, -14, 299, 24] art [0, 14, 299, 10] Size
+ResizeGripperBR Button target [-14, -14, 24, 24] art [14, 14, 10, 10] Size
+WindowDraggerTop Drag
+TopRow Decor
+LeftSide Decor
+Background Decor
+RightSide Decor
+BottomRow Decor
+InfoBar TitleBar
+  ChatUserContainer Group
+    TabbedTalkingState TalkingState
+      ButtonNotTalking Part
+      ButtonTalking Part
+    ChatUser ChatTitle
+  ButtonMinimize WindowButton(Minimize) target [-3, -4, 24, 24] art [3, 4, 18, 16] Size
+  ButtonMaximize WindowButton(Maximize) target [-3, -4, 22, 24] art [3, 4, 18, 16] Short
+  ButtonClose WindowButton(Close) target [-1, -4, 22, 24] art [1, 4, 18, 16] Short
+MenuBackground MenuBar
+  XfireMenu MenuTitle label "Rekindle" cover [0, 0, 45, 20] target [0, -2, 45, 24] art [0, 2, 45, 20] Size
+  ActionsMenu MenuTitle label "Tools" target [0, -2, 54, 24] art [0, 2, 54, 20] Size
+  HelpMenu MenuTitle target [0, -2, 47, 24] art [0, 2, 47, 20] Size
+ChatContainer Group
+  ChatArea Slot(ChatArea)
+ChatTypingMessage Slot(TypingNotice)
+ChatEditContentContainer Group
+  ChatEditBG Group
+    ChatEdit Slot(ChatEdit)
+  ButtonSend Slot(ChatSend)
+ButtonBar Group
+  TabbedCall ButtonBar
+    ChatButtonCall Button
+    ChatButtonAnswerCall Button
+    ChatButtonCancelCall Button
+    ChatButtonLeaveCall Button
+  Separator1 Decor
+  TabbedMute ButtonBar
+    ButtonMute Button
+    ButtonUnmute Button
+  Separator2 Decor
+  ButtonJoinGame Button
+  Separator3 Decor
+  ButtonInfo Button
+  Separator4 Decor
+ChatInfoViewButton Slot(InfoviewButton)

@@ -54,6 +54,7 @@ fn chat_trees_match_their_goldens() {
         ("onyx", include_str!("goldens/chat-onyx.txt")),
         ("xslimfire", include_str!("goldens/chat-xslimfire.txt")),
         ("symbiosis", include_str!("goldens/chat-symbiosis.txt")),
+        ("spacecowboy", include_str!("goldens/chat-spacecowboy.txt")),
     ];
     for (id, golden) in want {
         let got = tree_text(chat_layout(id).tree.as_ref().unwrap());

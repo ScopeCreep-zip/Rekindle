@@ -57,10 +57,15 @@ fn by_key(k: &str) -> Option<Role> {
         "maximize" | "maximizebox" | "buttonmaximize" => Some(button(W::Maximize)),
         "chatclose" | "closechatbox" | "closebox" | "buttonclose" => Some(button(W::Close)),
         "menubar" | "chatmenubar" | "menubackground" => shows(R::MenuBar),
-        // The first menu is Rekindle's (Onyx's and Space Cowboy's
-        // `ChatXfireMenuText`, Symbiosis's `XfireMenu`, xSLIMFIRE's
-        // `SystemMenuText`); then the chat window's own menus.
-        "chatxfiremenutext" | "xfiremenu" | "systemmenutext" => Some(menu(EngineMenu::File)),
+        // The first menu is Rekindle's where the pack's reads "Xfire"
+        // (Onyx's and Space Cowboy's `ChatXfireMenuText`, Symbiosis's
+        // `XfireMenu`): the brand rule renames only that word. xSLIMFIRE's
+        // `SystemMenuText` reads "System" (its `<Text>GCSystemMenu</Text>`)
+        // and its plate runs the engine's `MenuSystem`
+        // (`xSLIMFIREcomponents.xml:1076-1099`): the window's system menu,
+        // its word kept. Then the chat window's own menus.
+        "chatxfiremenutext" | "xfiremenu" => Some(menu(EngineMenu::File)),
+        "systemmenutext" => Some(menu(EngineMenu::Sys)),
         "chattoolsmenutext" => Some(menu(EngineMenu::Tool)),
         "actionsmenutext" | "actionsmenu" => Some(menu(EngineMenu::CwActions)),
         "chathelpmenutext" | "helpmenutext" | "helpmenu" => Some(menu(EngineMenu::CwHelp)),

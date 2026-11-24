@@ -331,7 +331,7 @@ fn named_shown(k: &str, f: &Facts<'_>) -> Option<NodeRole> {
     use NodeRole as R;
     match k {
         "maintitlebar" | "windowdragger" | "combatdragbar" => Some(R::Drag),
-        "xfirelogo" | "logo" | "logox" | "wndxfire" => Some(R::Logo),
+        "xfirelogo" | "xfirelogonolink" | "logo" | "logox" | "wndxfire" => Some(R::Logo),
         // A `Title` is the user's name only as text (Combat's `[Title]`
         // `Class=Text Text.text=%displayuser%`, `combat.ini:541-544`; Onyx's
         // and Space Cowboy's `Class="Text"`); Total Chaos's `Title` is the
