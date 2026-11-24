@@ -43,8 +43,14 @@ async function treeLaid(handle: string, title: string, text?: string): Promise<v
       last = (await browser.execute((want: string, seen: string) => {
         const w = document.querySelector(".chat-window");
         if (!w?.querySelector(".skin-tree")) return "no chat tree";
-        const t = w.querySelector(".skin-chat-title")?.textContent?.trim() ?? "";
+        const title = w.querySelector<HTMLElement>(".skin-chat-title");
+        const t = title?.textContent?.trim() ?? "";
         if (t !== want) return `chatTitle reads "${t}"`;
+        // Drawn, not only present: a box inside the window, not hidden or transparent.
+        const tb = title!.getBoundingClientRect();
+        const tcs = getComputedStyle(title!);
+        if (tb.width < 4 || tb.height < 4 || tb.right <= 0 || tb.left >= innerWidth || tb.bottom <= 0 || tb.top >= innerHeight) return `chatTitle has no visible box (${Math.round(tb.left)},${Math.round(tb.top)} ${Math.round(tb.width)}x${Math.round(tb.height)})`;
+        if (tcs.visibility !== "visible" || tcs.opacity === "0" || tcs.color === "rgba(0, 0, 0, 0)") return `chatTitle is not drawn (visibility ${tcs.visibility}, opacity ${tcs.opacity}, color ${tcs.color})`;
         if (!w.querySelector('[data-skin-role="slot:chatEdit"] .message-input-field')) return "the composer is not in chatEdit";
         if (!w.querySelector('[data-skin-role="slot:chatArea"] .chat-message-area')) return "the messages are not in chatArea";
         if (seen) {
