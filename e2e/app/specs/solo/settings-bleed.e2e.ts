@@ -17,32 +17,10 @@ import { BUDDY, openSettings } from "../../../walk/nav.ts";
 import { createIdentity, newUser, type User } from "../../journeys.ts";
 import { applySkin, skinShown } from "../../journeys_skins.ts";
 import { shot } from "../../shots.ts";
+import { artElements, windowKind } from "../../skin-art.ts";
 import { builtinPacks } from "../../skin-pack.ts";
 
 const PACKS = ["combat", "alloy", "onyx", "xslimfire", "simple-x", "symbiosis"];
-
-/**
- * Every element in the current window drawn with skin:// art (the sheet is
- * cross-origin, so read from computed styles): its classes, box, art and
- * ancestors.
- */
-async function artElements(): Promise<string[]> {
-  return (await browser.execute(() => {
-    const name = (el: Element): string => `${el.tagName.toLowerCase()}${el.id ? "#" + el.id : ""}${el.classList.length ? "." + Array.from(el.classList).join(".") : ""}`;
-    const out: string[] = [];
-    for (const el of Array.from(document.querySelectorAll<HTMLElement>("body *"))) {
-      const cs = getComputedStyle(el);
-      const art = [cs.backgroundImage, cs.borderImageSource].filter((v) => v && v.includes("skin://"));
-      if (art.length === 0) continue;
-      const path: string[] = [];
-      for (let p = el.parentElement; p && p !== document.body && path.length < 5; p = p.parentElement) path.push(name(p));
-      const r = el.getBoundingClientRect();
-      const file = art.map((a) => (a.match(/skin:\/\/[^)"]+/g) ?? []).map((u) => u.split("/").slice(-2).join("/")).join(",")).join(" ");
-      out.push(`${name(el)} [${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}] art=${file.slice(0, 120)} in ${path.reverse().join(" > ")}`);
-    }
-    return out;
-  })) as string[];
-}
 
 describe("Settings under faithful skins: what of the skin's sheet reaches it", function () {
   this.timeout(1_800_000);
@@ -63,7 +41,7 @@ describe("Settings under faithful skins: what of the skin's sheet reaches it", f
       await shot("settings-appearance");
       // Plan SB1: the window says its kind, and no pack art reaches Settings
       // (no pack defines it); theme tokens only.
-      const kind = (await browser.execute(() => document.querySelector(".app-frame")?.getAttribute("data-window") ?? "")) as string;
+      const kind = await windowKind();
       const painted = await artElements();
       console.log(`[bleed] ${file}: ${painted.length} element(s) in Settings drawn with skin art`);
       for (const line of painted.slice(0, 25)) console.log(`[bleed] ${file}: ${line.slice(0, 400)}`);
