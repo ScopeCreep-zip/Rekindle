@@ -50,7 +50,9 @@ use rekindle_image::RgbaImage;
 use rekindle_types::dto::skin::{Insets, SkinError, SkinRule, WindowLayout};
 use rekindle_types::dto::skin_action::{EngineMenu, SkinAction};
 use rekindle_types::dto::skin_layout::PopupLayout;
-use rekindle_types::dto::skin_tree::{NodeGlyph, NodeLabel, NodeRole, SkinNode, SkinTree};
+use rekindle_types::dto::skin_tree::{
+    NodeGlyph, NodeLabel, NodeRole, PieceSlot, SkinNode, SkinTree,
+};
 
 use super::cover::{differing, edge_connected, icon_box, seen, ICON_TOLERANCE};
 use crate::package::Package;
@@ -64,16 +66,22 @@ struct Pic {
     at: [i32; 2],
 }
 
-/// The node's own whole picture: its one normal piece, at least as large as
-/// its box `[x, y, w, h]` (a tile that repeats, Onyx's 4 px hover ground, is
-/// not one).
+/// The node's own whole picture: its one normal piece, either at least as
+/// large as its box `[x, y, w, h]` or its `TopLeft` piece, which the engine
+/// draws once at its own size from the box's top-left
+/// ([`super::pieces::cell`]: a corner is never repeated). Symbiosis's chat
+/// `ActionsMenu` is a 54 px title (`Common.xml:290`, `MinWidth="54"`) over
+/// its 47 px `menu_actions_norm` (`Images/default/Common/menu-actions-norm.gif`,
+/// "Actions"): its word is in that picture. A tile that repeats (Onyx's
+/// 4 px hover ground, a `Middle` piece) is not one.
 fn whole(n: &SkinNode, b: [i32; 4]) -> Option<Pic> {
     let art = n.art.as_ref()?;
     if art.normal.len() != 1 {
         return None;
     }
-    let piece = art.normal.values().next()?;
-    (i32::from(piece.width) >= b[2] && i32::from(piece.height) >= b[3]).then(|| Pic {
+    let (slot, piece) = art.normal.iter().next()?;
+    let covers = i32::from(piece.width) >= b[2] && i32::from(piece.height) >= b[3];
+    (covers || *slot == PieceSlot::TopLeft).then(|| Pic {
         image: piece.image.clone(),
         owner: n.id.clone(),
         at: [b[0], b[1]],

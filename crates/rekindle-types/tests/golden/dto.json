@@ -1515,6 +1515,25 @@
     "kind": "fixed",
     "size": 26
   },
+  "skin.nodeSpan.share": {
+    "at": {
+      "kind": "start",
+      "offset": 0
+    },
+    "kind": "share",
+    "permille": 800
+  },
+  "skin.nodeSpan.shareAfter": {
+    "at": {
+      "kind": "after",
+      "offset": {
+        "gap": 0,
+        "sibling": "Divider"
+      }
+    },
+    "kind": "share",
+    "permille": 1000
+  },
   "skin.run.launcher": {
     "arg": {
       "window": "buddy-list"

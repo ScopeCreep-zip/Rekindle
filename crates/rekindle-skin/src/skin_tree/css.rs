@@ -20,66 +20,18 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use rekindle_types::dto::skin::{RegionState, WindowLayout};
-use rekindle_types::dto::skin_tree::{
-    Anchor, NodePieces, NodeRole, NodeSpan, NodeTarget, SkinNode, SkinTree,
-};
+use rekindle_types::dto::skin_tree::{NodePieces, NodeRole, NodeTarget, SkinNode, SkinTree};
 
 use super::pieces::{self, Band};
+use super::span_css::{axis, target_len};
 
 use super::validate::{stack_z, text_sized};
 use crate::regions::css::href;
-
-fn axis(s: &NodeSpan, (start, end, len): (&str, &str, &str), text: bool) -> String {
-    let s = s.clone();
-    match s {
-        NodeSpan::Fixed {
-            at: Anchor::Start(o) | Anchor::Centre { by: o, .. },
-            size: 0,
-        } if text => format!("{start}: {o}px; {len}: max-content;"),
-        NodeSpan::Fixed {
-            at: Anchor::End(o),
-            size: 0,
-        } if text => format!("{end}: {o}px; {len}: max-content;"),
-        NodeSpan::Fixed {
-            at: Anchor::Start(o) | Anchor::After { gap: o, .. },
-            size,
-        } => format!("{start}: {o}px; {len}: {size}px;"),
-        NodeSpan::Fixed {
-            at: Anchor::End(o),
-            size,
-        } => format!("{end}: {o}px; {len}: {size}px;"),
-        // Lead decision 32: the floor `NodeSpan::place` takes, in whole
-        // pixels at every parent size (`round(down, …, 1px)` is CSS's
-        // floor, as the frame's centred tiles use, `shape/css.rs`).
-        NodeSpan::Fixed {
-            at: Anchor::Centre { by, before, after },
-            size,
-        } => {
-            let (b, a) = (i32::from(before), i32::from(after));
-            let k = b + a - i32::from(size);
-            let sign = if k < 0 { '-' } else { '+' };
-            format!(
-                "{start}: calc({}px + round(down, calc((100% {sign} {}px) / 2), 1px)); {len}: {size}px;",
-                i32::from(by) - b,
-                k.abs()
-            )
-        }
-        NodeSpan::Stretch { start: s, end: e } => format!("{start}: {s}px; {end}: {e}px;"),
-    }
-}
 
 /// The roles the shell draws as an `<input>` in the node's box: the name
 /// while it is edited and the status line.
 const fn is_input(role: NodeRole) -> bool {
     matches!(role, NodeRole::NameField | NodeRole::StatusText)
-}
-
-fn size(s: &NodeSpan) -> Option<u16> {
-    let s = s.clone();
-    match s {
-        NodeSpan::Fixed { size, .. } => Some(size),
-        NodeSpan::Stretch { .. } => None,
-    }
 }
 
 /// What every node's rule reads: the window's root selector, its package
@@ -185,7 +137,7 @@ fn layers(
 /// takes the target's length, and a transparent border of the art's inset
 /// keeps the art (drawn on the padding box), its children and its text at
 /// their own place and size.
-fn target(decls: &mut String, n: &SkinNode, t: NodeTarget) {
+fn target(decls: &mut String, (n, prev): (&SkinNode, &[SkinNode]), t: NodeTarget) {
     let [ax, ay, aw, ah] = t.art;
     let right = t.area[2] - ax - aw;
     let bottom = t.area[3] - ay - ah;
@@ -194,11 +146,10 @@ fn target(decls: &mut String, n: &SkinNode, t: NodeTarget) {
         " box-sizing: border-box; margin: {}px {}px {}px {}px; border: solid transparent; border-width: {ay}px {right}px {bottom}px {ax}px;",
         -ay, -right, -bottom, -ax
     );
-    if size(&n.x).is_some() {
-        let _ = write!(decls, " width: {}px;", t.area[2]);
-    }
-    if size(&n.y).is_some() {
-        let _ = write!(decls, " height: {}px;", t.area[3]);
+    for (span, x, prop, i) in [(&n.x, true, "width", 2), (&n.y, false, "height", 3)] {
+        if let Some(l) = target_len(span, prev, x, (t.area[i], t.art[i])) {
+            let _ = write!(decls, " {prop}: {l};");
+        }
     }
 }
 
@@ -279,14 +230,14 @@ fn input_area(sel: &str, n: &SkinNode, t: NodeTarget) -> String {
     )
 }
 
-fn node(out: &mut String, n: &SkinNode, ctx: &Ctx<'_>) -> Option<()> {
+fn node(out: &mut String, (n, prev): (&SkinNode, &[SkinNode]), ctx: &Ctx<'_>) -> Option<()> {
     let (root, images, base) = (ctx.root, ctx.images, ctx.base);
     let text = text_sized(n);
     let sel = format!("{root} [data-skin-node=\"{}\"]", n.id);
     let mut decls = format!(
         "position: absolute; {} {} z-index: {};",
-        axis(&n.x, ("left", "right", "width"), text),
-        axis(&n.y, ("top", "bottom", "height"), text),
+        axis(&n.x, prev, ("left", "right", "width"), text),
+        axis(&n.y, prev, ("top", "bottom", "height"), text),
         stack_z(n)
     );
     if n.role == NodeRole::Views {
@@ -295,7 +246,7 @@ fn node(out: &mut String, n: &SkinNode, ctx: &Ctx<'_>) -> Option<()> {
     let grip = n.frame_node();
     let outer = match n.target {
         Some(t) if !grip && !cut(t) => {
-            target(&mut decls, n, t);
+            target(&mut decls, (n, prev), t);
             "padding-box"
         }
         _ => "border-box",
@@ -349,8 +300,8 @@ fn node(out: &mut String, n: &SkinNode, ctx: &Ctx<'_>) -> Option<()> {
             None => {}
         }
     }
-    for c in &n.children {
-        node(out, c, ctx)?;
+    for (i, c) in n.children.iter().enumerate() {
+        node(out, (c, &n.children[..i]), ctx)?;
     }
     Some(())
 }
@@ -385,8 +336,8 @@ pub fn tree_css(
         "  {root} > .skin-tree {{\n    display: block; position: absolute; top: {}px; right: {}px; bottom: {}px; left: {}px;\n  }}\n",
         to.top, to.right, to.bottom, to.left
     );
-    for n in &tree.root {
-        node(&mut out, n, &ctx)?;
+    for (i, n) in tree.root.iter().enumerate() {
+        node(&mut out, (n, &tree.root[..i]), &ctx)?;
     }
     Some(out)
 }
@@ -396,36 +347,29 @@ mod tests {
     use rekindle_types::dto::skin::SkinWindow;
     use rekindle_types::dto::skin_tree::{NodeSpan, SkinNode, SkinTree};
 
+    use super::super::test_support::{css_len, Ratio};
     use super::{axis, text_sized};
     use crate::{builtin, images, manifest, package};
 
     /// The start `decls` (one axis's declarations from [`axis`]) gives a
     /// node in a parent `len` px long, as the browser computes it.
+    /// The start `decls` puts a box at in a parent `len` px long: its
+    /// `left`, or `len - right - width`, each evaluated as the browser
+    /// evaluates the emitted `calc(...)`/`round(down, …, 1px)`; `None`
+    /// when the start is not a whole pixel (a plain half in an odd parent).
     fn start_of(decls: &str, len: i32) -> Option<i32> {
-        let px = |v: &str| v.trim().strip_suffix("px")?.parse::<i32>().ok();
         let val = |p: &str| {
             let at = decls.find(&format!("{p}: "))?;
             decls[at + p.len() + 2..].split_once(';').map(|(v, _)| v)
         };
-        let Some(v) = val("left") else {
-            return Some(len - px(val("right")?)? - px(val("width")?)?);
+        let start = match val("left") {
+            Some(v) => css_len(v, len)?,
+            None => css_len(val("right")?, len)?
+                .add(css_len(val("width")?, len)?)
+                .neg()
+                .add(Ratio::whole(i64::from(len))),
         };
-        if let Some(n) = px(v) {
-            return Some(n);
-        }
-        // A plain half: whole pixels only in an even parent.
-        if let Some(n) = v
-            .strip_prefix("calc(50% - ")
-            .and_then(|r| px(r.strip_suffix(')')?))
-        {
-            return (len % 2 == 0).then_some(len / 2 - n);
-        }
-        // calc(Cpx + round(down, calc((100% ± Kpx) / 2), 1px))
-        let c = px(v.strip_prefix("calc(")?.split_once('+')?.0)?;
-        let (sign, k) = v.split_once("100% ")?.1.split_once(' ')?;
-        let k = px(k.split_once(')')?.0)?;
-        let k = if sign == "-" { -k } else { k };
-        Some(c + (len + k).div_euclid(2))
+        start.px()
     }
 
     fn walk(n: &SkinNode, (w, h): (i32, i32), wrong: &mut Vec<String>, id: &str) {
@@ -433,7 +377,7 @@ mod tests {
         let (_, tall) = n.y.place(h);
         if !text_sized(n) {
             for (span, len) in [(&n.x, w), (&n.y, h)] {
-                let css = axis(span, ("left", "right", "width"), false);
+                let css = axis(span, &[], ("left", "right", "width"), false);
                 let want = span.place(len).0;
                 if start_of(&css, len) != Some(want) {
                     wrong.push(format!("{id} {}: {css} at {len} != {want}", n.id));
@@ -473,7 +417,7 @@ mod tests {
                             matches!(
                                 s,
                                 NodeSpan::Fixed {
-                                    at: super::Anchor::Centre { .. },
+                                    at: rekindle_types::dto::skin_tree::Anchor::Centre { .. },
                                     ..
                                 }
                             )

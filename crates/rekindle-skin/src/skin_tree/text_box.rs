@@ -42,7 +42,9 @@
 use std::collections::HashMap;
 
 use rekindle_types::dto::skin::WindowLayout;
-use rekindle_types::dto::skin_tree::{Anchor, NodeRole, NodeSpan, SkinNode, SkinTree};
+use rekindle_types::dto::skin_tree::{
+    Anchor, NodeRole, NodeSpan, SkinNode, SkinTree, SlotKey,
+};
 
 use super::inset::is_text;
 use super::titles::{each_laid, laid_window, place};
@@ -187,6 +189,13 @@ fn respan(span: &NodeSpan, len: i32, was: (i32, i32), now: (i32, i32)) -> Option
             at: Anchor::Start(i16::try_from(span.place(len).0 + ds).ok()?),
             size,
         },
+        // A share moved whole keeps its share at the moved start; a share
+        // resized to a px length is no longer one: it keeps its place.
+        NodeSpan::Share { permille, .. } if was.1 == now.1 => NodeSpan::Share {
+            at: Anchor::Start(i16::try_from(span.place(len).0 + ds).ok()?),
+            permille,
+        },
+        NodeSpan::Share { .. } => return None,
     })
 }
 
@@ -426,10 +435,18 @@ fn line_span(n: &SkinNode) -> Option<NodeSpan> {
         return None;
     };
     let line = line_box(n.role);
-    (draws_text(n) && *size < line).then(|| NodeSpan::Fixed {
+    (draws_line(n) && *size < line).then(|| NodeSpan::Fixed {
         at: at.clone(),
         size: line,
     })
+}
+
+/// Whether `n` draws one line of text: a text node ([`draws_text`]) or the
+/// typing slot, where the shell writes one line ("… is typing"; xSLIMFIRE's
+/// `ChatTypingMessage` has no art and is 0 px tall in its pack), served
+/// the 14 px line box of [`line_box`].
+fn draws_line(n: &SkinNode) -> bool {
+    draws_text(n) || (n.art.is_none() && n.role == NodeRole::Slot(SlotKey::TypingNotice))
 }
 
 /// Serves every text node shorter than its line box that line box

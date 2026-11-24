@@ -108,7 +108,10 @@ fn rule_1_an_unknown_component_without_art_is_refused() {
 fn rule_2_an_anchor_that_does_not_resolve_is_refused() {
     let xml = br#"<Tile Name="W" Component="MainWindow"><Tile Name="CloseBox" X="Nowhere.RIGHT+1" Component="CloseBox"/></Tile>"#;
     let e = imported(xml).unwrap_err();
-    assert!(e.to_string().contains("no sibling Nowhere"), "{e}");
+    assert!(
+        e.to_string().contains("no tile Nowhere placed before it"),
+        "{e}"
+    );
 }
 
 /// Plan SK7 (replacing the `::before` hit area, same promise: a 24 px
@@ -202,6 +205,37 @@ fn a_child_sees_its_parents_siblings_in_its_own_frame() {
     assert_eq!(kids[1].y, fixed(50, 0));
     assert_eq!(kids[1].children[0].y, fixed(0, 0));
     assert_eq!(kids[1].children[0].role, NodeRole::Part);
+}
+
+/// Space Cowboy's `ChatEdit` `Y="ChatArea.BOTTOM+2"` under `ListViewBG2`
+/// (`chatwindow.xml:34-37`): `ChatArea` is not its sibling but was laid
+/// in the window before it, and `ListViewBG2` (on `ChatArea.BOTTOM+5`) is
+/// fixed from the window's bottom, so `ChatArea`'s bottom (132 px up) is a
+/// point in its frame: 67 px up from its own bottom (65 px up), less 2.
+/// Its top is not (82 px from the window's top), so a `.TOP` reference
+/// is refused there.
+#[test]
+fn a_child_sees_a_tile_laid_outside_its_parent_by_its_known_edges() {
+    let pack = |edge: &str| {
+        format!(
+            r#"<Tile Name="W" Component="MainWindow">
+<Tile Name="ChatArea" X="27" Y="82" IndentRight="31" IndentBottom="132" ResizeX="100" ResizeY="100" Component="MainTitleBar"/>
+<Tile Name="ListViewBG2" X="26" Y="ChatArea.BOTTOM+5" IndentRight="92" IndentBottom="65" ResizeX="100" ResizeY="100" Component="AdBar">
+<Tile Name="ChatEdit" X="1" IndentRight="1" Y="ChatArea.{edge}+2" IndentBottom="1" ResizeX="100" ResizeY="100" Component="AdArea"/></Tile></Tile>"#
+        )
+    };
+    let kids = root_of(pack("BOTTOM").as_bytes());
+    let fixed_end = |end: i16, size: u16| NodeSpan::Fixed {
+        at: Anchor::End(end),
+        size,
+    };
+    assert_eq!(kids[1].y, fixed_end(65, 62));
+    assert_eq!(kids[1].children[0].y, fixed_end(1, 64));
+    let e = imported(pack("TOP").as_bytes()).unwrap_err();
+    assert!(
+        e.to_string().contains("no tile ChatArea placed before it"),
+        "{e}"
+    );
 }
 
 /// xSLIMFIRE's tabs stretch (`ResizeX="100"`) up to their component's

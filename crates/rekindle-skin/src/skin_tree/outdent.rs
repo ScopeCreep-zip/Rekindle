@@ -26,12 +26,12 @@ use crate::shape;
 /// How far a stretched `span` lies before its parent's start and past its
 /// end (its negative insets, the `Outdent*`s).
 fn outdent(span: &NodeSpan) -> (u16, u16) {
-    let span = span.clone();
-    let NodeSpan::Stretch { start, end } = span else {
-        return (0, 0);
-    };
     let past = |v: i16| u16::try_from((-i32::from(v)).max(0)).unwrap_or(u16::MAX);
-    (past(start), past(end))
+    match span {
+        NodeSpan::Stretch { start, end } => (past(*start), past(*end)),
+        // A fixed span or a share lies inside its parent: no outdent.
+        NodeSpan::Fixed { .. } | NodeSpan::Share { .. } => (0, 0),
+    }
 }
 
 /// `span` moved inside its parent.
@@ -41,7 +41,8 @@ fn inside(span: NodeSpan) -> NodeSpan {
             start: start.max(0),
             end: end.max(0),
         },
-        fixed @ NodeSpan::Fixed { .. } => fixed,
+        // A share is laid inside its parent already.
+        kept @ (NodeSpan::Fixed { .. } | NodeSpan::Share { .. }) => kept,
     }
 }
 
@@ -88,6 +89,9 @@ fn shift_child(span: NodeSpan, (b, a): (u16, u16)) -> NodeSpan {
             start: start.saturating_sub(i(b)),
             end: end.saturating_sub(i(a)),
         },
+        // The anchor moves as a fixed span's does; the size it takes in
+        // the transform is unused (only `Centre`'s frame widens).
+        share @ NodeSpan::Share { .. } => share.share_through(0, |f| shift_child(f, (b, a))),
     }
 }
 
