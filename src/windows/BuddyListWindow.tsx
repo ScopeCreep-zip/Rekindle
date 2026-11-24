@@ -17,7 +17,7 @@ import SuccessorOffers from "../components/buddy-list/SuccessorOffers";
 import BuddyList from "../components/buddy-list/BuddyList";
 import CommunityListCompact from "../components/buddy-list/CommunityListCompact";
 import BottomActionBar from "../components/buddy-list/BottomActionBar";
-import RoutePausedStatus from "../components/buddy-list/RoutePausedStatus";
+import RouteStatus from "../components/buddy-list/RouteStatus";
 import AddFriendModal from "../components/buddy-list/AddFriendModal";
 import NewChatModal from "../components/buddy-list/NewChatModal";
 import PairingLinkNotice from "../components/buddy-list/PairingLinkNotice";
@@ -272,8 +272,9 @@ const BuddyListWindow: Component = () => {
               <BuddyContent />
             </div>
             <BottomActionBar />
-            {/* Owner decision 65: a paused inbound route is said here until the Host lifts it. */}
-            <RoutePausedStatus />
+            {/* Our own route paused (owner decision 65) or down while the Host
+                retries (plan F9-A), said here until the Host says it is up. */}
+            <RouteStatus />
             <div class="status-bar">
               <StatusPicker currentStatus={authState.status} />
               <NetworkIndicator />

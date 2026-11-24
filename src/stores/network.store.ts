@@ -7,6 +7,7 @@ import {
   subscribeNetworkStatus,
   subscribeNetworkStrength,
   subscribeOwnRecords,
+  subscribeOwnRouteDown,
   subscribeRouteDeaths,
   subscribeRoutePaused,
 } from "../ipc/channels";
@@ -27,7 +28,8 @@ export interface NetworkState {
   attachmentState: string;
   isAttached: boolean;
   publicInternetReady: boolean;
-  hasRoute: boolean;
+  /** Our inbound (General) route's availability (plan F9-A): `available` is a route. */
+  generalRoute: RouteAvailability;
   mediaRoute: RouteAvailability;
   /** The Host accepts writes now (its lifecycle's `can_write`). */
   canWrite: boolean;
@@ -55,13 +57,25 @@ export interface NetworkState {
   routePaused: boolean;
   /** Why, as the Host states it, while paused. */
   routePauseCause: RoutePauseCause | null;
+  /**
+   * Our own routes that are down while the Host retries (plan F9-A,
+   * `NetworkEvent::OwnRouteDown`/`OwnRouteUp`): since when (epoch ms) and
+   * Veilid's reason, per class; null while up.
+   */
+  ownRouteDown: Record<OwnRouteClass, OwnRouteDown | null>;
+}
+
+/** One own route class down: since when (epoch ms) and why, as the Host says. */
+export interface OwnRouteDown {
+  sinceMs: number;
+  reason: string;
 }
 
 const [networkState, setNetworkState] = createStore<NetworkState>({
   attachmentState: "detached",
   isAttached: false,
   publicInternetReady: false,
-  hasRoute: false,
+  generalRoute: "idle",
   mediaRoute: "idle",
   canWrite: false,
   bars: 0,
@@ -69,6 +83,7 @@ const [networkState, setNetworkState] = createStore<NetworkState>({
   ownRecordsError: null,
   routePaused: false,
   routePauseCause: null,
+  ownRouteDown: { general: null, media: null },
 });
 
 export { networkState };
@@ -78,6 +93,32 @@ export function routePausedText(cause: RoutePauseCause | null): string {
   return cause === "unreadable"
     ? "Route budget couldn't be read; inbound route paused"
     : "Inbound route paused after repeated failures: possible attack";
+}
+
+/** A time as the local clock shows it: hours and minutes today, with the date on another day. */
+function clockTime(ms: number): string {
+  const at = new Date(ms);
+  const sameDay = at.toDateString() === new Date().toDateString();
+  return sameDay
+    ? at.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : at.toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+/**
+ * Our own route's status line, where the buddy list shows our connection
+ * (plan F9-A, owner decision 65): a paused route first (the Host has decided
+ * to stay down), else an inbound route down while the Host retries, else a
+ * media route down; null when none is. The time is when it went down, from
+ * the Host's event, as a clock time: no counter and no updates of our own.
+ * `detail` is Veilid's reason, for the tooltip and the accessible description.
+ */
+export function routeStatus(): { text: string; detail: string | null } | null {
+  if (networkState.routePaused) return { text: routePausedText(networkState.routePauseCause), detail: null };
+  const general = networkState.ownRouteDown.general;
+  if (general) return { text: `Unreachable — retrying since ${clockTime(general.sinceMs)}`, detail: general.reason };
+  const media = networkState.ownRouteDown.media;
+  if (media) return { text: `Calls unreachable — retrying since ${clockTime(media.sinceMs)}`, detail: media.reason };
+  return null;
 }
 
 /** The deaths warning, from the Host's numbers (plan RV1): what died, how often, against the usual. */
@@ -90,7 +131,7 @@ function routeDeathsText(d: { class: OwnRouteClass; deaths: number; young: numbe
 
 /** Public internet ready and a route: the indicator's "Connected". */
 export function isNetworkConnected(): boolean {
-  return networkState.publicInternetReady && networkState.hasRoute;
+  return networkState.publicInternetReady && networkState.generalRoute === "available";
 }
 
 /**
@@ -123,7 +164,7 @@ export type NetworkLabel = "Connected" | "Connecting..." | "No Route" | "Disconn
 export function networkLabel(): NetworkLabel {
   if (isNetworkConnected()) return "Connected";
   if (isNetworkConnecting()) return "Connecting...";
-  if (networkState.publicInternetReady && !networkState.hasRoute) return "No Route";
+  if (networkState.publicInternetReady && networkState.generalRoute !== "available") return "No Route";
   return "Disconnected";
 }
 
@@ -137,7 +178,7 @@ let unlisteners: UnlistenFn[] = [];
  * older than the last change: the snapshot then leaves that kind alone
  * rather than overwrite it with what may be older (plan VI1).
  */
-const applied = { attachment: 0, strength: 0, ownRecords: 0, routePaused: 0 };
+const applied = { attachment: 0, strength: 0, ownRecords: 0, routePaused: 0, ownRouteDown: 0 };
 
 /** The state when the stream went live; the push events follow it. */
 async function readNetworkStatus(): Promise<void> {
@@ -149,7 +190,7 @@ async function readNetworkStatus(): Promise<void> {
       attachmentState: status.attachmentState,
       isAttached: status.isAttached,
       publicInternetReady: status.publicInternetReady,
-      hasRoute: status.hasRoute,
+      generalRoute: status.generalRoute,
       mediaRoute: status.mediaRoute,
       canWrite: status.canWrite,
     });
@@ -161,6 +202,9 @@ async function readNetworkStatus(): Promise<void> {
   if (applied.routePaused === before.routePaused) {
     setNetworkState({ routePaused: status.routePaused !== null, routePauseCause: status.routePaused });
   }
+  // A window opened while a route is down learns it here, not only from the
+  // next change (plan F9-A).
+  if (applied.ownRouteDown === before.ownRouteDown) setNetworkState("ownRouteDown", status.ownRouteDown);
 }
 
 function keep(subscription: Promise<UnlistenFn>): void {
@@ -179,7 +223,7 @@ function start(): void {
         attachmentState: event.attachmentState,
         isAttached: event.isAttached,
         publicInternetReady: event.publicInternetReady,
-        hasRoute: event.hasRoute,
+        generalRoute: event.generalRoute,
         mediaRoute: event.mediaRoute,
         canWrite: event.canWrite,
       });
@@ -201,6 +245,12 @@ function start(): void {
     subscribeRoutePaused((cause) => {
       applied.routePaused += 1;
       setNetworkState({ routePaused: cause !== null, routePauseCause: cause });
+    }),
+  );
+  keep(
+    subscribeOwnRouteDown((cls, down) => {
+      applied.ownRouteDown += 1;
+      setNetworkState("ownRouteDown", cls, down);
     }),
   );
   // Deaths above their baseline: a notice with the Host's numbers, no reaction.
