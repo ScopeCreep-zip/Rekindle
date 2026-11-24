@@ -73,6 +73,7 @@ export async function handleUnbanMember(
 // `voiceChannels[channelId].participants`).
 export async function handleServerMuteMember(
   communityId: string,
+  /** The member's voice channel, or null when none is known: the Host refuses that in its words. */
   channelId: string | null,
   targetPseudonym: string,
   muted: boolean,
@@ -89,6 +90,7 @@ export async function handleServerMuteMember(
 
 export async function handleServerDeafenMember(
   communityId: string,
+  /** The member's voice channel, or null when none is known: the Host refuses that in its words. */
   channelId: string | null,
   targetPseudonym: string,
   deafened: boolean,

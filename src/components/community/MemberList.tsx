@@ -227,10 +227,10 @@ const MemberList: Component<MemberListProps> = (props) => {
             class="context-menu-item"
             disabled={mod().mute !== null}
             title={mod().mute ?? undefined}
-            onSelect={() => {
-              const channel = voiceChannelId();
-              if (channel) handleServerMuteMember(props.communityId, channel, member.pseudonymKey, true);
-            }}
+            onSelect={() =>
+              // No known channel goes as null: the Host's refusal says why.
+              handleServerMuteMember(props.communityId, voiceChannelId(), member.pseudonymKey, true)
+            }
           >
             <SkinGlyph name="mic.off" class="context-menu-icon" />
             Server Mute
@@ -240,10 +240,10 @@ const MemberList: Component<MemberListProps> = (props) => {
             class="context-menu-item"
             disabled={mod().deafen !== null}
             title={mod().deafen ?? undefined}
-            onSelect={() => {
-              const channel = voiceChannelId();
-              if (channel) handleServerDeafenMember(props.communityId, channel, member.pseudonymKey, true);
-            }}
+            onSelect={() =>
+              // No known channel goes as null: the Host's refusal says why.
+              handleServerDeafenMember(props.communityId, voiceChannelId(), member.pseudonymKey, true)
+            }
           >
             <SkinGlyph name="speaker.off" class="context-menu-icon" />
             Server Deafen
