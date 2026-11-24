@@ -35,10 +35,11 @@ describe("a joined community's members: the Host's answer and the drawn count", 
       let answer = "";
       try {
         const list = (await w.__TAURI_INTERNALS__!.invoke("get_communities")) as unknown;
-        const rows = ((list as { done?: unknown })?.done ?? list) as { anchor?: string; id?: string; name?: string }[];
+        // A Host answer comes as { value, undo } (hostInvoke's Done).
+        const rows = ((list as { value?: unknown }).value ?? []) as { anchor?: string; id?: string; name?: string }[];
         const id = rows.find((r) => r.name === name)?.anchor ?? rows.find((r) => r.name === name)?.id ?? "";
         const raw = await w.__TAURI_INTERNALS__!.invoke("get_community_members", { communityId: id });
-        const members = ((raw as { done?: unknown })?.done ?? raw) as unknown[];
+        const members = ((raw as { value?: unknown }).value ?? raw) as unknown[];
         answer = `community ${id.slice(0, 16)}… members ${Array.isArray(members) ? members.length : "not a list"}: ${JSON.stringify(raw).slice(0, 600)}`;
       } catch (e) {
         answer = `error: ${String(e).slice(0, 300)}`;
