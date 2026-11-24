@@ -20,7 +20,7 @@ use rekindle_types::dto::transfer::TransferTarget;
 use rekindle_types::friend::GameInfoState;
 use rekindle_types::game_server::{JoinSource, ServerAddress};
 
-use super::reads::{GroupCall, Reads};
+use super::reads::Reads;
 use super::rooms::{self, Room};
 
 /// Each window's selection (`SkinSelectionSet`), by window label (lead
@@ -200,34 +200,6 @@ pub(crate) struct Selected<'a> {
 /// on the server their presence shares, launched by the one launch path
 /// (`GameLaunch`, TrustChanging for a peer's address). Refused with the
 /// Host's own `not_joinable` reason, the check the `Join` capability makes.
-/// A group window's join: the selected group's call in progress that we
-/// are not in, joined through the shell (`CallOp::JoinGroup`).
-///
-/// # Errors
-/// 409 when no group is selected, or the group has no call to join.
-fn join_group(group: Option<&GroupCall>) -> Result<Mapped, IpcResponse> {
-    match group {
-        Some(GroupCall {
-            group_id,
-            call_id: Some(call_id),
-            ..
-        }) => Ok(Mapped::Run(SkinRun::Shell(ShellOp::Call(
-            CallOp::JoinGroup {
-                group_id: group_id.clone(),
-                call_id: call_id.clone(),
-            },
-        )))),
-        Some(_) => Err(IpcResponse::error(
-            409,
-            "No call in this group is in progress.",
-        )),
-        None => Err(IpcResponse::error(
-            409,
-            "GroupVoiceChat acts on the selected group: none is selected",
-        )),
-    }
-}
-
 fn join_friend(friend: &str, game: Option<&GameInfoState>) -> Result<Mapped, IpcResponse> {
     let refused = |why: String| IpcResponse::error(409, format!("JoinFriend: {friend} {why}"));
     let game = game.ok_or_else(|| refused("is in no game".into()))?;
@@ -358,6 +330,13 @@ pub(crate) fn map(
         // Xfire's `AppHostVoiceChat` places a call (`ChatButtonCall`) and
         // `AppVoiceChat` answers the ringing one (`ChatButtonAnswerCall`,
         // Symbiosis `ChatWindow.xml:291-293`, `Common.xml:450-452`).
+        // A group window draws the same action on its Host button
+        // (Symbiosis `GroupChatWindow`'s `ChatButtonCall`, action
+        // `hostVoiceChat`): there it starts the group's call, as
+        // `AppHostGroupVoiceChat` does, never a 1:1 call.
+        A::HostVoiceChat if reads.group_call.is_some() => {
+            Ok(rooms::host_group(reads.group_call.as_ref()))
+        }
         A::HostVoiceChat => shell(ShellOp::Call(CallOp::Voice {
             friend: selected()?,
         })),
@@ -366,8 +345,8 @@ pub(crate) fn map(
         // (`Components/GroupChatWindow.xml:144-147`) and
         // `AppGroupVoiceChat` in WMP10/Alloy/LOTR/DiabloIILoD; its Host
         // button (`GroupChatButtonCall`) runs `AppHostGroupVoiceChat`.
-        A::GroupVoiceChat => join_group(reads.group_call.as_ref()),
-        A::VoiceChat if reads.group_call.is_some() => join_group(reads.group_call.as_ref()),
+        A::GroupVoiceChat => rooms::join_group(reads.group_call.as_ref()),
+        A::VoiceChat if reads.group_call.is_some() => rooms::join_group(reads.group_call.as_ref()),
         A::VoiceChat => {
             selected()?;
             reads.ringing_call.clone().map_or_else(
@@ -420,14 +399,7 @@ pub(crate) fn map(
         // A group window's host (`GroupChatButtonCall`) opens the panel
         // scoped to its group, prefilled from the roster; the buddy
         // list's has no group and opens the plain panel.
-        A::HostGroupVoiceChat => Ok(match reads.group_call.as_ref() {
-            Some(g) => Mapped::Run(SkinRun::Shell(ShellOp::StartGroupCall {
-                group_id: g.group_id.clone(),
-                group_name: g.group_name.clone(),
-                members: g.members.clone(),
-            })),
-            None => return panel(ShellPanel::StartGroupCall),
-        }),
+        A::HostGroupVoiceChat => Ok(rooms::host_group(reads.group_call.as_ref())),
         A::CreateCommunity => panel(ShellPanel::CreateCommunity),
         A::JoinCommunity => panel(ShellPanel::JoinCommunity),
         A::ShowShortcuts => panel(ShellPanel::Shortcuts),

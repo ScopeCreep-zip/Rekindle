@@ -560,10 +560,23 @@ fn group_voice_chat_joins_the_group_call_and_host_starts_one() {
         map(&A::GroupVoiceChat, Selection::default(), &Reads::default()),
         Err(IpcResponse::Error { code: 409, .. })
     ));
+    // Symbiosis's group window draws `hostVoiceChat` on its Host button
+    // (`ChatButtonCall`): it starts the group's call, never a 1:1 call.
+    for action in [A::HostGroupVoiceChat, A::HostVoiceChat] {
+        assert!(matches!(
+            map(&action, Selection::default(), &reads(None)),
+            Ok(Mapped::Run(SkinRun::Shell(ShellOp::StartGroupCall { ref group_id, ref group_name, ref members })))
+                if group_id == "g1" && group_name == "Raid" && *members == roster
+        ));
+    }
+    // A 1:1 window (no group read) keeps the 1:1 call.
+    let bob = Selection {
+        friend: Some("bob"),
+        ..Selection::default()
+    };
     assert!(matches!(
-        map(&A::HostGroupVoiceChat, Selection::default(), &reads(None)),
-        Ok(Mapped::Run(SkinRun::Shell(ShellOp::StartGroupCall { ref group_id, ref group_name, ref members })))
-            if group_id == "g1" && group_name == "Raid" && *members == roster
+        map(&A::HostVoiceChat, bob, &Reads::default()),
+        Ok(Mapped::Run(SkinRun::Shell(ShellOp::Call(CallOp::Voice { ref friend })))) if friend == "bob"
     ));
     assert!(matches!(
         map(
