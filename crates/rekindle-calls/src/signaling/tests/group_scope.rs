@@ -113,3 +113,63 @@ async fn a_forged_group_id_from_a_non_member_is_refused() {
     );
     assert!(bob.group_registry.list_ids().is_empty());
 }
+
+#[tokio::test]
+async fn a_pending_invitee_is_refused_with_the_reason_its_view_serves() {
+    use rekindle_types::group_dm::{group_call_refused, GroupCallRoster};
+
+    let (alice, bob, carol) = (
+        MockDeps::with_identity([1; 32]),
+        MockDeps::with_identity([2; 32]),
+        MockDeps::with_identity([3; 32]),
+    );
+    let (a, b, c) = (
+        alice.owner_key().unwrap(),
+        bob.owner_key().unwrap(),
+        carol.owner_key().unwrap(),
+    );
+    // Carol holds only the invite to g1; its view serves this reason.
+    carol.invited_groups.lock().insert("g1".to_owned());
+    let served = group_call_refused(&carol.group_roster("g1").await.unwrap(), &c)
+        .expect("a pending invitee may not call");
+    assert_eq!(served, "accept the invite first");
+    let refused = start_group_call(
+        &*carol,
+        vec![a.clone(), b.clone()],
+        CallKind::Audio,
+        Some("g1".into()),
+    )
+    .await
+    .expect_err("a pending invitee's start is refused");
+    assert_eq!(
+        refused.to_string(),
+        served,
+        "the refusal is the served reason"
+    );
+    assert!(offers(&carol).is_empty(), "a refused start sends nothing");
+
+    // Alice is on g1's roster with company: no reason, and the start goes.
+    let roster = [a.as_str(), b.as_str(), c.as_str()];
+    rosters(&alice, &[("g1", &roster)]);
+    assert_eq!(
+        group_call_refused(&alice.group_roster("g1").await.unwrap(), &a),
+        None
+    );
+    start_group_call(
+        &*alice,
+        vec![b.clone(), c.clone()],
+        CallKind::Audio,
+        Some("g1".into()),
+    )
+    .await
+    .expect("a full member starts the group's call");
+    assert_eq!(offers(&alice).len(), 2);
+
+    // Alone on the roster: the served reason, and the start refuses it too.
+    rosters(&bob, &[("g1", &[b.as_str()])]);
+    let alone = group_call_refused(&GroupCallRoster::Held(vec![b.clone()]), &b).unwrap();
+    let refused = start_group_call(&*bob, vec![a.clone()], CallKind::Audio, Some("g1".into()))
+        .await
+        .expect_err("no one else to call");
+    assert_eq!(refused.to_string(), alone);
+}

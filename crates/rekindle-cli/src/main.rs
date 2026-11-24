@@ -20,6 +20,7 @@ mod watch;
 
 mod channel;
 mod channel_message;
+mod channel_overwrite;
 mod community;
 mod community_watch;
 mod dm;

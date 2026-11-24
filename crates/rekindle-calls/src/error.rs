@@ -33,6 +33,11 @@ pub enum CallError {
     /// A group-scoped call names someone outside that group's roster.
     #[error("not in the group: {0}")]
     NotInGroup(String),
+    /// A group call this member may not start, with the Host's reason
+    /// (`rekindle_types::group_dm::group_call_refused`), as the group's
+    /// view serves it.
+    #[error("{0}")]
+    GroupCallRefused(String),
     #[error("glare resolution: peer {0}")]
     GlareResolved(String),
     #[error("peer temp-muted")]

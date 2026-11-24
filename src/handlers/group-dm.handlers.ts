@@ -35,6 +35,7 @@ function applyListEvent(event: GroupDmEvent): void {
       favourite: false,
       renameRefused: "accept the invite first",
       inviteRefused: "accept the invite first",
+      callRefused: "accept the invite first",
     });
     return;
   }

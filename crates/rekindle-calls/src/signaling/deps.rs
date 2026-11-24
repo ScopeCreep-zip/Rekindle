@@ -13,6 +13,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use rekindle_codec::capnp_codec::direct::DirectBody;
 
+use rekindle_types::group_dm::GroupCallRoster;
+
 use crate::error::CallError;
 use crate::signaling::event::CallSignalEvent;
 use crate::signaling::registry::{CallRegistry, GroupCallRegistry};
@@ -39,10 +41,11 @@ pub trait CallSignalingDeps: Send + Sync + 'static {
     /// Group call registry handle.
     fn group_registry(&self) -> Arc<dyn GroupCallRegistry>;
 
-    /// The roster (identity keys) of our group DM `group_id`, `None`
-    /// when we hold no such group: a group-scoped call is admitted only
-    /// between members of it ([`crate::signaling::check_group_scope`]).
-    async fn group_roster(&self, group_id: &str) -> Result<Option<Vec<String>>, CallError>;
+    /// What we hold of the group DM `group_id`: its roster (identity
+    /// keys), an unanswered invite to it, or nothing. A group-scoped call
+    /// is admitted only between members of it
+    /// ([`crate::signaling::check_group_scope`]).
+    async fn group_roster(&self, group_id: &str) -> Result<GroupCallRoster, CallError>;
 
     // --- Mute policy ---
 

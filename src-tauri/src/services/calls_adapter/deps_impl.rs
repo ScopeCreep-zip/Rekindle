@@ -15,6 +15,7 @@ use rekindle_calls::signaling::{
 use rekindle_calls::state::CallKind;
 use rekindle_calls::CallError;
 use rekindle_codec::capnp_codec::direct::DirectBody;
+use rekindle_types::group_dm::GroupCallRoster;
 
 use super::CallsAdapter;
 use crate::state_helpers;
@@ -37,14 +38,12 @@ impl CallSignalingDeps for CallsAdapter {
         Arc::clone(&self.group_registry)
     }
 
-    async fn group_roster(&self, group_id: &str) -> Result<Option<Vec<String>>, CallError> {
+    async fn group_roster(&self, group_id: &str) -> Result<GroupCallRoster, CallError> {
         let owner = self.owner_key()?;
         let id = group_id.to_string();
+        let now_ms = rekindle_utils::timestamp_ms_i64();
         self.pool
-            .call(move |conn| {
-                Ok(rekindle_db::repo::group_dms::get(conn, &owner, &id)?
-                    .map(|g| g.roster.into_iter().map(|m| m.identity).collect()))
-            })
+            .call(move |conn| rekindle_db::repo::group_dms::call_roster(conn, &owner, &id, now_ms))
             .await
             .map_err(|e| CallError::InvalidState(format!("the group cannot be read: {e}")))
     }

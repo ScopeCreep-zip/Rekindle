@@ -339,6 +339,7 @@
     "verifiedAt": null
   },
   "groupDm.view.pending": {
+    "callRefused": "accept the invite first",
     "epoch": 0,
     "favourite": false,
     "groupId": "0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f",
