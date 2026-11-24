@@ -208,6 +208,7 @@ export type GovernanceEvent =
   | { segmentsChanged: { community: string; segments: SegmentDescriptor[] } }
   | { bansChanged: { community: string } }
   | { opPublication: { community: string; op: string; state: OpPublicationState } }
+  | { catchUp: { community: string; catchingUp: boolean; pending: PendingGovOp[] } }
   | {
       inviteCreated: {
         community: string;
@@ -468,3 +469,32 @@ export function isLegacyCommunityEvent(
 ): event is CommunityEvent {
   return "type" in event;
 }
+
+/** The unlock barrier's view (plan E3.2 S7d-keys.8, `display_catch_up.rs`): sent in full on every change by
+ *  `GovernanceEvent::CatchUp`, and on re-read as `CommunityDetail.catch_up`. Cleared by `catchingUp: false, pending: []`. */
+export interface CatchUpView {
+  catchingUp: boolean;
+  pending: PendingGovOp[];
+}
+
+/** One governance write held by the unlock barrier. */
+export interface PendingGovOp {
+  opId: string;
+  kind: PendingGovKind;
+  target: { member: string | null; channel: string | null; role: string | null };
+  /** The Host's words, e.g. "Kick Bea". */
+  label: string;
+  state: "catchingUp" | "signing";
+}
+
+/** One per `GovernanceEntry` arm (`PendingGovKind`). */
+export type PendingGovKind =
+  | "channelCreated" | "channelEdited" | "channelDeleted" | "roleEdited" | "rolesChanged" | "roleDeleted"
+  | "ban" | "unban" | "join" | "memberRecordMoved" | "leave" | "kick" | "approveMember" | "rejectMember"
+  | "timeout" | "removeTimeout" | "communityEdited" | "notificationDefault" | "keyRotation"
+  | "categoryCreated" | "categoryEdited" | "categoryDeleted" | "permissionsChanged"
+  | "threadCreated" | "threadArchived" | "threadUnarchived" | "eventCreated" | "eventArchived" | "eventRsvp"
+  | "expressionAdded" | "expressionRemoved" | "modReport" | "onboardingConfig" | "welcomeScreen"
+  | "adminDelete" | "segmentAdded" | "autoModRule" | "inviteCreated" | "inviteRevoked" | "attachmentPinned"
+  | "communityPolicy" | "checkpoint" | "successor" | "deviceKey" | "deviceRetired" | "deviceReadmit"
+  | "successorLinkRequest" | "successorLink";

@@ -75,6 +75,7 @@ pub mod segments;
 pub mod successor;
 pub mod successor_invites;
 pub mod transfer;
+pub mod unlock_barrier;
 pub mod verify_cache;
 pub mod watch_ring;
 

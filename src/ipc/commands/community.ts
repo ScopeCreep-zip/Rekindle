@@ -1,6 +1,6 @@
 import { hostInvoke, invoke } from "../invoke";
 import type { ImageKind } from "./system";
-import type { OpPublicationState } from "../channels/community_subscription_events";
+import type { CatchUpView, OpPublicationState } from "../channels/community_subscription_events";
 
 /// A voice message as the Host decoded it: the Ogg Opus audio and the
 /// duration and waveform read from it (base64 fields).
@@ -106,6 +106,8 @@ export const communityCommands = {
       opPublications?: Record<string, OpPublicationState>;
       /** Whether this device may write here (`CommunityView::device_status`, ADR 0022 rule 4). */
       deviceStatus: DeviceStatus;
+      /** The unlock barrier's held governance writes (`CommunityView::catch_up`); later changes arrive as `catchUp`. */
+      catchUp?: CatchUpView;
     }[]>("get_community_details"),
   getCommunityMembers: (communityId: string) =>
     hostInvoke<{

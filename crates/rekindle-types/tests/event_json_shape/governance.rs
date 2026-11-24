@@ -22,6 +22,7 @@ pub const NAMES: &[&str] = &[
     "effectivePermissionsChanged",
     "governanceRebuilt",
     "opPublication",
+    "catchUp",
     "governanceOpQuarantined",
     "checkpointSnapshotMismatch",
     "communitySuccessorOffered",
@@ -43,6 +44,7 @@ pub fn variant_name(e: &GovernanceEvent) -> &'static str {
         GovernanceEvent::EffectivePermissionsChanged { .. } => "effectivePermissionsChanged",
         GovernanceEvent::GovernanceRebuilt { .. } => "governanceRebuilt",
         GovernanceEvent::OpPublication { .. } => "opPublication",
+        GovernanceEvent::CatchUp { .. } => "catchUp",
         GovernanceEvent::GovernanceOpQuarantined { .. } => "governanceOpQuarantined",
         GovernanceEvent::CheckpointSnapshotMismatch { .. } => "checkpointSnapshotMismatch",
         GovernanceEvent::CommunitySuccessorOffered { .. } => "communitySuccessorOffered",
@@ -104,6 +106,24 @@ fn structure() -> Vec<Sample> {
                 author: "a".repeat(64),
                 reason: OpQuarantineReason::AfterAuthorRemoval,
                 cause: Some("9".repeat(64)),
+            },
+        ),
+        ev(
+            "catchUp",
+            GovernanceEvent::CatchUp {
+                community: community(),
+                catching_up: true,
+                pending: vec![rekindle_types::display_catch_up::PendingGovOp {
+                    op_id: "9".repeat(16),
+                    kind: rekindle_types::display_catch_up::PendingGovKind::Kick,
+                    target: rekindle_types::display_catch_up::PendingGovTarget {
+                        member: Some("5".repeat(64)),
+                        channel: None,
+                        role: None,
+                    },
+                    label: "Kick Bea".into(),
+                    state: rekindle_types::display_catch_up::PendingGovState::CatchingUp,
+                }],
             },
         ),
         ev(

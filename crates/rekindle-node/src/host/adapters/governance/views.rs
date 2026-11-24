@@ -152,6 +152,7 @@ fn community_view(
         removed: None,
         op_publications: std::collections::BTreeMap::new(),
         device_status: rekindle_types::dto::community::DeviceStatus::Enrolled,
+        catch_up: None,
     }
 }
 
@@ -319,6 +320,7 @@ impl HostGovernance {
             .collect();
         for view in &mut views {
             view.removed = removal_display(&self.ctx.communities, &view.id);
+            view.catch_up = self.ctx.communities.unlock_barriers().view(&view.id);
             if view.removed.is_none() {
                 view.device_status = self.device_status(&view.id);
             }

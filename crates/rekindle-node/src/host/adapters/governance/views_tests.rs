@@ -248,3 +248,37 @@ fn we_are_creator_is_false_after_we_leave() {
     ));
     assert!(!community_view(&state, own_card_view(&state, None), 0, None).we_are_creator);
 }
+
+/// The unlock barrier's view rides on the window's re-read as `catchUp`
+/// (plan E3.2 S7d-keys.8), camelCase like `GovernanceEvent::CatchUp`, and
+/// is omitted once the barrier passed with nothing held.
+#[test]
+fn the_view_carries_the_unlock_barriers_held_writes_as_catch_up() {
+    use rekindle_types::display_catch_up::{
+        CatchUpView, PendingGovKind, PendingGovOp, PendingGovState, PendingGovTarget,
+    };
+    let state = CommunityState::new("gk");
+    let mut view = community_view(&state, own_card_view(&state, None), 0, None);
+    let idle = serde_json::to_value(&view).unwrap();
+    assert!(idle.get("catchUp").is_none(), "{idle}");
+    view.catch_up = Some(CatchUpView {
+        catching_up: true,
+        pending: vec![PendingGovOp {
+            op_id: "op1".into(),
+            kind: PendingGovKind::Kick,
+            target: PendingGovTarget {
+                member: Some("cd".repeat(32)),
+                ..PendingGovTarget::default()
+            },
+            label: "Kick Bea".into(),
+            state: PendingGovState::CatchingUp,
+        }],
+    });
+    let json = serde_json::to_value(&view).unwrap();
+    assert_eq!(json["catchUp"]["catchingUp"], true, "{json}");
+    let held = &json["catchUp"]["pending"][0];
+    assert_eq!(held["opId"], "op1", "{json}");
+    assert_eq!(held["kind"], "kick", "{json}");
+    assert_eq!(held["state"], "catchingUp", "{json}");
+    assert_eq!(held["target"]["member"], "cd".repeat(32), "{json}");
+}

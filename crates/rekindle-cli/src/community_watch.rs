@@ -295,6 +295,17 @@ fn governance(event: &GovernanceEvent) -> String {
         GovernanceEvent::ChannelsChanged { channels, .. } => {
             format!("channels changed ({} channels)", channels.len())
         }
+        GovernanceEvent::CatchUp {
+            catching_up,
+            pending,
+            ..
+        } => {
+            if *catching_up {
+                format!("catching up ({} governance writes held)", pending.len())
+            } else {
+                "caught up".into()
+            }
+        }
         GovernanceEvent::OpPublication { op, state, .. } => {
             let op = abbreviate_key(op);
             match state {

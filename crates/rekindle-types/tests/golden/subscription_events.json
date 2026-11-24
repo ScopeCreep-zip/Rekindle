@@ -570,6 +570,27 @@
       }
     }
   },
+  "governance.catchUp": {
+    "governance": {
+      "catchUp": {
+        "catchingUp": true,
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "pending": [
+          {
+            "kind": "kick",
+            "label": "Kick Bea",
+            "opId": "9999999999999999",
+            "state": "catchingUp",
+            "target": {
+              "channel": null,
+              "member": "5555555555555555555555555555555555555555555555555555555555555555",
+              "role": null
+            }
+          }
+        ]
+      }
+    }
+  },
   "governance.channelPermissionsChanged": {
     "governance": {
       "channelPermissionsChanged": {
