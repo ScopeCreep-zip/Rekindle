@@ -43,6 +43,7 @@ export type ShellPanel =
 
 export type CallOp =
   | { kind: "voice"; arg: { friend: string } }
+  | { kind: "answer"; arg: { callId: string } }
   | { kind: "video"; arg: { friend: string } }
   | { kind: "end" }
   | { kind: "mute" }
