@@ -33,6 +33,22 @@ async function ownRowDelivered(b: Browser, text: string): Promise<void> {
   expect(seen).toMatch(/message-status-(delivered|read)/);
 }
 
+/** `b`'s buddy list shows `name` online (its name not marked offline). */
+async function friendOnline(b: Browser, name: string): Promise<void> {
+  await waitUntil(
+    async () =>
+      (await b.execute(
+        (n: string) =>
+          Array.from(document.querySelectorAll(".buddy-item")).some(
+            (r) => (r.querySelector(".buddy-name")?.textContent ?? "").includes(n) && !r.querySelector(".buddy-name-offline"),
+          ),
+        name,
+      )) as boolean,
+    NET_WAIT_MS,
+    `${name} never showed online`,
+  );
+}
+
 describe("friend request, then a DM each way", () => {
   const alice = newUser("alice");
   const bob = newUser("bob");
@@ -59,6 +75,10 @@ describe("friend request, then a DM each way", () => {
     await acceptRequest(b, bob, hello);
     await friendRow(b, alice.displayName);
     await friendRow(a, bob.displayName);
+    // Each shows the other online, not only listed (peer finding F5: a
+    // friends snapshot folded over the live presence put a friend back
+    // offline).
+    await Promise.all([friendOnline(a, bob.displayName), friendOnline(b, alice.displayName)]);
     await shot("friends");
   });
 
