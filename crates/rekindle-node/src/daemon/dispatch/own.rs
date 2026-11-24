@@ -43,6 +43,7 @@ pub(crate) async fn route(
         IpcRequest::SetShareGameTotals { enabled } => {
             handle_share_game_totals(ctx, state, enabled).await
         }
+        IpcRequest::SetAutoAway { minutes } => super::own_idle::handle(ctx, state, minutes).await,
         request @ (IpcRequest::SetGameDetection { .. }
         | IpcRequest::SetShareCurrentGame { .. }
         | IpcRequest::HiddenGamesGet

@@ -331,6 +331,12 @@ pub enum IpcRequest {
     /// `Preferences.game_detection_enabled`, local only. Off, no process is
     /// scanned; the change takes effect at once. The preferences come back.
     SetGameDetection { enabled: bool },
+    /// Auto-away's idle threshold, minutes, 0 off (plan E7.4): the
+    /// identity's `Preferences.auto_away_minutes`, local only, applied at
+    /// once: an auto-away whose reason went (off, or a threshold above our
+    /// idle time) restores the status it replaced; a status the user picked
+    /// stays. The preferences come back.
+    SetAutoAway { minutes: u32 },
     /// Show friends the game we play, or stop (plan E7.2): the identity's
     /// `Preferences.share_current_game`, split from detection, off by
     /// default; a hidden game is never shown. The preferences come back.

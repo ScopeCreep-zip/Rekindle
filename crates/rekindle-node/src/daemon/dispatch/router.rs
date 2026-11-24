@@ -176,6 +176,7 @@ async fn route(
         | IpcRequest::SetReadReceiptsEnabled { .. }
         | IpcRequest::SetShareGameTotals { .. }
         | IpcRequest::SetGameDetection { .. }
+        | IpcRequest::SetAutoAway { .. }
         | IpcRequest::SetShareCurrentGame { .. }
         | IpcRequest::SetKeepActivityLog { .. }
         | IpcRequest::ActivityList { .. }

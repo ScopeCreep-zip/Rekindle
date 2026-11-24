@@ -6,6 +6,8 @@
     "settings"
   ],
   "permissions": [
+    "allow-get-own-presence",
+    "allow-set-auto-away",
     "allow-accept-pairing-code",
     "allow-audit-export",
     "allow-audit-verify",

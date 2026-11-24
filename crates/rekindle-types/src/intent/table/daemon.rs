@@ -222,6 +222,7 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
     // Detection is local only (plan E7.2); showing the game, or a hidden
     // one again, widens what friends see.
     ("SetGameDetection", Some(IntentKind::SetPreferences)),
+    ("SetAutoAway", Some(IntentKind::SetPreferences)),
     ("SetShareCurrentGame", Some(IntentKind::ShareCurrentGame)),
     ("SetKeepActivityLog", Some(IntentKind::SetPreferences)),
     ("ActivityList", None),

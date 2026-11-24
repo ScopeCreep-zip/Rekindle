@@ -37,6 +37,12 @@ pub enum SettingsCmd {
         /// `on` or `off`.
         state: Switch,
     },
+    /// Auto-away after this many idle minutes (0 off, at most 1440);
+    /// turning it off while auto-away holds us Away restores our status.
+    AutoAway {
+        /// Minutes, 0 off.
+        minutes: u32,
+    },
     /// Keep a local log of what friends did, for the Infoview (on by
     /// default); off clears it.
     ActivityLog {

@@ -157,7 +157,7 @@ pub(crate) async fn select(
             // Friends already received it: setting another one reverses it.
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::SetBio);
         }
-        IpcRequest::SetGameDetection { .. } => {
+        IpcRequest::SetGameDetection { .. } | IpcRequest::SetAutoAway { .. } => {
             s.subject = unlocked_identity(ctx);
             // Local only: setting it back reverses it (plan E7.2).
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::SetPreferences);

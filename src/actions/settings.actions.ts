@@ -46,9 +46,6 @@ export async function handleSaveSettings(
       ...(settings.startMinimized !== undefined && {
         startMinimized: settings.startMinimized,
       }),
-      ...(settings.autoAwayMinutes !== undefined && {
-        autoAwayMinutes: settings.autoAwayMinutes,
-      }),
       ...(settings.autoVolunteerRelayForNewFriends !== undefined && {
         autoVolunteerRelayForNewFriends: settings.autoVolunteerRelayForNewFriends,
       }),
@@ -69,6 +66,17 @@ export async function handleSaveSettings(
     setSettingsState(settings);
   } catch (e) {
     console.error("Failed to save settings:", e);
+  }
+}
+
+/// Auto-away's threshold (0 off): the Host stores it and applies it at once
+/// (an auto-away whose reason went ends), answering what it stored.
+export async function handleSetAutoAway(minutes: number): Promise<void> {
+  try {
+    const prefs = await commands.setAutoAway(minutes);
+    setSettingsState({ autoAwayMinutes: prefs.autoAwayMinutes });
+  } catch (e) {
+    console.error("Failed to set auto-away:", e);
   }
 }
 

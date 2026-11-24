@@ -81,6 +81,16 @@ pub async fn set_game_detection(
     host_call::call(&state, IpcRequest::SetGameDetection { enabled }).await
 }
 
+/// Auto-away's threshold, minutes, 0 off (`IpcRequest::SetAutoAway`, plan
+/// E7.4): local only, applied at once; the preferences come back.
+#[tauri::command]
+pub async fn set_auto_away(
+    minutes: u32,
+    state: State<'_, SharedState>,
+) -> Result<Done<Preferences>, CommandError> {
+    host_call::call(&state, IpcRequest::SetAutoAway { minutes }).await
+}
+
 /// Show friends our current game or stop (`IpcRequest::SetShareCurrentGame`,
 /// plan E7.2, a trust-changing intent the Host reviews): the preferences
 /// come back.
