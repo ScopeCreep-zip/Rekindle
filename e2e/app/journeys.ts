@@ -427,7 +427,33 @@ export async function createGroup(b: Browser, user: User, name: string, members:
     await (await shown(b, '[aria-label="New Group"]')).click();
   }
   await typeInto(await shown(b, "#new-group-name"), name);
-  for (const m of members) await (await byText(b, "label.group-dm-picker-option", m.slice(0, 24))).click();
+  for (const m of members) {
+    // Wait on what decides: the Host's eligibility for this friend (its
+    // groupDmBlock; the box is disabled with the Host's reason until it is
+    // null), not on time. A friend whose session is still opening is not
+    // eligible yet.
+    let state = { found: false, disabled: true, reason: "" };
+    await waitUntil(
+      async () => {
+        state = (await b.execute((n: string) => {
+          const opt = Array.from(document.querySelectorAll("label.group-dm-picker-option")).find((l) => (l.querySelector(".buddy-name")?.textContent ?? "").includes(n));
+          const box = opt?.querySelector<HTMLInputElement>("input[type=checkbox]");
+          return { found: !!box, disabled: box?.disabled ?? true, reason: (opt?.querySelector(".group-dm-picker-reason")?.textContent ?? "").trim() };
+        }, m.slice(0, 24))) as typeof state;
+        return state.found && !state.disabled;
+      },
+      NET_WAIT_MS * 2,
+      "",
+    ).catch(() => {
+      throw new Error(state.found ? `${m} never became eligible for the group (the Host says: ${state.reason || "no reason"})` : `${m} is not in the New Group picker`);
+    });
+    await (await byText(b, "label.group-dm-picker-option", m.slice(0, 24))).click();
+    await waitUntil(
+      async () => (await b.execute((n: string) => Array.from(document.querySelectorAll("label.group-dm-picker-option")).find((l) => (l.querySelector(".buddy-name")?.textContent ?? "").includes(n))?.querySelector<HTMLInputElement>("input[type=checkbox]")?.checked ?? false, m.slice(0, 24))) as boolean,
+      NET_WAIT_MS,
+      `${m} was not ticked in the New Group picker`,
+    );
+  }
   await submitModal(b, user, "#new-group-name");
 }
 

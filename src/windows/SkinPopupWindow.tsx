@@ -6,6 +6,7 @@ import { startEventStream, subscribeSkinSignals } from "../ipc/channels";
 import { setSkinSignals } from "../stores/skin-signals.store";
 import { registerShellRunner } from "../actions/skin.actions";
 import { handleClose } from "../actions/titlebar.actions";
+import { setWindowKind } from "../utils/window_kind";
 
 /**
  * A pack popup (plan SK2-P1b; `LaunchSkin`'s `<Popup>`: Xfire's Infoview
@@ -34,6 +35,7 @@ const SkinPopupWindow: Component = () => {
   onCleanup(() => {
     for (const p of unlisteners) void p.then((unlisten) => unlisten());
   });
+  setWindowKind("popup");
   return (
     <div class="app-frame" data-skin-popup={name}>
       <Show when={skinPopupShell(name)} keyed>

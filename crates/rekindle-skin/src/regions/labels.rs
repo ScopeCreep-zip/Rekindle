@@ -111,7 +111,7 @@ pub fn label_css(
     if decls.is_empty() {
         return String::new();
     }
-    format!("@layer skin {{\n  :root {{\n{decls}  }}\n}}\n")
+    super::css::scope::skin_layer(&decls)
 }
 
 #[cfg(test)]

@@ -139,7 +139,7 @@ async fn the_server_stamps_the_senders_real_name_and_key() {
 
     let mut forged = Message::new(
         &MessageContext::new(client.sender_id()),
-        BusPayload::Request(IpcRequest::Status),
+        BusPayload::Request(Box::new(IpcRequest::Status)),
         SecurityLevel::Open,
         client.epoch(),
     );

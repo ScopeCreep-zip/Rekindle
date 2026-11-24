@@ -452,10 +452,10 @@ mod tests {
             Cursor, Sequenced, StopReason, StreamFrame, SystemEvent,
         };
         let event = |seq, event| {
-            StreamFrame::Event(Sequenced {
+            StreamFrame::Event(Box::new(Sequenced {
                 cursor: Cursor { epoch: 1, seq },
                 event,
-            })
+            }))
         };
         let changed = |armed, shortcut: Option<&str>| {
             SubscriptionEvent::System(SystemEvent::QuickWipeChanged {

@@ -7,10 +7,15 @@ import CommunityMainPane from "./community_window/CommunityMainPane";
 import CommunityRightPanel from "./community_window/CommunityRightPanel";
 import CommunityModals from "./community_window/CommunityModals";
 import CallPipelineHost from "../components/voice/call_stage/CallPipelineHost";
+import { setWindowKind } from "../utils/window_kind";
 
 const CommunityWindow: Component = () => {
   const vm = useCommunityWindow();
+  // The window's kind (plan SB1), as its label names it: the browser is the
+  // community window opened with no community (`/community`, no `id`).
+  const kind = new URLSearchParams(window.location.search).get("id") ? "community" : "community-browser";
 
+  setWindowKind(kind);
   return (
     <div class="app-frame community-window">
       {/* Headless: keeps the community voice/video WebCodecs pipeline alive

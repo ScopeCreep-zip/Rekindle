@@ -294,11 +294,13 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
       </div>
       {/* Forwarded: its own message's, under the sender and time and above
        *  the text (Signal), like the reply quote below. */}
-      <Show when={props.message.forwardedFromAuthor}>
-        {(author) => (
+      {/* The author as the Host shows members (FW1b), never a key cut here;
+       *  `forwardedFromAuthor` stays the identity. */}
+      <Show when={props.message.forwardedFromName}>
+        {(name) => (
           <div class="message-forwarded-header">
             <SkinGlyph name="forward" class="message-forwarded-icon" />
-            Forwarded from {author().slice(0, 12)}…
+            Forwarded from {name()}
           </div>
         )}
       </Show>
