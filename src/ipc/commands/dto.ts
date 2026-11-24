@@ -557,6 +557,18 @@ export type MemberGroup =
 /** The moderation actions we may take against one member (Tier 1
  *  `TargetModeration`): each the governance validator's verdict on the
  *  entry it writes, computed by the Host (plan E3.2 S9). */
+/**
+ * What we may do to one member, as the Host decides it (never-hide): each
+ * action's reason when we may not (rank, missing permission, self), null
+ * when we may. The member's controls are drawn either way.
+ */
+export interface MemberModeration {
+  kick: string | null;
+  ban: string | null;
+  timeout: string | null;
+  manageRoles: string | null;
+}
+
 export interface TargetModeration {
   kick: boolean;
   ban: boolean;

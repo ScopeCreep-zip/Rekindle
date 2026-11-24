@@ -10,7 +10,8 @@ import MyNameSection from "./MyNameSection";
 
 interface OverviewTabProps {
   community: Community;
-  canManage: boolean;
+  /** Why we may not edit the community, in the Host's words, or null (never-hide). */
+  manageDenied: string | null;
 }
 
 const OverviewTab: Component<OverviewTabProps> = (props) => {
@@ -56,29 +57,27 @@ const OverviewTab: Component<OverviewTabProps> = (props) => {
   return (
     <div class="settings-section">
       <FormField label="Community Name">
-        <Show when={props.canManage} fallback={
-          <div class="settings-value">{props.community.name}</div>
-        }>
-          <input
-            class="form-input"
-            type="text"
-            value={editName()}
-            onInput={(e) => setEditName(e.currentTarget.value)}
-          />
-        </Show>
+        <input
+          class="form-input"
+          type="text"
+          value={editName()}
+          disabled={props.manageDenied !== null}
+          title={props.manageDenied ?? undefined}
+          aria-description={props.manageDenied ?? undefined}
+          onInput={(e) => setEditName(e.currentTarget.value)}
+        />
       </FormField>
       <FormField label="Description">
-        <Show when={props.canManage} fallback={
-          <div class="settings-value">{props.community.description || "No description set."}</div>
-        }>
-          <textarea
-            class="form-textarea"
-            rows={3}
-            value={editDescription()}
-            onInput={(e) => setEditDescription(e.currentTarget.value)}
-            placeholder="Community description..."
-          />
-        </Show>
+        <textarea
+          class="form-textarea"
+          rows={3}
+          value={editDescription()}
+          disabled={props.manageDenied !== null}
+          title={props.manageDenied ?? undefined}
+          aria-description={props.manageDenied ?? undefined}
+          onInput={(e) => setEditDescription(e.currentTarget.value)}
+          placeholder="Community description..."
+        />
       </FormField>
       <FormField label="Community ID">
         <div class="form-field-row">
@@ -92,13 +91,11 @@ const OverviewTab: Component<OverviewTabProps> = (props) => {
       <SuccessorSection communityId={props.community.id} />
       <div class="settings-section-title">This device</div>
       <CommunityDeviceStatus communityId={props.community.id} />
-      <Show when={props.canManage}>
         <div class="settings-actions-sticky">
-          <button class="form-btn-primary" onClick={handleSaveOverview} disabled={savingOverview()}>
-            <SkinGlyph name="save" /> {savingOverview() ? "Saving..." : "Save Changes"}
-          </button>
-        </div>
-      </Show>
+        <button class="form-btn-primary" onClick={handleSaveOverview} disabled={savingOverview() || props.manageDenied !== null} title={props.manageDenied ?? undefined} aria-description={props.manageDenied ?? undefined}>
+          <SkinGlyph name="save" /> {savingOverview() ? "Saving..." : "Save Changes"}
+        </button>
+      </div>
     </div>
   );
 };

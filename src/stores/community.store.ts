@@ -5,7 +5,7 @@ import type {
 import { createStore, reconcile } from "solid-js/store";
 import type { Message } from "./chat.store";
 import type {
-  GameInfo, InviteDto, MemberGroup, OnboardingConfig, TargetModeration, WelcomeScreen,
+  GameInfo, InviteDto, MemberGroup, MemberModeration, OnboardingConfig, TargetModeration, WelcomeScreen,
 } from "../ipc/commands/dto";
 
 export interface Channel {
@@ -78,6 +78,8 @@ export interface Member {
   /** Which moderation actions we may take against this member: the
    *  governance validator's verdicts, computed by the Host (plan E3.2 S9). */
   canModerateTarget: TargetModeration;
+  /** What we may do to this member and why not, as the Host decides (never-hide). */
+  moderation: MemberModeration;
   /** Whether we outrank this member (the validator's rank rule). */
   outranks: boolean;
 }
