@@ -82,7 +82,10 @@ pub struct MemberDevices {
     /// Fork evidence by device key: the lowest seq it was forked at (rule 5).
     pub forks: BTreeMap<[u8; 32], u64>,
     /// `DeviceReadmit`s naming this member: `(new key, incarnation, fork
-    /// evidence)` (rule 7).
+    /// evidence)` (rule 7). A merge harvests only the readmits a resolution
+    /// applied, judged at their causal position (rules 7 and 8, plan E3.2
+    /// K4b BUG and Q6; `merge::ancestry::prepare_settled`), so an
+    /// unauthorised readmit never makes its key effective.
     pub readmits: BTreeSet<([u8; 32], u64, [u8; 32])>,
 }
 

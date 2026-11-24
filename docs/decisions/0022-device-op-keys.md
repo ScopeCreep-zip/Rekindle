@@ -260,7 +260,11 @@ as today's does.
    endorsement that converges later cannot void ops already accepted. An endorsement whose own extended set
    already holds 6 live keys is inert in every carrier and can never be re-carried into effect. All of this is
    a pure function of the op set (D15 "pure effects"), never of local time. Device ops resolve in their own
-   phase, before power ops, in `(lamport, op_hash)` order; a device op is quarantined only through fork evidence or a
+   phase, before power ops, in `(lamport, op_hash)` order (*amended 2026-11-23, plan E3.2 K4b Q6:* the device phase
+   orders the device view only; a moderator's `DeviceReadmit` is judged at its causal position, its `KICK_MEMBERS`
+   and outranking check against the power state in its past, the kick rule of E3.3 M1 / S7c.3a, never at genesis;
+   and a `DeviceReadmit` enters the device view only once applied, so one its author has no authority for never
+   makes its key effective, K4b security finding); a device op is quarantined only through fork evidence or a
    retirement of the key that signed it, never of its subject, so a `DeviceReadmit` survives its subject's retirement.
    An op of a key whose endorsement has not arrived is pending, until its endorsement arrives, never quarantined
    (*Corrected 2026-10-24 (pass 3)*).
@@ -276,7 +280,10 @@ as today's does.
    are one fork. The own-key path gives creators and top-rank members, whom nobody outranks, a way to add a device
    while they still hold a pre-fork key. It is bounded (*amended 2026-10-24, prod research batch 10*):
    - **Pre-fork keys only.** The co-signer's endorsement must be in the causal past of the member's first fork
-     evidence or `DeviceRetired`. A key endorsed after it, a re-admitted key or the exempt replacement below
+     evidence or `DeviceRetired` (*amended 2026-11-23, plan E3.2 K4b Q7:* in the **strict** causal past of each op of
+     every fork evidence and of every `DeviceRetired` carrier of the member held at the readmit's deps: the
+     intersection, not the lowest stamp, so a key endorsed after one op of a fork pair and concurrent with the other is
+     not pre-fork, and the exempt replacement carried in a `DeviceRetired`'s op is never pre-fork). A key endorsed after it, a re-admitted key or the exempt replacement below
      included, can never co-sign an own-key `DeviceReadmit`, so approvals do not chain (Signal: only the primary
      approves a link, `DeviceController.java` L204-206; Apple: a newly added trusted device waits before it can
      make critical changes).
@@ -292,7 +299,10 @@ as today's does.
      holding `KICK_MEMBERS`, naming the co-signing key and the fork evidence (Matrix MSC4153: the user's own
      devices MUST alert; Apple sends the request to every trusted device).
 
-   A **second** fork from any of that member's keys, pre-endorsed ones included, retires **all** its keys, after
+   A **second** fork from any of that member's keys, pre-endorsed ones included, retires **all** its keys (*amended
+   2026-11-23, plan E3.2 K4b Q9:* on the converged set, every key `k` of the member is void above its floor, the
+   highest seq of `k` in the causal past of any op by another member's key, a quarantined one included, as rule 5's
+   floor keeps what others built on; forked keys are also void from their fork seq), after
    which only the moderator path (rule 8) remains, or, for a creator, a `CommunitySuccessor`; so pre-endorsing keys
    buys at most one fork. Exempt from the co-signer is only the replacement key that the member's first
    `DeviceRetired` is carried with (rule 4's restore or clone signal, one op carrying both). When an op's deps hold
@@ -300,7 +310,10 @@ as today's does.
    replacement is the one in the lowest `(lamport, op_hash)` carrier, and the other copy's replacement needs a
    `DeviceReadmit` for every op whose deps hold both (ops already judged stay judged, rule 6). A later
    `DeviceRetired` retires only its own key, but its replacement needs a co-signer: a `DeviceRetired` opens the first
-   fork but is never a second fork, which is fork evidence for a second distinct key (corrected 2026-10-24, premise
+   fork but is never a second fork, which is fork evidence for a second distinct key (*amended 2026-11-23, plan E3.2
+   K4b, order-free:* fork evidence on `d2` is a second fork iff fork evidence on another key of the member exists, or
+   a fork event of another key is in the strict past of both of `d2`'s fork ops; on the converged set the first
+   clause decides, so it never depends on arrival order) (corrected 2026-10-24, premise
    check), so retiring a lost device after a restore retires no other key. A self-signed reset is
    evidence shown to the co-signer, never a key on its own (Keybase re-add, Autobase `addWriter`). Retiring a key
    does **not** retire the keys it co-signed (Keybase revokes only the named key, `keyfamily.go` L752-810, and

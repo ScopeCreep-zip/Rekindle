@@ -16,8 +16,8 @@ use crate::state::GovernanceState;
 /// (`checkpoint::state_root`).
 #[must_use]
 pub fn merge_cut(cert: &GenesisCert, cut_ops: &[VerifiedOp]) -> (GovernanceState, CutIndex) {
-    let set = resolve::prepare(cert, cut_ops);
-    let (round, _, _, _) = ancestry::settle(cert, &set).settled;
+    let (set, settlement) = ancestry::prepare_settled(cert, cut_ops);
+    let (round, _, _, _) = settlement.settled;
     // A forked op is ancestry only (ADR 0022 rule 5), as is an op whose
     // device key is refused for its author (rule 6): the cut index counts
     // the merged ops, and `forks` names the fork. Every map is per device

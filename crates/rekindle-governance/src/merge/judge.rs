@@ -251,4 +251,4 @@ fn seen_by(md: &MemberDevices, reach: &Reach) -> MemberDevices {
 
 #[cfg(test)]
 #[path = "judge_tests.rs"]
-mod tests;
+pub(super) mod tests;

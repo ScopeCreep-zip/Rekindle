@@ -32,6 +32,10 @@ pub(super) struct OpSet<'a> {
     /// as ancestry only, its device elements harvested (rule 2), and is
     /// left out of every round.
     pub device_refused: Vec<Option<KeyRefusal>>,
+    /// Per op: an own-key `DeviceReadmit` whose co-signer is not pre-fork
+    /// (`prefork`, ADR 0022 rule 7, plan E3.2 K4b Q7): refused, ancestry
+    /// only, never in the device view.
+    pub readmit_refused: Vec<bool>,
     /// Ops whose deps are missing from the set (`pending_deps`), and ops
     /// whose device key is pending for their author at their deps (an
     /// unendorsed key is treated as a missing dep, rule 6), with every op
@@ -143,14 +147,25 @@ impl Hash for IndexKey {
 
 impl OpSet<'_> {
     /// Per op: left out of every round besides the gates' (its device key
-    /// refused, `device_refused`).
+    /// refused, `device_refused`, or an own-key readmit without a pre-fork
+    /// co-signer, `readmit_refused`).
     pub(super) fn judged_out(&self) -> Vec<bool> {
-        self.device_refused.iter().map(Option::is_some).collect()
+        (self.device_refused.iter().zip(&self.readmit_refused))
+            .map(|(d, r)| d.is_some() || *r)
+            .collect()
     }
 }
 
-/// Prepare `ops` of the community `cert` pins (module doc).
-pub(super) fn prepare<'a>(cert: &GenesisCert, ops: &'a [VerifiedOp]) -> OpSet<'a> {
+/// Prepare `ops` of the community `cert` pins (module doc). `admitted`:
+/// the `DeviceReadmit`s a resolution applied (`merge::prepare_settled`);
+/// any other readmit is kept as an op but never enters the device view,
+/// since a readmit counts only once authorised (ADR 0022 rules 7 and 8,
+/// plan E3.2 K4b BUG).
+pub(super) fn prepare<'a>(
+    cert: &GenesisCert,
+    ops: &'a [VerifiedOp],
+    admitted: &BTreeSet<OpHash>,
+) -> OpSet<'a> {
     let mut sorted: Vec<&VerifiedOp> = ops.iter().collect();
     sorted.sort_by_key(|op| op.stamp());
     sorted.dedup_by_key(|op| op.hash());
@@ -244,8 +259,11 @@ pub(super) fn prepare<'a>(cert: &GenesisCert, ops: &'a [VerifiedOp]) -> OpSet<'a
                     .map(|&j| kept[j].op().seq)
                     .max()
             });
-        devices.harvest_seen(op, seen);
-        judge.note(i, op, seen);
+        let unadmitted = is_readmit(op) && !admitted.contains(&op.hash());
+        if !unadmitted {
+            devices.harvest_seen(op, seen);
+            judge.note(i, op, seen);
+        }
         of_key.entry(op.op().device_key).or_default().push(i);
         kept.push(op);
     }
@@ -257,19 +275,28 @@ pub(super) fn prepare<'a>(cert: &GenesisCert, ops: &'a [VerifiedOp]) -> OpSet<'a
         &forked,
         &mut device_refused,
     );
+    void_on_second_fork(&kept, &past, &fork_at, &forked, &mut device_refused);
     let fork_cause = fork_causes(&kept, &past, &forked, &fork_at);
+    let readmit_refused =
+        super::prefork::own_readmits_refused(cert, &kept, &past, &fork_at, &devices);
     OpSet {
         ops: kept,
         past,
         forked,
         fork_cause,
         device_refused,
+        readmit_refused,
         pending,
         equivocators: (fork_at.into_iter())
             .filter_map(|(key, seq)| Some((author_of.get(&key)?.clone(), key, seq)))
             .collect(),
         devices,
     }
+}
+
+/// Whether `op` carries a `DeviceReadmit`.
+pub(super) fn is_readmit(op: &VerifiedOp) -> bool {
+    matches!(op.body(), GovernanceEntry::DeviceReadmit(_))
 }
 
 /// The key `op` retires, when it carries a `DeviceRetired`.
@@ -330,6 +357,54 @@ fn retire_on_converged_set(
                 } else if ops[i].op().seq < from && retired {
                     device_refused[i] = None;
                 }
+            }
+        }
+    }
+}
+
+/// ADR 0022 rule 7's second fork on the converged set (plan E3.2 K4b Q9):
+/// fork evidence on a second distinct key of a member (order-free: fork
+/// evidence on another key of the member exists; a `DeviceRetired` is
+/// never a second fork) retires every key of that member above its floor,
+/// the key's highest seq in the strict causal past of any op by another
+/// member, a forked or refused one included, so nobody erases ops others
+/// built on (rule 5's floor). A forked key is also void from its fork seq
+/// (`forked`). A late op of another member raises a floor and so moves
+/// back exactly the ops it cites, the one reverse move.
+fn void_on_second_fork(
+    ops: &[&VerifiedOp],
+    past: &Ancestry,
+    fork_at: &BTreeMap<[u8; 32], u64>,
+    forked: &[bool],
+    device_refused: &mut [Option<KeyRefusal>],
+) {
+    let mut forked_keys: BTreeMap<&PseudonymKey, BTreeSet<[u8; 32]>> = BTreeMap::new();
+    for o in ops
+        .iter()
+        .filter(|o| fork_at.contains_key(&o.op().device_key))
+    {
+        forked_keys
+            .entry(o.author())
+            .or_default()
+            .insert(o.op().device_key);
+    }
+    for (member, _) in forked_keys.iter().filter(|(_, keys)| keys.len() >= 2) {
+        let mine: Vec<usize> = (0..ops.len())
+            .filter(|&i| ops[i].author() == *member)
+            .collect();
+        let cited = |j: usize| {
+            (j + 1..ops.len()).any(|i| ops[i].author() != *member && past.contains(i, j))
+        };
+        let mut floor: BTreeMap<[u8; 32], u64> = BTreeMap::new();
+        for &j in mine.iter().filter(|&&j| cited(j)) {
+            let at = floor.entry(ops[j].op().device_key).or_insert(0);
+            *at = (*at).max(ops[j].op().seq);
+        }
+        for &i in &mine {
+            let (key, seq) = (ops[i].op().device_key, ops[i].op().seq);
+            let held = floor.get(&key).is_some_and(|f| seq <= *f);
+            if !forked[i] && !held && device_refused[i].is_none() {
+                device_refused[i] = Some(KeyRefusal::Retired);
             }
         }
     }
@@ -410,7 +485,7 @@ mod tests {
             let ops = dag(n, &picks);
             let creator = PseudonymKey([0; 32]);
             let cert = crate::fixture::cert(&creator, rekindle_types::governance::AdmissionMode::Open);
-            let set = prepare(&cert, &ops);
+            let set = prepare(&cert, &ops, &std::collections::BTreeSet::new());
             let at = |h| set.ops.iter().position(|o| o.hash() == h);
             let mut reach = vec![vec![false; set.ops.len()]; set.ops.len()];
             for i in 0..set.ops.len() {
