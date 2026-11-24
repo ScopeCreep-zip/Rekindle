@@ -1,4 +1,4 @@
-//! Governance commands: roles, moderation, invites.
+//! Governance commands under `community`: roles, moderation, invites.
 
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_ipc::protocol::{LifecycleRequest, MemberRequest};
@@ -50,125 +50,158 @@ fn parse_color(s: &str) -> anyhow::Result<u32> {
     u32::from_str_radix(hex, 16).map_err(|_| anyhow::anyhow!("invalid color hex: {s}"))
 }
 
-pub async fn dispatch_role(
-    cmd: &RoleCmd,
-    client: &DaemonClient,
-    mode: OutputMode,
-) -> anyhow::Result<()> {
-    match cmd {
-        RoleCmd::List { community } => {
-            let value = helpers::send(
-                client,
-                IpcRequest::Community(CommunityRequest::Members(MemberRequest::RoleList {
-                    community: community.clone(),
-                })),
-            )
-            .await?;
-            format::print_structured(&value, mode)
-        }
+/// A member target: the pseudonym (or the name the community shows) the
+/// Host resolves; never empty, never a control character.
+fn parse_member(s: &str) -> anyhow::Result<String> {
+    let trimmed = s.trim();
+    if trimmed.is_empty() {
+        anyhow::bail!("--member cannot be empty");
+    }
+    if trimmed.chars().any(char::is_control) {
+        anyhow::bail!("--member cannot contain control characters");
+    }
+    Ok(trimmed.to_string())
+}
+
+fn members(request: MemberRequest) -> IpcRequest {
+    IpcRequest::Community(CommunityRequest::Members(request))
+}
+
+/// The Host request a `community role` subcommand sends.
+pub(crate) fn role_request(cmd: &RoleCmd) -> anyhow::Result<IpcRequest> {
+    Ok(members(match cmd {
+        RoleCmd::List { community } => MemberRequest::RoleList {
+            community: community.clone(),
+        },
         RoleCmd::Create {
             community,
             name,
             permissions,
             color,
-        } => {
-            let perms = permissions
-                .as_deref()
-                .map(parse_permissions)
-                .transpose()?
-                .unwrap_or(0);
-            let col = color.as_deref().map(parse_color).transpose()?.unwrap_or(0);
-            let value = helpers::send(
-                client,
-                IpcRequest::Community(CommunityRequest::Members(MemberRequest::RoleCreate {
-                    community: community.clone(),
-                    name: name.clone(),
-                    permissions: perms,
-                    color: col,
-                    hoist: false,
-                    mentionable: false,
-                    self_assignable: false,
-                    exclusion_group: None,
-                })),
-            )
-            .await?;
-            format::print_structured(&value, mode)
-        }
-        RoleCmd::Update {
+        } => MemberRequest::RoleCreate {
+            community: community.clone(),
+            name: helpers::validate_name(name, "Role")?,
+            permissions: parse_permissions(permissions)?,
+            color: color.as_deref().map(parse_color).transpose()?.unwrap_or(0),
+            hoist: false,
+            mentionable: false,
+            self_assignable: false,
+            exclusion_group: None,
+        },
+        RoleCmd::Edit {
             community,
             role_id,
             name,
             permissions,
             color,
         } => {
-            let rid = parse_role_id(role_id)?;
-            let perms = permissions.as_deref().map(parse_permissions).transpose()?;
-            let col = color.as_deref().map(parse_color).transpose()?;
-            let value = helpers::send(
-                client,
-                IpcRequest::Community(CommunityRequest::Members(MemberRequest::RoleUpdate {
-                    community: community.clone(),
-                    role_id: rid,
-                    name: name.clone(),
-                    permissions: perms,
-                    color: col,
-                    position: None,
-                    hoist: None,
-                    mentionable: None,
-                    self_assignable: None,
-                    exclusion_group: rekindle_types::governance::ExclusionGroupEdit::Unchanged,
-                })),
-            )
-            .await?;
-            format::print_structured(&value, mode)
+            if name.is_none() && permissions.is_none() && color.is_none() {
+                anyhow::bail!("nothing to change: give --name, --permissions or --color");
+            }
+            MemberRequest::RoleUpdate {
+                community: community.clone(),
+                role_id: parse_role_id(role_id)?,
+                name: name
+                    .as_deref()
+                    .map(|n| helpers::validate_name(n, "Role"))
+                    .transpose()?,
+                permissions: permissions.as_deref().map(parse_permissions).transpose()?,
+                color: color.as_deref().map(parse_color).transpose()?,
+                position: None,
+                hoist: None,
+                mentionable: None,
+                self_assignable: None,
+                exclusion_group: rekindle_types::governance::ExclusionGroupEdit::Unchanged,
+            }
         }
-        RoleCmd::Delete { community, role_id } => {
-            let rid = parse_role_id(role_id)?;
-            let value = helpers::send(
-                client,
-                IpcRequest::Community(CommunityRequest::Members(MemberRequest::RoleDelete {
-                    community: community.clone(),
-                    role_id: rid,
-                })),
-            )
-            .await?;
-            format::print_structured(&value, mode)
-        }
+        RoleCmd::Delete { community, role_id } => MemberRequest::RoleDelete {
+            community: community.clone(),
+            role_id: parse_role_id(role_id)?,
+        },
         RoleCmd::Assign {
             community,
             member,
             role_id,
-        } => {
-            let rid = parse_role_id(role_id)?;
-            let value = helpers::send(
-                client,
-                IpcRequest::Community(CommunityRequest::Members(MemberRequest::RoleAssign {
-                    community: community.clone(),
-                    member_pseudonym: member.clone(),
-                    role_id: rid,
-                })),
-            )
-            .await?;
-            format::print_structured(&value, mode)
-        }
+        } => MemberRequest::RoleAssign {
+            community: community.clone(),
+            member_pseudonym: parse_member(member)?,
+            role_id: parse_role_id(role_id)?,
+        },
         RoleCmd::Unassign {
             community,
             member,
             role_id,
-        } => {
-            let rid = parse_role_id(role_id)?;
-            let value = helpers::send(
-                client,
-                IpcRequest::Community(CommunityRequest::Members(MemberRequest::RoleUnassign {
-                    community: community.clone(),
-                    member_pseudonym: member.clone(),
-                    role_id: rid,
-                })),
-            )
-            .await?;
-            format::print_structured(&value, mode)
-        }
+        } => MemberRequest::RoleUnassign {
+            community: community.clone(),
+            member_pseudonym: parse_member(member)?,
+            role_id: parse_role_id(role_id)?,
+        },
+    }))
+}
+
+/// `role create`'s answer (the new role's id, hex) as `{"roleId": …}`.
+pub(crate) fn role_created(value: serde_json::Value) -> anyhow::Result<serde_json::Value> {
+    match value {
+        serde_json::Value::String(id) => Ok(serde_json::json!({ "roleId": id })),
+        other => anyhow::bail!("role create answered no role id: {other}"),
     }
+}
+
+pub async fn dispatch_role(
+    cmd: &RoleCmd,
+    client: &DaemonClient,
+    mode: OutputMode,
+) -> anyhow::Result<()> {
+    let value = helpers::send(client, role_request(cmd)?).await?;
+    let value = if matches!(cmd, RoleCmd::Create { .. }) {
+        role_created(value)?
+    } else {
+        value
+    };
+    format::print_structured(&value, mode)
+}
+
+/// The Host request a moderation subcommand (`community kick`, `ban`,
+/// `unban`, `timeout`, `bans`) sends.
+pub(crate) fn moderate_request(cmd: &ModerateCmd) -> anyhow::Result<IpcRequest> {
+    Ok(members(match cmd {
+        ModerateCmd::Kick {
+            community,
+            member,
+            reason,
+        } => MemberRequest::Kick {
+            community: community.clone(),
+            target_pseudonym: parse_member(member)?,
+            reason: reason.clone(),
+        },
+        ModerateCmd::Ban {
+            community,
+            member,
+            reason,
+        } => MemberRequest::Ban {
+            community: community.clone(),
+            target_pseudonym: parse_member(member)?,
+            reason: reason.clone(),
+        },
+        ModerateCmd::Unban { community, member } => MemberRequest::Unban {
+            community: community.clone(),
+            target_pseudonym: parse_member(member)?,
+        },
+        ModerateCmd::Timeout {
+            community,
+            member,
+            duration,
+            reason,
+        } => MemberRequest::Timeout {
+            community: community.clone(),
+            target_pseudonym: parse_member(member)?,
+            duration_seconds: parse_duration_secs(duration)?,
+            reason: reason.clone(),
+        },
+        ModerateCmd::Bans { community } => MemberRequest::BanList {
+            community: community.clone(),
+        },
+    }))
 }
 
 pub async fn dispatch_moderate(
@@ -176,80 +209,7 @@ pub async fn dispatch_moderate(
     client: &DaemonClient,
     mode: OutputMode,
 ) -> anyhow::Result<()> {
-    match cmd {
-        ModerateCmd::Kick {
-            community,
-            member,
-            reason,
-        } => {
-            let value = helpers::send(
-                client,
-                IpcRequest::Community(CommunityRequest::Members(MemberRequest::Kick {
-                    community: community.clone(),
-                    target_pseudonym: member.clone(),
-                    reason: reason.clone(),
-                })),
-            )
-            .await?;
-            format::print_structured(&value, mode)
-        }
-        ModerateCmd::Ban {
-            community,
-            member,
-            reason,
-        } => {
-            let value = helpers::send(
-                client,
-                IpcRequest::Community(CommunityRequest::Members(MemberRequest::Ban {
-                    community: community.clone(),
-                    target_pseudonym: member.clone(),
-                    reason: reason.clone(),
-                })),
-            )
-            .await?;
-            format::print_structured(&value, mode)
-        }
-        ModerateCmd::Unban { community, member } => {
-            let value = helpers::send(
-                client,
-                IpcRequest::Community(CommunityRequest::Members(MemberRequest::Unban {
-                    community: community.clone(),
-                    target_pseudonym: member.clone(),
-                })),
-            )
-            .await?;
-            format::print_structured(&value, mode)
-        }
-        ModerateCmd::Timeout {
-            community,
-            member,
-            duration,
-            reason,
-        } => {
-            let secs = parse_duration_secs(duration)?;
-            let value = helpers::send(
-                client,
-                IpcRequest::Community(CommunityRequest::Members(MemberRequest::Timeout {
-                    community: community.clone(),
-                    target_pseudonym: member.clone(),
-                    duration_seconds: secs,
-                    reason: reason.clone(),
-                })),
-            )
-            .await?;
-            format::print_structured(&value, mode)
-        }
-        ModerateCmd::Bans { community } => {
-            let value = helpers::send(
-                client,
-                IpcRequest::Community(CommunityRequest::Members(MemberRequest::BanList {
-                    community: community.clone(),
-                })),
-            )
-            .await?;
-            format::print_structured(&value, mode)
-        }
-    }
+    helpers::send_and_print(client, moderate_request(cmd)?, mode).await
 }
 
 pub async fn dispatch_invite(
@@ -303,3 +263,7 @@ pub async fn dispatch_invite(
         }
     }
 }
+
+#[cfg(test)]
+#[path = "governance_tests.rs"]
+mod tests;
