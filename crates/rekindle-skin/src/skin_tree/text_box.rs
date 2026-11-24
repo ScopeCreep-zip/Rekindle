@@ -118,14 +118,51 @@ fn extent(n: &SkinNode, b: [i32; 4], targets: &Targets) -> [i32; 4] {
 /// buddy list and its search field). The served text stops at the near
 /// edge of any of them on its line, wherever it lies in the tree, except
 /// its own ancestors and descendants.
-struct Obstacle {
-    id: String,
-    up: Vec<String>,
+pub(super) struct Obstacle {
+    pub(super) id: String,
+    pub(super) up: Vec<String>,
     shows: Option<ViewKey>,
     /// A blocking node, which [`usable`] already counts among its
     /// siblings.
     blocker: bool,
-    b: [i32; 4],
+    pub(super) b: [i32; 4],
+    /// The node's own box ([`extent`] for a blocker), before [`reach`]
+    /// grows it over its target (see [`on_line`]).
+    art: [i32; 4],
+}
+
+impl Obstacle {
+    /// This stop's box as it stops a content text's line ([`on_line`]).
+    pub(super) fn on_content_line(&self) -> [i32; 4] {
+        on_line(self.b, self.art, true)
+    }
+}
+
+/// The box `b` of a stop whose own box is `art`, as it stops a text that
+/// `keeps_line` or not. A content text's line is the shell's line box at
+/// the pack's point (plan SK15b-2, [`super::content`]): a press area's
+/// target padding above or below its art does not cut that line (XGlow's
+/// `Status` art starts 3 px under the name's line, `Y="UserName.BOTTOM+2"`
+/// then `+1`, `Xglow.ini:195-217`; its 24 px target reaches 2 px into it),
+/// while its padding on the line's own axis still stops the words (plan
+/// SK12: Onyx's `ToolsMenu` target 1 px left of its art).
+fn on_line(b: [i32; 4], art: [i32; 4], keeps_line: bool) -> [i32; 4] {
+    if keeps_line {
+        [b[0], art[1], b[2], art[3]]
+    } else {
+        b
+    }
+}
+
+/// Every obstacle of `tree` laid in `window` (see [`Obstacle`]), on the
+/// boxes as laid: what a content text's row may not reach (plan SK15b-2,
+/// [`super::content`]).
+pub(super) fn obstacles_of(tree: &SkinTree, window: (i32, i32)) -> Vec<Obstacle> {
+    let targets = targets(tree, window);
+    let mut all = Vec::new();
+    let at = laid_window(tree.outsets, window);
+    obstacles(&tree.root, at, &[], (&targets, None), &mut all);
+    all
 }
 
 fn obstacles(
@@ -141,20 +178,26 @@ fn obstacles(
         // `BigBrowseFileText` under the Files row's `SearchFiles`).
         let shows = n.shows_with.or(view);
         let blocker = n.interactive() && !is_text(n.role) && n.resize_edge().is_none();
-        let area = if blocker {
-            Some(reach(n, extent(n, b, targets), targets))
+        let own = if blocker {
+            Some(extent(n, b, targets))
         } else if draws_text(n) {
-            Some(reach(n, [b[0], b[1], b[2], b[3].max(1)], targets))
+            Some([b[0], b[1], b[2], b[3].max(1)])
         } else {
             (n.role == NodeRole::Views).then_some(b)
         };
-        if let Some(b) = area {
+        if let Some(art) = own {
+            let reached = if n.role == NodeRole::Views {
+                art
+            } else {
+                reach(n, art, targets)
+            };
             out.push(Obstacle {
                 id: n.id.clone(),
                 up: up.to_vec(),
                 shows,
                 blocker,
-                b,
+                b: reached,
+                art,
             });
         }
         let mut own = up.to_vec();
@@ -179,7 +222,7 @@ fn stops(n: &SkinNode, up: &[String], all: &[Obstacle], siblings: bool) -> Vec<[
             let sibling_blocker = !siblings && o.blocker && o.up == up;
             !(kin || apart || sibling_blocker)
         })
-        .map(|o| o.b)
+        .map(|o| on_line(o.b, o.art, n.fit.is_some()))
         .collect()
 }
 
@@ -221,7 +264,7 @@ fn cut_on(text: [i32; 4], stop: [i32; 4], axis: usize) -> [i32; 4] {
 
 /// `t` cut off each of `stops` it meets on the axis that keeps it largest
 /// (x on a tie: a single-line label keeps its row).
-fn cut(mut t: [i32; 4], stops: &[[i32; 4]]) -> [i32; 4] {
+pub(super) fn cut(mut t: [i32; 4], stops: &[[i32; 4]]) -> [i32; 4] {
     for o in stops {
         if overlap(t, *o) {
             let (x, y) = (cut_on(t, *o, 0), cut_on(t, *o, 1));
@@ -335,7 +378,11 @@ fn usable(
         .zip(boxes)
         .enumerate()
         .filter(|(j, (s, _))| *j != i && blocks(&nodes[i], s))
-        .map(|(_, (s, sb))| (Some(s), reach(s, extent(s, *sb, targets), targets)))
+        .map(|(_, (s, sb))| {
+            let art = extent(s, *sb, targets);
+            let b = reach(s, art, targets);
+            (Some(s), on_line(b, art, nodes[i].fit.is_some()))
+        })
         .chain(extra.iter().map(|e| (None, *e)))
         .filter(|(_, sb)| sb[1] < line[1] && line[0] < sb[1] + sb[3])
         .collect();

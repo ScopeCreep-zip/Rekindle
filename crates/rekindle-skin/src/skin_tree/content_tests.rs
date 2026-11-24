@@ -3,9 +3,9 @@
 //! every tree numeric, each content text as wide as its served words.
 
 use rekindle_types::dto::skin::{SkinWindow, WindowLayout};
-use rekindle_types::dto::skin_tree::{SkinNode, SkinTree};
+use rekindle_types::dto::skin_tree::{Anchor, NodeSpan, SkinNode, SkinTree};
 
-use super::content::{width, word_width};
+use super::content::{chains, width, word_width, Link};
 use super::golden_tests::main_layout;
 use super::test_support::find;
 use crate::{builtin, manifest, package};
@@ -99,4 +99,41 @@ fn titles_hold_their_words_and_the_next_title_follows() {
         let served = served.tree.as_ref().unwrap();
         assert_eq!(any_after(&served.root), None, "{pack}");
     }
+}
+
+/// Plan SK15b-2: XGlow's status row follows its runtime name on y
+/// (`Xglow.ini:186-217`): `StatusMiddle` at `UserName.BOTTOM+2` (a far-edge
+/// chain on the content text) and `Status` at `StatusMiddle.TOP+1` (a
+/// near-edge chain on a tile that follows it) both chain `After` the name,
+/// the near edge's offset added to its sibling's gap, whichever parent edge
+/// their numeric spans counted from.
+#[test]
+fn a_near_edge_chain_on_a_following_tile_follows_the_same_sibling() {
+    let fixed = |at| NodeSpan::Fixed { at, size: 17 };
+    let links = [
+        Link {
+            id: "UserName",
+            fit: true,
+            chain: [None, None],
+        },
+        Link {
+            id: "StatusMiddle",
+            fit: false,
+            chain: [None, Some(("UserName", 2, true))],
+        },
+        Link {
+            id: "Status",
+            fit: false,
+            chain: [None, Some(("StatusMiddle", 1, false))],
+        },
+    ];
+    let mut spans = vec![
+        (fixed(Anchor::Start(20)), fixed(Anchor::End(133))),
+        (fixed(Anchor::Start(33)), fixed(Anchor::End(114))),
+        (fixed(Anchor::Start(39)), fixed(Anchor::End(116))),
+    ];
+    chains(&links, &mut spans);
+    assert_eq!(spans[1].1.after(), Some(("UserName", 2)), "{:?}", spans[1]);
+    assert_eq!(spans[2].1.after(), Some(("UserName", 3)), "{:?}", spans[2]);
+    assert_eq!(spans[2].0, fixed(Anchor::Start(39)), "x is not chained");
 }

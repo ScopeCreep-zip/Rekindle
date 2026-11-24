@@ -29,18 +29,18 @@ ResizeRight Button target [-19, 0, 24, 492] art [19, 0, 5, 492] Size
 ResizeDown Button target [0, -19, 342, 24] art [0, 19, 342, 5] Size
 Middle Decor
 StatusWrapper Group
-StatusEdit StatusText target [0, -5, 180, 23] art [0, 5, 180, 12] Short
+StatusEdit StatusText target [0, 0, 180, 12] art [0, 0, 180, 12] Spacing
 DownArrow StatusList target [0, -3, 44, 24] art [0, 3, 44, 17] Size
 MenuBar MenuBar
   XfireMenuText MenuTitle label "Rekindle"
     XfireMenuTextT Part
-    FileMenu Part target [0, -6, 54, 24] art [0, 6, 54, 12] Size
+    FileMenu Part target [0, -6, 50, 24] art [0, 6, 50, 12] Size
   ToolsMenuText MenuTitle label "Tools"
     ToolsMenuTextT Part
-    ToolsMenu Part target [0, -6, 54, 23] art [0, 6, 54, 12] Short
+    ToolsMenu Part target [0, -6, 34, 23] art [0, 6, 34, 12] Spacing
   HelpMenuText MenuTitle label "Help"
     HelpMenuTextT Part
-    HelpMenu Part target [0, -6, 54, 23] art [0, 6, 54, 12] Short
+    HelpMenu Part target [0, -6, 28, 23] art [0, 6, 28, 12] Spacing
 AdArea AdArea
   AdView Part
 TabHeader TabStrip
