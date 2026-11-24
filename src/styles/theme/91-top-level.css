@@ -372,6 +372,7 @@
     .form-textarea,
     .form-btn-primary,
     .form-btn-secondary,
+    .skin-row-btn,
     .form-btn-danger,
     .channel-item,
     .member-item,
@@ -414,6 +415,7 @@
   @media (prefers-contrast: more) {
     .form-btn-primary,
     .form-btn-secondary,
+    .skin-row-btn,
     .form-btn-danger {
       border-width: 2px;
     }

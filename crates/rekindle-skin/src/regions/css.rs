@@ -10,8 +10,9 @@
 //!   and `border-image` computes to `none`. [`app_a11y_css`], generated
 //!   beside it into `regions-a11y.css`, holds the same rules under the
 //!   user's settings (below).
-//! * [`skin_css`], built per skin: `@layer skin { :root { … } }` setting
-//!   those custom properties. A value is drawn from the numbers alone (the
+//! * [`skin_css`], built per skin: `@layer skin { <skinned roots> { … } }`
+//!   setting those custom properties on the windows the pack skins
+//!   ([`scope`]), so no other window inherits its art. A value is drawn from the numbers alone (the
 //!   insets, the fit) and the image's BLAKE3 address under the Host's
 //!   serving base, never its name in the package.
 //!
@@ -472,8 +473,8 @@ pub(crate) fn dimensions(path: &str, images: &BTreeMap<String, Vec<u8>>) -> Opti
     Some((header.width, header.height))
 }
 
-/// The skin half: `@layer skin { :root { … } }` with each painted region's
-/// custom properties, the images addressed under `base` (the Host's
+/// The skin half: `@layer skin { … }` on the skinned windows' roots
+/// ([`scope::skinned_root`]) with each painted region's custom properties, the images addressed under `base` (the Host's
 /// serving origin and path). `images` are the canonical images.
 ///
 /// A text slot's backing is written as its token's custom property, and
@@ -571,12 +572,13 @@ pub fn skin_css(
         let _ = writeln!(decls, "    {name}: url(\"{h}\");");
         let _ = writeln!(decls, "    {name}-paint: transparent;");
     }
-    Some(format!("@layer skin {{\n  :root {{\n{decls}  }}\n}}\n"))
+    Some(scope::skin_layer(&decls))
 }
 
 mod band;
 mod family;
 mod frame;
+pub mod scope;
 mod strip;
 pub use band::band_property;
 use band::band_rule;
