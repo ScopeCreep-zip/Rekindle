@@ -8,7 +8,7 @@ import { applyJoinProgress, resetJoinProgress, type JoinStageStatus } from "../.
 import { applySuccessorEvent } from "../../stores/successor.store";
 import { transformCommunityDetail } from "../../utils/transformers";
 import { handleResolveCommunityImageDataUrls } from "../../actions/community/lifecycle";
-import { setCommunityState, setCommunityMembers, communityState } from "../../stores/community.store";
+import { setCommunityState, setCommunityMembers, communityState, dropCommunity } from "../../stores/community.store";
 import { commands } from "../../ipc/commands";
 import { addToast } from "../../stores/toast.store";
 import { removalText } from "../../utils/removal_text";
@@ -210,15 +210,7 @@ function applyMembershipNotice(m: MembershipEvent, notices: boolean): void {
     const { community, reasonText } = m.joinWithdrawn;
     resetJoinProgress();
     if (notices) {
-      setCommunityState("communities", (prev) => {
-        const next = { ...prev };
-        delete next[community];
-        return next;
-      });
-      if (communityState.activeCommunity === community) {
-        setCommunityState("activeCommunity", null);
-        setCommunityState("activeChannel", null);
-      }
+      dropCommunity(community);
       addToast(reasonText, "error");
     } else if (communityState.communities[community]) {
       setCommunityState("communities", community, "withdrawn", { reasonText });
