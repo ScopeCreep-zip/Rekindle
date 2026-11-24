@@ -94,7 +94,7 @@ function told(log: Step[], from: number): string {
  * before `from + HELD_MS - 1000` (so the held answer landed after it), and
  * nothing in `stale` followed it up to `from + HELD_MS + SETTLE_MS`.
  */
-async function liveStateHeld(b: Browser, key: string, from: number, live: string[], stale: string[], what: string): Promise<Step[]> {
+async function liveStateHeld(b: Browser, key: string, from: number, live: string[], stale: string[], what: string, tag: string): Promise<Step[]> {
   let log: Step[] = [];
   await waitUntil(
     async () => {
@@ -107,12 +107,16 @@ async function liveStateHeld(b: Browser, key: string, from: number, live: string
     throw new Error(`${what}: never reached ${live.join("/")}; ${told(log, from)}`);
   });
   const reached = log.find((x) => live.includes(x.s))!;
+  // The moment the live state is reached, before the held answer lands.
+  await shot(`${tag}-live`);
   if (reached.t >= from + HELD_MS - 1000) {
     throw new Error(`${what}: the race was not provoked (${reached.s} only at +${((reached.t - from) / 1000).toFixed(1)}s, the held answer lands at +${HELD_MS / 1000}s); ${told(log, from)}`);
   }
   const until = from + HELD_MS + SETTLE_MS;
   while (Date.now() < until) await sleep(500);
   log = await steps(b, key);
+  // After the held answer has landed: the shot either way, before any failure.
+  await shot(`${tag}-after-late-answer`);
   const after = log.filter((x) => x.t >= reached.t);
   const back = after.find((x) => stale.includes(x.s));
   if (back) {
@@ -137,9 +141,8 @@ describe("held answers: a late snapshot or send answer never undoes a live state
     const acceptedAt = Date.now();
     await acceptRequest(b, bob, hello);
     await friendRow(b, alice.displayName);
-    const log = await liveStateHeld(b, "alice-row", acceptedAt, ["online"], ["offline", "absent"], `Bob's row for ${alice.displayName}`);
+    const log = await liveStateHeld(b, "alice-row", acceptedAt, ["online"], ["offline", "absent"], `Bob's row for ${alice.displayName}`, "f5");
     console.log(`[races] F5: ${told(log, acceptedAt)}`);
-    await shot("bob-alice-still-online");
     expect(log[log.length - 1].s).toBe("online");
   });
 
@@ -151,9 +154,8 @@ describe("held answers: a late snapshot or send answer never undoes a live state
     await typeAndSend(a, ".message-input-field", text);
     await resolveIntent(a, { passphrase: alice.passphrase, appearMs: 1500 });
     const committedAt = Date.now();
-    const log = await liveStateHeld(a, "own-row", committedAt, ["sent", "delivered", "read"], ["queued"], `Alice's own "${text.slice(0, 20)}"`);
+    const log = await liveStateHeld(a, "own-row", committedAt, ["sent", "delivered", "read"], ["queued"], `Alice's own "${text.slice(0, 20)}"`, "clock");
     console.log(`[races] clock: ${told(log, committedAt)}`);
-    await shot("alice-still-ticked");
     expect(["sent", "delivered", "read"]).toContain(log[log.length - 1].s);
   });
 });
