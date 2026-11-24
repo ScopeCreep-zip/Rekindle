@@ -177,6 +177,7 @@ export type {
   RecurrenceRule,
   Thread,
 };
+import type { DeniedCapabilities } from "../ipc/commands/dto";
 
 /**
  * A scheduled community event (architecture §21) — the calendar entry
@@ -231,8 +232,16 @@ export interface Community {
   /** Our effective permissions per channel id: base plus overwrites. */
   myChannelPermissions: Record<string, string>;
   myPseudonymKey: string | null;
+  /** What we may not do here and why, as the Host says (never-hide): a
+   *  control is disabled with the reason, never hidden. */
+  denied?: DeniedCapabilities;
+  /** Bumped on each `BansChanged` (plan E3.2 S9): a shown ban list re-reads on it. */
+  bansRevision?: number;
   /** Set when we were removed (plan E3.2 S9 own removal): the community
    *  stays as read-only history. */
+  /** Set when the inviter refused our join after it returned (plan JW):
+   *  the Host's words, shown in place in this community's window. */
+  withdrawn?: { reasonText: string } | null;
   removed?: {
     banned: boolean;
     by: string | null;

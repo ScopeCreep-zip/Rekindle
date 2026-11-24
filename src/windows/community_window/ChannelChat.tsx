@@ -109,7 +109,9 @@ const ChannelChat: Component<{ vm: CommunityVm }> = (props) => {
         disabledMessage={
           vm.ownRemoval()
             ? removalText(vm.activeCommunity()?.name ?? "", vm.ownRemoval()!)
-            : vm.isAnnouncementChannel()
+            : vm.joinWithdrawn()
+              ? vm.joinWithdrawn()!
+              : vm.isAnnouncementChannel()
               ? "Only admins can post in announcement channels"
               : "You don't have permission to send messages"
         }

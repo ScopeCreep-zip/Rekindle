@@ -37,7 +37,7 @@ use std::sync::Arc;
 
 use tokio::sync::mpsc;
 
-use super::action::Action;
+use super::action::{Action, ToastLevel};
 use super::components::intent_overlay::IntentOverlay;
 use super::components::search_overlay::SearchOverlay;
 use super::components::spinner::Spinner;
@@ -48,6 +48,7 @@ use super::navigator::Navigator;
 use super::terminal::Tui;
 use super::theme::ThemeManager;
 use rekindle_client::DaemonClient;
+use rekindle_types::subscription_events::MembershipEvent;
 
 /// TUI application state and main loop.
 ///
@@ -265,6 +266,45 @@ impl App {
         self.cached_communities
             .iter()
             .any(|c| c.anchor == anchor && c.our_pseudonym == pseudonym)
+    }
+
+    /// The warning toast of a removal (`Kicked`/`Banned`) or of our join
+    /// withdrawn after it returned (`JoinWithdrawn`, in the Host's words).
+    pub(crate) fn own_membership_toast(&mut self, event: &MembershipEvent) {
+        let toast = match event {
+            MembershipEvent::JoinWithdrawn { reason_text, .. } => {
+                crate::helpers::sanitize_for_display(reason_text)
+            }
+            MembershipEvent::Kicked {
+                community,
+                target_pseudonym,
+                removed_by_name,
+                reason,
+                ..
+            }
+            | MembershipEvent::Banned {
+                community,
+                target_pseudonym,
+                removed_by_name,
+                reason,
+                ..
+            } => {
+                let what = if matches!(event, MembershipEvent::Banned { .. }) {
+                    "banned"
+                } else {
+                    "kicked"
+                };
+                self.removal_toast(
+                    community,
+                    target_pseudonym,
+                    removed_by_name.as_deref(),
+                    reason.as_deref(),
+                    what,
+                )
+            }
+            _ => return,
+        };
+        self.notifications.push(toast, ToastLevel::Warning);
     }
 
     /// The toast for a kick or ban: ours names the community and the

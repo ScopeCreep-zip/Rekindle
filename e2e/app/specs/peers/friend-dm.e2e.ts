@@ -7,7 +7,7 @@
 
 import { expect, multiRemoteBrowser } from "@wdio/globals";
 import type { Browser } from "webdriverio";
-import { acceptRequest, createIdentity, friendCode, friendRow, newUser, openChat, pendingRequest, requestFriend, seesMessage } from "../../journeys.ts";
+import { DOT_STATUS, acceptRequest, createIdentity, friendCode, friendRow, newUser, openChat, ownStatusValue, pendingRequest, requestFriend, seesMessage } from "../../journeys.ts";
 import { NET_WAIT_MS, resolveIntent, typeAndSend, waitUntil } from "../../../walk/helpers.ts";
 import { shot } from "../../shots.ts";
 
@@ -36,20 +36,34 @@ async function ownRowDelivered(b: Browser, text: string): Promise<void> {
   expect(seen).toMatch(/message-status-(delivered|read)/);
 }
 
-/** `b`'s buddy list shows `name` online (its name not marked offline). */
-async function friendOnline(b: Browser, name: string): Promise<void> {
+/**
+ * `b`'s buddy list shows friend `name` with the status `them`'s own status
+ * line shows (the lead, 2026-11-23: a friend saw Away while the user's own
+ * line read Online; an idle Mac may legitimately go away, so the check is
+ * that both agree, not a literal Online), and not as offline.
+ */
+async function friendStatusAgrees(b: Browser, name: string, them: Browser): Promise<void> {
+  let last = "";
   await waitUntil(
-    async () =>
-      (await b.execute(
+    async () => {
+      const theirs = await ownStatusValue(them);
+      const dot = (await b.execute(
         (n: string) =>
-          Array.from(document.querySelectorAll(".buddy-item")).some(
-            (r) => (r.querySelector(".buddy-name")?.textContent ?? "").includes(n) && !r.querySelector(".buddy-name-offline"),
-          ),
+          Array.from(document.querySelectorAll(".buddy-item"))
+            .find((r) => (r.querySelector(".buddy-name")?.textContent ?? "").includes(n))
+            ?.querySelector('[role="img"]')
+            ?.getAttribute("aria-label") ?? "no row",
         name,
-      )) as boolean,
+      )) as string;
+      const seen = DOT_STATUS[dot] ?? dot;
+      last = `${name} shows ${seen}, their own line ${theirs}`;
+      return seen === theirs && seen !== "offline";
+    },
     NET_WAIT_MS,
-    `${name} never showed online`,
-  );
+    `${name}'s status`,
+  ).catch(() => {
+    throw new Error(`friend status disagrees: ${last}`);
+  });
 }
 
 describe("friend request, then a DM each way", () => {
@@ -81,7 +95,8 @@ describe("friend request, then a DM each way", () => {
     // Each shows the other online, not only listed (peer finding F5: a
     // friends snapshot folded over the live presence put a friend back
     // offline).
-    await Promise.all([friendOnline(a, bob.displayName), friendOnline(b, alice.displayName)]);
+    await friendStatusAgrees(a, bob.displayName, b);
+    await friendStatusAgrees(b, alice.displayName, a);
     await shot("friends");
   });
 

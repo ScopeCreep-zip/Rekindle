@@ -9,11 +9,10 @@ import {
 } from "../../actions/community.actions";
 import {
   servedPermissions,
-  CREATE_EXPRESSIONS,
   hasPermission,
-  MANAGE_EXPRESSIONS,
   USE_SOUNDBOARD,
 } from "../../ipc/permissions";
+import { deniedFor } from "../../utils/denied";
 
 type ExpressionTab = "emoji" | "sticker" | "soundboard";
 
@@ -79,13 +78,9 @@ const ExpressionPicker: Component<ExpressionPickerProps> = (props) => {
   // The backend's base flags (plan E3.2 S9): expressions are community-wide.
   const myPerms = createMemo(() => servedPermissions(community()));
 
-  const canUpload = createMemo(() => {
-    if (myPerms() === 0n) return false;
-    return (
-      hasPermission(myPerms(), CREATE_EXPRESSIONS)
-      || hasPermission(myPerms(), MANAGE_EXPRESSIONS)
-    );
-  });
+  // Whether we may add an expression of any kind, sounds included, as the
+  // Host says (never-hide; the validator admits them all on one rule).
+  const uploadDenied = createMemo(() => deniedFor(community(), "createExpressions"));
 
   // Architecture §10.9 — soundboard play requires USE_SOUNDBOARD;
   // backend re-validates on every received SoundboardPlay envelope so
@@ -94,14 +89,7 @@ const ExpressionPicker: Component<ExpressionPickerProps> = (props) => {
     hasPermission(myPerms(), USE_SOUNDBOARD),
   );
 
-  // Soundboard upload is gated more tightly than emoji upload —
-  // MANAGE_EXPRESSIONS only, not CREATE_EXPRESSIONS — because sounds
-  // are eagerly cached by every member (~48MB budget per community)
-  // and a low-trust member could push abusive clips into everyone's
-  // cache without this stricter gate.
-  const canUploadSoundboard = createMemo(() =>
-    hasPermission(myPerms(), MANAGE_EXPRESSIONS),
-  );
+
 
   async function uploadEmoji(): Promise<void> {
     const input = document.createElement("input");
@@ -174,12 +162,11 @@ const ExpressionPicker: Component<ExpressionPickerProps> = (props) => {
   }
 
   function uploadCurrent(): void {
+    if (uploadDenied() !== null) return;
     if (activeTab() === "soundboard") {
-      if (!canUploadSoundboard()) return;
       void uploadSoundboard();
       return;
     }
-    if (!canUpload()) return;
     if (activeTab() === "emoji") void uploadEmoji();
     else void uploadSticker();
   }
@@ -234,17 +221,16 @@ const ExpressionPicker: Component<ExpressionPickerProps> = (props) => {
       </div>
       <div class="emoji-picker-section-label expression-picker-header">
         <span>Community {activeTab() === "emoji" ? "Emoji" : activeTab() === "sticker" ? "Stickers" : "Sounds"}</span>
-        <Show
-          when={
-            activeTab() === "soundboard"
-              ? canUploadSoundboard()
-              : canUpload()
-          }
+        {/* Never-hide: drawn always, disabled with the Host's reason. */}
+        <button
+          class="expression-picker-upload-btn"
+          onClick={uploadCurrent}
+          disabled={uploadDenied() !== null}
+          title={uploadDenied() ?? undefined}
+          aria-description={uploadDenied() ?? undefined}
         >
-          <button class="expression-picker-upload-btn" onClick={uploadCurrent}>
-            {uploadLabel()}
-          </button>
-        </Show>
+          {uploadLabel()}
+        </button>
       </div>
       <Show
         when={filtered().length > 0}

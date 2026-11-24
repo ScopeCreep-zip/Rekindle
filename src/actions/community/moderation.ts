@@ -2,6 +2,7 @@ import { commands } from "../../ipc/commands";
 import type { CommunityAuditEntry, CommunityBanView } from "../../ipc/commands/dto";
 import { setCommunityState, communityState } from "../../stores/community.store";
 import { addToast } from "../../stores/toast.store";
+import { errorMessage } from "../../utils/error";
 
 export async function handleRemoveCommunityMember(
   communityId: string,
@@ -72,6 +73,7 @@ export async function handleUnbanMember(
 // `voiceChannels[channelId].participants`).
 export async function handleServerMuteMember(
   communityId: string,
+  /** The member's voice channel, or null when none is known: the Host refuses that in its words. */
   channelId: string | null,
   targetPseudonym: string,
   muted: boolean,
@@ -81,12 +83,14 @@ export async function handleServerMuteMember(
     addToast(muted ? "Member server-muted" : "Member un-muted", "success");
   } catch (e) {
     console.error("Failed to server-mute member:", e);
-    addToast("Failed to update server-mute", "error");
+    // The Host's refusal in its words (not in a voice channel, rank).
+    addToast(`Server mute not changed: ${errorMessage(e)}`, "error");
   }
 }
 
 export async function handleServerDeafenMember(
   communityId: string,
+  /** The member's voice channel, or null when none is known: the Host refuses that in its words. */
   channelId: string | null,
   targetPseudonym: string,
   deafened: boolean,
@@ -101,7 +105,7 @@ export async function handleServerDeafenMember(
     addToast(deafened ? "Member server-deafened" : "Member un-deafened", "success");
   } catch (e) {
     console.error("Failed to server-deafen member:", e);
-    addToast("Failed to update server-deafen", "error");
+    addToast(`Server deafen not changed: ${errorMessage(e)}`, "error");
   }
 }
 

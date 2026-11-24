@@ -236,7 +236,7 @@ async function submitModal(b: Browser, user: User, input: string): Promise<void>
  * (the Host places one in every tree, plan SK2-N4: `tab:communities` or
  * `knob:communities`) shows its Communities view; else the app's tab.
  */
-async function communitiesTab(b: Browser): Promise<void> {
+export async function communitiesTab(b: Browser): Promise<void> {
   if (await underTree(b)) {
     await press(b, await shown(b, '[data-skin-role="tab:communities"], [data-skin-role="knob:communities"]'));
     await shown(b, '[data-skin-role="view:communities"]:not([hidden])');
@@ -319,17 +319,58 @@ export async function setCommunityName(b: Browser, user: User, name: string): Pr
  */
 export async function setLocationSharing(b: Browser, user: User, share: boolean): Promise<void> {
   await communitySettings(b, "Privacy");
-  const select = ".modal-container .settings-section select.form-select";
+  // The location choice's own field: Privacy holds three selects (location,
+  // activity, last seen), and an ambiguous selector fails WebdriverIO's
+  // strict mode.
+  const select = '//div[contains(@class,"modal-container")]//div[contains(@class,"form-field")][.//label[contains(.,"Share which channel")]]//select';
   const value = share ? "members" : "none";
   await (await shown(b, select)).waitForEnabled({ timeout: NET_WAIT_MS, timeoutMsg: "the location choice stayed disabled" });
-  await setValue(b, select, value);
-  await resolveIntent(b, { passphrase: user.passphrase, appearMs: 1500 });
+  if ((await (await b.$(select)).getValue()) !== value) {
+    await setValue(b, select, value);
+    // A presence-sharing change is reviewed (IntentKind::SetPresencePolicy,
+    // trust-changing): wait for its review and require it committed; the
+    // select stays disabled until the Host answers (PrivacyTab saving), and
+    // a 1.5 s wait left the review unanswered (Linux, c18558272).
+    expect(await resolveIntent(b, { passphrase: user.passphrase, appearMs: NET_WAIT_MS })).toBe("committed");
+  }
   await waitUntil(
     async () => (await (await b.$(select)).getValue()) === value && (await (await b.$(select)).isEnabled()),
     NET_WAIT_MS,
     `location sharing never read back ${value}`,
   );
   await closeModal(b);
+}
+
+/** A status as one's own status line names it (StatusPicker's labels), as a
+ *  value; "Appear Offline" is what others see as offline. */
+const OWN_STATUS: Record<string, string> = { Online: "online", Away: "away", Busy: "busy", "Appear Offline": "offline" };
+
+/** A status dot's accessible name (StatusDot.tsx "Status: <label>"), as the same value. */
+export const DOT_STATUS: Record<string, string> = {
+  "Status: Online": "online",
+  "Status: Away": "away",
+  "Status: Do not disturb": "busy",
+  "Status: In game": "ingame",
+  "Status: Offline": "offline",
+  "Status: Appear offline": "offline",
+};
+
+/**
+ * `b`'s own effective status as its buddy list's status line shows it (the
+ * app's StatusPicker, or a skin tree's status field), as a status value;
+ * back on the window `b` was on.
+ */
+export async function ownStatusValue(b: Browser): Promise<string> {
+  const here = await b.getWindowHandle();
+  await switchTo(b, BUDDY);
+  const label = (await b.execute(
+    () =>
+      document.querySelector(".status-picker .buddy-name")?.textContent?.trim() ||
+      document.querySelector<HTMLInputElement>(".skin-status-edit")?.placeholder?.trim() ||
+      "",
+  )) as string;
+  await b.switchToWindow(here);
+  return OWN_STATUS[label] ?? `unread "${label}"`;
 }
 
 /** In the open community window, select channel `name`. */
@@ -374,7 +415,7 @@ export async function openGroup(b: Browser, name: string): Promise<void> {
 }
 
 /** In the open community window, open Community Settings on `tab`. */
-async function communitySettings(b: Browser, tab: string): Promise<void> {
+export async function communitySettings(b: Browser, tab: string): Promise<void> {
   if (!(await present(b, ".modal-container .form-tabs"))) {
     await (await shown(b, '[title="Community Settings"]')).click();
     await shown(b, ".modal-container .form-tabs");

@@ -1255,6 +1255,15 @@
       }
     }
   },
+  "membership.joinWithdrawn": {
+    "membership": {
+      "joinWithdrawn": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "reason": "INVITE_USED_UP",
+        "reasonText": "The inviter refused this join. This invite has already been used. Ask for a new invite."
+      }
+    }
+  },
   "membership.joined": {
     "membership": {
       "joined": {

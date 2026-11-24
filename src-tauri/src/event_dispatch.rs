@@ -24,8 +24,8 @@ use rekindle_types::dto::infoview::InfoviewEvent;
 use std::sync::Arc;
 
 use rekindle_types::subscription_events::{
-    CallEvent, ChannelMessageEvent, EventScope, FriendEvent, NetworkEvent, SubscriptionEvent,
-    SystemEvent, TypingContext, TypingEvent,
+    CallEvent, ChannelMessageEvent, EventScope, FriendEvent, MembershipEvent, NetworkEvent,
+    SubscriptionEvent, SystemEvent, TypingContext, TypingEvent,
 };
 use serde::Serialize;
 use tauri::{AppHandle, Manager};
@@ -207,6 +207,13 @@ fn subscription_audience(event: &SubscriptionEvent) -> Audience {
         // keeps it in its network store; the login window has nothing to
         // gate.
         SubscriptionEvent::Network(NetworkEvent::OwnRecordsChanged { .. }) => Audience::post_auth(),
+        // A join withdrawn after it returned (plan E3.1/JN1) drops the
+        // community from every window that may show it: the buddy list's
+        // communities, its own community window, and any other post-login
+        // window holding it in its store.
+        SubscriptionEvent::Membership(MembershipEvent::JoinWithdrawn { .. }) => {
+            Audience::post_auth()
+        }
         // A co-creation's end closes the creation's status view, in the
         // Create Community dialog of the buddy list or a community window
         // (plan E3.2 S7s.3g).

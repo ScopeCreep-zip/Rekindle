@@ -31,6 +31,15 @@ const CommunityWindow: Component = () => {
           </div>
         )}
       </Show>
+      {/* Plan JW: a join the inviter refused after it returned, in the
+          Host's words; the window stays, with its normal close control. */}
+      <Show when={vm.joinWithdrawn()}>
+        {(text) => (
+          <div class="removal-banner" role="alert">
+            <span class="removal-banner-text">{text()}</span>
+          </div>
+        )}
+      </Show>
       <div class="community-layout">
         <CommunitySidebar vm={vm} />
         <CommunityMainPane vm={vm} />

@@ -16,6 +16,7 @@ use rekindle_governance_runtime::{BootstrapJoiner, GovernanceRuntimeError};
 use rekindle_types::governance::OpRef;
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::join_refusal::JoinRefusal;
+use rekindle_types::subscription_events::{MembershipEvent, SubscriptionEvent};
 
 use super::HostGovernance;
 
@@ -107,7 +108,17 @@ impl HostGovernance {
         tracing::warn!(community, error = %refused, "join refused by the inviter, withdrawn");
         if let Err(error) = self.leave(&membership).await {
             tracing::warn!(community, %error, "refused join not withdrawn");
+            return;
         }
+        // Every frontend hears why the community it held is gone (ADR 0019's
+        // outcome rule): the leave alone publishes nothing.
+        self.ctx.publish_event(SubscriptionEvent::Membership(
+            MembershipEvent::JoinWithdrawn {
+                community: community.to_owned(),
+                reason: *refused,
+                reason_text: refused.withdrawn_text(),
+            },
+        ));
     }
 
     /// The inviter's pseudonym: the member whose record is `inviter_record`

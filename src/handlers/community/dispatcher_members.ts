@@ -4,7 +4,7 @@ import type {
   CommunitySubscriptionEvent,
   GovernanceEvent,
 } from "../../ipc/channels/community_subscription_events";
-import { applyJoinProgress, type JoinStageStatus } from "../../stores/join.store";
+import { applyJoinProgress, resetJoinProgress, type JoinStageStatus } from "../../stores/join.store";
 import { applySuccessorEvent } from "../../stores/successor.store";
 import { transformCommunityDetail } from "../../utils/transformers";
 import { handleResolveCommunityImageDataUrls } from "../../actions/community/lifecycle";
@@ -33,8 +33,12 @@ export function reduceMembership(event: CommunityEvent): boolean {
 
 /// Membership events on the daemon vocabulary. Same store effects as
 /// the `{ type, data }` cases they replaced; only the shape changed.
+/// `notices`: this window says membership notices (a toast for our own
+/// kick, ban or withdrawn join). Only the buddy list does (lead ruling,
+/// plan JW): every window takes the state, one says it.
 export function reduceSubscriptionMembership(
   event: CommunitySubscriptionEvent,
+  notices = false,
 ): void {
   if ("system" in event) {
     return;
@@ -49,10 +53,10 @@ export function reduceSubscriptionMembership(
   if (community !== null) {
     // Each of these writes under the community's row: one the window does
     // not hold yet is re-read first (walk 13: a write under a missing row threw).
-    withCommunity(community, () => applyMembershipRow(m));
+    withCommunity(community, () => applyMembershipRow(m, notices));
     return;
   }
-  applyMembershipNotice(m);
+  applyMembershipNotice(m, notices);
 }
 
 type MembershipEvent = Extract<CommunitySubscriptionEvent, { membership: unknown }>["membership"];
@@ -74,7 +78,7 @@ function membershipRowCommunity(m: MembershipEvent): string | null {
 }
 
 /** A membership event against a row the window holds. */
-function applyMembershipRow(m: MembershipEvent): void {
+function applyMembershipRow(m: MembershipEvent, notices: boolean): void {
   // A new member: the Host decides its group, so the list is re-read.
   if ("joined" in m) {
     refreshCommunityMembers(m.joined.community);
@@ -118,7 +122,7 @@ function applyMembershipRow(m: MembershipEvent): void {
       // the community stays as read-only history.
       const removed = { banned, by: r.removedBy, byName: r.removedByName, reason: r.reason };
       setCommunityState("communities", r.community, "removed", removed);
-      addToast(removalText(c.name, removed), "error");
+      if (notices) addToast(removalText(c.name, removed), "error");
       return;
     }
     setCommunityState("communities", r.community, "members", (prev) =>
@@ -196,7 +200,31 @@ function applyMembershipRow(m: MembershipEvent): void {
 }
 
 /** Membership events that write no community row: join progress. */
-function applyMembershipNotice(m: MembershipEvent): void {
+function applyMembershipNotice(m: MembershipEvent, notices: boolean): void {
+  // A join the inviter refused after it returned (plan JW, lead ruling):
+  // the buddy list drops the community, ends the stepper and says the
+  // Host's words verbatim; a community window holding it keeps it and
+  // shows the withdrawal in place (its banner, a closed composer), so the
+  // user sees why rather than a window going blank.
+  if ("joinWithdrawn" in m) {
+    const { community, reasonText } = m.joinWithdrawn;
+    resetJoinProgress();
+    if (notices) {
+      setCommunityState("communities", (prev) => {
+        const next = { ...prev };
+        delete next[community];
+        return next;
+      });
+      if (communityState.activeCommunity === community) {
+        setCommunityState("activeCommunity", null);
+        setCommunityState("activeChannel", null);
+      }
+      addToast(reasonText, "error");
+    } else if (communityState.communities[community]) {
+      setCommunityState("communities", community, "withdrawn", { reasonText });
+    }
+    return;
+  }
   if ("joinProgress" in m) {
     // Pure display: mirror the phase into the join store so the
     // stepper re-renders. No timeout logic — the backend gate owns
@@ -233,11 +261,21 @@ function governanceRowCommunity(g: GovernanceEvent): string | null {
   if ("channelPermissionsChanged" in g) return g.channelPermissionsChanged.community;
   if ("effectivePermissionsChanged" in g) return g.effectivePermissionsChanged.community;
   if ("governanceRebuilt" in g) return g.governanceRebuilt.community;
+  if ("bansChanged" in g) return g.bansChanged.community;
   return null;
 }
 
 /** One governance event; a row-writing one only against a row the window holds. */
 function applyGovernance(g: GovernanceEvent): void {
+  // The ban list changed (plan E3.2 S9): a shown ban list reads it again
+  // from the Host (`bansRevision`), which holds the list.
+  if ("bansChanged" in g) {
+    const { community } = g.bansChanged;
+    if (communityState.communities[community]) {
+      setCommunityState("communities", community, "bansRevision", (n) => (n ?? 0) + 1);
+    }
+    return;
+  }
   if ("rolesChanged" in g) {
     const { community, roles } = g.rolesChanged;
     if (communityState.communities[community]) {
@@ -408,8 +446,10 @@ function applyGovernance(g: GovernanceEvent): void {
     // Our own permissions moved (plan E3.2 S9): re-read the backend's
     // flags. Another member's change shows through its roles and the
     // member list, which re-render on their own events.
-    const { community, member } = g.effectivePermissionsChanged;
+    const { community, member, denied } = g.effectivePermissionsChanged;
     if (communityState.communities[community]?.myPseudonymKey !== member) return;
+    // What we may no longer do, and why (never-hide), straight from the event.
+    if (denied) setCommunityState("communities", community, "denied", denied);
     // Our rank may have moved, so the per-member moderation verdicts too.
     refreshCommunityMembers(community);
     commands
@@ -418,6 +458,7 @@ function applyGovernance(g: GovernanceEvent): void {
         const detail = details.find((d) => d.id === community);
         if (!detail) return;
         setCommunityState("communities", community, "myPermissions", detail.myPermissions);
+        setCommunityState("communities", community, "denied", detail.denied ?? {});
         setCommunityState(
           "communities",
           community,
@@ -454,6 +495,7 @@ function applyGovernance(g: GovernanceEvent): void {
           setCommunityState("communities", community, "categories", detail.categories ?? []);
           setCommunityState("communities", community, "myRoleIds", detail.myRoleIds);
           setCommunityState("communities", community, "myPermissions", detail.myPermissions);
+        setCommunityState("communities", community, "denied", detail.denied ?? {});
           setCommunityState(
             "communities",
             community,
