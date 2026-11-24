@@ -495,6 +495,7 @@ fn manifest(
         regions.insert(c.region.to_owned(), c.spec());
     }
     SkinManifest {
+        text: BTreeMap::new(),
         format: format!("{SKIN_FORMAT_PREFIX}{SKIN_FORMAT_MAJOR}"),
         id: id.to_owned(),
         name: read

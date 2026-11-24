@@ -36,12 +36,15 @@ pub const fn frame_of(kind: WindowKind) -> Option<SkinWindow> {
     }
 }
 
-/// The window kind wearing `frame` (the inverse of [`frame_of`]).
+/// The window kind wearing `frame` (the inverse of [`frame_of`]; the
+/// Community frame's kind is the Community window, which [`frame_of`]
+/// does not yet dress: no pack serves that layout before plan SK17-6).
 #[must_use]
 pub const fn kind_of(frame: SkinWindow) -> WindowKind {
     match frame {
         SkinWindow::Main => WindowKind::BuddyList,
         SkinWindow::Chat => WindowKind::Chat,
+        SkinWindow::Community => WindowKind::Community,
     }
 }
 

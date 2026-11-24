@@ -37,6 +37,7 @@ pub const fn window_attr(window: SkinWindow) -> &'static str {
     match window {
         SkinWindow::Main => "main",
         SkinWindow::Chat => "chat",
+        SkinWindow::Community => "community",
     }
 }
 

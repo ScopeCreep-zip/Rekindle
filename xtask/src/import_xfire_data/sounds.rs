@@ -104,6 +104,7 @@ fn elements(
 
 fn manifest(id: &str, name: &str, hash: String, cues: &[(SoundCue, String)]) -> SkinManifest {
     SkinManifest {
+        text: BTreeMap::new(),
         format: format!("{SKIN_FORMAT_PREFIX}{SKIN_FORMAT_MAJOR}"),
         id: id.to_owned(),
         name: name.to_owned(),

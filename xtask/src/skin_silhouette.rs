@@ -78,8 +78,9 @@ fn frame(window: &str) -> Result<SkinWindow> {
     match window {
         "main" => Ok(SkinWindow::Main),
         "chat" => Ok(SkinWindow::Chat),
+        "community" => Ok(SkinWindow::Community),
         other => Err(anyhow!(
-            "window {other:?} is not a skin frame (main or chat)"
+            "window {other:?} is not a skin frame (main, chat or community)"
         )),
     }
 }

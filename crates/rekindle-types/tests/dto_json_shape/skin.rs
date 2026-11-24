@@ -6,8 +6,10 @@ use rekindle_types::dto::skin_action::{
     NodeTrigger, OverlayPart, PackUrl, PopupRef, SkinAction, SkinEvent, SkinSettingsTab, SoundRef,
     TileRef,
 };
+use rekindle_types::dto::skin_layout::{LayoutSource, TextRole};
 use rekindle_types::dto::skin_library::{SkinApplyFailure, SkinEntry};
 use rekindle_types::dto::skin_run::SkinSelection;
+use rekindle_types::dto::skin_title::TitleText;
 use rekindle_types::dto::skin_tree::{NodeRole, NodeSpan, SkinNode, SkinTree};
 use rekindle_types::dto::skin_tree_role::Edge;
 use rekindle_types::presence::SessionStatus;
@@ -71,6 +73,43 @@ pub(super) fn samples(add: &mut impl FnMut(&str, Value)) {
             conforming: false,
         }),
     );
+    for window in [SkinWindow::Main, SkinWindow::Chat, SkinWindow::Community] {
+        add(
+            &format!("skin.window.{}", to(window).as_str().unwrap_or_default()),
+            to(window),
+        );
+    }
+    for source in [LayoutSource::Room, LayoutSource::Chat, LayoutSource::Main] {
+        add(
+            &format!(
+                "skin.layout_source.{}",
+                to(source).as_str().unwrap_or_default()
+            ),
+            to(source),
+        );
+    }
+    let mut text = std::collections::BTreeMap::new();
+    text.insert(
+        TextRole::ListHeader,
+        TitleText {
+            font: "Arial".into(),
+            size: 11,
+            bold: true,
+            colour: Some("#C8D7E6".into()),
+            inset: [0, 0],
+        },
+    );
+    text.insert(
+        TextRole::Menu,
+        TitleText {
+            font: "Tahoma".into(),
+            size: 11,
+            bold: false,
+            colour: None,
+            inset: [0, 0],
+        },
+    );
+    add("skin.manifest.text", to(text));
     actions(add);
 }
 
