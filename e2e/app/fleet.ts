@@ -435,14 +435,19 @@ export async function peerMemberCount(peer: Peer, anchor: string): Promise<numbe
 }
 
 /**
- * `args` as `peer`, answering its review when it asks one (D3.4): the CLI
- * names the subject to confirm (`--confirm=<subject>`), as a CLI user reads
+ * `args` as `peer`, answering its review when it asks one (D3.4) with the
+ * flag the CLI itself names ("…there is no terminal to ask on: pass <flag>",
+ * rekindle-cli helpers.rs): `--confirm=<subject>` for a trust-changing or
+ * destructive action, `--yes` for a consequential one, as a CLI user reads
  * it from their own review. A command that asks none runs as is.
  */
 export async function peerReviewed(peer: Peer, args: string[]): Promise<unknown> {
   const refused = (await peer.review(args)) as { error?: { message?: string } } | null;
-  const subject = /--confirm=(.+)$/.exec(refused?.error?.message ?? "")?.[1]?.trim();
-  return peer.cli(subject ? [`--confirm=${subject}`, ...args] : args);
+  const message = refused?.error?.message ?? "";
+  const subject = /--confirm=(.+)$/.exec(message)?.[1]?.trim();
+  if (subject) return peer.cli([`--confirm=${subject}`, ...args]);
+  if (/pass --yes\b/.test(message)) return peer.cli(["--yes", ...args]);
+  return peer.cli(args);
 }
 
 /** `peer` creates role `name` with permission bits `permissions` in community `anchor`; its role id. */
