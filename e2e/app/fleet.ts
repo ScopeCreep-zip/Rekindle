@@ -198,12 +198,16 @@ async function startPeer(displayName: string): Promise<Peer> {
   const attached = async (): Promise<void> => {
     await waitUntil(
       async () => {
-        const status = (await cli(["status"]).catch(() => null)) as { attachment?: string } | null;
-        // veilid-core AttachmentState (veilid_state.rs): good enough to use the network.
-        return ["AttachedGood", "AttachedStrong", "FullyAttached", "OverAttached"].includes(status?.attachment ?? "");
+        const status = (await cli(["status"]).catch(() => null)) as { attachment?: string; public_internet_ready?: boolean } | null;
+        // Attached is not enough to write: the Host refuses a reviewed write
+        // ("Not connected to the network yet") until the public internet is
+        // ready (create_leave.rs NOT_CONNECTED, node.is_ready()), which the
+        // daemon's status reports (StatusSnapshot.public_internet_ready).
+        const attachedEnough = ["AttachedGood", "AttachedStrong", "FullyAttached", "OverAttached"].includes(status?.attachment ?? "");
+        return attachedEnough && status?.public_internet_ready === true;
       },
       NET_WAIT_MS,
-      `peer ${displayName} never attached`,
+      `peer ${displayName} never attached with the public internet ready`,
     );
   };
   const peer: Peer = {
@@ -406,7 +410,8 @@ export async function peerCreateCommunity(peer: Peer, name: string): Promise<str
 
 /** A `uses`-use invite link to community `anchor` from `peer`. */
 export async function peerInvite(peer: Peer, anchor: string, uses = 1): Promise<string> {
-  const made = (await peer.cli(["community", "invite", "create", "--community", anchor, "--max-uses", String(uses)])) as { url?: string } | null;
+  // Reviewed (ADR 0019): confirmed by the subject its review names.
+  const made = (await peerReviewed(peer, ["community", "invite", "create", "--community", anchor, "--max-uses", String(uses)])) as { url?: string } | null;
   if (!made?.url) throw new Error(`${peer.displayName}: invite create answered no url (${JSON.stringify(made).slice(0, 200)})`);
   return made.url;
 }
