@@ -39,6 +39,8 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
     // user's (plan E7.13; `webdriver.rs`).
     #[cfg(all(feature = "webdriver-test", debug_assertions))]
     let root = crate::webdriver::data_root()?;
+    #[cfg(all(feature = "webdriver-test", debug_assertions))]
+    crate::webdriver::load_damage_next_post()?;
     #[cfg(not(all(feature = "webdriver-test", debug_assertions)))]
     let root = rekindle_db::paths::DataRoot::resolve()?;
     let claimed = match rekindle_node::host::claim(root.clone()) {
@@ -244,6 +246,10 @@ async fn start_host(
     })
     .await
     .map_err(|e| format!("{e:#}"))?;
+    #[cfg(all(feature = "webdriver-test", debug_assertions))]
+    if crate::webdriver::damage_next_post() {
+        host.arm_damage_next_post();
+    }
     if let Some(app) = state.app_handle.read().clone() {
         crate::event_dispatch::spawn_host_stream(app, state, Arc::clone(&host));
     }

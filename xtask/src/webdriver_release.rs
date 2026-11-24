@@ -16,7 +16,9 @@
 //! - in the graph `cargo metadata` resolves, nothing depends on it and no
 //!   release binary's build graph reaches it;
 //! - no release binary already built under `target/release` holds
-//!   `/wdio/eval` (this gate's own binary aside: the route is its needle).
+//!   `/wdio/eval`, or `REKINDLE_WDIO_DAMAGE_NEXT_POST` (the suite's
+//!   damaged-post switch, `src-tauri/src/webdriver.rs`), this gate's own
+//!   binary aside: they are its needles.
 
 use std::path::Path;
 
@@ -27,6 +29,11 @@ const CRATE_DIR: &str = "crates/vendor/tauri-plugin-wdio-webdriver";
 const HOST: &str = "rekindle-desktop";
 const FEATURE: &str = "webdriver-test";
 const EVAL_ROUTE: &[u8] = b"/wdio/eval";
+/// The real-app suite's damaged-post switch (`webdriver.rs`): a release
+/// binary naming it would damage a received post on request.
+const DAMAGE_NEXT_POST_VAR: &[u8] = b"REKINDLE_WDIO_DAMAGE_NEXT_POST";
+/// What no release binary may hold.
+const NEEDLES: [&[u8]; 2] = [EVAL_ROUTE, DAMAGE_NEXT_POST_VAR];
 
 /// Whether `lib` has `#[cfg(not(debug_assertions))] compile_error!`.
 fn has_release_guard(lib: &str) -> bool {
@@ -139,10 +146,10 @@ fn graph_problems(meta: &crate::cargo_meta::Metadata) -> Vec<String> {
     problems
 }
 
-/// Release binaries under `target/release` that hold the eval route.
+/// Release binaries under `target/release` that hold a [`NEEDLES`] entry.
 ///
-/// This gate's own binary is not scanned: it holds [`EVAL_ROUTE`] as the
-/// needle it searches for, so a release build of it (`cargo run --release
+/// This gate's own binary is not scanned: it holds the needles it searches
+/// for, so a release build of it (`cargo run --release
 /// -p xtask`, as a skin re-import does) would always match. It is a
 /// development tool no bundle ships.
 fn release_binary_problems(root: &Path, meta: &crate::cargo_meta::Metadata) -> Vec<String> {
@@ -151,13 +158,19 @@ fn release_binary_problems(root: &Path, meta: &crate::cargo_meta::Metadata) -> V
         .filter(|m| m.name != env!("CARGO_PKG_NAME"))
         .flat_map(|m| m.targets.iter())
         .filter(|t| t.kind.iter().any(|k| k == "bin"))
-        .filter_map(|t| {
-            let bin = release.join(&t.name);
-            let bytes = std::fs::read(&bin).ok()?;
-            bytes
-                .windows(EVAL_ROUTE.len())
-                .any(|w| w == EVAL_ROUTE)
-                .then(|| format!("target/release/{} holds /wdio/eval", t.name))
+        .flat_map(|t| {
+            let bytes = std::fs::read(release.join(&t.name)).unwrap_or_default();
+            NEEDLES
+                .iter()
+                .filter(|needle| bytes.windows(needle.len()).any(|w| w == **needle))
+                .map(|needle| {
+                    format!(
+                        "target/release/{} holds {}",
+                        t.name,
+                        String::from_utf8_lossy(needle)
+                    )
+                })
+                .collect::<Vec<_>>()
         })
         .collect()
 }

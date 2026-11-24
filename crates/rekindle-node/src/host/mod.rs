@@ -96,6 +96,8 @@ mod transport_config;
 pub mod undo;
 pub(crate) mod unlock;
 pub(crate) mod unlocked;
+#[cfg(all(feature = "webdriver-test", debug_assertions))]
+mod webdriver;
 
 #[cfg(test)]
 pub(crate) mod fixture;

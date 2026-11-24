@@ -150,13 +150,17 @@ impl HostChannel {
             tracing::debug!(community, channel = %post.channel_id, ?reason, "post dropped");
             return Ok(Ingested::Dropped(reason));
         }
-        let Some(body) = ingest::open_body(
-            self,
-            community,
-            &post.channel_id,
-            post.body_at(),
-            &post.message,
-        ) else {
+        // The real-app suite's one-shot damages this post's ciphertext, so
+        // the AEAD below fails for real (`host::webdriver`).
+        #[cfg(all(feature = "webdriver-test", debug_assertions))]
+        let damaged = self.ctx().damaged_if_armed(&post);
+        #[cfg(all(feature = "webdriver-test", debug_assertions))]
+        let message = damaged.as_ref().unwrap_or(&post.message);
+        #[cfg(not(all(feature = "webdriver-test", debug_assertions)))]
+        let message = &post.message;
+        let Some(body) =
+            ingest::open_body(self, community, &post.channel_id, post.body_at(), message)
+        else {
             return Ok(Ingested::Undecryptable);
         };
         let verdict = (self.judge_with(&inputs, &owner, &db, &post, &body, backfill)).await?;
@@ -486,7 +490,7 @@ impl HostChannel {
     ///
     /// # Errors
     /// No identity is unlocked, or the store failed.
-    pub(super) async fn store_undecryptable(
+    pub(crate) async fn store_undecryptable(
         &self,
         post: ReceivedPost,
     ) -> Result<bool, ChannelError> {

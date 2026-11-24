@@ -258,6 +258,10 @@ pub struct DaemonContext {
     /// A panicked unlock task's name, for the shell's teardown worker
     /// (`host::unlock::run_panic_teardowns`).
     pub unlock_panics: tokio::sync::mpsc::UnboundedSender<String>,
+    /// The real-app suite's one-shot (`host::webdriver`): the next received
+    /// channel post's ciphertext is damaged before it is opened.
+    #[cfg(all(feature = "webdriver-test", debug_assertions))]
+    pub(crate) damage_next_post: std::sync::atomic::AtomicBool,
     /// The receive gate's friend authority over the unlocked identity's
     /// database (plan E2.1); `None` while locked.
     pub friend_store: RwLock<Option<Arc<rekindle_db::SqliteFriendStore>>>,

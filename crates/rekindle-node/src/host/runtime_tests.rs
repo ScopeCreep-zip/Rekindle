@@ -84,6 +84,9 @@ mod skin_serve;
 #[cfg(unix)]
 #[path = "skin_trial_tests.rs"]
 mod skin_trial;
+#[cfg(all(feature = "webdriver-test", debug_assertions))]
+#[path = "webdriver_tests.rs"]
+mod webdriver_tests;
 #[path = "withdrawal_tests.rs"]
 mod withdrawal;
 
