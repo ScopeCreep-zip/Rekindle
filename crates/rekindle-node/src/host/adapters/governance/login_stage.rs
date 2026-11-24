@@ -75,6 +75,12 @@ impl HostGovernance {
 /// republish of our active records; nothing further starts once `stop`
 /// fires.
 async fn run(governance: &HostGovernance, stop: &CancellationToken) {
+    // A fresh device first catches up the communities its exported
+    // identity vault names and it holds no row of (plan E3.2 S7d-keys K5).
+    governance.restore_vault_communities().await;
+    if stop.is_cancelled() {
+        return;
+    }
     let mut communities: Vec<String> = governance
         .ctx
         .communities

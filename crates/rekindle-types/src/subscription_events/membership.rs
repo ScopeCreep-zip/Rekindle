@@ -98,6 +98,15 @@ pub enum MembershipEvent {
         community: String,
         pseudonym: String,
     },
+    /// We no longer hold `community`: our leave, our withdrawn join, or
+    /// our Forget of a community we were removed from dropped its store
+    /// entry and stored membership (plan E3.2). Not a governance change:
+    /// published by the Host on the one path that drops the entry
+    /// (`create_leave.rs` `drop_community_entry`), device-scoped, so it
+    /// reaches every frontend holding the community list after the
+    /// community's own subscription state is torn down. A frontend drops
+    /// the community; one it does not list is a no-op.
+    Forgotten { community: String },
     /// A member was removed by an operator.
     /// Triggered by: the desktop's gossip `Kick` notice
     /// (`control_moderation.rs`), until the merged `MemberRemoved` is the
@@ -214,6 +223,28 @@ mod tests {
         };
         let json = serde_json::to_value(&event).expect("serializes");
         assert!(json["joined"]["displayName"].is_null(), "{json}");
+    }
+
+    /// Our forget is device-scoped and names no community scope, so a
+    /// subscriber filtered to another community still receives it.
+    #[test]
+    fn a_forget_reaches_every_community_filter() {
+        use crate::subscription_events::{EventScope, SubscriptionEvent, SubscriptionFilter};
+        let event = SubscriptionEvent::Membership(MembershipEvent::Forgotten {
+            community: "c".into(),
+        });
+        assert_eq!(event.scope(), EventScope::Device);
+        assert_eq!(event.community(), None);
+        let other = SubscriptionFilter {
+            categories: Some(vec![crate::subscription_events::EventCategory::Membership]),
+            community_scope: Some("other".into()),
+        };
+        assert!(
+            other.matches(&event),
+            "a filter on another community passes it"
+        );
+        let json = serde_json::to_value(&event).expect("serializes");
+        assert_eq!(json["membership"]["forgotten"]["community"], "c", "{json}");
     }
 
     /// The removal's reason crosses the wire under `reason` and back.

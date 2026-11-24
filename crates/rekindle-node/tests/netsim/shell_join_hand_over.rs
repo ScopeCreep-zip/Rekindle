@@ -12,6 +12,7 @@ use rekindle_node::host::adapters::governance::projection::GovernanceProjected;
 use rekindle_node::host::{EndReason, OwnRecordKeys, ShellHooks, UnlockedView};
 
 use crate::harness::{start_with, Community, COMMUNITY_NAME};
+use crate::shell_node::SimMode;
 
 /// The communities whose records the Host handed to the shell, in order;
 /// every other hook answers as a shell that holds nothing.
@@ -70,8 +71,13 @@ impl ShellHooks for Shell {
 async fn a_shell_join_hands_the_records_to_the_shell() {
     let shell = Arc::new(Shell::default());
     let joiner_shell = Arc::clone(&shell) as Arc<dyn ShellHooks>;
-    let (sim, mut nodes) =
-        start_with(2, 977, &|i| (i == 1).then(|| Arc::clone(&joiner_shell))).await;
+    let (sim, mut nodes) = start_with(2, 977, &|i| {
+        (
+            SimMode::Daemon,
+            (i == 1).then(|| Arc::clone(&joiner_shell) as _),
+        )
+    })
+    .await;
     for (i, node) in nodes.iter_mut().enumerate() {
         node.unlock_new_identity(&format!("member{i}")).await;
     }

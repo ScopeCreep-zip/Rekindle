@@ -214,8 +214,13 @@ fn subscription_audience(event: &SubscriptionEvent) -> Audience {
         ) => Audience::kinds(&WindowKind::ALL),
         // A co-creation's end closes the creation's status view, in the
         // Create Community dialog of the buddy list or a community window
-        // (plan E3.2 S7s.3g).
-        SubscriptionEvent::Friend(FriendEvent::CoCreationFinished { .. }) => communities(),
+        // (plan E3.2 S7s.3g). Our leave, withdrawn join or Forget (plan
+        // E3.2): every window holding the community list drops the
+        // community, though the community's scope is already torn down.
+        SubscriptionEvent::Friend(FriendEvent::CoCreationFinished { .. })
+        | SubscriptionEvent::Membership(
+            rekindle_types::subscription_events::MembershipEvent::Forgotten { .. },
+        ) => communities(),
         _ => match event.scope() {
             EventScope::Device => Audience::post_auth(),
             EventScope::Community(_) | EventScope::CommunityJoin(_) => communities(),
