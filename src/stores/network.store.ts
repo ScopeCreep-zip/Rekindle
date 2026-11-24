@@ -177,7 +177,7 @@ let unlisteners: UnlistenFn[] = [];
  * older than the last change: the snapshot then leaves that kind alone
  * rather than overwrite it with what may be older (plan VI1).
  */
-const applied = { attachment: 0, strength: 0, ownRecords: 0, routePaused: 0 };
+const applied = { attachment: 0, strength: 0, ownRecords: 0, routePaused: 0, ownRouteDown: 0 };
 
 /** The state when the stream went live; the push events follow it. */
 async function readNetworkStatus(): Promise<void> {
@@ -201,6 +201,9 @@ async function readNetworkStatus(): Promise<void> {
   if (applied.routePaused === before.routePaused) {
     setNetworkState({ routePaused: status.routePaused !== null, routePauseCause: status.routePaused });
   }
+  // A window opened while a route is down learns it here, not only from the
+  // next change (plan F9-A).
+  if (applied.ownRouteDown === before.ownRouteDown) setNetworkState("ownRouteDown", status.ownRouteDown);
 }
 
 function keep(subscription: Promise<UnlistenFn>): void {
@@ -243,7 +246,12 @@ function start(): void {
       setNetworkState({ routePaused: cause !== null, routePauseCause: cause });
     }),
   );
-  keep(subscribeOwnRouteDown((cls, down) => setNetworkState("ownRouteDown", cls, down)));
+  keep(
+    subscribeOwnRouteDown((cls, down) => {
+      applied.ownRouteDown += 1;
+      setNetworkState("ownRouteDown", cls, down);
+    }),
+  );
   // Deaths above their baseline: a notice with the Host's numbers, no reaction.
   keep(subscribeRouteDeaths((d) => addToast(routeDeathsText(d), "error")));
   void eventStreamLive().then(readNetworkStatus);

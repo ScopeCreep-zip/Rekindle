@@ -2,7 +2,7 @@
 // former monolithic commands.ts; re-exported by ../commands.ts so
 // existing `import { ... } from "../ipc/commands"` call sites work.
 
-import type { OwnRecordsPhase, RouteAvailability, RoutePauseCause } from "../channels/notification_events";
+import type { OwnRecordsPhase, OwnRouteClass, RouteAvailability, RoutePauseCause } from "../channels/notification_events";
 
 export type { IdentitySummary } from "./dto";
 
@@ -334,6 +334,8 @@ export interface NetworkStatus {
   ownRecordsError: string | null;
   /** Our inbound route is paused and why (plan RV1c), or null when it is not. */
   routePaused: RoutePauseCause | null;
+  /** Our own routes down while the Host retries (plan F9-A): since when (epoch ms) and why, per class, or null. */
+  ownRouteDown: Record<OwnRouteClass, { sinceMs: number; reason: string } | null>;
   profileDhtKey: string | null;
   friendListDhtKey: string | null;
 }
