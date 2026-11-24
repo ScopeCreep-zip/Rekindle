@@ -199,7 +199,7 @@ pub enum ChannelMessageEvent {
         /// The client id of the message it replies to, if any.
         reply_to_id: Option<String>,
         /// The stored row, as `DmHistory` answers it.
-        message: crate::dto::dm::DmMessage,
+        message: Box<crate::dto::dm::DmMessage>,
     },
 
     /// A direct message we sent changed delivery state, the one send-state

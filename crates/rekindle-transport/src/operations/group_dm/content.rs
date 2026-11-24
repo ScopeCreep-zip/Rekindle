@@ -21,7 +21,9 @@ use rekindle_types::subscription_events::{GroupDmEvent, SubscriptionEvent, Typin
 use super::{friend_error, parse_group_id, send_pairwise};
 use crate::operations::dm::outbox::{self as dm_outbox, Attempt, OutgoingDm};
 use crate::operations::dm::stream as dm_stream;
-use crate::operations::dm::{client_id_text, hint_for, mint_client_id, send_to_peer};
+use crate::operations::dm::{
+    client_id_text, hint_for, mint_client_id, parse_client_id, send_to_peer,
+};
 use crate::operations::friend::inbox::records;
 use crate::operations::friend::{state, FriendError, FriendHost};
 
@@ -85,8 +87,10 @@ pub(super) async fn held(host: &dyn FriendHost, id: &GroupId) -> Result<GroupSta
         .ok_or_else(|| FriendError::NotFound(format!("no group {}", hex::encode(id))))
 }
 
-/// Commit our message `body` to `group_id` (32 hex) with its local echo in
-/// one transaction; its client id once committed (`queued`, then the
+/// Commit our message `body` to `group_id` (32 hex), a reply to
+/// `reply_to` (the parent's client id) when given, with its local echo in
+/// one transaction. The parent's id rides inside the sealed `DmText`, under
+/// our sending key like the body; its client id once committed (`queued`, then the
 /// outbox's `GroupDmEvent::SendStatus`). The stored row is published once
 /// as `GroupDmEvent::MessageSent` (plan E6.11), so every window of the
 /// group shows it whatever it rendered before.
@@ -97,8 +101,10 @@ pub async fn send(
     host: &dyn FriendHost,
     group_id: &str,
     body: &str,
+    reply_to: Option<&str>,
 ) -> Result<String, FriendError> {
     held(host, &parse_group_id(group_id)?).await?;
+    let reply_to = reply_to.map(parse_client_id).transpose()?;
     let owner = state::owner(host)?;
     let client_id = mint_client_id(host);
     let message_id = client_id_text(&client_id);
@@ -112,7 +118,7 @@ pub async fn send(
     let payload = dm_outbox::payload(&DirectBody::DmText(DmText {
         client_id,
         body: body.to_string(),
-        reply_to: None,
+        reply_to,
         expire_seconds,
     }))?;
     let dm = OutgoingDm {
@@ -121,7 +127,7 @@ pub async fn send(
         sender: owner.clone(),
         body: body.to_string(),
         timestamp: host.clock().now_ms_i64(),
-        reply_to: None,
+        reply_to: reply_to.as_ref().map(client_id_text),
         expire_seconds,
     };
     host.outbox()?.enqueue_group(group_id, dm).await?;
@@ -158,7 +164,7 @@ async fn publish_sent(
     host.publish(SubscriptionEvent::GroupDm(GroupDmEvent::MessageSent {
         group_id: group_id.to_string(),
         reply_to_id: stored.reply_to,
-        message: super::view::dm_message(stored.row, owner),
+        message: Box::new(super::view::dm_message(stored.row, owner)),
     }));
     Ok(())
 }

@@ -83,7 +83,7 @@ pub enum GroupDmEvent {
         /// The client id of the message it replies to, if any.
         reply_to_id: Option<String>,
         /// The stored row, as the group's history answers it.
-        message: crate::dto::dm::DmMessage,
+        message: Box<crate::dto::dm::DmMessage>,
     },
     /// The group's creator renamed it. Triggered by: our rename, or the
     /// creator's `GroupDmRename` entry that opened (never a non-creator's).

@@ -253,6 +253,7 @@ fn notice_row(set_by: &str, seconds: u32, client_id: &str, timestamp: i64) -> Dm
         expire_seconds: seconds,
         expire_at: None,
         timer_notice_seconds: Some(seconds),
+        reply_to_id: None,
     }
 }
 
@@ -356,6 +357,7 @@ impl View for GroupDmListView {
                         expire_seconds: 0,
                         expire_at: None,
                         timer_notice_seconds: None,
+                        reply_to_id: None,
                     });
                 }
             }

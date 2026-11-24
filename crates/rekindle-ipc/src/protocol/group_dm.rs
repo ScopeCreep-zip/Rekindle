@@ -44,11 +44,16 @@ pub enum GroupDmRequest {
         group_id: String,
         members: Vec<String>,
     },
-    /// Send `body` to `group_id`; the answer is the message's client id
-    /// once its row and local echo are committed (`queued`, then
+    /// Send `body` to `group_id`, a reply to `reply_to` (the parent's
+    /// client id) when given; the answer is the message's client id once
+    /// its row and local echo are committed (`queued`, then
     /// `GroupDmEvent::SendStatus`).
     #[serde(rename = "GroupDmSend")]
-    Send { group_id: String, body: String },
+    Send {
+        group_id: String,
+        body: String,
+        reply_to: Option<String>,
+    },
     /// The draft to `group_id` changed: `typing` is whether it holds text.
     /// The Host decides what goes out, as for `DmTyping`.
     #[serde(rename = "GroupDmTyping")]
@@ -144,8 +149,14 @@ impl std::fmt::Debug for GroupDmRequest {
                 d.field("group_id", group_id)
                     .field("name_len", &name.chars().count());
             }
-            Self::Send { group_id, body } => {
-                d.field("group_id", group_id).field("body_len", &body.len());
+            Self::Send {
+                group_id,
+                body,
+                reply_to,
+            } => {
+                d.field("group_id", group_id)
+                    .field("body_len", &body.len())
+                    .field("reply_to", reply_to);
             }
             Self::Typing { group_id, typing } => {
                 d.field("group_id", group_id).field("typing", typing);

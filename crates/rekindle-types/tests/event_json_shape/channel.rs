@@ -148,7 +148,7 @@ pub fn samples() -> Vec<Sample> {
             ChannelMessageEvent::DirectMessageSent {
                 conversation_id: pk('b'),
                 reply_to_id: Some(text("01900000-0000-7000-8000-000000000001")),
-                message: rekindle_types::dto::dm::DmMessage {
+                message: Box::new(rekindle_types::dto::dm::DmMessage {
                     id: 42,
                     message_id: Some(text("01900000-0000-7000-8000-000000000002")),
                     sender_id: pk('a'),
@@ -160,7 +160,8 @@ pub fn samples() -> Vec<Sample> {
                     expire_seconds: 300,
                     expire_at: Some(1_700_000_300_000),
                     timer_notice_seconds: None,
-                },
+                    reply_to_id: None,
+                }),
             },
         ),
         ev(

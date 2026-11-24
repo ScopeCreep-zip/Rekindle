@@ -50,6 +50,8 @@ mod group_content_tests;
 mod group_dm_tests;
 #[cfg(test)]
 mod group_lobby_tests;
+#[cfg(test)]
+mod group_reply_tests;
 pub mod hardening;
 #[cfg(test)]
 mod history_order_tests;
