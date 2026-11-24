@@ -307,6 +307,27 @@ export async function setCommunityName(b: Browser, user: User, name: string): Pr
   await closeModal(b);
 }
 
+/**
+ * In the open community window, `user` sets whether the community sees the
+ * channel they're in (Community Settings, Privacy: "Share which channel
+ * you're in"; default-deny, PresenceSharingPolicy share_location), and the
+ * choice reads back.
+ */
+export async function setLocationSharing(b: Browser, user: User, share: boolean): Promise<void> {
+  await communitySettings(b, "Privacy");
+  const select = ".modal-container .settings-section select.form-select";
+  const value = share ? "members" : "none";
+  await (await shown(b, select)).waitForEnabled({ timeout: NET_WAIT_MS, timeoutMsg: "the location choice stayed disabled" });
+  await setValue(b, select, value);
+  await resolveIntent(b, { passphrase: user.passphrase, appearMs: 1500 });
+  await waitUntil(
+    async () => (await (await b.$(select)).getValue()) === value && (await (await b.$(select)).isEnabled()),
+    NET_WAIT_MS,
+    `location sharing never read back ${value}`,
+  );
+  await closeModal(b);
+}
+
 /** In the open community window, select channel `name`. */
 export async function selectChannel(b: Browser, name: string): Promise<void> {
   await (await byText(b, ".channel-item", name.slice(0, 24), NET_WAIT_MS)).click();

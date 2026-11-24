@@ -23,6 +23,7 @@ import {
   openCommunity,
   postMessage,
   selectChannel,
+  setLocationSharing,
   setCommunityName,
   watchConsole,
 } from "../../journeys.ts";
@@ -57,40 +58,39 @@ async function membersShow(b: Browser, name: string): Promise<void> {
 /**
  * Presence in `b`'s open community window while both members view CHANNEL
  * (the lead, 2026-11-23: Bob's list put a posting Alice under Offline, and
- * his own row showed Away while Online): `other` is in the Online group;
- * `self`'s own row reads Online, as their buddy list does (both stay Online
- * throughout); and CHANNEL's presence badge counts both members there
- * ("2 here", ChannelList.tsx channel-presence-badge, members by location).
+ * his own row showed Away while Online): `other`'s row and `self`'s own row
+ * each carry the Online status dot ("Status: Online", StatusDot.tsx), in
+ * whatever group the list puts them (roles group first: an Owner sits under
+ * "Owner", not "Online"), as their buddy lists show (both stay Online
+ * throughout); and CHANNEL's presence badge reads `here`: "1 here" by
+ * default, since location is shared with no one by default and a member who
+ * shares none sees no one's (PresenceSharingPolicy share_location None,
+ * rekindle-presence community/policy.rs), "2 here" once both share it.
  */
-async function presenceRight(b: Browser, self: string, other: string): Promise<void> {
+async function presenceRight(b: Browser, self: string, other: string, here = "1 here"): Promise<void> {
   let last = "";
   await waitUntil(
     async () => {
       last = (await b.execute(
-        (me: string, them: string, channel: string) => {
-          const groups: Record<string, string> = {};
-          let group = "";
-          let mine = "";
-          for (const el of Array.from(document.querySelectorAll(".member-group-header, .member-item"))) {
-            if (el.classList.contains("member-group-header")) {
-              group = (el.textContent ?? "").trim();
-              continue;
-            }
+        (me: string, them: string, channel: string, want: string) => {
+          // Each member row's status dot, by name.
+          const dots: Record<string, string> = {};
+          for (const el of Array.from(document.querySelectorAll(".member-item"))) {
             const name = (el.querySelector(".member-name")?.textContent ?? "").trim();
-            groups[name] = group;
-            if (name === me) mine = el.querySelector('[role="img"]')?.getAttribute("aria-label") ?? "";
+            dots[name] = el.querySelector('[role="img"]')?.getAttribute("aria-label") ?? "";
           }
           const row = Array.from(document.querySelectorAll(".channel-item")).find((r) => (r.querySelector(".channel-name")?.textContent ?? "").trim() === channel);
           const here = row?.querySelector(".channel-presence-badge")?.getAttribute("title") ?? "no presence badge";
           const faults: string[] = [];
-          if (!/^online/i.test(groups[them] ?? "")) faults.push(`${them} under "${groups[them] ?? "no group"}"`);
-          if (!/^online$/i.test(mine)) faults.push(`own row reads "${mine || "nothing"}"`);
-          if (here !== "2 here") faults.push(`#${channel} badge "${here}"`);
+          if (dots[them] !== "Status: Online") faults.push(`${them}'s row reads "${dots[them] ?? "no row"}"`);
+          if (dots[me] !== "Status: Online") faults.push(`own row reads "${dots[me] ?? "no row"}"`);
+          if (here !== want) faults.push(`#${channel} badge "${here}", not "${want}"`);
           return faults.join("; ");
         },
         self,
         other,
         CHANNEL,
+        here,
       )) as string;
       return last === "";
     },
@@ -207,5 +207,20 @@ describe("a community post reaches the other member live", () => {
     await seesLive(multiRemoteBrowser.getInstance("alice"), text, BOB_NAME);
     await presenceRight(multiRemoteBrowser.getInstance("alice"), ALICE_NAME, BOB_NAME);
     await shot("bob-post-at-alice");
+  });
+
+  // Location is shared with no one by default; once both share it with
+  // members each badge counts both, and when one stops, neither sees the
+  // other's (a member who shares none sees none).
+  it("with the channel shared both ways each badge reads 2 here, and 1 again when Bob stops", async () => {
+    const a = multiRemoteBrowser.getInstance("alice");
+    const b = multiRemoteBrowser.getInstance("bob");
+    await setLocationSharing(a, alice, true);
+    await setLocationSharing(b, bob, true);
+    await Promise.all([presenceRight(a, ALICE_NAME, BOB_NAME, "2 here"), presenceRight(b, BOB_NAME, ALICE_NAME, "2 here")]);
+    await shot("location-shared");
+    await setLocationSharing(b, bob, false);
+    await Promise.all([presenceRight(a, ALICE_NAME, BOB_NAME, "1 here"), presenceRight(b, BOB_NAME, ALICE_NAME, "1 here")]);
+    await shot("location-unshared");
   });
 });
