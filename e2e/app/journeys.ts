@@ -120,11 +120,34 @@ export async function communitiesView(b: Browser): Promise<void> {
   }
 }
 
-/** The Friends tab's row for `name`, once listed. */
+/**
+ * The Friends tab's row for friend `name`, once listed as a friend: a buddy
+ * row outside the pending-request group (BuddyGroup `.buddy-group-pending`,
+ * "Awaiting Response"), which lists a request the other side has not yet
+ * accepted. Matching any row with the name passed while the request was
+ * still pending (Linux shots, 2026-11-23).
+ */
 export async function friendRow(b: Browser, name: string): Promise<Awaited<ReturnType<Browser["$"]>>> {
   await inBuddy(b);
   await friendsView(b);
-  return byText(b, ".buddy-item", name, NET_WAIT_MS);
+  let found: Awaited<ReturnType<Browser["$"]>> | undefined;
+  await waitUntil(
+    async () => {
+      for (const row of await b.$$(".buddy-item")) {
+        if (!(await row.isDisplayed().catch(() => false))) continue;
+        if (!(await row.getText().catch(() => "")).includes(name)) continue;
+        const pending = (await b.execute((el: HTMLElement) => el.closest(".buddy-group-pending") !== null, row as unknown as HTMLElement)) as boolean;
+        if (pending) continue;
+        found = row;
+        return true;
+      }
+      return false;
+    },
+    NET_WAIT_MS,
+    `${name} was never listed as a friend (outside Awaiting Response)`,
+  );
+  if (!found) throw new Error(`${name}: no friend row`);
+  return found;
 }
 
 /** Open the chat window with friend `name` (double-click its row) and switch to it. */
