@@ -12,6 +12,7 @@ import type { DeliveryRetry } from "../ipc/channels/chat_events";
 import { groupDmState, setGroupDmState } from "../stores/group-dm.store";
 import { handleLoadGroupDms } from "../actions/group-dm.actions";
 import { transformDmMessage, transformHistoryGap } from "../utils/transformers";
+import { withOwnRow } from "../utils/own_rows";
 
 // Group-DM events (plan E2.6). The Host decides every change; an invite
 // arrives whole and is shown as is, and a roster change (join, leave, key
@@ -73,11 +74,7 @@ function upsertOwnRow(groupId: string, row: ReturnType<typeof transformDmMessage
     setGroupDmState("conversations", groupId, { messages: [row], typing: {} });
     return;
   }
-  setGroupDmState("conversations", groupId, "messages", (msgs) =>
-    [...msgs.filter((m) => !(row.serverMessageId && m.serverMessageId === row.serverMessageId)), row].sort(
-      (x, y) => x.timestamp - y.timestamp,
-    ),
-  );
+  setGroupDmState("conversations", groupId, "messages", (msgs) => withOwnRow(msgs, row));
 }
 
 function appendMessage(groupId: string, m: Extract<GroupDmEvent, { message: unknown }>["message"]): void {
