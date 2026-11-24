@@ -30,6 +30,8 @@ export type Edge =
 export type NodeRole =
   | { kind: "tab" | "knob" | "view" | "buttonRow"; key: ViewKey }
   | { kind: "lamp"; key: string }
+  | { kind: "windowButton"; key: WindowButtonKind }
+  | { kind: "slot"; key: SlotKey }
   | {
       kind:
         | "drag"
@@ -52,8 +54,18 @@ export type NodeRole =
         | "gameLogo"
         | "group"
         | "part"
-        | "decor";
+        | "decor"
+        | "titleBar"
+        | "chatTitle"
+        | "talkingState";
     };
+
+/** `rekindle_types::dto::skin_tree_role::SlotKey` (plan SK17-2): a chat
+ *  window box the shell mounts its own control into. */
+export type SlotKey = "typingNotice" | "chatArea" | "chatEdit" | "chatSend" | "infoviewButton";
+
+/** `rekindle_types::dto::skin_tree_role::WindowButtonKind`. */
+export type WindowButtonKind = "minimize" | "maximize" | "close";
 
 /** `rekindle_types::dto::skin_action::EngineMenu`. */
 export type EngineMenu =

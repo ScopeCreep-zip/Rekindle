@@ -364,10 +364,24 @@ pub fn read(tree: &Tree) -> Result<Read, ImportError> {
         )?;
     }
     if let Some(pieces) = &chat {
-        windows.insert(
-            SkinWindow::Chat,
-            shape::from_nine(SkinWindow::Chat, pieces)?,
-        );
+        let mut built = shape::from_nine(SkinWindow::Chat, pieces)?;
+        // The chat window's own component tree (plan SK17-2), laid by the
+        // buddy list's model from the pack's chat layout.
+        if let Some(f) = window_layout(&skin, "ChatSkin").filter(|f| lookup(tree, f).is_ok()) {
+            let layout = xml(tree, f)?;
+            let bitmaps = bitmaps(theme);
+            let decode =
+                |name: &str, shift: Option<&str>| piece(tree, &bitmaps, &colours, name, shift);
+            crate::skin_tree::import::add(
+                SkinWindow::Chat,
+                &layout,
+                &components,
+                decode,
+                &[],
+                &mut built,
+            )?;
+        }
+        windows.insert(SkinWindow::Chat, built);
     }
     let info_xml = match lookup(tree, "Info.xml") {
         Ok((key, bytes)) => Some(tree::parse(key, bytes)?),

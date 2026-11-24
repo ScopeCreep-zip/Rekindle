@@ -16,7 +16,7 @@ use super::skin::{Insets, RegionState};
 use super::skin_action::NodeTrigger;
 use super::skin_layout::SkinWindow;
 pub use super::skin_title::{TitleSlices as NodeSlices, TitleText as NodeText};
-pub use super::skin_tree_role::{Edge, LampKey, NodeRole, ViewKey};
+pub use super::skin_tree_role::{Edge, LampKey, NodeRole, SlotKey, ViewKey, WindowButtonKind};
 
 /// Where a fixed-size node sits along one axis of its parent's box, px.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

@@ -152,6 +152,9 @@ pub struct WindowLayout {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub title: Option<super::skin_title::TitleLayout>,
     /// The pack's component tree (plan SK2); `content` is its views node's box.
+    /// The chat window's (plan SK17-2, `windows.chat.tree`) is served for
+    /// XML packs only: an INI pack serves no chat tree until SK17-3, and no
+    /// stand-in tree is made for it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tree: Option<super::skin_tree::SkinTree>,
     /// The popups the window's tiles launch (`LaunchSkin`), keyed by the

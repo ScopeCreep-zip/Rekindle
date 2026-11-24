@@ -310,12 +310,18 @@ impl Walk<'_> {
             class: comp.and_then(|c| c.attr_ci("Class")),
             children: &children,
         };
-        let role = role(&id, component, parent, &facts).ok_or_else(|| {
-            bad(format!(
-                "{id}: component {} has no role",
-                component.unwrap_or("-")
-            ))
-        })?;
+        // The chat window's own vocabulary first (plan SK17-2).
+        let chat = (self.window == SkinWindow::Chat)
+            .then(|| super::chat_roles::role(&id, component, parent, &facts))
+            .flatten();
+        let role = chat
+            .or_else(|| role(&id, component, parent, &facts))
+            .ok_or_else(|| {
+                bad(format!(
+                    "{id}: component {} has no role",
+                    component.unwrap_or("-")
+                ))
+            })?;
         let max = (limit_of(comp, "MaxWidth"), limit_of(comp, "MaxHeight"));
         let group = comp
             .and_then(|c| c.attr_ci("ControlGroupId"))
@@ -325,7 +331,14 @@ impl Walk<'_> {
             popups: &self.popups,
             groups: &self.group_ids,
         };
-        let triggers = triggers::read(tile, comp, &id, &pack)?;
+        // A slot is a box the shell mounts its own control into (plan
+        // SK17-2): the pack's engine triggers on it (the InfoView toggle's
+        // `LaunchSkin` of a chat popup) are the control's, not the box's.
+        let triggers = if matches!(role.shown(), NodeRole::Slot(_)) {
+            Vec::new()
+        } else {
+            triggers::read(tile, comp, &id, &pack)?
+        };
         check_grip(&id, component, &triggers).map_err(bad)?;
         Ok(Read {
             tile,
