@@ -406,7 +406,8 @@ export async function peerCreateCommunity(peer: Peer, name: string): Promise<str
 
 /** A `uses`-use invite link to community `anchor` from `peer`. */
 export async function peerInvite(peer: Peer, anchor: string, uses = 1): Promise<string> {
-  const made = (await peer.cli(["community", "invite", "create", "--community", anchor, "--max-uses", String(uses)])) as { url?: string } | null;
+  // Reviewed (ADR 0019): confirmed by the subject its review names.
+  const made = (await peerReviewed(peer, ["community", "invite", "create", "--community", anchor, "--max-uses", String(uses)])) as { url?: string } | null;
   if (!made?.url) throw new Error(`${peer.displayName}: invite create answered no url (${JSON.stringify(made).slice(0, 200)})`);
   return made.url;
 }
@@ -415,4 +416,15 @@ export async function peerInvite(peer: Peer, anchor: string, uses = 1): Promise<
 export async function peerMemberCount(peer: Peer, anchor: string): Promise<number> {
   const info = (await peer.cli(["community", "info", "--community", anchor])) as { member_count?: number; memberCount?: number } | null;
   return info?.member_count ?? info?.memberCount ?? 0;
+}
+
+/**
+ * `args` as `peer`, answering its review when it asks one (D3.4): the CLI
+ * names the subject to confirm (`--confirm=<subject>`), as a CLI user reads
+ * it from their own review. A command that asks none runs as is.
+ */
+export async function peerReviewed(peer: Peer, args: string[]): Promise<unknown> {
+  const refused = (await peer.review(args)) as { error?: { message?: string } } | null;
+  const subject = /--confirm=(.+)$/.exec(refused?.error?.message ?? "")?.[1]?.trim();
+  return peer.cli(subject ? [`--confirm=${subject}`, ...args] : args);
 }
