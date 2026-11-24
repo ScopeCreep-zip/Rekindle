@@ -7,6 +7,7 @@ import { transformDmMessage } from "../utils/transformers";
 import { awaitsExpiry } from "./disappearing.actions";
 import { afterDraftReports, sendDraftReport } from "../utils/draft_reports";
 import { withOwnRow } from "../utils/own_rows";
+import { disappearingState } from "../stores/disappearing.store";
 
 /**
  * Send `body` to `to`. Nothing is drawn here: once the send commits, the
@@ -182,7 +183,7 @@ export function handleResetUnread(peerId: string): void {
       .markRead(peerId, renderedThrough(peerId))
       .then(() => {
         const messages = chatState.conversations[peerId]?.messages ?? [];
-        if (awaitsExpiry(messages)) void handleLoadHistory(peerId, Math.max(50, messages.length));
+        if (awaitsExpiry(messages, disappearingState.timers[peerId])) void handleLoadHistory(peerId, Math.max(50, messages.length));
       })
       .catch((e) => {
         console.error("Failed to mark read:", e);
