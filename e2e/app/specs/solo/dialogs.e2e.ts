@@ -23,7 +23,7 @@ import path from "node:path";
 import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, byText, gone, press, resolveIntent, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
 import { BUDDY, underTree } from "../../../walk/nav.ts";
-import { createCommunity, createIdentity, createTextChannel, friendsView, newUser, openCommunity, postMessage, selectChannel, type User } from "../../journeys.ts";
+import { channelCount, createCommunity, createIdentity, friendsView, newUser, openCommunity, postMessage, selectChannel, type User } from "../../journeys.ts";
 import { shot } from "../../shots.ts";
 
 const SHORTCUTS_RS = path.join(import.meta.dirname, "..", "..", "..", "..", "src-tauri", "src", "shortcuts.rs");
@@ -93,7 +93,9 @@ describe("dialogs take focus, close on Esc and give focus back", function () {
     await createCommunity(browser, me, "Dialogs");
     await openCommunity(browser, "Dialogs");
     communityHandle = await browser.getWindowHandle();
-    await createTextChannel(browser, me, "general");
+    // The community's genesis #general (a second "general" made the count
+    // ambiguous: the genesis row could land with the new one, 0 → 2).
+    await waitUntil(async () => (await channelCount(browser, "general")) === 1, NET_WAIT_MS, "the genesis #general was never listed");
     await selectChannel(browser, "general");
     await postMessage(browser, me, "message 1 with some ordinary words");
   });
