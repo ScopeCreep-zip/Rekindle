@@ -7,7 +7,9 @@
 //! A 0-wide box cannot ellipsize, so a long name ran out of the window.
 //!
 //! The rule: every art-less node that draws text, a text field
-//! ([`is_text`]) or a node carrying a served [`NodeLabel`] with words and no
+//! ([`is_text`]), the chat title (plan SK17: Onyx's `MainTitleBar/Title`
+//! and Symbiosis's `ChatUser`, 0 px wide in their packs) or a node carrying
+//! a served [`NodeLabel`] with words and no
 //! glyph (SK4b menu titles, SK6/SK6b tab and button words, the N4 clone),
 //! whose pack span on x is `Fixed`, is served its usable box when the
 //! pack's box is narrower:
@@ -90,10 +92,16 @@ fn reach(n: &SkinNode, b: [i32; 4], targets: &Targets) -> [i32; 4] {
         .map_or(b, |t| union(b, [b[0] + t[0], b[1] + t[1], t[2], t[3]]))
 }
 
-/// Whether `n` draws text the shell must fit: a text field, or words the
-/// Host serves over it. An art node keeps its box.
+/// Whether `n` draws text the shell must fit: a text field, the chat
+/// title (plan SK17: the peer's or room's name, words only the running app
+/// knows, which Onyx's `Title` and Symbiosis's `ChatUser` lay at a point as
+/// `Class=Text Stretch=ToContent`, so the engine drew the name from there),
+/// or words the Host serves over it. An art node keeps its box.
 pub(super) fn draws_text(n: &SkinNode) -> bool {
-    n.art.is_none() && (is_text(n.role) || n.label.as_ref().is_some_and(|l| l.glyph.is_none()))
+    n.art.is_none()
+        && (is_text(n.role)
+            || n.role == NodeRole::ChatTitle
+            || n.label.as_ref().is_some_and(|l| l.glyph.is_none()))
 }
 
 /// Whether `by` can stop `n`'s text: it takes input, is no text field or
