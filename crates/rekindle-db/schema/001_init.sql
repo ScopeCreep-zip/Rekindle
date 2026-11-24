@@ -290,6 +290,10 @@ CREATE TABLE IF NOT EXISTS messages (
     -- The message mentions us (plan E3.1, D25): written by the receive
     -- pipeline from `rekindle_channel::mentions`; counts unread mentions.
     mentions_me INTEGER NOT NULL DEFAULT 0 CHECK(mentions_me IN (0, 1)),
+    -- A channel message stored without its body (plan KP): its author's
+    -- signed outbox entry names a key we hold and the body does not open
+    -- under it. Body empty; NULL for every readable message.
+    undecryptable_reason TEXT CHECK(undecryptable_reason IS NULL OR undecryptable_reason IN ('damaged')),
     -- An edited channel message (plan E3.3, rules E1 and E2): when its
     -- author last edited it (seconds), that edit's author seq (only a
     -- later one replaces it), and how many edits we applied (a reader caps

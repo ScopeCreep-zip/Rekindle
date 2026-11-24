@@ -93,6 +93,7 @@ impl HostGovernance {
         // A post kept across the lock whose key was installed before its
         // release ran (plan E3.2 S7l).
         for community in keyed {
+            self.refresh_key_status(&community);
             crate::host::adapters::channel::release_waiting_posts(self, &community);
         }
         for community in communities {
@@ -130,6 +131,7 @@ impl HostGovernance {
                 tracing::error!(community = %community_id, %scope, error = %e, "MEK not stored");
             }
         }
+        self.refresh_key_status(community_id);
         // The posts composed before this key are released to their writes
         // (plan E3.2 S7l, F9-1).
         crate::host::adapters::channel::release_waiting_posts(self, community_id);

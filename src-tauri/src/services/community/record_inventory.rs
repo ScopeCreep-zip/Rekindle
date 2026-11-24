@@ -123,6 +123,8 @@ mod tests {
     ) -> CommunityState {
         CommunityState {
             genesis_cert: None,
+            key_pending_since_ms: None,
+            published_key_status: None,
             held_threads: std::collections::HashSet::new(),
             id: "gov-id".to_string(),
             name: "T".to_string(),

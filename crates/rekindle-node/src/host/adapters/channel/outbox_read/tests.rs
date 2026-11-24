@@ -25,6 +25,24 @@ use crate::host::runtime::tests::{create_ann, offline_host, seed_registry_commun
 /// sealed under generation 1 of the community key and signed at chain
 /// seq 1.
 fn first_entry(signing: &SigningKey) -> ChainEntry {
+    sealed_entry(signing, 1, &TEXT_KEY)
+}
+
+/// The author's first outbox entry, its body "hello" sealed with `key`;
+/// the entry and its body both name `generation`.
+fn sealed_entry(signing: &SigningKey, generation: u64, key: &[u8; 32]) -> ChainEntry {
+    split_entry(signing, generation, generation, key)
+}
+
+/// The author's first outbox entry in `EDIT_CHANNEL`: the entry names
+/// `entry_generation` (its tag is always under `TEXT_KEY`), its body
+/// "hello" is sealed with `key` and names `body_generation`.
+fn split_entry(
+    signing: &SigningKey,
+    entry_generation: u64,
+    body_generation: u64,
+    key: &[u8; 32],
+) -> ChainEntry {
     let author = signing.verifying_key().to_bytes();
     let at = BodyPosition {
         anchor: "c1",
@@ -36,13 +54,13 @@ fn first_entry(signing: &SigningKey) -> ChainEntry {
         prev: None,
         channel_tag: channel_tag(&TEXT_KEY, EDIT_CHANNEL),
         stream_seq: 1,
-        generation: 1,
+        generation: entry_generation,
         committed_at: 1_000,
         entry: ChannelRecordEntry::Message(ChannelMessage {
             sequence: 1,
             sender_pseudonym: hex::encode(author),
-            ciphertext: encrypt_channel_body(&TEXT_KEY, at, b"hello").unwrap(),
-            mek_generation: 1,
+            ciphertext: encrypt_channel_body(key, at, b"hello").unwrap(),
+            mek_generation: body_generation,
             timestamp: 1_000,
             reply_to: None,
             revives: None,
@@ -171,5 +189,196 @@ async fn a_post_whose_leave_merged_during_its_judgement_is_held_not_passed() {
         .await
         .unwrap();
     assert!(rows.is_empty(), "neither judgement stored the post");
+    host.shutdown().await.unwrap();
+}
+
+/// A second community key, generation 2's.
+const NEXT_KEY: [u8; 32] = [7; 32];
+
+fn install(host: &crate::host::Host, key: [u8; 32], generation: u64) {
+    let cache = crate::daemon::mek_rotation::MekCacheAdapter::new(std::sync::Arc::clone(
+        &host.ctx.mek_cache,
+    ));
+    let key = rekindle_transport::crypto::mek::Mek::from_bytes(key, generation);
+    rekindle_mek_rotation::ChannelMekCache::insert(&cache, "c1", KeyScope::Community, key);
+}
+
+/// A reader of `c1` whose merged state converged on generation
+/// `converged`, holding the community keys `held`.
+async fn keyed_reader(
+    dir: &tempfile::TempDir,
+    converged: u64,
+    held: &[([u8; 32], u64)],
+) -> (std::sync::Arc<crate::host::Host>, String) {
+    let host = offline_host(dir).await;
+    let owner = create_ann(&host).await.public_key;
+    seed_registry_community(&host, &owner).await;
+    let mut state = with_channel();
+    state.mek_generation = converged;
+    (host.ctx.communities).set_governance_state("c1", state);
+    for (key, generation) in held {
+        install(&host, *key, *generation);
+    }
+    (host, owner)
+}
+
+fn member_read(author: &[u8; 32]) -> OutboxRead<'_> {
+    OutboxRead {
+        community_id: "c1",
+        author,
+        member_record: "VLD0:member",
+        backfill: true,
+        departed: false,
+        departure_head: None,
+        before: Before::Known(None),
+    }
+}
+
+async fn stored(host: &crate::host::Host, owner: &str) -> Vec<rows::StoredChannelMessage> {
+    let owner = owner.to_owned();
+    (host.ctx.db.current().unwrap())
+        .call(move |conn| rows::page(conn, &owner, EDIT_CHANNEL, None, 10))
+        .await
+        .unwrap()
+}
+
+/// Plan KP: an entry sealed under generation 2, which the state converged
+/// on and we are owed, is held (the cursor stays) while we hold only
+/// generation 1; once generation 2 installs, the re-read the install
+/// starts delivers it with its text.
+#[tokio::test]
+async fn an_entry_whose_key_is_owed_is_held_then_delivered_with_its_body() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, owner) = keyed_reader(&dir, 2, &[(TEXT_KEY, 1)]).await;
+    let signing = SigningKey::from_bytes(&[6; 32]);
+    let author = signing.verifying_key().to_bytes();
+    let channel = HostChannel::new(&host.ctx);
+    let entry = sealed_entry(&signing, 2, &NEXT_KEY);
+
+    let held = channel
+        .apply_outbox_entry(&member_read(&author), &entry)
+        .await;
+    assert!(
+        matches!(held, Ok(Held::Pending)),
+        "an entry of a generation we are owed is held: {held:?}"
+    );
+    assert!(stored(&host, &owner).await.is_empty(), "nothing stored yet");
+
+    install(&host, NEXT_KEY, 2);
+    let held = channel
+        .apply_outbox_entry(&member_read(&author), &entry)
+        .await;
+    assert!(matches!(held, Ok(Held::Stored)), "{held:?}");
+    let rows = stored(&host, &owner).await;
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(rows[0].body, "hello", "delivered with its text");
+    assert_eq!(rows[0].undecryptable_reason, None);
+    host.shutdown().await.unwrap();
+}
+
+/// Plan KP: an entry tagged under generation 1, which we hold, so its
+/// channel is found, whose body names generation 2, which the state
+/// converged on and we are owed: held at the body (the cursor stays),
+/// nothing stored; once generation 2 installs, the re-read delivers it
+/// with its text.
+#[tokio::test]
+async fn an_entry_whose_body_key_is_owed_is_held_then_delivered() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, owner) = keyed_reader(&dir, 2, &[(TEXT_KEY, 1)]).await;
+    let signing = SigningKey::from_bytes(&[6; 32]);
+    let author = signing.verifying_key().to_bytes();
+    let channel = HostChannel::new(&host.ctx);
+    let entry = split_entry(&signing, 1, 2, &NEXT_KEY);
+
+    let held = channel
+        .apply_outbox_entry(&member_read(&author), &entry)
+        .await;
+    assert!(
+        matches!(held, Ok(Held::Pending)),
+        "a body of a generation we are owed is held: {held:?}"
+    );
+    assert!(stored(&host, &owner).await.is_empty(), "nothing stored yet");
+
+    install(&host, NEXT_KEY, 2);
+    let held = channel
+        .apply_outbox_entry(&member_read(&author), &entry)
+        .await;
+    assert!(matches!(held, Ok(Held::Stored)), "{held:?}");
+    let rows = stored(&host, &owner).await;
+    assert_eq!(rows.len(), 1, "{rows:?}");
+    assert_eq!(rows[0].body, "hello", "delivered with its text");
+    assert_eq!(rows[0].undecryptable_reason, None);
+    host.shutdown().await.unwrap();
+}
+
+/// Plan KP: an entry naming generation 1, which we hold, whose body does
+/// not open under it is damaged: stored without its body, reason
+/// `damaged`, and published so; the cursor passes it.
+#[tokio::test]
+async fn an_entry_whose_held_key_does_not_open_it_is_stored_damaged() {
+    use rekindle_types::dto::channel_message::UndecryptableReason;
+    use rekindle_types::subscription_events::{
+        ChannelMessageEvent, StreamFrame, SubscriptionEvent,
+    };
+
+    let dir = tempfile::tempdir().unwrap();
+    let (host, owner) = keyed_reader(&dir, 1, &[(TEXT_KEY, 1)]).await;
+    let signing = SigningKey::from_bytes(&[6; 32]);
+    let author = signing.verifying_key().to_bytes();
+    let channel = HostChannel::new(&host.ctx);
+    let mut events = host.ctx.journal.subscribe(None);
+    let entry = sealed_entry(&signing, 1, &[9; 32]);
+
+    let held = channel
+        .apply_outbox_entry(&member_read(&author), &entry)
+        .await;
+    assert!(matches!(held, Ok(Held::Stored)), "{held:?}");
+    let rows = stored(&host, &owner).await;
+    assert_eq!(rows.len(), 1, "stored visibly, never skipped: {rows:?}");
+    assert_eq!(rows[0].body, "");
+    assert_eq!(rows[0].undecryptable_reason.as_deref(), Some("damaged"));
+
+    let mut published = Vec::new();
+    while let Ok(Some(frame)) =
+        tokio::time::timeout(std::time::Duration::from_millis(50), events.next()).await
+    {
+        if let StreamFrame::Event(s) = frame {
+            if let SubscriptionEvent::ChannelMessage(ChannelMessageEvent::New {
+                body,
+                undecryptable,
+                ..
+            }) = s.event
+            {
+                published.push((body, undecryptable.map(|u| u.reason)));
+            }
+        }
+    }
+    assert_eq!(
+        published,
+        [(None, Some(UndecryptableReason::Damaged))],
+        "published without its body, with why"
+    );
+    host.shutdown().await.unwrap();
+}
+
+/// Plan KP: an entry from before our first key (generation 1, our first
+/// held is 2) is history we never had: skipped, not held, not stored.
+#[tokio::test]
+async fn an_entry_from_before_our_first_key_is_skipped() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, owner) = keyed_reader(&dir, 2, &[(NEXT_KEY, 2)]).await;
+    let signing = SigningKey::from_bytes(&[6; 32]);
+    let author = signing.verifying_key().to_bytes();
+    let channel = HostChannel::new(&host.ctx);
+    let entry = sealed_entry(&signing, 1, &TEXT_KEY);
+
+    let held = channel
+        .apply_outbox_entry(&member_read(&author), &entry)
+        .await;
+    assert!(
+        matches!(held, Ok(Held::Stored)),
+        "passed, never held for a key we will not get: {held:?}"
+    );
+    assert!(stored(&host, &owner).await.is_empty(), "and not stored");
     host.shutdown().await.unwrap();
 }

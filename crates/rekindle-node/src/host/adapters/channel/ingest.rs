@@ -11,6 +11,8 @@ use std::sync::Arc;
 use rekindle_channel::{AutoModCompiledCache, ChannelMessagingDeps};
 use rekindle_db::repo::messages::channel::{self as rows, ChannelMessageInsert};
 use rekindle_governance::state::GovernanceState;
+use rekindle_types::channel_keys::KeyEpoch;
+use rekindle_types::dto::channel_message::UndecryptableReason;
 use rekindle_types::governance::{GovernanceEntry, ModReportTarget};
 use rekindle_types::id::{ChannelId, PseudonymKey};
 use rekindle_types::message::SendState;
@@ -31,6 +33,8 @@ struct Row {
     blurred: bool,
     own: bool,
     mentions_me: bool,
+    /// Stored without its body, and why (`store_undecryptable`).
+    undecryptable: Option<UndecryptableReason>,
 }
 
 /// One opened post as the gate judges it, from any receive path.
@@ -177,6 +181,7 @@ impl HostChannel {
             blurred,
             own,
             mentions_me,
+            undecryptable: None,
         };
         self.store_received(owner, &db, post.clone(), row).await?;
         let author = PseudonymKey::from_hex_lossy(&post.message.sender_pseudonym);
@@ -193,6 +198,7 @@ impl HostChannel {
                 body: Some(body.clone()),
                 reply_to_message_id: post.message.reply_to.clone(),
                 automod_blurred: blurred,
+                undecryptable: None,
             },
         ));
         // The typist's message ends their typing here (plan E3.4 S9).
@@ -443,6 +449,7 @@ impl HostChannel {
             blurred: false,
             own: false,
             mentions_me: false,
+            undecryptable: None,
         };
         self.store_received(owner, db, post.clone(), row).await?;
         (self.gov)
@@ -456,6 +463,66 @@ impl HostChannel {
             .await
             .map_err(|e| ChannelError::Adapter(e.to_string()))?;
         Ok(Ingested::RemovedByModerator)
+    }
+
+    /// Whether we hold the text key of `channel_id` at `generation`.
+    fn holds_text_key(&self, community_id: &str, channel_id: &str, generation: u64) -> bool {
+        let Some(channel) = ChannelId::from_hex(channel_id) else {
+            return false;
+        };
+        let keys = self.keys();
+        let scope = keys.scope_for_text(community_id, channel);
+        keys.key(community_id, scope, KeyEpoch(generation))
+            .is_some()
+    }
+
+    /// A post its author's signed outbox entry carries, whose body did not
+    /// open ([`Ingested::Undecryptable`]): when we hold the key of the
+    /// generation it names, the ciphertext itself is damaged, so it is
+    /// stored without its body, visibly unreadable, and published so; never
+    /// skipped past invisibly (plan KP). `false` when we do not hold that
+    /// key: the caller holds the entry for it or leaves it as history from
+    /// before our keys.
+    ///
+    /// # Errors
+    /// No identity is unlocked, or the store failed.
+    pub(super) async fn store_undecryptable(
+        &self,
+        post: ReceivedPost,
+    ) -> Result<bool, ChannelError> {
+        let generation = post.message.mek_generation;
+        if !self.holds_text_key(&post.community_id, &post.channel_id, generation) {
+            return Ok(false);
+        }
+        let (owner, db) = self.owner_and_db()?;
+        let message_id = (post.message.message_id.clone())
+            .ok_or_else(|| ChannelError::Adapter("a received post has no message id".into()))?;
+        let reason = UndecryptableReason::Damaged;
+        let row = Row {
+            message_id: message_id.clone(),
+            body: String::new(),
+            blurred: false,
+            own: false,
+            mentions_me: false,
+            undecryptable: Some(reason),
+        };
+        self.store_received(owner, &db, post.clone(), row).await?;
+        tracing::warn!(community = %post.community_id, channel = %post.channel_id, generation, "channel post stored unreadable: its body does not open under the key it names");
+        self.ctx().publish_event(SubscriptionEvent::ChannelMessage(
+            ChannelMessageEvent::New {
+                community: post.community_id,
+                channel: post.channel_id,
+                message_id,
+                sender_pseudonym: post.message.sender_pseudonym,
+                sequence: post.sequence,
+                timestamp: post.message.timestamp,
+                body: None,
+                reply_to_message_id: post.message.reply_to,
+                automod_blurred: false,
+                undecryptable: Some(reason.into()),
+            },
+        ));
+        Ok(true)
     }
 
     async fn store_received(
@@ -477,7 +544,7 @@ impl HostChannel {
             .map_err(stored)?;
         db.call(move |conn| {
             let m = &post.message;
-            rows::insert(
+            let insert = rows::insert(
                 conn,
                 &ChannelMessageInsert {
                     reply_to: m.reply_to.as_deref(),
@@ -497,7 +564,17 @@ impl HostChannel {
                     send_state: SendState::Delivered,
                     mentions_me: row.mentions_me,
                 },
-            )
+            );
+            match (insert, row.undecryptable) {
+                (Ok(()), Some(reason)) => rows::mark_undecryptable(
+                    conn,
+                    &owner,
+                    &post.channel_id,
+                    &row.message_id,
+                    reason.as_str(),
+                ),
+                (insert, _) => insert,
+            }
         })
         .await
         .map_err(stored)

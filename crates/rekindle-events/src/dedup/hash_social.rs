@@ -76,6 +76,11 @@ pub(super) fn hash_governance(h: &mut blake3::Hasher, g: &GovernanceEvent) {
         GovernanceEvent::BansChanged { .. } => {
             h.update(b"bans");
         }
+        // Every field: a status that changed is a new event.
+        GovernanceEvent::KeyStatus { status, .. } => {
+            h.update(b"key_status|");
+            h.update(format!("{status:?}").as_bytes());
+        }
         GovernanceEvent::OpPublication { op, state, .. } => {
             h.update(b"op_publication|");
             h.update(op.as_bytes());

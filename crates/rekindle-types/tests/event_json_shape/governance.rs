@@ -26,6 +26,7 @@ pub const NAMES: &[&str] = &[
     "checkpointSnapshotMismatch",
     "communitySuccessorOffered",
     "successorLinkRequested",
+    "keyStatus",
 ];
 
 pub fn variant_name(e: &GovernanceEvent) -> &'static str {
@@ -47,6 +48,7 @@ pub fn variant_name(e: &GovernanceEvent) -> &'static str {
         GovernanceEvent::CheckpointSnapshotMismatch { .. } => "checkpointSnapshotMismatch",
         GovernanceEvent::CommunitySuccessorOffered { .. } => "communitySuccessorOffered",
         GovernanceEvent::SuccessorLinkRequested { .. } => "successorLinkRequested",
+        GovernanceEvent::KeyStatus { .. } => "keyStatus",
     }
 }
 
@@ -191,6 +193,18 @@ fn structure() -> Vec<Sample> {
 
 fn invites_and_subkeys() -> Vec<Sample> {
     vec![
+        ev(
+            "keyStatus",
+            GovernanceEvent::KeyStatus {
+                community: community(),
+                status: rekindle_types::dto::community::KeyStatus {
+                    state: rekindle_types::dto::community::KeyState::Pending,
+                    have: Some(3),
+                    need: Some(4),
+                    since_ms: Some(1_760_000_000_000),
+                },
+            },
+        ),
         ev(
             "inviteCreated",
             GovernanceEvent::InviteCreated {

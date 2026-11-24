@@ -1,3 +1,4 @@
+import type { Undecryptable } from "../commands/types";
 import type { SkinApplied } from "../commands/dto";
 /**
  * The daemon-vocabulary half of the `community-event` channel.
@@ -208,6 +209,7 @@ export type GovernanceEvent =
   | { segmentsChanged: { community: string; segments: SegmentDescriptor[] } }
   | { bansChanged: { community: string } }
   | { opPublication: { community: string; op: string; state: OpPublicationState } }
+  | { keyStatus: { community: string; status: KeyStatus } }
   | {
       inviteCreated: {
         community: string;
@@ -384,6 +386,8 @@ export type ChannelMessageEvent =
         replyToMessageId: string | null;
         /** The D26 gate hid it (an automod `BlurContent` match). */
         automodBlurred: boolean;
+        /** Stored without its body, and why (`body` is `null`); a held post never has it. */
+        undecryptable?: Undecryptable;
       };
     }
   | {
@@ -467,4 +471,14 @@ export function isLegacyCommunityEvent(
   event: AnyCommunityEvent,
 ): event is CommunityEvent {
   return "type" in event;
+}
+
+/** Our community key against governance's generation, as the Host states it
+ *  (`rekindle_types::dto::community::KeyStatus`; `CommunityView::key_status`,
+ *  `GovernanceEvent::KeyStatus`): `pending` while it is missing or behind. */
+export interface KeyStatus {
+  state: "current" | "pending";
+  have: number | null;
+  need: number | null;
+  sinceMs: number | null;
 }

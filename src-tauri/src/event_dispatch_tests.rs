@@ -371,6 +371,7 @@ fn a_stored_post_reaches_the_community_window_as_new() {
             body: Some("hello".into()),
             reply_to_message_id: None,
             automod_blurred: false,
+            undecryptable: None,
         },
     ));
     assert_eq!(e.channel(), "community-event");

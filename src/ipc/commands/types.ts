@@ -7,6 +7,14 @@ import type { OwnRecordsPhase, RouteAvailability, RoutePauseCause } from "../cha
 export type { IdentitySummary } from "./dto";
 
 /** D22's delivery vocabulary (`rekindle_types::message::SendState`). */
+/** Why a stored message's body could not be read (the Host's words in `reasonText`). */
+export type UndecryptableReason = "damaged";
+
+export interface Undecryptable {
+  reason: UndecryptableReason;
+  reasonText: string;
+}
+
 export type SendState = "awaiting_key" | "queued" | "sent" | "delivered" | "read" | "failed";
 
 export interface Message {
@@ -14,6 +22,8 @@ export interface Message {
   senderId: string;
   body: string;
   decryptionFailed?: boolean;
+  /** Stored without its body, and why; absent for a readable message. */
+  undecryptable?: Undecryptable;
   automodBlurred?: boolean;
   timestamp: number;
   isOwn: boolean;

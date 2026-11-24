@@ -368,6 +368,7 @@ impl HostChannel {
             );
             return Ok(Held::Stored);
         }
+        let generation = message.mek_generation;
         let post = ReceivedPost {
             community_id: community_id.to_owned(),
             channel_id: channel_id.clone(),
@@ -379,7 +380,7 @@ impl HostChannel {
             message,
             forwarded_from_author,
         };
-        match self.ingest_as(post, read.backfill).await? {
+        match self.ingest_as(post.clone(), read.backfill).await? {
             // The gate judged the author departed while this read took it
             // as a member: its departure merged after the standing was
             // taken, so the entry was judged without the departure head
@@ -398,8 +399,23 @@ impl HostChannel {
             Ingested::Dropped(reason) => {
                 tracing::debug!(community_id, channel_id, ?reason, "outbox post dropped");
             }
+            // The body names a generation we are owed and do not hold yet
+            // (behind, or before our first `MekTransfer`): held, so the
+            // catch-up the key's install starts reads it again and it
+            // arrives with its text (`outbox_hold.rs`). One whose key we
+            // hold is damaged: stored visibly unreadable, never skipped
+            // past invisibly. Neither: history from before our keys.
+            Ingested::Undecryptable if self.entry_waits_for_key(community_id, generation) => {
+                return Ok(Held::Pending);
+            }
             Ingested::Undecryptable => {
-                tracing::debug!(community_id, channel_id, "outbox post no held key opens");
+                if !self.store_undecryptable(post).await? {
+                    tracing::debug!(
+                        community_id,
+                        channel_id,
+                        "outbox post of a key from before ours"
+                    );
+                }
             }
             _ => {}
         }

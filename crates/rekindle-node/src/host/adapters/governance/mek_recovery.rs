@@ -79,6 +79,7 @@ impl HostGovernance {
     /// Ask for `community_id`'s key when we hold it behind the generation
     /// governance names (item 1c's trigger, after a merge raised it).
     pub(crate) fn repair_behind_mek(&self, community_id: &str) {
+        self.refresh_key_status(community_id);
         if rekindle_presence::hides_presence(self.ctx.own_presence.status()) {
             return;
         }

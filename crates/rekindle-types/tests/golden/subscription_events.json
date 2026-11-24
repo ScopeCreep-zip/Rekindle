@@ -309,6 +309,25 @@
       }
     }
   },
+  "channelMessage.new.undecryptable": {
+    "channelMessage": {
+      "new": {
+        "automodBlurred": false,
+        "body": null,
+        "channel": "ch_cccccccccccccccccccccccccccccccc",
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "messageId": "msg_22222222222222222222222222222222",
+        "replyToMessageId": null,
+        "senderPseudonym": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "sequence": 43,
+        "timestamp": 1760000000001,
+        "undecryptable": {
+          "reason": "damaged",
+          "reasonText": "This message could not be read: it is damaged and does not open under the key it names."
+        }
+      }
+    }
+  },
   "crypto.mekRequested": {
     "crypto": {
       "mekRequested": {
@@ -690,6 +709,19 @@
         "codeHash": "7777777777777777777777777777777777777777777777777777777777777777",
         "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
         "uses": 1
+      }
+    }
+  },
+  "governance.keyStatus": {
+    "governance": {
+      "keyStatus": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "status": {
+          "have": 3,
+          "need": 4,
+          "sinceMs": 1760000000000,
+          "state": "pending"
+        }
       }
     }
   },

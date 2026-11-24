@@ -277,6 +277,7 @@ mod tests {
             body: None,
             reply_to_message_id: None,
             automod_blurred: false,
+            undecryptable: None,
         })
     }
 

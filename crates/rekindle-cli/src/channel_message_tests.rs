@@ -143,6 +143,7 @@ fn view(body: &str) -> ChannelMessageView {
         sender_id: ANN_PSEUDONYM.into(),
         body: body.into(),
         decryption_failed: false,
+        undecryptable: None,
         automod_blurred: false,
         timestamp: 0,
         is_own: false,

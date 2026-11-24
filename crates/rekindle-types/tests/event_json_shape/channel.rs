@@ -65,6 +65,24 @@ pub fn samples() -> Vec<Sample> {
                 body: Some(text("hello channel")),
                 reply_to_message_id: Some("msg_41".into()),
                 automod_blurred: true,
+                undecryptable: None,
+            },
+        ),
+        ev(
+            "new.undecryptable",
+            ChannelMessageEvent::New {
+                community: community(),
+                channel: channel(),
+                message_id: id("msg_", '2'),
+                sender_pseudonym: pk('a'),
+                sequence: 43,
+                timestamp: 1_760_000_000_001,
+                body: None,
+                reply_to_message_id: None,
+                automod_blurred: false,
+                undecryptable: Some(
+                    rekindle_types::dto::channel_message::UndecryptableReason::Damaged.into(),
+                ),
             },
         ),
         ev(

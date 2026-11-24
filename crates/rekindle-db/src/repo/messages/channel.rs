@@ -73,6 +73,27 @@ pub fn insert(conn: &Connection, msg: &ChannelMessageInsert<'_>) -> rusqlite::Re
     Ok(())
 }
 
+/// Mark the stored channel message `message_id` as unreadable for
+/// `reason` (`UndecryptableReason::as_str`): its body stays empty.
+///
+/// # Errors
+/// The update failed.
+pub fn mark_undecryptable(
+    conn: &Connection,
+    owner_key: &str,
+    channel_id: &str,
+    message_id: &str,
+    reason: &str,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE messages SET undecryptable_reason = ?4 \
+         WHERE owner_key = ?1 AND conversation_id = ?2 AND conversation_type = 'channel' \
+           AND message_id = ?3",
+        params![owner_key, channel_id, message_id, reason],
+    )?;
+    Ok(())
+}
+
 /// The local row id of the channel message `message_id`, when we hold it.
 ///
 /// # Errors
@@ -267,6 +288,8 @@ pub struct StoredChannelMessage {
     /// A history-gap marker row (plan E3.3, D23): the sender's channel
     /// outbox reaches this chain seq and no read reached it; body empty.
     pub history_gap_through: Option<u64>,
+    /// Stored without its body, and why (`mark_undecryptable`).
+    pub undecryptable_reason: Option<String>,
 }
 
 /// Up to `limit` messages of `channel_id`, oldest first; with `before`, only
@@ -286,7 +309,7 @@ pub fn page(
     let mut stmt = conn.prepare(
         "SELECT id, sender_key, body, automod_blurred, timestamp, message_id, forwarded_from_author, \
                 attachment_json, flags, send_state, failure_reason, edited_at, deleted_by, \
-                history_gap_through \
+                history_gap_through, undecryptable_reason \
          FROM messages \
          WHERE owner_key = ?1 AND conversation_id = ?2 AND conversation_type = 'channel' \
            AND (deleted_at IS NULL OR deleted_by IS NOT NULL) AND (?3 IS NULL OR timestamp < ?3) \
@@ -325,6 +348,7 @@ pub fn page(
                         Box::new(e),
                     )
                 })?,
+            undecryptable_reason: get(row, "undecryptable_reason")?,
         })
     })?;
     let mut out = rows.collect::<rusqlite::Result<Vec<_>>>()?;

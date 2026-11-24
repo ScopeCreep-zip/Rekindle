@@ -35,6 +35,23 @@ pub fn channel_read_roster(
     roster
 }
 
+/// Whether `channel` is restricted under `state` (plan FX3): an
+/// overwrite on it denies `VIEW_CHANNELS` to `@everyone` or to a role the
+/// state holds. A restricted channel's readers are its roster; everyone
+/// else sees it locked.
+#[must_use]
+pub fn is_restricted(state: &GovernanceState, channel: &ChannelId) -> bool {
+    state.overwrites.iter().any(|((on, target), overwrite)| {
+        on == channel
+            && overwrite.target_type == "role"
+            && overwrite.deny & VIEW_CHANNELS != 0
+            && state
+                .roles
+                .keys()
+                .any(|role| format!("{role:?}") == *target)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::HashSet;
@@ -118,6 +135,11 @@ mod tests {
             roster,
             vec![key(1), key(3)],
             "the creator reads everything, @everyone is denied, the role overwrite allows, a ban removes"
+        );
+        assert!(is_restricted(&state, &channel), "@everyone is denied");
+        assert!(
+            !is_restricted(&state, &ChannelId([8; 16])),
+            "no overwrite on the other channel"
         );
         assert_eq!(
             channel_read_roster(&state, &ChannelId([8; 16]), &[key(2)]),

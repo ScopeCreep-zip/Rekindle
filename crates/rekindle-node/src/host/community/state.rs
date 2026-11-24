@@ -247,6 +247,16 @@ pub struct CommunityState {
     #[serde(skip)]
     pub own_removal: Option<OwnRemoval>,
 
+    /// When our community key went missing or behind (unix ms), for
+    /// `KeyStatus::since_ms`; none while it is current.
+    #[serde(skip)]
+    pub key_pending_since_ms: Option<u64>,
+
+    /// The key status last published as `GovernanceEvent::KeyStatus`, so
+    /// only a change is announced.
+    #[serde(skip)]
+    pub published_key_status: Option<rekindle_types::dto::community::KeyStatus>,
+
     /// Whether the community's network side is torn down for our removal,
     /// behind the lock that orders a teardown and a restore (a removal the
     /// merge later voids, plan E3.2 S9 own removal and strong removal).

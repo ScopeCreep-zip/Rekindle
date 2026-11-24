@@ -208,3 +208,67 @@ async fn merged_joins_past_the_policy_raise_a_raid_alert() {
     );
     host.shutdown().await.unwrap();
 }
+
+/// KP: a member whose community key is behind governance's generation
+/// reads `Pending` with what it holds and needs (and since when), and
+/// `Current` once the key at that generation is installed.
+#[tokio::test]
+async fn a_member_behind_reads_pending_until_the_key_arrives() {
+    use rekindle_types::dto::community::KeyState;
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    let owner = create_ann(&host).await.public_key;
+    seed_registry_community(&host, &owner).await;
+    {
+        let mut map = host.ctx.communities.map().write();
+        let c = map.get_mut("c1").unwrap();
+        c.mek_generation = 3;
+        c.my_pseudonym_key = Some("me".into());
+    }
+    let governance = host.governance();
+    let cache = crate::daemon::mek_rotation::MekCacheAdapter::new(std::sync::Arc::clone(
+        &host.ctx.mek_cache,
+    ));
+    let at = |generation| rekindle_transport::crypto::mek::Mek::from_bytes([7; 32], generation);
+    rekindle_mek_rotation::ChannelMekCache::insert(&cache, "c1", KeyScope::Community, at(2));
+    governance.refresh_key_status("c1");
+    let status = |views: Vec<rekindle_types::dto::community::CommunityView>| {
+        views.into_iter().find(|v| v.id == "c1").unwrap().key_status
+    };
+    let pending = status(governance.community_views().await);
+    assert_eq!(pending.state, KeyState::Pending, "generation 2 is behind 3");
+    assert_eq!((pending.have, pending.need), (Some(2), Some(3)));
+    assert!(pending.since_ms.is_some(), "the wait has a start");
+
+    rekindle_mek_rotation::ChannelMekCache::insert(&cache, "c1", KeyScope::Community, at(3));
+    governance.refresh_key_status("c1");
+    let current = status(governance.community_views().await);
+    assert_eq!(current.state, KeyState::Current, "the key arrived");
+    assert_eq!((current.have, current.since_ms), (Some(3), None));
+    host.shutdown().await.unwrap();
+}
+
+/// KP: a member outside a channel's readers sees it locked with the
+/// Host's reason; a creator, who reads everything, does not.
+#[test]
+fn a_channel_we_cannot_read_is_locked_with_the_host_s_reason() {
+    use crate::host::adapters::governance::views::channel_lock;
+    use rekindle_types::id::PseudonymKey;
+    let creator = PseudonymKey([1; 32]);
+    let c = |me: u8| crate::host::community::CommunityState {
+        my_pseudonym_key: Some(hex::encode([me; 32])),
+        governance_state: Some(rekindle_governance::state::GovernanceState {
+            creators: std::collections::BTreeSet::from([creator.clone()]),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let channel = hex::encode([9u8; 16]);
+    let reason = channel_lock(&c(2), &channel, 0).expect("a non-reader sees the channel locked");
+    assert_eq!(reason, "You don't have permission to view this channel.");
+    assert_eq!(
+        channel_lock(&c(1), &channel, 0),
+        None,
+        "the creator reads it"
+    );
+}
