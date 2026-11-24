@@ -68,9 +68,11 @@ fn stranger() -> BootstrapJoiner {
 }
 
 /// A request that arrives with no unlocked Host has no answer: the one
-/// bare NAK. (A community the Host does not hold is not this case: its
-/// unreadable partial flag is held partial and answered `bootstrapPartial`,
-/// S7c.8 (i).)
+/// bare NAK (`host_governance` is `NotLoggedIn`, so `judge` is `Err`). On an
+/// unlocked Host a community it does not hold reads not partial
+/// (`governance_partial_impl`, `checkpoint_rows.rs:80`: no row is
+/// `Ok(None)`), so it too ends in `Err` and a NAK; `bootstrapPartial` is
+/// answered only for a community whose partial flag is set, S7c.8 (i).
 #[tokio::test]
 async fn a_request_the_host_cannot_answer_is_a_nak() {
     let state = std::sync::Arc::new(crate::state::AppState::default());
