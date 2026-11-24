@@ -22,6 +22,9 @@ export interface DmMessage {
   /** A timer-change notice row (plan E7.1): `senderId` set the timer to
    *  this many seconds (0 = off); null for a message. */
   timerNoticeSeconds: number | null;
+  /** The client id of the message it replies to, as carried (held or
+   *  not); `null`: not a reply. */
+  replyToId: string | null;
 }
 
 /** A conversation's disappearing-message timer as its control shows it

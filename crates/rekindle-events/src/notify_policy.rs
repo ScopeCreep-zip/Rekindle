@@ -360,7 +360,7 @@ mod tests {
         let sent = SubscriptionEvent::ChannelMessage(ChannelMessageEvent::DirectMessageSent {
             conversation_id: "pk".into(),
             reply_to_id: None,
-            message: rekindle_types::dto::dm::DmMessage {
+            message: Box::new(rekindle_types::dto::dm::DmMessage {
                 id: 1,
                 message_id: Some("01900000-0000-7000-8000-000000000002".into()),
                 sender_id: "me".into(),
@@ -372,7 +372,8 @@ mod tests {
                 expire_seconds: 0,
                 expire_at: None,
                 timer_notice_seconds: None,
-            },
+                reply_to_id: None,
+            }),
         });
         assert!(!is_candidate(&sent));
         let all_on = NotifyInputs {
@@ -389,7 +390,7 @@ mod tests {
         let sent = SubscriptionEvent::GroupDm(GroupDmEvent::MessageSent {
             group_id: "6d".repeat(16),
             reply_to_id: None,
-            message: rekindle_types::dto::dm::DmMessage {
+            message: Box::new(rekindle_types::dto::dm::DmMessage {
                 id: 1,
                 message_id: Some("01900000-0000-7000-8000-000000000003".into()),
                 sender_id: "me".into(),
@@ -401,7 +402,8 @@ mod tests {
                 expire_seconds: 0,
                 expire_at: None,
                 timer_notice_seconds: None,
-            },
+                reply_to_id: None,
+            }),
         });
         assert!(!is_candidate(&sent));
         let all_on = NotifyInputs {

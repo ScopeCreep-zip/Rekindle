@@ -84,6 +84,7 @@ impl App {
             let request = IpcRequest::GroupDm(GroupDmRequest::Send {
                 group_id: group_id.clone(),
                 body: text,
+                reply_to: None,
             });
             match client.request_ok(request).await {
                 Ok(_) => {

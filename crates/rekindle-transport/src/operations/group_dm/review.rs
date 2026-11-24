@@ -48,6 +48,7 @@ pub async fn send_reviewed(
     host: &dyn FriendHost,
     group_id: &str,
     body: &str,
+    reply_to: Option<&str>,
     acknowledges_key_changes: bool,
 ) -> Result<String, FriendError> {
     if acknowledges_key_changes {
@@ -57,5 +58,5 @@ pub async fn send_reviewed(
             }
         }
     }
-    send(host, group_id, body).await
+    send(host, group_id, body, reply_to).await
 }

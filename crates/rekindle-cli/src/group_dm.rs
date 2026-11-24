@@ -41,9 +41,14 @@ async fn request(client: &DaemonClient, cmd: &GroupDmCmd) -> anyhow::Result<IpcR
             group_id: group_id.clone(),
             members: friend_ref::resolve_all(client, members).await?,
         }),
-        GroupDmCmd::Send { group_id, text } => IpcRequest::GroupDm(GroupDmRequest::Send {
+        GroupDmCmd::Send {
+            group_id,
+            text,
+            reply_to,
+        } => IpcRequest::GroupDm(GroupDmRequest::Send {
             group_id: group_id.clone(),
             body: text.clone(),
+            reply_to: reply_to.clone(),
         }),
         GroupDmCmd::List => IpcRequest::GroupDm(GroupDmRequest::List),
         GroupDmCmd::Messages {

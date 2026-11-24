@@ -192,12 +192,13 @@ pub async fn send_dm(
         expire_seconds: row.expire_seconds,
         expire_at: row.expire_at,
         timer_notice_seconds: None,
+        reply_to_id: row.reply_to,
     };
     host.publish(SubscriptionEvent::ChannelMessage(
         ChannelMessageEvent::DirectMessageSent {
             conversation_id: to.to_string(),
             reply_to_id: stored.reply_to,
-            message: message.clone(),
+            message: Box::new(message.clone()),
         },
     ));
     Ok(message)
@@ -305,6 +306,7 @@ pub async fn history(
             expire_seconds: row.expire_seconds,
             expire_at: row.expire_at,
             timer_notice_seconds: row.timer_notice_seconds,
+            reply_to_id: row.reply_to,
         })
         .collect())
 }

@@ -319,7 +319,10 @@ export async function setCommunityName(b: Browser, user: User, name: string): Pr
  */
 export async function setLocationSharing(b: Browser, user: User, share: boolean): Promise<void> {
   await communitySettings(b, "Privacy");
-  const select = ".modal-container .settings-section select.form-select";
+  // The location choice's own field: Privacy holds three selects (location,
+  // activity, last seen), and an ambiguous selector fails WebdriverIO's
+  // strict mode.
+  const select = '//div[contains(@class,"modal-container")]//div[contains(@class,"form-field")][.//label[contains(.,"Share which channel")]]//select';
   const value = share ? "members" : "none";
   await (await shown(b, select)).waitForEnabled({ timeout: NET_WAIT_MS, timeoutMsg: "the location choice stayed disabled" });
   if ((await (await b.$(select)).getValue()) !== value) {
