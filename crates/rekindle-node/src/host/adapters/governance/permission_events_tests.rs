@@ -63,7 +63,7 @@ fn base() -> GovernanceState {
 
 #[test]
 fn an_unchanged_merge_is_no_transition() {
-    assert!(permission_transitions(&base(), &base(), 100).is_empty());
+    assert!(permission_transitions(&base(), &base(), &base().diff(&base()), 100).is_empty());
 }
 
 #[test]
@@ -80,7 +80,7 @@ fn a_member_overwrite_moves_that_member_and_its_channel() {
         },
     );
     assert_eq!(
-        permission_transitions(&prev, &next, 100),
+        permission_transitions(&prev, &next, &prev.diff(&next), 100),
         PermissionTransitions {
             members: vec![key(2).to_hex()],
             channels: vec![hex::encode([7; 16])],
@@ -102,11 +102,13 @@ fn a_timeout_moves_the_member_and_its_expiry_between_merges_does_not() {
         },
     );
     assert_eq!(
-        permission_transitions(&prev, &next, 120).members,
+        permission_transitions(&prev, &next, &prev.diff(&next), 120).members,
         vec![key(1).to_hex()]
     );
     // Run out: both sides are read at the same instant, so no change.
-    assert!(permission_transitions(&next, &next.clone(), 500).is_empty());
+    assert!(
+        permission_transitions(&next, &next.clone(), &next.diff(&next.clone()), 500).is_empty()
+    );
 }
 
 /// A co-creator's seat ends only by its own leave (lead decision (53)),
@@ -130,7 +132,7 @@ fn a_co_creator_who_left_is_named() {
     let prev = merge_entries_under(&cert, &[(key(2), vec![at(5, joined.clone())])]);
     let next = merge_entries_under(&cert, &[(key(2), vec![at(5, joined), at(6, left)])]);
     assert_eq!(
-        permission_transitions(&prev, &next, 0).members,
+        permission_transitions(&prev, &next, &prev.diff(&next), 0).members,
         vec![key(2).to_hex()]
     );
 }

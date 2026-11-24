@@ -25,24 +25,13 @@ pub enum JoinStageStatus {
     TimedOut,
 }
 
-/// Lifecycle-side events. `RolesChanged` + `ChannelsUpdated` carry
-/// **identifiers only** — the src-tauri adapter snapshots the current
-/// in-memory `CommunityState` after applying and constructs the full
-/// `CommunityEvent` payload (with `RoleDto` / `ChannelsUpdatedChannelDto`
-/// / `ChannelsUpdatedCategoryDto`) from there. This keeps the crate
-/// free of the src-tauri DTO types while preserving the existing UI
-/// contract.
+/// Lifecycle-side events, carrying identifiers only; the Host builds each
+/// frontend payload. A role, channel, category or member-role change is
+/// not one: every reader reads those off the diff of the merged states it
+/// projects (`GovernanceState::diff`, plan E3.2 S9), so a local write and
+/// a peer's op announce the same change once, from one place.
 #[derive(Debug, Clone)]
 pub enum GovernanceRuntimeEvent {
-    /// A role-affecting governance entry has been applied — adapter
-    /// snapshots roles and emits `CommunityEvent::RolesChanged`.
-    RolesChanged { community_id: String },
-
-    /// A channel/category-affecting governance entry has been applied —
-    /// adapter snapshots channels/categories and emits
-    /// `CommunityEvent::ChannelsUpdated`.
-    ChannelsUpdated { community_id: String },
-
     /// A community has been created locally (origin flow,
     /// `seed_community`: every create, direct or co-created, lead
     /// decision (41)). The adapter publishes
@@ -156,14 +145,6 @@ pub enum GovernanceRuntimeEvent {
     /// — the host publishes `GovernanceEvent::GovernanceRebuilt` and
     /// `MembershipEvent::MembersRefreshed` for it.
     GovernanceRebuilt { community_id: String },
-
-    /// A member's role set changed — adapter emits
-    /// `CommunityEvent::MemberRolesChanged`.
-    MemberRolesChanged {
-        community_id: String,
-        pseudonym_hex: String,
-        role_ids: Vec<rekindle_types::id::RoleId>,
-    },
 
     /// A member completed onboarding — adapter emits
     /// `CommunityEvent::OnboardingComplete`.
