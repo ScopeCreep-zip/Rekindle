@@ -5,6 +5,7 @@ import { transformDmMessage } from "../utils/transformers";
 import { errorMessage } from "../utils/error";
 import { awaitsExpiry } from "./disappearing.actions";
 import { afterDraftReports, sendDraftReport } from "../utils/draft_reports";
+import { disappearingState } from "../stores/disappearing.store";
 
 // Group DMs (plan E2.6). Each action calls the Host and renders what it
 // answers; validation, the member caps and the review are the Host's.
@@ -99,7 +100,7 @@ export function handleGroupDisplayed(groupId: string): void {
       .groupDmMarkRead(groupId)
       .then(() => {
         const messages = groupDmState.conversations[groupId]?.messages ?? [];
-        if (awaitsExpiry(messages)) void loadGroupRows(groupId, Math.max(50, messages.length));
+        if (awaitsExpiry(messages, disappearingState.timers[groupId])) void loadGroupRows(groupId, Math.max(50, messages.length));
       })
       .catch((e) => {
         console.error("group_dm_mark_read failed", e);
