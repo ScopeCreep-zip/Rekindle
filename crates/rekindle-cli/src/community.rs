@@ -305,6 +305,7 @@ pub async fn dispatch(
         | CommunityCmd::ReadmitDevice { .. }
         | CommunityCmd::EnrolDevice { .. } => device(cmd, client, mode).await,
         CommunityCmd::Invite(sub) => crate::governance::dispatch_invite(sub, client, mode).await,
+        CommunityCmd::Channel(sub) => crate::channel_overwrite::dispatch(sub, client, mode).await,
         CommunityCmd::Watch { community } => {
             crate::community_watch::watch(client, community.as_deref(), mode).await
         }

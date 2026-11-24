@@ -489,6 +489,7 @@ fn friend_samples(add: &mut impl FnMut(&str, Value)) {
             favourite: false,
             rename_refused: Some("accept the invite first".into()),
             invite_refused: Some("accept the invite first".into()),
+            call_refused: Some("accept the invite first".into()),
         }),
     );
     add(
