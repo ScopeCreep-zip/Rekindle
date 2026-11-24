@@ -149,6 +149,8 @@ mod routeless_request;
 mod scenarios;
 mod sealed_page_warming;
 mod shell_join_hand_over;
+mod shell_member_route;
+mod shell_node;
 mod single_use_race;
 mod smoke;
 mod stale_route_call;
