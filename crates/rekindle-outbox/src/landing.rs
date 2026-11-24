@@ -84,9 +84,8 @@ impl<D: OutboxDeps> Outbox<D> {
             for row in rows {
                 if on.contains(&row.stream_seq) && !row.kind.awaits_ack() {
                     // A group row settles `sent` once its entry lands (E2.6).
-                    self.deps.settle(&row.client_id, SendState::Sent).await?;
-                    self.deps
-                        .publish(StateChange::of(&row, SendState::Sent, None));
+                    let moved = self.deps.settle(&row.client_id, SendState::Sent).await?;
+                    self.publish_moved(&row, moved, None);
                     landed += 1;
                 } else if on.contains(&row.stream_seq) {
                     self.mark_landed(&row, row.attempts, now).await?;
@@ -100,6 +99,7 @@ impl<D: OutboxDeps> Outbox<D> {
                         next_at: now,
                         deadline: row.deadline,
                         wedge_reason: None,
+                        retry: false,
                     };
                     self.deps.update(&row.client_id, &update).await?;
                     due = true;
