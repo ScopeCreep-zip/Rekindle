@@ -455,3 +455,18 @@ export async function peerBan(peer: Peer, anchor: string, member: string): Promi
 export async function peerUnassignRole(peer: Peer, anchor: string, member: string, roleId: string): Promise<void> {
   await peerReviewed(peer, ["community", "role", "unassign", "--community", anchor, "--member", member, "--role-id", roleId]);
 }
+
+/** `peer` sends `text` to group `groupId` as a reply to the message whose client id is `replyTo` (CLI `--reply-to`, plan G-replies). */
+export async function peerReplyGroup(peer: Peer, groupId: string, text: string, replyTo: string): Promise<void> {
+  await peer.cli(["group", "send", groupId, text, "--reply-to", replyTo]);
+}
+
+/** `peer` kicks member `member` (pseudonym or display name) from community `anchor`. */
+export async function peerKick(peer: Peer, anchor: string, member: string): Promise<void> {
+  await peerReviewed(peer, ["community", "kick", "--community", anchor, "--member", member]);
+}
+
+/** `peer` posts `text` in channel `channel` of community `community` (names or keys). */
+export async function peerPostChannel(peer: Peer, community: string, channel: string, text: string): Promise<void> {
+  await peer.cli(["channel", "send", "-c", community, "-C", channel, "-m", text]);
+}
