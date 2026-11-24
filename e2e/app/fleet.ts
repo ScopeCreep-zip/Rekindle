@@ -416,3 +416,32 @@ export async function peerMemberCount(peer: Peer, anchor: string): Promise<numbe
   const info = (await peer.cli(["community", "info", "--community", anchor])) as { member_count?: number; memberCount?: number } | null;
   return info?.member_count ?? info?.memberCount ?? 0;
 }
+
+/**
+ * `args` as `peer`, answering its review when it asks one (D3.4): the CLI
+ * names the subject to confirm (`--confirm=<subject>`), as a CLI user reads
+ * it from their own review. A command that asks none runs as is.
+ */
+export async function peerReviewed(peer: Peer, args: string[]): Promise<unknown> {
+  const refused = (await peer.review(args)) as { error?: { message?: string } } | null;
+  const subject = /--confirm=(.+)$/.exec(refused?.error?.message ?? "")?.[1]?.trim();
+  return peer.cli(subject ? [`--confirm=${subject}`, ...args] : args);
+}
+
+/** `peer` creates role `name` with permission bits `permissions` in community `anchor`; its role id. */
+export async function peerCreateRole(peer: Peer, anchor: string, name: string, permissions: number): Promise<string> {
+  const made = (await peerReviewed(peer, ["community", "role", "create", "--community", anchor, "--name", name, "--permissions", String(permissions)])) as Record<string, unknown> | null;
+  const id = (made?.roleId ?? made?.role_id ?? made?.id) as string | undefined;
+  if (!id) throw new Error(`${peer.displayName}: role create answered no id (${JSON.stringify(made).slice(0, 200)})`);
+  return id;
+}
+
+/** `peer` gives member `member` (pseudonym or display name) role `roleId` in community `anchor`. */
+export async function peerAssignRole(peer: Peer, anchor: string, member: string, roleId: string): Promise<void> {
+  await peerReviewed(peer, ["community", "role", "assign", "--community", anchor, "--member", member, "--role-id", roleId]);
+}
+
+/** `peer` bans member `member` (pseudonym or display name) from community `anchor`. */
+export async function peerBan(peer: Peer, anchor: string, member: string): Promise<void> {
+  await peerReviewed(peer, ["community", "ban", "--community", anchor, "--member", member]);
+}
