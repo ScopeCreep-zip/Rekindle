@@ -79,9 +79,25 @@ pub(crate) enum Group {
     /// We are in it, with this many other members; `creator` when we
     /// created it (the roster's first member, `rekindle_dm::GroupRoster::
     /// creator`), the one member whose rename the others accept.
-    Joined { others: usize, creator: bool },
+    /// `lobby`: its lobby's verdicts for us (`group_lobby::current`).
+    Joined {
+        others: usize,
+        creator: bool,
+        lobby: Option<LobbyCaps>,
+    },
     /// We are invited and have not joined.
     Pending,
+}
+
+/// A group's lobby as the capabilities see it: whether it is open, and
+/// the Host's join, leave and launch verdicts for us
+/// (`group_dm::lobby::verdicts`, the ones `LobbyView` carries).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct LobbyCaps {
+    pub open: bool,
+    pub join: bool,
+    pub leave: bool,
+    pub launch: bool,
 }
 
 /// The state besides the selection and the Host's stream, read before
@@ -107,12 +123,13 @@ pub(crate) struct SkinWorld {
     pub records_held: bool,
 }
 
-/// The game has a launch method (`launcher::launch_to_server`'s own
-/// condition): a connect template or a Steam app id.
+/// The game can be launched to a server (`launcher::joins_servers`, the
+/// launcher's own condition): a connect template, or a Steam app id with
+/// Xfire's network arguments (plan E7.2 G2).
 pub(crate) fn launchable(game_id: u32) -> bool {
     GameDatabase::shared()
         .lookup_by_id(game_id)
-        .is_some_and(|g| g.connect_template.is_some() || g.steam_app_id.is_some())
+        .is_some_and(rekindle_game_detect::launcher::joins_servers)
 }
 
 fn media_exists(selected: Selected<'_>) -> bool {
@@ -155,6 +172,13 @@ fn friend_allows(capability: Capability, inputs: &Inputs, selected: Selected<'_>
     }
 }
 
+fn lobby_of(group: Option<Group>) -> Option<LobbyCaps> {
+    match group {
+        Some(Group::Joined { lobby, .. }) => lobby,
+        _ => None,
+    }
+}
+
 /// Whether `capability` holds for a window with `selected`.
 pub(crate) fn allows(
     capability: Capability,
@@ -189,17 +213,21 @@ pub(crate) fn allows(
             _ => false,
         },
         // In a 1:1 window Xfire's `OnAppCanJoin` drives it (SK2-G §5).
-        // In a group window: an open lobby hosted by another member; no
-        // group has a lobby before G6's `group_lobbies`, so we are in none.
+        // In a group window (SK2-G §5 (5)): an open lobby hosted by another
+        // member that we are not in.
         C::JoinGameLobby => match selected {
             Selected::Friend { friend, .. } => can_join_friend(friend),
-            _ => false,
+            _ => lobby_of(group).is_some_and(|l| l.join),
         },
-        // We are in no lobby (above): none to leave or launch.
-        C::LeaveGameLobby | C::LaunchGameLobby => false,
-        // A group with another member, while we are in a game we can launch.
+        // We are in it and are not its host.
+        C::LeaveGameLobby => lobby_of(group).is_some_and(|l| l.leave),
+        // We host it and it holds at least one joined member.
+        C::LaunchGameLobby => lobby_of(group).is_some_and(|l| l.launch),
+        // A group with another member and no open lobby, while we are in a
+        // game we can launch.
         C::HostGameLobby => {
             matches!(group, Some(Group::Joined { others, .. }) if others >= 1)
+                && !lobby_of(group).is_some_and(|l| l.open)
                 && world.own_game.is_some_and(launchable)
         }
         C::AddServer => match selected {

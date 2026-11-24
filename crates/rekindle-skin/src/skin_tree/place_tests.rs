@@ -173,6 +173,7 @@ fn bare(views_group: Option<u16>) -> WindowLayout {
         label: None,
         inset: None,
         target: None,
+        fit: None,
         shows_with: None,
         control_group: views_group,
         triggers: Vec::new(),
@@ -394,7 +395,8 @@ fn an_art_label_clone_carries_its_own_label() {
             panic!("{id}: {:?}", clone.label);
         };
         assert_eq!(text, "Communities", "{id}");
-        let (NodeSpan::Fixed { size: w, .. }, NodeSpan::Fixed { size: h, .. }) = (clone.x, clone.y)
+        let (NodeSpan::Fixed { size: w, .. }, NodeSpan::Fixed { size: h, .. }) =
+            (clone.x.clone(), clone.y.clone())
         else {
             panic!("{id}: a fixed tab");
         };

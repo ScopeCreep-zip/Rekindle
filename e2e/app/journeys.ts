@@ -1,21 +1,15 @@
 // Plan E7.14: journeys the real-app specs share, driven through the window
 // as a user would. Built on the walk's helpers until S3 moves them here.
 
-import { randomBytes } from "node:crypto";
 import { expect } from "@wdio/globals";
 import type { Browser } from "webdriverio";
-import { NETWORK_LABEL, NET_WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, sleep, switchTo, typeAndSend, typeInto, untilPublished, waitForHandle, waitUntil } from "../walk/helpers.ts";
-import { BUDDY, LOGIN, SETTINGS, inBuddy, menu, openAddFriend, setValue, submitJoin, underTree } from "../walk/nav.ts";
+import { NETWORK_LABEL, NET_WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, switchTo, typeAndSend, typeInto, untilPublished, waitForHandle, waitUntil } from "../walk/helpers.ts";
+import { BUDDY, LOGIN, closeModal, inBuddy, menu, openAddFriend, setValue, submitJoin, underTree } from "../walk/nav.ts";
+import { showSkinView, skinViewShown } from "./journeys_skins.ts";
+import type { User } from "./user.ts";
 
-/** A throwaway identity: its name and passphrase live only in this run. */
-export interface User {
-  displayName: string;
-  passphrase: string;
-}
-
-export function newUser(prefix: string): User {
-  return { displayName: `${prefix}-${randomBytes(3).toString("hex")}`, passphrase: randomBytes(18).toString("base64url") };
-}
+export { type User, newUser } from "./user.ts";
+export * from "./journeys_skins.ts";
 
 /**
  * Create `user` on a first-run app: the Host makes the keys, vault and
@@ -95,7 +89,11 @@ export async function pendingRequest(b: Browser, message: string): Promise<strin
 export async function acceptRequest(b: Browser, user: User, message: string): Promise<void> {
   const item = await byText(b, ".pending-item", message, NET_WAIT_MS);
   await (await item.$(".pending-btn-accept")).click();
-  await resolveIntent(b, { passphrase: user.passphrase });
+  // An accept is always reviewed (trust-changing, with its acknowledgement):
+  // wait for the review and require it committed. The 3 s default let a
+  // review that came up later return "none" and stay open (r27 friend-dm,
+  // Bob's Accept review unticked, Alice never listed).
+  expect(await resolveIntent(b, { passphrase: user.passphrase, appearMs: NET_WAIT_MS })).toBe("committed");
 }
 
 /**
@@ -120,11 +118,34 @@ export async function communitiesView(b: Browser): Promise<void> {
   }
 }
 
-/** The Friends tab's row for `name`, once listed. */
+/**
+ * The Friends tab's row for friend `name`, once listed as a friend: a buddy
+ * row outside the pending-request group (BuddyGroup `.buddy-group-pending`,
+ * "Awaiting Response"), which lists a request the other side has not yet
+ * accepted. Matching any row with the name passed while the request was
+ * still pending (Linux shots, 2026-11-23).
+ */
 export async function friendRow(b: Browser, name: string): Promise<Awaited<ReturnType<Browser["$"]>>> {
   await inBuddy(b);
   await friendsView(b);
-  return byText(b, ".buddy-item", name, NET_WAIT_MS);
+  let found: Awaited<ReturnType<Browser["$"]>> | undefined;
+  await waitUntil(
+    async () => {
+      for (const row of await b.$$(".buddy-item")) {
+        if (!(await row.isDisplayed().catch(() => false))) continue;
+        if (!(await row.getText().catch(() => "")).includes(name)) continue;
+        const pending = (await b.execute((el: HTMLElement) => el.closest(".buddy-group-pending") !== null, row as unknown as HTMLElement)) as boolean;
+        if (pending) continue;
+        found = row;
+        return true;
+      }
+      return false;
+    },
+    NET_WAIT_MS,
+    `${name} was never listed as a friend (outside Awaiting Response)`,
+  );
+  if (!found) throw new Error(`${name}: no friend row`);
+  return found;
 }
 
 /** Open the chat window with friend `name` (double-click its row) and switch to it. */
@@ -249,12 +270,104 @@ export async function openCommunity(b: Browser, name: string): Promise<void> {
   await shown(b, ".community-sidebar", NET_WAIT_MS);
 }
 
-/** In the open community window, `user` creates a text channel `name`, and it is listed. */
+/** How many channel rows in the open community window show `name`. */
+export async function channelCount(b: Browser, name: string): Promise<number> {
+  return (await b.execute(
+    (n: string) => Array.from(document.querySelectorAll(".channel-item")).filter((r) => (r.textContent ?? "").includes(n)).length,
+    name.slice(0, 24),
+  )) as number;
+}
+
+/**
+ * In the open community window, `user` creates a text channel `name`, and it
+ * is listed: one more row with its name than before (a match alone passed on
+ * the genesis #general when a spec created a second "general").
+ */
 export async function createTextChannel(b: Browser, user: User, name: string): Promise<void> {
+  const before = await channelCount(b, name);
   await (await shown(b, '[title="Create Channel"]')).click();
   await typeInto(await shown(b, 'input[placeholder="Channel name..."]'), name);
   await submitModal(b, user, 'input[placeholder="Channel name..."]');
-  await byText(b, ".channel-item", name.slice(0, 24), NET_WAIT_MS);
+  await waitUntil(async () => (await channelCount(b, name)) === before + 1, NET_WAIT_MS, `#${name.slice(0, 24)} was never added (still ${before} rows)`);
+}
+
+/**
+ * In the open community window, `user` sets their name in this community
+ * (Community Settings, Overview, MyNameSection: SetCommunityDisplayName), and
+ * the section says members see that name.
+ */
+export async function setCommunityName(b: Browser, user: User, name: string): Promise<void> {
+  await communitySettings(b, "Overview");
+  const input = await shown(b, ".my-name-section input.form-input");
+  await input.clearValue();
+  await typeInto(input, name);
+  await (await shown(b, ".my-name-section button[type=submit]")).click();
+  await resolveIntent(b, { passphrase: user.passphrase, appearMs: 1500 });
+  await waitUntil(
+    async () => ((await (await b.$("#my-name-hint")).getText().catch(() => "")) ?? "").includes(name),
+    NET_WAIT_MS,
+    `the community name never became ${name}`,
+  );
+  await closeModal(b);
+}
+
+/**
+ * In the open community window, `user` sets whether the community sees the
+ * channel they're in (Community Settings, Privacy: "Share which channel
+ * you're in"; default-deny, PresenceSharingPolicy share_location), and the
+ * choice reads back.
+ */
+export async function setLocationSharing(b: Browser, user: User, share: boolean): Promise<void> {
+  await communitySettings(b, "Privacy");
+  const select = ".modal-container .settings-section select.form-select";
+  const value = share ? "members" : "none";
+  await (await shown(b, select)).waitForEnabled({ timeout: NET_WAIT_MS, timeoutMsg: "the location choice stayed disabled" });
+  if ((await (await b.$(select)).getValue()) !== value) {
+    await setValue(b, select, value);
+    // A presence-sharing change is reviewed (IntentKind::SetPresencePolicy,
+    // trust-changing): wait for its review and require it committed; the
+    // select stays disabled until the Host answers (PrivacyTab saving), and
+    // a 1.5 s wait left the review unanswered (Linux, c18558272).
+    expect(await resolveIntent(b, { passphrase: user.passphrase, appearMs: NET_WAIT_MS })).toBe("committed");
+  }
+  await waitUntil(
+    async () => (await (await b.$(select)).getValue()) === value && (await (await b.$(select)).isEnabled()),
+    NET_WAIT_MS,
+    `location sharing never read back ${value}`,
+  );
+  await closeModal(b);
+}
+
+/** A status as one's own status line names it (StatusPicker's labels), as a
+ *  value; "Appear Offline" is what others see as offline. */
+const OWN_STATUS: Record<string, string> = { Online: "online", Away: "away", Busy: "busy", "Appear Offline": "offline" };
+
+/** A status dot's accessible name (StatusDot.tsx "Status: <label>"), as the same value. */
+export const DOT_STATUS: Record<string, string> = {
+  "Status: Online": "online",
+  "Status: Away": "away",
+  "Status: Do not disturb": "busy",
+  "Status: In game": "ingame",
+  "Status: Offline": "offline",
+  "Status: Appear offline": "offline",
+};
+
+/**
+ * `b`'s own effective status as its buddy list's status line shows it (the
+ * app's StatusPicker, or a skin tree's status field), as a status value;
+ * back on the window `b` was on.
+ */
+export async function ownStatusValue(b: Browser): Promise<string> {
+  const here = await b.getWindowHandle();
+  await switchTo(b, BUDDY);
+  const label = (await b.execute(
+    () =>
+      document.querySelector(".status-picker .buddy-name")?.textContent?.trim() ||
+      document.querySelector<HTMLInputElement>(".skin-status-edit")?.placeholder?.trim() ||
+      "",
+  )) as string;
+  await b.switchToWindow(here);
+  return OWN_STATUS[label] ?? `unread "${label}"`;
 }
 
 /** In the open community window, select channel `name`. */
@@ -369,87 +482,6 @@ export async function consoleSeen(b: Browser): Promise<string[]> {
   return (await b.execute("return window.__rekindleConsole || null;")) as string[];
 }
 
-/**
- * `user` chooses built-in skin `name` in Settings → Appearance (its radio,
- * then the intent review), and the Settings window has linked its sheet;
- * the sheet's address. Coming back to Appearance from another tab mounts
- * it afresh, so its list is awaited first; the skin already in use is not
- * clicked, so its sheet is awaited all the same.
- */
-export async function applySkin(b: Browser, user: User, name: string): Promise<string> {
-  await switchTo(b, SETTINGS);
-  await (await byText(b, ".form-tab", "Appearance")).click();
-  await shown(b, ".skin-row-shown .skin-name", NET_WAIT_MS);
-  const inUse = async (): Promise<string> => (await (await b.$(".skin-row-shown .skin-name")).getText()).trim();
-  const linked = async (): Promise<string> => (await b.execute(LINKED_SHEET)) as string;
-  // The sheet shown before the change: the new one links only after every
-  // image it lists has decoded (useSkin.ts), seconds after the row says
-  // "in use", so any skin:// sheet before then is the old skin's.
-  let before = "";
-  if ((await inUse()) !== name) {
-    // A window just opened links its current sheet only once its images
-    // decode, so wait for it: read early, `before` was "" and the old skin's
-    // sheet, linking late, passed as the new one (skin-login on c5802aa26,
-    // both tests one skin behind after a fresh Settings window).
-    await waitUntil(async () => (before = await linked()).startsWith("skin://"), NET_WAIT_MS, "Settings never linked its current skin's sheet");
-    let found = false;
-    for (const row of await b.$$(".skin-row")) {
-      if ((await (await row.$(".skin-name")).getText()).trim() !== name) continue;
-      await (await row.$("input[type=radio]")).click();
-      await resolveIntent(b, { passphrase: user.passphrase, appearMs: 1500 });
-      found = true;
-      break;
-    }
-    if (!found) throw new Error(`Settings lists no skin named ${name}`);
-    await waitUntil(async () => (await inUse()) === name, NET_WAIT_MS, `${name} never shown as the skin in use`);
-  }
-  let href = "";
-  await waitUntil(
-    async () => {
-      href = await linked();
-      return href.startsWith("skin://") && href !== before;
-    },
-    NET_WAIT_MS,
-    `Settings never linked ${name}'s sheet`,
-  );
-  return href;
-}
-
-/** The href of the window's linked, loaded skin sheet (useSkin.ts LINK_ID), or "". */
-export const LINKED_SHEET = 'var l = document.getElementById("rekindle-skin"); return l && l.sheet ? l.getAttribute("href") : "";';
-
-/**
- * Wait until the window `b` is in shows the skin sheet `href` (applySkin's
- * answer). Each window links a new skin itself, after decoding its own
- * trees' art (plan SK4), and swaps its tree with that link (useSkin
- * setSkinShells), so until then it still draws the previous skin's tree.
- */
-export async function skinShown(b: Browser, href: string): Promise<void> {
-  let now = "";
-  await waitUntil(
-    async () => {
-      now = (await b.execute(LINKED_SHEET)) as string;
-      return now === href;
-    },
-    NET_WAIT_MS,
-    `the window never showed the applied skin (shows ${now || "no sheet"})`,
-  );
-}
-
-/** In the open Settings → Appearance, `user` makes built-in skin `name` the login skin (its "Use as login skin", then the review), and its row says so. */
-export async function setLoginSkin(b: Browser, user: User, name: string): Promise<void> {
-  for (const row of await b.$$(".skin-row")) {
-    if ((await (await row.$(".skin-name")).getText()).trim() !== name) continue;
-    if (!(await (await row.$(".skin-badge")).isExisting())) {
-      await press(b, await row.$(".skin-action"));
-      await resolveIntent(b, { passphrase: user.passphrase, appearMs: 1500 });
-    }
-    await waitUntil(async () => (await (await row.$(".skin-badge")).isExisting()), NET_WAIT_MS, `${name} never marked as the login skin`);
-    return;
-  }
-  throw new Error(`Settings lists no skin named ${name}`);
-}
-
 /** `user` logs out from the buddy list (Logout, then the review) to the unlock screen under their name. */
 export async function logOut(b: Browser, user: User): Promise<void> {
   await inBuddy(b);
@@ -473,79 +505,4 @@ export async function unlock(b: Browser, user: User): Promise<void> {
   await submit.click();
   await resolveIntent(b, { passphrase: user.passphrase, appearMs: 1500 });
   await inBuddy(b);
-}
-
-/** Whether the skin tree's `view` node is shown (not under a hidden page, with a box). */
-export async function skinViewShown(b: Browser, view: string): Promise<boolean> {
-  return (await b.execute((v: string) => {
-    const n = document.querySelector<HTMLElement>(`[data-skin-role="view:${v}"]`);
-    return !!n && n.closest("[hidden]") === null && n.getBoundingClientRect().height > 0;
-  }, view)) as boolean;
-}
-
-/** The first visible skin node matching `selector` in `b`'s window, or "". */
-async function visibleSkinNode(b: Browser, selector: string): Promise<string> {
-  return (await b.execute(
-    (sel: string) =>
-      Array.from(document.querySelectorAll<HTMLElement>(sel)).find((n) => n.getBoundingClientRect().width > 0)?.dataset.skinNode ?? "",
-    selector,
-  )) as string;
-}
-
-/**
- * The node a press on control `id` lands on: the control when it listens
- * for presses, else its first shown descendant that does (Xfire Classic's
- * tab is a text node over its button Part, which carries the press). A user
- * presses what they see; this presses what listens there.
- */
-async function pressNode(b: Browser, id: string): Promise<string> {
-  return (await b.execute((control: string) => {
-    const pressable = (n: Element): boolean => /\b(leftDown|click)\b/.test(n.getAttribute("data-skin-on") ?? "");
-    const root = document.querySelector(`[data-skin-node="${control}"]`);
-    if (!root || pressable(root)) return control;
-    const inner = Array.from(root.querySelectorAll<HTMLElement>("[data-skin-on]")).find(
-      (n) => pressable(n) && n.getBoundingClientRect().width > 0,
-    );
-    return inner?.dataset.skinNode ?? control;
-  }, id)) as string;
-}
-
-/**
- * Under a skin's tree, press the pack's control for `view` wherever the Host
- * placed it (plan SK2-N4) and wait for the view: a tab or knob node; a knob
- * whose stops share one box (Combat), pressed round to the view; or a control
- * in a pack popup (StealthX's MainMenuPopup rail), pressed in the popup.
- */
-export async function showSkinView(b: Browser, view: string): Promise<void> {
-  await switchTo(b, BUDDY);
-  const control = await visibleSkinNode(b, `[data-skin-role="tab:${view}"], [data-skin-role="knob:${view}"]`);
-  if (control) {
-    await press(b, await b.$(`[data-skin-node="${await pressNode(b, control)}"]`));
-  } else if (await visibleSkinNode(b, '[data-skin-role^="knob:"]')) {
-    for (let i = 0; i < 4 && !(await skinViewShown(b, view)); i++) {
-      await press(b, await b.$(`[data-skin-node="${await visibleSkinNode(b, '[data-skin-role^="knob:"]')}"]`));
-      await sleep(600);
-    }
-  } else {
-    const launcher = await visibleSkinNode(b, '[data-skin-action^="launchPopup"]');
-    if (!launcher) throw new Error(`no control for ${view} in the main window, a knob or a popup`);
-    // The launcher toggles its popup (Xfire's MENU, shell popup.rs
-    // close_if_open), and a choice in the rail leaves it open: use the
-    // popup already open, else open it.
-    const before = await b.getWindowHandles();
-    const open = before.find((h) => h.startsWith(`popup-${BUDDY}-`));
-    if (open) {
-      await b.switchToWindow(open);
-    } else {
-      await press(b, await b.$(`[data-skin-node="${launcher}"]`));
-      await b.switchToWindow(await waitForHandle(b, (h) => h.startsWith("popup-") && !before.includes(h), 10_000));
-    }
-    // The rail's control, by the node that listens for its press (as in the
-    // main window: a control may carry its press on a child Part).
-    const item = await shown(b, `[data-skin-role="tab:${view}"], [data-skin-role="knob:${view}"]`);
-    const id = (await item.getAttribute("data-skin-node")) ?? "";
-    await press(b, await b.$(`[data-skin-node="${await pressNode(b, id)}"]`));
-    await switchTo(b, BUDDY);
-  }
-  await waitUntil(() => skinViewShown(b, view), 10_000, `the ${view} view did not show`);
 }

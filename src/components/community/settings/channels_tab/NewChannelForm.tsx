@@ -1,6 +1,6 @@
 import { Component, Show, createSignal } from "solid-js";
+import SkinGlyph from "../../../common/SkinGlyph";
 import { handleCreateChannel } from "../../../../actions/community.actions";
-import { ICON_PLUS_BOX } from "../../../../icons";
 
 type ChannelType = "text" | "voice" | "announcement" | "forum" | "stage" | "directory" | "media" | "events" | "dm";
 
@@ -36,7 +36,7 @@ const NewChannelForm: Component<NewChannelFormProps> = (props) => {
         class="form-btn-secondary"
         onClick={() => setShowNewChannel(true)}
       >
-        <span class="nf-icon">{ICON_PLUS_BOX}</span> Create Channel
+        <SkinGlyph name="plus-box" /> Create Channel
       </button>
     }>
       <div class="channel-create-inline">

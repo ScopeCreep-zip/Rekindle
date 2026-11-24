@@ -24,7 +24,7 @@ pub use deps::{
 pub use engine::{
     Deadline, Enqueued, Entry, Outbox, DEADLINE_REASON, KEY_DID_NOT_ARRIVE, OUTBOX_DEADLINE,
 };
-pub use state::{PeerAck, StateInput};
+pub use state::{Moved, PeerAck, StateInput, StoredSend};
 pub use stream::{OutboxRetry, StreamKind, DM_APPEND_DEADLINE, DM_FIRST_REASK};
 
 #[cfg(test)]

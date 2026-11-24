@@ -194,6 +194,16 @@ pub enum IpcRequest {
     /// The Downloads view: list, start (resume), stop, open (reveal), remove.
     Transfer(TransferRequest),
 
+    // ── Local search (plan E7.2 G11) ───────────────────────────────
+    /// Search what we already hold, scoped by the view it was opened from
+    /// (SK2-G §8): friends, groups and members we know; our servers; our
+    /// held files; or one direct conversation's messages. Answered from
+    /// the database only (`dto::local_search::LocalSearchResult`).
+    LocalSearch {
+        scope: rekindle_types::dto::local_search::LocalSearchScope,
+        query: String,
+    },
+
     // ── DMs ───────────────────────────────────────────────────────
     /// Send a direct message.
     DmSend {
@@ -229,28 +239,12 @@ pub enum IpcRequest {
     OutboxDiscard { client_id: String },
 
     // ── Group DMs (plan E2.6) ──────────────────────────────────────
-    /// Create a group named `name` of us and `members` (2-7 friends'
-    /// keys); the answer is its id. `origin_peer`: the member whose chat it
-    /// was created from (SK2-G §6, the room attached to that chat).
-    GroupDmCreate {
-        name: String,
-        members: Vec<String>,
-        origin_peer: Option<String>,
-    },
-    /// Accept the pending invite to `group_id` (32 hex).
-    GroupDmAccept { group_id: String },
-    /// Decline the pending invite to `group_id`.
-    GroupDmDecline { group_id: String },
-    /// Leave `group_id`; every other member rotates its key.
-    GroupDmLeave { group_id: String },
-    /// Rename `group_id` (its creator only; 1-`MAX_NAME_CHARS`
-    /// characters); every member is told through our group chain.
-    GroupDmRename { group_id: String, name: String },
-    /// Invite friends into `group_id` (creator only, at most 8; E7.2 G8).
-    GroupDmInvite {
-        group_id: String,
-        members: Vec<String>,
-    },
+    /// Create, answer, rename, invite into, send to, read and leave a
+    /// group DM.
+    GroupDm(GroupDmRequest),
+    /// A group DM's game lobby (plan E7.2 G6): host, join, leave, close,
+    /// launch and the lobby the group shows.
+    Lobby(LobbyRequest),
     /// Set the disappearing-message timer of `conversation` (a friend's
     /// key: our DM; a group's 32-hex id: the group DM) to `seconds`
     /// (0 = off, at most four weeks; plan E7.1). Every other member is
@@ -260,24 +254,6 @@ pub enum IpcRequest {
     /// `DisappearingSet` names it) carries now (0 = off; plan E7.1), with
     /// the presets the chat window's timer control offers.
     DisappearingGet { conversation: String },
-    /// Send `body` to `group_id`; the answer is the message's client id
-    /// once its row and local echo are committed (`queued`, then
-    /// `GroupDmEvent::SendStatus`).
-    GroupDmSend { group_id: String, body: String },
-    /// The draft to `group_id` changed: `typing` is whether it holds text.
-    /// The Host decides what goes out, as for `DmTyping`.
-    GroupDmTyping { group_id: String, typing: bool },
-    /// Every group we are in and every invite we have not answered.
-    GroupDmList,
-    /// The newest `limit` messages of `group_id` before `before` (ms).
-    GroupDmMessages {
-        group_id: String,
-        limit: u32,
-        before: Option<i64>,
-    },
-    /// The group's window displayed its messages (plan E7.1): the
-    /// received messages whose disappearing timer had not started start it.
-    GroupDmMarkRead { group_id: String },
 
     // ── Intents (plan D3.3, ADR 0019) ──────────────────────────────
     /// Commit a held action with the proof its review asked for.
@@ -565,7 +541,9 @@ pub enum IpcRequest {
 mod capability;
 mod community;
 mod debug;
+mod group_dm;
 mod lane;
+mod lobby;
 mod response;
 mod servers;
 mod transfer;
@@ -578,7 +556,9 @@ pub use community::{
     ExpressionRequest, LifecycleRequest, MemberRequest, PinRequest, RichRequest, SettingsRequest,
     UnreadRequest,
 };
+pub use group_dm::GroupDmRequest;
 pub use lane::Lane;
+pub use lobby::LobbyRequest;
 pub use rekindle_types::dto::infoview::InfoviewSubject;
 pub use servers::ServersRequest;
 pub use transfer::TransferRequest;

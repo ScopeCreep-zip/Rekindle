@@ -32,10 +32,13 @@ use rekindle_lifecycle::SessionScope;
 use rekindle_records::port::{
     OwnDeaths, RouteBudgetState, RouteClass, RoutePauseCause, RouteState,
 };
+use rekindle_types::subscription_events::OwnRouteDownSet;
 use tokio::sync::watch;
 
 use crate::ordered_watch::{Follow, OrderedWatch};
 use crate::own_route_accounts::RouteAccounts;
+use crate::own_route_down::{Downs, SLOW_BACKOFF};
+use crate::per_class::PerClass;
 use crate::route_death::{DeathCause, RouteDeath};
 
 /// Why an allocation did not produce a route.
@@ -120,13 +123,14 @@ pub use rekindle_records::port::{SaveBudget, WallMs};
 pub struct OwnRoutes<A: RouteAllocator> {
     /// The new-route budget, the pause and the death counts (plan RV1).
     accounts: RouteAccounts,
+    /// Each class's outage, told once each way (plan RV1g).
+    downs: Downs,
     alloc: A,
     /// Readiness, one watch per waiting class task (RK1).
     ready: Follow<bool>,
     scope: Arc<SessionScope>,
     backoff_min: Duration,
-    general: Slot<A::Id>,
-    media: Slot<A::Id>,
+    slots: PerClass<Slot<A::Id>>,
 }
 
 /// Every class, in the order a pass over them takes.
@@ -135,23 +139,30 @@ const CLASSES: [RouteClass; 2] = [RouteClass::General, RouteClass::Media];
 impl<A: RouteAllocator> std::fmt::Debug for OwnRoutes<A> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OwnRoutes")
-            .field("general", &self.general.state.get())
-            .field("media", &self.media.state.get())
+            .field("general", &self.slot(RouteClass::General).state.get())
+            .field("media", &self.slot(RouteClass::Media).state.get())
             .finish_non_exhaustive()
     }
 }
 
 impl<A: RouteAllocator> OwnRoutes<A> {
     /// An owner over `alloc`, allocating once `ready` holds, on a scope of
-    /// its own that lives as long as the node ([`shutdown`](Self::shutdown)).
+    /// its own that lives as long as the node ([`shutdown`](Self::shutdown));
+    /// `wall` stamps when a class went down.
     #[must_use]
-    pub fn new(alloc: A, ready: Follow<bool>) -> Arc<Self> {
-        Self::with_backoff(alloc, ready, BACKOFF_MIN)
+    pub fn new(alloc: A, ready: Follow<bool>, wall: WallMs) -> Arc<Self> {
+        Self::with_backoff(alloc, ready, BACKOFF_MIN, wall)
     }
 
-    fn with_backoff(alloc: A, ready: Follow<bool>, backoff_min: Duration) -> Arc<Self> {
+    fn with_backoff(
+        alloc: A,
+        ready: Follow<bool>,
+        backoff_min: Duration,
+        wall: WallMs,
+    ) -> Arc<Self> {
         Arc::new(Self {
             accounts: RouteAccounts::new(),
+            downs: Downs::new(wall),
             alloc,
             ready,
             scope: SessionScope::new(
@@ -159,22 +170,24 @@ impl<A: RouteAllocator> OwnRoutes<A> {
                 Arc::new(|task| tracing::error!(task, "own route task panicked")),
             ),
             backoff_min,
-            general: Slot::new(RouteClass::General),
-            media: Slot::new(RouteClass::Media),
+            slots: PerClass::new(Slot::new),
         })
     }
 
     fn slot(&self, class: RouteClass) -> &Slot<A::Id> {
-        match class {
-            RouteClass::General => &self.general,
-            RouteClass::Media => &self.media,
-        }
+        self.slots.get(class)
     }
 
     /// The class's state, to follow.
     #[must_use]
     pub fn state(&self, class: RouteClass) -> watch::Receiver<RouteState> {
         self.slot(class).state.subscribe()
+    }
+
+    /// Which classes are down now (plan RV1g), to follow.
+    #[must_use]
+    pub fn down(&self) -> watch::Receiver<OwnRouteDownSet> {
+        self.downs.subscribe()
     }
 
     /// The class's route blob once one is live: at once while one is, else
@@ -247,6 +260,7 @@ impl<A: RouteAllocator> OwnRoutes<A> {
             if let Some(old) = died {
                 self.death(class, DeathCause::VeilidReported, &old).log();
                 tracing::info!(?class, "own route died; allocating a replacement");
+                self.downs.lost(class, true);
                 slot.after_loss();
                 self.start(class);
             }
@@ -270,6 +284,7 @@ impl<A: RouteAllocator> OwnRoutes<A> {
             "own route rotated on evidence; allocating a replacement"
         );
         slot.retiring.lock().push(old);
+        self.downs.lost(class, false);
         slot.after_loss();
         self.start(class);
     }
@@ -388,6 +403,7 @@ impl<A: RouteAllocator> OwnRoutes<A> {
             self.alloc.release(&live.id);
         }
         self.release_retired(class);
+        self.downs.reset(class);
         slot.state.send_replace(RouteState::Idle);
     }
 
@@ -515,18 +531,25 @@ impl<A: RouteAllocator> OwnRoutes<A> {
                     if let Some(old) = replaced {
                         self.alloc.release(&old.id);
                     }
-                    tracing::info!(class = ?slot.class, blob_len = blob.len(), "own route allocated");
+                    let down_s = self.downs.up(class).map(|d| d.as_secs());
+                    tracing::info!(class = ?slot.class, blob_len = blob.len(), ?down_s, "own route allocated");
                     slot.state.send_replace(RouteState::Available { blob });
                     backoff = self.backoff_min;
                 }
                 Err(AllocError::TryAgain(reason)) => {
-                    tracing::debug!(?class, %reason, retry_ms = backoff.as_millis(), "own route: try again");
-                    if !live_up {
+                    let failure = self.downs.failed(class, &reason);
+                    let wait = if failure.slow { SLOW_BACKOFF } else { backoff };
+                    let wait = failure.withdraw_in.map_or(wait, |w| wait.min(w));
+                    tracing::debug!(?class, %reason, retry_ms = wait.as_millis(), "own route: try again");
+                    if failure.withdraw {
+                        tracing::info!(?class, "own route withdrawn after Veilid reported it dead");
+                        slot.state.send_replace(RouteState::Withdrawn);
+                    } else if !live_up {
                         slot.state
-                            .send_replace(RouteState::Unavailable { retry_in: backoff });
+                            .send_replace(RouteState::Unavailable { retry_in: wait });
                     }
                     if stop
-                        .run_until_cancelled(tokio::time::sleep(backoff))
+                        .run_until_cancelled(tokio::time::sleep(wait))
                         .await
                         .is_none()
                     {
@@ -536,7 +559,9 @@ impl<A: RouteAllocator> OwnRoutes<A> {
                 }
                 Err(AllocError::Fatal(reason)) => {
                     tracing::warn!(?class, %reason, live_up, "own route allocation failed");
-                    if !live_up {
+                    if self.downs.failed(class, &reason).withdraw {
+                        slot.state.send_replace(RouteState::Withdrawn);
+                    } else if !live_up {
                         slot.state.send_replace(RouteState::Failed { reason });
                     }
                     return;

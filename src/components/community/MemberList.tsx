@@ -1,4 +1,5 @@
 import { Component, For, Show, createEffect, createSignal, createMemo, JSX } from "solid-js";
+import SkinGlyph from "../common/SkinGlyph";
 import { ContextMenu } from "@kobalte/core/context-menu";
 import { Popover } from "@kobalte/core/popover";
 import { EVERYONE_ROLE_ID, Member, Role, RoleTagColours, communityState } from "../../stores/community.store";
@@ -8,14 +9,6 @@ import RoleTag from "./RoleTag";
 import { rovingList } from "../../utils/roving_list";
 import MemberProfilePopup from "./MemberProfilePopup";
 import { useMembersOnScreen } from "../../hooks/useMembersOnScreen";
-import {
-  ICON_SHIELD,
-  ICON_TIMEOUT,
-  ICON_ACCOUNT_REMOVE,
-  ICON_BAN,
-  ICON_MIC_OFF,
-  ICON_HEADPHONES_OFF,
-} from "../../icons";
 import {
   handleRemoveCommunityMember,
   handleBanMember,
@@ -184,7 +177,7 @@ const MemberList: Component<MemberListProps> = (props) => {
           <Show when={manage() && hasPermission(perms(), MANAGE_ROLES) && assignableRoles().length > 0}>
             <ContextMenu.Sub>
               <ContextMenu.SubTrigger class="context-menu-item">
-                <span class="nf-icon context-menu-icon">{ICON_SHIELD}</span>
+                <SkinGlyph name="shield" class="context-menu-icon" />
                 Manage Roles
               </ContextMenu.SubTrigger>
               <ContextMenu.Portal>
@@ -216,7 +209,7 @@ const MemberList: Component<MemberListProps> = (props) => {
           <Show when={may().timeout}>
             <ContextMenu.Sub>
               <ContextMenu.SubTrigger class="context-menu-item">
-                <span class="nf-icon context-menu-icon">{ICON_TIMEOUT}</span>
+                <SkinGlyph name="timeout" class="context-menu-icon" />
                 Timeout
               </ContextMenu.SubTrigger>
               <ContextMenu.Portal>
@@ -255,7 +248,7 @@ const MemberList: Component<MemberListProps> = (props) => {
                 )
               }
             >
-              <span class="nf-icon context-menu-icon">{ICON_MIC_OFF}</span>
+              <SkinGlyph name="mic.off" class="context-menu-icon" />
               Server Mute
             </ContextMenu.Item>
           </Show>
@@ -271,7 +264,7 @@ const MemberList: Component<MemberListProps> = (props) => {
                 )
               }
             >
-              <span class="nf-icon context-menu-icon">{ICON_HEADPHONES_OFF}</span>
+              <SkinGlyph name="speaker.off" class="context-menu-icon" />
               Server Deafen
             </ContextMenu.Item>
           </Show>
@@ -283,7 +276,7 @@ const MemberList: Component<MemberListProps> = (props) => {
                 void handleRemoveCommunityMember(props.communityId, member.pseudonymKey)
               }
             >
-              <span class="nf-icon context-menu-icon">{ICON_ACCOUNT_REMOVE}</span>
+              <SkinGlyph name="account-remove" class="context-menu-icon" />
               Kick Member
             </ContextMenu.Item>
           </Show>
@@ -295,7 +288,7 @@ const MemberList: Component<MemberListProps> = (props) => {
                 void handleBanMember(props.communityId, member.pseudonymKey)
               }
             >
-              <span class="nf-icon context-menu-icon">{ICON_BAN}</span>
+              <SkinGlyph name="ban" class="context-menu-icon" />
               Ban Member
             </ContextMenu.Item>
           </Show>
@@ -304,7 +297,7 @@ const MemberList: Component<MemberListProps> = (props) => {
             class="context-menu-item context-menu-item-danger"
             onSelect={() => void toggleBlock(member.pseudonymKey)}
           >
-            <span class="nf-icon context-menu-icon">{ICON_BAN}</span>
+            <SkinGlyph name="ban" class="context-menu-icon" />
             {blocked().has(member.pseudonymKey.toLowerCase()) ? "Unblock" : "Block"}
           </ContextMenu.Item>
         </ContextMenu.Content>
@@ -348,7 +341,7 @@ const MemberList: Component<MemberListProps> = (props) => {
                 {(role) => <RoleTag name={role.name} color={role.color} tagColours={role.tagColours} />}
               </For>
               <Show when={member.timeoutUntil}>
-                <span class="nf-icon timeout-indicator" title="Timed out">{ICON_TIMEOUT}</span>
+                <SkinGlyph name="timeout" class="timeout-indicator" title="Timed out" label="Timed out" />
               </Show>
             </div>
           </div>

@@ -120,6 +120,17 @@ pub(super) fn hash_channel_message(h: &mut blake3::Hasher, msg: &ChannelMessageE
             // Bucketize to 1-second granularity to tolerate clock skew across pathways
             h.update(&(timestamp / 1000).to_le_bytes());
         }
+        ChannelMessageEvent::DirectMessageSent {
+            conversation_id,
+            message,
+            ..
+        } => {
+            // One stored row per client id: its id names it.
+            h.update(b"dm_sent|");
+            h.update(conversation_id.as_bytes());
+            h.update(b"|");
+            h.update(&message.id.to_le_bytes());
+        }
         ChannelMessageEvent::DmSendStatus {
             client_id,
             conversation_id,
@@ -324,9 +335,21 @@ pub(super) fn hash_group_dm(
             h.update(sender.public_key.as_bytes());
             h.update(message_id.as_bytes());
         }
+        GroupDmEvent::MessageSent { message, .. } => {
+            // One stored row per client id: its id names it.
+            h.update(b"sent|");
+            h.update(&message.id.to_le_bytes());
+        }
         GroupDmEvent::Renamed { name, .. } => {
             h.update(b"name|");
             h.update(name.as_bytes());
+        }
+        GroupDmEvent::Lobby { lobby, .. } => {
+            h.update(b"lobby|");
+            if let Some(l) = lobby {
+                h.update(l.lobby_id.as_bytes());
+                h.update(format!("{:?}|{}", l.state, l.members.join(",")).as_bytes());
+            }
         }
         GroupDmEvent::HistoryGap {
             member,

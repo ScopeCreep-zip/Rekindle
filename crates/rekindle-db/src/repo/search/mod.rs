@@ -5,12 +5,17 @@
 //! the ±1 context.
 
 mod context;
+mod local;
 mod messages;
 mod query;
 mod threads;
 
 #[cfg(test)]
+mod local_tests;
+#[cfg(test)]
 mod tests;
+
+pub use local::local_search;
 
 use rekindle_types::search::{MessageSearch, SearchHit, SearchSort, MAX_SEARCH_LIMIT};
 use rusqlite::Connection;
@@ -30,8 +35,9 @@ pub fn search(
     let Some(match_expr) = query::build_match_expr(&req.query) else {
         return Ok(Vec::new());
     };
-    // An `in_thread` filter searches the thread only; otherwise the
-    // channel and DM messages and the threads are merged.
+    // An `in_thread` filter searches the thread only, an `in_conversation`
+    // filter that direct conversation only; otherwise the channel and DM
+    // messages and the threads are merged.
     let mut hits = Vec::new();
     if req.filters.in_thread.is_none() {
         hits.extend(messages::search_messages_table(
@@ -41,12 +47,14 @@ pub fn search(
             &req,
         )?);
     }
-    hits.extend(threads::search_thread_messages_table(
-        conn,
-        owner_key,
-        &match_expr,
-        &req,
-    )?);
+    if req.filters.in_conversation.is_none() {
+        hits.extend(threads::search_thread_messages_table(
+            conn,
+            owner_key,
+            &match_expr,
+            &req,
+        )?);
+    }
     sort_combined(&mut hits, req.sort);
     hits.truncate(req.limit as usize);
     Ok(hits)

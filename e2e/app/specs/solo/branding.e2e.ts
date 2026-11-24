@@ -9,6 +9,7 @@ import { byText, press, shown, sleep, switchTo } from "../../../walk/helpers.ts"
 import { BUDDY, SETTINGS, openSettings } from "../../../walk/nav.ts";
 import { applySkin, createIdentity, newUser, skinShown, type User } from "../../journeys.ts";
 import { builtinPacks } from "../../skin-pack.ts";
+import { shot } from "../../shots.ts";
 
 /**
  * Where the window `browser` is in shows Xfire: each finding names the place
@@ -52,6 +53,16 @@ async function logosUnbranded(): Promise<string[]> {
     const out: string[] = nodes.flatMap((el) => {
       if (!el.checkVisibility()) return [];
       const id = el.dataset.skinNode ?? "?";
+      // Inside a branded node (Classic's TheX and TheXCover in its
+      // XfireLogo, BR-E): the ancestor's mark covers it, so it draws neither
+      // its own mark nor any art of its own.
+      const branded = el.parentElement?.closest<HTMLElement>("[data-skin-node]:has(> .skin-node-label .skin-node-glyph-brand)");
+      if (branded) {
+        const own = el.querySelector(":scope > .skin-node-label .skin-node-glyph-brand");
+        const art = getComputedStyle(el).backgroundImage;
+        if (own) return [`${id} draws a second mark inside ${branded.dataset.skinNode ?? "?"}`];
+        return art && art !== "none" ? [`${id} draws art inside ${branded.dataset.skinNode ?? "?"}`] : [];
+      }
       const mark = el.querySelector<SVGElement>(":scope > .skin-node-label .skin-node-glyph-brand");
       if (!mark || !mark.checkVisibility()) return [`${id} draws no Rekindle mark`];
       const n = el.getBoundingClientRect();
@@ -102,10 +113,29 @@ describe("no Xfire branding where the user sees", function () {
     await switchTo(browser, SETTINGS);
     await (await byText(browser, ".form-tab", "About")).click();
     await shown(browser, ".settings-about-text");
+    await shot("about");
     expect(await xfireShown()).toEqual([]);
     await (await byText(browser, ".form-tab", "Appearance")).click();
     await shown(browser, ".skin-row .skin-name");
+    await shot("appearance");
     expect(await xfireShown()).toEqual([]);
+  });
+
+  // The owner's credits ruling (2026-11-23): a pack's credits keep the
+  // "Xfire, Inc." attribution as text, and no xfire.com address is served.
+  it("Classic's credits attribute Xfire, Inc. as text, with no xfire.com", async () => {
+    await switchTo(browser, SETTINGS);
+    await (await byText(browser, ".form-tab", "Appearance")).click();
+    const info = await shown(browser, '.skin-info[aria-label="Credits for Classic"]');
+    await info.scrollIntoView({ block: "center" });
+    await press(browser, info);
+    const credits = await shown(browser, '.skin-credits[aria-label="Credits for Classic"]');
+    await credits.scrollIntoView({ block: "center" });
+    await shot("classic-credits");
+    const text = await credits.getText();
+    expect(text).toContain("Xfire, Inc.");
+    expect(text.toLowerCase()).not.toContain("xfire.com");
+    await press(browser, info);
   });
 
   for (const pack of builtinPacks()) {
@@ -113,6 +143,7 @@ describe("no Xfire branding where the user sees", function () {
       const href = await applySkin(browser, me, pack.name);
       await switchTo(browser, BUDDY);
       await skinShown(browser, href);
+      await shot("title-strip");
       const found = [...(await xfireShown()), ...(await logosUnbranded()), ...(await menusShowXfire())];
       expect(found).toEqual([]);
     });

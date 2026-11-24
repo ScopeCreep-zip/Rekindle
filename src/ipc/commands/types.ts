@@ -2,7 +2,7 @@
 // former monolithic commands.ts; re-exported by ../commands.ts so
 // existing `import { ... } from "../ipc/commands"` call sites work.
 
-import type { OwnRecordsPhase, RouteAvailability, RoutePauseCause } from "../channels/notification_events";
+import type { OwnRecordsPhase, OwnRouteClass, RouteAvailability, RoutePauseCause } from "../channels/notification_events";
 
 export type { IdentitySummary } from "./dto";
 
@@ -258,7 +258,7 @@ export interface HiddenGameView {
 
 /** Where a launch's server came from (`JoinSource`, lead decision (50)):
  *  the Host reviews a peer's server first, naming it. */
-export type JoinSource = "installed" | "favourite" | "recent" | "friendPresence" | "invite" | "community";
+export type JoinSource = "installed" | "favourite" | "recent" | "friendPresence" | "invite" | "community" | "lobby";
 
 /** A game we can launch (`InstalledGamesGet`, plan E7.15 IV3). */
 export interface InstalledGameView {
@@ -322,7 +322,8 @@ export interface NetworkStatus {
   attachmentState: string;
   isAttached: boolean;
   publicInternetReady: boolean;
-  hasRoute: boolean;
+  /** Our inbound (General) route's availability (plan F9-A). */
+  generalRoute: RouteAvailability;
   mediaRoute: RouteAvailability;
   /** The Host accepts writes now (its lifecycle's `can_write`). */
   canWrite: boolean;
@@ -334,6 +335,8 @@ export interface NetworkStatus {
   ownRecordsError: string | null;
   /** Our inbound route is paused and why (plan RV1c), or null when it is not. */
   routePaused: RoutePauseCause | null;
+  /** Our own routes down while the Host retries (plan F9-A): since when (epoch ms) and why, per class, or null. */
+  ownRouteDown: Record<OwnRouteClass, { sinceMs: number; reason: string } | null>;
   profileDhtKey: string | null;
   friendListDhtKey: string | null;
 }

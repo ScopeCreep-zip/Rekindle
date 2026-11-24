@@ -1,5 +1,5 @@
 import { Component } from "solid-js";
-import { ICON_CHEVRON_DOWN, ICON_CHEVRON_RIGHT } from "../../icons";
+import SkinGlyph from "../common/SkinGlyph";
 
 interface CategoryHeaderProps {
   name: string;
@@ -10,9 +10,8 @@ interface CategoryHeaderProps {
 const CategoryHeader: Component<CategoryHeaderProps> = (props) => {
   return (
     <div class="category-header" onClick={props.onToggle}>
-      <span class="nf-icon category-chevron">
-        {props.isExpanded ? ICON_CHEVRON_DOWN : ICON_CHEVRON_RIGHT}
-      </span>
+      {/* The category's fold arrow (plan SK17-7a: fold.open / fold.closed). */}
+      <SkinGlyph name={props.isExpanded ? "fold.open" : "fold.closed"} class="category-chevron" />
       <span class="category-name">{props.name}</span>
     </div>
   );

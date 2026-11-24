@@ -7,11 +7,19 @@
     border-image: var(--skin-region-chat-toolbar);
     image-rendering: pixelated;
   }
-  .chat-window .chat-peer-status-label,
-  .chat-window .chat-safety-btn,
-  .chat-window .chat-call-btn {
-    background-image: linear-gradient(var(--skin-region-chat-toolbar-backing), var(--skin-region-chat-toolbar-backing));
-    background-clip: content-box;
+  :where(.chat-window .chat-peer-status) {
+    position: relative;
+    isolation: isolate;
+  }
+  .chat-window .chat-peer-status::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    padding: inherit;
+    border-radius: inherit;
+    background: linear-gradient(var(--skin-region-chat-toolbar-band), var(--skin-region-chat-toolbar-band)) 0 0 / 100% 100% no-repeat border-box;
+    pointer-events: none;
   }
   .chat-window .chat-call-btn {
     border-image: var(--skin-region-chat-call-button);
@@ -84,14 +92,21 @@
     border-image: var(--skin-region-chat-input);
     image-rendering: pixelated;
   }
-  .chat-window .message-input-attach-btn,
-  .chat-window .message-input-mic-btn,
-  .chat-window .message-input-send-btn,
-  .community-window .message-input-attach-btn,
-  .community-window .message-input-mic-btn,
-  .community-window .message-input-send-btn {
-    background-image: linear-gradient(var(--skin-region-chat-input-backing), var(--skin-region-chat-input-backing));
-    background-clip: content-box;
+  :where(.chat-window .message-input-shell),
+  :where(.community-window .message-input-shell) {
+    position: relative;
+    isolation: isolate;
+  }
+  .chat-window .message-input-shell::before,
+  .community-window .message-input-shell::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    padding: inherit;
+    border-radius: inherit;
+    background: linear-gradient(var(--skin-region-chat-input-band), var(--skin-region-chat-input-band)) 0 0 / 100% 100% no-repeat border-box;
+    pointer-events: none;
   }
   .chat-window .message-input-send-btn,
   .community-window .message-input-send-btn {
@@ -137,8 +152,18 @@
     border-image: var(--skin-region-chat-group-header);
     image-rendering: pixelated;
   }
-  .chat-window .group-chat-member {
-    background-image: linear-gradient(var(--skin-region-chat-group-header-backing), var(--skin-region-chat-group-header-backing));
-    background-clip: content-box;
+  :where(.chat-window .group-chat-members) {
+    position: relative;
+    isolation: isolate;
+  }
+  .chat-window .group-chat-members::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    padding: inherit;
+    border-radius: inherit;
+    background: linear-gradient(var(--skin-region-chat-group-header-band), var(--skin-region-chat-group-header-band)) 0 0 / 100% 100% no-repeat border-box;
+    pointer-events: none;
   }
 }

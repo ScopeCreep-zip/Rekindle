@@ -5,7 +5,6 @@ use super::IpcRequest;
 mod community;
 mod dm;
 mod friend;
-mod group_dm;
 
 const REDACTED: &str = "***REDACTED***";
 
@@ -81,19 +80,19 @@ impl std::fmt::Debug for IpcRequest {
                 .debug_struct("IntentCancel")
                 .field("intent_id", intent_id)
                 .finish(),
-            Self::GroupDmCreate { .. }
-            | Self::GroupDmAccept { .. }
-            | Self::GroupDmDecline { .. }
-            | Self::GroupDmLeave { .. }
-            | Self::GroupDmRename { .. }
-            | Self::GroupDmInvite { .. }
-            | Self::DisappearingSet { .. }
-            | Self::DisappearingGet { .. }
-            | Self::GroupDmSend { .. }
-            | Self::GroupDmTyping { .. }
-            | Self::GroupDmList
-            | Self::GroupDmMessages { .. }
-            | Self::GroupDmMarkRead { .. } => self.fmt_group_dm(f),
+            Self::GroupDm(request) => std::fmt::Debug::fmt(request, f),
+            Self::DisappearingSet {
+                conversation,
+                seconds,
+            } => f
+                .debug_struct("DisappearingSet")
+                .field("conversation", conversation)
+                .field("seconds", seconds)
+                .finish(),
+            Self::DisappearingGet { conversation } => f
+                .debug_struct("DisappearingGet")
+                .field("conversation", conversation)
+                .finish(),
             Self::FriendAddFromCode { .. }
             | Self::FriendAccept { .. }
             | Self::FriendReject { .. }
@@ -128,6 +127,7 @@ impl std::fmt::Debug for IpcRequest {
             Self::Community(request) => std::fmt::Debug::fmt(request, f),
             Self::Transfer(request) => std::fmt::Debug::fmt(request, f),
             Self::Servers(request) => std::fmt::Debug::fmt(request, f),
+            Self::Lobby(request) => std::fmt::Debug::fmt(request, f),
             Self::DmTyping { .. }
             | Self::DmInbox { .. }
             | Self::DmHistory { .. }
@@ -152,6 +152,7 @@ impl std::fmt::Debug for IpcRequest {
             | Self::PresenceSetMessage { .. }
             | Self::PresenceGet
             | Self::GameTotalsGet
+            | Self::LocalSearch { .. }
             | Self::FriendGameTotalsGet { .. }
             | Self::ProfileBioGet
             | Self::FriendBioGet { .. }
@@ -218,6 +219,12 @@ impl IpcRequest {
                 .finish(),
             Self::PresenceGet => write!(f, "PresenceGet"),
             Self::GameTotalsGet => write!(f, "GameTotalsGet"),
+            // The query is the user's text: only its length is logged.
+            Self::LocalSearch { scope, query } => f
+                .debug_struct("LocalSearch")
+                .field("scope", scope)
+                .field("query_len", &query.len())
+                .finish(),
             Self::FriendGameTotalsGet { public_key } => f
                 .debug_struct("FriendGameTotalsGet")
                 .field("public_key", public_key)

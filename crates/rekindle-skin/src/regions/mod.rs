@@ -34,8 +34,10 @@
 //!   must leave a centre in every measured box (else `border-image` would
 //!   shrink them and the backing would not meet the centre), refused as
 //!   [`SkinRule::TextRegionNoCentre`].
-//! * **A labelled slot's backing** paints each label in full, so the
-//!   text is on the backing over every pixel of the container's box.
+//! * **A labelled slot's backing**, where the skin layer sets its band
+//!   (its art fails its labels, [`labels`], [`title`]), is one band on the
+//!   container behind its text row ([`label_box`]), so the text is on the
+//!   backing over every pixel of that row.
 //! * **Window sizes** are `src-tauri/src/windows/mod.rs:54-72` (minimum)
 //!   and `:107` (the buddy list's maximum). A window without a maximum is
 //!   measured at [`MAX_IMAGE_SIDE`]: once a box side reaches the image's

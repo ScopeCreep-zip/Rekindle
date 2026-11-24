@@ -66,9 +66,11 @@ const fn label(pad_x: u32, pad_top: u32, pad_bottom: u32, line: Line) -> LabelBo
 #[must_use]
 pub fn label_box(id: &str) -> LabelBox {
     match id {
-        // `.status-bar` (`01-form-primitives.css:82`): 0 8 px padding,
-        // centred, 11 px.
-        "statusbar" => label(8, 0, 0, Line::Centred(LINE_11)),
+        // `.xfire-titlebar` (`00-rules.css:132`): 0 8 px padding, its 11 px
+        // title centred ([`super::title`] measures the title's columns).
+        // `.status-bar` (`01-form-primitives.css:82`): the same, 0 8 px
+        // padding, centred, 11 px.
+        "titlebar" | "statusbar" => label(8, 0, 0, Line::Centred(LINE_11)),
         // `.menu-bar-item` (`08-community-events.css:179`): a button the
         // bar's height, 0 10 px padding, its 11 px text centred.
         "buddylist.menubar" => label(10, 0, 0, Line::Centred(LINE_11)),

@@ -378,6 +378,7 @@ fn manifest(tree: &Tree, id: &str, read: &Read, source: &str, base: SkinBase) ->
         .cloned()
         .unwrap_or_else(|| read.skin_file.clone());
     SkinManifest {
+        text: BTreeMap::new(),
         format: format!("{SKIN_FORMAT_PREFIX}{SKIN_FORMAT_MAJOR}"),
         id: id.to_owned(),
         name: name.chars().take(64).collect(),

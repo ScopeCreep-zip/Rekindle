@@ -29,7 +29,7 @@ pub fn search_messages_table(
     // an `in_community` filter is present.
     let sql = format!(
         "SELECT m.id, m.conversation_id, m.message_id, m.sender_key, m.body, m.timestamp, \
-                bm25(messages_fts) AS rank \
+                bm25(messages_fts) AS rank, m.conversation_type \
            FROM messages_fts \
            JOIN messages m ON m.id = messages_fts.rowid \
           WHERE messages_fts MATCH ?1 \
@@ -50,6 +50,8 @@ pub fn search_messages_table(
                    WHERE ch.owner_key = m.owner_key \
                      AND ch.id = m.conversation_id \
                      AND ch.community_id = ?12)) \
+            AND (?13 IS NULL OR (m.conversation_id = ?13 \
+                 AND m.conversation_type IN ('dm', 'group_dm'))) \
           ORDER BY {order} \
           LIMIT ?10 OFFSET ?11"
     );
@@ -69,6 +71,7 @@ pub fn search_messages_table(
             i64::from(req.limit),
             i64::from(req.offset),
             req.filters.in_community,
+            req.filters.in_conversation,
         ],
         |row| {
             Ok(RowData {
@@ -79,6 +82,7 @@ pub fn search_messages_table(
                 body: row.get(4)?,
                 timestamp: row.get(5)?,
                 rank: row.get(6)?,
+                direct: row.get::<_, String>(7)? != "channel",
             })
         },
     )?;
@@ -89,7 +93,12 @@ pub fn search_messages_table(
         let (before_body, after_body) =
             fetch_adjacent_context(conn, owner_key, &r.conversation_id, r.timestamp, r.id);
         hits.push(SearchHit {
-            scope: SearchScope::Channel,
+            // A `dm` or `group_dm` row is a direct message (SK2-G §8).
+            scope: if r.direct {
+                SearchScope::Dm
+            } else {
+                SearchScope::Channel
+            },
             conversation_id: r.conversation_id,
             message_id: r.message_id,
             sender_key: r.sender_key,
@@ -113,6 +122,7 @@ struct RowData {
     body: String,
     timestamp: i64,
     rank: f64,
+    direct: bool,
 }
 
 fn order_clause(sort: SearchSort) -> &'static str {

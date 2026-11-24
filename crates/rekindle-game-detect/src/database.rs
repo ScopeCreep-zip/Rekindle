@@ -9,7 +9,8 @@ pub struct GameEntry {
     pub name: String,
     pub process_names: Vec<String>,
     pub icon: Option<String>,
-    /// Steam application ID (for `steam://connect/` launch URIs).
+    /// Steam application ID (`steam://rungameid/` and `steam://run/`
+    /// launch URIs).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub steam_app_id: Option<u32>,
     /// URI template for connecting to a server, e.g. `"steam://connect/{addr}"`.
@@ -29,6 +30,11 @@ pub struct GameEntry {
     /// icons"); not part of the database JSON.
     #[serde(skip)]
     pub xfire_id: Option<u32>,
+    /// The command-line arguments that put this game on a server, Xfire's
+    /// own `LauncherNetworkArgs` with its host and port written `{addr}`,
+    /// from `xfire_ids.json` (plan E7.2 G2); not part of the database JSON.
+    #[serde(skip)]
+    pub network_args: Option<String>,
 }
 
 /// Where each OS keeps its own copy of a game. Every path is fixed in the
@@ -123,10 +129,12 @@ impl GameDatabase {
             .and_then(GameEntry::icon_key)
     }
 
-    fn apply_xfire_ids(&mut self, ids: &[XfireId]) {
-        let by_id: HashMap<u32, u32> = ids.iter().map(|m| (m.id, m.xfire_id)).collect();
+    fn apply_xfire_ids(&mut self, ids: &[XfireMapping]) {
+        let by_id: HashMap<u32, &XfireMapping> = ids.iter().map(|m| (m.id, m)).collect();
         for entry in self.by_process.values_mut() {
-            entry.xfire_id = by_id.get(&entry.id).copied();
+            let mapped = by_id.get(&entry.id);
+            entry.xfire_id = mapped.map(|m| m.xfire_id);
+            entry.network_args = mapped.and_then(|m| m.network_args.clone());
         }
     }
 
@@ -181,13 +189,16 @@ struct GameDatabaseFile {
 /// `xfire_ids.json`, written by `cargo xtask import-xfire-data` (plan E7.7.3).
 #[derive(Deserialize)]
 struct XfireIdsFile {
-    games: Vec<XfireId>,
+    games: Vec<XfireMapping>,
 }
 
 #[derive(Deserialize)]
-struct XfireId {
+struct XfireMapping {
     id: u32,
     xfire_id: u32,
+    /// Present only for a game Xfire knew how to put on a server.
+    #[serde(default)]
+    network_args: Option<String>,
 }
 
 #[cfg(test)]
@@ -239,13 +250,17 @@ mod tests {
         assert_eq!(GameDatabase::icon_key_for(1), None);
     }
 
-    /// A launcher substitutes the address once: a template with no
-    /// `{addr}`, or two, would launch somewhere the user did not pick.
+    /// A launcher substitutes the address once: a template or network
+    /// arguments with no `{addr}`, or two, would launch somewhere the user
+    /// did not pick.
     #[test]
     fn every_connect_template_holds_one_address() {
         let db = GameDatabase::bundled();
         for entry in db.by_process.values() {
-            if let Some(template) = &entry.connect_template {
+            for template in [&entry.connect_template, &entry.network_args]
+                .into_iter()
+                .flatten()
+            {
                 assert_eq!(
                     template.matches("{addr}").count(),
                     1,

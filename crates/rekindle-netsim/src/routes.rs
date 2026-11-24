@@ -456,6 +456,10 @@ impl RoutePort for FakeRoutes {
         self.own.paused()
     }
 
+    fn own_down(&self) -> watch::Receiver<rekindle_types::subscription_events::OwnRouteDownSet> {
+        self.own.down()
+    }
+
     fn own_deaths(&self, class: RouteClass) -> rekindle_records::port::OwnDeaths {
         self.own.deaths(class)
     }

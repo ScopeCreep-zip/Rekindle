@@ -160,6 +160,15 @@ fn import_ids(root: &Path, ini: &[u8], games: &games::Games) -> Result<()> {
     for m in &mapped {
         let _ = writeln!(n, "    {} {} -> {}", m.id, m.name, m.xfire_id);
     }
+    n.push_str(
+        "  Games with Xfire's `LauncherNetworkArgs` (the launcher's `steam://run` arguments when\n  \
+         the game has a Steam app id and no connect template):\n",
+    );
+    for m in &mapped {
+        if let Some(args) = &m.network_args {
+            let _ = writeln!(n, "    {} {}: {args}", m.id, m.name);
+        }
+    }
     write(
         root,
         &format!("{GAME_DETECT_SRC}/xfire_ids.NOTICE"),

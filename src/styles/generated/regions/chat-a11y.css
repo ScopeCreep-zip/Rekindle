@@ -107,23 +107,15 @@
     .chat-window .group-chat-members {
       border-image: none;
     }
+    .chat-window .chat-peer-status::before,
     .chat-window .chat-call-btn::before,
     .chat-window .chat-call-btn.chat-call-btn-active::before,
+    .chat-window .message-input-shell::before,
+    .community-window .message-input-shell::before,
     .chat-window .message-input-send-btn::before,
-    .community-window .message-input-send-btn::before {
+    .community-window .message-input-send-btn::before,
+    .chat-window .group-chat-members::before {
       content: none;
-    }
-    .chat-window .chat-peer-status-label,
-    .chat-window .chat-safety-btn,
-    .chat-window .chat-call-btn,
-    .chat-window .message-input-attach-btn,
-    .chat-window .message-input-mic-btn,
-    .chat-window .message-input-send-btn,
-    .community-window .message-input-attach-btn,
-    .community-window .message-input-mic-btn,
-    .community-window .message-input-send-btn,
-    .chat-window .group-chat-member {
-      background-image: none;
     }
   }
 }

@@ -8,6 +8,7 @@
 use rekindle_crypto::keypair_text;
 use rekindle_governance::device_judge::MemberDevices;
 use rekindle_governance::device_writer::{self, DeviceRecord};
+use rekindle_governance::merge;
 use rekindle_records::schema;
 use rekindle_secrets::derive;
 use rekindle_secrets::ed25519_dalek::SigningKey;
@@ -102,7 +103,8 @@ pub async fn enrol<D: GovernanceRuntimeDeps>(
 }
 
 /// `p`'s endorsement of this device's held key for `record`, extending the
-/// set `on` holds, signed for the current member record (rule 10). The
+/// set `on` holds, signed for the current member record (rule 10), naming
+/// the fork event it answers ([`answered_fork`]). The
 /// writer refuses what readers refuse: a key the set already endorses and
 /// a record another endorsement (or the member record) binds (rule 3's
 /// `RecordTaken`).
@@ -125,9 +127,21 @@ fn endorsement<D: GovernanceRuntimeDeps>(
             .ok_or(GovernanceRuntimeError::IdentitySecretUnavailable)?,
     );
     let p = derive::derive_community_pseudonym(&identity, community);
-    let e = device_writer::endorse(&p, community, &member, set, key, record, [0; 32])
+    let fork = answered_fork(on, &member);
+    let e = device_writer::endorse(&p, community, &member, set, key, record, fork)
         .map_err(|_| GovernanceRuntimeError::DeviceActRefused("the device set is full"))?;
     Ok(GovernanceEntry::DeviceKey(e))
+}
+
+/// The fork evidence a new endorsement of our key names when built on `on`
+/// (ADR 0022 rule 7, amended 2026-11-23): the lowest-stamp fork event of
+/// ours `on` holds, a fork pair's hash or a retirement's under our member
+/// record `member`, else none (`[0; 32]`). A key endorsed after a fork
+/// event needs a `DeviceReadmit` naming the same evidence.
+fn answered_fork(on: &BuiltOn<'_>, member: &str) -> [u8; 32] {
+    let none = MemberDevices::default();
+    let md = on.state.devices.member(on.author).unwrap_or(&none);
+    merge::first_fork_evidence(&on.set.ops, on.author, md, member).unwrap_or([0; 32])
 }
 
 /// Rule 3 at the writer: refuse a key `set` already endorses and a record

@@ -1,7 +1,7 @@
 import { Component, For, Show, createMemo } from "solid-js";
+import SkinGlyph from "../common/SkinGlyph";
 import type { Message } from "../../stores/chat.store";
 import MessageBubble from "../chat/MessageBubble";
-import { ICON_CLOSE, ICON_PIN } from "../../icons";
 import { formatDateFromSecs } from "../../utils/formatting";
 
 interface PinInfo {
@@ -30,10 +30,10 @@ const PinnedMessagesPanel: Component<PinnedMessagesPanelProps> = (props) => {
   return (
     <div class="pin-panel">
       <div class="pin-panel-header">
-        <span class="nf-icon" aria-hidden="true">{ICON_PIN}</span>
+        <SkinGlyph name="pin" />
         Pinned Messages ({pinnedMessages().length})
         <button class="modal-close-btn" onClick={props.onClose} aria-label="Close pinned messages panel">
-          <span class="nf-icon" aria-hidden="true">{ICON_CLOSE}</span>
+          <SkinGlyph name="close" />
         </button>
       </div>
       <div class="pin-panel-list">

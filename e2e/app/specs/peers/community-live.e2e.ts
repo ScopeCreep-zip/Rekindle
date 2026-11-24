@@ -13,27 +13,107 @@ import type { Browser } from "webdriverio";
 import { NET_WAIT_MS, WAIT_MS, byText, waitUntil } from "../../../walk/helpers.ts";
 import {
   type User,
+  channelCount,
+  DOT_STATUS,
   consoleSeen,
   createCommunity,
   createIdentity,
   createInvite,
-  createTextChannel,
   joinCommunity,
   newUser,
   openCommunity,
+  ownStatusValue,
   postMessage,
   selectChannel,
+  setLocationSharing,
+  setCommunityName,
   watchConsole,
 } from "../../journeys.ts";
+import { shot } from "../../shots.ts";
 
 /** How long a post may take to show in the other member's open channel. */
 const LIVE_MS = 30_000;
 const COMMUNITY = "Live Posts";
 const CHANNEL = "general";
+/** The names each sets in the community (none is shown until set). */
+const ALICE_NAME = "Alice Live";
+const BOB_NAME = "Bob Live";
 
-/** `b`'s open channel shows `text` within LIVE_MS, then no unread badge, and no failed mark-read. */
-async function seesLive(b: Browser, text: string): Promise<void> {
-  await byText(b, ".community-main .chat-message", text.slice(0, 40), LIVE_MS);
+/** `b`'s member list shows a member named `name`. */
+async function membersShow(b: Browser, name: string): Promise<void> {
+  await waitUntil(
+    async () =>
+      (await b.execute(
+        (n: string) => Array.from(document.querySelectorAll(".member-item .member-name")).some((e) => (e.textContent ?? "").trim() === n),
+        name,
+      )) as boolean,
+    NET_WAIT_MS,
+    `the member list never showed ${name}`,
+  );
+}
+
+/**
+ * Presence in `b`'s open community window while both members view CHANNEL
+ * (the lead, 2026-11-23): `other`'s row reads the status `otherB`'s own
+ * status line shows, and `self`'s own row reads what `b`'s own line shows
+ * (an idle Mac may legitimately go away, so the check is that each place
+ * agrees, not a literal Online; Away rows under an Online user were the
+ * bug), in whatever group the list puts them (roles group first); and
+ * CHANNEL's presence badge reads `here`: "1 here" by default, since location
+ * is shared with no one by default and a member who shares none sees no
+ * one's (PresenceSharingPolicy share_location None, rekindle-presence
+ * community/policy.rs), "2 here" once both share it.
+ */
+async function presenceRight(b: Browser, otherB: Browser, self: string, other: string, here = "1 here"): Promise<void> {
+  let last = "";
+  await waitUntil(
+    async () => {
+      const mine = await ownStatusValue(b);
+      const theirs = await ownStatusValue(otherB);
+      const seen = (await b.execute(
+        (me: string, them: string, channel: string) => {
+          const dots: Record<string, string> = {};
+          for (const el of Array.from(document.querySelectorAll(".member-item"))) {
+            const name = (el.querySelector(".member-name")?.textContent ?? "").trim();
+            dots[name] = el.querySelector('[role="img"]')?.getAttribute("aria-label") ?? "";
+          }
+          const row = Array.from(document.querySelectorAll(".channel-item")).find((r) => (r.querySelector(".channel-name")?.textContent ?? "").trim() === channel);
+          return { me: dots[me] ?? "no row", them: dots[them] ?? "no row", here: row?.querySelector(".channel-presence-badge")?.getAttribute("title") ?? "no presence badge" };
+        },
+        self,
+        other,
+        CHANNEL,
+      )) as { me: string; them: string; here: string };
+      const faults: string[] = [];
+      if ((DOT_STATUS[seen.them] ?? seen.them) !== theirs) faults.push(`${other}'s row "${seen.them}", their own line ${theirs}`);
+      if ((DOT_STATUS[seen.me] ?? seen.me) !== mine) faults.push(`own row "${seen.me}", own line ${mine}`);
+      if (seen.here !== here) faults.push(`#${CHANNEL} badge "${seen.here}", not "${here}"`);
+      last = faults.join("; ");
+      return last === "";
+    },
+    NET_WAIT_MS,
+    `presence in ${self}'s community window`,
+  ).catch(() => {
+    throw new Error(`presence in ${self}'s community window: ${last}`);
+  });
+}
+
+/**
+ * `b`'s open channel shows `text` within LIVE_MS under the sender name
+ * `sender` (the sender's community name), then no unread badge, and no failed
+ * mark-read.
+ */
+async function seesLive(b: Browser, text: string, sender: string): Promise<void> {
+  const message = await byText(b, ".community-main .chat-message", text.slice(0, 40), LIVE_MS);
+  await waitUntil(
+    async () =>
+      (await b.execute(
+        (el: HTMLElement) => el.closest(".chat-message")?.querySelector(".chat-message-sender-other")?.textContent?.trim() ?? "",
+        message as unknown as HTMLElement,
+      )) === sender,
+    NET_WAIT_MS,
+    `"${text.slice(0, 24)}" never showed under ${sender}`,
+  );
   // Viewing the channel marks it read (handleSelectChannel, and the Host's
   // count of a message in the viewed channel): the badge clears after that
   // round trip, if it shows at all.
@@ -80,7 +160,9 @@ describe("a community post reaches the other member live", () => {
     const b = multiRemoteBrowser.getInstance("bob");
     await createCommunity(a, alice, COMMUNITY);
     await openCommunity(a, COMMUNITY);
-    await createTextChannel(a, alice, CHANNEL);
+    // The genesis #general (origin.rs: every community starts with one), never
+    // a second channel of the same name.
+    await waitUntil(async () => (await channelCount(a, CHANNEL)) === 1, NET_WAIT_MS, `the new community did not list one #${CHANNEL}`);
     await selectChannel(a, CHANNEL);
     // A post from before Bob joins, which his channel must show from its
     // history before any live post: then that load is over, and what follows
@@ -96,18 +178,54 @@ describe("a community post reaches the other member live", () => {
     const link = await createInvite(a, alice, 1);
     await joinCommunity(b, bob, link, COMMUNITY);
     await opensWithHistory(b, before);
+    expect(await channelCount(b, CHANNEL)).toBe(1);
     await Promise.all([watchConsole(a), watchConsole(b)]);
   });
 
-  it("Alice's post shows in Bob's open channel", async () => {
-    const text = `live a→b ${Date.now()}`;
-    await postMessage(multiRemoteBrowser.getInstance("alice"), alice, text);
-    await seesLive(multiRemoteBrowser.getInstance("bob"), text);
+  // A member has no name in a community until they set one (privacy by
+  // design: member_card.rs); each sets theirs, and the other's member list
+  // shows it (the member card's propagation, plan S6/S6c).
+  it("each sets a name in the community, and the other's member list shows it", async () => {
+    const a = multiRemoteBrowser.getInstance("alice");
+    const b = multiRemoteBrowser.getInstance("bob");
+    await setCommunityName(a, alice, ALICE_NAME);
+    await setCommunityName(b, bob, BOB_NAME);
+    await membersShow(b, ALICE_NAME);
+    await membersShow(a, BOB_NAME);
+    await shot("member-names");
   });
 
-  it("Bob's reply shows in Alice's open channel", async () => {
+  it("Alice's post shows in Bob's open channel, under her community name", async () => {
+    const text = `live a→b ${Date.now()}`;
+    await postMessage(multiRemoteBrowser.getInstance("alice"), alice, text);
+    await seesLive(multiRemoteBrowser.getInstance("bob"), text, ALICE_NAME);
+    await presenceRight(multiRemoteBrowser.getInstance("bob"), multiRemoteBrowser.getInstance("alice"), BOB_NAME, ALICE_NAME);
+    await shot("alice-post-at-bob");
+  });
+
+  it("Bob's reply shows in Alice's open channel, under his community name", async () => {
     const text = `live b→a ${Date.now()}`;
     await postMessage(multiRemoteBrowser.getInstance("bob"), bob, text);
-    await seesLive(multiRemoteBrowser.getInstance("alice"), text);
+    await seesLive(multiRemoteBrowser.getInstance("alice"), text, BOB_NAME);
+    await presenceRight(multiRemoteBrowser.getInstance("alice"), multiRemoteBrowser.getInstance("bob"), ALICE_NAME, BOB_NAME);
+    await shot("bob-post-at-alice");
+  });
+
+  // Location is shared with no one by default; once both share it with
+  // members each badge counts both, and when one stops, neither sees the
+  // other's (a member who shares none sees none).
+  it("with the channel shared both ways each badge reads 2 here, and 1 again when Bob stops", async () => {
+    const a = multiRemoteBrowser.getInstance("alice");
+    const b = multiRemoteBrowser.getInstance("bob");
+    await setLocationSharing(a, alice, true);
+    await setLocationSharing(b, bob, true);
+    // One at a time: each reads both sessions' own status lines.
+    await presenceRight(a, b, ALICE_NAME, BOB_NAME, "2 here");
+    await presenceRight(b, a, BOB_NAME, ALICE_NAME, "2 here");
+    await shot("location-shared");
+    await setLocationSharing(b, bob, false);
+    await presenceRight(a, b, ALICE_NAME, BOB_NAME, "1 here");
+    await presenceRight(b, a, BOB_NAME, ALICE_NAME, "1 here");
+    await shot("location-unshared");
   });
 });

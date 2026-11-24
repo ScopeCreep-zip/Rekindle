@@ -7,7 +7,13 @@
 //!   Onyx's `Logo2`) carries a label `"Rekindle"` covering its whole art box
 //!   with the brand glyph ([`glyph`]: the wordmark in a box more than twice
 //!   as wide as tall, the mark otherwise), so the shell draws Rekindle's
-//!   mark over the pack's Xfire art. A pack's own emblem (Space Cowboy's
+//!   mark in that box. The cover is the node's whole box, so the node
+//!   serves no art in any state (its `art` is dropped): the pack's Xfire
+//!   logo never reaches the webview, and the shell draws the glyph on a
+//!   transparent cover over the parent's art. A branded node inside a
+//!   branded ancestor (Classic's `TheX` and `TheXCover` in its wordmark
+//!   `XfireLogo`) serves no art and no label: the ancestor's cover is
+//!   already over its box. A pack's own emblem (Space Cowboy's
 //!   `SCLogo`, Total Chaos's "T.C" `Title`) is not Xfire's and stays;
 //! - a `LaunchUrl` trigger whose URL is Xfire's ([`is_xfire_url`]) is
 //!   dropped, the node's other triggers kept (Onyx's `Logo2` becomes inert
@@ -16,7 +22,9 @@
 //! - the served pack name and description drop the word "Xfire"
 //!   ([`name`], [`description`]): Xfire Classic is served as "Classic", the
 //!   sound packs as "Classic sound pack" and "Default sound pack". Credits
-//!   and licence text are attribution and stay as written.
+//!   and licence text are attribution and stay as written ("Xfire, Inc."
+//!   among the authors), but a credits URL that is Xfire's is not served
+//!   ([`credits`], owner 2026-11-23: pack links never point at xfire.com).
 //!
 //! The title strip's logo (`TitleRole::Logo`) is drawn from the same glyph:
 //! `shape::title` only places its box, and `serve::stylesheet` names the
@@ -24,7 +32,7 @@
 //! shell draws inline in that box; the pack's `title-logo.png` is never
 //! served.
 
-use rekindle_types::dto::skin::{SkinManifest, WindowLayout};
+use rekindle_types::dto::skin::{SkinCredits, SkinManifest, WindowLayout};
 use rekindle_types::dto::skin_action::SkinAction;
 use rekindle_types::dto::skin_tree::{NodeGlyph, NodeLabel, NodeRole, SkinNode, SkinTree};
 
@@ -155,10 +163,23 @@ pub fn description(text: &str) -> String {
     without_xfire(&text.replace("Xfire's own sound pack", "The original sound pack"))
 }
 
-/// The served name and description of `manifest` (see [`name`]).
+/// A pack's served credits: as written, less a `url` that is Xfire's
+/// ([`is_xfire_url`]); the authors ("Xfire, Inc." where the pack credits
+/// it), contributors and licence stay.
+#[must_use]
+pub fn credits(credits: Option<SkinCredits>) -> Option<SkinCredits> {
+    credits.map(|c| SkinCredits {
+        url: c.url.filter(|u| !is_xfire_url(u)),
+        ..c
+    })
+}
+
+/// The served name, description and credits of `manifest` (see [`name`],
+/// [`credits`]).
 pub fn texts(manifest: &mut SkinManifest) {
     manifest.name = name(&manifest.name);
     manifest.description = description(&manifest.description);
+    manifest.credits = credits(manifest.credits.take());
 }
 
 /// Brands `layout`'s tree and every popup tree, each laid in its window's
@@ -168,28 +189,39 @@ pub fn nodes(layout: &mut WindowLayout) {
 }
 
 fn tree(tree: &mut SkinTree, at: (i32, i32)) {
-    walk(&mut tree.root, laid_window(tree.outsets, at));
+    walk(&mut tree.root, laid_window(tree.outsets, at), false);
 }
 
 fn branded(n: &SkinNode) -> bool {
     n.role == NodeRole::Logo || XFIRE_DECOR.iter().any(|d| n.id.eq_ignore_ascii_case(d))
 }
 
-fn walk(nodes: &mut [SkinNode], parent: [i32; 4]) {
+/// Brands `nodes` laid in `parent`; `inside` when a branded ancestor's
+/// cover is already over them.
+fn walk(nodes: &mut [SkinNode], parent: [i32; 4], inside: bool) {
     for n in nodes {
         n.triggers
             .retain(|t| !matches!(&t.run, SkinAction::LaunchUrl(u) if is_xfire_url(&u.url)));
         let b = place(n, parent);
-        if branded(n) {
-            if let (Ok(w), Ok(h)) = (u16::try_from(b[2]), u16::try_from(b[3])) {
-                n.label = Some(NodeLabel {
-                    text: BRAND.to_owned(),
-                    cover: Some([0, 0, w, h]),
-                    glyph: Some(glyph(w, h)),
-                });
-            }
+        let mine = branded(n);
+        if mine {
+            // The cover is the whole box: the pack's (Xfire) art is never
+            // served, in any state.
+            n.art = None;
+            n.label = if inside {
+                None
+            } else {
+                match (u16::try_from(b[2]), u16::try_from(b[3])) {
+                    (Ok(w), Ok(h)) => Some(NodeLabel {
+                        text: BRAND.to_owned(),
+                        cover: Some([0, 0, w, h]),
+                        glyph: Some(glyph(w, h)),
+                    }),
+                    _ => n.label.take(),
+                }
+            };
         }
-        walk(&mut n.children, b);
+        walk(&mut n.children, b, inside || mine);
     }
 }
 
@@ -198,7 +230,7 @@ mod tests {
     use rekindle_types::dto::skin_action::SkinAction;
     use rekindle_types::dto::skin_tree::{NodeGlyph, NodeRole, SkinNode};
 
-    use super::{glyph, is_xfire_url, name, BRAND};
+    use super::{branded, glyph, is_xfire_url, name, BRAND};
     use crate::{builtin, manifest, package, validate};
 
     #[test]
@@ -319,6 +351,135 @@ mod tests {
             assert!(!sheet.css.contains("title-logo"), "{}", pack.id);
             assert!(!sheet.css.contains("--rekindle-"), "{}", pack.id);
         }
+    }
+
+    /// Every branded node of `nodes` (its whole box covered), each with
+    /// whether a branded ancestor holds it.
+    fn branded_of<'a>(nodes: &'a [SkinNode], inside: bool, out: &mut Vec<(&'a SkinNode, bool)>) {
+        for n in nodes {
+            let mine = branded(n);
+            if mine {
+                out.push((n, inside));
+            }
+            branded_of(&n.children, inside || mine, out);
+        }
+    }
+
+    /// The served trees of every built-in window and popup.
+    fn served_trees(
+        m: &rekindle_types::dto::skin::SkinManifest,
+    ) -> Vec<&rekindle_types::dto::skin_tree::SkinTree> {
+        m.windows
+            .values()
+            .flat_map(|l| l.tree.iter().chain(l.popups.values().map(|p| &p.tree)))
+            .collect()
+    }
+
+    /// Fix 1 (round 26 review: Combat's flame on a white box): a branded
+    /// node's cover is its whole box, so no built-in serves art for it in
+    /// any state, and no served stylesheet rule of it (its own, a state's or
+    /// an `::after`) draws an image; Combat's `XfireLogo` among them.
+    #[test]
+    fn a_whole_box_covered_branded_node_serves_no_art() {
+        let mut seen = 0;
+        for pack in &builtin::PACKS {
+            let c = validate::run(pack.bytes).unwrap();
+            let m = manifest::served(&package::read(&c.bytes).unwrap()).unwrap();
+            let address = blake3::hash(&c.bytes).to_hex().to_string();
+            let sheet = crate::serve::stylesheet(&c.bytes, &address).unwrap();
+            let rules: Vec<&str> = sheet.css.split("\n  }").collect();
+            for t in served_trees(&m) {
+                let mut nodes = Vec::new();
+                branded_of(&t.root, false, &mut nodes);
+                for (n, _) in nodes {
+                    seen += 1;
+                    assert!(n.art.is_none(), "{}: {} serves art", pack.id, n.id);
+                    let sel = format!("[data-skin-node=\"{}\"]", n.id);
+                    for rule in &rules {
+                        let head = rule.split('{').next().unwrap_or("");
+                        if head.contains(&sel) {
+                            assert!(!rule.contains("url("), "{}: {rule}", pack.id);
+                        }
+                    }
+                }
+            }
+            if pack.id == "combat" {
+                assert!(
+                    sheet.css.contains("[data-skin-node=\"XfireLogo\"]"),
+                    "combat"
+                );
+            }
+        }
+        assert!(seen > 0, "the built-ins serve branded nodes");
+    }
+
+    /// Fix 2 (round 26 review: Classic's wordmark clipped to "ekindle"): a
+    /// branded node inside a branded ancestor serves no label or cover, so
+    /// Classic's `TheX` and `TheXCover` lie bare under `XfireLogo`'s
+    /// wordmark cover.
+    #[test]
+    fn a_branded_node_in_a_branded_ancestor_serves_no_cover() {
+        let m = served_of("xfire-classic");
+        let mut nodes = Vec::new();
+        for t in served_trees(&m) {
+            branded_of(&t.root, false, &mut nodes);
+        }
+        let inner: Vec<&str> = nodes
+            .iter()
+            .filter(|(_, i)| *i)
+            .map(|(n, _)| n.id.as_str())
+            .collect();
+        assert!(
+            inner.contains(&"TheX") && inner.contains(&"TheXCover"),
+            "{inner:?}"
+        );
+        for (n, inside) in nodes {
+            if inside {
+                assert!(n.label.is_none(), "{} keeps {:?}", n.id, n.label);
+            } else {
+                assert!(
+                    n.label.as_ref().is_some_and(|l| l.cover.is_some()),
+                    "{}",
+                    n.id
+                );
+            }
+        }
+    }
+
+    /// Fix 3 (owner 2026-11-23): no built-in serves a credits URL that is
+    /// Xfire's, and the authors still credit "Xfire, Inc." where the pack
+    /// does.
+    #[test]
+    fn no_builtin_serves_an_xfire_credits_url() {
+        let mut xfire_authored = 0;
+        for pack in &builtin::PACKS {
+            let c = validate::run(pack.bytes).unwrap();
+            let read = package::read(&c.bytes).unwrap();
+            let raw = manifest::parse(&read).unwrap().credits;
+            let m = manifest::served(&read).unwrap();
+            let served = m.credits.as_ref().expect(pack.id);
+            if let Some(u) = &served.url {
+                assert!(!is_xfire_url(u), "{}: {u}", pack.id);
+            }
+            let draft = crate::draft::from_package(pack.id, &c.bytes).unwrap();
+            assert!(
+                draft
+                    .credits
+                    .url
+                    .as_deref()
+                    .is_none_or(|u| !is_xfire_url(u)),
+                "{}",
+                pack.id
+            );
+            assert_eq!(
+                raw.map(|r| r.authors),
+                Some(served.authors.clone()),
+                "{}",
+                pack.id
+            );
+            xfire_authored += usize::from(served.authors.iter().any(|a| a == "Xfire, Inc."));
+        }
+        assert!(xfire_authored > 0, "a built-in credits Xfire, Inc.");
     }
 
     fn count_logos(nodes: &[SkinNode]) -> usize {

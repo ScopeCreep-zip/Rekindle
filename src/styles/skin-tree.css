@@ -183,6 +183,18 @@
     font-size: min(11px, calc(var(--label-h) - 2px));
     background-color: var(--color-xfire-bg-secondary);
   }
+  /* A branded logo's cover (plan BR: a logo node or Xfire decor, its whole
+   * art box) is not filled: the Host serves such a node no art of its own,
+   * so the art under it (its parent's) shows, and the mark sits on it as the
+   * pack's logo sat; the list ground filled it as a visible box wherever the
+   * frame differs from the list (Combat's white box, r26 shots). Only those
+   * roles: a renamed menu title keeps its own art, whose baked word its
+   * cover hides (XGlow's File and its reflection, r27 shots), so its cover
+   * stays filled. The wordmark's word is logotype, outside WCAG 1.4.3's
+   * contrast minimum. */
+  :is([data-skin-role="logo"], [data-skin-role="decor"]) > .skin-node-glyph[data-cover]:has(> .skin-node-glyph-brand) {
+    background-color: transparent;
+  }
   .skin-node-label[data-tight] {
     font-size: min(10px, calc(var(--label-h, 12px) - 2px));
   }

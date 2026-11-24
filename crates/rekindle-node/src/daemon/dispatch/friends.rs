@@ -2,7 +2,8 @@
 //! (plans E2.1, E2.3): each request runs the ported operation
 //! (`operations::{friend, dm}`) over the Host (`HostFriends`).
 
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse, Lane};
+use rekindle_ipc::protocol::{GroupDmRequest, IpcRequest, IpcResponse, Lane, LobbyRequest};
+use rekindle_transport::operations::group_dm::lobby::LobbyStep;
 use rekindle_transport::operations::{dm, friend, friend::FriendError, group_dm};
 
 use super::{state_error, DaemonContext};
@@ -175,18 +176,52 @@ pub(crate) async fn route(
             done(dm::retry_send(&host, &client_id, acknowledged.key_change).await)
         }
         IpcRequest::OutboxDiscard { client_id } => done(dm::discard_send(&host, &client_id).await),
-        IpcRequest::GroupDmCreate {
+        IpcRequest::GroupDm(GroupDmRequest::Create {
             name,
             members,
             origin_peer,
-        } => answer(group_dm::create_from(&host, &name, &members, origin_peer.as_deref()).await),
-        IpcRequest::GroupDmAccept { group_id } => done(group_dm::accept(&host, &group_id).await),
-        IpcRequest::GroupDmDecline { group_id } => done(group_dm::decline(&host, &group_id).await),
-        IpcRequest::GroupDmLeave { group_id } => done(group_dm::leave(&host, &group_id).await),
-        IpcRequest::GroupDmInvite { group_id, members } => {
+        }) => answer(group_dm::create_from(&host, &name, &members, origin_peer.as_deref()).await),
+        IpcRequest::GroupDm(GroupDmRequest::Accept { group_id }) => {
+            done(group_dm::accept(&host, &group_id).await)
+        }
+        IpcRequest::GroupDm(GroupDmRequest::Decline { group_id }) => {
+            done(group_dm::decline(&host, &group_id).await)
+        }
+        IpcRequest::GroupDm(GroupDmRequest::Leave { group_id }) => {
+            done(group_dm::leave(&host, &group_id).await)
+        }
+        IpcRequest::GroupDm(GroupDmRequest::Invite { group_id, members }) => {
             done(group_dm::invite(&host, &group_id, &members).await)
         }
-        IpcRequest::GroupDmRename { group_id, name } => {
+        IpcRequest::Lobby(LobbyRequest::Host { group_id }) => {
+            match crate::host::lobby::own_game(ctx) {
+                Ok(game_id) => done(group_dm::lobby::open(&host, &group_id, game_id).await),
+                Err(refused) => refused,
+            }
+        }
+        IpcRequest::Lobby(LobbyRequest::Join { group_id, lobby_id }) => {
+            done(group_dm::lobby::act(&host, &group_id, &lobby_id, LobbyStep::Join).await)
+        }
+        IpcRequest::Lobby(LobbyRequest::Leave { group_id, lobby_id }) => {
+            done(group_dm::lobby::act(&host, &group_id, &lobby_id, LobbyStep::Leave).await)
+        }
+        IpcRequest::Lobby(LobbyRequest::Close { group_id, lobby_id }) => {
+            done(group_dm::lobby::act(&host, &group_id, &lobby_id, LobbyStep::Close).await)
+        }
+        IpcRequest::Lobby(LobbyRequest::Launch {
+            group_id,
+            lobby_id,
+            server,
+        }) => match crate::host::lobby::launch_server(ctx, server.as_ref()) {
+            Ok(server) => done(
+                group_dm::lobby::act(&host, &group_id, &lobby_id, LobbyStep::Launch(server)).await,
+            ),
+            Err(refused) => refused,
+        },
+        IpcRequest::Lobby(LobbyRequest::Get { group_id }) => {
+            answer(group_dm::lobby::get(&host, &group_id).await)
+        }
+        IpcRequest::GroupDm(GroupDmRequest::Rename { group_id, name }) => {
             done(group_dm::rename(&host, &group_id, &name).await)
         }
         IpcRequest::DisappearingSet {
@@ -200,19 +235,19 @@ pub(crate) async fn route(
             let kind = crate::validation::conversation_kind(&conversation);
             answer(dm::disappearing::current(&host, &conversation, kind).await)
         }
-        IpcRequest::GroupDmSend { group_id, body } => {
+        IpcRequest::GroupDm(GroupDmRequest::Send { group_id, body }) => {
             answer(group_dm::send_reviewed(&host, &group_id, &body, acknowledged.key_change).await)
         }
-        IpcRequest::GroupDmTyping { group_id, typing } => {
+        IpcRequest::GroupDm(GroupDmRequest::Typing { group_id, typing }) => {
             done(group_dm::report_draft(&host, &group_id, typing).await)
         }
-        IpcRequest::GroupDmList => answer(group_dm::list(&host).await),
-        IpcRequest::GroupDmMessages {
+        IpcRequest::GroupDm(GroupDmRequest::List) => answer(group_dm::list(&host).await),
+        IpcRequest::GroupDm(GroupDmRequest::Messages {
             group_id,
             limit,
             before,
-        } => answer(group_dm::messages(&host, &group_id, limit, before).await),
-        IpcRequest::GroupDmMarkRead { group_id } => {
+        }) => answer(group_dm::messages(&host, &group_id, limit, before).await),
+        IpcRequest::GroupDm(GroupDmRequest::MarkRead { group_id }) => {
             done(group_dm::mark_read(&host, &group_id).await)
         }
         other => unreachable!("{} is not a friend or DM request", other.name()),

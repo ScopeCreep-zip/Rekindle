@@ -1,5 +1,5 @@
 import { Component, For, Show, createMemo, createSignal } from "solid-js";
-import { ICON_TIMER_SAND } from "../../icons";
+import SkinGlyph from "../common/SkinGlyph";
 import { disappearingState } from "../../stores/disappearing.store";
 import { handleSetDisappearingTimer } from "../../actions/disappearing.actions";
 import { CUSTOM_UNITS, durationText } from "../../utils/disappearing";
@@ -48,7 +48,7 @@ const DisappearingTimerControl: Component<{ conversation: string; label: string 
             aria-expanded={open()}
             aria-controls={open() ? panelId : undefined}
           >
-            <span class="nf-icon" aria-hidden="true">{ICON_TIMER_SAND}</span>
+            <SkinGlyph name="timer-sand" />
             <span class="chat-disappearing-value">{durationText(seconds())}</span>
           </button>
           <Show when={open()}>

@@ -42,11 +42,16 @@
 use std::collections::HashMap;
 
 use rekindle_types::dto::skin::WindowLayout;
-use rekindle_types::dto::skin_tree::{Anchor, NodeRole, NodeSpan, SkinNode, SkinTree, ViewKey};
+use rekindle_types::dto::skin_tree::{Anchor, NodeRole, NodeSpan, SkinNode, SkinTree};
 
 use super::inset::is_text;
 use super::titles::{each_laid, laid_window, place};
 use super::validate::{overlap, Apart};
+
+mod obstacle;
+
+use obstacle::{obstacles, on_line, stops};
+pub(super) use obstacle::{obstacles_of, Obstacle};
 
 /// Each small interactive node's target box on the pack's boxes, relative
 /// to its art: `[dx, dy, w, h]` by node id.
@@ -112,77 +117,6 @@ fn extent(n: &SkinNode, b: [i32; 4], targets: &Targets) -> [i32; 4] {
     })
 }
 
-/// A box no text may run over (plan SK12), laid on the pack's boxes: a
-/// blocking node's press area ([`reach`] over [`extent`]), another text's
-/// box (its rows, at least one), or the views (the app's content, the
-/// buddy list and its search field). The served text stops at the near
-/// edge of any of them on its line, wherever it lies in the tree, except
-/// its own ancestors and descendants.
-struct Obstacle {
-    id: String,
-    up: Vec<String>,
-    shows: Option<ViewKey>,
-    /// A blocking node, which [`usable`] already counts among its
-    /// siblings.
-    blocker: bool,
-    b: [i32; 4],
-}
-
-fn obstacles(
-    nodes: &[SkinNode],
-    parent: [i32; 4],
-    up: &[String],
-    (targets, view): (&Targets, Option<ViewKey>),
-    out: &mut Vec<Obstacle>,
-) {
-    for n in nodes {
-        let b = place(n, parent);
-        // A node shows with its own view or its nearest ancestor's (Simple-X's
-        // `BigBrowseFileText` under the Files row's `SearchFiles`).
-        let shows = n.shows_with.or(view);
-        let blocker = n.interactive() && !is_text(n.role) && n.resize_edge().is_none();
-        let area = if blocker {
-            Some(reach(n, extent(n, b, targets), targets))
-        } else if draws_text(n) {
-            Some(reach(n, [b[0], b[1], b[2], b[3].max(1)], targets))
-        } else {
-            (n.role == NodeRole::Views).then_some(b)
-        };
-        if let Some(b) = area {
-            out.push(Obstacle {
-                id: n.id.clone(),
-                up: up.to_vec(),
-                shows,
-                blocker,
-                b,
-            });
-        }
-        let mut own = up.to_vec();
-        own.push(n.id.clone());
-        obstacles(&n.children, b, &own, (targets, shows), out);
-    }
-}
-
-/// The obstacles that stop `n`'s text (see [`Obstacle`]): not `n`, its
-/// ancestors (`up`) or descendants, not another view's, and not a
-/// blocking sibling (counted by [`usable`] with its span).
-/// With `siblings`, the blocking siblings count too (the plan SK13 cut).
-fn stops(n: &SkinNode, up: &[String], all: &[Obstacle], siblings: bool) -> Vec<[i32; 4]> {
-    let mine = all
-        .iter()
-        .find(|o| o.id == n.id && o.up == up)
-        .map_or(n.shows_with, |o| o.shows);
-    all.iter()
-        .filter(|o| {
-            let apart = o.shows.is_some() && mine.is_some() && o.shows != mine;
-            let kin = o.id == n.id || o.up.contains(&n.id) || up.contains(&o.id);
-            let sibling_blocker = !siblings && o.blocker && o.up == up;
-            !(kin || apart || sibling_blocker)
-        })
-        .map(|o| o.b)
-        .collect()
-}
-
 /// Keeps each child of a node that grew from `was` to `now` at its pack
 /// box on x (`axis` 0) or y (`axis` 1): the button art a text-drawn tab or
 /// title lays around its words (Classic's `TabNormalButton`, `Stretch`
@@ -221,7 +155,7 @@ fn cut_on(text: [i32; 4], stop: [i32; 4], axis: usize) -> [i32; 4] {
 
 /// `t` cut off each of `stops` it meets on the axis that keeps it largest
 /// (x on a tie: a single-line label keeps its row).
-fn cut(mut t: [i32; 4], stops: &[[i32; 4]]) -> [i32; 4] {
+pub(super) fn cut(mut t: [i32; 4], stops: &[[i32; 4]]) -> [i32; 4] {
     for o in stops {
         if overlap(t, *o) {
             let (x, y) = (cut_on(t, *o, 0), cut_on(t, *o, 1));
@@ -233,7 +167,8 @@ fn cut(mut t: [i32; 4], stops: &[[i32; 4]]) -> [i32; 4] {
 
 /// The span of a node that moved from `was` to `now` (start, length) in a
 /// parent `len` px long, kept on the same anchor where it has one.
-fn respan(span: NodeSpan, len: i32, was: (i32, i32), now: (i32, i32)) -> Option<NodeSpan> {
+fn respan(span: &NodeSpan, len: i32, was: (i32, i32), now: (i32, i32)) -> Option<NodeSpan> {
+    let span = span.clone();
     let (ds, de) = (now.0 - was.0, was.0 + was.1 - now.0 - now.1);
     let size = u16::try_from(now.1).ok()?;
     let add = |o: i16, d: i32| i16::try_from(i32::from(o) + d).ok();
@@ -282,11 +217,11 @@ fn cut_one(
             continue;
         }
         let was = place(n, parent);
-        let span = if axis == 0 { n.x } else { n.y };
+        let span = if axis == 0 { n.x.clone() } else { n.y.clone() };
         let len = parent[axis + 2];
         let moved = (t[axis] - parent[axis], t[axis + 2]);
         let from = (was[axis] - parent[axis], was[axis + 2]);
-        if let Some(s) = respan(span, len, from, moved) {
+        if let Some(s) = respan(&span, len, from, moved) {
             if axis == 0 {
                 n.x = s;
             } else {
@@ -321,7 +256,7 @@ fn usable(
     targets: &Targets,
     extra: &[[i32; 4]],
 ) -> Option<NodeSpan> {
-    let NodeSpan::Fixed { at, size } = nodes[i].x else {
+    let NodeSpan::Fixed { at, size } = nodes[i].x.clone() else {
         return None;
     };
     let b = boxes[i];
@@ -334,21 +269,28 @@ fn usable(
         .zip(boxes)
         .enumerate()
         .filter(|(j, (s, _))| *j != i && blocks(&nodes[i], s))
-        .map(|(_, (s, sb))| (Some(s), reach(s, extent(s, *sb, targets), targets)))
+        .map(|(_, (s, sb))| {
+            let art = extent(s, *sb, targets);
+            let b = reach(s, art, targets);
+            (Some(s), on_line(b, art, nodes[i].fit.is_some()))
+        })
         .chain(extra.iter().map(|e| (None, *e)))
         .filter(|(_, sb)| sb[1] < line[1] && line[0] < sb[1] + sb[3])
         .collect();
     let fixed = |len: i32| {
         let size = u16::try_from(len).ok()?;
-        (size > 0).then_some(NodeSpan::Fixed { at, size })
+        (size > 0).then_some(NodeSpan::Fixed {
+            at: at.clone(),
+            size,
+        })
     };
     // Served when it grows the box, or when the pack's box reaches past
     // its parent (Classic's `HelpMenuText`, x 269-368 in a parent ending at
     // x 343): the usable box is never wider than the parent's.
     let out = b[0] < lo || b[0] + b[2] > hi;
     let serve = |len: i32| len > i32::from(size) || (out && len < i32::from(size));
-    match at {
-        Anchor::Start(o) => {
+    match at.clone() {
+        Anchor::Start(o) | Anchor::After { gap: o, .. } => {
             let past: Vec<_> = near.iter().filter(|(_, sb)| sb[0] >= b[0]).collect();
             let end = past.iter().map(|(_, sb)| sb[0]).fold(hi, i32::min);
             let moves = past.iter().all(|(s, _)| {
@@ -416,7 +358,7 @@ fn usable(
             // Xfire floors the centred start: shrink until the box fits.
             let fits = |len: i32| {
                 let (s, w) = NodeSpan::Fixed {
-                    at,
+                    at: at.clone(),
                     size: u16::try_from(len).unwrap_or(0),
                 }
                 .place(parent[2]);
@@ -462,8 +404,53 @@ fn walk(
     }
 }
 
+/// The height of the shell's line box for the text `role` draws, px (plan
+/// SK15a): the name at 12 px bold (`skin-tree.css` `.skin-name-text`,
+/// `font-size: 12px; font-weight: 700`) takes 15 px; every other text, the
+/// status line and the Host's labels at 11 px (`.skin-name-edit`,
+/// `.skin-status-edit` and `.skin-node-label`, `font-size: 11px`), 14 px.
+pub(super) const fn line_box(role: NodeRole) -> u16 {
+    match role {
+        NodeRole::NameField => 15,
+        _ => 14,
+    }
+}
+
+/// The y span serving `n` its line box when it draws text in a box shorter
+/// than that (Onyx's `MainTitleBar/Title` is 0 px tall): the same anchor at
+/// the line's height, so it grows away from its anchor (down from a top,
+/// up from a bottom, about a centre), as the engine drew the string from
+/// that point.
+fn line_span(n: &SkinNode) -> Option<NodeSpan> {
+    let NodeSpan::Fixed { at, size } = &n.y else {
+        return None;
+    };
+    let line = line_box(n.role);
+    (draws_text(n) && *size < line).then(|| NodeSpan::Fixed {
+        at: at.clone(),
+        size: line,
+    })
+}
+
+/// Serves every text node shorter than its line box that line box
+/// ([`line_span`]), before any obstacle is measured, so the text pass
+/// (SK8), the targets and the overlap invariant (SK12) see the line the
+/// shell draws, not a 0 px row.
+fn lines(nodes: &mut [SkinNode], parent: [i32; 4]) {
+    for n in nodes {
+        let was = place(n, parent);
+        if let Some(y) = line_span(n) {
+            n.y = y;
+            pin_children(n, 1, was, place(n, parent));
+        }
+        let b = place(n, parent);
+        lines(&mut n.children, b);
+    }
+}
+
 /// Lays `tree`'s text boxes in `window` (see the module doc).
 fn lay_tree(tree: &mut SkinTree, window: (i32, i32)) {
+    lines(&mut tree.root, laid_window(tree.outsets, window));
     let targets = targets(tree, window);
     let at = laid_window(tree.outsets, window);
     let mut all = Vec::new();

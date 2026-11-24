@@ -405,7 +405,8 @@
 
     /* Icons rendered as font glyphs lose their decorative role; let the
      * platform pick the foreground. */
-    .nf-icon {
+    .nf-icon,
+    .skin-glyph {
       color: ButtonText;
     }
   }

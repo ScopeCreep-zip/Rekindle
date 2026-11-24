@@ -1,6 +1,6 @@
 import { Component, For, Show, createSignal, createMemo } from "solid-js";
+import SkinGlyph from "../common/SkinGlyph";
 import type { Thread } from "../../stores/community.store";
-import { ICON_CLOSE, ICON_THREAD } from "../../icons";
 import { formatRelativeTime } from "../../utils/formatting";
 
 interface ThreadListPanelProps {
@@ -42,10 +42,10 @@ const ThreadListPanel: Component<ThreadListPanelProps> = (props) => {
   return (
     <div class="thread-list-panel">
       <div class="thread-panel-header">
-        <span class="nf-icon" aria-hidden="true">{ICON_THREAD}</span>
+        <SkinGlyph name="thread" />
         Threads
         <button class="modal-close-btn" onClick={props.onClose} aria-label="Close threads panel">
-          <span class="nf-icon" aria-hidden="true">{ICON_CLOSE}</span>
+          <SkinGlyph name="close" />
         </button>
       </div>
       <div class="thread-list-controls">

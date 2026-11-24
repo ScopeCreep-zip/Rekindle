@@ -24,6 +24,11 @@ function getCommunityFromUrl(): string {
   return params.get("id") ?? "";
 }
 
+/** The channel the window was opened on (`&channel=`, plan E7.2 A), if any. */
+function getChannelFromUrl(): string {
+  return new URLSearchParams(window.location.search).get("channel") ?? "";
+}
+
 /// Signals + derived memos backing `CommunityWindow`. Split out of the
 /// orchestrating `useCommunityWindow` hook so neither file approaches the
 /// module size cap. Returns a flat object of stable accessor/setter
@@ -214,6 +219,7 @@ export function createCommunityWindowState() {
 
   return {
     getCommunityFromUrl,
+    getChannelFromUrl,
     selectedCommunityId, setSelectedCommunityId, selectedChannelId, setSelectedChannelId,
     showCreateCommunity, setShowCreateCommunity, showCreateChannel, setShowCreateChannel,
     showJoinCommunity, setShowJoinCommunity, showSettings, setShowSettings,

@@ -67,8 +67,13 @@ pub(super) type Sibs = BTreeMap<String, (NodeSpan, NodeSpan)>;
 pub(super) type Sizes = BTreeMap<String, (u16, u16)>;
 
 fn span_of(sibs: &Sibs, name: &str, axis: &Axis) -> Option<NodeSpan> {
-    sibs.get(&name.to_ascii_lowercase())
-        .map(|s| if axis.pos == "X" { s.0 } else { s.1 })
+    sibs.get(&name.to_ascii_lowercase()).map(|s| {
+        if axis.pos == "X" {
+            s.0.clone()
+        } else {
+            s.1.clone()
+        }
+    })
 }
 
 /// A sum of signed terms, each a number or a sibling's `width`/`height`.
@@ -155,6 +160,15 @@ fn edge(value: &str, sibs: &Sibs, axis: &Axis) -> Result<Option<At>, ImportError
         ) => At::End(i32::from(off) + i32::from(size) - by),
         (NodeSpan::Stretch { end, .. }, true) => At::End(i32::from(end) - by),
         (NodeSpan::Stretch { start, .. }, false) => At::Start(i32::from(start) + by),
+        // The names hold laid spans, never a chain ([`super::content`]):
+        // one is placed as `NodeSpan::place` places it.
+        (
+            NodeSpan::Fixed {
+                at: Anchor::After { gap: off, .. },
+                size,
+            },
+            far,
+        ) => At::Start(i32::from(off) + if far { i32::from(size) } else { 0 } + by),
         (
             NodeSpan::Fixed {
                 at:
@@ -174,6 +188,26 @@ fn edge(value: &str, sibs: &Sibs, axis: &Axis) -> Result<Option<At>, ImportError
             At::Centre(if far { left + i32::from(size) } else { left } + by)
         }
     }))
+}
+
+/// The sibling, offset and edge (`true` far, `false` near) of a tile
+/// placed at a sibling's edge on `ax` (`X="XfireMenuText.RIGHT+10"`,
+/// `Y="UserName.BOTTOM+2"`; XGlow's `Status` at `Y="StatusMiddle.TOP+1"`,
+/// `Xglow.ini:216-217`), neither stretched nor justified to its end or
+/// centre: a chain [`super::content::chains`] may keep symbolic.
+pub(super) fn chain<'t>(tile: &'t Node, ax: &Axis) -> Option<(&'t str, i32, bool)> {
+    let just = tile.attr_ci(ax.just).map_or("", str::trim);
+    let placed_from_start = !just.eq_ignore_ascii_case(ax.end_just)
+        && !just.eq_ignore_ascii_case("CENTER")
+        && !just.eq_ignore_ascii_case("CENTRE");
+    let stretched = tile.attr_ci(ax.resize).is_some_and(|r| r.trim() == "100");
+    let (name, side, by) = reference(tile.attr_ci(ax.pos)?)?;
+    let far = side.eq_ignore_ascii_case(ax.far);
+    (placed_from_start && !stretched && (far || side.eq_ignore_ascii_case(ax.near))).then_some((
+        name.trim(),
+        by,
+        far,
+    ))
 }
 
 fn i16_of(v: i32) -> Result<i16, ImportError> {
@@ -293,7 +327,8 @@ pub(super) fn axis(
 
 /// `span` (in a parent's frame) in the frame of a child laid at `inner`,
 /// when its edges are known there.
-fn shift(span: NodeSpan, inner: NodeSpan) -> Option<NodeSpan> {
+fn shift(span: &NodeSpan, inner: &NodeSpan) -> Option<NodeSpan> {
+    let (span, inner) = (span.clone(), inner.clone());
     let (start, end) = match inner {
         NodeSpan::Fixed {
             at: Anchor::Start(off),
@@ -306,6 +341,10 @@ fn shift(span: NodeSpan, inner: NodeSpan) -> Option<NodeSpan> {
         NodeSpan::Stretch { start, end } => (Some(start), Some(end)),
         NodeSpan::Fixed {
             at: Anchor::Centre { .. },
+            ..
+        }
+        | NodeSpan::Fixed {
+            at: Anchor::After { .. },
             ..
         } => (None, None),
     };
@@ -332,6 +371,10 @@ fn shift(span: NodeSpan, inner: NodeSpan) -> Option<NodeSpan> {
         NodeSpan::Fixed {
             at: Anchor::Centre { .. },
             ..
+        }
+        | NodeSpan::Fixed {
+            at: Anchor::After { .. },
+            ..
         } => return None,
     })
 }
@@ -339,10 +382,10 @@ fn shift(span: NodeSpan, inner: NodeSpan) -> Option<NodeSpan> {
 /// The names a child of a tile laid at `(x, y)` sees: its parent's
 /// siblings and their outer names (Total Chaos's `AdArea`
 /// `Y="MainTitleBar.BOTTOM"` inside `AdBar`), in the child's frame.
-pub(super) fn outer_for(names: &Sibs, x: NodeSpan, y: NodeSpan) -> Sibs {
+pub(super) fn outer_for(names: &Sibs, x: &NodeSpan, y: &NodeSpan) -> Sibs {
     names
         .iter()
-        .filter_map(|(k, (sx, sy))| Some((k.clone(), (shift(*sx, x)?, shift(*sy, y)?))))
+        .filter_map(|(k, (sx, sy))| Some((k.clone(), (shift(sx, x)?, shift(sy, y)?))))
         .collect()
 }
 
@@ -374,7 +417,7 @@ pub(super) fn client_inset(
 pub(super) fn client_box(span: NodeSpan, (s, e): (i32, i32)) -> Result<NodeSpan, ImportError> {
     // A boxless tile (no art, no declared size) has no client box: its
     // indents inset nothing (Total Chaos's, xSLIMFIRE's art-less wrappers).
-    let NodeSpan::Fixed { at, size } = span else {
+    let NodeSpan::Fixed { at, size } = span.clone() else {
         return Ok(span);
     };
     if size == 0 {
@@ -383,6 +426,10 @@ pub(super) fn client_box(span: NodeSpan, (s, e): (i32, i32)) -> Result<NodeSpan,
     let at = match at {
         Anchor::Start(o) => Anchor::Start(i16_of(i32::from(o) + s)?),
         Anchor::End(o) => Anchor::End(i16_of(i32::from(o) + e)?),
+        Anchor::After { sibling, gap } => Anchor::After {
+            sibling,
+            gap: i16_of(i32::from(gap) + s)?,
+        },
         // The client box is the tile's box less `(s, e)`: centred in the
         // same frame, narrowed by the insets (lead decision 32).
         Anchor::Centre { by, before, after } => Anchor::Centre {
@@ -409,6 +456,8 @@ fn from_client(child: NodeSpan, (s, e): (i32, i32)) -> Result<NodeSpan, ImportEr
             let at = match at {
                 Anchor::Start(o) => Anchor::Start(add(o, s)?),
                 Anchor::End(o) => Anchor::End(add(o, e)?),
+                // Its sibling moves with it: the gap stays.
+                after @ Anchor::After { .. } => after,
                 // Centred in the client box: the tile's box narrowed by
                 // `(s, e)` (lead decision 32).
                 Anchor::Centre { by, before, after } => Anchor::Centre {
@@ -438,7 +487,7 @@ pub(super) fn to_tile(
         }
         for n in &mut children {
             let slot = if c == 0 { &mut n.x } else { &mut n.y };
-            *slot = from_client(*slot, (s, e))?;
+            *slot = from_client(slot.clone(), (s, e))?;
         }
     }
     Ok(children)

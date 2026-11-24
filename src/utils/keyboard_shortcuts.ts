@@ -43,6 +43,11 @@ export const SHORTCUT_SECTIONS: ShortcutSection[] = [
     ],
   },
   {
+    // src/hooks/useChatSearchChord.ts: the Host's Search for this window.
+    title: "Chat",
+    rows: [{ keys: [["Mod", "F"]], action: "Search this conversation" }],
+  },
+  {
     // src/windows/community_window/useCommunityWindow.ts.
     title: "Community",
     rows: [{ keys: [["Mod", "F"], ["Mod", "K"]], action: "Search messages" }],

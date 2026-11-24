@@ -57,6 +57,8 @@ pub(crate) struct SkinState {
     pub(crate) selection: actions::Selections,
     /// Each open popup's launcher (plan SK2-N4).
     pub(crate) launchers: actions::Launchers,
+    /// Each skin window's current view (SK2-G §8, `SearchFor`).
+    pub(crate) views: actions::Views,
     /// Each skin window's state signals (plan SK2-A4 step 3).
     pub(crate) signals: signals::SignalState,
     /// The apply failures already told, so N windows failing one skin the
@@ -194,7 +196,7 @@ async fn import(ctx: &DaemonContext, bytes: Vec<u8>) -> Answer<SkinEntry> {
         id: format!("{PKG}{hash}"),
         name: m.name,
         imported_at: Some(imported_at),
-        credits: m.credits,
+        credits: rekindle_skin::skin_tree::brand::credits(m.credits),
         short_targets,
         conforming: short_targets == 0,
     })
@@ -337,7 +339,7 @@ fn entries(rows: Vec<(skins::SkinRow, Option<Vec<u8>>)>) -> Answer<Vec<SkinEntry
             id,
             name: rekindle_skin::skin_tree::brand::name(&m.name),
             imported_at: Some(row.imported_at),
-            credits: m.credits,
+            credits: rekindle_skin::skin_tree::brand::credits(m.credits),
             short_targets,
             conforming: short_targets == 0,
         });
@@ -358,7 +360,7 @@ fn builtin_entry(
         id,
         name,
         imported_at: None,
-        credits,
+        credits: rekindle_skin::skin_tree::brand::credits(credits),
         short_targets,
         conforming: short_targets == 0,
     })

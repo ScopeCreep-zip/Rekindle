@@ -14,13 +14,14 @@ pub(crate) mod control_ingress;
 mod control_moderation;
 mod dht_watch;
 mod inbound_unported;
+mod ingest_outcome;
 pub(crate) mod ingress_queue;
 mod lifecycle;
 mod network;
 pub(crate) mod route_publish;
 
 pub use lifecycle::{
-    emit_network_status, initialize_node, route_paused, route_status, sample_strength,
+    emit_network_status, initialize_node, route_down, route_paused, route_status, sample_strength,
     shutdown_app, start_dispatch_loop,
 };
 

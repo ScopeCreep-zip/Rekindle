@@ -20,6 +20,7 @@ import type { TreeFit } from "../../geometry-page.ts";
 import { applySkin, createCommunity, createIdentity, createTextChannel, newUser, openCommunity, postMessage, selectChannel, skinShown, type User } from "../../journeys.ts";
 import { ACCESSIBLE_VARIANT, builtinPacks, type SkinPack } from "../../skin-pack.ts";
 import { BUDDY_LIST, COMMUNITY, SETTINGS_APPEARANCE, type WindowCase, sizeWindow, sizesIn, spacingOf, treeGrowth } from "../../windows.ts";
+import { shot } from "../../shots.ts";
 
 const OUT = path.join(import.meta.dirname, "..", "..", "out", "skins-a11y");
 const PACKS = builtinPacks();
@@ -437,6 +438,10 @@ describe("every built-in skin keeps the app accessible and laid out", function (
     const faithful = PACKS.find((p) => p.file !== ACCESSIBLE_VARIANT.file);
     if (!faithful) throw new Error("no faithful skin");
     await applySkin(browser, me, faithful.name);
+    await shown(browser, ".skin-alternate button");
+    // Appearance with a faithful skin in use: its "N controls under 24 px"
+    // rows and the notice pointing at the accessible skin.
+    await shot("picker-faithful");
     await press(browser, await shown(browser, ".skin-alternate button"));
     await resolveIntent(browser, { passphrase: me.passphrase, appearMs: 1500 });
     await waitUntil(
@@ -444,6 +449,7 @@ describe("every built-in skin keeps the app accessible and laid out", function (
       NET_WAIT_MS,
       `${ACCESSIBLE_VARIANT.name} never became the skin in use`,
     );
+    await shot("picker-accessible");
   });
 
   for (const pack of PACKS) {

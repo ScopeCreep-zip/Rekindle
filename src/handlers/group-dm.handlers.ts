@@ -12,6 +12,7 @@ import type { DeliveryRetry } from "../ipc/channels/chat_events";
 import { groupDmState, setGroupDmState } from "../stores/group-dm.store";
 import { handleLoadGroupDms } from "../actions/group-dm.actions";
 import { transformDmMessage, transformHistoryGap } from "../utils/transformers";
+import { withOwnRow } from "../utils/own_rows";
 
 // Group-DM events (plan E2.6). The Host decides every change; an invite
 // arrives whole and is shown as is, and a roster change (join, leave, key
@@ -64,6 +65,17 @@ function applySendStatus(groupId: string, clientId: string, state: SendState, re
 // A live member message carries no row id: it takes a local negative one
 // (below any history-gap marker's) until a reload reads the stored row.
 let liveRows = 0;
+
+/** Our own committed row into the group's list, by its stored message id:
+ *  the row holding it is replaced, else it joins in time order. */
+function upsertOwnRow(groupId: string, row: ReturnType<typeof transformDmMessage>): void {
+  const convo = groupDmState.conversations[groupId];
+  if (!convo) {
+    setGroupDmState("conversations", groupId, { messages: [row], typing: {} });
+    return;
+  }
+  setGroupDmState("conversations", groupId, "messages", (msgs) => withOwnRow(msgs, row));
+}
 
 function appendMessage(groupId: string, m: Extract<GroupDmEvent, { message: unknown }>["message"]): void {
   const convo = groupDmState.conversations[groupId];
@@ -148,6 +160,13 @@ export function subscribeGroupChatEvents(
     applyListEvent(event);
     if ("sendStatus" in event && event.sendStatus.groupId === groupId) {
       applySendStatus(groupId, event.sendStatus.clientId, event.sendStatus.state, event.sendStatus.retry);
+    }
+    // Our own committed row (plan E6.11): the Host's row, once, by its
+    // stored id; never an unread or a notification.
+    if ("messageSent" in event && event.messageSent.groupId === groupId) {
+      upsertOwnRow(groupId, transformDmMessage(event.messageSent.message));
+      onDisplayed();
+      return;
     }
     if ("message" in event && event.message.groupId === groupId) {
       appendMessage(groupId, event.message);

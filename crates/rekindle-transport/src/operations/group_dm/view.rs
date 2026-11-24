@@ -133,18 +133,23 @@ pub async fn messages(
     .await?;
     Ok(rows
         .into_iter()
-        .map(|row| DmMessage {
-            id: row.id,
-            message_id: row.message_id,
-            is_own: row.sender_key == owner,
-            sender_id: row.sender_key,
-            body: row.body,
-            timestamp: row.timestamp,
-            send_state: row.send_state,
-            history_gap_through: row.history_gap_through,
-            expire_seconds: row.expire_seconds,
-            expire_at: row.expire_at,
-            timer_notice_seconds: row.timer_notice_seconds,
-        })
+        .map(|row| dm_message(row, &owner))
         .collect())
+}
+
+/// A stored group row as the group's history answers it (`owner`: ours).
+pub(super) fn dm_message(row: rekindle_db::repo::messages::DmRow, owner: &str) -> DmMessage {
+    DmMessage {
+        id: row.id,
+        message_id: row.message_id,
+        is_own: row.sender_key == owner,
+        sender_id: row.sender_key,
+        body: row.body,
+        timestamp: row.timestamp,
+        send_state: row.send_state,
+        history_gap_through: row.history_gap_through,
+        expire_seconds: row.expire_seconds,
+        expire_at: row.expire_at,
+        timer_notice_seconds: row.timer_notice_seconds,
+    }
 }

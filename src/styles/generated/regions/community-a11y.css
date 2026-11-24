@@ -29,16 +29,11 @@
     .community-window .member-group-header {
       border-image: none;
     }
-    .community-window .community-sidebar-title,
-    .community-window .community-sidebar-header .header-add-btn,
-    .community-window .channel-list .category-header > span,
-    .community-window .community-channel-header-icon,
-    .community-window .community-channel-header-name,
-    .community-window .channel-topic,
-    .community-window .channel-header-badge,
-    .community-window .community-channel-header .header-add-btn,
-    .community-window .member-group-name {
-      background-image: none;
+    .community-window .community-sidebar-header::before,
+    .community-window .channel-list .category-header::before,
+    .community-window .community-channel-header::before,
+    .community-window .member-group-header::before {
+      content: none;
     }
   }
 }

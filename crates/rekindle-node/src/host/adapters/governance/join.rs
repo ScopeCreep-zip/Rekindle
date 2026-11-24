@@ -2,7 +2,10 @@
 //! modes: `rekindle_governance_runtime::join_flow` claims our slot, then
 //! the membership is stored and the op set merged into the state and
 //! the projection, with our own member row, and the mesh hears
-//! the join. Nothing petitions anyone: admission is self-sovereign.
+//! the join once it stands: the inviter admitted it, or nobody answered
+//! and it stands from the DHT (ADR 0011 "Joining works with nobody
+//! online"). A join the inviter refuses is never announced or gossiped.
+//! Nothing petitions anyone: admission is self-sovereign.
 
 use rekindle_governance_runtime::GovernanceRuntimeError;
 use rekindle_types::dto::community::CommunityJoined;
@@ -115,9 +118,7 @@ impl HostGovernance {
             .map_err(|e| format!("community joined, member record not published: {e}"))?;
         self.store_own_member_row(&id, &pseudonym, joined_at)
             .await?;
-        self.announce_join(&id);
-        // Our `MemberJoined` is on `M` (or queued there and gossiped to the
-        // mesh): tell the inviter (it verifies and merges it), then continue
+        // Our `MemberJoined` is on `M` (or queued there): tell the inviter (it verifies and merges it), then continue
         // the walk from its frontier. The invite carries no community key
         // (D11): the inviter pushes it by `MekTransfer` once it merged our
         // `MemberJoined` (D16).
@@ -135,7 +136,7 @@ impl HostGovernance {
             .bootstrap_exchange(&id, &outcome.inviter_route, inviter_record, &outcome.joined)
             .await
         {
-            super::join_bootstrap::Exchange::Merged => {}
+            super::join_bootstrap::Exchange::Merged => self.announce_standing_join(&id, &outcome),
             super::join_bootstrap::Exchange::Refused(refused) => {
                 tracing::warn!(community = %id, error = %refused, "join refused by the inviter, withdrawn");
                 self.leave(&recorded).await.map_err(|e| {
@@ -147,6 +148,7 @@ impl HostGovernance {
                 tracing::info!(community = %id, %reason, "bootstrap exchange not answered: queued");
                 self.queue_bootstrap(&id, inviter_record, &outcome.joined)
                     .await;
+                self.announce_standing_join(&id, &outcome);
             }
         }
         // The inviter's key drop (plan RV2d): the durable copy of our key,
@@ -296,7 +298,6 @@ impl HostGovernance {
         };
         let queued = std::sync::atomic::AtomicBool::new(false);
         let publish_ops = async {
-            self.gossip_op(community, outcome.joined.encoded.clone());
             match self
                 .publish_governance_op(
                     community,
@@ -390,6 +391,20 @@ impl HostGovernance {
             "re-join: queued ops on the replaced record settled"
         );
         Ok(())
+    }
+
+    /// Our join stands (the inviter admitted it, or nobody answered and it
+    /// stands from the DHT, ADR 0011 "Join"): our `MemberJoined` gossiped
+    /// to the mesh, and our announcement after its settle. Never before
+    /// the bootstrap verdict: a join the inviter refuses is withdrawn and
+    /// leaves nothing on the mesh (finding F6).
+    fn announce_standing_join(
+        &self,
+        community: &str,
+        outcome: &rekindle_governance_runtime::join_flow::JoinStagesOutcome,
+    ) {
+        self.gossip_op(community, outcome.joined.encoded.clone());
+        self.announce_join(community);
     }
 
     async fn store_join_ops(

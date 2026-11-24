@@ -12,7 +12,8 @@ pub struct NetworkStatus {
     pub attachment_state: String,
     pub is_attached: bool,
     pub public_internet_ready: bool,
-    pub has_route: bool,
+    /// What the general-class route is doing (plan RV2).
+    pub general_route: rekindle_types::subscription_events::RouteAvailability,
     /// What the media-class route is doing (plan C7.9c).
     pub media_route: rekindle_types::subscription_events::RouteAvailability,
     /// Whether the Host accepts writes now (its lifecycle's `can_write`;
@@ -32,6 +33,10 @@ pub struct NetworkStatus {
     /// reads; later changes arrive as `NetworkEvent::RoutePaused` /
     /// `RouteResumed`.
     pub route_paused: Option<rekindle_types::subscription_events::RoutePauseCause>,
+    /// Which own route classes are down, and since when (plan RV1g): the
+    /// Host's `StatusSnapshot.own_route_down`; later changes arrive as
+    /// `NetworkEvent::OwnRouteDown` / `OwnRouteUp`.
+    pub own_route_down: rekindle_types::subscription_events::OwnRouteDownSet,
     pub profile_dht_key: Option<String>,
     pub friend_list_dht_key: Option<String>,
 }
@@ -121,10 +126,16 @@ pub async fn open_skin_popup(
 #[tauri::command]
 pub async fn open_community_window(
     community_id: Option<String>,
+    channel: Option<String>,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
-    windows::open_community_window(&app, state.inner(), community_id.as_deref())
+    windows::open_community_window(
+        &app,
+        state.inner(),
+        community_id.as_deref(),
+        channel.as_deref(),
+    )
 }
 
 /// Open a profile window for a friend or community member.

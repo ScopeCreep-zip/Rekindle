@@ -11,7 +11,7 @@ use rekindle_types::message::SendState;
 use rekindle_utils::random::RandomSource;
 use rekindle_utils::time::Clock;
 
-use crate::state::{merge, PeerAck, StateInput};
+use crate::state::{apply, merge, Moved, PeerAck, StateInput, Step, StoredSend, Write};
 use crate::*;
 
 mod reask;
@@ -59,6 +59,32 @@ struct Store {
     /// with a dependency kind missing from its list: a store that
     /// disagrees with `StreamKind::ordered` (lead decision 51).
     ordered_all: bool,
+}
+
+impl Store {
+    /// `client_id` as stored now, its noted ack with it.
+    fn stored(&self, client_id: &str) -> Option<StoredSend> {
+        let row = self.rows.iter().find(|r| r.client_id == client_id)?;
+        Some(StoredSend {
+            state: row.state,
+            ack: self.acks.get(client_id).copied(),
+        })
+    }
+
+    /// `target` through the lattice against `client_id` as stored now.
+    fn apply(&self, client_id: &str, target: SendState, step: Step) -> Option<(Write, Moved)> {
+        Some(apply(self.stored(client_id)?, target, step))
+    }
+
+    /// Project `state` and remove `client_id`.
+    fn settle_row(&mut self, client_id: &str, state: SendState) {
+        if let Some(r) = self.rows.iter().find(|r| r.client_id == client_id).cloned() {
+            self.settled
+                .push((r.stream, r.stream_seq, r.client_id, state));
+        }
+        self.rows.retain(|r| r.client_id != client_id);
+        self.acks.remove(client_id);
+    }
 }
 
 #[derive(Clone)]
@@ -213,13 +239,22 @@ impl OutboxDeps for Fake {
             .find(|r| r.stream == stream && r.stream_seq == seq)
             .cloned())
     }
-    async fn update(&self, client_id: &str, u: &RowUpdate) -> Result<Option<PeerAck>, OutboxError> {
+    async fn update(&self, client_id: &str, u: &RowUpdate) -> Result<Option<Moved>, OutboxError> {
+        let step = if u.retry { Step::Retry } else { Step::Update };
         let mut s = self.store.lock();
-        if let Some(r) = s.rows.iter_mut().find(|r| r.client_id == client_id) {
-            (r.state, r.attempts, r.next_at) = (u.state, u.attempts, u.next_at);
-            (r.deadline, r.wedge_reason) = (u.deadline, u.wedge_reason.clone());
+        let Some((write, moved)) = s.apply(client_id, u.state, step) else {
+            return Ok(None);
+        };
+        match write {
+            Write::Settle(state) => s.settle_row(client_id, state),
+            Write::Store(state) => {
+                if let Some(r) = s.rows.iter_mut().find(|r| r.client_id == client_id) {
+                    (r.state, r.attempts, r.next_at) = (state, u.attempts, u.next_at);
+                    (r.deadline, r.wedge_reason) = (u.deadline, u.wedge_reason.clone());
+                }
+            }
         }
-        Ok(s.acks.get(client_id).copied())
+        Ok(Some(moved))
     }
     async fn reschedule_queued(&self, id: &str, n: u32, at: i64) -> Result<(), OutboxError> {
         let mut s = self.store.lock();
@@ -229,26 +264,34 @@ impl OutboxDeps for Fake {
         }
         Ok(())
     }
-    async fn note_ack(&self, client_id: &str, ack: PeerAck) -> Result<bool, OutboxError> {
+    async fn note_ack(&self, client_id: &str, ack: PeerAck) -> Result<Option<Moved>, OutboxError> {
         let mut s = self.store.lock();
-        let queued = s
-            .rows
-            .iter()
-            .any(|r| r.client_id == client_id && r.state == SendState::Queued);
-        if queued {
-            let kept = s.acks.entry(client_id.to_owned()).or_insert(ack);
-            *kept = (*kept).max(ack);
-        }
-        Ok(queued)
+        let Some(before) = s.stored(client_id).filter(|b| b.state == SendState::Queued) else {
+            return Ok(None);
+        };
+        let kept = s.acks.entry(client_id.to_owned()).or_insert(ack);
+        *kept = (*kept).max(ack);
+        let after = StoredSend {
+            state: before.state,
+            ack: Some(*kept),
+        };
+        Ok(Some(Moved {
+            before: before.shown(),
+            after: after.shown(),
+        }))
     }
-    async fn settle(&self, client_id: &str, state: SendState) -> Result<(), OutboxError> {
+    async fn settle(
+        &self,
+        client_id: &str,
+        state: SendState,
+    ) -> Result<Option<Moved>, OutboxError> {
         let mut s = self.store.lock();
-        if let Some(r) = s.rows.iter().find(|r| r.client_id == client_id).cloned() {
-            s.settled.push((r.stream, r.stream_seq, r.client_id, state));
-        }
-        s.rows.retain(|r| r.client_id != client_id);
-        s.acks.remove(client_id);
-        Ok(())
+        let Some((write, moved)) = s.apply(client_id, state, Step::Settle) else {
+            return Ok(None);
+        };
+        let (Write::Settle(state) | Write::Store(state)) = write;
+        s.settle_row(client_id, state);
+        Ok(Some(moved))
     }
     async fn read_through(
         &self,
@@ -314,7 +357,7 @@ impl OutboxDeps for Fake {
             return Ok(Landed::Waiting);
         };
         let state = merge(SendState::Sent, StateInput::Peer(ack));
-        self.settle(client_id, state).await?;
+        self.store.lock().settle_row(client_id, state);
         Ok(Landed::Settled(state))
     }
     async fn on_chain(&self, _: &str, seqs: &[i64]) -> Result<Vec<i64>, OutboxError> {
@@ -397,6 +440,7 @@ mod independence;
 
 mod lifecycle;
 mod mek_transfer;
+mod monotone;
 #[cfg(test)]
 mod retrying;
 mod settle_landed;

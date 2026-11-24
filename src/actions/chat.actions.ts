@@ -6,34 +6,39 @@ import type { Message } from "../stores/chat.store";
 import { transformDmMessage } from "../utils/transformers";
 import { awaitsExpiry } from "./disappearing.actions";
 import { afterDraftReports, sendDraftReport } from "../utils/draft_reports";
+import { withOwnRow } from "../utils/own_rows";
 
+/**
+ * Send `body` to `to`. Nothing is drawn here: once the send commits, the
+ * Host publishes our own row (`directMessageSent`, plan E6.11) to this
+ * window and every other that shows the conversation, and a window opened
+ * later replays it from the journal; the command's answer is that same row,
+ * upserted alike. A failed send's row is the Host's stored one, read back so
+ * its Retry names the stored message.
+ */
 export async function handleSendMessage(to: string, body: string): Promise<void> {
   const trimmed = body.trim();
   if (!trimmed) return;
-
-  const tempId = Date.now();
-
-  // Optimistic insert with "sending" status
-  const message: Message = {
-    id: tempId,
-    senderId: authState.publicKey ?? "",
-    body: trimmed,
-    timestamp: Date.now(),
-    isOwn: true,
-    status: "sending",
-  };
-  handleIncomingMessage(to, message);
-
   try {
-    const sent = transformDmMessage(await afterDraftReports(`dm:${to}`, () => commands.sendMessage(to, trimmed)));
-    setChatState("conversations", to, "messages", (msgs) =>
-      msgs.map((m) => (m.id === tempId ? sent : m)),
-    );
+    upsertOwnMessage(to, transformDmMessage(await afterDraftReports(`dm:${to}`, () => commands.sendMessage(to, trimmed))));
   } catch {
-    // The Host stored the row as failed: show it as the Host holds it, so
-    // its Retry names the stored message.
     await handleLoadHistory(to, 50);
   }
+}
+
+/**
+ * Our own committed 1:1 row into the conversation `to`, by its stored
+ * message id (`serverMessageId`): the row holding it is replaced, else it
+ * joins in time order. The Host's event and the send's answer both land
+ * here, in either order, and leave one row.
+ */
+export function upsertOwnMessage(to: string, message: Message): void {
+  const existing = chatState.conversations[to];
+  if (!existing) {
+    setChatState("conversations", to, { peerId: to, messages: [message], isTyping: false, lastRead: 0 });
+    return;
+  }
+  setChatState("conversations", to, "messages", (msgs) => withOwnRow(msgs, message));
 }
 
 /// Whether a draft can be sent: it holds more than whitespace. The Send
@@ -127,10 +132,20 @@ export async function handleLoadHistory(
     const messages = await commands.getMessageHistory(peerId, limit);
     const mapped = messages.map(transformDmMessage);
     const existing = chatState.conversations[peerId];
-    if (mapped.length > 0 || !existing || existing.messages.length === 0) {
+    // Rows that arrived live after the history was read stay (peer finding
+    // F-echo): a row the snapshot lacks and newer than its newest row cannot
+    // be one the snapshot dropped (a page of the newest `limit`), and
+    // replacing the list lost our own sent row when the read began before
+    // its commit and answered after the Host's event.
+    const newest = mapped.reduce((t, m) => Math.max(t, m.timestamp), 0);
+    const stored = new Set(mapped.map((m) => m.serverMessageId).filter(Boolean));
+    const live = (existing?.messages ?? []).filter(
+      (m) => m.serverMessageId && !stored.has(m.serverMessageId) && m.timestamp > newest,
+    );
+    if (mapped.length > 0 || live.length > 0 || !existing || existing.messages.length === 0) {
       setChatState("conversations", peerId, {
         peerId,
-        messages: mapped,
+        messages: [...mapped, ...live],
         isTyping: existing?.isTyping ?? false,
         lastRead: existing?.lastRead ?? 0,
       });

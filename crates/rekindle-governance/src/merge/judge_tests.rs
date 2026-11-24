@@ -51,7 +51,7 @@ fn join(record: &str, first: Option<DeviceEndorsement>) -> GovernanceEntry {
     }
 }
 
-fn outcome(ops: &[&VerifiedOp]) -> MergeOutcome {
+pub(in crate::merge) fn outcome(ops: &[&VerifiedOp]) -> MergeOutcome {
     let ops: Vec<VerifiedOp> = ops.iter().map(|o| (*o).clone()).collect();
     merge_outcome(&cert(&pk(1), AdmissionMode::Open), &ops)
 }

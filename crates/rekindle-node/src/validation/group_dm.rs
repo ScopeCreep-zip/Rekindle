@@ -4,7 +4,7 @@
 
 use std::collections::HashSet;
 
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_ipc::protocol::{GroupDmRequest, IpcRequest, IpcResponse, LobbyRequest};
 use rekindle_types::group_dm::{MAX_MEMBERS, MAX_NAME_CHARS, MIN_MEMBERS};
 
 use super::{message_body, page, public_key, Checked};
@@ -108,27 +108,51 @@ fn distinct_keys(members: &[String]) -> Checked {
 
 pub(super) fn check(request: &IpcRequest) -> Checked {
     match request {
-        IpcRequest::GroupDmCreate {
+        IpcRequest::GroupDm(GroupDmRequest::Create {
             name,
             members,
             origin_peer,
-        } => create(name, members, origin_peer.as_deref()),
-        IpcRequest::GroupDmAccept { group_id: id }
-        | IpcRequest::GroupDmDecline { group_id: id }
-        | IpcRequest::GroupDmLeave { group_id: id }
-        | IpcRequest::GroupDmMarkRead { group_id: id }
-        | IpcRequest::GroupDmTyping {
-            group_id: id,
-            typing: _,
-        } => group_id(id),
-        IpcRequest::GroupDmInvite {
+        }) => create(name, members, origin_peer.as_deref()),
+        IpcRequest::GroupDm(
+            GroupDmRequest::Accept { group_id: id }
+            | GroupDmRequest::Decline { group_id: id }
+            | GroupDmRequest::Leave { group_id: id }
+            | GroupDmRequest::MarkRead { group_id: id }
+            | GroupDmRequest::Typing {
+                group_id: id,
+                typing: _,
+            },
+        )
+        | IpcRequest::Lobby(
+            LobbyRequest::Host { group_id: id } | LobbyRequest::Get { group_id: id },
+        ) => group_id(id),
+        IpcRequest::GroupDm(GroupDmRequest::Invite {
             group_id: id,
             members,
-        } => invite(id, members),
-        IpcRequest::GroupDmRename { group_id: id, name } => {
+        }) => invite(id, members),
+        IpcRequest::Lobby(
+            LobbyRequest::Join {
+                group_id: id,
+                lobby_id,
+            }
+            | LobbyRequest::Leave {
+                group_id: id,
+                lobby_id,
+            }
+            | LobbyRequest::Close {
+                group_id: id,
+                lobby_id,
+            }
+            | LobbyRequest::Launch {
+                group_id: id,
+                lobby_id,
+                server: _,
+            },
+        ) => group_id(id).and_then(|()| group_id(lobby_id)),
+        IpcRequest::GroupDm(GroupDmRequest::Rename { group_id: id, name }) => {
             group_id(id).and_then(|()| group_name(name))
         }
-        IpcRequest::GroupDmSend { group_id: id, body } => {
+        IpcRequest::GroupDm(GroupDmRequest::Send { group_id: id, body }) => {
             group_id(id).and_then(|()| message_body(body))
         }
         IpcRequest::DisappearingSet {
@@ -136,12 +160,12 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
             seconds,
         } => disappearing(conversation, *seconds),
         IpcRequest::DisappearingGet { conversation } => disappearing(conversation, 0),
-        IpcRequest::GroupDmList => Ok(()),
-        IpcRequest::GroupDmMessages {
+        IpcRequest::GroupDm(GroupDmRequest::List) => Ok(()),
+        IpcRequest::GroupDm(GroupDmRequest::Messages {
             group_id: id,
             limit,
             before: _,
-        } => group_id(id).and_then(|()| page(*limit)),
+        }) => group_id(id).and_then(|()| page(*limit)),
         other => unreachable!("{} is not a group-DM request", other.name()),
     }
 }
@@ -172,10 +196,10 @@ mod tests {
     #[test]
     fn a_rename_names_a_group_within_the_name_bounds() {
         let rename = |group_id: String, name: &str| {
-            check(&IpcRequest::GroupDmRename {
+            check(&IpcRequest::GroupDm(GroupDmRequest::Rename {
                 group_id,
                 name: name.to_owned(),
-            })
+            }))
         };
         let g = "0f".repeat(16);
         assert!(rename(g.clone(), "scrim night").is_ok());

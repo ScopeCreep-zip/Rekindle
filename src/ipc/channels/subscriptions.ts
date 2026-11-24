@@ -428,6 +428,17 @@ export function subscribeRoutePaused(onPause: (cause: RoutePauseCause | null) =>
   });
 }
 
+/** Our own route of a class went down (with since and Veilid's reason) or came back up (null), plan F9-A. */
+export function subscribeOwnRouteDown(
+  onChange: (cls: OwnRouteClass, down: { sinceMs: number; reason: string } | null) => void,
+): Promise<UnlistenFn> {
+  return on<NetworkSubscriptionEvent>("network-status", (payload) => {
+    const inner = payload.network;
+    if ("ownRouteDown" in inner) onChange(inner.ownRouteDown.class, { sinceMs: inner.ownRouteDown.sinceMs, reason: inner.ownRouteDown.reason });
+    else if ("ownRouteUp" in inner) onChange(inner.ownRouteUp.class, null);
+  });
+}
+
 /** Own-route deaths above their baseline (`NetworkEvent::RouteDeathsAboveBaseline`, plan RV1): a warning. */
 export function subscribeRouteDeaths(
   onDeaths: (d: { class: OwnRouteClass; deaths: number; young: number; windowSecs: number; baseline: number }) => void,
@@ -495,6 +506,12 @@ export function subscribePairingLinkRefused(onRefused: () => void): Promise<Unli
   return on<null>("pairing-link-refused", () => {
     onRefused();
   });
+}
+
+/// The open community window was asked to show a channel (plan E7.2 A: the
+/// skin's Show Voice on a community voice session), as settings switches tab.
+export function subscribeCommunityFocusChannel(onChannel: (channel: string) => void): Promise<UnlistenFn> {
+  return on<string>("community-focus-channel", onChannel);
 }
 
 /// The open settings window was asked to show a tab.

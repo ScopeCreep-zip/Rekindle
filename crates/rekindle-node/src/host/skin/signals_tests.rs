@@ -1,10 +1,10 @@
 //! The skin signals' computation (plan SK2-A4 step 3).
 
 use rekindle_types::dto::skin_action::Capability;
-use rekindle_types::dto::skin_run::SkinSelection;
+use rekindle_types::dto::skin_run::{CallTarget, SkinSelection};
 use rekindle_types::friend::{FriendState, FriendshipState, GameInfoState, UserStatus};
 use rekindle_types::subscription_events::{
-    CallEvent, NetworkEvent, OwnRecordsPhase, SubscriptionEvent,
+    CallEvent, NetworkEvent, OwnRecordsPhase, SubscriptionEvent, VoiceEvent, VoiceScope,
 };
 
 use super::actions::Selections;
@@ -297,6 +297,66 @@ fn focus_changes_the_set() {
         )
         .focused
     );
+}
+
+fn voice(event: VoiceEvent) -> SubscriptionEvent {
+    SubscriptionEvent::Voice(event)
+}
+
+fn community_scope() -> VoiceScope {
+    VoiceScope::Community {
+        community: "VLD0:community".into(),
+        channel: "ch".into(),
+    }
+}
+
+/// `ShowVoiceWindow`'s window (plan E7.2 G-item A): the active call
+/// first, else our community voice session; our own `Left` ends the
+/// session, a peer's does not; a DM scope is no voice window.
+#[test]
+fn show_call_takes_the_call_then_the_voice_session() {
+    let mut inputs = Inputs::default();
+    inputs.set_own(Some("ownkey".into()));
+    assert_eq!(inputs.show_call(), None);
+    inputs.fold(&voice(VoiceEvent::LocalJoined {
+        scope: community_scope(),
+    }));
+    let session = Some(CallTarget::Voice {
+        community: "VLD0:community".into(),
+        channel: "ch".into(),
+    });
+    assert_eq!(inputs.show_call(), session);
+    inputs.fold(&SubscriptionEvent::Call(CallEvent::Connected {
+        call_id: "c1".into(),
+        direct: None,
+    }));
+    assert_eq!(
+        inputs.show_call(),
+        Some(CallTarget::Call {
+            call_id: "c1".into()
+        })
+    );
+    inputs.fold(&SubscriptionEvent::Call(CallEvent::Ended {
+        call_id: "c1".into(),
+        reason: "hangup".into(),
+    }));
+    assert_eq!(inputs.show_call(), session);
+    inputs.fold(&voice(VoiceEvent::Left {
+        scope: community_scope(),
+        pseudonym: "peerkey".into(),
+    }));
+    assert_eq!(inputs.show_call(), session, "a peer's leave is not ours");
+    inputs.fold(&voice(VoiceEvent::Left {
+        scope: community_scope(),
+        pseudonym: "ownkey".into(),
+    }));
+    assert_eq!(inputs.show_call(), None);
+    inputs.fold(&voice(VoiceEvent::LocalJoined {
+        scope: VoiceScope::Dm {
+            peer_key: "peerkey".into(),
+        },
+    }));
+    assert_eq!(inputs.show_call(), None);
 }
 
 /// `Join` follows the Host's launch check (`not_joinable`, lead decision

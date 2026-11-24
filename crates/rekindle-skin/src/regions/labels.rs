@@ -5,9 +5,10 @@
 //!
 //! [`super::title`] decides the title's backing from the titlebar strip's
 //! pixels; this is the same rule for every other labelled slot
-//! ([`super::slots`], `regions.toml` `labels = [...]`). A label paints the
-//! slot's `textBacking` behind its content box so its text never depends
-//! on a bitmap it was not measured against (WCAG 2.2 F83). Here the slot's
+//! ([`super::slots`], `regions.toml` `labels = [...]`). Where its art fails, the
+//! container paints the slot's `textBacking` once behind its text row, so
+//! its text never depends on a bitmap it was not measured against (WCAG
+//! 2.2 F83). Here the slot's
 //! art is measured for the label's pairs (each `RegionText` of the slot,
 //! SC 1.4.3: 4.5:1, 3:1 for large text): the pixels under where its
 //! labels render ([`super::label_box`]: each label's text line in its
@@ -17,15 +18,16 @@
 //! says, over a black and a white desktop for its transparent pixels. Art
 //! outside the text rows (a bevel, an edge) is never under a label's text,
 //! so it never decides the backing. When the worst pixel under the labels
-//! meets the floor the slot's backing is `transparent` for that skin, else
-//! it stays.
+//! meets the floor the slot has no band for that skin; else the skin layer
+//! sets it and the container paints the backing once, across its whole
+//! strip ([`super::css`]), never a box per label or hugging the text row.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use rekindle_types::dto::skin::{SkinManifest, TokenValue};
 
-use super::css::backing_property;
+use super::css::{backing_property, band_property};
 use super::label_box::label_worst;
 use super::title::{TitleGround, TITLE_REGION};
 use super::{frames, slot_of, Tokens};
@@ -77,8 +79,10 @@ pub fn label_grounds(
         .collect()
 }
 
-/// The skin layer dropping the backing of each labelled slot whose own
-/// art carries its labels on `resolved`, else nothing.
+/// The skin layer setting the band of each labelled slot (but the
+/// titlebar's) whose own art does not carry its labels on `resolved`: once
+/// per slot, across its whole strip ([`super::css`]). A slot whose art meets
+/// its floor gets no band; one whose art does not read gets the band.
 #[must_use]
 pub fn label_css(
     manifest: &SkinManifest,
@@ -86,9 +90,22 @@ pub fn label_css(
     resolved: &[(&TokenEntry, TokenValue)],
 ) -> String {
     let mut decls = String::new();
-    for (id, g) in label_grounds(manifest, images, resolved) {
-        if g.bare() {
-            let _ = writeln!(decls, "    {}: transparent;", backing_property(&id));
+    let grounds = label_grounds(manifest, images, resolved);
+    for id in manifest
+        .regions
+        .keys()
+        .filter(|id| id.as_str() != TITLE_REGION)
+    {
+        if !slot_of(id).is_some_and(|s| s.labelled && !s.text.is_empty()) {
+            continue;
+        }
+        if !grounds.get(id).is_some_and(TitleGround::bare) {
+            let _ = writeln!(
+                decls,
+                "    {}: var({});",
+                band_property(id),
+                backing_property(id)
+            );
         }
     }
     if decls.is_empty() {

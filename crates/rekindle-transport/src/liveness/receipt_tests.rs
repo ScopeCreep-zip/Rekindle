@@ -98,6 +98,9 @@ impl RoutePort for OneRoute {
     fn own_paused(&self) -> watch::Receiver<Option<RoutePauseCause>> {
         self.paused.subscribe()
     }
+    fn own_down(&self) -> watch::Receiver<rekindle_types::subscription_events::OwnRouteDownSet> {
+        watch::channel(rekindle_types::subscription_events::OwnRouteDownSet::default()).1
+    }
     fn own_deaths(&self, _class: RouteClass) -> OwnDeaths {
         OwnDeaths::default()
     }

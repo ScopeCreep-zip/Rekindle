@@ -129,15 +129,13 @@ impl QuarantineReason {
 /// Merge `ops` under the pinned `cert` into a canonical state.
 #[must_use]
 pub fn merge(cert: &GenesisCert, ops: &[VerifiedOp]) -> GovernanceState {
-    let set = resolve::prepare(cert, ops);
-    ancestry::settle(cert, &set).settled.0.state
+    ancestry::prepare_settled(cert, ops).1.settled.0.state
 }
 
 /// [`merge`], with the fate of every op.
 #[must_use]
 pub fn merge_outcome(cert: &GenesisCert, ops: &[VerifiedOp]) -> MergeOutcome {
-    let set = resolve::prepare(cert, ops);
-    let ancestry::Settlement { settled, cascade } = ancestry::settle(cert, &set);
+    let (set, ancestry::Settlement { settled, cascade }) = ancestry::prepare_settled(cert, ops);
     let (round, masked_by, invite_refusals, record_refusals) = settled;
     // A forked op is reported once, by `equivocators` (D15); a cascade
     // victim or a device-refused op once, quarantined with its cause.
@@ -301,13 +299,18 @@ fn resolve_round(cert: &GenesisCert, set: &resolve::OpSet<'_>, invalid: &[bool])
     let mut applied = vec![false; n];
     let mut order = Vec::new();
     let candidates = (0..n).filter(|&i| !invalid[i]);
-    let (device, others): (Vec<usize>, Vec<usize>) =
-        candidates.partition(|&i| class_of(set.ops[i].body()) == OpClass::Device);
+    // A `DeviceReadmit` is judged at its causal position, against the power
+    // state in its past, as a kick is (ADR 0022 rule 8, plan E3.2 K4b Q6):
+    // it goes with the mainline, not the device phase.
+    let (device, others): (Vec<usize>, Vec<usize>) = candidates.partition(|&i| {
+        class_of(set.ops[i].body()) == OpClass::Device && !resolve::is_readmit(set.ops[i])
+    });
     let (power, rest): (Vec<usize>, Vec<usize>) =
         (others.into_iter()).partition(|&i| class_of(set.ops[i].body()) == OpClass::Power);
     let mut power_state = genesis_state(cert);
     // The device phase (ADR 0022 rule 6): before every power op, in stamp
-    // order; device ops anchor no mainline op.
+    // order; device ops anchor no mainline op. It orders the device view
+    // only (K4b Q6).
     for i in device {
         if try_apply(set.ops[i], &mut power_state) {
             applied[i] = true;
@@ -350,8 +353,8 @@ fn resolve_round(cert: &GenesisCert, set: &resolve::OpSet<'_>, invalid: &[bool])
         fold(set.ops[p], &mut state);
     }
     state.devices.clone_from(&set.devices);
-    // The creator's first device is the cert's (S7d-keys.5); every op of
-    // the set was verified for the one anchor.
+    // The cert's creator device (S7d-keys.5), as `prepare` seeded it
+    // (idempotent); every op of the set was verified for the one anchor.
     if let Some(op) = set.ops.first() {
         state.devices.seed_genesis(op.anchor(), cert);
     }
@@ -557,6 +560,8 @@ mod judge;
 mod membership;
 mod moderation;
 mod onboarding;
+mod prefork;
+pub use prefork::first_fork_evidence;
 mod resolve;
 mod resume;
 mod resume_gates;
@@ -572,6 +577,8 @@ mod hint_tests;
 mod op_proptests;
 #[cfg(test)]
 mod proptests;
+#[cfg(test)]
+mod readmit_tests;
 #[cfg(test)]
 mod resume_beside_tests;
 #[cfg(test)]

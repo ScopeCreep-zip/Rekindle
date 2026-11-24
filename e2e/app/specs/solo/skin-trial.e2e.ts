@@ -17,6 +17,7 @@ import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, byText, present, resolveIntent, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
 import { SETTINGS, openSettings, pickNextFile } from "../../../walk/nav.ts";
 import { createIdentity, newUser, type User } from "../../journeys.ts";
+import { shot } from "../../shots.ts";
 
 const PACKAGE = path.join(import.meta.dirname, "..", "..", "..", "..", "crates", "rekindle-skin", "builtin", "onyx.rkskin");
 /** The trial's length (rekindle_types SKIN_TRIAL_MS); the deadline itself is read from the prompt. */
@@ -32,6 +33,22 @@ async function libraryRow(): Promise<Awaited<ReturnType<typeof browser.$>>> {
     for (const action of await row.$$(".skin-action")) if ((await action.getText()).trim() === "Remove") return row;
   }
   throw new Error("no imported skin is listed");
+}
+
+/**
+ * The trial prompt scrolled into the Appearance pane's view, so the shot of
+ * the asserted state shows it, and it is on top at its centre there.
+ */
+async function promptInView(): Promise<void> {
+  const seen = (await browser.execute(() => {
+    const prompt = document.querySelector<HTMLElement>(".skin-trial");
+    if (!prompt) return "no prompt";
+    prompt.scrollIntoView({ block: "center" });
+    const r = prompt.getBoundingClientRect();
+    const top = document.elementFromPoint(r.left + r.width / 2, r.top + Math.min(r.height / 2, 12));
+    return top && prompt.contains(top) ? "" : `covered by ${top ? top.className : "nothing"}`;
+  })) as string;
+  expect(seen).toBe("");
 }
 
 describe("a chosen imported skin is on trial until kept, and reverts when the trial runs out", function () {
@@ -85,10 +102,13 @@ describe("a chosen imported skin is on trial until kept, and reverts when the tr
       NET_WAIT_MS,
       "the trial's sheet was never applied",
     );
+    await promptInView();
+    await shot("on-trial");
     // Not answered: the Host reverts at its deadline.
     await waitUntil(async () => (await browser.execute(SHEET)) === stored, TRIAL_MS + MARGIN_MS, "the skin did not revert when the trial ran out");
     expect(Date.now() - chosenAt).toBeGreaterThanOrEqual(TRIAL_MS - 1_000);
     expect(await present(browser, ".skin-trial")).toBe(false);
+    await shot("reverted");
   });
 
   it("kept, the skin stays past the trial's end", async () => {
@@ -96,6 +116,8 @@ describe("a chosen imported skin is on trial until kept, and reverts when the tr
     await (await (await libraryRow()).$("input[type=radio]")).click();
     await resolveIntent(browser, { passphrase: me.passphrase, appearMs: 1500 });
     await shown(browser, ".skin-trial", NET_WAIT_MS);
+    await promptInView();
+    await shot("on-trial-to-keep");
     await (await byText(browser, ".skin-trial button", "Keep this skin")).click();
     await resolveIntent(browser, { passphrase: me.passphrase, appearMs: 1500 });
     await waitUntil(async () => !(await present(browser, ".skin-trial")), NET_WAIT_MS, "the trial prompt stayed after Keep");
@@ -103,5 +125,6 @@ describe("a chosen imported skin is on trial until kept, and reverts when the tr
     expect(kept).not.toBe(stored);
     await new Promise((r) => setTimeout(r, TRIAL_MS + MARGIN_MS));
     expect(await browser.execute(SHEET)).toBe(kept);
+    await shot("kept-past-trial");
   });
 });

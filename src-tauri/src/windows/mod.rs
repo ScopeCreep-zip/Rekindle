@@ -18,6 +18,7 @@ mod titles;
 pub use rebind::follow_event;
 pub use reveal::reveal_window;
 
+use rekindle_types::id::ChannelId;
 use rekindle_types::key_format::{self, PublicKeyHex};
 use serde::{Deserialize, Serialize};
 use tauri::utils::config::BackgroundThrottlingPolicy;
@@ -313,23 +314,43 @@ pub fn open_settings(app: &AppHandle, tab: Option<SettingsTab>) -> Result<(), St
 }
 
 /// Open a community window, or the community browser when `community` is
-/// `None`.
+/// `None`, showing `channel` when one is named (plan E7.2 A): a new window
+/// reads it from its URL, an open one is told through
+/// `community-focus-channel` (as an open settings window switches tab).
 pub fn open_community_window(
     app: &AppHandle,
     state: &SharedState,
     community: Option<&str>,
+    channel: Option<&str>,
 ) -> Result<(), String> {
     let community = community
         .map(key_format::record_key)
         .transpose()
         .map_err(|e| invalid("community id", &e))?;
+    let channel = channel
+        .map(|c| {
+            ChannelId::from_hex(c)
+                .map(ChannelId::to_hex)
+                .ok_or_else(|| "invalid channel id".to_owned())
+        })
+        .transpose()?;
     let label = labels::community_label(community.as_ref());
     if raise(app, &label) {
+        if let Some(channel) = channel {
+            crate::event_dispatch::emit(
+                app,
+                crate::event_dispatch::WebviewEvent::CommunityFocusChannel {
+                    window: label,
+                    channel,
+                },
+            );
+        }
         return Ok(());
     }
-    let path = match &community {
-        Some(id) => format!("/community?id={id}"),
-        None => "/community".to_owned(),
+    let path = match (&community, &channel) {
+        (Some(id), Some(ch)) => format!("/community?id={id}&channel={ch}"),
+        (Some(id), None) => format!("/community?id={id}"),
+        (None, _) => "/community".to_owned(),
     };
     let builder = base_builder(app, WindowKind::Community, &label, path)?
         .title(titles::community(state, community.as_ref()));

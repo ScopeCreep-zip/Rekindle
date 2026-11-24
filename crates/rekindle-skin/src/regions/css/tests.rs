@@ -48,11 +48,11 @@ fn a_status_icon_is_served_with_its_paint_switch() {
     assert!(!css.contains("--skin-icon-status-online"));
 }
 
-/// Plan E7.7.7 S5: a labelled slot's backing is clipped to each label's
-/// content box, so a label's padding shows the bar's bitmap (the real app
-/// showed Symbiosis's info and menu bars flat under full-width labels).
+/// A labelled slot paints its backing once, as one band on its container
+/// behind its text row (the measured line, in the content box), never a
+/// box per label, and drops it under forced colours.
 #[test]
-fn a_label_backs_only_its_content_box() {
+fn a_labelled_slot_paints_one_band_across_its_whole_strip() {
     let map: BTreeMap<String, RegionMap> = SLOTS
         .iter()
         .filter(|s| s.css)
@@ -67,11 +67,52 @@ fn a_label_backs_only_its_content_box() {
         })
         .collect();
     let css = app_css("t", &map).unwrap();
-    let rule = css
-        .split("  }\n")
-        .find(|r| r.contains(".e-buddylist-infobar .label"))
-        .unwrap();
-    assert!(rule.contains("background-clip: content-box;"), "{rule}");
+    assert!(!css.contains(" .label"), "{css}");
+    let band = "linear-gradient(var(--skin-region-community-channel-header-band), var(--skin-region-community-channel-header-band))";
+    let rules: Vec<&str> = css.split("  }\n").filter(|r| r.contains(band)).collect();
+    assert_eq!(rules.len(), 1, "{css}");
+    assert!(
+        rules[0].contains(".e-community-channel-header::before {"),
+        "{}",
+        rules[0]
+    );
+    // SK17: the whole strip (the container's padding box), never a box
+    // hugging the text row in the content box.
+    assert!(
+        rules[0].contains(&format!("{band} 0 0 / 100% 100% no-repeat border-box;")),
+        "{}",
+        rules[0]
+    );
+    assert!(!rules[0].contains("content-box"), "{}", rules[0]);
+    for id in [
+        "community-sidebar-header",
+        "community-category-header",
+        "community-member-group-header",
+    ] {
+        let fill =
+            format!("linear-gradient(var(--skin-region-{id}-band), var(--skin-region-{id}-band))");
+        assert!(
+            css.contains(&format!("{fill} 0 0 / 100% 100% no-repeat border-box;")),
+            "{id}: {css}"
+        );
+    }
+    // The title strip keeps its title row band (`title.rs`).
+    let title =
+        "linear-gradient(var(--skin-region-titlebar-band), var(--skin-region-titlebar-band))";
+    assert!(
+        css.contains(&format!(
+            "{title} 0 50% / 100% 16.5px no-repeat content-box;"
+        )),
+        "{css}"
+    );
+    assert!(css.contains(":where(.e-community-channel-header) {\n    position: relative;\n    isolation: isolate;"), "{css}");
+    let a11y = app_a11y_css("t", &map).unwrap();
+    let forced = &a11y[a11y.find("forced-colors").unwrap()..];
+    let none = forced.split("content: none;").next().unwrap();
+    assert!(
+        none.contains(".e-community-channel-header::before"),
+        "{forced}"
+    );
 }
 
 fn builtin_regions(name: &str) -> Vec<String> {

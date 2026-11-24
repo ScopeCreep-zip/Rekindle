@@ -491,4 +491,47 @@
     border-radius: 3px;
     padding: 2px 4px;
   }
+
+  /* The skin's local search (plan E7.2 G11, LocalSearchPanel): one field and
+   * its results on the modal's ground; a result is a row button showing what
+   * it names and what kind of item it is (`.local-search` itself is grouped
+   * with the other flex-column dialog bodies in 04-member-profile-popup.css). */
+  .local-search-results {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    max-height: 320px;
+    margin: 0;
+    padding: 0;
+    overflow-y: auto;
+    list-style: none;
+  }
+  .local-search-hit {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    width: 100%;
+    padding: 4px 8px;
+    border: 0;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--color-xfire-text);
+    text-align: left;
+    cursor: pointer;
+  }
+  .local-search-hit:hover,
+  .local-search-hit:focus-visible {
+    background: color-mix(in srgb, var(--color-xfire-accent) 12%, transparent);
+  }
+  /* The row's full width, so a long name or message ends in an ellipsis. */
+  .local-search-hit-label {
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .local-search-hit-kind {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+  }
 }

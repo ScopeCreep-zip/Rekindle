@@ -39,6 +39,7 @@ mod identity;
 mod in_flight;
 mod keys;
 mod lifecycle;
+mod local_search;
 mod member_block;
 mod onboarding;
 mod own;

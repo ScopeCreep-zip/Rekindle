@@ -1,5 +1,5 @@
 import { Component, Show } from "solid-js";
-import { ICON_THREAD } from "../../icons";
+import SkinGlyph from "../common/SkinGlyph";
 
 interface ThreadStarterProps {
   threadName: string;
@@ -17,7 +17,7 @@ const ThreadStarter: Component<ThreadStarterProps> = (props) => {
       classList={{ "thread-starter-archived": props.archived }}
       onClick={props.onClick}
     >
-      <span class="nf-icon">{ICON_THREAD}</span>
+      <SkinGlyph name="thread" />
       {props.threadName} ({props.messageCount})
       <Show when={props.archived}>{" · archived"}</Show>
     </button>

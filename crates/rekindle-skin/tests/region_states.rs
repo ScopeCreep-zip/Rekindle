@@ -328,9 +328,9 @@ fn the_app_css_backs_a_text_slot_between_image_and_label() {
         css.matches("isolation: isolate;").count(),
         regions::SLOTS
             .iter()
-            .filter(|s| s.css && !s.text.is_empty() && !s.labelled)
+            .filter(|s| s.css && !s.text.is_empty())
             .count(),
-        "element-backed text slots only"
+        "element-backed text slots and one band host per labelled slot"
     );
     // Under forced colors the backing is not generated.
     let a11y = app_a11y_css("h", &full_map()).unwrap();
@@ -383,20 +383,21 @@ fn the_skin_css_writes_a_text_slot_slice_widths() {
     assert!(!css.contains("-slice-"));
 }
 
-/// Plan E7.7.7: a labelled bar paints its bitmap on the container and the
-/// backing on each label; the status arrow is sized to its image; the
+/// Plan E7.7.7: a labelled bar paints its bitmap on the container and its
+/// backing once, as one band across its whole strip (SK17; never per
+/// label, never a box hugging the text row); the status arrow is sized to its image; the
 /// chosen tab reads its `selected` image.
 #[test]
 fn the_app_css_backs_labels_sizes_the_arrow_and_marks_the_chosen_tab() {
     let css = app_css("h", &full_map()).unwrap();
     assert!(css.contains("  .buddylist-infobar {\n    border-image: var(--skin-region-buddylist-infobar);\n    image-rendering: pixelated;\n  }\n"), "{css}");
-    let b = "var(--skin-region-buddylist-infobar-backing)";
+    let f = "linear-gradient(var(--skin-region-buddylist-infobar-band), var(--skin-region-buddylist-infobar-band))";
     assert!(css.contains(&format!(
-        "  .buddylist-infobar-label {{\n    background-image: linear-gradient({b}, {b});\n    background-clip: content-box;\n  }}\n"
-    )));
+        "  .buddylist-infobar::before {{\n    content: \"\";\n    position: absolute;\n    inset: 0;\n    z-index: -1;\n    padding: inherit;\n    border-radius: inherit;\n    background: {f} 0 0 / 100% 100% no-repeat border-box;\n    pointer-events: none;\n  }}\n"
+    )), "{css}");
     assert!(
-        !css.contains(".buddylist-infobar::before"),
-        "labelled: no ::before"
+        !css.contains(".buddylist-infobar-label"),
+        "labelled: no rule per label"
     );
     assert!(css.contains("    width: var(--skin-region-statusbar-arrow-width, 0);\n    height: var(--skin-region-statusbar-arrow-height, 0);\n"));
     assert!(css.contains("  .buddylist-tab[aria-selected=\"true\"] {\n    border-image: var(--skin-region-buddylist-tab--selected, var(--skin-region-buddylist-tab));\n  }\n"));
@@ -407,8 +408,8 @@ fn the_app_css_backs_labels_sizes_the_arrow_and_marks_the_chosen_tab() {
     );
     let a11y = app_a11y_css("h", &full_map()).unwrap();
     let forced = &a11y[a11y.find("forced-colors").unwrap()..];
-    assert!(forced.contains(".buddylist-infobar-label"));
-    assert!(forced.contains("      background-image: none;\n"));
+    let none = &forced[..forced.find("      content: none;\n").unwrap()];
+    assert!(none.contains(".buddylist-infobar::before"), "{forced}");
 
     let mut unlabelled = full_map();
     unlabelled.insert("buddylist.infobar".to_owned(), RegionMap::elements(&[".x"]));
@@ -454,12 +455,13 @@ fn the_app_css_paints_the_chat_buttons_and_backs_the_toolbar() {
         css.find(".chat-call-button:active").unwrap()
             < css.find(".chat-call-button-active {").unwrap()
     );
-    let b = "var(--skin-region-chat-toolbar-backing)";
+    let f = "linear-gradient(var(--skin-region-chat-toolbar-band), var(--skin-region-chat-toolbar-band))";
     assert!(css.contains(&format!(
-        "  .chat-toolbar-label {{\n    background-image: linear-gradient({b}, {b});\n    background-clip: content-box;\n  }}\n"
-    )));
-    assert!(css.contains("  .chat-input-label {\n"));
-    assert!(css.contains("  .chat-group-header-label {\n"));
+        "  .chat-toolbar::before {{\n    content: \"\";\n    position: absolute;\n    inset: 0;\n    z-index: -1;\n    padding: inherit;\n    border-radius: inherit;\n    background: {f} 0 0 / 100% 100% no-repeat border-box;\n    pointer-events: none;\n  }}\n"
+    )), "{css}");
+    assert!(css.contains("  .chat-input::before {\n"), "{css}");
+    assert!(css.contains("  .chat-group-header::before {\n"), "{css}");
+    assert!(!css.contains("-label {"), "no rule per label");
     assert!(
         css.contains(".chat-call-button::before"),
         "a text button gets its backing"
@@ -467,8 +469,8 @@ fn the_app_css_paints_the_chat_buttons_and_backs_the_toolbar() {
 }
 
 /// Plan E7.7.7 S3: the Send button (its disabled state too) and the dialog
-/// confirm button are painted text buttons; the titlebar strip backs its
-/// title and buttons and swaps to its inactive image.
+/// confirm button are painted text buttons; the titlebar strip bands its
+/// title row and swaps to its inactive image.
 #[test]
 fn the_app_css_paints_the_send_button_the_titlebar_and_the_ok_button() {
     let css = app_css("h", &full_map()).unwrap();
@@ -481,15 +483,13 @@ fn the_app_css_paints_the_send_button_the_titlebar_and_the_ok_button() {
         css.contains(".button-primary::before"),
         "OK's label is backed"
     );
-    let b = "var(--skin-region-titlebar-backing)";
+    let f = "linear-gradient(var(--skin-region-titlebar-band), var(--skin-region-titlebar-band))";
     assert!(css.contains(&format!(
-        "  .titlebar-label {{\n    background-image: linear-gradient({b}, {b});\n    background-clip: content-box;\n  }}\n"
-    )));
+        "  .titlebar::before {{\n    content: \"\";\n    position: absolute;\n    inset: 0;\n    z-index: -1;\n    padding: inherit;\n    border-radius: inherit;\n    background: {f} 0 50% / 100% 16.5px no-repeat content-box;\n    pointer-events: none;\n  }}\n"
+    )), "{css}");
+
     assert!(css.contains("  :where(:root[data-window-inactive]) .titlebar {\n    border-image: var(--skin-region-titlebar--windowinactive, var(--skin-region-titlebar));\n"), "{css}");
-    assert!(
-        !css.contains(".titlebar::before"),
-        "a labelled bar has no ::before"
-    );
+    assert!(!css.contains(".titlebar-label"), "no rule per label");
 }
 
 /// Plan E7.7.7: the generated sheets are one per slot family; each holds

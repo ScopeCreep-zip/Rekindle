@@ -3,7 +3,7 @@
 
 use crate::host::gate::Acknowledged;
 use crate::host::shell_hooks::EndReason;
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_ipc::protocol::{GroupDmRequest, IpcRequest, IpcResponse};
 
 use super::{
     admin, friends, identity, keys, lifecycle, own, quick_wipe, status, voice, Caller,
@@ -97,6 +97,10 @@ async fn route(
         IpcRequest::Community(request) => community::route(ctx, state, request).await,
         // ── File transfers (plan E7.2 G12) ──
         IpcRequest::Transfer(request) => super::transfers::route(ctx, request).await,
+        // ── Local search (plan E7.2 G11) ──
+        IpcRequest::LocalSearch { scope, query } => {
+            super::local_search::handle(ctx, state, scope, query).await
+        }
 
         // ── Friends, DMs and session resets (plan E2.1) ─────────
         request @ (IpcRequest::FriendAddFromCode { .. }
@@ -137,19 +141,22 @@ async fn route(
         | IpcRequest::DmMarkRead { .. }
         | IpcRequest::OutboxRetry { .. }
         | IpcRequest::OutboxDiscard { .. }
-        | IpcRequest::GroupDmCreate { .. }
-        | IpcRequest::GroupDmAccept { .. }
-        | IpcRequest::GroupDmDecline { .. }
-        | IpcRequest::GroupDmLeave { .. }
-        | IpcRequest::GroupDmRename { .. }
-        | IpcRequest::GroupDmInvite { .. }
+        | IpcRequest::GroupDm(
+            GroupDmRequest::Create { .. }
+            | GroupDmRequest::Accept { .. }
+            | GroupDmRequest::Decline { .. }
+            | GroupDmRequest::Leave { .. }
+            | GroupDmRequest::Rename { .. }
+            | GroupDmRequest::Invite { .. }
+            | GroupDmRequest::Send { .. }
+            | GroupDmRequest::Typing { .. }
+            | GroupDmRequest::List
+            | GroupDmRequest::Messages { .. }
+            | GroupDmRequest::MarkRead { .. },
+        )
+        | IpcRequest::Lobby(_)
         | IpcRequest::DisappearingSet { .. }
-        | IpcRequest::DisappearingGet { .. }
-        | IpcRequest::GroupDmSend { .. }
-        | IpcRequest::GroupDmTyping { .. }
-        | IpcRequest::GroupDmList
-        | IpcRequest::GroupDmMessages { .. }
-        | IpcRequest::GroupDmMarkRead { .. }) => {
+        | IpcRequest::DisappearingGet { .. }) => {
             friends::route(ctx, state, request, acknowledged).await
         }
 

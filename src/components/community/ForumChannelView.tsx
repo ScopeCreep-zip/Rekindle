@@ -1,7 +1,7 @@
 import { Component, For, Show, createMemo, createSignal } from "solid-js";
+import SkinGlyph from "../common/SkinGlyph";
 import type { Channel, Thread } from "../../stores/community.store";
 import { formatRelativeTime } from "../../utils/formatting";
-import { ICON_PLUS, ICON_THREAD, ICON_CLOSE } from "../../icons";
 
 interface ForumChannelViewProps {
   channel: Channel;
@@ -52,7 +52,7 @@ const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
     <div class="forum-channel-view">
       <div class="forum-channel-toolbar">
         <div class="forum-channel-heading">
-          <span class="nf-icon">{ICON_THREAD}</span>
+          <SkinGlyph name="thread" />
           <div class="forum-channel-title-group">
             <div class="forum-channel-title">{props.channel.name}</div>
             <Show when={props.channel.topic}>
@@ -61,7 +61,7 @@ const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
           </div>
         </div>
         <button class="forum-channel-new-post-btn" onClick={() => setComposerOpen(true)}>
-          <span class="nf-icon">{ICON_PLUS}</span>
+          <SkinGlyph name="plus" />
           New post
         </button>
       </div>
@@ -92,7 +92,7 @@ const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
           <div class="forum-channel-composer-header">
             <div class="forum-channel-composer-title">Create forum post</div>
             <button class="forum-channel-composer-close" onClick={() => setComposerOpen(false)}>
-              <span class="nf-icon">{ICON_CLOSE}</span>
+              <SkinGlyph name="close" />
             </button>
           </div>
           <input

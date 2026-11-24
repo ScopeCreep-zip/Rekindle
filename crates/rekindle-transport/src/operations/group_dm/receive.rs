@@ -367,6 +367,12 @@ impl GroupSink<'_> {
                 .map_err(sink_error)?;
             return Ok(stream_seq);
         }
+        if rekindle_dm::admission::is_lobby_kind(body.type_id()) {
+            super::lobby::on_lobby(self.host, &self.group_id, writer, &body, sent_at_ms)
+                .await
+                .map_err(sink_error)?;
+            return Ok(stream_seq);
+        }
         let DirectBody::DmText(text) = body else {
             tracing::debug!(from = %writer, kind = ?body.type_id(), "group kind not stored");
             return Ok(stream_seq);

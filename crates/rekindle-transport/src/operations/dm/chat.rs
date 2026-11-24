@@ -3,7 +3,7 @@
 use rekindle_codec::capnp_codec::direct::{ClientId, DirectBody, DmText};
 use rekindle_types::dto::dm::{DmInboxEntry, DmMessage};
 use rekindle_types::message::SendState;
-use rekindle_types::subscription_events::SubscriptionEvent;
+use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent};
 
 use super::outbox::OutgoingDm;
 use crate::operations::friend::{state, FriendError, FriendHost};
@@ -121,7 +121,9 @@ async fn acknowledge_key_change(host: &dyn FriendHost, peer: &str) -> Result<(),
 /// Commit our message to `to` (a reply to `reply_to`, the parent's client
 /// id, when given) to the outbox with its local echo, in one transaction,
 /// and return once it is committed (plan E2.5, D22): `queued`, then the
-/// outbox's `DmSendStatus` states. A send whose review was held on `to`'s
+/// outbox's `DmSendStatus` states. The stored row is published as
+/// `DirectMessageSent` (plan E6.11), so every window of the conversation
+/// shows it whatever it rendered before. A send whose review was held on `to`'s
 /// verified key changing acknowledges the change first
 /// (`acknowledges_key_change`, plan E2.3).
 ///
@@ -174,11 +176,11 @@ pub async fn send_dm(
     // Sending the message ends our typing to `to`.
     super::typing::message_sent(host, to);
     // Its stored time: never behind our earlier messages to `to`.
-    let row = own_dm(host, &message_id)
+    let stored = own_dm(host, &message_id)
         .await?
-        .map(|dm| dm.row)
         .ok_or_else(|| FriendError::Failed(format!("message {message_id} not committed")))?;
-    Ok(DmMessage {
+    let row = stored.row;
+    let message = DmMessage {
         id: row.id,
         message_id: Some(message_id),
         sender_id: owner,
@@ -190,7 +192,15 @@ pub async fn send_dm(
         expire_seconds: row.expire_seconds,
         expire_at: row.expire_at,
         timer_notice_seconds: None,
-    })
+    };
+    host.publish(SubscriptionEvent::ChannelMessage(
+        ChannelMessageEvent::DirectMessageSent {
+            conversation_id: to.to_string(),
+            reply_to_id: stored.reply_to,
+            message: message.clone(),
+        },
+    ));
+    Ok(message)
 }
 
 /// The peer of our stored message `message_id` (a client id), for the

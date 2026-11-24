@@ -1,8 +1,8 @@
 import { Component, Show, For, createSignal, createEffect } from "solid-js";
+import SkinGlyph from "../common/SkinGlyph";
 import type { Thread } from "../../stores/community.store";
 import type { Message } from "../../stores/chat.store";
 import MessageBubble from "../chat/MessageBubble";
-import { ICON_CLOSE, ICON_THREAD, ICON_ARCHIVE } from "../../icons";
 import LiveRegion from "../common/LiveRegion";
 
 interface ThreadPanelProps {
@@ -61,7 +61,7 @@ const ThreadPanel: Component<ThreadPanelProps> = (props) => {
       {(thread) => (
         <div class="thread-panel">
           <div class="thread-panel-header">
-            <span class="nf-icon">{ICON_THREAD}</span>
+            <SkinGlyph name="thread" />
             <div class="thread-panel-title-group">
               <span class="thread-panel-title">{thread().name}</span>
               <div class="thread-panel-meta">
@@ -78,7 +78,7 @@ const ThreadPanel: Component<ThreadPanelProps> = (props) => {
                 title="Archive thread"
                 aria-label="Archive thread"
               >
-                <span class="nf-icon" aria-hidden="true">{ICON_ARCHIVE}</span>
+                <SkinGlyph name="archive" />
               </button>
             </Show>
             <button
@@ -86,7 +86,7 @@ const ThreadPanel: Component<ThreadPanelProps> = (props) => {
               onClick={props.onClose}
               aria-label="Close thread"
             >
-              <span class="nf-icon" aria-hidden="true">{ICON_CLOSE}</span>
+              <SkinGlyph name="close" />
             </button>
           </div>
           <Show when={thread().archived}>

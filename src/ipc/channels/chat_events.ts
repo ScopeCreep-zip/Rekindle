@@ -4,7 +4,9 @@
  * Calls, friend lifecycle, DMs, typing and acks all arrive this way.
  */
 
+import type { DmMessage } from "../commands/dto_dm";
 import type { SendState } from "../commands/types";
+import type { LobbyView } from "../commands/dto_lobby";
 
 /** DM / conversation message from the daemon vocabulary. */
 export interface DirectMessageReceived {
@@ -18,6 +20,15 @@ export interface DirectMessageReceived {
   serverMessageId: string | null;
   replyToId: string | null;
   isOwn: boolean;
+}
+
+/** Our own direct message exactly as stored, once committed (plan E6.11):
+ *  every window of the conversation upserts it by `message.messageId`. Never
+ *  a peer's message, so it never notifies or counts unread. */
+export interface DirectMessageSent {
+  conversationId: string;
+  replyToId: string | null;
+  message: DmMessage;
 }
 
 /** A direct message we sent changed delivery state (the outbox's one
@@ -73,6 +84,7 @@ export interface MessagesExpired {
 
 export type ChannelMessageEvent =
   | { directMessageReceived: DirectMessageReceived }
+  | { directMessageSent: DirectMessageSent }
   | { disappearingTimerChanged: DisappearingTimerChanged }
   | { messagesExpired: MessagesExpired }
   | { dmSendStatus: DmSendStatus }
@@ -114,6 +126,8 @@ export type GroupDmEvent =
   | { left: { groupId: string; member: GroupDmMember } }
   | { keyRotated: { groupId: string; member: GroupDmMember; epoch: number } }
   | { renamed: { groupId: string; name: string } }
+  /** The group's lobby changed (plan E7.2 G6); null when there is none. */
+  | { lobby: { groupId: string; lobby: LobbyView | null } }
   /** A group send's state; `retry` while unanswered attempts are retried (plan SR2b). */
   | { sendStatus: { groupId: string; clientId: string; state: SendState; retry: DeliveryRetry | null } }
   | {
@@ -126,6 +140,10 @@ export type GroupDmEvent =
         replyTo: string | null;
       };
     }
+  /** Our own message exactly as stored, once committed (plan E6.11): every
+   *  window of the group upserts it by `message.messageId`. Never a member's
+   *  message, so it never notifies or counts unread. */
+  | { messageSent: { groupId: string; replyToId: string | null; message: DmMessage } }
   | { historyGap: { groupId: string; member: GroupDmMember; throughSeq: number } };
 
 export type TypingEvent =

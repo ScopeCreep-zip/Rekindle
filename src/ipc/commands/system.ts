@@ -151,9 +151,10 @@ export const systemCommands = {
   openSkinEditorWindow: () => invoke<void>("open_skin_editor_window"),
   /// Open, or close if open, the pack popup `popup` beside this skin window (plan SK2-A5).
   openSkinPopup: (popup: string) => invoke<void>("open_skin_popup", { popup }),
-  /// `communityId` absent opens the community browser.
-  openCommunityWindow: (communityId?: string) =>
-    invoke<void>("open_community_window", { communityId: communityId ?? null }),
+  /// `communityId` absent opens the community browser; `channel` shows that
+  /// channel, in a new window or the open one (plan E7.2 A).
+  openCommunityWindow: (communityId?: string, channel?: string) =>
+    invoke<void>("open_community_window", { communityId: communityId ?? null, channel: channel ?? null }),
   openProfileWindow: (publicKey: string) => invoke<void>("open_profile_window", { publicKey }),
   /// Wave 12 W12.7 — pop the active call into its own webview window.
   openCallWindow: (callId: string) =>

@@ -119,55 +119,7 @@ pub enum ServerRefusal {
 /// false, reason}`: a refusal always names its reason, an allowed action
 /// never carries one (the `{flag, reason}` pair `NotJoinableReason` uses,
 /// made exact by type).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "RawVerdict", into = "RawVerdict")]
-pub enum ServerVerdict {
-    Allowed,
-    Refused { reason: ServerRefusal },
-}
-
-impl ServerVerdict {
-    #[must_use]
-    pub const fn refused(reason: ServerRefusal) -> Self {
-        Self::Refused { reason }
-    }
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct RawVerdict {
-    allowed: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    reason: Option<ServerRefusal>,
-}
-
-impl TryFrom<RawVerdict> for ServerVerdict {
-    type Error = &'static str;
-
-    fn try_from(raw: RawVerdict) -> Result<Self, Self::Error> {
-        match (raw.allowed, raw.reason) {
-            (true, None) => Ok(Self::Allowed),
-            (false, Some(reason)) => Ok(Self::Refused { reason }),
-            (true, Some(_)) => Err("an allowed verdict carries no reason"),
-            (false, None) => Err("a refused verdict names its reason"),
-        }
-    }
-}
-
-impl From<ServerVerdict> for RawVerdict {
-    fn from(v: ServerVerdict) -> Self {
-        match v {
-            ServerVerdict::Allowed => Self {
-                allowed: true,
-                reason: None,
-            },
-            ServerVerdict::Refused { reason } => Self {
-                allowed: false,
-                reason: Some(reason),
-            },
-        }
-    }
-}
+pub type ServerVerdict = super::verdict::ActionVerdict<ServerRefusal>;
 
 /// Whether a row's Join can start: on the wire `{joinable: true}` or
 /// `{joinable: false, joinableReason}` (flattened into [`ServerJoin`]).

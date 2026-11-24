@@ -1,4 +1,5 @@
 import { Component, For, Show, createSignal } from "solid-js";
+import SkinGlyph from "../../common/SkinGlyph";
 import type { Community } from "../../../stores/community.store";
 import { EVERYONE_ROLE_ID } from "../../../stores/community.store";
 import RoleTag from "../RoleTag";
@@ -13,12 +14,6 @@ import {
 } from "../../../actions/community.actions";
 import { addToast } from "../../../stores/toast.store";
 import { tokenVar } from "../../../styles/generated/tokens";
-import {
-  ICON_SAVE,
-  ICON_DELETE,
-  ICON_CLOSE,
-  ICON_PLUS_BOX,
-} from "../../../icons";
 
 interface RolesTabProps {
   community: Community;
@@ -137,7 +132,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
                     onClick={(e) => { e.stopPropagation(); deleteRole(role.id); }}
                     title="Delete Role"
                   >
-                    <span class="nf-icon">{ICON_DELETE}</span>
+                    <SkinGlyph name="delete" />
                   </button>
                 </Show>
               </div>
@@ -202,10 +197,10 @@ const RolesTab: Component<RolesTabProps> = (props) => {
               </FormField>
               <div class="form-field-row">
                 <button class="form-btn-primary" onClick={handleSaveEditRole} disabled={savingRole()}>
-                  <span class="nf-icon">{ICON_SAVE}</span> {savingRole() ? "Saving..." : "Save"}
+                  <SkinGlyph name="save" /> {savingRole() ? "Saving..." : "Save"}
                 </button>
                 <button class="form-btn-secondary" onClick={() => setEditingRoleId(null)} disabled={savingRole()}>
-                  <span class="nf-icon">{ICON_CLOSE}</span> Cancel
+                  <SkinGlyph name="close" /> Cancel
                 </button>
               </div>
             </div>
@@ -217,7 +212,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
           class="form-btn-secondary"
           onClick={() => setShowNewRole(true)}
         >
-          <span class="nf-icon">{ICON_PLUS_BOX}</span> Create Role
+          <SkinGlyph name="plus-box" /> Create Role
         </button>
       }>
         <div class="settings-section settings-section-success">
@@ -284,13 +279,13 @@ const RolesTab: Component<RolesTabProps> = (props) => {
               onClick={handleCreateNewRole}
               disabled={!newRoleName().trim() || creatingRole()}
             >
-              <span class="nf-icon">{ICON_SAVE}</span> {creatingRole() ? "Creating..." : "Create"}
+              <SkinGlyph name="save" /> {creatingRole() ? "Creating..." : "Create"}
             </button>
             <button
               class="form-btn-secondary"
               onClick={() => setShowNewRole(false)}
             >
-              <span class="nf-icon">{ICON_CLOSE}</span> Cancel
+              <SkinGlyph name="close" /> Cancel
             </button>
           </div>
         </div>
