@@ -69,8 +69,17 @@ async function loadGroupRows(groupId: string, limit: number): Promise<boolean> {
   try {
     const rows = await commands.groupDmMessages(groupId, limit);
     const held = groupDmState.conversations[groupId];
+    const mapped = rows.map(transformDmMessage);
+    // Rows that arrived live after the history was read stay, as in a 1:1
+    // conversation (chat.actions.ts handleLoadHistory, peer finding F-echo):
+    // not in the snapshot and newer than its newest row.
+    const newest = mapped.reduce((t, m) => Math.max(t, m.timestamp), 0);
+    const stored = new Set(mapped.map((m) => m.serverMessageId).filter(Boolean));
+    const live = (held?.messages ?? []).filter(
+      (m) => m.serverMessageId && !stored.has(m.serverMessageId) && m.timestamp > newest,
+    );
     setGroupDmState("conversations", groupId, {
-      messages: rows.map(transformDmMessage),
+      messages: [...mapped, ...live],
       typing: held?.typing ?? {},
     });
     return true;
@@ -103,8 +112,10 @@ export function handleGroupDisplayed(groupId: string): void {
  *  follows `sendStatus`. `null` on success, else the Host's error. */
 export async function handleSendGroupDm(groupId: string, body: string): Promise<string | null> {
   try {
+    // Nothing is drawn here: once the send commits, the Host publishes our
+    // own row (`messageSent`, plan E6.11) to this window, upserted by its
+    // stored id (handlers/group-dm.handlers.ts).
     await afterDraftReports(`group:${groupId}`, () => commands.groupDmSend(groupId, body));
-    await handleLoadGroupMessages(groupId, 50);
     return null;
   } catch (e) {
     return errorMessage(e);
