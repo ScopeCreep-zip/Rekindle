@@ -126,6 +126,27 @@ export function showVoicePack(): Buffer {
   });
 }
 
+/**
+ * Symbiosis with a Search on its Friends row (FriendAddButton) and its Servers
+ * row (RefreshServer), pressing `searchFor` (plan E7.2 G11). Symbiosis lays a
+ * Search only on its Files (SearchFiles, Downloads' info) and Videos rows, and
+ * no built-in pack lays one on Friends or Servers, so the spec imports this
+ * through Settings → Import and presses those nodes; Files uses Symbiosis's
+ * own SearchFiles.
+ */
+export const SEARCH_PACK = { name: "Search Test", friends: "FriendAddButton", servers: "RefreshServer", files: "SearchFiles" };
+
+export function searchPack(): Buffer {
+  return derivedPack("symbiosis", "search-test", SEARCH_PACK.name, (m) => {
+    const tree = (m.windows as Record<string, { tree: unknown }>).main.tree;
+    for (const id of [SEARCH_PACK.friends, SEARCH_PACK.servers]) {
+      const node = findNode(tree, id);
+      if (!node) throw new Error(`symbiosis has no ${id}`);
+      node.triggers = [{ on: { kind: "click" }, run: { kind: "searchFor" } }];
+    }
+  });
+}
+
 /** The node `id` in `tree` (a manifest window's `tree`), anywhere under it. */
 export function findNode(tree: unknown, id: string): Record<string, unknown> | undefined {
   if (Array.isArray(tree)) {

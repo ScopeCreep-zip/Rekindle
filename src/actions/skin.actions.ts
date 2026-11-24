@@ -14,6 +14,7 @@ import type { ShellOp, SkinRun, SkinSelection } from "../ipc/commands/dto_skin_r
 import { addToast } from "../stores/toast.store";
 import { errorMessage } from "../utils/error";
 import { isCancelled } from "../ipc/commands/dto";
+import { setLocalSearchScope } from "../stores/local_search.store";
 import { callsState } from "../stores/calls.store";
 import { handleEndDmCall, handleStartDmCall } from "./calls.actions";
 import { handleSetMuted } from "./voice.actions";
@@ -98,6 +99,11 @@ const common: ShellRunner = (op) => {
         const { community, channel } = op.arg.target.arg;
         commands.openCommunityWindow(community, channel).catch((e) => addToast(errorMessage(e), "error"));
       }
+      return true;
+    case "openSearch":
+      // The skin's Search and Downloads' info (plan E7.2 G11): the local
+      // search in the scope the Host picked from this window's view.
+      setLocalSearchScope(op.arg.scope);
       return true;
     case "showSettings":
       openSettingsTab(op.arg);
