@@ -28,6 +28,7 @@ mod community_policy;
 mod create_offline;
 mod crossing_request;
 mod data_root;
+mod device_import;
 mod devices;
 mod dm_ack_loss;
 mod dm_ack_through;
