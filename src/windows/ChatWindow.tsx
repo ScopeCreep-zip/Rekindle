@@ -1,8 +1,12 @@
-import { Component, Match, Switch } from "solid-js";
+import { Component, Match, Switch, onCleanup, onMount } from "solid-js";
+import type { UnlistenFn } from "@tauri-apps/api/event";
+import { subscribeSkinSignals } from "../ipc/channels";
+import { setSkinSignals } from "../stores/skin-signals.store";
 import SkinFrame from "../components/common/SkinFrame";
 import Titlebar from "../components/titlebar/Titlebar";
 import DirectChat from "./chat_window/DirectChat";
 import GroupChat from "./chat_window/GroupChat";
+import { SlotProvider } from "../components/skin-tree/slots";
 import { useChatSearchChord } from "../hooks/useChatSearchChord";
 
 /// The one chat window (plan E2.3): `?peer=<identity key>` is a 1:1
@@ -13,10 +17,18 @@ const ChatWindow: Component = () => {
   const peer = params.get("peer") ?? "";
   const group = params.get("group") ?? "";
   useChatSearchChord(group ? null : peer || null);
+  // The Host's signals for this window (skin-signals:<label>): a chat
+  // tree's state triggers read them, its talkingState among them.
+  let unlisten: UnlistenFn | undefined;
+  onMount(async () => {
+    unlisten = await subscribeSkinSignals(setSkinSignals);
+  });
+  onCleanup(() => unlisten?.());
 
   return (
     // `chat-window` scopes the chat window's skin surfaces (plan E7.7.7).
     // `data-skin-window` names the skin's chat frame layout (plan SK0 S2).
+    <SlotProvider>
     <div class="app-frame chat-window" data-skin-window="chat">
       <SkinFrame />
       {/* Architecture §32 a11y — keyboard skip link past the header. */}
@@ -42,6 +54,7 @@ const ChatWindow: Component = () => {
         </Match>
       </Switch>
     </div>
+    </SlotProvider>
   );
 };
 

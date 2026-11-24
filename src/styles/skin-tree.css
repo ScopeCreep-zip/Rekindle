@@ -256,4 +256,42 @@
     background-color: var(--color-xfire-bg-secondary);
     padding: 6px;
   }
+
+  /* The chat window as a pack's tree (plan SK17-2). The conversation title
+   * keeps one line in its box, ellipsized; the whole title is its tooltip. */
+  .skin-chat-title {
+    display: block;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  /* In the pack's chatSend slot the pack's Send art is the control: our
+   * button takes the slot's box with no background, border or visible label
+   * of its own (its word stays its accessible name), so the pack's word is
+   * not drawn twice (Linux SK17-2: "Send" over "SEND", Onyx's "end"). */
+  [data-skin-role="slot:chatSend"] .message-input-send-btn {
+    position: absolute;
+    inset: 0;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    box-shadow: none;
+  }
+  [data-skin-role="slot:chatSend"] .message-input-send-label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+  /* The app's own control row in the chat area (the 1:1 status, calls and
+   * safety number; the group's members, rename, invite, leave) keeps one line
+   * and scrolls sideways where the pack's box is narrow: no control is
+   * hidden, none wraps over the messages (Linux SK17-2 at min size). */
+  [data-skin-role="slot:chatArea"] :is(.group-chat-header, .chat-peer-status) {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+  }
 }
