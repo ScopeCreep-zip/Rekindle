@@ -149,9 +149,25 @@ export function subscribeCommunityPresenceEvents(): Promise<UnlistenFn> {
     const observed = subject(event);
     if (observed === null) return;
     const { key, snapshot, isSelf } = observed;
-    if (isSelf) return;
     // Nothing observed that this view renders.
     if (snapshot.status === null && snapshot.game === null) return;
+    if (isSelf) {
+      // Our own presence (the Host's one source, AA1): our row in each
+      // community shows it too, as the buddy list does; a self event names
+      // our identity key, our row is our pseudonym in that community.
+      if (snapshot.status === null) return;
+      for (const communityId of Object.keys(communityState.communities)) {
+        const community = communityState.communities[communityId];
+        const me = community?.myPseudonymKey;
+        if (!community || !me) continue;
+        const idx = community.members.findIndex((m) => m.pseudonymKey === me);
+        if (idx < 0) continue;
+        setCommunityState("communities", communityId, "members", idx, "status", snapshot.status);
+        // Presence moves a member between the Host's groups.
+        refreshCommunityMembers(communityId);
+      }
+      return;
+    }
 
     // A community member event names its own community, so only that
     // one needs scanning. A friend event carries no community, so every
