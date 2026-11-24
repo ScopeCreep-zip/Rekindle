@@ -54,6 +54,53 @@ async function membersShow(b: Browser, name: string): Promise<void> {
  * `sender` (the sender's community name), then no unread badge, and no failed
  * mark-read.
  */
+/**
+ * Presence in `b`'s open community window while both members view CHANNEL
+ * (the lead, 2026-11-23: Bob's list put a posting Alice under Offline, and
+ * his own row showed Away while Online): `other` is in the Online group;
+ * `self`'s own row reads Online, as their buddy list does (both stay Online
+ * throughout); and CHANNEL's presence badge counts both members there
+ * ("2 here", ChannelList.tsx channel-presence-badge, members by location).
+ */
+async function presenceRight(b: Browser, self: string, other: string): Promise<void> {
+  let last = "";
+  await waitUntil(
+    async () => {
+      last = (await b.execute(
+        (me: string, them: string, channel: string) => {
+          const groups: Record<string, string> = {};
+          let group = "";
+          let mine = "";
+          for (const el of Array.from(document.querySelectorAll(".member-group-header, .member-item"))) {
+            if (el.classList.contains("member-group-header")) {
+              group = (el.textContent ?? "").trim();
+              continue;
+            }
+            const name = (el.querySelector(".member-name")?.textContent ?? "").trim();
+            groups[name] = group;
+            if (name === me) mine = el.querySelector('[role="img"]')?.getAttribute("aria-label") ?? "";
+          }
+          const row = Array.from(document.querySelectorAll(".channel-item")).find((r) => (r.querySelector(".channel-name")?.textContent ?? "").trim() === channel);
+          const here = row?.querySelector(".channel-presence-badge")?.getAttribute("title") ?? "no presence badge";
+          const faults: string[] = [];
+          if (!/^online/i.test(groups[them] ?? "")) faults.push(`${them} under "${groups[them] ?? "no group"}"`);
+          if (!/^online$/i.test(mine)) faults.push(`own row reads "${mine || "nothing"}"`);
+          if (here !== "2 here") faults.push(`#${channel} badge "${here}"`);
+          return faults.join("; ");
+        },
+        self,
+        other,
+        CHANNEL,
+      )) as string;
+      return last === "";
+    },
+    NET_WAIT_MS,
+    `presence in ${self}'s community window is wrong`,
+  ).catch(() => {
+    throw new Error(`presence in ${self}'s community window: ${last}`);
+  });
+}
+
 async function seesLive(b: Browser, text: string, sender: string): Promise<void> {
   const message = await byText(b, ".community-main .chat-message", text.slice(0, 40), LIVE_MS);
   await waitUntil(
@@ -150,6 +197,7 @@ describe("a community post reaches the other member live", () => {
     const text = `live a→b ${Date.now()}`;
     await postMessage(multiRemoteBrowser.getInstance("alice"), alice, text);
     await seesLive(multiRemoteBrowser.getInstance("bob"), text, ALICE_NAME);
+    await presenceRight(multiRemoteBrowser.getInstance("bob"), BOB_NAME, ALICE_NAME);
     await shot("alice-post-at-bob");
   });
 
@@ -157,6 +205,7 @@ describe("a community post reaches the other member live", () => {
     const text = `live b→a ${Date.now()}`;
     await postMessage(multiRemoteBrowser.getInstance("bob"), bob, text);
     await seesLive(multiRemoteBrowser.getInstance("alice"), text, BOB_NAME);
+    await presenceRight(multiRemoteBrowser.getInstance("alice"), ALICE_NAME, BOB_NAME);
     await shot("bob-post-at-alice");
   });
 });
