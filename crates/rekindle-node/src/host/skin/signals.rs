@@ -183,6 +183,17 @@ impl Inputs {
                 };
                 self.calls.insert(call_id.clone(), call);
             }
+            CallEvent::GroupStarted {
+                call_id, group_id, ..
+            } => {
+                let call = Call {
+                    peer: None,
+                    group: group_id.clone(),
+                    ringing: true,
+                    outgoing: true,
+                };
+                self.calls.insert(call_id.clone(), call);
+            }
             CallEvent::Connected {
                 call_id,
                 direct,
@@ -274,6 +285,24 @@ impl Inputs {
     pub(crate) fn joinable_group_call(&self, group_id: &str) -> Option<String> {
         self.group_call(group_id)
             .filter(|(_, c)| c.ringing && !c.outgoing)
+            .map(|(call_id, _)| call_id.clone())
+    }
+
+    /// The id of the group's call that is ours to leave: one we are in,
+    /// or our own that still rings out (its cancel), the call Xfire's
+    /// group `AppLeaveGroupVoiceChat` leaves.
+    pub(crate) fn our_group_call(&self, group_id: &str) -> Option<String> {
+        self.group_call(group_id)
+            .filter(|(_, c)| !c.ringing || c.outgoing)
+            .map(|(call_id, _)| call_id.clone())
+    }
+
+    /// The id of the 1:1 call with `peer` that we are in (connected), the
+    /// call a chat window's `AppLeaveVoiceChat` leaves.
+    pub(crate) fn call_in_with(&self, peer: &str) -> Option<String> {
+        self.calls
+            .iter()
+            .find(|(_, c)| c.peer.as_deref() == Some(peer) && !c.ringing)
             .map(|(call_id, _)| call_id.clone())
     }
 
@@ -453,6 +482,16 @@ impl SignalState {
     /// ([`Inputs::joinable_group_call`]).
     pub(crate) fn joinable_group_call(&self, group_id: &str) -> Option<String> {
         self.inputs.lock().joinable_group_call(group_id)
+    }
+
+    /// A group window's leave or cancel ([`Inputs::our_group_call`]).
+    pub(crate) fn our_group_call(&self, group_id: &str) -> Option<String> {
+        self.inputs.lock().our_group_call(group_id)
+    }
+
+    /// A chat window's leave ([`Inputs::call_in_with`]).
+    pub(crate) fn call_in_with(&self, peer: &str) -> Option<String> {
+        self.inputs.lock().call_in_with(peer)
     }
 }
 

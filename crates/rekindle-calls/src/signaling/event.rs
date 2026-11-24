@@ -99,6 +99,15 @@ pub enum CallSignalEvent {
         /// The group DM the call belongs to, checked against its roster.
         group_id: Option<String>,
     },
+    /// Initiator side: we sent the `GroupCallOffer`s; the call rings out
+    /// (`GroupCallStatus::Outgoing`) until the first accept.
+    GroupCallStarted {
+        call_id: String,
+        participants: Vec<String>,
+        kind: u8,
+        expires_at_ms: u64,
+        group_id: Option<String>,
+    },
     /// Initiator side: first participant accepted; call is Active.
     GroupCallConnected {
         call_id: String,

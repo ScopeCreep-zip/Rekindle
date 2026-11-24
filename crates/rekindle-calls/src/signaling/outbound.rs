@@ -315,6 +315,13 @@ pub async fn start_group_call<D: CallSignalingDeps + ?Sized>(
         status: GroupCallStatus::Outgoing,
         group_id: group_id.clone(),
     });
+    deps.emit_event(CallSignalEvent::GroupCallStarted {
+        call_id: call_id.clone(),
+        participants: all_participants.clone(),
+        kind: kind.as_u8(),
+        expires_at_ms,
+        group_id: group_id.clone(),
+    });
 
     for invitee in &participant_pubkeys {
         let Ok(invitee_ed_bytes) = hex::decode(invitee) else {

@@ -29,6 +29,54 @@ pub(crate) struct Reads {
     /// `HostGroupVoiceChat`: the selected group, its roster, and its call
     /// in progress that we are not in (`signals::Inputs::joinable_group_call`).
     pub group_call: Option<GroupCall>,
+    /// The call a window's Leave (and a group window's Cancel and End)
+    /// acts on ([`in_call`]); `None` elsewhere, where Leave is the
+    /// community voice channel's.
+    pub in_call: Option<InCall>,
+}
+
+/// The call one window's leave acts on, by the window's kind.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum InCall {
+    /// A group window (selection `Group`): its group, and our call of it,
+    /// one we are in or our own still ringing out
+    /// (`signals::Inputs::our_group_call`).
+    Group {
+        group_id: String,
+        call_id: Option<String>,
+    },
+    /// A 1:1 chat window (`chat-…`, its peer selected): our connected call
+    /// with that peer (`signals::Inputs::call_in_with`).
+    Direct { call_id: Option<String> },
+}
+
+/// [`InCall`] for `action` pressed in `window` with `selection`.
+/// `our_group_call` and `call_in_with` are the call registry the
+/// capabilities read (`signals::Inputs`), so Leave acts on exactly the
+/// call that enabled it. A 1:1 window's Cancel and End stay `CallOp::End`.
+pub(crate) fn in_call(
+    window: &str,
+    action: &A,
+    selection: Option<SkinSelection>,
+    our_group_call: impl Fn(&str) -> Option<String>,
+    call_in_with: impl Fn(&str) -> Option<String>,
+) -> Option<InCall> {
+    let leave = matches!(action, A::LeaveVoiceChat | A::LeaveGroupVoiceChat);
+    if !leave && !matches!(action, A::CancelVoiceChat | A::EndVoiceChat) {
+        return None;
+    }
+    match selection? {
+        SkinSelection::Group { group_id } => Some(InCall::Group {
+            call_id: our_group_call(&group_id),
+            group_id,
+        }),
+        SkinSelection::Friend { public_key } if leave && window.starts_with("chat-") => {
+            Some(InCall::Direct {
+                call_id: call_in_with(&public_key),
+            })
+        }
+        _ => None,
+    }
 }
 
 /// The selected group and the call of its that we can join, if any.
@@ -132,11 +180,25 @@ pub(crate) async fn load(
         _ => None,
     };
     let group_call = group_call(ctx, selections, request).await?;
+    let in_call = match request {
+        IpcRequest::RunSkinAction { window, action, .. } => {
+            let signals = &ctx.skin.signals;
+            in_call(
+                window,
+                action,
+                selections.get(window),
+                |g| signals.our_group_call(g),
+                |p| signals.call_in_with(p),
+            )
+        }
+        _ => None,
+    };
     Ok(Reads {
         rooms,
         friend_game,
         show_call,
         ringing_call,
         group_call,
+        in_call,
     })
 }

@@ -212,8 +212,6 @@ export type CallEvent =
         expiresAtMs: number;
       };
     }
-  /** Our own group call, ringing its invitees (GV3). */
-  | { groupStarted: { callId: string; kind: string; participants: string[]; groupId: string | null; expiresAtMs: number } }
   | { ringing: { callId: string } }
   | {
       started: {
@@ -224,7 +222,17 @@ export type CallEvent =
         expiresAtMs: number;
       };
     }
-  | { connected: { callId: string; direct: DirectCallInfo | null; /** GV2: the call's group, null outside one. */ groupId: string | null } }
+  | {
+      /** We started a group call; it rings out until the first accept. */
+      groupStarted: {
+        callId: string;
+        kind: string;
+        participants: string[];
+        groupId: string | null;
+        expiresAtMs: number;
+      };
+    }
+  | { connected: { callId: string; direct: DirectCallInfo | null; groupId: string | null } }
   | { declined: { callId: string; reason: string } }
   | { missed: { callId: string; from: string } }
   | { timedOut: { callId: string } }

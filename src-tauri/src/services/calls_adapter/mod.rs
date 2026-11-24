@@ -13,6 +13,8 @@
 //!   `Arc<Mutex<HashMap>>`).
 //! * [`deps_impl`] — the full `impl CallSignalingDeps for CallsAdapter`
 //!   block (~456 LoC).
+//! * [`event_map`] — the `CallSignalEvent` → `CallEvent` mapping that
+//!   `emit_event` delegates to.
 
 use std::sync::Arc;
 
@@ -23,6 +25,7 @@ use rekindle_db::Db;
 
 mod call_media;
 pub mod deps_impl;
+mod event_map;
 pub mod registry;
 
 pub use registry::{ActiveCallRegistry, ActiveGroupCallRegistry};

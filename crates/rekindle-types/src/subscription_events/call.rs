@@ -82,6 +82,20 @@ pub enum CallEvent {
         expires_at_ms: u64,
     },
 
+    /// We started a group call; it rings out to `participants` until the
+    /// first of them accepts (`Connected`).
+    GroupStarted {
+        call_id: String,
+        /// `"audio"` or `"video"`.
+        kind: String,
+        /// Everyone invited, us first.
+        participants: Vec<String>,
+        /// The group DM the call belongs to (`GroupCallOffer.group_id`);
+        /// `None` for a buddy-list group call.
+        group_id: Option<String>,
+        expires_at_ms: u64,
+    },
+
     /// The call is up and media should flow.
     Connected {
         call_id: String,
@@ -153,6 +167,7 @@ impl CallEvent {
             Self::Incoming { call_id, .. }
             | Self::Ringing { call_id }
             | Self::Started { call_id, .. }
+            | Self::GroupStarted { call_id, .. }
             | Self::Connected { call_id, .. }
             | Self::Declined { call_id, .. }
             | Self::Missed { call_id, .. }
@@ -270,6 +285,13 @@ mod tests {
                 kind: "audio".into(),
                 peer_key: "pk".into(),
                 peer_display_name: "Ada".into(),
+                expires_at_ms: 1,
+            },
+            CallEvent::GroupStarted {
+                call_id: "c".into(),
+                kind: "audio".into(),
+                participants: vec!["me".into(), "b".into()],
+                group_id: Some("g".into()),
                 expires_at_ms: 1,
             },
             CallEvent::Connected {

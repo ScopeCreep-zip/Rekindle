@@ -289,6 +289,7 @@ pub(super) fn hash_call(h: &mut blake3::Hasher, c: &CallEvent) {
         CallEvent::Incoming { .. } => h.update(b"incoming"),
         CallEvent::Ringing { .. } => h.update(b"ringing"),
         CallEvent::Started { .. } => h.update(b"started"),
+        CallEvent::GroupStarted { .. } => h.update(b"groupStarted"),
         CallEvent::Connected { .. } => h.update(b"connected"),
         CallEvent::Declined { reason, .. } => {
             h.update(b"declined|");

@@ -45,9 +45,7 @@ export type CallOp =
   | { kind: "voice"; arg: { friend: string } }
   | { kind: "answer"; arg: { callId: string } }
   | { kind: "joinGroup"; arg: { groupId: string; callId: string } }
-  /** Leave the 1:1 call we are in (GV3). */
   | { kind: "leave"; arg: { callId: string } }
-  /** Leave the group call we are in, or cancel our own ring (GV3). */
   | { kind: "leaveGroup"; arg: { groupId: string; callId: string } }
   | { kind: "video"; arg: { friend: string } }
   | { kind: "end" }

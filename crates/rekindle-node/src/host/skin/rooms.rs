@@ -13,7 +13,7 @@ use rekindle_types::dto::skin_action::SkinAction as A;
 use rekindle_types::dto::skin_run::{CallOp, ShellOp, ShellPanel, SkinRun, SkinSelection};
 
 use super::actions::{Mapped, Selections};
-use super::reads::GroupCall;
+use super::reads::{GroupCall, InCall};
 use crate::daemon::dispatch::DaemonContext;
 
 /// The selected group's state.
@@ -216,6 +216,36 @@ pub(crate) fn join_group(group: Option<&GroupCall>) -> Result<Mapped, IpcRespons
             "GroupVoiceChat acts on the selected group: none is selected",
         )),
     }
+}
+
+/// A window's leave (and a group window's cancel): the group's call
+/// through `CallOp::LeaveGroup`, a chat window's 1:1 call through
+/// `CallOp::Leave`.
+///
+/// # Errors
+/// 409 when the window is in no call, the reason its capability is off.
+pub(crate) fn leave(in_call: Option<&InCall>) -> Result<Mapped, IpcResponse> {
+    let op = match in_call {
+        Some(InCall::Group {
+            group_id,
+            call_id: Some(call_id),
+        }) => CallOp::LeaveGroup {
+            group_id: group_id.clone(),
+            call_id: call_id.clone(),
+        },
+        Some(InCall::Direct {
+            call_id: Some(call_id),
+        }) => CallOp::Leave {
+            call_id: call_id.clone(),
+        },
+        Some(InCall::Group { call_id: None, .. }) => {
+            return Err(IpcResponse::error(409, "You're not in this group's call."))
+        }
+        Some(InCall::Direct { call_id: None }) | None => {
+            return Err(IpcResponse::error(409, "You're not in a call with them."))
+        }
+    };
+    Ok(Mapped::Run(SkinRun::Shell(ShellOp::Call(op))))
 }
 
 /// A group window's host (`AppHostGroupVoiceChat`, and the `hostVoiceChat`
