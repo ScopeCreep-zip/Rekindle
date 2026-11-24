@@ -85,6 +85,13 @@ pub fn envelope_call_timed_out(target: &PeerTarget, blob: &[u8], hops: u8, reaso
     );
 }
 
+/// A peer's route `blob` is declared dead by Veilid's failed remote route
+/// test (plan RV1g B1); it is not imported or called for the failure
+/// cache's span.
+pub fn declared_dead(blob: &[u8]) {
+    tracing::info!(blob = %blob_tag(blob), "peer route declared dead by Veilid");
+}
+
 #[cfg(test)]
 #[path = "route_trace_tests.rs"]
 mod tests;

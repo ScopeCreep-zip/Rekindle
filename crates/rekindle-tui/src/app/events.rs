@@ -130,10 +130,12 @@ impl App {
             // status line.
             NetworkEvent::RoutePaused { .. }
             | NetworkEvent::RouteResumed {}
-            | NetworkEvent::RouteDeathsAboveBaseline { .. } => {
+            | NetworkEvent::RouteDeathsAboveBaseline { .. }
+            | NetworkEvent::OwnRouteDown { .. }
+            | NetworkEvent::OwnRouteUp { .. } => {
                 self.route_alert.fold(event);
             }
-            // Routed by the caller's other arms.
+            // Nothing on the status bar: the open view re-renders.
             NetworkEvent::LocalRoutesDied { .. }
             | NetworkEvent::RemoteRoutesDied { .. }
             | NetworkEvent::ValueChanged { .. }
@@ -164,13 +166,9 @@ impl App {
             // The status bar's network indicator (plan E7.2): the Host's
             // smoothed bars and whether the node is attached; its route
             // warnings (plan RV1).
-            SubscriptionEvent::Network(
-                event @ (NetworkEvent::Strength { .. }
-                | NetworkEvent::AttachmentChanged { .. }
-                | NetworkEvent::RoutePaused { .. }
-                | NetworkEvent::RouteResumed {}
-                | NetworkEvent::RouteDeathsAboveBaseline { .. }),
-            ) => Some(self.network_event(&event)),
+            // Every network event goes to `network_event`, which matches
+            // each variant itself.
+            SubscriptionEvent::Network(ref network) => Some(self.network_event(network)),
             // ── Events forwarded to active view (real-time data push) ─────
             SubscriptionEvent::ChannelMessage(ChannelMessageEvent::New { .. }) => {
                 if self.nav.tab_bar.selected_id() != Some("communities") {
@@ -456,7 +454,6 @@ impl App {
             | SubscriptionEvent::Call(_)
             | SubscriptionEvent::GroupDm(_)
             | SubscriptionEvent::Notification(_)
-            | SubscriptionEvent::Network(_)
             // A file transfer's state or progress (plan E7.2 G12): the
             // TUI has no Downloads view, so the open view re-renders.
             | SubscriptionEvent::Transfer(_)

@@ -53,6 +53,7 @@ mod tests {
         calls_emit: Vec<FriendPresenceEvent>,
         calls_hold: Vec<(String, u64)>,
         calls_find_stale: Vec<i64>,
+        routes: HashMap<String, Vec<u8>>,
     }
 
     struct MockDeps {
@@ -131,7 +132,15 @@ mod tests {
                 .calls_set_dht_key
                 .push((dht_key.to_string(), friend_key.to_string()));
         }
-        fn cache_route_blob(&self, _: &str, _: Vec<u8>) {}
+        fn cache_route_blob(&self, friend_key: &str, blob: Vec<u8>) {
+            self.state
+                .lock()
+                .routes
+                .insert(friend_key.to_string(), blob);
+        }
+        fn drop_route_blob(&self, friend_key: &str) {
+            self.state.lock().routes.remove(friend_key);
+        }
         fn prekeys_changed(&self, _: &str) {}
         async fn acquire_friend_record(
             &self,
@@ -186,6 +195,27 @@ mod tests {
             st.calls_find_stale.push(threshold_ms);
             st.stale_friends.clone()
         }
+    }
+
+    /// Plan RV2 F9 A3: a route in their profile is cached; their profile's
+    /// route going empty (their route is down) drops it, never keeping
+    /// the dead blob.
+    #[test]
+    fn an_empty_route_value_clears_the_cached_route() {
+        let deps = MockDeps {
+            state: Mutex::new(MockState {
+                friends_with_dht: vec![("alice".into(), "dht1".into())],
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        crate::handle_value_change(&deps, "dht1", &[6], b"route-blob");
+        assert_eq!(
+            deps.state.lock().routes.get("alice").map(Vec::as_slice),
+            Some(&b"route-blob"[..])
+        );
+        crate::handle_value_change(&deps, "dht1", &[6], &[]);
+        assert_eq!(deps.state.lock().routes.get("alice"), None);
     }
 
     /// Plan E2.5: a friend's STATUS opens under their current key only; a

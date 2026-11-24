@@ -86,6 +86,11 @@ pub enum RouteState {
     Unavailable { retry_in: Duration },
     /// The network refused for good; the next want retries.
     Failed { reason: String },
+    /// The class has been down past its grace since the network reported
+    /// its route dead: publishers replace the published route with an
+    /// empty one (withdrawn) while the allocation keeps retrying (plan
+    /// RV1g).
+    Withdrawn,
 }
 
 impl RouteState {
@@ -97,7 +102,7 @@ impl RouteState {
             Self::Idle => RouteAvailability::Idle,
             Self::Allocating => RouteAvailability::Allocating,
             Self::Available { .. } => RouteAvailability::Available,
-            Self::Unavailable { .. } => RouteAvailability::Unavailable,
+            Self::Unavailable { .. } | Self::Withdrawn => RouteAvailability::Unavailable,
             Self::Failed { .. } => RouteAvailability::Failed,
         }
     }
@@ -195,6 +200,10 @@ pub trait RoutePort: Send + Sync {
 
     /// Why a class is down with no new route, if one is, to follow.
     fn own_paused(&self) -> watch::Receiver<Option<RoutePauseCause>>;
+
+    /// Which of our route classes are down, and since when (plan RV1g), to
+    /// follow.
+    fn own_down(&self) -> watch::Receiver<rekindle_types::subscription_events::OwnRouteDownSet>;
 
     /// Own-route deaths of `class` since the node started (the network's
     /// reports and our rotations on evidence), young ones counted apart.

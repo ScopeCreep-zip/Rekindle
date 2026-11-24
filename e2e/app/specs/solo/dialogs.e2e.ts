@@ -21,9 +21,10 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { browser, expect } from "@wdio/globals";
-import { NET_WAIT_MS, byText, gone, press, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
+import { NET_WAIT_MS, byText, gone, press, resolveIntent, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
 import { BUDDY, underTree } from "../../../walk/nav.ts";
-import { createCommunity, createIdentity, createTextChannel, friendsView, newUser, openCommunity, postMessage, selectChannel, type User } from "../../journeys.ts";
+import { channelCount, createCommunity, createIdentity, friendsView, newUser, openCommunity, postMessage, selectChannel, type User } from "../../journeys.ts";
+import { shot } from "../../shots.ts";
 
 const SHORTCUTS_RS = path.join(import.meta.dirname, "..", "..", "..", "..", "src-tauri", "src", "shortcuts.rs");
 
@@ -92,7 +93,9 @@ describe("dialogs take focus, close on Esc and give focus back", function () {
     await createCommunity(browser, me, "Dialogs");
     await openCommunity(browser, "Dialogs");
     communityHandle = await browser.getWindowHandle();
-    await createTextChannel(browser, me, "general");
+    // The community's genesis #general (a second "general" made the count
+    // ambiguous: the genesis row could land with the new one, 0 → 2).
+    await waitUntil(async () => (await channelCount(browser, "general")) === 1, NET_WAIT_MS, "the genesis #general was never listed");
     await selectChannel(browser, "general");
     await postMessage(browser, me, "message 1 with some ordinary words");
   });
@@ -105,6 +108,53 @@ describe("dialogs take focus, close on Esc and give focus back", function () {
   it("the forward dialog: focus in, Esc closes it, focus back on Forward", async () => {
     await browser.switchToWindow(communityHandle);
     await escReturnsFocus('.community-main .chat-message [aria-label="Forward message"]', '[role="dialog"]');
+  });
+
+  it("a forwarded message says so under its own sender and time, above its text", async () => {
+    await browser.switchToWindow(communityHandle);
+    const before = (await browser.execute(() => document.querySelectorAll(".community-main .message-forwarded-header").length)) as number;
+    // A message's action bar is collapsed until hover or focus within it (the
+    // focus test above covers revealing it; run alone, the window may not be
+    // the active one, so focus does not hold): the existing Forward is pressed
+    // in the page, which needs no reveal.
+    const forward = await browser.$('.community-main .chat-message [aria-label="Forward message"]');
+    await forward.waitForExist({ timeout: NET_WAIT_MS, timeoutMsg: "the message's Forward never existed" });
+    await press(browser, forward);
+    await shown(browser, ".forward-dialog");
+    // This community's #general: the forward lands in the channel shown.
+    await browser.execute(() => {
+      const selects = Array.from(document.querySelectorAll<HTMLSelectElement>(".forward-dialog .forward-dialog-select"));
+      const channel = selects[selects.length - 1];
+      const opt = Array.from(channel.options).find((o) => o.textContent?.trim() === "#general");
+      if (!opt) throw new Error(`no #general to forward to (${Array.from(channel.options).map((o) => o.textContent).join(", ")})`);
+      channel.value = opt.value;
+      // As a real choice does: `input` (the dialog's handler), then `change`.
+      channel.dispatchEvent(new Event("input", { bubbles: true }));
+      channel.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await press(browser, await shown(browser, ".forward-dialog .forward-dialog-btn-primary"));
+    await resolveIntent(browser, { passphrase: me.passphrase, appearMs: 1500 }).catch(() => undefined);
+    await gone(browser, ".forward-dialog");
+    let owned = "";
+    await waitUntil(
+      async () => {
+        owned = (await browser.execute((n: number) => {
+          const marks = Array.from(document.querySelectorAll(".community-main .message-forwarded-header"));
+          if (marks.length <= n) return "no forwarded message yet";
+          const mark = marks[marks.length - 1];
+          const bubble = mark.closest(".chat-message");
+          const header = bubble?.querySelector(".chat-message-header");
+          if (!bubble || !header) return "the forwarded mark is not inside a message with a header";
+          return header.compareDocumentPosition(mark) & Node.DOCUMENT_POSITION_FOLLOWING ? "" : "the forwarded mark comes before its message's header";
+        }, before)) as string;
+        return owned === "";
+      },
+      NET_WAIT_MS,
+      "",
+    ).catch(() => {
+      throw new Error(`forwarded message: ${owned}`);
+    });
+    await shot("forwarded-owned");
   });
 
   it("Add Friend (a shared Modal): focus in, Esc closes it, focus back on Add Friend", async () => {

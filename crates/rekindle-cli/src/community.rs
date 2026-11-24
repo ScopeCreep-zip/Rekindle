@@ -4,6 +4,7 @@ use rekindle_ipc::protocol::LifecycleRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, SettingsRequest};
 
 use crate::cli::CommunityCmd;
+use crate::governance;
 use crate::helpers;
 use crate::output::OutputMode;
 use crate::output::{format, table};
@@ -304,7 +305,9 @@ pub async fn dispatch(
         CommunityCmd::RetireDevice { .. }
         | CommunityCmd::ReadmitDevice { .. }
         | CommunityCmd::EnrolDevice { .. } => device(cmd, client, mode).await,
-        CommunityCmd::Invite(sub) => crate::governance::dispatch_invite(sub, client, mode).await,
+        CommunityCmd::Invite(sub) => governance::dispatch_invite(sub, client, mode).await,
+        CommunityCmd::Role(sub) => governance::dispatch_role(sub, client, mode).await,
+        CommunityCmd::Moderate(sub) => governance::dispatch_moderate(sub, client, mode).await,
         CommunityCmd::Watch { community } => {
             crate::community_watch::watch(client, community.as_deref(), mode).await
         }

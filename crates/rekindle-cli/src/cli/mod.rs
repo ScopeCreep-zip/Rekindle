@@ -151,14 +151,6 @@ pub enum Command {
     #[command(subcommand)]
     Community(CommunityCmd),
 
-    /// Role management (requires MANAGE_ROLES).
-    #[command(subcommand)]
-    Role(RoleCmd),
-
-    /// Moderation (requires KICK/BAN/MODERATE_MEMBERS).
-    #[command(subcommand)]
-    Moderate(ModerateCmd),
-
     /// Channel operations.
     #[command(subcommand)]
     Channel(ChannelCmd),

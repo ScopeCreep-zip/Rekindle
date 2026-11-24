@@ -8,7 +8,7 @@ use rekindle_types::message::{DeliveryRetry, SendState};
 use rekindle_utils::random::RandomSource;
 use rekindle_utils::time::Clock;
 
-use crate::state::PeerAck;
+use crate::state::{Moved, PeerAck};
 use crate::stream::StreamKind;
 
 /// A storage failure.
@@ -84,6 +84,9 @@ pub struct RowUpdate {
     pub next_at: i64,
     pub deadline: i64,
     pub wedge_reason: Option<String>,
+    /// The user's Retry: `state` (`queued`) is the one move down the
+    /// lattice, from `failed`; otherwise `state` only merges forward.
+    pub retry: bool,
 }
 
 /// How one send attempt went.
@@ -227,18 +230,21 @@ pub trait OutboxDeps: Send + Sync {
     async fn reschedule_sent(&self, stream: &str, at: i64) -> Result<usize, OutboxError>;
     async fn row_at(&self, stream: &str, stream_seq: i64)
         -> Result<Option<OutboxRow>, OutboxError>;
-    /// Store `update` for `client_id` and project its state; the peer's
-    /// ack [`Self::note_ack`] recorded on the row, read in the same write
-    /// (live A/B finding 42).
+    /// Store `update` for `client_id`, its state merged through the lattice
+    /// against the row's state as stored now, read in the same storage call
+    /// ([`crate::state::apply`], `Step::Update` or, for `retry`,
+    /// `Step::Retry`), and project it; a row past `queued` with the peer's
+    /// ack noted settles at it. `None` when no row is `client_id`.
     async fn update(
         &self,
         client_id: &str,
         update: &RowUpdate,
-    ) -> Result<Option<PeerAck>, OutboxError>;
+    ) -> Result<Option<Moved>, OutboxError>;
     /// Record the peer's `ack` on `client_id` while its send has not landed
     /// (`queued`; the higher ack stays), durably and atomically against
-    /// [`Self::update`]: `false` when the row is past `queued` or gone.
-    async fn note_ack(&self, client_id: &str, ack: PeerAck) -> Result<bool, OutboxError>;
+    /// [`Self::update`]; how the shown state moved. `None` when the row is
+    /// past `queued` or gone.
+    async fn note_ack(&self, client_id: &str, ack: PeerAck) -> Result<Option<Moved>, OutboxError>;
     /// `client_id`'s append is handed off: store `attempts` and `next_at`
     /// only while the row is `queued`, so a row that landed meanwhile is
     /// never lowered (D22 monotone state, review LV22 M2).
@@ -264,8 +270,12 @@ pub trait OutboxDeps: Send + Sync {
     /// no append reported (a late completion, the maintenance tick's
     /// append, a restart) leaves.
     async fn on_chain(&self, stream: &str, stream_seqs: &[i64]) -> Result<Vec<i64>, OutboxError>;
-    /// Project `state` and remove the row.
-    async fn settle(&self, client_id: &str, state: SendState) -> Result<(), OutboxError>;
+    /// Settle `client_id` at `state` merged through the lattice against the
+    /// row as stored now, in the same storage call
+    /// ([`crate::state::apply`], `Step::Settle`): project it and remove the
+    /// row. `None` when no row is `client_id` (another input settled it).
+    async fn settle(&self, client_id: &str, state: SendState)
+        -> Result<Option<Moved>, OutboxError>;
     /// The peer read `stream` (scope `scope`) through `up_to`: raise every
     /// echo at or below it to `read` and settle its rows still waiting, in
     /// one transaction; the entries raised, as `(stream_seq, client_id)`.

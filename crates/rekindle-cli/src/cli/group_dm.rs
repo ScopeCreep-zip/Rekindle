@@ -56,6 +56,9 @@ pub enum GroupDmCmd {
         group_id: String,
         /// The message text.
         text: String,
+        /// The client id (a UUID) of the group message this one replies to.
+        #[arg(long, value_parser = parse_client_id)]
+        reply_to: Option<String>,
     },
     /// Your groups and pending invites.
     List,
@@ -70,4 +73,14 @@ pub enum GroupDmCmd {
         #[arg(long)]
         before: Option<i64>,
     },
+}
+
+/// A message's client id, checked as the Host checks it
+/// (`rekindle-node` `validation::friends::client_id`): a 36-character UUID.
+fn parse_client_id(s: &str) -> Result<String, String> {
+    if s.len() == 36 && uuid::Uuid::parse_str(s).is_ok() {
+        Ok(s.to_owned())
+    } else {
+        Err("want a message client id (a UUID)".into())
+    }
 }

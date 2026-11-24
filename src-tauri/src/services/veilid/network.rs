@@ -138,17 +138,10 @@ async fn community_call(
                     member_joined_op,
                     route: joiner_route,
                 };
-                match crate::services::community::answer_bootstrap_request(
+                crate::services::community::answer_bootstrap_request(
                     app_handle, state, &anchor, &joiner,
                 )
                 .await
-                {
-                    Ok(response) => response,
-                    Err(e) => {
-                        tracing::warn!(call_id = %call_id, error = %e, "bootstrap request refused");
-                        NAK.to_vec()
-                    }
-                }
             }
             Some(ControlPayload::CheckpointStateRequest { request }) => {
                 // A member's state snapshot request (plan E3.2 S7c.3): the Host

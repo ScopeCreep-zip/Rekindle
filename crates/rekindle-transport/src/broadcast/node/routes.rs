@@ -19,16 +19,35 @@ impl TransportNode {
     /// hit, never a second import.
     ///
     /// # Errors
-    /// The blob does not decode or import.
+    /// The blob is a peer route known dead (`RouteUnusable`, plan RV1g B1),
+    /// or it does not decode or import.
     pub fn import_route(&self, route_blob: &[u8]) -> Result<PeerTarget> {
-        self.ports
-            .routes
-            .import(route_blob)
-            .map_err(|e| TransportError::RouteImportFailed {
-                peer: String::new(),
-                reason: e.to_string(),
-            })
+        import_live(self.ports.routes.as_ref(), &self.liveness, route_blob)
     }
+}
+
+/// Import `route_blob` unless it is a peer route known dead (plan RV1g
+/// B1): Veilid's import is idempotent (`route_remote.rs:21-28`), so a dead
+/// blob re-read from an unchanged record would be imported, tested and
+/// dropped again on every attempt. A refused blob is `RouteUnusable`, the
+/// verdict a send into it would have had; nothing is released.
+pub(crate) fn import_live(
+    routes: &dyn RoutePort,
+    liveness: &crate::liveness::Liveness,
+    route_blob: &[u8],
+) -> Result<PeerTarget> {
+    if liveness.route_declared_dead(route_blob) {
+        return Err(TransportError::RouteUnusable {
+            target: crate::route_trace::blob_tag(route_blob),
+            reason: "declared dead".into(),
+        });
+    }
+    routes
+        .import(route_blob)
+        .map_err(|e| TransportError::RouteImportFailed {
+            peer: String::new(),
+            reason: e.to_string(),
+        })
 }
 
 /// Republish our personal route blob to the profile's route subkey and
@@ -163,7 +182,14 @@ pub(super) async fn run_route_publisher(
                 if let Some(on_change) = &on_change {
                     on_change().await;
                 }
-                if let RouteState::Available { blob } = state {
+                // A withdrawal publishes the empty route (plan RV1g):
+                // readers take an empty blob as no route.
+                let blob = match state {
+                    RouteState::Available { blob } => Some(blob),
+                    RouteState::Withdrawn => Some(Vec::new()),
+                    _ => None,
+                };
+                if let Some(blob) = blob {
                     // The publisher's first, then the self-tests': one
                     // order every run (RK1).
                     for offer in &offers {

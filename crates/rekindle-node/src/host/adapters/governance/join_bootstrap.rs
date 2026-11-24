@@ -132,7 +132,8 @@ impl HostGovernance {
 
     /// The inviter's current route from its `M`/6 (forced: it changes when
     /// the inviter comes back); `None` while it holds none or it does not
-    /// verify.
+    /// verify. The read's seq goes to the transport's dead-route rule (plan
+    /// RV1g B3).
     pub(crate) async fn inviter_route(
         &self,
         community: &str,
@@ -149,7 +150,7 @@ impl HostGovernance {
             .member_record_owner
             .clone();
         let port = self.record_port().ok()?;
-        let read = rekindle_governance_runtime::member_routes::read_member_route(
+        let read = rekindle_governance_runtime::member_routes::read_member_route_at(
             &*port,
             community,
             inviter_record,
@@ -158,7 +159,11 @@ impl HostGovernance {
         )
         .await;
         match read {
-            Ok(route) => route.filter(|r| !r.is_empty()),
+            Ok(Some((seq, route))) => {
+                self.route_read_at(&route, seq);
+                Some(route).filter(|r| !r.is_empty())
+            }
+            Ok(None) => None,
             Err(error) => {
                 tracing::debug!(community, %error, "the inviter's route was not read");
                 None

@@ -214,9 +214,14 @@ fn handle_name_change<D: FriendPresenceDeps>(deps: &D, friend_key: &str, value: 
     }
 }
 
+/// A friend's profile subkey 6: their route blob, or empty while their
+/// route is down (plan RV2 F9 A3), which drops the one we cached.
 fn handle_route_change<D: FriendPresenceDeps>(deps: &D, friend_key: &str, value: &[u8]) {
-    tracing::debug!(friend = %friend_key, "friend route blob updated");
-    if !value.is_empty() {
+    if value.is_empty() {
+        tracing::debug!(friend = %friend_key, "friend route withdrawn");
+        deps.drop_route_blob(friend_key);
+    } else {
+        tracing::debug!(friend = %friend_key, "friend route blob updated");
         deps.cache_route_blob(friend_key, value.to_vec());
     }
 }

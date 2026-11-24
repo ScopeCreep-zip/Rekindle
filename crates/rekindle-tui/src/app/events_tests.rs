@@ -337,3 +337,29 @@ async fn the_route_pause_reaches_the_status_line() {
         Some("inbound route paused after repeated failures: possible attack")
     );
 }
+
+/// A role change reaches the open TUI without a reopen (plan E3.2 S10
+/// Verify, "a role change shows live in the GUI and the TUI"): the Host's
+/// `EffectivePermissionsChanged` re-reads the dashboard (status, the
+/// community list), so what we may do is redrawn. The test bus answers no
+/// request, so the re-read shows as its first request's failure.
+#[tokio::test]
+async fn a_permission_change_rereads_the_dashboard_live() {
+    use rekindle_types::subscription_events::GovernanceEvent;
+    let (_dir, mut app) = app_on_test_bus().await;
+    let action = app.subscription_event_to_action(SubscriptionEvent::Governance(
+        GovernanceEvent::EffectivePermissionsChanged {
+            community: "c1".into(),
+            member: "bob".into(),
+        },
+    ));
+    assert!(matches!(action, Some(Action::Render)));
+    let reread = tokio::time::timeout(std::time::Duration::from_secs(10), app.action_rx.recv())
+        .await
+        .expect("the dashboard is re-read")
+        .expect("action channel open");
+    assert!(
+        matches!(&reread, Action::CommandFailed { context, .. } if context == "status"),
+        "the re-read starts with the status snapshot, got {reread:?}"
+    );
+}

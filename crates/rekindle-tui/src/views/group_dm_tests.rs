@@ -71,6 +71,7 @@ fn messages_name_members_by_label_and_close_when_the_group_is_gone() {
             expire_seconds: 0,
             expire_at: None,
             timer_notice_seconds: None,
+            reply_to_id: None,
         }],
     })
     .unwrap();
@@ -105,6 +106,7 @@ fn disappearing_shows_the_countdown_and_notice_and_drops_expired() {
             expire_seconds: 300,
             expire_at: Some(now + 299_000),
             timer_notice_seconds: None,
+            reply_to_id: None,
         }],
     })
     .unwrap();
@@ -190,6 +192,7 @@ fn an_unanswered_group_send_says_still_trying_until_it_settles() {
             expire_seconds: 0,
             expire_at: None,
             timer_notice_seconds: None,
+            reply_to_id: None,
         }],
     })
     .unwrap();

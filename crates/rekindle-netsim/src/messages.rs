@@ -226,6 +226,7 @@ impl FakeMessages {
         });
         if let Ok(Ok(reply)) = answered.await {
             self.net.answered(self.node);
+            self.net.remote_route_answered(self.node, target.as_str());
             Ok(reply)
         } else {
             self.net.inner.lock().calls.remove(&call_id);

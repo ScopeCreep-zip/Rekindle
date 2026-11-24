@@ -12,7 +12,7 @@ pub(super) fn hash_network(h: &mut blake3::Hasher, n: &NetworkEvent) {
             attachment_state,
             is_attached,
             public_internet_ready,
-            has_route,
+            general_route,
             media_route,
             can_write,
         } => {
@@ -26,7 +26,7 @@ pub(super) fn hash_network(h: &mut blake3::Hasher, n: &NetworkEvent) {
             h.update(&[
                 u8::from(*is_attached),
                 u8::from(*public_internet_ready),
-                u8::from(*has_route),
+                *general_route as u8,
                 *media_route as u8,
                 u8::from(*can_write),
             ]);
@@ -46,6 +46,20 @@ pub(super) fn hash_network(h: &mut blake3::Hasher, n: &NetworkEvent) {
         }
         NetworkEvent::RouteResumed {} => {
             h.update(b"route_resumed|");
+        }
+        NetworkEvent::OwnRouteDown {
+            class,
+            since_ms,
+            reason,
+        } => {
+            h.update(b"own_route_down|");
+            h.update(&[*class as u8]);
+            h.update(&since_ms.to_le_bytes());
+            h.update(reason.as_bytes());
+        }
+        NetworkEvent::OwnRouteUp { class } => {
+            h.update(b"own_route_up|");
+            h.update(&[*class as u8]);
         }
         NetworkEvent::RouteDeathsAboveBaseline {
             class,

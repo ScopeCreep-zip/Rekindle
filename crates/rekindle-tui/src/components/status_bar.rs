@@ -18,7 +18,9 @@ use ratatui::text::{Line, Span};
 use ratatui::widgets::Paragraph;
 use ratatui::Frame;
 
-use rekindle_types::subscription_events::{NetworkEvent, OwnRouteClass, RoutePauseCause};
+use rekindle_types::subscription_events::{
+    NetworkEvent, OwnRouteClass, OwnRouteDownSet, OwnRouteOutage, RoutePauseCause,
+};
 
 use crate::theme::ThemeManager;
 
@@ -32,6 +34,31 @@ pub struct RouteAlert {
     /// The latest death warning: the class, its deaths within the window,
     /// how many were young, and the window in seconds.
     deaths: Option<(OwnRouteClass, u32, u32, u64)>,
+    /// Which own route classes are down, and since when (plan RV1g).
+    down: OwnRouteDownSet,
+}
+
+/// "since HH:MM" of an epoch-ms instant in local clock time, with the
+/// date when it is not today; an instant chrono cannot represent says
+/// only how long it has been retrying, never a made-up time.
+fn since_text(since_ms: u64) -> String {
+    match local_clock(since_ms, chrono::Local::now()) {
+        Some(at) => format!(" since {at}"),
+        None => String::new(),
+    }
+}
+
+/// `since_ms` as local "HH:MM", or "YYYY-MM-DD HH:MM" when its local day is
+/// not `now`'s.
+fn local_clock(since_ms: u64, now: chrono::DateTime<chrono::Local>) -> Option<String> {
+    let millis = i64::try_from(since_ms).ok()?;
+    let at = chrono::DateTime::from_timestamp_millis(millis)?.with_timezone(&chrono::Local);
+    let format = if at.date_naive() == now.date_naive() {
+        "%H:%M"
+    } else {
+        "%Y-%m-%d %H:%M"
+    };
+    Some(at.format(format).to_string())
 }
 
 impl RouteAlert {
@@ -47,7 +74,42 @@ impl RouteAlert {
                 window_secs,
                 ..
             } => self.deaths = Some((*class, *deaths, *young, *window_secs)),
+            NetworkEvent::OwnRouteDown {
+                class,
+                since_ms,
+                reason,
+            } => {
+                *self.down.entry(*class) = Some(OwnRouteOutage {
+                    since_ms: *since_ms,
+                    reason: reason.clone(),
+                });
+            }
+            NetworkEvent::OwnRouteUp { class } => *self.down.entry(*class) = None,
             _ => {}
+        }
+    }
+
+    /// The down set a status snapshot carries (a TUI started mid-outage).
+    pub fn load_down(&mut self, down: &OwnRouteDownSet) {
+        self.down = down.clone();
+    }
+
+    /// The outage text: "Unreachable — retrying since HH:MM" (local) for the
+    /// general class, "Calls unreachable — …" for the media class.
+    fn down_text(&self) -> Option<String> {
+        let general = self
+            .down
+            .general
+            .as_ref()
+            .map(|o| format!("Unreachable — retrying{}", since_text(o.since_ms)));
+        let media = self
+            .down
+            .media
+            .as_ref()
+            .map(|o| format!("Calls unreachable — retrying{}", since_text(o.since_ms)));
+        match (general, media) {
+            (Some(g), Some(m)) => Some(format!("{g} · {m}")),
+            (g, m) => g.or(m),
         }
     }
 
@@ -72,10 +134,11 @@ impl RouteAlert {
                 window / 60
             )
         });
-        match (paused, deaths) {
-            (Some(p), Some(d)) => Some(format!("{p} · {d}")),
-            (p, d) => p.or(d),
-        }
+        let parts: Vec<String> = [self.down_text(), paused, deaths]
+            .into_iter()
+            .flatten()
+            .collect();
+        (!parts.is_empty()).then(|| parts.join(" · "))
     }
 }
 
@@ -180,8 +243,10 @@ fn bars_text(bars: u8, unicode: bool) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{bars_text, RouteAlert};
-    use rekindle_types::subscription_events::{NetworkEvent, OwnRouteClass, RoutePauseCause};
+    use super::{bars_text, local_clock, RouteAlert};
+    use rekindle_types::subscription_events::{
+        NetworkEvent, OwnRouteClass, OwnRouteDownSet, OwnRouteOutage, RoutePauseCause,
+    };
 
     /// Plan RV1: the pause, with its cause, and the deaths warning, with its
     /// young deaths, are folded into the status line; a refill clears the
@@ -219,6 +284,47 @@ mod tests {
             alert.text().as_deref(),
             Some("general route deaths above baseline: 5 in 60m (2 young)")
         );
+        // Plan RV1g: an outage shows from the event and from a snapshot,
+        // and clears on the way up.
+        // The times are local clock time: the expected text is computed
+        // with the same local conversion, so the test holds in any zone.
+        alert = RouteAlert::default();
+        let now = chrono::Local::now();
+        let today_ms = u64::try_from(now.timestamp_millis()).expect("after 1970");
+        alert.fold(&NetworkEvent::OwnRouteDown {
+            class: OwnRouteClass::General,
+            since_ms: today_ms,
+            reason: "allocated route failed to test".into(),
+        });
+        assert_eq!(
+            alert.text(),
+            Some(format!(
+                "Unreachable — retrying since {}",
+                now.format("%H:%M")
+            ))
+        );
+        alert.fold(&NetworkEvent::OwnRouteUp {
+            class: OwnRouteClass::General,
+        });
+        assert_eq!(alert.text(), None);
+        alert.load_down(&OwnRouteDownSet {
+            general: None,
+            media: Some(OwnRouteOutage {
+                since_ms: 9 * 60_000,
+                reason: "r".into(),
+            }),
+        });
+        let then = chrono::DateTime::from_timestamp_millis(9 * 60_000)
+            .expect("in range")
+            .with_timezone(&chrono::Local);
+        assert_eq!(
+            alert.text(),
+            Some(format!(
+                "Calls unreachable — retrying since {}",
+                then.format("%Y-%m-%d %H:%M")
+            ))
+        );
+        assert_eq!(local_clock(u64::MAX, now), None);
     }
 
     /// The TUI shows the Host's bars as the GUI does (plan E7.2).

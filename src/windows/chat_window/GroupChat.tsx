@@ -25,6 +25,7 @@ import DisappearingTimerControl from "../../components/chat/DisappearingTimerCon
 import InviteToRoomModal from "../../components/chat/InviteToRoomModal";
 import GameLobbyCard from "../../components/chat/GameLobbyCard";
 import { subscribeGroupChatEvents } from "../../handlers/group-dm.handlers";
+import type { Message } from "../../stores/chat.store";
 
 /// The chat window's group mode (plan E2.6): the group's stored history
 /// (`group_dm_messages`) with members' messages as they arrive, its members
@@ -72,8 +73,13 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
 
   const held = createMemo(() => !!group() && !group()!.pending);
 
-  async function send(body: string): Promise<void> {
-    const err = await handleSendGroupDm(groupId, body);
+  // The message our next send replies to (plan G-replies), from a bubble's
+  // Reply; cleared once sent or dismissed.
+  const [replying, setReplying] = createSignal<Message | null>(null);
+
+  async function send(body: string, replyTo: string | null): Promise<void> {
+    setReplying(null);
+    const err = await handleSendGroupDm(groupId, body, replyTo);
     if (err) console.error("group_dm_send failed:", err);
   }
 
@@ -174,6 +180,7 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
           memberNames={memberNames()}
           onRetry={(id) => void handleRetryGroupSend(groupId, id)}
           onDiscard={(id) => void handleDiscardGroupSend(groupId, id)}
+          onReply={(m) => setReplying(m)}
           historyReady={historyReady()}
         />
         <TypingIndicator isTyping={typingNames().length > 0} peerName={typingNames().join(", ")} />
@@ -183,7 +190,14 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
         <MessageInput
           label={`Message ${name()}`}
           peerId={groupId}
-          onSend={(_, body) => void send(body)}
+          onSend={(_, body, replyToId) => void send(body, replyToId ?? null)}
+          replyTo={(() => {
+            const m = replying();
+            if (!m?.serverMessageId) return null;
+            const senderName = m.isOwn ? (authState.displayName ?? "You") : (memberNames()[m.senderId] ?? name());
+            return { senderName, body: m.body, messageId: m.serverMessageId };
+          })()}
+          onDismissReply={() => setReplying(null)}
           sendButton
           onDraftChanged={(body) => handleGroupDraftChanged(groupId, body)}
           disabled={!held()}

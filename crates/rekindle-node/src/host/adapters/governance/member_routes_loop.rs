@@ -34,7 +34,14 @@ pub(super) async fn run(host: HostGovernance, stop: CancellationToken) {
     let mut written: BTreeMap<String, Vec<u8>> = BTreeMap::new();
     loop {
         let state = general.borrow_and_update().clone();
-        if let RouteState::Available { blob } = state {
+        // A withdrawal writes the empty route (plan RV1g): a joiner's
+        // bootstrap reads an empty `M`/6 as no route.
+        let blob = match state {
+            RouteState::Available { blob } => Some(blob),
+            RouteState::Withdrawn => Some(Vec::new()),
+            _ => None,
+        };
+        if let Some(blob) = blob {
             for community_id in host.sync_targets() {
                 if stop.is_cancelled() {
                     return;

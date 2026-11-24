@@ -33,7 +33,8 @@ pub use governance::{GovernanceEvent, OpPublicationState, OpQuarantineReason};
 pub use group_dm::{GroupDmEvent, GroupDmMember};
 pub use membership::MembershipEvent;
 pub use network::{
-    NetworkEvent, OwnRecordsPhase, OwnRouteClass, RouteAvailability, RoutePauseCause,
+    NetworkEvent, OwnRecordsPhase, OwnRouteClass, OwnRouteDownSet, OwnRouteOutage,
+    RouteAvailability, RoutePauseCause,
 };
 pub use notification::{AlertSubject, NotificationEvent};
 pub use presence::{GameActivity, PresenceEvent, PresenceSnapshot};

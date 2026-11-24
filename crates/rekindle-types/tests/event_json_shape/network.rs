@@ -17,6 +17,8 @@ pub const NAMES: &[&str] = &[
     "routePaused",
     "routeResumed",
     "routeDeathsAboveBaseline",
+    "ownRouteDown",
+    "ownRouteUp",
 ];
 
 pub const NESTED: &[&str] = &[
@@ -45,6 +47,8 @@ pub fn variant_name(e: &NetworkEvent) -> &'static str {
         NetworkEvent::RoutePaused { .. } => "routePaused",
         NetworkEvent::RouteResumed {} => "routeResumed",
         NetworkEvent::RouteDeathsAboveBaseline { .. } => "routeDeathsAboveBaseline",
+        NetworkEvent::OwnRouteDown { .. } => "ownRouteDown",
+        NetworkEvent::OwnRouteUp { .. } => "ownRouteUp",
     }
 }
 
@@ -66,7 +70,9 @@ pub fn nested_names(e: &NetworkEvent) -> Vec<&'static str> {
             OwnRecordsPhase::Held => "OwnRecordsPhase.held",
             OwnRecordsPhase::Failed => "OwnRecordsPhase.failed",
         }],
-        NetworkEvent::RouteDeathsAboveBaseline { class, .. } => vec![match class {
+        NetworkEvent::RouteDeathsAboveBaseline { class, .. }
+        | NetworkEvent::OwnRouteDown { class, .. }
+        | NetworkEvent::OwnRouteUp { class } => vec![match class {
             OwnRouteClass::General => "OwnRouteClass.general",
             OwnRouteClass::Media => "OwnRouteClass.media",
         }],
@@ -90,7 +96,7 @@ fn attachment(
     suffix: &str,
     state: &str,
     attached: bool,
-    has_route: bool,
+    general_route: RouteAvailability,
     media_route: RouteAvailability,
 ) -> Sample {
     ev(
@@ -99,7 +105,7 @@ fn attachment(
             attachment_state: text(state),
             is_attached: attached,
             public_internet_ready: attached,
-            has_route,
+            general_route,
             media_route,
             // Attached here means unlocked and not detached: the Host
             // writes, with or without a route ("failed": no route, DHT up).
@@ -110,33 +116,39 @@ fn attachment(
 
 pub fn samples() -> Vec<Sample> {
     vec![
-        attachment("idle", "detached", false, false, RouteAvailability::Idle),
+        attachment(
+            "idle",
+            "detached",
+            false,
+            RouteAvailability::Idle,
+            RouteAvailability::Idle,
+        ),
         attachment(
             "allocating",
             "attaching",
             false,
-            false,
+            RouteAvailability::Allocating,
             RouteAvailability::Allocating,
         ),
         attachment(
             "available",
             "attached_good",
             true,
-            true,
+            RouteAvailability::Available,
             RouteAvailability::Available,
         ),
         attachment(
             "unavailable",
             "attached_weak",
             true,
-            true,
+            RouteAvailability::Available,
             RouteAvailability::Unavailable,
         ),
         attachment(
             "failed",
             "attached_weak",
             true,
-            false,
+            RouteAvailability::Failed,
             RouteAvailability::Failed,
         ),
         ev("strength", NetworkEvent::Strength { bars: 3 }),
@@ -174,6 +186,34 @@ pub fn samples() -> Vec<Sample> {
             },
         ),
         ev("routeResumed", NetworkEvent::RouteResumed {}),
+        ev(
+            "ownRouteDown.general",
+            NetworkEvent::OwnRouteDown {
+                class: OwnRouteClass::General,
+                since_ms: 1_700_000_000_000,
+                reason: "allocated route failed to test".into(),
+            },
+        ),
+        ev(
+            "ownRouteDown.media",
+            NetworkEvent::OwnRouteDown {
+                class: OwnRouteClass::Media,
+                since_ms: 1_700_000_060_000,
+                reason: "allocated route failed to test".into(),
+            },
+        ),
+        ev(
+            "ownRouteUp.general",
+            NetworkEvent::OwnRouteUp {
+                class: OwnRouteClass::General,
+            },
+        ),
+        ev(
+            "ownRouteUp.media",
+            NetworkEvent::OwnRouteUp {
+                class: OwnRouteClass::Media,
+            },
+        ),
         ev(
             "routeDeathsAboveBaseline.general",
             NetworkEvent::RouteDeathsAboveBaseline {

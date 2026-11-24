@@ -2,7 +2,7 @@ import type {
   OpPublicationState,
   OpQuarantineReason,
 } from "../ipc/channels/community_subscription_events";
-import { createStore, reconcile } from "solid-js/store";
+import { createStore, produce, reconcile } from "solid-js/store";
 import type { Message } from "./chat.store";
 import type {
   GameInfo, InviteDto, MemberGroup, OnboardingConfig, MemberModeration, WelcomeScreen,
@@ -365,3 +365,17 @@ export function setCommunityMembers(community: string, members: Member[]): void 
   setCommunityState("communities", community, "members", reconcile(members, { key: "pseudonymKey" }));
 }
 
+/**
+ * Drop community `id` from this window's list, and the selection when it
+ * was the shown one. The key is deleted in place (`produce`): a setter given
+ * a copy without the key merges it into the store, so the row stayed.
+ */
+export function dropCommunity(id: string): void {
+  setCommunityState("communities", produce((communities) => {
+    delete communities[id];
+  }));
+  if (communityState.activeCommunity === id) {
+    setCommunityState("activeCommunity", null);
+    setCommunityState("activeChannel", null);
+  }
+}
