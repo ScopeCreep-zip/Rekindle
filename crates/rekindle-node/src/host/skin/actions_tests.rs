@@ -190,7 +190,7 @@ fn show_voice_window_shows_the_call_or_voice_session() {
     }
     assert!(matches!(
         map(&A::ShowVoiceWindow, Selected::default(), &Reads::default()),
-        Err(IpcResponse::Error { code: 409, ref message, .. }) if message == "ShowVoiceWindow: no call or voice session"
+        Err(IpcResponse::Error { code: 409, ref message, .. }) if message == "There's no call or voice session to show."
     ));
 }
 

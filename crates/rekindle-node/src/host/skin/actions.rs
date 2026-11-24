@@ -326,7 +326,7 @@ pub(crate) fn map(
             || {
                 Err(IpcResponse::error(
                     409,
-                    "ShowVoiceWindow: no call or voice session",
+                    "There's no call or voice session to show.",
                 ))
             },
             |target| shell(ShellOp::ShowCall { target }),
