@@ -1,11 +1,12 @@
 //! Shared mock deps/registries for the signaling regression suites.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use parking_lot::Mutex;
 use rekindle_codec::capnp_codec::direct::DirectBody;
+use rekindle_types::group_dm::GroupCallRoster;
 use x25519_dalek::{PublicKey, StaticSecret};
 
 use crate::error::CallError;
@@ -165,6 +166,8 @@ pub(super) struct MockDeps {
     identity_secret: [u8; 32],
     /// Our group DMs' rosters, by group id (`group_roster`).
     pub(super) group_rosters: Mutex<HashMap<String, Vec<String>>>,
+    /// Groups we hold only an unanswered invite to.
+    pub(super) invited_groups: Mutex<HashSet<String>>,
 }
 
 impl MockDeps {
@@ -184,6 +187,7 @@ impl MockDeps {
             media: crate::signaling::CallMediaOwner::default(),
             owner_key: "aa".repeat(32),
             group_rosters: Mutex::new(HashMap::new()),
+            invited_groups: Mutex::new(HashSet::new()),
             identity_secret: [0xCC; 32],
         })
     }
@@ -223,8 +227,14 @@ impl CallSignalingDeps for MockDeps {
     fn group_registry(&self) -> Arc<dyn GroupCallRegistry> {
         Arc::clone(&self.group_registry) as Arc<dyn GroupCallRegistry>
     }
-    async fn group_roster(&self, group_id: &str) -> Result<Option<Vec<String>>, CallError> {
-        Ok(self.group_rosters.lock().get(group_id).cloned())
+    async fn group_roster(&self, group_id: &str) -> Result<GroupCallRoster, CallError> {
+        if let Some(keys) = self.group_rosters.lock().get(group_id) {
+            return Ok(GroupCallRoster::Held(keys.clone()));
+        }
+        if self.invited_groups.lock().contains(group_id) {
+            return Ok(GroupCallRoster::Invited);
+        }
+        Ok(GroupCallRoster::Unknown)
     }
     fn is_peer_temp_muted(&self, _peer: &str) -> bool {
         false

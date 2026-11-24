@@ -6,12 +6,14 @@
 
 use std::collections::HashSet;
 
+use rekindle_types::group_dm::{group_call_refused, GroupCallRoster};
+
 use crate::error::CallError;
 use crate::group::{generate_call_key, wrap_call_key};
 use crate::group_state::{GroupCallState, GroupCallStatus};
 use crate::signaling::deps::CallSignalingDeps;
 use crate::signaling::event::CallSignalEvent;
-use crate::signaling::group_handlers::check_group_scope;
+use crate::signaling::group_handlers::check_members;
 use crate::state::{CallKind, CallState, CallStatus};
 use crate::X25519StaticSecret;
 use crate::{derive_call_key, fresh_keypair, short_pubkey_helper};
@@ -263,6 +265,14 @@ pub async fn end_dm_call<D: CallSignalingDeps + ?Sized>(
 /// X25519 + HKDF-SHA256 + AES-256-GCM (`rekindle_calls::group::wrap_call_key`).
 /// Fire-and-forget sends; accepts/declines arrive asynchronously
 /// via `handle_group_call_payload`.
+///
+/// A group-scoped start is refused first for the reason the group's view
+/// serves as `callRefused` ([`group_call_refused`]), then when an invitee
+/// is not on the roster.
+///
+/// # Errors
+/// [`CallError::GroupCallRefused`], [`CallError::NotInGroup`], or the
+/// identity or roster could not be read.
 pub async fn start_group_call<D: CallSignalingDeps + ?Sized>(
     deps: &D,
     participant_pubkeys: Vec<String>,
@@ -271,9 +281,13 @@ pub async fn start_group_call<D: CallSignalingDeps + ?Sized>(
 ) -> Result<String, CallError> {
     let initiator_pubkey = deps.owner_key()?;
     if let Some(group) = group_id.as_deref() {
-        let members = std::iter::once(initiator_pubkey.as_str())
-            .chain(participant_pubkeys.iter().map(String::as_str));
-        check_group_scope(deps, group, members).await?;
+        let roster = deps.group_roster(group).await?;
+        if let Some(reason) = group_call_refused(&roster, &initiator_pubkey) {
+            return Err(CallError::GroupCallRefused(reason));
+        }
+        if let GroupCallRoster::Held(keys) = &roster {
+            check_members(keys, group, participant_pubkeys.iter().map(String::as_str))?;
+        }
     }
     let call_id = deps.fresh_call_id();
     let (my_secret, my_pub) = fresh_keypair();

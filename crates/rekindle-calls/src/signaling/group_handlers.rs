@@ -19,6 +19,8 @@ use rekindle_codec::capnp_codec::direct::{
 };
 use x25519_dalek::StaticSecret;
 
+use rekindle_types::group_dm::GroupCallRoster;
+
 use crate::error::CallError;
 use crate::group::unwrap_call_key;
 use crate::group_state::{GroupCallState, GroupCallStatus};
@@ -155,9 +157,22 @@ pub async fn check_group_scope<'a, D: CallSignalingDeps + ?Sized>(
     group_id: &str,
     members: impl IntoIterator<Item = &'a str>,
 ) -> Result<(), CallError> {
-    let Some(roster) = deps.group_roster(group_id).await? else {
+    let GroupCallRoster::Held(roster) = deps.group_roster(group_id).await? else {
         return Err(CallError::NotInGroup(format!("no group {group_id}")));
     };
+    check_members(&roster, group_id, members)
+}
+
+/// Refuse unless every key in `members` is in `roster`, the roster of
+/// our group DM `group_id`.
+///
+/// # Errors
+/// [`CallError::NotInGroup`] naming the first non-member.
+pub fn check_members<'a>(
+    roster: &[String],
+    group_id: &str,
+    members: impl IntoIterator<Item = &'a str>,
+) -> Result<(), CallError> {
     match members.into_iter().find(|m| !roster.iter().any(|r| r == m)) {
         Some(outsider) => Err(CallError::NotInGroup(format!(
             "{outsider} is not in group {group_id}"

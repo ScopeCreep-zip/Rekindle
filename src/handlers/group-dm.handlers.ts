@@ -4,10 +4,9 @@ import {
   conversationId,
   type ChannelMessageEvent,
   type GroupDmEvent,
-  type GroupDmMember,
 } from "../ipc/channels/chat_events";
 import { applyTimerChanged, withoutExpired } from "../actions/disappearing.actions";
-import type { GroupDmMemberView, SendState } from "../ipc/commands";
+import type { SendState } from "../ipc/commands";
 import type { DeliveryRetry } from "../ipc/channels/chat_events";
 import { groupDmState, setGroupDmState } from "../stores/group-dm.store";
 import { handleLoadGroupDms } from "../actions/group-dm.actions";
@@ -18,27 +17,11 @@ import { withOwnRow } from "../utils/own_rows";
 // arrives whole and is shown as is, and a roster change (join, leave, key
 // rotation) re-reads the Host's list instead of editing it here.
 
-function memberView(m: GroupDmMember): GroupDmMemberView {
-  return { key: m.publicKey, label: m.displayName };
-}
-
 function applyListEvent(event: GroupDmEvent): void {
-  if ("invited" in event) {
-    const i = event.invited;
-    setGroupDmState("groups", i.groupId, {
-      groupId: i.groupId,
-      name: i.name,
-      members: i.members.map(memberView),
-      epoch: 0,
-      pending: true,
-      originPeer: null,
-      favourite: false,
-      renameRefused: "accept the invite first",
-      inviteRefused: "accept the invite first",
-    });
-    return;
-  }
-  if ("joined" in event || "left" in event || "keyRotated" in event) {
+  // An invite, a join, a leave or a key rotation: the Host's list is read
+  // again, its view (pending, and each verdict in the Host's words) as given;
+  // the shell builds no group view of its own.
+  if ("invited" in event || "joined" in event || "left" in event || "keyRotated" in event) {
     void handleLoadGroupDms();
   }
   if ("renamed" in event) {

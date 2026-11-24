@@ -10,13 +10,13 @@ use crate::output::OutputMode;
 use rekindle_client::DaemonClient;
 
 /// A role id: the full 16 bytes as 32 hex characters (plan E3.2 S9).
-fn parse_role_id(s: &str) -> anyhow::Result<String> {
+pub(crate) fn parse_role_id(s: &str) -> anyhow::Result<String> {
     rekindle_types::id::RoleId::from_hex(s)
         .map(rekindle_types::id::RoleId::to_hex)
         .ok_or_else(|| anyhow::anyhow!("invalid role id (32 hex characters): {s}"))
 }
 
-fn parse_permissions(s: &str) -> anyhow::Result<u64> {
+pub(crate) fn parse_permissions(s: &str) -> anyhow::Result<u64> {
     if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
         u64::from_str_radix(hex, 16).map_err(|_| anyhow::anyhow!("invalid hex permissions: {s}"))
     } else {

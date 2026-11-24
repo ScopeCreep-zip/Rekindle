@@ -39,4 +39,8 @@ pub struct GroupDmView {
     /// when we may, else why not (only the creator; full at eight; an
     /// invite).
     pub invite_refused: Option<String>,
+    /// The Host's verdict on starting a call in it (plan E4.1): `None`
+    /// when we may, else why not (an invite; not on the roster; no one
+    /// else on it), the words `start_group_call` refuses with.
+    pub call_refused: Option<String>,
 }
