@@ -128,6 +128,8 @@ describe("dialogs take focus, close on Esc and give focus back", function () {
       const opt = Array.from(channel.options).find((o) => o.textContent?.trim() === "#general");
       if (!opt) throw new Error(`no #general to forward to (${Array.from(channel.options).map((o) => o.textContent).join(", ")})`);
       channel.value = opt.value;
+      // As a real choice does: `input` (the dialog's handler), then `change`.
+      channel.dispatchEvent(new Event("input", { bubbles: true }));
       channel.dispatchEvent(new Event("change", { bubbles: true }));
     });
     await press(browser, await shown(browser, ".forward-dialog .forward-dialog-btn-primary"));
