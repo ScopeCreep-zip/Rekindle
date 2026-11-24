@@ -28,7 +28,8 @@ export interface NetworkState {
   attachmentState: string;
   isAttached: boolean;
   publicInternetReady: boolean;
-  hasRoute: boolean;
+  /** Our inbound (General) route's availability (plan F9-A): `available` is a route. */
+  generalRoute: RouteAvailability;
   mediaRoute: RouteAvailability;
   /** The Host accepts writes now (its lifecycle's `can_write`). */
   canWrite: boolean;
@@ -74,7 +75,7 @@ const [networkState, setNetworkState] = createStore<NetworkState>({
   attachmentState: "detached",
   isAttached: false,
   publicInternetReady: false,
-  hasRoute: false,
+  generalRoute: "idle",
   mediaRoute: "idle",
   canWrite: false,
   bars: 0,
@@ -130,7 +131,7 @@ function routeDeathsText(d: { class: OwnRouteClass; deaths: number; young: numbe
 
 /** Public internet ready and a route: the indicator's "Connected". */
 export function isNetworkConnected(): boolean {
-  return networkState.publicInternetReady && networkState.hasRoute;
+  return networkState.publicInternetReady && networkState.generalRoute === "available";
 }
 
 /**
@@ -163,7 +164,7 @@ export type NetworkLabel = "Connected" | "Connecting..." | "No Route" | "Disconn
 export function networkLabel(): NetworkLabel {
   if (isNetworkConnected()) return "Connected";
   if (isNetworkConnecting()) return "Connecting...";
-  if (networkState.publicInternetReady && !networkState.hasRoute) return "No Route";
+  if (networkState.publicInternetReady && networkState.generalRoute !== "available") return "No Route";
   return "Disconnected";
 }
 
@@ -189,7 +190,7 @@ async function readNetworkStatus(): Promise<void> {
       attachmentState: status.attachmentState,
       isAttached: status.isAttached,
       publicInternetReady: status.publicInternetReady,
-      hasRoute: status.hasRoute,
+      generalRoute: status.generalRoute,
       mediaRoute: status.mediaRoute,
       canWrite: status.canWrite,
     });
@@ -222,7 +223,7 @@ function start(): void {
         attachmentState: event.attachmentState,
         isAttached: event.isAttached,
         publicInternetReady: event.publicInternetReady,
-        hasRoute: event.hasRoute,
+        generalRoute: event.generalRoute,
         mediaRoute: event.mediaRoute,
         canWrite: event.canWrite,
       });

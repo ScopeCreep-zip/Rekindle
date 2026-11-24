@@ -59,8 +59,9 @@ export type NotificationSubscriptionEvent = { notification: NotificationEvent };
  *
  * Was a standalone `NetworkStatusEvent`; it is now the
  * `attachmentChanged` variant of Tier 1's `NetworkEvent`, which gained
- * `attachmentState` and `hasRoute` to carry what this already had, and
- * `mediaRoute` for the media-class route voice needs (plan C7.9c).
+ * `attachmentState` and the general route's availability (`generalRoute`,
+ * plan F9-A) to carry what this already had, and `mediaRoute` for the
+ * media-class route voice needs (plan C7.9c).
  */
 export type NetworkEvent =
   | {
@@ -68,7 +69,8 @@ export type NetworkEvent =
         attachmentState: string;
         isAttached: boolean;
         publicInternetReady: boolean;
-        hasRoute: boolean;
+        /** Our inbound (General) route's availability (plan F9-A). */
+        generalRoute: RouteAvailability;
         mediaRoute: RouteAvailability;
         /** The Host accepts writes now (its lifecycle's `can_write`). */
         canWrite: boolean;
@@ -127,7 +129,8 @@ export interface NetworkStatusEvent {
   attachmentState: string;
   isAttached: boolean;
   publicInternetReady: boolean;
-  hasRoute: boolean;
+  /** Our inbound (General) route's availability (plan F9-A). */
+  generalRoute: RouteAvailability;
   mediaRoute: RouteAvailability;
   canWrite: boolean;
 }
