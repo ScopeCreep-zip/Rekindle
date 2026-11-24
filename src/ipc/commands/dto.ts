@@ -554,9 +554,6 @@ export type MemberGroup =
   | { kind: "online" }
   | { kind: "offline" };
 
-/** The moderation actions we may take against one member (Tier 1
- *  `TargetModeration`): each the governance validator's verdict on the
- *  entry it writes, computed by the Host (plan E3.2 S9). */
 /**
  * What we may do to one member, as the Host decides it (never-hide): each
  * action's reason when we may not (rank, missing permission, self), null
@@ -572,8 +569,3 @@ export interface MemberModeration {
   deafen: string | null;
 }
 
-export interface TargetModeration {
-  kick: boolean;
-  ban: boolean;
-  timeout: boolean;
-}

@@ -198,17 +198,25 @@ export interface SegmentDescriptor {
  */
 /** What a member may do in a community, as the Host names it (never-hide). */
 export type CommunityCapability =
-  | "manageChannels"
   | "manageCommunity"
+  | "manageChannels"
+  | "setTopic"
+  | "manageServers"
   | "manageRoles"
-  | "banMembers"
   | "kickMembers"
-  | "manageExpressions"
-  | "viewInsights"
-  | "viewAuditLog"
+  | "banMembers"
+  | "moderateMembers"
   | "createInvite"
+  | "viewAuditLog"
+  | "viewInsights"
+  | "manageExpressions"
+  | "createExpressions"
   | "manageEvents"
-  | "manageServers";
+  | "createEvents"
+  | "manageWelcome"
+  | "manageAutomod"
+  | "manageSecurity"
+  | "offerSuccessor";
 
 /** Each capability we lack, with the Host's words for why (a missing
  *  permission, a timeout until a time, creator-only). Absent: allowed. */

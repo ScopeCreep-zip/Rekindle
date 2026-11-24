@@ -16,7 +16,7 @@ export interface VoiceMessageAudioView {
 import type {
   AutoModRuleInfo, CommunityPolicy, ExpressionInfo, Message, QuietHoursSettings, SendChannelMessageResult,
 } from "./types";
-import type { CommunityBanView, MemberGroup, MemberModeration, TargetModeration } from "./dto";
+import type { CommunityBanView, MemberGroup, MemberModeration } from "./dto";
 import type { Denied } from "../channels/community_subscription_events";
 
 /** `SuccessorOffer` (rekindle-types `dto::community`): a successor both
@@ -132,7 +132,6 @@ export const communityCommands = {
       location?: { kind: "text" | "voice"; channelId: string } | null;
       lastActive: number;
       group: MemberGroup;
-      canModerateTarget: TargetModeration;
       /** What we may do to this member and why not (never-hide). */
       moderation: MemberModeration;
       outranks: boolean;

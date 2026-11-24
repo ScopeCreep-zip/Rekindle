@@ -32,7 +32,7 @@ const SecurityTab: Component<SecurityTabProps> = (props) => {
 
   // Never-hide: each section is drawn; one we may not change is disabled
   // with the Host's reason.
-  const manageDenied = createMemo(() => deniedFor(props.community, "manageCommunity"));
+  const manageDenied = createMemo(() => deniedFor(props.community, "manageSecurity"));
 
   // Architecture §15 — Plate Gate scaling: when segment 0 (or the
   // highest segment) is full, an admin can write a SegmentAdded
