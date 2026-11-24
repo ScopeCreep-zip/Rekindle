@@ -13,7 +13,7 @@ fn live(sim: &Netsim, blob: &[u8]) -> bool {
     crate::routes::route_id(blob).is_some_and(|id| sim.net.inner.lock().routes.contains_key(&id))
 }
 
-async fn own_blob(node: &Node) -> Vec<u8> {
+pub(crate) async fn own_blob(node: &Node) -> Vec<u8> {
     node.ports.routes.want_own();
     node.ports.routes.available_own(RouteClass::General).await
 }
@@ -413,7 +413,7 @@ async fn an_allocation_whose_test_fails_answers_try_again_and_leaves_no_route() 
 }
 
 /// The `dead_remote` ids `node` hears within `within`.
-async fn dead_remote_within(node: &mut Node, within: Duration) -> Vec<String> {
+pub(crate) async fn dead_remote_within(node: &mut Node, within: Duration) -> Vec<String> {
     let mut heard = Vec::new();
     let _ = tokio::time::timeout(within, async {
         while let Some(event) = node.events.recv().await {

@@ -7,27 +7,9 @@ use std::time::Duration;
 use rekindle_records::port::{PortError, PortEvent, RouteClass};
 use rekindle_types::config::SafetyProfile;
 
+use crate::routes_tests::{dead_remote_within, own_blob};
 use crate::tests::attached;
-use crate::{Fault, Netsim, Node};
-
-async fn own_blob(node: &Node) -> Vec<u8> {
-    node.ports.routes.want_own();
-    node.ports.routes.available_own(RouteClass::General).await
-}
-
-/// The `dead_remote` ids `node` hears within `within`.
-async fn dead_remote_within(node: &mut Node, within: Duration) -> Vec<String> {
-    let mut heard = Vec::new();
-    let _ = tokio::time::timeout(within, async {
-        while let Some(event) = node.events.recv().await {
-            if let PortEvent::RouteChange { dead_remote, .. } = event {
-                heard.extend(dead_remote);
-            }
-        }
-    })
-    .await;
-    heard
-}
+use crate::{Fault, Netsim};
 
 /// An attached importer's listing touches its import on every tick
 /// (Veilid 0.5.8 `route_spec_store/mod.rs:313-324` peeks each unexpired
