@@ -95,6 +95,31 @@ fn group_dms_reach_their_group_chat_window() {
     ));
     assert!(a.includes(&labels::conversation_label(GROUP).unwrap()));
     assert!(!a.includes("chat-3f1a9c0b7e2d4f6a"));
+    // Our own stored group row (plan E6.11): its group window and the
+    // buddy list, never another chat window.
+    let own = sub(SubscriptionEvent::GroupDm(
+        rekindle_types::subscription_events::GroupDmEvent::MessageSent {
+            group_id: GROUP.into(),
+            reply_to_id: None,
+            message: rekindle_types::dto::dm::DmMessage {
+                id: 1,
+                message_id: Some("01900000-0000-7000-8000-000000000003".into()),
+                sender_id: "me".into(),
+                body: "hi".into(),
+                timestamp: 1,
+                is_own: true,
+                send_state: rekindle_types::message::SendState::Queued,
+                history_gap_through: None,
+                expire_seconds: 0,
+                expire_at: None,
+                timer_notice_seconds: None,
+            },
+        },
+    ));
+    assert!(own.includes(&labels::conversation_label(GROUP).unwrap()));
+    assert!(own.includes("buddy-list"));
+    assert!(!own.includes("chat-3f1a9c0b7e2d4f6a"));
+    assert!(!own.includes("community-browser"));
 }
 
 #[test]
