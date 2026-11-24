@@ -265,6 +265,7 @@ fn own(request: &IpcRequest) -> Checked {
         IpcRequest::SetReadReceiptsEnabled { .. }
         | IpcRequest::SetShareGameTotals { .. }
         | IpcRequest::SetGameDetection { .. }
+        | IpcRequest::SetAutoAway { .. }
         | IpcRequest::SetShareCurrentGame { .. }
         | IpcRequest::SetKeepActivityLog { .. } => Ok(()),
         // A window label is the shell's own short name; a subject names a
@@ -479,6 +480,7 @@ IpcRequest::DisappearingSet { .. } | IpcRequest::DisappearingGet { .. } => group
         | IpcRequest::SetReadReceiptsEnabled { .. }
         | IpcRequest::SetShareGameTotals { .. }
         | IpcRequest::SetGameDetection { .. }
+        | IpcRequest::SetAutoAway { .. }
         | IpcRequest::SetShareCurrentGame { .. }
         | IpcRequest::SetKeepActivityLog { .. }
         | IpcRequest::ActivityList { .. }

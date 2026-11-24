@@ -200,6 +200,8 @@ impl IpcRequest {
             // games are never shown.
             | Self::SetGameDetection { .. }
             | Self::SetShareCurrentGame { .. }
+            // And when auto-away shows us Away.
+            | Self::SetAutoAway { .. }
             // And whether we keep a log of what friends did.
             | Self::SetKeepActivityLog { .. }
             | Self::GameHide { .. }

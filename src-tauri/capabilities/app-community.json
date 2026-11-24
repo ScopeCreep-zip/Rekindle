@@ -6,6 +6,7 @@
     "community-*"
   ],
   "permissions": [
+    "allow-get-own-presence",
     "allow-open-external-url",
     "allow-add-game-server",
     "allow-add-reaction",

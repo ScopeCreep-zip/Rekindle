@@ -84,6 +84,7 @@ export const systemCommands = {
 
   // Game
   getGameStatus: () => hostInvoke<OwnGame | null>("get_game_status"),
+  getOwnPresence: () => hostInvoke<OwnPresenceView>("get_own_presence"),
   // Our time in each detected game, the most recent first (plan E7.2).
   getGameTotals: () => hostInvoke<GameTotalView[]>("get_game_totals"),
   // What a friend last shared (empty when they share none).
@@ -116,6 +117,8 @@ export const systemCommands = {
     hostInvoke<Preferences>("set_share_game_totals", { enabled }),
   setGameDetection: (enabled: boolean) =>
     hostInvoke<Preferences>("set_game_detection", { enabled }),
+  setAutoAway: (minutes: number) =>
+    hostInvoke<Preferences>("set_auto_away", { minutes }),
   // The local activity feed (plan E7.15): one page, newest first, after
   // row `before`; keeping it or not (off clears it). Host calls.
   activityList: (before: number | null, limit: number) =>

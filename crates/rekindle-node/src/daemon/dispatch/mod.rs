@@ -48,6 +48,7 @@ pub(crate) mod own_favourite_servers;
 mod own_game;
 mod own_game_invite;
 mod own_game_launch;
+mod own_idle;
 mod pins;
 mod quick_wipe;
 mod rich_messaging;

@@ -93,6 +93,7 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
         HostCall::Request("SetShareGameTotals"),
     ),
     ("set_game_detection", HostCall::Request("SetGameDetection")),
+    ("set_auto_away", HostCall::Request("SetAutoAway")),
     (
         "set_share_current_game",
         HostCall::Request("SetShareCurrentGame"),
@@ -161,6 +162,7 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("transfer_open", HostCall::Request("TransferOpen")),
     ("transfer_remove", HostCall::Request("TransferRemove")),
     ("get_game_status", HostCall::Request("PresenceGet")),
+    ("get_own_presence", HostCall::Request("PresenceGet")),
     ("get_game_totals", HostCall::Request("GameTotalsGet")),
     (
         "get_friend_game_totals",

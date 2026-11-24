@@ -367,29 +367,29 @@ impl OwnPresence {
         self.changed();
     }
 
-    /// Activity is back: restore what auto-away replaced, or note that
-    /// idle time is readable.
+    /// Activity is back (or auto-away was turned off): what it replaced comes back.
     pub(crate) fn active(&self) {
-        {
-            let mut state = self.state.write();
-            match state.idle {
-                IdleState::AutoAway => {
-                    state.status = state.pre_away.take().unwrap_or(SessionStatus::Online);
-                }
-                IdleState::Unavailable => {}
-                IdleState::Active => return,
-            }
-            state.idle = IdleState::Active;
-        }
-        self.changed();
+        self.idle_now(IdleState::Active);
     }
 
-    /// No idle time can be read here: auto-away cannot arm.
+    /// No idle time can be read here: auto-away cannot arm, and one that held ends.
     pub(crate) fn idle_unavailable(&self) {
-        if self.state.read().idle == IdleState::Unavailable {
-            return;
+        self.idle_now(IdleState::Unavailable);
+    }
+
+    /// Idle is now `to`, not auto-away: an auto-away that held ends with its reason, restoring the
+    /// status it replaced; a status the user picked (`set_status`) is never auto-away's to end.
+    fn idle_now(&self, to: IdleState) {
+        {
+            let mut state = self.state.write();
+            if state.idle == to {
+                return;
+            }
+            if state.idle == IdleState::AutoAway {
+                state.status = state.pre_away.take().unwrap_or(SessionStatus::Online);
+            }
+            state.idle = to;
         }
-        self.state.write().idle = IdleState::Unavailable;
         self.changed();
     }
 
