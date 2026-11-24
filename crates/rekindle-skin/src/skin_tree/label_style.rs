@@ -11,24 +11,34 @@
 //!   ([`ink`]): its box is the cover that hides the copied word. Art with
 //!   no such word (a band taller than half the art: xslimfire's gloss)
 //!   keeps the cover [`super::place`] gave and the shell's label style.
+//! - Its weight is the word's stem width ([`stem`]): the commonest run of
+//!   ink across a row of the word, its vertical strokes (a word's bars and
+//!   bowls are a few long runs, its stems one per stroke per row). The
+//!   packs' words are unantialiased GDI raster: XGlow's tab words have 1 px
+//!   stems throughout, Tahoma Regular (400); xslimfire's have 2 px stems,
+//!   Tahoma Bold (700). A run of 2 px or more is bold.
 //! - Its size is the largest whose Tahoma cap height (OS/2 `sCapHeight`
-//!   1489 of 2048 units) fits the ink's height: a tab word is capitalised
-//!   (Friends, Servers, Downloads, Files), so its ink is its capitals; 7 px
-//!   of ink is 9 px. The weight is the shell's label weight, bold: Xfire's
-//!   tab words are Tahoma Bold (XGlow's "Downloads" and "Friends" are 50
-//!   and 33 px wide, Tahoma Bold 9 px's 50.1 and 33.2).
+//!   1489 of 2048 units, the same in Regular and Bold) rounds to no more
+//!   than the ink's height: a tab word is capitalised (Friends, Servers,
+//!   Downloads, Files), so its ink is its capitals, and the raster rounds
+//!   the cap height to whole pixels; 7 px of ink is 10 px (cap 7.27).
+//!   GDI drew the art with Tahoma's hinted device widths (its `hdmx` at 10
+//!   ppem): XGlow's "Friends", "Servers" and "Downloads" are 34, 34 and 51
+//!   px of ink, Regular's 33, 34 and 50 px of advance; xslimfire's
+//!   "Friends" and "Servers" are 36 and 38, Bold's 37 and 39.
 //! - Its colour is the brightest ink pixel (the word's core; its edges
 //!   blend into the ground).
 //! - It sits where the source word sits: centred when the word's margins
 //!   in the art are even (within 2 px: xslimfire's "Files"), the words
 //!   then laid across the node less its frame; otherwise from the word's
 //!   ink start across the rest of the node (XGlow's, at x 2).
-//! - The Host fits the words with Tahoma Bold's exact advances
-//!   ([`ADVANCES`], font units of its 2048 em), summed and scaled once per
-//!   size, against the text box with no margin: the size steps down until
-//!   "Communities" (13516 units) fits. XGlow's 9 px is 59.4 px of its 63
-//!   px from x 2; xslimfire's 8 px is 52.8 px of its 53 px box (9 px,
-//!   59.4, does not). [`super::content::word_width`]'s per-letter
+//! - The Host fits the words at the measured weight with Tahoma's exact
+//!   advances ([`REGULAR`], [`BOLD_ADVANCES`], font units of its 2048 em;
+//!   the shell lays text unhinted), summed and scaled once per size,
+//!   against the text box with no margin: the size steps down until
+//!   "Communities" fits. XGlow's Regular 10 px (11679 units) is 57.0 px of
+//!   its 63 px from x 2; xslimfire's Bold 8 px (13516 units) is 52.8 px of
+//!   its 53 px box (9 px, 59.4, does not). [`super::content::word_width`]'s per-letter
 //!   round-up at 10 px (67 px for the word, 53.6 px scaled to 8) is a
 //!   box that never cuts a label, and fitting with it stepped a size too
 //!   small.
@@ -49,11 +59,21 @@ use super::cover::{each_root, picture_frame, seen, ICON_TOLERANCE};
 /// Tahoma's cap height and em, font units (OS/2 table).
 const CAP_UNITS: u32 = 1489;
 const EM_UNITS: u32 = 2048;
-/// The shell's label weight (`skin-tree.css` `.skin-node-label`).
-const BOLD: u16 = 700;
-/// Tahoma Bold's advance widths, font units of [`EM_UNITS`], for ASCII
+/// CSS font weights of Tahoma's two faces.
+pub(crate) const REGULAR_WEIGHT: u16 = 400;
+pub(crate) const BOLD_WEIGHT: u16 = 700;
+/// Tahoma Regular's advance widths, font units of [`EM_UNITS`], for ASCII
 /// 32 (space) to 126 (`~`), in order (its `hmtx` through its `cmap`).
-const ADVANCES: [u32; 95] = [
+const REGULAR: [u32; 95] = [
+    640, 680, 822, 1490, 1118, 2000, 1380, 432, 784, 784, 1118, 1490, 620, 744, 620, 783, 1118,
+    1118, 1118, 1118, 1118, 1118, 1118, 1118, 1118, 1118, 724, 724, 1490, 1490, 1490, 970, 1862,
+    1228, 1207, 1230, 1389, 1149, 1068, 1367, 1383, 764, 853, 1204, 1019, 1578, 1367, 1449, 1129,
+    1449, 1271, 1141, 1196, 1343, 1222, 1847, 1189, 1180, 1145, 784, 783, 784, 1490, 1118, 1118,
+    1075, 1132, 945, 1132, 1078, 652, 1132, 1142, 468, 577, 1020, 468, 1720, 1142, 1112, 1132,
+    1132, 738, 914, 685, 1142, 1020, 1520, 1014, 1020, 910, 984, 783, 984, 1490,
+];
+/// Tahoma Bold's advance widths, as [`REGULAR`].
+const BOLD_ADVANCES: [u32; 95] = [
     600, 702, 1002, 1676, 1304, 2455, 1600, 564, 930, 930, 1304, 1676, 640, 883, 640, 1182, 1304,
     1304, 1304, 1304, 1304, 1304, 1304, 1304, 1304, 1304, 744, 744, 1676, 1676, 1676, 1160, 1884,
     1402, 1405, 1367, 1551, 1260, 1190, 1526, 1565, 990, 1025, 1426, 1172, 1829, 1578, 1577, 1346,
@@ -71,6 +91,40 @@ pub(crate) struct Ink {
     pub(crate) bounds: [usize; 4],
     pub(crate) brightest: [u8; 3],
     pub(crate) centred: bool,
+    /// The word's stem width, px ([`stem`]).
+    pub(crate) stem: usize,
+}
+
+/// The commonest length of a horizontal run of `mask` (the word's ink,
+/// row by row, inside its box), the shorter on a tie: a word's vertical
+/// strokes cross every row they span, each as one run as wide as the
+/// stem.
+pub(crate) fn stem(mask: &[Vec<bool>]) -> usize {
+    let mut counts: HashMap<usize, usize> = HashMap::new();
+    for row in mask {
+        let mut run = 0;
+        for &on in row.iter().chain(std::iter::once(&false)) {
+            if on {
+                run += 1;
+            } else if run > 0 {
+                *counts.entry(run).or_default() += 1;
+                run = 0;
+            }
+        }
+    }
+    counts
+        .into_iter()
+        .max_by_key(|&(len, count)| (count, std::cmp::Reverse(len)))
+        .map_or(1, |(len, _)| len)
+}
+
+/// The weight of a word whose stems are `stem` px: 2 px or more is bold.
+pub(crate) fn weight_for(stem: usize) -> u16 {
+    if stem >= 2 {
+        BOLD_WEIGHT
+    } else {
+        REGULAR_WEIGHT
+    }
 }
 
 /// Each row's ground: its commonest shown colour (a word is a few pixels
@@ -130,6 +184,7 @@ pub(crate) fn ink(image: &RgbaImage) -> Option<Ink> {
         .max_by_key(|p| u16::from(p[0]) + u16::from(p[1]) + u16::from(p[2]))?;
     let key = hue(rgb(*brightest), 15);
     let mut found: Option<[usize; 4]> = None;
+    let mut mask = vec![vec![false; width]; height];
     for (row, (pixels, &g)) in rows.iter().zip(&ground).enumerate() {
         for (col, &p) in pixels.iter().enumerate() {
             let [r, gr, b] = rgb(p);
@@ -141,6 +196,7 @@ pub(crate) fn ink(image: &RgbaImage) -> Option<Ink> {
             let mine = hue(d, 7);
             let same = key.iter().zip(mine).all(|(&k, m)| k == 0 || k == m);
             if off(p, g) && same {
+                mask[row][col] = true;
                 found = Some(found.map_or([col, row, col, row], |[l, t, r, b]| {
                     [l.min(col), t.min(row), r.max(col), b.max(row)]
                 }));
@@ -153,36 +209,48 @@ pub(crate) fn ink(image: &RgbaImage) -> Option<Ink> {
         return None;
     }
     let right_margin = width - 1 - right;
+    let word: Vec<Vec<bool>> = mask[top..=bottom]
+        .iter()
+        .map(|r| r[left..=right].to_vec())
+        .collect();
     Some(Ink {
         bounds: [left, top, right - left + 1, tall],
         brightest: [brightest[0], brightest[1], brightest[2]],
         centred: left.abs_diff(right_margin) <= CENTRED,
+        stem: stem(&word),
     })
 }
 
-/// The largest size whose cap height fits `ink_h` px.
+/// The largest size whose cap height rounds to no more than `ink_h` px:
+/// `size * CAP / EM < ink_h + 1/2`.
 pub(crate) fn size_for(ink_h: u16) -> u16 {
-    u16::try_from(u32::from(ink_h) * EM_UNITS / CAP_UNITS).unwrap_or(u16::MAX)
+    let limit = (2 * u32::from(ink_h) + 1) * EM_UNITS;
+    u16::try_from((limit - 1) / (2 * CAP_UNITS)).unwrap_or(u16::MAX)
 }
 
-/// The advance of `word` in Tahoma Bold, font units: a letter outside
-/// ASCII 32-126 takes a full em.
-pub(crate) fn word_units(word: &str) -> u32 {
+/// The advance of `word` in Tahoma at `weight`, font units: a letter
+/// outside ASCII 32-126 takes a full em.
+pub(crate) fn word_units(word: &str, weight: u16) -> u32 {
+    let advances = if weight >= BOLD_WEIGHT {
+        &BOLD_ADVANCES
+    } else {
+        &REGULAR
+    };
     word.chars()
         .map(|c| {
             u32::from(c)
                 .checked_sub(32)
-                .and_then(|i| ADVANCES.get(usize::try_from(i).ok()?))
+                .and_then(|i| advances.get(usize::try_from(i).ok()?))
                 .copied()
                 .unwrap_or(EM_UNITS)
         })
         .sum()
 }
 
-/// Whether `word` at `size` px fits `room` px: its exact advance, no
-/// rounding or margin.
-pub(crate) fn fits(word: &str, size: u16, room: u16) -> bool {
-    u64::from(word_units(word)) * u64::from(size) <= u64::from(room) * u64::from(EM_UNITS)
+/// Whether `word` at `weight` and `size` px fits `room` px: its exact
+/// advance, no rounding or margin.
+pub(crate) fn fits(word: &str, weight: u16, size: u16, room: u16) -> bool {
+    u64::from(word_units(word, weight)) * u64::from(size) <= u64::from(room) * u64::from(EM_UNITS)
 }
 
 /// The served style of `label` on a node `w x h` px whose copied word's
@@ -195,10 +263,11 @@ fn style(label: &NodeLabel, width: u16, height: u16, ink: Ink, at: [u16; 4]) -> 
     } else {
         (ink_x, width.saturating_sub(ink_x), LabelAlign::Start)
     };
+    let weight = weight_for(ink.stem);
     let measured = size_for(ink_h);
     let size = (1..=measured)
         .rev()
-        .find(|&px| fits(&label.text, px, bw))
+        .find(|&px| fits(&label.text, weight, px, bw))
         .unwrap_or(measured);
     let line = (size + 4).min(height);
     let middle = ink_y + ink_h / 2;
@@ -206,7 +275,7 @@ fn style(label: &NodeLabel, width: u16, height: u16, ink: Ink, at: [u16; 4]) -> 
     let [red, green, blue] = ink.brightest;
     LabelStyle {
         size_px: size,
-        weight: BOLD,
+        weight,
         color: format!("#{red:02X}{green:02X}{blue:02X}"),
         align,
         text_box: [bx, top, bw, line],
