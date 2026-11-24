@@ -18,6 +18,8 @@ export interface BuddyListUIState {
   inviteToRoom: string | null;
   /** The notification center's panel (a skin's OpenNotifications too). */
   showNotifications: boolean;
+  /** The Communities view's New chooser (plan CB1): create, or join with an invite. */
+  showCommunityStart: boolean;
 }
 
 const [buddyListUI, setBuddyListUI] = createStore<BuddyListUIState>({
@@ -30,6 +32,7 @@ const [buddyListUI, setBuddyListUI] = createStore<BuddyListUIState>({
   newGroupPeer: null,
   inviteToRoom: null,
   showNotifications: false,
+  showCommunityStart: false,
 });
 
 export function switchTab(tab: BuddyListTab): void {

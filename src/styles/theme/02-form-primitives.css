@@ -92,6 +92,18 @@
     background: color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
   }
 
+  /* The community rows' listbox: its rows stay the list's own flex children. */
+  .community-listbox {
+    display: contents;
+  }
+
+  /* The Communities view's New chooser (plan CB1): its two choices. */
+  .community-start-choices {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
   .community-icon {
     width: 24px;
     height: 24px;

@@ -22,6 +22,7 @@ import { handleOpenGroupChat } from "./group-dm.actions";
 import { handleCopyPublicKey } from "./buddy.actions";
 import { handleMaximize, handleMinimize } from "./titlebar.actions";
 import { handleQuit, handleReportBug, openSettingsTab } from "../components/buddy-list/MenuBar";
+import { handleLeaveCommunity } from "./community/lifecycle";
 
 /** Each pack edge's OS resize direction (Tauri `ResizeDirection`). */
 const DIRECTION = {
@@ -81,6 +82,14 @@ const common: ShellRunner = (op) => {
       return true;
     case "openGroupChat":
       handleOpenGroupChat(op.arg.groupId);
+      return true;
+    case "openCommunity":
+      commands.openCommunityWindow(op.arg.community).catch((e) => addToast(errorMessage(e), "error"));
+      return true;
+    case "leaveCommunity":
+      // The Host's leave intent asks first (ADR 0019); the row then goes in
+      // every window (dropCommunity here, LF1's forgotten in the others).
+      void handleLeaveCommunity(op.arg.community);
       return true;
     case "launchPopup":
       // The shell opens (or closes, when open) the pack popup beside this

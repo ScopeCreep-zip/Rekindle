@@ -24,6 +24,7 @@ import PairingLinkNotice from "../components/buddy-list/PairingLinkNotice";
 import CreateCommunityModal from "../components/community/CreateCommunityModal";
 import JoinCommunityModal from "../components/community/JoinCommunityModal";
 import StartGroupCallModal from "../components/buddy-list/StartGroupCallModal";
+import CommunityStartModal from "../components/buddy-list/CommunityStartModal";
 import NewGroupModal from "../components/buddy-list/NewGroupModal";
 import InviteToRoomModal from "../components/chat/InviteToRoomModal";
 import GroupDmList from "../components/buddy-list/GroupDmList";
@@ -146,6 +147,9 @@ function runBuddyListOp(op: ShellOp): boolean {
           return true;
         case "joinCommunity":
           handleToggleJoinCommunity();
+          return true;
+        case "communityStart":
+          setBuddyListUI("showCommunityStart", true);
           return true;
         case "shortcuts":
           setShortcutsHelpOpen(true);
@@ -309,6 +313,10 @@ const BuddyListWindow: Component = () => {
       <CallController />
       <NewGroupModal />
       <InviteToRoomModal groupId={buddyListUI.inviteToRoom} onClose={() => setBuddyListUI("inviteToRoom", null)} />
+      <CommunityStartModal
+        isOpen={buddyListUI.showCommunityStart}
+        onClose={() => setBuddyListUI("showCommunityStart", false)}
+      />
       <StartGroupCallModal
         isOpen={buddyListUI.showStartGroupCall}
         onClose={() => setBuddyListUI("showStartGroupCall", false)}

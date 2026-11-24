@@ -29,7 +29,9 @@ export type SkinSelection =
   | { kind: "media"; arg: { path: string } }
   | { kind: "group"; arg: { groupId: string } }
   /** A friend group's header (plan E7.15 IV5); null is the default group. */
-  | { kind: "friendGroup"; arg: { groupId: number | null } };
+  | { kind: "friendGroup"; arg: { groupId: number | null } }
+  /** A row of the Communities view (plan CB1): Open and Leave act on it. */
+  | { kind: "community"; arg: { community: string } };
 
 export type ShellPanel =
   | "addFriend"
@@ -38,6 +40,8 @@ export type ShellPanel =
   | "startGroupCall"
   | "createCommunity"
   | "joinCommunity"
+  /** The Communities view's New (plan CB1): create one or join with an invite. */
+  | "communityStart"
   | "shortcuts"
   | "notifications";
 
@@ -79,6 +83,10 @@ export type ShellOp =
   | { kind: "openGameInvite"; arg: { friend: string } }
   | { kind: "newRoom"; arg: { peer: string | null } }
   | { kind: "openGroupChat"; arg: { groupId: string } }
+  /** The Communities view's Open (plan CB1): that community's window. */
+  | { kind: "openCommunity"; arg: { community: string } }
+  /** The Communities view's Leave (plan CB1): through the Host's leave intent. */
+  | { kind: "leaveCommunity"; arg: { community: string } }
   | { kind: "inviteToRoom"; arg: { groupId: string } }
   | { kind: "call"; arg: CallOp }
   | { kind: "showCall"; arg: { target: CallTarget } }
