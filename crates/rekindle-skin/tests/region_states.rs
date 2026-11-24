@@ -384,7 +384,8 @@ fn the_skin_css_writes_a_text_slot_slice_widths() {
 }
 
 /// Plan E7.7.7: a labelled bar paints its bitmap on the container and its
-/// backing once, as one band behind its text row (never per label); the status arrow is sized to its image; the
+/// backing once, as one band across its whole strip (SK17; never per
+/// label, never a box hugging the text row); the status arrow is sized to its image; the
 /// chosen tab reads its `selected` image.
 #[test]
 fn the_app_css_backs_labels_sizes_the_arrow_and_marks_the_chosen_tab() {
@@ -392,7 +393,7 @@ fn the_app_css_backs_labels_sizes_the_arrow_and_marks_the_chosen_tab() {
     assert!(css.contains("  .buddylist-infobar {\n    border-image: var(--skin-region-buddylist-infobar);\n    image-rendering: pixelated;\n  }\n"), "{css}");
     let f = "linear-gradient(var(--skin-region-buddylist-infobar-band), var(--skin-region-buddylist-infobar-band))";
     assert!(css.contains(&format!(
-        "  .buddylist-infobar::before {{\n    content: \"\";\n    position: absolute;\n    inset: 0;\n    z-index: -1;\n    padding: inherit;\n    border-radius: inherit;\n    background: {f} 0 0 / 100% 100% no-repeat content-box;\n    pointer-events: none;\n  }}\n"
+        "  .buddylist-infobar::before {{\n    content: \"\";\n    position: absolute;\n    inset: 0;\n    z-index: -1;\n    padding: inherit;\n    border-radius: inherit;\n    background: {f} 0 0 / 100% 100% no-repeat border-box;\n    pointer-events: none;\n  }}\n"
     )), "{css}");
     assert!(
         !css.contains(".buddylist-infobar-label"),
@@ -456,7 +457,7 @@ fn the_app_css_paints_the_chat_buttons_and_backs_the_toolbar() {
     );
     let f = "linear-gradient(var(--skin-region-chat-toolbar-band), var(--skin-region-chat-toolbar-band))";
     assert!(css.contains(&format!(
-        "  .chat-toolbar::before {{\n    content: \"\";\n    position: absolute;\n    inset: 0;\n    z-index: -1;\n    padding: inherit;\n    border-radius: inherit;\n    background: {f} 0 50% / 100% 24px no-repeat content-box;\n    pointer-events: none;\n  }}\n"
+        "  .chat-toolbar::before {{\n    content: \"\";\n    position: absolute;\n    inset: 0;\n    z-index: -1;\n    padding: inherit;\n    border-radius: inherit;\n    background: {f} 0 0 / 100% 100% no-repeat border-box;\n    pointer-events: none;\n  }}\n"
     )), "{css}");
     assert!(css.contains("  .chat-input::before {\n"), "{css}");
     assert!(css.contains("  .chat-group-header::before {\n"), "{css}");

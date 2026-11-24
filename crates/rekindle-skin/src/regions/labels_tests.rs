@@ -63,7 +63,7 @@ fn a_label_over_art_that_meets_its_floor_serves_no_backing() {
 
 /// Symbiosis's community sidebar header art fails under its labels
 /// (1.42:1): the served sheet sets its band exactly once, to the slot's
-/// backing, which the container paints once behind its text row.
+/// backing, which the container paints once across its whole strip.
 #[test]
 fn a_label_over_failing_art_serves_one_band_for_the_region() {
     let (_, builtin) = crate::builtin::find("builtin:symbiosis").expect("a built-in");
