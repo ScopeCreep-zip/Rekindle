@@ -60,7 +60,12 @@
   }
 }
 
+/* A toast is legible from its first frame: the entrance only moves it a
+ * few pixels up into place, inside the window. It faded in from opacity 0,
+ * 20 px right, and where the window's animation timeline did not advance
+ * (Show Voice, E7.14 2bce3f11b: "running@0" for 2 s) it stayed invisible
+ * and partly outside the window for its whole life. */
 @keyframes toast-slide-in {
-  from { opacity: 0; transform: translateX(20px); }
-  to { opacity: 1; transform: translateX(0); }
+  from { transform: translateY(6px); }
+  to { transform: translateY(0); }
 }

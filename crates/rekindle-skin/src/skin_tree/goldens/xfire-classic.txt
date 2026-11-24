@@ -8,7 +8,7 @@ MainTitleBar Drag
   CloseBox Button target [0, -3, 21, 24] art [0, 3, 18, 17] Short
   ResizeUp Button target [0, 0, 330, 24] art [0, 0, 330, 5] Size
 GripperTopLeft Button target [0, 0, 24, 24] art [0, 0, 25, 44] Size
-GripperTopRight Button target [1, 0, 24, 24] art [-1, 0, 25, 44] Short
+GripperTopRight Button target [1, 0, 24, 24] art [-1, 0, 25, 44] Size
 BaseBoard Group
   ButtonArea ButtonBar
     FriendsButtons ButtonRow(Friends)
@@ -38,11 +38,11 @@ InnerBevel Decor
   MiddleBevel Decor
   MenuBar MenuBar
     XfireMenuText MenuTitle label "Rekindle"
-      FileMenu Part target [0, 0, 104, 24] art [0, 0, 104, 23] Size
+      FileMenu Part target [0, 0, 50, 24] art [0, 0, 50, 23] Size
     ToolsMenuText MenuTitle label "Tools"
-      ToolsMenu Part target [0, 0, 104, 24] art [0, 0, 104, 23] Size
+      ToolsMenu Part target [0, 0, 34, 24] art [0, 0, 34, 23] Size
     HelpMenuText MenuTitle label "Help"
-      HelpMenu Part target [0, 0, 104, 24] art [0, 0, 104, 23] Size
+      HelpMenu Part target [0, 0, 28, 24] art [0, 0, 28, 23] Size
   AdArea AdArea
     AdView Part
   Divider Decor
@@ -52,8 +52,8 @@ InnerBevel Decor
     TabServerText Tab(Servers) label "Servers"
       TabServerButton Part target [0, -4, 55, 20] art [0, 4, 62, 16] Spacing
     TabDownloadText Tab(Files) label "Downloads"
-      TabDownloadButton Part target [0, -4, 62, 20] art [0, 4, 62, 16] Spacing
-    TabDownloadText.Communities Tab(Communities) label "Communities" target [0, -4, 153, 19] art [0, 4, 153, 15] Spacing
+      TabDownloadButton Part target [0, -4, 79, 20] art [0, 4, 79, 16] Spacing
+    TabDownloadText.Communities Tab(Communities) label "Communities" target [0, -4, 136, 19] art [0, 4, 136, 15] Spacing
       TabDownloadButton.Communities Part
   TabbedControl Views
     BuddyView View(Friends)

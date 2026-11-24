@@ -1,5 +1,5 @@
 import { Component, Show } from "solid-js";
-import { ICON_GAMEPAD } from "../../icons";
+import SkinGlyph from "../common/SkinGlyph";
 
 // Plan E7.2 "Game icons": the backend resolves each game's icon key
 // (`xfire/<xfire id>` or `slug/<icon>`) from the game database and puts it
@@ -22,7 +22,7 @@ export function gameIconUrl(key: string | null | undefined): string | null {
 const GameIcon: Component<{ iconKey: string | null | undefined }> = (props) => (
   <Show
     when={gameIconUrl(props.iconKey)}
-    fallback={<span class="game-icon game-icon-generic nf-icon" aria-hidden="true">{ICON_GAMEPAD}</span>}
+    fallback={<SkinGlyph name="gamepad" class="game-icon game-icon-generic" />}
   >
     {(url) => <img class="game-icon" src={url()} alt="" aria-hidden="true" />}
   </Show>

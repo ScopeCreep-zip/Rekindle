@@ -249,6 +249,7 @@ fn button(id: &str, key: SkinAction) -> SkinNode {
         label: None,
         inset: None,
         target: None,
+        fit: None,
         shows_with: None,
         control_group: None,
         triggers: vec![NodeTrigger {
@@ -435,7 +436,7 @@ fn stealthxs_menu_button_launches_the_side_rail() {
     ];
     assert_eq!(depths(&rail.tree.root), own(&want));
     assert_eq!(
-        (rail.anchor, rail.width, rail.y),
+        (rail.anchor, rail.width, rail.y.clone()),
         (
             PopupAnchor {
                 edge: PopupEdge::Left,
@@ -538,7 +539,10 @@ fn a_fixed_tile_is_clipped_to_its_parent() {
         at: Anchor::End(0),
         size,
     };
-    assert_eq!((by("Gripper").x, by("Gripper").y), (end(20), end(20)));
+    assert_eq!(
+        (by("Gripper").x.clone(), by("Gripper").y.clone()),
+        (end(20), end(20))
+    );
     let close = by("CloseBox");
     assert_eq!(close.x, end(10));
     let art = close.art.as_ref().unwrap();

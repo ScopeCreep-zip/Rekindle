@@ -1,7 +1,7 @@
 import { Component, JSX, Show } from "solid-js";
+import SkinGlyph from "./SkinGlyph";
 import { Dialog } from "@kobalte/core/dialog";
 import { returnFocusToOpener } from "../../utils/dialog_focus";
-import { ICON_CLOSE } from "../../icons";
 
 interface ModalProps {
   isOpen: boolean;
@@ -53,7 +53,7 @@ const Modal: Component<ModalProps> = (props) => {
               <Dialog.Title class="modal-title">{props.title}</Dialog.Title>
               <Show when={isDismissable()}>
                 <Dialog.CloseButton class="modal-close-btn" aria-label="Close dialog">
-                  <span class="nf-icon" aria-hidden="true">{ICON_CLOSE}</span>
+                  <SkinGlyph name="close" />
                 </Dialog.CloseButton>
               </Show>
             </div>

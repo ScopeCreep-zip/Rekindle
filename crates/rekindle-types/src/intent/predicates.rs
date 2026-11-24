@@ -200,6 +200,11 @@ impl IntentKind {
             | Self::PolicyReload
             | Self::UpdateChannel
             | Self::RenameGroupDm
+            | Self::HostGameLobby
+            | Self::JoinGameLobby
+            | Self::LeaveGameLobby
+            | Self::CloseGameLobby
+            | Self::LaunchGameLobby
             | Self::SetGamePresence
             | Self::ClearGamePresence
             | Self::ApproveJoinRequest
@@ -418,6 +423,11 @@ impl IntentKind {
             | Self::PolicyReload
             | Self::UpdateChannel
             | Self::RenameGroupDm
+            | Self::HostGameLobby
+            | Self::JoinGameLobby
+            | Self::LeaveGameLobby
+            | Self::CloseGameLobby
+            | Self::LaunchGameLobby
             | Self::SetGamePresence
             | Self::ClearGamePresence
             | Self::RejectJoinRequest

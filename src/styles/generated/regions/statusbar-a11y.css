@@ -25,9 +25,8 @@
     .status-picker-arrow:active {
       border-image: none;
     }
-    .buddy-list-window > .status-bar .status-picker,
-    .buddy-list-window > .status-bar .network-indicator {
-      background-image: none;
+    .buddy-list-window > .status-bar::before {
+      content: none;
     }
   }
 }

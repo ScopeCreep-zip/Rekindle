@@ -1,4 +1,5 @@
 import { Component, For, Show, createEffect, createSignal, onCleanup } from "solid-js";
+import SkinGlyph from "../common/SkinGlyph";
 import { callsState } from "../../stores/calls.store";
 import { friendsState } from "../../stores/friends.store";
 import {
@@ -6,7 +7,6 @@ import {
   handleDeclineGroupCall,
   handleEndGroupCall,
 } from "../../actions/calls.actions";
-import { ICON_HANGUP } from "../../icons";
 
 // Wave 12 W12.10 — group call surfaces.
 //
@@ -147,7 +147,7 @@ const ActiveGroupCallPanel: Component = () => {
               aria-label="Leave call"
               title="Leave call"
             >
-              <span class="nf-icon" aria-hidden="true">{ICON_HANGUP}</span>
+              <SkinGlyph name="hangup" />
             </button>
           </div>
         </div>

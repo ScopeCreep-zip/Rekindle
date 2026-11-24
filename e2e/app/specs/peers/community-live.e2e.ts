@@ -13,27 +13,58 @@ import type { Browser } from "webdriverio";
 import { NET_WAIT_MS, WAIT_MS, byText, waitUntil } from "../../../walk/helpers.ts";
 import {
   type User,
+  channelCount,
   consoleSeen,
   createCommunity,
   createIdentity,
   createInvite,
-  createTextChannel,
   joinCommunity,
   newUser,
   openCommunity,
   postMessage,
   selectChannel,
+  setCommunityName,
   watchConsole,
 } from "../../journeys.ts";
+import { shot } from "../../shots.ts";
 
 /** How long a post may take to show in the other member's open channel. */
 const LIVE_MS = 30_000;
 const COMMUNITY = "Live Posts";
 const CHANNEL = "general";
+/** The names each sets in the community (none is shown until set). */
+const ALICE_NAME = "Alice Live";
+const BOB_NAME = "Bob Live";
 
-/** `b`'s open channel shows `text` within LIVE_MS, then no unread badge, and no failed mark-read. */
-async function seesLive(b: Browser, text: string): Promise<void> {
-  await byText(b, ".community-main .chat-message", text.slice(0, 40), LIVE_MS);
+/** `b`'s member list shows a member named `name`. */
+async function membersShow(b: Browser, name: string): Promise<void> {
+  await waitUntil(
+    async () =>
+      (await b.execute(
+        (n: string) => Array.from(document.querySelectorAll(".member-item .member-name")).some((e) => (e.textContent ?? "").trim() === n),
+        name,
+      )) as boolean,
+    NET_WAIT_MS,
+    `the member list never showed ${name}`,
+  );
+}
+
+/**
+ * `b`'s open channel shows `text` within LIVE_MS under the sender name
+ * `sender` (the sender's community name), then no unread badge, and no failed
+ * mark-read.
+ */
+async function seesLive(b: Browser, text: string, sender: string): Promise<void> {
+  const message = await byText(b, ".community-main .chat-message", text.slice(0, 40), LIVE_MS);
+  await waitUntil(
+    async () =>
+      (await b.execute(
+        (el: HTMLElement) => el.closest(".chat-message")?.querySelector(".chat-message-sender-other")?.textContent?.trim() ?? "",
+        message as unknown as HTMLElement,
+      )) === sender,
+    NET_WAIT_MS,
+    `"${text.slice(0, 24)}" never showed under ${sender}`,
+  );
   // Viewing the channel marks it read (handleSelectChannel, and the Host's
   // count of a message in the viewed channel): the badge clears after that
   // round trip, if it shows at all.
@@ -80,7 +111,9 @@ describe("a community post reaches the other member live", () => {
     const b = multiRemoteBrowser.getInstance("bob");
     await createCommunity(a, alice, COMMUNITY);
     await openCommunity(a, COMMUNITY);
-    await createTextChannel(a, alice, CHANNEL);
+    // The genesis #general (origin.rs: every community starts with one), never
+    // a second channel of the same name.
+    await waitUntil(async () => (await channelCount(a, CHANNEL)) === 1, NET_WAIT_MS, `the new community did not list one #${CHANNEL}`);
     await selectChannel(a, CHANNEL);
     // A post from before Bob joins, which his channel must show from its
     // history before any live post: then that load is over, and what follows
@@ -96,18 +129,34 @@ describe("a community post reaches the other member live", () => {
     const link = await createInvite(a, alice, 1);
     await joinCommunity(b, bob, link, COMMUNITY);
     await opensWithHistory(b, before);
+    expect(await channelCount(b, CHANNEL)).toBe(1);
     await Promise.all([watchConsole(a), watchConsole(b)]);
   });
 
-  it("Alice's post shows in Bob's open channel", async () => {
-    const text = `live a→b ${Date.now()}`;
-    await postMessage(multiRemoteBrowser.getInstance("alice"), alice, text);
-    await seesLive(multiRemoteBrowser.getInstance("bob"), text);
+  // A member has no name in a community until they set one (privacy by
+  // design: member_card.rs); each sets theirs, and the other's member list
+  // shows it (the member card's propagation, plan S6/S6c).
+  it("each sets a name in the community, and the other's member list shows it", async () => {
+    const a = multiRemoteBrowser.getInstance("alice");
+    const b = multiRemoteBrowser.getInstance("bob");
+    await setCommunityName(a, alice, ALICE_NAME);
+    await setCommunityName(b, bob, BOB_NAME);
+    await membersShow(b, ALICE_NAME);
+    await membersShow(a, BOB_NAME);
+    await shot("member-names");
   });
 
-  it("Bob's reply shows in Alice's open channel", async () => {
+  it("Alice's post shows in Bob's open channel, under her community name", async () => {
+    const text = `live a→b ${Date.now()}`;
+    await postMessage(multiRemoteBrowser.getInstance("alice"), alice, text);
+    await seesLive(multiRemoteBrowser.getInstance("bob"), text, ALICE_NAME);
+    await shot("alice-post-at-bob");
+  });
+
+  it("Bob's reply shows in Alice's open channel, under his community name", async () => {
     const text = `live b→a ${Date.now()}`;
     await postMessage(multiRemoteBrowser.getInstance("bob"), bob, text);
-    await seesLive(multiRemoteBrowser.getInstance("alice"), text);
+    await seesLive(multiRemoteBrowser.getInstance("alice"), text, BOB_NAME);
+    await shot("bob-post-at-alice");
   });
 });

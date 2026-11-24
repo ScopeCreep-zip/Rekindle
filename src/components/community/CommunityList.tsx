@@ -1,7 +1,7 @@
 import { Component, For, Show } from "solid-js";
+import SkinGlyph from "../common/SkinGlyph";
 import { ContextMenu } from "@kobalte/core/context-menu";
 import { communityState, Community } from "../../stores/community.store";
-import { ICON_SETTINGS, ICON_LOGOUT, ICON_COPY } from "../../icons";
 
 interface CommunityListProps {
   selectedId?: string;
@@ -48,7 +48,7 @@ const CommunityList: Component<CommunityListProps> = (props) => {
                     class="context-menu-item"
                     onSelect={() => props.onSettings!(community.id)}
                   >
-                    <span class="nf-icon context-menu-icon">{ICON_SETTINGS}</span>
+                    <SkinGlyph name="settings" class="context-menu-icon" />
                     Settings
                   </ContextMenu.Item>
                 </Show>
@@ -56,7 +56,7 @@ const CommunityList: Component<CommunityListProps> = (props) => {
                   class="context-menu-item"
                   onSelect={() => navigator.clipboard.writeText(community.id)}
                 >
-                  <span class="nf-icon context-menu-icon">{ICON_COPY}</span>
+                  <SkinGlyph name="copy" class="context-menu-icon" />
                   Copy ID
                 </ContextMenu.Item>
                 <Show when={props.onLeave}>
@@ -64,7 +64,7 @@ const CommunityList: Component<CommunityListProps> = (props) => {
                     class="context-menu-item context-menu-item-danger"
                     onSelect={() => props.onLeave!(community.id)}
                   >
-                    <span class="nf-icon context-menu-icon">{ICON_LOGOUT}</span>
+                    <SkinGlyph name="logout" class="context-menu-icon" />
                     Leave
                   </ContextMenu.Item>
                 </Show>

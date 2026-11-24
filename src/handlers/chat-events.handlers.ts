@@ -8,9 +8,9 @@ import type { DmHistoryGap, DmSendStatus, FriendEvent } from "../ipc/channels/ch
 import { friendsState, setFriendsState } from "../stores/friends.store";
 import { applyCoCreatorEvent } from "../stores/co-creator.store";
 import { chatState, setChatState } from "../stores/chat.store";
-import { handleTypingIndicator, handleIncomingMessage, handleResetUnread } from "../actions/chat.actions";
+import { handleTypingIndicator, handleIncomingMessage, handleResetUnread, upsertOwnMessage } from "../actions/chat.actions";
 import { handleRefreshFriends } from "../actions/buddy.actions";
-import { transformHistoryGap, transformNewFriend } from "../utils/transformers";
+import { transformDmMessage, transformHistoryGap, transformNewFriend } from "../utils/transformers";
 
 // A DM we sent changed delivery state (`dmSendStatus`): the
 // message whose client id (`serverMessageId`) it names takes the state the
@@ -66,6 +66,10 @@ export function subscribeBuddyListChatEvents(): Promise<UnlistenFn> {
       const msg = event.channelMessage;
       if ("dmSendStatus" in msg) {
         applyMessageState(msg.dmSendStatus);
+      } else if ("directMessageSent" in msg && chatState.conversations[msg.directMessageSent.conversationId]) {
+        // Our own committed row (plan E6.11), into a conversation this
+        // window holds; it draws no conversation of its own.
+        upsertOwnMessage(msg.directMessageSent.conversationId, transformDmMessage(msg.directMessageSent.message));
       }
       return;
     }
@@ -292,6 +296,16 @@ export function subscribeDmChatEvents(
         });
         handleResetUnread(peerId);
       });
+      onIncoming();
+      return;
+    }
+
+    // Our own message, committed (plan E6.11): the Host's row, once, by its
+    // stored id; never an unread or a notification.
+    if ("channelMessage" in event && "directMessageSent" in event.channelMessage) {
+      const sent = event.channelMessage.directMessageSent;
+      if (sent.conversationId !== peerId) return;
+      upsertOwnMessage(peerId, transformDmMessage(sent.message));
       onIncoming();
       return;
     }

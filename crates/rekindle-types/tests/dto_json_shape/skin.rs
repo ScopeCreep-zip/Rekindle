@@ -10,7 +10,7 @@ use rekindle_types::dto::skin_layout::{LayoutSource, TextRole};
 use rekindle_types::dto::skin_library::{SkinApplyFailure, SkinEntry};
 use rekindle_types::dto::skin_run::SkinSelection;
 use rekindle_types::dto::skin_title::TitleText;
-use rekindle_types::dto::skin_tree::{NodeRole, NodeSpan, SkinNode, SkinTree};
+use rekindle_types::dto::skin_tree::{Anchor, ContentFit, NodeRole, NodeSpan, SkinNode, SkinTree};
 use rekindle_types::dto::skin_tree_role::Edge;
 use rekindle_types::presence::SessionStatus;
 use serde_json::Value;
@@ -22,6 +22,7 @@ use super::{pk, to};
 pub(super) fn samples(add: &mut impl FnMut(&str, Value)) {
     selection_samples(add);
     infoview_subject_samples(add);
+    call_target_samples(add);
     // `SkinApplyFailed`'s cause, each kind (the image one is also in the
     // event golden).
     add(
@@ -235,6 +236,29 @@ fn actions(add: &mut impl FnMut(&str, Value)) {
     );
     add("skin.menuRegistry", super::to(MenuRegistry::rekindle()));
     shell(add);
+    content_samples(add);
+}
+
+/// A stored pack's chain on a content text and the text's fit (plan
+/// SK15b): the Host resolves both before it serves the tree.
+fn content_samples(add: &mut impl FnMut(&str, Value)) {
+    add(
+        "skin.nodeSpan.after",
+        to(NodeSpan::Fixed {
+            at: Anchor::After {
+                sibling: "XfireMenuText".into(),
+                gap: 10,
+            },
+            size: 26,
+        }),
+    );
+    add(
+        "skin.contentFit",
+        to(ContentFit {
+            min: 25,
+            max: Some(80),
+        }),
+    );
 }
 
 /// A served shell (design §2.6): a tab control's node with its
@@ -244,14 +268,15 @@ fn shell(add: &mut impl FnMut(&str, Value)) {
     let node = |id: &str, role, control_group, children| SkinNode {
         id: id.to_owned(),
         role,
-        x: fill,
-        y: fill,
+        x: fill.clone(),
+        y: fill.clone(),
         z: 0,
         art: None,
         text: None,
         label: None,
         inset: None,
         target: None,
+        fit: None,
         shows_with: None,
         control_group,
         triggers: Vec::new(),
@@ -322,6 +347,85 @@ fn selection_samples(add: &mut impl FnMut(&str, Value)) {
     add(
         "skin.selection.friendGroup",
         to(SkinSelection::FriendGroup { group_id: Some(3) }),
+    );
+}
+
+/// `ShowVoiceWindow`'s `ShellOp::ShowCall`, each `CallTarget` (plan E7.2
+/// G-item A): camelCase fields, as the TS mirror reads them.
+fn call_target_samples(add: &mut impl FnMut(&str, Value)) {
+    use rekindle_types::dto::skin_run::{CallTarget, ShellOp};
+    add(
+        "skin.shellOp.showCall.call",
+        to(ShellOp::ShowCall {
+            target: CallTarget::Call {
+                call_id: "c1".into(),
+            },
+        }),
+    );
+    add(
+        "skin.shellOp.showCall.voice",
+        to(ShellOp::ShowCall {
+            target: CallTarget::Voice {
+                community: "VLD0:community".into(),
+                channel: "ch".into(),
+            },
+        }),
+    );
+    shell_op_samples(add);
+}
+
+/// The `ShellOp`s with multi-word fields and every `SkinRun` (plan E7.2):
+/// fields camelCase like the variants, as `dto_skin_run.ts` reads them, so
+/// a casing drift fails here.
+fn shell_op_samples(add: &mut impl FnMut(&str, Value)) {
+    use rekindle_types::dto::skin_run::{CallOp, ShellOp, SkinRun};
+    add(
+        "skin.shellOp.openGroupChat",
+        to(ShellOp::OpenGroupChat {
+            group_id: "g1".into(),
+        }),
+    );
+    add(
+        "skin.shellOp.inviteToRoom",
+        to(ShellOp::InviteToRoom {
+            group_id: "g1".into(),
+        }),
+    );
+    add(
+        "skin.shellOp.chooseDownloadDest",
+        to(ShellOp::ChooseDownloadDest {
+            attachment_id: "att-1".into(),
+            target: rekindle_types::dto::transfer::TransferTarget::Channel {
+                community: "VLD0:community".into(),
+                channel_id: "ch".into(),
+            },
+            suggested_name: "notes.txt".into(),
+        }),
+    );
+    add(
+        "skin.shellOp.newRoom",
+        to(ShellOp::NewRoom {
+            peer: Some(pk('a')),
+        }),
+    );
+    add(
+        "skin.run.shell",
+        to(SkinRun::Shell(ShellOp::Call(CallOp::Voice {
+            friend: pk('a'),
+        }))),
+    );
+    add(
+        "skin.run.notBuiltYet",
+        to(SkinRun::NotBuiltYet {
+            action: SkinAction::SearchFor,
+            message: "Search isn't in Rekindle yet (plan E7.2 G11)".into(),
+        }),
+    );
+    add(
+        "skin.run.launcher",
+        to(SkinRun::Launcher {
+            window: "buddy-list".into(),
+        }),
     );
 }
 

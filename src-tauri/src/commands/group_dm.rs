@@ -1,10 +1,11 @@
 //! Group DMs (plan E2.6): each command is one Host request; the Host
 //! validates it, reviews its intent and runs `operations::group_dm`.
 
-use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::{IpcRequest, LobbyRequest};
 use rekindle_types::dto::dm::{DisappearingTimerView, DmMessage};
 use rekindle_types::dto::group_dm::GroupDmView;
 use rekindle_types::dto::{CommandError, Done};
+use rekindle_types::game_server::ServerAddress;
 use tauri::State;
 
 use crate::host_call;
@@ -162,4 +163,84 @@ pub async fn group_dm_messages(
         before,
     };
     host_call::call(&state, request).await
+}
+
+/// `IpcRequest::LobbyHost` (plan E7.2 G6).
+#[tauri::command]
+pub async fn lobby_host(
+    group_id: String,
+    state: State<'_, SharedState>,
+) -> Result<Done<serde_json::Value>, CommandError> {
+    host_call::call(&state, IpcRequest::Lobby(LobbyRequest::Host { group_id })).await
+}
+
+/// `IpcRequest::LobbyJoin` (plan E7.2 G6).
+#[tauri::command]
+pub async fn lobby_join(
+    group_id: String,
+    lobby_id: String,
+    state: State<'_, SharedState>,
+) -> Result<Done<serde_json::Value>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Lobby(LobbyRequest::Join { group_id, lobby_id }),
+    )
+    .await
+}
+
+/// `IpcRequest::LobbyLeave` (plan E7.2 G6).
+#[tauri::command]
+pub async fn lobby_leave(
+    group_id: String,
+    lobby_id: String,
+    state: State<'_, SharedState>,
+) -> Result<Done<serde_json::Value>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Lobby(LobbyRequest::Leave { group_id, lobby_id }),
+    )
+    .await
+}
+
+/// `IpcRequest::LobbyClose` (plan E7.2 G6).
+#[tauri::command]
+pub async fn lobby_close(
+    group_id: String,
+    lobby_id: String,
+    state: State<'_, SharedState>,
+) -> Result<Done<serde_json::Value>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Lobby(LobbyRequest::Close { group_id, lobby_id }),
+    )
+    .await
+}
+
+/// `IpcRequest::LobbyLaunch` (plan E7.2 G6): `None` launches on our shown
+/// game's server.
+#[tauri::command]
+pub async fn lobby_launch(
+    group_id: String,
+    lobby_id: String,
+    server: Option<ServerAddress>,
+    state: State<'_, SharedState>,
+) -> Result<Done<serde_json::Value>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Lobby(LobbyRequest::Launch {
+            group_id,
+            lobby_id,
+            server,
+        }),
+    )
+    .await
+}
+
+/// `IpcRequest::LobbyGet` (plan E7.2 G6): the group's lobby, or `null`.
+#[tauri::command]
+pub async fn lobby_get(
+    group_id: String,
+    state: State<'_, SharedState>,
+) -> Result<Done<serde_json::Value>, CommandError> {
+    host_call::call(&state, IpcRequest::Lobby(LobbyRequest::Get { group_id })).await
 }

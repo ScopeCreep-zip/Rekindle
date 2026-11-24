@@ -54,6 +54,9 @@ pub enum WebviewEvent {
     SettingsSwitchTab(SettingsTab),
     /// A community-window event in the desktop's legacy shape.
     Community(CommunityEvent),
+    /// Show `channel` in the open community window labelled `window` (plan
+    /// E7.2 A: the skin's Show Voice on a community voice session).
+    CommunityFocusChannel { window: String, channel: String },
 }
 
 /// Lifecycle payload, as the login window reads it.
@@ -73,6 +76,7 @@ impl WebviewEvent {
             Self::PairingLinkRefused => "pairing-link-refused",
             Self::SettingsSwitchTab(_) => "settings-switch-tab",
             Self::Community(_) => "community-event",
+            Self::CommunityFocusChannel { .. } => "community-focus-channel",
         }
     }
 
@@ -86,6 +90,7 @@ impl WebviewEvent {
             Self::PairingLinkRefused => Ok(serde_json::Value::Null),
             Self::SettingsSwitchTab(tab) => serde_json::to_value(tab),
             Self::Community(e) => serde_json::to_value(e),
+            Self::CommunityFocusChannel { channel, .. } => serde_json::to_value(channel),
         }
     }
 
@@ -101,6 +106,7 @@ impl WebviewEvent {
             // community's events go to every one of them (each filters by
             // its selection) and to the buddy list's community list.
             Self::Community(_) => communities(),
+            Self::CommunityFocusChannel { window, .. } => Audience::labels([window.clone()]),
         }
     }
 

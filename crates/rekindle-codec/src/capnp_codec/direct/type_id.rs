@@ -122,6 +122,19 @@ type_ids! {
     /// `GroupContent` entry's inner, so every member reads it from the
     /// creator's chain; never a frame of its own.
     GroupDmRename = 0x0126 => GroupChain,
+    /// A member opened a game lobby in the group, as its host (plan E7.2
+    /// G6, SK2-G §5). This and the four lobby kinds after it are sealed
+    /// only inside a `GroupContent` entry's inner; never a frame of their
+    /// own.
+    LobbyOpen = 0x0127 => GroupChain,
+    /// A member joined a lobby (G6).
+    LobbyJoin = 0x0128 => GroupChain,
+    /// A member left a lobby (G6).
+    LobbyLeave = 0x0129 => GroupChain,
+    /// The host launched its lobby on a server (G6).
+    LobbyLaunch = 0x012A => GroupChain,
+    /// The host closed its lobby (G6).
+    LobbyClose = 0x012B => GroupChain,
     /// A friend offers a relay route.
     RelayOffer = 0x0130 => Ratchet,
     /// The relay friend withdraws its offer.
@@ -270,7 +283,8 @@ mod tests {
     fn unallocated_ids_are_not_kinds() {
         for id in [
             // 0x0102 is FriendReject, retired (LV23 review L2).
-            0x0000, 0x0102, 0x0109, 0x0127, 0x0150, 0x0195, 0x0207, 0x0230, 0x0300, 0x0402, 0xFFFF,
+            // 0x0127-0x012B are the lobby kinds (plan E7.2 G6); 0x012C is next.
+            0x0000, 0x0102, 0x0109, 0x012C, 0x0150, 0x0195, 0x0207, 0x0230, 0x0300, 0x0402, 0xFFFF,
         ] {
             assert_eq!(DmTypeId::from_u16(id), None, "{id:#06x}");
         }
@@ -290,6 +304,15 @@ mod tests {
         );
         assert_eq!(DmTypeId::PreKeyInit.carrier(), Carrier::PreKeyInit);
         assert_eq!(DmTypeId::GroupContent.carrier(), Carrier::GroupChain);
+        let chain: Vec<u16> = DmTypeId::ALL
+            .iter()
+            .filter(|k| k.carrier() == Carrier::GroupChain)
+            .map(|k| k.as_u16())
+            .collect();
+        assert_eq!(
+            chain,
+            [0x0124, 0x0126, 0x0127, 0x0128, 0x0129, 0x012A, 0x012B]
+        );
         assert_eq!(DmTypeId::FriendAccept.carrier(), Carrier::FirstPayload);
         assert_eq!(
             DmTypeId::SessionResetAccept.carrier(),

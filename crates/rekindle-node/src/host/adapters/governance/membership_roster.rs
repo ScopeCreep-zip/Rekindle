@@ -7,7 +7,6 @@
 use std::time::Duration;
 
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
-use rekindle_governance_runtime::GovernanceRuntimeDeps;
 
 use super::HostGovernance;
 use crate::host::community::OnlineMember;
@@ -106,16 +105,20 @@ impl HostGovernance {
     }
 
     /// Announce our join to the community's mesh once its first peers have
-    /// had [`JOIN_SETTLE`] to appear.
+    /// had [`JOIN_SETTLE`] to appear, on the community's scope: a join
+    /// withdrawn in the meantime (a retried exchange the inviter refused,
+    /// `withdraw_refused_join`) stops that scope, so it never announces.
     pub(crate) fn announce_join(&self, community_id: &str) {
         let host = self.clone();
         let community = community_id.to_string();
-        let stop = self.scope().token();
-        self.scope().spawn_or_drop("join announcement", async move {
+        let scope = self.ctx.community_scope(community_id);
+        let stop = scope.token();
+        scope.spawn_or_drop("join announcement", async move {
             if stop
                 .run_until_cancelled(tokio::time::sleep(JOIN_SETTLE))
                 .await
                 .is_none()
+                || !host.holds_community(&community)
             {
                 return;
             }

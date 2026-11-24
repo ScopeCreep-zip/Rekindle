@@ -40,7 +40,7 @@ use std::collections::{BTreeMap, HashMap};
 use rekindle_types::governance::{GenesisCert, GovernanceEntry, OpHash};
 use rekindle_types::id::PseudonymKey;
 
-use super::judge::RestJudge;
+use super::judge::{retirement_open, RestJudge};
 use super::resolve::Ancestry;
 use super::{fold, genesis_state, try_apply, MergeOutcome, QuarantineReason};
 use crate::checkpoint::{CutSnapshot, Hints};
@@ -352,7 +352,16 @@ fn prepare_rest<'a>(
             ops: &set.ops,
             past: &set.past,
         };
-        if !judge.effective(&in_rest, op, reach.as_ref()) {
+        // A member's cut ops on a key: its merged top, and the unmerged
+        // ones, whose author the cut index does not name.
+        let cut_top_of = |p: &PseudonymKey, key: &[u8; 32]| {
+            let merged = (snap.cut.authors.get(key))
+                .filter(|top| top.author == p.0)
+                .map(|top| top.seq);
+            merged.max(snap.cut.unmerged.get(key).copied())
+        };
+        let open = retirement_open(&snap.state.devices, cut_top_of, op);
+        if open || !judge.effective(&in_rest, op, reach.as_ref()) {
             return Err(NotOnTop::DeviceJudged(op.hash()));
         }
         set.index.insert(op.hash(), set.ops.len());

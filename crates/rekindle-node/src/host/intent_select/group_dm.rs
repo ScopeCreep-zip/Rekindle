@@ -3,7 +3,7 @@
 //! on a friend member's key change.
 
 use rekindle_idempotency::intent_gate::Selection;
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_ipc::protocol::{IpcRequest, IpcResponse, LobbyRequest};
 use rekindle_transport::operations::group_dm;
 use rekindle_types::intent::{IntentKind, Notifies, Reversibility, Subject};
 
@@ -49,6 +49,13 @@ pub(super) async fn selection(
         | IpcRequest::GroupDmLeave { group_id }
         | IpcRequest::GroupDmRename { group_id, .. }
         | IpcRequest::GroupDmInvite { group_id, .. }
+        | IpcRequest::Lobby(
+            LobbyRequest::Host { group_id, .. }
+            | LobbyRequest::Join { group_id, .. }
+            | LobbyRequest::Leave { group_id, .. }
+            | LobbyRequest::Close { group_id, .. }
+            | LobbyRequest::Launch { group_id, .. },
+        )
         | IpcRequest::GroupDmSend { group_id, .. } => group_id,
         other => unreachable!("{} is not a group-DM write", other.name()),
     };
@@ -60,7 +67,9 @@ pub(super) async fn selection(
         .map_err(|e| unavailable("the group", e))?
         .ok_or_else(|| IpcResponse::error(404, "no such group or invite"))?;
     let others = view.members.len().saturating_sub(1);
-    s.subject = Subject::Named { name: view.name };
+    s.subject = Subject::Named {
+        name: view.name.clone(),
+    };
     match request {
         IpcRequest::GroupDmAccept { .. } => {
             s.notifies = count(others);
@@ -73,6 +82,24 @@ pub(super) async fn selection(
         IpcRequest::GroupDmInvite { members, .. } => {
             // Every member it had, and each newcomer, is told.
             s.notifies = count(others + members.len());
+            s.reversibility = Reversibility::NeedsOthers;
+        }
+        IpcRequest::Lobby(LobbyRequest::Host { .. }) => {
+            s.notifies = count(others);
+            s.reversibility = Reversibility::ReversibleByInverse(IntentKind::CloseGameLobby);
+        }
+        IpcRequest::Lobby(LobbyRequest::Join { .. }) => {
+            s.notifies = count(others);
+            s.reversibility = Reversibility::ReversibleByInverse(IntentKind::LeaveGameLobby);
+        }
+        IpcRequest::Lobby(LobbyRequest::Launch { server, .. }) => {
+            // TrustChanging (`LaunchGameLobby`): the review names the
+            // address every member receives.
+            let server = super::super::lobby::launch_server(ctx, server.as_ref())?;
+            s.subject = Subject::Named {
+                name: format!("{} at {server}", view.name),
+            };
+            s.notifies = count(others);
             s.reversibility = Reversibility::NeedsOthers;
         }
         IpcRequest::GroupDmDecline { .. } => {

@@ -2,10 +2,10 @@
 //! and the ancestry every resolution rule asks about (plan E3.2).
 
 use std::cell::{Cell, RefCell};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::hash::{Hash, Hasher};
 
-use rekindle_types::governance::{GenesisCert, OpHash};
+use rekindle_types::governance::{GenesisCert, GovernanceEntry, OpHash};
 use rekindle_types::id::PseudonymKey;
 
 use super::judge::Judge;
@@ -32,6 +32,10 @@ pub(super) struct OpSet<'a> {
     /// as ancestry only, its device elements harvested (rule 2), and is
     /// left out of every round.
     pub device_refused: Vec<Option<KeyRefusal>>,
+    /// Per op: an own-key `DeviceReadmit` whose co-signer is not pre-fork
+    /// (`prefork`, ADR 0022 rule 7, plan E3.2 K4b Q7): refused, ancestry
+    /// only, never in the device view.
+    pub readmit_refused: Vec<bool>,
     /// Ops whose deps are missing from the set (`pending_deps`), and ops
     /// whose device key is pending for their author at their deps (an
     /// unendorsed key is treated as a missing dep, rule 6), with every op
@@ -143,14 +147,25 @@ impl Hash for IndexKey {
 
 impl OpSet<'_> {
     /// Per op: left out of every round besides the gates' (its device key
-    /// refused, `device_refused`).
+    /// refused, `device_refused`, or an own-key readmit without a pre-fork
+    /// co-signer, `readmit_refused`).
     pub(super) fn judged_out(&self) -> Vec<bool> {
-        self.device_refused.iter().map(Option::is_some).collect()
+        (self.device_refused.iter().zip(&self.readmit_refused))
+            .map(|(d, r)| d.is_some() || *r)
+            .collect()
     }
 }
 
-/// Prepare `ops` of the community `cert` pins (module doc).
-pub(super) fn prepare<'a>(cert: &GenesisCert, ops: &'a [VerifiedOp]) -> OpSet<'a> {
+/// Prepare `ops` of the community `cert` pins (module doc). `admitted`:
+/// the `DeviceReadmit`s a resolution applied (`merge::prepare_settled`);
+/// any other readmit is kept as an op but never enters the device view,
+/// since a readmit counts only once authorised (ADR 0022 rules 7 and 8,
+/// plan E3.2 K4b BUG).
+pub(super) fn prepare<'a>(
+    cert: &GenesisCert,
+    ops: &'a [VerifiedOp],
+    admitted: &BTreeSet<OpHash>,
+) -> OpSet<'a> {
     let mut sorted: Vec<&VerifiedOp> = ops.iter().collect();
     sorted.sort_by_key(|op| op.stamp());
     sorted.dedup_by_key(|op| op.hash());
@@ -161,22 +176,7 @@ pub(super) fn prepare<'a>(cert: &GenesisCert, ops: &'a [VerifiedOp]) -> OpSet<'a
     // key, seq), and it retires that key, not the person (ADR 0022 rule
     // 5). Every op of that key from the fork on is quarantined, on every
     // reader alike, and kept as ancestry.
-    // Sorted by (seq, device key, hash), two ops at one (key, seq) with
-    // different hashes sit next to each other; seq leads the key because
-    // it is a cheap compare that settles most pairs.
-    let mut by_seq: Vec<(u64, &[u8; 32], OpHash)> = sorted
-        .iter()
-        .map(|op| (op.op().seq, &op.op().device_key, op.hash()))
-        .collect();
-    by_seq.sort_unstable();
-    let mut fork_at: BTreeMap<[u8; 32], u64> = BTreeMap::new();
-    for pair in by_seq.windows(2) {
-        let ((seq, key, a), (next_seq, next_key, b)) = (pair[0], pair[1]);
-        if key == next_key && seq == next_seq && a != b {
-            let slot = fork_at.entry(*key).or_insert(u64::MAX);
-            *slot = (*slot).min(seq);
-        }
-    }
+    let fork_at = super::prefork::fork_seqs(&sorted);
     let mut index: HashMap<IndexKey, usize> = HashMap::with_capacity(sorted.len());
     let mut kept: Vec<&VerifiedOp> = Vec::with_capacity(sorted.len());
     let mut past = Ancestry::with_capacity(sorted.len());
@@ -185,7 +185,17 @@ pub(super) fn prepare<'a>(cert: &GenesisCert, ops: &'a [VerifiedOp]) -> OpSet<'a
     let mut forked = Vec::with_capacity(sorted.len());
     let mut device_refused = Vec::with_capacity(sorted.len());
     let mut devices = DeviceView::default();
-    let mut judge = Judge::new(cert);
+    // The creator's first device is the cert's (S7d-keys.5), held before
+    // any op is harvested, as `judge::member_view` holds it: the creator
+    // joins by the cert, so without it the creator's own `DeviceKey` finds
+    // no member record and its endorsement is dropped. Every op of the set
+    // was verified for the one anchor.
+    if let Some(op) = sorted.first() {
+        devices.seed_genesis(op.anchor(), cert);
+    }
+    let mut judge = Judge::new(cert, &fork_at);
+    // Per device key, its kept ops' indices in stamp order.
+    let mut of_key: HashMap<[u8; 32], Vec<usize>> = HashMap::new();
     // A forked key's author, from an op whose key is not judged pending
     // (an op whose key no one endorsed for its claimed author names no
     // equivocator).
@@ -222,30 +232,174 @@ pub(super) fn prepare<'a>(cert: &GenesisCert, ops: &'a [VerifiedOp]) -> OpSet<'a
             KeyJudgement::Refused(why) => Some(why),
         };
         note_fork(&mut author_of);
-        index.insert(IndexKey(op.hash()), kept.len());
+        let i = kept.len();
+        index.insert(IndexKey(op.hash()), i);
         forked.push(
             fork_at
                 .get(&op.op().device_key)
                 .is_some_and(|seq| op.op().seq >= *seq),
         );
         device_refused.push(refused);
-        devices.harvest(op);
-        judge.note(kept.len(), op);
-        kept.push(op);
         past.push(&deps);
+        // A carrier signed by the retired key itself lifts no floor: "the
+        // key's own ops are left out, or a copy's own chain would lift the
+        // floor over everything it wrote" (ADR 0022 rule 5, pass 3).
+        let seen = retired_key(op)
+            .filter(|key| *key != op.op().device_key)
+            .and_then(|key| {
+                (of_key.get(&key).into_iter().flatten())
+                    .filter(|&&j| past.contains(i, j))
+                    .map(|&j| kept[j].op().seq)
+                    .max()
+            });
+        let unadmitted = is_readmit(op) && !admitted.contains(&op.hash());
+        if !unadmitted {
+            devices.harvest_seen(op, seen);
+            judge.note(i, op, seen);
+        }
+        of_key.entry(op.op().device_key).or_default().push(i);
+        kept.push(op);
     }
+    retire_on_converged_set(
+        &kept,
+        &past,
+        &devices,
+        &of_key,
+        &forked,
+        &mut device_refused,
+    );
+    void_on_second_fork(&kept, &past, &fork_at, &forked, &mut device_refused);
     let fork_cause = fork_causes(&kept, &past, &forked, &fork_at);
+    let readmit_refused =
+        super::prefork::own_readmits_refused(cert, &kept, &past, &fork_at, &devices);
     OpSet {
         ops: kept,
         past,
         forked,
         fork_cause,
         device_refused,
+        readmit_refused,
         pending,
         equivocators: (fork_at.into_iter())
             .filter_map(|(key, seq)| Some((author_of.get(&key)?.clone(), key, seq)))
             .collect(),
         devices,
+    }
+}
+
+/// Whether `op` carries a `DeviceReadmit`.
+pub(super) fn is_readmit(op: &VerifiedOp) -> bool {
+    matches!(op.body(), GovernanceEntry::DeviceReadmit(_))
+}
+
+/// The key `op` retires, when it carries a `DeviceRetired`.
+fn retired_key(op: &VerifiedOp) -> Option<[u8; 32]> {
+    match op.body() {
+        GovernanceEntry::DeviceRetired(r) => Some(r.device_key),
+        _ => None,
+    }
+}
+
+/// ADR 0022 rule 5 on the converged set (lead decision K4b Q2, Reading A):
+/// a member's key is void above the lowest carrier floor of its
+/// `DeviceRetired`s ([`crate::device_judge::MemberDevices::retirements`]),
+/// raised to `W`, the key's highest seq in the strict causal past of an op
+/// of another key that is effective at its deps, not forked, and carries
+/// no `DeviceRetired` of the key (a carrier's past is its own floor). Its
+/// ops above are refused `Retired`, quarantined and shown; an op the judge
+/// at its deps refused `Retired` (its past held a retirement) at or below
+/// moves back: `W` is the one reverse move ("exactly those move back to
+/// applied, shown"). A pure function of the set, so order-free.
+fn retire_on_converged_set(
+    ops: &[&VerifiedOp],
+    past: &Ancestry,
+    devices: &DeviceView,
+    of_key: &HashMap<[u8; 32], Vec<usize>>,
+    forked: &[bool],
+    device_refused: &mut [Option<KeyRefusal>],
+) {
+    let judged: Vec<bool> = device_refused.iter().map(Option::is_none).collect();
+    for (member, md) in &devices.members {
+        let keys: BTreeSet<[u8; 32]> = md.retirements.keys().map(|(k, _, _)| *k).collect();
+        for key in keys {
+            let (Some(from), Some(mine)) = (md.retired_from(&key), of_key.get(&key)) else {
+                continue;
+            };
+            let witness = |j: usize| {
+                (j + 1..ops.len()).any(|i| {
+                    let o = ops[i];
+                    o.op().device_key != key
+                        && judged[i]
+                        && !forked[i]
+                        && retired_key(o) != Some(key)
+                        && past.contains(i, j)
+                })
+            };
+            let lifted = (mine.iter().rev())
+                .filter(|&&j| ops[j].op().seq >= from)
+                .find(|&&j| witness(j))
+                .map(|&j| ops[j].op().seq.saturating_add(1));
+            let from = lifted.map_or(from, |w| w.max(from));
+            for &i in mine
+                .iter()
+                .filter(|&&i| ops[i].author() == member && !forked[i])
+            {
+                let retired = device_refused[i] == Some(KeyRefusal::Retired);
+                if ops[i].op().seq >= from && device_refused[i].is_none() {
+                    device_refused[i] = Some(KeyRefusal::Retired);
+                } else if ops[i].op().seq < from && retired {
+                    device_refused[i] = None;
+                }
+            }
+        }
+    }
+}
+
+/// ADR 0022 rule 7's second fork on the converged set (plan E3.2 K4b Q9):
+/// fork evidence on a second distinct key of a member (order-free: fork
+/// evidence on another key of the member exists; a `DeviceRetired` is
+/// never a second fork) retires every key of that member above its floor,
+/// the key's highest seq in the strict causal past of any op by another
+/// member, a forked or refused one included, so nobody erases ops others
+/// built on (rule 5's floor). A forked key is also void from its fork seq
+/// (`forked`). A late op of another member raises a floor and so moves
+/// back exactly the ops it cites, the one reverse move.
+fn void_on_second_fork(
+    ops: &[&VerifiedOp],
+    past: &Ancestry,
+    fork_at: &BTreeMap<[u8; 32], u64>,
+    forked: &[bool],
+    device_refused: &mut [Option<KeyRefusal>],
+) {
+    let mut forked_keys: BTreeMap<&PseudonymKey, BTreeSet<[u8; 32]>> = BTreeMap::new();
+    for o in ops
+        .iter()
+        .filter(|o| fork_at.contains_key(&o.op().device_key))
+    {
+        forked_keys
+            .entry(o.author())
+            .or_default()
+            .insert(o.op().device_key);
+    }
+    for (member, _) in forked_keys.iter().filter(|(_, keys)| keys.len() >= 2) {
+        let mine: Vec<usize> = (0..ops.len())
+            .filter(|&i| ops[i].author() == *member)
+            .collect();
+        let cited = |j: usize| {
+            (j + 1..ops.len()).any(|i| ops[i].author() != *member && past.contains(i, j))
+        };
+        let mut floor: BTreeMap<[u8; 32], u64> = BTreeMap::new();
+        for &j in mine.iter().filter(|&&j| cited(j)) {
+            let at = floor.entry(ops[j].op().device_key).or_insert(0);
+            *at = (*at).max(ops[j].op().seq);
+        }
+        for &i in &mine {
+            let (key, seq) = (ops[i].op().device_key, ops[i].op().seq);
+            let held = floor.get(&key).is_some_and(|f| seq <= *f);
+            if !forked[i] && !held && device_refused[i].is_none() {
+                device_refused[i] = Some(KeyRefusal::Retired);
+            }
+        }
     }
 }
 
@@ -276,6 +430,10 @@ fn fork_causes(
         })
         .collect()
 }
+
+#[cfg(test)]
+#[path = "retire_tests.rs"]
+mod retire_tests;
 
 #[cfg(test)]
 mod tests {
@@ -320,7 +478,7 @@ mod tests {
             let ops = dag(n, &picks);
             let creator = PseudonymKey([0; 32]);
             let cert = crate::fixture::cert(&creator, rekindle_types::governance::AdmissionMode::Open);
-            let set = prepare(&cert, &ops);
+            let set = prepare(&cert, &ops, &std::collections::BTreeSet::new());
             let at = |h| set.ops.iter().position(|o| o.hash() == h);
             let mut reach = vec![vec![false; set.ops.len()]; set.ops.len()];
             for i in 0..set.ops.len() {

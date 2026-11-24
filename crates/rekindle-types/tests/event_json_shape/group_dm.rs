@@ -12,6 +12,7 @@ pub const NAMES: &[&str] = &[
     "keyRotated",
     "sendStatus",
     "message",
+    "messageSent",
     "historyGap",
     "renamed",
 ];
@@ -24,8 +25,10 @@ pub fn variant_name(e: &GroupDmEvent) -> &'static str {
         GroupDmEvent::KeyRotated { .. } => "keyRotated",
         GroupDmEvent::SendStatus { .. } => "sendStatus",
         GroupDmEvent::Message { .. } => "message",
+        GroupDmEvent::MessageSent { .. } => "messageSent",
         GroupDmEvent::HistoryGap { .. } => "historyGap",
         GroupDmEvent::Renamed { .. } => "renamed",
+        GroupDmEvent::Lobby { .. } => "lobby",
     }
 }
 
@@ -82,6 +85,41 @@ pub fn samples() -> Vec<Sample> {
             },
         ),
         ev(
+            "lobby",
+            GroupDmEvent::Lobby {
+                group_id: group(),
+                lobby: Some(rekindle_types::dto::group_lobby::LobbyView {
+                    lobby_id: "ab".repeat(16),
+                    host_key: "c".repeat(64),
+                    game_id: 4181,
+                    members: vec!["d".repeat(64)],
+                    state: rekindle_types::dto::group_lobby::LobbyStatus::Launched {
+                        server: rekindle_types::game_server::ServerAddress::parse(
+                            "203.0.113.7:27015",
+                        )
+                        .unwrap(),
+                    },
+                    join: rekindle_types::dto::group_lobby::LobbyVerdict::refused(
+                        rekindle_types::dto::group_lobby::LobbyRefusal::NotOpen,
+                    ),
+                    leave: rekindle_types::dto::group_lobby::LobbyVerdict::Allowed,
+                    launch: rekindle_types::dto::group_lobby::LobbyVerdict::refused(
+                        rekindle_types::dto::group_lobby::LobbyRefusal::NotHost,
+                    ),
+                    close: rekindle_types::dto::group_lobby::LobbyVerdict::refused(
+                        rekindle_types::dto::group_lobby::LobbyRefusal::NotHost,
+                    ),
+                }),
+            },
+        ),
+        ev(
+            "lobby.none",
+            GroupDmEvent::Lobby {
+                group_id: group(),
+                lobby: None,
+            },
+        ),
+        ev(
             "renamed",
             GroupDmEvent::Renamed {
                 group_id: group(),
@@ -109,6 +147,26 @@ pub fn samples() -> Vec<Sample> {
                 body: text("hello group"),
                 timestamp: 1_700_000_000_000,
                 reply_to: None,
+            },
+        ),
+        ev(
+            "messageSent",
+            GroupDmEvent::MessageSent {
+                group_id: group(),
+                reply_to_id: None,
+                message: rekindle_types::dto::dm::DmMessage {
+                    id: 43,
+                    message_id: Some(text("0192f0c4-7b3a-7c1e-9a55-1f0e2d3c4b5c")),
+                    sender_id: pk('a'),
+                    body: text("gg group"),
+                    timestamp: 1_700_000_000_000,
+                    is_own: true,
+                    send_state: SendState::Queued,
+                    history_gap_through: None,
+                    expire_seconds: 0,
+                    expire_at: None,
+                    timer_notice_seconds: None,
+                },
             },
         ),
         ev(

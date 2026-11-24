@@ -102,7 +102,7 @@ fn own_or_part(n: &SkinNode, b: [i32; 4]) -> Option<Pic> {
 
 /// The engine menu the title opens: its own trigger or a part's (Xfire
 /// Classic's `XfireMenuText` holds the `FileMenu` part that runs it).
-fn menu_of(n: &SkinNode) -> Option<EngineMenu> {
+pub(super) fn menu_of(n: &SkinNode) -> Option<EngineMenu> {
     n.triggers
         .iter()
         .find_map(|t| match t.run {

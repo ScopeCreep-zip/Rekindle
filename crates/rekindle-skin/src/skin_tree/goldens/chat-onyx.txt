@@ -17,11 +17,11 @@ MainTitleBar TitleBar
   Title ChatTitle
 MenuBar MenuBar
   XfireMenuText MenuTitle label "Rekindle"
-    FileMenu Part target [-6, 0, 19, 24] art [6, 0, 12, 24] Short
+    FileMenu Part
   ToolsMenuText MenuTitle label "Tools"
-    ToolsMenu Part target [-1, 0, 14, 24] art [1, 0, 12, 24] Short
+    ToolsMenu Part
   HelpMenuText MenuTitle label "Help"
-    HelpMenu Part target [-1, 0, 19, 24] art [1, 0, 12, 24] Short
+    HelpMenu Part
   MenuDiv0 Decor
   MenuDiv1 Decor
   MenuDiv2 Decor

@@ -178,7 +178,9 @@ as today's does.
    signs `DeviceRetired{d, incarnation, lastSeq}` with `lastSeq` the barrier's maximum (the DHT `GovHead` and every
    answering peer's walk, so an op gossiped before its append landed stays valid; corrected 2026-10-24, premise check,
    from "the published head"), and the device mints a fresh device key and
-   record with a new endorsement. No fork happened, so this first restore needs no co-signer, but it counts as
+   record with a new endorsement. No fork happened, so this first restore needs no co-signer (*amended 2026-11-23,
+   plan E3.2 K4b.4 R3:* the replacement is carried by its own `DeviceReEnrol` op at the new key's seq 0, rule 7;
+   until plan E3.2 S7d-keys.10 builds it, the replacement needs a co-signer like any other post-fork key), but it counts as
    the member's one fork under rule 7 (any `DeviceRetired` does, since a reader cannot tell a restore from a
    lost-device retirement: both are `p`-signed): a later restore, fork or new device of that member needs a
    co-signer. A device also signs seq n + 1 only after seq n's append to `M(p,d)`/2 has landed, so no
@@ -223,7 +225,10 @@ as today's does.
    "is never applied"); it is quarantined with a visible reason and never dropped silently (plan D15's quarantine
    rule), so a copied data root's race (rule 4) stays visible. Readers never prefer the last writer of `d`
    (*amended 2026-10-24, prod research batch 10*): when the set holds more than one `DeviceRetired` for one key,
-   the lowest `lastSeq` counts, and a `DeviceRetired` retires the key only above its effective `lastSeq`, the highest of its signed
+   the lowest *effective* `lastSeq` over every `DeviceRetired` and every carrier of it counts (*amended 2026-11-23,
+   Reading A, plan E3.2 K4b Q2:* it read "the lowest `lastSeq` counts"; one `DeviceRetired` carried by several ops
+   keeps the highest of its carriers' floors, so a later carrier that saw less never lowers it, and a carrier of a
+   `DeviceRetired` of the key is not a witness of it), and a `DeviceRetired` retires the key only above its effective `lastSeq`, the highest of its signed
    `lastSeq`, the key's highest seq in the causal past of any op of another key in the converged set, and the key's
    highest seq in its carrier's causal past (*Corrected 2026-10-24 (pass 3):* it read "a `DeviceRetired` whose `lastSeq` is below the key's
    highest seq in its carrier's causal past is invalid and quarantined", which a carrier with genesis-only deps
@@ -257,7 +262,11 @@ as today's does.
    endorsement that converges later cannot void ops already accepted. An endorsement whose own extended set
    already holds 6 live keys is inert in every carrier and can never be re-carried into effect. All of this is
    a pure function of the op set (D15 "pure effects"), never of local time. Device ops resolve in their own
-   phase, before power ops, in `(lamport, op_hash)` order; a device op is quarantined only through fork evidence or a
+   phase, before power ops, in `(lamport, op_hash)` order (*amended 2026-11-23, plan E3.2 K4b Q6:* the device phase
+   orders the device view only; a moderator's `DeviceReadmit` is judged at its causal position, its `KICK_MEMBERS`
+   and outranking check against the power state in its past, the kick rule of E3.3 M1 / S7c.3a, never at genesis;
+   and a `DeviceReadmit` enters the device view only once applied, so one its author has no authority for never
+   makes its key effective, K4b security finding); a device op is quarantined only through fork evidence or a
    retirement of the key that signed it, never of its subject, so a `DeviceReadmit` survives its subject's retirement.
    An op of a key whose endorsement has not arrived is pending, until its endorsement arrives, never quarantined
    (*Corrected 2026-10-24 (pass 3)*).
@@ -273,7 +282,10 @@ as today's does.
    are one fork. The own-key path gives creators and top-rank members, whom nobody outranks, a way to add a device
    while they still hold a pre-fork key. It is bounded (*amended 2026-10-24, prod research batch 10*):
    - **Pre-fork keys only.** The co-signer's endorsement must be in the causal past of the member's first fork
-     evidence or `DeviceRetired`. A key endorsed after it, a re-admitted key or the exempt replacement below
+     evidence or `DeviceRetired` (*amended 2026-11-23, plan E3.2 K4b Q7:* in the **strict** causal past of each op of
+     every fork evidence and of every `DeviceRetired` carrier of the member held at the readmit's deps: the
+     intersection, not the lowest stamp, so a key endorsed after one op of a fork pair and concurrent with the other is
+     not pre-fork, and the exempt replacement carried in a `DeviceRetired`'s op is never pre-fork). A key endorsed after it, a re-admitted key or the exempt replacement below
      included, can never co-sign an own-key `DeviceReadmit`, so approvals do not chain (Signal: only the primary
      approves a link, `DeviceController.java` L204-206; Apple: a newly added trusted device waits before it can
      make critical changes).
@@ -288,16 +300,36 @@ as today's does.
    - **Shown.** Every own-key `DeviceReadmit` raises a notice on all of the member's devices and to members
      holding `KICK_MEMBERS`, naming the co-signing key and the fork evidence (Matrix MSC4153: the user's own
      devices MUST alert; Apple sends the request to every trusted device).
+   - **A fork event's evidence** (*amended 2026-11-23, plan E3.2 K4b.4, R1 and R2:* Keybase's sigchain names the
+     reset it follows, Matrix MSC1756/MSC4153 cross-signing names the key it vouches for). A member's fork events are
+     each op of a fork pair (rule 5) and each `DeviceRetired` carrier (rule 4); the retirement is left out only of
+     the second-fork test below, so the equivocate, retire, repeat loop still buys one free round. A fork event's
+     evidence is the fork pair's hash (rule 5) for an op of a pair, and the retirement evidence (rule 10) for a
+     `DeviceRetired` carrier. A key endorsed after the member's first fork event in an op's deps is effective
+     there only with an applied `DeviceReadmit` naming it, its `forkEvidence` the evidence of a fork event of the
+     member; the writer names its lowest-stamp fork event's. Every `DeviceReadmit`, own-key and moderator alike,
+     whose `forkEvidence` is no fork event of its member held at its deps is refused, so a co-signature always
+     answers a fork the reader can see. The exempt replacement as its own additive op (`DeviceReEnrol`, the new
+     key's seq 0, exempt iff its strict past holds no fork event of the member) is R3, pending plan E3.2
+     S7d-keys.10; until then the replacement needs a co-signer like any other post-fork key.
 
-   A **second** fork from any of that member's keys, pre-endorsed ones included, retires **all** its keys, after
+   A **second** fork from any of that member's keys, pre-endorsed ones included, retires **all** its keys (*amended
+   2026-11-23, plan E3.2 K4b Q9:* on the converged set, every key `k` of the member is void above its floor, the
+   highest seq of `k` in the causal past of any op by another member's key, a quarantined one included, as rule 5's
+   floor keeps what others built on; forked keys are also void from their fork seq), after
    which only the moderator path (rule 8) remains, or, for a creator, a `CommunitySuccessor`; so pre-endorsing keys
    buys at most one fork. Exempt from the co-signer is only the replacement key that the member's first
-   `DeviceRetired` is carried with (rule 4's restore or clone signal, one op carrying both). When an op's deps hold
+   `DeviceRetired` is carried with (rule 4's restore or clone signal, one op carrying both; *amended 2026-11-23, plan
+   E3.2 K4b.4 R3:* carried as one `DeviceReEnrol{retired, endorsement}` op at the new key's seq 0, exempt iff its
+   strict past holds no fork event of the member, pending plan E3.2 S7d-keys.10). When an op's deps hold
    two carriers of a `DeviceRetired` for that first retired key (two copies retiring it concurrently), the exempt
    replacement is the one in the lowest `(lamport, op_hash)` carrier, and the other copy's replacement needs a
    `DeviceReadmit` for every op whose deps hold both (ops already judged stay judged, rule 6). A later
    `DeviceRetired` retires only its own key, but its replacement needs a co-signer: a `DeviceRetired` opens the first
-   fork but is never a second fork, which is fork evidence for a second distinct key (corrected 2026-10-24, premise
+   fork but is never a second fork, which is fork evidence for a second distinct key (*amended 2026-11-23, plan E3.2
+   K4b, order-free:* fork evidence on `d2` is a second fork iff fork evidence on another key of the member exists, or
+   a fork event of another key is in the strict past of both of `d2`'s fork ops; on the converged set the first
+   clause decides, so it never depends on arrival order) (corrected 2026-10-24, premise
    check), so retiring a lost device after a restore retires no other key. A self-signed reset is
    evidence shown to the co-signer, never a key on its own (Keybase re-add, Autobase `addWriter`). Retiring a key
    does **not** retire the keys it co-signed (Keybase revokes only the named key, `keyfamily.go` L752-810, and
@@ -339,6 +371,10 @@ as today's does.
       ids `(kind, deviceKey, incarnation)` of every element of the member's set the signer held;
     - retirement, by `p`: `rekindle-gov-device-retired-v1 ‖ community ‖ memberRecord ‖ deviceKey ‖ incarnation ‖
       lastSeq`;
+    - retirement evidence (*amended 2026-11-23, rule 7*): `BLAKE3 derive_key("rekindle-gov-retirement-evidence-v1")`
+      over `community ‖ memberRecord ‖ deviceKey ‖ incarnation ‖ lastSeq` of a `DeviceRetired` (text fields
+      length-prefixed, integers big-endian, as the fork-evidence hash), the `forkEvidence` a post-fork endorsement
+      and its `DeviceReadmit` name when the fork event they answer is a retirement;
     - pseudonym-signed successor, by the creator's `p`: `rekindle-gov-successor-v1 ‖ community ‖ cut ‖ newAnchor ‖
       forkEvidence`, where `cut` is the hash of the frontier it names (rule 8);
     - re-admission: the `DeviceReadmit` op under `rekindle-gov-op-v1` (which already binds the community), whose
@@ -361,8 +397,9 @@ as today's does.
   amended to say so. D15 equivocation applies to device keys only; `p`'s endorsement set cannot equivocate.
 - New ops `DeviceKey`, `DeviceRetired` and `DeviceReadmit` with fresh ordinals and power rows; new domain labels
   `rekindle-gov-device-key-v1`, `rekindle-gov-device-retired-v1`, `rekindle-gov-device-readmit-v1`,
-  `rekindle-gov-device-set-v1`, `rekindle-gov-fork-evidence-v1`, `rekindle-gov-restore-evidence-v1` and
-  `rekindle-gov-successor-v1`; new intent rows for re-admission (ADR 0019);
+  `rekindle-gov-device-set-v1`, `rekindle-gov-fork-evidence-v1`, `rekindle-gov-restore-evidence-v1`,
+  `rekindle-gov-retirement-evidence-v1` (*amended 2026-11-23, rule 7*; the `deviceReEnrol @52` arm follows with R3,
+  plan E3.2 S7d-keys.10) and `rekindle-gov-successor-v1`; new intent rows for re-admission (ADR 0019);
   a vault entry `DeviceOpKey{community}` that is never exported; the governance stores keyed by device key.
 - The genesis signs under the creator's first device key: the `GenesisCert` carries the creator's first
   endorsement, so origin needs no separate op.

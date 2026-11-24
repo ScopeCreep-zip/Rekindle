@@ -6,6 +6,7 @@ import AnnounceRegion from "./components/common/AnnounceRegion";
 import IntentDialog from "./components/common/IntentDialog";
 import ToastContainer from "./components/common/Toast";
 import KeyboardShortcutsDialog from "./components/common/KeyboardShortcutsDialog";
+import LocalSearchPanel from "./components/common/LocalSearchPanel";
 import { useWindowInactive } from "./hooks/useWindowInactive";
 import { useSkin } from "./hooks/useSkin";
 import { useAppearanceChord } from "./hooks/useAppearanceChord";
@@ -54,6 +55,8 @@ function App() {
       <ToastContainer />
       {/* The keyboard-shortcuts help (wiring guide §13f), Mod+/ in any window. */}
       <KeyboardShortcutsDialog />
+      {/* The skin's Search (plan E7.2 G11), in the scope the Host picks. */}
+      <LocalSearchPanel />
       <Suspense>
         <Switch fallback={<UnknownRoute />}>
           <Match when={route() === "/login"}>

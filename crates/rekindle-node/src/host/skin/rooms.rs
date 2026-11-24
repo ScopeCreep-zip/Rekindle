@@ -6,7 +6,9 @@
 //! `EnterAttachedRoom`, open the group most recently created from it
 //! (`group_dms.origin_peer`).
 
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+use rekindle_ipc::protocol::{IpcRequest, IpcResponse, LobbyRequest};
+use rekindle_transport::operations::group_dm;
+use rekindle_types::dto::group_lobby::LobbyView;
 use rekindle_types::dto::skin_action::SkinAction as A;
 use rekindle_types::dto::skin_run::{ShellOp, SkinRun, SkinSelection};
 
@@ -26,6 +28,8 @@ pub(crate) enum Room {
 pub(crate) struct Rooms {
     pub selected: Option<Room>,
     pub attached: Option<String>,
+    /// The selected joined room's lobby (`group_lobby::current`), as we see it.
+    pub lobby: Option<LobbyView>,
 }
 
 /// The actions that read the rooms: the room actions, and
@@ -38,6 +42,10 @@ fn is_room(action: &A) -> bool {
             | A::EnterAttachedRoom
             | A::DeleteSelected
             | A::InviteUsersToRoom
+            | A::HostGameLobby
+            | A::JoinGameLobby
+            | A::LeaveGameLobby
+            | A::LaunchGameLobby
     )
 }
 
@@ -72,6 +80,32 @@ pub(crate) fn enter(action: &A, rooms: &Rooms) -> Result<Mapped, IpcResponse> {
 ///
 /// # Errors
 /// 409 for an invite not yet accepted, or no group selected.
+/// A lobby action on the selected room's lobby (SK2-G §5): Join, Leave
+/// (the host's page is Xfire's "Stop Hosting", rt#780: `LobbyClose`) or
+/// Launch on our shown game's server.
+pub(crate) fn lobby(action: &A, rooms: &Rooms) -> Result<Mapped, IpcResponse> {
+    let (Some(Room::Joined(group_id)), Some(lobby)) = (&rooms.selected, &rooms.lobby) else {
+        return Err(IpcResponse::error(
+            409,
+            format!("{action:?} acts on a selected room's lobby: there is none"),
+        ));
+    };
+    let (group_id, lobby_id) = (group_id.clone(), lobby.lobby_id.clone());
+    let request = match action {
+        A::JoinGameLobby => IpcRequest::Lobby(LobbyRequest::Join { group_id, lobby_id }),
+        A::LeaveGameLobby if lobby.close.allowed() && !lobby.leave.allowed() => {
+            IpcRequest::Lobby(LobbyRequest::Close { group_id, lobby_id })
+        }
+        A::LeaveGameLobby => IpcRequest::Lobby(LobbyRequest::Leave { group_id, lobby_id }),
+        _ => IpcRequest::Lobby(LobbyRequest::Launch {
+            group_id,
+            lobby_id,
+            server: None,
+        }),
+    };
+    Ok(Mapped::Request(Box::new(request)))
+}
+
 pub(crate) fn invite(rooms: &Rooms) -> Result<Mapped, IpcResponse> {
     match &rooms.selected {
         Some(Room::Joined(group_id)) => Ok(Mapped::Run(SkinRun::Shell(ShellOp::InviteToRoom {
@@ -108,32 +142,49 @@ pub(crate) async fn load(
         return Ok(Rooms::default());
     };
     let now = ctx.clock.now_ms_i64();
-    db.call(move |conn| {
-        use rekindle_db::repo::{group_dm_invites, group_dms};
-        Ok(match selection {
-            SkinSelection::Group { group_id } => {
-                let selected = if group_dms::get(conn, &owner, &group_id)?.is_some() {
-                    Some(Room::Joined(group_id))
-                } else if group_dm_invites::list(conn, &owner, now)?
-                    .iter()
-                    .any(|i| i.group_id == group_id)
-                {
-                    Some(Room::Pending(group_id))
-                } else {
-                    None
-                };
-                Rooms {
-                    selected,
-                    attached: None,
+    let me = owner.clone();
+    let (mut rooms, row) = db
+        .call(move |conn| {
+            use rekindle_db::repo::{group_dm_invites, group_dms, group_lobby};
+            Ok(match selection {
+                SkinSelection::Group { group_id } => {
+                    let selected = if group_dms::get(conn, &owner, &group_id)?.is_some() {
+                        Some(Room::Joined(group_id))
+                    } else if group_dm_invites::list(conn, &owner, now)?
+                        .iter()
+                        .any(|i| i.group_id == group_id)
+                    {
+                        Some(Room::Pending(group_id))
+                    } else {
+                        None
+                    };
+                    let row = match &selected {
+                        Some(Room::Joined(id)) => group_lobby::current(conn, &owner, id)?,
+                        _ => None,
+                    };
+                    let rooms = Rooms {
+                        selected,
+                        attached: None,
+                        lobby: None,
+                    };
+                    (rooms, row)
                 }
-            }
-            SkinSelection::Friend { public_key } => Rooms {
-                selected: None,
-                attached: group_dms::attached(conn, &owner, &public_key)?,
-            },
-            _ => Rooms::default(),
+                SkinSelection::Friend { public_key } => (
+                    Rooms {
+                        selected: None,
+                        attached: group_dms::attached(conn, &owner, &public_key)?,
+                        lobby: None,
+                    },
+                    None,
+                ),
+                _ => (Rooms::default(), None),
+            })
         })
-    })
-    .await
-    .map_err(|e| IpcResponse::error(500, format!("the rooms cannot be read: {e}")))
+        .await
+        .map_err(|e| IpcResponse::error(500, format!("the rooms cannot be read: {e}")))?;
+    rooms.lobby = row
+        .map(|r| group_dm::lobby::view_of(r, &me))
+        .transpose()
+        .map_err(|e| IpcResponse::error(500, format!("the room's lobby cannot be read: {e}")))?;
+    Ok(rooms)
 }

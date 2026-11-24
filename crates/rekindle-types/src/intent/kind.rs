@@ -240,6 +240,9 @@ pub enum IntentKind {
     /// Launch a game to a server whose address a peer chose (lead decision
     /// (50)): our IP address reaches that host.
     JoinGameServer,
+    /// Launch a group DM's lobby we host (plan E7.2 G6, SK2-G §5): its
+    /// server address, often our own IP, reaches every member.
+    LaunchGameLobby,
     /// Ask the Servers view's servers what they are running (plan E7.2 G4,
     /// `ServersRefresh`): the user's own Refresh, as Xfire's. Our IP
     /// address reaches every server asked, addresses friends and
@@ -269,6 +272,14 @@ pub enum IntentKind {
     /// Rename a group DM we created (plan E7.2 G7): every member sees the
     /// new name; renaming back undoes it.
     RenameGroupDm,
+    /// Open a game lobby in a group DM for our shown game (plan E7.2 G6).
+    HostGameLobby,
+    /// Join another member's open lobby (plan E7.2 G6); leaving undoes it.
+    JoinGameLobby,
+    /// Leave a lobby we joined (plan E7.2 G6).
+    LeaveGameLobby,
+    /// Close a lobby we host (plan E7.2 G6, Xfire's "Stop Hosting").
+    CloseGameLobby,
     // Routine: Own presence and profile (daemon)
     SetGamePresence,
     ClearGamePresence,
@@ -426,6 +437,10 @@ impl IntentKind {
             | Self::PolicyReload
             | Self::UpdateChannel
             | Self::RenameGroupDm
+            | Self::HostGameLobby
+            | Self::JoinGameLobby
+            | Self::LeaveGameLobby
+            | Self::CloseGameLobby
             | Self::SetGamePresence
             | Self::ClearGamePresence
             | Self::SetLoginSkin
@@ -513,6 +528,7 @@ impl IntentKind {
             | Self::VolunteerRelay
             | Self::OpenExternalUrl
             | Self::JoinGameServer
+            | Self::LaunchGameLobby
             | Self::RefreshServers
             | Self::UploadAttachment
             | Self::GeneratePairingQrSvg

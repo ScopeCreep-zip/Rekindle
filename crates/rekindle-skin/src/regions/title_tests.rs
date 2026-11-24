@@ -56,11 +56,24 @@ fn a_translucent_strip_is_measured_over_a_white_desktop() {
 }
 
 #[test]
-fn the_skin_layer_names_the_title_backing_only_when_bare() {
+fn the_skin_layer_sets_the_title_band_only_where_the_strip_fails() {
+    let band = format!(
+        "{}: var({});",
+        band_property(TITLE_REGION),
+        backing_property(TITLE_REGION)
+    );
+    for b in ["xslimfire", "xfire-classic", "symbiosis"] {
+        let (g, css) = builtin_title(b);
+        let g = g.unwrap_or_else(|| panic!("{b}: a titlebar strip"));
+        assert_eq!(!g.bare(), css.matches(&band).count() == 1, "{b} {g:?}");
+        assert_eq!(g.bare(), css.is_empty(), "{b} {g:?}");
+    }
+    // These packs lay no `titlebar` strip region: each frames its windows
+    // with `window.frame`, so the title sits on the frame art, and the
+    // band is the shape layer's, set on every framed window
+    // (`crate::shape::css`'s window rules). The strip measure has nothing
+    // to measure and the title layer sets nothing.
     for b in [
-        "xslimfire",
-        "xfire-classic",
-        "symbiosis",
         "onyx",
         "stealthx",
         "spacecowboy",
@@ -71,10 +84,8 @@ fn the_skin_layer_names_the_title_backing_only_when_bare() {
         "combat",
     ] {
         let (g, css) = builtin_title(b);
-        assert_eq!(
-            g.is_some_and(|g| g.bare()),
-            css.contains("-title-backing: transparent")
-        );
+        assert_eq!(g, None, "{b}");
+        assert!(css.is_empty(), "{b} {css}");
     }
 }
 
@@ -104,7 +115,7 @@ fn xslimfire_measures_its_title_on_the_cropped_strip() {
     let g = g.expect("a titlebar strip");
     assert_eq!(g.worst_x100, 127, "{g:?}");
     assert!(!g.bare(), "{g:?}");
-    assert_eq!(g.bare(), css.contains("-title-backing: transparent"));
+    assert!(css.contains(&band_property(TITLE_REGION)), "{css}");
 }
 
 /// Strips drawn wider and narrower than their source, caps that overlap

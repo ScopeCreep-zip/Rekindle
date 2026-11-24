@@ -4,7 +4,7 @@
 use rekindle_governance::state::GovernanceState;
 use rekindle_types::id::PseudonymKey;
 
-use super::{last_seq_of, readmission};
+use super::{answered_fork, last_seq_of, readmission};
 use crate::apply::BuiltOn;
 use crate::error::GovernanceRuntimeError;
 use crate::op_log::VerifiedSet;
@@ -124,4 +124,119 @@ fn enrol_refuses_an_endorsed_key_and_a_taken_record() {
         "VLD0:m"
     )));
     assert!(refuse_taken(Some(&md), [8; 32], "VLD0:new", "VLD0:m").is_ok());
+}
+
+/// An enrolment after a retirement names the retirement (ADR 0022 rule 7,
+/// amended 2026-11-23), and a key endorsed before it (the member's first
+/// device, its join's) co-signs the readmit that makes the new key
+/// effective: for a joined member, whose set its join seeds, and for the
+/// creator, whose set the cert seeds (S7d-keys.5).
+#[test]
+fn enrol_after_retire_names_the_retirement_and_a_pre_fork_device_readmits_it() {
+    enrol_after_retire_readmits(false);
+}
+
+#[test]
+fn the_creators_enrol_after_retire_names_the_retirement_and_readmits() {
+    enrol_after_retire_readmits(true);
+}
+
+fn enrol_after_retire_readmits(creator_subject: bool) {
+    use rekindle_governance::device::retirement_evidence_hash;
+    use rekindle_governance::device_writer::{endorse, readmit, retire, DeviceRecord};
+    use rekindle_governance::merge;
+    use rekindle_secrets::ed25519_dalek::SigningKey;
+    use rekindle_types::governance::GovernanceEntry;
+
+    use crate::op_log::Deps;
+    use crate::test_member::Member;
+    use crate::test_world::{World, ANCHOR};
+    let creator = Member::new(1);
+    let member = Member::new(2);
+    let mut world = World::new(&creator);
+    world.join(&member, &creator, "code");
+    let subject = if creator_subject { &creator } else { &member };
+    let author = subject.author();
+    let record = subject.record();
+    let on = |w: &World| {
+        answered_fork(
+            &BuiltOn {
+                state: &w.state,
+                set: &w.set,
+                author: &author,
+            },
+            &record,
+        )
+    };
+    assert_eq!(on(&world), [0; 32], "no fork event yet");
+    // A device record as Veilid names one, with its owner's key text.
+    let rec = |seed: u8| {
+        let m = Member::new(seed);
+        DeviceRecord {
+            record: m.record(),
+            owner: m.owner_text(),
+        }
+    };
+    let set = |w: &World| w.state.devices.member(&author).cloned();
+    // Each new key's endorsement is its own seq-0 op, as `enrol` writes it.
+    let device = |seed: u8| Member {
+        pseudonym: subject.pseudonym.clone(),
+        owner: subject.owner.clone(),
+        device: SigningKey::from_bytes(&[seed; 32]),
+    };
+    let (second, third) = (device(42), device(43));
+    let k2_pub = second.device.verifying_key().to_bytes();
+    let e2 = endorse(
+        &subject.pseudonym,
+        ANCHOR,
+        &record,
+        set(&world).as_ref(),
+        k2_pub,
+        rec(52),
+        [0; 32],
+    )
+    .unwrap();
+    world.author(&second, GovernanceEntry::DeviceKey(e2), Deps::Frontier);
+    let held = set(&world).unwrap();
+    let retired = retire(&subject.pseudonym, ANCHOR, &record, &held, k2_pub, 0).unwrap();
+    let evidence = retirement_evidence_hash(ANCHOR, &record, &retired);
+    world.author(
+        subject,
+        GovernanceEntry::DeviceRetired(retired),
+        Deps::Frontier,
+    );
+    assert_eq!(on(&world), evidence, "the enrolment names the retirement");
+    let k3_pub = third.device.verifying_key().to_bytes();
+    let e3 = endorse(
+        &subject.pseudonym,
+        ANCHOR,
+        &record,
+        set(&world).as_ref(),
+        k3_pub,
+        rec(53),
+        evidence,
+    )
+    .unwrap();
+    world.author(
+        &third,
+        GovernanceEntry::DeviceKey(e3.clone()),
+        Deps::Frontier,
+    );
+    let body = readmit(&author, &record, &e3).unwrap();
+    let r = world.author(
+        subject,
+        GovernanceEntry::DeviceReadmit(body),
+        Deps::Frontier,
+    );
+    // The joined member holds no role, and a leave needs none; the
+    // creator holds every permission.
+    let last = if creator_subject {
+        rekindle_governance::fixture::meta("after")
+    } else {
+        GovernanceEntry::MemberLeft { heads: Vec::new() }
+    };
+    let after = world.author(&third, last, Deps::Frontier);
+    let out = merge::merge_outcome(&world.cert, &world.set.ops);
+    assert!(out.applied.contains(&r.hash()), "{out:?}");
+    assert!(out.applied.contains(&after.hash()), "{out:?}");
 }

@@ -124,6 +124,16 @@ pub async fn seed_registry_community(host: &Host, owner: &str) {
         .unwrap();
 }
 
+/// `community_id`'s merged governance state: `member` holds a creator seat,
+/// so every permission the Host's control gates check (plan GI4).
+pub fn seat_creator(host: &Host, community_id: &str, member: &PseudonymKey) {
+    let mut state = GovernanceState::default();
+    state.creators.insert(member.clone());
+    host.ctx
+        .communities
+        .set_governance_state(community_id, state);
+}
+
 /// `community_id`'s merged governance state: `author` banned, so departed
 /// (the gate counts the left, the removed and the banned alike).
 pub fn mark_departed(host: &Host, community_id: &str, author: &PseudonymKey) {

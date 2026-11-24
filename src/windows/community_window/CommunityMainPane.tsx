@@ -1,4 +1,5 @@
 import { Component, Show } from "solid-js";
+import SkinGlyph from "../../components/common/SkinGlyph";
 import ChannelChat from "./ChannelChat";
 import CallStage from "./CallStage";
 import EventsPanel from "../../components/community/EventsPanel";
@@ -21,7 +22,6 @@ import {
   handleRequestToSpeak,
   handleRespondToSpeakRequest,
 } from "../../actions/voice.actions";
-import { ICON_PIN, ICON_THREAD, ICON_COMMUNITIES } from "../../icons";
 import type { CommunityVm } from "./useCommunityWindow";
 
 /// Center column: game-server list, events panel, welcome screen, or the
@@ -56,7 +56,7 @@ const CommunityMainPane: Component<{ vm: CommunityVm }> = (props) => {
             </div>
           }>
             <div class="community-channel-header">
-              <span class="nf-icon community-channel-header-icon">{vm.channelHeaderIcon()}</span>
+              <SkinGlyph name={vm.channelHeaderIcon()} class="community-channel-header-icon" />
               <span class="community-channel-header-name">{vm.activeChannel()!.name}</span>
               <Show when={vm.activeChannel()?.topic || vm.canManageChannels()}>
                 <Show when={vm.editingTopic()} fallback={
@@ -103,7 +103,7 @@ const CommunityMainPane: Component<{ vm: CommunityVm }> = (props) => {
                   onClick={vm.handleTogglePins}
                   title="Pinned Messages"
                 >
-                  <span class="nf-icon">{ICON_PIN}</span>
+                  <SkinGlyph name="pin" />
                   <Show when={vm.pins().length > 0}>
                     <span class="channel-header-badge">{vm.pins().length}</span>
                   </Show>
@@ -113,7 +113,7 @@ const CommunityMainPane: Component<{ vm: CommunityVm }> = (props) => {
                   onClick={vm.handleToggleThreadList}
                   title="Threads"
                 >
-                  <span class="nf-icon">{ICON_THREAD}</span>
+                  <SkinGlyph name="thread" />
                   <Show when={vm.activeThreadCount() > 0}>
                     <span class="channel-header-badge">{vm.activeThreadCount()}</span>
                   </Show>
@@ -125,7 +125,7 @@ const CommunityMainPane: Component<{ vm: CommunityVm }> = (props) => {
                   aria-label={vm.rightPanel() === "members" ? "Hide members panel" : "Show members panel"}
                   aria-pressed={vm.rightPanel() === "members"}
                 >
-                  <span class="nf-icon" aria-hidden="true">{ICON_COMMUNITIES}</span>
+                  <SkinGlyph name="room" />
                 </button>
               </span>
             </div>

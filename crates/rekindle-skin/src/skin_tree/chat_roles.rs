@@ -52,7 +52,10 @@ fn by_key(k: &str) -> Option<Role> {
         }
         "chattitlebar" | "maintitlebar" | "infobar" => shows(R::TitleBar),
         "logo" | "xfirelogo" | "xfirelogonolink" => shows(R::Logo),
-        "chattitle" | "chatuser" | "usernamefield" => shows(R::ChatTitle),
+        // StealthX's `UserNameText` (`chatwindow.xml:11`) is a text whose
+        // string is the engine's `UserNameText` (`components.xml:899-901`):
+        // the conversation's user name, the chat title.
+        "chattitle" | "chatuser" | "usernamefield" | "usernametext" => shows(R::ChatTitle),
         "minimize" | "minimizebox" | "buttonminimize" => Some(button(W::Minimize)),
         "maximize" | "maximizebox" | "buttonmaximize" => Some(button(W::Maximize)),
         "chatclose" | "closechatbox" | "closebox" | "buttonclose" => Some(button(W::Close)),
@@ -68,7 +71,12 @@ fn by_key(k: &str) -> Option<Role> {
         "systemmenutext" => Some(menu(EngineMenu::Sys)),
         "chattoolsmenutext" => Some(menu(EngineMenu::Tool)),
         "actionsmenutext" | "actionsmenu" => Some(menu(EngineMenu::CwActions)),
-        "chathelpmenutext" | "helpmenutext" | "helpmenu" => Some(menu(EngineMenu::CwHelp)),
+        // StealthX's chat menu popup names its help title `HelpMenuCText`
+        // over a `HelpMenuC` plate running `MenuCWHelp`
+        // (`components.xml:884-890`, `popups.xml:107`).
+        "chathelpmenutext" | "helpmenutext" | "helpmenu" | "helpmenuctext" => {
+            Some(menu(EngineMenu::CwHelp))
+        }
         "menudiv" | "divider" | "horizontalseparator" | "buttonbarverticalseparator" => {
             shows(R::Decor)
         }
@@ -81,6 +89,17 @@ fn by_key(k: &str) -> Option<Role> {
         // Onyx's and Space Cowboy's `ChatImButton` runs `SendMessage`.
         "sendbutton" | "chatbuttonsend" | "sendchatbutton" | "chatimbutton" => {
             shows(R::Slot(SlotKey::ChatSend))
+        }
+        // StealthX's `ChatMenuButton` (`chatwindow.xml:8`) is the chat
+        // window's one menu: a `SkinLauncher` whose `LaunchSkin` opens its
+        // `ChatMenuPopup` (`components.xml:838-852`, `popups.xml:107`), the
+        // buddy list's `MenuButton` → `MainMenuPopup` shape: a button run
+        // by the pack's own trigger. StealthX's chat menu popup's
+        // `GameButton1` (`popups.xml:107`) is a `PushButton` whose pack
+        // trigger runs `JoinFriend` (`components.xml:184-188`): a button
+        // run by that trigger too.
+        "chatmenubutton" | "groupchatmenubutton" | "gamebutton" => {
+            Some(Role::Acts(R::Button, None))
         }
         "chatinfoviewbutton" | "infoviewbutton" | "chatexpandbutton" | "expandbutton" => {
             shows(R::Slot(SlotKey::InfoviewButton))

@@ -5,7 +5,7 @@ import { randomBytes } from "node:crypto";
 import { expect } from "@wdio/globals";
 import type { Browser } from "webdriverio";
 import { NETWORK_LABEL, NET_WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, sleep, switchTo, typeAndSend, typeInto, untilPublished, waitForHandle, waitUntil } from "../walk/helpers.ts";
-import { BUDDY, LOGIN, SETTINGS, inBuddy, menu, openAddFriend, setValue, submitJoin, underTree } from "../walk/nav.ts";
+import { BUDDY, LOGIN, SETTINGS, closeModal, inBuddy, menu, openAddFriend, pickNextFile, setValue, submitJoin, underTree } from "../walk/nav.ts";
 
 /** A throwaway identity: its name and passphrase live only in this run. */
 export interface User {
@@ -120,11 +120,34 @@ export async function communitiesView(b: Browser): Promise<void> {
   }
 }
 
-/** The Friends tab's row for `name`, once listed. */
+/**
+ * The Friends tab's row for friend `name`, once listed as a friend: a buddy
+ * row outside the pending-request group (BuddyGroup `.buddy-group-pending`,
+ * "Awaiting Response"), which lists a request the other side has not yet
+ * accepted. Matching any row with the name passed while the request was
+ * still pending (Linux shots, 2026-11-23).
+ */
 export async function friendRow(b: Browser, name: string): Promise<Awaited<ReturnType<Browser["$"]>>> {
   await inBuddy(b);
   await friendsView(b);
-  return byText(b, ".buddy-item", name, NET_WAIT_MS);
+  let found: Awaited<ReturnType<Browser["$"]>> | undefined;
+  await waitUntil(
+    async () => {
+      for (const row of await b.$$(".buddy-item")) {
+        if (!(await row.isDisplayed().catch(() => false))) continue;
+        if (!(await row.getText().catch(() => "")).includes(name)) continue;
+        const pending = (await b.execute((el: HTMLElement) => el.closest(".buddy-group-pending") !== null, row as unknown as HTMLElement)) as boolean;
+        if (pending) continue;
+        found = row;
+        return true;
+      }
+      return false;
+    },
+    NET_WAIT_MS,
+    `${name} was never listed as a friend (outside Awaiting Response)`,
+  );
+  if (!found) throw new Error(`${name}: no friend row`);
+  return found;
 }
 
 /** Open the chat window with friend `name` (double-click its row) and switch to it. */
@@ -249,12 +272,45 @@ export async function openCommunity(b: Browser, name: string): Promise<void> {
   await shown(b, ".community-sidebar", NET_WAIT_MS);
 }
 
-/** In the open community window, `user` creates a text channel `name`, and it is listed. */
+/** How many channel rows in the open community window show `name`. */
+export async function channelCount(b: Browser, name: string): Promise<number> {
+  return (await b.execute(
+    (n: string) => Array.from(document.querySelectorAll(".channel-item")).filter((r) => (r.textContent ?? "").includes(n)).length,
+    name.slice(0, 24),
+  )) as number;
+}
+
+/**
+ * In the open community window, `user` creates a text channel `name`, and it
+ * is listed: one more row with its name than before (a match alone passed on
+ * the genesis #general when a spec created a second "general").
+ */
 export async function createTextChannel(b: Browser, user: User, name: string): Promise<void> {
+  const before = await channelCount(b, name);
   await (await shown(b, '[title="Create Channel"]')).click();
   await typeInto(await shown(b, 'input[placeholder="Channel name..."]'), name);
   await submitModal(b, user, 'input[placeholder="Channel name..."]');
-  await byText(b, ".channel-item", name.slice(0, 24), NET_WAIT_MS);
+  await waitUntil(async () => (await channelCount(b, name)) === before + 1, NET_WAIT_MS, `#${name.slice(0, 24)} was never added (still ${before} rows)`);
+}
+
+/**
+ * In the open community window, `user` sets their name in this community
+ * (Community Settings, Overview, MyNameSection: SetCommunityDisplayName), and
+ * the section says members see that name.
+ */
+export async function setCommunityName(b: Browser, user: User, name: string): Promise<void> {
+  await communitySettings(b, "Overview");
+  const input = await shown(b, ".my-name-section input.form-input");
+  await input.clearValue();
+  await typeInto(input, name);
+  await (await shown(b, ".my-name-section button[type=submit]")).click();
+  await resolveIntent(b, { passphrase: user.passphrase, appearMs: 1500 });
+  await waitUntil(
+    async () => ((await (await b.$("#my-name-hint")).getText().catch(() => "")) ?? "").includes(name),
+    NET_WAIT_MS,
+    `the community name never became ${name}`,
+  );
+  await closeModal(b);
 }
 
 /** In the open community window, select channel `name`. */
@@ -412,6 +468,36 @@ export async function applySkin(b: Browser, user: User, name: string): Promise<s
     NET_WAIT_MS,
     `Settings never linked ${name}'s sheet`,
   );
+  return href;
+}
+
+/**
+ * Import the package `bytes` (a derived pack, skin-pack.ts `derivedPack`)
+ * through Settings → Appearance → Import skin, choose it (its trial) and keep
+ * it; the href of its sheet, as `applySkin` answers it.
+ */
+export async function importAndKeepSkin(b: Browser, user: User, bytes: Buffer, name: string): Promise<string> {
+  await switchTo(b, SETTINGS);
+  await (await byText(b, ".form-tab", "Appearance")).click();
+  await pickNextFile(b, `${name}.rkskin`, "application/octet-stream", bytes.toString("base64"));
+  await (await byText(b, "button.form-btn-secondary", "Import skin")).click();
+  await resolveIntent(b, { passphrase: user.passphrase, appearMs: 3000 });
+  const listed = async (): Promise<boolean> =>
+    (await b.execute((n: string) => Array.from(document.querySelectorAll(".skin-row .skin-name")).some((e) => e.textContent?.trim() === n), name)) as boolean;
+  await waitUntil(
+    async () => {
+      const error = await b.$(".skin-error");
+      if ((await error.isExisting()) && (await error.isDisplayed())) throw new Error(`the import was refused: ${await error.getText()}`);
+      return listed();
+    },
+    NET_WAIT_MS,
+    `${name} was never listed`,
+  );
+  const href = await applySkin(b, user, name);
+  // A library skin is on trial until kept (SkinTrialPrompt).
+  await press(b, await shown(b, ".skin-trial .sec-btn-commit", NET_WAIT_MS));
+  await resolveIntent(b, { passphrase: user.passphrase, appearMs: 1500 });
+  await gone(b, ".skin-trial", NET_WAIT_MS);
   return href;
 }
 

@@ -72,6 +72,12 @@ macro_rules! group_dm_commands {
         commands::group_dm::group_dm_decline,
         commands::group_dm::group_dm_leave,
         commands::group_dm::group_dm_rename,
+        commands::group_dm::lobby_host,
+        commands::group_dm::lobby_join,
+        commands::group_dm::lobby_leave,
+        commands::group_dm::lobby_close,
+        commands::group_dm::lobby_launch,
+        commands::group_dm::lobby_get,
         commands::group_dm::group_dm_invite,
         commands::group_dm::disappearing_set,
         commands::group_dm::disappearing_get,
@@ -395,6 +401,7 @@ macro_rules! dm_commands {
 macro_rules! search_commands {
     ($next:ident [$($done:tt)*] $($rest:ident)*) => { $next!([$($done)*
         commands::search::search_messages,
+        commands::search::local_search,
     ] $($rest)*) };
 }
 

@@ -104,9 +104,13 @@ impl FromIterator<(String, (NodeSpan, NodeSpan))> for Sibs {
 pub(super) type Sizes = BTreeMap<String, (u16, u16)>;
 
 fn span_of(sibs: &Sibs, name: &str, axis: &Axis) -> Option<NodeSpan> {
-    sibs.spans
-        .get(&name.to_ascii_lowercase())
-        .map(|s| if axis.pos == "X" { s.0 } else { s.1 })
+    sibs.spans.get(&name.to_ascii_lowercase()).map(|s| {
+        if axis.pos == "X" {
+            s.0.clone()
+        } else {
+            s.1.clone()
+        }
+    })
 }
 
 /// A sum of signed terms, each a number or a sibling's `width`/`height`.
@@ -162,7 +166,7 @@ fn edge(value: &str, sibs: &Sibs, axis: &Axis) -> Result<Option<At>, ImportError
     }
     let key = name.to_ascii_lowercase();
     let at = match span_of(sibs, name, axis) {
-        Some(sib) => points(sib)[usize::from(far)],
+        Some(sib) => points(&sib)[usize::from(far)],
         None => sibs
             .edges
             .get(&key)
@@ -177,10 +181,13 @@ fn edge(value: &str, sibs: &Sibs, axis: &Axis) -> Result<Option<At>, ImportError
 }
 
 /// A box's near and far edge as points in its frame.
-fn points(span: NodeSpan) -> [At; 2] {
-    match span {
+fn points(span: &NodeSpan) -> [At; 2] {
+    match span.clone() {
+        // The names hold laid spans, never a chain ([`super::content`]):
+        // an `After` one is placed as `NodeSpan::place` places it, from
+        // the start like a `Start` one.
         NodeSpan::Fixed {
-            at: Anchor::Start(off),
+            at: Anchor::Start(off) | Anchor::After { gap: off, .. },
             size,
         } => [
             At::Start(i32::from(off)),
@@ -214,8 +221,8 @@ fn points(span: NodeSpan) -> [At; 2] {
 
 /// The edges of the frame of a child laid at `inner` that are known in its
 /// parent's frame: its start from the start, its end from the end.
-fn known(inner: NodeSpan) -> (Option<i16>, Option<i16>) {
-    match inner {
+fn known(inner: &NodeSpan) -> (Option<i16>, Option<i16>) {
+    match inner.clone() {
         NodeSpan::Fixed {
             at: Anchor::Start(off),
             ..
@@ -226,7 +233,7 @@ fn known(inner: NodeSpan) -> (Option<i16>, Option<i16>) {
         } => (None, Some(off)),
         NodeSpan::Stretch { start, end } => (Some(start), Some(end)),
         NodeSpan::Fixed {
-            at: Anchor::Centre { .. },
+            at: Anchor::Centre { .. } | Anchor::After { .. },
             ..
         } => (None, None),
     }
@@ -234,13 +241,28 @@ fn known(inner: NodeSpan) -> (Option<i16>, Option<i16>) {
 
 /// A point of the parent's frame in the frame of a child laid at `inner`,
 /// when the child's edge it is measured from is known there.
-fn into_frame(at: At, inner: NodeSpan) -> Option<At> {
+fn into_frame(at: At, inner: &NodeSpan) -> Option<At> {
     let (start, end) = known(inner);
     match at {
         At::Start(p) => start.map(|s| At::Start(p - i32::from(s))),
         At::End(e) => end.map(|o| At::End(e - i32::from(o))),
         At::Centre(_) => None,
     }
+}
+
+/// The sibling and offset of a tile placed at a sibling's far edge on
+/// `ax` (`X="XfireMenuText.RIGHT+10"`, `Y="UserName.BOTTOM+2"`), neither
+/// stretched nor justified to its end or centre: a chain
+/// [`super::content::chains`] may keep symbolic.
+pub(super) fn chain<'t>(tile: &'t Node, ax: &Axis) -> Option<(&'t str, i32)> {
+    let just = tile.attr_ci(ax.just).map_or("", str::trim);
+    let placed_from_start = !just.eq_ignore_ascii_case(ax.end_just)
+        && !just.eq_ignore_ascii_case("CENTER")
+        && !just.eq_ignore_ascii_case("CENTRE");
+    let stretched = tile.attr_ci(ax.resize).is_some_and(|r| r.trim() == "100");
+    let (name, side, by) = reference(tile.attr_ci(ax.pos)?)?;
+    (placed_from_start && !stretched && side.eq_ignore_ascii_case(ax.far))
+        .then_some((name.trim(), by))
 }
 
 fn i16_of(v: i32) -> Result<i16, ImportError> {
@@ -302,6 +324,7 @@ pub(super) fn axis(
     ax: &Axis,
     size: u16,
     max: Option<u16>,
+    slot: bool,
     (sibs, sizes): (&Sibs, &Sizes),
 ) -> Result<NodeSpan, ImportError> {
     let just = tile.attr_ci(ax.just).map_or("", str::trim);
@@ -341,6 +364,30 @@ pub(super) fn axis(
         };
         return Ok(capped(span, max, (at_end, centred)));
     }
+    // An artless slot (a box the shell mounts into, `slot`) placed from
+    // the start with an end indent spans the two: no art gives it a
+    // width, its anchors do (xSLIMFIRE's
+    // `ChatTypingMessage` `X="18" IndentRight="65"`,
+    // `xSLIMFIREchatwindow.xml:31`: the typing line from 18 px to 65 px
+    // short of the base board's right edge, left of its send button).
+    // Any other artless tile keeps its own place and the text's width
+    // (xfire-classic's `TabDownloadText` holds "Downloads").
+    if let (true, 0, false, false, Some(_), Pos::Num(p) | Pos::Ref(At::Start(p))) = (
+        slot,
+        size,
+        at_end,
+        centred,
+        tile.attr_ci(ax.indent[1]),
+        &pos,
+    ) {
+        if *p >= 0 {
+            let span = NodeSpan::Stretch {
+                start: i16_of(p + start_in)?,
+                end: i16_of(end_in)?,
+            };
+            return Ok(capped(span, max, (at_end, centred)));
+        }
+    }
     let own = i32::from(size);
     // A sibling's edge is a point: `Just*=RIGHT/BOTTOM` puts the tile's far
     // edge on it (StealthX's `WndMax` `JustX=RIGHT X="WndClose.LEFT-3"`).
@@ -360,8 +407,9 @@ pub(super) fn axis(
 
 /// `span` (in a parent's frame) in the frame of a child laid at `inner`,
 /// when its edges are known there.
-fn shift(span: NodeSpan, inner: NodeSpan) -> Option<NodeSpan> {
+fn shift(span: &NodeSpan, inner: &NodeSpan) -> Option<NodeSpan> {
     let (start, end) = known(inner);
+    let span = span.clone();
     let by = |val: i16, off: Option<i16>| off.and_then(|off| val.checked_sub(off));
     Some(match span {
         NodeSpan::Fixed {
@@ -385,6 +433,10 @@ fn shift(span: NodeSpan, inner: NodeSpan) -> Option<NodeSpan> {
         NodeSpan::Fixed {
             at: Anchor::Centre { .. },
             ..
+        }
+        | NodeSpan::Fixed {
+            at: Anchor::After { .. },
+            ..
         } => return None,
     })
 }
@@ -392,7 +444,7 @@ fn shift(span: NodeSpan, inner: NodeSpan) -> Option<NodeSpan> {
 /// The names a child of a tile laid at `(x, y)` sees: its parent's
 /// siblings and their outer names (Total Chaos's `AdArea`
 /// `Y="MainTitleBar.BOTTOM"` inside `AdBar`), in the child's frame.
-pub(super) fn outer_for(names: &Sibs, x: NodeSpan, y: NodeSpan) -> Sibs {
+pub(super) fn outer_for(names: &Sibs, x: &NodeSpan, y: &NodeSpan) -> Sibs {
     let frame = [x, y];
     let moved = |pts: [[Option<At>; 2]; 2]| {
         let m = [0, 1].map(|a| pts[a].map(|p| p.and_then(|p| into_frame(p, frame[a]))));
@@ -400,9 +452,9 @@ pub(super) fn outer_for(names: &Sibs, x: NodeSpan, y: NodeSpan) -> Sibs {
     };
     let mut out = Sibs::new();
     for (k, (sx, sy)) in &names.spans {
-        if let (Some(a), Some(b)) = (shift(*sx, x), shift(*sy, y)) {
+        if let (Some(a), Some(b)) = (shift(sx, x), shift(sy, y)) {
             out.spans.insert(k.clone(), (a, b));
-        } else if let Some(e) = moved([points(*sx).map(Some), points(*sy).map(Some)]) {
+        } else if let Some(e) = moved([points(sx).map(Some), points(sy).map(Some)]) {
             out.edges.insert(k.clone(), e);
         }
     }
@@ -442,7 +494,7 @@ pub(super) fn client_inset(
 pub(super) fn client_box(span: NodeSpan, (s, e): (i32, i32)) -> Result<NodeSpan, ImportError> {
     // A boxless tile (no art, no declared size) has no client box: its
     // indents inset nothing (Total Chaos's, xSLIMFIRE's art-less wrappers).
-    let NodeSpan::Fixed { at, size } = span else {
+    let NodeSpan::Fixed { at, size } = span.clone() else {
         return Ok(span);
     };
     if size == 0 {
@@ -451,6 +503,10 @@ pub(super) fn client_box(span: NodeSpan, (s, e): (i32, i32)) -> Result<NodeSpan,
     let at = match at {
         Anchor::Start(o) => Anchor::Start(i16_of(i32::from(o) + s)?),
         Anchor::End(o) => Anchor::End(i16_of(i32::from(o) + e)?),
+        Anchor::After { sibling, gap } => Anchor::After {
+            sibling,
+            gap: i16_of(i32::from(gap) + s)?,
+        },
         // The client box is the tile's box less `(s, e)`: centred in the
         // same frame, narrowed by the insets (lead decision 32).
         Anchor::Centre { by, before, after } => Anchor::Centre {
@@ -477,6 +533,8 @@ fn from_client(child: NodeSpan, (s, e): (i32, i32)) -> Result<NodeSpan, ImportEr
             let at = match at {
                 Anchor::Start(o) => Anchor::Start(add(o, s)?),
                 Anchor::End(o) => Anchor::End(add(o, e)?),
+                // Its sibling moves with it: the gap stays.
+                after @ Anchor::After { .. } => after,
                 // Centred in the client box: the tile's box narrowed by
                 // `(s, e)` (lead decision 32).
                 Anchor::Centre { by, before, after } => Anchor::Centre {
@@ -506,7 +564,7 @@ pub(super) fn to_tile(
         }
         for n in &mut children {
             let slot = if c == 0 { &mut n.x } else { &mut n.y };
-            *slot = from_client(*slot, (s, e))?;
+            *slot = from_client(slot.clone(), (s, e))?;
         }
     }
     Ok(children)

@@ -56,13 +56,20 @@ fn chat_trees_match_their_goldens() {
         ("symbiosis", include_str!("goldens/chat-symbiosis.txt")),
         ("spacecowboy", include_str!("goldens/chat-spacecowboy.txt")),
     ];
+    // Every pack is compared before failing, each differing tree in the
+    // message whole, so one run regenerates them all.
+    let mut wrong = Vec::new();
     for (id, golden) in want {
         let got = tree_text(chat_layout(id).tree.as_ref().unwrap());
         if got != golden {
-            println!("=== chat-{id} begin\n{got}=== chat-{id} end");
+            wrong.push(format!("=== chat-{id} begin\n{got}=== chat-{id} end"));
         }
-        assert_eq!(got, golden, "{id}: chat tree differs from its golden");
     }
+    assert!(
+        wrong.is_empty(),
+        "chat trees differ from their goldens:\n{}",
+        wrong.join("\n")
+    );
 }
 
 /// The title strip at the pack's own coordinates: Onyx's `MainTitleBar`
@@ -89,16 +96,28 @@ fn title_strips_sit_where_each_pack_places_them() {
         match id {
             "onyx" => {
                 assert_eq!((bar[0] - ox, bar[1] - oy), (5, 5), "{id} bar");
-                assert_eq!((logo()[0] - bar[0], logo()[1] - bar[1]), (2, 1), "{id} logo");
+                assert_eq!(
+                    (logo()[0] - bar[0], logo()[1] - bar[1]),
+                    (2, 1),
+                    "{id} logo"
+                );
                 assert_eq!((menu[0] - ox, menu[1] - oy), (7, 47), "{id} menu");
             }
             "spacecowboy" => {
                 assert_eq!((menu[0] - ox, menu[1] - oy), (30, 64), "{id} menu");
-                assert_eq!((logo()[0] - bar[0], logo()[1] - bar[1]), (4, 3), "{id} logo");
+                assert_eq!(
+                    (logo()[0] - bar[0], logo()[1] - bar[1]),
+                    (4, 3),
+                    "{id} logo"
+                );
             }
             "xslimfire" => {
                 assert_eq!((bar[0] - ox, bar[1] - oy, bar[3]), (0, 0, 165), "{id} bar");
-                assert_eq!((logo()[0] - bar[0], logo()[1] - bar[1]), (20, 8), "{id} logo");
+                assert_eq!(
+                    (logo()[0] - bar[0], logo()[1] - bar[1]),
+                    (20, 8),
+                    "{id} logo"
+                );
                 assert_eq!((menu[0] - ox, menu[1] - oy), (19, 33), "{id} menu");
             }
             _ => {

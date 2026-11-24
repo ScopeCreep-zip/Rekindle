@@ -9,15 +9,15 @@ BottomLeft Decor target [0, 0, 20, 57] art [0, 0, 20, 57] Frame
 Bottom Decor target [0, 0, 300, 57] art [0, 0, 300, 57] Frame
 BottomRight Decor target [0, 0, 24, 57] art [0, 0, 24, 57] Frame
 MainTitleBar TitleBar
-  Logo Logo label "Rekindle" cover [0, 0, 16, 16] glyph RekindleMarkSmall target [-4, -4, 24, 24] art [4, 4, 16, 16] Size
+  Logo Logo label "Rekindle" cover [0, 0, 16, 16] glyph RekindleMarkSmall target [-4, -4, 24, 20] art [4, 4, 16, 16] Spacing
   Title ChatTitle
 MenuBar MenuBar
   XfireMenuText MenuTitle label "Rekindle"
-    FileMenu Part target [-9, -10, 21, 24] art [9, 10, 6, 4] Short
+    FileMenu Part target [0, -3, 52, 24] art [0, 3, 52, 18] Size
   ToolsMenuText MenuTitle label "Tools"
-    ToolsMenu Part target [-6, -10, 18, 24] art [6, 10, 6, 4] Short
+    ToolsMenu Part target [0, -3, 36, 24] art [0, 3, 36, 18] Size
   HelpMenuText MenuTitle label "Help"
-    HelpMenu Part target [-6, -10, 21, 24] art [6, 10, 6, 4] Short
+    HelpMenu Part target [0, 0, 30, 21] art [0, 0, 30, 18] Spacing
 TopButtonBar Group
   Minimize WindowButton(Minimize) target [-5, -5, 20, 24] art [5, 5, 14, 14] Short
   Maximize WindowButton(Maximize) target [-1, -5, 16, 24] art [1, 5, 14, 14] Short

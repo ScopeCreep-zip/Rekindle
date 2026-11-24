@@ -1,10 +1,10 @@
 import { commands } from "../ipc/commands";
 import { setAuthState } from "./auth.store";
 import { fetchAvatarUrl } from "../ipc/avatar";
-import { setFriendsState } from "./friends.store";
+import { friendsState, setFriendsState } from "./friends.store";
 import { reconcile } from "solid-js/store";
 import { setCommunityState, setCommunityMembers } from "./community.store";
-import { transformExpression, transformFriendMap, transformCommunityMap, transformMember } from "../utils/transformers";
+import { foldFriendSnapshot, transformExpression, transformCommunityMap, transformMember } from "../utils/transformers";
 import {
   handleLoadAutoModRules,
   handleResolveCommunityImageDataUrls,
@@ -42,7 +42,7 @@ export async function hydrateState(): Promise<void> {
 
   try {
     const friends = await commands.getFriends();
-    setFriendsState("friends", transformFriendMap(friends));
+    setFriendsState("friends", reconcile(foldFriendSnapshot(friends, friendsState.friends)));
   } catch (e) {
     console.error("Failed to hydrate friends:", e);
   }

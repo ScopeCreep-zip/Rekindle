@@ -48,11 +48,11 @@ fn a_status_icon_is_served_with_its_paint_switch() {
     assert!(!css.contains("--skin-icon-status-online"));
 }
 
-/// Plan E7.7.7 S5: a labelled slot's backing is clipped to each label's
-/// content box, so a label's padding shows the bar's bitmap (the real app
-/// showed Symbiosis's info and menu bars flat under full-width labels).
+/// A labelled slot paints its backing once, as one band on its container
+/// behind its text row (the measured line, in the content box), never a
+/// box per label, and drops it under forced colours.
 #[test]
-fn a_label_backs_only_its_content_box() {
+fn a_labelled_slot_paints_one_band_behind_its_text_row() {
     let map: BTreeMap<String, RegionMap> = SLOTS
         .iter()
         .filter(|s| s.css)
@@ -67,11 +67,28 @@ fn a_label_backs_only_its_content_box() {
         })
         .collect();
     let css = app_css("t", &map).unwrap();
-    let rule = css
-        .split("  }\n")
-        .find(|r| r.contains(".e-buddylist-infobar .label"))
-        .unwrap();
-    assert!(rule.contains("background-clip: content-box;"), "{rule}");
+    assert!(!css.contains(" .label"), "{css}");
+    let band = "linear-gradient(var(--skin-region-community-channel-header-band), var(--skin-region-community-channel-header-band))";
+    let rules: Vec<&str> = css.split("  }\n").filter(|r| r.contains(band)).collect();
+    assert_eq!(rules.len(), 1, "{css}");
+    assert!(
+        rules[0].contains(".e-community-channel-header::before {"),
+        "{}",
+        rules[0]
+    );
+    assert!(
+        rules[0].contains(&format!("{band} 0 50% / 100% 21px no-repeat content-box;")),
+        "{}",
+        rules[0]
+    );
+    assert!(css.contains(":where(.e-community-channel-header) {\n    position: relative;\n    isolation: isolate;"), "{css}");
+    let a11y = app_a11y_css("t", &map).unwrap();
+    let forced = &a11y[a11y.find("forced-colors").unwrap()..];
+    let none = forced.split("content: none;").next().unwrap();
+    assert!(
+        none.contains(".e-community-channel-header::before"),
+        "{forced}"
+    );
 }
 
 fn builtin_regions(name: &str) -> Vec<String> {

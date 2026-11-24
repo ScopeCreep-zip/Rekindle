@@ -19,7 +19,7 @@ pub use super::skin_title::{TitleSlices as NodeSlices, TitleText as NodeText};
 pub use super::skin_tree_role::{Edge, LampKey, NodeRole, SlotKey, ViewKey, WindowButtonKind};
 
 /// Where a fixed-size node sits along one axis of its parent's box, px.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "kind", content = "offset")]
 pub enum Anchor {
     /// Its near side this far from the parent's start edge.
@@ -35,6 +35,14 @@ pub enum Anchor {
     /// Xfire floors: the start is ⌊(len + before + after − size) / 2⌋ +
     /// `by` − `before`, the one rule the shape and the stylesheet place by.
     Centre { by: i16, before: i16, after: i16 },
+    /// Its near side `gap` px past the far side of `sibling`, a node of the
+    /// same parent (plan SK15b): Xfire's `X="XfireMenuText.RIGHT+10"`
+    /// (Onyx `mainwindow.xml:42`) chained on a content-sized text
+    /// ([`ContentFit`]), which moves with that text's served width. A
+    /// stored pack keeps it; the Host resolves every one into a [`Self::Start`]
+    /// before it serves a tree (`rekindle_skin::skin_tree::content`), and
+    /// [`SkinTree::boxes`] places it against its sibling's box.
+    After { sibling: String, gap: i16 },
 }
 
 impl Anchor {
@@ -50,7 +58,7 @@ impl Anchor {
 }
 
 /// One axis of a node's box, parent-relative.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "kind", deny_unknown_fields)]
 pub enum NodeSpan {
     /// Its own size (its art's), placed once.
@@ -61,26 +69,41 @@ pub enum NodeSpan {
 }
 
 impl NodeSpan {
-    /// The span's start and length inside a parent `len` px long.
+    /// The span's start and length inside a parent `len` px long. An
+    /// [`Anchor::After`] is placed as though its sibling ended at the
+    /// parent's start edge: only [`SkinTree::boxes`] knows the sibling, and
+    /// the Host serves no tree that holds one.
     #[must_use]
-    pub fn place(self, len: i32) -> (i32, i32) {
+    pub fn place(&self, len: i32) -> (i32, i32) {
         match self {
             Self::Fixed { at, size } => {
-                let size = i32::from(size);
+                let size = i32::from(*size);
                 let start = match at {
-                    Anchor::Start(o) => i32::from(o),
-                    Anchor::End(o) => len - i32::from(o) - size,
+                    Anchor::Start(o) | Anchor::After { gap: o, .. } => i32::from(*o),
+                    Anchor::End(o) => len - i32::from(*o) - size,
                     Anchor::Centre { by, before, after } => {
-                        let (b, a) = (i32::from(before), i32::from(after));
-                        (len + b + a - size).div_euclid(2) + i32::from(by) - b
+                        let (b, a) = (i32::from(*before), i32::from(*after));
+                        (len + b + a - size).div_euclid(2) + i32::from(*by) - b
                     }
                 };
                 (start, size)
             }
             Self::Stretch { start, end } => {
-                let s = i32::from(start);
-                (s, len - s - i32::from(end))
+                let s = i32::from(*start);
+                (s, len - s - i32::from(*end))
             }
+        }
+    }
+
+    /// The sibling an [`Anchor::After`] span follows, if it is one.
+    #[must_use]
+    pub fn after(&self) -> Option<(&str, i16)> {
+        match self {
+            Self::Fixed {
+                at: Anchor::After { sibling, gap },
+                ..
+            } => Some((sibling, *gap)),
+            _ => None,
         }
     }
 }
@@ -286,6 +309,21 @@ pub struct NodeTarget {
     pub rule: TargetRule,
 }
 
+/// A content-sized text (plan SK15b): Xfire's `Class=Text
+/// Stretch=ToContent` component (the menu titles, Onyx
+/// `components.xml:268-273`; Combat `combat.ini:188-196`), as wide as its
+/// words, at least `min` and at most `max` px (its `MinWidth`/`MaxWidth`,
+/// each capped by the importer at the room its parent leaves it, so a
+/// served width never leaves the parent). The Host sizes it to the words
+/// it serves over the node.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ContentFit {
+    pub min: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max: Option<u16>,
+}
+
 /// One component of the pack's tree.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -313,6 +351,10 @@ pub struct SkinNode {
     /// The Host's target box for a small interactive node (plan SK7).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub target: Option<NodeTarget>,
+    /// A content-sized text's width limits (plan SK15b): the Host sets its
+    /// width from its served words.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fit: Option<ContentFit>,
     /// The tab whose view shows this node (a view's button row).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub shows_with: Option<ViewKey>,
@@ -343,13 +385,29 @@ impl SkinTree {
     /// Every node, depth first, with its box in a window `w × h`.
     #[must_use]
     pub fn boxes(&self, w: i32, h: i32) -> Vec<(&SkinNode, [i32; 4])> {
-        fn walk<'a>(node: &'a SkinNode, parent: [i32; 4], out: &mut Vec<(&'a SkinNode, [i32; 4])>) {
-            let (left, wide) = node.x.place(parent[2]);
-            let (top, tall) = node.y.place(parent[3]);
-            let area = [parent[0] + left, parent[1] + top, wide, tall];
-            out.push((node, area));
-            for child in &node.children {
-                walk(child, area, out);
+        // An `After` span starts past its sibling's box, laid before it in
+        // the level (the importer chains only on earlier-resolved siblings;
+        // tree order is resolution order).
+        fn level<'a>(
+            nodes: &'a [SkinNode],
+            parent: [i32; 4],
+            out: &mut Vec<(&'a SkinNode, [i32; 4])>,
+        ) {
+            let mut laid: Vec<(&str, [i32; 4])> = Vec::new();
+            for node in nodes {
+                let past = |span: &NodeSpan, i: usize| {
+                    let (sib, gap) = span.after()?;
+                    let b = laid.iter().find(|(id, _)| id.eq_ignore_ascii_case(sib))?.1;
+                    Some(b[i] - parent[i] + b[i + 2] + i32::from(gap))
+                };
+                let (mut left, wide) = node.x.place(parent[2]);
+                let (mut top, tall) = node.y.place(parent[3]);
+                left = past(&node.x, 0).unwrap_or(left);
+                top = past(&node.y, 1).unwrap_or(top);
+                let area = [parent[0] + left, parent[1] + top, wide, tall];
+                out.push((node, area));
+                laid.push((&node.id, area));
+                level(&node.children, area, out);
             }
         }
         let mut out = Vec::new();
@@ -361,9 +419,7 @@ impl SkinTree {
             w - left - i32::from(over.right),
             h - top - i32::from(over.bottom),
         ];
-        for n in &self.root {
-            walk(n, pack, &mut out);
-        }
+        level(&self.root, pack, &mut out);
         out
     }
 }

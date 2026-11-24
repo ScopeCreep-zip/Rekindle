@@ -38,15 +38,16 @@ fn nodes(m: &SkinManifest) -> Vec<String> {
 }
 
 /// Plan SK14: the alternate serves no `Short` target in any window or
-/// popup, where Symbiosis serves its nine: four in its buddy list and five
-/// in its chat window (the top-left, top and top-right grips beside its
-/// talking lamp and maximize button, and the maximize and close buttons,
-/// `goldens/targets-short.txt`).
+/// popup, where Symbiosis serves its seven: four in its buddy list and
+/// three in its chat window (the top-right grip beside its talking lamp and
+/// maximize button, and the maximize and close buttons,
+/// `goldens/targets-short.txt`; its top-left and top grips take the
+/// `TopRow` system menu, `target::grips`).
 #[test]
 fn the_alternate_serves_no_short_target() {
-    assert_eq!(short_targets(&original()), 9);
+    assert_eq!(short_targets(&original()), 7);
     assert_eq!(short_targets(&alternate()), 0);
-    assert_eq!(builtin_short_targets(SOURCE).unwrap(), Some(9));
+    assert_eq!(builtin_short_targets(SOURCE).unwrap(), Some(7));
     assert_eq!(builtin_short_targets(ID).unwrap(), Some(0));
     assert_eq!(builtin_short_targets("builtin:nope").unwrap(), None);
 }

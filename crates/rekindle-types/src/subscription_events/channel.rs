@@ -185,6 +185,23 @@ pub enum ChannelMessageEvent {
         is_own: bool,
     },
 
+    /// Our own direct message, exactly as stored, once it is committed to
+    /// the outbox with its local echo (plan E2.5, E6.11): every window of
+    /// the conversation upserts it by `message.message_id`, so a send no
+    /// window optimistically rendered (or whose window reloaded its history
+    /// during the send's review) still shows. Distinct from
+    /// [`Self::DirectMessageReceived`] by type: it is never a peer's words,
+    /// so no consumer can notify for it or count it unread.
+    /// Triggered by: `dm::send_dm` committing our message.
+    DirectMessageSent {
+        /// The conversation it belongs to (the peer's identity key).
+        conversation_id: String,
+        /// The client id of the message it replies to, if any.
+        reply_to_id: Option<String>,
+        /// The stored row, as `DmHistory` answers it.
+        message: crate::dto::dm::DmMessage,
+    },
+
     /// A direct message we sent changed delivery state, the one send-state
     /// event (D22's vocabulary, plan E2.5): `queued` once committed to the
     /// outbox, `sent` when a frame left this device, `delivered` from the

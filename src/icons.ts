@@ -1,4 +1,6 @@
-// Nerd Font icon constants — codepoints verified against @m234/nerd-fonts 0.5.0 (Nerd Fonts v3.4.0)
+// Nerd Font icon constants: codepoints in the shipped src/assets/fonts/SymbolsNerdFontMono-Regular.woff2
+// (its name table: "Version 001.000;Nerd Fonts 3.3.0"). scripts/skin_glyphs.py draws the ones a skinned
+// window shows as SVG (plan SK17-7a) and records each one's icon set and licence in src/assets/icons/NOTICE.md.
 
 // Action bar
 export const ICON_NEW_CHAT = "\u{F140F}";       // nf-md-chat_plus
@@ -23,6 +25,10 @@ export const ICON_HEADPHONES_OFF = "\u{F07CE}";  // nf-md-headphones_off
 export const ICON_HANGUP = "\u{F03F5}";          // nf-md-phone_hangup
 export const ICON_PHONE = "\u{F03F2}";           // nf-md-phone
 export const ICON_VOLUME_HIGH = "\u{F057E}";     // nf-md-volume_high
+export const ICON_VOLUME_OFF = "\u{F0581}";      // nf-md-volume_off (the shell's speaker.muted glyph, plan SK17-7a)
+export const ICON_PLAY = "\u{F040A}";            // nf-md-play
+export const ICON_PAUSE = "\u{F03E4}";           // nf-md-pause
+export const ICON_LOCK = "\u{F033E}";            // nf-md-lock
 export const ICON_VIDEO = "\u{F0567}";            // nf-md-video
 export const ICON_VIDEO_OFF = "\u{F0568}";        // nf-md-video_off
 export const ICON_SCREEN_SHARE = "\u{F1483}";     // nf-md-monitor_share

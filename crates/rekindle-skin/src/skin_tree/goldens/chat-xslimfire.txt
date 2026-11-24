@@ -7,13 +7,13 @@ ChatTitleBar TitleBar target [0, 0, 255, 165] art [0, 0, 255, 165] Frame
 ChatMenuBar MenuBar
   SystemMenuText MenuTitle label "System"
     SystemMenuTextT Part
-    SystemMenu Part target [0, -6, 54, 24] art [0, 6, 54, 12] Size
+    SystemMenu Part target [0, -6, 43, 24] art [0, 6, 43, 12] Size
   ActionsMenuText MenuTitle label "Actions"
     ActionsMenuTextT Part
-    ActionsMenu Part target [0, -6, 54, 24] art [0, 6, 54, 12] Size
+    ActionsMenu Part target [0, -6, 44, 24] art [0, 6, 44, 12] Size
   HelpMenuText MenuTitle label "Help"
     HelpMenuTextT Part
-    HelpMenu Part target [0, -6, 54, 24] art [0, 6, 54, 12] Size
+    HelpMenu Part target [0, -6, 28, 24] art [0, 6, 28, 12] Size
 ChatBaseBoard Group
   SendChatButton Slot(ChatSend)
   ChatTypingMessage Slot(TypingNotice)

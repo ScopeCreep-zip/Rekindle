@@ -320,10 +320,15 @@ pub fn read(tree: &Tree) -> Result<Read, ImportError> {
             let bitmaps = bitmaps(theme);
             let decode =
                 |name: &str, shift: Option<&str>| piece(tree, &bitmaps, &colours, name, shift);
+            // As the buddy list's tree, the chat window's reads the popups
+            // its components launch (StealthX's `ChatMenuButton` →
+            // `ChatMenuPopup`, `components.xml:851`, `popups.xml:107`).
+            let mut with_popups = components.clone();
+            with_popups.extend(sources::popup_files(tree, &included)?);
             crate::skin_tree::import::add(
                 SkinWindow::Chat,
                 &layout,
-                &components,
+                &with_popups,
                 decode,
                 &[],
                 &mut built,
