@@ -231,6 +231,17 @@ pub fn own_dm(
     owner_key: &str,
     message_id: &str,
 ) -> rusqlite::Result<Option<OwnDm>> {
+    own_message(conn, owner_key, message_id, "dm")
+}
+
+/// Our message whose client id is `message_id` in a conversation of
+/// `conversation_type` (`dm` or `group_dm`), with its parent's client id.
+pub(crate) fn own_message(
+    conn: &Connection,
+    owner_key: &str,
+    message_id: &str,
+    conversation_type: &str,
+) -> rusqlite::Result<Option<OwnDm>> {
     use rusqlite::OptionalExtension as _;
     conn.query_row(
         "SELECT m.id, m.conversation_id, m.sender_key, m.body, m.timestamp, m.is_read, \
@@ -238,8 +249,8 @@ pub fn own_dm(
          m.timer_notice_seconds, p.message_id FROM messages m \
          LEFT JOIN messages p ON p.id = m.reply_to_id \
          WHERE m.owner_key = ?1 AND m.sender_key = ?1 AND m.message_id = ?2 \
-         AND m.conversation_type = 'dm'",
-        params![owner_key, message_id],
+         AND m.conversation_type = ?3",
+        params![owner_key, message_id, conversation_type],
         |row| {
             Ok(OwnDm {
                 row: dm_row(row)?,

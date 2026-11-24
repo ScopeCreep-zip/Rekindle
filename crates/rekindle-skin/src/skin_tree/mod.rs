@@ -6,7 +6,9 @@
 
 mod anchor;
 pub mod brand;
+pub mod chat_roles;
 mod clip;
+pub mod content;
 pub mod cover;
 pub mod css;
 mod fit;
@@ -19,6 +21,7 @@ pub mod pieces;
 pub mod place;
 pub mod popup;
 pub mod roles;
+mod tab_step;
 pub mod target;
 pub mod text_box;
 pub mod titles;
@@ -28,9 +31,15 @@ pub mod validate;
 #[cfg(test)]
 mod anchor_tests;
 #[cfg(test)]
+mod chat_tests;
+#[cfg(test)]
+mod content_tests;
+#[cfg(test)]
 mod fit_tests;
 #[cfg(test)]
 mod golden_tests;
+#[cfg(test)]
+mod grip_menu_tests;
 #[cfg(test)]
 mod grip_tests;
 #[cfg(test)]

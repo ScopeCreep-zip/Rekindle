@@ -383,6 +383,10 @@
 .game-icon-generic	text	var(--color-xfire-ingame-text)	--color-xfire-bg-panel	1.0	true
 .game-invite	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
 .game-invite	text	var(--color-xfire-text)	--color-xfire-bg-panel	1.0	false
+.game-lobby-host	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
+.game-lobby-launched	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
+.game-lobby-members	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
+.game-lobby-title	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
 .game-server-address	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .game-server-group-header	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .game-server-icon	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
@@ -449,6 +453,10 @@
 .invite-url-masked	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
 .invite-url-masked:hover	text	var(--color-xfire-text)	--color-xfire-bg-panel	1.0	false
 .join-stepper-row	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
+.local-search-hit	text	var(--color-xfire-text)	--color-xfire-bg-panel	1.0	false
+.local-search-hit	text hovered	var(--color-xfire-text)	--color-xfire-accent 12% over --color-xfire-bg-panel	1.0	false
+.local-search-hit-kind	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
+.local-search-hit-kind	text hovered	var(--color-xfire-text-dim)	--color-xfire-accent 12% over --color-xfire-bg-panel	1.0	false
 .lock-name	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
 .login-subtitle	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .login-title	text	var(--color-xfire-accent-text)	--color-xfire-bg-dark	1.0	false

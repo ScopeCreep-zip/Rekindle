@@ -23,6 +23,7 @@ import {
 import { handleLoadDisappearingTimer } from "../../actions/disappearing.actions";
 import DisappearingTimerControl from "../../components/chat/DisappearingTimerControl";
 import InviteToRoomModal from "../../components/chat/InviteToRoomModal";
+import GameLobbyCard from "../../components/chat/GameLobbyCard";
 import { subscribeGroupChatEvents } from "../../handlers/group-dm.handlers";
 import { SlotMount } from "../../components/skin-tree/slots";
 
@@ -163,6 +164,9 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
         {(message) => <div class="form-error group-chat-error" role="alert">{message()}</div>}
       </Show>
       <InviteToRoomModal groupId={inviting() ? groupId : null} onClose={() => setInviting(false)} />
+      <Show when={held()}>
+        <GameLobbyCard groupId={groupId} memberNames={memberNames()} />
+      </Show>
       <div id="main-content" tabindex="-1" class="window-main">
         <SlotMount slot="chatArea">
           <MessageList

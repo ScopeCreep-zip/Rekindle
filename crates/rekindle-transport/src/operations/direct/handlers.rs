@@ -217,6 +217,15 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
             tracing::info!(from = %sender, "GroupDmRename outside a group entry; refused");
             applied = false;
         }
+        // Only ever sealed inside a group entry (plan E7.2 G6).
+        DirectBody::LobbyOpen(_)
+        | DirectBody::LobbyJoin(_)
+        | DirectBody::LobbyLeave(_)
+        | DirectBody::LobbyLaunch(_)
+        | DirectBody::LobbyClose(_) => {
+            tracing::info!(from = %sender, kind = ?opened.type_id, "lobby kind outside a group entry; refused");
+            applied = false;
+        }
         DirectBody::CreatorInvite(_)
         | DirectBody::CreatorAccept(_)
         | DirectBody::CreatorDecline(_)

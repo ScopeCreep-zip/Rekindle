@@ -4,6 +4,8 @@ use std::sync::Arc;
 
 use tauri::AppHandle;
 
+use super::ingest_outcome::{IngestOutcome, ShellFollowUp};
+use crate::event_dispatch::WebviewEvent;
 use crate::state::AppState;
 use crate::state_helpers;
 
@@ -58,42 +60,49 @@ pub fn handle(state: &Arc<AppState>, msg: &veilid_core::VeilidAppMessage) {
     }
 }
 
-/// Worker-side processing of one queued ingress item. Lives here so the
-/// gossip pipeline (`handle_gossip_envelope`) stays private to this
-/// module; the dispatch-loop worker only sees this entry point.
+/// Worker-side processing of one queued ingress item: the state-only core
+/// (`ingest_item`, plan GI4), then its delivery. The dispatch-loop worker
+/// only sees this entry point.
 pub(crate) async fn process_ingress_item(
     app_handle: &AppHandle,
     state: &Arc<AppState>,
     item: crate::services::veilid::ingress_queue::IngressItem,
 ) {
+    ingest_item(state, item)
+        .await
+        .deliver(app_handle, state)
+        .await;
+}
+
+/// One queued ingress item, ingested with the state alone: the events to
+/// show and the follow-ups that need the Tauri handle (plan GI4).
+pub(crate) async fn ingest_item(
+    state: &Arc<AppState>,
+    item: crate::services::veilid::ingress_queue::IngressItem,
+) -> IngestOutcome {
     use crate::services::veilid::ingress_queue::IngressItem;
     match item {
-        IngressItem::Gossip { signed, .. } => {
-            handle_gossip_envelope(app_handle, state, signed).await;
-        }
+        IngressItem::Gossip { signed, .. } => gossip_core(state, signed).await,
         IngressItem::Direct(message) => {
             let Some(host) = state.host.current() else {
                 tracing::debug!("1:1 message before the host started — dropped");
-                return;
+                return IngestOutcome::default();
             };
-            if let rekindle_transport::operations::direct::Routed::Unported(opened) =
+            let rekindle_transport::operations::direct::Routed::Unported(opened) =
                 host.receive_direct(&message).await
-            {
-                let Ok(pool) = state.db.current() else {
-                    tracing::debug!("unported 1:1 message: no identity database — dropped");
-                    return;
-                };
-                super::inbound_unported::handle(app_handle, state, &pool, *opened).await;
-            }
+            else {
+                return IngestOutcome::default();
+            };
+            let Ok(pool) = state.db.current() else {
+                tracing::debug!("unported 1:1 message: no identity database — dropped");
+                return IngestOutcome::default();
+            };
+            IngestOutcome::follow_up(ShellFollowUp::Unported { pool, opened })
         }
     }
 }
 
-async fn handle_gossip_envelope(
-    app_handle: &AppHandle,
-    state: &Arc<AppState>,
-    signed: SignedEnvelope,
-) {
+async fn gossip_core(state: &Arc<AppState>, signed: SignedEnvelope) -> IngestOutcome {
     let community_id = &signed.community_id;
 
     // Signature verification BEFORE any state mutation (audit P7-W26).
@@ -122,14 +131,15 @@ async fn handle_gossip_envelope(
         if video_payload_channel_from_bytes(&signed.envelope_bytes)
             .is_some_and(|ch| local_in_channel(state, community_id, &ch))
         {
-            crate::services::video_adapter::VideoAdapter::new(state.clone(), app_handle.clone())
-                .emit_video_envelope_rejected(
+            return IngestOutcome::event(WebviewEvent::Community(
+                crate::services::video_adapter::rejection_event(
                     community_id.clone(),
                     signed.sender_pseudonym.clone(),
                     reason,
-                );
+                ),
+            ));
         }
-        return;
+        return IngestOutcome::default();
     }
 
     let kind = encoded_envelope_kind(&signed.envelope_bytes);
@@ -138,7 +148,7 @@ async fn handle_gossip_envelope(
         let mut cache = state.dedup_cache.lock();
         if cache.check_and_insert(community_id, &signed.sender_pseudonym, &dedup_key) {
             tracing::debug!(kind, outcome = "duplicate", "gossip received");
-            return;
+            return IngestOutcome::default();
         }
     }
 
@@ -168,7 +178,7 @@ async fn handle_gossip_envelope(
     {
         // Trace: a flood must not become a log storm (M10.4 above).
         tracing::trace!(kind, outcome = "rate_limited", "gossip received");
-        return;
+        return IngestOutcome::default();
     }
 
     {
@@ -202,7 +212,7 @@ async fn handle_gossip_envelope(
             if passed && signed.ttl > 0 {
                 gossip_forward(state, &signed);
             }
-            return;
+            return IngestOutcome::default();
         }
     }
 
@@ -223,6 +233,7 @@ async fn handle_gossip_envelope(
     };
     if is_from_self {
         tracing::debug!(kind, outcome = "own", "gossip received");
+        IngestOutcome::default()
     } else {
         tracing::debug!(
             kind,
@@ -230,7 +241,7 @@ async fn handle_gossip_envelope(
             ttl = signed.ttl,
             "gossip received"
         );
-        handle_relayed_envelope(app_handle, state, signed).await;
+        relayed_core(state, signed).await
     }
 }
 
@@ -351,13 +362,12 @@ fn admitted_relay(state: &AppState, signed: &SignedEnvelope) -> Option<Community
     }
 }
 
-async fn handle_relayed_envelope(
-    app_handle: &AppHandle,
-    state: &Arc<AppState>,
-    signed: SignedEnvelope,
-) {
+/// A relayed envelope from another member, after the gossip checks: what
+/// the Host ingests itself returns nothing; an admitted Control returns
+/// `relayed_control_core`'s outcome (plan GI4).
+async fn relayed_core(state: &Arc<AppState>, signed: SignedEnvelope) -> IngestOutcome {
     let Some(envelope) = admitted_relay(state, &signed) else {
-        return;
+        return IngestOutcome::default();
     };
     let community_id = signed.community_id.clone();
 
@@ -384,20 +394,20 @@ async fn handle_relayed_envelope(
             } else {
                 tracing::trace!("typing frame before the host started — dropped");
             }
+            IngestOutcome::default()
         }
         CommunityEnvelope::Control(payload) => {
             if state.db.current().is_err() {
                 tracing::debug!("inbound message: no identity database — dropped");
-                return;
+                return IngestOutcome::default();
             }
-            super::control::handle_relayed_control(
-                app_handle,
+            super::control::relayed_control_core(
                 state,
                 &community_id,
                 &signed.sender_pseudonym,
                 *payload,
             )
-            .await;
+            .await
         }
         CommunityEnvelope::WatchRelay {
             record_key,
@@ -412,11 +422,14 @@ async fn handle_relayed_envelope(
                 host.on_watch_relay(&record_key, subkey, &content_hash, &observer_pseudonym)
                     .await;
             }
+            IngestOutcome::default()
         }
     }
 }
 
 #[cfg(test)]
 mod dedup_tests;
+#[cfg(test)]
+mod ingest_core_tests;
 #[cfg(test)]
 mod relay_gate_tests;

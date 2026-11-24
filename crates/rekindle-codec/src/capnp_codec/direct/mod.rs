@@ -22,6 +22,8 @@ mod frame;
 #[cfg(test)]
 mod group_tests;
 #[cfg(test)]
+mod lobby_tests;
+#[cfg(test)]
 mod tests;
 mod type_id;
 
@@ -31,11 +33,11 @@ pub use body::{
     DmAck, DmDelete, DmEdit, DmReaction, DmText, DmVideoFragment, FriendAccept, FriendRequest,
     FriendsKey, GameInvite, GameTotal, GameTotals, GroupCallMember, GroupCallOffer,
     GroupCallParticipantLeft, GroupContent, GroupDmAccept, GroupDmDecline, GroupDmInvite,
-    GroupDmLeave, GroupDmRename, GroupDmRosterGrow, GroupId, IdentityRotated, PreKeyRejected,
-    ProfileBio, ProfileKeyRotated, ReadUpTo, RegisterPushRelay, RelayEnvelope, RelayOffer,
-    RelayOfferAck, RelayWithdraw, RequestAuth, RetryRequest, SessionResetDecline,
-    SessionResetRequest, StatusRequest, StatusResponse, StreamRecord, Typing, UnregisterPushRelay,
-    WakeNotify, MAX_DM_ACK_SEQS, MAX_GAME_TOTALS,
+    GroupDmLeave, GroupDmRename, GroupDmRosterGrow, GroupId, IdentityRotated, LobbyId, LobbyLaunch,
+    LobbyOpen, LobbyRef, PreKeyRejected, ProfileBio, ProfileKeyRotated, ReadUpTo,
+    RegisterPushRelay, RelayEnvelope, RelayOffer, RelayOfferAck, RelayWithdraw, RequestAuth,
+    RetryRequest, SessionResetDecline, SessionResetRequest, StatusRequest, StatusResponse,
+    StreamRecord, Typing, UnregisterPushRelay, WakeNotify, MAX_DM_ACK_SEQS, MAX_GAME_TOTALS,
 };
 pub use frame::{
     ContentHint, DmContent, DmFrame, FrameBody, PqPrekey, PreKeyInitBody, RatchetBody,

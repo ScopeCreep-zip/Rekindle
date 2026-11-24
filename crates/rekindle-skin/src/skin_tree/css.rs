@@ -29,7 +29,8 @@ use super::pieces::{self, Band};
 use super::validate::{stack_z, text_sized};
 use crate::regions::css::href;
 
-fn axis(s: NodeSpan, (start, end, len): (&str, &str, &str), text: bool) -> String {
+fn axis(s: &NodeSpan, (start, end, len): (&str, &str, &str), text: bool) -> String {
+    let s = s.clone();
     match s {
         NodeSpan::Fixed {
             at: Anchor::Start(o) | Anchor::Centre { by: o, .. },
@@ -40,7 +41,7 @@ fn axis(s: NodeSpan, (start, end, len): (&str, &str, &str), text: bool) -> Strin
             size: 0,
         } if text => format!("{end}: {o}px; {len}: max-content;"),
         NodeSpan::Fixed {
-            at: Anchor::Start(o),
+            at: Anchor::Start(o) | Anchor::After { gap: o, .. },
             size,
         } => format!("{start}: {o}px; {len}: {size}px;"),
         NodeSpan::Fixed {
@@ -67,7 +68,14 @@ fn axis(s: NodeSpan, (start, end, len): (&str, &str, &str), text: bool) -> Strin
     }
 }
 
-fn size(s: NodeSpan) -> Option<u16> {
+/// The roles the shell draws as an `<input>` in the node's box: the name
+/// while it is edited and the status line.
+const fn is_input(role: NodeRole) -> bool {
+    matches!(role, NodeRole::NameField | NodeRole::StatusText)
+}
+
+fn size(s: &NodeSpan) -> Option<u16> {
+    let s = s.clone();
     match s {
         NodeSpan::Fixed { size, .. } => Some(size),
         NodeSpan::Stretch { .. } => None,
@@ -155,15 +163,17 @@ fn layers(
     } else {
         decls(&own)
     };
+    // Longhands only (plan SK15a): a shorthand here, after the shell's layer,
+    // reset the field's served `padding-inline` (`skin-tree.css` `.skin-name`).
     let _ = write!(
         main,
-        " box-sizing: border-box; padding: {}px 0 {}px 0;",
+        " box-sizing: border-box; padding-top: {}px; padding-bottom: {}px;",
         if padded { top } else { 0 },
         if padded { bottom } else { 0 }
     );
     let over = after.then(|| {
         format!(
-            "content: \"\"; position: absolute; z-index: -1; pointer-events: none; box-sizing: border-box; left: {left}px; right: {right}px; top: 0; bottom: 0; padding: {top}px 0 {bottom}px 0; {}",
+            "content: \"\"; position: absolute; z-index: -1; pointer-events: none; box-sizing: border-box; left: {left}px; right: {right}px; top: 0; bottom: 0; padding-top: {top}px; padding-bottom: {bottom}px; {}",
             decls(&over)
         )
     });
@@ -184,10 +194,10 @@ fn target(decls: &mut String, n: &SkinNode, t: NodeTarget) {
         " box-sizing: border-box; margin: {}px {}px {}px {}px; border: solid transparent; border-width: {ay}px {right}px {bottom}px {ax}px;",
         -ay, -right, -bottom, -ax
     );
-    if size(n.x).is_some() {
+    if size(&n.x).is_some() {
         let _ = write!(decls, " width: {}px;", t.area[2]);
     }
-    if size(n.y).is_some() {
+    if size(&n.y).is_some() {
         let _ = write!(decls, " height: {}px;", t.area[3]);
     }
 }
@@ -250,14 +260,33 @@ fn press_band(sel: &str, t: NodeTarget) -> String {
     )
 }
 
+/// A text field's `<input>` laid over its whole served press area (plan
+/// SK15a; it filled only the art box, so Alloy's `StatusEdit` took presses
+/// in 15 of its 20 px), in the art box's coordinates, with a transparent
+/// border keeping its text where the art and the served inset put it.
+fn input_area(sel: &str, n: &SkinNode, t: NodeTarget) -> String {
+    let [ax, ay, aw, ah] = t.art;
+    let [left, top, width, height] = t.area;
+    let (il, ir) = n
+        .inset
+        .map_or((0, 0), |i| (i32::from(i.left), i32::from(i.right)));
+    let right = (width - ax - aw + ir).max(0);
+    let bottom = (height - ay - ah).max(0);
+    format!(
+        "  {sel} > input {{\n    position: absolute; left: {left}px; top: {top}px; width: {width}px; height: {height}px; box-sizing: border-box; margin: 0; border: solid transparent; border-width: {}px {right}px {bottom}px {}px; background-clip: padding-box; pointer-events: auto;\n  }}\n",
+        ay.max(0),
+        (ax + il).max(0)
+    )
+}
+
 fn node(out: &mut String, n: &SkinNode, ctx: &Ctx<'_>) -> Option<()> {
     let (root, images, base) = (ctx.root, ctx.images, ctx.base);
     let text = text_sized(n);
     let sel = format!("{root} [data-skin-node=\"{}\"]", n.id);
     let mut decls = format!(
         "position: absolute; {} {} z-index: {};",
-        axis(n.x, ("left", "right", "width"), text),
-        axis(n.y, ("top", "bottom", "height"), text),
+        axis(&n.x, ("left", "right", "width"), text),
+        axis(&n.y, ("top", "bottom", "height"), text),
         stack_z(n)
     );
     if n.role == NodeRole::Views {
@@ -290,6 +319,9 @@ fn node(out: &mut String, n: &SkinNode, ctx: &Ctx<'_>) -> Option<()> {
     let _ = writeln!(out, "  {sel} {{\n    {decls}\n  }}");
     if let Some(band) = band {
         out.push_str(&band);
+    }
+    if let Some(t) = n.target.filter(|_| !grip && is_input(n.role)) {
+        out.push_str(&input_area(&sel, n, t));
     }
     let normal_after = after.is_some();
     if let Some(over) = after {
@@ -361,7 +393,8 @@ pub fn tree_css(
 
 #[cfg(test)]
 mod tests {
-    use rekindle_types::dto::skin_tree::{NodeSpan, SkinNode};
+    use rekindle_types::dto::skin::SkinWindow;
+    use rekindle_types::dto::skin_tree::{NodeSpan, SkinNode, SkinTree};
 
     use super::{axis, text_sized};
     use crate::{builtin, images, manifest, package};
@@ -399,7 +432,7 @@ mod tests {
         let (_, wide) = n.x.place(w);
         let (_, tall) = n.y.place(h);
         if !text_sized(n) {
-            for (span, len) in [(n.x, w), (n.y, h)] {
+            for (span, len) in [(&n.x, w), (&n.y, h)] {
                 let css = axis(span, ("left", "right", "width"), false);
                 let want = span.place(len).0;
                 if start_of(&css, len) != Some(want) {
@@ -436,7 +469,7 @@ mod tests {
                     .boxes(w, h)
                     .iter()
                     .filter(|(n, _)| {
-                        [n.x, n.y].iter().any(|s| {
+                        [n.x.clone(), n.y.clone()].iter().any(|s| {
                             matches!(
                                 s,
                                 NodeSpan::Fixed {
@@ -451,5 +484,116 @@ mod tests {
         }
         assert!(centred > 0, "no centred node to check");
         assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+    }
+
+    /// A built-in's served main tree and the stylesheet the Host serves it.
+    fn served(id: &str) -> (SkinTree, String) {
+        let (_, b) = builtin::find(&format!("{}{id}", builtin::PREFIX)).unwrap();
+        let p = package::read(b.bytes).unwrap();
+        let mut m = manifest::served(&p).unwrap();
+        let files = images::validate(&p, &m).unwrap();
+        let l = m.windows.remove(&SkinWindow::Main).unwrap();
+        let tree = l.tree.clone().unwrap();
+        let css = super::tree_css(".f", &tree, &l, &files, "x").unwrap();
+        (tree, css)
+    }
+
+    fn all<'a>(nodes: &'a [SkinNode], out: &mut Vec<&'a SkinNode>) {
+        for n in nodes {
+            out.push(n);
+            all(&n.children, out);
+        }
+    }
+
+    fn sel(id: &str) -> String {
+        format!(".f [data-skin-node=\"{id}\"]")
+    }
+
+    /// The declarations of each rule laid on the node `sel` itself (its
+    /// states and pseudo-elements, never a descendant's rule).
+    fn own<'a>(css: &'a str, sel: &str) -> Vec<&'a str> {
+        let lines: Vec<&str> = css.lines().map(str::trim).collect();
+        lines
+            .windows(2)
+            .filter(|w| {
+                w[0].strip_prefix(sel)
+                    .and_then(|r| r.strip_suffix('{'))
+                    .is_some_and(|r| r == " " || !r.starts_with(' '))
+            })
+            .map(|w| w[1])
+            .collect()
+    }
+
+    /// Plan SK15a: no served rule of a text field with an inset writes the
+    /// `padding` shorthand or `padding-inline`, so the shell's
+    /// `padding-inline: var(--field-inset-…)` holds (Alloy's name clear of
+    /// its status edit's arrow, Simple-X's of its `MinimizeBox`).
+    #[test]
+    fn a_field_with_an_inset_keeps_the_shells_inline_padding() {
+        let mut fields = 0;
+        for b in builtin::PACKS {
+            let (tree, css) = served(b.id);
+            let mut nodes = Vec::new();
+            all(&tree.root, &mut nodes);
+            for n in nodes.into_iter().filter(|n| n.inset.is_some()) {
+                let rules = own(&css, &sel(&n.id));
+                assert!(!rules.is_empty(), "{} {}: no rule", b.id, n.id);
+                for r in rules {
+                    assert!(
+                        !r.contains("padding:") && !r.contains("padding-inline"),
+                        "{} {}: {r}",
+                        b.id,
+                        n.id
+                    );
+                }
+                fields += 1;
+            }
+        }
+        assert!(fields > 0, "no field with an inset");
+        for pack in ["alloy", "simple-x"] {
+            let (_, css) = served(pack);
+            let rule = own(&css, &sel("UserNameField"))[0];
+            assert!(
+                rule.contains("padding-top: 0px; padding-bottom: 0px;")
+                    && !rule.contains("padding:"),
+                "{pack} UserNameField: {rule}"
+            );
+        }
+    }
+
+    /// Plan SK15a: a text field drawn as an input (the name while edited,
+    /// the status line) with a served target lays its input over that whole
+    /// area, so a press anywhere the Host claims focuses it.
+    #[test]
+    fn an_input_field_takes_its_whole_press_area() {
+        let mut inputs = 0;
+        for b in builtin::PACKS {
+            let (tree, css) = served(b.id);
+            let mut nodes = Vec::new();
+            all(&tree.root, &mut nodes);
+            for n in nodes.into_iter().filter(|n| super::is_input(n.role)) {
+                let Some(target) = n.target else { continue };
+                let [left, top, width, height] = target.area;
+                let head = format!("{} > input {{", sel(&n.id));
+                let rule = css
+                    .lines()
+                    .map(str::trim)
+                    .skip_while(|l| *l != head)
+                    .nth(1)
+                    .unwrap_or_else(|| panic!("{} {}: no input rule", b.id, n.id));
+                let area =
+                    format!("left: {left}px; top: {top}px; width: {width}px; height: {height}px;");
+                assert!(rule.contains(&area), "{} {}: {rule}", b.id, n.id);
+                inputs += 1;
+            }
+        }
+        assert!(inputs > 0, "no input field with a target");
+        let (_, css) = served("alloy");
+        let head = format!("{} > input {{", sel("StatusEdit"));
+        let rule = css.lines().map(str::trim).skip_while(|l| *l != head).nth(1);
+        assert_eq!(
+            rule,
+            Some("position: absolute; left: 0px; top: -4px; width: 165px; height: 20px; box-sizing: border-box; margin: 0; border: solid transparent; border-width: 4px 0px 1px 0px; background-clip: padding-box; pointer-events: auto;")
+        );
     }
 }

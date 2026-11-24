@@ -1,11 +1,11 @@
 import { Component, For, createSignal, createEffect, Show } from "solid-js";
+import SkinGlyph from "../common/SkinGlyph";
 import { Popover } from "@kobalte/core/popover";
 import { canSend, handleDraftChanged, handleKeyDown, sendDraft } from "../../actions/chat.actions";
 import { handleUploadAttachment } from "../../actions/community.actions";
 import EmojiPicker from "./EmojiPicker";
 import ReplyPreview from "./ReplyPreview";
 import { voiceState } from "../../stores/voice.store";
-import { ICON_CLOSE, ICON_EMOTICON, ICON_PAPERCLIP } from "../../icons";
 import { useMentionAutocomplete } from "./message_input/useMentionAutocomplete";
 import { useVoiceRecorder } from "./message_input/useVoiceRecorder";
 import { useSlowmode } from "./message_input/useSlowmode";
@@ -139,7 +139,7 @@ const MessageInput: Component<MessageInputProps> = (props) => {
             title="Cancel edit (Esc)"
             aria-label="Cancel edit"
           >
-            <span class="nf-icon" aria-hidden="true">{ICON_CLOSE}</span>
+            <SkinGlyph name="close" />
           </button>
         </div>
       </Show>
@@ -164,7 +164,7 @@ const MessageInput: Component<MessageInputProps> = (props) => {
               aria-label="Attach file"
               onClick={() => void handleAttachClick()}
             >
-              <span class="nf-icon" aria-hidden="true">{ICON_PAPERCLIP}</span>
+              <SkinGlyph name="paperclip" />
             </button>
           </Show>
           <Show when={props.communityId && !props.editMode}>
@@ -180,7 +180,7 @@ const MessageInput: Component<MessageInputProps> = (props) => {
               onTouchStart={() => void recorder.startRecording()}
               onTouchEnd={() => void recorder.stopRecording(true)}
             >
-              <span class="nf-icon" aria-hidden="true">{recorder.recording() ? ICON_MIC_OFF : ICON_MIC}</span>
+              <SkinGlyph name={recorder.recording() ? "mic.off" : "mic.on"} />
               <Show when={recorder.recording()}>
                 <span class="message-input-mic-timer">
                   {Math.floor(recorder.recordedMs() / 1000)}s
@@ -200,7 +200,7 @@ const MessageInput: Component<MessageInputProps> = (props) => {
               aria-label="Insert emoji"
               aria-pressed={showEmojiPicker()}
             >
-              <span class="nf-icon" aria-hidden="true">{ICON_EMOTICON}</span>
+              <SkinGlyph name="emoticon" />
             </Popover.Trigger>
             <Popover.Portal>
               <Popover.Content class="emoji-picker-popover">

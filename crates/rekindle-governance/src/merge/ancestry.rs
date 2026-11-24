@@ -21,12 +21,13 @@
 //! cause the lowest `(lamport, op_hash)` of those ops (its authority path).
 //! One whose authority holds through another path stays applied.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
-use rekindle_types::governance::GenesisCert;
+use rekindle_types::governance::{GenesisCert, OpHash};
 
-use super::resolve::OpSet;
+use super::resolve::{self, OpSet};
 use super::{resolve_stable, Settled};
+use crate::op::VerifiedOp;
 
 /// The final resolution and, per op the cascade quarantined, its cause.
 pub(super) struct Settlement {
@@ -71,4 +72,33 @@ pub(super) fn settle(cert: &GenesisCert, set: &OpSet<'_>) -> Settlement {
         .filter_map(|i| in_past(i).next().map(|q| (i, q)))
         .collect();
     Settlement { settled, cascade }
+}
+
+/// `ops` prepared and settled with exactly the `DeviceReadmit`s that apply
+/// in the device view (ADR 0022 rules 7 and 8; plan E3.2 K4b BUG): a
+/// readmit enters the view only once applied, judged at its causal
+/// position against the power state in its past (K4b Q6). A readmit's
+/// verdict rests on its strict past alone, whose device judgements no later
+/// readmit changes, so starting from none and admitting each round's
+/// applied readmits reaches every authorised one; the admitted set only
+/// grows, so it ends, and it is a pure function of the op set (D15).
+pub(super) fn prepare_settled<'a>(
+    cert: &GenesisCert,
+    ops: &'a [VerifiedOp],
+) -> (OpSet<'a>, Settlement) {
+    let mut admitted = BTreeSet::new();
+    loop {
+        let set = resolve::prepare(cert, ops, &admitted);
+        let settlement = settle(cert, &set);
+        let round = &settlement.settled.0;
+        let fresh: Vec<OpHash> = (0..set.ops.len())
+            .filter(|&i| round.applied[i] && resolve::is_readmit(set.ops[i]))
+            .map(|i| set.ops[i].hash())
+            .filter(|h| !admitted.contains(h))
+            .collect();
+        if fresh.is_empty() {
+            return (set, settlement);
+        }
+        admitted.extend(fresh);
+    }
 }

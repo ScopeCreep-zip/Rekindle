@@ -69,21 +69,23 @@
 //!   arcs once a slice reaches the radius, and the image's own corners are
 //!   the skin's.
 //! * A labelled container slot (a bar, a header, the selected row: plan
-//!   E7.7.7) paints its bitmap on the container and the backing on each
-//!   label the `[regions]` entry names (`labels = [...]`), as the label's
-//!   own `background-image` (a one-colour gradient of
-//!   [`backing_property`]): a child's background paints over its
-//!   ancestor's border image and under its own text, so the bitmap shows
-//!   around the labels and never under their text. The backing is clipped
-//!   to the label's content box (`background-clip: content-box`), where its
-//!   text is laid out: a label's padding (a menu item's 10 px, a button's
-//!   bevel room) shows the bar's bitmap, so a bar whose labels fill it is
-//!   still visibly skinned (E7.7.7 S5: the real app showed Symbiosis's info
-//!   and menu bars as the plain token look because full-width labels
-//!   covered the bitmap edge to edge). Unset, the gradient is
-//!   invalid at computed-value time and `background-image` is `none`, so
-//!   without a skin the labels look as the app draws them. Under
-//!   `forced-colors: active` the labels' `background-image` is `none` too.
+//!   E7.7.7) paints its bitmap on the container, and its text is on the
+//!   children the `[regions]` entry names (`labels = [...]`). Where the
+//!   art under those labels fails WCAG 2.2 SC 1.4.3 (contrast is measured
+//!   against what is actually behind the text: [`super::labels`] and
+//!   [`super::title`] sample it at serve time), the skin layer sets the
+//!   slot's [`band_property`] to its [`backing_property`] and the container
+//!   paints it once, as one band behind its text row: the container's
+//!   `::before` (as a text slot's backing, below: `position: absolute;
+//!   inset: 0; z-index: -1; padding: inherit` in a container made
+//!   `position: relative; isolation: isolate` under `:where()`, so an
+//!   app's own positioning wins) draws a one-colour gradient across the
+//!   content box at the rows [`super::label_box`] measures (a centred line,
+//!   a top line, or the whole content box). Never a box per label: where
+//!   the art carries the text no band is set, the gradient is invalid at
+//!   computed-value time and nothing is drawn, so the art shows as the
+//!   pack drew it. Under `forced-colors: active` the `::before` is not
+//!   generated.
 //! * A sized slot's element (the status arrow) is as wide and tall as its
 //!   image ([`size_property`]) and 0 × 0 without a skin.
 
@@ -284,8 +286,6 @@ fn rules(
     // backing `::before`.
     let mut painted: Vec<String> = Vec::new();
     let mut backed: Vec<String> = Vec::new();
-    // Every label of a labelled slot.
-    let mut labels: Vec<String> = Vec::new();
     // Every rule again, reading the still under reduced motion.
     let mut motion = String::new();
     let mut out = String::new();
@@ -352,17 +352,14 @@ fn rules(
             elements.join(",\n    ")
         );
         if slot.labelled {
-            let _ = write!(
-                out,
-                "  {} {{\n    background-image: linear-gradient(var({b}), var({b}));\n    background-clip: content-box;\n  }}\n",
-                entry.labels.join(",\n  "),
-                b = backing_property(slot.id)
-            );
-            // A strip's first label is its title (plan E7.7.7).
-            if let Some(title) = entry.labels.first().filter(|_| strip::is_strip(slot.id)) {
-                out.push_str(&super::title::title_rule(slot.id, title));
+            if let Some(e) = elements.iter().find(|e| e.contains("::")) {
+                return Err(format!(
+                    "`{}`: `{e}` carries labels, so it must be an element",
+                    slot.id
+                ));
             }
-            labels.extend(entry.labels.iter().cloned());
+            out.push_str(&band_rule(slot.id, elements));
+            backed.extend(elements.iter().map(|e| format!("{e}::before")));
         }
         if text {
             out.push_str(&backing_rule(slot.id, elements)?);
@@ -418,13 +415,6 @@ fn rules(
             a11y,
             "    {} {{\n      content: none;\n    }}\n",
             backed.join(",\n    ")
-        );
-    }
-    if !labels.is_empty() {
-        let _ = write!(
-            a11y,
-            "    {} {{\n      background-image: none;\n    }}\n",
-            labels.join(",\n    ")
         );
     }
     a11y.push_str("  }\n");
@@ -584,9 +574,12 @@ pub fn skin_css(
     Some(format!("@layer skin {{\n  :root {{\n{decls}  }}\n}}\n"))
 }
 
+mod band;
 mod family;
 mod frame;
 mod strip;
+pub use band::band_property;
+use band::band_rule;
 pub use family::{families, family, family_css};
 pub use frame::border_property;
 

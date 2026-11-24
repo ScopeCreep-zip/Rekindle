@@ -74,6 +74,7 @@ pub(crate) const TAURI_ACCOUNT_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("register_dm_video_channel", None),
     ("unregister_dm_video_channel", None),
     ("search_messages", None),
+    ("local_search", None),
     ("ensure_personal_sync_record", None),
     (
         "start_pairing_session",

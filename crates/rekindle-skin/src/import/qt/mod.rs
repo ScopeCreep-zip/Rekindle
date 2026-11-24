@@ -210,6 +210,7 @@ fn ini(text: &str) -> Vec<(String, String, String)> {
 fn manifest(tree: &Tree, id: &str, read: &Read, source: &str, base: SkinBase) -> SkinManifest {
     let what = read.front.name();
     SkinManifest {
+        text: BTreeMap::new(),
         format: format!("{SKIN_FORMAT_PREFIX}{SKIN_FORMAT_MAJOR}"),
         id: id.to_owned(),
         name: id.to_owned(),

@@ -1,7 +1,7 @@
 import { Component, Show, createMemo, onCleanup } from "solid-js";
+import SkinGlyph from "../../common/SkinGlyph";
 import Avatar from "../../common/Avatar";
 import { voiceState } from "../../../stores/voice.store";
-import { ICON_MIC_OFF, ICON_SCREEN_SHARE } from "../../../icons";
 import type { CallTile } from "./useCallStage";
 
 /// One gallery cell: a live video surface (remote decoder canvas or local
@@ -77,14 +77,10 @@ const ParticipantTile: Component<{
 
       <div class="call-stage-tile-overlay">
         <Show when={props.tile.isScreen}>
-          <span class="nf-icon call-stage-tile-badge" aria-hidden="true">
-            {ICON_SCREEN_SHARE}
-          </span>
+          <SkinGlyph name="screen-share" class="call-stage-tile-badge" />
         </Show>
         <Show when={isMuted()}>
-          <span class="nf-icon call-stage-tile-badge call-stage-tile-badge-muted" aria-hidden="true">
-            {ICON_MIC_OFF}
-          </span>
+          <SkinGlyph name="mic.off" class="call-stage-tile-badge call-stage-tile-badge-muted" />
         </Show>
         <span class="call-stage-tile-name">{name()}</span>
       </div>

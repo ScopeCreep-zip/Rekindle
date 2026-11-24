@@ -3,6 +3,7 @@
 
 use rekindle_image::{Rgba, RgbaImage};
 use rekindle_types::dto::skin::{Insets, WindowLayout};
+use rekindle_types::dto::skin_tree::SkinNode;
 
 /// No insets on any side.
 pub(super) const Z: Insets = Insets {
@@ -37,4 +38,11 @@ pub(super) fn piece(path: &str) -> RgbaImage {
         h.parse().unwrap(),
         Rgba([10, 20, 30, 255]),
     )
+}
+
+/// The node `id` under `nodes`, depth first.
+pub(super) fn find<'a>(nodes: &'a [SkinNode], id: &str) -> Option<&'a SkinNode> {
+    nodes
+        .iter()
+        .find_map(|n| (n.id == id).then_some(n).or_else(|| find(&n.children, id)))
 }

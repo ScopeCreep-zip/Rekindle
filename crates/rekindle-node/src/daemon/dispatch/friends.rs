@@ -2,7 +2,8 @@
 //! (plans E2.1, E2.3): each request runs the ported operation
 //! (`operations::{friend, dm}`) over the Host (`HostFriends`).
 
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse, Lane};
+use rekindle_ipc::protocol::{IpcRequest, IpcResponse, Lane, LobbyRequest};
+use rekindle_transport::operations::group_dm::lobby::LobbyStep;
 use rekindle_transport::operations::{dm, friend, friend::FriendError, group_dm};
 
 use super::{state_error, DaemonContext};
@@ -185,6 +186,34 @@ pub(crate) async fn route(
         IpcRequest::GroupDmLeave { group_id } => done(group_dm::leave(&host, &group_id).await),
         IpcRequest::GroupDmInvite { group_id, members } => {
             done(group_dm::invite(&host, &group_id, &members).await)
+        }
+        IpcRequest::Lobby(LobbyRequest::Host { group_id }) => {
+            match crate::host::lobby::own_game(ctx) {
+                Ok(game_id) => done(group_dm::lobby::open(&host, &group_id, game_id).await),
+                Err(refused) => refused,
+            }
+        }
+        IpcRequest::Lobby(LobbyRequest::Join { group_id, lobby_id }) => {
+            done(group_dm::lobby::act(&host, &group_id, &lobby_id, LobbyStep::Join).await)
+        }
+        IpcRequest::Lobby(LobbyRequest::Leave { group_id, lobby_id }) => {
+            done(group_dm::lobby::act(&host, &group_id, &lobby_id, LobbyStep::Leave).await)
+        }
+        IpcRequest::Lobby(LobbyRequest::Close { group_id, lobby_id }) => {
+            done(group_dm::lobby::act(&host, &group_id, &lobby_id, LobbyStep::Close).await)
+        }
+        IpcRequest::Lobby(LobbyRequest::Launch {
+            group_id,
+            lobby_id,
+            server,
+        }) => match crate::host::lobby::launch_server(ctx, server.as_ref()) {
+            Ok(server) => done(
+                group_dm::lobby::act(&host, &group_id, &lobby_id, LobbyStep::Launch(server)).await,
+            ),
+            Err(refused) => refused,
+        },
+        IpcRequest::Lobby(LobbyRequest::Get { group_id }) => {
+            answer(group_dm::lobby::get(&host, &group_id).await)
         }
         IpcRequest::GroupDmRename { group_id, name } => {
             done(group_dm::rename(&host, &group_id, &name).await)

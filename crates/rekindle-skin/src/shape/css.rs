@@ -37,6 +37,7 @@ pub const fn window_attr(window: SkinWindow) -> &'static str {
     match window {
         SkinWindow::Main => "main",
         SkinWindow::Chat => "chat",
+        SkinWindow::Community => "community",
     }
 }
 
@@ -142,7 +143,7 @@ fn window_rules(
     let pad = |a: u16, b: u16| u32::from(a) + u32::from(b);
     let _ = writeln!(
         out,
-        "  {root} {{\n    border: 0;\n    border-radius: 0;\n    border-image: none;\n    position: relative;\n    isolation: isolate;\n    padding: {}px {}px {}px {}px;\n    background: var(--color-xfire-bg-dark) content-box;\n    --skin-region-titlebar-title-backing: var(--skin-region-titlebar-backing);\n  }}",
+        "  {root} {{\n    border: 0;\n    border-radius: 0;\n    border-image: none;\n    position: relative;\n    isolation: isolate;\n    padding: {}px {}px {}px {}px;\n    background: var(--color-xfire-bg-dark) content-box;\n    --skin-region-titlebar-band: var(--skin-region-titlebar-backing);\n  }}",
         pad(o.top, c.top),
         pad(o.right, c.right),
         pad(o.bottom, c.bottom),

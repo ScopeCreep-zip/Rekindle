@@ -36,7 +36,7 @@ Colour roles by reference (11)
   [GroupChatInfoView] text.color_hyperlink=MainTextColor -> link kept: an earlier reference set it
 
 Regions
-  window.frame: the nine-piece frame of the chat window layout chatwindow.xml: one component's nine-piece set, 97x128 px, nine-slice 35/27/35/27
+  window.frame: the nine-piece frame of the chat window layout chatwindow.xml: one component's nine-piece set, 97x127 px, nine-slice 35/27/34/27
   buddylist.menubar: the component MenuBackground, 42x6 px, NineSlice(Insets { top: 0, right: 13, bottom: 0, left: 16 }); states normal
   buddylist.group-header: the component BuddyView, 54x21 px, NineSlice(Insets { top: 0, right: 1, bottom: 0, left: 1 }); states normal
   community.category-header: the component BuddyView, 54x21 px, NineSlice(Insets { top: 0, right: 1, bottom: 0, left: 1 }); states normal

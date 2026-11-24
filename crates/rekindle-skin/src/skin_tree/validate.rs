@@ -95,7 +95,7 @@ pub fn text_sized(n: &SkinNode) -> bool {
             n.role,
             NodeRole::MenuTitle | NodeRole::Tab(_) | NodeRole::StatusText | NodeRole::NameField
         )
-        && (empty(n.x) || empty(n.y))
+        && (empty(n.x.clone()) || empty(n.y.clone()))
 }
 
 /// The node's hit area in a `win_w × win_h` window: its box grown to 24×24

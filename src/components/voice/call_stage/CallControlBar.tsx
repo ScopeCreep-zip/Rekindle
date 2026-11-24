@@ -1,4 +1,5 @@
 import { Component, Show } from "solid-js";
+import SkinGlyph from "../../common/SkinGlyph";
 import { setVoiceState, voiceState } from "../../../stores/voice.store";
 import {
   handleToggleMute,
@@ -8,18 +9,6 @@ import {
 import { q8ToPercent } from "../../../ipc/channels/voice_events";
 import SoundboardPanel from "../SoundboardPanel";
 import ReactionsTray from "../ReactionsTray";
-import {
-  ICON_MIC,
-  ICON_MIC_OFF,
-  ICON_HEADPHONES,
-  ICON_HEADPHONES_OFF,
-  ICON_VIDEO,
-  ICON_VIDEO_OFF,
-  ICON_SCREEN_SHARE,
-  ICON_PIP,
-  ICON_HANGUP,
-  ICON_CHANNEL_TEXT,
-} from "../../../icons";
 
 /// Bottom-centred call controls for the main-pane call stage. Every voice
 /// control has room here (the old sidebar strip clipped at ~180px): mute,
@@ -100,9 +89,7 @@ const CallControlBar: Component<{
           aria-label={voiceState.isMuted ? "Unmute microphone" : "Mute microphone"}
           aria-pressed={voiceState.isMuted}
         >
-          <span class="nf-icon" aria-hidden="true">
-            {voiceState.isMuted ? ICON_MIC_OFF : ICON_MIC}
-          </span>
+          <SkinGlyph name={voiceState.isMuted ? "mic.off" : "mic.on"} />
         </button>
         <button
           class={`voice-btn ${voiceState.isDeafened ? "voice-btn-active" : ""}`}
@@ -111,9 +98,7 @@ const CallControlBar: Component<{
           aria-label={voiceState.isDeafened ? "Undeafen output" : "Deafen output"}
           aria-pressed={voiceState.isDeafened}
         >
-          <span class="nf-icon" aria-hidden="true">
-            {voiceState.isDeafened ? ICON_HEADPHONES_OFF : ICON_HEADPHONES}
-          </span>
+          <SkinGlyph name={voiceState.isDeafened ? "speaker.off" : "speaker.on"} />
         </button>
         <button
           class={`voice-btn ${voiceState.cameraOn ? "voice-btn-active" : ""}`}
@@ -128,9 +113,7 @@ const CallControlBar: Component<{
           aria-label={voiceState.cameraOn ? "Stop camera" : "Start camera"}
           aria-pressed={voiceState.cameraOn}
         >
-          <span class="nf-icon" aria-hidden="true">
-            {voiceState.cameraOn ? ICON_VIDEO : ICON_VIDEO_OFF}
-          </span>
+          <SkinGlyph name={voiceState.cameraOn ? "video" : "video-off"} />
         </button>
         <button
           class={`voice-btn ${voiceState.screenShareOn ? "voice-btn-active" : ""}`}
@@ -145,7 +128,7 @@ const CallControlBar: Component<{
           aria-label={voiceState.screenShareOn ? "Stop screen share" : "Share screen"}
           aria-pressed={voiceState.screenShareOn}
         >
-          <span class="nf-icon" aria-hidden="true">{ICON_SCREEN_SHARE}</span>
+          <SkinGlyph name="screen-share" />
         </button>
       </div>
 
@@ -159,7 +142,7 @@ const CallControlBar: Component<{
             title="Picture-in-picture"
             aria-label="Pop out video"
           >
-            <span class="nf-icon" aria-hidden="true">{ICON_PIP}</span>
+            <SkinGlyph name="pip" />
           </button>
         </Show>
         <button
@@ -169,7 +152,7 @@ const CallControlBar: Component<{
           aria-label={props.chatOpen ? "Hide channel chat" : "Show channel chat"}
           aria-pressed={props.chatOpen}
         >
-          <span class="nf-icon" aria-hidden="true">{ICON_CHANNEL_TEXT}</span>
+          <SkinGlyph name="chat" />
         </button>
       </div>
 
@@ -180,7 +163,7 @@ const CallControlBar: Component<{
           title="Disconnect"
           aria-label="Leave voice channel"
         >
-          <span class="nf-icon" aria-hidden="true">{ICON_HANGUP}</span>
+          <SkinGlyph name="hangup" />
         </button>
       </div>
     </div>

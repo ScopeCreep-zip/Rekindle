@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 
-use rekindle_types::dto::skin::WindowLayout;
+use rekindle_types::dto::skin::{SkinWindow, WindowLayout};
 use rekindle_types::dto::skin_action::{SkinAction, SkinEvent};
 use rekindle_types::dto::skin_tree::{Edge, NodeRole, NodeTarget, SkinNode, SkinTree, TargetRule};
 
@@ -14,7 +14,7 @@ use super::tests::{acts, fixed, layout, n};
 use super::{css, target, validate};
 use crate::{builtin, images, manifest, package};
 
-fn button(id: &str, (x, y): (i16, i16), (w, h): (u16, u16)) -> SkinNode {
+pub(super) fn button(id: &str, (x, y): (i16, i16), (w, h): (u16, u16)) -> SkinNode {
     acts(
         n(id, NodeRole::Button, fixed(x, w), fixed(y, h)),
         SkinEvent::Click,
@@ -23,18 +23,18 @@ fn button(id: &str, (x, y): (i16, i16), (w, h): (u16, u16)) -> SkinNode {
 }
 
 /// A 200 x 300 window holding `root`, its targets set as the Host serves.
-fn laid(root: Vec<SkinNode>) -> WindowLayout {
+pub(super) fn laid(root: Vec<SkinNode>) -> WindowLayout {
     let mut l = layout(Some(SkinTree { outsets: Z, root }));
     target::nodes(&mut l);
     l
 }
 
-fn target_of(l: &WindowLayout, id: &str) -> Option<NodeTarget> {
+pub(super) fn target_of(l: &WindowLayout, id: &str) -> Option<NodeTarget> {
     let tree = l.tree.as_ref().unwrap();
     tree.root.iter().find(|n| n.id == id).unwrap().target
 }
 
-fn sheet(l: &WindowLayout) -> String {
+pub(super) fn sheet(l: &WindowLayout) -> String {
     css::tree_css(".f", l.tree.as_ref().unwrap(), l, &BTreeMap::new(), "x").unwrap()
 }
 
@@ -125,14 +125,6 @@ fn laid_pair(at: (i16, i16), size: (u16, u16)) -> Vec<target::Laid> {
     let mut l = target::targets(&tree, (200, 300));
     l.reverse();
     l
-}
-
-#[test]
-fn a_node_already_24_px_is_unchanged() {
-    let l = laid(vec![button("Big", (50, 10), (24, 30))]);
-    assert_eq!(target_of(&l, "Big"), None);
-    let out = sheet(&l);
-    assert!(out.contains("[data-skin-node=\"Big\"] {\n    position: absolute; left: 50px; width: 24px; top: 10px; height: 30px; z-index: 0;\n  }"), "{out}");
 }
 
 /// Every built-in's interactive nodes, per window and popup: no two target
@@ -307,7 +299,10 @@ fn covered(tree: &SkinTree, window: (i32, i32)) -> Vec<String> {
                 || up.contains(&m.id.as_str())
                 || apart.apart(&l.id, &m.id)
                 || (!grip && (inside(*mb, *lb) || at(*mb, c)))
-                || (grip && (stack.yields(&m.id, &l.id) || in_hole(&m.id, c)));
+                || (grip && (stack.yields(&m.id, &l.id) || in_hole(&m.id, c)))
+                // A grip that serves every trigger of `l` (the system menu
+                // it takes from a frame strip) answers `l`'s press itself.
+                || (grip && !l.triggers.is_empty() && l.triggers.iter().all(|t| m.triggers.contains(t)));
             if skip {
                 continue;
             }
@@ -424,25 +419,30 @@ fn every_builtin_grip_is_a_served_target() {
                         );
                     }
                     if b.id == "spacecowboy" && popup.is_empty() {
-                        cowboy.push((g.laid.id.clone(), g.laid.rule));
+                        cowboy.push((*window, g.laid.id.clone(), g.laid.rule));
                     }
                 }
             }
         }
     }
-    // SpaceCowboy's four resize edges and its corner grip (its frame
-    // corners and side pieces are drag areas, no control): each band lies
-    // on the window's frame side, clear of the list's small controls.
-    let rule = |id: &str| cowboy.iter().find(|(g, _)| g == id).map(|(_, r)| *r);
-    assert_eq!(cowboy.len(), 5, "{cowboy:?}");
-    for (id, want) in [
-        ("ResizeLeft", TargetRule::Size),
-        ("ResizeRight", TargetRule::Size),
-        ("ResizeUp", TargetRule::Size),
-        ("ResizeDown", TargetRule::Size),
-        ("BRGripper", TargetRule::Size),
-    ] {
-        assert_eq!(rule(id), Some(want), "{id}: {cowboy:?}");
+    // SpaceCowboy's four resize edges and its corner grip, in its buddy
+    // list and in its chat window alike (`chatwindow.xml` lays the same
+    // five; its frame corners and side pieces are drag areas, no control):
+    // each band lies on the window's frame side, clear of the small
+    // controls.
+    for window in [SkinWindow::Main, SkinWindow::Chat] {
+        let of: Vec<_> = cowboy.iter().filter(|(w, ..)| *w == window).collect();
+        let rule = |id: &str| of.iter().find(|(_, g, _)| g == id).map(|(.., r)| *r);
+        assert_eq!(of.len(), 5, "{window:?}: {of:?}");
+        for (id, want) in [
+            ("ResizeLeft", TargetRule::Size),
+            ("ResizeRight", TargetRule::Size),
+            ("ResizeUp", TargetRule::Size),
+            ("ResizeDown", TargetRule::Size),
+            ("BRGripper", TargetRule::Size),
+        ] {
+            assert_eq!(rule(id), Some(want), "{window:?} {id}: {of:?}");
+        }
     }
 }
 
@@ -458,21 +458,82 @@ fn grip_edge(tree: &SkinTree, id: &str) -> Option<Edge> {
     n.resize_edge()
 }
 
-/// Plan SK11 (the real-app hit stack): Onyx's `TopLeft` (Decor art 83 x 128,
-/// `leftDown` drags the window, `doubleClick` maximizes it: a drag area,
-/// no resize) lies above the Friends tab's `TabNormalButton` in the pack's
-/// order and took the press over its whole art, so a click on the tab
-/// grabbed the window. A drag area takes no press over a press control:
-/// its pointer area is cut over the tab's press box, so the tab's centre
-/// is pressed by the tab.
+/// The ids of every tab button under `nodes`: each `Tab(_)` node (the
+/// Communities clone, `TabDownloadText.Communities`) and its children
+/// (`TabNormalButton`, `TabServerButton`, `TabDownloadButton` and the
+/// clone's `TabDownloadButton.Communities`).
+fn tab_buttons<'a>(nodes: &'a [SkinNode], out: &mut Vec<&'a str>) {
+    for n in nodes {
+        if matches!(n.role, NodeRole::Tab(_)) {
+            out.push(&n.id);
+            out.extend(n.children.iter().map(|c| c.id.as_str()));
+        }
+        tab_buttons(&n.children, out);
+    }
+}
+
+/// Each tab of `tabs` (id, box) whose centre one of `regions` (a frame
+/// node's id, its pointer area and the holes cut from it) takes.
+fn tab_centres_taken(
+    tabs: &[(&str, [i32; 4])],
+    regions: &[(&str, [i32; 4], Vec<[i32; 4]>)],
+) -> Vec<String> {
+    let inside = |r: [i32; 4], (cx, cy): (i32, i32)| {
+        2 * r[0] <= cx && cx < 2 * (r[0] + r[2]) && 2 * r[1] <= cy && cy < 2 * (r[1] + r[3])
+    };
+    let mut taken = Vec::new();
+    for (tab, b) in tabs {
+        let c = (2 * b[0] + b[2], 2 * b[1] + b[3]);
+        for (id, area, holes) in regions {
+            if inside(*area, c) && !holes.iter().any(|h| inside(*h, c)) {
+                taken.push(format!("{id} {area:?} takes {tab} {b:?}'s centre"));
+            }
+        }
+    }
+    taken
+}
+
+/// The tab centres a drag or move region of `tree` (laid in `window`)
+/// takes: each frame node's served pointer area ([`target::grips`]), or a
+/// drag area's own box in the window when nothing cut it.
+fn taken_in(tree: &SkinTree, window: (i32, i32)) -> Vec<String> {
+    let boxes = tree.boxes(window.0, window.1);
+    let mut ids = Vec::new();
+    tab_buttons(&tree.root, &mut ids);
+    let tabs: Vec<(&str, [i32; 4])> = boxes
+        .iter()
+        .filter(|(n, b)| ids.contains(&n.id.as_str()) && b[2] > 0 && b[3] > 0)
+        .map(|(n, b)| (n.id.as_str(), *b))
+        .collect();
+    let laid = target::targets(tree, window);
+    let grips = target::grips(tree, window, &laid);
+    let mut regions: Vec<(&str, [i32; 4], Vec<[i32; 4]>)> = grips
+        .iter()
+        .map(|g| (g.laid.id.as_str(), g.laid.area, g.holes.clone()))
+        .collect();
+    for (n, b) in &boxes {
+        if n.drag_area() && !grips.iter().any(|g| g.laid.id == n.id) {
+            regions.push((n.id.as_str(), *b, Vec::new()));
+        }
+    }
+    tab_centres_taken(&tabs, &regions)
+}
+
+/// Plan SK11 (the real-app hit stack), first found on Onyx: its `TopLeft`
+/// (Decor art 83 x 128, `leftDown` drags the window, `doubleClick`
+/// maximizes it: a drag area, no resize) lay above the Friends tab's
+/// `TabNormalButton` in the pack's order and took the press over its whole
+/// art, so a click on the tab grabbed the window. A drag area takes no
+/// press over a press control: in every built-in window and popup, no
+/// drag or move region's pointer area takes the centre of a tab button
+/// (the pack's tabs and the Communities clone).
 #[test]
-fn onyx_top_left_drag_area_leaves_the_friends_tab_its_centre() {
+fn no_builtin_drag_area_takes_a_tab_centre() {
     use rekindle_types::dto::skin_action::{SkinAction, SkinEvent};
-    let l = super::golden_tests::main_layout("onyx");
-    let tree = l.tree.as_ref().unwrap();
-    let at = target::window(&l);
-    let boxes = tree.boxes(at.0, at.1);
-    let (top_left, _) = boxes.iter().find(|(n, _)| n.id == "TopLeft").unwrap();
+    let onyx = super::golden_tests::main_layout("onyx");
+    let tree = onyx.tree.as_ref().unwrap();
+    let top_left = tree.boxes(0, 0);
+    let (top_left, _) = top_left.iter().find(|(n, _)| n.id == "TopLeft").unwrap();
     assert!(top_left.drag_area() && top_left.resize_edge().is_none());
     let gestures: Vec<(SkinEvent, SkinAction)> = top_left
         .triggers
@@ -487,24 +548,47 @@ fn onyx_top_left_drag_area_leaves_the_friends_tab_its_centre() {
             (SkinEvent::DoubleClick, SkinAction::Maximize)
         ]
     );
-    let (_, tab) = boxes
-        .iter()
-        .find(|(n, _)| n.id == "TabNormalButton")
-        .unwrap();
-    let laid = target::targets(tree, at);
-    let drag = target::grips(tree, at, &laid)
-        .into_iter()
-        .find(|g| g.laid.id == "TopLeft")
-        .expect("TopLeft is served a pointer area with holes");
-    assert_eq!(drag.laid.rule, TargetRule::Frame, "{:?}", drag.laid);
-    let (cx, cy) = (2 * tab[0] + tab[2], 2 * tab[1] + tab[3]);
-    let holds = |r: [i32; 4]| {
-        2 * r[0] <= cx && cx < 2 * (r[0] + r[2]) && 2 * r[1] <= cy && cy < 2 * (r[1] + r[3])
-    };
-    assert!(holds(drag.laid.area), "{:?}", drag.laid);
-    assert!(
-        drag.holes.iter().any(|h| holds(*h)),
-        "TopLeft {:?} takes TabNormalButton {tab:?}'s centre",
-        drag.laid
+    let (mut taken, mut tabs) = (Vec::new(), 0);
+    for b in builtin::PACKS {
+        let package = package::read(b.bytes).unwrap();
+        let m = manifest::served(&package).unwrap();
+        for (window, l) in &m.windows {
+            let mut trees = Vec::new();
+            if let Some(t) = &l.tree {
+                trees.push((String::new(), t, target::window(l)));
+            }
+            for (name, p) in &l.popups {
+                let at = target::window(&super::popup::frame(p, l.min_height));
+                trees.push((format!(" popup {name}"), &p.tree, at));
+            }
+            for (popup, tree, at) in trees {
+                let mut ids = Vec::new();
+                tab_buttons(&tree.root, &mut ids);
+                tabs += ids.len();
+                taken.extend(
+                    taken_in(tree, at)
+                        .into_iter()
+                        .map(|t| format!("{} {window:?}{popup}: {t}", b.id)),
+                );
+            }
+        }
+    }
+    assert!(tabs > 0, "no built-in tab button was checked");
+    assert!(taken.is_empty(), "{}", taken.join("\n"));
+}
+
+/// The check above fails when a region takes a tab's centre: a drag area
+/// over a tab with no hole at its centre is reported, one cut there is not.
+#[test]
+fn a_drag_area_over_a_tab_centre_is_reported() {
+    let tabs = [("TabNormalButton", [10, 10, 40, 20])];
+    let whole = [("TopLeft", [0, 0, 83, 128], Vec::new())];
+    assert_eq!(
+        tab_centres_taken(&tabs, &whole),
+        ["TopLeft [0, 0, 83, 128] takes TabNormalButton [10, 10, 40, 20]'s centre"]
     );
+    let edge = [("TopLeft", [0, 0, 83, 128], vec![[10, 25, 40, 5]])];
+    assert_eq!(tab_centres_taken(&tabs, &edge).len(), 1);
+    let cut = [("TopLeft", [0, 0, 83, 128], vec![[10, 10, 40, 20]])];
+    assert!(tab_centres_taken(&tabs, &cut).is_empty());
 }

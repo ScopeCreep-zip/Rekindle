@@ -398,6 +398,168 @@
   "infoview.subject.selection": {
     "type": "selection"
   },
+  "lobbyGet.closed": {
+    "close": {
+      "allowed": false,
+      "reason": "noMembers"
+    },
+    "gameId": 4181,
+    "hostKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "join": {
+      "allowed": false,
+      "reason": "notOpen"
+    },
+    "launch": {
+      "allowed": false,
+      "reason": "alreadyIn"
+    },
+    "leave": {
+      "allowed": false,
+      "reason": "closed"
+    },
+    "lobbyId": "abababababababababababababababab",
+    "members": [
+      "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    ],
+    "state": {
+      "kind": "closed"
+    }
+  },
+  "lobbyGet.launched": {
+    "close": {
+      "allowed": true
+    },
+    "gameId": 4181,
+    "hostKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "join": {
+      "allowed": false,
+      "reason": "notOpen"
+    },
+    "launch": {
+      "allowed": false,
+      "reason": "notOpen"
+    },
+    "leave": {
+      "allowed": false,
+      "reason": "ownLobby"
+    },
+    "lobbyId": "abababababababababababababababab",
+    "members": [
+      "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    ],
+    "state": {
+      "kind": "launched",
+      "server": "203.0.113.7:27015"
+    }
+  },
+  "lobbyGet.none": null,
+  "lobbyGet.open": {
+    "close": {
+      "allowed": false,
+      "reason": "notHost"
+    },
+    "gameId": 4181,
+    "hostKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "join": {
+      "allowed": true
+    },
+    "launch": {
+      "allowed": false,
+      "reason": "notHost"
+    },
+    "leave": {
+      "allowed": false,
+      "reason": "notIn"
+    },
+    "lobbyId": "abababababababababababababababab",
+    "members": [
+      "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+    ],
+    "state": {
+      "kind": "open"
+    }
+  },
+  "localSearch.hit.file": {
+    "arg": {
+      "attachmentId": "att-1",
+      "name": "map.zip",
+      "target": {
+        "channelId": "ch",
+        "community": "VLD0:community",
+        "kind": "channel"
+      }
+    },
+    "kind": "file"
+  },
+  "localSearch.hit.friend": {
+    "arg": {
+      "name": "Alice",
+      "publicKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "kind": "friend"
+  },
+  "localSearch.hit.groupDm": {
+    "arg": {
+      "groupId": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+      "name": "Raid night"
+    },
+    "kind": "groupDm"
+  },
+  "localSearch.hit.member": {
+    "arg": {
+      "community": "VLD0:community",
+      "name": "Bob",
+      "pseudonym": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "kind": "member"
+  },
+  "localSearch.hit.message": {
+    "arg": {
+      "afterBody": "ok",
+      "body": "see you at nine",
+      "conversationId": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "messageId": "m1",
+      "rank": 1.5,
+      "scope": "dm",
+      "senderKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "timestamp": 1700000000000
+    },
+    "kind": "message"
+  },
+  "localSearch.hit.server": {
+    "arg": {
+      "address": "203.0.113.7:27015",
+      "gameId": 4100,
+      "label": "Clan server"
+    },
+    "kind": "server"
+  },
+  "localSearch.result": {
+    "hits": [
+      {
+        "arg": {
+          "name": "Alice",
+          "publicKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+        },
+        "kind": "friend"
+      }
+    ]
+  },
+  "localSearch.scope.conversation": {
+    "arg": {
+      "conversationId": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    },
+    "kind": "conversation"
+  },
+  "localSearch.scope.files": {
+    "kind": "files"
+  },
+  "localSearch.scope.friends": {
+    "kind": "friends"
+  },
+  "localSearch.scope.servers": {
+    "kind": "servers"
+  },
   "onboarding.config.default": {
     "defaultChannels": [],
     "enabled": false,
@@ -1014,6 +1176,10 @@
     },
     "type": "sheetError"
   },
+  "skin.contentFit": {
+    "max": 80,
+    "min": 25
+  },
   "skin.entry.builtin": {
     "conforming": false,
     "credits": {
@@ -1093,6 +1259,21 @@
       "kind": "app"
     }
   ],
+  "skin.layout_source.chat": "chat",
+  "skin.layout_source.main": "main",
+  "skin.layout_source.room": "room",
+  "skin.manifest.text": {
+    "listHeader": {
+      "bold": true,
+      "colour": "#C8D7E6",
+      "font": "Arial",
+      "size": 11
+    },
+    "menu": {
+      "font": "Tahoma",
+      "size": 11
+    }
+  },
   "skin.menuRegistry": {
     "menus": [
       {
@@ -1309,6 +1490,44 @@
         "menu": "gcHelp"
       }
     ]
+  },
+  "skin.nodeSpan.after": {
+    "at": {
+      "kind": "after",
+      "offset": {
+        "gap": 10,
+        "sibling": "XfireMenuText"
+      }
+    },
+    "kind": "fixed",
+    "size": 26
+  },
+  "skin.run.launcher": {
+    "arg": {
+      "window": "buddy-list"
+    },
+    "kind": "launcher"
+  },
+  "skin.run.notBuiltYet": {
+    "arg": {
+      "action": {
+        "kind": "searchFor"
+      },
+      "message": "Search isn't in Rekindle yet (plan E7.2 G11)"
+    },
+    "kind": "notBuiltYet"
+  },
+  "skin.run.shell": {
+    "arg": {
+      "arg": {
+        "arg": {
+          "friend": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "kind": "voice"
+      },
+      "kind": "call"
+    },
+    "kind": "shell"
   },
   "skin.selection.friend": {
     "arg": {
@@ -1594,6 +1813,67 @@
     ],
     "window": "main"
   },
+  "skin.shell.openSearch": {
+    "arg": {
+      "scope": {
+        "kind": "files"
+      }
+    },
+    "kind": "openSearch"
+  },
+  "skin.shellOp.chooseDownloadDest": {
+    "arg": {
+      "attachmentId": "att-1",
+      "suggestedName": "notes.txt",
+      "target": {
+        "channelId": "ch",
+        "community": "VLD0:community",
+        "kind": "channel"
+      }
+    },
+    "kind": "chooseDownloadDest"
+  },
+  "skin.shellOp.inviteToRoom": {
+    "arg": {
+      "groupId": "g1"
+    },
+    "kind": "inviteToRoom"
+  },
+  "skin.shellOp.newRoom": {
+    "arg": {
+      "peer": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "kind": "newRoom"
+  },
+  "skin.shellOp.openGroupChat": {
+    "arg": {
+      "groupId": "g1"
+    },
+    "kind": "openGroupChat"
+  },
+  "skin.shellOp.showCall.call": {
+    "arg": {
+      "target": {
+        "arg": {
+          "callId": "c1"
+        },
+        "kind": "call"
+      }
+    },
+    "kind": "showCall"
+  },
+  "skin.shellOp.showCall.voice": {
+    "arg": {
+      "target": {
+        "arg": {
+          "channel": "ch",
+          "community": "VLD0:community"
+        },
+        "kind": "voice"
+      }
+    },
+    "kind": "showCall"
+  },
   "skin.trigger": {
     "on": {
       "arg": {
@@ -1606,5 +1886,8 @@
       "arg": "disabled",
       "kind": "setState"
     }
-  }
+  },
+  "skin.window.chat": "chat",
+  "skin.window.community": "community",
+  "skin.window.main": "main"
 }

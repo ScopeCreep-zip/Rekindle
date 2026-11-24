@@ -54,6 +54,10 @@ pub struct SkinManifest {
     /// Sound entry paths keyed by registry cue id.
     #[serde(default)]
     pub sounds: BTreeMap<String, String>,
+    /// Each text role's face as the pack declares it (plan SK17-4); a role
+    /// absent here keeps the app's.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub text: BTreeMap<super::skin_layout::TextRole, super::skin_title::TitleText>,
     /// Each window kind's frame layout, the source of its silhouette
     /// (plan SK0 S1); a window absent here keeps the rectangle.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]

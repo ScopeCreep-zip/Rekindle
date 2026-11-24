@@ -1,19 +1,19 @@
 TopLeft Decor target [0, 0, 16, 34] art [0, 0, 16, 34] Frame
-Top Decor target [0, 0, 299, 34] art [0, 0, 299, 34] Frame
+Top Decor target [0, 0, 305, 34] art [0, 0, 305, 34] Frame
 TopRight Decor target [0, 0, 20, 34] art [0, 0, 20, 34] Frame
 SCLogo Decor target [0, 0, 174, 45] art [0, 0, 174, 59] Size
 LeftEdge Decor target [0, 0, 16, 468] art [0, 0, 16, 468] Frame
 RightEdge Decor target [0, 0, 20, 468] art [0, 0, 20, 468] Frame
-Middle Decor target [0, 0, 299, 468] art [0, 0, 299, 468] Frame
+Middle Decor target [0, 0, 305, 468] art [0, 0, 305, 468] Frame
 BottomLeft Decor target [0, 0, 16, 53] art [0, 0, 16, 53] Frame
-Bottom Decor target [0, 0, 299, 53] art [0, 0, 299, 53] Frame
+Bottom Decor target [0, 0, 305, 53] art [0, 0, 305, 53] Frame
 BottomRight Decor target [0, 0, 20, 53] art [0, 0, 20, 53] Frame
 AdAreaBG AdArea
   AdArea Part
 ExpandButton Button target [-4, 0, 24, 47] art [4, 0, 20, 47] Size
 MainTitleBar Drag
-  Logo Logo label "Rekindle" cover [0, 0, 16, 16] glyph RekindleMarkSmall target [-4, -4, 22, 24] art [4, 4, 16, 16] Spacing
-  Title NameField
+  Logo Logo label "Rekindle" cover [0, 0, 16, 16] glyph RekindleMarkSmall target [-4, -4, 22, 23] art [4, 4, 16, 16] Short
+  Title NameField target [0, -4, 128, 22] art [0, 4, 128, 15] Spacing
 AGEAR Decor
 IGEAR Decor
 StatusWrapper Group
@@ -26,7 +26,7 @@ TabHeader TabStrip
     TabServerButton Part target [0, -2, 70, 22] art [0, 2, 70, 20] Spacing
   TabDownloadText Tab(Files) label "Downloads"
     TabDownloadButton Part target [0, -2, 70, 22] art [0, 2, 70, 20] Spacing
-  TabDownloadText.Communities Tab(Communities) label "Communities" target [0, -4, 62, 20] art [0, 4, 62, 16] Spacing
+  TabDownloadText.Communities Tab(Communities) label "Communities" target [0, -4, 68, 20] art [0, 4, 68, 16] Spacing
     TabDownloadButton.Communities Part
 TopButtonBar Group
   Minimize Button target [-5, -5, 20, 24] art [5, 5, 14, 14] Short
@@ -34,11 +34,11 @@ TopButtonBar Group
   Close Button target [-1, -5, 20, 24] art [1, 5, 14, 14] Short
 MenuBar MenuBar
   XfireMenuText MenuTitle label "Rekindle"
-    FileMenu Part target [-9, -11, 21, 24] art [9, 11, 6, 1] Short
+    FileMenu Part target [0, -4, 52, 24] art [0, 4, 52, 15] Size
   ToolsMenuText MenuTitle label "Tools"
-    ToolsMenu Part target [-6, -11, 18, 24] art [6, 11, 6, 1] Short
+    ToolsMenu Part target [0, -3, 36, 23] art [0, 3, 36, 15] Short
   HelpMenuText MenuTitle label "Help"
-    HelpMenu Part target [-6, -11, 21, 24] art [6, 11, 6, 1] Short
+    HelpMenu Part target [0, -3, 30, 23] art [0, 3, 30, 15] Spacing
 ListViewBG Decor
 TabbedControl Views
   BuddyView View(Friends)
@@ -66,8 +66,8 @@ TabButtonArea ButtonBar
     DownloadInfoButton Button target [0, -3, 54, 23] art [0, 3, 54, 18] Spacing
 ResizeLeft Button target [0, 0, 24, 555] art [0, 0, 5, 555] Size
 ResizeRight Button target [-19, 0, 24, 555] art [19, 0, 5, 555] Size
-ResizeUp Button target [0, 0, 335, 24] art [0, 0, 335, 5] Size
-ResizeDown Button target [0, -19, 335, 24] art [0, 19, 335, 5] Size
+ResizeUp Button target [0, 0, 341, 24] art [0, 0, 341, 5] Size
+ResizeDown Button target [0, -19, 341, 24] art [0, 19, 341, 5] Size
 BRGripper Button target [14, 14, 24, 24] art [-14, -14, 38, 38] Size
 popup InfoPopup
   InfoViewBG Decor target [0, 0, 240, 470] art [0, 0, 240, 470] Frame

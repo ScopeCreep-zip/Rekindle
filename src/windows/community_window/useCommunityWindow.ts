@@ -25,11 +25,11 @@ import {
   handleLoadWelcomeScreen,
 } from "../../actions/community.actions";
 import { commands } from "../../ipc/commands";
-import { ICON_CHANNEL_TEXT, ICON_MEGAPHONE } from "../../icons";
+import type { GlyphName } from "../../components/common/glyph_art";
 import type { Message } from "../../stores/chat.store";
 import type { Thread } from "../../stores/community.store";
 import { createCommunityWindowState } from "./state";
-import { startEventStream } from "../../ipc/channels";
+import { startEventStream, subscribeCommunityFocusChannel } from "../../ipc/channels";
 
 /// Orchestrating view-model hook for `CommunityWindow`. Owns the effects,
 /// event handlers, and Veilid subscription lifecycle on top of the signals
@@ -38,7 +38,7 @@ import { startEventStream } from "../../ipc/channels";
 export function useCommunityWindow() {
   const s = createCommunityWindowState();
   const {
-    getCommunityFromUrl, selectedCommunityId, setSelectedCommunityId,
+    getCommunityFromUrl, getChannelFromUrl, selectedCommunityId, setSelectedCommunityId,
     selectedChannelId, setSelectedChannelId, activeCommunity, activeChannel,
     channelMessages, gameServers, gameNameCache, setGameNameCache,
     setShowWelcomeForCommunity, setActiveThread, setShowEvents, setShowServers,
@@ -253,10 +253,10 @@ export function useCommunityWindow() {
     handleSendChannelMessage(channelId, body, replyToId);
   }
 
-  function channelHeaderIcon(): string {
+  function channelHeaderIcon(): GlyphName {
     const ch = activeChannel();
-    if (ch?.type === "announcement") return ICON_MEGAPHONE;
-    return ICON_CHANNEL_TEXT;
+    if (ch?.type === "announcement") return "megaphone";
+    return "chat";
   }
 
   function handleJumpToMessage(messageId: string): void {
@@ -277,6 +277,11 @@ export function useCommunityWindow() {
     const urlId = getCommunityFromUrl();
     if (urlId && communityState.communities[urlId]) {
       handleSelectCommunity(urlId);
+      // Opened on a channel (the skin's Show Voice, plan E7.2 A): that one.
+      const urlChannel = getChannelFromUrl();
+      if (urlChannel && communityState.communities[urlId].channels.some((c) => c.id === urlChannel)) {
+        handleSelectChannel(urlChannel);
+      }
     } else {
       const ids = Object.keys(communityState.communities);
       if (ids.length > 0) {
@@ -288,6 +293,13 @@ export function useCommunityWindow() {
     unlisteners.push(subscribeCommunityPresenceEvents());
     unlisteners.push(subscribeCommunityEventDispatcher());
     unlisteners.push(subscribeCommunityVoiceEvents());
+    // An open window asked to show a channel of its community (plan E7.2 A).
+    unlisteners.push(
+      subscribeCommunityFocusChannel((channel) => {
+        const id = selectedCommunityId();
+        if (communityState.communities[id]?.channels.some((c) => c.id === channel)) handleSelectChannel(channel);
+      }),
+    );
     void startEventStream(() => void hydrateState());
 
     // Architecture §23 — global Cmd/Ctrl-F opens the message search overlay.

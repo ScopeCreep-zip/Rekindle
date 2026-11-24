@@ -1,6 +1,6 @@
 import { Component, For, Show, createSignal, createEffect } from "solid-js";
+import SkinGlyph from "../../common/SkinGlyph";
 import { handleGetBanList, handleUnbanMember } from "../../../actions/community.actions";
-import { ICON_REFRESH } from "../../../icons";
 import type { CommunityBanView } from "../../../ipc/commands/dto";
 
 interface BansTabProps {
@@ -39,7 +39,7 @@ const BansTab: Component<BansTabProps> = (props) => {
                 class="form-btn-secondary"
                 onClick={() => handleUnban(banned.pseudonymKey)}
               >
-                <span class="nf-icon">{ICON_REFRESH}</span> Unban
+                <SkinGlyph name="refresh" /> Unban
               </button>
             </div>
           )}

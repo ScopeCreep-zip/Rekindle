@@ -146,6 +146,7 @@ impl IpcRequest {
             Self::Community(request) => request.agent_capability(),
             Self::Transfer(request) => request.agent_capability(),
             Self::Servers(request) => request.agent_capability(),
+            Self::Lobby(request) => Some(request.agent_capability()),
             Self::DmInbox { .. }
             | Self::DmHistory { .. }
             | Self::GroupDmList
@@ -240,6 +241,10 @@ impl IpcRequest {
             | Self::GameLaunch { .. }
             | Self::AgentRegister { .. }
             | Self::AgentRevoke { .. }
+            // One local search reads friends, members, direct history and
+            // the user's held files at once, more than any one read
+            // capability grants.
+            | Self::LocalSearch { .. }
             | Self::PolicyReload => None,
         }
     }

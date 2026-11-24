@@ -8,7 +8,8 @@
 //! a semantic change. The friendship and content kinds are E2.3's own
 //! definitions. Unfriended, UnfriendedAck and
 //! SessionResetAccept have an empty body. The group-DM kinds (0x0120-0x0124)
-//! are E2.6's sender-key bodies. The creator-set kinds (0x0190-0x0194) are
+//! are E2.6's sender-key bodies; the lobby kinds (0x0127-0x012B) are E7.2
+//! G6's. The creator-set kinds (0x0190-0x0194) are
 //! E3.2 S7s.3's.
 
 mod calls;
@@ -17,6 +18,7 @@ mod creator;
 mod friend;
 mod game;
 mod group;
+mod lobby;
 mod relay;
 
 pub use calls::{
@@ -44,6 +46,7 @@ pub use group::{
     GroupContent, GroupDmAccept, GroupDmDecline, GroupDmInvite, GroupDmLeave, GroupDmRename,
     GroupDmRosterGrow, GroupId,
 };
+pub use lobby::{LobbyId, LobbyLaunch, LobbyOpen, LobbyRef};
 pub use relay::{
     RegisterPushRelay, RelayEnvelope, RelayOffer, RelayOfferAck, RelayWithdraw, StatusRequest,
     StatusResponse, UnregisterPushRelay, WakeNotify,
@@ -145,6 +148,11 @@ direct_bodies! {
         GroupContent(GroupContent) = group_content,
         GroupDmRename(GroupDmRename) = group_dm_rename,
         GroupDmRosterGrow(GroupDmRosterGrow) = group_dm_roster_grow,
+        LobbyOpen(LobbyOpen) = lobby_open,
+        LobbyJoin(LobbyRef) = lobby_ref,
+        LobbyLeave(LobbyRef) = lobby_ref,
+        LobbyLaunch(LobbyLaunch) = lobby_launch,
+        LobbyClose(LobbyRef) = lobby_ref,
         RelayOffer(RelayOffer) = relay_offer,
         RelayWithdraw(RelayWithdraw) = relay_withdraw,
         RelayOfferAck(RelayOfferAck) = relay_offer_ack,

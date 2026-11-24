@@ -2,7 +2,8 @@
 // sources; their NOTICE.md and OFL-Outfit.txt) as static SVG elements, so
 // it draws in full colour with no innerHTML (threat model 5b W1). A change
 // to the art is made in the .svg and transcribed again.
-import { type Component, Match, Switch } from "solid-js";
+import type { Component } from "solid-js";
+import { Dynamic } from "solid-js/web";
 import type { BrandGlyphName } from "../../ipc/commands/dto";
 
 /** The full flame. */
@@ -93,17 +94,15 @@ export const RekindleWordmark: Component = () => (
   </svg>
 );
 
+/**
+ * Each brand glyph's drawing. A `Record` over the served names, so a glyph
+ * the Host adds without a drawing fails tsc rather than rendering nothing.
+ */
+const BRAND_DRAWINGS: Record<BrandGlyphName, Component> = {
+  rekindle: RekindleMark,
+  rekindleMarkSmall: RekindleMarkSmall,
+  rekindleWordmark: RekindleWordmark,
+};
+
 /** The served drawing of the mark, centred in its box with its aspect kept. */
-export const BrandGlyph: Component<{ glyph: BrandGlyphName }> = (props) => (
-  <Switch>
-    <Match when={props.glyph === "rekindle"}>
-      <RekindleMark />
-    </Match>
-    <Match when={props.glyph === "rekindleMarkSmall"}>
-      <RekindleMarkSmall />
-    </Match>
-    <Match when={props.glyph === "rekindleWordmark"}>
-      <RekindleWordmark />
-    </Match>
-  </Switch>
-);
+export const BrandGlyph: Component<{ glyph: BrandGlyphName }> = (props) => <Dynamic component={BRAND_DRAWINGS[props.glyph]} />;

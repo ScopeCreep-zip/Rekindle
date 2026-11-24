@@ -264,7 +264,10 @@ fn component(section: &Section) -> Node {
     // lead decision 6: XGlow's `[Join]` pages show with the views).
     // `DefaultWidth`: a popup's width (`[Infoskin]` `DefaultWidth=150`,
     // SimpleX `Infoskin.ini:3`), as the XML era's component attribute.
+    // `Stretch`: a `Class=Text Stretch=ToContent` text is as wide as its
+    // words (plan SK15b; Combat's `[FileMenuText]`, `combat.ini:188-190`).
     for key in [
+        "Stretch",
         "DefaultWidth",
         "MinWidth",
         "MinHeight",

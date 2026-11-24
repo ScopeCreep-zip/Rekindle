@@ -16,7 +16,7 @@ use rekindle_codec::capnp_codec::direct::{
 };
 use rekindle_dm::{GroupState, Outbound};
 use rekindle_events::typing::{Input, Lapse};
-use rekindle_types::subscription_events::TypingContext;
+use rekindle_types::subscription_events::{GroupDmEvent, SubscriptionEvent, TypingContext};
 
 use super::{friend_error, parse_group_id, send_pairwise};
 use crate::operations::dm::outbox::{self as dm_outbox, Attempt, OutgoingDm};
@@ -87,7 +87,9 @@ pub(super) async fn held(host: &dyn FriendHost, id: &GroupId) -> Result<GroupSta
 
 /// Commit our message `body` to `group_id` (32 hex) with its local echo in
 /// one transaction; its client id once committed (`queued`, then the
-/// outbox's `GroupDmEvent::SendStatus`).
+/// outbox's `GroupDmEvent::SendStatus`). The stored row is published once
+/// as `GroupDmEvent::MessageSent` (plan E6.11), so every window of the
+/// group shows it whatever it rendered before.
 ///
 /// # Errors
 /// No such group, locked, or the message could not be committed.
@@ -116,7 +118,7 @@ pub async fn send(
     let dm = OutgoingDm {
         client_id: message_id.clone(),
         payload,
-        sender: owner,
+        sender: owner.clone(),
         body: body.to_string(),
         timestamp: host.clock().now_ms_i64(),
         reply_to: None,
@@ -131,7 +133,34 @@ pub async fn send(
         .typing_out
         .lock()
         .end(&typing_context(group_id));
+    publish_sent(host, group_id, &owner, &message_id).await?;
     Ok(message_id)
+}
+
+/// Publish our committed message `message_id` to `group_id` as stored
+/// (plan E6.11), after its outbox transaction committed (E2.5).
+async fn publish_sent(
+    host: &dyn FriendHost,
+    group_id: &str,
+    owner: &str,
+    message_id: &str,
+) -> Result<(), FriendError> {
+    let (o, gid, mid) = (
+        owner.to_string(),
+        group_id.to_string(),
+        message_id.to_string(),
+    );
+    let stored = state::db_call!(host, "read our group message", move |conn| {
+        rekindle_db::repo::group_dm_messages::own_group_dm(conn, &o, &gid, &mid)
+    })
+    .await?
+    .ok_or_else(|| FriendError::Failed(format!("message {message_id} not committed")))?;
+    host.publish(SubscriptionEvent::GroupDm(GroupDmEvent::MessageSent {
+        group_id: group_id.to_string(),
+        reply_to_id: stored.reply_to,
+        message: super::view::dm_message(stored.row, owner),
+    }));
+    Ok(())
 }
 
 /// One attempt of `rows`, the due run of our stream to `group_id` in

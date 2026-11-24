@@ -1,11 +1,11 @@
 import { Component, For, Show } from "solid-js";
+import SkinGlyph from "../../components/common/SkinGlyph";
 import ParticipantTile from "../../components/voice/call_stage/ParticipantTile";
 import CallControlBar from "../../components/voice/call_stage/CallControlBar";
 import { useCallStage } from "../../components/voice/call_stage/useCallStage";
 import { activePipeline } from "../../components/voice/call_stage/pipeline_store";
 import ChannelChat from "./ChannelChat";
 import { handleJoinVoice } from "../../actions/voice.actions";
-import { ICON_PHONE } from "../../icons";
 import type { CommunityVm } from "./useCommunityWindow";
 
 /// Main-pane conferencing surface for a community voice channel. When the
@@ -24,7 +24,7 @@ const CallStage: Component<{ vm: CommunityVm }> = (props) => {
         when={connected()}
         fallback={
           <div class="call-stage-hero">
-            <span class="nf-icon call-stage-hero-icon" aria-hidden="true">{ICON_PHONE}</span>
+            <SkinGlyph name="phone" class="call-stage-hero-icon" />
             <div class="call-stage-hero-title">{vm.activeChannel()?.name}</div>
             <div class="call-stage-hero-subtitle">
               Voice channel — join to talk, turn on your camera, or share your screen.
@@ -33,7 +33,7 @@ const CallStage: Component<{ vm: CommunityVm }> = (props) => {
               class="call-stage-join-btn"
               onClick={() => void handleJoinVoice(vm.selectedChannelId(), vm.selectedCommunityId())}
             >
-              <span class="nf-icon" aria-hidden="true">{ICON_PHONE}</span> Join Voice
+              <SkinGlyph name="phone" /> Join Voice
             </button>
           </div>
         }

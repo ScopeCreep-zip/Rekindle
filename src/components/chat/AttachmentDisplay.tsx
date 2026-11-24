@@ -1,4 +1,5 @@
 import { Component, Show, createMemo, createSignal } from "solid-js";
+import SkinGlyph from "../common/SkinGlyph";
 import type { MessageAttachment } from "../../stores/chat.store";
 import {
   handleDownloadAttachment,
@@ -9,13 +10,7 @@ import { hasPermission, MANAGE_COMMUNITY } from "../../ipc/permissions";
 import { communityState } from "../../stores/community.store";
 import { servedPermissions } from "../../utils/permissions";
 import { formatSize } from "../../utils/formatting";
-import {
-  ICON_DOWNLOAD,
-  ICON_FILE,
-  ICON_FILE_IMAGE,
-  ICON_FOLDER_OPEN,
-  ICON_PIN,
-} from "../../icons";
+import type { GlyphName } from "../common/glyph_art";
 
 interface AttachmentDisplayProps {
   communityId: string;
@@ -23,9 +18,9 @@ interface AttachmentDisplayProps {
   attachment: MessageAttachment;
 }
 
-function pickIcon(mimeType: string): string {
-  if (mimeType.startsWith("image/")) return ICON_FILE_IMAGE;
-  return ICON_FILE;
+function pickIcon(mimeType: string): GlyphName {
+  if (mimeType.startsWith("image/")) return "file-image";
+  return "file";
 }
 
 const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
@@ -71,9 +66,10 @@ const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
 
   return (
     <div class="attachment-card">
-      <span class={`nf-icon attachment-card-icon ${downloaded() ? "attachment-card-icon-ready" : ""}`}>
-        {pickIcon(props.attachment.mimeType)}
-      </span>
+      <SkinGlyph
+        name={pickIcon(props.attachment.mimeType)}
+        class={`attachment-card-icon ${downloaded() ? "attachment-card-icon-ready" : ""}`}
+      />
       <div class="attachment-card-meta">
         <div class="attachment-card-filename">{props.attachment.filename}</div>
         <div class="attachment-card-info">
@@ -89,7 +85,7 @@ const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
             disabled={downloading()}
             title="Download"
           >
-            <span class="nf-icon">{ICON_DOWNLOAD}</span>
+            <SkinGlyph name="download" />
             <span>{downloading() ? "Downloading…" : "Download"}</span>
           </button>
         }
@@ -99,7 +95,7 @@ const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
           onClick={() => void handleRevealClick()}
           title="Show in folder"
         >
-          <span class="nf-icon">{ICON_FOLDER_OPEN}</span>
+          <SkinGlyph name="folder-open" />
           <span>Show in folder</span>
         </button>
       </Show>
@@ -109,7 +105,7 @@ const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
           onClick={() => void handlePinClick()}
           title={pinned() ? "Unpin attachment" : "Pin attachment"}
         >
-          <span class="nf-icon">{ICON_PIN}</span>
+          <SkinGlyph name="pin" />
         </button>
       </Show>
     </div>

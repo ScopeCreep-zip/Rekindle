@@ -8,8 +8,10 @@ pub mod community;
 pub mod dm;
 pub mod friends;
 pub mod group_dm;
+pub mod group_lobby;
 pub mod identity;
 pub mod infoview;
+pub mod local_search;
 pub mod member_groups;
 pub mod onboarding;
 pub mod presence;
@@ -26,5 +28,6 @@ pub mod skin_title;
 pub mod skin_tree;
 pub mod skin_tree_role;
 pub mod transfer;
+pub mod verdict;
 
 pub use command::{CommandError, Done};

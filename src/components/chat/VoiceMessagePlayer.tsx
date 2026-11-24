@@ -1,7 +1,7 @@
 import { Component, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
+import SkinGlyph from "../common/SkinGlyph";
 import type { MessageAttachment } from "../../stores/chat.store";
 import { handleLoadVoiceMessage } from "../../actions/community.actions";
-import { ICON_DOWNLOAD } from "../../icons";
 
 interface VoiceMessagePlayerProps {
   communityId: string;
@@ -115,9 +115,9 @@ const VoiceMessagePlayer: Component<VoiceMessagePlayerProps> = (props) => {
       >
         <Show
           when={!loaded() && !fetching()}
-          fallback={<span class="nf-icon">{playing() ? "\u{F03E4}" : "\u{F040A}"}</span>}
+          fallback={<SkinGlyph name={playing() ? "pause" : "play"} />}
         >
-          <span class="nf-icon">{ICON_DOWNLOAD}</span>
+          <SkinGlyph name="download" />
         </Show>
       </button>
       <div class="voice-message-waveform" aria-label="voice message waveform">

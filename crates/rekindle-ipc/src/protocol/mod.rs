@@ -194,6 +194,16 @@ pub enum IpcRequest {
     /// The Downloads view: list, start (resume), stop, open (reveal), remove.
     Transfer(TransferRequest),
 
+    // ── Local search (plan E7.2 G11) ───────────────────────────────
+    /// Search what we already hold, scoped by the view it was opened from
+    /// (SK2-G §8): friends, groups and members we know; our servers; our
+    /// held files; or one direct conversation's messages. Answered from
+    /// the database only (`dto::local_search::LocalSearchResult`).
+    LocalSearch {
+        scope: rekindle_types::dto::local_search::LocalSearchScope,
+        query: String,
+    },
+
     // ── DMs ───────────────────────────────────────────────────────
     /// Send a direct message.
     DmSend {
@@ -251,6 +261,9 @@ pub enum IpcRequest {
         group_id: String,
         members: Vec<String>,
     },
+    /// A group DM's game lobby (plan E7.2 G6): host, join, leave, close,
+    /// launch and the lobby the group shows.
+    Lobby(LobbyRequest),
     /// Set the disappearing-message timer of `conversation` (a friend's
     /// key: our DM; a group's 32-hex id: the group DM) to `seconds`
     /// (0 = off, at most four weeks; plan E7.1). Every other member is
@@ -566,6 +579,7 @@ mod capability;
 mod community;
 mod debug;
 mod lane;
+mod lobby;
 mod response;
 mod servers;
 mod transfer;
@@ -579,6 +593,7 @@ pub use community::{
     UnreadRequest,
 };
 pub use lane::Lane;
+pub use lobby::LobbyRequest;
 pub use rekindle_types::dto::infoview::InfoviewSubject;
 pub use servers::ServersRequest;
 pub use transfer::TransferRequest;

@@ -34,7 +34,12 @@ pub enum ShellPanel {
 /// A 1:1 call operation: the shell's call commands own calls until plan
 /// E4.1 moves them into the Host (then these rows become requests).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", tag = "kind", content = "arg")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "kind",
+    content = "arg"
+)]
 pub enum CallOp {
     Voice { friend: String },
     Video { friend: String },
@@ -43,9 +48,31 @@ pub enum CallOp {
     Unmute,
 }
 
-/// An operation the window's shell runs.
+/// The call window `ShowVoiceWindow` brings up (plan E7.2 G-item A): the
+/// Host's active call, else our community voice session.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", tag = "kind", content = "arg")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "kind",
+    content = "arg"
+)]
+pub enum CallTarget {
+    /// The call window of the call `call_id`.
+    Call { call_id: String },
+    /// The community window of `community`, on its voice `channel`.
+    Voice { community: String, channel: String },
+}
+
+/// An operation the window's shell runs. Fields are camelCase like the
+/// variants (the TS mirror reads `groupId`, `attachmentId`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "kind",
+    content = "arg"
+)]
 pub enum ShellOp {
     DragWindow,
     Minimize,
@@ -109,6 +136,11 @@ pub enum ShellOp {
         group_id: String,
     },
     Call(CallOp),
+    /// Bring up the window of the active call or voice session
+    /// (`ShowVoiceWindow`).
+    ShowCall {
+        target: CallTarget,
+    },
     ShowSettings(SkinSettingsTab),
     /// Ask the user where to save a never-fetched attachment (the native
     /// save dialog, `suggested_name` the uploader's sanitized filename),
@@ -117,6 +149,11 @@ pub enum ShellOp {
         attachment_id: String,
         target: super::transfer::TransferTarget,
         suggested_name: String,
+    },
+    /// The local search panel, scoped to the view it was opened from
+    /// (`SearchFor`, SK2-G §8); its query is one `LocalSearch`.
+    OpenSearch {
+        scope: super::local_search::LocalSearchScope,
     },
     ReportBug,
     CopyKey,
@@ -127,13 +164,20 @@ pub enum ShellOp {
 /// The answer to `RunSkinAction` when the action is not a request (a
 /// request's answer is that request's own).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", tag = "kind", content = "arg")]
+#[serde(
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    tag = "kind",
+    content = "arg"
+)]
 pub enum SkinRun {
     Shell(ShellOp),
     /// Rekindle has no feature for `action` yet (design §2.2 "Feature
-    /// gaps"): the button stays, and the window says so.
+    /// gaps"): the button stays, and the window says so with `message`
+    /// (the Host's words, naming the plan row that builds it).
     NotBuiltYet {
         action: SkinAction,
+        message: String,
     },
     /// The operation is the window labelled `window`'s, which the Host
     /// handed it on that window's channel (`SystemEvent::SkinShell`): a

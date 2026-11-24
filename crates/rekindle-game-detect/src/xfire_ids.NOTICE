@@ -31,3 +31,7 @@ How it was made
     5500 Cyberpunk 2077 -> 8548
     5601 Warframe -> 7785
     5701 Phasmophobia -> 8535
+  Games with Xfire's `LauncherNetworkArgs` (the launcher's `steam://run` arguments when
+  the game has a Steam app id and no connect template):
+    4102 Dota 2: +connect {addr}
+    4300 Minecraft: {addr}

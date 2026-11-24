@@ -21,11 +21,12 @@ use rekindle_types::dto::skin::{Insets, RegionState, SkinWindow, TileAxis, Windo
 pub use super::fit::views_content;
 use rekindle_types::dto::skin_action::NodeTrigger;
 use rekindle_types::dto::skin_tree::{
-    NodeArt, NodePiece, NodePieces, NodeRole, NodeSpan, PieceSlot, SkinNode, SkinTree,
+    ContentFit, NodeArt, NodePiece, NodePieces, NodeRole, NodeSpan, PieceSlot, SkinNode, SkinTree,
 };
 
-use super::anchor::{axis, client_box, client_inset, outer_for, to_tile, Sibs, Sizes, X, Y};
+use super::anchor::{axis, chain, client_box, client_inset, outer_for, to_tile, Sibs, Sizes, X, Y};
 use super::clip::{clip, Art, Images};
+use super::content::{self, Link};
 use super::fit::fit;
 use super::outdent;
 use super::passes::{by_view, pages, qualify, rows_by_view, tab_views};
@@ -118,6 +119,8 @@ struct Read<'n> {
     group: Option<String>,
     /// The tile's then its component's triggers (decision 36).
     triggers: Vec<NodeTrigger>,
+    /// A content text's limits (plan SK15b, [`content`]).
+    fit: Option<ContentFit>,
 }
 
 pub(super) struct Walk<'a> {
@@ -310,12 +313,18 @@ impl Walk<'_> {
             class: comp.and_then(|c| c.attr_ci("Class")),
             children: &children,
         };
-        let role = role(&id, component, parent, &facts).ok_or_else(|| {
-            bad(format!(
-                "{id}: component {} has no role",
-                component.unwrap_or("-")
-            ))
-        })?;
+        // The chat window's own vocabulary first (plan SK17-2).
+        let chat = (self.window == SkinWindow::Chat)
+            .then(|| super::chat_roles::role(&id, component, parent, &facts))
+            .flatten();
+        let role = chat
+            .or_else(|| role(&id, component, parent, &facts))
+            .ok_or_else(|| {
+                bad(format!(
+                    "{id}: component {} has no role",
+                    component.unwrap_or("-")
+                ))
+            })?;
         let max = (limit_of(comp, "MaxWidth"), limit_of(comp, "MaxHeight"));
         let group = comp
             .and_then(|c| c.attr_ci("ControlGroupId"))
@@ -325,8 +334,16 @@ impl Walk<'_> {
             popups: &self.popups,
             groups: &self.group_ids,
         };
-        let triggers = triggers::read(tile, comp, &id, &pack)?;
+        // A slot is a box the shell mounts its own control into (plan
+        // SK17-2): the pack's engine triggers on it (the InfoView toggle's
+        // `LaunchSkin` of a chat popup) are the control's, not the box's.
+        let triggers = if matches!(role.shown(), NodeRole::Slot(_)) {
+            Vec::new()
+        } else {
+            triggers::read(tile, comp, &id, &pack)?
+        };
         check_grip(&id, component, &triggers).map_err(bad)?;
+        let fit = content::fit_of(comp, !pieces.is_empty());
         Ok(Read {
             tile,
             id,
@@ -337,6 +354,7 @@ impl Walk<'_> {
             layer: layer_of(comp),
             group,
             triggers,
+            fit,
         })
     }
 
@@ -368,11 +386,12 @@ impl Walk<'_> {
                     continue;
                 }
                 let refs = (&names, &sizes);
-                let xy = axis(t.tile, &X, t.wh.0, t.max.0, refs)
-                    .and_then(|x| Ok((x, axis(t.tile, &Y, t.wh.1, t.max.1, refs)?)));
+                let slot = matches!(t.role.shown(), NodeRole::Slot(_));
+                let xy = axis(t.tile, &X, t.wh.0, t.max.0, slot, refs)
+                    .and_then(|x| Ok((x, axis(t.tile, &Y, t.wh.1, t.max.1, slot, refs)?)));
                 match xy {
                     Ok(xy) => {
-                        names.insert(t.id.to_ascii_lowercase(), xy);
+                        names.insert(t.id.to_ascii_lowercase(), xy.clone());
                         placed[i] = Some(xy);
                         progress = true;
                     }
@@ -387,8 +406,27 @@ impl Walk<'_> {
                 Some(_) => {}
             }
         }
+        // Plan SK15b: the chains on a content text stay symbolic in the
+        // node; its children and the names they see use the laid spans.
+        let mut kept: Vec<(NodeSpan, NodeSpan)> = placed
+            .iter()
+            .zip(&tiles)
+            .map(|(xy, t)| {
+                xy.clone()
+                    .ok_or_else(|| bad(format!("{}: not placed", t.id)))
+            })
+            .collect::<Result<_, _>>()?;
+        let links: Vec<Link<'_>> = tiles
+            .iter()
+            .map(|t| Link {
+                id: &t.id,
+                fit: t.fit.is_some(),
+                chain: [chain(t.tile, &X), chain(t.tile, &Y)],
+            })
+            .collect();
+        content::chains(&links, &mut kept);
         let mut out = Vec::new();
-        for (i, (t, xy)) in tiles.into_iter().zip(placed).enumerate() {
+        for (i, ((t, xy), (sx, sy))) in tiles.into_iter().zip(placed).zip(kept).enumerate() {
             let mut own = path.to_vec();
             own.push(i);
             if let Some(g) = &t.group {
@@ -421,8 +459,11 @@ impl Walk<'_> {
                 _ => None,
             };
             let inset = client_inset(t.tile, (&names, &sizes))?;
-            let (cx, cy) = (client_box(x, inset[0])?, client_box(y, inset[1])?);
-            let inner = outer_for(&names, cx, cy);
+            let (cx, cy) = (
+                client_box(x.clone(), inset[0])?,
+                client_box(y.clone(), inset[1])?,
+            );
+            let inner = outer_for(&names, &cx, &cy);
             let children = to_tile(
                 self.walk(t.tile, Some(&t.role), &inner, &own)?,
                 (x, y),
@@ -439,14 +480,15 @@ impl Walk<'_> {
             out.push(SkinNode {
                 id: t.id,
                 role: t.role.shown(),
-                x,
-                y,
+                x: sx,
+                y: sy,
                 z,
                 art,
                 text: None,
                 label: None,
                 inset: None,
                 target: None,
+                fit: t.fit,
                 shows_with,
                 control_group,
                 triggers: with_implied(t.triggers, &t.role, &children),
@@ -515,6 +557,7 @@ pub fn add(
         },
         root: walk.walk(layout, None, &Sibs::new(), &[])?,
     };
+    let held = content::hold(&mut tree);
     tab_views(&mut tree.root);
     pages(&mut tree.root, &walk.groups);
     by_view(&mut tree.root);
@@ -547,6 +590,7 @@ pub fn add(
     // `MainMenuPopup` is laid here from the `MenuButton`'s `LaunchPopup`,
     // never in the window's own tree.
     super::popup::add(&walk, (layout, components), &tree, built)?;
+    content::restore(&mut tree, held)?;
     built.1.extend(walk.files);
     built.0.tree = Some(tree);
     Ok(())

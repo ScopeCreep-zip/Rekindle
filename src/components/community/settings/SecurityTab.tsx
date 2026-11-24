@@ -1,4 +1,5 @@
 import { Component, Show, createEffect, createMemo, createSignal } from "solid-js";
+import SkinGlyph from "../../common/SkinGlyph";
 import type { Community } from "../../../stores/community.store";
 import type { ConfirmOptions } from "./types";
 import { handleRotateMek } from "../../../actions/community.actions";
@@ -9,7 +10,6 @@ import {
   hasPermission,
   MANAGE_COMMUNITY,
 } from "../../../ipc/permissions";
-import { ICON_KEY } from "../../../icons";
 import FormField from "../../common/FormField";
 
 interface SecurityTabProps {
@@ -148,7 +148,7 @@ const SecurityTab: Component<SecurityTabProps> = (props) => {
           with previous keys remain readable.
         </div>
         <button class="form-btn-danger" onClick={confirmRotateKey} disabled={rotating()}>
-          <span class="nf-icon">{ICON_KEY}</span> {rotating() ? "Rotating..." : "Rotate Encryption Key"}
+          <SkinGlyph name="key" /> {rotating() ? "Rotating..." : "Rotate Encryption Key"}
         </button>
       </FormField>
       <FormField label="Network Model">

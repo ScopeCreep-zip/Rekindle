@@ -37,6 +37,7 @@ pub fn tile_path(window: SkinWindow, piece: &str) -> String {
     let w = match window {
         SkinWindow::Main => "main",
         SkinWindow::Chat => "chat",
+        SkinWindow::Community => "community",
     };
     format!("assets/frame/{w}/{piece}.png")
 }

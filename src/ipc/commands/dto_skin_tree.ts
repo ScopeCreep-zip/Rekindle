@@ -27,14 +27,11 @@ export type Edge =
 
 /** `NodeRole` (serde `tag = "kind"`, `content = "key"`; plan SK2-A3: what a
  *  node shows; what it does is its `triggers`). */
-/** A place a chat tree lays for the shell's own content (plan SK17-2). */
-export type SlotKey = "typingNotice" | "chatArea" | "chatEdit" | "chatSend" | "infoviewButton";
-
 export type NodeRole =
   | { kind: "tab" | "knob" | "view" | "buttonRow"; key: ViewKey }
-  /** The shell mounts its part for `key` here (components/skin-tree/slots.tsx). */
-  | { kind: "slot"; key: SlotKey }
   | { kind: "lamp"; key: string }
+  | { kind: "windowButton"; key: WindowButtonKind }
+  | { kind: "slot"; key: SlotKey }
   | {
       kind:
         | "drag"
@@ -58,10 +55,17 @@ export type NodeRole =
         | "group"
         | "part"
         | "decor"
-        /** The chat window's title, in the pack's font and colour; its words
-         *  are the conversation title the Host serves the window. */
-        | "chatTitle";
+        | "titleBar"
+        | "chatTitle"
+        | "talkingState";
     };
+
+/** `rekindle_types::dto::skin_tree_role::SlotKey` (plan SK17-2): a chat
+ *  window box the shell mounts its own control into. */
+export type SlotKey = "typingNotice" | "chatArea" | "chatEdit" | "chatSend" | "infoviewButton";
+
+/** `rekindle_types::dto::skin_tree_role::WindowButtonKind`. */
+export type WindowButtonKind = "minimize" | "maximize" | "close";
 
 /** `rekindle_types::dto::skin_action::EngineMenu`. */
 export type EngineMenu =
@@ -395,7 +399,9 @@ export interface SkinShell {
   images: string[];
 }
 
-/** `Anchor` (serde `tag = "kind"`, `content = "offset"`). */
+/** `Anchor` (serde `tag = "kind"`, `content = "offset"`), as served: a stored pack's
+ *  `after` chain (plan SK15b) is resolved by the Host into `start`/`end`/`centre` before any
+ *  tree or popup reaches the shell. */
 export type NodeAnchor =
   | { kind: "start"; offset: number }
   | { kind: "end"; offset: number }

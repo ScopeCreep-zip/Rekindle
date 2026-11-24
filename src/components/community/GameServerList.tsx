@@ -1,6 +1,6 @@
 import { Component, For, Show, createMemo, createSignal, createEffect } from "solid-js";
+import SkinGlyph from "../common/SkinGlyph";
 import type { GameServer } from "../../stores/community.store";
-import { ICON_DELETE, ICON_GAMEPAD, ICON_SERVER } from "../../icons";
 import { commands } from "../../ipc/commands";
 
 interface GameServerListProps {
@@ -85,13 +85,13 @@ const GameServerList: Component<GameServerListProps> = (props) => {
         {([gameId, servers]) => (
           <div class="game-server-group">
             <div class="game-server-group-header">
-              <span class="nf-icon">{ICON_GAMEPAD}</span>
+              <SkinGlyph name="gamepad" />
               {resolveGameName(gameId)}
             </div>
             <For each={servers}>
               {(server) => (
                 <div class="game-server-row">
-                  <span class="nf-icon game-server-icon">{ICON_SERVER}</span>
+                  <SkinGlyph name="server" class="game-server-icon" />
                   <div class="game-server-info">
                     <div class="game-server-label">{server.label}</div>
                     <div class="game-server-address">{server.address}</div>
@@ -109,7 +109,7 @@ const GameServerList: Component<GameServerListProps> = (props) => {
                       onClick={() => props.onRemove(props.communityId, server.id)}
                       title="Remove server"
                     >
-                      <span class="nf-icon">{ICON_DELETE}</span>
+                      <SkinGlyph name="delete" />
                     </button>
                   </Show>
                 </div>

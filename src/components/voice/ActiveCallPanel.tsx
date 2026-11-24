@@ -1,22 +1,11 @@
 import { Component, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import SkinGlyph from "../common/SkinGlyph";
 import { commands } from "../../ipc/commands";
 import { callsState, type CallEntry } from "../../stores/calls.store";
 import { voiceState, setVoiceState } from "../../stores/voice.store";
 import { settingsState, setSettingsState } from "../../stores/settings.store";
 import { friendsState } from "../../stores/friends.store";
 import { handleEndDmCall } from "../../actions/calls.actions";
-import {
-  ICON_HANGUP,
-  ICON_HEADPHONES,
-  ICON_HEADPHONES_OFF,
-  ICON_MIC,
-  ICON_MIC_OFF,
-  ICON_OPEN_IN_NEW,
-  ICON_PHONE,
-  ICON_SCREEN_SHARE,
-  ICON_VIDEO,
-  ICON_VIDEO_OFF,
-} from "../../icons";
 import VideoCallPanel from "./VideoCallPanel";
 import ReactionsTray from "./ReactionsTray";
 import ReactionFloater from "./ReactionFloater";
@@ -201,9 +190,7 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
           aria-label={voiceState.isMuted ? "Unmute microphone" : "Mute microphone"}
           title={voiceState.isMuted ? "Unmute" : "Mute"}
         >
-          <span class="nf-icon" aria-hidden="true">
-            {voiceState.isMuted ? ICON_MIC_OFF : ICON_MIC}
-          </span>
+          <SkinGlyph name={voiceState.isMuted ? "mic.off" : "mic.on"} />
         </button>
         <button
           type="button"
@@ -213,9 +200,7 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
           aria-label={voiceState.isDeafened ? "Undeafen" : "Deafen"}
           title={voiceState.isDeafened ? "Undeafen" : "Deafen"}
         >
-          <span class="nf-icon" aria-hidden="true">
-            {voiceState.isDeafened ? ICON_HEADPHONES_OFF : ICON_HEADPHONES}
-          </span>
+          <SkinGlyph name={voiceState.isDeafened ? "speaker.off" : "speaker.on"} />
         </button>
         <Show when={isVideoCall()}>
           <button
@@ -226,9 +211,7 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
             aria-label={voiceState.cameraOn ? "Turn off camera" : "Turn on camera"}
             title={voiceState.cameraOn ? "Turn off camera" : "Turn on camera"}
           >
-            <span class="nf-icon" aria-hidden="true">
-              {voiceState.cameraOn ? ICON_VIDEO : ICON_VIDEO_OFF}
-            </span>
+            <SkinGlyph name={voiceState.cameraOn ? "video" : "video-off"} />
           </button>
         </Show>
         {/* Wave 12 W12.11 — screen-share toggle. Available in both audio
@@ -242,7 +225,7 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
           aria-label={voiceState.screenShareOn ? "Stop sharing screen" : "Share screen"}
           title={voiceState.screenShareOn ? "Stop sharing screen" : "Share screen"}
         >
-          <span class="nf-icon" aria-hidden="true">{ICON_SCREEN_SHARE}</span>
+          <SkinGlyph name="screen-share" />
         </button>
         {/* Wave 12 W12.11 — emoji reactions tray. */}
         <ReactionsTray />
@@ -257,7 +240,7 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
             aria-label="Pop out call"
             title="Pop out"
           >
-            <span class="nf-icon" aria-hidden="true">{ICON_OPEN_IN_NEW}</span>
+            <SkinGlyph name="open-in-new" />
           </button>
         </Show>
         <button
@@ -267,7 +250,7 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
           aria-label="Hang up"
           title="Hang up"
         >
-          <span class="nf-icon" aria-hidden="true">{ICON_HANGUP}</span>
+          <SkinGlyph name="hangup" />
         </button>
       </div>
 
@@ -290,7 +273,7 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
 
       <details class="active-call-devices">
         <summary class="active-call-devices-summary">
-          <span class="nf-icon" aria-hidden="true">{ICON_PHONE}</span>
+          <SkinGlyph name="phone" />
           Audio devices
         </summary>
         <div class="active-call-device-row">

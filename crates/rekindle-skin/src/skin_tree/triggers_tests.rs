@@ -8,10 +8,10 @@ use rekindle_types::dto::skin::SkinWindow;
 use rekindle_types::dto::skin_action::{
     AppSignal, Capability, NodeState, NodeTrigger, SkinAction, SkinEvent,
 };
-use rekindle_types::dto::skin_tree::{SkinNode, SkinTree};
+use rekindle_types::dto::skin_tree::SkinTree;
 
 use super::import;
-use super::test_support::{frame, piece};
+use super::test_support::{find, frame, piece};
 use crate::import::tree::parse;
 use crate::import::ImportError;
 use crate::{builtin, manifest, package};
@@ -46,12 +46,6 @@ fn tree_from(close: &str, tab: &str) -> Result<SkinTree, ImportError> {
         &mut built,
     )?;
     Ok(built.0.tree.unwrap())
-}
-
-fn find<'a>(nodes: &'a [SkinNode], id: &str) -> Option<&'a SkinNode> {
-    nodes
-        .iter()
-        .find_map(|n| (n.id == id).then_some(n).or_else(|| find(&n.children, id)))
 }
 
 const ON_CLICK_MINIMIZE: &str = r#"<Trigger Type="OnClick">AppMinimize</Trigger>"#;
