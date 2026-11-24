@@ -17,6 +17,7 @@ import type {
   AutoModRuleInfo, CommunityPolicy, ExpressionInfo, Message, QuietHoursSettings, SendChannelMessageResult,
 } from "./types";
 import type { CommunityBanView, MemberGroup, TargetModeration } from "./dto";
+import type { Denied } from "../channels/community_subscription_events";
 
 /** `SuccessorOffer` (rekindle-types `dto::community`): a successor both
  *  sides link, as `communitySuccessorOffered` carries it. */
@@ -106,6 +107,8 @@ export const communityCommands = {
       opPublications?: Record<string, OpPublicationState>;
       /** Whether this device may write here (`CommunityView::device_status`, ADR 0022 rule 4). */
       deviceStatus: DeviceStatus;
+      /** What we may not do here and why (`CommunityView::denied`, never-hide). */
+      denied?: Denied;
     }[]>("get_community_details"),
   getCommunityMembers: (communityId: string) =>
     hostInvoke<{

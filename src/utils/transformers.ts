@@ -9,6 +9,7 @@ import type { DeviceStatus } from "../ipc/commands/community";
 import type { Message } from "../stores/chat.store";
 import type { AutoModRule, Community, Channel, Expression, Member, MemberLocation } from "../stores/community.store";
 import type { MemberGroup, TargetModeration } from "../ipc/commands/dto";
+import type { Denied } from "../ipc/channels/community_subscription_events";
 
 /** Convert a single backend FriendInfo to a frontend Friend. */
 export function transformFriend(f: FriendInfo): Friend {
@@ -208,6 +209,7 @@ export function transformCommunityDetail(c: {
     byName: string | null;
     reason?: string | null;
   } | null;
+  denied?: Denied;
 }): Community {
   return {
     id: c.id, name: c.name, description: c.description ?? null,
@@ -236,6 +238,7 @@ export function transformCommunityDetail(c: {
     myThemeColor: c.myThemeColor ?? null,
     myBadges: c.myBadges ?? [],
     removed: c.removed ?? null,
+    denied: c.denied ?? {},
   };
 }
 

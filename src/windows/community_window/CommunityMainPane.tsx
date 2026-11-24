@@ -58,18 +58,23 @@ const CommunityMainPane: Component<{ vm: CommunityVm }> = (props) => {
             <div class="community-channel-header">
               <SkinGlyph name={vm.channelHeaderIcon()} class="community-channel-header-icon" />
               <span class="community-channel-header-name">{vm.activeChannel()!.name}</span>
-              <Show when={vm.activeChannel()?.topic || vm.canManageChannels()}>
+              {/* Never-hide: the topic (or "Set topic…") is always drawn; one we
+                  may not edit says why, in the Host's words. */}
+              <Show when={true}>
                 <Show when={vm.editingTopic()} fallback={
                   <span
-                    class={`channel-topic ${vm.canManageChannels() ? "channel-topic-editable" : ""}`}
+                    class={`channel-topic ${vm.denied("manageChannels") === null ? "channel-topic-editable" : ""}`}
+                    title={vm.denied("manageChannels") ?? undefined}
+                    aria-disabled={vm.denied("manageChannels") !== null ? "true" : undefined}
+                    aria-description={vm.denied("manageChannels") ?? undefined}
                     onClick={() => {
-                      if (vm.canManageChannels()) {
+                      if (vm.denied("manageChannels") === null) {
                         vm.setTopicDraft(vm.activeChannel()?.topic ?? "");
                         vm.setEditingTopic(true);
                       }
                     }}
                   >
-                    {vm.activeChannel()?.topic || (vm.canManageChannels() ? "Set topic..." : "")}
+                    {vm.activeChannel()?.topic || "Set topic..."}
                   </span>
                 }>
                   <input

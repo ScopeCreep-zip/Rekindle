@@ -1,10 +1,10 @@
 // Plan E3.2 S10, GUI half: a role change reaches the community window live
 // (EffectivePermissionsChanged), with no reopening. Cara (fleet) creates a
 // community; Ari (the app) joins as a plain member and keeps its window
-// open on general. The channel list's "+ Category" control is drawn only
-// for MANAGE_CHANNELS: absent (shot); Cara grants Ari a role with it and the
-// control appears in the open window (shot); Cara takes the role back and
-// it goes again (shot).
+// open on general. The channel list's "+ Category" is always drawn (never
+// hide): disabled with the Host's reason (shot); Cara grants Ari a role with
+// MANAGE_CHANNELS and it enables in the open window (shot); Cara takes the
+// role back and it is disabled with a reason again (shot).
 
 import { browser } from "@wdio/globals";
 import { NET_WAIT_MS, waitUntil } from "../../../walk/helpers.ts";
@@ -17,12 +17,37 @@ const COMMUNITY = `Perm Watch ${Date.now() % 100000}`;
 const MANAGE_CHANNELS = 1 << 1;
 const CONTROL = ".channel-create-category-btn";
 
-/** Whether the open community window draws the MANAGE_CHANNELS control. */
-async function controlShown(): Promise<boolean> {
+interface ControlState {
+  drawn: boolean;
+  disabled: boolean;
+  reason: string;
+}
+
+/** The MANAGE_CHANNELS control as drawn: present, disabled, and its reason (title / aria-description). */
+async function control(): Promise<ControlState> {
   return (await browser.execute((sel: string) => {
-    const el = document.querySelector<HTMLElement>(sel);
-    return !!el && el.getBoundingClientRect().width > 0;
-  }, CONTROL)) as boolean;
+    const el = document.querySelector<HTMLButtonElement>(sel);
+    if (!el || el.getBoundingClientRect().width === 0) return { drawn: false, disabled: false, reason: "" };
+    const disabled = el.disabled || el.getAttribute("aria-disabled") === "true";
+    return { drawn: true, disabled, reason: disabled ? (el.getAttribute("aria-description") ?? el.title ?? "") : "" };
+  }, CONTROL)) as ControlState;
+}
+
+/** Wait until the control is drawn and `enabled` or disabled with a reason. */
+async function controlIs(enabled: boolean, what: string): Promise<ControlState> {
+  let last: ControlState = { drawn: false, disabled: false, reason: "" };
+  await waitUntil(
+    async () => {
+      last = await control();
+      return last.drawn && (enabled ? !last.disabled : last.disabled && last.reason.trim().length > 0);
+    },
+    NET_WAIT_MS * 2,
+    "",
+  ).catch(() => {
+    throw new Error(`${what}: the control is ${JSON.stringify(last)}`);
+  });
+  console.log(`[perms] ${what}: ${JSON.stringify(last)}`);
+  return last;
 }
 
 describe("a role granted or taken back changes the open community window live", function () {
@@ -46,22 +71,21 @@ describe("a role granted or taken back changes the open community window live", 
     await stopFleet(peers);
   });
 
-  it("a plain member has no channel management control", async () => {
-    await browser.pause(2000);
-    if (await controlShown()) throw new Error("Ari, a plain member, already has the Manage Channels control");
+  it("a plain member sees the channel management control disabled, with the Host's reason", async () => {
+    await controlIs(false, "before the grant");
     await shot("before-grant");
   });
 
-  it("granted Manage Channels, the control appears in the open window", async () => {
+  it("granted Manage Channels, the control enables in the open window", async () => {
     role = await peerCreateRole(peers[0], anchor, "Builders", MANAGE_CHANNELS);
     await peerAssignRole(peers[0], anchor, me.displayName, role);
-    await waitUntil(controlShown, NET_WAIT_MS * 2, "the Manage Channels control never appeared after the grant (no reopening)");
+    await controlIs(true, "after the grant (no reopening)");
     await shot("after-grant");
   });
 
-  it("the role taken back, the control goes again", async () => {
+  it("the role taken back, the control is disabled with a reason again", async () => {
     await peerUnassignRole(peers[0], anchor, me.displayName, role);
-    await waitUntil(async () => !(await controlShown()), NET_WAIT_MS * 2, "the Manage Channels control stayed after the role was taken back");
+    await controlIs(false, "after the role was taken back");
     await shot("after-revoke");
   });
 });

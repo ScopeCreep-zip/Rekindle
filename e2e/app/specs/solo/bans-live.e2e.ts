@@ -27,6 +27,7 @@ describe("Settings → Bans shows a ban made while it is open (BansChanged)", fu
   const me: User = { ...newUser("bans"), displayName: "Ari" };
   let peers: Peer[] = [];
   let anchor = "";
+  let mods = "";
 
   before(async () => {
     await createIdentity(browser, me);
@@ -36,8 +37,7 @@ describe("Settings → Bans shows a ban made while it is open (BansChanged)", fu
     await joinCommunity(browser, me, await peerInvite(cara, anchor, 1), COMMUNITY);
     await peerJoinCommunity(bea, await peerInvite(cara, anchor, 1));
     await waitUntil(async () => (await peerMemberCount(cara, anchor)) >= 3, NET_WAIT_MS * 2, "Cara never counted three members");
-    const mods = await peerCreateRole(cara, anchor, "Mods", BAN_MEMBERS);
-    await peerAssignRole(cara, anchor, me.displayName, mods);
+    mods = await peerCreateRole(cara, anchor, "Mods", BAN_MEMBERS);
     await openCommunity(browser, COMMUNITY);
   });
 
@@ -45,15 +45,33 @@ describe("Settings → Bans shows a ban made while it is open (BansChanged)", fu
     await stopFleet(peers);
   });
 
+  it("before the grant the Bans tab is listed, disabled with the Host's reason (never hidden)", async () => {
+    await communitySettings(browser, "Overview");
+    const tab = (await browser.execute(() => {
+      const t = Array.from(document.querySelectorAll<HTMLButtonElement>(".modal-container .form-tab")).find((b) => (b.textContent ?? "").trim() === "Bans");
+      return t ? { disabled: t.disabled, reason: t.getAttribute("aria-description") ?? t.title ?? "" } : null;
+    })) as { disabled: boolean; reason: string } | null;
+    console.log(`[bans] Bans tab before the grant: ${JSON.stringify(tab)}`);
+    expect(tab).not.toBeNull();
+    expect(tab!.disabled).toBe(true);
+    expect(tab!.reason.trim().length).toBeGreaterThan(0);
+    await shot("bans-tab-denied");
+    await browser.keys("Escape");
+  });
+
   it("Ari's open ban list gains Bea when Cara bans her", async () => {
-    // The role reaches Ari's window as a permission change: wait for the tab.
+    await peerAssignRole(peers[0], anchor, me.displayName, mods);
+    // The grant reaches Ari's window live: the Bans tab enables.
     await waitUntil(
       async () => {
         await communitySettings(browser, "Overview").catch(() => undefined);
-        return (await byText(browser, ".modal-container .form-tab", "Bans", 1000).catch(() => null)) !== null;
+        return (await browser.execute(() => {
+          const t = Array.from(document.querySelectorAll<HTMLButtonElement>(".modal-container .form-tab")).find((b) => (b.textContent ?? "").trim() === "Bans");
+          return !!t && !t.disabled;
+        })) as boolean;
       },
       NET_WAIT_MS,
-      "Ari's settings never showed Bans (the Mods role did not arrive)",
+      "Ari's Bans tab never enabled (the Mods role did not arrive)",
     );
     await communitySettings(browser, "Bans");
     expect(await bannedShown()).not.toContain("Bea");

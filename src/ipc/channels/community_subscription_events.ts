@@ -196,6 +196,24 @@ export interface SegmentDescriptor {
  * moves channels, roles, members and permissions together, so there is
  * no single payload and re-reading is correct.
  */
+/** What a member may do in a community, as the Host names it (never-hide). */
+export type CommunityCapability =
+  | "manageChannels"
+  | "manageCommunity"
+  | "manageRoles"
+  | "banMembers"
+  | "kickMembers"
+  | "manageExpressions"
+  | "viewInsights"
+  | "viewAuditLog"
+  | "createInvite"
+  | "manageEvents"
+  | "manageServers";
+
+/** Each capability we lack, with the Host's words for why (a missing
+ *  permission, a timeout until a time, creator-only). Absent: allowed. */
+export type Denied = Partial<Record<CommunityCapability, string>>;
+
 export type GovernanceEvent =
   | {
       metadataChanged: {
@@ -233,7 +251,9 @@ export type GovernanceEvent =
   | { inviteRevoked: { community: string; codeHash: string } }
   | { inviteExpired: { community: string; codeHash: string } }
   | { channelPermissionsChanged: { community: string; channel: string } }
-  | { effectivePermissionsChanged: { community: string; member: string } }
+  /** A member's permissions moved; for us, `denied` is what we may no longer
+   *  do and why (never-hide: a control is disabled with that reason). */
+  | { effectivePermissionsChanged: { community: string; member: string; denied?: Denied } }
   | { governanceRebuilt: { community: string } }
   | {
       governanceOpQuarantined: {

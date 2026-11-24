@@ -16,6 +16,8 @@ import type { Message } from "../../stores/chat.store";
 import type { EditMode } from "../../components/chat/message_input/types";
 import type { ScheduledEvent, Thread } from "../../stores/community.store";
 import { formatEventCountdown as formatTimeUntilEvent } from "../../utils/time";
+import type { CommunityCapability } from "../../ipc/channels/community_subscription_events";
+import { deniedFor } from "../../utils/denied";
 
 export type RightPanel = "members" | "pins" | "threadList" | "thread" | null;
 
@@ -171,6 +173,8 @@ export function createCommunityWindowState() {
   const ownRemoval = createMemo(() => activeCommunity()?.removed ?? null);
   /// A join the inviter refused after it returned (plan JW): the Host's words.
   const joinWithdrawn = createMemo(() => activeCommunity()?.withdrawn?.reasonText ?? null);
+  /// Why we may not do `cap` here, in the Host's words (never-hide), or null.
+  const denied = (cap: CommunityCapability): string | null => deniedFor(activeCommunity(), cap);
   const canPostInChannel = createMemo(() => {
     if (ownRemoval() || joinWithdrawn()) return false;
     if (!isAnnouncementChannel()) return canSendMessages();
@@ -243,7 +247,7 @@ export function createCommunityWindowState() {
     myPerms, canManageChannels, canManageMessages, canRequestToSpeak,
     canManageCommunity, canSendMessages, canBypassSlowmode, gameServers,
     isAnnouncementChannel, isForumChannel, isStageChannel, isVoiceChannel,
-    isTextPaneVisible, ownRemoval, joinWithdrawn, canPostInChannel, activeVoiceChannelState, isConnectedToActiveStage,
+    isTextPaneVisible, denied, ownRemoval, joinWithdrawn, canPostInChannel, activeVoiceChannelState, isConnectedToActiveStage,
     channelTypingUsers, upcomingEvents, shouldShowOnboarding, shouldShowWelcome,
     sidebarServerList, formatTimeUntilEvent,
   };
