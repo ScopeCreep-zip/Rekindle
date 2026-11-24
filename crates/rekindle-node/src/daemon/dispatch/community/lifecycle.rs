@@ -162,7 +162,8 @@ pub(crate) async fn handle_leave(
         Ok(m) => m,
         Err(e) => return e,
     };
-    match adapter(ctx).leave(&membership).await {
+    use crate::host::adapters::governance::HoldEnd;
+    match adapter(ctx).leave(&membership, HoldEnd::Left).await {
         Ok(()) => IpcResponse::ok(&serde_json::json!({ "left": membership.anchor })),
         Err(e) => IpcResponse::error(500, e),
     }

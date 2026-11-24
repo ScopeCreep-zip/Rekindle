@@ -72,6 +72,36 @@ async fn our_forget_drops_the_community_from_the_dashboard() {
     assert_eq!(left, ["b"]);
 }
 
+/// Our withdrawn join (published in place of `Forgotten`) drops the
+/// community from the dashboard too.
+#[tokio::test]
+async fn our_withdrawn_join_drops_the_community_from_the_dashboard() {
+    use rekindle_types::join_refusal::JoinRefusal;
+    use rekindle_types::subscription_events::MembershipEvent;
+    let (_dir, mut app) = app_on_test_bus().await;
+    for anchor in ["a", "b"] {
+        app.cached_communities.push(crate::app::CachedCommunity {
+            anchor: anchor.into(),
+            name: anchor.into(),
+            our_pseudonym: "p".into(),
+        });
+    }
+    let action = app.subscription_event_to_action(SubscriptionEvent::Membership(
+        MembershipEvent::JoinWithdrawn {
+            community: "a".into(),
+            reason: JoinRefusal::InviteUsedUp,
+            reason_text: JoinRefusal::InviteUsedUp.withdrawn_text(),
+        },
+    ));
+    assert!(matches!(action, Some(Action::Render)));
+    let left: Vec<_> = app
+        .cached_communities
+        .iter()
+        .map(|c| c.anchor.as_str())
+        .collect();
+    assert_eq!(left, ["b"]);
+}
+
 #[tokio::test]
 async fn a_system_alert_is_shown_as_a_warning_toast() {
     let (_dir, mut app) = app_on_test_bus().await;

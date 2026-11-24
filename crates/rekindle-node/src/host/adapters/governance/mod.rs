@@ -49,7 +49,7 @@ mod successor;
 mod transfer;
 pub(crate) use co_create::PendingCreations;
 pub(crate) use community_info::InfoEdit;
-pub(crate) use create_leave::ForgetError;
+pub(crate) use create_leave::{ForgetError, HoldEnd};
 pub(crate) use invites::invite_fingerprint;
 pub(crate) use views::removal_display;
 pub(crate) mod channel_admin;
