@@ -89,7 +89,11 @@ export async function pendingRequest(b: Browser, message: string): Promise<strin
 export async function acceptRequest(b: Browser, user: User, message: string): Promise<void> {
   const item = await byText(b, ".pending-item", message, NET_WAIT_MS);
   await (await item.$(".pending-btn-accept")).click();
-  await resolveIntent(b, { passphrase: user.passphrase });
+  // An accept is always reviewed (trust-changing, with its acknowledgement):
+  // wait for the review and require it committed. The 3 s default let a
+  // review that came up later return "none" and stay open (r27 friend-dm,
+  // Bob's Accept review unticked, Alice never listed).
+  expect(await resolveIntent(b, { passphrase: user.passphrase, appearMs: NET_WAIT_MS })).toBe("committed");
 }
 
 /**
