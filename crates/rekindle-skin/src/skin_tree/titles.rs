@@ -306,7 +306,10 @@ fn walk(
 ) -> Result<(), SkinError> {
     for n in nodes {
         let b = place(n, parent);
-        if n.role == NodeRole::MenuTitle {
+        // A title the content pass gave the small mark keeps it (plan
+        // SK15b-2, [`super::content`]).
+        let marked = n.label.as_ref().is_some_and(|l| l.glyph.is_some());
+        if n.role == NodeRole::MenuTitle && !marked {
             if let Some(menu) = menu_of(n) {
                 let own = own_or_part(n, b);
                 let word = match own.as_ref().or(under) {

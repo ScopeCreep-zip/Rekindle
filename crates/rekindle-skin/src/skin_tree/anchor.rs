@@ -190,19 +190,24 @@ fn edge(value: &str, sibs: &Sibs, axis: &Axis) -> Result<Option<At>, ImportError
     }))
 }
 
-/// The sibling and offset of a tile placed at a sibling's far edge on
-/// `ax` (`X="XfireMenuText.RIGHT+10"`, `Y="UserName.BOTTOM+2"`), neither
-/// stretched nor justified to its end or centre: a chain
-/// [`super::content::chains`] may keep symbolic.
-pub(super) fn chain<'t>(tile: &'t Node, ax: &Axis) -> Option<(&'t str, i32)> {
+/// The sibling, offset and edge (`true` far, `false` near) of a tile
+/// placed at a sibling's edge on `ax` (`X="XfireMenuText.RIGHT+10"`,
+/// `Y="UserName.BOTTOM+2"`; XGlow's `Status` at `Y="StatusMiddle.TOP+1"`,
+/// `Xglow.ini:216-217`), neither stretched nor justified to its end or
+/// centre: a chain [`super::content::chains`] may keep symbolic.
+pub(super) fn chain<'t>(tile: &'t Node, ax: &Axis) -> Option<(&'t str, i32, bool)> {
     let just = tile.attr_ci(ax.just).map_or("", str::trim);
     let placed_from_start = !just.eq_ignore_ascii_case(ax.end_just)
         && !just.eq_ignore_ascii_case("CENTER")
         && !just.eq_ignore_ascii_case("CENTRE");
     let stretched = tile.attr_ci(ax.resize).is_some_and(|r| r.trim() == "100");
     let (name, side, by) = reference(tile.attr_ci(ax.pos)?)?;
-    (placed_from_start && !stretched && side.eq_ignore_ascii_case(ax.far))
-        .then_some((name.trim(), by))
+    let far = side.eq_ignore_ascii_case(ax.far);
+    (placed_from_start && !stretched && (far || side.eq_ignore_ascii_case(ax.near))).then_some((
+        name.trim(),
+        by,
+        far,
+    ))
 }
 
 fn i16_of(v: i32) -> Result<i16, ImportError> {

@@ -1,12 +1,12 @@
 Top Decor
 Logo Logo label "Rekindle" cover [0, 0, 89, 21] glyph RekindleWordmark
 MenuBar MenuBar
-  XfireMenuText MenuTitle label "Rekindle"
-    FileMenu Part target [0, 0, 50, 23] art [0, 0, 50, 23] Spacing
+  XfireMenuText MenuTitle label "Rekindle" glyph RekindleMarkSmall
+    FileMenu Part target [-3, 0, 24, 18] art [3, 0, 18, 23] Spacing
   ToolsMenuText MenuTitle label "Tools"
     ToolsMenu Part target [0, 0, 34, 23] art [0, 0, 34, 23] Spacing
   HelpMenuText MenuTitle label "Help"
-    HelpMenu Part target [0, 0, 15, 23] art [0, 0, 28, 23] Short
+    HelpMenu Part target [0, 0, 28, 23] art [0, 0, 28, 23] Spacing
 UserNameField NameField inset [0, 16] target [0, -1, 201, 24] art [0, 1, 217, 22] Size
   UserNameText Part
 StatusWrapper Group

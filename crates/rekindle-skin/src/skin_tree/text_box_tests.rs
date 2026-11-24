@@ -2,7 +2,9 @@
 //! ([`super::text_box`]), measured on the eleven built-ins at each window's
 //! served minimum.
 
-use rekindle_types::dto::skin_tree::{NodeRole, SkinNode, SkinTree};
+use rekindle_types::dto::skin_tree::{NodeGlyph, NodeRole, SkinNode, SkinTree};
+
+use super::test_support::find;
 
 use super::golden_tests::main_layout;
 use super::titles::{laid_window, place, popup_window};
@@ -134,23 +136,14 @@ fn onyxs_menu_titles_take_the_room_up_to_the_next_title() {
 }
 
 /// Every served label's box holds its word at the 10 px floor wherever the
-/// pack leaves room; the labels listed have no room at the pack's places
-/// (pack-layout findings for the lead), each at its served width.
+/// pack leaves room; the labels listed (none since plan SK15b-2) have no
+/// room at the pack's places (pack-layout findings for the lead), each at
+/// its served width.
 #[test]
 fn labels_hold_their_words_where_room_exists() {
-    let no_room: &[(&str, &str, i32)] = &[
-        // Plan SK15b: Simple-X's menu row (`MenuBar` X 14) meets its
-        // `TabHeader` (X 125, the same Y 100, `SimpleX.ini:106-107`):
-        // Xfire's "File" fit; "Rekindle" (46 px) carries `HelpMenuText`
-        // to x 110-134, into `TabNormalText`'s press from x 125, and each
-        // stops at the other's press (the Simple-X File glyph rule of
-        // design SK15b clears the row).
-        ("simple-x", "HelpMenuText", 13),
-        ("simple-x", "TabNormalText", 37),
-        // Plan SK13: the text starts at x 132, inside `TabServerText`'s
-        // press (its `TabServerButton` reaches x 135), and stops there.
-        ("xfire-classic", "TabDownloadText", 48),
-    ];
+    // Plan SK15b-2: none. Simple-X's file title takes the small mark (its
+    // row clears `TabHeader`), and Classic's re-import keeps its tab chains.
+    let no_room: &[(&str, &str, i32)] = &[];
     let mut short = Vec::new();
     for pack in PACKS {
         for l in laid(pack) {
@@ -181,6 +174,45 @@ fn every_text_box_is_as_tall_as_its_line() {
     assert!(
         short.is_empty(),
         "text boxes shorter than their line: {short:?}"
+    );
+}
+
+/// Plan SK15b-2: a renamed menu title whose content-sized word would run
+/// its row into the next obstacle takes the small brand mark, its words
+/// the accessible name and tooltip (Simple-X's `XfireMenuText`: the row
+/// `MenuBar` X 14 meets `TabHeader` X 125 on Y 100, `SimpleX.ini:106-107`),
+/// and the titles and tabs after it hold their words.
+#[test]
+fn a_renamed_title_without_room_for_its_word_takes_the_small_mark() {
+    let main = main_layout("simple-x");
+    let file = find(&main.tree.as_ref().unwrap().root, "XfireMenuText").unwrap();
+    let label = file.label.as_ref().expect("the File title is labelled");
+    assert_eq!(label.glyph, Some(NodeGlyph::RekindleMarkSmall), "{label:?}");
+    assert_eq!(label.text, "Rekindle");
+    for id in ["ToolsMenuText", "HelpMenuText", "TabNormalText"] {
+        let l = node("simple-x", id);
+        let words = l.words.as_deref().unwrap();
+        assert!(
+            l.b[2] >= word_width(words),
+            "simple-x {id} {:?} cuts {words:?}",
+            l.b
+        );
+    }
+}
+
+/// Plan SK15b-2: XGlow's `UserName` (`Class=Text Stretch=ToContent`, its
+/// words the user's name, `Xglow.ini:754-762`) is served a name line and
+/// the room of its row, and the status row chained on its bottom
+/// (`Y="UserName.BOTTOM+2"`, `Xglow.ini:195`) starts below it.
+#[test]
+fn xglows_runtime_name_takes_a_line_and_its_room() {
+    let name = art_box("xglow", "UserName");
+    let arrow = art_box("xglow", "DownArrow");
+    assert!(name[3] >= 15, "UserName {name:?}");
+    assert!(name[2] >= 100, "UserName {name:?}");
+    assert!(
+        name[1] + name[3] + 2 <= arrow[1],
+        "UserName {name:?} DownArrow {arrow:?}"
     );
 }
 
