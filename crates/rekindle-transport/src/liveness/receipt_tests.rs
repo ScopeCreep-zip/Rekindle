@@ -16,19 +16,22 @@ use tokio::sync::watch;
 
 use super::{owner, Liveness};
 
-/// Our General route, a new id at each replace; replaces counted.
-struct OneRoute {
+/// Our General route, a new id at each replace; replaces and the imports
+/// that reached the port counted.
+pub(crate) struct OneRoute {
     id: Mutex<u32>,
     replaces: AtomicU32,
+    imports: AtomicU32,
     state: watch::Sender<RouteState>,
     paused: watch::Sender<Option<RoutePauseCause>>,
 }
 
 impl OneRoute {
-    fn new() -> Arc<Self> {
+    pub(crate) fn new() -> Arc<Self> {
         Arc::new(Self {
             id: Mutex::new(1),
             replaces: AtomicU32::new(0),
+            imports: AtomicU32::new(0),
             state: watch::channel(RouteState::Allocating).0,
             paused: watch::channel(None).0,
         })
@@ -41,11 +44,17 @@ impl OneRoute {
     fn replaces(&self) -> u32 {
         self.replaces.load(Ordering::SeqCst)
     }
+
+    /// How many imports reached the port.
+    pub(crate) fn imports(&self) -> u32 {
+        self.imports.load(Ordering::SeqCst)
+    }
 }
 
 #[async_trait::async_trait]
 impl RoutePort for OneRoute {
     fn import(&self, _blob: &[u8]) -> Result<PeerTarget, PortError> {
+        self.imports.fetch_add(1, Ordering::SeqCst);
         Err(PortError::Routing("no imports here".into()))
     }
     fn on_dead_remote(&self, _dead: &[PeerTarget]) -> Vec<Vec<u8>> {

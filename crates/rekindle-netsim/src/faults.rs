@@ -102,8 +102,10 @@ pub enum Fault {
     /// The node's watch on `key` dies: Veilid sends a last change with
     /// empty subkeys, `count == 0` and no value (0.5.8 `watch_value.rs:782-789`).
     WatchDeath { node: usize, key: String },
-    /// The node's own routes die: the owner hears of it, its importers do
-    /// not (their sends are lost until they fetch the new route).
+    /// The node's own routes die: the owner hears of it, its importers are
+    /// not told; each learns it from its own next remote route test
+    /// (`dead_remote`, [`crate::loopback`]), and its sends are lost until
+    /// then.
     RouteDeath { node: usize },
     /// The node's live own route of `class` stops delivering, and no one is
     /// told: the live case of finding 75. The route breaks as under
@@ -127,10 +129,25 @@ pub enum Fault {
     /// `route_compile.rs:103`, `:420-434`, `rpc_route.rs:329-365`) and passes.
     /// Veilid declares a route dead only on loopback failures or on lost
     /// questions with it as the safety route (`route_stats.rs:19-29`, `:117-131`),
-    /// and charges a caller's lost question to the caller's safety route, so no
-    /// one is told: the route stays allocated and published until its owner
-    /// releases it.
+    /// and charges a caller's lost question to the caller's safety route, so its
+    /// owner is never told: the route stays allocated and published until its
+    /// owner releases it. Each importer's own remote route test fails, and it
+    /// hears `dead_remote` ([`crate::loopback`]).
     OutsideDead { node: usize, class: RouteClass },
+    /// The node's allocations of `class` fail their route test (or test
+    /// again): Veilid allocates the route, its test over the network gets
+    /// no answer, so it releases the route and answers `TryAgain`
+    /// ("allocated route failed to test", veilid-core 0.5.8
+    /// `veilid_api/api.rs:829-836`) once the test's duration has passed
+    /// ([`routes`](crate::routes)); no route is left behind and nothing is
+    /// published. The live F9 stage 2 case: a node whose routes cannot be
+    /// proven keeps allocating. A client-side network condition, so
+    /// [`Fault::Heal`] keeps it.
+    AllocationTestFails {
+        node: usize,
+        class: RouteClass,
+        failing: bool,
+    },
     /// The first hop of the node's safety route fails on its next app
     /// message or call: that send fails `NoConnection`, which our port
     /// reports as a `Send` error (our side: the peer's route is kept,
@@ -385,6 +402,18 @@ impl Netsim {
             Fault::RouteDeath { node } => self.kill_routes(node),
             Fault::RouteSilentDeath { node, class } => self.net.silence_route(node, class),
             Fault::OutsideDead { node, class } => self.net.kill_outside(node, class),
+            Fault::AllocationTestFails {
+                node,
+                class,
+                failing,
+            } => {
+                let set = &mut self.net.inner.lock().faults.allocation_test_fails;
+                if failing {
+                    set.insert((node, class));
+                } else {
+                    set.remove(&(node, class));
+                }
+            }
             Fault::RouteLinkFailure { node } => {
                 self.net.inner.lock().faults.link_failure.insert(node);
             }

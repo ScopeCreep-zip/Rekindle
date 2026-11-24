@@ -35,6 +35,24 @@ fn decode(payload: &[u8]) -> Option<([u8; 32], &str)> {
     (!record.is_empty()).then_some((hash, record))
 }
 
+/// The inviter's route read for an attempt, when it may be called: none
+/// read, or a blob the transport knows dead (plan RV1g B3: Veilid's
+/// `RouteChange` or two timed-out calls, until a newer `M`/6 or the failure
+/// cache's expiry), defers the row without a call.
+fn callable(
+    read: Option<Vec<u8>>,
+    dead: impl FnOnce(&[u8]) -> bool,
+) -> Result<Vec<u8>, AttemptOutcome> {
+    match read {
+        Some(route) if dead(&route) => {
+            tracing::debug!("bootstrap exchange deferred: the inviter's route is known dead");
+            Err(AttemptOutcome::Deferred)
+        }
+        Some(route) => Ok(route),
+        None => Err(AttemptOutcome::Deferred),
+    }
+}
+
 struct BootstrapSender(HostGovernance);
 
 #[async_trait]
@@ -53,8 +71,10 @@ impl StreamSender for BootstrapSender {
         let Some(joined) = governance.held_joined(community, &hash).await else {
             return AttemptOutcome::Wedged("our MemberJoined is not held".into());
         };
-        let Some(route) = governance.inviter_route(community, inviter_record).await else {
-            return AttemptOutcome::Deferred;
+        let read = governance.inviter_route(community, inviter_record).await;
+        let route = match callable(read, |blob| governance.route_declared_dead(blob)) {
+            Ok(route) => route,
+            Err(outcome) => return outcome,
         };
         use crate::host::adapters::governance::Exchange;
         match (governance)
@@ -134,5 +154,22 @@ mod tests {
         assert_eq!(super::decode(&payload), Some(([7; 32], "VLD0:rec")));
         assert_eq!(super::decode(&payload[..32]), None);
         assert_eq!(super::decode(&payload[..10]), None);
+    }
+
+    #[test]
+    fn a_dead_inviter_route_defers_the_row_without_a_call() {
+        use super::{callable, AttemptOutcome};
+        assert!(matches!(
+            callable(Some(b"A".to_vec()), |b| b == b"A"),
+            Err(AttemptOutcome::Deferred)
+        ));
+        assert!(matches!(
+            callable(None, |_| false),
+            Err(AttemptOutcome::Deferred)
+        ));
+        assert_eq!(
+            callable(Some(b"B".to_vec()), |b| b == b"A").ok(),
+            Some(b"B".to_vec())
+        );
     }
 }

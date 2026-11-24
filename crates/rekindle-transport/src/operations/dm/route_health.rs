@@ -83,13 +83,24 @@ async fn suspect_round(host: &dyn FriendHost, node: &TransportNode, to: &str) {
     };
     let fetched = live.observe(to, seq);
     let same = held.as_deref() == Some(blob.as_slice());
+    // A re-read of a blob Veilid declared dead is suspect, never "the peer
+    // republished": it takes the probe path, where the import refuses it;
+    // a strictly higher seq than the first read after its death revives it
+    // (plan RV1g B1, B3; `rekindle_route::dead_routes`).
+    live.route_read_at(&blob, u64::from(seq));
+    let dead = live.route_declared_dead(&blob);
     match fetched {
-        Fetched::Newer if !same => {
+        Fetched::Newer if !same && !dead => {
             tracing::info!(to = %to, seq, "suspect route: the peer republished; using it");
             route::cache(node, to, blob);
         }
         Fetched::Stale => tracing::debug!(to = %to, seq, "suspect route: stale record ignored"),
-        Fetched::Newer | Fetched::Same => probe_beside(host, to, blob),
+        Fetched::Newer | Fetched::Same => {
+            if dead {
+                tracing::debug!(to = %to, seq, "suspect route: the re-read route was declared dead");
+            }
+            probe_beside(host, to, blob);
+        }
     }
 }
 
@@ -111,12 +122,21 @@ async fn probe(host: &dyn FriendHost, to: &str, blob: Vec<u8>) {
         return;
     };
     let live = node.liveness();
-    let Some(target) = route::import(&node, to, &blob) else {
-        return;
+    // The probe is the suspect round's one re-test, at most once per round
+    // (S2, S3): it alone imports a blob Veilid declared dead (plan RV1g B1);
+    // every send refuses it (`route::import`).
+    let target = match node.routes().import(&blob) {
+        Ok(target) => target,
+        Err(e) => {
+            tracing::debug!(to = %to, error = %e, "suspect route probe: import failed");
+            route::invalidate_blob(&node, to, &blob);
+            return;
+        }
     };
     match node.caller().call_direct(&target, live.peer_probe()).await {
         Ok(_) => {
             tracing::info!(to = %to, "suspect route answered its probe");
+            live.route_proven(&blob);
             route::cache(&node, to, blob);
             if live.probe_answered(to) {
                 reachability(host, to, true);

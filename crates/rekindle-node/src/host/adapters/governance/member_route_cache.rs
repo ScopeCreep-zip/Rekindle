@@ -38,8 +38,13 @@ pub enum MemberCallError {
 
 impl HostGovernance {
     /// Take `author`'s verified route blob at DHT `seq` into `community`'s
-    /// cache.
+    /// cache, unless the transport still knows it dead after this read
+    /// (plan RV1g B3: only a strictly newer seq revives a dead blob).
     fn observe_route(&self, community: &str, author: &PseudonymKey, seq: u64, blob: Vec<u8>) {
+        self.route_read_at(&blob, seq);
+        if self.route_declared_dead(&blob) {
+            return;
+        }
         let mut map = self.ctx.communities.map().write();
         if let Some(c) = map.get_mut(community) {
             c.member_routes.observe(author, seq, blob);
@@ -122,7 +127,11 @@ impl HostGovernance {
                 .and_then(|c| c.member_routes.get(member).map(<[u8]>::to_vec))
         };
         match cached {
-            Some(blob) => Some(blob),
+            Some(blob) if !self.route_declared_dead(&blob) => Some(blob),
+            Some(_) => {
+                self.forget_dead_routes(community);
+                self.read_route_cold(community, member).await
+            }
             None => self.read_route_cold(community, member).await,
         }
     }
@@ -219,8 +228,16 @@ impl HostGovernance {
         }
     }
 
-    /// The members of `community`'s roster other than us (joined, not
-    /// departed, not banned).
+    /// Forget every cached route of `community` the transport knows dead
+    /// (Veilid's `RouteChange`, or timed-out calls; plan RV1g B3).
+    fn forget_dead_routes(&self, community: &str) {
+        let mut map = self.ctx.communities.map().write();
+        if let Some(c) = map.get_mut(community) {
+            c.member_routes
+                .forget_blobs(|blob| self.route_declared_dead(blob));
+        }
+    }
+
     /// Our pseudonym in `community`, derived from the identity.
     pub(crate) fn me_in(&self, community: &str) -> Option<PseudonymKey> {
         self.identity_secret_impl()
@@ -228,6 +245,8 @@ impl HostGovernance {
             .map(|key| PseudonymKey(key.verifying_key().to_bytes()))
     }
 
+    /// The members of `community`'s roster other than us (joined, not
+    /// departed, not banned).
     fn roster_others(&self, community: &str) -> Vec<PseudonymKey> {
         let me = self.me_in(community);
         let Some(state) = self.ctx.communities.governance_state(community) else {
@@ -245,6 +264,7 @@ impl HostGovernance {
     /// S4: every member with a route, not only those seen online).
     #[must_use]
     pub fn routed_members(&self, community: &str) -> Vec<(String, Vec<u8>)> {
+        self.forget_dead_routes(community);
         let roster = self.roster_others(community);
         let map = self.ctx.communities.map().read();
         map.get(community)
