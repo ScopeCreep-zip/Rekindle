@@ -56,7 +56,7 @@ fn a_direct_message_reaches_its_chat_window_only() {
         ChannelMessageEvent::DirectMessageSent {
             conversation_id: PK.into(),
             reply_to_id: None,
-            message: rekindle_types::dto::dm::DmMessage {
+            message: Box::new(rekindle_types::dto::dm::DmMessage {
                 id: 1,
                 message_id: Some("01900000-0000-7000-8000-000000000002".into()),
                 sender_id: "me".into(),
@@ -68,7 +68,8 @@ fn a_direct_message_reaches_its_chat_window_only() {
                 expire_seconds: 0,
                 expire_at: None,
                 timer_notice_seconds: None,
-            },
+                reply_to_id: None,
+            }),
         },
     ));
     assert!(own.includes("buddy-list"));
@@ -101,7 +102,7 @@ fn group_dms_reach_their_group_chat_window() {
         rekindle_types::subscription_events::GroupDmEvent::MessageSent {
             group_id: GROUP.into(),
             reply_to_id: None,
-            message: rekindle_types::dto::dm::DmMessage {
+            message: Box::new(rekindle_types::dto::dm::DmMessage {
                 id: 1,
                 message_id: Some("01900000-0000-7000-8000-000000000003".into()),
                 sender_id: "me".into(),
@@ -113,7 +114,8 @@ fn group_dms_reach_their_group_chat_window() {
                 expire_seconds: 0,
                 expire_at: None,
                 timer_notice_seconds: None,
-            },
+                reply_to_id: None,
+            }),
         },
     ));
     assert!(own.includes(&labels::conversation_label(GROUP).unwrap()));

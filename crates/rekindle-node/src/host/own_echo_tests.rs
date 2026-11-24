@@ -48,7 +48,8 @@ async fn our_send_publishes_its_stored_row_once() {
     assert_eq!(conversation_id, &peer);
     assert_eq!(reply_to_id, &None);
     assert_eq!(
-        message, &sent,
+        message.as_ref(),
+        &sent,
         "the event carries the row the send answered"
     );
     assert!(message.is_own);

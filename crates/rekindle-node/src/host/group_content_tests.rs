@@ -22,14 +22,14 @@ use super::adapters::group_dm::HostGroupDm;
 use super::direct_tests::ann;
 use super::group_dm_tests::member;
 
-const GID: GroupId = [9; 16];
+pub(super) const GID: GroupId = [9; 16];
 
-fn bob() -> String {
+pub(super) fn bob() -> String {
     "b".repeat(64)
 }
 
 /// Ann's group with Bob and Carol, Bob's first key held.
-async fn group(host: &HostFriends, owner: [u8; 32]) -> GroupSenderKey {
+pub(super) async fn group(host: &HostFriends, owner: [u8; 32]) -> GroupSenderKey {
     let deps = HostGroupDm::open(host).unwrap();
     let others = vec![member(bob(), 'b'), member("c".repeat(64), 'c')];
     let own = member(hex::encode(owner), 'a');
@@ -42,7 +42,7 @@ async fn group(host: &HostFriends, owner: [u8; 32]) -> GroupSenderKey {
     key
 }
 
-fn sealed(key: &GroupSenderKey, body: &DirectBody, seq: u64) -> GroupContent {
+pub(super) fn sealed(key: &GroupSenderKey, body: &DirectBody, seq: u64) -> GroupContent {
     sender_key::seal(key, GID, &bob(), &inner(body, 1_000 + seq, seq)).unwrap()
 }
 
@@ -85,7 +85,7 @@ async fn a_send_commits_its_row_and_echo_and_waits_for_its_chain_entry() {
     let friends = HostFriends::of(&host.ctx);
     group(&friends, owner).await;
     let gid = hex::encode(GID);
-    let id = content::send(&friends, &gid, "hello").await.unwrap();
+    let id = content::send(&friends, &gid, "hello", None).await.unwrap();
 
     let (o, stream) = (hex::encode(owner), stream_name(&gid));
     let db = host.ctx.db.current().unwrap();
@@ -119,7 +119,9 @@ async fn a_send_commits_its_row_and_echo_and_waits_for_its_chain_entry() {
     let landed = content::append_frames(&friends, &gid, &[(frame.clone(), row.stream_seq)]).await;
     assert_eq!(landed, [Attempt::Deferred]);
     assert!(
-        content::send(&friends, &"0".repeat(32), "x").await.is_err(),
+        content::send(&friends, &"0".repeat(32), "x", None)
+            .await
+            .is_err(),
         "not our group"
     );
 }
@@ -136,7 +138,9 @@ async fn our_group_send_publishes_its_stored_row_once() {
     let gid = hex::encode(GID);
     let mut events = host.ctx.journal.subscribe(None);
 
-    let id = content::send(&friends, &gid, "gg group").await.unwrap();
+    let id = content::send(&friends, &gid, "gg group", None)
+        .await
+        .unwrap();
 
     let mut own = Vec::new();
     while let Ok(Some(frame)) =
@@ -173,7 +177,7 @@ async fn our_group_send_publishes_its_stored_row_once() {
         .iter()
         .find(|m| m.message_id == message.message_id)
         .expect("the row is stored");
-    assert_eq!(stored, message, "the event carries the stored row");
+    assert_eq!(stored, message.as_ref(), "the event carries the stored row");
 }
 
 #[tokio::test]

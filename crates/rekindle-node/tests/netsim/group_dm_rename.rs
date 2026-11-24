@@ -90,6 +90,7 @@ async fn a_member_s_forged_rename_is_refused_by_every_receiver() {
         .ok(IpcRequest::GroupDm(GroupDmRequest::Send {
             group_id: gid.clone(),
             body: "after the rename".to_string(),
+            reply_to: None,
         }))
         .await;
     for node in [&nodes[0], &nodes[2]] {

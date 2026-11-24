@@ -5,7 +5,7 @@
 
 use clap::{CommandFactory, Parser};
 
-use super::{Cli, Command, CommunityCmd, InviteCmd};
+use super::{Cli, Command, CommunityCmd, GroupDmCmd, InviteCmd};
 
 fn parse(args: &[&str]) -> Cli {
     let mut argv = vec!["rekindle"];
@@ -312,4 +312,30 @@ fn infoview_subcommands_parse_to_their_subjects() {
         Cli::try_parse_from(["rekindle", "infoview", "group", "friends"]).is_err(),
         "a group is an id or `default`"
     );
+}
+
+/// `rekindle group send <id> <text> [--reply-to <client id>]`: the reply
+/// target is a message client id, a UUID, checked as the Host checks it.
+#[test]
+fn group_send_takes_an_optional_reply_to_client_id() {
+    const GROUP: &str = "00112233445566778899aabbccddeeff";
+    const PARENT: &str = "01900000-0000-7000-8000-000000000002";
+    let cli = parse(&["group", "send", GROUP, "hi"]);
+    assert!(matches!(
+        cli.command,
+        Some(Command::Group(GroupDmCmd::Send { reply_to: None, .. }))
+    ));
+    let cli = parse(&["group", "send", GROUP, "hi", "--reply-to", PARENT]);
+    assert!(matches!(
+        cli.command,
+        Some(Command::Group(GroupDmCmd::Send { reply_to: Some(ref id), ref text, .. }))
+            if id == PARENT && text == "hi"
+    ));
+    for bad in ["not-a-uuid", "0190000000007000800000000000000200", ""] {
+        assert!(
+            Cli::try_parse_from(["rekindle", "group", "send", GROUP, "hi", "--reply-to", bad])
+                .is_err(),
+            "{bad:?} is no client id"
+        );
+    }
 }

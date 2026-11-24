@@ -151,5 +151,6 @@ pub(super) fn dm_message(row: rekindle_db::repo::messages::DmRow, owner: &str) -
         expire_seconds: row.expire_seconds,
         expire_at: row.expire_at,
         timer_notice_seconds: row.timer_notice_seconds,
+        reply_to_id: row.reply_to,
     }
 }

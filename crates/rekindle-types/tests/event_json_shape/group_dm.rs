@@ -154,7 +154,7 @@ pub fn samples() -> Vec<Sample> {
             GroupDmEvent::MessageSent {
                 group_id: group(),
                 reply_to_id: None,
-                message: rekindle_types::dto::dm::DmMessage {
+                message: Box::new(rekindle_types::dto::dm::DmMessage {
                     id: 43,
                     message_id: Some(text("0192f0c4-7b3a-7c1e-9a55-1f0e2d3c4b5c")),
                     sender_id: pk('a'),
@@ -166,7 +166,8 @@ pub fn samples() -> Vec<Sample> {
                     expire_seconds: 0,
                     expire_at: None,
                     timer_notice_seconds: None,
-                },
+                    reply_to_id: None,
+                }),
             },
         ),
         ev(

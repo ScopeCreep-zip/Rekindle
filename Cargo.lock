@@ -7152,6 +7152,7 @@ dependencies = [
  "tokio-test",
  "toml 0.8.2",
  "tracing",
+ "uuid",
  "zeroize",
 ]
 

@@ -59,6 +59,7 @@ pub(crate) async fn send(node: &SimNode, group_id: &str, body: &str) {
     node.ok(IpcRequest::GroupDm(GroupDmRequest::Send {
         group_id: group_id.to_string(),
         body: body.to_string(),
+        reply_to: None,
     }))
     .await;
 }
