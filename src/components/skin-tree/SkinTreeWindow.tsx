@@ -1,5 +1,6 @@
 import { Component, For, JSX, Match, Show, Switch, createContext, createEffect, createSignal, onCleanup, untrack, useContext } from "solid-js";
 import { createStore, produce } from "solid-js/store";
+import { Dynamic } from "solid-js/web";
 import type { EngineMenu, MenuItem, NodeGlyph, NodeLabel, NodeTrigger, ShellNode, SkinAction, SkinEvent, SkinShell, ViewKey } from "../../ipc/commands/dto_skin_tree";
 import type { SkinSignalSet } from "../../ipc/commands/dto_skin_run";
 import { skinSignals } from "../../stores/skin-signals.store";
@@ -14,7 +15,6 @@ import FilesView from "./FilesView";
 import Infoview from "../infoview/Infoview";
 import ServersView from "./ServersView";
 import { BrandGlyph } from "./BrandGlyphs";
-import type { BrandGlyphName } from "../../ipc/commands/dto";
 
 /** What every node of one window's tree reads. */
 interface Tree {
@@ -175,27 +175,33 @@ const NodeLabelView: Component<{ label: NodeLabel }> = (props) => {
   );
 };
 
-/** A built-in glyph (plan SK3), sized by its box: an icon in the current colour, or the Rekindle mark. */
-const NodeGlyphView: Component<{ glyph: NodeGlyph }> = (props) => (
-  <Switch>
-    <Match when={props.glyph === "communities"}>
-      {/* Three people: the community mark. */}
-      <svg class="skin-node-glyph-svg" viewBox="0 0 24 24" aria-hidden="true">
-        <circle cx="12" cy="7" r="3.2" fill="currentColor" />
-        <path d="M6.5 19c0-3.2 2.5-5.6 5.5-5.6s5.5 2.4 5.5 5.6z" fill="currentColor" />
-        <circle cx="5" cy="9.5" r="2.3" fill="currentColor" opacity="0.8" />
-        <path d="M1 18.5c0-2.4 1.8-4.2 4-4.2 1 0 1.9.3 2.6.9-1.2 1-2 2.3-2.3 3.8z" fill="currentColor" opacity="0.8" />
-        <circle cx="19" cy="9.5" r="2.3" fill="currentColor" opacity="0.8" />
-        <path d="M23 18.5c0-2.4-1.8-4.2-4-4.2-1 0-1.9.3-2.6.9 1.2 1 2 2.3 2.3 3.8z" fill="currentColor" opacity="0.8" />
-      </svg>
-    </Match>
-    {/* The Rekindle mark (plan BR), in full colour, centred in the cover
-        with its aspect kept. */}
-    <Match when={props.glyph !== "communities" && props.glyph}>
-      {(brand) => <BrandGlyph glyph={brand() as BrandGlyphName} />}
-    </Match>
-  </Switch>
+/** The community mark (plan SK3): three people, in the current colour. */
+const CommunitiesGlyph: Component = () => (
+  <svg class="skin-node-glyph-svg" viewBox="0 0 24 24" aria-hidden="true">
+    <circle cx="12" cy="7" r="3.2" fill="currentColor" />
+    <path d="M6.5 19c0-3.2 2.5-5.6 5.5-5.6s5.5 2.4 5.5 5.6z" fill="currentColor" />
+    <circle cx="5" cy="9.5" r="2.3" fill="currentColor" opacity="0.8" />
+    <path d="M1 18.5c0-2.4 1.8-4.2 4-4.2 1 0 1.9.3 2.6.9-1.2 1-2 2.3-2.3 3.8z" fill="currentColor" opacity="0.8" />
+    <circle cx="19" cy="9.5" r="2.3" fill="currentColor" opacity="0.8" />
+    <path d="M23 18.5c0-2.4-1.8-4.2-4-4.2-1 0-1.9.3-2.6.9 1.2 1 2 2.3 2.3 3.8z" fill="currentColor" opacity="0.8" />
+  </svg>
 );
+
+/**
+ * Each built-in glyph's drawing (plan SK3, BR): the community icon in the
+ * current colour, the Rekindle marks in theirs, centred in the node's box
+ * with their aspect kept. A `Record` over every `NodeGlyph`, so a variant the
+ * Host adds without a drawing fails tsc rather than rendering nothing.
+ */
+const NODE_GLYPHS: Record<NodeGlyph, Component> = {
+  communities: CommunitiesGlyph,
+  rekindle: () => <BrandGlyph glyph="rekindle" />,
+  rekindleMarkSmall: () => <BrandGlyph glyph="rekindleMarkSmall" />,
+  rekindleWordmark: () => <BrandGlyph glyph="rekindleWordmark" />,
+};
+
+/** A built-in glyph, sized by its box. */
+const NodeGlyphView: Component<{ glyph: NodeGlyph }> = (props) => <Dynamic component={NODE_GLYPHS[props.glyph]} />;
 
 /** One node, as the served role draws it and its triggers drive it
  *  (design §2.4, §2.6). */
