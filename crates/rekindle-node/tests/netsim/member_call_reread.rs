@@ -6,8 +6,9 @@
 //! on our node tests each route it imported once it has been idle
 //! [`ROUTE_MIN_IDLE`] (veilid-core 0.5.8 `route_spec_store/mod.rs:46`,
 //! `route_stats.rs:672-681`); the test of the dead route gets no answer,
-//! so Veilid releases it and tells us `dead_remote`
-//! (`ping_validator.rs:740-744`). A call after that test: the dead route
+//! so once its answer wait runs out Veilid releases it and tells us
+//! `dead_remote` (`ping_validator.rs:740-744`): within [`TEST_CADENCE`] of
+//! the death. A call after that test: the dead route
 //! is refused at import (plan RV1g B1), so the call costs exactly one
 //! `M`/6 read and lands on the new route (one call). A call inside the
 //! window before that test: it is lost on the dead route, costs exactly
@@ -33,7 +34,7 @@ use std::time::Duration;
 
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, MemberRequest};
-use rekindle_netsim::{Fault, RELEASES_PEER_ROUTE};
+use rekindle_netsim::{Fault, RELEASES_PEER_ROUTE, RPC_TIMEOUT};
 use rekindle_node::host::adapters::governance::MemberCallError;
 use rekindle_records::port::RouteClass;
 use rekindle_types::dht_layout::member_record::SUBKEY_COUNT;
@@ -45,6 +46,17 @@ const ANSWERED: &str = "RequestMEK answered";
 /// Veilid 0.5.8 `route_spec_store/mod.rs:46` `ROUTE_MIN_IDLE_TIME_MS`: an
 /// imported route is tested once no test has proven it for this long.
 const ROUTE_MIN_IDLE: Duration = Duration::from_secs(30);
+
+/// The longest a dead imported route stays in Veilid's cache: its next
+/// test falls due up to [`ROUTE_MIN_IDLE`] after the last proof (an answer
+/// or a passed test, `route_stats.rs:489-498, 672-681`), and Veilid
+/// releases it only once that test's answer wait ([`RPC_TIMEOUT`]) has run
+/// out (`ping_validator.rs:731-744`), seen on the simulator's 1 s ticks.
+/// The netsim's own cadence (`routes_tests.rs`
+/// `an_importer_hears_dead_remote_once_the_owner_releases_the_route`).
+const TEST_CADENCE: Duration = ROUTE_MIN_IDLE
+    .saturating_add(RPC_TIMEOUT)
+    .saturating_add(Duration::from_secs(2));
 
 /// An opaque payload the member refuses (a NAK): the call still lands.
 fn payload() -> Vec<u8> {
@@ -174,8 +186,10 @@ async fn a_dropped_routes_hint_costs_one_reread_and_the_call_lands() {
     let (community, outside) = settled().await;
     let x = outside[0];
     let tests_failed = released(&community);
-    // Its M/6 write lands, and Veilid on node 0 tests the dead route.
-    dead_behind_dropped_hints(&community, x, ROUTE_MIN_IDLE).await;
+    // Its M/6 write lands, and Veilid on node 0 tests the dead route: node
+    // 0's last proof of it may come just before it dies, so the test that
+    // releases it ends up to one full cadence later, never sooner.
+    dead_behind_dropped_hints(&community, x, TEST_CADENCE).await;
     assert!(
         released(&community) > tests_failed,
         "Veilid's remote route test released the dead route first"
