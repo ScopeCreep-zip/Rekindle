@@ -8,6 +8,7 @@ import DirectChat from "./chat_window/DirectChat";
 import GroupChat from "./chat_window/GroupChat";
 import { SlotProvider } from "../components/skin-tree/slots";
 import { useChatSearchChord } from "../hooks/useChatSearchChord";
+import { sendSkinSelection } from "../actions/skin.actions";
 
 /// The one chat window (plan E2.3): `?peer=<identity key>` is a 1:1
 /// conversation, `?group=<group id>` a group DM (32 hex, plan E2.6
@@ -21,6 +22,11 @@ const ChatWindow: Component = () => {
   // tree's state triggers read them, its talkingState among them.
   let unlisten: UnlistenFn | undefined;
   onMount(async () => {
+    // A group window's selection is its group (as a 1:1 window's is its
+    // friend, useChatSearchChord): the Host builds the group's call, and
+    // its capabilities, from it (reads.rs group_call); without it a pack's
+    // Call fell to the 1:1 path, drawn disabled with no friend selected.
+    if (group) void sendSkinSelection({ kind: "group", arg: { groupId: group } });
     unlisten = await subscribeSkinSignals(setSkinSignals);
   });
   onCleanup(() => unlisten?.());

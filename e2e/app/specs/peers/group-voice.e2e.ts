@@ -31,6 +31,9 @@ interface Tab {
   id: string;
   role: string;
   action: string;
+  /** Drawn disabled (`aria-disabled`): a press does nothing, the Host's reason is its tooltip. */
+  disabled: boolean;
+  reason: string;
 }
 
 /**
@@ -54,7 +57,13 @@ async function voiceNode(b: Browser, state: VoiceState): Promise<Tab | null> {
     if (!n || n.closest("[hidden]") !== null) return null;
     const r = n.getBoundingClientRect();
     if (r.width === 0 || r.height === 0) return null;
-    return { id, role: n.dataset.skinRole ?? "", action: n.dataset.skinAction ?? "" };
+    return {
+      id,
+      role: n.dataset.skinRole ?? "",
+      action: n.dataset.skinAction ?? "",
+      disabled: n.getAttribute("aria-disabled") === "true",
+      reason: n.getAttribute("title") ?? n.getAttribute("aria-description") ?? "",
+    };
   }, VOICE_NODE[state])) as Tab | null;
 }
 
@@ -152,6 +161,8 @@ describe("a group's voice tab: Call, Join while its call rings, Leave once joine
     const a = multiRemoteBrowser.getInstance("alice");
     const b = multiRemoteBrowser.getInstance("bob");
     const call = await voiceTab(b, "Bob", "Call");
+    // A disabled Call ignores the press (no IPC, no toast): say so, with the Host's reason.
+    if (call.disabled) throw new Error(`Bob's Call (${call.id}) is drawn disabled: ${call.reason || "no reason given"}`);
     await pressNode(b, call.id);
     // GV2: the group's Call opens Start Group Call for this group, in this
     // window, titled with its name and its other members ticked; only they
@@ -216,6 +227,8 @@ describe("a group's voice tab: Call, Join while its call rings, Leave once joine
     const a = multiRemoteBrowser.getInstance("alice");
     const b = multiRemoteBrowser.getInstance("bob");
     const call = await voiceTab(b, "Bob", "Call");
+    // A disabled Call ignores the press (no IPC, no toast): say so, with the Host's reason.
+    if (call.disabled) throw new Error(`Bob's Call (${call.id}) is drawn disabled: ${call.reason || "no reason given"}`);
     await pressNode(b, call.id);
     await waitUntil(
       async () => (await (await b.$(".modal-title")).getText().catch(() => "")) === `Call ${GROUP}`,
