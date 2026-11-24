@@ -322,8 +322,14 @@ export async function setLocationSharing(b: Browser, user: User, share: boolean)
   const select = ".modal-container .settings-section select.form-select";
   const value = share ? "members" : "none";
   await (await shown(b, select)).waitForEnabled({ timeout: NET_WAIT_MS, timeoutMsg: "the location choice stayed disabled" });
-  await setValue(b, select, value);
-  await resolveIntent(b, { passphrase: user.passphrase, appearMs: 1500 });
+  if ((await (await b.$(select)).getValue()) !== value) {
+    await setValue(b, select, value);
+    // A presence-sharing change is reviewed (IntentKind::SetPresencePolicy,
+    // trust-changing): wait for its review and require it committed; the
+    // select stays disabled until the Host answers (PrivacyTab saving), and
+    // a 1.5 s wait left the review unanswered (Linux, c18558272).
+    expect(await resolveIntent(b, { passphrase: user.passphrase, appearMs: NET_WAIT_MS })).toBe("committed");
+  }
   await waitUntil(
     async () => (await (await b.$(select)).getValue()) === value && (await (await b.$(select)).isEnabled()),
     NET_WAIT_MS,
