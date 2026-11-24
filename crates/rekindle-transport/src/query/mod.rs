@@ -73,7 +73,9 @@ impl QueryEngine {
         &self,
         shared: &SharedState,
         route_allocated: bool,
+        general_route: rekindle_types::subscription_events::RouteAvailability,
         route_paused: Option<rekindle_types::subscription_events::RoutePauseCause>,
+        own_route_down: rekindle_types::subscription_events::OwnRouteDownSet,
     ) -> TransportSnapshot {
         TransportSnapshot {
             attachment: shared.attachment_state().to_string(),
@@ -83,7 +85,9 @@ impl QueryEngine {
             peer_count: self.peer_registry.read().route_count(),
             route_allocated,
             route_age_secs: None,
+            general_route,
             route_paused,
+            own_route_down,
         }
     }
 }

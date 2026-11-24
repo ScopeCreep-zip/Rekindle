@@ -30,13 +30,36 @@ pub(crate) struct Report {
 }
 
 /// Every `#[ignore]`d test whose reason names `cargo xtask perf`.
-pub(crate) const REPORTS: &[Report] = &[Report {
-    krate: "rekindle-skin",
-    target: "serve_budget",
-    test: "every_builtin_serves_its_stylesheet_in_time",
-    reason: "each built-in's stylesheet is served in 1.5 s, inside the client's 5 s timeout \
-             (the work itself is gated by operation counts in serve_tests.rs)",
-}];
+pub(crate) const REPORTS: &[Report] = &[
+    Report {
+        krate: "rekindle-skin",
+        target: "serve_budget",
+        test: "every_builtin_serves_its_stylesheet_in_time",
+        reason: "each built-in's stylesheet is served in 1.5 s, inside the client's 5 s timeout \
+                 (the work itself is gated by operation counts in serve_tests.rs)",
+    },
+    Report {
+        krate: "rekindle-governance",
+        target: "perf_targets",
+        test: "merge_10k_entries_completes_within_budget",
+        reason: "a merge of 10,000 governance entries finishes in 10 ms \
+                 (the work itself is gated by merge_work_grows_linearly_in_the_entries)",
+    },
+    Report {
+        krate: "rekindle-governance",
+        target: "perf_targets",
+        test: "an_uncached_snapshot_of_10k_entries_answers_inside_the_app_call_window",
+        reason: "merge_cut + stateRoot over 10,000 entries answers inside Veilid's 5 s app_call \
+                 window (its length is gated exactly by the preimage-length test)",
+    },
+    Report {
+        krate: "rekindle-governance-runtime",
+        target: "walk_cpu_budget",
+        test: "a_sixty_four_head_walk_stays_within_its_cpu_budget",
+        reason: "a 64-head op walk finishes in 100 ms \
+                 (verifications and walk steps are gated exactly beside it)",
+    },
+];
 
 /// Run every report in release, print its lines, and fail if any failed.
 pub(crate) fn perf(root: &Path) -> Result<()> {

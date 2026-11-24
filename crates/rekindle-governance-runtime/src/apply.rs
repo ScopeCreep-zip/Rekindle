@@ -17,42 +17,6 @@ use crate::error::GovernanceRuntimeError;
 use crate::event::GovernanceRuntimeEvent;
 use crate::op_log;
 
-/// Architecture §6 — classify a governance entry by which UI snapshot
-/// it invalidates so we can emit the right event after a successful
-/// CRDT apply. `Roles` triggers a `RolesChanged` snapshot;
-/// `ChannelsOrCategories` triggers `ChannelsUpdated`. Returning both
-/// false is intentional for entries that touch nothing the UI caches
-/// (e.g. lifecycle events handled elsewhere).
-#[derive(Default, Clone, Copy)]
-struct EntryAffects {
-    roles: bool,
-    channels_or_categories: bool,
-}
-
-fn classify_entry(entry: &GovernanceEntry) -> EntryAffects {
-    match entry {
-        // Role definition + archive change the role list itself;
-        // assignment/unassignment change only the merged role
-        // assignments, which every reader derives roles from.
-        GovernanceEntry::RoleDefinition { .. } | GovernanceEntry::RoleArchived { .. } => {
-            EntryAffects {
-                roles: true,
-                ..EntryAffects::default()
-            }
-        }
-        GovernanceEntry::ChannelCreated { .. }
-        | GovernanceEntry::ChannelArchived { .. }
-        | GovernanceEntry::ChannelUpdated { .. }
-        | GovernanceEntry::CategoryCreated { .. }
-        | GovernanceEntry::CategoryArchived { .. }
-        | GovernanceEntry::CategoryUpdated { .. } => EntryAffects {
-            channels_or_categories: true,
-            ..EntryAffects::default()
-        },
-        _ => EntryAffects::default(),
-    }
-}
-
 /// Apply a governance entry as our next signed op: validate it against the
 /// merged state, store it in `governance_ops`, gossip it, re-merge, emit
 /// the UI events and publish it on the governance-op outbox stream,
@@ -380,18 +344,6 @@ async fn write_with<D: GovernanceRuntimeDeps>(
         entry: Box::new(entry.clone()),
     });
     announce_successors.await;
-
-    let affects = classify_entry(&entry);
-    if affects.roles {
-        deps.emit_event(GovernanceRuntimeEvent::RolesChanged {
-            community_id: community_id.to_string(),
-        });
-    }
-    if affects.channels_or_categories {
-        deps.emit_event(GovernanceRuntimeEvent::ChannelsUpdated {
-            community_id: community_id.to_string(),
-        });
-    }
 
     // The op is stored and applied here; the outbox writes it to our `M`/2
     // and `M`/3, which a joiner's walk reads with nobody online. `landing`

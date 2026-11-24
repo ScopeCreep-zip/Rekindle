@@ -18,6 +18,7 @@ fn own(id: &str, body: &str, state: SendState) -> DmMessage {
         expire_seconds: 0,
         expire_at: None,
         timer_notice_seconds: None,
+        reply_to_id: None,
     }
 }
 

@@ -3,8 +3,10 @@
 //! every frontend (the GUI's windows through its bus subscriber, a CLI or
 //! TUI over IPC), so each sees the same governance changes.
 //!
-//! Role and channel tables come from the merged CRDT (the same builders
-//! `role list` and `channel list` use), segments from the community store.
+//! Segments come from the community store. The role and channel tables
+//! (`RolesChanged`, `ChannelsChanged`) are not runtime events: the Host
+//! reads them off the state diff when it projects a merge
+//! (`table_events.rs`, plan E3.2 S9).
 
 use rekindle_codec::governance_op::Uninterpretable;
 use rekindle_governance::merge::QuarantineReason;
@@ -12,8 +14,6 @@ use rekindle_governance_runtime::event::{GovernanceRuntimeEvent, JoinStageStatus
 use rekindle_types::subscription_events::{
     GovernanceEvent, MembershipEvent, NotificationEvent, OpQuarantineReason, SubscriptionEvent,
 };
-
-use rekindle_types::display::CategoryDisplay;
 
 use super::HostGovernance;
 
@@ -86,25 +86,6 @@ impl HostGovernance {
         let governance = |e| Some(SubscriptionEvent::Governance(e));
         let membership = |e| Some(SubscriptionEvent::Membership(e));
         match event {
-            GovernanceRuntimeEvent::RolesChanged { community_id } => {
-                governance(GovernanceEvent::RolesChanged {
-                    community: community_id.clone(),
-                    roles: crate::daemon::dispatch::governance::role_displays(
-                        &self.ctx,
-                        community_id,
-                    ),
-                })
-            }
-            GovernanceRuntimeEvent::ChannelsUpdated { community_id } => {
-                governance(GovernanceEvent::ChannelsChanged {
-                    community: community_id.clone(),
-                    channels: crate::daemon::dispatch::channel::channel_overviews(
-                        &self.ctx,
-                        community_id,
-                    ),
-                    categories: self.category_displays(community_id),
-                })
-            }
             GovernanceRuntimeEvent::SegmentAdded { community_id, .. } => {
                 governance(GovernanceEvent::SegmentsChanged {
                     community: community_id.clone(),
@@ -144,15 +125,6 @@ impl HostGovernance {
                     .to_string(),
                 },
             )),
-            GovernanceRuntimeEvent::MemberRolesChanged {
-                community_id,
-                pseudonym_hex,
-                role_ids,
-            } => membership(MembershipEvent::RolesChanged {
-                community: community_id.clone(),
-                pseudonym: pseudonym_hex.clone(),
-                role_ids: role_ids.iter().map(|id| id.to_hex()).collect(),
-            }),
             GovernanceRuntimeEvent::OnboardingComplete {
                 community_id,
                 pseudonym_hex,
@@ -237,29 +209,5 @@ impl HostGovernance {
             icon_hash: meta.as_ref().and_then(|m| m.icon_hash.clone()),
             banner_hash: meta.and_then(|m| m.banner_hash),
         }
-    }
-
-    /// Categories for a community, sorted by position then id.
-    ///
-    /// There is no `category list` command to share a builder with, so
-    /// this is the one place the projection lives; `ChannelsChanged`
-    /// carries it beside the channel tree because a channel's
-    /// `category_id` is meaningless to a client that has not seen the
-    /// categories.
-    fn category_displays(&self, community_id: &str) -> Vec<CategoryDisplay> {
-        let Some(gov) = self.ctx.communities.governance_state(community_id) else {
-            return Vec::new();
-        };
-        let mut out: Vec<CategoryDisplay> = gov
-            .categories
-            .iter()
-            .map(|(id, category)| CategoryDisplay {
-                id: hex::encode(id.0),
-                name: category.name.clone(),
-                sort_order: i32::try_from(category.position).unwrap_or(i32::MAX),
-            })
-            .collect();
-        out.sort_by(|a, b| a.sort_order.cmp(&b.sort_order).then(a.id.cmp(&b.id)));
-        out
     }
 }

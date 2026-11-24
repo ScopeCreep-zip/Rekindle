@@ -5,6 +5,7 @@ import { transformDmMessage } from "../utils/transformers";
 import { errorMessage } from "../utils/error";
 import { awaitsExpiry } from "./disappearing.actions";
 import { afterDraftReports, sendDraftReport } from "../utils/draft_reports";
+import { disappearingState } from "../stores/disappearing.store";
 
 // Group DMs (plan E2.6). Each action calls the Host and renders what it
 // answers; validation, the member caps and the review are the Host's.
@@ -99,7 +100,7 @@ export function handleGroupDisplayed(groupId: string): void {
       .groupDmMarkRead(groupId)
       .then(() => {
         const messages = groupDmState.conversations[groupId]?.messages ?? [];
-        if (awaitsExpiry(messages)) void loadGroupRows(groupId, Math.max(50, messages.length));
+        if (awaitsExpiry(messages, disappearingState.timers[groupId])) void loadGroupRows(groupId, Math.max(50, messages.length));
       })
       .catch((e) => {
         console.error("group_dm_mark_read failed", e);
@@ -110,12 +111,12 @@ export function handleGroupDisplayed(groupId: string): void {
 /** Send `body` to the group; once the Host commits its row, the stored
  *  history (with our queued echo) is read again, and its state then
  *  follows `sendStatus`. `null` on success, else the Host's error. */
-export async function handleSendGroupDm(groupId: string, body: string): Promise<string | null> {
+export async function handleSendGroupDm(groupId: string, body: string, replyTo: string | null = null): Promise<string | null> {
   try {
     // Nothing is drawn here: once the send commits, the Host publishes our
     // own row (`messageSent`, plan E6.11) to this window, upserted by its
     // stored id (handlers/group-dm.handlers.ts).
-    await afterDraftReports(`group:${groupId}`, () => commands.groupDmSend(groupId, body));
+    await afterDraftReports(`group:${groupId}`, () => commands.groupDmSend(groupId, body, replyTo));
     return null;
   } catch (e) {
     return errorMessage(e);

@@ -31,6 +31,10 @@ pub struct DmMessage {
     /// this many seconds (0 = off); shown as a timeline line, never a
     /// bubble. `None` for a message.
     pub timer_notice_seconds: Option<u32>,
+    /// The client id of the message it replies to, as its frame carried
+    /// it, whether or not that message is held (the shell shows "message
+    /// unavailable" for one it cannot find). `None`: not a reply.
+    pub reply_to_id: Option<String>,
 }
 
 /// A DM's or group DM's disappearing-message timer as its chat window's

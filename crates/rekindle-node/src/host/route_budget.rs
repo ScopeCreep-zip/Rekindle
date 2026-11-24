@@ -49,6 +49,11 @@ pub(crate) async fn attach(ctx: &DaemonContext, scope: &Arc<SessionScope>, owner
         return;
     };
     let routes = transport.routes();
+    let down_routes = Arc::clone(&routes);
+    let down_friends = super::adapters::friends::HostFriends::of(ctx);
+    scope.spawn_with_token_or_drop("own route down events", move |stop| {
+        super::route_down::tell_down(down_routes, down_friends, stop)
+    });
     if !attach_seeded(ctx, routes.as_ref()) && !attach_stored(ctx, routes.as_ref(), owner).await {
         return;
     }

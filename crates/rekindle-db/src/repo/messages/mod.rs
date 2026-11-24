@@ -56,6 +56,9 @@ pub struct DmRow {
     pub expire_at: Option<i64>,
     /// A timer-change notice's new timer (plan E7.1); `None` for a message.
     pub timer_notice_seconds: Option<u32>,
+    /// The parent's client id when it is a reply, as its frame carried it,
+    /// whether or not the parent is held.
+    pub reply_to: Option<String>,
 }
 
 /// A direct message to store (plan E2.3): `message_id` is its client id,
@@ -73,7 +76,9 @@ pub struct NewDm<'a> {
     /// Ours is read; a received one is unread until the window marks it.
     pub is_read: bool,
     pub message_id: &'a str,
-    /// Resolved to the parent's row; `NULL` when the parent is not held.
+    /// The parent's client id, stored as carried (`reply_to_client_id`)
+    /// and resolved to the parent's row (`reply_to_id`, `NULL` when the
+    /// parent is not held).
     pub reply_to: Option<&'a str>,
     /// Ours is `queued` until the send's outcome (`sent` or `failed`)
     /// replaces it; a received one is `delivered` (plan audit D-3).
@@ -109,11 +114,11 @@ pub struct StoredDm {
 pub fn insert_dm(conn: &Connection, dm: &NewDm<'_>) -> rusqlite::Result<StoredDm> {
     let inserted = conn.execute(
         "INSERT INTO messages (owner_key, conversation_id, conversation_type, sender_key, body, \
-         timestamp, is_read, message_id, reply_to_id, send_state, stream_seq, expire_seconds, \
-         expire_at) \
+         timestamp, is_read, message_id, reply_to_id, reply_to_client_id, send_state, \
+         stream_seq, expire_seconds, expire_at) \
          VALUES (?1, ?2, ?11, ?3, ?4, ?5, ?6, ?7, \
                  (SELECT id FROM messages WHERE owner_key = ?1 AND conversation_id = ?2 \
-                  AND message_id = ?8 ORDER BY id LIMIT 1), ?9, ?10, ?12, ?13) \
+                  AND message_id = ?8 ORDER BY id LIMIT 1), ?8, ?9, ?10, ?12, ?13) \
          ON CONFLICT(owner_key, conversation_id, sender_key, message_id) \
          WHERE message_id IS NOT NULL DO NOTHING",
         params![
@@ -173,12 +178,14 @@ pub(crate) fn dm_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DmRow> {
         expire_seconds: row.get(9)?,
         expire_at: row.get(10)?,
         timer_notice_seconds: row.get(11)?,
+        reply_to: row.get(12)?,
     })
 }
 
 pub(crate) const DM_COLS: &str =
     "id, conversation_id, sender_key, body, timestamp, is_read, send_state, \
-                       message_id, history_gap_through, expire_seconds, expire_at, timer_notice_seconds";
+                       message_id, history_gap_through, expire_seconds, expire_at, timer_notice_seconds, \
+                       reply_to_client_id";
 
 /// The order of a conversation's history, newest first: by the time each
 /// message was written (the sender's, which its frames carry), then by
@@ -246,8 +253,7 @@ pub(crate) fn own_message(
     conn.query_row(
         "SELECT m.id, m.conversation_id, m.sender_key, m.body, m.timestamp, m.is_read, \
          m.send_state, m.message_id, m.history_gap_through, m.expire_seconds, m.expire_at, \
-         m.timer_notice_seconds, p.message_id FROM messages m \
-         LEFT JOIN messages p ON p.id = m.reply_to_id \
+         m.timer_notice_seconds, m.reply_to_client_id FROM messages m \
          WHERE m.owner_key = ?1 AND m.sender_key = ?1 AND m.message_id = ?2 \
          AND m.conversation_type = ?3",
         params![owner_key, message_id, conversation_type],

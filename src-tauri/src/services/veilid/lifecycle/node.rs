@@ -57,6 +57,10 @@ pub async fn initialize_node(
     let own_routes = rekindle_route::own_routes::OwnRoutes::new(
         rekindle_protocol::own_routes::VeilidRouteAllocator::new(api.clone()),
         rekindle_route::ordered_watch::Follow::shared(state.network_ready.subscribe()),
+        {
+            let clock = Arc::clone(&state.clock);
+            Arc::new(move || rekindle_utils::Clock::now_ms(clock.as_ref()))
+        },
     );
     // The process's one route importer (plan C7.3): routes are imported
     // before login too (invites, inbound app_message).

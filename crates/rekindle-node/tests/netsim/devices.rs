@@ -25,7 +25,7 @@ const A: usize = 1;
 /// Device B, `p`'s second device (node 2's own identity is never used).
 const B: usize = 2;
 
-async fn unlock(community: &Community, i: usize) {
+pub(crate) async fn unlock(community: &Community, i: usize) {
     let node = &community.nodes[i];
     node.ok(IpcRequest::Unlock {
         identity: node.public_key.clone().expect("an identity"),
@@ -34,7 +34,7 @@ async fn unlock(community: &Community, i: usize) {
     .await;
 }
 
-async fn self_assignable_role(community: &Community, name: &str) -> String {
+pub(crate) async fn self_assignable_role(community: &Community, name: &str) -> String {
     let role = community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::RoleCreate {
@@ -53,7 +53,7 @@ async fn self_assignable_role(community: &Community, name: &str) -> String {
 }
 
 /// Node `i` takes `role_id` itself: a governance op of its own.
-async fn self_assign(
+pub(crate) async fn self_assign(
     community: &Community,
     i: usize,
     role_id: &str,
@@ -69,7 +69,12 @@ async fn self_assign(
 }
 
 /// Whether node `reader` lists `member` holding `role_id`, within the limit.
-async fn sees_role(community: &Community, reader: usize, member: &str, role_id: &str) -> bool {
+pub(crate) async fn sees_role(
+    community: &Community,
+    reader: usize,
+    member: &str,
+    role_id: &str,
+) -> bool {
     eventually(&community.sim, LIMIT, || async {
         community.nodes[reader]
             .call(IpcRequest::Community(CommunityRequest::Lifecycle(
@@ -93,7 +98,7 @@ async fn sees_role(community: &Community, reader: usize, member: &str, role_id: 
 }
 
 /// Whether node `i`'s view of the community reads `status` within the limit.
-async fn device_status(community: &Community, i: usize, status: &str) -> bool {
+pub(crate) async fn device_status(community: &Community, i: usize, status: &str) -> bool {
     eventually(&community.sim, LIMIT, || async {
         community.nodes[i]
             .call(IpcRequest::Community(CommunityRequest::Lifecycle(
@@ -113,7 +118,12 @@ async fn device_status(community: &Community, i: usize, status: &str) -> bool {
 }
 
 /// Whether node `reader` lists `member`, within the limit.
-async fn lists(community: &Community, reader: usize, member: &str, listed: bool) -> bool {
+pub(crate) async fn lists(
+    community: &Community,
+    reader: usize,
+    member: &str,
+    listed: bool,
+) -> bool {
     eventually(&community.sim, LIMIT, || async {
         community.nodes[reader]
             .call(IpcRequest::Community(CommunityRequest::Lifecycle(

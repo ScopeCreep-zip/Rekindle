@@ -25,7 +25,8 @@ impl TransportNode {
     /// The `session` Arc is shared with the route publisher, which
     /// republishes our personal route to the session's profile and
     /// mailbox. The session may be `None` at startup (no identity yet) —
-    /// it gets populated during `IdentityCreate` or session load.
+    /// it gets populated during `IdentityCreate` or session load. `clock`
+    /// is the Host's wall clock, which stamps when an own route went down.
     ///
     /// # Errors
     /// Veilid failed to start or attach.
@@ -34,6 +35,7 @@ impl TransportNode {
         handler: Arc<H>,
         session: SharedSession,
         rng: Arc<dyn RandomSource>,
+        clock: Arc<dyn rekindle_utils::Clock>,
     ) -> Result<Self> {
         info!(namespace = %config.namespace, "starting transport node");
 
@@ -59,6 +61,7 @@ impl TransportNode {
             &node_config,
             config.safety.dht.clone(),
             shared_state.follow_ready(),
+            Arc::new(move || rekindle_utils::Clock::now_ms(clock.as_ref())),
         )
         .await?;
 

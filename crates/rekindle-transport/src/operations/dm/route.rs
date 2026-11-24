@@ -35,10 +35,12 @@ pub fn invalidate_blob(node: &TransportNode, peer: &str, blob: &[u8]) {
     node.peers().write().invalidate_route_blob(peer, blob);
 }
 
-/// Import `blob` through the node's one importer; a blob that does not
-/// import is the peer's no longer, so it is forgotten (that blob only).
+/// Import `blob` through the node's one importer
+/// ([`TransportNode::import_route`], which refuses a blob Veilid declared
+/// dead, plan RV1g B1); a blob that does not import is the peer's no
+/// longer, so it is forgotten (that blob only).
 pub(crate) fn import(node: &TransportNode, peer: &str, blob: &[u8]) -> Option<PeerTarget> {
-    match node.routes().import(blob) {
+    match node.import_route(blob) {
         Ok(target) => {
             crate::route_trace::imported(peer, &target, blob);
             Some(target)
@@ -86,6 +88,12 @@ pub async fn fetch_from_profile(host: &dyn FriendHost, peer: &str) -> Option<Vec
     // its probe answers (plan RH1r-c S2).
     if node.liveness().failure_cached(peer, &blob) {
         tracing::debug!(peer = %peer, "profile route is the one we suspect; not using it");
+        return None;
+    }
+    // A blob Veilid declared dead is never cached again until the peer
+    // republishes it (plan RV1g B1, B3).
+    if node.liveness().route_declared_dead(&blob) {
+        tracing::debug!(peer = %peer, "profile route was declared dead; not using it");
         return None;
     }
     cache(&node, peer, blob.clone());
@@ -158,3 +166,7 @@ pub fn reachable_again(host: &dyn FriendHost, peer: &str, why: &'static str) {
             }
         });
 }
+
+#[cfg(test)]
+#[path = "route_tests.rs"]
+mod tests;

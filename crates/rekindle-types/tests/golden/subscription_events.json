@@ -216,6 +216,7 @@
           "id": 42,
           "isOwn": true,
           "messageId": "01900000-0000-7000-8000-000000000002",
+          "replyToId": null,
           "sendState": "queued",
           "senderId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "timerNoticeSeconds": null,
@@ -907,6 +908,7 @@
           "id": 43,
           "isOwn": true,
           "messageId": "0192f0c4-7b3a-7c1e-9a55-1f0e2d3c4b5c",
+          "replyToId": null,
           "sendState": "queued",
           "senderId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
           "timerNoticeSeconds": null,
@@ -1233,6 +1235,13 @@
       }
     }
   },
+  "membership.forgotten": {
+    "membership": {
+      "forgotten": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg"
+      }
+    }
+  },
   "membership.joinProgress": {
     "membership": {
       "joinProgress": {
@@ -1410,7 +1419,7 @@
       "attachmentChanged": {
         "attachmentState": "attaching",
         "canWrite": false,
-        "hasRoute": false,
+        "generalRoute": "allocating",
         "isAttached": false,
         "mediaRoute": "allocating",
         "publicInternetReady": false
@@ -1422,7 +1431,7 @@
       "attachmentChanged": {
         "attachmentState": "attached_good",
         "canWrite": true,
-        "hasRoute": true,
+        "generalRoute": "available",
         "isAttached": true,
         "mediaRoute": "available",
         "publicInternetReady": true
@@ -1434,7 +1443,7 @@
       "attachmentChanged": {
         "attachmentState": "attached_weak",
         "canWrite": true,
-        "hasRoute": false,
+        "generalRoute": "failed",
         "isAttached": true,
         "mediaRoute": "failed",
         "publicInternetReady": true
@@ -1446,7 +1455,7 @@
       "attachmentChanged": {
         "attachmentState": "detached",
         "canWrite": false,
-        "hasRoute": false,
+        "generalRoute": "idle",
         "isAttached": false,
         "mediaRoute": "idle",
         "publicInternetReady": false
@@ -1458,7 +1467,7 @@
       "attachmentChanged": {
         "attachmentState": "attached_weak",
         "canWrite": true,
-        "hasRoute": true,
+        "generalRoute": "available",
         "isAttached": true,
         "mediaRoute": "unavailable",
         "publicInternetReady": true
@@ -1493,6 +1502,38 @@
       "ownRecordsChanged": {
         "error": null,
         "phase": "pending"
+      }
+    }
+  },
+  "network.ownRouteDown.general": {
+    "network": {
+      "ownRouteDown": {
+        "class": "general",
+        "reason": "allocated route failed to test",
+        "sinceMs": 1700000000000
+      }
+    }
+  },
+  "network.ownRouteDown.media": {
+    "network": {
+      "ownRouteDown": {
+        "class": "media",
+        "reason": "allocated route failed to test",
+        "sinceMs": 1700000060000
+      }
+    }
+  },
+  "network.ownRouteUp.general": {
+    "network": {
+      "ownRouteUp": {
+        "class": "general"
+      }
+    }
+  },
+  "network.ownRouteUp.media": {
+    "network": {
+      "ownRouteUp": {
+        "class": "media"
       }
     }
   },

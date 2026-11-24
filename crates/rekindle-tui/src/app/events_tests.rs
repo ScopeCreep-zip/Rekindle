@@ -44,6 +44,34 @@ async fn app_on_test_bus() -> (tempfile::TempDir, App) {
     (dir, App::new(client, &config, theme, keymap))
 }
 
+/// Our forget drops the community from the dashboard; a repeat is a no-op.
+#[tokio::test]
+async fn our_forget_drops_the_community_from_the_dashboard() {
+    use rekindle_types::subscription_events::MembershipEvent;
+    let (_dir, mut app) = app_on_test_bus().await;
+    for anchor in ["a", "b"] {
+        app.cached_communities.push(crate::app::CachedCommunity {
+            anchor: anchor.into(),
+            name: anchor.into(),
+            our_pseudonym: "p".into(),
+        });
+    }
+    for _ in 0..2 {
+        let action = app.subscription_event_to_action(SubscriptionEvent::Membership(
+            MembershipEvent::Forgotten {
+                community: "a".into(),
+            },
+        ));
+        assert!(matches!(action, Some(Action::Render)));
+    }
+    let left: Vec<_> = app
+        .cached_communities
+        .iter()
+        .map(|c| c.anchor.as_str())
+        .collect();
+    assert_eq!(left, ["b"]);
+}
+
 #[tokio::test]
 async fn a_system_alert_is_shown_as_a_warning_toast() {
     let (_dir, mut app) = app_on_test_bus().await;
@@ -335,5 +363,31 @@ async fn the_route_pause_reaches_the_status_line() {
     assert_eq!(
         app.route_alert.text().as_deref(),
         Some("inbound route paused after repeated failures: possible attack")
+    );
+}
+
+/// A role change reaches the open TUI without a reopen (plan E3.2 S10
+/// Verify, "a role change shows live in the GUI and the TUI"): the Host's
+/// `EffectivePermissionsChanged` re-reads the dashboard (status, the
+/// community list), so what we may do is redrawn. The test bus answers no
+/// request, so the re-read shows as its first request's failure.
+#[tokio::test]
+async fn a_permission_change_rereads_the_dashboard_live() {
+    use rekindle_types::subscription_events::GovernanceEvent;
+    let (_dir, mut app) = app_on_test_bus().await;
+    let action = app.subscription_event_to_action(SubscriptionEvent::Governance(
+        GovernanceEvent::EffectivePermissionsChanged {
+            community: "c1".into(),
+            member: "bob".into(),
+        },
+    ));
+    assert!(matches!(action, Some(Action::Render)));
+    let reread = tokio::time::timeout(std::time::Duration::from_secs(10), app.action_rx.recv())
+        .await
+        .expect("the dashboard is re-read")
+        .expect("action channel open");
+    assert!(
+        matches!(&reread, Action::CommandFailed { context, .. } if context == "status"),
+        "the re-read starts with the status snapshot, got {reread:?}"
     );
 }

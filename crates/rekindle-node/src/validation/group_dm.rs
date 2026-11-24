@@ -7,7 +7,8 @@ use std::collections::HashSet;
 use rekindle_ipc::protocol::{GroupDmRequest, IpcRequest, IpcResponse, LobbyRequest};
 use rekindle_types::group_dm::{MAX_MEMBERS, MAX_NAME_CHARS, MIN_MEMBERS};
 
-use super::{message_body, page, public_key, Checked};
+use super::friends::client_id;
+use super::{message_body, opt, page, public_key, Checked};
 
 /// A group id: the creator's 16 random bytes, 32 lowercase hex.
 fn group_id(id: &str) -> Checked {
@@ -152,8 +153,14 @@ pub(super) fn check(request: &IpcRequest) -> Checked {
         IpcRequest::GroupDm(GroupDmRequest::Rename { group_id: id, name }) => {
             group_id(id).and_then(|()| group_name(name))
         }
-        IpcRequest::GroupDm(GroupDmRequest::Send { group_id: id, body }) => {
-            group_id(id).and_then(|()| message_body(body))
+        IpcRequest::GroupDm(GroupDmRequest::Send {
+            group_id: id,
+            body,
+            reply_to,
+        }) => {
+            group_id(id)?;
+            opt(reply_to.as_deref(), client_id)?;
+            message_body(body)
         }
         IpcRequest::DisappearingSet {
             conversation,

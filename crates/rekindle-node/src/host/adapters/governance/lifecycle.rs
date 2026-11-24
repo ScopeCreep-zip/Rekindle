@@ -155,7 +155,11 @@ impl HostGovernance {
     /// invalidated its import, `broadcast/send.rs` `send_failure`) is
     /// [`RouteCallError::Unusable`], and a lost call is
     /// [`RouteCallError::TimedOut`]; after either a member call re-reads
-    /// `M`/6 ([`RouteCallError::rereads_route`]).
+    /// `M`/6 ([`RouteCallError::rereads_route`]). A blob Veilid declared dead
+    /// (`RouteChange`, plan RV1g B1) is refused at import as `Unusable`, with
+    /// no call. Timeouts declare nothing dead (B2 owed): an inviter that
+    /// answers no call keeps its live route unrepublished (netsim
+    /// `rejoin_after_kick`).
     pub(super) async fn call_route_typed(
         &self,
         target_route_blob: &[u8],
@@ -167,18 +171,33 @@ impl HostGovernance {
         let target = node
             .import_route(target_route_blob)
             .map_err(|_| RouteCallError::Unusable)?;
-        node.caller()
+        let result = node
+            .caller()
             .call_community_envelope(&target, target_route_blob, payload)
-            .await
-            .map_err(|e| match e {
-                rekindle_transport::TransportError::RouteUnusable { .. } => {
-                    RouteCallError::Unusable
-                }
-                rekindle_transport::TransportError::Timeout { reason, .. } => {
-                    RouteCallError::TimedOut(reason)
-                }
-                other => RouteCallError::Failed(other.to_string()),
-            })
+            .await;
+        result.map_err(|e| match e {
+            rekindle_transport::TransportError::RouteUnusable { .. } => RouteCallError::Unusable,
+            rekindle_transport::TransportError::Timeout { reason, .. } => {
+                RouteCallError::TimedOut(reason)
+            }
+            other => RouteCallError::Failed(other.to_string()),
+        })
+    }
+
+    /// Whether `blob` is a peer route the transport knows dead (plan RV1g
+    /// B1): no call is made into it while it is.
+    pub(crate) fn route_declared_dead(&self, blob: &[u8]) -> bool {
+        self.transport()
+            .is_ok_and(|node| node.liveness().route_declared_dead(blob))
+    }
+
+    /// A read of a peer's record returned route `blob` at DHT `seq`: a
+    /// strictly newer read of a dead blob makes it usable again (plan RV1g
+    /// B3).
+    pub(crate) fn route_read_at(&self, blob: &[u8], seq: u64) {
+        if let Ok(node) = self.transport() {
+            node.liveness().route_read_at(blob, seq);
+        }
     }
 
     // ---------- Hydration ----------

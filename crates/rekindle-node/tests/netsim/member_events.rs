@@ -116,6 +116,18 @@ async fn a_leave_is_one_left_on_the_leaver_and_every_member() {
         1,
         "another member sees the leave once"
     );
+    let forgotten = |events: &Events| {
+        events.matching(|e| {
+            matches!(e, SubscriptionEvent::Membership(MembershipEvent::Forgotten { community: c })
+                if *c == community.anchor)
+        })
+    };
+    assert_eq!(
+        forgotten(&bea_events),
+        1,
+        "the leaver's every frontend is told once that the community is gone"
+    );
+    assert_eq!(forgotten(&cid_events), 0, "another member forgets nothing");
 }
 
 /// Plan E3.2 F9-2 (A/B round 9 saw `displayName: ""`): another member gets

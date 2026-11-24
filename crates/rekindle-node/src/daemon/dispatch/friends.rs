@@ -235,9 +235,20 @@ pub(crate) async fn route(
             let kind = crate::validation::conversation_kind(&conversation);
             answer(dm::disappearing::current(&host, &conversation, kind).await)
         }
-        IpcRequest::GroupDm(GroupDmRequest::Send { group_id, body }) => {
-            answer(group_dm::send_reviewed(&host, &group_id, &body, acknowledged.key_change).await)
-        }
+        IpcRequest::GroupDm(GroupDmRequest::Send {
+            group_id,
+            body,
+            reply_to,
+        }) => answer(
+            group_dm::send_reviewed(
+                &host,
+                &group_id,
+                &body,
+                reply_to.as_deref(),
+                acknowledged.key_change,
+            )
+            .await,
+        ),
         IpcRequest::GroupDm(GroupDmRequest::Typing { group_id, typing }) => {
             done(group_dm::report_draft(&host, &group_id, typing).await)
         }

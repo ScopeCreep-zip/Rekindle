@@ -199,8 +199,15 @@ function applyMembershipRow(m: MembershipEvent, notices: boolean): void {
   }
 }
 
-/** Membership events that write no community row: join progress. */
+/** Membership events that write no community row: join progress, a
+ *  withdrawn join, and our own removal (written on no row: the row goes). */
 function applyMembershipNotice(m: MembershipEvent, notices: boolean): void {
+  if ("forgotten" in m) {
+    // The Host forgot the community (LF1): drop its row and, when it was the
+    // shown one, the selection. Idempotent with the leave's own drop.
+    dropCommunity(m.forgotten.community);
+    return;
+  }
   // A join the inviter refused after it returned (plan JW, lead ruling):
   // the buddy list drops the community, ends the stepper and says the
   // Host's words verbatim; a community window holding it keeps it and

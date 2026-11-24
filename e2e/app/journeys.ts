@@ -4,7 +4,7 @@
 import { expect } from "@wdio/globals";
 import type { Browser } from "webdriverio";
 import { NETWORK_LABEL, NET_WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, switchTo, typeAndSend, typeInto, untilPublished, waitForHandle, waitUntil } from "../walk/helpers.ts";
-import { BUDDY, LOGIN, closeModal, inBuddy, menu, openAddFriend, setValue, submitJoin, underTree } from "../walk/nav.ts";
+import { BUDDY, LOGIN, closeModal, closeSettings, inBuddy, menu, openAddFriend, openSettings, setValue, submitJoin, underTree } from "../walk/nav.ts";
 import { showSkinView, skinViewShown } from "./journeys_skins.ts";
 import type { User } from "./user.ts";
 
@@ -34,6 +34,32 @@ export async function createIdentity(b: Browser, user: User): Promise<void> {
   // name): the tree's name field, or the app's own bar.
   const name = (await underTree(b)) ? '[data-skin-role="nameField"] .skin-name-text' : ".identity-bar-name";
   await expect(b.$(name)).toHaveText(expect.stringContaining(user.displayName), { wait: 10_000 });
+  await autoAwayOff(b, user);
+}
+
+/** Settings > Application's auto-away select. */
+const AUTO_AWAY = '//div[contains(@class,"form-field")][.//label[contains(.,"Go away after inactivity")]]//select';
+
+/**
+ * Turn `user`'s auto-away off (Settings > Application > "Disabled", the
+ * stored 0 the Host's idle stage reads as off: host/idle.rs). Idle is the
+ * OS's input idle, which WebDriver input does not reset, so with nobody at
+ * the machine every identity would go Away after the default 10 minutes
+ * and presence checks would race it (lead, PR1 trace). Read back after
+ * reopening Settings, so the stored value is what holds.
+ */
+export async function autoAwayOff(b: Browser, user: User): Promise<void> {
+  await openSettings(b, "Application");
+  await setValue(b, AUTO_AWAY, "0");
+  await resolveIntent(b, { passphrase: user.passphrase, appearMs: 1500 });
+  await closeSettings(b);
+  await openSettings(b, "Application");
+  await waitUntil(
+    async () => (await (await b.$(AUTO_AWAY)).getValue()) === "0",
+    NET_WAIT_MS,
+    `${user.displayName}'s auto-away did not read back Disabled`,
+  );
+  await closeSettings(b);
 }
 
 async function closeAddFriend(b: Browser): Promise<void> {

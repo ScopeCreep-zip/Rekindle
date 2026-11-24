@@ -79,10 +79,15 @@ pub enum BootstrapAnswer {
 /// admits it, then encode `bootstrapResponseV2`
 /// with our frontier.
 ///
+/// The partial check runs first (plan E3.2 S7c.8 (i),
+/// [`crate::partial::is_partial`]): a community whose partial flag is set,
+/// or whose flag cannot be read (on the Host: no identity unlocked), is
+/// answered [`BootstrapAnswer::Partial`] before anything below is checked.
+///
 /// # Errors
-/// We are not in the community, the op is not the joiner's `MemberJoined`
-/// or does not match its `OpRef`, or the store or the encode failed. The
-/// caller NAKs. A join the merge does not admit is answered
+/// Past the partial check only: we are not in the community, the op is not
+/// the joiner's `MemberJoined` or does not match its `OpRef`, or the store
+/// or the encode failed. The caller NAKs. A join the merge does not admit is answered
 /// [`BootstrapAnswer::Refused`], one we cannot judge yet (a dep not
 /// fetchable) [`BootstrapAnswer::RetryLater`].
 pub async fn answer_bootstrap_request<D: GovernanceRuntimeDeps>(

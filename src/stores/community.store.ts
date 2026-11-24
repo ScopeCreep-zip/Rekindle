@@ -362,8 +362,7 @@ export function setCommunityMembers(community: string, members: Member[]): void 
 /**
  * Drop community `id` from this window's list, and the selection when it
  * was the shown one. The key is deleted in place (`produce`): a setter given
- * a copy without the key merges it into the store, so the row stayed (the
- * withdrawn join's "Refusal Hall", r28 JW).
+ * a copy without the key merges it into the store, so the row stayed.
  */
 export function dropCommunity(id: string): void {
   setCommunityState("communities", produce((communities) => {

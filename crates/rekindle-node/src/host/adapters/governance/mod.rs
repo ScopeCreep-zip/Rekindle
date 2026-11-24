@@ -98,10 +98,11 @@ mod registry_watch;
 mod relayed_ingest;
 pub(crate) mod removal_posts;
 mod removal_watch;
+mod restore;
 pub(crate) mod search;
 mod segment_request;
+mod table_events;
 mod thread_events;
-mod timeout_events;
 
 mod checkpoint_rows;
 mod checkpoint_state;

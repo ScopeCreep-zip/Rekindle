@@ -94,6 +94,7 @@ impl Ancestry {
     }
 
     pub fn contains(&self, i: usize, j: usize) -> bool {
+        tally!(contains, 1);
         if j >= i {
             return false;
         }
@@ -115,10 +116,12 @@ impl Ancestry {
     fn build_through(&self, last: usize) {
         let mut bits = self.bits.borrow_mut();
         for i in self.built.get()..=last {
+            tally!(rows_built, 1);
             bits.resize(self.row[i + 1], 0);
             let (head, row) = bits.split_at_mut(self.row[i]);
             for &d in &self.deps[self.dep_at[i]..self.dep_at[i + 1]] {
                 if row[d / 64] & (1 << (d % 64)) == 0 {
+                    tally!(words_ored, (self.row[d + 1] - self.row[d]) as u64);
                     for (t, f) in row.iter_mut().zip(&head[self.row[d]..self.row[d + 1]]) {
                         *t |= *f;
                     }

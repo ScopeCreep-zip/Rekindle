@@ -80,6 +80,9 @@ impl SubscriptionEvent {
                 }
             },
             Self::Membership(e) => match e {
+                // Our forget outlives the community's scope: every
+                // frontend holding the list drops it.
+                MembershipEvent::Forgotten { .. } => EventScope::Device,
                 MembershipEvent::JoinProgress { community, .. } => {
                     EventScope::CommunityJoin(community.clone())
                 }

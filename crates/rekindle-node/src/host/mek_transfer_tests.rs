@@ -420,6 +420,52 @@ async fn a_leave_discards_every_key_transfer_of_the_community() {
     host.shutdown().await.unwrap();
 }
 
+/// Our leave's local side (the leave and the withdrawn join both end in
+/// `forget_left_community`) publishes exactly one `Forgotten`, which a
+/// subscriber filtered to another community still receives.
+#[tokio::test]
+async fn a_leave_publishes_one_forgotten_past_every_community_filter() {
+    use rekindle_types::subscription_events::{
+        EventCategory, MembershipEvent, SubscriptionEvent, SubscriptionFilter,
+    };
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    let owner = create_ann(&host).await.public_key;
+    queued_for_a_joiner(&host, &owner).await;
+    let from = host.ctx.journal.head();
+    host.governance()
+        .forget_left_community("c1")
+        .await
+        .expect("forgotten");
+    let other = SubscriptionFilter {
+        categories: Some(vec![EventCategory::Membership]),
+        community_scope: Some("another".into()),
+    };
+    let forgotten: Vec<_> = host
+        .ctx
+        .journal
+        .replay(from)
+        .into_iter()
+        .filter_map(|frame| match frame {
+            rekindle_types::subscription_events::StreamFrame::Event(sequenced) => {
+                Some(sequenced.event)
+            }
+            _ => None,
+        })
+        .filter(|e| other.matches(e))
+        .filter(|e| {
+            matches!(e, SubscriptionEvent::Membership(MembershipEvent::Forgotten { community })
+                if community == "c1")
+        })
+        .collect();
+    assert_eq!(
+        forgotten.len(),
+        1,
+        "one Forgotten reaches another community's filter"
+    );
+    host.shutdown().await.unwrap();
+}
+
 /// Review S7m part 1 F5: a member the merge removed before its row's
 /// attempt (its departure not yet forgotten here) is sent nothing: the
 /// row settles unsent, and its bootstrap queues nothing more.

@@ -428,6 +428,17 @@ export function subscribeRoutePaused(onPause: (cause: RoutePauseCause | null) =>
   });
 }
 
+/** Our own route of a class went down (with since and Veilid's reason) or came back up (null), plan F9-A. */
+export function subscribeOwnRouteDown(
+  onChange: (cls: OwnRouteClass, down: { sinceMs: number; reason: string } | null) => void,
+): Promise<UnlistenFn> {
+  return on<NetworkSubscriptionEvent>("network-status", (payload) => {
+    const inner = payload.network;
+    if ("ownRouteDown" in inner) onChange(inner.ownRouteDown.class, { sinceMs: inner.ownRouteDown.sinceMs, reason: inner.ownRouteDown.reason });
+    else if ("ownRouteUp" in inner) onChange(inner.ownRouteUp.class, null);
+  });
+}
+
 /** Own-route deaths above their baseline (`NetworkEvent::RouteDeathsAboveBaseline`, plan RV1): a warning. */
 export function subscribeRouteDeaths(
   onDeaths: (d: { class: OwnRouteClass; deaths: number; young: number; windowSecs: number; baseline: number }) => void,

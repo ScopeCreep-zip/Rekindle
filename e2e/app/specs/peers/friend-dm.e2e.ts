@@ -8,7 +8,7 @@
 import { expect, multiRemoteBrowser } from "@wdio/globals";
 import type { Browser } from "webdriverio";
 import { DOT_STATUS, acceptRequest, createIdentity, friendCode, friendRow, newUser, openChat, ownStatusValue, pendingRequest, requestFriend, seesMessage } from "../../journeys.ts";
-import { NET_WAIT_MS, resolveIntent, typeAndSend, waitUntil } from "../../../walk/helpers.ts";
+import { NET_WAIT_MS, resolveIntent, shown, typeAndSend, waitUntil } from "../../../walk/helpers.ts";
 import { shot } from "../../shots.ts";
 
 /**
@@ -18,6 +18,25 @@ import { shot } from "../../shots.ts";
  */
 async function ownRowDelivered(b: Browser, text: string): Promise<void> {
   let seen = "";
+  // Every state the row takes, in order, recorded in the page by a
+  // MutationObserver (a poll misses a brief state): a timeout says what the
+  // row did ("reached delivered, then reverted to sent"), not only where it
+  // ended.
+  const key = text.slice(0, 40);
+  await b.execute((t: string) => {
+    const w = window as unknown as { __ownStates?: Record<string, string[]> };
+    w.__ownStates ??= {};
+    const log: string[] = [];
+    w.__ownStates[t] = log;
+    const note = (): void => {
+      const row = Array.from(document.querySelectorAll(".chat-message")).find((m) => (m.textContent ?? "").includes(t));
+      const cls = row?.querySelector(".message-status")?.getAttribute("class") ?? "";
+      const state = row ? (/message-status-([a-z_]+)/.exec(cls)?.[1] ?? "no status") : "absent";
+      if (log[log.length - 1] !== state) log.push(state);
+    };
+    note();
+    new MutationObserver(note).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["class"] });
+  }, key);
   await waitUntil(
     async () => {
       seen = (await b.execute((t: string) => {
@@ -31,8 +50,19 @@ async function ownRowDelivered(b: Browser, text: string): Promise<void> {
       return /message-status-(delivered|read)\b/.test(seen);
     },
     NET_WAIT_MS,
-    `the sender's own "${text.slice(0, 24)}" never showed once as delivered (last: ${seen})`,
-  );
+    "",
+  ).catch(async () => {
+    const states = (await b.execute(
+      (t: string) => (window as unknown as { __ownStates?: Record<string, string[]> }).__ownStates?.[t] ?? [],
+      key,
+    )) as string[];
+    const reached = states.findIndex((x) => x === "delivered" || x === "read");
+    const what =
+      reached >= 0
+        ? `reached ${states[reached]}, then reverted to ${states[states.length - 1]}`
+        : `never reached delivered (last: ${states[states.length - 1] ?? "absent"})`;
+    throw new Error(`the sender's own "${text.slice(0, 24)}" ${what}; states in order: ${states.join(" → ")}`);
+  });
   expect(seen).toMatch(/message-status-(delivered|read)/);
 }
 
@@ -70,6 +100,8 @@ describe("friend request, then a DM each way", () => {
   const alice = newUser("alice");
   const bob = newUser("bob");
   const hello = `hi bob, from ${alice.displayName}`;
+  /** Alice's first DM, which must stay delivered after Bob's reply lands. */
+  let first = "";
 
   it("creates an identity on each app", async () => {
     await Promise.all([
@@ -104,6 +136,7 @@ describe("friend request, then a DM each way", () => {
     const a = multiRemoteBrowser.getInstance("alice");
     const b = multiRemoteBrowser.getInstance("bob");
     const text = `dm a→b ${Date.now()}`;
+    first = text;
     await openChat(a, bob.displayName);
     await typeAndSend(a, ".message-input-field", text);
     await resolveIntent(a, { passphrase: alice.passphrase, appearMs: 1500 });
@@ -123,6 +156,41 @@ describe("friend request, then a DM each way", () => {
     await seesMessage(b, bob, text);
     await seesMessage(a, alice, text);
     await ownRowDelivered(b, text);
+    // Alice's own first message stays delivered (or read) and seen after
+    // Bob's reply lands: the history load an incoming message started used
+    // to fold delivered back to one tick (transformers.ts ownStatus).
+    await ownRowDelivered(a, first);
+    await shot("first-still-delivered");
     await shot("dm-b-to-a");
+  });
+
+  // With the conversation's disappearing timer on, an incoming message
+  // still re-reads the history (a live row's timer is unknown), so this is
+  // where a folded status would show: Alice's DM must stay delivered after
+  // Bob's reply (ownStatus keeps each stored state).
+  it("with the disappearing timer on, Alice's DM stays delivered after Bob's reply re-reads the history", async () => {
+    const a = multiRemoteBrowser.getInstance("alice");
+    const b = multiRemoteBrowser.getInstance("bob");
+    await (await shown(a, ".chat-disappearing-btn")).click();
+    const presets = await a.$$(".chat-disappearing-preset");
+    await presets[presets.length - 1].click();
+    await resolveIntent(a, { passphrase: alice.passphrase, appearMs: 10_000 });
+    await waitUntil(
+      async () => (await (await a.$(".chat-disappearing-value")).getText()).trim() !== "Off",
+      NET_WAIT_MS,
+      "the disappearing timer never turned on",
+    );
+    await a.keys("Escape");
+    const mine = `timer a→b ${Date.now()}`;
+    await typeAndSend(a, ".message-input-field", mine);
+    await resolveIntent(a, { passphrase: alice.passphrase, appearMs: 1500 });
+    await seesMessage(b, bob, mine);
+    await ownRowDelivered(a, mine);
+    const reply = `timer b→a ${Date.now()}`;
+    await typeAndSend(b, ".message-input-field", reply);
+    await resolveIntent(b, { passphrase: bob.passphrase, appearMs: 1500 });
+    await seesMessage(a, alice, reply);
+    await ownRowDelivered(a, mine);
+    await shot("first-still-delivered-timer-on");
   });
 });

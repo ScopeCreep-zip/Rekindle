@@ -50,6 +50,8 @@ mod group_content_tests;
 mod group_dm_tests;
 #[cfg(test)]
 mod group_lobby_tests;
+#[cfg(test)]
+mod group_reply_tests;
 pub mod hardening;
 #[cfg(test)]
 mod history_order_tests;
@@ -83,6 +85,7 @@ mod reinitiate_tests;
 #[cfg(test)]
 mod rotation_tests;
 mod route_budget;
+mod route_down;
 pub mod runtime;
 mod serve;
 pub(crate) mod servers;

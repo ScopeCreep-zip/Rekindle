@@ -90,19 +90,13 @@ export function transformMessage(m: IpcMessage): Message {
   };
 }
 
-/** Our own message's status from its stored delivery state: still queued,
- *  failed, or out (sent, delivered, read). */
+/** Our own message's status from its stored delivery state, each state as
+ *  itself: MessageBubble draws queued (the clock), sent (one tick),
+ *  delivered (two), read and failed. Folding delivered and read into sent
+ *  put every delivered row back to one tick on each history load (Linux
+ *  2026-11-24; the store itself never moves a state back). */
 function ownStatus(state: IpcMessage["sendState"]): Message["status"] {
-  switch (state) {
-    case "awaiting_key":
-    case "queued":
-    case "failed":
-      return state;
-    case "sent":
-    case "delivered":
-    case "read":
-      return "sent";
-  }
+  return state;
 }
 
 /** A direct message: its client id is the row's `serverMessageId`, which
@@ -111,6 +105,7 @@ export function transformDmMessage(m: DmMessage): Message {
   return {
     ...transformMessage(m),
     serverMessageId: m.messageId ?? undefined,
+    replyToId: m.replyToId ?? undefined,
     historyGapThrough: m.historyGapThrough ?? undefined,
     expireSeconds: m.expireSeconds,
     expireAt: m.expireAt ?? undefined,

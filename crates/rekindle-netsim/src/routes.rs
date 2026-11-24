@@ -11,12 +11,21 @@
 //!   (`mod.rs:42`); one pushed out by LRU is reported to the importer as
 //!   `dead_remote` (`route_spec_store_cache.rs:293-311`), and so is one
 //!   removed (`:397-415`). The owner's route dying is never told to an
-//!   importer: Veilid has no message for it (`mod.rs:235-251`
-//!   `send_route_update` reports only the node's own cache).
+//!   importer: Veilid has no message for it. The importer learns it from
+//!   its own remote route test ([`crate::loopback`] `tick_remote_route_tests`,
+//!   `private_route_management.rs:396-414`, `ping_validator.rs:719-744`): a
+//!   failed test removes the entry, reported as `dead_remote`
+//!   (`mod.rs:235-251` `send_route_update`).
 //! - **resolve:** a send looks the route up in the cache, touching it; an
 //!   entry unused for 5 minutes has expired and does not resolve
 //!   (`mod.rs:44`, `remote_route_cache_entry.rs:131-135`,
 //!   `route_spec_store_cache.rs:331-343`), nor does one never imported:
+//!   "unused" means untouched by the private route management task too,
+//!   whose listing touches every unexpired entry on each of its ticks
+//!   ([`crate::loopback`] `tick_remote_route_tests`, `mod.rs:313-324`,
+//!   `route_spec_store_cache.rs:348-357`), so an import expires only
+//!   while that task is stopped (the node detached, offline, not ready
+//!   or asleep) for 5 minutes;
 //!   that send fails `NoConnection` (`rpc_processor/destination.rs:362-371`,
 //!   `rpc_processor/error.rs:81`), which our port maps to `RouteUnusable`
 //!   (`rekindle-protocol` `ports.rs:233-245`).
@@ -52,8 +61,9 @@
 //!   up to three direct-target status calls, all at once, waiting for every
 //!   probe (`route_test.rs:228-338`). So an allocation costs
 //!   [`route_test_duration`]; a node gone offline or not ready by the
-//!   test's end fails it, `TryAgain` ("allocated route failed to test",
-//!   `api.rs:832-836`). It is traced: [`ALLOCATION_STARTS`],
+//!   test's end fails it, and so does [`crate::Fault::AllocationTestFails`]:
+//!   Veilid releases the route and answers `TryAgain` ("allocated route
+//!   failed to test", `api.rs:829-836`), leaving no route behind. It is traced: [`ALLOCATION_STARTS`],
 //!   [`ALLOCATION_ENDS`], and [`ALLOCATION_CUT`] when the call is dropped
 //!   mid-flight (a shutdown that cancels it, a node that stops), as
 //!   Veilid's `DurationRecorder` dropped unfinished logs an error
@@ -75,6 +85,12 @@ use crate::network::{Network, RouteEntry};
 /// The trace entry of a node forgetting a peer's route after a send to it
 /// failed `RouteUnusable` (`RoutePort::invalidate_after_send_failure`).
 pub const FORGETS_PEER_ROUTE: &str = "forgets a peer route";
+
+/// The trace entry of a node's remote route test failing: Veilid removes
+/// the peer's route from the node's cache and reports it as `dead_remote`
+/// (Veilid 0.5.8 `ping_validator.rs:740-744` logs "Remote route test
+/// failed (no response)"; [`crate::loopback`]).
+pub const RELEASES_PEER_ROUTE: &str = "a remote route test releases a peer route";
 
 /// The trace entry of an own-route allocation starting:
 /// `"{ALLOCATION_STARTS}: {class:?}"` ([`allocation_entry`]).
@@ -139,6 +155,35 @@ pub(crate) struct CacheEntry {
     pub touched: u64,
     /// LRU order.
     pub used: u64,
+    /// When it was last known valid (µs): a remote route test passed
+    /// (`route_stats.rs:685-692` `record_remote_test_pass`) or a call over
+    /// it was answered (`rpc_processor/mod.rs:1821-1827`,
+    /// `route_stats.rs:489-498` `record_answer_received`); `None` before
+    /// either: a new or unexpired entry starts with fresh stats
+    /// (Veilid 0.5.8 `remote_route_cache_entry.rs:138-143` `unexpire`) and
+    /// needs testing at once (`route_stats.rs:672-681` `remote_needs_testing`).
+    pub valid: Option<u64>,
+    /// A remote route test in flight that gets no answer: its answer wait
+    /// (Veilid's RPC timeout) ends at this µs ([`crate::loopback`]).
+    pub failing: Option<u64>,
+}
+
+impl CacheEntry {
+    /// A new entry, or an expired one imported again: fresh stats.
+    fn fresh(touched: u64, used: u64) -> Self {
+        Self {
+            touched,
+            used,
+            valid: None,
+            failing: None,
+        }
+    }
+
+    /// Whether it is idle past [`REMOTE_ROUTE_EXPIRY`] at `now` (µs).
+    pub(crate) fn expired(&self, now: u64) -> bool {
+        let expiry = u64::try_from(REMOTE_ROUTE_EXPIRY.as_micros()).unwrap_or(u64::MAX);
+        now.saturating_sub(self.touched) >= expiry
+    }
 }
 
 /// Allocates a node's routes on the simulated route table.
@@ -207,8 +252,14 @@ impl FakeAllocator {
         let mut inner = self.net.inner.lock();
         if inner.faults.dht_offline.contains(&self.node)
             || inner.faults.not_ready.contains(&self.node)
+            || inner
+                .faults
+                .allocation_test_fails
+                .contains(&(self.node, class))
         {
-            // The loopback could not come back (Veilid 0.5.8 `api.rs:832-836`).
+            // The test got no answer: Veilid releases the route it just
+            // allocated (never inserted here) and answers `TryAgain`
+            // (Veilid 0.5.8 `veilid_api/api.rs:829-836`).
             return Err(AllocError::TryAgain(
                 "allocated route failed to test".into(),
             ));
@@ -405,6 +456,10 @@ impl RoutePort for FakeRoutes {
         self.own.paused()
     }
 
+    fn own_down(&self) -> watch::Receiver<rekindle_types::subscription_events::OwnRouteDownSet> {
+        self.own.down()
+    }
+
     fn own_deaths(&self, class: RouteClass) -> rekindle_records::port::OwnDeaths {
         self.own.deaths(class)
     }
@@ -424,8 +479,16 @@ impl Network {
             let Some(slot) = inner.nodes.get_mut(node) else {
                 return;
             };
-            slot.imported
-                .insert(id.to_string(), CacheEntry { touched: now, used });
+            let entry = slot
+                .imported
+                .entry(id.to_string())
+                .or_insert_with(|| CacheEntry::fresh(now, used));
+            if entry.expired(now) {
+                *entry = CacheEntry::fresh(now, used);
+            } else {
+                entry.touched = now;
+                entry.used = used;
+            }
             if slot.imported.len() > REMOTE_ROUTE_CACHE_SIZE {
                 let oldest = slot
                     .imported
@@ -461,7 +524,6 @@ impl Network {
         let mut inner = self.inner.lock();
         inner.lru += 1;
         let used = inner.lru;
-        let expiry = u64::try_from(REMOTE_ROUTE_EXPIRY.as_micros()).unwrap_or(u64::MAX);
         let Some(entry) = inner
             .nodes
             .get_mut(node)
@@ -469,10 +531,11 @@ impl Network {
         else {
             return false;
         };
-        if now.saturating_sub(entry.touched) >= expiry {
+        if entry.expired(now) {
             return false;
         }
-        *entry = CacheEntry { touched: now, used };
+        entry.touched = now;
+        entry.used = used;
         true
     }
 
@@ -483,6 +546,30 @@ impl Network {
     /// (Veilid 0.5.8 `route_stats.rs:31-35`, `route_compile.rs:672`).
     pub(crate) fn first_hop_failed(&self, node: usize) -> bool {
         self.inner.lock().faults.link_failure.remove(&node)
+    }
+
+    /// An answer to `node`'s call over its imported route `id` came back:
+    /// the remote route is known valid now, which puts off its next remote
+    /// route test by [`ROUTE_MIN_IDLE`](crate::loopback::ROUTE_MIN_IDLE)
+    /// (Veilid 0.5.8 `rpc_processor/mod.rs:1821-1827` records the answer on
+    /// the remote private route, `route_stats.rs:489-498`
+    /// `record_answer_received` sets `last_known_valid_ts`, which
+    /// `remote_needs_testing` reads, `:672-681`). An entry gone or expired
+    /// meanwhile takes nothing: Veilid holds the answer on the route ref
+    /// it sent with, and an expired entry is not listed for a test.
+    pub(crate) fn remote_route_answered(&self, node: usize, id: &str) {
+        let now = self.now_us();
+        if let Some(entry) = self
+            .inner
+            .lock()
+            .nodes
+            .get_mut(node)
+            .and_then(|s| s.imported.get_mut(id))
+        {
+            if !entry.expired(now) {
+                entry.valid = Some(now);
+            }
+        }
     }
 
     /// An answer reached `node`: the pool reply route it came over

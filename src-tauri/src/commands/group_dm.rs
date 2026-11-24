@@ -126,18 +126,24 @@ pub async fn disappearing_get(
     host_call::call(&state, IpcRequest::DisappearingGet { conversation }).await
 }
 
-/// Send `body` to a group (`GroupDmRequest::Send`); the answer is the
+/// Send `body` to a group (`GroupDmRequest::Send`), a reply to `reply_to`
+/// (the parent's client id) when given; the answer is the
 /// message's client id once its row and echo are committed (`queued`,
 /// then `GroupDmEvent::SendStatus`).
 #[tauri::command]
 pub async fn group_dm_send(
     group_id: String,
     body: String,
+    reply_to: Option<String>,
     state: State<'_, SharedState>,
 ) -> Result<Done<String>, CommandError> {
     host_call::call(
         &state,
-        IpcRequest::GroupDm(GroupDmRequest::Send { group_id, body }),
+        IpcRequest::GroupDm(GroupDmRequest::Send {
+            group_id,
+            body,
+            reply_to,
+        }),
     )
     .await
 }

@@ -92,7 +92,7 @@ impl Netsim {
         let rng = Arc::clone(&self.rngs.lock()[node]);
         let clock = Arc::clone(&self.clocks.lock()[node]);
         let idle = Arc::clone(&self.idles.lock()[node]);
-        let ports = self.ports(node, &rng, ready_rx);
+        let ports = self.ports(node, &rng, ready_rx, &clock);
         self.set_ready(node, true);
         Node {
             index: node,
