@@ -445,3 +445,8 @@ export async function peerAssignRole(peer: Peer, anchor: string, member: string,
 export async function peerBan(peer: Peer, anchor: string, member: string): Promise<void> {
   await peerReviewed(peer, ["community", "ban", "--community", anchor, "--member", member]);
 }
+
+/** `peer` takes role `roleId` back from member `member` in community `anchor`. */
+export async function peerUnassignRole(peer: Peer, anchor: string, member: string, roleId: string): Promise<void> {
+  await peerReviewed(peer, ["community", "role", "unassign", "--community", anchor, "--member", member, "--role-id", roleId]);
+}
