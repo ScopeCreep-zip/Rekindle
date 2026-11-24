@@ -302,6 +302,7 @@
         "body": "hello channel",
         "channel": "ch_cccccccccccccccccccccccccccccccc",
         "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "forwardedFromAuthor": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "messageId": "msg_11111111111111111111111111111111",
         "replyToMessageId": "msg_41",
         "senderPseudonym": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

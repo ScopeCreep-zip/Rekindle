@@ -66,6 +66,11 @@ pub enum ChannelMessageEvent {
         body: Option<String>,
         /// The message id of the parent this one replies to.
         reply_to_message_id: Option<String>,
+        /// The original author's pseudonym when the post is a forward (plan
+        /// E3.3 forwards): the value the stored row's
+        /// `forwarded_from_author` holds and history serves, so a live
+        /// forward renders as one before any reload. `None` otherwise.
+        forwarded_from_author: Option<String>,
         /// The D26 gate hid the post (an automod `BlurContent` match): it is
         /// stored with `automod_blurred` and every frontend renders it
         /// blurred.

@@ -134,6 +134,7 @@ pub async fn send_channel_message<D: ChannelMessagingDeps>(
         timestamp_ms: timestamp_u64,
         body: body.to_string(),
         channel_id: channel_id.to_string(),
+        forwarded_from_author: None,
     });
 
     Ok(ChannelSendResult {
@@ -264,6 +265,7 @@ pub async fn forward_channel_message<D: ChannelMessagingDeps>(
         timestamp_ms: timestamp_u64,
         body: source.body.clone(),
         channel_id: dest_channel_id.to_string(),
+        forwarded_from_author: Some(source.sender_key),
     });
 
     Ok(ChannelSendResult {
