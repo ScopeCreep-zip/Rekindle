@@ -62,8 +62,9 @@ struct GameEntry {
     name: String,                     // Display name
     process_names: Vec<String>,       // Match against running processes
     icon: Option<String>,             // Icon ref (matches assets in icons.dll)
-    steam_app_id: Option<u32>,        // For steam://connect/ URI
-    connect_template: Option<String>, // URI template for non-Steam launchers
+    steam_app_id: Option<u32>,        // With network_args: steam://run/<id>//<args>/
+    connect_template: Option<String>, // URI template, tried first ("{addr}")
+    network_args: Option<String>,     // Xfire's LauncherNetworkArgs ("+connect {addr}")
 }
 ```
 
@@ -147,14 +148,20 @@ The combined server address (`server_ip:server_port`) is what powers the
                                              │
                           ┌──────────────────┼──────────────────┐
                           ▼                  ▼                  ▼
-              connect_template?      steam_app_id?         neither
-              "scheme://join/{addr}" "steam://connect/    Error: no
-                                       {addr}"             launch method
+              connect_template?      steam_app_id +        neither
+              "scheme://join/{addr}" network_args?         CannotLaunch
+                                     "steam://run/<id>//
+                                      <args>/"
                           │                  │
                           └──────────┬───────┘
                                      ▼
                           open::that(url)  → OS handles URI scheme
 ```
+
+There is no blanket `steam://connect` fallback: a Steam game reaches a server
+only through its `connect_template` or, failing that, its Steam app id with
+Xfire's `LauncherNetworkArgs` (`network_args`, percent-encoded into the
+`steam://run` command line). A game with neither is `CannotLaunch`.
 
 The `open` crate dispatches the URI to the OS default handler. For
 Steam URIs, Steam intercepts and joins the game. For custom schemes,

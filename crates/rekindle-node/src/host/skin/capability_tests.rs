@@ -13,7 +13,8 @@ use super::signals::Inputs;
 
 /// Team Fortress 2: a connect template.
 const TF2: u32 = 4100;
-/// Dota 2: a Steam app id only.
+/// Dota 2: no connect template; a Steam app id with Xfire's network
+/// arguments (`+connect {addr}`), so `steam://run` puts it on a server.
 const DOTA2: u32 = 4102;
 /// No game in the database.
 const UNKNOWN: u32 = 1;
@@ -48,7 +49,9 @@ fn temp_file(name: &str) -> PathBuf {
 #[test]
 fn join_needs_a_game_we_can_launch() {
     let (i, w) = (Inputs::default(), SkinWorld::default());
-    for (game, launchable) in [(TF2, true), (DOTA2, true), (UNKNOWN, false)] {
+    // Terraria (5002): a Steam app id but no way onto a server (plan
+    // E7.2 G2), so it cannot be joined.
+    for (game, launchable) in [(TF2, true), (DOTA2, true), (5002, false), (UNKNOWN, false)] {
         let f = in_game(game);
         let friend = Selected::Friend {
             key: "k",

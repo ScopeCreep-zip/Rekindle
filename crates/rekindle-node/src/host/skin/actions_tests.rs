@@ -47,6 +47,10 @@ fn request(action: &A) -> IpcRequest {
 fn feature_actions_yield_the_handlers_requests() {
     assert!(matches!(request(&A::LogOff), IpcRequest::Logout));
     assert!(matches!(
+        request(&A::RefreshServer),
+        IpcRequest::Servers(ServersRequest::Refresh)
+    ));
+    assert!(matches!(
         request(&A::SetStatus(SessionStatus::Away)),
         IpcRequest::PresenceSet {
             status: SessionStatus::Away
@@ -133,10 +137,6 @@ fn a_selection_action_is_refused_while_nothing_is_selected() {
 fn unbuilt_actions_yield_not_built_yet() {
     for (action, message) in [
         (A::SearchFor, "Search isn't in Rekindle yet (plan E7.2 G11)"),
-        (
-            A::RefreshServer,
-            "Refreshing a server isn't in Rekindle yet (plan E7.2 G4)",
-        ),
         (
             A::DeleteSelected,
             "Deleting a picture or video isn't in Rekindle yet (plan E7.2 G14)",

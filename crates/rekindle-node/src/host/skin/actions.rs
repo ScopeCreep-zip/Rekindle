@@ -228,6 +228,9 @@ pub(crate) fn map(
         }),
         A::DownloadInfo => transfer_request(TransferRequest::List),
         A::LogOff => Ok(Request(Box::new(IpcRequest::Logout))),
+        A::RefreshServer => Ok(Request(Box::new(IpcRequest::Servers(
+            ServersRequest::Refresh,
+        )))),
         A::SetStatus(status) => Ok(Request(Box::new(IpcRequest::PresenceSet {
             status: *status,
         }))),
@@ -337,7 +340,6 @@ pub(crate) fn map(
         | A::JoinGameLobby
         | A::LeaveGameLobby
         | A::LaunchGameLobby
-        | A::RefreshServer
         | A::OpenSelected
         | A::UploadSelected
         | A::SearchFor
@@ -381,7 +383,6 @@ fn gap_name(action: &A) -> (String, Option<&'static str>) {
         A::JoinGameLobby => (name("Joining a game lobby"), Some("E7.2 G6")),
         A::LeaveGameLobby => (name("Leaving a game lobby"), Some("E7.2 G6")),
         A::LaunchGameLobby => (name("Launching a game lobby"), Some("E7.2 G6")),
-        A::RefreshServer => (name("Refreshing a server"), Some("E7.2 G4")),
         A::OpenSelected => (name("Opening a picture or video"), Some("E7.2 G14")),
         A::UploadSelected => (name("Uploading a picture or video"), Some("E7.2 G14")),
         A::DeleteSelected => (name("Deleting a picture or video"), Some("E7.2 G14")),
