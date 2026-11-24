@@ -8,7 +8,7 @@
 import { expect, multiRemoteBrowser } from "@wdio/globals";
 import type { Browser } from "webdriverio";
 import { DOT_STATUS, acceptRequest, createIdentity, friendCode, friendRow, newUser, openChat, ownStatusValue, pendingRequest, requestFriend, seesMessage } from "../../journeys.ts";
-import { NET_WAIT_MS, resolveIntent, typeAndSend, waitUntil } from "../../../walk/helpers.ts";
+import { NET_WAIT_MS, resolveIntent, shown, typeAndSend, waitUntil } from "../../../walk/helpers.ts";
 import { shot } from "../../shots.ts";
 
 /**
@@ -132,5 +132,35 @@ describe("friend request, then a DM each way", () => {
     await ownRowDelivered(a, first);
     await shot("first-still-delivered");
     await shot("dm-b-to-a");
+  });
+
+  // With the conversation's disappearing timer on, an incoming message
+  // still re-reads the history (a live row's timer is unknown), so this is
+  // where a folded status would show: Alice's DM must stay delivered after
+  // Bob's reply (ownStatus keeps each stored state).
+  it("with the disappearing timer on, Alice's DM stays delivered after Bob's reply re-reads the history", async () => {
+    const a = multiRemoteBrowser.getInstance("alice");
+    const b = multiRemoteBrowser.getInstance("bob");
+    await (await shown(a, ".chat-disappearing-btn")).click();
+    const presets = await a.$$(".chat-disappearing-preset");
+    await presets[presets.length - 1].click();
+    await resolveIntent(a, { passphrase: alice.passphrase, appearMs: 10_000 });
+    await waitUntil(
+      async () => (await (await a.$(".chat-disappearing-value")).getText()).trim() !== "Off",
+      NET_WAIT_MS,
+      "the disappearing timer never turned on",
+    );
+    await a.keys("Escape");
+    const mine = `timer a→b ${Date.now()}`;
+    await typeAndSend(a, ".message-input-field", mine);
+    await resolveIntent(a, { passphrase: alice.passphrase, appearMs: 1500 });
+    await seesMessage(b, bob, mine);
+    await ownRowDelivered(a, mine);
+    const reply = `timer b→a ${Date.now()}`;
+    await typeAndSend(b, ".message-input-field", reply);
+    await resolveIntent(b, { passphrase: bob.passphrase, appearMs: 1500 });
+    await seesMessage(a, alice, reply);
+    await ownRowDelivered(a, mine);
+    await shot("first-still-delivered-timer-on");
   });
 });
