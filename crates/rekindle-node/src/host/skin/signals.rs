@@ -236,6 +236,15 @@ impl Inputs {
         }
     }
 
+    /// The id of the incoming 1:1 call from `peer` that is ringing, the
+    /// call Xfire's `AppVoiceChat` answers.
+    pub(crate) fn ringing_from(&self, peer: &str) -> Option<String> {
+        self.calls
+            .iter()
+            .find(|(_, c)| c.peer.as_deref() == Some(peer) && c.ringing && !c.outgoing)
+            .map(|(call_id, _)| call_id.clone())
+    }
+
     pub(crate) fn call_with(&self, peer: &str) -> Option<&Call> {
         self.calls
             .values()
@@ -401,6 +410,11 @@ impl SignalState {
     /// `ShowVoiceWindow`'s window ([`Inputs::show_call`]).
     pub(crate) fn show_call(&self) -> Option<CallTarget> {
         self.inputs.lock().show_call()
+    }
+
+    /// `VoiceChat`'s call ([`Inputs::ringing_from`]).
+    pub(crate) fn ringing_from(&self, peer: &str) -> Option<String> {
+        self.inputs.lock().ringing_from(peer)
     }
 }
 

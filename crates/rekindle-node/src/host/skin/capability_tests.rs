@@ -8,7 +8,14 @@ use rekindle_types::friend::{FriendState, FriendshipState, GameInfoState, UserSt
 
 use rekindle_types::dto::transfer::{TransferRow, TransferState, TransferTarget};
 
+use rekindle_ipc::protocol::IpcResponse;
+use rekindle_types::dto::skin_action::SkinAction as A;
+use rekindle_types::dto::skin_run::{CallOp, ShellOp, SkinRun};
+use rekindle_types::subscription_events::{CallEvent, SubscriptionEvent};
+
+use super::actions::{map, Mapped, Selected as Selection};
 use super::capability::{allows, Group, LobbyCaps, Selected, SkinWorld};
+use super::reads::Reads;
 use super::signals::Inputs;
 
 /// Team Fortress 2: a connect template.
@@ -321,4 +328,84 @@ fn the_lobby_actions_follow_the_group_lobby() {
         ..none
     });
     assert!(can(C::HostGameLobby, &i, &w, g));
+}
+
+fn incoming(call_id: &str, from: &str) -> SubscriptionEvent {
+    SubscriptionEvent::Call(CallEvent::Incoming {
+        call_id: call_id.into(),
+        from: from.into(),
+        display_name: "K".into(),
+        kind: "voice".into(),
+        participants: Vec::new(),
+        is_group: false,
+        expires_at_ms: 0,
+    })
+}
+
+fn outgoing(call_id: &str, to: &str) -> SubscriptionEvent {
+    SubscriptionEvent::Call(CallEvent::Started {
+        call_id: call_id.into(),
+        kind: "voice".into(),
+        peer_key: to.into(),
+        peer_display_name: "K".into(),
+        expires_at_ms: 0,
+    })
+}
+
+/// Symbiosis pages its call tab by these (`ChatWindow.xml:280-284`):
+/// `HostVoiceChat` is `ChatButtonCall` (`AppHostVoiceChat`), `VoiceChat`
+/// is `ChatButtonAnswerCall` (`AppVoiceChat`, `Common.xml:450-456`), so
+/// with no call the Call button shows, never Answer.
+#[test]
+fn host_voice_places_a_call_and_voice_answers_a_ringing_one() {
+    let w = SkinWorld::default();
+    let mut f = FriendState::new("k".into(), "K".into(), FriendshipState::Accepted);
+    f.status = UserStatus::Online;
+    let friend = Selected::Friend {
+        key: "k",
+        friend: Some(&f),
+    };
+    let mut i = Inputs::default();
+    assert!(can(C::HostVoiceChat, &i, &w, friend));
+    assert!(!can(C::VoiceChat, &i, &w, friend));
+    assert!(i.ringing_from("k").is_none());
+
+    i.fold(&incoming("in1", "k"));
+    assert!(can(C::VoiceChat, &i, &w, friend));
+    assert!(!can(C::HostVoiceChat, &i, &w, friend));
+    assert!(!can(C::CancelVoiceChat, &i, &w, friend));
+    assert_eq!(i.ringing_from("k").as_deref(), Some("in1"));
+    assert!(i.ringing_from("other").is_none());
+
+    let mut i = Inputs::default();
+    i.fold(&outgoing("out1", "k"));
+    assert!(can(C::CancelVoiceChat, &i, &w, friend));
+    assert!(!can(C::VoiceChat, &i, &w, friend));
+    assert!(!can(C::HostVoiceChat, &i, &w, friend));
+    assert!(i.ringing_from("k").is_none());
+}
+
+/// `VoiceChat` answers the ringing call; it never places a new one.
+#[test]
+fn voice_chat_runs_answer_on_the_ringing_call() {
+    let friend = || Selection {
+        friend: Some("k"),
+        ..Selection::default()
+    };
+    let reads = Reads {
+        ringing_call: Some("in1".into()),
+        ..Reads::default()
+    };
+    assert!(matches!(
+        map(&A::VoiceChat, friend(), &reads),
+        Ok(Mapped::Run(SkinRun::Shell(ShellOp::Call(CallOp::Answer { ref call_id })))) if call_id == "in1"
+    ));
+    assert!(matches!(
+        map(&A::VoiceChat, friend(), &Reads::default()),
+        Err(IpcResponse::Error { code: 409, .. })
+    ));
+    assert!(matches!(
+        map(&A::HostVoiceChat, friend(), &Reads::default()),
+        Ok(Mapped::Run(SkinRun::Shell(ShellOp::Call(CallOp::Voice { ref friend })))) if friend == "k"
+    ));
 }

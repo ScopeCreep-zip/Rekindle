@@ -41,8 +41,19 @@ pub enum ShellPanel {
     content = "arg"
 )]
 pub enum CallOp {
-    Voice { friend: String },
-    Video { friend: String },
+    /// Place a voice call to `friend` (Xfire's `AppHostVoiceChat`).
+    Voice {
+        friend: String,
+    },
+    /// Answer the incoming call `call_id` that is ringing (Xfire's
+    /// `AppVoiceChat` on `ChatButtonAnswerCall`, Symbiosis
+    /// `Components/Common.xml:450-452`).
+    Answer {
+        call_id: String,
+    },
+    Video {
+        friend: String,
+    },
     End,
     Mute,
     Unmute,

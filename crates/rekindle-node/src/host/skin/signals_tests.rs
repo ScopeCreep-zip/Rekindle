@@ -51,11 +51,12 @@ fn can_in(world: &SkinWorld, f: &FriendState, capability: Capability) -> bool {
 #[test]
 fn capabilities_follow_the_selected_friend_offline_online_in_game() {
     let offline = friend(UserStatus::Offline, None);
-    assert!(!can(&offline, Capability::VoiceChat));
+    assert!(!can(&offline, Capability::HostVoiceChat));
     assert!(!can(&offline, Capability::Join));
     assert!(can(&offline, Capability::Chat));
     let online = friend(UserStatus::Online, None);
-    assert!(can(&online, Capability::VoiceChat));
+    assert!(can(&online, Capability::HostVoiceChat));
+    assert!(!can(&online, Capability::VoiceChat));
     assert!(!can(&online, Capability::Join));
     let in_game = friend(UserStatus::Online, Some("10.0.0.1:27960"));
     assert!(can(&in_game, Capability::Join));
@@ -276,8 +277,10 @@ fn two_chat_windows_with_different_peers_get_different_sets() {
             Some(f)
         },
     );
-    assert!(sets["chat-online"].can.contains(&Capability::VoiceChat));
-    assert!(sets["chat-offline"].cannot.contains(&Capability::VoiceChat));
+    assert!(sets["chat-online"].can.contains(&Capability::HostVoiceChat));
+    assert!(sets["chat-offline"]
+        .cannot
+        .contains(&Capability::HostVoiceChat));
 }
 
 #[test]

@@ -22,6 +22,9 @@ pub(crate) struct Reads {
     /// `ShowVoiceWindow`'s window: the Host's active call, else our
     /// community voice session, folded from its stream (`signals`).
     pub show_call: Option<CallTarget>,
+    /// `VoiceChat`'s call: the incoming call from the selected friend that
+    /// is ringing (`signals::Inputs::ringing_from`).
+    pub ringing_call: Option<String>,
 }
 
 /// [`Reads`] for `request`; empty for anything but a `RunSkinAction`.
@@ -55,9 +58,20 @@ pub(crate) async fn load(
         } => ctx.skin.signals.show_call(),
         _ => None,
     };
+    let ringing_call = match request {
+        IpcRequest::RunSkinAction {
+            window,
+            action: A::VoiceChat,
+            ..
+        } => selections
+            .friend(window)
+            .and_then(|key| ctx.skin.signals.ringing_from(&key)),
+        _ => None,
+    };
     Ok(Reads {
         rooms,
         friend_game,
         show_call,
+        ringing_call,
     })
 }

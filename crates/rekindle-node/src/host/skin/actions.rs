@@ -327,9 +327,19 @@ pub(crate) fn map(
         A::ShowGameInvite => shell(ShellOp::OpenGameInvite {
             friend: selected()?,
         }),
-        A::VoiceChat | A::HostVoiceChat => shell(ShellOp::Call(CallOp::Voice {
+        // Xfire's `AppHostVoiceChat` places a call (`ChatButtonCall`) and
+        // `AppVoiceChat` answers the ringing one (`ChatButtonAnswerCall`,
+        // Symbiosis `ChatWindow.xml:291-293`, `Common.xml:450-452`).
+        A::HostVoiceChat => shell(ShellOp::Call(CallOp::Voice {
             friend: selected()?,
         })),
+        A::VoiceChat => {
+            selected()?;
+            reads.ringing_call.clone().map_or_else(
+                || Err(IpcResponse::error(409, "No call from them is ringing.")),
+                |call_id| shell(ShellOp::Call(CallOp::Answer { call_id })),
+            )
+        }
         A::VideoChat => shell(ShellOp::Call(CallOp::Video {
             friend: selected()?,
         })),

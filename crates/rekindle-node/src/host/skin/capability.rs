@@ -164,7 +164,12 @@ fn friend_allows(capability: Capability, inputs: &Inputs, selected: Selected<'_>
     let call = inputs.call_with(key);
     match capability {
         Capability::Chat => accepted,
-        Capability::VoiceChat | Capability::HostVoiceChat => online && call.is_none(),
+        // Xfire's `HostVoiceChat` places a call (`ChatButtonCall`) and its
+        // `VoiceChat` answers one (`ChatButtonAnswerCall`, art
+        // `button_call_ringing`, tip `ButtonAnswerCallTip`; Symbiosis
+        // `ChatWindow.xml:280-295`, `Common.xml:450-456`).
+        Capability::HostVoiceChat => online && call.is_none(),
+        Capability::VoiceChat => call.is_some_and(|c| c.ringing && !c.outgoing),
         Capability::LeaveVoiceChat => call.is_some_and(|c| !c.ringing),
         Capability::CancelVoiceChat => call.is_some_and(|c| c.ringing && c.outgoing),
         // Profile and Delete act on any selected key.

@@ -1176,6 +1176,12 @@
     },
     "type": "sheetError"
   },
+  "skin.callOp.answer": {
+    "arg": {
+      "callId": "call-1"
+    },
+    "kind": "answer"
+  },
   "skin.contentFit": {
     "max": 80,
     "min": 25
