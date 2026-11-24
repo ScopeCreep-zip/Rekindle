@@ -196,15 +196,17 @@ export async function seesMessage(b: Browser, who: User, text: string): Promise<
 async function whenConnected(b: Browser): Promise<void> {
   await inBuddy(b);
   // Under a skin's tree the status field says the network state while
-  // detached (StatusField.tsx, N1) and our status ("Online") once attached.
+  // detached (StatusField.tsx, N1) and our status once attached: any of our
+  // statuses, not only Online (auto-away holds Away from unlock in the AA1
+  // spec, and the network is attached all the same).
   const tree = await underTree(b);
   await waitUntil(
     async () =>
       tree
-        ? ((await (await b.$('[data-skin-role="statusText"] .skin-status-edit')).getAttribute("placeholder")) ?? "") === "Online"
+        ? ((await (await b.$('[data-skin-role="statusText"] .skin-status-edit')).getAttribute("placeholder")) ?? "") in OWN_STATUS
         : (await (await b.$(NETWORK_LABEL)).getText()).trim() === "Connected",
     NET_WAIT_MS,
-    tree ? "the skin's status field never said Online" : "the network indicator never said Connected",
+    tree ? "the skin's status field never showed our status (still the network state)" : "the network indicator never said Connected",
   );
 }
 
