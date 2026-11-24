@@ -40,7 +40,8 @@ describe("leaving a community removes its row live", function () {
     if (!(await listed())) throw new Error(`${COMMUNITY} was never listed after joining`);
     await shot("before-leave");
     await openCommunity(browser, COMMUNITY);
-    await press(browser, await shown(browser, ".community-leave-btn", NET_WAIT_MS));
+    // The sidebar's Search shares Leave's class (its styling): the Leave button by its word.
+    await press(browser, await shown(browser, "button.community-leave-btn*=Leave", NET_WAIT_MS));
     await resolveIntent(browser, { passphrase: me.passphrase, appearMs: 1500 }).catch(() => undefined);
     await switchTo(browser, BUDDY);
     await communitiesTab(browser);
