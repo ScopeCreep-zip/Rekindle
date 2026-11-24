@@ -339,6 +339,7 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("VoiceMessageSend", Some(IntentKind::SendVoiceMessage)),
     ("VoiceMessageAudio", None),
     ("MessageSearch", None),
+    ("LocalSearch", None),
     ("ReactionAdd", Some(IntentKind::AddReaction)),
     ("ReactionRemove", Some(IntentKind::RemoveReaction)),
     ("ThreadCreate", Some(IntentKind::CreateThread)),

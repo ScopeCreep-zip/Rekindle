@@ -194,6 +194,16 @@ pub enum IpcRequest {
     /// The Downloads view: list, start (resume), stop, open (reveal), remove.
     Transfer(TransferRequest),
 
+    // ── Local search (plan E7.2 G11) ───────────────────────────────
+    /// Search what we already hold, scoped by the view it was opened from
+    /// (SK2-G §8): friends, groups and members we know; our servers; our
+    /// held files; or one direct conversation's messages. Answered from
+    /// the database only (`dto::local_search::LocalSearchResult`).
+    LocalSearch {
+        scope: rekindle_types::dto::local_search::LocalSearchScope,
+        query: String,
+    },
+
     // ── DMs ───────────────────────────────────────────────────────
     /// Send a direct message.
     DmSend {

@@ -105,6 +105,7 @@ impl IpcRequest {
 
             Self::Community(request) => request.class(),
             Self::Transfer(request) => request.class(),
+            Self::LocalSearch { .. } => ("LocalSearch", Query, Authenticated),
             Self::Servers(request) => request.class(),
 
             Self::DmSend { .. } => ("DmSend", Write, Authenticated),

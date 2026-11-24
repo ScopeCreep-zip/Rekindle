@@ -3,15 +3,17 @@
 //! Host's selection, and a feature gap `NotBuiltYet`.
 
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse, ServersRequest};
+use rekindle_types::dto::local_search::LocalSearchScope;
 use rekindle_types::dto::skin_action::{
     EngineMenu, EngineView, PackUrl, SkinAction as A, SkinSettingsTab,
 };
 use rekindle_types::dto::skin_run::{CallOp, ShellOp, ShellPanel, SkinRun, SkinSelection};
 use rekindle_types::presence::SessionStatus;
 
-use super::actions::{addressed, map, resolve, Launchers, Mapped, Resolved, Selected, Selections};
+use super::actions::{addressed, map, resolve, Launchers, Mapped, Resolved, Selected, Views};
 use super::reads::Reads;
 use super::rooms::{Room, Rooms};
+use super::SkinState;
 
 const SELECTED_FRIEND_KEY: &str = "bobkey";
 
@@ -136,7 +138,10 @@ fn a_selection_action_is_refused_while_nothing_is_selected() {
 #[test]
 fn unbuilt_actions_yield_not_built_yet() {
     for (action, message) in [
-        (A::SearchFor, "Search isn't in Rekindle yet (plan E7.2 G11)"),
+        (
+            A::UploadSelected,
+            "Uploading a picture or video isn't in Rekindle yet (plan E7.2 G14)",
+        ),
         (
             A::DeleteSelected,
             "Deleting a picture or video isn't in Rekindle yet (plan E7.2 G14)",
@@ -196,13 +201,14 @@ fn show_voice_window_shows_the_call_or_voice_session() {
 
 #[test]
 fn resolve_takes_the_selection_from_the_host() {
-    let selections = Selections::default();
+    let skin = SkinState::default();
+    let selections = &skin.selection;
     let chat = || IpcRequest::RunSkinAction {
         window: "buddy-list".into(),
         node: "ChatButton".into(),
         action: A::ChatFriend,
     };
-    assert!(resolve(&selections, &Reads::default(), chat()).is_err());
+    assert!(resolve(&skin, &Reads::default(), chat()).is_err());
     selections.set(
         "buddy-list",
         Some(SkinSelection::Friend {
@@ -210,7 +216,7 @@ fn resolve_takes_the_selection_from_the_host() {
         }),
     );
     assert!(matches!(
-        resolve(&selections, &Reads::default(), chat()),
+        resolve(&skin, &Reads::default(), chat()),
         Ok(Resolved::Run {
             request: IpcRequest::RunSkinAction { .. },
             ..
@@ -222,7 +228,7 @@ fn resolve_takes_the_selection_from_the_host() {
         action: A::LogOff,
     };
     assert!(matches!(
-        resolve(&selections, &Reads::default(), logoff),
+        resolve(&skin, &Reads::default(), logoff),
         Ok(Resolved::Request(IpcRequest::Logout))
     ));
 }
@@ -490,4 +496,99 @@ fn a_popups_view_switch_is_addressed_to_its_launcher() {
     );
     launchers.set(popup, None);
     assert_eq!(addressed(&launchers, popup, show()), (show(), None));
+}
+
+/// `SearchFor` pressed in `window` (SK2-G §8), as `resolve` maps it.
+fn search_for(skin: &SkinState, window: &str) -> SkinRun {
+    let pressed = IpcRequest::RunSkinAction {
+        window: window.into(),
+        node: "SearchButton".into(),
+        action: A::SearchFor,
+    };
+    match resolve(skin, &Reads::default(), pressed) {
+        Ok(Resolved::Run { run, .. }) => run,
+        other => panic!("{other:?}"),
+    }
+}
+
+fn open_search(scope: LocalSearchScope) -> SkinRun {
+    SkinRun::Shell(ShellOp::OpenSearch { scope })
+}
+
+fn show(views: &Views, window: &str, view: EngineView) {
+    views.record(window, &SkinRun::Shell(ShellOp::ShowView(view)), None);
+}
+
+#[test]
+fn search_for_searches_the_windows_recorded_view() {
+    let skin = SkinState::default();
+    // The buddy list opens on its friends.
+    assert_eq!(
+        search_for(&skin, "buddy-list"),
+        open_search(LocalSearchScope::Friends)
+    );
+    show(&skin.views, "buddy-list", EngineView::Servers);
+    assert_eq!(
+        search_for(&skin, "buddy-list"),
+        open_search(LocalSearchScope::Servers)
+    );
+    show(&skin.views, "buddy-list", EngineView::Files);
+    assert_eq!(
+        search_for(&skin, "buddy-list"),
+        open_search(LocalSearchScope::Files)
+    );
+    show(&skin.views, "buddy-list", EngineView::Friends);
+    assert_eq!(
+        search_for(&skin, "buddy-list"),
+        open_search(LocalSearchScope::Friends)
+    );
+    // A view switch handed on from a popup is its launcher's view.
+    skin.views.record(
+        "popup-1",
+        &SkinRun::Launcher {
+            window: "buddy-list".into(),
+        },
+        Some(&("buddy-list".into(), ShellOp::ShowView(EngineView::Servers))),
+    );
+    skin.launchers.set("popup-1", Some("buddy-list"));
+    assert_eq!(
+        search_for(&skin, "buddy-list"),
+        open_search(LocalSearchScope::Servers)
+    );
+    assert_eq!(
+        search_for(&skin, "popup-1"),
+        open_search(LocalSearchScope::Servers)
+    );
+    // The pictures and videos have nothing local to search yet (G14).
+    show(&skin.views, "buddy-list", EngineView::Videos);
+    assert_eq!(
+        search_for(&skin, "buddy-list"),
+        SkinRun::NotBuiltYet {
+            action: A::SearchFor
+        }
+    );
+}
+
+#[test]
+fn search_for_in_a_chat_window_searches_its_conversation() {
+    let skin = SkinState::default();
+    skin.selection.set(
+        "chat-0123456789abcdef",
+        Some(SkinSelection::Friend {
+            public_key: SELECTED_FRIEND_KEY.into(),
+        }),
+    );
+    assert_eq!(
+        search_for(&skin, "chat-0123456789abcdef"),
+        open_search(LocalSearchScope::Conversation {
+            conversation_id: SELECTED_FRIEND_KEY.into()
+        })
+    );
+    let group = "0a".repeat(16);
+    assert_eq!(
+        search_for(&skin, &format!("chat-g{group}")),
+        open_search(LocalSearchScope::Conversation {
+            conversation_id: group
+        })
+    );
 }

@@ -437,6 +437,7 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
         HostCall::Request("VoiceMessageAudio"),
     ),
     ("search_messages", HostCall::Request("MessageSearch")),
+    ("local_search", HostCall::Request("LocalSearch")),
     ("upload_emoji", HostCall::Request("EmojiUpload")),
     ("upload_sticker", HostCall::Request("StickerUpload")),
     ("delete_emoji", HostCall::Request("ExpressionDelete")),

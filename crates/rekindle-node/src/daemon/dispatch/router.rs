@@ -97,6 +97,10 @@ async fn route(
         IpcRequest::Community(request) => community::route(ctx, state, request).await,
         // ── File transfers (plan E7.2 G12) ──
         IpcRequest::Transfer(request) => super::transfers::route(ctx, request).await,
+        // ── Local search (plan E7.2 G11) ──
+        IpcRequest::LocalSearch { scope, query } => {
+            super::local_search::handle(ctx, state, scope, query).await
+        }
 
         // ── Friends, DMs and session resets (plan E2.1) ─────────
         request @ (IpcRequest::FriendAddFromCode { .. }

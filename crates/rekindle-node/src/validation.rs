@@ -476,6 +476,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
 
         IpcRequest::Community(request) => community::check(request),
         IpcRequest::Transfer(request) => transfers::check(request),
+        IpcRequest::LocalSearch { scope, query } => local_search::check(scope, query),
 
         IpcRequest::PresenceSet { .. }
         | IpcRequest::PresenceSetMessage { .. }
@@ -561,6 +562,7 @@ mod community_onboarding;
 mod expressions;
 mod friends;
 mod group_dm;
+mod local_search;
 mod pins;
 mod rich_messaging;
 #[cfg(test)]

@@ -60,6 +60,8 @@ pub(crate) mod infoview;
 mod infoview_tests;
 mod intent_select;
 pub(crate) mod journal_entry;
+#[cfg(test)]
+mod local_search_tests;
 pub(crate) mod own_prekeys;
 pub(crate) mod own_presence;
 pub(crate) mod own_profile;

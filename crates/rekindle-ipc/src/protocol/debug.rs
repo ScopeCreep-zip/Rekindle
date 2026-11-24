@@ -152,6 +152,7 @@ impl std::fmt::Debug for IpcRequest {
             | Self::PresenceSetMessage { .. }
             | Self::PresenceGet
             | Self::GameTotalsGet
+            | Self::LocalSearch { .. }
             | Self::FriendGameTotalsGet { .. }
             | Self::ProfileBioGet
             | Self::FriendBioGet { .. }
@@ -218,6 +219,12 @@ impl IpcRequest {
                 .finish(),
             Self::PresenceGet => write!(f, "PresenceGet"),
             Self::GameTotalsGet => write!(f, "GameTotalsGet"),
+            // The query is the user's text: only its length is logged.
+            Self::LocalSearch { scope, query } => f
+                .debug_struct("LocalSearch")
+                .field("scope", scope)
+                .field("query_len", &query.len())
+                .finish(),
             Self::FriendGameTotalsGet { public_key } => f
                 .debug_struct("FriendGameTotalsGet")
                 .field("public_key", public_key)
