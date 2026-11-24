@@ -10,7 +10,7 @@
 
 use std::time::Duration;
 
-use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::{GroupDmRequest, IpcRequest};
 use rekindle_netsim::{Fault, Netsim};
 use rekindle_types::dto::dm::DmMessage;
 use rekindle_types::dto::group_dm::GroupDmView;
@@ -23,18 +23,19 @@ use crate::pair::{befriend, key, retired, unretired_chain, LIMIT};
 /// The group as `node` lists it (a pending invite included).
 pub(crate) async fn view(node: &SimNode, group_id: &str) -> Option<GroupDmView> {
     let groups: Vec<GroupDmView> =
-        serde_json::from_value(node.ok(IpcRequest::GroupDmList).await).expect("the group list");
+        serde_json::from_value(node.ok(IpcRequest::GroupDm(GroupDmRequest::List)).await)
+            .expect("the group list");
     groups.into_iter().find(|g| g.group_id == group_id)
 }
 
 /// `node`'s stored history of the group, oldest first.
 pub(crate) async fn history(node: &SimNode, group_id: &str) -> Vec<DmMessage> {
     serde_json::from_value(
-        node.ok(IpcRequest::GroupDmMessages {
+        node.ok(IpcRequest::GroupDm(GroupDmRequest::Messages {
             group_id: group_id.to_string(),
             limit: 100,
             before: None,
-        })
+        }))
         .await,
     )
     .expect("the group history")
@@ -55,10 +56,10 @@ pub(crate) async fn reads(node: &SimNode, group_id: &str, body: &str) -> bool {
 }
 
 pub(crate) async fn send(node: &SimNode, group_id: &str, body: &str) {
-    node.ok(IpcRequest::GroupDmSend {
+    node.ok(IpcRequest::GroupDm(GroupDmRequest::Send {
         group_id: group_id.to_string(),
         body: body.to_string(),
-    })
+    }))
     .await;
 }
 
@@ -90,11 +91,11 @@ pub(crate) async fn three_members(sim: &Netsim, nodes: &mut [SimNode]) -> String
     let members = vec![key(&nodes[1]), key(&nodes[2])];
     let gid: String = serde_json::from_value(
         nodes[0]
-            .ok(IpcRequest::GroupDmCreate {
+            .ok(IpcRequest::GroupDm(GroupDmRequest::Create {
                 name: "raid night".to_string(),
                 members,
                 origin_peer: None,
-            })
+            }))
             .await,
     )
     .expect("the group is created");
@@ -107,9 +108,9 @@ pub(crate) async fn three_members(sim: &Netsim, nodes: &mut [SimNode]) -> String
             "node {} holds the invite",
             node.index
         );
-        node.ok(IpcRequest::GroupDmAccept {
+        node.ok(IpcRequest::GroupDm(GroupDmRequest::Accept {
             group_id: gid.clone(),
-        })
+        }))
         .await;
     }
     // Each sends once the previous message is read by everyone: everyone
@@ -160,9 +161,9 @@ async fn a_group_of_non_friends_talks_and_a_leave_and_a_block_rotate() {
     let ann_events = nodes[0].events().await;
     let (ann_epoch, bea_epoch) = (epoch(&nodes[0], &gid).await, epoch(&nodes[1], &gid).await);
     nodes[2]
-        .ok(IpcRequest::GroupDmLeave {
+        .ok(IpcRequest::GroupDm(GroupDmRequest::Leave {
             group_id: gid.clone(),
-        })
+        }))
         .await;
     for node in &nodes[..2] {
         let before = if node.index == 0 {
@@ -447,11 +448,11 @@ async fn posts_right_after_accepting_reach_every_member() {
     befriend(&sim, &nodes[2], &nodes[0]).await;
     let gid: String = serde_json::from_value(
         nodes[0]
-            .ok(IpcRequest::GroupDmCreate {
+            .ok(IpcRequest::GroupDm(GroupDmRequest::Create {
                 name: "raid night".to_string(),
                 members: vec![key(&nodes[1]), key(&nodes[2])],
                 origin_peer: None,
-            })
+            }))
             .await,
     )
     .expect("the group is created");
@@ -471,15 +472,15 @@ async fn posts_right_after_accepting_reach_every_member() {
         per_mille: 1000,
     });
     nodes[1]
-        .ok(IpcRequest::GroupDmAccept {
+        .ok(IpcRequest::GroupDm(GroupDmRequest::Accept {
             group_id: gid.clone(),
-        })
+        }))
         .await;
     send(&nodes[1], &gid, "from Bea").await;
     nodes[2]
-        .ok(IpcRequest::GroupDmAccept {
+        .ok(IpcRequest::GroupDm(GroupDmRequest::Accept {
             group_id: gid.clone(),
-        })
+        }))
         .await;
     send(&nodes[2], &gid, "from Cat").await;
     send(&nodes[0], &gid, "from Ann").await;

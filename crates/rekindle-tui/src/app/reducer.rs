@@ -4,7 +4,7 @@ use super::super::action::{Action, SearchMode, ToastLevel};
 use super::super::terminal::Tui;
 use super::App;
 use crate::views::ViewKind;
-use rekindle_ipc::protocol::{ChannelMessageRequest, IpcRequest, ServersRequest};
+use rekindle_ipc::protocol::{ChannelMessageRequest, GroupDmRequest, IpcRequest, ServersRequest};
 use rekindle_types::subscription_events::SubscriptionEvent;
 
 impl App {
@@ -167,13 +167,22 @@ impl App {
             Action::ShowGroupMessages { group_id } => self.load_group_messages(group_id),
             Action::LoadDmHistory { peer_key } => self.load_dm_history(peer_key),
             Action::AcceptGroupInvite { group_id } => {
-                self.spawn_group_request(IpcRequest::GroupDmAccept { group_id }, "accept group");
+                self.spawn_group_request(
+                    IpcRequest::GroupDm(GroupDmRequest::Accept { group_id }),
+                    "accept group",
+                );
             }
             Action::DeclineGroupInvite { group_id } => {
-                self.spawn_group_request(IpcRequest::GroupDmDecline { group_id }, "decline group");
+                self.spawn_group_request(
+                    IpcRequest::GroupDm(GroupDmRequest::Decline { group_id }),
+                    "decline group",
+                );
             }
             Action::LeaveGroup { group_id } => {
-                self.spawn_group_request(IpcRequest::GroupDmLeave { group_id }, "leave group");
+                self.spawn_group_request(
+                    IpcRequest::GroupDm(GroupDmRequest::Leave { group_id }),
+                    "leave group",
+                );
             }
             Action::ShowVoiceSession { community, channel } => {
                 self.nav.navigate(

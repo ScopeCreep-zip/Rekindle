@@ -4,7 +4,7 @@
 //! Only the creator invites (`inviteRefused` says so to the others), and a
 //! room never passes eight members.
 
-use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::{GroupDmRequest, IpcRequest};
 
 use crate::group_dm::{reads, send, three_members, view};
 use crate::harness::{eventually, start};
@@ -22,10 +22,10 @@ async fn the_creator_grows_a_room_of_three_to_four_and_never_past_eight() {
     let bea = view(&nodes[1], &gid).await.expect("Bea's room");
     assert!(bea.invite_refused.is_some_and(|r| r.contains("creator")));
     let refused = nodes[1]
-        .call(IpcRequest::GroupDmInvite {
+        .call(IpcRequest::GroupDm(GroupDmRequest::Invite {
             group_id: gid.clone(),
             members: vec![key(&nodes[3])],
-        })
+        }))
         .await;
     match refused {
         Ok(_) => panic!("Bea grew a room she did not create"),
@@ -33,10 +33,10 @@ async fn the_creator_grows_a_room_of_three_to_four_and_never_past_eight() {
     }
 
     nodes[0]
-        .ok(IpcRequest::GroupDmInvite {
+        .ok(IpcRequest::GroupDm(GroupDmRequest::Invite {
             group_id: gid.clone(),
             members: vec![key(&nodes[3])],
-        })
+        }))
         .await;
     assert!(
         eventually(&sim, LIMIT, || async {
@@ -48,9 +48,9 @@ async fn the_creator_grows_a_room_of_three_to_four_and_never_past_eight() {
         "Dan holds the invite to the room of four"
     );
     nodes[3]
-        .ok(IpcRequest::GroupDmAccept {
+        .ok(IpcRequest::GroupDm(GroupDmRequest::Accept {
             group_id: gid.clone(),
-        })
+        }))
         .await;
     for node in &nodes {
         assert!(
@@ -79,10 +79,10 @@ async fn the_creator_grows_a_room_of_three_to_four_and_never_past_eight() {
     // Five more would make nine.
     let five: Vec<String> = "56789".chars().map(|c| c.to_string().repeat(64)).collect();
     let full = nodes[0]
-        .call(IpcRequest::GroupDmInvite {
+        .call(IpcRequest::GroupDm(GroupDmRequest::Invite {
             group_id: gid.clone(),
             members: five,
-        })
+        }))
         .await;
     match full {
         Ok(_) => panic!("the room passed eight members"),

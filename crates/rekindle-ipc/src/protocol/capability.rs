@@ -147,27 +147,17 @@ impl IpcRequest {
             Self::Transfer(request) => request.agent_capability(),
             Self::Servers(request) => request.agent_capability(),
             Self::Lobby(request) => Some(request.agent_capability()),
+            Self::GroupDm(request) => Some(request.agent_capability()),
             Self::DmInbox { .. }
             | Self::DmHistory { .. }
-            | Self::GroupDmList
-            | Self::GroupDmMessages { .. }
             | Self::DisappearingGet { .. } => Some(C::ImHistory),
             Self::DmSend { .. }
             | Self::GameInviteSend { .. }
             | Self::OutboxRetry { .. }
             | Self::OutboxDiscard { .. }
-            | Self::GroupDmCreate { .. }
-            | Self::GroupDmAccept { .. }
-            | Self::GroupDmDecline { .. }
-            | Self::GroupDmLeave { .. }
-            | Self::GroupDmRename { .. }
-            | Self::GroupDmInvite { .. }
             | Self::DisappearingSet { .. }
-            | Self::GroupDmSend { .. }
-            | Self::GroupDmTyping { .. }
             | Self::DmTyping { .. }
-            | Self::DmMarkRead { .. }
-            | Self::GroupDmMarkRead { .. } => Some(C::ImWrite),
+            | Self::DmMarkRead { .. } => Some(C::ImWrite),
             Self::PresenceSet { .. }
             | Self::PresenceSetMessage { .. }
             | Self::GamePresenceSet { .. }

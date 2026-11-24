@@ -14,7 +14,7 @@ use rekindle_types::key_format::{
 };
 
 use rekindle_ipc::noise_keys::validate_agent_name;
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse, ServersRequest};
+use rekindle_ipc::protocol::{GroupDmRequest, IpcRequest, IpcResponse, ServersRequest};
 
 /// Largest identity archive (base64) an import takes: the bus's whole
 /// application frame (`framing::MAX_APP_FRAME`, 16 MiB).
@@ -444,20 +444,13 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::DmMarkRead { .. }
         | IpcRequest::OutboxRetry { .. }
         | IpcRequest::OutboxDiscard { .. } => friends::check(request),
-        IpcRequest::GroupDmCreate { .. }
-        | IpcRequest::GroupDmAccept { .. }
-        | IpcRequest::GroupDmDecline { .. }
-        | IpcRequest::GroupDmLeave { .. }
-        | IpcRequest::GroupDmRename { .. }
-        | IpcRequest::GroupDmInvite { .. }
-        | IpcRequest::Lobby(_)
-        | IpcRequest::DisappearingSet { .. }
-        | IpcRequest::DisappearingGet { .. }
-        | IpcRequest::GroupDmSend { .. }
-        | IpcRequest::GroupDmTyping { .. }
-        | IpcRequest::GroupDmList
-        | IpcRequest::GroupDmMessages { .. }
-        | IpcRequest::GroupDmMarkRead { .. } => group_dm::check(request),
+        IpcRequest::GroupDm(GroupDmRequest::Create { .. } | GroupDmRequest::Accept {
+.. } | GroupDmRequest::Decline { .. } | GroupDmRequest::Leave { .. } |
+GroupDmRequest::Rename { .. } | GroupDmRequest::Invite { .. } |
+GroupDmRequest::Send { .. } | GroupDmRequest::Typing { .. } |
+GroupDmRequest::List | GroupDmRequest::Messages { .. } |
+GroupDmRequest::MarkRead { .. }) | IpcRequest::Lobby(_) |
+IpcRequest::DisappearingSet { .. } | IpcRequest::DisappearingGet { .. } => group_dm::check(request),
         IpcRequest::GameInviteSend {
             public_key: key,
             game_id,
