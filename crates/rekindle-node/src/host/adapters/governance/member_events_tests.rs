@@ -45,7 +45,7 @@ fn transitions(
     next: &GovernanceState,
     me: Option<&PseudonymKey>,
 ) -> serde_json::Value {
-    json(member_transitions(C, prev, next, me, names, names))
+    json(member_transitions(C, &prev.diff(next), me, names, names))
 }
 
 fn json(events: Vec<MembershipEvent>) -> serde_json::Value {
@@ -87,7 +87,7 @@ fn a_ban_is_one_banned_and_our_own_removal_is_left_to_own_removal() {
     next.bans.insert(key(2));
     next.removed.insert(key(2), OpStamp::MIN);
     next.removed_by.insert(key(2), key(1));
-    let events = member_transitions(C, &prev, &next, Some(&key(1)), names, names);
+    let events = member_transitions(C, &prev.diff(&next), Some(&key(1)), names, names);
     assert!(
         matches!(&events[..], [MembershipEvent::Banned { target_pseudonym, removed_by: Some(by), .. }]
             if *target_pseudonym == key(2).to_hex() && *by == key(1).to_hex()),
@@ -141,18 +141,30 @@ fn a_merged_leave_of_another_member_is_the_one_departure_rotated() {
     next.members.remove(&key(3));
     next.removed.insert(key(3), OpStamp::MIN);
     next.removed_by.insert(key(3), key(1));
-    let events = member_transitions(C, &prev, &next, Some(&key(1)), names, names);
+    let events = member_transitions(C, &prev.diff(&next), Some(&key(1)), names, names);
     let leaver = key(2).to_hex();
     assert_eq!(
         departures_to_rotate(&events, Some(&key(1))),
         vec![leaver.as_str()]
     );
-    let own = member_transitions(C, &prev, &departed(&prev, 1), Some(&key(1)), names, names);
+    let own = member_transitions(
+        C,
+        &prev.diff(&departed(&prev, 1)),
+        Some(&key(1)),
+        names,
+        names,
+    );
     assert!(
         departures_to_rotate(&own, Some(&key(1))).is_empty(),
         "our own leave rotates nothing of ours"
     );
-    let join = member_transitions(C, &with(&[2]), &with(&[1, 2]), Some(&key(2)), names, names);
+    let join = member_transitions(
+        C,
+        &with(&[2]).diff(&with(&[1, 2])),
+        Some(&key(2)),
+        names,
+        names,
+    );
     assert!(departures_to_rotate(&join, Some(&key(2))).is_empty());
 }
 
@@ -180,7 +192,7 @@ fn a_join_before_the_card_is_read_carries_no_name_not_the_profile_row() {
     let prev = with(&[2]);
     let next = with(&[1, 2]);
     let no_card = |_: &PseudonymKey| None;
-    let events = member_transitions(C, &prev, &next, Some(&key(2)), no_card, names);
+    let events = member_transitions(C, &prev.diff(&next), Some(&key(2)), no_card, names);
     assert_eq!(
         json(events),
         json(vec![MembershipEvent::Joined {
