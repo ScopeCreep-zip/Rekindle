@@ -25,7 +25,7 @@ export const voiceCommands = {
    */
   serverMuteMember: (
     communityId: string,
-    channelId: string,
+    channelId: string | null,
     targetPseudonym: string,
     muted: boolean,
   ) =>
@@ -42,7 +42,7 @@ export const voiceCommands = {
    */
   serverDeafenMember: (
     communityId: string,
-    channelId: string,
+    channelId: string | null,
     targetPseudonym: string,
     deafened: boolean,
   ) =>

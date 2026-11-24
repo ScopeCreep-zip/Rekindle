@@ -8,7 +8,7 @@ import type { NotJoinableReason } from "../ipc/commands/types";
 import type { DeviceStatus } from "../ipc/commands/community";
 import type { Message } from "../stores/chat.store";
 import type { AutoModRule, Community, Channel, Expression, Member, MemberLocation } from "../stores/community.store";
-import type { MemberGroup, TargetModeration } from "../ipc/commands/dto";
+import type { MemberGroup, MemberModeration } from "../ipc/commands/dto";
 
 /** Convert a single backend FriendInfo to a frontend Friend. */
 export function transformFriend(f: FriendInfo): Friend {
@@ -258,7 +258,7 @@ export function transformMember(m: {
   location?: MemberLocation | null;
   lastActive?: number;
   group: MemberGroup;
-  canModerateTarget: TargetModeration;
+  moderation: MemberModeration;
   outranks: boolean;
 }): Member {
   return {
@@ -276,7 +276,7 @@ export function transformMember(m: {
     location: m.location ?? null,
     lastActive: m.lastActive ?? 0,
     group: m.group,
-    canModerateTarget: m.canModerateTarget,
+    moderation: m.moderation,
     outranks: m.outranks,
   };
 }

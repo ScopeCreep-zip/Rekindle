@@ -10,7 +10,14 @@ use rekindle_governance::state::{
 use rekindle_types::id::{ChannelId, PseudonymKey, RoleId};
 use rekindle_types::permissions::{SEND_MESSAGES, VIEW_CHANNELS};
 
+use rekindle_types::dto::community_capability::CommunityCapability;
+
 use super::{permission_transitions, PermissionTransitions};
+
+/// The members a transition names, in order.
+fn moved(changes: &PermissionTransitions) -> Vec<String> {
+    changes.members.keys().cloned().collect()
+}
 
 fn key(byte: u8) -> PseudonymKey {
     PseudonymKey([byte; 32])
@@ -79,13 +86,9 @@ fn a_member_overwrite_moves_that_member_and_its_channel() {
             stamp: stamp(3),
         },
     );
-    assert_eq!(
-        permission_transitions(&prev, &next, &prev.diff(&next), 100),
-        PermissionTransitions {
-            members: vec![key(2).to_hex()],
-            channels: vec![hex::encode([7; 16])],
-        }
-    );
+    let changes = permission_transitions(&prev, &next, &prev.diff(&next), 100);
+    assert_eq!(moved(&changes), vec![key(2).to_hex()]);
+    assert_eq!(changes.channels, vec![hex::encode([7; 16])]);
 }
 
 #[test]
@@ -102,7 +105,12 @@ fn a_timeout_moves_the_member_and_its_expiry_between_merges_does_not() {
         },
     );
     assert_eq!(
-        permission_transitions(&prev, &next, &prev.diff(&next), 120).members,
+        moved(&permission_transitions(
+            &prev,
+            &next,
+            &prev.diff(&next),
+            120
+        )),
         vec![key(1).to_hex()]
     );
     // Run out: both sides are read at the same instant, so no change.
@@ -132,7 +140,54 @@ fn a_co_creator_who_left_is_named() {
     let prev = merge_entries_under(&cert, &[(key(2), vec![at(5, joined.clone())])]);
     let next = merge_entries_under(&cert, &[(key(2), vec![at(5, joined), at(6, left)])]);
     assert_eq!(
-        permission_transitions(&prev, &next, &prev.diff(&next), 0).members,
+        moved(&permission_transitions(&prev, &next, &prev.diff(&next), 0)),
         vec![key(2).to_hex()]
+    );
+}
+
+/// Granting a member a role that carries `MANAGE_CHANNELS` names it, and
+/// its event's map no longer denies the channel controls; the revoke
+/// denies them again with the permission that grants them.
+#[test]
+fn a_grant_carries_the_new_denied_map() {
+    use rekindle_types::permissions::MANAGE_CHANNELS;
+    let mut prev = base();
+    prev.roles.insert(
+        RoleId([5; 16]),
+        RoleState {
+            name: "Builders".into(),
+            permissions: MANAGE_CHANNELS,
+            position: 1,
+            color: 0,
+            hoist: false,
+            mentionable: false,
+            self_assignable: false,
+            exclusion_group: None,
+            stamp: OpStamp::MIN,
+        },
+    );
+    let mut next = prev.clone();
+    next.role_assignments
+        .entry(key(1))
+        .or_default()
+        .insert(RoleId([5; 16]));
+    let plain = permission_transitions(&next, &prev, &next.diff(&prev), 100);
+    assert_eq!(
+        plain.members[&key(1).to_hex()].get(&CommunityCapability::ManageChannels),
+        Some(&"You need the Manage Channels permission.".to_owned())
+    );
+    let granted = permission_transitions(&prev, &next, &prev.diff(&next), 100);
+    assert_eq!(moved(&granted), vec![key(1).to_hex()]);
+    let denied = &granted.members[&key(1).to_hex()];
+    for cap in [
+        CommunityCapability::ManageChannels,
+        CommunityCapability::SetTopic,
+        CommunityCapability::ManageServers,
+    ] {
+        assert!(!denied.contains_key(&cap), "{cap:?} still denied");
+    }
+    assert_eq!(
+        denied.get(&CommunityCapability::ManageRoles),
+        Some(&"You need the Manage Roles permission.".to_owned())
     );
 }

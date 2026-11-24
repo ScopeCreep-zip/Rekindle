@@ -238,6 +238,11 @@ fn invites_and_subkeys() -> Vec<Sample> {
             GovernanceEvent::EffectivePermissionsChanged {
                 community: community(),
                 member: pk('p'),
+                denied: [(
+                    rekindle_types::dto::community_capability::CommunityCapability::BanMembers,
+                    "You're timed out until 14:05.".to_owned(),
+                )]
+                .into(),
             },
         ),
         ev(
