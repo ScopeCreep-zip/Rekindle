@@ -19,8 +19,8 @@
 //! outside the text rows (a bevel, an edge) is never under a label's text,
 //! so it never decides the backing. When the worst pixel under the labels
 //! meets the floor the slot has no band for that skin; else the skin layer
-//! sets it and the container paints the backing once, behind its text row
-//! ([`super::css`]), never a box per label.
+//! sets it and the container paints the backing once, across its whole
+//! strip ([`super::css`]), never a box per label or hugging the text row.
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
@@ -81,7 +81,7 @@ pub fn label_grounds(
 
 /// The skin layer setting the band of each labelled slot (but the
 /// titlebar's) whose own art does not carry its labels on `resolved`: once
-/// per slot, behind its text row ([`super::css`]). A slot whose art meets
+/// per slot, across its whole strip ([`super::css`]). A slot whose art meets
 /// its floor gets no band; one whose art does not read gets the band.
 #[must_use]
 pub fn label_css(

@@ -18,7 +18,7 @@
     z-index: -1;
     padding: inherit;
     border-radius: inherit;
-    background: linear-gradient(var(--skin-region-statusbar-band), var(--skin-region-statusbar-band)) 0 50% / 100% 16.5px no-repeat content-box;
+    background: linear-gradient(var(--skin-region-statusbar-band), var(--skin-region-statusbar-band)) 0 0 / 100% 100% no-repeat border-box;
     pointer-events: none;
   }
   .status-picker-arrow {

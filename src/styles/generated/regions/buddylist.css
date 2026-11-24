@@ -18,7 +18,7 @@
     z-index: -1;
     padding: inherit;
     border-radius: inherit;
-    background: linear-gradient(var(--skin-region-buddylist-menubar-band), var(--skin-region-buddylist-menubar-band)) 0 50% / 100% 16.5px no-repeat content-box;
+    background: linear-gradient(var(--skin-region-buddylist-menubar-band), var(--skin-region-buddylist-menubar-band)) 0 0 / 100% 100% no-repeat border-box;
     pointer-events: none;
   }
   .buddy-list-window .identity-bar {
@@ -36,7 +36,7 @@
     z-index: -1;
     padding: inherit;
     border-radius: inherit;
-    background: linear-gradient(var(--skin-region-buddylist-infobar-band), var(--skin-region-buddylist-infobar-band)) 0 0 / 100% 100% no-repeat content-box;
+    background: linear-gradient(var(--skin-region-buddylist-infobar-band), var(--skin-region-buddylist-infobar-band)) 0 0 / 100% 100% no-repeat border-box;
     pointer-events: none;
   }
   .buddy-tab {
@@ -90,7 +90,7 @@
     z-index: -1;
     padding: inherit;
     border-radius: inherit;
-    background: linear-gradient(var(--skin-region-buddylist-group-header-band), var(--skin-region-buddylist-group-header-band)) 0 0 / 100% 16.5px no-repeat content-box;
+    background: linear-gradient(var(--skin-region-buddylist-group-header-band), var(--skin-region-buddylist-group-header-band)) 0 0 / 100% 100% no-repeat border-box;
     pointer-events: none;
   }
   .buddy-group-header:hover,
@@ -112,7 +112,7 @@
     z-index: -1;
     padding: inherit;
     border-radius: inherit;
-    background: linear-gradient(var(--skin-region-buddylist-row-selected-band), var(--skin-region-buddylist-row-selected-band)) 0 0 / 100% 100% no-repeat content-box;
+    background: linear-gradient(var(--skin-region-buddylist-row-selected-band), var(--skin-region-buddylist-row-selected-band)) 0 0 / 100% 100% no-repeat border-box;
     pointer-events: none;
   }
   .buddy-list-window .action-bar {
@@ -130,7 +130,7 @@
     z-index: -1;
     padding: inherit;
     border-radius: inherit;
-    background: linear-gradient(var(--skin-region-buddylist-actionbar-band), var(--skin-region-buddylist-actionbar-band)) 0 0 / 100% 100% no-repeat content-box;
+    background: linear-gradient(var(--skin-region-buddylist-actionbar-band), var(--skin-region-buddylist-actionbar-band)) 0 0 / 100% 100% no-repeat border-box;
     pointer-events: none;
   }
   .buddy-list-window .action-bar-icon-btn {
