@@ -34,21 +34,6 @@
     color: var(--color-xfire-text-secondary);
   }
 
-  /* FX3: a message from the gap while the community key is pending: waiting,
-   * in the queued message's colour, not a failure. */
-  .message-key-waiting {
-    padding: 8px 12px;
-    color: var(--color-xfire-away-text);
-    font-style: italic;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .message-key-waiting-icon {
-    color: var(--color-xfire-away-text);
-  }
-
   /* FX3: waiting for the community key from a member: a notice, never a block. */
   .key-pending-notice {
     padding: 6px 12px;
