@@ -1,7 +1,7 @@
 MainTitleBar Drag
   XfireLogo Logo label "Rekindle" cover [0, 0, 67, 19] glyph RekindleWordmark
-  CloseBox Button target [-1, 0, 18, 24] art [1, 0, 9, 5] Short
-  MinimizeBox Button target [-7, 0, 17, 24] art [7, 0, 9, 5] Short
+  CloseBox Button target [-1, 0, 24, 24] art [1, 0, 9, 5] Size
+  MinimizeBox Button target [-14, 0, 24, 24] art [14, 0, 9, 5] Size
 BaseBoard Group
   ButtonArea ButtonBar
     FriendsButtons ButtonRow(Friends)
@@ -37,10 +37,10 @@ MenuBar MenuBar
     FileMenu Part target [0, -6, 50, 24] art [0, 6, 50, 12] Size
   ToolsMenuText MenuTitle label "Tools"
     ToolsMenuTextT Part
-    ToolsMenu Part target [0, -6, 34, 23] art [0, 6, 34, 12] Short
+    ToolsMenu Part target [0, -7, 34, 24] art [0, 7, 34, 12] Size
   HelpMenuText MenuTitle label "Help"
     HelpMenuTextT Part
-    HelpMenu Part target [0, -6, 28, 23] art [0, 6, 28, 12] Short
+    HelpMenu Part target [0, -7, 28, 24] art [0, 7, 28, 12] Size
 AdArea AdArea
   AdView Part
 TabHeader TabStrip

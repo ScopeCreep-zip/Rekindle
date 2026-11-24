@@ -20,6 +20,7 @@ pub mod pieces;
 pub mod place;
 pub mod popup;
 pub mod roles;
+mod settle;
 mod tab_step;
 pub mod target;
 pub mod text_box;
@@ -43,6 +44,8 @@ mod overlap_tests;
 mod place_tests;
 #[cfg(test)]
 mod rail_tests;
+#[cfg(test)]
+mod settle_tests;
 #[cfg(test)]
 mod stack_tests;
 #[cfg(test)]
