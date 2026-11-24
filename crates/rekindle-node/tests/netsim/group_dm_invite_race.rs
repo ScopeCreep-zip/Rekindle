@@ -7,7 +7,7 @@
 //! stream sends it again after the accept lands: Bea holds the invite
 //! once, joins once, and the group carries both ways.
 
-use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::{GroupDmRequest, IpcRequest};
 use rekindle_netsim::latency::MESSAGE;
 use rekindle_netsim::{Fault, Writes};
 use rekindle_types::dto::group_dm::GroupDmView;
@@ -18,7 +18,8 @@ use crate::pair::{accept, befriend, is_accepted_friend, key, request, LIMIT};
 
 async fn copies_of(node: &SimNode, group_id: &str) -> usize {
     let groups: Vec<GroupDmView> =
-        serde_json::from_value(node.ok(IpcRequest::GroupDmList).await).expect("the group list");
+        serde_json::from_value(node.ok(IpcRequest::GroupDm(GroupDmRequest::List)).await)
+            .expect("the group list");
     groups.iter().filter(|g| g.group_id == group_id).count()
 }
 
@@ -56,11 +57,11 @@ async fn an_invite_sent_right_after_the_accept_lands_once_the_accept_does() {
     });
     let gid: String = serde_json::from_value(
         nodes[0]
-            .ok(IpcRequest::GroupDmCreate {
+            .ok(IpcRequest::GroupDm(GroupDmRequest::Create {
                 name: "right after".to_string(),
                 members: vec![key(&nodes[1]), key(&nodes[2])],
                 origin_peer: None,
-            })
+            }))
             .await,
     )
     .expect("the group is created");
@@ -81,9 +82,9 @@ async fn an_invite_sent_right_after_the_accept_lands_once_the_accept_does() {
         );
     }
     for node in &nodes[1..] {
-        node.ok(IpcRequest::GroupDmAccept {
+        node.ok(IpcRequest::GroupDm(GroupDmRequest::Accept {
             group_id: gid.clone(),
-        })
+        }))
         .await;
     }
     send(&nodes[1], &gid, "from Bea").await;

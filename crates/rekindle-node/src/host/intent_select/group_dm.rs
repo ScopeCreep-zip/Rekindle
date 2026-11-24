@@ -3,7 +3,7 @@
 //! on a friend member's key change.
 
 use rekindle_idempotency::intent_gate::Selection;
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse, LobbyRequest};
+use rekindle_ipc::protocol::{GroupDmRequest, IpcRequest, IpcResponse, LobbyRequest};
 use rekindle_transport::operations::group_dm;
 use rekindle_types::intent::{IntentKind, Notifies, Reversibility, Subject};
 
@@ -25,7 +25,7 @@ pub(super) async fn selection(
     s: &mut Selection,
 ) -> Result<(), IpcResponse> {
     let group_id = match request {
-        IpcRequest::GroupDmCreate { name, members, .. } => {
+        IpcRequest::GroupDm(GroupDmRequest::Create { name, members, .. }) => {
             s.subject = Subject::Named { name: name.clone() };
             s.notifies = count(members.len());
             s.reversibility = Reversibility::NeedsOthers;
@@ -44,19 +44,21 @@ pub(super) async fn selection(
             conversation: group_id,
             ..
         }
-        | IpcRequest::GroupDmAccept { group_id }
-        | IpcRequest::GroupDmDecline { group_id }
-        | IpcRequest::GroupDmLeave { group_id }
-        | IpcRequest::GroupDmRename { group_id, .. }
-        | IpcRequest::GroupDmInvite { group_id, .. }
+        | IpcRequest::GroupDm(
+            GroupDmRequest::Accept { group_id }
+            | GroupDmRequest::Decline { group_id }
+            | GroupDmRequest::Leave { group_id }
+            | GroupDmRequest::Rename { group_id, .. }
+            | GroupDmRequest::Invite { group_id, .. }
+            | GroupDmRequest::Send { group_id, .. },
+        )
         | IpcRequest::Lobby(
             LobbyRequest::Host { group_id, .. }
             | LobbyRequest::Join { group_id, .. }
             | LobbyRequest::Leave { group_id, .. }
             | LobbyRequest::Close { group_id, .. }
             | LobbyRequest::Launch { group_id, .. },
-        )
-        | IpcRequest::GroupDmSend { group_id, .. } => group_id,
+        ) => group_id,
         other => unreachable!("{} is not a group-DM write", other.name()),
     };
     if ctx.require_owner().is_err() {
@@ -71,15 +73,15 @@ pub(super) async fn selection(
         name: view.name.clone(),
     };
     match request {
-        IpcRequest::GroupDmAccept { .. } => {
+        IpcRequest::GroupDm(GroupDmRequest::Accept { .. }) => {
             s.notifies = count(others);
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::LeaveGroupDm);
         }
-        IpcRequest::GroupDmRename { .. } => {
+        IpcRequest::GroupDm(GroupDmRequest::Rename { .. }) => {
             s.notifies = count(others);
             s.reversibility = Reversibility::ReversibleByInverse(IntentKind::RenameGroupDm);
         }
-        IpcRequest::GroupDmInvite { members, .. } => {
+        IpcRequest::GroupDm(GroupDmRequest::Invite { members, .. }) => {
             // Every member it had, and each newcomer, is told.
             s.notifies = count(others + members.len());
             s.reversibility = Reversibility::NeedsOthers;
@@ -102,11 +104,11 @@ pub(super) async fn selection(
             s.notifies = count(others);
             s.reversibility = Reversibility::NeedsOthers;
         }
-        IpcRequest::GroupDmDecline { .. } => {
+        IpcRequest::GroupDm(GroupDmRequest::Decline { .. }) => {
             s.notifies = count(1);
             s.reversibility = Reversibility::NeedsOthers;
         }
-        IpcRequest::GroupDmSend { .. } => {
+        IpcRequest::GroupDm(GroupDmRequest::Send { .. }) => {
             // Reviewed as a direct send: escalated on each friend
             // member's unacknowledged verified key change (R-4).
             s.notifies = count(others);

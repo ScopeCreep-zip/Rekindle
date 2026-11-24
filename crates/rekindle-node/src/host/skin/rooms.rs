@@ -6,7 +6,7 @@
 //! `EnterAttachedRoom`, open the group most recently created from it
 //! (`group_dms.origin_peer`).
 
-use rekindle_ipc::protocol::{IpcRequest, IpcResponse, LobbyRequest};
+use rekindle_ipc::protocol::{GroupDmRequest, IpcRequest, IpcResponse, LobbyRequest};
 use rekindle_transport::operations::group_dm;
 use rekindle_types::dto::group_lobby::LobbyView;
 use rekindle_types::dto::skin_action::SkinAction as A;
@@ -63,11 +63,11 @@ pub(crate) fn enter(action: &A, rooms: &Rooms) -> Result<Mapped, IpcResponse> {
         (A::EnterAttachedRoom, _, Some(group_id))
         | (A::EnterRoom | A::JoinRoom, Some(Room::Joined(group_id)), _)
         | (A::EnterRoom | A::JoinRoom, None, Some(group_id)) => open(group_id),
-        (A::EnterRoom | A::JoinRoom, Some(Room::Pending(group_id)), _) => {
-            Ok(Mapped::Request(Box::new(IpcRequest::GroupDmAccept {
+        (A::EnterRoom | A::JoinRoom, Some(Room::Pending(group_id)), _) => Ok(Mapped::Request(
+            Box::new(IpcRequest::GroupDm(GroupDmRequest::Accept {
                 group_id: group_id.clone(),
-            })))
-        }
+            })),
+        )),
         _ => Err(IpcResponse::error(
             409,
             format!("{action:?} acts on a selected room or the chat's room: there is none"),

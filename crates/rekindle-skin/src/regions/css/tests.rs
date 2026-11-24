@@ -52,7 +52,7 @@ fn a_status_icon_is_served_with_its_paint_switch() {
 /// behind its text row (the measured line, in the content box), never a
 /// box per label, and drops it under forced colours.
 #[test]
-fn a_labelled_slot_paints_one_band_behind_its_text_row() {
+fn a_labelled_slot_paints_one_band_across_its_whole_strip() {
     let map: BTreeMap<String, RegionMap> = SLOTS
         .iter()
         .filter(|s| s.css)
@@ -76,10 +76,34 @@ fn a_labelled_slot_paints_one_band_behind_its_text_row() {
         "{}",
         rules[0]
     );
+    // SK17: the whole strip (the container's padding box), never a box
+    // hugging the text row in the content box.
     assert!(
-        rules[0].contains(&format!("{band} 0 50% / 100% 21px no-repeat content-box;")),
+        rules[0].contains(&format!("{band} 0 0 / 100% 100% no-repeat border-box;")),
         "{}",
         rules[0]
+    );
+    assert!(!rules[0].contains("content-box"), "{}", rules[0]);
+    for id in [
+        "community-sidebar-header",
+        "community-category-header",
+        "community-member-group-header",
+    ] {
+        let fill =
+            format!("linear-gradient(var(--skin-region-{id}-band), var(--skin-region-{id}-band))");
+        assert!(
+            css.contains(&format!("{fill} 0 0 / 100% 100% no-repeat border-box;")),
+            "{id}: {css}"
+        );
+    }
+    // The title strip keeps its title row band (`title.rs`).
+    let title =
+        "linear-gradient(var(--skin-region-titlebar-band), var(--skin-region-titlebar-band))";
+    assert!(
+        css.contains(&format!(
+            "{title} 0 50% / 100% 16.5px no-repeat content-box;"
+        )),
+        "{css}"
     );
     assert!(css.contains(":where(.e-community-channel-header) {\n    position: relative;\n    isolation: isolate;"), "{css}");
     let a11y = app_a11y_css("t", &map).unwrap();

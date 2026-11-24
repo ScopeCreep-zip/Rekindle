@@ -4,7 +4,7 @@
 
 use std::sync::Arc;
 
-use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::{GroupDmRequest, IpcRequest};
 use rekindle_types::dto::dm::DmMessage;
 use rekindle_types::dto::group_dm::GroupDmView;
 
@@ -32,7 +32,10 @@ impl App {
         let tx = self.action_tx.clone();
         let client = Arc::clone(&self.client);
         tokio::spawn(async move {
-            match client.request_ok(IpcRequest::GroupDmList).await {
+            match client
+                .request_ok(IpcRequest::GroupDm(GroupDmRequest::List))
+                .await
+            {
                 Ok(value) => match serde_json::from_value::<Vec<GroupDmView>>(value) {
                     Ok(groups) => {
                         let _ = tx.send(Action::CommandComplete(Box::new(
@@ -51,11 +54,11 @@ impl App {
         let tx = self.action_tx.clone();
         let client = Arc::clone(&self.client);
         tokio::spawn(async move {
-            let request = IpcRequest::GroupDmMessages {
+            let request = IpcRequest::GroupDm(GroupDmRequest::Messages {
                 group_id: group_id.clone(),
                 limit: PAGE,
                 before: None,
-            };
+            });
             match client.request_ok(request).await {
                 Ok(value) => match serde_json::from_value::<Vec<DmMessage>>(value) {
                     Ok(messages) => {
@@ -78,10 +81,10 @@ impl App {
         let tx = self.action_tx.clone();
         let client = Arc::clone(&self.client);
         tokio::spawn(async move {
-            let request = IpcRequest::GroupDmSend {
+            let request = IpcRequest::GroupDm(GroupDmRequest::Send {
                 group_id: group_id.clone(),
                 body: text,
-            };
+            });
             match client.request_ok(request).await {
                 Ok(_) => {
                     let _ = tx.send(Action::ShowGroupMessages { group_id });

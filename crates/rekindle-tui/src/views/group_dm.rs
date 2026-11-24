@@ -7,7 +7,7 @@
 //! host reviews each of those (its intent gate); this view only asks.
 //!
 //! Under the open group's messages, the input box sends
-//! (`IpcRequest::GroupDmSend`); a group message, ours or a member's,
+//! (`GroupDmRequest::Send`); a group message, ours or a member's,
 //! reloads the open group's messages.
 
 use anyhow::Result;

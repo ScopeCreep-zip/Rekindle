@@ -49,13 +49,16 @@
   }
 }
 
+/* A new message is legible from its first frame: the entrance only moves it
+ * 4 px up into place. It faded in from opacity 0, and where a window's
+ * animation timeline did not advance the message stayed invisible though it
+ * was there (r27 own-message-ticks shots: an empty chat around a row the
+ * spec found), as the toast's did (fb7f7b514). */
 @keyframes fade-in {
   from {
-    opacity: 0;
     transform: translateY(4px);
   }
   to {
-    opacity: 1;
     transform: translateY(0);
   }
 }

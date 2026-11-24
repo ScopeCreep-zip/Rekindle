@@ -8,7 +8,7 @@
 use std::time::Duration;
 
 use rekindle_codec::capnp_codec::direct::{DirectBody, GroupDmRename};
-use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::{GroupDmRequest, IpcRequest};
 use rekindle_transport::operations::dm::{client_id_text, outbox};
 use rekindle_transport::operations::group_dm::parse_group_id;
 
@@ -21,10 +21,10 @@ async fn the_creator_renames_a_room_for_everyone_and_another_member_cannot() {
     let (sim, mut nodes) = start(3, 126).await;
     let gid = three_members(&sim, &mut nodes).await;
     nodes[0]
-        .ok(IpcRequest::GroupDmRename {
+        .ok(IpcRequest::GroupDm(GroupDmRequest::Rename {
             group_id: gid.clone(),
             name: "scrim night".to_string(),
-        })
+        }))
         .await;
     for node in &nodes {
         assert!(
@@ -40,10 +40,10 @@ async fn the_creator_renames_a_room_for_everyone_and_another_member_cannot() {
     }
 
     let refused = nodes[1]
-        .call(IpcRequest::GroupDmRename {
+        .call(IpcRequest::GroupDm(GroupDmRequest::Rename {
             group_id: gid.clone(),
             name: "bea's room".to_string(),
-        })
+        }))
         .await;
     match refused {
         Ok(_) => panic!("Bea renamed a room she did not create"),
@@ -87,10 +87,10 @@ async fn a_member_s_forged_rename_is_refused_by_every_receiver() {
     // Bea's next message rides the same chain, after the rename: once the
     // others hold it they have read past the rename.
     nodes[1]
-        .ok(IpcRequest::GroupDmSend {
+        .ok(IpcRequest::GroupDm(GroupDmRequest::Send {
             group_id: gid.clone(),
             body: "after the rename".to_string(),
-        })
+        }))
         .await;
     for node in [&nodes[0], &nodes[2]] {
         assert!(

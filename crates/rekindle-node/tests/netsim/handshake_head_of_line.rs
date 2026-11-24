@@ -10,7 +10,7 @@
 
 use std::time::Duration;
 
-use rekindle_ipc::protocol::IpcRequest;
+use rekindle_ipc::protocol::{GroupDmRequest, IpcRequest};
 use rekindle_netsim::Fault;
 use rekindle_types::subscription_events::{PresenceEvent, SubscriptionEvent};
 
@@ -52,11 +52,11 @@ async fn a_lost_accept_answer_holds_back_only_the_frames_that_need_it() {
 
     let gid: String = serde_json::from_value(
         nodes[0]
-            .ok(IpcRequest::GroupDmCreate {
+            .ok(IpcRequest::GroupDm(GroupDmRequest::Create {
                 name: "raid night".to_string(),
                 members: vec![bea.clone(), key(&nodes[2])],
                 origin_peer: None,
-            })
+            }))
             .await,
     )
     .expect("the group is created");

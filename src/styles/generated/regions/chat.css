@@ -18,7 +18,7 @@
     z-index: -1;
     padding: inherit;
     border-radius: inherit;
-    background: linear-gradient(var(--skin-region-chat-toolbar-band), var(--skin-region-chat-toolbar-band)) 0 50% / 100% 24px no-repeat content-box;
+    background: linear-gradient(var(--skin-region-chat-toolbar-band), var(--skin-region-chat-toolbar-band)) 0 0 / 100% 100% no-repeat border-box;
     pointer-events: none;
   }
   .chat-window .chat-call-btn {
@@ -105,7 +105,7 @@
     z-index: -1;
     padding: inherit;
     border-radius: inherit;
-    background: linear-gradient(var(--skin-region-chat-input-band), var(--skin-region-chat-input-band)) 0 0 / 100% 100% no-repeat content-box;
+    background: linear-gradient(var(--skin-region-chat-input-band), var(--skin-region-chat-input-band)) 0 0 / 100% 100% no-repeat border-box;
     pointer-events: none;
   }
   .chat-window .message-input-send-btn,
@@ -163,7 +163,7 @@
     z-index: -1;
     padding: inherit;
     border-radius: inherit;
-    background: linear-gradient(var(--skin-region-chat-group-header-band), var(--skin-region-chat-group-header-band)) 0 0 / 100% 16.5px no-repeat content-box;
+    background: linear-gradient(var(--skin-region-chat-group-header-band), var(--skin-region-chat-group-header-band)) 0 0 / 100% 100% no-repeat border-box;
     pointer-events: none;
   }
 }
