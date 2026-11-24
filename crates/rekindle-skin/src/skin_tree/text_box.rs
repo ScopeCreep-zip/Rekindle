@@ -255,6 +255,13 @@ fn respan(span: &NodeSpan, len: i32, was: (i32, i32), now: (i32, i32)) -> Option
             at: Anchor::Start(i16::try_from(span.place(len).0 + ds).ok()?),
             size,
         },
+        // A share moved whole keeps its share at the moved start; a share
+        // resized to a px length is no longer one: it keeps its place.
+        NodeSpan::Share { permille, .. } if was.1 == now.1 => NodeSpan::Share {
+            at: Anchor::Start(i16::try_from(span.place(len).0 + ds).ok()?),
+            permille,
+        },
+        NodeSpan::Share { .. } => return None,
     })
 }
 

@@ -40,19 +40,34 @@ fn by_key(k: &str) -> Option<Role> {
     let shows = |r| Some(Role::Shows(r));
     match k {
         "chatwindow" | "chatmainwindow" | "topbuttonbar" | "chatusercontainer"
-        | "chatbaseboard" | "contentcontainer" | "textcontainer" | "chatbuttonbar" => {
+        | "chatbaseboard" | "contentcontainer" | "textcontainer" | "chatbuttonbar"
+        // The INI packs' containers (plan SK17-3): Combat's `[ContentArea]`
+        // around `ChatArea`/`ChatEdit` (`CombatChatSkin.ini:288`), Alloy's
+        // and Simple X's `[BaseBoard]` (`Chatskin.ini:459`, `:414`).
+        | "contentarea" | "baseboard" => {
             shows(R::Group)
         }
         "chattitlebar" | "maintitlebar" | "infobar" => shows(R::TitleBar),
-        "logo" | "xfirelogo" | "xfirelogonolink" => shows(R::Logo),
+        // Alloy's and Simple X's `[ChatLogo]` (`Chatskin.ini:167`, `:150`).
+        "logo" | "xfirelogo" | "xfirelogonolink" | "chatlogo" => shows(R::Logo),
         // StealthX's `UserNameText` (`chatwindow.xml:11`) is a text whose
         // string is the engine's `UserNameText` (`components.xml:899-901`):
         // the conversation's user name, the chat title.
-        "chattitle" | "chatuser" | "usernamefield" | "usernametext" => shows(R::ChatTitle),
+        // Combat's chat `[Title]` reads `Xfire - %displayuser%`
+        // (`CombatChatSkin.ini:243-249`): the conversation's title, served
+        // with no words of the pack's.
+        "chattitle" | "chatuser" | "usernamefield" | "usernametext" | "title" => {
+            shows(R::ChatTitle)
+        }
         "minimize" | "minimizebox" | "buttonminimize" => Some(button(W::Minimize)),
         "maximize" | "maximizebox" | "buttonmaximize" => Some(button(W::Maximize)),
-        "chatclose" | "closechatbox" | "closebox" | "buttonclose" => Some(button(W::Close)),
-        "menubar" | "chatmenubar" | "menubackground" => shows(R::MenuBar),
+        // Combat's `[Close]` `Class=PushButton Action.click=AppClose`
+        // (`CombatChatSkin.ini:279-286`), in its `[MainTitleBar]` (`:236`).
+        "chatclose" | "closechatbox" | "closebox" | "buttonclose" | "close" => {
+            Some(button(W::Close))
+        }
+        // Combat's `[GCMenuBar]` (`CombatChatSkin.ini:454`).
+        "menubar" | "chatmenubar" | "menubackground" | "gcmenubar" => shows(R::MenuBar),
         // The first menu is Rekindle's where the pack's reads "Xfire"
         // (Onyx's and Space Cowboy's `ChatXfireMenuText`, Symbiosis's
         // `XfireMenu`): the brand rule renames only that word. xSLIMFIRE's
@@ -61,16 +76,24 @@ fn by_key(k: &str) -> Option<Role> {
         // (`xSLIMFIREcomponents.xml:1076-1099`): the window's system menu,
         // its word kept. Then the chat window's own menus.
         "chatxfiremenutext" | "xfiremenu" => Some(menu(EngineMenu::File)),
-        "systemmenutext" => Some(menu(EngineMenu::Sys)),
+        // Combat's `GC…MenuText` titles (`CombatChatSkin.ini:478`, `:508`,
+        // `:538`) are the INI packs' `…MenuText` ones.
+        "systemmenutext" | "gcsystemmenutext" => Some(menu(EngineMenu::Sys)),
         "chattoolsmenutext" => Some(menu(EngineMenu::Tool)),
-        "actionsmenutext" | "actionsmenu" => Some(menu(EngineMenu::CwActions)),
+        "actionsmenutext" | "actionsmenu" | "gcactionsmenutext" => {
+            Some(menu(EngineMenu::CwActions))
+        }
         // StealthX's chat menu popup names its help title `HelpMenuCText`
         // over a `HelpMenuC` plate running `MenuCWHelp`
         // (`components.xml:884-890`, `popups.xml:107`).
-        "chathelpmenutext" | "helpmenutext" | "helpmenu" | "helpmenuctext" => {
+        "chathelpmenutext" | "helpmenutext" | "helpmenu" | "helpmenuctext" | "gchelpmenutext" => {
             Some(menu(EngineMenu::CwHelp))
         }
-        "menudiv" | "divider" | "horizontalseparator" | "buttonbarverticalseparator" => {
+        // Simple X's `IVButtonHolder` (`Chatskin.ini:99-104,470-474`): a
+        // plain `Class=Tile` drawing `info-button-holder.gif`, the plate
+        // the info-view button sits on; art only, no action.
+        "menudiv" | "divider" | "horizontalseparator" | "buttonbarverticalseparator"
+        | "ivbuttonholder" => {
             shows(R::Decor)
         }
         "tabbedtalkingstate" => shows(R::TalkingState),
@@ -80,7 +103,10 @@ fn by_key(k: &str) -> Option<Role> {
             shows(R::Slot(SlotKey::TypingNotice))
         }
         // Onyx's and Space Cowboy's `ChatImButton` runs `SendMessage`.
-        "sendbutton" | "chatbuttonsend" | "sendchatbutton" | "chatimbutton" => {
+        // Combat's `[ImButton]` (`CombatChatSkin.ini:343`, plan E7.7.7 S3)
+        // and XGlow's `[Send]` (`ChatSkin.ini:290`) likewise.
+        "sendbutton" | "chatbuttonsend" | "sendchatbutton" | "chatimbutton" | "imbutton"
+        | "send" => {
             shows(R::Slot(SlotKey::ChatSend))
         }
         // StealthX's `ChatMenuButton` (`chatwindow.xml:8`) is the chat
@@ -94,7 +120,9 @@ fn by_key(k: &str) -> Option<Role> {
         "chatmenubutton" | "groupchatmenubutton" | "gamebutton" => {
             Some(Role::Acts(R::Button, None))
         }
-        "chatinfoviewbutton" | "infoviewbutton" | "chatexpandbutton" | "expandbutton" => {
+        // XGlow's `[ViewInfoButton]` (`ChatSkin.ini:248`).
+        "chatinfoviewbutton" | "infoviewbutton" | "chatexpandbutton" | "expandbutton"
+        | "viewinfobutton" => {
             shows(R::Slot(SlotKey::InfoviewButton))
         }
         _ => None,
@@ -115,12 +143,27 @@ pub fn role(
     f: &Facts<'_>,
 ) -> Option<Role> {
     use NodeRole as R;
-    if parent.is_some_and(|p| {
+    let shown = parent.map(Role::shown);
+    if shown.is_some_and(|p| {
         matches!(
-            p.shown(),
-            R::MenuTitle | R::ChatTitle | R::TalkingState | R::Slot(_) | R::WindowButton(_)
+            p,
+            R::MenuTitle
+                | R::ChatTitle
+                | R::TalkingState
+                | R::Slot(_)
+                | R::WindowButton(_)
+                | R::Part
         )
     }) {
+        // The typing line a pack lays in its title field is the typing
+        // slot, never a part of the title: XGlow's `[UserNameField]`
+        // holds `UserNameText` and `TypingMessage` (`ChatSkin.ini:154-166`),
+        // Alloy's `[UserNameBG]` in its `[UserNameField]` likewise
+        // (`Chatskin.ini:181-210`).
+        let typing = by_key(&key(name)) == Some(Role::Shows(R::Slot(SlotKey::TypingNotice)));
+        if typing && matches!(shown, Some(R::ChatTitle | R::Part)) {
+            return Some(Role::Shows(R::Slot(SlotKey::TypingNotice)));
+        }
         return Some(Role::Shows(R::Part));
     }
     let found = component

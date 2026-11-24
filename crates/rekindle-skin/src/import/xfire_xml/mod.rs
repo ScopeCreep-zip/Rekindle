@@ -28,7 +28,7 @@
 //!   pair is settled by [`super::walk::settle`], each change recorded.
 
 pub mod bitmap;
-mod chat_frame;
+pub(in crate::import) mod chat_frame;
 pub mod colours;
 pub mod controls;
 mod decor;
@@ -312,7 +312,7 @@ pub fn read(tree: &Tree) -> Result<Read, ImportError> {
         )?;
     }
     if let Some((pieces, fitted)) = &chat {
-        let mut built = chat_frame::window(pieces, *fitted)?;
+        let mut built = chat_frame::window(pieces, fitted)?;
         // The chat window's own component tree (plan SK17-2), laid by the
         // buddy list's model from the pack's chat layout.
         if let Some(f) = window_layout(&skin, "ChatSkin").filter(|f| lookup(tree, f).is_ok()) {

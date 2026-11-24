@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 
-use rekindle_types::dto::skin_tree::{Anchor, NodeSpan, SkinNode};
+use rekindle_types::dto::skin_tree::{Anchor, NodeSpan};
 
 use crate::import::tree::Node;
 use crate::import::xfire_xml::title::reference;
@@ -18,12 +18,19 @@ pub(super) struct Axis {
     pos: &'static str,
     just: &'static str,
     resize: &'static str,
-    indent: [&'static str; 2],
-    outdent: [&'static str; 2],
+    pub(super) indent: [&'static str; 2],
+    pub(super) outdent: [&'static str; 2],
     far: &'static str,
     near: &'static str,
     size: &'static str,
     end_just: &'static str,
+}
+
+impl Axis {
+    /// The axis's position attribute (`X`, `Y`), naming it in errors.
+    pub(super) const fn pos(&self) -> &'static str {
+        self.pos
+    }
 }
 
 pub(super) const X: Axis = Axis {
@@ -54,7 +61,7 @@ pub(super) const Y: Axis = Axis {
 /// from its centre (an edge of a centred sibling: Combat's `JoinPlayTab`
 /// `X="CenterConsole.RIGHT"`).
 #[derive(Clone, Copy)]
-enum At {
+pub(super) enum At {
     Start(i32),
     End(i32),
     Centre(i32),
@@ -103,6 +110,15 @@ impl FromIterator<(String, (NodeSpan, NodeSpan))> for Sibs {
 /// `Middle.BOTTOM`, a cycle only in position, never in size.
 pub(super) type Sizes = BTreeMap<String, (u16, u16)>;
 
+/// A tile's `Resize*` on `ax`, percent of its parent: `Some(100)` a
+/// stretch, `Some(1..=99)` a share (plan SK17-3: Combat's chat `ChatArea`
+/// `ResizeY=80`); `None` for none or 0 (its own size).
+pub(super) fn resize(tile: &Node, ax: &Axis) -> Option<u16> {
+    tile.attr_ci(ax.resize)
+        .and_then(|r| r.trim().parse::<u16>().ok())
+        .filter(|r| (1..=100).contains(r))
+}
+
 fn span_of(sibs: &Sibs, name: &str, axis: &Axis) -> Option<NodeSpan> {
     sibs.spans.get(&name.to_ascii_lowercase()).map(|s| {
         if axis.pos == "X" {
@@ -114,7 +130,11 @@ fn span_of(sibs: &Sibs, name: &str, axis: &Axis) -> Option<NodeSpan> {
 }
 
 /// A sum of signed terms, each a number or a sibling's `width`/`height`.
-fn expr(v: Option<&str>, (sibs, sizes): (&Sibs, &Sizes), axis: &Axis) -> Result<i32, ImportError> {
+pub(super) fn expr(
+    v: Option<&str>,
+    (sibs, sizes): (&Sibs, &Sizes),
+    axis: &Axis,
+) -> Result<i32, ImportError> {
     let Some(v) = v else { return Ok(0) };
     let mut total = 0i32;
     let mut rest = v.trim();
@@ -152,8 +172,11 @@ fn expr(v: Option<&str>, (sibs, sizes): (&Sibs, &Sizes), axis: &Axis) -> Result<
     Ok(total)
 }
 
-/// `v` as a sibling's edge ± n, when it is one.
-fn edge(value: &str, sibs: &Sibs, axis: &Axis) -> Result<Option<At>, ImportError> {
+/// `v` as a sibling's edge ± n, when it is one: a point, or the far edge
+/// of a sibling that moves with the parent's length (a share, or a tile
+/// chained past one: Combat's chat `Divider` `Y=ChatArea.BOTTOM`), which
+/// the tile chains on.
+fn edge(value: &str, sibs: &Sibs, axis: &Axis) -> Result<Option<Pos>, ImportError> {
     let Some((name, side, by)) = reference(value) else {
         return Ok(None);
     };
@@ -161,46 +184,85 @@ fn edge(value: &str, sibs: &Sibs, axis: &Axis) -> Result<Option<At>, ImportError
         return Ok(None);
     }
     let far = side.eq_ignore_ascii_case(axis.far);
-    if !far && !side.eq_ignore_ascii_case(axis.near) {
+    // A sibling's `CENTER` is the midpoint of its two edges (Combat's chat
+    // `MainTitleBar` `X=LeftEdge.CENTER` then `X=60`,
+    // `CombatChatSkin.ini:121-122`), when both move together.
+    let centre = side.eq_ignore_ascii_case("CENTER") || side.eq_ignore_ascii_case("CENTRE");
+    if !far && !centre && !side.eq_ignore_ascii_case(axis.near) {
         return Err(bad(format!("{value}: {side} is not an edge of this axis")));
     }
     let key = name.to_ascii_lowercase();
-    let at = match span_of(sibs, name, axis) {
-        Some(sib) => points(&sib)[usize::from(far)],
+    if let (Some(sib), true, false) = (span_of(sibs, name, axis), far, centre) {
+        if matches!(sib, NodeSpan::Share { .. }) || sib.after().is_some() {
+            return Ok(Some(Pos::After(name.trim().to_owned(), by)));
+        }
+    }
+    let at_edge = |far: bool| match span_of(sibs, name, axis) {
+        Some(sib) => points(&sib)[usize::from(far)]
+            .ok_or_else(|| bad(format!("{value}: {name}'s edge moves with the window"))),
         None => sibs
             .edges
             .get(&key)
             .and_then(|e| e[usize::from(axis.pos == "Y")][usize::from(far)])
-            .ok_or_else(|| bad(format!("{value}: no tile {name} placed before it")))?,
+            .ok_or_else(|| bad(format!("{value}: no tile {name} placed before it"))),
     };
-    Ok(Some(match at {
+    let at = if centre {
+        match (at_edge(false)?, at_edge(true)?) {
+            (At::Start(a), At::Start(b)) => At::Start((a + b).div_euclid(2)),
+            (At::End(a), At::End(b)) => At::End((a + b).div_euclid(2)),
+            (At::Centre(a), At::Centre(b)) => At::Centre((a + b).div_euclid(2)),
+            _ => {
+                return Err(bad(format!(
+                    "{value}: {name}'s centre moves with the window"
+                )))
+            }
+        }
+    } else {
+        at_edge(far)?
+    };
+    Ok(Some(Pos::Ref(match at {
         At::Start(p) => At::Start(p + by),
         At::End(e) => At::End(e - by),
         At::Centre(c) => At::Centre(c + by),
-    }))
+    })))
 }
 
-/// A box's near and far edge as points in its frame.
-fn points(span: &NodeSpan) -> [At; 2] {
+/// A box's near and far edge as points in its frame, where they are
+/// points: a share's far edge (and a chained tile's edges) move with the
+/// parent's length ([`edge`] chains on them).
+fn points(span: &NodeSpan) -> [Option<At>; 2] {
     match span.clone() {
-        // The names hold laid spans, never a chain ([`super::content`]):
-        // an `After` one is placed as `NodeSpan::place` places it, from
-        // the start like a `Start` one.
         NodeSpan::Fixed {
-            at: Anchor::Start(off) | Anchor::After { gap: off, .. },
+            at: Anchor::Start(off),
             size,
         } => [
-            At::Start(i32::from(off)),
-            At::Start(i32::from(off) + i32::from(size)),
+            Some(At::Start(i32::from(off))),
+            Some(At::Start(i32::from(off) + i32::from(size))),
         ],
         NodeSpan::Fixed {
             at: Anchor::End(off),
             size,
         } => [
-            At::End(i32::from(off) + i32::from(size)),
-            At::End(i32::from(off)),
+            Some(At::End(i32::from(off) + i32::from(size))),
+            Some(At::End(i32::from(off))),
         ],
-        NodeSpan::Stretch { start, end } => [At::Start(i32::from(start)), At::End(i32::from(end))],
+        NodeSpan::Stretch { start, end } => [
+            Some(At::Start(i32::from(start))),
+            Some(At::End(i32::from(end))),
+        ],
+        NodeSpan::Share {
+            at: Anchor::Start(off),
+            ..
+        } => [Some(At::Start(i32::from(off))), None],
+        NodeSpan::Share {
+            at: Anchor::End(off),
+            ..
+        } => [None, Some(At::End(i32::from(off)))],
+        NodeSpan::Fixed {
+            at: Anchor::After { .. },
+            ..
+        }
+        | NodeSpan::Share { .. } => [None, None],
         NodeSpan::Fixed {
             at:
                 Anchor::Centre {
@@ -214,7 +276,10 @@ fn points(span: &NodeSpan) -> [At; 2] {
             // widening moves the centre by half its difference.
             let mid = i32::from(mid) + (i32::from(after) - i32::from(before)).div_euclid(2);
             let left = mid - i32::from(size) / 2;
-            [At::Centre(left), At::Centre(left + i32::from(size))]
+            [
+                Some(At::Centre(left)),
+                Some(At::Centre(left + i32::from(size))),
+            ]
         }
     }
 }
@@ -226,8 +291,16 @@ fn known(inner: &NodeSpan) -> (Option<i16>, Option<i16>) {
         NodeSpan::Fixed {
             at: Anchor::Start(off),
             ..
+        }
+        | NodeSpan::Share {
+            at: Anchor::Start(off),
+            ..
         } => (Some(off), None),
         NodeSpan::Fixed {
+            at: Anchor::End(off),
+            ..
+        }
+        | NodeSpan::Share {
             at: Anchor::End(off),
             ..
         } => (None, Some(off)),
@@ -235,7 +308,8 @@ fn known(inner: &NodeSpan) -> (Option<i16>, Option<i16>) {
         NodeSpan::Fixed {
             at: Anchor::Centre { .. } | Anchor::After { .. },
             ..
-        } => (None, None),
+        }
+        | NodeSpan::Share { .. } => (None, None),
     }
 }
 
@@ -259,21 +333,24 @@ pub(super) fn chain<'t>(tile: &'t Node, ax: &Axis) -> Option<(&'t str, i32)> {
     let placed_from_start = !just.eq_ignore_ascii_case(ax.end_just)
         && !just.eq_ignore_ascii_case("CENTER")
         && !just.eq_ignore_ascii_case("CENTRE");
-    let stretched = tile.attr_ci(ax.resize).is_some_and(|r| r.trim() == "100");
+    let stretched = resize(tile, ax).is_some();
     let (name, side, by) = reference(tile.attr_ci(ax.pos)?)?;
     (placed_from_start && !stretched && side.eq_ignore_ascii_case(ax.far))
         .then_some((name.trim(), by))
 }
 
-fn i16_of(v: i32) -> Result<i16, ImportError> {
+pub(super) fn i16_of(v: i32) -> Result<i16, ImportError> {
     i16::try_from(v).map_err(|_| bad(format!("{v} px is out of range")))
 }
 
 /// A position: a number (from the parent's start edge, or its far edge
 /// under `Just*=RIGHT/BOTTOM`), or a sibling's edge (a point).
-enum Pos {
+pub(super) enum Pos {
     Num(i32),
     Ref(At),
+    /// `by` px past the far edge of the named sibling, which moves with
+    /// the parent's length.
+    After(String, i32),
 }
 
 /// A stretching tile from a point measured from the parent's far edge (its
@@ -315,16 +392,26 @@ fn capped(span: NodeSpan, max: Option<u16>, (at_end, centred): (bool, bool)) -> 
             at,
             size: size.min(m),
         },
-        (s, None) => s,
+        // [`axis`] refuses a capped share before it lays one.
+        (s @ NodeSpan::Share { .. }, Some(_)) | (s, None) => s,
     }
 }
 
+/// `tile`'s box on `ax`. `root` is a tile laid directly in its window: a
+/// bare negative number there is measured from the window's far edge, as a
+/// tile cannot lie outside its window (Alloy's `InfoViewButton` `X=-59`,
+/// `Infoskin.ini:29`; Onyx's `CloseInfoView` `X="-52"`,
+/// `popups.xml:17,35,61`). Inside a nested tile (a title bar, a menu bar)
+/// it is an offset before the tile's start: Combat's chat `Logo` `X=-30`
+/// `Y=-3` under `[MainTitleBar]`, then `Title` `X=Logo.RIGHT X=20`
+/// (`CombatChatSkin.ini:219-226`), the 48×23 mark hanging off the bar's
+/// top-left corner as the original draws it.
 pub(super) fn axis(
     tile: &Node,
     ax: &Axis,
     size: u16,
     max: Option<u16>,
-    slot: bool,
+    (slot, root): (bool, bool),
     (sibs, sizes): (&Sibs, &Sizes),
 ) -> Result<NodeSpan, ImportError> {
     let just = tile.attr_ci(ax.just).map_or("", str::trim);
@@ -332,7 +419,7 @@ pub(super) fn axis(
     let centred = just.eq_ignore_ascii_case("CENTER") || just.eq_ignore_ascii_case("CENTRE");
     let pos = match tile.attr_ci(ax.pos) {
         Some(v) => match edge(v, sibs, ax)? {
-            Some(at) => Pos::Ref(at),
+            Some(pos) => pos,
             None => Pos::Num(expr(Some(v), (sibs, sizes), ax)?),
         },
         None => Pos::Num(0),
@@ -340,7 +427,29 @@ pub(super) fn axis(
     let ind = |k| expr(tile.attr_ci(k), (sibs, sizes), ax);
     let start_in = ind(ax.indent[0])? - ind(ax.outdent[0])?;
     let end_in = ind(ax.indent[1])? - ind(ax.outdent[1])?;
-    if tile.attr_ci(ax.resize).is_some_and(|r| r.trim() == "100") {
+    let pos = match pos {
+        Pos::After(sibling, by) => {
+            return super::anchor_share::chained(
+                (sibling, by),
+                size,
+                resize(tile, ax),
+                (start_in, end_in, max),
+                (at_end, centred),
+                ax,
+            )
+        }
+        pos => pos,
+    };
+    if let Some(pct @ 1..=99) = resize(tile, ax) {
+        return super::anchor_share::share(
+            pos,
+            pct,
+            (start_in, end_in, max),
+            (at_end, centred),
+            ax,
+        );
+    }
+    if resize(tile, ax) == Some(100) {
         let (start, end) = match (pos, at_end) {
             (Pos::Num(p), true) => (start_in, p + end_in),
             (Pos::Num(p) | Pos::Ref(At::Start(p)), false) => (p + start_in, end_in),
@@ -351,7 +460,8 @@ pub(super) fn axis(
                     (at_end, centred),
                 ))
             }
-            (Pos::Ref(At::Centre(_)), false) | (Pos::Ref(_), true) => {
+            (Pos::Ref(At::Centre(_)) | Pos::After(..), false)
+            | (Pos::Ref(_) | Pos::After(..), true) => {
                 return Err(bad(format!(
                     "{}: ax stretch from an edge and ax far side",
                     ax.pos
@@ -370,16 +480,17 @@ pub(super) fn axis(
     // `ChatTypingMessage` `X="18" IndentRight="65"`,
     // `xSLIMFIREchatwindow.xml:31`: the typing line from 18 px to 65 px
     // short of the base board's right edge, left of its send button).
+    // Without an end indent, an artless slot's line runs to the parent's
+    // right edge, as a `Stretch=ToContent` text drew its string rightward
+    // from its point (Alloy's `TypingMessage` `X=UserNameText.RIGHT X=5`,
+    // `Chatskin.ini:207-210,222-231`; XGlow's `X=14`, `ChatSkin.ini:
+    // 163-166,178-188`); its height stays the line box (`text_box`).
     // Any other artless tile keeps its own place and the text's width
     // (xfire-classic's `TabDownloadText` holds "Downloads").
-    if let (true, 0, false, false, Some(_), Pos::Num(p) | Pos::Ref(At::Start(p))) = (
-        slot,
-        size,
-        at_end,
-        centred,
-        tile.attr_ci(ax.indent[1]),
-        &pos,
-    ) {
+    let ends = tile.attr_ci(ax.indent[1]).is_some() || ax.pos == X.pos;
+    if let (true, 0, false, false, true, Pos::Num(p) | Pos::Ref(At::Start(p))) =
+        (slot, size, at_end, centred, ends, &pos)
+    {
         if *p >= 0 {
             let span = NodeSpan::Stretch {
                 start: i16_of(p + start_in)?,
@@ -394,13 +505,14 @@ pub(super) fn axis(
     let at = match (pos, at_end, centred) {
         (Pos::Num(p), _, true) => Anchor::centre(i16_of(p)?),
         (Pos::Num(p), true, _) => Anchor::End(i16_of(p)?),
-        (Pos::Num(p), false, _) if p < 0 => Anchor::End(i16_of(-p - own)?),
+        (Pos::Num(p), false, _) if p < 0 && root => Anchor::End(i16_of(-p - own)?),
         (Pos::Num(p) | Pos::Ref(At::Start(p)), false, _) => Anchor::Start(i16_of(p)?),
         (Pos::Ref(At::Start(p)), true, _) => Anchor::Start(i16_of(p - own)?),
         (Pos::Ref(At::End(far_at)), true, _) => Anchor::End(i16_of(far_at)?),
         (Pos::Ref(At::End(far_at)), false, _) => Anchor::End(i16_of(far_at - own)?),
         (Pos::Ref(At::Centre(p)), true, _) => Anchor::centre(i16_of(p - own / 2)?),
         (Pos::Ref(At::Centre(p)), false, _) => Anchor::centre(i16_of(p + own / 2)?),
+        (Pos::After(..), _, _) => return Err(bad(format!("{}: a chain laid twice", ax.pos))),
     };
     Ok(capped(NodeSpan::Fixed { at, size }, max, (at_end, centred)))
 }
@@ -430,12 +542,23 @@ fn shift(span: &NodeSpan, inner: &NodeSpan) -> Option<NodeSpan> {
             start: by(lo, start)?,
             end: by(hi, end)?,
         },
-        NodeSpan::Fixed {
-            at: Anchor::Centre { .. },
-            ..
-        }
+        NodeSpan::Share {
+            at: Anchor::Start(off),
+            permille,
+        } => NodeSpan::Share {
+            at: Anchor::Start(by(off, start)?),
+            permille,
+        },
+        NodeSpan::Share {
+            at: Anchor::End(off),
+            permille,
+        } => NodeSpan::Share {
+            at: Anchor::End(by(off, end)?),
+            permille,
+        },
+        NodeSpan::Share { .. }
         | NodeSpan::Fixed {
-            at: Anchor::After { .. },
+            at: Anchor::Centre { .. } | Anchor::After { .. },
             ..
         } => return None,
     })
@@ -454,7 +577,7 @@ pub(super) fn outer_for(names: &Sibs, x: &NodeSpan, y: &NodeSpan) -> Sibs {
     for (k, (sx, sy)) in &names.spans {
         if let (Some(a), Some(b)) = (shift(sx, x), shift(sy, y)) {
             out.spans.insert(k.clone(), (a, b));
-        } else if let Some(e) = moved([points(sx).map(Some), points(sy).map(Some)]) {
+        } else if let Some(e) = moved([points(sx), points(sy)]) {
             out.edges.insert(k.clone(), e);
         }
     }
@@ -464,108 +587,4 @@ pub(super) fn outer_for(names: &Sibs, x: &NodeSpan, y: &NodeSpan) -> Sibs {
         }
     }
     out
-}
-
-/// A fixed tile's client inset on each axis (x, y), `Indent*` less
-/// `Outdent*` at each end: Xfire lays its children in its box less these
-/// (plan SK2-S1o; StealthX's `XfireMenuText` `X="1" IndentLeft="27"` holds
-/// `FileMenu` `ResizeX="100" OutdentLeft="27"`, `popups.xml:5-6`: the menu
-/// art from the text tile's own left edge, x 2 inside the rail). A
-/// stretched tile's indents move its own edges instead ([`axis`]).
-pub(super) fn client_inset(
-    tile: &Node,
-    refs: (&Sibs, &Sizes),
-) -> Result<[(i32, i32); 2], ImportError> {
-    let one = |ax: &Axis| -> Result<(i32, i32), ImportError> {
-        if tile.attr_ci(ax.resize).is_some_and(|r| r.trim() == "100") {
-            return Ok((0, 0));
-        }
-        let ind = |k| expr(tile.attr_ci(k), refs, ax);
-        Ok((
-            ind(ax.indent[0])? - ind(ax.outdent[0])?,
-            ind(ax.indent[1])? - ind(ax.outdent[1])?,
-        ))
-    };
-    Ok([one(&X)?, one(&Y)?])
-}
-
-/// The client box of a tile laid at `span` with `inset`: its edges moved in,
-/// for the names its children see ([`outer_for`]).
-pub(super) fn client_box(span: NodeSpan, (s, e): (i32, i32)) -> Result<NodeSpan, ImportError> {
-    // A boxless tile (no art, no declared size) has no client box: its
-    // indents inset nothing (Total Chaos's, xSLIMFIRE's art-less wrappers).
-    let NodeSpan::Fixed { at, size } = span.clone() else {
-        return Ok(span);
-    };
-    if size == 0 {
-        return Ok(span);
-    }
-    let at = match at {
-        Anchor::Start(o) => Anchor::Start(i16_of(i32::from(o) + s)?),
-        Anchor::End(o) => Anchor::End(i16_of(i32::from(o) + e)?),
-        Anchor::After { sibling, gap } => Anchor::After {
-            sibling,
-            gap: i16_of(i32::from(gap) + s)?,
-        },
-        // The client box is the tile's box less `(s, e)`: centred in the
-        // same frame, narrowed by the insets (lead decision 32).
-        Anchor::Centre { by, before, after } => Anchor::Centre {
-            by,
-            before: i16_of(i32::from(before) - s)?,
-            after: i16_of(i32::from(after) - e)?,
-        },
-    };
-    let size = u16::try_from(i32::from(size) - s - e)
-        .map_err(|_| bad(format!("a client inset {s}+{e} wider than its tile {size}")))?;
-    Ok(NodeSpan::Fixed { at, size })
-}
-
-/// `child` (laid in the client box of a tile inset by `(s, e)`)
-/// in the tile's own frame.
-fn from_client(child: NodeSpan, (s, e): (i32, i32)) -> Result<NodeSpan, ImportError> {
-    let add = |o: i16, d: i32| i16_of(i32::from(o) + d);
-    Ok(match child {
-        NodeSpan::Stretch { start, end } => NodeSpan::Stretch {
-            start: add(start, s)?,
-            end: add(end, e)?,
-        },
-        NodeSpan::Fixed { at, size: own } => {
-            let at = match at {
-                Anchor::Start(o) => Anchor::Start(add(o, s)?),
-                Anchor::End(o) => Anchor::End(add(o, e)?),
-                // Its sibling moves with it: the gap stays.
-                after @ Anchor::After { .. } => after,
-                // Centred in the client box: the tile's box narrowed by
-                // `(s, e)` (lead decision 32).
-                Anchor::Centre { by, before, after } => Anchor::Centre {
-                    by,
-                    before: add(before, -s)?,
-                    after: add(after, -e)?,
-                },
-            };
-            NodeSpan::Fixed { at, size: own }
-        }
-    })
-}
-
-/// `children` laid in the client box of a tile at `(x, y)` inset by
-/// `inset` ([`client_inset`]), in the tile's own frame.
-pub(super) fn to_tile(
-    mut children: Vec<SkinNode>,
-    (x, y): (NodeSpan, NodeSpan),
-    inset: [(i32, i32); 2],
-) -> Result<Vec<SkinNode>, ImportError> {
-    for (span, (s, e), c) in [(x, inset[0], 0), (y, inset[1], 1)] {
-        let NodeSpan::Fixed { size, .. } = span else {
-            continue;
-        };
-        if (s, e) == (0, 0) || size == 0 {
-            continue;
-        }
-        for n in &mut children {
-            let slot = if c == 0 { &mut n.x } else { &mut n.y };
-            *slot = from_client(slot.clone(), (s, e))?;
-        }
-    }
-    Ok(children)
 }
