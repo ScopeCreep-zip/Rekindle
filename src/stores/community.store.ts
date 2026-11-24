@@ -231,6 +231,8 @@ export interface Community {
   /** Our effective permissions per channel id: base plus overwrites. */
   myChannelPermissions: Record<string, string>;
   myPseudonymKey: string | null;
+  /** Bumped on each `BansChanged` (plan E3.2 S9): a shown ban list re-reads on it. */
+  bansRevision?: number;
   /** Set when we were removed (plan E3.2 S9 own removal): the community
    *  stays as read-only history. */
   /** Set when the inviter refused our join after it returned (plan JW):
