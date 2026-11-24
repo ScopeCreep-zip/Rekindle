@@ -509,3 +509,25 @@ export async function unlock(b: Browser, user: User): Promise<void> {
   await resolveIntent(b, { passphrase: user.passphrase, appearMs: 1500 });
   await inBuddy(b);
 }
+
+/**
+ * Our pseudonym in community `anchor`, as our own Host serves it
+ * (`get_communities` → `ourPseudonym`): the member id a peer's CLI names us
+ * by (`--member`). Waits until the Host holds a full key; never computed here.
+ */
+export async function ourPseudonym(b: Browser, anchor: string): Promise<string> {
+  let key = "";
+  await waitUntil(
+    async () => {
+      key = (await b.execute(async (a: string) => {
+        const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: (cmd: string, args?: unknown) => Promise<unknown> } };
+        const done = (await w.__TAURI_INTERNALS__!.invoke("get_communities")) as { value?: { anchor: string; ourPseudonym: string }[] };
+        return done.value?.find((c) => c.anchor === a)?.ourPseudonym ?? "";
+      }, anchor)) as string;
+      return /^[0-9a-f]{64}$/i.test(key);
+    },
+    NET_WAIT_MS,
+    `our pseudonym in ${anchor.slice(0, 16)}… was never served`,
+  );
+  return key;
+}

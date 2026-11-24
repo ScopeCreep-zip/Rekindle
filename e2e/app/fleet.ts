@@ -441,12 +441,12 @@ export async function peerCreateRole(peer: Peer, anchor: string, name: string, p
   return id;
 }
 
-/** `peer` gives member `member` (pseudonym or display name) role `roleId` in community `anchor`. */
+/** `peer` gives member `member` (its 64-hex pseudonym in the community: `ourPseudonym`, from the member's own Host) role `roleId` in community `anchor`. */
 export async function peerAssignRole(peer: Peer, anchor: string, member: string, roleId: string): Promise<void> {
   await peerReviewed(peer, ["community", "role", "assign", "--community", anchor, "--member", member, "--role-id", roleId]);
 }
 
-/** `peer` bans member `member` (pseudonym or display name) from community `anchor`. */
+/** `peer` bans member `member` (its 64-hex pseudonym in the community: `ourPseudonym`, from the member's own Host) from community `anchor`. */
 export async function peerBan(peer: Peer, anchor: string, member: string): Promise<void> {
   await peerReviewed(peer, ["community", "ban", "--community", anchor, "--member", member]);
 }
@@ -461,7 +461,7 @@ export async function peerReplyGroup(peer: Peer, groupId: string, text: string, 
   await peer.cli(["group", "send", groupId, text, "--reply-to", replyTo]);
 }
 
-/** `peer` kicks member `member` (pseudonym or display name) from community `anchor`. */
+/** `peer` kicks member `member` (its 64-hex pseudonym in the community: `ourPseudonym`, from the member's own Host) from community `anchor`. */
 export async function peerKick(peer: Peer, anchor: string, member: string): Promise<void> {
   await peerReviewed(peer, ["community", "kick", "--community", anchor, "--member", member]);
 }
