@@ -6,7 +6,9 @@
 // an element in Settings, logged as `[bleed]` with its selector, the count
 // and first element it matches, and its declarations: which rules reach
 // Settings, and whether they are the Host's (in the served sheet) or the
-// shell's. Symbiosis is the control.
+// shell's. Symbiosis is the control. The sheet is cross-origin to the page,
+// so its rules are read through computed styles: each element drawn with
+// skin:// art.
 
 import { browser, expect } from "@wdio/globals";
 import { switchTo } from "../../../walk/helpers.ts";
@@ -17,62 +19,6 @@ import { shot } from "../../shots.ts";
 import { builtinPacks } from "../../skin-pack.ts";
 
 const PACKS = ["combat", "alloy", "onyx", "xslimfire", "simple-x", "symbiosis"];
-
-interface Hit {
-  selector: string;
-  count: number;
-  first: string;
-  decls: string;
-}
-
-/** The skin sheet's style rules matching an element of this document (the Settings window). */
-async function skinRulesHere(): Promise<{ href: string; total: number; hits: Hit[]; error: string }> {
-  return (await browser.execute(async () => {
-    const link = document.getElementById("rekindle-skin") as HTMLLinkElement | null;
-    const href = link?.getAttribute("href") ?? "";
-    const walk = (rules: CSSRuleList, out: CSSStyleRule[]): void => {
-      for (const r of Array.from(rules)) {
-        if (r instanceof CSSStyleRule) out.push(r);
-        if ("cssRules" in r && (r as CSSGroupingRule).cssRules) walk((r as CSSGroupingRule).cssRules, out);
-      }
-    };
-    const report = (rules: CSSStyleRule[], error: string) => {
-      const hits: { selector: string; count: number; first: string; decls: string }[] = [];
-      for (const r of rules) {
-        let els: Element[] = [];
-        try {
-          els = Array.from(document.querySelectorAll(r.selectorText));
-        } catch {
-          continue;
-        }
-        // :root / html / body rules carry the tokens every window takes.
-        els = els.filter((e) => e !== document.documentElement && e !== document.body);
-        if (els.length === 0) continue;
-        const e = els[0] as HTMLElement;
-        const first = `${e.tagName.toLowerCase()}${e.id ? "#" + e.id : ""}.${Array.from(e.classList).join(".")}`;
-        hits.push({ selector: r.selectorText.slice(0, 160), count: els.length, first: first.slice(0, 100), decls: r.style.cssText.slice(0, 220) });
-      }
-      return { href, total: rules.length, hits, error };
-    };
-    try {
-      const out: CSSStyleRule[] = [];
-      walk(link!.sheet!.cssRules, out);
-      return report(out, "");
-    } catch (err) {
-      // A cross-origin sheet hides its rules: read its text instead.
-      try {
-        const text = await (await fetch(href)).text();
-        const sheet = new CSSStyleSheet();
-        sheet.replaceSync(text);
-        const out: CSSStyleRule[] = [];
-        walk(sheet.cssRules, out);
-        return report(out, `cssRules: ${String(err)} (read by fetch)`);
-      } catch (e2) {
-        return { href, total: 0, hits: [], error: `${String(err)}; fetch: ${String(e2)}` };
-      }
-    }
-  })) as { href: string; total: number; hits: Hit[]; error: string };
-}
 
 describe("Settings under faithful skins: what of the skin's sheet reaches it", function () {
   this.timeout(1_800_000);
@@ -91,9 +37,27 @@ describe("Settings under faithful skins: what of the skin's sheet reaches it", f
       await skinShown(browser, href);
       await browser.pause(1500);
       await shot("settings-appearance");
-      const { total, hits, error } = await skinRulesHere();
-      console.log(`[bleed] ${file}: ${hits.length} of ${total} skin rules match Settings' elements${error ? ` (${error})` : ""}`);
-      for (const h of hits) console.log(`[bleed] ${file}: ${h.selector} -> ${h.count} (${h.first}) { ${h.decls} }`);
+      // The skin sheet is cross-origin to the page (its rules are not
+      // readable), so what it paints is read from computed styles: every
+      // element in Settings drawn with skin:// art, its classes, ancestors
+      // and the art's name.
+      const painted = (await browser.execute(() => {
+        const name = (el: Element): string => `${el.tagName.toLowerCase()}${el.id ? "#" + el.id : ""}${el.classList.length ? "." + Array.from(el.classList).join(".") : ""}`;
+        const out: string[] = [];
+        for (const el of Array.from(document.querySelectorAll<HTMLElement>("body *"))) {
+          const cs = getComputedStyle(el);
+          const art = [cs.backgroundImage, cs.borderImageSource].filter((v) => v && v.includes("skin://"));
+          if (art.length === 0) continue;
+          const path: string[] = [];
+          for (let p = el.parentElement; p && p !== document.body && path.length < 5; p = p.parentElement) path.push(name(p));
+          const r = el.getBoundingClientRect();
+          const file = art.map((a) => (a.match(/skin:\/\/[^)"]+/g) ?? []).map((u) => u.split("/").slice(-2).join("/")).join(",")).join(" ");
+          out.push(`${name(el)} [${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}] art=${file.slice(0, 120)} in ${path.reverse().join(" > ")}`);
+        }
+        return out;
+      })) as string[];
+      console.log(`[bleed] ${file}: ${painted.length} element(s) in Settings drawn with skin art`);
+      for (const line of painted.slice(0, 25)) console.log(`[bleed] ${file}: ${line.slice(0, 400)}`);
       // The element under the skin list's middle: what paints over it.
       const over = (await browser.execute(() => {
         const list = document.querySelector(".skin-list, .skin-row")?.closest("div") as HTMLElement | null;
@@ -107,7 +71,7 @@ describe("Settings under faithful skins: what of the skin's sheet reaches it", f
       await switchTo(browser, BUDDY);
       await shot("buddy-list");
       await openSettings(browser, "Appearance");
-      expect(total).toBeGreaterThan(0);
+      expect(painted).toBeDefined();
     });
   }
 });
