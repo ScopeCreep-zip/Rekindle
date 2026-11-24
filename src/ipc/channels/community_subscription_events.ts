@@ -15,9 +15,15 @@ import type { TypingContext, UnreadChanged } from "./chat_events";
 import type { EventInfo, GameServer, Thread } from "../commands/types";
 
 /** Membership events from the daemon vocabulary. */
+/** `rekindle_types::JoinRefusal`: the inviter's typed refusal of a join. */
+export type JoinRefusal = "INVITE_USED_UP" | "INVITE_NO_LONGER_VALID" | "INVITE_UNKNOWN" | "NOT_ADMITTED";
+
 export type MembershipEvent =
   | { joinRequested: { community: string; pseudonym: string; displayName: string; hasInvite: boolean } }
   | { joinProgress: { community: string; stage: string; status: string } }
+  /** A join the inviter refused after it returned (plan JW): withdrawn, with
+   *  the Host's typed reason and its words for it. Sent once. */
+  | { joinWithdrawn: { community: string; reason: JoinRefusal; reasonText: string } }
   | {
       joined: {
         community: string;

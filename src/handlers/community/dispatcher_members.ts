@@ -4,7 +4,7 @@ import type {
   CommunitySubscriptionEvent,
   GovernanceEvent,
 } from "../../ipc/channels/community_subscription_events";
-import { applyJoinProgress, type JoinStageStatus } from "../../stores/join.store";
+import { applyJoinProgress, resetJoinProgress, type JoinStageStatus } from "../../stores/join.store";
 import { applySuccessorEvent } from "../../stores/successor.store";
 import { transformCommunityDetail } from "../../utils/transformers";
 import { handleResolveCommunityImageDataUrls } from "../../actions/community/lifecycle";
@@ -197,6 +197,23 @@ function applyMembershipRow(m: MembershipEvent): void {
 
 /** Membership events that write no community row: join progress. */
 function applyMembershipNotice(m: MembershipEvent): void {
+  // A join the inviter refused after it returned (plan JW): the community
+  // leaves the list and the Host's words say why, verbatim; the stepper ends.
+  if ("joinWithdrawn" in m) {
+    const { community, reasonText } = m.joinWithdrawn;
+    setCommunityState("communities", (prev) => {
+      const next = { ...prev };
+      delete next[community];
+      return next;
+    });
+    if (communityState.activeCommunity === community) {
+      setCommunityState("activeCommunity", null);
+      setCommunityState("activeChannel", null);
+    }
+    resetJoinProgress();
+    addToast(reasonText, "error");
+    return;
+  }
   if ("joinProgress" in m) {
     // Pure display: mirror the phase into the join store so the
     // stepper re-renders. No timeout logic — the backend gate owns
