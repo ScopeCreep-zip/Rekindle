@@ -22,6 +22,7 @@ use super::{pk, to};
 pub(super) fn samples(add: &mut impl FnMut(&str, Value)) {
     selection_samples(add);
     infoview_subject_samples(add);
+    call_target_samples(add);
     // `SkinApplyFailed`'s cause, each kind (the image one is also in the
     // event golden).
     add(
@@ -346,6 +347,85 @@ fn selection_samples(add: &mut impl FnMut(&str, Value)) {
     add(
         "skin.selection.friendGroup",
         to(SkinSelection::FriendGroup { group_id: Some(3) }),
+    );
+}
+
+/// `ShowVoiceWindow`'s `ShellOp::ShowCall`, each `CallTarget` (plan E7.2
+/// G-item A): camelCase fields, as the TS mirror reads them.
+fn call_target_samples(add: &mut impl FnMut(&str, Value)) {
+    use rekindle_types::dto::skin_run::{CallTarget, ShellOp};
+    add(
+        "skin.shellOp.showCall.call",
+        to(ShellOp::ShowCall {
+            target: CallTarget::Call {
+                call_id: "c1".into(),
+            },
+        }),
+    );
+    add(
+        "skin.shellOp.showCall.voice",
+        to(ShellOp::ShowCall {
+            target: CallTarget::Voice {
+                community: "VLD0:community".into(),
+                channel: "ch".into(),
+            },
+        }),
+    );
+    shell_op_samples(add);
+}
+
+/// The `ShellOp`s with multi-word fields and every `SkinRun` (plan E7.2):
+/// fields camelCase like the variants, as `dto_skin_run.ts` reads them, so
+/// a casing drift fails here.
+fn shell_op_samples(add: &mut impl FnMut(&str, Value)) {
+    use rekindle_types::dto::skin_run::{CallOp, ShellOp, SkinRun};
+    add(
+        "skin.shellOp.openGroupChat",
+        to(ShellOp::OpenGroupChat {
+            group_id: "g1".into(),
+        }),
+    );
+    add(
+        "skin.shellOp.inviteToRoom",
+        to(ShellOp::InviteToRoom {
+            group_id: "g1".into(),
+        }),
+    );
+    add(
+        "skin.shellOp.chooseDownloadDest",
+        to(ShellOp::ChooseDownloadDest {
+            attachment_id: "att-1".into(),
+            target: rekindle_types::dto::transfer::TransferTarget::Channel {
+                community: "VLD0:community".into(),
+                channel_id: "ch".into(),
+            },
+            suggested_name: "notes.txt".into(),
+        }),
+    );
+    add(
+        "skin.shellOp.newRoom",
+        to(ShellOp::NewRoom {
+            peer: Some(pk('a')),
+        }),
+    );
+    add(
+        "skin.run.shell",
+        to(SkinRun::Shell(ShellOp::Call(CallOp::Voice {
+            friend: pk('a'),
+        }))),
+    );
+    add(
+        "skin.run.notBuiltYet",
+        to(SkinRun::NotBuiltYet {
+            action: SkinAction::SearchFor,
+            message: "Search isn't in Rekindle yet (plan E7.2 G11)".into(),
+        }),
+    );
+    add(
+        "skin.run.launcher",
+        to(SkinRun::Launcher {
+            window: "buddy-list".into(),
+        }),
     );
 }
 

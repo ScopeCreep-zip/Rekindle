@@ -320,10 +320,20 @@ pub(crate) fn map(
         A::AnimationStop { group } => shell(ShellOp::AnimationStop { group: *group }),
         A::SetState(s) => shell(ShellOp::SetState(*s)),
         A::PlaySound(s) => shell(ShellOp::PlaySound(s.clone())),
+        // The active call's window, else our community voice session's
+        // (plan E7.2 G-item A); refused while there is neither.
+        A::ShowVoiceWindow => reads.show_call.clone().map_or_else(
+            || {
+                Err(IpcResponse::error(
+                    409,
+                    "There's no call or voice session to show.",
+                ))
+            },
+            |target| shell(ShellOp::ShowCall { target }),
+        ),
         // Not built yet, each with its plan step (lead decision 49; the
         // table in SK2-T1a's mapping): the button stays; the window says so.
-        A::ShowVoiceWindow
-        | A::HostGameLobby
+        A::HostGameLobby
         | A::JoinGameLobby
         | A::LeaveGameLobby
         | A::LaunchGameLobby
@@ -347,10 +357,49 @@ pub(crate) fn map(
     }
 }
 
+/// A feature gap's answer, with the words the window shows: the action's
+/// user-facing name and, where known, the plan row that builds it.
 fn gap(action: &A) -> Mapped {
+    let (name, row) = gap_name(action);
+    let message = match row {
+        Some(row) => format!("{name} isn't in Rekindle yet (plan {row})"),
+        None => format!("{name} isn't in Rekindle yet"),
+    };
     Mapped::Run(SkinRun::NotBuiltYet {
         action: action.clone(),
+        message,
     })
+}
+
+/// Each gap action's user-facing name and plan row (the table in SK2-T1a's
+/// mapping: lobbies G6, media G14, search G11, overlay G15–G18, menus G9).
+fn gap_name(action: &A) -> (String, Option<&'static str>) {
+    const OVERLAY: Option<&str> = Some("E7.2 G15–G18");
+    let name = |s: &str| s.to_owned();
+    match action {
+        A::HostGameLobby => (name("Hosting a game lobby"), Some("E7.2 G6")),
+        A::JoinGameLobby => (name("Joining a game lobby"), Some("E7.2 G6")),
+        A::LeaveGameLobby => (name("Leaving a game lobby"), Some("E7.2 G6")),
+        A::LaunchGameLobby => (name("Launching a game lobby"), Some("E7.2 G6")),
+        A::RefreshServer => (name("Refreshing a server"), Some("E7.2 G4")),
+        A::OpenSelected => (name("Opening a picture or video"), Some("E7.2 G14")),
+        A::UploadSelected => (name("Uploading a picture or video"), Some("E7.2 G14")),
+        A::DeleteSelected => (name("Deleting a picture or video"), Some("E7.2 G14")),
+        A::SearchFor => (name("Search"), Some("E7.2 G11")),
+        A::ShowWindow => (name("Showing the in-game overlay"), OVERLAY),
+        A::HideWindow => (name("Hiding the in-game overlay"), OVERLAY),
+        A::DialogOk | A::DialogCancel => (name("The overlay's dialogs"), OVERLAY),
+        A::EnableOverlay(_) | A::DisableOverlay(_) => {
+            (name("Turning overlay parts on and off"), OVERLAY)
+        }
+        A::UpdateClock => (name("The overlay clock"), OVERLAY),
+        A::TackWindow | A::UntackWindow => (name("Pinning overlay windows"), OVERLAY),
+        A::OpenOverlayOptions => (name("Overlay options"), OVERLAY),
+        A::AttachedClose => (name("Closing an attached overlay window"), OVERLAY),
+        A::BrowseBack | A::BrowseForward => (name("The overlay browser"), OVERLAY),
+        A::Menu(m) | A::ContextMenu(m) => (format!("The {m:?} menu"), Some("E7.2 G9")),
+        other => (format!("{other:?}"), None),
+    }
 }
 
 /// What [`resolve`] made of a request.

@@ -131,21 +131,67 @@ fn a_selection_action_is_refused_while_nothing_is_selected() {
 
 #[test]
 fn unbuilt_actions_yield_not_built_yet() {
-    for action in [A::SearchFor, A::RefreshServer, A::DeleteSelected] {
+    for (action, message) in [
+        (A::SearchFor, "Search isn't in Rekindle yet (plan E7.2 G11)"),
+        (
+            A::RefreshServer,
+            "Refreshing a server isn't in Rekindle yet (plan E7.2 G4)",
+        ),
+        (
+            A::DeleteSelected,
+            "Deleting a picture or video isn't in Rekindle yet (plan E7.2 G14)",
+        ),
+        (
+            A::HostGameLobby,
+            "Hosting a game lobby isn't in Rekindle yet (plan E7.2 G6)",
+        ),
+    ] {
         assert_eq!(
             run(&action),
             SkinRun::NotBuiltYet {
-                action: action.clone()
+                action: action.clone(),
+                message: message.into(),
             }
         );
     }
-    let gap_menu = A::Menu(rekindle_types::dto::skin_action::MenuRegistry::FEATURE_GAPS[0]);
+    let menu = rekindle_types::dto::skin_action::MenuRegistry::FEATURE_GAPS[0];
+    let gap_menu = A::Menu(menu);
     assert_eq!(
         run(&gap_menu),
         SkinRun::NotBuiltYet {
-            action: gap_menu.clone()
+            action: gap_menu.clone(),
+            message: format!("The {menu:?} menu isn't in Rekindle yet (plan E7.2 G9)"),
         }
     );
+}
+
+/// `ShowVoiceWindow` (plan E7.2 G-item A) shows the window the Host read
+/// (the active call, else the voice session), and is refused with neither.
+#[test]
+fn show_voice_window_shows_the_call_or_voice_session() {
+    use rekindle_types::dto::skin_run::CallTarget;
+    for target in [
+        CallTarget::Call {
+            call_id: "c1".into(),
+        },
+        CallTarget::Voice {
+            community: "VLD0:community".into(),
+            channel: "ch".into(),
+        },
+    ] {
+        let reads = Reads {
+            show_call: Some(target.clone()),
+            ..Reads::default()
+        };
+        assert!(matches!(
+            map(&A::ShowVoiceWindow, Selected::default(), &reads),
+            Ok(Mapped::Run(SkinRun::Shell(ShellOp::ShowCall { target: t }))) if t == target
+        ));
+    }
+    assert!(matches!(
+        map(&A::ShowVoiceWindow, Selected::default(), &Reads::default()),
+        Err(IpcResponse::Error { code: 409, ref message, .. }) if message == "There's no call or voice session to show."
+    ));
 }
 
 #[test]
@@ -184,7 +230,7 @@ fn resolve_takes_the_selection_from_the_host() {
 fn room(action: &A, friend: Option<&str>, rooms: &Rooms) -> Result<Mapped, IpcResponse> {
     let reads = Reads {
         rooms: rooms.clone(),
-        friend_game: None,
+        ..Reads::default()
     };
     map(
         action,

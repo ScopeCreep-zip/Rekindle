@@ -1340,6 +1340,33 @@
     "kind": "fixed",
     "size": 26
   },
+  "skin.run.launcher": {
+    "arg": {
+      "window": "buddy-list"
+    },
+    "kind": "launcher"
+  },
+  "skin.run.notBuiltYet": {
+    "arg": {
+      "action": {
+        "kind": "searchFor"
+      },
+      "message": "Search isn't in Rekindle yet (plan E7.2 G11)"
+    },
+    "kind": "notBuiltYet"
+  },
+  "skin.run.shell": {
+    "arg": {
+      "arg": {
+        "arg": {
+          "friend": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        "kind": "voice"
+      },
+      "kind": "call"
+    },
+    "kind": "shell"
+  },
   "skin.selection.friend": {
     "arg": {
       "publicKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -1623,6 +1650,59 @@
       }
     ],
     "window": "main"
+  },
+  "skin.shellOp.chooseDownloadDest": {
+    "arg": {
+      "attachmentId": "att-1",
+      "suggestedName": "notes.txt",
+      "target": {
+        "channelId": "ch",
+        "community": "VLD0:community",
+        "kind": "channel"
+      }
+    },
+    "kind": "chooseDownloadDest"
+  },
+  "skin.shellOp.inviteToRoom": {
+    "arg": {
+      "groupId": "g1"
+    },
+    "kind": "inviteToRoom"
+  },
+  "skin.shellOp.newRoom": {
+    "arg": {
+      "peer": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "kind": "newRoom"
+  },
+  "skin.shellOp.openGroupChat": {
+    "arg": {
+      "groupId": "g1"
+    },
+    "kind": "openGroupChat"
+  },
+  "skin.shellOp.showCall.call": {
+    "arg": {
+      "target": {
+        "arg": {
+          "callId": "c1"
+        },
+        "kind": "call"
+      }
+    },
+    "kind": "showCall"
+  },
+  "skin.shellOp.showCall.voice": {
+    "arg": {
+      "target": {
+        "arg": {
+          "channel": "ch",
+          "community": "VLD0:community"
+        },
+        "kind": "voice"
+      }
+    },
+    "kind": "showCall"
   },
   "skin.trigger": {
     "on": {
