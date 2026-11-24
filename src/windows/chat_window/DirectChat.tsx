@@ -26,6 +26,7 @@ import { useSafetyNumber } from "../../hooks/useSafetyNumber";
 import { identityPinMismatchText } from "../../utils/identity_pin";
 import DisappearingTimerControl from "../../components/chat/DisappearingTimerControl";
 import { handleLoadDisappearingTimer } from "../../actions/disappearing.actions";
+import { SlotMount } from "../../components/skin-tree/slots";
 
 /// The chat window's 1:1 mode: a conversation with a friend or a
 /// community member, with its call controls and typing indicator.
@@ -233,28 +234,36 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
         </div>
       </Show>
       <div id="main-content" tabindex="-1" class="window-main">
-      <GameInviteList peerId={peerId} peerName={peerName()} />
-      <MessageList
-        messages={messages()}
-        ownName={ownName()}
-        peerName={peerName()}
-        onRetry={handleRetry}
-        onDiscard={handleDiscard}
-        historyReady={historyReady()}
-      />
+      {/* Each part mounts into its slot when the pack's chat tree lays one
+       *  (plan SK17-2, components/skin-tree/slots.tsx), else stands here. */}
+      <SlotMount slot="chatArea">
+        <GameInviteList peerId={peerId} peerName={peerName()} />
+        <MessageList
+          messages={messages()}
+          ownName={ownName()}
+          peerName={peerName()}
+          onRetry={handleRetry}
+          onDiscard={handleDiscard}
+          historyReady={historyReady()}
+        />
+      </SlotMount>
       {/* A connected call's controls (timer, mute, hangup, video) live in
        *  its own call window, which the backend opens on connect. */}
-      <TypingIndicator isTyping={conversation().isTyping} peerName={peerName()} />
+      <SlotMount slot="typingNotice">
+        <TypingIndicator isTyping={conversation().isTyping} peerName={peerName()} />
+      </SlotMount>
       {/* A first message waits until our identity is published (plan E2.5
        *  FC3); the composer says so while it is not. */}
-      <OwnRecordsWait active={true} />
-      <MessageInput
-        label={`Message ${peerName()}`}
-        peerId={peerId}
-        disabled={pinMismatch()}
-        sendButton
-        disabledMessage={identityPinMismatchText(peerName())}
-      />
+      <SlotMount slot="chatEdit">
+        <OwnRecordsWait active={true} />
+        <MessageInput
+          label={`Message ${peerName()}`}
+          peerId={peerId}
+          disabled={pinMismatch()}
+          sendButton
+          disabledMessage={identityPinMismatchText(peerName())}
+        />
+      </SlotMount>
       </div>
     </>
   );

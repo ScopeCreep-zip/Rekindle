@@ -24,6 +24,7 @@ import { handleLoadDisappearingTimer } from "../../actions/disappearing.actions"
 import DisappearingTimerControl from "../../components/chat/DisappearingTimerControl";
 import InviteToRoomModal from "../../components/chat/InviteToRoomModal";
 import { subscribeGroupChatEvents } from "../../handlers/group-dm.handlers";
+import { SlotMount } from "../../components/skin-tree/slots";
 
 /// The chat window's group mode (plan E2.6): the group's stored history
 /// (`group_dm_messages`) with members' messages as they arrive, its members
@@ -163,28 +164,34 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
       </Show>
       <InviteToRoomModal groupId={inviting() ? groupId : null} onClose={() => setInviting(false)} />
       <div id="main-content" tabindex="-1" class="window-main">
-        <MessageList
-          messages={messages()}
-          ownName={authState.displayName ?? "You"}
-          peerName={name()}
-          memberNames={memberNames()}
-          onRetry={(id) => void handleRetryGroupSend(groupId, id)}
-          onDiscard={(id) => void handleDiscardGroupSend(groupId, id)}
-          historyReady={historyReady()}
-        />
-        <TypingIndicator isTyping={typingNames().length > 0} peerName={typingNames().join(", ")} />
+        <SlotMount slot="chatArea">
+          <MessageList
+            messages={messages()}
+            ownName={authState.displayName ?? "You"}
+            peerName={name()}
+            memberNames={memberNames()}
+            onRetry={(id) => void handleRetryGroupSend(groupId, id)}
+            onDiscard={(id) => void handleDiscardGroupSend(groupId, id)}
+            historyReady={historyReady()}
+          />
+        </SlotMount>
+        <SlotMount slot="typingNotice">
+          <TypingIndicator isTyping={typingNames().length > 0} peerName={typingNames().join(", ")} />
+        </SlotMount>
         {/* A group send waits until our identity is published (plan E2.5
          *  FC3); the composer says so while it is not. */}
-        <OwnRecordsWait active={true} />
-        <MessageInput
-          label={`Message ${name()}`}
-          peerId={groupId}
-          onSend={(_, body) => void send(body)}
-          sendButton
-          onDraftChanged={(body) => handleGroupDraftChanged(groupId, body)}
-          disabled={!held()}
-          disabledMessage="You can send once you are in this group."
-        />
+        <SlotMount slot="chatEdit">
+          <OwnRecordsWait active={true} />
+          <MessageInput
+            label={`Message ${name()}`}
+            peerId={groupId}
+            onSend={(_, body) => void send(body)}
+            sendButton
+            onDraftChanged={(body) => handleGroupDraftChanged(groupId, body)}
+            disabled={!held()}
+            disabledMessage="You can send once you are in this group."
+          />
+        </SlotMount>
         <Show when={!group()}>
           <div class="empty-placeholder-subtitle" role="status">
             This group is not in your list.
