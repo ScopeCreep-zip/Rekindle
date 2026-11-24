@@ -121,6 +121,7 @@ pub async fn queue_awaiting_key<D: ChannelMessagingDeps>(
         timestamp_ms: timestamp_u64,
         body: body.to_string(),
         channel_id: channel_id.to_string(),
+        forwarded_from_author: None,
     });
     deps.emit_send_state(community_id, channel_id, &message_id, state);
     tracing::info!(message = %message_id, "channel post waits for the community key");

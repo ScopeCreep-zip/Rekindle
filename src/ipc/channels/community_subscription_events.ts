@@ -382,6 +382,9 @@ export type ChannelMessageEvent =
         body: string | null;
         /** The message id of the parent this one replies to. */
         replyToMessageId: string | null;
+        /** The original author's pseudonym when the post is a forward (the
+         *  value history serves as `forwardedFromAuthor`); `null` otherwise. */
+        forwardedFromAuthor: string | null;
         /** The D26 gate hid it (an automod `BlurContent` match). */
         automodBlurred: boolean;
       };

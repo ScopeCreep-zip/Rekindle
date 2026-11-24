@@ -192,6 +192,7 @@ impl HostChannel {
                 timestamp: post.message.timestamp,
                 body: Some(body.clone()),
                 reply_to_message_id: post.message.reply_to.clone(),
+                forwarded_from_author: post.forwarded_from_author.clone(),
                 automod_blurred: blurred,
             },
         ));
