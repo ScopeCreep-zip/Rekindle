@@ -373,6 +373,7 @@ fn a_stored_post_reaches_the_community_window_as_new() {
             body: Some("hello".into()),
             reply_to_message_id: None,
             forwarded_from_author: None,
+            forwarded_from_name: None,
             automod_blurred: false,
         },
     ));
@@ -387,6 +388,10 @@ fn a_stored_post_reaches_the_community_window_as_new() {
     assert!(
         post["forwardedFromAuthor"].is_null(),
         "a post that is not a forward names no original author"
+    );
+    assert!(
+        post["forwardedFromName"].is_null(),
+        "a post that is not a forward names no author by name"
     );
     assert_eq!(post["automodBlurred"], false);
 }

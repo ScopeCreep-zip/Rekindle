@@ -58,6 +58,10 @@ impl HostChannel {
         // (plan E3.3); a poll shows only on its creator's own message.
         let history::ChannelAttachments { reactions, polls } = attached;
         for view in &mut messages {
+            // The forward's author as a sender header names them (plan
+            // E3.3), resolved now, as the live `New` was.
+            view.forwarded_from_name =
+                self.forward_name(community_id, view.forwarded_from_author.as_deref());
             let Some(id) = view.server_message_id.as_deref() else {
                 continue;
             };
@@ -104,6 +108,7 @@ pub(crate) fn stored_view(
         pinned: None,
         poll: None,
         forwarded_from_author: row.forwarded_from_author,
+        forwarded_from_name: None,
         attachment,
         flags: row.flags,
         failure_reason: row

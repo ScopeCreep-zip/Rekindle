@@ -385,6 +385,9 @@ export type ChannelMessageEvent =
         /** The original author's pseudonym when the post is a forward (the
          *  value history serves as `forwardedFromAuthor`); `null` otherwise. */
         forwardedFromAuthor: string | null;
+        /** That author as the community names them: the display form a
+         *  sender header shows (never the raw key); `null` otherwise. */
+        forwardedFromName: string | null;
         /** The D26 gate hid it (an automod `BlurContent` match). */
         automodBlurred: boolean;
       };

@@ -193,6 +193,8 @@ impl HostChannel {
                 body: Some(body.clone()),
                 reply_to_message_id: post.message.reply_to.clone(),
                 forwarded_from_author: post.forwarded_from_author.clone(),
+                forwarded_from_name: self
+                    .forward_name(&post.community_id, post.forwarded_from_author.as_deref()),
                 automod_blurred: blurred,
             },
         ));

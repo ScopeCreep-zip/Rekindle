@@ -230,9 +230,7 @@ impl HostGovernance {
     /// card, else their key's short fingerprint. Never empty, never a raw
     /// key, never a name the frame carries.
     pub(crate) fn typist_name(&self, community_id: &str, sender: &str) -> String {
-        let pseudonym = PseudonymKey::from_hex_lossy(sender);
-        let card_name = (self.ctx.communities).member_card_name(community_id, &pseudonym);
-        super::community_profile::shown_name(card_name, &pseudonym)
+        super::community_profile::member_shown_name(&self.ctx.communities, community_id, sender)
     }
 
     /// `channel_id`'s tag under the current key of its text scope.

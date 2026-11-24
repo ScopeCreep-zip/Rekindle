@@ -14,6 +14,7 @@ use rekindle_types::intent::Escalation;
 use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent};
 
 use crate::harness::{eventually, Community, Events};
+use crate::moderation::listed;
 
 const LIMIT: Duration = Duration::from_secs(180);
 
@@ -89,17 +90,22 @@ async fn a_forward_to_another_membership_is_held_with_both_counts() {
     );
 }
 
-/// The forward `New` on `events` (its id and original author), the post
-/// `source` excluded.
-fn forward_seen(events: &Events, source: &str) -> Option<(String, String)> {
+/// The forward `New` on `events` (its id, original author and that
+/// author's name), the post `source` excluded.
+fn forward_seen(events: &Events, source: &str) -> Option<(String, String, Option<String>)> {
     let found = std::cell::RefCell::new(None);
     events.any(|event| match event {
         SubscriptionEvent::ChannelMessage(ChannelMessageEvent::New {
             message_id,
             forwarded_from_author: Some(author),
+            forwarded_from_name,
             ..
         }) if message_id != source => {
-            *found.borrow_mut() = Some((message_id.clone(), author.clone()));
+            *found.borrow_mut() = Some((
+                message_id.clone(),
+                author.clone(),
+                forwarded_from_name.clone(),
+            ));
             true
         }
         _ => false,
@@ -163,10 +169,29 @@ async fn a_forward_is_live_with_its_original_author_for_both_members() {
     })
     .await;
     assert!(echoed_live, "ann's echo of her forward names an author");
-    let (forward_id, echoed) = forward_seen(&seen_by[0], &source).expect("the echo seen above");
+    let (forward_id, echoed, echoed_name) =
+        forward_seen(&seen_by[0], &source).expect("the echo seen above");
     assert_eq!(echoed, author, "the echo names bea, not the forwarder");
+    // The name each member's sender header shows for bea: its member list's.
+    let mut header = Vec::new();
+    for i in [0, 1] {
+        header.push(
+            listed(&community, i, &author)
+                .await
+                .and_then(|m| m["displayName"].as_str().map(str::to_owned))
+                .expect("bea listed by name"),
+        );
+    }
+    assert_ne!(header[0], author, "a sender header never shows the raw key");
+    assert_eq!(
+        echoed_name.as_deref(),
+        Some(header[0].as_str()),
+        "ann's echo names bea as her sender header does"
+    );
     let read = eventually(&community.sim, LIMIT, || async {
-        forward_seen(&seen_by[1], &source).is_some_and(|(id, by)| id == forward_id && by == author)
+        forward_seen(&seen_by[1], &source).is_some_and(|(id, by, name)| {
+            id == forward_id && by == author && name.as_deref() == Some(header[1].as_str())
+        })
     })
     .await;
     assert!(
@@ -180,6 +205,13 @@ async fn a_forward_is_live_with_its_original_author_for_both_members() {
                 .as_deref(),
             Some(author.as_str()),
             "member {i}'s history serves the author the live event named"
+        );
+        assert_eq!(
+            history_field(&community, i, &forward_id, "forwardedFromName")
+                .await
+                .as_deref(),
+            Some(header[i].as_str()),
+            "member {i}'s history names the author as the sender header does"
         );
     }
 }

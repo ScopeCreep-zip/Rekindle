@@ -466,6 +466,7 @@ impl View for ChannelWatchView {
                 body,
                 reply_to_message_id,
                 forwarded_from_author: _,
+                forwarded_from_name: _,
                 automod_blurred,
             }) if *community == self.community && *channel == self.channel => {
                 self.message_list.push(DecryptedMessageDisplay {
