@@ -23,7 +23,7 @@ export async function artElements(): Promise<string[]> {
   })) as string[];
 }
 
-/** The current window's kind (plan SB1: `data-window` on its `.app-frame` root). */
+/** The current window's kind (plan SB1: `data-window` on its document root, `<html>`). */
 export async function windowKind(): Promise<string> {
-  return (await browser.execute(() => document.querySelector(".app-frame")?.getAttribute("data-window") ?? "")) as string;
+  return (await browser.execute(() => document.documentElement.dataset.window ?? "")) as string;
 }

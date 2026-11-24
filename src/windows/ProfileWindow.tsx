@@ -17,6 +17,7 @@ import VerifiedBadge from "../components/profile/VerifiedBadge";
 import { useSafetyNumber } from "../hooks/useSafetyNumber";
 import GameIcon from "../components/game/GameIcon";
 import FriendNicknameField from "../components/profile/FriendNicknameField";
+import { setWindowKind } from "../utils/window_kind";
 
 function getKeyFromUrl(): string {
   const params = new URLSearchParams(window.location.search);
@@ -62,8 +63,9 @@ const ProfileWindow: Component = () => {
     return result;
   });
 
+  setWindowKind("profile");
   return (
-    <div class="app-frame" data-window="profile">
+    <div class="app-frame">
       <Titlebar title={`Profile — ${displayName()}`} />
       <div class="profile-content">
         <Avatar displayName={displayName()} size={64} />

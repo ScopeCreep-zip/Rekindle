@@ -10,6 +10,7 @@ import { subscribeLifecycleEvents } from "../ipc/channels/subscriptions";
 import { errorMessage } from "../utils/error";
 import { truncateKey } from "../utils/formatting";
 import { startEventStream } from "../ipc/channels";
+import { setWindowKind } from "../utils/window_kind";
 
 type Mode = "picker" | "login" | "create";
 
@@ -146,8 +147,9 @@ const LoginWindow: Component = () => {
     }
   }
 
+  setWindowKind("login");
   return (
-    <div class="app-frame" data-window="login">
+    <div class="app-frame">
       <Titlebar title="Rekindle" />
 
       {/* Picker mode — avatar bubble grid */}

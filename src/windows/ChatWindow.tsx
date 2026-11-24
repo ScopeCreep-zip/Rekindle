@@ -4,6 +4,7 @@ import Titlebar from "../components/titlebar/Titlebar";
 import DirectChat from "./chat_window/DirectChat";
 import GroupChat from "./chat_window/GroupChat";
 import { useChatSearchChord } from "../hooks/useChatSearchChord";
+import { setWindowKind } from "../utils/window_kind";
 
 /// The one chat window (plan E2.3): `?peer=<identity key>` is a 1:1
 /// conversation, `?group=<group id>` a group DM (32 hex, plan E2.6
@@ -14,12 +15,12 @@ const ChatWindow: Component = () => {
   const group = params.get("group") ?? "";
   useChatSearchChord(group ? null : peer || null);
 
+  // The window's kind (plan SB1), as its label names it: a group's or a 1:1's.
+  setWindowKind(group ? "group-chat" : "chat");
   return (
     // `chat-window` scopes the chat window's skin surfaces (plan E7.7.7).
     // `data-skin-window` names the skin's chat frame layout (plan SK0 S2).
-    // `data-window` is the window's kind (plan SB1), as its label names it:
-    // a group's window or a 1:1's, which the Host's pack art is scoped by.
-    <div class="app-frame chat-window" data-window={group ? "group-chat" : "chat"} data-skin-window="chat">
+    <div class="app-frame chat-window" data-skin-window="chat">
       <SkinFrame />
       {/* Architecture §32 a11y — keyboard skip link past the header. */}
       <a href="#main-content" class="skip-link">Skip to messages</a>

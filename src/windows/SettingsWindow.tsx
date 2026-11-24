@@ -15,6 +15,7 @@ import VideoTab from "./settings/VideoTab";
 import PrivacyTab from "./settings/PrivacyTab";
 import DevicesTab from "./settings/DevicesTab";
 import AboutTab from "./settings/AboutTab";
+import { setWindowKind } from "../utils/window_kind";
 
 
 const VALID_TABS: SettingsTab[] = ["profile", "application", "appearance", "notifications", "audio", "video", "privacy", "devices", "mobile", "about"];
@@ -59,8 +60,9 @@ const SettingsWindow: Component = () => {
     unlistenSwitchTab?.then((unlisten) => unlisten());
   });
 
+  setWindowKind("settings");
   return (
-    <div class="app-frame" data-window="settings">
+    <div class="app-frame">
       {/* Architecture §32 a11y — keyboard skip link past tab rail. */}
       <a href="#main-content" class="skip-link">Skip to settings content</a>
       <Titlebar title="Settings" />
