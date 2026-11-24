@@ -14,11 +14,20 @@ import type { CommunityEvent } from "./community_events";
 import type { TypingContext, UnreadChanged } from "./chat_events";
 import type { EventInfo, GameServer, Thread } from "../commands/types";
 
+/** Why an inviter refused a join (`rekindle_types::join_refusal::JoinRefusal`). */
+export type JoinRefusal = "INVITE_USED_UP" | "INVITE_NO_LONGER_VALID" | "INVITE_UNKNOWN" | "NOT_ADMITTED";
+
 /** Membership events from the daemon vocabulary. */
 /** `rekindle_types::JoinRefusal`: the inviter's typed refusal of a join. */
 export type JoinRefusal = "INVITE_USED_UP" | "INVITE_NO_LONGER_VALID" | "INVITE_UNKNOWN" | "NOT_ADMITTED";
 
 export type MembershipEvent =
+  /**
+   * Our join was withdrawn after it returned: the inviter refused it on a
+   * retried exchange and the Host forgot the community (plan E3.1/JN1).
+   * `reasonText` is the Host's words for the user; render it as given.
+   */
+  | { joinWithdrawn: { community: string; reason: JoinRefusal; reasonText: string } }
   | { joinRequested: { community: string; pseudonym: string; displayName: string; hasInvite: boolean } }
   | { joinProgress: { community: string; stage: string; status: string } }
   /** A join the inviter refused after it returned (plan JW): withdrawn, with
