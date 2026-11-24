@@ -14,6 +14,7 @@ import { NET_WAIT_MS, WAIT_MS, byText, waitUntil } from "../../../walk/helpers.t
 import {
   type User,
   channelCount,
+  DOT_STATUS,
   consoleSeen,
   createCommunity,
   createIdentity,
@@ -21,6 +22,7 @@ import {
   joinCommunity,
   newUser,
   openCommunity,
+  ownStatusValue,
   postMessage,
   selectChannel,
   setLocationSharing,
@@ -51,56 +53,56 @@ async function membersShow(b: Browser, name: string): Promise<void> {
 }
 
 /**
- * `b`'s open channel shows `text` within LIVE_MS under the sender name
- * `sender` (the sender's community name), then no unread badge, and no failed
- * mark-read.
- */
-/**
  * Presence in `b`'s open community window while both members view CHANNEL
- * (the lead, 2026-11-23: Bob's list put a posting Alice under Offline, and
- * his own row showed Away while Online): `other`'s row and `self`'s own row
- * each carry the Online status dot ("Status: Online", StatusDot.tsx), in
- * whatever group the list puts them (roles group first: an Owner sits under
- * "Owner", not "Online"), as their buddy lists show (both stay Online
- * throughout); and CHANNEL's presence badge reads `here`: "1 here" by
- * default, since location is shared with no one by default and a member who
- * shares none sees no one's (PresenceSharingPolicy share_location None,
- * rekindle-presence community/policy.rs), "2 here" once both share it.
+ * (the lead, 2026-11-23): `other`'s row reads the status `otherB`'s own
+ * status line shows, and `self`'s own row reads what `b`'s own line shows
+ * (an idle Mac may legitimately go away, so the check is that each place
+ * agrees, not a literal Online; Away rows under an Online user were the
+ * bug), in whatever group the list puts them (roles group first); and
+ * CHANNEL's presence badge reads `here`: "1 here" by default, since location
+ * is shared with no one by default and a member who shares none sees no
+ * one's (PresenceSharingPolicy share_location None, rekindle-presence
+ * community/policy.rs), "2 here" once both share it.
  */
-async function presenceRight(b: Browser, self: string, other: string, here = "1 here"): Promise<void> {
+async function presenceRight(b: Browser, otherB: Browser, self: string, other: string, here = "1 here"): Promise<void> {
   let last = "";
   await waitUntil(
     async () => {
-      last = (await b.execute(
-        (me: string, them: string, channel: string, want: string) => {
-          // Each member row's status dot, by name.
+      const mine = await ownStatusValue(b);
+      const theirs = await ownStatusValue(otherB);
+      const seen = (await b.execute(
+        (me: string, them: string, channel: string) => {
           const dots: Record<string, string> = {};
           for (const el of Array.from(document.querySelectorAll(".member-item"))) {
             const name = (el.querySelector(".member-name")?.textContent ?? "").trim();
             dots[name] = el.querySelector('[role="img"]')?.getAttribute("aria-label") ?? "";
           }
           const row = Array.from(document.querySelectorAll(".channel-item")).find((r) => (r.querySelector(".channel-name")?.textContent ?? "").trim() === channel);
-          const here = row?.querySelector(".channel-presence-badge")?.getAttribute("title") ?? "no presence badge";
-          const faults: string[] = [];
-          if (dots[them] !== "Status: Online") faults.push(`${them}'s row reads "${dots[them] ?? "no row"}"`);
-          if (dots[me] !== "Status: Online") faults.push(`own row reads "${dots[me] ?? "no row"}"`);
-          if (here !== want) faults.push(`#${channel} badge "${here}", not "${want}"`);
-          return faults.join("; ");
+          return { me: dots[me] ?? "no row", them: dots[them] ?? "no row", here: row?.querySelector(".channel-presence-badge")?.getAttribute("title") ?? "no presence badge" };
         },
         self,
         other,
         CHANNEL,
-        here,
-      )) as string;
+      )) as { me: string; them: string; here: string };
+      const faults: string[] = [];
+      if ((DOT_STATUS[seen.them] ?? seen.them) !== theirs) faults.push(`${other}'s row "${seen.them}", their own line ${theirs}`);
+      if ((DOT_STATUS[seen.me] ?? seen.me) !== mine) faults.push(`own row "${seen.me}", own line ${mine}`);
+      if (seen.here !== here) faults.push(`#${CHANNEL} badge "${seen.here}", not "${here}"`);
+      last = faults.join("; ");
       return last === "";
     },
     NET_WAIT_MS,
-    `presence in ${self}'s community window is wrong`,
+    `presence in ${self}'s community window`,
   ).catch(() => {
     throw new Error(`presence in ${self}'s community window: ${last}`);
   });
 }
 
+/**
+ * `b`'s open channel shows `text` within LIVE_MS under the sender name
+ * `sender` (the sender's community name), then no unread badge, and no failed
+ * mark-read.
+ */
 async function seesLive(b: Browser, text: string, sender: string): Promise<void> {
   const message = await byText(b, ".community-main .chat-message", text.slice(0, 40), LIVE_MS);
   await waitUntil(
@@ -197,7 +199,7 @@ describe("a community post reaches the other member live", () => {
     const text = `live a→b ${Date.now()}`;
     await postMessage(multiRemoteBrowser.getInstance("alice"), alice, text);
     await seesLive(multiRemoteBrowser.getInstance("bob"), text, ALICE_NAME);
-    await presenceRight(multiRemoteBrowser.getInstance("bob"), BOB_NAME, ALICE_NAME);
+    await presenceRight(multiRemoteBrowser.getInstance("bob"), multiRemoteBrowser.getInstance("alice"), BOB_NAME, ALICE_NAME);
     await shot("alice-post-at-bob");
   });
 
@@ -205,7 +207,7 @@ describe("a community post reaches the other member live", () => {
     const text = `live b→a ${Date.now()}`;
     await postMessage(multiRemoteBrowser.getInstance("bob"), bob, text);
     await seesLive(multiRemoteBrowser.getInstance("alice"), text, BOB_NAME);
-    await presenceRight(multiRemoteBrowser.getInstance("alice"), ALICE_NAME, BOB_NAME);
+    await presenceRight(multiRemoteBrowser.getInstance("alice"), multiRemoteBrowser.getInstance("bob"), ALICE_NAME, BOB_NAME);
     await shot("bob-post-at-alice");
   });
 
@@ -217,10 +219,13 @@ describe("a community post reaches the other member live", () => {
     const b = multiRemoteBrowser.getInstance("bob");
     await setLocationSharing(a, alice, true);
     await setLocationSharing(b, bob, true);
-    await Promise.all([presenceRight(a, ALICE_NAME, BOB_NAME, "2 here"), presenceRight(b, BOB_NAME, ALICE_NAME, "2 here")]);
+    // One at a time: each reads both sessions' own status lines.
+    await presenceRight(a, b, ALICE_NAME, BOB_NAME, "2 here");
+    await presenceRight(b, a, BOB_NAME, ALICE_NAME, "2 here");
     await shot("location-shared");
     await setLocationSharing(b, bob, false);
-    await Promise.all([presenceRight(a, ALICE_NAME, BOB_NAME, "1 here"), presenceRight(b, BOB_NAME, ALICE_NAME, "1 here")]);
+    await presenceRight(a, b, ALICE_NAME, BOB_NAME, "1 here");
+    await presenceRight(b, a, BOB_NAME, ALICE_NAME, "1 here");
     await shot("location-unshared");
   });
 });

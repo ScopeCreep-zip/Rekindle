@@ -338,6 +338,38 @@ export async function setLocationSharing(b: Browser, user: User, share: boolean)
   await closeModal(b);
 }
 
+/** A status as one's own status line names it (StatusPicker's labels), as a
+ *  value; "Appear Offline" is what others see as offline. */
+const OWN_STATUS: Record<string, string> = { Online: "online", Away: "away", Busy: "busy", "Appear Offline": "offline" };
+
+/** A status dot's accessible name (StatusDot.tsx "Status: <label>"), as the same value. */
+export const DOT_STATUS: Record<string, string> = {
+  "Status: Online": "online",
+  "Status: Away": "away",
+  "Status: Do not disturb": "busy",
+  "Status: In game": "ingame",
+  "Status: Offline": "offline",
+  "Status: Appear offline": "offline",
+};
+
+/**
+ * `b`'s own effective status as its buddy list's status line shows it (the
+ * app's StatusPicker, or a skin tree's status field), as a status value;
+ * back on the window `b` was on.
+ */
+export async function ownStatusValue(b: Browser): Promise<string> {
+  const here = await b.getWindowHandle();
+  await switchTo(b, BUDDY);
+  const label = (await b.execute(
+    () =>
+      document.querySelector(".status-picker .buddy-name")?.textContent?.trim() ||
+      document.querySelector<HTMLInputElement>(".skin-status-edit")?.placeholder?.trim() ||
+      "",
+  )) as string;
+  await b.switchToWindow(here);
+  return OWN_STATUS[label] ?? `unread "${label}"`;
+}
+
 /** In the open community window, select channel `name`. */
 export async function selectChannel(b: Browser, name: string): Promise<void> {
   await (await byText(b, ".channel-item", name.slice(0, 24), NET_WAIT_MS)).click();
