@@ -6,12 +6,14 @@
 //! every window Rekindle adds that Xfire never drew but the Community
 //! window, keep the theme's tokens and none of the pack's art.
 //!
-//! Every window's root `.app-frame` carries `data-window`, its window kind
-//! in kebab case (`login`, `buddy-list`, `settings`, `skin-editor`, `chat`,
+//! Every window's document root (`<html>`, one per window) carries
+//! `data-window`, its window kind in kebab case (`login`, `buddy-list`, `settings`, `skin-editor`, `chat`,
 //! `group-chat`, `community`, `community-browser`, `call`, `profile`,
 //! `popup`). The skin layer's region, band and icon properties are set on
-//! the roots of the skinned kinds, so they inherit only inside those
-//! windows; elsewhere each `var()` is unset and the app's own rule shows.
+//! the document roots of the skinned kinds, so they inherit everywhere in
+//! those windows, menus, context menus and dialogs portaled under `<body>`
+//! included, and nowhere else: elsewhere each `var()` is unset and the
+//! app's own rule shows.
 
 /// Each pack component that is a window and the app window kinds it skins.
 /// The Community window is composed from the pack's room window
@@ -41,14 +43,14 @@ pub fn skinned_windows() -> impl Iterator<Item = &'static str> {
         .flat_map(|(_, kinds)| kinds.iter().copied())
 }
 
-/// The selector of every skinned window's root:
-/// `.app-frame:is([data-window="buddy-list"], …)`.
+/// The selector of every skinned window's document root:
+/// `:root:is([data-window="buddy-list"], …)`.
 #[must_use]
 pub fn skinned_root() -> String {
     let kinds: Vec<String> = skinned_windows()
         .map(|k| format!("[data-window=\"{k}\"]"))
         .collect();
-    format!(".app-frame:is({})", kinds.join(", "))
+    format!(":root:is({})", kinds.join(", "))
 }
 
 /// `decls` in the skin layer on the skinned windows' roots.

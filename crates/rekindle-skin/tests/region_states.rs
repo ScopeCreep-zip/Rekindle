@@ -144,7 +144,7 @@ fn the_skin_css_addresses_images_by_hash_under_the_base() {
     assert_eq!(
         css,
         format!(
-            "@layer skin {{\n  .app-frame:is([data-window=\"buddy-list\"], [data-window=\"chat\"], [data-window=\"group-chat\"], [data-window=\"community\"], [data-window=\"popup\"]) {{\n    --skin-region-titlebar-btn-close: url(\"skin://localhost/abc/{normal}.png\") 2 3 2 3 fill / 2px 3px 2px 3px / 0 stretch;\n    --skin-region-titlebar-btn-close--hover: url(\"skin://localhost/abc/{hover}.png\") 2 3 2 3 fill / 2px 3px 2px 3px / 0 stretch;\n  }}\n}}\n"
+            "@layer skin {{\n  :root:is([data-window=\"buddy-list\"], [data-window=\"chat\"], [data-window=\"group-chat\"], [data-window=\"community\"], [data-window=\"popup\"]) {{\n    --skin-region-titlebar-btn-close: url(\"skin://localhost/abc/{normal}.png\") 2 3 2 3 fill / 2px 3px 2px 3px / 0 stretch;\n    --skin-region-titlebar-btn-close--hover: url(\"skin://localhost/abc/{hover}.png\") 2 3 2 3 fill / 2px 3px 2px 3px / 0 stretch;\n  }}\n}}\n"
         )
     );
     assert!(!css.contains("assets/"), "no package name reaches CSS");

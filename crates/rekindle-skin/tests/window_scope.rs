@@ -2,7 +2,7 @@
 //! (`regions::css::scope`). Every built-in's served sheet is walked rule by
 //! rule: a rule that draws pack art (a `skin://` image, or a region or
 //! icon property) must be scoped to a skinned window's root, so none can
-//! match Settings (`.app-frame[data-window="settings"]`), whose skin list
+//! match Settings (`:root[data-window="settings"]`), whose skin list
 //! once showed Combat's camo frame and Symbiosis's buttons.
 
 use rekindle_skin::regions::css::scope::{skinned_windows, PACK_WINDOWS, UNSKINNED_WINDOWS};
