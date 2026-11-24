@@ -1,7 +1,7 @@
 // Plan SB1: the Host scopes each pack's art to the windows the pack defines
 // (`:root[data-window]`), so Settings gets none. The other half of the
-// proof: no skinned window goes bare. Ari (the app) befriends Cara (fleet),
-// so a 1:1 chat and a group with her can open, and creates a community. For
+// proof: no skinned window goes bare. Ari (the app) befriends Cara and Dan (fleet),
+// so a 1:1 chat (Cara) and a group of three can open, and creates a community. For
 // every pack, the buddy list, the 1:1 chat, the group chat and the community
 // window each name their kind and paint pack art (`[art]` counts), each a
 // shot.
@@ -30,13 +30,14 @@ describe("skinned windows keep their pack art (SB1)", function () {
 
   before(async () => {
     await createIdentity(browser, me);
-    peers = await startFleet(["Cara"]);
+    peers = await startFleet(["Cara", "Dan"]);
     await befriendFleet(browser, me, peers);
     windows.push({ label: "buddy-list", kind: "buddy-list", handle: await browser.getWindowHandle() });
     await openChat(browser, "Cara");
     windows.push({ label: "chat", kind: "chat", handle: await browser.getWindowHandle() });
     await switchTo(browser, BUDDY);
-    await createGroup(browser, me, GROUP, ["Cara"]);
+    // A group DM is 3–8 people (NewGroupModal MIN_PICKED = 2 friends besides us).
+    await createGroup(browser, me, GROUP, ["Cara", "Dan"]);
     await openGroup(browser, GROUP);
     windows.push({ label: "group-chat", kind: "group-chat", handle: await browser.getWindowHandle() });
     await switchTo(browser, BUDDY);
