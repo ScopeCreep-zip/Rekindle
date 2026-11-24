@@ -65,6 +65,7 @@ pub fn samples() -> Vec<Sample> {
                 body: Some(text("hello channel")),
                 reply_to_message_id: Some("msg_41".into()),
                 forwarded_from_author: Some(pk('b')),
+                forwarded_from_name: Some("bbbb bbbb".into()),
                 automod_blurred: true,
             },
         ),

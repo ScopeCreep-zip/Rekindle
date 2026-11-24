@@ -117,6 +117,7 @@ fn samples() -> Map<String, Value> {
                 selected_answers: vec![],
             }),
             forwarded_from_author: None,
+            forwarded_from_name: None,
             attachment: Some(rekindle_types::dto::channel_message::MessageAttachment {
                 attachment_id: "att_1".into(),
                 filename: "a.png".into(),

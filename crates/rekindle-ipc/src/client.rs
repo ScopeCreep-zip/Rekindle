@@ -256,7 +256,7 @@ impl BusClient {
     ) -> Result<IpcResponse> {
         let msg = Message::new(
             &self.msg_ctx,
-            BusPayload::Request(request),
+            BusPayload::Request(Box::new(request)),
             level,
             self.epoch,
         );

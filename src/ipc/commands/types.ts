@@ -30,7 +30,8 @@ export interface Message {
     selectedAnswers: number[];
   };
   forwardedFromAuthor?: string | null;
-  /** The original author's display form, as the Host serves senders (FW1b). */
+  /** The forward's author as the community names them (the display form a
+   *  sender header shows); absent when not a forward. */
   forwardedFromName?: string | null;
   sendState: SendState;
   /** Why our `failed` post was not delivered, as the backend words it

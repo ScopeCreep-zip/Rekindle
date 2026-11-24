@@ -9,6 +9,7 @@ use rekindle_types::message::SendState;
 use rekindle_types::subscription_events::{ChannelMessageEvent, SocialEvent, SubscriptionEvent};
 
 use super::HostChannel;
+use crate::host::adapters::governance::community_profile::member_shown_name;
 
 impl HostChannel {
     pub(super) fn emit_event_impl(event: &ChannelEvent) {
@@ -27,9 +28,18 @@ impl HostChannel {
                 body: Some(echo.body.clone()),
                 reply_to_message_id: None,
                 forwarded_from_author: echo.forwarded_from_author.clone(),
+                forwarded_from_name: self
+                    .forward_name(&echo.community_id, echo.forwarded_from_author.as_deref()),
                 automod_blurred: false,
             },
         ));
+    }
+
+    /// A forward's original `author` as `community_id` names a sender
+    /// (plan E3.3): the member list's name, never the raw key. The echo,
+    /// the ingest and history all name it here.
+    pub(super) fn forward_name(&self, community_id: &str, author: Option<&str>) -> Option<String> {
+        author.map(|a| member_shown_name(&self.ctx().communities, community_id, a))
     }
 
     pub(super) fn delivery_impl(

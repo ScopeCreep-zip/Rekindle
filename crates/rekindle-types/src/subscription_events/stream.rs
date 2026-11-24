@@ -35,8 +35,9 @@ pub struct Sequenced {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum StreamFrame {
-    /// The next event.
-    Event(Sequenced),
+    /// The next event, boxed: an event is far larger than every other
+    /// frame (serde writes a `Box` as its content, so the wire is the same).
+    Event(Box<Sequenced>),
     /// The replay of what the subscriber missed is complete; live events
     /// follow from this cursor.
     Resumed(Cursor),

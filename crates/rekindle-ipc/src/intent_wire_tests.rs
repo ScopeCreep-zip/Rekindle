@@ -29,14 +29,17 @@ fn round_trip(payload: BusPayload) -> BusPayload {
 #[test]
 fn a_commit_with_a_passphrase_proof_crosses_the_bus() {
     let intent_id = IntentId::v7(1_000, [7; 10]);
-    let decoded = round_trip(BusPayload::Request(IpcRequest::IntentCommit {
+    let decoded = round_trip(BusPayload::Request(Box::new(IpcRequest::IntentCommit {
         intent_id,
         proof: IntentProof::Passphrase("correct horse".to_string().into()),
-    }));
-    let BusPayload::Request(IpcRequest::IntentCommit {
+    })));
+    let BusPayload::Request(request) = decoded else {
+        panic!("not a request");
+    };
+    let IpcRequest::IntentCommit {
         intent_id: id,
         proof,
-    }) = decoded
+    } = *request
     else {
         panic!("not a commit");
     };
@@ -66,15 +69,14 @@ fn a_pending_review_crosses_the_bus() {
         acknowledgement: None,
         cancel_sends: true,
     };
-    let decoded = round_trip(BusPayload::Event(StreamFrame::Event(Sequenced {
+    let decoded = round_trip(BusPayload::Event(StreamFrame::Event(Box::new(Sequenced {
         cursor: Cursor { epoch: 1, seq: 2 },
         event: SubscriptionEvent::IntentPending(review.clone()),
-    })));
-    let BusPayload::Event(StreamFrame::Event(Sequenced {
-        event: SubscriptionEvent::IntentPending(got),
-        ..
-    })) = decoded
-    else {
+    }))));
+    let BusPayload::Event(StreamFrame::Event(sequenced)) = decoded else {
+        panic!("not a pending review");
+    };
+    let SubscriptionEvent::IntentPending(got) = sequenced.event else {
         panic!("not a pending review");
     };
     assert_eq!(got, review);

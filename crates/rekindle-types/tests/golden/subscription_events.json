@@ -303,6 +303,7 @@
         "channel": "ch_cccccccccccccccccccccccccccccccc",
         "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
         "forwardedFromAuthor": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "forwardedFromName": "bbbb bbbb",
         "messageId": "msg_11111111111111111111111111111111",
         "replyToMessageId": "msg_41",
         "senderPseudonym": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

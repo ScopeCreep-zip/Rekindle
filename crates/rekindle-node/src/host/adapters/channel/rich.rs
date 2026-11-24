@@ -80,6 +80,7 @@ fn message_view(view: rekindle_channel::ThreadMessageView) -> ChannelMessageView
         pinned: None,
         poll: None,
         forwarded_from_author: None,
+        forwarded_from_name: None,
         attachment: None,
         flags: 0,
         send_state: if view.is_own {
