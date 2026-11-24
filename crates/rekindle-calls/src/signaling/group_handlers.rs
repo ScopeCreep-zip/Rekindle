@@ -19,6 +19,7 @@ use rekindle_codec::capnp_codec::direct::{
 };
 use x25519_dalek::StaticSecret;
 
+use crate::error::CallError;
 use crate::group::unwrap_call_key;
 use crate::group_state::{GroupCallState, GroupCallStatus};
 use crate::signaling::deps::CallSignalingDeps;
@@ -44,7 +45,21 @@ pub async fn handle_group_call_payload<D: CallSignalingDeps + ?Sized>(
             participants,
             wrapped_call_key,
             expires_at_ms,
+            group_id,
         }) => {
+            // A group id is a claim: only a member of that group, inviting
+            // only its members, rings here as that group's call.
+            if let Some(group) = group_id.as_deref() {
+                let claimed = std::iter::once(sender_hex)
+                    .chain(std::iter::once(initiator_pubkey.as_str()))
+                    .chain(participants.iter().map(String::as_str));
+                if let Err(e) = check_group_scope(deps, group, claimed).await {
+                    tracing::warn!(call_id = %call_id, sender = %sender_hex,
+                        claimed_group = %group, error = %e,
+                        "GroupCallOffer group id refused; offer dropped");
+                    return;
+                }
+            }
             handle_incoming_group_invite(
                 deps,
                 GroupInvite {
@@ -56,6 +71,7 @@ pub async fn handle_group_call_payload<D: CallSignalingDeps + ?Sized>(
                     participants,
                     wrapped_call_key: &wrapped_call_key,
                     expires_at_ms,
+                    group_id,
                 },
             );
         }
@@ -124,6 +140,30 @@ pub struct GroupInvite<'a> {
     pub wrapped_call_key: &'a [u8],
     /// Offer expiry, ms since epoch.
     pub expires_at_ms: u64,
+    /// The group DM the call belongs to, already checked against its
+    /// roster by [`check_group_scope`].
+    pub group_id: Option<String>,
+}
+
+/// Refuse a group-scoped call unless every key in `members` is in the
+/// roster of our group DM `group_id`.
+///
+/// # Errors
+/// [`CallError::NotInGroup`] for an unknown group or a non-member.
+pub async fn check_group_scope<'a, D: CallSignalingDeps + ?Sized>(
+    deps: &D,
+    group_id: &str,
+    members: impl IntoIterator<Item = &'a str>,
+) -> Result<(), CallError> {
+    let Some(roster) = deps.group_roster(group_id).await? else {
+        return Err(CallError::NotInGroup(format!("no group {group_id}")));
+    };
+    match members.into_iter().find(|m| !roster.iter().any(|r| r == m)) {
+        Some(outsider) => Err(CallError::NotInGroup(format!(
+            "{outsider} is not in group {group_id}"
+        ))),
+        None => Ok(()),
+    }
 }
 
 /// Receiver-side entry into a group call. Mirrors the 1:1
@@ -142,6 +182,7 @@ pub fn handle_incoming_group_invite<D: CallSignalingDeps + ?Sized>(
         participants,
         wrapped_call_key,
         expires_at_ms,
+        group_id,
     } = invite;
     // `offer_kind` is the wire-format u8 (0=audio, 1=video). The
     // GroupCallState + emitted IncomingGroupCall event both carry the
@@ -211,6 +252,7 @@ pub fn handle_incoming_group_invite<D: CallSignalingDeps + ?Sized>(
         our_x25519_secret: Some(reconstruct_x25519_secret(&our_x25519_secret)),
         call_key: Some(call_key),
         status: GroupCallStatus::Incoming,
+        group_id: group_id.clone(),
     });
 
     deps.emit_event(CallSignalEvent::IncomingGroupCall {
@@ -220,6 +262,7 @@ pub fn handle_incoming_group_invite<D: CallSignalingDeps + ?Sized>(
         participants,
         kind: offer_kind,
         expires_at_ms,
+        group_id,
     });
     deps.surface_window_for_call(call_id);
 }
@@ -258,6 +301,7 @@ pub fn handle_group_accept_received<D: CallSignalingDeps + ?Sized>(
         registry.set_status(call_id, GroupCallStatus::Active);
         deps.emit_event(CallSignalEvent::GroupCallConnected {
             call_id: call_id.to_string(),
+            group_id: snapshot.group_id.clone(),
         });
     }
     deps.emit_event(CallSignalEvent::GroupCallParticipantJoined {

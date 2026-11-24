@@ -39,6 +39,11 @@ pub trait CallSignalingDeps: Send + Sync + 'static {
     /// Group call registry handle.
     fn group_registry(&self) -> Arc<dyn GroupCallRegistry>;
 
+    /// The roster (identity keys) of our group DM `group_id`, `None`
+    /// when we hold no such group: a group-scoped call is admitted only
+    /// between members of it ([`crate::signaling::check_group_scope`]).
+    async fn group_roster(&self, group_id: &str) -> Result<Option<Vec<String>>, CallError>;
+
     // --- Mute policy ---
 
     /// Returns `true` if the peer is temp-muted (W12.12 — `temp_call_muted`

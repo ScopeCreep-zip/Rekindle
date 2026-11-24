@@ -96,9 +96,14 @@ pub enum CallSignalEvent {
         participants: Vec<String>,
         kind: u8,
         expires_at_ms: u64,
+        /// The group DM the call belongs to, checked against its roster.
+        group_id: Option<String>,
     },
     /// Initiator side: first participant accepted; call is Active.
-    GroupCallConnected { call_id: String },
+    GroupCallConnected {
+        call_id: String,
+        group_id: Option<String>,
+    },
     /// A participant joined the call (accepted invite).
     GroupCallParticipantJoined {
         call_id: String,

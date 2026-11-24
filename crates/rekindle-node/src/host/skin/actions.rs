@@ -210,6 +210,7 @@ fn join_group(group: Option<&GroupCall>) -> Result<Mapped, IpcResponse> {
         Some(GroupCall {
             group_id,
             call_id: Some(call_id),
+            ..
         }) => Ok(Mapped::Run(SkinRun::Shell(ShellOp::Call(
             CallOp::JoinGroup {
                 group_id: group_id.clone(),
@@ -416,7 +417,17 @@ pub(crate) fn map(
         },
         A::JoinFriend => join_friend(&selected()?, reads.friend_game.as_ref()),
         A::AddServer => add_server(server),
-        A::HostGroupVoiceChat => panel(ShellPanel::StartGroupCall),
+        // A group window's host (`GroupChatButtonCall`) opens the panel
+        // scoped to its group, prefilled from the roster; the buddy
+        // list's has no group and opens the plain panel.
+        A::HostGroupVoiceChat => Ok(match reads.group_call.as_ref() {
+            Some(g) => Mapped::Run(SkinRun::Shell(ShellOp::StartGroupCall {
+                group_id: g.group_id.clone(),
+                group_name: g.group_name.clone(),
+                members: g.members.clone(),
+            })),
+            None => return panel(ShellPanel::StartGroupCall),
+        }),
         A::CreateCommunity => panel(ShellPanel::CreateCommunity),
         A::JoinCommunity => panel(ShellPanel::JoinCommunity),
         A::ShowShortcuts => panel(ShellPanel::Shortcuts),

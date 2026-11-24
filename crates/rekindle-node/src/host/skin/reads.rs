@@ -6,9 +6,7 @@
 
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 use rekindle_types::dto::skin_action::SkinAction as A;
-use std::collections::BTreeSet;
-
-use rekindle_types::dto::skin_run::{CallTarget, SkinSelection};
+use rekindle_types::dto::skin_run::{CallTarget, GroupCallInvitee, SkinSelection};
 use rekindle_types::friend::GameInfoState;
 
 use super::actions::Selections;
@@ -27,9 +25,9 @@ pub(crate) struct Reads {
     /// `VoiceChat`'s call: the incoming call from the selected friend that
     /// is ringing (`signals::Inputs::ringing_from`).
     pub ringing_call: Option<String>,
-    /// A group window's `GroupVoiceChat` (and its `VoiceChat`): the
-    /// selected group and its call in progress that we are not in
-    /// (`signals::Inputs::joinable_group_call`).
+    /// A group window's `GroupVoiceChat` (and its `VoiceChat`) and
+    /// `HostGroupVoiceChat`: the selected group, its roster, and its call
+    /// in progress that we are not in (`signals::Inputs::joinable_group_call`).
     pub group_call: Option<GroupCall>,
 }
 
@@ -37,11 +35,15 @@ pub(crate) struct Reads {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct GroupCall {
     pub group_id: String,
+    pub group_name: String,
+    /// The group's members besides us, in roster order: the Start Group
+    /// Call panel's prefill.
+    pub members: Vec<GroupCallInvitee>,
     pub call_id: Option<String>,
 }
 
-/// [`GroupCall`] for a group window's join: the group's members besides
-/// us from `group_dms`, matched to the Host's group calls.
+/// [`GroupCall`] for a group window's join or host: the group from
+/// `group_dms`, and its call by the group id its signaling carries.
 async fn group_call(
     ctx: &DaemonContext,
     selections: &Selections,
@@ -49,7 +51,7 @@ async fn group_call(
 ) -> Result<Option<GroupCall>, IpcResponse> {
     let IpcRequest::RunSkinAction {
         window,
-        action: A::VoiceChat | A::GroupVoiceChat,
+        action: A::VoiceChat | A::GroupVoiceChat | A::HostGroupVoiceChat,
         ..
     } = request
     else {
@@ -62,22 +64,30 @@ async fn group_call(
         return Ok(None);
     };
     let id = group_id.clone();
-    let others: Option<BTreeSet<String>> = db
-        .call(move |conn| {
-            Ok(
-                rekindle_db::repo::group_dms::get(conn, &owner, &id)?.map(|g| {
-                    g.roster
-                        .into_iter()
-                        .map(|m| m.identity)
-                        .filter(|m| *m != owner)
-                        .collect()
-                }),
-            )
-        })
+    let group = db
+        .call(move |conn| rekindle_db::repo::group_dms::get(conn, &owner, &id))
         .await
         .map_err(|e| IpcResponse::error(500, format!("the group cannot be read: {e}")))?;
-    let call_id = others.and_then(|o| ctx.skin.signals.joinable_group_call(&o));
-    Ok(Some(GroupCall { group_id, call_id }))
+    let Some(group) = group else {
+        return Ok(None);
+    };
+    let owner = ctx.require_owner().ok();
+    let members = group
+        .roster
+        .into_iter()
+        .filter(|m| Some(&m.identity) != owner.as_ref())
+        .map(|m| GroupCallInvitee {
+            pubkey: m.identity,
+            display_name: m.display_name,
+        })
+        .collect();
+    let call_id = ctx.skin.signals.joinable_group_call(&group.group_id);
+    Ok(Some(GroupCall {
+        group_id: group.group_id,
+        group_name: group.name,
+        members,
+        call_id,
+    }))
 }
 
 /// [`Reads`] for `request`; empty for anything but a `RunSkinAction`.

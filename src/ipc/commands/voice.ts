@@ -96,7 +96,7 @@ export const voiceCommands = {
   /// wrapped call_key to every invitee.
   /** `groupId`: the group the call is for (GV2), null outside a group; the
    *  Host refuses a participant outside that group's roster. */
-  startGroupCall: (participantPubkeys: string[], video: boolean, groupId: string | null = null) =>
+  startGroupCall: (participantPubkeys: string[], video: boolean, groupId: string | null) =>
     invoke<string>("start_group_call", { participantPubkeys, video, groupId }),
   acceptGroupCall: (callId: string) =>
     invoke<void>("accept_group_call", { callId }),

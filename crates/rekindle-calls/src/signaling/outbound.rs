@@ -11,6 +11,7 @@ use crate::group::{generate_call_key, wrap_call_key};
 use crate::group_state::{GroupCallState, GroupCallStatus};
 use crate::signaling::deps::CallSignalingDeps;
 use crate::signaling::event::CallSignalEvent;
+use crate::signaling::group_handlers::check_group_scope;
 use crate::state::{CallKind, CallState, CallStatus};
 use crate::X25519StaticSecret;
 use crate::{derive_call_key, fresh_keypair, short_pubkey_helper};
@@ -266,10 +267,16 @@ pub async fn start_group_call<D: CallSignalingDeps + ?Sized>(
     deps: &D,
     participant_pubkeys: Vec<String>,
     kind: CallKind,
+    group_id: Option<String>,
 ) -> Result<String, CallError> {
+    let initiator_pubkey = deps.owner_key()?;
+    if let Some(group) = group_id.as_deref() {
+        let members = std::iter::once(initiator_pubkey.as_str())
+            .chain(participant_pubkeys.iter().map(String::as_str));
+        check_group_scope(deps, group, members).await?;
+    }
     let call_id = deps.fresh_call_id();
     let (my_secret, my_pub) = fresh_keypair();
-    let initiator_pubkey = deps.owner_key()?;
     let expires_at_ms = rekindle_utils::timestamp_ms() + RING_DURATION_MS;
     let call_key = generate_call_key();
 
@@ -292,6 +299,7 @@ pub async fn start_group_call<D: CallSignalingDeps + ?Sized>(
         our_x25519_secret: Some(my_secret),
         call_key: Some(call_key),
         status: GroupCallStatus::Outgoing,
+        group_id: group_id.clone(),
     });
 
     for invitee in &participant_pubkeys {
@@ -328,6 +336,7 @@ pub async fn start_group_call<D: CallSignalingDeps + ?Sized>(
             participants: all_participants.clone(),
             wrapped_call_key: wrapped,
             expires_at_ms,
+            group_id: group_id.clone(),
         });
         if let Err(e) = deps.send_to_peer(invitee, offer).await {
             tracing::info!(peer = %invitee, error = %e, "GroupCallOffer send failed");
@@ -368,6 +377,7 @@ pub async fn accept_group_call<D: CallSignalingDeps + ?Sized>(
 
     deps.emit_event(CallSignalEvent::GroupCallConnected {
         call_id: call_id.to_string(),
+        group_id: snapshot.group_id.clone(),
     });
     Ok(())
 }

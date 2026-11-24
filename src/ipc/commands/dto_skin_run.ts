@@ -56,6 +56,12 @@ export type CallTarget =
   | { kind: "call"; arg: { callId: string } }
   | { kind: "voice"; arg: { community: string; channel: string } };
 
+/** One prefilled member of a group-scoped Start Group Call (Rust `GroupCallInvitee`). */
+export interface GroupCallInvitee {
+  pubkey: string;
+  displayName: string;
+}
+
 export type ShellOp =
   | { kind: "dragWindow" }
   | { kind: "minimize" }
@@ -75,9 +81,10 @@ export type ShellOp =
   | { kind: "setState"; arg: ArgOf<"setState"> }
   | { kind: "playSound"; arg: ArgOf<"playSound"> }
   | { kind: "openPanel"; arg: ShellPanel }
-  /** A group's Call (HostGroupVoiceChat, GV2): Start Group Call for that
-   *  group, its members ticked; only they may be called. */
-  | { kind: "startGroupCall"; arg: { groupId: string; groupName: string; members: { pubkey: string; displayName: string }[] } }
+  | {
+      kind: "startGroupCall";
+      arg: { groupId: string; groupName: string; members: GroupCallInvitee[] };
+    }
   | { kind: "openChat"; arg: { friend: string } }
   | { kind: "openProfile"; arg: { friend: string } }
   | { kind: "openSafetyNumber"; arg: { friend: string } }

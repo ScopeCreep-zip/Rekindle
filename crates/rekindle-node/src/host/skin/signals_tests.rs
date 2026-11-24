@@ -164,6 +164,7 @@ fn self_mute_follows_the_call_state() {
     assert!(set.cannot.contains(&Capability::UnmuteSelf));
     inputs.fold(&SubscriptionEvent::Call(CallEvent::Connected {
         call_id: "c1".into(),
+        group_id: None,
         direct: None,
     }));
     let set = compute(
@@ -212,6 +213,7 @@ fn a_self_mute_event_flips_the_mute_capabilities() {
     let mut inputs = Inputs::default();
     inputs.fold(&SubscriptionEvent::Call(CallEvent::Connected {
         call_id: "c1".into(),
+        group_id: None,
         direct: None,
     }));
     assert_eq!(mute_caps(&inputs), (true, false));
@@ -231,6 +233,7 @@ fn call_end_resets_the_self_mute() {
     let mut inputs = Inputs::default();
     let connected = SubscriptionEvent::Call(CallEvent::Connected {
         call_id: "c1".into(),
+        group_id: None,
         direct: None,
     });
     inputs.fold(&connected);
@@ -331,6 +334,7 @@ fn show_call_takes_the_call_then_the_voice_session() {
     assert_eq!(inputs.show_call(), session);
     inputs.fold(&SubscriptionEvent::Call(CallEvent::Connected {
         call_id: "c1".into(),
+        group_id: None,
         direct: None,
     }));
     assert_eq!(

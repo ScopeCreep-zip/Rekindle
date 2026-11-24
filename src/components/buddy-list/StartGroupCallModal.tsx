@@ -3,6 +3,7 @@ import { Dialog } from "@kobalte/core/dialog";
 import { returnFocusToOpener } from "../../utils/dialog_focus";
 import { friendsState } from "../../stores/friends.store";
 import { handleStartGroupCall } from "../../actions/calls.actions";
+import type { GroupCallInvitee } from "../../ipc/commands/dto_skin_run";
 
 // Wave 12 W12.10 — friend multi-select dialog for starting a group
 // call. Audio/video toggle + checkbox list + Call button. Closes on
@@ -11,7 +12,7 @@ import { handleStartGroupCall } from "../../actions/calls.actions";
 export interface GroupCallTarget {
   groupId: string;
   groupName: string;
-  members: { pubkey: string; displayName: string }[];
+  members: GroupCallInvitee[];
 }
 
 interface StartGroupCallModalProps {
