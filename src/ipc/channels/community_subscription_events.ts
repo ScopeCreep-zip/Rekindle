@@ -382,6 +382,8 @@ export type ChannelMessageEvent =
         body: string | null;
         /** The message id of the parent this one replies to. */
         replyToMessageId: string | null;
+        /** A forward's original author (plan FW1): drawn as "Forwarded from" live. */
+        forwardedFromAuthor?: string | null;
         /** The D26 gate hid it (an automod `BlurContent` match). */
         automodBlurred: boolean;
       };

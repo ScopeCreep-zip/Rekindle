@@ -231,6 +231,8 @@ function applyNew(post: NewChannelMessage): void {
     isOwn: own,
     serverMessageId: post.messageId,
     replyToId: post.replyToMessageId ?? undefined,
+    // A live forward draws its label as its history row does (FW1).
+    forwardedFromAuthor: post.forwardedFromAuthor ?? null,
   };
   setCommunityState("channelMessages", post.channel, (prev) => [...(prev ?? []), message]);
 }
