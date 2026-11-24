@@ -57,8 +57,10 @@ async function membersShow(b: Browser, name: string): Promise<void> {
 /**
  * Presence in `b`'s open community window while both members view CHANNEL
  * (the lead, 2026-11-23: Bob's list put a posting Alice under Offline, and
- * his own row showed Away while Online): `other` is in the Online group;
- * `self`'s own row reads Online, as their buddy list does (both stay Online
+ * his own row showed Away while Online): `other`'s row and `self`'s own row
+ * each carry the Online status dot ("Status: Online", StatusDot.tsx), in
+ * whatever group the list puts them (roles group first: an Owner sits under
+ * "Owner", not "Online"), as their buddy lists show (both stay Online
  * throughout); and CHANNEL's presence badge counts both members there
  * ("2 here", ChannelList.tsx channel-presence-badge, members by location).
  */
@@ -68,23 +70,17 @@ async function presenceRight(b: Browser, self: string, other: string): Promise<v
     async () => {
       last = (await b.execute(
         (me: string, them: string, channel: string) => {
-          const groups: Record<string, string> = {};
-          let group = "";
-          let mine = "";
-          for (const el of Array.from(document.querySelectorAll(".member-group-header, .member-item"))) {
-            if (el.classList.contains("member-group-header")) {
-              group = (el.textContent ?? "").trim();
-              continue;
-            }
+          // Each member row's status dot, by name.
+          const dots: Record<string, string> = {};
+          for (const el of Array.from(document.querySelectorAll(".member-item"))) {
             const name = (el.querySelector(".member-name")?.textContent ?? "").trim();
-            groups[name] = group;
-            if (name === me) mine = el.querySelector('[role="img"]')?.getAttribute("aria-label") ?? "";
+            dots[name] = el.querySelector('[role="img"]')?.getAttribute("aria-label") ?? "";
           }
           const row = Array.from(document.querySelectorAll(".channel-item")).find((r) => (r.querySelector(".channel-name")?.textContent ?? "").trim() === channel);
           const here = row?.querySelector(".channel-presence-badge")?.getAttribute("title") ?? "no presence badge";
           const faults: string[] = [];
-          if (!/^online/i.test(groups[them] ?? "")) faults.push(`${them} under "${groups[them] ?? "no group"}"`);
-          if (!/^online$/i.test(mine)) faults.push(`own row reads "${mine || "nothing"}"`);
+          if (dots[them] !== "Status: Online") faults.push(`${them}'s row reads "${dots[them] ?? "no row"}"`);
+          if (dots[me] !== "Status: Online") faults.push(`own row reads "${dots[me] ?? "no row"}"`);
           if (here !== "2 here") faults.push(`#${channel} badge "${here}"`);
           return faults.join("; ");
         },
