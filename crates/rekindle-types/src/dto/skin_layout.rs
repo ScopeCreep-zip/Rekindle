@@ -53,8 +53,9 @@ pub struct FrameTile {
     /// silhouette and never cuts the content. `None` for a frame piece.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub decoration: Option<u8>,
-    /// The pack's centre fill laid in the band between a side piece and the views (plan SK0-L1, lead
-    /// decision): a frame tile allowed only in that band, wholly opaque, never over the content.
+    /// The pack's centre fill laid in the band between the frame pieces and the views (plan SK0-L1,
+    /// lead decision): beside the content, or on its top or bottom line; a frame tile allowed only in
+    /// that band, wholly opaque, never over the content.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub fill: bool,
 }

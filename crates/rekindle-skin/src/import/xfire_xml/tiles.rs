@@ -33,11 +33,10 @@
 use std::collections::BTreeMap;
 
 use rekindle_image::RgbaImage;
-use rekindle_types::dto::skin::Insets;
 
 use super::super::tree::Node;
 use super::super::ImportError;
-use super::{bitmap, descendants, nine_piece_in};
+use super::{descendants, nine_piece_in};
 
 /// Which rule the frame was read by.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,7 +62,7 @@ impl Shape {
     }
 }
 
-/// The tile names of [`Shape::Named`], in [`bitmap::NINE`] order.
+/// The tile names of [`Shape::Named`], in [`super::bitmap::NINE`] order.
 const NAMED: [&[&str]; 9] = [
     &["TopLeft"],
     &["Top"],
@@ -197,26 +196,8 @@ fn named(laid: &[Laid<'_>]) -> Option<[Option<Piece>; 9]> {
         .then_some(pieces)
 }
 
-/// The frame laid by `layout` (the chat window's layout file) from
-/// `components`, each piece decoded by `piece(bitmap name, shift colour)`;
-/// `None` when no shape is complete.
-///
-/// # Errors
-/// What `piece` returns, or pieces that do not compose.
-pub fn frame(
-    layout: &Node,
-    components: &[Node],
-    piece: impl Fn(&str, Option<&str>) -> Result<RgbaImage, ImportError>,
-) -> Result<Option<(RgbaImage, Insets, Shape, [RgbaImage; 9])>, ImportError> {
-    let Some((pieces, shape, _)) = pieces(layout, components, piece)? else {
-        return Ok(None);
-    };
-    let (img, insets) = bitmap::compose("window layout", &pieces)?;
-    Ok(Some((img, insets, shape, pieces)))
-}
-
-/// The nine pieces (in [`bitmap::NINE`] order) of the frame `layout`
-/// lays, as [`frame`] reads them, uncomposed: a window's frame tiles
+/// The nine pieces (in [`super::bitmap::NINE`] order) of the frame `layout`
+/// lays, uncomposed: a window's frame tiles
 /// (plan SK0 S1), the shape, and the tile laying a nine-piece set (StealthX's
 /// `MainBackground`, the frame rows the tree places: plan SK2-S1o); `None`
 /// when no shape is complete.
