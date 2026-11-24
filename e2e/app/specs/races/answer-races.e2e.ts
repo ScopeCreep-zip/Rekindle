@@ -2,10 +2,12 @@
 // sometimes, provoked every run by wdio.races.conf.ts's held answers (each
 // command's work is done, then its answer waits HELD_MS; webdriver.rs).
 //
-// F5: Bob accepts Alice. His window asks for the friends snapshot at once
-// and the snapshot is read then (Alice not yet online), but it lands only
-// HELD_MS later, after FriendChanged has shown Alice online. Bob must keep
-// showing her online (the snapshot keeps a held row's live presence).
+// F5: Bob accepts Alice. The spec arms Bob's next friends snapshot, so the
+// one the accept asks for is read then (Alice not yet online) and held until
+// the spec releases it, which it does only once FriendChanged has shown
+// Alice online. Bob must keep showing her online after it lands (the
+// snapshot keeps a held row's live presence). Event-gated, so it provokes
+// the order on any machine (a fixed delay lost to a slow first beat).
 //
 // Clock: Alice sends Bob a message. It commits (the row arrives queued),
 // the outbox sends it and Bob's receipt marks it delivered, and only then
@@ -22,7 +24,9 @@ import type { Browser } from "webdriverio";
 import { NET_WAIT_MS, resolveIntent, sleep, typeAndSend, waitUntil } from "../../../walk/helpers.ts";
 import { DOT_STATUS, acceptRequest, createIdentity, friendCode, friendRow, newUser, openChat, pendingRequest, requestFriend } from "../../journeys.ts";
 import { shot } from "../../shots.ts";
-import { HELD_MS } from "../../wdio.races.conf.ts";
+import { existsSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { HELD_MS, RELEASE_DIR } from "../../wdio.races.conf.ts";
 
 /** How long past a held answer's earliest landing the state is watched (the request may go out a little after the action). */
 const SETTLE_MS = 12_000;
@@ -138,11 +142,39 @@ describe("held answers: a late snapshot or send answer never undoes a live state
     await requestFriend(a, alice, await friendCode(b), hello);
     await pendingRequest(b, hello);
     await recordFriend(b, "alice-row", alice.displayName, DOT_STATUS);
+    // Arm Bob's next friends snapshot: the one the accept asks for is read
+    // now and held until this spec releases it (REKINDLE_WDIO_RELEASE_DIR).
+    const arm = path.join(RELEASE_DIR, "get_friends.arm");
+    const release = path.join(RELEASE_DIR, "get_friends");
+    writeFileSync(arm, "");
     const acceptedAt = Date.now();
     await acceptRequest(b, bob, hello);
     await friendRow(b, alice.displayName);
-    const log = await liveStateHeld(b, "alice-row", acceptedAt, ["online"], ["offline", "absent"], `Bob's row for ${alice.displayName}`, "f5");
-    console.log(`[races] F5: ${told(log, acceptedAt)}`);
+    // The accept's snapshot request was taken and is held (the arm consumed).
+    await waitUntil(async () => !existsSync(arm), NET_WAIT_MS, "Bob's window asked for no friends snapshot after the accept: nothing held");
+    // Alice's live status lands first, while the snapshot is held.
+    let log: Step[] = [];
+    await waitUntil(
+      async () => (log = await steps(b, "alice-row")).some((x) => x.s === "online"),
+      NET_WAIT_MS * 2,
+      "",
+    ).catch(() => {
+      throw new Error(`Bob's row for ${alice.displayName}: never online while the snapshot was held; ${told(log, acceptedAt)}`);
+    });
+    const online = log.find((x) => x.s === "online")!;
+    await shot("f5-live");
+    // Release the held snapshot (read before Alice was online) and see it land.
+    writeFileSync(release, "");
+    const releasedAt = Date.now();
+    await waitUntil(async () => !existsSync(release), NET_WAIT_MS, "the held snapshot was never released");
+    await sleep(3000);
+    log = await steps(b, "alice-row");
+    await shot("f5-after-late-answer");
+    const back = log.filter((x) => x.t >= online.t).find((x) => x.s === "offline" || x.s === "absent");
+    console.log(`[races] F5: ${told(log, acceptedAt)} (released at +${((releasedAt - acceptedAt) / 1000).toFixed(1)}s)`);
+    if (back) {
+      throw new Error(`Bob's row for ${alice.displayName}: reached online, then reverted to ${back.s} at +${((back.t - acceptedAt) / 1000).toFixed(1)}s (the late snapshot); ${told(log, acceptedAt)}`);
+    }
     expect(log[log.length - 1].s).toBe("online");
   });
 
