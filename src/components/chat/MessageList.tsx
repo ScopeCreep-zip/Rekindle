@@ -212,6 +212,8 @@ const MessageList: Component<MessageListProps> = (props) => {
               senderName={senderNameOf(msg)}
               myPseudonymKey={props.myPseudonymKey}
               replyToMessage={msg.replyToId ? messageMap().get(msg.replyToId) ?? null : null}
+              replyToSender={msg.replyToId && messageMap().get(msg.replyToId) ? senderNameOf(messageMap().get(msg.replyToId)!) : undefined}
+              replyUnavailable={Boolean(msg.replyToId) && !messageMap().get(msg.replyToId!)}
               threadInfo={thread() ? { name: thread()!.name, messageCount: thread()!.messageCount, threadId: thread()!.id, archived: thread()!.archived } : undefined}
               onRetry={props.onRetry}
               onDiscard={props.onDiscard}

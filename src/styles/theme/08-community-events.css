@@ -381,6 +381,12 @@
     cursor: pointer;
   }
 
+  /* A reply whose parent this window does not hold: said in italics, in the
+   * snippet's own colours (plan G-replies). */
+  .reply-snippet-missing {
+    font-style: italic;
+  }
+
   .reply-snippet:hover {
     background: color-mix(in srgb, var(--color-xfire-overlay) 8%, transparent);
   }

@@ -111,6 +111,7 @@ export function transformDmMessage(m: DmMessage): Message {
   return {
     ...transformMessage(m),
     serverMessageId: m.messageId ?? undefined,
+    replyToId: m.replyToId ?? undefined,
     historyGapThrough: m.historyGapThrough ?? undefined,
     expireSeconds: m.expireSeconds,
     expireAt: m.expireAt ?? undefined,

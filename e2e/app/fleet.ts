@@ -367,6 +367,11 @@ export async function peerSendGroup(peer: Peer, groupId: string, text: string): 
   await peer.cli(["group", "send", groupId, text]);
 }
 
+/** `peer` sends `text` to group `groupId` as a reply to the message whose client id is `replyTo` (CLI `--reply-to`, plan G-replies). */
+export async function peerReplyGroup(peer: Peer, groupId: string, text: string, replyTo: string): Promise<void> {
+  await peer.cli(["group", "send", groupId, text, "--reply-to", replyTo]);
+}
+
 /**
  * `peer` joins by `invite`. The join is reviewed (ADR 0019) and confirmed by
  * the invite's 64-hex fingerprint its review prints (cli/community.rs

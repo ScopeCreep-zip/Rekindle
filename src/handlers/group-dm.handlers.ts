@@ -88,6 +88,8 @@ function appendMessage(groupId: string, m: Extract<GroupDmEvent, { message: unkn
   const row = transformDmMessage({
     id: -1_000_000_000 - liveRows,
     messageId: m.messageId,
+    // The parent it replies to, as the sender named it (plan G-replies).
+    replyToId: m.replyTo,
     senderId: m.sender.publicKey,
     body: m.body,
     timestamp: m.timestamp,
@@ -97,7 +99,6 @@ function appendMessage(groupId: string, m: Extract<GroupDmEvent, { message: unkn
     expireSeconds: 0,
     expireAt: null,
     timerNoticeSeconds: null,
-    replyToId: null,
   });
   // The live copy's timer is unknown until its row is read.
   row.expireSeconds = undefined;
