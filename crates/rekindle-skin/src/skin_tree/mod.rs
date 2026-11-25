@@ -21,6 +21,7 @@ pub mod pieces;
 pub mod place;
 pub mod popup;
 pub mod roles;
+pub mod row_pages;
 mod tab_step;
 pub mod target;
 pub mod text_box;
@@ -46,6 +47,8 @@ mod overlap_tests;
 mod place_tests;
 #[cfg(test)]
 mod rail_tests;
+#[cfg(test)]
+mod row_pages_tests;
 #[cfg(test)]
 mod stack_tests;
 #[cfg(test)]

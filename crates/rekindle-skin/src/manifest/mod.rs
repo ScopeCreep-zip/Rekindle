@@ -117,7 +117,8 @@ pub fn served(package: &Package<'_>) -> Result<SkinManifest, SkinError> {
     Ok(manifest)
 }
 
-/// The Host's placements in `manifest` (see [`served`]), then the cover of
+/// The Host's placements in `manifest` (see [`served`]): each button row's
+/// slots unpaged by the views' group ([`crate::skin_tree::row_pages`]), then the cover of
 /// each glyph label from the package's art (plan SK3: the icon the
 /// Communities clone copied, [`crate::skin_tree::cover`]), then every
 /// window's menu-title labels (plan SK4b, [`crate::skin_tree::titles`]) and
@@ -132,6 +133,7 @@ pub fn place(manifest: &mut SkinManifest, package: &Package<'_>) -> Result<(), S
     // resolved first, so each pass after lays numeric spans.
     for layout in manifest.windows.values_mut() {
         crate::skin_tree::content::serve(layout);
+        crate::skin_tree::row_pages::rows(layout);
     }
     if let Some(main) = manifest
         .windows
