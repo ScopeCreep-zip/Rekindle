@@ -150,22 +150,24 @@ pub async fn on_invite<D: GroupDmDeps + ?Sized>(
     if deps.group(&invite.group_id).await?.is_some() {
         return Err(DmError::AlreadyMember(group_id_hex(&invite.group_id)));
     }
-    let mut members = Vec::with_capacity(roster.members().len());
-    for m in roster.members() {
-        members.push(member(deps, &m.identity).await);
-    }
-    let event = GroupDmEvent::Invited {
-        group_id: group_id_hex(&invite.group_id),
-        name: invite.name.clone(),
-        inviter: member(deps, from).await,
-        members,
-    };
+    let (group_id, name) = (group_id_hex(&invite.group_id), invite.name.clone());
+    // Held first, so a member is labelled with the name this roster
+    // carries (GN1): the label reads the held rosters and invites.
     deps.stash_invite(&PendingInvite {
         from: from.to_owned(),
         invite,
     })
     .await?;
-    deps.publish(event);
+    let mut members = Vec::with_capacity(roster.members().len());
+    for m in roster.members() {
+        members.push(member(deps, &m.identity).await);
+    }
+    deps.publish(GroupDmEvent::Invited {
+        group_id,
+        name,
+        inviter: member(deps, from).await,
+        members,
+    });
     Ok(())
 }
 

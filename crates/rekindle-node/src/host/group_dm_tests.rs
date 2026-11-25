@@ -182,7 +182,77 @@ async fn a_groups_members_are_labelled_by_name_never_by_key() {
         vec![
             (me, "You".to_owned()),
             (b, "Bob".to_owned()),
-            (c, "member c (not a friend)".to_owned()),
+            (c, "member c \u{b7} cccc cccc (not a friend)".to_owned()),
         ]
     );
+}
+
+/// GN1: a received invite's members, in its `Invited` event and in the
+/// list: a friend by our friend row's name, ourselves as "You", a
+/// non-friend by the name this roster carries with their short key
+/// fingerprint and the not-a-friend marker, and a non-friend the roster
+/// names nobody by that fingerprint alone; never "Unknown".
+#[tokio::test]
+async fn an_invites_non_friend_members_are_served_by_fingerprint_never_unknown() {
+    use rekindle_types::friend::{FriendState, FriendshipState};
+
+    let (dir_a, dir_b) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+    let (host_a, owner_a) = ann(&dir_a).await;
+    let (host_b, owner_b) = ann(&dir_b).await;
+    let creator = HostGroupDm::open(&HostFriends::of(&host_a.ctx)).unwrap();
+    let friends_b = HostFriends::of(&host_b.ctx);
+    let deps_b = HostGroupDm::open(&friends_b).unwrap();
+    let (a, b) = (hex::encode(owner_a), hex::encode(owner_b));
+    let (c, d) = ("c".repeat(64), "d".repeat(64));
+    host_b.ctx.session.write().as_mut().unwrap().friends.insert(
+        a.clone(),
+        FriendState::new(a.clone(), "Ann".into(), FriendshipState::Accepted),
+    );
+    let mut cara = member(c.clone(), 'c');
+    cara.display_name = "Cara".into();
+    let mut unnamed = member(d.clone(), 'd');
+    unnamed.display_name = String::new();
+    let created = rekindle_dm::create(
+        &creator,
+        [5; 16],
+        "raid night",
+        member(a.clone(), 'a'),
+        vec![member(b.clone(), 'b'), cara, unnamed],
+        &format!("VLD0:{}", "Q".repeat(43)),
+    )
+    .await
+    .unwrap();
+
+    let mut events = host_b.ctx.journal.subscribe(None);
+    rekindle_dm::on_invite(&deps_b, &a, created.invite.frame)
+        .await
+        .unwrap();
+    let want = [
+        (a.clone(), "Ann".to_owned()),
+        (b.clone(), "You".to_owned()),
+        (c.clone(), "Cara \u{b7} cccc cccc (not a friend)".to_owned()),
+        (d.clone(), "dddd dddd (not a friend)".to_owned()),
+    ];
+    let frame = tokio::time::timeout(std::time::Duration::from_secs(2), events.next())
+        .await
+        .expect("the invite is published")
+        .expect("a journal frame");
+    let seen = format!("{frame:?}");
+    assert!(seen.contains("Invited"), "{seen}");
+    assert!(!seen.contains("Unknown"), "{seen}");
+    for (key, label) in &want {
+        let row = format!("public_key: {key:?}, display_name: {label:?}");
+        assert!(seen.contains(&row), "{row} not in {seen}");
+    }
+
+    let views = rekindle_transport::operations::group_dm::list(&friends_b)
+        .await
+        .unwrap();
+    let labels: Vec<(String, String)> = views[0]
+        .members
+        .iter()
+        .map(|m| (m.key.clone(), m.label.clone()))
+        .collect();
+    assert!(views[0].pending);
+    assert_eq!(labels, want.to_vec());
 }

@@ -88,6 +88,17 @@ impl HostGroupDm {
     }
 }
 
+/// A roster member's short key fingerprint (`"a1b2 c3d4"`). A roster's
+/// identities are hex keys (`group::verify_invite`); text that is not hex
+/// shows its own first eight characters, as `friend::state::short_key`
+/// shows a key it cannot parse.
+fn member_fingerprint(identity: &str) -> String {
+    hex::decode(identity).map_or_else(
+        |_| rekindle_utils::text::prefix(identity, 8).to_owned(),
+        |key| rekindle_crypto::identity::short_key_fingerprint(&key),
+    )
+}
+
 fn parse_group_id(hex_id: &str) -> Result<GroupId, DmError> {
     let bytes = hex::decode(hex_id).map_err(|e| DmError::storage(format!("group id: {e}")))?;
     bytes
@@ -144,11 +155,15 @@ impl GroupDmDeps for HostGroupDm {
     }
 
     /// Plan E2.6 GC1: "You" for ourselves; a friend (or a pending
-    /// request) by the name that relationship holds; anyone else by the
-    /// name the creator signed onto the roster, marked as not a friend's
-    /// so it never passes for one (threat model: a name is a label, never
-    /// an identity). Never a key: the key stays on the profile and the
-    /// safety number.
+    /// request) by the name that relationship holds; anyone else by their
+    /// short key fingerprint, the form a community shows a member whose
+    /// card names nobody (`governance::community_profile::shown_name`),
+    /// after the name the creator signed onto the roster when it carries
+    /// one, and marked as not a friend's (GN1). A peer-chosen name is
+    /// never shown alone (threat model: no spoofable display fields;
+    /// `key_fingerprint`, plan U1.4), so two non-friends announced under
+    /// one name stay apart and neither passes for a friend; never
+    /// "Unknown". The full key stays on the profile and the safety number.
     async fn display_name(&self, identity: &str) -> String {
         if identity == self.owner {
             return "You".to_owned();
@@ -158,8 +173,11 @@ impl GroupDmDeps for HostGroupDm {
             Ok(None) => {}
             Err(e) => tracing::warn!(error = %e, "group member's relationship not read"),
         }
-        let carried = self.carried_name(identity).await;
-        format!("{} (not a friend)", carried.as_deref().unwrap_or("Unknown"))
+        let fingerprint = member_fingerprint(identity);
+        match self.carried_name(identity).await {
+            Some(name) => format!("{name} \u{b7} {fingerprint} (not a friend)"),
+            None => format!("{fingerprint} (not a friend)"),
+        }
     }
 
     async fn group(&self, group_id: &GroupId) -> Result<Option<GroupState>, DmError> {
