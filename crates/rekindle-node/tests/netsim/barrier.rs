@@ -294,3 +294,69 @@ async fn a_fresh_creator_and_joiner_pass_the_barrier_and_their_first_write_signs
         );
     }
 }
+
+/// Plan E3.2 S7d-keys.8 on the desktop's mode: every unlock re-arms the
+/// barrier. Node 1, a shell-mode member, passes it at its first unlock,
+/// logs out and unlocks again in the same app session with every ring peer
+/// silent: the barrier catches up again and its first write (a leave, an
+/// op any member signs) is held, as at a first unlock, never signed on the
+/// passed barrier the log-out left.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_re_unlock_in_one_app_session_re_arms_the_barrier_on_the_shell() {
+    let community = crate::shell_member_route::with_shell_member(3, 1, 2121).await;
+    let first = community.nodes[1]
+        .host
+        .governance()
+        .unlock_barrier(&community.anchor);
+    assert!(
+        eventually(&community.sim, SEEN, || async {
+            first.phase() == BarrierPhase::Passed
+        })
+        .await,
+        "the first unlock's barrier passes"
+    );
+    tokio::time::sleep(Duration::from_secs(60)).await;
+    let p = community.pseudonym(1).await;
+
+    community.nodes[1].ok(IpcRequest::Logout).await;
+    community.sim.fault(Fault::Partition {
+        a: vec![1],
+        b: vec![0, 2],
+    });
+    unlock(&community, 1).await;
+    let barrier = community.nodes[1]
+        .host
+        .governance()
+        .unlock_barrier(&community.anchor);
+    community.nodes[1]
+        .call_held(IpcRequest::Community(CommunityRequest::Lifecycle(
+            LifecycleRequest::CommunityLeave {
+                anchor: community.anchor.clone(),
+            },
+        )))
+        .await
+        .expect("the leave is answered while catching up");
+    tokio::time::sleep(SEEN).await;
+    assert_eq!(
+        barrier.phase(),
+        BarrierPhase::CatchingUp,
+        "the re-unlock catches up again"
+    );
+    assert!(
+        crate::devices::lists(&community, 0, &p, true).await,
+        "nothing is signed while catching up"
+    );
+
+    community.sim.fault(Fault::Heal);
+    assert!(
+        eventually(&community.sim, SEEN * 2, || async {
+            barrier.phase() == BarrierPhase::Passed
+        })
+        .await,
+        "the barrier passes once a ring peer answered"
+    );
+    assert!(
+        crate::devices::lists(&community, 0, &p, false).await,
+        "the held MemberLeft is signed once the barrier passed"
+    );
+}
