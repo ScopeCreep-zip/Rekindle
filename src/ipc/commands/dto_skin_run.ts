@@ -11,9 +11,17 @@ export type SkinWindow = "main" | "chat" | "community";
 
 /** `SkinSignalSet`: one window's state signals, computed by the Host
  *  (design §2.5); the window applies the pack triggers they fire. */
-/** Why a node is drawn disabled (plan CR1): a capability the window cannot
- *  use, or our own connection being down. */
-export type DisableCause = Capability | "disconnected";
+/** Why a node is drawn disabled (plan CR1, bare names on the wire): a
+ *  capability the window cannot use, or an active signal (our connection
+ *  down, the friend typing, a call ringing, someone talking, a new
+ *  notification). */
+export type DisableCause =
+  | Capability
+  | "disconnected"
+  | "activeUserTyping"
+  | "voiceRinging"
+  | "userStartedTalking"
+  | "newNotification";
 
 export interface SkinSignalSet {
   focused: boolean;

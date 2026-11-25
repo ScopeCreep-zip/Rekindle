@@ -102,12 +102,15 @@ export interface Fired {
   cause?: DisableCause;
 }
 
-/** The cause a state event names: a capability the window cannot use, or our connection down. */
+/** The signals a disabled node's reason may name (plan CR1's `DisableCause`, beside the capabilities). */
+const SIGNAL_CAUSES = ["disconnected", "activeUserTyping", "voiceRinging", "userStartedTalking", "newNotification"] as const;
+
+/** The cause a state event names: a capability the window cannot use, or an active signal. */
 function causeOf(on: SkinEvent): DisableCause | undefined {
   if (on.kind !== "app") return undefined;
   if (on.arg.kind === "cannot") return on.arg.arg;
-  if (on.arg.kind === "disconnected") return "disconnected";
-  return undefined;
+  const signal = on.arg.kind;
+  return SIGNAL_CAUSES.find((c) => c === signal);
 }
 
 /**
