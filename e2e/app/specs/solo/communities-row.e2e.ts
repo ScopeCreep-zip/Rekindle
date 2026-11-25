@@ -52,6 +52,20 @@ describe("the Communities view's row: Open / Leave / New in every pack (CB1)", f
 
   before(async () => {
     await createIdentity(browser, me);
+    // Lead (signals never live with SR1): every console error and uncaught
+    // error or rejection in the buddy list from here, printed when the live
+    // wait fails (a throw in a tree effect aborts that flush, so the binding
+    // that marks signals live would never update).
+    await browser.execute(`if (!window.__cbLog) {
+  window.__cbLog = [];
+  const text = (a) => (a instanceof Error ? a.message + " @ " + (a.stack || "").split("\\n").slice(0, 3).join(" | ") : typeof a === "string" ? a : JSON.stringify(a));
+  for (const level of ["warn", "error"]) {
+    const o = console[level].bind(console);
+    console[level] = (...args) => { window.__cbLog.push(level + ": " + args.map(text).join(" ")); o(...args); };
+  }
+  window.addEventListener("error", (e) => window.__cbLog.push("uncaught: " + text(e.error ?? e.message)));
+  window.addEventListener("unhandledrejection", (e) => window.__cbLog.push("unhandled rejection: " + text(e.reason)));
+}`);
     await createCommunity(browser, me, COMMUNITY);
   });
 
@@ -89,8 +103,12 @@ describe("the Communities view's row: Open / Leave / New in every pack (CB1)", f
       await waitUntil(
         async () => (await browser.$('.skin-tree[data-skin-signals="live"]').isExisting().catch(() => false)),
         NET_WAIT_MS,
-        `${file}: the window's skin signals never went live`,
-      );
+        "",
+      ).catch(async () => {
+        const seen = (await browser.execute("return window.__cbLog || [];")) as string[];
+        console.log(`[cb] ${file} console when signals never went live: ${JSON.stringify(seen).slice(0, 3000)}`);
+        throw new Error(`${file}: the window's skin signals never went live`);
+      });
       let before = { open: await node(NODES.open), leave: await node(NODES.leave), new: await node(NODES.new) };
       await waitUntil(
         async () => {
