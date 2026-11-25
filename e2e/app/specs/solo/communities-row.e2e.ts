@@ -13,7 +13,7 @@ import { applySkin, showSkinView, skinShown } from "../../journeys_skins.ts";
 import { shot } from "../../shots.ts";
 import { builtinPacks } from "../../skin-pack.ts";
 
-const PACKS = ["combat", "alloy", "onyx", "xslimfire", "simple-x", "symbiosis"];
+const PACKS = ["combat", "alloy", "onyx", "xslimfire", "simple-x", "symbiosis", "xfire-classic"];
 const COMMUNITY = `Row Hall ${Date.now() % 100000}`;
 const NODES = { open: "CommunitiesOpen", leave: "CommunitiesLeave", new: "CommunitiesNew" } as const;
 
@@ -102,6 +102,15 @@ describe("the Communities view's row: Open / Leave / New in every pack (CB1)", f
       ).catch(() => undefined);
       console.log(`[cb] ${file} nothing selected (signals live): ${JSON.stringify(before)}`);
       await shot("nothing-selected");
+      // The view itself shows too, not only its row: in Classic views and
+      // button rows share one control group, so a page that shows the row
+      // could hide the view (lead, CB2).
+      const listed = (await browser.execute((n: string) => {
+        const row = Array.from(document.querySelectorAll<HTMLElement>(".community-item")).find((r) => (r.textContent ?? "").includes(n));
+        return !!row && !row.closest("[hidden]") && row.getBoundingClientRect().width > 0;
+      }, COMMUNITY.slice(0, 24))) as boolean;
+      console.log(`[cb] ${file} community listed in the view: ${listed}`);
+      expect(listed).toBe(true);
       expect(before.open.shown && before.leave.shown && before.new.shown).toBe(true);
       expect(before.open.disabled).toBe(true);
       expect(before.leave.disabled).toBe(true);
