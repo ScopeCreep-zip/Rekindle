@@ -17,7 +17,11 @@ import { artElements, frameNodes, windowKind } from "../../skin-art.ts";
 import { builtinPacks } from "../../skin-pack.ts";
 import { befriendFleet } from "../../social.ts";
 
-const PACKS = ["combat", "alloy", "onyx", "xslimfire", "simple-x", "symbiosis"];
+const PACKS = ["combat", "alloy", "onyx", "xslimfire", "simple-x", "symbiosis", "total-chaos", "xfire-classic"];
+/** The window whose frame a pack's community window wears (SKW1): its chat
+ *  window's, or its buddy list's where the pack ships no chat window (Total
+ *  Chaos, whose group chat has no pack frame either: a known finding). */
+const FRAME_SOURCE: Record<string, "chat" | "buddy-list"> = { "total-chaos": "buddy-list" };
 const GROUP = `Art Squad ${Date.now() % 100000}`;
 const COMMUNITY = `Art Hall ${Date.now() % 100000}`;
 
@@ -92,10 +96,15 @@ describe("skinned windows keep their pack art (SB1)", function () {
       // the pack's frame, the one its chat window draws (today the pack's
       // ChatWindow is every chat-like window's source): the same title strip,
       // window buttons and menus with the same art, and never a default title bar.
-      const source = frames["chat"];
+      const from = FRAME_SOURCE[file] ?? "chat";
+      const source = frames[from];
       expect(source.nodes.length).toBeGreaterThan(0);
       expect(source.defaultTitlebar).toBe(false);
-      for (const label of ["group-chat", "community"]) {
+      // A pack with no chat window draws no chat frame for its group chat
+      // (logged, not compared); its community window still wears its frame.
+      const compared = from === "chat" ? ["group-chat", "community"] : ["community"];
+      if (from !== "chat") console.log(`[frame] ${file}: no pack chat window; the community window is compared to the buddy list's frame, the group chat not`);
+      for (const label of compared) {
         expect({ window: label, defaultTitlebar: frames[label].defaultTitlebar }).toEqual({ window: label, defaultTitlebar: false });
         expect({ window: label, frame: frames[label].nodes }).toEqual({ window: label, frame: source.nodes });
       }
