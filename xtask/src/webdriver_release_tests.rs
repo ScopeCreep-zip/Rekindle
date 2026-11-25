@@ -1,6 +1,7 @@
 use super::{
     feature_problems, graph_problems, has_feature_release_guard, has_release_guard,
-    release_binary_problems, workspace_names_driver, CRATE, EVAL_ROUTE, IDLE_ENV,
+    release_binary_problems, workspace_names_driver, CRATE, DAMAGE_NEXT_POST_VAR, EVAL_ROUTE,
+    IDLE_ENV,
 };
 
 #[test]
@@ -106,5 +107,35 @@ fn a_release_binary_holding_the_idle_override_is_a_problem() {
     assert_eq!(
         problems,
         vec!["target/release/rekindle-desktop holds REKINDLE_WDIO_IDLE_SECONDS".to_owned()]
+    );
+}
+
+/// A release binary naming the suite's damaged-post switch is a problem, as
+/// one holding the eval route is (each needle reported).
+#[test]
+fn the_release_scan_finds_the_damaged_post_switch() {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let meta = crate::cargo_meta::Metadata::load(&root).unwrap();
+    let fake = std::env::temp_dir().join(format!("xtask-wdio-damage-{}", std::process::id()));
+    let release = fake.join("target").join("release");
+    std::fs::create_dir_all(&release).unwrap();
+    let mut held = b"prefix".to_vec();
+    held.extend_from_slice(DAMAGE_NEXT_POST_VAR);
+    std::fs::write(release.join("rekindle-desktop"), &held).unwrap();
+    let switch_only = release_binary_problems(&fake, &meta);
+    held.extend_from_slice(EVAL_ROUTE);
+    std::fs::write(release.join("rekindle-desktop"), &held).unwrap();
+    let both = release_binary_problems(&fake, &meta);
+    std::fs::remove_dir_all(&fake).unwrap();
+    assert_eq!(
+        switch_only,
+        vec!["target/release/rekindle-desktop holds REKINDLE_WDIO_DAMAGE_NEXT_POST".to_owned()]
+    );
+    assert_eq!(
+        both,
+        vec![
+            "target/release/rekindle-desktop holds /wdio/eval".to_owned(),
+            "target/release/rekindle-desktop holds REKINDLE_WDIO_DAMAGE_NEXT_POST".to_owned(),
+        ]
     );
 }

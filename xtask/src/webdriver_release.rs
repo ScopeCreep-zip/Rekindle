@@ -16,8 +16,10 @@
 //! - in the graph `cargo metadata` resolves, nothing depends on it and no
 //!   release binary's build graph reaches it;
 //! - no release binary already built under `target/release` holds
-//!   `/wdio/eval` or the walk's `REKINDLE_WDIO_IDLE_SECONDS` override (this
-//!   gate's own binary aside: they are its needles).
+//!   `/wdio/eval`, the walk's `REKINDLE_WDIO_IDLE_SECONDS` override, or
+//!   `REKINDLE_WDIO_DAMAGE_NEXT_POST` (the suite's damaged-post switch,
+//!   `src-tauri/src/webdriver.rs`), this gate's own binary aside: they are
+//!   its needles.
 
 use std::path::Path;
 
@@ -31,8 +33,11 @@ const EVAL_ROUTE: &[u8] = b"/wdio/eval";
 /// The walk's idle override (`src-tauri/src/webdriver.rs`), compiled only
 /// beside the driver.
 const IDLE_ENV: &[u8] = b"REKINDLE_WDIO_IDLE_SECONDS";
+/// The real-app suite's damaged-post switch (`webdriver.rs`): a release
+/// binary naming it would damage a received post on request.
+const DAMAGE_NEXT_POST_VAR: &[u8] = b"REKINDLE_WDIO_DAMAGE_NEXT_POST";
 /// What no release binary may hold.
-const NEEDLES: [&[u8]; 2] = [EVAL_ROUTE, IDLE_ENV];
+const NEEDLES: [&[u8]; 3] = [EVAL_ROUTE, IDLE_ENV, DAMAGE_NEXT_POST_VAR];
 
 /// Whether `lib` has `#[cfg(not(debug_assertions))] compile_error!`.
 fn has_release_guard(lib: &str) -> bool {
