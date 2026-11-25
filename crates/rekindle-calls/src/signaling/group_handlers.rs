@@ -26,6 +26,7 @@ use crate::group::unwrap_call_key;
 use crate::group_state::{GroupCallState, GroupCallStatus};
 use crate::signaling::deps::CallSignalingDeps;
 use crate::signaling::event::CallSignalEvent;
+use crate::signaling::trace;
 use crate::state::CallKind;
 
 /// Dispatcher for the group-call kinds (§6 0x0210–0x0214). After W13.13,
@@ -59,9 +60,11 @@ pub async fn handle_group_call_payload<D: CallSignalingDeps + ?Sized>(
                     tracing::warn!(call_id = %call_id, sender = %sender_hex,
                         claimed_group = %group, error = %e,
                         "GroupCallOffer group id refused; offer dropped");
+                    trace::incoming("offer", &call_id, sender_hex, "refused: not the group's");
                     return;
                 }
             }
+            trace::incoming("offer", &call_id, sender_hex, "received");
             handle_incoming_group_invite(
                 deps,
                 GroupInvite {
@@ -78,9 +81,31 @@ pub async fn handle_group_call_payload<D: CallSignalingDeps + ?Sized>(
             );
         }
         DirectBody::GroupCallAccept(GroupCallMember { call_id, pubkey }) => {
+            let known = deps.group_registry().contains(&call_id);
+            trace::incoming(
+                "accept",
+                &call_id,
+                sender_hex,
+                if known {
+                    "applied"
+                } else {
+                    "ignored: unknown call"
+                },
+            );
             handle_group_accept_received(deps, sender_hex, &call_id, &pubkey);
         }
         DirectBody::GroupCallDecline(CallClosed { call_id, reason }) => {
+            let known = deps.group_registry().contains(&call_id);
+            trace::incoming(
+                "decline",
+                &call_id,
+                sender_hex,
+                if known {
+                    "applied"
+                } else {
+                    "ignored: unknown call"
+                },
+            );
             handle_group_decline_received(deps, sender_hex, &call_id, reason);
         }
         DirectBody::GroupCallParticipantJoined(GroupCallMember {
@@ -92,6 +117,16 @@ pub async fn handle_group_call_payload<D: CallSignalingDeps + ?Sized>(
             // known invite list.
             let snapshot = deps.group_registry().snapshot(&call_id);
             let known = snapshot.is_some_and(|s| s.participants.contains(&participant_pubkey));
+            trace::incoming(
+                "participant joined",
+                &call_id,
+                sender_hex,
+                if known {
+                    "applied"
+                } else {
+                    "ignored: not in the call"
+                },
+            );
             if known {
                 deps.emit_event(CallSignalEvent::GroupCallParticipantJoined {
                     call_id,
@@ -104,15 +139,7 @@ pub async fn handle_group_call_payload<D: CallSignalingDeps + ?Sized>(
             participant_pubkey,
             reason,
         }) => {
-            let snapshot = deps.group_registry().snapshot(&call_id);
-            let known = snapshot.is_some_and(|s| s.participants.contains(&participant_pubkey));
-            if known {
-                deps.emit_event(CallSignalEvent::GroupCallParticipantLeft {
-                    call_id,
-                    peer_public_key: participant_pubkey,
-                    reason,
-                });
-            }
+            handle_participant_left(deps, sender_hex, &call_id, &participant_pubkey, reason);
         }
         other => {
             tracing::warn!(kind = ?other.type_id(), "handle_group_call_payload: non-group body ignored");
@@ -323,6 +350,49 @@ pub fn handle_group_accept_received<D: CallSignalingDeps + ?Sized>(
         call_id: call_id.to_string(),
         peer_public_key: acceptor_pubkey.to_string(),
     });
+}
+
+/// A member left a group call (`GroupCallParticipantLeft`, finding GV3).
+/// Only the member itself can say so (`sender_hex` must be the leaver).
+/// When the initiator leaves a call that still rings here (we never
+/// joined), the ring is over: the entry goes and `GroupCallEnded` clears
+/// the window, the same as a 1:1 caller's cancel (`CallEnd`). Otherwise
+/// the call goes on and the grid learns who left.
+pub fn handle_participant_left<D: CallSignalingDeps + ?Sized>(
+    deps: &D,
+    sender_hex: &str,
+    call_id: &str,
+    participant_pubkey: &str,
+    reason: String,
+) {
+    let registry = deps.group_registry();
+    let outcome = match registry.snapshot(call_id) {
+        None => "ignored: unknown call",
+        Some(_) if sender_hex != participant_pubkey => "ignored: not the leaver's own",
+        Some(s) if !s.participants.iter().any(|p| p == participant_pubkey) => {
+            "ignored: not in the call"
+        }
+        Some(s)
+            if s.status == GroupCallStatus::Incoming
+                && s.initiator_pubkey == participant_pubkey =>
+        {
+            registry.remove(call_id);
+            deps.emit_event(CallSignalEvent::GroupCallEnded {
+                call_id: call_id.to_string(),
+                reason,
+            });
+            "ring cancelled"
+        }
+        Some(_) => {
+            deps.emit_event(CallSignalEvent::GroupCallParticipantLeft {
+                call_id: call_id.to_string(),
+                peer_public_key: participant_pubkey.to_string(),
+                reason,
+            });
+            "participant left"
+        }
+    };
+    trace::incoming("participant left", call_id, sender_hex, outcome);
 }
 
 /// Initiator side: a participant declined.

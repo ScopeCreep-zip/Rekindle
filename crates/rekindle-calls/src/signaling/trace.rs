@@ -162,15 +162,22 @@ pub async fn decline_group_call<D: CallSignalingDeps + ?Sized>(
 ///
 /// # Errors
 /// The call is unknown.
-pub fn end_group_call<D: CallSignalingDeps + ?Sized>(
+pub async fn end_group_call<D: CallSignalingDeps + ?Sized>(
     deps: &D,
     call_id: &str,
     reason: Option<String>,
 ) -> Result<(), CallError> {
     let group = group_of(deps, call_id);
-    let result = end_group_call_untraced(deps, call_id, reason);
+    let result = end_group_call_untraced(deps, call_id, reason).await;
     op("end group", Some(call_id), group.as_deref(), &result);
     result
+}
+
+/// Log one incoming group call signal at info (finding GV3: OBS1 traced
+/// only our own operations, so an end that never arrived left no line):
+/// the signal, the call, its sender and what the engine did with it.
+pub(crate) fn incoming(signal: &'static str, call: &str, from: &str, outcome: &str) {
+    tracing::info!(signal, call, from, outcome, "call signal in");
 }
 
 #[cfg(test)]
