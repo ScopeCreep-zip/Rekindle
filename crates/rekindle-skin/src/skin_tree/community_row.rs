@@ -22,6 +22,14 @@
 //!   With none, the slot is a plain button: no art, a text part with the
 //!   Host's word.
 //!   A word the pack drew on a button reads ours ([`super::titles`]).
+//! - **Paging:** a bar that is one paged control group (Symbiosis's
+//!   `TabsButtonsContainer`, which pages to a view's row on its `Show`)
+//!   pages to the new row's own index on `Show(Communities)`, and the
+//!   Communities tab's page of that group is the row's index, never the
+//!   index of the row its frame came from. The clone's slots are not paged:
+//!   a frame's per-slot groups (Alloy's `TabAddButton`, one page per view)
+//!   would show the clone's buttons only on the frame's page; the row's own
+//!   view already shows them.
 //! - Open and Leave are never hidden: the Host's `cannot` for their
 //!   capability (no community selected) disables them, its `can` enables
 //!   them; pressed while refused, the Host answers "Select a community
@@ -337,6 +345,76 @@ fn retarget_frame(n: &mut SkinNode, from: Src) {
 /// Composes `ButtonRow(Communities)` in the main window's tree, else in a
 /// popup it launches; a tree that has one, or has no frame row, is left.
 pub fn row(layout: &mut WindowLayout) {
+    if insert(layout) {
+        page_to_row(layout);
+    }
+}
+
+/// `f` on every node under `nodes`.
+fn each_mut(nodes: &mut [SkinNode], f: &mut dyn FnMut(&mut SkinNode)) {
+    for n in nodes {
+        f(n);
+        each_mut(&mut n.children, f);
+    }
+}
+
+/// No node under `nodes` pages with a control group.
+fn unpage(nodes: &mut [SkinNode]) {
+    each_mut(nodes, &mut |n| n.control_group = None);
+}
+
+/// When the row's bar is a paged control group, everything that pages it
+/// to Communities pages to the row's own index: the Communities tab's
+/// presses, and a `Show(Communities)` beside the pack's own `Show(<view>)`
+/// pages of that group.
+fn page_to_row(layout: &mut WindowLayout) {
+    let main = layout.tree.as_mut().map(|t| &mut t.root);
+    let mut roots: Vec<&mut Vec<SkinNode>> = main
+        .into_iter()
+        .chain(layout.popups.values_mut().map(|p| &mut p.tree.root))
+        .collect();
+    let holds = |n: &SkinNode| n.children.iter().any(|c| c.role == NodeRole::ButtonRow(C));
+    let Some((g, page)) = roots.iter().find_map(|r| {
+        let bar = find(r, &holds)?;
+        let at = bar
+            .children
+            .iter()
+            .position(|c| c.role == NodeRole::ButtonRow(C))?;
+        Some((bar.control_group?, u16::try_from(at).ok()?))
+    }) else {
+        return;
+    };
+    let ours = NodeTrigger {
+        on: SkinEvent::Show(EngineView::Communities),
+        run: SkinAction::GroupPage { group: g, page },
+    };
+    let mut shown = false;
+    for r in &mut roots {
+        each_mut(r, &mut |n| {
+            let tab = matches!(n.role, NodeRole::Tab(C) | NodeRole::Knob(C));
+            for t in &mut n.triggers {
+                if let SkinAction::GroupPage { group, page: p } = &mut t.run {
+                    if *group == g && (tab || t.on == ours.on) {
+                        *p = page;
+                    }
+                }
+            }
+            let pages_on_show = n.triggers.iter().any(|t| {
+                matches!(t.on, SkinEvent::Show(_))
+                    && matches!(t.run, SkinAction::GroupPage { group, .. } if group == g)
+            });
+            if pages_on_show && !shown {
+                shown = true;
+                if !n.triggers.contains(&ours) {
+                    n.triggers.push(ours.clone());
+                }
+            }
+        });
+    }
+}
+
+/// [`row`]'s composition; `true` when it placed the row.
+fn insert(layout: &mut WindowLayout) -> bool {
     let donors = {
         let mut roots: Vec<&[SkinNode]> = layout.tree.iter().map(|t| t.root.as_slice()).collect();
         roots.extend(layout.popups.values().map(|p| p.tree.root.as_slice()));
@@ -351,25 +429,27 @@ pub fn row(layout: &mut WindowLayout) {
             continue;
         };
         if bar.iter().any(|c| c.role == NodeRole::ButtonRow(C)) {
-            return;
+            return false;
         }
         let Some((at, from)) = FRAMES.iter().find_map(|&(k, v)| {
             bar.iter()
                 .position(|c| c.role == NodeRole::ButtonRow(k))
                 .map(|i| (i, Src(k, v)))
         }) else {
-            return;
+            return false;
         };
         let mut clone = bar[at].clone();
         prune(&mut clone.children, SLOTS.len(), &mut 0);
         clone.role = NodeRole::ButtonRow(C);
         retarget_frame(&mut clone, from);
         wire(&mut clone.children, &donors, from, &mut 0);
+        unpage(&mut clone.children);
         let last = bar
             .iter()
             .rposition(|c| matches!(c.role, NodeRole::ButtonRow(_)))
             .unwrap_or(at);
         bar.insert(last + 1, clone);
-        return;
+        return true;
     }
+    false
 }
