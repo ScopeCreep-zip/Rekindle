@@ -147,7 +147,7 @@ describe("the Communities view's row: Open / Leave / New in every pack (CB1)", f
       await browser.pause(3000);
       const answered = (await browser.execute(() => ({
         dialogs: Array.from(document.querySelectorAll("[role=dialog],[role=alertdialog]")).map((d) => `${d.className}: ${(d.textContent ?? "").trim().slice(0, 80)}`),
-        toasts: Array.from(document.querySelectorAll(".toast, [data-toast], [role=status]")).map((t) => (t.textContent ?? "").trim().slice(0, 120)).filter(Boolean),
+        toasts: Array.from(document.querySelectorAll(".toast-item")).map((t) => (t.textContent ?? "").trim().slice(0, 120)).filter(Boolean),
         rows: document.querySelectorAll(".community-item").length,
       }))) as { dialogs: string[]; toasts: string[]; rows: number };
       console.log(`[cb] ${file} after Leave: ${JSON.stringify(answered)}`);
