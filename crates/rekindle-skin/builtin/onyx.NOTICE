@@ -78,7 +78,7 @@ Colour roles by reference (11)
   [GroupInfoView] color=DialogCG -> bg.secondary kept: an earlier reference set it
 
 Regions
-  window.frame: the nine-piece frame of the chat window layout chatwindow.xml: the tiles named TopLeft … BottomRight, one piece each, 250x260 px, nine-slice 87/83/87/83
+  window.frame: the nine-piece frame of the chat window layout chatwindow.xml: the tiles named TopLeft … BottomRight, one piece each, 250x161 px, nine-slice 67/83/8/83
   buddylist.menubar: the component MenuBar, 12x18 px, NineSlice(Insets { top: 0, right: 4, bottom: 0, left: 4 }); states normal
   buddylist.group-header: the component BuddyView, 12x18 px, NineSlice(Insets { top: 0, right: 4, bottom: 0, left: 4 }); states normal
   community.category-header: the component BuddyView, 12x18 px, NineSlice(Insets { top: 0, right: 4, bottom: 0, left: 4 }); states normal

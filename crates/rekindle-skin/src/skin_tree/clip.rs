@@ -43,11 +43,21 @@ pub(super) struct Art<'a> {
 /// How much of a fixed `span` lies before its parent's start and past its
 /// end (a parent `len` px long, or one that stretches with the window,
 /// `None`, where only the offset can lay it outside), at most its size.
-fn cut(span: &NodeSpan, len: Option<u16>) -> (u16, u16) {
+/// A tile placed from its parent's start loses only what lies before the
+/// window's start, `lead` px before its parent's start (`None` where the
+/// parent's start moves with the window): inside a nested tile a negative
+/// offset is deliberate ([`super::anchor::axis`]), as Combat's chat `Logo`
+/// `X=-30 Y=-3` hangs its whole 48×23 `c_chat_x_norm.gif` off the
+/// `MainTitleBar`'s corner (`CombatChatSkin.ini:219-221`), which the
+/// original shows uncut; only the window clips it (Total Chaos's
+/// `BottomLeft`, shifted 1 px before its window by its row's
+/// `OutdentLeft="1"`, [`super::outdent`]).
+fn cut(span: &NodeSpan, len: Option<u16>, lead: Option<i32>) -> (u16, u16) {
     let span = span.clone();
     let NodeSpan::Fixed { at, size } = span.clone() else {
         return (0, 0);
     };
+    let from_start = matches!(at, Anchor::Start(_));
     let (before, after) = match (len, at) {
         (Some(len), _) => {
             let (s, l) = span.place(i32::from(len));
@@ -56,6 +66,12 @@ fn cut(span: &NodeSpan, len: Option<u16>) -> (u16, u16) {
         (None, Anchor::Start(o) | Anchor::After { gap: o, .. }) => ((-i32::from(o)).max(0), 0),
         (None, Anchor::End(o)) => (0, (-i32::from(o)).max(0)),
         (None, Anchor::Centre { .. }) => (0, 0),
+    };
+    let before = match (from_start, lead, len) {
+        (false, _, _) => before,
+        (true, None, _) => 0,
+        (true, Some(lead), Some(len)) => (-(lead + span.place(i32::from(len)).0)).max(0),
+        (true, Some(lead), None) => (-(lead + span.place(0).0)).max(0),
     };
     let b = u16::try_from(before).unwrap_or(u16::MAX).min(size);
     let a = u16::try_from(after).unwrap_or(u16::MAX).min(size - b);
@@ -149,6 +165,9 @@ fn shifted(span: NodeSpan, (b, a): (u16, u16), len: u16) -> NodeSpan {
             start: start.saturating_sub(b16),
             end: end.saturating_sub(a16),
         },
+        share @ NodeSpan::Share { .. } => {
+            share.share_through(i32::from(len), |f| shifted(f, (b, a), len))
+        }
     }
 }
 
@@ -352,13 +371,15 @@ fn trim_art(
 }
 
 /// Clips each of `nodes` (in a parent `(w, h)` px, or `None` on an axis
-/// that stretches with the window) to its parent, then its children to it.
+/// that stretches with the window; its start `lead` px from the window's
+/// start per axis, `None` where that moves with the window) to its parent,
+/// then its children to it.
 ///
 /// # Errors
 /// A cropped image that does not encode.
 pub(super) fn clip(
     nodes: &mut [SkinNode],
-    parent: (Option<u16>, Option<u16>),
+    (parent, lead): ((Option<u16>, Option<u16>), [Option<i32>; 2]),
     art: &mut Art<'_>,
 ) -> Result<(), ImportError> {
     for n in nodes {
@@ -377,7 +398,7 @@ pub(super) fn clip(
             (NodeSpan::Fixed { .. }, NodeSpan::Fixed { .. })
         );
         let cuts = if fixed || n.art.is_some() {
-            [cut(&n.x, parent.0), cut(&n.y, parent.1)]
+            [cut(&n.x, parent.0, lead[0]), cut(&n.y, parent.1, lead[1])]
         } else {
             [(0, 0); 2]
         };
@@ -395,11 +416,13 @@ pub(super) fn clip(
         if cuts[1] != (0, 0) {
             n.y = clipped(n.y.clone(), cuts[1], parent.1);
         }
-        let len = |s: NodeSpan| match s {
+        // A share is laid against its parent's box at this size.
+        let len = |s: NodeSpan, l: Option<u16>| match s {
             NodeSpan::Fixed { size, .. } => Some(size),
             NodeSpan::Stretch { .. } => None,
+            NodeSpan::Share { .. } => l.and_then(|l| u16::try_from(s.place(i32::from(l)).1).ok()),
         };
-        let own = (len(n.x.clone()), len(n.y.clone()));
+        let own = (len(n.x.clone(), parent.0), len(n.y.clone(), parent.1));
         if cuts != [(0, 0); 2] {
             if let Some(a) = n.art.take() {
                 n.art = match own {
@@ -419,7 +442,23 @@ pub(super) fn clip(
                 }
             }
         }
-        clip(&mut n.children, own, art)?;
+        // The children's lead: this tile's start from the window's start.
+        let start = |s: &NodeSpan, l: Option<u16>, lead: Option<i32>| {
+            let at = match s {
+                NodeSpan::Fixed {
+                    at: Anchor::Start(o),
+                    ..
+                } => Some(i32::from(*o)),
+                NodeSpan::Stretch { start, .. } => Some(i32::from(*start)),
+                _ => l.map(|l| s.place(i32::from(l)).0),
+            };
+            lead.zip(at).map(|(a, b)| a + b)
+        };
+        let inner = [
+            start(&n.x, parent.0, lead[0]),
+            start(&n.y, parent.1, lead[1]),
+        ];
+        clip(&mut n.children, (own, inner), art)?;
     }
     Ok(())
 }

@@ -117,21 +117,17 @@ Dropped
     SimpleX.ini: [StatusEdit] Text.bold (line 348)
     SimpleX.ini: [InfoViewButton] Skin.X (line 458)
     SimpleX.ini: [SearchFiles] Cursor (line 825)
-  files not read (73):
+  files not read (59):
     CScroll/Thumbs.db
     CScroll/scroll-gripper-grips-horz.gif
     CScroll/scroll-gripper-grips-vert.gif
-    Chatskin.ini
     GroupChatInfoskin.ini
     Groupchatskin.ini
     InGameMainSkin.ini
     InGameSkin.ini
     buttons/Thumbs.db
     buttons/button-afav-disabled.gif
-    buttons/button-chat-Send-click.gif
     buttons/button-chat-Send-disabled.gif
-    buttons/button-chat-Send-hover.gif
-    buttons/button-chat-Send-norm.gif
     buttons/button-game-disabled.gif
     buttons/button-im-disabled.gif
     buttons/button-profile-disabled.gif
@@ -142,17 +138,7 @@ Dropped
     chatskin/ChatLogo-hover.gif
     chatskin/ChatLogo.gif
     chatskin/Thumbs.db
-    chatskin/chat-bottomleft.gif
-    chatskin/chat-bottommiddle.gif
-    chatskin/chat-bottomright.gif
-    chatskin/chat-middleleft.gif
-    chatskin/chat-middlemiddle.gif
-    chatskin/chat-middleright.gif
-    chatskin/chat-topleft.gif
-    chatskin/chat-topmiddle.gif
-    chatskin/chat-topright.gif
     chatskin/textbg.gif
-    chatskin/toolbar.gif
     infoskin/Thumbs.db
     infoskin/icon_mic_green.gif
     infoskin/icon_mic_grey.gif

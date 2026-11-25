@@ -8,7 +8,7 @@
 //! outside the closed vocabulary refuses the pack
 //! ([`ImportError::UnknownAction`]): nothing is dropped.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use rekindle_types::dto::skin_action::{
     AnimateSpec, AppSignal, Capability, EngineMenu, EngineView, NodeState, NodeTrigger,
@@ -25,8 +25,35 @@ pub(super) struct Pack<'a> {
     /// The tile names of the pack's `<Popups>` roots, lowercased (empty
     /// for a pack with none: the INI era's popups are skin files).
     pub popups: &'a BTreeSet<String>,
-    /// Every `GroupId`/`ControlGroupId` the pack's components declare.
-    pub groups: &'a BTreeSet<u16>,
+    /// The control groups the pack's components declare.
+    pub groups: &'a Groups,
+}
+
+/// The control groups a pack's components declare.
+#[derive(Clone)]
+pub(super) struct Groups {
+    /// Every `GroupId`/`ControlGroupId`.
+    pub all: BTreeSet<u16>,
+    /// Every `ControlGroupId`: the groups with a paged control, whose pages
+    /// a `GroupMessage(n)` selects.
+    pub controls: BTreeSet<u16>,
+}
+
+impl Groups {
+    /// The groups `components` (by name) declare.
+    pub(super) fn of(components: &BTreeMap<String, &Node>) -> Self {
+        let ids = |keys: &[&str]| -> BTreeSet<u16> {
+            components
+                .values()
+                .flat_map(|c| keys.iter().filter_map(|k| c.attr_ci(k)))
+                .filter_map(|g| g.trim().parse().ok())
+                .collect()
+        };
+        Self {
+            all: ids(&["GroupId", "ControlGroupId"]),
+            controls: ids(&["ControlGroupId"]),
+        }
+    }
 }
 
 /// Who declared the trigger: the tile, or its component.
@@ -65,7 +92,7 @@ pub(super) fn read(
             let (event, action) = (t.attr_ci("Type").unwrap_or_default().trim(), t.text.trim());
             // Onyx's `<Trigger Type="OnClick"></Trigger>` (`components.xml:2089`)
             // names no action: there is nothing to run, and no name to refuse.
-            if action.is_empty() || radio(action, &owner) {
+            if action.is_empty() || radio(action, &owner, pack) {
                 continue;
             }
             out.push(NodeTrigger {
@@ -349,19 +376,24 @@ fn own_group(owner: &Owner<'_>) -> Option<u16> {
 /// Whether `action` is a sticky push button's radio message: a one-argument
 /// `GroupMessage(n)` naming the button's own `GroupId` (Symbiosis's tabs,
 /// `GroupId="8765"` with `OnLeftButtonDown` `GroupMessage(8765)`,
-/// `MainWindow.xml:910-915`), which tells the other sticky buttons of the
-/// group to release. It selects no page of any group (the group has no page
-/// 8765), and the shell's shown-tab state already is the radio (one tab
-/// down, the shown view's), so it imports as no trigger.
-fn radio(action: &str, owner: &Owner<'_>) -> bool {
+/// `MainWindow.xml:910-915`) when no component declares a paged control of
+/// that group (`ControlGroupId`), which tells the other sticky buttons of
+/// the group to release. It selects no page of any group (the group has no
+/// paged control, so no page 8765), and the shell's shown-tab state already
+/// is the radio (one tab down, the shown view's), so it imports as no
+/// trigger. A group with a paged control has its pages: Onyx's Servers tab
+/// (`GroupId="1"`, `GroupMessage(1)`, `components.xml:840-846`, its views
+/// `ControlGroupId="1"`) and Combat's `[Knob02]` (`GroupId=2`,
+/// `GroupMessage(2)`, its knob strip `ControlGroupId=2`, `combat.ini:319,
+/// 358-366`) select page `n` of their group, as any `GroupMessage(n)` does.
+fn radio(action: &str, owner: &Owner<'_>, pack: &Pack<'_>) -> bool {
     let (name, args) = split(action);
     name == "groupmessage"
         && args.is_some_and(|a| {
             !a.contains(',')
-                && a.trim()
-                    .parse::<u16>()
-                    .ok()
-                    .is_some_and(|n| Some(n) == own_group(owner))
+                && a.trim().parse::<u16>().ok().is_some_and(|n| {
+                    Some(n) == own_group(owner) && !pack.groups.controls.contains(&n)
+                })
         })
 }
 
@@ -468,7 +500,7 @@ fn action_of(raw: &str, owner: &Owner<'_>, pack: &Pack<'_>) -> Result<SkinAction
                         .ok_or_else(|| bad(format!("{}: {raw} in no group", owner.id)))?,
                 ),
             };
-            if !pack.groups.contains(&group) {
+            if !pack.groups.all.contains(&group) {
                 return Err(bad(format!("{}: {raw}: no group {group}", owner.id)));
             }
             Ok(SkinAction::GroupPage { group, page })
