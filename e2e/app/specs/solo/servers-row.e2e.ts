@@ -31,6 +31,13 @@ interface RowReport {
   row: boolean;
   nodes: string[];
   drawnButtons: number;
+  /** Each button's box and whether it is visible: inside the window, not
+   *  zero-sized, not transparent or hidden, and the top element at its
+   *  centre (lead: "drawn" alone did not prove the shot shows it). */
+  visible: { node: string; rect: number[]; seen: boolean; why: string }[];
+  /** The selected tab's word (the tab row's pressed/active node), to check
+   *  the view's tab is the highlighted one. */
+  communitiesWordColor: string;
 }
 
 describe("a view's own button row shows on its page (SR1)", function () {
@@ -64,12 +71,34 @@ describe("a view's own button row shows on its page (SR1)", function () {
         const drawnButtons = Array.from(row.querySelectorAll<HTMLElement>("[data-skin-node]")).filter(
           (n) => drawn(n) && (n.dataset.skinRole === "button" || n.getAttribute("role") === "button"),
         ).length;
-        return { row: drawn(row), nodes, drawnButtons };
+        const visible = Array.from(row.querySelectorAll<HTMLElement>("[data-skin-node]"))
+          .filter((n) => n.dataset.skinRole === "button" || n.getAttribute("role") === "button")
+          .map((n) => {
+            const r = n.getBoundingClientRect();
+            const cs = getComputedStyle(n);
+            const cx = r.x + r.width / 2;
+            const cy = r.y + r.height / 2;
+            const top = document.elementFromPoint(cx, cy);
+            const why =
+              r.width <= 0 || r.height <= 0
+                ? "zero-sized"
+                : r.right <= 0 || r.bottom <= 0 || r.left >= window.innerWidth || r.top >= window.innerHeight
+                  ? "outside the window"
+                  : cs.visibility === "hidden" || Number(cs.opacity) === 0
+                    ? "transparent or hidden"
+                    : !top || !(top === n || n.contains(top))
+                      ? `covered by ${(top as HTMLElement | null)?.dataset?.skinNode ?? top?.tagName ?? "nothing"}`
+                      : "";
+            return { node: n.dataset.skinNode ?? "", rect: [r.x, r.y, r.width, r.height].map(Math.round), seen: why === "", why };
+          });
+        const comm = Array.from(document.querySelectorAll<HTMLElement>(".skin-node-label-text")).find((t) => (t.textContent ?? "").trim() === "Communities");
+        return { row: drawn(row), nodes, drawnButtons, visible, communitiesWordColor: comm ? getComputedStyle(comm).color : "none" };
       }, view)) as RowReport;
       console.log(`[sr] ${file} ${view}: ${JSON.stringify(report)}`);
       await shot(`${view}-view`);
       expect(report.row).toBe(true);
       expect(report.drawnButtons).toBeGreaterThan(0);
+      expect(report.visible.filter((v) => !v.seen)).toEqual([]);
     });
   }
 });
