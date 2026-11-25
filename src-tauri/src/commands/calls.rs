@@ -255,6 +255,7 @@ pub async fn end_group_call(
     let pool = state.db.current()?;
     let adapter = build_adapter(app, &state, &pool);
     rekindle_calls::signaling::end_group_call(adapter.as_ref(), &call_id, reason)
+        .await
         .map_err(|e| e.to_string())
 }
 

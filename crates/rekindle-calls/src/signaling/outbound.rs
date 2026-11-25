@@ -23,6 +23,7 @@ use crate::X25519StaticSecret;
 use crate::{derive_call_key, fresh_keypair, short_pubkey_helper};
 use rekindle_codec::capnp_codec::direct::{
     CallAccept, CallClosed, CallInvite, DirectBody, GroupCallMember, GroupCallOffer,
+    GroupCallParticipantLeft,
 };
 
 /// Ring window (architecture §10.10) — 30 s for both caller-side
@@ -432,14 +433,17 @@ pub(super) async fn decline_group_call_untraced<D: CallSignalingDeps + ?Sized>(
     Ok(())
 }
 
-/// Leave / end a group call locally. Drops the GroupCallState
-/// entry and emits `GroupCallEnded` so the local UI dismisses the
-/// in-call panel. Other participants learn through whatever path
-/// our exit registers (gossip ParticipantLeft on next presence
-/// poll, dialing-timeout on the initiator's side, etc.). No
-/// explicit GroupCallEnd envelope today — matches the pre-Phase-14
-/// behavior.
-pub(super) fn end_group_call_untraced<D: CallSignalingDeps + ?Sized>(
+/// Leave / end a group call: drop the GroupCallState entry, tell every
+/// other member of the call (`GroupCallParticipantLeft` naming us) and emit
+/// `GroupCallEnded` so the local UI dismisses the call (finding GV3).
+///
+/// Whom we tell follows what they hold: our own call (rings out or
+/// connected) and a call we joined are known to every participant, so each
+/// other participant learns we left, and an invitee still being rung for
+/// our call clears its ring on the initiator's leave
+/// (`group_handlers::handle_participant_left`). A call that only rings here
+/// is known to its initiator alone.
+pub(super) async fn end_group_call_untraced<D: CallSignalingDeps + ?Sized>(
     deps: &D,
     call_id: &str,
     reason: Option<String>,
@@ -448,11 +452,34 @@ pub(super) fn end_group_call_untraced<D: CallSignalingDeps + ?Sized>(
         .group_registry()
         .remove(call_id)
         .ok_or_else(|| CallError::CallNotFound(call_id.to_string()))?;
+    let reason = reason.unwrap_or_default();
+    let own = deps.owner_key()?;
+    let recipients: Vec<String> = if removed.status == GroupCallStatus::Incoming {
+        vec![removed.initiator_pubkey.clone()]
+    } else {
+        removed
+            .participants
+            .iter()
+            .filter(|p| **p != own)
+            .cloned()
+            .collect()
+    };
     drop(removed);
     deps.emit_event(CallSignalEvent::GroupCallEnded {
         call_id: call_id.to_string(),
-        reason: reason.unwrap_or_default(),
+        reason: reason.clone(),
     });
+    for peer in &recipients {
+        let left = DirectBody::GroupCallParticipantLeft(GroupCallParticipantLeft {
+            call_id: call_id.to_string(),
+            participant_pubkey: own.clone(),
+            reason: reason.clone(),
+        });
+        if let Err(e) = deps.send_to_peer(peer, left).await {
+            tracing::info!(call = %call_id, peer = %peer, error = %e,
+                "GroupCallParticipantLeft send failed");
+        }
+    }
     Ok(())
 }
 
@@ -474,7 +501,7 @@ pub async fn end_all_calls<D: CallSignalingDeps + ?Sized>(deps: &D, reason: &str
         }
     }
     for call_id in deps.group_registry().list_ids() {
-        if let Err(e) = end_group_call(deps, &call_id, Some(reason.to_string())) {
+        if let Err(e) = end_group_call(deps, &call_id, Some(reason.to_string())).await {
             tracing::debug!(call = %call_id, error = %e, "end_all_calls: group call already ended");
         }
     }
