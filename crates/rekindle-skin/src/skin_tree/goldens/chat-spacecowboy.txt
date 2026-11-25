@@ -19,9 +19,9 @@ MenuBar MenuBar
   HelpMenuText MenuTitle label "Help"
     HelpMenu Part target [0, 0, 30, 21] art [0, 0, 30, 18] Spacing
 TopButtonBar Group
-  Minimize WindowButton(Minimize) target [-5, -5, 20, 22] art [5, 5, 14, 14] Short
+  Minimize WindowButton(Minimize) target [-9, -7, 24, 24] art [9, 7, 14, 14] Size
   Maximize WindowButton(Maximize) target [-1, -5, 16, 22] art [1, 5, 14, 14] Short
-  ChatClose WindowButton(Close) target [-1, -5, 20, 22] art [1, 5, 14, 14] Short
+  ChatClose WindowButton(Close) target [-1, -7, 24, 24] art [1, 7, 14, 14] Size
 ListViewBG1 Decor
 Divider Decor
 ChatArea Slot(ChatArea)

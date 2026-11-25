@@ -14,8 +14,17 @@ import type { CommunityEvent } from "./community_events";
 import type { TypingContext, UnreadChanged } from "./chat_events";
 import type { EventInfo, GameServer, Thread } from "../commands/types";
 
+/** Why an inviter refused a join (`rekindle_types::join_refusal::JoinRefusal`). */
+export type JoinRefusal = "INVITE_USED_UP" | "INVITE_NO_LONGER_VALID" | "INVITE_UNKNOWN" | "NOT_ADMITTED";
+
 /** Membership events from the daemon vocabulary. */
 export type MembershipEvent =
+  /**
+   * Our join was withdrawn after it returned: the inviter refused it on a
+   * retried exchange and the Host forgot the community (plan E3.1/JN1).
+   * `reasonText` is the Host's words for the user; render it as given.
+   */
+  | { joinWithdrawn: { community: string; reason: JoinRefusal; reasonText: string } }
   | { joinRequested: { community: string; pseudonym: string; displayName: string; hasInvite: boolean } }
   | { joinProgress: { community: string; stage: string; status: string } }
   | {
@@ -30,6 +39,8 @@ export type MembershipEvent =
   /** The name on a member's verified card, first read or changed (plan E3.2 F9-2). */
   | { memberCardChanged: { community: string; pseudonym: string; displayName: string; customStatus?: string } }
   | { left: { community: string; pseudonym: string } }
+  /** We no longer hold the community: our leave, withdrawn join or Forget (plan E3.2). Device-scoped; a repeat is a no-op. */
+  | { forgotten: { community: string } }
   | { removed: { community: string; pseudonym: string } }
   | {
       kicked: {
@@ -382,6 +393,12 @@ export type ChannelMessageEvent =
         body: string | null;
         /** The message id of the parent this one replies to. */
         replyToMessageId: string | null;
+        /** The original author's pseudonym when the post is a forward (the
+         *  value history serves as `forwardedFromAuthor`); `null` otherwise. */
+        forwardedFromAuthor: string | null;
+        /** That author as the community names them: the display form a
+         *  sender header shows (never the raw key); `null` otherwise. */
+        forwardedFromName: string | null;
         /** The D26 gate hid it (an automod `BlurContent` match). */
         automodBlurred: boolean;
       };

@@ -225,6 +225,7 @@ fn label(tab: &SkinNode) -> NodeLabel {
                     text,
                     cover: None,
                     glyph: Some(NodeGlyph::Communities),
+                    style: None,
                 };
             }
             let (dx, dy) = ((w / 10).max(3), (h / 5).max(2));
@@ -232,12 +233,14 @@ fn label(tab: &SkinNode) -> NodeLabel {
                 text,
                 cover: Some([dx, dy, w.saturating_sub(2 * dx), h.saturating_sub(2 * dy)]),
                 glyph: None,
+                style: None,
             }
         }
         _ => NodeLabel {
             text,
             cover: None,
             glyph: None,
+            style: None,
         },
     }
 }
@@ -444,6 +447,7 @@ fn host_tab(views: &SkinNode, at: Target) -> SkinNode {
             text: WORDS.to_owned(),
             cover: None,
             glyph: None,
+            style: None,
         }),
         shows_with: None,
         inset: None,

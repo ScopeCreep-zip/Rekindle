@@ -68,10 +68,36 @@ async fn run(
         let Some(minutes) = auto_away_minutes(&db, &owner).await else {
             continue;
         };
-        if minutes > 0 && idle_secs >= u64::from(minutes) * 60 {
-            presence.auto_away();
-        } else {
-            presence.active();
+        apply(&presence, Some(idle_secs), minutes);
+    }
+}
+
+/// One idle reading against `minutes` (0 = off): at or past the threshold,
+/// auto-away; under it, activity, which ends an auto-away whose reason went;
+/// no reading, idle is unavailable, which ends one too (`OwnPresence`).
+pub(crate) fn apply(presence: &OwnPresence, idle_secs: Option<u64>, minutes: u32) {
+    match idle_secs {
+        Some(secs) if minutes > 0 && secs >= u64::from(minutes) * 60 => presence.auto_away(),
+        Some(_) => presence.active(),
+        None => presence.idle_unavailable(),
+    }
+}
+
+/// Read the idle time once and apply `minutes` now (`SetAutoAway`): the
+/// change takes effect at once, not at the next tick.
+pub(crate) async fn apply_now(
+    presence: &OwnPresence,
+    source: &Arc<dyn rekindle_utils::IdleSource>,
+    minutes: u32,
+) {
+    let read = Arc::clone(source);
+    match rekindle_lifecycle::run_blocking(move || read.idle_seconds()).await {
+        Ok(idle_secs) => apply(presence, idle_secs, minutes),
+        Err(e) => {
+            tracing::warn!(error = %e, "idle time read failed");
+            if minutes == 0 {
+                presence.active();
+            }
         }
     }
 }
@@ -91,3 +117,7 @@ async fn auto_away_minutes(db: &rekindle_db::DbHandle, owner: &str) -> Option<u3
         }
     }
 }
+
+#[cfg(test)]
+#[path = "idle_tests.rs"]
+mod tests;

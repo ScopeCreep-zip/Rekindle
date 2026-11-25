@@ -17,12 +17,14 @@ mod fit;
 pub mod import;
 pub mod inset;
 mod keep;
+pub mod label_style;
 mod outdent;
 mod passes;
 pub mod pieces;
 pub mod place;
 pub mod popup;
 pub mod roles;
+mod settle;
 mod span_css;
 mod tab_step;
 pub mod target;
@@ -46,11 +48,15 @@ mod grip_menu_tests;
 #[cfg(test)]
 mod grip_tests;
 #[cfg(test)]
+mod label_style_tests;
+#[cfg(test)]
 mod overlap_tests;
 #[cfg(test)]
 mod place_tests;
 #[cfg(test)]
 mod rail_tests;
+#[cfg(test)]
+mod settle_tests;
 #[cfg(test)]
 mod stack_tests;
 #[cfg(test)]

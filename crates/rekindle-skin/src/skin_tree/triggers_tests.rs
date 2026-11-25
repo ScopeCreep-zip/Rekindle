@@ -124,6 +124,53 @@ fn a_group_message_resolves_to_its_group_page() {
             },
         ]
     );
+    // SK15d: a sticky button's radio message to its own group (Symbiosis's
+    // tabs, `GroupId="8765"` `GroupMessage(8765)`, `MainWindow.xml:910-915`)
+    // selects no page: it imports as no trigger, the shell's shown tab
+    // being the radio.
+    let radio = r#"<Trigger Type="OnLeftButtonDown">GroupMessage(4)</Trigger><Trigger Type="OnClick">GroupMessage(1)</Trigger>"#;
+    let tree = tree_from("", radio).unwrap();
+    assert_eq!(
+        find(&tree.root, "TabArt").unwrap().triggers,
+        [NodeTrigger {
+            on: SkinEvent::Click,
+            run: SkinAction::GroupPage { group: 4, page: 1 },
+        }]
+    );
+    // A group with a paged control (Onyx's Servers tab, `GroupId="1"`
+    // `GroupMessage(1)` over its views' `ControlGroupId="1"`; Combat's
+    // `[Knob02]` over its knob strip's `ControlGroupId=2`) has page 4: the
+    // message to its own group selects it.
+    let paged = parts("", radio).replace(
+        "</Components>",
+        r#"<Component Name="Pages" ControlGroupId="4"/></Components>"#,
+    );
+    let main = parse("main.xml", MAIN).unwrap();
+    let paged = parse("parts.xml", paged.as_bytes()).unwrap();
+    let mut built = (frame(), BTreeMap::new());
+    import::add(
+        SkinWindow::Main,
+        &main,
+        std::slice::from_ref(&paged),
+        |path, _| Ok(piece(path)),
+        &[],
+        &mut built,
+    )
+    .unwrap();
+    let tree = built.0.tree.unwrap();
+    assert_eq!(
+        find(&tree.root, "TabArt").unwrap().triggers,
+        [
+            NodeTrigger {
+                on: SkinEvent::LeftDown,
+                run: SkinAction::GroupPage { group: 4, page: 4 },
+            },
+            NodeTrigger {
+                on: SkinEvent::Click,
+                run: SkinAction::GroupPage { group: 4, page: 1 },
+            },
+        ]
+    );
     // A group no component declares is refused.
     let stray = r#"<Trigger Type="OnClick">GroupMessage(0,77)</Trigger>"#;
     assert!(tree_from("", stray).is_err());

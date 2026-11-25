@@ -43,6 +43,7 @@ mod tests {
     use rekindle_types::permissions::{DEFAULT_EVERYONE, READ_HISTORY};
 
     use super::*;
+    use crate::overwrite::OverwriteTarget;
     use crate::state::{OverwriteState, RoleState};
 
     fn key(b: u8) -> PseudonymKey {
@@ -84,7 +85,7 @@ mod tests {
         let channel = ChannelId([9; 16]);
         let mut state = state();
         state.overwrites.insert(
-            (channel, format!("{:?}", RoleId([0; 16]))),
+            (channel, OverwriteTarget::Role(RoleId::EVERYONE).key()),
             OverwriteState {
                 target_type: "role".into(),
                 allow: 0,
@@ -97,7 +98,7 @@ mod tests {
             .roles
             .insert(reader, role(VIEW_CHANNELS | READ_HISTORY));
         state.overwrites.insert(
-            (channel, format!("{reader:?}")),
+            (channel, OverwriteTarget::Role(reader).key()),
             OverwriteState {
                 target_type: "role".into(),
                 allow: VIEW_CHANNELS,

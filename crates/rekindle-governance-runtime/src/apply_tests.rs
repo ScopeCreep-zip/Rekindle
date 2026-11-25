@@ -2,61 +2,6 @@ use super::*;
 use rekindle_types::id::ChannelId;
 
 #[test]
-fn classify_role_definition_marks_roles() {
-    let entry = GovernanceEntry::RoleDefinition {
-        role_id: rekindle_types::id::RoleId([0u8; 16]),
-        name: "test".into(),
-        permissions: 0,
-        position: 0,
-        color: 0,
-        hoist: false,
-        mentionable: false,
-        self_assignable: false,
-        exclusion_group: None,
-    };
-    let affects = classify_entry(&entry);
-    assert!(affects.roles);
-    assert!(!affects.channels_or_categories);
-}
-
-#[test]
-fn classify_role_archived_marks_roles() {
-    let entry = GovernanceEntry::RoleArchived {
-        role_id: rekindle_types::id::RoleId([0u8; 16]),
-    };
-    let affects = classify_entry(&entry);
-    assert!(affects.roles);
-    assert!(!affects.channels_or_categories);
-}
-
-#[test]
-fn classify_channel_created_marks_channels() {
-    let entry = GovernanceEntry::ChannelCreated {
-        channel_id: ChannelId([0u8; 16]),
-        name: "general".into(),
-        channel_type: "text".into(),
-        category_id: None,
-        position: 0,
-        parent_voice_channel_id: None,
-    };
-    let affects = classify_entry(&entry);
-    assert!(!affects.roles);
-    assert!(affects.channels_or_categories);
-}
-
-#[test]
-fn classify_category_updated_marks_channels() {
-    let entry = GovernanceEntry::CategoryUpdated {
-        category_id: rekindle_types::id::CategoryId([0u8; 16]),
-        name: Some("renamed".into()),
-        position: None,
-    };
-    let affects = classify_entry(&entry);
-    assert!(!affects.roles);
-    assert!(affects.channels_or_categories);
-}
-
-#[test]
 fn out_of_bounds_entries_are_refused_by_field() {
     use rekindle_types::channel::MAX_SLOWMODE_SECONDS;
     use rekindle_types::key_format::MAX_DESCRIPTION_LEN;
@@ -166,17 +111,6 @@ async fn a_write_waits_for_a_running_rebuild_before_reading_the_state() {
         written,
         Err(GovernanceRuntimeError::GovernanceStateMissing(_))
     ));
-}
-
-#[test]
-fn classify_role_assignment_affects_nothing() {
-    let entry = GovernanceEntry::RoleAssignment {
-        target: PseudonymKey([0u8; 32]),
-        role_id: rekindle_types::id::RoleId([0u8; 16]),
-    };
-    let affects = classify_entry(&entry);
-    assert!(!affects.roles);
-    assert!(!affects.channels_or_categories);
 }
 
 /// An honest member's op written through the real write path is judged

@@ -299,6 +299,7 @@ fn title_label(menu: EngineMenu, word: Option<[u16; 4]>, icon: bool) -> Option<N
         text: words.ours.to_owned(),
         cover,
         glyph: (icon && word.is_some()).then_some(NodeGlyph::Rekindle),
+        style: None,
     };
     match word {
         Some(cover) => words.renamed().then(|| label(Some(cover))),
@@ -352,6 +353,7 @@ fn tab_words(nodes: &mut [SkinNode]) {
                     text: view.title().to_owned(),
                     cover: None,
                     glyph: None,
+                    style: None,
                 });
             }
         }
@@ -426,6 +428,7 @@ fn button_text_words(nodes: &mut [SkinNode]) {
                         text: words.to_owned(),
                         cover: None,
                         glyph: None,
+                        style: None,
                     });
                 }
             }

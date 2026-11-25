@@ -341,5 +341,65 @@ async fn a_founder_is_listed_as_her_beats_show_her_without_a_join_announce() {
         ("offline".to_owned(), MemberGroup::Offline),
         "the founder shows offline once her beat expires"
     );
+
+    // Our own beat read back (a peer relayed it) says Away while our own
+    // presence is Online (auto-away ended before the next scheduled beat):
+    // our row keeps our own status, its group follows that one value, and
+    // the beat view never holds us (finding PR1).
+    let observed = crate::host::adapters::presence::view::observe(
+        &host.ctx,
+        "c1",
+        &joiner,
+        &PresenceBeat {
+            seq: 2,
+            state: BeatState::Away,
+            voice_channel: None,
+            beat_number: now / rekindle_codec::member_record::beat::BEAT_PERIOD_MS,
+            extras: None,
+        },
+        Some(now),
+    );
+    assert!(
+        observed.shown.is_none(),
+        "our own beat publishes no member change"
+    );
+    assert_eq!(
+        crate::host::adapters::presence::view::shown(&host.ctx, "c1", &joiner.to_hex()),
+        BeatState::Offline,
+        "the beat view holds no entry for us"
+    );
+    let own = host.ctx.own_presence.status().as_wire_str().to_owned();
+    let me = governance
+        .community_members("c1")
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|m| m.pseudonym_key == joiner.to_hex())
+        .expect("we are listed");
+    assert_eq!(me.status, own, "our row shows our own presence's status");
+    assert_eq!(
+        me.group,
+        MemberGroup::Online,
+        "our group follows the same status"
+    );
+
+    // Idle sets auto-away: our presence, our row and its group all say Away
+    // (present, so still under Online) from the one value.
+    host.ctx.own_presence.auto_away();
+    assert_eq!(
+        host.ctx.own_presence.status(),
+        rekindle_types::presence::SessionStatus::Away
+    );
+    let me = governance
+        .community_members("c1")
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|m| m.pseudonym_key == joiner.to_hex())
+        .expect("we are listed");
+    assert_eq!(
+        (me.status.as_str(), me.group),
+        ("away", MemberGroup::Online)
+    );
     host.shutdown().await.unwrap();
 }

@@ -101,6 +101,10 @@ pub struct ChannelMessageView {
     /// The original author's pseudonym when this message is a forward.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub forwarded_from_author: Option<String>,
+    /// That author as the community names them (the display form a
+    /// sender's header shows); present only with `forwarded_from_author`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forwarded_from_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub attachment: Option<MessageAttachment>,
     /// `ChannelEntry::Message.flags` (VOICE_MESSAGE=0x10,

@@ -90,6 +90,8 @@ pub struct AppCaller {
     messages: Arc<dyn AppMessagePort>,
     routes: Arc<dyn RoutePort>,
     config: Arc<TransportConfig>,
+    /// The peer routes known dead, refused at import (plan RV1g B1).
+    liveness: Arc<crate::liveness::Liveness>,
 }
 
 impl AppCaller {
@@ -97,11 +99,13 @@ impl AppCaller {
         messages: Arc<dyn AppMessagePort>,
         routes: Arc<dyn RoutePort>,
         config: Arc<TransportConfig>,
+        liveness: Arc<crate::liveness::Liveness>,
     ) -> Self {
         Self {
             messages,
             routes,
             config,
+            liveness,
         }
     }
 
@@ -246,15 +250,14 @@ impl AppCaller {
     /// ([`AppMessagePort::send`]); a statement names no reply route.
     ///
     /// # Errors
-    /// The import or the send failed.
+    /// The blob is a peer route known dead (`RouteUnusable`, plan RV1g B1),
+    /// or the import or the send failed.
     pub async fn send_unframed_to_route(&self, route_blob: &[u8], data: Vec<u8>) -> Result<()> {
-        let target =
-            self.routes
-                .import(route_blob)
-                .map_err(|e| TransportError::RouteImportFailed {
-                    peer: "route-blob".to_string(),
-                    reason: e.to_string(),
-                })?;
+        let target = crate::broadcast::node::routes::import_live(
+            self.routes.as_ref(),
+            &self.liveness,
+            route_blob,
+        )?;
         self.messages
             .send(&target, &self.config.safety.rpc, data)
             .await

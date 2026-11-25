@@ -259,6 +259,10 @@ CREATE TABLE IF NOT EXISTS messages (
     timestamp INTEGER NOT NULL,
     is_read INTEGER NOT NULL DEFAULT 0,
     reply_to_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
+    -- A DM's or group DM's parent as its frame named it (the parent's client
+    -- id), kept whether or not the parent is held: a reply to a message we
+    -- never received is served as-is ("message unavailable").
+    reply_to_client_id TEXT,
     attachment_json TEXT CHECK(json_valid(attachment_json)),
     mek_generation INTEGER,
     lamport_ts INTEGER DEFAULT 0,

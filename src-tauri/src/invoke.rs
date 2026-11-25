@@ -362,6 +362,7 @@ macro_rules! skin_commands {
 macro_rules! game_commands {
     ($next:ident [$($done:tt)*] $($rest:ident)*) => { $next!([$($done)*
         commands::game::get_game_status,
+        commands::game::get_own_presence,
         commands::game::get_game_totals,
         commands::game::get_friend_game_totals,
         commands::game::get_hidden_games,
@@ -435,6 +436,7 @@ macro_rules! settings_commands {
         commands::settings::set_read_receipts_enabled,
         commands::settings::set_share_game_totals,
         commands::settings::set_game_detection,
+        commands::settings::set_auto_away,
         commands::settings::set_share_current_game,
         commands::activity::activity_list,
         commands::activity::set_keep_activity_log,

@@ -24,6 +24,42 @@ pub(crate) const NOT_CONNECTED: &str = "Not connected to the network yet; try ag
 /// How long a left community's tasks get to stop.
 const COMMUNITY_STOP_DEADLINE: std::time::Duration = rekindle_types::config::SESSION_STOP_DEADLINE;
 
+/// Why our hold of a community ends, which names the one event every
+/// frontend hears when its store entry goes (one event per cause).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum HoldEnd {
+    /// Our leave: `Forgotten`.
+    Left,
+    /// The join call's own refusal, before the community was announced
+    /// (`SelfJoined`): the call's error tells the caller; `Forgotten` is a
+    /// no-op on every frontend that never listed it.
+    JoinRefusedAtOnce,
+    /// The inviter refused a join after it returned (plan E3.1/JN1): only
+    /// `JoinWithdrawn`, so a community window holding it keeps it and
+    /// shows the withdrawal in place (plan JW ruling).
+    JoinWithdrawn(rekindle_types::join_refusal::JoinRefusal),
+    /// Our Forget of a community we were removed from: `Forgotten`.
+    ForgetAfterRemoval,
+}
+
+impl HoldEnd {
+    /// The event every frontend hears for this end of `community`.
+    fn event(self, community: &str) -> rekindle_types::subscription_events::SubscriptionEvent {
+        use rekindle_types::subscription_events::{MembershipEvent, SubscriptionEvent};
+        let community = community.to_owned();
+        SubscriptionEvent::Membership(match self {
+            Self::Left | Self::JoinRefusedAtOnce | Self::ForgetAfterRemoval => {
+                MembershipEvent::Forgotten { community }
+            }
+            Self::JoinWithdrawn(reason) => MembershipEvent::JoinWithdrawn {
+                community,
+                reason,
+                reason_text: reason.withdrawn_text(),
+            },
+        })
+    }
+}
+
 impl HostGovernance {
     /// Create `name` with the genesis `admission`; `description` is written
     /// as metadata after genesis. Named `co_creators` (friends) make it a
@@ -131,7 +167,8 @@ impl HostGovernance {
         }
     }
 
-    /// Leave `membership`'s community.
+    /// Leave `membership`'s community; `end` names why (our leave, or a
+    /// refused join withdrawn) and so the event its frontends hear.
     ///
     /// A joiner whose own `MemberJoined` our merged state never admitted
     /// (it lost a single-use race, or the inviter refused it) withdraws
@@ -147,6 +184,7 @@ impl HostGovernance {
     pub(crate) async fn leave(
         &self,
         membership: &rekindle_transport::CommunityMembership,
+        end: HoldEnd,
     ) -> Result<(), String> {
         let id = membership.anchor.clone();
         let transport = self.transport().map_err(|e| e.to_string())?;
@@ -165,7 +203,7 @@ impl HostGovernance {
             self.stop_community_tasks(&id).await;
             self.ctx.mek_cache.write().remove_community(&id);
             self.discard_governance_ops(&id);
-            return self.forget_community(&transport, &id).await;
+            return self.forget_community(&transport, &id, end).await;
         }
         // Then our `Departed` beat, which ends the community's beats.
         crate::host::adapters::presence::depart(&self.ctx, &id).await;
@@ -187,7 +225,7 @@ impl HostGovernance {
         .await
         .map_err(|e| format!("community leave failed: {e}"))?;
         self.send_before_teardown(&id, &left.departure_notice).await;
-        self.forget_community(&transport, &id).await
+        self.forget_community(&transport, &id, end).await
     }
 
     /// Stop the community's loops, so none writes to a record the leave
@@ -229,6 +267,7 @@ impl HostGovernance {
         &self,
         transport: &rekindle_transport::TransportNode,
         id: &str,
+        end: HoldEnd,
     ) -> Result<(), String> {
         // A follow-up a rebuild scheduled after the loops stopped started
         // on a fresh community scope: stop it before the ring is released.
@@ -246,19 +285,19 @@ impl HostGovernance {
         for lease in leases.all().chain(ring_leases) {
             rekindle_transport::broadcast::dht_writes::release(transport, lease).await;
         }
-        self.forget_left_community(id).await
+        self.forget_left_community(id, end).await
     }
 
     /// The local half of [`Self::forget_community`], once its records are
     /// released: keys, queued key transfers (awaited, so none is attempted
     /// after the leave), bootstrap answers, waiting posts, store entry and
-    /// stored membership.
-    pub(crate) async fn forget_left_community(&self, id: &str) -> Result<(), String> {
+    /// stored membership; `end` names the event its frontends hear.
+    pub(crate) async fn forget_left_community(&self, id: &str, end: HoldEnd) -> Result<(), String> {
         self.forget_keys(id);
         self.discard_key_transfers(id, None).await;
         self.discard_bootstrap(id);
         crate::host::adapters::channel::discard_waiting_posts(self, id);
-        self.ctx.communities.remove(id);
+        self.drop_community_entry(id, end);
         crate::host::session::forget_membership(
             &self.ctx.session,
             &self.ctx.db,
@@ -270,6 +309,21 @@ impl HostGovernance {
         self.audit_left(id);
         tracing::info!(community = %id, "left community");
         Ok(())
+    }
+
+    /// Drop `id`'s store entry and tell every frontend, once, why: the one
+    /// step of each self-removal that ends our hold of a community
+    /// ([`HoldEnd`]). `Forgotten` (a leave, a Forget after a removal) is
+    /// device-scoped (`EventScope::Device`), so it reaches the buddy list,
+    /// every community window, the CLI and the TUI although the
+    /// community's subscription state is already torn down. A withdrawn
+    /// join publishes only `JoinWithdrawn` (desktop audience: every
+    /// post-login window): the buddy list and the TUI drop the community,
+    /// a community window holding it keeps it and shows the withdrawal. A
+    /// repeat for a community already gone is a no-op on every frontend.
+    fn drop_community_entry(&self, id: &str, end: HoldEnd) {
+        self.ctx.communities.remove(id);
+        self.ctx.publish_event(end.event(id));
     }
 
     /// Gossip our departure (or our quit's hint) to the mesh before the
@@ -361,7 +415,7 @@ impl HostGovernance {
         }
         self.forget_keys(community);
         self.ctx.mek_cache.write().remove_community(community);
-        self.ctx.communities.remove(community);
+        self.drop_community_entry(community, HoldEnd::ForgetAfterRemoval);
         crate::host::session::forget_membership(
             &self.ctx.session,
             &self.ctx.db,

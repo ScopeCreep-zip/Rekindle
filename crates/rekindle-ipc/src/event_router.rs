@@ -276,6 +276,8 @@ mod tests {
             timestamp: 0,
             body: None,
             reply_to_message_id: None,
+            forwarded_from_author: None,
+            forwarded_from_name: None,
             automod_blurred: false,
         })
     }

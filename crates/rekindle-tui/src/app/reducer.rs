@@ -407,6 +407,10 @@ impl App {
         self.loading_spinner.stop();
         // Extract identity and community caches before forwarding to view
         match &result {
+            // Plan RV1g: a TUI started mid-outage shows it from the snapshot.
+            CommandResult::StatusLoaded { snapshot } => {
+                self.route_alert.load_down(&snapshot.own_route_down);
+            }
             CommandResult::IdentityLoaded {
                 public_key,
                 display_name,

@@ -9,6 +9,7 @@
 //!   projection through `host::session` (plan D1), because losing them
 //!   means losing the slot.
 
+use rekindle_governance::diff::GovernanceDiff;
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance_runtime::deps::CommunityInsert;
 use rekindle_transport::session::CommunityMembership as SessionMembership;
@@ -52,17 +53,19 @@ impl HostGovernance {
             (hex::decode(hex).ok()?.try_into().ok()).map(rekindle_types::id::PseudonymKey)
         });
         let prev = self.ctx.communities.governance_state(community_id);
-        let transitions =
-            self.member_transitions_of(community_id, prev.as_ref(), &state, me.as_ref());
+        let diff = prev.as_ref().map(|prev| prev.diff(&state));
+        let transitions = self.member_transitions_of(community_id, diff.as_ref(), me.as_ref());
+        let bans_changed = diff.as_ref().is_some_and(GovernanceDiff::bans_changed);
         let archives = prev.as_ref().map_or_else(Vec::new, |prev| {
             super::thread_events::thread_archive_transitions(prev, &state)
         });
         let raised = raises_key_generation(prev.as_ref(), &state);
         let departed_outboxes = new_outbox_heads(prev.as_ref(), &state);
         let now_secs = self.ctx.clock.now_secs();
-        let permissions = prev.as_ref().map_or_else(Default::default, |prev| {
-            super::permission_events::permission_transitions(prev, &state, now_secs)
-        });
+        let permissions =
+            (prev.as_ref().zip(diff.as_ref())).map_or_else(Default::default, |(prev, diff)| {
+                super::permission_events::permission_transitions(prev, &state, diff, now_secs)
+            });
         let (projected, held) =
             self.ctx
                 .communities
@@ -74,6 +77,12 @@ impl HostGovernance {
         }
         self.rotate_for_departures(community_id, &transitions, me.as_ref());
         self.publish_member_transitions(transitions);
+        if let Some(diff) = &diff {
+            self.publish_table_changes(community_id, diff);
+        }
+        if bans_changed {
+            self.publish_bans_changed(community_id);
+        }
         self.publish_thread_creations(community_id, prev.as_ref(), now_secs);
         self.publish_thread_archive_changes(community_id, archives);
         if !permissions.is_empty() {

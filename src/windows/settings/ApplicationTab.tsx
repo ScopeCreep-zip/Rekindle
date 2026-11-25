@@ -2,7 +2,7 @@ import { Component } from "solid-js";
 import FormField from "../../components/common/FormField";
 import FavouriteServersSection from "../../components/settings/FavouriteServersSection";
 import { settingsState } from "../../stores/settings.store";
-import { handleSaveSettings, handleSetGameDetection } from "../../actions/settings.actions";
+import { handleSaveSettings, handleSetAutoAway, handleSetGameDetection } from "../../actions/settings.actions";
 
 const ApplicationTab: Component = () => {
   function handleToggle(key: keyof typeof settingsState): void {
@@ -48,7 +48,7 @@ const ApplicationTab: Component = () => {
           class="form-select"
           value={settingsState.autoAwayMinutes}
           onChange={(e) =>
-            handleSaveSettings({ autoAwayMinutes: parseInt(e.currentTarget.value) })
+            handleSetAutoAway(parseInt(e.currentTarget.value))
           }
         >
           <option value={0}>Disabled</option>

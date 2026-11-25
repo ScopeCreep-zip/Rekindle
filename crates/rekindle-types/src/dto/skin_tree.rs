@@ -16,6 +16,7 @@ use super::skin::{Insets, RegionState};
 use super::skin_action::NodeTrigger;
 use super::skin_layout::SkinWindow;
 pub use super::skin_title::{TitleSlices as NodeSlices, TitleText as NodeText};
+pub use super::skin_tree_label::{LabelAlign, LabelStyle};
 pub use super::skin_tree_role::{Edge, LampKey, NodeRole, SlotKey, ViewKey, WindowButtonKind};
 
 pub use super::skin_tree_span::{share_of, Anchor, NodeSpan};
@@ -149,6 +150,10 @@ pub struct NodeLabel {
     /// plan SK5). `None` for a worded tab or title.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub glyph: Option<NodeGlyph>,
+    /// The style measured from the source tab's drawn word (plan SK15,
+    /// XGlow's `Downloads`); `None`: the shell's label style.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style: Option<LabelStyle>,
 }
 
 /// The part of a text field's box its pack's interactive siblings cover
@@ -161,6 +166,14 @@ pub struct NodeLabel {
 pub struct NodeInset {
     pub left: u16,
     pub right: u16,
+    /// The text's maximum width in px from its start (the field's left
+    /// edge plus `left`), when the press area its text stops at does not
+    /// move with the field's far edge as the window grows (plan SK15:
+    /// Alloy's name field stretches while its status field's press area
+    /// stays at x 171, so a constant `right` would run the name under it
+    /// at a wider window); `None` when `right` holds at every width.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_width: Option<u16>,
 }
 
 /// The shell's built-in glyphs a [`NodeLabel`] may name.

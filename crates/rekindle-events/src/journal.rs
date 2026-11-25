@@ -169,7 +169,7 @@ impl SessionJournal {
         let mut ring = self.ring.write();
         let sequenced = ring.append(event, self.capacity);
         let cursor = sequenced.cursor;
-        let _ = self.live.send(StreamFrame::Event(sequenced));
+        let _ = self.live.send(StreamFrame::Event(Box::new(sequenced)));
         cursor
     }
 
@@ -185,7 +185,7 @@ impl SessionJournal {
             key: None,
             sequenced: sequenced.clone(),
         });
-        let _ = self.live.send(StreamFrame::Event(sequenced));
+        let _ = self.live.send(StreamFrame::Event(Box::new(sequenced)));
         cursor
     }
 
@@ -203,7 +203,7 @@ impl SessionJournal {
             key: Some(key.to_owned()),
             sequenced: sequenced.clone(),
         });
-        let _ = self.live.send(StreamFrame::Event(sequenced));
+        let _ = self.live.send(StreamFrame::Event(Box::new(sequenced)));
         cursor
     }
 
@@ -274,7 +274,7 @@ impl SessionJournal {
             .standing
             .iter()
             .filter(|s| served && from.is_none_or(|from| s.sequenced.cursor.seq <= from.seq))
-            .map(|s| StreamFrame::Event(s.sequenced.clone()))
+            .map(|s| StreamFrame::Event(Box::new(s.sequenced.clone())))
             .collect();
         first.extend(replay.unwrap_or_default());
         EventStream {
@@ -306,7 +306,7 @@ fn replay_from(ring: &Ring, from: Cursor) -> Vec<StreamFrame> {
             .iter()
             .filter(|e| e.cursor.seq > from.seq)
             .cloned()
-            .map(StreamFrame::Event)
+            .map(|s| StreamFrame::Event(Box::new(s)))
             .collect();
         frames.push(StreamFrame::Resumed(Cursor {
             epoch: ring.epoch,

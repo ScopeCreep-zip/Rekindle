@@ -19,7 +19,7 @@ fn friend_invite(link: &str) -> Checked {
 }
 
 /// A message's client id: a hyphenated UUID.
-fn client_id(id: &str) -> Checked {
+pub(super) fn client_id(id: &str) -> Checked {
     if id.len() == 36 && uuid::Uuid::parse_str(id).is_ok() {
         Ok(())
     } else {

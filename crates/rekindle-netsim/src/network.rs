@@ -112,6 +112,9 @@ pub(crate) struct Faults {
     pub link_failure: HashSet<usize>,
     /// Own routes dead from outside, by route id ([`crate::Fault::OutsideDead`]).
     pub outside_dead: HashSet<String>,
+    /// The (node, class) whose allocations fail their route test
+    /// ([`crate::Fault::AllocationTestFails`]).
+    pub allocation_test_fails: HashSet<(usize, rekindle_records::port::RouteClass)>,
     /// Nodes whose automatic pool routes fail end to end
     /// ([`crate::Fault::PoolRoutesFail`]).
     pub pool_failing: HashSet<usize>,
@@ -438,6 +441,7 @@ impl Network {
             self.tick_rehydration();
             self.tick_value_changes();
             self.tick_route_tests();
+            self.tick_remote_route_tests();
         }
         let (batch, senders) = {
             let mut inner = self.inner.lock();

@@ -22,13 +22,16 @@ impl<D: OutboxDeps> Outbox<D> {
         if !is_unsettled(row.state) && row.state != SendState::Failed {
             return Ok(false);
         }
-        self.deps.settle(client_id, SendState::Failed).await?;
-        self.deps.publish(StateChange::of(
-            &row,
-            SendState::Failed,
-            row.wedge_reason.clone(),
-        ));
-        self.fail_dependents(&row).await?;
+        let moved = self.deps.settle(client_id, SendState::Failed).await?;
+        // The row leaves its stream: shown at the state it settled at (a
+        // wedged `failed` row too, whose controls go), never below it.
+        if let Some(moved) = moved {
+            self.deps
+                .publish(StateChange::of(&row, moved.after, row.wedge_reason.clone()));
+            if moved.after == SendState::Failed {
+                self.fail_dependents(&row).await?;
+            }
+        }
         self.wake.notify_one();
         Ok(true)
     }
@@ -48,12 +51,8 @@ impl<D: OutboxDeps> Outbox<D> {
     ) -> Result<usize, OutboxError> {
         let rows = self.deps.prefix_rows(&kind.stream(scope_prefix)).await?;
         for row in &rows {
-            self.deps.settle(&row.client_id, SendState::Failed).await?;
-            self.deps.publish(StateChange::of(
-                row,
-                SendState::Failed,
-                Some(reason.to_owned()),
-            ));
+            let moved = self.deps.settle(&row.client_id, SendState::Failed).await?;
+            self.publish_moved(row, moved, Some(reason.to_owned()));
         }
         Ok(rows.len())
     }

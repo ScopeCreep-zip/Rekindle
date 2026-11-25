@@ -138,6 +138,7 @@ impl IpcRequest {
             Self::SetReadReceiptsEnabled { .. } => ("SetReadReceiptsEnabled", Write, Authenticated),
             Self::SetShareGameTotals { .. } => ("SetShareGameTotals", Write, Authenticated),
             Self::SetGameDetection { .. } => ("SetGameDetection", Write, Authenticated),
+            Self::SetAutoAway { .. } => ("SetAutoAway", Write, Authenticated),
             Self::SetShareCurrentGame { .. } => ("SetShareCurrentGame", Write, Authenticated),
             Self::SetKeepActivityLog { .. } => ("SetKeepActivityLog", Write, Authenticated),
             Self::ActivityList { .. } => ("ActivityList", Query, Authenticated),

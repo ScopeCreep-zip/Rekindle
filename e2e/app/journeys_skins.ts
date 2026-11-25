@@ -17,9 +17,20 @@ import type { User } from "./user.ts";
  */
 export async function applySkin(b: Browser, user: User, name: string): Promise<string> {
   await switchTo(b, SETTINGS);
-  await (await byText(b, ".form-tab", "Appearance")).click();
+  // Settings on Appearance, again whenever it is not: the menu's Profile
+  // (how Settings was opened) can land after our tab click and show Profile,
+  // which hid the skin list mid-choice (Alloy, Simple X "never in use").
+  const onAppearance = async (): Promise<void> => {
+    if (!(await (await b.$(".skin-row-shown .skin-name")).isDisplayed().catch(() => false))) {
+      await (await byText(b, ".form-tab", "Appearance")).click();
+    }
+  };
+  await onAppearance();
   await shown(b, ".skin-row-shown .skin-name", NET_WAIT_MS);
-  const inUse = async (): Promise<string> => (await (await b.$(".skin-row-shown .skin-name")).getText()).trim();
+  const inUse = async (): Promise<string> => {
+    await onAppearance();
+    return (await (await b.$(".skin-row-shown .skin-name")).getText().catch(() => "")).trim();
+  };
   const linked = async (): Promise<string> => (await b.execute(LINKED_SHEET)) as string;
   // The sheet shown before the change: the new one links only after every
   // image it lists has decoded (useSkin.ts), seconds after the row says
@@ -31,15 +42,33 @@ export async function applySkin(b: Browser, user: User, name: string): Promise<s
     // sheet, linking late, passed as the new one (skin-login on c5802aa26,
     // both tests one skin behind after a fresh Settings window).
     await waitUntil(async () => (before = await linked()).startsWith("skin://"), NET_WAIT_MS, "Settings never linked its current skin's sheet");
-    let found = false;
-    for (const row of await b.$$(".skin-row")) {
-      if ((await (await row.$(".skin-name")).getText()).trim() !== name) continue;
-      await (await row.$("input[type=radio]")).click();
-      await resolveIntent(b, { passphrase: user.passphrase, appearMs: 1500 });
-      found = true;
-      break;
-    }
-    if (!found) throw new Error(`Settings lists no skin named ${name}`);
+    // One fresh query per attempt for the row naming `name`: the list
+    // re-renders (its library refreshes after an apply), and a row held
+    // across that went stale ("element wasn't found" on Simple X).
+    const radio = `//*[contains(concat(" ", normalize-space(@class), " "), " skin-row ")][.//*[contains(concat(" ", normalize-space(@class), " "), " skin-name ") and normalize-space(.)="${name}"]]//input[@type="radio"]`;
+    let lastError = "";
+    await waitUntil(
+      async () => {
+        try {
+          await onAppearance();
+          const el = await b.$(radio);
+          if (!(await el.isExisting())) {
+            lastError = `Settings lists no skin named ${name}`;
+            return false;
+          }
+          await el.click();
+          return true;
+        } catch (e) {
+          lastError = e instanceof Error ? (e.message.split("\n")[0] ?? "") : String(e);
+          return false;
+        }
+      },
+      NET_WAIT_MS,
+      "",
+    ).catch(() => {
+      throw new Error(`could not choose ${name} in Settings: ${lastError}`);
+    });
+    await resolveIntent(b, { passphrase: user.passphrase, appearMs: 1500 });
     await waitUntil(async () => (await inUse()) === name, NET_WAIT_MS, `${name} never shown as the skin in use`);
   }
   let href = "";

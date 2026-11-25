@@ -5,7 +5,7 @@ MainTitleBar Drag
       TheXCover Decor target [0, -2, 32, 24] art [0, 2, 32, 19] Size
   UserNameField NameField target [0, -3, 169, 24] art [0, 3, 169, 17] Size
     UserNameText Part
-  CloseBox Button target [0, -3, 21, 24] art [0, 3, 18, 17] Short
+  CloseBox Button target [0, -3, 24, 24] art [0, 3, 18, 17] Size
   ResizeUp Button target [0, 0, 330, 24] art [0, 0, 330, 5] Size
 GripperTopLeft Button target [0, 0, 24, 24] art [0, 0, 25, 44] Size
 GripperTopRight Button target [1, 0, 24, 24] art [-1, 0, 25, 44] Size
@@ -26,7 +26,7 @@ BaseBoard Group
         BigBrowseFileText Part label "Find"
   StatusWrapper Group
   StatusEdit StatusText target [0, -4, 209, 24] art [0, 4, 209, 15] Size
-  DownArrow StatusList target [0, -5, 20, 24] art [0, 5, 16, 14] Short
+  DownArrow StatusList target [0, -5, 24, 24] art [0, 5, 16, 14] Size
   ResizeDown Button target [0, -19, 336, 24] art [0, 19, 336, 5] Size
 LeftOuterEdge Decor target [0, 0, 24, 289] art [0, 0, 9, 289] Size
 MainRightOuterEdge Decor target [-15, 0, 24, 289] art [15, 0, 9, 289] Size

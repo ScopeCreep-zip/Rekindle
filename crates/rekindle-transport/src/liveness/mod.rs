@@ -25,6 +25,7 @@
 //! `sender` is `None` then), so anyone who read our published blob could
 //! send it and drain the route budget.
 
+pub mod dead;
 pub mod owner;
 pub mod peer;
 pub mod resolve;
@@ -85,6 +86,9 @@ pub struct Liveness {
     sees_inbound: bool,
     /// One re-resolve of a peer's route in flight at a time (CR2).
     resolves: resolve::ResolveFlights,
+    /// Peers' route blobs known dead, never imported or called while
+    /// cached (RV1g B1–B3, [`dead`]).
+    dead: Mutex<rekindle_route::dead_routes::DeadRoutes>,
 }
 
 impl Liveness {
@@ -103,6 +107,7 @@ impl Liveness {
             rotated: AtomicBool::new(false),
             sees_inbound,
             resolves: resolve::ResolveFlights::default(),
+            dead: Mutex::new(rekindle_route::dead_routes::DeadRoutes::default()),
         })
     }
 
@@ -242,5 +247,8 @@ impl Liveness {
 }
 
 #[cfg(test)]
+#[path = "dead_tests.rs"]
+mod dead_tests;
+#[cfg(test)]
 #[path = "receipt_tests.rs"]
-mod receipt_tests;
+pub(crate) mod receipt_tests;

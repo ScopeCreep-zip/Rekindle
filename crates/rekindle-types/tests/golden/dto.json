@@ -198,6 +198,7 @@
     "id": 10,
     "isOwn": false,
     "messageId": null,
+    "replyToId": null,
     "sendState": "delivered",
     "senderId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "timerNoticeSeconds": null,
@@ -218,6 +219,7 @@
     "id": 9,
     "isOwn": true,
     "messageId": "0192d5a8-7f00-7c3a-9b1e-4d2f6a8c0e11",
+    "replyToId": null,
     "sendState": "delivered",
     "senderId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "timerNoticeSeconds": null,
@@ -231,6 +233,7 @@
     "id": 11,
     "isOwn": false,
     "messageId": "0192d5a8-7f00-7c3a-9b1e-4d2f6a8c0e12",
+    "replyToId": null,
     "sendState": "delivered",
     "senderId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "timerNoticeSeconds": 3600,
@@ -1517,6 +1520,15 @@
         "menu": "gcHelp"
       }
     ]
+  },
+  "skin.nodeInset.fixed": {
+    "left": 0,
+    "right": 28
+  },
+  "skin.nodeInset.maxWidth": {
+    "left": 0,
+    "maxWidth": 151,
+    "right": 54
   },
   "skin.nodeSpan.after": {
     "at": {

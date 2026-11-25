@@ -3,8 +3,8 @@
 
 import { expect } from "@wdio/globals";
 import type { Browser } from "webdriverio";
-import { NETWORK_LABEL, NET_WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, switchTo, typeAndSend, typeInto, untilPublished, waitForHandle, waitUntil } from "../walk/helpers.ts";
-import { BUDDY, LOGIN, closeModal, inBuddy, menu, openAddFriend, setValue, submitJoin, underTree } from "../walk/nav.ts";
+import { NET_WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, switchTo, typeAndSend, typeInto, untilPublished, waitForHandle, waitUntil } from "../walk/helpers.ts";
+import { BUDDY, LOGIN, closeModal, closeSettings, inBuddy, menu, openAddFriend, openSettings, setValue, submitJoin, underTree } from "../walk/nav.ts";
 import { showSkinView, skinViewShown } from "./journeys_skins.ts";
 import type { User } from "./user.ts";
 
@@ -14,9 +14,9 @@ export * from "./journeys_skins.ts";
 /**
  * Create `user` on a first-run app: the Host makes the keys, vault and
  * database, Create waits for the Veilid node, and the buddy list opens
- * under the new name.
+ * under the new name. Auto-away is then turned off unless `keepAutoAway`.
  */
-export async function createIdentity(b: Browser, user: User): Promise<void> {
+export async function createIdentity(b: Browser, user: User, opts: { keepAutoAway?: boolean } = {}): Promise<void> {
   await switchTo(b, LOGIN, NET_WAIT_MS);
   // First run opens the create form without the account picker
   // (LoginWindow.tsx); the button is there only once identities exist.
@@ -34,6 +34,33 @@ export async function createIdentity(b: Browser, user: User): Promise<void> {
   // name): the tree's name field, or the app's own bar.
   const name = (await underTree(b)) ? '[data-skin-role="nameField"] .skin-name-text' : ".identity-bar-name";
   await expect(b.$(name)).toHaveText(expect.stringContaining(user.displayName), { wait: 10_000 });
+  // The auto-away spec (AA1) keeps it on, to watch it fire and be turned off.
+  if (!opts.keepAutoAway) await autoAwayOff(b, user);
+}
+
+/** Settings > Application's auto-away select. */
+const AUTO_AWAY = '//div[contains(@class,"form-field")][.//label[contains(.,"Go away after inactivity")]]//select';
+
+/**
+ * Turn `user`'s auto-away off (Settings > Application > "Disabled", the
+ * stored 0 the Host's idle stage reads as off: host/idle.rs). Idle is the
+ * OS's input idle, which WebDriver input does not reset, so with nobody at
+ * the machine every identity would go Away after the default 10 minutes
+ * and presence checks would race it (lead, PR1 trace). Read back after
+ * reopening Settings, so the stored value is what holds.
+ */
+export async function autoAwayOff(b: Browser, user: User): Promise<void> {
+  await openSettings(b, "Application");
+  await setValue(b, AUTO_AWAY, "0");
+  await resolveIntent(b, { passphrase: user.passphrase, appearMs: 1500 });
+  await closeSettings(b);
+  await openSettings(b, "Application");
+  await waitUntil(
+    async () => (await (await b.$(AUTO_AWAY)).getValue()) === "0",
+    NET_WAIT_MS,
+    `${user.displayName}'s auto-away did not read back Disabled`,
+  );
+  await closeSettings(b);
 }
 
 async function closeAddFriend(b: Browser): Promise<void> {
@@ -165,20 +192,54 @@ export async function seesMessage(b: Browser, who: User, text: string): Promise<
   }
 }
 
-/** The buddy list's network indicator reads "Connected" (NetworkIndicator.tsx): a DHT write may land. */
+/**
+ * The Host accepts writes: a DHT write may land. Read from the Host's own
+ * network state (`get_network_status`: attached, public internet ready, and
+ * its lifecycle's `canWrite`), never inferred from text a window draws (our
+ * presence can read Away or Appear Offline while attached or detached).
+ */
 async function whenConnected(b: Browser): Promise<void> {
   await inBuddy(b);
-  // Under a skin's tree the status field says the network state while
-  // detached (StatusField.tsx, N1) and our status ("Online") once attached.
-  const tree = await underTree(b);
+  let last = "";
   await waitUntil(
-    async () =>
-      tree
-        ? ((await (await b.$('[data-skin-role="statusText"] .skin-status-edit')).getAttribute("placeholder")) ?? "") === "Online"
-        : (await (await b.$(NETWORK_LABEL)).getText()).trim() === "Connected",
+    async () => {
+      const s = (await b.execute(async () => {
+        const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: (cmd: string) => Promise<unknown> } };
+        return (await w.__TAURI_INTERNALS__!.invoke("get_network_status")) as { isAttached: boolean; publicInternetReady: boolean; canWrite: boolean };
+      })) as { isAttached: boolean; publicInternetReady: boolean; canWrite: boolean };
+      last = JSON.stringify(s);
+      return s.isAttached && s.publicInternetReady && s.canWrite;
+    },
     NET_WAIT_MS,
-    tree ? "the skin's status field never said Online" : "the network indicator never said Connected",
-  );
+    "",
+  ).catch(() => {
+    throw new Error(`the Host never accepted writes (network status: ${last})`);
+  });
+}
+
+/**
+ * The settled state a window's shot claims (lead, default-windows): the Host
+ * accepts writes (as `whenConnected`) and our general route is available, so
+ * the status field reads no "No Route" (`network.store.ts` networkLabel).
+ * Read from `get_network_status`, never from the drawn words.
+ */
+export async function whenSettled(b: Browser): Promise<void> {
+  await inBuddy(b);
+  let last = "";
+  await waitUntil(
+    async () => {
+      const s = (await b.execute(async () => {
+        const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: (cmd: string) => Promise<unknown> } };
+        return (await w.__TAURI_INTERNALS__!.invoke("get_network_status")) as { isAttached: boolean; publicInternetReady: boolean; canWrite: boolean; generalRoute: string };
+      })) as { isAttached: boolean; publicInternetReady: boolean; canWrite: boolean; generalRoute: string };
+      last = JSON.stringify(s);
+      return s.isAttached && s.publicInternetReady && s.canWrite && s.generalRoute === "available";
+    },
+    NET_WAIT_MS,
+    "",
+  ).catch(() => {
+    throw new Error(`the Host never settled with a general route (network status: ${last})`);
+  });
 }
 
 /**
@@ -236,7 +297,7 @@ async function submitModal(b: Browser, user: User, input: string): Promise<void>
  * (the Host places one in every tree, plan SK2-N4: `tab:communities` or
  * `knob:communities`) shows its Communities view; else the app's tab.
  */
-async function communitiesTab(b: Browser): Promise<void> {
+export async function communitiesTab(b: Browser): Promise<void> {
   if (await underTree(b)) {
     await press(b, await shown(b, '[data-skin-role="tab:communities"], [data-skin-role="knob:communities"]'));
     await shown(b, '[data-skin-role="view:communities"]:not([hidden])');
@@ -400,7 +461,33 @@ export async function createGroup(b: Browser, user: User, name: string, members:
     await (await shown(b, '[aria-label="New Group"]')).click();
   }
   await typeInto(await shown(b, "#new-group-name"), name);
-  for (const m of members) await (await byText(b, "label.group-dm-picker-option", m.slice(0, 24))).click();
+  for (const m of members) {
+    // Wait on what decides: the Host's eligibility for this friend (its
+    // groupDmBlock; the box is disabled with the Host's reason until it is
+    // null), not on time. A friend whose session is still opening is not
+    // eligible yet.
+    let state = { found: false, disabled: true, reason: "" };
+    await waitUntil(
+      async () => {
+        state = (await b.execute((n: string) => {
+          const opt = Array.from(document.querySelectorAll("label.group-dm-picker-option")).find((l) => (l.querySelector(".buddy-name")?.textContent ?? "").includes(n));
+          const box = opt?.querySelector<HTMLInputElement>("input[type=checkbox]");
+          return { found: !!box, disabled: box?.disabled ?? true, reason: (opt?.querySelector(".group-dm-picker-reason")?.textContent ?? "").trim() };
+        }, m.slice(0, 24))) as typeof state;
+        return state.found && !state.disabled;
+      },
+      NET_WAIT_MS * 2,
+      "",
+    ).catch(() => {
+      throw new Error(state.found ? `${m} never became eligible for the group (the Host says: ${state.reason || "no reason"})` : `${m} is not in the New Group picker`);
+    });
+    await (await byText(b, "label.group-dm-picker-option", m.slice(0, 24))).click();
+    await waitUntil(
+      async () => (await b.execute((n: string) => Array.from(document.querySelectorAll("label.group-dm-picker-option")).find((l) => (l.querySelector(".buddy-name")?.textContent ?? "").includes(n))?.querySelector<HTMLInputElement>("input[type=checkbox]")?.checked ?? false, m.slice(0, 24))) as boolean,
+      NET_WAIT_MS,
+      `${m} was not ticked in the New Group picker`,
+    );
+  }
   await submitModal(b, user, "#new-group-name");
 }
 

@@ -1,8 +1,8 @@
 MainTitleBar TitleBar
   Logo Logo label "Rekindle" cover [0, 0, 48, 23] glyph RekindleWordmark target [0, 0, 48, 24] art [0, 0, 48, 23] Size
   Title ChatTitle
-  Minimize WindowButton(Minimize) target [-6, -6, 18, 24] art [6, 6, 12, 12] Short
-  Close WindowButton(Close) target [0, -6, 18, 24] art [0, 6, 12, 12] Short
+  Minimize WindowButton(Minimize) target [-12, -6, 24, 24] art [12, 6, 12, 12] Size
+  Close WindowButton(Close) target [0, -6, 24, 24] art [0, 6, 12, 12] Size
 LeftEdge Decor
 RightEdge Decor
 Middle Decor

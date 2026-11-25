@@ -241,8 +241,31 @@ async fn an_exported_identity_imports_on_another_root_and_unlocks() {
         .await,
         Err(IdentityError::Exists)
     ));
+    // The archive carries no device secret (ADR 0022 rule 4): the imported
+    // vault holds no key to the exporting device's vault.
+    let (imported, _) = VaultStore::open(&b.root.identity_vault(&pk), "pass").unwrap();
+    assert_eq!(
+        imported
+            .get(&rekindle_vault::VaultKey::DeviceVaultSecret)
+            .unwrap(),
+        None
+    );
+    drop(imported);
     let unlocked = unlock(&b.root, &b.stores(), &pk, "pass", 7).await.unwrap();
     assert_eq!(unlocked.display_name, "Mover");
+    // The unlock minted this device's own vault under a fresh key; the
+    // exporting device still holds its own.
+    assert!(b.root.device_vault(&pk).exists());
+    let held = |f: &Fixture| {
+        f.vault
+            .lock()
+            .as_ref()
+            .unwrap()
+            .get(&rekindle_vault::VaultKey::DeviceVaultSecret)
+            .unwrap()
+            .unwrap()
+    };
+    assert_ne!(*held(&b), *held(&a));
 }
 
 #[tokio::test]

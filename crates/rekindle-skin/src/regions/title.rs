@@ -265,11 +265,11 @@ pub fn title_css(
     }
     match title_ground(manifest, images, resolved) {
         Some(g) if g.bare() => String::new(),
-        _ => format!(
-            "@layer skin {{\n  :root {{\n    {}: var({});\n  }}\n}}\n",
+        _ => super::css::scope::skin_layer(&format!(
+            "    {}: var({});\n",
             band_property(TITLE_REGION),
             backing_property(TITLE_REGION)
-        ),
+        )),
     }
 }
 

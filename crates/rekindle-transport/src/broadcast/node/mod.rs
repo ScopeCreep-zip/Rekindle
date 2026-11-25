@@ -16,7 +16,7 @@ use crate::error::{Result, TransportError};
 use crate::shared::{SharedState, TransportNotification, TransportSnapshot};
 
 mod lifecycle;
-mod routes;
+pub(crate) mod routes;
 
 pub(crate) use routes::publish_personal_route;
 
@@ -54,6 +54,7 @@ impl TransportNode {
             Arc::clone(&self.ports.messages),
             Arc::clone(&self.ports.routes),
             Arc::clone(&self.config),
+            Arc::clone(&self.liveness),
         )
     }
 
@@ -159,6 +160,7 @@ impl TransportNode {
         crate::subscriptions::dispatch::forget_dead_remote(
             self.ports.routes.as_ref(),
             &self.peer_registry,
+            &self.liveness,
             dead,
         )
     }
@@ -218,7 +220,14 @@ impl TransportNode {
             peer_count: peer_reg.route_count(),
             route_allocated: route_age.is_some(),
             route_age_secs: route_age.map(|d| d.as_secs()),
+            general_route: self
+                .ports
+                .routes
+                .own_state(RouteClass::General)
+                .borrow()
+                .availability(),
             route_paused: *self.routes().own_paused().borrow(),
+            own_route_down: self.routes().own_down().borrow().clone(),
         }
     }
 

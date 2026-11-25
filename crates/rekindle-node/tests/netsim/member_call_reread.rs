@@ -2,11 +2,20 @@
 //! routed only by `M`/6, to a member outside our watch ring.
 //!
 //! B: the member's route dies and its new route reaches its `M`/6 while
-//! every hint to us is dropped, so our cache keeps the dead route. Our
-//! next call to it costs exactly one `M`/6 read and lands on the new route
-//! (two calls: the lost one and the landed one); and a member whose `M`/6
-//! holds no newer route (its DHT is offline as its route dies) is
-//! `Unreachable` after exactly one re-read and no further call.
+//! every hint to us is dropped, so our cache keeps the dead route. Veilid
+//! on our node tests each route it imported once it has been idle
+//! [`ROUTE_MIN_IDLE`] (veilid-core 0.5.8 `route_spec_store/mod.rs:46`,
+//! `route_stats.rs:672-681`); the test of the dead route gets no answer,
+//! so once its answer wait runs out Veilid releases it and tells us
+//! `dead_remote` (`ping_validator.rs:740-744`): within [`TEST_CADENCE`] of
+//! the death. A call after that test: the dead route
+//! is refused at import (plan RV1g B1), so the call costs exactly one
+//! `M`/6 read and lands on the new route (one call). A call inside the
+//! window before that test: it is lost on the dead route, costs exactly
+//! one `M`/6 read and lands (two calls: the lost one and the landed one).
+//! And a member whose `M`/6 holds no newer route (its DHT is offline as
+//! its route dies) is `Unreachable` after exactly one re-read and no
+//! further call.
 //!
 //! C: a member outside the rotator's ring misses a kick's rotation (every
 //! send of the rotator dropped), then the rotator heals and the member
@@ -14,15 +23,18 @@
 //! (`mek_request.rs`, `member_route` then `distribute_mek`), and the
 //! member holds the new generation.
 //!
-//! B fails without the rule (a call timeout rereads `M`/6,
-//! `RouteCallError::rereads_route`'s `TimedOut` arm): a call into the dead
-//! route ends as a `Call` error with no read and no second call.
+//! B's lost-call scenario fails without the rule (a call timeout rereads
+//! `M`/6, `RouteCallError::rereads_route`'s `TimedOut` arm): a call into
+//! the dead route ends as a `Call` error with no read and no second call.
+//! B's tested-route scenario asserts the faithful sequence: Veilid's
+//! remote route test released the dead route before the call, the call
+//! never lands on it, and exactly one call is made.
 
 use std::time::Duration;
 
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, MemberRequest};
-use rekindle_netsim::Fault;
+use rekindle_netsim::{Fault, RELEASES_PEER_ROUTE, RPC_TIMEOUT};
 use rekindle_node::host::adapters::governance::MemberCallError;
 use rekindle_records::port::RouteClass;
 use rekindle_types::dht_layout::member_record::SUBKEY_COUNT;
@@ -30,6 +42,21 @@ use rekindle_types::dht_layout::member_record::SUBKEY_COUNT;
 use crate::harness::{eventually, Community};
 
 const ANSWERED: &str = "RequestMEK answered";
+
+/// Veilid 0.5.8 `route_spec_store/mod.rs:46` `ROUTE_MIN_IDLE_TIME_MS`: an
+/// imported route is tested once no test has proven it for this long.
+const ROUTE_MIN_IDLE: Duration = Duration::from_secs(30);
+
+/// The longest a dead imported route stays in Veilid's cache: its next
+/// test falls due up to [`ROUTE_MIN_IDLE`] after the last proof (an answer
+/// or a passed test, `route_stats.rs:489-498, 672-681`), and Veilid
+/// releases it only once that test's answer wait ([`RPC_TIMEOUT`]) has run
+/// out (`ping_validator.rs:731-744`), seen on the simulator's 1 s ticks.
+/// The netsim's own cadence (`routes_tests.rs`
+/// `an_importer_hears_dead_remote_once_the_owner_releases_the_route`).
+const TEST_CADENCE: Duration = ROUTE_MIN_IDLE
+    .saturating_add(RPC_TIMEOUT)
+    .saturating_add(Duration::from_secs(2));
 
 /// An opaque payload the member refuses (a NAK): the call still lands.
 fn payload() -> Vec<u8> {
@@ -95,13 +122,23 @@ async fn cached(community: &Community, i: usize) -> Option<Vec<u8>> {
         .cached_member_route(&community.anchor, &hex)
 }
 
-#[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn a_dropped_routes_hint_costs_one_reread_and_the_call_lands() {
-    let (community, outside) = settled().await;
-    let (sim, x) = (&community.sim, outside[0]);
+/// Node 0's remote route tests that failed and released a peer route
+/// (`ping_validator.rs:740-744`).
+fn released(community: &Community) -> usize {
+    (community.sim.trace().of(community.nodes[0].index))
+        .filter(|e| *e == RELEASES_PEER_ROUTE)
+        .count()
+}
+
+/// Node `x`'s route dies and it allocates a new one, while every hint to
+/// node 0 is dropped: node 0's cache keeps the dead route. `settle` is how
+/// long the hints stay dropped once the new route exists (its `M`/6 write
+/// lands meanwhile).
+async fn dead_behind_dropped_hints(community: &Community, x: usize, settle: Duration) {
+    let sim = &community.sim;
     let old = community.nodes[x].routes.own_blob(RouteClass::General);
     assert!(old.is_some(), "node {x} holds a route");
-    assert_eq!(cached(&community, x).await, old, "node 0 cached it");
+    assert_eq!(cached(community, x).await, old, "node 0 cached it");
 
     for node in 1..community.nodes.len() {
         sim.fault(Fault::DropFrom {
@@ -118,15 +155,19 @@ async fn a_dropped_routes_hint_costs_one_reread_and_the_call_lands() {
         .await,
         "node {x} allocated a new route"
     );
-    // Its M/6 write lands; every hint of it to node 0 is dropped.
-    tokio::time::sleep(Duration::from_secs(30)).await;
+    tokio::time::sleep(settle).await;
     for node in 1..community.nodes.len() {
         sim.fault(Fault::DropFrom { node, per_mille: 0 });
     }
-    assert_eq!(cached(&community, x).await, old, "the hint was dropped");
+    assert_eq!(cached(community, x).await, old, "the hint was dropped");
+}
 
-    let record = record_of(&community, x).await;
-    let (gets, calls) = (sim.app_gets(0, &record), member_calls(&community));
+/// Node 0 calls node `x`: the call lands, after exactly one `M`/6 read and
+/// exactly `calls` member calls, and node 0's cache moves to `x`'s route.
+async fn call_lands(community: &Community, x: usize, calls: u64, why: &str) {
+    let sim = &community.sim;
+    let record = record_of(community, x).await;
+    let (gets, before) = (sim.app_gets(0, &record), member_calls(community));
     let hex = community.pseudonym(x).await;
     let reply = community.nodes[0]
         .host
@@ -135,12 +176,55 @@ async fn a_dropped_routes_hint_costs_one_reread_and_the_call_lands() {
         .await;
     assert!(reply.is_ok(), "the call lands on the new route: {reply:?}");
     assert_eq!(sim.app_gets(0, &record) - gets, 1, "exactly one M/6 read");
-    assert_eq!(
-        member_calls(&community) - calls,
-        2,
-        "the lost call and the landed one"
+    assert_eq!(member_calls(community) - before, calls, "{why}");
+    let current = community.nodes[x].routes.own_blob(RouteClass::General);
+    assert_eq!(cached(community, x).await, current, "the cache moved");
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_dropped_routes_hint_costs_one_reread_and_the_call_lands() {
+    let (community, outside) = settled().await;
+    let x = outside[0];
+    let tests_failed = released(&community);
+    // Its M/6 write lands, and Veilid on node 0 tests the dead route: node
+    // 0's last proof of it may come just before it dies, so the test that
+    // releases it ends up to one full cadence later, never sooner.
+    dead_behind_dropped_hints(&community, x, TEST_CADENCE).await;
+    assert!(
+        released(&community) > tests_failed,
+        "Veilid's remote route test released the dead route first"
     );
-    assert_eq!(cached(&community, x).await, current(), "the cache moved");
+    call_lands(
+        &community,
+        x,
+        1,
+        "the dead route is refused at import: only the landed call",
+    )
+    .await;
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_call_before_veilid_tests_the_dead_route_is_lost_once_and_lands() {
+    let (community, outside) = settled().await;
+    let x = outside[0];
+    // Under seed 4430 the route dies 5 s past the settle, just after Veilid
+    // on node 0 last proved it, and the new route's M/6 write lands within
+    // 10 s; the whole lost call then falls inside the window before the
+    // next test, and the one re-read is the call's own.
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    let tests_failed = released(&community);
+    dead_behind_dropped_hints(&community, x, Duration::from_secs(10)).await;
+    assert_eq!(
+        released(&community),
+        tests_failed,
+        "inside the {ROUTE_MIN_IDLE:?} window: Veilid has not tested the dead route"
+    );
+    call_lands(&community, x, 2, "the lost call and the landed one").await;
+    assert_eq!(
+        released(&community),
+        tests_failed,
+        "the lost call ended before Veilid's test of the dead route"
+    );
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]

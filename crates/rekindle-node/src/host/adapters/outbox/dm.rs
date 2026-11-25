@@ -83,8 +83,8 @@ impl OutboxSlot {
                 ),
             ),
         );
-        self.install_mek_transfer_sender(governance.clone());
-        self.install_bootstrap_sender(governance.clone());
+        // The `mek_transfer` and `bootstrap` senders come with the
+        // communities (`Self::hand_over_communities`, unlock step 3e''').
         *self.current.write() = Some(Arc::clone(&outbox));
         let friends = HostFriends::of(ctx);
         let states_outbox = Arc::clone(&outbox);

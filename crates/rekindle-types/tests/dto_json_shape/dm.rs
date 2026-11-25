@@ -23,6 +23,7 @@ pub(super) fn samples(add: &mut impl FnMut(&str, Value)) {
             expire_seconds: 0,
             expire_at: None,
             timer_notice_seconds: None,
+            reply_to_id: None,
         }),
     );
     add(
@@ -39,6 +40,7 @@ pub(super) fn samples(add: &mut impl FnMut(&str, Value)) {
             expire_seconds: 0,
             expire_at: None,
             timer_notice_seconds: None,
+            reply_to_id: None,
         }),
     );
     add(
@@ -55,6 +57,7 @@ pub(super) fn samples(add: &mut impl FnMut(&str, Value)) {
             expire_seconds: 3600,
             expire_at: None,
             timer_notice_seconds: Some(3600),
+            reply_to_id: None,
         }),
     );
     add("dm.disappearingTimer", to(DisappearingTimerView::of(3600)));

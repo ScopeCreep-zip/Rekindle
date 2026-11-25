@@ -408,7 +408,7 @@ async fn a_leave_discards_every_key_transfer_of_the_community() {
     let owner = create_ann(&host).await.public_key;
     let joiner = queued_for_a_joiner(&host, &owner).await;
     host.governance()
-        .forget_left_community("c1")
+        .forget_left_community("c1", crate::host::adapters::governance::HoldEnd::Left)
         .await
         .expect("forgotten");
     assert!(rows(&host).await.is_empty(), "the leave discards the rows");
@@ -416,6 +416,102 @@ async fn a_leave_discards_every_key_transfer_of_the_community() {
     assert!(
         rows(&host).await.is_empty(),
         "no key is queued after the leave"
+    );
+    host.shutdown().await.unwrap();
+}
+
+/// The membership events about `c1` the journal holds from `from` that
+/// pass `filter`.
+fn membership_events_about_c1(
+    host: &Host,
+    from: rekindle_types::subscription_events::Cursor,
+    filter: &rekindle_types::subscription_events::SubscriptionFilter,
+) -> Vec<rekindle_types::subscription_events::MembershipEvent> {
+    use rekindle_types::subscription_events::{MembershipEvent, StreamFrame, SubscriptionEvent};
+    host.ctx
+        .journal
+        .replay(from)
+        .into_iter()
+        .filter_map(|frame| match frame {
+            StreamFrame::Event(sequenced) if filter.matches(&sequenced.event) => {
+                match sequenced.event {
+                    SubscriptionEvent::Membership(
+                        m @ (MembershipEvent::Forgotten { .. }
+                        | MembershipEvent::JoinWithdrawn { .. }),
+                    ) => Some(m),
+                    _ => None,
+                }
+            }
+            _ => None,
+        })
+        .filter(|m| match m {
+            MembershipEvent::Forgotten { community }
+            | MembershipEvent::JoinWithdrawn { community, .. } => community == "c1",
+            _ => false,
+        })
+        .collect()
+}
+
+/// Lead ruling (one event per cause): a withdrawn join's local side drops
+/// the store entry and publishes exactly one `JoinWithdrawn` and no
+/// `Forgotten`, so a community window holding it keeps it (plan JW).
+#[tokio::test]
+async fn a_withdrawn_join_publishes_only_join_withdrawn() {
+    use rekindle_types::join_refusal::JoinRefusal;
+    use rekindle_types::subscription_events::{EventCategory, MembershipEvent, SubscriptionFilter};
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    let owner = create_ann(&host).await.public_key;
+    queued_for_a_joiner(&host, &owner).await;
+    let from = host.ctx.journal.head();
+    let refused = JoinRefusal::InviteUsedUp;
+    host.governance()
+        .forget_left_community(
+            "c1",
+            crate::host::adapters::governance::HoldEnd::JoinWithdrawn(refused),
+        )
+        .await
+        .expect("withdrawn");
+    let all = SubscriptionFilter {
+        categories: Some(vec![EventCategory::Membership]),
+        community_scope: None,
+    };
+    let events = membership_events_about_c1(&host, from, &all);
+    assert!(
+        matches!(events.as_slice(), [MembershipEvent::JoinWithdrawn { reason, reason_text, .. }]
+            if *reason == refused && *reason_text == refused.withdrawn_text()),
+        "one JoinWithdrawn and no Forgotten: {events:?}"
+    );
+    assert!(
+        host.ctx.communities.map().read().get("c1").is_none(),
+        "the store entry is gone"
+    );
+    host.shutdown().await.unwrap();
+}
+
+/// Our leave's local side (`forget_left_community` with `HoldEnd::Left`)
+/// publishes exactly one `Forgotten` and no `JoinWithdrawn`, which a
+/// subscriber filtered to another community still receives.
+#[tokio::test]
+async fn a_leave_publishes_one_forgotten_past_every_community_filter() {
+    use rekindle_types::subscription_events::{EventCategory, MembershipEvent, SubscriptionFilter};
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    let owner = create_ann(&host).await.public_key;
+    queued_for_a_joiner(&host, &owner).await;
+    let from = host.ctx.journal.head();
+    host.governance()
+        .forget_left_community("c1", crate::host::adapters::governance::HoldEnd::Left)
+        .await
+        .expect("forgotten");
+    let other = SubscriptionFilter {
+        categories: Some(vec![EventCategory::Membership]),
+        community_scope: Some("another".into()),
+    };
+    let events = membership_events_about_c1(&host, from, &other);
+    assert!(
+        matches!(events.as_slice(), [MembershipEvent::Forgotten { .. }]),
+        "one Forgotten (no JoinWithdrawn) reaches another community's filter: {events:?}"
     );
     host.shutdown().await.unwrap();
 }

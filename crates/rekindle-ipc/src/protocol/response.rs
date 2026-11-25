@@ -88,7 +88,7 @@ impl IpcResponse {
 /// stamps `verified_sender_name`. It never inspects the inner variant.
 ///
 /// Participants wrap their payloads:
-/// - CLI/TUI clients: `BusPayload::Request(IpcRequest)`
+/// - CLI/TUI clients: `BusPayload::Request(Box<IpcRequest>)`
 /// - Daemon subscriber: `BusPayload::Response(IpcResponse)`
 /// - Subscription delivery: `BusPayload::Event(SubscriptionEvent)`
 /// - Media fan-out: `BusPayload::Media(MediaFrame)` (daemon → client only)
@@ -100,8 +100,10 @@ impl IpcResponse {
 /// existing indices stable. `Media` is the last variant for that reason.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BusPayload {
-    /// Frontend → Daemon request.
-    Request(IpcRequest),
+    /// Frontend → Daemon request, boxed: `IpcRequest` dwarfs every other
+    /// variant. Serde and postcard write a `Box` as its content, so the wire
+    /// is unchanged.
+    Request(Box<IpcRequest>),
     /// Daemon → Frontend response, serialized as JSON bytes.
     ///
     /// `IpcResponse` contains `serde_json::Value` which postcard cannot

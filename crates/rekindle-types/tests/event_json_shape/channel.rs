@@ -64,6 +64,8 @@ pub fn samples() -> Vec<Sample> {
                 timestamp: 1_760_000_000_000,
                 body: Some(text("hello channel")),
                 reply_to_message_id: Some("msg_41".into()),
+                forwarded_from_author: Some(pk('b')),
+                forwarded_from_name: Some("bbbb bbbb".into()),
                 automod_blurred: true,
             },
         ),
@@ -148,7 +150,7 @@ pub fn samples() -> Vec<Sample> {
             ChannelMessageEvent::DirectMessageSent {
                 conversation_id: pk('b'),
                 reply_to_id: Some(text("01900000-0000-7000-8000-000000000001")),
-                message: rekindle_types::dto::dm::DmMessage {
+                message: Box::new(rekindle_types::dto::dm::DmMessage {
                     id: 42,
                     message_id: Some(text("01900000-0000-7000-8000-000000000002")),
                     sender_id: pk('a'),
@@ -160,7 +162,8 @@ pub fn samples() -> Vec<Sample> {
                     expire_seconds: 300,
                     expire_at: Some(1_700_000_300_000),
                     timer_notice_seconds: None,
-                },
+                    reply_to_id: None,
+                }),
             },
         ),
         ev(

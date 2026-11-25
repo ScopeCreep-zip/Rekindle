@@ -24,6 +24,7 @@
 #![forbid(unsafe_code)]
 
 pub mod admission;
+pub mod anchor_walk;
 pub mod anti_entropy;
 pub mod apply;
 pub mod audit;
@@ -108,9 +109,7 @@ pub use join_stages::{
     claim_registry_slot, collect_initial_presence_state, load_governance_snapshot, ClaimedSlot,
     GovernanceSnapshot, SlotClaimCtx,
 };
-pub use membership_events::{
-    process_member_roles_changed, process_onboarding_answers, MembershipEventDeps,
-};
+pub use membership_events::{process_onboarding_answers, MembershipEventDeps};
 pub use op_log::{rebuild_at, rebuild_ops, HeldOp, OpFate};
 pub use origin::{create_community, create_successor_community, finish_community};
 pub use origin_reserve::{

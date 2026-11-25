@@ -52,13 +52,15 @@ mod group_dm_tests;
 mod group_host_call_tests;
 #[cfg(test)]
 mod group_lobby_tests;
+#[cfg(test)]
+mod group_reply_tests;
 pub mod hardening;
 #[cfg(test)]
 mod history_order_tests;
 #[cfg(test)]
 mod horizon_tests;
 pub mod identity;
-mod idle;
+pub(crate) mod idle;
 pub(crate) mod infoview;
 #[cfg(test)]
 mod infoview_tests;
@@ -85,6 +87,7 @@ mod reinitiate_tests;
 #[cfg(test)]
 mod rotation_tests;
 mod route_budget;
+mod route_down;
 pub mod runtime;
 mod serve;
 pub(crate) mod servers;

@@ -13,7 +13,7 @@ fn live(sim: &Netsim, blob: &[u8]) -> bool {
     crate::routes::route_id(blob).is_some_and(|id| sim.net.inner.lock().routes.contains_key(&id))
 }
 
-async fn own_blob(node: &Node) -> Vec<u8> {
+pub(crate) async fn own_blob(node: &Node) -> Vec<u8> {
     node.ports.routes.want_own();
     node.ports.routes.available_own(RouteClass::General).await
 }
@@ -48,24 +48,33 @@ async fn a_dead_route_imports_and_swallows_sends() {
     ));
 }
 
-/// An imported route unused for 5 minutes no longer resolves (Veilid's
-/// `NoConnection`); forgotten and imported again, it resolves.
+/// An imported route expires once untouched for 5 minutes, and the private
+/// route management task's listing touches it on every tick it runs
+/// (Veilid 0.5.8 `route_spec_store/mod.rs:313-324`,
+/// `route_spec_store_cache.rs:348-357`): so it expires only while that
+/// task is stopped, here the importer detached for 5 minutes. It then no
+/// longer resolves (Veilid's `NoConnection`); forgotten and imported
+/// again, it resolves.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn an_idle_import_expires_after_five_minutes() {
+async fn an_import_expires_after_five_minutes_without_the_management_task() {
     let (sim, mut nodes) = Netsim::nodes(2, 22);
     let _pump = sim.start();
     let blob = own_blob(&nodes[1]).await;
     attached(&mut nodes[0]).await;
     let target = nodes[0].ports.routes.import(&blob).unwrap();
     let profile = SafetyProfile::default_dht();
-    tokio::time::sleep(Duration::from_secs(299)).await;
-    nodes[0]
-        .ports
-        .messages
-        .send(&target, &profile, vec![1])
-        .await
-        .unwrap();
+    sim.fault(Fault::Detach {
+        node: 0,
+        detached: true,
+    });
     tokio::time::sleep(Duration::from_secs(300)).await;
+    sim.fault(Fault::Detach {
+        node: 0,
+        detached: false,
+    });
+    while !matches!(recv(&mut nodes[0]).await, PortEvent::Attachment { state, .. } if state == "attached_good")
+    {
+    }
     assert!(matches!(
         nodes[0]
             .ports
@@ -349,4 +358,142 @@ async fn a_silent_death_ends_by_release_or_by_tests_once_the_network_is_proven()
     });
     tokio::time::sleep(Duration::from_secs(30)).await;
     assert!(!live(&sim, &general), "counted again, the tests kill it");
+}
+
+/// F9 N1: under [`Fault::AllocationTestFails`] an allocation runs its
+/// route's test and then answers `TryAgain("allocated route failed to
+/// test")`, the route released (Veilid 0.5.8 `veilid_api/api.rs:829-836`):
+/// it leaves no route; the other class is unaffected, and once cleared the
+/// class allocates again.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn an_allocation_whose_test_fails_answers_try_again_and_leaves_no_route() {
+    use crate::latency::MESSAGE;
+    use crate::FakeAllocator;
+    use rekindle_route::own_routes::{AllocError, RouteAllocator};
+
+    let (sim, _nodes) = Netsim::nodes(1, 28);
+    let alloc = FakeAllocator::new(0, std::sync::Arc::clone(&sim.net));
+    let general = |sim: &Netsim| {
+        sim.net
+            .inner
+            .lock()
+            .routes
+            .keys()
+            .filter(|id| crate::routes::is_class(id, 0, 'g'))
+            .count()
+    };
+    sim.fault(Fault::AllocationTestFails {
+        node: 0,
+        class: RouteClass::General,
+        failing: true,
+    });
+    let start = tokio::time::Instant::now();
+    let failed = alloc.allocate(RouteClass::General).await;
+    let took = start.elapsed();
+    assert!(
+        matches!(&failed, Err(AllocError::TryAgain(why)) if why == "allocated route failed to test"),
+        "{failed:?}"
+    );
+    assert!(took >= MESSAGE.min * 2, "after the route test: {took:?}");
+    assert_eq!(general(&sim), 0, "the failed route is released");
+    alloc
+        .allocate(RouteClass::Media)
+        .await
+        .expect("only General's tests fail");
+    sim.fault(Fault::AllocationTestFails {
+        node: 0,
+        class: RouteClass::General,
+        failing: false,
+    });
+    alloc
+        .allocate(RouteClass::General)
+        .await
+        .expect("cleared, General allocates");
+    assert_eq!(general(&sim), 1);
+}
+
+/// The `dead_remote` ids `node` hears within `within`.
+pub(crate) async fn dead_remote_within(node: &mut Node, within: Duration) -> Vec<String> {
+    let mut heard = Vec::new();
+    let _ = tokio::time::timeout(within, async {
+        while let Some(event) = node.events.recv().await {
+            if let PortEvent::RouteChange { dead_remote, .. } = event {
+                heard.extend(dead_remote);
+            }
+        }
+    })
+    .await;
+    heard
+}
+
+/// F9 N2: an importer tests the route it imported; once the owner releases
+/// it, the next test gets no answer and Veilid removes it from the
+/// importer's cache, reported as `dead_remote` (Veilid 0.5.8
+/// `private_route_management.rs:396-414`, `ping_validator.rs:741-744`,
+/// `route_spec_store_cache.rs:397-415`) within one test cadence: idle
+/// [`crate::loopback::ROUTE_MIN_IDLE`], the answer wait, two ticks.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn an_importer_hears_dead_remote_once_the_owner_releases_the_route() {
+    let (sim, mut nodes) = Netsim::nodes(2, 29);
+    let _pump = sim.start();
+    let blob = own_blob(&nodes[1]).await;
+    attached(&mut nodes[0]).await;
+    attached(&mut nodes[1]).await;
+    let target = nodes[0].ports.routes.import(&blob).unwrap();
+    assert!(
+        dead_remote_within(&mut nodes[0], Duration::from_secs(90))
+            .await
+            .is_empty(),
+        "a live route passes its tests"
+    );
+    nodes[1].ports.routes.release_own_class(RouteClass::General);
+    let cadence = crate::loopback::ROUTE_MIN_IDLE + crate::RPC_TIMEOUT + Duration::from_secs(2);
+    assert_eq!(
+        dead_remote_within(&mut nodes[0], cadence).await,
+        vec![target.as_str().to_string()]
+    );
+}
+
+/// F9 N2: a route dead from outside while its owner holds it
+/// ([`Fault::OutsideDead`]) fails the importer's test, but while the
+/// importer's blame is suppressed (its detector Offline) the failure is
+/// deferred (`ping_validator.rs:733-739`); once a round trip proves its
+/// network the retest releases it as `dead_remote`.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn an_outside_dead_route_is_released_by_its_importer_but_not_while_blame_is_suppressed() {
+    let (sim, mut nodes) = Netsim::nodes(2, 30);
+    let _pump = sim.start();
+    let blob = own_blob(&nodes[1]).await;
+    attached(&mut nodes[0]).await;
+    attached(&mut nodes[1]).await;
+    let target = nodes[0].ports.routes.import(&blob).unwrap();
+    sim.quiesce().await;
+    // The importer's detector says Offline (it owns no route to break).
+    sim.fault(Fault::RouteSilentDeath {
+        node: 0,
+        class: RouteClass::General,
+    });
+    sim.fault(Fault::OutsideDead {
+        node: 1,
+        class: RouteClass::General,
+    });
+    assert!(
+        dead_remote_within(&mut nodes[0], Duration::from_secs(120))
+            .await
+            .is_empty(),
+        "deferred while the importer's blame is suppressed"
+    );
+    assert!(live(&sim, &blob), "the owner still holds it");
+    sim.fault(Fault::InternetReady {
+        node: 0,
+        ready: false,
+    });
+    sim.fault(Fault::InternetReady {
+        node: 0,
+        ready: true,
+    });
+    assert_eq!(
+        dead_remote_within(&mut nodes[0], Duration::from_secs(15)).await,
+        vec![target.as_str().to_string()]
+    );
 }

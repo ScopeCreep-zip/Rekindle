@@ -8,6 +8,7 @@ import DirectChat from "./chat_window/DirectChat";
 import GroupChat from "./chat_window/GroupChat";
 import { SlotProvider } from "../components/skin-tree/slots";
 import { useChatSearchChord } from "../hooks/useChatSearchChord";
+import { setWindowKind } from "../utils/window_kind";
 import { registerShellRunner, sendSkinSelection } from "../actions/skin.actions";
 import { callOps, friendOps, menuOps, muteOps, popupOps } from "../actions/shell_runners";
 
@@ -39,6 +40,8 @@ const ChatWindow: Component = () => {
     for (const off of unregister) off();
   });
 
+  // The window's kind (plan SB1), as its label names it: a group's or a 1:1's.
+  setWindowKind(group ? "group-chat" : "chat");
   return (
     // `chat-window` scopes the chat window's skin surfaces (plan E7.7.7).
     // `data-skin-window` names the skin's chat frame layout (plan SK0 S2).

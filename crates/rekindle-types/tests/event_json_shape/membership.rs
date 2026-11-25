@@ -11,8 +11,10 @@ pub const NAMES: &[&str] = &[
     "joinProgress",
     "joined",
     "selfJoined",
+    "joinWithdrawn",
     "memberCardChanged",
     "left",
+    "forgotten",
     "removed",
     "kicked",
     "banned",
@@ -33,8 +35,10 @@ pub fn variant_name(e: &MembershipEvent) -> &'static str {
         MembershipEvent::JoinProgress { .. } => "joinProgress",
         MembershipEvent::Joined { .. } => "joined",
         MembershipEvent::SelfJoined { .. } => "selfJoined",
+        MembershipEvent::JoinWithdrawn { .. } => "joinWithdrawn",
         MembershipEvent::MemberCardChanged { .. } => "memberCardChanged",
         MembershipEvent::Left { .. } => "left",
+        MembershipEvent::Forgotten { .. } => "forgotten",
         MembershipEvent::Removed { .. } => "removed",
         MembershipEvent::Kicked { .. } => "kicked",
         MembershipEvent::Banned { .. } => "banned",
@@ -128,6 +132,12 @@ fn joining() -> Vec<Sample> {
                 pseudonym: pk('e'),
             },
         ),
+        ev(
+            "forgotten",
+            MembershipEvent::Forgotten {
+                community: community(),
+            },
+        ),
     ]
 }
 
@@ -138,6 +148,15 @@ fn moderation() -> Vec<Sample> {
             MembershipEvent::Removed {
                 community: community(),
                 pseudonym: pk('e'),
+            },
+        ),
+        ev(
+            "joinWithdrawn",
+            MembershipEvent::JoinWithdrawn {
+                community: community(),
+                reason: rekindle_types::join_refusal::JoinRefusal::InviteUsedUp,
+                reason_text: rekindle_types::join_refusal::JoinRefusal::InviteUsedUp
+                    .withdrawn_text(),
             },
         ),
         ev(

@@ -5,7 +5,7 @@
 use rekindle_types::dto::skin::{SkinWindow, WindowLayout};
 use rekindle_types::dto::skin_action::{EngineView, NodeTrigger, SkinAction};
 use rekindle_types::dto::skin_tree::{
-    NodeGlyph, NodeLabel, NodeRole, NodeSpan, ShellNode, SkinNode, SkinTree,
+    LabelAlign, LabelStyle, NodeGlyph, NodeLabel, NodeRole, NodeSpan, ShellNode, SkinNode, SkinTree,
 };
 use rekindle_types::dto::skin_tree_role::ViewKey;
 
@@ -390,6 +390,7 @@ fn an_art_label_clone_carries_its_own_label() {
             text,
             cover: Some(cover),
             glyph: None,
+            style: _,
         }) = &clone.label
         else {
             panic!("{id}: {:?}", clone.label);
@@ -404,10 +405,26 @@ fn an_art_label_clone_carries_its_own_label() {
             cover[0] + cover[2] <= w && cover[1] + cover[3] <= h,
             "{id}: {cover:?}"
         );
-        assert!(
-            cover[2] * 2 > w && cover[3] * 2 > h,
-            "{id}: {cover:?} covers the word band"
-        );
+        // A measured word (plan SK15: xslimfire's "Files") is covered to
+        // its ink exactly; an unmeasured one by the word band.
+        if clone
+            .label
+            .as_ref()
+            .and_then(|l| l.style.as_ref())
+            .is_some()
+        {
+            let ink = super::label_style_tests::source_ink(
+                id,
+                "assets/frame/main/node-tabdownloadbutton.png",
+            );
+            let word = ink.bounds.map(|v| u16::try_from(v).unwrap());
+            assert_eq!(*cover, word, "{id}: the word's ink");
+        } else {
+            assert!(
+                cover[2] * 2 > w && cover[3] * 2 > h,
+                "{id}: {cover:?} covers the word band"
+            );
+        }
         // The window reads the served shell: the label rides it.
         let shell = main
             .tree
@@ -458,6 +475,7 @@ fn an_icon_tab_clone_carries_a_glyph_over_the_copied_icon() {
             text: "Communities".to_owned(),
             cover: Some([14, 15, 18, 17]),
             glyph: Some(NodeGlyph::Communities),
+            style: None,
         })
     );
     let [x, y, w, h] = label.and_then(|l| l.cover).unwrap();
@@ -473,8 +491,15 @@ fn a_worded_tab_clone_keeps_its_words() {
         clone_shell_label("xslimfire"),
         Some(NodeLabel {
             text: "Communities".to_owned(),
-            cover: Some([6, 3, 53, 12]),
+            cover: Some([22, 5, 22, 8]),
             glyph: None,
+            style: Some(LabelStyle {
+                size_px: 8,
+                weight: 700,
+                color: "#1F76BD".to_owned(),
+                align: LabelAlign::Centre,
+                text_box: [6, 3, 53, 12],
+            }),
         })
     );
     assert_eq!(
@@ -483,6 +508,7 @@ fn a_worded_tab_clone_keeps_its_words() {
             text: "Communities".to_owned(),
             cover: None,
             glyph: None,
+            style: None,
         })
     );
 }

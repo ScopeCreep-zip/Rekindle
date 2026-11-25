@@ -2,7 +2,7 @@ import type {
   OpPublicationState,
   OpQuarantineReason,
 } from "../ipc/channels/community_subscription_events";
-import { createStore, reconcile } from "solid-js/store";
+import { createStore, produce, reconcile } from "solid-js/store";
 import type { Message } from "./chat.store";
 import type {
   GameInfo, InviteDto, MemberGroup, OnboardingConfig, TargetModeration, WelcomeScreen,
@@ -233,6 +233,9 @@ export interface Community {
   myPseudonymKey: string | null;
   /** Set when we were removed (plan E3.2 S9 own removal): the community
    *  stays as read-only history. */
+  /** Set when the inviter refused our join after it returned (plan JW):
+   *  the Host's words, shown in place in this community's window. */
+  withdrawn?: { reasonText: string } | null;
   removed?: {
     banned: boolean;
     by: string | null;
@@ -356,3 +359,17 @@ export function setCommunityMembers(community: string, members: Member[]): void 
   setCommunityState("communities", community, "members", reconcile(members, { key: "pseudonymKey" }));
 }
 
+/**
+ * Drop community `id` from this window's list, and the selection when it
+ * was the shown one. The key is deleted in place (`produce`): a setter given
+ * a copy without the key merges it into the store, so the row stayed.
+ */
+export function dropCommunity(id: string): void {
+  setCommunityState("communities", produce((communities) => {
+    delete communities[id];
+  }));
+  if (communityState.activeCommunity === id) {
+    setCommunityState("activeCommunity", null);
+    setCommunityState("activeChannel", null);
+  }
+}

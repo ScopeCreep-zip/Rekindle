@@ -21,9 +21,19 @@ pub(super) fn lines(nodes: &[SkinNode], depth: usize, out: &mut String) {
             if let Some(g) = l.glyph {
                 let _ = write!(out, " glyph {g:?}");
             }
+            if let Some(s) = &l.style {
+                let _ = write!(
+                    out,
+                    " style {}px {} {} {:?} box {:?}",
+                    s.size_px, s.weight, s.color, s.align, s.text_box
+                );
+            }
         }
         if let Some(i) = n.inset {
             let _ = write!(out, " inset [{}, {}]", i.left, i.right);
+            if let Some(m) = i.max_width {
+                let _ = write!(out, " max {m}");
+            }
         }
         if let Some(t) = n.target {
             let _ = write!(out, " target {:?} art {:?} {:?}", t.area, t.art, t.rule);
@@ -327,8 +337,43 @@ fn a_name_field_under_a_button_serves_its_inset() {
 #[test]
 fn a_clear_name_field_serves_no_inset() {
     let alloy = name_field("alloy").inset;
-    assert_eq!(alloy, Some(NodeInset { left: 0, right: 54 }));
+    assert_eq!(
+        alloy,
+        Some(NodeInset {
+            left: 0,
+            right: 54,
+            max_width: Some(151)
+        })
+    );
     assert_eq!(name_field("xfire-classic").inset, None);
+}
+
+/// Plan SK15: Alloy's `UserNameField` stretches with the window while its
+/// `StatusEdit`'s press area stays at x 171, so the fixed `right` inset
+/// laid at the minimum runs the name under the status field at 400 x 900;
+/// the served `max_width` stops the text at that press area at every
+/// width.
+#[test]
+fn a_stretching_field_caps_its_text_at_a_fixed_press_area() {
+    let tree = main_layout("alloy").tree.unwrap();
+    let inset = name_field("alloy").inset.expect("alloy name field inset");
+    let max = inset.max_width.expect("alloy name field max width");
+    let at = (400, 900);
+    let field = tree
+        .boxes(at.0, at.1)
+        .into_iter()
+        .find(|(n, _)| n.id == "UserNameField")
+        .map(|(_, b)| b)
+        .unwrap();
+    let status = super::target::targets(&tree, at)
+        .into_iter()
+        .find(|l| l.id == "StatusEdit")
+        .unwrap();
+    let end = field[0] + i32::from(inset.left) + i32::from(max);
+    assert!(end <= status.area[0], "{field:?} {inset:?} {status:?}");
+    // Without the cap the fixed inset runs past the status field's start.
+    let uncapped = field[0] + field[2] - i32::from(inset.right);
+    assert!(uncapped > status.area[0], "{field:?} {inset:?} {status:?}");
 }
 
 /// Plan SK5 (lead decision): XGlow's file title is icon-shaped (one whole

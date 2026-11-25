@@ -27,9 +27,9 @@ MenuBar MenuBar
   MenuDiv2 Decor
   MenuDiv3 Decor
 TopButtonBar Group
-  Minimize WindowButton(Minimize) target [-4, -4, 20, 24] art [4, 4, 15, 15] Short
+  Minimize WindowButton(Minimize) target [-8, -4, 24, 24] art [8, 4, 15, 15] Size
   Maximize WindowButton(Maximize) target [-1, -4, 17, 24] art [1, 4, 15, 15] Short
-  ChatClose WindowButton(Close) target [-1, -4, 21, 24] art [1, 4, 15, 15] Short
+  ChatClose WindowButton(Close) target [-2, -4, 24, 24] art [2, 4, 15, 15] Size
 ChatArea Slot(ChatArea)
 ChatEdit Slot(ChatEdit)
 ExpandButton Slot(InfoviewButton)

@@ -89,6 +89,7 @@ pub async fn dispatch_settings(
         SettingsCmd::GameDetection { state } => IpcRequest::SetGameDetection {
             enabled: matches!(state, Switch::On),
         },
+        SettingsCmd::AutoAway { minutes } => IpcRequest::SetAutoAway { minutes: *minutes },
         SettingsCmd::ShareGame { state } => IpcRequest::SetShareCurrentGame {
             enabled: matches!(state, Switch::On),
         },

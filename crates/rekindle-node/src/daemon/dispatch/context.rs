@@ -210,7 +210,7 @@ impl DaemonContext {
                         };
                         let ctx = Arc::clone(self);
                         in_flight.spawn(correlation, request.name(), async move {
-                            ctx.call(request, &caller).await
+                            ctx.call(*request, &caller).await
                         });
                     }
                     Some(Err(e)) => {

@@ -136,8 +136,8 @@ pub(super) struct Walk<'a> {
     pub(super) groups: Vec<(Vec<usize>, String)>,
     /// The pack's `<Popups>` tile names, lowercased.
     pub(super) popups: BTreeSet<String>,
-    /// Every control group id the pack's components declare.
-    pub(super) group_ids: BTreeSet<u16>,
+    /// Every control group the pack's components declare.
+    pub(super) group_ids: triggers::Groups,
     /// The art file prefix: a popup's name, so its art never meets the window's.
     pub(super) prefix: String,
 }
@@ -534,12 +534,7 @@ pub fn add(
         .filter_map(|t| t.attr_ci("Name"))
         .map(|n| n.trim().to_ascii_lowercase())
         .collect();
-    let group_ids = by_name
-        .values()
-        .flat_map(|c| [c.attr_ci("GroupId"), c.attr_ci("ControlGroupId")])
-        .flatten()
-        .filter_map(|g| g.trim().parse().ok())
-        .collect();
+    let group_ids = triggers::Groups::of(&by_name);
     let mut walk = Walk {
         window,
         by_name,

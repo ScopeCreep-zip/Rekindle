@@ -27,6 +27,7 @@ use rekindle_types::subscription_events::{
 };
 
 use super::HostGovernance;
+use crate::host::community::CommunityStore;
 
 /// A change to our profile in one community: each `None` keeps the field,
 /// an empty value clears it (plan E3.4 S6).
@@ -331,6 +332,22 @@ pub(crate) fn shown_name(card_name: Option<String>, pseudonym: &PseudonymKey) ->
     card_name
         .filter(|n| !n.is_empty())
         .unwrap_or_else(|| rekindle_crypto::identity::short_key_fingerprint(&pseudonym.0))
+}
+
+/// The name `community_id` renders for the member whose pseudonym is
+/// `member_hex`: [`shown_name`] over their verified card, as the member
+/// list names its rows and so as a message's sender header shows them. A
+/// typist and a forward's original author (plan E3.3) are named by it.
+pub(crate) fn member_shown_name(
+    communities: &CommunityStore,
+    community_id: &str,
+    member_hex: &str,
+) -> String {
+    let pseudonym = PseudonymKey::from_hex_lossy(member_hex);
+    shown_name(
+        communities.member_card_name(community_id, &pseudonym),
+        &pseudonym,
+    )
 }
 
 /// The member-list observation a card read makes when its game moved from

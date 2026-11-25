@@ -10,6 +10,57 @@ use rekindle_types::id::PseudonymKey;
 use crate::op::{OpStamp, VerifiedOp};
 use crate::state::GovernanceState;
 
+/// The merge's units of work, machine-independent, for the tests that gate
+/// its complexity on counts rather than on wall clock
+/// (`tests/perf_targets.rs`). Kept only in test and `fixture` builds.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct MergeCounts {
+    /// Fixpoint rounds (`fixpoint::settle` passes), over every resolution.
+    pub rounds: u64,
+    /// `try_apply` calls, each one `validate_write`.
+    pub try_apply: u64,
+    /// `Ancestry::contains` calls.
+    pub contains: u64,
+    /// Ancestry rows built (`build_through`).
+    pub rows_built: u64,
+    /// `u64` words OR'd into ancestry rows (`build_through`).
+    pub words_ored: u64,
+    /// Ops examined by `frontier_holds` counting a removal's target ops.
+    pub frontier_steps: u64,
+    /// Deps visited finding each op's anchor (`Ancestry::latest_in_past`).
+    pub anchor_steps: u64,
+}
+
+std::thread_local! {
+    static COUNTS: std::cell::Cell<MergeCounts> = const {
+        std::cell::Cell::new(MergeCounts {
+            rounds: 0,
+            try_apply: 0,
+            contains: 0,
+            rows_built: 0,
+            words_ored: 0,
+            frontier_steps: 0,
+            anchor_steps: 0,
+        })
+    };
+}
+
+/// The work `run` makes the merge do on this thread.
+pub fn counts(run: impl FnOnce()) -> MergeCounts {
+    COUNTS.with(|c| c.set(MergeCounts::default()));
+    run();
+    COUNTS.with(std::cell::Cell::get)
+}
+
+/// Adds to this thread's counts (the crate's `tally!`).
+pub(crate) fn tally(add: impl FnOnce(&mut MergeCounts)) {
+    COUNTS.with(|c| {
+        let mut counts = c.get();
+        add(&mut counts);
+        c.set(counts);
+    });
+}
+
 /// An entry with the position the test wants it ordered at.
 pub type Stamped = (u64, GovernanceEntry);
 

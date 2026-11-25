@@ -66,11 +66,24 @@ export interface AppCapability {
   env?: Record<string, string>;
 }
 
+/**
+ * Every app's idle (plan AA1): OS input idle is machine-wide and WebDriver's
+ * presses never reset it, so on an untouched machine auto-away fired at
+ * unlock and raced each spec. Every app runs at idle 0 (the webdriver-only
+ * `REKINDLE_WDIO_IDLE_SECONDS`); a spec that needs real idle sets its own
+ * value in its capability's `env` (wdio.idle.conf.ts), which wins.
+ */
+const DEFAULT_TEST_ENV: Record<string, string> = { REKINDLE_WDIO_IDLE_SECONDS: "0" };
+
 /** The environment `caps`' app launches with (`AppCapability.display`, `.env`). */
 function displayEnv(where: string, caps: AppCaps): Record<string, string> {
   const wanted = caps[APP_CAPABILITY];
   if (!wanted) throw new Error(`${where}: capability "${APP_CAPABILITY}" is missing`);
-  return { ...(wanted.display === "x11" && process.platform === "linux" ? { GDK_BACKEND: "x11" } : {}), ...(wanted.env ?? {}) };
+  return {
+    ...DEFAULT_TEST_ENV,
+    ...(wanted.display === "x11" && process.platform === "linux" ? { GDK_BACKEND: "x11" } : {}),
+    ...(wanted.env ?? {}),
+  };
 }
 
 /** Connection options the runner reads from a capability (standalone) or an instance (multiremote). */

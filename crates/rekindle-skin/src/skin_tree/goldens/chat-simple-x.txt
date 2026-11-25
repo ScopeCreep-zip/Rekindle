@@ -12,9 +12,9 @@ MenuBar MenuBar
   HelpMenuText MenuTitle label "Help"
     HelpMenu Part target [0, -4, 24, 24] art [0, 4, 24, 15] Size
 TopButtonBar Group
-  MinimizeBox WindowButton(Minimize) target [-4, -4, 20, 24] art [4, 4, 16, 16] Short
+  MinimizeBox WindowButton(Minimize) target [-8, -4, 24, 24] art [8, 4, 16, 16] Size
   MaximizeBox WindowButton(Maximize) target [0, -4, 16, 24] art [0, 4, 16, 16] Short
-  CloseBox WindowButton(Close) target [0, -4, 20, 24] art [0, 4, 16, 16] Short
+  CloseBox WindowButton(Close) target [0, -4, 24, 24] art [0, 4, 16, 16] Size
 InfoViewButton Slot(InfoviewButton)
 BaseBoard Group target [0, 0, 257, 100] art [0, 0, 257, 100] Frame
   TypingMessage Slot(TypingNotice)

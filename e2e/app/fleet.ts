@@ -43,6 +43,10 @@ export interface Peer {
   stop(): Promise<void>;
   /** For the process's `exit` hook, where only synchronous work runs. */
   stopSync(): void;
+  /** Stop this peer's daemon and keep its HOME: the peer is offline, its identity and state kept. */
+  pause(): Promise<void>;
+  /** Start a paused peer's daemon again, unlock its identity, and wait until it is attached. */
+  resume(): Promise<void>;
 }
 
 const started = new Set<Peer>();
@@ -218,6 +222,21 @@ async function startPeer(displayName: string): Promise<Peer> {
   };
 
   let stopped = false;
+  const attached = async (): Promise<void> => {
+    await waitUntil(
+      async () => {
+        const status = (await cli(["status"]).catch(() => null)) as { attachment?: string; public_internet_ready?: boolean } | null;
+        // Attached is not enough to write: the Host refuses a reviewed write
+        // ("Not connected to the network yet") until the public internet is
+        // ready (create_leave.rs NOT_CONNECTED, node.is_ready()), which the
+        // daemon's status reports (StatusSnapshot.public_internet_ready).
+        const attachedEnough = ["AttachedGood", "AttachedStrong", "FullyAttached", "OverAttached"].includes(status?.attachment ?? "");
+        return attachedEnough && status?.public_internet_ready === true;
+      },
+      NET_WAIT_MS,
+      `peer ${displayName} never attached with the public internet ready`,
+    );
+  };
   const peer: Peer = {
     displayName,
     publicKey: "",
@@ -235,6 +254,15 @@ async function startPeer(displayName: string): Promise<Peer> {
       keepLogs(home, displayName);
       if (!ended) throw new Error(`peer ${displayName}: rekindled ${lockHolder(home)} outlived SIGKILL; its HOME ${home} is kept`);
       rmSync(home, { recursive: true, force: true });
+    },
+    async pause() {
+      await run(exe, ["--no-input", "node", "stop"], { env });
+      await waitUntil(async () => !(await daemonRunning()), 30_000, `peer ${displayName} did not stop`);
+    },
+    async resume() {
+      await run(exe, ["--no-input", "node", "start"], { env });
+      await cli(["unlock", "--passphrase-file", passFile]);
+      await attached();
     },
     stopSync() {
       if (stopped) return;
@@ -271,15 +299,7 @@ async function startPeer(displayName: string): Promise<Peer> {
     const list = (await cli(["identity", "list"])) as { publicKey: string }[];
     peer.publicKey = made?.publicKey ?? list[0]?.publicKey ?? "";
     if (!peer.publicKey) throw new Error(`peer ${displayName}: no identity after init`);
-    await waitUntil(
-      async () => {
-        const status = (await cli(["status"]).catch(() => null)) as { attachment?: string } | null;
-        // veilid-core AttachmentState (veilid_state.rs): good enough to use the network.
-        return ["AttachedGood", "AttachedStrong", "FullyAttached", "OverAttached"].includes(status?.attachment ?? "");
-      },
-      NET_WAIT_MS,
-      `peer ${displayName} never attached`,
-    );
+    await attached();
   } catch (err) {
     await peer.stop();
     throw err;
@@ -407,4 +427,81 @@ export async function peerJoinCommunity(peer: Peer, invite: string): Promise<voi
   const fingerprint = /--confirm=([0-9a-f ]{64,79})$/.exec(reviewed.refusal?.error?.message ?? "")?.[1];
   if (!fingerprint) throw new Error(`${peer.displayName}: the join asked for no fingerprint (${JSON.stringify(reviewed.refusal).slice(0, 200)})`);
   await peer.cli([`--confirm=${fingerprint}`, "community", "join", "--invite", invite]);
+}
+
+/** `peer` creates community `name` (reviewed: confirmed by its name, ADR 0019); its anchor key. */
+export async function peerCreateCommunity(peer: Peer, name: string): Promise<string> {
+  const made = (await peer.cli([`--confirm=${name}`, "community", "create", name])) as { anchor?: string } | null;
+  if (!made?.anchor) throw new Error(`${peer.displayName}: community create answered no anchor (${JSON.stringify(made).slice(0, 200)})`);
+  return made.anchor;
+}
+
+/** A `uses`-use invite link to community `anchor` from `peer`. */
+export async function peerInvite(peer: Peer, anchor: string, uses = 1): Promise<string> {
+  // Reviewed (ADR 0019): confirmed by the subject its review names.
+  const made = (await peerReviewed(peer, ["community", "invite", "create", "--community", anchor, "--max-uses", String(uses)])) as { url?: string } | null;
+  if (!made?.url) throw new Error(`${peer.displayName}: invite create answered no url (${JSON.stringify(made).slice(0, 200)})`);
+  return made.url;
+}
+
+/** How many members `peer`'s view of community `anchor` counts. */
+export async function peerMemberCount(peer: Peer, anchor: string): Promise<number> {
+  const info = (await peer.cli(["community", "info", "--community", anchor])) as { member_count?: number; memberCount?: number } | null;
+  return info?.member_count ?? info?.memberCount ?? 0;
+}
+
+/**
+ * `args` as `peer`, answering its review when it asks one (D3.4): the CLI
+ * names the subject to confirm (`--confirm=<subject>`), as a CLI user reads
+ * it from their own review. A command that asks none runs as is.
+ */
+export async function peerReviewed(peer: Peer, args: string[]): Promise<unknown> {
+  // A command that asks no review has run once already: its answer, never a
+  // second run (that duplicated posts and invites). Otherwise the flag the
+  // CLI itself names; a refusal naming none is that refusal.
+  const reviewed = await peer.review(args);
+  if (reviewed.ran) return reviewed.value;
+  const message = reviewed.refusal?.error?.message ?? "";
+  const subject = /--confirm=(.+)$/.exec(message)?.[1]?.trim();
+  if (subject) return peer.cli([`--confirm=${subject}`, ...args]);
+  if (/pass --yes\b/.test(message)) return peer.cli(["--yes", ...args]);
+  throw new Error(`${peer.displayName}: ${args.join(" ")} was refused: ${message || JSON.stringify(reviewed.refusal).slice(0, 300)}`);
+}
+
+/** `peer` creates role `name` with permission bits `permissions` in community `anchor`; its role id. */
+export async function peerCreateRole(peer: Peer, anchor: string, name: string, permissions: number): Promise<string> {
+  const made = (await peerReviewed(peer, ["community", "role", "create", "--community", anchor, "--name", name, "--permissions", String(permissions)])) as Record<string, unknown> | null;
+  const id = (made?.roleId ?? made?.role_id ?? made?.id) as string | undefined;
+  if (!id) throw new Error(`${peer.displayName}: role create answered no id (${JSON.stringify(made).slice(0, 200)})`);
+  return id;
+}
+
+/** `peer` gives member `member` (pseudonym or display name) role `roleId` in community `anchor`. */
+export async function peerAssignRole(peer: Peer, anchor: string, member: string, roleId: string): Promise<void> {
+  await peerReviewed(peer, ["community", "role", "assign", "--community", anchor, "--member", member, "--role-id", roleId]);
+}
+
+/** `peer` bans member `member` (pseudonym or display name) from community `anchor`. */
+export async function peerBan(peer: Peer, anchor: string, member: string): Promise<void> {
+  await peerReviewed(peer, ["community", "ban", "--community", anchor, "--member", member]);
+}
+
+/** `peer` takes role `roleId` back from member `member` in community `anchor`. */
+export async function peerUnassignRole(peer: Peer, anchor: string, member: string, roleId: string): Promise<void> {
+  await peerReviewed(peer, ["community", "role", "unassign", "--community", anchor, "--member", member, "--role-id", roleId]);
+}
+
+/** `peer` sends `text` to group `groupId` as a reply to the message whose client id is `replyTo` (CLI `--reply-to`, plan G-replies). */
+export async function peerReplyGroup(peer: Peer, groupId: string, text: string, replyTo: string): Promise<void> {
+  await peer.cli(["group", "send", groupId, text, "--reply-to", replyTo]);
+}
+
+/** `peer` kicks member `member` (pseudonym or display name) from community `anchor`. */
+export async function peerKick(peer: Peer, anchor: string, member: string): Promise<void> {
+  await peerReviewed(peer, ["community", "kick", "--community", anchor, "--member", member]);
+}
+
+/** `peer` posts `text` in channel `channel` of community `community` (names or keys). */
+export async function peerPostChannel(peer: Peer, community: string, channel: string, text: string): Promise<void> {
+  await peer.cli(["channel", "send", "-c", community, "-C", channel, "-m", text]);
 }

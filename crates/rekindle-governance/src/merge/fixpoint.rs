@@ -33,6 +33,7 @@ pub(super) fn settle<R, G, E>(
     let mut seen: Vec<Vec<bool>> = Vec::new();
     let mut widening = false;
     loop {
+        tally!(rounds, 1);
         let settled = round(&invalid);
         let verdict = gate(&settled)?;
         let next = invalid_of(&verdict);

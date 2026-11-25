@@ -40,6 +40,39 @@
 //!   (`rpc_processor/mod.rs:1711-1728`, `SimDht::network`).
 //!   From then on the failures count, and 3 (Ordered) or 5 (Unordered)
 //!   kill the route (`route_spec_store/mod.rs:51-63`).
+//! - **remote route tests** (plan RV1, F9 N2): each node also tests the
+//!   routes it imported, on the same task
+//!   (`private_route_management.rs:396-414`): an entry the cache still
+//!   lists (not expired, `route_spec_store_cache.rs:315-326`) needs a test
+//!   when no test has proven it for [`ROUTE_MIN_IDLE`], or before its first
+//!   (`route_stats.rs:672-681` `remote_needs_testing`). The test is one
+//!   status question over the route (`ping_validator.rs:705-716`): a route
+//!   that takes traffic from outside answers it (`record_remote_test_pass`,
+//!   `route_stats.rs:685-692`); one its owner released, one dead from
+//!   outside ([`crate::Fault::OutsideDead`]) or one failing end to end
+//!   ([`crate::Fault::LoopbackFailures`]) gets no answer, and at the end of
+//!   the answer wait ([`crate::RPC_TIMEOUT`]) Veilid removes it from the
+//!   importer's cache (`ping_validator.rs:741-744`, `release_route` of a
+//!   remote id, `route_spec_store_cache.rs:397-415`) and reports it to the
+//!   importer alone as `dead_remote` (`mod.rs:235-251`). While the
+//!   importer's blame is suppressed (its detector Offline) the failure is
+//!   deferred and retested (`ping_validator.rs:733-739`); a node that is
+//!   detached, DHT-offline, not ready or asleep runs no test. An answered
+//!   call over the route proves it as a passed test does
+//!   (`rpc_processor/mod.rs:1821-1827`, `route_stats.rs:489-498`
+//!   `record_answer_received` sets `last_known_valid_ts`), so its next
+//!   test waits [`ROUTE_MIN_IDLE`] from that answer
+//!   ([`Network::remote_route_answered`]).
+//! - **the listing touches:** each tick lists the cache
+//!   (`mod.rs:313-324` `list_remote_routes`), which skips expired entries
+//!   (`route_spec_store_cache.rs:315-326`) and peeks every other one, and
+//!   `peek_remote_route` touches it (`route_spec_store_cache.rs:348-357`).
+//!   So while the task runs no import expires; one expires only when the
+//!   task has not run for 5 minutes ([`crate::routes`]). The task runs only
+//!   at the stages past published peer info
+//!   (`public_internet/controller/tasks.rs:113-122`), here a node that is
+//!   attached, DHT-online, ready and awake. Not modelled: a test lost to a
+//!   partition or a drop.
 
 use std::time::Duration;
 
@@ -135,6 +168,81 @@ impl Network {
                 PortEvent::RouteChange {
                     dead: vec![id],
                     dead_remote: Vec::new(),
+                },
+                false,
+            );
+        }
+    }
+
+    /// Run each node's due remote route tests ([module docs](self)): a
+    /// failed one, its answer wait over and blame not suppressed, removes
+    /// the importer's entry and tells the importer `dead_remote`.
+    pub(crate) fn tick_remote_route_tests(&self) {
+        let now = self.now_us();
+        let wait = u64::try_from(crate::RPC_TIMEOUT.as_micros()).unwrap_or(u64::MAX);
+        let idle = u64::try_from(ROUTE_MIN_IDLE.as_micros()).unwrap_or(u64::MAX);
+        let mut dead: Vec<(usize, String)> = Vec::new();
+        {
+            let mut guard = self.inner.lock();
+            let inner = &mut *guard;
+            let faults = &inner.faults;
+            let routes = &inner.routes;
+            for (node, slot) in inner.nodes.iter_mut().enumerate() {
+                if faults.detached.contains(&node)
+                    || faults.dht_offline.contains(&node)
+                    || faults.not_ready.contains(&node)
+                    || faults.asleep.contains(&node)
+                {
+                    continue;
+                }
+                let suppressed = faults.detector_offline.contains(&node);
+                let mut ids: Vec<String> = slot.imported.keys().cloned().collect();
+                ids.sort();
+                for id in ids {
+                    let answers = routes.contains_key(&id)
+                        && !faults.outside_dead.contains(&id)
+                        && !faults.loopback.contains_key(&id);
+                    let Some(entry) = slot.imported.get_mut(&id) else {
+                        continue;
+                    };
+                    if entry.expired(now) {
+                        continue;
+                    }
+                    // `peek_remote_route` touches without LRU action.
+                    entry.touched = now;
+                    match entry.failing {
+                        Some(at) if now >= at => {
+                            entry.failing = None;
+                            if !suppressed {
+                                slot.imported.remove(&id);
+                                dead.push((node, id));
+                            }
+                        }
+                        None if entry.valid.is_none_or(|v| now.saturating_sub(v) > idle) => {
+                            if answers {
+                                entry.valid = Some(now);
+                            } else {
+                                entry.failing = Some(now.saturating_add(wait));
+                            }
+                        }
+                        // A test in flight, or none due.
+                        Some(_) | None => {}
+                    }
+                }
+            }
+        }
+        for (node, id) in dead {
+            self.inner
+                .lock()
+                .trace
+                .push(node, crate::routes::RELEASES_PEER_ROUTE.to_string());
+            self.send(
+                node,
+                node,
+                "RouteChange",
+                PortEvent::RouteChange {
+                    dead: Vec::new(),
+                    dead_remote: vec![id],
                 },
                 false,
             );

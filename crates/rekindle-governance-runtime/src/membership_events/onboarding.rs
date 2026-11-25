@@ -13,7 +13,6 @@ use rekindle_types::id::{PseudonymKey, RoleId};
 use crate::apply::write_entry_queued;
 use crate::event::GovernanceRuntimeEvent;
 use crate::membership_events::deps::MembershipEventDeps;
-use crate::membership_events::roles_changed::process_member_roles_changed;
 
 /// Why an onboarding submission failed validation. Carries enough detail
 /// for the handler to log the same context the legacy per-check warnings
@@ -184,8 +183,6 @@ pub async fn process_onboarding_answers<D: MembershipEventDeps>(
     if is_self {
         deps.push_onboarding_complete_to_sync(community_id);
     }
-
-    process_member_roles_changed(deps, community_id, sender_pseudonym, &final_role_ids);
 
     let envelope = CommunityEnvelope::control(ControlPayload::OnboardingComplete {
         pseudonym_key: sender_pseudonym.to_string(),

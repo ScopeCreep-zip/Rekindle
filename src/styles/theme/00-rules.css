@@ -93,15 +93,6 @@
     border: 0;
   }
 
-  /* One line in its box, ellipsized: a chat tree's title (SK17-2), a clip's name. */
-  .skin-chat-title,
-  .soundboard-panel-clip-name {
-    display: block;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-  }
-
   /* Nerd Font icon utility */
   .nf-icon {
     font-family: var(--font-family-icons);
@@ -275,7 +266,10 @@
     cursor: not-allowed;
   }
 
-  .form-btn-secondary {
+  /* `.skin-row-btn`: Settings' skin-list buttons, the secondary look outside
+   * the skin's button region (plan SB1: no pack art reaches Settings). */
+  .form-btn-secondary,
+  .skin-row-btn {
     padding: 8px 16px;
     background: color-mix(in srgb, var(--color-xfire-overlay) 8%, transparent);
     color: var(--color-xfire-text);
@@ -288,11 +282,13 @@
     transition: background var(--motion-duration-fast);
   }
 
-  .form-btn-secondary:hover {
+  .form-btn-secondary:hover,
+  .skin-row-btn:hover {
     background: color-mix(in srgb, var(--color-xfire-overlay) 12%, transparent);
   }
 
-  .form-btn-secondary:disabled {
+  .form-btn-secondary:disabled,
+  .skin-row-btn:disabled {
     opacity: 0.4;
     cursor: not-allowed;
   }

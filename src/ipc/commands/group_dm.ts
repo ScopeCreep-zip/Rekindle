@@ -45,8 +45,8 @@ export const groupDmCommands = {
     hostInvoke<unknown>("group_dm_invite", { groupId, members }),
   /** Our message's client id once its row and echo are committed
    *  (`queued`, then `sendStatus` events). */
-  groupDmSend: (groupId: string, body: string) =>
-    hostInvoke<string>("group_dm_send", { groupId, body }),
+  groupDmSend: (groupId: string, body: string, replyTo: string | null = null) =>
+    hostInvoke<string>("group_dm_send", { groupId, body, replyTo }),
   /** Whether our draft to the group holds text; the Host decides what goes
    *  out. */
   groupDmTyping: (groupId: string, typing: boolean) =>

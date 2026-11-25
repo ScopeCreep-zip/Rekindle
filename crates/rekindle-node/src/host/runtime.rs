@@ -253,6 +253,7 @@ impl Host {
                     handler,
                     Arc::clone(&stores.session),
                     Arc::clone(&rng),
+                    Arc::clone(&clock),
                 )
                 .await
                 .map_err(|e| anyhow::anyhow!("transport node did not start: {e}"))?;

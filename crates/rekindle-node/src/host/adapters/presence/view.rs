@@ -24,7 +24,11 @@ pub(crate) const EXPIRY_CHECK: Duration = Duration::from_secs(30);
 
 /// Take `author`'s verified `beat` in `community` into the view, delivered
 /// at `arrived_at_ms` (`None` for a cold read), and publish what it shows
-/// when that changed.
+/// when that changed. Our own beat (read back from a relayed hint) is never
+/// taken in: our status is our own presence's (`host::own_presence`), which
+/// our row and the buddy list both show, while our beat lags an idle change
+/// by design (plan E3.4 "Constant rate"); a view entry for us would draw our
+/// own row from that lagging copy (finding PR1).
 pub(crate) fn observe(
     ctx: &DaemonContext,
     community: &str,
@@ -39,6 +43,9 @@ pub(crate) fn observe(
         let Some(state) = map.get_mut(community) else {
             return Observed::default();
         };
+        if state.my_pseudonym_key.as_deref() == Some(member.as_str()) {
+            return Observed::default();
+        }
         state.beat_view.observe(&member, beat, arrived_at_ms, now)
     };
     if let Some(shown) = observed.shown {

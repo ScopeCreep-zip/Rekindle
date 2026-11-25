@@ -45,6 +45,10 @@ pub(super) fn hash_membership(h: &mut blake3::Hasher, m: &MembershipEvent) {
             h.update(b"|");
             h.update(status.as_bytes());
         }
+        MembershipEvent::Forgotten { community } => {
+            h.update(b"forgotten|");
+            h.update(community.as_bytes());
+        }
         MembershipEvent::SelfJoined { community, .. } => {
             // One join of ours per community per session.
             h.update(b"self_joined|");
@@ -85,6 +89,14 @@ pub(super) fn hash_membership(h: &mut blake3::Hasher, m: &MembershipEvent) {
             h.update(community.as_bytes());
             h.update(b"|");
             h.update(pseudonym.as_bytes());
+        }
+        MembershipEvent::JoinWithdrawn {
+            community, reason, ..
+        } => {
+            h.update(b"join_withdrawn|");
+            h.update(community.as_bytes());
+            h.update(b"|");
+            h.update(reason.name().as_bytes());
         }
         MembershipEvent::Removed {
             community,

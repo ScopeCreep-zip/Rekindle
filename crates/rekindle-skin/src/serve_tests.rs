@@ -80,7 +80,9 @@ fn pack_of(bytes: &[u8]) -> Pack {
 /// contrast pixels, contrast calls, region cases, label spans, decodes,
 /// decoded frames). The region check measures at validation, not here,
 /// so its cases are 0; a pack whose title is not a 3-slice strip walks no
-/// title columns.
+/// title columns. SK15: a pack whose Communities clone copies a worded
+/// tab (Total Chaos, xslimfire, Alloy, XGlow) decodes that tab's art once
+/// more, to measure the copied word's style (`skin_tree::label_style`).
 const PINNED: [(&str, [u64; 8]); 11] = [
     ("symbiosis", [39220, 5817, 19277, 26, 0, 245_125, 33, 33]),
     (
@@ -91,11 +93,11 @@ const PINNED: [(&str, [u64; 8]); 11] = [
     ("onyx", [0, 660, 2496, 10, 0, 98050, 10, 10]),
     ("spacecowboy", [0, 3336, 6966, 6, 0, 58830, 6, 6]),
     ("stealthx", [0, 3522, 5040, 6, 0, 58830, 6, 6]),
-    ("total-chaos", [0, 715_159, 1_117_134, 51, 0, 68635, 10, 10]),
-    ("xslimfire", [1_823_730, 10382, 31110, 9, 0, 68635, 9, 9]),
-    ("alloy", [0, 526, 1734, 12, 0, 117_660, 15, 15]),
+    ("total-chaos", [0, 715_159, 1_117_134, 51, 0, 68635, 11, 11]),
+    ("xslimfire", [1_823_730, 10382, 31110, 9, 0, 68635, 10, 10]),
+    ("alloy", [0, 526, 1734, 12, 0, 117_660, 16, 16]),
     ("simple-x", [0, 4000, 8514, 12, 0, 117_660, 12, 12]),
-    ("xglow", [0, 32, 126, 3, 0, 29415, 6, 6]),
+    ("xglow", [0, 32, 126, 3, 0, 29415, 7, 7]),
 ];
 
 fn row(w: Work) -> [u64; 8] {

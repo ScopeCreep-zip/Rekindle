@@ -11,6 +11,8 @@ use crate::error::VaultError;
 use crate::key::VaultKey;
 use crate::schema;
 
+mod export;
+
 /// The SQLCipher key of the identity's database (plan D1), derived from the
 /// vault passphrase, so unlocking the vault opens the database too.
 /// Held in locked memory (plan E7.1, roadmap 5.2).
@@ -190,19 +192,6 @@ impl VaultStore {
             }
         }
         Ok(())
-    }
-
-    /// The vault file's bytes and its header's, for an identity archive.
-    /// Read under the connection lock: every write goes through it, and the
-    /// vault journals by rollback, so the file is a committed state.
-    ///
-    /// # Errors
-    /// I/O.
-    pub fn export_files(&self) -> Result<(Vec<u8>, Vec<u8>), VaultError> {
-        let _conn = self.conn.lock();
-        let vault = std::fs::read(&self.path)?;
-        let header = std::fs::read(crate::header::header_path(&self.path))?;
-        Ok((vault, header))
     }
 
     /// Install a vault and its header from an archive at `path`. Refuses to

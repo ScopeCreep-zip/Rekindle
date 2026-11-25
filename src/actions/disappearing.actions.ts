@@ -5,6 +5,7 @@ import { conversationId } from "../ipc/channels/chat_events";
 import type { Message } from "../stores/chat.store";
 import { disappearingState, setDisappearingState } from "../stores/disappearing.store";
 import { errorMessage } from "../utils/error";
+import type { DisappearingTimerView } from "../ipc/commands/dto_dm";
 
 // Disappearing messages (plan E7.1). The Host holds the timer, its presets,
 // each message's expiry and the deletion; the window reads the timer, asks
@@ -65,16 +66,23 @@ export function withoutExpired(messages: Message[], clientIds: string[]): Messag
   return messages.filter((m) => !m.serverMessageId || !gone.has(m.serverMessageId));
 }
 
-/** A message whose expiry this window has not read: a live copy (its row
- *  is not loaded, so its timer is unknown) or a received one whose timer
- *  had not started. Once the Host starts timers at display, the window
- *  re-reads the rows. */
-export function awaitsExpiry(messages: Message[]): boolean {
+/**
+ * A message whose expiry this window has not read, so the rows are re-read
+ * once the Host starts timers at display: a received stored row whose timer
+ * has not started, or a live copy (its row not loaded) in a conversation
+ * whose timer is unknown or on. A live copy in a conversation whose timer is
+ * off cannot expire, so it asks nothing: the live row carries no
+ * `expireSeconds`, and counting that as unknown re-read the whole history on
+ * every incoming message (Linux 2026-11-24: an own row re-rendered from a
+ * stale stored state 49 ms after a reply landed).
+ */
+export function awaitsExpiry(messages: Message[], timer: DisappearingTimerView | undefined): boolean {
+  const liveMayExpire = timer === undefined || timer.seconds > 0;
   return messages.some(
     (m) =>
       m.serverMessageId !== undefined &&
       m.historyGapThrough === undefined &&
-      (m.expireSeconds === undefined ||
-        (!m.isOwn && m.expireSeconds > 0 && m.expireAt === undefined)),
+      ((m.expireSeconds === undefined && liveMayExpire) ||
+        (m.expireSeconds !== undefined && !m.isOwn && m.expireSeconds > 0 && m.expireAt === undefined)),
   );
 }

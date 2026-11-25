@@ -35,6 +35,24 @@ fn decode(payload: &[u8]) -> Option<([u8; 32], &str)> {
     (!record.is_empty()).then_some((hash, record))
 }
 
+/// The inviter's route read for an attempt, when it may be called: none
+/// read, or a blob the transport knows dead (plan RV1g B3: Veilid's
+/// `RouteChange` or two timed-out calls, until a newer `M`/6 or the failure
+/// cache's expiry), defers the row without a call.
+fn callable(
+    read: Option<Vec<u8>>,
+    dead: impl FnOnce(&[u8]) -> bool,
+) -> Result<Vec<u8>, AttemptOutcome> {
+    match read {
+        Some(route) if dead(&route) => {
+            tracing::debug!("bootstrap exchange deferred: the inviter's route is known dead");
+            Err(AttemptOutcome::Deferred)
+        }
+        Some(route) => Ok(route),
+        None => Err(AttemptOutcome::Deferred),
+    }
+}
+
 struct BootstrapSender(HostGovernance);
 
 #[async_trait]
@@ -48,13 +66,22 @@ impl StreamSender for BootstrapSender {
         };
         let governance = &self.0;
         if !governance.holds_community(community) {
+            // Our leave or removal discards the row; one reaching here met
+            // a community we do not hold (finding JW2: attempted before the
+            // unlock restored it), so it is said, not settled silently.
+            tracing::warn!(
+                community,
+                "bootstrap row of a community we do not hold: settled left"
+            );
             return AttemptOutcome::Superseded(LEFT.to_owned());
         }
         let Some(joined) = governance.held_joined(community, &hash).await else {
             return AttemptOutcome::Wedged("our MemberJoined is not held".into());
         };
-        let Some(route) = governance.inviter_route(community, inviter_record).await else {
-            return AttemptOutcome::Deferred;
+        let read = governance.inviter_route(community, inviter_record).await;
+        let route = match callable(read, |blob| governance.route_declared_dead(blob)) {
+            Ok(route) => route,
+            Err(outcome) => return outcome,
         };
         use crate::host::adapters::governance::Exchange;
         match (governance)
@@ -121,8 +148,30 @@ impl OutboxSlot {
         self.current.read().clone().map(Bootstraps)
     }
 
-    pub(super) fn install_bootstrap_sender(&self, governance: HostGovernance) {
+    /// Hand the community streams (`mek_transfer`, `bootstrap`) to their
+    /// senders once the unlock restored every community and its stored keys
+    /// (unlock step 3e'''). Both read the community from that cache: one
+    /// attempted while it is still empty finds no community and would
+    /// settle as left or departed, so the exchange the last lock left
+    /// unanswered was dropped for good (finding JW2). Until then their rows
+    /// defer (`Senders::send` with no sender, kept with their backoff).
+    /// Each held community's `bootstrap` row is then made due at once: the
+    /// unlock re-drives the exchange rather than waiting out its backoff.
+    pub(crate) async fn hand_over_communities(&self, governance: HostGovernance) {
+        let communities = governance.held_communities();
+        self.install_mek_transfer_sender(governance.clone());
         (self.senders).install(StreamKind::Bootstrap, Arc::new(BootstrapSender(governance)));
+        let Some(outbox) = self.current.read().clone() else {
+            return;
+        };
+        for community in communities {
+            if let Err(error) = outbox
+                .bring_forward(StreamKind::Bootstrap, &community)
+                .await
+            {
+                tracing::warn!(%error, "bootstrap exchange not brought forward at unlock");
+            }
+        }
     }
 }
 
@@ -134,5 +183,22 @@ mod tests {
         assert_eq!(super::decode(&payload), Some(([7; 32], "VLD0:rec")));
         assert_eq!(super::decode(&payload[..32]), None);
         assert_eq!(super::decode(&payload[..10]), None);
+    }
+
+    #[test]
+    fn a_dead_inviter_route_defers_the_row_without_a_call() {
+        use super::{callable, AttemptOutcome};
+        assert!(matches!(
+            callable(Some(b"A".to_vec()), |b| b == b"A"),
+            Err(AttemptOutcome::Deferred)
+        ));
+        assert!(matches!(
+            callable(None, |_| false),
+            Err(AttemptOutcome::Deferred)
+        ));
+        assert_eq!(
+            callable(Some(b"B".to_vec()), |b| b == b"A").ok(),
+            Some(b"B".to_vec())
+        );
     }
 }

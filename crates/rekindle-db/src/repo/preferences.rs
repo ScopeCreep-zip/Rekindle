@@ -212,6 +212,24 @@ pub fn set_game_detection_enabled(
     Ok(())
 }
 
+/// Auto-away's threshold, minutes, 0 off (`SetAutoAway`, plan E7.4); the
+/// row's other settings stay.
+///
+/// # Errors
+/// The write failed (the schema bounds it to 0..=1440).
+pub fn set_auto_away_minutes(
+    conn: &Connection,
+    owner_key: &str,
+    minutes: u32,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO app_settings (owner_key, auto_away_minutes) VALUES (?1, ?2) \
+         ON CONFLICT(owner_key) DO UPDATE SET auto_away_minutes = excluded.auto_away_minutes",
+        params![owner_key, minutes],
+    )?;
+    Ok(())
+}
+
 /// Turn showing our current game to friends on or off
 /// (`SetShareCurrentGame`, plan E7.2); the row's other settings stay.
 ///
