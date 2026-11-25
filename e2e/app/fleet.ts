@@ -135,10 +135,29 @@ async function endStray(home: string, displayName: string): Promise<boolean> {
   if (process.platform === "darwin") {
     await run("sample", [String(pid), "10", "-file", path.join(keep, "rekindled.sample.txt")]).catch(() => undefined);
   }
-  const gone = async (): Promise<boolean> => lockHolder(home) !== pid;
-  process.kill(pid, "SIGTERM");
+  // A lock left by a daemon that has already exited (a peer `pause()` stopped)
+  // names a pid that no longer runs: that daemon is gone, nothing to signal.
+  const alive = (): boolean => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  if (!alive()) return true;
+  const gone = async (): Promise<boolean> => lockHolder(home) !== pid || !alive();
+  const signal = (sig: NodeJS.Signals): void => {
+    try {
+      process.kill(pid, sig);
+    } catch (e) {
+      // It exited between the check and the signal: gone, as wanted.
+      if ((e as NodeJS.ErrnoException).code !== "ESRCH") throw e;
+    }
+  };
+  signal("SIGTERM");
   if (await waitUntil(gone, 30_000, "").then(() => true, () => false)) return true;
-  process.kill(pid, "SIGKILL");
+  signal("SIGKILL");
   return waitUntil(gone, 10_000, "").then(() => true, () => false);
 }
 
