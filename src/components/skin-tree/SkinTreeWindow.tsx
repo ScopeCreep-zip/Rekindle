@@ -104,6 +104,20 @@ function rightMenu(n: ShellNode): EngineMenu | undefined {
 }
 
 /** `kind[:key]`: the served role, stable across every pack and window. */
+/** The served signal set's true flags, space-separated (`data-skin-signal-on`). */
+function signalFlags(set: SkinSignalSet | null): string {
+  if (!set) return "";
+  const flags: [string, boolean][] = [
+    ["focused", set.focused],
+    ["userTyping", set.userTyping],
+    ["voiceRinging", set.voiceRinging],
+    ["talking", set.talking],
+    ["disconnected", set.disconnected],
+    ["newNotification", set.newNotification],
+  ];
+  return flags.filter(([, on]) => on).map(([name]) => name).join(" ");
+}
+
 function roleAttr(n: ShellNode): string {
   const r = n.role;
   return "key" in r ? `${r.kind}:${r.key}` : r.kind;
@@ -565,8 +579,15 @@ const SkinTreeWindow: Component<{
     >
       {/* Whether this window's signal sets have started arriving: the
        *  pack's state art is applied from them, so the real-app suite
-       *  waits for "live" before reading a button's state. */}
-      <div class="skin-tree" data-skin-signals={skinSignals() ? "live" : "none"}>
+       *  waits for "live" before reading a button's state. The set itself,
+       *  as the Host served it (its true flags and what it cannot do), so
+       *  a node's state can be read against the signals that drove it. */}
+      <div
+        class="skin-tree"
+        data-skin-signals={skinSignals() ? "live" : "none"}
+        data-skin-signal-on={signalFlags(skinSignals())}
+        data-skin-cannot={skinSignals()?.cannot.join(" ") ?? ""}
+      >
         <For each={props.shell.root}>{(node) => <SkinNodeView node={node} />}</For>
       </div>
     </TreeCtx.Provider>
