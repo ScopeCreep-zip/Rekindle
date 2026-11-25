@@ -69,24 +69,15 @@ describe("the Communities view's row: Open / Leave / New in every pack (CB1)", f
       await showSkinView(browser, "communities");
       await waitUntil(async () => (await node(NODES.open)).shown, NET_WAIT_MS, `${file}: the Communities row's Open is not drawn`);
 
-      // 1. Nothing selected: all three drawn; Open is refused with the Host's
-      // reason ("Select a community first."; drawn disabled once CR1 lands).
+      // 1. Nothing selected: Open and Leave drawn disabled (never-hide: drawn,
+      // and visibly not usable), New usable.
       const before = { open: await node(NODES.open), leave: await node(NODES.leave), new: await node(NODES.new) };
       console.log(`[cb] ${file} nothing selected: ${JSON.stringify(before)}`);
-      expect(before.open.shown && before.leave.shown && before.new.shown).toBe(true);
-      expect(before.new.disabled).toBe(false);
-      if (!before.open.disabled) {
-        await pressNode(NODES.open);
-        let refused = "";
-        await waitUntil(
-          async () =>
-            (refused = ((await browser.execute(() => Array.from(document.querySelectorAll(".toast-item")).map((t) => (t.textContent ?? "").trim()).join(" | "))) as string)) !== "",
-          NET_WAIT_MS,
-          `${file}: Open with nothing selected did nothing (no Host reason shown)`,
-        );
-        console.log(`[cb] ${file} Open with nothing selected: ${refused}`);
-      }
       await shot("nothing-selected");
+      expect(before.open.shown && before.leave.shown && before.new.shown).toBe(true);
+      expect(before.open.disabled).toBe(true);
+      expect(before.leave.disabled).toBe(true);
+      expect(before.new.disabled).toBe(false);
 
       // 2. The community row selected: Open and Leave enabled.
       await press(browser, await shown(browser, `.community-item*=${COMMUNITY.slice(0, 24)}`, NET_WAIT_MS));
