@@ -16,7 +16,7 @@ import { builtinPacks } from "../../skin-pack.ts";
 import { befriendFleet } from "../../social.ts";
 import { CHAT_DM } from "../../windows.ts";
 
-const PACKS = ["onyx", "xslimfire", "symbiosis", "spacecowboy", "stealthx"];
+const PACKS = ["onyx", "xslimfire", "symbiosis", "spacecowboy", "stealthx", "alloy", "simple-x", "combat"];
 const GROUP = "Night Raid";
 
 /** The chatArea slot's box, each child's (the portals' wrappers), the list's and each message's (`[slot]` evidence). */
@@ -87,6 +87,47 @@ async function stripsAndTitle(): Promise<{ strips: string; title: string }> {
     }
     return { strips: strips.join(" | ") || "none", title };
   })) as { strips: string; title: string };
+}
+
+/**
+ * Lead (CHT1, Linux): where the frame's parts sit, not only what they read.
+ * (1) The title text lies inside the pack's title strip (its titleBar node,
+ * else its chatTitle node) and inside the pack window, never at the window
+ * corner; (2) in a 1:1 window the presence row (`.chat-peer-status`) is drawn
+ * inside the chat area; (3) no frame tile (a decor node) reaches outside the
+ * window. The problems, as `[cht1]` lines; empty when all hold.
+ */
+async function chatFrameChecks(kind: "dm" | "group"): Promise<string[]> {
+  return (await browser.execute((k: string) => {
+    const out: string[] = [];
+    const drawn = (e: Element | null): e is HTMLElement => !!e && !e.closest("[hidden]") && e.getBoundingClientRect().width > 0;
+    const box = (e: Element): string => {
+      const r = e.getBoundingClientRect();
+      return `${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}`;
+    };
+    const inside = (a: DOMRect, b: DOMRect): boolean => a.left >= b.left - 1 && a.right <= b.right + 1 && a.top >= b.top - 1 && a.bottom <= b.bottom + 1;
+    const tree = document.querySelector(".chat-window .skin-tree");
+    const text = document.querySelector(".chat-window .skin-chat-title");
+    if (!tree || !drawn(text)) return ["no drawn chat title"];
+    const strip =
+      Array.from(document.querySelectorAll<HTMLElement>('.skin-tree [data-skin-role="titleBar"]')).find(drawn) ??
+      text.closest<HTMLElement>('[data-skin-role="chatTitle"]');
+    const t = text.getBoundingClientRect();
+    if (!strip) out.push(`title ${box(text)} has no title strip`);
+    else if (!inside(t, strip.getBoundingClientRect())) out.push(`title ${box(text)} is outside its strip ${strip.dataset.skinNode} ${box(strip)}`);
+    if (!inside(t, tree.getBoundingClientRect())) out.push(`title ${box(text)} is outside the pack window ${box(tree)}`);
+    if (k === "dm") {
+      const row = document.querySelector(".chat-peer-status");
+      const area = document.querySelector('[data-skin-role="slot:chatArea"]');
+      if (!drawn(row)) out.push("no drawn presence row");
+      else if (area && !inside(row.getBoundingClientRect(), area.getBoundingClientRect())) out.push(`presence row ${box(row)} is outside the chat area ${box(area)}`);
+    }
+    for (const n of Array.from(document.querySelectorAll<HTMLElement>('.skin-tree [data-skin-role="decor"]')).filter(drawn)) {
+      const r = n.getBoundingClientRect();
+      if (r.left < -0.5 || r.top < -0.5 || r.right > innerWidth + 0.5 || r.bottom > innerHeight + 0.5) out.push(`tile ${n.dataset.skinNode} ${box(n)} is clipped by the window ${innerWidth}x${innerHeight}`);
+    }
+    return out;
+  }, kind)) as string[];
 }
 
 /** The chat window `handle` draws the pack's tree with `title` in its chatTitle node and the chat in its slots; `text`, when given, is a message drawn inside the chatArea slot's box. */
@@ -186,6 +227,9 @@ describe("a pack's chat tree draws the chat window, the chat in its slots", func
         const def = await sizeTo(CHAT_DM.def.width, CHAT_DM.def.height);
         await treeLaid(handle, title, text);
         await shot(`${kind}-default-${def}`);
+        const frame = await chatFrameChecks(kind);
+        console.log(`[cht1] ${file} ${kind}: ${frame.length === 0 ? "title in its strip, presence row drawn, no clipped tile" : JSON.stringify(frame)}`);
+        expect({ pack: file, window: kind, problems: frame }).toEqual({ pack: file, window: kind, problems: [] });
         const min = await sizeTo(CHAT_DM.min.width, CHAT_DM.min.height);
         await treeLaid(handle, title, text);
         await shot(`${kind}-min-${min}`);
