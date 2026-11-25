@@ -95,7 +95,9 @@ pub(super) async fn route_lifecycle(
         LifecycleRequest::CommunityMembers { anchor } => {
             community::handle_members(ctx, state, &anchor).await
         }
-        LifecycleRequest::CommunityInfo { anchor } => community::handle_info(ctx, state, &anchor),
+        LifecycleRequest::CommunityInfo { anchor } => {
+            community::handle_info(ctx, state, &anchor).await
+        }
         LifecycleRequest::CommunityUpdateInfo {
             anchor,
             name,
