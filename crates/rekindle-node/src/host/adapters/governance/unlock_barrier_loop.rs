@@ -33,6 +33,32 @@ use rekindle_types::id::PseudonymKey;
 
 use super::HostGovernance;
 
+/// How far one barrier round got: the known ring peers asked and the
+/// answers it had (for the phase log line).
+#[derive(Debug, Default)]
+struct RoundCounts {
+    ring: usize,
+    answers: usize,
+}
+
+/// `value`, with a debug line naming the round's `exit` when it is `None`
+/// (a round with no verdict, or a ring peer that gave no answer).
+fn noted<T>(value: Option<T>, community: &str, exit: &'static str) -> Option<T> {
+    if value.is_none() {
+        tracing::debug!(community, exit, "unlock barrier round: no value");
+    }
+    value
+}
+
+/// The phase as the log line names it.
+fn phase_name(phase: BarrierPhase) -> &'static str {
+    match phase {
+        BarrierPhase::CatchingUp => "catching_up",
+        BarrierPhase::Passed => "passed",
+        BarrierPhase::Restored(_) => "restored",
+    }
+}
+
 impl HostGovernance {
     /// Start `community_id`'s barrier rounds once per unlock (the stage
     /// re-runs on a reconnect; the first loop keeps going).
@@ -50,25 +76,37 @@ impl HostGovernance {
             });
     }
 
-    /// Run rounds until the barrier passes or detects a restore.
+    /// Run rounds until the barrier passes or detects a restore. Each phase
+    /// change is logged at info with the round's ring size and answers, so
+    /// a real-app run shows the barrier (the windows see `CatchUpView`).
     async fn barrier_rounds(&self, community: &str, barrier: Arc<UnlockBarrier>) {
+        let mut shown = None;
         loop {
-            barrier.complete(self.barrier_round(community).await);
+            let mut counts = RoundCounts::default();
+            barrier.complete(self.barrier_round(community, &mut counts).await);
+            let phase = barrier.phase();
+            if shown != Some(phase) {
+                shown = Some(phase);
+                tracing::info!(
+                    community,
+                    phase = phase_name(phase),
+                    ring = counts.ring,
+                    answers = counts.answers,
+                    "unlock barrier phase"
+                );
+            }
             let view = barrier.view().unwrap_or(CatchUpView {
                 catching_up: false,
                 pending: Vec::new(),
             });
             self.emit_catch_up(community, view);
-            match barrier.phase() {
+            match phase {
                 BarrierPhase::CatchingUp => {
                     barrier
                         .next_round(rekindle_transport::operations::direct::CALL_DEADLINE)
                         .await;
                 }
-                BarrierPhase::Passed => {
-                    tracing::info!(community, "unlock barrier passed");
-                    return;
-                }
+                BarrierPhase::Passed => return,
                 BarrierPhase::Restored(fact) => {
                     tracing::warn!(
                         community,
@@ -81,29 +119,54 @@ impl HostGovernance {
         }
     }
 
-    /// One round's verdict; `None` keeps catching up.
-    async fn barrier_round(&self, community: &str) -> Option<BarrierPhase> {
-        let state = self.governance_state_impl(community)?;
+    /// One round's verdict; `None` keeps catching up. `counts` gets the
+    /// ring's size and the answers as far as the round got.
+    async fn barrier_round(
+        &self,
+        community: &str,
+        counts: &mut RoundCounts,
+    ) -> Option<BarrierPhase> {
+        let state = noted(self.governance_state_impl(community), community, "state")?;
         // No device key held: nothing was ever signed under a `d` of ours.
-        let Some(secret) = self.device_op_key(community).ok()? else {
+        let Some(secret) = noted(self.device_op_key(community).ok(), community, "device key")?
+        else {
             return Some(BarrierPhase::Passed);
         };
         let d = SigningKey::from_bytes(&secret).verifying_key().to_bytes();
         let store = GovernanceRuntimeDeps::op_store(self);
-        let held = store.governance_ops(community).await.ok()?;
+        let held = noted(
+            store.governance_ops(community).await.ok(),
+            community,
+            "held ops",
+        )?;
         // This copy's signed head, never the highest held op of `d` (the
         // sweep stores our own ops that peers echo back).
-        let local_head = unlock_barrier::local_head(&*store, community, &d)
-            .await
-            .ok()?;
-        let dht_head = self.own_dht_head(community, &state, &d, local_head).await?;
-        let (me, _) = op_log::own_pseudonym(self, community).ok()?;
+        let local_head = noted(
+            unlock_barrier::local_head(&*store, community, &d)
+                .await
+                .ok(),
+            community,
+            "local head",
+        )?;
+        let dht_head = noted(
+            self.own_dht_head(community, &state, &d, local_head).await,
+            community,
+            "dht head",
+        )?;
+        let (me, _) = noted(
+            op_log::own_pseudonym(self, community).ok(),
+            community,
+            "pseudonym",
+        )?;
         let ring = ring_successors(community, &state, &me, RING_K);
-        let signer = derive_community_pseudonym(&self.identity_secret_impl()?, community);
+        counts.ring = ring.len();
+        let secret = noted(self.identity_secret_impl(), community, "identity secret")?;
+        let signer = derive_community_pseudonym(&secret, community);
         let asks = ring
             .iter()
             .map(|record| self.peer_seq(community, record, &signer, &d, &held));
         let answers: Vec<Option<u64>> = join_all(asks).await.into_iter().flatten().collect();
+        counts.answers = answers.len();
         judge_round(&BarrierRound {
             local_head,
             dht_head,
@@ -157,11 +220,23 @@ impl HostGovernance {
         d: &[u8; 32],
         held: &[HeldOp],
     ) -> Option<Option<u64>> {
-        let peer = self.author_of_record(community, record)?;
-        let route = self.member_route(community, &peer).await?;
-        let answer = frontier_exchange::request_frontier(self, &route, community, signer)
-            .await
-            .ok()?;
+        let peer = noted(
+            self.author_of_record(community, record),
+            community,
+            "ring author",
+        )?;
+        let route = noted(
+            self.member_route(community, &peer).await,
+            community,
+            "member route",
+        )?;
+        let answer = noted(
+            frontier_exchange::request_frontier(self, &route, community, signer)
+                .await
+                .ok(),
+            community,
+            "frontier request",
+        )?;
         let mut seed = held.to_vec();
         seed.extend(answer.heads);
         let walked = op_walk::walk_seeded(self, community, &answer.frontier.heads, seed)

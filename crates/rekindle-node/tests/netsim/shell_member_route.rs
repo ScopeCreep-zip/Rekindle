@@ -19,7 +19,7 @@ use crate::shell_node::SimMode;
 
 /// A community of `n` whose node `shell` is a desktop-mode member; every
 /// other node is a daemon, node 0 the creator. All have joined.
-async fn with_shell_member(n: usize, shell: usize, seed: u64) -> Community {
+pub(crate) async fn with_shell_member(n: usize, shell: usize, seed: u64) -> Community {
     let mode = |i| {
         if i == shell {
             SimMode::Shell
