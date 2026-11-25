@@ -62,6 +62,7 @@ fn in_window(span: NodeSpan, before: u16, after: u16) -> NodeSpan {
             start: start.saturating_add(b),
             end: end.saturating_add(a),
         },
+        share @ NodeSpan::Share { .. } => share.share_through(0, |f| in_window(f, before, after)),
     }
 }
 
@@ -145,12 +146,12 @@ fn lay(
     refs.insert(window_name.to_ascii_lowercase(), whole);
     let both = (&refs, &Sizes::new());
     let x = in_window(
-        axis(&placed, &X, width, None, both)?,
+        axis(&placed, &X, width, None, (false, true), both)?,
         outsets.left,
         outsets.right,
     );
     let y = in_window(
-        axis(&placed, &Y, min_height, None, both)?,
+        axis(&placed, &Y, min_height, None, (false, true), both)?,
         outsets.top,
         outsets.bottom,
     );
@@ -182,7 +183,7 @@ fn lay(
         images: &mut walk.images,
         files: &mut walk.files,
     };
-    clip(&mut tree.root, (None, None), &mut art)?;
+    clip(&mut tree.root, ((None, None), [Some(0); 2]), &mut art)?;
     super::content::restore(&mut tree, held)?;
     built.1.extend(walk.files);
     let layout = PopupLayout {

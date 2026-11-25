@@ -26,6 +26,9 @@ import InviteToRoomModal from "../../components/chat/InviteToRoomModal";
 import GameLobbyCard from "../../components/chat/GameLobbyCard";
 import { subscribeGroupChatEvents } from "../../handlers/group-dm.handlers";
 import type { Message } from "../../stores/chat.store";
+import { SlotMount } from "../../components/skin-tree/slots";
+import SkinTreeWindow from "../../components/skin-tree/SkinTreeWindow";
+import { skinShell } from "../../hooks/useSkin";
 
 /// The chat window's group mode (plan E2.6): the group's stored history
 /// (`group_dm_messages`) with members' messages as they arrive, its members
@@ -107,7 +110,14 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
 
   return (
     <>
-      <Titlebar title={`Chat — ${name()}`} showMaximize />
+      {/* A pack's chat tree (plan SK17-2) draws the window; the group's name
+       *  is its chatTitle; without one, the app's titlebar. */}
+      <Show when={skinShell("chat")} keyed fallback={<Titlebar title={`Chat — ${name()}`} showMaximize />}>
+        {(shell) => <SkinTreeWindow shell={shell} views={() => null} communities={() => null} chatTitle={name} />}
+      </Show>
+      {/* The group's own controls (members, timer, rename, invite, leave, its
+       *  lobby) stay reachable: above the messages, in the chat area. */}
+      <SlotMount slot="chatArea">
       <div class="group-chat-header">
         <ul
           class="group-chat-members"
@@ -172,37 +182,44 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
       <Show when={held()}>
         <GameLobbyCard groupId={groupId} memberNames={memberNames()} />
       </Show>
+      </SlotMount>
       <div id="main-content" tabindex="-1" class="window-main">
-        <MessageList
-          messages={messages()}
-          ownName={authState.displayName ?? "You"}
-          peerName={name()}
-          memberNames={memberNames()}
-          onRetry={(id) => void handleRetryGroupSend(groupId, id)}
-          onDiscard={(id) => void handleDiscardGroupSend(groupId, id)}
-          onReply={(m) => setReplying(m)}
-          historyReady={historyReady()}
-        />
-        <TypingIndicator isTyping={typingNames().length > 0} peerName={typingNames().join(", ")} />
+        <SlotMount slot="chatArea">
+          <MessageList
+            messages={messages()}
+            ownName={authState.displayName ?? "You"}
+            peerName={name()}
+            memberNames={memberNames()}
+            onRetry={(id) => void handleRetryGroupSend(groupId, id)}
+            onDiscard={(id) => void handleDiscardGroupSend(groupId, id)}
+            onReply={(m) => setReplying(m)}
+            historyReady={historyReady()}
+          />
+        </SlotMount>
+        <SlotMount slot="typingNotice">
+          <TypingIndicator isTyping={typingNames().length > 0} peerName={typingNames().join(", ")} />
+        </SlotMount>
         {/* A group send waits until our identity is published (plan E2.5
          *  FC3); the composer says so while it is not. */}
-        <OwnRecordsWait active={true} />
-        <MessageInput
-          label={`Message ${name()}`}
-          peerId={groupId}
-          onSend={(_, body, replyToId) => void send(body, replyToId ?? null)}
-          replyTo={(() => {
-            const m = replying();
-            if (!m?.serverMessageId) return null;
-            const senderName = m.isOwn ? (authState.displayName ?? "You") : (memberNames()[m.senderId] ?? name());
-            return { senderName, body: m.body, messageId: m.serverMessageId };
-          })()}
-          onDismissReply={() => setReplying(null)}
-          sendButton
-          onDraftChanged={(body) => handleGroupDraftChanged(groupId, body)}
-          disabled={!held()}
-          disabledMessage="You can send once you are in this group."
-        />
+        <SlotMount slot="chatEdit">
+          <OwnRecordsWait active={true} />
+          <MessageInput
+            label={`Message ${name()}`}
+            peerId={groupId}
+            onSend={(_, body, replyToId) => void send(body, replyToId ?? null)}
+            replyTo={(() => {
+              const m = replying();
+              if (!m?.serverMessageId) return null;
+              const senderName = m.isOwn ? (authState.displayName ?? "You") : (memberNames()[m.senderId] ?? name());
+              return { senderName, body: m.body, messageId: m.serverMessageId };
+            })()}
+            onDismissReply={() => setReplying(null)}
+            sendButton
+            onDraftChanged={(body) => handleGroupDraftChanged(groupId, body)}
+            disabled={!held()}
+            disabledMessage="You can send once you are in this group."
+          />
+        </SlotMount>
         <Show when={!group()}>
           <div class="empty-placeholder-subtitle" role="status">
             This group is not in your list.

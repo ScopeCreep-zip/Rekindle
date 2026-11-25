@@ -1,7 +1,7 @@
 import { Component, For, createSignal, createEffect, Show } from "solid-js";
 import SkinGlyph from "../common/SkinGlyph";
 import { Popover } from "@kobalte/core/popover";
-import { canSend, handleDraftChanged, handleKeyDown, sendDraft } from "../../actions/chat.actions";
+import { canSend } from "../../actions/chat.actions";
 import { handleUploadAttachment } from "../../actions/community.actions";
 import EmojiPicker from "./EmojiPicker";
 import ReplyPreview from "./ReplyPreview";
@@ -10,6 +10,7 @@ import { useMentionAutocomplete } from "./message_input/useMentionAutocomplete";
 import { useVoiceRecorder } from "./message_input/useVoiceRecorder";
 import { useSlowmode } from "./message_input/useSlowmode";
 import type { MessageInputProps } from "./message_input/types";
+import { SlotMount } from "../skin-tree/slots";
 
 const ICON_MIC = "\u{F036C}"; // nf-md-microphone
 const ICON_MIC_OFF = "\u{F036D}"; // nf-md-microphone_off
@@ -80,23 +81,15 @@ const MessageInput: Component<MessageInputProps> = (props) => {
       return;
     }
 
-    if (props.onSend) {
-      if (e.key === "Enter" && !e.shiftKey) {
-        e.preventDefault();
-        send();
-      }
-    } else {
-      handleKeyDown(e, props.peerId, getBody, clearInput);
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      send();
     }
   }
 
   /** Send the draft as Enter does (the Send button's action). */
   function send(): void {
     if (slowmode.effectiveDisabled()) return;
-    if (!props.onSend) {
-      sendDraft(props.peerId, getBody, clearInput);
-      return;
-    }
     const text = getBody();
     if (canSend(text)) {
       props.onSend(props.peerId, text, props.replyTo?.messageId);
@@ -112,9 +105,7 @@ const MessageInput: Component<MessageInputProps> = (props) => {
     // Recompute mention picker query from the new caret position.
     mentions.recomputeOnInput(target.value, target.selectionStart ?? target.value.length);
     props.onTyping?.();
-    // The 1:1 chat (no `onSend`) reports its draft for the typing indicator.
-    if (props.onDraftChanged) props.onDraftChanged(target.value);
-    else if (!props.onSend) handleDraftChanged(props.peerId, target.value);
+    props.onDraftChanged?.(target.value);
   }
 
   function insertEmoji(value: string): void {
@@ -235,17 +226,19 @@ const MessageInput: Component<MessageInputProps> = (props) => {
           {/* Xfire's chat window has a Send button (plan E7.7.7, CLAUDE.md
            * "1:1 Xfire look"); Enter still sends. */}
           <Show when={props.sendButton && !props.editMode}>
-            <button
-              class="message-input-send-btn"
-              type="button"
-              disabled={!canSend(body())}
-              onClick={() => {
-                send();
-                textareaRef?.focus();
-              }}
-            >
-              Send
-            </button>
+            <SlotMount slot="chatSend">
+              <button
+                class="message-input-send-btn"
+                type="button"
+                disabled={!canSend(body())}
+                onClick={() => {
+                  send();
+                  textareaRef?.focus();
+                }}
+              >
+                <span class="message-input-send-label">Send</span>
+              </button>
+            </SlotMount>
           </Show>
           {/* Architecture §28.5 — mention autocomplete popover.
            * Implements the ARIA combobox listbox pattern (2026-canon):

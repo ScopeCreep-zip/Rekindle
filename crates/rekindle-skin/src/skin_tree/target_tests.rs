@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 
-use rekindle_types::dto::skin::WindowLayout;
+use rekindle_types::dto::skin::{SkinWindow, WindowLayout};
 use rekindle_types::dto::skin_action::{SkinAction, SkinEvent};
 use rekindle_types::dto::skin_tree::{Edge, NodeRole, NodeTarget, SkinNode, SkinTree, TargetRule};
 
@@ -14,7 +14,7 @@ use super::tests::{acts, fixed, layout, n};
 use super::{css, target, validate};
 use crate::{builtin, images, manifest, package};
 
-fn button(id: &str, (x, y): (i16, i16), (w, h): (u16, u16)) -> SkinNode {
+pub(super) fn button(id: &str, (x, y): (i16, i16), (w, h): (u16, u16)) -> SkinNode {
     acts(
         n(id, NodeRole::Button, fixed(x, w), fixed(y, h)),
         SkinEvent::Click,
@@ -23,18 +23,18 @@ fn button(id: &str, (x, y): (i16, i16), (w, h): (u16, u16)) -> SkinNode {
 }
 
 /// A 200 x 300 window holding `root`, its targets set as the Host serves.
-fn laid(root: Vec<SkinNode>) -> WindowLayout {
+pub(super) fn laid(root: Vec<SkinNode>) -> WindowLayout {
     let mut l = layout(Some(SkinTree { outsets: Z, root }));
     target::nodes(&mut l);
     l
 }
 
-fn target_of(l: &WindowLayout, id: &str) -> Option<NodeTarget> {
+pub(super) fn target_of(l: &WindowLayout, id: &str) -> Option<NodeTarget> {
     let tree = l.tree.as_ref().unwrap();
     tree.root.iter().find(|n| n.id == id).unwrap().target
 }
 
-fn sheet(l: &WindowLayout) -> String {
+pub(super) fn sheet(l: &WindowLayout) -> String {
     css::tree_css(".f", l.tree.as_ref().unwrap(), l, &BTreeMap::new(), "x").unwrap()
 }
 
@@ -125,14 +125,6 @@ fn laid_pair(at: (i16, i16), size: (u16, u16)) -> Vec<target::Laid> {
     let mut l = target::targets(&tree, (200, 300));
     l.reverse();
     l
-}
-
-#[test]
-fn a_node_already_24_px_is_unchanged() {
-    let l = laid(vec![button("Big", (50, 10), (24, 30))]);
-    assert_eq!(target_of(&l, "Big"), None);
-    let out = sheet(&l);
-    assert!(out.contains("[data-skin-node=\"Big\"] {\n    position: absolute; left: 50px; width: 24px; top: 10px; height: 30px; z-index: 0;\n  }"), "{out}");
 }
 
 /// Every built-in's interactive nodes, per window and popup: no two target
@@ -307,7 +299,10 @@ fn covered(tree: &SkinTree, window: (i32, i32)) -> Vec<String> {
                 || up.contains(&m.id.as_str())
                 || apart.apart(&l.id, &m.id)
                 || (!grip && (inside(*mb, *lb) || at(*mb, c)))
-                || (grip && (stack.yields(&m.id, &l.id) || in_hole(&m.id, c)));
+                || (grip && (stack.yields(&m.id, &l.id) || in_hole(&m.id, c)))
+                // A grip that serves every trigger of `l` (the system menu
+                // it takes from a frame strip) answers `l`'s press itself.
+                || (grip && !l.triggers.is_empty() && l.triggers.iter().all(|t| m.triggers.contains(t)));
             if skip {
                 continue;
             }
@@ -424,25 +419,30 @@ fn every_builtin_grip_is_a_served_target() {
                         );
                     }
                     if b.id == "spacecowboy" && popup.is_empty() {
-                        cowboy.push((g.laid.id.clone(), g.laid.rule));
+                        cowboy.push((*window, g.laid.id.clone(), g.laid.rule));
                     }
                 }
             }
         }
     }
-    // SpaceCowboy's four resize edges and its corner grip (its frame
-    // corners and side pieces are drag areas, no control): each band lies
-    // on the window's frame side, clear of the list's small controls.
-    let rule = |id: &str| cowboy.iter().find(|(g, _)| g == id).map(|(_, r)| *r);
-    assert_eq!(cowboy.len(), 5, "{cowboy:?}");
-    for (id, want) in [
-        ("ResizeLeft", TargetRule::Size),
-        ("ResizeRight", TargetRule::Size),
-        ("ResizeUp", TargetRule::Size),
-        ("ResizeDown", TargetRule::Size),
-        ("BRGripper", TargetRule::Size),
-    ] {
-        assert_eq!(rule(id), Some(want), "{id}: {cowboy:?}");
+    // SpaceCowboy's four resize edges and its corner grip, in its buddy
+    // list and in its chat window alike (`chatwindow.xml` lays the same
+    // five; its frame corners and side pieces are drag areas, no control):
+    // each band lies on the window's frame side, clear of the small
+    // controls.
+    for window in [SkinWindow::Main, SkinWindow::Chat] {
+        let of: Vec<_> = cowboy.iter().filter(|(w, ..)| *w == window).collect();
+        let rule = |id: &str| of.iter().find(|(_, g, _)| g == id).map(|(.., r)| *r);
+        assert_eq!(of.len(), 5, "{window:?}: {of:?}");
+        for (id, want) in [
+            ("ResizeLeft", TargetRule::Size),
+            ("ResizeRight", TargetRule::Size),
+            ("ResizeUp", TargetRule::Size),
+            ("ResizeDown", TargetRule::Size),
+            ("BRGripper", TargetRule::Size),
+        ] {
+            assert_eq!(rule(id), Some(want), "{window:?} {id}: {of:?}");
+        }
     }
 }
 

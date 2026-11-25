@@ -224,7 +224,7 @@ impl Reach {
         for (dep, names) in module_imports(path, &src) {
             if owned(&dep) || is_under(&dep, "src/components") {
                 self.file(&dep, owned, w);
-            } else if is_under(&dep, "src/stores") {
+            } else if is_under(&dep, "src/stores") || is_under(&dep, "src/actions") {
                 for name in names {
                     self.function(&dep, &name, w);
                 }
