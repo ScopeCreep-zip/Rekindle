@@ -143,6 +143,11 @@ mod tests {
             vec![key(1), key(3)],
             "the creator reads everything, @everyone is denied, the role overwrite allows, a ban removes"
         );
+        assert!(is_restricted(&state, &channel), "@everyone is denied");
+        assert!(
+            !is_restricted(&state, &ChannelId([8; 16])),
+            "no overwrite on the other channel"
+        );
         assert_eq!(
             channel_read_roster(&state, &ChannelId([8; 16]), &[key(2)]),
             vec![key(2)],

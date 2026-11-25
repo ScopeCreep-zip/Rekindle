@@ -91,6 +91,30 @@ fn own_card_view(
     (shown, card.display_name, card.custom_status)
 }
 
+/// Why we cannot read `channel` (hex) of `c`, in the Host's words; none
+/// when our effective permissions there include `VIEW_CHANNELS`, or before
+/// the first merge.
+pub(crate) fn channel_lock(c: &CommunityState, channel: &str, now_secs: u64) -> Option<String> {
+    use rekindle_governance::permissions::{compute_permissions, is_restricted};
+    use rekindle_types::permissions::VIEW_CHANNELS;
+    let gov = c.governance_state.as_ref()?;
+    let me = (c.my_pseudonym_key.as_deref())
+        .and_then(|hex| hex::decode(hex).ok()?.try_into().ok())
+        .map(PseudonymKey)?;
+    let id = hex::decode(channel)
+        .ok()
+        .and_then(|b| <[u8; 16]>::try_from(b).ok())
+        .map(rekindle_types::id::ChannelId)?;
+    if compute_permissions(&me, Some(&id), gov, now_secs) & VIEW_CHANNELS != 0 {
+        return None;
+    }
+    Some(if is_restricted(gov, &id) {
+        "This channel is limited to roles you don't hold.".into()
+    } else {
+        "You don't have permission to view this channel.".into()
+    })
+}
+
 fn community_view(
     c: &CommunityState,
     own_card: (String, Option<String>, Option<String>),
@@ -108,7 +132,8 @@ fn community_view(
         channels: c
             .channels
             .iter()
-            .map(|channel| CommunityChannelView {
+            .map(|channel| (channel, channel_lock(c, &channel.id, now_secs)))
+            .map(|(channel, lock)| CommunityChannelView {
                 id: channel.id.clone(),
                 name: channel.name.clone(),
                 channel_type: channel.channel_type.to_string(),
@@ -120,6 +145,8 @@ fn community_view(
                 slowmode_seconds: channel.slowmode_seconds,
                 notification_level: channel.notification_level.clone(),
                 notification_sound_ref: channel.notification_sound_ref.clone(),
+                locked: lock.is_some(),
+                locked_reason: lock.unwrap_or_default(),
             })
             .collect(),
         categories: c
@@ -153,6 +180,7 @@ fn community_view(
         op_publications: std::collections::BTreeMap::new(),
         device_status: rekindle_types::dto::community::DeviceStatus::Enrolled,
         catch_up: None,
+        key_status: rekindle_types::dto::community::KeyStatus::default(),
     }
 }
 
@@ -326,6 +354,10 @@ impl HostGovernance {
             view.catch_up = self.ctx.communities.unlock_barriers().view(&view.id);
             if view.removed.is_none() {
                 view.device_status = self.device_status(&view.id);
+            }
+            let held = self.held_community_generation(&view.id);
+            if let Some(c) = self.ctx.communities.map().read().get(&view.id) {
+                view.key_status = super::key_status::key_status(c, held);
             }
         }
         if let Some(ops) = self.ctx.outbox.governance_ops() {

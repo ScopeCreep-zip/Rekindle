@@ -72,6 +72,61 @@ pub struct VoiceMessageAudioView {
     pub waveform: Vec<u8>,
 }
 
+/// Why a stored message's body could not be read: only the cases the
+/// Host can tell apart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum UndecryptableReason {
+    /// The author's signed outbox entry names a key generation we hold,
+    /// and its body does not open under it: the ciphertext is damaged.
+    /// (A body some other sender forged cannot reach this: the entry's
+    /// signature is checked under its author before the body is opened.)
+    Damaged,
+}
+
+impl UndecryptableReason {
+    /// The stored form (`messages.undecryptable_reason`).
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Damaged => "damaged",
+        }
+    }
+
+    /// The stored form back; `None` for any other text.
+    #[must_use]
+    pub fn parse(stored: &str) -> Option<Self> {
+        (stored == "damaged").then_some(Self::Damaged)
+    }
+
+    /// What every frontend tells the user, in the Host's words.
+    #[must_use]
+    pub const fn text(self) -> &'static str {
+        match self {
+            Self::Damaged => {
+                "This message could not be read: it is damaged and does not open under the key it names."
+            }
+        }
+    }
+}
+
+/// A message stored without its body, and why (`UndecryptableReason`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Undecryptable {
+    pub reason: UndecryptableReason,
+    pub reason_text: String,
+}
+
+impl From<UndecryptableReason> for Undecryptable {
+    fn from(reason: UndecryptableReason) -> Self {
+        Self {
+            reason,
+            reason_text: reason.text().to_owned(),
+        }
+    }
+}
+
 /// One channel message.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -85,6 +140,10 @@ pub struct ChannelMessageView {
     /// must not render `body` as the sender's words.
     #[serde(default)]
     pub decryption_failed: bool,
+    /// Why the stored body could not be read, when the Host knows
+    /// (`decryption_failed` is then set too).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub undecryptable: Option<Undecryptable>,
     #[serde(default)]
     pub automod_blurred: bool,
     pub timestamp: i64,

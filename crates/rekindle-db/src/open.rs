@@ -278,7 +278,9 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// as carried, served whether or not the parent is held.
 /// 163 (plan E3.2 S7d-keys.8): `communities.departing`, a leave that took effect locally
 /// before its `MemberLeft` was signed.
-pub const SCHEMA_VERSION: i64 = 163;
+/// 164 (plan FX3 follow-up KP): `messages.undecryptable_reason`, a channel message stored without
+/// its body (`'damaged'`): its signed outbox entry names a key we hold and the body does not open.
+pub const SCHEMA_VERSION: i64 = 164;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

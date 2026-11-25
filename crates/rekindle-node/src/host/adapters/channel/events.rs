@@ -31,6 +31,7 @@ impl HostChannel {
                 forwarded_from_name: self
                     .forward_name(&echo.community_id, echo.forwarded_from_author.as_deref()),
                 automod_blurred: false,
+                undecryptable: None,
             },
         ));
     }

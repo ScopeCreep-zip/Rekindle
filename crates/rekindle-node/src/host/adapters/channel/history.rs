@@ -99,7 +99,10 @@ pub(crate) fn stored_view(
         id: row.id,
         sender_id: row.sender_key,
         body: row.body,
-        decryption_failed: false,
+        decryption_failed: row.undecryptable_reason.is_some(),
+        undecryptable: (row.undecryptable_reason.as_deref())
+            .and_then(rekindle_types::dto::channel_message::UndecryptableReason::parse)
+            .map(rekindle_types::dto::channel_message::Undecryptable::from),
         automod_blurred: row.automod_blurred,
         timestamp: row.timestamp,
         is_own,

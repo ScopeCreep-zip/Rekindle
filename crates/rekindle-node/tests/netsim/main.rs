@@ -95,6 +95,7 @@ mod join_from_hint;
 mod join_reads_outboxes;
 mod join_withdrawn;
 mod key_drop;
+mod key_status_after_unlock;
 mod kick_rotates_once;
 mod kicked_slot_write;
 mod left_quiet;
