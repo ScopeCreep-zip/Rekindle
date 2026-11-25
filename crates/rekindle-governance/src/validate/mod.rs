@@ -60,6 +60,16 @@ pub fn well_formed(
     // that let the creator violate them would diverge from what other
     // peers compute.
     match entry {
+        // An overwrite names its target by the one canonical key readers
+        // look up (`OverwriteTarget`); any other spelling applies to no
+        // one, so it is malformed, the creator's included.
+        GovernanceEntry::PermissionOverwrite {
+            target_type,
+            target_id,
+            ..
+        } if crate::overwrite::OverwriteTarget::parse(target_type, target_id).is_none() => {
+            return false;
+        }
         // Self-authored only. If the creator could forge a request in
         // someone else's name, "pending members" would stop meaning
         // "people who asked".

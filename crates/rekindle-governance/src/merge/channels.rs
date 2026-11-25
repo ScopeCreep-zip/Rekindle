@@ -1,6 +1,7 @@
 //! `merge` channels CRDT apply rules.
 
 use crate::op::OpStamp;
+use crate::overwrite::OverwriteTarget;
 
 use super::{CategoryState, ChannelState, GovernanceEntry, GovernanceState, OverwriteState};
 
@@ -108,7 +109,12 @@ pub(super) fn apply_channels(entry: &GovernanceEntry, stamp: OpStamp, state: &mu
             allow,
             deny,
         } => {
-            let key = (*channel_id, target_id.clone());
+            // One canonical target key for writer, merge and readers;
+            // a target that is not one is no overwrite (reader-validates).
+            let Some(target) = OverwriteTarget::parse(target_type, target_id) else {
+                return;
+            };
+            let key = (*channel_id, target.key());
             let existing_stamp = state.overwrites.get(&key).map_or(OpStamp::MIN, |o| o.stamp);
             if stamp > existing_stamp {
                 state.overwrites.insert(
