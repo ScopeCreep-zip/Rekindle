@@ -10,7 +10,7 @@
 
 import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, waitUntil } from "../../../walk/helpers.ts";
-import { type Peer, peerCreateCommunity, peerInvite, peerJoinCommunity, peerMemberCount, peerPostChannel, startFleet, stopFleet } from "../../fleet.ts";
+import { type Peer, peerCreateCommunity, peerInvite, peerJoinCommunity, peerMemberCount, peerPostChannel, peerReviewed, startFleet, stopFleet } from "../../fleet.ts";
 import { createIdentity, joinCommunity, newUser, openCommunity, selectChannel, type User } from "../../journeys.ts";
 import { shot } from "../../shots.ts";
 
@@ -19,19 +19,6 @@ const COMMUNITY = `Roster Hall ${Date.now() % 100000}`;
 const VIEW = "0x1";
 const DEN_POST = `den post ${Date.now()}`;
 const VAULT_POST = `vault post ${Date.now()}`;
-
-/**
- * Run `args` once as `peer`: a reviewed command refuses without its
- * confirmation and names it, and is run again with it; a command with no
- * review has already run (fleet `peerReviewed` would run it twice).
- */
-async function once(peer: Peer, args: string[]): Promise<void> {
-  const refused = (await peer.review(args)) as { error?: { message?: string } } | null;
-  if (refused === null) return;
-  const subject = /--confirm=(.+)$/.exec(refused?.error?.message ?? "")?.[1]?.trim();
-  if (!subject) throw new Error(`${peer.displayName}: ${args.join(" ")} refused: ${JSON.stringify(refused).slice(0, 300)}`);
-  await peer.cli([`--confirm=${subject}`, ...args]);
-}
 
 /** `peer`'s pseudonym in `anchor` (community info's `ourPseudonym`). */
 async function peerPseudonym(peer: Peer, anchor: string): Promise<string> {
@@ -83,8 +70,8 @@ async function channelId(peer: Peer, anchor: string, name: string): Promise<stri
 
 /** Cara restricts `channel` to `member` (VIEW denied to @everyone, allowed to the member). */
 async function restrict(cara: Peer, anchor: string, channel: string, member: string): Promise<void> {
-  await once(cara, ["community", "channel", "overwrite", "set", "-c", anchor, "-C", channel, "--target", "everyone", "--deny", VIEW]);
-  await once(cara, ["community", "channel", "overwrite", "set", "-c", anchor, "-C", channel, "--target", `member:${member}`, "--allow", VIEW]);
+  await peerReviewed(cara, ["community", "channel", "overwrite", "set", "-c", anchor, "-C", channel, "--target", "everyone", "--deny", VIEW]);
+  await peerReviewed(cara, ["community", "channel", "overwrite", "set", "-c", anchor, "-C", channel, "--target", `member:${member}`, "--allow", VIEW]);
 }
 
 /** The open community window's channel row `name`: listed, locked (with its words), and what the open channel shows. */
@@ -115,8 +102,8 @@ describe("a restricted channel's key goes only to its roster (FX3)", function ()
     await joinCommunity(browser, me, await peerInvite(cara, anchor, 1), COMMUNITY);
     await peerJoinCommunity(bea, await peerInvite(cara, anchor, 1));
     await waitUntil(async () => (await peerMemberCount(cara, anchor)) >= 3, NET_WAIT_MS * 2, "Cara never counted three members");
-    await once(cara, ["channel", "create", "-c", anchor, "-n", "den"]);
-    await once(cara, ["channel", "create", "-c", anchor, "-n", "vault"]);
+    await peerReviewed(cara, ["channel", "create", "-c", anchor, "-n", "den"]);
+    await peerReviewed(cara, ["channel", "create", "-c", anchor, "-n", "vault"]);
     const den = await channelId(cara, anchor, "den");
     const vault = await channelId(cara, anchor, "vault");
     await restrict(cara, anchor, den, await ourPseudonym(anchor));
