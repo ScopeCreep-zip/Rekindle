@@ -135,8 +135,23 @@ describe("the Communities view's row: Open / Leave / New in every pack (CB1)", f
       await browser.closeWindow();
       await switchTo(browser, BUDDY);
 
-      // 4. Leave: the Host's leave intent asks first (cancelled here).
+      // 4. Leave: the Host's leave intent asks first (cancelled here). Back
+      // from the community window, the row is still selected and Leave
+      // usable (logged, then required), and what the press answered is
+      // logged and shot: a dialog, a toast, or the row gone.
+      const backLeave = await node(NODES.leave);
+      const backSelected = (await browser.execute(() => !!document.querySelector(".community-item-selected"))) as boolean;
+      console.log(`[cb] ${file} back from Open: leave ${JSON.stringify(backLeave)}, row selected ${backSelected}`);
+      expect(backLeave.disabled).toBe(false);
       await pressNode(NODES.leave);
+      await browser.pause(3000);
+      const answered = (await browser.execute(() => ({
+        dialogs: Array.from(document.querySelectorAll("[role=dialog],[role=alertdialog]")).map((d) => `${d.className}: ${(d.textContent ?? "").trim().slice(0, 80)}`),
+        toasts: Array.from(document.querySelectorAll(".toast, [data-toast], [role=status]")).map((t) => (t.textContent ?? "").trim().slice(0, 120)).filter(Boolean),
+        rows: document.querySelectorAll(".community-item").length,
+      }))) as { dialogs: string[]; toasts: string[]; rows: number };
+      console.log(`[cb] ${file} after Leave: ${JSON.stringify(answered)}`);
+      await shot("leave-pressed");
       await shown(browser, ".intent-dialog", NET_WAIT_MS);
       await shot("leave-intent");
       await press(browser, await shown(browser, ".intent-dialog .intent-dialog-actions button.sec-btn-secondary"));
