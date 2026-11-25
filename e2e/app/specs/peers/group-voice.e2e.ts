@@ -142,6 +142,46 @@ async function symbiosis(b: Browser, user: User): Promise<string> {
   return applySkin(b, user, pack.name);
 }
 
+/**
+ * Record, in `b`'s window from now on, every IPC call through
+ * `window.__TAURI_INTERNALS__.invoke` (its answer or refusal), every console
+ * warning and error, and every unhandled error or rejection (lead, gv10:
+ * proven against a press that works before it is trusted on Cancel).
+ */
+async function recordIpc(b: Browser): Promise<void> {
+  await b.execute(`if (!window.__gvCalls) {
+  window.__gvCalls = [];
+  const text = (a) => (a instanceof Error ? a.message : typeof a === "string" ? a : JSON.stringify(a));
+  const inner = window.__TAURI_INTERNALS__;
+  const original = inner.invoke.bind(inner);
+  inner.invoke = async (cmd, args, opts) => {
+    try {
+      const r = await original(cmd, args, opts);
+      if (!/skin_signals|get_network_status/.test(cmd)) window.__gvCalls.push(cmd + " -> " + JSON.stringify(r).slice(0, 300));
+      return r;
+    } catch (e) {
+      window.__gvCalls.push(cmd + " !! " + JSON.stringify(e).slice(0, 300));
+      throw e;
+    }
+  };
+  for (const level of ["warn", "error"]) {
+    const o = console[level].bind(console);
+    console[level] = (...args) => { window.__gvCalls.push(level + ": " + args.map(text).join(" ")); o(...args); };
+  }
+  window.addEventListener("error", (e) => window.__gvCalls.push("uncaught: " + text(e.error ?? e.message)));
+  window.addEventListener("unhandledrejection", (e) => window.__gvCalls.push("unhandled rejection: " + text(e.reason)));
+}`);
+}
+
+/** What `recordIpc` saw since the last read (then cleared), and the toasts now shown. */
+async function ipcSeen(b: Browser): Promise<{ calls: string[]; toasts: string[] }> {
+  return (await b.execute(() => {
+    const w = window as unknown as { __gvCalls?: string[] };
+    const calls = w.__gvCalls ? w.__gvCalls.splice(0) : [];
+    return { calls, toasts: Array.from(document.querySelectorAll(".toast-item")).map((t) => (t.textContent ?? "").trim()) };
+  })) as { calls: string[]; toasts: string[] };
+}
+
 describe("a group's voice tab: Call, Join while its call rings, Leave once joined", function () {
   this.timeout(2_400_000);
   const alice = { ...newUser("alice"), displayName: "Alice" };
@@ -252,7 +292,12 @@ describe("a group's voice tab: Call, Join while its call rings, Leave once joine
     const a = multiRemoteBrowser.getInstance("alice");
     const b = multiRemoteBrowser.getInstance("bob");
     const leave = await voiceTab(b, "Bob", "Leave");
+    // The recorder proven on a press that works (Leave) before Cancel's.
+    await recordIpc(b);
+    await ipcSeen(b);
     await pressNode(b, leave.id);
+    await b.pause(3000);
+    console.log(`[gv] Bob after Leave (recorder check): ${JSON.stringify(await ipcSeen(b))}`);
     await voiceTab(b, "Bob (after Leave)", "Call");
     await voiceTab(a, "Alice (call ended)", "Call");
     await shot("call-ended");
@@ -277,23 +322,9 @@ describe("a group's voice tab: Call, Join while its call rings, Leave once joine
     const cancel = await voiceTab(b, "Bob (ringing)", "Cancel");
     expect(await voiceNode(b, "Leave")).toBeNull();
     await shot("own-ring-cancel-tab");
-    // Lead (gv8 5/6): what Cancel's press answered on Bob's side: the
-    // run_skin_action answer and every command after it, and the toasts.
-    await b.execute(`if (!window.__gvCalls) {
-  window.__gvCalls = [];
-  const inner = window.__TAURI_INTERNALS__;
-  const original = inner.invoke.bind(inner);
-  inner.invoke = async (cmd, args, opts) => {
-    try {
-      const r = await original(cmd, args, opts);
-      if (!/skin_signals|get_network_status/.test(cmd)) window.__gvCalls.push(cmd + " -> " + JSON.stringify(r).slice(0, 300));
-      return r;
-    } catch (e) {
-      window.__gvCalls.push(cmd + " !! " + JSON.stringify(e).slice(0, 300));
-      throw e;
-    }
-  };
-}`);
+    // What Cancel's press answered on Bob's side (the recorder, proven on Leave above).
+    await recordIpc(b);
+    await ipcSeen(b);
     // Lead (gv9: no call at all after Cancel): what the press hits. The
     // element at Cancel's centre, and for the click and pointerdown events
     // their target, its nearest listening node ([data-skin-on], what the
@@ -324,11 +355,7 @@ describe("a group's voice tab: Call, Join while its call rings, Leave once joine
     await pressNode(b, cancel.id);
     await b.pause(3000);
     console.log(`[gv] Cancel press events: ${JSON.stringify(await b.execute(() => (window as unknown as { __gvPress?: string[] }).__gvPress ?? []))}`);
-    const afterCancel = (await b.execute(() => ({
-      calls: (window as unknown as { __gvCalls?: string[] }).__gvCalls ?? [],
-      toasts: Array.from(document.querySelectorAll(".toast-item")).map((t) => (t.textContent ?? "").trim()),
-    }))) as { calls: string[]; toasts: string[] };
-    console.log(`[gv] Bob after Cancel: ${JSON.stringify(afterCancel)}`);
+    console.log(`[gv] Bob after Cancel: ${JSON.stringify(await ipcSeen(b))}`);
     await voiceTab(a, "Alice (ring cancelled)", "Call");
     await voiceTab(b, "Bob (ring cancelled)", "Call");
     await shot("ring-cancelled");
