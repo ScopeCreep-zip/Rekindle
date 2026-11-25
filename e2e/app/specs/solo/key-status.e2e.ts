@@ -10,7 +10,7 @@
 
 import { browser } from "@wdio/globals";
 import { NET_WAIT_MS, waitUntil } from "../../../walk/helpers.ts";
-import { type Peer, peerCreateCommunity, peerInvite, peerJoinCommunity, peerKick, peerMemberCount, startFleet, stopFleet } from "../../fleet.ts";
+import { type Peer, peerCreateCommunity, peerInvite, peerJoinCommunity, peerKick, peerMemberCount, peerOwnPseudonym, startFleet, stopFleet } from "../../fleet.ts";
 import { createIdentity, joinCommunity, logOut, newUser, openCommunity, selectChannel, unlock, type User } from "../../journeys.ts";
 import { shot } from "../../shots.ts";
 
@@ -47,7 +47,8 @@ describe("a rotated key we lack: pending until a holder answers, then current", 
   it("while Ari is away Cara kicks Bea (the key rotates) and goes offline", async () => {
     const [cara] = peers;
     await logOut(browser, me);
-    await peerKick(cara, anchor, "Bea");
+    // The CLI kicks by pseudonym (the 64 hex community info serves).
+    await peerKick(cara, anchor, await peerOwnPseudonym(peers[1], anchor));
     await waitUntil(async () => (await peerMemberCount(cara, anchor)) === 2, NET_WAIT_MS * 2, "Cara never counted Bea gone");
     await cara.pause();
   });

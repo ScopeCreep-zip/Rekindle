@@ -10,7 +10,7 @@
 
 import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, waitUntil } from "../../../walk/helpers.ts";
-import { type Peer, peerCreateCommunity, peerInvite, peerJoinCommunity, peerMemberCount, peerPostChannel, peerReviewed, startFleet, stopFleet } from "../../fleet.ts";
+import { type Peer, peerCreateCommunity, peerInvite, peerJoinCommunity, peerMemberCount, peerOwnPseudonym, peerPostChannel, peerReviewed, startFleet, stopFleet } from "../../fleet.ts";
 import { createIdentity, joinCommunity, newUser, openCommunity, selectChannel, type User } from "../../journeys.ts";
 import { shot } from "../../shots.ts";
 
@@ -19,14 +19,6 @@ const COMMUNITY = `Roster Hall ${Date.now() % 100000}`;
 const VIEW = "0x1";
 const DEN_POST = `den post ${Date.now()}`;
 const VAULT_POST = `vault post ${Date.now()}`;
-
-/** `peer`'s pseudonym in `anchor` (community info's `ourPseudonym`). */
-async function peerPseudonym(peer: Peer, anchor: string): Promise<string> {
-  const info = (await peer.cli(["community", "info", "--community", anchor])) as { ourPseudonym?: string; our_pseudonym?: string } | null;
-  const key = info?.ourPseudonym ?? info?.our_pseudonym ?? "";
-  if (!/^[0-9a-f]{64}$/i.test(key)) throw new Error(`${peer.displayName}: community info served no pseudonym (${JSON.stringify(info).slice(0, 200)})`);
-  return key;
-}
 
 /** Ari's pseudonym in `anchor`, as the Host lists the community. */
 async function ourPseudonym(anchor: string): Promise<string> {
@@ -107,7 +99,7 @@ describe("a restricted channel's key goes only to its roster (FX3)", function ()
     const den = await channelId(cara, anchor, "den");
     const vault = await channelId(cara, anchor, "vault");
     await restrict(cara, anchor, den, await ourPseudonym(anchor));
-    await restrict(cara, anchor, vault, await peerPseudonym(bea, anchor));
+    await restrict(cara, anchor, vault, await peerOwnPseudonym(bea, anchor));
     await peerPostChannel(cara, anchor, den, DEN_POST);
     await peerPostChannel(cara, anchor, vault, VAULT_POST);
   });
