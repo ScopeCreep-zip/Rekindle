@@ -55,6 +55,8 @@ mod mek_transfer_tests;
 mod membership;
 #[path = "onboarding_bounds_tests.rs"]
 mod onboarding_bounds;
+#[path = "op_publications_tests.rs"]
+mod op_publications;
 #[path = "own_frontier_record_tests.rs"]
 mod own_frontier_record;
 #[path = "own_member_record_tests.rs"]

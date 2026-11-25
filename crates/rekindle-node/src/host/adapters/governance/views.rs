@@ -327,6 +327,26 @@ fn moderation_of(
     )
 }
 
+/// Where each of our ops of `community` not yet landed stands, by op hash
+/// (hex; the outbox's `governance_op` rows): the one source the window's
+/// view and the daemon's `community info` both read, so every frontend
+/// shows the same state. Empty while no outbox runs (locked).
+pub(crate) async fn op_publications(
+    ctx: &crate::daemon::dispatch::DaemonContext,
+    community: &str,
+) -> std::collections::BTreeMap<String, rekindle_types::subscription_events::OpPublicationState> {
+    let Some(ops) = ctx.outbox.governance_ops() else {
+        return std::collections::BTreeMap::new();
+    };
+    match ops.publications(community).await {
+        Ok(states) => states,
+        Err(error) => {
+            tracing::warn!(%error, "queued governance ops not read");
+            std::collections::BTreeMap::new()
+        }
+    }
+}
+
 impl HostGovernance {
     /// Every joined community, by name then id, with where each of our
     /// ops not yet landed stands (the outbox's `governance_op` rows).
@@ -360,13 +380,8 @@ impl HostGovernance {
                 view.key_status = super::key_status::key_status(c, held);
             }
         }
-        if let Some(ops) = self.ctx.outbox.governance_ops() {
-            for view in &mut views {
-                match ops.publications(&view.id).await {
-                    Ok(states) => view.op_publications = states,
-                    Err(error) => tracing::warn!(%error, "queued governance ops not read"),
-                }
-            }
+        for view in &mut views {
+            view.op_publications = op_publications(&self.ctx, &view.id).await;
         }
         views.sort_by(|a, b| a.name.cmp(&b.name).then_with(|| a.id.cmp(&b.id)));
         views

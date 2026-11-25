@@ -208,7 +208,7 @@ pub async fn dispatch(
                 ),
             ];
             let mut pairs = pairs;
-            pairs.push(("Standing", removal_text(value.get("removed"))));
+            pairs.extend(standing_rows(&value));
             table::print_kv_table(&pairs, mode)?;
             if *full {
                 print_full_info(&value, mode)?;
@@ -374,6 +374,49 @@ fn role_rows(roles: &[rekindle_types::display::RoleDisplay]) -> Vec<Vec<String>>
         .collect()
 }
 
+/// The info table's rows after the community's facts: our standing (plan
+/// E3.2 S9 R3-5) and our governance ops not yet landed.
+fn standing_rows(value: &serde_json::Value) -> [(&'static str, String); 2] {
+    [
+        ("Standing", removal_text(value.get("removed"))),
+        (
+            "Unlanded Ops",
+            publications_text(value.get("op_publications")),
+        ),
+    ]
+}
+
+/// Our governance ops not yet landed as info shows them
+/// (`CommunityDetail::op_publications`): "none", or how many stand pending
+/// and each failure's reason.
+fn publications_text(publications: Option<&serde_json::Value>) -> String {
+    let Some(states) = publications
+        .and_then(serde_json::Value::as_object)
+        .filter(|s| !s.is_empty())
+    else {
+        return "none".into();
+    };
+    let kind = |s: &serde_json::Value| s.get("kind").and_then(|k| k.as_str()).map(str::to_owned);
+    let pending = states
+        .values()
+        .filter(|s| kind(s).as_deref() == Some("pending"))
+        .count();
+    let failed: Vec<&str> = states
+        .values()
+        .filter(|s| kind(s).as_deref() == Some("failed"))
+        .map(|s| s.get("reason").and_then(|r| r.as_str()).unwrap_or(""))
+        .collect();
+    if failed.is_empty() {
+        format!("{pending} pending")
+    } else {
+        format!(
+            "{pending} pending, {} failed: {}",
+            failed.len(),
+            failed.join("; ")
+        )
+    }
+}
+
 /// A community's standing as list and info show it (plan E3.2 S9 R3-5):
 /// "member", or "removed"/"banned" with the remover's card name or short
 /// pseudonym when the merge names one.
@@ -510,6 +553,21 @@ async fn lifecycle(
 #[cfg(test)]
 mod removal_tests {
     use super::removal_text;
+
+    #[test]
+    fn info_shows_our_unlanded_ops() {
+        use serde_json::json;
+        assert_eq!(super::publications_text(None), "none");
+        assert_eq!(super::publications_text(Some(&json!({}))), "none");
+        let states = json!({
+            "aa": { "kind": "pending" },
+            "bb": { "kind": "failed", "reason": "removed" },
+        });
+        assert_eq!(
+            super::publications_text(Some(&states)),
+            "1 pending, 1 failed: removed"
+        );
+    }
 
     #[test]
     fn standing_names_who_removed_us() {
