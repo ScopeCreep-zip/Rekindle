@@ -149,9 +149,16 @@ export function subscribeCommunityPresenceEvents(): Promise<UnlistenFn> {
     const observed = subject(event);
     if (observed === null) return;
     const { key, snapshot, isSelf } = observed;
-    if (isSelf) return;
     // Nothing observed that this view renders.
     if (snapshot.status === null && snapshot.game === null) return;
+    if (isSelf) {
+      // Our own presence changed (AA1): each community's member list is read
+      // again, and the Host builds our row there from its one own-presence
+      // source (views.rs), status and group alike; nothing is written here.
+      if (snapshot.status === null) return;
+      for (const communityId of Object.keys(communityState.communities)) refreshCommunityMembers(communityId);
+      return;
+    }
 
     // A community member event names its own community, so only that
     // one needs scanning. A friend event carries no community, so every

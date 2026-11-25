@@ -9,9 +9,15 @@
 //! - `TAURI_WEBDRIVER_PORT` ([`tauri_plugin_wdio_webdriver::PORT_ENV_VAR`]):
 //!   the loopback port the driver binds, chosen per run;
 //! - `REKINDLE_WDIO_TOKEN`: the run's bearer token, which the vendored
-//!   driver requires on every request (its `server/auth.rs`).
+//!   driver requires on every request (its `server/auth.rs`);
+//! - [`IDLE_SECONDS_ENV`], when set: the idle time the Host reads, fixed
+//!   (0 for the specs), since the driver's input never resets the
+//!   machine's own idle time and auto-away would fire mid-run.
+
+use std::sync::Arc;
 
 use rekindle_db::paths::DataRoot;
+use rekindle_utils::IdleSource;
 use tauri::plugin::TauriPlugin;
 use tauri::Runtime;
 
@@ -47,4 +53,38 @@ pub fn plugin<R: Runtime>() -> TauriPlugin<R> {
         .filter(|p| *p != 0)
         .expect("TAURI_WEBDRIVER_PORT must name the walk's loopback port");
     tauri_plugin_wdio_webdriver::init_with_port(port)
+}
+
+/// The variable fixing the idle time the Host reads, in seconds.
+pub const IDLE_SECONDS_ENV: &str = "REKINDLE_WDIO_IDLE_SECONDS";
+
+/// An idle time the walk fixed.
+#[derive(Debug, Clone, Copy)]
+struct FixedIdle(u64);
+
+impl IdleSource for FixedIdle {
+    fn idle_seconds(&self) -> Option<u64> {
+        Some(self.0)
+    }
+}
+
+/// The Host's idle port, read once at startup: [`IDLE_SECONDS_ENV`]'s
+/// fixed time when it is set, the operating system's otherwise.
+///
+/// # Errors
+/// The variable is set but is not a whole number of seconds: the app
+/// refuses to start.
+pub fn idle_source() -> Result<Arc<dyn IdleSource>, String> {
+    match std::env::var(IDLE_SECONDS_ENV) {
+        Err(std::env::VarError::NotPresent) => Ok(Arc::new(rekindle_idle::OsIdle)),
+        Err(std::env::VarError::NotUnicode(_)) => Err(format!(
+            "{IDLE_SECONDS_ENV} must be a whole number of seconds"
+        )),
+        Ok(value) => match value.parse::<u64>() {
+            Ok(secs) => Ok(Arc::new(FixedIdle(secs))),
+            Err(e) => Err(format!(
+                "{IDLE_SECONDS_ENV}={value:?} must be a whole number of seconds: {e}"
+            )),
+        },
+    }
 }

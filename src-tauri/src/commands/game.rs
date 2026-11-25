@@ -22,6 +22,15 @@ pub async fn get_game_status(
     })
 }
 
+/// Our presence as the Host holds it (`IpcRequest::PresenceGet`): the one
+/// source every window hydrates our status from (plan E7.4).
+#[tauri::command]
+pub async fn get_own_presence(
+    state: State<'_, SharedState>,
+) -> Result<Done<OwnPresenceView>, CommandError> {
+    host_call::call(&state, IpcRequest::PresenceGet).await
+}
+
 /// Resolve a numeric game ID to a human-readable game name from the bundled database.
 #[tauri::command]
 pub async fn get_game_name(game_id: u32) -> Option<String> {

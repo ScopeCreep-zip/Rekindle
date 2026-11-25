@@ -41,6 +41,12 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
     let root = crate::webdriver::data_root()?;
     #[cfg(not(all(feature = "webdriver-test", debug_assertions)))]
     let root = rekindle_db::paths::DataRoot::resolve()?;
+    // The Host's idle port, read once here; the walk's build may fix it
+    // (`REKINDLE_WDIO_IDLE_SECONDS`, `webdriver.rs`), and a bad value stops the launch.
+    #[cfg(all(feature = "webdriver-test", debug_assertions))]
+    let idle = crate::webdriver::idle_source()?;
+    #[cfg(not(all(feature = "webdriver-test", debug_assertions)))]
+    let idle: Arc<dyn rekindle_utils::IdleSource> = Arc::new(rekindle_idle::OsIdle);
     let claimed = match rekindle_node::host::claim(root.clone()) {
         Ok(claimed) => claimed,
         Err(e) => {
@@ -184,7 +190,7 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
             Ok(update_rx) => {
                 // The host runs in-process over the adopted node (plan
                 // D3.1) and serves the bus the TUI and CLI attach to.
-                if let Err(e) = start_host(&state_for_veilid, claimed).await {
+                if let Err(e) = start_host(&state_for_veilid, claimed, idle).await {
                     tracing::error!(error = %e, "host did not start");
                     exit_with_error(&app_handle_clone, &e);
                     return;
@@ -222,6 +228,7 @@ pub fn run(app: &tauri::App, state: &SharedState) -> Result<(), Box<dyn std::err
 async fn start_host(
     state: &SharedState,
     claimed: rekindle_node::host::ClaimedRoot,
+    idle: Arc<dyn rekindle_utils::IdleSource>,
 ) -> Result<(), String> {
     let node = state
         .transport
@@ -238,7 +245,7 @@ async fn start_host(
         serve_bus: true,
         clock: Arc::clone(&state.clock),
         rng: Arc::clone(&state.rng),
-        idle: Arc::new(rekindle_idle::OsIdle),
+        idle,
         server_query: std::sync::Arc::new(rekindle_game_detect::server_query::UdpServerQuery),
         shell: Some(shell),
     })

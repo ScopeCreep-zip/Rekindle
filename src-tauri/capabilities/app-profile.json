@@ -6,6 +6,7 @@
     "profile-*"
   ],
   "permissions": [
+    "allow-get-own-presence",
     "allow-clear-identity-verification",
     "allow-get-friend-game-totals",
     "allow-get-safety-number",

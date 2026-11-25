@@ -58,7 +58,7 @@ mod history_order_tests;
 #[cfg(test)]
 mod horizon_tests;
 pub mod identity;
-mod idle;
+pub(crate) mod idle;
 pub(crate) mod infoview;
 #[cfg(test)]
 mod infoview_tests;

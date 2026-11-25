@@ -1,5 +1,6 @@
 import { commands } from "../ipc/commands";
 import { setAuthState } from "./auth.store";
+import type { UserStatus } from "./auth.store";
 import { fetchAvatarUrl } from "../ipc/avatar";
 import { friendsState, setFriendsState } from "./friends.store";
 import { reconcile } from "solid-js/store";
@@ -28,12 +29,17 @@ export async function hydrateState(): Promise<void> {
     const identity = await commands.getIdentity();
     if (identity) {
       const avatarUrl = await fetchAvatarUrl(identity.publicKey);
+      // Our status from the Host's own presence, the one source every
+      // window reads (an auto-away or a pick made before this window
+      // opened, or before a stream resync, is never reset to Online).
+      const presence = await commands.getOwnPresence();
       setAuthState({
         isLoggedIn: true,
         publicKey: identity.publicKey,
         displayName: identity.displayName,
         avatarUrl,
-        status: "online",
+        status: presence.status as UserStatus,
+        statusMessage: presence.statusMessage || null,
       });
     }
   } catch (e) {

@@ -3,7 +3,7 @@
 
 import { expect } from "@wdio/globals";
 import type { Browser } from "webdriverio";
-import { NETWORK_LABEL, NET_WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, switchTo, typeAndSend, typeInto, untilPublished, waitForHandle, waitUntil } from "../walk/helpers.ts";
+import { NET_WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, switchTo, typeAndSend, typeInto, untilPublished, waitForHandle, waitUntil } from "../walk/helpers.ts";
 import { BUDDY, LOGIN, closeModal, closeSettings, inBuddy, menu, openAddFriend, openSettings, setValue, submitJoin, underTree } from "../walk/nav.ts";
 import { showSkinView, skinViewShown } from "./journeys_skins.ts";
 import type { User } from "./user.ts";
@@ -14,9 +14,9 @@ export * from "./journeys_skins.ts";
 /**
  * Create `user` on a first-run app: the Host makes the keys, vault and
  * database, Create waits for the Veilid node, and the buddy list opens
- * under the new name.
+ * under the new name. Auto-away is then turned off unless `keepAutoAway`.
  */
-export async function createIdentity(b: Browser, user: User): Promise<void> {
+export async function createIdentity(b: Browser, user: User, opts: { keepAutoAway?: boolean } = {}): Promise<void> {
   await switchTo(b, LOGIN, NET_WAIT_MS);
   // First run opens the create form without the account picker
   // (LoginWindow.tsx); the button is there only once identities exist.
@@ -34,7 +34,8 @@ export async function createIdentity(b: Browser, user: User): Promise<void> {
   // name): the tree's name field, or the app's own bar.
   const name = (await underTree(b)) ? '[data-skin-role="nameField"] .skin-name-text' : ".identity-bar-name";
   await expect(b.$(name)).toHaveText(expect.stringContaining(user.displayName), { wait: 10_000 });
-  await autoAwayOff(b, user);
+  // The auto-away spec (AA1) keeps it on, to watch it fire and be turned off.
+  if (!opts.keepAutoAway) await autoAwayOff(b, user);
 }
 
 /** Settings > Application's auto-away select. */
@@ -191,20 +192,29 @@ export async function seesMessage(b: Browser, who: User, text: string): Promise<
   }
 }
 
-/** The buddy list's network indicator reads "Connected" (NetworkIndicator.tsx): a DHT write may land. */
+/**
+ * The Host accepts writes: a DHT write may land. Read from the Host's own
+ * network state (`get_network_status`: attached, public internet ready, and
+ * its lifecycle's `canWrite`), never inferred from text a window draws (our
+ * presence can read Away or Appear Offline while attached or detached).
+ */
 async function whenConnected(b: Browser): Promise<void> {
   await inBuddy(b);
-  // Under a skin's tree the status field says the network state while
-  // detached (StatusField.tsx, N1) and our status ("Online") once attached.
-  const tree = await underTree(b);
+  let last = "";
   await waitUntil(
-    async () =>
-      tree
-        ? ((await (await b.$('[data-skin-role="statusText"] .skin-status-edit')).getAttribute("placeholder")) ?? "") === "Online"
-        : (await (await b.$(NETWORK_LABEL)).getText()).trim() === "Connected",
+    async () => {
+      const s = (await b.execute(async () => {
+        const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: (cmd: string) => Promise<unknown> } };
+        return (await w.__TAURI_INTERNALS__!.invoke("get_network_status")) as { isAttached: boolean; publicInternetReady: boolean; canWrite: boolean };
+      })) as { isAttached: boolean; publicInternetReady: boolean; canWrite: boolean };
+      last = JSON.stringify(s);
+      return s.isAttached && s.publicInternetReady && s.canWrite;
+    },
     NET_WAIT_MS,
-    tree ? "the skin's status field never said Online" : "the network indicator never said Connected",
-  );
+    "",
+  ).catch(() => {
+    throw new Error(`the Host never accepted writes (network status: ${last})`);
+  });
 }
 
 /**
