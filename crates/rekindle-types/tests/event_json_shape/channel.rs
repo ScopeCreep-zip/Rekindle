@@ -81,6 +81,8 @@ pub fn samples() -> Vec<Sample> {
                 timestamp: 1_760_000_000_001,
                 body: None,
                 reply_to_message_id: None,
+                forwarded_from_author: None,
+                forwarded_from_name: None,
                 automod_blurred: false,
                 undecryptable: Some(
                     rekindle_types::dto::channel_message::UndecryptableReason::Damaged.into(),

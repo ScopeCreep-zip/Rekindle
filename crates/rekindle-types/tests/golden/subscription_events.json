@@ -319,6 +319,8 @@
         "body": null,
         "channel": "ch_cccccccccccccccccccccccccccccccc",
         "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "forwardedFromAuthor": null,
+        "forwardedFromName": null,
         "messageId": "msg_22222222222222222222222222222222",
         "replyToMessageId": null,
         "senderPseudonym": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",

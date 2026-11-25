@@ -515,6 +515,10 @@ impl HostChannel {
         };
         self.store_received(owner, &db, post.clone(), row).await?;
         tracing::warn!(community = %post.community_id, channel = %post.channel_id, generation, "channel post stored unreadable: its body does not open under the key it names");
+        // The forward's original author, as the stored row holds it and
+        // history serves it.
+        let forwarded_from_name =
+            self.forward_name(&post.community_id, post.forwarded_from_author.as_deref());
         self.ctx().publish_event(SubscriptionEvent::ChannelMessage(
             ChannelMessageEvent::New {
                 community: post.community_id,
@@ -525,6 +529,8 @@ impl HostChannel {
                 timestamp: post.message.timestamp,
                 body: None,
                 reply_to_message_id: post.message.reply_to,
+                forwarded_from_author: post.forwarded_from_author,
+                forwarded_from_name,
                 automod_blurred: false,
                 undecryptable: Some(reason.into()),
             },
