@@ -24,7 +24,7 @@ mod transfer;
 
 // Re-export all types so callers use `cli::Cli`, `cli::Command`, etc.
 pub use activity::{ActivityArgs, InfoviewCmd};
-pub use channel::{ChannelCmd, VoiceCmd};
+pub use channel::{ChannelCmd, CommunityChannelCmd, OverwriteCmd, VoiceCmd};
 pub use community::{CommunityCmd, InviteCmd, ModerateCmd, RoleCmd};
 pub use config::{ConfigCmd, ExportCmd, ImportCmd};
 pub use group_dm::GroupDmCmd;

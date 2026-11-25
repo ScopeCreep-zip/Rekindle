@@ -255,6 +255,10 @@ pub enum CommunityCmd {
     #[command(flatten)]
     Moderate(ModerateCmd),
 
+    /// Channel administration: permission overwrites.
+    #[command(subcommand)]
+    Channel(super::CommunityChannelCmd),
+
     /// Live-stream membership and governance events (joins, leaves,
     /// kicks and bans with their reason, roles, channels) until Ctrl-C.
     Watch {

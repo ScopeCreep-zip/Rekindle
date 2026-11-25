@@ -308,6 +308,7 @@ pub async fn dispatch(
         CommunityCmd::Invite(sub) => governance::dispatch_invite(sub, client, mode).await,
         CommunityCmd::Role(sub) => governance::dispatch_role(sub, client, mode).await,
         CommunityCmd::Moderate(sub) => governance::dispatch_moderate(sub, client, mode).await,
+        CommunityCmd::Channel(sub) => crate::channel_overwrite::dispatch(sub, client, mode).await,
         CommunityCmd::Watch { community } => {
             crate::community_watch::watch(client, community.as_deref(), mode).await
         }
