@@ -14,7 +14,7 @@ use rekindle_types::permissions::{
 use crate::state::GovernanceState;
 
 mod roster;
-pub use roster::channel_read_roster;
+pub use roster::{channel_read_roster, is_restricted};
 
 /// Whether `member` may rotate the community key under `state` — be
 /// elected rotator and write a `MEKGenerationBump` (plan D20). Evaluated

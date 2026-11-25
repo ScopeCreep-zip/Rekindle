@@ -208,3 +208,105 @@ async fn merged_joins_past_the_policy_raise_a_raid_alert() {
     );
     host.shutdown().await.unwrap();
 }
+
+/// FX3 d (register `audit-2026-10-23` FX3; Q6): the elected `RequestMEK`
+/// responder hands a restricted channel's key only to a member of that
+/// channel's read roster. A member the channel's `@everyone` overwrite
+/// shuts out is refused; one a role overwrite lets in passes the gate.
+#[tokio::test]
+async fn the_responder_refuses_a_restricted_channel_key_outside_its_roster() {
+    use std::collections::HashSet;
+
+    use rekindle_governance::state::{GovernanceState, MemberState, OverwriteState, RoleState};
+    use rekindle_types::id::{ChannelId, PseudonymKey, RoleId};
+    use rekindle_types::permissions::{DEFAULT_EVERYONE, VIEW_CHANNELS};
+
+    use crate::host::adapters::governance::MekRequest;
+
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    let owner = create_ann(&host).await.public_key;
+    seed_registry_community(&host, &owner).await;
+    let channel = ChannelId([9; 16]);
+    let outsider = PseudonymKey([2; 32]);
+    let insider = PseudonymKey([3; 32]);
+    let reader = RoleId([5; 16]);
+    let role = |permissions| RoleState {
+        name: "r".into(),
+        permissions,
+        position: 1,
+        color: 0,
+        hoist: false,
+        mentionable: false,
+        self_assignable: false,
+        exclusion_group: None,
+        stamp: rekindle_governance::fixture::stamp(1),
+    };
+    let overwrite = |allow, deny| OverwriteState {
+        target_type: "role".into(),
+        allow,
+        deny,
+        stamp: rekindle_governance::fixture::stamp(2),
+    };
+    let mut gov = GovernanceState::default();
+    gov.roles.insert(RoleId([0; 16]), role(DEFAULT_EVERYONE));
+    gov.roles.insert(reader, role(DEFAULT_EVERYONE));
+    gov.overwrites.insert(
+        (channel, format!("{:?}", RoleId([0; 16]))),
+        overwrite(0, VIEW_CHANNELS),
+    );
+    gov.overwrites.insert(
+        (channel, format!("{reader:?}")),
+        overwrite(VIEW_CHANNELS, 0),
+    );
+    gov.role_assignments
+        .insert(insider.clone(), HashSet::from([reader]));
+    for member in [&outsider, &insider] {
+        gov.members.insert(
+            member.clone(),
+            MemberState {
+                member_record: "r".into(),
+                member_record_owner: "o".into(),
+                joined: rekindle_governance::op::OpStamp::MIN,
+            },
+        );
+    }
+    {
+        let mut map = host.ctx.communities.map().write();
+        let c = map.get_mut("c1").unwrap();
+        c.my_pseudonym_key = Some(hex::encode([1; 32]));
+        c.governance_state = Some(gov);
+    }
+    let deps = crate::daemon::mek_rotation::DaemonMekAdapter::new(std::sync::Arc::clone(&host.ctx));
+    let governance = host.governance();
+    let ask = |requester: &PseudonymKey| MekRequest {
+        channel_id: KeyScope::Channel(channel).wire_channel_str(),
+        needed_generation: 0,
+        requester_pseudonym: hex::encode(requester.0),
+        cascade_index: 0,
+    };
+    let answer = |request: MekRequest| {
+        let governance = governance.clone();
+        let deps = &deps;
+        async move {
+            tokio::time::timeout(
+                std::time::Duration::from_secs(20),
+                governance.answer_mek_request(deps, "c1", &request),
+            )
+            .await
+        }
+    };
+    let refused = answer(ask(&outsider)).await;
+    assert!(
+        matches!(&refused, Ok(Err(e)) if e.contains("restricted channel's roster")),
+        "an outsider is refused the restricted channel's key: {refused:?}"
+    );
+    let passed = answer(ask(&insider)).await;
+    assert!(
+        !matches!(&passed, Ok(Err(e)) if e.contains("restricted channel's roster")),
+        "a roster member passes the gate: {passed:?}"
+    );
+    assert!(governance.reads_scope("c1", KeyScope::Community, &outsider));
+    assert!(governance.reads_scope("c1", KeyScope::Channel(ChannelId([8; 16])), &outsider));
+    host.shutdown().await.unwrap();
+}
