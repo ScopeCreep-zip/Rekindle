@@ -453,7 +453,7 @@ export async function peerReviewed(peer: Peer, args: string[]): Promise<unknown>
   const message = reviewed.refusal?.error?.message ?? "";
   const subject = /--confirm=(.+)$/.exec(message)?.[1]?.trim();
   if (subject) return peer.cli([`--confirm=${subject}`, ...args]);
-  if (/pass --yes/.test(message)) return peer.cli(["--yes", ...args]);
+  if (/pass --yes\b/.test(message)) return peer.cli(["--yes", ...args]);
   throw new Error(`${peer.displayName}: ${args.join(" ")} was refused: ${message || JSON.stringify(reviewed.refusal).slice(0, 300)}`);
 }
 
