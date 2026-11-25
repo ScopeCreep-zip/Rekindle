@@ -261,7 +261,25 @@ impl DaemonContext {
     /// `HostApi::call`: the sender's clearance (stamped by the bus server
     /// from the registry, or the shell's) must meet the request's (plan D1),
     /// and an agent's capabilities admit it.
+    /// A skin press is traced with what it mapped to and its answer
+    /// (finding OBS1, [`crate::host::skin::press_trace`]).
     pub(crate) async fn call(&self, request: IpcRequest, caller: &Caller) -> IpcResponse {
+        let press = crate::host::skin::press_trace::Press::of(&request);
+        let mut mapped = None;
+        let answer = self.call_resolved(request, caller, &mut mapped).await;
+        if let Some(press) = press {
+            press.trace(mapped.as_deref(), &answer);
+        }
+        answer
+    }
+
+    /// [`Self::call`]'s work; `mapped` gets what a skin action resolved to.
+    async fn call_resolved(
+        &self,
+        request: IpcRequest,
+        caller: &Caller,
+        mapped: &mut Option<String>,
+    ) -> IpcResponse {
         // A skin action that is a feature becomes its own request first
         // (plan SK2-A4), so that request meets its own clearance and gate.
         let reads = match crate::host::skin::reads::load(self, &self.skin.selection, &request).await
@@ -273,8 +291,14 @@ impl DaemonContext {
         // is the answer once the request is admitted.
         let (request, run) = match crate::host::skin::actions::resolve(&self.skin, &reads, request)
         {
-            Ok(Resolved::Request(request)) => (request, None),
-            Ok(Resolved::Run { request, run }) => (request, Some(run)),
+            Ok(Resolved::Request(request)) => {
+                *mapped = Some(crate::host::skin::press_trace::request_kind(&request));
+                (request, None)
+            }
+            Ok(Resolved::Run { request, run }) => {
+                *mapped = Some(crate::host::skin::press_trace::run_kind(&run));
+                (request, Some(run))
+            }
             Err(refused) => return refused,
         };
         let pressed_in = match &request {

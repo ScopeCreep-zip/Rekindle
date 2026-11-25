@@ -25,6 +25,7 @@ pub mod lifecycle; // Plan CE1 — local end first, durable CallEnd, consent.
 pub mod media_owner; // Plan CE2 — media is owned per call id.
 pub mod outbound; // Phase 14.n — caller-side entry points (start_dm_call, etc.).
 pub mod registry;
+mod trace; // Finding OBS1 — one info line per call operation.
 
 // Ring timers live on the deps trait:
 //   - Receiver-side: `CallSignalingDeps::spawn_incoming_call_timeout`
