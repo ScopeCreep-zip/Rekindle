@@ -22,7 +22,7 @@ const INGEST_CHANNEL: &str = "0123456789abcdef0123456789abcdef";
 const BEA: [u8; 32] = [0xbe; 32];
 
 fn governance(slowmode_seconds: Option<u32>) -> GovernanceState {
-    let mut gov = GovernanceState::default();
+    let mut gov = super::channel_gap_tests::everyone(GovernanceState::default());
     gov.channels.insert(
         ChannelId::from_hex(INGEST_CHANNEL).expect("channel id"),
         ChannelState {
@@ -118,7 +118,11 @@ async fn a_banned_author_is_dropped() {
 #[tokio::test]
 async fn a_timed_out_author_is_dropped_until_the_timeout_ends() {
     let dir = tempfile::tempdir().unwrap();
-    let (host, owner) = host_under(&dir, GovernanceState::default()).await;
+    let (host, owner) = host_under(
+        &dir,
+        super::channel_gap_tests::everyone(GovernanceState::default()),
+    )
+    .await;
     let now = host.ctx.clock.now_secs();
     let mut gov = governance(None);
     gov.timeouts.insert(
