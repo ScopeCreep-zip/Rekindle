@@ -14,6 +14,10 @@ use crate::group_state::{GroupCallState, GroupCallStatus};
 use crate::signaling::deps::CallSignalingDeps;
 use crate::signaling::event::CallSignalEvent;
 use crate::signaling::group_handlers::check_members;
+pub use crate::signaling::trace::{
+    accept_dm_call, accept_group_call, decline_dm_call, decline_group_call, end_dm_call,
+    end_group_call, start_dm_call, start_group_call,
+};
 use crate::state::{CallKind, CallState, CallStatus};
 use crate::X25519StaticSecret;
 use crate::{derive_call_key, fresh_keypair, short_pubkey_helper};
@@ -30,7 +34,7 @@ pub const RING_DURATION_MS: u64 = 30_000;
 /// the 30 s dialing timeout, fires `CallInvite` via app_message, emits
 /// `CallStarted` + `ConversationFocusRequested` so frontends seed the
 /// outgoing-call UI. Returns `call_id` on success.
-pub async fn start_dm_call<D: CallSignalingDeps + ?Sized>(
+pub(super) async fn start_dm_call_untraced<D: CallSignalingDeps + ?Sized>(
     deps: &D,
     peer_public_key: &str,
     kind: CallKind,
@@ -113,7 +117,7 @@ pub async fn start_dm_call<D: CallSignalingDeps + ?Sized>(
 /// `CallConnected` + `ConversationFocusRequested`. Distinct from
 /// `handle_accept_received` (caller-side handler of the peer's
 /// CallAccept reply).
-pub async fn accept_dm_call<D: CallSignalingDeps + ?Sized>(
+pub(super) async fn accept_dm_call_untraced<D: CallSignalingDeps + ?Sized>(
     deps: &D,
     call_id: &str,
 ) -> Result<(), CallError> {
@@ -217,7 +221,7 @@ pub async fn accept_dm_call<D: CallSignalingDeps + ?Sized>(
 /// W13.7 — receiver-side LOCAL decline. Drops the CallState entry
 /// + fires `CallDecline` envelope. Fire-and-forget send (the peer's
 /// state will GC via the dialing timeout if our envelope is lost).
-pub async fn decline_dm_call<D: CallSignalingDeps + ?Sized>(
+pub(super) async fn decline_dm_call_untraced<D: CallSignalingDeps + ?Sized>(
     deps: &D,
     call_id: &str,
     reason: Option<String>,
@@ -245,7 +249,7 @@ pub async fn decline_dm_call<D: CallSignalingDeps + ?Sized>(
 /// `CallEnded` retires the call window, voice stops; then `CallEnd` is
 /// committed to the outbox, which delivers it once the peer is reachable
 /// ([`crate::signaling::lifecycle`]).
-pub async fn end_dm_call<D: CallSignalingDeps + ?Sized>(
+pub(super) async fn end_dm_call_untraced<D: CallSignalingDeps + ?Sized>(
     deps: &D,
     call_id: &str,
     reason: Option<String>,
@@ -273,7 +277,7 @@ pub async fn end_dm_call<D: CallSignalingDeps + ?Sized>(
 /// # Errors
 /// [`CallError::GroupCallRefused`], [`CallError::NotInGroup`], or the
 /// identity or roster could not be read.
-pub async fn start_group_call<D: CallSignalingDeps + ?Sized>(
+pub(super) async fn start_group_call_untraced<D: CallSignalingDeps + ?Sized>(
     deps: &D,
     participant_pubkeys: Vec<String>,
     kind: CallKind,
@@ -372,7 +376,7 @@ pub async fn start_group_call<D: CallSignalingDeps + ?Sized>(
 /// emits `GroupCallConnected`. Voice session setup is W14
 /// follow-up — left to existing 1:1 voice flow until group-voice
 /// topology lands.
-pub async fn accept_group_call<D: CallSignalingDeps + ?Sized>(
+pub(super) async fn accept_group_call_untraced<D: CallSignalingDeps + ?Sized>(
     deps: &D,
     call_id: &str,
 ) -> Result<(), CallError> {
@@ -405,7 +409,7 @@ pub async fn accept_group_call<D: CallSignalingDeps + ?Sized>(
 
 /// W13.13 — receiver-side LOCAL decline of a group call. Drops the
 /// GroupCallState entry + fires `GroupCallDecline` to the initiator.
-pub async fn decline_group_call<D: CallSignalingDeps + ?Sized>(
+pub(super) async fn decline_group_call_untraced<D: CallSignalingDeps + ?Sized>(
     deps: &D,
     call_id: &str,
     reason: Option<String>,
@@ -435,7 +439,7 @@ pub async fn decline_group_call<D: CallSignalingDeps + ?Sized>(
 /// poll, dialing-timeout on the initiator's side, etc.). No
 /// explicit GroupCallEnd envelope today — matches the pre-Phase-14
 /// behavior.
-pub fn end_group_call<D: CallSignalingDeps + ?Sized>(
+pub(super) fn end_group_call_untraced<D: CallSignalingDeps + ?Sized>(
     deps: &D,
     call_id: &str,
     reason: Option<String>,
