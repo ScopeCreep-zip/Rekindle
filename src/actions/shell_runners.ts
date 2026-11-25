@@ -106,8 +106,11 @@ export function callOps(op: ShellOp): boolean {
       void handleEndGroupCall(call.arg.callId);
       return true;
     case "end": {
+      // The window's 1:1 call (active, or our own ring); with none, say so:
+      // the Host asked for an end this window has no call for.
       const active = callsState.activeCall ?? callsState.outgoingCall;
       if (active) void handleEndDmCall(active.callId);
+      else addToast("call end has no 1:1 call in this window", "error");
       return true;
     }
     default:

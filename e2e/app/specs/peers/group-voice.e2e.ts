@@ -277,7 +277,30 @@ describe("a group's voice tab: Call, Join while its call rings, Leave once joine
     const cancel = await voiceTab(b, "Bob (ringing)", "Cancel");
     expect(await voiceNode(b, "Leave")).toBeNull();
     await shot("own-ring-cancel-tab");
+    // Lead (gv8 5/6): what Cancel's press answered on Bob's side: the
+    // run_skin_action answer and every command after it, and the toasts.
+    await b.execute(`if (!window.__gvCalls) {
+  window.__gvCalls = [];
+  const inner = window.__TAURI_INTERNALS__;
+  const original = inner.invoke.bind(inner);
+  inner.invoke = async (cmd, args, opts) => {
+    try {
+      const r = await original(cmd, args, opts);
+      if (!/skin_signals|get_network_status/.test(cmd)) window.__gvCalls.push(cmd + " -> " + JSON.stringify(r).slice(0, 300));
+      return r;
+    } catch (e) {
+      window.__gvCalls.push(cmd + " !! " + JSON.stringify(e).slice(0, 300));
+      throw e;
+    }
+  };
+}`);
     await pressNode(b, cancel.id);
+    await b.pause(3000);
+    const afterCancel = (await b.execute(() => ({
+      calls: (window as unknown as { __gvCalls?: string[] }).__gvCalls ?? [],
+      toasts: Array.from(document.querySelectorAll(".toast-item")).map((t) => (t.textContent ?? "").trim()),
+    }))) as { calls: string[]; toasts: string[] };
+    console.log(`[gv] Bob after Cancel: ${JSON.stringify(afterCancel)}`);
     await voiceTab(a, "Alice (ring cancelled)", "Call");
     await voiceTab(b, "Bob (ring cancelled)", "Call");
     await shot("ring-cancelled");
