@@ -64,15 +64,43 @@ describe("the Communities view's row: Open / Leave / New in every pack (CB1)", f
       const href = await applySkin(browser, me, pack.name);
       await switchTo(browser, BUDDY);
       await skinShown(browser, href);
+      // Lead (CB2): does the Servers view's own row show on its page (the
+      // same slot-wrapper shape hid the Communities row)? Logged and shot.
+      await showSkinView(browser, "servers");
+      await browser.pause(1000);
+      const servers = (await browser.execute(() => {
+        const drawn = (e: Element): boolean => !e.closest("[hidden]") && e.getBoundingClientRect().width > 0;
+        const row = Array.from(document.querySelectorAll('[data-skin-role="buttonRow:servers"]')).find(drawn);
+        const buttons = row ? Array.from(row.querySelectorAll('[data-skin-role="button"]')).filter(drawn).map((b) => (b as HTMLElement).dataset.skinNode ?? "") : [];
+        return { row: !!row, buttons };
+      })) as { row: boolean; buttons: string[] };
+      console.log(`[cb] ${file} servers row: ${JSON.stringify(servers)}`);
+      await shot("servers-row");
+
       // The tree's Communities view, by its tab or a knob's stop (Combat):
       // showSkinView turns knobs; view keys are lowercase.
       await showSkinView(browser, "communities");
       await waitUntil(async () => (await node(NODES.open)).shown, NET_WAIT_MS, `${file}: the Communities row's Open is not drawn`);
 
       // 1. Nothing selected: Open and Leave drawn disabled (never-hide: drawn,
-      // and visibly not usable), New usable.
-      const before = { open: await node(NODES.open), leave: await node(NODES.leave), new: await node(NODES.new) };
-      console.log(`[cb] ${file} nothing selected: ${JSON.stringify(before)}`);
+      // and visibly not usable), New usable. Read once the window's signals
+      // are live (the tree draws before them, every node in its normal state),
+      // and allow the state triggers a moment to run.
+      await waitUntil(
+        async () => (await browser.$('.skin-tree[data-skin-signals="live"]').isExisting().catch(() => false)),
+        NET_WAIT_MS,
+        `${file}: the window's skin signals never went live`,
+      );
+      let before = { open: await node(NODES.open), leave: await node(NODES.leave), new: await node(NODES.new) };
+      await waitUntil(
+        async () => {
+          before = { open: await node(NODES.open), leave: await node(NODES.leave), new: await node(NODES.new) };
+          return before.open.disabled && before.leave.disabled;
+        },
+        10_000,
+        "",
+      ).catch(() => undefined);
+      console.log(`[cb] ${file} nothing selected (signals live): ${JSON.stringify(before)}`);
       await shot("nothing-selected");
       expect(before.open.shown && before.leave.shown && before.new.shown).toBe(true);
       expect(before.open.disabled).toBe(true);
