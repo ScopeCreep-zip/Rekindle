@@ -22,8 +22,9 @@ export interface Message {
   senderId: string;
   body: string;
   decryptionFailed?: boolean;
-  /** Stored without its body, and why; absent for a readable message. */
-  undecryptable?: Undecryptable;
+  /** Stored without its body, and why (KP: the Host's reason and its words,
+   *  shown in place of the body); absent or null for a readable message. */
+  undecryptable?: Undecryptable | null;
   automodBlurred?: boolean;
   timestamp: number;
   isOwn: boolean;

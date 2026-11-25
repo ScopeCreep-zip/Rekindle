@@ -69,7 +69,7 @@ export function transformMessage(m: IpcMessage): Message {
   return {
     id: m.id, senderId: m.senderId, body: decryptionFailed ? "" : m.body, timestamp: m.timestamp,
     isOwn: m.isOwn, serverMessageId: m.serverMessageId,
-    decryptionFailed, automodBlurred: m.automodBlurred ?? false,
+    decryptionFailed, undecryptable: m.undecryptable ?? null, automodBlurred: m.automodBlurred ?? false,
     reactions: m.reactions, pinned: m.pinned, poll: m.poll,
     forwardedFromAuthor: m.forwardedFromAuthor ?? null,
     forwardedFromName: m.forwardedFromName ?? null,
