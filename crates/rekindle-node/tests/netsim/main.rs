@@ -8,6 +8,7 @@ mod attachment_round_trip;
 mod audit;
 mod auto_away;
 mod backfill_gate;
+mod barrier;
 mod beat_engine;
 mod beat_expiry;
 mod beat_on_screen;

@@ -166,6 +166,8 @@ mod tests {
             tasks: None,
             leases: rekindle_records::lease::CommunityLeases::default(),
             loops_started: false,
+            departing: false,
+            departure_running: false,
             open_community_records: CommunityRecords {
                 governance_overflow_keys: overflow_keys,
                 ..CommunityRecords::default()

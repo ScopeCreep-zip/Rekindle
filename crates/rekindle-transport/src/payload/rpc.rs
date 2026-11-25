@@ -134,6 +134,12 @@ pub enum InboundCall {
     /// answers `CallResponse::Ok` with the encoded `checkpointHintResponse`
     /// envelope; anything else is a NAK.
     CheckpointHintRequest { request: Vec<u8> },
+    /// A member's frontier request (plan E3.2 S7d-keys.8, the unlock
+    /// barrier), bare: the encoded `FrontierRequest` its pseudonym signs.
+    /// The handler admits the signer only as a member and rate-limits it,
+    /// then answers `CallResponse::Ok` with the encoded `frontierResponse`
+    /// envelope; anything else is a NAK.
+    FrontierRequest { request: Vec<u8> },
 }
 
 /// Response from the handler to an inbound RPC.

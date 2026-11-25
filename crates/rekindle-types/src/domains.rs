@@ -186,6 +186,10 @@ labels! {
     /// endorsements (plan E3.2 S7c.5), by the asking member's or joiner's
     /// pseudonym, over `community ‖ height ‖ digest ‖ requester ‖ invite`.
     CHECKPOINT_HINT_REQUEST = "rekindle-checkpoint-hint-request-v1";
+    /// Ed25519 signature prefix: a member's frontier request to a ring
+    /// peer (plan E3.2 S7d-keys.8, the unlock barrier), by the asking
+    /// member's pseudonym, over `community ‖ requester`.
+    FRONTIER_REQUEST = "rekindle-frontier-request-v1";
     /// BLAKE3 `derive_key` context: a `Frontier`'s roster checksum over the
     /// canonical encoding of the merged roster and role tables (D15).
     GOV_ROSTER_CHECKSUM = "rekindle-gov-roster-checksum-v1";

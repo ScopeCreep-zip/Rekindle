@@ -313,16 +313,16 @@ impl HostGovernance {
                 outcome_of(&published)
             }
             // Bounded by the command's deadline (the client's
-            // `NETWORK_COMMAND_DEADLINE`, answered before it): the invite
-            // link, with its revoke-unless-landed row (review RV4 M3).
-            rekindle_governance_runtime::OpLanding::InviteLanded { invite_id } => {
+            // `NETWORK_COMMAND_DEADLINE`, answered before it; shared with the
+            // barrier's wait in line): the link, with its revoke row (RV4 M3).
+            rekindle_governance_runtime::OpLanding::InviteLanded { invite_id, .. } => {
                 let published = ops
                     .publish_invite_created(
                         community_id,
                         &record,
                         encoded,
                         invite_id,
-                        rekindle_types::config::NETWORK_ANSWER_DEADLINE,
+                        landing.remaining(),
                     )
                     .await
                     .map_err(|e| adapter("publish op", e))?;

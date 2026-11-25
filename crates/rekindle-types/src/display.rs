@@ -60,6 +60,11 @@ pub struct CommunityDetail {
     /// Set when we were removed: the community is read-only history.
     #[serde(default)]
     pub removed: Option<CommunityRemovalDisplay>,
+    /// Set while the unlock barrier holds our governance writes (plan
+    /// E3.2 S7d-keys.8), so a window opened mid-barrier shows them; the
+    /// same view `GovernanceEvent::CatchUp` sends on every change.
+    #[serde(default)]
+    pub catch_up: Option<crate::display_catch_up::CatchUpView>,
 }
 
 // ── Channel ─────────────────────────────────────────────────────────────

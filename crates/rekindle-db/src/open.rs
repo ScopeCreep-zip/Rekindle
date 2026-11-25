@@ -276,7 +276,9 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// 161 (plan E7.2 G6): `group_lobbies` and `group_lobby_members`, each group's game lobbies.
 /// 162 (owed item GD): `messages.reply_to_client_id`, a DM's or group DM's parent client id
 /// as carried, served whether or not the parent is held.
-pub const SCHEMA_VERSION: i64 = 162;
+/// 163 (plan E3.2 S7d-keys.8): `communities.departing`, a leave that took effect locally
+/// before its `MemberLeft` was signed.
+pub const SCHEMA_VERSION: i64 = 163;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

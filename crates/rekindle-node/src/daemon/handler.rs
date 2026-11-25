@@ -360,6 +360,25 @@ impl InboundHandler for DaemonHandler {
                         CallResponse::Ok,
                     )
             }
+            InboundCall::FrontierRequest { request } => {
+                // A member's frontier request (plan E3.2 S7d-keys.8, the
+                // unlock barrier): only an admitted member, rate-limited per
+                // requester; a refusal is a NAK.
+                let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) else {
+                    return CallResponse::Rejected {
+                        reason: "no host".into(),
+                    };
+                };
+                crate::host::adapters::governance::HostGovernance::new(ctx)
+                    .answer_frontier(&request)
+                    .await
+                    .map_or_else(
+                        || CallResponse::Rejected {
+                            reason: "frontier not served".into(),
+                        },
+                        CallResponse::Ok,
+                    )
+            }
         }
     }
 

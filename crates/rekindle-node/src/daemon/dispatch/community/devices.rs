@@ -90,6 +90,7 @@ fn answer(
         Ok(outcome) => IpcResponse::ok(&serde_json::json!({
             field: device_key,
             "pending": outcome == OpOutcome::Pending,
+            "heldOpId": outcome.held_op_id(),
         })),
         Err(e @ GovernanceRuntimeError::DeviceActRefused(_)) => {
             IpcResponse::error(409, e.to_string())

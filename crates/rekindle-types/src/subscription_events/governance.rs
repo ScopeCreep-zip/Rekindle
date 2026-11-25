@@ -68,6 +68,16 @@ pub enum GovernanceEvent {
         state: OpPublicationState,
     },
 
+    /// The unlock barrier (plan E3.2 S7d-keys.8): whether it is catching
+    /// up and every governance write it holds, in full on every change (no
+    /// deltas); cleared by one `catching_up: false, pending: []`, after
+    /// which each op's own events follow as usual.
+    CatchUp {
+        community: String,
+        catching_up: bool,
+        pending: Vec<crate::display_catch_up::PendingGovOp>,
+    },
+
     /// The role table changed — the full new table, not a delta.
     RolesChanged {
         community: String,
@@ -260,6 +270,7 @@ impl GovernanceEvent {
             Self::MetadataChanged { community, .. }
             | Self::ChannelsChanged { community, .. }
             | Self::OpPublication { community, .. }
+            | Self::CatchUp { community, .. }
             | Self::RolesChanged { community, .. }
             | Self::SegmentsChanged { community, .. }
             | Self::BansChanged { community }

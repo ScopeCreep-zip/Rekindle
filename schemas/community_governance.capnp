@@ -410,6 +410,19 @@ struct CheckpointStateRequest {
     inviteTag            @7 :Data;
 }
 
+# A member asks a ring peer for its frontier (plan E3.2 S7d-keys.8, the
+# unlock barrier), in `frontierRequest @83`, signed by the requester's
+# pseudonym under `rekindle-frontier-request-v1` over
+# `community ‖ requester`. Only an admitted member is answered, at the
+# `headAdvanced` handler's per-requester rate; the answer is the
+# responder's own `Frontier` (governance_op.capnp), in
+# `frontierResponse @84`.
+struct FrontierRequest {
+    community            @0 :Text;
+    requester            @1 :Data;          # 32 bytes
+    sig                  @2 :Data;          # 64 bytes
+}
+
 # A request for a usable checkpoint hint (plan E3.2 S7c.5), in ControlPayload
 # `checkpointHintRequest @79`: with `height` 0 the hint selected at the
 # greatest height, else the usable hint at `height` carrying `digest` (a

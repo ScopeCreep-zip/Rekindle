@@ -106,6 +106,7 @@ mod thread_events;
 
 mod checkpoint_rows;
 mod checkpoint_state;
+mod frontier;
 mod head_advanced;
 pub mod moderation;
 mod op_store;
@@ -115,6 +116,7 @@ pub(crate) mod slot_heads;
 mod state_builder;
 pub(crate) mod state_mutations;
 mod state_reads;
+mod unlock_barrier_loop;
 pub(crate) mod unread;
 mod views;
 mod watch;

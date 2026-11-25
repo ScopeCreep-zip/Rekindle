@@ -186,6 +186,7 @@ impl CommunityStore {
         self.follow_ups.lock().clear();
         self.card_refreshes.lock().clear();
         self.member_cards.write().clear();
+        self.barriers.clear();
     }
 }
 

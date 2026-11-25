@@ -189,6 +189,11 @@ pub struct CommunityView {
     /// another device); the window offers `CommunityDeviceEnrol`.
     #[serde(default)]
     pub device_status: DeviceStatus,
+    /// The unlock barrier's view while it holds our governance writes
+    /// (plan E3.2 S7d-keys.8): what a window opened mid-barrier reads at
+    /// load; later changes arrive as `GovernanceEvent::CatchUp`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catch_up: Option<crate::display_catch_up::CatchUpView>,
 }
 
 /// This device's standing in a community ([`CommunityView::device_status`]).

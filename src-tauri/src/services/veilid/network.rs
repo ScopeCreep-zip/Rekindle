@@ -167,6 +167,18 @@ async fn community_call(
                     None => NAK.to_vec(),
                 }
             }
+            Some(ControlPayload::FrontierRequest { request }) => {
+                // A member's frontier request (plan E3.2 S7d-keys.8): only an
+                // admitted member, rate-limited per requester; else a NAK.
+                match state.host.current() {
+                    Some(host) => host
+                        .governance()
+                        .answer_frontier(&request)
+                        .await
+                        .unwrap_or_else(|| NAK.to_vec()),
+                    None => NAK.to_vec(),
+                }
+            }
             Some(ControlPayload::MekTransfer(transfer)) => {
                 // The Host's one receive path (plan E3.1, CB3 glue audit), the
                 // daemon's too: membership and removal checks, unwrap, install

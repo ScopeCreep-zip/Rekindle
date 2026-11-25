@@ -691,5 +691,13 @@ struct ControlPayload @0xeaffffff00000001 {
         # The inviter refused the joiner's MemberJoined, and why (plan E3.2
         # join step 5): the joiner withdraws its join and tells the user.
         bootstrapRefused         @82 :BootstrapRefusedPayload;
+        # A member's frontier request and its answer (plan E3.2
+        # S7d-keys.8, the unlock barrier): an encoded `FrontierRequest`
+        # (community_governance.capnp) the asking member's pseudonym signs,
+        # and the responder's own encoded `Frontier` (governance_op.capnp:
+        # at most 64 heads, the roster checksum and fork refs, no fork
+        # proof ops), under the 32,768 B app_call cap.
+        frontierRequest          @83 :Data;
+        frontierResponse         @84 :Data;
     }
 }

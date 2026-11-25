@@ -39,6 +39,8 @@ mod community_info;
 mod expression_upload_tests;
 #[path = "friend_code_wait_tests.rs"]
 mod friend_code_wait;
+#[path = "frontier_tests.rs"]
+mod frontier_tests;
 #[path = "governance_seed_tests.rs"]
 mod governance_seed;
 #[path = "held_threads_tests.rs"]

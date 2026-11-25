@@ -76,6 +76,25 @@ pub(super) fn hash_governance(h: &mut blake3::Hasher, g: &GovernanceEvent) {
         GovernanceEvent::BansChanged { .. } => {
             h.update(b"bans");
         }
+        // The full held list: each change is a new event.
+        GovernanceEvent::CatchUp {
+            catching_up,
+            pending,
+            ..
+        } => {
+            h.update(b"catch_up|");
+            h.update(&[u8::from(*catching_up)]);
+            for op in pending {
+                h.update(b"|");
+                h.update(op.op_id.as_bytes());
+                h.update(b"|");
+                h.update(op.label.as_bytes());
+                h.update(match op.state {
+                    rekindle_types::display_catch_up::PendingGovState::CatchingUp => b"|c",
+                    rekindle_types::display_catch_up::PendingGovState::Signing => b"|s",
+                });
+            }
+        }
         GovernanceEvent::OpPublication { op, state, .. } => {
             h.update(b"op_publication|");
             h.update(op.as_bytes());

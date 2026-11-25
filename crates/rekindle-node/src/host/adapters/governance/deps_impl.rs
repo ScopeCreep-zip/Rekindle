@@ -263,6 +263,51 @@ impl GovernanceRuntimeDeps for HostGovernance {
         self.emit_event_impl(&event);
     }
 
+    fn unlock_barrier(
+        &self,
+        community_id: &str,
+    ) -> std::sync::Arc<rekindle_governance_runtime::unlock_barrier::UnlockBarrier> {
+        self.ctx.communities.unlock_barriers().of(community_id)
+    }
+
+    fn emit_catch_up(
+        &self,
+        community_id: &str,
+        view: rekindle_types::display_catch_up::CatchUpView,
+    ) {
+        self.ctx.publish_event(
+            rekindle_types::subscription_events::SubscriptionEvent::Governance(
+                rekindle_types::subscription_events::GovernanceEvent::CatchUp {
+                    community: community_id.to_owned(),
+                    catching_up: view.catching_up,
+                    pending: view.pending,
+                },
+            ),
+        );
+    }
+
+    fn pending_target_name(
+        &self,
+        community_id: &str,
+        target: &rekindle_types::display_catch_up::PendingGovTarget,
+    ) -> Option<String> {
+        self.pending_target_name_impl(community_id, target)
+    }
+
+    fn handle(&self) -> Self {
+        self.clone()
+    }
+
+    fn spawn_held_write(
+        &self,
+        community_id: &str,
+        write: std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'static>>,
+    ) {
+        self.ctx
+            .community_scope(community_id)
+            .spawn_or_drop("held governance write", write);
+    }
+
     // ---------- Background lifecycle ----------
 
     fn spawn_history_catchup(&self, community_id: &str) {

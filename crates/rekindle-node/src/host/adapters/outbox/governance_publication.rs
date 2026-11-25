@@ -71,6 +71,14 @@ pub(super) async fn publish_governance_states(
             for row in rows.iter().filter(|r| is_op_row(&r.client_id)) {
                 if let Some(community) = community_of(&row.stream) {
                     governance.announce_op(community, &row.client_id, OpPublicationState::Pending);
+                    // An op still queued from an earlier session has not
+                    // landed: our next write waits for it (plan E3.2
+                    // S7d-keys.8, seq n + 1 after seq n).
+                    if matches!(row.state, SendState::Queued | SendState::AwaitingKey) {
+                        (governance.ctx.communities.unlock_barriers())
+                            .of(community)
+                            .signed(&row.client_id);
+                    }
                 }
             }
         }
@@ -98,6 +106,13 @@ pub(super) async fn publish_governance_states(
         let Some(community) = community_of(&change.stream) else {
             continue;
         };
+        // Landed or failed for good, it no longer holds our next write back
+        // (plan E3.2 S7d-keys.8: seq n + 1 signs after seq n landed).
+        if matches!(change.state, SendState::Sent | SendState::Failed) {
+            (governance.ctx.communities.unlock_barriers())
+                .of(community)
+                .settled(&change.client_id);
+        }
         match announced(&change) {
             Some(state) => governance.announce_op(community, &change.client_id, state),
             None if change.state == SendState::Sent => {

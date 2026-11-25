@@ -139,6 +139,7 @@ pub(crate) fn handle_info(ctx: &DaemonContext, state: DaemonState, anchor: &str)
     );
     detail.removed =
         crate::host::adapters::governance::removal_display(&ctx.communities, &membership.anchor);
+    detail.catch_up = ctx.communities.unlock_barriers().view(&membership.anchor);
     IpcResponse::ok(&detail)
 }
 
