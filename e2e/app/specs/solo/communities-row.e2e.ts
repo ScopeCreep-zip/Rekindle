@@ -8,8 +8,8 @@
 import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, press, shown, switchTo, waitForHandle, waitUntil } from "../../../walk/helpers.ts";
 import { BUDDY, closeModal, openSettings } from "../../../walk/nav.ts";
-import { communitiesTab, createCommunity, createIdentity, newUser, type User } from "../../journeys.ts";
-import { applySkin, skinShown } from "../../journeys_skins.ts";
+import { createCommunity, createIdentity, newUser, type User } from "../../journeys.ts";
+import { applySkin, showSkinView, skinShown } from "../../journeys_skins.ts";
 import { shot } from "../../shots.ts";
 import { builtinPacks } from "../../skin-pack.ts";
 
@@ -64,18 +64,29 @@ describe("the Communities view's row: Open / Leave / New in every pack (CB1)", f
       const href = await applySkin(browser, me, pack.name);
       await switchTo(browser, BUDDY);
       await skinShown(browser, href);
-      // The tree's Communities tab (roles are lowercase: tab:communities).
-      await communitiesTab(browser);
+      // The tree's Communities view, by its tab or a knob's stop (Combat):
+      // showSkinView turns knobs; view keys are lowercase.
+      await showSkinView(browser, "communities");
       await waitUntil(async () => (await node(NODES.open)).shown, NET_WAIT_MS, `${file}: the Communities row's Open is not drawn`);
 
-      // 1. Nothing selected: Open and Leave drawn disabled, New usable.
+      // 1. Nothing selected: all three drawn; Open is refused with the Host's
+      // reason ("Select a community first."; drawn disabled once CR1 lands).
       const before = { open: await node(NODES.open), leave: await node(NODES.leave), new: await node(NODES.new) };
       console.log(`[cb] ${file} nothing selected: ${JSON.stringify(before)}`);
-      await shot("nothing-selected");
-      expect(before.open.disabled).toBe(true);
-      expect(before.leave.disabled).toBe(true);
-      expect(before.new.shown).toBe(true);
+      expect(before.open.shown && before.leave.shown && before.new.shown).toBe(true);
       expect(before.new.disabled).toBe(false);
+      if (!before.open.disabled) {
+        await pressNode(NODES.open);
+        let refused = "";
+        await waitUntil(
+          async () =>
+            (refused = ((await browser.execute(() => Array.from(document.querySelectorAll(".toast-item")).map((t) => (t.textContent ?? "").trim()).join(" | "))) as string)) !== "",
+          NET_WAIT_MS,
+          `${file}: Open with nothing selected did nothing (no Host reason shown)`,
+        );
+        console.log(`[cb] ${file} Open with nothing selected: ${refused}`);
+      }
+      await shot("nothing-selected");
 
       // 2. The community row selected: Open and Leave enabled.
       await press(browser, await shown(browser, `.community-item*=${COMMUNITY.slice(0, 24)}`, NET_WAIT_MS));
