@@ -154,7 +154,7 @@ async function recordIpc(b: Browser): Promise<void> {
   const text = (a) => (a instanceof Error ? a.message : typeof a === "string" ? a : JSON.stringify(a));
   const inner = window.__TAURI_INTERNALS__;
   const original = inner.invoke.bind(inner);
-  inner.invoke = async (cmd, args, opts) => {
+  const wrapper = async (cmd, args, opts) => {
     try {
       const r = await original(cmd, args, opts);
       if (!/skin_signals|get_network_status/.test(cmd)) window.__gvCalls.push(cmd + " -> " + JSON.stringify(r).slice(0, 300));
@@ -164,6 +164,11 @@ async function recordIpc(b: Browser): Promise<void> {
       throw e;
     }
   };
+  // Tauri defines invoke non-writable (tauri 2.12.1 scripts/core.js:81,
+  // defineProperty with a value only): an assignment fails silently, so say
+  // whether the wrap took instead of reporting an empty list as "no calls".
+  try { inner.invoke = wrapper; } catch (e) { /* strict-mode TypeError */ }
+  if (inner.invoke !== wrapper) window.__gvCalls.push("ipc recorder: NOT installed (invoke is read-only); calls are not visible here");
   for (const level of ["warn", "error"]) {
     const o = console[level].bind(console);
     console[level] = (...args) => { window.__gvCalls.push(level + ": " + args.map(text).join(" ")); o(...args); };
