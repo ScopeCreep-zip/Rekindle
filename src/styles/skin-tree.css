@@ -257,14 +257,6 @@
     padding: 6px;
   }
 
-  /* The chat window as a pack's tree (plan SK17-2). The conversation title
-   * keeps one line in its box, ellipsized; the whole title is its tooltip. */
-  .skin-chat-title {
-    display: block;
-    overflow: hidden;
-    white-space: nowrap;
-    text-overflow: ellipsis;
-  }
   /* In the pack's chatSend slot the pack's Send art is the control: our
    * button takes the slot's box with no background, border or visible label
    * of its own (its word stays its accessible name), so the pack's word is

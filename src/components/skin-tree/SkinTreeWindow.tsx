@@ -5,31 +5,14 @@ import type { EngineMenu, MenuItem, NodeGlyph, NodeLabel, NodeTrigger, ShellNode
 import { useSlotRegister } from "./slots";
 import type { SkinSignalSet } from "../../ipc/commands/dto_skin_run";
 import { skinSignals } from "../../stores/skin-signals.store";
-import { applyTreeOp, fired, initialTreeState, pageView, type TreeState } from "./signalEffects";
+import { applyTreeOp, fired, initialTreeState, pageView, signalFlags, type TreeState } from "./signalEffects";
+import type { TreePieces } from "./tree_pieces";
 import { dispatchSkinAction, registerShellRunner } from "../../actions/skin.actions";
 import { handleOpenDocs, openSettingsTab } from "../../actions/app_menu.actions";
 import { actionLabel } from "../../utils/skin_action_words";
 import { InBar, PackContextMenu, PackMenu, PackMenuBar } from "./PackMenus";
 import AdArea from "./AdArea";
 import { BrandGlyph } from "./BrandGlyphs";
-
-type Attrs = Record<string, unknown>;
-
-/**
- * The parts only some windows' trees lay, given by the window as it gives
- * `views` and `communities` (lead, ACL: a window's code reaches only what it
- * draws). The main window gives its status field, name field and its
- * Servers and Files views; the main window and the pack popups give the
- * Infoview. A node whose part its window does not give draws its art alone.
- */
-export interface TreePieces {
-  statusText?: Component<{ attrs: Attrs }>;
-  statusList?: Component<{ attrs: Attrs; children: JSX.Element }>;
-  nameField?: Component<{ attrs: Attrs; edit: number; children: JSX.Element }>;
-  infoView?: () => JSX.Element;
-  servers?: () => JSX.Element;
-  files?: (onExecute: () => void) => JSX.Element;
-}
 
 /** What every node of one window's tree reads. */
 interface Tree {
@@ -118,20 +101,6 @@ function rightMenu(n: ShellNode): EngineMenu | undefined {
 }
 
 /** `kind[:key]`: the served role, stable across every pack and window. */
-/** The served signal set's true flags, space-separated (`data-skin-signal-on`). */
-function signalFlags(set: SkinSignalSet | null): string {
-  if (!set) return "";
-  const flags: [string, boolean][] = [
-    ["focused", set.focused],
-    ["userTyping", set.userTyping],
-    ["voiceRinging", set.voiceRinging],
-    ["talking", set.talking],
-    ["disconnected", set.disconnected],
-    ["newNotification", set.newNotification],
-  ];
-  return flags.filter(([, on]) => on).map(([name]) => name).join(" ");
-}
-
 function roleAttr(n: ShellNode): string {
   const r = n.role;
   return "key" in r ? `${r.kind}:${r.key}` : r.kind;
