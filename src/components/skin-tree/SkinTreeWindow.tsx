@@ -3,7 +3,7 @@ import { createStore, produce } from "solid-js/store";
 import { Dynamic } from "solid-js/web";
 import type { EngineMenu, MenuItem, NodeGlyph, NodeLabel, NodeTrigger, ShellNode, SkinAction, SkinEvent, SkinShell, SlotKey, ViewKey } from "../../ipc/commands/dto_skin_tree";
 import { useSlotRegister } from "./slots";
-import type { SkinSignalSet } from "../../ipc/commands/dto_skin_run";
+import type { DisableCause, SkinSignalSet } from "../../ipc/commands/dto_skin_run";
 import { skinSignals } from "../../stores/skin-signals.store";
 import { applyTreeOp, fired, initialTreeState, pageView, signalFlags, type TreeState } from "./signalEffects";
 import type { TreePieces } from "./tree_pieces";
@@ -208,6 +208,11 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
   const press = (): SkinAction | undefined => pressAction(n());
   const fx = () => tree.state.nodes[n().id];
   const disabled = (): boolean => fx()?.state === "disabled";
+  /** The Host's words for why this node is disabled (plan CR1). */
+  const disabledReason = (): string | undefined => {
+    const cause = fx()?.cause;
+    return cause ? skinSignals()?.disabledReasons[cause] : undefined;
+  };
   const slotKey = (): SlotKey | undefined => {
     const r = role();
     return r.kind === "slot" ? r.key : undefined;
@@ -301,6 +306,19 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
     },
     get "aria-disabled"() {
       return disabled() ? "true" : undefined;
+    },
+    // Why it is disabled, in the Host's words (plan CR1): the reason the
+    // window's served `disabledReasons` gives for the trigger's cause; the
+    // shell dims only a node with no disabled art of its own (`shell`).
+    get "aria-description"() {
+      return disabled() ? disabledReason() : undefined;
+    },
+    get "data-disabled-by"() {
+      return disabled() ? n().disabledBy : undefined;
+    },
+    // The same words as the pointer's tooltip.
+    get title() {
+      return disabled() ? disabledReason() : undefined;
     },
     get hidden() {
       return hidden() || undefined;
@@ -495,9 +513,9 @@ const SkinTreeWindow: Component<{
   const [nameEdits, setNameEdits] = createSignal(0);
   const root = (): ShellNode[] => props.shell.root;
 
-  const treeOp = (node: string, action: SkinAction): boolean => {
+  const treeOp = (node: string, action: SkinAction, cause?: DisableCause): boolean => {
     let done = false;
-    setState(produce((s) => (done = applyTreeOp(s, node, action, root()))));
+    setState(produce((s) => (done = applyTreeOp(s, node, action, root(), cause))));
     return done;
   };
   const run = (node: string, action: SkinAction): void => {
@@ -511,7 +529,7 @@ const SkinTreeWindow: Component<{
     const now = { set: skinSignals(), view: state.view };
     if (!now.set) return;
     untrack(() => {
-      for (const f of fired(root(), before, now)) treeOp(f.node, f.run);
+      for (const f of fired(root(), before, now)) treeOp(f.node, f.run, f.cause);
       before = { set: now.set, view: state.view };
     });
   });

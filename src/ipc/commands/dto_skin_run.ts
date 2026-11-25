@@ -11,10 +11,17 @@ export type SkinWindow = "main" | "chat" | "community";
 
 /** `SkinSignalSet`: one window's state signals, computed by the Host
  *  (design §2.5); the window applies the pack triggers they fire. */
+/** Why a node is drawn disabled (plan CR1): a capability the window cannot
+ *  use, or our own connection being down. */
+export type DisableCause = Capability | "disconnected";
+
 export interface SkinSignalSet {
   focused: boolean;
   can: Capability[];
   cannot: Capability[];
+  /** The Host's words for each cause that disables a node here (plan CR1):
+   *  a disabled node says why, never a reason-less one. */
+  disabledReasons: Partial<Record<DisableCause, string>>;
   userTyping: boolean;
   voiceRinging: boolean;
   talking: boolean;

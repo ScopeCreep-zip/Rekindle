@@ -321,6 +321,9 @@ export interface ShellNode {
   inset?: NodeInset;
   /** The Host's target box for a small interactive node (plan SK7). */
   target?: NodeTarget;
+  /** Who draws this node's disabled state (plan CR1): `pack`, its own
+   *  disabled art; `shell`, no such art, so the shell dims it. */
+  disabledBy?: "pack" | "shell";
 }
 
 /**
