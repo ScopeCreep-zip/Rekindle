@@ -7,19 +7,33 @@ import type { SkinSignalSet } from "../../ipc/commands/dto_skin_run";
 import { skinSignals } from "../../stores/skin-signals.store";
 import { applyTreeOp, fired, initialTreeState, pageView, type TreeState } from "./signalEffects";
 import { dispatchSkinAction, registerShellRunner } from "../../actions/skin.actions";
-import { handleOpenDocs, openSettingsTab } from "../buddy-list/MenuBar";
-import NameField from "./NameField";
+import { handleOpenDocs, openSettingsTab } from "../../actions/app_menu.actions";
 import { actionLabel } from "../../utils/skin_action_words";
 import { InBar, PackContextMenu, PackMenu, PackMenuBar } from "./PackMenus";
-import { StatusList, StatusText } from "./StatusField";
 import AdArea from "./AdArea";
-import FilesView from "./FilesView";
-import Infoview from "../infoview/Infoview";
-import ServersView from "./ServersView";
 import { BrandGlyph } from "./BrandGlyphs";
+
+type Attrs = Record<string, unknown>;
+
+/**
+ * The parts only some windows' trees lay, given by the window as it gives
+ * `views` and `communities` (lead, ACL: a window's code reaches only what it
+ * draws). The main window gives its status field, name field and its
+ * Servers and Files views; the main window and the pack popups give the
+ * Infoview. A node whose part its window does not give draws its art alone.
+ */
+export interface TreePieces {
+  statusText?: Component<{ attrs: Attrs }>;
+  statusList?: Component<{ attrs: Attrs; children: JSX.Element }>;
+  nameField?: Component<{ attrs: Attrs; edit: number; children: JSX.Element }>;
+  infoView?: () => JSX.Element;
+  servers?: () => JSX.Element;
+  files?: (onExecute: () => void) => JSX.Element;
+}
 
 /** What every node of one window's tree reads. */
 interface Tree {
+  pieces: TreePieces;
   views: () => JSX.Element;
   /** What the Communities view shows (plan SK2-N4); null where a window has none. */
   communities: () => JSX.Element;
@@ -383,21 +397,27 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
           </PackContextMenu>
         )}
       </Match>
-      <Match when={role().kind === "nameField"}>
-        <NameField attrs={attrs} edit={tree.nameEdits()}>
-          {children()}
-        </NameField>
+      <Match when={role().kind === "nameField" && tree.pieces.nameField}>
+        {(NameField) => (
+          <Dynamic component={NameField()} attrs={attrs} edit={tree.nameEdits()}>
+            {children()}
+          </Dynamic>
+        )}
       </Match>
       {/* A bar holding other controls is no ARIA menubar (it may own only
        *  menu items): its titles are each their own one-menu bar. */}
       <Match when={role().kind === "menuBar" && !holdsNonMenuControls(n())}>
         <PackMenuBar attrs={attrs}>{children()}</PackMenuBar>
       </Match>
-      <Match when={role().kind === "statusText"}>
-        <StatusText attrs={attrs} />
+      <Match when={role().kind === "statusText" && tree.pieces.statusText}>
+        {(StatusText) => <Dynamic component={StatusText()} attrs={attrs} />}
       </Match>
-      <Match when={role().kind === "statusList"}>
-        <StatusList attrs={attrs}>{children()}</StatusList>
+      <Match when={role().kind === "statusList" && tree.pieces.statusList}>
+        {(StatusList) => (
+          <Dynamic component={StatusList()} attrs={attrs}>
+            {children()}
+          </Dynamic>
+        )}
       </Match>
       <Match when={role().kind === "adArea"}>
         <AdArea attrs={attrs}>{children()}</AdArea>
@@ -439,13 +459,13 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
       </Match>
       {/* A pack's InfoView (its Info popup or an inline pane, plan E7.15 IV5): the
        *  Host's Infoview for what this window's launcher has selected. */}
-      <Match when={role().kind === "infoView"}>
-        <div {...attrs}>
-          {children()}
-          <div class="skin-tree-view-content">
-            <Infoview subject={{ type: "selection" }} />
+      <Match when={role().kind === "infoView" && tree.pieces.infoView}>
+        {(infoView) => (
+          <div {...attrs}>
+            {children()}
+            <div class="skin-tree-view-content">{infoView()()}</div>
           </div>
-        </div>
+        )}
       </Match>
       <Match when={role().kind === "view" && viewKey() === "communities"}>
         <div {...attrs}>
@@ -453,21 +473,21 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
           <div class="skin-tree-view-content">{tree.communities()}</div>
         </div>
       </Match>
-      <Match when={role().kind === "view" && viewKey() === "servers"}>
-        <div {...attrs}>
-          {children()}
-          <div class="skin-tree-view-content">
-            <ServersView />
+      <Match when={role().kind === "view" && viewKey() === "servers" && tree.pieces.servers}>
+        {(servers) => (
+          <div {...attrs}>
+            {children()}
+            <div class="skin-tree-view-content">{servers()()}</div>
           </div>
-        </div>
+        )}
       </Match>
-      <Match when={role().kind === "view" && viewKey() === "files"}>
-        <div {...attrs}>
-          {children()}
-          <div class="skin-tree-view-content">
-            <FilesView onExecute={() => tree.run(n().id, { kind: "openDownload" })} />
+      <Match when={role().kind === "view" && viewKey() === "files" && tree.pieces.files}>
+        {(files) => (
+          <div {...attrs}>
+            {children()}
+            <div class="skin-tree-view-content">{files()(() => tree.run(n().id, { kind: "openDownload" }))}</div>
           </div>
-        </div>
+        )}
       </Match>
       <Match when={pressable()}>
         <div {...buttonAttrs}>{children()}</div>
@@ -499,6 +519,8 @@ const SkinTreeWindow: Component<{
   communities: () => JSX.Element;
   /** A chat window's conversation title, for its `chatTitle` node. */
   chatTitle?: () => string;
+  /** The window-only parts this window draws (none for a chat window). */
+  pieces?: TreePieces;
 }> = (props) => {
   const [state, setState] = createStore<TreeState>(initialTreeState());
   const [nameEdits, setNameEdits] = createSignal(0);
@@ -561,6 +583,7 @@ const SkinTreeWindow: Component<{
       value={{
         views: props.views,
         communities: props.communities,
+        pieces: props.pieces ?? {},
         chatTitle: () => props.chatTitle?.() ?? "",
         hasFriendsView: hasFriendsView(props.shell.root),
         state,
