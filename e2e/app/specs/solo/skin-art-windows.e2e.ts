@@ -69,6 +69,20 @@ describe("skinned windows keep their pack art (SB1)", function () {
         frames[w.label] = await frameNodes();
         console.log(`[art] ${file} ${w.label}: data-window=${kind} ${art.length} element(s) with pack art`);
         console.log(`[frame] ${file} ${w.label}: default titlebar=${frames[w.label].defaultTitlebar}; ${JSON.stringify(frames[w.label].nodes)}`);
+        if (w.label === "chat") {
+          // Lead: a stray white bar at the 1:1 chat's top left (Combat): the
+          // node drawn there and its box and art, to check against the pack.
+          const at = (await browser.execute(() =>
+            [8, 20].map((x) => {
+              const el = document.elementFromPoint(x, 52) as HTMLElement | null;
+              const node = el?.closest<HTMLElement>("[data-skin-node]");
+              const r = node?.getBoundingClientRect();
+              const cs = node ? getComputedStyle(node) : null;
+              return `(${x},52) ${el?.tagName}.${el?.className} in ${node?.dataset.skinNode ?? "-"} (${node?.dataset.skinRole ?? "-"}) box ${r ? [r.x, r.y, r.width, r.height].map(Math.round) : "-"} bg ${cs?.backgroundColor ?? "-"} art ${(cs?.backgroundImage ?? "").slice(0, 80)}`;
+            }),
+          )) as string[];
+          console.log(`[frame] ${file} chat top-left: ${JSON.stringify(at)}`);
+        }
         // Named so a pack's windows sort side by side (chat, group chat, community).
         await shot(`${file}-${i}-${w.label}`);
         expect(kind).toBe(w.kind);
