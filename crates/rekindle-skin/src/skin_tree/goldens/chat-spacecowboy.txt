@@ -9,7 +9,7 @@ BottomLeft Decor target [0, 0, 20, 57] art [0, 0, 20, 57] Frame
 Bottom Decor target [0, 0, 300, 57] art [0, 0, 300, 57] Frame
 BottomRight Decor target [0, 0, 24, 57] art [0, 0, 24, 57] Frame
 MainTitleBar TitleBar
-  Logo Logo label "Rekindle" cover [0, 0, 16, 16] glyph RekindleMarkSmall target [-4, -4, 24, 20] art [4, 4, 16, 16] Spacing
+  Logo Logo label "Rekindle" cover [0, 0, 16, 16] glyph RekindleMarkSmall target [-4, -4, 22, 20] art [4, 4, 16, 16] Spacing
   Title ChatTitle
 MenuBar MenuBar
   XfireMenuText MenuTitle label "Rekindle"
@@ -19,9 +19,9 @@ MenuBar MenuBar
   HelpMenuText MenuTitle label "Help"
     HelpMenu Part target [0, 0, 30, 21] art [0, 0, 30, 18] Spacing
 TopButtonBar Group
-  Minimize WindowButton(Minimize) target [-5, -5, 20, 24] art [5, 5, 14, 14] Short
-  Maximize WindowButton(Maximize) target [-1, -5, 16, 24] art [1, 5, 14, 14] Short
-  ChatClose WindowButton(Close) target [-1, -5, 20, 24] art [1, 5, 14, 14] Short
+  Minimize WindowButton(Minimize) target [-5, -5, 20, 22] art [5, 5, 14, 14] Short
+  Maximize WindowButton(Maximize) target [-1, -5, 16, 22] art [1, 5, 14, 14] Short
+  ChatClose WindowButton(Close) target [-1, -5, 20, 22] art [1, 5, 14, 14] Short
 ListViewBG1 Decor
 Divider Decor
 ChatArea Slot(ChatArea)

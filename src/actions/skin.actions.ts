@@ -8,20 +8,14 @@
 // which must start inside the pointer event that began them.
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { commands } from "../ipc/commands";
-import { type TransferRow, transferCommands } from "../ipc/commands/dto_transfer";
+import type { TransferRow } from "../ipc/commands/dto_transfer";
 import type { Edge, SkinAction } from "../ipc/commands/dto_skin_tree";
 import type { ShellOp, SkinRun, SkinSelection } from "../ipc/commands/dto_skin_run";
 import { addToast } from "../stores/toast.store";
 import { errorMessage } from "../utils/error";
 import { isCancelled } from "../ipc/commands/dto";
 import { setLocalSearchScope } from "../stores/local_search.store";
-import { callsState } from "../stores/calls.store";
-import { handleAcceptGroupCall, handleAcceptIncomingCall, handleEndDmCall, handleEndGroupCall, handleStartDmCall } from "./calls.actions";
-import { handleSetMuted } from "./voice.actions";
-import { handleOpenGroupChat } from "./group-dm.actions";
-import { handleCopyPublicKey } from "./buddy.actions";
 import { handleMaximize, handleMinimize } from "./titlebar.actions";
-import { handleQuit, handleReportBug, openSettingsTab } from "../components/buddy-list/MenuBar";
 
 /** Each pack edge's OS resize direction (Tauri `ResizeDirection`). */
 const DIRECTION = {
@@ -39,7 +33,8 @@ const DIRECTION = {
  * Runs one shell operation for the node whose trigger asked for it; `false`
  * when the operation is not this runner's. A window registers the
  * operations only it can run (the buddy list's panels and its Close to the
- * tray, a tree's own node states); the rest are every window's.
+ * tray, a tree's own node states) and the shell_runners groups its trees
+ * serve; only its frame's are every window's.
  */
 export type ShellRunner = (op: ShellOp, node: string) => boolean;
 
@@ -54,7 +49,9 @@ export function registerShellRunner(run: ShellRunner): () => void {
   };
 }
 
-/** The operations every window runs the same way. */
+/** The operations every window runs the same way: its own frame (minimize,
+ *  maximize, the OS drag and resize) and the local search's scope. What
+ *  else a window runs is the shell_runners groups it registers. */
 const common: ShellRunner = (op) => {
   switch (op.kind) {
     case "minimize":
@@ -69,94 +66,15 @@ const common: ShellRunner = (op) => {
     case "resize":
       void getCurrentWindow().startResizeDragging(DIRECTION[op.arg]);
       return true;
-    case "openChat":
-      void commands.openChatWindow(op.arg.friend);
-      return true;
-    case "openProfile":
-      void commands.openProfileWindow(op.arg.friend);
-      return true;
-    case "chooseDownloadDest":
-      // `transfer_start` asks where to save in Rust; no path reaches the webview.
-      transferCommands.start(op.arg.attachmentId, op.arg.target).catch((e) => addToast(errorMessage(e), "error"));
-      return true;
-    case "openGroupChat":
-      handleOpenGroupChat(op.arg.groupId);
-      return true;
-    case "launchPopup":
-      // The shell opens (or closes, when open) the pack popup beside this
-      // window; its place and size come from the Host's shell (popup_place.rs).
-      commands.openSkinPopup(op.arg.popup).catch((e) => addToast(errorMessage(e), "error"));
-      return true;
-    case "call":
-      runCall(op.arg);
-      return true;
-    case "showCall":
-      // The skin's Show Voice (plan E7.2 A): the call window forward, or the
-      // community window on the voice channel the user is in.
-      if (op.arg.target.kind === "call") {
-        commands.openCallWindow(op.arg.target.arg.callId).catch((e) => addToast(errorMessage(e), "error"));
-      } else {
-        const { community, channel } = op.arg.target.arg;
-        commands.openCommunityWindow(community, channel).catch((e) => addToast(errorMessage(e), "error"));
-      }
-      return true;
     case "openSearch":
       // The skin's Search and Downloads' info (plan E7.2 G11): the local
       // search in the scope the Host picked from this window's view.
       setLocalSearchScope(op.arg.scope);
       return true;
-    case "showSettings":
-      openSettingsTab(op.arg);
-      return true;
-    case "reportBug":
-      handleReportBug();
-      return true;
-    case "copyKey":
-      handleCopyPublicKey();
-      return true;
-    case "quit":
-      handleQuit();
-      return true;
     default:
       return false;
   }
 };
-
-function runCall(op: Extract<ShellOp, { kind: "call" }>["arg"]): void {
-  switch (op.kind) {
-    case "voice":
-    case "video":
-      void handleStartDmCall(op.arg.friend, "", op.kind === "video");
-      return;
-    // A pack's Answer (VoiceChat while a friend's call rings, plan CAP1):
-    // accept that call, never place one.
-    case "answer":
-      void handleAcceptIncomingCall(op.arg.callId);
-      return;
-    // A pack's Join (GroupVoiceChat, or VoiceChat in a group window, while
-    // the group's call rings): join that call, never start one.
-    case "joinGroup":
-      void handleAcceptGroupCall(op.arg.callId);
-      return;
-    // A pack's Leave/Cancel in a chat window (GV3): end that 1:1 call.
-    case "leave":
-      void handleEndDmCall(op.arg.callId);
-      return;
-    // In a group window: leave the group call, or cancel our own ring.
-    case "leaveGroup":
-      void handleEndGroupCall(op.arg.callId);
-      return;
-    case "end": {
-      const call = callsState.activeCall ?? callsState.outgoingCall;
-      if (call) void handleEndDmCall(call.callId);
-      return;
-    }
-    case "mute":
-    case "unmute":
-      void handleSetMuted(op.kind === "mute");
-      return;
-  }
-}
 
 /** Run `op` for `node`: this window's runners first, then the common ones. */
 function runShellOp(op: ShellOp, node: string): void {

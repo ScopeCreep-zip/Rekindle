@@ -3,6 +3,10 @@ import { Component, JSX, onMount, onCleanup, createSignal, Show } from "solid-js
 import { type UnlistenFn } from "@tauri-apps/api/event";
 import SkinFrame from "../components/common/SkinFrame";
 import SkinTreeWindow from "../components/skin-tree/SkinTreeWindow";
+import NameField from "../components/skin-tree/NameField";
+import { StatusList, StatusText } from "../components/skin-tree/StatusField";
+import FilesView from "../components/skin-tree/FilesView";
+import Infoview from "../components/infoview/Infoview";
 import { skinShell } from "../hooks/useSkin";
 import Titlebar from "../components/titlebar/Titlebar";
 import MenuBar from "../components/buddy-list/MenuBar";
@@ -56,6 +60,7 @@ import {
 } from "../ipc/channels";
 import { setSkinSignals } from "../stores/skin-signals.store";
 import { registerShellRunner, runAddressedShellOp } from "../actions/skin.actions";
+import { chatOpenOps, friendOps, mainOps, menuOps, popupOps, transferOps } from "../actions/shell_runners";
 import type { ShellOp } from "../ipc/commands/dto_skin_run";
 import { handleHide } from "../actions/titlebar.actions";
 import { handleToggleAddFriend } from "../actions/buddy.actions";
@@ -206,6 +211,12 @@ const BuddyListWindow: Component = () => {
     // The skin operations only the buddy list runs (plan SK2-A5): Close
     // hides it in the tray, and its dialogs.
     unlisteners.push(Promise.resolve(registerShellRunner(runBuddyListOp)));
+    // The groups the main window's trees serve (shell_runners): its menus,
+    // popups, a friend's profile and chat, a room, downloads, Copy Key and
+    // Show Voice. No call or mute: no main tree lays one.
+    for (const run of [menuOps, popupOps, friendOps, chatOpenOps, transferOps, mainOps]) {
+      unlisteners.push(Promise.resolve(registerShellRunner(run)));
+    }
     unlisteners.push(subscribePairingLinkHandler());
     // Reviews of actions the backend began, in the router root's dialog.
     unlisteners.push(subscribeBackendIntents());
@@ -292,6 +303,14 @@ const BuddyListWindow: Component = () => {
               </>
             )}
             communities={() => <CommunityListCompact />}
+            pieces={{
+              statusText: StatusText,
+              statusList: StatusList,
+              nameField: NameField,
+              infoView: () => <Infoview subject={{ type: "selection" }} />,
+              servers: () => <ServersView />,
+              files: (onExecute) => <FilesView onExecute={onExecute} />,
+            }}
           />
         )}
       </Show>

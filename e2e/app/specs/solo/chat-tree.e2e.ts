@@ -40,6 +40,33 @@ async function slotBoxes(): Promise<string> {
  * role, box and art (background image, colour), as `[strips]`; and the
  * chatTitle's box, visibility, opacity and colour as `[title]`.
  */
+/**
+ * Lead (r31: Symbiosis's DM showed "Answer" lit with no call): the signal set
+ * the Host served this window (`data-skin-signal-on`, `data-skin-cannot` on
+ * `.skin-tree`), and for each voice node its drawn state, whether disabled,
+ * its index among its parent's children (a control group's page) and the
+ * parent; plus the node behind any drawn "Answer" word. One line, `[voice]`.
+ */
+async function voiceEvidence(): Promise<string> {
+  return (await browser.execute(() => {
+    const tree = document.querySelector<HTMLElement>(".skin-tree");
+    const drawn = (e: Element | null): boolean => !!e && !e.closest("[hidden]") && e.getBoundingClientRect().width > 0;
+    const nodes = ["ChatButtonCall", "ChatButtonAnswerCall", "ChatButtonLeaveCall"].map((id) => {
+      const n = document.querySelector<HTMLElement>(`[data-skin-node="${id}"]`);
+      if (!n) return `${id}: absent`;
+      const parent = n.parentElement?.closest<HTMLElement>("[data-skin-node]");
+      const siblings = parent ? Array.from(parent.children).filter((c) => (c as HTMLElement).dataset.skinNode) : [];
+      return `${id}: ${drawn(n) ? "drawn" : "hidden"}${n.getAttribute("aria-disabled") === "true" ? " disabled" : ""} index ${siblings.indexOf(n)} of ${parent?.dataset.skinNode ?? "?"}`;
+    });
+    const answer = Array.from(document.querySelectorAll<HTMLElement>(".skin-node-label-text")).find((t) => drawn(t) && /answer/i.test(t.textContent ?? ""));
+    return [
+      `signals on=[${tree?.dataset.skinSignalOn ?? ""}] cannot=[${tree?.dataset.skinCannot ?? ""}]`,
+      ...nodes,
+      `"Answer" word on ${answer?.closest<HTMLElement>("[data-skin-node]")?.dataset.skinNode ?? "none"}`,
+    ].join("; ");
+  })) as string;
+}
+
 async function stripsAndTitle(): Promise<{ strips: string; title: string }> {
   return (await browser.execute(() => {
     const box = (b: DOMRect): string => `${Math.round(b.left)},${Math.round(b.top)} ${Math.round(b.width)}x${Math.round(b.height)}`;
@@ -153,6 +180,7 @@ describe("a pack's chat tree draws the chat window, the chat in its slots", func
         const st = await stripsAndTitle();
         console.log(`[strips] ${file} ${kind}: ${st.strips}`);
         console.log(`[title] ${file} ${kind}: ${st.title}`);
+        console.log(`[voice] ${file} ${kind}: ${await voiceEvidence()}`);
         await shot(`${kind}-before-checks`);
         await treeLaid(handle, title, text);
         const def = await sizeTo(CHAT_DM.def.width, CHAT_DM.def.height);

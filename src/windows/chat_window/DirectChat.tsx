@@ -11,7 +11,7 @@ import { chatState, setChatState, type Message } from "../../stores/chat.store";
 import { authState } from "../../stores/auth.store";
 import { friendsState } from "../../stores/friends.store";
 import { callsState } from "../../stores/calls.store";
-import { handleLoadHistory, handleResetUnread, handleRetrySendMessage, handleDiscardSendMessage } from "../../actions/chat.actions";
+import { handleLoadHistory, handleResetUnread, handleRetrySendMessage, handleDiscardSendMessage, handleSendMessage, handleDraftChanged } from "../../actions/chat.actions";
 import { handleStartDmCall, handleEndDmCall } from "../../actions/calls.actions";
 import { subscribeDmChatEvents } from "../../handlers/chat-events.handlers";
 import { subscribeBuddyListPresenceEvents } from "../../handlers/presence-events.handlers";
@@ -271,6 +271,8 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
         <MessageInput
           label={`Message ${peerName()}`}
           peerId={peerId}
+          onSend={(to, body) => void handleSendMessage(to, body)}
+          onDraftChanged={(body) => handleDraftChanged(peerId, body)}
           disabled={pinMismatch()}
           sendButton
           disabledMessage={identityPinMismatchText(peerName())}

@@ -93,6 +93,15 @@
     border: 0;
   }
 
+  /* One line in its box, ellipsized: a chat tree's title (SK17-2), a clip's name. */
+  .skin-chat-title,
+  .soundboard-panel-clip-name {
+    display: block;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
   /* Nerd Font icon utility */
   .nf-icon {
     font-family: var(--font-family-icons);

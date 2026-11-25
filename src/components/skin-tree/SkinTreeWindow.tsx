@@ -5,21 +5,18 @@ import type { EngineMenu, MenuItem, NodeGlyph, NodeLabel, NodeTrigger, ShellNode
 import { useSlotRegister } from "./slots";
 import type { SkinSignalSet } from "../../ipc/commands/dto_skin_run";
 import { skinSignals } from "../../stores/skin-signals.store";
-import { applyTreeOp, fired, initialTreeState, pageView, type TreeState } from "./signalEffects";
+import { applyTreeOp, fired, initialTreeState, pageView, signalFlags, type TreeState } from "./signalEffects";
+import type { TreePieces } from "./tree_pieces";
 import { dispatchSkinAction, registerShellRunner } from "../../actions/skin.actions";
-import { handleOpenDocs, openSettingsTab } from "../buddy-list/MenuBar";
-import NameField from "./NameField";
+import { handleOpenDocs, openSettingsTab } from "../../actions/app_menu.actions";
 import { actionLabel } from "../../utils/skin_action_words";
 import { InBar, PackContextMenu, PackMenu, PackMenuBar } from "./PackMenus";
-import { StatusList, StatusText } from "./StatusField";
 import AdArea from "./AdArea";
-import FilesView from "./FilesView";
-import Infoview from "../infoview/Infoview";
-import ServersView from "./ServersView";
 import { BrandGlyph } from "./BrandGlyphs";
 
 /** What every node of one window's tree reads. */
 interface Tree {
+  pieces: TreePieces;
   views: () => JSX.Element;
   /** What the Communities view shows (plan SK2-N4); null where a window has none. */
   communities: () => JSX.Element;
@@ -369,21 +366,27 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
           </PackContextMenu>
         )}
       </Match>
-      <Match when={role().kind === "nameField"}>
-        <NameField attrs={attrs} edit={tree.nameEdits()}>
-          {children()}
-        </NameField>
+      <Match when={role().kind === "nameField" && tree.pieces.nameField}>
+        {(NameField) => (
+          <Dynamic component={NameField()} attrs={attrs} edit={tree.nameEdits()}>
+            {children()}
+          </Dynamic>
+        )}
       </Match>
       {/* A bar holding other controls is no ARIA menubar (it may own only
        *  menu items): its titles are each their own one-menu bar. */}
       <Match when={role().kind === "menuBar" && !holdsNonMenuControls(n())}>
         <PackMenuBar attrs={attrs}>{children()}</PackMenuBar>
       </Match>
-      <Match when={role().kind === "statusText"}>
-        <StatusText attrs={attrs} />
+      <Match when={role().kind === "statusText" && tree.pieces.statusText}>
+        {(StatusText) => <Dynamic component={StatusText()} attrs={attrs} />}
       </Match>
-      <Match when={role().kind === "statusList"}>
-        <StatusList attrs={attrs}>{children()}</StatusList>
+      <Match when={role().kind === "statusList" && tree.pieces.statusList}>
+        {(StatusList) => (
+          <Dynamic component={StatusList()} attrs={attrs}>
+            {children()}
+          </Dynamic>
+        )}
       </Match>
       <Match when={role().kind === "adArea"}>
         <AdArea attrs={attrs}>{children()}</AdArea>
@@ -425,13 +428,13 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
       </Match>
       {/* A pack's InfoView (its Info popup or an inline pane, plan E7.15 IV5): the
        *  Host's Infoview for what this window's launcher has selected. */}
-      <Match when={role().kind === "infoView"}>
-        <div {...attrs}>
-          {children()}
-          <div class="skin-tree-view-content">
-            <Infoview subject={{ type: "selection" }} />
+      <Match when={role().kind === "infoView" && tree.pieces.infoView}>
+        {(infoView) => (
+          <div {...attrs}>
+            {children()}
+            <div class="skin-tree-view-content">{infoView()()}</div>
           </div>
-        </div>
+        )}
       </Match>
       <Match when={role().kind === "view" && viewKey() === "communities"}>
         <div {...attrs}>
@@ -439,21 +442,21 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
           <div class="skin-tree-view-content">{tree.communities()}</div>
         </div>
       </Match>
-      <Match when={role().kind === "view" && viewKey() === "servers"}>
-        <div {...attrs}>
-          {children()}
-          <div class="skin-tree-view-content">
-            <ServersView />
+      <Match when={role().kind === "view" && viewKey() === "servers" && tree.pieces.servers}>
+        {(servers) => (
+          <div {...attrs}>
+            {children()}
+            <div class="skin-tree-view-content">{servers()()}</div>
           </div>
-        </div>
+        )}
       </Match>
-      <Match when={role().kind === "view" && viewKey() === "files"}>
-        <div {...attrs}>
-          {children()}
-          <div class="skin-tree-view-content">
-            <FilesView onExecute={() => tree.run(n().id, { kind: "openDownload" })} />
+      <Match when={role().kind === "view" && viewKey() === "files" && tree.pieces.files}>
+        {(files) => (
+          <div {...attrs}>
+            {children()}
+            <div class="skin-tree-view-content">{files()(() => tree.run(n().id, { kind: "openDownload" }))}</div>
           </div>
-        </div>
+        )}
       </Match>
       <Match when={pressable()}>
         <div {...buttonAttrs}>{children()}</div>
@@ -485,6 +488,8 @@ const SkinTreeWindow: Component<{
   communities: () => JSX.Element;
   /** A chat window's conversation title, for its `chatTitle` node. */
   chatTitle?: () => string;
+  /** The window-only parts this window draws (none for a chat window). */
+  pieces?: TreePieces;
 }> = (props) => {
   const [state, setState] = createStore<TreeState>(initialTreeState());
   const [nameEdits, setNameEdits] = createSignal(0);
@@ -547,6 +552,7 @@ const SkinTreeWindow: Component<{
       value={{
         views: props.views,
         communities: props.communities,
+        pieces: props.pieces ?? {},
         chatTitle: () => props.chatTitle?.() ?? "",
         hasFriendsView: hasFriendsView(props.shell.root),
         state,
@@ -565,8 +571,15 @@ const SkinTreeWindow: Component<{
     >
       {/* Whether this window's signal sets have started arriving: the
        *  pack's state art is applied from them, so the real-app suite
-       *  waits for "live" before reading a button's state. */}
-      <div class="skin-tree" data-skin-signals={skinSignals() ? "live" : "none"}>
+       *  waits for "live" before reading a button's state. The set itself,
+       *  as the Host served it (its true flags and what it cannot do), so
+       *  a node's state can be read against the signals that drove it. */}
+      <div
+        class="skin-tree"
+        data-skin-signals={skinSignals() ? "live" : "none"}
+        data-skin-signal-on={signalFlags(skinSignals())}
+        data-skin-cannot={skinSignals()?.cannot.join(" ") ?? ""}
+      >
         <For each={props.shell.root}>{(node) => <SkinNodeView node={node} />}</For>
       </div>
     </TreeCtx.Provider>

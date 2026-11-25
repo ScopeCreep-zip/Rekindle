@@ -8,7 +8,8 @@ import DirectChat from "./chat_window/DirectChat";
 import GroupChat from "./chat_window/GroupChat";
 import { SlotProvider } from "../components/skin-tree/slots";
 import { useChatSearchChord } from "../hooks/useChatSearchChord";
-import { sendSkinSelection } from "../actions/skin.actions";
+import { registerShellRunner, sendSkinSelection } from "../actions/skin.actions";
+import { callOps, friendOps, menuOps, muteOps, popupOps } from "../actions/shell_runners";
 
 /// The one chat window (plan E2.3): `?peer=<identity key>` is a 1:1
 /// conversation, `?group=<group id>` a group DM (32 hex, plan E2.6
@@ -21,6 +22,10 @@ const ChatWindow: Component = () => {
   // The Host's signals for this window (skin-signals:<label>): a chat
   // tree's state triggers read them, its talkingState among them.
   let unlisten: UnlistenFn | undefined;
+  // The groups the chat trees serve (shell_runners): the File, Tool and
+  // Help menus, a pack popup, the friend's profile, a call and mute. No
+  // friend chat, room or download: no chat tree lays one.
+  const unregister = [menuOps, popupOps, friendOps, callOps, muteOps].map((run) => registerShellRunner(run));
   onMount(async () => {
     // A group window's selection is its group (as a 1:1 window's is its
     // friend, useChatSearchChord): the Host builds the group's call, and
@@ -29,7 +34,10 @@ const ChatWindow: Component = () => {
     if (group) void sendSkinSelection({ kind: "group", arg: { groupId: group } });
     unlisten = await subscribeSkinSignals(setSkinSignals);
   });
-  onCleanup(() => unlisten?.());
+  onCleanup(() => {
+    unlisten?.();
+    for (const off of unregister) off();
+  });
 
   return (
     // `chat-window` scopes the chat window's skin surfaces (plan E7.7.7).
