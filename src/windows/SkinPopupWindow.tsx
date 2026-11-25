@@ -1,10 +1,12 @@
 import { Component, Show, onCleanup, onMount } from "solid-js";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import SkinTreeWindow from "../components/skin-tree/SkinTreeWindow";
+import Infoview from "../components/infoview/Infoview";
 import { popupName, skinPopupShell } from "../hooks/useSkin";
 import { startEventStream, subscribeSkinSignals } from "../ipc/channels";
 import { setSkinSignals } from "../stores/skin-signals.store";
 import { registerShellRunner } from "../actions/skin.actions";
+import { callOps, chatOpenOps, friendOps, menuOps, transferOps } from "../actions/shell_runners";
 import { handleClose } from "../actions/titlebar.actions";
 import { setWindowKind } from "../utils/window_kind";
 
@@ -30,6 +32,14 @@ const SkinPopupWindow: Component = () => {
         }),
       ),
     );
+    // The groups the pack popups' trees serve (shell_runners): the menus
+    // a main-menu popup carries, a friend's profile and chat, downloads,
+    // and a call started or ended. No mute: no popup lays one. A popup's
+    // LaunchPopup is not run here: `open_skin_popup` takes only a skin
+    // window as launcher, so it says it has no handler in this window.
+    for (const run of [menuOps, friendOps, chatOpenOps, transferOps, callOps]) {
+      unlisteners.push(Promise.resolve(registerShellRunner(run)));
+    }
     void startEventStream();
   });
   onCleanup(() => {
@@ -39,7 +49,14 @@ const SkinPopupWindow: Component = () => {
   return (
     <div class="app-frame" data-skin-popup={name}>
       <Show when={skinPopupShell(name)} keyed>
-        {(shell) => <SkinTreeWindow shell={shell} views={() => null} communities={() => null} />}
+        {(shell) => (
+          <SkinTreeWindow
+            shell={shell}
+            views={() => null}
+            communities={() => null}
+            pieces={{ infoView: () => <Infoview subject={{ type: "selection" }} /> }}
+          />
+        )}
       </Show>
     </div>
   );

@@ -414,9 +414,9 @@ fn with_fill(
 }
 
 /// Rule 2's fill band (plan SK0-L1, lead decision for Space Cowboy): a
-/// wholly opaque centre fill beside the content passes; one over the
-/// content, one with a transparent pixel, or one above the content is
-/// refused.
+/// wholly opaque centre fill beside the content, or above it with its edge
+/// on the content's top line, passes; one over the content, one with a
+/// transparent pixel, or one above the content clear of it is refused.
 #[test]
 fn a_centre_fill_is_allowed_only_opaque_in_the_band_beside_the_content() {
     let art = solid(3, 2);
@@ -427,8 +427,9 @@ fn a_centre_fill_is_allowed_only_opaque_in_the_band_beside_the_content() {
     assert_eq!(checked_with(&nine(), with_fill(&art, at, down, 7)), Ok(()));
     let refused = Err(SkinRule::BadValue {
         field: "windows.chat.tiles.8".to_owned(),
-        expected: "a centre fill wholly opaque in the band between a side piece and the content"
-            .to_owned(),
+        expected:
+            "a centre fill wholly opaque in the band between the frame pieces and the content"
+                .to_owned(),
     });
     assert_eq!(checked_with(&nine(), with_fill(&art, at, down, 4)), refused);
     let mut holed = art.clone();
@@ -439,6 +440,15 @@ fn a_centre_fill_is_allowed_only_opaque_in_the_band_beside_the_content() {
     );
     let top = TileAxis::Start { offset: 0 };
     assert_eq!(checked_with(&nine(), with_fill(&art, at, top, 7)), refused);
+    // Under the 4 px top row, 2 px tall, the content's top moved to its
+    // lower edge (Space Cowboy's chat window).
+    let row = with_fill(&art, at, TileAxis::Start { offset: 4 }, 4);
+    let on_the_top_line = move |l: &mut WindowLayout, files: &mut BTreeMap<String, Vec<u8>>| {
+        row(l, files);
+        l.content.top = 6;
+        l.min_height = 12;
+    };
+    assert_eq!(checked_with(&nine(), on_the_top_line), Ok(()));
 }
 
 /// Space Cowboy's content is its views' rectangle (27/30 px in,

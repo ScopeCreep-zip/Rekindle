@@ -84,7 +84,7 @@ fn pack_of(bytes: &[u8]) -> Pack {
 /// tab (Total Chaos, xslimfire, Alloy, XGlow) decodes that tab's art once
 /// more, to measure the copied word's style (`skin_tree::label_style`).
 const PINNED: [(&str, [u64; 8]); 11] = [
-    ("symbiosis", [39220, 5817, 19277, 26, 0, 245_125, 30, 30]),
+    ("symbiosis", [39220, 5817, 19277, 26, 0, 245_125, 33, 33]),
     (
         "xfire-classic",
         [705_960, 40618, 79010, 24, 0, 215_710, 24, 24],

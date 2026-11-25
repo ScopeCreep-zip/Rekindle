@@ -7,7 +7,9 @@
 //! A 0-wide box cannot ellipsize, so a long name ran out of the window.
 //!
 //! The rule: every art-less node that draws text, a text field
-//! ([`is_text`]) or a node carrying a served [`NodeLabel`] with words and no
+//! ([`is_text`]), the chat title (plan SK17: Onyx's `MainTitleBar/Title`
+//! and Symbiosis's `ChatUser`, 0 px wide in their packs) or a node carrying
+//! a served [`NodeLabel`] with words and no
 //! glyph (SK4b menu titles, SK6/SK6b tab and button words, the N4 clone),
 //! whose pack span on x is `Fixed`, is served its usable box when the
 //! pack's box is narrower:
@@ -42,7 +44,7 @@
 use std::collections::HashMap;
 
 use rekindle_types::dto::skin::WindowLayout;
-use rekindle_types::dto::skin_tree::{Anchor, NodeRole, NodeSpan, SkinNode, SkinTree};
+use rekindle_types::dto::skin_tree::{Anchor, NodeRole, NodeSpan, SkinNode, SkinTree, SlotKey};
 
 use super::inset::is_text;
 use super::titles::{each_laid, laid_window, place};
@@ -90,10 +92,16 @@ fn reach(n: &SkinNode, b: [i32; 4], targets: &Targets) -> [i32; 4] {
         .map_or(b, |t| union(b, [b[0] + t[0], b[1] + t[1], t[2], t[3]]))
 }
 
-/// Whether `n` draws text the shell must fit: a text field, or words the
-/// Host serves over it. An art node keeps its box.
+/// Whether `n` draws text the shell must fit: a text field, the chat
+/// title (plan SK17: the peer's or room's name, words only the running app
+/// knows, which Onyx's `Title` and Symbiosis's `ChatUser` lay at a point as
+/// `Class=Text Stretch=ToContent`, so the engine drew the name from there),
+/// or words the Host serves over it. An art node keeps its box.
 pub(super) fn draws_text(n: &SkinNode) -> bool {
-    n.art.is_none() && (is_text(n.role) || n.label.as_ref().is_some_and(|l| l.glyph.is_none()))
+    n.art.is_none()
+        && (is_text(n.role)
+            || n.role == NodeRole::ChatTitle
+            || n.label.as_ref().is_some_and(|l| l.glyph.is_none()))
 }
 
 /// Whether `by` can stop `n`'s text: it takes input, is no text field or
@@ -187,6 +195,13 @@ fn respan(span: &NodeSpan, len: i32, was: (i32, i32), now: (i32, i32)) -> Option
             at: Anchor::Start(i16::try_from(span.place(len).0 + ds).ok()?),
             size,
         },
+        // A share moved whole keeps its share at the moved start; a share
+        // resized to a px length is no longer one: it keeps its place.
+        NodeSpan::Share { permille, .. } if was.1 == now.1 => NodeSpan::Share {
+            at: Anchor::Start(i16::try_from(span.place(len).0 + ds).ok()?),
+            permille,
+        },
+        NodeSpan::Share { .. } => return None,
     })
 }
 
@@ -426,10 +441,18 @@ fn line_span(n: &SkinNode) -> Option<NodeSpan> {
         return None;
     };
     let line = line_box(n.role);
-    (draws_text(n) && *size < line).then(|| NodeSpan::Fixed {
+    (draws_line(n) && *size < line).then(|| NodeSpan::Fixed {
         at: at.clone(),
         size: line,
     })
+}
+
+/// Whether `n` draws one line of text: a text node ([`draws_text`]) or the
+/// typing slot, where the shell writes one line ("… is typing"; xSLIMFIRE's
+/// `ChatTypingMessage` has no art and is 0 px tall in its pack), served
+/// the 14 px line box of [`line_box`].
+fn draws_line(n: &SkinNode) -> bool {
+    draws_text(n) || (n.art.is_none() && n.role == NodeRole::Slot(SlotKey::TypingNotice))
 }
 
 /// Serves every text node shorter than its line box that line box

@@ -10,7 +10,7 @@ use rekindle_types::dto::skin_tree::{NodeInset, NodeRole, ShellNode, SkinNode, S
 
 use crate::{builtin, images, manifest, package};
 
-fn lines(nodes: &[SkinNode], depth: usize, out: &mut String) {
+pub(super) fn lines(nodes: &[SkinNode], depth: usize, out: &mut String) {
     for n in nodes {
         let _ = write!(out, "{}{} {:?}", "  ".repeat(depth), n.id, n.role);
         if let Some(l) = &n.label {

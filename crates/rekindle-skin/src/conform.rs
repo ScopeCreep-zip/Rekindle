@@ -81,22 +81,31 @@ const fn end(offset: i16, size: u16) -> NodeSpan {
     }
 }
 
-/// Symbiosis's main window re-laid (x spans only), measured at its served
-/// minimum (368 x 555; `InfoBar` spans x 5–350):
+/// Symbiosis re-laid (x spans only), measured at its served minimum.
+/// Its main window (368 x 555; `InfoBar` spans x 5–350) and its chat
+/// window (332 wide; `InfoBar` spans x 5–314) carry the same title row
+/// (`MainWindow.xml:55-57`, `ChatWindow.xml:64-66`: `ButtonMinimize`,
+/// `ButtonMaximize`, `ButtonClose` at `JustX=Right` 49, 25 and 5 in an
+/// `InfoBar` indented 5 and 18), so the same rule moves it in each:
 ///
 /// - The title buttons (18 x 16 art, 3 px apart in Symbiosis) end 5 px
-///   from `InfoBar`'s end, so their row (x 283–345) has 62 px for three
-///   24 px targets, and `ButtonClose`'s target reaches the top-right
-///   grip's 24 x 24 corner (x ≥ 331, y < 24), which then loses it. Each is
-///   moved left so the three arts sit 6 px apart, their targets 24 px
-///   wide and edge to edge, `ButtonClose`'s ending at x 331: art x 262,
-///   286, 310 (were 283, 307, 327). The logo ends at x 130, so the row
-///   meets nothing.
-/// - `Status` (the status text, ending 18 px from its bar's end) abuts
-///   `StatusChanger` (gap 0), whose target could take only 21 px: it ends
-///   3 px sooner, so the changer's target is 24 x 24 (x 329–353).
+///   from `InfoBar`'s end, so their row has 62 px for three 24 px
+///   targets, and `ButtonClose`'s target reaches the top-right grip's
+///   24 x 24 corner (the window's last 24 px, y < 24), which then loses
+///   it. Each is moved left so the three arts sit 6 px apart, their
+///   targets 24 px wide and edge to edge, `ButtonClose`'s ending where
+///   the corner begins: in the main window art x 262, 286, 310 (were
+///   283, 307, 327), in the chat window 226, 250, 274 (were 247, 271,
+///   291). The main window's logo ends at x 130 and the chat window's
+///   user name box at x 221 (`ChatUserContainer`, `IndentRight="93"`), so
+///   the row meets nothing.
+/// - `Status` (the status text in the main window, ending 18 px from its
+///   bar's end) abuts `StatusChanger` (gap 0), whose target could take
+///   only 21 px: it ends 3 px sooner, so the changer's target is 24 x 24
+///   (x 329–353).
 ///
-/// Every node, trigger and art is kept; only these four spans move.
+/// Every node, trigger and art is kept; only these spans move, in every
+/// window that holds the node.
 fn moves() -> [Move; 4] {
     [
         Move {
@@ -134,32 +143,45 @@ fn node_mut<'a>(nodes: &'a mut [SkinNode], id: &str) -> Option<&'a mut SkinNode>
 
 /// Re-lays Symbiosis's parsed manifest as the alternate ([`moves`]), before
 /// the Host's placements, so the text-box, inset and target passes all lay
-/// the moved boxes. A node not laid as Symbiosis lays it is refused: the
-/// alternate is this relayout of that pack, never a guess.
+/// the moved boxes. Each move applies in every window and popup holding
+/// its node; a node not laid as Symbiosis lays it, or a move no window
+/// holds, is refused: the alternate is this relayout of that pack, never a
+/// guess.
 ///
 /// # Errors
-/// A moved node is missing or not where Symbiosis lays it.
+/// A moved node is missing from every window or not where Symbiosis lays
+/// it.
 pub fn relayout(m: &mut SkinManifest) -> Result<(), SkinError> {
-    let refuse = |id: &str| {
+    let refuse = |w: SkinWindow, id: &str| {
         SkinError::new(
             package::MANIFEST,
             SkinRule::BadValue {
-                field: format!("windows.main.tree.{id}.x"),
+                field: format!("windows.{w:?}.tree.{id}.x").to_ascii_lowercase(),
                 expected: "Symbiosis's span, which the accessible alternate moves".to_owned(),
             },
         )
     };
-    let tree = m
-        .windows
-        .get_mut(&SkinWindow::Main)
-        .and_then(|l| l.tree.as_mut())
-        .ok_or_else(|| refuse("root"))?;
     for mv in moves() {
-        let n = node_mut(&mut tree.root, mv.id).ok_or_else(|| refuse(mv.id))?;
-        if n.x != mv.from {
-            return Err(refuse(mv.id));
+        let mut held = false;
+        for (w, l) in &mut m.windows {
+            let roots = l
+                .tree
+                .iter_mut()
+                .map(|t| &mut t.root)
+                .chain(l.popups.values_mut().map(|p| &mut p.tree.root));
+            for root in roots {
+                if let Some(n) = node_mut(root, mv.id) {
+                    if n.x != mv.from {
+                        return Err(refuse(*w, mv.id));
+                    }
+                    n.x = mv.to.clone();
+                    held = true;
+                }
+            }
         }
-        n.x = mv.to;
+        if !held {
+            return Err(refuse(SkinWindow::Main, mv.id));
+        }
     }
     NAME.clone_into(&mut m.name);
     Ok(())

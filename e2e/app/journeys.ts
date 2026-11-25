@@ -218,6 +218,31 @@ async function whenConnected(b: Browser): Promise<void> {
 }
 
 /**
+ * The settled state a window's shot claims (lead, default-windows): the Host
+ * accepts writes (as `whenConnected`) and our general route is available, so
+ * the status field reads no "No Route" (`network.store.ts` networkLabel).
+ * Read from `get_network_status`, never from the drawn words.
+ */
+export async function whenSettled(b: Browser): Promise<void> {
+  await inBuddy(b);
+  let last = "";
+  await waitUntil(
+    async () => {
+      const s = (await b.execute(async () => {
+        const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: (cmd: string) => Promise<unknown> } };
+        return (await w.__TAURI_INTERNALS__!.invoke("get_network_status")) as { isAttached: boolean; publicInternetReady: boolean; canWrite: boolean; generalRoute: string };
+      })) as { isAttached: boolean; publicInternetReady: boolean; canWrite: boolean; generalRoute: string };
+      last = JSON.stringify(s);
+      return s.isAttached && s.publicInternetReady && s.canWrite && s.generalRoute === "available";
+    },
+    NET_WAIT_MS,
+    "",
+  ).catch(() => {
+    throw new Error(`the Host never settled with a general route (network status: ${last})`);
+  });
+}
+
+/**
  * After a submit: the U1 review (ADR 0019) appears, then is committed, or
  * the form closes with none. The review can take seconds to appear on a
  * busy node (layout run 3: the 7th community's review came after the 3 s

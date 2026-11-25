@@ -153,10 +153,14 @@ fn past(sib: &NodeSpan, gap: i16, own: u16) -> Option<Anchor> {
             before: *before,
             after: i(i32::from(*after) + own - i32::from(*size))?,
         }),
+        // A chain past a chain, or past a share (whose far edge moves with
+        // the parent's length), stays a chain: the stylesheet and
+        // `SkinTree::boxes` place it from the sibling's box.
         NodeSpan::Fixed {
             at: Anchor::After { .. },
             ..
-        } => None,
+        }
+        | NodeSpan::Share { .. } => None,
     }
 }
 

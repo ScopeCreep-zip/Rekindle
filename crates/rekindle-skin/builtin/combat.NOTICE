@@ -76,7 +76,7 @@ Dropped
     combat.ini: [StatusEdit] Text.bold (line 557)
     combat.ini: [InfoViewSwitchIn] Skin.X (line 815)
     combat.ini: [InfoviewSwitchOut] Skin.X (line 838)
-  files not read (82):
+  files not read (59):
     CombatGroupChatInfoSkin.ini
     CombatInGameMainSkin.ini
     CombatInGamePopUp.ini
@@ -118,29 +118,6 @@ Dropped
     c_top_left_off.gif
     c_top_middle_off.gif
     c_top_right_off.gif
-    c_white_background.gif
-    chat/c_chat_bottom_left.gif
-    chat/c_chat_bottom_middle.gif
-    chat/c_chat_bottom_right.gif
-    chat/c_chat_button_close_down.gif
-    chat/c_chat_button_close_hover.gif
-    chat/c_chat_button_close_norm.gif
-    chat/c_chat_button_minimize_down.gif
-    chat/c_chat_button_minimize_hover.gif
-    chat/c_chat_divider.gif
-    chat/c_chat_infoview_in_hover.gif
-    chat/c_chat_infoview_in_norm.gif
-    chat/c_chat_infoview_out_hover.gif
-    chat/c_chat_infoview_out_norm.gif
-    chat/c_chat_left_middle.gif
-    chat/c_chat_resize_hover.gif
-    chat/c_chat_resize_norm.gif
-    chat/c_chat_right_middle.gif
-    chat/c_chat_top_left.gif
-    chat/c_chat_top_middle.gif
-    chat/c_chat_top_right.gif
-    chat/c_chat_x_hover.gif
-    chat/c_chat_x_norm.gif
     infoview/c_infoview_button_join_disabled.gif
     infoview/c_infoview_button_voicechat_disabled.gif
     infoview/icon_mic_green.gif
