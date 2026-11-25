@@ -104,6 +104,26 @@ impl Ancestry {
         self.bits.borrow()[self.row[i] + j / 64] & (1 << (j % 64)) != 0
     }
 
+    /// Per op `i`, the highest `pos[j]` over the ops `j` in its causal past
+    /// (`None` when none has one): what `contains(i, j)` over every `j`
+    /// gives, from the deps alone. Op `i`'s past is the union over its deps
+    /// `d` of `d` and `d`'s past, so its highest is the highest over its
+    /// deps of `pos[d]` and `d`'s own; a dep comes before its dependant, so
+    /// one pass in stamp order settles every op in one step per dep and
+    /// builds no row (an anchor query per op built the whole matrix,
+    /// `n²/128` words OR'd on a chain).
+    pub(super) fn latest_in_past(&self, pos: &[Option<usize>]) -> Vec<Option<usize>> {
+        let n = self.dep_at.len() - 1;
+        let mut latest: Vec<Option<usize>> = Vec::with_capacity(n);
+        for i in 0..n {
+            let deps = &self.deps[self.dep_at[i]..self.dep_at[i + 1]];
+            tally!(anchor_steps, deps.len() as u64);
+            let highest = deps.iter().map(|&d| pos[d].max(latest[d])).max();
+            latest.push(highest.flatten());
+        }
+        latest
+    }
+
     /// Neither op is in the other's causal past.
     pub fn concurrent(&self, i: usize, j: usize) -> bool {
         i != j && !self.contains(i, j) && !self.contains(j, i)
@@ -500,6 +520,28 @@ mod tests {
                 let q = q as usize;
                 let (i, j) = (q % m, (q / m) % m);
                 prop_assert_eq!(set.past.contains(i, j), reach[i][j], "contains({}, {})", i, j);
+            }
+        }
+
+        /// PF1: the anchor recurrence over the deps equals the latest
+        /// marked op that `contains` finds in each op's causal past.
+        #[test]
+        fn latest_in_past_is_the_latest_marked_op_in_the_past(
+            n in 1usize..160,
+            picks in proptest::collection::vec(any::<u64>(), 1..8),
+            marks in proptest::collection::vec(any::<u8>(), 1..16),
+        ) {
+            let ops = dag(n, &picks);
+            let creator = PseudonymKey([0; 32]);
+            let cert = crate::fixture::cert(&creator, rekindle_types::governance::AdmissionMode::Open);
+            let set = prepare(&cert, &ops, &std::collections::BTreeSet::new());
+            let m = set.ops.len();
+            let order: Vec<usize> =
+                (0..m).filter(|&i| marks[i % marks.len()] % 3 == 0).collect();
+            let latest = set.past.latest_in_past(&super::super::positions(m, &order));
+            for (i, got) in latest.into_iter().enumerate() {
+                let want = order.iter().rposition(|&p| set.past.contains(i, p));
+                prop_assert_eq!(got, want, "op {}", i);
             }
         }
     }

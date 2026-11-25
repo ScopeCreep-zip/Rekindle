@@ -27,6 +27,8 @@ pub struct MergeCounts {
     pub words_ored: u64,
     /// Ops examined by `frontier_holds` counting a removal's target ops.
     pub frontier_steps: u64,
+    /// Deps visited finding each op's anchor (`Ancestry::latest_in_past`).
+    pub anchor_steps: u64,
 }
 
 std::thread_local! {
@@ -38,6 +40,7 @@ std::thread_local! {
             rows_built: 0,
             words_ored: 0,
             frontier_steps: 0,
+            anchor_steps: 0,
         })
     };
 }

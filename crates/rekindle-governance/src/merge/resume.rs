@@ -441,12 +441,10 @@ pub(super) fn rest_round(ctx: &Ctx<'_>, set: &RestSet<'_>, invalid: &[bool]) -> 
         }
     }
     let power_order = order.clone();
-    let anchor: Vec<Option<usize>> = (0..n)
-        .map(|i| {
-            (power_order.iter().rposition(|&q| set.past.contains(i, q)))
-                .map(|k| p + k)
-                .or_else(|| p.checked_sub(1))
-        })
+    let anchor: Vec<Option<usize>> = (set.past)
+        .latest_in_past(&super::positions(n, &power_order))
+        .into_iter()
+        .map(|k| k.map(|k| p + k).or_else(|| p.checked_sub(1)))
         .collect();
     let mut mainline: Vec<(Option<usize>, u64, OpHash, usize)> = rest
         .into_iter()
