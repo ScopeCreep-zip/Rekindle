@@ -34,14 +34,21 @@ export interface Peer {
   publicKey: string;
   /** `rekindle --format json --no-input <args>` as this peer; the parsed answer. */
   cli(args: string[]): Promise<unknown>;
-  /** The review a reviewed command prints when run without its confirmation (D3.4), or null. */
-  review(args: string[]): Promise<unknown>;
+  /**
+   * `args` run once without any confirmation: `ran` with its answer when it
+   * needed none, else the refusal it printed (a reviewed command prints its
+   * review, D3.4). Never runs a command twice.
+   */
+  review(args: string[]): Promise<Reviewed>;
   stop(): Promise<void>;
   /** For the process's `exit` hook, where only synchronous work runs. */
   stopSync(): void;
 }
 
 const started = new Set<Peer>();
+
+/** What `Peer.review` saw: the command ran (its answer), or it was refused (what it printed). */
+export type Reviewed = { ran: true; value: unknown } | { ran: false; refusal: { error?: { message?: string } } | null };
 
 /**
  * The last JSON value a CLI run printed. A reviewed action prints its
@@ -159,17 +166,18 @@ async function startPeer(displayName: string): Promise<Peer> {
   chmodSync(passFile, 0o600);
   const exe = cliPath();
 
-  const review = async (args: string[]): Promise<unknown> => {
+  const review = async (args: string[]): Promise<Reviewed> => {
     try {
-      await run(exe, ["--format", "json", "--no-input", ...args], { env, maxBuffer: 16 * 1024 * 1024 });
-      return null;
+      const { stdout } = await run(exe, ["--format", "json", "--no-input", ...args], { env, maxBuffer: 16 * 1024 * 1024 });
+      // It asked no review: it has run, and this is its answer.
+      return { ran: true, value: lastJson(stdout) };
     } catch (err) {
       // A refused reviewed run prints its review on one line, then the
       // error (D3.4); a refusal before any review prints only the error.
       const out = ((err as { stdout?: string }).stdout ?? "").trim();
       const first = out.split("\n")[0] ?? "";
-      if (first.length > 1 && first.startsWith("{")) return JSON.parse(first);
-      return out.startsWith("{") ? JSON.parse(out) : null;
+      if (first.length > 1 && first.startsWith("{")) return { ran: false, refusal: JSON.parse(first) };
+      return { ran: false, refusal: out.startsWith("{") ? JSON.parse(out) : null };
     }
   };
 
@@ -375,8 +383,9 @@ export async function peerSendGroup(peer: Peer, groupId: string, text: string): 
  * confirms the fingerprint its own review names.
  */
 export async function peerJoinCommunity(peer: Peer, invite: string): Promise<void> {
-  const refused = (await peer.review(["community", "join", "--invite", invite])) as { error?: { message?: string } } | null;
-  const fingerprint = /--confirm=([0-9a-f ]{64,79})$/.exec(refused?.error?.message ?? "")?.[1];
-  if (!fingerprint) throw new Error(`${peer.displayName}: the join asked for no fingerprint (${JSON.stringify(refused).slice(0, 200)})`);
+  const reviewed = await peer.review(["community", "join", "--invite", invite]);
+  if (reviewed.ran) throw new Error(`${peer.displayName}: the join ran without the fingerprint review it must ask`);
+  const fingerprint = /--confirm=([0-9a-f ]{64,79})$/.exec(reviewed.refusal?.error?.message ?? "")?.[1];
+  if (!fingerprint) throw new Error(`${peer.displayName}: the join asked for no fingerprint (${JSON.stringify(reviewed.refusal).slice(0, 200)})`);
   await peer.cli([`--confirm=${fingerprint}`, "community", "join", "--invite", invite]);
 }
