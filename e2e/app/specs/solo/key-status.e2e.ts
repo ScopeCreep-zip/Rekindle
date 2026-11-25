@@ -49,7 +49,27 @@ describe("a rotated key we lack: pending until a holder answers, then current", 
     await logOut(browser, me);
     // The CLI kicks by pseudonym (the 64 hex community info serves).
     await peerKick(cara, anchor, await peerOwnPseudonym(peers[1], anchor));
-    await waitUntil(async () => (await peerMemberCount(cara, anchor)) === 2, NET_WAIT_MS * 2, "Cara never counted Bea gone");
+    // Cara goes offline only once her kick and the rotation it starts have
+    // landed on the DHT: no op of hers still publishing (`opPublications`
+    // empty) and no barrier holding her writes (`catchUp` absent), as
+    // `community info` serves them. Her member count flips locally before
+    // publication, so Ari could unlock to a DHT without the rotation.
+    let last = "";
+    await waitUntil(
+      async () => {
+        const info = ((await cara.cli(["community", "info", "--community", anchor])) ?? {}) as Record<string, unknown>;
+        const members = (info.memberCount ?? info.member_count) as number | undefined;
+        const publishing = (info.opPublications ?? info.op_publications ?? {}) as Record<string, unknown>;
+        const catchUp = info.catchUp ?? info.catch_up;
+        last = JSON.stringify({ members, publishing, catchUp });
+        return members === 2 && Object.keys(publishing).length === 0 && catchUp == null;
+      },
+      NET_WAIT_MS * 2,
+      "",
+    ).catch(() => {
+      throw new Error(`Cara's kick and rotation never landed (community info: ${last})`);
+    });
+    console.log(`[key] Cara's ops landed: ${last}`);
     await cara.pause();
   });
 
