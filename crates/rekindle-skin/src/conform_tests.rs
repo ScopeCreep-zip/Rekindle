@@ -38,8 +38,9 @@ fn nodes(m: &SkinManifest) -> Vec<String> {
 }
 
 /// Plan SK14: the alternate serves no `Short` target in any window or
-/// popup, where Symbiosis serves two: its `ResizeGripperTR` grip in its
-/// buddy list and in its chat window (`goldens/targets-short.txt`; its
+/// popup, where Symbiosis serves three: its `ResizeGripperTR` grip in its
+/// buddy list, in its chat window and in the Community window, which wears
+/// the chat window's frame (plan SK17-6, `goldens/targets-short.txt`; its
 /// top-left and top grips take the `TopRow` system menu, `target::grips`).
 /// Plan SK15's settle pass grows its other short boxes in both windows
 /// (`ButtonMaximize`, `ButtonClose`, and the buddy list's `StatusChanger`,
@@ -47,9 +48,9 @@ fn nodes(m: &SkinManifest) -> Vec<String> {
 /// their far side, so they serve `Size`.
 #[test]
 fn the_alternate_serves_no_short_target() {
-    assert_eq!(short_targets(&original()), 2);
+    assert_eq!(short_targets(&original()), 3);
     assert_eq!(short_targets(&alternate()), 0);
-    assert_eq!(builtin_short_targets(SOURCE).unwrap(), Some(2));
+    assert_eq!(builtin_short_targets(SOURCE).unwrap(), Some(3));
     assert_eq!(builtin_short_targets(ID).unwrap(), Some(0));
     assert_eq!(builtin_short_targets("builtin:nope").unwrap(), None);
 }
