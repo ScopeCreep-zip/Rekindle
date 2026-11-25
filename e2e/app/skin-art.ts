@@ -27,3 +27,29 @@ export async function artElements(): Promise<string[]> {
 export async function windowKind(): Promise<string> {
   return (await browser.execute(() => document.documentElement.dataset.window ?? "")) as string;
 }
+
+/**
+ * The current window's skinned frame (lead, SKW1): every drawn node of the
+ * frame's roles (title bar, window buttons, menu bar and titles, the chat
+ * title), as `id role art` lines sorted, art being the node's own skin://
+ * files; and whether a default (unskinned) title bar is drawn instead.
+ */
+export async function frameNodes(): Promise<{ nodes: string[]; defaultTitlebar: boolean }> {
+  return (await browser.execute(() => {
+    const drawn = (e: Element): boolean => !e.closest("[hidden]") && e.getBoundingClientRect().width > 0;
+    const frameRole = /^(titleBar|windowButton|menuBar|menuTitle|chatTitle)(:|$)/;
+    const nodes = Array.from(document.querySelectorAll<HTMLElement>(".skin-tree [data-skin-node]"))
+      .filter((n) => frameRole.test(n.dataset.skinRole ?? "") && drawn(n))
+      .map((n) => {
+        const cs = getComputedStyle(n);
+        const art = [cs.backgroundImage, cs.borderImageSource]
+          .flatMap((v) => v.match(/skin:\/\/[^)"]+/g) ?? [])
+          .map((u) => u.split("/").slice(-1)[0])
+          .join(",");
+        return `${n.dataset.skinNode} ${n.dataset.skinRole} ${art || "-"}`;
+      })
+      .sort();
+    const tb = document.querySelector(".xfire-titlebar");
+    return { nodes, defaultTitlebar: !!tb && drawn(tb) };
+  })) as { nodes: string[]; defaultTitlebar: boolean };
+}

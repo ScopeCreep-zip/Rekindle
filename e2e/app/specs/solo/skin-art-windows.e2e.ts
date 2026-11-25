@@ -13,7 +13,7 @@ import { type Peer, startFleet, stopFleet } from "../../fleet.ts";
 import { createCommunity, createGroup, createIdentity, friendsView, newUser, openChat, openCommunity, openGroup, type User } from "../../journeys.ts";
 import { applySkin, skinShown } from "../../journeys_skins.ts";
 import { shot } from "../../shots.ts";
-import { artElements, windowKind } from "../../skin-art.ts";
+import { artElements, frameNodes, windowKind } from "../../skin-art.ts";
 import { builtinPacks } from "../../skin-pack.ts";
 import { befriendFleet } from "../../social.ts";
 
@@ -58,18 +58,33 @@ describe("skinned windows keep their pack art (SB1)", function () {
       await openSettings(browser, "Appearance");
       const href = await applySkin(browser, me, pack.name);
       const counts: Record<string, number> = {};
-      for (const w of windows) {
+      const frames: Record<string, { nodes: string[]; defaultTitlebar: boolean }> = {};
+      for (const [i, w] of windows.entries()) {
         await browser.switchToWindow(w.handle);
         await skinShown(browser, href);
         await browser.pause(1000);
         const kind = await windowKind();
         const art = await artElements();
         counts[w.label] = art.length;
+        frames[w.label] = await frameNodes();
         console.log(`[art] ${file} ${w.label}: data-window=${kind} ${art.length} element(s) with pack art`);
-        await shot(`${w.label}`);
+        console.log(`[frame] ${file} ${w.label}: default titlebar=${frames[w.label].defaultTitlebar}; ${JSON.stringify(frames[w.label].nodes)}`);
+        // Named so a pack's windows sort side by side (chat, group chat, community).
+        await shot(`${file}-${i}-${w.label}`);
         expect(kind).toBe(w.kind);
       }
       for (const w of windows) expect(counts[w.label]).toBeGreaterThan(0);
+      // Frame parity (lead, SKW1): the group-chat and community windows wear
+      // the pack's frame, the one its chat window draws (today the pack's
+      // ChatWindow is every chat-like window's source): the same title strip,
+      // window buttons and menus with the same art, and never a default title bar.
+      const source = frames["chat"];
+      expect(source.nodes.length).toBeGreaterThan(0);
+      expect(source.defaultTitlebar).toBe(false);
+      for (const label of ["group-chat", "community"]) {
+        expect({ window: label, defaultTitlebar: frames[label].defaultTitlebar }).toEqual({ window: label, defaultTitlebar: false });
+        expect({ window: label, frame: frames[label].nodes }).toEqual({ window: label, frame: source.nodes });
+      }
 
       // The window's portaled surfaces (mounted under <body>, outside the
       // frame) are in the pack's scope too: its menu opens with its items,
