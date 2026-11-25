@@ -294,8 +294,36 @@ describe("a group's voice tab: Call, Join while its call rings, Leave once joine
     }
   };
 }`);
+    // Lead (gv9: no call at all after Cancel): what the press hits. The
+    // element at Cancel's centre, and for the click and pointerdown events
+    // their target, its nearest listening node ([data-skin-on], what the
+    // tree's `mine` compares) and Cancel's served state.
+    const atCentre = (await b.execute((id: string) => {
+      const n = document.querySelector<HTMLElement>(`[data-skin-node="${id}"]`);
+      if (!n) return "no node";
+      const r = n.getBoundingClientRect();
+      const top = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) as HTMLElement | null;
+      const listener = top?.closest<HTMLElement>("[data-skin-on]");
+      (window as unknown as { __gvPress?: string[] }).__gvPress = [];
+      for (const kind of ["pointerdown", "click"]) {
+        document.addEventListener(
+          kind,
+          (e) => {
+            const t = e.target as HTMLElement | null;
+            const l = t?.closest<HTMLElement>("[data-skin-on]");
+            (window as unknown as { __gvPress: string[] }).__gvPress.push(
+              `${kind}: target ${t?.tagName}.${t?.className} in ${t?.closest<HTMLElement>("[data-skin-node]")?.dataset.skinNode}; listener ${l?.dataset.skinNode} (${l === n ? "Cancel" : "not Cancel"})`,
+            );
+          },
+          { capture: true, once: true },
+        );
+      }
+      return `box ${[r.x, r.y, r.width, r.height].map(Math.round)}; top ${top?.tagName}.${top?.className} in ${top?.closest<HTMLElement>("[data-skin-node]")?.dataset.skinNode}; its listener ${listener?.dataset.skinNode}; Cancel data-state ${n.dataset.state}, aria-disabled ${n.getAttribute("aria-disabled")}, data-skin-on ${n.dataset.skinOn}`;
+    }, cancel.id)) as string;
+    console.log(`[gv] Cancel before press: ${atCentre}`);
     await pressNode(b, cancel.id);
     await b.pause(3000);
+    console.log(`[gv] Cancel press events: ${JSON.stringify(await b.execute(() => (window as unknown as { __gvPress?: string[] }).__gvPress ?? []))}`);
     const afterCancel = (await b.execute(() => ({
       calls: (window as unknown as { __gvCalls?: string[] }).__gvCalls ?? [],
       toasts: Array.from(document.querySelectorAll(".toast-item")).map((t) => (t.textContent ?? "").trim()),
