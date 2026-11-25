@@ -1494,6 +1494,15 @@
       }
     ]
   },
+  "skin.nodeInset.fixed": {
+    "left": 0,
+    "right": 28
+  },
+  "skin.nodeInset.maxWidth": {
+    "left": 0,
+    "maxWidth": 151,
+    "right": 54
+  },
   "skin.nodeSpan.after": {
     "at": {
       "kind": "after",

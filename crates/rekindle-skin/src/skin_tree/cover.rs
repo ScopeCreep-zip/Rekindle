@@ -167,8 +167,12 @@ fn picture(n: &SkinNode, w: i32, h: i32) -> Option<(&NodePiece, i32, i32)> {
     })
 }
 
-/// The cover of a glyph label on `n` (a fixed box), from its picture.
-fn cover_of(node: &SkinNode, package: &Package<'_>) -> Result<Option<[u16; 4]>, SkinError> {
+/// The first frame of `node`'s one whole picture (a fixed box), and where
+/// it sits in the node's box; `None` when it has none.
+pub(super) fn picture_frame(
+    node: &SkinNode,
+    package: &Package<'_>,
+) -> Result<Option<(RgbaImage, i32, i32)>, SkinError> {
     let (NodeSpan::Fixed { size: width, .. }, NodeSpan::Fixed { size: height, .. }) =
         (node.x.clone(), node.y.clone())
     else {
@@ -186,7 +190,15 @@ fn cover_of(node: &SkinNode, package: &Package<'_>) -> Result<Option<[u16; 4]>, 
         )
     })?;
     let frames = crate::regions::frames(&piece.image, bytes)?;
-    let Some([left, top, across, down]) = frames.first().and_then(icon_box) else {
+    Ok(frames.into_iter().next().map(|f| (f, dx, dy)))
+}
+
+/// The cover of a glyph label on `n` (a fixed box), from its picture.
+fn cover_of(node: &SkinNode, package: &Package<'_>) -> Result<Option<[u16; 4]>, SkinError> {
+    let Some((frame, dx, dy)) = picture_frame(node, package)? else {
+        return Ok(None);
+    };
+    let Some([left, top, across, down]) = icon_box(&frame) else {
         return Ok(None);
     };
     let shift = |v: u16, by: i32| u16::try_from(i32::from(v) + by).ok();
@@ -214,11 +226,22 @@ fn walk(nodes: &mut [SkinNode], package: &Package<'_>) -> Result<(), SkinError> 
 /// # Errors
 /// A glyph label's picture missing from the package or not decoding.
 pub fn glyphs(layout: &mut WindowLayout, package: &Package<'_>) -> Result<(), SkinError> {
+    each_root(layout, |root| walk(root, package))
+}
+
+/// Runs `pass` on `layout`'s tree root and each popup's.
+///
+/// # Errors
+/// The first error `pass` returns.
+pub(super) fn each_root(
+    layout: &mut WindowLayout,
+    mut pass: impl FnMut(&mut [SkinNode]) -> Result<(), SkinError>,
+) -> Result<(), SkinError> {
     if let Some(tree) = layout.tree.as_mut() {
-        walk(&mut tree.root, package)?;
+        pass(&mut tree.root[..])?;
     }
     for popup in layout.popups.values_mut() {
-        walk(&mut popup.tree.root, package)?;
+        pass(&mut popup.tree.root[..])?;
     }
     Ok(())
 }

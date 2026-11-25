@@ -96,8 +96,9 @@ fn adjacent_small_buttons_never_overlap_and_each_meets_size_or_spacing() {
     assert_eq!(corner[0].area, [27, 27, 23, 24]);
     assert_eq!(corner[0].rule, TargetRule::Spacing);
     assert!(!validate::overlap(corner[0].area, corner[1].area));
-    // 2 px apart: each takes 1 px of the gap; the boxes touch, never
-    // overlap, and neither size nor spacing holds (a finding, served).
+    // 2 px apart: each takes 1 px of the gap, where neither size nor
+    // spacing holds, so each takes its 24 px from the free room on its far
+    // side (plan SK15, `settle`); the boxes touch, never overlap.
     let tight = target::targets(
         &SkinTree {
             outsets: Z,
@@ -108,9 +109,10 @@ fn adjacent_small_buttons_never_overlap_and_each_meets_size_or_spacing() {
         },
         (200, 300),
     );
-    assert_eq!(tight[0].area, [47, 7, 22, 24]);
-    assert_eq!(tight[1].area, [69, 7, 22, 24]);
-    assert!(tight.iter().all(|t| t.rule == TargetRule::Short));
+    assert_eq!(tight[0].area, [45, 7, 24, 24]);
+    assert_eq!(tight[1].area, [69, 7, 24, 24]);
+    assert!(tight.iter().all(|t| t.rule == TargetRule::Size));
+    assert!(!validate::overlap(tight[0].area, tight[1].area));
 }
 
 /// A small button at `at` beside a 30 x 40 button at x 0.

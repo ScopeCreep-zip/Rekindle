@@ -23,6 +23,10 @@
 //!   same axis): it takes half the gap (floored), or the whole gap less
 //!   what the neighbour wants of it when that is under half ([`clip`]). The
 //!   two target boxes then never overlap, whatever order they are laid in.
+//! - A box cut short of 24 px on one side then takes its 24 px from the
+//!   free room on its other side, or from a neighbour's share of the gap
+//!   the neighbour can spare ([`super::settle`], plan SK15): the target
+//!   need not be centred on its art, and the art never moves.
 //! - Its rule: `Size` when the box is at least 24 x 24; else `Spacing` when
 //!   the 24 px circle centred on its box meets no neighbour's target box and
 //!   no undersized neighbour's circle (the criterion's spacing exception;
@@ -43,8 +47,8 @@ use rekindle_types::dto::skin::WindowLayout;
 use rekindle_types::dto::skin_action::NodeTrigger;
 use rekindle_types::dto::skin_tree::{Edge, NodeRole, NodeTarget, SkinNode, SkinTree, TargetRule};
 
-use super::keep;
 use super::validate::{hit_area, overlap, text_sized, Apart, Stack, HIT};
+use super::{keep, settle};
 
 /// One candidate laid in the window.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -198,11 +202,22 @@ pub fn targets(tree: &SkinTree, window: (i32, i32)) -> Vec<Laid> {
     let want: Vec<[i32; 4]> = live.iter().map(|(_, b)| hit_area(*b, window)).collect();
     // Plan SK12: no target grows over the views or a served text box.
     let kept = keep::boxes(tree, window);
+    let keeps = |i: usize, id: &str| {
+        !apart.apart(&live[i].0.id, id) && !keep::kin(&tree.root, live[i].0, id)
+    };
     let near = |i: usize, j: usize| {
         i != j && !apart.apart(&live[i].0.id, &live[j].0.id) && !overlap(live[i].1, live[j].1)
     };
     let laid_over = |i: usize, j: usize| {
         i != j && !apart.apart(&live[i].0.id, &live[j].0.id) && overlap(live[i].1, live[j].1)
+    };
+    // The spacing exception's circle: 24 px across, 12 px (24 half
+    // pixels) from its centre.
+    let r2 = i64::from(HIT) * i64::from(HIT);
+    let spaced = |i: usize, own: [i32; 4], area: &[[i32; 4]]| {
+        (0..live.len())
+            .filter(|&j| near(i, j) || laid_over(i, j))
+            .all(|j| far(own, area[j]) >= r2 && !(small(area[j]) && centres(own, area[j]) < 4 * r2))
     };
     let mut area: Vec<[i32; 4]> = (0..live.len())
         .map(|i| {
@@ -210,14 +225,16 @@ pub fn targets(tree: &SkinTree, window: (i32, i32)) -> Vec<Laid> {
             for j in (0..live.len()).filter(|&j| near(i, j)) {
                 clip(&mut g, live[i].1, live[j].1, want[j]);
             }
-            for (id, o, views) in &kept {
-                if !apart.apart(&live[i].0.id, id) && !keep::kin(&tree.root, live[i].0, id) {
-                    keep::keep_out(&mut g, live[i].1, *o, *views);
-                }
+            for (_, o, views) in kept.iter().filter(|(id, ..)| keeps(i, id)) {
+                keep::keep_out(&mut g, live[i].1, *o, *views);
             }
             g
         })
         .collect();
+    // Plan SK15: a box cut short on one side takes its 24 px from the free
+    // room on its other side, or from a neighbour that can spare it.
+    let arts: Vec<[i32; 4]> = live.iter().map(|(_, b)| *b).collect();
+    settle::settle(&mut area, &arts, &near, &kept, &keeps, window, &spaced);
     // Plan SK12: top of the served stack first, so each node is cut clear
     // of the final press areas of the nodes drawn over its art.
     let stack = Stack::new(&tree.root);
@@ -238,14 +255,6 @@ pub fn targets(tree: &SkinTree, window: (i32, i32)) -> Vec<Laid> {
             under(&mut area[i], live[i].1, top);
         }
     }
-    // The spacing exception's circle: 24 px across, 12 px (24 half
-    // pixels) from its centre.
-    let r2 = i64::from(HIT) * i64::from(HIT);
-    let spaced = |i: usize, own: [i32; 4], area: &[[i32; 4]]| {
-        (0..live.len())
-            .filter(|&j| near(i, j) || laid_over(i, j))
-            .all(|j| far(own, area[j]) >= r2 && !(small(area[j]) && centres(own, area[j]) < 4 * r2))
-    };
     // A box cut short of 24 px meets its neighbour's, so its circle never
     // clears it: the node then keeps its art box as its (undersized)
     // target when that clears every neighbour (the spacing exception on

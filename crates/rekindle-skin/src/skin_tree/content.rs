@@ -330,6 +330,7 @@ fn mark(nodes: &mut [SkinNode], id: &str) {
             text: words.to_owned(),
             cover: None,
             glyph: Some(NodeGlyph::RekindleMarkSmall),
+            style: None,
         });
     }
 }

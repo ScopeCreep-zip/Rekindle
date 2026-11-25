@@ -65,7 +65,7 @@ pub(super) fn read(
             let (event, action) = (t.attr_ci("Type").unwrap_or_default().trim(), t.text.trim());
             // Onyx's `<Trigger Type="OnClick"></Trigger>` (`components.xml:2089`)
             // names no action: there is nothing to run, and no name to refuse.
-            if action.is_empty() {
+            if action.is_empty() || radio(action, &owner) {
                 continue;
             }
             out.push(NodeTrigger {
@@ -344,6 +344,25 @@ fn own_group(owner: &Owner<'_>) -> Option<u16> {
         .flatten()
         .find_map(|n| n.attr_ci("GroupId").or(n.attr_ci("ControlGroupId")))
         .and_then(|g| g.trim().parse().ok())
+}
+
+/// Whether `action` is a sticky push button's radio message: a one-argument
+/// `GroupMessage(n)` naming the button's own `GroupId` (Symbiosis's tabs,
+/// `GroupId="8765"` with `OnLeftButtonDown` `GroupMessage(8765)`,
+/// `MainWindow.xml:910-915`), which tells the other sticky buttons of the
+/// group to release. It selects no page of any group (the group has no page
+/// 8765), and the shell's shown-tab state already is the radio (one tab
+/// down, the shown view's), so it imports as no trigger.
+fn radio(action: &str, owner: &Owner<'_>) -> bool {
+    let (name, args) = split(action);
+    name == "groupmessage"
+        && args.is_some_and(|a| {
+            !a.contains(',')
+                && a.trim()
+                    .parse::<u16>()
+                    .ok()
+                    .is_some_and(|n| Some(n) == own_group(owner))
+        })
 }
 
 fn number(s: &str, owner: &Owner<'_>, raw: &str) -> Result<u16, ImportError> {

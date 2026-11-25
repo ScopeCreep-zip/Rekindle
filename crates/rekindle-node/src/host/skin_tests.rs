@@ -153,7 +153,9 @@ async fn the_conforming_alternate_is_listed_selectable_and_a_login_skin() {
     assert_eq!(alternate.id, conform::ID);
     assert_eq!(alternate.name, conform::NAME);
     assert_eq!((alternate.short_targets, alternate.conforming), (0, true));
-    assert_eq!((symbiosis.short_targets, symbiosis.conforming), (4, false));
+    // Plan SK15: settle grows three of Symbiosis's four Shorts to 24 x 24;
+    // its `ResizeGripperTR` grip stays Short.
+    assert_eq!((symbiosis.short_targets, symbiosis.conforming), (1, false));
     assert_eq!(alternate.credits, symbiosis.credits);
 
     let (answer, _) = run(

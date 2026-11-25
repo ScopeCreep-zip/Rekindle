@@ -328,6 +328,13 @@ export interface NodeTarget {
 export interface NodeInset {
   left: number;
   right: number;
+  /**
+   * The text's maximum width in px from its start (left edge + `left`)
+   * when its stop does not move with the field's far edge (plan SK15:
+   * Alloy's name field under its fixed status field); absent when `right`
+   * holds at every width.
+   */
+  maxWidth?: number;
 }
 
 /** A Host-placed node's words (`NodeLabel`, plan SK2-N4d). */
@@ -341,6 +348,22 @@ export interface NodeLabel {
   /** A built-in glyph drawn instead of text (an icon tab, plan SK3), centred in `cover`
    *  (the source icon's box); `text` is then its accessible name and tooltip. */
   glyph?: NodeGlyph;
+  /** The source tab's word style (plan SK15), measured from its art: the words drawn at
+   *  `sizePx`/`weight`/`color`, laid in `textBox` (not filled; `cover` hides the copied word).
+   *  Absent: the shell's label style. */
+  style?: LabelStyle;
+}
+
+/** `LabelStyle`: a source tab's word style (plan SK15). */
+export interface LabelStyle {
+  sizePx: number;
+  weight: number;
+  /** `#RRGGBB`. */
+  color: string;
+  /** How the words sit in `textBox`, as the source word sits in its art. */
+  align: "start" | "centre";
+  /** [x, y, width, height] in px of the node's own box the words are laid in. */
+  textBox: [number, number, number, number];
 }
 
 /** The built-in glyphs the shell draws (`NodeGlyph`). */

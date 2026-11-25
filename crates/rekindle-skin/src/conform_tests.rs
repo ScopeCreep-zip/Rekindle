@@ -38,12 +38,15 @@ fn nodes(m: &SkinManifest) -> Vec<String> {
 }
 
 /// Plan SK14: the alternate serves no `Short` target in any window or
-/// popup, where Symbiosis serves its four.
+/// popup, where Symbiosis serves one: its `ResizeGripperTR` grip. Plan
+/// SK15's settle pass grows its other three (`ButtonMaximize`,
+/// `ButtonClose`, `StatusChanger`, each cut to 21 or 22 px by a neighbour)
+/// to 24 x 24 into the free room on their far side, so they serve `Size`.
 #[test]
 fn the_alternate_serves_no_short_target() {
-    assert_eq!(short_targets(&original()), 4);
+    assert_eq!(short_targets(&original()), 1);
     assert_eq!(short_targets(&alternate()), 0);
-    assert_eq!(builtin_short_targets(SOURCE).unwrap(), Some(4));
+    assert_eq!(builtin_short_targets(SOURCE).unwrap(), Some(1));
     assert_eq!(builtin_short_targets(ID).unwrap(), Some(0));
     assert_eq!(builtin_short_targets("builtin:nope").unwrap(), None);
 }
