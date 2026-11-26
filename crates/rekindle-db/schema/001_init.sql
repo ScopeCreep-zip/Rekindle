@@ -242,12 +242,14 @@ CREATE TABLE IF NOT EXISTS group_lobby_members (
 CREATE TABLE IF NOT EXISTS group_dm_rendezvous (
     owner_key TEXT NOT NULL,
     group_id TEXT NOT NULL,
-    record_key TEXT NOT NULL CHECK(length(record_key) > 0),
-    slot INTEGER NOT NULL CHECK(slot BETWEEN 0 AND 7),
-    writer TEXT NOT NULL CHECK(length(writer) > 0),
-    slots TEXT NOT NULL CHECK(json_valid(slots)),
+    record_key TEXT NOT NULL CHECK (length(record_key) > 0),
+    slot INTEGER NOT NULL CHECK (slot BETWEEN 0 AND 7),
+    writer TEXT NOT NULL CHECK (length(writer) > 0),
+    slots TEXT NOT NULL CHECK (json_valid(slots)),
     PRIMARY KEY (owner_key, group_id),
-    FOREIGN KEY (owner_key, group_id) REFERENCES group_dms(owner_key, group_id) ON DELETE CASCADE
+    FOREIGN KEY (owner_key, group_id) REFERENCES group_dms (
+        owner_key, group_id
+    ) ON DELETE CASCADE
 );
 
 -- Plan E2.6: a creator's verified invite we have not answered yet, held
