@@ -13,7 +13,7 @@
 
 import { browser, expect } from "@wdio/globals";
 import { switchTo } from "../../../walk/helpers.ts";
-import { BUDDY, openSettings } from "../../../walk/nav.ts";
+import { BUDDY, SETTINGS, closeSettings, openSettings } from "../../../walk/nav.ts";
 import { createCommunity, createIdentity, newUser, openCommunity, type User } from "../../journeys.ts";
 import { applySkin, skinShown } from "../../journeys_skins.ts";
 import { shot } from "../../shots.ts";
@@ -90,6 +90,11 @@ describe("a skinned community window's slots and the content mounted in them (SK
       await switchTo(browser, BUDDY);
       await openSettings(browser, "Appearance");
       const href = await applySkin(browser, me, pack.name);
+      // Settings closes after each switch, so the next pack's Settings
+      // opens fresh and frontmost (left open behind the kept community
+      // window, its Appearance tab once took no click).
+      await switchTo(browser, SETTINGS);
+      await closeSettings(browser);
       await browser.switchToWindow(community);
       await skinShown(browser, href);
       await browser.pause(2000);
@@ -113,6 +118,8 @@ describe("a skinned community window's slots and the content mounted in them (SK
     await switchTo(browser, BUDDY);
     await openSettings(browser, "Appearance");
     const fromHref = await applySkin(browser, me, from.name);
+    await switchTo(browser, SETTINGS);
+    await closeSettings(browser);
     await browser.switchToWindow(community);
     await skinShown(browser, fromHref);
     const handle = community;
@@ -127,6 +134,8 @@ describe("a skinned community window's slots and the content mounted in them (SK
     await switchTo(browser, BUDDY);
     await openSettings(browser, "Appearance");
     const href = await applySkin(browser, me, to.name);
+    await switchTo(browser, SETTINGS);
+    await closeSettings(browser);
     await browser.switchToWindow(handle);
     await skinShown(browser, href);
     await browser.pause(1500);
