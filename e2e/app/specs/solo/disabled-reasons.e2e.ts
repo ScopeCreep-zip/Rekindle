@@ -168,6 +168,13 @@ describe("a disabled node says why (CR1)", function () {
     await openCommunity(browser, name);
     const handle = await browser.getWindowHandle();
     await skinShown(browser, href);
+    // Lead (Linux run): on an unlocked desktop the fresh window is focused.
+    // It is unfocused through the app's own path: Settings opened from the
+    // buddy list's menu comes up focused (a locked screen leaves every
+    // window unfocused already). A focused window is never pressed and
+    // called inactive: the wait below fails loudly instead.
+    await openSettings(browser, "Appearance");
+    await browser.switchToWindow(handle);
     // The window follows its signals (SKW1); unfocused, the pack's
     // deactivate trigger draws its close button in the Disabled art.
     let close: { node: string; cause: string; ariaDisabled: string | null; role: string } | null = null;
@@ -182,7 +189,7 @@ describe("a disabled node says why (CR1)", function () {
       NET_WAIT_MS,
       "",
     ).catch(() => {
-      throw new Error(`the inactive community window's close button is not in its windowInactive art: ${JSON.stringify(close)}`);
+      throw new Error(`the community window never deactivated (its close button is not in its windowInactive art), so no inactive press is made: ${JSON.stringify(close)}`);
     });
     console.log(`[cr1] symbiosis community close: ${JSON.stringify(close)}`);
     // What takes a press at the button's centre: the nearest node listening
