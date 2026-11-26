@@ -18,7 +18,7 @@ use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
 use rekindle_records::lease::{CommunityLeases, LeaseId};
 use rekindle_types::attachment::AttachmentOffer;
 use rekindle_types::governance::GovernanceEntry;
-use rekindle_types::id::PseudonymKey;
+use rekindle_types::id::{ChannelId, PseudonymKey};
 
 use super::HostChannel;
 
@@ -294,14 +294,31 @@ impl ChannelMessagingDeps for HostChannel {
             })
     }
 
+    /// A channel action is judged on that channel's effective permissions,
+    /// its overwrites applied (architecture §9.2 steps 4-6, plan E3.2
+    /// SEC): a channel an overwrite closes to us refuses its history,
+    /// sends and moderation even where the community-wide bits allow them.
+    /// `None` is a community-wide action.
     fn require_channel_permission(
         &self,
         community_id: &str,
-        _channel_id: Option<&str>,
+        channel_id: Option<&str>,
         perm_bits: u64,
     ) -> Result<(), ChannelError> {
-        (self.gov.require_permission(community_id, perm_bits))
-            .map_err(|e| ChannelError::PermissionDenied(e.to_string()))
+        let Some(channel_id) = channel_id else {
+            return (self.gov.require_permission(community_id, perm_bits))
+                .map_err(|e| ChannelError::PermissionDenied(e.to_string()));
+        };
+        let channel = ChannelId::from_hex(channel_id)
+            .ok_or_else(|| ChannelError::InvalidId(format!("channel {channel_id}")))?;
+        let perms = self.compute_my_channel_permissions_impl(community_id, Some(&channel));
+        if rekindle_governance::permissions::has_capability(perms, perm_bits) {
+            Ok(())
+        } else {
+            Err(ChannelError::PermissionDenied(format!(
+                "permission {perm_bits:#x} not held on channel {channel_id}"
+            )))
+        }
     }
 
     // ---------- Events ----------

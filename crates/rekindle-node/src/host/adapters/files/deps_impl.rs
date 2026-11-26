@@ -47,10 +47,15 @@ impl FilesDeps for HostFiles {
         (self.channel.channel_info(community_id, channel_id)).is_some_and(|c| c.is_forum)
     }
 
-    fn require_permission(&self, community_id: &str, permission: u64) -> Result<(), FilesError> {
+    fn require_permission(
+        &self,
+        community_id: &str,
+        channel_id: Option<&str>,
+        permission: u64,
+    ) -> Result<(), FilesError> {
         (self
             .channel
-            .require_channel_permission(community_id, None, permission))
+            .require_channel_permission(community_id, channel_id, permission))
         .map_err(|e| FilesError::PermissionDenied(e.to_string()))
     }
 
