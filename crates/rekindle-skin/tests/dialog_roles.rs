@@ -6,8 +6,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use rekindle_skin::registry::{dialog, entry_in, resolve, Base, ENTRIES};
-use rekindle_skin::{builtin, manifest, package, tokens};
+use rekindle_skin::registry::{
+    dialog, dialog_walk, entry_in, resolve, resolve_unwalked, Base, ENTRIES,
+};
+use rekindle_skin::{access, builtin, manifest, package, tokens};
 use rekindle_types::dto::skin::TokenValue;
 
 fn variant_of(id: &str) -> (BTreeMap<String, TokenValue>, Base) {
@@ -81,17 +83,20 @@ fn walked(notice: &str, id: &str) -> bool {
     notice.lines().any(|l| l.starts_with(&format!("  {id}: #")))
 }
 
-/// The registry's derivation of `id` over what `t` serves.
+/// The registry's derivation of `id` over what `t` derives, before any
+/// dialog walk.
 fn derived(t: &BTreeMap<String, TokenValue>, base: Base, id: &str) -> Option<TokenValue> {
     let d = entry_in(ENTRIES, id)?.derivation?;
-    let served = resolve(ENTRIES, base, t);
+    let served = resolve_unwalked(ENTRIES, base, t);
     let view: BTreeMap<&str, TokenValue> = served.into_iter().map(|(e, v)| (e.id, v)).collect();
     d.apply(&view)
 }
 
 /// xfire-classic has no source tree and was imported before the roles
 /// existed: `registry::resolve` serves every role at load by the same table
-/// the importer writes from (ST1 ruling 4), so none takes a default.
+/// the importer writes from (ST1 ruling 4), so none takes a default; a role
+/// differs from its derivation only where the one dialog walk moved it
+/// (lead round 4 b).
 /// Fail-without: resolve's dialog rows following only a token the skin
 /// sets serves `menubar.bg` the default #0a0a0a, not its #060c1c.
 #[test]
@@ -100,10 +105,38 @@ fn xfire_classic_is_served_every_dialog_role_from_its_own_colours() {
     let served = resolve(ENTRIES, base, &t);
     let view: BTreeMap<&str, TokenValue> =
         served.iter().map(|(e, v)| (e.id, v.clone())).collect();
+    let mut filled = t.clone();
+    dialog::fill(&mut filled, base);
+    let moved = dialog_walk::settle(&mut filled, base, &dialog::is_role).changes;
     for id in dialog::roles() {
         assert!(!t.contains_key(id), "{id}: its token file sets it");
-        assert_eq!(Some(view[id].clone()), derived(&t, base, id), "{id}");
+        if !moved.iter().any(|c| c.token == id) {
+            assert_eq!(Some(view[id].clone()), derived(&t, base, id), "{id}");
+        }
     }
+}
+
+/// Lead round 4 b: derived dialog roles are ours, so load settles them by
+/// the importer's dialog walk, and xfire-classic's served tokens pass
+/// every pair that names a dialog role (its derived `progress.fill`
+/// among them).
+/// Fail-without: `resolve` returning `resolve_unwalked` leaves its derived
+/// `progress.fill` under 3:1 on its track.
+#[test]
+fn xfire_classic_served_tokens_pass_every_dialog_constraint() {
+    let (t, base) = variant_of("xfire-classic");
+    let names_role = |m: &access::Measured| {
+        dialog::is_role(&m.fg)
+            || dialog_walk::ground_parts(&m.ground)
+                .iter()
+                .any(|g| dialog::is_role(g))
+    };
+    let failing: Vec<String> = access::measured(base, &resolve(ENTRIES, base, &t))
+        .into_iter()
+        .filter(|m| !m.passes() && names_role(m))
+        .map(|m| format!("{} on {}: {:.2}", m.fg, m.ground, m.ratio))
+        .collect();
+    assert!(failing.is_empty(), "{failing:#?}");
 }
 
 /// The title ground of a pack with a strip is its strip's, not the

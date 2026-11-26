@@ -265,11 +265,12 @@ pub fn roles() -> impl Iterator<Item = &'static str> {
     BASE_ROLES.into_iter().chain(DIALOG.iter().map(|e| e.id))
 }
 
-/// `tokens` with every dialog role it omits set to what
-/// [`super::resolve`] serves for it on `base`: the import writes exactly
-/// what load would derive, from one table (ST1 ruling 4).
+/// `tokens` with every dialog role it omits set to its derivation on
+/// `base` ([`super::resolve_unwalked`]): the import and load derive from
+/// one table (ST1 ruling 4), then run one dialog walk
+/// ([`super::dialog_walk::settle`]).
 pub fn fill(tokens: &mut BTreeMap<String, TokenValue>, base: Base) {
-    let served = super::resolve(super::ENTRIES, base, tokens);
+    let served = super::resolve_unwalked(super::ENTRIES, base, tokens);
     for (e, v) in served {
         if is_role(e.id) && !tokens.contains_key(e.id) {
             tokens.insert(e.id.to_owned(), v);

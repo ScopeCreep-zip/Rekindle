@@ -200,7 +200,10 @@ fn skin_zip(window_text: [u8; 3], window_bg: [u8; 3], descriptor: bool) -> Vec<u
 fn a_minimal_wsz_imports_and_validates() {
     let i = match import(&skin([0xe7; 3]), "w").unwrap() {
         Outcome::Passed(i) => i,
-        Outcome::Draft(d) => panic!("#e7e7e7 window text on #101010 passes: {:?}", d.failures),
+        Outcome::Draft(d) => panic!(
+            "#e7e7e7 window text on #101010 passes: {:?} {:?}",
+            d.failures, d.unsettled
+        ),
     };
     let c = validate::run(&i.canonical.bytes).unwrap();
     assert_eq!(c.bytes, i.canonical.bytes);

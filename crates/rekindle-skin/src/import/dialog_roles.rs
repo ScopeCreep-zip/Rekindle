@@ -13,7 +13,9 @@
 //! bars), decoded by `controls::read` into one image whose nine-slice left
 //! and right insets are its end pieces; and the menu bar (`menubar.bg`),
 //! the whole `buddylist.menubar` control (`MenuBackground`, `MenuBar`), the
-//! ground Xfire draws `MenuTextCG` on. Only the colours leave the importer,
+//! ground Xfire draws `MenuTextCG` on, or, for a pack with no menu-bar
+//! control, the art its menu text is laid on (an INI main window lays its
+//! menu titles on its frame, `xfire_ini/menu_ground.rs`). Only the colours leave the importer,
 //! never the art (Settings draws none, plan SB1).
 
 use std::collections::BTreeMap;
@@ -23,12 +25,18 @@ use rekindle_types::dto::skin::{RegionFit, RegionState, TokenValue};
 
 use super::Control;
 
-/// The alpha-weighted mean colour of columns `cols` of `img`; `None` when
-/// every pixel there is transparent.
-fn mean(img: &RgbaImage, cols: std::ops::Range<u32>) -> Option<[u8; 3]> {
+/// The alpha-weighted mean colour of `cols` × `rows` of `img` (a
+/// transparent pixel weighs nothing); `None` when every pixel there is
+/// transparent.
+#[must_use]
+pub fn region_mean(
+    img: &RgbaImage,
+    cols: std::ops::Range<u32>,
+    rows: std::ops::Range<u32>,
+) -> Option<[u8; 3]> {
     let (mut sum, mut weight) = ([0u64; 3], 0u64);
     for x in cols {
-        for y in 0..img.height() {
+        for y in rows.clone() {
             let p = img.get_pixel(x, y).0;
             let a = u64::from(p[3]);
             for (s, c) in sum.iter_mut().zip(p) {
@@ -38,6 +46,11 @@ fn mean(img: &RgbaImage, cols: std::ops::Range<u32>) -> Option<[u8; 3]> {
         }
     }
     (weight > 0).then(|| sum.map(|s| u8::try_from((s + weight / 2) / weight).unwrap_or(u8::MAX)))
+}
+
+/// The alpha-weighted mean colour of columns `cols` of `img`, every row.
+fn mean(img: &RgbaImage, cols: std::ops::Range<u32>) -> Option<[u8; 3]> {
+    region_mean(img, cols, 0..img.height())
 }
 
 /// The mean colours of the strip's left and right ends: its nine-slice end
@@ -68,14 +81,19 @@ fn normal<'c>(controls: &'c [Control], region: &str) -> Option<(&'c RgbaImage, R
 }
 
 /// `tokens` with the grounds the pack draws as art and does not name:
-/// the title strip's two ends and the menu bar's mean.
+/// the title strip's two ends and the menu bar's mean, or, with no menu-bar
+/// control, `menu_text_ground` (the mean of the art the pack lays its menu
+/// text on).
 #[must_use]
 pub fn with_art(
     mut tokens: BTreeMap<String, TokenValue>,
     controls: &[Control],
+    menu_text_ground: Option<[u8; 3]>,
 ) -> BTreeMap<String, TokenValue> {
     let strip = normal(controls, "titlebar").and_then(|(img, fit)| strip_ends(img, fit));
-    let menu = normal(controls, "buddylist.menubar").and_then(|(img, _)| art_mean(img));
+    let menu = normal(controls, "buddylist.menubar")
+        .and_then(|(img, _)| art_mean(img))
+        .or(menu_text_ground);
     let grounds = strip
         .map(|(start, end)| [("titlebar.start", start), ("titlebar.end", end)])
         .into_iter()

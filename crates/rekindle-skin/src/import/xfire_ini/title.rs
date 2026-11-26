@@ -67,7 +67,7 @@ fn node(name: &str, attrs: BTreeMap<String, String>, children: Vec<Node>) -> Nod
 }
 
 /// `section`'s child tiles in `Window<n>` order: (n, attrs).
-fn windows(section: &Section) -> BTreeMap<u32, BTreeMap<String, String>> {
+pub(super) fn windows(section: &Section) -> BTreeMap<u32, BTreeMap<String, String>> {
     let mut out: BTreeMap<u32, BTreeMap<String, String>> = BTreeMap::new();
     for e in &section.entries {
         if !e

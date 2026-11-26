@@ -76,7 +76,7 @@ fn a_pack_with_a_strip_takes_its_title_ground_from_it() {
         fit: INSETS,
         images: BTreeMap::from([(RegionState::Normal, strip())]),
     };
-    let t = with_art(pack_tokens(), &[control]);
+    let t = with_art(pack_tokens(), &[control], None);
     assert_eq!(rgb(&t, "titlebar.start"), [255, 0, 0]);
     assert_eq!(rgb(&t, "titlebar.end"), [0, 0, 255]);
 }
@@ -90,7 +90,7 @@ fn a_pack_with_menu_bar_art_takes_its_menu_ground_from_it() {
         fit: RegionFit::Stretch,
         images: BTreeMap::from([(RegionState::Normal, strip())]),
     };
-    let t = with_art(pack_tokens(), &[control]);
+    let t = with_art(pack_tokens(), &[control], None);
     assert_eq!(art_mean(&strip()), Some([71, 142, 43]));
     assert_eq!(rgb(&t, "menubar.bg"), [71, 142, 43]);
 }
@@ -99,7 +99,7 @@ fn a_pack_with_menu_bar_art_takes_its_menu_ground_from_it() {
 /// registry's own rows, so it writes what load serves (ST1 ruling 4).
 #[test]
 fn a_strip_less_pack_derives_every_role_from_its_own_colours() {
-    let mut t = with_art(pack_tokens(), &[]);
+    let mut t = with_art(pack_tokens(), &[], None);
     dialog::fill(&mut t, Base::Dark);
     for id in dialog::roles() {
         assert!(t.contains_key(id), "{id} unset");

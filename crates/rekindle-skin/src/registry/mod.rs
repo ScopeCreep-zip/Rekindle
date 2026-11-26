@@ -16,6 +16,7 @@
 //! `@layer sec` of `global.css` and no skin reaches them (plan E7.7.0).
 
 pub mod dialog;
+pub mod dialog_walk;
 mod fonts;
 mod slots;
 mod table;
@@ -260,7 +261,7 @@ pub struct TokenEntry {
 /// the ground (alpha resolved), as the app paints them.
 #[must_use]
 pub fn constraint_failures(table: &[TokenEntry], base: Base) -> Vec<String> {
-    let resolved = resolve(table, base, &BTreeMap::new());
+    let resolved = resolve_unwalked(table, base, &BTreeMap::new());
     let colour_of = |id: &str| {
         resolved
             .iter()
@@ -300,6 +301,30 @@ pub fn entry_in<'a>(table: &'a [TokenEntry], id: &str) -> Option<&'a TokenEntry>
     table.iter().find(|e| e.id == id)
 }
 
+/// Every token of `table` on `base` as a package serves it: what
+/// [`resolve_unwalked`] gives, and, when `table` serves the dialog roles and
+/// the skin lacks some, those roles derived from the skin's colours and
+/// settled by the dialog walk ([`dialog_walk::settle`], only the lacking
+/// roles movable: derived roles are ours, not the pack's; lead round 4 b).
+/// A role the walk cannot settle is served as derived, and the validator
+/// refuses its pair. `skin` holds only ids of `table` (what
+/// [`crate::tokens::parse`] returns).
+#[must_use]
+pub fn resolve<'a>(
+    table: &'a [TokenEntry],
+    base: Base,
+    skin: &BTreeMap<String, TokenValue>,
+) -> Vec<(&'a TokenEntry, TokenValue)> {
+    let lacking: BTreeSet<&str> = dialog::roles().filter(|r| !skin.contains_key(*r)).collect();
+    if lacking.is_empty() || !DIALOG.iter().all(|d| table.contains(d)) {
+        return resolve_unwalked(table, base, skin);
+    }
+    let mut tokens = skin.clone();
+    dialog::fill(&mut tokens, base);
+    dialog_walk::settle(&mut tokens, base, &|id| lacking.contains(id));
+    resolve_unwalked(table, base, &tokens)
+}
+
 /// Every token of `table` on `base`: the skin's own value, else the
 /// derivation when the skin sets a token it reads, else the base default.
 /// A dialog role ([`DIALOG`]) also follows its derivation when a token it
@@ -308,7 +333,7 @@ pub fn entry_in<'a>(table: &'a [TokenEntry], id: &str) -> Option<&'a TokenEntry>
 /// role is served it from its own colours (ST1 ruling 4).
 /// `skin` holds only ids of `table` (what [`crate::tokens::parse`] returns).
 #[must_use]
-pub fn resolve<'a>(
+pub fn resolve_unwalked<'a>(
     table: &'a [TokenEntry],
     base: Base,
     skin: &BTreeMap<String, TokenValue>,
