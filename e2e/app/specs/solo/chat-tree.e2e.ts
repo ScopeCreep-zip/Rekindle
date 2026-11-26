@@ -7,10 +7,10 @@
 // the shell's default and minimum chat sizes; each state a shot.
 
 import { browser, expect } from "@wdio/globals";
-import { NET_WAIT_MS, doubleClick, shown, switchTo, waitForHandle, waitUntil } from "../../../walk/helpers.ts";
-import { BUDDY, openSettings } from "../../../walk/nav.ts";
+import { NET_WAIT_MS, byText, doubleClick, press, shown, switchTo, waitForHandle, waitUntil } from "../../../walk/helpers.ts";
+import { BUDDY, SETTINGS, openSettings } from "../../../walk/nav.ts";
 import { type Peer, peerAcceptGroup, peerSendDm, startFleet, stopFleet } from "../../fleet.ts";
-import { applySkin, createGroup, createIdentity, friendRow, newUser, openGroup, seesMessage, skinShown, type User } from "../../journeys.ts";
+import { applySkin, createGroup, createIdentity, friendRow, friendsView, newUser, openGroup, seesMessage, skinShown, type User } from "../../journeys.ts";
 import { decodePng } from "../../png.ts";
 import { shot } from "../../shots.ts";
 import { builtinPacks } from "../../skin-pack.ts";
@@ -337,6 +337,38 @@ describe("a pack's chat tree draws the chat window, the chat in its slots", func
         await shot(`${kind}-min-${min}`);
         expect(min).not.toBe("");
       }
+    });
+  }
+
+  // Lead (inactive close): a skin's close button closes every window it
+  // frames. The Host answers its press with ShellOp::Close, which a chat
+  // window had no runner for. Each window is reopened under its label (a
+  // window keeps its label across a close).
+  for (const file of ["symbiosis", "alloy"]) {
+    it(`${file}: the skin's close button closes the 1:1 and group windows`, async () => {
+      const pack = builtinPacks().find((p) => p.file === file);
+      if (!pack) throw new Error(`no built-in pack ${file}`);
+      await switchTo(browser, SETTINGS);
+      const href = await applySkin(browser, me, pack.name);
+      for (const [handle, kind] of [[dm, "dm"], [group, "group"]] as const) {
+        await switchTo(browser, handle, NET_WAIT_MS);
+        await skinShown(browser, href);
+        const state = (await browser.execute(() => {
+          const n = document.querySelector<HTMLElement>('.skin-tree [data-skin-role="windowButton:close"]');
+          return n ? { state: n.dataset.state ?? "", cause: n.dataset.stateCause ?? "", ariaDisabled: n.getAttribute("aria-disabled") } : null;
+        })) as Record<string, unknown> | null;
+        console.log(`[close] ${file} ${kind}: close button ${JSON.stringify(state)}`);
+        await shot(`${kind}-before-close`);
+        await press(browser, await browser.$('.skin-tree [data-skin-role="windowButton:close"]'));
+        await waitUntil(async () => !(await browser.getWindowHandles()).includes(handle), NET_WAIT_MS, `${file}: the ${kind} window's close button did not close it`);
+        console.log(`[close] ${file} ${kind}: closed`);
+        await switchTo(browser, BUDDY);
+        await friendsView(browser);
+        await doubleClick(browser, kind === "dm" ? await friendRow(browser, "Bea") : await byText(browser, ".group-dm-row", GROUP.slice(0, 24), NET_WAIT_MS));
+        await switchTo(browser, handle, NET_WAIT_MS);
+      }
+      await switchTo(browser, BUDDY);
+      await openSettings(browser, "Appearance");
     });
   }
 });

@@ -19,8 +19,8 @@
 // (Combat's round Open/Leave drew the same art in both).
 
 import { browser, expect } from "@wdio/globals";
-import { NET_WAIT_MS, switchTo, waitUntil } from "../../../walk/helpers.ts";
-import { BUDDY, openSettings } from "../../../walk/nav.ts";
+import { NET_WAIT_MS, press, switchTo, waitUntil } from "../../../walk/helpers.ts";
+import { BUDDY, SETTINGS, closeSettings, openSettings } from "../../../walk/nav.ts";
 import { createCommunity, createIdentity, newUser, openCommunity, type User } from "../../journeys.ts";
 import { applySkin, skinShown } from "../../journeys_skins.ts";
 import { disabledLookWithBoxes, ownArt } from "../../disabled-look.ts";
@@ -140,6 +140,13 @@ describe("a disabled node says why (CR1)", function () {
     await openCommunity(browser, name);
     const handle = await browser.getWindowHandle();
     await skinShown(browser, href);
+    // Lead (Linux run): on an unlocked desktop the fresh window is focused.
+    // It is unfocused through the app's own path: Settings opened from the
+    // buddy list's menu comes up focused (a locked screen leaves every
+    // window unfocused already). A focused window is never pressed and
+    // called inactive: the wait below fails loudly instead.
+    await openSettings(browser, "Appearance");
+    await browser.switchToWindow(handle);
     // The window follows its signals (SKW1); unfocused, the pack's
     // deactivate trigger draws its close button in the Disabled art.
     let close: { node: string; cause: string; ariaDisabled: string | null; role: string } | null = null;
@@ -154,7 +161,7 @@ describe("a disabled node says why (CR1)", function () {
       NET_WAIT_MS,
       "",
     ).catch(() => {
-      throw new Error(`the inactive community window's close button is not in its windowInactive art: ${JSON.stringify(close)}`);
+      throw new Error(`the community window never deactivated (its close button is not in its windowInactive art), so no inactive press is made: ${JSON.stringify(close)}`);
     });
     console.log(`[cr1] symbiosis community close: ${JSON.stringify(close)}`);
     // What takes a press at the button's centre: the nearest node listening
@@ -195,5 +202,39 @@ describe("a disabled node says why (CR1)", function () {
     await browser.switchToWindow(BUDDY).catch(() => undefined);
     await waitUntil(async () => !(await browser.getWindowHandles()).includes(handle), NET_WAIT_MS, "the inactive community window's close button did not close it");
     console.log("[cr1] symbiosis community window closed by its inactive close button");
+    // Settings, opened to take the focus, closes too, so the next test's
+    // Settings opens fresh and frontmost.
+    await switchTo(browser, SETTINGS);
+    await closeSettings(browser);
   });
+
+  // Lead: close works in every window it frames, whatever its focus (the
+  // cause was a missing runner, never inactivity). Each pack's community
+  // window is opened, its close pressed once, and it must close; the close
+  // button's state at the press is logged.
+  for (const file of ["symbiosis", "alloy"]) {
+    it(`${file}: a community window's close button closes it`, async () => {
+      const pack = builtinPacks().find((p) => p.file === file);
+      if (!pack) throw new Error(`no built-in pack ${file}`);
+      await switchTo(browser, BUDDY);
+      await openSettings(browser, "Appearance");
+      const href = await applySkin(browser, me, pack.name);
+      const name = `Close ${file} ${Date.now() % 100000}`;
+      await switchTo(browser, BUDDY);
+      await createCommunity(browser, me, name);
+      await openCommunity(browser, name);
+      const handle = await browser.getWindowHandle();
+      await skinShown(browser, href);
+      const state = (await browser.execute(() => {
+        const n = document.querySelector<HTMLElement>('.skin-tree [data-skin-role="windowButton:close"]');
+        return n ? { state: n.dataset.state ?? "", cause: n.dataset.stateCause ?? "", ariaDisabled: n.getAttribute("aria-disabled"), focused: document.hasFocus() } : null;
+      })) as Record<string, unknown> | null;
+      console.log(`[close] ${file} community: close button ${JSON.stringify(state)}`);
+      await shot(`${file}-community-before-close`);
+      await press(browser, await browser.$('.skin-tree [data-skin-role="windowButton:close"]'));
+      await browser.switchToWindow(BUDDY).catch(() => undefined);
+      await waitUntil(async () => !(await browser.getWindowHandles()).includes(handle), NET_WAIT_MS, `${file}: the community window's close button did not close it`);
+      console.log(`[close] ${file} community: closed`);
+    });
+  }
 });
