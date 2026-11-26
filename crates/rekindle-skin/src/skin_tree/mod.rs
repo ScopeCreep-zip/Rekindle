@@ -23,6 +23,7 @@ pub mod import;
 pub mod inset;
 mod keep;
 pub mod label_style;
+mod layer;
 mod outdent;
 mod passes;
 pub mod pieces;

@@ -12,25 +12,11 @@ use super::super::disabled::{
     changed_pixels, shell_only, visible_difference, visibly_changed, visibly_differs, Measured,
     VISIBLE_PIXELS,
 };
+use super::super::test_support::{each, find, pack};
 use super::super::{popup, target};
 use super::{crop, Made, Under};
 use crate::package::{self, Package};
 use crate::{builtin, manifest};
-
-fn pack(id: &str) -> Package<'static> {
-    let (_, b) = builtin::find(&format!("builtin:{id}")).unwrap();
-    package::read(b.bytes).unwrap()
-}
-
-fn find<'a>(nodes: &'a [SkinNode], id: &str) -> Option<&'a SkinNode> {
-    nodes.iter().find_map(|n| {
-        if n.id == id {
-            Some(n)
-        } else {
-            find(&n.children, id)
-        }
-    })
-}
 
 /// The first frame of `name`, from the made images or the package.
 fn frame(name: &str, made: &Made, p: &Package<'_>) -> RgbaImage {
@@ -359,12 +345,6 @@ fn collect<'a>(nodes: &'a [SkinNode], out: &mut Vec<&'a SkinNode>) {
         out.push(n);
         collect(&n.children, out);
     }
-}
-
-fn each<'a>(nodes: &'a [SkinNode], f: &mut impl FnMut(&'a SkinNode)) {
-    let mut all = Vec::new();
-    collect(nodes, &mut all);
-    all.into_iter().for_each(f);
 }
 
 /// The served stylesheet's rule heads laid on the node `id` of `pack`'s

@@ -7,33 +7,11 @@ use rekindle_image::{Rgba, RgbaImage};
 
 use super::disabled::{pack_art, visible_difference, Measured, VISIBLE_PIXELS};
 use super::golden_tests::main_layout;
-use crate::package::Package;
+use super::test_support::{each, find, pack};
 use crate::{builtin, manifest, package};
-
-fn pack(id: &str) -> Package<'static> {
-    let (_, b) = builtin::find(&format!("builtin:{id}")).unwrap();
-    package::read(b.bytes).unwrap()
-}
 
 fn is_pack_art(id: &str, n: &SkinNode) -> bool {
     pack_art(n, &pack(id), &mut Measured::default()).unwrap()
-}
-
-fn find<'a>(nodes: &'a [SkinNode], id: &str) -> Option<&'a SkinNode> {
-    nodes.iter().find_map(|n| {
-        if n.id == id {
-            Some(n)
-        } else {
-            find(&n.children, id)
-        }
-    })
-}
-
-fn each(nodes: &[SkinNode], f: &mut impl FnMut(&SkinNode)) {
-    for n in nodes {
-        f(n);
-        each(&n.children, f);
-    }
 }
 
 #[test]

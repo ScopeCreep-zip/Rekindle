@@ -28,11 +28,12 @@ use crate::output::tokens_css;
 use crate::package::{self, Package};
 use crate::regions::css::skin_css;
 use crate::regions::labels::label_css;
-use crate::regions::still;
 use crate::regions::title::title_css;
 use crate::registry::{resolve, Base, TokenEntry, ENTRIES};
 use crate::shape;
-use crate::{manifest, tokens};
+use crate::tokens;
+
+mod image;
 
 /// The stylesheet's file name.
 pub const TOKENS_CSS: &str = "tokens.css";
@@ -327,22 +328,7 @@ pub fn body(bytes: &[u8], address: &str, file: File<'_>) -> Result<Option<Body>,
             bytes: stylesheet(bytes, address)?.css.into_bytes(),
         })),
         File::Image { hash, ext } => {
-            let p = package::read(bytes)?;
-            let found = p
-                .files()
-                .find(|(name, data)| {
-                    name.rsplit_once('.').map(|(_, e)| e) == Some(ext)
-                        && blake3::hash(data).to_hex().as_str() == hash
-                })
-                .map(|(_, data)| data.to_vec());
-            let bytes = match found {
-                Some(bytes) => Some(bytes),
-                None if ext == "png" => match still_named(&p, hash)? {
-                    Some(still) => Some(still),
-                    None => made_named(bytes, &p, address, hash)?,
-                },
-                None => None,
-            };
+            let bytes = image::named(bytes, address, hash, ext)?;
             Ok(bytes.map(|bytes| Body {
                 content_type: if ext == "gif" {
                     "image/gif"
@@ -355,34 +341,10 @@ pub fn body(bytes: &[u8], address: &str, file: File<'_>) -> Result<Option<Body>,
     }
 }
 
-/// The still (`skin_css`'s reduced-motion first frame, [`still::stills`])
-/// of the package's animated region image whose PNG has address `hash`.
-fn still_named(p: &Package<'_>, hash: &str) -> Result<Option<Vec<u8>>, SkinError> {
-    let m = manifest::parse(p)?;
-    let stills = still::stills(&m, &files(p)).map_err(|e| unreadable(&e.to_string()))?;
-    Ok(stills
-        .into_values()
-        .find(|png| blake3::hash(png).to_hex().as_str() == hash))
-}
-
-/// The Disabled copy the serve made ([`crate::skin_tree::dim`]) whose PNG
-/// has address `hash`, made as [`stylesheet`] makes it.
-fn made_named(
-    bytes: &[u8],
-    p: &Package<'_>,
-    address: &str,
-    hash: &str,
-) -> Result<Option<Vec<u8>>, SkinError> {
-    let (_, made) = crate::conform::served(bytes, p, address)?;
-    Ok(made
-        .into_values()
-        .find(|png| blake3::hash(png).to_hex().as_str() == hash))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{builtin, validate};
+    use crate::{builtin, manifest, validate};
 
     const H: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
