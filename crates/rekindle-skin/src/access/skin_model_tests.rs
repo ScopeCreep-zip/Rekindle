@@ -1,0 +1,67 @@
+use std::collections::BTreeMap;
+
+use rekindle_types::dto::skin::{SkinRule, TokenValue};
+
+use super::{model_failures, model_pairs};
+use crate::access::failures;
+use crate::registry::{resolve, Base, ENTRIES};
+
+/// Every pair of the model resolves on every base's registry defaults:
+/// it names only registry tokens and opaque grounds.
+#[test]
+fn every_model_pair_resolves_on_the_registry_defaults() {
+    for base in Base::ALL {
+        let resolved = resolve(ENTRIES, base, &BTreeMap::new());
+        let pairs = model_pairs(&resolved);
+        assert!(pairs.len() > 100);
+        let bad: Vec<_> = pairs.iter().filter_map(|p| p.as_ref().err()).collect();
+        assert!(bad.is_empty(), "{}: {bad:?}", base.key());
+    }
+}
+
+fn is_model(rule: &SkinRule) -> bool {
+    matches!(rule, SkinRule::Contrast { rule, .. } if rule.contains(" ."))
+}
+
+/// A skin whose window ground is #161616 keeps the default accent
+/// text, which passes on every opaque ground but reads 4.44:1 on the
+/// accent tint `.search-panel-chip-active` is drawn on: the registry
+/// constraints and `PAIRS` pass it, the full model refuses it.
+#[test]
+fn the_validator_refuses_a_skin_whose_tint_pair_fails() {
+    let base = Base::Dark;
+    let ground = TokenValue::Color {
+        r: 22,
+        g: 22,
+        b: 22,
+        a: 255,
+    };
+    // The window ground stays the default: it follows `bg.primary`
+    // unless the skin sets it (plan E7.7.7 e777n), and this test is
+    // about the chip's tint over `bg.primary` alone.
+    let window = TokenValue::Color {
+        r: 10,
+        g: 10,
+        b: 10,
+        a: 255,
+    };
+    let tokens: BTreeMap<String, TokenValue> = [
+        ("bg.primary".to_owned(), ground),
+        ("bg.dark".to_owned(), window),
+    ]
+    .into_iter()
+    .collect();
+    let resolved = resolve(ENTRIES, base, &tokens);
+    let all = failures(base, &resolved);
+    assert!(!all.is_empty(), "the tint pair passes");
+    assert!(all.iter().all(is_model), "{all:?}");
+    assert_eq!(all, model_failures(&resolved));
+    assert!(
+        all.iter().any(|r| matches!(
+            r,
+            SkinRule::Contrast { token, ground, .. }
+                if token == "accent.text" && ground.contains(" over ")
+        )),
+        "{all:?}"
+    );
+}
