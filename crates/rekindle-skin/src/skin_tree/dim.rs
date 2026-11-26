@@ -27,7 +27,9 @@
 //! grey packs are already neutral (0 px). No single continuous per-channel
 //! map moves every value by more than the delta (each has a fixed point),
 //! so the pair covers both ends of the range. The copy is served only when
-//! it clears [`VISIBLE_PIXELS`], proven here with [`changed_pixels`].
+//! it is visibly changed ([`visibly_changed`]: `VISIBLE_PIXELS` changed,
+//! or every painted pixel of art that paints fewer), of the filters that
+//! pass the one that changes more.
 
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
@@ -36,7 +38,7 @@ use rekindle_image::{encode_png, DynamicImage, RgbaImage};
 use rekindle_types::dto::skin::{SkinError, SkinRule};
 use rekindle_types::dto::skin_tree::{NodePiece, NodePieces, PieceSlot, SkinNode};
 
-use super::disabled::{changed_pixels, load, Measured, VISIBLE_PIXELS};
+use super::disabled::{changed_pixels, load, visibly_changed, Measured};
 use super::pieces;
 use crate::package::Package;
 
@@ -91,7 +93,7 @@ pub struct Under {
 /// The Disabled set the serve draws for `n`, laid at `at` in the window,
 /// `under` what its nearest ancestor with art paints, and its made images
 /// added to `measured`; `None` when nothing is painted at its box or
-/// neither dim changes [`VISIBLE_PIXELS`] of it.
+/// neither dim visibly changes it ([`visibly_changed`]).
 ///
 /// # Errors
 /// A Normal piece missing from `package` or not decoding, or a copy not
@@ -121,12 +123,15 @@ pub fn copy(
     let mut best: Option<(u64, NodePieces)> = None;
     for dim in Dim::ALL {
         let set = dimmed(&normal, dim, measured);
+        if !visibly_changed(&normal, &set, package, measured)? {
+            continue;
+        }
         let changed = changed_pixels(&normal, &set, package, measured)?;
         if best.as_ref().is_none_or(|(b, _)| changed > *b) {
             best = Some((changed, set));
         }
     }
-    let Some((_, set)) = best.filter(|(changed, _)| *changed >= VISIBLE_PIXELS) else {
+    let Some((_, set)) = best else {
         return Ok(None);
     };
     for p in set.values() {

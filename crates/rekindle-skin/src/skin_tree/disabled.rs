@@ -127,7 +127,8 @@ fn mark(
 /// Disabled art is visibly its own ([`pack_art`]); the serve, with a
 /// dimmed copy of what is painted at its box set as its refusal's layer
 /// (`NodeArt::refused`, [`dim::copy`]; the pack's own Disabled set stays
-/// for its window-inactive look), when that copy changes [`VISIBLE_PIXELS`]; else the
+/// for its window-inactive look), when that copy is visibly changed
+/// ([`visibly_changed`]); else the
 /// shell's opacity, which also dims the node's children and words: a node
 /// that or whose parts carry words (a Host label, the pack's text or a Host
 /// text field, which a copy of the art cannot carry), one whose parts draw art over it (a layer
@@ -252,6 +253,53 @@ pub(super) fn changed_pixels(
     Ok(total)
 }
 
+/// Whether `copy` is visibly changed from `normal`, the bar every served
+/// copy clears (lead ruling, DIS3 2026-11-26, on Space Cowboy's `Main
+/// DownArrow`: 18 painted pixels in a 270 px box, every one changed by
+/// each filter, yet fewer than the count): at least [`VISIBLE_PIXELS`]
+/// pixels change by more than [`CHANNEL_DELTA`] in a channel
+/// ([`changed_pixels`]), or, when `normal` paints fewer than
+/// [`VISIBLE_PIXELS`] pixels (alpha above 0), every painted pixel does. Art
+/// that paints [`VISIBLE_PIXELS`] or more is held to the count alone, and
+/// art that paints nothing is never visibly changed. A copy keeps Normal's
+/// slots at their sizes ([`dim::copy`]); a slot it drops or resizes is not
+/// read as every pixel changed.
+///
+/// # Errors
+/// As [`nodes`].
+pub(super) fn visibly_changed(
+    normal: &NodePieces,
+    copy: &NodePieces,
+    package: &Package<'_>,
+    measured: &mut Measured,
+) -> Result<bool, SkinError> {
+    if changed_pixels(normal, copy, package, measured)? >= VISIBLE_PIXELS {
+        return Ok(true);
+    }
+    let mut painted = 0u64;
+    for (slot, a) in normal {
+        let Some(c) = copy.get(slot) else {
+            return Ok(false);
+        };
+        load(a, package, &mut measured.frames)?;
+        load(c, package, &mut measured.frames)?;
+        let (from, to) = (&measured.frames[&a.image], &measured.frames[&c.image]);
+        if from.dimensions() != to.dimensions() {
+            return Ok(false);
+        }
+        for (p, q) in from.pixels().zip(to.pixels()) {
+            if p.0[3] == 0 {
+                continue;
+            }
+            painted += 1;
+            if !visibly_differs(p.0, q.0) {
+                return Ok(false);
+            }
+        }
+    }
+    Ok((1..VISIBLE_PIXELS).contains(&painted))
+}
+
 fn area(p: &NodePiece) -> u64 {
     u64::from(p.width) * u64::from(p.height)
 }
@@ -293,12 +341,16 @@ pub(super) fn visible_difference(a: &RgbaImage, b: &RgbaImage) -> u64 {
     let count = a
         .pixels()
         .zip(b.pixels())
-        .filter(|(p, q)| {
-            super::cover::seen(p.0)
-                .iter()
-                .zip(super::cover::seen(q.0))
-                .any(|(x, y)| x.abs_diff(y) > CHANNEL_DELTA)
-        })
+        .filter(|(p, q)| visibly_differs(p.0, q.0))
         .count();
     u64::try_from(count).unwrap_or(u64::MAX)
+}
+
+/// Whether the pixels `p` and `q` differ by more than [`CHANNEL_DELTA`] in
+/// a channel, fully transparent pixels comparing as one colour.
+pub(super) fn visibly_differs(p: [u8; 4], q: [u8; 4]) -> bool {
+    super::cover::seen(p)
+        .iter()
+        .zip(super::cover::seen(q))
+        .any(|(x, y)| x.abs_diff(y) > CHANNEL_DELTA)
 }

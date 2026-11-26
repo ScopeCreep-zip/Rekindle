@@ -4,9 +4,14 @@ use std::collections::HashMap;
 
 use rekindle_image::RgbaImage;
 use rekindle_types::dto::skin::{RegionState, SkinManifest, SkinWindow, WindowLayout};
-use rekindle_types::dto::skin_tree::{DisabledBy, NodePieces, SkinNode, SkinTree};
+use rekindle_types::dto::skin_tree::{
+    DisabledBy, NodePiece, NodePieces, PieceSlot, SkinNode, SkinTree,
+};
 
-use super::super::disabled::{shell_only, visible_difference, Measured, VISIBLE_PIXELS};
+use super::super::disabled::{
+    changed_pixels, shell_only, visible_difference, visibly_changed, visibly_differs, Measured,
+    VISIBLE_PIXELS,
+};
 use super::super::{popup, target};
 use super::{crop, Made, Under};
 use crate::package::{self, Package};
@@ -167,13 +172,13 @@ fn combat_join_button_serves_a_visibly_dimmed_copy() {
 /// its copy is the tab's art cropped to its box and dimmed by one filter.
 #[test]
 fn alloy_join_chat_button_serves_the_tabs_region_cropped_and_dimmed() {
-    let (m, made) = served("alloy");
-    let l: &WindowLayout = &m.windows[&SkinWindow::Main];
-    let pop = &l.popups["Infoskin"];
-    let (w, h) = target::window(&popup::frame(pop, l.min_height));
+    let (served_manifest, made) = served("alloy");
+    let layout: &WindowLayout = &served_manifest.windows[&SkinWindow::Main];
+    let pop = &layout.popups["Infoskin"];
+    let (win_w, win_h) = target::window(&popup::frame(pop, layout.min_height));
     let boxes: HashMap<&str, [i32; 4]> = pop
         .tree
-        .boxes(w, h)
+        .boxes(win_w, win_h)
         .into_iter()
         .map(|(n, b)| (n.id.as_str(), b))
         .collect();
@@ -190,7 +195,7 @@ fn alloy_join_chat_button_serves_the_tabs_region_cropped_and_dimmed() {
         [at[2], at[3]]
     );
     let tab = boxes["JoinChatTab"];
-    let p = pack("alloy");
+    let pkg = pack("alloy");
     let tab_art = frame(
         &find(&pop.tree.root, "JoinChatTab")
             .unwrap()
@@ -200,9 +205,9 @@ fn alloy_join_chat_button_serves_the_tabs_region_cropped_and_dimmed() {
             .normal[&rekindle_types::dto::skin_tree::PieceSlot::Middle]
             .image,
         &made,
-        &p,
+        &pkg,
     );
-    let copy = frame(&piece.image, &made, &p);
+    let copy = frame(&piece.image, &made, &pkg);
     let (dx, dy) = (
         u32::try_from(at[0] - tab[0]).unwrap(),
         u32::try_from(at[1] - tab[1]).unwrap(),
@@ -222,8 +227,8 @@ fn alloy_join_chat_button_serves_the_tabs_region_cropped_and_dimmed() {
 }
 
 /// Every interactive node of every built-in pack is visibly disabled by
-/// whoever draws it: a served copy changes at least the bar against what
-/// the node shows before; a node the shell still dims carries what a copy
+/// whoever draws it: a served copy is visibly changed from what the node
+/// shows before ([`visibly_changed`]); a node the shell still dims carries what a copy
 /// cannot ([`shell_only`]) or has nothing painted at its box.
 #[test]
 fn every_builtin_interactive_node_is_visibly_disabled() {
@@ -261,21 +266,16 @@ fn every_builtin_interactive_node_is_visibly_disabled() {
                     Some(DisabledBy::Served) => {
                         served_nodes += 1;
                         let from = before(n, at, under, &package, &mut measured);
-                        let mut both = made.clone();
-                        for piece in from.values() {
-                            if !piece.image.starts_with(super::MADE) {
-                                continue;
-                            }
-                            if let Some(f) = measured.frames.get(&piece.image) {
-                                let png = rekindle_image::encode_png(
-                                    &rekindle_image::DynamicImage::ImageRgba8(f.clone()),
-                                )
-                                .unwrap();
-                                both.entry(piece.image.clone()).or_insert(png);
-                            }
+                        let copy = copy_of(n);
+                        // The copy's pixels as served: decoded from its PNG.
+                        for piece in copy.values() {
+                            measured
+                                .frames
+                                .entry(piece.image.clone())
+                                .or_insert_with(|| frame(&piece.image, &made, &package));
                         }
-                        let c = changed(&from, copy_of(n), &both, &package);
-                        if c < VISIBLE_PIXELS {
+                        let c = changed_pixels(&from, copy, &package, &mut measured).unwrap();
+                        if !visibly_changed(&from, copy, &package, &mut measured).unwrap() {
                             weak.push(format!("{} {at_name} {} {c}", b.id, n.id));
                         }
                     }
@@ -400,7 +400,12 @@ fn rule_heads(pack_id: &str, id: &str) -> (SkinNode, Vec<String>) {
 fn the_served_copy_draws_for_a_refusal_never_for_an_inactive_window() {
     let refused = "[data-state=\"disabled\"]:not([data-state-cause=\"windowInactive\"])";
     let (n, heads) = rule_heads("combat", "JoinButton@Friends");
-    assert!(!n.art.as_ref().unwrap().states.contains_key(&RegionState::Disabled));
+    assert!(!n
+        .art
+        .as_ref()
+        .unwrap()
+        .states
+        .contains_key(&RegionState::Disabled));
     copy_of(&n);
     let sel = ".f [data-skin-node=\"JoinButton@Friends\"]";
     assert!(heads.contains(&format!("{sel}{refused} {{")), "{heads:#?}");
@@ -427,4 +432,84 @@ fn the_served_copy_draws_for_a_refusal_never_for_an_inactive_window() {
         "{heads:#?}"
     );
     assert!(heads.contains(&format!("{sel}{refused} {{")), "{heads:#?}");
+}
+
+/// Lead ruling (DIS3): Space Cowboy's `Main DownArrow` has no art; its
+/// copy crops `StatusWrapper`'s art, which paints 18 pixels of its 270 px
+/// box. Every one of the 18 changes, so the copy is served though fewer
+/// than [`VISIBLE_PIXELS`] change.
+#[test]
+fn spacecowboy_down_arrow_serves_a_copy_changing_every_painted_pixel() {
+    let (served_manifest, made) = served("spacecowboy");
+    let pkg = pack("spacecowboy");
+    let layout = &served_manifest.windows[&SkinWindow::Main];
+    let tree = layout.tree.as_ref().unwrap();
+    let (win_w, win_h) = target::window(layout);
+    let boxes: HashMap<&str, [i32; 4]> = tree
+        .boxes(win_w, win_h)
+        .into_iter()
+        .map(|(n, b)| (n.id.as_str(), b))
+        .collect();
+    let mut measured = Measured::default();
+    let mut from = None;
+    walk(&tree.root, None, &boxes, &mut |n, at, under| {
+        if n.id == "DownArrow" {
+            from = Some(before(n, at, under, &pkg, &mut measured));
+        }
+    });
+    let from = from.unwrap();
+    let copy = copy_of(find(&tree.root, "DownArrow").unwrap());
+    let normal = &measured.frames[&from[&PieceSlot::Middle].image];
+    let dimmed = frame(&copy[&PieceSlot::Middle].image, &made, &pkg);
+    assert_eq!(normal.width() * normal.height(), 270);
+    let painted: Vec<_> = normal
+        .enumerate_pixels()
+        .filter(|(_, _, px)| px.0[3] > 0)
+        .collect();
+    assert_eq!(painted.len(), 18);
+    for (x, y, px) in painted {
+        assert!(
+            visibly_differs(px.0, dimmed.get_pixel(x, y).0),
+            "({x}, {y})"
+        );
+    }
+    assert!(visible_difference(normal, &dimmed) < VISIBLE_PIXELS);
+}
+
+/// Lead ruling (DIS3): the every-painted-pixel arm is only for art that
+/// paints fewer than [`VISIBLE_PIXELS`]; art painting 25 pixels that
+/// changes 19 is still refused, and art that paints nothing never passes.
+#[test]
+fn the_small_art_arm_never_lowers_the_bar_for_large_art() {
+    let p = pack("alloy");
+    let check = |painted: usize, changed: usize| {
+        let mut normal = RgbaImage::new(5, 5);
+        for px in normal.pixels_mut().take(painted) {
+            px.0 = [100, 100, 100, 255];
+        }
+        let mut copy = normal.clone();
+        for px in copy.pixels_mut().take(changed) {
+            px.0[0] = 200;
+        }
+        let mut measured = Measured::default();
+        let set = |name: &str, image: RgbaImage, measured: &mut Measured| {
+            measured.frames.insert(name.to_owned(), image);
+            NodePieces::from([(
+                PieceSlot::Middle,
+                NodePiece {
+                    image: name.to_owned(),
+                    width: 5,
+                    height: 5,
+                },
+            )])
+        };
+        let from = set("normal", normal, &mut measured);
+        let to = set("copy", copy, &mut measured);
+        visibly_changed(&from, &to, &p, &mut measured).unwrap()
+    };
+    assert!(!check(25, 19), "25 painted, 19 changed: under the bar");
+    assert!(check(25, 20), "25 painted, 20 changed");
+    assert!(check(18, 18), "18 painted, every one changed");
+    assert!(!check(18, 17), "18 painted, 17 changed");
+    assert!(!check(0, 0), "nothing painted");
 }
