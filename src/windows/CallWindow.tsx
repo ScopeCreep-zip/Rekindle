@@ -2,7 +2,12 @@ import { Component, Show, createMemo, onCleanup, onMount } from "solid-js";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import Titlebar from "../components/titlebar/Titlebar";
 import ActiveCallPanel from "../components/voice/ActiveCallPanel";
-import { callsState, setCallsState, type CallEntry } from "../stores/calls.store";
+import { produce } from "solid-js/store";
+import { callsState, setCallsState } from "../stores/calls.store";
+import { reduceActiveCallSnapshot, type CallEffect } from "../stores/calls.reduce";
+import { authState } from "../stores/auth.store";
+import { addToast } from "../stores/toast.store";
+import { errorMessage } from "../utils/error";
 import { subscribeCallEvents } from "../handlers/calls.handlers";
 import { commands } from "../ipc/commands";
 import { setVoiceState } from "../stores/voice.store";
@@ -29,23 +34,17 @@ const CallWindow: Component = () => {
   /// Load this call's state from the backend: at mount, and again when the
   /// event stream says this window's state may be stale.
   async function load(): Promise<void> {
-    const snapshot = await commands.getActiveCall(callId);
+    const snapshot = await commands.getActiveCall(callId).catch((e: unknown) => {
+      addToast(errorMessage(e), "error");
+      return null;
+    });
     if (!snapshot) return;
-    const entry: CallEntry = {
-      callId: snapshot.callId,
-      peerKey: snapshot.peerKey,
-      displayName: snapshot.displayName,
-      kind: snapshot.kind,
-      expiresAtMs: snapshot.expiresAtMs,
-      startedAtMs: Date.now(),
-    };
-    setCallsState(snapshot.connected ? "activeCall" : "outgoingCall", entry);
-    // The window opens right after `connected`, which carries the camera
-    // policy, so it applies the same policy from the snapshot: a video
-    // call starts with the camera on.
-    if (snapshot.connected && snapshot.kind === "video") {
-      setVoiceState("cameraOn", true);
-    }
+    // The snapshot through the store's reducer; its camera policy (a video
+    // call starts with the camera on) comes back as an effect.
+    let effects: CallEffect[] = [];
+    const ctx = { nowMs: Date.now(), selfKey: authState.publicKey ?? "", selfName: authState.displayName ?? "" };
+    setCallsState(produce((s) => (effects = reduceActiveCallSnapshot(s, snapshot, ctx))));
+    if (effects.some((e) => e.kind === "cameraOn")) setVoiceState("cameraOn", true);
   }
 
   onMount(async () => {

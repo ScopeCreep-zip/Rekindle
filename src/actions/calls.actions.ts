@@ -1,6 +1,8 @@
 import { commands } from "../ipc/commands";
 import { addToast } from "../stores/toast.store";
+import { produce } from "solid-js/store";
 import { callsState, setCallsState } from "../stores/calls.store";
+import { localCallGone, localDeclineCall, localDropGroupRing, localReaction, pruneReaction } from "../stores/calls.reduce";
 import { stopActiveRing } from "./calls_ring";
 import { errorMessage } from "../utils/error";
 
@@ -29,7 +31,7 @@ export async function handleStartDmCall(
     // Backend emits ChatEvent::CallStarted; the case arm seeds
     // outgoingCall + ringback. No local state mutation here.
   } catch (e) {
-    addToast(`Call failed: ${String(e)}`, "error");
+    addToast(errorMessage(e), "error");
   }
 }
 
@@ -45,16 +47,10 @@ export async function handleEndDmCall(callId: string, reason?: string): Promise<
   try {
     await commands.endDmCall(callId, reason);
   } catch (e) {
-    addToast(`Failed to end call: ${String(e)}`, "error");
-    // Backend may have already removed the call (race with callEnded
-    // event); clear the local slot defensively so the UI doesn't get
-    // stuck showing an "Active" call that's already gone server-side.
-    if (callsState.activeCall?.callId === callId) {
-      setCallsState("activeCall", null);
-    }
-    if (callsState.outgoingCall?.callId === callId) {
-      setCallsState("outgoingCall", null);
-    }
+    // The end succeeds with the Host's `ended`; a refusal means the call is
+    // already gone (a race with its `ended`), so no slot keeps showing it.
+    addToast(errorMessage(e), "error");
+    setCallsState(produce((s) => localCallGone(s, callId)));
   }
 }
 
@@ -87,8 +83,8 @@ export async function handleAcceptGroupCall(callId: string): Promise<void> {
   try {
     await commands.acceptGroupCall(callId);
   } catch (e) {
-    addToast(`Failed to accept group call: ${String(e)}`, "error");
-    setCallsState("incomingGroupCalls", (p) => p.filter((c) => c.callId !== callId));
+    addToast(errorMessage(e), "error");
+    setCallsState(produce((s) => localDropGroupRing(s, callId)));
   }
 }
 
@@ -100,9 +96,10 @@ export async function handleDeclineGroupCall(
   try {
     await commands.declineGroupCall(callId, reason);
   } catch (e) {
-    console.error("decline group call:", e);
+    addToast(errorMessage(e), "error");
   }
-  setCallsState("incomingGroupCalls", (p) => p.filter((c) => c.callId !== callId));
+  // GroupCallState answers a decline with no event until it is the Host's (S7).
+  setCallsState(produce((s) => localDropGroupRing(s, callId)));
 }
 
 export async function handleEndGroupCall(callId: string, reason?: string): Promise<void> {
@@ -110,10 +107,8 @@ export async function handleEndGroupCall(callId: string, reason?: string): Promi
   try {
     await commands.endGroupCall(callId, reason);
   } catch (e) {
-    addToast(`Failed to end group call: ${String(e)}`, "error");
-    if (callsState.activeGroupCall?.callId === callId) {
-      setCallsState("activeGroupCall", null);
-    }
+    addToast(errorMessage(e), "error");
+    setCallsState(produce((s) => localCallGone(s, callId)));
   }
 }
 
@@ -123,26 +118,18 @@ export async function handleEndGroupCall(callId: string, reason?: string): Promi
 export async function handleSendCallReaction(emoji: string): Promise<void> {
   const active = callsState.activeCall;
   if (!active) return;
-  setCallsState("recentReactions", (prev) => [
-    ...prev,
-    {
-      id: crypto.randomUUID(),
-      emoji,
-      sender: "us",
-      timestampMs: Date.now(),
-    },
-  ]);
+  setCallsState(produce((s) => localReaction(s, emoji, Date.now())));
   try {
     await commands.sendCallReaction(active.callId, emoji);
   } catch (e) {
-    console.warn("sendCallReaction failed:", e);
+    addToast(errorMessage(e), "error");
   }
 }
 
 /// Wave 12 W12.11 — remove a reaction once its float animation finished.
 /// Called by ReactionFloater on each glyph's `animationend`.
 export function removeCallReaction(id: string): void {
-  setCallsState("recentReactions", (prev) => prev.filter((r) => r.id !== id));
+  setCallsState(produce((s) => pruneReaction(s, id)));
 }
 
 export async function handleAcceptIncomingCall(callId: string): Promise<void> {
@@ -153,8 +140,10 @@ export async function handleAcceptIncomingCall(callId: string): Promise<void> {
   try {
     await commands.acceptDmCall(callId);
   } catch (e) {
-    addToast(`Failed to accept call: ${String(e)}`, "error");
-    setCallsState("incomingCalls", (prev) => prev.filter((c) => c.callId !== callId));
+    // The accept succeeds with the Host's `connected`; a refused one drops
+    // the ring, which no event will now answer.
+    addToast(errorMessage(e), "error");
+    setCallsState(produce((s) => localDeclineCall(s, callId)));
   }
 }
 
@@ -166,9 +155,11 @@ export async function handleDeclineIncomingCall(
   try {
     await commands.declineDmCall(callId, reason);
   } catch (e) {
-    console.error("Failed to decline call:", e);
+    addToast(errorMessage(e), "error");
   }
-  setCallsState("incomingCalls", (prev) => prev.filter((c) => c.callId !== callId));
+  // The desktop path emits nothing for our decline until the call machine
+  // is the Host's (S7), so the ring goes here.
+  setCallsState(produce((s) => localDeclineCall(s, callId)));
 }
 
 // Stopping the ringtone is a user action, so it belongs on this side of

@@ -236,6 +236,12 @@ export type CallEvent =
   | { declined: { callId: string; reason: string } }
   | { missed: { callId: string; from: string } }
   | { timedOut: { callId: string } }
+  /** Our invite never reached the peer (no session, no route): no
+   *  missed-call row, since the peer never saw it. */
+  | { unreachable: { callId: string; reason: string } }
+  /** Bring the conversation with `peerKey` forward, because the call
+   *  started or was answered (`reason`: "call-started", "call-accepted"). */
+  | { focusConversation: { callId: string; peerKey: string; peerDisplayName: string; reason: string } }
   /** Covers 1:1 and group alike — the two had identical fields. */
   | { ended: { callId: string; reason: string } }
   | {
