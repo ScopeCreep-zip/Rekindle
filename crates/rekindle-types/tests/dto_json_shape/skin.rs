@@ -299,6 +299,7 @@ fn shell(add: &mut impl FnMut(&str, Value)) {
         fit: None,
         shows_with: None,
         control_group,
+        disabled_by: None,
         triggers: Vec::new(),
         children,
     };

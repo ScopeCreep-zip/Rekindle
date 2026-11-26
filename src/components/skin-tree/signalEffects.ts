@@ -10,7 +10,7 @@
 // here decides a capability, and nothing is hidden that the pack does not
 // hide.
 import type { EngineView, NodeTrigger, ShellNode, SkinAction, SkinEvent, ViewKey } from "../../ipc/commands/dto_skin_tree";
-import type { DisableCause, SkinSignalSet } from "../../ipc/commands/dto_skin_run";
+import type { DisableCause, DisableSignal, SkinSignalSet } from "../../ipc/commands/dto_skin_run";
 
 type NodeStateName = "normal" | "disabled" | "down";
 
@@ -103,7 +103,7 @@ export interface Fired {
 }
 
 /** The signals a disabled node's reason may name (plan CR1's `DisableCause`, beside the capabilities). */
-const SIGNAL_CAUSES = ["disconnected", "activeUserTyping", "voiceRinging", "userStartedTalking", "newNotification"] as const;
+const SIGNAL_CAUSES: readonly DisableSignal[] = ["disconnected", "activeUserTyping", "voiceRinging", "userStartedTalking", "newNotification"];
 
 /** The cause a state event names: a capability the window cannot use, or an active signal. */
 function causeOf(on: SkinEvent): DisableCause | undefined {

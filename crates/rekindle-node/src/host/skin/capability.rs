@@ -291,3 +291,85 @@ pub(crate) fn allows(
         }
     }
 }
+
+/// Why `capability` is refused for a window with `selected`, `None` while
+/// it holds: the one source of a capability's refusal words (plan E7.7
+/// CR1, owner ruling: a disabled button shows the Host's reason). The
+/// signal set's `disabled_reasons` carries exactly these words for every
+/// capability in `cannot`.
+pub(crate) fn refusal(
+    capability: Capability,
+    inputs: &Inputs,
+    world: &SkinWorld,
+    selected: Selected<'_>,
+) -> Option<String> {
+    (!allows(capability, inputs, world, selected))
+        .then(|| why(capability, inputs, selected).to_owned())
+}
+
+/// The selected friend's refusals (the conditions of [`friend_allows`]).
+fn friend_why(capability: Capability, selected: Selected<'_>) -> &'static str {
+    let Selected::Friend { friend, .. } = selected else {
+        return "Select a friend first.";
+    };
+    let accepted = friend.is_some_and(|f| f.friendship_state == FriendshipState::Accepted);
+    let online = accepted && friend.is_some_and(|f| f.status != UserStatus::Offline);
+    match capability {
+        Capability::Chat => "You can chat once they accept your friend request.",
+        Capability::VoiceChat | Capability::HostVoiceChat if !accepted => {
+            "You can call once they accept your friend request."
+        }
+        Capability::VoiceChat | Capability::HostVoiceChat if !online => "They're offline.",
+        Capability::VoiceChat | Capability::HostVoiceChat => "You're already in a call with them.",
+        Capability::LeaveVoiceChat => "There's no connected call with them to leave.",
+        Capability::CancelVoiceChat => "There's no outgoing call ringing to cancel.",
+        _ => "Select a friend first.",
+    }
+}
+
+/// The words for a refused `capability` (the conditions of [`allows`]).
+fn why(capability: Capability, inputs: &Inputs, selected: Selected<'_>) -> &'static str {
+    use Capability as C;
+    let friend = matches!(selected, Selected::Friend { .. });
+    let server = matches!(selected, Selected::Server { .. });
+    let transfer = matches!(selected, Selected::Transfer { .. });
+    match capability {
+        C::AddFriend => "Your profile is still being published. Adding friends opens once it is.",
+        C::Chat
+        | C::Profile
+        | C::Delete
+        | C::VoiceChat
+        | C::HostVoiceChat
+        | C::LeaveVoiceChat
+        | C::CancelVoiceChat => friend_why(capability, selected),
+        C::MuteSelf | C::UnmuteSelf if !inputs.in_call() => "You're not in a call.",
+        C::MuteSelf => "You're already muted.",
+        C::UnmuteSelf => "You're not muted.",
+        C::Join | C::JoinGameLobby if friend => {
+            "Your friend isn't in a game you can join from here."
+        }
+        C::Join if server => "Rekindle can't launch this game to a server.",
+        C::Join => "Select a friend or a server first.",
+        C::JoinGameLobby => "There's no open lobby here to join.",
+        C::LeaveGameLobby => "You're not in a lobby you can leave.",
+        C::LaunchGameLobby => "You can launch only a lobby you host, once someone has joined.",
+        C::HostGameLobby => {
+            "Hosting a lobby needs a room with another member, no open lobby, and a game you're playing that Rekindle can launch."
+        }
+        C::AddServer if server => "This server is already in your favourites.",
+        C::AddServer => "Select a server first.",
+        C::RefreshServer => "There are no servers to refresh.",
+        C::StartDownload if transfer => "This download is already running or done.",
+        C::StopDownload if transfer => "This download isn't running.",
+        C::ExecuteDownload if transfer => "This download isn't finished, or its file has moved.",
+        C::StartDownload | C::StopDownload | C::ExecuteDownload => "Select a download first.",
+        C::CreateRoom => "A room needs at least two friends.",
+        C::EnterRoom => "Select a room, or a chat that has one.",
+        C::RenameRoom => "Only the room's creator can rename it.",
+        C::UploadSelected if media_exists(selected) => {
+            "There's no one to share it with yet: add a friend, or join a room or a community."
+        }
+        C::OpenSelected | C::UploadSelected => "Select a picture or video first.",
+        C::DeleteSelected => "Select a picture, a video or a room first.",
+    }
+}

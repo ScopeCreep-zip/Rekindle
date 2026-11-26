@@ -147,6 +147,7 @@ pub fn place(manifest: &mut SkinManifest, package: &Package<'_>) -> Result<(), S
         crate::skin_tree::text_box::lay(layout);
         crate::skin_tree::inset::fields(layout);
         crate::skin_tree::target::nodes(layout);
+        crate::skin_tree::disabled::nodes(layout);
     }
     Ok(())
 }

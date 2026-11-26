@@ -494,6 +494,7 @@ impl Walk<'_> {
                 fit: t.fit,
                 shows_with,
                 control_group,
+                disabled_by: None,
                 triggers: with_implied(t.triggers, &t.role, &children),
                 children,
             });

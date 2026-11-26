@@ -13,6 +13,7 @@ mod clip;
 pub mod content;
 pub mod cover;
 pub mod css;
+pub mod disabled;
 mod fit;
 pub mod import;
 pub mod inset;
@@ -39,6 +40,8 @@ mod anchor_tests;
 mod chat_tests;
 #[cfg(test)]
 mod content_tests;
+#[cfg(test)]
+mod disabled_tests;
 #[cfg(test)]
 mod fit_tests;
 #[cfg(test)]

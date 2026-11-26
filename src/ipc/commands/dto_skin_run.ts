@@ -11,31 +11,30 @@ export type SkinWindow = "main" | "chat" | "community";
 
 /** `SkinSignalSet`: one window's state signals, computed by the Host
  *  (design §2.5); the window applies the pack triggers they fire. */
-/** Why a node is drawn disabled (plan CR1, bare names on the wire): a
- *  capability the window cannot use, or an active signal (our connection
- *  down, the friend typing, a call ringing, someone talking, a new
- *  notification). */
-export type DisableCause =
-  | Capability
+export interface SkinSignalSet {
+  focused: boolean;
+  can: Capability[];
+  cannot: Capability[];
+  userTyping: boolean;
+  voiceRinging: boolean;
+  talking: boolean;
+  disconnected: boolean;
+  newNotification: boolean;
+  /** The Host's reason for each cause that can disable a node now (plan E7.7 CR1): every
+   *  capability in `cannot` and every active disabling signal. */
+  disabledReasons: Partial<Record<DisableCause, string>>;
+}
+
+/** `DisableSignal`: a Host-fired signal a pack trigger can pair with `SetState(Disabled)`. */
+export type DisableSignal =
   | "disconnected"
   | "activeUserTyping"
   | "voiceRinging"
   | "userStartedTalking"
   | "newNotification";
 
-export interface SkinSignalSet {
-  focused: boolean;
-  can: Capability[];
-  cannot: Capability[];
-  /** The Host's words for each cause that disables a node here (plan CR1):
-   *  a disabled node says why, never a reason-less one. */
-  disabledReasons: Partial<Record<DisableCause, string>>;
-  userTyping: boolean;
-  voiceRinging: boolean;
-  talking: boolean;
-  disconnected: boolean;
-  newNotification: boolean;
-}
+/** `DisableCause`: a capability the window cannot use now, or an active disabling signal. */
+export type DisableCause = Capability | DisableSignal;
 
 export type SkinSelection =
   | { kind: "friend"; arg: { publicKey: string } }

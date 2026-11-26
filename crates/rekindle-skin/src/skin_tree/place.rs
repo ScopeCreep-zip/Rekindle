@@ -68,6 +68,7 @@ fn fill_view(views: &SkinNode, v: ViewKey) -> SkinNode {
         fit: None,
         shows_with: Some(v),
         control_group: None,
+        disabled_by: None,
         triggers: Vec::new(),
         children: Vec::new(),
     }
@@ -454,6 +455,7 @@ fn host_tab(views: &SkinNode, at: Target) -> SkinNode {
         target: None,
         fit: None,
         control_group: None,
+        disabled_by: None,
         triggers: at.press(),
         children: Vec::new(),
     }
