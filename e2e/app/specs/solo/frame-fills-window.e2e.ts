@@ -1,0 +1,190 @@
+// Owner (2026-11-26, correcting TAB1): a pack's side tab protrudes beside
+// its frame, as the pack lays it out (Symbiosis `IndentRight=13`) and as
+// Xfire drew it: the 13x115 `MainInfoViewButton` sits in a 13 px column at
+// the window's right, and the column above and below it is transparent
+// (alpha 0) and click-through (the window shaper, src-tauri windows/shape).
+// TAB1 took that transparency, which a screenshot viewer shows as white,
+// for a gap and moved the tab onto the frame; it is reverted. For every
+// pack's main window, and Combat's chat:
+//   1. the frame (the union of the drawn nodes that paint art, the tab
+//      aside) reaches `.skin-tree`'s left, top and bottom edges (±1), and
+//      its right edge too, except where the pack hangs a tab: there it stops
+//      the tab's width short;
+//   2. a window with no tab is painted (alpha 255) at 3 and 10 px from the
+//      right edge and 2 and 9 px from the left, at y = 60 and innerHeight-60;
+//   3. a window with a tab: its left points are painted, the tab's own
+//      pixels are opaque, and the tab's column above and below it (the same
+//      right points, clear of the tab) is alpha 0; the tab's right edge is
+//      the window's and its target is 13x115.
+// A pack whose frame stops short of an edge with no tab recorded here fails,
+// naming the gap. (Symbiosis's minimum width is proven where it is computed:
+// a programmatic resize is not bound by a window's content minimum on macOS.)
+// Kept: `.skin-tree` is the window's inner box, and no node lives outside it.
+// Logged as `[tab]`; each window shot, and its right 40 px cut from the same
+// screenshot the pixels are read from (over a checkerboard, see shots.ts),
+// as out/shots/frame-fills-window/crops/<pack>-<window>-right.png.
+
+import { mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { browser, expect } from "@wdio/globals";
+import { doubleClick, switchTo, waitForHandle } from "../../../walk/helpers.ts";
+import { BUDDY, openSettings } from "../../../walk/nav.ts";
+import { type Peer, peerSendDm, startFleet, stopFleet } from "../../fleet.ts";
+import { createIdentity, friendRow, newUser, seesMessage, type User } from "../../journeys.ts";
+import { applySkin, skinShown } from "../../journeys_skins.ts";
+import { decodePng, encodePng, type Rgba } from "../../png.ts";
+import { checkered } from "../../shots.ts";
+import { shot } from "../../shots.ts";
+import { builtinPacks } from "../../skin-pack.ts";
+import { befriendFleet } from "../../social.ts";
+
+const PACKS = ["symbiosis", "combat", "onyx", "alloy", "xslimfire"];
+/** The side tab a pack hangs off its main window's right edge, and its height. */
+const TABS: Record<string, { node: string; size: [number, number] }> = {
+  symbiosis: { node: "MainInfoViewButton", size: [13, 115] },
+};
+
+const CROPS = path.join(import.meta.dirname, "..", "..", "out", "shots", "frame-fills-window", "crops");
+
+type Box = [number, number, number, number];
+
+interface Measure {
+  window: [number, number];
+  tree: Box;
+  /** The union of the drawn nodes that paint art, the tab aside, as [left, top, right, bottom]. */
+  art: Box;
+  tab: Box | null;
+  /** Drawn nodes whose box reaches outside `.skin-tree`. */
+  outside: string[];
+}
+
+/** The current window's pack tree, its art's extent, the tab `tabNode` (if any) and what reaches outside. */
+async function measure(tabNode: string): Promise<Measure> {
+  return (await browser.execute((tabId: string) => {
+    const edges = (r: DOMRect): [number, number, number, number] => [Math.round(r.left), Math.round(r.top), Math.round(r.right), Math.round(r.bottom)];
+    const tree = document.querySelector(".skin-tree");
+    const t = tree?.getBoundingClientRect();
+    const drawn = Array.from(document.querySelectorAll<HTMLElement>(".skin-tree [data-skin-node]")).filter(
+      (n) => !n.closest("[hidden]") && n.getBoundingClientRect().width > 0,
+    );
+    const art = drawn.filter((n) => n.dataset.skinNode !== tabId && getComputedStyle(n).backgroundImage !== "none");
+    const union = art.reduce<[number, number, number, number] | null>((u, n) => {
+      const e = edges(n.getBoundingClientRect());
+      return u ? [Math.min(u[0], e[0]), Math.min(u[1], e[1]), Math.max(u[2], e[2]), Math.max(u[3], e[3])] : e;
+    }, null);
+    const tab = tabId ? document.querySelector<HTMLElement>(`.skin-tree [data-skin-node="${tabId}"]`) : null;
+    const outside = t
+      ? drawn
+          .filter((n) => {
+            const r = n.getBoundingClientRect();
+            return r.right > t.right + 0.5 || r.left < t.left - 0.5 || r.bottom > t.bottom + 0.5 || r.top < t.top - 0.5;
+          })
+          .map((n) => `${n.dataset.skinNode} ${edges(n.getBoundingClientRect()).join(",")}`)
+      : [];
+    return {
+      window: [window.innerWidth, window.innerHeight],
+      tree: t ? edges(t) : [0, 0, 0, 0],
+      art: union ?? [0, 0, 0, 0],
+      tab: tab ? edges(tab.getBoundingClientRect()) : null,
+      outside,
+    };
+  }, tabNode)) as Measure;
+}
+
+/** The window's screenshot, the alpha at each probe point (CSS px; `extra`
+ *  adds points), and its right 40 px saved as `crop`, over a checkerboard. */
+async function probe(w: number, h: number, crop: string, extra: [number, number][] = []): Promise<Record<string, number>> {
+  const img = decodePng(Buffer.from(await browser.takeScreenshot(), "base64"));
+  const scale = img.width / w;
+  const alpha = (x: number, y: number): number => img.data[(Math.round(y * scale) * img.width + Math.round(x * scale)) * 4 + 3];
+  const out: Record<string, number> = {};
+  for (const x of [w - 3, w - 10, 2, 9]) for (const y of [60, h - 60]) out[`${x},${y}`] = alpha(x, y);
+  for (const [x, y] of extra) out[`${x},${y}`] = alpha(x, y);
+  const cw = Math.min(img.width, Math.round(40 * scale));
+  const cut: Rgba = { width: cw, height: img.height, data: new Uint8Array(cw * img.height * 4) };
+  for (let y = 0; y < img.height; y++) {
+    const from = (y * img.width + (img.width - cw)) * 4;
+    cut.data.set(img.data.subarray(from, from + cw * 4), y * cw * 4);
+  }
+  mkdirSync(CROPS, { recursive: true });
+  writeFileSync(path.join(CROPS, `${crop}-right.png`), encodePng(checkered(cut)));
+  return out;
+}
+
+/** Measure, log, shoot and require the frame, the paint and the tab for the current window. */
+async function frameFills(file: string, label: string): Promise<void> {
+  const tab = label === "main" ? TABS[file] : undefined;
+  const m = await measure(tab?.node ?? "");
+  const [w, h] = m.window;
+  // The tab's own pixels: its centre, a few px in from the window's edge.
+  const tabPoint: [number, number] | null = m.tab ? [w - 6, Math.round((m.tab[1] + m.tab[3]) / 2)] : null;
+  const px = await probe(w, h, `${file}-${label}`, tabPoint ? [tabPoint] : []);
+  console.log(`[tab] ${file} ${label}: frame=${JSON.stringify(m.art)} tree=${JSON.stringify(m.tree)} window=${JSON.stringify(m.window)} tab=${JSON.stringify(m.tab)} px=${JSON.stringify(px)} outside=${JSON.stringify(m.outside)}`);
+  await shot(`${file}-${label}-frame`);
+  expect({ window: label, tree: m.tree }).toEqual({ window: label, tree: [0, 0, w, h] });
+  expect({ window: label, outside: m.outside }).toEqual({ window: label, outside: [] });
+  // The frame's edges: every one on the window's, but the right edge stops
+  // the tab's width short where the pack hangs a tab.
+  const want: Box = [m.tree[0], m.tree[1], m.tree[2] - (tab ? tab.size[0] : 0), m.tree[3]];
+  const off = m.art.map((v, i) => Math.abs(v - want[i]));
+  expect({ window: label, frame: m.art, short: off.map((d) => d > 1) }).toEqual({ window: label, frame: m.art, short: [false, false, false, false] });
+  const left = Object.entries(px).filter(([k]) => Number(k.split(",")[0]) < 20);
+  const right = Object.entries(px).filter(([k]) => Number(k.split(",")[0]) >= w - 10 && k !== tabPoint?.join(","));
+  expect({ window: label, leftUnpainted: left.filter(([, a]) => a !== 255) }).toEqual({ window: label, leftUnpainted: [] });
+  if (!tab) {
+    expect({ window: label, rightUnpainted: right.filter(([, a]) => a !== 255) }).toEqual({ window: label, rightUnpainted: [] });
+    return;
+  }
+  if (!m.tab || !tabPoint) throw new Error(`${file}: no drawn ${tab.node}`);
+  expect({ tabRight: m.tab[2], size: [m.tab[2] - m.tab[0], m.tab[3] - m.tab[1]] }).toEqual({ tabRight: w, size: tab.size });
+  // The tab is drawn; the column above and below it is transparent.
+  expect({ window: label, tabAlpha: px[tabPoint.join(",")] }).toEqual({ window: label, tabAlpha: 255 });
+  expect({ window: label, columnNotClear: right.filter(([, a]) => a !== 0) }).toEqual({ window: label, columnNotClear: [] });
+}
+
+describe("the pack frame reaches the window's edges; a side tab protrudes beside it in a transparent column (owner)", function () {
+  this.timeout(1_800_000);
+  const me: User = { ...newUser("framefill"), displayName: "Ari" };
+  let peers: Peer[] = [];
+
+  before(async () => {
+    await createIdentity(browser, me);
+  });
+
+  after(async () => {
+    await stopFleet(peers);
+  });
+
+  for (const file of PACKS) {
+    it(`${file}: the main window's frame reaches its edges, and its side tab (if any) protrudes in a transparent column`, async () => {
+      const pack = builtinPacks().find((p) => p.file === file);
+      if (!pack) throw new Error(`no built-in pack ${file}`);
+      await switchTo(browser, BUDDY);
+      await openSettings(browser, "Appearance");
+      const href = await applySkin(browser, me, pack.name);
+      await switchTo(browser, BUDDY);
+      await skinShown(browser, href);
+      await browser.pause(1500);
+      await frameFills(file, "main");
+    });
+  }
+
+  it("combat: the chat window's frame reaches every edge, painted", async () => {
+    const pack = builtinPacks().find((p) => p.file === "combat");
+    if (!pack) throw new Error("no built-in pack combat");
+    await switchTo(browser, BUDDY);
+    await openSettings(browser, "Appearance");
+    const href = await applySkin(browser, me, pack.name);
+    peers = await startFleet(["Bea"]);
+    const myKey = await befriendFleet(browser, me, peers);
+    await peerSendDm(peers[0], myKey, "frame check");
+    await switchTo(browser, BUDDY);
+    const before = await browser.getWindowHandles();
+    await doubleClick(browser, await friendRow(browser, "Bea"));
+    await browser.switchToWindow(await waitForHandle(browser, (h) => h.startsWith("chat-") && !before.includes(h)));
+    await seesMessage(browser, me, "frame check");
+    await skinShown(browser, href);
+    await browser.pause(1500);
+    await frameFills("combat", "chat");
+  });
+});
