@@ -128,7 +128,14 @@ fn section_lines(section: &InfoviewSection, out: &mut Vec<InfoviewLine>) {
             }
             row(
                 out,
-                format!("{member_count} members, {online_count} online"),
+                format!(
+                    "{member_count} {}, {online_count} online",
+                    if *member_count == 1 {
+                        "member"
+                    } else {
+                        "members"
+                    }
+                ),
             );
             if let Some(removed) = removed {
                 let what = if removed.banned { "banned" } else { "removed" };

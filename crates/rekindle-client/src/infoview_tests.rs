@@ -80,3 +80,32 @@ fn sections_are_headings_and_rows_in_the_hosts_order() {
     );
     assert_eq!(got.len(), 7);
 }
+
+/// A community's header counts one member in the singular, more in the
+/// plural.
+#[test]
+fn a_community_header_counts_one_member_in_the_singular() {
+    let header = |member_count| InfoviewView {
+        subject: InfoviewSubject::Community {
+            community: "c".into(),
+        },
+        sections: vec![InfoviewSection::CommunityHeader {
+            anchor: "c".into(),
+            name: "Hall".into(),
+            description: String::new(),
+            member_count,
+            online_count: 0,
+            removed: None,
+        }],
+    };
+    let one = lines(&header(1));
+    assert!(
+        one.contains(&InfoviewLine::Row("1 member, 0 online".into())),
+        "{one:?}"
+    );
+    let two = lines(&header(2));
+    assert!(
+        two.contains(&InfoviewLine::Row("2 members, 0 online".into())),
+        "{two:?}"
+    );
+}
