@@ -8,9 +8,9 @@
 // Each button's state is logged as `[hsc1]` and shot.
 
 import { browser, expect } from "@wdio/globals";
-import { NET_WAIT_MS, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
+import { NET_WAIT_MS, byText, shown, switchTo, waitForHandle, waitUntil } from "../../../walk/helpers.ts";
 import { BUDDY, openSettings } from "../../../walk/nav.ts";
-import { createCommunity, createIdentity, newUser, openCommunity, type User } from "../../journeys.ts";
+import { communitiesTab, createCommunity, createIdentity, friendsView, newUser, openCommunity, type User } from "../../journeys.ts";
 import { applySkin, skinShown } from "../../journeys_skins.ts";
 import { shot } from "../../shots.ts";
 import { builtinPacks } from "../../skin-pack.ts";
@@ -82,5 +82,25 @@ describe("a community window's Call, Mute, Join and Profile act on its community
     await shown(browser, ".modal-container", NET_WAIT_MS);
     console.log("[hsc1] profile opened the community's settings panel");
     await shot("symbiosis-community-info");
+  });
+
+  // Lead (CBM, Xfire's selected-item semantics): a community selected in
+  // the buddy list's Communities row drives the pack's buttons too: its
+  // Profile opens that community's window.
+  it("a community selected in the buddy list: Profile opens that community's window", async () => {
+    await browser.closeWindow().catch(() => undefined);
+    await switchTo(browser, BUDDY);
+    await communitiesTab(browser);
+    await (await byText(browser, ".community-item", name.slice(0, 24), NET_WAIT_MS)).click();
+    await friendsView(browser);
+    const info = await button("FriendInfoButton");
+    console.log(`[hsc1] buddy list profile, community selected: ${JSON.stringify(info)}`);
+    expect({ shown: info.shown, refused: info.refused }).toEqual({ shown: true, refused: false });
+    const before = await browser.getWindowHandles();
+    await (await browser.$('.skin-tree [data-skin-node="FriendInfoButton"]')).click();
+    const opened = await waitForHandle(browser, (h) => h.startsWith("community-") && !before.includes(h), NET_WAIT_MS);
+    console.log(`[hsc1] buddy list profile opened ${opened}`);
+    await browser.switchToWindow(opened);
+    await shot("buddy-profile-community-window");
   });
 });
