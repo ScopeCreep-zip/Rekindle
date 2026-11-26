@@ -30,10 +30,15 @@ impl SimDht {
         self.validate(key, subkey, &public, data.len())?;
         // In flight until it returns (0.5.8 `inspect_record.rs:274-277,287-290`).
         let _setting = super::super::Setting::new(&self.net, self.node, key, subkey);
+        // Offline before the fanout: the offline handler bails `TryAgain`
+        // under `AllowOffline(false)` and its `?` returns it (fork `e1158844`
+        // `set_value.rs:248-255` → `local_record_store_interface.rs:61-62`).
         if self.offline() {
             return Err(try_again());
         }
         let _slot = self.net.latency.slot(self.node, key, &[subkey]).await;
+        // An outbound error: the same handler bails `TryAgain` first
+        // (`set_value.rs:276-290`).
         if self.fault_try_again() {
             tokio::time::sleep(self.net.latency.draw(self.node, latency::SET)).await;
             return Err(try_again());
@@ -45,10 +50,10 @@ impl SimDht {
                 .accepting(self.node, key, subkey, inner.records.get(key))
         };
         let ours = self.ours(key, subkey, data, &public, min_seq);
+        // Going offline mid-fanout is no error: Veilid processes whatever
+        // the fanout reached (`set_value.rs:296-305`, no online check after
+        // it), and the lanes the node lost are already missing from it.
         let fanout = fanout::run(&self.net, self.node, (key, subkey), &ours, accepting).await;
-        if self.offline() {
-            return Err(try_again());
-        }
         fanout::commit(&self.net, self.node, (key, subkey), &ours, &fanout)
     }
 

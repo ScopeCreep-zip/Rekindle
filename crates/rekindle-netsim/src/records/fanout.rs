@@ -549,10 +549,14 @@ async fn land_tail(
 /// A landed fanout's value is stored in `node`'s local store, within the
 /// record's total (`record_store/record.rs:105-129`); `Some` is that value
 /// when it is not ours or some replica holds a rival at its seq
-/// (`set_value.rs:753-760`). A set that did not land stores nothing and,
-/// with the `AllowOffline(false)` every Rekindle set passes, answers
-/// `TryAgain` (0.5.8 `set_value.rs:731-738` →
-/// `local_record_store_interface.rs:60-62`), never `Ok(None)`.
+/// (`set_value.rs:753-760`). A set that did not land stores nothing: with
+/// the `AllowOffline(false)` every Rekindle set passes, Veilid's offline
+/// handler bails `TryAgain` before writing or queuing (fork `e1158844`
+/// `set_value.rs:731-738` → `local_record_store_interface.rs:61-62`), and
+/// `set_value` turns that `TryAgain` into `Ok(None)` unless the write is at
+/// the max seq and so closes the subkey (`set_value.rs:244-245,306-308`;
+/// the API doc on `set_dht_value`, `routing_context.rs:758`: "a failed
+/// network fanout does not error"). Only the closing write hears `TryAgain`.
 pub(crate) fn commit(
     net: &Network,
     node: usize,
@@ -561,10 +565,14 @@ pub(crate) fn commit(
     fanout: &SetFanout,
 ) -> Result<Option<rekindle_records::port::RecordValue>, DhtCallError> {
     if !fanout.landed() {
-        return Err(DhtCallError {
-            kind: DhtErrorKind::TryAgain,
-            message: "offline, try again later".into(),
-        });
+        // `ValueSeqNum::MAX` is `u32::MAX - 1` (`value_seq_num.rs:15`).
+        if ours.value.seq == u32::MAX - 1 {
+            return Err(DhtCallError {
+                kind: DhtErrorKind::TryAgain,
+                message: "offline, try again later".into(),
+            });
+        }
+        return Ok(None);
     }
     let mut inner = net.inner.lock();
     let others: usize = inner.nodes[node]

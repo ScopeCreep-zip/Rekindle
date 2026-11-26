@@ -1,9 +1,11 @@
 //! Own-write republish (plan E3.4 LV1, lead decision OW1).
 //!
 //! A write to one of our own records can come back stored while it reached
-//! only one side of a split network: Veilid 0.5.8 counts a set as landed
+//! only one side of a split network: Veilid 0.5.8 ends a set at consensus
 //! once `set_value_count` (5) of the nodes its fanout reached accept it,
-//! closest or not (`set_value.rs:441`), and never re-pushes it; a get after
+//! closest or not (`set_value.rs:441`), and also counts one that times out
+//! or exhausts with `get_value_count` (3) consensus nodes as landed
+//! (`storage_manager/mod.rs:990-1028`), and never re-pushes it; a get after
 //! the heal settles on `get_value_count` (3) holders of the newest seq it
 //! saw (`get_value.rs:328`, `:498-512`), so readers can settle on the old
 //! value. Veilid's own rehydration skips records this node created this
@@ -41,6 +43,26 @@
 //! (a write that stored on one side of a split, plan E3.4 LV1). An
 //! inspect that fails sends nothing and leaves every subkey due for the
 //! next round. A fully landed record costs one inspect per round.
+//!
+//! The republish is also where an identical re-push's landedness is
+//! checked (DHT1). Veilid answers `Ok(None)` for a set at consensus and for
+//! a fanout below it (fork `e1158844` `set_value.rs:306-308`; the
+//! `set_dht_value` doc: "a failed network fanout does not error"), and an
+//! identical value keeps its seq (`set_value.rs:353-366`), so the set's return
+//! and the local seq say nothing about whether that re-push reached the
+//! network; the pool reports it `Unchanged`. Veilid's way to learn what the
+//! network holds is a network-scope inspect (`inspect_dht_record`,
+//! `routing_context.rs:945`: `SyncSet` "useful for determining if the unchanged
+//! local copy should be pushed to the network"; the fanout,
+//! `inspect_record.rs`), and every `Unchanged` from [`RecordPool::set_durable`],
+//! [`RecordPool::set_republished`] or a held write's re-push enters this
+//! schedule exactly as a `Landed` does: 60 s later its record is inspected,
+//! and a subkey the network holds behind our seq is re-sent. The inspect is
+//! the get scope rather than `SyncSet` for the reason above (a reader's view,
+//! not the writer's). No inspect follows the set itself: the bytes were
+//! already ours on the network (the local copy is stored only by a landed
+//! write or a network read; a missed write stores nothing), so the re-push
+//! risks nothing a reader saw, and the first round settles it.
 //!
 //! Session-scoped: the entries live in the session's pool, not in a
 //! community's scope, so a leave's last write is re-sent after the leave
