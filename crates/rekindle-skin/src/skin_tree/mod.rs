@@ -44,6 +44,8 @@ mod compose_tests;
 #[cfg(test)]
 mod content_tests;
 #[cfg(test)]
+mod edge_tests;
+#[cfg(test)]
 mod fit_tests;
 #[cfg(test)]
 mod golden_tests;

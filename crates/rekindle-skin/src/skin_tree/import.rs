@@ -28,7 +28,7 @@ use super::anchor::{axis, chain, outer_for, Sibs, Sizes, X, Y};
 use super::anchor_client::{client_box, client_inset, to_tile};
 use super::clip::{clip, Art, Images};
 use super::content::{self, Link};
-use super::fit::fit;
+use super::fit::{fit, popup_onto_frame};
 use super::outdent;
 use super::passes::{by_view, pages, qualify, rows_by_view, tab_views};
 use super::roles::{check_grip, role, with_implied, Facts, Role};
@@ -574,7 +574,7 @@ pub fn add(
         limit_of(declared, "MinWidth").unwrap_or(0),
         limit_of(declared, "MinHeight").unwrap_or(0),
     );
-    fit(&mut tree, pack_min, rows, &mut built.0)?;
+    let given = fit(&mut tree, pack_min, rows, &mut built.0)?;
     if tree
         .boxes(0, 0)
         .iter()
@@ -588,6 +588,9 @@ pub fn add(
     // `MainMenuPopup` is laid here from the `MenuButton`'s `LaunchPopup`,
     // never in the window's own tree.
     super::popup::add(&walk, (layout, components), &tree, built)?;
+    for p in built.0.popups.values_mut() {
+        popup_onto_frame(&mut p.anchor, given);
+    }
     content::restore(&mut tree, held)?;
     built.1.extend(walk.files);
     built.0.tree = Some(tree);
