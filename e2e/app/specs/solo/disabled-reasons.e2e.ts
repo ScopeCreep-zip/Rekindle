@@ -23,7 +23,7 @@ import { NET_WAIT_MS, switchTo, waitUntil } from "../../../walk/helpers.ts";
 import { BUDDY, openSettings } from "../../../walk/nav.ts";
 import { createCommunity, createIdentity, newUser, openCommunity, type User } from "../../journeys.ts";
 import { applySkin, skinShown } from "../../journeys_skins.ts";
-import { disabledLook } from "../../disabled-look.ts";
+import { disabledLookWithBoxes } from "../../disabled-look.ts";
 import { shot } from "../../shots.ts";
 import { builtinPacks } from "../../skin-pack.ts";
 
@@ -94,7 +94,9 @@ describe("a disabled node says why (CR1)", function () {
           })),
       )) as Disabled[];
       for (const d of nodes) console.log(`[cr1] ${file} ${d.node}: cause=${d.cause || "?"} by=${d.by || "?"} opacity=${d.opacity} reason="${d.reason}"`);
-      const look = await disabledLook(nodes.map((d) => d.node));
+      const measured = await disabledLookWithBoxes(nodes.map((d) => d.node));
+      const look = Object.fromEntries(Object.entries(measured).map(([id, v]) => [id, v.changed]));
+      console.log(`[cr1] ${file} measured boxes: ${JSON.stringify(measured)}`);
       console.log(`[cr1] ${file} disabled vs enabled self, pixels changed: ${JSON.stringify(look)} (visibly disabled at 20)`);
       const inactive = await inactiveNodes();
       console.log(`[cr1] ${file} windowInactive (pressable, not aria-disabled): ${JSON.stringify(inactive)}`);
