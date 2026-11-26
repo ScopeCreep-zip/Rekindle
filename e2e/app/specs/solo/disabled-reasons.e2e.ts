@@ -20,7 +20,7 @@
 
 import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, press, switchTo, waitUntil } from "../../../walk/helpers.ts";
-import { BUDDY, openSettings } from "../../../walk/nav.ts";
+import { BUDDY, SETTINGS, closeSettings, openSettings } from "../../../walk/nav.ts";
 import { createCommunity, createIdentity, newUser, openCommunity, type User } from "../../journeys.ts";
 import { applySkin, skinShown } from "../../journeys_skins.ts";
 import { disabledLookWithBoxes } from "../../disabled-look.ts";
@@ -230,6 +230,10 @@ describe("a disabled node says why (CR1)", function () {
     await browser.switchToWindow(BUDDY).catch(() => undefined);
     await waitUntil(async () => !(await browser.getWindowHandles()).includes(handle), NET_WAIT_MS, "the inactive community window's close button did not close it");
     console.log("[cr1] symbiosis community window closed by its inactive close button");
+    // Settings, opened to take the focus, closes too, so the next test's
+    // Settings opens fresh and frontmost.
+    await switchTo(browser, SETTINGS);
+    await closeSettings(browser);
   });
 
   // Lead: close works in every window it frames, whatever its focus (the
