@@ -91,10 +91,14 @@ describe("a paused inbound route is said in the tree's status field, which stays
         const line = document.querySelector(".skin-status-paused");
         const r = line?.getBoundingClientRect();
         const top = r ? (document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) as HTMLElement | null) : null;
-        const statusNodes = Array.from(document.querySelectorAll<HTMLElement>('.skin-tree [data-skin-role="statusText"]')).map((n) => `${n.dataset.skinNode} ${box(n)}`);
+        const art = (e: Element | null): string => (e ? getComputedStyle(e).backgroundImage.slice(0, 80) : "-");
+        const statusNodes = Array.from(document.querySelectorAll<HTMLElement>('.skin-tree [data-skin-role^="status"], .skin-tree [data-skin-role^="name"], .skin-tree [data-skin-role*="presence" i]')).map(
+          (n) => `${n.dataset.skinNode} (${n.dataset.skinRole}) ${box(n)} art=${art(n)}`,
+        );
+        const fieldEl = field as HTMLElement | null;
         return JSON.stringify({
           field: box(field),
-          fieldNode: (field as HTMLElement | null)?.dataset.skinNode ?? "none",
+          fieldNode: `${fieldEl?.dataset.skinNode ?? "none"} (${fieldEl?.dataset.skinRole ?? "-"}) art=${art(field)}`,
           line: box(line),
           atLine: top ? `${top.tagName.toLowerCase()}.${top.className} in ${top.closest<HTMLElement>("[data-skin-node]")?.dataset.skinNode ?? "none"}` : "none",
           statusNodes,
