@@ -19,6 +19,7 @@ mod card_game_policy;
 mod channel_delete_container_not_empty;
 mod channel_edit_both_ways;
 mod channel_move;
+mod channel_outbox_two_channels;
 mod channel_post_both_ways;
 mod co_creators;
 mod code_request_durable;
