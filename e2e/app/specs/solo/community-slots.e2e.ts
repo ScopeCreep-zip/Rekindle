@@ -19,12 +19,15 @@ import { applySkin, skinShown } from "../../journeys_skins.ts";
 import { shot } from "../../shots.ts";
 import { builtinPacks } from "../../skin-pack.ts";
 
-const PACKS = ["symbiosis", "alloy", "xslimfire"];
+/** Every pack the skin round ships. Each serves the community window's
+ *  slots (xfire-classic and Total Chaos too, though they have no chat
+ *  golden); a pack that served none would be said so from what is drawn. */
+const PACKS = ["symbiosis", "alloy", "xslimfire", "combat", "onyx", "simple-x", "xfire-classic", "total-chaos"];
 
 type Box = [number, number, number, number];
 
 /** The boxes the proof compares: each slot's, its mounted part's, the layout's and the composer's. */
-async function slotBoxes(): Promise<{ area: Box | null; layout: Box | null; edit: Box | null; composer: Box | null; send: Box | null; sendPart: Box | null }> {
+async function slotBoxes(): Promise<{ area: Box | null; layout: Box | null; edit: Box | null; composer: Box | null; send: Box | null; sendPart: Box | null; field: Box | null; controls: Box[]; view: Box }> {
   return (await browser.execute(() => {
     const box = (e: Element | null | undefined): [number, number, number, number] | null => {
       if (!e) return null;
@@ -39,9 +42,20 @@ async function slotBoxes(): Promise<{ area: Box | null; layout: Box | null; edit
       composer: box(document.querySelector(".message-input-wrapper")),
       send: box(slot("chatSend")),
       sendPart: box(slot("chatSend")?.firstElementChild),
+      // The composer's text field and every control it draws (attach,
+      // mic, emoji, a shell Send): a usable composer has a field a line
+      // tall and all of them in the window.
+      field: box(document.querySelector(".message-input-field")),
+      controls: Array.from(document.querySelectorAll(".message-input-shell > *"))
+        .filter((e) => e.getBoundingClientRect().width > 0)
+        .map((e) => box(e) as [number, number, number, number]),
+      view: [0, 0, window.innerWidth, window.innerHeight] as [number, number, number, number],
     };
-  })) as { area: Box | null; layout: Box | null; edit: Box | null; composer: Box | null; send: Box | null; sendPart: Box | null };
+  })) as { area: Box | null; layout: Box | null; edit: Box | null; composer: Box | null; send: Box | null; sendPart: Box | null; field: Box | null; controls: Box[]; view: Box };
 }
+
+/** A text field a line tall: 12 px text in 6 px padding (`.message-input`) and its border. */
+const MIN_FIELD_PX = 24;
 
 const near = (a: Box | null, b: Box | null): boolean => !!a && !!b && a.every((v, i) => Math.abs(v - b[i]) <= 1);
 const within = (a: Box | null, b: Box | null): boolean => !!a && !!b && a[0] >= b[0] - 1 && a[1] >= b[1] - 1 && a[2] <= b[2] + 1 && a[3] <= b[3] + 1;
@@ -102,7 +116,19 @@ describe("a skinned community window's slots and the content mounted in them (SK
       await shot(`${file}-community`);
       const b = await slotBoxes();
       console.log(`[slots-proof] ${file}: ${JSON.stringify(b)}`);
+      if (b.area === null && b.edit === null) {
+        // No chat frame served: the community window is the app's own
+        // layout, whole and on screen, with its composer inside it.
+        const view = (await browser.execute(() => [0, 0, window.innerWidth, window.innerHeight])) as [number, number, number, number];
+        console.log(`[slots-proof] ${file}: no chat frame served (no chatArea/chatEdit slot drawn); window ${JSON.stringify(view)}`);
+        expect({ pack: file, layout: b.layout !== null, composerOnScreen: within(b.composer, view) }).toEqual({ pack: file, layout: true, composerOnScreen: true });
+        return;
+      }
       expect({ pack: file, layoutFillsChatArea: near(b.layout, b.area) }).toEqual({ pack: file, layoutFillsChatArea: true });
+      // Within the slot is not enough: a 2 px slot holds a crushed composer.
+      const fieldHeight = b.field ? b.field[3] - b.field[1] : 0;
+      const outside = b.controls.filter((c) => !within(c, b.view)).length;
+      expect({ pack: file, fieldAtLeastALine: fieldHeight >= MIN_FIELD_PX, controlsOutsideWindow: outside }).toEqual({ pack: file, fieldAtLeastALine: true, controlsOutsideWindow: 0 });
       expect({ pack: file, composerWithinChatEdit: within(b.composer, b.edit) }).toEqual({ pack: file, composerWithinChatEdit: true });
       if (b.send) expect({ pack: file, partFillsChatSend: near(b.sendPart, b.send) }).toEqual({ pack: file, partFillsChatSend: true });
     });

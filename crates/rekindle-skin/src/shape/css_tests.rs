@@ -73,11 +73,10 @@ fn the_frame_box_holds_the_content_in_its_insets_and_drops_the_border() {
     assert!(css.starts_with("@layer shape {\n"));
     // SK2: the content is the views node's box (`XfireView`
     // `Y="Tabs.Bottom+1"` IndentRight 18 IndentBottom 91 IndentLeft 5,
-    // `MainWindow.xml:125`): top 185 + 51 + 1 = 237, right 5 (the InfoView
-    // strip is given up, plan E7.7 TAB1: the frame fills the window), bottom
-    // 91, left 5.
+    // `MainWindow.xml:125`): top 185 + 51 + 1 = 237, right 5 + the Infoview
+    // strip's 13 px outset = 18, bottom 91, left 5.
     assert!(css.contains(
-        "  .app-frame[data-skin-window=\"main\"] {\n    border: 0;\n    border-radius: 0;\n    border-image: none;\n    position: relative;\n    isolation: isolate;\n    padding: 237px 5px 91px 5px;\n    background: var(--color-xfire-bg-dark) content-box;\n"
+        "  .app-frame[data-skin-window=\"main\"] {\n    border: 0;\n    border-radius: 0;\n    border-image: none;\n    position: relative;\n    isolation: isolate;\n    padding: 237px 18px 91px 5px;\n    background: var(--color-xfire-bg-dark) content-box;\n"
     ));
     // The strip is a decoration: drawn after the eight frame pieces, at the
     // window's right edge (an overhang ignores the outsets).

@@ -2,6 +2,7 @@
 //! decoded masks and the layout give the skin's silhouette at the window's
 //! device size, and a kind the skin does not frame keeps its rectangle.
 
+use rekindle_skin::shape::ALPHA_OPAQUE;
 use rekindle_types::dto::skin::{FrameTile, Insets, SkinWindow, TileAxis, WindowLayout};
 use rekindle_types::dto::skin_library::{SkinFrames, SkinTileMask, SkinWindowFrame};
 use tauri::PhysicalSize;
@@ -151,4 +152,95 @@ fn a_window_grows_to_its_skin_and_never_shrinks() {
     assert_eq!(grown((320.0, 400.0), min), Some((348.0, 500.0)));
     assert_eq!(grown((348.0, 500.0), min), None);
     assert_eq!(grown((900.0, 900.0), min), None);
+}
+
+/// Plan SK0 over E7.7 (TAB1 reverted): Symbiosis's InfoView tab
+/// (`MainInfoViewButton`, 13×115, `JustX="Right"` in the frame's
+/// `IndentRight="13"` column) protrudes beside the main frame in a 13 px
+/// right outset. The tab is shaped art (SK0: the art is the window's
+/// shape, `rekindle_skin::shape::outline_nodes` puts it in the outline), so
+/// the silhouette built from the served layout
+/// (`rekindle_skin::shape::silhouette`, through [`compute`]) holds every
+/// pixel of the tab's normal art at or above the shaper's threshold
+/// ([`ALPHA_OPAQUE`], `rekindle_skin::shape::mask`) and leaves every
+/// transparent one in its box out, as it leaves the outset column above
+/// and below the tab out, so those pixels are click-through; the frame's
+/// own right edge beside the tab stays opaque.
+#[test]
+fn symbiosis_info_view_tab_protrudes_and_the_column_around_it_is_click_through() {
+    let (_, pack) = rekindle_skin::builtin::find("builtin:symbiosis").unwrap();
+    let canonical = rekindle_skin::validate::run(pack.bytes).unwrap();
+    let windows = rekindle_skin::serve::frames(&canonical.bytes, &canonical.address()).unwrap();
+    let decoded = decode(SkinFrames {
+        id: "builtin:symbiosis".to_owned(),
+        windows,
+    })
+    .unwrap();
+    let (layout, _) = &decoded[&SkinWindow::Main];
+    assert_eq!(layout.outsets.right, 13, "{:?}", layout.outsets);
+    // The reference screenshot's main window (`shape/tests.rs` goldens).
+    let (w, h) = (399_i32, 555_i32);
+    let tree = layout.tree.as_ref().expect("a tree-laid main window");
+    let (tab, [x, y, bw, bh]) = tree
+        .boxes(w, h)
+        .into_iter()
+        .find(|(n, _)| n.id == "MainInfoViewButton")
+        .expect("the InfoView tab");
+    let column = w - i32::from(layout.outsets.right);
+    assert_eq!((bw, bh), (13, 115));
+    assert!(
+        x >= column && x + bw <= w,
+        "tab {x}+{bw} outside the outset column {column}..{w}"
+    );
+    let shape = compute(
+        &decoded,
+        frame_of(WindowKind::BuddyList),
+        PhysicalSize::new(w.unsigned_abs(), h.unsigned_abs()),
+        1.0,
+    )
+    .unwrap();
+    let inside = |px: i32, py: i32| shape.contains(f64::from(px) + 0.5, f64::from(py) + 0.5);
+    // The tab's normal art, the one image the outline lays at its box's
+    // top left (`rekindle_skin::shape::of_layout`).
+    let art = tab.art.as_ref().expect("the tab's art");
+    assert_eq!(art.normal.len(), 1, "{:?}", art.normal);
+    let piece = art.normal.values().next().expect("the tab's normal piece");
+    assert_eq!((piece.width, piece.height), (13, 115));
+    let package = rekindle_skin::package::read(&canonical.bytes).unwrap();
+    let png = package.get(&piece.image).expect("the tab's image");
+    let img = image::load_from_memory_with_format(png, image::ImageFormat::Png)
+        .unwrap()
+        .into_rgba8();
+    assert_eq!(img.dimensions(), (13, 115));
+    let (mut opaque, mut clear) = (0_u32, 0_u32);
+    for (ax, ay, pixel) in img.enumerate_pixels() {
+        let px = x + i32::try_from(ax).unwrap();
+        let py = y + i32::try_from(ay).unwrap();
+        if pixel.0[3] >= ALPHA_OPAQUE {
+            opaque += 1;
+            assert!(inside(px, py), "opaque tab pixel ({px}, {py}) cut out");
+        } else {
+            clear += 1;
+            assert!(
+                !inside(px, py),
+                "transparent tab pixel ({px}, {py}) is not click-through"
+            );
+        }
+    }
+    assert!(
+        opaque > 0 && clear > 0,
+        "shaped tab art: {opaque} opaque, {clear} clear"
+    );
+    for px in column..w {
+        for py in (0..y).chain(y + bh..h) {
+            assert!(
+                !inside(px, py),
+                "outset pixel ({px}, {py}) is not click-through"
+            );
+        }
+    }
+    assert!(
+        inside(column - 1, y + bh / 2),
+        "the frame's right edge beside the tab"
+    );
 }

@@ -461,6 +461,10 @@ pub(crate) async fn teardown(ctx: &DaemonContext, reason: EndReason) {
     // a kept barrier read as passed let the next unlock's first write sign
     // with every ring peer silent.
     ctx.communities.unlock_barriers().clear();
+    // The follow-up and card refresh markers go with the scope their tasks
+    // ran on (plan E3.2 S7l, JP1): kept, the shell's next unlock never
+    // started either task.
+    ctx.communities.reset_session_state();
     if ctx.mode == HostMode::Daemon {
         crate::daemon::dispatch::daemon_release_communities(ctx);
     }

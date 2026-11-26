@@ -87,6 +87,12 @@ pub enum GovernanceRuntimeError {
     /// signed; the earlier ops still land.
     #[error("Your earlier change is still being published; try again in a moment.")]
     OwnOpsPending(String),
+    /// An invite's steps before signing (its secrets record, the state
+    /// read under the rebuild lock) did not finish within its command's
+    /// network deadline (`NETWORK_ANSWER_DEADLINE`): nothing was signed and
+    /// no link handed out.
+    #[error("The network did not answer within {0} s; no invite was made, try again.")]
+    InviteTimedOut(u64),
     /// Our own op failed the verification every reader runs.
     #[error("our governance op was refused: {0}")]
     OpRefused(String),

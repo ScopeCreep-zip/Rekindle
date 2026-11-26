@@ -21,6 +21,7 @@ use crate::deps::{CommunityMembership, MockGovernanceRuntimeDeps, OpOutcome};
 use crate::device_signer::{first_endorsement, op_record_of, own_op_record, OpSigner};
 use crate::error::GovernanceRuntimeError;
 use crate::op_log::{build_op, Deps, HeldOp, VerifiedSet};
+use crate::unlock_barrier::{BarrierPhase, UnlockBarrier};
 
 const HELD_IN: &str = crate::test_world::ANCHOR;
 const SECRET: [u8; 32] = [9; 32];
@@ -81,6 +82,18 @@ fn deps_for(
     state: GovernanceState,
     device: [u8; 32],
 ) -> (MockGovernanceRuntimeDeps, Arc<Mutex<Vec<HeldOp>>>) {
+    let barrier = Arc::new(UnlockBarrier::default());
+    barrier.complete(Some(BarrierPhase::Passed));
+    deps_behind(cert, state, device, barrier)
+}
+
+/// [`deps_for`] behind `barrier`; a held write is answered and dropped.
+fn deps_behind(
+    cert: GenesisCert,
+    state: GovernanceState,
+    device: [u8; 32],
+    barrier: Arc<UnlockBarrier>,
+) -> (MockGovernanceRuntimeDeps, Arc<Mutex<Vec<HeldOp>>>) {
     let mut deps = MockGovernanceRuntimeDeps::new();
     let mut ops = crate::deps::MockGovernanceOpStore::new();
     let lock = Arc::new(tokio::sync::Mutex::new(()));
@@ -128,11 +141,14 @@ fn deps_for(
     deps.expect_gossip_governance_op().return_const(());
     deps.expect_set_governance_state().return_const(());
     deps.expect_emit_event().return_const(());
-    deps.expect_unlock_barrier().returning(|_| {
-        let barrier = std::sync::Arc::new(crate::unlock_barrier::UnlockBarrier::default());
-        barrier.complete(Some(crate::unlock_barrier::BarrierPhase::Passed));
-        barrier
-    });
+    deps.expect_unlock_barrier()
+        .returning(move |_| Arc::clone(&barrier));
+    deps.expect_emit_catch_up().return_const(());
+    deps.expect_pending_target_name().returning(|_, _| None);
+    deps.expect_handle()
+        .returning(MockGovernanceRuntimeDeps::new);
+    deps.expect_spawn_held_write()
+        .returning(|_, write| drop(write));
     deps.expect_publish_governance_op()
         .returning(|_, _, _| Ok(OpOutcome::Landed));
     (deps, stored)
@@ -190,6 +206,39 @@ async fn an_unendorsed_device_key_is_refused_not_written_to_the_member_record() 
         "{written:?}"
     );
     assert!(held.is_empty(), "nothing stored for an unendorsed key");
+}
+
+/// A write by `device` while the unlock barrier catches up (plan E3.2
+/// S7d-keys.8), when an endorsed device's write is held.
+async fn write_catching_up(
+    device: [u8; 32],
+) -> (Result<OpOutcome, GovernanceRuntimeError>, Vec<HeldOp>) {
+    let (cert, state) = two_device_state();
+    let barrier = Arc::new(UnlockBarrier::default());
+    assert!(matches!(barrier.phase(), BarrierPhase::CatchingUp));
+    let (deps, stored) = deps_behind(cert, state, device, barrier);
+    let entry = rekindle_governance::fixture::meta("renamed");
+    let written = write_entry(&deps, HELD_IN, entry).await;
+    let held = stored.lock().clone();
+    (written, held)
+}
+
+/// ADR 0022 rule 3 at the call: an unendorsed key's write is refused at
+/// once while the barrier catches up, never answered "held" and dropped
+/// when its turn comes; an endorsed device's write is still held.
+#[tokio::test]
+async fn an_unendorsed_device_write_is_refused_at_the_call_never_held() {
+    let (written, held) = write_catching_up([6; 32]).await;
+    assert!(
+        matches!(written, Err(GovernanceRuntimeError::DeviceUnendorsed(ref c)) if c == HELD_IN),
+        "{written:?}"
+    );
+    assert!(held.is_empty(), "nothing stored for an unendorsed key");
+    let (endorsed, _) = write_catching_up(SECOND_DEVICE).await;
+    assert!(
+        matches!(endorsed, Ok(OpOutcome::Held { .. })),
+        "{endorsed:?}"
+    );
 }
 
 /// An op signed by `device` over `set`, citing its frontier.
