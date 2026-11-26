@@ -114,6 +114,30 @@ describe("a paused inbound route is said in the tree's status field, which stays
       const line = await seenInField(PAUSED);
       const input = await seenInField(FIELD);
       console.log(`[paused] ${file}: hiding the line changes ${line} px, hiding the input ${input} px (one text: line >= 20, input < 20)`);
+      // Every pack (the five that pass and the two that do not): the line's
+      // own paint and box, and the status input's ground, opaque or not.
+      const paint = (await browser.execute(() => {
+        const l = document.querySelector<HTMLElement>(".skin-status-paused");
+        const i = document.querySelector<HTMLElement>(".skin-status-edit");
+        const box = (e: HTMLElement | null): string => {
+          if (!e) return "none";
+          const r = e.getBoundingClientRect();
+          return `${Math.round(r.x)},${Math.round(r.y)} ${Math.round(r.width)}x${Math.round(r.height)}`;
+        };
+        const alpha = (c: string): number => {
+          const m = /rgba?\(([^)]+)\)/.exec(c);
+          if (!m) return c === "transparent" ? 0 : 1;
+          const parts = m[1].split(",").map((v) => parseFloat(v));
+          return parts.length === 4 ? parts[3] : 1;
+        };
+        const li = l ? getComputedStyle(l) : null;
+        const ii = i ? getComputedStyle(i) : null;
+        return JSON.stringify({
+          line: { box: box(l), color: li?.color, background: li?.backgroundColor, backgroundImage: li?.backgroundImage },
+          input: { box: box(i), background: ii?.backgroundColor, opaque: ii ? alpha(ii.backgroundColor) === 1 : null, backgroundImage: ii?.backgroundImage },
+        });
+      })) as string;
+      console.log(`[paused] ${file} paint: ${paint}`);
       // Lead (Alloy, 15 px): a line not seen, measured before anything
       // changes: every element at its centre, topmost first, with its
       // stacking and paint, and the line's text colour against the ground
