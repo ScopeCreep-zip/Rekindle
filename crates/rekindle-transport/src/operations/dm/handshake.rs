@@ -72,8 +72,19 @@ pub async fn payload(
     to: &str,
     body: &DirectBody,
 ) -> Result<Vec<u8>, FriendError> {
-    let (_, framed) = send::framed(host, to, body).await?;
-    encode(&framed)
+    Ok(payload_of(host, to, body).await?.0)
+}
+
+/// [`payload`] and the kind its row is named by: `PreKeyInit` for a group
+/// member's first contact ([`super::group_first_contact::framed`]).
+async fn payload_of(
+    host: &dyn FriendHost,
+    to: &str,
+    body: &DirectBody,
+) -> Result<(Vec<u8>, DmTypeId), FriendError> {
+    let (frame, framed) = send::framed(host, to, body).await?;
+    let (framed, kind) = super::group_first_contact::framed(host, to, body, &frame, framed).await?;
+    Ok((encode(&framed)?, kind))
 }
 
 /// Frame `body` and commit it to our handshake stream to `to`; the row's
@@ -86,8 +97,8 @@ pub async fn enqueue(
     to: &str,
     body: &DirectBody,
 ) -> Result<String, FriendError> {
-    let payload = payload(host, to, body).await?;
-    commit(host, to, client_id(host, body.type_id()), payload).await
+    let (payload, kind) = payload_of(host, to, body).await?;
+    commit(host, to, client_id(host, kind), payload).await
 }
 
 /// [`enqueue`] for a frame worth nothing after `deadline_ms` (ms since the
@@ -135,9 +146,12 @@ pub async fn enqueue_when_ready(
     to: &str,
     body: &DirectBody,
 ) -> Result<String, FriendError> {
-    let kind = body.type_id();
-    let payload = match payload(host, to, body).await {
-        Ok(payload) => payload,
+    let mut kind = body.type_id();
+    let payload = match payload_of(host, to, body).await {
+        Ok((payload, row)) => {
+            kind = row;
+            payload
+        }
         Err(e @ FriendError::NotReady(_)) => {
             tracing::info!(?kind, "group frame waits for the member's session to open");
             tracing::debug!(to = %to, ?kind, reason = %e, "frame committed to wait");
@@ -149,28 +163,6 @@ pub async fn enqueue_when_ready(
         Err(e) => return Err(e),
     };
     commit(host, to, client_id(host, kind), payload).await
-}
-
-/// One attempt of a frame waiting for its session ([`enqueue_when_ready`]):
-/// framed now and committed as its own row, which settles this one; a
-/// session still not openable is attempted again; any other failure wedges
-/// the row, shown on it.
-async fn attempt_pending(host: &dyn FriendHost, to: &str, type_id: u16, body: &[u8]) -> Attempt {
-    let Some(kind) = DmTypeId::from_u16(type_id) else {
-        return Attempt::Wedged(format!("typeId {type_id:#06x}"));
-    };
-    let body = match DirectBody::decode(kind, body) {
-        Ok(body) => body,
-        Err(e) => return Attempt::Wedged(format!("queued body: {e}")),
-    };
-    match enqueue(host, to, &body).await {
-        Ok(_) => Attempt::Sent,
-        Err(e @ (FriendError::NotReady(_) | FriendError::Locked)) => {
-            tracing::debug!(to = %to, ?kind, reason = %e, "frame still waits for the session");
-            Attempt::Deferred
-        }
-        Err(e) => Attempt::Wedged(e.to_string()),
-    }
 }
 
 /// Commit a frame built elsewhere (a PreKeyInit opened from a bundle); a
@@ -469,27 +461,30 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
             return stopped;
         }
     }
-    if let Framed::Inbox {
-        record_key,
-        writer,
-        frame,
-    } = &framed
-    {
-        return attempt_inbox(host, record_key, writer, frame).await;
-    }
-    if let Framed::FirstContactDurable {
-        datagram,
-        record_key,
-        writer,
-    } = &framed
-    {
-        return super::first_contact_durable::attempt(host, to, datagram, record_key, writer).await;
-    }
-    if let Framed::FirstContact { first_type_id } = &framed {
-        return attempt_first_contact(host, to, *first_type_id).await;
-    }
-    if let Framed::Pending { type_id, body } = &framed {
-        return attempt_pending(host, to, *type_id, body).await;
+    match &framed {
+        Framed::Inbox {
+            record_key,
+            writer,
+            frame,
+        } => return attempt_inbox(host, record_key, writer, frame).await,
+        Framed::FirstContactDurable {
+            datagram,
+            record_key,
+            writer,
+        } => {
+            return super::first_contact_durable::attempt(host, to, datagram, record_key, writer)
+                .await
+        }
+        Framed::GroupFirstContact { datagram, group_id } => {
+            return super::group_first_contact::attempt(host, to, datagram, group_id).await;
+        }
+        Framed::FirstContact { first_type_id } => {
+            return attempt_first_contact(host, to, *first_type_id).await;
+        }
+        Framed::Pending { type_id, body } => {
+            return super::group_first_contact::attempt_pending(host, to, *type_id, body).await;
+        }
+        Framed::Wire { .. } | Framed::Sealed { .. } => {}
     }
     let (datagram, kind) = match send::datagram_of(host, to, &framed) {
         Ok(sent) => sent,

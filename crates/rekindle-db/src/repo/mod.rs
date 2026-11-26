@@ -33,6 +33,7 @@ pub mod governance_ops;
 pub mod governance_partial;
 pub mod group_dm_invites;
 pub mod group_dm_messages;
+pub mod group_dm_rendezvous;
 pub mod group_dms;
 pub mod group_lobby;
 pub mod held_threads;

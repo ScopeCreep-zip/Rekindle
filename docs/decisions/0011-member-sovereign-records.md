@@ -210,6 +210,15 @@ one subkey.
 
 ## More information
 
+- **Note (plan decision 67, item 3, 2026-11-26): the group rendezvous record.** A group DM's
+  durable first-contact path between members who are not friends is a creator-minted
+  `SMPL(o_cnt 1, members = 8 one-time writers, m_cnt 8)` record, 65 subkeys, subkey `1 + 8i + j`
+  = member i's first contact to member j (`dht_layout::group_rendezvous`). It is the one
+  record here that is not member-sovereign: its creator mints every writer. Bound: only W_i
+  writes row i (veilid-core 0.5.8 `derivation.rs:191-235`), the sender of an entry is proven by
+  its signed `PreKeyInit` and the roster, and the creator can only junk-write (deny the durable
+  copy), never forge; the `app_call` copy remains. See threat model D9.
+
 - `.claude/plans/standards-remediation/evidence/slot-integrity.md` — design, watch and size
   budgets, rejected alternatives
 - `.claude/plans/standards-remediation/00-integration-plan.md` D15, steps E3.2–E3.4

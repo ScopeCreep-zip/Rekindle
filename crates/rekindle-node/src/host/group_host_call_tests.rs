@@ -57,9 +57,17 @@ async fn a_group_windows_host_voice_chat_opens_the_prefilled_start_group_call() 
     let others = vec![member(bob(), 'b'), member("c".repeat(64), 'c')];
     let own = member(hex::encode(owner), 'a');
     let chain = format!("VLD0:{}", "Q".repeat(43));
-    rekindle_dm::create(&deps, GID, "raid", own, others, &chain)
-        .await
-        .unwrap();
+    rekindle_dm::create(
+        &deps,
+        GID,
+        "raid",
+        own,
+        others,
+        &chain,
+        &crate::host::group_dm_tests::rendezvous_mint(),
+    )
+    .await
+    .unwrap();
     let group_id = group_id_hex(&GID);
 
     let group = SkinSelection::Group {

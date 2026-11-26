@@ -21,15 +21,52 @@ use rekindle_types::subscription_events::GroupDmEvent;
 use super::{held_group, member, own_chain, own_key, rotate_in, Outbound};
 use crate::error::DmError;
 use crate::group::{self, group_id_hex, KeyUpdate, Roster};
-use crate::ports::{GroupDmDeps, PendingInvite};
+use crate::ports::{GroupDmDeps, PendingInvite, RendezvousMint, RendezvousSlot};
 use crate::sender_key;
+use rekindle_types::dht_layout::group_rendezvous as rendezvous;
 
 /// The grown roster's two frames: the invite to the newcomers, and the
 /// grow to every member already on the roster.
 #[derive(Debug, Clone)]
 pub struct Grown {
-    pub invite: Outbound<GroupDmInvite>,
-    pub grow: Outbound<GroupDmRosterGrow>,
+    pub invites: Vec<Outbound<GroupDmInvite>>,
+    pub grows: Vec<Outbound<GroupDmRosterGrow>>,
+}
+
+/// The grown roster's slots (plan decision 67 item 3): a member already on
+/// it keeps its slot, and each newcomer, in roster order, takes the lowest
+/// row no current member holds (eight rows for at most eight members,
+/// `group_dm::MAX_MEMBERS`). A departed member's row is free again: it
+/// still holds that row's writer, so it can junk-write the row, never
+/// forge an entry in it (the reader takes row `i` only from the member
+/// the plan assigns it).
+fn grown_slots(held: &RendezvousSlot, roster: &Roster) -> Result<Vec<u8>, DmError> {
+    let mut taken = 0u16;
+    let mut slots: Vec<Option<u8>> = roster
+        .members()
+        .iter()
+        .map(|m| {
+            let kept = held
+                .slots
+                .iter()
+                .find(|(id, _)| *id == m.identity)
+                .map(|(_, s)| *s);
+            if let Some(s) = kept {
+                taken |= 1 << s;
+            }
+            kept
+        })
+        .collect();
+    for slot in &mut slots {
+        if slot.is_none() {
+            let free = (0..rendezvous::WRITERS)
+                .find(|s| taken & (1 << s) == 0)
+                .ok_or_else(|| DmError::InvalidRoster("no free rendezvous row".into()))?;
+            taken |= 1 << free;
+            *slot = Some(free);
+        }
+    }
+    Ok(slots.into_iter().flatten().collect())
 }
 
 /// Invite `added` (the creator's friends, none on the roster) to
@@ -44,6 +81,7 @@ pub async fn grow<D: GroupDmDeps + ?Sized>(
     deps: &D,
     group_id: &GroupId,
     added: Vec<GroupDmRosterMember>,
+    mint: &RendezvousMint,
 ) -> Result<Grown, DmError> {
     let group = held_group(deps, group_id).await?;
     let me = deps.own_identity();
@@ -68,9 +106,21 @@ pub async fn grow<D: GroupDmDeps + ?Sized>(
     )?;
     let next = sender_key::rotate(&own_key(deps, &group).await?, deps.rng())?;
     let chain = own_chain(deps, group_id).await?;
-    let invite = group::build_invite(*group_id, &group.name, &roster, &next, &chain, |m| {
+    let held = deps
+        .rendezvous(group_id)
+        .await?
+        .ok_or_else(|| DmError::InvalidRoster("the group has no rendezvous record".into()))?;
+    let slots = grown_slots(&held, &roster)?;
+    let plan = group::RendezvousPlan {
+        record_key: &held.record_key,
+        slots: &slots,
+    };
+    let invite = group::build_invite(*group_id, &group.name, &roster, &next, &chain, plan, |m| {
         deps.sign_identity(m)
     });
+    let own = group::for_recipient(&invite, &me, mint)?;
+    deps.put_rendezvous(group_id, &group::rendezvous_of(&own, &me)?)
+        .await?;
     deps.put_sender_key(group_id, &me, &next).await?;
     deps.update_group(group_id, &roster, next.epoch()).await?;
     deps.publish(GroupDmEvent::KeyRotated {
@@ -83,17 +133,16 @@ pub async fn grow<D: GroupDmDeps + ?Sized>(
         .into_iter()
         .filter(|m| !had.contains(m))
         .collect();
+    let grows = super::per_recipient(&invite, had, mint)?
+        .into_iter()
+        .map(|out| Outbound {
+            frame: GroupDmRosterGrow { invite: out.frame },
+            to: out.to,
+        })
+        .collect();
     Ok(Grown {
-        grow: Outbound {
-            frame: GroupDmRosterGrow {
-                invite: invite.clone(),
-            },
-            to: had,
-        },
-        invite: Outbound {
-            frame: invite,
-            to: newcomers,
-        },
+        grows,
+        invites: super::per_recipient(&invite, newcomers, mint)?,
     })
 }
 
@@ -146,6 +195,24 @@ pub async fn on_roster_grow<D: GroupDmDeps + ?Sized>(
         return Ok(None);
     }
     extends(&group.roster, &roster)?;
+    let held = deps
+        .rendezvous(&gid)
+        .await?
+        .ok_or_else(|| DmError::InvalidRoster("the group has no rendezvous record".into()))?;
+    let place = group::rendezvous_of(invite, &me)?;
+    if place.record_key != held.record_key || place.slot != held.slot {
+        return Err(DmError::InvalidRoster(
+            "a grow moved our rendezvous record or slot".into(),
+        ));
+    }
+    deps.put_rendezvous(
+        &gid,
+        &RendezvousSlot {
+            writer: held.writer,
+            ..place
+        },
+    )
+    .await?;
     deps.put_sender_key(&gid, from, &incoming).await?;
     deps.put_chain(&gid, from, &invite.creator_chain_key)
         .await?;

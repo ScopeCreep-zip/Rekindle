@@ -183,6 +183,20 @@ The `rekindle-dm` crate is pure logic. The `src-tauri/services/dm/` layer
 wires it to Veilid (record creation, app_message invitations) and SQLite
 (local message history).
 
+### Group first contact: the rendezvous record (decision 67)
+
+`GroupDmInvite` carries four rendezvous fields: `@7 rendezvousKey` (the
+group's rendezvous record), `@8 slot` and `@9 slotWriter` (the recipient's
+row and its one-time writer, so one invite frame per recipient, sealed by
+the pairwise session), and `@10 slots` (the creator's signed slot plan,
+one distinct slot `< 8` per member; `signing_bytes` covers the key and the
+plan). The record is `SMPL(o_cnt 1, members = 8 writers, m_cnt 8)` with 65
+subkeys: subkey 0 holds `OPENED` from the creator, subkey `1 + 8i + j` is
+member `i`'s first contact to member `j` (at most 16,131 B, which a group
+PreKeyInit fits). A member's first contact to a non-friend member is sent
+by `app_call` and written, the same datagram, to its row; the receiver
+watches its column and opens the entry as any inbound 1:1 frame.
+
 ## Community Architecture (v2.0 Flat Governance)
 
 Communities use **flat SMPL governance** — there is no coordinator process and
@@ -356,6 +370,13 @@ invitations. The cross-device sync layer (`rekindle-sync` +
 `services/cross_device_sync`) extends this with a personal sync record
 (`personal_sync_record_key` on the `identity` row) that holds device list,
 read state, preferences, and pairing state.
+
+### Group Rendezvous Record (SMPL, 65 subkeys)
+
+Minted by a group's creator, owner key discarded after `OPENED` is written
+to subkey 0; eight one-time member writers, one per slot of the signed plan;
+subkey `1 + 8i + j` = slot `i`'s first contact to slot `j`
+(`dht_layout::group_rendezvous`).
 
 ### Community Records (SMPL `o_cnt: 0`)
 

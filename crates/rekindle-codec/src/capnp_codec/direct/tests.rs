@@ -135,6 +135,10 @@ fn samples() -> Vec<DirectBody> {
             epoch: 0,
             signature: [0x51; 64],
             creator_chain_key: dht_key(),
+            rendezvous_key: dht_key(),
+            slot: 2,
+            slot_writer: s("VLD0:writer"),
+            slots: vec![0, 1, 2],
         }),
         DirectBody::GroupDmAccept(GroupDmAccept {
             group_id: [0x6D; 16],
@@ -158,6 +162,10 @@ fn samples() -> Vec<DirectBody> {
                 epoch: 1,
                 signature: [0x51; 64],
                 creator_chain_key: dht_key(),
+                rendezvous_key: dht_key(),
+                slot: 1,
+                slot_writer: s("VLD0:writer"),
+                slots: vec![0, 1, 2],
             },
         }),
         DirectBody::GroupDmRename(GroupDmRename {

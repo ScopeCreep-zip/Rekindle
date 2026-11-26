@@ -18,7 +18,7 @@ use rekindle_types::subscription_events::{GroupDmEvent, GroupDmMember};
 
 use crate::error::DmError;
 use crate::group::{self, group_id_hex, KeyUpdate, Roster};
-use crate::ports::{GroupDmDeps, GroupState, PendingInvite};
+use crate::ports::{GroupDmDeps, GroupState, PendingInvite, RendezvousMint};
 use crate::sender_key;
 
 mod grow;
@@ -31,11 +31,29 @@ pub struct Outbound<F> {
     pub to: Vec<String>,
 }
 
-/// A group we created, and the invite to send to every other member.
+/// A group we created, and the invite to send to each other member, one
+/// frame each (its own rendezvous slot and writer, plan decision 67).
 #[derive(Debug, Clone)]
 pub struct Created {
     pub group: GroupState,
-    pub invite: Outbound<GroupDmInvite>,
+    pub invites: Vec<Outbound<GroupDmInvite>>,
+}
+
+/// The signed invite as one frame per member of `to`, each with its own
+/// slot and writer from `mint`.
+pub(crate) fn per_recipient(
+    signed: &GroupDmInvite,
+    to: Vec<String>,
+    mint: &RendezvousMint,
+) -> Result<Vec<Outbound<GroupDmInvite>>, DmError> {
+    to.into_iter()
+        .map(|member| {
+            Ok(Outbound {
+                frame: group::for_recipient(signed, &member, mint)?,
+                to: vec![member],
+            })
+        })
+        .collect()
 }
 
 async fn member<D: GroupDmDeps + ?Sized>(deps: &D, identity: &str) -> GroupDmMember {
@@ -88,7 +106,10 @@ fn key_frame(group_id: GroupId, key: &GroupSenderKey, chain: &str) -> GroupDmAcc
 /// Create a group named `name` of `own` (us, the creator, first on the
 /// roster) and `others`, with our first sending key and our group chain
 /// `own_chain` (carried in the signed invite). `group_id` is fresh
-/// ([`group::new_group_id`]): the host made our chain for it first.
+/// ([`group::new_group_id`]): the host made our chain for it first, and
+/// minted the group's rendezvous record `mint` (plan decision 67 item 3):
+/// each roster member takes the slot of its roster position, and each
+/// invite carries its recipient's writer only.
 ///
 /// # Errors
 /// An invalid name or roster, `own` not our identity, or storage.
@@ -99,6 +120,7 @@ pub async fn create<D: GroupDmDeps + ?Sized>(
     own: GroupDmRosterMember,
     others: Vec<GroupDmRosterMember>,
     own_chain: &str,
+    mint: &RendezvousMint,
 ) -> Result<Created, DmError> {
     group::check_name(name)?;
     let me = deps.own_identity();
@@ -107,9 +129,19 @@ pub async fn create<D: GroupDmDeps + ?Sized>(
     }
     let roster = Roster::new(std::iter::once(own).chain(others).collect())?;
     let key = sender_key::mint_first(deps.rng());
-    let invite = group::build_invite(group_id, name, &roster, &key, own_chain, |m| {
+    let slots: Vec<u8> = (0..roster.members().len())
+        .map(|i| u8::try_from(i).expect("a roster of at most eight"))
+        .collect();
+    let plan = group::RendezvousPlan {
+        record_key: &mint.record_key,
+        slots: &slots,
+    };
+    let invite = group::build_invite(group_id, name, &roster, &key, own_chain, plan, |m| {
         deps.sign_identity(m)
     });
+    let to = roster.others(&me);
+    let invites = per_recipient(&invite, to, mint)?;
+    let own_slot = group::for_recipient(&invite, &me, mint)?;
     let state = GroupState {
         group_id,
         name: name.to_owned(),
@@ -120,14 +152,15 @@ pub async fn create<D: GroupDmDeps + ?Sized>(
     deps.insert_group(&state).await?;
     deps.put_sender_key(&group_id, &me, &key).await?;
     deps.put_chain(&group_id, &me, own_chain).await?;
+    deps.put_rendezvous(&group_id, &group::rendezvous_of(&own_slot, &me)?)
+        .await?;
     deps.publish(GroupDmEvent::Joined {
         group_id: group_id_hex(&group_id),
         member: member(deps, &me).await,
     });
-    let to = state.roster.others(&me);
     Ok(Created {
         group: state,
-        invite: Outbound { frame: invite, to },
+        invites,
     })
 }
 
@@ -186,6 +219,7 @@ pub async fn accept<D: GroupDmDeps + ?Sized>(
         .ok_or_else(|| DmError::UnknownGroup(group_id_hex(group_id)))?;
     let roster = group::verify_invite(&pending.invite, &pending.from)?;
     let me = deps.own_identity();
+    let place = group::rendezvous_of(&pending.invite, &me)?;
     let key = sender_key::mint_first(deps.rng());
     let state = GroupState {
         group_id: *group_id,
@@ -202,6 +236,7 @@ pub async fn accept<D: GroupDmDeps + ?Sized>(
     deps.put_chain(group_id, &pending.from, &pending.invite.creator_chain_key)
         .await?;
     deps.put_chain(group_id, &me, own_chain).await?;
+    deps.put_rendezvous(group_id, &place).await?;
     deps.publish(GroupDmEvent::Joined {
         group_id: group_id_hex(group_id),
         member: member(deps, &me).await,

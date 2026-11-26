@@ -242,7 +242,11 @@ struct GroupDmRosterMember {
 }
 
 # 0x0120: the creator's invite, signed by its identity over
-# `GROUP_DM_INVITE || groupId || name || roster || epoch`.
+# `GROUP_DM_INVITE || groupId || name || roster || creatorChainKey || epoch
+# || rendezvousKey || slots`. One frame per recipient: `slot` and
+# `slotWriter` are that recipient's own (plan decision 67 item 3), unsigned
+# like `creatorSenderKey` because the pairwise session already
+# authenticates and seals them to that one recipient.
 struct GroupDmInvite {
   groupId @0 :Data;                     # 16
   name @1 :Text;
@@ -251,6 +255,10 @@ struct GroupDmInvite {
   epoch @4 :UInt32;
   signature @5 :Data;                   # 64
   creatorChainKey @6 :Text;             # the creator's group chain (dm_participant)
+  rendezvousKey @7 :Text;               # the group rendezvous record (decision 67)
+  slot @8 :UInt8;                       # the recipient's row and column, 0-7
+  slotWriter @9 :Text;                  # the recipient's one-time writer of row `slot`
+  slots @10 :Data;                      # each roster member's slot, in roster order
 }
 
 # 0x0121: we joined; our sending key, to each member.

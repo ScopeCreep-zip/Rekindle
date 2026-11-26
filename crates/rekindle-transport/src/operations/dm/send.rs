@@ -67,6 +67,16 @@ pub enum Framed {
         record_key: String,
         writer: String,
     },
+    /// A group member's first contact to a member who is not our friend
+    /// (plan decision 67 item 3): the PreKeyInit's datagram, sent by
+    /// `app_call` and written to our row of the group's rendezvous record,
+    /// the same bytes both ways (`group_first_contact`). Our row's writer
+    /// stays in `group_dm_rendezvous`, never in the outbox row.
+    GroupFirstContact {
+        #[serde(with = "rekindle_types::base64_bytes")]
+        datagram: Vec<u8>,
+        group_id: String,
+    },
     /// A group control frame to a member whose session cannot be opened
     /// yet (their prekey record not readable; plan E2.6, finding GA1): its
     /// body, framed at an attempt once the session opens and committed
@@ -502,7 +512,9 @@ pub(super) fn datagram_of(
     framed: &Framed,
 ) -> Result<(Vec<u8>, DmTypeId), FriendError> {
     match framed {
-        Framed::Wire { datagram } | Framed::FirstContactDurable { datagram, .. } => {
+        Framed::Wire { datagram }
+        | Framed::FirstContactDurable { datagram, .. }
+        | Framed::GroupFirstContact { datagram, .. } => {
             let frame = super::unwire(datagram)
                 .and_then(|bytes| DmFrame::decode(bytes).ok())
                 .ok_or_else(|| FriendError::Invalid("stored frame does not decode".into()))?;

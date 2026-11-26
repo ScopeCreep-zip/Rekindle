@@ -211,6 +211,24 @@ CREATE TABLE IF NOT EXISTS group_lobby_members (
     FOREIGN KEY (owner_key, group_id) REFERENCES group_dms(owner_key, group_id) ON DELETE CASCADE
 );
 
+-- Plan decision 67 item 3: our place in a group's rendezvous record (the
+-- durable path of a member's first contact to a member who is not its
+-- friend): the record, our slot (we write row `slot`, we watch column
+-- `slot`), our one-time writer of that row (keypair text, given to us alone
+-- in our invite; the creator's own), and every member's slot from the
+-- creator's signed plan as JSON `[[identity, slot], ...]`. Written by the
+-- creator at create and grow and by a member at accept and on a grow.
+CREATE TABLE IF NOT EXISTS group_dm_rendezvous (
+    owner_key TEXT NOT NULL,
+    group_id TEXT NOT NULL,
+    record_key TEXT NOT NULL CHECK(length(record_key) > 0),
+    slot INTEGER NOT NULL CHECK(slot BETWEEN 0 AND 7),
+    writer TEXT NOT NULL CHECK(length(writer) > 0),
+    slots TEXT NOT NULL CHECK(json_valid(slots)),
+    PRIMARY KEY (owner_key, group_id),
+    FOREIGN KEY (owner_key, group_id) REFERENCES group_dms(owner_key, group_id) ON DELETE CASCADE
+);
+
 -- Plan E2.6: a creator's verified invite we have not answered yet, held
 -- for at most `DELIVERY_HORIZON` (D24, Q2b: 30 days) from `received_at`
 -- (milliseconds); `invite` is the encoded `GroupDmInvite` (0x0120) body.

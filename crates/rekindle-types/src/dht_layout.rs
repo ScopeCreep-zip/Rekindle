@@ -210,6 +210,72 @@ pub mod request_inbox {
     pub const MAX_SUBKEY_VALUE_LEN: usize = 32_768;
 }
 
+/// Subkey layout for a group DM's rendezvous record (plan decision 67,
+/// item 3): `SMPL(o_cnt: 1, members = 8 one-time writers, m_cnt: 8)`, the
+/// durable path of a group member's first contact to a member who is not
+/// their friend. The creator mints it with eight fresh writers; member
+/// `i` of the roster holds writer `W_i` only (sealed to them in their
+/// invite), so only they write row `i`: subkey [`subkey`]`(i, j)` is
+/// member `i`'s first contact (a `PreKeyInit` frame) to member `j`, and
+/// member `j` watches its column [`column`]`(j)`.
+///
+/// Veilid enforces the rows (veilid-core 0.5.8
+/// `veilid_api/types/dht/derivation.rs:191-235`
+/// `check_subkey_value_data_smpl`: the owner writes only subkey 0, and a
+/// value in member `i`'s range must be signed by the writer whose member
+/// id is `m_key`, else "wrong writer"). The creator, who minted every
+/// writer, can write any row: it can only junk-write (deny the durable
+/// path), never forge, since every entry is a signed `PreKeyInit` whose
+/// sender the reader checks against the roster.
+pub mod group_rendezvous {
+    /// The creator's owner subkey, written once with [`OPENED`].
+    pub const OWNER_SUBKEY: u32 = 0;
+    /// What the creator writes to [`OWNER_SUBKEY`] at creation: the
+    /// layout's version.
+    pub const OPENED: &[u8] = &[1];
+    /// Owner subkeys in the schema.
+    pub const OWNER_SUBKEY_COUNT: u16 = 1;
+    /// One-time writers (= rows = columns): a group's most members
+    /// (`group_dm::MAX_MEMBERS`).
+    pub const WRITERS: u8 = 8;
+    /// Subkeys each writer owns: one per possible recipient.
+    pub const ROW_LEN: u16 = 8;
+    /// Total subkeys of the record: 1 + 8 × 8 = 65.
+    pub const SUBKEY_COUNT: u16 = OWNER_SUBKEY_COUNT + (WRITERS as u16) * ROW_LEN;
+    /// Largest value a subkey accepts:
+    /// `min(MAX_SUBKEY_SIZE, MAX_RECORD_DATA_SIZE / subkey_count)` =
+    /// `min(32,768, 1,048,576 / 65)` = 16,131 bytes (veilid-core 0.5.8
+    /// `veilid_api/types/dht/derivation.rs:186-189`, constants at
+    /// `veilid_api/types/dht/mod.rs:36,38`); a group `PreKeyInit` frame
+    /// (~5.5 KB with its ML-KEM ciphertext) fits.
+    pub const MAX_SUBKEY_VALUE_LEN: usize = 16_131;
+
+    /// The subkey of member `from`'s first contact to member `to` (both
+    /// slots, `0..WRITERS`): `1 + 8·from + to`. `None` for a slot out of
+    /// range or a member to itself.
+    #[must_use]
+    pub fn subkey(from: u8, to: u8) -> Option<u32> {
+        (from < WRITERS && to < WRITERS && from != to).then(|| {
+            u32::from(OWNER_SUBKEY_COUNT) + u32::from(from) * u32::from(ROW_LEN) + u32::from(to)
+        })
+    }
+
+    /// The subkeys member `to` watches: every other row's entry to it.
+    #[must_use]
+    pub fn column(to: u8) -> Vec<u32> {
+        (0..WRITERS).filter_map(|from| subkey(from, to)).collect()
+    }
+
+    /// The (row, column) a subkey holds: whose first contact to whom.
+    #[must_use]
+    pub fn slots_of(subkey: u32) -> Option<(u8, u8)> {
+        let index = subkey.checked_sub(u32::from(OWNER_SUBKEY_COUNT))?;
+        let row = u8::try_from(index / u32::from(ROW_LEN)).ok()?;
+        let col = u8::try_from(index % u32::from(ROW_LEN)).ok()?;
+        (row < WRITERS && row != col).then_some((row, col))
+    }
+}
+
 /// Subkey layout for a community's anchor `A` (plan E3.2, ADR 0011): a
 /// DFLT(1) record whose one subkey holds the `GenesisCert`, written once by
 /// the anchor's owner `K_A`, whose keypair is then discarded. The community

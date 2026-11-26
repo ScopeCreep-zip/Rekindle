@@ -164,15 +164,26 @@ pub fn group_id_hex(id: &GroupId) -> String {
     hex::encode(id)
 }
 
-/// The creator's invite: the roster (the creator first), the name and the
-/// creator's sending key, signed by `sign` (the creator's identity key)
-/// over [`GroupDmInvite::signing_bytes`].
+/// Where the invite puts its roster in the group rendezvous record (plan
+/// decision 67 item 3): the record and each roster member's slot, in
+/// roster order.
+#[derive(Debug, Clone, Copy)]
+pub struct RendezvousPlan<'a> {
+    pub record_key: &'a str,
+    pub slots: &'a [u8],
+}
+
+/// The creator's invite: the roster (the creator first), the name, the
+/// creator's sending key and the rendezvous plan, signed by `sign` (the
+/// creator's identity key) over [`GroupDmInvite::signing_bytes`]. It names
+/// no recipient yet: [`for_recipient`] gives each its own slot and writer.
 pub fn build_invite(
     group_id: GroupId,
     name: &str,
     roster: &Roster,
     creator_key: &GroupSenderKey,
     creator_chain_key: &str,
+    plan: RendezvousPlan<'_>,
     sign: impl FnOnce(&[u8]) -> [u8; 64],
 ) -> GroupDmInvite {
     let mut invite = GroupDmInvite {
@@ -183,9 +194,74 @@ pub fn build_invite(
         epoch: creator_key.epoch(),
         signature: [0; 64],
         creator_chain_key: creator_chain_key.to_owned(),
+        rendezvous_key: plan.record_key.to_owned(),
+        slot: 0,
+        slot_writer: String::new(),
+        slots: plan.slots.to_vec(),
     };
     invite.signature = sign(&invite.signing_bytes());
     invite
+}
+
+/// `member`'s slot in the invite's signed plan.
+#[must_use]
+pub fn slot_of(invite: &GroupDmInvite, member: &str) -> Option<u8> {
+    invite
+        .roster
+        .iter()
+        .position(|m| m.identity == member)
+        .and_then(|i| invite.slots.get(i).copied())
+}
+
+/// The signed invite for `member`, carrying its own slot and its writer
+/// from `mint` (one frame per recipient, plan decision 67 item 3).
+///
+/// # Errors
+/// [`DmError::InvalidRoster`] when `member` has no slot or `mint` no
+/// writer for it.
+pub fn for_recipient(
+    signed: &GroupDmInvite,
+    member: &str,
+    mint: &crate::ports::RendezvousMint,
+) -> Result<GroupDmInvite, DmError> {
+    let slot = slot_of(signed, member)
+        .ok_or_else(|| DmError::InvalidRoster(format!("{member} has no rendezvous slot")))?;
+    let writer = mint
+        .writers
+        .get(usize::from(slot))
+        .ok_or_else(|| DmError::InvalidRoster(format!("no rendezvous writer for slot {slot}")))?;
+    Ok(GroupDmInvite {
+        slot,
+        slot_writer: writer.clone(),
+        ..signed.clone()
+    })
+}
+
+/// Our place in the rendezvous record from a verified invite to `me`: its
+/// `slot` must be the one the signed plan gives us.
+///
+/// # Errors
+/// [`DmError::InvalidRoster`] when the plan gives us no slot or another.
+pub fn rendezvous_of(
+    invite: &GroupDmInvite,
+    me: &str,
+) -> Result<crate::ports::RendezvousSlot, DmError> {
+    if slot_of(invite, me) != Some(invite.slot) {
+        return Err(DmError::InvalidRoster(
+            "the invite's slot is not the one its plan gives us".into(),
+        ));
+    }
+    Ok(crate::ports::RendezvousSlot {
+        record_key: invite.rendezvous_key.clone(),
+        slot: invite.slot,
+        writer: invite.slot_writer.clone(),
+        slots: invite
+            .roster
+            .iter()
+            .zip(&invite.slots)
+            .map(|(m, s)| (m.identity.clone(), *s))
+            .collect(),
+    })
 }
 
 /// Verify an invite that arrived over `from`'s pairwise session: its
@@ -198,6 +274,11 @@ pub fn build_invite(
 /// [`DmError::BadSignature`].
 pub fn verify_invite(invite: &GroupDmInvite, from: &str) -> Result<Roster, DmError> {
     let roster = Roster::new(invite.roster.clone())?;
+    if invite.slots.len() != invite.roster.len() {
+        return Err(DmError::InvalidRoster(
+            "one rendezvous slot per member".into(),
+        ));
+    }
     check_name(&invite.name)?;
     if roster.creator().identity != from {
         return Err(DmError::NotOnRoster(from.to_owned()));

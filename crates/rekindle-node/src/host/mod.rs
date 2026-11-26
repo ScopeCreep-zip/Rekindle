@@ -53,6 +53,8 @@ mod group_host_call_tests;
 #[cfg(test)]
 mod group_lobby_tests;
 #[cfg(test)]
+mod group_rendezvous_tests;
+#[cfg(test)]
 mod group_reply_tests;
 pub mod hardening;
 #[cfg(test)]

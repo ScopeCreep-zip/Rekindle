@@ -10,9 +10,12 @@ use std::sync::Arc;
 
 use rekindle_codec::capnp_codec::direct::{DirectBody, DmTypeId, GroupDmInvite, GroupId};
 use rekindle_db::repo::group_dm_invites::{self, InviteRow};
+use rekindle_db::repo::group_dm_rendezvous;
 use rekindle_db::repo::group_dms::{self, GroupDmRow};
 use rekindle_dm::group::group_id_hex;
-use rekindle_dm::{DmError, GroupDmDeps, GroupSenderKey, GroupState, PendingInvite, Roster};
+use rekindle_dm::{
+    DmError, GroupDmDeps, GroupSenderKey, GroupState, PendingInvite, RendezvousSlot, Roster,
+};
 use rekindle_transport::operations::friend::{relationship_name, FriendError, FriendHost};
 use rekindle_types::subscription_events::{GroupDmEvent, SubscriptionEvent};
 
@@ -324,6 +327,38 @@ impl GroupDmDeps for HostGroupDm {
         Ok(Some(PendingInvite {
             from: row.from_key,
             invite: invite_of(&row.invite)?,
+        }))
+    }
+
+    async fn put_rendezvous(
+        &self,
+        group_id: &GroupId,
+        slot: &RendezvousSlot,
+    ) -> Result<(), DmError> {
+        let row = group_dm_rendezvous::RendezvousRow {
+            group_id: group_id_hex(group_id),
+            record_key: slot.record_key.clone(),
+            slot: slot.slot,
+            writer: slot.writer.clone(),
+            slots: slot.slots.clone(),
+        };
+        db!(self, "store rendezvous place", |c, o| {
+            group_dm_rendezvous::put(c, o, &row)
+        })
+        .await
+    }
+
+    async fn rendezvous(&self, group_id: &GroupId) -> Result<Option<RendezvousSlot>, DmError> {
+        let id = group_id_hex(group_id);
+        let row = db!(self, "read rendezvous place", |c, o| {
+            group_dm_rendezvous::get(c, o, &id)
+        })
+        .await?;
+        Ok(row.map(|r| RendezvousSlot {
+            record_key: r.record_key,
+            slot: r.slot,
+            writer: r.writer,
+            slots: r.slots,
         }))
     }
 
