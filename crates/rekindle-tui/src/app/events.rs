@@ -468,6 +468,8 @@ impl App {
             // A file transfer's state or progress (plan E7.2 G12): the
             // TUI has no Downloads view, so the open view re-renders.
             | SubscriptionEvent::Transfer(_)
+            // Video facts (plan E4.1): the TUI renders no video.
+            | SubscriptionEvent::Video(_)
             | SubscriptionEvent::System(_) => Some(Action::Render),
         }
     }

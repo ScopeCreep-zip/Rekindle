@@ -35,6 +35,11 @@ fn sample_frame(seq: u32) -> MediaFrame {
         // Distinct per-frame content; sequence/timestamp already differ by seq.
         payload: vec![0xDE, 0xAD, 0xBE, 0xEF],
         timestamp_ms: 1_700_000_000_000 + u64::from(seq),
+        scope: rekindle_types::media::MediaScope::Channel {
+            community_id: "c".into(),
+            channel_id: "v".into(),
+        },
+        sender: "d".repeat(64),
     }
 }
 

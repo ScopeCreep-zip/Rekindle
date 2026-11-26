@@ -5,8 +5,9 @@
 use rekindle_events::EventStream;
 use rekindle_ipc::error::IpcError;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
-use rekindle_ipc::{Caller, HostApi};
+use rekindle_ipc::{Caller, HostApi, MediaReceiver, MediaStream};
 use rekindle_types::subscription_events::Cursor;
+use rekindle_types::video::{MediaFrame, UplinkFrame};
 
 impl super::Host {
     /// Where the unlocked identity's own-records stage is (plan E2.5 FC3),
@@ -43,6 +44,19 @@ impl super::Host {
         self.ctx.journal.clear_state(key);
     }
 
+    /// The uplink of encoded video frames the frontends hand the host
+    /// (plan E4.1): taken once, by the video engine (S8).
+    #[must_use]
+    pub fn take_media_uplink(&self) -> Option<MediaReceiver<UplinkFrame>> {
+        self.media.take_uplink()
+    }
+
+    /// Deliver one downlink video frame to every open `media_down` stream;
+    /// returns how many it reached.
+    pub fn publish_media_down(&self, frame: &MediaFrame) -> usize {
+        self.media.push_down(frame)
+    }
+
     /// The session's standing events with their cursors: the snapshot a GUI
     /// window that just opened is handed before its live events.
     #[must_use]
@@ -59,5 +73,13 @@ impl HostApi for super::Host {
 
     async fn subscribe(&self, from: Option<Cursor>) -> Result<EventStream, IpcError> {
         Ok(self.ctx.journal.subscribe(from))
+    }
+
+    fn media_up(&self, frame: UplinkFrame) {
+        self.media.push_up(frame);
+    }
+
+    fn media_down(&self) -> MediaStream {
+        self.media.open_down()
     }
 }

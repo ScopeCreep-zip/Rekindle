@@ -23,6 +23,7 @@ mod stream;
 mod system;
 mod transfer;
 mod typing;
+mod video;
 mod voice;
 
 pub use call::{CallEvent, DirectCallInfo};
@@ -44,6 +45,7 @@ pub use stream::{Cursor, Sequenced, StopReason, StreamFrame};
 pub use system::SystemEvent;
 pub use transfer::TransferEvent;
 pub use typing::{TypingContext, TypingEvent};
+pub use video::VideoEvent;
 pub use voice::{LinkMeasurement, VoiceEvent, VoiceParticipant, VoiceScope};
 
 use serde::{Deserialize, Serialize};
@@ -97,6 +99,10 @@ pub enum SubscriptionEvent {
     /// The backend began an action that needs the user's review (plan
     /// D3.3): any connection of the identity renders it and commits it.
     IntentPending(crate::intent::IntentReview),
+    /// Video session facts for the window that captures or renders a
+    /// scope (plan E4.1): keyframe requests, encoder targets, topology.
+    /// Appended last so postcard indices stay stable.
+    Video(VideoEvent),
 }
 
 /// Context for unread count changes.
@@ -132,11 +138,12 @@ pub enum EventCategory {
     Transfer,
     UnreadChanged,
     Intent,
+    Video,
 }
 
 impl EventCategory {
     /// Every category, for subscribers that want all of them.
-    pub const ALL: [Self; 17] = [
+    pub const ALL: [Self; 18] = [
         Self::ChannelMessage,
         Self::Typing,
         Self::Presence,
@@ -154,6 +161,7 @@ impl EventCategory {
         Self::Transfer,
         Self::UnreadChanged,
         Self::Intent,
+        Self::Video,
     ];
 }
 
@@ -178,6 +186,7 @@ impl SubscriptionEvent {
             Self::Transfer(_) => EventCategory::Transfer,
             Self::UnreadChanged { .. } => EventCategory::UnreadChanged,
             Self::IntentPending(_) => EventCategory::Intent,
+            Self::Video(_) => EventCategory::Video,
         }
     }
 
@@ -253,6 +262,7 @@ impl SubscriptionEvent {
             // `None` for a DM call and for device changes, both of
             // which belong to no community.
             Self::Voice(e) => e.community(),
+            Self::Video(e) => e.community(),
             Self::Governance(e) => Some(e.community()),
             Self::Social(e) => Some(match e {
                 SocialEvent::ReactionAdded { community, .. }

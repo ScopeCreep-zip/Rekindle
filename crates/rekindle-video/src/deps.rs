@@ -1,4 +1,4 @@
-//! Phase 16 — VideoDeps trait + VideoEvent enum.
+//! Phase 16 — VideoDeps trait + VideoFlowEvent enum.
 //!
 //! The community-video send / receive / dispatch flows parameterise
 //! over `VideoDeps` so the crate-side bodies never import
@@ -20,7 +20,7 @@ use rekindle_types::video::{Codec, ScalabilityMode};
 /// maps 1:1 to a `CommunityEvent::Video*` shape; the adapter does the
 /// translation.
 #[derive(Debug, Clone)]
-pub enum VideoEvent {
+pub enum VideoFlowEvent {
     /// A complete frame is ready for the webview decoder (plaintext
     /// payload — MEK-decryption is the crate's responsibility).
     FrameReady {
@@ -132,7 +132,7 @@ pub trait VideoDeps: Send + Sync + 'static {
     fn request_media_key(&self, community_id: &str, channel_id: &str, sender: &str, index: u64);
 
     /// Emit a UI-facing event from a receive-side handler.
-    fn emit_event(&self, event: VideoEvent);
+    fn emit_event(&self, event: VideoFlowEvent);
 
     /// Reassembly completed frame `frame_seq` of `stream_id` from `sender`
     /// (pseudonym hex), with parity if `recovered_via_fec`: the post-FEC
@@ -159,13 +159,13 @@ mod tests {
     #[test]
     fn envelope_rejected_preserves_fields_and_sentinels() {
         let deps = MockDeps::new();
-        deps.emit_event(VideoEvent::EnvelopeRejected {
+        deps.emit_event(VideoFlowEvent::EnvelopeRejected {
             community_id: "community_abc".to_string(),
             sender_pseudonym: "deadbeef".to_string(),
             reason: "bad signature".to_string(),
         });
         // Sentinel-bearing variant.
-        deps.emit_event(VideoEvent::EnvelopeRejected {
+        deps.emit_event(VideoFlowEvent::EnvelopeRejected {
             community_id: "<unknown>".to_string(),
             sender_pseudonym: "<unknown>".to_string(),
             reason: "deserialize failed".to_string(),
@@ -175,7 +175,7 @@ mod tests {
         assert_eq!(calls.events.len(), 2);
 
         match &calls.events[0] {
-            VideoEvent::EnvelopeRejected {
+            VideoFlowEvent::EnvelopeRejected {
                 community_id,
                 sender_pseudonym,
                 reason,
@@ -187,7 +187,7 @@ mod tests {
             other => panic!("expected EnvelopeRejected, got {other:?}"),
         }
         match &calls.events[1] {
-            VideoEvent::EnvelopeRejected {
+            VideoFlowEvent::EnvelopeRejected {
                 community_id,
                 sender_pseudonym,
                 reason,

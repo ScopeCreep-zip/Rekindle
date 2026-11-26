@@ -76,9 +76,13 @@ impl EventDedup {
         // A transfer event is the Host's own local state (plan E7.2 G12): it
         // arrives by one path only, and the same state legitimately repeats
         // (stop, start, stop again), so no digest may suppress it.
+        // A video fact (plan E4.1) legitimately repeats too: a second
+        // keyframe request for the same stream is a new request.
         if matches!(
             event,
-            SubscriptionEvent::UnreadChanged { .. } | SubscriptionEvent::Transfer(_)
+            SubscriptionEvent::UnreadChanged { .. }
+                | SubscriptionEvent::Transfer(_)
+                | SubscriptionEvent::Video(_)
         ) {
             return true;
         }
@@ -188,6 +192,10 @@ fn hash_event(event: &SubscriptionEvent, now_ms: u64) -> [u8; 32] {
         SubscriptionEvent::Transfer(_) => {
             hasher.update(b"transfer");
         }
+        // Nor for video facts.
+        SubscriptionEvent::Video(_) => {
+            hasher.update(b"video");
+        }
         // Each review has its own id: two are never the same action.
         SubscriptionEvent::IntentPending(review) => {
             hasher.update(review.intent_id.to_string().as_bytes());
@@ -216,6 +224,7 @@ fn event_discriminant_tag(event: &SubscriptionEvent) -> &'static str {
         SubscriptionEvent::Transfer(_) => "tf",
         SubscriptionEvent::UnreadChanged { .. } => "ur",
         SubscriptionEvent::IntentPending(_) => "ip",
+        SubscriptionEvent::Video(_) => "vd",
     }
 }
 

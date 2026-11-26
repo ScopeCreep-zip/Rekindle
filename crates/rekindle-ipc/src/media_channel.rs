@@ -1,4 +1,4 @@
-//! Bounded, drop-oldest queue for daemon→client media frames.
+//! Bounded, drop-oldest queue for media frames, both directions (plan E4.1).
 //!
 //! Media (video frames) must not ride the ordered, deduped, journaled event
 //! stream (`BusPayload::Event`), and a late frame is worthless — so the media
@@ -12,7 +12,9 @@
 //! - **server → connection**: the per-connection fan-out queue that drains to
 //!   one client's socket (`T = Vec<u8>`, an encoded `Message<BusPayload>`).
 //! - **client inbound → consumer**: the queue `take_media_receiver` hands to
-//!   the TUI/CLI (`T = MediaFrame`).
+//!   the TUI/CLI (`T = MediaFrame`), and the uplink queue
+//!   `take_media_up_receiver` hands the daemon (`T = UplinkFrame`).
+//! - **in-process Host lanes**: `HostApi::media_up`/`media_down`.
 //!
 //! A single-producer/single-consumer discipline is expected (the sender is
 //! `Clone` only so it can be moved into a task and still observe closure), and
@@ -20,7 +22,7 @@
 //! frame when the capacity is reached.
 
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
@@ -38,7 +40,14 @@ struct Shared<T> {
     dropped: AtomicU64,
     /// Live sender count. When it reaches zero the receiver observes closure.
     senders: AtomicUsize,
+    /// Cleared when the receiver drops, so a fan-out prunes the sender.
+    receiver_alive: AtomicBool,
 }
+
+/// The depth of each in-process media lane (`HostApi::media_up` and each
+/// `media_down` stream): the bus's per-connection fan-out depth, about 4 s of
+/// one 30 fps stream. A late frame is worthless.
+pub const MEDIA_LANE_CAPACITY: usize = 128;
 
 /// Producer half of a bounded drop-oldest media queue.
 pub struct MediaSender<T> {
@@ -60,6 +69,7 @@ pub fn media_channel<T>(capacity: usize) -> (MediaSender<T>, MediaReceiver<T>) {
         capacity,
         dropped: AtomicU64::new(0),
         senders: AtomicUsize::new(1),
+        receiver_alive: AtomicBool::new(true),
     });
     (
         MediaSender {
@@ -94,6 +104,11 @@ impl<T> MediaSender<T> {
         evicted
     }
 
+    /// Whether the receiver has dropped: nothing sent now is ever read.
+    pub fn is_closed(&self) -> bool {
+        !self.shared.receiver_alive.load(Ordering::Acquire)
+    }
+
     /// Total items evicted (oldest-dropped) over this queue's lifetime.
     pub fn dropped(&self) -> u64 {
         self.shared.dropped.load(Ordering::Relaxed)
@@ -116,6 +131,12 @@ impl<T> Drop for MediaSender<T> {
         if self.shared.senders.fetch_sub(1, Ordering::AcqRel) == 1 {
             self.shared.notify.notify_one();
         }
+    }
+}
+
+impl<T> Drop for MediaReceiver<T> {
+    fn drop(&mut self) {
+        self.shared.receiver_alive.store(false, Ordering::Release);
     }
 }
 
@@ -225,6 +246,14 @@ mod tests {
         tokio::task::yield_now().await;
         tx.send(42);
         assert_eq!(handle.await.unwrap(), Some(42));
+    }
+
+    #[test]
+    fn a_dropped_receiver_closes_the_sender() {
+        let (tx, rx) = media_channel::<u32>(2);
+        assert!(!tx.is_closed());
+        drop(rx);
+        assert!(tx.is_closed(), "the fan-out prunes a sender nobody reads");
     }
 
     #[tokio::test]

@@ -69,6 +69,7 @@ pub(crate) mod journal_entry;
 pub(crate) mod lobby;
 #[cfg(test)]
 mod local_search_tests;
+pub mod media_lanes;
 #[cfg(test)]
 mod own_echo_tests;
 pub(crate) mod own_prekeys;

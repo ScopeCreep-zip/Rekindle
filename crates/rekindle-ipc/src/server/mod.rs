@@ -22,6 +22,7 @@ use super::registry::ClearanceRegistry;
 use super::transport::{Listener, PeerCredentials};
 
 mod connection;
+mod rate;
 mod routing;
 mod stream;
 
@@ -29,6 +30,11 @@ mod stream;
 const RATE_LIMIT_MAX_TOKENS: u32 = 100;
 /// Rate limit: refill interval in milliseconds.
 const RATE_LIMIT_REFILL_MS: u64 = 1000;
+
+/// Media uplink: max `BusPayload::MediaUp` frames per second per connection
+/// (plan E4.1): two tracks at 60 fps with 2x headroom. Its own bucket: a
+/// frame never spends a request token, and a request never a frame token.
+pub const MEDIA_UP_MAX_FRAMES_PER_SEC: u32 = 240;
 
 /// Per-connection media fan-out queue depth.
 ///
@@ -59,10 +65,8 @@ struct ConnectionState {
     peer: PeerCredentials,
     /// When this connection was established.
     connected_at: Instant,
-    /// Token bucket rate limiter: tokens remaining this window.
-    rate_tokens: std::sync::atomic::AtomicU32,
-    /// Epoch ms when tokens were last refilled.
-    last_token_refill: std::sync::atomic::AtomicU64,
+    /// The request bucket and the separate `MediaUp` frame bucket.
+    rate: rate::RateBuckets,
 }
 
 /// Shared state for the bus server, accessible from per-connection tasks.

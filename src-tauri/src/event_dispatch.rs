@@ -233,8 +233,8 @@ fn subscription_audience(event: &SubscriptionEvent) -> Audience {
             EventScope::Community(_) | EventScope::CommunityJoin(_) => communities(),
             EventScope::Peer(peer) => {
                 let audience = buddy_list().with_labels(labels::peer_labels(&peer));
-                // A DM call's media and voice state also drive its call window.
-                if matches!(event, SubscriptionEvent::Voice(_)) {
+                // A DM call's media, voice and video state also drive its call window.
+                if matches!(event, SubscriptionEvent::Voice(_) | SubscriptionEvent::Video(_)) {
                     audience.with_kinds(&[WindowKind::Call])
                 } else {
                     audience
@@ -248,9 +248,7 @@ fn subscription_audience(event: &SubscriptionEvent) -> Audience {
     }
 }
 
-/// Which frontend channel a [`SubscriptionEvent`] is consumed on.
-///
-/// Many families share a channel because the frontend's handlers are
+/// Which frontend channel a [`SubscriptionEvent`] is consumed on. Many families share a channel because the frontend's handlers are
 /// organized by window, not by family.
 fn subscription_channel(event: &SubscriptionEvent) -> &'static str {
     match event {
@@ -266,6 +264,7 @@ fn subscription_channel(event: &SubscriptionEvent) -> &'static str {
         SubscriptionEvent::System(SystemEvent::SkinSignals { .. }) => "skin-signals-event",
         SubscriptionEvent::System(SystemEvent::SkinShell { .. }) => "skin-shell-event",
         SubscriptionEvent::Voice(_) => "voice-event",
+        SubscriptionEvent::Video(_) => "video-event",
         // `ChannelMessage` and `Typing` split by context: the community
         // half goes to the community dispatcher, the direct half to the
         // chat handlers.

@@ -6,8 +6,10 @@
 
 use rekindle_events::EventStream;
 use rekindle_types::subscription_events::Cursor;
+use rekindle_types::video::{MediaFrame, UplinkFrame};
 
 use crate::error::IpcError;
+use crate::media_channel::MediaReceiver;
 use crate::message::SecurityLevel;
 use crate::protocol::{IpcRequest, IpcResponse};
 
@@ -49,6 +51,10 @@ impl Caller {
     }
 }
 
+/// A frontend's stream of downlink video frames (plan E4.1): bounded and
+/// drop-oldest, because a late frame is worthless.
+pub type MediaStream = MediaReceiver<MediaFrame>;
+
 /// The host's request surface.
 #[async_trait::async_trait]
 pub trait HostApi: Send + Sync {
@@ -63,4 +69,14 @@ pub trait HostApi: Send + Sync {
     /// # Errors
     /// The stream cannot be opened (a bus client's connection is gone).
     async fn subscribe(&self, from: Option<Cursor>) -> Result<EventStream, IpcError>;
+
+    /// Hand the host one encoded video frame (plan E4.1, the client→Host
+    /// lane). Never blocks: the lane is bounded and drops its oldest frame.
+    /// Named apart from `BusClient::send_media`, the daemon's downlink push;
+    /// over the bus it is `BusPayload::MediaUp`.
+    fn media_up(&self, frame: UplinkFrame);
+
+    /// A new stream of the host's downlink video frames (plan E4.1), each
+    /// naming its scope and sender so the frontend routes it per window.
+    fn media_down(&self) -> MediaStream;
 }

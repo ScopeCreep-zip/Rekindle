@@ -26,7 +26,7 @@ pub mod stream_id;
 mod test_mock;
 
 pub use codec::{EncodedVideoFrame, RawFrame, VideoDecoder, VideoEncoder};
-pub use deps::{VideoDeps, VideoEvent};
+pub use deps::{VideoDeps, VideoFlowEvent};
 pub use error::VideoError;
 pub use fragment::{
     fragment_frame, fragment_frame_with_fec, fragment_signing_bytes, parity_signing_bytes,

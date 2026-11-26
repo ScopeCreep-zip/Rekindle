@@ -60,6 +60,8 @@ mod intent_wire_tests;
 #[cfg(test)]
 mod media_transport_tests;
 #[cfg(test)]
+mod media_up_tests;
+#[cfg(test)]
 mod routing_tests;
 #[cfg(test)]
 mod stream_tests;
@@ -68,8 +70,8 @@ mod stream_tests;
 pub use client::BusClient;
 pub use error::{IpcError, Result};
 pub use framing::{decode_frame, encode_frame, MAX_APP_FRAME, MAX_NOISE_MESSAGE};
-pub use host_api::{Caller, ConnId, HostApi};
-pub use media_channel::{media_channel, MediaReceiver, MediaSender};
+pub use host_api::{Caller, ConnId, HostApi, MediaStream};
+pub use media_channel::{media_channel, MediaReceiver, MediaSender, MEDIA_LANE_CAPACITY};
 pub use message::{AgentType, Message, MessageContext, SecurityLevel, Timestamp, WIRE_VERSION};
 pub use noise::NoiseTransport;
 pub use noise_keys::{generate_keypair, ZeroizingKeypair, NOISE_PARAMS};

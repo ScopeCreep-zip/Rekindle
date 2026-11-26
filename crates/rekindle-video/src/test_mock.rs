@@ -9,13 +9,13 @@ use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_secrets::media_sender_key::keyring::ChannelSenderKeys;
 
-use crate::deps::{VideoDeps, VideoEvent};
+use crate::deps::{VideoDeps, VideoFlowEvent};
 use crate::error::VideoError;
 
 #[derive(Default)]
 pub struct MockCalls {
     pub sent: Vec<CommunityEnvelope>,
-    pub events: Vec<VideoEvent>,
+    pub events: Vec<VideoFlowEvent>,
     pub lamport_calls: u64,
     /// `(community_id, channel_id, sender, index)` per key request.
     pub key_requests: Vec<(String, String, String, u64)>,
@@ -102,7 +102,7 @@ impl VideoDeps for MockDeps {
         Ok(*next)
     }
 
-    fn emit_event(&self, event: VideoEvent) {
+    fn emit_event(&self, event: VideoFlowEvent) {
         self.calls.lock().events.push(event);
     }
 

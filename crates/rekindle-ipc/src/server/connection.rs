@@ -6,7 +6,7 @@ use std::time::Instant;
 use tokio::sync::mpsc;
 
 use super::routing;
-use super::{ConnectionState, ServerState, RATE_LIMIT_MAX_TOKENS};
+use super::{rate, ConnectionState, ServerState};
 
 use crate::media_channel::{MediaReceiver, MediaSender};
 use crate::noise::{self, NoiseTransport};
@@ -108,8 +108,7 @@ pub(super) async fn handle_connection(
         static_key: client_pubkey,
         peer: peer_creds,
         connected_at,
-        rate_tokens: std::sync::atomic::AtomicU32::new(RATE_LIMIT_MAX_TOKENS),
-        last_token_refill: std::sync::atomic::AtomicU64::new(0),
+        rate: rate::RateBuckets::new(),
     };
     state.connections.write().await.insert(conn_id, conn);
 
