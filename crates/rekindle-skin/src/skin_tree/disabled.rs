@@ -30,19 +30,25 @@ fn mark(nodes: &mut [SkinNode]) {
     }
 }
 
-/// The pack ships a disabled state image for the node's art or one of its
-/// parts' (the importer's `--disabled` state variant), and the Host draws
-/// no words over it (a Host label, such as the Communities tab's, is the
-/// shell's to dim).
-fn pack_art(n: &SkinNode) -> bool {
-    let disabled = |node: &SkinNode| {
-        node.art
-            .as_ref()
-            .is_some_and(|a| a.states.contains_key(&RegionState::Disabled))
+/// The pack ships a disabled look of its own for the node's art or one of
+/// its parts' (the importer's `--disabled` state variant whose layers differ
+/// from the normal ones: asset names are content hashes, so equal layer sets
+/// draw the same pixels, as Combat's round Open/Leave buttons do), and the
+/// Host draws no words over it (a Host label, such as the Communities tab's,
+/// is the shell's to dim). A Disabled set equal to Normal would leave a
+/// refused button looking pressable, so the shell dims it (owner rule: never
+/// hidden, visibly disabled).
+pub(super) fn pack_art(n: &SkinNode) -> bool {
+    let distinct = |node: &SkinNode| {
+        node.art.as_ref().is_some_and(|a| {
+            a.states
+                .get(&RegionState::Disabled)
+                .is_some_and(|d| *d != a.normal)
+        })
     };
     n.label.is_none()
-        && (disabled(n)
+        && (distinct(n)
             || n.children
                 .iter()
-                .any(|c| c.role == NodeRole::Part && disabled(c)))
+                .any(|c| c.role == NodeRole::Part && distinct(c)))
 }
