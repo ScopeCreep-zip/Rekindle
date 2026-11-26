@@ -3,9 +3,9 @@
 //! shallow-join shape, S7c.0), walked from the 64 heads by another node
 //! through the production pool and `op_walk::fetch_from_log`, the read the
 //! Host's `fetch_governance_op` runs. The level's fetches run sixteen at a
-//! time and each author log is read once, so the walk costs about four
-//! single-fetch round trips, where a fetch at a time over a re-read log
-//! took 130.
+//! time and each author log is read once, so the walk costs about five
+//! round trips of a level (sixteen cold fetches at once), where a fetch at
+//! a time over a re-read log took 130 single fetches.
 
 use std::time::Duration;
 
@@ -90,15 +90,28 @@ async fn a_sixty_four_head_level_costs_one_round_trip_bound() {
     for seed in 2..2 + AUTHORS {
         heads.push(author(writer.as_ref(), seed, std::slice::from_ref(&creator)).await);
     }
-    // One fetch's cost on the reader: a log of the same shape it has not
-    // opened, read cold.
-    let probe = author(writer.as_ref(), 200, std::slice::from_ref(&creator)).await;
+    // One round trip of a level on the reader: a level's fetches run
+    // sixteen at a time (plan E3.2 S7c.1, `buffer_unordered(16)`), so a
+    // round costs its slowest fetch, not one fetch's draw. Measured as the
+    // walk spends it: sixteen logs of the same shape it has not opened, read
+    // cold and at once. Each DHT operation's duration is its own record's
+    // draw (`rekindle_netsim::latency`, Veilid's per-record fanouts), so one
+    // lone fetch is one draw where each of the walk's rounds is the slowest
+    // of sixteen.
+    let mut probes = Vec::new();
+    for seed in 200..200 + u8::try_from(WALK_FETCHES_IN_FLIGHT).unwrap() {
+        probes.push(author(writer.as_ref(), seed, std::slice::from_ref(&creator)).await);
+    }
+    let probe_logs = WalkLogCache::default();
     let started = Instant::now();
-    let fetched = fetch_from_log(reader.as_ref(), &WalkLogCache::default(), &probe)
-        .await
-        .unwrap();
-    let one_fetch = started.elapsed();
-    assert!(fetched.is_some() && one_fetch > Duration::ZERO);
+    let fetched = futures::future::join_all(
+        probes
+            .iter()
+            .map(|probe| fetch_from_log(reader.as_ref(), &probe_logs, probe)),
+    )
+    .await;
+    let one_round = started.elapsed();
+    assert!(fetched.iter().all(|f| matches!(f, Ok(Some(_)))) && one_round > Duration::ZERO);
 
     let logs = WalkLogCache::default();
     let (port, logs_ref) = (reader.as_ref(), &logs);
@@ -119,12 +132,12 @@ async fn a_sixty_four_head_level_costs_one_round_trip_bound() {
     assert_eq!(walked.len(), 2 + 2 * usize::from(AUTHORS));
     // The heads' level reads 64 logs sixteen at a time; every lower level
     // is served from the logs already read, but the creator's, read once:
-    // five single-fetch round trips (measured 10.83 s against one fetch of
-    // 2.16 s), with half a round trip of slack for the replicas' jitter.
+    // five round trips of a level, with half a round trip of slack for the
+    // replicas' jitter.
     let rounds = u32::try_from(usize::from(AUTHORS).div_ceil(WALK_FETCHES_IN_FLIGHT) + 1).unwrap();
-    let bound = one_fetch * rounds + one_fetch / 2;
+    let bound = one_round * rounds + one_round / 2;
     assert!(
         walk <= bound,
-        "the walk took {walk:?}; one fetch {one_fetch:?}, bound {bound:?}"
+        "the walk took {walk:?}; one round {one_round:?}, bound {bound:?}"
     );
 }

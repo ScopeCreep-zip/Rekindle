@@ -3,9 +3,11 @@
 //! pairwise control frames, the receive arms and the group admission.
 //!
 //! Every lifecycle step returns a frame and the members it goes to; each
-//! goes over that member's pairwise session as a `friend_handshake` outbox
-//! row ([`crate::operations::dm::handshake::enqueue_when_ready`]), sent
-//! until it settles and survives a restart. The keys inside are never
+//! goes over that member's pairwise session: an entry of our DM chain to an
+//! accepted friend (plan RV2c, [`crate::operations::dm::friend_control`]),
+//! a `friend_handshake` outbox row to any other member
+//! ([`crate::operations::dm::handshake::enqueue_when_ready`]), sent until
+//! it settles and survives a restart. The keys inside are never
 //! printed.
 
 mod admission;
@@ -40,7 +42,7 @@ pub(crate) mod first_contact {
 use rekindle_codec::capnp_codec::direct::{DirectBody, GroupId};
 use rekindle_dm::{DmError, Outbound};
 
-use crate::operations::dm::handshake;
+use crate::operations::dm::friend_control;
 use rekindle_types::group_dm::GroupDmRosterMember;
 
 use crate::operations::friend::{state, FriendError, FriendHost};
@@ -76,10 +78,12 @@ pub fn parse_group_id(text: &str) -> Result<GroupId, FriendError> {
         .map_err(|_| FriendError::Invalid("group id is not 16 bytes".into()))
 }
 
-/// Commit `out`'s frame to every member it names, one handshake row each.
+/// Commit `out`'s frame to every member it names: an entry of our DM chain
+/// to a member who is our accepted friend (plan RV2c,
+/// [`friend_control::enqueue_when_ready`]), a handshake row to any other.
 /// A member whose session cannot be opened yet (their prekey record not
 /// readable) gets the frame committed to wait for it
-/// ([`handshake::enqueue_when_ready`], finding GA1): the step is committed
+/// ([`crate::operations::dm::handshake::enqueue_when_ready`], finding GA1): the step is committed
 /// at once and sent when the session opens. A member whose row could not
 /// be framed or stored does not stop the rest; the first such error is
 /// returned once all were tried.
@@ -94,7 +98,7 @@ pub(crate) async fn send_pairwise<F>(
     let body = wrap(out.frame);
     let mut first_error = None;
     for to in &out.to {
-        if let Err(e) = handshake::enqueue_when_ready(host, to, &body).await {
+        if let Err(e) = friend_control::enqueue_when_ready(host, to, &body).await {
             tracing::warn!(to = %to, kind = ?body.type_id(), error = %e,
                 "group frame not committed to this member");
             first_error.get_or_insert(e);

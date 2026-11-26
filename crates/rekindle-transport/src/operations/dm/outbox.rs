@@ -226,6 +226,10 @@ pub enum Attempt {
     /// It went as an `app_call` (a `StreamRecord`) and no receipt came: it
     /// may be lost, and is sent again soon ([`record_call`]).
     Unanswered,
+    /// A `StreamRecord` framed for this attempt (this datagram): its
+    /// `app_call` ([`call`]) is handed to the stream's appender, which runs
+    /// it beside the stream's later rows and settles the row on its answer.
+    Calling(Vec<u8>),
     /// The hint left, and the entry (this frame) goes to the stream's
     /// appender; the append's outcome is its landing (the DM pump).
     Appending(Vec<u8>),
@@ -283,7 +287,6 @@ enum Framed {
 pub async fn attempt(host: &dyn FriendHost, to: &str, rows: &[RowAttempt<'_>]) -> Vec<Attempt> {
     let mut outcomes: Vec<Option<Attempt>> = Vec::with_capacity(rows.len());
     let mut chained: Vec<(usize, Vec<u8>, Vec<u8>, DmTypeId)> = Vec::new();
-    let mut records: Vec<(usize, Vec<u8>, DmTypeId)> = Vec::new();
     // Route liveness (plan RH1r-c S1–S4): every row here waits for the
     // peer's `DmAck`, so its sends count against their route, and a suspect
     // round runs first when one is due: its re-read, which may replace the
@@ -301,13 +304,9 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, rows: &[RowAttempt<'_>]) -
         }
         let outcome = match frame_row(host, to, row, true).await {
             Err(outcome) => outcome,
-            // A `StreamRecord` is called beside the run's hints
-            // ([`record_call`]).
-            Ok(Framed::Record(datagram, type_id)) => {
-                records.push((outcomes.len(), datagram, type_id));
-                outcomes.push(None);
-                continue;
-            }
+            // A `StreamRecord`'s call is handed off ([`call`]): it runs
+            // beside the run's hints and the stream's later rows.
+            Ok(Framed::Record(datagram, _)) => Attempt::Calling(datagram),
             Ok(Framed::Entry {
                 hint,
                 chain,
@@ -326,28 +325,26 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, rows: &[RowAttempt<'_>]) -
     // stream's appender ([`append`]), so the peer has each message without
     // waiting on a DHT write, its own or an earlier one's (live A/B finding
     // 42, the DM pump); an ack that beats the landing waits on the row.
-    // A `StreamRecord`'s call runs beside them, so no hint waits for its
-    // round trip.
-    let hints = async {
-        for (_, datagram, _, type_id) in chained.iter().filter(|_| hint) {
-            match send::route_send_datagram(host, to, datagram, *type_id).await {
-                Ok(true) => super::route_health::sent(host, to, *type_id),
-                Ok(false) => {}
-                Err(e) => tracing::debug!(to = %to, error = %e, "chain entry hint not sent"),
-            }
+    // A `StreamRecord`'s call is the appender's ([`Attempt::Calling`]), so
+    // no hint and no later row waits for its round trip.
+    for (_, datagram, _, type_id) in chained.iter().filter(|_| hint) {
+        match send::route_send_datagram(host, to, datagram, *type_id).await {
+            Ok(true) => super::route_health::sent(host, to, *type_id),
+            Ok(false) => {}
+            Err(e) => tracing::debug!(to = %to, error = %e, "chain entry hint not sent"),
         }
-    };
-    let calls = futures::future::join_all(records.into_iter().map(
-        |(i, datagram, type_id)| async move { (i, record_call(host, to, datagram, type_id).await) },
-    ));
-    let ((), called) = futures::join!(hints, calls);
-    for (i, outcome) in called {
-        outcomes[i] = Some(outcome);
     }
     for (i, _, chain, _) in chained {
         outcomes[i] = Some(Attempt::Appending(chain));
     }
     finish(outcomes)
+}
+
+/// Call `to` with our `StreamRecord` (`datagram`, as an attempt framed it,
+/// [`Attempt::Calling`]): the appender's call, run off the attempt so the
+/// stream's later rows go meanwhile ([`record_call`]).
+pub async fn call(host: &dyn FriendHost, to: &str, datagram: Vec<u8>) -> Attempt {
+    record_call(host, to, datagram, DmTypeId::StreamRecord).await
 }
 
 /// Send our `StreamRecord` (`datagram`) to `to` as an `app_call` (live

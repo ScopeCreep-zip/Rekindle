@@ -203,11 +203,13 @@ fn inspect(
             .collect()
     };
     outbound::inspected(inner, node, key, !newer.is_empty());
-    let mut delay = latency.draw(node, latency::GET);
+    // Drawn from the record's stream: the node's inspections of different
+    // watched records are independent fanouts (`Latency::draw_op`).
+    let mut delay = latency.draw_op(node, latency::GET, key, &[]);
     let value = match newer.len() {
         0 => return Some((None, delay)),
         1 => {
-            delay += latency.draw(node, latency::GET);
+            delay += latency.draw_op(node, latency::GET, key, &[]);
             let first = *newer.first()?;
             let Some(value) = read_one(inner, node, key, first, &reach) else {
                 return Some((None, delay));

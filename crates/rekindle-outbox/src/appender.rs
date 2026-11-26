@@ -11,9 +11,17 @@
 //! a row another path landed. The appender stops with [`Outbox::run`]'s
 //! scope, and a row whose append was cut off is attempted again by a later
 //! pass, at the `next_at` its hand-off set, or by `Outbox::reconcile`.
+//!
+//! A row whose attempt is an `app_call` (a `StreamRecord`,
+//! [`AttemptOutcome::Calling`]) is handed here the same way: its call runs
+//! beside the appends, the pass returns without awaiting it, and the
+//! stream's later rows are attempted meanwhile (a call never holds its
+//! stream, as an append never does). One call per row is in flight; its
+//! answer, however late, settles the row while it is still unsettled.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
 
+use futures::future::FutureExt;
 use futures::stream::{FuturesUnordered, StreamExt};
 use parking_lot::Mutex;
 use tokio::sync::Notify;
@@ -43,6 +51,12 @@ struct State {
     waiting: BTreeMap<String, VecDeque<Job>>,
     /// The streams with an append running.
     busy: BTreeSet<String>,
+    /// The client ids whose call is in flight, each with its stream and
+    /// when its outcome turns unknown ([`DM_APPEND_DEADLINE`], which spans
+    /// the call timeout).
+    calls: HashMap<String, (String, i64)>,
+    /// The calls handed off and not started yet.
+    calls_ready: Vec<Job>,
 }
 
 /// The appenders' shared state.
@@ -57,17 +71,51 @@ pub(crate) struct Appends {
 
 impl Appends {
     pub(crate) fn in_flight(&self, client_id: &str) -> bool {
-        self.state.lock().in_flight.contains_key(client_id)
+        let s = self.state.lock();
+        s.in_flight.contains_key(client_id) || s.calls.contains_key(client_id)
     }
 
     /// Whether `client_id`'s append is in flight and its outcome still
     /// awaited at `now`.
     pub(crate) fn within_deadline(&self, client_id: &str, now: i64) -> bool {
-        self.state
-            .lock()
-            .in_flight
+        let s = self.state.lock();
+        s.in_flight
             .get(client_id)
+            .or_else(|| s.calls.get(client_id).map(|(_, deadline)| deadline))
             .is_some_and(|deadline| now < *deadline)
+    }
+
+    /// The streams a pass walks past a row in flight: [`Self::streams`]
+    /// and the streams with a call in flight.
+    pub(crate) fn walked(&self) -> BTreeSet<String> {
+        let mut walked = self.streams();
+        walked.extend(self.state.lock().calls.values().map(|(s, _)| s.clone()));
+        walked
+    }
+
+    /// Start `jobs`' calls (rows handed off by [`AttemptOutcome::Calling`],
+    /// each its frame), handed off at `now`.
+    pub(crate) fn call(&self, jobs: Vec<Job>, now: i64) {
+        if jobs.is_empty() {
+            return;
+        }
+        let deadline = deadline_from(now);
+        let mut s = self.state.lock();
+        for job in jobs {
+            let entry = (job.row.stream.clone(), deadline);
+            s.calls.insert(job.row.client_id.clone(), entry);
+            s.calls_ready.push(job);
+        }
+        drop(s);
+        self.wake.notify_one();
+    }
+
+    fn take_calls(&self) -> Vec<Job> {
+        std::mem::take(&mut self.state.lock().calls_ready)
+    }
+
+    fn finish_call(&self, client_id: &str) {
+        self.state.lock().calls.remove(client_id);
     }
 
     /// The streams with a row in flight, in order.
@@ -82,8 +130,7 @@ impl Appends {
         if jobs.is_empty() {
             return;
         }
-        let deadline =
-            now.saturating_add(i64::try_from(DM_APPEND_DEADLINE.as_millis()).unwrap_or(i64::MAX));
+        let deadline = deadline_from(now);
         let mut s = self.state.lock();
         for job in jobs {
             s.in_flight.insert(job.row.client_id.clone(), deadline);
@@ -137,13 +184,22 @@ impl Appends {
     }
 }
 
+/// When an outcome handed off at `now` turns unknown.
+fn deadline_from(now: i64) -> i64 {
+    now.saturating_add(i64::try_from(DM_APPEND_DEADLINE.as_millis()).unwrap_or(i64::MAX))
+}
+
 impl<D: OutboxDeps> Outbox<D> {
-    /// Run each stream's handed-off appends, one in flight per stream.
+    /// Run each stream's handed-off appends, one in flight per stream, and
+    /// the handed-off calls beside them.
     pub(crate) async fn append_loop(&self) {
         let mut running = FuturesUnordered::new();
         loop {
             for (stream, jobs) in self.appends.take_ready() {
-                running.push(self.append_run(stream, jobs));
+                running.push(self.append_run(stream, jobs).left_future());
+            }
+            for job in self.appends.take_calls() {
+                running.push(self.call_run(job).right_future());
             }
             // `biased`, as the pump's: one order on every run.
             tokio::select! {
@@ -178,6 +234,32 @@ impl<D: OutboxDeps> Outbox<D> {
         self.wake();
     }
 
+    /// Run `job`'s call; its answer settles the row while it is still
+    /// unsettled (a receipt lands it, an unanswered call is sent again
+    /// after the short retry), and a row settled meanwhile (the peer's ack,
+    /// a deadline, a discard) is left as it is.
+    async fn call_run(&self, job: Job) {
+        let kind = job.row.kind;
+        let outcome = self
+            .deps
+            .call(kind, &job.row.stream, job.frame.clone())
+            .await;
+        let gate = self.appends.gate.lock().await;
+        let settled = match self.deps.row(&job.row.client_id).await {
+            Ok(Some(row)) if is_unsettled(row.state) => {
+                self.settle_attempt(&row, outcome, job.sent_at).await
+            }
+            Ok(_) => Ok(()),
+            Err(e) => Err(e),
+        };
+        if let Err(e) = settled {
+            tracing::warn!(error = %e, kind = kind.as_str(), "outbox call outcome not stored");
+        }
+        self.appends.finish_call(&job.row.client_id);
+        drop(gate);
+        self.wake();
+    }
+
     /// `job`'s append ended with `outcome`, however late: the row as it is
     /// now is settled by it, and a row no longer `queued` (landed by the
     /// tick or a restart's reconcile, or gone) is left as it is.
@@ -203,7 +285,7 @@ impl<D: OutboxDeps> Outbox<D> {
     pub(crate) async fn busy_wake(&self) -> Result<Option<i64>, OutboxError> {
         let mut wake: Option<i64> = None;
         let attempting = self.attempting.streams();
-        for stream in self.appends.streams().difference(&attempting) {
+        for stream in self.appends.walked().difference(&attempting) {
             for row in self.deps.stream_rows(stream).await? {
                 let in_flight = self.appends.in_flight(&row.client_id);
                 if in_flight || is_unsettled(row.state) {
@@ -232,7 +314,7 @@ impl<D: OutboxDeps> Outbox<D> {
         now: i64,
     ) -> Result<Vec<OutboxRow>, OutboxError> {
         let attempting = self.attempting.streams();
-        let streams = self.appends.streams();
+        let streams = self.appends.walked();
         let mut rows: Vec<OutboxRow> = due
             .into_iter()
             .filter(|row| !streams.contains(&row.stream) && !attempting.contains(&row.stream))
@@ -244,7 +326,7 @@ impl<D: OutboxDeps> Outbox<D> {
                         continue;
                     }
                     if self.appends.within_deadline(&row.client_id, now) {
-                        self.hand_off(&row).await?;
+                        self.hand_off_call(&row).await?;
                     } else {
                         rows.push(row);
                     }

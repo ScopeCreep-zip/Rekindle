@@ -4,6 +4,19 @@
 //! There is no switch that turns it off: a scenario's budgets are simulated
 //! time on a paused runtime, so a real network's waits cost no wall time.
 //!
+//! A DHT call's duration is drawn from the node's stream for the record and
+//! subkeys it names ([`Latency::draw_op`]), not from the node's one
+//! generator. In Veilid each DHT operation is its own fanout to that
+//! record's replicas (0.5.8 `storage_manager/get_value.rs`,
+//! `inspect_record.rs`, `set_value.rs`, `watch_value.rs`, each through
+//! `fanout_call.rs`): a read of one record does not wait for, or take its
+//! timing from, a read of another record issued a moment earlier. With one
+//! generator per node, two reads woken at the same instant in an order
+//! tokio picks (a watch's waiters) swapped their draws and every later
+//! duration of that node, so one seed ran two ways; keyed per record the
+//! seed fixes each operation's duration whatever the wake order, and every
+//! span is unchanged.
+//!
 //! # Calibration table
 //!
 //! Each duration is uniform over its [`Span`]. "Measured" numbers come from
@@ -165,12 +178,22 @@ impl Latency {
         uniform(rng, span)
     }
 
+    /// A DHT operation's duration from `span`, drawn from `node`'s stream
+    /// for `key` and `subkeys` (the module's note: Veilid's operations on
+    /// different records are independent fanouts, so one's duration does
+    /// not depend on which other was issued first). Calls on one
+    /// `(record, subkeys)` serialize under its subkey locks and take that
+    /// stream's draws in turn.
+    pub(crate) fn draw_op(&self, node: usize, span: Span, key: &str, subkeys: &[u32]) -> Duration {
+        self.draw_stream(node, op_stream(key, subkeys), span)
+    }
+
     /// Wait for `subkeys` of `key` on `node`, then a slot under the cap,
-    /// then the call's latency. The caller applies its effect while it
-    /// holds the returned slot.
+    /// then the call's latency ([`Self::draw_op`]). The caller applies its
+    /// effect while it holds the returned slot.
     pub(crate) async fn dht(&self, node: usize, span: Span, key: &str, subkeys: &[u32]) -> Slot {
         let slot = self.slot(node, key, subkeys).await;
-        tokio::time::sleep(self.draw(node, span)).await;
+        tokio::time::sleep(self.draw_op(node, span, key, subkeys)).await;
         slot
     }
 
@@ -205,6 +228,23 @@ impl Latency {
             _permit: permit,
         }
     }
+}
+
+/// The stream of DHT operations on `key`'s `subkeys` (sorted, deduped; none
+/// for a whole-record call such as an open or a watch).
+fn op_stream(key: &str, subkeys: &[u32]) -> u64 {
+    let mut sorted = subkeys.to_vec();
+    sorted.sort_unstable();
+    sorted.dedup();
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(b"rekindle-netsim dht operation stream");
+    hasher.update(key.as_bytes());
+    for subkey in sorted {
+        hasher.update(&subkey.to_le_bytes());
+    }
+    let mut first = [0u8; 8];
+    first.copy_from_slice(&hasher.finalize().as_bytes()[..8]);
+    u64::from_le_bytes(first)
 }
 
 /// A duration uniform over `span`.
@@ -263,6 +303,19 @@ mod tests {
             .filter(|d| **d == Duration::from_secs(2))
             .count();
         assert_eq!(late, 1, "one call past the cap of {cap} waits a round");
+    }
+
+    #[test]
+    fn a_record_s_draws_do_not_depend_on_another_record_s_order() {
+        let ab = Latency::new(9);
+        let a_first = (ab.draw_op(0, GET, "a", &[1]), ab.draw_op(0, GET, "b", &[1]));
+        let ba = Latency::new(9);
+        let b_first = ba.draw_op(0, GET, "b", &[1]);
+        let a_second = ba.draw_op(0, GET, "a", &[1]);
+        assert_eq!(a_first, (a_second, b_first));
+        assert!([a_second, b_first]
+            .iter()
+            .all(|d| *d >= GET.min && *d <= GET.max));
     }
 
     #[test]
