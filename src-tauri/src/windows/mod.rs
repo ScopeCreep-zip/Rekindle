@@ -175,7 +175,7 @@ fn finish(
             crate::platform::enable_webview_media_capture(window);
         }
     })?;
-    shape::attach(&window, shape::frame_of(kind));
+    shape::attach(&window, shape::frame_of_label(window.label()));
     Ok(window)
 }
 

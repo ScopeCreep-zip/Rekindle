@@ -407,7 +407,9 @@ export interface MenuRegistry {
 }
 
 export interface SkinShell {
-  window: "main" | "chat";
+  /** The window this outline lays: the buddy list, a chat window, or a
+   *  community window (plan SKW1: composed from the pack's chat window). */
+  window: "main" | "chat" | "community";
   /** The popup this outline is (its frame carries `data-skin-popup="<name>"`) and where it sits, else the window's own tree. */
   popup?: ShellPopup;
   root: ShellNode[];
