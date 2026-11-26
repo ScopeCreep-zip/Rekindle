@@ -5,6 +5,15 @@
 # are uploaded as workflow artefacts and (on tag) attached to the
 # GitHub Release. See docs/security/supply-chain-policy.md.
 
+# Our own composite actions (.github/actions/<name>) are referenced as
+# ScopeCreep-zip/Rekindle/.github/actions/<name>@<full 40-char sha>, never
+# ./.github/actions/<name> (zizmor self-repository: a workspace path is not
+# pinned and loads whatever the checkout holds). The sha is the latest
+# commit that touches that action: after changing .github/actions/<name>,
+# push that commit, then set every reference to
+#   git log -1 --format=%H -- .github/actions/<name>
+# in a follow-up commit (the pinned commit must already be on GitHub).
+
 name: SBOM
 
 on:
@@ -65,7 +74,7 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: ./.github/actions/setup-pnpm
+      - uses: ScopeCreep-zip/Rekindle/.github/actions/setup-pnpm@7cf987f7e8b2f5b396fa467a3831db5c1055535b # action content as of 7cf987f7e
 
       - name: Generate SBOM
         # cdxgen pinned to an exact release (pnpm dlx fetches that version).

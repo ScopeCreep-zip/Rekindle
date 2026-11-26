@@ -8,6 +8,15 @@
 #
 # The release pipeline lives in release.yml and is triggered by tags.
 
+# Our own composite actions (.github/actions/<name>) are referenced as
+# ScopeCreep-zip/Rekindle/.github/actions/<name>@<full 40-char sha>, never
+# ./.github/actions/<name> (zizmor self-repository: a workspace path is not
+# pinned and loads whatever the checkout holds). The sha is the latest
+# commit that touches that action: after changing .github/actions/<name>,
+# push that commit, then set every reference to
+#   git log -1 --format=%H -- .github/actions/<name>
+# in a follow-up commit (the pinned commit must already be on GitHub).
+
 name: CI
 
 on:
@@ -43,7 +52,7 @@ jobs:
           persist-credentials: false
 
       - name: Install system deps
-        uses: ./.github/actions/setup-linux-deps
+        uses: ScopeCreep-zip/Rekindle/.github/actions/setup-linux-deps@7cf987f7e8b2f5b396fa467a3831db5c1055535b # action content as of 7cf987f7e
 
       - name: Install Rust toolchain
         # rust-toolchain.toml pins the version; this just makes sure
@@ -95,7 +104,7 @@ jobs:
 
       - name: Install system deps (Linux)
         if: matrix.os == 'ubuntu-24.04'
-        uses: ./.github/actions/setup-linux-deps
+        uses: ScopeCreep-zip/Rekindle/.github/actions/setup-linux-deps@7cf987f7e8b2f5b396fa467a3831db5c1055535b # action content as of 7cf987f7e
 
       # rekindle-protocol's build.rs shells out to `capnp` for schema
       # codegen on every build — not just Linux. Matches release.yml's
@@ -140,7 +149,7 @@ jobs:
           GST_VERSION: "1.26.8"
         run: ./scripts/ci/install-gstreamer-windows.ps1
 
-      - uses: ./.github/actions/setup-pnpm
+      - uses: ScopeCreep-zip/Rekindle/.github/actions/setup-pnpm@7cf987f7e8b2f5b396fa467a3831db5c1055535b # action content as of 7cf987f7e
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
