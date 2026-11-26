@@ -91,7 +91,7 @@ describe("a community window's Call, Mute, Join and Profile act on its community
   // it. Selection is per view (the Friends view sends its own), so the
   // buttons pressed are ones a pack draws outside any view's row, shown
   // with the Communities view: Alloy's Join (`JoinButton`) and voice join
-  // (`JoinChatButton`). With the community selected, the Host answers them
+  // (`JoinChatButton`), in its info view. With the community selected, the Host answers them
   // for the community: no server listed, no voice channel.
   it("a community selected in the buddy list drives Alloy's Join and voice join", async () => {
     await browser.closeWindow().catch(() => undefined);
@@ -104,6 +104,13 @@ describe("a community window's Call, Mute, Join and Profile act on its community
     await skinShown(browser, href);
     await communitiesTab(browser);
     await (await byText(browser, ".community-item", name.slice(0, 24), NET_WAIT_MS)).click();
+    // Alloy's Join and voice join stand in its info view's ButtonHolder
+    // (goldens/alloy.txt: InfoView, ButtonHolder > JoinChatTab, JoinButton),
+    // the side panel its INFO button opens, as Xfire's showed the selected
+    // item with them.
+    const infoButton = await browser.$('.skin-tree [data-skin-node="InfoViewButton"]');
+    await infoButton.click();
+    await waitUntil(async () => (await button("JoinButton")).shown, NET_WAIT_MS, "Alloy's info view never showed its Join button");
     // The selection reaches the Host asynchronously and its verdict comes
     // back as the window's capabilities: wait for it, never read once.
     let join = await button("JoinButton");
