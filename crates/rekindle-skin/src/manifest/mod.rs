@@ -154,6 +154,9 @@ pub fn place(manifest: &mut SkinManifest, package: &Package<'_>) -> Result<(), S
         // Plan SK17: the chat title on its text point and the native
         // controls above the art, before the text boxes are laid.
         crate::skin_tree::chat_slots::serve(layout);
+        // Plan E7.7/RV1: a text control above the art-only siblings
+        // that would cover its text.
+        crate::skin_tree::text_top::serve(layout);
         crate::skin_tree::text_box::lay(layout);
         crate::skin_tree::inset::fields(layout);
         crate::skin_tree::target::nodes(layout);

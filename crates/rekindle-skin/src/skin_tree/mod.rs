@@ -34,6 +34,7 @@ mod span_css;
 mod tab_step;
 pub mod target;
 pub mod text_box;
+pub mod text_top;
 pub mod titles;
 mod triggers;
 pub mod validate;
@@ -82,5 +83,7 @@ mod test_support;
 mod tests;
 #[cfg(test)]
 mod text_box_tests;
+#[cfg(test)]
+mod text_top_tests;
 #[cfg(test)]
 mod triggers_tests;
