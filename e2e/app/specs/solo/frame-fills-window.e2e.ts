@@ -140,8 +140,22 @@ async function paintersAt(x: number, y: number): Promise<string[]> {
     const c = getComputedStyle(e);
     const n = (e as HTMLElement).closest<HTMLElement>("[data-skin-node]");
     const art = c.backgroundImage === "none" ? "none" : c.backgroundImage.split("/").pop()?.slice(0, 30);
-    return `${e.tagName.toLowerCase()}.${(e as HTMLElement).className || "-"} node=${n?.dataset.skinNode ?? "-"} role=${n?.dataset.skinRole ?? "-"} state=${n?.dataset.state ?? "-"} z=${c.zIndex} bg=${c.backgroundColor} art=${art} op=${c.opacity}`;
+    const border = c.borderImageSource === "none" ? "none" : c.borderImageSource.split("/").pop()?.slice(0, 30);
+    return `${e.tagName.toLowerCase()}.${(e as HTMLElement).className || "-"} node=${n?.dataset.skinNode ?? "-"} role=${n?.dataset.skinRole ?? "-"} state=${n?.dataset.state ?? "-"} z=${c.zIndex} bg=${c.backgroundColor} art=${art} clip=${c.backgroundClip} border-image=${border} op=${c.opacity}`;
   }), x, y)) as string[];
+}
+
+/** The page's root paint: html, body, the window root and .skin-frame (the
+ *  shape layer's ground lies in the frame's content box, shape/css.rs). */
+async function rootPaint(): Promise<string> {
+  return (await browser.execute(() => {
+    const one = (name: string, e: Element | null): string => {
+      if (!e) return `${name}: none`;
+      const c = getComputedStyle(e);
+      return `${name}: bg=${c.backgroundColor} art=${c.backgroundImage === "none" ? "none" : "set"} clip=${c.backgroundClip} padding=${c.padding} isolation=${c.isolation} display=${c.display} border-image=${c.borderImageSource === "none" ? "none" : "set"}`;
+    };
+    return [one("html", document.documentElement), one("body", document.body), one("root", document.querySelector(".app-frame")), one("skin-frame", document.querySelector(".skin-frame"))].join(" | ");
+  })) as string;
 }
 
 async function frameFills(file: string, label: string): Promise<void> {
@@ -166,6 +180,22 @@ async function frameFills(file: string, label: string): Promise<void> {
   console.log(`[tab] ${file} ${label}: frame=${JSON.stringify(m.art)} tree=${JSON.stringify(m.tree)} window=${JSON.stringify(m.window)} tab=${JSON.stringify(m.tab)} px=${JSON.stringify(px)} outside=${JSON.stringify(m.outside)}`);
   console.log(`[tab] ${file} ${label} edges vs silhouette (16 px on all four sides): drawn outside ${off.outsideDrawn}, clear inside ${off.insideClear}; ${JSON.stringify(off.first)}`);
   await shot(`${file}-${label}-frame`);
+  // Lead (Linux, WebKitGTK): a point expected clear but drawn (a tab
+  // column's point, or a corner outside the silhouette) is logged with
+  // every painter under it and the page's root paint.
+  const inside = (x: number, y: number): boolean =>
+    !cut.rects || cut.rects.some((r) => x * scale >= r.x && x * scale < r.x + r.width && y * scale >= r.y && y * scale < r.y + r.height);
+  const alphaAt = (x: number, y: number): number => img.data[(Math.round(y * scale) * img.width + Math.round(x * scale)) * 4 + 3];
+  const corners: [number, number][] = [[1, 1], [w - 2, 1], [1, h - 2], [w - 2, h - 2]];
+  const drawnClear = [
+    ...(tab ? Object.entries(px).filter(([k]) => Number(k.split(",")[0]) >= w - 10 && k !== tabPoint?.join(",")).filter(([, a]) => a !== 0).map(([k]) => k.split(",").map(Number) as [number, number]) : []),
+    ...corners.filter(([x, y]) => !inside(x, y) && alphaAt(x, y) !== 0),
+  ];
+  // The root paint for every window, so a window drawn clear is the contrast.
+  console.log(`[clear-drawn] ${file} ${label} root: ${await rootPaint()} (points drawn where clear: ${drawnClear.length})`);
+  if (drawnClear.length > 0) {
+    for (const [x, y] of drawnClear) console.log(`[clear-drawn] ${file} ${label} at ${x},${y} alpha ${alphaAt(x, y)}: ${JSON.stringify(await paintersAt(x, y))}`);
+  }
   expect({ window: label, tree: m.tree }).toEqual({ window: label, tree: [0, 0, w, h] });
   expect({ window: label, outside: m.outside }).toEqual({ window: label, outside: [] });
   // Where the frame reaches is the silhouette's to say (StealthX's starts
