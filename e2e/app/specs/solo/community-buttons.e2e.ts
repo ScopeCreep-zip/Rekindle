@@ -13,7 +13,7 @@ import { NET_WAIT_MS, byText, shown, switchTo, waitForHandle, waitUntil } from "
 import { BUDDY, openSettings } from "../../../walk/nav.ts";
 import { communitiesTab, createCommunity, createIdentity, newUser, openCommunity, type User } from "../../journeys.ts";
 import { applySkin, skinShown } from "../../journeys_skins.ts";
-import { disabledLook } from "../../disabled-look.ts";
+import { disabledLook, ownArt } from "../../disabled-look.ts";
 import { shot } from "../../shots.ts";
 import { builtinPacks } from "../../skin-pack.ts";
 
@@ -135,6 +135,9 @@ describe("a community window's Call, Mute, Join and Profile act on its community
     // self changes at least 20 px of its box, as communities-row's bar).
     const look = await disabledLook(["JoinButton", "HostChatButton"]);
     console.log(`[hsc1] info view Join/voice join disabled vs enabled self, pixels changed: ${JSON.stringify(look)} (visibly disabled at 20)`);
+    // Lead: a refused node that changes nothing, measured, not guessed: its
+    // own art where the button is seen, and what draws there.
+    for (const id of ["JoinButton", "HostChatButton"]) console.log(`[hsc1] info view ${id} own art: ${await ownArt(id)}`);
     await shot("alloy-info-community-selected");
     expect({ join: (look.JoinButton ?? 0) >= 20, voice: (look.HostChatButton ?? 0) >= 20 }).toEqual({ join: true, voice: true });
     // The page's counts read as words: one member, not "1 members".

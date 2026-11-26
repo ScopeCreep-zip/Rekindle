@@ -23,7 +23,7 @@ import { NET_WAIT_MS, switchTo, waitUntil } from "../../../walk/helpers.ts";
 import { BUDDY, openSettings } from "../../../walk/nav.ts";
 import { createCommunity, createIdentity, newUser, openCommunity, type User } from "../../journeys.ts";
 import { applySkin, skinShown } from "../../journeys_skins.ts";
-import { disabledLookWithBoxes } from "../../disabled-look.ts";
+import { disabledLookWithBoxes, ownArt } from "../../disabled-look.ts";
 import { shot } from "../../shots.ts";
 import { builtinPacks } from "../../skin-pack.ts";
 
@@ -108,35 +108,7 @@ describe("a disabled node says why (CR1)", function () {
         // Lead: the node's own art's alpha at its box centre (the served
         // image drawn at the node's background size and position), and every
         // node with art under that point (which one draws the button seen).
-        const art = (await browser.execute((nid: string) => new Promise<string>((done) => {
-          const n = document.querySelector<HTMLElement>(`.skin-tree [data-skin-node="${nid}"]`);
-          if (!n) return done("no node");
-          const cs = getComputedStyle(n);
-          const url = /url\("?([^")]+)"?\)/.exec(cs.backgroundImage)?.[1];
-          const r = n.getBoundingClientRect();
-          const under = document
-            .elementsFromPoint(r.left + r.width / 2, r.top + r.height / 2)
-            .map((e) => e.closest<HTMLElement>("[data-skin-node]"))
-            .filter((e, i, all): e is HTMLElement => !!e && all.indexOf(e) === i)
-            .map((e) => `${e.dataset.skinNode}(${e.dataset.skinRole}) art=${getComputedStyle(e).backgroundImage.split("/").pop()?.slice(0, 16) ?? "-"}`);
-          if (!url) return done(`no art; under: ${JSON.stringify(under)}`);
-          const img = new Image();
-          img.onload = () => {
-            const c = document.createElement("canvas");
-            c.width = Math.round(r.width);
-            c.height = Math.round(r.height);
-            const g = c.getContext("2d")!;
-            const [px, py] = cs.backgroundPosition.split(" ").map((v) => parseFloat(v) || 0);
-            const size = cs.backgroundSize.split(" ").map((v) => parseFloat(v));
-            const w = Number.isFinite(size[0]) ? size[0] : img.width;
-            const h = Number.isFinite(size[1]) ? size[1] : img.height;
-            g.drawImage(img, px, py, w, h);
-            const a = g.getImageData(Math.floor(r.width / 2), Math.floor(r.height / 2), 1, 1).data[3];
-            done(`image ${img.width}x${img.height} at ${cs.backgroundPosition} size ${cs.backgroundSize}: alpha at centre ${a}; under: ${JSON.stringify(under)}`);
-          };
-          img.onerror = () => done(`image failed to load; under: ${JSON.stringify(under)}`);
-          img.src = url;
-        }), id)) as string;
+        const art = await ownArt(id);
         console.log(`[cr1] ${file} ${id} own art: ${art}`);
       }
       console.log(`[cr1] ${file} disabled vs enabled self, pixels changed: ${JSON.stringify(look)} (visibly disabled at 20)`);

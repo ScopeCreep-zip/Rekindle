@@ -58,3 +58,47 @@ export async function disabledLookWithBoxes(ids: string[]): Promise<Record<strin
   }
   return out;
 }
+
+/**
+ * A node's own art where its button is seen (lead): the served image drawn
+ * at the node's background size and position, its alpha at the box's
+ * centre and the share of the box its opaque pixels (alpha > 200) cover,
+ * and every node with art under the centre, topmost first (which one draws
+ * the button seen). An opacity dim on a node whose own art is transparent
+ * there changes nothing visible.
+ */
+export async function ownArt(nodeId: string): Promise<string> {
+  return (await browser.execute((nid: string) => new Promise<string>((done) => {
+    const n = document.querySelector<HTMLElement>(`.skin-tree [data-skin-node="${nid}"]`);
+    if (!n) return done("no node");
+    const cs = getComputedStyle(n);
+    const url = /url\("?([^")]+)"?\)/.exec(cs.backgroundImage)?.[1];
+    const r = n.getBoundingClientRect();
+    const under = document
+      .elementsFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+      .map((e) => e.closest<HTMLElement>("[data-skin-node]"))
+      .filter((e, i, all): e is HTMLElement => !!e && all.indexOf(e) === i)
+      .map((e) => `${e.dataset.skinNode}(${e.dataset.skinRole}) art=${getComputedStyle(e).backgroundImage.split("/").pop()?.slice(0, 16) ?? "-"}`);
+    if (!url) return done(`no art; under: ${JSON.stringify(under)}`);
+    const img = new Image();
+    img.onload = () => {
+      const c = document.createElement("canvas");
+      c.width = Math.max(1, Math.round(r.width));
+      c.height = Math.max(1, Math.round(r.height));
+      const g = c.getContext("2d")!;
+      const [px, py] = cs.backgroundPosition.split(" ").map((v) => parseFloat(v) || 0);
+      const size = cs.backgroundSize.split(" ").map((v) => parseFloat(v));
+      const w = Number.isFinite(size[0]) ? size[0] : img.width;
+      const h = Number.isFinite(size[1]) ? size[1] : img.height;
+      g.drawImage(img, px, py, w, h);
+      const all = g.getImageData(0, 0, c.width, c.height).data;
+      let opaque = 0;
+      for (let i = 3; i < all.length; i += 4) if (all[i] > 200) opaque++;
+      const centre = g.getImageData(Math.floor(c.width / 2), Math.floor(c.height / 2), 1, 1).data[3];
+      const cover = Math.round((opaque / (c.width * c.height)) * 100);
+      done(`image ${img.width}x${img.height} at ${cs.backgroundPosition} size ${cs.backgroundSize} over box ${c.width}x${c.height}: alpha at centre ${centre}, opaque cover ${cover}%; under: ${JSON.stringify(under)}`);
+    };
+    img.onerror = () => done(`image failed to load; under: ${JSON.stringify(under)}`);
+    img.src = url;
+  }), nodeId)) as string;
+}
