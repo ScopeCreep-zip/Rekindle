@@ -41,6 +41,11 @@
 '.xfire-titlebar-text' = { on = ["--color-xfire-titlebar-start", "--color-xfire-titlebar-end"] }
 '.form-input' = { on = ["--color-xfire-bg-input"] }
 '.form-select' = { on = ["--color-xfire-bg-input"] }
+'.settings-select-trigger' = { on = ["--color-xfire-input-bg"] }
+'.settings-select-trigger:disabled' = { on = ["--color-xfire-input-bg"] }
+'.settings-select-item' = { on = ["--color-xfire-bg-dark"] }
+'.settings-select-item[data-highlighted]' = { on = ["--color-xfire-accent"] }
+'.settings-select-item[data-selected]' = { on = ["--color-xfire-accent"] }
 'option' = { on = ["--color-xfire-bg-input"] }
 '.analytics-sparkline-label' = { on = ["--color-xfire-bg-panel"] }
 '.profile-section-label' = { on = ["--color-xfire-bg-dark"] }
@@ -686,6 +691,11 @@
 '.skin-status-edit:focus-visible' = { on = ["--color-xfire-bg-status", "--color-xfire-bg-dark"] }
 '.form-input' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.form-select' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+# Settings' drop-down (plan ST1): the trigger's outline on the Settings
+# grounds, and the inset ring of the focused row, which is the highlighted
+# (accent) row.
+'.settings-select-trigger' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.settings-select-item:focus-visible' = { on = ["--color-xfire-accent"] }
 '.sec-btn-commit:focus-visible' = { on = ["--sec-focus-ground"] }
 '.sec-btn-commit-danger:focus-visible' = { on = ["--sec-focus-ground"] }
 '.sec-btn-secondary:focus-visible' = { on = ["--sec-focus-ground"] }
