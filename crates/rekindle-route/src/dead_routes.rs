@@ -10,7 +10,7 @@
 //! it. Veilid's import is idempotent
 //! (`route_remote.rs:21-28`), so without this rule a caller that re-reads
 //! the peer's unchanged record re-imports the same blob and Veilid tests and
-//! drops it again, once per attempt. It leaves after [`FAILURE_CACHE`] (the
+//! drops it again, once per attempt. It leaves after `DEAD_HOLD` (the
 //! sender rule's failure cache, S4) or when a read of the peer's record
 //! returns it at a strictly higher seq than the first read after its death
 //! (the peer republished it; [`PeerLiveness::observe`]'s rule).
@@ -24,7 +24,9 @@ use std::collections::HashMap;
 
 use tokio::time::Instant;
 
-use crate::liveness::FAILURE_CACHE;
+/// DL3 PROBE: Veilid's remote route re-test cooldown, `rpc_timeout × 3`
+/// (veilid-core `routing_table/mod.rs:89`), at the 5 s default.
+const DEAD_HOLD: std::time::Duration = std::time::Duration::from_secs(15);
 
 #[derive(Debug, Clone)]
 struct Dead {
@@ -56,11 +58,11 @@ impl DeadRoutes {
         fresh
     }
 
-    /// Whether `blob` is dead at `now` (an entry past [`FAILURE_CACHE`] is
+    /// Whether `blob` is dead at `now` (an entry past `DEAD_HOLD` is
     /// dropped).
     pub fn is_dead(&mut self, blob: &[u8], now: Instant) -> bool {
         match self.dead.get(blob) {
-            Some(d) if now.duration_since(d.at) < FAILURE_CACHE => true,
+            Some(d) if now.duration_since(d.at) < DEAD_HOLD => true,
             Some(_) => {
                 self.dead.remove(blob);
                 false
@@ -108,13 +110,10 @@ mod tests {
         let mut dead = DeadRoutes::default();
         assert!(dead.declare(b"A", t0));
         assert!(!dead.declare(b"A", t0), "already dead");
-        assert!(dead.is_dead(
-            b"A",
-            t0 + FAILURE_CACHE.saturating_sub(Duration::from_secs(1))
-        ));
+        assert!(dead.is_dead(b"A", t0 + DEAD_HOLD.saturating_sub(Duration::from_secs(1))));
         assert!(!dead.is_dead(b"B", t0));
-        assert!(!dead.is_dead(b"A", t0 + FAILURE_CACHE), "expired");
-        assert!(dead.declare(b"A", t0 + FAILURE_CACHE), "declared again");
+        assert!(!dead.is_dead(b"A", t0 + DEAD_HOLD), "expired");
+        assert!(dead.declare(b"A", t0 + DEAD_HOLD), "declared again");
     }
 
     #[test]
