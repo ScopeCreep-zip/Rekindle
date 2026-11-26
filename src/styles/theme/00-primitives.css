@@ -132,7 +132,8 @@
   .buddy-game-text,
   .status-picker .buddy-name,
   .chat-message-sender-other,
-  .chat-message-sender-self {
+  .chat-message-sender-self,
+  .settings-select-value {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
