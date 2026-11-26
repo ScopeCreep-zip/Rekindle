@@ -179,9 +179,13 @@ D8's call transactions (plan E4.2). The W16 `pending_envelopes` primitive
 meant for them was never wired and was deleted (plan E2.3); see
 §Signaling and session state below.
 
-`VoiceMode` lets a session prefer ordered delivery (`PreferOrdered`)
-when the network conditions warrant it; the default is
-`NoPreference`, which Veilid optimises for latency.
+Frames are sent under `MessageClass::Voice` (LowLatency /
+`PreferUnordered`) to the peer's Media route, itself Unordered; call
+signals are control traffic, `MessageClass::Text` (Reliable /
+`PreferOrdered`), to the peer's General route. See
+`docs/protocol/overview.md` §Sequencing for the Veilid basis (plan VU
+decision 2). (`VoiceMode` is the mesh/MCU topology, not a sequencing
+choice.)
 
 ## Mutual-aid SFU pattern
 
@@ -208,20 +212,17 @@ that hears plaintext (threat model I13).
 
 ## Signaling and session state
 
-**Wave 13 / Wave 16 supersession**: Voice and call signaling moved off
-Veilid `app_call` (synchronous RPC) to fire-and-forget `app_message`.
-(The W16 `pending_envelopes` reliability layer planned on top was never
-wired and was deleted, plan E2.3; E4.2's call transactions are the
-reliability.) Reasons:
+**Today:** call signals go by fire-and-forget `app_message` under the
+1:1 control profile (`MessageClass::Text`, `PreferOrdered`), with no
+receipt or retry. **Decided (D8, plan E4.2, not built):** every call
+signal is an `app_call` transaction after RFC 3261 §17: T1 = the route
+RTT doubling to T2 = 4 s with jitter, a timeout of 64·T1 (≈ 32 s), the
+callee re-sending Accept until acknowledged, one transaction in flight
+per session, over the D22 outbox streams. The Wave 13 / Wave 16 move to
+`app_message` (and its never-wired `pending_envelopes` layer, deleted in
+plan E2.3) is superseded by D8.
 
-- `app_call`'s synchronous RPC layer collapses at ~25 s under network
-  churn; a long ring window can lose the call mid-handshake.
-- `app_call` traffic shape leaks "this is a call signal" vs DM (a
-  privacy regression for vulnerable users).
-- Reference architectures (SimpleX, Signal RingRTC, WebRTC standard) all
-  use async signaling for the same reasons.
-
-The supersession applies to both 1:1 call signaling
+This applies to both 1:1 call signaling
 (`CallInvite`/`CallAccept`/`CallDecline`/`CallRinging`/`CallEnd`/
 `CallMediaState`) and group call signaling
 (`GroupCallOffer`/`GroupCallAccept`/`GroupCallDecline`).

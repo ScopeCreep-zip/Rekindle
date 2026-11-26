@@ -270,13 +270,40 @@ paths resolve.
 
 | Primitive | Usage |
 |-----------|-------|
-| `app_message(target, data)` | Fire-and-forget delivery to a `RouteId`. Used for DMs, friend-add, call signaling (W13/W16), DM invites, and voice/video frames. DMs that need retry go through the `pending_messages` queue (E2.5 replaces it with the send log); the W16 `pending_envelopes` layer was never wired and was deleted (plan E2.3). |
-| `app_call(target, data)` | Request-response delivery. Reserved for operations that genuinely need an inline reply: MEK delivery, file chunk transfer, bootstrap bundles. **Not used for call signaling or DM invites** — Wave 13/16 superseded those with `app_message` to avoid `app_call`'s connection-table exhaustion under bootstrap, ~25 s collapse under network churn, and signaling-vs-DM traffic-shape leakage. See `docs/architecture/voice.md` and the `.claude/docs/rekindle-communities-architecture.md` §10.10 / §27 for the design rationale. |
+| `app_message(target, data)` | Fire-and-forget delivery to a `RouteId`: 1:1 statements (`'D'` datagrams the DM chain and outbox acks back up, `rekindle-transport` `Sender::send_direct`), gossip, and voice/video frames (desktop `VeilidVoiceFrameSender`). Call signals still go this way today; D8 (plan E4.2) makes every call signal an `app_call` transaction (RFC 3261 §17 timers, the callee re-sends Accept until acknowledged), not built yet. |
+| `app_call(target, data)` | Request-response delivery: receipted 1:1 frames (`AppCaller::call_direct`: the outbox's `friend_handshake` rows such as `FriendsKey` and `GroupDmInvite`), signed RPCs (`AppCaller::call`), community envelopes (MEK delivery), bootstrap bundles, file chunks. The answer returns over a reply route Veilid picks from the caller's pool to match the question's safety spec (`rpc_processor/destination.rs:487-521`). |
 | DHT record calls (`create`/`open`/`close_dht_record`, `get`/`set_dht_value`, `inspect_dht_record`, `watch_dht_values`, `cancel_dht_watch`) | Only through the record pool, `rekindle_protocol::dht::pool::RecordPool` (one per session, both tracks). It holds each record's lease, sticky writer and watch; serializes writes per subkey; re-pushes missed writes of records held writable and saves them as outbox `dht_write` rows at logout (plan E2.5); closes ended sessions' records through the node's `RecordCloser`, after their calls finish, never aborting one mid-commit; and rehydrates community records on a jittered keepalive. A multi-writer read consults an index (one inspect over the writer set) before fetching (plan C7.12). |
 | `new_private_route` / `new_custom_private_route` / `release_private_route` | Only through `rekindle_route::own_routes::OwnRoutes` (one per node, over `rekindle_protocol::own_routes::VeilidRouteAllocator`): a General route and a Media route (LowLatency, PreferUnordered; never substituted by General). Allocated at network readiness, single-flight per class, `TryAgain` retried with backoff; a route Veilid reports dead is forgotten, never released, and reallocated; logout releases and renews, so no route is shared between identities. The relay feature owns its dedicated relay routes (`services/relay/offer.rs`). |
 | `import_remote_private_route(blob)` | Only through `RouteImports` (one per node). A dead or failed peer route is forgotten, never released: Veilid releases a dead remote route itself. |
 | Node capabilities | App nodes disable `DHTV` (they do not store records for others; veilid #492). |
 | `RoutingContext` | Scoped handle for all DHT and message operations |
+
+### Sequencing: control ordered, media unordered
+
+Every send names a `MessageClass` and takes its profile from one table,
+`SafetyConfig` (`rekindle-types` `config`, looked up by `SafetyConfig::for_class`;
+`rekindle_route::profile::profile_for_class` is its default): **Text** (1:1
+control: DMs, receipts, friend handshakes, presence keys, group invites, call
+signals) Reliable / `PreferOrdered`; **Rpc** Reliable / `EnsureOrdered`; **Dht**
+Reliable / `PreferOrdered`; **Voice** (voice and video frames) LowLatency /
+`PreferUnordered`. This is plan VU decision 2 and Veilid's intended use:
+
+- `Sequencing` defaults to `PreferOrdered` (veilid-core 0.5.8 fork
+  `veilid_api/types/safety.rs:12-21`).
+- A routed operation carries the *sender's* sequencing and every hop filters
+  the next hop by it (`rpc_processor/rpc_route.rs:26-29` safety route,
+  `:87-90` private route). Veilid adapts a preference only to the sender's own
+  safety route (`route_spec_store/route_compile.rs:106-110`).
+- A private route's hops are chosen and proven on that route's one ordering
+  (`route_spec_store/route_allocate.rs:580-588`). Our General route is
+  Ordered (TCP/WS); the Media route is Unordered (UDP).
+
+So an unordered send to a General route crosses UDP hop pairs nobody proved.
+In the real app (DL1/DL2, 2026-11-25) unordered 1:1 calls to some routes
+arrived 8 in 48, losing group invites and new friends' presence keys, while
+ordered calls arrived 119 in 122. Media keeps UDP because a late frame is
+useless and the jitter buffer reorders. The netsim models the loss as
+`Fault::UnprovenUnorderedHops`.
 
 ## DHT Record Layouts
 

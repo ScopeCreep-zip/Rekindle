@@ -6,6 +6,7 @@
 use std::sync::Arc;
 
 use rekindle_records::port::{AppMessagePort, PeerTarget, PortError, RoutePort};
+use rekindle_types::message::MessageClass;
 use tracing::debug;
 
 use crate::config::TransportConfig;
@@ -52,24 +53,34 @@ pub struct BroadcastReport {
 pub struct Sender {
     messages: Arc<dyn AppMessagePort>,
     routes: Arc<dyn RoutePort>,
+    config: Arc<TransportConfig>,
 }
 
 impl Sender {
-    pub(crate) fn new(messages: Arc<dyn AppMessagePort>, routes: Arc<dyn RoutePort>) -> Self {
-        Self { messages, routes }
+    pub(crate) fn new(
+        messages: Arc<dyn AppMessagePort>,
+        routes: Arc<dyn RoutePort>,
+        config: Arc<TransportConfig>,
+    ) -> Self {
+        Self {
+            messages,
+            routes,
+            config,
+        }
     }
 
     /// Send an already-built 1:1 wire message (`operations::dm::wire`) to the
-    /// peer whose route is `target`, over the safe route profile every 1:1
-    /// message takes (`RouteContextSpec::rc_safe`, plan E2.1), over a
-    /// tested pool route Veilid picks ([`AppMessagePort::send`], plan RV1).
+    /// peer whose route is `target`, under the control profile every 1:1
+    /// message takes ([`MessageClass::Text`], Reliable / PreferOrdered, plan
+    /// VU decision 2), over a tested pool route Veilid picks
+    /// ([`AppMessagePort::send`], plan RV1).
     /// A statement lost on the way is not charged to the route; the
     /// outbox's acks and retries and the DM chain recover it.
     ///
     /// # Errors
     /// The send failed; an unusable route is forgotten first.
     pub async fn send_direct(&self, target: &PeerTarget, message: Vec<u8>) -> Result<()> {
-        let profile = rekindle_route::contexts::RouteContextSpec::rc_safe().safety_profile();
+        let profile = self.config.safety.for_class(MessageClass::Text);
         // The route id is scrubbed to a per-run tag at the log sink
         // (`rekindle_utils::log_scrub`).
         debug!(
@@ -79,7 +90,7 @@ impl Sender {
             "1:1 app_message sent"
         );
         self.messages
-            .send(target, &profile, message)
+            .send(target, profile, message)
             .await
             .map_err(|e| send_failure(self.routes.as_ref(), target, e))
     }
@@ -142,7 +153,11 @@ impl AppCaller {
 
         let response = self
             .messages
-            .call(target, &self.config.safety.rpc, frame_bytes)
+            .call(
+                target,
+                self.config.safety.for_class(MessageClass::Rpc),
+                frame_bytes,
+            )
             .await
             .map_err(|e| send_failure(self.routes.as_ref(), target, e))?;
 
@@ -155,14 +170,15 @@ impl AppCaller {
     }
 
     /// `app_call` an already-built 1:1 wire message (`operations::dm::wire`)
-    /// and await the reply, as [`Sender::send_direct`] sends one: Veilid
+    /// and await the reply, under the same control profile as
+    /// [`Sender::send_direct`] ([`MessageClass::Text`]): Veilid
     /// picks the safety route from its pool and the reply route to match it
     /// (0.5.8 `rpc_processor/destination.rs:487-520`; plan RV1).
     ///
     /// # Errors
     /// The call failed or timed out; an unusable route is forgotten first.
     pub async fn call_direct(&self, target: &PeerTarget, message: Vec<u8>) -> Result<Vec<u8>> {
-        let profile = rekindle_route::contexts::RouteContextSpec::rc_safe().safety_profile();
+        let profile = self.config.safety.for_class(MessageClass::Text);
         debug!(
             route = target.as_str(),
             hops = profile.hop_count,
@@ -170,7 +186,7 @@ impl AppCaller {
             "1:1 app_call sent"
         );
         self.messages
-            .call(target, &profile, message)
+            .call(target, profile, message)
             .await
             .map_err(|e| send_failure(self.routes.as_ref(), target, e))
     }
@@ -207,7 +223,7 @@ impl AppCaller {
         route_blob: &[u8],
         envelope_bytes: Vec<u8>,
     ) -> Result<Vec<u8>> {
-        let profile = &self.config.safety.rpc;
+        let profile = self.config.safety.for_class(MessageClass::Rpc);
         crate::route_trace::envelope_call_sent(target, route_blob, profile.hop_count);
         let response = self
             .messages
@@ -259,7 +275,11 @@ impl AppCaller {
             route_blob,
         )?;
         self.messages
-            .send(&target, &self.config.safety.rpc, data)
+            .send(
+                &target,
+                self.config.safety.for_class(MessageClass::Rpc),
+                data,
+            )
             .await
             .map_err(|e| send_failure(self.routes.as_ref(), &target, e))
     }

@@ -123,6 +123,9 @@ pub(crate) struct Faults {
     pub min_seqnums: HashMap<(usize, String), u32>,
     /// Nodes on a network that blocks UDP ([`crate::Fault::UdpBlocked`]).
     pub udp_blocked: HashSet<usize>,
+    /// Nodes whose Ordered routes lose unordered sends
+    /// ([`crate::Fault::UnprovenUnorderedHops`]).
+    pub unproven_unordered: HashSet<usize>,
     /// Own routes failing their loopback tests, by route id
     /// ([`crate::loopback`]).
     pub loopback: HashMap<String, crate::loopback::LoopbackRun>,
