@@ -4,7 +4,6 @@
 
 import type { OwnRecordsPhase, OwnRouteClass, RouteAvailability, RoutePauseCause } from "../channels/notification_events";
 
-export type { IdentitySummary } from "./dto";
 
 /** D22's delivery vocabulary (`rekindle_types::message::SendState`). */
 /** Why a stored message's body could not be read (the Host's words in `reasonText`). */
@@ -473,3 +472,6 @@ export interface ActiveCall {
   /// Accepted (connecting or active) rather than still ringing out.
   connected: boolean;
 }
+
+/** Our own presence status as the Host states it (`SessionStatus`). */
+export type SessionStatus = "online" | "away" | "busy" | "offline" | "invisible";

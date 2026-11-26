@@ -2,7 +2,7 @@
 /// plan SK2-S2): the served component tree's ids, roles and nesting. It
 /// carries no box: every position is the Host's emitted rule.
 
-import type { SessionStatus } from "./dto";
+import type { SessionStatus } from "./types";
 
 export type ViewKey =
   | "friends"

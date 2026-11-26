@@ -12,7 +12,7 @@ import type { SkinShell } from "./dto_skin_tree";
 // same reason: it is the FSM state `setup.rs` emits, and both
 // `lifecycleCurrent()` and the channel subscription need to name it.
 
-import type { NotJoinableReason, SendState } from "./types";
+import type { NotJoinableReason, SendState, SessionStatus } from "./types";
 
 export interface GameInfo {
   gameName: string;
@@ -417,7 +417,7 @@ export interface IdentityShown {
 
 // ── Our presence (rekindle_types::dto::presence) ──
 
-export type SessionStatus = "online" | "away" | "busy" | "offline" | "invisible";
+export type { SessionStatus } from "./types";
 
 type IdleState = "unavailable" | "active" | "autoAway";
 

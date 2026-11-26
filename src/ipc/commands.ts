@@ -3,6 +3,7 @@
 // module per domain) to keep every file under the module size cap;
 // call sites continue to use `import { commands, type Foo } from "../ipc/commands"`.
 export * from "./commands/types";
+export type { IdentitySummary } from "./commands/dto";
 export * from "./commands/types_sync";
 
 import { accountCommands } from "./commands/account";
