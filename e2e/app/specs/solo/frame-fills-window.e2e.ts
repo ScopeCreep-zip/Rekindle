@@ -34,7 +34,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, doubleClick, switchTo, waitForHandle } from "../../../walk/helpers.ts";
-import { BUDDY, SETTINGS, closeSettings, openSettings } from "../../../walk/nav.ts";
+import { BUDDY, SETTINGS, openSettings } from "../../../walk/nav.ts";
 import { type Peer, peerSendDm, startFleet, stopFleet } from "../../fleet.ts";
 import { createIdentity, friendRow, newUser, seesMessage, type User } from "../../journeys.ts";
 import { applySkin, skinShown } from "../../journeys_skins.ts";
@@ -147,9 +147,16 @@ async function frameFills(file: string, label: string): Promise<void> {
   await shot(`${file}-${label}-frame`);
   expect({ window: label, tree: m.tree }).toEqual({ window: label, tree: [0, 0, w, h] });
   expect({ window: label, outside: m.outside }).toEqual({ window: label, outside: [] });
-  // The frame's edges: every one on the window's, but the right edge stops
-  // the tab's width short where the pack hangs a tab.
-  const want: Box = [m.tree[0], m.tree[1], m.tree[2] - (tab ? tab.artWidth : 0), m.tree[3]];
+  // The frame's edges reach the silhouette's own extent (the shaper decides
+  // where the window is: StealthX's frame starts 110 px in, by its shape),
+  // and on a tab's side stop the tab's art width short of it.
+  const sil = cut.rects && cut.rects.length > 0
+    ? cut.rects.reduce<Box>(
+        (b, r) => [Math.min(b[0], r.x / scale), Math.min(b[1], r.y / scale), Math.max(b[2], (r.x + r.width) / scale), Math.max(b[3], (r.y + r.height) / scale)],
+        [Infinity, Infinity, -Infinity, -Infinity],
+      )
+    : m.tree;
+  const want: Box = [sil[0], sil[1], sil[2] - (tab ? tab.artWidth : 0), sil[3]].map((v) => Math.round(v)) as Box;
   const short = m.art.map((v, i) => Math.abs(v - want[i]));
   expect({ window: label, frame: m.art, short: short.map((d) => d > 1) }).toEqual({ window: label, frame: m.art, short: [false, false, false, false] });
   expect({ window: label, edgesOffSilhouette: off.outsideDrawn + off.insideClear, first: off.first }).toEqual({ window: label, edgesOffSilhouette: 0, first: [] });
@@ -183,6 +190,8 @@ describe("the pack frame reaches the window's edges; a side tab protrudes beside
     chat = await waitForHandle(browser, (h) => h.startsWith("chat-") && !before.includes(h));
     await browser.switchToWindow(chat);
     await seesMessage(browser, me, "frame check");
+    await switchTo(browser, BUDDY);
+    await openSettings(browser, "Appearance");
   });
 
   after(async () => {
@@ -193,12 +202,10 @@ describe("the pack frame reaches the window's edges; a side tab protrudes beside
     it(`${file}: the main and chat windows' frames reach their edges, a side tab (if any) protruding in a transparent column`, async () => {
       const pack = builtinPacks().find((p) => p.file === file);
       if (!pack) throw new Error(`no built-in pack ${file}`);
-      await switchTo(browser, BUDDY);
-      await openSettings(browser, "Appearance");
-      const href = await applySkin(browser, me, pack.name);
-      // Settings closes after each switch, so the next pack's opens fresh.
+      // Settings stays open from before(), so a pack whose menus live in a
+      // popup (StealthX) cannot keep the next switch from Settings.
       await switchTo(browser, SETTINGS);
-      await closeSettings(browser);
+      const href = await applySkin(browser, me, pack.name);
       await switchTo(browser, BUDDY);
       await skinShown(browser, href);
       await browser.pause(1500);
@@ -219,8 +226,7 @@ describe("the pack frame reaches the window's edges; a side tab protrudes beside
   it("combat: a frame art layer hidden at the right edge is caught by the edge check", async () => {
     const pack = builtinPacks().find((p) => p.file === "combat");
     if (!pack) throw new Error("no built-in pack combat");
-    await switchTo(browser, BUDDY);
-    await openSettings(browser, "Appearance");
+    await switchTo(browser, SETTINGS);
     const href = await applySkin(browser, me, pack.name);
     await switchTo(browser, BUDDY);
     await skinShown(browser, href);
