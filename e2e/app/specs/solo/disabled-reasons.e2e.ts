@@ -6,7 +6,7 @@
 // one with its own art (`pack`) is not. Each node logged as `[cr1]` and shot.
 
 import { browser, expect } from "@wdio/globals";
-import { switchTo } from "../../../walk/helpers.ts";
+import { NET_WAIT_MS, switchTo, waitUntil } from "../../../walk/helpers.ts";
 import { BUDDY, openSettings } from "../../../walk/nav.ts";
 import { createIdentity, newUser, type User } from "../../journeys.ts";
 import { applySkin, skinShown } from "../../journeys_skins.ts";
@@ -41,6 +41,22 @@ describe("a disabled node says why (CR1)", function () {
       await switchTo(browser, BUDDY);
       await skinShown(browser, href);
       await browser.pause(2000);
+      // Disabled states are pack triggers fired from the Host's signal set
+      // (signalEffects), so they exist only once the window's signals are
+      // live; the state is logged either way.
+      const state = async (): Promise<string> =>
+        (await browser.execute(() => {
+          const t = document.querySelector<HTMLElement>(".skin-tree");
+          return JSON.stringify({
+            signals: t?.dataset.skinSignals ?? "none",
+            cannot: t?.dataset.skinCannot ?? "",
+            ariaDisabled: document.querySelectorAll('[data-skin-node][aria-disabled="true"]').length,
+          });
+        })) as string;
+      await waitUntil(async () => (await browser.$('.skin-tree[data-skin-signals="live"]').isExisting().catch(() => false)), NET_WAIT_MS, "").catch(async () => {
+        throw new Error(`${file}: the window's skin signals never went live (${await state()})`);
+      });
+      console.log(`[cr1] ${file} signals: ${await state()}`);
       const nodes = (await browser.execute(() =>
         Array.from(document.querySelectorAll<HTMLElement>('[data-skin-node][aria-disabled="true"]'))
           .filter((n) => !n.closest("[hidden]") && n.getBoundingClientRect().width > 0)
