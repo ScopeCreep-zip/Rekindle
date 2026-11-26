@@ -45,8 +45,10 @@
 '.settings-select-trigger' = { on = ["--color-xfire-input-bg"] }
 '.settings-select-trigger:disabled' = { on = ["--color-xfire-input-bg"] }
 '.settings-select-item' = { on = ["--color-xfire-bg-dark"] }
-'.settings-select-item[data-highlighted]' = { on = ["--color-xfire-accent"] }
-'.settings-select-item[data-selected]' = { on = ["--color-xfire-accent"] }
+# The selected fill composited over what it lies on (a translucent
+# accent.fill shows the ground through it): the open list's bg-dark.
+'.settings-select-item[data-highlighted]' = { on = ["--color-xfire-accent 100% over --color-xfire-bg-dark"] }
+'.settings-select-item[data-selected]' = { on = ["--color-xfire-accent 100% over --color-xfire-bg-dark"] }
 'option' = { on = ["--color-xfire-input-bg"] }
 '.analytics-sparkline-label' = { on = ["--color-xfire-bg-panel"] }
 '.profile-section-label' = { on = ["--color-xfire-bg-dark"] }
@@ -97,7 +99,7 @@
 # Selected text (plan ST1): the text-field highlight, focused and unfocused.
 '::selection' = { on = ["--color-xfire-input-selection-bg"] }
 '::selection:window-inactive' = { on = ["--color-xfire-input-selection-bg-inactive"] }
-'.form-btn-primary' = { on = ["--color-xfire-accent"], on_hover = ["--color-xfire-accent 80% over --color-xfire-fill-shade"] }
+'.form-btn-primary' = { on = ["--color-xfire-accent 100% over --color-xfire-bg-dark", "--color-xfire-accent 100% over --color-xfire-bg-panel"], on_hover = ["--color-xfire-accent 80% over --color-xfire-fill-shade"] }
 '.form-btn-primary:disabled' = { on = ["--color-xfire-bg-secondary"] }
 '.form-btn-danger:disabled' = { on = ["--color-xfire-bg-secondary"] }
 '.form-btn-secondary' = { on = ["--color-xfire-bg-secondary"], on_hover = ["--color-xfire-accent 12% over --color-xfire-bg-secondary"] }
@@ -108,9 +110,9 @@
 '.form-field-label' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.form-tabs-equal .form-tab' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.form-tab' = { on = ["--color-xfire-menubar-bg"], on_hover = ["--color-xfire-accent 12% over --color-xfire-menubar-bg"] }
-'.form-tab-active' = { on = ["--color-xfire-accent"] }
-'.form-tab[aria-selected="true"]' = { on = ["--color-xfire-accent"] }
-'.form-tab.active' = { on = ["--color-xfire-accent"] }
+'.form-tab-active' = { on = ["--color-xfire-accent 100% over --color-xfire-menubar-bg"] }
+'.form-tab[aria-selected="true"]' = { on = ["--color-xfire-accent 100% over --color-xfire-menubar-bg"] }
+'.form-tab.active' = { on = ["--color-xfire-accent 100% over --color-xfire-menubar-bg"] }
 '.buddy-group-header' = { on = ["--color-xfire-bg-dark"], on_selected = ["--color-xfire-accent 30% over --color-xfire-bg-dark"] }
 '.buddy-subgroup-header' = { on = ["--color-xfire-bg-dark"] }
 '.buddy-name-offline' = { on = ["--color-xfire-accent 30% over --color-xfire-bg-dark", "--color-xfire-bg-dark", "--color-xfire-bg-panel", "--color-xfire-bg-status"] }
@@ -161,8 +163,8 @@
 '.settings-hint' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel", "--color-xfire-bg-primary"] }
 # The Settings window's `.app-frame` (bg-dark); the chosen row (`.skin-row-shown`) is the solid
 # selected fill, its text the selected text.
-'.skin-row-shown' = { on = ["--color-xfire-accent"] }
-'.skin-row-shown :is(.skin-access, .skin-badge, .skin-credits, .skin-credits-stated, .skin-credits-term, .skin-credits-value, .skin-credits-url, .skin-credits-licence)' = { on = ["--color-xfire-accent"] }
+'.skin-row-shown' = { on = ["--color-xfire-accent 100% over --color-xfire-bg-dark"] }
+'.skin-row-shown :is(.skin-access, .skin-badge, .skin-credits, .skin-credits-stated, .skin-credits-term, .skin-credits-value, .skin-credits-url, .skin-credits-licence)' = { on = ["--color-xfire-accent 100% over --color-xfire-bg-dark"] }
 '.skin-badge' = { on = ["--color-xfire-bg-dark"] }
 # A skin's target-size line under its name (plan SK14), in the same row.
 '.skin-access' = { on = ["--color-xfire-bg-dark"] }
@@ -705,7 +707,7 @@
 # grounds, and the inset ring of the focused row, which is the highlighted
 # (accent) row.
 '.settings-select-trigger' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
-'.settings-select-item:focus-visible' = { on = ["--color-xfire-accent"] }
+'.settings-select-item:focus-visible' = { on = ["--color-xfire-accent 100% over --color-xfire-bg-dark"] }
 '.sec-btn-commit:focus-visible' = { on = ["--sec-focus-ground"] }
 '.sec-btn-commit-danger:focus-visible' = { on = ["--sec-focus-ground"] }
 '.sec-btn-secondary:focus-visible' = { on = ["--sec-focus-ground"] }
