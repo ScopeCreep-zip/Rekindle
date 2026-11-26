@@ -21,9 +21,12 @@ mod community_tests;
 mod draft;
 pub(crate) mod failure;
 pub(crate) mod ids;
+mod launchers;
 #[cfg(test)]
 mod leave_tests;
 pub(crate) mod login;
+#[cfg(test)]
+mod popup_selection_tests;
 pub(crate) mod press_trace;
 pub(crate) mod reads;
 pub(crate) mod rooms;

@@ -20,6 +20,7 @@ use rekindle_types::dto::transfer::TransferTarget;
 use rekindle_types::friend::GameInfoState;
 use rekindle_types::game_server::{JoinSource, ServerAddress};
 
+pub(crate) use super::launchers::Launchers;
 use super::reads::Reads;
 use super::rooms::{self, Room};
 
@@ -145,26 +146,6 @@ impl Views {
             | EngineView::InviteUsersToRoom
             | EngineView::Communities => Some(LocalSearchScope::Friends),
         }
-    }
-}
-
-/// Each open popup's launcher, by popup label (plan SK2-N4), as the shell
-/// said when it opened the popup (`Host::skin_window_opened`).
-#[derive(Debug, Default)]
-pub(crate) struct Launchers(parking_lot::Mutex<BTreeMap<String, String>>);
-
-impl Launchers {
-    pub(crate) fn set(&self, popup: &str, launcher: Option<&str>) {
-        let mut all = self.0.lock();
-        match launcher {
-            Some(l) => all.insert(popup.to_owned(), l.to_owned()),
-            None => all.remove(popup),
-        };
-    }
-
-    /// The window that launched `popup`, when it is an open popup.
-    pub(crate) fn of(&self, popup: &str) -> Option<String> {
-        self.0.lock().get(popup).cloned()
     }
 }
 
@@ -566,10 +547,11 @@ pub(crate) fn resolve(
         return Ok(Resolved::Request(request));
     };
     let selections = &skin.selection;
-    let friend = selections.friend(window);
-    let transfer = selections.transfer(window);
-    let server = selections.server(window);
-    let community = selections.community(window);
+    let at = skin.launchers.selection_window(window);
+    let friend = selections.friend(&at);
+    let transfer = selections.transfer(&at);
+    let server = selections.server(&at);
+    let community = selections.community(&at);
     let launcher = skin.launchers.of(window);
     let search = skin.views.scope(window, launcher.as_deref(), selections);
     let selected = Selected {
