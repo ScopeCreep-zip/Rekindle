@@ -19,7 +19,11 @@ import { applySkin, skinShown } from "../../journeys_skins.ts";
 import { shot } from "../../shots.ts";
 import { builtinPacks } from "../../skin-pack.ts";
 
-const PACKS = ["symbiosis", "alloy", "xslimfire"];
+/** Every pack the skin round ships. The six with a chat frame (their
+ *  chat window's tree, `goldens/chat-*.txt`) serve the community window's
+ *  slots; xfire-classic and Total Chaos serve none, and the spec says so
+ *  from what is drawn. */
+const PACKS = ["symbiosis", "alloy", "xslimfire", "combat", "onyx", "simple-x", "xfire-classic", "total-chaos"];
 
 type Box = [number, number, number, number];
 
@@ -102,6 +106,14 @@ describe("a skinned community window's slots and the content mounted in them (SK
       await shot(`${file}-community`);
       const b = await slotBoxes();
       console.log(`[slots-proof] ${file}: ${JSON.stringify(b)}`);
+      if (b.area === null && b.edit === null) {
+        // No chat frame served: the community window is the app's own
+        // layout, whole and on screen, with its composer inside it.
+        const view = (await browser.execute(() => [0, 0, window.innerWidth, window.innerHeight])) as [number, number, number, number];
+        console.log(`[slots-proof] ${file}: no chat frame served (no chatArea/chatEdit slot drawn); window ${JSON.stringify(view)}`);
+        expect({ pack: file, layout: b.layout !== null, composerOnScreen: within(b.composer, view) }).toEqual({ pack: file, layout: true, composerOnScreen: true });
+        return;
+      }
       expect({ pack: file, layoutFillsChatArea: near(b.layout, b.area) }).toEqual({ pack: file, layoutFillsChatArea: true });
       expect({ pack: file, composerWithinChatEdit: within(b.composer, b.edit) }).toEqual({ pack: file, composerWithinChatEdit: true });
       if (b.send) expect({ pack: file, partFillsChatSend: near(b.sendPart, b.send) }).toEqual({ pack: file, partFillsChatSend: true });
