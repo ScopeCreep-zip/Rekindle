@@ -5,7 +5,7 @@
 // (alpha 0) and click-through (the window shaper, src-tauri windows/shape).
 // TAB1 took that transparency, which a screenshot viewer shows as white,
 // for a gap and moved the tab onto the frame; it is reverted. For every
-// pack's main window, and Combat's chat:
+// built-in pack's main and chat windows:
 //   1. the frame (the union of the drawn nodes that paint art, the tab
 //      aside) reaches `.skin-tree`'s left, top and bottom edges (±1), and
 //      its right edge too, except where the pack hangs a tab: there it stops
@@ -33,8 +33,8 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { browser, expect } from "@wdio/globals";
-import { doubleClick, switchTo, waitForHandle } from "../../../walk/helpers.ts";
-import { BUDDY, openSettings } from "../../../walk/nav.ts";
+import { NET_WAIT_MS, doubleClick, switchTo, waitForHandle } from "../../../walk/helpers.ts";
+import { BUDDY, SETTINGS, closeSettings, openSettings } from "../../../walk/nav.ts";
 import { type Peer, peerSendDm, startFleet, stopFleet } from "../../fleet.ts";
 import { createIdentity, friendRow, newUser, seesMessage, type User } from "../../journeys.ts";
 import { applySkin, skinShown } from "../../journeys_skins.ts";
@@ -42,16 +42,21 @@ import { decodePng, encodePng, type Rgba } from "../../png.ts";
 import { checkered } from "../../shots.ts";
 import { disagreements, silhouette } from "../../silhouette.ts";
 import { shot } from "../../shots.ts";
-import { builtinPacks } from "../../skin-pack.ts";
+import { ACCESSIBLE_VARIANT, builtinPacks } from "../../skin-pack.ts";
 import { befriendFleet } from "../../social.ts";
 
-const PACKS = ["symbiosis", "combat", "onyx", "alloy", "xslimfire"];
+/** Every built-in pack (lead: a hand-picked list let Simple X's tab go
+ *  unchecked); the accessible variant shares Symbiosis's layout. */
+const PACKS = builtinPacks()
+  .filter((p) => p.file !== ACCESSIBLE_VARIANT.file)
+  .map((p) => p.file);
 /** The side tab a pack hangs off its main window's right edge: its node,
  *  its art's width (the column it protrudes in) and its height. Its press
  *  area may reach further back over the frame (Symbiosis serves
  *  `target [-5, 0, 18, 115] art [5, 0, 13, 115]`). */
 const TABS: Record<string, { node: string; artWidth: number; height: number }> = {
   symbiosis: { node: "MainInfoViewButton", artWidth: 13, height: 115 },
+  "simple-x": { node: "InfoViewButton", artWidth: 13, height: 60 },
 };
 
 const CROPS = path.join(import.meta.dirname, "..", "..", "out", "shots", "frame-fills-window", "crops");
@@ -164,8 +169,20 @@ describe("the pack frame reaches the window's edges; a side tab protrudes beside
   const me: User = { ...newUser("framefill"), displayName: "Ari" };
   let peers: Peer[] = [];
 
+  // One friend and one chat window, kept open and re-skinned in place, so
+  // every pack's chat frame is checked beside its main window.
+  let chat = "";
   before(async () => {
     await createIdentity(browser, me);
+    peers = await startFleet(["Bea"]);
+    const myKey = await befriendFleet(browser, me, peers);
+    await peerSendDm(peers[0], myKey, "frame check");
+    await switchTo(browser, BUDDY);
+    const before = await browser.getWindowHandles();
+    await doubleClick(browser, await friendRow(browser, "Bea"));
+    chat = await waitForHandle(browser, (h) => h.startsWith("chat-") && !before.includes(h));
+    await browser.switchToWindow(chat);
+    await seesMessage(browser, me, "frame check");
   });
 
   after(async () => {
@@ -173,16 +190,23 @@ describe("the pack frame reaches the window's edges; a side tab protrudes beside
   });
 
   for (const file of PACKS) {
-    it(`${file}: the main window's frame reaches its edges, and its side tab (if any) protrudes in a transparent column`, async () => {
+    it(`${file}: the main and chat windows' frames reach their edges, a side tab (if any) protruding in a transparent column`, async () => {
       const pack = builtinPacks().find((p) => p.file === file);
       if (!pack) throw new Error(`no built-in pack ${file}`);
       await switchTo(browser, BUDDY);
       await openSettings(browser, "Appearance");
       const href = await applySkin(browser, me, pack.name);
+      // Settings closes after each switch, so the next pack's opens fresh.
+      await switchTo(browser, SETTINGS);
+      await closeSettings(browser);
       await switchTo(browser, BUDDY);
       await skinShown(browser, href);
       await browser.pause(1500);
       await frameFills(file, "main");
+      await switchTo(browser, chat, NET_WAIT_MS);
+      await skinShown(browser, href);
+      await browser.pause(1500);
+      await frameFills(file, "chat");
     });
   }
 
@@ -263,22 +287,4 @@ describe("the pack frame reaches the window's edges; a side tab protrudes beside
     expect({ caught: off.insideClear > 0 }).toEqual({ caught: true });
   });
 
-  it("combat: the chat window's frame reaches every edge, painted", async () => {
-    const pack = builtinPacks().find((p) => p.file === "combat");
-    if (!pack) throw new Error("no built-in pack combat");
-    await switchTo(browser, BUDDY);
-    await openSettings(browser, "Appearance");
-    const href = await applySkin(browser, me, pack.name);
-    peers = await startFleet(["Bea"]);
-    const myKey = await befriendFleet(browser, me, peers);
-    await peerSendDm(peers[0], myKey, "frame check");
-    await switchTo(browser, BUDDY);
-    const before = await browser.getWindowHandles();
-    await doubleClick(browser, await friendRow(browser, "Bea"));
-    await browser.switchToWindow(await waitForHandle(browser, (h) => h.startsWith("chat-") && !before.includes(h)));
-    await seesMessage(browser, me, "frame check");
-    await skinShown(browser, href);
-    await browser.pause(1500);
-    await frameFills("combat", "chat");
-  });
 });
