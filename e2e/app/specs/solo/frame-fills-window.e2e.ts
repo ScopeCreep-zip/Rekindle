@@ -10,8 +10,13 @@
 //      aside) reaches `.skin-tree`'s left, top and bottom edges (±1), and
 //      its right edge too, except where the pack hangs a tab: there it stops
 //      the tab's width short;
-//   2. a window with no tab is painted (alpha 255) at 3 and 10 px from the
-//      right edge and 2 and 9 px from the left, at y = 60 and innerHeight-60;
+//   2. every pixel of the window's leftmost and rightmost 16 px agrees with
+//      the shaper's own silhouette (`cargo xtask skin-silhouette`, shared
+//      helpers in e2e/app/silhouette.ts): drawn inside it, clear outside it,
+//      each mismatch named by its coordinates. A pack's own transparent
+//      shape at an edge (Combat's bottom-right channel) is outside it, so it
+//      is expected; a CSS-side gap or misplacement is not. A forced gap (a
+//      frame art layer hidden) must fail this check (the last test);
 //   3. a window with a tab: its left points are painted, the tab's own
 //      pixels are opaque, and the tab's column above and below it (the same
 //      right points, clear of the tab) is alpha 0; the tab's right edge is
@@ -35,6 +40,7 @@ import { createIdentity, friendRow, newUser, seesMessage, type User } from "../.
 import { applySkin, skinShown } from "../../journeys_skins.ts";
 import { decodePng, encodePng, type Rgba } from "../../png.ts";
 import { checkered } from "../../shots.ts";
+import { disagreements, silhouette } from "../../silhouette.ts";
 import { shot } from "../../shots.ts";
 import { builtinPacks } from "../../skin-pack.ts";
 import { befriendFleet } from "../../social.ts";
@@ -97,7 +103,7 @@ async function measure(tabNode: string): Promise<Measure> {
 
 /** The window's screenshot, the alpha at each probe point (CSS px; `extra`
  *  adds points), and its right 40 px saved as `crop`, over a checkerboard. */
-async function probe(w: number, h: number, crop: string, extra: [number, number][] = []): Promise<Record<string, number>> {
+async function probe(w: number, h: number, crop: string, extra: [number, number][] = []): Promise<{ px: Record<string, number>; img: Rgba; scale: number }> {
   const img = decodePng(Buffer.from(await browser.takeScreenshot(), "base64"));
   const scale = img.width / w;
   const alpha = (x: number, y: number): number => img.data[(Math.round(y * scale) * img.width + Math.round(x * scale)) * 4 + 3];
@@ -112,7 +118,7 @@ async function probe(w: number, h: number, crop: string, extra: [number, number]
   }
   mkdirSync(CROPS, { recursive: true });
   writeFileSync(path.join(CROPS, `${crop}-right.png`), encodePng(checkered(cut)));
-  return out;
+  return { px: out, img, scale };
 }
 
 /** Measure, log, shoot and require the frame, the paint and the tab for the current window. */
@@ -122,23 +128,28 @@ async function frameFills(file: string, label: string): Promise<void> {
   const [w, h] = m.window;
   // The tab's own pixels: its centre, a few px in from the window's edge.
   const tabPoint: [number, number] | null = m.tab ? [w - 6, Math.round((m.tab[1] + m.tab[3]) / 2)] : null;
-  const px = await probe(w, h, `${file}-${label}`, tabPoint ? [tabPoint] : []);
+  const { px, img, scale } = await probe(w, h, `${file}-${label}`, tabPoint ? [tabPoint] : []);
+  // The window's edges against the shaper's own silhouette (cargo xtask
+  // skin-silhouette): every pixel of the leftmost and rightmost 16 px is
+  // drawn exactly where the silhouette is, clear where it is not. A pack's
+  // own transparent shape at an edge (Combat's bottom-right channel,
+  // Symbiosis's tab column) is outside the silhouette, so it is expected.
+  const cut = silhouette(file, label === "chat" ? "chat" : "main", w, h, Math.round(scale * 1000));
+  const edge = Math.round(16 * scale);
+  const off = disagreements(img, cut, [[0, edge], [img.width - edge, img.width]], 12);
   console.log(`[tab] ${file} ${label}: frame=${JSON.stringify(m.art)} tree=${JSON.stringify(m.tree)} window=${JSON.stringify(m.window)} tab=${JSON.stringify(m.tab)} px=${JSON.stringify(px)} outside=${JSON.stringify(m.outside)}`);
+  console.log(`[tab] ${file} ${label} edges vs silhouette (16 px each side): drawn outside ${off.outsideDrawn}, clear inside ${off.insideClear}; ${JSON.stringify(off.first)}`);
   await shot(`${file}-${label}-frame`);
   expect({ window: label, tree: m.tree }).toEqual({ window: label, tree: [0, 0, w, h] });
   expect({ window: label, outside: m.outside }).toEqual({ window: label, outside: [] });
   // The frame's edges: every one on the window's, but the right edge stops
   // the tab's width short where the pack hangs a tab.
   const want: Box = [m.tree[0], m.tree[1], m.tree[2] - (tab ? tab.artWidth : 0), m.tree[3]];
-  const off = m.art.map((v, i) => Math.abs(v - want[i]));
-  expect({ window: label, frame: m.art, short: off.map((d) => d > 1) }).toEqual({ window: label, frame: m.art, short: [false, false, false, false] });
-  const left = Object.entries(px).filter(([k]) => Number(k.split(",")[0]) < 20);
+  const short = m.art.map((v, i) => Math.abs(v - want[i]));
+  expect({ window: label, frame: m.art, short: short.map((d) => d > 1) }).toEqual({ window: label, frame: m.art, short: [false, false, false, false] });
+  expect({ window: label, edgesOffSilhouette: off.outsideDrawn + off.insideClear, first: off.first }).toEqual({ window: label, edgesOffSilhouette: 0, first: [] });
   const right = Object.entries(px).filter(([k]) => Number(k.split(",")[0]) >= w - 10 && k !== tabPoint?.join(","));
-  expect({ window: label, leftUnpainted: left.filter(([, a]) => a !== 255) }).toEqual({ window: label, leftUnpainted: [] });
-  if (!tab) {
-    expect({ window: label, rightUnpainted: right.filter(([, a]) => a !== 255) }).toEqual({ window: label, rightUnpainted: [] });
-    return;
-  }
+  if (!tab) return;
   if (!m.tab || !tabPoint) throw new Error(`${file}: no drawn ${tab.node}`);
   // Its right edge is the window's and it is the tab's height; its width is
   // its press area's (logged), which may reach back over the frame.
@@ -174,6 +185,43 @@ describe("the pack frame reaches the window's edges; a side tab protrudes beside
       await frameFills(file, "main");
     });
   }
+
+  // The edge check's mutation proof: Combat's main window with one of its
+  // frame art layers at the right edge hidden must disagree with the
+  // silhouette (drawn pixels gone inside it); restored, it agrees again.
+  it("combat: a frame art layer hidden at the right edge is caught by the edge check", async () => {
+    const pack = builtinPacks().find((p) => p.file === "combat");
+    if (!pack) throw new Error("no built-in pack combat");
+    await switchTo(browser, BUDDY);
+    await openSettings(browser, "Appearance");
+    const href = await applySkin(browser, me, pack.name);
+    await switchTo(browser, BUDDY);
+    await skinShown(browser, href);
+    await browser.pause(1500);
+    const hidden = (await browser.execute(() => {
+      const w = window.innerWidth;
+      const layer = Array.from(document.querySelectorAll<HTMLElement>(".skin-frame i")).find((i) => {
+        const r = i.getBoundingClientRect();
+        return r.right >= w - 1 && r.height > 50 && getComputedStyle(i).backgroundImage !== "none";
+      });
+      if (!layer) return "";
+      layer.style.setProperty("visibility", "hidden", "important");
+      layer.dataset.mutated = "1";
+      const r = layer.getBoundingClientRect();
+      return `${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}`;
+    })) as string;
+    if (!hidden) throw new Error("combat: no frame art layer at the right edge to hide");
+    const [w, h] = (await browser.execute(() => [window.innerWidth, window.innerHeight])) as [number, number];
+    const img = decodePng(Buffer.from(await browser.takeScreenshot(), "base64"));
+    const scale = img.width / w;
+    const cut = silhouette("combat", "main", w, h, Math.round(scale * 1000));
+    const edge = Math.round(16 * scale);
+    const off = disagreements(img, cut, [[0, edge], [img.width - edge, img.width]], 4);
+    console.log(`[tab] combat mutation: hid the frame layer at ${hidden}; edges vs silhouette: drawn outside ${off.outsideDrawn}, clear inside ${off.insideClear}; ${JSON.stringify(off.first)}`);
+    await shot("combat-main-mutated");
+    await browser.execute(() => document.querySelector<HTMLElement>('.skin-frame i[data-mutated="1"]')?.style.removeProperty("visibility"));
+    expect({ caught: off.insideClear > 0 }).toEqual({ caught: true });
+  });
 
   it("combat: the chat window's frame reaches every edge, painted", async () => {
     const pack = builtinPacks().find((p) => p.file === "combat");
