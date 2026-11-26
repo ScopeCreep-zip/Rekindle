@@ -185,7 +185,9 @@ mod tests {
     fn at(hop_count: u8) -> SafetyProfile {
         SafetyProfile {
             hop_count,
-            ..rekindle_route::contexts::RouteContextSpec::rc_safe().safety_profile()
+            ..rekindle_route::profile::profile_for_class(
+                rekindle_types::message::MessageClass::Text,
+            )
         }
     }
 

@@ -14,6 +14,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use rekindle_protocol::dht::route_imports::RouteImports;
+use rekindle_types::message::MessageClass;
 use rekindle_voice::{VoiceError, VoiceFrameSender};
 use veilid_core::{RoutingContext, Target, VeilidAPI, VeilidAPIError};
 
@@ -47,7 +48,10 @@ impl VeilidVoiceFrameSender {
 
     /// Build the voice routing context: a 3-hop Tor-class Safe route
     /// (sender hidden behind an ephemeral route id) with `LowLatency`
-    /// stability — the lowest-latency variant that is still anonymous.
+    /// stability and PreferUnordered sequencing ([`MessageClass::Voice`],
+    /// plan VU decision 2: media keeps UDP, to the peer's Media route,
+    /// itself PreferUnordered) — the lowest-latency variant that is still
+    /// anonymous.
     /// Voice never uses `SafetySelection::Unsafe`: a vulnerable user's
     /// real node identity must not be exposed to a relay just to shave
     /// latency, and Unsafe routing is gated behind veilid-core's
@@ -56,7 +60,7 @@ impl VeilidVoiceFrameSender {
         api.routing_context()
             .map_err(|e| VoiceError::Transport(format!("routing context: {e}")))?
             .with_safety(rekindle_protocol::dht::pool::safety_selection(
-                &rekindle_types::config::SafetyProfile::default_voice(),
+                &rekindle_route::profile::profile_for_class(MessageClass::Voice),
             ))
             .map_err(|e| VoiceError::Transport(format!("with_safety: {e}")))
     }
