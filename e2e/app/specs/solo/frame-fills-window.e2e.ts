@@ -188,9 +188,9 @@ describe("the pack frame reaches the window's edges; a side tab protrudes beside
 
   // The edge check's mutation proof (lead): a real transparency gap inside
   // the silhouette must be caught. Hiding the right-edge frame art alone
-  // leaves the window's ground (clipped to the silhouette) there, so it
-  // changes colour, not alpha (logged: before, art hidden); clearing the
-  // ground too makes the gap. Whether art is drawn at all (colour against
+  // leaves other layers drawing there (logged: before, art hidden, and what
+  // still paints the point); shifting the window's content 8 px left makes
+  // the gap, as a CSS misplacement would. Whether art is drawn at all (colour against
   // the ground) is a different test, not this one.
   it("combat: a frame art layer hidden at the right edge is caught by the edge check", async () => {
     const pack = builtinPacks().find((p) => p.file === "combat");
@@ -233,9 +233,20 @@ describe("the pack frame reaches the window's edges; a side tab protrudes beside
     if (hidden.length === 0) throw new Error("combat: no frame art layer at the right edge to hide");
     await browser.pause(500);
     const artHidden = at(await shoot(), ...probePoint);
-    // 2. The ground cleared too: a real transparency gap inside the
-    //    silhouette, which the edge check must catch.
-    await browser.execute(() => document.querySelector<HTMLElement>(".app-frame")?.style.setProperty("background", "transparent", "important"));
+    // What still paints the probe point with the frame art hidden (a run
+    // read the same colour after hiding it and clearing the ground: another
+    // layer draws there).
+    const painters = (await browser.execute((x: number, y: number) =>
+      document
+        .elementsFromPoint(x, y)
+        .filter((e) => getComputedStyle(e).backgroundImage !== "none" || !/rgba\(\d+, \d+, \d+, 0\)/.test(getComputedStyle(e).backgroundColor))
+        .slice(0, 6)
+        .map((e) => `${e.tagName.toLowerCase()}.${(e as HTMLElement).className || "-"} (${(e as HTMLElement).closest<HTMLElement>("[data-skin-node]")?.dataset.skinNode ?? "-"}) bg=${getComputedStyle(e).backgroundColor} art=${getComputedStyle(e).backgroundImage === "none" ? "none" : "yes"}`),
+    probePoint[0], probePoint[1])) as string[];
+    // 2. A real transparency gap (lead): the window's content shifted 8 px
+    //    left, as a CSS misplacement would; the rightmost 8 px inside the
+    //    silhouette is left with nothing behind it, which the check must catch.
+    await browser.execute(() => document.querySelector<HTMLElement>(".app-frame")?.style.setProperty("transform", "translateX(-8px)", "important"));
     await browser.pause(500);
     const img = await shoot();
     const gap = at(img, ...probePoint);
@@ -243,11 +254,11 @@ describe("the pack frame reaches the window's edges; a side tab protrudes beside
     const cut = silhouette("combat", "main", w, h, Math.round(scale * 1000));
     const edge = Math.round(16 * scale);
     const off = disagreements(img, cut, [[0, edge], [img.width - edge, img.width]], 4);
-    console.log(`[tab] combat mutation: hid ${hidden.length} frame layers at the right edge ${JSON.stringify(hidden)}; pixel ${probePoint.join(",")} before ${before}, art hidden ${artHidden}, ground cleared ${gap}; edges vs silhouette: drawn outside ${off.outsideDrawn}, clear inside ${off.insideClear}; ${JSON.stringify(off.first)}`);
+    console.log(`[tab] combat mutation: hid ${hidden.length} frame layers at the right edge ${JSON.stringify(hidden)}; pixel ${probePoint.join(",")} before ${before}, art hidden ${artHidden} (painted by ${JSON.stringify(painters)}), content shifted ${gap}; edges vs silhouette: drawn outside ${off.outsideDrawn}, clear inside ${off.insideClear}; ${JSON.stringify(off.first)}`);
     await shot("combat-main-mutated");
     await browser.execute(() => {
       for (const l of Array.from(document.querySelectorAll<HTMLElement>('.skin-frame i[data-mutated="1"]'))) l.style.removeProperty("visibility");
-      document.querySelector<HTMLElement>(".app-frame")?.style.removeProperty("background");
+      document.querySelector<HTMLElement>(".app-frame")?.style.removeProperty("transform");
     });
     expect({ caught: off.insideClear > 0 }).toEqual({ caught: true });
   });
