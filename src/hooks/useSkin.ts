@@ -25,6 +25,21 @@ export function skinSheetLinked(): number {
   return sheetsLinked();
 }
 
+/**
+ * Set the shown skin's trees, keeping each one whose content is unchanged
+ * as the same object: a skin re-applied unchanged (every window's
+ * `SkinApplied`) then never re-creates a window's tree, whose slot mounts
+ * would re-append in a new order (plan CR1 audit).
+ */
+function setShells(next: SkinShell[]): void {
+  setSkinShells((shown) =>
+    next.map((n) => {
+      const same = shown.find((s) => s.window === n.window && s.popup?.name === n.popup?.name);
+      return same && JSON.stringify(same) === JSON.stringify(n) ? same : n;
+    }),
+  );
+}
+
 /** The shown skin's outline for `window`, if it lays that window as a tree. */
 export function skinShell(window: SkinShell["window"]): SkinShell | undefined {
   return skinShells().find((s) => s.window === window && s.popup === undefined);
@@ -114,7 +129,7 @@ export function applySkin(skin: SkinApplied): void {
   const shown = document.getElementById(LINK_ID) as HTMLLinkElement | null;
   if (shown?.getAttribute("href") === skin.tokensHref) {
     document.documentElement.dataset.skinBase = skin.base;
-    setSkinShells(skin.shells ?? []);
+    setShells(skin.shells ?? []);
     return;
   }
   // Held until the swap, so the decoded images stay in this document's cache.
@@ -166,7 +181,7 @@ function linkSheet(skin: SkinApplied, mine: number, images: HTMLImageElement[]):
     document.getElementById(LINK_ID)?.remove();
     next.id = LINK_ID;
     document.documentElement.dataset.skinBase = skin.base;
-    setSkinShells(skin.shells ?? []);
+    setShells(skin.shells ?? []);
     setSkinTitleLogo(skin.titleLogo);
     setSheetsLinked((n) => n + 1);
     images.length = 0;

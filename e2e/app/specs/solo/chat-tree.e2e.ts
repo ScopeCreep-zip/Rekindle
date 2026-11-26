@@ -11,12 +11,13 @@ import { NET_WAIT_MS, doubleClick, shown, switchTo, waitForHandle, waitUntil } f
 import { BUDDY, openSettings } from "../../../walk/nav.ts";
 import { type Peer, peerAcceptGroup, peerSendDm, startFleet, stopFleet } from "../../fleet.ts";
 import { applySkin, createGroup, createIdentity, friendRow, newUser, openGroup, seesMessage, skinShown, type User } from "../../journeys.ts";
+import { decodePng } from "../../png.ts";
 import { shot } from "../../shots.ts";
 import { builtinPacks } from "../../skin-pack.ts";
 import { befriendFleet } from "../../social.ts";
 import { CHAT_DM } from "../../windows.ts";
 
-const PACKS = ["onyx", "xslimfire", "symbiosis", "spacecowboy", "stealthx"];
+const PACKS = ["onyx", "xslimfire", "symbiosis", "spacecowboy", "stealthx", "alloy", "simple-x", "combat"];
 const GROUP = "Night Raid";
 
 /** The chatArea slot's box, each child's (the portals' wrappers), the list's and each message's (`[slot]` evidence). */
@@ -114,6 +115,119 @@ async function stripsAndTitle(): Promise<{ strips: string; title: string }> {
     }
     return { strips: strips.join(" | ") || "none", title };
   })) as { strips: string; title: string };
+}
+
+/**
+ * Lead (CHT1, Linux): where the frame's parts sit and that they are seen. A
+ * node under the pack's art has a box but is not seen (the control's Alloy
+ * and Simple X), and `elementFromPoint` cannot tell: it hit-tests, and the
+ * pack's transparent drag and resize regions sit over visible parts. So a
+ * part is seen when hiding it changes the window's pixels inside its box.
+ * (1) The title's glyphs (a Range over its text) lie inside its chatTitle
+ * node, ±3 px, and are seen; (2) in a 1:1 window the presence row, the
+ * friend's message and the composer are each seen; (3) no node that paints
+ * art reaches outside the window. The problems, as `[cht1]` lines; empty
+ * when all hold.
+ */
+async function chatFrameChecks(kind: "dm" | "group", message: string): Promise<string[]> {
+  const found = (await browser.execute((k: string, msg: string) => {
+    const out: string[] = [];
+    const drawn = (e: Element | null): e is HTMLElement => !!e && !e.closest("[hidden]") && e.getBoundingClientRect().width > 0;
+    const rect = (r: DOMRect): [number, number, number, number] => [r.left, r.top, r.width, r.height];
+    const fmt = (r: DOMRect): string => `${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}`;
+    const inside = (a: DOMRect, b: DOMRect): boolean => a.left >= b.left - 3 && a.right <= b.right + 3 && a.top >= b.top - 3 && a.bottom <= b.bottom + 3;
+    const parts: { name: string; selector: string; box: [number, number, number, number] }[] = [];
+    const text = document.querySelector(".chat-window .skin-chat-title");
+    if (!document.querySelector(".chat-window .skin-tree") || !drawn(text)) return { out: ["no drawn chat title"], parts };
+    const range = document.createRange();
+    range.selectNodeContents(text);
+    const glyphs = range.getBoundingClientRect();
+    const strip = text.closest<HTMLElement>('[data-skin-role="chatTitle"]');
+    if (glyphs.width === 0) out.push("the title has no glyphs");
+    else {
+      if (!strip) out.push(`title ${fmt(glyphs)} has no chatTitle node`);
+      else if (!inside(glyphs, strip.getBoundingClientRect())) out.push(`title ${fmt(glyphs)} is outside its ${strip.dataset.skinNode} ${fmt(strip.getBoundingClientRect())}`);
+      parts.push({ name: "title", selector: ".chat-window .skin-chat-title", box: rect(glyphs) });
+    }
+    if (k === "dm") {
+      const message = Array.from(document.querySelectorAll(".chat-message")).find((m) => (m.textContent ?? "").includes(msg));
+      if (message) message.setAttribute("data-cht1-message", "");
+      for (const [name, selector] of [
+        ["presence row", ".chat-peer-status"],
+        ["message", "[data-cht1-message]"],
+        ["composer", ".message-input-field"],
+      ] as const) {
+        const e = document.querySelector(selector);
+        if (!drawn(e)) out.push(`no drawn ${name}`);
+        else parts.push({ name, selector, box: rect(e.getBoundingClientRect()) });
+      }
+    }
+    if (k === "dm") {
+      // Lead (CHT1): the presence row is the conversation header, under the
+      // menu and above the first message, inside the chat area's top.
+      const row = document.querySelector(".chat-peer-status");
+      const first = document.querySelector(".chat-message");
+      const area = row?.closest('[data-skin-role="slot:chatArea"]');
+      if (drawn(row) && drawn(first)) {
+        const r = row.getBoundingClientRect();
+        const m = first.getBoundingClientRect();
+        if (r.bottom > m.top + 1) out.push(`presence row ${fmt(r)} is not above the first message ${fmt(m)}`);
+        if (area && r.top < area.getBoundingClientRect().top - 1) out.push(`presence row ${fmt(r)} starts above its chat area ${fmt(area.getBoundingClientRect())}`);
+      }
+    }
+    for (const n of Array.from(document.querySelectorAll<HTMLElement>(".skin-tree [data-skin-node]")).filter(drawn)) {
+      if (getComputedStyle(n).backgroundImage === "none") continue;
+      const r = n.getBoundingClientRect();
+      if (r.left < -0.5 || r.top < -0.5 || r.right > innerWidth + 0.5 || r.bottom > innerHeight + 0.5) out.push(`art ${n.dataset.skinNode} ${fmt(r)} is clipped by the window ${innerWidth}x${innerHeight}`);
+    }
+    return { out, parts };
+  }, kind, message)) as { out: string[]; parts: { name: string; selector: string; box: [number, number, number, number] }[] };
+  const width = (await browser.execute(() => innerWidth)) as number;
+  const before = decodePng(Buffer.from(await browser.takeScreenshot(), "base64"));
+  const scale = before.width / width;
+  for (const part of found.parts) {
+    await browser.execute((sel: string) => document.querySelector<HTMLElement>(sel)?.style.setProperty("visibility", "hidden"), part.selector);
+    const after = decodePng(Buffer.from(await browser.takeScreenshot(), "base64"));
+    await browser.execute((sel: string) => document.querySelector<HTMLElement>(sel)?.style.removeProperty("visibility"), part.selector);
+    const [x, y, w, h] = part.box.map((v) => Math.round(v * scale));
+    let changed = 0;
+    for (let row = Math.max(0, y); row < Math.min(before.height, y + h); row++) {
+      for (let col = Math.max(0, x); col < Math.min(before.width, x + w); col++) {
+        const i = (row * before.width + col) * 4;
+        if (Math.abs(before.data[i] - after.data[i]) + Math.abs(before.data[i + 1] - after.data[i + 1]) + Math.abs(before.data[i + 2] - after.data[i + 2]) > 48) changed++;
+      }
+    }
+    console.log(`[cht1] px ${part.name} ${part.box.map(Math.round).join(",")}: hiding it changes ${changed} px (seen at 20)`);
+    if (changed < 20) found.out.push(`${part.name} ${part.box.map(Math.round).join(",")} is not seen (hiding it changes ${changed} px)`);
+  }
+  return found.out;
+}
+
+/**
+ * Evidence (lead, CHT1): every chatArea slot element's box and its children
+ * in DOM order, each named by what it holds (the presence row, the message
+ * list, …) with its box. The presence row and the message list mount through
+ * two SlotMounts, each a Portal that appends its own container to the slot.
+ */
+async function chatAreaOrder(): Promise<string> {
+  return (await browser.execute(() => {
+    const fmt = (e: Element): string => {
+      const r = e.getBoundingClientRect();
+      return `${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}`;
+    };
+    const holds = (e: Element): string =>
+      e.querySelector(".chat-peer-status") || e.matches(".chat-peer-status")
+        ? "presence row"
+        : e.querySelector(".chat-message-area") || e.matches(".chat-message-area")
+          ? "message list"
+          : `${e.tagName.toLowerCase()}.${(e as HTMLElement).className || ""}`;
+    return JSON.stringify(
+      Array.from(document.querySelectorAll<HTMLElement>('.chat-window [data-skin-role="slot:chatArea"]')).map((slot) => ({
+        slot: `${slot.dataset.skinNode} ${fmt(slot)}`,
+        children: Array.from(slot.children).map((c) => `${holds(c)} ${fmt(c)}`),
+      })),
+    );
+  })) as string;
 }
 
 /** The chat window `handle` draws the pack's tree with `title` in its chatTitle node and the chat in its slots; `text`, when given, is a message drawn inside the chatArea slot's box. */
@@ -214,6 +328,10 @@ describe("a pack's chat tree draws the chat window, the chat in its slots", func
         const def = await sizeTo(CHAT_DM.def.width, CHAT_DM.def.height);
         await treeLaid(handle, title, text);
         await shot(`${kind}-default-${def}`);
+        if (kind === "dm") console.log(`[order] ${file} dm: ${await chatAreaOrder()}`);
+        const frame = await chatFrameChecks(kind, text ?? "");
+        console.log(`[cht1] ${file} ${kind}: ${frame.length === 0 ? "title in its strip and seen; presence row, message and composer seen; no clipped art" : JSON.stringify(frame)}`);
+        expect({ pack: file, window: kind, problems: frame }).toEqual({ pack: file, window: kind, problems: [] });
         const min = await sizeTo(CHAT_DM.min.width, CHAT_DM.min.height);
         await treeLaid(handle, title, text);
         await shot(`${kind}-min-${min}`);
