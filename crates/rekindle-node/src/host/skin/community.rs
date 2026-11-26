@@ -11,7 +11,9 @@
 //!   `VoiceJoin` the Host's ("exists, now held"), so the press is
 //!   `CallOp::JoinVoice`, run by the shell as every `CallOp` is now.
 //! - `MuteSelf`/`UnmuteSelf` are `CallOp::Mute`/`Unmute`.
-//! - `JoinGameLobby` joins the community's game server (plan E3.1 H1,
+//! - `JoinGameLobby`, and `JoinFriend` (a pack's plain Join node, e.g.
+//!   Symbiosis's, asking `Capability::Join`), join the community's game
+//!   server (plan E3.1 H1,
 //!   `HostGovernance::game_servers`, the list the community window's
 //!   "SERVERS (n)" sidebar shows): the selected server, else the first
 //!   listed, launched by the one launch path a friend's Join takes
@@ -238,7 +240,7 @@ pub(crate) fn verdict(
             Ok(target) if in_voice_here(Some(target)) => Some(IN_VOICE),
             Ok(_) => None,
         },
-        C::JoinGameLobby => {
+        C::Join | C::JoinGameLobby => {
             let words = server_target(view, server).err();
             return Some(words.map_or(CommunityVerdict::Holds, CommunityVerdict::Refused));
         }
@@ -297,7 +299,7 @@ pub(crate) fn map(action: &A, read: &CommunityRead) -> Option<Result<Mapped, Ipc
         },
         A::MuteSelf => shell(ShellOp::Call(CallOp::Mute)),
         A::UnmuteSelf => shell(ShellOp::Call(CallOp::Unmute)),
-        A::JoinGameLobby => match server_target(view, read.server.as_deref()) {
+        A::JoinGameLobby | A::JoinFriend => match server_target(view, read.server.as_deref()) {
             Ok((game_id, address)) => match ServerAddress::parse(address) {
                 Ok(server) => Ok(Mapped::Request(Box::new(IpcRequest::GameLaunch {
                     game_id,
