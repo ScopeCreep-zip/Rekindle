@@ -3,6 +3,11 @@
 //! until a key holder answers its `RequestMEK`; then Current. The post
 //! sealed under the key it missed is held while the key is owed, never
 //! stored as damaged, so the member reads its text once the key lands.
+//!
+//! Five members, so the state is one ADR 0018 can produce: the creator
+//! kicks one, one is locked (absent), and the three left are a strict
+//! majority of the previous epoch's eligible rotators (ADR 0018 rule 3),
+//! enough to confirm the rotation without the absent member.
 
 use std::time::Duration;
 
@@ -51,12 +56,12 @@ fn key_state(event: &SubscriptionEvent, want: KeyState) -> bool {
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_member_locked_through_a_rotation_waits_for_the_key_then_reads_the_gap() {
-    let community = Community::of(4, 241).await;
+    let community = Community::of(5, 241).await;
     let bea = community.pseudonym(1).await;
-    let before = community_generation(&community, 3).await;
-    assert!(before > 0, "node 3 holds the community key");
-    assert_eq!(shown_state(&community, 3).await, "current");
-    let member = &community.nodes[3];
+    let before = community_generation(&community, 4).await;
+    assert!(before > 0, "node 4 holds the community key");
+    assert_eq!(shown_state(&community, 4).await, "current");
+    let member = &community.nodes[4];
     let key = member.public_key.clone().expect("an identity");
     member.ok(IpcRequest::Lock).await;
     community.nodes[0]
@@ -68,7 +73,7 @@ async fn a_member_locked_through_a_rotation_waits_for_the_key_then_reads_the_gap
             },
         )))
         .await;
-    for i in [0, 2] {
+    for i in [0, 2, 3] {
         assert!(
             eventually(&community.sim, Duration::from_secs(180), || async {
                 community_generation(&community, i).await > before
@@ -94,25 +99,25 @@ async fn a_member_locked_through_a_rotation_waits_for_the_key_then_reads_the_gap
         })
         .await;
     let events = member.events().await;
-    let shown_pending = shown_state(&community, 3).await == "pending";
+    let shown_pending = shown_state(&community, 4).await == "pending";
     assert!(
         eventually(&community.sim, Duration::from_secs(180), || async {
-            community_generation(&community, 3).await > before
+            community_generation(&community, 4).await > before
         })
         .await,
-        "node 3 asks for and receives the key it missed: {}",
-        community.mek_list(3).await
+        "node 4 asks for and receives the key it missed: {}",
+        community.mek_list(4).await
     );
     assert!(
         shown_pending || events.any(|e| key_state(e, KeyState::Pending)),
-        "node 3 showed its key Pending after the unlock"
+        "node 4 showed its key Pending after the unlock"
     );
     assert!(
         eventually(&community.sim, Duration::from_secs(60), || async {
-            shown_state(&community, 3).await == "current"
+            shown_state(&community, 4).await == "current"
         })
         .await,
-        "node 3 shows its key Current once a holder answers"
+        "node 4 shows its key Current once a holder answers"
     );
     assert!(
         events.any(|e| key_state(e, KeyState::Current)),
@@ -120,8 +125,8 @@ async fn a_member_locked_through_a_rotation_waits_for_the_key_then_reads_the_gap
     );
     assert!(
         community
-            .reads(3, "sealed in the gap", Duration::from_secs(120))
+            .reads(4, "sealed in the gap", Duration::from_secs(120))
             .await,
-        "node 3 reads the post sealed under the key it missed"
+        "node 4 reads the post sealed under the key it missed"
     );
 }
