@@ -1,11 +1,12 @@
-//! Voice dispatch handlers (until E4.1 brings the daemon's voice engine).
+//! Voice dispatch handlers: the Host's one voice engine (plan E4.1 S5a2,
+//! `host::adapters::voice`).
 
 use crate::daemon::DaemonState;
 use rekindle_ipc::protocol::IpcResponse;
 
 use super::{state_error, DaemonContext};
 
-pub(crate) fn handle_voice_join(
+pub(crate) async fn handle_voice_join(
     ctx: &DaemonContext,
     state: DaemonState,
     community: &str,
@@ -16,40 +17,32 @@ pub(crate) fn handle_voice_join(
     if !state.can_write() {
         return state_error(state, "write");
     }
-    let transport = match ctx.require_transport() {
-        Ok(t) => t,
-        Err(e) => return e,
-    };
     let membership = match ctx.resolve_community(community) {
         Ok(m) => m,
         Err(e) => return e,
     };
-
-    match rekindle_transport::operations::voice::join_voice(
-        &transport,
-        &membership,
-        channel,
-        muted,
-        deafened,
-    ) {
-        Ok(session) => IpcResponse::ok(&serde_json::json!({
+    let ctx = ctx.this.upgrade().expect("a context in use is alive");
+    match crate::host::adapters::voice::join(ctx, &membership.anchor, channel, muted, deafened)
+        .await
+    {
+        Ok(()) => IpcResponse::ok(&serde_json::json!({
             "joined": true,
-            "community": session.community_id,
-            "channel": session.channel_id,
-            "muted": session.muted,
-            "deafened": session.deafened,
+            "community": membership.anchor,
+            "channel": channel,
+            "muted": muted,
+            "deafened": deafened,
         })),
-        Err(e) => IpcResponse::error(500, format!("voice join failed: {e}")),
+        Err(reason) => IpcResponse::error(409, reason),
     }
 }
 
-pub(crate) fn handle_voice_leave(_ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
+/// Leave is always available; with no session live there is nothing to
+/// leave (`left: false`).
+pub(crate) async fn handle_voice_leave(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
     if !state.can_write() {
         return state_error(state, "write");
     }
-    // The daemon keeps no voice session yet (`VoiceJoin` hands its session
-    // back without holding it), so there is nothing to leave and no leave
-    // to announce. Answering "left" would be a success that did not happen;
-    // the daemon's voice engine arrives in plan E4.
-    IpcResponse::error(501, "voice sessions are not held by the daemon yet")
+    let ctx = ctx.this.upgrade().expect("a context in use is alive");
+    let left = crate::host::adapters::voice::leave(ctx).await;
+    IpcResponse::ok(&serde_json::json!({ "left": left }))
 }

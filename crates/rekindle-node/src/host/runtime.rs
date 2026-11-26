@@ -151,6 +151,10 @@ pub struct HostConfig {
     /// How the Servers view's Refresh asks a game server (plan E7.2 G4):
     /// `UdpServerQuery`, or a test's fake. Used only on `ServersRefresh`.
     pub server_query: Arc<dyn rekindle_game_detect::server_query::ServerQuery>,
+    /// Where the voice engine's audio comes from and goes (plan E4.1
+    /// S5a2): the user's devices, or none (`AudioIo::HEADLESS`, the
+    /// simulator: the netsim never opens a real device).
+    pub audio: rekindle_voice::AudioIo,
     /// The GUI's side of an unlock (`ShellHooks`); `None` for `rekindled`,
     /// the E2E server and the simulator.
     pub shell: Option<Arc<dyn super::shell_hooks::ShellHooks>>,
@@ -193,6 +197,7 @@ impl Host {
             rng,
             idle,
             server_query,
+            audio,
             shell,
         } = config;
         let root = claimed.root().clone();
@@ -306,9 +311,10 @@ impl Host {
             network_strength: strength,
             infoview: crate::host::infoview::OpenViews::default(),
             servers: crate::host::servers::ServersState::new(server_query),
-            voice: Arc::new(crate::host::adapters::voice::HostVoice::new(Arc::clone(
-                &clock,
-            ))),
+            voice: Arc::new(crate::host::adapters::voice::HostVoice::new(
+                Arc::clone(&clock),
+                audio,
+            )),
             skin: crate::host::skin::SkinState::default(),
             transfers: Arc::default(),
             mode,

@@ -78,6 +78,7 @@ pub async fn host_on(
         rng,
         idle: Arc::clone(&node.idle) as Arc<dyn rekindle_utils::IdleSource>,
         server_query: std::sync::Arc::new(rekindle_game_detect::server_query::UdpServerQuery),
+        audio: rekindle_voice::AudioIo::HEADLESS,
         shell,
     })
     .instrument(node_span(index))

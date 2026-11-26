@@ -40,6 +40,7 @@ pub mod media_quality; // Render, post-FEC loss and lip sync at this receiver (p
 pub mod media_ready; // Media-ready session gate (WebRTC "transport before RTP" analog).
 pub mod mixer;
 pub mod playback;
+pub mod quality_cache; // The merged connection-quality state + link projection.
 pub mod receive_loop; // Phase 14 — packet receive → decode → mix → playback pipeline.
 pub mod receiver_report; // RFC 3550 receiver reports — the return path voice never had.
 pub mod replay_window;
@@ -56,6 +57,7 @@ pub use election::{channel_target, elect_relay_host};
 pub use error::VoiceError;
 pub use liveness::{MediaLiveness, MEDIA_LIVE_WINDOW_MS};
 pub use playback::VoiceSink;
+pub use quality_cache::VoiceQualityCache;
 pub use session_deps::{
     AudioPrefs, CallMediaKeys, MediaKeySource, VoiceIdentity, VoiceLoopScopes, VoicePeer,
     VoiceSessionDeps, VoiceSessionEvent, VoiceSessionStartup, VoiceShutdownOpts,

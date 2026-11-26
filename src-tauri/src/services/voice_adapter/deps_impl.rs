@@ -458,8 +458,9 @@ impl VoiceSessionDeps for VoiceAdapter {
         );
         // The channel session's keys end with it, and the keys still queued
         // for it (plans C7.20, C7.29, E2.5); a rejoin draws new ones.
-        let outbox =
-            crate::services::voice_signaling_adapter::HostMediaKeyOutbox(Arc::clone(&self.state));
+        let outbox = crate::services::voice_signaling_adapter::DesktopMediaKeyOutbox(Arc::clone(
+            &self.state,
+        ));
         rekindle_voice::signaling::end_media_key_session(
             &self.state.voice_sender_keys,
             &outbox,

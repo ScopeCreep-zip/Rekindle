@@ -40,6 +40,7 @@ pub(super) async fn started_with(
         rng: Arc::new(rekindle_utils::OsRandom),
         idle: Arc::new(rekindle_idle::OsIdle),
         server_query,
+        audio: rekindle_voice::AudioIo::HEADLESS,
         shell: None,
     })
     .await

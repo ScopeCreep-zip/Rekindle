@@ -29,6 +29,7 @@ pub(crate) async fn host_with_identity(dir: &tempfile::TempDir) -> (std::sync::A
         rng: std::sync::Arc::new(rekindle_utils::OsRandom),
         idle: std::sync::Arc::new(rekindle_idle::OsIdle),
         server_query: std::sync::Arc::new(rekindle_game_detect::server_query::UdpServerQuery),
+        audio: rekindle_voice::AudioIo::HEADLESS,
         shell: None,
     })
     .await

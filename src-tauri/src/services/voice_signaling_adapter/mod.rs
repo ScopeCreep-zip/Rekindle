@@ -21,7 +21,7 @@ use crate::state_helpers;
 mod events;
 pub(crate) use events::ROSTER_STATE;
 mod media_keys;
-pub use media_keys::{install_carrier as install_media_key_carrier, HostMediaKeyOutbox};
+pub use media_keys::{install_carrier as install_media_key_carrier, DesktopMediaKeyOutbox};
 use rekindle_db::Db;
 
 pub struct VoiceSignalingAdapter {
@@ -293,7 +293,7 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
     }
 
     fn media_key_outbox(&self) -> Arc<dyn rekindle_voice::signaling::MediaKeyOutbox> {
-        Arc::new(HostMediaKeyOutbox(Arc::clone(&self.state)))
+        Arc::new(DesktopMediaKeyOutbox(Arc::clone(&self.state)))
     }
 
     fn send_to_mesh(&self, community_id: &str, envelope: &CommunityEnvelope) {

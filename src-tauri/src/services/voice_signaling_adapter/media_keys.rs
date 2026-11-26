@@ -13,9 +13,9 @@ use super::VoiceSignalingAdapter;
 use crate::state::AppState;
 
 /// The Host's `media_key` streams as the voice signaling uses them.
-pub struct HostMediaKeyOutbox(pub Arc<AppState>);
+pub struct DesktopMediaKeyOutbox(pub Arc<AppState>);
 
-impl HostMediaKeyOutbox {
+impl DesktopMediaKeyOutbox {
     fn media_keys(&self) -> Result<MediaKeyStreams, String> {
         (self.0.host.current())
             .and_then(|host| host.media_keys())
@@ -24,7 +24,7 @@ impl HostMediaKeyOutbox {
 }
 
 #[async_trait]
-impl MediaKeyOutbox for HostMediaKeyOutbox {
+impl MediaKeyOutbox for DesktopMediaKeyOutbox {
     async fn queue(
         &self,
         session: &str,

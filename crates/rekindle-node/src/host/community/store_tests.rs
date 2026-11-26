@@ -107,6 +107,7 @@ async fn a_shell_host_selects_a_role_delete_from_gui_written_state() {
         rng: Arc::new(rekindle_utils::OsRandom),
         idle: Arc::new(rekindle_idle::OsIdle),
         server_query: std::sync::Arc::new(rekindle_game_detect::server_query::UdpServerQuery),
+        audio: rekindle_voice::AudioIo::HEADLESS,
         shell: None,
     })
     .await

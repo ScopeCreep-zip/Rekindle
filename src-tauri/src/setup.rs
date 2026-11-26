@@ -249,6 +249,7 @@ async fn start_host(
         rng: Arc::clone(&state.rng),
         idle,
         server_query: std::sync::Arc::new(rekindle_game_detect::server_query::UdpServerQuery),
+        audio: rekindle_voice::AudioIo::DEVICES,
         shell: Some(shell),
     })
     .await

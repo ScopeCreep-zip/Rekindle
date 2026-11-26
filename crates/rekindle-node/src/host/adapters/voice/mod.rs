@@ -11,19 +11,21 @@
 //! through [`HostVoice`]'s `MediaIngress` impl and
 //! `rekindle_voice::ingress::handle_media_tag` ([`ingest_media`]).
 
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 
-use parking_lot::RwLock;
+use parking_lot::{Mutex, RwLock};
 use rekindle_codec::capnp_codec::transport_feedback::TransportFeedback;
 use rekindle_codec::community::envelope::SignedEnvelope;
+use rekindle_lifecycle::SessionScope;
+use rekindle_secrets::media_sender_key::keyring::ChannelSenderKeyStore;
 use rekindle_types::subscription_events::VoiceScope;
 use rekindle_voice::ingress::MediaIngress;
-use rekindle_voice::liveness::MediaLiveness;
+use rekindle_voice::liveness::{MediaLiveness, MEDIA_LIVE_WINDOW_MS};
 use rekindle_voice::receiver_report::VoiceReceiverReport;
 use rekindle_voice::transport::roster::MediaRoster;
-use rekindle_voice::transport::VoicePacket;
+use rekindle_voice::transport::{VoicePacket, VoiceTransport};
 use tokio::sync::mpsc;
 
 /// The refusal while a 1:1 or group call is live (lead ruling 2026-11-26).
@@ -36,61 +38,127 @@ pub fn leave_voice_in(community_name: &str) -> String {
     format!("Leave voice in {community_name} first.")
 }
 
-/// The live session: its scope, its local controls and the queues and
-/// ledgers its loops read.
+/// The live session: its scope, its engine and transport, the scopes its
+/// loops run in, its local controls and the ledgers its loops read (the
+/// desktop's `VoiceEngineHandle`, ported to the Host, plan E4.1 S5a2).
 pub struct LiveVoice {
     pub scope: VoiceScope,
-    pub muted: bool,
-    pub deafened: bool,
+    /// Read by the send loop (muted) and the receive loop (deafened).
+    pub muted: Arc<AtomicBool>,
+    pub deafened: Arc<AtomicBool>,
     /// The transport's media roster (arrivals, feedback, allocator).
     pub media: Arc<MediaRoster>,
     /// Media-plane proof of life per sender.
     pub liveness: Arc<MediaLiveness>,
-    /// The receive loop's packet channel.
-    pub packet_tx: Option<mpsc::Sender<VoicePacket>>,
-    /// The send loop's receiver-report channel.
-    pub report_tx: Option<mpsc::Sender<VoiceReceiverReport>>,
+    /// The audio engine (devices, or none under `AudioIo::HEADLESS`).
+    pub engine: Option<rekindle_voice::VoiceEngine>,
+    /// The session's transport: its roster of peers and their routes.
+    pub transport: Option<Arc<tokio::sync::Mutex<VoiceTransport>>>,
+    /// The send and receive loops.
+    pub loops: Option<Arc<SessionScope>>,
+    /// The device monitor.
+    pub monitor: Option<Arc<SessionScope>>,
+    /// The MCU loop, while we host one.
+    pub mcu: Option<Arc<SessionScope>>,
+    /// The transport's per-peer egress drivers.
+    pub egress: Option<Arc<SessionScope>>,
 }
 
 impl LiveVoice {
-    /// A session on `scope` with fresh ledgers and no loop channels yet;
+    /// A session on `scope` with fresh ledgers, no engine and no loops yet;
     /// its media roster reads `clock` (the Host's clock port).
     #[must_use]
     pub fn new(scope: VoiceScope, clock: Arc<dyn rekindle_utils::Clock>) -> Self {
         Self {
             scope,
-            muted: false,
-            deafened: false,
+            muted: Arc::default(),
+            deafened: Arc::default(),
             media: Arc::new(MediaRoster::new(clock)),
             liveness: Arc::default(),
-            packet_tx: None,
-            report_tx: None,
+            engine: None,
+            transport: None,
+            loops: None,
+            monitor: None,
+            mcu: None,
+            egress: None,
         }
+    }
+
+    /// Stop the engine's devices (the session stays).
+    pub fn stop_devices(&mut self) {
+        if let Some(engine) = self.engine.as_mut() {
+            engine.stop_capture();
+            engine.stop_playback();
+        }
+    }
+}
+
+/// The live session's roster as the Host reads it (plan E4.1 S5a2;
+/// `VoiceStatus` in S5b): the peers on its transport and the senders whose
+/// media arrived within [`MEDIA_LIVE_WINDOW_MS`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LiveRoster {
+    pub scope: VoiceScope,
+    /// The peers on the session's transport roster (their voice identity).
+    pub peers: Vec<String>,
+    /// The senders with media live now.
+    pub media_live: Vec<String>,
+}
+
+impl LiveRoster {
+    /// How many peers the session sends to.
+    #[must_use]
+    pub fn peer_count(&self) -> usize {
+        self.peers.len()
     }
 }
 
 /// The Host's voice engine state: one per Host, at most one live session.
 pub struct HostVoice {
-    live: RwLock<Option<LiveVoice>>,
+    pub(crate) live: Mutex<Option<LiveVoice>>,
     drops: AtomicU64,
     clock: Arc<dyn rekindle_utils::Clock>,
+    /// Where audio comes from and goes (`HostConfig::audio`).
+    pub(crate) io: rekindle_voice::AudioIo,
+    /// The receive loop's packet channel (staged before the loops when a
+    /// call is accepted).
+    pub(crate) packet_tx: RwLock<Option<mpsc::Sender<VoicePacket>>>,
+    pub(crate) packet_rx_staged: Mutex<Option<mpsc::Receiver<VoicePacket>>>,
+    /// The send loop's receiver-report channel.
+    pub(crate) report_tx: RwLock<Option<mpsc::Sender<VoiceReceiverReport>>>,
+    /// Our and our peers' channel media sender keys (plans C7.20, C7.29).
+    pub(crate) sender_keys: ChannelSenderKeyStore,
+    /// The last quality and receive stats, merged into one event.
+    pub(crate) quality: Mutex<rekindle_voice::VoiceQualityCache>,
 }
 
 impl HostVoice {
     #[must_use]
-    pub fn new(clock: Arc<dyn rekindle_utils::Clock>) -> Self {
+    pub fn new(clock: Arc<dyn rekindle_utils::Clock>, io: rekindle_voice::AudioIo) -> Self {
         Self {
-            live: RwLock::new(None),
+            live: Mutex::new(None),
             drops: AtomicU64::new(0),
             clock,
+            io,
+            packet_tx: RwLock::new(None),
+            packet_rx_staged: Mutex::new(None),
+            report_tx: RwLock::new(None),
+            sender_keys: ChannelSenderKeyStore::default(),
+            quality: Mutex::default(),
         }
+    }
+
+    /// The Host's clock port.
+    #[must_use]
+    pub fn clock(&self) -> Arc<dyn rekindle_utils::Clock> {
+        Arc::clone(&self.clock)
     }
 
     /// Why a new voice session cannot start now, in the Host's words, or
     /// `None` when idle. `community_name` names a community by id.
     pub fn start_refusal(&self, community_name: impl Fn(&str) -> String) -> Option<String> {
-        let live = self.live.read();
-        Some(match &live.as_ref()?.scope {
+        let scope = self.session()?;
+        Some(match &scope {
             VoiceScope::Community { community, .. } => leave_voice_in(&community_name(community)),
             VoiceScope::Dm { .. } | VoiceScope::Group { .. } => LEAVE_CALL_FIRST.to_owned(),
         })
@@ -107,7 +175,7 @@ impl HostVoice {
         session: LiveVoice,
         community_name: impl Fn(&str) -> String,
     ) -> Result<(), String> {
-        let mut live = self.live.write();
+        let mut live = self.live.lock();
         if let Some(current) = live.as_ref() {
             if current.scope == session.scope {
                 return Ok(());
@@ -121,29 +189,46 @@ impl HostVoice {
         Ok(())
     }
 
-    /// End the live session (leave and teardown); its scope, if one ran.
+    /// End the live session (leave and teardown): its devices stop, its
+    /// loop channels go; its scope, if one ran.
     pub fn end(&self) -> Option<VoiceScope> {
-        self.live.write().take().map(|s| s.scope)
+        let ended = self.live.lock().take().map(|mut s| {
+            s.stop_devices();
+            s.scope
+        });
+        *self.packet_tx.write() = None;
+        *self.packet_rx_staged.lock() = None;
+        *self.report_tx.write() = None;
+        ended
     }
 
     /// The live session's scope.
     #[must_use]
     pub fn session(&self) -> Option<VoiceScope> {
-        self.live.read().as_ref().map(|s| s.scope.clone())
+        self.live.lock().as_ref().map(|s| s.scope.clone())
+    }
+
+    /// Whether the live session's engine is up.
+    #[must_use]
+    pub fn engine_present(&self) -> bool {
+        self.live
+            .lock()
+            .as_ref()
+            .is_some_and(|s| s.engine.is_some())
     }
 
     /// Set the live session's mute; `false` when none runs.
     pub fn set_muted(&self, muted: bool) -> bool {
-        self.live.write().as_mut().is_some_and(|s| {
-            s.muted = muted;
+        self.live.lock().as_ref().is_some_and(|s| {
+            s.muted.store(muted, Ordering::Relaxed);
             true
         })
     }
 
     /// Set the live session's deafen; `false` when none runs.
     pub fn set_deafened(&self, deafened: bool) -> bool {
-        self.live.write().as_mut().is_some_and(|s| {
-            s.deafened = deafened;
+        self.live.lock().as_ref().is_some_and(|s| {
+            s.deafened.store(deafened, Ordering::Relaxed);
             true
         })
     }
@@ -151,7 +236,47 @@ impl HostVoice {
     /// The live session's (muted, deafened), or `None`.
     #[must_use]
     pub fn controls(&self) -> Option<(bool, bool)> {
-        self.live.read().as_ref().map(|s| (s.muted, s.deafened))
+        self.live.lock().as_ref().map(|s| {
+            (
+                s.muted.load(Ordering::Relaxed),
+                s.deafened.load(Ordering::Relaxed),
+            )
+        })
+    }
+
+    /// The live session's transport, while its engine is up.
+    #[must_use]
+    pub fn transport(&self) -> Option<Arc<tokio::sync::Mutex<VoiceTransport>>> {
+        self.live.lock().as_ref().and_then(|s| s.transport.clone())
+    }
+
+    /// The live session's roster and media-live senders, or `None` with no
+    /// session (the one read `VoiceStatus` uses, plan E4.1 S5b).
+    pub async fn roster(&self) -> Option<LiveRoster> {
+        let (scope, transport, liveness) = {
+            let live = self.live.lock();
+            let s = live.as_ref()?;
+            (
+                s.scope.clone(),
+                s.transport.clone(),
+                Arc::clone(&s.liveness),
+            )
+        };
+        let mut peers = match transport {
+            Some(t) => t.lock().await.peer_keys(),
+            None => Vec::new(),
+        };
+        peers.sort();
+        let mut media_live: Vec<String> = liveness
+            .live_within(MEDIA_LIVE_WINDOW_MS, self.clock.now_ms())
+            .into_iter()
+            .collect();
+        media_live.sort();
+        Some(LiveRoster {
+            scope,
+            peers,
+            media_live,
+        })
     }
 
     /// Inbound voice packets dropped since the Host started.
@@ -159,29 +284,34 @@ impl HostVoice {
     pub fn voice_drops(&self) -> u64 {
         self.drops.load(Ordering::Relaxed)
     }
+
+    /// Count one dropped voice packet.
+    pub fn note_drop(&self) {
+        self.drops.fetch_add(1, Ordering::Relaxed);
+    }
 }
 
 impl MediaIngress for HostVoice {
     fn media(&self) -> Option<Arc<MediaRoster>> {
-        self.live.read().as_ref().map(|s| Arc::clone(&s.media))
+        self.live.lock().as_ref().map(|s| Arc::clone(&s.media))
     }
 
     fn note_media_live(&self, sender: &str) {
-        if let Some(s) = self.live.read().as_ref() {
+        if let Some(s) = self.live.lock().as_ref() {
             s.liveness.note(sender, self.clock.now_ms());
         }
     }
 
     fn voice_packet_tx(&self) -> Option<mpsc::Sender<VoicePacket>> {
-        self.live.read().as_ref().and_then(|s| s.packet_tx.clone())
+        self.packet_tx.read().clone()
     }
 
     fn receiver_report_tx(&self) -> Option<mpsc::Sender<VoiceReceiverReport>> {
-        self.live.read().as_ref().and_then(|s| s.report_tx.clone())
+        self.report_tx.read().clone()
     }
 
     fn note_voice_drop(&self) {
-        self.drops.fetch_add(1, Ordering::Relaxed);
+        self.note_drop();
     }
 
     fn queue_media_envelope(&self, signed: SignedEnvelope) {
@@ -230,6 +360,15 @@ pub fn ingest_media(voice: &HostVoice, raw: &[u8], arrived: Instant) {
         );
     }
 }
+
+mod deps;
+mod events;
+mod frame_sender;
+mod requests;
+mod setup;
+
+pub use deps::HostVoiceDeps;
+pub use requests::{join, leave};
 
 #[cfg(test)]
 mod tests;

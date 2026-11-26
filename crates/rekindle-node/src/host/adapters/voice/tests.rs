@@ -15,7 +15,10 @@ fn live_on(scope: VoiceScope) -> LiveVoice {
 }
 
 fn voice() -> HostVoice {
-    HostVoice::new(Arc::new(rekindle_utils::SystemClock))
+    HostVoice::new(
+        Arc::new(rekindle_utils::SystemClock),
+        rekindle_voice::AudioIo::HEADLESS,
+    )
 }
 
 fn room(community: &str) -> VoiceScope {
@@ -120,10 +123,10 @@ fn signed_voice_datagram(key: &SigningKey) -> Vec<u8> {
 fn a_media_datagram_reaches_the_live_session() {
     let v = voice();
     let (tx, mut rx) = mpsc::channel(4);
-    let mut session = live_on(room("c1"));
-    session.packet_tx = Some(tx);
+    let session = live_on(room("c1"));
     let liveness = Arc::clone(&session.liveness);
     v.begin(session, name).unwrap();
+    *v.packet_tx.write() = Some(tx);
 
     let key = SigningKey::from_bytes(&[7; 32]);
     ingest_media(&v, &signed_voice_datagram(&key), Instant::now());

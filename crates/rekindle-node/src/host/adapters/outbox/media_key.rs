@@ -108,7 +108,7 @@ impl MediaKeyStreams {
 }
 
 impl OutboxSlot {
-    fn media_keys(&self) -> Option<MediaKeyStreams> {
+    pub(crate) fn media_keys(&self) -> Option<MediaKeyStreams> {
         self.current.read().clone().map(MediaKeyStreams)
     }
 

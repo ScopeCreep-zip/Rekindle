@@ -222,8 +222,7 @@ pub struct AppState {
     /// Phase 5 — last-known halves of the merged ConnectionQuality
     /// emission (send-side quality + receive-side jitter drops arrive
     /// on different 5 s cadences; each emission carries both).
-    pub voice_quality_cache:
-        Mutex<crate::services::voice_adapter::event_mapping::VoiceQualityCache>,
+    pub voice_quality_cache: Mutex<rekindle_voice::VoiceQualityCache>,
     /// Phase 5 — CUMULATIVE inbound voice drops (`voice_pkt_drops` is
     /// swap-reset every second by the telemetry poller; this total
     /// feeds the quality event's `ingress_drops`).
@@ -315,9 +314,7 @@ impl Default for AppState {
                 rekindle_transport::subscriptions::lanes::ControlIngressQueue::new(),
             ),
             native_video: crate::services::native_video::NativeVideoSlot::default(),
-            voice_quality_cache: Mutex::new(
-                crate::services::voice_adapter::event_mapping::VoiceQualityCache::default(),
-            ),
+            voice_quality_cache: Mutex::new(rekindle_voice::VoiceQualityCache::default()),
             voice_ingress_drops_total: std::sync::atomic::AtomicU64::new(0),
             video_pre_ready_drops: std::sync::atomic::AtomicU64::new(0),
             channel_send_empty_roster_drops: std::sync::atomic::AtomicU64::new(0),

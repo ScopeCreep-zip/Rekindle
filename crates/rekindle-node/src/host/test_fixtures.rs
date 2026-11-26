@@ -62,6 +62,7 @@ pub async fn offline_host_on(
         rng: Arc::new(rekindle_utils::OsRandom),
         idle: Arc::new(rekindle_idle::OsIdle),
         server_query: Arc::new(rekindle_game_detect::server_query::UdpServerQuery),
+        audio: rekindle_voice::AudioIo::HEADLESS,
         shell,
     })
     .await

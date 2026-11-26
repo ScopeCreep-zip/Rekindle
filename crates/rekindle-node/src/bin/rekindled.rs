@@ -61,6 +61,7 @@ async fn run() -> anyhow::Result<rekindle_node::daemon::shutdown::ExitReason> {
         rng: std::sync::Arc::new(rekindle_utils::OsRandom),
         idle: std::sync::Arc::new(rekindle_idle::OsIdle),
         server_query: std::sync::Arc::new(rekindle_game_detect::server_query::UdpServerQuery),
+        audio: rekindle_voice::AudioIo::DEVICES,
         shell: None,
     })
     .await?;

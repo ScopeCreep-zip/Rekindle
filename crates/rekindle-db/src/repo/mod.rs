@@ -63,6 +63,7 @@ pub mod stream_cursors;
 pub mod threads;
 pub mod transfers;
 pub mod unprocessed;
+pub mod voice_session_events;
 
 #[cfg(test)]
 mod constraints_tests;

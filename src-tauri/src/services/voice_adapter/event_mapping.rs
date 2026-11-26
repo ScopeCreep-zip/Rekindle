@@ -9,59 +9,10 @@ use std::sync::Arc;
 
 use rekindle_voice::VoiceSessionEvent;
 
-use rekindle_types::subscription_events::{
-    LinkMeasurement, SubscriptionEvent, VoiceEvent, VoiceScope,
-};
+use rekindle_types::subscription_events::{SubscriptionEvent, VoiceEvent, VoiceScope};
 
 use crate::state::AppState;
 use tauri::Manager;
-
-/// Last-known halves of the merged `ConnectionQuality` UI event. The
-/// send loop reports `quality` and the receive loop reports jitter
-/// drops on independent 5 s cadences; each emission carries the full
-/// picture from this cache.
-#[derive(Debug, Clone)]
-pub struct VoiceQualityCache {
-    pub quality: String,
-    pub rx_overflow_drops: u64,
-    pub rx_late_drops: u64,
-    pub rx_key_drops: u64,
-    /// The send half's end-to-end measurement, from receiver reports.
-    /// `None` until a peer reports.
-    pub link: Option<LinkMeasurement>,
-}
-
-impl Default for VoiceQualityCache {
-    fn default() -> Self {
-        Self {
-            quality: "good".to_string(),
-            rx_overflow_drops: 0,
-            rx_late_drops: 0,
-            rx_key_drops: 0,
-            link: None,
-        }
-    }
-}
-
-/// Project the crate's measurement types onto the flat Tier-1 event
-/// payload. The one place the two representations meet — see
-/// [`LinkMeasurement`]'s note on why they are separate.
-fn project_link(stats: &rekindle_voice::session_deps::SendLinkStats) -> LinkMeasurement {
-    LinkMeasurement {
-        loss_q8: stats.metrics.loss_rate_q8,
-        discard_q8: stats.metrics.discard_rate_q8,
-        jitter_ms: stats.metrics.jitter_ms,
-        rtt_ms: stats.rtt_ms,
-        r_factor: stats.score.r_factor,
-        mos_lq: stats.score.mos_lq,
-        mos_cq: stats.score.mos_cq,
-        bitrate_bps: stats.bitrate_bps,
-        one_way_p50_ms: stats.route.map(|r| r.one_way_p50_ms),
-        one_way_p95_ms: stats.route.map(|r| r.one_way_p95_ms),
-        mouth_to_ear_ms: stats.route.map(|r| r.mouth_to_ear_ms),
-        outside_g114: stats.route.is_some_and(|r| r.outside_g114),
-    }
-}
 
 /// Phase 5 — fold a quality/receive-stats event into the cache and
 /// build the merged UI event. Returns `None` for every other variant.
@@ -70,40 +21,18 @@ pub(super) fn merge_quality_event(
     event: &rekindle_voice::VoiceSessionEvent,
     scope: &VoiceScope,
 ) -> Option<VoiceEvent> {
-    use rekindle_voice::VoiceSessionEvent as E;
     let mut cache = state.voice_quality_cache.lock();
-    match event {
-        E::ConnectionQuality { quality, link } => {
-            cache.quality.clone_from(quality);
-            // Only overwrite when this window carried a measurement; a
-            // window with no report should not erase the last known
-            // numbers, or the UI blinks empty between reports.
-            if let Some(stats) = link {
-                cache.link = Some(project_link(stats));
-            }
-        }
-        E::ReceiveStats {
-            rx_overflow_drops,
-            rx_late_drops,
-            rx_key_drops,
-        } => {
-            cache.rx_overflow_drops = *rx_overflow_drops;
-            cache.rx_late_drops = *rx_late_drops;
-            cache.rx_key_drops = *rx_key_drops;
-        }
-        _ => return None,
+    if !cache.fold(event) {
+        return None;
     }
-    Some(VoiceEvent::ConnectionQuality {
-        scope: scope.clone(),
-        quality: cache.quality.clone(),
-        rx_overflow_drops: cache.rx_overflow_drops,
-        rx_late_drops: cache.rx_late_drops,
-        rx_key_drops: cache.rx_key_drops,
-        ingress_drops: state
-            .voice_ingress_drops_total
-            .load(std::sync::atomic::Ordering::Relaxed),
-        link: cache.link,
-    })
+    Some(
+        cache.connection_quality(
+            scope.clone(),
+            state
+                .voice_ingress_drops_total
+                .load(std::sync::atomic::Ordering::Relaxed),
+        ),
+    )
 }
 
 pub(super) fn map(event: VoiceSessionEvent, scope: &VoiceScope) -> VoiceEvent {

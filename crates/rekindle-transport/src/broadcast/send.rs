@@ -283,4 +283,30 @@ impl AppCaller {
             .await
             .map_err(|e| send_failure(self.routes.as_ref(), &target, e))
     }
+
+    /// Send one realtime media datagram (a voice frame, a receiver report)
+    /// to a peer's media route, over a route chosen for the media class
+    /// (`MessageClass::Voice`: low latency, unordered, plan C7.9c), never
+    /// the RPC class whose ordered relays head-of-line block media. Takes
+    /// the blob the peer announced; the import is the process's one
+    /// importer's ([`import_live`](crate::broadcast::node::routes::import_live)).
+    ///
+    /// # Errors
+    /// The blob is a peer route known dead (`RouteUnusable`), or the import
+    /// or the send failed (a peer-side failure invalidates the import).
+    pub async fn send_media_to_route(&self, route_blob: &[u8], data: Vec<u8>) -> Result<()> {
+        let target = crate::broadcast::node::routes::import_live(
+            self.routes.as_ref(),
+            &self.liveness,
+            route_blob,
+        )?;
+        self.messages
+            .send(
+                &target,
+                self.config.safety.for_class(MessageClass::Voice),
+                data,
+            )
+            .await
+            .map_err(|e| send_failure(self.routes.as_ref(), &target, e))
+    }
 }
