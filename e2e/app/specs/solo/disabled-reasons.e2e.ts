@@ -97,6 +97,15 @@ describe("a disabled node says why (CR1)", function () {
       const measured = await disabledLookWithBoxes(nodes.map((d) => d.node));
       const look = Object.fromEntries(Object.entries(measured).map(([id, v]) => [id, v.changed]));
       console.log(`[cr1] ${file} measured boxes: ${JSON.stringify(measured)}`);
+      // A refused node that changes nothing: what is on top at its centre.
+      for (const [id, v] of Object.entries(measured).filter(([, m]) => m.changed < 20)) {
+        const top = (await browser.execute((box: number[]) => {
+          const t = document.elementFromPoint(box[0] + box[2] / 2, box[1] + box[3] / 2) as HTMLElement | null;
+          const node = t?.closest<HTMLElement>("[data-skin-node]");
+          return `top=${t?.tagName.toLowerCase()}.${t?.className ?? ""} in node ${node?.dataset.skinNode ?? "none"} (${node?.dataset.skinRole ?? "-"}) art=${node ? getComputedStyle(node).backgroundImage.slice(0, 90) : "-"}`;
+        }, v.box)) as string;
+        console.log(`[cr1] ${file} ${id} changes ${v.changed} px; at its centre: ${top}`);
+      }
       console.log(`[cr1] ${file} disabled vs enabled self, pixels changed: ${JSON.stringify(look)} (visibly disabled at 20)`);
       const inactive = await inactiveNodes();
       console.log(`[cr1] ${file} windowInactive (pressable, not aria-disabled): ${JSON.stringify(inactive)}`);
@@ -143,6 +152,17 @@ describe("a disabled node says why (CR1)", function () {
       throw new Error(`the inactive community window's close button is not in its windowInactive art: ${JSON.stringify(close)}`);
     });
     console.log(`[cr1] symbiosis community close: ${JSON.stringify(close)}`);
+    // What takes a press at the button's centre: the nearest node listening
+    // for pointer events there (a drag strip over the button would take it).
+    const atClose = (await browser.execute(() => {
+      const n = document.querySelector<HTMLElement>('.skin-tree [data-skin-role="windowButton:close"]');
+      if (!n) return "no close button";
+      const r = n.getBoundingClientRect();
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      const listener = top?.closest<HTMLElement>("[data-skin-on]");
+      return `top=${top?.tagName.toLowerCase()}.${(top as HTMLElement | null)?.className ?? ""} listener=${listener?.dataset.skinNode ?? "none"} (${listener?.dataset.skinRole ?? "-"}, on=${listener?.dataset.skinOn ?? "-"}) is the button: ${listener === n}`;
+    })) as string;
+    console.log(`[cr1] symbiosis community close, at its centre: ${atClose}`);
     await shot("symbiosis-inactive-close");
     expect(close!.ariaDisabled).toBeNull();
     await (await browser.$('.skin-tree [data-skin-role="windowButton:close"]')).click();
