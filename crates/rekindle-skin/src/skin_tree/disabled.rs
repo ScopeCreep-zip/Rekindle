@@ -125,11 +125,12 @@ fn mark(
 
 /// Who draws the interactive node `n`'s disabled look: the pack, when its
 /// Disabled art is visibly its own ([`pack_art`]); the serve, with a
-/// dimmed copy of what is painted at its box set as its Disabled layer
-/// ([`dim::copy`]), when that copy changes [`VISIBLE_PIXELS`]; else the
+/// dimmed copy of what is painted at its box set as its refusal's layer
+/// (`NodeArt::refused`, [`dim::copy`]; the pack's own Disabled set stays
+/// for its window-inactive look), when that copy changes [`VISIBLE_PIXELS`]; else the
 /// shell's opacity, which also dims the node's children and words: a node
-/// that or whose parts carry words (a Host label or the pack's text, which a
-/// copy of the art cannot carry), one whose parts draw art over it (a layer
+/// that or whose parts carry words (a Host label, the pack's text or a Host
+/// text field, which a copy of the art cannot carry), one whose parts draw art over it (a layer
 /// of the node lies under them), a branded node (the Host's mark, never the
 /// pack's art, [`super::brand`]), one sized by its text at render (no box
 /// at serve, [`super::validate::text_sized`]), and one with nothing visibly
@@ -153,20 +154,25 @@ fn look(
     let Some(set) = dim::copy(n, at, under, package, measured)? else {
         return Ok(DisabledBy::Shell);
     };
+    // Only a node with a copy gains art: an art-less one gets an empty
+    // Normal set beside its copy, every other node keeps the pack's art.
     n.art
         .get_or_insert_with(|| NodeArt {
             normal: NodePieces::new(),
             states: std::collections::BTreeMap::new(),
+            refused: None,
         })
-        .states
-        .insert(RegionState::Disabled, set);
+        .refused = Some(set);
     Ok(DisabledBy::Served)
 }
 
 /// What only the shell's opacity can dim (see [`look`]): words on the node
-/// or its parts, parts with art, the Host's mark, a text-sized box.
+/// or its parts (a Host label, the pack's text, or a field the Host writes
+/// the name, status or room into, [`super::inset::is_text`]; Onyx's and
+/// Combat's `Title`), parts with art, the Host's mark, a text-sized box.
 pub(super) fn shell_only(n: &SkinNode) -> bool {
-    let worded = |c: &SkinNode| c.label.is_some() || c.text.is_some();
+    let worded =
+        |c: &SkinNode| c.label.is_some() || c.text.is_some() || super::inset::is_text(c.role);
     let parts = n.children.iter().filter(|c| c.role == NodeRole::Part);
     worded(n)
         || parts.clone().any(|c| worded(c) || c.art.is_some())

@@ -101,6 +101,15 @@ pub struct NodeArt {
     pub normal: NodePieces,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub states: BTreeMap<RegionState, NodePieces>,
+    /// The Disabled set the serve draws for a refusal where the pack draws
+    /// no visibly distinct one (plan DIS3, `DisabledBy::Served`): a dimmed
+    /// copy of what is painted at the node's box, its images made at serve
+    /// time and never in the package. The pack's own Disabled set (in
+    /// `states`) stays for its window-inactive look. Serve-internal: never
+    /// read from a package (an unknown key there) nor sent to the shell,
+    /// which draws it through the served stylesheet.
+    #[serde(skip)]
+    pub refused: Option<NodePieces>,
 }
 
 impl NodeArt {
@@ -117,6 +126,7 @@ impl NodeArt {
                 },
             )]),
             states: BTreeMap::new(),
+            refused: None,
         }
     }
 

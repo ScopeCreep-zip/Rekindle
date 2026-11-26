@@ -1,7 +1,7 @@
 //! The served `disabledBy` of each interactive node (plan E7.7 CR1).
 
-use rekindle_types::dto::skin::RegionState;
-use rekindle_types::dto::skin_tree::{DisabledBy, NodeRole, SkinNode};
+use rekindle_types::dto::skin::{RegionState, SkinManifest};
+use rekindle_types::dto::skin_tree::{DisabledBy, NodePieces, NodeRole, SkinNode};
 
 use rekindle_image::{Rgba, RgbaImage};
 
@@ -55,7 +55,8 @@ fn total_chaos_communities_open_is_disabled_by_a_served_copy() {
     let art = open.art.as_ref().unwrap();
     assert!(art.states.contains_key(&RegionState::Disabled));
     assert_ne!(art.states.get(&RegionState::Disabled), Some(&art.normal));
-    // DIS3: the near-copy is replaced by the serve's visibly dimmed copy.
+    // DIS3: a refusal shows the serve's visibly dimmed copy; the near-copy
+    // stays the pack's window-inactive look.
     assert_eq!(open.disabled_by, Some(DisabledBy::Served));
 }
 
@@ -143,22 +144,42 @@ fn no_disabled_look_is_the_shells_to_dim() {
     assert!(!is_pack_art("xslimfire", &chat));
 }
 
-/// The rule before CR1b: any Disabled state the pack ships at all, equal
-/// to Normal or not (a copy the serve made, DIS3, is not the pack's).
-fn had_disabled_state(n: &SkinNode) -> bool {
+/// The rule before CR1b: any Disabled state the pack wrote, equal to
+/// Normal or not, read from the authored manifest (lead ruling 3, never
+/// the served one): the node's or a part's Disabled set is one of
+/// `authored`'s. A node the placements add (Total Chaos's Communities
+/// clone) carries the authored set it copies.
+fn had_disabled_state(n: &SkinNode, authored: &[NodePieces]) -> bool {
     let has = |c: &SkinNode| {
-        c.art.as_ref().is_some_and(|a| {
-            a.states.get(&RegionState::Disabled).is_some_and(|s| {
-                s.values()
-                    .all(|p| !p.image.starts_with(super::dim::MADE))
-            })
-        })
+        c.art
+            .as_ref()
+            .and_then(|a| a.states.get(&RegionState::Disabled))
+            .is_some_and(|set| authored.contains(set))
     };
     n.label.is_none()
         && (has(n)
             || n.children
                 .iter()
                 .any(|c| c.role == NodeRole::Part && has(c)))
+}
+
+/// Every Disabled set the authored manifest `m` ships, over every tree.
+fn authored_disabled(m: &SkinManifest) -> Vec<NodePieces> {
+    let mut sets = Vec::new();
+    for l in m.windows.values() {
+        for tree in l.tree.iter().chain(l.popups.values().map(|p| &p.tree)) {
+            each(&tree.root, &mut |n| {
+                if let Some(set) = n
+                    .art
+                    .as_ref()
+                    .and_then(|a| a.states.get(&RegionState::Disabled))
+                {
+                    sets.push(set.clone());
+                }
+            });
+        }
+    }
+    sets
 }
 
 /// Plan CR1b and DIS2: every built-in node that ships a Disabled state but
@@ -177,6 +198,7 @@ fn builtin_nodes_whose_disabled_art_is_not_visibly_distinct_are_dimmed_by_the_sh
     for b in builtin::PACKS {
         let p = package::read(b.bytes).unwrap();
         let m = manifest::served(&p).unwrap();
+        let authored = authored_disabled(&manifest::parse(&p).unwrap());
         for (window, l) in &m.windows {
             let trees = l.tree.iter().map(|t| (format!("{window:?}"), t)).chain(
                 l.popups
@@ -186,11 +208,8 @@ fn builtin_nodes_whose_disabled_art_is_not_visibly_distinct_are_dimmed_by_the_sh
             for (at, tree) in trees {
                 each(&tree.root, &mut |n| {
                     if n.interactive()
-                        && had_disabled_state(n)
-                        && matches!(
-                            n.disabled_by,
-                            Some(DisabledBy::Served | DisabledBy::Shell)
-                        )
+                        && had_disabled_state(n, &authored)
+                        && matches!(n.disabled_by, Some(DisabledBy::Served | DisabledBy::Shell))
                     {
                         moved.push(format!("{} {at} {}", b.id, n.id));
                     }

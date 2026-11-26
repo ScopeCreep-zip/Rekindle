@@ -29,7 +29,9 @@ fn find<'a>(nodes: &'a [SkinNode], id: &str) -> Option<&'a SkinNode> {
 
 /// The first frame of `name`, from the made images or the package.
 fn frame(name: &str, made: &Made, p: &Package<'_>) -> RgbaImage {
-    let bytes = made.get(name).map_or_else(|| p.get(name).unwrap(), Vec::as_slice);
+    let bytes = made
+        .get(name)
+        .map_or_else(|| p.get(name).unwrap(), Vec::as_slice);
     crate::regions::frames(name, bytes)
         .unwrap()
         .into_iter()
@@ -39,7 +41,10 @@ fn frame(name: &str, made: &Made, p: &Package<'_>) -> RgbaImage {
 
 /// The visibly changed pixels from `from` to `to`, slot by slot.
 fn changed(from: &NodePieces, to: &NodePieces, made: &Made, p: &Package<'_>) -> u64 {
-    assert_eq!(from.keys().collect::<Vec<_>>(), to.keys().collect::<Vec<_>>());
+    assert_eq!(
+        from.keys().collect::<Vec<_>>(),
+        to.keys().collect::<Vec<_>>()
+    );
     from.iter()
         .map(|(slot, a)| {
             visible_difference(&frame(&a.image, made, p), &frame(&to[slot].image, made, p))
@@ -110,10 +115,10 @@ fn popup_tree<'a>(m: &'a SkinManifest, window: SkinWindow, name: &str) -> &'a Sk
     &m.windows[&window].popups[name].tree
 }
 
-/// The served Disabled set of `n`, a copy the serve made.
+/// The served refusal set of `n`, a copy the serve made.
 fn copy_of(n: &SkinNode) -> &NodePieces {
     assert_eq!(n.disabled_by, Some(DisabledBy::Served), "{}", n.id);
-    let set = &n.art.as_ref().unwrap().states[&RegionState::Disabled];
+    let set = n.art.as_ref().unwrap().refused.as_ref().unwrap();
     assert!(set.values().all(|p| p.image.starts_with(super::MADE)));
     set
 }
@@ -127,9 +132,18 @@ fn alloy_host_chat_button_serves_a_visibly_dimmed_copy() {
     let tree = popup_tree(&m, SkinWindow::Main, "Infoskin");
     let n = find(&tree.root, "HostChatButton").unwrap();
     let normal = &n.art.as_ref().unwrap().normal;
-    let tab = &find(&tree.root, "JoinChatTab").unwrap().art.as_ref().unwrap().normal;
+    let tab = &find(&tree.root, "JoinChatTab")
+        .unwrap()
+        .art
+        .as_ref()
+        .unwrap()
+        .normal;
     let p = pack("alloy");
-    assert_eq!(changed(normal, tab, &made, &p), 0, "the art equals the tab's");
+    assert_eq!(
+        changed(normal, tab, &made, &p),
+        0,
+        "the art equals the tab's"
+    );
     assert!(changed(normal, copy_of(n), &made, &p) >= VISIBLE_PIXELS);
 }
 
@@ -142,7 +156,10 @@ fn combat_join_button_serves_a_visibly_dimmed_copy() {
     let normal = &n.art.as_ref().unwrap().normal;
     let tab = find(&tree.root, "FriendsButtons.JoinPlayTab").unwrap();
     let p = pack("combat");
-    assert_eq!(changed(normal, &tab.art.as_ref().unwrap().normal, &made, &p), 0);
+    assert_eq!(
+        changed(normal, &tab.art.as_ref().unwrap().normal, &made, &p),
+        0
+    );
     assert!(changed(normal, copy_of(n), &made, &p) >= VISIBLE_PIXELS);
 }
 
@@ -161,16 +178,26 @@ fn alloy_join_chat_button_serves_the_tabs_region_cropped_and_dimmed() {
         .map(|(n, b)| (n.id.as_str(), b))
         .collect();
     let n = find(&pop.tree.root, "JoinChatButton").unwrap();
-    assert!(n.art.as_ref().unwrap().normal.is_empty(), "no art of its own");
+    assert!(
+        n.art.as_ref().unwrap().normal.is_empty(),
+        "no art of its own"
+    );
     let set = copy_of(n);
     let piece = &set[&rekindle_types::dto::skin_tree::PieceSlot::Middle];
     let at = boxes["JoinChatButton"];
-    assert_eq!([i32::from(piece.width), i32::from(piece.height)], [at[2], at[3]]);
+    assert_eq!(
+        [i32::from(piece.width), i32::from(piece.height)],
+        [at[2], at[3]]
+    );
     let tab = boxes["JoinChatTab"];
     let p = pack("alloy");
     let tab_art = frame(
-        &find(&pop.tree.root, "JoinChatTab").unwrap().art.as_ref().unwrap().normal
-            [&rekindle_types::dto::skin_tree::PieceSlot::Middle]
+        &find(&pop.tree.root, "JoinChatTab")
+            .unwrap()
+            .art
+            .as_ref()
+            .unwrap()
+            .normal[&rekindle_types::dto::skin_tree::PieceSlot::Middle]
             .image,
         &made,
         &p,
@@ -204,20 +231,36 @@ fn every_builtin_interactive_node_is_visibly_disabled() {
     let mut shell = Vec::new();
     let mut served_nodes = 0;
     for b in builtin::PACKS {
-        let p = package::read(b.bytes).unwrap();
-        let (m, made) = manifest::served_made(&p).unwrap();
+        let package = package::read(b.bytes).unwrap();
+        let (m, made) = manifest::served_made(&package).unwrap();
         let mut measured = Measured::default();
-        for (at_name, tree, (w, h)) in trees(&m) {
+        for (at_name, tree, (win_w, win_h)) in trees(&m) {
             let boxes: HashMap<&str, [i32; 4]> = tree
-                .boxes(w, h)
+                .boxes(win_w, win_h)
                 .into_iter()
                 .map(|(n, b)| (n.id.as_str(), b))
                 .collect();
+            each(&tree.root, &mut |node| {
+                // A copy is the only art the serve adds: a node with none
+                // keeps the pack's art, never an empty set of its own.
+                let refused = node.art.as_ref().and_then(|art| art.refused.as_ref());
+                assert_eq!(
+                    refused.is_some(),
+                    node.disabled_by == Some(DisabledBy::Served),
+                    "{} {at_name} {}",
+                    b.id,
+                    node.id
+                );
+                if let Some(art) = node.art.as_ref().filter(|_| refused.is_none()) {
+                    let empty = art.normal.is_empty() && art.states.is_empty();
+                    assert!(!empty, "{} {at_name} {}: empty art", b.id, node.id);
+                }
+            });
             walk(&tree.root, None, &boxes, &mut |n, at, under| {
                 match n.disabled_by {
                     Some(DisabledBy::Served) => {
                         served_nodes += 1;
-                        let from = before(n, at, under, &p, &mut measured);
+                        let from = before(n, at, under, &package, &mut measured);
                         let mut both = made.clone();
                         for piece in from.values() {
                             if !piece.image.starts_with(super::MADE) {
@@ -231,7 +274,7 @@ fn every_builtin_interactive_node_is_visibly_disabled() {
                                 both.entry(piece.image.clone()).or_insert(png);
                             }
                         }
-                        let c = changed(&from, copy_of(n), &both, &p);
+                        let c = changed(&from, copy_of(n), &both, &package);
                         if c < VISIBLE_PIXELS {
                             weak.push(format!("{} {at_name} {} {c}", b.id, n.id));
                         }
@@ -241,7 +284,7 @@ fn every_builtin_interactive_node_is_visibly_disabled() {
                         // or a box with nothing painted at it.
                         let painted = n.art.as_ref().is_some_and(|a| !a.normal.is_empty())
                             || under.is_some_and(|u| {
-                                let c = crop(u, at, &p, &mut measured).unwrap();
+                                let c = crop(u, at, &package, &mut measured).unwrap();
                                 c.is_some_and(|c| {
                                     c.values().any(|piece| {
                                         measured.frames[&piece.image].pixels().any(|px| px.0[3] > 0)
@@ -295,8 +338,16 @@ fn a_packs_own_disabled_art_is_unchanged() {
                 let Some(o) = find(&authored_tree.root, &n.id) else {
                     continue;
                 };
-                let original = o.art.as_ref().and_then(|a| a.states.get(&RegionState::Disabled));
-                assert_eq!(art.states.get(&RegionState::Disabled), original, "{id} {}", n.id);
+                let original = o
+                    .art
+                    .as_ref()
+                    .and_then(|a| a.states.get(&RegionState::Disabled));
+                assert_eq!(
+                    art.states.get(&RegionState::Disabled),
+                    original,
+                    "{id} {}",
+                    n.id
+                );
             }
         }
         assert!(packs > 0, "{id} has Pack nodes");
@@ -308,4 +359,72 @@ fn collect<'a>(nodes: &'a [SkinNode], out: &mut Vec<&'a SkinNode>) {
         out.push(n);
         collect(&n.children, out);
     }
+}
+
+fn each<'a>(nodes: &'a [SkinNode], f: &mut impl FnMut(&'a SkinNode)) {
+    let mut all = Vec::new();
+    collect(nodes, &mut all);
+    all.into_iter().for_each(f);
+}
+
+/// The served stylesheet's rule heads laid on the node `id` of `pack`'s
+/// main tree, and the node.
+fn rule_heads(pack_id: &str, id: &str) -> (SkinNode, Vec<String>) {
+    let p = pack(pack_id);
+    let (mut m, made) = served(pack_id);
+    let mut files = crate::images::validate(&p, &m).unwrap();
+    files.extend(made);
+    let l = m.windows.remove(&SkinWindow::Main).unwrap();
+    let tree = l.tree.clone().unwrap();
+    let css = super::super::css::tree_css(".f", &tree, &l, &files, "x").unwrap();
+    let sel = format!(".f [data-skin-node=\"{id}\"]");
+    let heads = css
+        .lines()
+        .map(str::trim)
+        .filter(|l| {
+            l.ends_with('{')
+                && l.strip_prefix(sel.as_str())
+                    .is_some_and(|r| !r.starts_with(' '))
+        })
+        .map(str::to_owned)
+        .collect();
+    (find(&tree.root, id).unwrap().clone(), heads)
+}
+
+/// Lead ruling 1: the served copy is the refusal's look only. Its rule
+/// excludes the Host-sent `windowInactive` cause, so Combat's
+/// `JoinButton@Friends` (no pack Disabled art) shows its Normal art while
+/// its window is inactive; Total Chaos's `CommunitiesOpen` keeps the
+/// pack's own Disabled art for that look beside the copy for a refusal.
+#[test]
+fn the_served_copy_draws_for_a_refusal_never_for_an_inactive_window() {
+    let refused = "[data-state=\"disabled\"]:not([data-state-cause=\"windowInactive\"])";
+    let (n, heads) = rule_heads("combat", "JoinButton@Friends");
+    assert!(!n.art.as_ref().unwrap().states.contains_key(&RegionState::Disabled));
+    copy_of(&n);
+    let sel = ".f [data-skin-node=\"JoinButton@Friends\"]";
+    assert!(heads.contains(&format!("{sel}{refused} {{")), "{heads:#?}");
+    for h in heads
+        .iter()
+        .filter(|h| h.contains("data-state=\"disabled\""))
+    {
+        assert!(
+            h.contains(":not([data-state-cause=\"windowInactive\"])"),
+            "{h}"
+        );
+    }
+    let (n, heads) = rule_heads("total-chaos", "CommunitiesOpen");
+    assert!(n
+        .art
+        .as_ref()
+        .unwrap()
+        .states
+        .contains_key(&RegionState::Disabled));
+    copy_of(&n);
+    let sel = ".f [data-skin-node=\"CommunitiesOpen\"]";
+    assert!(
+        heads.contains(&format!("{sel}[data-state=\"disabled\"] {{")),
+        "{heads:#?}"
+    );
+    assert!(heads.contains(&format!("{sel}{refused} {{")), "{heads:#?}");
 }

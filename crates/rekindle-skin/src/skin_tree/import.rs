@@ -252,7 +252,11 @@ impl Walk<'_> {
                 states.insert(state, encoded);
             }
         }
-        Ok(Some(NodeArt { normal, states }))
+        Ok(Some(NodeArt {
+            normal,
+            states,
+            refused: None,
+        }))
     }
 
     /// One tile's id, role and art, before it is placed.
