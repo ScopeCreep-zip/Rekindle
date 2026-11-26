@@ -53,3 +53,26 @@ export async function frameNodes(): Promise<{ nodes: string[]; defaultTitlebar: 
     return { nodes, defaultTitlebar: !!tb && drawn(tb) };
   })) as { nodes: string[]; defaultTitlebar: boolean };
 }
+
+/**
+ * Lead (SKW1 parity): everything the tree exposes on the nodes `ids` in the
+ * current window, one line each: every `data-*` and `aria-*` attribute, the
+ * class, the box and the full art URLs (background and border image), or
+ * "absent" when the window draws no such node.
+ */
+export async function frameNodeDetail(ids: string[]): Promise<string[]> {
+  return (await browser.execute((want: string[]) =>
+    want.map((id) => {
+      const n = document.querySelector<HTMLElement>(`.skin-tree [data-skin-node="${id}"]`);
+      if (!n) return `${id}: absent`;
+      const attrs = Array.from(n.attributes)
+        .filter((a) => a.name.startsWith("data-") || a.name.startsWith("aria-") || a.name === "class" || a.name === "title")
+        .map((a) => `${a.name}=${JSON.stringify(a.value)}`)
+        .join(" ");
+      const r = n.getBoundingClientRect();
+      const cs = getComputedStyle(n);
+      const art = [cs.backgroundImage, cs.borderImageSource].flatMap((v) => v.match(/skin:\/\/[^)"]+/g) ?? []).join(" , ");
+      return `${id}: ${attrs} box=${[r.x, r.y, r.width, r.height].map(Math.round).join(",")} art=${art || "-"}`;
+    }),
+  ids)) as string[];
+}

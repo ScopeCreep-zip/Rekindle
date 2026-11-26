@@ -13,7 +13,7 @@ import { type Peer, startFleet, stopFleet } from "../../fleet.ts";
 import { createCommunity, createGroup, createIdentity, friendsView, newUser, openChat, openCommunity, openGroup, type User } from "../../journeys.ts";
 import { applySkin, skinShown } from "../../journeys_skins.ts";
 import { shot } from "../../shots.ts";
-import { artElements, frameNodes, windowKind } from "../../skin-art.ts";
+import { artElements, frameNodeDetail, frameNodes, windowKind } from "../../skin-art.ts";
 import { builtinPacks } from "../../skin-pack.ts";
 import { befriendFleet } from "../../social.ts";
 
@@ -104,6 +104,19 @@ describe("skinned windows keep their pack art (SB1)", function () {
       // (logged, not compared); its community window still wears its frame.
       const compared = from === "chat" ? ["group-chat", "community"] : ["community"];
       if (from !== "chat") console.log(`[frame] ${file}: no pack chat window; the community window is compared to the buddy list's frame, the group chat not`);
+      // Evidence first (lead): for every node whose art differs from the
+      // source's, what each window serves on it, the buddy list included
+      // (is the art another window's, or another state's?).
+      const byNode = (list: string[]): Map<string, string> => new Map(list.map((l) => [l.split(" ")[0], l]));
+      const sourceBy = byNode(source.nodes);
+      for (const label of compared) {
+        const differing = [...byNode(frames[label].nodes)].filter(([id, line]) => sourceBy.get(id) !== line).map(([id]) => id);
+        if (differing.length === 0) continue;
+        for (const w of windows.filter((x) => ["buddy-list", from, label].includes(x.label))) {
+          await browser.switchToWindow(w.handle);
+          for (const line of await frameNodeDetail(differing)) console.log(`[frame-diff] ${file} ${label} vs ${from}, in ${w.label}: ${line}`);
+        }
+      }
       for (const label of compared) {
         expect({ window: label, defaultTitlebar: frames[label].defaultTitlebar }).toEqual({ window: label, defaultTitlebar: false });
         expect({ window: label, frame: frames[label].nodes }).toEqual({ window: label, frame: source.nodes });
