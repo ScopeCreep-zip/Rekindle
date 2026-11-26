@@ -169,6 +169,16 @@ impl InboundHandler for DaemonHandler {
             )
     }
 
+    fn on_media(&self, raw: &[u8], _arrived: std::time::Instant) {
+        // The Host has no voice engine until its voice adapter lands (plan
+        // E4.1 S5, the same round as this slice): until then a media
+        // datagram is dropped here, as the untagged datagram it was before.
+        tracing::trace!(
+            len = raw.len(),
+            "media datagram: no voice engine in this host"
+        );
+    }
+
     async fn on_direct(&self, datagram: &[u8]) {
         let Some(host) = self.friends() else {
             debug!("1:1 message before the host is up — dropped");
@@ -360,6 +370,12 @@ impl InboundHandler for DaemonHandler {
                         CallResponse::Ok,
                     )
             }
+            // Call-media keys are answered by the Host's voice adapter
+            // (plan E4.1 S4/S5); until it lands this host refuses them, as
+            // it NAKed the bare envelope before the branch existed.
+            InboundCall::VoiceMediaKey(_) => CallResponse::Rejected {
+                reason: "no voice engine in this host".into(),
+            },
             InboundCall::FrontierRequest { request } => {
                 // A member's frontier request (plan E3.2 S7d-keys.8, the
                 // unlock barrier): only an admitted member, rate-limited per

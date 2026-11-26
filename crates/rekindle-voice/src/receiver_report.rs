@@ -50,10 +50,9 @@ use rekindle_media_stats::ReceptionMetrics;
 use rekindle_types::domains;
 use serde::{Deserialize, Serialize};
 
-/// Wire tag for a receiver report, sibling to [`VoicePacket`]'s `b'V'`.
-/// Reports ride the same media route as the audio they describe, so
-/// they measure the path actually in use.
-pub const RECEIVER_REPORT_TAG: u8 = b'R';
+/// Wire tag for a receiver report, sibling to [`VoicePacket`]'s `b'V'`;
+/// it lives with the other ingress tags (plan E4.1 S3).
+pub use rekindle_codec::ingress::RECEIVER_REPORT_TAG;
 
 /// One receiver's view of one inbound stream, sent back to that
 /// stream's sender.

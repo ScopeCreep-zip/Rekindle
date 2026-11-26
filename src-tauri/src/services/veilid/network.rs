@@ -48,7 +48,8 @@ pub async fn handle_app_call(
 
     // A 1:1 call (the `'D'` tag) is routed first, by its tag: the Host's
     // direct dispatch; an unported kind (a relay offer) is answered by the
-    // desktop's arm (plan E2.3). Gossip never travels by `app_call`. The
+    // desktop's arm (plan E2.3). Gossip and media never travel by
+    // `app_call` (plan E4.1 S3, as the transport's dispatch refuses them). The
     // untagged arms below keep their order until their owners tag them
     // (plan E2.3, "Ingress").
     match rekindle_codec::ingress::classify(&message) {
@@ -61,8 +62,9 @@ pub async fn handle_app_call(
             }
             return;
         }
-        rekindle_codec::ingress::Ingress::Gossip(_) => {
-            tracing::debug!(msg_len = message.len(), "gossip by app_call — NAK");
+        rekindle_codec::ingress::Ingress::Gossip(_)
+        | rekindle_codec::ingress::Ingress::Media(_) => {
+            tracing::debug!(msg_len = message.len(), "gossip or media by app_call — NAK");
             reply_to_call(state, call_id, NAK.to_vec()).await;
             return;
         }

@@ -38,6 +38,8 @@ impl InboundHandler for Gated {
 
     async fn on_direct(&self, _datagram: &[u8]) {}
 
+    fn on_media(&self, _raw: &[u8], _arrived: std::time::Instant) {}
+
     async fn on_direct_call(&self, _datagram: &[u8], _route: Option<&str>) -> Option<Vec<u8>> {
         None
     }

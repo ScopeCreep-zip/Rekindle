@@ -38,9 +38,9 @@ impl MediaIngress for DesktopMediaIngress<'_> {
     }
     fn queue_media_envelope(&self, signed: SignedEnvelope) {
         let is_video = super::video_payload_channel_from_bytes(&signed.envelope_bytes).is_some();
-        self.0
-            .gossip_ingress
-            .push(crate::services::veilid::ingress_queue::IngressItem::Gossip { signed, is_video });
+        self.0.gossip_ingress.push(
+            rekindle_transport::subscriptions::lanes::IngressItem::Gossip { signed, is_video },
+        );
     }
     fn on_transport_feedback(&self, feedback: &TransportFeedback, arrived: Instant) {
         crate::services::voice_adapter::media_feedback::on_transport_feedback(

@@ -248,7 +248,17 @@ pub async fn start_dispatch_loop(
                             // Veilid's 5 s deadline, so it never waits
                             // behind `ValueChange`s (`app_call_lane`).
                             VeilidUpdate::AppCall(_) => {
-                                state.app_call_lane.dispatch(&app_handle, &state, update);
+                                let scope = crate::state_helpers::login_scope_or_closed(&state);
+                                let (app_handle, state_task) =
+                                    (app_handle.clone(), Arc::clone(&state));
+                                state.app_call_lane.dispatch(&scope, async move {
+                                    crate::services::veilid::handle_veilid_update(
+                                        &app_handle,
+                                        &state_task,
+                                        update,
+                                    )
+                                    .await;
+                                });
                             }
                             _ => {
                                 crate::services::veilid::handle_veilid_update(

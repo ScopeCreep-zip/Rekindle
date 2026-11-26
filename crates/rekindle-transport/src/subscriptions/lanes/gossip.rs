@@ -1,4 +1,6 @@
 //! Inbound dispatch isolation — the voice fast path's bodyguard.
+//! (Moved from the desktop's `services/veilid/ingress_queue.rs`, plan
+//! E4.1 S3: the inbound lanes are the transport's.)
 //!
 //! The Veilid update dispatch loop is SERIAL: every `app_message` used
 //! to await full gossip processing (signature verify → dedup →

@@ -203,7 +203,7 @@ pub struct AppState {
     /// pushes and returns so video processing can never stall voice
     /// packet delivery; one worker (spawned by the dispatch loop)
     /// drains it in FIFO order.
-    pub gossip_ingress: Arc<crate::services::veilid::ingress_queue::GossipIngressQueue>,
+    pub gossip_ingress: Arc<rekindle_transport::subscriptions::lanes::GossipIngressQueue>,
     /// Piece 6 — inbound control-event queue. The dispatch loop pushes
     /// `ValueChange`/`AppCall` here and returns immediately; a sibling
     /// worker (spawned by the dispatch loop) drains it in FIFO order via
@@ -211,10 +211,12 @@ pub struct AppState {
     /// handlers (DHT/DB/decrypt, network round-trips) from the serial
     /// recv loop so incoming media `AppMessage`s can't back up in the
     /// node's 4096-deep update channel behind them.
-    pub control_ingress: Arc<crate::services::veilid::control_ingress::ControlIngressQueue>,
+    pub control_ingress: Arc<
+        rekindle_transport::subscriptions::lanes::ControlIngressQueue<veilid_core::VeilidUpdate>,
+    >,
     /// Inbound `app_call`s, served concurrently within Veilid's answer
     /// deadline (plan C7.22).
-    pub app_call_lane: crate::services::veilid::app_call_lane::AppCallLane,
+    pub app_call_lane: rekindle_transport::subscriptions::lanes::AppCallLane,
     /// Linux-native camera session slot (unit type off-Linux).
     pub native_video: crate::services::native_video::NativeVideoSlot,
     /// Phase 5 — last-known halves of the merged ConnectionQuality
@@ -306,11 +308,11 @@ impl Default for AppState {
             video_sessions: crate::services::community::video_session::VideoSessionStateMap::new(),
             media_ready: Mutex::new(rekindle_voice::media_ready::MediaReadyTracker::new()),
             gossip_ingress: Arc::new(
-                crate::services::veilid::ingress_queue::GossipIngressQueue::new(),
+                rekindle_transport::subscriptions::lanes::GossipIngressQueue::new(),
             ),
-            app_call_lane: crate::services::veilid::app_call_lane::AppCallLane::default(),
+            app_call_lane: rekindle_transport::subscriptions::lanes::AppCallLane::default(),
             control_ingress: Arc::new(
-                crate::services::veilid::control_ingress::ControlIngressQueue::new(),
+                rekindle_transport::subscriptions::lanes::ControlIngressQueue::new(),
             ),
             native_video: crate::services::native_video::NativeVideoSlot::default(),
             voice_quality_cache: Mutex::new(

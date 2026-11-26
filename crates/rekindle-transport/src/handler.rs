@@ -90,6 +90,15 @@ pub trait InboundHandler: Send + Sync + 'static {
         route: Option<&str>,
     ) -> impl Future<Output = Option<Vec<u8>>> + Send;
 
+    /// A media datagram arrived (plan E4.1 S3): `raw` starts with a media
+    /// tag (`rekindle_codec::ingress::Ingress::Media`), tag included, and
+    /// `arrived` is when the dispatch loop took it, before any queue adds a
+    /// delay the bandwidth estimator would measure. Synchronous on purpose:
+    /// the handler verifies and `try_send`s onto its media owner and
+    /// returns, so the serial dispatch loop never waits on media, and the
+    /// app-call lane keeps media from ever waiting on a call.
+    fn on_media(&self, raw: &[u8], arrived: std::time::Instant);
+
     /// An authenticated gossip broadcast arrived from a community member.
     fn on_gossip(
         &self,

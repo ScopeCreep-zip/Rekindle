@@ -26,15 +26,7 @@ pub fn handle(state: &Arc<AppState>, msg: &veilid_core::VeilidAppMessage) {
     // on the serial dispatch loop the audio fast path shares (plan C7.23).
     tracing::trace!(msg_len = message.len(), "app_message received");
 
-    // Both media fast paths (audio packets and their receiver
-    // reports) live in `media`: verify, `try_send`, return — never
-    // any work on this thread, which is serial across every
-    // app_message the node receives.
-    if media::handle_media_tag(state, &message) {
-        return;
-    }
-
-    // Everything below is queued, NOT processed inline: gossip/video
+    // Everything else is queued, NOT processed inline: gossip/video
     // processing (sig verify → dedup → reassembly → MEK decrypt → emit)
     // is slow enough that a fragment burst would stall this serial
     // dispatch path and starve the voice fast path above. The worker
@@ -42,8 +34,18 @@ pub fn handle(state: &Arc<AppState>, msg: &veilid_core::VeilidAppMessage) {
     //
     // Routed by the ingress tag (§6), so nothing here trial-decodes: a
     // datagram that is neither media, `'D'` nor `'G'` is dropped (plan E2.3).
-    use crate::services::veilid::ingress_queue::IngressItem;
+    use rekindle_transport::subscriptions::lanes::IngressItem;
     match classify(&message) {
+        // Both media fast paths (audio packets and their receiver
+        // reports) live in `media`, routed by the media tags of the one
+        // classifier (plan E4.1 S3): verify, `try_send`, return — never
+        // any work on this thread, which is serial across every
+        // app_message the node receives.
+        Ingress::Media(datagram) => {
+            if !media::handle_media_tag(state, datagram) {
+                tracing::debug!(msg_len = datagram.len(), "malformed media datagram dropped");
+            }
+        }
         Ingress::Direct(_) => state.gossip_ingress.push(IngressItem::Direct(message)),
         Ingress::Gossip(bytes) => match decode_signed_envelope(bytes) {
             Ok(signed) => {
@@ -66,7 +68,7 @@ pub fn handle(state: &Arc<AppState>, msg: &veilid_core::VeilidAppMessage) {
 pub(crate) async fn process_ingress_item(
     app_handle: &AppHandle,
     state: &Arc<AppState>,
-    item: crate::services::veilid::ingress_queue::IngressItem,
+    item: rekindle_transport::subscriptions::lanes::IngressItem,
 ) {
     ingest_item(state, item)
         .await
@@ -78,9 +80,9 @@ pub(crate) async fn process_ingress_item(
 /// show and the follow-ups that need the Tauri handle (plan GI4).
 pub(crate) async fn ingest_item(
     state: &Arc<AppState>,
-    item: crate::services::veilid::ingress_queue::IngressItem,
+    item: rekindle_transport::subscriptions::lanes::IngressItem,
 ) -> IngestOutcome {
-    use crate::services::veilid::ingress_queue::IngressItem;
+    use rekindle_transport::subscriptions::lanes::IngressItem;
     match item {
         IngressItem::Gossip { signed, .. } => gossip_core(state, signed).await,
         IngressItem::Direct(message) => {

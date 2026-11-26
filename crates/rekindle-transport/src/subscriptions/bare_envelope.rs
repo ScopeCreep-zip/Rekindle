@@ -35,16 +35,85 @@
 //! the handler verifies and admits as a member before it answers; the
 //! answer is bytes the reader checks against the endorsed `stateRoot`.
 //!
-//! Those four arguments cover `MekTransfer`, `RequestAttachment`,
-//! `BootstrapRequest` and `CheckpointStateRequest` and nothing else. Every
-//! other
-//! control variant carries its authority in plaintext fields — a
+//! The fifth is a call-media key (plan E4.1 S3): a `VoiceMediaKey` or a
+//! `VoiceMediaKeyRequest`, the bare envelopes the desktop's voice sends
+//! point to point (plan C7.22, ADR 0016). Each carries its own
+//! authority: a key is sealed to the recipient and signed by its sender's
+//! pseudonym inside the payload (plan C7.29), and a request names the key
+//! index it asks for, which the handler answers only with a key sealed to
+//! the requester, so neither is forgeable by reaching our route. What
+//! reaching our route does buy is volume: each one makes the handler
+//! verify a signature (and, for a request, seal a key), so they are
+//! metered per requester ([`MediaKeyAdmission`]) before the handler
+//! sees them, the receiver-side floor gossip has (architecture §20.2).
+//!
+//! Those five arguments cover `MekTransfer`, `RequestAttachment`,
+//! `BootstrapRequest`, `CheckpointStateRequest` (the hint and frontier
+//! requests are routed like it) and the two media-key variants, and
+//! nothing else. Every other control variant carries its authority in plaintext fields — a
 //! `MEKRotated` generation, a `RequestMEK` cascade index — and would be
 //! forgeable by anyone who can reach our route. Those must keep
 //! arriving signed, which is why this returns `None` for them and lets
 //! the caller NAK.
 
+use std::collections::HashMap;
+use std::time::{Duration, Instant};
+
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload, MekTransferPayload};
+use rekindle_gossip::rate_limit::TokenBucket;
+
+/// Recognise a bare `VoiceMediaKey` or `VoiceMediaKeyRequest` (plan E4.1
+/// S3), and only those: the payload and the requester it is metered by
+/// (a key's `sender`, a request's `requester`).
+pub(super) fn decode_bare_media_key(raw: &[u8]) -> Option<(String, ControlPayload)> {
+    let payload = rekindle_codec::capnp_envelope::try_decode_community_envelope(raw)
+        .ok()
+        .flatten()
+        .and_then(CommunityEnvelope::into_control)?;
+    let requester = match &payload {
+        ControlPayload::VoiceMediaKey { sender, .. } => sender.clone(),
+        ControlPayload::VoiceMediaKeyRequest { requester, .. } => requester.clone(),
+        _ => return None,
+    };
+    Some((requester, payload))
+}
+
+/// Burst of media-key calls one requester may make: a sender delivers one
+/// key per recipient per rotation (ratchet-on-join, rotation on every
+/// departure, ADR 0016 / plan C7.29), and a joiner asks once per sender it
+/// lacks a key for, so a burst is a handful.
+pub const MEDIA_KEY_BURST: u32 = 8;
+/// Media-key calls per second one requester sustains past its burst.
+pub const MEDIA_KEY_PER_SEC: u32 = 2;
+/// Buckets held before idle ones are pruned: the requester is a claim, so
+/// a flood of invented names must not pin the map.
+const MEDIA_KEY_SOFT_CAP: usize = 1024;
+/// A bucket idle this long is pruned.
+const MEDIA_KEY_IDLE_TTL: Duration = Duration::from_secs(60);
+
+/// The per-requester token bucket the bare media-key branch meters by
+/// (plan E4.1 S3): over its floor a requester's call is refused before
+/// any handler work.
+#[derive(Debug, Default)]
+pub struct MediaKeyAdmission {
+    buckets: HashMap<String, TokenBucket>,
+}
+
+impl MediaKeyAdmission {
+    /// Take one token for `requester` at `now`; `false` refuses the call.
+    pub fn admit(&mut self, requester: &str, now: Instant) -> bool {
+        let admitted = self
+            .buckets
+            .entry(requester.to_string())
+            .or_insert_with(|| TokenBucket::new(MEDIA_KEY_BURST, MEDIA_KEY_PER_SEC, now))
+            .try_consume_at(1, now);
+        if self.buckets.len() > MEDIA_KEY_SOFT_CAP {
+            self.buckets
+                .retain(|_, b| now.saturating_duration_since(b.last_refill()) < MEDIA_KEY_IDLE_TTL);
+        }
+        admitted
+    }
+}
 
 /// Recognise a bare `CommunityEnvelope` carrying a wrapped MEK.
 ///
@@ -158,7 +227,11 @@ pub(super) fn decode_bare_frontier_request(raw: &[u8]) -> Option<crate::payload:
 
 #[cfg(test)]
 mod tests {
-    use super::{decode_bare_attachment_request, decode_bare_mek_transfer};
+    use super::{
+        decode_bare_attachment_request, decode_bare_bootstrap_request,
+        decode_bare_checkpoint_hint_request, decode_bare_checkpoint_state_request,
+        decode_bare_frontier_request, decode_bare_media_key, decode_bare_mek_transfer,
+    };
     use rekindle_codec::capnp_envelope::encode_community_envelope;
     use rekindle_codec::community::envelope::{
         CommunityEnvelope, ControlPayload, MekTransferPayload,
@@ -203,6 +276,89 @@ mod tests {
             decode_bare_mek_transfer(&rotated).is_none(),
             "an unsigned MEKRotated must not be actionable"
         );
+        // No bare branch admits it, the media-key branch included.
+        assert!(decode_bare_media_key(&rotated).is_none());
+        assert!(decode_bare_attachment_request(&rotated).is_none());
+        assert!(decode_bare_bootstrap_request(&rotated).is_none());
+        assert!(decode_bare_checkpoint_state_request(&rotated).is_none());
+        assert!(decode_bare_checkpoint_hint_request(&rotated).is_none());
+        assert!(decode_bare_frontier_request(&rotated).is_none());
+    }
+
+    fn control_bytes(payload: ControlPayload) -> Vec<u8> {
+        encode_community_envelope(&CommunityEnvelope::control(payload)).expect("encode")
+    }
+
+    /// The media-key branch admits a key and a request, metered by the
+    /// key's sender and the request's requester, and nothing else: the
+    /// key's ack (also a valid media-key envelope), the MEK transfer and
+    /// an attachment request all fall through to their own branch or the
+    /// NAK.
+    #[test]
+    fn the_media_key_branch_admits_only_a_key_and_a_request() {
+        let key = control_bytes(ControlPayload::VoiceMediaKey {
+            community_id: "c".into(),
+            channel_id: "ch".into(),
+            sender: "s".into(),
+            recipient: "r".into(),
+            key_index: 4,
+            sealed: vec![7; 80],
+            signature: vec![8; 64],
+        });
+        let request = control_bytes(ControlPayload::VoiceMediaKeyRequest {
+            community_id: "c".into(),
+            channel_id: "ch".into(),
+            requester: "q".into(),
+            sender: "s".into(),
+            key_index: 3,
+        });
+        let ack = control_bytes(ControlPayload::VoiceMediaKeyAck {
+            community_id: "c".into(),
+            channel_id: "ch".into(),
+            sender: "s".into(),
+            recipient: "r".into(),
+            key_index: 9,
+        });
+        let attachment = control_bytes(ControlPayload::RequestAttachment {
+            channel_id: "general".into(),
+            attachment_id: [7; 16],
+            requested_chunks: vec![0],
+            requester_pseudonym: "cc".repeat(32),
+        });
+        assert_eq!(
+            decode_bare_media_key(&key).map(|(who, _)| who),
+            Some("s".into())
+        );
+        assert_eq!(
+            decode_bare_media_key(&request).map(|(who, _)| who),
+            Some("q".into())
+        );
+        for refused in [ack, mek_transfer_bytes(), attachment, b"garbage".to_vec()] {
+            assert!(decode_bare_media_key(&refused).is_none());
+        }
+        assert!(decode_bare_mek_transfer(&key).is_none());
+        assert!(decode_bare_attachment_request(&request).is_none());
+    }
+
+    /// Each requester has its own bucket: one past its burst is refused
+    /// while another requester is still admitted, and a refused one is
+    /// admitted again once its bucket refills.
+    #[test]
+    fn media_keys_are_rate_limited_per_requester() {
+        use super::{MediaKeyAdmission, MEDIA_KEY_BURST, MEDIA_KEY_PER_SEC};
+        let now = std::time::Instant::now();
+        let mut admission = MediaKeyAdmission::default();
+        for _ in 0..MEDIA_KEY_BURST {
+            assert!(admission.admit("flooder", now));
+        }
+        assert!(!admission.admit("flooder", now), "past its burst");
+        assert!(
+            admission.admit("honest", now),
+            "another requester's own bucket"
+        );
+        let refilled = now + std::time::Duration::from_millis(1_000 / u64::from(MEDIA_KEY_PER_SEC));
+        assert!(admission.admit("flooder", refilled));
+        assert!(!admission.admit("flooder", refilled));
     }
 
     #[test]
