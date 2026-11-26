@@ -23,7 +23,7 @@ import { NET_WAIT_MS, switchTo, waitUntil } from "../../../walk/helpers.ts";
 import { BUDDY, openSettings } from "../../../walk/nav.ts";
 import { createCommunity, createIdentity, newUser, openCommunity, type User } from "../../journeys.ts";
 import { applySkin, skinShown } from "../../journeys_skins.ts";
-import { decodePng } from "../../png.ts";
+import { disabledLook } from "../../disabled-look.ts";
 import { shot } from "../../shots.ts";
 import { builtinPacks } from "../../skin-pack.ts";
 
@@ -36,50 +36,6 @@ interface Disabled {
   by: string;
   opacity: string;
   cause: string;
-}
-
-/**
- * How many pixels inside each refused node's box change when it is drawn as
- * its enabled self instead (its attributes put back after), by node.
- */
-async function disabledLook(ids: string[]): Promise<Record<string, number>> {
-  const width = (await browser.execute(() => innerWidth)) as number;
-  const served = decodePng(Buffer.from(await browser.takeScreenshot(), "base64"));
-  const scale = served.width / width;
-  const out: Record<string, number> = {};
-  for (const id of ids) {
-    const box = (await browser.execute((node: string) => {
-      const n = document.querySelector<HTMLElement>(`.skin-tree [data-skin-node="${node}"][aria-disabled="true"]`);
-      if (!n) return null;
-      const r = n.getBoundingClientRect();
-      const keep = { state: n.getAttribute("data-state"), by: n.getAttribute("data-disabled-by") };
-      (window as unknown as { __cr1Keep: unknown }).__cr1Keep = keep;
-      n.setAttribute("data-state", "normal");
-      n.removeAttribute("aria-disabled");
-      n.removeAttribute("data-disabled-by");
-      return [r.x, r.y, r.width, r.height];
-    }, id)) as number[] | null;
-    if (!box) continue;
-    const enabled = decodePng(Buffer.from(await browser.takeScreenshot(), "base64"));
-    await browser.execute((node: string) => {
-      const n = document.querySelector<HTMLElement>(`.skin-tree [data-skin-node="${node}"]`);
-      const keep = (window as unknown as { __cr1Keep: { state: string | null; by: string | null } }).__cr1Keep;
-      if (!n) return;
-      if (keep.state !== null) n.setAttribute("data-state", keep.state);
-      n.setAttribute("aria-disabled", "true");
-      if (keep.by !== null) n.setAttribute("data-disabled-by", keep.by);
-    }, id);
-    const [x, y, w, h] = box.map((v) => Math.round(v * scale));
-    let changed = 0;
-    for (let row = Math.max(0, y); row < Math.min(served.height, y + h); row++) {
-      for (let col = Math.max(0, x); col < Math.min(served.width, x + w); col++) {
-        const i = (row * served.width + col) * 4;
-        if (Math.abs(served.data[i] - enabled.data[i]) + Math.abs(served.data[i + 1] - enabled.data[i + 1]) + Math.abs(served.data[i + 2] - enabled.data[i + 2]) > 48) changed++;
-      }
-    }
-    out[id] = changed;
-  }
-  return out;
 }
 
 /** The current window's drawn nodes in their Disabled art for `windowInactive`: `aria-disabled` must be absent. */
