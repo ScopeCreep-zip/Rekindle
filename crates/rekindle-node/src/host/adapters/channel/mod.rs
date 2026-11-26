@@ -34,6 +34,7 @@ mod outbox_entries;
 mod outbox_gap;
 mod outbox_hold;
 mod outbox_read;
+mod outbox_unmapped;
 pub(crate) use outbox_read::outbox_stream;
 pub(crate) mod outbox_send;
 mod persist;

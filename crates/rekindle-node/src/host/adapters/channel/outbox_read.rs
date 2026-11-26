@@ -293,24 +293,32 @@ impl HostChannel {
             }
         };
         self.check_link(read, entry.seq, &decoded);
-        let Some(channel_id) =
-            self.channel_of_tag(community_id, decoded.generation, &decoded.channel_tag)
-        else {
+        let tag = (decoded.generation, &decoded.channel_tag);
+        let channel_id = match self.channel_of_tag(community_id, tag.0, tag.1) {
+            Some(channel_id) => channel_id,
             // A joiner before its first `MekTransfer` (D11, D16), or a
             // reader owed a converged generation's key it does not hold
             // yet: the cursor stays on this entry and the catch-up the key's
-            // install starts reads it again (`outbox_hold.rs`). Otherwise an
-            // entry no key maps is of a channel we do not read or from
-            // before our keys, and the chain covers it.
-            if self.entry_waits_for_key(community_id, decoded.generation) {
-                return Ok(Held::Pending);
+            // install starts reads it again (`outbox_hold.rs`).
+            None if self.entry_waits_for_key(community_id, tag.0) => return Ok(Held::Pending),
+            // Otherwise the entry is of a channel we do not read, from
+            // before our keys, a thread's, or of a channel whose creation
+            // has not merged here yet: it passes, and its writer is diffed
+            // again when a merge creates a channel (`outbox_unmapped.rs`).
+            // Noted before the second look, so a creation merging between
+            // the two is either seen here or re-reads the writer.
+            None => {
+                self.note_unmapped(community_id, author, read.member_record);
+                let Some(channel_id) = self.channel_of_tag(community_id, tag.0, tag.1) else {
+                    tracing::info!(
+                        community_id,
+                        seq = entry.seq,
+                        "channel outbox entry of no channel merged here: re-read when one is created"
+                    );
+                    return Ok(Held::Stored);
+                };
+                channel_id
             }
-            tracing::debug!(
-                community_id,
-                seq = entry.seq,
-                "channel outbox entry of no channel we read"
-            );
-            return Ok(Held::Stored);
         };
         let author_hex = hex::encode(author);
         let (message, forwarded_from_author) = match decoded.entry {

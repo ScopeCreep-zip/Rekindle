@@ -23,6 +23,20 @@ impl HostGovernance {
         );
     }
 
+    /// A merge created a channel (plan E3.3, `channel::outbox_unmapped`):
+    /// diff again, on the community's scope, every outbox whose entries
+    /// mapped to no merged channel since the last creation.
+    pub(super) fn spawn_outbox_reread_unmapped(&self, community_id: &str) {
+        let channel = crate::host::adapters::channel::HostChannel::new(&self.ctx);
+        let community = community_id.to_string();
+        self.ctx.community_scope(community_id).spawn_or_drop(
+            "channel outbox re-read for a new channel",
+            async move {
+                channel.reread_unmapped(&community).await;
+            },
+        );
+    }
+
     /// An older community key arrived (plan D16, `key_history.rs`): forget
     /// the community's outbox cursors, so the entries a catch-up passed for
     /// want of that key are read again, then catch every outbox up.
