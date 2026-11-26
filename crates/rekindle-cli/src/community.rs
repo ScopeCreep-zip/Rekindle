@@ -371,10 +371,19 @@ fn role_rows(roles: &[rekindle_types::display::RoleDisplay]) -> Vec<Vec<String>>
 }
 
 /// The info table's rows after the community's facts: our standing (plan
-/// E3.2 S9 R3-5) and our governance ops not yet landed.
-fn standing_rows(value: &serde_json::Value) -> [(&'static str, String); 2] {
+/// E3.2 S9 R3-5), our governance ops not yet landed, and the community
+/// key generation the Host holds (`CommunityDetail::mek_generation`).
+fn standing_rows(value: &serde_json::Value) -> [(&'static str, String); 3] {
     [
         ("Standing", removal_text(value.get("removed"))),
+        (
+            "Key Generation",
+            value
+                .get("mek_generation")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or_default()
+                .to_string(),
+        ),
         (
             "Unlanded Ops",
             publications_text(value.get("op_publications")),

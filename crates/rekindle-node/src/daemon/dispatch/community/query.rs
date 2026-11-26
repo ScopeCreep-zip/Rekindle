@@ -158,6 +158,8 @@ fn held_detail(
     detail.removed =
         crate::host::adapters::governance::removal_display(&ctx.communities, &membership.anchor);
     detail.catch_up = ctx.communities.unlock_barriers().view(&membership.anchor);
+    detail.mek_generation =
+        (ctx.communities.mek_generation(&membership.anchor)).unwrap_or_default();
     detail
 }
 
