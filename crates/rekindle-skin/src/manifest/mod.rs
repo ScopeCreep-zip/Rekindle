@@ -144,6 +144,9 @@ pub fn place(manifest: &mut SkinManifest, package: &Package<'_>) -> Result<(), S
     for layout in manifest.windows.values_mut() {
         crate::skin_tree::titles::menus(layout, package)?;
         crate::skin_tree::brand::nodes(layout);
+        // Plan SK17: the chat title on its text point and the native
+        // controls above the art, before the text boxes are laid.
+        crate::skin_tree::chat_slots::serve(layout);
         crate::skin_tree::text_box::lay(layout);
         crate::skin_tree::inset::fields(layout);
         crate::skin_tree::target::nodes(layout);
