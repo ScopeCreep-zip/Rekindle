@@ -29,6 +29,8 @@ mod channel_held_tests;
 mod channel_ingest_tests;
 #[path = "channel_send_tests.rs"]
 mod channel_send_tests;
+#[path = "channel_view_tests.rs"]
+mod channel_view_tests;
 #[path = "checkpoint_rows_tests.rs"]
 mod checkpoint_rows;
 #[path = "checkpoint_state_tests.rs"]
@@ -55,6 +57,8 @@ mod mek_transfer_tests;
 mod membership;
 #[path = "onboarding_bounds_tests.rs"]
 mod onboarding_bounds;
+#[path = "op_publications_tests.rs"]
+mod op_publications;
 #[path = "own_frontier_record_tests.rs"]
 mod own_frontier_record;
 #[path = "own_member_record_tests.rs"]
@@ -86,6 +90,9 @@ mod skin_serve;
 #[cfg(unix)]
 #[path = "skin_trial_tests.rs"]
 mod skin_trial;
+#[cfg(all(feature = "webdriver-test", debug_assertions))]
+#[path = "webdriver_tests.rs"]
+mod webdriver_tests;
 #[path = "withdrawal_tests.rs"]
 mod withdrawal;
 

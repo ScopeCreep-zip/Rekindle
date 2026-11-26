@@ -34,8 +34,12 @@ export interface Peer {
   publicKey: string;
   /** `rekindle --format json --no-input <args>` as this peer; the parsed answer. */
   cli(args: string[]): Promise<unknown>;
-  /** The review a reviewed command prints when run without its confirmation (D3.4), or null. */
-  review(args: string[]): Promise<unknown>;
+  /**
+   * `args` run once without any confirmation: `ran` with its answer when it
+   * needed none, else the refusal it printed (a reviewed command prints its
+   * review, D3.4). Never runs a command twice.
+   */
+  review(args: string[]): Promise<Reviewed>;
   stop(): Promise<void>;
   /** For the process's `exit` hook, where only synchronous work runs. */
   stopSync(): void;
@@ -46,6 +50,9 @@ export interface Peer {
 }
 
 const started = new Set<Peer>();
+
+/** What `Peer.review` saw: the command ran (its answer), or it was refused (what it printed). */
+export type Reviewed = { ran: true; value: unknown } | { ran: false; refusal: { error?: { message?: string } } | null };
 
 /**
  * The last JSON value a CLI run printed. A reviewed action prints its
@@ -128,10 +135,29 @@ async function endStray(home: string, displayName: string): Promise<boolean> {
   if (process.platform === "darwin") {
     await run("sample", [String(pid), "10", "-file", path.join(keep, "rekindled.sample.txt")]).catch(() => undefined);
   }
-  const gone = async (): Promise<boolean> => lockHolder(home) !== pid;
-  process.kill(pid, "SIGTERM");
+  // A lock left by a daemon that has already exited (a peer `pause()` stopped)
+  // names a pid that no longer runs: that daemon is gone, nothing to signal.
+  const alive = (): boolean => {
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  if (!alive()) return true;
+  const gone = async (): Promise<boolean> => lockHolder(home) !== pid || !alive();
+  const signal = (sig: NodeJS.Signals): void => {
+    try {
+      process.kill(pid, sig);
+    } catch (e) {
+      // It exited between the check and the signal: gone, as wanted.
+      if ((e as NodeJS.ErrnoException).code !== "ESRCH") throw e;
+    }
+  };
+  signal("SIGTERM");
   if (await waitUntil(gone, 30_000, "").then(() => true, () => false)) return true;
-  process.kill(pid, "SIGKILL");
+  signal("SIGKILL");
   return waitUntil(gone, 10_000, "").then(() => true, () => false);
 }
 
@@ -163,17 +189,18 @@ async function startPeer(displayName: string): Promise<Peer> {
   chmodSync(passFile, 0o600);
   const exe = cliPath();
 
-  const review = async (args: string[]): Promise<unknown> => {
+  const review = async (args: string[]): Promise<Reviewed> => {
     try {
-      await run(exe, ["--format", "json", "--no-input", ...args], { env, maxBuffer: 16 * 1024 * 1024 });
-      return null;
+      const { stdout } = await run(exe, ["--format", "json", "--no-input", ...args], { env, maxBuffer: 16 * 1024 * 1024 });
+      // It asked no review: it has run, and this is its answer.
+      return { ran: true, value: lastJson(stdout) };
     } catch (err) {
       // A refused reviewed run prints its review on one line, then the
       // error (D3.4); a refusal before any review prints only the error.
       const out = ((err as { stdout?: string }).stdout ?? "").trim();
       const first = out.split("\n")[0] ?? "";
-      if (first.length > 1 && first.startsWith("{")) return JSON.parse(first);
-      return out.startsWith("{") ? JSON.parse(out) : null;
+      if (first.length > 1 && first.startsWith("{")) return { ran: false, refusal: JSON.parse(first) };
+      return { ran: false, refusal: out.startsWith("{") ? JSON.parse(out) : null };
     }
   };
 
@@ -395,9 +422,10 @@ export async function peerSendGroup(peer: Peer, groupId: string, text: string): 
  * confirms the fingerprint its own review names.
  */
 export async function peerJoinCommunity(peer: Peer, invite: string): Promise<void> {
-  const refused = (await peer.review(["community", "join", "--invite", invite])) as { error?: { message?: string } } | null;
-  const fingerprint = /--confirm=([0-9a-f ]{64,79})$/.exec(refused?.error?.message ?? "")?.[1];
-  if (!fingerprint) throw new Error(`${peer.displayName}: the join asked for no fingerprint (${JSON.stringify(refused).slice(0, 200)})`);
+  const reviewed = await peer.review(["community", "join", "--invite", invite]);
+  if (reviewed.ran) throw new Error(`${peer.displayName}: the join ran without the fingerprint review it must ask`);
+  const fingerprint = /--confirm=([0-9a-f ]{64,79})$/.exec(reviewed.refusal?.error?.message ?? "")?.[1];
+  if (!fingerprint) throw new Error(`${peer.displayName}: the join asked for no fingerprint (${JSON.stringify(reviewed.refusal).slice(0, 200)})`);
   await peer.cli([`--confirm=${fingerprint}`, "community", "join", "--invite", invite]);
 }
 
@@ -417,6 +445,14 @@ export async function peerInvite(peer: Peer, anchor: string, uses = 1): Promise<
 }
 
 /** How many members `peer`'s view of community `anchor` counts. */
+/** `peer`'s own pseudonym in community `anchor` (community info's `ourPseudonym`): what the CLI's member commands take. */
+export async function peerOwnPseudonym(peer: Peer, anchor: string): Promise<string> {
+  const info = (await peer.cli(["community", "info", "--community", anchor])) as { ourPseudonym?: string; our_pseudonym?: string } | null;
+  const key = info?.ourPseudonym ?? info?.our_pseudonym ?? "";
+  if (!/^[0-9a-f]{64}$/i.test(key)) throw new Error(`${peer.displayName}: community info served no pseudonym for ${anchor.slice(0, 16)}… (${JSON.stringify(info).slice(0, 200)})`);
+  return key;
+}
+
 export async function peerMemberCount(peer: Peer, anchor: string): Promise<number> {
   const info = (await peer.cli(["community", "info", "--community", anchor])) as { member_count?: number; memberCount?: number } | null;
   return info?.member_count ?? info?.memberCount ?? 0;
@@ -428,9 +464,16 @@ export async function peerMemberCount(peer: Peer, anchor: string): Promise<numbe
  * it from their own review. A command that asks none runs as is.
  */
 export async function peerReviewed(peer: Peer, args: string[]): Promise<unknown> {
-  const refused = (await peer.review(args)) as { error?: { message?: string } } | null;
-  const subject = /--confirm=(.+)$/.exec(refused?.error?.message ?? "")?.[1]?.trim();
-  return peer.cli(subject ? [`--confirm=${subject}`, ...args] : args);
+  // A command that asks no review has run once already: its answer, never a
+  // second run (that duplicated posts and invites). Otherwise the flag the
+  // CLI itself names; a refusal naming none is that refusal.
+  const reviewed = await peer.review(args);
+  if (reviewed.ran) return reviewed.value;
+  const message = reviewed.refusal?.error?.message ?? "";
+  const subject = /--confirm=(.+)$/.exec(message)?.[1]?.trim();
+  if (subject) return peer.cli([`--confirm=${subject}`, ...args]);
+  if (/pass --yes\b/.test(message)) return peer.cli(["--yes", ...args]);
+  throw new Error(`${peer.displayName}: ${args.join(" ")} was refused: ${message || JSON.stringify(reviewed.refusal).slice(0, 300)}`);
 }
 
 /** `peer` creates role `name` with permission bits `permissions` in community `anchor`; its role id. */

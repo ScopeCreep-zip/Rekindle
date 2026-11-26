@@ -4,15 +4,15 @@ MenuBar MenuBar
   FileMenu MenuTitle label "Rekindle" cover [2, 0, 44, 15] target [0, -4, 48, 24] art [0, 4, 48, 15] Size
   ToolsMenu MenuTitle target [0, -4, 54, 24] art [0, 4, 54, 15] Size
   HelpMenu MenuTitle target [0, -4, 44, 24] art [0, 4, 44, 15] Size
-UserNameField NameField inset [0, 54] target [0, -3, 151, 20] art [0, 3, 205, 17] Spacing
+UserNameField NameField inset [0, 54] max 151 target [0, -3, 151, 20] art [0, 3, 205, 17] Spacing
   UserNameText Part
 StatusWrapper Group
 StatusEdit StatusText inset [0, 22] target [0, -4, 165, 20] art [0, 4, 187, 15] Spacing
-DownArrow StatusList target [-3, -3, 24, 20] art [3, 3, 18, 17] Spacing
+DownArrow StatusList target [-3, -7, 24, 24] art [3, 7, 18, 17] Size
 TopButtonBar Group
-  MinimizeBox Button target [-3, -3, 21, 24] art [3, 3, 18, 18] Short
+  MinimizeBox Button target [-6, -3, 24, 24] art [6, 3, 18, 18] Size
   MaximizeBox Button target [0, -3, 18, 24] art [0, 3, 18, 18] Short
-  CloseBox Button target [0, -3, 21, 24] art [0, 3, 18, 18] Short
+  CloseBox Button target [0, -3, 24, 24] art [0, 3, 18, 18] Size
 Middle Decor target [0, 0, 376, 8] art [0, 0, 376, 8] Frame
 LeftDetail Decor target [0, 0, 10, 101] art [0, 0, 10, 101] Frame
 InfoViewButton Button target [0, -1, 41, 24] art [0, 1, 41, 21] Size
@@ -29,7 +29,7 @@ TabHeader TabStrip
     TabNormalButton Tab(Friends) target [0, -2, 87, 24] art [0, 2, 87, 20] Size
     TabServerButton Tab(Servers) target [0, -2, 87, 24] art [0, 2, 87, 20] Size
     TabDownloadButton Tab(Files) target [0, -2, 87, 24] art [0, 2, 87, 20] Size
-    TabDownloadButton.Communities Tab(Communities) label "Communities" cover [8, 4, 71, 12] target [0, -2, 87, 24] art [0, 2, 87, 20] Size
+    TabDownloadButton.Communities Tab(Communities) label "Communities" cover [8, 4, 71, 12] target [0, -4, 87, 24] art [0, 4, 87, 20] Size
 Bottom Decor target [0, 0, 376, 170] art [0, 0, 376, 170] Frame
 AdArea AdArea
   AdView Part

@@ -8,8 +8,11 @@
 //! only for a member behind on a generation (register S7l, HIGH-1). The ask is the shell's
 //! retrying recovery on the desktop (`ShellHooks::spawn_community_mek_recovery`,
 //! E3.5) and one `RequestMEK` to the top-ranked responder on the daemon,
-//! as the daemon's `MekRequest` sends it; the retry and the last-resort
-//! mint move with the MEK adapters at E3.5.
+//! as the daemon's `MekRequest` sends it; the retry moves with the MEK
+//! adapters at E3.5. Neither mints a key: FX3 deleted the desktop's
+//! last-resort mint, and only a confirmed ADR 0018 ballot raises a key.
+//! The only trigger is the Host's community sync phase (FX3 deleted the
+//! shell's route-publish and unlock triggers).
 //!
 //! The repair of a missed generation (plan E3.2 S7m item 1c): a member
 //! that merges a `MEKGenerationBump` above the key it holds (it was out of
@@ -21,8 +24,7 @@
 //! the next. Matrix's `m.room_key_request` and Signal's sender-key
 //! redistribution make the same choice: the member missing a key asks the
 //! holders; the holders answer only a member (`is_key_reader`). The ask is
-//! the direct mesh request on both modes, never the desktop recovery's
-//! last-resort mint: a bump means a holder exists.
+//! the direct mesh request on both modes: a bump means a holder exists.
 
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 use rekindle_governance_runtime::GovernanceRuntimeDeps;
@@ -79,6 +81,7 @@ impl HostGovernance {
     /// Ask for `community_id`'s key when we hold it behind the generation
     /// governance names (item 1c's trigger, after a merge raised it).
     pub(crate) fn repair_behind_mek(&self, community_id: &str) {
+        self.refresh_key_status(community_id);
         if rekindle_presence::hides_presence(self.ctx.own_presence.status()) {
             return;
         }

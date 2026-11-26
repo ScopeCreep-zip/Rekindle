@@ -16,97 +16,10 @@ use super::skin::{Insets, RegionState};
 use super::skin_action::NodeTrigger;
 use super::skin_layout::SkinWindow;
 pub use super::skin_title::{TitleSlices as NodeSlices, TitleText as NodeText};
-pub use super::skin_tree_role::{Edge, LampKey, NodeRole, ViewKey};
+pub use super::skin_tree_label::{LabelAlign, LabelStyle};
+pub use super::skin_tree_role::{Edge, LampKey, NodeRole, SlotKey, ViewKey, WindowButtonKind};
 
-/// Where a fixed-size node sits along one axis of its parent's box, px.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", tag = "kind", content = "offset")]
-pub enum Anchor {
-    /// Its near side this far from the parent's start edge.
-    Start(i16),
-    /// Its far side this far before the parent's end edge.
-    End(i16),
-    /// Centred in its parent's box widened by `before` px at its start and
-    /// `after` px at its end, then moved by `by` (plan SK2 lead decision
-    /// 32): the frame the pack centred it in. A parent an `Outdent*` cut
-    /// keeps its uncut length here (Total Chaos's `BottomCenter` tab,
-    /// centred in the 471 px `BottomBar` that lost its first column); a
-    /// client box or a capped stretch is a narrower frame (negative).
-    /// Xfire floors: the start is ⌊(len + before + after − size) / 2⌋ +
-    /// `by` − `before`, the one rule the shape and the stylesheet place by.
-    Centre { by: i16, before: i16, after: i16 },
-    /// Its near side `gap` px past the far side of `sibling`, a node of the
-    /// same parent (plan SK15b): Xfire's `X="XfireMenuText.RIGHT+10"`
-    /// (Onyx `mainwindow.xml:42`) chained on a content-sized text
-    /// ([`ContentFit`]), which moves with that text's served width. A
-    /// stored pack keeps it; the Host resolves every one into a [`Self::Start`]
-    /// before it serves a tree (`rekindle_skin::skin_tree::content`), and
-    /// [`SkinTree::boxes`] places it against its sibling's box.
-    After { sibling: String, gap: i16 },
-}
-
-impl Anchor {
-    /// Centred in the parent's own box, then moved by `by`.
-    #[must_use]
-    pub const fn centre(by: i16) -> Self {
-        Self::Centre {
-            by,
-            before: 0,
-            after: 0,
-        }
-    }
-}
-
-/// One axis of a node's box, parent-relative.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", tag = "kind", deny_unknown_fields)]
-pub enum NodeSpan {
-    /// Its own size (its art's), placed once.
-    Fixed { at: Anchor, size: u16 },
-    /// Stretched between two insets from the parent's edges (Xfire's
-    /// `ResizeX="100"` with `Indent*`; negative for an `Outdent*`).
-    Stretch { start: i16, end: i16 },
-}
-
-impl NodeSpan {
-    /// The span's start and length inside a parent `len` px long. An
-    /// [`Anchor::After`] is placed as though its sibling ended at the
-    /// parent's start edge: only [`SkinTree::boxes`] knows the sibling, and
-    /// the Host serves no tree that holds one.
-    #[must_use]
-    pub fn place(&self, len: i32) -> (i32, i32) {
-        match self {
-            Self::Fixed { at, size } => {
-                let size = i32::from(*size);
-                let start = match at {
-                    Anchor::Start(o) | Anchor::After { gap: o, .. } => i32::from(*o),
-                    Anchor::End(o) => len - i32::from(*o) - size,
-                    Anchor::Centre { by, before, after } => {
-                        let (b, a) = (i32::from(*before), i32::from(*after));
-                        (len + b + a - size).div_euclid(2) + i32::from(*by) - b
-                    }
-                };
-                (start, size)
-            }
-            Self::Stretch { start, end } => {
-                let s = i32::from(*start);
-                (s, len - s - i32::from(*end))
-            }
-        }
-    }
-
-    /// The sibling an [`Anchor::After`] span follows, if it is one.
-    #[must_use]
-    pub fn after(&self) -> Option<(&str, i16)> {
-        match self {
-            Self::Fixed {
-                at: Anchor::After { sibling, gap },
-                ..
-            } => Some((sibling, *gap)),
-            _ => None,
-        }
-    }
-}
+pub use super::skin_tree_span::{share_of, Anchor, NodeSpan};
 
 /// Where one piece of a component's image set draws in its tile's box
 /// (Xfire's `Image Type=`, spec A7; the engine's table, `Xfire.exe` UTF-16
@@ -237,6 +150,10 @@ pub struct NodeLabel {
     /// plan SK5). `None` for a worded tab or title.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub glyph: Option<NodeGlyph>,
+    /// The style measured from the source tab's drawn word (plan SK15,
+    /// XGlow's `Downloads`); `None`: the shell's label style.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style: Option<LabelStyle>,
 }
 
 /// The part of a text field's box its pack's interactive siblings cover
@@ -249,6 +166,14 @@ pub struct NodeLabel {
 pub struct NodeInset {
     pub left: u16,
     pub right: u16,
+    /// The text's maximum width in px from its start (the field's left
+    /// edge plus `left`), when the press area its text stops at does not
+    /// move with the field's far edge as the window grows (plan SK15:
+    /// Alloy's name field stretches while its status field's press area
+    /// stays at x 171, so a constant `right` would run the name under it
+    /// at a wider window); `None` when `right` holds at every width.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_width: Option<u16>,
 }
 
 /// The shell's built-in glyphs a [`NodeLabel`] may name.
@@ -395,15 +320,15 @@ impl SkinTree {
         ) {
             let mut laid: Vec<(&str, [i32; 4])> = Vec::new();
             for node in nodes {
-                let past = |span: &NodeSpan, i: usize| {
-                    let (sib, gap) = span.after()?;
-                    let b = laid.iter().find(|(id, _)| id.eq_ignore_ascii_case(sib))?.1;
-                    Some(b[i] - parent[i] + b[i + 2] + i32::from(gap))
+                let place = |span: &NodeSpan, i: usize| {
+                    let past = span.after().and_then(|(sib, _)| {
+                        let b = laid.iter().find(|(id, _)| id.eq_ignore_ascii_case(sib))?.1;
+                        span.place_from(parent[i + 2], b[i] - parent[i] + b[i + 2])
+                    });
+                    past.unwrap_or_else(|| span.place(parent[i + 2]))
                 };
-                let (mut left, wide) = node.x.place(parent[2]);
-                let (mut top, tall) = node.y.place(parent[3]);
-                left = past(&node.x, 0).unwrap_or(left);
-                top = past(&node.y, 1).unwrap_or(top);
+                let (left, wide) = place(&node.x, 0);
+                let (top, tall) = place(&node.y, 1);
                 let area = [parent[0] + left, parent[1] + top, wide, tall];
                 out.push((node, area));
                 laid.push((&node.id, area));

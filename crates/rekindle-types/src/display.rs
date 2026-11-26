@@ -65,6 +65,18 @@ pub struct CommunityDetail {
     /// same view `GovernanceEvent::CatchUp` sends on every change.
     #[serde(default)]
     pub catch_up: Option<crate::display_catch_up::CatchUpView>,
+    /// Where each of our governance ops not yet landed stands, by op hash
+    /// (hex): the window view's `CommunityView::op_publications`, read from
+    /// the same Host function, so the CLI and TUI show what the window does.
+    #[serde(default)]
+    pub op_publications:
+        std::collections::BTreeMap<String, crate::subscription_events::OpPublicationState>,
+    /// The community key generation the Host holds now: the window view's
+    /// `CommunityView::mek_generation`, from the same state, so the CLI and
+    /// TUI show what the window does. It is the elected rotator's minted
+    /// generation until E3.5's ballots make it a confirmed one (ADR 0018).
+    #[serde(default)]
+    pub mek_generation: u64,
 }
 
 // ── Channel ─────────────────────────────────────────────────────────────

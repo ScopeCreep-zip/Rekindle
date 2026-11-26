@@ -1,0 +1,33 @@
+MainTitleBar TitleBar target [0, 0, 300, 160] art [0, 0, 300, 160] Frame
+ChatLogo Logo label "Rekindle" cover [0, 0, 34, 21] glyph Rekindle
+UserNameField ChatTitle
+  UserNameBG Part
+    UserNameText Part
+    TypingMessage Slot(TypingNotice)
+Middle Decor target [0, 0, 300, 25] art [0, 0, 300, 25] Frame
+ChatArea Slot(ChatArea)
+MenuBar MenuBar
+  SystemMenuText MenuTitle label "System"
+    SystemMenu Part target [0, -4, 39, 24] art [0, 4, 39, 15] Size
+  ActionsMenuText MenuTitle label "Actions"
+    ActionsMenu Part target [0, -4, 40, 24] art [0, 4, 40, 15] Size
+  HelpMenuText MenuTitle label "Help"
+    HelpMenu Part target [0, -4, 24, 24] art [0, 4, 24, 15] Size
+TopButtonBar Group
+  MinimizeBox WindowButton(Minimize) target [-6, -3, 24, 24] art [6, 3, 18, 18] Size
+  MaximizeBox WindowButton(Maximize) target [0, -3, 18, 24] art [0, 3, 18, 18] Short
+  CloseBox WindowButton(Close) target [0, -3, 24, 24] art [0, 3, 18, 18] Size
+InfoViewButton Slot(InfoviewButton)
+BaseBoard Group target [0, 0, 300, 100] art [0, 0, 300, 100] Frame
+ChatEdit Slot(ChatEdit)
+SendButton Slot(ChatSend)
+LeftDetail Decor target [0, 0, 10, 101] art [0, 0, 10, 101] Frame
+RightDetail Decor target [0, 0, 10, 101] art [0, 0, 10, 101] Frame
+MAINBG Decor target [0, 0, 290, 275] art [0, 0, 290, 275] Frame
+IVButtonHolder Decor
+SendButtonHolder Decor
+ResizeUp Button target [0, 0, 300, 24] art [0, 0, 300, 10] Size
+ResizeLeft Button target [0, 0, 24, 285] art [0, 0, 10, 285] Size
+ResizeRight Button target [-14, 0, 24, 285] art [14, 0, 10, 285] Size
+ResizeDown Button target [0, -14, 300, 24] art [0, 14, 300, 10] Size
+GripperBR Button target [1, 1, 24, 24] art [-1, -1, 25, 25] Size

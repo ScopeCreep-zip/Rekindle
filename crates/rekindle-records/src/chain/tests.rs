@@ -320,3 +320,51 @@ async fn a_writer_lists_its_own_pages_above_a_floor_locally() {
     assert_eq!(above(6).await.unwrap(), Vec::<PagePointer>::new());
     assert_eq!(port.network_reads(), reads);
 }
+
+/// Two appends of ours at one seq (plan E3.3, CHN1): the later one read
+/// our head before the earlier one's head landed, and is refused with
+/// `SeqMoved` at its head write; the head the earlier one wrote stays.
+#[tokio::test]
+async fn an_append_whose_own_head_moved_is_refused() {
+    let (port, key, owner) = participant().await;
+    let first = super::append_exact(
+        &port,
+        &key,
+        dm_participant::HEAD,
+        &owner,
+        1,
+        &entries(1..=1),
+    )
+    .await
+    .unwrap();
+    let won = ChainHead {
+        newest: PagePointer {
+            page_key: "VLD0:the-other-append".into(),
+            first_seq: 2,
+            last_seq: 2,
+        },
+        retired_through: 0,
+    };
+    let won_bytes = super::page::encode_head(&won).unwrap();
+    port.land_on_next_create(&key, dm_participant::HEAD, won_bytes);
+    let refused = super::append_exact(
+        &port,
+        &key,
+        dm_participant::HEAD,
+        &owner,
+        2,
+        &entries(9..=9),
+    )
+    .await;
+    assert_eq!(
+        refused,
+        Err(ChainError::SeqMoved {
+            expected: 2,
+            next: 3
+        }),
+        "an append whose own head moved is refused"
+    );
+    let kept = head(&port, &key).await.unwrap().unwrap();
+    assert_eq!(kept, won.newest, "the head the other append wrote stays");
+    assert_ne!(kept, first);
+}

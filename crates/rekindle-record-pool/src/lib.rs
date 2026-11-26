@@ -13,10 +13,12 @@
 //!   every record goes through it, so no record is ever re-opened at
 //!   Veilid's 1-hop default (V19).
 //! - **Honest writes.** `set` passes `allow_offline: false` and reports a
-//!   [`SetOutcome`]. veilid returns `Ok(None)` only for ours at
-//!   consensus; a write below consensus stores nothing and answers
-//!   `TryAgain` (0.5.8 `set_value.rs:731-738` →
-//!   `local_record_store_interface.rs:60-62`), reported `Offline`. Writes
+//!   [`SetOutcome`]. veilid returns `Ok(None)` for ours at consensus and
+//!   for a fanout below it, which stores nothing (fork `e1158844`
+//!   `set_value.rs:731-738` → `local_record_store_interface.rs:61-62`, then
+//!   `set_value.rs:306-308`); the pool tells them apart by the local seq
+//!   (only a landing writes it, `set_value.rs:741-746`) and reports the miss
+//!   `Offline`, as it does Veilid's `TryAgain`. Writes
 //!   are not retried here: the outbox owns durability (D22).
 //! - **One retry layer.** Opens, reads and inspects retry `TryAgain`,
 //!   `KeyNotFound` and `TransactionNotFound`, waiting for

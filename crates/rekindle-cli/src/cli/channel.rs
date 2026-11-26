@@ -225,3 +225,52 @@ pub enum VoiceCmd {
     /// Toggle self-deafen.
     Deafen,
 }
+
+/// A community's channel administration (`rekindle community channel …`).
+#[derive(Subcommand)]
+pub enum CommunityChannelCmd {
+    /// A channel's permission overwrites for @everyone, a role or a member.
+    #[command(subcommand)]
+    Overwrite(OverwriteCmd),
+}
+
+/// Channel permission overwrite subcommands (the host reviews each as a
+/// consequential governance write, `SetChannelOverwrite` /
+/// `DeleteChannelOverwrite`; `--yes` commits it without a terminal).
+#[derive(Subcommand)]
+pub enum OverwriteCmd {
+    /// Set a channel's overwrite for one target.
+    ///
+    /// Example: rekindle community channel overwrite set -c <ANCHOR> -C <CHANNEL_ID>
+    /// --target role:<ROLE_ID> --deny 0x800
+    Set {
+        /// Community name or anchor key.
+        #[arg(long, short = 'c')]
+        community: String,
+        /// Channel ID (32 hex characters).
+        #[arg(long, short = 'C')]
+        channel: String,
+        /// `everyone`, `role:<role id>` or `member:<pseudonym>`.
+        #[arg(long)]
+        target: String,
+        /// Permissions to allow: a bitmask, decimal or 0x hex; repeatable.
+        #[arg(long)]
+        allow: Vec<String>,
+        /// Permissions to deny: a bitmask, decimal or 0x hex; repeatable.
+        #[arg(long)]
+        deny: Vec<String>,
+    },
+
+    /// Clear a channel's overwrite for one target.
+    Delete {
+        /// Community name or anchor key.
+        #[arg(long, short = 'c')]
+        community: String,
+        /// Channel ID (32 hex characters).
+        #[arg(long, short = 'C')]
+        channel: String,
+        /// `everyone`, `role:<role id>` or `member:<pseudonym>`.
+        #[arg(long)]
+        target: String,
+    },
+}

@@ -76,6 +76,7 @@ pub struct MemDht {
     state: Mutex<MemState>,
     contest: Mutex<Contest>,
     offline: Mutex<bool>,
+    below_consensus: Mutex<bool>,
     /// The pool's readiness sender, kept alive with the backend: the
     /// re-push loop ends when its sender is gone.
     ready: Mutex<Option<tokio::sync::watch::Sender<bool>>>,
@@ -113,6 +114,14 @@ impl MemDht {
     /// Whether sets fail with `TryAgain` (the node is offline).
     pub fn offline(&self, offline: bool) {
         *self.offline.lock() = offline;
+    }
+
+    /// Whether every set's fanout ends below consensus: nothing is stored
+    /// and the set answers `Ok(None)` (fork `e1158844`
+    /// `set_value.rs:731-738` → `local_record_store_interface.rs:61-62`,
+    /// then `set_value.rs:306-308`).
+    pub fn below_consensus(&self, below: bool) {
+        *self.below_consensus.lock() = below;
     }
 
     /// Every open so far, with its intent, in order.
@@ -408,6 +417,9 @@ impl MemDht {
     ) -> Result<Option<RecordValue>, DhtCallError> {
         if *self.offline.lock() {
             return Err(error(DhtErrorKind::TryAgain, "offline"));
+        }
+        if *self.below_consensus.lock() {
+            return Ok(None);
         }
         let contest = self.contest.lock().clone();
         let mut guard = self.state.lock();

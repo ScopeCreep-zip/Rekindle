@@ -1,6 +1,5 @@
 pub mod budget;
 pub mod cache;
-pub mod contexts;
 pub mod dead_routes;
 pub mod lifecycle;
 pub mod liveness;

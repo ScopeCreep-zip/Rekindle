@@ -188,38 +188,38 @@ pub const ENVELOPE_MAX_FUTURE_SKEW_MS: u64 = 60_000;
 
 // ── Phase 9 — Per-class message taxonomy for SafetyProfile selection ──
 
-/// Per-class message taxonomy: the class selects the `SafetyProfile` a
-/// message is sent under, so the transport layer can pick it without
-/// reaching back into the call site.
+/// The traffic classes of Rekindle's sends, one per row of
+/// [`crate::config::SafetyConfig`], the one class-to-profile table
+/// ([`crate::config::SafetyConfig::for_class`]; its defaults are
+/// `rekindle_route::profile::profile_for_class`). Every class rides a Veilid
+/// safety route at [`crate::config::ANONYMITY_HOP_FLOOR`]; a class tunes
+/// only stability and sequencing, never anonymity.
 ///
-/// Different message categories want different privacy/latency trade-offs
-/// at the Veilid routing layer:
-/// - **Text** DMs prioritize anonymity over latency (2-hop relay).
-/// - **Voice** frames must be low-latency (0 hops, direct route).
-/// - **Rpc** invites need reliability but not strict order.
-/// - **DhtRead/DhtWrite** are infrastructure operations.
-///
-/// [`crate::config::SafetyProfile`] holds the actual parameters;
-/// `rekindle-route::profile::profile_for_class` is the lookup function.
-///
-/// Plan reference: `/Users/kali/.claude/plans/memoized-dazzling-torvalds.md` § Phase 9.
+/// Control traffic is ordered and media unordered (plan VU decision 2), as
+/// Veilid intends: a routed operation carries the sender's sequencing and
+/// every hop filters the next hop by it (veilid-core
+/// `rpc_processor/rpc_route.rs:26-29`, `:87-90`), while a receiver's
+/// General route had its hops chosen and proven on its one ordering,
+/// Ordered (`route_allocate.rs:580-588`). An unordered send to it crosses
+/// UDP hop pairs nobody proved (real-app DL1/DL2, 2026-11-25).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum MessageClass {
-    /// 1:1 text DMs and friend-graph control messages. 2-hop relay
-    /// for sender anonymity; ordered + reliable.
+    /// 1:1 control traffic: DMs and their receipts, friend handshakes,
+    /// presence keys, group invites, call signals (the transport's
+    /// `send_direct`/`call_direct`). Reliable, PreferOrdered.
     Text,
-    /// Voice frames inside an active audio call. 0-hop direct route
-    /// for minimum latency; unordered (jitter buffer reorders).
+    /// Voice and video frames inside a call, sent to the peer's Media route
+    /// (itself LowLatency, PreferUnordered). LowLatency, PreferUnordered:
+    /// the jitter buffer reorders and a late frame is useless.
     Voice,
-    /// RPC invites and other one-shot reply-required messages.
-    /// 1-hop relay; reliable; no ordering requirement.
+    /// Signed RPCs, community envelopes and gossip (`AppCaller::call`,
+    /// `call_community_envelope`, `send_unframed_to_route`). Reliable,
+    /// EnsureOrdered.
     Rpc,
-    /// DHT subkey reads (profile, prekey, route). 1-hop relay.
-    DhtRead,
-    /// DHT subkey writes (publish profile, rotate prekey).
-    /// 2-hop relay for write anonymity; ordered + reliable.
-    DhtWrite,
+    /// DHT record operations: the record pool's safety selection
+    /// (`VeilidPorts::start`). Reliable, PreferOrdered.
+    Dht,
 }
 
 impl MessageClass {
@@ -230,8 +230,7 @@ impl MessageClass {
             Self::Text => "text",
             Self::Voice => "voice",
             Self::Rpc => "rpc",
-            Self::DhtRead => "dht_read",
-            Self::DhtWrite => "dht_write",
+            Self::Dht => "dht",
         }
     }
 }

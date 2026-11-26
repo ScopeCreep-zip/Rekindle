@@ -149,3 +149,33 @@ async fn a_chain_append_onto_contested_subkeys_is_stored() {
         "the page is written"
     );
 }
+
+/// DHT1 (E2.5 durable `dht_write`): Veilid answers `Ok(None)` for a set
+/// whose fanout ends below consensus and stores nothing (fork `e1158844`
+/// `set_value.rs:731-738` → `local_record_store_interface.rs:61-62`, then
+/// `set_value.rs:306-308`). The local seq did not move, so a plain set sees
+/// the miss and `set_durable` holds it until the re-push lands.
+#[tokio::test(start_paused = true)]
+async fn a_set_veilid_answers_none_below_consensus_is_held_not_landed() {
+    let dht = Arc::new(MemDht::default());
+    let pool = pool_on(Arc::clone(&dht));
+    let (lease, key) = created(&pool).await;
+    let mut settled = pool.settled();
+    dht.below_consensus(true);
+    let plain = pool.set(lease, 0, b"plain".to_vec(), None).await.unwrap();
+    assert_eq!(plain, SetOutcome::Offline, "a plain set sees the miss");
+    let outcome = pool.set_durable(lease, 1, b"post".to_vec()).await.unwrap();
+    assert_eq!(outcome, SetOutcome::Offline, "held, not landed");
+    assert!(dht.value(&key, 1).is_none());
+    assert!(settled.try_recv().is_err(), "a miss settles nothing");
+    dht.below_consensus(false);
+    let event = tokio::time::timeout(Duration::from_secs(120), settled.recv())
+        .await
+        .expect("the re-push settles it")
+        .unwrap();
+    assert_eq!(
+        (event.record_key, event.subkey, event.landed),
+        (key.clone(), 1, true)
+    );
+    assert_eq!(dht.value(&key, 1).unwrap().data, b"post");
+}

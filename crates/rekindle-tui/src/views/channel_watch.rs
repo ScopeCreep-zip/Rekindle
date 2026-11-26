@@ -468,18 +468,26 @@ impl View for ChannelWatchView {
                 forwarded_from_author: _,
                 forwarded_from_name: _,
                 automod_blurred,
+                undecryptable,
             }) if *community == self.community && *channel == self.channel => {
+                // A post stored unreadable reads the Host's reason; only a
+                // post still owed its key waits for one.
+                let waits = body.is_none() && undecryptable.is_none();
                 self.message_list.push(DecryptedMessageDisplay {
                     message_id: message_id.clone(),
                     sequence: *sequence,
                     author_pseudonym: sender_pseudonym.clone(),
                     author_display_name: helpers::abbreviate_key(sender_pseudonym),
-                    body: body.clone().unwrap_or_else(|| "(decrypting...)".into()),
+                    body: match (body, undecryptable) {
+                        (Some(body), _) => body.clone(),
+                        (None, Some(why)) => why.reason_text.clone(),
+                        (None, None) => "(decrypting...)".into(),
+                    },
                     timestamp: *timestamp,
                     reply_to_message_id: reply_to_message_id.clone(),
                     mek_generation: 0,
                     is_encrypted: body.is_none(),
-                    needs_mek: if body.is_none() { Some(0) } else { None },
+                    needs_mek: waits.then_some(0),
                     automod_blurred: *automod_blurred,
                     is_own: *sender_pseudonym == self.our_pseudonym,
                     edited: false,

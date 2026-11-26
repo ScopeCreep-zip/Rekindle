@@ -9,7 +9,11 @@
 //! under `ApprovalRequired`, approved (owner question Q6: no key reaches a
 //! pending member). The key is sealed to the requester's pseudonym by
 //! `rekindle_mek_rotation::distribute_mek` (`rekindle-secrets` ECDH wrap).
-//! Rotation itself is untouched; E3.5 replaces it.
+//! A restricted channel's key goes only to a member of that channel's
+//! read roster (FX3 d, register `audit-2026-10-23` FX3; the predicate is
+//! `rekindle_governance::permissions::is_restricted`, plan E3.5
+//! "Restricted channel, defined"). Rotation itself is untouched; E3.5
+//! replaces it.
 
 use rekindle_crypto::group::media_key::MediaEncryptionKey;
 use rekindle_mek_rotation::{MekDistributeDeps, RotationRecipient};
@@ -65,6 +69,33 @@ impl HostGovernance {
             })
     }
 
+    /// Whether `requester` may hold `scope`'s key: the community key and an
+    /// unrestricted channel's go to every key reader; a restricted
+    /// channel's only to its `channel_read_roster` (FX3 d). No merged
+    /// state names no roster, so a channel key is refused.
+    pub(crate) fn reads_scope(
+        &self,
+        community_id: &str,
+        scope: KeyScope,
+        requester: &PseudonymKey,
+    ) -> bool {
+        let KeyScope::Channel(channel) = scope else {
+            return true;
+        };
+        self.ctx
+            .communities
+            .governance_state(community_id)
+            .is_some_and(|state| {
+                !rekindle_governance::permissions::is_restricted(&state, &channel)
+                    || !rekindle_governance::permissions::channel_read_roster(
+                        &state,
+                        &channel,
+                        std::slice::from_ref(requester),
+                    )
+                    .is_empty()
+            })
+    }
+
     /// Answer a `RequestMEK` when we are the elected responder and the
     /// requester is a member: seal the asked-for key to it.
     ///
@@ -94,6 +125,12 @@ impl HostGovernance {
         if !self.is_key_reader(community_id, &requester) {
             return Err(format!(
                 "RequestMEK from {} refused: not a member",
+                request.requester_pseudonym
+            ));
+        }
+        if !self.reads_scope(community_id, scope, &requester) {
+            return Err(format!(
+                "RequestMEK from {} refused: outside the restricted channel's roster",
                 request.requester_pseudonym
             ));
         }

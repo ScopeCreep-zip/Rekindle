@@ -16,6 +16,16 @@
  * relying on a later override.
  */
 @layer components {
+  /* One line in its box, ellipsized: a chat tree's conversation title
+   * (plan SK17-2; its whole title is the tooltip) and a soundboard clip's name. */
+  .skin-chat-title,
+  .soundboard-panel-clip-name {
+    display: block;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
   .category-name,
   .member-custom-status,
   .channel-name,

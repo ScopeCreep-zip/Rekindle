@@ -139,6 +139,7 @@ pub fn place(manifest: &mut SkinManifest, package: &Package<'_>) -> Result<(), S
     {
         crate::skin_tree::place::communities(main);
         crate::skin_tree::cover::glyphs(main, package)?;
+        crate::skin_tree::label_style::worded(main, package)?;
     }
     for layout in manifest.windows.values_mut() {
         crate::skin_tree::titles::menus(layout, package)?;

@@ -1,6 +1,6 @@
 import { hostInvoke, invoke } from "../invoke";
 import type { ImageKind } from "./system";
-import type { CatchUpView, OpPublicationState } from "../channels/community_subscription_events";
+import type { CatchUpView, KeyStatus, OpPublicationState } from "../channels/community_subscription_events";
 
 /// A voice message as the Host decoded it: the Ogg Opus audio and the
 /// duration and waveform read from it (base64 fields).
@@ -82,7 +82,7 @@ export const communityCommands = {
       description: string | null;
       iconHash?: string | null;
       bannerHash?: string | null;
-      channels: { id: string; name: string; channelType: string; categoryId?: string; topic?: string; forumTags?: string[]; stageSpeakers?: string[]; stageModerator?: string | null; notificationLevel?: "all" | "mentions" | "nothing"; notificationSoundRef?: string | null }[];
+      channels: { id: string; name: string; channelType: string; categoryId?: string; topic?: string; forumTags?: string[]; stageSpeakers?: string[]; stageModerator?: string | null; notificationLevel?: "all" | "mentions" | "nothing"; notificationSoundRef?: string | null; locked: boolean; lockedReason: string }[];
       categories?: { id: string; name: string; sortOrder: number }[];
       myRole: string | null;
       myRoleIds: string[];
@@ -116,6 +116,8 @@ export const communityCommands = {
       deviceStatus: DeviceStatus;
       /** The unlock barrier's held governance writes (`CommunityView::catch_up`); later changes arrive as `catchUp`. */
       catchUp?: CatchUpView;
+      /** Our community key, as the Host states it (`CommunityView::key_status`); changes arrive as `keyStatus`. */
+      keyStatus: KeyStatus;
     }[]>("get_community_details"),
   getCommunityMembers: (communityId: string) =>
     hostInvoke<{

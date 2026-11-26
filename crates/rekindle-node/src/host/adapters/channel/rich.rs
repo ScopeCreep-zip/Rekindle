@@ -72,6 +72,7 @@ fn message_view(view: rekindle_channel::ThreadMessageView) -> ChannelMessageView
         sender_id: view.sender_pseudonym,
         body: view.body,
         decryption_failed: view.decryption_failed,
+        undecryptable: None,
         automod_blurred: false,
         timestamp: i64::try_from(view.timestamp_ms).unwrap_or(i64::MAX),
         is_own: view.is_own,

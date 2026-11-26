@@ -330,6 +330,17 @@ fn governance(event: &GovernanceEvent) -> String {
                 }
             }
         }
+        GovernanceEvent::KeyStatus { status, .. } => match status.state {
+            rekindle_types::dto::community::KeyState::Current => format!(
+                "community key current (generation {})",
+                status.have.map_or_else(|| "none".into(), |g| g.to_string())
+            ),
+            rekindle_types::dto::community::KeyState::Pending => format!(
+                "waiting for the community key: hold {}, need {}",
+                status.have.map_or_else(|| "none".into(), |g| g.to_string()),
+                status.need.map_or_else(|| "none".into(), |g| g.to_string())
+            ),
+        },
         GovernanceEvent::RolesChanged { roles, .. } => {
             format!("roles changed ({} roles)", roles.len())
         }

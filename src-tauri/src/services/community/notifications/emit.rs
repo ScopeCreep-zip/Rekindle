@@ -209,6 +209,7 @@ pub fn notify_stored_post(
         sender_pseudonym,
         body: Some(body),
         automod_blurred: false,
+        undecryptable: None,
         ..
     }) = event
     else {

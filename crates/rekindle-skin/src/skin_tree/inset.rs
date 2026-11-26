@@ -32,6 +32,15 @@
 //!   left`, at most the field's width. The largest reach on each side wins.
 //! - A field no sibling meets serves no inset.
 //!
+//! - Plan SK15: the inset is fixed px from each edge, so where the field
+//!   stretches with the window but the press area its text stops at does
+//!   not (Alloy's name field, `Stretch`, under its status field's press
+//!   area at x 171), a constant `right` lets the text run under that area
+//!   at a wider window. The tree is also laid `INSET_PROBE_WIDTH` px wider;
+//!   when the stop moves otherwise than the field's far edge, the inset
+//!   carries `max_width`, the text's width from its start to the stop at
+//!   the minimum (Alloy: 151), and the shell caps the text there.
+//!
 //! Measured on the built-ins: Symbiosis's name field `[7, 82, 330, 13]`
 //! under its gear `[309, 77, 26, 24]` serves `{left: 0, right: 28}` (the
 //! resize strip `ResizeR` at x 332 reaches 5 px, under the gear's 28).
@@ -145,14 +154,19 @@ fn inset_of(
     sides.map(|[left, right]| NodeInset {
         left: px(left),
         right: px(right),
+        max_width: None,
     })
 }
+
+/// Each text field's box and inset in a laid tree, by id.
+type Fields = HashMap<String, ([i32; 4], Option<NodeInset>)>;
 
 fn walk(
     nodes: &mut [SkinNode],
     parent: [i32; 4],
     (up, view): (&[String], Option<ViewKey>),
     all: &[Press],
+    fields: &mut Fields,
 ) {
     let boxes: Vec<[i32; 4]> = nodes.iter().map(|n| place(n, parent)).collect();
     let insets: Vec<Option<NodeInset>> = (0..nodes.len())
@@ -168,15 +182,56 @@ fn walk(
         .collect();
     for ((n, inset), b) in nodes.iter_mut().zip(insets).zip(boxes) {
         n.inset = inset;
+        if is_text(n.role) {
+            fields.insert(n.id.clone(), (b, inset));
+        }
         let shows = n.shows_with.or(view);
         let mut own = up.to_vec();
         own.push(n.id.clone());
-        walk(&mut n.children, b, (&own, shows), all);
+        walk(&mut n.children, b, (&own, shows), all, fields);
     }
 }
 
-/// Sets the insets of `tree` laid in `window`.
+/// How much wider than its served minimum the window is laid to learn
+/// whether a field's text stop moves with the field's far edge.
+const INSET_PROBE_WIDTH: i32 = 200;
+
+/// Where the text of a field at `b` with `inset` stops (window x).
+fn stop(b: [i32; 4], inset: Option<NodeInset>) -> i32 {
+    b[0] + b[2] - inset.map_or(0, |i| i32::from(i.right))
+}
+
+/// Sets each field's `max_width` (plan SK15): laid at the minimum (`at`)
+/// and `INSET_PROBE_WIDTH` px wider (`wide`), a field whose text stop does
+/// not move with its far edge serves the width from its text start to the
+/// stop at the minimum.
+fn cap(nodes: &mut [SkinNode], at: &Fields, wide: &Fields) {
+    for n in nodes {
+        if let (Some(inset), Some(&(b, _)), Some(&(w, wide_inset))) =
+            (n.inset.as_mut(), at.get(&n.id), wide.get(&n.id))
+        {
+            let edge_moves = (w[0] + w[2]) - (b[0] + b[2]);
+            let stop_moves = stop(w, wide_inset) - stop(b, Some(*inset));
+            if stop_moves != edge_moves {
+                let text = stop(b, Some(*inset)) - b[0] - i32::from(inset.left);
+                inset.max_width = Some(u16::try_from(text.max(0)).unwrap_or(u16::MAX));
+            }
+        }
+        cap(&mut n.children, at, wide);
+    }
+}
+
+/// Sets the insets of `tree` laid in `window`, and their `max_width`.
 fn lay_tree(tree: &mut SkinTree, window: (i32, i32)) {
+    let mut wide = tree.clone();
+    let wide_fields = lay_at(&mut wide, (window.0 + INSET_PROBE_WIDTH, window.1));
+    let fields = lay_at(tree, window);
+    cap(&mut tree.root, &fields, &wide_fields);
+}
+
+/// Sets the insets of `tree` laid in `window`; its text fields' boxes and
+/// insets by id.
+fn lay_at(tree: &mut SkinTree, window: (i32, i32)) -> Fields {
     let laid: HashMap<String, [i32; 4]> = super::target::targets(tree, window)
         .into_iter()
         .map(|l| (l.id, l.area))
@@ -184,7 +239,9 @@ fn lay_tree(tree: &mut SkinTree, window: (i32, i32)) {
     let at = laid_window(tree.outsets, window);
     let mut all = Vec::new();
     presses(&tree.root, at, (&[], None), &laid, &mut all);
-    walk(&mut tree.root, at, (&[], None), &all);
+    let mut fields = Fields::new();
+    walk(&mut tree.root, at, (&[], None), &all, &mut fields);
+    fields
 }
 
 /// Sets the inset of every text field in `layout`'s tree and popups (see

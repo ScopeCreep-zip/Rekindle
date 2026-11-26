@@ -10,7 +10,9 @@ use rekindle_types::dto::skin_layout::{LayoutSource, TextRole};
 use rekindle_types::dto::skin_library::{SkinApplyFailure, SkinEntry};
 use rekindle_types::dto::skin_run::SkinSelection;
 use rekindle_types::dto::skin_title::TitleText;
-use rekindle_types::dto::skin_tree::{Anchor, ContentFit, NodeRole, NodeSpan, SkinNode, SkinTree};
+use rekindle_types::dto::skin_tree::{
+    Anchor, ContentFit, NodeInset, NodeRole, NodeSpan, SkinNode, SkinTree,
+};
 use rekindle_types::dto::skin_tree_role::Edge;
 use rekindle_types::presence::SessionStatus;
 use serde_json::Value;
@@ -236,6 +238,7 @@ fn actions(add: &mut impl FnMut(&str, Value)) {
     );
     add("skin.menuRegistry", super::to(MenuRegistry::rekindle()));
     shell(add);
+    inset_samples(add);
     content_samples(add);
 }
 
@@ -250,6 +253,23 @@ fn content_samples(add: &mut impl FnMut(&str, Value)) {
                 gap: 10,
             },
             size: 26,
+        }),
+    );
+    add(
+        "skin.nodeSpan.share",
+        to(NodeSpan::Share {
+            at: Anchor::Start(0),
+            permille: 800,
+        }),
+    );
+    add(
+        "skin.nodeSpan.shareAfter",
+        to(NodeSpan::Share {
+            at: Anchor::After {
+                sibling: "Divider".into(),
+                gap: 0,
+            },
+            permille: 1000,
         }),
     );
     add(
@@ -303,6 +323,28 @@ fn shell(add: &mut impl FnMut(&str, Value)) {
             (368, 400),
             vec!["skin://app/0123/abcd.png".to_owned()],
         )),
+    );
+}
+
+/// A text field's inset (plan SK5) with the plan SK15 `maxWidth` (Alloy's
+/// name field: 151 px from its text start) and without it (the key is
+/// absent, as the TS mirror `dto_skin_tree.ts` reads it).
+fn inset_samples(add: &mut impl FnMut(&str, Value)) {
+    add(
+        "skin.nodeInset.maxWidth",
+        super::to(NodeInset {
+            left: 0,
+            right: 54,
+            max_width: Some(151),
+        }),
+    );
+    add(
+        "skin.nodeInset.fixed",
+        super::to(NodeInset {
+            left: 0,
+            right: 28,
+            max_width: None,
+        }),
     );
 }
 
@@ -413,6 +455,32 @@ fn shell_op_samples(add: &mut impl FnMut(&str, Value)) {
         to(SkinRun::Shell(ShellOp::Call(CallOp::Voice {
             friend: pk('a'),
         }))),
+    );
+    add(
+        "skin.callOp.answer",
+        to(CallOp::Answer {
+            call_id: "call-1".into(),
+        }),
+    );
+    add(
+        "skin.callOp.joinGroup",
+        to(CallOp::JoinGroup {
+            group_id: "group-1".into(),
+            call_id: "call-1".into(),
+        }),
+    );
+    add(
+        "skin.callOp.leave",
+        to(CallOp::Leave {
+            call_id: "call-1".into(),
+        }),
+    );
+    add(
+        "skin.callOp.leaveGroup",
+        to(CallOp::LeaveGroup {
+            group_id: "group-1".into(),
+            call_id: "call-1".into(),
+        }),
     );
     add(
         "skin.run.notBuiltYet",

@@ -51,11 +51,12 @@ fn can_in(world: &SkinWorld, f: &FriendState, capability: Capability) -> bool {
 #[test]
 fn capabilities_follow_the_selected_friend_offline_online_in_game() {
     let offline = friend(UserStatus::Offline, None);
-    assert!(!can(&offline, Capability::VoiceChat));
+    assert!(!can(&offline, Capability::HostVoiceChat));
     assert!(!can(&offline, Capability::Join));
     assert!(can(&offline, Capability::Chat));
     let online = friend(UserStatus::Online, None);
-    assert!(can(&online, Capability::VoiceChat));
+    assert!(can(&online, Capability::HostVoiceChat));
+    assert!(!can(&online, Capability::VoiceChat));
     assert!(!can(&online, Capability::Join));
     let in_game = friend(UserStatus::Online, Some("10.0.0.1:27960"));
     assert!(can(&in_game, Capability::Join));
@@ -163,6 +164,7 @@ fn self_mute_follows_the_call_state() {
     assert!(set.cannot.contains(&Capability::UnmuteSelf));
     inputs.fold(&SubscriptionEvent::Call(CallEvent::Connected {
         call_id: "c1".into(),
+        group_id: None,
         direct: None,
     }));
     let set = compute(
@@ -211,6 +213,7 @@ fn a_self_mute_event_flips_the_mute_capabilities() {
     let mut inputs = Inputs::default();
     inputs.fold(&SubscriptionEvent::Call(CallEvent::Connected {
         call_id: "c1".into(),
+        group_id: None,
         direct: None,
     }));
     assert_eq!(mute_caps(&inputs), (true, false));
@@ -230,6 +233,7 @@ fn call_end_resets_the_self_mute() {
     let mut inputs = Inputs::default();
     let connected = SubscriptionEvent::Call(CallEvent::Connected {
         call_id: "c1".into(),
+        group_id: None,
         direct: None,
     });
     inputs.fold(&connected);
@@ -276,8 +280,10 @@ fn two_chat_windows_with_different_peers_get_different_sets() {
             Some(f)
         },
     );
-    assert!(sets["chat-online"].can.contains(&Capability::VoiceChat));
-    assert!(sets["chat-offline"].cannot.contains(&Capability::VoiceChat));
+    assert!(sets["chat-online"].can.contains(&Capability::HostVoiceChat));
+    assert!(sets["chat-offline"]
+        .cannot
+        .contains(&Capability::HostVoiceChat));
 }
 
 #[test]
@@ -328,6 +334,7 @@ fn show_call_takes_the_call_then_the_voice_session() {
     assert_eq!(inputs.show_call(), session);
     inputs.fold(&SubscriptionEvent::Call(CallEvent::Connected {
         call_id: "c1".into(),
+        group_id: None,
         direct: None,
     }));
     assert_eq!(

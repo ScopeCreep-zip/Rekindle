@@ -601,6 +601,11 @@
 '.message-removed' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.message-decrypt-failed' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.message-decrypt-failed-icon' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.message-damaged' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.message-damaged-icon' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"], graphic = true }
+'.key-pending-notice' = { on = ["--color-xfire-accent 20% over --color-xfire-bg-dark"] }
+'.key-pending-since' = { on = ["--color-xfire-accent 20% over --color-xfire-bg-dark"] }
+'.channel-locked-icon' = { on = ["--color-xfire-accent 25% over --color-xfire-bg-dark", "--color-xfire-bg-dark"], graphic = true }
 '.message-automod-blur' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.message-automod-reveal-btn' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.poll-card-question' = { on = ["--color-xfire-bg-panel", "--color-xfire-bg-panel 90% over --color-xfire-bg-dark"] }

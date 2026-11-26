@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "app-chat",
-  "description": "App-command grants for `chat-*` windows: 1:1 friend chat, with start and hang-up of a call to this peer and the peer's safety number with its mark-verified flow (the header's badge), and the group mode (plan E2.6): the group list, a group's stored messages, its send and typing, Leave, and the creator's Rename (decision 1a's `RoomName`), and opening a link preview's page (`open_external_url`, which asks in Rust before it opens). A friend's game invite: its game name and joining it (`launch_game`, the Host's `GameLaunch`), and inviting the friend to one of our favourite servers (`get_favourite_servers`, `send_game_invite`). The network status snapshot (`get_network_status`, read-only) so the composer shows \"Publishing your identity…\" while our own records are pending (plan FC3). No plugin grants. A skin's Search For searches this conversation's messages (`local_search`, the Host's `LocalSearch`, plan E7.2 G11), from the database only. No pack lays a chat-window tree, so the window's Mod+F dispatches that Search as a skin action (`run_skin_action`, `src/hooks/useChatSearchChord.ts`) and a 1:1 window names its friend as its selection (`set_skin_selection`): the Host's `Views::scope` picks the conversation from them.",
+  "description": "App-command grants for `chat-*` windows: 1:1 friend chat, with start, answer and hang-up of a call to this peer and the peer's safety number with its mark-verified flow (the header's badge), and the group mode (plan E2.6): the group list, a group's stored messages, its send and typing, its group call (plan E4.1 GV2: Call starts it, Join answers its ring, Leave and Cancel end it: `start_group_call`, `accept_group_call`, `end_group_call`), Leave, and the creator's Rename (decision 1a's `RoomName`), and opening a link preview's page (`open_external_url`, which asks in Rust before it opens). A friend's game invite: its game name and joining it (`launch_game`, the Host's `GameLaunch`), and inviting the friend to one of our favourite servers (`get_favourite_servers`, `send_game_invite`). The network status snapshot (`get_network_status`, read-only) so the composer shows \"Publishing your identity…\" while our own records are pending (plan FC3). No plugin grants. A pack's chat tree (plan SK17, `src/components/skin-tree/SkinTreeWindow.tsx`) runs the shell groups its triggers serve (`src/actions/shell_runners.ts`, registered in `src/windows/ChatWindow.tsx`): its Rekindle, Tools and Help menus open Settings on a tab and Exit quits (`open_settings_window`, `quit_app`), its ProfileFriend opens the friend's profile (`open_profile_window`), its LaunchPopup opens the pack's popup (`open_skin_popup`), and its MuteSelf and UnmuteSelf set the microphone (`set_mute`). A skin's Search For searches this conversation's messages (`local_search`, the Host's `LocalSearch`, plan E7.2 G11), from the database only. No pack lays a chat-window tree, so the window's Mod+F dispatches that Search as a skin action (`run_skin_action`, `src/hooks/useChatSearchChord.ts`) and a 1:1 window names its friend as its selection (`set_skin_selection`): the Host's `Views::scope` picks the conversation from them.",
   "windows": [
     "chat-*"
   ],
@@ -35,6 +35,10 @@
     "allow-get-network-status",
     "allow-start-dm-call",
     "allow-end-dm-call",
+    "allow-accept-dm-call",
+    "allow-start-group-call",
+    "allow-accept-group-call",
+    "allow-end-group-call",
     "allow-get-safety-number",
     "allow-mark-identity-verified",
     "allow-clear-identity-verification",
@@ -43,6 +47,11 @@
     "allow-get-favourite-servers",
     "allow-get-game-name",
     "allow-local-search",
+    "allow-open-profile-window",
+    "allow-open-settings-window",
+    "allow-quit-app",
+    "allow-open-skin-popup",
+    "allow-set-mute",
     "allow-run-skin-action",
     "allow-set-skin-selection"
   ]

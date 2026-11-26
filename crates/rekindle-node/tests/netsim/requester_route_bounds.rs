@@ -5,17 +5,18 @@
 use std::time::Duration;
 
 use rekindle_netsim::latency;
-use rekindle_route::contexts::RouteContextSpec;
 use rekindle_route::liveness::{PUBLISH_DELAY, SILENCE_TRIGGER};
+use rekindle_route::profile::profile_for_class;
+use rekindle_types::message::MessageClass;
 
 /// The owner's evidence loop wakes once a second (`rekindle-transport`
 /// `liveness/owner.rs` `EVIDENCE_TICK`): a due rotation starts up to this late.
 const EVIDENCE_TICK: Duration = Duration::from_secs(1);
 
 /// One app call's deadline over our safety route (`call_direct` sends
-/// over `rc_safe`; Veilid 0.5.8 `routed_timeout`, [`rekindle_netsim::call_timeout`]).
+/// under the 1:1 control profile; Veilid 0.5.8 `routed_timeout`, [`rekindle_netsim::call_timeout`]).
 pub fn call_timeout() -> Duration {
-    rekindle_netsim::call_timeout(&RouteContextSpec::rc_safe().safety_profile())
+    rekindle_netsim::call_timeout(&profile_for_class(MessageClass::Text))
 }
 
 /// The latest a route that silently stopped delivering (its online

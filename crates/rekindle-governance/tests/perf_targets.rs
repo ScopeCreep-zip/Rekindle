@@ -26,14 +26,19 @@ const ENTRY_COUNT: usize = 10_000;
 const RELEASE_BUDGET_MS: u128 = 10;
 
 /// The merge's work at 10,000 entries, exact (measured 2026-11-23): any
-/// change in the work the merge does is a diff here to explain.
+/// change in the work the merge does is a diff here to explain. PF1
+/// (2026-11-24): each op's anchor comes from its deps' anchors
+/// (`anchor_steps`, one per dep), no longer from an ancestry query per op,
+/// which built every row (was `contains` 10,000, `rows_built` 10,000,
+/// `words_ored` 785,942).
 const WORK_AT_10K: MergeCounts = MergeCounts {
     rounds: 1,
     try_apply: 10_000,
-    contains: 10_000,
-    rows_built: 10_000,
-    words_ored: 785_942,
+    contains: 0,
+    rows_built: 0,
+    words_ored: 0,
     frontier_steps: 0,
+    anchor_steps: 19_947,
 };
 
 /// The `stateRoot` preimage of the 10,000 entry community, exact (the
@@ -123,10 +128,12 @@ fn merge_work_grows_linearly_in_the_entries() {
         assert!(w.try_apply <= w.rounds * n, "{n}: {w:?}");
         assert!(w.rows_built <= n, "{n}: {w:?}");
         assert!(w.contains <= n, "one anchor query per op: {w:?}");
+        // The anchors, one step per dep: the fixture cites at most two.
+        assert!(w.anchor_steps <= 2 * n, "{n}: {w:?}");
         assert_eq!(w.frontier_steps, 0, "no removal in the set: {w:?}");
-        // Quadratic, measured: the fixture is one chain, so row `i` is
-        // every op below it and is OR'd once from its latest dep, `i / 64`
-        // words: Σ i/64 = n²/128. Bounded so it grows no further.
+        // A row, when one is built, on this one chain is every op below
+        // it, OR'd once from its latest dep, `i / 64` words: Σ i/64 =
+        // n²/128 if every row were. Bounded so it grows no further.
         assert!(w.words_ored <= n * n / 128 + n, "{n}: {w:?}");
     }
     for pair in work.windows(2) {
@@ -134,6 +141,10 @@ fn merge_work_grows_linearly_in_the_entries() {
         assert!(at_most_doubles(a.try_apply, b.try_apply), "{a:?} → {b:?}");
         assert!(at_most_doubles(a.contains, b.contains), "{a:?} → {b:?}");
         assert!(at_most_doubles(a.rows_built, b.rows_built), "{a:?} → {b:?}");
+        assert!(
+            at_most_doubles(a.anchor_steps, b.anchor_steps),
+            "{a:?} → {b:?}"
+        );
     }
     assert_eq!(work[2], WORK_AT_10K);
 }

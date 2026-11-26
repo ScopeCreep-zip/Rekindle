@@ -35,6 +35,7 @@
 //!   dropped and counted in the `NOTICE`; the package goes through
 //!   [`super::conclude`] (a draft names every failing pair).
 
+pub mod chat;
 pub mod colours;
 pub mod controls;
 pub mod frame;
@@ -56,7 +57,6 @@ use super::credits;
 use super::xfire_xml::colours::{absolute, parse_rgba, target_in, Target};
 use super::xfire_xml::controls::StateTally;
 use super::xfire_xml::refs::{self, Ref};
-use super::xfire_xml::surfaces::Window;
 use super::xfire_xml::title as xtitle;
 use super::xfire_xml::{bitmap, ColourRow};
 use super::{base_of, conclude, tree_hash, walk, Control, ImportError, Outcome, Tree};
@@ -92,6 +92,8 @@ pub struct Read {
     /// The buddy list's layout from the frame, with the title strip the
     /// skin file lays ([`title`]), and its package images.
     pub main: Option<(WindowLayout, BTreeMap<String, Vec<u8>>)>,
+    /// The chat window its `ChatSkin=` file lays ([`chat`]), if any.
+    pub chat: Option<chat::Built>,
     pub dropped: BTreeMap<&'static str, usize>,
     /// Files of the tree that were not read.
     pub unread: Vec<String>,
@@ -149,7 +151,7 @@ pub(crate) fn lookup<'t>(tree: &'t Tree, raw: &str) -> Result<(&'t str, &'t [u8]
         .ok_or(ImportError::MissingFile { file: path })
 }
 
-fn parse_file<'t>(tree: &'t Tree, name: &str) -> Result<(&'t str, Ini), ImportError> {
+pub(super) fn parse_file<'t>(tree: &'t Tree, name: &str) -> Result<(&'t str, Ini), ImportError> {
     let (key, bytes) = lookup(tree, name)?;
     Ok((key, ini::parse(key, bytes)?))
 }
@@ -158,7 +160,7 @@ fn parse_file<'t>(tree: &'t Tree, name: &str) -> Result<(&'t str, Ini), ImportEr
 /// (`Skin.Name=`, [`title::popup`]) and the files read: the first launcher
 /// of a name places it (repeated keys read the first, [`ini`]). A launched
 /// file the pack lacks, or one without its root section, refuses the pack.
-fn popups<'t>(
+pub(super) fn popups<'t>(
     tree: &'t Tree,
     skin_key: &str,
     skin: &Ini,
@@ -192,7 +194,7 @@ fn section<'i>(ini: &'i Ini, file: &str, name: &str) -> Result<&'i Section, Impo
 }
 
 /// A file name from a value: one path segment, no separator.
-fn file_name(file: &str, key: &str, value: &str) -> Result<String, ImportError> {
+pub(super) fn file_name(file: &str, key: &str, value: &str) -> Result<String, ImportError> {
     if value.is_empty() || value.len() > 64 || value.contains(['/', '\\', ':']) || value == ".." {
         return Err(ImportError::Format {
             file: file.to_owned(),
@@ -257,7 +259,7 @@ pub(crate) fn resolve<'t>(
 }
 
 /// Every key of the skin file the importer does not use, by kind.
-fn count_dropped(
+pub(super) fn count_dropped(
     skin: &Ini,
     (frame, control_sections): (Option<&Frame>, &BTreeSet<String>),
     dropped: &mut BTreeMap<&'static str, usize>,
@@ -338,19 +340,19 @@ pub fn read(tree: &Tree, folder: &str) -> Result<Read, ImportError> {
     let (mut controls, mut tally, control_sections) = controls::read(&skin, &images)?;
     let mut main_layout = frame.as_ref().map(frame::main_layout).transpose()?;
     let (popup_nodes, popup_keys) = popups(tree, skin_key, &skin)?;
+    let decode = |value: &str, group: Option<&str>| {
+        let (file, bytes) = resolve(tree, value, &aliases)?;
+        images.files.borrow_mut().insert(file.to_owned());
+        let mut img = bitmap::decode(file, bytes)?;
+        let by = group
+            .and_then(|c| colours.iter().find(|r| r.name == c))
+            .map_or([0; 3], |r| r.value);
+        bitmap::shift(&mut img, by);
+        Ok(img)
+    };
     if let (Some(built), Some((layout, components))) =
         (main_layout.as_mut(), title::tree(&skin, "MainWindow"))
     {
-        let decode = |value: &str, group: Option<&str>| {
-            let (file, bytes) = resolve(tree, value, &aliases)?;
-            images.files.borrow_mut().insert(file.to_owned());
-            let mut img = bitmap::decode(file, bytes)?;
-            let by = group
-                .and_then(|c| colours.iter().find(|r| r.name == c))
-                .map_or([0; 3], |r| r.value);
-            bitmap::shift(&mut img, by);
-            Ok(img)
-        };
         let mut all = vec![components];
         all.extend(popup_nodes);
         let components = all.as_slice();
@@ -370,26 +372,19 @@ pub fn read(tree: &Tree, folder: &str) -> Result<Read, ImportError> {
     read_files.extend(popup_keys);
     let mut found = Vec::new();
     ini_refs(&skin, &mut found);
-    for (key, window) in [
-        ("ChatSkin", Window::Chat),
-        ("GroupChatSkin", Window::GroupChat),
-    ] {
-        let Some(name) = main.get(key) else { continue };
-        // A skin that names a file it does not ship has no chat surfaces;
-        // a shipped file is read like the others (a malformed one refuses).
-        let file = file_name(skin_key, key, name)?;
-        if lookup(tree, &file).is_err() {
-            continue;
-        }
-        let (chat_key, chat) = parse_file(tree, &file)?;
-        ini_refs(&chat, &mut found);
-        let sections = controls::read_file(&chat, &images, window, (&mut controls, &mut tally))?;
-        if sections.is_empty() {
-            continue;
-        }
-        count_dropped(&chat, (None, &sections), &mut dropped);
-        read_files.push(chat_key);
-    }
+    let chat_window = chat::read_files(
+        tree,
+        (skin_key, main),
+        &images,
+        &decode,
+        &mut chat::Sink {
+            controls: &mut controls,
+            tally: &mut tally,
+            read_files: &mut read_files,
+            found: &mut found,
+            dropped: &mut dropped,
+        },
+    )?;
     let refs = refs::apply(&found, &colours, &mut tokens);
     let control_files = images.files.into_inner();
     let repeated = [
@@ -422,6 +417,7 @@ pub fn read(tree: &Tree, folder: &str) -> Result<Read, ImportError> {
         tokens,
         frame,
         main: main_layout,
+        chat: chat_window,
         dropped,
         unread,
         repeated,
@@ -435,7 +431,7 @@ pub fn read(tree: &Tree, folder: &str) -> Result<Read, ImportError> {
 /// Every colour reference of `ini` in file order ([`refs`]): a section's
 /// `ColorGroup=` and its `Text.<attr>=` keys (`Graphics.ColorGroup` is an
 /// image shift, never a role).
-fn ini_refs(ini: &Ini, out: &mut Vec<Ref>) {
+pub(super) fn ini_refs(ini: &Ini, out: &mut Vec<Ref>) {
     for s in &ini.sections {
         for e in &s.entries {
             let key = e.key.to_ascii_lowercase();
@@ -468,7 +464,7 @@ fn manifest(
     (source, tree): (&str, &Tree),
     base: SkinBase,
     credit: Option<&XfireCredit>,
-    main: Option<&WindowLayout>,
+    windows: BTreeMap<SkinWindow, WindowLayout>,
 ) -> SkinManifest {
     let authorship = credit.map_or(Authorship::ThirdParty, Authorship::XfireByCredit);
     let mut regions = BTreeMap::new();
@@ -522,9 +518,7 @@ fn manifest(
         regions,
         icons: BTreeMap::new(),
         sounds: BTreeMap::new(),
-        windows: main
-            .map(|m| BTreeMap::from([(SkinWindow::Main, m.clone())]))
-            .unwrap_or_default(),
+        windows,
     }
 }
 
@@ -548,15 +542,20 @@ pub fn import(
     let authorship = credit.map_or(Authorship::ThirdParty, Authorship::XfireByCredit);
     // The skin file is the main window's (`MainSkin`); its frame is the
     // buddy list's outline (plan SK0 S1).
-    let main = read.main.as_ref();
-    let layout = main.map(|(l, _)| l);
-    let manifest = manifest(id, &read, (&source, tree), skin_base, credit, layout);
+    let windows = [
+        (SkinWindow::Main, &read.main),
+        (SkinWindow::Chat, &read.chat),
+    ]
+    .into_iter()
+    .filter_map(|(w, b)| Some((w, b.as_ref()?.0.clone())))
+    .collect();
+    let manifest = manifest(id, &read, (&source, tree), skin_base, credit, windows);
     let manifest_json = serde_json::to_vec(&manifest).map_err(|e| ImportError::Format {
         file: MANIFEST.to_owned(),
         detail: e.to_string(),
     })?;
     let mut files = BTreeMap::from([(MANIFEST.to_owned(), manifest_json)]);
-    if let Some((_, tiles)) = main {
+    for (_, tiles) in read.main.iter().chain(&read.chat) {
         files.extend(tiles.clone());
     }
     for (state, img) in read.frame.iter().flat_map(|f| &f.images) {

@@ -6,9 +6,7 @@
 use std::sync::Arc;
 
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
-use rekindle_secrets::rotator::select_rotator;
 use rekindle_types::channel_keys::KeyScope;
-use rekindle_types::id::PseudonymKey;
 
 use crate::state::AppState;
 
@@ -133,10 +131,9 @@ pub fn spawn_mek_request_with_retry(
 /// peers minted different keys at the same generation. In that case only
 /// a KEY CHANGE (not a generation bump) can end the retry: a plain
 /// generation check would be satisfied by the exact key that's already
-/// failing to decrypt. Pulled out of the retry loop as its own function —
-/// matching [`should_last_resort_mint`] below — so it can be tested
-/// directly against the split-brain scenario rather than only through the
-/// live cascade loop.
+/// failing to decrypt. Pulled out of the retry loop as its own function so
+/// it can be tested directly against the split-brain scenario rather than
+/// only through the live cascade loop.
 #[must_use]
 fn cascade_cache_hit(
     needed_generation: u64,
@@ -157,146 +154,29 @@ fn cascade_cache_hit(
     }
 }
 
-/// Decide whether a community-MEK recovery should fall back to a last-resort
-/// local mint. Mint ONLY when we are the elected minter AND nothing landed
-/// during the re-acquire window (the slot started empty and is still empty —
-/// no peer served the canonical key). An unelected peer never mints; an
-/// elected one that did receive a key (slot now populated) keeps the
-/// canonical one.
-#[must_use]
-pub fn should_last_resort_mint(initial: Option<u64>, current: Option<u64>, elected: bool) -> bool {
-    elected && initial.is_none() && current.is_none()
-}
-
-/// Are we the peer that mints when nobody served the key?
-///
-/// This gate used to be `registry_owner_keypair.is_some()` — "did I
-/// create this community". Under `o_cnt: 0` that keypair authorizes no
-/// write on the registry at all, so it had degenerated into a pure
-/// creator privilege: if the creator never came back, the community's
-/// media stayed permanently undecryptable. That is the single point of
-/// failure v2.0 removed.
-///
-/// The replacement is the election every other MEK decision already
-/// uses — [`select_rotator`] over `blake3(context || candidate)` — with
-/// the zero context `rotate_mek_on_request` stamps its provenance rank
-/// against, so the minter and the rank it publishes agree.
-///
-/// Candidates are the peers we can *see* who may rotate: the gossip
-/// overlay's online set plus ourselves, filtered by the rotation
-/// permissions. Scoping to online members is what keeps this
-/// live — an offline lowest-ranked member must not veto recovery for
-/// everyone else. The cost is that two peers with different online
-/// views can both elect themselves. That degrades to a resolvable tie
-/// rather than a fork: both mint at the same generation, both stamp
-/// their election rank, and `convergence::incoming_wins_same_generation`
-/// converges every peer on the lower-ranked key.
-fn elected_to_mint(state: &Arc<AppState>, community_id: &str) -> bool {
-    let Some(me) = super::mek_rotation_support::my_pseudonym(state, community_id) else {
-        return false;
-    };
-    let Some(governance) = crate::state_helpers::governance_state(state, community_id) else {
-        return false;
-    };
-    let mut candidates = vec![me.clone()];
-    {
-        let communities = state.communities.read();
-        if let Some(gossip) = communities
-            .get(community_id)
-            .and_then(|c| c.gossip.as_ref())
-        {
-            for pseudonym in gossip.online_members.keys() {
-                let key = PseudonymKey::from_hex_lossy(pseudonym);
-                if key != me {
-                    candidates.push(key);
-                }
-            }
-        }
-    }
-    // Minting is a rotation, so only members who may rotate stand (plan
-    // D20); the election and the readers' bump validation agree.
-    candidates.retain(|candidate| {
-        rekindle_governance::permissions::may_rotate_mek(candidate, &governance)
-    });
-    select_rotator(&PseudonymKey([0u8; 32]), &candidates) == Some(me)
-}
-
-/// Community-MEK recovery after vault loss (architecture §7.3): re-acquire the
-/// canonical key from an online peer via `RequestMEK`; only if no peer serves
-/// it within the cascade window AND [`elected_to_mint`] picks us, mint a
-/// SUPERSEDING key (`rotate_mek_local` mints at `mek_generation + 1` and
-/// broadcasts), so a peer that appears later converges FORWARD via
-/// Max-Register instead of forking. Never mints a colliding same-generation
-/// key.
+/// Community-key catch-up (architecture §7.3): ask the mesh for the
+/// current community key through the retrying `RequestMEK` cascade. It
+/// never mints: a key the community has not agreed on is a fork, and only
+/// a confirmed ADR 0018 ballot raises the key (FX3; plan E3.5 builds the
+/// ballot). A member no peer answers stays on the keys it holds until a
+/// holder is reachable (the Host's sync tick asks again).
 pub fn spawn_community_mek_recovery(
-    app_handle: tauri::AppHandle,
     state: Arc<AppState>,
     community_id: String,
     requester_pseudonym: String,
 ) {
-    crate::state_helpers::spawn_in_login_with_token(
-        &state.clone(),
-        "community MEK recovery",
-        |stop| async move {
-            // Snapshot before requesting so we can tell whether anything landed.
-            let community_generation = || {
-                crate::state_helpers::current_mek(&state, &community_id, KeyScope::Community)
-                    .map(|mek| mek.generation())
-            };
-            let initial = community_generation();
-
-            // Prefer re-acquisition: ask the deterministic responder for the
-            // current community MEK (generation 0 = "send current").
-            spawn_mek_request_with_retry(
-                Arc::clone(&state),
-                community_id.clone(),
-                KeyScope::Community,
-                0,
-                requester_pseudonym,
-            );
-
-            // Wait out the full cascade budget (lock-step with the requester's
-            // MAX_CASCADES × 5s) plus slack for the reply to apply.
-            let max_cascades = u64::try_from(rekindle_mek_rotation::MAX_CASCADES).unwrap_or(3);
-            let window = std::time::Duration::from_millis(max_cascades * 5_000 + 3_000);
-            if stop
-                .run_until_cancelled(tokio::time::sleep(window))
-                .await
-                .is_none()
-            {
-                return;
-            }
-
-            let current = community_generation();
-            if !should_last_resort_mint(initial, current, elected_to_mint(&state, &community_id)) {
-                return;
-            }
-
-            tracing::warn!(
-                community = %community_id,
-                "no peer served the community MEK within the re-acquire window — \
-                 minting a superseding key (last resort)"
-            );
-            if let Err(e) = crate::services::community_mek_local_rotate::rotate_mek_local(
-                &app_handle,
-                &state,
-                &community_id,
-            )
-            .await
-            {
-                tracing::warn!(
-                    community = %community_id,
-                    error = %e,
-                    "last-resort community MEK mint failed"
-                );
-            }
-        },
+    spawn_mek_request_with_retry(
+        state,
+        community_id,
+        KeyScope::Community,
+        0,
+        requester_pseudonym,
     );
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{cascade_cache_hit, should_last_resort_mint};
+    use super::cascade_cache_hit;
 
     const KEY_A: [u8; 32] = [1u8; 32];
     const KEY_B: [u8; 32] = [2u8; 32];
@@ -357,32 +237,5 @@ mod tests {
         assert!(cascade_cache_hit(5, false, None, Some((KEY_A, 9))));
         assert!(!cascade_cache_hit(5, false, None, Some((KEY_A, 4))));
         assert!(!cascade_cache_hit(5, false, None, None));
-    }
-
-    #[test]
-    fn elected_mints_only_when_nothing_landed() {
-        // Elected, slot still empty after the window → mint (no peer served it).
-        assert!(should_last_resort_mint(None, None, true));
-    }
-
-    #[test]
-    fn peer_served_key_blocks_mint() {
-        // A peer served the canonical key during the window → keep it, no mint.
-        assert!(!should_last_resort_mint(None, Some(1), true));
-        assert!(!should_last_resort_mint(None, Some(7), true));
-    }
-
-    #[test]
-    fn unelected_never_mints() {
-        assert!(!should_last_resort_mint(None, None, false));
-        assert!(!should_last_resort_mint(None, Some(3), false));
-    }
-
-    #[test]
-    fn nonempty_initial_never_mints() {
-        // Defensive: recovery only runs on an absent slot; if we somehow had a
-        // key to begin with, never mint a competing one.
-        assert!(!should_last_resort_mint(Some(2), None, true));
-        assert!(!should_last_resort_mint(Some(2), Some(2), true));
     }
 }

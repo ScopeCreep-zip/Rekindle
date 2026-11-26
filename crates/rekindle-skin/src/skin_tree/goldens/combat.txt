@@ -31,7 +31,7 @@ MainTabbedArea Views
   MainTabbedArea.Communities View(Communities)
 Title NameField target [0, -4, 214, 24] art [0, 4, 214, 15] Size
 StatusEdit StatusText target [0, -4, 219, 24] art [0, 4, 219, 15] Size
-DownArrow StatusList target [0, -2, 22, 24] art [0, 2, 20, 20] Short
+DownArrow StatusList target [0, -2, 24, 24] art [0, 2, 20, 20] Size
 FriendsButtons ButtonRow(Friends)
   FriendsButtons.JoinPlayTab Group
     JoinButton@Friends Button

@@ -141,6 +141,14 @@ impl CommunityStore {
         f(entry)
     }
 
+    /// The community key generation the Host holds now, as the window view
+    /// serves it (`CommunityView::mek_generation`); `None` for a community
+    /// we do not know.
+    #[must_use]
+    pub fn mek_generation(&self, community_id: &str) -> Option<u64> {
+        self.read(community_id, |c| c.mek_generation)
+    }
+
     /// Cached governance state for a community, if it has been merged.
     #[must_use]
     pub fn governance_state(&self, community_id: &str) -> Option<GovernanceState> {

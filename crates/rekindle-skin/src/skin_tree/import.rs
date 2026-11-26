@@ -24,7 +24,8 @@ use rekindle_types::dto::skin_tree::{
     ContentFit, NodeArt, NodePiece, NodePieces, NodeRole, NodeSpan, PieceSlot, SkinNode, SkinTree,
 };
 
-use super::anchor::{axis, chain, client_box, client_inset, outer_for, to_tile, Sibs, Sizes, X, Y};
+use super::anchor::{axis, chain, outer_for, Sibs, Sizes, X, Y};
+use super::anchor_client::{client_box, client_inset, to_tile};
 use super::clip::{clip, Art, Images};
 use super::content::{self, Link};
 use super::fit::fit;
@@ -135,8 +136,8 @@ pub(super) struct Walk<'a> {
     pub(super) groups: Vec<(Vec<usize>, String)>,
     /// The pack's `<Popups>` tile names, lowercased.
     pub(super) popups: BTreeSet<String>,
-    /// Every control group id the pack's components declare.
-    pub(super) group_ids: BTreeSet<u16>,
+    /// Every control group the pack's components declare.
+    pub(super) group_ids: triggers::Groups,
     /// The art file prefix: a popup's name, so its art never meets the window's.
     pub(super) prefix: String,
 }
@@ -313,12 +314,18 @@ impl Walk<'_> {
             class: comp.and_then(|c| c.attr_ci("Class")),
             children: &children,
         };
-        let role = role(&id, component, parent, &facts).ok_or_else(|| {
-            bad(format!(
-                "{id}: component {} has no role",
-                component.unwrap_or("-")
-            ))
-        })?;
+        // The chat window's own vocabulary first (plan SK17-2).
+        let chat = (self.window == SkinWindow::Chat)
+            .then(|| super::chat_roles::role(&id, component, parent, &facts))
+            .flatten();
+        let role = chat
+            .or_else(|| role(&id, component, parent, &facts))
+            .ok_or_else(|| {
+                bad(format!(
+                    "{id}: component {} has no role",
+                    component.unwrap_or("-")
+                ))
+            })?;
         let max = (limit_of(comp, "MaxWidth"), limit_of(comp, "MaxHeight"));
         let group = comp
             .and_then(|c| c.attr_ci("ControlGroupId"))
@@ -328,7 +335,14 @@ impl Walk<'_> {
             popups: &self.popups,
             groups: &self.group_ids,
         };
-        let triggers = triggers::read(tile, comp, &id, &pack)?;
+        // A slot is a box the shell mounts its own control into (plan
+        // SK17-2): the pack's engine triggers on it (the InfoView toggle's
+        // `LaunchSkin` of a chat popup) are the control's, not the box's.
+        let triggers = if matches!(role.shown(), NodeRole::Slot(_)) {
+            Vec::new()
+        } else {
+            triggers::read(tile, comp, &id, &pack)?
+        };
         check_grip(&id, component, &triggers).map_err(bad)?;
         let fit = content::fit_of(comp, !pieces.is_empty());
         Ok(Read {
@@ -373,8 +387,11 @@ impl Walk<'_> {
                     continue;
                 }
                 let refs = (&names, &sizes);
-                let xy = axis(t.tile, &X, t.wh.0, t.max.0, refs)
-                    .and_then(|x| Ok((x, axis(t.tile, &Y, t.wh.1, t.max.1, refs)?)));
+                let slot = matches!(t.role.shown(), NodeRole::Slot(_));
+                // A tile of the window's own layout, not of a nested tile.
+                let kind = (slot, path.is_empty());
+                let xy = axis(t.tile, &X, t.wh.0, t.max.0, kind, refs)
+                    .and_then(|x| Ok((x, axis(t.tile, &Y, t.wh.1, t.max.1, kind, refs)?)));
                 match xy {
                     Ok(xy) => {
                         names.insert(t.id.to_ascii_lowercase(), xy.clone());
@@ -517,12 +534,7 @@ pub fn add(
         .filter_map(|t| t.attr_ci("Name"))
         .map(|n| n.trim().to_ascii_lowercase())
         .collect();
-    let group_ids = by_name
-        .values()
-        .flat_map(|c| [c.attr_ci("GroupId"), c.attr_ci("ControlGroupId")])
-        .flatten()
-        .filter_map(|g| g.trim().parse().ok())
-        .collect();
+    let group_ids = triggers::Groups::of(&by_name);
     let mut walk = Walk {
         window,
         by_name,
@@ -555,7 +567,7 @@ pub fn add(
         files: &mut walk.files,
     };
     outdent::clip_window(&mut tree.root, &mut art)?;
-    clip(&mut tree.root, (None, None), &mut art)?;
+    clip(&mut tree.root, ((None, None), [Some(0); 2]), &mut art)?;
     let window = layout.attr_ci("Component").unwrap_or("MainWindow");
     let declared = walk.by_name.get(&window.to_ascii_lowercase()).copied();
     let pack_min = (

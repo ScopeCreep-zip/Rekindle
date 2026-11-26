@@ -117,9 +117,10 @@ pub async fn message_route_blob(
     settle_route(state, &route_id, result).map_err(|e| format!("app_message: {e}"))
 }
 
-/// The profile of [`safe_api_and_routing_context`]'s routing context.
+/// The profile of [`safe_api_and_routing_context`]'s routing context: the
+/// 1:1 control class (Reliable / PreferOrdered, plan VU decision 2).
 fn safe_profile() -> rekindle_types::config::SafetyProfile {
-    rekindle_route::contexts::RouteContextSpec::rc_safe().safety_profile()
+    rekindle_route::profile::profile_for_class(rekindle_types::message::MessageClass::Text)
 }
 
 /// The error of a send still unresolved at our `deadline`.

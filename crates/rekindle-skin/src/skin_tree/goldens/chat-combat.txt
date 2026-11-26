@@ -1,0 +1,35 @@
+MainTitleBar TitleBar
+  Logo Logo label "Rekindle" cover [0, 0, 48, 23] glyph RekindleWordmark target [0, 0, 48, 24] art [0, 0, 48, 23] Size
+  Title ChatTitle
+  Minimize WindowButton(Minimize) target [-12, -6, 24, 24] art [12, 6, 12, 12] Size
+  Close WindowButton(Close) target [0, -6, 24, 24] art [0, 6, 12, 12] Size
+LeftEdge Decor
+RightEdge Decor
+Middle Decor
+Bottom Decor
+BottomLeft Decor
+BottomRight Decor
+Top Decor
+TopLeft Decor
+TopRight Decor
+ContentArea Group
+  ChatArea Slot(ChatArea)
+  Divider Decor
+  ChatEdit Slot(ChatEdit)
+ImButton Slot(ChatSend)
+ExpandButton Slot(InfoviewButton)
+  InfoViewSwitchIn Part
+  InfoviewSwitchOut Part
+ResizeRight Button target [-12, 0, 24, 304] art [12, 0, 12, 304] Size
+ResizeBottomRight Button target [-9, -8, 24, 24] art [9, 8, 15, 16] Size
+TypingMessage Slot(TypingNotice)
+ResizeLeft Button target [0, 0, 24, 304] art [0, 0, 12, 304] Size
+ResizeTop Button target [0, 0, 350, 24] art [0, 0, 350, 5] Size
+ResizeBottom Button target [0, -19, 350, 24] art [0, 19, 350, 5] Size
+GCMenuBar MenuBar
+  GCSystemMenuText MenuTitle label "System"
+    GCSystemMenu Part target [0, -1, 51, 24] art [0, 1, 51, 22] Size
+  GCActionsMenuText MenuTitle label "Actions"
+    GCActionsMenu Part target [0, -2, 44, 24] art [0, 2, 44, 20] Size
+  GCHelpMenuText MenuTitle label "Help"
+    GCHelpMenu Part target [0, -2, 28, 24] art [0, 2, 28, 20] Size

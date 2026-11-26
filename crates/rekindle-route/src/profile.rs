@@ -1,136 +1,93 @@
-//! [`SafetyProfile`] lookup keyed on [`MessageClass`].
+//! The [`SafetyProfile`] of a [`MessageClass`]. Rekindle's one
+//! class-to-profile table is [`SafetyConfig`]'s defaults (`rekindle-types`
+//! `config`), looked up by [`SafetyConfig::for_class`]; this is that table
+//! before user config and the admin hop floor apply, for the senders that
+//! hold no `TransportConfig` (the desktop's own Veilid contexts). The
+//! transport reads its configured copy through the same lookup.
 //!
-//! Every message class routes through a Veilid Safe route at the uniform
-//! [`ANONYMITY_HOP_FLOOR`] (3-hop Tor-class) — sender hidden behind an
-//! ephemeral route id on every path, voice and video included. There is
-//! no `Unsafe`/direct path and no per-class hop count: a class only
-//! tunes the *latency/ordering* knobs (`stability`, `sequencing`), never
-//! its anonymity.
+//! | Class | Stability | Sequencing (Veilid) | Consumers |
+//! |---|---|---|---|
+//! | Text | Reliable | PreferOrdered | transport `Sender::send_direct`, `AppCaller::call_direct`; desktop `state_helpers` `safe_routing_context_from`, `routes::safe_profile` |
+//! | Voice | LowLatency | PreferUnordered (`NoPreference`) | desktop `VeilidVoiceFrameSender` (voice and video frames) |
+//! | Rpc | Reliable | EnsureOrdered | transport `AppCaller::call`, `call_community_envelope`, `send_unframed_to_route` |
+//! | Dht | Reliable | PreferOrdered | transport node start (`VeilidPorts::start`: the record pool's safety selection) |
 //!
-//! - **Voice** — `LowLatency` / `NoPreference`: the lowest-latency
-//!   variant *within* the anonymous floor. It does not trade sender
-//!   anonymity for speed (a single relay would already link both call
-//!   ends; unacceptable on a privsec platform).
-//! - **Text + DhtWrite** — `Reliable` / `PreferOrdered`: user-content
-//!   that should arrive in order.
-//! - **Rpc + DhtRead** — `Reliable` / `NoPreference`: one-shot
-//!   request/response, no ordering requirement.
+//! Every class rides a Safe route at
+//! [`ANONYMITY_HOP_FLOOR`](rekindle_types::config::ANONYMITY_HOP_FLOOR); a class tunes
+//! only stability and sequencing. Control traffic is ordered and media
+//! unordered (plan VU decision 2), Veilid's intended use: `Sequencing`
+//! defaults to PreferOrdered (veilid-core `veilid_api/types/safety.rs:12-21`);
+//! a routed operation carries the sender's sequencing and every hop filters
+//! the next hop by it (`rpc_processor/rpc_route.rs:26-29`, `:87-90`); Veilid
+//! adapts it only to the sender's own safety route (`route_compile.rs:106-110`),
+//! never to the receiver's private route, whose hops were chosen and proven
+//! on its one ordering (`route_allocate.rs:580-588`). An unordered send to an
+//! Ordered General route crosses UDP hop pairs nobody proved: in the real app
+//! (DL1/DL2, 2026-11-25) such sends were lost while ordered ones arrived.
 
-use rekindle_types::config::{
-    SafetyProfile, SequencingPreference, StabilityPreference, ANONYMITY_HOP_FLOOR,
-};
+use rekindle_types::config::{SafetyConfig, SafetyProfile};
 use rekindle_types::message::MessageClass;
 
-/// Return the [`SafetyProfile`] appropriate for the given message class.
-///
-/// All classes share the same `hop_count` ([`ANONYMITY_HOP_FLOOR`]); they
-/// differ only in `stability`/`sequencing`. The result is consumed by
-/// `rekindle-transport`'s `build_routing_context`, which always builds a
-/// `SafetySelection::Safe` route (floor-clamped).
+/// The default [`SafetyProfile`] of `class`: [`SafetyConfig::for_class`]
+/// over the default table.
 #[must_use]
 pub fn profile_for_class(class: MessageClass) -> SafetyProfile {
-    let hop_count = ANONYMITY_HOP_FLOOR;
-    match class {
-        // Voice: lowest-latency variant within the anonymous floor.
-        MessageClass::Voice => SafetyProfile {
-            hop_count,
-            stability: StabilityPreference::LowLatency,
-            sequencing: SequencingPreference::NoPreference,
-        },
-        // Text DMs + DHT writes — ordered, reliable.
-        MessageClass::Text | MessageClass::DhtWrite => SafetyProfile {
-            hop_count,
-            stability: StabilityPreference::Reliable,
-            sequencing: SequencingPreference::PreferOrdered,
-        },
-        // RPC invites + DHT reads — reliable, no ordering requirement.
-        MessageClass::Rpc | MessageClass::DhtRead => SafetyProfile {
-            hop_count,
-            stability: StabilityPreference::Reliable,
-            sequencing: SequencingPreference::NoPreference,
-        },
-    }
+    SafetyConfig::default().for_class(class).clone()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rekindle_types::config::{SequencingPreference, StabilityPreference, ANONYMITY_HOP_FLOOR};
 
-    /// Text DMs: 3-hop anonymous, ordered+reliable.
+    const CLASSES: [MessageClass; 4] = [
+        MessageClass::Text,
+        MessageClass::Voice,
+        MessageClass::Rpc,
+        MessageClass::Dht,
+    ];
+
+    /// 1:1 control traffic is reliable and ordered (plan VU decision 2).
     #[test]
-    fn text_class_uses_three_hop_ordered() {
+    fn control_traffic_is_reliable_and_ordered() {
         let p = profile_for_class(MessageClass::Text);
-        assert_eq!(p.hop_count, ANONYMITY_HOP_FLOOR);
         assert_eq!(p.stability, StabilityPreference::Reliable);
         assert_eq!(p.sequencing, SequencingPreference::PreferOrdered);
     }
 
-    /// Voice: 3-hop anonymous (same floor as everything else), but the
-    /// lowest-latency stability/sequencing within that floor.
+    /// Media frames keep UDP: LowLatency and unordered (`NoPreference`,
+    /// Veilid's PreferUnordered), unlike control traffic.
     #[test]
-    fn voice_class_uses_three_hop_low_latency() {
-        let p = profile_for_class(MessageClass::Voice);
-        assert_eq!(p.hop_count, ANONYMITY_HOP_FLOOR);
-        assert_eq!(p.stability, StabilityPreference::LowLatency);
-        assert_eq!(p.sequencing, SequencingPreference::NoPreference);
+    fn media_frames_stay_unordered() {
+        let v = profile_for_class(MessageClass::Voice);
+        assert_eq!(v.stability, StabilityPreference::LowLatency);
+        assert_eq!(v.sequencing, SequencingPreference::NoPreference);
+        assert_ne!(
+            v.sequencing,
+            profile_for_class(MessageClass::Text).sequencing
+        );
     }
 
-    /// Rpc: 3-hop anonymous, reliable, no ordering.
+    /// RPCs require ordering; DHT operations prefer it.
     #[test]
-    fn rpc_class_uses_three_hop_unordered() {
-        let p = profile_for_class(MessageClass::Rpc);
-        assert_eq!(p.hop_count, ANONYMITY_HOP_FLOOR);
-        assert_eq!(p.stability, StabilityPreference::Reliable);
-        assert_eq!(p.sequencing, SequencingPreference::NoPreference);
+    fn rpc_and_dht_rows_are_ordered() {
+        let rpc = profile_for_class(MessageClass::Rpc);
+        assert_eq!(rpc.stability, StabilityPreference::Reliable);
+        assert_eq!(rpc.sequencing, SequencingPreference::EnsureOrdered);
+        let dht = profile_for_class(MessageClass::Dht);
+        assert_eq!(dht.stability, StabilityPreference::Reliable);
+        assert_eq!(dht.sequencing, SequencingPreference::PreferOrdered);
     }
 
-    /// DhtRead: routing-equivalent to Rpc.
-    #[test]
-    fn dht_read_matches_rpc() {
-        let dr = profile_for_class(MessageClass::DhtRead);
-        let r = profile_for_class(MessageClass::Rpc);
-        assert_eq!(dr.hop_count, r.hop_count);
-        assert_eq!(dr.stability, r.stability);
-        assert_eq!(dr.sequencing, r.sequencing);
-    }
-
-    /// DhtWrite: routing-equivalent to Text.
-    #[test]
-    fn dht_write_matches_text() {
-        let dw = profile_for_class(MessageClass::DhtWrite);
-        let t = profile_for_class(MessageClass::Text);
-        assert_eq!(dw.hop_count, t.hop_count);
-        assert_eq!(dw.stability, t.stability);
-        assert_eq!(dw.sequencing, t.sequencing);
-    }
-
-    /// Every class — voice included — routes at the anonymity floor.
-    /// Guards against any path silently dropping below 3-hop Safe.
+    /// Every class routes at the anonymity floor, voice included.
     #[test]
     fn every_class_is_at_the_anonymity_floor() {
-        for class in [
-            MessageClass::Voice,
-            MessageClass::Text,
-            MessageClass::Rpc,
-            MessageClass::DhtRead,
-            MessageClass::DhtWrite,
-        ] {
+        for class in CLASSES {
             assert_eq!(
                 profile_for_class(class).hop_count,
                 ANONYMITY_HOP_FLOOR,
                 "{class:?} must route at the 3-hop Tor-class anonymity floor",
             );
         }
-    }
-
-    /// Voice + Text share the anonymity floor but differ on the
-    /// latency/ordering knobs.
-    #[test]
-    fn voice_and_text_differ_only_on_perf_knobs() {
-        let v = profile_for_class(MessageClass::Voice);
-        let t = profile_for_class(MessageClass::Text);
-        assert_eq!(v.hop_count, t.hop_count);
-        assert_ne!(v.stability, t.stability);
-        assert_ne!(v.sequencing, t.sequencing);
     }
 }

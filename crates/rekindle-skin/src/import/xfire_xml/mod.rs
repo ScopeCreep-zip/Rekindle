@@ -28,6 +28,7 @@
 //!   pair is settled by [`super::walk::settle`], each change recorded.
 
 pub mod bitmap;
+pub(in crate::import) mod chat_frame;
 pub mod colours;
 pub mod controls;
 mod decor;
@@ -61,7 +62,6 @@ use crate::colour;
 use crate::output::{token_file, zip};
 use crate::package::MANIFEST;
 use crate::registry::Base;
-use crate::shape;
 use colours::{absolute, parse_attrs, parse_rgba, target_in, Target};
 
 /// The `source.format` of an imported package.
@@ -255,13 +255,6 @@ pub(crate) fn nine_piece_in<'a>(
     None
 }
 
-/// The frame and where it was read.
-type ReadFrame = (
-    Option<(RgbaImage, rekindle_types::dto::skin::Insets)>,
-    String,
-    Option<[RgbaImage; 9]>,
-);
-
 /// The file `Skin.xml`'s `section` (`<ChatSkin>`, `<MainSkin>`) includes:
 /// that window's layout.
 fn window_layout<'s>(skin: &'s Node, section: &str) -> Option<&'s str> {
@@ -270,51 +263,6 @@ fn window_layout<'s>(skin: &'s Node, section: &str) -> Option<&'s str> {
         .find(|n| n.name.eq_ignore_ascii_case(section))
         .and_then(|n| descendants(n, "Include").into_iter().next())
         .and_then(|i| i.attr_ci("File"))
-}
-
-fn read_frame(
-    tree: &Tree,
-    (skin, theme): (&Node, &Node),
-    colours: &[ColourRow],
-    layout: Layout,
-    components: &[Node],
-) -> Result<ReadFrame, ImportError> {
-    let bitmaps = bitmaps(theme);
-    let decode = |name: &str, shift: Option<&str>| piece(tree, &bitmaps, colours, name, shift);
-    if layout == Layout::ClassicV3 {
-        let source = "xfirecomponents.xml (the chat window's outer edges' middles, \
-                      9 px rails; no top or bottom row; transparent middle)";
-        let read = v3::frame(&xml(tree, v3::SOURCE)?, decode)?;
-        let (frame, pieces) = read.map(|(i, n, p)| ((i, n), p)).unzip();
-        return Ok((frame, source.to_owned(), pieces));
-    }
-    let set = if lookup(tree, FRAME_SOURCE).is_ok() {
-        nine_piece(&xml(tree, FRAME_SOURCE)?)
-    } else {
-        None
-    };
-    let Some(set) = set else {
-        let Some(file) = window_layout(skin, "ChatSkin").filter(|f| lookup(tree, f).is_ok()) else {
-            return Ok((None, String::new(), None));
-        };
-        return Ok(match tiles::frame(&xml(tree, file)?, components, decode)? {
-            Some((img, insets, shape, pieces)) => (
-                Some((img, insets)),
-                format!("the chat window layout {file}: {}", shape.describe()),
-                Some(pieces),
-            ),
-            None => (None, String::new(), None),
-        });
-    };
-    let mut pieces: Vec<RgbaImage> = Vec::with_capacity(9);
-    for (name, colour) in &set {
-        pieces.push(decode(name, colour.as_deref())?);
-    }
-    let pieces: [RgbaImage; 9] = pieces.try_into().map_err(|_| ImportError::MissingFile {
-        file: FRAME_SOURCE.to_owned(),
-    })?;
-    let frame = bitmap::compose(FRAME_SOURCE, &pieces)?;
-    Ok((Some(frame), FRAME_SOURCE.to_owned(), Some(pieces)))
 }
 
 /// Reads `tree` (an unpacked Xfire XML-era skin).
@@ -346,7 +294,7 @@ pub fn read(tree: &Tree) -> Result<Read, ImportError> {
     let components = component_files(tree, &included)?;
     let refs = refs::apply(&refs::xml_refs(&components), &colours, &mut tokens);
     let (frame, frame_source, chat) =
-        read_frame(tree, (&skin, theme), &colours, layout, &components)?;
+        chat_frame::read_frame(tree, (&skin, theme), &colours, layout, &components)?;
     let (mut controls, tally) = controls::read(tree, theme, &colours, &components)?;
     let mut windows = Windows::new();
     if let Some(f) = window_layout(&skin, "MainSkin").filter(|f| lookup(tree, f).is_ok()) {
@@ -363,11 +311,30 @@ pub fn read(tree: &Tree) -> Result<Read, ImportError> {
             &mut windows,
         )?;
     }
-    if let Some(pieces) = &chat {
-        windows.insert(
-            SkinWindow::Chat,
-            shape::from_nine(SkinWindow::Chat, pieces)?,
-        );
+    if let Some((pieces, fitted)) = &chat {
+        let mut built = chat_frame::window(pieces, fitted)?;
+        // The chat window's own component tree (plan SK17-2), laid by the
+        // buddy list's model from the pack's chat layout.
+        if let Some(f) = window_layout(&skin, "ChatSkin").filter(|f| lookup(tree, f).is_ok()) {
+            let layout = xml(tree, f)?;
+            let bitmaps = bitmaps(theme);
+            let decode =
+                |name: &str, shift: Option<&str>| piece(tree, &bitmaps, &colours, name, shift);
+            // As the buddy list's tree, the chat window's reads the popups
+            // its components launch (StealthX's `ChatMenuButton` →
+            // `ChatMenuPopup`, `components.xml:851`, `popups.xml:107`).
+            let mut with_popups = components.clone();
+            with_popups.extend(sources::popup_files(tree, &included)?);
+            crate::skin_tree::import::add(
+                SkinWindow::Chat,
+                &layout,
+                &with_popups,
+                decode,
+                &[],
+                &mut built,
+            )?;
+        }
+        windows.insert(SkinWindow::Chat, built);
     }
     let info_xml = match lookup(tree, "Info.xml") {
         Ok((key, bytes)) => Some(tree::parse(key, bytes)?),

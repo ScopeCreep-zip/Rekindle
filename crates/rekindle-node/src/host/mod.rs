@@ -49,6 +49,8 @@ mod group_content_tests;
 #[cfg(test)]
 mod group_dm_tests;
 #[cfg(test)]
+mod group_host_call_tests;
+#[cfg(test)]
 mod group_lobby_tests;
 #[cfg(test)]
 mod group_reply_tests;
@@ -99,6 +101,8 @@ mod transport_config;
 pub mod undo;
 pub(crate) mod unlock;
 pub(crate) mod unlocked;
+#[cfg(all(feature = "webdriver-test", debug_assertions))]
+mod webdriver;
 
 #[cfg(test)]
 pub(crate) mod fixture;

@@ -33,6 +33,13 @@ pub(crate) fn raises_key_generation(
     prev.is_some_and(|prev| prev.mek_generation < next.mek_generation)
 }
 
+/// Whether merging `next` over `prev` creates a channel: an outbox entry
+/// of it read before the merge passed with no channel to map to
+/// (`channel::outbox_unmapped`).
+pub(crate) fn creates_channel(prev: Option<&GovernanceState>, next: &GovernanceState) -> bool {
+    (next.channels.keys()).any(|id| prev.is_none_or(|prev| !prev.channels.contains_key(id)))
+}
+
 impl HostGovernance {
     pub(super) fn set_governance_state_impl(&self, community_id: &str, state: GovernanceState) {
         // Store each merged channel's row before the state lands.
@@ -61,7 +68,12 @@ impl HostGovernance {
         });
         let raised = raises_key_generation(prev.as_ref(), &state);
         let departed_outboxes = new_outbox_heads(prev.as_ref(), &state);
+        let channel_created = creates_channel(prev.as_ref(), &state);
         let now_secs = self.ctx.clock.now_secs();
+        let me_hex = (self.ctx.communities.map().read().get(community_id))
+            .and_then(|c| c.my_pseudonym_key.clone())
+            .unwrap_or_default();
+        let view_gained = super::view_gain::view_gained(prev.as_ref(), &state, &me_hex, now_secs);
         let permissions =
             (prev.as_ref().zip(diff.as_ref())).map_or_else(Default::default, |(prev, diff)| {
                 super::permission_events::permission_transitions(prev, &state, diff, now_secs)
@@ -96,6 +108,12 @@ impl HostGovernance {
             self.repair_after_grace(community_id);
         }
         self.read_departed_outboxes(community_id, departed_outboxes);
+        if channel_created {
+            self.spawn_outbox_reread_unmapped(community_id);
+        }
+        if view_gained {
+            self.spawn_outbox_reread(community_id);
+        }
     }
 
     /// A merged departure recorded a new head of the member's channel

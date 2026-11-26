@@ -92,6 +92,7 @@ fn samples() -> Map<String, Value> {
             sender_id: pk('b'),
             body: "hello channel".into(),
             decryption_failed: false,
+            undecryptable: None,
             automod_blurred: false,
             timestamp: 1_760_000_000,
             is_own: false,
@@ -490,6 +491,7 @@ fn friend_samples(add: &mut impl FnMut(&str, Value)) {
             favourite: false,
             rename_refused: Some("accept the invite first".into()),
             invite_refused: Some("accept the invite first".into()),
+            call_refused: Some("accept the invite first".into()),
         }),
     );
     add(

@@ -45,6 +45,18 @@ impl Netsim {
             .unwrap_or(0)
     }
 
+    /// How many of those inspects were in a network scope (`SyncGet`,
+    /// `SyncSet`, `UpdateGet`, `UpdateSet`), each a fanout; a `Local`
+    /// inspect reads only the local store and sends nothing.
+    #[must_use]
+    pub fn app_network_inspects(&self, node: usize, key: &str) -> u64 {
+        self.net.inner.lock().nodes[node]
+            .app_network_inspects
+            .get(key)
+            .copied()
+            .unwrap_or(0)
+    }
+
     /// How many gets of `key` node `node`'s app sent to the network.
     #[must_use]
     pub fn app_gets(&self, node: usize, key: &str) -> u64 {

@@ -7,6 +7,7 @@ import { settingsState } from "../../stores/settings.store";
 import { setNotificationState } from "../../stores/notification.store";
 import { setVoiceState } from "../../stores/voice.store";
 import { friendsState } from "../../stores/friends.store";
+import { authState } from "../../stores/auth.store";
 import { playBusyTone, playIncomingRing, playOutgoingRingback } from "../../utils/ringtone";
 import { startRing, stopActiveRing } from "../../actions/calls_ring";
 
@@ -97,8 +98,30 @@ export function subscribeCallEvents({ owner }: { owner: boolean }): Promise<Unli
       return;
     }
 
+    if ("groupStarted" in call) {
+      // GV3 — our own group call, ringing its invitees, from the Host's
+      // payload (as `started` seeds a 1:1's outgoing call): its group's
+      // window shows Cancel until it connects or ends.
+      const { callId, kind, participants, groupId, expiresAtMs } = call.groupStarted;
+      setCallsState("outgoingGroupCall", {
+        callId,
+        initiatorKey: authState.publicKey ?? "",
+        displayName: authState.displayName ?? "",
+        kind: kind as "audio" | "video",
+        participants,
+        groupId,
+        accepted: [],
+        startedAtMs: Date.now(),
+        expiresAtMs,
+      });
+      if (settingsState.ringtoneEnabled) {
+        asOwner(() => startRing(playOutgoingRingback({ volume: settingsState.ringtoneVolume })));
+      }
+      return;
+    }
+
     if ("incoming" in call) {
-      const { callId, from, displayName, kind, participants, isGroup, expiresAtMs } =
+      const { callId, from, displayName, kind, participants, isGroup, groupId, expiresAtMs } =
         call.incoming;
 
       if (isGroup) {
@@ -112,6 +135,7 @@ export function subscribeCallEvents({ owner }: { owner: boolean }): Promise<Unli
             displayName,
             kind: kind as "audio" | "video",
             participants,
+            groupId,
             accepted: [],
             startedAtMs: Date.now(),
             expiresAtMs,
@@ -152,15 +176,23 @@ export function subscribeCallEvents({ owner }: { owner: boolean }): Promise<Unli
     }
 
     if ("connected" in call) {
-      const { callId, direct } = call.connected;
+      const { callId, direct, groupId } = call.connected;
       asOwner(stopActiveRing);
 
       if (direct == null) {
         // Wave 12 W12.9 — promote a group call to active. A group call
         // has no single peer, which is exactly what `direct: null` says.
+        // Our own ring answered (GV3): it becomes the active call.
+        const ours = callsState.outgoingGroupCall;
+        if (ours && ours.callId === callId) {
+          setCallsState("activeGroupCall", { ...ours, groupId });
+          setCallsState("outgoingGroupCall", null);
+          return;
+        }
         const head = callsState.incomingGroupCalls.find((c) => c.callId === callId);
         if (head) {
-          setCallsState("activeGroupCall", { ...head, accepted: [head.initiatorKey] });
+          // The connect's group as the Host sends it, never the ring's in its place.
+          setCallsState("activeGroupCall", { ...head, groupId, accepted: [head.initiatorKey] });
           setCallsState("incomingGroupCalls", (p) => p.filter((c) => c.callId !== callId));
         }
         return;
@@ -322,6 +354,9 @@ export function subscribeCallEvents({ owner }: { owner: boolean }): Promise<Unli
       // Group slots too: one `ended` now covers both call shapes.
       if (callsState.activeGroupCall?.callId === callId) {
         setCallsState("activeGroupCall", null);
+      }
+      if (callsState.outgoingGroupCall?.callId === callId) {
+        setCallsState("outgoingGroupCall", null);
       }
       setCallsState("incomingGroupCalls", (p) => p.filter((c) => c.callId !== callId));
       setCallsState("incomingCalls", (prev) => prev.filter((c) => c.callId !== callId));

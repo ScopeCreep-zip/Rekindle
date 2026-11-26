@@ -19,13 +19,16 @@ export interface MessageInputProps {
   peerId: string;
   replyTo?: { senderName: string; body: string; messageId?: string } | null;
   editMode?: EditMode | null;
-  onSend?: (id: string, body: string, replyToId?: string) => void;
+  /** Send the draft: each window gives its own path (a 1:1 chat's
+   *  send_message, a group's group_dm_send, a channel's post), so the input
+   *  reaches no window's send command itself. */
+  onSend: (id: string, body: string, replyToId?: string) => void;
   onDismissReply?: () => void;
   onEditSave?: (messageId: string, newBody: string) => void;
   onEditCancel?: () => void;
   onTyping?: () => void;
-  /** Each edit's draft, for a window that reports its own typing (a
-   *  group); without it a 1:1 draft is reported to `peerId`. */
+  /** Each edit's draft, for a window that reports typing from it (a 1:1
+   *  chat, a group). */
   onDraftChanged?: (body: string) => void;
   disabled?: boolean;
   disabledMessage?: string;

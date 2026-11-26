@@ -137,6 +137,12 @@ pub struct CommunityState {
     /// E3.3), one per author.
     #[serde(skip)]
     pub outbox_streams: std::sync::Arc<rekindle_sync::stream::StreamEngine>,
+    /// The writers (author, member record) whose outbox entries mapped to
+    /// no merged channel since a merge last created one, diffed again when
+    /// one is (plan E3.3, `channel::outbox_unmapped`).
+    #[serde(skip)]
+    pub outbox_unmapped:
+        std::sync::Arc<parking_lot::Mutex<std::collections::BTreeSet<([u8; 32], String)>>>,
     /// Checkpoint hint and state requests at the gossip floor (S7c.3): a
     /// member's per pseudonym, a joiner's per invite (S7c.8 (2)); frontier
     /// requests (S7d-keys.8) per pseudonym in their own buckets.
@@ -247,6 +253,16 @@ pub struct CommunityState {
     /// loader's merge and by every projection that finds us departed.
     #[serde(skip)]
     pub own_removal: Option<OwnRemoval>,
+
+    /// When our community key went missing or behind (unix ms), for
+    /// `KeyStatus::since_ms`; none while it is current.
+    #[serde(skip)]
+    pub key_pending_since_ms: Option<u64>,
+
+    /// The key status last published as `GovernanceEvent::KeyStatus`, so
+    /// only a change is announced.
+    #[serde(skip)]
+    pub published_key_status: Option<rekindle_types::dto::community::KeyStatus>,
 
     /// Whether the community's network side is torn down for our removal,
     /// behind the lock that orders a teardown and a restore (a removal the

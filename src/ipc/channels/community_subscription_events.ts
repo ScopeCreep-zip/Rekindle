@@ -1,3 +1,4 @@
+import type { Undecryptable } from "../commands/types";
 import type { SkinApplied } from "../commands/dto";
 /**
  * The daemon-vocabulary half of the `community-event` channel.
@@ -172,6 +173,10 @@ export interface ChannelOverviewDisplay {
   logKey: string | null;
   sortOrder: number;
   slowmodeSeconds: number | null;
+  /** A restricted channel whose roster we are not on (FX3): shown, closed. */
+  locked?: boolean;
+  /** The Host's words for why it is locked. */
+  lockedReason?: string;
 }
 
 /** A channel category, as Tier 1's `CategoryDisplay`. */
@@ -220,6 +225,7 @@ export type GovernanceEvent =
   | { bansChanged: { community: string } }
   | { opPublication: { community: string; op: string; state: OpPublicationState } }
   | { catchUp: { community: string; catchingUp: boolean; pending: PendingGovOp[] } }
+  | { keyStatus: { community: string; status: KeyStatus } }
   | {
       inviteCreated: {
         community: string;
@@ -402,6 +408,8 @@ export type ChannelMessageEvent =
         forwardedFromName: string | null;
         /** The D26 gate hid it (an automod `BlurContent` match). */
         automodBlurred: boolean;
+        /** Stored without its body, and why (`body` is `null`); a held post never has it. */
+        undecryptable?: Undecryptable;
       };
     }
   | {
@@ -515,3 +523,13 @@ export type PendingGovKind =
   | "adminDelete" | "segmentAdded" | "autoModRule" | "inviteCreated" | "inviteRevoked" | "attachmentPinned"
   | "communityPolicy" | "checkpoint" | "successor" | "deviceKey" | "deviceRetired" | "deviceReadmit"
   | "successorLinkRequest" | "successorLink";
+
+/** Our community key against governance's generation, as the Host states it
+ *  (`rekindle_types::dto::community::KeyStatus`; `CommunityView::key_status`,
+ *  `GovernanceEvent::KeyStatus`): `pending` while it is missing or behind. */
+export interface KeyStatus {
+  state: "current" | "pending";
+  have: number | null;
+  need: number | null;
+  sinceMs: number | null;
+}

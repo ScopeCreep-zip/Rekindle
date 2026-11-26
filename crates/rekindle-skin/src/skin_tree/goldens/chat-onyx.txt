@@ -1,0 +1,38 @@
+TopLeft Decor target [0, 0, 83, 87] art [0, 0, 83, 87] Frame
+Top Decor target [0, 0, 87, 87] art [0, 0, 87, 87] Frame
+TopRight Decor target [0, 0, 83, 87] art [0, 0, 83, 87] Frame
+LeftEdge Decor target [0, 0, 83, 106] art [0, 0, 83, 106] Frame
+Middle Decor
+RightEdge Decor target [0, 0, 83, 106] art [0, 0, 83, 106] Frame
+BottomLeft Decor target [0, 0, 83, 87] art [0, 0, 83, 87] Frame
+Bottom Decor target [0, 0, 87, 87] art [0, 0, 87, 87] Frame
+BottomRight Decor target [0, 0, 83, 87] art [0, 0, 83, 87] Frame
+ResizeLeft Button target [0, 0, 24, 280] art [0, 0, 5, 280] Size
+ResizeRight Button target [-19, 0, 24, 280] art [19, 0, 5, 280] Size
+ResizeUp Button target [0, 0, 253, 24] art [0, 0, 253, 5] Short
+ResizeDown Button target [0, -19, 253, 24] art [0, 19, 253, 5] Size
+BRGripper Button target [1, 1, 24, 24] art [-1, -1, 25, 25] Size
+MainTitleBar TitleBar
+  Logo Logo label "Rekindle" cover [0, 0, 16, 16] glyph RekindleMarkSmall target [-4, -4, 24, 24] art [4, 4, 16, 16] Size
+  Title ChatTitle
+MenuBar MenuBar
+  XfireMenuText MenuTitle label "Rekindle"
+    FileMenu Part
+  ToolsMenuText MenuTitle label "Tools"
+    ToolsMenu Part
+  HelpMenuText MenuTitle label "Help"
+    HelpMenu Part
+  MenuDiv0 Decor
+  MenuDiv1 Decor
+  MenuDiv2 Decor
+  MenuDiv3 Decor
+TopButtonBar Group
+  Minimize WindowButton(Minimize) target [-8, -4, 24, 24] art [8, 4, 15, 15] Size
+  Maximize WindowButton(Maximize) target [-1, -4, 17, 24] art [1, 4, 15, 15] Short
+  ChatClose WindowButton(Close) target [-2, -4, 24, 24] art [2, 4, 15, 15] Size
+ChatArea Slot(ChatArea)
+ChatEdit Slot(ChatEdit)
+ExpandButton Slot(InfoviewButton)
+ImButton Slot(ChatSend)
+TypingMessageBG Slot(TypingNotice)
+  TypingMessage Part
