@@ -90,6 +90,9 @@ fn resolved(ctx: &DaemonContext, window: &str, asked: &InfoviewSubject) -> Infov
     match ctx.skin.selection.get(&launcher(ctx, window)) {
         Some(SkinSelection::Friend { public_key }) => InfoviewSubject::Friend { public_key },
         Some(SkinSelection::FriendGroup { group_id }) => InfoviewSubject::FriendGroup { group_id },
+        Some(SkinSelection::Community { community, .. }) => {
+            InfoviewSubject::Community { community }
+        }
         // The subject set has no page for a server, a transfer, a media
         // file or a room (design §2.2): with none of its subjects selected
         // the page is our own, as with nothing selected.

@@ -34,6 +34,9 @@ pub(crate) struct Reads {
     /// acts on ([`in_call`]); `None` elsewhere, where Leave is the
     /// community voice channel's.
     pub in_call: Option<InCall>,
+    /// A community window's selection, its community read from the joined
+    /// ones (`super::community::read`).
+    pub community: Option<super::community::CommunityRead>,
 }
 
 /// The call one window's leave acts on, by the window's kind.
@@ -197,6 +200,19 @@ pub(crate) async fn load(
         }
         _ => None,
     };
+    let community = match request {
+        IpcRequest::RunSkinAction { window, .. } => {
+            let selection = selections.get(window);
+            match &selection {
+                Some(SkinSelection::Community { community, .. }) => {
+                    let views = super::community::load(ctx, Some(community)).await;
+                    super::community::read(selection.as_ref(), |id| views.get(id).cloned())
+                }
+                _ => None,
+            }
+        }
+        _ => None,
+    };
     Ok(Reads {
         rooms,
         friend_game,
@@ -204,5 +220,6 @@ pub(crate) async fn load(
         ringing_call,
         group_call,
         in_call,
+        community,
     })
 }

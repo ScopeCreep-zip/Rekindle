@@ -61,6 +61,15 @@ fn selection_fits(selection: &rekindle_types::dto::skin_run::SkinSelection) -> b
         S::Group { group_id: id } => id.len() <= 64,
         S::Media { path } => path.len() <= 4096,
         S::FriendGroup { .. } => true,
+        S::Community {
+            community,
+            channel,
+            server,
+        } => {
+            community.len() <= 128
+                && channel.as_ref().is_none_or(|c| c.len() <= 64)
+                && server.as_ref().is_none_or(|s| s.len() <= 64)
+        }
     }
 }
 

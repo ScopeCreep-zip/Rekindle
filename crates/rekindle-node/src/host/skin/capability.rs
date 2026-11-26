@@ -37,6 +37,13 @@ pub(crate) enum Selected<'a> {
     Group {
         group_id: &'a str,
     },
+    /// A community window (plan E7.7 HSC1): its community, channel and
+    /// selected game server.
+    Community {
+        community: &'a str,
+        channel: Option<&'a str>,
+        server: Option<&'a str>,
+    },
 }
 
 impl<'a> Selected<'a> {
@@ -61,6 +68,15 @@ impl<'a> Selected<'a> {
             Some(SkinSelection::Transfer { attachment_id, .. }) => Self::Transfer { attachment_id },
             Some(SkinSelection::Media { path }) => Self::Media { path },
             Some(SkinSelection::Group { group_id }) => Self::Group { group_id },
+            Some(SkinSelection::Community {
+                community,
+                channel,
+                server,
+            }) => Self::Community {
+                community,
+                channel: channel.as_deref(),
+                server: server.as_deref(),
+            },
         }
     }
 
@@ -121,6 +137,30 @@ pub(crate) struct SkinWorld {
     /// published, so a friend code, invite or request can name them
     /// (`FriendStores::own_records`, plan E2.5 FC3).
     pub records_held: bool,
+    /// The joined communities, by id, with their voice channels and game
+    /// servers (a community window's capabilities, `super::community`).
+    pub community_views: BTreeMap<String, super::community::SkinCommunity>,
+}
+
+/// A community window's verdict on `capability` (`community::verdict`):
+/// `None` when the selection is no community or the community scope
+/// leaves the capability to the general table.
+fn community_verdict(
+    capability: Capability,
+    inputs: &Inputs,
+    world: &SkinWorld,
+    selected: Selected<'_>,
+) -> Option<super::community::CommunityVerdict> {
+    let Selected::Community {
+        community,
+        channel,
+        server,
+    } = selected
+    else {
+        return None;
+    };
+    let view = world.community_views.get(community);
+    super::community::verdict(capability, inputs, community, view, channel, server)
 }
 
 /// The game can be launched to a server (`launcher::joins_servers`, the
@@ -220,6 +260,9 @@ pub(crate) fn allows(
     selected: Selected<'_>,
 ) -> bool {
     use Capability as C;
+    if let Some(verdict) = community_verdict(capability, inputs, world, selected) {
+        return verdict.words().is_none();
+    }
     let group_id = match selected {
         Selected::Group { group_id } => Some(group_id),
         _ => None,
@@ -343,6 +386,9 @@ pub(crate) fn refusal(
     world: &SkinWorld,
     selected: Selected<'_>,
 ) -> Option<String> {
+    if let Some(verdict) = community_verdict(capability, inputs, world, selected) {
+        return verdict.words().map(str::to_owned);
+    }
     (!allows(capability, inputs, world, selected))
         .then(|| why(capability, inputs, selected).to_owned())
 }

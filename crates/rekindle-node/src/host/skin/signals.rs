@@ -98,6 +98,11 @@ impl Inputs {
         self.self_muted
     }
 
+    /// Our voice session (a community window's Call, Leave and Mute).
+    pub(crate) fn voice(&self) -> Option<&VoiceScope> {
+        self.voice.as_ref()
+    }
+
     /// Fold one event; `false` when it cannot change any window's set.
     pub(crate) fn fold(&mut self, event: &SubscriptionEvent) -> bool {
         match event {
@@ -515,7 +520,8 @@ impl crate::host::Host {
     /// The shell opened a skin window; `launcher` is the window that
     /// launched it when it is a pack popup (its view switches are the
     /// launcher's, plan SK2-N4), and `selection` what it shows from the
-    /// start (a chat window's own peer, lead decision 48).
+    /// start (a chat window's own peer, lead decision 48; a community
+    /// window's `SkinSelection::Community`, plan E7.7 HSC1).
     pub fn skin_window_opened(
         &self,
         window: &str,

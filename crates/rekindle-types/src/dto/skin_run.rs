@@ -75,6 +75,14 @@ pub enum CallOp {
     Video {
         friend: String,
     },
+    /// Join the voice channel `channel` of the community `community` (a
+    /// community window's `AppVoiceChat`/`AppHostVoiceChat`, plan E7.7
+    /// HSC1): the shell's `join_voice_channel` holds community voice until
+    /// plan E4.1 makes `VoiceJoin` the Host's.
+    JoinVoice {
+        community: String,
+        channel: String,
+    },
     End,
     Mute,
     Unmute,
@@ -195,6 +203,11 @@ pub enum ShellOp {
         target: CallTarget,
     },
     ShowSettings(SkinSettingsTab),
+    /// The info panel of the community `community` (a community window's
+    /// `AppViewProfile`, plan E7.7 HSC1).
+    OpenCommunityInfo {
+        community: String,
+    },
     /// Ask the user where to save a never-fetched attachment (the native
     /// save dialog, `suggested_name` the uploader's sanitized filename),
     /// then send `TransferStart` with that destination (plan E7.2 G12).
@@ -277,6 +290,15 @@ pub enum SkinSelection {
     /// default group of friends in no group.
     FriendGroup {
         group_id: Option<i64>,
+    },
+    /// A community window (plan E7.7 HSC1): its community, the channel
+    /// it shows (`None` before one is shown) and the game server selected
+    /// in its "SERVERS" list (`None`: Join takes the first listed). The
+    /// window sends it on open and on every channel or server change.
+    Community {
+        community: String,
+        channel: Option<String>,
+        server: Option<String>,
     },
 }
 

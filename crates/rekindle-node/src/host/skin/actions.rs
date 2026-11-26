@@ -256,6 +256,14 @@ pub(crate) fn map(
         server,
         search,
     } = selected;
+    // A community window's pack row (plan E7.7 HSC1, `super::community`).
+    if let Some(mapped) = reads
+        .community
+        .as_ref()
+        .and_then(|c| super::community::map(action, c))
+    {
+        return mapped;
+    }
     let rooms = &reads.rooms;
     use Mapped::{Request, Run};
     let shell = |op| Ok(Run(SkinRun::Shell(op)));

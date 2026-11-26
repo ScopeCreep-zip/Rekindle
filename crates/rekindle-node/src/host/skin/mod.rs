@@ -13,6 +13,9 @@ mod actions_tests;
 pub(crate) mod capability;
 #[cfg(test)]
 mod capability_tests;
+pub(crate) mod community;
+#[cfg(test)]
+mod community_tests;
 mod draft;
 pub(crate) mod failure;
 pub(crate) mod ids;

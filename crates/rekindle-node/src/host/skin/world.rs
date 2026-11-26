@@ -25,6 +25,7 @@ pub(crate) async fn load_world(ctx: &DaemonContext) -> SkinWorld {
         }
         world.communities = session.communities.len();
     }
+    world.community_views = super::community::load(ctx, None).await;
     world.own_game = ctx.own_presence.view().game.map(|g| g.game_id);
     world.records_held = ctx.friend_stores.own_records.get()
         == rekindle_transport::operations::friend::OwnRecordsStage::Held;
