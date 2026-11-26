@@ -106,7 +106,7 @@ describe("a community window's Call, Mute, Join and Profile act on its community
     await communitiesTab(browser);
     await (await byText(browser, ".community-item", name.slice(0, 24), NET_WAIT_MS)).click();
     // Alloy's Join and voice join stand in its info view's ButtonHolder
-    // (goldens/alloy.txt: InfoView, ButtonHolder > JoinChatTab, JoinButton),
+    // (goldens/alloy.txt: InfoView, ButtonHolder > JoinChatTab {Host, Join, Leave}, JoinButton),
     // the panel its INFO button opens (a popup window), as Xfire's showed
     // the selected item with them.
     const infoButton = await browser.$('.skin-tree [data-skin-node="InfoViewButton"]');
@@ -119,10 +119,10 @@ describe("a community window's Call, Mute, Join and Profile act on its community
     // The selection reaches the Host asynchronously and its verdict comes
     // back as the window's capabilities: wait for it, never read once.
     let join = await button("JoinButton");
-    let voice = await button("JoinChatButton");
+    let voice = await button("HostChatButton");
     await waitUntil(
       async () => {
-        [join, voice] = [await button("JoinButton"), await button("JoinChatButton")];
+        [join, voice] = [await button("JoinButton"), await button("HostChatButton")];
         return join.reason === NO_SERVER && voice.reason === NO_VOICE;
       },
       NET_WAIT_MS,
@@ -133,10 +133,10 @@ describe("a community window's Call, Mute, Join and Profile act on its community
     expect({ shown: voice.shown, refused: voice.refused, reason: voice.reason }).toEqual({ shown: true, refused: true, reason: NO_VOICE });
     // Refused is not enough: each is drawn visibly disabled (its enabled
     // self changes at least 20 px of its box, as communities-row's bar).
-    const look = await disabledLook(["JoinButton", "JoinChatButton"]);
+    const look = await disabledLook(["JoinButton", "HostChatButton"]);
     console.log(`[hsc1] info view Join/voice join disabled vs enabled self, pixels changed: ${JSON.stringify(look)} (visibly disabled at 20)`);
     await shot("alloy-info-community-selected");
-    expect({ join: (look.JoinButton ?? 0) >= 20, voice: (look.JoinChatButton ?? 0) >= 20 }).toEqual({ join: true, voice: true });
+    expect({ join: (look.JoinButton ?? 0) >= 20, voice: (look.HostChatButton ?? 0) >= 20 }).toEqual({ join: true, voice: true });
     // The page's counts read as words: one member, not "1 members".
     const meta = (await browser.execute(() => document.querySelector(".infoview-meta")?.textContent ?? "")) as string;
     console.log(`[hsc1] info view meta: ${JSON.stringify(meta)}`);
