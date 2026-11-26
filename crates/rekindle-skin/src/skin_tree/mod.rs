@@ -5,7 +5,10 @@
 //! and the stylesheet's one rule per node. The shell renders it in SK2-S2.
 
 mod anchor;
+mod anchor_client;
+mod anchor_share;
 pub mod brand;
+pub mod chat_roles;
 mod clip;
 pub mod content;
 pub mod cover;
@@ -14,12 +17,15 @@ mod fit;
 pub mod import;
 pub mod inset;
 mod keep;
+pub mod label_style;
 mod outdent;
 mod passes;
 pub mod pieces;
 pub mod place;
 pub mod popup;
 pub mod roles;
+mod settle;
+mod span_css;
 mod tab_step;
 pub mod target;
 pub mod text_box;
@@ -30,19 +36,27 @@ pub mod validate;
 #[cfg(test)]
 mod anchor_tests;
 #[cfg(test)]
+mod chat_tests;
+#[cfg(test)]
 mod content_tests;
 #[cfg(test)]
 mod fit_tests;
 #[cfg(test)]
 mod golden_tests;
 #[cfg(test)]
+mod grip_menu_tests;
+#[cfg(test)]
 mod grip_tests;
+#[cfg(test)]
+mod label_style_tests;
 #[cfg(test)]
 mod overlap_tests;
 #[cfg(test)]
 mod place_tests;
 #[cfg(test)]
 mod rail_tests;
+#[cfg(test)]
+mod settle_tests;
 #[cfg(test)]
 mod stack_tests;
 #[cfg(test)]

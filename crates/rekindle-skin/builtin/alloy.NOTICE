@@ -113,44 +113,25 @@ Dropped
     Alloy.ini: [MainWindow] Window6.IndentRight (line 58)
     Alloy.ini: [StatusEdit] Text.bold (line 304)
     Alloy.ini: [SearchFiles] Cursor (line 734)
-  files not read (81):
+  files not read (62):
     AlloyScroll/Thumbs.db
     AlloyScroll/scroll-gripper-grips-horz.gif
     AlloyScroll/scroll-gripper-grips-vert.gif
-    Chatskin.ini
     GroupChatInfoskin.ini
     Groupchatskin.ini
     InGameMainSkin.ini
     InGameSkin.ini
     buttons/Thumbs.db
     buttons/button-afav-disabled.gif
-    buttons/button-chat-Send-click.gif
     buttons/button-chat-Send-disabled.gif
-    buttons/button-chat-Send-hover.gif
-    buttons/button-chat-Send-norm.gif
     buttons/button-game-disabled.gif
     buttons/button-im-disabled.gif
     buttons/button-profile-disabled.gif
     buttons/button-refresh-disabled.gif
     buttons/info-join-disabled.gif
     buttons/info-voice-disabled.gif
-    chatskin/ChatLogo.gif
     chatskin/Thumbs.db
-    chatskin/chat-bottomleft.gif
-    chatskin/chat-bottommiddle.gif
-    chatskin/chat-bottomright.gif
-    chatskin/chat-middleleft.gif
-    chatskin/chat-middlemiddle.gif
-    chatskin/chat-middleright.gif
-    chatskin/chat-topleft.gif
-    chatskin/chat-topmiddle.gif
-    chatskin/chat-topright.gif
-    chatskin/chat-user-left.gif
-    chatskin/chat-user-middle.gif
-    chatskin/chat-user-right.gif
     chatskin/chat-user.gif
-    chatskin/textbg.gif
-    chatskin/toolbar.gif
     infoskin/Thumbs.db
     infoskin/icon_mic_green.gif
     infoskin/icon_mic_grey.gif

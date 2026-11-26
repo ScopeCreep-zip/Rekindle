@@ -87,7 +87,7 @@ Colour roles by reference (13)
   [GroupChatInfoView] text.color_hyperlink=InfoViewHyperlink -> link kept: an earlier reference set it
 
 Regions
-  window.frame: the nine-piece frame of the chat window layout xSLIMFIREchatwindow.xml: the top and bottom rows' typed pieces and a vertically resizing tile's sides, 252x495 px, nine-slice 165/125/165/125
+  window.frame: the nine-piece frame of the chat window layout xSLIMFIREchatwindow.xml: the top and bottom rows' typed pieces and a vertically resizing tile's sides, 252x256 px, nine-slice 54/125/37/125
   titlebar: the titlebar strip MainTitleBar, 266x37 px, NineSlice(Insets { top: 0, right: 131, bottom: 0, left: 131 }); states normal, windowInactive
   titlebar.btn.close: the title button CloseBox, 24x24 px, Stretch; states normal, hover, down
   titlebar.btn.minimize: the title button MinimizeBox, 24x24 px, Stretch; states normal, hover, down

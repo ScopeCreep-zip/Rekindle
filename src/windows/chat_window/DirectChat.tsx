@@ -11,7 +11,7 @@ import { chatState, setChatState, type Message } from "../../stores/chat.store";
 import { authState } from "../../stores/auth.store";
 import { friendsState } from "../../stores/friends.store";
 import { callsState } from "../../stores/calls.store";
-import { handleLoadHistory, handleResetUnread, handleRetrySendMessage, handleDiscardSendMessage } from "../../actions/chat.actions";
+import { handleLoadHistory, handleResetUnread, handleRetrySendMessage, handleDiscardSendMessage, handleSendMessage, handleDraftChanged } from "../../actions/chat.actions";
 import { handleStartDmCall, handleEndDmCall } from "../../actions/calls.actions";
 import { subscribeDmChatEvents } from "../../handlers/chat-events.handlers";
 import { subscribeBuddyListPresenceEvents } from "../../handlers/presence-events.handlers";
@@ -26,6 +26,9 @@ import { useSafetyNumber } from "../../hooks/useSafetyNumber";
 import { identityPinMismatchText } from "../../utils/identity_pin";
 import DisappearingTimerControl from "../../components/chat/DisappearingTimerControl";
 import { handleLoadDisappearingTimer } from "../../actions/disappearing.actions";
+import { SlotMount } from "../../components/skin-tree/slots";
+import SkinTreeWindow from "../../components/skin-tree/SkinTreeWindow";
+import { skinShell } from "../../hooks/useSkin";
 
 /// The chat window's 1:1 mode: a conversation with a friend or a
 /// community member, with its call controls and typing indicator.
@@ -154,7 +157,16 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
 
   return (
     <>
-      <Titlebar title={`Chat — ${peerName()}`} showMaximize />
+      {/* A pack that lays its chat window as a tree (plan SK17-2) draws it
+       *  whole: its title bar, window buttons, menu row and frame, the
+       *  conversation title in its chatTitle node; the chat's parts mount
+       *  into its slots. Without one, the app's own titlebar. */}
+      <Show when={skinShell("chat")} keyed fallback={<Titlebar title={`Chat — ${peerName()}`} showMaximize />}>
+        {(shell) => <SkinTreeWindow shell={shell} views={() => null} communities={() => null} chatTitle={peerName} />}
+      </Show>
+      {/* What the app adds that no pack lays (status, calls, safety number,
+       *  game invites) stays reachable: above the messages, in the chat area. */}
+      <SlotMount slot="chatArea">
       <div class="chat-peer-status">
         <StatusDot status={peerStatus()} />
         <span class="chat-peer-status-label">{peerStatus()}</span>
@@ -232,29 +244,40 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
           <GameInvitePicker peerId={peerId} peerName={peerName()} />
         </div>
       </Show>
+      </SlotMount>
       <div id="main-content" tabindex="-1" class="window-main">
-      <GameInviteList peerId={peerId} peerName={peerName()} />
-      <MessageList
-        messages={messages()}
-        ownName={ownName()}
-        peerName={peerName()}
-        onRetry={handleRetry}
-        onDiscard={handleDiscard}
-        historyReady={historyReady()}
-      />
+      {/* Each part mounts into its slot when the pack's chat tree lays one
+       *  (plan SK17-2, components/skin-tree/slots.tsx), else stands here. */}
+      <SlotMount slot="chatArea">
+        <GameInviteList peerId={peerId} peerName={peerName()} />
+        <MessageList
+          messages={messages()}
+          ownName={ownName()}
+          peerName={peerName()}
+          onRetry={handleRetry}
+          onDiscard={handleDiscard}
+          historyReady={historyReady()}
+        />
+      </SlotMount>
       {/* A connected call's controls (timer, mute, hangup, video) live in
        *  its own call window, which the backend opens on connect. */}
-      <TypingIndicator isTyping={conversation().isTyping} peerName={peerName()} />
+      <SlotMount slot="typingNotice">
+        <TypingIndicator isTyping={conversation().isTyping} peerName={peerName()} />
+      </SlotMount>
       {/* A first message waits until our identity is published (plan E2.5
        *  FC3); the composer says so while it is not. */}
-      <OwnRecordsWait active={true} />
-      <MessageInput
-        label={`Message ${peerName()}`}
-        peerId={peerId}
-        disabled={pinMismatch()}
-        sendButton
-        disabledMessage={identityPinMismatchText(peerName())}
-      />
+      <SlotMount slot="chatEdit">
+        <OwnRecordsWait active={true} />
+        <MessageInput
+          label={`Message ${peerName()}`}
+          peerId={peerId}
+          onSend={(to, body) => void handleSendMessage(to, body)}
+          onDraftChanged={(body) => handleDraftChanged(peerId, body)}
+          disabled={pinMismatch()}
+          sendButton
+          disabledMessage={identityPinMismatchText(peerName())}
+        />
+      </SlotMount>
       </div>
     </>
   );

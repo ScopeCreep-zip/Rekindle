@@ -1,10 +1,7 @@
 import { Component } from "solid-js";
 import { Menubar } from "@kobalte/core/menubar";
-import { commands } from "../../ipc/commands";
-import type { SettingsTab } from "../../ipc/commands/types";
+import { handleOpenDocs, handleQuit, handleReportBug, openSettingsTab } from "../../actions/app_menu.actions";
 import { setBuddyListUI } from "../../stores/buddylist-ui.store";
-
-const REPO_URL = "https://github.com/ScopeCreep-zip/Rekindle";
 
 /**
  * Plan GC4 (live, once): the Rekindle menu's dropdown did not show right
@@ -27,24 +24,6 @@ function menuDebug(menu: string, what: string): void {
     bodyPointerEvents: getComputedStyle(document.body).pointerEvents,
     dialogsOpen: document.querySelectorAll("[role=dialog],[role=alertdialog]").length,
   });
-}
-
-export function openSettingsTab(tab: SettingsTab): void {
-  commands.openSettingsWindow(tab);
-}
-
-/** Quit the app, as the tray's Quit does; closing this window only hides
- *  it in the tray. */
-export function handleQuit(): void {
-  void commands.quitApp();
-}
-
-export function handleOpenDocs(): void {
-  void commands.openExternalUrl(`${REPO_URL}/tree/main/docs`);
-}
-
-export function handleReportBug(): void {
-  void commands.openExternalUrl(`${REPO_URL}/issues/new`);
 }
 
 const MenuBar: Component = () => {

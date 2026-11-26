@@ -194,12 +194,6 @@
   .soundboard-panel-clip:hover {
     background: color-mix(in srgb, var(--color-xfire-accent) 15%, var(--color-xfire-bg-input));
   }
-  .soundboard-panel-clip-name {
-    display: block;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
 
   /* Plan §Failure 5 — incoming-call modal */
   .incoming-call-modal {

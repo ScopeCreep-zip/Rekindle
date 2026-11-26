@@ -216,6 +216,7 @@ fn walk(nodes: &mut [SkinNode], parent: [i32; 4], inside: bool) {
                         text: BRAND.to_owned(),
                         cover: Some([0, 0, w, h]),
                         glyph: Some(glyph(w, h)),
+                        style: None,
                     }),
                     _ => n.label.take(),
                 }

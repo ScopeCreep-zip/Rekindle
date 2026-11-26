@@ -4,7 +4,7 @@
 //! xfire-online/ia_XFireSkins/`): the chat window's layout file (the
 //! `<Include>` under `Skin.xml`'s `<ChatSkin>`) lays tiles, each naming a
 //! component, and the frame is read from those tiles' components in one
-//! of four shapes, the first that is complete winning. The shapes that name
+//! of five shapes, the first that is complete winning. The shapes that name
 //! the window's own frame tiles come first: a nine-piece set found on any
 //! laid tile can be a panel inside the window (Space Cowboy's `ListViewBG`
 //! at 26,181 is the buddy list's ground, not the window frame).
@@ -26,6 +26,13 @@
 //!    stretches down the window) whose set has `left` and `right`
 //!    (its `middle`, if any, the centre): Classic v3's rule with the
 //!    components found through the layout (xSLIMFIRE).
+//! 5. [`Shape::Band`]: the rows of 4, with the middle band laid as three
+//!    vertically resizing tiles named `Left`, `Middle` and `Right` (or
+//!    `LeftEdge`/`RightEdge`), one image each, `Middle` optional: XGlow's
+//!    `ChatSkin.ini` (`[Top]` `Graphics.topleft/top/topright`, `[Bottom]`
+//!    `Graphics.bottomleft/bottom/bottomright`, and `[MainWindow]`'s
+//!    `Window10`–`Window12` laying `[Left]`, `[Middle]`, `[Right]` at
+//!    `ResizeY=100`, each a single `Graphics.middle`).
 //!
 //! A shape without a centre piece has a transparent middle, as the INI era
 //! and Classic v3 do. Names and types match ASCII-case-insensitively.
@@ -33,11 +40,10 @@
 use std::collections::BTreeMap;
 
 use rekindle_image::RgbaImage;
-use rekindle_types::dto::skin::Insets;
 
 use super::super::tree::Node;
 use super::super::ImportError;
-use super::{bitmap, descendants, nine_piece_in};
+use super::{descendants, nine_piece_in};
 
 /// Which rule the frame was read by.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -46,6 +52,7 @@ pub enum Shape {
     Rows,
     Named,
     Sides,
+    Band,
 }
 
 impl Shape {
@@ -59,11 +66,14 @@ impl Shape {
             }
             Self::Named => "the tiles named TopLeft … BottomRight, one piece each",
             Self::Sides => "the tiles TopRow, LeftSide, RightSide and BottomRow",
+            Self::Band => {
+                "the top and bottom rows' typed pieces and the band of tiles Left, Middle and Right"
+            }
         }
     }
 }
 
-/// The tile names of [`Shape::Named`], in [`bitmap::NINE`] order.
+/// The tile names of [`Shape::Named`], in [`super::bitmap::NINE`] order.
 const NAMED: [&[&str]; 9] = [
     &["TopLeft"],
     &["Top"],
@@ -137,6 +147,36 @@ fn rows(laid: &[Laid<'_>]) -> Option<[Option<Piece>; 9]> {
     ])
 }
 
+/// [`Shape::Band`]: the typed top and bottom rows and the middle band's
+/// vertically resizing tiles named for the left, middle and right pieces
+/// ([`NAMED`]), one image each.
+fn band(laid: &[Laid<'_>]) -> Option<[Option<Piece>; 9]> {
+    let [top_left, top, top_right] = row(laid, ["topleft", "top", "topright"])?.map(Some);
+    let [bottom_left, bottom, bottom_right] =
+        row(laid, ["bottomleft", "bottom", "bottomright"])?.map(Some);
+    let piece = |i: usize| {
+        laid.iter()
+            .filter(|l| l.tile.attr_ci("ResizeY") == Some("100"))
+            .find(|l| {
+                l.tile
+                    .attr_ci("Name")
+                    .is_some_and(|n| NAMED[i].iter().any(|m| eq(m, n)))
+            })
+            .and_then(single)
+    };
+    Some([
+        top_left,
+        top,
+        top_right,
+        Some(piece(3)?),
+        piece(4),
+        Some(piece(5)?),
+        bottom_left,
+        bottom,
+        bottom_right,
+    ])
+}
+
 fn tile_named<'a>(laid: &'a [Laid<'a>], names: &[&str]) -> Option<&'a Laid<'a>> {
     laid.iter().find(|l| {
         l.tile
@@ -197,26 +237,8 @@ fn named(laid: &[Laid<'_>]) -> Option<[Option<Piece>; 9]> {
         .then_some(pieces)
 }
 
-/// The frame laid by `layout` (the chat window's layout file) from
-/// `components`, each piece decoded by `piece(bitmap name, shift colour)`;
-/// `None` when no shape is complete.
-///
-/// # Errors
-/// What `piece` returns, or pieces that do not compose.
-pub fn frame(
-    layout: &Node,
-    components: &[Node],
-    piece: impl Fn(&str, Option<&str>) -> Result<RgbaImage, ImportError>,
-) -> Result<Option<(RgbaImage, Insets, Shape, [RgbaImage; 9])>, ImportError> {
-    let Some((pieces, shape, _)) = pieces(layout, components, piece)? else {
-        return Ok(None);
-    };
-    let (img, insets) = bitmap::compose("window layout", &pieces)?;
-    Ok(Some((img, insets, shape, pieces)))
-}
-
-/// The nine pieces (in [`bitmap::NINE`] order) of the frame `layout`
-/// lays, as [`frame`] reads them, uncomposed: a window's frame tiles
+/// The nine pieces (in [`super::bitmap::NINE`] order) of the frame `layout`
+/// lays, uncomposed: a window's frame tiles
 /// (plan SK0 S1), the shape, and the tile laying a nine-piece set (StealthX's
 /// `MainBackground`, the frame rows the tree places: plan SK2-S1o); `None`
 /// when no shape is complete.
@@ -252,7 +274,8 @@ pub fn pieces(
         .map(|p| (p, Shape::Named, Vec::new()))
         .or_else(|| sides(&laid).map(|p| (p, Shape::Sides, Vec::new())))
         .or_else(|| nine.map(|(p, n)| (p, Shape::Nine, n.into_iter().collect())))
-        .or_else(|| rows(&laid).map(|p| (p, Shape::Rows, Vec::new())));
+        .or_else(|| rows(&laid).map(|p| (p, Shape::Rows, Vec::new())))
+        .or_else(|| band(&laid).map(|p| (p, Shape::Band, Vec::new())));
     let Some((set, shape, frame_tiles)) = found else {
         return Ok(None);
     };
@@ -306,6 +329,43 @@ mod tests {
         assert_eq!(
             names.into_inner(),
             ["tl", "t", "tr", "l", "r", "bl", "b", "br"]
+        );
+    }
+
+    /// XGlow's chat form (`ChatSkin.ini`): typed top and bottom rows, and
+    /// the middle band as three resizing tiles of one image each.
+    #[test]
+    fn rows_with_a_tile_band_are_the_band_shape() {
+        let layout = parse(
+            "ChatSkin.ini",
+            br#"<Tile Name="MainWindow" Component="MainWindow">
+<Tile Name="Top" Component="Top"/><Tile Name="Left" ResizeY="100" Component="Left"/>
+<Tile Name="Middle" ResizeY="100" Component="Middle"/><Tile Name="Right" ResizeY="100" Component="Right"/>
+<Tile Name="Bottom" Component="Bottom"/></Tile>"#,
+        )
+        .unwrap();
+        let components = parse(
+            "ChatSkin.ini",
+            br#"<Components>
+<Component Name="Top"><Images State="Normal"><Image Type="topleft">tl</Image><Image Type="top">t</Image><Image Type="topright">tr</Image></Images></Component>
+<Component Name="Left"><Images State="Normal"><Image Type="middle">l</Image></Images></Component>
+<Component Name="Middle"><Images State="Normal"><Image Type="middle">m</Image></Images></Component>
+<Component Name="Right"><Images State="Normal"><Image Type="middle">r</Image></Images></Component>
+<Component Name="Bottom"><Images State="Normal"><Image Type="bottomleft">bl</Image><Image Type="bottom">b</Image><Image Type="bottomright">br</Image></Images></Component>
+</Components>"#,
+        )
+        .unwrap();
+        let names = std::cell::RefCell::new(Vec::new());
+        let got = pieces(&layout, &[components], |name, _| {
+            names.borrow_mut().push(name.to_owned());
+            Ok(RgbaImage::new(2, 2))
+        })
+        .unwrap()
+        .map(|(_, shape, _)| shape);
+        assert_eq!(got, Some(Shape::Band));
+        assert_eq!(
+            names.into_inner(),
+            ["tl", "t", "tr", "l", "m", "r", "bl", "b", "br"]
         );
     }
 }

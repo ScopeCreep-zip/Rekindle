@@ -1494,6 +1494,15 @@
       }
     ]
   },
+  "skin.nodeInset.fixed": {
+    "left": 0,
+    "right": 28
+  },
+  "skin.nodeInset.maxWidth": {
+    "left": 0,
+    "maxWidth": 151,
+    "right": 54
+  },
   "skin.nodeSpan.after": {
     "at": {
       "kind": "after",
@@ -1504,6 +1513,25 @@
     },
     "kind": "fixed",
     "size": 26
+  },
+  "skin.nodeSpan.share": {
+    "at": {
+      "kind": "start",
+      "offset": 0
+    },
+    "kind": "share",
+    "permille": 800
+  },
+  "skin.nodeSpan.shareAfter": {
+    "at": {
+      "kind": "after",
+      "offset": {
+        "gap": 0,
+        "sibling": "Divider"
+      }
+    },
+    "kind": "share",
+    "permille": 1000
   },
   "skin.run.launcher": {
     "arg": {

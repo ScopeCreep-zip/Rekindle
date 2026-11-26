@@ -7,15 +7,15 @@ MenuBar MenuBar
     ToolsMenu Part target [0, 0, 34, 23] art [0, 0, 34, 23] Spacing
   HelpMenuText MenuTitle label "Help"
     HelpMenu Part target [0, 0, 28, 23] art [0, 0, 28, 23] Spacing
-UserNameField NameField inset [0, 16] target [0, -1, 201, 24] art [0, 1, 217, 22] Size
+UserNameField NameField inset [0, 20] target [0, -1, 197, 24] art [0, 1, 217, 22] Size
   UserNameText Part
 StatusWrapper Group
-StatusEdit StatusText inset [0, 10] target [0, -4, 282, 23] art [0, 4, 292, 14] Short
+StatusEdit StatusText inset [0, 10] target [0, -4, 282, 24] art [0, 4, 292, 14] Size
 DownArrow StatusList target [-1, -1, 24, 24] art [1, 1, 22, 22] Size
 TopButtonBar Group
-  MinimizeBox Button target [-4, -4, 20, 24] art [4, 4, 16, 16] Short
+  MinimizeBox Button target [-8, -4, 24, 24] art [8, 4, 16, 16] Size
   MaximizeBox Button target [0, -4, 16, 24] art [0, 4, 16, 16] Short
-  CloseBox Button target [0, -4, 20, 24] art [0, 4, 16, 16] Short
+  CloseBox Button target [0, -4, 24, 24] art [0, 4, 16, 16] Size
 Middle Decor target [0, 0, 359, 8] art [0, 0, 359, 8] Frame
 InfoViewButton Button target [0, 0, 13, 60] art [0, 0, 13, 60] Spacing
 TabbedControl Views

@@ -11,10 +11,13 @@ use rekindle_types::permissions::{
     READ_HISTORY, SEND_MESSAGES, SPEAK, STREAM, TIMEOUT_MEMBERS, USE_VOICE_ACTIVITY, VIEW_CHANNELS,
 };
 
+use crate::overwrite::OverwriteTarget;
 use crate::state::GovernanceState;
 
 mod roster;
 pub use roster::{channel_read_roster, is_restricted};
+#[cfg(test)]
+mod overwrite_tests;
 
 /// Whether `member` may rotate the community key under `state` — be
 /// elected rotator and write a `MEKGenerationBump` (plan D20). Evaluated
@@ -93,7 +96,7 @@ pub fn compute_permissions(
     // Steps 4-6: Channel-specific overwrites (only if channel specified)
     if let Some(ch_id) = channel_id {
         // Step 4: @everyone channel overwrites
-        let everyone_key = (*ch_id, format!("{everyone_role_id:?}"));
+        let everyone_key = (*ch_id, OverwriteTarget::Role(everyone_role_id).key());
         if let Some(ow) = state.overwrites.get(&everyone_key) {
             perms &= !ow.deny;
             perms |= ow.allow;
@@ -104,7 +107,7 @@ pub fn compute_permissions(
         let mut role_deny: u64 = 0;
         if let Some(member_roles) = state.role_assignments.get(member) {
             for role_id in member_roles {
-                let key = (*ch_id, format!("{role_id:?}"));
+                let key = (*ch_id, OverwriteTarget::Role(*role_id).key());
                 if let Some(ow) = state.overwrites.get(&key) {
                     role_allow |= ow.allow;
                     role_deny |= ow.deny;
@@ -114,8 +117,7 @@ pub fn compute_permissions(
         perms = (perms & !role_deny) | role_allow;
 
         // Step 6: Member-specific channel overwrites (highest priority)
-        let member_hex = hex_encode_pseudonym(member);
-        let member_key = (*ch_id, member_hex);
+        let member_key = (*ch_id, OverwriteTarget::Member(member.clone()).key());
         if let Some(ow) = state.overwrites.get(&member_key) {
             perms &= !ow.deny;
             perms |= ow.allow;
@@ -148,16 +150,6 @@ pub fn compute_permissions(
     }
 
     perms
-}
-
-fn hex_encode_pseudonym(key: &PseudonymKey) -> String {
-    use std::fmt::Write as _;
-    key.0.iter().fold(String::with_capacity(64), |mut acc, b| {
-        // `write!` into one buffer rather than `format!` per byte: the
-        // latter allocates a String for every one of the 32 bytes.
-        let _ = write!(acc, "{b:02x}");
-        acc
-    })
 }
 
 /// Whether `perms` carries any moderation capability.

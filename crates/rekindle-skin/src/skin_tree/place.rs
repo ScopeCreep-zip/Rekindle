@@ -225,6 +225,7 @@ fn label(tab: &SkinNode) -> NodeLabel {
                     text,
                     cover: None,
                     glyph: Some(NodeGlyph::Communities),
+                    style: None,
                 };
             }
             let (dx, dy) = ((w / 10).max(3), (h / 5).max(2));
@@ -232,12 +233,14 @@ fn label(tab: &SkinNode) -> NodeLabel {
                 text,
                 cover: Some([dx, dy, w.saturating_sub(2 * dx), h.saturating_sub(2 * dy)]),
                 glyph: None,
+                style: None,
             }
         }
         _ => NodeLabel {
             text,
             cover: None,
             glyph: None,
+            style: None,
         },
     }
 }
@@ -247,7 +250,7 @@ fn label(tab: &SkinNode) -> NodeLabel {
 /// so no slot follows the last tab.
 fn spread(strip: &[SkinNode]) -> bool {
     let anchor = |n: &SkinNode| match &n.x {
-        NodeSpan::Fixed { at, .. } => Some(at.clone()),
+        NodeSpan::Fixed { at, .. } | NodeSpan::Share { at, .. } => Some(at.clone()),
         NodeSpan::Stretch { .. } => None,
     };
     let mut tabs = strip.iter().filter(|n| matches!(n.role, NodeRole::Tab(_)));
@@ -420,8 +423,12 @@ fn host_tab(views: &SkinNode, at: Target) -> SkinNode {
         NodeSpan::Fixed {
             at: Anchor::Start(s),
             ..
+        }
+        | NodeSpan::Share {
+            at: Anchor::Start(s),
+            ..
         } => s,
-        NodeSpan::Fixed { .. } => 0,
+        NodeSpan::Fixed { .. } | NodeSpan::Share { .. } => 0,
     };
     let lift = i16::try_from(H).unwrap_or(0);
     SkinNode {
@@ -440,6 +447,7 @@ fn host_tab(views: &SkinNode, at: Target) -> SkinNode {
             text: WORDS.to_owned(),
             cover: None,
             glyph: None,
+            style: None,
         }),
         shows_with: None,
         inset: None,
