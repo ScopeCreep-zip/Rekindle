@@ -294,21 +294,34 @@ async fn shown_events_push_the_open_window_once() {
     assert_eq!(pushes, [("main".to_owned(), InfoviewSubject::Own)]);
 }
 
-/// A community's page: its header with the online count its beats show,
-/// then its events, pins and game servers.
+/// A community's page: its header with the online count, then its events,
+/// pins and game servers. The count is the member list's own rule (finding
+/// OC1): us while our own row shows us present, plus every member its beats
+/// show present; invisible, we count in neither view.
 #[tokio::test]
-async fn a_community_page_counts_the_members_its_beats_show_present() {
+async fn a_community_page_counts_us_and_the_members_its_beats_show_present() {
     use rekindle_codec::member_record::{BeatState, PresenceBeat};
+    use rekindle_types::presence::SessionStatus;
     let (_dirs, host, owner, _bob) = ann_and_bob().await;
     seed_registry_community(&host, &owner).await;
     // A joined community holds our pseudonym and its loaded governance
     // state (warm restore); an empty state grants Ann nothing, so events,
     // pins and servers are empty.
+    let me = rekindle_types::id::PseudonymKey([0xaa; 32]);
+    let mut governance = rekindle_governance::state::GovernanceState::default();
+    governance.members.insert(
+        me.clone(),
+        rekindle_governance::state::MemberState {
+            member_record: "record".into(),
+            member_record_owner: "owner".into(),
+            joined: rekindle_governance::op::OpStamp::MIN,
+        },
+    );
     {
         let mut map = host.ctx.communities.map().write();
         let c = map.get_mut("c1").unwrap();
         c.my_pseudonym_key = Some("aa".repeat(32));
-        c.governance_state = Some(rekindle_governance::state::GovernanceState::default());
+        c.governance_state = Some(governance);
     }
     host.ctx
         .session
@@ -329,6 +342,70 @@ async fn a_community_page_counts_the_members_its_beats_show_present() {
                 mek_generation: 0,
             },
         );
+    let roster_owner = owner.clone();
+    let my_key = me.to_hex();
+    host.ctx
+        .db
+        .current()
+        .unwrap()
+        .call(move |conn| {
+            rekindle_db::repo::members::insert_if_absent(conn, &roster_owner, "c1", &my_key, 1)
+        })
+        .await
+        .unwrap();
+    let read = || async {
+        let view = get(
+            &host,
+            InfoviewSubject::Community {
+                community: "c1".into(),
+            },
+            "community-c1",
+        )
+        .await;
+        assert_eq!(
+            kinds(&view),
+            ["communityHeader", "events", "pinned", "gameServers"]
+        );
+        let InfoviewSection::CommunityHeader {
+            anchor,
+            online_count,
+            ..
+        } = &view.sections[0]
+        else {
+            panic!("{view:?}");
+        };
+        assert_eq!(anchor, "c1");
+        let my_row = host
+            .governance()
+            .community_members("c1")
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|m| m.pseudonym_key == me.to_hex())
+            .expect("we are listed")
+            .status;
+        (*online_count, my_row)
+    };
+
+    // Only us, online: the count holds us, as our row does.
+    host.ctx
+        .own_presence
+        .set_status(SessionStatus::Online)
+        .await;
+    assert_eq!(read().await, (1, "online".to_owned()), "only us online");
+
+    // Invisible: our row shows offline and the count leaves us out.
+    host.ctx
+        .own_presence
+        .set_status(SessionStatus::Invisible)
+        .await;
+    assert_eq!(read().await, (0, "offline".to_owned()), "us invisible");
+
+    // Online again, and another member's beat shows present: one more.
+    host.ctx
+        .own_presence
+        .set_status(SessionStatus::Online)
+        .await;
     let now = host.ctx.clock.now_ms();
     let beat = |seq, state| PresenceBeat {
         seq,
@@ -346,27 +423,11 @@ async fn a_community_page_counts_the_members_its_beats_show_present() {
             Some(now),
         );
     }
-    let view = get(
-        &host,
-        InfoviewSubject::Community {
-            community: "c1".into(),
-        },
-        "community-c1",
-    )
-    .await;
     assert_eq!(
-        kinds(&view),
-        ["communityHeader", "events", "pinned", "gameServers"]
+        read().await,
+        (2, "online".to_owned()),
+        "a member's beat adds one"
     );
-    let InfoviewSection::CommunityHeader {
-        anchor,
-        online_count,
-        ..
-    } = &view.sections[0]
-    else {
-        panic!("{view:?}");
-    };
-    assert_eq!((anchor.as_str(), *online_count), ("c1", 1));
 }
 
 /// `InfoviewGet { Selection }` for `window`, answered as JSON: its

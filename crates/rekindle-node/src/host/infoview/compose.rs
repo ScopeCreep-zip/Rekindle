@@ -235,7 +235,7 @@ async fn community_page(
         name: overview.name,
         description: overview.description,
         member_count: overview.member_count,
-        online_count: u32::try_from(crate::host::adapters::presence::view::present_count(
+        online_count: u32::try_from(crate::host::adapters::presence::view::online_count(
             ctx, &anchor,
         ))
         .unwrap_or(u32::MAX),
