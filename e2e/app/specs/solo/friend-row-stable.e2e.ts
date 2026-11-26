@@ -44,9 +44,33 @@ describe("a friend row survives a signal push, and a double-click opens the chat
       await switchTo(browser, BUDDY);
       await skinShown(browser, href);
       const row = await friendRow(browser, "Cara");
+      // Evidence (lead, Symbiosis's replaced row): Cara's section (the
+      // group's Online or Offline list) and status before the click and
+      // after the push, and every Cara row added or removed meanwhile.
+      const where = async (): Promise<string> =>
+        (await browser.execute(() => {
+          const r = Array.from(document.querySelectorAll<HTMLElement>(".buddy-item")).find((e) => (e.textContent ?? "").includes("Cara"));
+          return JSON.stringify({
+            section: r?.closest(".buddy-subgroup")?.getAttribute("aria-label") ?? "none",
+            status: r?.querySelector("[role=img]")?.getAttribute("aria-label") ?? "none",
+          });
+        })) as string;
       await browser.execute((el: HTMLElement) => {
         (el as HTMLElement & { __rowOnce?: number }).__rowOnce = 1;
+        const w = window as unknown as { __rowLog?: string[] };
+        w.__rowLog = [];
+        const cara = (n: Node): HTMLElement[] =>
+          n instanceof HTMLElement
+            ? [n, ...Array.from(n.querySelectorAll<HTMLElement>(".buddy-item"))].filter((e) => e.matches(".buddy-item") && (e.textContent ?? "").includes("Cara"))
+            : [];
+        new MutationObserver((records) => {
+          for (const rec of records) {
+            for (const n of Array.from(rec.addedNodes)) for (const f of cara(n)) w.__rowLog!.push(`${new Date().toISOString()} added in ${f.closest(".buddy-subgroup")?.getAttribute("aria-label") ?? "none"}`);
+            for (const n of Array.from(rec.removedNodes)) if (cara(n).length > 0) w.__rowLog!.push(`${new Date().toISOString()} removed`);
+          }
+        }).observe(document.body, { subtree: true, childList: true });
       }, row as unknown as HTMLElement);
+      console.log(`[row] ${file}: before the click: ${await where()}`);
       await row.click();
       await browser.pause(2000);
       const kept = (await browser.execute(() => {
@@ -54,6 +78,7 @@ describe("a friend row survives a signal push, and a double-click opens the chat
         return { same: (r as (HTMLElement & { __rowOnce?: number }) | undefined)?.__rowOnce === 1, signals: document.querySelector<HTMLElement>(".skin-tree")?.dataset.skinSignals ?? "no tree" };
       })) as { same: boolean; signals: string };
       console.log(`[row] ${file}: after selecting Cara: ${JSON.stringify(kept)}`);
+      console.log(`[row] ${file}: after the push: ${await where()}; rows added/removed: ${JSON.stringify(await browser.execute(() => (window as unknown as { __rowLog?: string[] }).__rowLog ?? []))}`);
       await shot(`${file}-row-selected`);
       expect({ pack: file, rowKept: kept.same }).toEqual({ pack: file, rowKept: true });
       await openChat(browser, "Cara");
