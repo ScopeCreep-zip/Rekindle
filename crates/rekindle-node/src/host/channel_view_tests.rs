@@ -2,10 +2,11 @@
 //! a channel an overwrite closes to us is neither stored nor published,
 //! and a later grant of the view makes it readable.
 
+use rekindle_channel::error::ChannelError;
 use rekindle_governance::overwrite::OverwriteTarget;
 use rekindle_governance::state::{GovernanceState, OverwriteState};
-use rekindle_types::id::{ChannelId, RoleId};
-use rekindle_types::permissions::VIEW_CHANNELS;
+use rekindle_types::id::{ChannelId, PseudonymKey, RoleId};
+use rekindle_types::permissions::{READ_HISTORY, VIEW_CHANNELS};
 use rekindle_types::subscription_events::ChannelMessageEvent;
 
 use super::channel_change_tests::{channel_events, reader, reload, EDIT_CHANNEL};
@@ -98,4 +99,54 @@ fn only_an_opened_channel_is_a_view_gained() {
     assert!(!view_gained(Some(&open), &open, "", 0));
     assert!(!view_gained(Some(&open), &shut, "", 0));
     assert!(!view_gained(None, &open, "", 0));
+}
+
+/// Give us the community key `me` on `c1`.
+fn set_me(host: &Host, me: &PseudonymKey) {
+    let mut map = host.ctx.communities.map().write();
+    map.get_mut("c1").expect("c1").my_pseudonym_key = Some(hex::encode(me.0));
+}
+
+#[tokio::test]
+async fn history_of_a_channel_closed_to_us_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, _owner) = reader(&dir).await;
+    set_me(&host, &PseudonymKey([0x42; 32]));
+    (host.ctx.communities).set_governance_state("c1", closed());
+    let got = HostChannel::new(&host.ctx)
+        .history("c1", EDIT_CHANNEL, None, 10)
+        .await;
+    assert!(
+        matches!(got, Err(ChannelError::PermissionDenied(_))),
+        "{got:?}"
+    );
+}
+
+#[tokio::test]
+async fn history_of_a_closed_channel_is_open_to_the_member_it_admits() {
+    let dir = tempfile::tempdir().unwrap();
+    let (host, _owner) = reader(&dir).await;
+    let me = PseudonymKey([0x42; 32]);
+    set_me(&host, &me);
+    let mut gov = closed();
+    gov.overwrites.insert(
+        (
+            ChannelId::from_hex(EDIT_CHANNEL).expect("channel id"),
+            OverwriteTarget::Member(me).key(),
+        ),
+        OverwriteState {
+            target_type: "member".into(),
+            allow: VIEW_CHANNELS | READ_HISTORY,
+            deny: 0,
+            stamp: rekindle_governance::fixture::stamp(2),
+        },
+    );
+    (host.ctx.communities).set_governance_state("c1", gov);
+    let got = HostChannel::new(&host.ctx)
+        .history("c1", EDIT_CHANNEL, None, 10)
+        .await;
+    assert!(
+        !matches!(got, Err(ChannelError::PermissionDenied(_))),
+        "{got:?}"
+    );
 }

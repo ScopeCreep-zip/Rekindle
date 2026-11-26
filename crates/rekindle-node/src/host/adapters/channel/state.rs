@@ -9,7 +9,7 @@ use rekindle_channel::deps::{
 };
 use rekindle_channel::error::ChannelError;
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
-use rekindle_types::id::{PseudonymKey, ThreadId};
+use rekindle_types::id::{ChannelId, PseudonymKey, ThreadId};
 
 use super::HostChannel;
 use crate::host::community::state::ChannelType;
@@ -146,6 +146,17 @@ impl HostChannel {
 
     /// Our effective permissions from merged governance, at the Host's clock.
     pub(super) fn compute_my_permissions_impl(&self, community_id: &str) -> u64 {
+        self.compute_my_channel_permissions_impl(community_id, None)
+    }
+
+    /// Our effective permissions on `channel` (its overwrites applied) or,
+    /// for `None`, community-wide, from merged governance at the Host's
+    /// clock. No governance state or no own key yet is no permission.
+    pub(super) fn compute_my_channel_permissions_impl(
+        &self,
+        community_id: &str,
+        channel: Option<&ChannelId>,
+    ) -> u64 {
         let Some(gov) = self.gov.governance_state(community_id) else {
             return 0;
         };
@@ -157,7 +168,7 @@ impl HostChannel {
         };
         rekindle_governance::permissions::compute_permissions(
             &PseudonymKey(pseudonym),
-            None,
+            channel,
             &gov,
             self.ctx().clock.now_secs(),
         )

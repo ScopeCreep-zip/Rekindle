@@ -194,7 +194,7 @@ impl FilesDeps for MockDeps {
         self.forum_channel
     }
 
-    fn require_permission(&self, _c: &str, _p: u64) -> Result<(), FilesError> {
+    fn require_permission(&self, _c: &str, _ch: Option<&str>, _p: u64) -> Result<(), FilesError> {
         if self.permission_pass {
             Ok(())
         } else {
