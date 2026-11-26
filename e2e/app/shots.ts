@@ -111,6 +111,16 @@ async function save(b: Browser, user: string, file: string): Promise<void> {
   writeFileSync(index, `${JSON.stringify(entries, null, 2)}\n`);
 }
 
+/** An image the test computed (a crop, a diff), saved as `<name>.png` and
+ *  `<name>.checker.png` in the test's folder. */
+export function saveImage(name: string, image: Rgba): void {
+  const now = current();
+  const dir = path.join(SHOTS, now.spec, now.test);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(path.join(dir, `${slug(name)}.png`), encodePng(image));
+  writeFileSync(path.join(dir, `${slug(name)}.checker.png`), encodePng(checkered(image)));
+}
+
 /** The state a spec asserts mid-test (a dialog open, a toast shown): each user's current window, as `<user>-<name>.png`. */
 export async function shot(name: string): Promise<void> {
   for (const [user, b] of sessions()) await save(b, user, `${user}-${slug(name)}.png`);

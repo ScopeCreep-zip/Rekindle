@@ -118,7 +118,9 @@ describe("a disabled node says why (CR1)", function () {
       // windowInactive with no pack Disabled art draws as Normal (the served
       // refusal copy and the Shell dim are refusal-only).
       const plain = inactive.filter((i) => i.by !== "pack").map((i) => i.node);
-      const inactiveLook = Object.fromEntries(Object.entries(await disabledLookWithBoxes(plain, true)).map(([id, v]) => [id, v.changed]));
+      const inactiveMeasured = await disabledLookWithBoxes(plain, true);
+      for (const [id, v] of Object.entries(inactiveMeasured)) console.log(`[dis3] ${file} ${id} windowInactive vs Normal: ${v.why}`);
+      const inactiveLook = Object.fromEntries(Object.entries(inactiveMeasured).map(([id, v]) => [id, v.changed]));
       console.log(`[dis3] ${file} windowInactive with no pack Disabled art vs Normal, pixels changed: ${JSON.stringify(inactiveLook)} (Normal: < 20)`);
       await shot(`${file}-disabled`);
       expect(nodes.length).toBeGreaterThan(0);
