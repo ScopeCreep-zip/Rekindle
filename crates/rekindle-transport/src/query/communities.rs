@@ -118,5 +118,6 @@ pub fn community_detail(
         removed: None,
         catch_up: None,
         op_publications: std::collections::BTreeMap::new(),
+        mek_generation: 0,
     }
 }

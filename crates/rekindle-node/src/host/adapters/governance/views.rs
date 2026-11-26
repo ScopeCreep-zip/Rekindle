@@ -165,6 +165,7 @@ fn community_view(
         we_are_creator: we_are_creator(c),
         roles: c.roles.iter().map(|r| role_view(r, shown)).collect(),
         my_pseudonym_key: c.my_pseudonym_key.clone(),
+        // The same state `CommunityStore::mek_generation` serves to info.
         mek_generation: c.mek_generation,
         member_registry_key: c.member_registry_key.clone(),
         anchor: c.anchor.clone(),
