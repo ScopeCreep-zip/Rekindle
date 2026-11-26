@@ -380,8 +380,6 @@ export type EventLocation =
   | { type: "external"; data: string }
   | { type: "in_game"; data: { gameId: number; serverAddress?: string } };
 
-export type EventStatus = "scheduled" | "active" | "completed" | "cancelled";
-
 export interface CreateEventRequest {
   title: string;
   description: string;

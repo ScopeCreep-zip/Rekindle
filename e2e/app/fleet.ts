@@ -352,12 +352,6 @@ export async function stopFleet(peers: Peer[]): Promise<void> {
   await Promise.all(peers.map((p) => p.stop()));
 }
 
-/** This peer's friend code URL (`rekindle friend code`). */
-export async function peerFriendCode(peer: Peer): Promise<string> {
-  const code = (await peer.cli(["friend", "code"])) as { url: string };
-  return code.url;
-}
-
 /** `peer` sends a friend request to `url` with `message`. */
 export async function peerRequestFriend(peer: Peer, url: string, message: string): Promise<void> {
   // Trust-changing (ADR 0019): confirmed by naming the fingerprint of the
@@ -365,19 +359,6 @@ export async function peerRequestFriend(peer: Peer, url: string, message: string
   const key = /^rekindle:\/\/add\/([0-9a-f]{64})\//.exec(url)?.[1];
   if (!key) throw new Error(`not a friend code: ${url.slice(0, 40)}`);
   await peer.cli([`--confirm=${fingerprint(key)}`, "friend", "add", url, "--message", message]);
-}
-
-/** `peer` accepts the pending request from `publicKey`, once it has arrived. */
-export async function peerAcceptFrom(peer: Peer, publicKey: string): Promise<void> {
-  await waitUntil(
-    async () => {
-      const requests = (await peer.cli(["friend", "requests"])) as { publicKey?: string }[];
-      return requests.some((r) => r.publicKey === publicKey);
-    },
-    NET_WAIT_MS,
-    `${peer.displayName} never saw the request`,
-  );
-  await peer.cli([`--confirm=${fingerprint(publicKey)}`, "friend", "accept", "--request-id", publicKey]);
 }
 
 /** `peer` sends `text` to friend `to` (a public key). */

@@ -83,8 +83,3 @@ export function gameName(snapshot: PresenceSnapshot): string | null {
   if (game === null || game === "idle") return null;
   return game.playing.gameName;
 }
-
-/** Whether a game was observed at all (running or stopped). */
-export function gameObserved(snapshot: PresenceSnapshot): boolean {
-  return snapshot.game !== null;
-}

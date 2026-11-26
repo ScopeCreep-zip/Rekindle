@@ -131,19 +131,6 @@ export function subscribeBuddyListPresenceEvents(): Promise<UnlistenFn> {
   });
 }
 
-export function subscribeChatPresenceEvents(
-  peerId: string,
-  setPeerStatus: (s: UserStatus) => void,
-): Promise<UnlistenFn> {
-  return subscribePresenceEvents((event) => {
-    const observed = subject(event);
-    if (observed === null) return;
-    const { key, snapshot, isSelf } = observed;
-    if (isSelf || key !== peerId || snapshot.status === null) return;
-    setPeerStatus(snapshot.status as UserStatus);
-  });
-}
-
 export function subscribeCommunityPresenceEvents(): Promise<UnlistenFn> {
   return subscribePresenceEvents((event) => {
     const observed = subject(event);

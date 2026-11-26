@@ -6,7 +6,6 @@ export const CREATE_INVITES = 1n << 4n;
 export const KICK_MEMBERS = 1n << 5n;
 export const BAN_MEMBERS = 1n << 6n;
 export const MODERATE_MEMBERS = 1n << 7n;
-export const MANAGE_NICKNAMES = 1n << 8n;
 export const MANAGE_EXPRESSIONS = 1n << 9n;
 export const VIEW_AUDIT_LOG = 1n << 10n;
 export const VIEW_INSIGHTS = 1n << 11n;
@@ -19,11 +18,8 @@ const ADD_REACTIONS = 1n << 19n;
 export const MENTION_EVERYONE = 1n << 20n;
 export const MANAGE_MESSAGES = 1n << 21n;
 const READ_HISTORY = 1n << 22n;
-export const SEND_TTS = 1n << 23n;
 export const USE_EXTERNAL_EMOJIS = 1n << 24n;
-export const USE_EXTERNAL_STICKERS = 1n << 25n;
 const PIN_MESSAGES = 1n << 26n;
-export const SEND_VOICE_MESSAGES = 1n << 27n;
 const SEND_POLLS = 1n << 28n;
 export const BYPASS_SLOWMODE = 1n << 29n;
 
@@ -33,9 +29,7 @@ export const MUTE_MEMBERS = 1n << 34n;
 export const DEAFEN_MEMBERS = 1n << 35n;
 const MOVE_MEMBERS = 1n << 36n;
 const USE_VOICE_ACTIVITY = 1n << 37n;
-export const PRIORITY_SPEAKER = 1n << 38n;
 export const USE_SOUNDBOARD = 1n << 39n;
-export const USE_EXTERNAL_SOUNDS = 1n << 40n;
 export const REQUEST_TO_SPEAK = 1n << 41n;
 const STREAM = 1n << 42n;
 
@@ -60,10 +54,6 @@ export function hasPermission(
   const perms = permissionBits(permissions);
   if ((perms & ADMINISTRATOR) !== 0n) return true;
   return (perms & required) === required;
-}
-
-export function isAdministrator(permissions: string | bigint | null | undefined): boolean {
-  return (permissionBits(permissions) & ADMINISTRATOR) !== 0n;
 }
 
 /** What we may do in a community, as the backend computed it from the

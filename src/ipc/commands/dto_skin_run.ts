@@ -7,8 +7,6 @@ import type { TransferTarget } from "./dto_transfer";
 
 type ArgOf<K extends SkinAction["kind"]> = Extract<SkinAction, { kind: K; arg: unknown }>["arg"];
 
-export type SkinWindow = "main" | "chat" | "community";
-
 /** `SkinSignalSet`: one window's state signals, computed by the Host
  *  (design §2.5); the window applies the pack triggers they fire. */
 export interface SkinSignalSet {

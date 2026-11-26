@@ -79,7 +79,6 @@ export interface Message extends Omit<IpcMessage, "sendState"> {
 
 /** VOICE_MESSAGE bit on `Message.flags` per architecture §16.4. */
 export const FLAG_VOICE_MESSAGE = 0x10;
-export const FLAG_SUPPRESS_NOTIFICATIONS = 0x20;
 
 export interface MessageAttachment {
   attachmentId: string;
