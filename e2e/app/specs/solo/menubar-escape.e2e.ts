@@ -11,7 +11,7 @@ import { Key } from "webdriverio";
 import { gone, press, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
 import { BUDDY, SETTINGS, closeSettings, openSettings } from "../../../walk/nav.ts";
 import { createIdentity, newUser, type User } from "../../journeys.ts";
-import { applySkin } from "../../journeys_skins.ts";
+import { applySkin, skinShown } from "../../journeys_skins.ts";
 import { shot } from "../../shots.ts";
 import { builtinPacks } from "../../skin-pack.ts";
 
@@ -48,10 +48,15 @@ describe("after Escape closes the status menu, the next menu title opens (lead)"
       const pack = builtinPacks().find((p) => p.file === file);
       if (!pack) throw new Error(`no built-in pack ${file}`);
       await openSettings(browser, "Appearance");
-      await applySkin(browser, me, pack.name);
+      const href = await applySkin(browser, me, pack.name);
       await switchTo(browser, SETTINGS);
       await closeSettings(browser);
       await switchTo(browser, BUDDY);
+      // The buddy list re-laid in this pack before any press (a press while
+      // the tree is replaced meets the old one: the first run's "combat"
+      // pressed Symbiosis's XfireMenu).
+      await skinShown(browser, href);
+      await browser.pause(1500);
 
       // Control: no status menu first. What the press meets (every match of
       // the title, what is on top at its centre, the focus and the window's
@@ -120,7 +125,9 @@ describe("after Escape closes the status menu, the next menu title opens (lead)"
         if (byArrow) await closeMenu();
       }
       console.log(`[mbesc] ${file}: control ${control}; after Escape (focus on ${active}): press ${byPress}, second press ${secondPress}; keyboard Enter ${byEnter}, ArrowDown ${byArrow}`);
-      expect({ control, byPress, byEnter }).toEqual({ control: true, byPress: true, byEnter: true });
+      const fileNode = (await browser.execute((sel: string) => document.querySelector<HTMLElement>(sel)?.dataset.skinNode ?? "none", FILE_MENU)) as string;
+      const want = file === "combat" ? "FileMenuText" : "XfireMenu";
+      expect({ fileNode, control, byPress, byEnter }).toEqual({ fileNode: want, control: true, byPress: true, byEnter: true });
     });
   }
 });
