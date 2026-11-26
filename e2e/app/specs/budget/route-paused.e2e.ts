@@ -7,7 +7,7 @@
 
 import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, gone, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
-import { BUDDY, openSettings, underTree } from "../../../walk/nav.ts";
+import { BUDDY, SETTINGS, closeSettings, openSettings, underTree } from "../../../walk/nav.ts";
 import { createIdentity, newUser, type User } from "../../journeys.ts";
 import { applySkin, skinShown } from "../../journeys_skins.ts";
 import { decodePng } from "../../png.ts";
@@ -76,6 +76,10 @@ describe("a paused inbound route is said in the tree's status field, which stays
       await switchTo(browser, BUDDY);
       await openSettings(browser, "Appearance");
       const href = await applySkin(browser, me, pack.name);
+      // Settings closes after each switch, so the next pack's opens fresh
+      // and frontmost (left open, its Appearance tab took no click).
+      await switchTo(browser, SETTINGS);
+      await closeSettings(browser);
       await switchTo(browser, BUDDY);
       await skinShown(browser, href);
       // Evidence first (a pack that shows no line): the status node's and
@@ -110,6 +114,25 @@ describe("a paused inbound route is said in the tree's status field, which stays
       const line = await seenInField(PAUSED);
       const input = await seenInField(FIELD);
       console.log(`[paused] ${file}: hiding the line changes ${line} px, hiding the input ${input} px (one text: line >= 20, input < 20)`);
+      // Lead (Alloy, 15 px): a line not seen, measured before anything
+      // changes: every element at its centre, topmost first, with its
+      // stacking and paint, and the line's text colour against the ground
+      // under it.
+      if (line < 20) {
+        const stack = (await browser.execute(() => {
+          const l = document.querySelector<HTMLElement>(".skin-status-paused");
+          if (!l) return "no line";
+          const r = l.getBoundingClientRect();
+          const cs = getComputedStyle(l);
+          const at = document.elementsFromPoint(r.x + r.width / 2, r.y + r.height / 2).slice(0, 8).map((e) => {
+            const c = getComputedStyle(e);
+            const node = (e as HTMLElement).closest<HTMLElement>("[data-skin-node]")?.dataset.skinNode ?? "-";
+            return `${e.tagName.toLowerCase()}.${(e as HTMLElement).className || "-"} in ${node} z=${c.zIndex} pos=${c.position} bg=${c.backgroundColor} art=${c.backgroundImage === "none" ? "none" : c.backgroundImage.split("/").pop()?.slice(0, 24)} op=${c.opacity}`;
+          });
+          return JSON.stringify({ lineColour: cs.color, lineBg: cs.backgroundColor, lineFont: `${cs.fontSize} ${cs.fontWeight}`, lineText: (l.textContent ?? "").slice(0, 40), at });
+        })) as string;
+        console.log(`[paused] ${file} not seen; stack at the line: ${stack}`);
+      }
       await shot(`${file}-paused-field`);
       expect({ pack: file, lineSeen: line >= 20, inputSeen: input >= 20 }).toEqual({ pack: file, lineSeen: true, inputSeen: false });
     });
