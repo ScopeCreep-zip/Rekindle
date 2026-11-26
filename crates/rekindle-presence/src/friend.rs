@@ -120,12 +120,12 @@ fn opened<D: FriendPresenceDeps>(
     value: &[u8],
 ) -> Option<Vec<u8>> {
     let Some(key) = deps.friend_presence_key(friend_key) else {
-        tracing::debug!(friend = %friend_key, subkey, "no presence key for friend; value dropped");
+        tracing::info!(friend = %friend_key, subkey, "no presence key for friend; value dropped");
         return None;
     };
     rekindle_secrets::friend_presence::open(&key, friend_key, subkey, value)
         .map_err(|e| {
-            tracing::debug!(friend = %friend_key, subkey, error = %e, "presence value dropped");
+            tracing::info!(friend = %friend_key, subkey, error = %e, "presence value dropped");
         })
         .ok()
 }
@@ -160,6 +160,8 @@ fn handle_status_change<D: FriendPresenceDeps>(deps: &D, friend_key: &str, value
     // Privacy: don't leak status from pending (un-accepted) friend
     // requests. We still persist + log it; just don't emit.
     let is_accepted = deps.is_friend_accepted(friend_key);
+    // The one line that shows a friend's status reached their row (PR2).
+    tracing::info!(friend = %friend_key, ?status, accepted = is_accepted, "friend presence applied");
 
     if status == UserStatusKind::Offline {
         let now = deps.now_ms();

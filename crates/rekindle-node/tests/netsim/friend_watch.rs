@@ -299,3 +299,49 @@ async fn a_participant_record_learned_offline_opens_on_a_later_tick() {
         "the retried watch delivers Kim's next message"
     );
 }
+
+/// Whether `node`'s friend list shows `peer` with `status`.
+async fn lists(
+    node: &crate::harness::SimNode,
+    peer: &str,
+    status: rekindle_types::friend::UserStatus,
+) -> bool {
+    crate::pair::friends(node)
+        .await
+        .iter()
+        .any(|f| f.public_key == peer && f.status == status)
+}
+
+/// Real-app finding PR2: both are online before Kim asks, so Lev's status
+/// is published before Kim's watch of his profile, and Kim watches it again
+/// when Lev's accept lands. Each side's list still shows the other online
+/// with no status change made after the accept (a Veilid watch reports only
+/// later changes), and a change Lev makes afterwards still reaches Kim
+/// through the re-armed watch.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_status_published_before_the_accept_shows_on_both_lists() {
+    use rekindle_types::friend::UserStatus;
+    let (sim, mut nodes) = start(2, 85).await;
+    for (node, name) in nodes.iter_mut().zip(["Kim", "Lev"]) {
+        node.unlock_new_identity(name).await;
+    }
+    befriend(&sim, &nodes[0], &nodes[1]).await;
+    let (kim, lev) = (key(&nodes[0]), key(&nodes[1]));
+    assert!(
+        eventually(&sim, LIMIT, || lists(&nodes[0], &lev, UserStatus::Online)).await,
+        "Kim's list shows Lev online after his accept"
+    );
+    assert!(
+        eventually(&sim, LIMIT, || lists(&nodes[1], &kim, UserStatus::Online)).await,
+        "Lev's list shows Kim online after his accept"
+    );
+    nodes[1]
+        .ok(IpcRequest::PresenceSet {
+            status: SessionStatus::Away,
+        })
+        .await;
+    assert!(
+        eventually(&sim, LIMIT, || lists(&nodes[0], &lev, UserStatus::Away)).await,
+        "Lev's later change reaches Kim through the re-watched record"
+    );
+}
