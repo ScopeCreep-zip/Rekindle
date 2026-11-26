@@ -9,6 +9,7 @@ use rekindle_types::id::{ChannelId, PseudonymKey, RoleId};
 use rekindle_types::permissions::VIEW_CHANNELS;
 
 use super::compute_permissions;
+use crate::overwrite::OverwriteTarget;
 use crate::state::GovernanceState;
 
 /// The members of `members` who can read `channel` under `state`, sorted
@@ -45,7 +46,7 @@ pub fn channel_read_roster(
 /// channel).
 #[must_use]
 pub fn is_restricted(state: &GovernanceState, channel: &ChannelId) -> bool {
-    let everyone = format!("{:?}", RoleId([0u8; 16]));
+    let everyone = OverwriteTarget::Role(RoleId::EVERYONE).key();
     state
         .overwrites
         .iter()
@@ -55,7 +56,7 @@ pub fn is_restricted(state: &GovernanceState, channel: &ChannelId) -> bool {
                 || state
                     .roles
                     .keys()
-                    .any(|role| format!("{role:?}") == *target)
+                    .any(|role| OverwriteTarget::Role(*role).key() == *target)
         })
 }
 
@@ -178,7 +179,12 @@ mod tests {
             !is_restricted(&open, &channel),
             "a member overwrite narrows one member, not the channel"
         );
-        deny_view(&mut open, channel, format!("{:?}", RoleId([7; 16])), "role");
+        deny_view(
+            &mut open,
+            channel,
+            OverwriteTarget::Role(RoleId([7; 16])).key(),
+            "role",
+        );
         assert!(
             !is_restricted(&open, &channel),
             "an overwrite naming no held role is not effective"
@@ -188,7 +194,7 @@ mod tests {
         deny_view(
             &mut by_everyone,
             channel,
-            format!("{:?}", RoleId([0; 16])),
+            OverwriteTarget::Role(RoleId::EVERYONE).key(),
             "role",
         );
         assert!(is_restricted(&by_everyone, &channel));
@@ -200,7 +206,12 @@ mod tests {
         let mut by_role = state();
         let role_id = RoleId([5; 16]);
         by_role.roles.insert(role_id, role(VIEW_CHANNELS));
-        deny_view(&mut by_role, channel, format!("{role_id:?}"), "role");
+        deny_view(
+            &mut by_role,
+            channel,
+            OverwriteTarget::Role(role_id).key(),
+            "role",
+        );
         assert!(is_restricted(&by_role, &channel));
     }
 }

@@ -3,6 +3,8 @@
 
 use rekindle_types::channel_keys::KeyScope;
 
+use rekindle_governance::overwrite::OverwriteTarget;
+
 use super::{create_ann, offline_host, seed_registry_community};
 
 /// The key catch-up (plan E3.1 C2b; register S7l HIGH-1): a community
@@ -252,11 +254,11 @@ async fn the_responder_refuses_a_restricted_channel_key_outside_its_roster() {
     gov.roles.insert(RoleId([0; 16]), role(DEFAULT_EVERYONE));
     gov.roles.insert(reader, role(DEFAULT_EVERYONE));
     gov.overwrites.insert(
-        (channel, format!("{:?}", RoleId([0; 16]))),
+        (channel, OverwriteTarget::Role(RoleId::EVERYONE).key()),
         overwrite(0, VIEW_CHANNELS),
     );
     gov.overwrites.insert(
-        (channel, format!("{reader:?}")),
+        (channel, OverwriteTarget::Role(reader).key()),
         overwrite(VIEW_CHANNELS, 0),
     );
     gov.role_assignments
