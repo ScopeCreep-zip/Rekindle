@@ -61,8 +61,7 @@ Dropped
     Xglow.ini: [BuddyView] Text.color_selected (line 359)
     Xglow.ini: [BuddyView] Text.color_header (line 363)
     Xglow.ini: [ViewInfo] Skin.X (line 808)
-  files not read (99):
-    ChatSkin.ini
+  files not read (76):
     InGameMainSkin.ini
     InGameSkin.ini
     buttons/Thumbs.db
@@ -87,29 +86,7 @@ Dropped
     buttons/servers-hover.gif
     buttons/viewout.gif
     chatskin/Thumbs.db
-    chatskin/bb.gif
-    chatskin/blc.gif
-    chatskin/bottom-bump.gif
-    chatskin/brc.gif
-    chatskin/button-close-down.gif
-    chatskin/button-close-hover.gif
-    chatskin/button-close-norm.gif
-    chatskin/button-minimize-down.gif
-    chatskin/button-minimize-hover.gif
-    chatskin/button-minimize-norm.gif
-    chatskin/chat-down.gif
-    chatskin/chat-hover.gif
-    chatskin/chat-middleleft.gif
-    chatskin/chat-middleright.gif
-    chatskin/chat-topleft.gif
-    chatskin/chat-topmiddle.gif
-    chatskin/chat-topright.gif
-    chatskin/chat.gif
-    chatskin/gripper.gif
-    chatskin/middle-bump.gif
-    chatskin/mm.gif
     chatskin/nochat.gif
-    chatskin/top-bump.gif
     chatskin/viewinfo.gif
     infoskin/Thumbs.db
     infoskin/nojoin.gif

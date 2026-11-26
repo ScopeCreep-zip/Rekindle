@@ -256,6 +256,23 @@ fn content_samples(add: &mut impl FnMut(&str, Value)) {
         }),
     );
     add(
+        "skin.nodeSpan.share",
+        to(NodeSpan::Share {
+            at: Anchor::Start(0),
+            permille: 800,
+        }),
+    );
+    add(
+        "skin.nodeSpan.shareAfter",
+        to(NodeSpan::Share {
+            at: Anchor::After {
+                sibling: "Divider".into(),
+                gap: 0,
+            },
+            permille: 1000,
+        }),
+    );
+    add(
         "skin.contentFit",
         to(ContentFit {
             min: 25,

@@ -45,10 +45,16 @@
 
 use rekindle_types::dto::skin::WindowLayout;
 use rekindle_types::dto::skin_action::NodeTrigger;
-use rekindle_types::dto::skin_tree::{Edge, NodeRole, NodeTarget, SkinNode, SkinTree, TargetRule};
+use rekindle_types::dto::skin_tree::{NodeRole, NodeTarget, SkinNode, SkinTree, TargetRule};
+
+use super::{keep, settle};
+
+mod grip;
 
 use super::validate::{hit_area, overlap, text_sized, Apart, Stack, HIT};
-use super::{keep, settle};
+#[cfg(test)]
+pub(super) use grip::press_box;
+pub use grip::{band, grip_holes, grip_targets, grips, Grip};
 
 /// One candidate laid in the window.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -318,231 +324,6 @@ pub(super) fn minus(r: [i32; 4], a: [i32; 4]) -> Vec<[i32; 4]> {
     .collect()
 }
 
-/// The part of a listening node at `art` (served `area`) a grip's band
-/// must leave to it: a small node's whole target box (SC 2.5.8 measures
-/// it), a node already 24 x 24 the 24 x 24 square about its centre (where
-/// a press lands, plan SK9), so a long edge loses only that notch.
-pub(super) fn press_box(art: [i32; 4], area: [i32; 4]) -> [i32; 4] {
-    if small(art) {
-        return area;
-    }
-    let (cx, cy) = (art[0] + art[2] / 2, art[1] + art[3] / 2);
-    let half = HIT / 2;
-    meet([cx - half, cy - half, HIT, HIT], art).unwrap_or(art)
-}
-
-/// Whether `g` less `holes` still holds a 24 x 24 square.
-fn free_square(g: [i32; 4], holes: &[[i32; 4]]) -> bool {
-    let mut xs = vec![g[0], g[0] + g[2] - HIT];
-    let mut ys = vec![g[1], g[1] + g[3] - HIT];
-    for h in holes {
-        xs.extend([h[0] + h[2], h[0] - HIT]);
-        ys.extend([h[1] + h[3], h[1] - HIT]);
-    }
-    xs.iter().any(|&x| {
-        ys.iter().any(|&y| {
-            let s = [x, y, HIT, HIT];
-            meet(g, s) == Some(s) && holes.iter().all(|h| !overlap(s, *h))
-        })
-    })
-}
-
-/// A resize grip's pointer area (plan SK11): its frame band, never its art
-/// box (Onyx's `TopLeft` corner art, 83 x 128, lies over its Friends tab).
-/// On each axis the grip resizes, the band is 24 px in from the art's side
-/// on the window's frame (the side it drags), clamped to the art when the
-/// art is thicker and grown inward when thinner: a corner, frame or inner
-/// (`BRGripper`), is the 24 x 24 at the corner it resizes; an edge is
-/// 24 px thick along its length. On an axis it does not resize, the band
-/// runs the art's length, grown to 24 px about its centre. The band then
-/// lies in the window.
-#[must_use]
-pub fn band(art: [i32; 4], edge: Edge, (win_w, win_h): (i32, i32)) -> [i32; 4] {
-    let (low_x, high_x, low_y, high_y) = match edge {
-        Edge::Top => (false, false, true, false),
-        Edge::Bottom => (false, false, false, true),
-        Edge::Left => (true, false, false, false),
-        Edge::Right => (false, true, false, false),
-        Edge::TopLeft => (true, false, true, false),
-        Edge::TopRight => (false, true, true, false),
-        Edge::BottomLeft => (true, false, false, true),
-        Edge::BottomRight => (false, true, false, true),
-    };
-    let axis = |at: i32, len: i32, win: i32, low: bool, high: bool| {
-        let (start, full) = if low {
-            (at, HIT)
-        } else if high {
-            (at + len - HIT, HIT)
-        } else {
-            let full = len.max(HIT);
-            (at - (full - len) / 2, full)
-        };
-        (start.min(win - full).max(0), full)
-    };
-    let (left, width) = axis(art[0], art[2], win_w, low_x, high_x);
-    let (top, height) = axis(art[1], art[3], win_h, low_y, high_y);
-    [left, top, width, height]
-}
-
-/// A resize grip's target ([`grips`]): its frame band ([`band`]), and the
-/// holes cut from it (window coordinates, disjoint).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Grip {
-    pub laid: Laid,
-    pub holes: Vec<[i32; 4]>,
-}
-
-/// The target of every resize grip of `tree` in `window` (plan SK11, lead
-/// decision: a frameless window resizes only by dragging its frame, so a
-/// grip is a pointer target like any control). Its pointer area is its
-/// frame band ([`band`]: a corner 24 x 24, an edge 24 px thick along its
-/// whole length), never its art box: the art draws and takes no press.
-/// A frame node never takes a press over a press control, whatever the
-/// pack's order (lead decision, title-bar semantics): where the band meets
-/// the press box ([`press_box`]) of a listening node shown with it, that
-/// stretch is cut out, as a hole the stylesheet clips from the band
-/// ([`super::css`]), over the grip's art too (the art takes no press). A
-/// grip never cuts another grip: a corner stacks above the edges
-/// ([`super::validate::stack_z`]).
-///
-/// A drag area ([`SkinNode::drag_area`]: only move and double-click
-/// maximize, Onyx's `TopLeft` over its Friends tab) is a frame node like a
-/// grip, as a title bar is in every OS (Tauri's `data-tauri-drag-region`
-/// takes only the presses no control takes): it never takes a press over
-/// a press control, whatever the pack's order. Its pointer area is its art
-/// box in the window, cut over the press box of every listening node and
-/// the band of every grip it would lie above; the art still draws in the
-/// pack's order. A drag area with no hole keeps its own box and is not
-/// listed. A frame node never cuts another's area for a drag area (a grip
-/// or drag area is no press control to a grip; a drag area yields to a
-/// grip).
-///
-/// A grip's rule (WCAG 2.5.8: a grip is a control): `Size` while 24 x 24
-/// of the area is left, else `Spacing` when the 24 px circle on it meets
-/// no listening node's box, else `Short` (a control the pack lays over its
-/// band takes that stretch). A drag area's rule is `Frame` (lead decision:
-/// a window-drag area is no control, so 2.5.8 sets it no size or spacing,
-/// and it is never a short-list finding).
-#[must_use]
-pub fn grips(tree: &SkinTree, window: (i32, i32), laid: &[Laid]) -> Vec<Grip> {
-    let apart = Apart::new(&tree.root);
-    let r2 = i64::from(HIT) * i64::from(HIT);
-    let boxes = tree.boxes(window.0, window.1);
-    let others: Vec<(&str, [i32; 4], [i32; 4])> = boxes
-        .iter()
-        .filter(|(n, b)| {
-            !n.frame_node()
-                && b[2] > 0
-                && b[3] > 0
-                && (listens(n) || n.triggers.iter().any(|t| t.on.pointer()))
-        })
-        .map(|(n, b)| {
-            let area = laid.iter().find(|l| l.id == n.id).map_or(*b, |l| l.area);
-            (n.id.as_str(), area, press_box(*b, area))
-        })
-        .collect();
-    let frames: Vec<(&SkinNode, [i32; 4], [i32; 4], bool)> = boxes
-        .iter()
-        .filter(|(n, b)| n.frame_node() && !text_sized(n) && b[2] > 0 && b[3] > 0)
-        .filter_map(|(n, art)| {
-            let g = match n.resize_edge() {
-                Some(edge) => band(*art, edge, window),
-                None => meet(*art, [0, 0, window.0, window.1])?,
-            };
-            Some((*n, *art, g, n.resize_edge().is_some()))
-        })
-        .collect();
-    frames
-        .iter()
-        .filter_map(|&(n, art, g, grip)| {
-            let shown: Vec<[i32; 4]> = others
-                .iter()
-                .filter(|(id, ..)| !apart.apart(&n.id, id))
-                .map(|(_, o, _)| *o)
-                .collect();
-            let mut holes: Vec<[i32; 4]> = Vec::new();
-            // Every press control shown with it is cut, whatever the
-            // pack's order: the served stack nests each node's z inside
-            // its parent's (CSS stacking contexts), so a control's
-            // effective z ([`Stack::yields`]) does not lift it over a
-            // frame node; Onyx's `TabNormalButton` (inside `TabNormalText`)
-            // lies under `TopLeft` (`Z=2`) though its own `Z` is higher. A
-            // hole over a control already above is a no-op.
-            let mut cuts: Vec<[i32; 4]> = others
-                .iter()
-                .filter(|(id, ..)| !apart.apart(&n.id, id))
-                .map(|(.., press)| *press)
-                .collect();
-            if !grip {
-                cuts.extend(
-                    frames
-                        .iter()
-                        .filter(|(m, .., is_grip)| *is_grip && !apart.apart(&n.id, &m.id))
-                        .map(|(_, _, b, _)| *b),
-                );
-            }
-            for press in cuts {
-                let Some(m) = meet(g, press) else { continue };
-                let mut parts = vec![m];
-                for h in &holes {
-                    parts = parts.into_iter().flat_map(|p| minus(p, *h)).collect();
-                }
-                holes.extend(parts);
-            }
-            if !grip && holes.is_empty() {
-                return None;
-            }
-            let rule = if !grip {
-                TargetRule::Frame
-            } else if free_square(g, &holes) {
-                TargetRule::Size
-            } else if shown.iter().all(|o| far(g, *o) >= r2) {
-                TargetRule::Spacing
-            } else {
-                TargetRule::Short
-            };
-            Some(Grip {
-                laid: Laid {
-                    id: n.id.clone(),
-                    art,
-                    area: g,
-                    rule,
-                },
-                holes,
-            })
-        })
-        .collect()
-}
-
-/// The [`Laid`] of every grip ([`grips`]).
-#[must_use]
-pub fn grip_targets(tree: &SkinTree, window: (i32, i32), laid: &[Laid]) -> Vec<Laid> {
-    grips(tree, window, laid)
-        .into_iter()
-        .map(|g| g.laid)
-        .collect()
-}
-
-/// Each grip of `tree` in `window` with holes: its box, and the holes
-/// relative to it (what the stylesheet clips, [`super::css`]).
-#[must_use]
-pub fn grip_holes(tree: &SkinTree, window: (i32, i32)) -> Vec<(String, [i32; 4], Vec<[i32; 4]>)> {
-    let laid = targets(tree, window);
-    grips(tree, window, &laid)
-        .into_iter()
-        .filter(|g| !g.holes.is_empty())
-        .map(|g| {
-            let a = g.laid.area;
-            let rel = g
-                .holes
-                .iter()
-                .map(|h| [h[0] - a[0], h[1] - a[1], h[2], h[3]])
-                .collect();
-            (g.laid.id, a, rel)
-        })
-        .collect()
-}
-
 /// The target `l` serves its node: none for a node already 24 x 24 that
 /// is not a grip (a grip's band is its pointer area whatever its art's
 /// size, [`band`]) and keeps its art box (one [`under`] cuts serves it).
@@ -585,15 +366,41 @@ pub fn window(layout: &WindowLayout) -> (i32, i32) {
 pub fn nodes(layout: &mut WindowLayout) {
     let at = window(layout);
     if let Some(tree) = layout.tree.as_mut() {
-        let mut laid = targets(tree, at);
-        laid.extend(grip_targets(tree, at, &laid));
-        set(&mut tree.root, &laid);
+        lay(tree, at);
     }
     let min_height = layout.min_height;
     for popup in layout.popups.values_mut() {
         let at = window(&super::popup::frame(popup, min_height));
-        let mut laid = targets(&popup.tree, at);
-        laid.extend(grip_targets(&popup.tree, at, &laid));
-        set(&mut popup.tree.root, &laid);
+        lay(&mut popup.tree, at);
+    }
+}
+
+/// Sets the targets of `tree` laid in `at`, and serves each grip the
+/// triggers it takes from the system-menu strips it lies over
+/// ([`Grip::takes`]).
+fn lay(tree: &mut SkinTree, at: (i32, i32)) {
+    let mut laid = targets(tree, at);
+    let grips = grips(tree, at, &laid);
+    let takes: Vec<(String, Vec<NodeTrigger>)> = grips
+        .iter()
+        .filter(|g| !g.takes.is_empty())
+        .map(|g| (g.laid.id.clone(), g.takes.clone()))
+        .collect();
+    laid.extend(grips.into_iter().map(|g| g.laid));
+    set(&mut tree.root, &laid);
+    take(&mut tree.root, &takes);
+}
+
+/// Adds to each grip in `nodes` the triggers it takes, once.
+fn take(nodes: &mut [SkinNode], takes: &[(String, Vec<NodeTrigger>)]) {
+    for n in nodes {
+        if let Some((_, ts)) = takes.iter().find(|(id, _)| *id == n.id) {
+            for t in ts {
+                if !n.triggers.contains(t) {
+                    n.triggers.push(t.clone());
+                }
+            }
+        }
+        take(&mut n.children, takes);
     }
 }

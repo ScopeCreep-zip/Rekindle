@@ -5,7 +5,7 @@
 import { browser, expect } from "@wdio/globals";
 import { switchTo } from "../../../walk/helpers.ts";
 import { BUDDY } from "../../../walk/nav.ts";
-import { communitiesTab, createCommunity, createIdentity, newUser, openCommunity, type User } from "../../journeys.ts";
+import { communitiesTab, createCommunity, createIdentity, newUser, openCommunity, type User, whenSettled } from "../../journeys.ts";
 import { shot, shotAllWindows } from "../../shots.ts";
 
 const COMMUNITY = `Round Hall ${Date.now() % 100000}`;
@@ -16,9 +16,13 @@ describe("the default skin's buddy list and community window", function () {
 
   it("shows both windows", async () => {
     await createIdentity(browser, me);
+    // The shots show the settled windows: writes accepted and our general
+    // route available (the status field reads no "No Route").
+    await whenSettled(browser);
     await shot("buddy-list-friends");
     await createCommunity(browser, me, COMMUNITY);
     await switchTo(browser, BUDDY);
+    await whenSettled(browser);
     await communitiesTab(browser);
     const listed = (await browser.execute(
       (n: string) => Array.from(document.querySelectorAll(".community-item")).some((r) => (r.textContent ?? "").includes(n)),

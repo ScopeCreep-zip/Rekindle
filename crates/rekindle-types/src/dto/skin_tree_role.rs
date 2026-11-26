@@ -79,6 +79,37 @@ pub enum LampKey {
     Files,
 }
 
+/// A box in the chat window's tree that the shell mounts its own control
+/// into (plan SK17-2): the pack places it, Rekindle fills it, as a
+/// [`NodeRole::View`] is filled with the buddy list's views.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SlotKey {
+    /// The "is typing" line (Onyx's and Space Cowboy's `TypingMessageBG`,
+    /// Symbiosis's `ChatTypingMessage`, xSLIMFIRE's `TypingMessage`).
+    TypingNotice,
+    /// The conversation's message list (every pack's `ChatArea`).
+    ChatArea,
+    /// The composer (every pack's `ChatEdit`).
+    ChatEdit,
+    /// The send button (Symbiosis's `ChatButtonSend`, xSLIMFIRE's
+    /// `SendButton` in its `ChatBaseBoard`, Onyx's and Space Cowboy's
+    /// `ChatImButton`).
+    ChatSend,
+    /// The InfoView toggle (xSLIMFIRE's `ChatInfoViewButton`, Space
+    /// Cowboy's `ChatExpandButton`, Symbiosis's `ButtonInfo`).
+    InfoviewButton,
+}
+
+/// Which window-frame button a chat window's [`NodeRole::WindowButton`] is.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum WindowButtonKind {
+    Minimize,
+    Maximize,
+    Close,
+}
+
 /// What the shell binds into a node (design §1's 45 components, merged).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", tag = "kind", content = "key")]
@@ -144,6 +175,23 @@ pub enum NodeRole {
     Part,
     /// Pack art with no behaviour (frame pieces, `Vent`, `Divider`).
     Decor,
+    /// The chat window's title strip (Onyx's and Space Cowboy's
+    /// `MainTitleBar`, xSLIMFIRE's `ChatTitleBar`, Symbiosis's `InfoBar`),
+    /// a window drag area like [`Self::Drag`] (plan SK17-2).
+    TitleBar,
+    /// The chat window's conversation title. The tree carries the pack's
+    /// font and colour, never words: the shell writes the conversation's
+    /// title the Host serves that window (the peer's display name, the
+    /// group's name), never the pack's own `ChatTitle`/`UserNameText`.
+    ChatTitle,
+    /// A window-frame button, with the pack's art states; absent where
+    /// the pack draws none (xSLIMFIRE has no maximize).
+    WindowButton(WindowButtonKind),
+    /// Symbiosis's `TabbedTalkingState`: the peer's typing lamp, its two
+    /// parts shown by the window's `userTyping` signal.
+    TalkingState,
+    /// A box the shell mounts a Rekindle control into ([`SlotKey`]).
+    Slot(SlotKey),
 }
 
 impl NodeRole {

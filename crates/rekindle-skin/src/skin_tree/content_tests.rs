@@ -21,12 +21,43 @@ fn stored_main(id: &str) -> WindowLayout {
         .unwrap()
 }
 
+/// The first node under `nodes` served with a chain, except a chain whose
+/// base resolves through a [`NodeSpan::Share`] (plan SK17-3, lead ruling):
+/// a share's far edge depends on the window, so no px start exists to
+/// serve and the stylesheet keeps it as `calc(...)` (Combat's chat
+/// `Divider`, `Y=ChatArea.BOTTOM` under `ChatArea`'s `ResizeY=80`,
+/// `CombatChatSkin.ini:291-334`).
 fn any_after(nodes: &[SkinNode]) -> Option<&str> {
+    let axes: [fn(&SkinNode) -> &NodeSpan; 2] = [|n| &n.x, |n| &n.y];
     nodes.iter().find_map(|n| {
-        (n.x.after().is_some() || n.y.after().is_some())
+        axes.iter()
+            .any(|ax| {
+                ax(n)
+                    .after()
+                    .is_some_and(|(sib, _)| !through_share(nodes, sib, *ax))
+            })
             .then_some(n.id.as_str())
             .or_else(|| any_after(&n.children))
     })
+}
+
+/// Whether the chain on sibling `name` of `nodes` bottoms out at a share
+/// on the axis `ax` reads: `name` is one, or is chained on one.
+fn through_share(nodes: &[SkinNode], name: &str, ax: fn(&SkinNode) -> &NodeSpan) -> bool {
+    let mut name = name;
+    for _ in 0..nodes.len() {
+        let Some(sib) = nodes.iter().find(|s| s.id.eq_ignore_ascii_case(name)) else {
+            return false;
+        };
+        match ax(sib) {
+            NodeSpan::Share { .. } => return true,
+            span => match span.after() {
+                Some((next, _)) => name = next,
+                None => return false,
+            },
+        }
+    }
+    false
 }
 
 /// Onyx (`mainwindow.xml:42`, `X="XfireMenuText.RIGHT+10"`) and Combat
@@ -47,7 +78,8 @@ fn a_content_text_keeps_its_fit_and_the_chain_on_it_stays_symbolic() {
     }
 }
 
-/// No served tree of any built-in window or popup carries a chain.
+/// No served tree of any built-in window or popup carries a chain, but for
+/// one whose base resolves through a share ([`any_after`]).
 #[test]
 fn no_served_tree_carries_a_chain() {
     for b in builtin::PACKS {

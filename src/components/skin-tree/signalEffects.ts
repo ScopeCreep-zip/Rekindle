@@ -194,3 +194,17 @@ function pageNode(list: ShellNode[], group: number, page: number): ShellNode | u
   }
   return undefined;
 }
+
+/** The served signal set's true flags, space-separated (`data-skin-signal-on`). */
+export function signalFlags(set: SkinSignalSet | null): string {
+  if (!set) return "";
+  const flags: [string, boolean][] = [
+    ["focused", set.focused],
+    ["userTyping", set.userTyping],
+    ["voiceRinging", set.voiceRinging],
+    ["talking", set.talking],
+    ["disconnected", set.disconnected],
+    ["newNotification", set.newNotification],
+  ];
+  return flags.filter(([, on]) => on).map(([name]) => name).join(" ");
+}

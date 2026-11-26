@@ -89,7 +89,9 @@ pub struct Facts<'a> {
     pub children: &'a [String],
 }
 
-fn key(name: &str) -> String {
+/// A pack name's table key: lower case, its trailing digits dropped
+/// (`MenuDiv0`…`MenuDiv3`, `Separator1`); the main and chat tables share it.
+pub(super) fn key(name: &str) -> String {
     name.trim_end_matches(|c: char| c.is_ascii_digit())
         .to_ascii_lowercase()
 }
@@ -331,7 +333,7 @@ fn named_shown(k: &str, f: &Facts<'_>) -> Option<NodeRole> {
     use NodeRole as R;
     match k {
         "maintitlebar" | "windowdragger" | "combatdragbar" => Some(R::Drag),
-        "xfirelogo" | "logo" | "logox" | "wndxfire" => Some(R::Logo),
+        "xfirelogo" | "xfirelogonolink" | "logo" | "logox" | "wndxfire" => Some(R::Logo),
         // A `Title` is the user's name only as text (Combat's `[Title]`
         // `Class=Text Text.text=%displayuser%`, `combat.ini:541-544`; Onyx's
         // and Space Cowboy's `Class="Text"`); Total Chaos's `Title` is the

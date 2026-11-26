@@ -28,6 +28,7 @@ pub mod skin_title;
 pub mod skin_tree;
 pub mod skin_tree_label;
 pub mod skin_tree_role;
+pub mod skin_tree_span;
 pub mod transfer;
 pub mod verdict;
 

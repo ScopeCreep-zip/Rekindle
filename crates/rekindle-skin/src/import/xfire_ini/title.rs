@@ -105,14 +105,28 @@ fn put(attrs: &mut BTreeMap<String, String>, attr: &str, value: &str) {
 }
 
 /// A repeated `X`/`Y` whose first value is a sibling's edge
-/// (`Bottom.BOTTOM`) and whose second is a number: the edge plus it.
+/// (`Bottom.BOTTOM`) and whose second is a number: the edge plus it. A
+/// bare sibling name is its near edge (Combat's chat `MainTitleBar`
+/// `Y=Top` then `Y=13`, `CombatChatSkin.ini:124-125`: 13 px below the
+/// top of `[Top]`, inside the title band its `Logo` `Y=-3` reaches over).
 fn offset_of(attr: &str, first: &str, value: &str) -> Option<String> {
     let n: i32 = value.parse().ok()?;
-    let edge = (attr == "X" || attr == "Y")
-        && first.contains('.')
-        && !first.contains(['+', '-'])
-        && first.parse::<i32>().is_err();
-    edge.then(|| format!("{first}{n:+}"))
+    let near = match attr {
+        "X" => "LEFT",
+        "Y" => "TOP",
+        _ => return None,
+    };
+    let named = !first.contains(['+', '-']) && first.parse::<i32>().is_err();
+    if !named {
+        return None;
+    }
+    if first.contains('.') {
+        Some(format!("{first}{n:+}"))
+    } else {
+        let name = first.trim();
+        (!name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'))
+            .then(|| format!("{name}.{near}{n:+}"))
+    }
 }
 
 fn tiles(ini: &Ini, section: &Section, path: &mut Vec<String>) -> Vec<Node> {
@@ -354,6 +368,8 @@ mod offset_tests {
             offset_of("Y", "Middle.BOTTOM", "0").as_deref(),
             Some("Middle.BOTTOM+0")
         );
+        assert_eq!(offset_of("Y", "Top", "13").as_deref(), Some("Top.TOP+13"));
+        assert_eq!(offset_of("X", "Logo", "-2").as_deref(), Some("Logo.LEFT-2"));
         assert_eq!(offset_of("Y", "12", "0"), None);
         assert_eq!(offset_of("Z", "Bottom.BOTTOM", "1"), None);
     }
