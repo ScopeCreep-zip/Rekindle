@@ -173,3 +173,82 @@ async fn a_post_whose_leave_merged_during_its_judgement_is_held_not_passed() {
     assert!(rows.is_empty(), "neither judgement stored the post");
     host.shutdown().await.unwrap();
 }
+
+/// Live finding CH1: the author creates a channel and posts in it at once,
+/// and our diff of its outbox runs before the channel's `ChannelCreated`
+/// merges here. The entry maps to no channel while we hold its key, so it
+/// passes and the cursor moves past it; the merge that creates the channel
+/// forgets the writer's cursor, so the re-diff stores the post.
+#[tokio::test]
+async fn a_post_read_before_its_channel_merged_is_shown_once_the_channel_merges() {
+    use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    let owner = create_ann(&host).await.public_key;
+    seed_registry_community(&host, &owner).await;
+    let mut before = with_channel();
+    before.channels.clear();
+    (host.ctx.communities).set_governance_state("c1", before);
+    let cache = crate::daemon::mek_rotation::MekCacheAdapter::new(std::sync::Arc::clone(
+        &host.ctx.mek_cache,
+    ));
+    let key = rekindle_transport::crypto::mek::Mek::from_bytes(TEXT_KEY, 1);
+    rekindle_mek_rotation::ChannelMekCache::insert(&cache, "c1", KeyScope::Community, key);
+    let (sim, mut nodes) = rekindle_netsim::Netsim::nodes(1, 89);
+    let _pump = sim.start();
+    let port = nodes.remove(0).ports.records.start_session().unwrap();
+    let signing = SigningKey::from_bytes(&[6; 32]);
+    let channel = HostChannel::new(&host.ctx);
+    let sink = OutboxSink {
+        channel: &channel,
+        community_id: "c1",
+        author: signing.verifying_key().to_bytes(),
+        member_record: "VLD0:member",
+        backfill: true,
+        standing: Standing::Member,
+        port: &*port,
+        last: parking_lot::Mutex::new(None),
+    };
+    let stream = outbox_stream("c1");
+    let writer = format!(
+        "{}:VLD0:member",
+        hex::encode(signing.verifying_key().to_bytes())
+    );
+    let entry = first_entry(&signing);
+    let db = host.ctx.db.current().unwrap();
+    let page = || {
+        let (owner, db) = (owner.clone(), db.clone());
+        async move {
+            db.call(move |conn| rows::page(conn, &owner, EDIT_CHANNEL, None, 10))
+                .await
+                .unwrap()
+                .into_iter()
+                .map(|row| row.body)
+                .collect::<Vec<String>>()
+        }
+    };
+
+    let held = sink.apply(&stream, &writer, &entry).await;
+    assert!(matches!(held, Ok(Held::Stored)), "{held:?}");
+    assert_eq!(sink.cursor(&stream, &writer).await.unwrap(), 1);
+    assert!(page().await.is_empty(), "no channel to show it in yet");
+
+    host.governance().set_governance_state("c1", with_channel());
+    let mut cursor = 1;
+    for _ in 0..100 {
+        cursor = sink.cursor(&stream, &writer).await.unwrap();
+        if cursor == 0 {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    assert_eq!(
+        cursor, 0,
+        "the channel's creation forgets the writer's cursor"
+    );
+
+    let held = sink.apply(&stream, &writer, &entry).await;
+    assert!(matches!(held, Ok(Held::Stored)), "{held:?}");
+    assert_eq!(page().await, ["hello"], "the re-diff shows the post");
+    host.shutdown().await.unwrap();
+}

@@ -137,6 +137,12 @@ pub struct CommunityState {
     /// E3.3), one per author.
     #[serde(skip)]
     pub outbox_streams: std::sync::Arc<rekindle_sync::stream::StreamEngine>,
+    /// The writers (author, member record) whose outbox entries mapped to
+    /// no merged channel since a merge last created one, diffed again when
+    /// one is (plan E3.3, `channel::outbox_unmapped`).
+    #[serde(skip)]
+    pub outbox_unmapped:
+        std::sync::Arc<parking_lot::Mutex<std::collections::BTreeSet<([u8; 32], String)>>>,
     /// Checkpoint hint and state requests at the gossip floor (S7c.3): a
     /// member's per pseudonym, a joiner's per invite (S7c.8 (2)).
     #[serde(skip)]
