@@ -156,6 +156,7 @@ mod sidecars;
 mod skin_silhouette;
 mod sqlite;
 mod supply_chain;
+mod test_code;
 mod theme_literals;
 mod veilid_boundary;
 mod veilid_dht_calls;
@@ -355,6 +356,10 @@ fn dispatch(cmd: &Command) -> Result<()> {
                 (
                     "allow-reasons",
                     Box::new(|| allow_reasons::check_allow_reasons(&root)),
+                ),
+                (
+                    "inline-modules",
+                    Box::new(|| inline_modules::check_inline_modules(&root)),
                 ),
                 (
                     "duplicate-constants",

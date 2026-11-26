@@ -42,6 +42,7 @@ use std::path::Path;
 use anyhow::{anyhow, Context, Result};
 use syn::visit::Visit;
 
+use crate::test_code::is_test_attr;
 use crate::walk_source_files;
 
 /// The crates whose dependency closure runs in the simulator.
@@ -162,17 +163,6 @@ struct Finder<'a> {
     /// Imported name → full path, from the file's `use` items.
     uses: BTreeMap<String, Vec<String>>,
     hits: Vec<String>,
-}
-
-pub(crate) fn is_test_attr(attr: &syn::Attribute) -> bool {
-    let path = attr.path();
-    if path.is_ident("test") || path.segments.last().is_some_and(|s| s.ident == "test") {
-        return true;
-    }
-    path.is_ident("cfg")
-        && attr
-            .parse_args::<syn::Meta>()
-            .is_ok_and(|meta| meta.path().is_ident("test"))
 }
 
 fn collect_uses(
@@ -381,11 +371,8 @@ fn sim_crates(root: &Path) -> Result<BTreeSet<String>> {
     Ok(seen)
 }
 
-pub(crate) fn is_test_file(rel: &str) -> bool {
-    rel.contains("/tests/") || rel.ends_with("_tests.rs") || rel.ends_with("/tests.rs")
-}
-
 pub(crate) fn check_wall_clock(root: &Path) -> Result<()> {
+    let tests = crate::test_code::TestCode::load(root)?;
     let mut hits = Vec::new();
     for name in sim_crates(root)? {
         for path in walk_source_files(&root.join("crates").join(&name).join("src"), &["rs"])? {
@@ -394,7 +381,7 @@ pub(crate) fn check_wall_clock(root: &Path) -> Result<()> {
                 .unwrap_or(&path)
                 .display()
                 .to_string();
-            if is_test_file(&rel) || OUTSIDE_THE_SIM.iter().any(|(p, _)| rel.starts_with(p)) {
+            if tests.is_test(&path) || OUTSIDE_THE_SIM.iter().any(|(p, _)| rel.starts_with(p)) {
                 continue;
             }
             let Ok(src) = std::fs::read_to_string(&path) else {

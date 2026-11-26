@@ -37,9 +37,9 @@
 //! own file (build scripts, benches, examples), from `cargo metadata`. Test
 //! code builds its messages locally and is not scanned, and is known only
 //! from the module tree: an inline `#[cfg(test)]` module or `#[test]`
-//! function, and the file (with its submodules' directory) that a
-//! `#[cfg(test)] mod name;` declaration loads. A production file named
-//! `tests.rs` is scanned like any other.
+//! function, and the files [`crate::test_code`] knows as test code by how
+//! they are declared. A production file named `tests.rs` is scanned like
+//! any other.
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -48,7 +48,7 @@ use anyhow::{anyhow, Context, Result};
 use syn::visit::Visit;
 
 use crate::walk_source_files;
-use crate::wall_clock::is_test_attr;
+use crate::test_code::is_test_attr;
 
 /// The one file allowed to call a capnp reader.
 const READER_FILE: &str = "crates/rekindle-codec/src/capnp_codec/mod.rs";
@@ -391,89 +391,10 @@ impl<'ast> Visit<'ast> for Finder<'_> {
     }
 }
 
-/// What `#[cfg(test)]` module declarations make test code: the files they
-/// load and the directories their submodules live in.
-#[derive(Default)]
-struct TestModules {
-    files: BTreeSet<PathBuf>,
-    dirs: Vec<PathBuf>,
-}
-
-impl TestModules {
-    fn contains(&self, path: &Path) -> bool {
-        self.files.contains(path) || self.dirs.iter().any(|d| path.starts_with(d))
-    }
-
-    /// Record the test modules `items` declare, `dir` being where their
-    /// non-inline submodules live and `file_dir` the declaring file's own
-    /// directory (`#[path]` is relative to it).
-    fn collect(&mut self, items: &[syn::Item], dir: &Path, file_dir: &Path) {
-        for item in items {
-            let syn::Item::Mod(m) = item else {
-                continue;
-            };
-            let name = m.ident.to_string();
-            let sub = dir.join(&name);
-            if m.attrs.iter().any(is_test_attr) {
-                if let Some(p) = path_attr(&m.attrs) {
-                    self.files.insert(file_dir.join(&p));
-                    if let Some(parent) = file_dir.join(&p).parent() {
-                        self.dirs.push(parent.join(&name));
-                    }
-                } else {
-                    self.files.insert(dir.join(format!("{name}.rs")));
-                    self.files.insert(sub.join("mod.rs"));
-                }
-                self.dirs.push(sub);
-            } else if let Some((_, inner)) = &m.content {
-                self.collect(inner, &sub, file_dir);
-            }
-        }
-    }
-}
-
-/// The value of a `#[path = "…"]` attribute.
-fn path_attr(attrs: &[syn::Attribute]) -> Option<String> {
-    attrs.iter().find_map(|a| {
-        let syn::Meta::NameValue(nv) = &a.meta else {
-            return None;
-        };
-        let syn::Expr::Lit(syn::ExprLit {
-            lit: syn::Lit::Str(s),
-            ..
-        }) = &nv.value
-        else {
-            return None;
-        };
-        nv.path.is_ident("path").then(|| s.value())
-    })
-}
-
-/// The test modules of every file in `files` (`roots` are the crate roots,
-/// whose submodules live beside them).
-fn test_modules(files: &[(PathBuf, String)], roots: &BTreeSet<PathBuf>) -> TestModules {
-    let mut tests = TestModules::default();
-    for (path, src) in files {
-        let Ok(parsed) = syn::parse_file(src) else {
-            continue;
-        };
-        let file_dir = path.parent().unwrap_or(Path::new("")).to_path_buf();
-        let beside = roots.contains(path) || path.file_name().is_some_and(|n| n == "mod.rs");
-        let dir = if beside {
-            file_dir.clone()
-        } else {
-            file_dir.join(path.file_stem().unwrap_or_default())
-        };
-        tests.collect(&parsed.items, &dir, &file_dir);
-    }
-    tests
-}
-
 /// Every workspace member's `src/` files and its non-test targets' own
-/// files, with the crate roots.
-fn source_files(meta: &crate::cargo_meta::Metadata) -> Result<(Vec<PathBuf>, BTreeSet<PathBuf>)> {
+/// files.
+fn source_files(meta: &crate::cargo_meta::Metadata) -> Result<Vec<PathBuf>> {
     let mut files = BTreeSet::new();
-    let mut roots = BTreeSet::new();
     for package in meta.members() {
         let dir = package.manifest_path.parent().unwrap_or(Path::new(""));
         files.extend(walk_source_files(&dir.join("src"), &["rs"])?);
@@ -481,11 +402,10 @@ fn source_files(meta: &crate::cargo_meta::Metadata) -> Result<(Vec<PathBuf>, BTr
             if target.kind.iter().any(|k| k == "test") {
                 continue;
             }
-            roots.insert(target.src_path.clone());
             files.insert(target.src_path.clone());
         }
     }
-    Ok((files.into_iter().collect(), roots))
+    Ok(files.into_iter().collect())
 }
 
 #[cfg(test)]
@@ -519,7 +439,7 @@ pub(crate) fn check_capnp_bounds(root: &Path) -> Result<()> {
     let meta = crate::cargo_meta::Metadata::load(root)?;
     let mut hits = capnp_dependent_hits(&meta.direct_dependents("capnp"));
     let root = root.canonicalize()?;
-    let (paths, roots) = source_files(&meta)?;
+    let paths = source_files(&meta)?;
     let mut files = Vec::new();
     for path in paths {
         let path = path.canonicalize().unwrap_or(path);
@@ -527,13 +447,9 @@ pub(crate) fn check_capnp_bounds(root: &Path) -> Result<()> {
             .with_context(|| format!("reading {}", path.display()))?;
         files.push((path, src));
     }
-    let roots = roots
-        .into_iter()
-        .map(|r| r.canonicalize().unwrap_or(r))
-        .collect();
-    let tests = test_modules(&files, &roots);
+    let tests = crate::test_code::TestCode::load(&root)?;
     for (path, src) in &files {
-        if tests.contains(path) {
+        if tests.is_test(path) {
             continue;
         }
         let rel = path
