@@ -10,6 +10,7 @@ mod anchor_share;
 pub mod brand;
 pub mod chat_roles;
 mod clip;
+pub mod compose;
 pub mod content;
 pub mod cover;
 pub mod css;
@@ -38,6 +39,8 @@ pub mod validate;
 mod anchor_tests;
 #[cfg(test)]
 mod chat_tests;
+#[cfg(test)]
+mod compose_tests;
 #[cfg(test)]
 mod content_tests;
 #[cfg(test)]

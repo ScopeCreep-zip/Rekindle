@@ -42,8 +42,8 @@ export function popupName(): string {
 
 /**
  * The trees of `shells` this window lays (plan SK4): a popup window its
- * popup's, the buddy list and chat windows their window's own; every other
- * window none, so it decodes none of their art.
+ * popup's, the buddy list, chat and community windows their window's own;
+ * every other window none, so it decodes none of their art.
  */
 function boundShells(shells: SkinShell[]): SkinShell[] {
   const path = window.location.pathname;
@@ -51,7 +51,11 @@ function boundShells(shells: SkinShell[]): SkinShell[] {
     const name = popupName();
     return shells.filter((s) => s.popup?.name === name);
   }
-  const kind: SkinShell["window"] | undefined = path === "/buddy-list" ? "main" : path.startsWith("/chat") ? "chat" : undefined;
+  // A community window with a community (`/community?id=`, plan SKW1) wears
+  // the community frame; the community browser (no `id`) none.
+  const community = path.startsWith("/community") && new URLSearchParams(window.location.search).has("id");
+  const kind: SkinShell["window"] | undefined =
+    path === "/buddy-list" ? "main" : path.startsWith("/chat") ? "chat" : community ? "community" : undefined;
   return kind ? shells.filter((s) => s.window === kind && s.popup === undefined) : [];
 }
 

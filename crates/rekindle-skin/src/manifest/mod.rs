@@ -122,7 +122,9 @@ pub fn served(package: &Package<'_>) -> Result<SkinManifest, SkinError> {
 /// Communities clone copied, [`crate::skin_tree::cover`]), then every
 /// window's menu-title labels (plan SK4b, [`crate::skin_tree::titles`]) and
 /// text-field insets (plan SK5, [`crate::skin_tree::inset`]) and the target
-/// boxes of small interactive nodes (plan SK7, [`crate::skin_tree::target`]).
+/// boxes of small interactive nodes (plan SK7, [`crate::skin_tree::target`]),
+/// then the Community window composed from the pack's own windows (plan
+/// SK17-6, [`crate::skin_tree::compose`]).
 ///
 /// # Errors
 /// A glyph label's or menu title's picture missing from `package` or not
@@ -149,6 +151,9 @@ pub fn place(manifest: &mut SkinManifest, package: &Package<'_>) -> Result<(), S
         crate::skin_tree::target::nodes(layout);
         crate::skin_tree::disabled::nodes(layout);
     }
+    // Plan SK17-6: the Community window wears the pack's own frame, the
+    // served layout of its room window, else its chat, else its buddy list.
+    crate::skin_tree::compose::community(manifest);
     Ok(())
 }
 
