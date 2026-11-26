@@ -59,7 +59,7 @@ use crate::verify_cache::OpVerifyCache;
 )]
 #[cfg_attr(test, mockall::automock)]
 #[async_trait]
-pub trait GovernanceRuntimeDeps: Send + Sync {
+pub trait GovernanceRuntimeDeps: Send + Sync + 'static {
     // ---------- Session ----------
 
     /// The scope of the session this work belongs to. Multi-call
@@ -312,6 +312,41 @@ pub trait GovernanceRuntimeDeps: Send + Sync {
     // ---------- Events ----------
 
     fn emit_event(&self, event: GovernanceRuntimeEvent);
+
+    /// `community_id`'s unlock barrier (plan E3.2 S7d-keys.8): our
+    /// governance writes wait on it before they are signed.
+    fn unlock_barrier(
+        &self,
+        community_id: &str,
+    ) -> std::sync::Arc<crate::unlock_barrier::UnlockBarrier>;
+
+    /// Send the barrier's full view (`GovernanceEvent::CatchUp`).
+    fn emit_catch_up(
+        &self,
+        community_id: &str,
+        view: rekindle_types::display_catch_up::CatchUpView,
+    );
+
+    /// The name a held write's target shows in its "pending: catching up"
+    /// row (plan E3.2 S7d-keys.8): a member's card name as the member list
+    /// shows it, a channel's or a role's from the governance state.
+    fn pending_target_name(
+        &self,
+        community_id: &str,
+        target: &rekindle_types::display_catch_up::PendingGovTarget,
+    ) -> Option<String>;
+
+    /// An owned handle on these deps, for a held write signed in the
+    /// background.
+    fn handle(&self) -> Self;
+
+    /// Run a held governance write on `community_id`'s scope (plan E3.2
+    /// S7d-keys.8: a held write never blocks its request).
+    fn spawn_held_write(
+        &self,
+        community_id: &str,
+        write: std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + 'static>>,
+    );
 
     // ---------- Background lifecycle (origin/join) ----------
 

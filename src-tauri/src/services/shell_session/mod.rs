@@ -84,11 +84,7 @@ impl ShellHooks for ShellSession {
     }
 
     fn spawn_community_mek_recovery(&self, community_id: &str, requester_pseudonym: &str) {
-        let Some(app) = &self.app else {
-            return;
-        };
         crate::services::community::mek_rotation::spawn_community_mek_recovery(
-            app.clone(),
             self.state.clone(),
             community_id.to_string(),
             requester_pseudonym.to_string(),

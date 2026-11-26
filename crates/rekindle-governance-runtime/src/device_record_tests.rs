@@ -128,6 +128,11 @@ fn deps_for(
     deps.expect_gossip_governance_op().return_const(());
     deps.expect_set_governance_state().return_const(());
     deps.expect_emit_event().return_const(());
+    deps.expect_unlock_barrier().returning(|_| {
+        let barrier = std::sync::Arc::new(crate::unlock_barrier::UnlockBarrier::default());
+        barrier.complete(Some(crate::unlock_barrier::BarrierPhase::Passed));
+        barrier
+    });
     deps.expect_publish_governance_op()
         .returning(|_, _, _| Ok(OpOutcome::Landed));
     (deps, stored)

@@ -78,7 +78,7 @@ impl OutboxSlot {
         self.senders.install(
             StreamKind::ChannelPost,
             Arc::new(
-                crate::host::adapters::channel::outbox_send::ChannelPostSender(
+                crate::host::adapters::channel::outbox_send::ChannelPostSender::new(
                     crate::host::adapters::channel::HostChannel::new(ctx),
                 ),
             ),

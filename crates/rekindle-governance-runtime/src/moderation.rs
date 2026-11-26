@@ -108,10 +108,15 @@ pub async fn leave<D: GovernanceRuntimeDeps>(
 }
 
 /// What our [`leave`] did.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LeaveOutcome {
     /// Our `MemberLeft` was authored on our member record.
     Left,
+    /// The unlock barrier holds our writes (plan E3.2 S7d-keys.8): the
+    /// leave takes effect locally at once and our `MemberLeft` is signed
+    /// once the barrier passes (never, on a restore). `op_id` is its id
+    /// in the held list ([`crate::unlock_barrier::UnlockBarrier::written`]).
+    Held { op_id: String },
     /// Our join was never admitted: nothing was authored.
     Withdrawn,
 }

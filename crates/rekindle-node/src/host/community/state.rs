@@ -137,8 +137,15 @@ pub struct CommunityState {
     /// E3.3), one per author.
     #[serde(skip)]
     pub outbox_streams: std::sync::Arc<rekindle_sync::stream::StreamEngine>,
+    /// The writers (author, member record) whose outbox entries mapped to
+    /// no merged channel since a merge last created one, diffed again when
+    /// one is (plan E3.3, `channel::outbox_unmapped`).
+    #[serde(skip)]
+    pub outbox_unmapped:
+        std::sync::Arc<parking_lot::Mutex<std::collections::BTreeSet<([u8; 32], String)>>>,
     /// Checkpoint hint and state requests at the gossip floor (S7c.3): a
-    /// member's per pseudonym, a joiner's per invite (S7c.8 (2)).
+    /// member's per pseudonym, a joiner's per invite (S7c.8 (2)); frontier
+    /// requests (S7d-keys.8) per pseudonym in their own buckets.
     #[serde(skip)]
     pub snapshot_requests: rekindle_transport::gossip::RateLimiter,
     // ── v2.0 flat governance fields ──
@@ -247,11 +254,33 @@ pub struct CommunityState {
     #[serde(skip)]
     pub own_removal: Option<OwnRemoval>,
 
+    /// When our community key went missing or behind (unix ms), for
+    /// `KeyStatus::since_ms`; none while it is current.
+    #[serde(skip)]
+    pub key_pending_since_ms: Option<u64>,
+
+    /// The key status last published as `GovernanceEvent::KeyStatus`, so
+    /// only a change is announced.
+    #[serde(skip)]
+    pub published_key_status: Option<rekindle_types::dto::community::KeyStatus>,
+
     /// Whether the community's network side is torn down for our removal,
     /// behind the lock that orders a teardown and a restore (a removal the
     /// merge later voids, plan E3.2 S9 own removal and strong removal).
     #[serde(skip)]
     pub removal_gate: std::sync::Arc<tokio::sync::Mutex<bool>>,
+
+    /// Our leave took effect locally while our `MemberLeft` waits behind
+    /// the unlock barrier (plan E3.2 S7d-keys.8, lead ruling 2026-11-24;
+    /// `communities.departing`): the community is listed nowhere and holds
+    /// no content key, and is kept only to sign the op.
+    #[serde(skip)]
+    pub departing: bool,
+
+    /// Whether this unlock already runs the departing community's leave
+    /// (once per unlock: a reconnect's stage re-run finds it running).
+    #[serde(skip)]
+    pub departure_running: bool,
 
     /// Our locally persisted RSVPs for scheduled events.
     #[serde(skip)]

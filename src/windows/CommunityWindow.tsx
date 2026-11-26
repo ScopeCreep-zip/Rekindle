@@ -11,6 +11,7 @@ import CommunityRightPanel from "./community_window/CommunityRightPanel";
 import CommunityModals from "./community_window/CommunityModals";
 import CallPipelineHost from "../components/voice/call_stage/CallPipelineHost";
 import { setWindowKind } from "../utils/window_kind";
+import { formatTimestamp } from "../utils/formatting";
 
 const CommunityWindow: Component = () => {
   const vm = useCommunityWindow();
@@ -57,6 +58,16 @@ const CommunityWindow: Component = () => {
         {(text) => (
           <div class="removal-banner" role="alert">
             <span class="removal-banner-text">{text()}</span>
+          </div>
+        )}
+      </Show>
+      {/* FX3: no local key mint; while a rotated key is missing we wait for a
+          member who holds it, and say so. Nothing is blocked. */}
+      <Show when={vm.keyPending()}>
+        {(k) => (
+          <div class="key-pending-notice" role="status">
+            Waiting for the community key from a member…
+            <Show when={k().sinceMs}>{(since) => <span class="key-pending-since"> since {formatTimestamp(since())}</span>}</Show>
           </div>
         )}
       </Show>

@@ -17,6 +17,7 @@ pub mod dedup;
 pub mod envelope;
 pub mod error;
 pub mod friend;
+pub mod frontier_request;
 pub mod governance_op;
 pub mod ingress;
 pub mod member_record;

@@ -25,6 +25,9 @@ struct Mem {
     stall_network: bool,
     /// Reads that went to the network.
     network_reads: usize,
+    /// A write our copy takes at the next record create: another append's
+    /// head landing while this append writes its page.
+    on_create: Option<(String, u32, Vec<u8>)>,
 }
 
 #[derive(Default)]
@@ -51,6 +54,11 @@ impl MemPort {
     /// The network holds `data` at `key`/`subkey`, newer than our copy.
     pub(super) fn write_remote(&self, key: &str, subkey: u32, data: Vec<u8>) {
         self.0.lock().remote.insert((key.to_owned(), subkey), data);
+    }
+
+    /// Our copy of `key`/`subkey` becomes `data` at the next create.
+    pub(super) fn land_on_next_create(&self, key: &str, subkey: u32, data: Vec<u8>) {
+        self.0.lock().on_create = Some((key.to_owned(), subkey, data));
     }
 
     pub(super) fn stall_network(&self, stall: bool) {
@@ -90,6 +98,9 @@ impl RecordPort for MemPort {
         owner: Option<&str>,
     ) -> Result<(LeaseId, String, String), PortError> {
         let mut mem = self.0.lock();
+        if let Some((key, subkey, data)) = mem.on_create.take() {
+            mem.records.get_mut(&key).unwrap().1[subkey as usize] = Some(data);
+        }
         mem.next += 1;
         let id = mem.next;
         let key = format!("VLD0:record-{id}");

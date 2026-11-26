@@ -99,7 +99,11 @@ pub(crate) fn overviews(
     Ok(overviews)
 }
 
-pub(crate) fn handle_info(ctx: &DaemonContext, state: DaemonState, anchor: &str) -> IpcResponse {
+pub(crate) async fn handle_info(
+    ctx: &DaemonContext,
+    state: DaemonState,
+    anchor: &str,
+) -> IpcResponse {
     if !state.can_query() {
         return state_error(state, "query");
     }
@@ -107,6 +111,20 @@ pub(crate) fn handle_info(ctx: &DaemonContext, state: DaemonState, anchor: &str)
         Ok(m) => m,
         Err(e) => return e,
     };
+    let mut detail = held_detail(ctx, &membership);
+    // The window view's own source: the CLI and TUI read exactly the state
+    // the window reads.
+    detail.op_publications =
+        crate::host::adapters::governance::op_publications(ctx, &membership.anchor).await;
+    IpcResponse::ok(&detail)
+}
+
+/// `membership`'s detail from the merged state and the unlock barrier the
+/// Host holds.
+fn held_detail(
+    ctx: &DaemonContext,
+    membership: &rekindle_transport::CommunityMembership,
+) -> rekindle_types::display::CommunityDetail {
     let member_count =
         u32::try_from(ctx.communities.member_count(&membership.anchor)).unwrap_or(u32::MAX);
     let channels = super::super::channel::channel_overviews(ctx, &membership.anchor);
@@ -130,7 +148,7 @@ pub(crate) fn handle_info(ctx: &DaemonContext, state: DaemonState, anchor: &str)
         .unwrap_or_default();
 
     let mut detail = rekindle_transport::community_detail(
-        &membership,
+        membership,
         member_count,
         channels,
         roles,
@@ -139,7 +157,10 @@ pub(crate) fn handle_info(ctx: &DaemonContext, state: DaemonState, anchor: &str)
     );
     detail.removed =
         crate::host::adapters::governance::removal_display(&ctx.communities, &membership.anchor);
-    IpcResponse::ok(&detail)
+    detail.catch_up = ctx.communities.unlock_barriers().view(&membership.anchor);
+    detail.mek_generation =
+        (ctx.communities.mek_generation(&membership.anchor)).unwrap_or_default();
+    detail
 }
 
 /// Every joined community as its window renders it (plan E3.1 D1b).

@@ -68,6 +68,24 @@ pub enum GovernanceEvent {
         state: OpPublicationState,
     },
 
+    /// The unlock barrier (plan E3.2 S7d-keys.8): whether it is catching
+    /// up and every governance write it holds, in full on every change (no
+    /// deltas); cleared by one `catching_up: false, pending: []`, after
+    /// which each op's own events follow as usual.
+    CatchUp {
+        community: String,
+        catching_up: bool,
+        pending: Vec<crate::display_catch_up::PendingGovOp>,
+    },
+
+    /// Our community key's status changed (`CommunityView::key_status`):
+    /// `Pending` while the key governance names is missing or behind,
+    /// `Current` once a holder's answer installs it.
+    KeyStatus {
+        community: String,
+        status: crate::dto::community::KeyStatus,
+    },
+
     /// The role table changed — the full new table, not a delta.
     RolesChanged {
         community: String,
@@ -260,6 +278,8 @@ impl GovernanceEvent {
             Self::MetadataChanged { community, .. }
             | Self::ChannelsChanged { community, .. }
             | Self::OpPublication { community, .. }
+            | Self::CatchUp { community, .. }
+            | Self::KeyStatus { community, .. }
             | Self::RolesChanged { community, .. }
             | Self::SegmentsChanged { community, .. }
             | Self::BansChanged { community }
@@ -384,12 +404,45 @@ mod tests {
                     slot_range_end: 510,
                 }],
             },
+            GovernanceEvent::KeyStatus {
+                community: "c".into(),
+                status: crate::dto::community::KeyStatus {
+                    state: crate::dto::community::KeyState::Pending,
+                    have: Some(2),
+                    need: Some(3),
+                    since_ms: Some(1_700),
+                },
+            },
         ];
         for event in events {
             let bytes = postcard::to_allocvec(&event).expect("postcard encode");
             let back: GovernanceEvent = postcard::from_bytes(&bytes).expect("postcard decode");
             assert_eq!(format!("{event:?}"), format!("{back:?}"));
         }
+    }
+
+    /// The key status's JSON shape, as the webview reads it (KP).
+    #[test]
+    fn key_status_json_shape() {
+        let event = GovernanceEvent::KeyStatus {
+            community: "c".into(),
+            status: crate::dto::community::KeyStatus {
+                state: crate::dto::community::KeyState::Pending,
+                have: None,
+                need: Some(3),
+                since_ms: Some(1_700),
+            },
+        };
+        assert_eq!(
+            serde_json::to_value(&event).unwrap(),
+            serde_json::json!({ "keyStatus": { "community": "c", "status": {
+                "state": "pending", "have": null, "need": 3, "sinceMs": 1_700,
+            }}})
+        );
+        assert_eq!(
+            serde_json::to_value(crate::dto::community::KeyStatus::default()).unwrap(),
+            serde_json::json!({ "state": "current", "have": null, "need": null, "sinceMs": null })
+        );
     }
 
     /// `permissions::ALL` must stay inside JavaScript's safe-integer

@@ -260,11 +260,18 @@ function governanceRowCommunity(g: GovernanceEvent): string | null {
   if ("channelPermissionsChanged" in g) return g.channelPermissionsChanged.community;
   if ("effectivePermissionsChanged" in g) return g.effectivePermissionsChanged.community;
   if ("governanceRebuilt" in g) return g.governanceRebuilt.community;
+  if ("keyStatus" in g) return g.keyStatus.community;
   return null;
 }
 
 /** One governance event; a row-writing one only against a row the window holds. */
 function applyGovernance(g: GovernanceEvent): void {
+  // FX3: the community key we hold, current or waiting on a key holder.
+  if ("keyStatus" in g) {
+    const { community, status } = g.keyStatus;
+    if (communityState.communities[community]) setCommunityState("communities", community, "keyStatus", status);
+    return;
+  }
   if ("rolesChanged" in g) {
     const { community, roles } = g.rolesChanged;
     if (communityState.communities[community]) {
@@ -321,6 +328,8 @@ function applyGovernance(g: GovernanceEvent): void {
         categoryId: ch.categoryId ?? undefined,
         topic: ch.topic,
         slowmodeSeconds: ch.slowmodeSeconds ?? undefined,
+        locked: ch.locked ?? false,
+        lockedReason: ch.lockedReason,
       })),
     );
     setCommunityState(

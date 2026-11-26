@@ -4,6 +4,7 @@ use rekindle_ipc::protocol::LifecycleRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, SettingsRequest};
 
 use crate::cli::CommunityCmd;
+use crate::governance;
 use crate::helpers;
 use crate::output::OutputMode;
 use crate::output::{format, table};
@@ -207,7 +208,7 @@ pub async fn dispatch(
                 ),
             ];
             let mut pairs = pairs;
-            pairs.push(("Standing", removal_text(value.get("removed"))));
+            pairs.extend(standing_rows(&value));
             table::print_kv_table(&pairs, mode)?;
             if *full {
                 print_full_info(&value, mode)?;
@@ -304,7 +305,9 @@ pub async fn dispatch(
         CommunityCmd::RetireDevice { .. }
         | CommunityCmd::ReadmitDevice { .. }
         | CommunityCmd::EnrolDevice { .. } => device(cmd, client, mode).await,
-        CommunityCmd::Invite(sub) => crate::governance::dispatch_invite(sub, client, mode).await,
+        CommunityCmd::Invite(sub) => governance::dispatch_invite(sub, client, mode).await,
+        CommunityCmd::Role(sub) => governance::dispatch_role(sub, client, mode).await,
+        CommunityCmd::Moderate(sub) => governance::dispatch_moderate(sub, client, mode).await,
         CommunityCmd::Channel(sub) => crate::channel_overwrite::dispatch(sub, client, mode).await,
         CommunityCmd::Watch { community } => {
             crate::community_watch::watch(client, community.as_deref(), mode).await
@@ -369,6 +372,58 @@ fn role_rows(roles: &[rekindle_types::display::RoleDisplay]) -> Vec<Vec<String>>
             ]
         })
         .collect()
+}
+
+/// The info table's rows after the community's facts: our standing (plan
+/// E3.2 S9 R3-5), our governance ops not yet landed, and the community
+/// key generation the Host holds (`CommunityDetail::mek_generation`).
+fn standing_rows(value: &serde_json::Value) -> [(&'static str, String); 3] {
+    [
+        ("Standing", removal_text(value.get("removed"))),
+        (
+            "Key Generation",
+            value
+                .get("mek_generation")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or_default()
+                .to_string(),
+        ),
+        (
+            "Unlanded Ops",
+            publications_text(value.get("op_publications")),
+        ),
+    ]
+}
+
+/// Our governance ops not yet landed as info shows them
+/// (`CommunityDetail::op_publications`): "none", or how many stand pending
+/// and each failure's reason.
+fn publications_text(publications: Option<&serde_json::Value>) -> String {
+    let Some(states) = publications
+        .and_then(serde_json::Value::as_object)
+        .filter(|s| !s.is_empty())
+    else {
+        return "none".into();
+    };
+    let kind = |s: &serde_json::Value| s.get("kind").and_then(|k| k.as_str()).map(str::to_owned);
+    let pending = states
+        .values()
+        .filter(|s| kind(s).as_deref() == Some("pending"))
+        .count();
+    let failed: Vec<&str> = states
+        .values()
+        .filter(|s| kind(s).as_deref() == Some("failed"))
+        .map(|s| s.get("reason").and_then(|r| r.as_str()).unwrap_or(""))
+        .collect();
+    if failed.is_empty() {
+        format!("{pending} pending")
+    } else {
+        format!(
+            "{pending} pending, {} failed: {}",
+            failed.len(),
+            failed.join("; ")
+        )
+    }
 }
 
 /// A community's standing as list and info show it (plan E3.2 S9 R3-5):
@@ -507,6 +562,21 @@ async fn lifecycle(
 #[cfg(test)]
 mod removal_tests {
     use super::removal_text;
+
+    #[test]
+    fn info_shows_our_unlanded_ops() {
+        use serde_json::json;
+        assert_eq!(super::publications_text(None), "none");
+        assert_eq!(super::publications_text(Some(&json!({}))), "none");
+        let states = json!({
+            "aa": { "kind": "pending" },
+            "bb": { "kind": "failed", "reason": "removed" },
+        });
+        assert_eq!(
+            super::publications_text(Some(&states)),
+            "1 pending, 1 failed: removed"
+        );
+    }
 
     #[test]
     fn standing_names_who_removed_us() {

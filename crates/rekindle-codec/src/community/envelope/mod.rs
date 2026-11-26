@@ -109,6 +109,8 @@ impl CommunityEnvelope {
                 | ControlPayload::CheckpointStateResponse { .. }
                 | ControlPayload::CheckpointHintRequest { .. }
                 | ControlPayload::CheckpointHintResponse { .. }
+                | ControlPayload::FrontierRequest { .. }
+                | ControlPayload::FrontierResponse { .. }
                 // Media plane — §10.6. Directed to a call or channel
                 // roster; flooding it would multiply a video stream by
                 // the fan-out degree at every hop.

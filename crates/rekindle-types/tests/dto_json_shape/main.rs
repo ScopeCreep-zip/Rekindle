@@ -92,6 +92,7 @@ fn samples() -> Map<String, Value> {
             sender_id: pk('b'),
             body: "hello channel".into(),
             decryption_failed: false,
+            undecryptable: None,
             automod_blurred: false,
             timestamp: 1_760_000_000,
             is_own: false,

@@ -22,10 +22,12 @@ pub const NAMES: &[&str] = &[
     "effectivePermissionsChanged",
     "governanceRebuilt",
     "opPublication",
+    "catchUp",
     "governanceOpQuarantined",
     "checkpointSnapshotMismatch",
     "communitySuccessorOffered",
     "successorLinkRequested",
+    "keyStatus",
 ];
 
 pub fn variant_name(e: &GovernanceEvent) -> &'static str {
@@ -43,10 +45,12 @@ pub fn variant_name(e: &GovernanceEvent) -> &'static str {
         GovernanceEvent::EffectivePermissionsChanged { .. } => "effectivePermissionsChanged",
         GovernanceEvent::GovernanceRebuilt { .. } => "governanceRebuilt",
         GovernanceEvent::OpPublication { .. } => "opPublication",
+        GovernanceEvent::CatchUp { .. } => "catchUp",
         GovernanceEvent::GovernanceOpQuarantined { .. } => "governanceOpQuarantined",
         GovernanceEvent::CheckpointSnapshotMismatch { .. } => "checkpointSnapshotMismatch",
         GovernanceEvent::CommunitySuccessorOffered { .. } => "communitySuccessorOffered",
         GovernanceEvent::SuccessorLinkRequested { .. } => "successorLinkRequested",
+        GovernanceEvent::KeyStatus { .. } => "keyStatus",
     }
 }
 
@@ -104,6 +108,24 @@ fn structure() -> Vec<Sample> {
                 author: "a".repeat(64),
                 reason: OpQuarantineReason::AfterAuthorRemoval,
                 cause: Some("9".repeat(64)),
+            },
+        ),
+        ev(
+            "catchUp",
+            GovernanceEvent::CatchUp {
+                community: community(),
+                catching_up: true,
+                pending: vec![rekindle_types::display_catch_up::PendingGovOp {
+                    op_id: "9".repeat(16),
+                    kind: rekindle_types::display_catch_up::PendingGovKind::Kick,
+                    target: rekindle_types::display_catch_up::PendingGovTarget {
+                        member: Some("5".repeat(64)),
+                        channel: None,
+                        role: None,
+                    },
+                    label: "Kick Bea".into(),
+                    state: rekindle_types::display_catch_up::PendingGovState::CatchingUp,
+                }],
             },
         ),
         ev(
@@ -191,6 +213,18 @@ fn structure() -> Vec<Sample> {
 
 fn invites_and_subkeys() -> Vec<Sample> {
     vec![
+        ev(
+            "keyStatus",
+            GovernanceEvent::KeyStatus {
+                community: community(),
+                status: rekindle_types::dto::community::KeyStatus {
+                    state: rekindle_types::dto::community::KeyState::Pending,
+                    have: Some(3),
+                    need: Some(4),
+                    since_ms: Some(1_760_000_000_000),
+                },
+            },
+        ),
         ev(
             "inviteCreated",
             GovernanceEvent::InviteCreated {

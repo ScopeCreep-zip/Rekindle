@@ -67,6 +67,26 @@ pub fn samples() -> Vec<Sample> {
                 forwarded_from_author: Some(pk('b')),
                 forwarded_from_name: Some("bbbb bbbb".into()),
                 automod_blurred: true,
+                undecryptable: None,
+            },
+        ),
+        ev(
+            "new.undecryptable",
+            ChannelMessageEvent::New {
+                community: community(),
+                channel: channel(),
+                message_id: id("msg_", '2'),
+                sender_pseudonym: pk('a'),
+                sequence: 43,
+                timestamp: 1_760_000_000_001,
+                body: None,
+                reply_to_message_id: None,
+                forwarded_from_author: None,
+                forwarded_from_name: None,
+                automod_blurred: false,
+                undecryptable: Some(
+                    rekindle_types::dto::channel_message::UndecryptableReason::Damaged.into(),
+                ),
             },
         ),
         ev(

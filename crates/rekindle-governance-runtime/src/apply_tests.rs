@@ -86,6 +86,13 @@ async fn a_write_waits_for_a_running_rebuild_before_reading_the_state() {
         seen.store(true, std::sync::atomic::Ordering::SeqCst);
         None
     });
+    // The write path consults the unlock barrier (plan E3.2 S7d-keys.8);
+    // a passed barrier signs at once, so only the rebuild lock holds it.
+    deps.expect_unlock_barrier().returning(|_| {
+        let barrier = std::sync::Arc::new(crate::unlock_barrier::UnlockBarrier::default());
+        barrier.complete(Some(crate::unlock_barrier::BarrierPhase::Passed));
+        barrier
+    });
     let deps = std::sync::Arc::new(deps);
     let rebuilding = held.lock().await;
     let writer = std::sync::Arc::clone(&deps);
@@ -204,6 +211,11 @@ async fn an_op_written_through_the_write_path_judges_effective_in_the_merged_vie
     deps.expect_set_governance_state()
         .returning(move |_, state| *installed.lock() = Some(state));
     deps.expect_emit_event().return_const(());
+    deps.expect_unlock_barrier().returning(|_| {
+        let barrier = std::sync::Arc::new(crate::unlock_barrier::UnlockBarrier::default());
+        barrier.complete(Some(crate::unlock_barrier::BarrierPhase::Passed));
+        barrier
+    });
     deps.expect_publish_governance_op()
         .returning(|_, _, _| Ok(OpOutcome::Landed));
 

@@ -226,6 +226,7 @@ function applyNew(post: NewChannelMessage): void {
     senderId: post.senderPseudonym,
     body: post.body ?? "",
     decryptionFailed: post.body === null,
+    undecryptable: post.undecryptable ?? null,
     automodBlurred: post.automodBlurred,
     timestamp: post.timestamp,
     isOwn: own,

@@ -17,6 +17,7 @@ pub mod cross_device_sync;
 pub mod dht_layout;
 pub mod disappearing;
 pub mod display;
+pub mod display_catch_up;
 pub mod domains;
 pub mod dto;
 pub mod error;

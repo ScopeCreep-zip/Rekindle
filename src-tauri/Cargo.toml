@@ -15,7 +15,8 @@ workspace = true
 # The WebDriver walk's driver (plan E7.13): the vendored, patched
 # tauri-plugin-wdio-webdriver. Debug builds only (`lib.rs` compile_error!);
 # never a default (`cargo xtask check-webdriver-release`).
-webdriver-test = [ "dep:tauri-plugin-wdio-webdriver" ]
+# It also turns on rekindle-node's damaged-post switch (`webdriver.rs`).
+webdriver-test = [ "dep:tauri-plugin-wdio-webdriver", "rekindle-node/webdriver-test" ]
 
 [lib]
 name = "rekindle_lib"

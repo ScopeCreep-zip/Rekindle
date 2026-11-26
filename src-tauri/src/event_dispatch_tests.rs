@@ -388,6 +388,7 @@ fn a_stored_post_reaches_the_community_window_as_new() {
             forwarded_from_author: None,
             forwarded_from_name: None,
             automod_blurred: false,
+            undecryptable: None,
         },
     ));
     assert_eq!(e.channel(), "community-event");

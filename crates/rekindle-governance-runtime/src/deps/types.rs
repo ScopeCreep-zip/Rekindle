@@ -139,23 +139,68 @@ pub enum OpLanding {
     /// for what a joiner must find on the DHT before we hand it out, an
     /// invite's `InviteCreated` (S6 (4)). Stored in one transaction with a
     /// revoke of `invite_id` that the outbox writes once the op landed
-    /// unless the answer handed the link out (review RV4 M3).
-    InviteLanded { invite_id: [u8; 16] },
+    /// unless the answer handed the link out (review RV4 M3). `deadline`
+    /// bounds the wait in line and the landing together.
+    InviteLanded {
+        invite_id: [u8; 16],
+        deadline: tokio::time::Instant,
+    },
     /// Queued on the stream, not waited for: the outbox lands it behind our
     /// earlier ops (one stream per author, so the order holds).
     Queued,
 }
 
+impl OpLanding {
+    /// An invite's `InviteCreated`, answered within the command's network
+    /// deadline from now (`NETWORK_ANSWER_DEADLINE`).
+    #[must_use]
+    pub fn invite_landed(invite_id: [u8; 16]) -> Self {
+        let bound = rekindle_types::config::NETWORK_ANSWER_DEADLINE;
+        Self::InviteLanded {
+            invite_id,
+            deadline: tokio::time::Instant::now() + bound,
+        }
+    }
+
+    /// What is left of an invite's deadline (zero past it); the other
+    /// landings carry no deadline, so zero.
+    #[must_use]
+    pub fn remaining(self) -> std::time::Duration {
+        match self {
+            Self::InviteLanded { deadline, .. } => {
+                deadline.saturating_duration_since(tokio::time::Instant::now())
+            }
+            Self::FirstAttempt | Self::Queued => std::time::Duration::ZERO,
+        }
+    }
+}
+
 /// How a published governance op stands when its command answers (plan
 /// E3.2 S6b): both are successes, since the op is applied, gossiped and
 /// queued and nothing cancels it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OpOutcome {
     /// On our `M`/2 with our frontier on `M`/3.
     Landed,
     /// Queued on the governance-op stream; the outbox lands it, and the
     /// backend announces the landing.
     Pending,
+    /// Held behind the unlock barrier (plan E3.2 S7d-keys.8), unsigned:
+    /// listed under `op_id` in the community's `CatchUp` pending list, it
+    /// is signed in the background once the barrier passed, and its
+    /// landing or refusal reaches the window as any op's.
+    Held { op_id: String },
+}
+
+impl OpOutcome {
+    /// The held write's id in the `CatchUp` pending list, when held.
+    #[must_use]
+    pub fn held_op_id(&self) -> Option<&str> {
+        match self {
+            Self::Held { op_id } => Some(op_id),
+            Self::Landed | Self::Pending => None,
+        }
+    }
 }
 
 /// What a member's verified card (`M`/0) says that the community renders

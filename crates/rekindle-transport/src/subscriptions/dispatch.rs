@@ -260,6 +260,10 @@ async fn dispatch_app_call<H: InboundHandler>(
                 dispatch_bare_request(handler, messages, call_id, request).await;
                 return;
             }
+            if let Some(request) = super::bare_envelope::decode_bare_frontier_request(raw) {
+                dispatch_bare_request(handler, messages, call_id, request).await;
+                return;
+            }
             if let Some((attachment_id, requested_chunks)) =
                 super::bare_envelope::decode_bare_attachment_request(raw)
             {

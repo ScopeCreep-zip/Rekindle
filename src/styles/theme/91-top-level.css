@@ -34,6 +34,44 @@
     color: var(--color-xfire-text-secondary);
   }
 
+  /* KP: a post that does not open under the key it names: damaged, said in
+   * the Host's words, in the danger tone (no key will come). */
+  .message-damaged {
+    padding: 8px 12px;
+    color: var(--color-xfire-danger-text);
+    font-style: italic;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .message-damaged-icon {
+    color: var(--color-xfire-danger-text);
+  }
+
+  /* FX3: waiting for the community key from a member: a notice, never a block. */
+  .key-pending-notice {
+    padding: 6px 12px;
+    font-size: 11px;
+    color: var(--color-xfire-text);
+    background: color-mix(in srgb, var(--color-xfire-accent) 20%, var(--color-xfire-bg-dark));
+    border-bottom: 1px solid color-mix(in srgb, var(--color-xfire-accent) 45%, transparent);
+  }
+
+  .key-pending-since {
+    color: var(--color-xfire-text-secondary);
+  }
+
+  /* FX3: a restricted channel we are not on the roster of: listed, with a lock. */
+  .channel-locked {
+    display: inline-flex;
+    margin-left: 4px;
+  }
+
+  .channel-locked-icon {
+    color: var(--color-xfire-text-secondary);
+  }
+
   .message-automod-blur {
     padding: 8px 12px;
     color: var(--color-xfire-text-secondary);

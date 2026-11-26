@@ -246,6 +246,15 @@ pub enum CommunityCmd {
     #[command(subcommand)]
     Invite(InviteCmd),
 
+    /// Role management (requires MANAGE_ROLES).
+    #[command(subcommand)]
+    Role(RoleCmd),
+
+    /// Moderation: `kick`, `ban`, `unban`, `timeout`, `bans` (requires
+    /// KICK_MEMBERS, BAN_MEMBERS or MODERATE_MEMBERS).
+    #[command(flatten)]
+    Moderate(ModerateCmd),
+
     /// Channel administration: permission overwrites.
     #[command(subcommand)]
     Channel(super::CommunityChannelCmd),
@@ -312,14 +321,14 @@ pub enum RoleCmd {
         name: String,
         /// Permission bitmask (decimal or hex with 0x prefix).
         #[arg(long)]
-        permissions: Option<String>,
+        permissions: String,
         /// Role color (hex, e.g., "FF5733").
         #[arg(long)]
         color: Option<String>,
     },
 
-    /// Update a role.
-    Update {
+    /// Edit a role: its name, permissions or color.
+    Edit {
         /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,

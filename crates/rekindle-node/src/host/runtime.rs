@@ -360,6 +360,8 @@ impl Host {
             ),
             shell,
             unlock_panics,
+            #[cfg(all(feature = "webdriver-test", debug_assertions))]
+            damage_next_post: std::sync::atomic::AtomicBool::new(false),
         });
         // The inbound handler reaches the friend operations through the
         // context it was built before (plan E2.1).

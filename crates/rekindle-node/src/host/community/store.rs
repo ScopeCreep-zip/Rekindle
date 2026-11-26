@@ -85,6 +85,9 @@ pub struct CommunityStore {
     /// The channel edits and deletes that arrived before their message
     /// (plan E3.3 E5), bounded, keyed by author pseudonym and message id.
     held_changes: Arc<parking_lot::Mutex<HeldChanges<HeldChange>>>,
+    /// Every community's unlock barrier and the governance writes it holds
+    /// (plan E3.2 S7d-keys.8).
+    barriers: Arc<rekindle_governance_runtime::unlock_barrier::UnlockBarriers>,
 }
 
 impl CommunityStore {
@@ -104,7 +107,14 @@ impl CommunityStore {
             follow_ups: Arc::default(),
             card_refreshes: Arc::default(),
             held_changes: Arc::default(),
+            barriers: Arc::default(),
         }
+    }
+
+    /// Every community's unlock barrier (plan E3.2 S7d-keys.8).
+    #[must_use]
+    pub fn unlock_barriers(&self) -> &rekindle_governance_runtime::unlock_barrier::UnlockBarriers {
+        &self.barriers
     }
 
     /// The channel changes waiting for their message (plan E3.3 E5).
@@ -129,6 +139,14 @@ impl CommunityStore {
             .entry(community_id.to_string())
             .or_insert_with(|| CommunityState::new(community_id));
         f(entry)
+    }
+
+    /// The community key generation the Host holds now, as the window view
+    /// serves it (`CommunityView::mek_generation`); `None` for a community
+    /// we do not know.
+    #[must_use]
+    pub fn mek_generation(&self, community_id: &str) -> Option<u64> {
+        self.read(community_id, |c| c.mek_generation)
     }
 
     /// Cached governance state for a community, if it has been merged.

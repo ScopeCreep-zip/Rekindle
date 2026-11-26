@@ -21,7 +21,8 @@
 //!   is not writable"; a writer the schema refuses is `Generic` "failed
 //!   schema validation"; the same data and writer resend the local copy,
 //!   anything else is local seq + 1 (0.5.8 `set_value.rs:353-366`); offline
-//!   is `TryAgain` and stores nothing; how the fanout settles, lands and
+//!   is `TryAgain` and stores nothing, a fanout below consensus `Ok(None)`
+//!   and stores nothing (`set_value.rs:306-308`); how the fanout settles, lands and
 //!   what it returns is [`super::fanout`];
 //! - a get over the network settles on the replicas' tally and keeps the
 //!   local copy unless the settled value replaces it ([`super::replicas`],
@@ -425,6 +426,9 @@ impl DhtBackend for SimDht {
         scope: ReportScope,
     ) -> Result<RecordReport, DhtCallError> {
         self.net.count_app_inspect(self.node, key);
+        if scope != ReportScope::Local {
+            self.net.count_app_network_inspect(self.node, key);
+        }
         self.opened(key)?;
         let _slot = if scope == ReportScope::Local {
             None

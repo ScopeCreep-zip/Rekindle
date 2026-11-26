@@ -73,10 +73,8 @@ async fn republish_general(state: &Arc<AppState>, blob: &[u8]) {
     // never from a gossip re-announce.
     rewrite_presence_rows(state).await;
     crate::services::voice_adapter::reannounce_voice_route(state);
-    // A key request sent while routeless had no way back to us.
-    if let Ok(governance) = crate::state_helpers::host_governance(state) {
-        governance.recover_behind_meks();
-    }
+    // A key held behind is asked for by the Host's community sync phase
+    // on its own tick, never from here (FX3).
     tracing::info!(blob_len = blob.len(), "own route republished");
 }
 

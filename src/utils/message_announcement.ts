@@ -19,8 +19,10 @@ export function messageAnnouncement(
   const sender = senderName || (message.isOwn ? "You" : "Unknown");
   const body = message.removedBy
     ? `Removed by ${removedByName()}`
-    : message.decryptionFailed
-      ? "Unable to decrypt — waiting for encryption keys"
-      : message.body;
+    : message.undecryptable
+      ? message.undecryptable.reasonText
+      : message.decryptionFailed
+        ? "Unable to decrypt — waiting for encryption keys"
+        : message.body;
   return `${sender} at ${ts}: ${body}`;
 }

@@ -279,6 +279,7 @@ mod tests {
             forwarded_from_author: None,
             forwarded_from_name: None,
             automod_blurred: false,
+            undecryptable: None,
         })
     }
 

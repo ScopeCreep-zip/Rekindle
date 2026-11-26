@@ -4,8 +4,9 @@
 //! slot heads are (`own_head_at` reads our own head the same way), so a
 //! round trip never lets ops arriving meanwhile into its causal past.
 
-use super::{local_value, own_head_at, page, ChainEntry, ChainError, PagePointer};
-use crate::port::{OpenIntent, RecordPort};
+use super::{page, ChainEntry, ChainError, ChainHead, PagePointer};
+use crate::lease::LeaseId;
+use crate::port::{OpenIntent, PortError, RecordPort, RecordValue, ReportScope};
 
 /// The newest entry of the log whose head is `record`/`head_subkey`, from
 /// our local copies of the head and of its newest page; `None` when we
@@ -76,4 +77,43 @@ pub async fn local_pages_after(
         pages.push(pointer);
     }
     Ok(pages)
+}
+
+/// The writer's own `HEAD`, from its local copy, never the network: the
+/// append's `HEAD` write is the check against a newer one ([`append_after`]).
+///
+/// A get with no local copy goes to the network whatever its refresh mode
+/// (0.5.8 `get_value.rs:161-169`), and an unwritten subkey has no value to
+/// reach consensus on, so that fanout runs to `get_value_timeout_ms`, 10 s
+/// (`veilid_config.rs:1007`): a chain's first append waited that long, and
+/// past it on an unready internet (the pool's retry waits for readiness),
+/// before it wrote anything (E2.5i). The write needs no read first: its seq
+/// follows our copy (`set_value.rs:346-385`), and a replica holding a newer
+/// value, or another at that seq, answers with it (`set_value.rs:825-845`),
+/// which the set stores as our copy and reports as
+/// [`SetOutcome::Superseded`] (`set_value.rs:741-760`).
+pub(super) async fn own_head_at(
+    port: &dyn RecordPort,
+    record: &str,
+    head_subkey: u32,
+) -> Result<Option<ChainHead>, ChainError> {
+    let lease = port.acquire(record, None, OpenIntent::Check).await?;
+    let local = local_value(port, lease, head_subkey).await;
+    port.release(lease).await;
+    local?.map_or(Ok(None), |v| page::decode_head(&v.data))
+}
+
+/// The leased record's local copy of `subkey`, `None` when there is none.
+pub(super) async fn local_value(
+    port: &dyn RecordPort,
+    lease: LeaseId,
+    subkey: u32,
+) -> Result<Option<RecordValue>, PortError> {
+    let report = port
+        .inspect(lease, Some(&[subkey]), ReportScope::Local)
+        .await?;
+    if report.local_seqs.first().copied().flatten().is_none() {
+        return Ok(None);
+    }
+    port.get(lease, subkey, false).await
 }

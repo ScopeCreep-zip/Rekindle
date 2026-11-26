@@ -189,6 +189,17 @@ pub struct CommunityView {
     /// another device); the window offers `CommunityDeviceEnrol`.
     #[serde(default)]
     pub device_status: DeviceStatus,
+    /// The unlock barrier's view while it holds our governance writes
+    /// (plan E3.2 S7d-keys.8): what a window opened mid-barrier reads at
+    /// load; later changes arrive as `GovernanceEvent::CatchUp`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub catch_up: Option<crate::display_catch_up::CatchUpView>,
+    /// Whether we hold the community key governance names (plan FX3
+    /// follow-up KP): `Pending` while it is missing or behind, until a key
+    /// holder answers our request; later changes arrive as
+    /// `GovernanceEvent::KeyStatus`.
+    #[serde(default)]
+    pub key_status: KeyStatus,
 }
 
 /// This device's standing in a community ([`CommunityView::device_status`]).
@@ -200,6 +211,32 @@ pub enum DeviceStatus {
     Enrolled,
     /// Our writes are refused until this device enrols a fresh key.
     NeedsReenrol,
+}
+
+/// Whether a community key is held ([`KeyStatus::state`]).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum KeyState {
+    /// We hold the generation governance names.
+    #[default]
+    Current,
+    /// The key is missing or behind: posts sealed under it stay unread
+    /// until a key holder answers.
+    Pending,
+}
+
+/// Our community key against the generation governance names, as the Host
+/// publishes it ([`CommunityView::key_status`],
+/// `GovernanceEvent::KeyStatus`). `have` is the generation we hold (none
+/// before the first key), `need` the one governance names, `since_ms` when
+/// it went `Pending` (unix ms; none while `Current`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KeyStatus {
+    pub state: KeyState,
+    pub have: Option<u64>,
+    pub need: Option<u64>,
+    pub since_ms: Option<u64>,
 }
 
 /// One channel's unread messages and mentions after our read marker
@@ -234,6 +271,14 @@ pub struct CommunityChannelView {
     pub notification_level: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notification_sound_ref: Option<String>,
+    /// We cannot read it (our effective permissions lack `VIEW_CHANNELS`):
+    /// the window shows it locked with `locked_reason`, never its posts as
+    /// undecryptable noise.
+    #[serde(default)]
+    pub locked: bool,
+    /// The Host's words for why, empty when not locked.
+    #[serde(default)]
+    pub locked_reason: String,
 }
 
 /// A channel category of a [`CommunityView`].

@@ -293,24 +293,32 @@ impl HostChannel {
             }
         };
         self.check_link(read, entry.seq, &decoded);
-        let Some(channel_id) =
-            self.channel_of_tag(community_id, decoded.generation, &decoded.channel_tag)
-        else {
+        let tag = (decoded.generation, &decoded.channel_tag);
+        let channel_id = match self.channel_of_tag(community_id, tag.0, tag.1) {
+            Some(channel_id) => channel_id,
             // A joiner before its first `MekTransfer` (D11, D16), or a
             // reader owed a converged generation's key it does not hold
             // yet: the cursor stays on this entry and the catch-up the key's
-            // install starts reads it again (`outbox_hold.rs`). Otherwise an
-            // entry no key maps is of a channel we do not read or from
-            // before our keys, and the chain covers it.
-            if self.entry_waits_for_key(community_id, decoded.generation) {
-                return Ok(Held::Pending);
+            // install starts reads it again (`outbox_hold.rs`).
+            None if self.entry_waits_for_key(community_id, tag.0) => return Ok(Held::Pending),
+            // Otherwise the entry is of a channel we do not read, from
+            // before our keys, a thread's, or of a channel whose creation
+            // has not merged here yet: it passes, and its writer is diffed
+            // again when a merge creates a channel (`outbox_unmapped.rs`).
+            // Noted before the second look, so a creation merging between
+            // the two is either seen here or re-reads the writer.
+            None => {
+                self.note_unmapped(community_id, author, read.member_record);
+                let Some(channel_id) = self.channel_of_tag(community_id, tag.0, tag.1) else {
+                    tracing::info!(
+                        community_id,
+                        seq = entry.seq,
+                        "channel outbox entry of no channel merged here: re-read when one is created"
+                    );
+                    return Ok(Held::Stored);
+                };
+                channel_id
             }
-            tracing::debug!(
-                community_id,
-                seq = entry.seq,
-                "channel outbox entry of no channel we read"
-            );
-            return Ok(Held::Stored);
         };
         let author_hex = hex::encode(author);
         let (message, forwarded_from_author) = match decoded.entry {
@@ -368,6 +376,7 @@ impl HostChannel {
             );
             return Ok(Held::Stored);
         }
+        let generation = message.mek_generation;
         let post = ReceivedPost {
             community_id: community_id.to_owned(),
             channel_id: channel_id.clone(),
@@ -379,7 +388,7 @@ impl HostChannel {
             message,
             forwarded_from_author,
         };
-        match self.ingest_as(post, read.backfill).await? {
+        match self.ingest_as(post.clone(), read.backfill).await? {
             // The gate judged the author departed while this read took it
             // as a member: its departure merged after the standing was
             // taken, so the entry was judged without the departure head
@@ -398,8 +407,23 @@ impl HostChannel {
             Ingested::Dropped(reason) => {
                 tracing::debug!(community_id, channel_id, ?reason, "outbox post dropped");
             }
+            // The body names a generation we are owed and do not hold yet
+            // (behind, or before our first `MekTransfer`): held, so the
+            // catch-up the key's install starts reads it again and it
+            // arrives with its text (`outbox_hold.rs`). One whose key we
+            // hold is damaged: stored visibly unreadable, never skipped
+            // past invisibly. Neither: history from before our keys.
+            Ingested::Undecryptable if self.entry_waits_for_key(community_id, generation) => {
+                return Ok(Held::Pending);
+            }
             Ingested::Undecryptable => {
-                tracing::debug!(community_id, channel_id, "outbox post no held key opens");
+                if !self.store_undecryptable(post).await? {
+                    tracing::debug!(
+                        community_id,
+                        channel_id,
+                        "outbox post of a key from before ours"
+                    );
+                }
             }
             // `Withheld`: we may not view its channel; the cursor passes it
             // and the merge that opens the channel re-reads every outbox
