@@ -19,7 +19,7 @@
 // (Combat's round Open/Leave drew the same art in both).
 
 import { browser, expect } from "@wdio/globals";
-import { NET_WAIT_MS, switchTo, waitUntil } from "../../../walk/helpers.ts";
+import { NET_WAIT_MS, press, switchTo, waitUntil } from "../../../walk/helpers.ts";
 import { BUDDY, openSettings } from "../../../walk/nav.ts";
 import { createCommunity, createIdentity, newUser, openCommunity, type User } from "../../journeys.ts";
 import { applySkin, skinShown } from "../../journeys_skins.ts";
@@ -224,4 +224,34 @@ describe("a disabled node says why (CR1)", function () {
     await waitUntil(async () => !(await browser.getWindowHandles()).includes(handle), NET_WAIT_MS, "the inactive community window's close button did not close it");
     console.log("[cr1] symbiosis community window closed by its inactive close button");
   });
+
+  // Lead: close works in every window it frames, whatever its focus (the
+  // cause was a missing runner, never inactivity). Each pack's community
+  // window is opened, its close pressed once, and it must close; the close
+  // button's state at the press is logged.
+  for (const file of ["symbiosis", "alloy"]) {
+    it(`${file}: a community window's close button closes it`, async () => {
+      const pack = builtinPacks().find((p) => p.file === file);
+      if (!pack) throw new Error(`no built-in pack ${file}`);
+      await switchTo(browser, BUDDY);
+      await openSettings(browser, "Appearance");
+      const href = await applySkin(browser, me, pack.name);
+      const name = `Close ${file} ${Date.now() % 100000}`;
+      await switchTo(browser, BUDDY);
+      await createCommunity(browser, me, name);
+      await openCommunity(browser, name);
+      const handle = await browser.getWindowHandle();
+      await skinShown(browser, href);
+      const state = (await browser.execute(() => {
+        const n = document.querySelector<HTMLElement>('.skin-tree [data-skin-role="windowButton:close"]');
+        return n ? { state: n.dataset.state ?? "", cause: n.dataset.stateCause ?? "", ariaDisabled: n.getAttribute("aria-disabled"), focused: document.hasFocus() } : null;
+      })) as Record<string, unknown> | null;
+      console.log(`[close] ${file} community: close button ${JSON.stringify(state)}`);
+      await shot(`${file}-community-before-close`);
+      await press(browser, await browser.$('.skin-tree [data-skin-role="windowButton:close"]'));
+      await browser.switchToWindow(BUDDY).catch(() => undefined);
+      await waitUntil(async () => !(await browser.getWindowHandles()).includes(handle), NET_WAIT_MS, `${file}: the community window's close button did not close it`);
+      console.log(`[close] ${file} community: closed`);
+    });
+  }
 });
