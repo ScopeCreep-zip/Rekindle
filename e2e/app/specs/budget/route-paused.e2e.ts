@@ -78,6 +78,29 @@ describe("a paused inbound route is said in the tree's status field, which stays
       const href = await applySkin(browser, me, pack.name);
       await switchTo(browser, BUDDY);
       await skinShown(browser, href);
+      // Evidence first (a pack that shows no line): the status node's and
+      // the line's boxes and stacking, and what is on top at the line.
+      const probe = (await browser.execute(() => {
+        const box = (e: Element | null): string => {
+          if (!e) return "none";
+          const r = e.getBoundingClientRect();
+          const cs = getComputedStyle(e);
+          return `${Math.round(r.x)},${Math.round(r.y)} ${Math.round(r.width)}x${Math.round(r.height)} z=${cs.zIndex} pos=${cs.position} vis=${cs.visibility} op=${cs.opacity}`;
+        };
+        const field = document.querySelector(".skin-status");
+        const line = document.querySelector(".skin-status-paused");
+        const r = line?.getBoundingClientRect();
+        const top = r ? (document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) as HTMLElement | null) : null;
+        const statusNodes = Array.from(document.querySelectorAll<HTMLElement>('.skin-tree [data-skin-role="statusText"]')).map((n) => `${n.dataset.skinNode} ${box(n)}`);
+        return JSON.stringify({
+          field: box(field),
+          fieldNode: (field as HTMLElement | null)?.dataset.skinNode ?? "none",
+          line: box(line),
+          atLine: top ? `${top.tagName.toLowerCase()}.${top.className} in ${top.closest<HTMLElement>("[data-skin-node]")?.dataset.skinNode ?? "none"}` : "none",
+          statusNodes,
+        });
+      })) as string;
+      console.log(`[paused] ${file} probe: ${probe}`);
       await shown(browser, PAUSED, NET_WAIT_MS);
       await browser.pause(1000);
       const line = await seenInField(PAUSED);
