@@ -1,0 +1,21 @@
+<Tile Name="InGameMainWindow"  ResizeX="100" ResizeY="100" Component="InGameMainWindow">
+	<Tile Name="Logo" Z="10" X="38" Y="55" Component="Logo"></Tile>
+	<Tile Name="MainTitle" Z="10" X="58" Y="55" IndentRight="99" ResizeX="100" Component="InGameMainTitle"></Tile>
+	<Tile Name="MainClock" Z="20" JustX="RIGHT" X="40" Y="55" Component="InGameMainClock"></Tile>
+	<Tile Name="MainChatArea" Z="20" X="38" Y="70" IndentRight="42" IndentBottom="138" ResizeX="100" ResizeY="100" Component="InGameMainChatArea"></Tile>
+	<Tile Name="MainEditArea" Z="10" X="38" Y="121" JustY="BOTTOM" IndentRight="42" ResizeX="100" Component="InGameMainEditArea"></Tile>
+	<Tile Name="MainFooter" Z="10" X="38" Y="106" JustY="BOTTOM" IndentRight="42" ResizeX="100" Component="InGameMainFooter"></Tile>
+	<Tile Name="InGameMain" X="0" Y="0" ResizeX="100" ResizeY="100" Component="InGameMainSkin"></Tile>
+	<Tile Name="InGameMainLeft" X="0" Y="34" IndentBottom="54" ResizeX="100" ResizeY="100" Component="InGameMainLeft"></Tile>
+	<Tile Name="InGameMainMiddle" X="16" Y="34" IndentRight="20" IndentBottom="54" ResizeX="100" ResizeY="100" Component="InGameMainMiddle"></Tile>
+	<Tile Name="InGameMainRight" JustX="RIGHT" X="0" Y="34" IndentBottom="54" ResizeX="100" ResizeY="100" Component="InGameMainRight"></Tile>
+	<Tile Name="TextTile" X="8" Y="37" IndentRight="8" IndentBottom="62" ResizeX="100" ResizeY="100" Z="100" Component="InGameTextTile"></Tile>
+	<Tile Name="ListViewBG" X="35" Y="54" Z="4" IndentRight="39" IndentBottom="103" ResizeX="100" ResizeY="100" Component="ListViewBG">
+	<Tile Name="Divider1" Z="1" Y="16" X="1" IndentRight="1" ResizeX="100" Component="Divider"></Tile>
+	<Tile Name="Divider2" Z="1" JustY="BOTTOM" Y="30" X="1" IndentRight="1" ResizeX="100" Component="Divider"></Tile>
+	<Tile Name="Divider3" Z="1" JustY="BOTTOM" Y="15" X="1" IndentRight="1" ResizeX="100" Component="Divider"></Tile>
+	</Tile>
+	<Tile Name="CHATSCLOGO" X="0" Y="0" Z="6" Component="CHATSCLOGO"></Tile>
+	<Tile Name="AGEAR" X="0" Y="0" JustY="BOTTOM" Z="2" Component="AGEAR"></Tile>
+	<Tile Name="IGEAR" JustX="RIGHT" X="0" Y="0" JustY="BOTTOM" Z="2" Component="IGEAR"></Tile>
+</Tile>

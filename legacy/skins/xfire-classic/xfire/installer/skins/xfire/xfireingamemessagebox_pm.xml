@@ -1,0 +1,194 @@
+<!-- Message Box System Dialog -->
+<!-- ControlId Range: 1100-1199 -->
+<SystemDialog>
+  <Tile Name="MessageBox" ResizeX="100" ResizeY="100" Features="MessageBox" Component="XIGMessageBox">
+
+    <Tile Name="ActiveOutline"
+      ResizeX="100"
+      ResizeY="100"
+      Component="XIGActiveOutline"
+          >
+    </Tile>
+    <Tile Name="Titlebar"
+          ResizeX="100"
+          X="12" 
+          IndentRight="12" 
+          Y="1" 
+          Component="XIGTitlebar"
+          >
+      <Tile Name="Logo"
+            X="22"
+            Y="16"
+            Component="XIGLogo"
+            >
+      </Tile>
+      <Tile Name="Nameplate"
+            X="Logo.RIGHT+6"
+            IndentRight="55"
+            Y="16"
+            ResizeX="100"
+            Component="XIGPlate"
+            >
+        <Tile Name="NameplateText"
+              X="14"
+              Y="0"
+              IndentRight="14"
+              ResizeX="100"
+              Component="XIGDialogBoxCaption"
+              >
+        </Tile>
+      </Tile>
+      <Tile Name="CloseBox"
+            X="Nameplate.RIGHT + 5"
+            Y="Nameplate.TOP"
+            Component="XIGDialogBoxCloseBox"
+            ControlId="320"
+            TabOrder="20"
+            >
+      </Tile>
+    </Tile>
+    <Tile Name="LeftEdge"
+          X="1"
+          Y="69"
+          IndentBottom="53"
+          ResizeY="100"
+          Component="XIGLeftEdge"
+            >
+    </Tile>
+    <Tile Name="RightEdge"
+          X="1"
+          Y="LeftEdge.TOP"
+          JustX="RIGHT" 
+          IndentBottom="55"
+          ResizeY="100"
+          Component="XIGRightEdge"
+            >
+    </Tile>
+    <Tile Name="BottomEdge"
+          X="14"
+          Y="1"
+          JustY="BOTTOM"
+          IndentRight="13"
+          ResizeX="100"
+          Component="XIGBottomEdge"
+          >
+      <Tile Name="OpacitySlider"
+            X="39"
+            Y="11"
+            JustX="RIGHT"
+            MinWidth="70" 
+            Component="XIGOpacitySlider"
+            ControlId="310"
+            TabOrder="10"
+            Default="setfocuscontrol"
+            FocusedColor="XIGFocusedRectColor"
+            >
+        <Tile Name="OpacityTrack"
+              ResizeX="100"
+              Stretch="ToContent"
+              Component="XIGSliderTrack"
+              >
+        </Tile>
+        <Tile Name="OpacityGripper"
+              ResizeY="100"
+              Stretch="ToContent"
+              Component="XIGSliderGripper"
+              >
+        </Tile>
+      </Tile>
+    </Tile>
+    <Tile Name="GripperTopLeft"
+          X="1"
+          Y="LeftEdge.TOP-30"
+          Component="XIGGripperTopLeft"
+          >
+    </Tile>
+    <Tile Name="GripperTopRight"
+          X="1"
+          Y="GripperTopLeft.TOP"
+          JustX="RIGHT" 
+          Component="XIGGripperTopRight"
+          >
+    </Tile>
+    <Tile Name="GripperBottomLeft"
+          X="1"
+          Y="26"
+          JustY="BOTTOM"
+          Component="XIGGripperBottomLeft"
+          >
+    </Tile>
+    <Tile Name="GripperBottomRight"
+          X="1"
+          Y="26"
+          JustY="BOTTOM"
+          JustX="RIGHT" 
+          Component="XIGGripperBottomRight"
+          >
+    </Tile>
+    <Tile Name="InnerBevel"
+          X="9"
+          Y="46"
+          IndentRight="9"
+          IndentBottom="36"
+          ResizeX="100"
+          ResizeY="100"
+          Component="XIGInnerBevel"
+          Z="10"
+          >
+    </Tile>
+    <Tile Name="BackDrop"
+          X="12"
+          Y="50"
+          IndentRight="12"
+          IndentBottom="40"
+          ResizeX="100"
+          ResizeY="100"
+          Component="BvBk"
+          Z="-10"
+          >
+    </Tile>
+
+    <Tile Name="Instructions"
+          Y="60"
+          ResizeX="100"
+          IndentLeft="30"
+          IndentRight="30"
+          MinHeight="160"
+          Z="100"
+          Multiline="true" 
+          Component="XIGDialogBoxText"
+            >
+    </Tile>
+
+    <Tile Name="OKButton"
+          JustY="BOTTOM"
+          X="50"
+          Y="8"
+          ControlId="1020" 
+          TabOrder="10" 
+          Z="100"
+          Component="XIGDialogBoxOKButton"
+            >
+      <Tile Name="OKIcon"
+            JustX="CENTER"
+            JustY="CENTER"
+            Component="XIGOKIcon">
+      </Tile>
+    </Tile>
+
+    <Tile Name="CancelButton"
+          X="OKButton.RIGHT + 5"
+          Y="OKButton.TOP"
+          ControlId="1010" 
+          TabOrder="20" 
+          Z="100"
+          Component="XIGDialogBoxCancelButton"
+            >
+      <Tile Name="CancelIcon"
+            JustX="CENTER"
+            JustY="CENTER"
+            Component="XIGCancelIcon">
+      </Tile>
+    </Tile>
+  </Tile>
+</SystemDialog>
