@@ -1,5 +1,8 @@
-//! `check-background-throttling` (plan A1.5, finding E7.14 F5): every
-//! window throttles in the background and is never suspended.
+//! `check-background-throttling` (plan A1.5, finding E7.14 F5): no window
+//! is ever suspended in the background; a window that can carry live media
+//! (call, chat, community) is not throttled either (lead ruling, E7.14
+//! key-status: a hidden community window's timers ran at ~1 Hz with gaps
+//! up to 69 s under `Throttle`).
 //!
 //! Without a policy, macOS WKWebView's default inactive scheduling fully
 //! suspends a hidden or covered webview's tasks (~5 min after it is
@@ -13,7 +16,10 @@
 //! - every window builder constructor under `src-tauri/src`
 //!   (`WebviewWindowBuilder`, `WebviewBuilder` or `WindowBuilder`, `::new`
 //!   or `::from_config`) is called only inside `windows::base_builder`;
-//! - `base_builder` calls `.background_throttling(…::Throttle)`;
+//! - `base_builder` calls `.background_throttling(…::Throttle)`, or
+//!   `.background_throttling(background_policy(kind))` where
+//!   `windows::background_policy` names only `Throttle` and `Disabled`,
+//!   and `Throttle` at least once (the text windows);
 //! - every window `src-tauri/tauri.conf.json` declares sets
 //!   `"backgroundThrottling": "throttle"`.
 
@@ -26,6 +32,9 @@ use crate::walk_source_files;
 
 const WINDOWS_RS: &str = "src-tauri/src/windows/mod.rs";
 const BASE_BUILDER: &str = "base_builder";
+const POLICY_FN: &str = "background_policy";
+/// The policies `background_policy` may name: never `Suspend`.
+const ALLOWED: &[&str] = &["Throttle", "Disabled"];
 const CONF: &str = "src-tauri/tauri.conf.json";
 const BUILDERS: &[&str] = &["WebviewWindowBuilder", "WebviewBuilder", "WindowBuilder"];
 const CONSTRUCTORS: &[&str] = &["new", "from_config"];
@@ -37,6 +46,12 @@ struct Finder {
     constructors: Vec<(String, String)>,
     /// `base_builder` calls `.background_throttling(…::Throttle)`.
     throttles: bool,
+    /// `base_builder` calls `.background_throttling(background_policy(…))`.
+    by_kind: bool,
+    /// `background_policy` is defined here.
+    policy_fn: bool,
+    /// The `BackgroundThrottlingPolicy` variants `background_policy` names.
+    policy_variants: Vec<String>,
 }
 
 impl Finder {
@@ -54,6 +69,7 @@ fn last_segments(path: &syn::Path) -> Option<(String, String)> {
 
 impl<'ast> Visit<'ast> for Finder {
     fn visit_item_fn(&mut self, f: &'ast syn::ItemFn) {
+        self.policy_fn |= f.sig.ident == POLICY_FN;
         self.fn_stack.push(f.sig.ident.to_string());
         syn::visit::visit_item_fn(self, f);
         self.fn_stack.pop();
@@ -84,8 +100,25 @@ impl<'ast> Visit<'ast> for Finder {
                     if p.path.segments.last().is_some_and(|s| s.ident == "Throttle"))
             });
             self.throttles |= throttle;
+            let by_kind = call.args.iter().any(|a| {
+                matches!(a, syn::Expr::Call(c)
+                    if matches!(&*c.func, syn::Expr::Path(p)
+                        if p.path.segments.last().is_some_and(|s| s.ident == POLICY_FN)))
+            });
+            self.by_kind |= by_kind;
         }
         syn::visit::visit_expr_method_call(self, call);
+    }
+
+    fn visit_path(&mut self, path: &'ast syn::Path) {
+        if self.current_fn() == POLICY_FN {
+            if let Some((ty, variant)) = last_segments(path) {
+                if ty == "BackgroundThrottlingPolicy" {
+                    self.policy_variants.push(variant);
+                }
+            }
+        }
+        syn::visit::visit_path(self, path);
     }
 }
 
@@ -103,13 +136,40 @@ fn source_problems(rel: &str, src: &str) -> Result<Vec<String>> {
             ));
         }
     }
-    if rel == WINDOWS_RS && !finder.throttles {
+    if rel == WINDOWS_RS && !finder.throttles && !finder.by_kind {
         out.push(format!(
             "{rel}  `{BASE_BUILDER}` does not call \
-             `.background_throttling(BackgroundThrottlingPolicy::Throttle)`"
+             `.background_throttling(BackgroundThrottlingPolicy::Throttle)` \
+             or `.background_throttling({POLICY_FN}(kind))`"
         ));
     }
+    if rel == WINDOWS_RS && finder.by_kind {
+        out.extend(policy_problems(rel, &finder));
+    }
     Ok(out)
+}
+
+/// The problems of `background_policy`, when `base_builder` takes its
+/// policy from it: defined, never `Suspend` (nor anything but `Throttle`
+/// and `Disabled`), and `Throttle` for some kind.
+fn policy_problems(rel: &str, finder: &Finder) -> Vec<String> {
+    if !finder.policy_fn {
+        return vec![format!(
+            "{rel}  `{BASE_BUILDER}` calls `{POLICY_FN}`, which is not defined here"
+        )];
+    }
+    let mut out: Vec<String> = finder
+        .policy_variants
+        .iter()
+        .filter(|v| !ALLOWED.contains(&v.as_str()))
+        .map(|v| format!("{rel}  `{POLICY_FN}` names `BackgroundThrottlingPolicy::{v}`: only `Throttle` and `Disabled`"))
+        .collect();
+    if !finder.policy_variants.iter().any(|v| v == "Throttle") {
+        out.push(format!(
+            "{rel}  `{POLICY_FN}` throttles no window: the text windows throttle"
+        ));
+    }
+    out
 }
 
 /// The problems of the windows `tauri.conf.json` declares.
@@ -153,7 +213,9 @@ pub(crate) fn check_background_throttling(root: &Path) -> Result<()> {
     .with_context(|| format!("parse {CONF}"))?;
     hits.extend(conf_problems(&conf));
     if hits.is_empty() {
-        println!("check-background-throttling: every window throttles, none suspends");
+        println!(
+            "check-background-throttling: no window suspends; live-media windows are not throttled"
+        );
         return Ok(());
     }
     for h in &hits {
@@ -191,6 +253,34 @@ mod tests {
         assert_eq!(source_problems(WINDOWS_RS, &none).unwrap().len(), 1);
         let suspend = GOOD.replace("::Throttle", "::Suspend");
         assert_eq!(source_problems(WINDOWS_RS, &suspend).unwrap().len(), 1);
+    }
+
+    const BY_KIND: &str = r"
+        const fn background_policy(kind: WindowKind) -> BackgroundThrottlingPolicy {
+            match kind {
+                WindowKind::Call => BackgroundThrottlingPolicy::Disabled,
+                _ => BackgroundThrottlingPolicy::Throttle,
+            }
+        }
+        fn base_builder() {
+            let b = WebviewWindowBuilder::new(app, label, url)
+                .background_throttling(background_policy(kind));
+        }
+    ";
+
+    #[test]
+    fn a_policy_by_kind_of_throttle_and_disabled_passes() {
+        assert!(source_problems(WINDOWS_RS, BY_KIND).unwrap().is_empty());
+    }
+
+    #[test]
+    fn a_policy_by_kind_that_suspends_or_never_throttles_fails() {
+        let suspend = BY_KIND.replace("::Disabled", "::Suspend");
+        assert_eq!(source_problems(WINDOWS_RS, &suspend).unwrap().len(), 1);
+        let never = BY_KIND.replace("::Throttle", "::Disabled");
+        assert_eq!(source_problems(WINDOWS_RS, &never).unwrap().len(), 1);
+        let undefined = BY_KIND.replace("const fn background_policy", "const fn other_policy");
+        assert_eq!(source_problems(WINDOWS_RS, &undefined).unwrap().len(), 1);
     }
 
     #[test]

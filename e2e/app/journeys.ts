@@ -52,10 +52,8 @@ const AUTO_AWAY = '//div[contains(@class,"form-field")][.//label[contains(.,"Go 
 export async function autoAwayOff(b: Browser, user: User): Promise<void> {
   await openSettings(b, "Application");
   await setValue(b, AUTO_AWAY, "0");
-  // The change is reviewed; under load the review can take longer than a
-  // second or two to appear, and a review not answered drops the change
-  // (it read back "10 minutes"). Wait long enough for it; the read-back
-  // below still proves the stored value.
+  // Under load the review can come late, and an unanswered one drops the
+  // change (it read back "10 minutes"); the read-back below proves it.
   await resolveIntent(b, { passphrase: user.passphrase, appearMs: 10_000 });
   await closeSettings(b);
   await openSettings(b, "Application");
