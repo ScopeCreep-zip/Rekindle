@@ -20,7 +20,21 @@ export interface SkinSignalSet {
   talking: boolean;
   disconnected: boolean;
   newNotification: boolean;
+  /** The Host's reason for each cause that can disable a node now (plan E7.7 CR1): every
+   *  capability in `cannot` and every active disabling signal. */
+  disabledReasons: Partial<Record<DisableCause, string>>;
 }
+
+/** `DisableSignal`: a Host-fired signal a pack trigger can pair with `SetState(Disabled)`. */
+export type DisableSignal =
+  | "disconnected"
+  | "activeUserTyping"
+  | "voiceRinging"
+  | "userStartedTalking"
+  | "newNotification";
+
+/** `DisableCause`: a capability the window cannot use now, or an active disabling signal. */
+export type DisableCause = Capability | DisableSignal;
 
 export type SkinSelection =
   | { kind: "friend"; arg: { publicKey: string } }

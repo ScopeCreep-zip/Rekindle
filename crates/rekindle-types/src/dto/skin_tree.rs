@@ -249,6 +249,18 @@ pub struct ContentFit {
     pub max: Option<u16>,
 }
 
+/// Who draws an interactive node's disabled look (plan E7.7 CR1, owner
+/// ruling: a disabled button is visibly disabled): `Pack`, the pack ships
+/// a `--disabled` state image for the node's art (xslimfire's
+/// `node-chatbutton--disabled.png`); `Shell`, it ships none (text parts,
+/// Host-worded nodes, composed rows), so the shell dims it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DisabledBy {
+    Pack,
+    Shell,
+}
+
 /// One component of the pack's tree.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -287,6 +299,10 @@ pub struct SkinNode {
     /// the tab controls of one group switch together.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub control_group: Option<u16>,
+    /// Who draws its disabled look, on every interactive node; served by
+    /// the Host (`rekindle_skin::skin_tree::disabled`), never authored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disabled_by: Option<DisabledBy>,
     /// The pack's `(event, action)` pairs (plan SK2-A, decision 36): the
     /// tile's own, then its component's.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -364,6 +380,10 @@ pub struct ShellNode {
     /// the tab controls of one group switch together.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub control_group: Option<u16>,
+    /// Who draws its disabled look, on every interactive node; served by
+    /// the Host (`rekindle_skin::skin_tree::disabled`), never authored.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub disabled_by: Option<DisabledBy>,
     /// The Host's words over the node (rule N4), drawn by the shell.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<NodeLabel>,
@@ -483,6 +503,7 @@ impl SkinNode {
             role: self.role,
             shows_with: self.shows_with,
             control_group: self.control_group,
+            disabled_by: self.disabled_by,
             label: self.label.clone(),
             inset: self.inset,
             target: self.target,

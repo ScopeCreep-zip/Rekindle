@@ -16,14 +16,16 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use rekindle_types::dto::skin_run::{CallTarget, SkinSelection};
-use rekindle_types::dto::skin_signals::{SkinSignalSet, EVERY_CAPABILITY};
+use rekindle_types::dto::skin_signals::{
+    DisableCause, DisableSignal, SkinSignalSet, EVERY_CAPABILITY,
+};
 use rekindle_types::friend::{FriendState, FriendshipState};
 use rekindle_types::subscription_events::{
     CallEvent, NetworkEvent, StreamFrame, SubscriptionEvent, SystemEvent, TypingContext,
     TypingEvent, VoiceEvent, VoiceScope,
 };
 
-use super::capability::{allows, Group, LobbyCaps, Selected, SkinWorld};
+use super::capability::{refusal, Group, LobbyCaps, Selected, SkinWorld};
 use crate::daemon::dispatch::DaemonContext;
 use rekindle_transport::operations::group_dm;
 
@@ -257,10 +259,15 @@ pub(crate) fn compute(
         ..SkinSignalSet::default()
     };
     for capability in EVERY_CAPABILITY {
-        if allows(capability, inputs, world, selected) {
-            set.can.insert(capability);
-        } else {
-            set.cannot.insert(capability);
+        match refusal(capability, inputs, world, selected) {
+            None => {
+                set.can.insert(capability);
+            }
+            Some(why) => {
+                set.cannot.insert(capability);
+                set.disabled_reasons
+                    .insert(DisableCause::Capability(capability), why);
+            }
         }
     }
     if let Some(key) = selected.key() {
@@ -268,7 +275,34 @@ pub(crate) fn compute(
         set.voice_ringing = inputs.call_with(key).is_some_and(|c| c.ringing);
         set.talking = inputs.speaking.contains(key);
     }
+    let active = [
+        (set.disconnected, DisableSignal::Disconnected),
+        (set.user_typing, DisableSignal::ActiveUserTyping),
+        (set.voice_ringing, DisableSignal::VoiceRinging),
+        (set.talking, DisableSignal::UserStartedTalking),
+        (set.new_notification, DisableSignal::NewNotification),
+    ];
+    for (on, signal) in active {
+        if on {
+            set.disabled_reasons.insert(
+                DisableCause::Signal(signal),
+                signal_reason(signal).to_owned(),
+            );
+        }
+    }
     set
+}
+
+/// The words for a node a pack disables on an active signal (plan E7.7
+/// CR1): what the window shows over it.
+pub(crate) const fn signal_reason(signal: DisableSignal) -> &'static str {
+    match signal {
+        DisableSignal::Disconnected => "You're offline. Rekindle reconnects on its own.",
+        DisableSignal::ActiveUserTyping => "Your friend is typing.",
+        DisableSignal::VoiceRinging => "A call with your friend is ringing.",
+        DisableSignal::UserStartedTalking => "Your friend is talking.",
+        DisableSignal::NewNotification => "You have a new notification.",
+    }
 }
 
 /// Every known window's set, by label: `friend` looks a key up in the

@@ -8,7 +8,10 @@ use rekindle_types::subscription_events::{
 };
 
 use super::actions::Selections;
-use super::capability::{Selected, SkinWorld};
+use rekindle_types::dto::skin_signals::{DisableCause, DisableSignal};
+use rekindle_types::subscription_events::RouteAvailability;
+
+use super::capability::{refusal, Selected, SkinWorld};
 use super::signals::{compute, window_sets, Inputs};
 
 const SELECTED_KEY: &str = "selectedkey";
@@ -367,4 +370,68 @@ fn join_follows_the_hosts_not_joinable_check() {
     let unparsed = friend(UserStatus::Online, Some("not a server"));
     assert!(!can(&unparsed, Capability::Join));
     assert!(!can(&unparsed, Capability::JoinGameLobby));
+}
+
+/// Plan E7.7 CR1: every capability in `cannot` carries the Host's reason,
+/// the words of its refusal, and no capability in `can` carries one.
+#[test]
+fn every_cannot_has_its_refusal_as_its_reason() {
+    let f = friend(UserStatus::Offline, None);
+    let inputs = Inputs::default();
+    let world = SkinWorld::default();
+    for selected in [
+        Selected::Nothing,
+        Selected::Friend {
+            key: SELECTED_KEY,
+            friend: Some(&f),
+        },
+        Selected::Server {
+            game_id: TF2,
+            address: "192.0.2.1:27015",
+        },
+        Selected::Transfer { attachment_id: "a" },
+    ] {
+        let set = compute("buddy-list", &inputs, &world, selected);
+        assert!(!set.cannot.is_empty(), "{selected:?}");
+        for c in &set.cannot {
+            let reason = set.disabled_reasons.get(&DisableCause::Capability(*c));
+            assert!(reason.is_some_and(|r| !r.is_empty()), "{c:?} has no reason");
+            assert_eq!(
+                reason,
+                refusal(*c, &inputs, &world, selected).as_ref(),
+                "{c:?}"
+            );
+        }
+        for c in &set.can {
+            assert!(!set
+                .disabled_reasons
+                .contains_key(&DisableCause::Capability(*c)));
+        }
+    }
+}
+
+/// Plan E7.7 CR1: off the network, `disconnected` carries its reason;
+/// attached, it carries none.
+#[test]
+fn disconnected_has_its_reason() {
+    let mut inputs = Inputs::default();
+    let event = SubscriptionEvent::Network(NetworkEvent::AttachmentChanged {
+        attachment_state: "detached".into(),
+        is_attached: false,
+        public_internet_ready: false,
+        general_route: RouteAvailability::Idle,
+        media_route: RouteAvailability::Idle,
+        can_write: false,
+    });
+    assert!(inputs.fold(&event));
+    let world = SkinWorld::default();
+    let set = compute("buddy-list", &inputs, &world, Selected::Nothing);
+    assert!(set.disconnected);
+    let cause = DisableCause::Signal(DisableSignal::Disconnected);
+    assert_eq!(
+        set.disabled_reasons.get(&cause).map(String::as_str),
+        Some("You're offline. Rekindle reconnects on its own.")
+    );
+    let online = compute("buddy-list", &Inputs::default(), &world, Selected::Nothing);
+    assert!(!online.disabled_reasons.contains_key(&cause));
 }
