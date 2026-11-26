@@ -110,15 +110,28 @@ async function arrowOpens(): Promise<string> {
   if (!top.startsWith("on top")) return top;
   await press(browser, await browser.$(ARROW));
   const opened = await waitUntil(async () => (await browser.$('[role="menu"]').isDisplayed().catch(() => false)), NET_WAIT_MS, "").then(() => true, () => false);
-  const menu = (await browser.execute(() => {
-    const m = document.querySelector<HTMLElement>('[role="menu"]');
-    return m ? `${m.className} items ${Array.from(m.querySelectorAll('[role="menuitemradio"]')).map((i) => i.textContent?.trim()).join("/")}` : "none";
-  })) as string;
-  console.log(`[paused] status list opened: ${opened} (${menu})`);
+  // The pack's arrow is a pack menu (Kobalte's Menubar: its entries are
+  // `menuitem`s), the shell's status list a radio group: either way the
+  // Host's statuses are its entries, read once they have rendered.
+  const items = async (): Promise<string[]> =>
+    (await browser.execute(() => {
+      const m = document.querySelector<HTMLElement>('[role="menu"]');
+      return m ? Array.from(m.querySelectorAll('[role="menuitem"], [role="menuitemradio"]')).map((i) => i.textContent?.trim() ?? "") : [];
+    })) as string[];
+  if (opened) await waitUntil(async () => (await items()).length > 0, 5_000, "").catch(() => undefined);
+  const entries = opened ? await items() : [];
+  const menuClass = (await browser.execute(() => document.querySelector<HTMLElement>('[role="menu"]')?.className ?? "none")) as string;
+  console.log(`[paused] status list opened: ${opened} (${menuClass} items ${JSON.stringify(entries)})`);
   if (!opened) return "the arrow did not open the status list";
   await browser.keys(["Escape"]);
   await gone(browser, '[role="menu"]', NET_WAIT_MS);
-  return "opens the status list";
+  // Kobalte's menubar stays in menubar mode after Escape (the next press on
+  // another bar title then did not open it: Combat's Settings never opened):
+  // focus leaves the bar.
+  await browser.execute(() => (document.activeElement as HTMLElement | null)?.blur());
+  const statuses = ["Online", "Away", "Busy"];
+  const missing = statuses.filter((st) => !entries.some((e) => e.startsWith(st)));
+  return missing.length === 0 ? "opens the status list" : `the status list lacks ${missing.join(", ")} (entries ${JSON.stringify(entries)})`;
 }
 
 describe("a paused inbound route is said in the tree's status field, which stays usable", function () {
