@@ -11,12 +11,34 @@
 // key request, and the notice goes (Current; shot). The Host path is netsim
 // key_status_after_unlock's.
 
+import { execFileSync } from "node:child_process";
 import { browser } from "@wdio/globals";
 import { NET_WAIT_MS, byText, doubleClick, switchTo, waitUntil } from "../../../walk/helpers.ts";
 import { BUDDY } from "../../../walk/nav.ts";
 import { type Peer, peerCreateCommunity, peerInvite, peerJoinCommunity, peerKick, peerMemberCount, peerOwnPseudonym, startFleet, stopFleet } from "../../fleet.ts";
 import { communitiesTab, createIdentity, joinCommunity, logOut, newUser, openCommunity, selectChannel, unlock, type User } from "../../journeys.ts";
 import { shot } from "../../shots.ts";
+
+/**
+ * Read-only machine state beside the heartbeat (lead): whether the screen
+ * is locked (every window is then hidden), the system's power assertions,
+ * and LaunchServices' record of the app (its type and whether it is in
+ * front). Nothing is changed.
+ */
+function machineState(): string {
+  const run = (cmd: string, args: string[]): string => {
+    try {
+      return execFileSync(cmd, args, { encoding: "utf8", timeout: 5000 });
+    } catch (e) {
+      return `(${cmd} failed: ${String(e).slice(0, 80)})`;
+    }
+  };
+  const locked = /CGSSessionScreenIsLocked<\/key>\s*<true\/>/.test(run("ioreg", ["-n", "Root", "-d1", "-a"]));
+  const assertions = run("pmset", ["-g", "assertions"]).split("\n").filter((l) => /^\s+(UserIsActive|PreventUserIdleSystemSleep|PreventUserIdleDisplaySleep|BackgroundTask)\s/.test(l)).map((l) => l.trim().replace(/\s+/g, " ")).join(", ");
+  const app = run("lsappinfo", ["list"]).split("\n\n").find((b) => b.includes("rekindle-desktop")) ?? "";
+  const appLine = [/type="[^"]*"/, /\(in front\)/].map((r) => app.match(r)?.[0] ?? "").filter(Boolean).join(" ");
+  return JSON.stringify({ screenLocked: locked, assertions, app: appLine || "not listed" });
+}
 
 const COMMUNITY = `Key Watch ${Date.now() % 100000}`;
 
@@ -130,6 +152,12 @@ describe("a rotated key we lack: pending until a holder answers, then current", 
     await browser.switchToWindow(handle);
     const front = (await browser.execute(() => ({ visibility: document.visibilityState, focus: document.hasFocus() }))) as { visibility: string; focus: boolean };
     console.log(`[key-hb] polling window ${handle}, raised: ${JSON.stringify(front)}`);
+    console.log(`[key-hb] machine at step 3: ${machineState()}`);
+    // Lead: a hidden page fails loudly, never slowly. A locked screen hides
+    // every window, and no app can then be brought to the front.
+    if (front.visibility !== "visible" || !front.focus) {
+      throw new Error(`the asserted window is not shown (${JSON.stringify(front)}; ${machineState()}): its page's timers are clamped while hidden, so step 3 cannot be timed`);
+    }
     await peers[0].resume();
     const polls: string[] = [];
     await waitUntil(
