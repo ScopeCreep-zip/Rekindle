@@ -13,6 +13,7 @@ import { NET_WAIT_MS, byText, shown, switchTo, waitForHandle, waitUntil } from "
 import { BUDDY, openSettings } from "../../../walk/nav.ts";
 import { communitiesTab, createCommunity, createIdentity, newUser, openCommunity, type User } from "../../journeys.ts";
 import { applySkin, skinShown } from "../../journeys_skins.ts";
+import { disabledLook } from "../../disabled-look.ts";
 import { shot } from "../../shots.ts";
 import { builtinPacks } from "../../skin-pack.ts";
 
@@ -128,8 +129,17 @@ describe("a community window's Call, Mute, Join and Profile act on its community
       "Alloy's Join and voice join never answered for the selected community",
     ).catch(() => undefined);
     console.log(`[hsc1] buddy list, community selected: join ${JSON.stringify(join)} voice ${JSON.stringify(voice)}`);
-    await shot("alloy-buddy-community-selected");
     expect({ shown: join.shown, refused: join.refused, reason: join.reason }).toEqual({ shown: true, refused: true, reason: NO_SERVER });
     expect({ shown: voice.shown, refused: voice.refused, reason: voice.reason }).toEqual({ shown: true, refused: true, reason: NO_VOICE });
+    // Refused is not enough: each is drawn visibly disabled (its enabled
+    // self changes at least 20 px of its box, as communities-row's bar).
+    const look = await disabledLook(["JoinButton", "JoinChatButton"]);
+    console.log(`[hsc1] info view Join/voice join disabled vs enabled self, pixels changed: ${JSON.stringify(look)} (visibly disabled at 20)`);
+    await shot("alloy-info-community-selected");
+    expect({ join: (look.JoinButton ?? 0) >= 20, voice: (look.JoinChatButton ?? 0) >= 20 }).toEqual({ join: true, voice: true });
+    // The page's counts read as words: one member, not "1 members".
+    const meta = (await browser.execute(() => document.querySelector(".infoview-meta")?.textContent ?? "")) as string;
+    console.log(`[hsc1] info view meta: ${JSON.stringify(meta)}`);
+    expect(meta.trim()).toMatch(/^1 member, \d+ online$/);
   });
 });
