@@ -17,7 +17,7 @@ use crate::deps::ChannelMekCache;
 /// Each `(community, scope)`'s current key.
 type Entries = HashMap<(String, KeyScope), MediaEncryptionKey>;
 
-/// Thread-safe in-memory MEK cache. Cheaply clonable (Arc-backed).
+/// Thread-safe in-memory MEK cache. Cheaply cloneable (Arc-backed).
 #[derive(Clone, Default)]
 pub struct InMemoryMekCache {
     inner: Arc<Mutex<Entries>>,

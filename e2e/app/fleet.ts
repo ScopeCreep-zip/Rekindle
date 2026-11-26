@@ -313,7 +313,7 @@ const MARKER = ".rekindle-fleet-home";
 
 /**
  * A run that was killed (SIGKILL, a crash) never reached its peers'
- * stop(); their HOMEs stay under the prefix. Before starting, remove each
+ * stop(); their HOME directories stay under the prefix. Before starting, remove each
  * HOME this suite made (it holds `MARKER`) whose daemon is not running,
  * keeping its logs first. Anything else under the prefix is left alone.
  */

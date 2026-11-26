@@ -136,15 +136,15 @@ jobs:
           GST_VERSION: "1.26.8"
         run: |
           $base = "https://gstreamer.freedesktop.org/data/pkg/windows/$env:GST_VERSION/msvc"
-          $msis = [ordered]@{
+          $installers = [ordered]@{
             "gstreamer-1.0-msvc-x86_64-$env:GST_VERSION.msi"       = "0e884dde0cf868491292ae44c527c55f415c795805db5a4ff2ed39355e870da7"
             "gstreamer-1.0-devel-msvc-x86_64-$env:GST_VERSION.msi" = "7073632eec899fbf9b56336ed523ddfa0f75246e737691db77092b31c728e2fc"
           }
-          foreach ($msi in $msis.Keys) {
+          foreach ($msi in $installers.Keys) {
             $out = Join-Path $env:RUNNER_TEMP $msi
             Invoke-WebRequest -Uri "$base/$msi" -OutFile $out
             $sum = (Get-FileHash -Algorithm SHA256 $out).Hash.ToLowerInvariant()
-            if ($sum -ne $msis[$msi]) { throw "$msi sha256 $sum does not match the published sum" }
+            if ($sum -ne $installers[$msi]) { throw "$msi sha256 $sum does not match the published sum" }
             $p = Start-Process msiexec.exe -ArgumentList "/i", "`"$out`"", "/qn", "ADDLOCAL=ALL" -Wait -PassThru
             if ($p.ExitCode -ne 0) { throw "msiexec $msi exited $($p.ExitCode)" }
           }

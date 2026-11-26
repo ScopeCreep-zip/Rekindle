@@ -43,8 +43,8 @@ regexes = [
     '''AABBCCDDEEFF''',
     # Project-specific placeholders
     '''VLD0:[A-Za-z0-9_-]{0,8}\\.\\.\\.''',
-    '''\\b[Pp]laceholder[Kk]ey\\b''',
-    '''\\b[Pp]laceholder[Tt]oken\\b''',
+    '''\\b(?:Placeholder|placeholder)[Kk]ey\\b''',
+    '''\\b(?:Placeholder|placeholder)[Tt]oken\\b''',
 ]
 
 # ─── Custom rules in addition to the default pack ───────────────────────

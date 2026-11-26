@@ -150,7 +150,7 @@ mod tests {
     #[test]
     fn sanitize_strips_cursor_movement() {
         // ESC [ 10 A (cursor up 10) → stripped
-        assert_eq!(sanitize_for_display("before\x1b[10Aafter"), "beforeafter");
+        assert_eq!(sanitize_for_display("before\x1b[10A_after"), "before_after");
     }
 
     #[test]

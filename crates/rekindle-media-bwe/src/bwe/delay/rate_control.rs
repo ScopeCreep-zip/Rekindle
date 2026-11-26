@@ -501,7 +501,7 @@ mod test {
                 rate_controller.estimated_bitrate().as_u64(),
                 76_500,
                 "When overuse is detected we should reduce the estimate to \
-                85% of the obeserved rate immediately"
+                85% of the observed rate immediately"
             );
         }
 

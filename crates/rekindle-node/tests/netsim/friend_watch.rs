@@ -95,7 +95,7 @@ async fn a_status_change_arrives_by_watch_and_survives_a_watch_death() {
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_change_missed_while_detached_is_recovered_on_reattach() {
     let (sim, mut nodes) = start(2, 89).await;
-    for (node, name) in nodes.iter_mut().zip(["Mia", "Ned"]) {
+    for (node, name) in nodes.iter_mut().zip(["Mia", "Nat"]) {
         node.unlock_new_identity(name).await;
     }
     befriend(&sim, &nodes[0], &nodes[1]).await;
@@ -121,7 +121,7 @@ async fn a_change_missed_while_detached_is_recovered_on_reattach() {
     });
     assert!(
         eventually(&sim, LIMIT, || async { saw(&events, &mia, "busy") }).await,
-        "Ned sees Mia busy after his reattach"
+        "Nat sees Mia busy after his reattach"
     );
 }
 

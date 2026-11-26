@@ -212,7 +212,10 @@ async fn a_friends_page_has_header_bio_and_game_and_never_communities() {
     .await;
     assert_eq!(kinds(&view), ["friendHeader", "bio", "nowPlaying"]);
     let json = serde_json::to_string(&view).unwrap();
-    assert!(!json.contains("communit"), "{json}");
+    assert!(
+        !json.contains("community") && !json.contains("communities"),
+        "{json}"
+    );
     assert!(!json.contains("\"c1\""), "{json}");
 }
 
