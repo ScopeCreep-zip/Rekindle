@@ -200,7 +200,10 @@ fn skin_zip(window_text: [u8; 3], window_bg: [u8; 3], descriptor: bool) -> Vec<u
 fn a_minimal_wsz_imports_and_validates() {
     let i = match import(&skin([0xe7; 3]), "w").unwrap() {
         Outcome::Passed(i) => i,
-        Outcome::Draft(d) => panic!("#e7e7e7 window text on #101010 passes: {:?}", d.failures),
+        Outcome::Draft(d) => panic!(
+            "#e7e7e7 window text on #101010 passes: {:?} {:?}",
+            d.failures, d.unsettled
+        ),
     };
     let c = validate::run(&i.canonical.bytes).unwrap();
     assert_eq!(c.bytes, i.canonical.bytes);
@@ -453,4 +456,32 @@ fn genex_button_pieces_join_into_one_nine_slice() {
     }
     // The pressed sprite is already whole (Webamp: 0,1 47x15).
     assert_eq!(button.images[&RegionState::Down].dimensions(), (47, 15));
+}
+
+/// Lead round 5 e: the minimal wsz's `#00ff00` window text derives
+/// `selection.text`, which the dialog walk settles on the dark base's
+/// `accent.fill` (and the field selection that follows it) at 4.5:1 by
+/// giving up chroma; no base token moves for it.
+#[test]
+fn the_green_text_derived_selection_text_passes_on_its_accent_fill() {
+    use crate::registry::{resolve, Base, ENTRIES};
+    let Outcome::Passed(i) = import(&skin([0xe7; 3]), "w").unwrap() else {
+        panic!("the minimal wsz passes")
+    };
+    let pkg = crate::package::read(&i.canonical.bytes).unwrap();
+    let m = crate::manifest::parse(&pkg).unwrap();
+    let v = &m.variants[0];
+    let t = crate::tokens::parse(&v.tokens, pkg.get(&v.tokens).unwrap()).unwrap();
+    assert_eq!(t.get("text.base"), Some(&walk::color([0, 0xff, 0])));
+    let served: BTreeMap<&str, [u8; 3]> = resolve(ENTRIES, Base::of(v.base, v.contrast), &t)
+        .into_iter()
+        .filter_map(|(e, v)| match v {
+            TokenValue::Color { r, g, b, .. } => Some((e.id, [r, g, b])),
+            _ => None,
+        })
+        .collect();
+    for ground in ["accent.fill", "input.selection.bg"] {
+        let ratio = crate::colour::contrast(served["selection.text"], served[ground]);
+        assert!(ratio >= 4.5, "selection.text on {ground}: {ratio:.2}");
+    }
 }

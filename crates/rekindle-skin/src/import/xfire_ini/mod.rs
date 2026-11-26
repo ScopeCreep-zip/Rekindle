@@ -40,6 +40,7 @@ pub mod colours;
 pub mod controls;
 pub mod frame;
 pub mod ini;
+mod menu_ground;
 mod notice;
 pub mod title;
 
@@ -103,6 +104,8 @@ pub struct Read {
     pub authors: Vec<String>,
     /// The painted control slots ([`controls`]) and what they kept.
     pub controls: Vec<Control>,
+    /// The mean of the frame art under the menu text ([`menu_ground`]).
+    pub menu_ground: Option<[u8; 3]>,
     pub tally: StateTally,
     /// The colour roles the sections name ([`refs`]).
     pub refs: Vec<refs::RefsApplied>,
@@ -411,6 +414,7 @@ pub fn read(tree: &Tree, folder: &str) -> Result<Read, ImportError> {
         ("skin file", skin_key.to_owned()),
         ("theme file", theme_key.to_owned()),
     ]);
+    let menu_ground = menu_ground::of(&skin, frame.as_ref());
     Ok(Read {
         info,
         colours,
@@ -422,6 +426,7 @@ pub fn read(tree: &Tree, folder: &str) -> Result<Read, ImportError> {
         unread,
         repeated,
         authors: stated_authors(&version.comments),
+        menu_ground,
         controls,
         tally,
         refs,
@@ -578,7 +583,9 @@ pub fn import(
         );
         zip(&files).map_err(ImportError::Refused)
     };
-    conclude(read.tokens.clone(), base, build, |changes| {
+    let tokens =
+        super::dialog_roles::with_art(read.tokens.clone(), &read.controls, read.menu_ground);
+    conclude(tokens, base, build, |changes| {
         notice::render(id, &read, &source, authorship, changes)
     })
 }

@@ -40,8 +40,6 @@ export type SkinTokenId =
   | "focus-outline"
   | "success.text"
   | "success.fill"
-  | "titlebar.start"
-  | "titlebar.end"
   | "titlebar.text"
   | "tint.fill-strong"
   | "tint.fill"
@@ -60,6 +58,23 @@ export type SkinTokenId =
   | "font.family"
   | "font.icons"
   | "size.chrome-height"
+  | "titlebar.start"
+  | "titlebar.end"
+  | "input.bg"
+  | "input.text"
+  | "input.selection.bg"
+  | "input.selection.bg-inactive"
+  | "selection.text"
+  | "menubar.bg"
+  | "menubar.text"
+  | "progress.bg"
+  | "progress.fill"
+  | "progress.outline"
+  | "progress.text"
+  | "scrollbar.track"
+  | "scrollbar.thumb"
+  | "tooltip.bg"
+  | "tooltip.text"
 ;
 
 const CSS_PROPERTY: Readonly<Record<SkinTokenId, string>> = {
@@ -101,8 +116,6 @@ const CSS_PROPERTY: Readonly<Record<SkinTokenId, string>> = {
   "focus-outline": "--color-xfire-focus-outline",
   "success.text": "--color-xfire-success",
   "success.fill": "--color-xfire-success-fill",
-  "titlebar.start": "--color-xfire-titlebar-start",
-  "titlebar.end": "--color-xfire-titlebar-end",
   "titlebar.text": "--color-xfire-titlebar-text",
   "tint.fill-strong": "--tint-fill-strong",
   "tint.fill": "--tint-fill",
@@ -121,6 +134,23 @@ const CSS_PROPERTY: Readonly<Record<SkinTokenId, string>> = {
   "font.family": "--font-family-xfire",
   "font.icons": "--font-family-icons",
   "size.chrome-height": "--chrome-height",
+  "titlebar.start": "--color-xfire-titlebar-start",
+  "titlebar.end": "--color-xfire-titlebar-end",
+  "input.bg": "--color-xfire-input-bg",
+  "input.text": "--color-xfire-input-text",
+  "input.selection.bg": "--color-xfire-input-selection-bg",
+  "input.selection.bg-inactive": "--color-xfire-input-selection-bg-inactive",
+  "selection.text": "--color-xfire-selection-text",
+  "menubar.bg": "--color-xfire-menubar-bg",
+  "menubar.text": "--color-xfire-menubar-text",
+  "progress.bg": "--color-xfire-progress-bg",
+  "progress.fill": "--color-xfire-progress-fill",
+  "progress.outline": "--color-xfire-progress-outline",
+  "progress.text": "--color-xfire-progress-text",
+  "scrollbar.track": "--color-xfire-scrollbar-track",
+  "scrollbar.thumb": "--color-xfire-scrollbar-thumb",
+  "tooltip.bg": "--color-xfire-tooltip-bg",
+  "tooltip.text": "--color-xfire-tooltip-text",
 };
 
 /** `var(--…)` of a registry token, for inline custom properties. */

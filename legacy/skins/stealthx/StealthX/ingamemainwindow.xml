@@ -1,0 +1,10 @@
+<Tile Name="IngameMainWindow" ResizeX="100" ResizeY="100" Component="MainIGWindow">
+    <Tile Name="MainTitle" Y="8" X="22" ResizeX="100" IndentRight="100" Z="10" Component="InGameMainTitle" />
+    <Tile Name="MainFooter" X="22" Y="7" JustY="BOTTOM" ResizeX="100" IndentRight="22" Z="10" Component="InGameMainFooter" />
+    <Tile Name="MainEditArea" X="27" IndentRight="27" Y="MainFooter.TOP-27" Z="10" IndentBottom="34" ResizeX="100" ResizeY="100" Component="InGameEditArea" />
+    <Tile Name="MainChatArea" X="27" IndentRight="27" Y="33" Z="10" IndentBottom="53" ResizeX="100" ResizeY="100" Component="InGameChatArea" />
+    <Tile Name="MainClock" Z="20" JustX="RIGHT" X="15" Y="8" Component="InGameMainClock" />
+
+    <Tile Name="MainBackground" X="0" Y="0" Z="1" ResizeX="100" ResizeY="100" Component="MainBackground" />
+    <Tile Name="MainBackgroundCol" X="0" Y="0" Z="2" IndentLeft="24" IndentTop="33" IndentRight="23" IndentBottom="33" ResizeX="100" ResizeY="100" Component="MainBackgroundCol" />
+</Tile>
