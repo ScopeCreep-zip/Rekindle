@@ -152,6 +152,9 @@ mod tests {
         fn now_ms(&self) -> u64 {
             EPOCH_OFFSET_MS + u64::try_from(self.0.elapsed().as_millis()).unwrap_or(u64::MAX)
         }
+        fn monotonic(&self) -> std::time::Instant {
+            tokio::time::Instant::now().into_std()
+        }
     }
 
     /// The driver both hosts run (plan E7.2: one rule, two hosts until

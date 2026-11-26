@@ -7,12 +7,15 @@ use super::*;
 /// Silence delivers no PCM and Null takes more than its channel holds.
 #[test]
 fn a_headless_engine_runs_with_no_audio_device() {
-    let mut engine = VoiceEngine::new(VoiceConfig {
-        io: AudioIo::HEADLESS,
-        input_device: Some("no-such-input".into()),
-        output_device: Some("no-such-output".into()),
-        ..VoiceConfig::default()
-    })
+    let mut engine = VoiceEngine::new(
+        VoiceConfig {
+            io: AudioIo::HEADLESS,
+            input_device: Some("no-such-input".into()),
+            output_device: Some("no-such-output".into()),
+            ..VoiceConfig::default()
+        },
+        std::sync::Arc::new(rekindle_utils::SystemClock),
+    )
     .unwrap();
     engine.start_capture().unwrap();
     engine.start_playback().unwrap();

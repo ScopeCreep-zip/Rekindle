@@ -75,6 +75,10 @@ pub(super) fn hash_voice(h: &mut blake3::Hasher, v: &VoiceEvent, now_ms: u64) {
             h.update(b"d|");
             h.update(peer_key.as_bytes());
         }
+        Some(VoiceScope::Group { group_id }) => {
+            h.update(b"g|");
+            h.update(group_id.as_bytes());
+        }
         // Device changes are machine-wide.
         None => {
             h.update(b"-|");

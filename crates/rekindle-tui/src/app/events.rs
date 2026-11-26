@@ -18,6 +18,9 @@ fn call_label(scope: &VoiceScope) -> String {
         VoiceScope::Dm { peer_key } => {
             format!("with {}", crate::helpers::abbreviate_key(peer_key))
         }
+        VoiceScope::Group { group_id } => {
+            format!("in group {}", crate::helpers::abbreviate_key(group_id))
+        }
     }
 }
 

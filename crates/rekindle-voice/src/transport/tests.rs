@@ -23,7 +23,10 @@ impl VoiceFrameSender for SelectiveSender {
 }
 
 fn test_transport(dead_blob: Vec<u8>) -> VoiceTransport {
-    let mut t = VoiceTransport::new("chan".into());
+    let mut t = VoiceTransport::new(
+        "chan".into(),
+        std::sync::Arc::new(rekindle_utils::SystemClock),
+    );
     t.init(
         Arc::new(SelectiveSender { dead_blob }),
         vec![1, 2, 3],
@@ -94,4 +97,39 @@ async fn removing_a_peer_stops_its_driver_and_forgets_its_allocation() {
     assert!(t.remove_peer("p"));
     assert!(link.is_stopped());
     assert!(t.allocator().route("p").is_none());
+}
+
+/// A clock whose monotonic time moves only when the test says so.
+struct ManualClock(parking_lot::Mutex<std::time::Instant>);
+
+impl rekindle_utils::Clock for ManualClock {
+    fn now_ms(&self) -> u64 {
+        0
+    }
+
+    fn monotonic(&self) -> std::time::Instant {
+        *self.0.lock()
+    }
+}
+
+/// The roster's join-grace ages read the session's clock port, never the
+/// OS clock (plan E4.1, E2.B): the age moves exactly as far as the port.
+#[tokio::test]
+async fn a_peer_age_advances_only_with_the_clock_port() {
+    let clock = Arc::new(ManualClock(parking_lot::Mutex::new(
+        std::time::Instant::now(),
+    )));
+    let mut t = VoiceTransport::new("chan".into(), clock.clone());
+    t.init(
+        Arc::new(SelectiveSender {
+            dead_blob: Vec::new(),
+        }),
+        vec![1, 2, 3],
+        rekindle_lifecycle::SessionScope::new("test", Arc::new(|_| {})),
+    );
+    t.add_peer("peer", &[4, 5, 6], None);
+    std::thread::sleep(std::time::Duration::from_millis(1_100));
+    assert_eq!(t.peer_views(), vec![("peer".to_string(), 0)]);
+    *clock.0.lock() += std::time::Duration::from_secs(42);
+    assert_eq!(t.peer_views(), vec![("peer".to_string(), 42)]);
 }

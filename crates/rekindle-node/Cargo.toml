@@ -42,6 +42,8 @@ rekindle-db = { path = "../rekindle-db" }
 rekindle-events = { path = "../rekindle-events" }
 rekindle-lifecycle = { path = "../rekindle-lifecycle" }
 rekindle-codec = { path = "../rekindle-codec" }
+# The Host's one voice engine (plan E4.1, ADR 0015); Veilid-free (ADR 0014).
+rekindle-voice = { path = "../rekindle-voice" }
 rekindle-channel = { path = "../rekindle-channel" }
 rekindle-protocol = { path = "../rekindle-protocol" }
 rekindle-records = { path = "../rekindle-records" }

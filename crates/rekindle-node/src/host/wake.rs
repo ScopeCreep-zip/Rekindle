@@ -90,6 +90,10 @@ mod tests {
         fn now_ms(&self) -> u64 {
             self.0.load(Ordering::SeqCst)
         }
+
+        fn monotonic(&self) -> std::time::Instant {
+            std::time::Instant::now()
+        }
     }
 
     #[test]

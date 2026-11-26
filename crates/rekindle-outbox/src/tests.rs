@@ -21,6 +21,10 @@ impl Clock for FixedClock {
     fn now_ms(&self) -> u64 {
         u64::try_from(self.0.load(Ordering::SeqCst)).unwrap_or(0)
     }
+
+    fn monotonic(&self) -> std::time::Instant {
+        std::time::Instant::now()
+    }
 }
 
 struct CounterRng(AtomicU64);

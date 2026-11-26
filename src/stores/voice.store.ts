@@ -31,7 +31,7 @@ export interface VoiceState {
    * reports it. `null` until the first receiver report arrives.
    */
   link: LinkMeasurement | null;
-  activeCallType: "dm" | "community" | null;
+  activeCallType: "dm" | "community" | "group" | null;
   inputDevice: string | null;
   outputDevice: string | null;
   inputVolume: number;

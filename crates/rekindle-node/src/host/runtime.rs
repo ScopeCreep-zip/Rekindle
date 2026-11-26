@@ -306,6 +306,9 @@ impl Host {
             network_strength: strength,
             infoview: crate::host::infoview::OpenViews::default(),
             servers: crate::host::servers::ServersState::new(server_query),
+            voice: Arc::new(crate::host::adapters::voice::HostVoice::new(Arc::clone(
+                &clock,
+            ))),
             skin: crate::host::skin::SkinState::default(),
             transfers: Arc::default(),
             mode,

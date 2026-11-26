@@ -157,16 +157,16 @@ pub struct ArrivalLedger {
     origin: Instant,
 }
 
-impl Default for ArrivalLedger {
-    fn default() -> Self {
+impl ArrivalLedger {
+    /// A ledger whose report clock starts at `clock`'s monotonic now.
+    #[must_use]
+    pub fn new(clock: &dyn rekindle_utils::Clock) -> Self {
         Self {
             peers: Mutex::default(),
-            origin: Instant::now(),
+            origin: clock.monotonic(),
         }
     }
-}
 
-impl ArrivalLedger {
     /// Note that `peer`'s datagram `transport_seq` arrived at `at`.
     pub fn record(&self, peer: &str, transport_seq: u32, at: Instant) {
         let mut peers = self.peers.lock();
@@ -252,7 +252,7 @@ mod tests {
 
     #[test]
     fn report_covers_gaps_and_offsets() {
-        let ledger = ArrivalLedger::default();
+        let ledger = ArrivalLedger::new(&rekindle_utils::SystemClock);
         let t0 = Instant::now();
         ledger.record("a", 10, t0);
         ledger.record("a", 12, t0 + Duration::from_millis(500));
@@ -268,7 +268,7 @@ mod tests {
 
     #[test]
     fn reports_survive_the_sequence_wrap() {
-        let ledger = ArrivalLedger::default();
+        let ledger = ArrivalLedger::new(&rekindle_utils::SystemClock);
         let t0 = Instant::now();
         ledger.record("a", u32::MAX, t0);
         ledger.record("a", 0, t0);
@@ -279,7 +279,7 @@ mod tests {
 
     #[test]
     fn a_long_gap_reports_only_the_newest_span() {
-        let ledger = ArrivalLedger::default();
+        let ledger = ArrivalLedger::new(&rekindle_utils::SystemClock);
         let t0 = Instant::now();
         ledger.record("a", 0, t0);
         ledger.record("a", 5_000, t0);
@@ -290,7 +290,7 @@ mod tests {
 
     #[test]
     fn a_replayed_voice_packet_does_not_count_again() {
-        let ledger = ArrivalLedger::default();
+        let ledger = ArrivalLedger::new(&rekindle_utils::SystemClock);
         let t0 = Instant::now();
         ledger.record_voice("a", 7, 100, t0);
         // The same signed packet replayed under a new route sequence.
@@ -301,7 +301,7 @@ mod tests {
 
     #[test]
     fn a_replayed_envelope_does_not_count_again() {
-        let ledger = ArrivalLedger::default();
+        let ledger = ArrivalLedger::new(&rekindle_utils::SystemClock);
         let t0 = Instant::now();
         ledger.record_signed("a", &[7u8; 64], 10, t0);
         ledger.record_signed("a", &[7u8; 64], 11, t0);
@@ -314,7 +314,7 @@ mod tests {
 
     #[test]
     fn a_sequence_number_keeps_its_first_arrival() {
-        let ledger = ArrivalLedger::default();
+        let ledger = ArrivalLedger::new(&rekindle_utils::SystemClock);
         let t0 = Instant::now();
         ledger.record("a", 5, t0);
         ledger.record("a", 5, t0 + Duration::from_millis(500));
@@ -326,7 +326,7 @@ mod tests {
 
     #[test]
     fn duplicates_of_reported_packets_ask_for_nothing() {
-        let ledger = ArrivalLedger::default();
+        let ledger = ArrivalLedger::new(&rekindle_utils::SystemClock);
         let t0 = Instant::now();
         ledger.record("a", 100, t0);
         ledger.take_report("a", t0).unwrap();
@@ -336,7 +336,7 @@ mod tests {
 
     #[test]
     fn a_packet_behind_the_first_report_is_reported_late() {
-        let ledger = ArrivalLedger::default();
+        let ledger = ArrivalLedger::new(&rekindle_utils::SystemClock);
         let t0 = Instant::now();
         ledger.record("a", 100, t0);
         ledger.take_report("a", t0).unwrap();
@@ -348,7 +348,7 @@ mod tests {
 
     #[test]
     fn a_late_packet_is_reported_received_after_all() {
-        let ledger = ArrivalLedger::default();
+        let ledger = ArrivalLedger::new(&rekindle_utils::SystemClock);
         let t0 = Instant::now();
         ledger.record("a", 10, t0);
         ledger.record("a", 12, t0 + Duration::from_millis(20));
@@ -372,7 +372,7 @@ mod tests {
 
     #[test]
     fn reordering_inside_the_back_window_loses_nothing() {
-        let ledger = ArrivalLedger::default();
+        let ledger = ArrivalLedger::new(&rekindle_utils::SystemClock);
         let t0 = Instant::now();
         let mut lost = 0;
         // Arrivals in bursts, each burst reversed, a report between bursts.
@@ -405,7 +405,7 @@ mod tests {
 
     #[test]
     fn an_arrival_older_than_the_back_window_is_gone() {
-        let ledger = ArrivalLedger::default();
+        let ledger = ArrivalLedger::new(&rekindle_utils::SystemClock);
         let t0 = Instant::now();
         ledger.record("a", 1, t0);
         ledger.take_report("a", t0).unwrap();

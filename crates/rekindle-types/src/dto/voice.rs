@@ -3,6 +3,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::subscription_events::VoiceScope;
+
 /// One audio device in a settings list.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -26,12 +28,15 @@ pub struct VoiceDevices {
 }
 
 /// One audio end of the running session (plan E4.1 `AudioIo`, C7.24).
+///
+/// Externally tagged, like `VoiceEvent`: it crosses the daemon IPC as
+/// postcard, which is not self-describing, and an adjacently tagged enum
+/// does not decode there (plan E4.1 S5a1 round-trip test).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase", tag = "type", content = "data")]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum VoiceEndState {
     /// A device is open. `standsInFor` is the saved choice it replaces
     /// while that device is not connected (announced to the user).
-    #[serde(rename_all = "camelCase")]
     Device {
         id: String,
         name: String,
@@ -39,26 +44,23 @@ pub enum VoiceEndState {
     },
     /// No device could be opened: the visible C7.24 state the user
     /// resolves (listen-only without a mic, silent without a speaker).
-    #[serde(rename_all = "camelCase")]
     Unavailable { reason: String },
     /// Configured without a device (`Silence`/`Null`: a headless Host).
     Headless,
-}
-
-/// The voice session the Host runs, if any.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct VoiceSessionRef {
-    pub community_id: String,
-    pub channel_id: String,
 }
 
 /// The Host's voice state.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VoiceStatus {
-    /// `None` when not in a voice channel; the rest then reads idle.
-    pub session: Option<VoiceSessionRef>,
+    /// The one live voice session (1:1 call, group call or community
+    /// voice, lead ruling 2026-11-26); `None` when idle, and the rest then
+    /// reads idle.
+    pub session: Option<VoiceScope>,
+    /// The Host's words for why a new voice session cannot start now (the
+    /// precedence reason), or `None`. Every voice-start control reads it;
+    /// none computes it.
+    pub start_refusal: Option<String>,
     pub muted: bool,
     pub deafened: bool,
     pub input: VoiceEndState,
@@ -73,10 +75,11 @@ mod tests {
     #[test]
     fn voice_status_serializes_in_the_ipc_shape() {
         let status = VoiceStatus {
-            session: Some(VoiceSessionRef {
-                community_id: "c".into(),
-                channel_id: "v".into(),
+            session: Some(VoiceScope::Community {
+                community: "c".into(),
+                channel: "v".into(),
             }),
+            start_refusal: Some("Leave voice in c first.".into()),
             muted: true,
             deafened: false,
             input: VoiceEndState::Device {
@@ -92,18 +95,19 @@ mod tests {
         assert_eq!(
             json,
             serde_json::json!({
-                "session": { "communityId": "c", "channelId": "v" },
+                "session": { "community": { "community": "c", "channel": "v" } },
+                "startRefusal": "Leave voice in c first.",
                 "muted": true,
                 "deafened": false,
-                "input": { "type": "device", "data": {
+                "input": { "device": {
                     "id": "builtin", "name": "Built-in", "standsInFor": "usb" } },
-                "output": { "type": "unavailable", "data": {
+                "output": { "unavailable": {
                     "reason": "no output device available" } }
             })
         );
         assert_eq!(
             serde_json::to_value(VoiceEndState::Headless).unwrap(),
-            serde_json::json!({ "type": "headless" })
+            serde_json::json!("headless")
         );
         let back: VoiceStatus = serde_json::from_value(json).unwrap();
         assert_eq!(back, status);

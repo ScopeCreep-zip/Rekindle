@@ -70,6 +70,8 @@ struct VoiceSendLoop {
     transport: Arc<tokio::sync::Mutex<VoiceTransport>>,
     stop: tokio_util::sync::CancellationToken,
     deps: Arc<dyn VoiceSessionDeps>,
+    /// The session's clock port (plan E4.1).
+    clock: Arc<dyn rekindle_utils::Clock>,
     public_key: String,
     codec: OpusCodec,
     processor: AudioProcessor,
@@ -142,6 +144,7 @@ impl VoiceSendLoop {
             frame_duration_ms,
         );
 
+        let clock = params.deps.clock();
         let key_source: Arc<dyn MediaKeySource> = params.deps.clone();
         let keys = Arc::new(MediaKeys::new(
             key_source,
@@ -166,7 +169,8 @@ impl VoiceSendLoop {
             sends_at_last_pass: (0, 0),
             audio_bps: crate::transport::allocation::Allocation::default().audio_bps,
             diag_frames: 0,
-            last_quality_report: Instant::now(),
+            last_quality_report: clock.monotonic(),
+            clock,
             community_id: params.community_id,
             channel_id: params.channel_id,
             our_pseudonym: params.our_pseudonym,
@@ -305,7 +309,7 @@ impl VoiceSendLoop {
         };
 
         encoded.sequence = self.sequence;
-        encoded.timestamp = rekindle_utils::timestamp_ms();
+        encoded.timestamp = self.clock.now_ms();
         self.sequence = self.sequence.wrapping_add(1);
 
         {

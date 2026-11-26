@@ -24,7 +24,6 @@ use crate::media_quality::MediaQuality;
 /// key, installed after the roster may already hold peers.
 pub type PaddingKey = Arc<RwLock<Option<ed25519_dalek::SigningKey>>>;
 
-#[derive(Default)]
 pub struct MediaRoster {
     links: RwLock<HashMap<String, Arc<PeerLink>>>,
     allocator: Arc<Allocator>,
@@ -35,9 +34,30 @@ pub struct MediaRoster {
     /// Transport feedback counts on both ends (plan E4.3 T2 diagnostics).
     feedback: Arc<super::feedback_stats::FeedbackStats>,
     padding_key: PaddingKey,
+    /// The session's clock port, handed to every link and the arrivals.
+    clock: Arc<dyn rekindle_utils::Clock>,
 }
 
 impl MediaRoster {
+    #[must_use]
+    pub fn new(clock: Arc<dyn rekindle_utils::Clock>) -> Self {
+        Self {
+            links: RwLock::default(),
+            allocator: Arc::default(),
+            arrivals: Arc::new(ArrivalLedger::new(clock.as_ref())),
+            quality: Arc::default(),
+            feedback: Arc::default(),
+            padding_key: PaddingKey::default(),
+            clock,
+        }
+    }
+
+    /// The session's clock port.
+    #[must_use]
+    pub fn clock(&self) -> &Arc<dyn rekindle_utils::Clock> {
+        &self.clock
+    }
+
     /// Arrivals from each peer, recorded once a datagram proved fresh.
     #[must_use]
     pub fn arrivals(&self) -> &Arc<ArrivalLedger> {

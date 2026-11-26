@@ -151,6 +151,9 @@ pub trait MediaKeySource: Send + Sync {
     /// The media keys of the active 1:1 call with `peer_pubkey`, or
     /// `None` when there is no such call or it has no key yet.
     fn call_media(&self, peer_pubkey: &str) -> Option<CallMediaKeys>;
+
+    /// The media engine's clock: the host's port (plan C9.2, E4.1).
+    fn clock(&self) -> Arc<dyn rekindle_utils::Clock>;
 }
 
 /// Orchestration port for voice session work.

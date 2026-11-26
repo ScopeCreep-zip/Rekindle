@@ -17,6 +17,10 @@ impl Clock for Manual {
     fn now_ms(&self) -> u64 {
         self.0.load(Ordering::SeqCst)
     }
+
+    fn monotonic(&self) -> std::time::Instant {
+        std::time::Instant::now()
+    }
 }
 
 fn detected(game_id: u32, started_at_epoch_ms: u64) -> DetectedGame {

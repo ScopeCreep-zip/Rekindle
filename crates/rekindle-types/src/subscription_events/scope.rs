@@ -51,6 +51,7 @@ impl EventScope {
         match scope {
             VoiceScope::Community { community, .. } => Self::Community(community.clone()),
             VoiceScope::Dm { peer_key } => Self::Peer(peer_key.clone()),
+            VoiceScope::Group { group_id } => Self::Conversation(group_id.clone()),
         }
     }
 }

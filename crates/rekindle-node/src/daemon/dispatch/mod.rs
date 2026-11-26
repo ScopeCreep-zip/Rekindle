@@ -182,6 +182,9 @@ pub struct DaemonContext {
     /// mint (plan C9.2). `OsRandom` in production; AEAD nonces never come
     /// from it.
     pub rng: Arc<dyn rekindle_utils::RandomSource>,
+    /// The Host's one voice engine state (plan E4.1 S5a1, lead ruling
+    /// 2026-11-26): at most one live session per identity.
+    pub voice: Arc<crate::host::adapters::voice::HostVoice>,
     /// The user's input idle time (plan E2.B): `rekindle_idle::OsIdle` in
     /// production.
     pub idle: Arc<dyn rekindle_utils::IdleSource>,

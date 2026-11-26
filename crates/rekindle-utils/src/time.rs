@@ -71,6 +71,12 @@ pub trait Clock: Send + Sync {
     fn now_ms_i64(&self) -> i64 {
         i64::try_from(self.now_ms()).unwrap_or(i64::MAX)
     }
+
+    /// A monotonic instant, for durations and deadlines that never go on
+    /// the wire (the media engine's pacing, RTT and liveness, plan E4.1):
+    /// the OS monotonic clock in production, the paused tokio clock in the
+    /// simulator. Callable from any thread, with or without a runtime.
+    fn monotonic(&self) -> std::time::Instant;
 }
 
 /// The system's wall clock.
@@ -84,6 +90,10 @@ impl Clock for SystemClock {
 
     fn now_secs(&self) -> u64 {
         timestamp_secs()
+    }
+
+    fn monotonic(&self) -> std::time::Instant {
+        std::time::Instant::now()
     }
 }
 

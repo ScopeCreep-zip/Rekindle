@@ -397,6 +397,10 @@ pub(crate) async fn teardown(ctx: &DaemonContext, reason: EndReason) {
     if let Some(shell) = &shell {
         shell.ending().await;
     }
+    // The unlock's voice session ends with it (plan E4.1 S5a1).
+    if let Some(scope) = ctx.voice.end() {
+        tracing::debug!(?scope, "teardown left voice");
+    }
     // The stop token first, and the stages get [`STAGE_GRACE`] to stop at
     // it while the pool still answers, so a call in flight lands rather
     // than failing (R1-2); then draining the pool releases every task still

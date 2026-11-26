@@ -83,6 +83,7 @@ impl Peer {
             is_stage,
             transport: Arc::new(tokio::sync::Mutex::new(VoiceTransport::new(
                 CHANNEL.to_string(),
+                Arc::new(rekindle_utils::SystemClock),
             ))),
             keys: ChannelSenderKeyStore::default(),
             calls: Mutex::new(Vec::new()),
@@ -211,6 +212,9 @@ impl VoiceSignalingDeps for Peer {
     fn set_voice_engine_deafened(&self, _: bool) {}
     fn media_live_peers(&self) -> std::collections::HashSet<String> {
         std::collections::HashSet::new()
+    }
+    fn clock(&self) -> Arc<dyn rekindle_utils::Clock> {
+        Arc::new(rekindle_utils::SystemClock)
     }
     fn channel_sender_keys(&self, community_id: &str, channel_id: &str) -> Arc<ChannelSenderKeys> {
         self.keys.keys(community_id, channel_id)

@@ -66,6 +66,8 @@ struct McuLoop {
     /// sender's jitter buffer for arrival stamping and playout timing.
     /// Only differences within it are used, so the origin is arbitrary.
     origin: Instant,
+    /// The session's clock port (plan E4.1).
+    clock: std::sync::Arc<dyn rekindle_utils::Clock>,
 }
 
 pub async fn run(params: McuParams) {
@@ -89,6 +91,7 @@ impl McuLoop {
             }
         };
 
+        let clock = params.keys.clock();
         Some(Self {
             transport: params.transport,
             packet_rx: params.packet_rx,
@@ -102,14 +105,21 @@ impl McuLoop {
             sequence: 0,
             opener: FrameOpener::new(std::sync::Arc::clone(&params.keys)),
             sealer: FrameSealer::new(params.keys),
-            origin: Instant::now(),
+            origin: clock.monotonic(),
+            clock,
         })
     }
 
     /// Local milliseconds since loop start — the monotonic clock the
     /// per-sender jitter buffers stamp arrivals and time playout with.
     fn local_ms(&self) -> u64 {
-        u64::try_from(self.origin.elapsed().as_millis()).unwrap_or(u64::MAX)
+        u64::try_from(
+            self.clock
+                .monotonic()
+                .saturating_duration_since(self.origin)
+                .as_millis(),
+        )
+        .unwrap_or(u64::MAX)
     }
 
     async fn run_loop(mut self) {
@@ -153,7 +163,7 @@ impl McuLoop {
                         PerSenderState {
                             codec,
                             jitter_buffer: JitterBuffer::new(80),
-                            last_packet_time: Instant::now(),
+                            last_packet_time: self.clock.monotonic(),
                         },
                     );
                 }
@@ -173,7 +183,7 @@ impl McuLoop {
                 },
                 arrival_ms,
             );
-            sender.last_packet_time = Instant::now();
+            sender.last_packet_time = self.clock.monotonic();
         }
     }
 
@@ -236,7 +246,7 @@ impl McuLoop {
             match self.encoder.encode(&mixed) {
                 Ok(encoded) => {
                     let sequence = self.sequence;
-                    let timestamp = rekindle_utils::timestamp_ms();
+                    let timestamp = self.clock.now_ms();
                     self.sequence = self.sequence.wrapping_add(1);
                     // No key → drop the mix; it is never sent in the clear.
                     let Some(sframe) =
@@ -274,7 +284,12 @@ impl McuLoop {
         let stale: Vec<Vec<u8>> = self
             .senders
             .iter()
-            .filter(|(_, s)| s.last_packet_time.elapsed() > Duration::from_secs(5))
+            .filter(|(_, s)| {
+                self.clock
+                    .monotonic()
+                    .saturating_duration_since(s.last_packet_time)
+                    > Duration::from_secs(5)
+            })
             .map(|(k, _)| k.clone())
             .collect();
 

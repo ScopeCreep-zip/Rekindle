@@ -58,7 +58,7 @@ pub(super) fn init_voice_session_impl(
         io: prefs.io,
         ..rekindle_voice::VoiceConfig::default()
     };
-    let engine = rekindle_voice::VoiceEngine::new(config)
+    let engine = rekindle_voice::VoiceEngine::new(config, Arc::clone(&state.clock))
         .map_err(|e| VoiceError::Session(format!("failed to create voice engine: {e}")))?;
 
     // First install the engine handle on AppState so
@@ -69,9 +69,14 @@ pub(super) fn init_voice_session_impl(
         // Placeholder transport — overwritten below once we've
         // built the real one with signing key + AEAD installed.
         transport: Arc::new(tokio::sync::Mutex::new(
-            rekindle_voice::transport::VoiceTransport::new(channel_id.to_string()),
+            rekindle_voice::transport::VoiceTransport::new(
+                channel_id.to_string(),
+                Arc::clone(&state.clock),
+            ),
         )),
-        media: Arc::default(),
+        media: Arc::new(rekindle_voice::transport::roster::MediaRoster::new(
+            Arc::clone(&state.clock),
+        )),
         loops: None,
         monitor: None,
         mcu: None,
@@ -200,7 +205,10 @@ fn create_transport_impl(
     rekindle_voice::transport::VoiceTransport,
     Option<Arc<rekindle_lifecycle::SessionScope>>,
 ) {
-    let mut transport = rekindle_voice::transport::VoiceTransport::new(channel_id.to_string());
+    let mut transport = rekindle_voice::transport::VoiceTransport::new(
+        channel_id.to_string(),
+        Arc::clone(&state.clock),
+    );
     let api = state_helpers::veilid_api(state);
     let sender_key = hex::decode(self_voice_id).unwrap_or_default();
 
@@ -315,7 +323,9 @@ pub(super) fn spawn_voice_loops_impl(
                     String::new(),
                     Arc::new(rekindle_voice::liveness::MediaLiveness::default()),
                     Arc::default(),
-                    Arc::default(),
+                    Arc::new(rekindle_voice::transport::roster::MediaRoster::new(
+                        Arc::clone(&state.clock),
+                    )),
                 )
             },
             |h| {

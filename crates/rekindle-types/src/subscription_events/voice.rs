@@ -35,6 +35,8 @@ pub enum VoiceScope {
     Community { community: String, channel: String },
     /// A direct call with one peer.
     Dm { peer_key: String },
+    /// A group call in a group conversation (plan E2.6 group DMs).
+    Group { group_id: String },
 }
 
 impl VoiceScope {
@@ -43,7 +45,7 @@ impl VoiceScope {
     pub fn community(&self) -> Option<&str> {
         match self {
             Self::Community { community, .. } => Some(community.as_str()),
-            Self::Dm { .. } => None,
+            Self::Dm { .. } | Self::Group { .. } => None,
         }
     }
 
@@ -55,6 +57,7 @@ impl VoiceScope {
         match self {
             Self::Community { channel, .. } => channel.as_str(),
             Self::Dm { peer_key } => peer_key.as_str(),
+            Self::Group { group_id } => group_id.as_str(),
         }
     }
 
@@ -64,6 +67,7 @@ impl VoiceScope {
         match self {
             Self::Community { .. } => "community",
             Self::Dm { .. } => "dm",
+            Self::Group { .. } => "group",
         }
     }
 }

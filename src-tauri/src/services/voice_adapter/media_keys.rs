@@ -32,6 +32,10 @@ impl MediaKeySource for VoiceAdapter {
             sender: call.media_sender,
         })
     }
+
+    fn clock(&self) -> Arc<dyn rekindle_utils::Clock> {
+        Arc::clone(&self.state.clock)
+    }
 }
 
 /// Our community pseudonym's signature over `message`, one of the

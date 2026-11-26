@@ -169,14 +169,16 @@ impl InboundHandler for DaemonHandler {
             )
     }
 
-    fn on_media(&self, raw: &[u8], _arrived: std::time::Instant) {
-        // The Host has no voice engine until its voice adapter lands (plan
-        // E4.1 S5, the same round as this slice): until then a media
-        // datagram is dropped here, as the untagged datagram it was before.
-        tracing::trace!(
-            len = raw.len(),
-            "media datagram: no voice engine in this host"
-        );
+    fn on_media(&self, raw: &[u8], arrived: std::time::Instant) {
+        // The Host's one voice engine takes it (plan E4.1 S5a1).
+        let Some(ctx) = self.host.get().and_then(std::sync::Weak::upgrade) else {
+            tracing::trace!(
+                len = raw.len(),
+                "media datagram before the host is up — dropped"
+            );
+            return;
+        };
+        crate::host::adapters::voice::ingest_media(&ctx.voice, raw, arrived);
     }
 
     async fn on_direct(&self, datagram: &[u8]) {

@@ -10,7 +10,7 @@
 //! per-message cost included, so on a Veilid route the interval sits near
 //! its 250 ms ceiling until the estimate is several Mbps.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use rekindle_codec::capnp_codec::transport_feedback::TransportFeedback;
 use rekindle_codec::capnp_codec::SignedWire;
@@ -43,7 +43,7 @@ impl VoiceReceiveLoop {
     /// Send each peer its report when its interval has passed. Without a
     /// signing identity no report would be accepted, so none is built.
     pub(super) fn send_feedback_if_due(&mut self) {
-        let now = Instant::now();
+        let now = self.clock.monotonic();
         let Some(signing_key) = self.report_signing_key.clone() else {
             return;
         };

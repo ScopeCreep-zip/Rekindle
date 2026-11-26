@@ -233,6 +233,10 @@ impl VoiceSignalingDeps for VoiceSignalingAdapter {
         state_helpers::media_live_peers(&self.state)
     }
 
+    fn clock(&self) -> Arc<dyn rekindle_utils::Clock> {
+        Arc::clone(&self.state.clock)
+    }
+
     fn channel_sender_keys(
         &self,
         community_id: &str,

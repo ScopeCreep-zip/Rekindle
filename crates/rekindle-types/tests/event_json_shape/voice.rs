@@ -27,7 +27,7 @@ pub const NAMES: &[&str] = &[
     "connectionQuality",
 ];
 
-pub const NESTED: &[&str] = &["VoiceScope.community", "VoiceScope.dm"];
+pub const NESTED: &[&str] = &["VoiceScope.community", "VoiceScope.dm", "VoiceScope.group"];
 
 pub fn variant_name(e: &VoiceEvent) -> &'static str {
     match e {
@@ -56,6 +56,7 @@ fn scope_name(scope: &VoiceScope) -> &'static str {
     match scope {
         VoiceScope::Community { .. } => "VoiceScope.community",
         VoiceScope::Dm { .. } => "VoiceScope.dm",
+        VoiceScope::Group { .. } => "VoiceScope.group",
     }
 }
 
@@ -76,6 +77,12 @@ fn room() -> VoiceScope {
 
 fn dm() -> VoiceScope {
     VoiceScope::Dm { peer_key: pk('b') }
+}
+
+fn group() -> VoiceScope {
+    VoiceScope::Group {
+        group_id: id("gdm_", 'g'),
+    }
 }
 
 /// Exactly representable floats, so the golden text is stable.
@@ -247,6 +254,10 @@ fn local_session() -> Vec<Sample> {
             VoiceEvent::LocalJoined { scope: room() },
         ),
         ev("localJoined.dm", VoiceEvent::LocalJoined { scope: dm() }),
+        ev(
+            "localJoined.group",
+            VoiceEvent::LocalJoined { scope: group() },
+        ),
         ev(
             "speakingChanged",
             VoiceEvent::SpeakingChanged {

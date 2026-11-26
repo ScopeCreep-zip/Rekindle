@@ -259,7 +259,7 @@ impl Inputs {
                 community: community.clone(),
                 channel: channel.clone(),
             }),
-            VoiceScope::Dm { .. } => None,
+            VoiceScope::Dm { .. } | VoiceScope::Group { .. } => None,
         }
     }
 

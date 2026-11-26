@@ -2830,6 +2830,17 @@
       }
     }
   },
+  "voice.localJoined.group": {
+    "voice": {
+      "localJoined": {
+        "scope": {
+          "group": {
+            "groupId": "gdm_gggggggggggggggggggggggggggggggg"
+          }
+        }
+      }
+    }
+  },
   "voice.mediaReady": {
     "voice": {
       "mediaReady": {

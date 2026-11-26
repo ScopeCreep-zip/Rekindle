@@ -24,7 +24,8 @@
  */
 export type VoiceScope =
   | { community: { community: string; channel: string } }
-  | { dm: { peerKey: string } };
+  | { dm: { peerKey: string } }
+  | { group: { groupId: string } };
 
 /** One participant in a voice roster. */
 export interface VoiceParticipant {
@@ -158,14 +159,16 @@ export function q8ToPercent(q8: number): number {
 /** The full subscription event as emitted on the channel. */
 export type VoiceSubscriptionEvent = { voice: VoiceEvent };
 
-/** `"community"` or `"dm"` — what the UI switches its call panel on. */
-export function callType(scope: VoiceScope): "community" | "dm" {
-  return "community" in scope ? "community" : "dm";
+/** `"community"`, `"dm"` or `"group"` — what the UI switches its call panel on. */
+export function callType(scope: VoiceScope): "community" | "dm" | "group" {
+  if ("community" in scope) return "community";
+  return "dm" in scope ? "dm" : "group";
 }
 
-/** Channel id for a community call, peer key for a DM. */
+/** Channel id for a community call, peer key for a DM, group id for a group call. */
 export function sessionKey(scope: VoiceScope): string {
-  return "community" in scope ? scope.community.channel : scope.dm.peerKey;
+  if ("community" in scope) return scope.community.channel;
+  return "dm" in scope ? scope.dm.peerKey : scope.group.groupId;
 }
 
 /** The community, or `null` for a DM call. */
