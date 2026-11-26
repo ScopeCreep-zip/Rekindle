@@ -210,7 +210,7 @@ Dropped
   layout tiles: 0
   sounds, strings, popups, other bitmaps and the in-game overlay (XIG) are not read.
 
-Contrast changes (minimal Oklab-lightness walk) (9 made)
+Contrast changes (minimal Oklab-lightness walk) (8 made)
   accent.text: #0264b4 -> #277bcc (1.4.3 accent.text on bg.dark: 3.28:1 -> 4.51:1, required 4.50:1)
   accent.text: #277bcc -> #2d80d2 (1.4.3 accent.text on bg.primary: 4.20:1 -> 4.50:1, required 4.50:1)
   link: #0264b4 -> #277bcc (1.4.3 link on bg.dark: 3.28:1 -> 4.51:1, required 4.50:1)
@@ -218,5 +218,4 @@ Contrast changes (minimal Oklab-lightness walk) (9 made)
   accent.text: #2d80d2 -> #2f82d4 (1.4.3 .action-bar-btn hovered accent.text on accent.fill 15% over bg.dark: 4.41:1 -> passes, required 4.50:1)
   accent.text: #2f82d4 -> #3689db (1.4.3 .announcement-icon accent.text on accent.fill 25% over bg.dark: 4.13:1 -> passes, required 4.50:1)
   accent.text: #3689db -> #388bdd (1.4.3 .search-panel-chip-active accent.text on accent.fill 18% over bg.primary: 4.42:1 -> passes, required 4.50:1)
-  focus-outline: #2d80d2 -> #3386d8 (1.4.11 .skin-menu:focus-visible boundary focus-outline on titlebar.start: 2.78:1 -> 3.00:1, required 3.00:1)
-  titlebar.text: #e7e7e7 -> #ececeb (1.4.3 .xfire-titlebar-btn titlebar.text on titlebar.start: 4.35:1 -> 9.63:1, required 4.50:1)
+  titlebar.start: #0b3c64 -> #04365e (1.4.11 .skin-menu:focus-visible boundary focus-outline on titlebar.start: 2.78:1 -> 3.02:1, required 3.00:1)

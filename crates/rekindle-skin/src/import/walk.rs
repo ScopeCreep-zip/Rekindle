@@ -6,7 +6,8 @@
 //! The validator is the oracle: the package is rebuilt and run through
 //! [`validate::run`]; on a contrast refusal the colour the skin may set
 //! (the text token, or its ground when the text is a fixed role) keeps
-//! its Oklab a and b and moves its lightness away from the other colour,
+//! its Oklab a and b and moves its lightness away from the other colour
+//! (or, when no lightness that way passes, the other way through it),
 //! the smallest move (bisected to 2⁻²⁰ of the way) after which the
 //! validator no longer names that pair. Repeated until the package passes.
 //! Oklab: Ottosson, "A perceptual color space for image processing"
@@ -20,7 +21,7 @@ use super::ImportError;
 use crate::access::scaled;
 use crate::colour;
 use crate::output::Canonical;
-use crate::registry::{entry_in, resolve, Base, Class, TokenType, ENTRIES};
+use crate::registry::{dialog, entry_in, resolve, Base, Class, TokenType, BASE_TABLE, ENTRIES};
 use crate::validate;
 
 /// One change the walk made.
@@ -227,10 +228,8 @@ fn ground_parts(ground: &str) -> Vec<&str> {
 
 /// What the walk may move to fix `fg` on `ground`, in order, each with the
 /// colour it moves away from: the text token itself, then the opaque ground
-/// (itself, or beneath its tints), then (when the text is a fixed role) the
-/// ground's tints. The ground moves only when no lightness of the text
-/// passes: text already at the end it walks to (a pack's white title text
-/// on its own strip's colour, ST1). A derived colour the skin omits is moved through the colour it
+/// beneath a tint, then (when the text is a fixed role) the ground's
+/// tints. A derived colour the skin omits is moved through the colour it
 /// follows (plan E7.7.7 e777n: white on `status.online 60% over bg.dark`
 /// moves the skin's `bg.primary`).
 pub(crate) fn targets(
@@ -247,7 +246,9 @@ pub(crate) fn targets(
     let parts = ground_parts(ground);
     if settable(fg) {
         push(Some(fg.to_owned()), ground);
-        push(owner(parts[0], tokens), fg);
+        if parts.len() > 1 {
+            push(owner(parts[0], tokens), fg);
+        }
     } else {
         for part in parts {
             push(owner(part, tokens), fg);
@@ -266,8 +267,35 @@ pub(crate) fn target_of(
     targets(fg, ground, tokens).into_iter().next()
 }
 
+/// What a walk may move and which rows the validator holds it to.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Phase {
+    /// The base rows, before any dialog role is set.
+    Base,
+    /// Every row; only a dialog role moves.
+    Dialog,
+}
+
+/// The dialog walk's targets (ST1 ruling 1): the pair's dialog roles
+/// only, the text first, then its ground (a pack's white menu text on a
+/// strip of its own colour moves the strip's mean, never the text).
+fn dialog_targets(fg: &str, ground: &str) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    if dialog::is_role(fg) {
+        out.push((fg.to_owned(), ground.to_owned()));
+    }
+    for part in ground_parts(ground) {
+        if dialog::is_role(part) && part != fg {
+            out.push((part.to_owned(), fg.to_owned()));
+        }
+    }
+    out
+}
+
 /// Builds with `build`, validates, and walks every failing pair until the
-/// package passes or a refusal cannot be settled.
+/// package passes or a refusal cannot be settled: the base walk with every
+/// dialog role held out, then the roles the pack does not name derived from
+/// the settled base, then the dialog walk (module docs).
 ///
 /// # Errors
 /// What `build` returns.
@@ -277,9 +305,38 @@ pub fn settle(
     build: impl Fn(&BTreeMap<String, TokenValue>) -> Result<Vec<u8>, ImportError>,
 ) -> Result<(WalkResult, Vec<Change>), ImportError> {
     let mut changes = Vec::new();
+    let held: BTreeMap<String, TokenValue> = tokens
+        .iter()
+        .filter(|(id, _)| dialog::is_role(id))
+        .map(|(id, v)| (id.clone(), v.clone()))
+        .collect();
+    tokens.retain(|id, _| !dialog::is_role(id));
+    let based = walk(tokens, base, &build, Phase::Base, &mut changes)?;
+    tokens.extend(held);
+    if let WalkResult::Unsettled(_) = based {
+        return Ok((based, changes));
+    }
+    dialog::fill(tokens, base);
+    let settled = walk(tokens, base, &build, Phase::Dialog, &mut changes)?;
+    Ok((settled, changes))
+}
+
+/// One walk of `phase` until the package passes its rows or a refusal
+/// cannot be settled.
+fn walk(
+    tokens: &mut BTreeMap<String, TokenValue>,
+    base: Base,
+    build: &impl Fn(&BTreeMap<String, TokenValue>) -> Result<Vec<u8>, ImportError>,
+    phase: Phase,
+    changes: &mut Vec<Change>,
+) -> Result<WalkResult, ImportError> {
+    let check = |bytes: &[u8]| match phase {
+        Phase::Base => validate::run_on(bytes, BASE_TABLE),
+        Phase::Dialog => validate::run(bytes),
+    };
     loop {
-        let err = match validate::run(&build(tokens)?) {
-            Ok(c) => return Ok((WalkResult::Passed(c), changes)),
+        let err = match check(&build(tokens)?) {
+            Ok(c) => return Ok(WalkResult::Passed(c)),
             Err(e) => e,
         };
         let stop = |why: &str| {
@@ -289,17 +346,20 @@ pub fn settle(
             })
         };
         let Some((rule, fg, ground, before, required)) = pair_of(&err.rule) else {
-            return Ok((stop("not a contrast pair"), changes));
+            return Ok(stop("not a contrast pair"));
         };
         if changes.len() >= MAX_CHANGES {
-            return Ok((stop("the walk made its limit of changes"), changes));
+            return Ok(stop("the walk made its limit of changes"));
         }
-        let tries = targets(&fg, &ground, tokens);
+        let tries = match phase {
+            Phase::Base => targets(&fg, &ground, tokens),
+            Phase::Dialog => dialog_targets(&fg, &ground),
+        };
         if tries.is_empty() {
-            return Ok((
-                stop("neither colour of the pair is a token the skin sets"),
-                changes,
-            ));
+            return Ok(stop(match phase {
+                Phase::Base => "neither colour of the pair is a token the skin sets",
+                Phase::Dialog => "neither colour of the pair is a dialog role, and the dialog walk moves no pack colour",
+            }));
         }
         let same = |e: &SkinError| {
             pair_of(&e.rule).is_some_and(|(r, f, g, _, _)| r == rule && f == fg && g == ground)
@@ -307,7 +367,7 @@ pub fn settle(
         let mut found = None;
         for (target, other) in tries {
             let Some(original) = colour_of(tokens, base, &target) else {
-                return Ok((stop("the token is not a resolved colour"), changes));
+                return Ok(stop("the token is not a resolved colour"));
             };
             // Away from the other colour; text on an image region goes away
             // from the base's ground.
@@ -315,22 +375,30 @@ pub fn settle(
                 .map_or(matches!(base, Base::Dark | Base::HcDark), |o| {
                     colour::luminance(original) >= colour::luminance(o)
                 });
-            let mut trial = tokens.clone();
-            let walked = lightness_walk(original, up, |c| {
-                trial.insert(target.clone(), color(c));
-                Ok(match validate::run(&build(&trial)?) {
-                    Ok(_) => true,
-                    Err(e) => !same(&e),
-                })
-            })?;
-            if let Some(new) = walked {
-                found = Some((target, original, new));
+            // Away from the other colour first; when no lightness that way
+            // passes (text darker than a mid-tone fill, which only white
+            // clears), the other way, through the other colour's lightness.
+            for dir in [up, !up] {
+                let mut trial = tokens.clone();
+                let walked = lightness_walk(original, dir, |c| {
+                    trial.insert(target.clone(), color(c));
+                    Ok(match check(&build(&trial)?) {
+                        Ok(_) => true,
+                        Err(e) => !same(&e),
+                    })
+                })?;
+                if let Some(new) = walked {
+                    found = Some((target.clone(), original, new));
+                    break;
+                }
+            }
+            if found.is_some() {
                 break;
             }
         }
         let Some((target, original, new)) = found else {
             let why = format!("no lightness of {fg} or its ground passes {rule} on {ground}");
-            return Ok((stop(&why), changes));
+            return Ok(stop(&why));
         };
         tokens.insert(target.clone(), color(new));
         let after_x100 = colour_of(tokens, base, &fg)

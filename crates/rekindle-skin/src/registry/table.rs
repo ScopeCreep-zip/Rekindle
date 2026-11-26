@@ -149,8 +149,8 @@ const GRAPHIC: &[Constraint] = &[Constraint {
 }];
 pub(super) const NONE: &[Constraint] = &[];
 
-/// The rows before the dialog roles ([`super::dialog::DIALOG`]); every
-/// derivation in both reads only rows with none.
+/// The rows before the dialog roles ([`super::dialog::DIALOG`]); a
+/// derivation in either reads only an earlier row.
 pub(super) const BASE: &[TokenEntry] = &[
     // The window ground (`ui-skin.md`: outer chrome; every window sits on
     // it, `00-rules.css`). No importer writes it: each writes the pack's own
@@ -442,36 +442,6 @@ pub(super) const BASE: &[TokenEntry] = &[
         "--color-xfire-success-fill",
         c1("#00892d"),
         NONE,
-    ),
-    // The title-bar ground of a window that draws no pack art (Settings,
-    // plan SB1). An Xfire import writes the mean colours of the pack's own
-    // title strip ends (`import::dialog_roles`); a skin that sets its accent
-    // and omits these follows its selection colour toward its ground.
-    derived(
-        row(
-            "titlebar.start",
-            "--color-xfire-titlebar-start",
-            c2("#0f1a3a", "#dbe7f6"),
-            NONE,
-        ),
-        Derivation::Mix {
-            a: "accent.fill",
-            b: "bg.primary",
-            a_weight: 500,
-        },
-    ),
-    derived(
-        row(
-            "titlebar.end",
-            "--color-xfire-titlebar-end",
-            c2("#1a2a5e", "#c3d6ef"),
-            NONE,
-        ),
-        Derivation::Mix {
-            a: "accent.fill",
-            b: "bg.primary",
-            a_weight: 250,
-        },
     ),
     same_as(
         row(

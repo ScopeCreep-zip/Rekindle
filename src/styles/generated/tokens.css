@@ -193,16 +193,6 @@
   inherits: true;
   initial-value: #00892d;
 }
-@property --color-xfire-titlebar-start {
-  syntax: "<color>";
-  inherits: true;
-  initial-value: #0f1a3a;
-}
-@property --color-xfire-titlebar-end {
-  syntax: "<color>";
-  inherits: true;
-  initial-value: #1a2a5e;
-}
 @property --color-xfire-titlebar-text {
   syntax: "<color>";
   inherits: true;
@@ -283,6 +273,16 @@
   inherits: true;
   initial-value: 28px;
 }
+@property --color-xfire-titlebar-start {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #0f1a3a;
+}
+@property --color-xfire-titlebar-end {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #1a2a5e;
+}
 @property --color-xfire-input-bg {
   syntax: "<color>";
   inherits: true;
@@ -307,6 +307,11 @@
   syntax: "<color>";
   inherits: true;
   initial-value: #ffffff;
+}
+@property --color-xfire-menubar-bg {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #0a0a0a;
 }
 @property --color-xfire-menubar-text {
   syntax: "<color>";
@@ -393,8 +398,6 @@
   --color-xfire-focus-outline: #5fa8d3;
   --color-xfire-success: #51e385;
   --color-xfire-success-fill: #00892d;
-  --color-xfire-titlebar-start: #0f1a3a;
-  --color-xfire-titlebar-end: #1a2a5e;
   --color-xfire-titlebar-text: #e7e7e7;
   --tint-fill-strong: 80%;
   --tint-fill: 60%;
@@ -413,11 +416,14 @@
   --font-family-xfire: "Segoe UI", "Tahoma", sans-serif;
   --font-family-icons: "Symbols Nerd Font Mono";
   --chrome-height: 28px;
+  --color-xfire-titlebar-start: #0f1a3a;
+  --color-xfire-titlebar-end: #1a2a5e;
   --color-xfire-input-bg: #1e1e1e;
   --color-xfire-input-text: #e7e7e7;
   --color-xfire-input-selection-bg: #167bc0;
   --color-xfire-input-selection-bg-inactive: #3a3a3a;
   --color-xfire-selection-text: #ffffff;
+  --color-xfire-menubar-bg: #0a0a0a;
   --color-xfire-menubar-text: #8fb9d7;
   --color-xfire-progress-bg: #1e1e1e;
   --color-xfire-progress-fill: #167bc0;
@@ -463,8 +469,6 @@
     --color-xfire-link: #0a5a9c;
     --color-xfire-focus-outline: #0b5cad;
     --color-xfire-success: #00631d;
-    --color-xfire-titlebar-start: #dbe7f6;
-    --color-xfire-titlebar-end: #c3d6ef;
     --color-xfire-titlebar-text: #000000;
     --tint-fill-strong: 100%;
     --tint-fill: 100%;
@@ -475,9 +479,12 @@
     --color-xfire-mention-everyone: #9a3a00;
     --color-xfire-mention-role: #5a32b8;
     --color-xfire-mention-self: #a3261b;
+    --color-xfire-titlebar-start: #dbe7f6;
+    --color-xfire-titlebar-end: #c3d6ef;
     --color-xfire-input-bg: #ffffff;
     --color-xfire-input-text: #1a1a1a;
     --color-xfire-input-selection-bg-inactive: #d4d4d4;
+    --color-xfire-menubar-bg: #ffffff;
     --color-xfire-menubar-text: #0d4363;
     --color-xfire-progress-bg: #ffffff;
     --color-xfire-progress-outline: #767676;

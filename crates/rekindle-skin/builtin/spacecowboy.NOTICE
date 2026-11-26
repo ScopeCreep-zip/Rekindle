@@ -208,12 +208,11 @@ Dropped
   layout tiles: 0
   sounds, strings, popups, other bitmaps and the in-game overlay (XIG) are not read.
 
-Contrast changes (minimal Oklab-lightness walk) (8 made)
+Contrast changes (minimal Oklab-lightness walk) (7 made)
   accent.text: #b90000 -> #da3529 (1.4.3 accent.text on bg.dark: 3.06:1 -> 4.52:1, required 4.50:1)
   accent.text: #da3529 -> #e13c2f (1.4.3 accent.text on bg.tertiary: 4.18:1 -> 4.52:1, required 4.50:1)
   text.status: #767676 -> #7a7a7a (1.4.3 text.status on bg.tertiary: 4.27:1 -> 4.52:1, required 4.50:1)
   link: #eb0000 -> #f2150e (1.4.3 link on bg.tertiary: 4.19:1 -> 4.52:1, required 4.50:1)
   accent.text: #e13c2f -> #e33f31 (1.4.3 .action-bar-btn hovered accent.text on accent.fill 15% over bg.dark: 4.39:1 -> passes, required 4.50:1)
   accent.text: #e33f31 -> #ed4939 (1.4.3 .announcement-icon accent.text on accent.fill 25% over bg.dark: 4.03:1 -> passes, required 4.50:1)
-  focus-outline: #f2150e -> #ff2b20 (1.4.11 .skin-menu:focus-visible boundary focus-outline on titlebar.start: 2.61:1 -> 3.00:1, required 3.00:1)
-  titlebar.text: #e7e7e7 -> #eeeeed (1.4.3 .xfire-titlebar-btn titlebar.text on titlebar.start: 4.31:1 -> 9.66:1, required 4.50:1)
+  titlebar.start: #0b3e60 -> #003456 (1.4.11 .skin-menu:focus-visible boundary focus-outline on titlebar.start: 2.61:1 -> 3.00:1, required 3.00:1)

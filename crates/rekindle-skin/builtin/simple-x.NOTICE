@@ -178,6 +178,5 @@ Dropped
     mainskin/toolbar.gif
     strings.ini
 
-Contrast changes (minimal Oklab-lightness walk) (2 made)
-  accent.fill: #666666 -> #757575 (1.4.3 selection.text on accent.fill: 3.65:1 -> 4.55:1, required 4.50:1)
-  input.selection.bg: #666666 -> #757575 (1.4.3 selection.text on input.selection.bg: 3.65:1 -> 4.55:1, required 4.50:1)
+Contrast changes (minimal Oklab-lightness walk) (1 made)
+  selection.text: #000000 -> #e4e4e4 (1.4.3 selection.text on accent.fill: 3.65:1 -> 4.51:1, required 4.50:1)

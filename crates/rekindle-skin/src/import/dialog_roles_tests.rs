@@ -5,10 +5,10 @@ use std::collections::BTreeMap;
 use rekindle_image::{Rgba, RgbaImage};
 use rekindle_types::dto::skin::{Insets, RegionFit, RegionState, TokenValue};
 
-use super::dialog_roles::{filled, strip_ends, DERIVE};
+use super::dialog_roles::{art_mean, strip_ends, with_art};
 use super::walk::color;
 use super::{xfire_xml, Control, Tree};
-use crate::registry::DIALOG;
+use crate::registry::{dialog, Base};
 
 fn rgb(tokens: &BTreeMap<String, TokenValue>, id: &str) -> [u8; 3] {
     match &tokens[id] {
@@ -76,18 +76,32 @@ fn a_pack_with_a_strip_takes_its_title_ground_from_it() {
         fit: INSETS,
         images: BTreeMap::from([(RegionState::Normal, strip())]),
     };
-    let t = filled(pack_tokens(), &[control]);
+    let t = with_art(pack_tokens(), &[control]);
     assert_eq!(rgb(&t, "titlebar.start"), [255, 0, 0]);
     assert_eq!(rgb(&t, "titlebar.end"), [0, 0, 255]);
 }
 
+/// The menu bar's ground is the mean of the whole bar: 3 red, 5 green and
+/// 2 blue columns, less the two transparent pixels (ST1 ruling 3).
+#[test]
+fn a_pack_with_menu_bar_art_takes_its_menu_ground_from_it() {
+    let control = Control {
+        region: "buddylist.menubar",
+        fit: RegionFit::Stretch,
+        images: BTreeMap::from([(RegionState::Normal, strip())]),
+    };
+    let t = with_art(pack_tokens(), &[control]);
+    assert_eq!(art_mean(&strip()), Some([71, 142, 43]));
+    assert_eq!(rgb(&t, "menubar.bg"), [71, 142, 43]);
+}
+
+/// The import derives a role the pack neither names nor draws by the
+/// registry's own rows, so it writes what load serves (ST1 ruling 4).
 #[test]
 fn a_strip_less_pack_derives_every_role_from_its_own_colours() {
-    let t = filled(pack_tokens(), &[]);
-    for e in DIALOG {
-        assert!(t.contains_key(e.id), "{} unset", e.id);
-    }
-    for id in ["text.disabled", "titlebar.start", "titlebar.end"] {
+    let mut t = with_art(pack_tokens(), &[]);
+    dialog::fill(&mut t, Base::Dark);
+    for id in dialog::roles() {
         assert!(t.contains_key(id), "{id} unset");
     }
     // The selected row's colour toward the list ground: (23+10)/2, …
@@ -95,7 +109,8 @@ fn a_strip_less_pack_derives_every_role_from_its_own_colours() {
     assert_eq!(rgb(&t, "input.bg"), [20, 20, 20]);
     assert_eq!(rgb(&t, "input.text"), [231, 231, 231]);
     assert_eq!(rgb(&t, "scrollbar.track"), [10, 10, 10]);
-    assert_eq!(DERIVE.len(), DIALOG.len() + 3);
+    // The window ground, which follows the list ground.
+    assert_eq!(rgb(&t, "menubar.bg"), [10, 10, 10]);
 }
 
 /// An XML pack that names its dialog colours.
@@ -129,22 +144,43 @@ fn tree() -> Tree {
     t
 }
 
+/// Each named colour reaches its role as mapped, before any walk; any walk
+/// change to a role is recorded in the NOTICE (ST1 ruling 5).
 /// Fail-without: `TextFieldTextCG` mapped back to `NoRole` leaves
-/// `input.text` to the derivation (231, the list text), not 245.
+/// `input.text` unmapped.
 #[test]
 fn every_named_dialog_colour_reaches_its_role() {
+    let read = xfire_xml::read(&tree()).unwrap();
+    for (id, want) in [
+        ("input.text", [245, 245, 245]),
+        ("input.bg", [30, 30, 30]),
+        ("selection.text", [250, 250, 250]),
+        ("menubar.text", [143, 185, 215]),
+        ("tooltip.bg", [56, 56, 56]),
+        ("tooltip.text", [200, 200, 200]),
+    ] {
+        assert!(read.tokens.contains_key(id), "{id} not mapped");
+        assert_eq!(rgb(&read.tokens, id), want, "{id}");
+    }
     let imported = xfire_xml::import(&tree(), "fixture", None).unwrap();
     let pkg = crate::package::read(&imported.canonical.bytes).unwrap();
     let m = crate::manifest::parse(&pkg).unwrap();
     let v = &m.variants[0];
     let t = crate::tokens::parse(&v.tokens, pkg.get(&v.tokens).unwrap()).unwrap();
-    assert_eq!(rgb(&t, "input.text"), [245, 245, 245]);
-    assert_eq!(rgb(&t, "input.bg"), [30, 30, 30]);
-    assert_eq!(rgb(&t, "selection.text"), [250, 250, 250]);
-    assert_eq!(rgb(&t, "menubar.text"), [143, 185, 215]);
-    assert_eq!(rgb(&t, "tooltip.bg"), [56, 56, 56]);
-    assert_eq!(rgb(&t, "tooltip.text"), [200, 200, 200]);
-    for e in DIALOG {
-        assert!(t.contains_key(e.id), "{} unset", e.id);
+    for id in dialog::roles() {
+        assert!(t.contains_key(id), "{id} unset");
+    }
+    let noted = |id: &str| {
+        imported
+            .notice
+            .lines()
+            .any(|l| l.starts_with(&format!("  {id}: #")))
+    };
+    for c in &imported.changes {
+        assert!(noted(&c.token), "{} walked but not in the NOTICE", c.token);
+    }
+    for (id, mapped) in read.tokens.iter().filter(|(id, _)| dialog::is_role(id)) {
+        let walked = imported.changes.iter().any(|c| &c.token == id);
+        assert!(walked || &t[id] == mapped, "{id} moved with no walk change");
     }
 }

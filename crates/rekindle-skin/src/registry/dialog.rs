@@ -1,20 +1,26 @@
 //! The dialog-control roles (plan E7.7.3 item 1, E7.7.7; research
 //! `research-settings-theme-2026-11-26.md` §2.1, §3.2): the colours Xfire's
-//! `Themes.xml` gives its text fields, selection, menu text, progress bars,
+//! `Themes.xml` gives its text fields, selection, menu bar, progress bars,
 //! scrollbars and tooltips, which a window that draws no pack art
 //! (Settings, plan SB1) paints with.
 //!
-//! An Xfire import writes each of them for every pack: from the pack's own
-//! colour when it names one (`import::xfire_xml::colours::NAMES`), else
-//! from the documented derivation over the colours it does define
-//! (`import::dialog_roles::DERIVE`). The derivations here serve a skin of
-//! any other format that omits a role; like every registry derivation they
-//! read only rows with none. Every role's contrast pair is a constraint
-//! here, so the validator and the import walk hold it to WCAG 1.4.3 (text,
-//! 4.5:1) or 1.4.11 (a boundary or a fill, 3:1).
+//! This is the one derivation table for them (ST1 ruling 4, 2026-11-26):
+//! an import writes a role the pack's theme does not name from these rows
+//! ([`fill`], after the base walk), and [`super::resolve`] serves the same
+//! rows at load to a package that lacks a role (xfire-classic, imported
+//! before the roles existed), so both paths read one table. Every role's
+//! contrast pair is a constraint here, so the validator and the import walk
+//! hold it to WCAG 1.4.3 (text, 4.5:1) or 1.4.11 (a boundary or a fill,
+//! 3:1). A text role is held only against the ground the pack itself draws
+//! it on (ST1 ruling 3): `menubar.text` on `menubar.bg`, `progress.text` on
+//! the bar, `tooltip.text` on `tooltip.bg`.
 
-use super::table::{c1, c4, derived, row, same_as, NONE};
-use super::{Constraint, Derivation, TokenEntry};
+use std::collections::BTreeMap;
+
+use rekindle_types::dto::skin::TokenValue;
+
+use super::table::{c1, c2, c4, derived, row, same_as, NONE};
+use super::{Base, Constraint, Derivation, TokenEntry};
 
 const fn on(grounds: &'static [&'static str], min_ratio_x100: u16) -> [Constraint; 1] {
     [Constraint {
@@ -27,22 +33,65 @@ const fn on(grounds: &'static [&'static str], min_ratio_x100: u16) -> [Constrain
 const INPUT_TEXT: &[Constraint] = &on(&["input.bg", "input.selection.bg-inactive"], 450);
 /// WCAG 1.4.3: selected text on the selected row and the field selection.
 const SELECTED_TEXT: &[Constraint] = &on(&["accent.fill", "input.selection.bg"], 450);
-/// WCAG 1.4.3: text on the window ground (Settings' tab rail).
-const WINDOW_TEXT: &[Constraint] = &on(&["bg.dark", "bg.primary"], 450);
+/// WCAG 1.4.3: Xfire draws `MenuTextCG` only on its menu bar (ST1 ruling 3).
+const MENU_TEXT: &[Constraint] = &on(&["menubar.bg"], 450);
 /// WCAG 1.4.11: a slider's fill against its track.
 const FILL: &[Constraint] = &on(&["progress.bg"], 300);
 /// WCAG 1.4.11: a track's outline against the window ground.
 const OUTLINE: &[Constraint] = &on(&["bg.dark"], 300);
-/// WCAG 1.4.3: a progress value is drawn beside its bar on the panel
-/// ground, never on the bar (Settings; lead ruling 2026-11-26).
-const PROGRESS_TEXT: &[Constraint] = &on(&["bg.panel"], 450);
+/// WCAG 1.4.3: Xfire draws `ProgBarTextCG` on its bar's well (ST1 ruling
+/// 3: a text role on the ground the pack drew it on, never the panel).
+const PROGRESS_TEXT: &[Constraint] = &on(&["progress.bg"], 450);
 /// WCAG 1.4.11: the thumb against its track.
 const THUMB: &[Constraint] = &on(&["scrollbar.track"], 300);
 const TOOLTIP_TEXT: &[Constraint] = &on(&["tooltip.bg"], 450);
 
+/// The title-bar ground of a window that draws no pack art (Settings,
+/// plan SB1). An Xfire import writes the mean colours of the pack's own
+/// title strip ends (`import::dialog_roles`); a skin that sets its accent
+/// and omits these follows its selection colour toward its ground.
+const TITLE_START: TokenEntry = derived(
+    row(
+        "titlebar.start",
+        "--color-xfire-titlebar-start",
+        c2("#0f1a3a", "#dbe7f6"),
+        NONE,
+    ),
+    Derivation::Mix {
+        a: "accent.fill",
+        b: "bg.primary",
+        a_weight: 500,
+    },
+);
+const TITLE_END: TokenEntry = derived(
+    row(
+        "titlebar.end",
+        "--color-xfire-titlebar-end",
+        c2("#1a2a5e", "#c3d6ef"),
+        NONE,
+    ),
+    Derivation::Mix {
+        a: "accent.fill",
+        b: "bg.primary",
+        a_weight: 250,
+    },
+);
+
+const fn underived(mut e: TokenEntry) -> TokenEntry {
+    e.derivation = None;
+    e
+}
+
+/// The title grounds as the base walk holds `titlebar.text` to them: their
+/// defaults, as before the roles existed (ST1 ruling 2), so a pack's own
+/// colours never move for a ground the import derives.
+pub const TITLE_AS_BEFORE: [TokenEntry; 2] = [underived(TITLE_START), underived(TITLE_END)];
+
 /// The dialog roles, after the base table (their constraints name rows of
-/// both).
+/// both), in derivation order: a row may read an earlier one.
 pub const DIALOG: &[TokenEntry] = &[
+    TITLE_START,
+    TITLE_END,
     same_as(
         row(
             "input.bg",
@@ -59,7 +108,7 @@ pub const DIALOG: &[TokenEntry] = &[
             c4("#e7e7e7", "#1a1a1a", "#ffffff", "#000000"),
             INPUT_TEXT,
         ),
-        "text.primary",
+        "text.base",
     ),
     same_as(
         row(
@@ -79,7 +128,7 @@ pub const DIALOG: &[TokenEntry] = &[
         ),
         Derivation::Mix {
             a: "accent.fill",
-            b: "bg.panel",
+            b: "input.bg",
             a_weight: 400,
         },
     ),
@@ -92,16 +141,29 @@ pub const DIALOG: &[TokenEntry] = &[
             c1("#ffffff"),
             SELECTED_TEXT,
         ),
-        "text.primary",
+        "text.base",
+    ),
+    // The menu bar's ground: an Xfire import writes the alpha-weighted
+    // mean of the pack's own menu-bar art (`import::dialog_roles`), as it
+    // does the title strip; a skin with neither art nor the colour follows
+    // its window ground, where the app lays the bar.
+    same_as(
+        row(
+            "menubar.bg",
+            "--color-xfire-menubar-bg",
+            c4("#0a0a0a", "#ffffff", "#000000", "#ffffff"),
+            NONE,
+        ),
+        "bg.dark",
     ),
     same_as(
         row(
             "menubar.text",
             "--color-xfire-menubar-text",
             c4("#8fb9d7", "#0d4363", "#ffffff", "#000000"),
-            WINDOW_TEXT,
+            MENU_TEXT,
         ),
-        "text.primary",
+        "text.base",
     ),
     same_as(
         row(
@@ -129,8 +191,8 @@ pub const DIALOG: &[TokenEntry] = &[
             OUTLINE,
         ),
         Derivation::Mix {
-            a: "text.primary",
-            b: "bg.panel",
+            a: "text.base",
+            b: "progress.bg",
             a_weight: 500,
         },
     ),
@@ -141,7 +203,7 @@ pub const DIALOG: &[TokenEntry] = &[
             c4("#e7e7e7", "#1a1a1a", "#ffffff", "#000000"),
             PROGRESS_TEXT,
         ),
-        "text.primary",
+        "text.base",
     ),
     same_as(
         row(
@@ -161,8 +223,8 @@ pub const DIALOG: &[TokenEntry] = &[
             THUMB,
         ),
         Derivation::Mix {
-            a: "text.primary",
-            b: "bg.primary",
+            a: "text.base",
+            b: "scrollbar.track",
             a_weight: 500,
         },
     ),
@@ -182,6 +244,35 @@ pub const DIALOG: &[TokenEntry] = &[
             c4("#e7e7e7", "#1a1a1a", "#ffffff", "#000000"),
             TOOLTIP_TEXT,
         ),
-        "text.primary",
+        "text.base",
     ),
 ];
+
+/// The base row Settings also paints with, which every Xfire import writes
+/// too (a contract role; its derivation stays the base table's): the
+/// disabled text.
+pub const BASE_ROLES: [&str; 1] = ["text.disabled"];
+
+/// Whether `id` is a dialog role: a [`DIALOG`] row or one of
+/// [`BASE_ROLES`]. The dialog walk moves only these (ST1 ruling 1).
+#[must_use]
+pub fn is_role(id: &str) -> bool {
+    BASE_ROLES.contains(&id) || DIALOG.iter().any(|e| e.id == id)
+}
+
+/// Every dialog role.
+pub fn roles() -> impl Iterator<Item = &'static str> {
+    BASE_ROLES.into_iter().chain(DIALOG.iter().map(|e| e.id))
+}
+
+/// `tokens` with every dialog role it omits set to what
+/// [`super::resolve`] serves for it on `base`: the import writes exactly
+/// what load would derive, from one table (ST1 ruling 4).
+pub fn fill(tokens: &mut BTreeMap<String, TokenValue>, base: Base) {
+    let served = super::resolve(super::ENTRIES, base, tokens);
+    for (e, v) in served {
+        if is_role(e.id) && !tokens.contains_key(e.id) {
+            tokens.insert(e.id.to_owned(), v);
+        }
+    }
+}

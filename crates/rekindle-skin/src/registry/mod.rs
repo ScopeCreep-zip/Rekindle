@@ -15,18 +15,23 @@
 //! Security-surface tokens (`--sec-*`) are absent: they live only in
 //! `@layer sec` of `global.css` and no skin reaches them (plan E7.7.0).
 
-mod dialog;
+pub mod dialog;
 mod fonts;
 mod slots;
 mod table;
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use rekindle_types::dto::skin::{SkinBase, SkinContrast, TokenValue};
 
 pub use dialog::DIALOG;
 pub use fonts::{font, FontFace, FONTS};
 pub use slots::{IconSlot, SoundCue};
+/// The base rows, with the title grounds at their defaults: what the import
+/// walks before any dialog role is derived (ST1 ruling 2).
+pub const BASE_TABLE: &[TokenEntry] = &BASE_AND_TITLE;
+const BASE_AND_TITLE: [TokenEntry; table::BASE.len() + 2] =
+    concat(table::BASE, &dialog::TITLE_AS_BEFORE);
 
 /// Every row: the base table, then the dialog roles.
 pub const ENTRIES: &[TokenEntry] = &BASE_THEN_DIALOG;
@@ -297,6 +302,10 @@ pub fn entry_in<'a>(table: &'a [TokenEntry], id: &str) -> Option<&'a TokenEntry>
 
 /// Every token of `table` on `base`: the skin's own value, else the
 /// derivation when the skin sets a token it reads, else the base default.
+/// A dialog role ([`DIALOG`]) also follows its derivation when a token it
+/// reads is itself derived from the skin's colours (`menubar.bg` from
+/// `bg.dark` from the skin's `bg.primary`), so a package that lacks the
+/// role is served it from its own colours (ST1 ruling 4).
 /// `skin` holds only ids of `table` (what [`crate::tokens::parse`] returns).
 #[must_use]
 pub fn resolve<'a>(
@@ -312,15 +321,21 @@ pub fn resolve<'a>(
             .unwrap_or_else(|| e.defaults.on(base).value());
         resolved.insert(e.id, v);
     }
+    let mut followed: BTreeSet<&str> = BTreeSet::new();
     for e in table {
         let Some(d) = e.derivation else { continue };
-        let v = skin.get(e.id).cloned().or_else(|| {
-            d.sources()
-                .iter()
-                .any(|s| skin.contains_key(*s))
-                .then(|| d.apply(&resolved))
-                .flatten()
-        });
+        let role = entry_in(DIALOG, e.id).is_some();
+        let follows = d
+            .sources()
+            .iter()
+            .any(|s| skin.contains_key(*s) || (role && followed.contains(s)));
+        let derived = (follows && !skin.contains_key(e.id))
+            .then(|| d.apply(&resolved))
+            .flatten();
+        if derived.is_some() {
+            followed.insert(e.id);
+        }
+        let v = skin.get(e.id).cloned().or(derived);
         resolved.insert(e.id, v.unwrap_or_else(|| e.defaults.on(base).value()));
     }
     table
