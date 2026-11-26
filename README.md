@@ -123,7 +123,7 @@ the desktop shell.
 | App Framework   | [Tauri 2](https://v2.tauri.app/) (Rust + webview)                 |
 | Frontend        | [SolidJS](https://www.solidjs.com/) + [Tailwind 4](https://tailwindcss.com/) |
 | Network         | [Veilid](https://veilid.com/) (DHT storage, P2P message routing) |
-| Encryption      | Signal Protocol ([libsignal](https://github.com/nicemicro/libsignal)), XChaCha20-Poly1305, AES-256-GCM |
+| Encryption      | Signal Protocol (implemented from the [Signal specifications](https://signal.org/docs/)), XChaCha20-Poly1305, AES-256-GCM |
 | Serialization   | [Cap'n Proto](https://capnproto.org/) (wire format)              |
 | Voice           | [Opus](https://opus-codec.org/) codec, [cpal](https://github.com/RustAudio/cpal) audio I/O |
 | Storage         | SQLite (chat history), `rekindle-vault` (SQLCipher-backed, double-encrypted secrets), DHT (presence/keys) |

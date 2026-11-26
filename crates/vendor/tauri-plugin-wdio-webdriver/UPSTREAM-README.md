@@ -299,8 +299,8 @@ before a requested size is applied, including moves between displays.
 
 ## See Also
 
-- [Plugin Setup Guide](../tauri-service/docs/plugin-setup.md) — Full setup instructions including this plugin
-- [Platform Support](../tauri-service/docs/platform-support.md) — Per-platform details
+- [Plugin Setup Guide](https://github.com/webdriverio/desktop-mobile/blob/ba733f664e034976499fd3d43cf940f357f904c4/packages/tauri-service/docs/plugin-setup.md) — Full setup instructions including this plugin
+- [Platform Support](https://github.com/webdriverio/desktop-mobile/blob/ba733f664e034976499fd3d43cf940f357f904c4/packages/tauri-service/docs/platform-support.md) — Per-platform details
 - [Upstream repository](https://github.com/Choochmeque/tauri-plugin-webdriver) — Original project
 
 ## License

@@ -16,7 +16,9 @@ check-webdriver-release` keeps it out of every release build.
 - crates.io checksum (SHA-256 of the `.crate`):
   `5a775b0b59f6f12b38d1f28667311a89cd07f532f540e27d65c6eadfba1156d8`,
   verified against the downloaded archive before vendoring.
-- `UPSTREAM-README.md` is the crate's README as shipped.
+- `UPSTREAM-README.md` is the crate's README as shipped, except that its two
+  "See Also" links into the upstream monorepo (`../tauri-service/docs/...`)
+  point at that commit on GitHub, since the relative paths do not exist here.
 
 ## Changes from upstream
 

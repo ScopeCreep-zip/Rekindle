@@ -463,7 +463,7 @@ SHA256(concatenated)` will move to a true binary Merkle tree
 - 5× to 10× faster than SHA-256 on commodity hardware.
 - Tree-mode parallelism (irrelevant for our short inputs but available).
 - Modern, well-audited (BLAKE2/3 family, IETF
-  [draft-irtf-cfrg-blake3](https://datatracker.ietf.org/doc/draft-irtf-cfrg-blake3/)).
+  [draft-aumasson-blake3](https://datatracker.ietf.org/doc/draft-aumasson-blake3/)).
 - Distinct from SHA-256 — using both means a single hash-function
   weakness in either does not affect both code paths.
 

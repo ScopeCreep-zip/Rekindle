@@ -70,7 +70,7 @@ were resolved:
 
 | Tag | Date | Highlights | SBOM |
 |-----|------|-----------|------|
-| vX.Y.Z | YYYY-MM-DD | Major points | [SBOM](https://github.com/ScopeCreep-zip/Rekindle/releases/download/vX.Y.Z/rekindle-cargo-sbom.cdx.json) |
+| vX.Y.Z | YYYY-MM-DD | Major points | SBOM: `https://github.com/ScopeCreep-zip/Rekindle/releases/download/vX.Y.Z/rekindle-cargo-sbom.cdx.json` |
 
 ### 5. Standards alignment progress
 
