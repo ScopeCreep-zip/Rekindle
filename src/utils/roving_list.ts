@@ -17,7 +17,7 @@ interface RovingListOptions {
  * the menu's trigger already handles for the mouse. Enter (open) stays with each
  * row, which knows what opening it means.
  */
-export function attachRovingList(
+function attachRovingList(
   list: HTMLElement,
   itemSelector: string,
   { orientation = "vertical", preferSelected = false }: RovingListOptions = {},
