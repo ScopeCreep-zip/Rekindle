@@ -149,6 +149,7 @@ fn slot(id: String, key: SlotKey, y: NodeSpan, z: i16) -> SkinNode {
         control_group: None,
         triggers: Vec::new(),
         children: Vec::new(),
+        disabled_by: None,
     }
 }
 
