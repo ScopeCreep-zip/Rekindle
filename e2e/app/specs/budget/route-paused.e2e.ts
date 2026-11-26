@@ -93,20 +93,31 @@ async function typedSeen(): Promise<number> {
   return changedIn(box, empty, typed);
 }
 
-/** The status list's arrow is on top at its centre and opens the list. */
+/** The status list's arrow, found by its served role (`statusList`, the
+ *  pack's DownArrow), is on top at its centre and opens the list; what it is
+ *  and what opened are logged. */
 async function arrowOpens(): Promise<string> {
-  const top = (await browser.execute(() => {
-    const a = document.querySelector<HTMLElement>(".skin-status-list");
-    if (!a) return "no arrow";
+  const ARROW = '.skin-tree [data-skin-role="statusList"]';
+  const top = (await browser.execute((sel: string) => {
+    const a = Array.from(document.querySelectorAll<HTMLElement>(sel)).find((e) => !e.closest("[hidden]") && e.getBoundingClientRect().width > 0);
+    if (!a) return `no statusList node (nodes with a status role: ${Array.from(document.querySelectorAll<HTMLElement>('[data-skin-role^="status"]')).map((e) => `${e.dataset.skinNode}(${e.dataset.skinRole}) ${e.tagName.toLowerCase()}.${e.className}`).join(", ") || "none"})`;
     const r = a.getBoundingClientRect();
     const at = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
-    return at && a.contains(at) ? "on top" : `covered by ${at?.tagName.toLowerCase()}.${(at as HTMLElement | null)?.className ?? "-"}`;
+    const what = `${a.dataset.skinNode} ${a.tagName.toLowerCase()}.${a.className || "-"} aria-haspopup=${a.getAttribute("aria-haspopup")}`;
+    return at && a.contains(at) ? `on top: ${what}` : `covered by ${at?.tagName.toLowerCase()}.${(at as HTMLElement | null)?.className ?? "-"} (arrow ${what})`;
+  }, ARROW)) as string;
+  console.log(`[paused] status list arrow: ${top}`);
+  if (!top.startsWith("on top")) return top;
+  await press(browser, await browser.$(ARROW));
+  const opened = await waitUntil(async () => (await browser.$('[role="menu"]').isDisplayed().catch(() => false)), NET_WAIT_MS, "").then(() => true, () => false);
+  const menu = (await browser.execute(() => {
+    const m = document.querySelector<HTMLElement>('[role="menu"]');
+    return m ? `${m.className} items ${Array.from(m.querySelectorAll('[role="menuitemradio"]')).map((i) => i.textContent?.trim()).join("/")}` : "none";
   })) as string;
-  if (top !== "on top") return top;
-  await press(browser, await browser.$(".skin-status-list"));
-  await shown(browser, ".status-picker-dropdown", NET_WAIT_MS);
+  console.log(`[paused] status list opened: ${opened} (${menu})`);
+  if (!opened) return "the arrow did not open the status list";
   await browser.keys(["Escape"]);
-  await gone(browser, ".status-picker-dropdown", NET_WAIT_MS);
+  await gone(browser, '[role="menu"]', NET_WAIT_MS);
   return "opens the status list";
 }
 
