@@ -198,7 +198,28 @@ describe("a disabled node says why (CR1)", function () {
     console.log(`[cr1] symbiosis community close, at its centre: ${atClose}`);
     await shot("symbiosis-inactive-close");
     expect(close!.ariaDisabled).toBeNull();
+    // Lead (inactive close): trace the press. Every toast the window shows
+    // after it is collected from the page (a served operation with no
+    // runner says "<op> has no handler in this window"), with the node's
+    // state at the press.
+    await browser.execute(() => {
+      const w = window as unknown as { __closeToasts?: string[] };
+      w.__closeToasts = [];
+      new MutationObserver(() => {
+        for (const t of Array.from(document.querySelectorAll(".toast-item"))) {
+          const text = (t.textContent ?? "").trim();
+          if (text && !w.__closeToasts!.includes(text)) w.__closeToasts!.push(text);
+        }
+      }).observe(document.body, { childList: true, subtree: true, characterData: true });
+    });
     await (await browser.$('.skin-tree [data-skin-role="windowButton:close"]')).click();
+    await browser.pause(3000);
+    const traced = (await browser.execute(() => {
+      const w = window as unknown as { __closeToasts?: string[] };
+      const n = document.querySelector<HTMLElement>('.skin-tree [data-skin-role="windowButton:close"]');
+      return { toasts: w.__closeToasts ?? [], action: n?.dataset.skinAction ?? "", state: n?.dataset.state ?? "", cause: n?.dataset.stateCause ?? "" };
+    }).catch((e: unknown) => ({ closed: String(e).slice(0, 80) }))) as Record<string, unknown>;
+    console.log(`[cr1] symbiosis inactive close, after the press: ${JSON.stringify(traced)}`);
     await browser.switchToWindow(BUDDY).catch(() => undefined);
     await waitUntil(async () => !(await browser.getWindowHandles()).includes(handle), NET_WAIT_MS, "the inactive community window's close button did not close it");
     console.log("[cr1] symbiosis community window closed by its inactive close button");
