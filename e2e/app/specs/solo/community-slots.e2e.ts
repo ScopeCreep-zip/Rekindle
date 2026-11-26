@@ -98,4 +98,40 @@ describe("a skinned community window's slots and the content mounted in them (SK
       await switchTo(browser, BUDDY);
     });
   }
+
+  // Lead (CR1 audit fix 2): a slot's part is created once. A draft typed in
+  // the community composer survives a skin switch, which re-creates the
+  // window's tree and re-registers its slots: the composer is the same
+  // element (an expando the test sets stays on it) with the same text.
+  it("a skin switch keeps the composer's element and its draft", async () => {
+    const [from, to] = ["symbiosis", "alloy"].map((f) => builtinPacks().find((p) => p.file === f));
+    if (!from || !to) throw new Error("no built-in symbiosis/alloy");
+    await switchTo(browser, BUDDY);
+    await openSettings(browser, "Appearance");
+    await applySkin(browser, me, from.name);
+    await switchTo(browser, BUDDY);
+    await openCommunity(browser, "Slot Hall");
+    const handle = await browser.getWindowHandle();
+    const draft = `draft ${Date.now() % 100000}`;
+    const field = await browser.$(".message-input-field");
+    await field.click();
+    await browser.keys(draft.split(""));
+    await browser.execute(() => {
+      const f = document.querySelector(".message-input-field") as (HTMLElement & { __slotOnce?: number }) | null;
+      if (f) f.__slotOnce = 1;
+    });
+    await switchTo(browser, BUDDY);
+    await openSettings(browser, "Appearance");
+    const href = await applySkin(browser, me, to.name);
+    await browser.switchToWindow(handle);
+    await skinShown(browser, href);
+    await browser.pause(1500);
+    const after = (await browser.execute(() => {
+      const f = document.querySelector(".message-input-field") as (HTMLTextAreaElement & { __slotOnce?: number }) | null;
+      return { same: f?.__slotOnce === 1, text: f ? (f.value ?? f.textContent ?? "") : null, count: document.querySelectorAll(".message-input-field").length };
+    })) as { same: boolean; text: string | null; count: number };
+    console.log(`[slots-once] after the switch: ${JSON.stringify(after)} (draft "${draft}")`);
+    await shot("draft-after-switch");
+    expect(after).toEqual({ same: true, text: draft, count: 1 });
+  });
 });
