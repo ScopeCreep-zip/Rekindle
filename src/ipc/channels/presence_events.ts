@@ -19,7 +19,7 @@
 import type { NotJoinableReason } from "../commands/types";
 
 /** What a peer is playing, when the emitter actually looked. */
-export type GameActivity =
+type GameActivity =
   | "idle"
   | {
       playing: {

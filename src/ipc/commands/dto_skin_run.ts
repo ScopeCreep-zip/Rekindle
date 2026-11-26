@@ -31,7 +31,7 @@ export type SkinSelection =
   /** A friend group's header (plan E7.15 IV5); null is the default group. */
   | { kind: "friendGroup"; arg: { groupId: number | null } };
 
-export type ShellPanel =
+type ShellPanel =
   | "addFriend"
   | "newChat"
   | "newGroup"
@@ -41,7 +41,7 @@ export type ShellPanel =
   | "shortcuts"
   | "notifications";
 
-export type CallOp =
+type CallOp =
   | { kind: "voice"; arg: { friend: string } }
   | { kind: "answer"; arg: { callId: string } }
   | { kind: "joinGroup"; arg: { groupId: string; callId: string } }
@@ -54,7 +54,7 @@ export type CallOp =
 
 /** `CallTarget`: the window `ShowVoiceWindow` brings up (plan E7.2 G-item
  *  A), the active call's, else the community voice session's. */
-export type CallTarget =
+type CallTarget =
   | { kind: "call"; arg: { callId: string } }
   | { kind: "voice"; arg: { community: string; channel: string } };
 

@@ -37,15 +37,19 @@ check-webdriver-release` keeps it out of every release build.
    replaced and forwards those two selectors to it, so camera, microphone
    and file pickers behave as in the shipped app.
 3. **Platforms**: macOS and Linux only (the walk's machines); the Windows
-   backend and its dependencies are removed and other targets fail to
-   compile.
+   backend and its dependencies are removed. On every other target the
+   crate is empty (crate-level `#![cfg(any(target_os = "macos", target_os =
+   "linux"))]` in `src/lib.rs`), so `cargo check --workspace` passes on the
+   Windows CI runner; `rekindle-desktop` refuses its `webdriver-test`
+   feature there with a `compile_error!` (`src-tauri/src/lib.rs`), so no
+   build that asks for the driver silently gets the empty crate.
 4. **Linux `glib`**: 0.18, the release `webkit2gtk` 2.0 and the workspace
    already use, instead of upstream's separate 0.21 stack.
 5. **Workspace lints**: the crate inherits `[lints] workspace = true` with no
    `#[allow]`; long files and functions are split along module seams,
    `std::sync::Mutex` is `parking_lot::Mutex`, and every `unsafe` block
    carries a `// SAFETY:` comment (`docs/contributor/style-guide.md`).
-6. **Release guard**: `src/lib.rs` refuses to compile without
+6. **Release guard**: on macOS and Linux, `src/lib.rs` refuses to compile without
    `debug_assertions`.
 7. **Linux number conversion** (`src/platform/linux.rs` `js_number`): a
    JavaScript number converts by parsing JavaScriptCore's string form as an

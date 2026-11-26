@@ -109,7 +109,7 @@ export type SystemEvent =
   | { skinChanged: { skin: SkinApplied } };
 
 /** Cryptographic key events from the daemon vocabulary. */
-export type CryptoEvent =
+type CryptoEvent =
   | {
       mekRotated: {
         community: string;
@@ -142,7 +142,7 @@ export type CryptoEvent =
 // `subscribeCommunityPresenceEvents` in `presence-events.handlers.ts`.
 
 /** A role, as Tier 1's `RoleDisplay`. */
-export interface RoleDisplay {
+interface RoleDisplay {
   /** The full 16-byte role id, 32 hex characters. */
   id: string;
   name: string;
@@ -162,7 +162,7 @@ export interface RoleDisplay {
 }
 
 /** A channel, as Tier 1's `ChannelOverviewDisplay`. */
-export interface ChannelOverviewDisplay {
+interface ChannelOverviewDisplay {
   id: string;
   name: string;
   /** `"text"` | `"voice"` | `"announcement"`. Called `type` in the store. */
@@ -180,14 +180,14 @@ export interface ChannelOverviewDisplay {
 }
 
 /** A channel category, as Tier 1's `CategoryDisplay`. */
-export interface CategoryDisplay {
+interface CategoryDisplay {
   id: string;
   name: string;
   sortOrder: number;
 }
 
 /** Plate Gate (architecture §15) expansion segment, as Tier 1's `SegmentDescriptor`. */
-export interface SegmentDescriptor {
+interface SegmentDescriptor {
   segmentIndex: number;
   registryKey: string;
   anchor: string;
@@ -513,7 +513,7 @@ export interface PendingGovOp {
 }
 
 /** One per `GovernanceEntry` arm (`PendingGovKind`). */
-export type PendingGovKind =
+type PendingGovKind =
   | "channelCreated" | "channelEdited" | "channelDeleted" | "roleEdited" | "rolesChanged" | "roleDeleted"
   | "ban" | "unban" | "join" | "memberRecordMoved" | "leave" | "kick" | "approveMember" | "rejectMember"
   | "timeout" | "removeTimeout" | "communityEdited" | "notificationDefault" | "keyRotation"

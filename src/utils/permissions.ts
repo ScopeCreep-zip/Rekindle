@@ -14,41 +14,41 @@ export const CREATE_EXPRESSIONS = 1n << 12n;
 
 export const SEND_MESSAGES = 1n << 16n;
 export const EMBED_LINKS = 1n << 17n;
-export const ATTACH_FILES = 1n << 18n;
-export const ADD_REACTIONS = 1n << 19n;
+const ATTACH_FILES = 1n << 18n;
+const ADD_REACTIONS = 1n << 19n;
 export const MENTION_EVERYONE = 1n << 20n;
 export const MANAGE_MESSAGES = 1n << 21n;
-export const READ_HISTORY = 1n << 22n;
+const READ_HISTORY = 1n << 22n;
 export const SEND_TTS = 1n << 23n;
 export const USE_EXTERNAL_EMOJIS = 1n << 24n;
 export const USE_EXTERNAL_STICKERS = 1n << 25n;
-export const PIN_MESSAGES = 1n << 26n;
+const PIN_MESSAGES = 1n << 26n;
 export const SEND_VOICE_MESSAGES = 1n << 27n;
-export const SEND_POLLS = 1n << 28n;
+const SEND_POLLS = 1n << 28n;
 export const BYPASS_SLOWMODE = 1n << 29n;
 
-export const CONNECT = 1n << 32n;
-export const SPEAK = 1n << 33n;
+const CONNECT = 1n << 32n;
+const SPEAK = 1n << 33n;
 export const MUTE_MEMBERS = 1n << 34n;
 export const DEAFEN_MEMBERS = 1n << 35n;
-export const MOVE_MEMBERS = 1n << 36n;
-export const USE_VOICE_ACTIVITY = 1n << 37n;
+const MOVE_MEMBERS = 1n << 36n;
+const USE_VOICE_ACTIVITY = 1n << 37n;
 export const PRIORITY_SPEAKER = 1n << 38n;
 export const USE_SOUNDBOARD = 1n << 39n;
 export const USE_EXTERNAL_SOUNDS = 1n << 40n;
 export const REQUEST_TO_SPEAK = 1n << 41n;
-export const STREAM = 1n << 42n;
+const STREAM = 1n << 42n;
 
-export const MANAGE_THREADS = 1n << 44n;
-export const CREATE_PUBLIC_THREADS = 1n << 45n;
-export const CREATE_PRIVATE_THREADS = 1n << 46n;
-export const SEND_IN_THREADS = 1n << 47n;
+const MANAGE_THREADS = 1n << 44n;
+const CREATE_PUBLIC_THREADS = 1n << 45n;
+const CREATE_PRIVATE_THREADS = 1n << 46n;
+const SEND_IN_THREADS = 1n << 47n;
 
 export const MANAGE_EVENTS = 1n << 48n;
-export const CREATE_EVENTS = 1n << 49n;
+const CREATE_EVENTS = 1n << 49n;
 export const ADMINISTRATOR = 1n << 50n;
 
-export function permissionBits(value: string | bigint | null | undefined): bigint {
+function permissionBits(value: string | bigint | null | undefined): bigint {
   if (typeof value === "bigint") return value;
   return BigInt(value || "0");
 }

@@ -1,6 +1,6 @@
 import { createStore } from "solid-js/store";
 
-export interface RelayState {
+interface RelayState {
   /// Friends we've volunteered to relay for, by public key. Drives the
   /// "Stop relaying" vs "Volunteer to relay" label in the context menu.
   volunteeredFor: Record<string, true>;

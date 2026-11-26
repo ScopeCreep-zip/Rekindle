@@ -148,7 +148,7 @@ export function searchPack(): Buffer {
 }
 
 /** The node `id` in `tree` (a manifest window's `tree`), anywhere under it. */
-export function findNode(tree: unknown, id: string): Record<string, unknown> | undefined {
+function findNode(tree: unknown, id: string): Record<string, unknown> | undefined {
   if (Array.isArray(tree)) {
     for (const n of tree) {
       const found = findNode(n, id);
@@ -214,7 +214,7 @@ function shippedFiles(): string[] {
  * skin_tree/brand.rs `name`): without the word "Xfire" (or "Xfire's"), any
  * case, and "Xfire" alone is "Classic". Settings lists skins by this name.
  */
-export function servedName(name: string): string {
+function servedName(name: string): string {
   const plain = name
     .split(/\s+/)
     .filter((w) => w !== "")

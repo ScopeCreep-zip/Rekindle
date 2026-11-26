@@ -15,7 +15,7 @@ import type { FriendEvent } from "../ipc/channels/chat_events";
 import type { CoCreationSnapshot } from "../ipc/commands/community";
 
 /** A friend's invite to co-create `communityName`, held until answered. */
-export interface CreatorInvite {
+interface CreatorInvite {
   anchor: string;
   peerKey: string;
   communityName: string;

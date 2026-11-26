@@ -88,4 +88,3 @@ export function successorsOf(community: string): SuccessorOffer[] {
   return Object.values(successorState.offers[community] ?? {});
 }
 
-export { successorState };

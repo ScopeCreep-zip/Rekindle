@@ -7,7 +7,7 @@ import type { OwnRecordsPhase, OwnRouteClass, RouteAvailability, RoutePauseCause
 
 /** D22's delivery vocabulary (`rekindle_types::message::SendState`). */
 /** Why a stored message's body could not be read (the Host's words in `reasonText`). */
-export type UndecryptableReason = "damaged";
+type UndecryptableReason = "damaged";
 
 export interface Undecryptable {
   reason: UndecryptableReason;
@@ -310,10 +310,10 @@ export interface CommunityPolicy {
 }
 
 /** How coarse a peer's last-seen timestamp is exposed. */
-export type LastSeenPrecision = "hidden" | "coarse" | "exact";
+type LastSeenPrecision = "hidden" | "coarse" | "exact";
 
 /** Per-signal share scope. Default-deny: "none" hides the signal. */
-export type ShareScope = "none" | "members";
+type ShareScope = "none" | "members";
 
 /**
  * Per-community presence sharing consent (default-deny). Local-only — never
@@ -397,7 +397,7 @@ export interface CreateEventRequest {
   location?: EventLocation;
 }
 
-export interface EventRsvpInfo {
+interface EventRsvpInfo {
   pseudonymKey: string;
   status: string;
 }
