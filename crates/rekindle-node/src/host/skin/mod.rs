@@ -28,6 +28,7 @@ pub(crate) mod signals;
 #[cfg(test)]
 mod signals_tests;
 mod trial;
+mod world;
 
 use rekindle_db::repo::{preferences, skins};
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
