@@ -157,6 +157,7 @@ async function chatFrameChecks(kind: "dm" | "group", message: string): Promise<s
         if (Math.abs(before.data[i] - after.data[i]) + Math.abs(before.data[i + 1] - after.data[i + 1]) + Math.abs(before.data[i + 2] - after.data[i + 2]) > 48) changed++;
       }
     }
+    console.log(`[cht1] px ${part.name} ${part.box.map(Math.round).join(",")}: hiding it changes ${changed} px (seen at 20)`);
     if (changed < 20) found.out.push(`${part.name} ${part.box.map(Math.round).join(",")} is not seen (hiding it changes ${changed} px)`);
   }
   return found.out;
