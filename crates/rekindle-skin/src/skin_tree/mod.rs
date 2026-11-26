@@ -16,6 +16,7 @@ pub mod compose;
 pub mod content;
 pub mod cover;
 pub mod css;
+pub mod dim;
 pub mod disabled;
 mod fit;
 pub mod import;

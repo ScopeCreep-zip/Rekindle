@@ -437,8 +437,9 @@ mod tests {
     fn served(id: &str) -> (SkinTree, String) {
         let (_, b) = builtin::find(&format!("{}{id}", builtin::PREFIX)).unwrap();
         let p = package::read(b.bytes).unwrap();
-        let mut m = manifest::served(&p).unwrap();
-        let files = images::validate(&p, &m).unwrap();
+        let (mut m, made) = manifest::served_made(&p).unwrap();
+        let mut files = images::validate(&p, &m).unwrap();
+        files.extend(made);
         let l = m.windows.remove(&SkinWindow::Main).unwrap();
         let tree = l.tree.clone().unwrap();
         let css = super::tree_css(".f", &tree, &l, &files, "x").unwrap();

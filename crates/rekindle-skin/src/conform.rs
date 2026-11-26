@@ -190,13 +190,18 @@ pub fn relayout(m: &mut SkinManifest) -> Result<(), SkinError> {
 /// The manifest the Host serves for the canonical package `bytes` read as
 /// `p` at `address`: the alternate's ([`relayout`], then the placements)
 /// at [`address`], which only Symbiosis's committed bytes may be served
-/// at; else [`manifest::served`].
+/// at; else [`manifest::served`]; with the images its placements made
+/// ([`manifest::place`]).
 ///
 /// # Errors
 /// As [`manifest::served`]; other bytes at the alternate's address.
-pub fn served(bytes: &[u8], p: &Package<'_>, address: &str) -> Result<SkinManifest, SkinError> {
+pub fn served(
+    bytes: &[u8],
+    p: &Package<'_>,
+    address: &str,
+) -> Result<(SkinManifest, crate::skin_tree::dim::Made), SkinError> {
     if address != self::address() {
-        return manifest::served(p);
+        return manifest::served_made(p);
     }
     if bytes != source() {
         return Err(SkinError::new(
@@ -210,8 +215,8 @@ pub fn served(bytes: &[u8], p: &Package<'_>, address: &str) -> Result<SkinManife
     }
     let mut m = manifest::parse(p)?;
     relayout(&mut m)?;
-    manifest::place(&mut m, p)?;
-    Ok(m)
+    let made = manifest::place(&mut m, p)?;
+    Ok((m, made))
 }
 
 fn shorts(nodes: &[SkinNode]) -> u32 {
@@ -267,7 +272,7 @@ pub fn builtin_short_targets(skin_id: &str) -> Result<Option<u32>, SkinError> {
     }
     let bytes = builtin::find(pack_id(skin_id)).map_or(&[][..], |(_, b)| b.bytes);
     let p = package::read(bytes)?;
-    let n = short_targets(&served(bytes, &p, &address)?);
+    let n = short_targets(&served(bytes, &p, &address)?.0);
     Ok(Some(*COUNTS[slot].get_or_init(|| n)))
 }
 

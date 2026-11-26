@@ -49,13 +49,14 @@ fn xslimfire_chat_button_is_disabled_by_its_packs_art() {
 /// dims it (served pieces: 658 of 1710 pixels differ at all, none by
 /// more than the channel delta; real app: 12 px changed, under the 20 px bar).
 #[test]
-fn total_chaos_communities_open_is_disabled_by_the_shell() {
+fn total_chaos_communities_open_is_disabled_by_a_served_copy() {
     let tree = main_layout("total-chaos").tree.unwrap();
     let open = find(&tree.root, "CommunitiesOpen").unwrap();
     let art = open.art.as_ref().unwrap();
     assert!(art.states.contains_key(&RegionState::Disabled));
     assert_ne!(art.states.get(&RegionState::Disabled), Some(&art.normal));
-    assert_eq!(open.disabled_by, Some(DisabledBy::Shell));
+    // DIS3: the near-copy is replaced by the serve's visibly dimmed copy.
+    assert_eq!(open.disabled_by, Some(DisabledBy::Served));
 }
 
 fn image(w: u32, h: u32, p: [u8; 4]) -> RgbaImage {
@@ -142,12 +143,16 @@ fn no_disabled_look_is_the_shells_to_dim() {
     assert!(!is_pack_art("xslimfire", &chat));
 }
 
-/// The rule before CR1b: any Disabled state at all, equal to Normal or not.
+/// The rule before CR1b: any Disabled state the pack ships at all, equal
+/// to Normal or not (a copy the serve made, DIS3, is not the pack's).
 fn had_disabled_state(n: &SkinNode) -> bool {
     let has = |c: &SkinNode| {
-        c.art
-            .as_ref()
-            .is_some_and(|a| a.states.contains_key(&RegionState::Disabled))
+        c.art.as_ref().is_some_and(|a| {
+            a.states.get(&RegionState::Disabled).is_some_and(|s| {
+                s.values()
+                    .all(|p| !p.image.starts_with(super::dim::MADE))
+            })
+        })
     };
     n.label.is_none()
         && (has(n)
@@ -182,7 +187,10 @@ fn builtin_nodes_whose_disabled_art_is_not_visibly_distinct_are_dimmed_by_the_sh
                 each(&tree.root, &mut |n| {
                     if n.interactive()
                         && had_disabled_state(n)
-                        && n.disabled_by == Some(DisabledBy::Shell)
+                        && matches!(
+                            n.disabled_by,
+                            Some(DisabledBy::Served | DisabledBy::Shell)
+                        )
                     {
                         moved.push(format!("{} {at} {}", b.id, n.id));
                     }

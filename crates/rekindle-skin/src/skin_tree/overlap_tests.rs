@@ -132,7 +132,8 @@ fn all_overlaps() -> Vec<String> {
         &package::read(symbiosis).unwrap(),
         crate::conform::address(),
     )
-    .unwrap();
+    .unwrap()
+    .0;
     let served = builtin::PACKS
         .iter()
         .map(|b| {

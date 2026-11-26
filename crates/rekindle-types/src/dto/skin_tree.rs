@@ -252,12 +252,17 @@ pub struct ContentFit {
 /// Who draws an interactive node's disabled look (plan E7.7 CR1, owner
 /// ruling: a disabled button is visibly disabled): `Pack`, the pack ships
 /// a `--disabled` state image for the node's art (xslimfire's
-/// `node-chatbutton--disabled.png`); `Shell`, it ships none (text parts,
-/// Host-worded nodes, composed rows), so the shell dims it.
+/// `node-chatbutton--disabled.png`) that differs visibly from its Normal
+/// art; `Served`, it ships none, so the serve draws a dimmed copy of what
+/// is painted at the node's box as its Disabled layer, shown for a refusal
+/// (plan DIS3: Alloy's `HostChatButton`, whose art equals its tab's art
+/// under it); `Shell`, no copy can carry its look (text parts, Host-worded
+/// nodes, composed rows), so the shell dims it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DisabledBy {
     Pack,
+    Served,
     Shell,
 }
 

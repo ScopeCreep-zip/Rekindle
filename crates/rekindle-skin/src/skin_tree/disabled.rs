@@ -8,8 +8,11 @@ use std::collections::HashMap;
 
 use rekindle_image::RgbaImage;
 use rekindle_types::dto::skin::{RegionState, SkinError, SkinRule, WindowLayout};
-use rekindle_types::dto::skin_tree::{DisabledBy, NodePiece, NodePieces, NodeRole, SkinNode};
+use rekindle_types::dto::skin_tree::{
+    DisabledBy, NodeArt, NodePiece, NodePieces, NodeRole, SkinNode, SkinTree,
+};
 
+use super::dim::{self, Made, Under};
 use crate::package::Package;
 
 /// The largest channel difference between a Disabled pixel and its Normal
@@ -24,9 +27,10 @@ pub(super) const CHANNEL_DELTA: u8 = 32;
 /// visibly disabled control changes at least 20 px).
 pub(super) const VISIBLE_PIXELS: u64 = 20;
 
-/// What this serve already measured: the visibly changed pixel count of
-/// each (Normal, Disabled) image pair and the first frame of each image
-/// decoded for it, by name. Names are content hashes, so a pair measures
+/// What this serve already measured and made: the visibly changed pixel
+/// count of each (Normal, Disabled) image pair, the first frame of each
+/// image decoded for it by name (a made copy's frame under its made name,
+/// [`dim`]), and the Disabled copies made ([`dim::copy`]). Names are content hashes, so a pair measures
 /// the same in every window and node that shows it, and an image shared by
 /// several pairs (one Normal under two Disabled looks) decodes once.
 /// [`crate::manifest::place`] makes one per serve: it runs once per
@@ -34,46 +38,140 @@ pub(super) const VISIBLE_PIXELS: u64 = 20;
 #[derive(Default)]
 pub struct Measured {
     pairs: HashMap<(String, String), u64>,
-    frames: HashMap<String, RgbaImage>,
+    pub(super) frames: HashMap<String, RgbaImage>,
+    pub(super) made: Made,
+}
+
+impl Measured {
+    /// The Disabled copies this serve made, by name.
+    #[must_use]
+    pub fn made(self) -> Made {
+        self.made
+    }
 }
 
 /// Sets `disabled_by` on every interactive node of the window's tree and
-/// its popups' trees, and clears it on every other node.
+/// its popups' trees, laid in the window at its served minimum (as
+/// [`super::target::nodes`] lays them), serves a Disabled copy for each one
+/// the serve draws ([`look`]), and clears it on every other node.
 ///
 /// # Errors
-/// A Disabled or Normal piece missing from `package` or not decoding.
+/// A Disabled or Normal piece missing from `package` or not decoding, or a
+/// copy not encoding.
 pub fn nodes(
     layout: &mut WindowLayout,
     package: &Package<'_>,
     measured: &mut Measured,
 ) -> Result<(), SkinError> {
+    let at = super::target::window(layout);
     if let Some(tree) = layout.tree.as_mut() {
-        mark(&mut tree.root, package, measured)?;
+        laid(tree, at, package, measured)?;
     }
+    let min_height = layout.min_height;
     for popup in layout.popups.values_mut() {
-        mark(&mut popup.tree.root, package, measured)?;
+        let at = super::target::window(&super::popup::frame(popup, min_height));
+        laid(&mut popup.tree, at, package, measured)?;
     }
     Ok(())
 }
 
+fn laid(
+    tree: &mut SkinTree,
+    (w, h): (i32, i32),
+    package: &Package<'_>,
+    measured: &mut Measured,
+) -> Result<(), SkinError> {
+    let boxes: HashMap<String, [i32; 4]> = tree
+        .boxes(w, h)
+        .into_iter()
+        .map(|(n, b)| (n.id.clone(), b))
+        .collect();
+    mark(&mut tree.root, None, &boxes, package, measured)
+}
+
 fn mark(
     nodes: &mut [SkinNode],
+    under: Option<&Under>,
+    boxes: &HashMap<String, [i32; 4]>,
     package: &Package<'_>,
     measured: &mut Measured,
 ) -> Result<(), SkinError> {
     for n in nodes {
         n.disabled_by = if n.interactive() {
-            Some(if pack_art(n, package, measured)? {
-                DisabledBy::Pack
-            } else {
-                DisabledBy::Shell
-            })
+            Some(look(n, under, boxes, package, measured)?)
         } else {
             None
         };
-        mark(&mut n.children, package, measured)?;
+        let own = n
+            .art
+            .as_ref()
+            .filter(|a| !a.normal.is_empty())
+            .zip(boxes.get(&n.id))
+            .map(|(a, at)| Under {
+                set: a.normal.clone(),
+                at: *at,
+            });
+        // The Host's mark covers a branded node's whole box: nothing of
+        // the art above it is seen inside it.
+        let inside = if super::brand::branded(n) {
+            None
+        } else {
+            own.as_ref().or(under)
+        };
+        mark(&mut n.children, inside, boxes, package, measured)?;
     }
     Ok(())
+}
+
+/// Who draws the interactive node `n`'s disabled look: the pack, when its
+/// Disabled art is visibly its own ([`pack_art`]); the serve, with a
+/// dimmed copy of what is painted at its box set as its Disabled layer
+/// ([`dim::copy`]), when that copy changes [`VISIBLE_PIXELS`]; else the
+/// shell's opacity, which also dims the node's children and words: a node
+/// that or whose parts carry words (a Host label or the pack's text, which a
+/// copy of the art cannot carry), one whose parts draw art over it (a layer
+/// of the node lies under them), a branded node (the Host's mark, never the
+/// pack's art, [`super::brand`]), one sized by its text at render (no box
+/// at serve, [`super::validate::text_sized`]), and one with nothing visibly
+/// dimmable at its box (an art-less grip over no art).
+fn look(
+    n: &mut SkinNode,
+    under: Option<&Under>,
+    boxes: &HashMap<String, [i32; 4]>,
+    package: &Package<'_>,
+    measured: &mut Measured,
+) -> Result<DisabledBy, SkinError> {
+    if pack_art(n, package, measured)? {
+        return Ok(DisabledBy::Pack);
+    }
+    if shell_only(n) {
+        return Ok(DisabledBy::Shell);
+    }
+    let Some(&at) = boxes.get(&n.id) else {
+        return Ok(DisabledBy::Shell);
+    };
+    let Some(set) = dim::copy(n, at, under, package, measured)? else {
+        return Ok(DisabledBy::Shell);
+    };
+    n.art
+        .get_or_insert_with(|| NodeArt {
+            normal: NodePieces::new(),
+            states: std::collections::BTreeMap::new(),
+        })
+        .states
+        .insert(RegionState::Disabled, set);
+    Ok(DisabledBy::Served)
+}
+
+/// What only the shell's opacity can dim (see [`look`]): words on the node
+/// or its parts, parts with art, the Host's mark, a text-sized box.
+pub(super) fn shell_only(n: &SkinNode) -> bool {
+    let worded = |c: &SkinNode| c.label.is_some() || c.text.is_some();
+    let parts = n.children.iter().filter(|c| c.role == NodeRole::Part);
+    worded(n)
+        || parts.clone().any(|c| worded(c) || c.art.is_some())
+        || super::brand::branded(n)
+        || super::validate::text_sized(n)
 }
 
 /// The pack ships a disabled look of its own for the node's art or one of
@@ -153,7 +251,7 @@ fn area(p: &NodePiece) -> u64 {
 }
 
 /// Decodes the first frame of `p`'s image into `frames`, once per serve.
-fn load(
+pub(super) fn load(
     p: &NodePiece,
     package: &Package<'_>,
     frames: &mut HashMap<String, RgbaImage>,
