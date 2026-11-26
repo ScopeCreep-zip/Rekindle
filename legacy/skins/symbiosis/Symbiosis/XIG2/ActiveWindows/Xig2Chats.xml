@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE ActiveWindow SYSTEM "XfireSkin.dtd">
+
+<ActiveWindow>
+    <Tile Name="Chats" ResizeX="100" ResizeY="100" Component="XIGChats">
+        <!--
+        //////////////////////////////////////////////
+        // Resize Grippers
+        //////////////////////////////////////////////
+        -->
+        <Tile Name="ResizeGripperTL" Z="26" JustX="Left" JustY="Top" Component="XIGActiveWindowsResizeGripperTL" />
+        <Tile Name="ResizeGripperT" Z="25" JustY="Top" ResizeX="100" IndentRight="ResizeGripperTR.Width" IndentLeft="ResizeGripperTL.Width" Component="XIGActiveWindowsResizeGripperTop" />
+        <Tile Name="ResizeGripperTR" Z="26" JustX="Right" JustY="Top" Component="XIGActiveWindowsResizeGripperTR" />
+        <Tile Name="ResizeGripperL" Z="25" JustX="Left" JustY="Center" ResizeY="100" IndentTop="ResizeGripperTL.Height" IndentBottom="ResizeGripperBL.Height" Component="XIGActiveWindowsResizeGripperL" />
+        <Tile Name="ResizeGripperR" Z="25" JustX="Right" JustY="Center" ResizeY="100" IndentTop="ResizeGripperTR.Height" IndentBottom="ResizeGripperBR.Height" Component="XIGActiveWindowsResizeGripperR" />
+        <Tile Name="ResizeGripperBL" Z="26" JustX="Left" JustY="Bottom" Component="XIGActiveWindowsResizeGripperBL" />
+        <Tile Name="ResizeGripperBottom" Z="25" JustY="Bottom" ResizeX="100" IndentRight="ResizeGripperBR.Width" IndentLeft="ResizeGripperBL.Width"  Component="XIGActiveWindowsResizeGripperBottom" />
+        <Tile Name="ResizeGripperBR" X="7" Y="7" Z="26" JustX="Right" JustY="Bottom" Component="XIGActiveWindowsResizeGripperBR" />
+        
+        
+        
+        <!--
+        //////////////////////////////////////////////
+        // Window Draggers
+        //////////////////////////////////////////////
+        -->
+        <Tile Name="WindowDragger" Z="10" ResizeX="100" ResizeY="100" Component="XIGWindowDragger" />
+        
+        
+        
+        <!--
+        //////////////////////////////////////////////
+        // Window Frame
+        //////////////////////////////////////////////
+        -->
+        <Tile Name="TopRow" Z="1" JustY="Top" ResizeX="100" Component="XIGActiveWindowsTopRow" />
+        <Tile Name="LeftSide" Z="1" JustX="Left" JustY="Top" ResizeY="100" IndentTop="TopRow.Height" IndentBottom="BottomRow.Height" Component="XIGActiveWindowsLeftSide" />
+        <Tile Name="Background" Z="1" ResizeX="100" ResizeY="100" IndentRight="RightSide.Width" IndentBottom="BottomRow.Height" IndentLeft="LeftSide.Width" IndentTop="TopRow.Height" Component="XIGActiveWindowsBackground" />
+        <Tile Name="RightSide" Z="1" JustX="Right" JustY="Top" ResizeY="100" IndentTop="TopRow.Height" IndentBottom="BottomRow.Height" Component="XIGActiveWindowsRightSide" />
+        <Tile Name="BottomRow" Z="1" JustY="Bottom" ResizeX="100" Component="XIGActiveWindowsBottomRow" />
+        
+        
+        
+        <!--
+        //////////////////////////////////////////////
+        // Content
+        //////////////////////////////////////////////
+        -->
+        <!--[BEGIN] Xfire Logo -->
+        <!-- <Tile Name="XfireLogo" X="13" Y="25" Z="99" Component="XfireLogoNoLink" /> -->
+        <!--[END] Xfire Logo -->
+        
+        
+        <!--[BEGIN] Info Bar -->
+        <Tile Name="InfoBar" Y="5" Z="24" ResizeX="100" IndentLeft="5" IndentRight="5" Component="InfoBar">
+            <!--[BEGIN] Username -->
+            <!-- <Tile Name="UsernameContainer" X="4" Y="5" ResizeX="100" IndentRight="93" Component="UsernameContainer">
+                <Tile Name="Username" Z="26" JustY="Center" Component="Username" />
+            </Tile> -->
+            <!--[END] Username -->
+            
+            <!--[BEGIN] Window Title -->
+            <Tile Name="WindowTitle" X="4" Y="5" Z="25" ResizeX="100" IndentRight="93" Component="XIGChatsTitle" />
+            <!--[END] Window Title -->
+            
+            
+            <!--[BEGIN] Window Control -->
+            <Tile Name="ButtonClose" X="5" Y="3" Z="25" JustX="Right" ControlId="8" TabOrder="40" Component="XIGActiveWindowsButtonClose" />
+            <!--[END] Window Control -->
+        </Tile>
+        <!--[END] Info Bar -->
+        
+        
+        <!--[BEGIN] Tabs -->
+        <Tile Name="TabsContainer" Y="InfoBar.Bottom+1" Z="25" ResizeX="100" IndentRight="5" IndentLeft="5" Component="TabButtonsContainer">
+            <Tile Name="ButtonFriendsTab" Y="2" Z="26" ControlId="260" TabOrder="50" Component="XIGActiveWindowButtonFriendsTab" />
+            <Tile Name="TabSeparator1" X="ButtonFriendsTab.Right" Z="26" Component="TabVerticalSeparator" />
+            <Tile Name="ButtonChatRoomsTab" X="TabSeparator1.Right" Y="ButtonFriendsTab.Top" Z="26" ControlId="261" TabOrder="51" Component="XIGActiveWindowButtonChatRoomsTab" />
+            <Tile Name="TabSeparator2" X="ButtonChatRoomsTab.Right" Z="26" Component="TabVerticalSeparator" />
+            <Tile Name="ButtonChatsTab" X="TabSeparator2.Right" Y="ButtonFriendsTab.Top" Z="26" Component="XIGActiveWindowButtonChatsTabActive" />
+            <Tile Name="TabSeparator3" X="ButtonChatsTab.Right" Z="26" Component="TabVerticalSeparator" />
+            <Tile Name="ButtonOptionsTab" X="TabSeparator3.Right" Y="ButtonFriendsTab.Top" Z="26" ControlId="262" TabOrder="52" Component="XIGActiveWindowButtonOptionsTab" />
+            <Tile Name="TabSeparator4" X="ButtonOptionsTab.Right" Z="26" Component="TabVerticalSeparator" />
+            <Tile Name="ButtonHelpTab" X="TabSeparator4.Right" Y="ButtonFriendsTab.Top" Z="26" ControlId="270" TabOrder="53" Component="XIGActiveWindowButtonHelpTab" />
+            <Tile Name="TabSeparator5" X="ButtonHelpTab.Right" Z="26" Component="TabVerticalSeparator" />
+        </Tile>
+        <!--[END] Tabs -->
+        
+        
+        <!--[BEGIN] Content Container -->
+        <Tile Name="ContentContainer" Y="TabsContainer.Bottom+1" Z="24" ResizeX="100" ResizeY="100" IndentRight="5" IndentBottom="91" IndentLeft="5" Component="ContentContainer">
+            <Tile Name="ChatsListContainer" Y="2" Z="25" ResizeY="100" IndentBottom="2" IndentLeft="2" Component="XIGChatsListContainer">
+                <!--[BEGIN] All Conversations Header -->
+                <Tile Name="AllChatsHeader" Z="25" ResizeX="100" Component="Header">
+                    <Tile Name="AllChatsText" Z="25" JustX="Center" JustY="Center" Component="XIGChatsAllChatsText">
+                        <Tile Name="ButtonAllChats" Z="25" ResizeX="100" ResizeY="100" ControlId="220" AttachedControlId="15" TabOrder="60" Component="XIGActiveWindowButtonAllChats" />
+                    </Tile>
+                </Tile>
+                <!--[END] All Conversations Header -->
+                
+                <!--[BEGIN] Conversations List -->
+                <Tile Name="ChatsList" Y="AllChatsHeader.Bottom" Z="25" ResizeX="100" ResizeY="100" IndentRight="16" IndentBottom="4" ControlId="15" TabOrder="70" Component="XIGChatsList">
+                    <Tile Name="ListItemBG" ResizeX="100" ResizeY="100" Component="XIGListItemBG" />
+                    <Tile Name="ListItemBGSelected" ResizeX="100" ResizeY="100" Component="XIGListItemBGSelected" />
+                    <Tile Name="ListItemBGAlert" ResizeX="100" ResizeY="100" Component="XIGListItemBGAlert" />
+                </Tile>
+                <Tile Name="ChatsListVertScrollBar" X="ChatsList.Right" Y="AllChatsHeader.Bottom" Z="25" ResizeY="100" AttachedControlId="15" Component="XIGVertScrollBar" />
+                <!--[END] Conversations List -->
+                
+                <!-- <Tile Name="ChatsListBackground" Z="24" JustX="Center" JustY="Center" Component="XfireListBackdrop" /> -->
+            </Tile>
+            
+            
+            <!-- <Tile Name="VerticalSeparator" X="ChatsListContainer.Right" Z="25" ResizeY="100" Component="VerticalSeparator" /> -->
+            
+            
+            <Tile Name="ChatsContainer" X="ChatsListContainer.Right+2" Y="ChatsListContainer.Top" Z="23" ResizeX="100" ResizeY="100" IndentRight="2" IndentBottom="2" Component="XIGChatsMsgsContainer">
+                <!--[BEGIN] Chats Header -->
+                <Tile Name="ChatsHeader" ResizeX="100" Component="Header">
+                    <Tile Name="ChatsTitleText" X="20" Y="2" Z="25" ResizeX="100" IndentRight="24" Component="XIGChatsMsgsHeaderText" />
+                    <Tile Name="ButtonCloseConvo" X="4" Z="25" JustX="Right" JustY="Center" ControlId="280" AttachedControlId="15" TabOrder="80" Component="XIGChatsCloseConvo" />
+                </Tile>
+                <!--[END] Chats Header -->
+                
+                <!--[BEGIN] Chat Area -->
+                <Tile Name="ChatAreaContainer" Y="ChatsHeader.Bottom" Z="24" ResizeX="100" ResizeY="100" IndentBottom="22" IndentLeft="1" Component="XIGChatsMsgsContainer">
+                    <Tile Name="ChatArea" Z="25" ResizeX="100" ResizeY="100" IndentRight="16" IndentBottom="2" ControlId="10" AttachedControlId="15" Component="XIGChatsChatArea" />
+                    <Tile Name="ChatAreaVertScrollBar" X="ChatArea.Right" Z="25" ResizeY="100" IndentBottom="1" AttachedControlId="10" Component="XIGVertScrollBar" />
+                </Tile>
+                <!--[END] Chat Area -->
+                
+                <!--[BEGIN] Chat Edit -->
+                <Tile Name="ChatEditContainer" Y="ChatAreaContainer.Bottom+1" Z="50" ResizeX="100" Component="XIGChatsChatEditContainer">
+                    <Tile Name="ChatEdit" Z="100" ResizeX="100" ResizeY="100" IndentTop="3" IndentRight="3" IndentBottom="3" IndentLeft="3" ControlId="210" AttachedControlId="15" Default="SetFocusControl" Component="XIGChatsChatEdit" />
+                </Tile>
+                <!--[END] Chat Edit -->
+                
+                <!-- <Tile Name="ChatsBackground" Z="20" JustX="Center" JustY="Center" Component="XfireListBackdrop" /> -->
+            </Tile>
+        </Tile>
+        <!--[END] Content Container -->
+        
+        
+        <!--[BEGIN] Opacity Slider -->
+        <Tile Name="OpacitySlider" X="5" Y="7" Z="75" JustX="Left" JustY="Bottom" TabOrder="2" ControlId="1802" FocusedColor="XIGFocusedColor" Component="XIGOpacitySlider">
+            <Tile Name="OpacTrack" ResizeX="100" Component="XIGOpacityTrack" />
+            <Tile Name="OpacGripper" Component="XIGOpacityGripper" />
+        </Tile>
+        <!--[END] Opacity Slider -->
+        
+        
+        
+        <!--
+        //////////////////////////////////////////////
+        // Buttons
+        //////////////////////////////////////////////
+        -->
+        <Tile Name="ChatsButtonBar" Y="ContentContainer.Bottom+2" Z="25" ResizeX="100" IndentRight="5" IndentLeft="5" Component="XIGFriendsButtonBar">
+            <!--[BEGIN] Buttons -->
+            <Tile Name="ButtonInvite" X="1" Y="1" Z="25" ControlId="232" AttachedControlId="15" TabOrder="21" Component="XIGActiveWindowButtonInviteUsers" />
+            <Tile Name="Separator1" X="ButtonInvite.Right" Z="30" Component="ButtonBarVerticalSeparator" />
+            <Tile Name="TabbedCall" X="Separator1.Right" Y="ButtonInvite.Top" Z="25" Component="XIGChatsTabbedCall">
+                <Tile Name="ButtonCall" CallState="Call" Component="XIGActiveWindowButtonCall" />
+                <Tile Name="ButtonAnswer" CallState="Ringing" Component="XIGActiveWindowButtonAnswerCall" />
+                <Tile Name="ButtonCancel" CallState="Connected" Component="XIGActiveWindowButtonCancelCall" />
+                <Tile Name="ButtonTalking" CallState="Talking" Component="XIGActiveWindowButtonTalkingCall" />
+                <Tile Name="DisabledCall" CallState="Disabled" Component="XIGActiveWindowButtonDisabledCall" />
+            </Tile>
+            <Tile Name="Separator2" X="TabbedCall.Right" Z="30" Component="ButtonBarVerticalSeparator" />
+            <Tile Name="ButtonNewRoom" Y="4" Z="30" JustX="Center" JustY="Bottom" ControlId="231" TabOrder="20" Component="XIGActiveWindowButtonNewRoom" />
+            <!--[END] Buttons -->
+        </Tile>
+    </Tile>
+</ActiveWindow>

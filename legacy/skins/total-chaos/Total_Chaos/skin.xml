@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE XfireSkin SYSTEM "xfireskin.dtd">
+
+<XfireSkin>
+	<!-- Skin Themes -->
+	<Include File="themes.xml" />
+
+	<!-- Language String Translations -->
+	<Include File="strings.xml" /> -->
+
+	<!-- Component Definitions -->
+	<Include File="components.xml" />
+	
+	<!-- Popup tiles -->
+	<Include File="popups.xml" />
+
+	<!-- Main Window -->
+	<MainSkin>
+		<Include File="mainwindow.xml" />
+	</MainSkin>
+
+	<!-- Chat Window -->
+	<ChatSkin>
+ 		<Include File="chatwindow.xml" />
+	</ChatSkin>
+
+	<!-- Group Chat Window -->
+	<GroupChatSkin>
+		<Include File="groupchatwindow.xml" />
+	</GroupChatSkin>
+
+	<!-- InGame Main Window -->
+	<InGameMainSkin>
+		<Include File="ingamemainwindow.xml" />
+	</InGameMainSkin>
+
+	<!-- InGame Alert Window -->
+	<InGameAlertSkin>
+		<Include File="ingamealertwindow.xml" />
+	</InGameAlertSkin>
+</XfireSkin>

@@ -1,0 +1,26 @@
+<XfireSkin>
+    <Include File="themes.xml" />
+    <Include File="strings.xml" />
+    <Include File="components.xml" />
+    <Include File="popups.xml" />
+
+    <MainSkin>
+        <Include File="mainwindow.xml" />
+    </MainSkin>
+
+    <ChatSkin>
+        <Include File="chatwindow.xml" />
+    </ChatSkin>
+
+    <GroupChatSkin>
+        <Include File="groupchatwindow.xml" />
+    </GroupChatSkin>
+
+    <InGameMainSkin>
+        <Include File="ingamemainwindow.xml" />
+    </InGameMainSkin>
+
+    <InGameAlertSkin>
+        <Include File="ingamealertwindow.xml" />
+    </InGameAlertSkin>
+</XfireSkin>

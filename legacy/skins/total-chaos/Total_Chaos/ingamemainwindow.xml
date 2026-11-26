@@ -1,0 +1,20 @@
+<Tile Name="MainWindow" ResizeX="100" ResizeY="100" Component="InGameMainWindow">
+	<Tile Name="MainTitleBar" Z="2" X="0" Y="0" ResizeX="100" ResizeY="0" Component="MainTitleBar">
+		<Tile Name="Title" JustX="CENTER" X="0" Y="0" Component="Title"></Tile>
+	</Tile>
+	<Tile Name="InGameMiddle" Z="2" Y="MainTitleBar.BOTTOM" ResizeX="100" ResizeY="100" Indentbottom="60" Component="InGameMiddle">
+		<Tile Name="ChatAreaTitle" X="58" IndentRight="58" ResizeX="100" Z="25" Component="ChatAreaTitle"></Tile>
+		<Tile Name="InGameBG" X="58" IndentRight="58" Y="ChatAreaTitle.BOTTOM" Z="20" ResizeX="100" ResizeY="100" Component="InGameBG">
+			<Tile Name="InGameFuckingStupidPieceOfShitWillNotWorkFuckingBackroundColorMotherFucker" X="1" IndentRight="1" Z="300000000000000" ResizeX="100" ResizeY="100" Component="InGameFuckingStupidPieceOfShitWillNotWorkFuckingBackroundColorMotherFucker"></Tile>
+		</Tile>
+	</Tile>
+	<Tile Name="InGameBottom" Z="2" Indentleft="12" Indentright="12" Y="InGameMiddle.BOTTOM" ResizeX="100" Component="InGameBottom">
+		<Tile Name="InGameBottomMiddle" Z="2" JustX="CENTER" Component="InGameBottomMiddle"></Tile>
+	</Tile>
+	<Tile Name="InGame" X="58" Z="72" Y="InGameMiddle.BOTTOM" ResizeX="100" IndentRight="58" Component="InGame"></Tile>
+	<Tile Name="MainChatArea" X="60" Y="72" ResizeX="100" ResizeY="100" IndentRight="60" IndentBottom="60" Z="4" Component="InGameMainChatArea"></Tile>
+	<Tile Name="MainEditArea" X="60" Y="45" JustY="BOTTOM" ResizeX="100" IndentRight="60" Z="4" Component="InGameMainEditArea"></Tile>
+	<Tile Name="MainTitle" X="65" Y="55" ResizeX="70" IndentRight="65" Z="10" Component="InGameMainTitle"></Tile>
+	<Tile Name="MainFooter" JustX="RIGHT" X="65" Y="55" ResizeX="30" Z="10" Component="InGameMainFooter"></Tile>
+	<Tile Name="MainClock" Z="-50" JustX="CENTER" Y="ChatAreaTitle.BOTTOM" Component="InGameMainClock"></Tile>
+</Tile>
