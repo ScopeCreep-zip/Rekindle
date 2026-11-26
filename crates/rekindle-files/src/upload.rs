@@ -92,7 +92,7 @@ fn build_upload_context<D: FilesDeps>(
     community_id: &str,
     channel_id: &str,
 ) -> Result<UploadContext, FilesError> {
-    deps.require_permission(community_id, permissions::SEND_MESSAGES)?;
+    deps.require_permission(community_id, Some(channel_id), permissions::SEND_MESSAGES)?;
     if deps.channel_is_forum(community_id, channel_id) {
         return Err(FilesError::InvalidInput(
             "forum channels accept posts only through thread creation".into(),
@@ -308,7 +308,11 @@ pub async fn send_voice_message_bytes<D: FilesDeps>(
     channel_id: &str,
     opus_bytes: Vec<u8>,
 ) -> Result<String, FilesError> {
-    deps.require_permission(community_id, permissions::SEND_VOICE_MESSAGES)?;
+    deps.require_permission(
+        community_id,
+        Some(channel_id),
+        permissions::SEND_VOICE_MESSAGES,
+    )?;
     if opus_bytes.is_empty() {
         return Err(FilesError::InvalidInput(
             "voice message has empty audio bytes".into(),

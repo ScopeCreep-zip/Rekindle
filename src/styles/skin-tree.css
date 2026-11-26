@@ -286,4 +286,11 @@
     flex-wrap: nowrap;
     overflow-x: auto;
   }
+
+  /* A disabled node the pack draws no disabled art for (plan CR1,
+   * `disabledBy: shell`) is dimmed so it reads unusable; one with its own
+   * disabled art (`pack`) keeps it as the pack drew it. */
+  [data-disabled-by="shell"][aria-disabled="true"] {
+    opacity: 0.5;
+  }
 }

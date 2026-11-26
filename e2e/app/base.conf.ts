@@ -88,4 +88,18 @@ export const base = {
     await shotAllWindows();
     if (!result.passed) await recordFailure(test.title);
   },
+  // A failed before/after hook leaves evidence too: every window each user
+  // has open, as a shot under the hook's own name, and the failure record
+  // (a before-all hook fails before any test, so afterTest never runs).
+  async afterHook(
+    test: { title?: string; parent?: string; file?: string } | undefined,
+    _context: unknown,
+    result: { passed?: boolean; error?: unknown },
+  ) {
+    if (result.passed !== false && !result.error) return;
+    const title = test?.title ?? "hook";
+    shotsFor(test?.file ?? "hook", test?.parent ?? "hook", title);
+    await shotAllWindows();
+    await recordFailure(title);
+  },
 } satisfies Partial<WebdriverIO.Config>;

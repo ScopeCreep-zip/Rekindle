@@ -16,22 +16,28 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use rekindle_types::dto::skin_run::{CallTarget, SkinSelection};
-use rekindle_types::dto::skin_signals::{SkinSignalSet, EVERY_CAPABILITY};
-use rekindle_types::friend::{FriendState, FriendshipState};
+use rekindle_types::dto::skin_signals::{
+    DisableCause, DisableSignal, SkinSignalSet, EVERY_CAPABILITY,
+};
+use rekindle_types::friend::FriendState;
 use rekindle_types::subscription_events::{
     CallEvent, NetworkEvent, StreamFrame, SubscriptionEvent, SystemEvent, TypingContext,
     TypingEvent, VoiceEvent, VoiceScope,
 };
 
-use super::capability::{allows, Group, LobbyCaps, Selected, SkinWorld};
+use super::capability::{refusal, Selected, SkinWorld};
+pub(crate) use super::world::load_world;
 use crate::daemon::dispatch::DaemonContext;
-use rekindle_transport::operations::group_dm;
 
 /// A call the Host has seen on its stream, by call id.
 #[derive(Debug, Clone)]
 pub(crate) struct Call {
     /// The 1:1 peer; `None` for a group call.
     peer: Option<String>,
+    /// The group DM a group call belongs to, from the `groupId` on
+    /// `CallEvent::Incoming`/`Connected` (`GroupCallOffer.group_id`,
+    /// roster-checked by `rekindle_calls::signaling::check_group_scope`).
+    group: Option<String>,
     pub(crate) ringing: bool,
     pub(crate) outgoing: bool,
 }
@@ -156,11 +162,13 @@ impl Inputs {
                 call_id,
                 from,
                 is_group,
+                group_id,
                 ..
             } => {
                 let peer = (!is_group).then(|| from.clone());
                 let call = Call {
                     peer,
+                    group: group_id.clone(),
                     ringing: true,
                     outgoing: false,
                 };
@@ -171,18 +179,38 @@ impl Inputs {
             } => {
                 let call = Call {
                     peer: Some(peer_key.clone()),
+                    group: None,
                     ringing: true,
                     outgoing: true,
                 };
                 self.calls.insert(call_id.clone(), call);
             }
-            CallEvent::Connected { call_id, direct } => {
+            CallEvent::GroupStarted {
+                call_id, group_id, ..
+            } => {
+                let call = Call {
+                    peer: None,
+                    group: group_id.clone(),
+                    ringing: true,
+                    outgoing: true,
+                };
+                self.calls.insert(call_id.clone(), call);
+            }
+            CallEvent::Connected {
+                call_id,
+                direct,
+                group_id,
+            } => {
                 let call = self.calls.entry(call_id.clone()).or_insert(Call {
                     peer: None,
+                    group: None,
                     ringing: false,
                     outgoing: false,
                 });
                 call.ringing = false;
+                if group_id.is_some() {
+                    call.group.clone_from(group_id);
+                }
                 if let Some(direct) = direct {
                     call.peer = Some(direct.peer_key.clone());
                 }
@@ -236,6 +264,50 @@ impl Inputs {
         }
     }
 
+    /// The id of the incoming 1:1 call from `peer` that is ringing, the
+    /// call Xfire's `AppVoiceChat` answers.
+    pub(crate) fn ringing_from(&self, peer: &str) -> Option<String> {
+        self.calls
+            .iter()
+            .find(|(_, c)| c.peer.as_deref() == Some(peer) && c.ringing && !c.outgoing)
+            .map(|(call_id, _)| call_id.clone())
+    }
+
+    /// The call of the group DM `group_id`: the one whose signaling
+    /// carries that group id (never matched by members, so two groups of
+    /// the same people each see only their own call).
+    pub(crate) fn group_call(&self, group_id: &str) -> Option<(&String, &Call)> {
+        self.calls
+            .iter()
+            .find(|(_, c)| c.peer.is_none() && c.group.as_deref() == Some(group_id))
+    }
+
+    /// The id of the group's call in progress that we are not in (it is
+    /// ringing here), the call Xfire's group `AppGroupVoiceChat` joins.
+    pub(crate) fn joinable_group_call(&self, group_id: &str) -> Option<String> {
+        self.group_call(group_id)
+            .filter(|(_, c)| c.ringing && !c.outgoing)
+            .map(|(call_id, _)| call_id.clone())
+    }
+
+    /// The id of the group's call that is ours to leave: one we are in,
+    /// or our own that still rings out (its cancel), the call Xfire's
+    /// group `AppLeaveGroupVoiceChat` leaves.
+    pub(crate) fn our_group_call(&self, group_id: &str) -> Option<String> {
+        self.group_call(group_id)
+            .filter(|(_, c)| !c.ringing || c.outgoing)
+            .map(|(call_id, _)| call_id.clone())
+    }
+
+    /// The id of the 1:1 call with `peer` that we are in (connected), the
+    /// call a chat window's `AppLeaveVoiceChat` leaves.
+    pub(crate) fn call_in_with(&self, peer: &str) -> Option<String> {
+        self.calls
+            .iter()
+            .find(|(_, c)| c.peer.as_deref() == Some(peer) && !c.ringing)
+            .map(|(call_id, _)| call_id.clone())
+    }
+
     pub(crate) fn call_with(&self, peer: &str) -> Option<&Call> {
         self.calls
             .values()
@@ -257,10 +329,15 @@ pub(crate) fn compute(
         ..SkinSignalSet::default()
     };
     for capability in EVERY_CAPABILITY {
-        if allows(capability, inputs, world, selected) {
-            set.can.insert(capability);
-        } else {
-            set.cannot.insert(capability);
+        match refusal(capability, inputs, world, selected) {
+            None => {
+                set.can.insert(capability);
+            }
+            Some(why) => {
+                set.cannot.insert(capability);
+                set.disabled_reasons
+                    .insert(DisableCause::Capability(capability), why);
+            }
         }
     }
     if let Some(key) = selected.key() {
@@ -268,7 +345,34 @@ pub(crate) fn compute(
         set.voice_ringing = inputs.call_with(key).is_some_and(|c| c.ringing);
         set.talking = inputs.speaking.contains(key);
     }
+    let active = [
+        (set.disconnected, DisableSignal::Disconnected),
+        (set.user_typing, DisableSignal::ActiveUserTyping),
+        (set.voice_ringing, DisableSignal::VoiceRinging),
+        (set.talking, DisableSignal::UserStartedTalking),
+        (set.new_notification, DisableSignal::NewNotification),
+    ];
+    for (on, signal) in active {
+        if on {
+            set.disabled_reasons.insert(
+                DisableCause::Signal(signal),
+                signal_reason(signal).to_owned(),
+            );
+        }
+    }
     set
+}
+
+/// The words for a node a pack disables on an active signal (plan E7.7
+/// CR1): what the window shows over it.
+pub(crate) const fn signal_reason(signal: DisableSignal) -> &'static str {
+    match signal {
+        DisableSignal::Disconnected => "You're offline. Rekindle reconnects on its own.",
+        DisableSignal::ActiveUserTyping => "Your friend is typing.",
+        DisableSignal::VoiceRinging => "A call with your friend is ringing.",
+        DisableSignal::UserStartedTalking => "Your friend is talking.",
+        DisableSignal::NewNotification => "You have a new notification.",
+    }
 }
 
 /// Every known window's set, by label: `friend` looks a key up in the
@@ -296,87 +400,6 @@ pub(crate) fn window_sets(
         .collect()
 }
 
-/// The state the capabilities read besides the selection and the stream:
-/// the session's friends and communities, our shown game, the
-/// own-records stage, and our favourite servers, groups and group invites in the database.
-pub(crate) async fn load_world(ctx: &DaemonContext) -> SkinWorld {
-    let mut world = SkinWorld::default();
-    if let Some(session) = ctx.session.read().as_ref() {
-        for f in session.friends.values() {
-            if f.friendship_state == FriendshipState::Accepted {
-                world.accepted_friends += 1;
-                let server = f.game_info.as_ref().and_then(|g| g.server_address.as_ref());
-                world.friend_servers += usize::from(server.is_some());
-            }
-        }
-        world.communities = session.communities.len();
-    }
-    world.own_game = ctx.own_presence.view().game.map(|g| g.game_id);
-    world.records_held = ctx.friend_stores.own_records.get()
-        == rekindle_transport::operations::friend::OwnRecordsStage::Held;
-    let (Ok(db), Ok(owner)) = (ctx.require_db(), ctx.require_owner()) else {
-        return world;
-    };
-    let now = ctx.clock.now_ms_i64();
-    let read = db
-        .call(move |conn| {
-            use rekindle_db::repo::{
-                favourite_servers, group_dm_invites, group_dms, group_lobby, transfers,
-            };
-            let favourites = favourite_servers::list(conn, &owner)?;
-            let groups = group_dms::list(conn, &owner)?;
-            let invites = group_dm_invites::list(conn, &owner, now)?;
-            let attached: BTreeSet<String> = groups
-                .iter()
-                .filter_map(|g| g.origin_peer.clone())
-                .collect();
-            let mut joined = Vec::with_capacity(groups.len());
-            for g in groups {
-                let others = g.roster.iter().filter(|m| m.identity != owner).count();
-                let creator = g.roster.first().is_some_and(|m| m.identity == owner);
-                let lobby = group_lobby::current(conn, &owner, &g.group_id)?.map(|row| {
-                    let [join, leave, launch, _] = group_dm::lobby::verdicts(&row, &owner);
-                    LobbyCaps {
-                        open: row.state == group_lobby::LobbyState::Open,
-                        join: join.allowed(),
-                        leave: leave.allowed(),
-                        launch: launch.allowed(),
-                    }
-                });
-                joined.push((
-                    g.group_id,
-                    Group::Joined {
-                        others,
-                        creator,
-                        lobby,
-                    },
-                ));
-            }
-            let pending = invites.into_iter().map(|i| (i.group_id, Group::Pending));
-            let favourites: BTreeSet<(u32, String)> = favourites
-                .into_iter()
-                .map(|f| (f.game_id, f.address))
-                .collect();
-            let groups: BTreeMap<String, Group> = pending.chain(joined).collect();
-            let transfers: BTreeMap<String, _> = transfers::list(conn, &owner)?
-                .into_iter()
-                .map(|t| (t.attachment_id.clone(), t))
-                .collect();
-            Ok((favourites, groups, attached, transfers))
-        })
-        .await;
-    match read {
-        Ok((favourites, groups, attached, transfers)) => {
-            world.favourites = favourites;
-            world.groups = groups;
-            world.attached = attached;
-            world.transfers = transfers;
-        }
-        Err(e) => tracing::warn!(error = %e, "skin signals: database state unread"),
-    }
-    world
-}
-
 /// The Host's signal state: the inputs, the sets last published, and the
 /// worker's wake-up for an input that is not on the stream.
 #[derive(Debug, Default)]
@@ -401,6 +424,27 @@ impl SignalState {
     /// `ShowVoiceWindow`'s window ([`Inputs::show_call`]).
     pub(crate) fn show_call(&self) -> Option<CallTarget> {
         self.inputs.lock().show_call()
+    }
+
+    /// `VoiceChat`'s call ([`Inputs::ringing_from`]).
+    pub(crate) fn ringing_from(&self, peer: &str) -> Option<String> {
+        self.inputs.lock().ringing_from(peer)
+    }
+
+    /// A group window's `GroupVoiceChat` call
+    /// ([`Inputs::joinable_group_call`]).
+    pub(crate) fn joinable_group_call(&self, group_id: &str) -> Option<String> {
+        self.inputs.lock().joinable_group_call(group_id)
+    }
+
+    /// A group window's leave or cancel ([`Inputs::our_group_call`]).
+    pub(crate) fn our_group_call(&self, group_id: &str) -> Option<String> {
+        self.inputs.lock().our_group_call(group_id)
+    }
+
+    /// A chat window's leave ([`Inputs::call_in_with`]).
+    pub(crate) fn call_in_with(&self, peer: &str) -> Option<String> {
+        self.inputs.lock().call_in_with(peer)
     }
 }
 

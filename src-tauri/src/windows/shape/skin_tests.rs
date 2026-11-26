@@ -6,7 +6,7 @@ use rekindle_types::dto::skin::{FrameTile, Insets, SkinWindow, TileAxis, WindowL
 use rekindle_types::dto::skin_library::{SkinFrames, SkinTileMask, SkinWindowFrame};
 use tauri::PhysicalSize;
 
-use super::{compute, decode, frame_of, grown, kind_of, min_window};
+use super::{compute, decode, frame_of, frame_of_label, grown, kind_of, min_window};
 use crate::window_labels::WindowKind;
 use crate::windows::shape::{ShapeRect, Silhouette};
 
@@ -93,6 +93,22 @@ fn a_window_the_skin_does_not_frame_keeps_its_rectangle() {
     )
     .unwrap();
     assert_eq!(none, whole);
+}
+
+/// Plan SKW1: a community window with a community wears the community frame
+/// (composed from the pack's chat window); the community browser shares the
+/// Community kind but keeps its rectangle; the buddy list and a chat window
+/// keep theirs.
+#[test]
+fn a_community_window_wears_the_community_frame_and_the_browser_none() {
+    assert_eq!(frame_of(WindowKind::Community), Some(SkinWindow::Community));
+    assert_eq!(
+        frame_of_label("community-0123456789abcdef"),
+        Some(SkinWindow::Community)
+    );
+    assert_eq!(frame_of_label("community-browser"), None);
+    assert_eq!(frame_of_label("buddy-list"), Some(SkinWindow::Main));
+    assert_eq!(frame_of_label("settings"), None);
 }
 
 #[test]

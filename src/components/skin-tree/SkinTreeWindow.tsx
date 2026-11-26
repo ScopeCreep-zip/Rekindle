@@ -1,11 +1,11 @@
 import { Component, For, JSX, Match, Show, Switch, createContext, createEffect, createSignal, onCleanup, untrack, useContext } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { Dynamic } from "solid-js/web";
-import type { EngineMenu, MenuItem, NodeGlyph, NodeLabel, NodeTrigger, ShellNode, SkinAction, SkinEvent, SkinShell, SlotKey, ViewKey } from "../../ipc/commands/dto_skin_tree";
+import type { EngineMenu, MenuItem, NodeGlyph, NodeLabel, ShellNode, SkinAction, SkinShell, SlotKey, ViewKey } from "../../ipc/commands/dto_skin_tree";
 import { useSlotRegister } from "./slots";
 import type { SkinSignalSet } from "../../ipc/commands/dto_skin_run";
 import { skinSignals } from "../../stores/skin-signals.store";
-import { applyTreeOp, fired, initialTreeState, pageView, signalFlags, type TreeState } from "./signalEffects";
+import { applyTreeOp, fired, initialTreeState, pageView, signalFlags, type StateCause, type TreeState } from "./signalEffects";
 import type { TreePieces } from "./tree_pieces";
 import { dispatchSkinAction, registerShellRunner } from "../../actions/skin.actions";
 import { handleOpenDocs, openSettingsTab } from "../../actions/app_menu.actions";
@@ -13,6 +13,7 @@ import { actionLabel } from "../../utils/skin_action_words";
 import { InBar, PackContextMenu, PackMenu, PackMenuBar } from "./PackMenus";
 import AdArea from "./AdArea";
 import { BrandGlyph } from "./BrandGlyphs";
+import { actionAttr, hasFriendsView, holdsControls, holdsNonMenuControls, isPointer, parents, pointerTriggers, pressAction, rightMenu, roleAttr, type PointerEvent } from "./nodeQueries";
 
 /** What every node of one window's tree reads. */
 interface Tree {
@@ -44,74 +45,6 @@ function useTree(): Tree {
   if (!ctx) throw new Error("a skin node outside SkinTreeWindow");
   return ctx;
 }
-
-function hasFriendsView(nodes: ShellNode[]): boolean {
-  return nodes.some(
-    (n) => (n.role.kind === "view" && n.role.key === "friends") || hasFriendsView(n.children ?? []),
-  );
-}
-
-function parents(nodes: ShellNode[], into = new Map<string, ShellNode>()): Map<string, ShellNode> {
-  for (const n of nodes) {
-    for (const c of n.children ?? []) into.set(c.id, n);
-    parents(n.children ?? [], into);
-  }
-  return into;
-}
-
-/** The pointer and keyboard events a node's triggers listen to. */
-type PointerEvent = "click" | "doubleClick" | "leftDown" | "rightDown" | "rightClick";
-
-function pointerTriggers(n: ShellNode, on: PointerEvent): NodeTrigger[] {
-  return (n.triggers ?? []).filter((t) => t.on.kind === on);
-}
-
-function isPointer(on: SkinEvent): on is { kind: PointerEvent } {
-  return on.kind === "click" || on.kind === "doubleClick" || on.kind === "leftDown" || on.kind === "rightDown" || on.kind === "rightClick";
-}
-
-/** Whether any node under `n` takes a press (its own pointer trigger),
- *  menu titles included: a control inside `n`. */
-function holdsControls(n: ShellNode): boolean {
-  return (n.children ?? []).some((c) => (c.triggers ?? []).some((t) => isPointer(t.on)) || holdsControls(c));
-}
-
-/** Whether a node under `n` takes a press but is no menu title: what an
- *  ARIA menubar may not own (Onyx lays its tab strip inside its MenuBar). */
-function holdsNonMenuControls(n: ShellNode): boolean {
-  return (n.children ?? []).some(
-    (c) =>
-      (c.role.kind !== "menuTitle" && pressAction(c) !== undefined) || holdsNonMenuControls(c),
-  );
-}
-
-/** The node's own press (click or button down, not the window drag or a
- *  resize): what it does, for its accessible name and `data-skin-action`. */
-function pressAction(n: ShellNode): SkinAction | undefined {
-  return (n.triggers ?? []).find(
-    (t) => (t.on.kind === "click" || t.on.kind === "leftDown" || t.on.kind === "doubleClick") && t.run.kind !== "dragWindow" && t.run.kind !== "resize",
-  )?.run;
-}
-
-function rightMenu(n: ShellNode): EngineMenu | undefined {
-  const t = (n.triggers ?? []).find(
-    (t) => (t.on.kind === "rightClick" || t.on.kind === "rightDown") && (t.run.kind === "menu" || t.run.kind === "contextMenu"),
-  );
-  return t && (t.run.kind === "menu" || t.run.kind === "contextMenu") ? t.run.arg : undefined;
-}
-
-/** `kind[:key]`: the served role, stable across every pack and window. */
-function roleAttr(n: ShellNode): string {
-  const r = n.role;
-  return "key" in r ? `${r.kind}:${r.key}` : r.kind;
-}
-
-/** `kind[:arg]` of an action, its argument when that is a plain name. */
-function actionAttr(a: SkinAction | undefined): string | undefined {
-  if (!a) return undefined;
-  return "arg" in a && typeof a.arg === "string" ? `${a.kind}:${a.arg}` : a.kind;
-}
-
 
 /**
  * The words the Host serves on a node it placed (plan SK2-N4d): over the
@@ -207,7 +140,16 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
   const role = (): ShellNode["role"] => props.node.role;
   const press = (): SkinAction | undefined => pressAction(n());
   const fx = () => tree.state.nodes[n().id];
-  const disabled = (): boolean => fx()?.state === "disabled";
+  /** Refused (plan CR1): in its Disabled art for a refusal, so not
+   *  pressable, and saying why. The pack's unfocused-window look draws the
+   *  same art (`windowInactive`) on a node that stays pressable (lead
+   *  ruling): an inactive window's caption buttons still work. */
+  const disabled = (): boolean => fx()?.state === "disabled" && fx()?.cause !== "windowInactive";
+  /** The Host's words for why this node is refused (plan CR1). */
+  const disabledReason = (): string | undefined => {
+    const cause = fx()?.cause;
+    return cause && cause !== "windowInactive" ? skinSignals()?.disabledReasons[cause] : undefined;
+  };
   const slotKey = (): SlotKey | undefined => {
     const r = role();
     return r.kind === "slot" ? r.key : undefined;
@@ -293,6 +235,11 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
     get "data-state"() {
       return fx()?.state;
     },
+    // Why the node shows its Disabled art: a refusal's cause, or
+    // `windowInactive` (the pack's unfocused-window look).
+    get "data-state-cause"() {
+      return fx()?.state === "disabled" ? fx()?.cause : undefined;
+    },
     // A text field's served inset (plan SK5): its text keeps clear of the
     // pack's controls laid over it.
     get style() {
@@ -301,6 +248,19 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
     },
     get "aria-disabled"() {
       return disabled() ? "true" : undefined;
+    },
+    // Why it is disabled, in the Host's words (plan CR1): the reason the
+    // window's served `disabledReasons` gives for the trigger's cause; the
+    // shell dims only a node with no disabled art of its own (`shell`).
+    get "aria-description"() {
+      return disabled() ? disabledReason() : undefined;
+    },
+    get "data-disabled-by"() {
+      return disabled() ? n().disabledBy : undefined;
+    },
+    // The same words as the pointer's tooltip.
+    get title() {
+      return disabled() ? disabledReason() : undefined;
     },
     get hidden() {
       return hidden() || undefined;
@@ -495,9 +455,9 @@ const SkinTreeWindow: Component<{
   const [nameEdits, setNameEdits] = createSignal(0);
   const root = (): ShellNode[] => props.shell.root;
 
-  const treeOp = (node: string, action: SkinAction): boolean => {
+  const treeOp = (node: string, action: SkinAction, cause?: StateCause): boolean => {
     let done = false;
-    setState(produce((s) => (done = applyTreeOp(s, node, action, root()))));
+    setState(produce((s) => (done = applyTreeOp(s, node, action, root(), cause))));
     return done;
   };
   const run = (node: string, action: SkinAction): void => {
@@ -511,7 +471,7 @@ const SkinTreeWindow: Component<{
     const now = { set: skinSignals(), view: state.view };
     if (!now.set) return;
     untrack(() => {
-      for (const f of fired(root(), before, now)) treeOp(f.node, f.run);
+      for (const f of fired(root(), before, now)) treeOp(f.node, f.run, f.cause);
       before = { set: now.set, view: state.view };
     });
   });

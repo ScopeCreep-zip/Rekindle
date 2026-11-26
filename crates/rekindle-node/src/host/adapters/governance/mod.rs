@@ -116,6 +116,7 @@ mod state_builder;
 pub(crate) mod state_mutations;
 mod state_reads;
 pub(crate) mod unread;
+pub(crate) mod view_gain;
 mod views;
 mod watch;
 mod watch_relay;

@@ -17,6 +17,8 @@ mod titles;
 
 pub use rebind::follow_event;
 pub use reveal::reveal_window;
+/// Which skin frame a window wears, by label (the signal windows, `skin_windows`).
+pub use shape::frame_of_label;
 
 use rekindle_types::id::ChannelId;
 use rekindle_types::key_format::{self, PublicKeyHex};
@@ -175,7 +177,7 @@ fn finish(
             crate::platform::enable_webview_media_capture(window);
         }
     })?;
-    shape::attach(&window, shape::frame_of(kind));
+    shape::attach(&window, shape::frame_of_label(window.label()));
     Ok(window)
 }
 
@@ -234,7 +236,11 @@ pub fn open_buddy_list(app: &AppHandle) -> Result<(), String> {
     )?
     .title("Rekindle")
     .max_inner_size(400.0, 900.0);
-    finish(builder, WindowKind::BuddyList).map(drop)
+    finish(builder, WindowKind::BuddyList)?;
+    // A skin window: the Host serves its signals from now on (plan CR1); one
+    // opened before the Host is announced when it starts (`announce_open`).
+    crate::skin_windows::opened(app, labels::BUDDY_LIST, None, None);
+    Ok(())
 }
 
 /// What a chat window shows: a 1:1 conversation with a friend (identity
@@ -354,7 +360,13 @@ pub fn open_community_window(
     };
     let builder = base_builder(app, WindowKind::Community, &label, path)?
         .title(titles::community(state, community.as_ref()));
-    finish(builder, WindowKind::Community).map(drop)
+    finish(builder, WindowKind::Community)?;
+    // A community window wears the pack's frame (plan SKW1) and follows the
+    // window's signals like a chat's; the browser (no community) wears none.
+    if community.is_some() {
+        crate::skin_windows::opened(app, &label, None, None);
+    }
+    Ok(())
 }
 
 /// Bring the buddy list forward for something the user must answer now:

@@ -64,6 +64,10 @@ pub enum CallEvent {
         participants: Vec<String>,
         is_group: bool,
         expires_at_ms: u64,
+        /// The group DM a group call belongs to (`GroupCallOffer.group_id`,
+        /// checked against its roster); `None` for a 1:1 or a buddy-list
+        /// group call.
+        group_id: Option<String>,
     },
 
     /// Our outbound call reached the peer and is ringing there.
@@ -78,6 +82,20 @@ pub enum CallEvent {
         expires_at_ms: u64,
     },
 
+    /// We started a group call; it rings out to `participants` until the
+    /// first of them accepts (`Connected`).
+    GroupStarted {
+        call_id: String,
+        /// `"audio"` or `"video"`.
+        kind: String,
+        /// Everyone invited, us first.
+        participants: Vec<String>,
+        /// The group DM the call belongs to (`GroupCallOffer.group_id`);
+        /// `None` for a buddy-list group call.
+        group_id: Option<String>,
+        expires_at_ms: u64,
+    },
+
     /// The call is up and media should flow.
     Connected {
         call_id: String,
@@ -85,6 +103,8 @@ pub enum CallEvent {
         /// only the call id, because the kind and the participants were
         /// established when the call came in and have not changed.
         direct: Option<DirectCallInfo>,
+        /// The group DM of a group call, as on `Incoming`.
+        group_id: Option<String>,
     },
 
     /// The peer declined.
@@ -147,6 +167,7 @@ impl CallEvent {
             Self::Incoming { call_id, .. }
             | Self::Ringing { call_id }
             | Self::Started { call_id, .. }
+            | Self::GroupStarted { call_id, .. }
             | Self::Connected { call_id, .. }
             | Self::Declined { call_id, .. }
             | Self::Missed { call_id, .. }
@@ -170,10 +191,12 @@ mod tests {
     fn a_group_call_connects_without_a_peer() {
         let group = CallEvent::Connected {
             call_id: "c1".into(),
+            group_id: None,
             direct: None,
         };
         let one_to_one = CallEvent::Connected {
             call_id: "c2".into(),
+            group_id: None,
             direct: Some(DirectCallInfo {
                 kind: "video".into(),
                 peer_key: "pk".into(),
@@ -228,6 +251,7 @@ mod tests {
 
         let connected = CallEvent::Connected {
             call_id: "c1".into(),
+            group_id: None,
             direct: Some(DirectCallInfo {
                 kind: "audio".into(),
                 peer_key: "pk".into(),
@@ -237,7 +261,7 @@ mod tests {
         };
         assert_eq!(
             serde_json::to_string(&connected).unwrap(),
-            r#"{"connected":{"callId":"c1","direct":{"kind":"audio","peerKey":"pk","peerDisplayName":"Ada","expectedLocalCamera":false}}}"#
+            r#"{"connected":{"callId":"c1","direct":{"kind":"audio","peerKey":"pk","peerDisplayName":"Ada","expectedLocalCamera":false},"groupId":null}}"#
         );
     }
 
@@ -251,6 +275,7 @@ mod tests {
                 participants: vec!["a".into(), "b".into()],
                 is_group: true,
                 expires_at_ms: 1,
+                group_id: None,
             },
             CallEvent::Ringing {
                 call_id: "c".into(),
@@ -262,8 +287,16 @@ mod tests {
                 peer_display_name: "Ada".into(),
                 expires_at_ms: 1,
             },
+            CallEvent::GroupStarted {
+                call_id: "c".into(),
+                kind: "audio".into(),
+                participants: vec!["me".into(), "b".into()],
+                group_id: Some("g".into()),
+                expires_at_ms: 1,
+            },
             CallEvent::Connected {
                 call_id: "c".into(),
+                group_id: None,
                 direct: None,
             },
             CallEvent::Declined {

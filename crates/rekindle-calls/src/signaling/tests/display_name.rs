@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use rekindle_codec::capnp_codec::direct::DirectBody;
+use rekindle_types::group_dm::GroupCallRoster;
 use x25519_dalek::StaticSecret;
 
 use super::mocks::*;
@@ -27,6 +28,9 @@ struct EmptyNameDeps(Arc<MockDeps>);
 
 #[async_trait]
 impl CallSignalingDeps for EmptyNameDeps {
+    async fn group_roster(&self, _group_id: &str) -> Result<GroupCallRoster, CallError> {
+        Ok(GroupCallRoster::Unknown)
+    }
     fn owner_key(&self) -> Result<String, CallError> {
         self.0.owner_key()
     }
@@ -206,6 +210,7 @@ async fn group_accept_from_non_invitee_ignored() {
 
     deps.group_registry.insert(GroupCallState {
         call_id: "group-3".into(),
+        group_id: None,
         initiator_pubkey: initiator.clone(),
         kind: 0,
         participants: vec![initiator, p1],

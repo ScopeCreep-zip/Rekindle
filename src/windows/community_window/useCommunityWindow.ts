@@ -29,7 +29,8 @@ import type { GlyphName } from "../../components/common/glyph_art";
 import type { Message } from "../../stores/chat.store";
 import type { Thread } from "../../stores/community.store";
 import { createCommunityWindowState } from "./state";
-import { startEventStream, subscribeCommunityFocusChannel } from "../../ipc/channels";
+import { startEventStream, subscribeCommunityFocusChannel, subscribeSkinSignals } from "../../ipc/channels";
+import { setSkinSignals } from "../../stores/skin-signals.store";
 
 /// Orchestrating view-model hook for `CommunityWindow`. Owns the effects,
 /// event handlers, and Veilid subscription lifecycle on top of the signals
@@ -293,6 +294,9 @@ export function useCommunityWindow() {
     unlisteners.push(subscribeCommunityPresenceEvents());
     unlisteners.push(subscribeCommunityEventDispatcher());
     unlisteners.push(subscribeCommunityVoiceEvents());
+    // The window's skin signals (plan SKW1): its pack frame follows them
+    // like a chat window's, focus included.
+    unlisteners.push(subscribeSkinSignals(setSkinSignals));
     // An open window asked to show a channel of its community (plan E7.2 A).
     unlisteners.push(
       subscribeCommunityFocusChannel((channel) => {

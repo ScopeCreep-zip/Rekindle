@@ -50,7 +50,10 @@ pub(super) async fn reader(dir: &tempfile::TempDir) -> (std::sync::Arc<Host>, St
     ));
     let key = rekindle_transport::crypto::mek::Mek::from_bytes(TEXT_KEY, 1);
     rekindle_mek_rotation::ChannelMekCache::insert(&cache, "c1", KeyScope::Community, key);
-    (host.ctx.communities).set_governance_state("c1", GovernanceState::default());
+    (host.ctx.communities).set_governance_state(
+        "c1",
+        super::channel_gap_tests::everyone(GovernanceState::default()),
+    );
     let o = owner.clone();
     (host.ctx.db.current().unwrap())
         .call(move |conn| {

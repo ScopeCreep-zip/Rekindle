@@ -62,7 +62,11 @@ pub async fn set_attachment_pinned<D: crate::deps::FilesDeps + ?Sized>(
     attachment_id_hex: &str,
     pinned: bool,
 ) -> Result<(), crate::error::FilesError> {
-    deps.require_permission(community_id, rekindle_types::permissions::MANAGE_COMMUNITY)?;
+    deps.require_permission(
+        community_id,
+        None,
+        rekindle_types::permissions::MANAGE_COMMUNITY,
+    )?;
     let attachment_id: [u8; 16] = hex::decode(attachment_id_hex)
         .ok()
         .and_then(|b| b.try_into().ok())

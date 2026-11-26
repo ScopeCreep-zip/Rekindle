@@ -15,6 +15,7 @@ async fn ending_the_session_ends_every_call() {
     seed_outgoing_call(&deps, "dm-2", &"cc".repeat(32), CallKind::Video);
     deps.group_registry.insert(GroupCallState {
         call_id: "group-1".into(),
+        group_id: None,
         initiator_pubkey: "aa".repeat(32),
         kind: 0,
         participants: vec!["aa".repeat(32), "dd".repeat(32)],

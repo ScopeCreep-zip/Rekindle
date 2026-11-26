@@ -20,15 +20,18 @@ use crate::window_labels::WindowKind;
 pub type SkinFrameMap = BTreeMap<SkinWindow, (WindowLayout, Vec<Mask>)>;
 
 /// The skin frame a window kind wears: the buddy list the main frame, a
-/// conversation the chat frame; every other window keeps its rectangle.
+/// conversation the chat frame, a community window the community frame
+/// (plan SKW1: composed from the pack's chat window); every other window
+/// keeps its rectangle. The community browser shares the Community kind but
+/// wears no frame: [`frame_of_label`] tells them apart.
 #[must_use]
 pub const fn frame_of(kind: WindowKind) -> Option<SkinWindow> {
     match kind {
         WindowKind::BuddyList => Some(SkinWindow::Main),
         WindowKind::Chat => Some(SkinWindow::Chat),
+        WindowKind::Community => Some(SkinWindow::Community),
         WindowKind::Login
         | WindowKind::Settings
-        | WindowKind::Community
         | WindowKind::Call
         | WindowKind::Profile
         | WindowKind::SkinEditor
@@ -36,9 +39,19 @@ pub const fn frame_of(kind: WindowKind) -> Option<SkinWindow> {
     }
 }
 
-/// The window kind wearing `frame` (the inverse of [`frame_of`]; the
-/// Community frame's kind is the Community window, which [`frame_of`]
-/// does not yet dress: no pack serves that layout before plan SK17-6).
+/// The skin frame the window labelled `label` wears: its kind's
+/// ([`frame_of`]), except the community browser (`community-browser`, a
+/// community window opened with no community), which keeps its rectangle as
+/// its webview lays no community tree.
+#[must_use]
+pub fn frame_of_label(label: &str) -> Option<SkinWindow> {
+    if label == crate::window_labels::community_label(None) {
+        return None;
+    }
+    WindowKind::of_label(label).and_then(frame_of)
+}
+
+/// The window kind wearing `frame` (the inverse of [`frame_of`]).
 #[must_use]
 pub const fn kind_of(frame: SkinWindow) -> WindowKind {
     match frame {

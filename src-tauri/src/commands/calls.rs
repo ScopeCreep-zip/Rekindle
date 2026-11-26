@@ -191,6 +191,7 @@ pub async fn mute_caller_temp(
 pub async fn start_group_call(
     participant_pubkeys: Vec<String>,
     video: bool,
+    group_id: Option<String>,
     app: tauri::AppHandle,
     state: State<'_, SharedState>,
 ) -> Result<String, String> {
@@ -204,9 +205,14 @@ pub async fn start_group_call(
         CallKind::Audio
     };
     let adapter = build_adapter(app, &state, &pool);
-    rekindle_calls::signaling::start_group_call(adapter.as_ref(), participant_pubkeys, kind)
-        .await
-        .map_err(|e| e.to_string())
+    rekindle_calls::signaling::start_group_call(
+        adapter.as_ref(),
+        participant_pubkeys,
+        kind,
+        group_id,
+    )
+    .await
+    .map_err(|e| e.to_string())
 }
 
 /// W13.13 — receiver accepts a group call. Fires GroupCallAccept
@@ -249,6 +255,7 @@ pub async fn end_group_call(
     let pool = state.db.current()?;
     let adapter = build_adapter(app, &state, &pool);
     rekindle_calls::signaling::end_group_call(adapter.as_ref(), &call_id, reason)
+        .await
         .map_err(|e| e.to_string())
 }
 

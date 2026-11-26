@@ -41,8 +41,40 @@ pub enum ShellPanel {
     content = "arg"
 )]
 pub enum CallOp {
-    Voice { friend: String },
-    Video { friend: String },
+    /// Place a voice call to `friend` (Xfire's `AppHostVoiceChat`).
+    Voice {
+        friend: String,
+    },
+    /// Answer the incoming call `call_id` that is ringing (Xfire's
+    /// `AppVoiceChat` on `ChatButtonAnswerCall`, Symbiosis
+    /// `Components/Common.xml:450-452`).
+    Answer {
+        call_id: String,
+    },
+    /// Join the group call `call_id` in progress in the group `group_id`
+    /// (Xfire's `AppGroupVoiceChat`/`AppVoiceChat` on a group window's
+    /// `GroupChatButtonAnswerCall`, tip `ButtonGroupJoinVoiceChatTip`;
+    /// Symbiosis `Components/GroupChatWindow.xml:144-147`).
+    JoinGroup {
+        group_id: String,
+        call_id: String,
+    },
+    /// Leave the 1:1 call `call_id` we are in (Xfire's `AppLeaveVoiceChat`
+    /// in a chat window, `ChatButtonLeaveCall`).
+    Leave {
+        call_id: String,
+    },
+    /// Leave the group call `call_id` of the group `group_id`, or cancel it
+    /// while it still rings out from us (Xfire's `AppLeaveGroupVoiceChat`
+    /// and `AppCancelVoiceChat` on a group window's call tab; the call
+    /// layer ends both through `end_group_call`).
+    LeaveGroup {
+        group_id: String,
+        call_id: String,
+    },
+    Video {
+        friend: String,
+    },
     End,
     Mute,
     Unmute,
@@ -62,6 +94,16 @@ pub enum CallTarget {
     Call { call_id: String },
     /// The community window of `community`, on its voice `channel`.
     Voice { community: String, channel: String },
+}
+
+/// One member of [`ShellOp::StartGroupCall`]'s prefill: the identity key
+/// and the name the group's roster gives it (the group window's member
+/// list's source; a label, never an identity).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GroupCallInvitee {
+    pub pubkey: String,
+    pub display_name: String,
 }
 
 /// An operation the window's shell runs. Fields are camelCase like the
@@ -134,6 +176,17 @@ pub enum ShellOp {
     /// verdict says when the Host refuses it.
     InviteToRoom {
         group_id: String,
+    },
+    /// The Start Group Call panel scoped to the group DM `group_id`
+    /// (a group window's `AppHostGroupVoiceChat`, Symbiosis
+    /// `Components/GroupChatWindow.xml:123`), prefilled with the group's
+    /// `members` besides us from its roster; the call it starts carries
+    /// `group_id` (`start_group_call { groupId }`). The buddy list's own
+    /// Start Group Call stays `OpenPanel(StartGroupCall)` with no group.
+    StartGroupCall {
+        group_id: String,
+        group_name: String,
+        members: Vec<GroupCallInvitee>,
     },
     Call(CallOp),
     /// Bring up the window of the active call or voice session

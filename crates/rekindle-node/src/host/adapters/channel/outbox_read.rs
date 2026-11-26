@@ -401,6 +401,9 @@ impl HostChannel {
             Ingested::Undecryptable => {
                 tracing::debug!(community_id, channel_id, "outbox post no held key opens");
             }
+            // `Withheld`: we may not view its channel; the cursor passes it
+            // and the merge that opens the channel re-reads every outbox
+            // (`governance/view_gain.rs`).
             _ => {}
         }
         Ok(Held::Stored)

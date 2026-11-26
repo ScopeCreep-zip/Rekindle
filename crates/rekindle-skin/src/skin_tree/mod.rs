@@ -15,6 +15,7 @@ pub mod compose;
 pub mod content;
 pub mod cover;
 pub mod css;
+pub mod disabled;
 mod fit;
 pub mod import;
 pub mod inset;
@@ -45,6 +46,8 @@ mod community_tests;
 mod compose_tests;
 #[cfg(test)]
 mod content_tests;
+#[cfg(test)]
+mod disabled_tests;
 #[cfg(test)]
 mod edge_tests;
 #[cfg(test)]

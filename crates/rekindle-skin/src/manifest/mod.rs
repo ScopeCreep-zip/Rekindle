@@ -152,6 +152,7 @@ pub fn place(manifest: &mut SkinManifest, package: &Package<'_>) -> Result<(), S
         crate::skin_tree::text_box::lay(layout);
         crate::skin_tree::inset::fields(layout);
         crate::skin_tree::target::nodes(layout);
+        crate::skin_tree::disabled::nodes(layout);
     }
     // Plan SK17-6: the Community window wears the pack's own frame, the
     // served layout of its room window, else its chat, else its buddy list.

@@ -321,6 +321,9 @@ export interface ShellNode {
   inset?: NodeInset;
   /** The Host's target box for a small interactive node (plan SK7). */
   target?: NodeTarget;
+  /** Who draws an interactive node's disabled look (plan E7.7 CR1): "pack", its art has a
+   *  disabled state image; "shell", none, so the shell dims it. Absent on other nodes. */
+  disabledBy?: "pack" | "shell";
 }
 
 /**
@@ -407,7 +410,9 @@ export interface MenuRegistry {
 }
 
 export interface SkinShell {
-  window: "main" | "chat";
+  /** The window this outline lays: the buddy list, a chat window, or a
+   *  community window (plan SKW1: composed from the pack's chat window). */
+  window: "main" | "chat" | "community";
   /** The popup this outline is (its frame carries `data-skin-popup="<name>"`) and where it sits, else the window's own tree. */
   popup?: ShellPopup;
   root: ShellNode[];

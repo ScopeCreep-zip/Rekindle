@@ -299,6 +299,7 @@ fn shell(add: &mut impl FnMut(&str, Value)) {
         fit: None,
         shows_with: None,
         control_group,
+        disabled_by: None,
         triggers: Vec::new(),
         children,
     };
@@ -455,6 +456,32 @@ fn shell_op_samples(add: &mut impl FnMut(&str, Value)) {
         to(SkinRun::Shell(ShellOp::Call(CallOp::Voice {
             friend: pk('a'),
         }))),
+    );
+    add(
+        "skin.callOp.answer",
+        to(CallOp::Answer {
+            call_id: "call-1".into(),
+        }),
+    );
+    add(
+        "skin.callOp.joinGroup",
+        to(CallOp::JoinGroup {
+            group_id: "group-1".into(),
+            call_id: "call-1".into(),
+        }),
+    );
+    add(
+        "skin.callOp.leave",
+        to(CallOp::Leave {
+            call_id: "call-1".into(),
+        }),
+    );
+    add(
+        "skin.callOp.leaveGroup",
+        to(CallOp::LeaveGroup {
+            group_id: "group-1".into(),
+            call_id: "call-1".into(),
+        }),
     );
     add(
         "skin.run.notBuiltYet",

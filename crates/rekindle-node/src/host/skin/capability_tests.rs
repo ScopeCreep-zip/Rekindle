@@ -8,7 +8,14 @@ use rekindle_types::friend::{FriendState, FriendshipState, GameInfoState, UserSt
 
 use rekindle_types::dto::transfer::{TransferRow, TransferState, TransferTarget};
 
+use rekindle_ipc::protocol::IpcResponse;
+use rekindle_types::dto::skin_action::SkinAction as A;
+use rekindle_types::dto::skin_run::{CallOp, ShellOp, SkinRun};
+use rekindle_types::subscription_events::{CallEvent, SubscriptionEvent};
+
+use super::actions::{map, Mapped, Selected as Selection};
 use super::capability::{allows, Group, LobbyCaps, Selected, SkinWorld};
+use super::reads::Reads;
 use super::signals::Inputs;
 
 /// Team Fortress 2: a connect template.
@@ -321,4 +328,264 @@ fn the_lobby_actions_follow_the_group_lobby() {
         ..none
     });
     assert!(can(C::HostGameLobby, &i, &w, g));
+}
+
+fn incoming(call_id: &str, from: &str) -> SubscriptionEvent {
+    SubscriptionEvent::Call(CallEvent::Incoming {
+        call_id: call_id.into(),
+        from: from.into(),
+        display_name: "K".into(),
+        kind: "voice".into(),
+        participants: Vec::new(),
+        is_group: false,
+        expires_at_ms: 0,
+        group_id: None,
+    })
+}
+
+fn outgoing(call_id: &str, to: &str) -> SubscriptionEvent {
+    SubscriptionEvent::Call(CallEvent::Started {
+        call_id: call_id.into(),
+        kind: "voice".into(),
+        peer_key: to.into(),
+        peer_display_name: "K".into(),
+        expires_at_ms: 0,
+    })
+}
+
+/// Symbiosis pages its call tab by these (`ChatWindow.xml:280-284`):
+/// `HostVoiceChat` is `ChatButtonCall` (`AppHostVoiceChat`), `VoiceChat`
+/// is `ChatButtonAnswerCall` (`AppVoiceChat`, `Common.xml:450-456`), so
+/// with no call the Call button shows, never Answer.
+#[test]
+fn host_voice_places_a_call_and_voice_answers_a_ringing_one() {
+    let w = SkinWorld::default();
+    let mut f = FriendState::new("k".into(), "K".into(), FriendshipState::Accepted);
+    f.status = UserStatus::Online;
+    let friend = Selected::Friend {
+        key: "k",
+        friend: Some(&f),
+    };
+    let mut i = Inputs::default();
+    assert!(can(C::HostVoiceChat, &i, &w, friend));
+    assert!(!can(C::VoiceChat, &i, &w, friend));
+    assert!(i.ringing_from("k").is_none());
+
+    i.fold(&incoming("in1", "k"));
+    assert!(can(C::VoiceChat, &i, &w, friend));
+    assert!(!can(C::HostVoiceChat, &i, &w, friend));
+    assert!(!can(C::CancelVoiceChat, &i, &w, friend));
+    assert_eq!(i.ringing_from("k").as_deref(), Some("in1"));
+    assert!(i.ringing_from("other").is_none());
+
+    let mut i = Inputs::default();
+    i.fold(&outgoing("out1", "k"));
+    assert!(can(C::CancelVoiceChat, &i, &w, friend));
+    assert!(!can(C::VoiceChat, &i, &w, friend));
+    assert!(!can(C::HostVoiceChat, &i, &w, friend));
+    assert!(i.ringing_from("k").is_none());
+}
+
+/// `VoiceChat` answers the ringing call; it never places a new one.
+#[test]
+fn voice_chat_runs_answer_on_the_ringing_call() {
+    let friend = || Selection {
+        friend: Some("k"),
+        ..Selection::default()
+    };
+    let reads = Reads {
+        ringing_call: Some("in1".into()),
+        ..Reads::default()
+    };
+    assert!(matches!(
+        map(&A::VoiceChat, friend(), &reads),
+        Ok(Mapped::Run(SkinRun::Shell(ShellOp::Call(CallOp::Answer { ref call_id })))) if call_id == "in1"
+    ));
+    assert!(matches!(
+        map(&A::VoiceChat, friend(), &Reads::default()),
+        Err(IpcResponse::Error { code: 409, .. })
+    ));
+    assert!(matches!(
+        map(&A::HostVoiceChat, friend(), &Reads::default()),
+        Ok(Mapped::Run(SkinRun::Shell(ShellOp::Call(CallOp::Voice { ref friend })))) if friend == "k"
+    ));
+}
+
+fn group_incoming(
+    call_id: &str,
+    group_id: &str,
+    from: &str,
+    invited: &[&str],
+) -> SubscriptionEvent {
+    SubscriptionEvent::Call(CallEvent::Incoming {
+        call_id: call_id.into(),
+        from: from.into(),
+        display_name: "A".into(),
+        kind: "voice".into(),
+        participants: invited.iter().map(|k| (*k).to_owned()).collect(),
+        is_group: true,
+        expires_at_ms: 0,
+        group_id: Some(group_id.into()),
+    })
+}
+
+fn joined_group(others: usize) -> Group {
+    Group::Joined {
+        others,
+        creator: false,
+        lobby: None,
+    }
+}
+
+/// A group window pages its call tab by `HostVoiceChat`, `VoiceChat` and
+/// `LeaveVoiceChat` (`TabbedGCCall`, Symbiosis
+/// `Components/GroupChatWindow.xml:112-118`): Host starts the group's
+/// call, Join joins its call in progress, Leave while we are in it.
+#[test]
+fn a_group_window_hosts_joins_and_leaves_its_group_call() {
+    let mut w = SkinWorld::default();
+    w.groups.insert("g1".into(), joined_group(2));
+    let g = Selected::Group { group_id: "g1" };
+
+    // No group call: Host can, Join and Leave cannot.
+    let mut i = Inputs::default();
+    assert!(can(C::HostVoiceChat, &i, &w, g));
+    assert!(!can(C::VoiceChat, &i, &w, g));
+    assert!(!can(C::LeaveVoiceChat, &i, &w, g));
+    assert!(i.joinable_group_call("g1").is_none());
+
+    // Another group's call leaves this group's tab on Host.
+    i.fold(&group_incoming("other", "g9", "a", &["me", "c"]));
+    assert!(can(C::HostVoiceChat, &i, &w, g));
+    assert!(!can(C::VoiceChat, &i, &w, g));
+
+    // The group's call in progress that we are not in: Join, not Host.
+    i.fold(&group_incoming("gc1", "g1", "a", &["me", "b"]));
+    assert!(can(C::VoiceChat, &i, &w, g));
+    assert!(!can(C::HostVoiceChat, &i, &w, g));
+    assert!(!can(C::LeaveVoiceChat, &i, &w, g));
+    assert!(!can(C::CancelVoiceChat, &i, &w, g));
+    assert_eq!(i.joinable_group_call("g1").as_deref(), Some("gc1"));
+
+    // We are in it: Leave.
+    i.fold(&SubscriptionEvent::Call(CallEvent::Connected {
+        call_id: "gc1".into(),
+        group_id: Some("g1".into()),
+        direct: None,
+    }));
+    assert!(can(C::LeaveVoiceChat, &i, &w, g));
+    assert!(!can(C::VoiceChat, &i, &w, g));
+    assert!(!can(C::HostVoiceChat, &i, &w, g));
+    assert!(i.joinable_group_call("g1").is_none());
+
+    // A group we are only invited to has no call tab.
+    w.groups.insert("g1".into(), Group::Pending);
+    assert!(!can(C::LeaveVoiceChat, &i, &w, g));
+    assert!(!can(C::HostVoiceChat, &i, &w, g));
+}
+
+/// Two group DMs of the same people each see only their own call: the
+/// call is matched by the group id its signaling carries, never by its
+/// members (plan E4.1).
+#[test]
+fn two_groups_with_the_same_members_each_match_only_their_own_call() {
+    let mut w = SkinWorld::default();
+    w.groups.insert("g1".into(), joined_group(2));
+    w.groups.insert("g2".into(), joined_group(2));
+    let mut i = Inputs::default();
+    i.fold(&group_incoming("gc2", "g2", "a", &["me", "b"]));
+    let (g1, g2) = (
+        Selected::Group { group_id: "g1" },
+        Selected::Group { group_id: "g2" },
+    );
+    assert_eq!(i.joinable_group_call("g2").as_deref(), Some("gc2"));
+    assert!(i.joinable_group_call("g1").is_none());
+    assert!(can(C::VoiceChat, &i, &w, g2));
+    assert!(!can(C::VoiceChat, &i, &w, g1));
+    assert!(can(C::HostVoiceChat, &i, &w, g1));
+    // A buddy-list group call (no group id) belongs to neither.
+    i.fold(&SubscriptionEvent::Call(CallEvent::Incoming {
+        call_id: "adhoc".into(),
+        from: "a".into(),
+        display_name: "A".into(),
+        kind: "voice".into(),
+        participants: vec!["me".into(), "b".into()],
+        is_group: true,
+        expires_at_ms: 0,
+        group_id: None,
+    }));
+    assert!(i.joinable_group_call("g1").is_none());
+    assert!(can(C::HostVoiceChat, &i, &w, g1));
+}
+
+/// `GroupVoiceChat` (and a group window's `VoiceChat`) joins the group's
+/// call in progress; a group window's `HostGroupVoiceChat` opens the
+/// Start Group Call panel scoped to the group and prefilled with its
+/// roster, the buddy list's opens the plain panel.
+#[test]
+fn group_voice_chat_joins_the_group_call_and_host_starts_one() {
+    use super::reads::GroupCall;
+    use rekindle_types::dto::skin_run::{GroupCallInvitee, ShellPanel};
+    let roster = vec![
+        GroupCallInvitee {
+            pubkey: "b".into(),
+            display_name: "Bea".into(),
+        },
+        GroupCallInvitee {
+            pubkey: "c".into(),
+            display_name: "Cy".into(),
+        },
+    ];
+    let reads = |call_id: Option<&str>| Reads {
+        group_call: Some(GroupCall {
+            group_id: "g1".into(),
+            group_name: "Raid".into(),
+            members: roster.clone(),
+            call_id: call_id.map(str::to_owned),
+        }),
+        ..Reads::default()
+    };
+    for action in [A::GroupVoiceChat, A::VoiceChat] {
+        assert!(matches!(
+            map(&action, Selection::default(), &reads(Some("gc1"))),
+            Ok(Mapped::Run(SkinRun::Shell(ShellOp::Call(CallOp::JoinGroup { ref group_id, ref call_id }))))
+                if group_id == "g1" && call_id == "gc1"
+        ));
+        assert!(matches!(
+            map(&action, Selection::default(), &reads(None)),
+            Err(IpcResponse::Error { code: 409, .. })
+        ));
+    }
+    assert!(matches!(
+        map(&A::GroupVoiceChat, Selection::default(), &Reads::default()),
+        Err(IpcResponse::Error { code: 409, .. })
+    ));
+    // Symbiosis's group window draws `hostVoiceChat` on its Host button
+    // (`ChatButtonCall`): it starts the group's call, never a 1:1 call.
+    for action in [A::HostGroupVoiceChat, A::HostVoiceChat] {
+        assert!(matches!(
+            map(&action, Selection::default(), &reads(None)),
+            Ok(Mapped::Run(SkinRun::Shell(ShellOp::StartGroupCall { ref group_id, ref group_name, ref members })))
+                if group_id == "g1" && group_name == "Raid" && *members == roster
+        ));
+    }
+    // A 1:1 window (no group read) keeps the 1:1 call.
+    let bob = Selection {
+        friend: Some("bob"),
+        ..Selection::default()
+    };
+    assert!(matches!(
+        map(&A::HostVoiceChat, bob, &Reads::default()),
+        Ok(Mapped::Run(SkinRun::Shell(ShellOp::Call(CallOp::Voice { ref friend })))) if friend == "bob"
+    ));
+    assert!(matches!(
+        map(
+            &A::HostGroupVoiceChat,
+            Selection::default(),
+            &Reads::default()
+        ),
+        Ok(Mapped::Run(SkinRun::Shell(ShellOp::OpenPanel(
+            ShellPanel::StartGroupCall
+        ))))
+    ));
 }

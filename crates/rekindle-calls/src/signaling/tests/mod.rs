@@ -18,6 +18,8 @@ mod mocks;
 
 mod display_name;
 mod end_all;
+mod group_end;
+mod group_scope;
 mod handlers;
 mod invite_outbox;
 mod lifecycle;

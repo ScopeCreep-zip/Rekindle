@@ -20,7 +20,21 @@ export interface SkinSignalSet {
   talking: boolean;
   disconnected: boolean;
   newNotification: boolean;
+  /** The Host's reason for each cause that can disable a node now (plan E7.7 CR1): every
+   *  capability in `cannot` and every active disabling signal. */
+  disabledReasons: Partial<Record<DisableCause, string>>;
 }
+
+/** `DisableSignal`: a Host-fired signal a pack trigger can pair with `SetState(Disabled)`. */
+export type DisableSignal =
+  | "disconnected"
+  | "activeUserTyping"
+  | "voiceRinging"
+  | "userStartedTalking"
+  | "newNotification";
+
+/** `DisableCause`: a capability the window cannot use now, or an active disabling signal. */
+export type DisableCause = Capability | DisableSignal;
 
 export type SkinSelection =
   | { kind: "friend"; arg: { publicKey: string } }
@@ -43,6 +57,10 @@ export type ShellPanel =
 
 export type CallOp =
   | { kind: "voice"; arg: { friend: string } }
+  | { kind: "answer"; arg: { callId: string } }
+  | { kind: "joinGroup"; arg: { groupId: string; callId: string } }
+  | { kind: "leave"; arg: { callId: string } }
+  | { kind: "leaveGroup"; arg: { groupId: string; callId: string } }
   | { kind: "video"; arg: { friend: string } }
   | { kind: "end" }
   | { kind: "mute" }
@@ -53,6 +71,12 @@ export type CallOp =
 export type CallTarget =
   | { kind: "call"; arg: { callId: string } }
   | { kind: "voice"; arg: { community: string; channel: string } };
+
+/** One prefilled member of a group-scoped Start Group Call (Rust `GroupCallInvitee`). */
+export interface GroupCallInvitee {
+  pubkey: string;
+  displayName: string;
+}
 
 export type ShellOp =
   | { kind: "dragWindow" }
@@ -73,6 +97,10 @@ export type ShellOp =
   | { kind: "setState"; arg: ArgOf<"setState"> }
   | { kind: "playSound"; arg: ArgOf<"playSound"> }
   | { kind: "openPanel"; arg: ShellPanel }
+  | {
+      kind: "startGroupCall";
+      arg: { groupId: string; groupName: string; members: GroupCallInvitee[] };
+    }
   | { kind: "openChat"; arg: { friend: string } }
   | { kind: "openProfile"; arg: { friend: string } }
   | { kind: "openSafetyNumber"; arg: { friend: string } }

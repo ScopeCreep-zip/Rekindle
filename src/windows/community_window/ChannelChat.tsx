@@ -1,6 +1,8 @@
 import { Component, Show } from "solid-js";
 import MessageList from "../../components/chat/MessageList";
 import MessageInput from "../../components/chat/MessageInput";
+import { SlotMount } from "../../components/skin-tree/slots";
+import { skinShell } from "../../hooks/useSkin";
 import { communityState } from "../../stores/community.store";
 import { removalText } from "../../utils/removal_text";
 import { hasPermission, servedPermissions, MANAGE_MESSAGES } from "../../utils/permissions";
@@ -91,8 +93,12 @@ const ChannelChat: Component<{ vm: CommunityVm }> = (props) => {
           </span>
         </div>
       </Show>
+      {/* In the pack's frame (plan SKW1) the composer stands in its edit
+          slot and the pack's Send art is the control (as in a chat window). */}
+      <SlotMount slot="chatEdit">
       <MessageInput
         label={`Message #${vm.activeChannel()?.name ?? "channel"}`}
+        sendButton={skinShell("community") !== undefined}
         communityId={vm.selectedCommunityId()}
         peerId={vm.selectedChannelId()}
         replyTo={vm.replyTo()}
@@ -118,6 +124,7 @@ const ChannelChat: Component<{ vm: CommunityVm }> = (props) => {
         slowmodeSeconds={vm.activeChannel()?.slowmodeSeconds}
         bypassSlowmode={vm.canBypassSlowmode()}
       />
+      </SlotMount>
     </>
   );
 };
