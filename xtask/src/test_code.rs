@@ -88,10 +88,11 @@ impl TestCode {
             walked.dedup();
             for walk_dir in walked {
                 for path in walk_source_files(&walk_dir, &["rs"])? {
-                    let path = canonical(&path);
-                    if !sources.contains_key(&path) {
-                        let src = std::fs::read_to_string(&path)?;
-                        sources.insert(path, src);
+                    if let std::collections::btree_map::Entry::Vacant(slot) =
+                        sources.entry(canonical(&path))
+                    {
+                        let src = std::fs::read_to_string(slot.key())?;
+                        slot.insert(src);
                     }
                 }
             }

@@ -14,8 +14,8 @@ use std::path::Path;
 use anyhow::{anyhow, Result};
 use syn::visit::Visit;
 
-use crate::walk_source_files;
 use crate::test_code::is_test_attr;
+use crate::walk_source_files;
 
 /// `rekindle_db::erase::KEY_MATERIAL_TABLES`, read from its source so the
 /// two never disagree.

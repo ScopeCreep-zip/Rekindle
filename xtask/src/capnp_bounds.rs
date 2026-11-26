@@ -47,8 +47,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{anyhow, Context, Result};
 use syn::visit::Visit;
 
-use crate::walk_source_files;
 use crate::test_code::is_test_attr;
+use crate::walk_source_files;
 
 /// The one file allowed to call a capnp reader.
 const READER_FILE: &str = "crates/rekindle-codec/src/capnp_codec/mod.rs";
