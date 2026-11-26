@@ -308,3 +308,21 @@ This is especially important for:
 - **Security-sensitive changes** — see
   [`../../CONTRIBUTING.md`](../../CONTRIBUTING.md) "Security-sensitive
   changes" — every such change should land with a regression test.
+
+## Canonical test fixtures
+
+Owner ruling 2026-11-26: the test identities and items a secret scanner could read as
+credentials are static, defined once in `crates/rekindle-test-fixtures` (a dev-dependency only),
+and referenced by path (`rekindle_test_fixtures::HEX_KEY_64`), never copied.
+
+- **Marker.** Each secret-shaped fixture is built from a ramp, the in-order run of its alphabet:
+  hex values repeat `abcdef1234567890` (`HEX_RAMP`; a random 32-byte key repeats its first 8 bytes
+  four times with probability 2^-192), and base32 tokens start `abcdefghijklmnopqrstuvwx`
+  (`BASE32_RAMP`, 2^-120). The shared passphrases (`PASSPHRASE`, `PASSPHRASE_SPOKEN`) live there too.
+- **Detection.** `.gitleaks.toml` allowlists exactly these values (anchored regexes, AND crate
+  source/tests/goldens paths); any other secret-shaped value in a test is reported.
+- **Gate.** `cargo xtask check-test-fixtures` fails on a secret-shaped literal in Rust or
+  TypeScript test code (a high-entropy value bound to a credential name, mirroring gitleaks
+  `generic-api-key`, or a provider token / PEM private-key header). Add a new value to the
+  crate, carrying the marker, and to the gitleaks allowlist; the frontend suites generate
+  passphrases at run time (`e2e/app/user.ts`) and keep no static ones.

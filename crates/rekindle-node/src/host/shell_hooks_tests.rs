@@ -184,7 +184,7 @@ async fn the_shell_hears_the_unlock_and_its_end_in_order() {
             Caller::shell(),
             IpcRequest::Unlock {
                 identity: view.public_key,
-                passphrase: "pass".into(),
+                passphrase: rekindle_test_fixtures::PASSPHRASE.into(),
             },
         )
         .await;
@@ -267,7 +267,7 @@ async fn a_failed_shell_stage_leaves_nothing_unlocked() {
             Caller::shell(),
             IpcRequest::IdentityCreate {
                 display_name: None,
-                passphrase: "pass".into(),
+                passphrase: rekindle_test_fixtures::PASSPHRASE.into(),
             },
         )
         .await;

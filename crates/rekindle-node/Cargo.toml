@@ -133,12 +133,14 @@ hex = "0.4"
 rekindle-secrets = { path = "../rekindle-secrets" }
 # The temp root of the public Host test fixture (`test-fixtures` only).
 tempfile = { version = "3", optional = true }
+# The canonical test values `host::test_fixtures` creates its identities with.
+rekindle-test-fixtures = { path = "../rekindle-test-fixtures", optional = true }
 
 [features]
 # The public Host test fixture (`host::test_fixtures`, plan GI3) the
 # desktop's relay tests start a real Host with; only the desktop's
 # `[dev-dependencies]` turn it on, so no production build has it.
-test-fixtures = [ "dep:tempfile" ]
+test-fixtures = [ "dep:tempfile", "dep:rekindle-test-fixtures" ]
 # Builds the `netsim_scale` test target (see its `[[test]]`).
 netsim-scale = []
 # The netsim's entry to one Host call to a member (plan E3.4 S4 netsim B,
@@ -152,6 +154,7 @@ netsim-entry = []
 webdriver-test = []
 
 [dev-dependencies]
+rekindle-test-fixtures = { path = "../rekindle-test-fixtures" }
 # Itself, for the `netsim-entry` feature the netsim scenarios call.
 rekindle-node = { path = ".", features = [ "netsim-entry" ] }
 # The unsigned op fixtures the governance tests merge (`merge_entries`, `at`, `stamp`).

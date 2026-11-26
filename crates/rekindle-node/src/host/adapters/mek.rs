@@ -90,7 +90,11 @@ mod tests {
     #[test]
     fn a_generation_the_cache_lacks_is_read_from_the_vault() {
         let dir = tempfile::tempdir().unwrap();
-        let (vault, _) = VaultStore::create(&dir.path().join("pk.vault"), "pass").unwrap();
+        let (vault, _) = VaultStore::create(
+            &dir.path().join("pk.vault"),
+            rekindle_test_fixtures::PASSPHRASE,
+        )
+        .unwrap();
         for generation in [1, 2] {
             let mek =
                 MediaEncryptionKey::from_bytes([u8::try_from(generation).unwrap(); 32], generation);

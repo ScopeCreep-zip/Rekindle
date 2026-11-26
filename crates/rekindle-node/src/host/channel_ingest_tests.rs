@@ -228,7 +228,7 @@ async fn a_post_stored_before_a_restart_starts_the_window() {
             Caller::shell(),
             IpcRequest::Unlock {
                 identity: owner.clone(),
-                passphrase: "pass".into(),
+                passphrase: rekindle_test_fixtures::PASSPHRASE.into(),
             },
         )
         .await;

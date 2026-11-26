@@ -281,7 +281,9 @@ fn proofs() -> Vec<IntentProof> {
         IntentProof::Commit,
         IntentProof::Acknowledged,
         IntentProof::Typed("general".into()),
-        IntentProof::Passphrase(Zeroizing::new("correct horse".into())),
+        IntentProof::Passphrase(Zeroizing::new(
+            rekindle_test_fixtures::PASSPHRASE_SPOKEN.into(),
+        )),
     ]
 }
 

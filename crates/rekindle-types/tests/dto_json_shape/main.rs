@@ -450,12 +450,13 @@ fn friend_samples(add: &mut impl FnMut(&str, Value)) {
         "friends.friendCode",
         to(FriendCodeView {
             url: format!(
-                "rekindle://add/{}/VLD0:abc/abcdefghijklmnopqrstuvwx2q",
-                pk('a')
+                "rekindle://add/{}/VLD0:abc/{}",
+                pk('a'),
+                rekindle_test_fixtures::FRIEND_TOKEN
             ),
             public_key: pk('a'),
             profile_key: "VLD0:abc".into(),
-            token: "abcdefghijklmnopqrstuvwx2q".into(),
+            token: rekindle_test_fixtures::FRIEND_TOKEN.into(),
             qr_rows: vec!["101".into(), "010".into(), "101".into()],
         }),
     );

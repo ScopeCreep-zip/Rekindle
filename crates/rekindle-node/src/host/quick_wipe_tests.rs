@@ -22,7 +22,7 @@ async fn commit_protected(host: &Host, request: IpcRequest) -> IpcResponse {
     assert_eq!(review.class, IntentClass::Protected);
     let commit = IpcRequest::IntentCommit {
         intent_id: review.intent_id,
-        proof: IntentProof::Passphrase("pass".to_string().into()),
+        proof: IntentProof::Passphrase(rekindle_test_fixtures::PASSPHRASE.to_string().into()),
     };
     host.call(Caller::shell(), commit).await
 }

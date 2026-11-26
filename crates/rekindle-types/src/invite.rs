@@ -447,8 +447,9 @@ mod invite_link_tests {
             );
         }
         let code = format!(
-            "rekindle://add/{}/VLD0:{B64}/abcdefghijklmnopqrstuvwx2q",
-            "ab".repeat(32)
+            "rekindle://add/{}/VLD0:{B64}/{}",
+            "ab".repeat(32),
+            rekindle_test_fixtures::FRIEND_TOKEN
         );
         match DeepLink::parse(&code) {
             Ok(DeepLink::Add(parsed)) => assert_eq!(parsed.to_url(), code),

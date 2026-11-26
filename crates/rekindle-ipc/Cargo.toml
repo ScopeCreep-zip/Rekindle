@@ -50,5 +50,6 @@ widestring = "1"
 blake3 = "1"
 
 [dev-dependencies]
+rekindle-test-fixtures = { path = "../rekindle-test-fixtures" }
 tempfile = "3"
 tokio = { workspace = true, features = [ "test-util", "macros" ] }
