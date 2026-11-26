@@ -36,9 +36,16 @@ fn every_builtin_serves_its_community_window_in_its_chat_windows_frame() {
         let mut uncomposed = m.clone();
         uncomposed.windows.remove(&SkinWindow::Community);
         assert_eq!(compose::source(&uncomposed), Some(want), "{id}");
+        // A chat source is worn whole; a buddy list less its own nodes
+        // (SKW2, `compose::strip_buddy_list`).
+        let mut expect = m.windows.get(&want).cloned();
+        if want == SkinWindow::Main {
+            let tree = expect.as_mut().and_then(|l| l.tree.as_mut()).unwrap();
+            compose::strip_buddy_list(&mut tree.root);
+        }
         assert_eq!(
             m.windows.get(&SkinWindow::Community),
-            m.windows.get(&want),
+            expect.as_ref(),
             "{id}: the Community layout is its source's"
         );
 
@@ -62,7 +69,15 @@ fn every_builtin_serves_its_community_window_in_its_chat_windows_frame() {
             source.iter().any(|s| s.popup.is_none()),
             "{id}: the source lays a tree"
         );
-        assert_eq!(of(SkinWindow::Community), source, "{id}: shells");
+        if want == SkinWindow::Chat {
+            assert_eq!(of(SkinWindow::Community), source, "{id}: shells");
+        } else {
+            assert_eq!(
+                of(SkinWindow::Community).len(),
+                source.len(),
+                "{id}: shells"
+            );
+        }
         assert!(
             sheet.css.contains("[data-skin-window=\"community\"]"),
             "{id}: the Community window's rules"
@@ -77,7 +92,33 @@ fn every_builtin_serves_its_community_window_in_its_chat_windows_frame() {
                 .map(|f| (f.layout.clone(), f.masks.clone()))
         };
         assert!(frame(want).is_some(), "{id}");
-        assert_eq!(frame(SkinWindow::Community), frame(want), "{id}: frame");
+        let (layout, masks) = frame(SkinWindow::Community).unwrap();
+        assert_eq!(Some(&layout), expect.as_ref(), "{id}: frame layout");
+        // The masks are the served layout's (`serve::frames` runs
+        // `shape::of_layout` on it): a chat source's exactly; a buddy
+        // list's less the art of its own nodes, which the strip leaves out
+        // of the layout asserted above. The frame tiles' masks lead both.
+        let want_masks =
+            crate::shape::of_layout("windows", expect.as_ref().unwrap(), &serve::files(&p))
+                .unwrap()
+                .into_iter()
+                .map(|m| (m.width(), m.height(), m.bits().to_vec()))
+                .collect::<Vec<_>>();
+        let got_masks = masks
+            .iter()
+            .map(|m| (m.width, m.height, m.bits.clone()))
+            .collect::<Vec<_>>();
+        assert_eq!(got_masks, want_masks, "{id}: frame masks");
+        let source_masks = frame(want).unwrap().1;
+        let tiles = layout.tiles.len();
+        assert_eq!(
+            masks[..tiles],
+            source_masks[..tiles],
+            "{id}: frame tile masks"
+        );
+        if want == SkinWindow::Chat {
+            assert_eq!(masks, source_masks, "{id}: frame masks");
+        }
     }
 }
 

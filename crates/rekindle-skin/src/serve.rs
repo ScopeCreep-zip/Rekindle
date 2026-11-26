@@ -169,7 +169,7 @@ pub fn active_resolved<'m>(
     Ok((v, resolve(ENTRIES, Base::of(v.base, v.contrast), &skin)))
 }
 
-fn files(p: &Package<'_>) -> BTreeMap<String, Vec<u8>> {
+pub(crate) fn files(p: &Package<'_>) -> BTreeMap<String, Vec<u8>> {
     p.files().map(|(n, b)| (n.to_owned(), b.to_vec())).collect()
 }
 

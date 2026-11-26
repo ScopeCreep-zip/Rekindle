@@ -40,6 +40,8 @@ mod anchor_tests;
 #[cfg(test)]
 mod chat_tests;
 #[cfg(test)]
+mod community_tests;
+#[cfg(test)]
 mod compose_tests;
 #[cfg(test)]
 mod content_tests;
