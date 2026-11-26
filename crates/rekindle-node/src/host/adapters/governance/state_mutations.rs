@@ -62,10 +62,27 @@ impl HostGovernance {
         let raised = raises_key_generation(prev.as_ref(), &state);
         let departed_outboxes = new_outbox_heads(prev.as_ref(), &state);
         let now_secs = self.ctx.clock.now_secs();
-        let permissions =
-            (prev.as_ref().zip(diff.as_ref())).map_or_else(Default::default, |(prev, diff)| {
+        // The first projection (a join's first merge, or the unlock's load)
+        // diffs against nothing, yet a window opened before it read an empty
+        // roster and every control denied (`views::my_denied`): it announces
+        // our own verdicts and the merged roster, so that window updates.
+        let permissions = match prev.as_ref().zip(diff.as_ref()) {
+            Some((prev, diff)) => {
                 super::permission_events::permission_transitions(prev, &state, diff, now_secs)
-            });
+            }
+            None => super::permission_events::first_permission_transitions(
+                &state,
+                me.as_ref(),
+                now_secs,
+            ),
+        };
+        let first_roster = prev.is_none().then(|| {
+            state
+                .members
+                .keys()
+                .map(rekindle_types::id::PseudonymKey::to_hex)
+                .collect()
+        });
         let (projected, held) =
             self.ctx
                 .communities
@@ -77,6 +94,9 @@ impl HostGovernance {
         }
         self.rotate_for_departures(community_id, &transitions, me.as_ref());
         self.publish_member_transitions(transitions);
+        if let Some(roster) = first_roster {
+            self.publish_first_roster(community_id, roster);
+        }
         if let Some(diff) = &diff {
             self.publish_table_changes(community_id, diff);
         }
@@ -325,3 +345,7 @@ fn new_outbox_heads(
         .into_iter()
         .collect()
 }
+
+#[cfg(test)]
+#[path = "open_window_events_tests.rs"]
+mod open_window_tests;

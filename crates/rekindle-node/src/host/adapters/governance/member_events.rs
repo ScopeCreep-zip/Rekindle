@@ -86,6 +86,35 @@ impl HostGovernance {
         }
     }
 
+    /// Publish the roster of a community's first projection (`prev` absent:
+    /// a join's first merge, or the unlock's load), which diffs against
+    /// nothing and so names no `Joined`. Its `members` (pseudonym hex) go
+    /// on the stored roster first, queued before the event as in
+    /// [`Self::publish_member_transitions`], then one `MembersRefreshed`
+    /// makes every open window re-read the list: a window opened right
+    /// after a join read it before the merge and otherwise kept it empty.
+    /// No `Joined` each: these are not joins this merge witnessed (no raid
+    /// count, no notification).
+    pub(super) fn publish_first_roster(&self, community_id: &str, members: Vec<String>) {
+        if let Some((owner, db)) = self.owner_and_db().filter(|_| !members.is_empty()) {
+            let community = community_id.to_owned();
+            let joined_at = self.ctx.clock.now_secs().cast_signed();
+            db.fire("merged roster", move |conn| {
+                for pseudonym in &members {
+                    rekindle_db::repo::members::insert_if_absent(
+                        conn, &owner, &community, pseudonym, joined_at,
+                    )?;
+                }
+                Ok(())
+            });
+        }
+        self.ctx.publish_event(SubscriptionEvent::Membership(
+            MembershipEvent::MembersRefreshed {
+                community: community_id.to_owned(),
+            },
+        ));
+    }
+
     /// The key rotation each merged departure in `events` requires (ADR
     /// 0018): a member who left still holds the current keys. Kicks and
     /// bans rotate from the moderation path; ours rotates nothing of ours.

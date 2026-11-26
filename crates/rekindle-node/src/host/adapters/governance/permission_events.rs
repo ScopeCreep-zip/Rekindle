@@ -88,6 +88,27 @@ pub(super) fn permission_transitions(
     PermissionTransitions { members, channels }
 }
 
+/// The permission transitions of a community's first projection (`prev`
+/// absent: a join's first merge, or the unlock's load): ours alone, with
+/// our denied capabilities under `next`. Before it our view denied every
+/// control (`views::my_denied`, the rules not loaded), so a window opened
+/// in between re-reads its flags from this; another member's verdicts were
+/// never shown, so none is named.
+pub(super) fn first_permission_transitions(
+    next: &GovernanceState,
+    me: Option<&PseudonymKey>,
+    now_secs: u64,
+) -> PermissionTransitions {
+    let members = me
+        .map(|me| (me.to_hex(), denied_of(me, next, now_secs)))
+        .into_iter()
+        .collect();
+    PermissionTransitions {
+        members,
+        channels: Vec::new(),
+    }
+}
+
 impl super::HostGovernance {
     /// Publish `BansChanged` for `community_id`: the merge changed its ban
     /// list (`GovernanceDiff::bans_changed`), so a bans view re-reads it.
