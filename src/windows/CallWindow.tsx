@@ -9,6 +9,7 @@ import { setVoiceState } from "../stores/voice.store";
 import { startEventStream } from "../ipc/channels";
 import { initVoiceEventListener } from "../actions/voice.actions";
 import { setWindowKind } from "../utils/window_kind";
+import { loadVoiceStatus, subscribeVoiceStatus } from "../handlers/voice_status.handlers";
 
 /// The call window: the one place a connected 1:1 call's controls and
 /// media pipeline run. The backend opens it on connect
@@ -54,6 +55,10 @@ const CallWindow: Component = () => {
     // connection quality) to its call window too; without this the
     // panel's peer state never moved (plan C7.28).
     unlisteners.push(initVoiceEventListener());
+    // The Host's voice status and devices (plan E4.1 S5): the call's mute,
+    // deafen and audio ends.
+    unlisteners.push(subscribeVoiceStatus());
+    void loadVoiceStatus();
     void startEventStream(() => void load());
     await load();
   });

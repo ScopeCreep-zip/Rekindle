@@ -21,8 +21,6 @@ export interface VoiceState {
   status: VoiceStatus | null;
   isConnected: boolean;
   channelId: string | null;
-  isMuted: boolean;
-  isDeafened: boolean;
   participants: VoiceParticipant[];
   connectionQuality: string;
   /** Phase 5 — receive-side jitter drops in the last 5 s window. */
@@ -37,7 +35,7 @@ export interface VoiceState {
    * reports it. `null` until the first receiver report arrives.
    */
   link: LinkMeasurement | null;
-  activeCallType: "dm" | "community" | null;
+  activeCallType: "dm" | "community" | "group" | null;
   inputDevice: string | null;
   outputDevice: string | null;
   inputVolume: number;
@@ -66,8 +64,6 @@ const [voiceState, setVoiceState] = createStore<VoiceState>({
   status: null,
   isConnected: false,
   channelId: null,
-  isMuted: false,
-  isDeafened: false,
   participants: [],
   connectionQuality: "good",
   rxOverflowDrops: 0,

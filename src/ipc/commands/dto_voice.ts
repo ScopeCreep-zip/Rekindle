@@ -1,5 +1,9 @@
-// Community voice DTOs (plan E4.1): the Host's answers to `VoiceDevices`
-// and `VoiceStatus`, mirroring `rekindle_types::dto::voice`.
+// Voice DTOs (plan E4.1): the Host's answers to `VoiceDevices` and
+// `VoiceStatus`, mirroring `rekindle_types::dto::voice`. Externally tagged
+// like every `VoiceEvent` (the values cross the daemon IPC as postcard,
+// which cannot decode a tagged enum).
+
+import type { VoiceScope } from "../channels/voice_events";
 
 /** One audio device in a settings list. */
 export interface VoiceDevice {
@@ -21,22 +25,21 @@ export interface VoiceDevices {
 export type VoiceEndState =
   /** A device is open; `standsInFor` is the saved choice it replaces
    *  while that device is not connected. */
-  | { type: "device"; data: { id: string; name: string; standsInFor: string | null } }
+  | { device: { id: string; name: string; standsInFor: string | null } }
   /** No device could be opened: the Host's reason. */
-  | { type: "unavailable"; data: { reason: string } }
+  | { unavailable: { reason: string } }
   /** Configured without a device (a headless Host). */
-  | { type: "headless" };
+  | "headless";
 
-/** The voice session the Host runs. */
-export interface VoiceSessionRef {
-  communityId: string;
-  channelId: string;
-}
-
-/** The Host's voice state. */
+/** The Host's voice state: one live session per identity, across 1:1,
+ *  group and community calls. */
 export interface VoiceStatus {
-  /** `null` when not in a voice channel; the rest then reads idle. */
-  session: VoiceSessionRef | null;
+  /** The live session's scope; `null` when in none (the rest then reads idle). */
+  session: VoiceScope | null;
+  /** The Host's words for why a new voice session cannot start now
+   *  ("Leave the current call first."), or `null` when one can. Every
+   *  voice-start button is visibly disabled with it; Leave never is. */
+  startRefusal: string | null;
   muted: boolean;
   deafened: boolean;
   input: VoiceEndState;

@@ -18,6 +18,8 @@ import { useSafetyNumber } from "../hooks/useSafetyNumber";
 import GameIcon from "../components/game/GameIcon";
 import FriendNicknameField from "../components/profile/FriendNicknameField";
 import { setWindowKind } from "../utils/window_kind";
+import { voiceStartRefusal } from "../components/voice/VoiceStartRefusal";
+import { loadVoiceStatus, subscribeVoiceStatus } from "../handlers/voice_status.handlers";
 
 function getKeyFromUrl(): string {
   const params = new URLSearchParams(window.location.search);
@@ -33,15 +35,20 @@ const ProfileWindow: Component = () => {
   // Their bio as they last sent it (plan E7.2), shown as plain text.
   const [bio] = createResource(() => commands.getFriendBio(publicKey));
   let unlistenPresence: Promise<import("@tauri-apps/api/event").UnlistenFn> | undefined;
+  let unlistenVoice: Promise<import("@tauri-apps/api/event").UnlistenFn> | undefined;
 
   onMount(() => {
     hydrateState();
     unlistenPresence = subscribeProfilePresenceEvents(publicKey);
+    // The Host's voice status (plan E4.1 S5): the call buttons' start refusal.
+    unlistenVoice = subscribeVoiceStatus();
+    void loadVoiceStatus();
     void startEventStream(() => void hydrateState());
   });
 
   onCleanup(() => {
     unlistenPresence?.then((unlisten) => unlisten());
+    unlistenVoice?.then((unlisten) => unlisten());
   });
 
   const friend = createMemo(() => {
@@ -156,14 +163,18 @@ const ProfileWindow: Component = () => {
             {/* Wave 12 W12.8 — call buttons in profile header. */}
             <button
               class="form-btn-secondary"
-              title="Start a voice call"
+              disabled={voiceStartRefusal() !== null}
+              aria-disabled={voiceStartRefusal() !== null}
+              title={voiceStartRefusal() ?? "Start a voice call"}
               onClick={() => void handleStartDmCall(publicKey, displayName(), false)}
             >
               <span class="nf-icon">{ICON_PHONE}</span> Voice Call
             </button>
             <button
               class="form-btn-secondary"
-              title="Start a video call"
+              disabled={voiceStartRefusal() !== null}
+              aria-disabled={voiceStartRefusal() !== null}
+              title={voiceStartRefusal() ?? "Start a video call"}
               onClick={() => void handleStartDmCall(publicKey, displayName(), true)}
             >
               <span class="nf-icon">{ICON_VIDEO}</span> Video Call

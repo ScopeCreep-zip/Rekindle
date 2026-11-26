@@ -7,6 +7,7 @@ import { activePipeline } from "../../components/voice/call_stage/pipeline_store
 import ChannelChat from "./ChannelChat";
 import { handleJoinVoice } from "../../actions/voice.actions";
 import type { CommunityVm } from "./useCommunityWindow";
+import VoiceStartRefusal, { voiceStartRefusal } from "../../components/voice/VoiceStartRefusal";
 
 /// Main-pane conferencing surface for a community voice channel. When the
 /// local member isn't connected it shows a Join hero; once connected it
@@ -31,10 +32,14 @@ const CallStage: Component<{ vm: CommunityVm }> = (props) => {
             </div>
             <button
               class="call-stage-join-btn"
+              disabled={voiceStartRefusal() !== null}
+              aria-disabled={voiceStartRefusal() !== null}
+              title={voiceStartRefusal() ?? undefined}
               onClick={() => void handleJoinVoice(vm.selectedChannelId(), vm.selectedCommunityId())}
             >
               <SkinGlyph name="phone" /> Join Voice
             </button>
+            <VoiceStartRefusal />
           </div>
         }
       >

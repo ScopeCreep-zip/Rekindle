@@ -906,6 +906,10 @@
 .voice-panel-status	text	var(--color-xfire-online-text)	--color-xfire-bg-status	1.0	false
 .voice-panel-status-disconnected	text	var(--color-xfire-text-dim)	--color-xfire-bg-status	1.0	false
 .voice-participant	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
+.voice-start-refusal	text	var(--color-xfire-danger-text)	--color-xfire-bg-dark	1.0	false
+.voice-start-refusal	text	var(--color-xfire-danger-text)	--color-xfire-bg-panel	1.0	false
+.voice-start-refusal	text	var(--color-xfire-danger-text)	--color-xfire-bg-primary	1.0	false
+.voice-start-refusal	text	var(--color-xfire-danger-text)	--color-xfire-bg-status	1.0	false
 .welcome-channel-desc	text	var(--color-xfire-text-dim)	--color-xfire-bg-secondary	1.0	false
 .welcome-channel-entry	text	var(--color-xfire-text-primary)	--color-xfire-bg-secondary	1.0	false
 .welcome-channel-entry	text hovered	var(--color-xfire-text-primary)	--color-xfire-bg-tertiary	1.0	false

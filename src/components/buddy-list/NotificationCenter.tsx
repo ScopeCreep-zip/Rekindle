@@ -10,6 +10,7 @@ import { ICON_BELL, ICON_CHECK, ICON_PHONE, ICON_SEND } from "../../icons";
 import { formatRelativeTime } from "../../utils/formatting";
 import { handleStartDmCall } from "../../actions/calls.actions";
 import { commands } from "../../ipc/commands";
+import { voiceStartRefusal } from "../voice/VoiceStartRefusal";
 
 const NotificationCenter: Component = () => {
   const open = (): boolean => buddyListUI.showNotifications;
@@ -109,7 +110,9 @@ const NotificationCenter: Component = () => {
                           <button
                             type="button"
                             class="form-btn-secondary notification-action-btn"
-                            title="Call back"
+                            disabled={voiceStartRefusal() !== null}
+                            aria-disabled={voiceStartRefusal() !== null}
+                            title={voiceStartRefusal() ?? "Call back"}
                             onClick={() => {
                               const peerKey = notification.peerKey!;
                               const name = notification.body.split(" (")[0];

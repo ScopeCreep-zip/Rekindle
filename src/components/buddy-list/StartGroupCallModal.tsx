@@ -4,6 +4,7 @@ import { returnFocusToOpener } from "../../utils/dialog_focus";
 import { friendsState } from "../../stores/friends.store";
 import { handleStartGroupCall } from "../../actions/calls.actions";
 import type { GroupCallInvitee } from "../../ipc/commands/dto_skin_run";
+import VoiceStartRefusal, { voiceStartRefusal } from "../voice/VoiceStartRefusal";
 
 // Wave 12 W12.10 — friend multi-select dialog for starting a group
 // call. Audio/video toggle + checkbox list + Call button. Closes on
@@ -101,6 +102,7 @@ const StartGroupCallModal: Component<StartGroupCallModalProps> = (props) => {
                   {Object.values(selected()).filter(Boolean).length === 1 ? "" : "s"}
                 </span>
               </div>
+              <VoiceStartRefusal />
               <div class="start-group-call-list">
                 <Show
                   when={friendList().length > 0}
@@ -136,8 +138,10 @@ const StartGroupCallModal: Component<StartGroupCallModalProps> = (props) => {
                 type="button"
                 class="form-btn-primary"
                 disabled={
-                  busy() || Object.values(selected()).filter(Boolean).length === 0
+                  busy() || voiceStartRefusal() !== null || Object.values(selected()).filter(Boolean).length === 0
                 }
+                aria-disabled={voiceStartRefusal() !== null}
+                title={voiceStartRefusal() ?? undefined}
                 onClick={() => void startCall()}
               >
                 {busy() ? "Calling…" : "Call"}

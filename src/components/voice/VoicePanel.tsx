@@ -5,6 +5,7 @@ import VoiceParticipantItem from "./VoiceParticipant";
 import { handleLeaveVoice } from "../../actions/voice.actions";
 import { DeafenButton, MuteButton } from "./SelfVoiceButtons";
 import VoiceEndNotices from "./VoiceEndNotices";
+import VoiceStartRefusal from "./VoiceStartRefusal";
 
 /// Compact sidebar "connected" strip. Quick mute / deafen / leave plus the
 /// participant list — reachable from any channel while in a call. The full
@@ -48,6 +49,7 @@ const VoicePanel: Component = () => {
         </Show>
       </div>
       <VoiceEndNotices />
+      <VoiceStartRefusal />
 
       <Show when={voiceState.isConnected}>
         <div class="voice-participants">

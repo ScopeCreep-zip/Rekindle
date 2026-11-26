@@ -1,6 +1,7 @@
 import { Component, For, Show, createMemo } from "solid-js";
 import SkinGlyph from "../common/SkinGlyph";
 import type { Channel, Member, VoiceChannelState } from "../../stores/community.store";
+import { voiceStartRefusal } from "../voice/VoiceStartRefusal";
 
 interface StagePanelProps {
   channel: Channel;
@@ -54,7 +55,13 @@ const StagePanel: Component<StagePanelProps> = (props) => {
           <Show
             when={props.isConnectedToChannel}
             fallback={
-              <button class="stage-panel-join-btn" onClick={props.onJoinStage}>
+              <button
+                class="stage-panel-join-btn"
+                disabled={voiceStartRefusal() !== null}
+                aria-disabled={voiceStartRefusal() !== null}
+                title={voiceStartRefusal() ?? undefined}
+                onClick={props.onJoinStage}
+              >
                 <SkinGlyph name="phone" />
                 Join stage
               </button>

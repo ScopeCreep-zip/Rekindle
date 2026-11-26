@@ -6,6 +6,7 @@ import { voiceState } from "../../stores/voice.store";
 import CategoryHeader from "./CategoryHeader";
 import { rovingList } from "../../utils/roving_list";
 import type { GlyphName } from "../common/glyph_art";
+import { voiceStartRefusal } from "../voice/VoiceStartRefusal";
 
 interface ChannelListProps {
   channels: Channel[];
@@ -170,7 +171,9 @@ const ChannelList: Component<ChannelListProps> = (props) => {
           {channel.type === "voice" && (
             <button
               class="channel-voice-join-btn"
-              title="Join Voice"
+              disabled={voiceStartRefusal() !== null}
+              aria-disabled={voiceStartRefusal() !== null}
+              title={voiceStartRefusal() ?? "Join Voice"}
               aria-label={`Join voice channel ${channel.name}`}
               onClick={(e) => {
                 e.stopPropagation();

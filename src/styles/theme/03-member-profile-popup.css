@@ -32,6 +32,14 @@
     color: var(--color-xfire-danger-text);
   }
 
+  /* Why a new voice session cannot start (components/voice/
+   * VoiceStartRefusal.tsx): the Host's words beside the disabled buttons. */
+  .voice-start-refusal {
+    font-size: 11px;
+    padding: 4px 8px;
+    color: var(--color-xfire-danger-text);
+  }
+
   .voice-participants {
     display: flex;
     flex-direction: column;

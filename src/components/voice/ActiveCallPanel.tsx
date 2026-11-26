@@ -6,6 +6,11 @@ import { voiceState, setVoiceState } from "../../stores/voice.store";
 import { settingsState, setSettingsState } from "../../stores/settings.store";
 import { friendsState } from "../../stores/friends.store";
 import { handleEndDmCall } from "../../actions/calls.actions";
+import { handleToggleDeafen } from "../../actions/voice.actions";
+import { addToast } from "../../stores/toast.store";
+import { errorMessage } from "../../utils/error";
+import { endUnavailable } from "./voiceEnds";
+import { VoiceEndLine } from "./VoiceEndNotices";
 import VideoCallPanel from "./VideoCallPanel";
 import ReactionsTray from "./ReactionsTray";
 import ReactionFloater from "./ReactionFloater";
@@ -86,27 +91,22 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
     }
   }
 
+  /** Our mute, as the Host's `VoiceStatus` has it (plan E4.1 S5: one
+   *  voice engine for every call). */
+  const muted = () => voiceState.status?.muted ?? false;
+  const deafened = () => voiceState.status?.deafened ?? false;
+  /** Why an end has no device (the Host's reason): its control stays,
+   *  visibly disabled. */
+  const inputReason = () => endUnavailable(voiceState.status?.input);
+  const outputReason = () => endUnavailable(voiceState.status?.output);
+
   async function toggleMute(): Promise<void> {
-    const next = !voiceState.isMuted;
-    setVoiceState("isMuted", next);
+    const next = !muted();
     try {
       await commands.setMute(next);
       await pingMediaState(!next, voiceState.cameraOn, voiceState.screenShareOn);
     } catch (e) {
-      // Revert UI on failure.
-      setVoiceState("isMuted", !next);
-      console.error("setMute failed:", e);
-    }
-  }
-
-  async function toggleDeafen(): Promise<void> {
-    const next = !voiceState.isDeafened;
-    setVoiceState("isDeafened", next);
-    try {
-      await commands.setDeafen(next);
-    } catch (e) {
-      setVoiceState("isDeafened", !next);
-      console.error("setDeafen failed:", e);
+      addToast(errorMessage(e), "error");
     }
   }
 
@@ -114,7 +114,7 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
     if (!isVideoCall()) return;
     const next = !voiceState.cameraOn;
     setVoiceState("cameraOn", next);
-    void pingMediaState(!voiceState.isMuted, next, voiceState.screenShareOn);
+    void pingMediaState(!muted(), next, voiceState.screenShareOn);
   }
 
   // Wave 12 W12.11 — screen-share toggle. The webview's getDisplayMedia
@@ -123,24 +123,26 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
   function toggleScreenShare(): void {
     const next = !voiceState.screenShareOn;
     setVoiceState("screenShareOn", next);
-    void pingMediaState(!voiceState.isMuted, voiceState.cameraOn, next);
+    void pingMediaState(!muted(), voiceState.cameraOn, next);
   }
 
-  async function pickInputDevice(deviceName: string): Promise<void> {
-    setSettingsState("selectedInputDevice", deviceName || null);
+  // A choice saves the device's id, as Settings > Audio does (a name is
+  // not what `set_audio_devices` resolves).
+  async function pickInputDevice(deviceId: string): Promise<void> {
+    setSettingsState("selectedInputDevice", deviceId || null);
     try {
-      await commands.setAudioDevices(deviceName || null, settingsState.selectedOutputDevice);
+      await commands.setAudioDevices(deviceId || null, settingsState.selectedOutputDevice);
     } catch (e) {
-      console.error("setAudioDevices(input) failed:", e);
+      addToast(errorMessage(e), "error");
     }
   }
 
-  async function pickOutputDevice(deviceName: string): Promise<void> {
-    setSettingsState("selectedOutputDevice", deviceName || null);
+  async function pickOutputDevice(deviceId: string): Promise<void> {
+    setSettingsState("selectedOutputDevice", deviceId || null);
     try {
-      await commands.setAudioDevices(settingsState.selectedInputDevice, deviceName || null);
+      await commands.setAudioDevices(settingsState.selectedInputDevice, deviceId || null);
     } catch (e) {
-      console.error("setAudioDevices(output) failed:", e);
+      addToast(errorMessage(e), "error");
     }
   }
 
@@ -184,23 +186,27 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
       <div class="active-call-controls">
         <button
           type="button"
-          class={`call-control-btn${voiceState.isMuted ? " call-control-btn-active" : ""}`}
+          class={`call-control-btn${muted() ? " call-control-btn-active" : ""}`}
           onClick={() => void toggleMute()}
-          aria-pressed={voiceState.isMuted}
-          aria-label={voiceState.isMuted ? "Unmute microphone" : "Mute microphone"}
-          title={voiceState.isMuted ? "Unmute" : "Mute"}
+          disabled={inputReason() !== null}
+          aria-disabled={inputReason() !== null}
+          aria-pressed={muted()}
+          aria-label={muted() ? "Unmute microphone" : "Mute microphone"}
+          title={inputReason() ?? (muted() ? "Unmute" : "Mute")}
         >
-          <SkinGlyph name={voiceState.isMuted ? "mic.off" : "mic.on"} />
+          <SkinGlyph name={muted() ? "mic.off" : "mic.on"} />
         </button>
         <button
           type="button"
-          class={`call-control-btn${voiceState.isDeafened ? " call-control-btn-active" : ""}`}
-          onClick={() => void toggleDeafen()}
-          aria-pressed={voiceState.isDeafened}
-          aria-label={voiceState.isDeafened ? "Undeafen" : "Deafen"}
-          title={voiceState.isDeafened ? "Undeafen" : "Deafen"}
+          class={`call-control-btn${deafened() ? " call-control-btn-active" : ""}`}
+          onClick={() => void handleToggleDeafen()}
+          disabled={outputReason() !== null}
+          aria-disabled={outputReason() !== null}
+          aria-pressed={deafened()}
+          aria-label={deafened() ? "Undeafen" : "Deafen"}
+          title={outputReason() ?? (deafened() ? "Undeafen" : "Deafen")}
         >
-          <SkinGlyph name={voiceState.isDeafened ? "speaker.off" : "speaker.on"} />
+          <SkinGlyph name={deafened() ? "speaker.off" : "speaker.on"} />
         </button>
         <Show when={isVideoCall()}>
           <button
@@ -284,10 +290,11 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
           >
             <option value="">System default</option>
             {settingsState.inputDevices.map((d) => (
-              <option value={d.name}>{d.name}</option>
+              <option value={d.id}>{d.name}</option>
             ))}
           </select>
         </div>
+        <VoiceEndLine end="input" />
         <div class="active-call-device-row">
           <label>Speakers</label>
           <select
@@ -296,10 +303,11 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
           >
             <option value="">System default</option>
             {settingsState.outputDevices.map((d) => (
-              <option value={d.name}>{d.name}</option>
+              <option value={d.id}>{d.name}</option>
             ))}
           </select>
         </div>
+        <VoiceEndLine end="output" />
       </details>
     </div>
   );

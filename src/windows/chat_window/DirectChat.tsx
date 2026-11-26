@@ -29,6 +29,8 @@ import { handleLoadDisappearingTimer } from "../../actions/disappearing.actions"
 import { SlotMount } from "../../components/skin-tree/slots";
 import SkinTreeWindow from "../../components/skin-tree/SkinTreeWindow";
 import { skinShell } from "../../hooks/useSkin";
+import VoiceStartRefusal, { voiceStartRefusal } from "../../components/voice/VoiceStartRefusal";
+import { loadVoiceStatus, subscribeVoiceStatus } from "../../handlers/voice_status.handlers";
 
 /// The chat window's 1:1 mode: a conversation with a friend or a
 /// community member, with its call controls and typing indicator.
@@ -137,6 +139,9 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
     unlisteners.push(subscribeBuddyListPresenceEvents());
     // Keeps the call buttons in step with a call to this peer.
     unlisteners.push(subscribeCallEvents({ owner: false }));
+    // The Host's voice status (plan E4.1 S5): the call buttons' start refusal.
+    unlisteners.push(subscribeVoiceStatus());
+    void loadVoiceStatus();
     void startEventStream(() => void hydrateState());
 
     // Await hydration so stores are populated before loading history
@@ -214,7 +219,9 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
           <button
             class="chat-call-btn"
             onClick={() => startCall(false)}
-            title="Voice call"
+            disabled={voiceStartRefusal() !== null}
+            aria-disabled={voiceStartRefusal() !== null}
+            title={voiceStartRefusal() ?? "Voice call"}
             aria-label={`Start voice call with ${peerName()}`}
           >
             <span class="nf-icon" aria-hidden="true">{ICON_PHONE}</span>
@@ -222,13 +229,18 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
           <button
             class="chat-call-btn"
             onClick={() => startCall(true)}
-            title="Video call"
+            disabled={voiceStartRefusal() !== null}
+            aria-disabled={voiceStartRefusal() !== null}
+            title={voiceStartRefusal() ?? "Video call"}
             aria-label={`Start video call with ${peerName()}`}
           >
             <span class="nf-icon" aria-hidden="true">{ICON_VIDEO}</span>
           </button>
         </Show>
       </div>
+      <Show when={!activeCallWithPeer() && !outgoingToThisPeer()}>
+        <VoiceStartRefusal />
+      </Show>
       <Show when={awaitingAccept()}>
         <div class="chat-awaiting-accept" role="status">
           Waiting for {peerName()} to accept your friend request. Messages stay queued until then.

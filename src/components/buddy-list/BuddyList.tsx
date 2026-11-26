@@ -27,6 +27,7 @@ import BuddyGroup from "./BuddyGroup";
 import ScrollArea from "../common/ScrollArea";
 import { rovingList } from "../../utils/roving_list";
 import SimpleInputModal from "../common/SimpleInputModal";
+import { voiceStartRefusal } from "../voice/VoiceStartRefusal";
 
 /** The list of our sent requests, shown as a group of its own. */
 const AWAITING_RESPONSE = "Awaiting Response";
@@ -188,12 +189,16 @@ const BuddyList: Component = () => {
            *  CallController) surfaces the "Calling…" UX globally. */}
           <ContextMenu.Item
             class="context-menu-item"
+            disabled={voiceStartRefusal() !== null}
+            title={voiceStartRefusal() ?? undefined}
             onSelect={() => void handleStartDmCall(key, name, false)}
           >
             Voice Call
           </ContextMenu.Item>
           <ContextMenu.Item
             class="context-menu-item"
+            disabled={voiceStartRefusal() !== null}
+            title={voiceStartRefusal() ?? undefined}
             onSelect={() => void handleStartDmCall(key, name, true)}
           >
             Video Call
