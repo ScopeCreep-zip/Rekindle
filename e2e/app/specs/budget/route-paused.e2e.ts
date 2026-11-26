@@ -195,6 +195,15 @@ describe("a paused inbound route is said in the tree's status field, which stays
         await browser.pause(300);
         console.log(`[paused] ${file} with the input hidden: hiding the line changes ${await seenInField(PAUSED)} px`);
         await browser.execute(() => document.querySelector<HTMLElement>(".skin-status-edit")?.style.removeProperty("visibility"));
+        // Confirmation (Codex handoff, verified from the manifests: Alloy and
+        // Simple X serve StatusWrapper z=4 over StatusEdit z=3, tripled to 12
+        // over 9): the status field's context raised to the wrapper's must
+        // bring the line into view.
+        await browser.execute(() => document.querySelector<HTMLElement>(".skin-status")?.style.setProperty("z-index", "12", "important"));
+        await browser.pause(300);
+        console.log(`[paused] ${file} with .skin-status at z-index 12: hiding the line changes ${await seenInField(PAUSED)} px`);
+        await shot(`${file}-paused-field-raised`);
+        await browser.execute(() => document.querySelector<HTMLElement>(".skin-status")?.style.removeProperty("z-index"));
       }
       await shot(`${file}-paused-field`);
       expect({ pack: file, lineSeen: line >= 20, inputSeen: input >= 20 }).toEqual({ pack: file, lineSeen: true, inputSeen: false });
