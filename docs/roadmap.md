@@ -256,14 +256,14 @@ live work.
 - [x] `rekindle-governance-runtime` — async lifecycle on top of
   the pure-CRDT `rekindle-governance`
 - [x] `rekindle-channel` — channel messaging + threads + reactions
-  + polls + automod + slowmode
+  - polls + automod + slowmode
 - [x] `rekindle-presence` — friend + community + idle + game
   presence orchestrators; see
   [`architecture/presence.md`](architecture/presence.md)
 - [x] `rekindle-analytics` — local-only SQL aggregations
 - [x] `rekindle-idle` — cross-platform OS idle-time detection
   (CoreGraphics / `GetLastInputInfo` / Wayland `ext-idle-notify-v1`
-  + xprintidle/Mutter/ScreenSaver D-Bus fallbacks) hoisted out of
+  - xprintidle/Mutter/ScreenSaver D-Bus fallbacks) hoisted out of
   `idle_service.rs`, mirroring `rekindle-game-detect`'s `platform/`
   shape
 - [~] **Phase 23 services drain** — ongoing harvest of remaining

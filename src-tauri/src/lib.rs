@@ -45,6 +45,15 @@ mod windows;
 #[cfg(all(feature = "webdriver-test", not(debug_assertions)))]
 compile_error!("the webdriver-test feature is for debug builds only");
 
+// The vendored driver carries only the macOS and Linux back ends and is an
+// empty crate elsewhere (its README, change 3); Windows is driven by
+// tauri-driver, which needs no in-app plugin.
+#[cfg(all(
+    feature = "webdriver-test",
+    not(any(target_os = "macos", target_os = "linux"))
+))]
+compile_error!("the vendored tauri-plugin-wdio-webdriver supports macOS and Linux only");
+
 pub use services::shell_session::ShellSession;
 
 use std::sync::Arc;

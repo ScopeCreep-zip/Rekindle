@@ -9,7 +9,7 @@ import type { SendState } from "../commands/types";
 import type { LobbyView } from "../commands/dto_lobby";
 
 /** DM / conversation message from the daemon vocabulary. */
-export interface DirectMessageReceived {
+interface DirectMessageReceived {
   peerKey: string;
   timestamp: number;
   senderName: string | null;
@@ -25,7 +25,7 @@ export interface DirectMessageReceived {
 /** Our own direct message exactly as stored, once committed (plan E6.11):
  *  every window of the conversation upserts it by `message.messageId`. Never
  *  a peer's message, so it never notifies or counts unread. */
-export interface DirectMessageSent {
+interface DirectMessageSent {
   conversationId: string;
   replyToId: string | null;
   message: DmMessage;
@@ -77,7 +77,7 @@ export interface DisappearingTimerChanged {
 }
 
 /** The Host deleted these messages at their `expireAt`. */
-export interface MessagesExpired {
+interface MessagesExpired {
   context: ConversationContext;
   clientIds: string[];
 }
@@ -146,7 +146,7 @@ export type GroupDmEvent =
   | { messageSent: { groupId: string; replyToId: string | null; message: DmMessage } }
   | { historyGap: { groupId: string; member: GroupDmMember; throughSeq: number } };
 
-export type TypingEvent =
+type TypingEvent =
   // `name`: the typist as the Host names them (your nickname, else their name, else fingerprint).
   | { started: { context: TypingContext; who: string; name: string } }
   | { stopped: { context: TypingContext; who: string } };
@@ -190,7 +190,7 @@ export type FriendEvent =
   | { coCreationFinished: { anchor: string; created: boolean } };
 
 /** Peer on the other end of a direct call; absent for a group call. */
-export interface DirectCallInfo {
+interface DirectCallInfo {
   kind: string;
   peerKey: string;
   peerDisplayName: string;
@@ -261,7 +261,7 @@ export type CallEvent =
   | { selfMuteChanged: { muted: boolean; timestampMs: number } };
 
 /** What an unread count belongs to (`subscription_events::UnreadContext`). */
-export type UnreadContext =
+type UnreadContext =
   | { channel: { community: string; channel: string } }
   | { dm: { peerKey: string } }
   | "friendRequests";
@@ -273,7 +273,7 @@ export interface UnreadChanged {
 }
 
 /** The daemon-vocabulary families delivered on this channel. */
-export type ChatSubscriptionEvent =
+type ChatSubscriptionEvent =
   | { channelMessage: ChannelMessageEvent }
   | { typing: TypingEvent }
   | { friend: FriendEvent }

@@ -33,7 +33,7 @@ already has by virtue of holding the identity secret.
 
 ## Chain construction
 
-```
+```text
 mac_i = BLAKE3-keyed(mac_key, prev_mac_i || cursor_le_i || payload_json_i)
 prev_mac_{i+1} = mac_i
 ```

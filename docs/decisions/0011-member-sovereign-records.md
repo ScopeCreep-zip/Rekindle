@@ -59,6 +59,7 @@ can ever join again. For communities of vulnerable users this is an unacceptable
 service.
 
 There are two further constraints:
+
 - The SMPL member set is fixed at record creation ("Once created, the schema cannot be changed,
   because it is hashed to form part of the record key"), so per-member keys cannot be added to an
   existing SMPL record.
@@ -98,6 +99,7 @@ Detail: `.claude/plans/standards-remediation/evidence/slot-integrity.md` §5.
 
 **Community anchor `A`.** A DFLT(1) record. Its random owner key `K_A` writes a `GenesisCert`,
 signed by `K_A` and by the creator's pseudonym, and is then zeroized and never persisted.
+
 - Readers pin the record descriptor's owner to the certificate signer.
 - The anchor is physically immutable.
 - The community id is `A`'s record key.
@@ -109,6 +111,7 @@ signed by `K_A` and by the creator's pseudonym, and is then zeroized and never p
 
 **Successor community** *(added 2026-10-22, Q3).* An immutable anchor cannot be repaired, so
 recovery and ownership transfer go through a new community:
+
 - A `CommunitySuccessor{newAnchor, reason}` op counts only when signed by a creator of the old
   community. A `MANAGE_COMMUNITY` holder cannot sign it: Matrix sets room upgrade above admin "to
   guard against unauthorised privilege escalation by admins" (MSC4289:145-151), and Project Hydra
@@ -149,6 +152,7 @@ signature verifies. *(Amended 2026-10-24, ADR 0022: the inner signature is the d
 `MemberJoined` or `DeviceKey` endorsement binds, itself endorsed by the pseudonym.)*
 
 **Discovery.**
+
 - Op dependencies carry locators (`OpRef`), so any op is fetchable without a directory.
 - Checkpoint ops list directory pages of about 170 members each. *(Amended 2026-10-24, plan S7c: 128 members
   each, so a page is a complete subtree of one RFC 9162 tree; each entry names the member's record and owner.)*
@@ -156,6 +160,7 @@ signature verifies. *(Amended 2026-10-24, ADR 0022: the inner signature is the d
   rebuild the member set from the DHT.
 
 **Notification.**
+
 - Gossip is the fast path.
 - Each member watches 4 ring successors, giving ≤ 4 watchers per record at any size *(amended 2026-10-24, ADR 0022
   rule 4: each device also watches its own `M(p,d)`/2 to see a copy's write, so ≤ 5)*, and relays
@@ -163,6 +168,7 @@ signature verifies. *(Amended 2026-10-24, ADR 0022: the inner signature is the d
 - A 60-second anti-entropy inspect sweep.
 
 **Join.**
+
 1. Create `M`.
 2. Read the anchor and the inviter's frontier.
 3. Walk the DAG.
@@ -202,6 +208,7 @@ one subkey.
 - Reading a channel costs O(authors who posted in it).
 
 **Deleted.**
+
 - `derive_slot_keypair`, `slot_seed`, `SlotSeed`.
 - The registry record and per-channel SMPL records.
 - Segments: `SegmentAdded`, `ChannelSegmentLinked`, `RequestSegmentExpansion`.

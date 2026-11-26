@@ -1,5 +1,5 @@
 /** Modules of light margin a scanner needs around a QR code. */
-export const QUIET_ZONE = 4;
+const QUIET_ZONE = 4;
 
 /** The side of the square SVG viewBox for `rows` with its quiet zone. */
 export function qrSize(rows: string[]): number {

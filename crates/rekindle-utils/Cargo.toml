@@ -54,6 +54,7 @@ thiserror = { workspace = true, optional = true }
 rustix = { version = "1", features = [ "fs" ], optional = true }
 
 [dev-dependencies]
+rekindle-test-fixtures = { path = "../rekindle-test-fixtures" }
 serde_json = { workspace = true }
 tempfile = "3"
 tokio = { workspace = true, features = [ "test-util", "macros" ] }

@@ -255,7 +255,7 @@ The 2-member SMPL DM below is gone: 1:1 DMs are the friend's ratchet
 stream (the chat window's 1:1 mode). Kept here as the record of what was
 removed.
 
-```
+```text
 SMPL Record (DM)
 ├── o_cnt: 0
 ├── member_count: 2
@@ -266,7 +266,7 @@ SMPL Record (DM)
 
 The DM MEK comes from X25519 ECDH between the two identity keys:
 
-```
+```text
 dm_mek = HKDF-SHA256(
     ikm:  X25519(alice_private, bob_public),
     salt: SHA256(sorted(alice_pubkey || bob_pubkey)),

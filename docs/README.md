@@ -140,7 +140,7 @@ See [`decisions/README.md`](decisions/README.md) for how to write a new ADR.
 
 ## Repository structure
 
-```
+```text
 src/                                Frontend (SolidJS + Tailwind 4)
 src-tauri/                          Tauri 2 Rust backend
   src/

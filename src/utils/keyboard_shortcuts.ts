@@ -6,7 +6,7 @@
  *
  * `Mod` is Cmd on macOS and Ctrl elsewhere, as the handlers read it.
  */
-export interface ShortcutRow {
+interface ShortcutRow {
   keys: string[][];
   action: string;
 }
@@ -82,7 +82,7 @@ export const SHORTCUT_SECTIONS: ShortcutSection[] = [
 ];
 
 /** True on macOS, where `Mod` is Cmd. */
-export function isMac(): boolean {
+function isMac(): boolean {
   return /Mac/i.test(navigator.platform);
 }
 

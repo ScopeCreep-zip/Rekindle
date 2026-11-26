@@ -175,7 +175,7 @@ fn the_proof_must_match_and_a_wrong_one_keeps_it_held() {
         GateError::WrongProof
     );
     assert_eq!(
-        try_with(IntentProof::Typed("generl".into())).unwrap_err(),
+        try_with(IntentProof::Typed("generic".into())).unwrap_err(),
         GateError::WrongProof
     );
     assert!(matches!(

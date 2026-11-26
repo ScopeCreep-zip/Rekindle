@@ -11,7 +11,7 @@ import { onCleanup } from "solid-js";
  * the menu's trigger already handles for the mouse. Enter (open) stays with each
  * row, which knows what opening it means.
  */
-export function attachRovingList(list: HTMLElement, itemSelector: string): () => void {
+function attachRovingList(list: HTMLElement, itemSelector: string): () => void {
   let current: HTMLElement | null = null;
 
   const items = (): HTMLElement[] =>

@@ -32,7 +32,7 @@ fn test_realistic() {
 
     assert!(
         total_rate >= lower_bound && total_rate <= upper_bound,
-        "Expected reuslting total rate to be within expected bounds. \
+        "Expected resulting total rate to be within expected bounds. \
         total_rate={total_rate}, media_rate={media_rate}, padding_rate={padding_rate}, \
         config={config:?}, lower_bound={lower_bound}, upper_bound={upper_bound}"
     );

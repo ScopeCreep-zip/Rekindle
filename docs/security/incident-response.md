@@ -41,7 +41,7 @@ reduces miscommunication risk for a small project.
 
 Every report follows the same five-step flow:
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────┐
 │  1. Receive (GHSA private report / email / KEV-check issue)   │
 ├──────────────────────────────────────────────────────────────┤
@@ -217,7 +217,7 @@ After every P0 or P1 incident, a post-mortem is written within 14 days
 and published in the next transparency report
 ([`transparency-report-template.md`](transparency-report-template.md)).
 
-```
+```text
 # Post-mortem: <one-line description>
 Date: YYYY-MM-DD
 Severity: P0 / P1

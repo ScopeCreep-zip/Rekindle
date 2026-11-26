@@ -152,21 +152,21 @@ impl TrendlineEstimator {
         let avg_x = sum_x / usize_to_f64(self.history.len());
         let avg_y = sum_y / usize_to_f64(self.history.len());
 
-        let (numerator, denomenator) = self.history.iter().fold((0.0, 0.0), |acc, t| {
+        let (numerator, denominator) = self.history.iter().fold((0.0, 0.0), |acc, t| {
             let x = t.remote_recv_time_ms;
             let y = t.smoothed_delay_ms;
 
             let numerator = acc.0 + (x - avg_x) * (y - avg_y);
-            let denomenator = acc.1 + (x - avg_x).powi(2);
+            let denominator = acc.1 + (x - avg_x).powi(2);
 
-            (numerator, denomenator)
+            (numerator, denominator)
         });
 
-        if denomenator == 0.0 {
+        if denominator == 0.0 {
             return None;
         }
 
-        Some(numerator / denomenator)
+        Some(numerator / denominator)
     }
 
     fn detect(&mut self, trend: f64, variation: InterGroupDelayDelta, now: Instant) {

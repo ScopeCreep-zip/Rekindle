@@ -83,7 +83,7 @@ impl LossController {
         }
     }
 
-    pub(super) fn get_derivatives(&self, channel_prameters: &ChannelParameters) -> (f64, f64) {
+    pub(super) fn get_derivatives(&self, channel_parameters: &ChannelParameters) -> (f64, f64) {
         let mut derivatives: (f64, f64) = (0.0, 0.0);
 
         for observation in &self.observations {
@@ -92,8 +92,8 @@ impl LossController {
             }
 
             let loss_probability = Self::get_loss_probability(
-                channel_prameters.inherent_loss,
-                channel_prameters.loss_limited_bandwidth,
+                channel_parameters.inherent_loss,
+                channel_parameters.loss_limited_bandwidth,
                 observation.sending_rate,
             );
 

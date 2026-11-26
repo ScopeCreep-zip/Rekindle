@@ -32,7 +32,7 @@ export interface CallEntry {
   };
 }
 
-export interface CallReactionFloat {
+interface CallReactionFloat {
   /** Unique key so the floater renders distinct nodes per reaction. */
   id: string;
   emoji: string;

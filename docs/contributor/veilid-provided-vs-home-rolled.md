@@ -4,7 +4,7 @@
 > veilid-core 0.5.8 plus two fixes from the fork (ADR 0017, rev `e1158844`); the 0.5.8 analysis is
 > `.claude/plans/standards-remediation/evidence/veilid-0.5.8/` (synthesis and slice reports 1–6) and plan step VU.
 > Line citations here are 0.5.7's.
-
+>
 > **Superseded in part.** This document was written without accounting
 > for the bring-your-own-protocol goal (SimpleX / Matrix / atproto
 > alongside Veilid). Under BYOP, §3's suggestion to adopt
@@ -48,7 +48,7 @@ whether our `to_scalar_bytes()` agrees is a real question, not a
 formality. **It does.** Running both derivations against
 ed25519-dalek 2.2 / x25519-dalek 2 on the same seed:
 
-```
+```text
 ours   sk: 2fad39fe…3928f8      veilid sk: 2fad39fe…3928f8   equal: true
 ours   pk: 761d88ec…6edf74      veilid pk: 761d88ec…6edf74   equal: true
 ed→montgomery pk: 761d88ec…6edf74   both match: true

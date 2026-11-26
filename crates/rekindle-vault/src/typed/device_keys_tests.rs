@@ -2,7 +2,11 @@ use super::*;
 
 fn vault() -> (tempfile::TempDir, VaultStore) {
     let dir = tempfile::tempdir().unwrap();
-    let (store, _) = VaultStore::create(&dir.path().join("d.vault"), "pass").unwrap();
+    let (store, _) = VaultStore::create(
+        &dir.path().join("d.vault"),
+        rekindle_test_fixtures::PASSPHRASE,
+    )
+    .unwrap();
     (dir, store)
 }
 

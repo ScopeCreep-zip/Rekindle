@@ -1,27 +1,13 @@
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { produce } from "solid-js/store";
 import { subscribeTransfers } from "../ipc/channels";
-import { transferCommands, type TransferEvent } from "../ipc/commands/dto_transfer";
+import type { TransferEvent } from "../ipc/commands/dto_transfer";
+import { loadTransfers } from "../actions/transfer.actions";
 import { setTransfersState, transfersState } from "../stores/transfers.store";
-import { addToast } from "../stores/toast.store";
 
 // File transfers (plan E7.2 G12): the Host's list, kept by its events. An
 // event for a row this window has not listed (a transfer started while the
 // list was unread) re-reads the Host's list instead of inventing the row.
-
-/** Read the Host's list (`transfer_list`) into the store. */
-export async function loadTransfers(): Promise<void> {
-  try {
-    const rows = await transferCommands.list();
-    setTransfersState({
-      rows: Object.fromEntries(rows.map((r) => [r.attachmentId, r])),
-      order: rows.map((r) => r.attachmentId),
-      loaded: true,
-    });
-  } catch (e) {
-    addToast(String(e), "error");
-  }
-}
 
 function applyTransferEvent(event: TransferEvent): void {
   if (!transfersState.loaded) return;

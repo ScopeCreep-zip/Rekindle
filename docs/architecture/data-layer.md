@@ -483,6 +483,7 @@ Governance is member-sovereign (ADR 0011, `dht_layout.rs`):
 The member registry and channel records below are still SMPL
 `o_cnt: 0` (255 subkeys), written through a slot claimed with keys
 derived from the invite's `slot_seed`, until plan E3.4:
+
 - **Member registry record** — a presence directory, not a ledger.
   Members claim a free subkey on join and overwrite it each
   heartbeat; it never grows. Membership is a predicate over these
@@ -524,7 +525,7 @@ row of a first contact names the group, never the writer.
 Per-identity filesystem cache for chunked attachments managed by
 `rekindle-files`. Path layout:
 
-```
+```text
 <data>/state/{pk}.files/<scope name>/<attachment name>/<chunk_index>.bin
 ```
 

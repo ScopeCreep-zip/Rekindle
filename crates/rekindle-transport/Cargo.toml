@@ -90,8 +90,8 @@ tracing = { workspace = true }
 # `log_capture`: the log-line tests read their lines through it.
 rekindle-utils = { path = "../rekindle-utils", features = [ "test-support" ] }
 # The frame size tests build real bundles over a temporary database.
-rekindle-db = { path = "../rekindle-db", features = [ "test-support" ] }
 proptest = "1"
+rekindle-db = { path = "../rekindle-db", features = [ "test-support" ] }
 # The route trace test reads its lines through a real fmt subscriber.
-tracing-subscriber = { workspace = true }
 tokio = { workspace = true, features = [ "test-util", "macros" ] }
+tracing-subscriber = { workspace = true }

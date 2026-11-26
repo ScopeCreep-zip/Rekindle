@@ -99,20 +99,6 @@ export function handleSelectChannel(channelId: string): void {
   }
 }
 
-/// Mark a specific channel as read (explicit call, e.g. from UI button).
-export async function handleMarkChannelRead(
-  communityId: string,
-  channelId: string,
-  lastMessageId: string,
-): Promise<void> {
-  try {
-    // The Host zeroes its count and publishes `UnreadChanged`.
-    await commands.markChannelRead(communityId, channelId, lastMessageId);
-  } catch (e) {
-    console.error("Failed to mark channel read:", e);
-  }
-}
-
 /// Fetch unread counts from the backend and update the store.
 export async function handleLoadUnreadCounts(communityId: string): Promise<void> {
   try {

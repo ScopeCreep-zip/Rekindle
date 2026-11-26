@@ -2,7 +2,7 @@
 resolver = "2"
 # The Veilid contract tests build veilid-core with `mock-api`, which must never
 # unify into this graph (plan VU decision 6, ADR 0021): their own workspace.
-exclude = ["contract/veilid"]
+exclude = [ "contract/veilid" ]
 members = [
     "src-tauri",
     "crates/vendor/tauri-plugin-wdio-webdriver",
@@ -53,6 +53,7 @@ members = [
     "crates/rekindle-analytics",
     "crates/rekindle-asql",
     "crates/rekindle-netsim",
+    "crates/rekindle-test-fixtures",
     "xtask",
 ]
 # W-1 #12 — `rekindle-cli` and `rekindle-node` are sister artifacts

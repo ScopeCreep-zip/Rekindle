@@ -1,10 +1,27 @@
-//! The workspace source-file walk the checks share (moved whole from
-//! `main.rs`).
+//! Workspace root discovery and source-file walking shared by every check.
 
 use std::path::{Path, PathBuf};
 
-use anyhow::Result;
+use anyhow::{anyhow, Context, Result};
 use ignore::WalkBuilder;
+
+pub(crate) fn workspace_root() -> Result<PathBuf> {
+    // CARGO_MANIFEST_DIR is set when invoked via `cargo run -p xtask`.
+    // Walk up until we find the workspace Cargo.toml.
+    let mut p = std::env::current_dir().context("getting current dir")?;
+    loop {
+        let cargo = p.join("Cargo.toml");
+        if cargo.exists() {
+            let txt = std::fs::read_to_string(&cargo)?;
+            if txt.contains("[workspace]") {
+                return Ok(p);
+            }
+        }
+        if !p.pop() {
+            return Err(anyhow!("could not find workspace root"));
+        }
+    }
+}
 
 /// Walk `dir` for files with any of `exts`, honouring .gitignore and
 /// skipping build/dependency trees.

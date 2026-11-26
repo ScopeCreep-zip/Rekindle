@@ -111,7 +111,7 @@ the dep graph since last quarter need explicit allowlist entries in
 Maintain a running log at `/audit-logs/YYYY-QN.md` (not yet
 created — first quarter post-1.0 starts the log). Each entry:
 
-```
+```text
 ## YYYY-QN audit — YYYY-MM-DD
 
 Auditor: <handle>

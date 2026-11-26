@@ -21,7 +21,7 @@ export type ServerVerdict = { allowed: true } | { allowed: false; reason: Server
 
 /** A row's Join: sent as `launch_game{gameId, server, source: launchSource}` when
  *  joinable; `joinableReason` is present exactly when it is not. */
-export type ServerJoin = {
+type ServerJoin = {
   gameId: number | null;
   server: string | null;
   launchSource: Exclude<JoinSource, "installed">;

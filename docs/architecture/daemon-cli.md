@@ -35,7 +35,7 @@ desktop shell as well.
 
 ## Three crates
 
-```
+```text
               ┌────────────────────────────┐
               │ rekindle (CLI), rekindle-tui│  frontends, over
               │ via rekindle-client        │   rekindle-client
@@ -70,7 +70,7 @@ the daemon track be tested without a running Veilid node.
 
 ## `rekindle-transport` — the unified Veilid boundary
 
-```
+```text
 crates/rekindle-transport/src/
 ├── broadcast/         outbound: sends, DHT writes, route management,
 │                      node lifecycle (only outbound veilid_core importer)
@@ -102,7 +102,7 @@ plus the per-feature operation modules.
 Tier 3, `#![forbid(unsafe_code)]`. No Veilid, no storage: every frontend
 and the daemon link it.
 
-```
+```text
 crates/rekindle-ipc/src/
 ├── server/              bus server (accept loop, per-connection Noise, routing)
 ├── client.rs            BusClient (consumed by rekindle-cli; later rekindle-client)
@@ -134,7 +134,7 @@ Everyone read access, which is why it is replaced. Research:
 
 ## `rekindle-node` — the daemon (`rekindled`)
 
-```
+```text
 crates/rekindle-node/src/
 ├── lib.rs               crate-level docs
 ├── bin/rekindled.rs     the `rekindled` binary
@@ -162,7 +162,7 @@ daemon's socket. The lock is `std::fs::File::try_lock` (`flock` /
 
 ### Lifecycle state machine
 
-```
+```text
        ┌────────────┐
        │  STOPPED   │  no socket, no Veilid node
        └─────┬──────┘
@@ -207,7 +207,7 @@ discriminant comparisons.
 
 ### IPC bus (Noise IK over the local socket)
 
-```
+```text
 Client                                    Daemon (rekindled)
 ──────                                    ──────────────────
 connect to the per-user socket / pipe
@@ -379,14 +379,14 @@ start the daemon at once, the node lock lets one run; the other's
 The CLI starts the daemon for every command except `status` (which
 reports a stopped daemon honestly) and `node stop`.
 
-```
-$ rekindle friend list                 # starts rekindled if needed
-$ rekindle node start                  # detached; returns once it answers
-$ rekindle node start --foreground     # becomes `rekindled` in this terminal
-$ rekindle channel watch -c Dev -C general   # stream until Ctrl-C
-$ rekindle --format jsonl dm watch     # one JSON event per line
-$ rekindle-tui                         # the terminal UI
-$ rekindled                            # or run the host directly
+```sh
+rekindle friend list                 # starts rekindled if needed
+rekindle node start                  # detached; returns once it answers
+rekindle node start --foreground     # becomes `rekindled` in this terminal
+rekindle channel watch -c Dev -C general   # stream until Ctrl-C
+rekindle --format jsonl dm watch     # one JSON event per line
+rekindle-tui                         # the terminal UI
+rekindled                            # or run the host directly
 ```
 
 `channel watch`, `community watch`, `dm watch` and `voice join --watch`

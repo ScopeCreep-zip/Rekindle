@@ -167,8 +167,3 @@ export function callType(scope: VoiceScope): "community" | "dm" {
 export function sessionKey(scope: VoiceScope): string {
   return "community" in scope ? scope.community.channel : scope.dm.peerKey;
 }
-
-/** The community, or `null` for a DM call. */
-export function scopeCommunity(scope: VoiceScope): string | null {
-  return "community" in scope ? scope.community.community : null;
-}

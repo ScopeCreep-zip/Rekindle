@@ -24,7 +24,7 @@ import type { OwnRecordsPhase, OwnRouteClass, RouteAvailability, RoutePauseCause
  * the network before it may start (plan E7.13: Create waits for
  * `canCreateCommunity`).
  */
-export interface NetworkState {
+interface NetworkState {
   attachmentState: string;
   isAttached: boolean;
   publicInternetReady: boolean;
@@ -66,7 +66,7 @@ export interface NetworkState {
 }
 
 /** One own route class down: since when (epoch ms) and why, as the Host says. */
-export interface OwnRouteDown {
+interface OwnRouteDown {
   sinceMs: number;
   reason: string;
 }

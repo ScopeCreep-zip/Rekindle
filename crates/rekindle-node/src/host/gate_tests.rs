@@ -37,7 +37,7 @@ pub(crate) async fn host_with_identity(dir: &tempfile::TempDir) -> (std::sync::A
         host.root(),
         &host.identity_stores(),
         Some("Ann"),
-        "pass",
+        rekindle_test_fixtures::PASSPHRASE,
         1,
         &rekindle_utils::random::OsRandom,
     )
@@ -82,8 +82,17 @@ async fn a_protected_delete_runs_once_on_its_passphrase() {
         proof: IntentProof::Passphrase(passphrase.to_string().into()),
     };
     assert_eq!(code(&host.call(bus(1), commit("wrong")).await), Some(401));
-    assert_eq!(code(&host.call(bus(2), commit("pass")).await), Some(404));
-    let ran = host.call(bus(1), commit("pass")).await;
+    assert_eq!(
+        code(
+            &host
+                .call(bus(2), commit(rekindle_test_fixtures::PASSPHRASE))
+                .await
+        ),
+        Some(404)
+    );
+    let ran = host
+        .call(bus(1), commit(rekindle_test_fixtures::PASSPHRASE))
+        .await;
     assert!(
         matches!(
             ran,
@@ -95,7 +104,9 @@ async fn a_protected_delete_runs_once_on_its_passphrase() {
         "{ran:?}"
     );
     assert!(identity::list(host.root()).unwrap().is_empty());
-    let again = host.call(bus(1), commit("pass")).await;
+    let again = host
+        .call(bus(1), commit(rekindle_test_fixtures::PASSPHRASE))
+        .await;
     assert!(matches!(again, IpcResponse::Ok { .. }), "{again:?}");
 }
 
@@ -120,7 +131,7 @@ async fn cancelled_and_disconnected_actions_are_gone() {
     assert!(matches!(cancelled, IpcResponse::Ok { .. }));
     let commit = |id| IpcRequest::IntentCommit {
         intent_id: id,
-        proof: IntentProof::Passphrase("pass".to_string().into()),
+        proof: IntentProof::Passphrase(rekindle_test_fixtures::PASSPHRASE.to_string().into()),
     };
     assert_eq!(
         code(&host.call(bus(1), commit(first.intent_id)).await),
@@ -147,7 +158,7 @@ async fn ann_with_rotated_verified_friend(
             Caller::shell(),
             IpcRequest::Unlock {
                 identity: ann.clone(),
-                passphrase: "pass".into(),
+                passphrase: rekindle_test_fixtures::PASSPHRASE.into(),
             },
         )
         .await;
@@ -516,7 +527,7 @@ async fn a_person_is_confirmed_by_fingerprint_and_a_removal_drops_the_nickname()
     let (host, ann) = host_with_identity(&dir).await;
     let unlock = IpcRequest::Unlock {
         identity: ann.clone(),
-        passphrase: "pass".into(),
+        passphrase: rekindle_test_fixtures::PASSPHRASE.into(),
     };
     assert!(code(&host.call(Caller::shell(), unlock).await).is_none());
     let bob = hex::encode(rekindle_crypto::Identity::generate().public_key_bytes());

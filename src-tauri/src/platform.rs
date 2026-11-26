@@ -12,7 +12,7 @@
 ///    renderer unconditionally on Linux regressed input handling on
 ///    non-NVIDIA Mesa/Wayland (Pop!_OS): the webview rendered but did not
 ///    receive pointer events, because modern WebKitGTK (2.42+) treats the
-///    DMABuf path as primary and the disabled-fallback path mis-routes input
+///    DMABuf path as primary and the disabled-fallback path misroutes input
 ///    on Wayland subsurfaces. The asymmetric-video fix lives in the codec
 ///    negotiation path (frontend probe removal), not here, so this guard
 ///    stays NVIDIA-only.

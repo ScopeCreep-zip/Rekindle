@@ -170,7 +170,7 @@ daemon never produces. Same one-line-per-variant fix, same file.
 
 Create the `VideoCodec` trait the architecture has been claiming exists.
 
-```
+```text
 crates/rekindle-video/src/codec.rs   (Tier 7, no FFI — trait only)
 
 pub trait VideoEncoder: Send {

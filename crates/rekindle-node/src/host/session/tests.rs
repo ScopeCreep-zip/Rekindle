@@ -28,7 +28,7 @@ async fn writes_come_back_in_the_next_projection() {
         &f.root,
         &f.stores(),
         Some("Ann"),
-        "pass",
+        rekindle_test_fixtures::PASSPHRASE,
         1,
         &rekindle_utils::random::OsRandom,
     )
@@ -157,7 +157,7 @@ async fn the_session_names_no_own_record_before_the_stage_holds_it() {
         &f.root,
         &f.stores(),
         Some("Ann"),
-        "pass",
+        rekindle_test_fixtures::PASSPHRASE,
         1,
         &rekindle_utils::random::OsRandom,
     )
@@ -197,7 +197,7 @@ async fn a_rejoin_records_its_membership_over_the_kept_history() {
         &f.root,
         &f.stores(),
         Some("Bea"),
-        "pass",
+        rekindle_test_fixtures::PASSPHRASE,
         1,
         &rekindle_utils::random::OsRandom,
     )

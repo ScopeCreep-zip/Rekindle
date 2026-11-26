@@ -12,7 +12,7 @@ import type { MemberGroup, TargetModeration } from "../ipc/commands/dto";
 import type { KeyStatus } from "../ipc/channels/community_subscription_events";
 
 /** Convert a single backend FriendInfo to a frontend Friend. */
-export function transformFriend(f: FriendInfo): Friend {
+function transformFriend(f: FriendInfo): Friend {
   return {
     publicKey: f.publicKey,
     displayName: f.displayName,
@@ -64,7 +64,7 @@ export function foldFriendSnapshot(friends: FriendInfo[], held: Record<string, F
 
 /** Backend Message DTO → store Message: our own message's `status` comes
  *  from its stored `sendState`; optimistic sends set it themselves. */
-export function transformMessage(m: IpcMessage): Message {
+function transformMessage(m: IpcMessage): Message {
   const decryptionFailed = m.decryptionFailed ?? m.body === "(decryption failed)";
   return {
     id: m.id, senderId: m.senderId, body: decryptionFailed ? "" : m.body, timestamp: m.timestamp,

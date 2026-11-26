@@ -107,8 +107,10 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{anyhow, Result};
 use clap::{Parser, Subcommand};
+pub(crate) use walk::walk_source_files;
+use walk::workspace_root;
 
 mod allow_reasons;
 mod background_throttling;
@@ -157,6 +159,7 @@ mod skin_silhouette;
 mod sqlite;
 mod supply_chain;
 mod test_code;
+mod test_fixtures;
 mod theme_literals;
 mod veilid_boundary;
 mod veilid_dht_calls;
@@ -164,8 +167,6 @@ mod walk;
 mod wall_clock;
 mod webdriver_release;
 mod woff2;
-
-pub(crate) use walk::walk_source_files;
 
 #[derive(Parser)]
 #[command(
@@ -219,6 +220,8 @@ enum Command {
     CheckSqlite,
     /// Verify the database is reached through `AppState.db`, not Tauri managed state.
     CheckNoManagedDb,
+    /// Verify secret-shaped test literals come from rekindle-test-fixtures (owner 2026-11-26).
+    CheckTestFixtures,
     /// Verify session work spawns through a `SessionScope`, not bare `tokio::spawn`.
     CheckBareSpawn,
     /// Verify code the netsim runs reads no wall clock (`Instant::now`, `SystemTime::now`, …).
@@ -402,6 +405,10 @@ fn dispatch(cmd: &Command) -> Result<()> {
                     Box::new(|| no_managed_db::check_no_managed_db(&root)),
                 ),
                 (
+                    "test-fixtures",
+                    Box::new(|| test_fixtures::check_test_fixtures(&root)),
+                ),
+                (
                     "bare-spawn",
                     Box::new(|| bare_spawn::check_bare_spawn(&root)),
                 ),
@@ -511,6 +518,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
         Command::CheckVeilidDhtCalls => veilid_dht_calls::check_veilid_dht_calls(&root),
         Command::CheckSqlite => sqlite::check_sqlite(&root),
         Command::CheckNoManagedDb => no_managed_db::check_no_managed_db(&root),
+        Command::CheckTestFixtures => test_fixtures::check_test_fixtures(&root),
         Command::CheckBareSpawn => bare_spawn::check_bare_spawn(&root),
         Command::CheckWallClock => wall_clock::check_wall_clock(&root),
         Command::CheckIntentTable => intent_table::check_intent_table(&root),
@@ -571,24 +579,6 @@ fn dispatch(cmd: &Command) -> Result<()> {
         Command::Perf => perf::perf(&root),
         Command::RetrofitAllowReasons { dry_run } => {
             allow_reasons::retrofit_allow_reasons(&root, *dry_run)
-        }
-    }
-}
-
-fn workspace_root() -> Result<PathBuf> {
-    // CARGO_MANIFEST_DIR is set when invoked via `cargo run -p xtask`.
-    // Walk up until we find the workspace Cargo.toml.
-    let mut p = std::env::current_dir().context("getting current dir")?;
-    loop {
-        let cargo = p.join("Cargo.toml");
-        if cargo.exists() {
-            let txt = std::fs::read_to_string(&cargo)?;
-            if txt.contains("[workspace]") {
-                return Ok(p);
-            }
-        }
-        if !p.pop() {
-            return Err(anyhow!("could not find workspace root"));
         }
     }
 }
