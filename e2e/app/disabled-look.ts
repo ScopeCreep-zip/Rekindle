@@ -111,3 +111,54 @@ export async function ownArt(nodeId: string): Promise<string> {
       .catch((e: unknown) => finish(`art not read (${String(e).slice(0, 120)}); under: ${JSON.stringify(under)}`));
   }), nodeId)) as string;
 }
+
+/**
+ * What a node's own art adds on screen, measured without reading the art
+ * (the page cannot read skin:// art: an <img> taints a canvas, and fetch is
+ * refused): the window is shot with the node shown and with it hidden
+ * (`visibility: hidden`, children too), and the pixels that change inside
+ * its box are counted, with that count's share of the box. Near 0 means its
+ * own art draws nothing there; the button seen is another layer's. Also
+ * every element under the box's centre with a background, topmost first,
+ * skin nodes or not (the frame's own art included).
+ */
+export async function artContribution(nodeId: string): Promise<string> {
+  const info = (await browser.execute((nid: string) => {
+    const n = document.querySelector<HTMLElement>(`.skin-tree [data-skin-node="${nid}"]`);
+    if (!n) return null;
+    const r = n.getBoundingClientRect();
+    const under = document
+      .elementsFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+      .filter((e) => getComputedStyle(e).backgroundImage !== "none" || getComputedStyle(e).backgroundColor !== "rgba(0, 0, 0, 0)")
+      .slice(0, 8)
+      .map((e) => {
+        const c = getComputedStyle(e);
+        const node = (e as HTMLElement).dataset.skinNode ?? (e as HTMLElement).closest<HTMLElement>("[data-skin-node]")?.dataset.skinNode ?? "-";
+        return `${e.tagName.toLowerCase()}.${(e as HTMLElement).className || "-"} (${node}) art=${c.backgroundImage === "none" ? "none" : c.backgroundImage.split("/").pop()?.slice(0, 16)} bg=${c.backgroundColor}`;
+      });
+    return { box: [r.left, r.top, r.width, r.height], width: window.innerWidth, under };
+  }, nodeId)) as { box: number[]; width: number; under: string[] } | null;
+  if (!info) return "no node";
+  const shoot = async () => decodePng(Buffer.from(await browser.takeScreenshot(), "base64"));
+  const shown = await shoot();
+  await browser.execute((nid: string) => {
+    const n = document.querySelector<HTMLElement>(`.skin-tree [data-skin-node="${nid}"]`);
+    if (n) n.style.setProperty("visibility", "hidden", "important");
+  }, nodeId);
+  await browser.pause(300);
+  const hidden = await shoot();
+  await browser.execute((nid: string) => {
+    document.querySelector<HTMLElement>(`.skin-tree [data-skin-node="${nid}"]`)?.style.removeProperty("visibility");
+  }, nodeId);
+  const scale = shown.width / info.width;
+  const [x0, y0, w, h] = info.box.map((v) => Math.round(v * scale));
+  let changed = 0;
+  for (let y = Math.max(0, y0); y < Math.min(shown.height, y0 + h); y++) {
+    for (let x = Math.max(0, x0); x < Math.min(shown.width, x0 + w); x++) {
+      const i = (y * shown.width + x) * 4;
+      if (Math.abs(shown.data[i] - hidden.data[i]) + Math.abs(shown.data[i + 1] - hidden.data[i + 1]) + Math.abs(shown.data[i + 2] - hidden.data[i + 2]) > 30) changed++;
+    }
+  }
+  const area = Math.max(1, w * h);
+  return `box ${info.box.map((v) => Math.round(v)).join(",")}: hiding it changes ${changed} of ${area} px (${Math.round((changed / area) * 100)}%); under its centre: ${JSON.stringify(info.under)}`;
+}

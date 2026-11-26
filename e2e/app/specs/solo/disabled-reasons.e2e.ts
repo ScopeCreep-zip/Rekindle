@@ -23,7 +23,7 @@ import { NET_WAIT_MS, press, switchTo, waitUntil } from "../../../walk/helpers.t
 import { BUDDY, SETTINGS, closeSettings, openSettings } from "../../../walk/nav.ts";
 import { createCommunity, createIdentity, newUser, openCommunity, type User } from "../../journeys.ts";
 import { applySkin, skinShown } from "../../journeys_skins.ts";
-import { disabledLookWithBoxes, ownArt } from "../../disabled-look.ts";
+import { artContribution, disabledLookWithBoxes, ownArt } from "../../disabled-look.ts";
 import { shot } from "../../shots.ts";
 import { builtinPacks } from "../../skin-pack.ts";
 
@@ -108,7 +108,7 @@ describe("a disabled node says why (CR1)", function () {
         // Lead: the node's own art's alpha at its box centre (the served
         // image drawn at the node's background size and position), and every
         // node with art under that point (which one draws the button seen).
-        const art = await ownArt(id);
+        const art = `${await ownArt(id)} | contribution: ${await artContribution(id)}`;
         console.log(`[cr1] ${file} ${id} own art: ${art}`);
       }
       console.log(`[cr1] ${file} disabled vs enabled self, pixels changed: ${JSON.stringify(look)} (visibly disabled at 20)`);
