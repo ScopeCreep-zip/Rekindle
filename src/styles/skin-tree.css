@@ -282,6 +282,17 @@
    * safety number; the group's members, rename, invite, leave) keeps one line
    * and scrolls sideways where the pack's box is narrow: no control is
    * hidden, none wraps over the messages (Linux SK17-2 at min size). */
+  /* A slot's shell part (components/skin-tree/slots.tsx): the portal's
+   * container takes the slot's whole box as a flex column, so the part
+   * fills it (a community layout, a message list) and never spills out
+   * (the composer in its edit slot). */
+  .skin-slot-mount {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+  }
   [data-skin-role="slot:chatArea"] :is(.group-chat-header, .chat-peer-status) {
     flex-wrap: nowrap;
     overflow-x: auto;
