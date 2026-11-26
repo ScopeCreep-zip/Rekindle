@@ -15,7 +15,7 @@ import { addToast } from "../stores/toast.store";
 import { errorMessage } from "../utils/error";
 import { isCancelled } from "../ipc/commands/dto";
 import { setLocalSearchScope } from "../stores/local_search.store";
-import { handleMaximize, handleMinimize } from "./titlebar.actions";
+import { handleClose, handleMaximize, handleMinimize } from "./titlebar.actions";
 
 /** Each pack edge's OS resize direction (Tauri `ResizeDirection`). */
 const DIRECTION = {
@@ -49,11 +49,16 @@ export function registerShellRunner(run: ShellRunner): () => void {
   };
 }
 
-/** The operations every window runs the same way: its own frame (minimize,
- *  maximize, the OS drag and resize) and the local search's scope. What
- *  else a window runs is the shell_runners groups it registers. */
+/** The operations every window runs the same way: its own frame (close,
+ *  minimize, maximize, the OS drag and resize) and the local search's
+ *  scope. What else a window runs is the shell_runners groups it
+ *  registers; the buddy list's close hides it to the tray instead, and a
+ *  skin popup's closes it its own way, by runners registered before these. */
 const common: ShellRunner = (op) => {
   switch (op.kind) {
+    case "close":
+      handleClose();
+      return true;
     case "minimize":
       handleMinimize();
       return true;
