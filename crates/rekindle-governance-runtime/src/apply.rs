@@ -247,13 +247,14 @@ async fn write_with<D: GovernanceRuntimeDeps>(
 ) -> Result<Written, GovernanceRuntimeError> {
     if let WriteEntry::Ready(ready) = &entry {
         refuse_out_of_bounds(ready)?;
-        // Validation precedes the barrier: a malformed entry answers 400
-        // at once and is never held (a withdrawn join's leave is decided
-        // before validation, in `write_signed`).
-        if matches!(not_admitted, NotAdmitted::Refuse) {
-            refuse_malformed_now(deps, community_id, ready, landing).await?;
-        }
     }
+    // Validation and our endorsement (ADR 0022 rule 3) precede the barrier:
+    // neither a malformed entry nor an unendorsed device's op is ever held.
+    let (ready, enrols) = match &entry {
+        WriteEntry::Ready(ready) => (Some(&**ready), false),
+        WriteEntry::Built(_, kind) => (None, *kind == PendingGovKind::DeviceKey),
+    };
+    refuse_now(deps, community_id, ready, enrols, landing, not_admitted).await?;
     // The unlock barrier (plan E3.2 S7d-keys.8): nothing is signed before
     // it passed, held writes sign in arrival order, each after our
     // previous op's append landed; a restore signs nothing. A held write
@@ -291,6 +292,7 @@ async fn write_with<D: GovernanceRuntimeDeps>(
         unlock_hold::BarrierSlot::Held(held) => {
             held.echo(&entry);
             let op_id = held.op_id().to_owned();
+            let label = held.label();
             let owned = deps.handle();
             let community = community_id.to_owned();
             deps.spawn_held_write(
@@ -312,7 +314,7 @@ async fn write_with<D: GovernanceRuntimeDeps>(
                         written
                     };
                     if let Err(error) = signed.await {
-                        tracing::warn!(community, %error, "held governance write not made");
+                        unlock_hold::report_refused(&owned, &community, label, &error);
                     }
                 }),
             );
@@ -500,15 +502,23 @@ fn refuse_out_of_bounds(entry: &GovernanceEntry) -> Result<(), GovernanceRuntime
     }
 }
 
-/// [`refuse_invalid`]'s structural half before the unlock barrier, read
-/// under the rebuild lock (register S7l, HIGH-2): a malformed entry is
-/// `Malformed` (400) at once, never held. Permission is judged in the
-/// state the op is signed on, past the barrier.
-async fn refuse_malformed_now<D: GovernanceRuntimeDeps>(
+/// [`refuse_invalid`]'s structural half and our device's endorsement
+/// before the unlock barrier, read under the rebuild lock (register S7l,
+/// HIGH-2): a malformed entry is `Malformed` (400) at once, and an op of a
+/// device whose key the merged device set does not endorse is
+/// `DeviceUnendorsed` at once (ADR 0022 rule 3: refused, never written,
+/// so never held either); a device's own first op (its `MemberJoined`, or
+/// the `DeviceKey` that enrols it) carries its endorsement and is resolved
+/// where it is signed. Permission is judged in the state the op is signed
+/// on, past the barrier. `ready` is the entry when it is known now, and
+/// `enrols` marks a built `DeviceKey` (our enrolment).
+async fn refuse_now<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
-    entry: &GovernanceEntry,
+    ready: Option<&GovernanceEntry>,
+    enrols: bool,
     landing: OpLanding,
+    not_admitted: NotAdmitted,
 ) -> Result<(), GovernanceRuntimeError> {
     let gov_state = {
         let lock = deps.rebuild_lock(community_id);
@@ -517,12 +527,22 @@ async fn refuse_malformed_now<D: GovernanceRuntimeDeps>(
             GovernanceRuntimeError::GovernanceStateMissing(community_id.to_string())
         })?
     };
-    let (pseudo, _) = op_log::own_pseudonym(deps, community_id)?;
-    if validate::well_formed(&pseudo, entry, &gov_state) {
-        Ok(())
-    } else {
-        Err(GovernanceRuntimeError::Malformed)
+    let carries_own = match ready {
+        Some(ready) => {
+            if matches!(not_admitted, NotAdmitted::Refuse) {
+                let (pseudo, _) = op_log::own_pseudonym(deps, community_id)?;
+                if !validate::well_formed(&pseudo, ready, &gov_state) {
+                    return Err(GovernanceRuntimeError::Malformed);
+                }
+            }
+            device_signer::carries_own_endorsement(deps, community_id, ready)?
+        }
+        None => enrols,
+    };
+    if carries_own {
+        return Ok(());
     }
+    device_signer::refuse_unendorsed(deps, community_id, &gov_state)
 }
 
 /// The community's rebuild lock, which a rebuild holds across its fetches

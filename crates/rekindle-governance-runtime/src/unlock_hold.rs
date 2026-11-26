@@ -150,6 +150,27 @@ async fn wait_in_line<D: GovernanceRuntimeDeps>(
     Err(refused)
 }
 
+/// A held write refused when its turn came, nothing signed: its request
+/// was answered "held" at once, so the refusal is told to the user now
+/// (`GovernanceRuntimeEvent::HeldWriteRefused`), never only logged. A
+/// restore is not a refusal: that write stays held and listed, unsigned.
+pub(crate) fn report_refused<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    label: Option<String>,
+    error: &GovernanceRuntimeError,
+) {
+    tracing::warn!(community = community_id, %error, "held governance write not made");
+    if matches!(error, GovernanceRuntimeError::RestoreDetected { .. }) {
+        return;
+    }
+    deps.emit_event(crate::event::GovernanceRuntimeEvent::HeldWriteRefused {
+        community_id: community_id.to_owned(),
+        label,
+        reason: error.to_string(),
+    });
+}
+
 impl HeldGovWrite {
     /// A held write takes effect locally at once: a held `InviteRevoked`
     /// (a refused invite's, queued behind its unlanded `InviteCreated`)
@@ -161,6 +182,13 @@ impl HeldGovWrite {
                 self.barrier.withdraw_invite(invite_id);
             }
         }
+    }
+
+    /// The words the held list shows the write under ("Kick Bea").
+    pub(crate) fn label(&self) -> Option<String> {
+        let view = self.barrier.view()?;
+        let listed = view.pending.into_iter().find(|p| p.op_id == self.op_id)?;
+        Some(listed.label)
     }
 
     /// The id the held list shows the write under.
