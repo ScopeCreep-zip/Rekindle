@@ -178,7 +178,7 @@ async function frameFills(file: string, label: string): Promise<void> {
   // All four edges: the leftmost and rightmost 16 px, and the top and bottom 16 px.
   const off = disagreements(img, cut, [[0, edge], [img.width - edge, img.width]], 12, [[0, edge], [img.height - edge, img.height]]);
   console.log(`[tab] ${file} ${label}: frame=${JSON.stringify(m.art)} tree=${JSON.stringify(m.tree)} window=${JSON.stringify(m.window)} tab=${JSON.stringify(m.tab)} px=${JSON.stringify(px)} outside=${JSON.stringify(m.outside)}`);
-  console.log(`[tab] ${file} ${label} edges vs silhouette (16 px on all four sides): drawn outside ${off.outsideDrawn}, clear inside ${off.insideClear}, edge smoothing ${off.halo}; ${JSON.stringify(off.first)}`);
+  console.log(`[tab] ${file} ${label} edges vs silhouette (16 px on all four sides): drawn outside ${off.outsideDrawn}, clear inside ${off.insideClear}; ${JSON.stringify(off.first)}`);
   await shot(`${file}-${label}-frame`);
   // Lead (Linux, WebKitGTK): a point expected clear but drawn (a tab
   // column's point, or a corner outside the silhouette) is logged with

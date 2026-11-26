@@ -47,7 +47,7 @@ export function disagreements(
   columns?: [number, number][],
   log = 6,
   rows?: [number, number][],
-): { outsideDrawn: number; insideClear: number; halo: number; first: string[] } {
+): { outsideDrawn: number; insideClear: number; first: string[] } {
   const inside = new Uint8Array(img.width * img.height);
   for (const r of cut.rects ?? [{ x: 0, y: 0, width: img.width, height: img.height }]) {
     for (let y = r.y; y < Math.min(r.y + r.height, img.height); y++) inside.fill(1, y * img.width + r.x, y * img.width + Math.min(r.x + r.width, img.width));
@@ -59,21 +59,6 @@ export function disagreements(
     (!columns && !rows) || (columns !== undefined && inBand(x, columns)) || (rows !== undefined && inBand(y, rows));
   let outsideDrawn = 0;
   let insideClear = 0;
-  // A semi-transparent pixel just outside the silhouette, touching it, is
-  // the art's edge smoothing at device scale (Total Chaos's 45-degree
-  // corners): counted apart, never a disagreement. A misplaced layer leaves
-  // opaque or clear runs, which still count.
-  let halo = 0;
-  const touchesInside = (x: number, y: number): boolean => {
-    for (let dy = -1; dy <= 1; dy++) {
-      for (let dx = -1; dx <= 1; dx++) {
-        const nx = x + dx;
-        const ny = y + dy;
-        if ((dx || dy) && nx >= 0 && ny >= 0 && nx < img.width && ny < img.height && inside[ny * img.width + nx] === 1) return true;
-      }
-    }
-    return false;
-  };
   const first: string[] = [];
   for (let i = 0; i < inside.length; i++) {
     const x = i % img.width;
@@ -81,13 +66,9 @@ export function disagreements(
     const alpha = img.data[i * 4 + 3];
     const drawn = alpha >= cut.alphaOpaque;
     if (drawn === (inside[i] === 1)) continue;
-    if (drawn && alpha < 255 && touchesInside(x, Math.floor(i / img.width))) {
-      halo++;
-      continue;
-    }
     if (drawn) outsideDrawn++;
     else insideClear++;
     if (first.length < log) first.push(`(${x},${Math.floor(i / img.width)}) alpha ${alpha} ${drawn ? "drawn outside" : "clear inside"}`);
   }
-  return { outsideDrawn, insideClear, halo, first };
+  return { outsideDrawn, insideClear, first };
 }
