@@ -188,7 +188,7 @@ async function frameFills(file: string, label: string): Promise<void> {
   const alphaAt = (x: number, y: number): number => img.data[(Math.round(y * scale) * img.width + Math.round(x * scale)) * 4 + 3];
   const corners: [number, number][] = [[1, 1], [w - 2, 1], [1, h - 2], [w - 2, h - 2]];
   const drawnClear = [
-    ...(tab ? Object.entries(px).filter(([k]) => Number(k.split(",")[0]) >= w - 10 && k !== tabPoint?.join(",")).filter(([, a]) => a !== 0).map(([k]) => k.split(",").map(Number) as [number, number]) : []),
+    ...(tab ? Object.entries(px).filter(([k]) => Number(k.split(",")[0]) >= w - 10 && k !== tabPoint?.join(",")).filter(([k, a]) => a !== 0 && !inside(...(k.split(",").map(Number) as [number, number]))).map(([k]) => k.split(",").map(Number) as [number, number]) : []),
     ...corners.filter(([x, y]) => !inside(x, y) && alphaAt(x, y) !== 0),
   ];
   // The root paint for every window, so a window drawn clear is the contrast.
@@ -202,7 +202,13 @@ async function frameFills(file: string, label: string): Promise<void> {
   // 110 px in, Space Cowboy's below the top): the four edge bands above,
   // pixel by pixel, are the check; an element's box is not its drawn extent.
   expect({ window: label, edgesOffSilhouette: off.outsideDrawn + off.insideClear, first: off.first }).toEqual({ window: label, edgesOffSilhouette: 0, first: [] });
-  const right = Object.entries(px).filter(([k]) => Number(k.split(",")[0]) >= w - 10 && k !== tabPoint?.join(","));
+  // The column beside a tab is clear where the silhouette leaves it out
+  // (Symbiosis); a pack whose own art fills it (Simple X's white panel down
+  // its right side) draws it, and the edge check above holds those pixels.
+  const right = Object.entries(px).filter(([k]) => {
+    const [x, y] = k.split(",").map(Number);
+    return x >= w - 10 && k !== tabPoint?.join(",") && !inside(x, y);
+  });
   if (!tab) return;
   if (!m.tab || !tabPoint) throw new Error(`${file}: no drawn ${tab.node}`);
   // Its right edge is the window's and it is the tab's height; its width is
