@@ -17,8 +17,15 @@
 //! ground) moved away from the other colour, the smallest move after which
 //! the pair passes ([`lightness::walk`]); only when no side passes that way
 //! does it try through the other colour (text darker than a mid-tone fill,
-//! which only white clears). The base walk (`import::walk`) never crosses.
-//! Each walk has its own limit of [`MAX_CHANGES`].
+//! which only white clears). When no lightness at the role's own chroma
+//! passes either way (lead round 5 e: winamp's `#00ff00` text derives a
+//! `selection.text` whose darkest lightness at that chroma clamps to
+//! `#000b00`), the role loses chroma: its Oklab a and b shrink toward the
+//! achromatic axis at its own hue, the direction CSS Color 4's gamut
+//! mapping takes in OKLCh, keeping the most chroma at which some lightness
+//! passes; pure black or white ends that path ([`reduced`]). The base walk
+//! (`import::walk`) never crosses and never reduces chroma. Each walk has
+//! its own limit of [`MAX_CHANGES`].
 
 use std::collections::BTreeMap;
 use std::convert::Infallible;
@@ -104,8 +111,37 @@ fn sides(m: &Measured, movable: &dyn Fn(&str) -> bool) -> Vec<(String, [u8; 3])>
     out
 }
 
+/// The lightness move of `original` (towards white when `up`) at the most
+/// of its Oklab chroma for which some lightness passes, its hue kept; `None`
+/// when even the achromatic end, pure black or white, does not pass.
+fn reduced(
+    original: [u8; 3],
+    up: bool,
+    mut passes: impl FnMut([u8; 3]) -> bool,
+) -> Option<[u8; 3]> {
+    let [l, a, b] = lightness::oklab(original);
+    let end = if up { 1.0 } else { 0.0 };
+    let at_end = |keep: f64| lightness::from_oklab([end, a * keep, b * keep]);
+    if !passes(at_end(0.0)) {
+        return None;
+    }
+    let (mut lo, mut hi) = (0.0_f64, 1.0_f64);
+    for _ in 0..lightness::STEPS {
+        let mid = f64::midpoint(lo, hi);
+        if passes(at_end(mid)) {
+            lo = mid;
+        } else {
+            hi = mid;
+        }
+    }
+    lightness::walk_lab([l, a * lo, b * lo], up, |c| Ok::<_, Infallible>(passes(c)))
+        .ok()
+        .flatten()
+}
+
 /// The smallest move that settles `m`: every side away from the other
-/// colour first, then every side through it.
+/// colour first, then every side through it, at the side's own chroma;
+/// only then the same with chroma reduced ([`reduced`]).
 fn first_move(
     tokens: &BTreeMap<String, TokenValue>,
     base: Base,
@@ -113,19 +149,25 @@ fn first_move(
     movable: &dyn Fn(&str) -> bool,
 ) -> Option<(String, [u8; 3], [u8; 3])> {
     let sides = sides(m, movable);
-    for cross in [false, true] {
+    for (reduce, cross) in [(false, false), (false, true), (true, false), (true, true)] {
         for (token, other) in &sides {
             let Some(original) = rgb_of(tokens, base, token) else {
                 continue;
             };
             let away = colour::luminance(original) >= colour::luminance(*other);
             let mut trial = tokens.clone();
-            let walked = lightness::walk(original, away != cross, |c| {
+            let mut passes = |c: [u8; 3]| {
                 trial.insert(token.clone(), lightness::color(c));
-                let passes = pairs(&trial, base).iter().any(|p| same(p, m) && p.passes());
-                Ok::<_, Infallible>(passes)
-            });
-            if let Ok(Some(new)) = walked {
+                pairs(&trial, base).iter().any(|p| same(p, m) && p.passes())
+            };
+            let walked = if reduce {
+                reduced(original, away != cross, passes)
+            } else {
+                lightness::walk(original, away != cross, |c| Ok::<_, Infallible>(passes(c)))
+                    .ok()
+                    .flatten()
+            };
+            if let Some(new) = walked {
                 return Some((token.clone(), original, new));
             }
         }
@@ -153,7 +195,7 @@ pub fn settle(
         }
         let Some((token, original, new)) = first_move(tokens, base, &m, movable) else {
             done.unsettled = Some(format!(
-                "no lightness of {} or its ground passes {} on {}",
+                "no lightness or chroma of {} or its ground passes {} on {}",
                 m.fg, m.rule, m.ground
             ));
             return done;
@@ -219,5 +261,61 @@ mod tests {
         assert!(t
             .keys()
             .all(|id| before.contains_key(id) || dialog::is_role(id)));
+    }
+
+    fn role_test_tokens(text: [u8; 3], fill: [u8; 3]) -> BTreeMap<String, TokenValue> {
+        BTreeMap::from([
+            ("accent.fill".to_owned(), lightness::color(fill)),
+            ("selection.text".to_owned(), lightness::color(text)),
+        ])
+    }
+
+    fn chroma(c: [u8; 3]) -> f64 {
+        let [_, a, b] = lightness::oklab(c);
+        a.hypot(b)
+    }
+
+    /// Lead round 5 e: a role that passes by lightness at its own chroma
+    /// keeps that chroma and hue (only its Oklab lightness moves).
+    #[test]
+    fn a_role_that_passes_at_its_chroma_keeps_it() {
+        let original = [0xa0, 0x30, 0x30];
+        let mut t = role_test_tokens(original, [0x20, 0x20, 0x60]);
+        let done = settle(&mut t, Base::Dark, &dialog::is_role);
+        assert_eq!(done.unsettled, None);
+        let moved = done
+            .changes
+            .iter()
+            .find(|c| c.token == "selection.text")
+            .expect("selection.text walks");
+        let [_, a0, b0] = lightness::oklab(original);
+        let [_, a1, b1] = lightness::oklab(moved.new);
+        assert!(
+            (a1 - a0).abs() < 0.01 && (b1 - b0).abs() < 0.01,
+            "{:?} lost chroma: {a0:.3},{b0:.3} -> {a1:.3},{b1:.3}",
+            moved.new
+        );
+        assert!(moved.after_x100.is_some_and(|r| r >= 450), "{moved:?}");
+    }
+
+    /// Lead round 5 e: winamp's `#00ff00` window text derives
+    /// `selection.text`; on the dark base's `accent.fill` #167bc0 no
+    /// lightness at that chroma clears 4.5:1 either way (the dark end
+    /// clamps to #000b00, 4.43:1), so the role loses chroma until one does.
+    /// Fail-without: with no chroma path the walk stops unsettled.
+    #[test]
+    fn a_role_no_lightness_settles_loses_chroma_until_one_does() {
+        let green = [0x00, 0xff, 0x00];
+        let fill = [0x16, 0x7b, 0xc0];
+        let mut t = role_test_tokens(green, fill);
+        let done = settle(&mut t, Base::Dark, &dialog::is_role);
+        assert_eq!(done.unsettled, None, "{:?}", done.changes);
+        let moved = done
+            .changes
+            .iter()
+            .find(|c| c.token == "selection.text")
+            .expect("selection.text walks");
+        assert!(chroma(moved.new) < chroma(green), "{:?}", moved.new);
+        assert!(colour::contrast(moved.new, fill) >= 4.5, "{:?}", moved.new);
     }
 }

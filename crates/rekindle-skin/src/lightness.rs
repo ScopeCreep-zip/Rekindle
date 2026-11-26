@@ -8,7 +8,7 @@ use rekindle_types::dto::skin::TokenValue;
 
 use crate::access::scaled;
 
-const STEPS: u32 = 20;
+pub(crate) const STEPS: u32 = 20;
 
 fn to_gamma(c: f64) -> u8 {
     let c = c.clamp(0.0, 1.0);
@@ -70,9 +70,22 @@ pub fn from_oklab(lab: [f64; 3]) -> [u8; 3] {
 pub fn walk<E>(
     original: [u8; 3],
     up: bool,
+    passes: impl FnMut([u8; 3]) -> Result<bool, E>,
+) -> Result<Option<[u8; 3]>, E> {
+    walk_lab(oklab(original), up, passes)
+}
+
+/// [`walk`] from an Oklab start: its a and b stay, its lightness moves.
+/// The dialog walk (`registry::dialog_walk`) starts here from a colour whose
+/// chroma it has reduced.
+///
+/// # Errors
+/// What `passes` returns.
+pub fn walk_lab<E>(
+    [l, a, b]: [f64; 3],
+    up: bool,
     mut passes: impl FnMut([u8; 3]) -> Result<bool, E>,
 ) -> Result<Option<[u8; 3]>, E> {
-    let [l, a, b] = oklab(original);
     let end = if up { 1.0 } else { 0.0 };
     let at = |t: f64| from_oklab([l + (end - l) * t, a, b]);
     if !passes(at(1.0))? {

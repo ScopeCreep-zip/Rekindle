@@ -37,7 +37,9 @@ fn rgb(t: &BTreeMap<String, TokenValue>, id: &str) -> [u8; 3] {
 /// keeps the roles of its last import. The row stays red until its source
 /// is found; the reason is read from the tree, never a list here.
 fn unset_reason(id: &str) -> &'static str {
-    let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../legacy/skins").join(id);
+    let tree = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../legacy/skins")
+        .join(id);
     if tree.is_dir() {
         "its source is in legacy/skins: re-import it (a refused import names the pair the walk cannot settle)"
     } else {
@@ -55,7 +57,11 @@ fn every_builtin_sets_every_dialog_role() {
         let t = tokens_of(pack.id);
         let missing: BTreeSet<&str> = dialog::roles().filter(|id| !t.contains_key(*id)).collect();
         if !missing.is_empty() {
-            unset.push(format!("{}: {missing:?} unset: {}", pack.id, unset_reason(pack.id)));
+            unset.push(format!(
+                "{}: {missing:?} unset: {}",
+                pack.id,
+                unset_reason(pack.id)
+            ));
         }
     }
     assert!(unset.is_empty(), "{unset:#?}");
@@ -103,8 +109,7 @@ fn derived(t: &BTreeMap<String, TokenValue>, base: Base, id: &str) -> Option<Tok
 fn xfire_classic_is_served_every_dialog_role_from_its_own_colours() {
     let (t, base) = variant_of("xfire-classic");
     let served = resolve(ENTRIES, base, &t);
-    let view: BTreeMap<&str, TokenValue> =
-        served.iter().map(|(e, v)| (e.id, v.clone())).collect();
+    let view: BTreeMap<&str, TokenValue> = served.iter().map(|(e, v)| (e.id, v.clone())).collect();
     let mut filled = t.clone();
     dialog::fill(&mut filled, base);
     let moved = dialog_walk::settle(&mut filled, base, &dialog::is_role).changes;
@@ -176,7 +181,9 @@ fn ini_packs_derive_the_roles_they_do_not_name() {
         ] {
             let d = entry_in(ENTRIES, role).unwrap().derivation.unwrap();
             let moved = walked(notice, role)
-                || d.sources().iter().any(|s| dialog::is_role(s) && walked(notice, s));
+                || d.sources()
+                    .iter()
+                    .any(|s| dialog::is_role(s) && walked(notice, s));
             let mut unset = t.clone();
             unset.remove(role);
             assert!(
