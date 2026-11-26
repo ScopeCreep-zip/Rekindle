@@ -83,18 +83,25 @@ fn pack_of(bytes: &[u8]) -> Pack {
 /// title columns. SK15: a pack whose Communities clone copies a worded
 /// tab (Total Chaos, xslimfire, Alloy, XGlow) decodes that tab's art once
 /// more, to measure the copied word's style (`skin_tree::label_style`).
+/// DIS2: decodes = the stylesheet's own + each distinct image of the
+/// (Normal, Disabled) piece pairs whose hashes differ, decoded once per
+/// serve to measure whether the Disabled look is visibly the pack's
+/// (`skin_tree::disabled`): Symbiosis 33 + 70, xfire-classic 24 + 22,
+/// Onyx 10 + 28, Space Cowboy 6 + 28, StealthX 6 + 38, Total Chaos 11 + 30,
+/// xslimfire 10 + 30; Combat, Alloy, Simple X and XGlow ship no Disabled
+/// state (+ 0).
 const PINNED: [(&str, [u64; 8]); 11] = [
-    ("symbiosis", [39220, 5817, 19277, 26, 0, 245_125, 33, 33]),
+    ("symbiosis", [39220, 5817, 19277, 26, 0, 245_125, 103, 103]),
     (
         "xfire-classic",
-        [705_960, 40618, 79010, 24, 0, 215_710, 24, 24],
+        [705_960, 40618, 79010, 24, 0, 215_710, 46, 46],
     ),
     ("combat", [0, 66146, 86310, 15, 0, 147_075, 15, 15]),
-    ("onyx", [0, 660, 2496, 10, 0, 98050, 10, 10]),
-    ("spacecowboy", [0, 3336, 6966, 6, 0, 58830, 6, 6]),
-    ("stealthx", [0, 3522, 5040, 6, 0, 58830, 6, 6]),
-    ("total-chaos", [0, 715_159, 1_117_134, 51, 0, 68635, 11, 11]),
-    ("xslimfire", [1_823_730, 10382, 31110, 9, 0, 68635, 10, 10]),
+    ("onyx", [0, 660, 2496, 10, 0, 98050, 38, 38]),
+    ("spacecowboy", [0, 3336, 6966, 6, 0, 58830, 34, 34]),
+    ("stealthx", [0, 3522, 5040, 6, 0, 58830, 44, 44]),
+    ("total-chaos", [0, 715_159, 1_117_134, 51, 0, 68635, 41, 41]),
+    ("xslimfire", [1_823_730, 10382, 31110, 9, 0, 68635, 40, 40]),
     ("alloy", [0, 526, 1734, 12, 0, 117_660, 16, 16]),
     ("simple-x", [0, 4000, 8514, 12, 0, 117_660, 12, 12]),
     ("xglow", [0, 32, 126, 3, 0, 29415, 7, 7]),
