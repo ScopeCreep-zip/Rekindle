@@ -1,11 +1,11 @@
 // FX3 (no local key mint): a member missing a rotated community key waits
 // for a key holder, and is told. Cara (fleet) creates a community; Ari (the
-// app), Bea, Dan and Eve (fleet) join: five, so a rotation can be confirmed
-// without Ari (ADR 0018: a strict majority of the previous epoch's eligible
-// rotators confirms it; with three, Ari's own confirmation would be needed).
-// Ari logs out; Cara kicks Bea, which starts the rotation; Cara, Dan and Eve
-// confirm generation 2 (waited on Cara's `community info`). The three go
-// offline; Ari unlocks and learns generation 2 from the governance state,
+// app), Bea, Dan and Eve (fleet) join. Ari logs out; Cara kicks Bea, and
+// the member the cascade elects rotates the key at once (rekindle-mek-
+// rotation rotate.rs on a departure; ADR 0018's majority ballots are E3.5,
+// and five members keep the spec valid then: a majority without Ari). Once
+// Cara's `community info` reports generation 2, Cara, Dan and Eve, every
+// holder whoever rotated, go offline; Ari unlocks and learns generation 2 from the governance state,
 // with no holder online: his community window says "Waiting for the
 // community key from a member…" (Pending; shot). Cara comes back, answers his
 // key request, and the notice goes (Current; shot). The Host path is netsim
@@ -47,13 +47,13 @@ describe("a rotated key we lack: pending until a holder answers, then current", 
     await stopFleet(peers);
   });
 
-  it("while Ari is away Cara kicks Bea, the rotation is confirmed without Ari, and every key holder goes offline", async () => {
+  it("while Ari is away Cara kicks Bea, generation 2 is minted without Ari, and every key holder goes offline", async () => {
     const [cara, bea, dan, eve] = peers;
     await logOut(browser, me);
     // The CLI kicks by pseudonym (the 64 hex community info serves).
     await peerKick(cara, anchor, await peerOwnPseudonym(bea, anchor));
-    // The key holders go offline only once generation 2 is confirmed (Cara's
-    // `community info` `mekGeneration`, the confirmed one) and her kick and
+    // The key holders go offline only once Cara holds generation 2 (her
+    // `community info` `mekGeneration`, the window's source) and her kick and
     // the rotation have landed on the DHT: no op of hers still publishing
     // (`opPublications` empty) and no barrier holding her writes (`catchUp`
     // absent). Her member count flips locally before publication.
@@ -71,9 +71,9 @@ describe("a rotated key we lack: pending until a holder answers, then current", 
       NET_WAIT_MS * 2,
       "",
     ).catch(() => {
-      throw new Error(`generation 2 was never confirmed and landed (Cara's community info: ${last})`);
+      throw new Error(`generation 2 never reached Cara and landed (Cara's community info: ${last})`);
     });
-    console.log(`[key] generation 2 confirmed, Cara's ops landed: ${last}`);
+    console.log(`[key] Cara at generation 2, ops landed: ${last}`);
     // Every member that holds generation 2 goes offline: no holder can answer Ari.
     await Promise.all([cara.pause(), dan.pause(), eve.pause()]);
   });
