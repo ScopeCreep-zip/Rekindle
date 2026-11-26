@@ -3,9 +3,11 @@
 //! pairwise control frames, the receive arms and the group admission.
 //!
 //! Every lifecycle step returns a frame and the members it goes to; each
-//! goes over that member's pairwise session as a `friend_handshake` outbox
-//! row ([`crate::operations::dm::handshake::enqueue_when_ready`]), sent
-//! until it settles and survives a restart. The keys inside are never
+//! goes over that member's pairwise session: an entry of our DM chain to an
+//! accepted friend (plan RV2c, [`crate::operations::dm::friend_control`]),
+//! a `friend_handshake` outbox row to any other member
+//! ([`crate::operations::dm::handshake::enqueue_when_ready`]), sent until
+//! it settles and survives a restart. The keys inside are never
 //! printed.
 
 mod admission;
@@ -15,6 +17,7 @@ pub mod lobby;
 mod pairwise;
 pub mod receive;
 mod rename;
+pub mod rendezvous;
 pub mod retire;
 mod review;
 mod room;
@@ -40,7 +43,7 @@ pub(crate) mod first_contact {
 use rekindle_codec::capnp_codec::direct::{DirectBody, GroupId};
 use rekindle_dm::{DmError, Outbound};
 
-use crate::operations::dm::handshake;
+use crate::operations::dm::friend_control;
 use rekindle_types::group_dm::GroupDmRosterMember;
 
 use crate::operations::friend::{state, FriendError, FriendHost};
@@ -76,10 +79,12 @@ pub fn parse_group_id(text: &str) -> Result<GroupId, FriendError> {
         .map_err(|_| FriendError::Invalid("group id is not 16 bytes".into()))
 }
 
-/// Commit `out`'s frame to every member it names, one handshake row each.
+/// Commit `out`'s frame to every member it names: an entry of our DM chain
+/// to a member who is our accepted friend (plan RV2c,
+/// [`friend_control::enqueue_when_ready`]), a handshake row to any other.
 /// A member whose session cannot be opened yet (their prekey record not
 /// readable) gets the frame committed to wait for it
-/// ([`handshake::enqueue_when_ready`], finding GA1): the step is committed
+/// ([`crate::operations::dm::handshake::enqueue_when_ready`], finding GA1): the step is committed
 /// at once and sent when the session opens. A member whose row could not
 /// be framed or stored does not stop the rest; the first such error is
 /// returned once all were tried.
@@ -94,7 +99,7 @@ pub(crate) async fn send_pairwise<F>(
     let body = wrap(out.frame);
     let mut first_error = None;
     for to in &out.to {
-        if let Err(e) = handshake::enqueue_when_ready(host, to, &body).await {
+        if let Err(e) = friend_control::enqueue_when_ready(host, to, &body).await {
             tracing::warn!(to = %to, kind = ?body.type_id(), error = %e,
                 "group frame not committed to this member");
             first_error.get_or_insert(e);
@@ -129,11 +134,85 @@ pub async fn create(
     let gid = rekindle_dm::group::group_id_hex(&group_id);
     let chain = host.group_chain_writer(&gid).await?;
     let deps = host.group_dm()?;
-    let created = rekindle_dm::create(deps.as_ref(), group_id, name, me, others, &chain.record_key)
-        .await
-        .map_err(|e| friend_error(&e))?;
-    send_pairwise(host, created.invite, DirectBody::GroupDmInvite).await?;
+    let mint = mint_rendezvous(host, &gid).await?;
+    let created = rekindle_dm::create(
+        deps.as_ref(),
+        group_id,
+        name,
+        me,
+        others,
+        &chain.record_key,
+        &mint,
+    )
+    .await
+    .map_err(|e| friend_error(&e))?;
+    host.sync_group_rendezvous().await;
+    send_each(host, created.invites, DirectBody::GroupDmInvite).await?;
     Ok(gid)
+}
+
+/// [`send_pairwise`] for one frame per member (each its own rendezvous
+/// slot and writer): every frame is tried, the first error returned.
+async fn send_each<F>(
+    host: &dyn FriendHost,
+    outs: Vec<Outbound<F>>,
+    wrap: fn(F) -> DirectBody,
+) -> Result<(), FriendError> {
+    let mut first_error = None;
+    for out in outs {
+        if let Err(e) = send_pairwise(host, out, wrap).await {
+            first_error.get_or_insert(e);
+        }
+    }
+    first_error.map_or(Ok(()), Err)
+}
+
+/// Mint `group_id`'s rendezvous record (plan decision 67 item 3) through
+/// the pool, as a request inbox is (`inbox::new_inbox_for`): eight fresh
+/// one-time writers, the record created locally under their schema and put
+/// on the network by its owner subkey's one write ([`OPENED`]). The owner
+/// keypair is never kept (the owner subkey is written once, here); the
+/// writers go to the vault before any invite names the record.
+///
+/// [`OPENED`]: rekindle_types::dht_layout::group_rendezvous::OPENED
+///
+/// # Errors
+/// The record could not be created or opened, or the vault write failed.
+async fn mint_rendezvous(
+    host: &dyn FriendHost,
+    group_id: &str,
+) -> Result<rekindle_dm::RendezvousMint, FriendError> {
+    use rekindle_types::dht_layout::group_rendezvous as layout;
+    let signers: Vec<rekindle_secrets::ed25519_dalek::SigningKey> = (0..layout::WRITERS)
+        .map(|_| {
+            let mut secret = zeroize::Zeroizing::new([0u8; 32]);
+            host.rng().fill(secret.as_mut_slice());
+            rekindle_secrets::ed25519_dalek::SigningKey::from_bytes(&secret)
+        })
+        .collect();
+    let publics: [[u8; 32]; layout::WRITERS as usize] =
+        std::array::from_fn(|i| signers[i].verifying_key().to_bytes());
+    let pool = crate::operations::friend::inbox::records(host)?;
+    let (lease, record_key, _owner) = pool
+        .create(&rekindle_records::schema::group_rendezvous(&publics), None)
+        .await
+        .map_err(|e| FriendError::Failed(format!("group rendezvous not created: {e}")))?;
+    let opened = pool
+        .set(lease, layout::OWNER_SUBKEY, layout::OPENED.to_vec(), None)
+        .await
+        .and_then(|outcome| outcome.require_stored(layout::OWNER_SUBKEY));
+    pool.release(lease).await;
+    opened.map_err(|e| FriendError::Failed(format!("group rendezvous not opened: {e}")))?;
+    let writers: Vec<String> = signers
+        .iter()
+        .map(rekindle_crypto::keypair_text::keypair_text_from_signing)
+        .collect();
+    let mint = rekindle_dm::RendezvousMint {
+        record_key,
+        writers,
+    };
+    host.keep_group_rendezvous(group_id, &mint)?;
+    Ok(mint)
 }
 
 /// Grow `group_id`'s roster by `members` (our friends; plan E7.2 G8,
@@ -162,11 +241,14 @@ pub async fn invite(
         )));
     }
     let added = friend_members(host, members)?;
-    let grown = rekindle_dm::grow(deps.as_ref(), &id, added)
+    let mint = host
+        .group_rendezvous_writers(group_id)?
+        .ok_or_else(|| FriendError::Invalid("the group has no rendezvous record".into()))?;
+    let grown = rekindle_dm::grow(deps.as_ref(), &id, added, &mint)
         .await
         .map_err(|e| friend_error(&e))?;
-    let invited = send_pairwise(host, grown.invite, DirectBody::GroupDmInvite).await;
-    let told = send_pairwise(host, grown.grow, DirectBody::GroupDmRosterGrow).await;
+    let invited = send_each(host, grown.invites, DirectBody::GroupDmInvite).await;
+    let told = send_each(host, grown.grows, DirectBody::GroupDmRosterGrow).await;
     invited.and(told)
 }
 
@@ -212,6 +294,7 @@ pub async fn accept(host: &dyn FriendHost, group_id: &str) -> Result<(), FriendE
     let out = rekindle_dm::accept(deps.as_ref(), &id, &chain.record_key)
         .await
         .map_err(|e| friend_error(&e))?;
+    host.sync_group_rendezvous().await;
     send_pairwise(host, out, DirectBody::GroupDmAccept).await
 }
 
@@ -240,10 +323,14 @@ pub async fn leave(host: &dyn FriendHost, group_id: &str) -> Result<(), FriendEr
     let out = rekindle_dm::leave(deps.as_ref(), &parse_group_id(group_id)?)
         .await
         .map_err(|e| friend_error(&e))?;
+    // The group is gone: our column's watch goes with its row, and, as its
+    // creator, the writers we minted (plan decision 67 item 3).
+    host.sync_group_rendezvous().await;
+    let forgot = host.forget_group_rendezvous(group_id);
     let members = out.to.clone();
     let sent = send_pairwise(host, out, DirectBody::GroupDmLeave).await;
     pairwise::drop_sessions(host, &members).await;
-    sent
+    sent.and(forgot)
 }
 
 /// We blocked `peer` (`friend::block`, whose transaction dropped our

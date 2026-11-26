@@ -578,6 +578,10 @@ impl OutboxDeps for HostOutbox {
         self.senders.append(kind, stream, frames).await
     }
 
+    async fn call(&self, kind: StreamKind, stream: &str, frame: Vec<u8>) -> AttemptOutcome {
+        self.senders.call(kind, stream, frame).await
+    }
+
     fn publish(&self, change: StateChange) {
         // No subscriber yet is not an error: the state is in the database.
         let _ = self.changes.send(change);

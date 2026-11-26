@@ -34,6 +34,7 @@ async fn a_group_its_keys_and_a_held_invite_are_the_identitys() {
         own,
         others,
         &format!("VLD0:{}", "Q".repeat(43)),
+        &crate::host::group_dm_tests::rendezvous_mint(),
     )
     .await
     .unwrap();
@@ -45,13 +46,13 @@ async fn a_group_its_keys_and_a_held_invite_are_the_identitys() {
         .await
         .unwrap()
         .unwrap();
-    assert_eq!(*key.as_bytes(), created.invite.frame.creator_sender_key);
-    rekindle_dm::group::verify_invite(&created.invite.frame, &deps.own_identity())
+    assert_eq!(*key.as_bytes(), created.invites[0].frame.creator_sender_key);
+    rekindle_dm::group::verify_invite(&created.invites[0].frame, &deps.own_identity())
         .expect("the invite is signed by the identity");
 
     let pending = PendingInvite {
         from: "b".repeat(64),
-        invite: created.invite.frame.clone(),
+        invite: created.invites[0].frame.clone(),
     };
     deps.stash_invite(&pending).await.unwrap();
     assert_eq!(deps.take_invite(&gid).await.unwrap(), Some(pending));
@@ -94,6 +95,7 @@ async fn a_member_who_is_not_a_friend_is_admitted_for_the_group_kinds_only() {
         member(hex::encode(owner), 'a'),
         others,
         &format!("VLD0:{}", "Q".repeat(43)),
+        &crate::host::group_dm_tests::rendezvous_mint(),
     )
     .await
     .unwrap();
@@ -165,6 +167,7 @@ async fn a_groups_members_are_labelled_by_name_never_by_key() {
         member(me.clone(), 'a'),
         vec![member(b.clone(), 'b'), member(c.clone(), 'c')],
         &format!("VLD0:{}", "Q".repeat(43)),
+        &crate::host::group_dm_tests::rendezvous_mint(),
     )
     .await
     .unwrap();
@@ -185,4 +188,13 @@ async fn a_groups_members_are_labelled_by_name_never_by_key() {
             (c, "member c (not a friend)".to_owned()),
         ]
     );
+}
+
+/// A minted rendezvous record (plan decision 67 item 3) for the tests that
+/// create a group through `rekindle_dm::create`.
+pub(crate) fn rendezvous_mint() -> rekindle_dm::RendezvousMint {
+    rekindle_dm::RendezvousMint {
+        record_key: format!("VLD0:{}", "R".repeat(43)),
+        writers: (0..8).map(|i| format!("VLD0:writer-{i}")).collect(),
+    }
 }

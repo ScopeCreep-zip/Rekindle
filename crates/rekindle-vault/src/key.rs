@@ -114,6 +114,11 @@ pub enum VaultKey {
     DmParticipantOwner {
         conversation: String,
     },
+    /// A group DM we created: its rendezvous record's eight one-time
+    /// writers (plan decision 67 item 3), each member given only its own.
+    GroupRendezvousWriters {
+        group: String,
+    },
 
     /// Our identity rotation in flight (audit 2026-10-20 R-2): the new
     /// secret and its prekey set's mint seed, journalled before the first
@@ -142,6 +147,7 @@ impl VaultKey {
             | Self::DeviceVaultSecret
             | Self::RequestInboxOwnerKeypair { .. }
             | Self::DmParticipantOwner { .. }
+            | Self::GroupRendezvousWriters { .. }
             | Self::PendingRotation => "identity",
             Self::CommunityMek { .. }
             | Self::CommunityMekGeneration { .. }
@@ -187,6 +193,7 @@ impl VaultKey {
             Self::DmParticipantOwner { conversation } => {
                 ("dm_participant_owner", vec![s(conversation)])
             }
+            Self::GroupRendezvousWriters { group } => ("group_rendezvous_writers", vec![s(group)]),
             Self::PendingRotation => ("pending_rotation", vec![]),
             Self::CommunityMek { community } => ("community_mek", vec![s(community)]),
             Self::CommunityMekGeneration {
@@ -262,6 +269,7 @@ impl VaultKey {
             ("dm_participant_owner", [c]) => Self::DmParticipantOwner {
                 conversation: c.clone(),
             },
+            ("group_rendezvous_writers", [g]) => Self::GroupRendezvousWriters { group: g.clone() },
             ("pending_rotation", []) => Self::PendingRotation,
             ("community_mek", [c]) => Self::CommunityMek {
                 community: c.clone(),
@@ -371,6 +379,7 @@ mod tests {
             VaultKey::SlotKeypair { community: c() },
             VaultKey::RequestInboxOwnerKeypair { record: c() },
             VaultKey::DmParticipantOwner { conversation: c() },
+            VaultKey::GroupRendezvousWriters { group: c() },
             VaultKey::RegistryKeypair { community: c() },
             VaultKey::SlotSeed { community: c() },
             VaultKey::MemberRecordOwner { community: c() },

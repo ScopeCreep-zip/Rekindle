@@ -53,6 +53,11 @@ struct Store {
     /// How many appends started, and what holds each until notified.
     appends: usize,
     hold: Option<Arc<tokio::sync::Notify>>,
+    /// How many calls started ([`OutboxDeps::call`]), what holds each until
+    /// notified, and their scripted outcomes (`Sent`, a receipt, when none).
+    calls: usize,
+    call_hold: Option<Arc<tokio::sync::Notify>>,
+    call_outcomes: VecDeque<AttemptOutcome>,
     /// Streams whose attempts never resolve (an unanswered call).
     hang: HashSet<String>,
     /// The store reads every stream as ordered, as the SQL's `due` does
@@ -335,6 +340,18 @@ impl OutboxDeps for Fake {
         }
         vec![AttemptOutcome::Sent; f.len()]
     }
+    async fn call(&self, _: StreamKind, _: &str, _: Vec<u8>) -> AttemptOutcome {
+        let hold = {
+            let mut s = self.store.lock();
+            s.calls += 1;
+            s.call_hold.clone()
+        };
+        if let Some(hold) = hold {
+            hold.notified().await;
+        }
+        let mut s = self.store.lock();
+        s.call_outcomes.pop_front().unwrap_or(AttemptOutcome::Sent)
+    }
     async fn land(
         &self,
         client_id: &str,
@@ -425,6 +442,7 @@ fn advance(o: &Outbox<Fake>, ms: i64) {
 
 mod channel_post;
 
+mod calling;
 mod landing;
 
 mod media_key;

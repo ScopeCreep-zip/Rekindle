@@ -241,6 +241,35 @@ pub trait FriendHost: Send + Sync {
         &self,
         group_id: &str,
     ) -> Result<crate::operations::dm::stream::ParticipantWriter, FriendError>;
+    /// Keep the eight writers of `group_id`'s (32 hex) rendezvous record we
+    /// minted (plan decision 67 item 3) in the vault.
+    ///
+    /// # Errors
+    /// The vault is locked or its write failed.
+    fn keep_group_rendezvous(
+        &self,
+        group_id: &str,
+        mint: &rekindle_dm::RendezvousMint,
+    ) -> Result<(), FriendError>;
+    /// The writers of `group_id`'s rendezvous record, when we minted it.
+    ///
+    /// # Errors
+    /// The vault is locked or its read failed.
+    fn group_rendezvous_writers(
+        &self,
+        group_id: &str,
+    ) -> Result<Option<rekindle_dm::RendezvousMint>, FriendError>;
+    /// Forget the writers of `group_id`'s rendezvous record (we left the
+    /// group, so its creator holds them no longer; plan decision 67 item 3).
+    ///
+    /// # Errors
+    /// The vault is locked or its delete failed.
+    fn forget_group_rendezvous(&self, group_id: &str) -> Result<(), FriendError>;
+    /// Hold and watch exactly our column of every group's rendezvous record
+    /// we hold a place in (`repo::group_dm_rendezvous`, plan decision 67
+    /// item 3): one not held is opened and watched (an accept, a create),
+    /// and one whose group is gone (a leave) is released.
+    async fn sync_group_rendezvous(&self);
     /// Our saved group chain for `group_id` (32 hex) and its writer, when
     /// held; never creates one (the retire tick, plan E2.6).
     async fn held_group_chain_writer(

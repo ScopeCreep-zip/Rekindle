@@ -80,7 +80,7 @@ pub enum Called {
 /// E2.5, D23): it is applied as it comes, and the sender's chain, which
 /// is authoritative, is diffed for anything before it that was lost.
 pub async fn receive(host: &dyn FriendHost, datagram: &[u8]) -> Routed {
-    receive_from(host, datagram, false).await
+    receive_from(host, datagram, false, None).await
 }
 
 /// [`receive`] for what landed in one of our requests' reply inboxes (plan
@@ -89,10 +89,27 @@ pub async fn receive(host: &dyn FriendHost, datagram: &[u8]) -> Routed {
 /// `Liveness::reply_landed`), which rotates our General route unless its
 /// call copy arrives over the route within the hint window.
 pub async fn receive_reply(host: &dyn FriendHost, datagram: &[u8]) -> Routed {
-    receive_from(host, datagram, true).await
+    receive_from(host, datagram, true, None).await
 }
 
-async fn receive_from(host: &dyn FriendHost, datagram: &[u8], reply: bool) -> Routed {
+/// [`receive`] for an entry of a group's rendezvous record (plan decision
+/// 67 item 3): the same admission and roster gate ([`frame::open`]), and
+/// applied only when its sender is `member`, the one the creator's signed
+/// plan gives the row it was written to. Veilid refuses a write by any key
+/// but the row's writer (0.5.8 `veilid_api/types/dht/derivation.rs:191-235`),
+/// but a departed member keeps its row's writer and a newcomer may be given
+/// the row, so the sender the `PreKeyInit` proves is checked against the
+/// plan: another member's entry is refused, logged and never applied.
+pub async fn receive_from_member(host: &dyn FriendHost, member: &str, datagram: &[u8]) -> Routed {
+    receive_from(host, datagram, false, Some(member)).await
+}
+
+async fn receive_from(
+    host: &dyn FriendHost,
+    datagram: &[u8],
+    reply: bool,
+    member: Option<&str>,
+) -> Routed {
     let Some(bytes) = dm::unwire(datagram) else {
         tracing::warn!(len = datagram.len(), "dropping untagged 1:1 message");
         return Routed::Handled;
@@ -105,6 +122,12 @@ async fn receive_from(host: &dyn FriendHost, datagram: &[u8], reply: bool) -> Ro
             return Routed::Handled;
         }
     };
+    if member.is_some_and(|m| m != opened.sender_hex) {
+        // No name or key: the scrub rule.
+        tracing::warn!("refusing a rendezvous entry from a member the plan does not give its row");
+        frame::processed(host, &opened);
+        return Routed::Handled;
+    }
     if reply {
         if let Ok(node) = host.node() {
             node.liveness().reply_landed(&opened.sender_hex, digest);

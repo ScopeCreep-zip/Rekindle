@@ -45,6 +45,21 @@ impl Netsim {
             .collect()
     }
 
+    /// The subkeys `node` watches of the record `key`, over every replica
+    /// (empty when it holds no watch of it).
+    #[must_use]
+    pub fn watched_subkeys(&self, node: usize, key: &str) -> BTreeSet<u32> {
+        let inner = self.net.inner.lock();
+        inner
+            .records
+            .get(key)
+            .into_iter()
+            .flat_map(|r| r.replicas.iter())
+            .flat_map(|x| x.watches.iter().filter(|w| w.node == node))
+            .flat_map(|w| w.subkeys.iter().copied())
+            .collect()
+    }
+
     /// Watches a replica refused at its watch limit, since the start.
     #[must_use]
     pub fn watch_refusals(&self) -> u64 {

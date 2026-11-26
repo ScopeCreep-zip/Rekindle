@@ -33,6 +33,56 @@ pub struct PendingInvite {
     pub invite: GroupDmInvite,
 }
 
+/// A group rendezvous record the creator minted (plan decision 67 item
+/// 3): its key and the keypair text of each of its eight one-time writers,
+/// writer `i` for slot `i`. Only the creator holds every writer; each
+/// member is given its own in its invite.
+#[derive(Clone, PartialEq, Eq)]
+pub struct RendezvousMint {
+    pub record_key: String,
+    pub writers: Vec<String>,
+}
+
+impl std::fmt::Debug for RendezvousMint {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RendezvousMint")
+            .field("record_key", &self.record_key)
+            .finish_non_exhaustive()
+    }
+}
+
+/// Our place in a group's rendezvous record (a `group_dm_rendezvous`
+/// row): our slot, our one-time writer of its row, and every member's
+/// slot from the creator's signed plan, `(identity, slot)`.
+#[derive(Clone, PartialEq, Eq)]
+pub struct RendezvousSlot {
+    pub record_key: String,
+    pub slot: u8,
+    pub writer: String,
+    pub slots: Vec<(String, u8)>,
+}
+
+impl RendezvousSlot {
+    /// The member assigned to `slot` by the plan, if any.
+    #[must_use]
+    pub fn member_at(&self, slot: u8) -> Option<&str> {
+        self.slots
+            .iter()
+            .find(|(_, s)| *s == slot)
+            .map(|(member, _)| member.as_str())
+    }
+}
+
+impl std::fmt::Debug for RendezvousSlot {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RendezvousSlot")
+            .field("record_key", &self.record_key)
+            .field("slot", &self.slot)
+            .field("slots", &self.slots)
+            .finish_non_exhaustive()
+    }
+}
+
 /// The host's side of the group-DM owner.
 #[async_trait]
 pub trait GroupDmDeps: Send + Sync {
@@ -109,6 +159,16 @@ pub trait GroupDmDeps: Send + Sync {
 
     /// Take (and forget) the pending invite to `group_id`.
     async fn take_invite(&self, group_id: &GroupId) -> Result<Option<PendingInvite>, DmError>;
+
+    /// Store our place in `group_id`'s rendezvous record, replacing it.
+    async fn put_rendezvous(
+        &self,
+        group_id: &GroupId,
+        slot: &RendezvousSlot,
+    ) -> Result<(), DmError>;
+
+    /// Our place in `group_id`'s rendezvous record, if held.
+    async fn rendezvous(&self, group_id: &GroupId) -> Result<Option<RendezvousSlot>, DmError>;
 
     /// Publish a lifecycle event on the event bus.
     fn publish(&self, event: GroupDmEvent);

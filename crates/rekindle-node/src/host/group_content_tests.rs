@@ -34,9 +34,17 @@ pub(super) async fn group(host: &HostFriends, owner: [u8; 32]) -> GroupSenderKey
     let others = vec![member(bob(), 'b'), member("c".repeat(64), 'c')];
     let own = member(hex::encode(owner), 'a');
     let chain = format!("VLD0:{}", "Q".repeat(43));
-    rekindle_dm::create(&deps, GID, "raid", own, others, &chain)
-        .await
-        .unwrap();
+    rekindle_dm::create(
+        &deps,
+        GID,
+        "raid",
+        own,
+        others,
+        &chain,
+        &crate::host::group_dm_tests::rendezvous_mint(),
+    )
+    .await
+    .unwrap();
     let key = sender_key::mint_first(&OsRandom);
     deps.put_sender_key(&GID, &bob(), &key).await.unwrap();
     key

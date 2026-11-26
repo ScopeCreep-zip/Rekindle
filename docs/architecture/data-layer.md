@@ -509,6 +509,16 @@ DMs are SMPL records with `o_cnt:0`, exactly two member subkeys for
 deterministically via X25519 ECDH between identity keys (no
 key-exchange round-trip). Group DMs wrap the MEK per recipient.
 
+### Group Rendezvous Record (SMPL, 65 subkeys; plan decision 67)
+
+One per group, minted by the creator (eight one-time writers, `m_cnt 8`):
+subkey 0 holds `OPENED`, subkey `1 + 8i + j` member `i`'s first contact to
+member `j`. Each member's place is the `group_dm_rendezvous` row
+(`owner_key`, `group_id`, the record key, our slot, our row's writer, the
+creator's slot plan), deleted with its group; the creator's eight writers
+are in the vault (`typed::group_rendezvous`) until it leaves. The outbox
+row of a first contact names the group, never the writer.
+
 ## Lost Cargo File Cache (Architecture §28.9)
 
 Per-identity filesystem cache for chunked attachments managed by

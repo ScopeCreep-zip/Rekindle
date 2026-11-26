@@ -21,11 +21,12 @@ use rekindle_transport::operations::friend::FriendHost;
 use rekindle_transport::operations::{dm, group_dm};
 use rekindle_types::friend::FriendshipState;
 
-use super::{inbox_watch, HostFriends};
+use super::{inbox_watch, rendezvous_watch, HostFriends};
 use crate::daemon::dispatch::DaemonContext;
 
-/// Open every accepted friend's watches and every pending invite's,
-/// open request's and friend code's inbox watch, in `scope` (the
+/// Open every accepted friend's watches, every pending invite's, open
+/// request's and friend code's inbox watch and our column of every group
+/// rendezvous record we hold a place in, in `scope` (the
 /// unlock's), as a stage that stops at the unlock's token: a lock right
 /// after the unlock ends it before the record pool is drained, so none of
 /// its opens or watches outlives the unlock (live R1-2).
@@ -36,6 +37,7 @@ pub(crate) fn watch_friends(ctx: &DaemonContext, scope: &Arc<rekindle_lifecycle:
             host.rewatch().await;
             inbox_watch::rewatch_pending(&host).await;
             inbox_watch::rewatch_open_requests(&host).await;
+            rendezvous_watch::sync(&host, true).await;
         })
         .await;
     });
@@ -174,7 +176,9 @@ impl HostFriends {
         subkeys: &[u32],
         inline: Option<&[u8]>,
     ) -> bool {
-        if self.request_inbox_change(record, subkeys, inline) {
+        if self.request_inbox_change(record, subkeys, inline)
+            || self.rendezvous_change(record, subkeys, inline)
+        {
             return true;
         }
         if let Some(peer) = participant_peer(self, record) {

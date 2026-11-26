@@ -108,6 +108,13 @@ pub enum AttemptOutcome {
     /// pump): the row stays `queued`, is not attempted again while the
     /// append is in flight, and lands on [`OutboxDeps::append`]'s outcome.
     Appending(Vec<u8>),
+    /// The frame (this datagram, as framed for this attempt) goes as an
+    /// `app_call` that the stream's appender runs ([`OutboxDeps::call`]),
+    /// beside the stream's later rows (a `StreamRecord`): the attempt
+    /// returns without awaiting the answer, the row is not attempted again
+    /// while the call is in flight, and the call's outcome settles the row
+    /// while it is still unsettled.
+    Calling(Vec<u8>),
     /// The frame went as an `app_call` and no answer came within the call
     /// timeout, or the peer could not take it (a NAK, a retry-later): it
     /// may be lost. Veilid's `app_call` is the one send whose loss is seen
@@ -331,6 +338,11 @@ pub trait OutboxDeps: Send + Sync {
         stream: &str,
         frames: &[(Vec<u8>, i64)],
     ) -> Vec<AttemptOutcome>;
+    /// Run the call an attempt handed off ([`AttemptOutcome::Calling`]):
+    /// `frame` to the peer of `stream` as an `app_call`, its outcome as
+    /// [`Self::attempt`]'s (`Sent` on the peer's receipt, `Unanswered` when
+    /// none came). Only a host whose attempt hands calls off is asked.
+    async fn call(&self, kind: StreamKind, stream: &str, frame: Vec<u8>) -> AttemptOutcome;
     /// Deliver a state change to the user's windows and frontends.
     fn publish(&self, change: StateChange);
 }

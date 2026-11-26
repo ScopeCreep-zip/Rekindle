@@ -14,14 +14,13 @@ use rekindle_outbox::{
     AttemptOutcome, Cover, Deadline, Entry, Outbox, OutboxRow, PeerAck, StateChange, StreamKind,
 };
 use rekindle_transport::operations::dm::handshake;
-use rekindle_transport::operations::dm::outbox::{
-    self as dm_outbox, Attempt, DmOutbox, OutgoingDm,
-};
+use rekindle_transport::operations::dm::outbox::{self as dm_outbox, DmOutbox, OutgoingDm};
 use rekindle_transport::operations::friend::{self, FriendError, FriendHost};
 use rekindle_types::subscription_events::{ChannelMessageEvent, GroupDmEvent, SubscriptionEvent};
 use tokio::sync::broadcast;
 use tokio_util::sync::CancellationToken;
 
+use super::senders::outcome;
 use super::{DmEcho, HostOutbox, Senders, StreamSender};
 use crate::daemon::dispatch::DaemonContext;
 use crate::host::adapters::friends::HostFriends;
@@ -245,6 +244,14 @@ impl StreamSender for DmSender {
             .map(outcome)
             .collect()
     }
+
+    /// The stream's handed-off `StreamRecord` call (`dm::outbox::call`).
+    async fn call(&self, stream: &str, frame: Vec<u8>) -> AttemptOutcome {
+        match stream.strip_prefix("dm:") {
+            Some(peer) => outcome(dm_outbox::call(&self.0, peer, frame).await),
+            None => AttemptOutcome::Wedged(format!("not a dm stream: {stream}")),
+        }
+    }
 }
 
 /// The `group_dm` stream's sender: `group_dm::content::attempt` (plan
@@ -316,19 +323,6 @@ impl StreamSender for HandshakeSender {
             return AttemptOutcome::Wedged(format!("not a handshake stream: {}", row.stream));
         };
         outcome(handshake::attempt(&self.0, peer, &row.payload).await)
-    }
-}
-
-fn outcome(attempt: Attempt) -> AttemptOutcome {
-    match attempt {
-        Attempt::Sent => AttemptOutcome::Sent,
-        Attempt::Appending(frame) => AttemptOutcome::Appending(frame),
-        Attempt::Awaiting => AttemptOutcome::Awaiting,
-        Attempt::Receipted => AttemptOutcome::Receipted,
-        Attempt::Unanswered => AttemptOutcome::Unanswered,
-        Attempt::Deferred => AttemptOutcome::Deferred,
-        Attempt::Wedged(reason) => AttemptOutcome::Wedged(reason),
-        Attempt::Superseded(reason) => AttemptOutcome::Superseded(reason),
     }
 }
 

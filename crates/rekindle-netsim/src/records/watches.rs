@@ -90,7 +90,7 @@ pub(crate) struct Desired {
 pub(crate) struct ReplicaWatch {
     pub node: usize,
     member: Option<[u8; 32]>,
-    subkeys: BTreeSet<u32>,
+    pub(crate) subkeys: BTreeSet<u32>,
     count: u32,
     expiration: u64,
     pub(crate) changed: BTreeSet<u32>,

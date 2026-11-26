@@ -33,7 +33,33 @@ async fn check_addable(
     Ok(())
 }
 
-/// Add a friend by friend code: our request built first, then a
+/// They asked first and their request is held: both of us asked, the
+/// crossing seen from our side (`accept_crossing_request` is the same case
+/// when ours went first), so we accept theirs, once. A request of ours
+/// beside it would wait for an accept they never send: they see a
+/// crossing, and as the higher side they await ours (RV2; plan E2.5's
+/// handshake is one request answered by one accept).
+async fn accept_held(host: &dyn FriendHost, public_key: &str) -> Result<(), FriendError> {
+    tracing::info!(peer = %public_key, "adding a peer whose request we hold — accepting it");
+    super::answer::accept(host, public_key).await
+}
+
+/// Whether a request from `public_key` is held, unanswered.
+async fn holds_request_from(
+    host: &dyn FriendHost,
+    owner: &str,
+    public_key: &str,
+) -> Result<bool, FriendError> {
+    let (owner, peer) = (owner.to_string(), public_key.to_string());
+    let held = state::db_call!(host, "read held request", move |conn| {
+        rekindle_db::repo::pending_requests::answer(conn, &owner, &peer)
+    })
+    .await?;
+    Ok(held.is_some())
+}
+
+/// Add a friend by friend code: a request of theirs we hold is accepted
+/// instead ([`holds_request_from`]); otherwise our request built first, then a
 /// `PendingOut` friend with the profile the code names, and the request,
 /// carrying the code's token and sealed to the code's identity, committed
 /// to our `friend_handshake` stream to them (plan E2.5, live finding LF5).
@@ -55,6 +81,9 @@ pub async fn add(
     let public_key = code.public_key.as_str();
     let owner = state::owner(host)?;
     check_addable(host, &owner, public_key).await?;
+    if holds_request_from(host, &owner, public_key).await? {
+        return accept_held(host, public_key).await;
+    }
     invites::published_identity(host).await?;
     // Built before the friend is stored: a request that cannot be built
     // leaves no `PendingOut` friend without a request behind it.
@@ -71,14 +100,22 @@ pub async fn add(
         code.profile_key.as_str().to_string(),
     );
     // The friend, their record and the end of an ended friendship's
-    // handshake rows: one transaction.
+    // handshake rows: one transaction, read against their held request in
+    // the same database call (a request stored after the check above).
     let list = super::list_record::list_write(host);
-    let ended = state::db_call!(host, "store friend", move |conn| {
+    let stored = state::db_call!(host, "store friend", move |conn| {
+        if rekindle_db::repo::pending_requests::answer(conn, &ok, &pk)?.is_some() {
+            return Ok(None);
+        }
         rekindle_db::repo::friends::changing_list(conn, &ok, list, |conn| {
             rekindle_db::repo::friends::add_by_code(conn, &ok, &pk, &dn, now, &prof)
         })
+        .map(Some)
     })
     .await?;
+    let Some(ended) = stored else {
+        return accept_held(host, public_key).await;
+    };
     let mut friend = FriendState::new(
         public_key.to_string(),
         display_name.to_string(),
@@ -135,6 +172,9 @@ pub async fn from_invite(host: &dyn FriendHost, link: &str) -> Result<(), Friend
         .ok_or_else(|| FriendError::Invalid("the invite names no invite id".to_string()))?;
     let owner = state::owner(host)?;
     check_addable(host, &owner, &blob.public_key).await?;
+    if holds_request_from(host, &owner, &blob.public_key).await? {
+        return accept_held(host, &blob.public_key).await;
+    }
     invites::published_identity(host).await?;
 
     if state::take(host, &blob.public_key).is_some() {
@@ -146,7 +186,10 @@ pub async fn from_invite(host: &dyn FriendHost, link: &str) -> Result<(), Friend
     let (ok, pk, dn) = (owner, blob.public_key.clone(), blob.display_name.clone());
     let (profile_key, mailbox_key) = (blob.profile_dht_key.clone(), blob.mailbox_dht_key.clone());
     let list = super::list_record::list_write(host);
-    let ended = state::db_call!(host, "store invited friend", move |conn| {
+    let stored = state::db_call!(host, "store invited friend", move |conn| {
+        if rekindle_db::repo::pending_requests::answer(conn, &ok, &pk)?.is_some() {
+            return Ok(None);
+        }
         rekindle_db::repo::friends::changing_list(conn, &ok, list, |conn| {
             rekindle_db::repo::friends::replace_with_invited(
                 conn,
@@ -158,8 +201,12 @@ pub async fn from_invite(host: &dyn FriendHost, link: &str) -> Result<(), Friend
                 &mailbox_key,
             )
         })
+        .map(Some)
     })
     .await?;
+    let Some(ended) = stored else {
+        return accept_held(host, &blob.public_key).await;
+    };
     let mut friend = FriendState::new(
         blob.public_key.clone(),
         blob.display_name.clone(),

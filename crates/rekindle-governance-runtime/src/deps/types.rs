@@ -178,6 +178,52 @@ impl OpLanding {
 /// How a published governance op stands when its command answers (plan
 /// E3.2 S6b): both are successes, since the op is applied, gossiped and
 /// queued and nothing cancels it.
+/// Our op's row on the governance-op stream, stored
+/// ([`GovernanceRuntimeDeps::publish_governance_op`](crate::deps::GovernanceRuntimeDeps::publish_governance_op)
+/// returns it once the row is durable), and the wait for what its
+/// [`OpLanding`] names (lead ruling 2026-11-26, item 2: the row exists
+/// before the op is gossiped, so no abort between the two loses it).
+pub struct OpPublication(
+    std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = Result<OpOutcome, crate::error::GovernanceRuntimeError>,
+                > + Send,
+        >,
+    >,
+);
+
+impl OpPublication {
+    /// The wait `landed` for a row already stored.
+    pub fn new(
+        landed: impl std::future::Future<Output = Result<OpOutcome, crate::error::GovernanceRuntimeError>>
+            + Send
+            + 'static,
+    ) -> Self {
+        Self(Box::pin(landed))
+    }
+
+    /// A publication whose outcome is already known.
+    #[must_use]
+    pub fn settled(outcome: Result<OpOutcome, crate::error::GovernanceRuntimeError>) -> Self {
+        Self::new(std::future::ready(outcome))
+    }
+
+    /// Wait for what the op's landing names.
+    ///
+    /// # Errors
+    /// As the landing it waits for.
+    pub async fn landed(self) -> Result<OpOutcome, crate::error::GovernanceRuntimeError> {
+        self.0.await
+    }
+}
+
+impl std::fmt::Debug for OpPublication {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("OpPublication")
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OpOutcome {
     /// On our `M`/2 with our frontier on `M`/3.

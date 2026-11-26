@@ -152,6 +152,22 @@ the DHT or `app_message` transport:
 
 Layer 4 in the stack — see [`overview.md`](overview.md).
 
+
+### Group rendezvous metadata (plan decision 67)
+
+A group's rendezvous record is readable by anyone who learns its key, and
+the key travels only in the members' invites. What it shows: which rows
+hold a value (that member `i` made a first contact to member `j`), each
+value's size and seq, and when it changed; the values are PreKeyInit
+datagrams, encrypted to their one recipient. Slots, not identities, name
+the rows: mapping a slot to a member needs the creator's signed plan, held
+by the members only. Every write is signed by the row's one-time writer,
+never an identity key, and reaches the DHT over our safety route. A member
+can write only its own row; the creator (who minted the writers) and a
+departed member (whose writer a newcomer may reuse) can junk-write a row,
+which denies the durable path but forges nothing (the receiver opens only
+a PreKeyInit from the member the plan gives that row; threat model D9).
+
 ### 2.3 Forward secrecy
 
 - **1:1 messaging:** the spec Double Ratchet (DR rev. 4), seeded by a

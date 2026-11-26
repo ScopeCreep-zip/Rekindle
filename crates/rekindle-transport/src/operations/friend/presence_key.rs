@@ -22,8 +22,9 @@ fn ours(host: &dyn FriendHost) -> Option<PresenceKey> {
 }
 
 /// Send our current key to `peer` (their friendship was just accepted).
-/// It is an outbox row (plan E2.5); a failure to store it is logged, and
-/// the next rotation sends again.
+/// It is an entry of our DM chain to them (plan RV2c,
+/// [`dm::friend_control`]); a failure to store it is logged, and the next
+/// rotation sends again.
 pub(crate) async fn send(host: &dyn FriendHost, peer: &str) {
     let Some(key) = ours(host) else {
         tracing::warn!(to = %peer, "no presence key to send");
@@ -33,7 +34,7 @@ pub(crate) async fn send(host: &dyn FriendHost, peer: &str) {
         epoch: key.epoch(),
         key: *key.as_bytes(),
     });
-    if let Err(e) = dm::handshake::enqueue(host, peer, &body).await {
+    if let Err(e) = dm::friend_control::enqueue(host, peer, &body).await {
         tracing::warn!(to = %peer, error = %e, "FriendsKey not committed to the outbox");
     }
 }

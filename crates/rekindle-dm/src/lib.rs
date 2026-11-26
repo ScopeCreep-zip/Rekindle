@@ -30,6 +30,6 @@ pub use lifecycle::{
     on_member_left, on_roster_grow, open_received, remove_member, rotate_own_key, seal_for_send,
     Created, Grown, Outbound,
 };
-pub use ports::{GroupDmDeps, GroupState, PendingInvite};
+pub use ports::{GroupDmDeps, GroupState, PendingInvite, RendezvousMint, RendezvousSlot};
 pub use sender_key::GroupSenderKey;
 pub use video::{AssembledFrame, DmVideoFragment, DmVideoReassemblyState, FRAGMENT_PAYLOAD_LIMIT};

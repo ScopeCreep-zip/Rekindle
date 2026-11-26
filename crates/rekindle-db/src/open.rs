@@ -280,7 +280,9 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// before its `MemberLeft` was signed.
 /// 164 (plan FX3 follow-up KP): `messages.undecryptable_reason`, a channel message stored without
 /// its body (`'damaged'`): its signed outbox entry names a key we hold and the body does not open.
-pub const SCHEMA_VERSION: i64 = 164;
+/// 165 (plan decision 67 item 3): `group_dm_rendezvous`, each member's place in its group's
+/// rendezvous record.
+pub const SCHEMA_VERSION: i64 = 165;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

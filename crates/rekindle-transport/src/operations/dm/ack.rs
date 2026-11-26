@@ -149,6 +149,17 @@ pub fn acknowledged_id(body: &DirectBody) -> Option<String> {
     }
 }
 
+/// Whether `body`, as an entry of a peer's DM stream, is one we
+/// acknowledge: user content and its `StreamRecord` ([`acknowledged_id`]),
+/// or a control frame that rides an accepted friend's DM chain (plan RV2c,
+/// [`super::friend_control::on_chain`]). A control entry applied from its
+/// hint steps the cursor like a message (D23), or the chain's next entries
+/// sit past a gap only a chain diff fills, and the friend's `through`
+/// stalls below it.
+fn acknowledged(body: &DirectBody) -> bool {
+    acknowledged_id(body).is_some() || super::friend_control::on_chain(body.type_id())
+}
+
 /// `body` from `from`, entry `stream_seq` of their stream and `chain_seq` of
 /// their chain (0: none), was committed: record it received, step our
 /// cursor on their chain ([`step_cursor`]) and schedule its acknowledgement.
@@ -159,16 +170,20 @@ pub(crate) async fn committed(
     stream_seq: u64,
     chain_seq: u64,
 ) {
-    let Some(client_id) = acknowledged_id(body) else {
+    if !acknowledged(body) {
         return;
-    };
-    match host.outbox() {
-        Ok(outbox) => {
-            if let Err(e) = outbox.receive(from, &client_id).await {
-                tracing::warn!(from = %from, error = %e, "received entry not recorded");
+    }
+    // A control entry carries no client id to record; its stream seq and
+    // chain seq are acknowledged all the same.
+    if let Some(client_id) = acknowledged_id(body) {
+        match host.outbox() {
+            Ok(outbox) => {
+                if let Err(e) = outbox.receive(from, &client_id).await {
+                    tracing::warn!(from = %from, error = %e, "received entry not recorded");
+                }
             }
+            Err(e) => tracing::debug!(error = %e, "no outbox: entry not recorded"),
         }
-        Err(e) => tracing::debug!(error = %e, "no outbox: entry not recorded"),
     }
     if stream_seq == 0 || !accepted(host, from) {
         return;
@@ -206,7 +221,7 @@ pub(crate) fn digest(bytes: &[u8]) -> [u8; 32] {
 /// that we acknowledge is remembered, so an exact copy of it is
 /// acknowledged again ([`duplicate`]).
 pub(crate) fn opened(host: &dyn FriendHost, opened: &Opened, digest: [u8; 32]) {
-    if opened.stream_seq > 0 && acknowledged_id(&opened.body).is_some() {
+    if opened.stream_seq > 0 && acknowledged(&opened.body) {
         host.stores()
             .acks
             .lock()

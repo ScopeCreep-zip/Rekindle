@@ -18,7 +18,7 @@ use super::direct_tests::{ann, befriend, text, unapplied};
 use super::prekey_tests::own_bundle;
 use super::Host;
 
-fn member(identity: [u8; 32], n: char) -> GroupDmRosterMember {
+pub(crate) fn member(identity: [u8; 32], n: char) -> GroupDmRosterMember {
     GroupDmRosterMember {
         identity: hex::encode(identity),
         profile_record_key: format!("VLD0:{}", n.to_string().repeat(43)),
@@ -37,6 +37,7 @@ async fn group_of(host: &Host, owner: [u8; 32], others: &[[u8; 32]]) -> GroupId 
         member(owner, 'a'),
         others,
         &format!("VLD0:{}", "Q".repeat(43)),
+        &crate::host::group_dm_tests::rendezvous_mint(),
     )
     .await
     .unwrap()
@@ -44,7 +45,7 @@ async fn group_of(host: &Host, owner: [u8; 32], others: &[[u8; 32]]) -> GroupId 
     .group_id
 }
 
-fn accept_of(group_id: GroupId) -> DirectBody {
+pub(crate) fn accept_of(group_id: GroupId) -> DirectBody {
     DirectBody::GroupDmAccept(GroupDmAccept {
         group_id,
         epoch: 0,
