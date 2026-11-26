@@ -29,6 +29,7 @@ mod events;
 pub(crate) mod held_changes;
 pub(crate) mod history;
 pub mod ingest;
+mod mod_report;
 pub(crate) mod not_delivered;
 mod outbox_entries;
 mod outbox_gap;
