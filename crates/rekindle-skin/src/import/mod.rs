@@ -23,6 +23,9 @@
 
 pub mod credit;
 pub mod credits;
+pub mod dialog_roles;
+#[cfg(test)]
+mod dialog_roles_tests;
 pub mod miranda;
 mod notice;
 pub mod pidgin;

@@ -526,7 +526,7 @@ pub fn import(
         }
         zip(&files).map_err(ImportError::Refused)
     };
-    let mut tokens = read.tokens.clone();
+    let mut tokens = super::dialog_roles::filled(read.tokens.clone(), &read.controls);
     let (settled, changes) = settle(&mut tokens, base, build)?;
     let canonical = match settled {
         walk::WalkResult::Passed(c) => c,

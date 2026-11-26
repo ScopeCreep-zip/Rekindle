@@ -60,6 +60,20 @@ export type SkinTokenId =
   | "font.family"
   | "font.icons"
   | "size.chrome-height"
+  | "input.bg"
+  | "input.text"
+  | "input.selection.bg"
+  | "input.selection.bg-inactive"
+  | "selection.text"
+  | "menubar.text"
+  | "progress.bg"
+  | "progress.fill"
+  | "progress.outline"
+  | "progress.text"
+  | "scrollbar.track"
+  | "scrollbar.thumb"
+  | "tooltip.bg"
+  | "tooltip.text"
 ;
 
 const CSS_PROPERTY: Readonly<Record<SkinTokenId, string>> = {
@@ -121,6 +135,20 @@ const CSS_PROPERTY: Readonly<Record<SkinTokenId, string>> = {
   "font.family": "--font-family-xfire",
   "font.icons": "--font-family-icons",
   "size.chrome-height": "--chrome-height",
+  "input.bg": "--color-xfire-input-bg",
+  "input.text": "--color-xfire-input-text",
+  "input.selection.bg": "--color-xfire-input-selection-bg",
+  "input.selection.bg-inactive": "--color-xfire-input-selection-bg-inactive",
+  "selection.text": "--color-xfire-selection-text",
+  "menubar.text": "--color-xfire-menubar-text",
+  "progress.bg": "--color-xfire-progress-bg",
+  "progress.fill": "--color-xfire-progress-fill",
+  "progress.outline": "--color-xfire-progress-outline",
+  "progress.text": "--color-xfire-progress-text",
+  "scrollbar.track": "--color-xfire-scrollbar-track",
+  "scrollbar.thumb": "--color-xfire-scrollbar-thumb",
+  "tooltip.bg": "--color-xfire-tooltip-bg",
+  "tooltip.text": "--color-xfire-tooltip-text",
 };
 
 /** `var(--…)` of a registry token, for inline custom properties. */

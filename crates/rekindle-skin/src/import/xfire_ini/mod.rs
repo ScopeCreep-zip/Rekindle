@@ -578,7 +578,8 @@ pub fn import(
         );
         zip(&files).map_err(ImportError::Refused)
     };
-    conclude(read.tokens.clone(), base, build, |changes| {
+    let tokens = super::dialog_roles::filled(read.tokens.clone(), &read.controls);
+    conclude(tokens, base, build, |changes| {
         notice::render(id, &read, &source, authorship, changes)
     })
 }

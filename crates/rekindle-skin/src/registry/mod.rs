@@ -15,6 +15,7 @@
 //! Security-surface tokens (`--sec-*`) are absent: they live only in
 //! `@layer sec` of `global.css` and no skin reaches them (plan E7.7.0).
 
+mod dialog;
 mod fonts;
 mod slots;
 mod table;
@@ -25,7 +26,22 @@ use rekindle_types::dto::skin::{SkinBase, SkinContrast, TokenValue};
 
 pub use fonts::{font, FontFace, FONTS};
 pub use slots::{IconSlot, SoundCue};
-pub use table::ENTRIES;
+pub use dialog::DIALOG;
+
+/// Every row: the base table, then the dialog roles.
+pub const ENTRIES: &[TokenEntry] = &ALL;
+const ALL: [TokenEntry; table::BASE.len() + DIALOG.len()] = concat(table::BASE, DIALOG);
+
+const fn concat<const N: usize>(a: &[TokenEntry], b: &[TokenEntry]) -> [TokenEntry; N] {
+    assert!(a.len() + b.len() == N && !a.is_empty());
+    let mut out = [a[0]; N];
+    let mut i = 0;
+    while i < N {
+        out[i] = if i < a.len() { a[i] } else { b[i - a.len()] };
+        i += 1;
+    }
+    out
+}
 
 use crate::colour;
 

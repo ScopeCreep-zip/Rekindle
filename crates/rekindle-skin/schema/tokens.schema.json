@@ -1290,6 +1290,358 @@
       },
       "type": "object"
     },
+    "input": {
+      "additionalProperties": false,
+      "properties": {
+        "$description": {
+          "maxLength": 280,
+          "type": "string"
+        },
+        "$extensions": {
+          "additionalProperties": false,
+          "properties": {
+            "app.rekindle": {
+              "maxProperties": 0,
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "$type": {
+          "enum": [
+            "color",
+            "dimension",
+            "number",
+            "fontFamily"
+          ]
+        },
+        "bg": {
+          "additionalProperties": false,
+          "properties": {
+            "$description": {
+              "maxLength": 280,
+              "type": "string"
+            },
+            "$extensions": {
+              "additionalProperties": false,
+              "properties": {
+                "app.rekindle": {
+                  "maxProperties": 0,
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            },
+            "$type": {
+              "const": "color"
+            },
+            "$value": {
+              "oneOf": [
+                {
+                  "oneOf": [
+                    {
+                      "pattern": "^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$",
+                      "type": "string"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "alpha": {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "colorSpace": {
+                          "const": "srgb"
+                        },
+                        "components": {
+                          "items": {
+                            "maximum": 1,
+                            "minimum": 0,
+                            "type": "number"
+                          },
+                          "maxItems": 3,
+                          "minItems": 3,
+                          "type": "array"
+                        },
+                        "hex": {
+                          "pattern": "^#[0-9a-fA-F]{6}$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "colorSpace",
+                        "components"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                {
+                  "pattern": "^\\{[a-z0-9-]+(\\.[a-z0-9-]+)*\\}$",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "required": [
+            "$value"
+          ],
+          "type": "object"
+        },
+        "selection": {
+          "additionalProperties": false,
+          "properties": {
+            "$description": {
+              "maxLength": 280,
+              "type": "string"
+            },
+            "$extensions": {
+              "additionalProperties": false,
+              "properties": {
+                "app.rekindle": {
+                  "maxProperties": 0,
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            },
+            "$type": {
+              "enum": [
+                "color",
+                "dimension",
+                "number",
+                "fontFamily"
+              ]
+            },
+            "bg": {
+              "additionalProperties": false,
+              "properties": {
+                "$description": {
+                  "maxLength": 280,
+                  "type": "string"
+                },
+                "$extensions": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "app.rekindle": {
+                      "maxProperties": 0,
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                },
+                "$type": {
+                  "const": "color"
+                },
+                "$value": {
+                  "oneOf": [
+                    {
+                      "oneOf": [
+                        {
+                          "pattern": "^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$",
+                          "type": "string"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "alpha": {
+                              "maximum": 1,
+                              "minimum": 0,
+                              "type": "number"
+                            },
+                            "colorSpace": {
+                              "const": "srgb"
+                            },
+                            "components": {
+                              "items": {
+                                "maximum": 1,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "maxItems": 3,
+                              "minItems": 3,
+                              "type": "array"
+                            },
+                            "hex": {
+                              "pattern": "^#[0-9a-fA-F]{6}$",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "colorSpace",
+                            "components"
+                          ],
+                          "type": "object"
+                        }
+                      ]
+                    },
+                    {
+                      "pattern": "^\\{[a-z0-9-]+(\\.[a-z0-9-]+)*\\}$",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "$value"
+              ],
+              "type": "object"
+            },
+            "bg-inactive": {
+              "additionalProperties": false,
+              "properties": {
+                "$description": {
+                  "maxLength": 280,
+                  "type": "string"
+                },
+                "$extensions": {
+                  "additionalProperties": false,
+                  "properties": {
+                    "app.rekindle": {
+                      "maxProperties": 0,
+                      "type": "object"
+                    }
+                  },
+                  "type": "object"
+                },
+                "$type": {
+                  "const": "color"
+                },
+                "$value": {
+                  "oneOf": [
+                    {
+                      "oneOf": [
+                        {
+                          "pattern": "^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$",
+                          "type": "string"
+                        },
+                        {
+                          "additionalProperties": false,
+                          "properties": {
+                            "alpha": {
+                              "maximum": 1,
+                              "minimum": 0,
+                              "type": "number"
+                            },
+                            "colorSpace": {
+                              "const": "srgb"
+                            },
+                            "components": {
+                              "items": {
+                                "maximum": 1,
+                                "minimum": 0,
+                                "type": "number"
+                              },
+                              "maxItems": 3,
+                              "minItems": 3,
+                              "type": "array"
+                            },
+                            "hex": {
+                              "pattern": "^#[0-9a-fA-F]{6}$",
+                              "type": "string"
+                            }
+                          },
+                          "required": [
+                            "colorSpace",
+                            "components"
+                          ],
+                          "type": "object"
+                        }
+                      ]
+                    },
+                    {
+                      "pattern": "^\\{[a-z0-9-]+(\\.[a-z0-9-]+)*\\}$",
+                      "type": "string"
+                    }
+                  ]
+                }
+              },
+              "required": [
+                "$value"
+              ],
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "text": {
+          "additionalProperties": false,
+          "properties": {
+            "$description": {
+              "maxLength": 280,
+              "type": "string"
+            },
+            "$extensions": {
+              "additionalProperties": false,
+              "properties": {
+                "app.rekindle": {
+                  "maxProperties": 0,
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            },
+            "$type": {
+              "const": "color"
+            },
+            "$value": {
+              "oneOf": [
+                {
+                  "oneOf": [
+                    {
+                      "pattern": "^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$",
+                      "type": "string"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "alpha": {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "colorSpace": {
+                          "const": "srgb"
+                        },
+                        "components": {
+                          "items": {
+                            "maximum": 1,
+                            "minimum": 0,
+                            "type": "number"
+                          },
+                          "maxItems": 3,
+                          "minItems": 3,
+                          "type": "array"
+                        },
+                        "hex": {
+                          "pattern": "^#[0-9a-fA-F]{6}$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "colorSpace",
+                        "components"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                {
+                  "pattern": "^\\{[a-z0-9-]+(\\.[a-z0-9-]+)*\\}$",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "required": [
+            "$value"
+          ],
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
     "link": {
       "additionalProperties": false,
       "properties": {
@@ -1614,6 +1966,108 @@
       },
       "type": "object"
     },
+    "menubar": {
+      "additionalProperties": false,
+      "properties": {
+        "$description": {
+          "maxLength": 280,
+          "type": "string"
+        },
+        "$extensions": {
+          "additionalProperties": false,
+          "properties": {
+            "app.rekindle": {
+              "maxProperties": 0,
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "$type": {
+          "enum": [
+            "color",
+            "dimension",
+            "number",
+            "fontFamily"
+          ]
+        },
+        "text": {
+          "additionalProperties": false,
+          "properties": {
+            "$description": {
+              "maxLength": 280,
+              "type": "string"
+            },
+            "$extensions": {
+              "additionalProperties": false,
+              "properties": {
+                "app.rekindle": {
+                  "maxProperties": 0,
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            },
+            "$type": {
+              "const": "color"
+            },
+            "$value": {
+              "oneOf": [
+                {
+                  "oneOf": [
+                    {
+                      "pattern": "^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$",
+                      "type": "string"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "alpha": {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "colorSpace": {
+                          "const": "srgb"
+                        },
+                        "components": {
+                          "items": {
+                            "maximum": 1,
+                            "minimum": 0,
+                            "type": "number"
+                          },
+                          "maxItems": 3,
+                          "minItems": 3,
+                          "type": "array"
+                        },
+                        "hex": {
+                          "pattern": "^#[0-9a-fA-F]{6}$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "colorSpace",
+                        "components"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                {
+                  "pattern": "^\\{[a-z0-9-]+(\\.[a-z0-9-]+)*\\}$",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "required": [
+            "$value"
+          ],
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
     "overlay": {
       "additionalProperties": false,
       "properties": {
@@ -1686,6 +2140,608 @@
       "required": [
         "$value"
       ],
+      "type": "object"
+    },
+    "progress": {
+      "additionalProperties": false,
+      "properties": {
+        "$description": {
+          "maxLength": 280,
+          "type": "string"
+        },
+        "$extensions": {
+          "additionalProperties": false,
+          "properties": {
+            "app.rekindle": {
+              "maxProperties": 0,
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "$type": {
+          "enum": [
+            "color",
+            "dimension",
+            "number",
+            "fontFamily"
+          ]
+        },
+        "bg": {
+          "additionalProperties": false,
+          "properties": {
+            "$description": {
+              "maxLength": 280,
+              "type": "string"
+            },
+            "$extensions": {
+              "additionalProperties": false,
+              "properties": {
+                "app.rekindle": {
+                  "maxProperties": 0,
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            },
+            "$type": {
+              "const": "color"
+            },
+            "$value": {
+              "oneOf": [
+                {
+                  "oneOf": [
+                    {
+                      "pattern": "^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$",
+                      "type": "string"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "alpha": {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "colorSpace": {
+                          "const": "srgb"
+                        },
+                        "components": {
+                          "items": {
+                            "maximum": 1,
+                            "minimum": 0,
+                            "type": "number"
+                          },
+                          "maxItems": 3,
+                          "minItems": 3,
+                          "type": "array"
+                        },
+                        "hex": {
+                          "pattern": "^#[0-9a-fA-F]{6}$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "colorSpace",
+                        "components"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                {
+                  "pattern": "^\\{[a-z0-9-]+(\\.[a-z0-9-]+)*\\}$",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "required": [
+            "$value"
+          ],
+          "type": "object"
+        },
+        "fill": {
+          "additionalProperties": false,
+          "properties": {
+            "$description": {
+              "maxLength": 280,
+              "type": "string"
+            },
+            "$extensions": {
+              "additionalProperties": false,
+              "properties": {
+                "app.rekindle": {
+                  "maxProperties": 0,
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            },
+            "$type": {
+              "const": "color"
+            },
+            "$value": {
+              "oneOf": [
+                {
+                  "oneOf": [
+                    {
+                      "pattern": "^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$",
+                      "type": "string"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "alpha": {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "colorSpace": {
+                          "const": "srgb"
+                        },
+                        "components": {
+                          "items": {
+                            "maximum": 1,
+                            "minimum": 0,
+                            "type": "number"
+                          },
+                          "maxItems": 3,
+                          "minItems": 3,
+                          "type": "array"
+                        },
+                        "hex": {
+                          "pattern": "^#[0-9a-fA-F]{6}$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "colorSpace",
+                        "components"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                {
+                  "pattern": "^\\{[a-z0-9-]+(\\.[a-z0-9-]+)*\\}$",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "required": [
+            "$value"
+          ],
+          "type": "object"
+        },
+        "outline": {
+          "additionalProperties": false,
+          "properties": {
+            "$description": {
+              "maxLength": 280,
+              "type": "string"
+            },
+            "$extensions": {
+              "additionalProperties": false,
+              "properties": {
+                "app.rekindle": {
+                  "maxProperties": 0,
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            },
+            "$type": {
+              "const": "color"
+            },
+            "$value": {
+              "oneOf": [
+                {
+                  "oneOf": [
+                    {
+                      "pattern": "^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$",
+                      "type": "string"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "alpha": {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "colorSpace": {
+                          "const": "srgb"
+                        },
+                        "components": {
+                          "items": {
+                            "maximum": 1,
+                            "minimum": 0,
+                            "type": "number"
+                          },
+                          "maxItems": 3,
+                          "minItems": 3,
+                          "type": "array"
+                        },
+                        "hex": {
+                          "pattern": "^#[0-9a-fA-F]{6}$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "colorSpace",
+                        "components"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                {
+                  "pattern": "^\\{[a-z0-9-]+(\\.[a-z0-9-]+)*\\}$",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "required": [
+            "$value"
+          ],
+          "type": "object"
+        },
+        "text": {
+          "additionalProperties": false,
+          "properties": {
+            "$description": {
+              "maxLength": 280,
+              "type": "string"
+            },
+            "$extensions": {
+              "additionalProperties": false,
+              "properties": {
+                "app.rekindle": {
+                  "maxProperties": 0,
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            },
+            "$type": {
+              "const": "color"
+            },
+            "$value": {
+              "oneOf": [
+                {
+                  "oneOf": [
+                    {
+                      "pattern": "^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$",
+                      "type": "string"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "alpha": {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "colorSpace": {
+                          "const": "srgb"
+                        },
+                        "components": {
+                          "items": {
+                            "maximum": 1,
+                            "minimum": 0,
+                            "type": "number"
+                          },
+                          "maxItems": 3,
+                          "minItems": 3,
+                          "type": "array"
+                        },
+                        "hex": {
+                          "pattern": "^#[0-9a-fA-F]{6}$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "colorSpace",
+                        "components"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                {
+                  "pattern": "^\\{[a-z0-9-]+(\\.[a-z0-9-]+)*\\}$",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "required": [
+            "$value"
+          ],
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "scrollbar": {
+      "additionalProperties": false,
+      "properties": {
+        "$description": {
+          "maxLength": 280,
+          "type": "string"
+        },
+        "$extensions": {
+          "additionalProperties": false,
+          "properties": {
+            "app.rekindle": {
+              "maxProperties": 0,
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "$type": {
+          "enum": [
+            "color",
+            "dimension",
+            "number",
+            "fontFamily"
+          ]
+        },
+        "thumb": {
+          "additionalProperties": false,
+          "properties": {
+            "$description": {
+              "maxLength": 280,
+              "type": "string"
+            },
+            "$extensions": {
+              "additionalProperties": false,
+              "properties": {
+                "app.rekindle": {
+                  "maxProperties": 0,
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            },
+            "$type": {
+              "const": "color"
+            },
+            "$value": {
+              "oneOf": [
+                {
+                  "oneOf": [
+                    {
+                      "pattern": "^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$",
+                      "type": "string"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "alpha": {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "colorSpace": {
+                          "const": "srgb"
+                        },
+                        "components": {
+                          "items": {
+                            "maximum": 1,
+                            "minimum": 0,
+                            "type": "number"
+                          },
+                          "maxItems": 3,
+                          "minItems": 3,
+                          "type": "array"
+                        },
+                        "hex": {
+                          "pattern": "^#[0-9a-fA-F]{6}$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "colorSpace",
+                        "components"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                {
+                  "pattern": "^\\{[a-z0-9-]+(\\.[a-z0-9-]+)*\\}$",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "required": [
+            "$value"
+          ],
+          "type": "object"
+        },
+        "track": {
+          "additionalProperties": false,
+          "properties": {
+            "$description": {
+              "maxLength": 280,
+              "type": "string"
+            },
+            "$extensions": {
+              "additionalProperties": false,
+              "properties": {
+                "app.rekindle": {
+                  "maxProperties": 0,
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            },
+            "$type": {
+              "const": "color"
+            },
+            "$value": {
+              "oneOf": [
+                {
+                  "oneOf": [
+                    {
+                      "pattern": "^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$",
+                      "type": "string"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "alpha": {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "colorSpace": {
+                          "const": "srgb"
+                        },
+                        "components": {
+                          "items": {
+                            "maximum": 1,
+                            "minimum": 0,
+                            "type": "number"
+                          },
+                          "maxItems": 3,
+                          "minItems": 3,
+                          "type": "array"
+                        },
+                        "hex": {
+                          "pattern": "^#[0-9a-fA-F]{6}$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "colorSpace",
+                        "components"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                {
+                  "pattern": "^\\{[a-z0-9-]+(\\.[a-z0-9-]+)*\\}$",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "required": [
+            "$value"
+          ],
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "selection": {
+      "additionalProperties": false,
+      "properties": {
+        "$description": {
+          "maxLength": 280,
+          "type": "string"
+        },
+        "$extensions": {
+          "additionalProperties": false,
+          "properties": {
+            "app.rekindle": {
+              "maxProperties": 0,
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "$type": {
+          "enum": [
+            "color",
+            "dimension",
+            "number",
+            "fontFamily"
+          ]
+        },
+        "text": {
+          "additionalProperties": false,
+          "properties": {
+            "$description": {
+              "maxLength": 280,
+              "type": "string"
+            },
+            "$extensions": {
+              "additionalProperties": false,
+              "properties": {
+                "app.rekindle": {
+                  "maxProperties": 0,
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            },
+            "$type": {
+              "const": "color"
+            },
+            "$value": {
+              "oneOf": [
+                {
+                  "oneOf": [
+                    {
+                      "pattern": "^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$",
+                      "type": "string"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "alpha": {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "colorSpace": {
+                          "const": "srgb"
+                        },
+                        "components": {
+                          "items": {
+                            "maximum": 1,
+                            "minimum": 0,
+                            "type": "number"
+                          },
+                          "maxItems": 3,
+                          "minItems": 3,
+                          "type": "array"
+                        },
+                        "hex": {
+                          "pattern": "^#[0-9a-fA-F]{6}$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "colorSpace",
+                        "components"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                {
+                  "pattern": "^\\{[a-z0-9-]+(\\.[a-z0-9-]+)*\\}$",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "required": [
+            "$value"
+          ],
+          "type": "object"
+        }
+      },
       "type": "object"
     },
     "shade": {
@@ -3654,6 +4710,182 @@
           "type": "object"
         },
         "start": {
+          "additionalProperties": false,
+          "properties": {
+            "$description": {
+              "maxLength": 280,
+              "type": "string"
+            },
+            "$extensions": {
+              "additionalProperties": false,
+              "properties": {
+                "app.rekindle": {
+                  "maxProperties": 0,
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            },
+            "$type": {
+              "const": "color"
+            },
+            "$value": {
+              "oneOf": [
+                {
+                  "oneOf": [
+                    {
+                      "pattern": "^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$",
+                      "type": "string"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "alpha": {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "colorSpace": {
+                          "const": "srgb"
+                        },
+                        "components": {
+                          "items": {
+                            "maximum": 1,
+                            "minimum": 0,
+                            "type": "number"
+                          },
+                          "maxItems": 3,
+                          "minItems": 3,
+                          "type": "array"
+                        },
+                        "hex": {
+                          "pattern": "^#[0-9a-fA-F]{6}$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "colorSpace",
+                        "components"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                {
+                  "pattern": "^\\{[a-z0-9-]+(\\.[a-z0-9-]+)*\\}$",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "required": [
+            "$value"
+          ],
+          "type": "object"
+        },
+        "text": {
+          "additionalProperties": false,
+          "properties": {
+            "$description": {
+              "maxLength": 280,
+              "type": "string"
+            },
+            "$extensions": {
+              "additionalProperties": false,
+              "properties": {
+                "app.rekindle": {
+                  "maxProperties": 0,
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            },
+            "$type": {
+              "const": "color"
+            },
+            "$value": {
+              "oneOf": [
+                {
+                  "oneOf": [
+                    {
+                      "pattern": "^#([0-9a-fA-F]{6}|[0-9a-fA-F]{8})$",
+                      "type": "string"
+                    },
+                    {
+                      "additionalProperties": false,
+                      "properties": {
+                        "alpha": {
+                          "maximum": 1,
+                          "minimum": 0,
+                          "type": "number"
+                        },
+                        "colorSpace": {
+                          "const": "srgb"
+                        },
+                        "components": {
+                          "items": {
+                            "maximum": 1,
+                            "minimum": 0,
+                            "type": "number"
+                          },
+                          "maxItems": 3,
+                          "minItems": 3,
+                          "type": "array"
+                        },
+                        "hex": {
+                          "pattern": "^#[0-9a-fA-F]{6}$",
+                          "type": "string"
+                        }
+                      },
+                      "required": [
+                        "colorSpace",
+                        "components"
+                      ],
+                      "type": "object"
+                    }
+                  ]
+                },
+                {
+                  "pattern": "^\\{[a-z0-9-]+(\\.[a-z0-9-]+)*\\}$",
+                  "type": "string"
+                }
+              ]
+            }
+          },
+          "required": [
+            "$value"
+          ],
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "tooltip": {
+      "additionalProperties": false,
+      "properties": {
+        "$description": {
+          "maxLength": 280,
+          "type": "string"
+        },
+        "$extensions": {
+          "additionalProperties": false,
+          "properties": {
+            "app.rekindle": {
+              "maxProperties": 0,
+              "type": "object"
+            }
+          },
+          "type": "object"
+        },
+        "$type": {
+          "enum": [
+            "color",
+            "dimension",
+            "number",
+            "fontFamily"
+          ]
+        },
+        "bg": {
           "additionalProperties": false,
           "properties": {
             "$description": {

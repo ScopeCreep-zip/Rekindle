@@ -37,7 +37,7 @@ const fn rgb(hex: &str) -> DefaultValue {
 }
 
 /// Dark, light, high-contrast dark, high-contrast light.
-const fn c4(dark: &str, light: &str, hc_dark: &str, hc_light: &str) -> Defaults {
+pub(super) const fn c4(dark: &str, light: &str, hc_dark: &str, hc_light: &str) -> Defaults {
     Defaults {
         dark: rgb(dark),
         light: rgb(light),
@@ -47,11 +47,11 @@ const fn c4(dark: &str, light: &str, hc_dark: &str, hc_light: &str) -> Defaults 
 }
 
 /// High contrast keeps the standard value of each base.
-const fn c2(dark: &str, light: &str) -> Defaults {
+pub(super) const fn c2(dark: &str, light: &str) -> Defaults {
     c4(dark, light, dark, light)
 }
 
-const fn c1(all: &str) -> Defaults {
+pub(super) const fn c1(all: &str) -> Defaults {
     c4(all, all, all, all)
 }
 
@@ -65,7 +65,7 @@ const fn font_all(name: &'static str) -> Defaults {
     }
 }
 
-const fn row(
+pub(super) const fn row(
     id: &'static str,
     css: &'static str,
     defaults: Defaults,
@@ -111,13 +111,13 @@ const fn fraction(id: &'static str, css: &'static str, dark: i64) -> TokenEntry 
 }
 
 /// Follows `derivation` when a skin sets its sources and omits this token.
-const fn derived(mut e: TokenEntry, derivation: Derivation) -> TokenEntry {
+pub(super) const fn derived(mut e: TokenEntry, derivation: Derivation) -> TokenEntry {
     e.derivation = Some(derivation);
     e
 }
 
 /// Follows `of` when a skin sets `of` and omits this token.
-const fn same_as(mut e: TokenEntry, of: &'static str) -> TokenEntry {
+pub(super) const fn same_as(mut e: TokenEntry, of: &'static str) -> TokenEntry {
     e.derivation = Some(Derivation::Mix {
         a: of,
         b: of,
@@ -147,9 +147,11 @@ const GRAPHIC: &[Constraint] = &[Constraint {
     on: &["bg.dark", "bg.panel"],
     min_ratio_x100: 300,
 }];
-const NONE: &[Constraint] = &[];
+pub(super) const NONE: &[Constraint] = &[];
 
-pub const ENTRIES: &[TokenEntry] = &[
+/// The rows before the dialog roles ([`super::dialog::DIALOG`]); every
+/// derivation in both reads only rows with none.
+pub(super) const BASE: &[TokenEntry] = &[
     // The window ground (`ui-skin.md`: outer chrome; every window sits on
     // it, `00-rules.css`). No importer writes it: each writes the pack's own
     // window ground as `bg.primary` (Symbiosis, the pack the dark defaults
@@ -441,17 +443,35 @@ pub const ENTRIES: &[TokenEntry] = &[
         c1("#00892d"),
         NONE,
     ),
-    row(
-        "titlebar.start",
-        "--color-xfire-titlebar-start",
-        c2("#0f1a3a", "#dbe7f6"),
-        NONE,
+    // The title-bar ground of a window that draws no pack art (Settings,
+    // plan SB1). An Xfire import writes the mean colours of the pack's own
+    // title strip ends (`import::dialog_roles`); a skin that sets its accent
+    // and omits these follows its selection colour toward its ground.
+    derived(
+        row(
+            "titlebar.start",
+            "--color-xfire-titlebar-start",
+            c2("#0f1a3a", "#dbe7f6"),
+            NONE,
+        ),
+        Derivation::Mix {
+            a: "accent.fill",
+            b: "bg.primary",
+            a_weight: 500,
+        },
     ),
-    row(
-        "titlebar.end",
-        "--color-xfire-titlebar-end",
-        c2("#1a2a5e", "#c3d6ef"),
-        NONE,
+    derived(
+        row(
+            "titlebar.end",
+            "--color-xfire-titlebar-end",
+            c2("#1a2a5e", "#c3d6ef"),
+            NONE,
+        ),
+        Derivation::Mix {
+            a: "accent.fill",
+            b: "bg.primary",
+            a_weight: 250,
+        },
     ),
     same_as(
         row(
