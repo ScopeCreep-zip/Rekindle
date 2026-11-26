@@ -83,15 +83,12 @@ async fn eight_unanswered_sends_make_bo_suspect_adas_route_at_most_once_a_minute
         rekindle_types::message::DM_ACK_DELAY_MAX_MS + rekindle_types::message::CALL_TIMEOUT_MS,
     ))
     .await;
-    sim.fault(Fault::RouteSilentDeath {
-        node: 0,
-        class: RouteClass::General,
-    });
-    // Unanswered: nothing of Ada's reaches Bo either. Her route's silence
-    // alone leaves Bo's sends answered, since she reads them from his chain
-    // and acks them over his route, and any authenticated frame resets his
-    // counters (plan RH1r-c S5; `direct/frame.rs` `open_ratchet`); healing
-    // that case is her own self-test's (O1, O2, S6).
+    // Unanswered: nothing of Ada's reaches Bo, while her route stays one
+    // Veilid holds alive (suspect, not dead). A route Veilid declared dead
+    // is never re-imported or probed; a suspect round that finds one queues
+    // an unreachable report instead (plan RL7, GI1 design 4.3), which
+    // `route_unreachable_report` covers. Any authenticated frame resets
+    // Bo's counters (plan RH1r-c S5; `direct/frame.rs` `open_ratchet`).
     sim.fault(Fault::DropFrom {
         node: 0,
         per_mille: 1000,

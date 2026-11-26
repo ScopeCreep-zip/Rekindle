@@ -92,7 +92,8 @@ pub async fn fetch_from_profile(host: &dyn FriendHost, peer: &str) -> Option<Vec
     }
     // A blob Veilid declared dead is never cached again until the peer
     // republishes it (plan RV1g B1, B3).
-    if node.liveness().route_declared_dead(&blob) {
+    // Its owner is told once (plan RV2, evidence source 7).
+    if super::route_report::report_if_dead(host, peer, &blob) {
         tracing::debug!(peer = %peer, "profile route was declared dead; not using it");
         return None;
     }

@@ -95,12 +95,15 @@ async fn suspect_round(host: &dyn FriendHost, node: &TransportNode, to: &str) {
             route::cache(node, to, blob);
         }
         Fetched::Stale => tracing::debug!(to = %to, seq, "suspect route: stale record ignored"),
-        Fetched::Newer | Fetched::Same => {
-            if dead {
-                tracing::debug!(to = %to, seq, "suspect route: the re-read route was declared dead");
-            }
-            probe_beside(host, to, blob);
+        // Never re-imported while dead: an import restarts Veilid's
+        // test-and-release of it (`route_remote.rs:21-52`); the owner is
+        // told instead, once per blob (plan RV2, evidence source 7), and the
+        // route watch brings its replacement.
+        Fetched::Newer | Fetched::Same if dead => {
+            tracing::debug!(to = %to, seq, "suspect route: the re-read route was declared dead");
+            super::route_report::report_if_dead(host, to, &blob);
         }
+        Fetched::Newer | Fetched::Same => probe_beside(host, to, blob),
     }
 }
 
@@ -123,9 +126,9 @@ async fn probe(host: &dyn FriendHost, to: &str, blob: Vec<u8>) {
     };
     let live = node.liveness();
     // The probe is the suspect round's one re-test, at most once per round
-    // (S2, S3): it alone imports a blob Veilid declared dead (plan RV1g B1);
-    // every send refuses it (`route::import`).
-    let target = match node.routes().import(&blob) {
+    // (S2, S3). A blob Veilid declared dead is refused like every send's
+    // (plan RV1g B1, RV2 source 7): its owner is told instead.
+    let target = match node.import_route(&blob) {
         Ok(target) => target,
         Err(e) => {
             tracing::debug!(to = %to, error = %e, "suspect route probe: import failed");

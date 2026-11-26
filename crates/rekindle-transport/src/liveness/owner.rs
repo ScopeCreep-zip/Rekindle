@@ -23,7 +23,9 @@ pub(crate) type SharedSession = Arc<parking_lot::RwLock<Option<crate::session::S
 /// answering us (O2, plan RV1), when a friend's DM chain runs ahead of the
 /// hints that should have reached us over it, when a friend re-sent a
 /// call we receipted over it (plan RV2), or when a first contact reached us
-/// only through its reply inbox (plan RV2, evidence source 6), until
+/// only through its reply inbox (plan RV2, evidence source 6), or when a
+/// friend or roster member reported our live blob unreachable (plan RV2,
+/// evidence source 7), until
 /// shutdown. A route Veilid
 /// reports dead is `OwnRoutes::on_dead`'s.
 pub(crate) async fn run_rotations(live: Arc<Liveness>, mut offers: Offers) {
@@ -60,6 +62,11 @@ pub(crate) async fn run_rotations(live: Arc<Liveness>, mut offers: Offers) {
             .lock()
             .as_ref()
             .and_then(|s| s.rules.reply_ahead(now));
+        let reported = live
+            .general
+            .lock()
+            .as_ref()
+            .and_then(|s| s.rules.report_ahead(now));
         if silent {
             live.rotate("inbound silence while a peer should answer");
         } else if ahead {
@@ -75,6 +82,11 @@ pub(crate) async fn run_rotations(live: Arc<Liveness>, mut offers: Offers) {
                 state.rules.rotated_for(&peer, now);
             }
             live.rotate("a first contact reached us only through its reply inbox");
+        } else if let Some(peer) = reported {
+            if let Some(state) = live.general.lock().as_mut() {
+                state.rules.rotated_for(&peer, now);
+            }
+            live.rotate("a peer reported our General route unreachable");
         }
     }
 }

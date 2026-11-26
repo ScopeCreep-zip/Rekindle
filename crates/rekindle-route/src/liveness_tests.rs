@@ -229,3 +229,47 @@ fn a_reply_without_its_call_rotates() {
         "ann may hold the old blob"
     );
 }
+
+/// Plan RV2, the seventh evidence source: a peer's report rotates the route
+/// only when it names our live blob, on a route old enough that the peer
+/// holds it, once per peer cooldown; a report on an old blob, from a peer
+/// inside its cooldown, or on a replaced route does nothing.
+#[test]
+fn a_report_on_our_live_blob_rotates_once_per_peer_cooldown() {
+    let start = Instant::now();
+    let (live, old_blob) = ([7; 32], [6; 32]);
+    let mut rules = InboundLiveness::new(start);
+    rules.route_reported("bea", old_blob, live, start);
+    assert_eq!(
+        rules.report_ahead(at(start, REPORT_ROTATE_AGE.as_secs())),
+        None,
+        "a report naming a blob we already replaced"
+    );
+    rules.route_reported("bea", live, live, start);
+    assert_eq!(
+        rules.report_ahead(start),
+        None,
+        "the route is younger than REPORT_ROTATE_AGE"
+    );
+    let old = at(start, REPORT_ROTATE_AGE.as_secs());
+    assert_eq!(rules.report_ahead(old), Some("bea".to_owned()));
+    rules.rotated_for("bea", old);
+    assert_eq!(rules.report_ahead(old), None, "the report was spent");
+    rules.route_reported("bea", live, live, old);
+    assert_eq!(
+        rules.report_ahead(old + REPORT_PEER_COOLDOWN - Duration::from_secs(1)),
+        None,
+        "bea is cooling"
+    );
+    assert_eq!(
+        rules.report_ahead(old + REPORT_PEER_COOLDOWN),
+        Some("bea".to_owned()),
+        "bea's cooldown passed"
+    );
+    rules.route_replaced(old + REPORT_PEER_COOLDOWN);
+    assert_eq!(
+        rules.report_ahead(old + REPORT_PEER_COOLDOWN + REPORT_ROTATE_AGE),
+        None,
+        "a report on the replaced route is not about the new one"
+    );
+}

@@ -150,6 +150,7 @@ mod rotation_routes;
 mod route_budget;
 mod route_link_failure;
 mod route_liveness;
+mod route_unreachable_report;
 mod routeless_request;
 mod scenarios;
 mod sealed_page_warming;

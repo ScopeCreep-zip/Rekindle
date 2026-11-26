@@ -35,7 +35,7 @@ use rekindle_types::subscription_events::{
 use super::content::{parse_inner, stream_name, GroupContentInner};
 use crate::operations::dm::client_id_text;
 use crate::operations::friend::inbox::records;
-use crate::operations::friend::{state, FriendHost};
+use crate::operations::friend::{state, FriendError, FriendHost};
 use crate::operations::typing;
 
 /// How long a member's typing start shows without a refresh.
@@ -373,6 +373,12 @@ impl GroupSink<'_> {
                 .map_err(sink_error)?;
             return Ok(stream_seq);
         }
+        if let DirectBody::GroupRouteReport(report) = &body {
+            on_route_report(self.host, &self.group_id, writer, report.blob_hash)
+                .await
+                .map_err(sink_error)?;
+            return Ok(stream_seq);
+        }
         let DirectBody::DmText(text) = body else {
             tracing::debug!(from = %writer, kind = ?body.type_id(), "group kind not stored");
             return Ok(stream_seq);
@@ -539,4 +545,24 @@ impl StreamSink for GroupSink<'_> {
     }
 
     async fn caught_up(&self, _stream: &str, _writer: &str) {}
+}
+
+/// `writer`'s `GroupRouteReport` read from its chain in `group_id` (plan
+/// RV2, evidence source 7): evidence against our General route only from a
+/// writer on the group's roster (`route_report::ingest`); the chain's seal
+/// and signature authenticated it.
+async fn on_route_report(
+    host: &dyn FriendHost,
+    group_id: &GroupId,
+    writer: &str,
+    blob_hash: [u8; 32],
+) -> Result<(), FriendError> {
+    let group = super::content::held(host, group_id).await?;
+    crate::operations::dm::route_report::ingest(
+        host,
+        writer,
+        &crate::operations::dm::route_report::ReportStream::Group(&group.roster),
+        blob_hash,
+    );
+    Ok(())
 }

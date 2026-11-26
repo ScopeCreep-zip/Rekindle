@@ -518,3 +518,13 @@ struct CreatorJoin {
   anchor @0 :Text;
   invite @1 :Text;
 }
+
+# 0x0150 RouteReport (on the reporter's 1:1 DM chain) and 0x0151
+# GroupRouteReport (only ever sealed inside a 0x0124 entry, on its group
+# chain) (plan RV2, route evidence source 7): the reporter's Veilid
+# declared the named General route blob dead and a re-read of the owner's
+# profile returned that same blob. The owner rotates only if it names its
+# current blob.
+struct RouteReport {
+  blobHash @0 :Data;                    # 32, BLAKE3 of the route blob
+}

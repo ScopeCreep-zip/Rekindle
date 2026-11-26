@@ -17,6 +17,7 @@ mod outgoing;
 pub(crate) mod receipts;
 pub mod route;
 pub(crate) mod route_health;
+pub(crate) mod route_report;
 mod send;
 pub mod stream;
 mod typing;

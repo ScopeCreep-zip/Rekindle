@@ -145,6 +145,12 @@ type_ids! {
     StatusRequest = 0x0140 => Ratchet,
     /// The cached status.
     StatusResponse = 0x0141 => Ratchet,
+    /// A peer reports our General route blob (by BLAKE3) unreachable from
+    /// outside, on its 1:1 DM chain to us (plan RV2, evidence source 7).
+    RouteReport = 0x0150 => Ratchet,
+    /// The same report on its group chain: only ever sealed inside a
+    /// `GroupContent` entry's inner; never a frame of its own.
+    GroupRouteReport = 0x0151 => GroupChain,
     /// The conversation's disappearing-message timer (plan E7.1); a
     /// group's names the group.
     DisappearingTimer = 0x0160 => Ratchet,
@@ -284,7 +290,9 @@ mod tests {
         for id in [
             // 0x0102 is FriendReject, retired (LV23 review L2).
             // 0x0127-0x012B are the lobby kinds (plan E7.2 G6); 0x012C is next.
-            0x0000, 0x0102, 0x0109, 0x012C, 0x0150, 0x0195, 0x0207, 0x0230, 0x0300, 0x0402, 0xFFFF,
+            // 0x0150-0x0151 are the route reports (plan RV2, evidence source
+            // 7); 0x0152 is next.
+            0x0000, 0x0102, 0x0109, 0x012C, 0x0152, 0x0195, 0x0207, 0x0230, 0x0300, 0x0402, 0xFFFF,
         ] {
             assert_eq!(DmTypeId::from_u16(id), None, "{id:#06x}");
         }
@@ -311,7 +319,7 @@ mod tests {
             .collect();
         assert_eq!(
             chain,
-            [0x0124, 0x0126, 0x0127, 0x0128, 0x0129, 0x012A, 0x012B]
+            [0x0124, 0x0126, 0x0127, 0x0128, 0x0129, 0x012A, 0x012B, 0x0151]
         );
         assert_eq!(DmTypeId::FriendAccept.carrier(), Carrier::FirstPayload);
         assert_eq!(

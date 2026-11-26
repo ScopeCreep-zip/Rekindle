@@ -36,8 +36,9 @@ pub use body::{
     GroupDmLeave, GroupDmRename, GroupDmRosterGrow, GroupId, IdentityRotated, LobbyId, LobbyLaunch,
     LobbyOpen, LobbyRef, PreKeyRejected, ProfileBio, ProfileKeyRotated, ReadUpTo,
     RegisterPushRelay, RelayEnvelope, RelayOffer, RelayOfferAck, RelayWithdraw, RequestAuth,
-    RetryRequest, SessionResetDecline, SessionResetRequest, StatusRequest, StatusResponse,
-    StreamRecord, Typing, UnregisterPushRelay, WakeNotify, MAX_DM_ACK_SEQS, MAX_GAME_TOTALS,
+    RetryRequest, RouteReport, SessionResetDecline, SessionResetRequest, StatusRequest,
+    StatusResponse, StreamRecord, Typing, UnregisterPushRelay, WakeNotify, MAX_DM_ACK_SEQS,
+    MAX_GAME_TOTALS,
 };
 pub use frame::{
     ContentHint, DmContent, DmFrame, FrameBody, PqPrekey, PreKeyInitBody, RatchetBody,

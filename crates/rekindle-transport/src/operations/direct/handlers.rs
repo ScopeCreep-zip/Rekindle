@@ -120,6 +120,14 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
         DirectBody::FriendsKey(k) => {
             applied = presence_key::on_friends_key(host, sender, k).await;
         }
+        DirectBody::RouteReport(r) => {
+            applied = crate::operations::dm::route_report::on_report(host, sender, r);
+        }
+        // Only ever sealed inside a group entry (plan RV2, evidence source 7).
+        DirectBody::GroupRouteReport(_) => {
+            tracing::info!(from = %sender, "GroupRouteReport outside a group entry; refused");
+            applied = false;
+        }
         DirectBody::ProfileBio(b) => {
             applied = bio::on_profile_bio(host, sender, b).await;
         }

@@ -20,6 +20,7 @@ mod game;
 mod group;
 mod lobby;
 mod relay;
+mod route_report;
 
 pub use calls::{
     CallAccept, CallClosed, CallInvite, CallMediaState, CallReaction, CallRinging, DmVideoFragment,
@@ -51,6 +52,7 @@ pub use relay::{
     RegisterPushRelay, RelayEnvelope, RelayOffer, RelayOfferAck, RelayWithdraw, StatusRequest,
     StatusResponse, UnregisterPushRelay, WakeNotify,
 };
+pub use route_report::RouteReport;
 
 use super::{decode_root, encode_root, DmTypeId};
 use crate::capnp_codec::CodecError;
@@ -158,6 +160,8 @@ direct_bodies! {
         RelayOfferAck(RelayOfferAck) = relay_offer_ack,
         StatusRequest(StatusRequest) = status_request,
         StatusResponse(StatusResponse) = status_response,
+        RouteReport(RouteReport) = route_report,
+        GroupRouteReport(RouteReport) = route_report,
         DisappearingTimer(DisappearingTimer) = disappearing_timer,
         GameInvite(GameInvite) = game_invite,
         ProfileBio(ProfileBio) = profile_bio,

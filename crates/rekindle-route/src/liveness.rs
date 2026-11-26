@@ -14,7 +14,9 @@
 //!   runs ahead of the hints that should have reached us over the route,
 //!   when a friend re-sends a call we receipted over it (plan RV2: our
 //!   receipt was lost), or when a first contact reaches us only through
-//!   its reply inbox (plan RV2: the call path to us is lost); pace the
+//!   its reply inbox (plan RV2: the call path to us is lost), or when an
+//!   authenticated peer reports our current blob unreachable (plan RV2,
+//!   evidence source 7: its Veilid declared the route dead); pace the
 //!   republish (O3). A peer's `'L'` probe is
 //!   no evidence: it names no sender, so anyone holding our blob could
 //!   send it (plan RV2). Each rotation
@@ -122,6 +124,10 @@ pub struct InboundLiveness {
     /// Per peer, the durable first contact (digest, when it opened) whose
     /// call copy has not arrived over the route (plan RV2).
     replies: std::collections::HashMap<String, ([u8; 32], Instant)>,
+    /// Per peer, when they reported our current blob unreachable (plan
+    /// RV2, evidence source 7): only a report naming the live route's blob
+    /// is kept, and [`Self::route_replaced`] clears them.
+    reports: std::collections::HashMap<String, Instant>,
     /// Per peer, when their evidence last rotated a route: kept across
     /// [`Self::route_replaced`], for [`REPORT_PEER_COOLDOWN`].
     peer_rotated: std::collections::HashMap<String, Instant>,
@@ -140,6 +146,7 @@ impl InboundLiveness {
             lost_receipts: std::collections::HashMap::new(),
             calls: std::collections::HashMap::new(),
             replies: std::collections::HashMap::new(),
+            reports: std::collections::HashMap::new(),
             peer_rotated: std::collections::HashMap::new(),
         }
     }
@@ -198,6 +205,43 @@ impl InboundLiveness {
         self.peer_rotated.insert(peer.to_owned(), now);
         self.lost_receipts.remove(peer);
         self.replies.remove(peer);
+        self.reports.remove(peer);
+    }
+
+    /// `peer` (a friend or a roster member, authenticated by the stream it
+    /// wrote on) reported at `now` the route blob whose BLAKE3 is
+    /// `reported` unreachable from outside (plan RV2, evidence source 7):
+    /// kept only when it names `current`, the BLAKE3 of our live General
+    /// blob; a report about a route we already replaced is ignored.
+    pub fn route_reported(
+        &mut self,
+        peer: &str,
+        reported: [u8; 32],
+        current: [u8; 32],
+        now: Instant,
+    ) {
+        if reported == current {
+            self.reports.entry(peer.to_owned()).or_insert(now);
+        }
+    }
+
+    /// The peer whose report names our live route, on a route at least
+    /// [`REPORT_ROTATE_AGE`] old, and who is out of its
+    /// [`REPORT_PEER_COOLDOWN`], if any: the route rotates on their
+    /// evidence ([`Self::rotated_for`]).
+    #[must_use]
+    pub fn report_ahead(&self, now: Instant) -> Option<String> {
+        if now.duration_since(self.came_up) < REPORT_ROTATE_AGE {
+            return None;
+        }
+        let mut reported: Vec<&String> = self
+            .reports
+            .keys()
+            .filter(|peer| !self.cooling(peer, now))
+            .collect();
+        // The least key, never the map's order: one seed, one schedule.
+        reported.sort();
+        reported.first().map(|peer| (*peer).clone())
     }
 
     /// A call copy of the frame with digest `frame` arrived over the route

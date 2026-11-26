@@ -28,6 +28,7 @@
 pub mod dead;
 pub mod owner;
 pub mod peer;
+pub mod report;
 pub mod resolve;
 
 use std::collections::HashMap;
@@ -89,6 +90,10 @@ pub struct Liveness {
     /// Peers' route blobs known dead, never imported or called while
     /// cached (RV1g B1–B3, [`dead`]).
     dead: Mutex<rekindle_route::dead_routes::DeadRoutes>,
+    /// The (peer, BLAKE3 of the blob) pairs we already reported
+    /// unreachable to their owner: one report per blob (plan RV2, evidence
+    /// source 7).
+    reported: Mutex<std::collections::HashSet<(String, [u8; 32])>>,
 }
 
 impl Liveness {
@@ -108,6 +113,7 @@ impl Liveness {
             sees_inbound,
             resolves: resolve::ResolveFlights::default(),
             dead: Mutex::new(rekindle_route::dead_routes::DeadRoutes::default()),
+            reported: Mutex::new(std::collections::HashSet::new()),
         })
     }
 

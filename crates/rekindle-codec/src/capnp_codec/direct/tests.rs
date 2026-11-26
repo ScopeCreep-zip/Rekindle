@@ -207,6 +207,12 @@ fn samples() -> Vec<DirectBody> {
             last_seen: 1_700_000_000,
             route_blob: vec![7; 20],
         }),
+        DirectBody::RouteReport(RouteReport {
+            blob_hash: [0x5A; 32],
+        }),
+        DirectBody::GroupRouteReport(RouteReport {
+            blob_hash: [0x5B; 32],
+        }),
         DirectBody::DisappearingTimer(body::timer_sample()),
         DirectBody::GameInvite(body::game_invite_sample()),
         DirectBody::ProfileBio(body::profile_bio_sample()),

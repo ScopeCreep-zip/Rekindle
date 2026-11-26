@@ -144,6 +144,7 @@ and the framed DM kinds.
 | `DmVideoFragment` (0x0220) | DM video |
 | `RegisterPushRelay` / `UnregisterPushRelay` / `WakeNotify` (0x0310-0x0312) | Mobile Push Relay (§17.3 Tier 3), sealed |
 | `StatusRequest` / `StatusResponse` (0x0140/0x0141) | Strand Relay presence cache (§13.5 "social CDN") |
+| `RouteReport` / `GroupRouteReport` (0x0150/0x0151) | Route evidence source 7 (plan RV2): the reporter's Veilid released our General route after a failed remote test and a re-read of our profile returned the same blob, so it names that blob's BLAKE3 once, on its 1:1 DM chain (friend) or inside a `GroupContent` entry on its group chain (roster member). We rotate only if it names our live blob, under the per-peer cooldown and route budget |
 
 ### Invite System
 
