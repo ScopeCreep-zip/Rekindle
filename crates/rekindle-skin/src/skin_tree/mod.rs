@@ -9,6 +9,7 @@ mod anchor_client;
 mod anchor_share;
 pub mod brand;
 pub mod chat_roles;
+pub mod chat_slots;
 mod clip;
 pub mod compose;
 pub mod content;

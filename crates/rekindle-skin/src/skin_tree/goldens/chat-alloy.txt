@@ -1,8 +1,8 @@
 MainTitleBar TitleBar target [0, 0, 300, 160] art [0, 0, 300, 160] Frame
 ChatLogo Logo label "Rekindle" cover [0, 0, 34, 21] glyph Rekindle
-UserNameField ChatTitle
+UserNameField Group
   UserNameBG Part
-    UserNameText Part
+    UserNameText ChatTitle
     TypingMessage Slot(TypingNotice)
 Middle Decor target [0, 0, 300, 25] art [0, 0, 300, 25] Frame
 ChatArea Slot(ChatArea)
