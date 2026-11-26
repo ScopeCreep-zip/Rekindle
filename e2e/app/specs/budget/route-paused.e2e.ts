@@ -148,6 +148,29 @@ describe("a paused inbound route is said in the tree's status field, which stays
         await browser.execute(() => (document.activeElement as HTMLElement | null)?.blur());
         await browser.pause(500);
         console.log(`[paused] ${file} after blurring the focused element: hiding the line changes ${await seenInField(PAUSED)} px`);
+        // Does the input cover it? The line is out of hit-testing
+        // (pointer-events: none), so its place in the stack is not in the
+        // list above: the input is hidden and the line measured again, with
+        // both their stacking contexts named.
+        const ctx = (await browser.execute(() => {
+          const ctxOf = (e: HTMLElement | null): string => {
+            const out: string[] = [];
+            for (let n = e; n && n !== document.body; n = n.parentElement) {
+              const c = getComputedStyle(n);
+              const makes = c.zIndex !== "auto" || c.opacity !== "1" || c.transform !== "none" || c.filter !== "none" || c.isolation === "isolate" || c.mixBlendMode !== "normal" || c.willChange !== "auto" || c.contain !== "none";
+              if (makes) out.push(`${n.tagName.toLowerCase()}.${n.className || "-"} z=${c.zIndex} op=${c.opacity} tf=${c.transform !== "none"} filter=${c.filter !== "none"}`);
+            }
+            return out.join(" < ");
+          };
+          const input = document.querySelector<HTMLElement>(".skin-status-edit");
+          const line = document.querySelector<HTMLElement>(".skin-status-paused");
+          return JSON.stringify({ line: ctxOf(line), input: ctxOf(input), inputBg: input ? getComputedStyle(input).backgroundColor : "-" });
+        })) as string;
+        console.log(`[paused] ${file} stacking contexts: ${ctx}`);
+        await browser.execute(() => document.querySelector<HTMLElement>(".skin-status-edit")?.style.setProperty("visibility", "hidden", "important"));
+        await browser.pause(300);
+        console.log(`[paused] ${file} with the input hidden: hiding the line changes ${await seenInField(PAUSED)} px`);
+        await browser.execute(() => document.querySelector<HTMLElement>(".skin-status-edit")?.style.removeProperty("visibility"));
       }
       await shot(`${file}-paused-field`);
       expect({ pack: file, lineSeen: line >= 20, inputSeen: input >= 20 }).toEqual({ pack: file, lineSeen: true, inputSeen: false });
