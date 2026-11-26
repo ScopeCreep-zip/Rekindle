@@ -50,7 +50,7 @@ fn own_states(ops: Vec<StoredOp>, mine: Option<&str>) -> Vec<(String, OpState)> 
         .collect()
 }
 
-fn outcome_of(
+pub(super) fn outcome_of(
     published: &crate::host::adapters::outbox::Published,
 ) -> rekindle_governance_runtime::OpOutcome {
     match published {
@@ -270,80 +270,6 @@ impl HostGovernance {
         rekindle_governance_runtime::op_walk::fetch_from_log(&*pool, logs, op_ref).await
     }
 
-    /// Publish `encoded` on our device's op record (ADR 0022 rules 3 and
-    /// 10, `device_signer::encoded_op_record`, the write path's rule: a
-    /// `MemberJoined` on the record its carried endorsement binds, else
-    /// `M(p)` for the first device or the `M(p,d)` our key's endorsement
-    /// binds in the state) and wait for what
-    /// `landing` names: its first attempt (a queued op stands; community
-    /// create only), its landing on `M`/2 and `M`/3 within the command's
-    /// deadline, or only its row on the stream.
-    pub(super) async fn publish_governance_op_impl(
-        &self,
-        community_id: &str,
-        encoded: Vec<u8>,
-        landing: rekindle_governance_runtime::OpLanding,
-    ) -> Result<rekindle_governance_runtime::OpOutcome, GovernanceRuntimeError> {
-        let state = self.governance_state_impl(community_id).unwrap_or_default();
-        let record = rekindle_governance_runtime::device_signer::encoded_op_record(
-            self,
-            community_id,
-            &state,
-            &encoded,
-        )?;
-        let ops = self
-            .ctx
-            .outbox
-            .governance_ops()
-            .ok_or_else(|| adapter("publish op", "the outbox is not running"))?;
-        let outcome = match landing {
-            rekindle_governance_runtime::OpLanding::FirstAttempt => {
-                let published = ops
-                    .publish_answer(
-                        community_id,
-                        &record,
-                        encoded,
-                        rekindle_types::config::GOVERNANCE_ANSWER_BOUND,
-                    )
-                    .await
-                    .map_err(|e| adapter("publish op", e))?;
-                if let crate::host::adapters::outbox::Published::Queued(reason) = &published {
-                    tracing::info!(community = %community_id, %reason, "governance op pending, queued on the outbox");
-                }
-                outcome_of(&published)
-            }
-            // Bounded by the command's deadline (the client's
-            // `NETWORK_COMMAND_DEADLINE`, answered before it; shared with the
-            // barrier's wait in line): the link, with its revoke row (RV4 M3).
-            rekindle_governance_runtime::OpLanding::InviteLanded { invite_id, .. } => {
-                let published = ops
-                    .publish_invite_created(
-                        community_id,
-                        &record,
-                        encoded,
-                        invite_id,
-                        landing.remaining(),
-                    )
-                    .await
-                    .map_err(|e| adapter("publish op", e))?;
-                // The command is refused, but the op stands (it is in our
-                // state, gossiped, and the outbox lands it).
-                if let crate::host::adapters::outbox::Published::Queued(reason) = published {
-                    tracing::warn!(community = %community_id, %reason, "governance op not yet published, queued");
-                    return Err(GovernanceRuntimeError::NotYetPublished);
-                }
-                rekindle_governance_runtime::OpOutcome::Landed
-            }
-            rekindle_governance_runtime::OpLanding::Queued => {
-                ops.queue(community_id, &record, encoded)
-                    .await
-                    .map_err(|e| adapter("queue op", e))?;
-                rekindle_governance_runtime::OpOutcome::Pending
-            }
-        };
-        Ok(outcome)
-    }
-
     /// The fast path: every member hears the op before its watch fires
     /// (`GovernanceRuntimeDeps::gossip_governance_op`, before the install).
     pub(super) fn gossip_op(&self, community_id: &str, encoded: Vec<u8>) {
@@ -355,15 +281,55 @@ impl HostGovernance {
         );
     }
 
-    /// A gossiped `governanceOp @74`: into the op store and the rebuild
-    /// (`op_log::receive_op`), for both tracks.
+    /// A gossiped `governanceOp @74`: seen, read at its locator at once,
+    /// and into the op store and the rebuild only as that read returns it
+    /// (`op_log::receive_gossiped_op`, lead ruling 2026-11-26), for both
+    /// tracks.
     pub async fn on_governance_op(&self, community_id: &str, op: Vec<u8>) {
         if !self.ctx.communities.map().read().contains_key(community_id) {
             return;
         }
-        if let Err(error) = op_log::receive_op(self, community_id, op).await {
-            tracing::debug!(community = community_id, %error, "gossiped governance op not stored");
+        match op_log::receive_gossiped_op(self, community_id, op.clone()).await {
+            Ok(rekindle_governance_runtime::op_receive::Gossiped::NotLanded) => {
+                self.read_when_landed(community_id, op);
+            }
+            Ok(_) => {}
+            Err(error) => {
+                tracing::debug!(community = community_id, %error, "gossiped governance op not stored");
+            }
         }
+    }
+
+    /// A seen op its author's log did not serve yet: read its locator again
+    /// after each of `rekindle_governance_runtime::op_receive::LANDING_READS`, on the community's scope,
+    /// until a read returns it (merged) or settles it otherwise (ruling
+    /// 2026-11-26 item 1). An op that never lands is never merged: the
+    /// reads end, nothing is stored.
+    fn read_when_landed(&self, community_id: &str, op: Vec<u8>) {
+        let host = self.clone();
+        let community = community_id.to_owned();
+        let scope = self.ctx.community_scope(community_id);
+        let stop = scope.token();
+        scope.spawn_or_drop("gossiped op landing reads", async move {
+            for wait in rekindle_governance_runtime::op_receive::LANDING_READS {
+                if stop
+                    .run_until_cancelled(tokio::time::sleep(wait))
+                    .await
+                    .is_none()
+                    || !host.holds_community(&community)
+                {
+                    return;
+                }
+                match op_log::receive_gossiped_op(&host, &community, op.clone()).await {
+                    Ok(rekindle_governance_runtime::op_receive::Gossiped::NotLanded) => {}
+                    Ok(_) => return,
+                    Err(error) => {
+                        tracing::debug!(community = %community, %error, "seen governance op not read");
+                        return;
+                    }
+                }
+            }
+        });
     }
 
     /// The `governance_op` stream's send: append `op` to `record`'s op log

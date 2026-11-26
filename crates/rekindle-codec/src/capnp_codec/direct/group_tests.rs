@@ -34,12 +34,17 @@ fn group_bodies_hold_their_shapes() {
         epoch: 0,
         signature: [2; 64],
         creator_chain_key: dht_key(),
+        rendezvous_key: dht_key(),
+        slot: 1,
+        slot_writer: s("VLD0:writer"),
+        slots: vec![0, 1, 2],
     };
     for roster in [
         roster()[..2].to_vec(),
         roster().iter().cycle().take(9).cloned().collect(),
     ] {
         let short = GroupDmInvite {
+            slots: (0..u8::try_from(roster.len()).unwrap_or(9)).collect(),
             roster,
             ..invite.clone()
         };
@@ -57,6 +62,43 @@ fn group_bodies_hold_their_shapes() {
         ..invite.clone()
     };
     assert_eq!(invite.signing_bytes(), rekeyed.signing_bytes());
+    // Decision 67 item 3: the rendezvous record and the slot plan are
+    // signed; the recipient's own slot and writer are not.
+    let resent = GroupDmInvite {
+        slot: 2,
+        slot_writer: s("VLD0:other-writer"),
+        ..invite.clone()
+    };
+    assert_eq!(invite.signing_bytes(), resent.signing_bytes());
+    let moved = GroupDmInvite {
+        rendezvous_key: s("VLD0:elsewhere"),
+        ..invite.clone()
+    };
+    assert_ne!(invite.signing_bytes(), moved.signing_bytes());
+    let replanned = GroupDmInvite {
+        slots: vec![0, 2, 1],
+        ..invite.clone()
+    };
+    assert_ne!(invite.signing_bytes(), replanned.signing_bytes());
+    assert!(!format!("{invite:?}").contains("VLD0:writer"));
+    let decoded = DirectBody::decode(
+        DmTypeId::GroupDmInvite,
+        &DirectBody::GroupDmInvite(invite.clone()).encode(),
+    );
+    assert!(matches!(decoded, Ok(DirectBody::GroupDmInvite(ref back)) if *back == invite));
+    for (slot, slots) in [
+        (8, vec![0, 1, 2]),
+        (1, vec![0, 1]),
+        (1, vec![0, 1, 1]),
+        (1, vec![0, 1, 9]),
+    ] {
+        let bad = DirectBody::GroupDmInvite(GroupDmInvite {
+            slot,
+            slots,
+            ..invite.clone()
+        });
+        assert!(DirectBody::decode(DmTypeId::GroupDmInvite, &bad.encode()).is_err());
+    }
     let mut fewer = invite.clone();
     fewer.roster[2].identity = "d".repeat(64);
     assert_ne!(invite.signing_bytes(), fewer.signing_bytes());

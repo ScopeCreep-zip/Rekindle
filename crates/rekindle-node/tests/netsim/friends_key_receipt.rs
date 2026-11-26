@@ -1,7 +1,7 @@
-//! A presence key is receipted (live A/B finding 36): the `FriendsKey` row
-//! goes by `app_call` and settles only on its receipt, so one lost on the
-//! way is attempted again and the friend's presence lights up once it
-//! lands, not at the next rotation.
+//! A presence key lost on the way is attempted again (live A/B finding
+//! 36): to an accepted friend the `FriendsKey` is an entry of our DM chain
+//! (plan RV2c), re-hinted until the friend's `DmAck`, so the friend's
+//! presence lights up once it lands, not at the next rotation.
 
 use std::time::Duration;
 
@@ -72,10 +72,7 @@ async fn a_status_that_lands_before_the_key_is_shown_when_the_key_does() {
     request(&sim, &nodes[0], &nodes[1]).await;
     sim.fault(status_fails(1));
     // Rae takes Ann's accept but her answer is lost, and so is every frame
-    // of hers: Ann's FriendsKey waits for her first contact to be proven
-    // (plan HOL1, lead decision 47: the receipt, or Rae's first frame
-    // under the session, `handshake_order::settle_first_contact`), so a
-    // frame of Rae's that arrived would rightly free it.
+    // of hers: her first contact is never proven while it lasts.
     sim.fault(Fault::DropFrom {
         node: 0,
         per_mille: 1000,
@@ -86,10 +83,13 @@ async fn a_status_that_lands_before_the_key_is_shown_when_the_key_does() {
     sim.fault(reply_slot_fails(1));
     accept(&nodes[1], &nodes[0]).await;
     assert!(eventually(&sim, LIMIT, || is_accepted_friend(&nodes[0], &ann)).await);
-    tokio::time::sleep(Duration::from_secs(20)).await;
+    // Plan RV2c: Ann's key is an entry of her DM chain, which waits for no
+    // proof of her first contact (the HOL1 wait this test once asserted
+    // was the receipted row's); Rae holds the session the accept opened,
+    // so she opens it with every frame of hers still lost.
     assert!(
-        !saw(&events, &ann, "online"),
-        "without Ann's key, Rae cannot open her status"
+        eventually(&sim, LIMIT, || async { saw(&events, &ann, "online") }).await,
+        "Rae shows Ann online once her key lands, her own frames all lost"
     );
     sim.fault(Fault::DropFrom {
         node: 0,
@@ -98,11 +98,7 @@ async fn a_status_that_lands_before_the_key_is_shown_when_the_key_does() {
     // Heal ends the reply-slot fault; Ann's STATUS writes keep failing.
     sim.fault(Fault::Heal);
     sim.fault(status_fails(1));
-    assert!(
-        eventually(&sim, LIMIT, || async { saw(&events, &ann, "online") }).await,
-        "Rae shows Ann online once her key lands"
-    );
-    assert!(is_accepted_friend(&nodes[1], &rae).await);
+    assert!(eventually(&sim, LIMIT, || is_accepted_friend(&nodes[1], &rae)).await);
 }
 
 fn status_fails(node: usize) -> Fault {

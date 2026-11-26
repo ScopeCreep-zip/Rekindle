@@ -58,9 +58,19 @@ fn signed(creator: &SigningKey) -> GroupDmInvite {
     list.extend(members(3).into_iter().skip(1));
     let roster = Roster::new(list).expect("roster");
     let key = sender_key::mint_first(&OsRandom);
-    build_invite([9; 16], "squad", &roster, &key, "VLD0:chain-creator", |m| {
-        creator.sign(m).to_bytes()
-    })
+    let plan = RendezvousPlan {
+        record_key: "VLD0:rendezvous",
+        slots: &[0, 1, 2],
+    };
+    build_invite(
+        [9; 16],
+        "squad",
+        &roster,
+        &key,
+        "VLD0:chain-creator",
+        plan,
+        |m| creator.sign(m).to_bytes(),
+    )
 }
 
 #[test]
@@ -75,6 +85,20 @@ fn invite_signature_verifies_and_tampering_fails() {
     tampered.roster[2] = member_of(&signer(7));
     assert!(matches!(
         verify_invite(&tampered, &from),
+        Err(DmError::BadSignature)
+    ));
+    // Decision 67 item 3: the rendezvous record and the slot plan are
+    // signed, so a relay cannot point members at another record or row.
+    let mut moved = invite.clone();
+    moved.rendezvous_key = "VLD0:elsewhere".into();
+    assert!(matches!(
+        verify_invite(&moved, &from),
+        Err(DmError::BadSignature)
+    ));
+    let mut replanned = invite.clone();
+    replanned.slots = vec![0, 2, 1];
+    assert!(matches!(
+        verify_invite(&replanned, &from),
         Err(DmError::BadSignature)
     ));
     let mut renamed = invite.clone();
@@ -103,6 +127,10 @@ fn invite_signature_verifies_and_tampering_fails() {
         &Roster::new(invite.roster.clone()).expect("r"),
         &sender_key::mint_first(&OsRandom),
         "VLD0:chain-forged",
+        RendezvousPlan {
+            record_key: "VLD0:rendezvous",
+            slots: &[0, 1, 2],
+        },
         |m| signer(2).sign(m).to_bytes(),
     );
     assert!(matches!(

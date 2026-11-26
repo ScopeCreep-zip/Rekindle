@@ -184,6 +184,13 @@ pub enum Published {
     Queued(String),
 }
 
+/// The wait for a stored op row's landing (its first attempt, or through
+/// the retries): the row is durable before this is handed out, so the
+/// caller gossips the op only once an abort can no longer lose it (lead
+/// ruling 2026-11-26, item 2).
+pub type PublishWait =
+    std::pin::Pin<Box<dyn std::future::Future<Output = Result<Published, String>> + Send>>;
+
 pub struct GovernanceOps {
     outbox: Arc<Outbox<HostOutbox>>,
     waiters: Arc<OpWaiters>,
@@ -209,7 +216,8 @@ impl GovernanceOps {
             .await
     }
 
-    /// Queue `op` (encoded) for `record`'s op log in `community` and wait
+    /// Queue `op` (encoded) for `record`'s op log in `community`; the
+    /// returned wait (handed out once the row is stored) waits
     /// for its first attempt for at most `within` (plan E3.2 S6b, RV4 review
     /// M2). [`Published::Queued`]: the row stays and the outbox lands it; its
     /// state reaches the frontends as `GovernanceEvent::OpPublication`
@@ -224,19 +232,23 @@ impl GovernanceOps {
         record: &str,
         op: Vec<u8>,
         within: std::time::Duration,
-    ) -> Result<Published, String> {
+    ) -> Result<PublishWait, String> {
         let (entry, client_id) = row(community, record, &op)?;
         let first = self.waiters.wait(community, &client_id);
         self.enqueue(entry, community, &client_id).await?;
-        let first = match tokio::time::timeout(within, first).await {
-            Ok(Ok(first)) => first,
-            Ok(Err(_)) => return Err("the outbox stopped before the op's first attempt".to_owned()),
-            Err(_) => Err(format!("no first attempt within {within:?}")),
-        };
-        Ok(match first {
-            Ok(()) => Published::Landed,
-            Err(reason) => Published::Queued(reason),
-        })
+        Ok(Box::pin(async move {
+            let first = match tokio::time::timeout(within, first).await {
+                Ok(Ok(first)) => first,
+                Ok(Err(_)) => {
+                    return Err("the outbox stopped before the op's first attempt".to_owned())
+                }
+                Err(_) => Err(format!("no first attempt within {within:?}")),
+            };
+            Ok(match first {
+                Ok(()) => Published::Landed,
+                Err(reason) => Published::Queued(reason),
+            })
+        }))
     }
 
     /// Queue `op` and return once its row is stored, behind our earlier ops
@@ -296,7 +308,7 @@ impl GovernanceOps {
         op: Vec<u8>,
         invite_id: [u8; 16],
         within: std::time::Duration,
-    ) -> Result<Published, String> {
+    ) -> Result<PublishWait, String> {
         let (entry, client_id) = row(community, record, &op)?;
         let revoke_id = revoke_client_id(invite_id);
         let revoke = Entry {
@@ -321,19 +333,24 @@ impl GovernanceOps {
             return Err(error.to_string());
         }
         self.outbox.wake();
-        let waited = tokio::time::timeout(within, landed).await;
-        self.waiters.forget(community, &client_id);
-        match waited {
-            Ok(Ok(())) => {
-                self.outbox
-                    .discard(&revoke_id)
-                    .await
-                    .map_err(|e| format!("the invite's revoke row stays: {e}"))?;
-                Ok(Published::Landed)
+        let outbox = Arc::clone(&self.outbox);
+        let waiters = Arc::clone(&self.waiters);
+        let community = community.to_owned();
+        Ok(Box::pin(async move {
+            let waited = tokio::time::timeout(within, landed).await;
+            waiters.forget(&community, &client_id);
+            match waited {
+                Ok(Ok(())) => {
+                    outbox
+                        .discard(&revoke_id)
+                        .await
+                        .map_err(|e| format!("the invite's revoke row stays: {e}"))?;
+                    Ok(Published::Landed)
+                }
+                Ok(Err(_)) => Err("the outbox stopped before the op landed".to_owned()),
+                Err(_) => Ok(Published::Queued(format!("not landed within {within:?}"))),
             }
-            Ok(Err(_)) => Err("the outbox stopped before the op landed".to_owned()),
-            Err(_) => Ok(Published::Queued(format!("not landed within {within:?}"))),
-        }
+        }))
     }
 
     /// Where each of our op rows of `community` not yet sent stands, by op

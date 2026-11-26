@@ -8,6 +8,7 @@ mod inbox_watch;
 mod maintenance;
 mod participant;
 mod presence;
+mod rendezvous_watch;
 mod watch;
 
 use std::collections::BTreeMap;
@@ -51,6 +52,9 @@ pub struct FriendWatches {
     replies: Mutex<BTreeMap<String, LeaseId>>,
     /// Our friend code's request inbox lease, by record key (plan RV2e).
     codes: Mutex<BTreeMap<String, LeaseId>>,
+    /// Our watched column of each group's rendezvous record, by record key
+    /// (plan decision 67 item 3).
+    rendezvous: Mutex<BTreeMap<String, rendezvous_watch::HeldColumn>>,
     /// The code slot's roll budget (plan RV2e): a route's bucket, since a
     /// roll costs a record create and two writes, as a route costs a
     /// creation. Read from the identity's database at unlock with the save
@@ -401,6 +405,29 @@ impl FriendHost for HostFriends {
 
     async fn sync_reply_inboxes(&self) {
         inbox_watch::rewatch_open_requests(self).await;
+    }
+
+    fn keep_group_rendezvous(
+        &self,
+        group_id: &str,
+        mint: &rekindle_dm::RendezvousMint,
+    ) -> Result<(), FriendError> {
+        rendezvous_watch::keep_writers(self, group_id, mint)
+    }
+
+    fn group_rendezvous_writers(
+        &self,
+        group_id: &str,
+    ) -> Result<Option<rekindle_dm::RendezvousMint>, FriendError> {
+        rendezvous_watch::writers(self, group_id)
+    }
+
+    fn forget_group_rendezvous(&self, group_id: &str) -> Result<(), FriendError> {
+        rendezvous_watch::forget_writers(self, group_id)
+    }
+
+    async fn sync_group_rendezvous(&self) {
+        rendezvous_watch::sync(self, false).await;
     }
 
     fn reply_inbox_owner(

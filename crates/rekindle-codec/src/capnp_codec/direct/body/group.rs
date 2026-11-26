@@ -5,6 +5,7 @@
 //! sender's key and written to the sender's group chain. Signing, sealing
 //! and verifying are `rekindle-dm`'s (slice G2); these are the bytes.
 
+use rekindle_types::dht_layout::group_rendezvous as rendezvous;
 use rekindle_types::group_dm::{GroupDmRosterMember, MAX_MEMBERS, MAX_NAME_CHARS, MIN_MEMBERS};
 use rekindle_types::presence::limits::MAX_DISPLAY_NAME_LEN;
 
@@ -33,6 +34,15 @@ pub struct GroupDmInvite {
     pub signature: [u8; 64],
     /// The creator's group chain (a `dm_participant` record).
     pub creator_chain_key: String,
+    /// The group's rendezvous record (plan decision 67 item 3), signed.
+    pub rendezvous_key: String,
+    /// The recipient's slot: its row (it writes) and column (it watches).
+    pub slot: u8,
+    /// The recipient's one-time writer of row [`Self::slot`] (keypair
+    /// text), sealed to that recipient alone by the pairwise session.
+    pub slot_writer: String,
+    /// Each roster member's slot, in roster order, signed.
+    pub slots: Vec<u8>,
 }
 
 /// The key is never printed.
@@ -44,6 +54,9 @@ impl std::fmt::Debug for GroupDmInvite {
             .field("roster", &self.roster)
             .field("epoch", &self.epoch)
             .field("creator_chain_key", &self.creator_chain_key)
+            .field("rendezvous_key", &self.rendezvous_key)
+            .field("slot", &self.slot)
+            .field("slots", &self.slots)
             .finish_non_exhaustive()
     }
 }
@@ -57,11 +70,13 @@ fn put_len_prefixed(out: &mut Vec<u8>, bytes: &[u8]) {
 
 impl GroupDmInvite {
     /// The bytes the creator signs: `GROUP_DM_INVITE ‖ group_id ‖ name ‖
-    /// roster ‖ creator_chain_key ‖ epoch`, every variable field length-prefixed, the roster in
-    /// its order. The sending key is not signed: the pairwise session
-    /// already authenticates it to its one recipient, and a signature over
-    /// it would make the key a transferable artifact. What admission reads
-    /// (who is on the roster, under which records) is signed.
+    /// roster ‖ creator_chain_key ‖ epoch ‖ rendezvous_key ‖ slots`, every
+    /// variable field length-prefixed, the roster in its order. The sending
+    /// key, the recipient's `slot` and its `slot_writer` are not signed: the
+    /// pairwise session already authenticates them to their one recipient,
+    /// and a signature over a secret would make it a transferable artifact.
+    /// What admission reads (who is on the roster, under which records, in
+    /// which rendezvous row) is signed.
     #[must_use]
     pub fn signing_bytes(&self) -> Vec<u8> {
         let mut out = rekindle_types::domains::GROUP_DM_INVITE.as_bytes().to_vec();
@@ -75,6 +90,8 @@ impl GroupDmInvite {
         }
         put_len_prefixed(&mut out, self.creator_chain_key.as_bytes());
         out.extend_from_slice(&self.epoch.to_be_bytes());
+        put_len_prefixed(&mut out, self.rendezvous_key.as_bytes());
+        put_len_prefixed(&mut out, &self.slots);
         out
     }
 
@@ -94,6 +111,10 @@ impl GroupDmInvite {
         b.set_epoch(self.epoch);
         b.set_signature(&self.signature);
         b.set_creator_chain_key(&self.creator_chain_key);
+        b.set_rendezvous_key(&self.rendezvous_key);
+        b.set_slot(self.slot);
+        b.set_slot_writer(&self.slot_writer);
+        b.set_slots(&self.slots);
     }
 
     /// A roster outside 3-8 members, a member that is not an identity key
@@ -136,8 +157,48 @@ impl GroupDmInvite {
             epoch: r.get_epoch(),
             signature: fixed(r.get_signature(), "group invite signature")?,
             creator_chain_key: record_key(r.get_creator_chain_key(), "creator chain key")?,
+            rendezvous_key: record_key(r.get_rendezvous_key(), "rendezvous key")?,
+            slot: rendezvous_slot(r.get_slot())?,
+            slot_writer: bounded_text(r.get_slot_writer(), MAX_WRITER_LEN, "slot writer")?,
+            slots: rendezvous_slots(data(r.get_slots())?, count)?,
         })
     }
+}
+
+/// The longest one-time writer keypair text read (`VLD0:` key and secret).
+const MAX_WRITER_LEN: usize = 256;
+
+/// A slot is a row of the rendezvous record.
+fn rendezvous_slot(slot: u8) -> Result<u8, CodecError> {
+    if slot < rendezvous::WRITERS {
+        Ok(slot)
+    } else {
+        Err(CodecError::Deserialization(format!(
+            "rendezvous slot {slot} past {}",
+            rendezvous::WRITERS
+        )))
+    }
+}
+
+/// One distinct slot per roster member.
+fn rendezvous_slots(slots: Vec<u8>, members: usize) -> Result<Vec<u8>, CodecError> {
+    if slots.len() != members {
+        return Err(CodecError::Deserialization(format!(
+            "{} rendezvous slots for {members} members",
+            slots.len()
+        )));
+    }
+    let mut seen = 0u8;
+    for slot in &slots {
+        let bit = 1u8 << rendezvous_slot(*slot)?;
+        if seen & bit != 0 {
+            return Err(CodecError::Deserialization(format!(
+                "rendezvous slot {slot} given twice"
+            )));
+        }
+        seen |= bit;
+    }
+    Ok(slots)
 }
 
 /// 0x0121 GroupDmAccept, inside the ratchet to each member: we joined, and

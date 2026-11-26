@@ -40,7 +40,12 @@ impl SimDht {
         // An outbound error: the same handler bails `TryAgain` first
         // (`set_value.rs:276-290`).
         if self.fault_try_again() {
-            tokio::time::sleep(self.net.latency.draw(self.node, latency::SET)).await;
+            tokio::time::sleep(
+                self.net
+                    .latency
+                    .draw_op(self.node, latency::SET, key, &[subkey]),
+            )
+            .await;
             return Err(try_again());
         }
         let accepting = {

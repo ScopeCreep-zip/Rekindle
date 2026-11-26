@@ -197,15 +197,22 @@ async fn an_op_written_through_the_write_path_judges_effective_in_the_merged_vie
         .returning(|| Arc::new(rekindle_utils::SystemClock));
     let stored = Arc::new(Mutex::new(Vec::new()));
     let into = Arc::clone(&stored);
+    // What ran in which order (lead ruling 2026-11-26, item 2): the
+    // durable outbox row before the store and the gossip.
+    let order: Arc<Mutex<Vec<&'static str>>> = Arc::default();
+    let stored_at = Arc::clone(&order);
     ops.expect_store_signed_governance_op()
         .returning(move |_, op| {
             into.lock().push(op.clone());
+            stored_at.lock().push("store");
             Ok(())
         });
     let ops: std::sync::Arc<dyn crate::deps::GovernanceOpStore> = std::sync::Arc::new(ops);
     deps.expect_op_store()
         .returning(move || std::sync::Arc::clone(&ops));
-    deps.expect_gossip_governance_op().return_const(());
+    let gossiped_at = Arc::clone(&order);
+    deps.expect_gossip_governance_op()
+        .returning(move |_, _| gossiped_at.lock().push("gossip"));
     let merged = Arc::new(Mutex::new(None));
     let installed = Arc::clone(&merged);
     deps.expect_set_governance_state()
@@ -216,12 +223,21 @@ async fn an_op_written_through_the_write_path_judges_effective_in_the_merged_vie
         barrier.complete(Some(crate::unlock_barrier::BarrierPhase::Passed));
         barrier
     });
+    let queued_at = Arc::clone(&order);
     deps.expect_publish_governance_op()
-        .returning(|_, _, _| Ok(OpOutcome::Landed));
+        .returning(move |_, _, _| {
+            queued_at.lock().push("row");
+            Ok(crate::deps::OpPublication::settled(Ok(OpOutcome::Landed)))
+        });
 
     let entry = rekindle_governance::fixture::meta("renamed");
     let outcome = write_entry(&deps, COMMUNITY, entry).await.unwrap();
     assert!(matches!(outcome, OpOutcome::Landed));
+    assert_eq!(
+        *order.lock(),
+        ["row", "store", "gossip"],
+        "the outbox row is stored before the op is stored or gossiped, so no abort between them loses it"
+    );
 
     let held = stored.lock().clone();
     let read = op_log::verify_held(COMMUNITY, &held);

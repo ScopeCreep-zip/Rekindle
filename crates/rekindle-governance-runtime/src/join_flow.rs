@@ -394,6 +394,9 @@ pub async fn run_join_stages<D: GovernanceRuntimeDeps>(
         walked = walked.held.len(),
         "join: the op set walked"
     );
+    refuse_incomplete(&walked.set).inspect_err(|refused| {
+        tracing::info!(community = anchor, source = "walk", %refused, "join refused");
+    })?;
     let gov_state = walked.merged.state.clone();
 
     if gov_state.bans.contains(&identity.pseudo) {
@@ -472,6 +475,25 @@ pub async fn run_join_stages<D: GovernanceRuntimeDeps>(
     })
 }
 
+/// A walk that left a cited dep unfetched is not the community's history:
+/// its merge would judge the invite (and every later check) on a partial
+/// op set, so the join fails naming the first missing op's author record
+/// and seq, never a silent partial merge.
+///
+/// # Errors
+/// [`GovernanceRuntimeError::HistoryIncomplete`] when `set` misses a dep.
+pub(crate) fn refuse_incomplete(
+    set: &crate::op_log::VerifiedSet,
+) -> Result<(), GovernanceRuntimeError> {
+    match set.missing.first() {
+        None => Ok(()),
+        Some(missing) => Err(GovernanceRuntimeError::HistoryIncomplete {
+            author_record: missing.author_record.clone(),
+            author_seq: missing.author_seq,
+        }),
+    }
+}
+
 #[cfg(test)]
 #[path = "join_flow_invite_tests.rs"]
 mod invite_tests;
@@ -490,5 +512,39 @@ mod tests {
         assert_eq!(enc.decode("Zm9vYmFy").unwrap(), b"foobar");
         assert_eq!(enc.decode("Zg==").unwrap(), b"f");
         assert!(enc.decode("Zm9v!!").is_err());
+    }
+
+    /// A walk missing a cited dep fails the join with the missing op's
+    /// author record and seq; a complete walk passes.
+    #[test]
+    fn a_walk_missing_a_dep_fails_the_join_naming_it() {
+        use crate::error::GovernanceRuntimeError;
+        use crate::op_log::VerifiedSet;
+        use rekindle_types::governance::{OpHash, OpRef};
+        use rekindle_types::id::PseudonymKey;
+
+        assert!(super::refuse_incomplete(&VerifiedSet::default()).is_ok());
+        let set = VerifiedSet {
+            missing: vec![OpRef {
+                op_hash: OpHash([7; 32]),
+                author: PseudonymKey([1; 32]),
+                author_record: "VLD0:leaver".to_owned(),
+                author_seq: 1,
+                device_key: [2; 32],
+            }],
+            ..VerifiedSet::default()
+        };
+        let refused = super::refuse_incomplete(&set).expect_err("a partial walk is refused");
+        assert!(
+            matches!(
+                &refused,
+                GovernanceRuntimeError::HistoryIncomplete { author_record, author_seq: 1 }
+                    if author_record == "VLD0:leaver"
+            ),
+            "{refused:?}"
+        );
+        assert!(refused
+            .to_string()
+            .starts_with("This community's history is incomplete on the network"));
     }
 }

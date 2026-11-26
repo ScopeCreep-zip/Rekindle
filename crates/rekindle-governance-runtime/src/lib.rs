@@ -93,7 +93,7 @@ pub use bootstrap::{
 pub use deps::{
     CardText, CommunityDhtOpenSetup, CommunityInsert, CommunityMembership, DhtRecordInfo,
     DiscoveredMember, GovernanceRuntimeDeps, MekSnapshot, OnlineMemberSnapshot, OpLanding,
-    OpOutcome, UserStatusKind,
+    OpOutcome, OpPublication, UserStatusKind,
 };
 pub use dht_hydration::{
     hydrate_one_community, open_and_track_one_community, rebuild_governance,

@@ -18,7 +18,7 @@ use parking_lot::Mutex;
 use rekindle_types::message::SendState;
 
 use super::{Outbox, DEADLINE_REASON, KEY_DID_NOT_ARRIVE};
-use crate::deps::{AttemptOutcome, OutboxDeps, OutboxError, OutboxRow};
+use crate::deps::{AttemptOutcome, OutboxDeps, OutboxError, OutboxRow, RowUpdate};
 use crate::stream::StreamKind;
 
 /// The streams with an attempt running.
@@ -107,6 +107,7 @@ impl<D: OutboxDeps> Outbox<D> {
         // inside the attempt must not shrink the ack's window.
         let sent_at = self.now();
         let mut jobs = Vec::new();
+        let mut calls = Vec::new();
         for (row, outcome) in run.rows.iter().zip(outcomes) {
             // Each attempt's outcome, by stream kind only (no identifier
             // leaves through a log, B19): what a scenario's `RUST_LOG`
@@ -131,9 +132,25 @@ impl<D: OutboxDeps> Outbox<D> {
                 });
                 continue;
             }
+            // The appender's own design (its module doc): the call runs
+            // there and the pass returns without awaiting it, so the
+            // stream's later rows are attempted meanwhile; its answer
+            // settles the row. One call per row is in flight.
+            if let AttemptOutcome::Calling(frame) = outcome {
+                self.hand_off_call(row).await?;
+                if !self.appends.in_flight(&row.client_id) {
+                    calls.push(crate::appender::Job {
+                        row: row.clone(),
+                        frame,
+                        sent_at,
+                    });
+                }
+                continue;
+            }
             self.settle_attempt(row, outcome, sent_at).await?;
         }
         self.appends.hand(jobs, sent_at);
+        self.appends.call(calls, sent_at);
         drop(run);
         self.wake();
         Ok(())
@@ -178,7 +195,7 @@ impl<D: OutboxDeps> Outbox<D> {
     /// row ahead of it in its stream), or a row out of `attempting`
     /// reaches its deadline.
     async fn wake_past(&self, attempting: &BTreeSet<String>) -> Result<Option<i64>, OutboxError> {
-        let appending = self.appends.streams();
+        let appending = self.appends.walked();
         let skip =
             |row: &OutboxRow| attempting.contains(&row.stream) || appending.contains(&row.stream);
         let mut streams: BTreeMap<String, Vec<OutboxRow>> = BTreeMap::new();
@@ -209,6 +226,28 @@ impl<D: OutboxDeps> Outbox<D> {
 }
 
 impl<D: OutboxDeps> Outbox<D> {
+    /// `row`'s call is handed off ([`AttemptOutcome::Calling`]): a `queued`
+    /// row is scheduled as an append's hand-off is ([`Self::hand_off`]);
+    /// one already `sent` (a `StreamRecord` called again until the peer's
+    /// ack) moves to its next re-ask, so a pass never spins on it while the
+    /// call is in flight. Its state is left as it is: only the call's
+    /// answer moves it.
+    pub(crate) async fn hand_off_call(&self, row: &OutboxRow) -> Result<(), OutboxError> {
+        if row.state == SendState::Queued {
+            return self.hand_off(row).await;
+        }
+        let attempts = row.attempts.saturating_add(1);
+        let update = RowUpdate {
+            state: row.state,
+            attempts,
+            next_at: self.next_after(row, row.state, attempts, self.now()),
+            deadline: row.deadline,
+            wedge_reason: None,
+            retry: false,
+        };
+        self.deps.update(&row.client_id, &update).await.map(|_| ())
+    }
+
     /// The earliest of `candidates` (when, kind, client id) that a pass
     /// would attempt: one past due counts only if the store's `due` gives
     /// it now. One it withholds would wake a pass that claims nothing, over
@@ -254,6 +293,7 @@ impl<D: OutboxDeps> Outbox<D> {
 fn outcome_label(outcome: &AttemptOutcome) -> &'static str {
     match outcome {
         AttemptOutcome::Appending(_) => "appending",
+        AttemptOutcome::Calling(_) => "calling",
         AttemptOutcome::Sent => "sent",
         AttemptOutcome::Awaiting => "awaiting",
         AttemptOutcome::Receipted => "receipted",

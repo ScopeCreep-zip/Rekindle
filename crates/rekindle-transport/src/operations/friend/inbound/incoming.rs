@@ -13,13 +13,27 @@ use super::{IncomingFriendAccept, IncomingFriendRequest};
 use crate::operations::dm;
 use crate::operations::friend::{invites, state, FriendError, FriendHost};
 
+/// What storing an incoming request did.
+enum Persisted {
+    /// A new request, held for the user.
+    New,
+    /// The same request again (a retry whose receipt was lost).
+    Held,
+    /// Our own request to them was stored while theirs was on its way in:
+    /// a crossing, nothing held.
+    Crossing,
+}
+
 /// Store the request; persisted before the event, so the row exists when a
-/// window acts on it (B5/P3.1). Whether it is new: the same request again
-/// (a retry whose receipt was lost) changes nothing.
+/// window acts on it (B5/P3.1). The same request again (a retry whose
+/// receipt was lost) changes nothing. Our `pending_out` row is read in the
+/// same database call as the store: an add of ours that stored its friend
+/// after this request's friendship was read is a crossing, never a request
+/// held beside ours (RV2: held beside it, neither side answered).
 async fn persist_request(
     host: &dyn FriendHost,
     req: &IncomingFriendRequest<'_>,
-) -> Result<bool, FriendError> {
+) -> Result<Persisted, FriendError> {
     let owner = state::owner(host)?;
     let pk = req.sender_hex.to_string();
     let dn = req.display_name.to_string();
@@ -34,7 +48,10 @@ async fn persist_request(
     };
     let now = host.clock().now_ms_i64();
     state::db_call!(host, "store friend request", move |conn| {
-        rekindle_db::repo::pending_requests::upsert(
+        if rekindle_db::repo::friends::is_pending_out(conn, &owner, &pk)? {
+            return Ok(Persisted::Crossing);
+        }
+        let new = rekindle_db::repo::pending_requests::upsert(
             conn,
             &owner,
             &rekindle_db::repo::pending_requests::Incoming {
@@ -49,7 +66,8 @@ async fn persist_request(
                 reply_inbox_key: &rik,
                 reply_writer: &rw,
             },
-        )
+        )?;
+        Ok(if new { Persisted::New } else { Persisted::Held })
     })
     .await
 }
@@ -198,8 +216,13 @@ pub(crate) async fn on_friend_request(
     }
 
     match persist_request(host, req).await {
-        Ok(true) => {}
-        Ok(false) => {
+        Ok(Persisted::New) => {}
+        Ok(Persisted::Crossing) => {
+            tracing::info!(from = %req.sender_hex, "cross-request detected at the store — auto-accepting");
+            accept_crossing_request(host, req).await;
+            return Ok(());
+        }
+        Ok(Persisted::Held) => {
             tracing::debug!(from = %req.sender_hex, "friend request already held — a retry");
             return Ok(());
         }

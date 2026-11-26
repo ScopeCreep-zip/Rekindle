@@ -73,7 +73,7 @@ impl SimDht {
     ) -> Result<Option<RecordValue>, DhtCallError> {
         self.opened(key)?;
         let begin_cap = replicas::SET_COUNT + (replicas::SET_COUNT * TRIM_PERCENT).div_ceil(100);
-        let _begin = self.network(latency::GET, key, &[]).await?;
+        let _begin = self.network(|| latency::GET, key, &[]).await?;
         let accepters: Vec<usize> = {
             let mut guard = self.net.inner.lock();
             let inner = &mut *guard;
@@ -99,7 +99,7 @@ impl SimDht {
             stores: self.stores_of(key, &accepters),
         };
         let _get = self
-            .network(self.read_span(key, Some(&[subkey])), key, &[subkey])
+            .network(|| self.read_span(key, Some(&[subkey])), key, &[subkey])
             .await?;
         let mut inner = self.net.inner.lock();
         stores::touch(&mut inner, key, &accepters);

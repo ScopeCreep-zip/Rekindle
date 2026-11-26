@@ -265,7 +265,8 @@ impl<D: OutboxDeps> Outbox<D> {
             outcome @ (AttemptOutcome::Sent
             | AttemptOutcome::Awaiting
             | AttemptOutcome::Deferred
-            | AttemptOutcome::Appending(_)) => {
+            | AttemptOutcome::Appending(_)
+            | AttemptOutcome::Calling(_)) => {
                 let landed = matches!(outcome, AttemptOutcome::Sent | AttemptOutcome::Awaiting);
                 if landed && row.state == SendState::Queued {
                     return self.mark_landed(row, attempts, sent_at).await;

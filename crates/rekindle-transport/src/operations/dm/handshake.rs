@@ -5,9 +5,9 @@
 //! and sent by the outbox until it settles. These are control frames no
 //! `DmAck` answers: a row settles `sent` when its frame leaves, a request,
 //! a first contact (the PreKeyInit carrying our `FriendAccept` or
-//! `SessionResetAccept`) and a presence key (`FriendsKey`: a lost one left
-//! the friend's presence dark until the next rotation, live A/B finding
-//! 36) and the ack of a removal (`UnfriendedAck`: a lost one left the
+//! `SessionResetAccept`) and a presence key to a peer not yet accepted
+//! (`FriendsKey`, live A/B finding 36; an accepted friend's rides the DM
+//! chain, plan RV2c) and the ack of a removal (`UnfriendedAck`: a lost one left the
 //! remover re-sending `Unfriended` into a session we had deleted, and its
 //! removal never ended, live A/B finding 62) only on its `app_call` receipt
 //! (`delivered`: an
@@ -72,8 +72,19 @@ pub async fn payload(
     to: &str,
     body: &DirectBody,
 ) -> Result<Vec<u8>, FriendError> {
-    let (_, framed) = send::framed(host, to, body).await?;
-    encode(&framed)
+    Ok(payload_of(host, to, body).await?.0)
+}
+
+/// [`payload`] and the kind its row is named by: `PreKeyInit` for a group
+/// member's first contact ([`super::group_first_contact::framed`]).
+async fn payload_of(
+    host: &dyn FriendHost,
+    to: &str,
+    body: &DirectBody,
+) -> Result<(Vec<u8>, DmTypeId), FriendError> {
+    let (frame, framed) = send::framed(host, to, body).await?;
+    let (framed, kind) = super::group_first_contact::framed(host, to, body, &frame, framed).await?;
+    Ok((encode(&framed)?, kind))
 }
 
 /// Frame `body` and commit it to our handshake stream to `to`; the row's
@@ -86,8 +97,8 @@ pub async fn enqueue(
     to: &str,
     body: &DirectBody,
 ) -> Result<String, FriendError> {
-    let payload = payload(host, to, body).await?;
-    commit(host, to, client_id(host, body.type_id()), payload).await
+    let (payload, kind) = payload_of(host, to, body).await?;
+    commit(host, to, client_id(host, kind), payload).await
 }
 
 /// [`enqueue`] for a frame worth nothing after `deadline_ms` (ms since the
@@ -135,9 +146,12 @@ pub async fn enqueue_when_ready(
     to: &str,
     body: &DirectBody,
 ) -> Result<String, FriendError> {
-    let kind = body.type_id();
-    let payload = match payload(host, to, body).await {
-        Ok(payload) => payload,
+    let mut kind = body.type_id();
+    let payload = match payload_of(host, to, body).await {
+        Ok((payload, row)) => {
+            kind = row;
+            payload
+        }
         Err(e @ FriendError::NotReady(_)) => {
             tracing::info!(?kind, "group frame waits for the member's session to open");
             tracing::debug!(to = %to, ?kind, reason = %e, "frame committed to wait");
@@ -149,28 +163,6 @@ pub async fn enqueue_when_ready(
         Err(e) => return Err(e),
     };
     commit(host, to, client_id(host, kind), payload).await
-}
-
-/// One attempt of a frame waiting for its session ([`enqueue_when_ready`]):
-/// framed now and committed as its own row, which settles this one; a
-/// session still not openable is attempted again; any other failure wedges
-/// the row, shown on it.
-async fn attempt_pending(host: &dyn FriendHost, to: &str, type_id: u16, body: &[u8]) -> Attempt {
-    let Some(kind) = DmTypeId::from_u16(type_id) else {
-        return Attempt::Wedged(format!("typeId {type_id:#06x}"));
-    };
-    let body = match DirectBody::decode(kind, body) {
-        Ok(body) => body,
-        Err(e) => return Attempt::Wedged(format!("queued body: {e}")),
-    };
-    match enqueue(host, to, &body).await {
-        Ok(_) => Attempt::Sent,
-        Err(e @ (FriendError::NotReady(_) | FriendError::Locked)) => {
-            tracing::debug!(to = %to, ?kind, reason = %e, "frame still waits for the session");
-            Attempt::Deferred
-        }
-        Err(e) => Attempt::Wedged(e.to_string()),
-    }
 }
 
 /// Commit a frame built elsewhere (a PreKeyInit opened from a bundle); a
@@ -370,15 +362,13 @@ async fn commit(
 /// this stream is a first contact ([`enqueue_frame`]'s callers), and the
 /// receiver answers a re-sent one it already opened with the same receipt
 /// (`direct::receive_call`: a duplicate init is `Dropped::Duplicate`).
-/// A group member's key (`GroupDmAccept`: an accept, the answer to a
-/// joiner, a rotation) is receipted too (plan E2.6, live finding: a
-/// member's accept lost or late as an `app_message` left the others
-/// without its key and chain, so its posts were never read): it is the one
-/// frame naming the member's key and chain, and the group stream's hints
-/// are only worth sending once it is held. The creator's `GroupDmInvite`
-/// is receipted for the same reason (Linux run 2: one lost invite left the
-/// invitee outside the group with nothing re-sending it): it is the one
-/// frame carrying the signed roster and the creator's key and chain.
+/// A group member's key (`GroupDmAccept`) and the creator's
+/// `GroupDmInvite` are receipted too (plan E2.6; Linux run 2: one lost
+/// left a member without the key and chain or the signed roster). A
+/// `FriendsKey` and these group kinds come here only to a peer not yet an
+/// accepted friend: to an accepted friend they are entries of our DM
+/// chain, settled by the friend's `DmAck` (plan RV2c, D22,
+/// [`super::friend_control`]), so a stalled call no longer holds them.
 /// A call's `CallEnd` is receipted (plan CE4, lead decision 22): sent as
 /// an `app_message` it settled on leaving and was lost unseen by a frozen
 /// peer (Veilid 0.5.8 `rpc_app_message.rs:24`: a statement no one
@@ -471,27 +461,30 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
             return stopped;
         }
     }
-    if let Framed::Inbox {
-        record_key,
-        writer,
-        frame,
-    } = &framed
-    {
-        return attempt_inbox(host, record_key, writer, frame).await;
-    }
-    if let Framed::FirstContactDurable {
-        datagram,
-        record_key,
-        writer,
-    } = &framed
-    {
-        return super::first_contact_durable::attempt(host, to, datagram, record_key, writer).await;
-    }
-    if let Framed::FirstContact { first_type_id } = &framed {
-        return attempt_first_contact(host, to, *first_type_id).await;
-    }
-    if let Framed::Pending { type_id, body } = &framed {
-        return attempt_pending(host, to, *type_id, body).await;
+    match &framed {
+        Framed::Inbox {
+            record_key,
+            writer,
+            frame,
+        } => return attempt_inbox(host, record_key, writer, frame).await,
+        Framed::FirstContactDurable {
+            datagram,
+            record_key,
+            writer,
+        } => {
+            return super::first_contact_durable::attempt(host, to, datagram, record_key, writer)
+                .await
+        }
+        Framed::GroupFirstContact { datagram, group_id } => {
+            return super::group_first_contact::attempt(host, to, datagram, group_id).await;
+        }
+        Framed::FirstContact { first_type_id } => {
+            return attempt_first_contact(host, to, *first_type_id).await;
+        }
+        Framed::Pending { type_id, body } => {
+            return super::group_first_contact::attempt_pending(host, to, *type_id, body).await;
+        }
+        Framed::Wire { .. } | Framed::Sealed { .. } => {}
     }
     let (datagram, kind) = match send::datagram_of(host, to, &framed) {
         Ok(sent) => sent,

@@ -244,6 +244,13 @@ async fn a_leavers_reserved_seq_gap_is_kept_by_no_member() {
     )
     .await
     .expect("the forged leave commits");
+    // The scenario's precondition (lead ruling 2026-11-26): the leave has
+    // landed, readable at the leaver's record, before the lock and the
+    // restore below, so the restored copy is behind an op the DHT holds.
+    assert!(
+        eventually(&community.sim, LIMIT, || leave_landed(&community)).await,
+        "the leave lands on the leaver's op log"
+    );
     for reader in [0, 2] {
         assert!(
             eventually(&community.sim, LIMIT, || async {
@@ -408,4 +415,39 @@ async fn a_leavers_withheld_last_write_reaches_every_member_without_gossip() {
             );
         }
     }
+}
+
+/// Whether node 1's `MemberLeft` is readable at its locator (its op log),
+/// read by node 0 as any reader's fetch reads it.
+async fn leave_landed(community: &Community) -> bool {
+    use rekindle_governance_runtime::deps::GovernanceOpStore as _;
+    let held = community.nodes[1]
+        .host
+        .governance()
+        .governance_ops(&community.anchor)
+        .await
+        .unwrap_or_default();
+    let Some(leave) = held.iter().find(|op| {
+        rekindle_codec::governance_op::decode_op(&op.encoded)
+            .is_ok_and(|d| matches!(d.op.body, GovernanceEntry::MemberLeft { .. }))
+    }) else {
+        return false;
+    };
+    let op_ref = rekindle_types::governance::OpRef {
+        op_hash: leave.hash,
+        author: leave.author.clone(),
+        author_record: leave.author_record.clone(),
+        author_seq: leave.seq,
+        device_key: leave.device_key,
+    };
+    let logs = rekindle_governance_runtime::op_log::WalkLogCache::default();
+    matches!(
+        rekindle_governance_runtime::op_log::fetch_held(
+            &community.nodes[0].host.governance(),
+            &op_ref,
+            &logs
+        )
+        .await,
+        Ok(Some(_))
+    )
 }

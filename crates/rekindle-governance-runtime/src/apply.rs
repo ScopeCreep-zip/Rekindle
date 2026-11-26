@@ -404,6 +404,10 @@ async fn write_signed<D: GovernanceRuntimeDeps>(
     // ADR 0022 rules 3 and 10): a `MemberJoined` under the endorsement it
     // carries, any later op under the state's.
     let record = device_signer::op_record_of(deps, community_id, &gov_state, op.op())?;
+    // The outbox row before our store, state or gossip (ruling 2026-11-26 item 2).
+    let publication = deps
+        .publish_governance_op(community_id, encoded.clone(), landing)
+        .await?;
     deps.op_store()
         .store_signed_governance_op(
             community_id,
@@ -411,6 +415,7 @@ async fn write_signed<D: GovernanceRuntimeDeps>(
         )
         .await?;
     turn.signed(&hex::encode(op.hash().0));
+    // Gossip before the install, which prunes a removed member it removes.
     deps.gossip_governance_op(community_id, &encoded);
 
     // The state every reader merges from the op set with this op in it.
@@ -435,12 +440,8 @@ async fn write_signed<D: GovernanceRuntimeDeps>(
     });
     announce_successors.await;
 
-    // The op is stored and applied here; the outbox writes it to our `M`/2
-    // and `M`/3, which a joiner's walk reads with nobody online. `landing`
-    // says whether the caller needs it there before it returns.
-    deps.publish_governance_op(community_id, encoded, landing)
-        .await
-        .map(Written::Op)
+    // The outbox lands it on our `M`/2 and `M`/3; `landing` says how long we wait.
+    publication.landed().await.map(Written::Op)
 }
 
 /// What our op is built on: the community, its pinned cert, the locked

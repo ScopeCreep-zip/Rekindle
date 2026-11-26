@@ -162,6 +162,37 @@ The merge engine lives at `services/cross_device_sync/merge.rs` and is
 exercised by the property tests in
 `services/cross_device_sync/tests.rs`.
 
+## Group first-contact rendezvous
+
+A group member's first contact to a member who is not its friend (the
+PreKeyInit whose first payload is its `GroupDmAccept`, plan decision 67
+item 3) has a durable path beside its `app_call`. The creator mints one
+**group rendezvous record** per group (`SMPL(o_cnt 1, 8 one-time writers,
+m_cnt 8)`, 65 subkeys; `dht_layout::group_rendezvous`): subkey
+`1 + 8i + j` holds member `i`'s first contact to member `j`, writable only
+by row `i`'s writer (Veilid's SMPL member range). Each member stores its
+slot and its row's writer in `group_dm_rendezvous` at create or accept.
+
+- **Write:** the first-contact row (`friend_handshake:<peer>`, named
+  `PreKeyInit:`; `Framed::GroupFirstContact`) is attempted as the call and
+  a write of the same datagram to `subkey(own slot, their slot)` through
+  the record pool's republishing set (`write_own_once`). A frame over
+  `MAX_SUBKEY_VALUE_LEN` (16,131 B) is refused when it is framed. Every
+  retry calls and writes again; a B6 resend is a new init written over the
+  row (`transport/operations/dm/group_first_contact.rs`).
+- **Settle:** only an authenticated answer settles the row: the call's
+  receipt, or the member's first frame opened under the session
+  (`handshake::settle_first_contact`). The write's own outcome never does.
+- **Read:** each member watches exactly its own column from accept to
+  leave, re-held at unlock, and reads the column once whenever it holds
+  it (a watch reports only later changes), so an entry written while it
+  was locked or still invited lands (`rendezvous_watch.rs`). An entry is
+  opened through `direct::receive_from_member` with the admission and the
+  roster gate unchanged, and only from the member the creator's signed
+  slot plan gives its row. A copy heard by both paths is dropped as a
+  duplicate by the replay store or the ratchet, and a member's key already
+  held is a `KeyUpdate::Duplicate`.
+
 ## Gap detection and history catch-up
 
 Cross-device sync uses the same primitives as community catch-up:

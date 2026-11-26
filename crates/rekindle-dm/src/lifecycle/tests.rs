@@ -10,6 +10,7 @@ use rekindle_utils::{OsRandom, RandomSource};
 
 use super::*;
 use crate::group::tests::{member_of, signer};
+use crate::ports::RendezvousSlot;
 
 struct Host {
     key: SigningKey,
@@ -17,7 +18,43 @@ struct Host {
     keys: Mutex<HashMap<(GroupId, String), GroupSenderKey>>,
     invites: Mutex<HashMap<GroupId, PendingInvite>>,
     chains: Mutex<HashMap<(GroupId, String), String>>,
+    rendezvous: Mutex<HashMap<GroupId, RendezvousSlot>>,
     events: Mutex<Vec<GroupDmEvent>>,
+}
+
+/// The creator's minted rendezvous record (decision 67 item 3).
+fn mint() -> RendezvousMint {
+    RendezvousMint {
+        record_key: "VLD0:rendezvous".into(),
+        writers: (0..8).map(|i| format!("VLD0:writer-{i}")).collect(),
+    }
+}
+
+/// The frame `outs` sends to `who`, which is sent to it alone.
+fn frame_for<F: Clone>(outs: &[Outbound<F>], who: &str) -> F {
+    let out = outs
+        .iter()
+        .find(|o| o.to == [who.to_owned()])
+        .expect("one frame to this member");
+    out.frame.clone()
+}
+
+/// Every member `outs` goes to, one frame each.
+fn recipients<F>(outs: &[Outbound<F>]) -> Vec<String> {
+    outs.iter()
+        .map(|o| {
+            assert_eq!(o.to.len(), 1, "one recipient per frame");
+            o.to[0].clone()
+        })
+        .collect()
+}
+
+async fn grow_with(
+    h: &Host,
+    gid: &GroupId,
+    added: Vec<rekindle_types::group_dm::GroupDmRosterMember>,
+) -> Result<Grown, DmError> {
+    grow(h, gid, added, &mint()).await
 }
 
 impl Host {
@@ -28,6 +65,7 @@ impl Host {
             keys: Mutex::default(),
             invites: Mutex::default(),
             chains: Mutex::default(),
+            rendezvous: Mutex::default(),
             events: Mutex::default(),
         }
     }
@@ -130,6 +168,13 @@ impl GroupDmDeps for Host {
     async fn take_invite(&self, id: &GroupId) -> Result<Option<PendingInvite>, DmError> {
         Ok(self.invites.lock().remove(id))
     }
+    async fn put_rendezvous(&self, id: &GroupId, slot: &RendezvousSlot) -> Result<(), DmError> {
+        self.rendezvous.lock().insert(*id, slot.clone());
+        Ok(())
+    }
+    async fn rendezvous(&self, id: &GroupId) -> Result<Option<RendezvousSlot>, DmError> {
+        Ok(self.rendezvous.lock().get(id).cloned())
+    }
     fn publish(&self, event: GroupDmEvent) {
         self.events.lock().push(event);
     }
@@ -168,13 +213,14 @@ async fn three() -> (Host, Host, Host, GroupId) {
         member_of(&ann.key),
         vec![member_of(&bea.key), member_of(&cy.key)],
         &ann.chain(),
+        &mint(),
     )
     .await
     .expect("create");
     let gid = created.group.group_id;
-    assert_eq!(created.invite.to, vec![bea.id(), cy.id()]);
+    assert_eq!(recipients(&created.invites), vec![bea.id(), cy.id()]);
     for h in [&bea, &cy] {
-        on_invite(h, &ann.id(), created.invite.frame.clone())
+        on_invite(h, &ann.id(), frame_for(&created.invites, &h.id()))
             .await
             .expect("invite");
     }
@@ -290,19 +336,20 @@ async fn invites_are_refused_when_forged_or_not_ours_and_decline_rotates() {
         member_of(&ann.key),
         vec![member_of(&bea.key), member_of(&cy.key)],
         &ann.chain(),
+        &mint(),
     )
     .await
     .expect("create");
     let gid = created.group.group_id;
     assert!(matches!(
-        on_invite(&dee, &ann.id(), created.invite.frame.clone()).await,
+        on_invite(&dee, &ann.id(), frame_for(&created.invites, &bea.id())).await,
         Err(DmError::NotOnRoster(_))
     ));
     assert!(matches!(
-        on_invite(&bea, &cy.id(), created.invite.frame.clone()).await,
+        on_invite(&bea, &cy.id(), frame_for(&created.invites, &bea.id())).await,
         Err(DmError::NotOnRoster(_))
     ));
-    on_invite(&bea, &ann.id(), created.invite.frame)
+    on_invite(&bea, &ann.id(), frame_for(&created.invites, &bea.id()))
         .await
         .expect("invite");
     let declined = decline(&bea, &gid).await.expect("decline");
@@ -312,11 +359,17 @@ async fn invites_are_refused_when_forged_or_not_ours_and_decline_rotates() {
         .await
         .expect("decline");
     assert_eq!((out.frame.epoch, out.to), (1, vec![cy.id()]));
-    assert!(
-        create(&ann, [1; 16], "", member_of(&ann.key), vec![], &ann.chain())
-            .await
-            .is_err()
-    );
+    assert!(create(
+        &ann,
+        [1; 16],
+        "",
+        member_of(&ann.key),
+        vec![],
+        &ann.chain(),
+        &mint()
+    )
+    .await
+    .is_err());
 }
 
 #[tokio::test]
@@ -352,4 +405,68 @@ async fn each_member_holds_every_chain_as_its_member_announced_it() {
     // A rotation carries our chain.
     let out = rotate_own_key(&bea, &gid).await.expect("rotate");
     assert_eq!(out.frame.chain_record_key, bea.chain());
+}
+
+async fn created_three(ann: &Host, bea: &Host, cy: &Host) -> Created {
+    create(
+        ann,
+        group::new_group_id(&OsRandom),
+        "squad",
+        member_of(&ann.key),
+        vec![member_of(&bea.key), member_of(&cy.key)],
+        &ann.chain(),
+        &mint(),
+    )
+    .await
+    .expect("create")
+}
+
+/// Decision 67 item 3: one invite per member, each with its own slot and
+/// writer under one signature; the creator and each accepter hold their
+/// place and the signed plan.
+#[tokio::test]
+async fn each_member_gets_its_own_rendezvous_slot_and_writer() {
+    let (ann, bea, cy) = (Host::new(1), Host::new(2), Host::new(3));
+    let created = created_three(&ann, &bea, &cy).await;
+    let gid = created.group.group_id;
+    let to_bea = frame_for(&created.invites, &bea.id());
+    let to_cy = frame_for(&created.invites, &cy.id());
+    assert_eq!((to_bea.slot, to_cy.slot), (1, 2));
+    assert_eq!(to_bea.slot_writer, "VLD0:writer-1");
+    assert_eq!(to_cy.slot_writer, "VLD0:writer-2");
+    assert_eq!(to_bea.signing_bytes(), to_cy.signing_bytes());
+    let own = ann.rendezvous.lock()[&gid].clone();
+    assert_eq!((own.slot, own.writer.as_str()), (0, "VLD0:writer-0"));
+    for (h, frame) in [(&bea, to_bea), (&cy, to_cy)] {
+        on_invite(h, &ann.id(), frame).await.expect("invite");
+        accept(h, &gid, &h.chain()).await.expect("accept");
+    }
+    let held = bea.rendezvous.lock()[&gid].clone();
+    assert_eq!(
+        (held.record_key.as_str(), held.slot, held.writer.as_str()),
+        ("VLD0:rendezvous", 1, "VLD0:writer-1")
+    );
+    assert_eq!(held.member_at(0), Some(ann.id().as_str()));
+    assert_eq!(held.member_at(2), Some(cy.id().as_str()));
+    assert_eq!(cy.rendezvous.lock()[&gid].slot, 2);
+}
+
+/// An invite carrying another member's slot (Cy's row relabelled onto
+/// Bea's frame) still verifies, since the slot is unsigned, but accept
+/// refuses it against the signed plan and stores nothing.
+#[tokio::test]
+async fn an_invite_with_another_members_slot_is_refused_at_accept() {
+    let (ann, bea, cy) = (Host::new(1), Host::new(2), Host::new(3));
+    let created = created_three(&ann, &bea, &cy).await;
+    let gid = created.group.group_id;
+    let mut frame = frame_for(&created.invites, &bea.id());
+    frame.slot = 2;
+    frame.slot_writer = "VLD0:writer-2".into();
+    on_invite(&bea, &ann.id(), frame).await.expect("verifies");
+    assert!(matches!(
+        accept(&bea, &gid, &bea.chain()).await,
+        Err(DmError::InvalidRoster(_))
+    ));
+    assert!(bea.rendezvous.lock().is_empty());
+    assert!(bea.groups.lock().is_empty());
 }

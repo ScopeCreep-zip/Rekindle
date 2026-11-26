@@ -119,6 +119,11 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
         }
         DirectBody::FriendsKey(k) => {
             applied = presence_key::on_friends_key(host, sender, k).await;
+            if applied {
+                // An entry of their DM chain (plan RV2c): it steps our
+                // cursor and is acknowledged like a message.
+                chain_entry_committed(host, &opened).await;
+            }
         }
         DirectBody::ProfileBio(b) => {
             applied = bio::on_profile_bio(host, sender, b).await;
@@ -211,6 +216,11 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
         | DirectBody::GroupDmRosterGrow(_)
         | DirectBody::GroupContent(_) => {
             applied = crate::operations::group_dm::apply(host, sender, &opened.body).await;
+            if applied {
+                // A pairwise group kind to a friend is an entry of their DM
+                // chain (plan RV2c); `committed` passes over the rest.
+                chain_entry_committed(host, &opened).await;
+            }
         }
         // Only ever sealed inside a group entry (plan E7.2 G7).
         DirectBody::GroupDmRename(_) => {
@@ -268,6 +278,20 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
         }
     }
     Applied::Done(applied)
+}
+
+/// `opened`, applied, was a control entry of its sender's DM chain (plan
+/// RV2c, `dm::friend_control`): step our cursor and acknowledge it
+/// (`dm::ack::committed`; a frame off the stream, stream seq 0, is not).
+async fn chain_entry_committed(host: &dyn FriendHost, opened: &Opened) {
+    crate::operations::dm::ack::committed(
+        host,
+        &opened.sender_hex,
+        &opened.body,
+        opened.stream_seq,
+        opened.chain_seq,
+    )
+    .await;
 }
 
 /// Store a friend's direct message (once: a replayed one is already held),

@@ -77,6 +77,26 @@ pub fn load_all(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<Frie
     rows
 }
 
+/// Whether our request to `public_key` is outstanding (a `pending_out`
+/// row): a request of theirs arriving now crosses ours (plan E2.5).
+///
+/// # Errors
+/// The read failed.
+pub fn is_pending_out(
+    conn: &Connection,
+    owner_key: &str,
+    public_key: &str,
+) -> rusqlite::Result<bool> {
+    conn.query_row(
+        "SELECT 1 FROM friends WHERE owner_key = ?1 AND public_key = ?2 \
+           AND friendship_state = 'pending_out'",
+        params![owner_key, public_key],
+        |_| Ok(()),
+    )
+    .optional()
+    .map(|row| row.is_some())
+}
+
 /// Record an outgoing request: a `pending_out` row, unless the friend is
 /// already there (a friend we are removing is added afresh).
 ///

@@ -179,6 +179,19 @@ pub enum GovernanceRuntimeError {
     /// would answer, so the join is refused the same either way.
     #[error("the invite is not live: {0}")]
     InviteRefused(rekindle_types::join_refusal::JoinRefusal),
+    /// Our own join's walk could not fetch an op the community's history
+    /// cites (the first one named: its author's member record and seq), so
+    /// no merge of what was walked is the community's state and nothing is
+    /// judged from it (`join_flow::refuse_incomplete`). Not a refusal of
+    /// the invite: the join may be tried again once the op is on the
+    /// network.
+    #[error(
+        "This community's history is incomplete on the network (the op at seq {author_seq} of member record {author_record} cannot be fetched); try again later."
+    )]
+    HistoryIncomplete {
+        author_record: String,
+        author_seq: u64,
+    },
 
     /// The inviter answered `bootstrapPartial` and none of the members
     /// asked after it (this many) answered a frontier: each was partial,

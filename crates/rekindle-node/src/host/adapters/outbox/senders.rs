@@ -8,6 +8,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use parking_lot::RwLock;
 use rekindle_outbox::{AttemptOutcome, OutboxRow, StreamKind};
+use rekindle_transport::operations::dm::outbox::Attempt;
 
 /// Sends one stream kind's rows (`dm::send`'s deliver, the friend
 /// handshake, the record pool's held write, …).
@@ -42,6 +43,13 @@ pub trait StreamSender: Send + Sync {
             .take(1)
             .map(|_| AttemptOutcome::Wedged(format!("{stream} has no chain appender")))
             .collect()
+    }
+
+    /// Run the call an attempt handed off ([`AttemptOutcome::Calling`]),
+    /// `frame` to `stream`'s peer: its outcome. Only a sender whose attempt
+    /// hands calls off (the `dm` stream's `StreamRecord`) is asked.
+    async fn call(&self, stream: &str, _frame: Vec<u8>) -> AttemptOutcome {
+        AttemptOutcome::Wedged(format!("{stream} has no call"))
     }
 }
 
@@ -102,6 +110,21 @@ impl Senders {
         }
     }
 
+    /// Run `frame`'s call to `stream` through `kind`'s sender; `Deferred`
+    /// when none is installed (its owner stopped).
+    pub(super) async fn call(
+        &self,
+        kind: StreamKind,
+        stream: &str,
+        frame: Vec<u8>,
+    ) -> AttemptOutcome {
+        let sender = self.by_kind.read().get(&kind).cloned();
+        match sender {
+            Some(sender) => sender.call(stream, frame).await,
+            None => AttemptOutcome::Deferred,
+        }
+    }
+
     /// Send `row` through its kind's sender; `Deferred` when none is
     /// installed.
     pub(super) async fn send(&self, row: &OutboxRow) -> AttemptOutcome {
@@ -115,5 +138,20 @@ impl Senders {
             "no sender installed for the stream kind; the row stays queued"
         );
         AttemptOutcome::Deferred
+    }
+}
+
+/// A transport attempt's outcome as the engine takes it.
+pub(super) fn outcome(attempt: Attempt) -> AttemptOutcome {
+    match attempt {
+        Attempt::Sent => AttemptOutcome::Sent,
+        Attempt::Appending(frame) => AttemptOutcome::Appending(frame),
+        Attempt::Calling(frame) => AttemptOutcome::Calling(frame),
+        Attempt::Awaiting => AttemptOutcome::Awaiting,
+        Attempt::Receipted => AttemptOutcome::Receipted,
+        Attempt::Unanswered => AttemptOutcome::Unanswered,
+        Attempt::Deferred => AttemptOutcome::Deferred,
+        Attempt::Wedged(reason) => AttemptOutcome::Wedged(reason),
+        Attempt::Superseded(reason) => AttemptOutcome::Superseded(reason),
     }
 }

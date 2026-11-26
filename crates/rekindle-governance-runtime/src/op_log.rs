@@ -30,7 +30,7 @@ use rekindle_types::id::PseudonymKey;
 use crate::deps::GovernanceRuntimeDeps;
 use crate::device_signer::OpSigner;
 use crate::error::GovernanceRuntimeError;
-pub use crate::op_receive::{held_from_encoded, receive_bounded, receive_op};
+pub use crate::op_receive::{held_from_encoded, receive_bounded, receive_gossiped_op, receive_op};
 pub use crate::op_walk::{walk, WalkLogCache};
 pub use crate::own_frontier::{fit_fork_proof, frontier_refs, own_fork_proof, own_frontier};
 pub use crate::verify_cache::verify_held_cached;

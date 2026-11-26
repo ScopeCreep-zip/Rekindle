@@ -91,6 +91,26 @@ pub fn request_inbox(one_time_writer: &[u8; 32]) -> RecordSchema {
     }
 }
 
+/// A group DM's rendezvous record (plan decision 67, item 3): one owner
+/// subkey, then a row of [`ROW_LEN`](layout::group_rendezvous::ROW_LEN)
+/// subkeys for each of the eight one-time writers, in slot order (writer
+/// `i` is member `i`'s; its raw Ed25519 public key is its member id, VLD0).
+#[must_use]
+pub fn group_rendezvous(
+    writers: &[[u8; 32]; layout::group_rendezvous::WRITERS as usize],
+) -> RecordSchema {
+    RecordSchema::Smpl {
+        owner_subkeys: layout::group_rendezvous::OWNER_SUBKEY_COUNT,
+        members: writers
+            .iter()
+            .map(|key| SchemaMember {
+                key: *key,
+                subkeys: layout::group_rendezvous::ROW_LEN,
+            })
+            .collect(),
+    }
+}
+
 /// A single-subkey record: our friend list, the account header.
 #[must_use]
 pub fn single() -> RecordSchema {
@@ -158,5 +178,44 @@ mod tests {
         let keys = [[1u8; 32], [2u8; 32]];
         assert_eq!(community_smpl(&keys).subkey_count(), 2);
         assert_eq!(channel(&keys).subkey_count(), 2);
+    }
+
+    /// Decision 67 item 3: 65 subkeys, and writer `i`'s Veilid range (owner
+    /// subkeys first, then each member's `m_cnt` in order, derivation.rs
+    /// `check_subkey_value_data_smpl`) is exactly row `i` of the layout.
+    #[test]
+    fn group_rendezvous_rows_are_their_writers_ranges() {
+        use layout::group_rendezvous as g;
+        let writers: [[u8; 32]; 8] = std::array::from_fn(|i| [u8::try_from(i).unwrap() + 1; 32]);
+        let schema = group_rendezvous(&writers);
+        assert_eq!(schema.subkey_count(), 65);
+        assert_eq!(usize::from(g::SUBKEY_COUNT), 65);
+        assert_eq!(g::MAX_SUBKEY_VALUE_LEN, 1_048_576 / 65);
+        let RecordSchema::Smpl {
+            owner_subkeys,
+            members,
+        } = &schema
+        else {
+            panic!("a rendezvous record is SMPL");
+        };
+        let mut start = u32::from(*owner_subkeys);
+        for (i, member) in members.iter().enumerate() {
+            let row = u8::try_from(i).unwrap();
+            assert_eq!(member.key, writers[i]);
+            let range = start..start + u32::from(member.subkeys);
+            for col in (0..g::WRITERS).filter(|c| *c != row) {
+                let subkey = g::subkey(row, col).unwrap();
+                assert!(range.contains(&subkey), "row {row} col {col}");
+                assert_eq!(g::slots_of(subkey), Some((row, col)));
+            }
+            start = range.end;
+        }
+        assert_eq!(g::subkey(2, 2), None);
+        assert_eq!(g::subkey(8, 0), None);
+        assert_eq!(g::slots_of(g::OWNER_SUBKEY), None);
+        assert_eq!(g::column(3).len(), 7);
+        assert!(g::column(3)
+            .iter()
+            .all(|s| g::slots_of(*s).map(|(_, c)| c) == Some(3)));
     }
 }

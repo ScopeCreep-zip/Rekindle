@@ -42,15 +42,20 @@ pub enum Sweep {
     Sample,
 }
 
-/// The member records of `community_id`'s merged state plus the creator's,
-/// in record order.
+/// The member records of `community_id`'s merged state, each member's
+/// further device records (`M(p,d)`, ADR 0022 rule 3: a second device's
+/// ops and frontier live there, the record `op_record` resolves) and the
+/// creator's, in record order. A gossiped op is merged only once read at
+/// its locator (lead ruling 2026-11-26 item 1), so every op log is swept.
 fn member_records<D: GovernanceRuntimeDeps>(deps: &D, community_id: &str) -> Vec<String> {
     let mut records: BTreeSet<String> = deps
         .governance_state(community_id)
         .map(|s| {
-            s.members
-                .values()
+            let devices = (s.members.keys())
+                .flat_map(|p| crate::watch_ring::device_records(&s, community_id, p));
+            (s.members.values())
                 .map(|m| m.member_record.clone())
+                .chain(devices)
                 .collect()
         })
         .unwrap_or_default();

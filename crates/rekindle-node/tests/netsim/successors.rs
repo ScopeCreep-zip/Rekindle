@@ -27,7 +27,7 @@ use rekindle_types::id::PseudonymKey;
 use rekindle_types::permissions::MANAGE_COMMUNITY;
 
 use crate::harness::{eventually, Community, SimNode};
-use crate::scenarios::{signed, vld0};
+use crate::scenarios::{signed, vld0, ForgedLog};
 
 /// The `OpRef` and `issued_at` of the first op in node 0's store whose
 /// body matches `pick`.
@@ -94,7 +94,15 @@ async fn a_manager_successor_is_quarantined_on_every_peer() {
     let owner = SigningKey::from_bytes(&[0x47; 32])
         .verifying_key()
         .to_bytes();
-    let record = vld0(&dflt_opaque_record_key(&owner, member_record::SUBKEY_COUNT));
+    // Created first: the op names the key `create` returns, as
+    // `create_member_record` does, so readers read the log it names.
+    let log = ForgedLog::create(
+        &community.sim,
+        &[0x47; 32],
+        &vld0(&dflt_opaque_record_key(&owner, member_record::SUBKEY_COUNT)),
+    )
+    .await;
+    let record = log.record().to_owned();
     let joined = GovernanceOp {
         device_key: author.0,
         author: author.clone(),
@@ -120,6 +128,9 @@ async fn a_manager_successor_is_quarantined_on_every_peer() {
         sig: [0; 64],
     };
     let (joined, joined_hash) = signed(&anchor, &manager, joined);
+    // Landed on the test key's op log first: a gossiped op is merged only
+    // once a read at its locator returns it (lead ruling 2026-11-26 item 1).
+    log.land(std::slice::from_ref(&joined)).await;
     for node in &community.nodes {
         (node.host.governance())
             .on_governance_op(&anchor, joined.clone())
@@ -193,6 +204,7 @@ async fn a_manager_successor_is_quarantined_on_every_peer() {
         sig: [0; 64],
     };
     let (successor, successor_hash) = signed(&anchor, &manager, successor);
+    log.land(std::slice::from_ref(&successor)).await;
     for node in &community.nodes {
         (node.host.governance())
             .on_governance_op(&anchor, successor.clone())

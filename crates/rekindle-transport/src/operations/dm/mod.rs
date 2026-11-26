@@ -9,6 +9,8 @@ mod chat;
 pub mod disappearing;
 mod first_contact_durable;
 pub mod frame;
+pub mod friend_control;
+mod group_first_contact;
 pub mod handshake;
 mod handshake_order;
 pub mod outbox;
