@@ -31,7 +31,7 @@ pub const NAMES: &[(&str, Target)] = &[
     ),
     ("BuddyViewOfflineText", Target::Token("status.offline-text")),
     ("BuddyViewSelected", Target::Token("accent.fill")),
-    ("BuddyViewSelectedText", Target::Fixed("accent.fg")),
+    ("BuddyViewSelectedText", Target::Token("selection.text")),
     ("ButtonCG", Target::Shift),
     // Combat: `ColorGroup=` of the chat area and edit box, as DoiDD's
     // `ColorGroup=InfoViewBG` grounds its view (`ChatViewCG`'s role).
@@ -70,7 +70,7 @@ pub const NAMES: &[(&str, Target)] = &[
     ("InfoViewText", Target::NoRole("profile.text")),
     ("InnerBevelBkCg", Target::Shift),
     // Combat: `Text.color_selectedtext` (`combat.ini:496`).
-    ("Label", Target::Fixed("accent.fg")),
+    ("Label", Target::Token("selection.text")),
     ("LogoCG", Target::Shift),
     ("LogoDown", Target::Shift),
     ("LogoHover", Target::Shift),
@@ -79,18 +79,18 @@ pub const NAMES: &[(&str, Target)] = &[
     ("MenuBarCG", Target::Shift),
     ("MenuDownCG", Target::Shift),
     ("MenuHoverCG", Target::Shift),
-    ("MenuTextCG", Target::NoRole("menubar.text")),
+    ("MenuTextCG", Target::Token("menubar.text")),
     // Combat: the download progress bar's fill (`combat.ini:537`).
-    ("ProgressFill", Target::NoRole("progress.fill")),
+    ("ProgressFill", Target::Token("progress.fill")),
     ("ScrollbarColor", Target::Shift),
-    ("ScrollbarColorBG", Target::NoRole("scrollbar.track")),
+    ("ScrollbarColorBG", Target::Token("scrollbar.track")),
     // Combat: `Text.color_selected` and `color_nonfocus` (`combat.ini:494-495`).
     ("Select", Target::Token("accent.fill")),
     ("StatusBackgroundCG", Target::Token("bg.status")),
     ("StatusCG", Target::Token("text.status")),
     ("StatusWrapCG", Target::Shift),
-    ("TooltipCG", Target::NoRole("tooltip.bg")),
-    ("TooltipTextCG", Target::NoRole("tooltip.text")),
+    ("TooltipCG", Target::Token("tooltip.bg")),
+    ("TooltipTextCG", Target::Token("tooltip.text")),
     ("TypingNotificationCG", Target::NoRole("chat.typing.text")),
     ("UserNameBkCG", Target::Shift),
     ("UserNameCG", Target::NoRole("self.name")),

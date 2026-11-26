@@ -51,6 +51,7 @@ pub mod generate;
 pub mod helper;
 pub mod images;
 pub mod import;
+mod lightness;
 pub mod login;
 pub mod manifest;
 pub mod output;

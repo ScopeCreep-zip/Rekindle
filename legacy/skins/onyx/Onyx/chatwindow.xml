@@ -1,0 +1,62 @@
+<Tile Name="OnyxChatWindow" Component="ChatWindow">
+<!-- Top Row -->
+	<Tile Name="TopLeft" Z="1" X="0" Y="0" JustY="TOP" ResizeX="0" ResizeY="0" Component="CTopLeft"></Tile>
+	<Tile Name="Top" Z="1" Y="0" ResizeX="100" ResizeY="0" X="TopLeft.RIGHT" IndentRight="TopRight.width" Component="CTop"></Tile>	
+	<Tile Name="TopRight" Z="1" X="0" Y="0" JustY="TOP" JustX="RIGHT" ResizeX="0" ResizeY="0" Component="CTopRight"></Tile>
+<!-- Middle Row -->	
+	<Tile Name="LeftEdge" Z="1" Y="TopLeft.BOTTOM" ResizeY="100" ResizeX="0" IndentBottom="BottomLeft.height" Component="CLeftEdge"></Tile>
+	<Tile Name="Middle" Z="1" X="83" Y="87" IndentRight="83" IndentBottom="87" ResizeX="100" ResizeY="100" Component="CMiddle"></Tile>
+	<Tile Name="RightEdge" Z="1" Y="TopRight.BOTTOM" ResizeY="100" ResizeX="0" JustX="RIGHT" IndentBottom="BottomRight.height" Component="CRightEdge"></Tile>
+<!-- Bottom Row -->	
+	<Tile Name="BottomLeft" X="0" Y="0" JustY="BOTTOM" ResizeX="0" ResizeY="0" Component="CBottomLeft"></Tile>
+	<Tile Name="Bottom" Z="1" X="LeftEdge.RIGHT" Y="0" JustY="BOTTOM" IndentRight="RightEdge.width" ResizeX="100" ResizeY="0" Component="CBottom"></Tile>	
+	<Tile Name="BottomRight" JustY="BOTTOM" JustX="RIGHT" Component="CBottomRight"></Tile>
+<!-- Resizers -->	
+	<Tile Name="ResizeLeft" ResizeY="100" Z="40" Component="ResizeLeft"></Tile>
+	<Tile Name="ResizeRight" JustX="RIGHT" ResizeY="100" Z="40" Component="ResizeRight"></Tile>
+	<Tile Name="ResizeUp" Y="0" ResizeX="100" Z="40" Component="ResizeUp"></Tile>
+	<Tile Name="ResizeDown" JustY="BOTTOM" ResizeX="100" Z="40" Component="ResizeDown"></Tile>
+	<Tile Name="BRGripper" JustX="RIGHT" X="0" JustY="BOTTOM" Y="0" ResizeX="100" Z="40" Component="BRGripper"></Tile>
+<!-- Title Bar  -->	
+	<Tile Name="MainTitleBar" Z="25" X="5" Y="5" ResizeX="100" ResizeY="0" Component="ChatTitleBar">
+		<Tile Name="Logo" Z="4" X="2" Y="1" Component="Logo"></Tile>
+		<Tile Name="Title" Z="4" X="Logo.RIGHT+2" Y="1" Component="ChatTitle"></Tile>
+	</Tile>
+<!-- Menu -->	
+	<Tile Name="MenuBar" X="7" Y="47" Z="8" ResizeX="100" ResizeY="0" IndentRight="7" Component="MenuBar">
+		<Tile Name="XfireMenuText" X="9" Y="2" Z="10" Component="ChatXfireMenuText">
+		<Tile Name="FileMenu" X="0" Y="0" Z="-2" ResizeX="100" ResizeY="100" OutdentLeft="4" OutdentRight="4" OutdentTop="2" OutdentBottom="4" Component="FileMenu"></Tile>
+		</Tile>
+		<Tile Name="ToolsMenuText" X="XfireMenuText.RIGHT+10" Y="2" Z="10" Component="ChatToolsMenuText">
+		<Tile Name="ToolsMenu" X="0" Y="0" Z="-2" ResizeX="100" ResizeY="100" OutdentLeft="4" OutdentRight="4" OutdentTop="2" OutdentBottom="4" Component="ToolsMenu"></Tile>
+		</Tile>
+		<Tile Name="HelpMenuText" X="ToolsMenuText.RIGHT+10" Y="2" Z="10" Component="ChatHelpMenuText">
+		<Tile Name="HelpMenu" X="0" Y="0" Z="-2" ResizeX="100" ResizeY="100" OutdentLeft="4" OutdentRight="4" OutdentTop="2" OutdentBottom="4" Component="ChatHelpMenu"></Tile>
+		</Tile>
+		<Tile Name="MenuDiv0" X="3" Y="0" Z="9" ResizeX="100" ResizeY="100" Component="MenuDiv0"></Tile>
+		<Tile Name="MenuDiv1" X="XfireMenuText.RIGHT+4" Y="0" Z="9" ResizeX="100" ResizeY="100" Component="MenuDiv1"></Tile>		
+		<Tile Name="MenuDiv2" X="ToolsMenuText.RIGHT+4" Y="0" Z="9" ResizeX="100" ResizeY="100" Component="MenuDiv2"></Tile>		
+		<Tile Name="MenuDiv3" X="HelpMenuText.RIGHT+4" Y="0" Z="9" ResizeX="100" ResizeY="100" Component="MenuDiv3"></Tile>
+	</Tile>
+<!-- TOPBUTTONBAR definition -->	
+	<Tile Name="TopButtonBar" Z="20" JustX="RIGHT" X="7" Y="5" IndentRight="0" ResizeY="0" Component="TopButtonBar">
+		<Tile Name="Minimize" JustX="RIGHT" X="36" Y="0" Z="2" Component="Minimize"></Tile>
+		<Tile Name="Maximize" JustX="RIGHT" X="18" Y="0" Z="2" Component="Maximize"></Tile>
+		<Tile Name="ChatClose" JustX="RIGHT" X="0" Y="0" Z="2" Component="ChatClose"></Tile>
+	</Tile>	
+<!-- Chat Area -->
+	<Tile Name="ChatArea" Z="5" X="8" IndentRight="8" Y="67" IndentBottom="75" ResizeX="100" ResizeY="100" Component="ChatArea">
+	</Tile>
+<!-- Chat Edit -->	
+	<Tile Name="ChatEdit" Z="45" X="8" IndentRight="57" Y="ChatArea.BOTTOM+8" ResizeX="100" ResizeY="100" IndentBottom="8" Component="ChatEdit">
+	</Tile>
+<!-- Infoview Button -->	
+	<Tile Name="ExpandButton" JustX="RIGHT" X="9" Y="23" Z="8" Component="ChatExpandButton"></Tile>
+<!-- Chat Send -->	
+	<Tile Name="ImButton" Z="5" JustX="RIGHT" JustY="BOTTOM" X="5" Y="28" Component="ChatImButton"></Tile>
+<!-- Typing Message -->	
+	<Tile Name="TypingMessageBG" Z="25" X="5" Y="25" ResizeX="100" ResizeY="0" Component="TypingMessageBG">
+		<Tile Name="TypingMessage" Z="5" X="5" Y="1" IndentRight="5" Component="TypingMessage"></Tile>
+	</Tile>
+	
+</Tile>
