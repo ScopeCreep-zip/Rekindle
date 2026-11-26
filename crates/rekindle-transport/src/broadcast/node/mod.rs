@@ -46,6 +46,7 @@ impl TransportNode {
         Sender::new(
             Arc::clone(&self.ports.messages),
             Arc::clone(&self.ports.routes),
+            Arc::clone(&self.config),
         )
     }
 

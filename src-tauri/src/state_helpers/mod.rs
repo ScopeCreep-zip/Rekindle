@@ -68,7 +68,8 @@ pub use voice::{
 pub(super) fn safe_routing_context_from(
     routing_context: veilid_core::RoutingContext,
 ) -> Option<veilid_core::RoutingContext> {
-    let profile = rekindle_route::contexts::RouteContextSpec::rc_safe().safety_profile();
+    let profile =
+        rekindle_route::profile::profile_for_class(rekindle_types::message::MessageClass::Text);
     routing_context
         .with_safety(rekindle_protocol::dht::pool::safety_selection(&profile))
         .ok()

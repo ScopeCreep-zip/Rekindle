@@ -164,6 +164,7 @@ mod successors;
 mod transfer_resume;
 mod transfers;
 mod udp_blocked;
+mod unproven_unordered_hops;
 mod wake_trigger;
 mod walk_cost;
 mod watch_fallback;
