@@ -67,6 +67,12 @@ pub async fn create_invite<D: GovernanceRuntimeDeps>(
     if !rekindle_governance::invite_quota::check_max_uses_cap(max_uses) {
         return Err(GovernanceRuntimeError::OutOfBounds { field: "max_uses" });
     }
+    // An invite is never held (plan E3.2 S7d-keys.8): while the unlock
+    // barrier catches up it is refused at once, before any network step;
+    // every later step is bounded by the command's network deadline.
+    crate::unlock_hold::refuse_unheld(&deps.unlock_barrier(community_id), community_id)?;
+    let invite_id = rekindle_utils::random::id_bytes_16_from(deps.rng().as_ref());
+    let landing = crate::deps::OpLanding::invite_landed(invite_id);
     let membership = deps
         .community_membership(community_id)
         .ok_or_else(|| GovernanceRuntimeError::CommunityNotFound(community_id.to_string()))?;
@@ -145,9 +151,13 @@ pub async fn create_invite<D: GovernanceRuntimeDeps>(
         base64::engine::general_purpose::STANDARD.encode(&encrypted)
     };
 
-    let secrets_record_key = publish_invite_secrets(deps, &encrypted_b64).await?;
+    let secrets_record_key = tokio::time::timeout(
+        landing.remaining(),
+        publish_invite_secrets(deps, &encrypted_b64),
+    )
+    .await
+    .map_err(|_| apply::invite_timed_out())??;
 
-    let invite_id = rekindle_utils::random::id_bytes_16_from(deps.rng().as_ref());
     let expires_at = expires_in_seconds.map(|s| deps.clock().now_secs() + s);
     // The link is handed out only once its op and our frontier are on `M`
     // (plan E3.2 S6 (4)): a joiner walks what is on the DHT.
@@ -161,7 +171,7 @@ pub async fn create_invite<D: GovernanceRuntimeDeps>(
             expires_at,
             secrets_record_key: secrets_record_key.clone(),
         },
-        invite_id,
+        landing,
     )
     .await;
     if let Err(GovernanceRuntimeError::NotYetPublished) = created {

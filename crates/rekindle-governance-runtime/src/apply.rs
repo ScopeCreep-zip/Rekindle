@@ -69,13 +69,13 @@ pub async fn write_invite_created<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
     entry: GovernanceEntry,
-    invite_id: [u8; 16],
+    landing: OpLanding,
 ) -> Result<OpOutcome, GovernanceRuntimeError> {
     write(
         deps,
         community_id,
         WriteEntry::Ready(Box::new(entry)),
-        OpLanding::invite_landed(invite_id),
+        landing,
         op_log::Deps::Frontier,
     )
     .await
@@ -251,7 +251,7 @@ async fn write_with<D: GovernanceRuntimeDeps>(
         // at once and is never held (a withdrawn join's leave is decided
         // before validation, in `write_signed`).
         if matches!(not_admitted, NotAdmitted::Refuse) {
-            refuse_malformed_now(deps, community_id, ready).await?;
+            refuse_malformed_now(deps, community_id, ready, landing).await?;
         }
     }
     // The unlock barrier (plan E3.2 S7d-keys.8): nothing is signed before
@@ -336,7 +336,7 @@ async fn write_signed<D: GovernanceRuntimeDeps>(
     // grow-only op set, so whoever reads last installs last; register S7l,
     // HIGH-2). Never held across the publish, and no rebuild runs under it.
     let lock = deps.rebuild_lock(community_id);
-    let installing = lock.lock().await;
+    let installing = locked(&lock, landing).await?;
 
     let gov_state = deps
         .governance_state(community_id)
@@ -508,10 +508,11 @@ async fn refuse_malformed_now<D: GovernanceRuntimeDeps>(
     deps: &D,
     community_id: &str,
     entry: &GovernanceEntry,
+    landing: OpLanding,
 ) -> Result<(), GovernanceRuntimeError> {
     let gov_state = {
         let lock = deps.rebuild_lock(community_id);
-        let _installing = lock.lock().await;
+        let _installing = locked(&lock, landing).await?;
         deps.governance_state(community_id).ok_or_else(|| {
             GovernanceRuntimeError::GovernanceStateMissing(community_id.to_string())
         })?
@@ -522,6 +523,33 @@ async fn refuse_malformed_now<D: GovernanceRuntimeDeps>(
     } else {
         Err(GovernanceRuntimeError::Malformed)
     }
+}
+
+/// The community's rebuild lock, which a rebuild holds across its fetches
+/// of missing deps (`op_log::rebuild_ops`): an invite (whose answer has a
+/// deadline) waits for it only until its deadline, every other write until
+/// it is free.
+///
+/// # Errors
+/// [`GovernanceRuntimeError::InviteTimedOut`] at an invite's deadline.
+async fn locked(
+    lock: &tokio::sync::Mutex<()>,
+    landing: OpLanding,
+) -> Result<tokio::sync::MutexGuard<'_, ()>, GovernanceRuntimeError> {
+    match landing {
+        OpLanding::InviteLanded { deadline, .. } => tokio::time::timeout_at(deadline, lock.lock())
+            .await
+            .map_err(|_| invite_timed_out()),
+        OpLanding::FirstAttempt | OpLanding::Queued => Ok(lock.lock().await),
+    }
+}
+
+/// An invite whose steps before signing outran its command's network
+/// deadline: refused with the deadline in words.
+pub(crate) fn invite_timed_out() -> GovernanceRuntimeError {
+    GovernanceRuntimeError::InviteTimedOut(
+        rekindle_types::config::NETWORK_ANSWER_DEADLINE.as_secs(),
+    )
 }
 
 /// Every reader runs `validate_write` against its merged state before it

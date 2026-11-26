@@ -81,18 +81,7 @@ pub(crate) async fn take_slot<D: GovernanceRuntimeDeps>(
         OpLanding::InviteLanded { deadline, .. } => Some(deadline),
     };
     if deadline.is_some() {
-        match barrier.phase() {
-            BarrierPhase::CatchingUp => {
-                return Err(GovernanceRuntimeError::CatchingUp(community_id.to_owned()));
-            }
-            BarrierPhase::Restored(fact) => {
-                return Err(GovernanceRuntimeError::RestoreDetected {
-                    community: community_id.to_owned(),
-                    last_seq: fact.last_seq,
-                });
-            }
-            BarrierPhase::Passed => {}
-        }
+        refuse_unheld(&barrier, community_id)?;
     }
     let (op_id, ticket) = barrier.hold_next(held);
     announce(deps, community_id, &barrier);
@@ -104,6 +93,29 @@ pub(crate) async fn take_slot<D: GovernanceRuntimeDeps>(
     match deadline {
         None => Ok(BarrierSlot::Held(write)),
         Some(deadline) => wait_in_line(deps, community_id, write, deadline).await,
+    }
+}
+
+/// A write that may not be held (an invite link) is refused at once unless
+/// `barrier` passed: its caller checks this before any network step, so
+/// the answer never waits on one (plan E3.2 S7d-keys.8).
+///
+/// # Errors
+/// [`GovernanceRuntimeError::CatchingUp`] while the barrier catches up,
+/// [`GovernanceRuntimeError::RestoreDetected`] after a restore.
+pub(crate) fn refuse_unheld(
+    barrier: &UnlockBarrier,
+    community_id: &str,
+) -> Result<(), GovernanceRuntimeError> {
+    match barrier.phase() {
+        BarrierPhase::CatchingUp => {
+            Err(GovernanceRuntimeError::CatchingUp(community_id.to_owned()))
+        }
+        BarrierPhase::Restored(fact) => Err(GovernanceRuntimeError::RestoreDetected {
+            community: community_id.to_owned(),
+            last_seq: fact.last_seq,
+        }),
+        BarrierPhase::Passed => Ok(()),
     }
 }
 
