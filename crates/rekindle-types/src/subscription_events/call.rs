@@ -116,6 +116,21 @@ pub enum CallEvent {
     /// The ring expired before anyone answered.
     TimedOut { call_id: String },
 
+    /// Our outbound call never reached the peer: its invite could not be
+    /// committed or sent (no session, no route). No missed-call row, since
+    /// the peer never saw it.
+    Unreachable { call_id: String, reason: String },
+
+    /// Bring the conversation with `peer_key` forward, because call
+    /// `call_id` started or was answered (`reason`: `"call-started"`,
+    /// `"call-accepted"`).
+    FocusConversation {
+        call_id: String,
+        peer_key: String,
+        peer_display_name: String,
+        reason: String,
+    },
+
     /// The call is over. Covers 1:1 and group alike — the desktop's two
     /// variants for this had identical fields.
     Ended { call_id: String, reason: String },
@@ -172,6 +187,8 @@ impl CallEvent {
             | Self::Declined { call_id, .. }
             | Self::Missed { call_id, .. }
             | Self::TimedOut { call_id }
+            | Self::Unreachable { call_id, .. }
+            | Self::FocusConversation { call_id, .. }
             | Self::Ended { call_id, .. }
             | Self::MediaStateChanged { call_id, .. }
             | Self::ReactionReceived { call_id, .. }
@@ -309,6 +326,16 @@ mod tests {
             },
             CallEvent::TimedOut {
                 call_id: "c".into(),
+            },
+            CallEvent::Unreachable {
+                call_id: "c".into(),
+                reason: "no_route".into(),
+            },
+            CallEvent::FocusConversation {
+                call_id: "c".into(),
+                peer_key: "pk".into(),
+                peer_display_name: "Ada".into(),
+                reason: "call-started".into(),
             },
             CallEvent::Ended {
                 call_id: "c".into(),

@@ -12,6 +12,7 @@ pub mod activity;
 pub mod audit;
 pub mod bio;
 pub mod blocked;
+pub mod calls;
 pub mod chain_entries;
 pub mod channel_pins;
 pub mod channels;

@@ -232,17 +232,17 @@ impl CallSignalingDeps for CallsAdapter {
                 if let Ok(owner_key) = state_helpers::current_owner_key(&task_state) {
                     let cid = call_id.clone();
                     let pk = peer_pubkey.clone();
-                    let kind_u8 = i64::from(kind.as_u8());
-                    let expired = i64::try_from(expires_at_ms).unwrap_or(i64::MAX);
                     crate::db_helpers::db_fire(
                         &pool,
                         "persist missed call (dialing timeout)",
                         move |conn| {
-                            conn.execute(
-                                "INSERT OR IGNORE INTO missed_calls \
-                             (call_id, owner_key, peer_key, kind, expired_at) \
-                             VALUES (?1, ?2, ?3, ?4, ?5)",
-                                rusqlite::params![cid, owner_key, pk, kind_u8, expired],
+                            rekindle_db::repo::calls::record_missed(
+                                conn,
+                                &owner_key,
+                                &cid,
+                                &pk,
+                                kind.as_u8(),
+                                expires_at_ms,
                             )?;
                             Ok(())
                         },
@@ -300,17 +300,17 @@ impl CallSignalingDeps for CallsAdapter {
                 if let Ok(owner_key) = state_helpers::current_owner_key(&state) {
                     let cid = call_id.clone();
                     let pk = peer_pubkey.clone();
-                    let kind_u8 = i64::from(kind.as_u8());
-                    let expired = i64::try_from(expires_at_ms).unwrap_or(i64::MAX);
                     crate::db_helpers::db_fire(
                         &pool,
                         "persist missed call (incoming timeout)",
                         move |conn| {
-                            conn.execute(
-                                "INSERT OR IGNORE INTO missed_calls \
-                             (call_id, owner_key, peer_key, kind, expired_at) \
-                             VALUES (?1, ?2, ?3, ?4, ?5)",
-                                rusqlite::params![cid, owner_key, pk, kind_u8, expired],
+                            rekindle_db::repo::calls::record_missed(
+                                conn,
+                                &owner_key,
+                                &cid,
+                                &pk,
+                                kind.as_u8(),
+                                expires_at_ms,
                             )?;
                             Ok(())
                         },
@@ -342,13 +342,15 @@ impl CallSignalingDeps for CallsAdapter {
         };
         let cid = call_id.to_string();
         let pk = peer_pubkey_hex.to_string();
-        let kind_u8 = i64::from(kind.as_u8());
-        let expired = i64::try_from(expired_at_ms).unwrap_or(i64::MAX);
+        let kind = kind.as_u8();
         crate::db_helpers::db_fire(&self.pool, "persist missed call (adapter)", move |conn| {
-            conn.execute(
-                "INSERT OR IGNORE INTO missed_calls (call_id, owner_key, peer_key, kind, expired_at) \
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-                rusqlite::params![cid, owner_key, pk, kind_u8, expired],
+            rekindle_db::repo::calls::record_missed(
+                conn,
+                &owner_key,
+                &cid,
+                &pk,
+                kind,
+                expired_at_ms,
             )?;
             Ok(())
         });

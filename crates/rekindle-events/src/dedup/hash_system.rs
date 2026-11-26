@@ -311,6 +311,11 @@ pub(super) fn hash_call(h: &mut blake3::Hasher, c: &CallEvent) {
         }
         CallEvent::Missed { .. } => h.update(b"missed"),
         CallEvent::TimedOut { .. } => h.update(b"timedout"),
+        CallEvent::Unreachable { .. } => h.update(b"unreachable"),
+        CallEvent::FocusConversation { reason, .. } => {
+            h.update(b"focus|");
+            h.update(reason.as_bytes())
+        }
         CallEvent::Ended { reason, .. } => {
             h.update(b"ended|");
             h.update(reason.as_bytes())

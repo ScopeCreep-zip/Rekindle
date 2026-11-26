@@ -216,6 +216,7 @@ impl Inputs {
             CallEvent::Declined { call_id, .. }
             | CallEvent::Missed { call_id, .. }
             | CallEvent::TimedOut { call_id }
+            | CallEvent::Unreachable { call_id, .. }
             | CallEvent::Ended { call_id, .. } => {
                 self.calls.remove(call_id);
                 if self.calls.is_empty() {

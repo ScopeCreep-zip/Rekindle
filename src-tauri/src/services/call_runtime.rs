@@ -4,8 +4,6 @@
 //! `send_call_reaction_inner`, `get_missed_calls_inner`) so the Tauri
 //! commands stay thin delegations.
 
-use rusqlite::params;
-
 use rekindle_codec::capnp_codec::direct::{CallMediaState, CallReaction, DirectBody};
 
 use crate::db_helpers::db_call;
@@ -130,20 +128,15 @@ pub async fn get_missed_calls_inner(
 ) -> Result<Vec<MissedCallRow>, String> {
     let owner_key = state_helpers::current_owner_key(state)?;
     db_call(pool, move |conn| {
-        let mut stmt = conn.prepare(
-            "SELECT call_id, peer_key, kind, expired_at FROM missed_calls \
-             WHERE owner_key = ?1 ORDER BY expired_at DESC LIMIT 200",
-        )?;
-        let rows = stmt
-            .query_map(params![owner_key], |row| {
-                Ok(MissedCallRow {
-                    call_id: row.get::<_, String>(0)?,
-                    peer_key: row.get::<_, String>(1)?,
-                    kind: row.get::<_, u8>(2)?,
-                    expired_at: row.get::<_, i64>(3)?,
-                })
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
+        let rows = rekindle_db::repo::calls::list_missed(conn, &owner_key)?
+            .into_iter()
+            .map(|r| MissedCallRow {
+                call_id: r.call_id,
+                peer_key: r.peer_key,
+                kind: r.kind,
+                expired_at: r.expired_at,
+            })
+            .collect();
         Ok(rows)
     })
     .await

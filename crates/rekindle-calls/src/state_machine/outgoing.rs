@@ -1,32 +1,28 @@
-//! Outgoing (caller-side) call-event handlers.
-//!
-//! [`super::CallStateMachine::apply`] dispatches here for the caller-side
-//! events: starting a call, cancelling, dialing timeout, unreachable,
-//! accept/decline/ringing received.
+//! Caller-side inputs: placing a call, its ring timeout, an unreachable
+//! peer, and the callee's ringing, accept and decline.
 
-use rekindle_types::notification::TransportNotification;
-use x25519_dalek::StaticSecret;
+use rekindle_types::subscription_events::CallEvent;
 
-use super::{kind_str, CallStateMachine, Effect, StartCallParams};
+use super::{kind_str, CallStateMachine, CallTimer, Effect, Held, OutgoingCall};
+use crate::signaling::outbound::RING_DURATION_MS;
 use crate::state::{CallState, CallStatus};
 
 impl CallStateMachine {
-    pub(super) fn apply_local_start_call(&mut self, params: StartCallParams) -> Vec<Effect> {
-        let StartCallParams {
+    pub(super) fn apply_local_start_call(&mut self, call: OutgoingCall) -> Vec<Effect> {
+        let OutgoingCall {
             call_id,
             peer,
             peer_display_name,
             kind,
             my_x25519_secret,
-            my_x25519_pub,
-            expires_at_ms,
-            started_at_ms,
-        } = params;
-        let call_id = call_id.as_str();
-        let peer = peer.as_str();
+            video_decode_codecs,
+            now_ms,
+        } = call;
+        let expires_at_ms = now_ms.saturating_add(RING_DURATION_MS);
+        let my_pub = x25519_dalek::PublicKey::from(&my_x25519_secret).to_bytes();
         let state = CallState {
-            call_id: call_id.into(),
-            peer_pubkey: peer.into(),
+            call_id: call_id.clone(),
+            peer_pubkey: peer.clone(),
             kind,
             status: CallStatus::Outgoing,
             expires_at_ms,
@@ -34,134 +30,90 @@ impl CallStateMachine {
             peer_x25519_pub: None,
             media_secret: None,
             media_sender: std::sync::Arc::new(rekindle_secrets::sframe::SframeSender::fresh()),
+            // Filled from the peer's CallAccept.
             peer_video_decode_codecs: Vec::new(),
         };
-        let secret_bytes = state.my_x25519_secret.as_ref().map(StaticSecret::to_bytes);
-        self.active.insert(call_id.into(), state);
-
+        self.active.insert(
+            call_id.clone(),
+            Held {
+                call: state,
+                display_name: peer_display_name.clone(),
+                outgoing: true,
+                local_decode_codecs: video_decode_codecs.clone(),
+                active_since_ms: None,
+            },
+        );
         vec![
-            Effect::PersistCallState {
-                call_id: call_id.into(),
-                peer_pubkey: peer.into(),
-                kind,
-                status: CallStatus::Outgoing,
-                expires_at_ms,
-                my_x25519_secret: secret_bytes,
-                peer_x25519_pub: None,
+            Effect::ArmTimer {
+                call_id: call_id.clone(),
+                timer: CallTimer::Dialing,
+                at_ms: expires_at_ms,
             },
             Effect::SendCallInvite {
-                recipient: peer.into(),
-                call_id: call_id.into(),
+                recipient: peer.clone(),
+                call_id: call_id.clone(),
                 offer_kind: kind.as_u8(),
-                initiator_x25519_pub: my_x25519_pub,
+                initiator_pubkey: self.own_key.clone(),
+                initiator_x25519_pub: my_pub,
                 expires_at_ms,
+                video_decode_codecs,
             },
-            Effect::SpawnDialingTimer {
-                call_id: call_id.into(),
-                expires_at_ms,
-            },
-            Effect::Notify(TransportNotification::CallStarted {
-                call_id: call_id.into(),
+            Effect::Emit(CallEvent::Started {
+                call_id: call_id.clone(),
                 kind: kind_str(kind).into(),
-                peer_key: peer.into(),
-                peer_display_name,
+                peer_key: peer.clone(),
+                peer_display_name: peer_display_name.clone(),
                 expires_at_ms,
-                started_at_ms,
-                status: "calling".into(),
             }),
-            Effect::Notify(TransportNotification::ConversationFocusRequested {
-                peer_key: peer.into(),
-                display_name: String::new(),
+            Effect::FocusConversation {
+                call_id,
+                peer,
+                display_name: peer_display_name,
                 reason: "call-started".into(),
-            }),
+            },
         ]
     }
 
-    pub(super) fn apply_local_cancel(&mut self, call_id: &str, reason: String) -> Vec<Effect> {
-        let Some(state) = self.active.remove(call_id) else {
-            return vec![];
-        };
-        let mut effects = vec![
-            Effect::CancelTimer {
-                call_id: call_id.into(),
-            },
-            Effect::SendCallEnd {
-                recipient: state.peer_pubkey.clone(),
-                call_id: call_id.into(),
-                reason: reason.clone(),
-            },
-            Effect::DeletePersistedCall {
-                call_id: call_id.into(),
-            },
-        ];
-        if matches!(state.status, CallStatus::Active | CallStatus::Connecting) {
-            effects.push(Effect::StopVoiceSession {
-                call_id: call_id.into(),
-                reason: reason.clone(),
-            });
-        }
-        effects.push(Effect::Notify(TransportNotification::CallEnded {
-            call_id: call_id.into(),
-            reason,
-        }));
-        effects
-    }
-
-    pub(super) fn apply_local_dialing_timeout(&mut self, call_id: &str) -> Vec<Effect> {
-        // Only fire if the call is STILL Outgoing — accept/decline race
-        // could have already removed/transitioned it.
-        let still_outgoing = self
-            .active
-            .get(call_id)
-            .is_some_and(|c| matches!(c.status, CallStatus::Outgoing));
-        if !still_outgoing {
-            return vec![];
-        }
-        let Some(state) = self.active.remove(call_id) else {
+    /// The caller's ring expired unanswered: a missed-call row and `TimedOut`.
+    pub(super) fn apply_dialing_timeout(&mut self, call_id: &str, now_ms: u64) -> Vec<Effect> {
+        let due = self.active.get(call_id).is_some_and(|h| {
+            matches!(h.call.status, CallStatus::Outgoing) && now_ms >= h.call.expires_at_ms
+        });
+        let Some(held) = due.then(|| self.take(call_id)).flatten() else {
             return vec![];
         };
         vec![
-            Effect::DeletePersistedCall {
-                call_id: call_id.into(),
-            },
             Effect::PersistMissedCall {
                 call_id: call_id.into(),
-                peer_pubkey: state.peer_pubkey.clone(),
-                kind: state.kind,
-                expired_at_ms: state.expires_at_ms,
+                peer_pubkey: held.call.peer_pubkey.clone(),
+                kind: held.call.kind,
+                expired_at_ms: held.call.expires_at_ms,
             },
-            Effect::Notify(TransportNotification::CallTimedOut {
+            Effect::Emit(CallEvent::TimedOut {
                 call_id: call_id.into(),
             }),
         ]
     }
 
-    /// W16.5b — `app_call` CallInvite failed inside Veilid's RPC budget
-    /// (peer offline, no route, etc.). Drops Outgoing state and emits
-    /// `CallUnreachable` so the caller's UI can surface "Couldn't reach
-    /// {peer}" within ~10 s instead of waiting for the 30 s ring timer.
-    /// No missed_call row — the receiver never saw the invite.
-    pub(super) fn apply_local_unreachable(&mut self, call_id: &str, reason: String) -> Vec<Effect> {
-        let still_outgoing = self
+    /// The invite never left (no session, no route): no missed-call row,
+    /// the peer never saw it.
+    pub(super) fn apply_unreachable(&mut self, call_id: &str, reason: String) -> Vec<Effect> {
+        let outgoing = self
             .active
             .get(call_id)
-            .is_some_and(|c| matches!(c.status, CallStatus::Outgoing));
-        if !still_outgoing {
-            // Race: accept arrived before the app_call returned its
-            // error path; treat the call as alive and ignore the
-            // unreachable signal. (Should be rare given app_call's
-            // 5–10 s budget vs the user-decision time.)
+            .is_some_and(|h| matches!(h.call.status, CallStatus::Outgoing));
+        if !outgoing || self.take(call_id).is_none() {
             return vec![];
         }
-        let _ = self.active.remove(call_id);
         vec![
-            Effect::CancelTimer {
+            Effect::CancelTimers {
                 call_id: call_id.into(),
             },
-            Effect::DeletePersistedCall {
+            Effect::SettleInvite {
                 call_id: call_id.into(),
+                answered: false,
             },
-            Effect::Notify(TransportNotification::CallUnreachable {
+            Effect::Emit(CallEvent::Unreachable {
                 call_id: call_id.into(),
                 reason,
             }),
@@ -172,141 +124,101 @@ impl CallStateMachine {
         &mut self,
         call_id: &str,
         from: &str,
-        peer_x25519_pub: [u8; 32],
+        peer_x25519_pub: &[u8],
+        video_decode_codecs: Vec<String>,
+        now_ms: u64,
     ) -> Vec<Effect> {
-        let Some(state) = self.active.get_mut(call_id) else {
-            return vec![];
-        };
-        // Validate: status must be Outgoing AND sender must match peer.
-        if !matches!(state.status, CallStatus::Outgoing) || state.peer_pubkey != from {
+        let valid = self
+            .held_from(call_id, from)
+            .is_some_and(|h| matches!(h.call.status, CallStatus::Outgoing));
+        if !valid || peer_x25519_pub.len() != 32 {
             return vec![];
         }
-
-        // Derive call_key. If derivation fails, we can't proceed —
-        // tear down with a clear reason.
-        let Some(my_secret) = state.my_x25519_secret.as_ref() else {
-            // Defensive: we should always have our secret on Outgoing.
-            // If not, abort.
-            let cid = call_id.to_string();
-            let peer = state.peer_pubkey.clone();
-            self.active.remove(call_id);
-            return vec![
-                Effect::CancelTimer {
-                    call_id: cid.clone(),
-                },
-                Effect::SendCallEnd {
-                    recipient: peer,
-                    call_id: cid.clone(),
-                    reason: "missing local x25519 secret".into(),
-                },
-                Effect::DeletePersistedCall {
-                    call_id: cid.clone(),
-                },
-                Effect::Notify(TransportNotification::CallEnded {
-                    call_id: cid,
-                    reason: "internal: missing x25519 secret".into(),
-                }),
-            ];
-        };
-        let call_key = match crate::derive_call_key(my_secret, &peer_x25519_pub, call_id) {
-            Ok(k) => k,
-            Err(e) => {
-                let cid = call_id.to_string();
-                let peer = state.peer_pubkey.clone();
-                self.active.remove(call_id);
-                return vec![
-                    Effect::CancelTimer {
-                        call_id: cid.clone(),
-                    },
-                    Effect::SendCallEnd {
-                        recipient: peer,
-                        call_id: cid.clone(),
-                        reason: format!("call_key derive failed: {e}"),
-                    },
-                    Effect::DeletePersistedCall {
-                        call_id: cid.clone(),
-                    },
-                    Effect::Notify(TransportNotification::CallEnded {
-                        call_id: cid,
-                        reason: format!("call_key derive failed: {e}"),
-                    }),
-                ];
+        // Plan CE3: the answer settles our invite's row. Plan CE2: the peer
+        // answering this call has left any other call with us.
+        let mut effects = vec![Effect::SettleInvite {
+            call_id: call_id.into(),
+            answered: true,
+        }];
+        effects.extend(self.supersede_stale_with(from, call_id, now_ms));
+        let derived = self.active.get(call_id).and_then(|h| {
+            let secret = h.call.my_x25519_secret.as_ref()?;
+            Some(crate::derive_call_key(secret, peer_x25519_pub, call_id))
+        });
+        let key = match derived {
+            Some(Ok(key)) => key,
+            Some(Err(e)) => {
+                effects.extend(self.end_locally(call_id, &format!("derive call_key: {e}"), now_ms));
+                return effects;
+            }
+            None => {
+                effects.extend(self.end_locally(call_id, "missing local x25519 secret", now_ms));
+                return effects;
             }
         };
-
-        state.peer_x25519_pub = Some(peer_x25519_pub);
-        state.media_secret = Some(zeroize::Zeroizing::new(call_key));
-        state.status = CallStatus::Connecting;
-        let kind = state.kind;
-        let peer = state.peer_pubkey.clone();
-        let now = rekindle_utils::timestamp_ms();
-
-        vec![
-            Effect::CancelTimer {
-                call_id: call_id.into(),
-            },
-            Effect::StartVoiceSession {
-                call_id: call_id.into(),
-                peer: peer.clone(),
-                kind,
-            },
-            Effect::Notify(TransportNotification::CallStatusChanged {
-                call_id: call_id.into(),
-                status: "connecting".into(),
-                timestamp_ms: now,
-            }),
-            // CallConnected fires on VoiceTransportUp once audio is live.
-            Effect::Notify(TransportNotification::ConversationFocusRequested {
-                peer_key: peer,
-                display_name: String::new(),
-                reason: "call-accepted".into(),
-            }),
-        ]
+        let Some(held) = self.active.get_mut(call_id) else {
+            return effects;
+        };
+        let mut peer_arr = [0u8; 32];
+        peer_arr.copy_from_slice(peer_x25519_pub);
+        held.call.peer_x25519_pub = Some(peer_arr);
+        held.call.media_secret = Some(zeroize::Zeroizing::new(key));
+        held.call.peer_video_decode_codecs = video_decode_codecs;
+        held.call.status = CallStatus::Connecting;
+        effects.push(Effect::CancelTimers {
+            call_id: call_id.into(),
+        });
+        effects.push(Effect::StartVoiceSession {
+            call_id: call_id.into(),
+            peer: from.into(),
+            kind: held.call.kind,
+        });
+        effects
     }
 
-    pub(super) fn apply_decline_received(&mut self, call_id: &str, reason: String) -> Vec<Effect> {
-        let Some(state) = self.active.remove(call_id) else {
-            return vec![];
-        };
-        // Only valid if the call was Outgoing (caller-side).
-        if !matches!(state.status, CallStatus::Outgoing) {
-            // Re-insert (unexpected state); ignore.
-            self.active.insert(call_id.to_string(), state);
+    pub(super) fn apply_decline_received(
+        &mut self,
+        call_id: &str,
+        from: &str,
+        reason: String,
+    ) -> Vec<Effect> {
+        let outgoing = self
+            .held_from(call_id, from)
+            .is_some_and(|h| matches!(h.call.status, CallStatus::Outgoing));
+        if !outgoing || self.take(call_id).is_none() {
             return vec![];
         }
         vec![
-            Effect::CancelTimer {
+            Effect::CancelTimers {
                 call_id: call_id.into(),
             },
-            Effect::DeletePersistedCall {
+            Effect::SettleInvite {
                 call_id: call_id.into(),
+                answered: true,
             },
-            Effect::Notify(TransportNotification::CallDeclined {
+            Effect::Emit(CallEvent::Declined {
                 call_id: call_id.into(),
                 reason,
             }),
         ]
     }
 
-    pub(super) fn apply_ringing_received(&self, call_id: &str) -> Vec<Effect> {
-        // Pure UI hint: caller's panel transitions "Calling…" → "Ringing…".
-        // Only valid for Outgoing calls.
-        let still_outgoing = self
-            .active
-            .get(call_id)
-            .is_some_and(|c| matches!(c.status, CallStatus::Outgoing));
-        if !still_outgoing {
+    /// The callee holds our invite and rings: the row stops re-sending and
+    /// our panel flips "Calling…" → "Ringing…".
+    pub(super) fn apply_ringing_received(&self, call_id: &str, from: &str) -> Vec<Effect> {
+        let outgoing = self
+            .held_from(call_id, from)
+            .is_some_and(|h| matches!(h.call.status, CallStatus::Outgoing));
+        if !outgoing {
             return vec![];
         }
-        let now = rekindle_utils::timestamp_ms();
         vec![
-            Effect::Notify(TransportNotification::CallRinging {
+            Effect::SettleInvite {
                 call_id: call_id.into(),
-            }),
-            Effect::Notify(TransportNotification::CallStatusChanged {
+                answered: true,
+            },
+            Effect::Emit(CallEvent::Ringing {
                 call_id: call_id.into(),
-                status: "ringing".into(),
-                timestamp_ms: now,
             }),
         ]
     }
