@@ -14,7 +14,7 @@ import { disabledLook } from "../../disabled-look.ts";
 import { shot } from "../../shots.ts";
 import { builtinPacks } from "../../skin-pack.ts";
 
-const PACKS = ["combat", "alloy", "onyx", "xslimfire", "simple-x", "symbiosis", "xfire-classic"];
+const PACKS = ["combat", "alloy", "onyx", "xslimfire", "simple-x", "symbiosis", "xfire-classic", "total-chaos"];
 const COMMUNITY = `Row Hall ${Date.now() % 100000}`;
 const NODES = { open: "CommunitiesOpen", leave: "CommunitiesLeave", new: "CommunitiesNew" } as const;
 
