@@ -7,11 +7,9 @@
 // conversation brought forward, the camera's policy) comes back as a list
 // of effects, which the subscription runs in the window that owns them.
 //
-// Local inputs (`local*`) are the user's own acts that the call path does
-// not answer with an event on this base: a 1:1 decline (the desktop path
-// emits nothing for it until the call machine is the Host's, S7), the group
-// call's accept/decline/end (the desktop's GroupCallState until S7), a
-// refused end, and our own reactions.
+// The store renders only the Host: its events and the call window's
+// snapshot. The one local input is display state: our own reaction's float
+// (the Host does not echo our reactions) and its end.
 
 import type { CallEvent } from "../ipc/channels/chat_events";
 import type { ActiveCall } from "../ipc/commands/types";
@@ -217,22 +215,6 @@ export function reduceActiveCallSnapshot(s: CallsState, snapshot: ActiveCall, ct
   // The window opens right after `connected`, whose camera policy the
   // snapshot carries as its kind: a video call starts with the camera on.
   return snapshot.connected && snapshot.kind === "video" ? [{ kind: "cameraOn" }] : [];
-}
-
-/** We declined a 1:1 ring: the desktop path emits nothing for it until S7. */
-export function localDeclineCall(s: CallsState, callId: string): void {
-  s.incomingCalls = s.incomingCalls.filter((c) => c.callId !== callId);
-}
-
-/** Our end was refused because the call is already gone (a race with its
- *  `ended`): no slot keeps showing it. */
-export function localCallGone(s: CallsState, callId: string): void {
-  clearCall(s, callId);
-}
-
-/** We declined a group ring, or our accept was refused (GroupCallState, S7). */
-export function localDropGroupRing(s: CallsState, callId: string): void {
-  s.incomingGroupCalls = s.incomingGroupCalls.filter((c) => c.callId !== callId);
 }
 
 /** Our reaction, shown at once (its send is best-effort). */

@@ -2,7 +2,7 @@ import { commands } from "../ipc/commands";
 import { addToast } from "../stores/toast.store";
 import { produce } from "solid-js/store";
 import { callsState, setCallsState } from "../stores/calls.store";
-import { localCallGone, localDeclineCall, localDropGroupRing, localReaction, pruneReaction } from "../stores/calls.reduce";
+import { localReaction, pruneReaction } from "../stores/calls.reduce";
 import { stopActiveRing } from "./calls_ring";
 import { errorMessage } from "../utils/error";
 
@@ -47,10 +47,8 @@ export async function handleEndDmCall(callId: string, reason?: string): Promise<
   try {
     await commands.endDmCall(callId, reason);
   } catch (e) {
-    // The end succeeds with the Host's `ended`; a refusal means the call is
-    // already gone (a race with its `ended`), so no slot keeps showing it.
+    // The end succeeds with the Host's `ended`; a refusal is said in its words.
     addToast(errorMessage(e), "error");
-    setCallsState(produce((s) => localCallGone(s, callId)));
   }
 }
 
@@ -84,7 +82,6 @@ export async function handleAcceptGroupCall(callId: string): Promise<void> {
     await commands.acceptGroupCall(callId);
   } catch (e) {
     addToast(errorMessage(e), "error");
-    setCallsState(produce((s) => localDropGroupRing(s, callId)));
   }
 }
 
@@ -98,8 +95,6 @@ export async function handleDeclineGroupCall(
   } catch (e) {
     addToast(errorMessage(e), "error");
   }
-  // GroupCallState answers a decline with no event until it is the Host's (S7).
-  setCallsState(produce((s) => localDropGroupRing(s, callId)));
 }
 
 export async function handleEndGroupCall(callId: string, reason?: string): Promise<void> {
@@ -108,7 +103,6 @@ export async function handleEndGroupCall(callId: string, reason?: string): Promi
     await commands.endGroupCall(callId, reason);
   } catch (e) {
     addToast(errorMessage(e), "error");
-    setCallsState(produce((s) => localCallGone(s, callId)));
   }
 }
 
@@ -140,10 +134,8 @@ export async function handleAcceptIncomingCall(callId: string): Promise<void> {
   try {
     await commands.acceptDmCall(callId);
   } catch (e) {
-    // The accept succeeds with the Host's `connected`; a refused one drops
-    // the ring, which no event will now answer.
+    // The accept succeeds with the Host's `connected`; a refusal is said in its words.
     addToast(errorMessage(e), "error");
-    setCallsState(produce((s) => localDeclineCall(s, callId)));
   }
 }
 
@@ -157,9 +149,6 @@ export async function handleDeclineIncomingCall(
   } catch (e) {
     addToast(errorMessage(e), "error");
   }
-  // The desktop path emits nothing for our decline until the call machine
-  // is the Host's (S7), so the ring goes here.
-  setCallsState(produce((s) => localDeclineCall(s, callId)));
 }
 
 // Stopping the ringtone is a user action, so it belongs on this side of
