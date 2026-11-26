@@ -124,8 +124,15 @@ impl SimDht {
     /// A network call's latency and slot: `TryAgain` at once when the node
     /// is offline (Veilid checks `dht_is_online()` before any fanout), and
     /// after the latency when the node went offline meanwhile or a "try
-    /// again" fault answers (a fanout that failed ran to its end).
-    async fn network(&self, span: Span, key: &str, subkeys: &[u32]) -> Result<Slot, DhtCallError> {
+    /// again" fault answers (a fanout that failed ran to its end). `span` is
+    /// taken once the slot is held, as a get's fanout starts after its lock
+    /// and gate (0.5.8 `get_value.rs:302-303`, `:178-189`).
+    async fn network(
+        &self,
+        span: impl FnOnce() -> Span,
+        key: &str,
+        subkeys: &[u32],
+    ) -> Result<Slot, DhtCallError> {
         if self.offline() {
             return Err(try_again());
         }
@@ -136,7 +143,8 @@ impl SimDht {
             .faults
             .detector_offline
             .contains(&self.node);
-        let slot = self.net.latency.dht(self.node, span, key, subkeys).await;
+        let slot = self.net.latency.slot(self.node, key, subkeys).await;
+        tokio::time::sleep(self.net.latency.draw_op(self.node, span(), key, subkeys)).await;
         let mut inner = self.net.inner.lock();
         if offline(&inner.faults, self.node) {
             return Err(try_again());
@@ -245,7 +253,7 @@ impl SimDht {
             // Inspect subkey 0 for the descriptor, stopping at the first
             // node that has it (0.5.8 `open_record.rs:90-105`); not found needs a
             // node that said so (`:107-110`).
-            let _slot = self.network(latency::GET, key, &[]).await?;
+            let _slot = self.network(|| latency::GET, key, &[]).await?;
             if self.reach(key).is_empty() {
                 return Err(no_answer("open"));
             }
@@ -378,7 +386,7 @@ impl DhtBackend for SimDht {
             return Ok(local);
         }
         self.net.count_app_get(self.node, key);
-        let span = self.read_span(key, Some(&[subkey]));
+        let span = || self.read_span(key, Some(&[subkey]));
         let _slot = self.network(span, key, &[subkey]).await?;
         let mut inner = self.net.inner.lock();
         Ok(replicas::refresh(
@@ -433,7 +441,10 @@ impl DhtBackend for SimDht {
         let _slot = if scope == ReportScope::Local {
             None
         } else {
-            Some(self.network(self.read_span(key, subkeys), key, &[]).await?)
+            Some(
+                self.network(|| self.read_span(key, subkeys), key, &[])
+                    .await?,
+            )
         };
         if scope != ReportScope::Local && self.reach(key).is_empty() {
             return Err(no_answer("inspect"));

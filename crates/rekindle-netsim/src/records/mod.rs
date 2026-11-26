@@ -64,6 +64,8 @@ mod outbound_tests;
 mod outside;
 #[cfg(test)]
 mod outside_tests;
+#[cfg(test)]
+mod queued_read_tests;
 mod rehydrate;
 #[cfg(test)]
 mod rehydrate_tests;
