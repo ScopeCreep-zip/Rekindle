@@ -9,7 +9,7 @@ import type { Browser } from "webdriverio";
 import type { App } from "./launch.ts";
 import {
   Key, MOD_KEY, NETWORK_LABEL, NET_WAIT_MS, Skip, WAIT_MS, byText, doubleClick, gone, identityBarState,
-  present, press, resolveIntent, shown, sleep, switchTo, typeInto, untilPublished, waitForHandle, waitUntil, within,
+  communityWindowLabel, present, press, resolveIntent, shown, sleep, switchTo, typeInto, untilPublished, waitForHandle, waitUntil, within,
 } from "./helpers.ts";
 import { BUDDY, LOGIN, SETTINGS, closeModal, inBuddy, menu, openAddFriend } from "./nav.ts";
 import { pageLog, recordPage } from "./probe.ts";
@@ -369,17 +369,16 @@ const BASE_ROWS: Row[] = [
     async run({ b, s, shot }) {
       await inBuddy(b);
       await (await b.$('.buddy-tab[title^="Communities"]')).click();
-      const before = await b.getWindowHandles();
+      const label = await communityWindowLabel(b, s.communityName);
       await doubleClick(b, await byText(b, ".community-item", s.communityName, NET_WAIT_MS));
-      const handle = await waitForHandle(b, (h) => h.startsWith("community-") && !before.includes(h), WAIT_MS);
-      await b.switchToWindow(handle);
+      await switchTo(b, label, WAIT_MS);
       await shown(b, "body");
       await sleep(1000);
       await shot();
       await b.closeWindow();
       await inBuddy(b);
       await (await b.$('.buddy-tab[title^="Friends"]')).click();
-      return `opened ${handle}; dblclick dispatched in page (the server synthesises none)`;
+      return `opened ${label}; dblclick dispatched in page (the server synthesises none)`;
     },
   },
   {

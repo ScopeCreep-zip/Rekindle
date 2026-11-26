@@ -97,9 +97,9 @@ describe("Show Voice in a call and in a voice channel", function () {
     // A closed window: Show Voice opens it on the voice channel (?channel=).
     await browser.closeWindow();
     await switchTo(browser, BUDDY);
-    const open = await browser.getWindowHandles();
     await pressShowVoice();
-    await browser.switchToWindow(await waitForHandle(browser, (h) => h.startsWith("community-") && !open.includes(h), NET_WAIT_MS));
+    // The window re-opens under its label (it keeps it across a close).
+    await switchTo(browser, community, NET_WAIT_MS);
     await waitUntil(async () => (await selectedChannel()) === VOICE, NET_WAIT_MS, `the new window never opened on ${VOICE}`);
     expect(await selectedChannel()).toBe(VOICE);
   });

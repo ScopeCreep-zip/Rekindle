@@ -3,7 +3,7 @@
 
 import { expect } from "@wdio/globals";
 import type { Browser } from "webdriverio";
-import { NET_WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, switchTo, typeAndSend, typeInto, untilPublished, waitForHandle, waitUntil } from "../walk/helpers.ts";
+import { NET_WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, switchTo, typeAndSend, typeInto, untilPublished, communityWindowLabel, waitForHandle, waitUntil } from "../walk/helpers.ts";
 import { BUDDY, LOGIN, closeModal, closeSettings, inBuddy, menu, openAddFriend, openSettings, setValue, submitJoin, underTree } from "../walk/nav.ts";
 import { showSkinView, skinViewShown } from "./journeys_skins.ts";
 import type { User } from "./user.ts";
@@ -52,10 +52,8 @@ const AUTO_AWAY = '//div[contains(@class,"form-field")][.//label[contains(.,"Go 
 export async function autoAwayOff(b: Browser, user: User): Promise<void> {
   await openSettings(b, "Application");
   await setValue(b, AUTO_AWAY, "0");
-  // The change is reviewed; under load the review can take longer than a
-  // second or two to appear, and a review not answered drops the change
-  // (it read back "10 minutes"). Wait long enough for it; the read-back
-  // below still proves the stored value.
+  // Under load the review can come late, and an unanswered one drops the
+  // change (it read back "10 minutes"); the read-back below proves it.
   await resolveIntent(b, { passphrase: user.passphrase, appearMs: 10_000 });
   await closeSettings(b);
   await openSettings(b, "Application");
@@ -328,10 +326,10 @@ export async function createCommunity(b: Browser, user: User, name: string): Pro
 /** Open community `name`'s window from the buddy list (double-click) and switch to it. */
 export async function openCommunity(b: Browser, name: string): Promise<void> {
   await inBuddy(b);
+  const label = await communityWindowLabel(b, name);
   await communitiesTab(b);
-  const before = await b.getWindowHandles();
   await doubleClick(b, await byText(b, ".community-item", name.slice(0, 24), NET_WAIT_MS));
-  await b.switchToWindow(await waitForHandle(b, (h) => h.startsWith("community-") && !before.includes(h), NET_WAIT_MS));
+  await switchTo(b, label, NET_WAIT_MS);
   await shown(b, ".community-sidebar", NET_WAIT_MS);
 }
 
