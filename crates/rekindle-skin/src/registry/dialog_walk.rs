@@ -60,7 +60,7 @@ pub struct Change {
 /// What [`settle`] did: every move, and why it stopped short when a
 /// failing pair it may move could not be settled.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct Settled {
+pub struct DialogSettled {
     pub changes: Vec<Change>,
     pub unsettled: Option<String>,
 }
@@ -180,8 +180,8 @@ pub fn settle(
     tokens: &mut BTreeMap<String, TokenValue>,
     base: Base,
     movable: &dyn Fn(&str) -> bool,
-) -> Settled {
-    let mut done = Settled::default();
+) -> DialogSettled {
+    let mut done = DialogSettled::default();
     loop {
         let failing = pairs(tokens, base)
             .into_iter()
