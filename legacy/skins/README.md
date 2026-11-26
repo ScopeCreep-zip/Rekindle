@@ -34,7 +34,6 @@ cover them (see each pack's NOTICE for its licence note).
 | stealthx | `StealthX` | xfire-xml | 108 | MrCPU, René Schädlich, version 1; website http://www.xfire.com/ | `9361c4881e29f78713d2e78a40b890ccaf480613a8d5e1987999dbb3d9486603` |
 | spacecowboy | `Space_Cowboy` | xfire-xml | 236 | Peanut, Gunowar, version 1 | `1dc982e57376b9f02ad1359471978fa02d4ec45d5a2c25d375b86fa3add663e3` |
 | total-chaos | `Total_Chaos` | xfire-xml | 188 | Ryan Dunn, version 0; website http://www.totalchaos.org.uk/ | `eac16e3d4af4bd70a94cbc4ce908d7c3d9658a3d33ce49d1da738478a232a896` |
+| xfire-classic | `xfire` | xfire-xml | 880 | Xfire, Inc., Name/LongName Xfire, version 3, CompatibleVersion 1.58; source `https://web.archive.org/web/20120823211321/http://media.xfire.com/xfire/client/skins/xfire.zip` | `ccb37e23e133ac50693c4d065fa6d7fc246a9f4e3958c4834a8915b448f1bd53` |
 
-Still without a stored source: `xfire-classic` (NOTICE hash
-`ccb37e23e133ac50693c4d065fa6d7fc246a9f4e3958c4834a8915b448f1bd53`); no copy of
-its tree was found.
+Every built-in pack now has its verified source tree here.
