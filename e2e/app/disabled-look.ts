@@ -11,10 +11,15 @@ import { decodePng } from "./png.ts";
  * its enabled self instead (its attributes put back after), by node.
  */
 export async function disabledLook(ids: string[]): Promise<Record<string, number>> {
+  return Object.fromEntries(Object.entries(await disabledLookWithBoxes(ids)).map(([id, v]) => [id, v.changed]));
+}
+
+/** As `disabledLook`, with each node's box (CSS px), so a node that changes nothing can be found on the shot. */
+export async function disabledLookWithBoxes(ids: string[]): Promise<Record<string, { changed: number; box: number[] }>> {
   const width = (await browser.execute(() => innerWidth)) as number;
   const served = decodePng(Buffer.from(await browser.takeScreenshot(), "base64"));
   const scale = served.width / width;
-  const out: Record<string, number> = {};
+  const out: Record<string, { changed: number; box: number[] }> = {};
   for (const id of ids) {
     const box = (await browser.execute((node: string) => {
       const drawn = (sel: string): HTMLElement | undefined =>
@@ -49,7 +54,7 @@ export async function disabledLook(ids: string[]): Promise<Record<string, number
         if (Math.abs(served.data[i] - enabled.data[i]) + Math.abs(served.data[i + 1] - enabled.data[i + 1]) + Math.abs(served.data[i + 2] - enabled.data[i + 2]) > 48) changed++;
       }
     }
-    out[id] = changed;
+    out[id] = { changed, box: box.map(Math.round) };
   }
   return out;
 }

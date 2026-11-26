@@ -23,7 +23,7 @@ import { NET_WAIT_MS, switchTo, waitUntil } from "../../../walk/helpers.ts";
 import { BUDDY, openSettings } from "../../../walk/nav.ts";
 import { createCommunity, createIdentity, newUser, openCommunity, type User } from "../../journeys.ts";
 import { applySkin, skinShown } from "../../journeys_skins.ts";
-import { disabledLook } from "../../disabled-look.ts";
+import { disabledLookWithBoxes } from "../../disabled-look.ts";
 import { shot } from "../../shots.ts";
 import { builtinPacks } from "../../skin-pack.ts";
 
@@ -94,7 +94,51 @@ describe("a disabled node says why (CR1)", function () {
           })),
       )) as Disabled[];
       for (const d of nodes) console.log(`[cr1] ${file} ${d.node}: cause=${d.cause || "?"} by=${d.by || "?"} opacity=${d.opacity} reason="${d.reason}"`);
-      const look = await disabledLook(nodes.map((d) => d.node));
+      const measured = await disabledLookWithBoxes(nodes.map((d) => d.node));
+      const look = Object.fromEntries(Object.entries(measured).map(([id, v]) => [id, v.changed]));
+      console.log(`[cr1] ${file} measured boxes: ${JSON.stringify(measured)}`);
+      // A refused node that changes nothing: what is on top at its centre.
+      for (const [id, v] of Object.entries(measured).filter(([, m]) => m.changed < 20)) {
+        const top = (await browser.execute((box: number[]) => {
+          const t = document.elementFromPoint(box[0] + box[2] / 2, box[1] + box[3] / 2) as HTMLElement | null;
+          const node = t?.closest<HTMLElement>("[data-skin-node]");
+          return `top=${t?.tagName.toLowerCase()}.${t?.className ?? ""} in node ${node?.dataset.skinNode ?? "none"} (${node?.dataset.skinRole ?? "-"}) art=${node ? getComputedStyle(node).backgroundImage.slice(0, 90) : "-"}`;
+        }, v.box)) as string;
+        console.log(`[cr1] ${file} ${id} changes ${v.changed} px; at its centre: ${top}`);
+        // Lead: the node's own art's alpha at its box centre (the served
+        // image drawn at the node's background size and position), and every
+        // node with art under that point (which one draws the button seen).
+        const art = (await browser.execute((nid: string) => new Promise<string>((done) => {
+          const n = document.querySelector<HTMLElement>(`.skin-tree [data-skin-node="${nid}"]`);
+          if (!n) return done("no node");
+          const cs = getComputedStyle(n);
+          const url = /url\("?([^")]+)"?\)/.exec(cs.backgroundImage)?.[1];
+          const r = n.getBoundingClientRect();
+          const under = document
+            .elementsFromPoint(r.left + r.width / 2, r.top + r.height / 2)
+            .map((e) => e.closest<HTMLElement>("[data-skin-node]"))
+            .filter((e, i, all): e is HTMLElement => !!e && all.indexOf(e) === i)
+            .map((e) => `${e.dataset.skinNode}(${e.dataset.skinRole}) art=${getComputedStyle(e).backgroundImage.split("/").pop()?.slice(0, 16) ?? "-"}`);
+          if (!url) return done(`no art; under: ${JSON.stringify(under)}`);
+          const img = new Image();
+          img.onload = () => {
+            const c = document.createElement("canvas");
+            c.width = Math.round(r.width);
+            c.height = Math.round(r.height);
+            const g = c.getContext("2d")!;
+            const [px, py] = cs.backgroundPosition.split(" ").map((v) => parseFloat(v) || 0);
+            const size = cs.backgroundSize.split(" ").map((v) => parseFloat(v));
+            const w = Number.isFinite(size[0]) ? size[0] : img.width;
+            const h = Number.isFinite(size[1]) ? size[1] : img.height;
+            g.drawImage(img, px, py, w, h);
+            const a = g.getImageData(Math.floor(r.width / 2), Math.floor(r.height / 2), 1, 1).data[3];
+            done(`image ${img.width}x${img.height} at ${cs.backgroundPosition} size ${cs.backgroundSize}: alpha at centre ${a}; under: ${JSON.stringify(under)}`);
+          };
+          img.onerror = () => done(`image failed to load; under: ${JSON.stringify(under)}`);
+          img.src = url;
+        }), id)) as string;
+        console.log(`[cr1] ${file} ${id} own art: ${art}`);
+      }
       console.log(`[cr1] ${file} disabled vs enabled self, pixels changed: ${JSON.stringify(look)} (visibly disabled at 20)`);
       const inactive = await inactiveNodes();
       console.log(`[cr1] ${file} windowInactive (pressable, not aria-disabled): ${JSON.stringify(inactive)}`);
@@ -141,6 +185,17 @@ describe("a disabled node says why (CR1)", function () {
       throw new Error(`the inactive community window's close button is not in its windowInactive art: ${JSON.stringify(close)}`);
     });
     console.log(`[cr1] symbiosis community close: ${JSON.stringify(close)}`);
+    // What takes a press at the button's centre: the nearest node listening
+    // for pointer events there (a drag strip over the button would take it).
+    const atClose = (await browser.execute(() => {
+      const n = document.querySelector<HTMLElement>('.skin-tree [data-skin-role="windowButton:close"]');
+      if (!n) return "no close button";
+      const r = n.getBoundingClientRect();
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      const listener = top?.closest<HTMLElement>("[data-skin-on]");
+      return `top=${top?.tagName.toLowerCase()}.${(top as HTMLElement | null)?.className ?? ""} listener=${listener?.dataset.skinNode ?? "none"} (${listener?.dataset.skinRole ?? "-"}, on=${listener?.dataset.skinOn ?? "-"}) is the button: ${listener === n}`;
+    })) as string;
+    console.log(`[cr1] symbiosis community close, at its centre: ${atClose}`);
     await shot("symbiosis-inactive-close");
     expect(close!.ariaDisabled).toBeNull();
     await (await browser.$('.skin-tree [data-skin-role="windowButton:close"]')).click();

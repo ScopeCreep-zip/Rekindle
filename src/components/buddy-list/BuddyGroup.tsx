@@ -1,4 +1,4 @@
-import { Component, createSignal, JSX, Show, For } from "solid-js";
+import { Component, createSignal, createUniqueId, JSX, Show, For } from "solid-js";
 import type { Friend } from "../../stores/friends.store";
 import { handleRenameFriendGroup } from "../../actions/buddy.actions";
 import BuddyItem from "./BuddyItem";
@@ -24,22 +24,6 @@ interface BuddyGroupProps {
    */
   renderItem: (friend: Friend, item: JSX.Element) => JSX.Element;
 }
-
-/** One status section of a group; an empty one is not shown. */
-const BuddySection: Component<{
-  label: string;
-  friends: Friend[];
-  render: (friend: Friend) => JSX.Element;
-}> = (props) => (
-  <Show when={props.friends.length > 0}>
-    <div class="buddy-subgroup" role="group" aria-label={props.label}>
-      <div class="buddy-subgroup-header">
-        {props.label} ({props.friends.length})
-      </div>
-      <For each={props.friends}>{props.render}</For>
-    </div>
-  </Show>
-);
 
 const BuddyGroup: Component<BuddyGroupProps> = (props) => {
   const [collapsed, setCollapsed] = createSignal(false);
@@ -80,9 +64,20 @@ const BuddyGroup: Component<BuddyGroupProps> = (props) => {
   const isPendingGroup = () => props.name === "Awaiting Response";
 
   // Plan E7.2: each group splits into "Online" and "Offline" sections, as
-  // Xfire's list did; the list keeps its status order inside each.
+  // Xfire's list did; the list keeps its status order inside each. One
+  // keyed list holds both, each section's label drawn on its first row: a
+  // friend whose presence changes moves between the sections with the same
+  // element (two lists re-created the row, and a double-click straddling a
+  // presence change opened nothing, plan CR1 audit).
   const online = () => props.friends.filter((f) => f.status !== "offline");
   const offline = () => props.friends.filter((f) => f.status === "offline");
+  const ordered = () => [...online(), ...offline()];
+  const sectionOf = (f: Friend): "Online" | "Offline" => (f.status === "offline" ? "Offline" : "Online");
+  const section = (f: Friend): Friend[] => (sectionOf(f) === "Online" ? online() : offline());
+  // Each section's label is a heading screen readers can jump between, and
+  // every row is described by its section's label (WCAG 1.3.1: the meaning
+  // the per-section groups gave, kept with one list).
+  const sectionIds = { Online: createUniqueId(), Offline: createUniqueId() };
 
   const renderBuddy = (friend: Friend) =>
     props.renderItem(
@@ -108,6 +103,7 @@ const BuddyGroup: Component<BuddyGroupProps> = (props) => {
         unreachable={friend.unreachable}
         identityPinMismatch={friend.identityPinMismatch}
         selected={props.selectedKey === friend.publicKey}
+        describedBy={isPendingGroup() ? undefined : sectionIds[sectionOf(friend)]}
         onDoubleClick={props.onDoubleClick}
         onSelect={props.onSelect}
       />,
@@ -151,10 +147,18 @@ const BuddyGroup: Component<BuddyGroupProps> = (props) => {
       </Show>
       <Show when={!collapsed()}>
         <Show when={isPendingGroup()} fallback={
-          <>
-            <BuddySection label="Online" friends={online()} render={renderBuddy} />
-            <BuddySection label="Offline" friends={offline()} render={renderBuddy} />
-          </>
+          <For each={ordered()}>
+            {(friend) => (
+              <div class="buddy-subgroup" data-buddy-section={sectionOf(friend)}>
+                <Show when={section(friend)[0] === friend}>
+                  <div class="buddy-subgroup-header" id={sectionIds[sectionOf(friend)]} role="heading" aria-level="2">
+                    {sectionOf(friend)} ({section(friend).length})
+                  </div>
+                </Show>
+                {renderBuddy(friend)}
+              </div>
+            )}
+          </For>
         }>
           <For each={props.friends}>{renderBuddy}</For>
         </Show>

@@ -33,6 +33,9 @@ interface BuddyItemProps {
   unreachable: boolean;
   identityPinMismatch: boolean;
   selected: boolean;
+  /** The id of the label naming this row's section (Online or Offline),
+   *  so the row read on its own says which (WCAG 1.3.1). */
+  describedBy?: string;
   onDoubleClick: (publicKey: string, displayName: string) => void;
   onSelect: (publicKey: string) => void;
 }
@@ -88,6 +91,7 @@ const BuddyItem: Component<BuddyItemProps> = (props) => {
   return (
     <div
       class={`buddy-item ${props.selected ? "buddy-item-selected" : ""}`}
+      aria-describedby={props.describedBy}
       onClick={handleClick}
       onDblClick={handleDblClick}
       onFocus={handleClick}

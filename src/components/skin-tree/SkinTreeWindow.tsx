@@ -280,7 +280,9 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
     // label names it, else its action; the label is also its tooltip, so words
     // the box cuts short read in full on hover (focus: skin-tree.css).
     "aria-label": { get: () => n().label?.text ?? tree.label(press()!), enumerable: true },
-    title: { get: () => n().label?.text, enumerable: true },
+    // A refused button's tooltip is the Host's reason (plan CR1), as its
+    // aria-description is; otherwise its label, read in full on hover.
+    title: { get: () => (disabled() ? disabledReason() : undefined) ?? n().label?.text, enumerable: true },
     class: { get: () => "skin-tree-button", enumerable: true },
     onKeyDown: {
       value: (e: KeyboardEvent) => {

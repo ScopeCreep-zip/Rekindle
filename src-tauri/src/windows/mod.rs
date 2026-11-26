@@ -112,6 +112,33 @@ const fn size(kind: WindowKind) -> Size {
 /// No data root is managed yet (`setup::run` manages it before the first
 /// window): a window is never built on the platform's default store when
 /// the root names another.
+/// Whether a window of `kind` acts on the click that activates it (macOS
+/// otherwise only focuses an inactive window, so a skin's close or chat
+/// button needed two clicks): every window drawn from a skin tree, as
+/// Xfire's chrome acted on the first click (lead ruling; consequential
+/// presses still go through the intent review).
+const fn accepts_first_mouse(kind: WindowKind) -> bool {
+    matches!(
+        kind,
+        WindowKind::BuddyList | WindowKind::Chat | WindowKind::Community | WindowKind::SkinPopup
+    )
+}
+
+/// How a window of `kind`'s page runs while it is in the background
+/// (Tauri's `BackgroundThrottlingPolicy`, macOS 14+; Linux and Windows
+/// ignore it). A window that can carry live media (a call window, a chat
+/// window's video call, a community window's voice and video) decodes and
+/// answers keyframe and consent requests in its page, so it is never
+/// throttled; every other window is throttled, not suspended (lead ruling).
+const fn background_policy(kind: WindowKind) -> BackgroundThrottlingPolicy {
+    match kind {
+        WindowKind::Call | WindowKind::Chat | WindowKind::Community => {
+            BackgroundThrottlingPolicy::Disabled
+        }
+        _ => BackgroundThrottlingPolicy::Throttle,
+    }
+}
+
 fn base_builder<'a>(
     app: &'a AppHandle,
     kind: WindowKind,
@@ -135,8 +162,9 @@ fn base_builder<'a>(
         .decorations(false)
         .transparent(true)
         .shadow(false)
+        .accept_first_mouse(accepts_first_mouse(kind))
         .resizable(true)
-        .background_throttling(BackgroundThrottlingPolicy::Throttle)
+        .background_throttling(background_policy(kind))
         .on_navigation(move |url| navigation::is_app_origin(url, dev_origin.as_ref()))
         .on_new_window(|_, _| NewWindowResponse::Deny)
         .on_permission_request(move |_, permission| {
@@ -470,3 +498,7 @@ pub async fn open_profile_window(
     .title(title);
     finish(builder, WindowKind::Profile).map(drop)
 }
+
+#[cfg(test)]
+#[path = "first_mouse_tests.rs"]
+mod first_mouse_tests;
