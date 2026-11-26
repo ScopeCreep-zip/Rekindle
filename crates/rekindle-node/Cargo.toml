@@ -121,9 +121,6 @@ parking_lot = { workspace = true }
 clap = { version = "4", features = [ "derive", "std", "help", "usage", "error-context" ] }
 tracing-appender = "0.2"
 
-# systemd integration (sd_notify READY=1, watchdog keepalive)
-sd-notify = "0.4"
-
 base64 = "0.22"
 hex = "0.4"
 
@@ -133,6 +130,11 @@ hex = "0.4"
 rekindle-secrets = { path = "../rekindle-secrets" }
 # The temp root of the public Host test fixture (`test-fixtures` only).
 tempfile = { version = "3", optional = true }
+
+# systemd integration (sd_notify READY=1, watchdog keepalive). systemd runs
+# only on Linux, and the crate builds only on unix (`std::os::unix`).
+[target.'cfg(target_os = "linux")'.dependencies]
+sd-notify = "0.4"
 
 [features]
 # The public Host test fixture (`host::test_fixtures`, plan GI3) the

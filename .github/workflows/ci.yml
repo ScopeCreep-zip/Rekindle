@@ -81,7 +81,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-14, windows-2022]
+        os: [ubuntu-24.04, macos-15, windows-2022]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -97,7 +97,7 @@ jobs:
       # codegen on every build — not just Linux. Matches release.yml's
       # per-OS install.
       - name: Install system deps (macOS)
-        if: matrix.os == 'macos-14'
+        if: matrix.os == 'macos-15'
         run: brew install capnp
 
       - name: Install system deps (Windows)
@@ -111,7 +111,7 @@ jobs:
       # in /Library/Frameworks/GStreamer.framework, the path
       # .cargo/config.toml already points PKG_CONFIG_PATH at.
       - name: Install GStreamer (macOS)
-        if: matrix.os == 'macos-14'
+        if: matrix.os == 'macos-15'
         env:
           GST_VERSION: "1.26.8"
         run: |
