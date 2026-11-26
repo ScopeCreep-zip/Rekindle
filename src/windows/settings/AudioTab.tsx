@@ -2,26 +2,25 @@ import { Component, onMount, For, Show } from "solid-js";
 import FormField from "../../components/common/FormField";
 import { settingsState, setSettingsState } from "../../stores/settings.store";
 import { commands } from "../../ipc/commands";
+import { addToast } from "../../stores/toast.store";
+import { errorMessage } from "../../utils/error";
+import { loadVoiceStatus } from "../../handlers/voice_status.handlers";
+import { VoiceEndLine } from "../../components/voice/VoiceEndNotices";
 
 const AudioTab: Component = () => {
-  // Plan §Failure 1 — load enumerated audio devices + the persisted
-  // selection when the audio tab opens. Which device a call opens when the
-  // saved one is missing is the backend's decision (plan C7.24).
+  // Plan §Failure 1: the Host's audio devices, its voice status and the
+  // persisted selection when the audio tab opens; the device lists and the
+  // status then follow the Host's events (`voice_status.handlers.ts`).
+  // Which device a call opens when the saved one is missing is the Host's
+  // decision (plan C7.24); each end's line says what it did (E4.1 S5).
 
   onMount(() => {
-    commands.listAudioDevices().then((d) => {
-      setSettingsState("inputDevices", d.inputDevices);
-      setSettingsState("outputDevices", d.outputDevices);
-    }).catch((e) => {
-      console.error("Failed to enumerate audio devices:", e);
-    });
+    void loadVoiceStatus();
     commands.getPreferences().then((prefs) => {
       setSettingsState("selectedInputDevice", prefs.inputDevice);
       setSettingsState("selectedOutputDevice", prefs.outputDevice);
       setSettingsState("inputChannels", prefs.inputChannels ?? {});
-    }).catch((e) => {
-      console.error("Failed to load device preferences:", e);
-    });
+    }).catch((e) => addToast(errorMessage(e), "error"));
   });
 
   /** The input device the channel choice applies to: the selected one, or
@@ -51,7 +50,7 @@ const AudioTab: Component = () => {
       await commands.setInputChannels(device, saved);
       setSettingsState("inputChannels", device, saved.length ? saved : undefined);
     } catch (e) {
-      console.error("Failed to save input channels:", e);
+      addToast(errorMessage(e), "error");
     }
   }
 
@@ -62,7 +61,7 @@ const AudioTab: Component = () => {
         settingsState.selectedOutputDevice,
       );
     } catch (e) {
-      console.error("Failed to persist audio device selection:", e);
+      addToast(errorMessage(e), "error");
     }
   }
 
@@ -88,6 +87,7 @@ const AudioTab: Component = () => {
             )}
           </For>
         </select>
+        <VoiceEndLine end="input" />
       </FormField>
       <Show when={(inputDevice()?.channels ?? 0) > 1 && inputDevice()}>
         {(device) => (
@@ -126,6 +126,7 @@ const AudioTab: Component = () => {
             )}
           </For>
         </select>
+        <VoiceEndLine end="output" />
       </FormField>
       <div class="settings-hint">
         Changes take effect immediately during a call; saved otherwise.

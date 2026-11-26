@@ -1,6 +1,7 @@
 import { createStore } from "solid-js/store";
 
 import type { LinkMeasurement } from "../ipc/channels/voice_events";
+import type { VoiceStatus } from "../ipc/commands/dto_voice";
 
 export interface VoiceParticipant {
   publicKey: string;
@@ -13,6 +14,11 @@ export interface VoiceParticipant {
 }
 
 export interface VoiceState {
+  /** The Host's voice state (plan E4.1 S5): written only from its
+   *  `get_voice_status` answer and `statusChanged` events. A community
+   *  call's mute, deafen and audio ends read from it; null until the
+   *  first answer. */
+  status: VoiceStatus | null;
   isConnected: boolean;
   channelId: string | null;
   isMuted: boolean;
@@ -57,6 +63,7 @@ export interface VoiceState {
 }
 
 const [voiceState, setVoiceState] = createStore<VoiceState>({
+  status: null,
   isConnected: false,
   channelId: null,
   isMuted: false,

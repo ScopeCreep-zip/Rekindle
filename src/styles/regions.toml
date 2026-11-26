@@ -56,6 +56,8 @@
 '.profile-popup-key' = { on = ["--color-xfire-bg-primary"] }
 '.update-status-available' = { on = ["--color-xfire-bg-dark"] }
 '.voice-panel-status' = { on = ["--color-xfire-bg-status"] }
+'.voice-end-notice' = { on = ["--color-xfire-bg-status", "--color-xfire-bg-dark", "--color-xfire-bg-panel", "--color-xfire-bg-primary"] }
+'.voice-end-notice-unavailable' = { on = ["--color-xfire-bg-status", "--color-xfire-bg-dark", "--color-xfire-bg-panel", "--color-xfire-bg-primary"] }
 '.call-waiting-banner-kind' = { on = ["--color-xfire-bg-secondary 96% over --color-xfire-bg-dark"] }
 '.outgoing-call-panel-kind' = { on = ["--color-xfire-bg-secondary 96% over --color-xfire-bg-dark"] }
 '.notification-body' = { on = ["--color-xfire-bg-panel"] }

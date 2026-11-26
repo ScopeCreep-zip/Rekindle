@@ -15,6 +15,8 @@
  * which cannot decode a tagged enum.
  */
 
+import type { VoiceDevices, VoiceStatus } from "../commands/dto_voice";
+
 /**
  * Where a call is happening.
  *
@@ -102,6 +104,11 @@ export type VoiceEvent =
   /** Machine-wide — no scope, since a device can change with no call. */
   | { deviceChanged: { deviceType: string; deviceName: string; reason: string } }
   | { packetsDropped: { scope: VoiceScope; reason: string; count: number } }
+  /** The Host's voice state (plan E4.1 S5), on every join, leave, mute,
+   *  deafen, device or end-state change; the latest is journaled. */
+  | { statusChanged: { status: VoiceStatus } }
+  /** The Host's audio devices, from its device monitor (plan E4.1 S5). */
+  | { devicesChanged: { devices: VoiceDevices } }
   | {
       connectionQuality: {
         scope: VoiceScope;

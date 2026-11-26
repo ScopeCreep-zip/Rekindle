@@ -50,6 +50,7 @@ import { refreshMissedCalls, subscribeCallEvents } from "../handlers/calls.handl
 import { subscribeNotificationHandler } from "../handlers/notification-events.handlers";
 import CallController from "../components/voice/CallController";
 import { startEventStream } from "../ipc/channels";
+import { loadVoiceStatus, subscribeVoiceStatus } from "../handlers/voice_status.handlers";
 import { handleHydrateRelayState } from "../actions/relay.actions";
 import { hydrateState } from "../stores/hydrate";
 import {
@@ -213,6 +214,9 @@ const BuddyListWindow: Component = () => {
     // The skin operations only the buddy list runs (plan SK2-A5): Close
     // hides it in the tray, and its dialogs.
     unlisteners.push(Promise.resolve(registerShellRunner(runBuddyListOp)));
+    // The Host's voice status (plan E4.1 S5): a skin's Mute toggles from it.
+    unlisteners.push(subscribeVoiceStatus());
+    void loadVoiceStatus();
     // The groups the main window's trees serve (shell_runners): its menus,
     // popups, a friend's profile and chat, a room, downloads, Copy Key and
     // Show Voice. No call or mute: no main tree lays one.

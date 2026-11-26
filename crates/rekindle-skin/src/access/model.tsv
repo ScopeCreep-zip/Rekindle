@@ -892,6 +892,14 @@
 .voice-btn-active	text	var(--color-xfire-danger-fg)	--color-xfire-danger var(--tint-fill) over --color-xfire-bg-status	1.0	false
 .voice-btn-disconnect	text	var(--color-xfire-danger-fg)	--color-xfire-danger var(--tint-fill-soft) over --color-xfire-bg-dark	1.0	false
 .voice-btn-disconnect	text	var(--color-xfire-danger-fg)	--color-xfire-danger var(--tint-fill-soft) over --color-xfire-bg-status	1.0	false
+.voice-end-notice	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
+.voice-end-notice	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
+.voice-end-notice	text	var(--color-xfire-text-dim)	--color-xfire-bg-primary	1.0	false
+.voice-end-notice	text	var(--color-xfire-text-dim)	--color-xfire-bg-status	1.0	false
+.voice-end-notice-unavailable	text	var(--color-xfire-danger-text)	--color-xfire-bg-dark	1.0	false
+.voice-end-notice-unavailable	text	var(--color-xfire-danger-text)	--color-xfire-bg-panel	1.0	false
+.voice-end-notice-unavailable	text	var(--color-xfire-danger-text)	--color-xfire-bg-primary	1.0	false
+.voice-end-notice-unavailable	text	var(--color-xfire-danger-text)	--color-xfire-bg-status	1.0	false
 .voice-message-duration	text	var(--color-xfire-text-dim)	--color-xfire-bg 88% over --color-xfire-bg-dark	1.0	false
 .voice-message-duration	text	var(--color-xfire-text-dim)	--color-xfire-bg 88% over --color-xfire-bg-panel	1.0	false
 .voice-message-play-btn	text	var(--color-xfire-accent-fg)	--color-xfire-accent	1.0	false

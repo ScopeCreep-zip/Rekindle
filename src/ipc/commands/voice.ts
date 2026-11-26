@@ -1,7 +1,6 @@
-import { invoke } from "../invoke";
-import type { ActiveCall,
-  AudioDevices, MissedCallRow,
-} from "./types";
+import { hostInvoke, invoke } from "../invoke";
+import type { VoiceDevices, VoiceStatus } from "./dto_voice";
+import type { ActiveCall, MissedCallRow } from "./types";
 
 export const voiceCommands = {
   // Voice
@@ -14,8 +13,8 @@ export const voiceCommands = {
     invoke<string[]>("get_stage_hand_raises", { communityId, channelId }),
   respondToSpeakRequest: (communityId: string, channelId: string, requesterPseudonym: string, granted: boolean) =>
     invoke<void>("respond_to_speak_request", { communityId, channelId, requesterPseudonym, granted }),
-  setMute: (muted: boolean) => invoke<void>("set_mute", { muted }),
-  setDeafen: (deafened: boolean) => invoke<void>("set_deafen", { deafened }),
+  setMute: (muted: boolean) => hostInvoke<void>("set_mute", { muted }),
+  setDeafen: (deafened: boolean) => hostInvoke<void>("set_deafen", { deafened }),
   /**
    * Architecture §10 — moderator action: server-mute another member
    * in a community voice channel. Backend gates on `MUTE_MEMBERS`
@@ -52,12 +51,15 @@ export const voiceCommands = {
       targetPseudonym,
       deafened,
     }),
-  listAudioDevices: () => invoke<AudioDevices>("list_audio_devices"),
+  listAudioDevices: () => hostInvoke<VoiceDevices>("list_audio_devices"),
+  /** The Host's voice state (plan E4.1 S5): its session, mute, deafen and
+   *  what each audio end is. */
+  getVoiceStatus: () => hostInvoke<VoiceStatus>("get_voice_status"),
   setAudioDevices: (inputDevice: string | null, outputDevice: string | null) =>
-    invoke<void>("set_audio_devices", { inputDevice, outputDevice }),
+    hostInvoke<void>("set_audio_devices", { inputDevice, outputDevice }),
   /** Save the input channels to capture on `device` (0-based; [] = all). */
   setInputChannels: (device: string, channels: number[]) =>
-    invoke<void>("set_input_channels", { device, channels }),
+    hostInvoke<void>("set_input_channels", { device, channels }),
   setVoiceMode: (mode: string, hostPseudonym?: string) =>
     invoke<void>("set_voice_mode", { mode, hostPseudonym: hostPseudonym ?? null }),
 

@@ -13,6 +13,7 @@ import { friendsState } from "../stores/friends.store";
 import { voiceState, setVoiceState } from "../stores/voice.store";
 import { communityState } from "../stores/community.store";
 import { addToast } from "../stores/toast.store";
+import { errorMessage } from "../utils/error";
 import { probeAndReportLocalVideoCapabilities } from "./video.actions";
 
 let voiceEventUnlisten: UnlistenFn | null = null;
@@ -183,26 +184,27 @@ export async function handleLeaveVoice(): Promise<void> {
 }
 
 export async function handleToggleMute(): Promise<void> {
-  await handleSetMuted(!voiceState.isMuted);
+  await handleSetMuted(!(voiceState.status?.muted ?? false));
 }
 
-/** Mute or unmute our microphone (a skin's MuteSelf / UnmuteSelf, plan SK2-A5). */
+/** Mute or unmute our microphone (a skin's MuteSelf / UnmuteSelf, plan
+ *  SK2-A5). The Host's `statusChanged` carries the result; a refusal is
+ *  shown in its words. */
 export async function handleSetMuted(muted: boolean): Promise<void> {
   try {
     await commands.setMute(muted);
-    setVoiceState("isMuted", muted);
   } catch (e) {
-    console.error("Failed to set mute:", e);
+    addToast(errorMessage(e), "error");
   }
 }
 
+/** Deafen or undeafen our speakers; the Host's `statusChanged` carries
+ *  the result. */
 export async function handleToggleDeafen(): Promise<void> {
   try {
-    const newDeafened = !voiceState.isDeafened;
-    await commands.setDeafen(newDeafened);
-    setVoiceState("isDeafened", newDeafened);
+    await commands.setDeafen(!(voiceState.status?.deafened ?? false));
   } catch (e) {
-    console.error("Failed to toggle deafen:", e);
+    addToast(errorMessage(e), "error");
   }
 }
 

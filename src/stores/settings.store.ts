@@ -1,5 +1,5 @@
 import { createStore } from "solid-js/store";
-import type { AudioDeviceInfo, NotificationContent } from "../ipc/commands";
+import type { NotificationContent, VoiceDevice } from "../ipc/commands";
 
 export interface SettingsState {
   notifications: boolean;
@@ -15,8 +15,8 @@ export interface SettingsState {
   autoVolunteerRelayForNewFriends: boolean;
   /** Architecture §32 W26 + plan §Failure 1 — enumerated input devices
    *  for the Settings → Audio dropdowns. Hydrated by `listAudioDevices`. */
-  inputDevices: AudioDeviceInfo[];
-  outputDevices: AudioDeviceInfo[];
+  inputDevices: VoiceDevice[];
+  outputDevices: VoiceDevice[];
   /** Persisted device id selected by the user. `null` means "system
    *  default" — the backend's `resolve_device` falls back accordingly
    *  (cpal `default_input_device`/`default_output_device`). */

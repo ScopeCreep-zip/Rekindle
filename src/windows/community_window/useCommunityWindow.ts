@@ -30,6 +30,7 @@ import type { Message } from "../../stores/chat.store";
 import type { Thread } from "../../stores/community.store";
 import { createCommunityWindowState } from "./state";
 import { startEventStream, subscribeCommunityFocusChannel } from "../../ipc/channels";
+import { loadVoiceStatus, subscribeVoiceStatus } from "../../handlers/voice_status.handlers";
 
 /// Orchestrating view-model hook for `CommunityWindow`. Owns the effects,
 /// event handlers, and Veilid subscription lifecycle on top of the signals
@@ -293,6 +294,10 @@ export function useCommunityWindow() {
     unlisteners.push(subscribeCommunityPresenceEvents());
     unlisteners.push(subscribeCommunityEventDispatcher());
     unlisteners.push(subscribeCommunityVoiceEvents());
+    // The Host's voice status and devices (plan E4.1 S5): the voice panel's
+    // and call bar's mute, deafen and audio ends.
+    unlisteners.push(subscribeVoiceStatus());
+    void loadVoiceStatus();
     // An open window asked to show a channel of its community (plan E7.2 A).
     unlisteners.push(
       subscribeCommunityFocusChannel((channel) => {

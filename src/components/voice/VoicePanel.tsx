@@ -2,7 +2,9 @@ import { Component, For, Show } from "solid-js";
 import SkinGlyph from "../common/SkinGlyph";
 import { voiceState } from "../../stores/voice.store";
 import VoiceParticipantItem from "./VoiceParticipant";
-import { handleToggleMute, handleToggleDeafen, handleLeaveVoice } from "../../actions/voice.actions";
+import { handleLeaveVoice } from "../../actions/voice.actions";
+import { DeafenButton, MuteButton } from "./SelfVoiceButtons";
+import VoiceEndNotices from "./VoiceEndNotices";
 
 /// Compact sidebar "connected" strip. Quick mute / deafen / leave plus the
 /// participant list — reachable from any channel while in a call. The full
@@ -32,24 +34,8 @@ const VoicePanel: Component = () => {
         </span>
         <Show when={voiceState.isConnected}>
           <div class="voice-panel-controls">
-            <button
-              class={`voice-btn ${voiceState.isMuted ? "voice-btn-active" : ""}`}
-              onClick={handleToggleMute}
-              title={voiceState.isMuted ? "Unmute" : "Mute"}
-              aria-label={voiceState.isMuted ? "Unmute microphone" : "Mute microphone"}
-              aria-pressed={voiceState.isMuted}
-            >
-              <SkinGlyph name={voiceState.isMuted ? "mic.off" : "mic.on"} />
-            </button>
-            <button
-              class={`voice-btn ${voiceState.isDeafened ? "voice-btn-active" : ""}`}
-              onClick={handleToggleDeafen}
-              title={voiceState.isDeafened ? "Undeafen" : "Deafen"}
-              aria-label={voiceState.isDeafened ? "Undeafen output" : "Deafen output"}
-              aria-pressed={voiceState.isDeafened}
-            >
-              <SkinGlyph name={voiceState.isDeafened ? "speaker.off" : "speaker.on"} />
-            </button>
+            <MuteButton />
+            <DeafenButton />
             <button
               class="voice-btn voice-btn-disconnect"
               onClick={handleLeaveVoice}
@@ -61,6 +47,7 @@ const VoicePanel: Component = () => {
           </div>
         </Show>
       </div>
+      <VoiceEndNotices />
 
       <Show when={voiceState.isConnected}>
         <div class="voice-participants">

@@ -139,7 +139,7 @@ if ("soundboardPlayed" in v) {
     if (!("community" in scope)) return;
     const community = scope.community.community;
     if (!settingsState.soundEnabled) return;
-    if (voiceState.isDeafened) return;
+    if (voiceState.status?.deafened) return;
     const c = communityState.communities[community];
     if (!c) return;
     const expression = (c.expressions ?? []).find((e) => e.id === expressionId);

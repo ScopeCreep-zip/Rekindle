@@ -169,19 +169,6 @@ export interface GameStatus {
 /** `rekindle_types::friend::NotJoinableReason`. */
 export type NotJoinableReason = "noServer" | "cannotLaunch";
 
-export interface AudioDeviceInfo {
-  id: string;
-  name: string;
-  isDefault: boolean;
-  /** Input channels an input-channel choice picks from; 0 for outputs. */
-  channels: number;
-}
-
-export interface AudioDevices {
-  inputDevices: AudioDeviceInfo[];
-  outputDevices: AudioDeviceInfo[];
-}
-
 /** Plan §Failure 5 — row from `getMissedCalls`. `kind` is 0 = audio, 1 = video. */
 export interface MissedCallRow {
   callId: string;

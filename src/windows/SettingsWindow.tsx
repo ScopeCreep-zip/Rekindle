@@ -1,6 +1,7 @@
 import { Component, createSignal, For, Show, onMount, onCleanup } from "solid-js";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { startEventStream, subscribeSettingsTab } from "../ipc/channels";
+import { subscribeVoiceStatus } from "../handlers/voice_status.handlers";
 import Titlebar from "../components/titlebar/Titlebar";
 import PushRelaySettingsSection from "../components/settings/PushRelaySettingsSection";
 import { handleLoadSettings } from "../actions/settings.actions";
@@ -46,6 +47,7 @@ const SettingsWindow: Component = () => {
   const [activeTab, setActiveTab] = createSignal<SettingsTab>(getInitialTab());
 
   let unlistenSwitchTab: Promise<UnlistenFn> | undefined;
+  let unlistenVoice: Promise<UnlistenFn> | undefined;
 
   onMount(() => {
     // Hydrate global stores read by every tab (identity, preferences).
@@ -53,11 +55,15 @@ const SettingsWindow: Component = () => {
     handleLoadSettings();
 
     unlistenSwitchTab = subscribeSettingsTab(setActiveTab);
+    // The Host's voice status and devices (plan E4.1 S5): Audio's lists and
+    // each end's line follow them.
+    unlistenVoice = subscribeVoiceStatus();
     void startEventStream(() => void hydrateState());
   });
 
   onCleanup(() => {
     unlistenSwitchTab?.then((unlisten) => unlisten());
+    unlistenVoice?.then((unlisten) => unlisten());
   });
 
   setWindowKind("settings");

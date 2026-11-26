@@ -13,6 +13,25 @@
     color: var(--color-xfire-danger-fg);
   }
 
+  /* An end with no device keeps its button, visibly disabled (plan E4.1
+   * S5, C7.24): the Host's reason is its title and the end's line. */
+  .voice-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+
+  /* An audio end's line (components/voice/VoiceEndNotices.tsx): the device
+   * standing in for the saved one, or the Host's reason there is none. */
+  .voice-end-notice {
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+    padding-top: 4px;
+  }
+
+  .voice-end-notice-unavailable {
+    color: var(--color-xfire-danger-text);
+  }
+
   .voice-participants {
     display: flex;
     flex-direction: column;
