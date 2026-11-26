@@ -260,7 +260,7 @@ jobs:
 
       - name: nixfmt --check
         run: |
-          nix shell nixpkgs#nixfmt-rfc-style --command nixfmt --check $(find . -name '*.nix' -not -path './target/*' -not -path './node_modules/*')
+          nix shell nixpkgs#nixfmt --command find . -name '*.nix' -not -path './target/*' -not -path './node_modules/*' -exec nixfmt --check {} +
 
       - name: statix
         run: |
