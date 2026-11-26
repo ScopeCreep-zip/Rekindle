@@ -8,6 +8,7 @@ import path from "node:path";
 import { browser } from "@wdio/globals";
 import type { Browser } from "webdriverio";
 import { keepDir } from "./keep.ts";
+import { machineState } from "./machine.ts";
 import { RekindleAppLauncher } from "./launcher.ts";
 import { shotAllWindows, shotsFor } from "./shots.ts";
 import { timingAfter, timingBefore, timingTest } from "./timing.ts";
@@ -65,6 +66,9 @@ export const base = {
   // is the one reported. A command past the old 30 s still prints the
   // processes (timing.ts), so a stall this absorbs is not hidden.
   async before() {
+    // Whether the screen is locked, for every run (machine.ts): a locked
+    // session hides every window, so timing and visibility cannot hold.
+    console.log(`[machine] at session start: ${machineState()}`);
     for (const [name, b] of sessions()) {
       await b.setTimeout({ script: SCRIPT_TIMEOUT_MS });
       const { script } = await b.getTimeouts();

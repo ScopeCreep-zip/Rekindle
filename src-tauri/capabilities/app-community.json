@@ -166,6 +166,9 @@
     "allow-upload-emoji",
     "allow-upload-soundboard-sound",
     "allow-upload-sticker",
-    "allow-vote-poll"
+    "allow-vote-poll",
+    "allow-open-settings-window",
+    "allow-run-skin-action",
+    "allow-set-skin-selection"
   ]
 }

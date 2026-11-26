@@ -212,6 +212,31 @@ export async function waitForHandle(b: Browser, match: (h: string) => boolean, t
   return found;
 }
 
+/**
+ * The label of community `name`'s window: `community-` and the first 16
+ * characters of its anchor (src-tauri window_labels::community_label), read
+ * from the Host's community list. A window keeps its label across a close
+ * and re-open, so a re-open is found by label, never as a new handle.
+ * Run from a window whose page can call the Host (the buddy list).
+ */
+export async function communityWindowLabel(b: Browser, name: string): Promise<string> {
+  let label = "";
+  await waitUntil(
+    async () => {
+      const anchor = (await b.execute(async (n: string) => {
+        const w = window as unknown as { __TAURI_INTERNALS__?: { invoke: (cmd: string) => Promise<unknown> } };
+        const done = (await w.__TAURI_INTERNALS__!.invoke("get_communities")) as { value: { anchor: string; name: string }[] };
+        return done.value.find((c) => c.name === n)?.anchor ?? "";
+      }, name)) as string;
+      label = anchor ? `community-${Array.from(anchor).slice(0, 16).join("")}` : "";
+      return label !== "";
+    },
+    NET_WAIT_MS,
+    `the Host lists no community named ${name.slice(0, 24)}`,
+  );
+  return label;
+}
+
 export async function switchTo(b: Browser, label: string, timeout = WAIT_MS): Promise<void> {
   await waitForHandle(b, (h) => h === label, timeout);
   await b.switchToWindow(label);

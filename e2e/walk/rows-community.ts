@@ -6,7 +6,7 @@
 // (theme/10-thread-list-panel.css:120-132), so they are pressed in the page.
 
 import type { Browser } from "webdriverio";
-import { NET_WAIT_MS, Skip, WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, sleep, typeAndSend, typeInto, waitForHandle, waitUntil } from "./helpers.ts";
+import { NET_WAIT_MS, Skip, WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, sleep, switchTo, typeAndSend, typeInto, communityWindowLabel, waitUntil } from "./helpers.ts";
 import { inBuddy, setValue } from "./nav.ts";
 import { pageLog, recordPage } from "./probe.ts";
 import type { Row } from "./rows.ts";
@@ -21,15 +21,14 @@ const POLL_HOST = "the walk polls this";
 
 /** Switch to the open community window, or open it from the buddy list. */
 export async function inCommunity(b: Browser, name: string): Promise<void> {
-  const open = (await b.getWindowHandles()).find((h) => h.startsWith("community-"));
-  if (open) {
-    await b.switchToWindow(open);
+  await inBuddy(b);
+  const label = await communityWindowLabel(b, name);
+  if ((await b.getWindowHandles()).includes(label)) {
+    await b.switchToWindow(label);
   } else {
-    await inBuddy(b);
     await (await b.$('.buddy-tab[title^="Communities"]')).click();
-    const before = await b.getWindowHandles();
     await doubleClick(b, await byText(b, ".community-item", name, NET_WAIT_MS));
-    await b.switchToWindow(await waitForHandle(b, (h) => h.startsWith("community-") && !before.includes(h)));
+    await switchTo(b, label, NET_WAIT_MS);
   }
   await shown(b, ".community-sidebar", NET_WAIT_MS);
 }

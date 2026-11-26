@@ -16,16 +16,18 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use rekindle_types::dto::skin_run::{CallTarget, SkinSelection};
-use rekindle_types::dto::skin_signals::{SkinSignalSet, EVERY_CAPABILITY};
-use rekindle_types::friend::{FriendState, FriendshipState};
+use rekindle_types::dto::skin_signals::{
+    DisableCause, DisableSignal, SkinSignalSet, EVERY_CAPABILITY,
+};
+use rekindle_types::friend::FriendState;
 use rekindle_types::subscription_events::{
     CallEvent, NetworkEvent, StreamFrame, SubscriptionEvent, SystemEvent, TypingContext,
     TypingEvent, VoiceEvent, VoiceScope,
 };
 
-use super::capability::{allows, Group, LobbyCaps, Selected, SkinWorld};
+use super::capability::{refusal, Selected, SkinWorld};
+pub(crate) use super::world::load_world;
 use crate::daemon::dispatch::DaemonContext;
-use rekindle_transport::operations::group_dm;
 
 /// A call the Host has seen on its stream, by call id.
 #[derive(Debug, Clone)]
@@ -94,6 +96,11 @@ impl Inputs {
 
     pub(crate) fn self_muted(&self) -> bool {
         self.self_muted
+    }
+
+    /// Our voice session (a community window's Call, Leave and Mute).
+    pub(crate) fn voice(&self) -> Option<&VoiceScope> {
+        self.voice.as_ref()
     }
 
     /// Fold one event; `false` when it cannot change any window's set.
@@ -327,10 +334,15 @@ pub(crate) fn compute(
         ..SkinSignalSet::default()
     };
     for capability in EVERY_CAPABILITY {
-        if allows(capability, inputs, world, selected) {
-            set.can.insert(capability);
-        } else {
-            set.cannot.insert(capability);
+        match refusal(capability, inputs, world, selected) {
+            None => {
+                set.can.insert(capability);
+            }
+            Some(why) => {
+                set.cannot.insert(capability);
+                set.disabled_reasons
+                    .insert(DisableCause::Capability(capability), why);
+            }
         }
     }
     if let Some(key) = selected.key() {
@@ -338,7 +350,34 @@ pub(crate) fn compute(
         set.voice_ringing = inputs.call_with(key).is_some_and(|c| c.ringing);
         set.talking = inputs.speaking.contains(key);
     }
+    let active = [
+        (set.disconnected, DisableSignal::Disconnected),
+        (set.user_typing, DisableSignal::ActiveUserTyping),
+        (set.voice_ringing, DisableSignal::VoiceRinging),
+        (set.talking, DisableSignal::UserStartedTalking),
+        (set.new_notification, DisableSignal::NewNotification),
+    ];
+    for (on, signal) in active {
+        if on {
+            set.disabled_reasons.insert(
+                DisableCause::Signal(signal),
+                signal_reason(signal).to_owned(),
+            );
+        }
+    }
     set
+}
+
+/// The words for a node a pack disables on an active signal (plan E7.7
+/// CR1): what the window shows over it.
+pub(crate) const fn signal_reason(signal: DisableSignal) -> &'static str {
+    match signal {
+        DisableSignal::Disconnected => "You're offline. Rekindle reconnects on its own.",
+        DisableSignal::ActiveUserTyping => "Your friend is typing.",
+        DisableSignal::VoiceRinging => "A call with your friend is ringing.",
+        DisableSignal::UserStartedTalking => "Your friend is talking.",
+        DisableSignal::NewNotification => "You have a new notification.",
+    }
 }
 
 /// Every known window's set, by label: `friend` looks a key up in the
@@ -364,87 +403,6 @@ pub(crate) fn window_sets(
             (window, set)
         })
         .collect()
-}
-
-/// The state the capabilities read besides the selection and the stream:
-/// the session's friends and communities, our shown game, the
-/// own-records stage, and our favourite servers, groups and group invites in the database.
-pub(crate) async fn load_world(ctx: &DaemonContext) -> SkinWorld {
-    let mut world = SkinWorld::default();
-    if let Some(session) = ctx.session.read().as_ref() {
-        for f in session.friends.values() {
-            if f.friendship_state == FriendshipState::Accepted {
-                world.accepted_friends += 1;
-                let server = f.game_info.as_ref().and_then(|g| g.server_address.as_ref());
-                world.friend_servers += usize::from(server.is_some());
-            }
-        }
-        world.communities = session.communities.len();
-    }
-    world.own_game = ctx.own_presence.view().game.map(|g| g.game_id);
-    world.records_held = ctx.friend_stores.own_records.get()
-        == rekindle_transport::operations::friend::OwnRecordsStage::Held;
-    let (Ok(db), Ok(owner)) = (ctx.require_db(), ctx.require_owner()) else {
-        return world;
-    };
-    let now = ctx.clock.now_ms_i64();
-    let read = db
-        .call(move |conn| {
-            use rekindle_db::repo::{
-                favourite_servers, group_dm_invites, group_dms, group_lobby, transfers,
-            };
-            let favourites = favourite_servers::list(conn, &owner)?;
-            let groups = group_dms::list(conn, &owner)?;
-            let invites = group_dm_invites::list(conn, &owner, now)?;
-            let attached: BTreeSet<String> = groups
-                .iter()
-                .filter_map(|g| g.origin_peer.clone())
-                .collect();
-            let mut joined = Vec::with_capacity(groups.len());
-            for g in groups {
-                let others = g.roster.iter().filter(|m| m.identity != owner).count();
-                let creator = g.roster.first().is_some_and(|m| m.identity == owner);
-                let lobby = group_lobby::current(conn, &owner, &g.group_id)?.map(|row| {
-                    let [join, leave, launch, _] = group_dm::lobby::verdicts(&row, &owner);
-                    LobbyCaps {
-                        open: row.state == group_lobby::LobbyState::Open,
-                        join: join.allowed(),
-                        leave: leave.allowed(),
-                        launch: launch.allowed(),
-                    }
-                });
-                joined.push((
-                    g.group_id,
-                    Group::Joined {
-                        others,
-                        creator,
-                        lobby,
-                    },
-                ));
-            }
-            let pending = invites.into_iter().map(|i| (i.group_id, Group::Pending));
-            let favourites: BTreeSet<(u32, String)> = favourites
-                .into_iter()
-                .map(|f| (f.game_id, f.address))
-                .collect();
-            let groups: BTreeMap<String, Group> = pending.chain(joined).collect();
-            let transfers: BTreeMap<String, _> = transfers::list(conn, &owner)?
-                .into_iter()
-                .map(|t| (t.attachment_id.clone(), t))
-                .collect();
-            Ok((favourites, groups, attached, transfers))
-        })
-        .await;
-    match read {
-        Ok((favourites, groups, attached, transfers)) => {
-            world.favourites = favourites;
-            world.groups = groups;
-            world.attached = attached;
-            world.transfers = transfers;
-        }
-        Err(e) => tracing::warn!(error = %e, "skin signals: database state unread"),
-    }
-    world
 }
 
 /// The Host's signal state: the inputs, the sets last published, and the
@@ -562,7 +520,8 @@ impl crate::host::Host {
     /// The shell opened a skin window; `launcher` is the window that
     /// launched it when it is a pack popup (its view switches are the
     /// launcher's, plan SK2-N4), and `selection` what it shows from the
-    /// start (a chat window's own peer, lead decision 48).
+    /// start (a chat window's own peer, lead decision 48; a community
+    /// window's `SkinSelection::Community`, plan E7.7 HSC1).
     pub fn skin_window_opened(
         &self,
         window: &str,

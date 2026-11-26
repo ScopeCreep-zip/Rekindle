@@ -92,12 +92,16 @@ fn windows(section: &Section) -> BTreeMap<u32, BTreeMap<String, String>> {
 }
 
 /// Sets `attr` to `value` in `attrs`: the first value wins, except a
-/// sibling's edge then a number ([`offset_of`]).
+/// sibling's edge and a number, in either order ([`offset_of`]).
 fn put(attrs: &mut BTreeMap<String, String>, attr: &str, value: &str) {
     attrs
         .entry(attr.to_owned())
         .and_modify(|first: &mut String| {
-            if let Some(joined) = offset_of(attr, first, value) {
+            // Either order: Combat's `[Top]` gives `X=0` then
+            // `X=TopLeft.RIGHT` (`CombatChatSkin.ini:26,30`), the edge
+            // plus 0, never the bare 0 that laid it over `TopLeft`.
+            let joined = offset_of(attr, first, value).or_else(|| offset_of(attr, value, first));
+            if let Some(joined) = joined {
                 *first = joined;
             }
         })
@@ -372,5 +376,18 @@ mod offset_tests {
         assert_eq!(offset_of("X", "Logo", "-2").as_deref(), Some("Logo.LEFT-2"));
         assert_eq!(offset_of("Y", "12", "0"), None);
         assert_eq!(offset_of("Z", "Bottom.BOTTOM", "1"), None);
+    }
+
+    /// A number before the edge is the edge plus it: Combat's chat `[Top]`
+    /// `X=0` then `X=TopLeft.RIGHT` (`CombatChatSkin.ini:26,30`).
+    #[test]
+    fn a_number_before_an_edge_offsets_that_edge() {
+        let mut attrs = std::collections::BTreeMap::new();
+        super::put(&mut attrs, "X", "0");
+        super::put(&mut attrs, "X", "TopLeft.RIGHT");
+        assert_eq!(attrs["X"], "TopLeft.RIGHT+0");
+        super::put(&mut attrs, "Y", "Middle.BOTTOM");
+        super::put(&mut attrs, "Y", "-7");
+        assert_eq!(attrs["Y"], "Middle.BOTTOM-7");
     }
 }

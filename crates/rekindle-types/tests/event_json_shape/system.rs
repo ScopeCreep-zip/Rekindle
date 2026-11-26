@@ -221,6 +221,13 @@ fn sync() -> Vec<Sample> {
                     talking: false,
                     disconnected: false,
                     new_notification: true,
+                    disabled_reasons: [(
+                        rekindle_types::dto::skin_signals::DisableCause::Capability(
+                            rekindle_types::dto::skin_action::Capability::Join,
+                        ),
+                        "Your friend isn't in a game you can join from here.".to_owned(),
+                    )]
+                    .into(),
                 },
             },
         ),

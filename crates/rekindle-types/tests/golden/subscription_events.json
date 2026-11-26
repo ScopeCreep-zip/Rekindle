@@ -2349,6 +2349,9 @@
           "cannot": [
             "join"
           ],
+          "disabledReasons": {
+            "join": "Your friend isn't in a game you can join from here."
+          },
           "disconnected": false,
           "focused": true,
           "newNotification": true,

@@ -282,7 +282,10 @@ fn node(out: &mut String, (n, prev): (&SkinNode, &[SkinNode]), ctx: &Ctx<'_>) ->
         let pseudo = match state {
             RegionState::Hover => ":hover",
             RegionState::Down => ":active",
-            RegionState::Disabled => "[aria-disabled=\"true\"]",
+            // The shell's `data-state="disabled"` (SkinTreeWindow.tsx), set
+            // for a refusal and for the pack's unfocused-window look alike;
+            // `aria-disabled` marks only a refusal (CR1, lead ruling (a)).
+            RegionState::Disabled => "[data-state=\"disabled\"]",
             _ => continue,
         };
         let (main, over) = layers(set, images, base, outer)?;
@@ -539,5 +542,26 @@ mod tests {
             rule,
             Some("position: absolute; left: 0px; top: -4px; width: 165px; height: 20px; box-sizing: border-box; margin: 0; border: solid transparent; border-width: 4px 0px 1px 0px; background-clip: padding-box; pointer-events: auto;")
         );
+    }
+
+    /// Plan CR1, lead ruling (a): a pack's Disabled art draws on the shell's
+    /// `data-state="disabled"`, which a window-inactive Disabled sets without
+    /// `aria-disabled`, so the unfocused-window look shows the pack's art.
+    #[test]
+    fn disabled_art_draws_on_the_shells_data_state() {
+        let (_, css) = served("xslimfire");
+        let head = format!("{}[data-state=\"disabled\"] {{", sel("ChatButton"));
+        assert!(
+            css.lines().any(|l| l.trim() == head),
+            "xslimfire ChatButton: no {head}"
+        );
+        for b in builtin::PACKS {
+            let (_, css) = served(b.id);
+            assert!(
+                !css.contains("aria-disabled"),
+                "{}: art keyed on aria-disabled",
+                b.id
+            );
+        }
     }
 }

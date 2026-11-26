@@ -59,6 +59,13 @@ FilesButtons ButtonRow(Files)
     StopButton Button
   FilesButtons.AddDownloadTab Group
     StartDownloadButton Button
+FriendsButtons.Communities ButtonRow(Communities)
+  FriendsButtons.JoinPlayTab.Communities Group
+    CommunitiesOpen Button
+  FriendsButtons.ProfileBrowseTab.Communities Group
+    CommunitiesLeave Button
+  FriendsButtons.ChatRefreshStopTab.Communities Group
+    CommunitiesNew Button
 TopOuterEdge Decor target [0, 0, 340, 24] art [0, 0, 340, 5] Size
 LeftOuterEdge Decor target [0, 0, 24, 490] art [0, 0, 11, 490] Size
 BottomOuterEdge Decor target [0, -19, 340, 24] art [0, 19, 340, 5] Size

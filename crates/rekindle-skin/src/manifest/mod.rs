@@ -117,37 +117,51 @@ pub fn served(package: &Package<'_>) -> Result<SkinManifest, SkinError> {
     Ok(manifest)
 }
 
-/// The Host's placements in `manifest` (see [`served`]), then the cover of
+/// The Host's placements in `manifest` (see [`served`]): each button row's
+/// slots unpaged by the views' group ([`crate::skin_tree::row_pages`]), then the cover of
 /// each glyph label from the package's art (plan SK3: the icon the
 /// Communities clone copied, [`crate::skin_tree::cover`]), then every
 /// window's menu-title labels (plan SK4b, [`crate::skin_tree::titles`]) and
 /// text-field insets (plan SK5, [`crate::skin_tree::inset`]) and the target
-/// boxes of small interactive nodes (plan SK7, [`crate::skin_tree::target`]).
+/// boxes of small interactive nodes (plan SK7, [`crate::skin_tree::target`])
+/// and who dims each one (plan CR1, [`crate::skin_tree::disabled`]),
+/// then the Community window composed from the pack's own windows (plan
+/// SK17-6, [`crate::skin_tree::compose`]).
 ///
 /// # Errors
-/// A glyph label's or menu title's picture missing from `package` or not
-/// decoding.
+/// A glyph label's or menu title's picture, or a disabled node's Normal or
+/// Disabled piece, missing from `package` or not decoding.
 pub fn place(manifest: &mut SkinManifest, package: &Package<'_>) -> Result<(), SkinError> {
     // Plan SK15b: content texts sized to the served words and every chain
     // resolved first, so each pass after lays numeric spans.
     for layout in manifest.windows.values_mut() {
         crate::skin_tree::content::serve(layout);
+        crate::skin_tree::row_pages::rows(layout);
     }
     if let Some(main) = manifest
         .windows
         .get_mut(&rekindle_types::dto::skin::SkinWindow::Main)
     {
         crate::skin_tree::place::communities(main);
+        crate::skin_tree::community_row::row(main);
         crate::skin_tree::cover::glyphs(main, package)?;
         crate::skin_tree::label_style::worded(main, package)?;
     }
+    let mut measured = crate::skin_tree::disabled::Measured::default();
     for layout in manifest.windows.values_mut() {
         crate::skin_tree::titles::menus(layout, package)?;
         crate::skin_tree::brand::nodes(layout);
+        // Plan SK17: the chat title on its text point and the native
+        // controls above the art, before the text boxes are laid.
+        crate::skin_tree::chat_slots::serve(layout);
         crate::skin_tree::text_box::lay(layout);
         crate::skin_tree::inset::fields(layout);
         crate::skin_tree::target::nodes(layout);
+        crate::skin_tree::disabled::nodes(layout, package, &mut measured)?;
     }
+    // Plan SK17-6: the Community window wears the pack's own frame, the
+    // served layout of its room window, else its chat, else its buddy list.
+    crate::skin_tree::compose::community(manifest);
     Ok(())
 }
 

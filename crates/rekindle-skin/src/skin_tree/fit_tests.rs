@@ -252,6 +252,7 @@ fn button(id: &str, key: SkinAction) -> SkinNode {
         fit: None,
         shows_with: None,
         control_group: None,
+        disabled_by: None,
         triggers: vec![NodeTrigger {
             on: SkinEvent::Click,
             run: key,

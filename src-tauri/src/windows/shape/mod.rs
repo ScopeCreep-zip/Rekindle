@@ -47,7 +47,7 @@ use rekindle_types::dto::skin::SkinWindow;
 use tauri::{AppHandle, LogicalSize, Manager, WebviewWindow, WindowEvent};
 
 pub use geometry::{ShapeRect, Silhouette};
-pub use skin::{frame_of, refresh};
+pub use skin::{frame_of, frame_of_label, refresh};
 
 /// One shaped window: the skin frame it wears and the silhouette applied.
 struct Shaped {

@@ -17,6 +17,8 @@ mod titles;
 
 pub use rebind::follow_event;
 pub use reveal::reveal_window;
+/// Which skin frame a window wears, by label (the signal windows, `skin_windows`).
+pub use shape::frame_of_label;
 
 use rekindle_types::id::ChannelId;
 use rekindle_types::key_format::{self, PublicKeyHex};
@@ -110,6 +112,33 @@ const fn size(kind: WindowKind) -> Size {
 /// No data root is managed yet (`setup::run` manages it before the first
 /// window): a window is never built on the platform's default store when
 /// the root names another.
+/// Whether a window of `kind` acts on the click that activates it (macOS
+/// otherwise only focuses an inactive window, so a skin's close or chat
+/// button needed two clicks): every window drawn from a skin tree, as
+/// Xfire's chrome acted on the first click (lead ruling; consequential
+/// presses still go through the intent review).
+const fn accepts_first_mouse(kind: WindowKind) -> bool {
+    matches!(
+        kind,
+        WindowKind::BuddyList | WindowKind::Chat | WindowKind::Community | WindowKind::SkinPopup
+    )
+}
+
+/// How a window of `kind`'s page runs while it is in the background
+/// (Tauri's `BackgroundThrottlingPolicy`, macOS 14+; Linux and Windows
+/// ignore it). A window that can carry live media (a call window, a chat
+/// window's video call, a community window's voice and video) decodes and
+/// answers keyframe and consent requests in its page, so it is never
+/// throttled; every other window is throttled, not suspended (lead ruling).
+const fn background_policy(kind: WindowKind) -> BackgroundThrottlingPolicy {
+    match kind {
+        WindowKind::Call | WindowKind::Chat | WindowKind::Community => {
+            BackgroundThrottlingPolicy::Disabled
+        }
+        _ => BackgroundThrottlingPolicy::Throttle,
+    }
+}
+
 fn base_builder<'a>(
     app: &'a AppHandle,
     kind: WindowKind,
@@ -133,8 +162,9 @@ fn base_builder<'a>(
         .decorations(false)
         .transparent(true)
         .shadow(false)
+        .accept_first_mouse(accepts_first_mouse(kind))
         .resizable(true)
-        .background_throttling(BackgroundThrottlingPolicy::Throttle)
+        .background_throttling(background_policy(kind))
         .on_navigation(move |url| navigation::is_app_origin(url, dev_origin.as_ref()))
         .on_new_window(|_, _| NewWindowResponse::Deny)
         .on_permission_request(move |_, permission| {
@@ -175,7 +205,7 @@ fn finish(
             crate::platform::enable_webview_media_capture(window);
         }
     })?;
-    shape::attach(&window, shape::frame_of(kind));
+    shape::attach(&window, shape::frame_of_label(window.label()));
     Ok(window)
 }
 
@@ -234,7 +264,11 @@ pub fn open_buddy_list(app: &AppHandle) -> Result<(), String> {
     )?
     .title("Rekindle")
     .max_inner_size(400.0, 900.0);
-    finish(builder, WindowKind::BuddyList).map(drop)
+    finish(builder, WindowKind::BuddyList)?;
+    // A skin window: the Host serves its signals from now on (plan CR1); one
+    // opened before the Host is announced when it starts (`announce_open`).
+    crate::skin_windows::opened(app, labels::BUDDY_LIST, None, None);
+    Ok(())
 }
 
 /// What a chat window shows: a 1:1 conversation with a friend (identity
@@ -354,7 +388,13 @@ pub fn open_community_window(
     };
     let builder = base_builder(app, WindowKind::Community, &label, path)?
         .title(titles::community(state, community.as_ref()));
-    finish(builder, WindowKind::Community).map(drop)
+    finish(builder, WindowKind::Community)?;
+    // A community window wears the pack's frame (plan SKW1) and follows the
+    // window's signals like a chat's; the browser (no community) wears none.
+    if community.is_some() {
+        crate::skin_windows::opened(app, &label, None, None);
+    }
+    Ok(())
 }
 
 /// Bring the buddy list forward for something the user must answer now:
@@ -458,3 +498,7 @@ pub async fn open_profile_window(
     .title(title);
     finish(builder, WindowKind::Profile).map(drop)
 }
+
+#[cfg(test)]
+#[path = "first_mouse_tests.rs"]
+mod first_mouse_tests;

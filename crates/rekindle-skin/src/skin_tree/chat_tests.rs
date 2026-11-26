@@ -120,7 +120,10 @@ fn title_strips_sit_where_each_pack_places_them() {
                 );
             }
             let title = one(t, w, h, NodeRole::ChatTitle, id);
-            assert_eq!((title[0] - ox, title[1] - oy), (4, 14), "{id} title");
+            // The title is its `UserNameText`, `X=14` in the `UserNameField`
+            // at X4 Y14 (`ChatSkin.ini:21-23,159-161`, plan SK17: the
+            // pack's text point, [`super::chat_slots`]).
+            assert_eq!((title[0] - ox, title[1] - oy), (18, 14), "{id} title");
             continue;
         }
         let bar = one(t, w, h, NodeRole::TitleBar, id);
@@ -374,6 +377,128 @@ fn a_point_laid_chat_title_spans_its_declared_room() {
             assert_eq!(end, room_end, "{id}: title {title:?} in {room:?}");
         } else {
             assert!(title[2] >= 100, "{id}: title {title:?} in {room:?}");
+        }
+    }
+}
+
+/// Plan SK17 (round 34: Alloy's title empty, xSLIMFIRE's drawn at the
+/// window's corner): the chat title is the pack's text point, never the
+/// field around it (Alloy's, Simple X's and XGlow's `UserNameText`,
+/// xSLIMFIRE's `ChatUserNameText`, `xSLIMFIREchatwindow.xml:4-5`), with
+/// room to draw, in the strip above the message list and off the logo.
+#[test]
+fn the_chat_title_is_the_packs_text_point_in_its_title_strip() {
+    for id in PACKS {
+        let l = chat_layout(id);
+        let t = l.tree.as_ref().unwrap();
+        let (w, h) = min_window(&l);
+        let boxes = t.boxes(w, h);
+        let (node, title) = boxes
+            .iter()
+            .find(|(n, _)| n.role == NodeRole::ChatTitle)
+            .copied()
+            .unwrap();
+        let held: Vec<_> = node.children.iter().map(|c| &c.id).collect();
+        assert!(held.is_empty(), "{id}: title {} holds {held:?}", node.id);
+        let leaf = match id {
+            "alloy" | "simple-x" | "xglow" => Some("UserNameText"),
+            "xslimfire" => Some("ChatUserNameText"),
+            _ => None,
+        };
+        if let Some(leaf) = leaf {
+            assert_eq!(node.id, leaf, "{id}: the title is the pack's text");
+        }
+        let area = one(t, w, h, NodeRole::Slot(SlotKey::ChatArea), id);
+        let [left, top, wide, tall] = title;
+        assert!(
+            wide > 0 && left >= 0 && left + wide <= w && top >= 0 && top + tall <= area[1],
+            "{id}: title {title:?} outside the strip above {area:?}"
+        );
+        for logo in find(t, w, h, NodeRole::Logo) {
+            assert!(
+                !super::validate::overlap(title, logo),
+                "{id}: title {title:?} over the logo {logo:?}"
+            );
+        }
+    }
+}
+
+/// Each node depth first with its (z, sibling index) at every level.
+fn stacks(nodes: &[SkinNode], at: &mut Vec<(i16, usize)>, out: &mut Vec<Vec<(i16, usize)>>) {
+    for (i, n) in nodes.iter().enumerate() {
+        at.push((n.z, i));
+        out.push(at.clone());
+        stacks(&n.children, at, out);
+        at.pop();
+    }
+}
+
+/// Plan SK17 (round 34: Alloy's blank pane, Simple X's missing presence
+/// row): the message list and the composer are the engine's child
+/// windows, drawn over the skin's painted tiles, so each paints above
+/// every art node its box meets (Alloy's `MainTitleBar` and `Middle`,
+/// Simple X's 70 px title bar art), at the served minimum and 1200x900.
+/// Every node is its own stacking level, so the order is decided where
+/// the two nodes' ancestries part.
+#[test]
+fn the_chat_area_and_composer_draw_above_the_art_they_meet() {
+    for id in PACKS {
+        let l = chat_layout(id);
+        let t = l.tree.as_ref().unwrap();
+        let mut order = Vec::new();
+        stacks(&t.root, &mut Vec::new(), &mut order);
+        for (w, h) in [min_window(&l), (1200, 900)] {
+            let boxes = t.boxes(w, h);
+            for (s, (slot, sb)) in boxes.iter().enumerate() {
+                if !matches!(
+                    slot.role,
+                    NodeRole::Slot(SlotKey::ChatArea | SlotKey::ChatEdit)
+                ) {
+                    continue;
+                }
+                for (a, (art, ab)) in boxes.iter().enumerate() {
+                    let (ps, pa) = (&order[s], &order[a]);
+                    let Some(d) = ps.iter().zip(pa).position(|(x, y)| x != y) else {
+                        continue;
+                    };
+                    if art.art.is_some() && super::validate::overlap(*sb, *ab) {
+                        assert!(
+                            ps[d] > pa[d],
+                            "{id} at {w}x{h}: {} {sb:?} under {} {ab:?}",
+                            slot.id,
+                            art.id
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Plan SK17 (round 34: Combat's frame clipped at the left): Combat's
+/// `[Top]` lies between its corners (`X=0` then `X=TopLeft.RIGHT`,
+/// `IndentRight=TopRight.width`, `CombatChatSkin.ini:24-31`), never over
+/// `TopLeft`, and every frame tile lies within the window.
+#[test]
+fn combats_top_lies_between_its_corners() {
+    let l = chat_layout("combat");
+    let t = l.tree.as_ref().unwrap();
+    for (w, h) in [min_window(&l), (1200, 900)] {
+        let (left, _) = by_id(t, w, h, "TopLeft");
+        let (top, _) = by_id(t, w, h, "Top");
+        let (right, _) = by_id(t, w, h, "TopRight");
+        assert!(
+            top[0] >= left[0] + left[2] && top[0] + top[2] <= right[0],
+            "combat at {w}x{h}: Top {top:?} not between {left:?} and {right:?}"
+        );
+        for (n, [x, _, bw, _]) in t.boxes(w, h) {
+            if n.role == NodeRole::Decor && n.art.is_some() {
+                assert!(
+                    x >= 0 && x + bw <= w,
+                    "combat at {w}x{h}: {} at x {x} w {bw}",
+                    n.id
+                );
+            }
         }
     }
 }

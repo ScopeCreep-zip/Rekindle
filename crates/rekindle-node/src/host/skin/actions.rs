@@ -66,6 +66,14 @@ impl Selections {
         }
     }
 
+    /// The window's selected community, when its selection is one.
+    pub(crate) fn community(&self, window: &str) -> Option<String> {
+        match self.0.lock().get(window) {
+            Some(SkinSelection::Community { community, .. }) => Some(community.clone()),
+            _ => None,
+        }
+    }
+
     /// The window's selection.
     pub(crate) fn get(&self, window: &str) -> Option<SkinSelection> {
         self.0.lock().get(window).cloned()
@@ -194,6 +202,7 @@ pub(crate) struct Selected<'a> {
     pub server: Option<&'a (u32, String)>,
     /// What `SearchFor` searches ([`Views::scope`]).
     pub search: Option<&'a LocalSearchScope>,
+    pub community: Option<&'a str>,
 }
 
 /// `JoinFriend` (SK2-G §1, lead decision 49): the selected friend's game
@@ -255,7 +264,16 @@ pub(crate) fn map(
         transfer,
         server,
         search,
+        community,
     } = selected;
+    // A community window's pack row (plan E7.7 HSC1, `super::community`).
+    if let Some(mapped) = reads
+        .community
+        .as_ref()
+        .and_then(|c| super::community::map(action, c))
+    {
+        return mapped;
+    }
     let rooms = &reads.rooms;
     use Mapped::{Request, Run};
     let shell = |op| Ok(Run(SkinRun::Shell(op)));
@@ -408,6 +426,8 @@ pub(crate) fn map(
         // scoped to its group, prefilled from the roster; the buddy
         // list's has no group and opens the plain panel.
         A::HostGroupVoiceChat => Ok(rooms::host_group(reads.group_call.as_ref())),
+        A::OpenCommunity | A::LeaveCommunity => super::community::row(action, community),
+        A::StartCommunity => panel(ShellPanel::CommunityStart),
         A::CreateCommunity => panel(ShellPanel::CreateCommunity),
         A::JoinCommunity => panel(ShellPanel::JoinCommunity),
         A::ShowShortcuts => panel(ShellPanel::Shortcuts),
@@ -549,6 +569,7 @@ pub(crate) fn resolve(
     let friend = selections.friend(window);
     let transfer = selections.transfer(window);
     let server = selections.server(window);
+    let community = selections.community(window);
     let launcher = skin.launchers.of(window);
     let search = skin.views.scope(window, launcher.as_deref(), selections);
     let selected = Selected {
@@ -556,6 +577,7 @@ pub(crate) fn resolve(
         transfer: transfer.as_ref(),
         server: server.as_ref(),
         search: search.as_ref(),
+        community: community.as_deref(),
     };
     match map(action, selected, reads)? {
         Mapped::Request(mapped) => Ok(Resolved::Request(*mapped)),

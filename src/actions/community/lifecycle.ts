@@ -4,6 +4,7 @@ import { setCommunityState, setCommunityMembers, communityState } from "../../st
 import { onCommunityListed } from "../../handlers/community/community_listed";
 import { addToast } from "../../stores/toast.store";
 import { errorMessage } from "../../utils/error";
+import { isCancelled } from "../../ipc/commands/dto";
 import {
   transformAutoModRule,
   transformExpression,
@@ -288,7 +289,8 @@ export async function handleLeaveCommunity(communityId: string): Promise<void> {
     await commands.leaveCommunity(communityId);
     dropCommunity(communityId);
   } catch (e) {
-    console.error("Failed to leave community:", e);
-    addToast("Failed to leave community", "error");
+    // The Host's refusal in its words (a review cancelled is no error).
+    if (isCancelled(e)) return;
+    addToast(errorMessage(e), "error");
   }
 }

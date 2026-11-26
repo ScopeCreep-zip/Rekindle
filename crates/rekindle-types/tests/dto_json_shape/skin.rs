@@ -299,6 +299,7 @@ fn shell(add: &mut impl FnMut(&str, Value)) {
         fit: None,
         shows_with: None,
         control_group,
+        disabled_by: None,
         triggers: Vec::new(),
         children,
     };
@@ -389,6 +390,27 @@ fn selection_samples(add: &mut impl FnMut(&str, Value)) {
     add(
         "skin.selection.friendGroup",
         to(SkinSelection::FriendGroup { group_id: Some(3) }),
+    );
+    add(
+        "skin.selection.community",
+        to(SkinSelection::Community {
+            community: "VLD0:community".into(),
+            channel: Some("ch".into()),
+            server: Some("gs_00".into()),
+        }),
+    );
+    add(
+        "skin.callOp.joinVoice",
+        to(rekindle_types::dto::skin_run::CallOp::JoinVoice {
+            community: "VLD0:community".into(),
+            channel: "voice".into(),
+        }),
+    );
+    add(
+        "skin.shellOp.openCommunityInfo",
+        to(rekindle_types::dto::skin_run::ShellOp::OpenCommunityInfo {
+            community: "VLD0:community".into(),
+        }),
     );
 }
 

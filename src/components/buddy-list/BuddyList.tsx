@@ -97,6 +97,13 @@ const BuddyList: Component = () => {
     return groups;
   });
 
+  // The groups by name, so each group and its rows keep their elements
+  // while the friends change (presence, a signal push on selection):
+  // iterating `Object.entries` made new tuples on every change, `For`
+  // re-created every group and row, and a double-click straddling a change
+  // landed on a replaced row (plan CR1 audit).
+  const groupNames = createMemo(() => Object.keys(groupedFriends()));
+
   const hasFriends = createMemo(() => Object.keys(friendsState.friends).length > 0);
   const hasFilteredResults = createMemo(() => Object.keys(groupedFriends()).length > 0);
 
@@ -314,12 +321,12 @@ const BuddyList: Component = () => {
             <div class="empty-placeholder-subtitle">No matches</div>
           </div>
         }>
-          <For each={Object.entries(groupedFriends())}>
-            {([name, friends]) => (
+          <For each={groupNames()}>
+            {(name) => (
               <BuddyGroup
                 name={name}
                 groupId={groupIdOf(name)}
-                friends={friends}
+                friends={groupedFriends()[name] ?? []}
                 selectedKey={selectedKey()}
                 groupSelected={name !== AWAITING_RESPONSE && selectedGroup()?.groupId === groupIdOf(name) && selectedGroup() !== null}
                 onSelectGroup={name === AWAITING_RESPONSE ? undefined : () => handleSelectGroup(groupIdOf(name))}

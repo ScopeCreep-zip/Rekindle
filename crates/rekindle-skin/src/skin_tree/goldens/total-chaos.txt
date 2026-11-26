@@ -46,6 +46,11 @@ BottomBar Group
       StopDownloadButton Button
       ExecuteDownloadButton Button target [0, 0, 47, 29] art [0, 0, 57, 29] Size
       DownloadInfoButton Button
+    FriendsButtons.Communities ButtonRow(Communities)
+      CommunitiesOpen Button target [0, 0, 33, 30] art [0, 0, 57, 30] Size
+      CommunitiesLeave Button
+        CommunitiesLeaveText.Communities Part label "Leave"
+      CommunitiesNew Button
 popup InfoPopup
   XfireTopRow Decor
   InfoMiddle Decor

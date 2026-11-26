@@ -218,7 +218,7 @@ const Section: Component<{ section: InfoviewSection }> = (props) => (
             <div class="infoview-text">{s().description}</div>
           </Show>
           <div class="infoview-meta">
-            {s().memberCount} members, {s().onlineCount} online
+            {s().memberCount} {s().memberCount === 1 ? "member" : "members"}, {s().onlineCount} online
           </div>
           <Show when={s().removed}>
             {(r) => (

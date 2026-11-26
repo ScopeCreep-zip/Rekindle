@@ -4,7 +4,7 @@
 //! `OnActiveUserTyping`, `OnAppVoiceRinging`, `OnDisconnected`,
 //! `OnNewNotification`, …). The frontend never computes a capability.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
@@ -13,7 +13,7 @@ use crate::dto::skin_action::Capability;
 /// Every [`Capability`] (Xfire's `OnAppCan<X>` / `OnAppCannot<X>`), in
 /// order: each is in exactly one of [`SkinSignalSet::can`] and
 /// [`SkinSignalSet::cannot`].
-pub const EVERY_CAPABILITY: [Capability; 26] = [
+pub const EVERY_CAPABILITY: [Capability; 28] = [
     Capability::AddFriend,
     Capability::Chat,
     Capability::Profile,
@@ -40,7 +40,33 @@ pub const EVERY_CAPABILITY: [Capability; 26] = [
     Capability::DeleteSelected,
     Capability::OpenSelected,
     Capability::UploadSelected,
+    Capability::OpenCommunity,
+    Capability::LeaveCommunity,
 ];
+
+/// A Host-fired signal a pack trigger can pair with `SetState(Disabled)`
+/// (`OnDisconnected`, `OnActiveUserTyping`, `OnAppVoiceRinging`,
+/// `OnAppUserStartedTalking`, `OnNewNotification`): the signals
+/// [`SkinSignalSet`] carries besides the capabilities and the focus.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DisableSignal {
+    Disconnected,
+    ActiveUserTyping,
+    VoiceRinging,
+    UserStartedTalking,
+    NewNotification,
+}
+
+/// Why a node can be disabled now: a capability in
+/// [`SkinSignalSet::cannot`], or an active [`DisableSignal`]. On the wire
+/// the bare name (`"chat"`, `"disconnected"`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum DisableCause {
+    Capability(Capability),
+    Signal(DisableSignal),
+}
 
 /// One skin window's signals.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -63,4 +89,8 @@ pub struct SkinSignalSet {
     /// A notification arrived since the window last had focus
     /// (`OnNewNotification`).
     pub new_notification: bool,
+    /// The Host's words for each cause that can disable a node now (plan
+    /// E7.7 CR1): every capability in `cannot` and every active
+    /// [`DisableSignal`], each with the reason the window shows.
+    pub disabled_reasons: BTreeMap<DisableCause, String>,
 }

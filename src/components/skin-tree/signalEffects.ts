@@ -10,13 +10,25 @@
 // here decides a capability, and nothing is hidden that the pack does not
 // hide.
 import type { EngineView, NodeTrigger, ShellNode, SkinAction, SkinEvent, ViewKey } from "../../ipc/commands/dto_skin_tree";
-import type { SkinSignalSet } from "../../ipc/commands/dto_skin_run";
+import type { DisableCause, DisableSignal, SkinSignalSet } from "../../ipc/commands/dto_skin_run";
 
 type NodeStateName = "normal" | "disabled" | "down";
+
+/**
+ * Why a node shows its Disabled art: a refusal (a capability the window
+ * cannot use, or an active signal: plan CR1's `DisableCause`, with the
+ * Host's reason), or `windowInactive`: the pack's unfocused-window look (a
+ * `deactivate` trigger), drawn in the Disabled art while the node stays
+ * pressable, as an inactive window's caption buttons still work (lead
+ * ruling, CR1). Only a refusal is a disabled control.
+ */
+export type StateCause = DisableCause | "windowInactive";
 
 interface NodeEffect {
   state?: NodeStateName;
   hidden?: boolean;
+  /** What put it in its Disabled art: the firing trigger's cause. */
+  cause?: StateCause;
 }
 
 /** One window's tree state: per-node effects, each control group's page,
@@ -95,6 +107,21 @@ function holds(on: SkinEvent, set: SkinSignalSet | null, view: ViewKey): boolean
 export interface Fired {
   node: string;
   run: SkinAction;
+  /** The cause behind a state trigger, when its event names one. */
+  cause?: StateCause;
+}
+
+/** The signals a disabled node's reason may name (plan CR1's `DisableCause`, beside the capabilities). */
+const SIGNAL_CAUSES: readonly DisableSignal[] = ["disconnected", "activeUserTyping", "voiceRinging", "userStartedTalking", "newNotification"];
+
+/** The cause a state event names: a capability the window cannot use, an
+ *  active signal, or the window losing focus. */
+function causeOf(on: SkinEvent): StateCause | undefined {
+  if (on.kind === "deactivate") return "windowInactive";
+  if (on.kind !== "app") return undefined;
+  if (on.arg.kind === "cannot") return on.arg.arg;
+  const signal = on.arg.kind;
+  return SIGNAL_CAUSES.find((c) => c === signal);
 }
 
 /**
@@ -113,7 +140,7 @@ export function fired(
       for (const t of n.triggers ?? []) {
         if (!stateEvent(t)) continue;
         if (holds(t.on, now.set, now.view) && !(before && holds(t.on, before.set, before.view))) {
-          out.push({ node: n.id, run: t.run });
+          out.push({ node: n.id, run: t.run, cause: causeOf(t.on) });
         }
       }
       walk(n.children ?? []);
@@ -134,10 +161,10 @@ function stateEvent(t: NodeTrigger): boolean {
  * a tree operation, or a view switch this tree keeps only for its own art
  * (a popup with no views, whose launcher the Host addresses, SK2-N4).
  */
-export function applyTreeOp(state: TreeState, node: string, run: SkinAction, root: ShellNode[]): boolean {
+export function applyTreeOp(state: TreeState, node: string, run: SkinAction, root: ShellNode[], cause?: StateCause): boolean {
   switch (run.kind) {
     case "setState":
-      state.nodes[node] = { ...state.nodes[node], state: run.arg };
+      state.nodes[node] = { ...state.nodes[node], state: run.arg, cause: run.arg === "disabled" ? cause : undefined };
       return true;
     case "showTile":
     case "hideTile": {

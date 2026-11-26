@@ -28,6 +28,7 @@ import PairingLinkNotice from "../components/buddy-list/PairingLinkNotice";
 import CreateCommunityModal from "../components/community/CreateCommunityModal";
 import JoinCommunityModal from "../components/community/JoinCommunityModal";
 import StartGroupCallModal from "../components/buddy-list/StartGroupCallModal";
+import CommunityStartModal from "../components/buddy-list/CommunityStartModal";
 import NewGroupModal from "../components/buddy-list/NewGroupModal";
 import InviteToRoomModal from "../components/chat/InviteToRoomModal";
 import GroupDmList from "../components/buddy-list/GroupDmList";
@@ -60,7 +61,7 @@ import {
 } from "../ipc/channels";
 import { setSkinSignals } from "../stores/skin-signals.store";
 import { registerShellRunner, runAddressedShellOp } from "../actions/skin.actions";
-import { chatOpenOps, friendOps, mainOps, menuOps, popupOps, transferOps } from "../actions/shell_runners";
+import { chatOpenOps, friendOps, mainOps, menuOps, muteOps, popupOps, transferOps } from "../actions/shell_runners";
 import type { ShellOp } from "../ipc/commands/dto_skin_run";
 import { handleHide } from "../actions/titlebar.actions";
 import { handleToggleAddFriend } from "../actions/buddy.actions";
@@ -154,6 +155,9 @@ function runBuddyListOp(op: ShellOp): boolean {
         case "joinCommunity":
           handleToggleJoinCommunity();
           return true;
+        case "communityStart":
+          setBuddyListUI("showCommunityStart", true);
+          return true;
         case "shortcuts":
           setShortcutsHelpOpen(true);
           return true;
@@ -216,7 +220,7 @@ const BuddyListWindow: Component = () => {
     // The groups the main window's trees serve (shell_runners): its menus,
     // popups, a friend's profile and chat, a room, downloads, Copy Key and
     // Show Voice. No call or mute: no main tree lays one.
-    for (const run of [menuOps, popupOps, friendOps, chatOpenOps, transferOps, mainOps]) {
+    for (const run of [menuOps, popupOps, friendOps, chatOpenOps, transferOps, mainOps, muteOps]) {
       unlisteners.push(Promise.resolve(registerShellRunner(run)));
     }
     unlisteners.push(subscribePairingLinkHandler());
@@ -330,6 +334,10 @@ const BuddyListWindow: Component = () => {
       <CallController />
       <NewGroupModal />
       <InviteToRoomModal groupId={buddyListUI.inviteToRoom} onClose={() => setBuddyListUI("inviteToRoom", null)} />
+      <CommunityStartModal
+        isOpen={buddyListUI.showCommunityStart}
+        onClose={() => setBuddyListUI("showCommunityStart", false)}
+      />
       <StartGroupCallModal
         isOpen={buddyListUI.showStartGroupCall}
         onClose={() => setBuddyListUI("showStartGroupCall", false)}

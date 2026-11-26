@@ -189,6 +189,27 @@ fn centres(a: [i32; 4], b: [i32; 4]) -> i64 {
     dx * dx + dy * dy
 }
 
+/// The axis across an edge tab `a` (plan E7.7 TAB1, lead ruling): an art
+/// on the window's edge, under 24 px across it and at least 24 px along it
+/// (Symbiosis's InfoView tab `MainInfoViewButton`, 13 x 115 on its frame's
+/// right border once the strip is given up, over the list's last 8 px). Over
+/// the views such a tab is the control in its column: its target keeps its
+/// whole span along the edge, and across it reaches over the views no
+/// further than its art (plan SK12), so it serves the spacing exception;
+/// the resize grip under it is split around that target ([`grips`]) and
+/// stays live above and below it.
+const fn edge_tab(a: [i32; 4], (w, h): (i32, i32)) -> Option<usize> {
+    let across_x = a[0] <= 0 || a[0] + a[2] >= w;
+    let across_y = a[1] <= 0 || a[1] + a[3] >= h;
+    if across_x && a[2] < HIT && a[3] >= HIT {
+        Some(0)
+    } else if across_y && a[3] < HIT && a[2] >= HIT {
+        Some(1)
+    } else {
+        None
+    }
+}
+
 const fn small(r: [i32; 4]) -> bool {
     r[2] < HIT || r[3] < HIT
 }
@@ -211,8 +232,12 @@ pub fn targets(tree: &SkinTree, window: (i32, i32)) -> Vec<Laid> {
     let keeps = |i: usize, id: &str| {
         !apart.apart(&live[i].0.id, id) && !keep::kin(&tree.root, live[i].0, id)
     };
+    // A place of a button bar's grid is taken whichever row shows
+    // ([`keep::Grid`]).
+    let grid = keep::Grid::new(&tree.root);
     let near = |i: usize, j: usize| {
-        i != j && !apart.apart(&live[i].0.id, &live[j].0.id) && !overlap(live[i].1, live[j].1)
+        let (a, b) = (&live[i].0.id, &live[j].0.id);
+        i != j && (!apart.apart(a, b) || grid.shares(a, b)) && !overlap(live[i].1, live[j].1)
     };
     let laid_over = |i: usize, j: usize| {
         i != j && !apart.apart(&live[i].0.id, &live[j].0.id) && overlap(live[i].1, live[j].1)
@@ -231,8 +256,15 @@ pub fn targets(tree: &SkinTree, window: (i32, i32)) -> Vec<Laid> {
             for j in (0..live.len()).filter(|&j| near(i, j)) {
                 clip(&mut g, live[i].1, live[j].1, want[j]);
             }
+            let art = live[i].1;
             for (_, o, views) in kept.iter().filter(|(id, ..)| keeps(i, id)) {
-                keep::keep_out(&mut g, live[i].1, *o, *views);
+                match edge_tab(art, window) {
+                    Some(c) if *views && overlap(art, *o) => {
+                        g[c] = art[c];
+                        g[c + 2] = art[c + 2];
+                    }
+                    _ => keep::keep_out(&mut g, art, *o, *views),
+                }
             }
             g
         })

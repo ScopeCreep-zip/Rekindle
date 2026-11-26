@@ -439,6 +439,8 @@
 
 
   .add-friend-generate,
+  /* The Communities view's New chooser (plan CB1): its two choices. */
+  .community-start-choices,
   .intent-dialog-body,
   .local-search {
     display: flex;

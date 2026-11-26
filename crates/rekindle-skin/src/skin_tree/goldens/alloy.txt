@@ -55,6 +55,14 @@ ButtonHolder ButtonBar
   FilesButtons ButtonRow(Files)
     FilesButtons.TabAddButton Group
       SearchFiles Button target [0, -1, 179, 24] art [0, 1, 179, 21] Size
+  FriendsButtons.Communities ButtonRow(Communities)
+    FriendsButtons.TabAddButton.Communities Group
+      CommunitiesOpen Button target [0, -1, 41, 24] art [0, 1, 41, 21] Size
+    FriendsButtons.TabChatRefreshButton.Communities Group
+      CommunitiesLeave Button target [0, -1, 41, 24] art [0, 1, 41, 21] Size
+        CommunitiesLeaveText.Communities Part label "Leave"
+    FriendsButtons.TabGameDownloadButton.Communities Group
+      CommunitiesNew Button target [0, -1, 41, 24] art [0, 1, 41, 21] Size
 IVButtonHolder Decor
 RightDetail Decor target [0, 0, 10, 101] art [0, 0, 10, 101] Frame
 MAINBG Decor target [0, 0, 366, 420] art [0, 0, 366, 420] Frame

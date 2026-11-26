@@ -6,9 +6,11 @@ import type { OutgoingInvite } from "../stores/friends.store";
 import { foldFriendSnapshot } from "../utils/transformers";
 import { errorMessage } from "../utils/error";
 import { isCancelled, type FriendCodeView } from "../ipc/commands/dto";
+import { addToast } from "../stores/toast.store";
 
+/** Open the chat with a friend; a refusal or failure says so in the Host's words, never silently. */
 export function handleDoubleClickFriend(publicKey: string): void {
-  commands.openChatWindow(publicKey);
+  commands.openChatWindow(publicKey).catch((e: unknown) => addToast(errorMessage(e), "error"));
 }
 
 export async function handleRemoveFriend(publicKey: string): Promise<void> {

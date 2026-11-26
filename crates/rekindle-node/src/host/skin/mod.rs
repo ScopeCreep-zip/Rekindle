@@ -13,6 +13,11 @@ mod actions_tests;
 pub(crate) mod capability;
 #[cfg(test)]
 mod capability_tests;
+pub(crate) mod community;
+#[cfg(test)]
+mod community_row_tests;
+#[cfg(test)]
+mod community_tests;
 mod draft;
 pub(crate) mod failure;
 pub(crate) mod ids;
@@ -28,6 +33,7 @@ pub(crate) mod signals;
 #[cfg(test)]
 mod signals_tests;
 mod trial;
+mod world;
 
 use rekindle_db::repo::{preferences, skins};
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};

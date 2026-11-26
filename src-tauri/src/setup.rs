@@ -257,10 +257,15 @@ async fn start_host(
     if crate::webdriver::damage_next_post() {
         host.arm_damage_next_post();
     }
-    if let Some(app) = state.app_handle.read().clone() {
+    let app = state.app_handle.read().clone();
+    if let Some(app) = app.clone() {
         crate::event_dispatch::spawn_host_stream(app, state, Arc::clone(&host));
     }
-    state.host.set(host);
+    state.host.set(Arc::clone(&host));
+    // The skin windows already open have signals from now on (plan CR1).
+    if let Some(app) = app {
+        crate::skin_windows::announce_open(&app, &host);
+    }
     Ok(())
 }
 

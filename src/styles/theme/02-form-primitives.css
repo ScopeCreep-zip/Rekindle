@@ -92,6 +92,11 @@
     background: color-mix(in srgb, var(--color-xfire-accent) 30%, transparent);
   }
 
+  /* The community rows' listbox: its rows stay the list's own flex children. */
+  .community-listbox {
+    display: contents;
+  }
+
   .community-icon {
     width: 24px;
     height: 24px;

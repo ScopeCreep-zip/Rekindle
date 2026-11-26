@@ -1193,6 +1193,13 @@
     },
     "kind": "joinGroup"
   },
+  "skin.callOp.joinVoice": {
+    "arg": {
+      "channel": "voice",
+      "community": "VLD0:community"
+    },
+    "kind": "joinVoice"
+  },
   "skin.callOp.leave": {
     "arg": {
       "callId": "call-1"
@@ -1587,6 +1594,14 @@
     },
     "kind": "shell"
   },
+  "skin.selection.community": {
+    "arg": {
+      "channel": "ch",
+      "community": "VLD0:community",
+      "server": "gs_00"
+    },
+    "kind": "community"
+  },
   "skin.selection.friend": {
     "arg": {
       "publicKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
@@ -1902,6 +1917,12 @@
       "peer": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
     },
     "kind": "newRoom"
+  },
+  "skin.shellOp.openCommunityInfo": {
+    "arg": {
+      "community": "VLD0:community"
+    },
+    "kind": "openCommunityInfo"
   },
   "skin.shellOp.openGroupChat": {
     "arg": {

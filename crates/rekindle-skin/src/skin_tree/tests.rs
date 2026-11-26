@@ -60,6 +60,7 @@ pub(super) fn n(id: &str, role: NodeRole, x: NodeSpan, y: NodeSpan) -> SkinNode 
         fit: None,
         shows_with: None,
         control_group: None,
+        disabled_by: None,
         triggers: Vec::new(),
         children: Vec::new(),
     }

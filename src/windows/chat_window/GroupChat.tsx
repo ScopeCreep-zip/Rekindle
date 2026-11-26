@@ -161,8 +161,12 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
       <Show when={skinShell("chat")} keyed fallback={<Titlebar title={`Chat — ${name()}`} showMaximize />}>
         {(shell) => <SkinTreeWindow shell={shell} views={() => null} communities={() => null} chatTitle={name} />}
       </Show>
-      {/* The group's own controls (members, timer, rename, invite, leave, its
-       *  lobby) stay reachable: above the messages, in the chat area. */}
+      <div id="main-content" tabindex="-1" class="window-main">
+      {/* The chat area is one mount (one Portal, one container) holding, in
+       *  this order, the group's own controls (members, timer, rename,
+       *  invite, leave, its lobby) and then the messages: two mounts append
+       *  in effect order, and a skin re-applied could draw the messages
+       *  above the controls. */}
       <SlotMount slot="chatArea">
       <div class="group-chat-header">
         <ul
@@ -237,9 +241,6 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
       <Show when={held()}>
         <GameLobbyCard groupId={groupId} memberNames={memberNames()} />
       </Show>
-      </SlotMount>
-      <div id="main-content" tabindex="-1" class="window-main">
-        <SlotMount slot="chatArea">
           <MessageList
             messages={messages()}
             ownName={authState.displayName ?? "You"}

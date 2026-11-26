@@ -106,9 +106,14 @@
    * app layout's status-line ground (.route-paused-status), ellipsized in
    * the box; the whole line is its alert text and tooltip. A press reaches
  * the away-message input under it, and it steps aside while that has focus. */
+  /* Over the status input (RV1: the paused line replaces the status text,
+   * never overlays it): the input is positioned too and comes later, so
+   * without a stacking order its text drew through the line (Combat). A
+   * press passes through to the input (pointer-events: none). */
   .skin-status-paused {
     position: absolute;
     inset: 0;
+    z-index: 1;
     display: flex;
     align-items: center;
     padding: 0 3px;
@@ -282,8 +287,46 @@
    * safety number; the group's members, rename, invite, leave) keeps one line
    * and scrolls sideways where the pack's box is narrow: no control is
    * hidden, none wraps over the messages (Linux SK17-2 at min size). */
+  /* A slot's shell part (components/skin-tree/slots.tsx): the portal's
+   * container takes the slot's whole box as a flex column, so the part
+   * fills it (a community layout, a message list) and never spills out
+   * (the composer in its edit slot). */
+  .skin-slot-mount {
+    display: flex;
+    flex-direction: column;
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+  }
+  /* The composer in a pack's edit slot fills the box the pack draws for
+   * it (Symbiosis's `ChatEdit` is 50 px): no padding of its own, and the
+   * field takes the height left beside its buttons (its own 48 px plus
+   * 8 px padding spilled 14 px past the slot). */
+  .skin-slot-mount > .message-input-wrapper {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    padding: 0;
+  }
+  .skin-slot-mount > .message-input-wrapper > .message-input-shell {
+    flex: 1;
+    min-height: 0;
+  }
+  .skin-slot-mount .message-input-shell > .message-input-field {
+    align-self: stretch;
+    height: auto;
+    min-height: 0;
+  }
   [data-skin-role="slot:chatArea"] :is(.group-chat-header, .chat-peer-status) {
     flex-wrap: nowrap;
     overflow-x: auto;
+  }
+
+  /* A disabled node the pack draws no disabled art for (plan CR1,
+   * `disabledBy: shell`) is dimmed so it reads unusable; one with its own
+   * disabled art (`pack`) keeps it as the pack drew it. */
+  [data-disabled-by="shell"][aria-disabled="true"] {
+    opacity: 0.5;
   }
 }

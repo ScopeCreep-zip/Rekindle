@@ -29,6 +29,8 @@ pub enum ShellPanel {
     JoinCommunity,
     Shortcuts,
     Notifications,
+    /// The Communities row's New (plan E7.7): a chooser, Create or Join.
+    CommunityStart,
 }
 
 /// A 1:1 call operation: the shell's call commands own calls until plan
@@ -74,6 +76,14 @@ pub enum CallOp {
     },
     Video {
         friend: String,
+    },
+    /// Join the voice channel `channel` of the community `community` (a
+    /// community window's `AppVoiceChat`/`AppHostVoiceChat`, plan E7.7
+    /// HSC1): the shell's `join_voice_channel` holds community voice until
+    /// plan E4.1 makes `VoiceJoin` the Host's.
+    JoinVoice {
+        community: String,
+        channel: String,
     },
     End,
     Mute,
@@ -195,6 +205,11 @@ pub enum ShellOp {
         target: CallTarget,
     },
     ShowSettings(SkinSettingsTab),
+    /// The info panel of the community `community` (a community window's
+    /// `AppViewProfile`, plan E7.7 HSC1).
+    OpenCommunityInfo {
+        community: String,
+    },
     /// Ask the user where to save a never-fetched attachment (the native
     /// save dialog, `suggested_name` the uploader's sanitized filename),
     /// then send `TransferStart` with that destination (plan E7.2 G12).
@@ -207,6 +222,16 @@ pub enum ShellOp {
     /// (`SearchFor`, SK2-G §8); its query is one `LocalSearch`.
     OpenSearch {
         scope: super::local_search::LocalSearchScope,
+    },
+    /// The window of the selected `community` (the Communities row's Open,
+    /// plan E7.7).
+    OpenCommunity {
+        community: String,
+    },
+    /// Leave the selected `community`: the shell runs the existing leave,
+    /// which goes through the Host's leave intent (ADR 0019).
+    LeaveCommunity {
+        community: String,
     },
     ReportBug,
     CopyKey,
@@ -277,6 +302,17 @@ pub enum SkinSelection {
     /// default group of friends in no group.
     FriendGroup {
         group_id: Option<i64>,
+    },
+    /// A community (plan E7.7): a row selected in the buddy list's
+    /// Communities view (plan CB1: channel and server `None`), or a
+    /// community window (HSC1): its community, the channel
+    /// it shows (`None` before one is shown) and the game server selected
+    /// in its "SERVERS" list (`None`: Join takes the first listed). The
+    /// window sends it on open and on every channel or server change.
+    Community {
+        community: String,
+        channel: Option<String>,
+        server: Option<String>,
     },
 }
 

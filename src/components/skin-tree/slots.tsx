@@ -1,4 +1,4 @@
-import { type Component, type JSX, Show, createContext, createSignal, useContext } from "solid-js";
+import { type Component, type JSX, Show, children, createContext, createSignal, useContext } from "solid-js";
 import { Portal } from "solid-js/web";
 import type { SlotKey } from "../../ipc/commands/dto_skin_tree";
 
@@ -41,13 +41,25 @@ export function useSlotRegister(): ((key: SlotKey, el: HTMLElement | undefined) 
  * window's tree lays one, else where it stands (a window without a tree, or
  * a pack that lays no such slot). A portal keeps the part's own reactive
  * owner, so its state and handlers are the chat's wherever it is drawn.
+ *
+ * The part is created once (`children` resolves it): the fallback and the
+ * portal draw the same nodes, so a part drawn in place before the tree's
+ * slot registers keeps its state (a draft typed in the composer) when it
+ * moves into the slot. The portal's container (`skin-slot-mount`) takes the
+ * slot's whole box as a flex column, so a part that grows (`flex: 1`)
+ * fills the slot, and one window mounts each slot once.
  */
 export const SlotMount: Component<{ slot: SlotKey; children: JSX.Element }> = (props) => {
   const slots = useContext(SlotContext);
   const target = (): HTMLElement | undefined => slots?.target(props.slot);
+  const part = children(() => props.children);
   return (
-    <Show when={target()} fallback={props.children}>
-      {(el) => <Portal mount={el()}>{props.children}</Portal>}
+    <Show when={target()} fallback={part()}>
+      {(el) => (
+        <Portal mount={el()} ref={(container: HTMLDivElement) => container.classList.add("skin-slot-mount")}>
+          {part()}
+        </Portal>
+      )}
     </Show>
   );
 };

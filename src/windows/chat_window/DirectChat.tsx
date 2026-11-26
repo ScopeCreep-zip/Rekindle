@@ -164,8 +164,14 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
       <Show when={skinShell("chat")} keyed fallback={<Titlebar title={`Chat — ${peerName()}`} showMaximize />}>
         {(shell) => <SkinTreeWindow shell={shell} views={() => null} communities={() => null} chatTitle={peerName} />}
       </Show>
-      {/* What the app adds that no pack lays (status, calls, safety number,
-       *  game invites) stays reachable: above the messages, in the chat area. */}
+      <div id="main-content" tabindex="-1" class="window-main">
+      {/* Each part mounts into its slot when the pack's chat tree lays one
+       *  (plan SK17-2, components/skin-tree/slots.tsx), else stands here.
+       *  The chat area is one mount (one Portal, one container) holding,
+       *  in this order, what the app adds that no pack lays (status, calls,
+       *  safety number, game invites) and then the messages: two mounts
+       *  appended in effect order, and a skin re-applied could draw the
+       *  messages above the status row. */}
       <SlotMount slot="chatArea">
       <div class="chat-peer-status">
         <StatusDot status={peerStatus()} />
@@ -244,11 +250,6 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
           <GameInvitePicker peerId={peerId} peerName={peerName()} />
         </div>
       </Show>
-      </SlotMount>
-      <div id="main-content" tabindex="-1" class="window-main">
-      {/* Each part mounts into its slot when the pack's chat tree lays one
-       *  (plan SK17-2, components/skin-tree/slots.tsx), else stands here. */}
-      <SlotMount slot="chatArea">
         <GameInviteList peerId={peerId} peerName={peerName()} />
         <MessageList
           messages={messages()}
