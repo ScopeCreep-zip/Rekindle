@@ -70,7 +70,9 @@ const PACKS = ["symbiosis", "combat", "onyx", "alloy", "xslimfire", "simple-x", 
  *  edit is then left (blur), which puts back the Host's stored message. */
 async function typedSeen(): Promise<number> {
   const field = await browser.$(FIELD);
-  await press(browser, field);
+  // The driver's element click focuses the input (as the away-message test);
+  // press() dispatches events in the page, which focus nothing.
+  await field.click();
   await gone(browser, PAUSED, NET_WAIT_MS);
   await field.clearValue();
   await browser.pause(300);
