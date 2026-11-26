@@ -44,6 +44,6 @@ zeroize = { version = "1", features = [ "derive" ] }
 blake3 = "1"
 
 [dev-dependencies]
-rekindle-test-fixtures = { path = "../rekindle-test-fixtures" }
 parking_lot = "0.12"
 proptest = "1"
+rekindle-test-fixtures = { path = "../rekindle-test-fixtures" }
