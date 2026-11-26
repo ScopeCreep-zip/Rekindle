@@ -36,8 +36,8 @@ TabHeader TabStrip
   TabDownloadText.Communities Tab(Communities) label "Communities" target [0, -4, 68, 19] art [0, 4, 68, 15] Spacing
     TabDownloadButton.Communities Part
 Bottom Decor target [0, 0, 359, 170] art [0, 0, 359, 170] Frame
-AdArea AdArea
-  AdView Part
+AdArea Decor
+  AdView AdArea
 ButtonHolder ButtonBar
   FriendsButtons ButtonRow(Friends)
     FriendsButtons.TabAddButton Group

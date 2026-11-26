@@ -48,8 +48,8 @@ InnerBevel Decor
       ToolsMenu Part target [0, 0, 34, 24] art [0, 0, 34, 23] Size
     HelpMenuText MenuTitle label "Help"
       HelpMenu Part target [0, 0, 28, 24] art [0, 0, 28, 23] Size
-  AdArea AdArea
-    AdView Part
+  AdArea Decor
+    AdView AdArea
   Divider Decor
   TabHeader TabStrip
     TabNormalText Tab(Friends) label "Friends"

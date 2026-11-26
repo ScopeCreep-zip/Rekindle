@@ -117,7 +117,8 @@ pub fn served(package: &Package<'_>) -> Result<SkinManifest, SkinError> {
     Ok(manifest)
 }
 
-/// The Host's placements in `manifest` (see [`served`]): each button row's
+/// The Host's placements in `manifest` (see [`served`]): the ad's own box
+/// ([`crate::skin_tree::ad`]), each button row's
 /// slots unpaged by the views' group ([`crate::skin_tree::row_pages`]), then the cover of
 /// each glyph label from the package's art (plan SK3: the icon the
 /// Communities clone copied, [`crate::skin_tree::cover`]), then every
@@ -137,6 +138,7 @@ pub fn place(manifest: &mut SkinManifest, package: &Package<'_>) -> Result<(), S
     for layout in manifest.windows.values_mut() {
         crate::skin_tree::content::serve(layout);
         crate::skin_tree::row_pages::rows(layout);
+        crate::skin_tree::ad::serve(layout);
     }
     if let Some(main) = manifest
         .windows
