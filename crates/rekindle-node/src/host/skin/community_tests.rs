@@ -189,6 +189,13 @@ fn join_launches_the_selected_server_else_the_first_listed() {
         NOT_MEMBER
     );
     assert_eq!(NO_SERVER, "This community lists no game server to join.");
+    // A pack's plain Join node (`JoinFriend`, Symbiosis) is the same press.
+    let plain = launched(press(&A::JoinFriend, &sel("c1", Some("v1"))));
+    assert_eq!(plain, "198.51.100.1:27015");
+    assert_eq!(
+        refused_with(press(&A::JoinFriend, &sel("c0", None))),
+        NO_SERVER
+    );
 }
 
 #[test]
@@ -212,6 +219,10 @@ fn each_community_capability_is_refused_with_the_hosts_words() {
     assert_eq!(on(&c1, C::JoinGameLobby, &i), None);
     assert_eq!(on(&c0, C::JoinGameLobby, &i).as_deref(), Some(NO_SERVER));
     assert_eq!(on(&cx, C::JoinGameLobby, &i).as_deref(), Some(NOT_MEMBER));
+    // A plain Join node asks `Capability::Join`: the same verdict.
+    assert_eq!(on(&c1, C::Join, &i), None);
+    assert_eq!(on(&c0, C::Join, &i).as_deref(), Some(NO_SERVER));
+    assert_eq!(on(&cx, C::Join, &i).as_deref(), Some(NOT_MEMBER));
     assert_eq!(
         on(&c1, C::LeaveVoiceChat, &i).as_deref(),
         Some(NOT_IN_VOICE)
