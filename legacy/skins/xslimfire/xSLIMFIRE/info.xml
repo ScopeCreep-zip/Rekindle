@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8" ?> 
+<!DOCTYPE SkinDescription SYSTEM "XfireSkin.dtd">
+
+<SkinDescription>
+ 	<Author Type="original">Grasman</Author>
+ 	<Author Type="contributor">Gunowar</Author>
+ 	<Website></Website>
+ 	<Name>xSLIMFIRE</Name>
+ 	<LongName>xSLIMFIRE</LongName>
+ 	<Version>1</Version>
+ 	<CompatibleVersion>1.62</CompatibleVersion>
+</SkinDescription>

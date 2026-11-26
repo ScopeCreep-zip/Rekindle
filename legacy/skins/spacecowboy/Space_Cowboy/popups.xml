@@ -1,0 +1,74 @@
+<Popups>
+	<Tile Name="InfoPopup" X="MainWindow.RIGHT-20" Y="33" Z="3" IndentBottom="52" Component="InfoWindow">
+		<Tile Name="InfoViewBG" ResizeX="100" ResizeY="100" Component="InfoViewBG"></Tile>
+		<Tile Name="InfoViewTop" X="1" IndentRight="22" ResizeX="100" ResizeY="100" Component="InfoViewTop"></Tile>
+		<Tile Name="InfoViewLeft" X="0" Y="1" IndentBottom="1" ResizeX="100" ResizeY="100" Component="InfoViewLeft"></Tile>
+		<Tile Name="InfoViewMiddle" X="1" Y="1" IndentRight="22" IndentBottom="1" ResizeX="100" ResizeY="100" Component="InfoViewMiddle"></Tile>
+		<Tile Name="InfoViewRight" JustX="RIGHT" X="0" Y="1" IndentBottom="1" ResizeX="100" ResizeY="100" Component="InfoViewRight"></Tile>
+		<Tile Name="InfoViewBottom" X="1" JustY="BOTTOM" IndentRight="22" ResizeX="100" ResizeY="100" Component="InfoViewBottom"></Tile>
+		<Tile Name="ListViewBG" X="15" Y="20" Z="2" IndentRight="37" IndentBottom="32" ResizeX="100" ResizeY="100" Component="ListViewBG"></Tile>
+		<Tile Name="BackDrop" Z="-1" Y="21" X="16" IndentRight="38" IndentBottom="33" ResizeX="100" ResizeY="100" Component="BackDrop"></Tile>
+		<Tile Name="InfoView" Y="21" X="16" IndentRight="38" IndentBottom="33" ResizeX="100" ResizeY="100" Component="InfoView"></Tile>
+		<Tile Name="ResizeRight" JustX="RIGHT" X="22" ResizeY="100" Z="4" Component="ResizeRight"></Tile>
+		<Tile Name="JoinButton" JustX="RIGHT" JustY="BOTTOM" Y="6" X="100" Z="5" Component="InfoJoinGameButton"></Tile>
+		<Tile Name="JoinChatTab" JustX="RIGHT" JustY="BOTTOM" Y="6" X="38" Z="5" Component="JoinChatTab">
+			<Tile Name="HostChatButton" ResizeX="100" ResizeY="100" Component="HostChatButton"></Tile>
+			<Tile Name="JoinChatButton" ResizeX="100" ResizeY="100" Component="JoinChatButton"></Tile>
+			<Tile Name="LeaveChatButton" ResizeX="100" ResizeY="100" Component="LeaveChatButton">
+				<Tile Name="TalkingStateButton" Z="10" Component="TalkingStateButton"></Tile>
+			</Tile>
+		</Tile>
+		<Tile Name="CloseInfoView" Z="3" JustX="RIGHT" X="2" JustY="CENTER" Component="CloseInfoView"></Tile>
+	</Tile>
+	
+	<Tile Name="ChatInfoPopup" X="MainWindow.RIGHT-22" Y="29" Z="3" IndentBottom="55" Component="ChatInfoWindow">
+		<Tile Name="CInfoViewBG" Z="1" ResizeX="100" ResizeY="100" Component="CInfoViewBG"></Tile>
+		<Tile Name="CInfoViewTop" Z="1" X="1" IndentRight="23" ResizeX="100" ResizeY="100" Component="CInfoViewTop"></Tile>
+		<Tile Name="CInfoViewLeft" Z="1" X="0" Y="1" IndentBottom="1" ResizeX="100" ResizeY="100" Component="CInfoViewLeft"></Tile>
+		<Tile Name="CInfoViewMiddle" Z="1" X="1" Y="1" IndentRight="23" IndentBottom="1" ResizeX="100" ResizeY="100" Component="CInfoViewMiddle"></Tile>
+		<Tile Name="CInfoViewRight" Z="1" JustX="RIGHT" X="0" Y="1" IndentBottom="1" ResizeX="100" ResizeY="100" Component="CInfoViewRight"></Tile>
+		<Tile Name="CInfoViewBottom" Z="1" X="1" JustY="BOTTOM" IndentRight="23" ResizeX="100" ResizeY="100" Component="CInfoViewBottom"></Tile>
+		<Tile Name="ListViewBG" X="15" Y="20" Z="2" IndentRight="37" IndentBottom="32" ResizeX="100" ResizeY="100" Component="ListViewBG"></Tile>
+		<Tile Name="BackDrop" Z="-1" Y="21" X="16" IndentRight="38" IndentBottom="33" ResizeX="100" ResizeY="100" Component="BackDrop"></Tile>
+		<Tile Name="InfoView" Y="21" X="16" IndentRight="38" IndentBottom="33" ResizeX="100" ResizeY="100" Component="InfoView"></Tile>
+		<Tile Name="ResizeRight" JustX="RIGHT" X="22" ResizeY="100" Z="4" Component="ResizeRight"></Tile>
+		<Tile Name="JoinButton" JustX="RIGHT" JustY="BOTTOM" Y="6" X="100" Z="5" Component="InfoJoinGameButton"></Tile>
+		<Tile Name="JoinChatTab" JustX="RIGHT" JustY="BOTTOM" Y="6" X="38" Z="5" Component="JoinChatTab">
+			<Tile Name="HostChatButton" ResizeX="100" ResizeY="100" Component="HostChatButton"></Tile>
+			<Tile Name="JoinChatButton" ResizeX="100" ResizeY="100" Component="JoinChatButton"></Tile>
+			<Tile Name="LeaveChatButton" ResizeX="100" ResizeY="100" Component="LeaveChatButton">
+				<Tile Name="TalkingStateButton" Z="10" Component="TalkingStateButton"></Tile>
+			</Tile>
+		</Tile>
+		<Tile Name="CloseChatInfoView" Z="3" JustX="RIGHT" X="2" JustY="CENTER" Component="CloseChatInfoView"></Tile>
+	</Tile>
+	
+	<Tile Name="GroupInfoPopup" X="MainWindow.RIGHT-22" Y="29" Z="3" IndentBottom="55" Component="GroupInfoWindow">
+		<Tile Name="CInfoViewBG" Z="1" ResizeX="100" ResizeY="100" Component="CInfoViewBG"></Tile>
+		<Tile Name="CInfoViewTop" Z="1" X="1" IndentRight="23" ResizeX="100" ResizeY="100" Component="CInfoViewTop"></Tile>
+		<Tile Name="CInfoViewLeft" Z="1" X="0" Y="1" IndentBottom="1" ResizeX="100" ResizeY="100" Component="CInfoViewLeft"></Tile>
+		<Tile Name="CInfoViewMiddle" Z="1" X="1" Y="1" IndentRight="23" IndentBottom="1" ResizeX="100" ResizeY="100" Component="CInfoViewMiddle"></Tile>
+		<Tile Name="CInfoViewRight" Z="1" JustX="RIGHT" X="0" Y="1" IndentBottom="1" ResizeX="100" ResizeY="100" Component="CInfoViewRight"></Tile>
+		<Tile Name="CInfoViewBottom" Z="1" X="1" JustY="BOTTOM" IndentRight="23" ResizeX="100" ResizeY="100" Component="CInfoViewBottom"></Tile>
+		<Tile Name="ListViewBG" X="15" Y="20" Z="2" IndentRight="37" IndentBottom="32" ResizeX="100" ResizeY="100" Component="ListViewBG"></Tile>
+		<Tile Name="BackDrop" Z="-1" Y="21" X="16" IndentRight="38" IndentBottom="33" ResizeX="100" ResizeY="100" Component="BackDrop"></Tile>
+		<Tile Name="InfoView" Y="21" X="16" IndentRight="38" IndentBottom="33" ResizeX="100" ResizeY="100" Component="GroupInfoView"></Tile>
+		<Tile Name="ResizeRight" JustX="RIGHT" X="22" ResizeY="100" Z="4" Component="ResizeRight"></Tile>
+		<Tile Name="JoinGameTab" JustX="RIGHT" JustY="BOTTOM" Y="6" X="100" Z="5" Component="JoinGameTab">
+			<Tile Name="HostGameLobbyButton" ResizeX="100" ResizeY="100" Component="HostGameLobbyButton"></Tile>
+			<Tile Name="JoinGameLobbyButton" ResizeX="100" ResizeY="100" Component="JoinGameLobbyButton"></Tile>
+			<Tile Name="LeaveGameLobbyButton" ResizeX="100" ResizeY="100" Component="LeaveGameLobbyButton"></Tile>
+			<Tile Name="LaunchGameLobbyButton" ResizeX="100" ResizeY="100" Component="LaunchGameLobbyButton"></Tile>
+			<Tile Name="DisabledLobbyButton" ResizeX="100" ResizeY="100" Component="DisabledLobbyButton"></Tile>
+		</Tile>
+		<Tile Name="JoinChatTab" JustX="RIGHT" JustY="BOTTOM" Y="6" X="38" Z="5" Component="JoinGroupChatTab">
+				<Tile Name="InfoHostChatButton" ResizeX="100" ResizeY="100" Component="GroupHostChatButton"></Tile>
+				<Tile Name="InfoJoinChatButton" ResizeX="100" ResizeY="100" Component="GroupJoinChatButton"></Tile>
+				<Tile Name="InfoLeaveChatButton" ResizeX="100" ResizeY="100" Component="GroupLeaveChatButton">
+					<Tile Name="TalkingStateButton" Z="10" Component="TalkingStateButton"></Tile>
+			</Tile>
+			<Tile Name="DisabledChatButton" ResizeX="100" ResizeY="100" Component="DisabledChatButton"></Tile>
+		</Tile>
+		<Tile Name="CloseGroupInfoView" Z="3" JustX="RIGHT" X="2" JustY="CENTER" Component="CloseGroupInfoView"></Tile>
+	</Tile>
+</Popups>
