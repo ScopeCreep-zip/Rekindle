@@ -425,6 +425,9 @@ impl HostChannel {
                     );
                 }
             }
+            // `Withheld`: we may not view its channel; the cursor passes it
+            // and the merge that opens the channel re-reads every outbox
+            // (`governance/view_gain.rs`).
             _ => {}
         }
         Ok(Held::Stored)

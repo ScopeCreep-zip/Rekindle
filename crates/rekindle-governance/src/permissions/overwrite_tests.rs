@@ -7,11 +7,11 @@ use std::collections::{HashMap, HashSet};
 
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::{ChannelId, PseudonymKey, RoleId};
-use rekindle_types::permissions::{DEFAULT_EVERYONE, SEND_MESSAGES, VIEW_CHANNELS};
+use rekindle_types::permissions::{DEFAULT_EVERYONE, READ_HISTORY, SEND_MESSAGES, VIEW_CHANNELS};
 
 use super::{channel_read_roster, compute_permissions};
 use crate::merge::apply_entry;
-use crate::state::{GovernanceState, RoleState};
+use crate::state::{GovernanceState, RoleState, TimeoutState};
 use crate::validate::validate_write;
 
 const RESTRICTED_CHANNEL: ChannelId = ChannelId([9; 16]);
@@ -151,4 +151,63 @@ fn a_malformed_target_is_refused_and_never_stored() {
         state.overwrites.is_empty(),
         "the merge drops a target that is not canonical"
     );
+}
+
+/// `key(2)` timed out from 1000 for an hour.
+fn timed_out(state: &mut GovernanceState) {
+    state.timeouts.insert(
+        key(2),
+        TimeoutState {
+            duration_seconds: 3600,
+            started_at: 1000,
+            reason: None,
+            stamp: crate::fixture::stamp(3),
+        },
+    );
+}
+
+#[test]
+fn a_timeout_never_reopens_a_channel_an_overwrite_closed() {
+    let mut state = state();
+    write(
+        &mut state,
+        &overwrite("role", RoleId::EVERYONE.to_hex(), 0, VIEW_CHANNELS),
+        1,
+    );
+    timed_out(&mut state);
+    let perms = compute_permissions(&key(2), Some(&RESTRICTED_CHANNEL), &state, 1500);
+    assert_eq!(
+        perms & VIEW_CHANNELS,
+        0,
+        "timed out on a denied channel: {perms:#x}"
+    );
+    assert_eq!(
+        perms & READ_HISTORY,
+        0,
+        "timed out on a denied channel: {perms:#x}"
+    );
+}
+
+#[test]
+fn a_timeout_on_an_open_channel_keeps_view_and_history_and_takes_send() {
+    let mut state = state();
+    timed_out(&mut state);
+    let perms = compute_permissions(&key(2), Some(&OPEN), &state, 1500);
+    assert_eq!(perms, VIEW_CHANNELS | READ_HISTORY, "{perms:#x}");
+    assert_eq!(perms & SEND_MESSAGES, 0);
+    // Expired: the member's own permissions come back.
+    let perms = compute_permissions(&key(2), Some(&OPEN), &state, 5000);
+    assert_ne!(perms & SEND_MESSAGES, 0);
+}
+
+#[test]
+fn a_timeout_never_grants_history_the_member_lacked() {
+    let mut state = state();
+    // `@everyone` may view but not read history on the open channel.
+    state
+        .roles
+        .insert(RoleId::EVERYONE, role(VIEW_CHANNELS | SEND_MESSAGES));
+    timed_out(&mut state);
+    let perms = compute_permissions(&key(2), Some(&OPEN), &state, 1500);
+    assert_eq!(perms, VIEW_CHANNELS, "{perms:#x}");
 }

@@ -16,7 +16,7 @@ use rekindle_types::dto::channel_message::UndecryptableReason;
 use rekindle_types::governance::{GovernanceEntry, ModReportTarget};
 use rekindle_types::id::{ChannelId, PseudonymKey};
 use rekindle_types::message::SendState;
-use rekindle_types::permissions::MANAGE_MESSAGES;
+use rekindle_types::permissions::{MANAGE_MESSAGES, VIEW_CHANNELS};
 use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent, SystemEvent};
 
 pub use super::received::{ReceivedAt, ReceivedPost};
@@ -81,6 +81,11 @@ pub enum Ingested {
     /// A moderator's merged `AdminDelete` names it (plan E3.3 M4): it is
     /// stored removed, never opened.
     RemovedByModerator,
+    /// We may not view its channel (plan E3.2 SEC): nothing of it is
+    /// opened, stored or published. The outbox cursor passes it; the merge
+    /// that opens the channel to us re-reads every outbox
+    /// (`governance/view_gain.rs`, the D16 re-read), so it is read then.
+    Withheld,
 }
 
 impl HostChannel {
@@ -149,6 +154,10 @@ impl HostChannel {
         if let Some(reason) = self.author_refused(&inputs, &author) {
             tracing::debug!(community, channel = %post.channel_id, ?reason, "post dropped");
             return Ok(Ingested::Dropped(reason));
+        }
+        if !self.we_may_view(&inputs, community, &post.channel_id) {
+            tracing::info!(community, channel = %post.channel_id, "channel post withheld: we may not view its channel");
+            return Ok(Ingested::Withheld);
         }
         // The real-app suite's one-shot damages this post's ciphertext, so
         // the AEAD below fails for real (`host::webdriver`).
@@ -424,6 +433,29 @@ impl HostChannel {
         post: &GatedPost<'_>,
     ) -> Option<GateReason> {
         ingest::author_refusal(&self.gate_item(post), &inputs.gov, &inputs.blocked)
+    }
+
+    /// Whether we hold `VIEW_CHANNELS` on `channel_id` in `inputs`' merged
+    /// state (plan E3.2 SEC; `compute_permissions` with the channel's
+    /// overwrites). This is a reader-side gate: every channel's posts are
+    /// sealed under the community key we hold, so until E3.5's per-channel
+    /// keys (D11) make it cryptographic, this check is what keeps a channel
+    /// an overwrite closes to us unread. An own key not known yet is judged
+    /// as no member's: `@everyone` and its overwrites alone.
+    fn we_may_view(&self, inputs: &GateInputs, community_id: &str, channel_id: &str) -> bool {
+        let me =
+            PseudonymKey::from_hex_lossy(&self.my_pseudonym_impl(community_id).unwrap_or_default());
+        let Some(channel) = ChannelId::from_hex(channel_id) else {
+            return false;
+        };
+        let now_secs = self.ctx().clock.now_secs();
+        let perms = rekindle_governance::permissions::compute_permissions(
+            &me,
+            Some(&channel),
+            &inputs.gov,
+            now_secs,
+        );
+        perms & VIEW_CHANNELS != 0
     }
 
     fn gate_item<'a>(&self, post: &GatedPost<'a>) -> GateItem<'a> {

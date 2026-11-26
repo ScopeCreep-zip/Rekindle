@@ -9,7 +9,7 @@ import GroupChat from "./chat_window/GroupChat";
 import { SlotProvider } from "../components/skin-tree/slots";
 import { useChatSearchChord } from "../hooks/useChatSearchChord";
 import { setWindowKind } from "../utils/window_kind";
-import { registerShellRunner } from "../actions/skin.actions";
+import { registerShellRunner, sendSkinSelection } from "../actions/skin.actions";
 import { callOps, friendOps, menuOps, muteOps, popupOps } from "../actions/shell_runners";
 
 /// The one chat window (plan E2.3): `?peer=<identity key>` is a 1:1
@@ -28,6 +28,11 @@ const ChatWindow: Component = () => {
   // friend chat, room or download: no chat tree lays one.
   const unregister = [menuOps, popupOps, friendOps, callOps, muteOps].map((run) => registerShellRunner(run));
   onMount(async () => {
+    // A group window's selection is its group (as a 1:1 window's is its
+    // friend, useChatSearchChord): the Host builds the group's call, and
+    // its capabilities, from it (reads.rs group_call); without it a pack's
+    // Call fell to the 1:1 path, drawn disabled with no friend selected.
+    if (group) void sendSkinSelection({ kind: "group", arg: { groupId: group } });
     unlisten = await subscribeSkinSignals(setSkinSignals);
   });
   onCleanup(() => {

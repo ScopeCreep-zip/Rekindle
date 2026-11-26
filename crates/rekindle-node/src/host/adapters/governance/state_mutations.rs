@@ -70,6 +70,10 @@ impl HostGovernance {
         let departed_outboxes = new_outbox_heads(prev.as_ref(), &state);
         let channel_created = creates_channel(prev.as_ref(), &state);
         let now_secs = self.ctx.clock.now_secs();
+        let me_hex = (self.ctx.communities.map().read().get(community_id))
+            .and_then(|c| c.my_pseudonym_key.clone())
+            .unwrap_or_default();
+        let view_gained = super::view_gain::view_gained(prev.as_ref(), &state, &me_hex, now_secs);
         let permissions =
             (prev.as_ref().zip(diff.as_ref())).map_or_else(Default::default, |(prev, diff)| {
                 super::permission_events::permission_transitions(prev, &state, diff, now_secs)
@@ -106,6 +110,9 @@ impl HostGovernance {
         self.read_departed_outboxes(community_id, departed_outboxes);
         if channel_created {
             self.spawn_outbox_reread_unmapped(community_id);
+        }
+        if view_gained {
+            self.spawn_outbox_reread(community_id);
         }
     }
 

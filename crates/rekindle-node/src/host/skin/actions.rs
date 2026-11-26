@@ -310,6 +310,14 @@ pub(crate) fn map(
         A::SetStatus(status) => Ok(Request(Box::new(IpcRequest::PresenceSet {
             status: *status,
         }))),
+        // Leave acts on the window's call (`reads.in_call`): a group
+        // window's own (whose Cancel and End end our ring), a chat
+        // window's 1:1; anywhere else it is the community voice channel's.
+        A::LeaveVoiceChat | A::LeaveGroupVoiceChat | A::CancelVoiceChat | A::EndVoiceChat
+            if reads.in_call.is_some() =>
+        {
+            rooms::leave(reads.in_call.as_ref())
+        }
         A::LeaveVoiceChat | A::LeaveGroupVoiceChat => Ok(Request(Box::new(IpcRequest::VoiceLeave))),
         A::LaunchUrl(u) => Ok(Request(Box::new(IpcRequest::LinkOpen {
             url: u.url.clone(),
@@ -327,9 +335,33 @@ pub(crate) fn map(
         A::ShowGameInvite => shell(ShellOp::OpenGameInvite {
             friend: selected()?,
         }),
-        A::VoiceChat | A::HostVoiceChat => shell(ShellOp::Call(CallOp::Voice {
+        // Xfire's `AppHostVoiceChat` places a call (`ChatButtonCall`) and
+        // `AppVoiceChat` answers the ringing one (`ChatButtonAnswerCall`,
+        // Symbiosis `ChatWindow.xml:291-293`, `Common.xml:450-452`).
+        // A group window draws the same action on its Host button
+        // (Symbiosis `GroupChatWindow`'s `ChatButtonCall`, action
+        // `hostVoiceChat`): there it starts the group's call, as
+        // `AppHostGroupVoiceChat` does, never a 1:1 call.
+        A::HostVoiceChat if reads.group_call.is_some() => {
+            Ok(rooms::host_group(reads.group_call.as_ref()))
+        }
+        A::HostVoiceChat => shell(ShellOp::Call(CallOp::Voice {
             friend: selected()?,
         })),
+        // A group window's join (`GroupChatButtonAnswerCall`, tip
+        // `ButtonGroupJoinVoiceChatTip`) runs `AppVoiceChat` in Symbiosis
+        // (`Components/GroupChatWindow.xml:144-147`) and
+        // `AppGroupVoiceChat` in WMP10/Alloy/LOTR/DiabloIILoD; its Host
+        // button (`GroupChatButtonCall`) runs `AppHostGroupVoiceChat`.
+        A::GroupVoiceChat => rooms::join_group(reads.group_call.as_ref()),
+        A::VoiceChat if reads.group_call.is_some() => rooms::join_group(reads.group_call.as_ref()),
+        A::VoiceChat => {
+            selected()?;
+            reads.ringing_call.clone().map_or_else(
+                || Err(IpcResponse::error(409, "No call from them is ringing.")),
+                |call_id| shell(ShellOp::Call(CallOp::Answer { call_id })),
+            )
+        }
         A::VideoChat => shell(ShellOp::Call(CallOp::Video {
             friend: selected()?,
         })),
@@ -372,7 +404,10 @@ pub(crate) fn map(
         },
         A::JoinFriend => join_friend(&selected()?, reads.friend_game.as_ref()),
         A::AddServer => add_server(server),
-        A::GroupVoiceChat | A::HostGroupVoiceChat => panel(ShellPanel::StartGroupCall),
+        // A group window's host (`GroupChatButtonCall`) opens the panel
+        // scoped to its group, prefilled from the roster; the buddy
+        // list's has no group and opens the plain panel.
+        A::HostGroupVoiceChat => Ok(rooms::host_group(reads.group_call.as_ref())),
         A::CreateCommunity => panel(ShellPanel::CreateCommunity),
         A::JoinCommunity => panel(ShellPanel::JoinCommunity),
         A::ShowShortcuts => panel(ShellPanel::Shortcuts),

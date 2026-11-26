@@ -29,6 +29,8 @@ mod channel_held_tests;
 mod channel_ingest_tests;
 #[path = "channel_send_tests.rs"]
 mod channel_send_tests;
+#[path = "channel_view_tests.rs"]
+mod channel_view_tests;
 #[path = "checkpoint_rows_tests.rs"]
 mod checkpoint_rows;
 #[path = "checkpoint_state_tests.rs"]

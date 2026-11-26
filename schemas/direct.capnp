@@ -458,6 +458,8 @@ struct GroupCallOffer {
   participants @4 :List(Text);
   wrappedCallKey @5 :Data;
   expiresAtMs @6 :UInt64;
+  # The group DM the call belongs to; empty for a buddy-list group call.
+  groupId @7 :Text;
 }
 
 # 0x0211 GroupCallAccept, 0x0213 GroupCallParticipantJoined.

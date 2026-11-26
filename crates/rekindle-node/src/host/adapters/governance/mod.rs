@@ -119,6 +119,7 @@ pub(crate) mod state_mutations;
 mod state_reads;
 mod unlock_barrier_loop;
 pub(crate) mod unread;
+pub(crate) mod view_gain;
 pub(crate) mod views;
 mod watch;
 mod watch_relay;

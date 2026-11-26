@@ -79,6 +79,33 @@ pub fn get(
     .optional()
 }
 
+/// What this identity knows of a group's call roster (E4.1): the members'
+/// keys when we hold the group, `Invited` while our invite to it is still
+/// pending, else `Unknown`. The one source for `group_call_refused`.
+///
+/// # Errors
+/// A query failed or a row is corrupt.
+pub fn call_roster(
+    conn: &Connection,
+    owner_key: &str,
+    group_id: &str,
+    now_ms: i64,
+) -> rusqlite::Result<rekindle_types::group_dm::GroupCallRoster> {
+    use rekindle_types::group_dm::GroupCallRoster;
+    if let Some(group) = get(conn, owner_key, group_id)? {
+        let keys = group.roster.into_iter().map(|m| m.identity).collect();
+        return Ok(GroupCallRoster::Held(keys));
+    }
+    let invited = super::group_dm_invites::list(conn, owner_key, now_ms)?
+        .iter()
+        .any(|invite| invite.group_id == group_id);
+    Ok(if invited {
+        GroupCallRoster::Invited
+    } else {
+        GroupCallRoster::Unknown
+    })
+}
+
 /// Every group we are in, oldest first.
 ///
 /// # Errors

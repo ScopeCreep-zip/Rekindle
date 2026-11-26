@@ -54,7 +54,10 @@ async fn add_channel(
     crate::host::adapters::governance::loader::restore(&host.ctx, owner, &secret)
         .await
         .unwrap();
-    (host.ctx.communities).set_governance_state("c1", GovernanceState::default());
+    (host.ctx.communities).set_governance_state(
+        "c1",
+        super::channel_gap_tests::everyone(GovernanceState::default()),
+    );
 }
 
 fn code(response: &rekindle_ipc::IpcResponse) -> u32 {

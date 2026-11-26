@@ -124,10 +124,14 @@ pub fn compute_permissions(
         }
     }
 
-    // Step 7: Timed-out members get only VIEW_CHANNELS | READ_HISTORY
+    // Step 7: a timed-out member *retains* at most VIEW_CHANNELS |
+    // READ_HISTORY (architecture §9.1 bit 7 "restrict a member to",
+    // §20.5 "retains only"; communities-overview §permissions step 8
+    // "clamp"). The timeout masks what steps 1-6 computed; it never
+    // grants a bit, so a channel an overwrite closes stays closed.
     if let Some(timeout) = state.timeouts.get(member) {
         if !timeout.is_expired(now_unix) {
-            perms = VIEW_CHANNELS | READ_HISTORY;
+            perms &= VIEW_CHANNELS | READ_HISTORY;
         }
     }
 

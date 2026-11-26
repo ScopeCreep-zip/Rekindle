@@ -47,6 +47,33 @@ async function slotBoxes(): Promise<string> {
  * its index among its parent's children (a control group's page) and the
  * parent; plus the node behind any drawn "Answer" word. One line, `[voice]`.
  */
+/**
+ * Lead (CW1, `9c50e1aee`): with no call ringing, an idle 1:1 window's
+ * served set holds `voiceChat` (a pack's Answer) in `cannot`, and where the
+ * pack lays a Call/Answer group the Call is the drawn page, the Answer not.
+ */
+async function idleDmOffersCall(file: string): Promise<void> {
+  const st = (await browser.execute(() => {
+    const tree = document.querySelector<HTMLElement>(".skin-tree");
+    const drawn = (id: string): boolean | null => {
+      const n = document.querySelector<HTMLElement>(`[data-skin-node="${id}"]`);
+      if (!n) return null;
+      return !n.closest("[hidden]") && n.getBoundingClientRect().width > 0;
+    };
+    return {
+      on: (tree?.dataset.skinSignalOn ?? "").split(" ").filter(Boolean),
+      cannot: (tree?.dataset.skinCannot ?? "").split(" ").filter(Boolean),
+      call: drawn("ChatButtonCall"),
+      answer: drawn("ChatButtonAnswerCall"),
+    };
+  })) as { on: string[]; cannot: string[]; call: boolean | null; answer: boolean | null };
+  console.log(`[cw1] ${file} idle dm: ${JSON.stringify(st)}`);
+  expect(st.on).not.toContain("voiceRinging");
+  expect(st.cannot).toContain("voiceChat");
+  if (st.call !== null) expect(st.call).toBe(true);
+  if (st.answer !== null) expect(st.answer).toBe(false);
+}
+
 async function voiceEvidence(): Promise<string> {
   return (await browser.execute(() => {
     const tree = document.querySelector<HTMLElement>(".skin-tree");
@@ -182,6 +209,7 @@ describe("a pack's chat tree draws the chat window, the chat in its slots", func
         console.log(`[title] ${file} ${kind}: ${st.title}`);
         console.log(`[voice] ${file} ${kind}: ${await voiceEvidence()}`);
         await shot(`${kind}-before-checks`);
+        if (kind === "dm") await idleDmOffersCall(file);
         await treeLaid(handle, title, text);
         const def = await sizeTo(CHAT_DM.def.width, CHAT_DM.def.height);
         await treeLaid(handle, title, text);

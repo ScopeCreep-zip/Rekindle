@@ -457,6 +457,32 @@ fn shell_op_samples(add: &mut impl FnMut(&str, Value)) {
         }))),
     );
     add(
+        "skin.callOp.answer",
+        to(CallOp::Answer {
+            call_id: "call-1".into(),
+        }),
+    );
+    add(
+        "skin.callOp.joinGroup",
+        to(CallOp::JoinGroup {
+            group_id: "group-1".into(),
+            call_id: "call-1".into(),
+        }),
+    );
+    add(
+        "skin.callOp.leave",
+        to(CallOp::Leave {
+            call_id: "call-1".into(),
+        }),
+    );
+    add(
+        "skin.callOp.leaveGroup",
+        to(CallOp::LeaveGroup {
+            group_id: "group-1".into(),
+            call_id: "call-1".into(),
+        }),
+    );
+    add(
         "skin.run.notBuiltYet",
         to(SkinRun::NotBuiltYet {
             action: SkinAction::SearchFor,
