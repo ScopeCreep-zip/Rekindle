@@ -81,18 +81,7 @@ pub(crate) async fn take_slot<D: GovernanceRuntimeDeps>(
         OpLanding::InviteLanded { deadline, .. } => Some(deadline),
     };
     if deadline.is_some() {
-        match barrier.phase() {
-            BarrierPhase::CatchingUp => {
-                return Err(GovernanceRuntimeError::CatchingUp(community_id.to_owned()));
-            }
-            BarrierPhase::Restored(fact) => {
-                return Err(GovernanceRuntimeError::RestoreDetected {
-                    community: community_id.to_owned(),
-                    last_seq: fact.last_seq,
-                });
-            }
-            BarrierPhase::Passed => {}
-        }
+        refuse_unheld(&barrier, community_id)?;
     }
     let (op_id, ticket) = barrier.hold_next(held);
     announce(deps, community_id, &barrier);
@@ -104,6 +93,29 @@ pub(crate) async fn take_slot<D: GovernanceRuntimeDeps>(
     match deadline {
         None => Ok(BarrierSlot::Held(write)),
         Some(deadline) => wait_in_line(deps, community_id, write, deadline).await,
+    }
+}
+
+/// A write that may not be held (an invite link) is refused at once unless
+/// `barrier` passed: its caller checks this before any network step, so
+/// the answer never waits on one (plan E3.2 S7d-keys.8).
+///
+/// # Errors
+/// [`GovernanceRuntimeError::CatchingUp`] while the barrier catches up,
+/// [`GovernanceRuntimeError::RestoreDetected`] after a restore.
+pub(crate) fn refuse_unheld(
+    barrier: &UnlockBarrier,
+    community_id: &str,
+) -> Result<(), GovernanceRuntimeError> {
+    match barrier.phase() {
+        BarrierPhase::CatchingUp => {
+            Err(GovernanceRuntimeError::CatchingUp(community_id.to_owned()))
+        }
+        BarrierPhase::Restored(fact) => Err(GovernanceRuntimeError::RestoreDetected {
+            community: community_id.to_owned(),
+            last_seq: fact.last_seq,
+        }),
+        BarrierPhase::Passed => Ok(()),
     }
 }
 
@@ -138,6 +150,27 @@ async fn wait_in_line<D: GovernanceRuntimeDeps>(
     Err(refused)
 }
 
+/// A held write refused when its turn came, nothing signed: its request
+/// was answered "held" at once, so the refusal is told to the user now
+/// (`GovernanceRuntimeEvent::HeldWriteRefused`), never only logged. A
+/// restore is not a refusal: that write stays held and listed, unsigned.
+pub(crate) fn report_refused<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    label: Option<String>,
+    error: &GovernanceRuntimeError,
+) {
+    tracing::warn!(community = community_id, %error, "held governance write not made");
+    if matches!(error, GovernanceRuntimeError::RestoreDetected { .. }) {
+        return;
+    }
+    deps.emit_event(crate::event::GovernanceRuntimeEvent::HeldWriteRefused {
+        community_id: community_id.to_owned(),
+        label,
+        reason: error.to_string(),
+    });
+}
+
 impl HeldGovWrite {
     /// A held write takes effect locally at once: a held `InviteRevoked`
     /// (a refused invite's, queued behind its unlanded `InviteCreated`)
@@ -149,6 +182,13 @@ impl HeldGovWrite {
                 self.barrier.withdraw_invite(invite_id);
             }
         }
+    }
+
+    /// The words the held list shows the write under ("Kick Bea").
+    pub(crate) fn label(&self) -> Option<String> {
+        let view = self.barrier.view()?;
+        let listed = view.pending.into_iter().find(|p| p.op_id == self.op_id)?;
+        Some(listed.label)
     }
 
     /// The id the held list shows the write under.

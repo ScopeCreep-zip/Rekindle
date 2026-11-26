@@ -360,3 +360,61 @@ async fn a_re_unlock_in_one_app_session_re_arms_the_barrier_on_the_shell() {
         "the held MemberLeft is signed once the barrier passed"
     );
 }
+
+/// Plan E3.2 S7d-keys.8: an invite is never held. While the barrier
+/// catches up, `InviteCreate` is refused at once with the catching-up
+/// reason, before any network step and whatever else holds the
+/// community's rebuild lock (a rebuild fetching missing deps); once the
+/// barrier passed, the invite is created.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn an_invite_while_catching_up_is_refused_at_once_and_made_once_passed() {
+    let community = Community::of(3, 1821).await;
+    tokio::time::sleep(Duration::from_secs(60)).await;
+    community.nodes[0].ok(IpcRequest::Lock).await;
+    community.sim.fault(Fault::Partition {
+        a: vec![0],
+        b: vec![1, 2],
+    });
+    unlock(&community, 0).await;
+    let governance = community.nodes[0].host.governance();
+    let barrier = governance.unlock_barrier(&community.anchor);
+    assert_eq!(barrier.phase(), BarrierPhase::CatchingUp);
+    let invite = || {
+        IpcRequest::Community(CommunityRequest::Lifecycle(
+            LifecycleRequest::InviteCreate {
+                community: community.anchor.clone(),
+                max_uses: 1,
+                expires_seconds: None,
+            },
+        ))
+    };
+    let rebuild = governance.rebuild_lock(&community.anchor);
+    let rebuilding = rebuild.lock().await;
+    let answer = tokio::time::timeout(Duration::from_secs(5), community.nodes[0].call(invite()))
+        .await
+        .expect("the create is answered at once while catching up");
+    let refused = match answer {
+        Ok(created) => panic!("no invite while catching up: {created}"),
+        Err(refused) => refused,
+    };
+    assert!(
+        refused.message.contains("This community is catching up"),
+        "{}",
+        refused.message
+    );
+    drop(rebuilding);
+
+    community.sim.fault(Fault::Heal);
+    assert!(
+        eventually(&community.sim, SEEN * 2, || async {
+            barrier.phase() == BarrierPhase::Passed
+        })
+        .await,
+        "the barrier passed once a ring peer answered"
+    );
+    let created = community.nodes[0].ok(invite()).await;
+    assert!(
+        created["url"].as_str().is_some_and(|url| !url.is_empty()),
+        "{created}"
+    );
+}

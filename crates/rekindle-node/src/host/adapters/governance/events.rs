@@ -125,6 +125,16 @@ impl HostGovernance {
                     .to_string(),
                 },
             )),
+            GovernanceRuntimeEvent::HeldWriteRefused { label, reason, .. } => Some(
+                SubscriptionEvent::Notification(NotificationEvent::SystemAlert {
+                    title: "Change not made".to_string(),
+                    subject: None,
+                    body: match label {
+                        Some(label) => format!("{label}: {reason}"),
+                        None => reason.clone(),
+                    },
+                }),
+            ),
             GovernanceRuntimeEvent::OnboardingComplete {
                 community_id,
                 pseudonym_hex,

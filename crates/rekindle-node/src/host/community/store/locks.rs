@@ -156,6 +156,19 @@ impl CommunityStore {
         stop(&self.card_refreshes, community_id);
     }
 
+    /// Forget the per-session single-task markers — on every teardown, both
+    /// modes. A follow-up or card refresh runs on its community's scope, a
+    /// child of the unlock scope the teardown stops; a follow-up stopped in
+    /// its delay returns with `running` still set, and a task the scope
+    /// drops never clears it, so a kept marker left the shell's next unlock
+    /// (whose store outlives the log-out) never starting either task again.
+    /// The locks and rebuild flights stay: a dropped task's guard is released
+    /// with it, and a flight's next ticket always exceeds what it built.
+    pub fn reset_session_state(&self) {
+        self.follow_ups.lock().clear();
+        self.card_refreshes.lock().clear();
+    }
+
     /// Drop a community — on leave.
     pub fn remove(&self, community_id: &str) {
         self.map.write().remove(community_id);
@@ -259,5 +272,20 @@ mod tests {
             &store.frontier_write_lock("c")
         ));
         assert!(store.mark_follow_up("c"), "no follow-up survives the leave");
+    }
+
+    /// A teardown forgets the follow-up and card refresh a stopped task left
+    /// marked running, so the next session starts them again.
+    #[test]
+    fn reset_session_state_forgets_the_running_markers() {
+        let store = store_with("c");
+        assert!(store.mark_follow_up("c"));
+        assert!(store.mark_card_refresh("c"));
+        store.reset_session_state();
+        assert!(
+            store.mark_follow_up("c"),
+            "the next session's follow-up starts"
+        );
+        assert!(store.mark_card_refresh("c"), "and its card refresh");
     }
 }

@@ -251,7 +251,7 @@ mod tests {
         }
         let pack = |id: &str| find(&format!("builtin:{id}")).unwrap().1;
         let (sym, _) = popups_of(pack("symbiosis"));
-        assert_eq!(sym["MainInfoViewPopup"], (PopupEdge::Right, 0, 196, 196));
+        assert_eq!(sym["MainInfoViewPopup"], (PopupEdge::Right, -13, 196, 196));
         let (classic, _) = popups_of(pack("xfire-classic"));
         assert_eq!(
             classic["MainInfoViewPopup"],

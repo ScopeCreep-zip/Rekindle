@@ -141,6 +141,16 @@ pub enum GovernanceRuntimeEvent {
         entry: Box<GovernanceEntry>,
     },
 
+    /// A held governance write (plan E3.2 S7d-keys.8), answered at once as
+    /// held, was refused when its turn came and nothing was signed: the
+    /// adapter tells the user (`NotificationEvent::SystemAlert`), the held
+    /// row having left the list. `label` is the row's words.
+    HeldWriteRefused {
+        community_id: String,
+        label: Option<String>,
+        reason: String,
+    },
+
     /// A community's governance was rebuilt from its record (plan E3.1 C1)
     /// — the host publishes `GovernanceEvent::GovernanceRebuilt` and
     /// `MembershipEvent::MembersRefreshed` for it.

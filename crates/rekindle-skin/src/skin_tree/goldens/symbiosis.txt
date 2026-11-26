@@ -24,8 +24,8 @@ MenuBackground MenuBar
 UsernameContainer NameField inset [0, 28] target [0, -4, 315, 24] art [0, 4, 343, 15] Size
   Username Part
 StatusBarContainer Group
-  Status StatusText inset [0, 1] target [0, -5, 321, 24] art [0, 5, 322, 14] Size
-  StatusChanger StatusList target [-1, -3, 24, 24] art [1, 3, 18, 18] Size
+  Status StatusText target [0, -5, 322, 24] art [0, 5, 322, 14] Size
+  StatusChanger StatusList target [0, -3, 24, 24] art [0, 3, 18, 18] Size
 AdView AdArea
 TabsContainer Decor
   ButtonFriendsTab Tab(Friends)
@@ -39,7 +39,7 @@ TabsContainer Decor
   ButtonPicturesTab Tab(Pictures)
   TabSeparator5 Decor
   ButtonVideosTab Tab(Videos)
-  ButtonVideosTab.Communities Tab(Communities) label "Communities" cover [14, 15, 18, 17] glyph Communities target [0, 0, 38, 48] art [0, 0, 46, 48] Size
+  ButtonVideosTab.Communities Tab(Communities) label "Communities" cover [14, 15, 18, 17] glyph Communities
   TabSeparator6 Decor
 ButtonNotificationsTab Tab(Notifications)
   ButtonNotificationsTabControl ButtonBar
@@ -110,7 +110,7 @@ TabsButtonsContainer ButtonBar
     CommunitiesLeave Button
     ChatRoomsButtonBar.Separator2.Communities Decor
     CommunitiesNew Button
-MainInfoViewButton Button target [0, 0, 13, 115] art [0, 0, 13, 115] Spacing
+MainInfoViewButton Button target [-5, 0, 18, 115] art [5, 0, 13, 115] Spacing
 popup MainInfoViewPopup
   MainInfoResizeR Button target [-14, 0, 24, 509] art [14, 0, 10, 509] Size
   MainInfoTopRow Decor
