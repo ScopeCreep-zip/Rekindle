@@ -6,7 +6,7 @@ use super::*;
 use crate::signaling::media_key_outbox::acknowledges;
 
 /// `secret` sealed to `recipient`'s current session key under index 5.
-fn sealed_to(recipient: &Peer, secret: &[u8; 32]) -> Vec<u8> {
+pub(super) fn sealed_to(recipient: &Peer, secret: &[u8; 32]) -> Vec<u8> {
     let aad = seal_aad(CHANNEL, &recipient.id(), 5);
     session::seal(&recipient.sender_keys().session_public(), &aad, secret).unwrap()
 }

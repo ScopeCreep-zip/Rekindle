@@ -221,6 +221,8 @@ impl VoiceSessionDeps for VoiceAdapter {
             input_device: prefs.input_device,
             output_device: prefs.output_device,
             input_channels: prefs.input_channels,
+            // The GUI's Host runs on the user's devices (plan E4.1).
+            io: rekindle_voice::AudioIo::DEVICES,
         }
     }
 

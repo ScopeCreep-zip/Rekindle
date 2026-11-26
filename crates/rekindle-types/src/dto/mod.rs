@@ -31,5 +31,6 @@ pub mod skin_tree_role;
 pub mod skin_tree_span;
 pub mod transfer;
 pub mod verdict;
+pub mod voice;
 
 pub use command::{CommandError, Done};

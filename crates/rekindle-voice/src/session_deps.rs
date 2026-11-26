@@ -60,6 +60,9 @@ pub struct AudioPrefs {
     pub output_device: Option<String>,
     /// Input-channel choice per input device name (0-based, plan C7.24b).
     pub input_channels: std::collections::BTreeMap<String, Vec<u16>>,
+    /// The audio ends this host runs with (plan E4.1): devices for the GUI,
+    /// none for the netsim and a headless daemon.
+    pub io: crate::AudioIo,
 }
 
 /// Identity snapshot returned by the adapter for `start_session`

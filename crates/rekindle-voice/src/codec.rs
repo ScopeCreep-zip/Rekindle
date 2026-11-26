@@ -1,9 +1,9 @@
 use crate::error::VoiceError;
 
 /// Starting Opus bitrate, matching the per-channel default the major
-/// voice services ship. The send loop's group ladder scales down from
-/// here as the mesh grows and a struggling link backs off further, but
-/// never below [`MIN_BITRATE_BPS`].
+/// voice services ship, and the top of audio's range in the session's
+/// allocator (`transport::allocation`, plan E4.3.3): each route's estimate
+/// sets the rate within [`MIN_BITRATE_BPS`]..=this, audio first.
 pub const DEFAULT_BITRATE_BPS: i32 = 64_000;
 
 /// Floor for every bitrate decision.
@@ -65,8 +65,8 @@ impl OpusCodec {
         // Configure encoder for anonymous voice over Veilid.
         //
         // 64 kbps matches the default other major services use for a
-        // voice channel; the send loop's group ladder scales it down
-        // from here as the mesh grows.
+        // voice channel; the allocator lowers it when a route's estimate
+        // cannot carry it, never below MIN_BITRATE_BPS.
         encoder
             .set_bitrate(opus::Bitrate::Bits(DEFAULT_BITRATE_BPS))
             .map_err(|e| VoiceError::Codec(format!("set bitrate failed: {e}")))?;
@@ -93,7 +93,7 @@ impl OpusCodec {
         // CBR "can cause noticeable quality degradation" for LPC/hybrid
         // modes *at very low bit-rate*. Raising the rate is what makes
         // CBR cheap here, which is why the two land together and why
-        // the ladder's floor is kept well clear of that region.
+        // the allocator's floor is kept well clear of that region.
         encoder
             .set_vbr(false)
             .map_err(|e| VoiceError::Codec(format!("set CBR failed: {e}")))?;
@@ -309,34 +309,28 @@ mod tests {
         );
     }
 
-    /// The ladder must never drive the encoder into the region where
+    /// The allocator must never drive the encoder into the region where
     /// libopus documents CBR as costing noticeable quality.
     ///
     /// `const` blocks, so lowering a constant fails the **build** rather
     /// than a test run — this guards a security setting, and the whole
-    /// point is that it cannot be relaxed quietly.
+    /// point is that it cannot be relaxed quietly. The allocator is what
+    /// sets the Opus rate (plan E4.3.3): a starved route gets exactly the
+    /// floor and an ample one exactly the default, never past either.
     #[test]
     fn the_bitrate_floor_stays_clear_of_the_low_rate_cbr_penalty() {
+        use crate::transport::allocation::allocate;
+        use crate::transport::egress::MediaShare;
+        use rekindle_media_bwe::Bitrate;
+
         const { assert!(MIN_BITRATE_BPS >= 24_000) };
         const { assert!(DEFAULT_BITRATE_BPS >= MIN_BITRATE_BPS) };
-        // Pin the worst bitrate the system can ever emit: the smallest
-        // group rung (8+ peers) with a Poor-link backoff on top. The
-        // ladder's own arithmetic lands under the floor there, so the
-        // clamp in `report_quality_if_due` is load-bearing rather than
-        // decorative — worth stating, because deleting it as redundant
-        // would silently reopen the low-rate CBR quality hole.
-        const {
-            let worst_rung = DEFAULT_BITRATE_BPS / 2;
-            assert!(
-                worst_rung * 2 / 3 < MIN_BITRATE_BPS,
-                "clamp is load-bearing"
-            );
+        let audio = |estimate| {
+            i32::try_from(allocate(Bitrate::bps(estimate), MediaShare::default(), true).audio_bps)
+                .unwrap()
         };
-        // So the floor is what the system actually emits at its worst.
-        // (`Ord::max` is not const-callable yet, hence the runtime
-        // assertion for the clamped result.)
-        let worst_rung = DEFAULT_BITRATE_BPS / 2;
-        assert_eq!((worst_rung * 2 / 3).max(MIN_BITRATE_BPS), MIN_BITRATE_BPS);
+        assert_eq!(audio(0), MIN_BITRATE_BPS);
+        assert_eq!(audio(100_000_000), DEFAULT_BITRATE_BPS);
     }
 
     #[test]

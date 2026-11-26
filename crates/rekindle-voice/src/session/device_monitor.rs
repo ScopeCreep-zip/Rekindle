@@ -27,43 +27,59 @@ use tokio::sync::mpsc;
 
 use crate::device::{select_device, DeviceDirection, SelectedDevice};
 use crate::session_deps::{AudioPrefs, VoiceSessionDeps, VoiceShutdownOpts};
-use crate::VoiceError;
+use crate::{VoiceError, VoiceSink, VoiceSource};
 
-/// The concrete devices a call should have open right now.
+/// The concrete devices a call should have open right now: none for an
+/// end configured `Silence`/`Null` (plan E4.1 `AudioIo`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AudioTargets {
-    pub input: SelectedDevice,
-    pub output: SelectedDevice,
+    pub input: Option<SelectedDevice>,
+    pub output: Option<SelectedDevice>,
 }
 
 impl AudioTargets {
-    /// Resolve the saved choices in `prefs` against the connected devices.
+    /// Resolve the saved choices in `prefs` against the connected devices,
+    /// for the ends `prefs.io` opens; a headless end touches no host.
     pub(crate) fn select(prefs: &AudioPrefs) -> Result<Self, VoiceError> {
-        let host = cpal::default_host();
-        Ok(Self {
-            input: select_device(
-                &host,
+        let input = match prefs.io.source {
+            VoiceSource::Mic => Some(select_device(
+                &cpal::default_host(),
                 prefs.input_device.as_deref(),
                 &DeviceDirection::Input,
-            )?,
-            output: select_device(
-                &host,
+            )?),
+            VoiceSource::Silence => None,
+        };
+        let output = match prefs.io.sink {
+            VoiceSink::Speakers => Some(select_device(
+                &cpal::default_host(),
                 prefs.output_device.as_deref(),
                 &DeviceDirection::Output,
-            )?,
-        })
+            )?),
+            VoiceSink::Null => None,
+        };
+        Ok(Self { input, output })
+    }
+
+    /// The device ids to open, `(input, output)`.
+    pub(crate) fn ids(&self) -> (Option<String>, Option<String>) {
+        (
+            self.input.as_ref().map(|d| d.id.clone()),
+            self.output.as_ref().map(|d| d.id.clone()),
+        )
     }
 
     /// Whether these are the devices already open.
     fn match_open(&self, open: &(Option<String>, Option<String>)) -> bool {
-        open.0.as_deref() == Some(self.input.id.as_str())
-            && open.1.as_deref() == Some(self.output.id.as_str())
+        self.ids() == *open
     }
 
     /// Tell the user about each stand-in for a saved device that is not
     /// connected.
     pub(crate) fn announce_missing<D: VoiceSessionDeps + ?Sized>(&self, deps: &Arc<D>) {
         for (kind, selected) in [("microphone", &self.input), ("speaker", &self.output)] {
+            let Some(selected) = selected else {
+                continue;
+            };
             if let Some(saved) = &selected.saved_missing {
                 tracing::warn!(kind, saved = %saved, using = %selected.label,
                     "saved audio device not connected; using the system default");
@@ -168,10 +184,8 @@ async fn reselect<D: VoiceSessionDeps + ?Sized>(
     // our own JoinHandle would deadlock.
     crate::session::shutdown::shutdown_voice(deps, &VoiceShutdownOpts::LOOPS_ONLY).await;
     deps.stop_audio_devices();
-    deps.set_voice_engine_devices(
-        Some(targets.input.id.clone()),
-        Some(targets.output.id.clone()),
-    );
+    let (input, output) = targets.ids();
+    deps.set_voice_engine_devices(input, output);
     deps.set_voice_engine_input_channels(prefs.input_channels.clone());
     crate::session::restart::restart_loops(deps)
         .await
@@ -181,6 +195,9 @@ async fn reselect<D: VoiceSessionDeps + ?Sized>(
         ("input", &targets.input, &open.0, &prefs.input_device),
         ("output", &targets.output, &open.1, &prefs.output_device),
     ] {
+        let Some(selected) = selected else {
+            continue;
+        };
         if was.as_deref() == Some(selected.id.as_str()) {
             continue;
         }
@@ -202,4 +219,30 @@ async fn reselect<D: VoiceSessionDeps + ?Sized>(
     }
     targets.announce_missing(deps);
     Ok(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::AudioIo;
+
+    /// A headless session selects no device and so never asks the host
+    /// for one (the netsim and CI have none).
+    #[test]
+    fn headless_io_selects_no_device() {
+        let prefs = AudioPrefs {
+            noise_suppression: false,
+            echo_cancellation: false,
+            input_volume: 1.0,
+            output_volume: 1.0,
+            input_device: Some("no-such-input".into()),
+            output_device: Some("no-such-output".into()),
+            input_channels: std::collections::BTreeMap::new(),
+            io: AudioIo::HEADLESS,
+        };
+        let targets = AudioTargets::select(&prefs).unwrap();
+        assert_eq!(targets.input, None);
+        assert_eq!(targets.output, None);
+        assert!(targets.match_open(&(None, None)));
+    }
 }

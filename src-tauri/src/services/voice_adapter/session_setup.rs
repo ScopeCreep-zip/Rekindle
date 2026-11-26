@@ -55,6 +55,7 @@ pub(super) fn init_voice_session_impl(
         noise_suppression: prefs.noise_suppression,
         echo_cancellation: prefs.echo_cancellation,
         input_channels: prefs.input_channels.clone(),
+        io: prefs.io,
         ..rekindle_voice::VoiceConfig::default()
     };
     let engine = rekindle_voice::VoiceEngine::new(config)
@@ -474,9 +475,13 @@ pub(super) fn spawn_voice_loops_impl(
     // keyframes a route asks for after dropping or pausing video (plan
     // E4.3.3). DM video is 1:1 over its own path.
     if let Some((community_id, channel_id)) = follower_scope {
-        let follower = super::video_allocation::VideoAllocationFollower {
-            state: Arc::clone(state),
-            app: app.clone(),
+        let follower = rekindle_voice::transport::allocation_follower::VideoAllocationFollower {
+            encoders: super::video_allocation::DesktopVideoEncoders {
+                state: Arc::clone(state),
+                app: app.clone(),
+                community_id: community_id.clone(),
+                channel_id: channel_id.clone(),
+            },
             allocator: Arc::clone(media.allocator()),
             community_id,
             channel_id,

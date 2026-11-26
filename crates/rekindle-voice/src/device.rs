@@ -128,28 +128,44 @@ pub fn select_device(
     saved: Option<&str>,
     direction: &DeviceDirection,
 ) -> Result<SelectedDevice, VoiceError> {
-    if let Some(id) = saved {
-        if let Some(device) = direction
+    let connected_label = saved.and_then(|id| {
+        direction
             .devices(host)
             .iter()
             .find(|device| device_id(device).as_deref() == Some(id))
-        {
-            return Ok(SelectedDevice {
-                id: id.to_string(),
-                label: device_label(device),
-                saved_missing: None,
-            });
-        }
+            .map(device_label)
+    });
+    choose_device(saved, connected_label, || {
+        let default = direction.default_device(host).ok_or_else(|| {
+            VoiceError::AudioDevice(format!("no {} device available", direction.label()))
+        })?;
+        let id = device_id(&default).ok_or_else(|| {
+            VoiceError::AudioDevice(format!("{} default device has no id", direction.label()))
+        })?;
+        Ok((id, device_label(&default)))
+    })
+}
+
+/// [`select_device`]'s decision: the saved device when it is connected
+/// (`connected_label` is its label then), else the system `default`
+/// standing in with the saved choice kept, else no device at all, which
+/// is an error the user sees (plan C7.24), never a silent substitute.
+fn choose_device(
+    saved: Option<&str>,
+    connected_label: Option<String>,
+    default: impl FnOnce() -> Result<(String, String), VoiceError>,
+) -> Result<SelectedDevice, VoiceError> {
+    if let (Some(id), Some(label)) = (saved, connected_label) {
+        return Ok(SelectedDevice {
+            id: id.to_string(),
+            label,
+            saved_missing: None,
+        });
     }
-    let default = direction.default_device(host).ok_or_else(|| {
-        VoiceError::AudioDevice(format!("no {} device available", direction.label()))
-    })?;
-    let id = device_id(&default).ok_or_else(|| {
-        VoiceError::AudioDevice(format!("{} default device has no id", direction.label()))
-    })?;
+    let (id, label) = default()?;
     Ok(SelectedDevice {
         id,
-        label: device_label(&default),
+        label,
         saved_missing: saved.map(str::to_string),
     })
 }
@@ -222,5 +238,42 @@ pub fn enumerate_audio_devices() -> EnumeratedDevices {
             .iter()
             .filter_map(|d| listed(d, default_output.as_deref()))
             .collect(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn no_device() -> Result<(String, String), VoiceError> {
+        Err(VoiceError::AudioDevice("no input device available".into()))
+    }
+
+    /// A connected saved device is opened as chosen.
+    #[test]
+    fn a_connected_saved_device_is_opened() {
+        let picked = choose_device(Some("usb"), Some("USB Mic".into()), no_device).unwrap();
+        assert_eq!(picked.id, "usb");
+        assert_eq!(picked.saved_missing, None);
+    }
+
+    /// Under `Mic`, a saved device that is gone keeps the C7.24 state: the
+    /// system default stands in and the saved choice is kept to announce
+    /// it; with no device at all the session gets the error, never
+    /// `Silence` in its place.
+    #[test]
+    fn a_missing_device_stays_the_visible_c7_24_state() {
+        let default = || Ok(("builtin".to_string(), "Built-in".to_string()));
+        let stand_in = choose_device(Some("usb"), None, default).unwrap();
+        assert_eq!(stand_in.id, "builtin");
+        assert_eq!(stand_in.saved_missing.as_deref(), Some("usb"));
+        assert!(matches!(
+            choose_device(Some("usb"), None, no_device),
+            Err(VoiceError::AudioDevice(_))
+        ));
+        assert!(matches!(
+            choose_device(None, None, no_device),
+            Err(VoiceError::AudioDevice(_))
+        ));
     }
 }

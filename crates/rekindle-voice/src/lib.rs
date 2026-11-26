@@ -30,6 +30,7 @@ pub mod codec;
 pub mod device;
 pub mod election; // Phase 14 — deterministic MCU host election (pure logic).
 pub mod error;
+pub mod ingress; // Inbound media datagram policy off the app_message dispatch (plan E4.1).
 pub mod jitter;
 pub mod liveness; // Media-plane liveness ledger (call-transport proof-of-life).
 pub mod mcu_loop; // Phase 14 — MCU mixing for groups (>4 participants or stage channels).
@@ -50,9 +51,11 @@ pub mod stream_config; // cpal stream-config negotiation + format adaptation.
 pub mod topology; // Phase 14 — pure mode-decision + stage-host election math.
 pub mod transport;
 
+pub use capture::{AudioIo, VoiceSource};
 pub use election::{channel_target, elect_relay_host};
 pub use error::VoiceError;
 pub use liveness::{MediaLiveness, MEDIA_LIVE_WINDOW_MS};
+pub use playback::VoiceSink;
 pub use session_deps::{
     AudioPrefs, CallMediaKeys, MediaKeySource, VoiceIdentity, VoiceLoopScopes, VoicePeer,
     VoiceSessionDeps, VoiceSessionEvent, VoiceSessionStartup, VoiceShutdownOpts,
@@ -91,6 +94,8 @@ pub struct VoiceConfig {
     /// indices, plan C7.24b). A device without an entry averages all its
     /// channels.
     pub input_channels: std::collections::BTreeMap<String, Vec<u16>>,
+    /// The audio ends: devices, or none (plan E4.1).
+    pub io: AudioIo,
 }
 
 /// Returns recommended voice settings based on group size (9E: Adaptive Codec).
@@ -150,6 +155,7 @@ impl Default for VoiceConfig {
             input_volume: 1.0,
             output_volume: 1.0,
             input_channels: std::collections::BTreeMap::new(),
+            io: AudioIo::DEVICES,
         }
     }
 }
@@ -241,7 +247,11 @@ impl VoiceEngine {
         // Channel capacity: ~100 frames ≈ 2 seconds of audio at 20ms per frame.
         let (tx, rx) = mpsc::channel::<Vec<f32>>(100);
 
-        let mut capture = AudioCapture::new(self.config.sample_rate, self.config.channels);
+        let mut capture = AudioCapture::new(
+            self.config.sample_rate,
+            self.config.channels,
+            self.config.io.source,
+        );
         let picked = self
             .config
             .input_device
@@ -277,7 +287,11 @@ impl VoiceEngine {
     pub fn start_playback(&mut self) -> Result<(), VoiceError> {
         let (tx, rx) = mpsc::channel::<Vec<f32>>(100);
 
-        let mut pb = AudioPlayback::new(self.config.sample_rate, self.config.channels);
+        let mut pb = AudioPlayback::new(
+            self.config.sample_rate,
+            self.config.channels,
+            self.config.io.sink,
+        );
         pb.start(
             rx,
             self.config.output_device.as_deref(),
@@ -369,3 +383,6 @@ impl VoiceEngine {
         rx
     }
 }
+
+#[cfg(test)]
+mod engine_tests;

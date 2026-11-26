@@ -84,38 +84,25 @@ pub fn member_departed(
     rekindle_voice::signaling::member_departed(&deps, community_id, departed);
 }
 
-/// An inbound media-key `app_call` (plan C7.22): a `VoiceMediaKey` is
-/// installed and answered with its `VoiceMediaKeyAck`; a
-/// `VoiceMediaKeyRequest` starts our deliveries and is answered with a
-/// bare acknowledgement. Returns the reply bytes.
+/// An inbound media-key `app_call` (plans C7.22, E4.1): answered by
+/// `rekindle_voice::signaling::answer_media_key_call`, written on the wire
+/// as its ack envelope, an empty reply, or the transport's NAK.
 pub async fn answer_media_key_call(
     app_handle: &tauri::AppHandle,
     state: &Arc<AppState>,
     payload: &rekindle_codec::community::envelope::ControlPayload,
 ) -> Vec<u8> {
-    use rekindle_codec::community::envelope::ControlPayload;
+    use rekindle_transport::operations::direct::NAK;
+    use rekindle_voice::signaling::MediaKeyAnswer;
     let Ok(pool) = state.db.current() else {
-        return b"ACK".to_vec();
+        return NAK.to_vec();
     };
     let deps: Arc<dyn VoiceSignalingDeps> =
         VoiceSignalingAdapter::new(state.clone(), app_handle.clone(), pool);
-    match payload {
-        ControlPayload::VoiceMediaKey { .. } => {
-            rekindle_voice::signaling::handle_voice_media_key(&deps, payload)
-                .await
-                .and_then(|ack| {
-                    rekindle_codec::capnp_envelope::encode_community_envelope(
-                        &CommunityEnvelope::control(ack),
-                    )
-                    .ok()
-                })
-                .unwrap_or_else(|| b"ACK".to_vec())
-        }
-        ControlPayload::VoiceMediaKeyRequest { .. } => {
-            rekindle_voice::signaling::handle_voice_media_key_request(&deps, payload);
-            b"ACK".to_vec()
-        }
-        _ => b"ACK".to_vec(),
+    match rekindle_voice::signaling::answer_media_key_call(&deps, payload).await {
+        MediaKeyAnswer::Ack(envelope) => envelope,
+        MediaKeyAnswer::Accepted => Vec::new(),
+        MediaKeyAnswer::Refused => NAK.to_vec(),
     }
 }
 

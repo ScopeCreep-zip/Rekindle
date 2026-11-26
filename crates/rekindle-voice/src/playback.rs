@@ -20,6 +20,17 @@ const PLAYBACK_LABELS: AudioThreadLabels = AudioThreadLabels {
     direction: "playback",
 };
 
+/// Where a voice session's decoded audio goes (plan E4.1): the user's
+/// output device, or nowhere. `Null` opens no device and discards every
+/// mixed frame, so the receive loop runs (it stops without a playback
+/// sender) in the netsim, CI and a headless daemon. Configuration, never
+/// a substitute for a missing speaker (see [`crate::capture::VoiceSource`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VoiceSink {
+    Speakers,
+    Null,
+}
+
 /// Audio playback to the speaker via cpal.
 ///
 /// Opens the system's default output device on a dedicated audio thread and
@@ -30,13 +41,19 @@ const PLAYBACK_LABELS: AudioThreadLabels = AudioThreadLabels {
 /// on macOS), so `AudioPlayback` itself is `Send`.
 pub struct AudioPlayback {
     thread: AudioThread,
+    sink: VoiceSink,
+    /// Under [`VoiceSink::Null`], the thread draining the pipeline; it ends
+    /// when the receive loop drops its sender.
+    null: Option<std::thread::JoinHandle<()>>,
 }
 
 impl AudioPlayback {
-    /// Create a new audio playback instance.
-    pub fn new(sample_rate: u32, channels: u16) -> Self {
+    /// Create a new audio playback instance for `sink`.
+    pub fn new(sample_rate: u32, channels: u16, sink: VoiceSink) -> Self {
         Self {
             thread: AudioThread::new(sample_rate, channels, PLAYBACK_LABELS),
+            sink,
+            null: None,
         }
     }
 
@@ -48,6 +65,15 @@ impl AudioPlayback {
         depth_ms: Arc<AtomicU32>,
         device_error_tx: Option<mpsc::Sender<String>>,
     ) -> Result<(), VoiceError> {
+        if self.sink == VoiceSink::Null {
+            let mut rx = rx;
+            let drain = std::thread::Builder::new()
+                .name("audio-null-sink".into())
+                .spawn(move || while rx.blocking_recv().is_some() {})
+                .map_err(|e| VoiceError::AudioDevice(format!("failed to spawn null sink: {e}")))?;
+            self.null = Some(drain);
+            return Ok(());
+        }
         self.thread.start(
             device_name,
             device_error_tx,
@@ -66,11 +92,13 @@ impl AudioPlayback {
 
     /// Stop playback.
     pub fn stop(&mut self) {
+        // Detached: the drain ends with the receive loop's sender.
+        self.null = None;
         self.thread.stop();
     }
 
     pub fn is_active(&self) -> bool {
-        self.thread.is_active()
+        self.null.is_some() || self.thread.is_active()
     }
 }
 

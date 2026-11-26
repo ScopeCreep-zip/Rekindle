@@ -8,6 +8,7 @@ use crate::error::VoiceError;
 use rekindle_codec::capnp_codec::SignedWire;
 
 pub mod allocation;
+pub mod allocation_follower;
 pub mod egress;
 pub mod feedback_stats;
 pub mod link;

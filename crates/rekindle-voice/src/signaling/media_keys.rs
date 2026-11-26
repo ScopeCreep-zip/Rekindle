@@ -374,11 +374,13 @@ pub async fn handle_voice_media_key(
 }
 
 /// A `VoiceMediaKeyRequest` call: if it asks for our key and the requester
-/// is on our roster, deliver our keys from its admission on.
+/// is on our roster, deliver our keys from its admission on. Returns
+/// whether the request was accepted (it names us, in the channel we are
+/// in, while our transport runs); the roster check follows on the task.
 pub fn handle_voice_media_key_request(
     deps: &Arc<dyn VoiceSignalingDeps>,
     payload: &ControlPayload,
-) {
+) -> bool {
     let ControlPayload::VoiceMediaKeyRequest {
         community_id,
         channel_id,
@@ -387,15 +389,15 @@ pub fn handle_voice_media_key_request(
         ..
     } = payload
     else {
-        return;
+        return false;
     };
     if deps.my_pseudonym(community_id).as_ref() != Some(sender)
         || !deps.voice_engine_bound_to(community_id, channel_id)
     {
-        return;
+        return false;
     }
     let Some(transport) = deps.transport_handle() else {
-        return;
+        return false;
     };
     let deps_task = Arc::clone(deps);
     let (cid, ch, requester) = (community_id.clone(), channel_id.clone(), requester.clone());
@@ -412,6 +414,7 @@ pub fn handle_voice_media_key_request(
                 spawn_delivery(&deps_task, &cid, &ch, &requester, key);
             }
         });
+    true
 }
 
 #[cfg(test)]

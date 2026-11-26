@@ -50,8 +50,13 @@ pub async fn start_session<D: VoiceSessionDeps + ?Sized>(
     let mut prefs = deps.audio_prefs();
     let targets = crate::session::device_monitor::AudioTargets::select(&prefs)?;
     targets.announce_missing(deps);
-    prefs.input_device = Some(targets.input.id);
-    prefs.output_device = Some(targets.output.id);
+    let (input, output) = targets.ids();
+    if input.is_some() {
+        prefs.input_device = input;
+    }
+    if output.is_some() {
+        prefs.output_device = output;
+    }
 
     // Self-identity on the voice wire: the per-community pseudonym for
     // community voice (so our signed packets verify against the
