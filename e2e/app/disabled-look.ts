@@ -58,18 +58,37 @@ export async function disabledLook(ids: string[]): Promise<Record<string, number
  * nothing can be found on the shot. `inactive` measures instead the nodes a
  * window that lost focus drew in its `windowInactive` state (not refused).
  */
-export async function disabledLookWithBoxes(ids: string[], inactive = false): Promise<Record<string, { changed: number; box: number[]; why?: string }>> {
+export async function disabledLookWithBoxes(ids: string[], inactive = false): Promise<Record<string, { changed: number; box: number[]; why?: string; packArt?: boolean }>> {
   const width = (await browser.execute(() => innerWidth)) as number;
   const served = decodePng(Buffer.from(await browser.takeScreenshot(), "base64"));
   const scale = served.width / width;
-  const out: Record<string, { changed: number; box: number[]; why?: string }> = {};
+  const out: Record<string, { changed: number; box: number[]; why?: string; packArt?: boolean }> = {};
+  // The art the marked node draws: its own and its descendants' background
+  // image and position, with their ::before and ::after layers (the served
+  // sheet lays a state's art on these). The served sheet itself is not
+  // readable from the page (skin:// is another origin), its computed result is.
+  const art = async (): Promise<string> =>
+    (await browser.execute(() => {
+      const n = document.querySelector<HTMLElement>('[data-cr1-look="1"]');
+      if (!n) return "";
+      return [n, ...Array.from(n.querySelectorAll<HTMLElement>("*"))]
+        .flatMap((e) => [null, "::before", "::after"].map((p) => {
+          const c = getComputedStyle(e, p);
+          return `${c.backgroundImage}@${c.backgroundPosition}`;
+        }))
+        .join("|");
+    })) as string;
   const paint = async (): Promise<string[]> =>
     (await browser.execute((props: string[]) => {
       const n = document.querySelector<HTMLElement>('[data-cr1-look="1"]');
       if (!n) return [];
       return [n, ...Array.from(n.querySelectorAll<HTMLElement>("*"))].map((e, i) => {
         const c = getComputedStyle(e);
-        return `${i}:${e.tagName.toLowerCase()}.${e.className || "-"} ${props.map((p) => `${p}=${c.getPropertyValue(p).slice(0, 60)}`).join(" ")} hover=${e.matches(":hover")} focus=${e.matches(":focus-visible")}`;
+        const layers = ["::before", "::after"].map((p) => {
+          const l = getComputedStyle(e, p);
+          return `${p}=${l.backgroundImage.split("/").pop()?.slice(0, 40)}@${l.backgroundPosition}`;
+        });
+        return `${i}:${e.tagName.toLowerCase()}.${e.className || "-"} ${props.map((p) => `${p}=${c.getPropertyValue(p).slice(0, 60)}`).join(" ")} ${layers.join(" ")} hover=${e.matches(":hover")} focus=${e.matches(":focus-visible")}`;
       });
     }, PAINT_PROPS)) as string[];
   for (const id of ids) {
@@ -91,6 +110,7 @@ export async function disabledLookWithBoxes(ids: string[], inactive = false): Pr
     if (!box) continue;
     const enabled = decodePng(Buffer.from(await browser.takeScreenshot(), "base64"));
     const normalPaint = inactive ? await paint() : [];
+    const normalArt = inactive ? await art() : "";
     await browser.execute(() => {
       const n = document.querySelector<HTMLElement>('[data-cr1-look="1"]');
       const keep = (window as unknown as { __cr1Keep: { state: string | null; by: string | null; cause: string | null; aria: string | null } }).__cr1Keep;
@@ -118,6 +138,9 @@ export async function disabledLookWithBoxes(ids: string[], inactive = false): Pr
         n?.setAttribute("data-cr1-look", "1");
       }, id);
       const servedPaint = await paint();
+      // The pack's own Disabled art for this node: the art it draws in its
+      // served windowInactive state differs from its Normal art.
+      out[id].packArt = (await art()) !== normalArt;
       await browser.execute(() => document.querySelector('[data-cr1-look="1"]')?.removeAttribute("data-cr1-look"));
       const changedProps = servedPaint.map((line, i) => (line === normalPaint[i] ? null : `${line}  ->  ${normalPaint[i] ?? "(absent)"}`)).filter((l) => l !== null);
       const pad = Math.round(4 * scale);
