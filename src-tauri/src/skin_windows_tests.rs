@@ -80,3 +80,16 @@ async fn an_unfocused_buddy_list_is_served_its_signals() {
     );
     t.shutdown().await;
 }
+
+/// Plan SKW1: a community window wears the pack's frame, so it carries
+/// signals like a chat window; the community browser wears none and does not.
+#[test]
+fn a_community_window_carries_signals_and_the_browser_none() {
+    use super::is_skin_window;
+    assert!(is_skin_window("community-VLD0:abcdefghijkl"));
+    assert!(!is_skin_window(&crate::window_labels::community_label(
+        None
+    )));
+    assert!(is_skin_window(crate::window_labels::BUDDY_LIST));
+    assert!(!is_skin_window(crate::window_labels::LOGIN));
+}

@@ -17,6 +17,8 @@ mod titles;
 
 pub use rebind::follow_event;
 pub use reveal::reveal_window;
+/// Which skin frame a window wears, by label (the signal windows, `skin_windows`).
+pub use shape::frame_of_label;
 
 use rekindle_types::id::ChannelId;
 use rekindle_types::key_format::{self, PublicKeyHex};
@@ -358,7 +360,13 @@ pub fn open_community_window(
     };
     let builder = base_builder(app, WindowKind::Community, &label, path)?
         .title(titles::community(state, community.as_ref()));
-    finish(builder, WindowKind::Community).map(drop)
+    finish(builder, WindowKind::Community)?;
+    // A community window wears the pack's frame (plan SKW1) and follows the
+    // window's signals like a chat's; the browser (no community) wears none.
+    if community.is_some() {
+        crate::skin_windows::opened(app, &label, None, None);
+    }
+    Ok(())
 }
 
 /// Bring the buddy list forward for something the user must answer now:

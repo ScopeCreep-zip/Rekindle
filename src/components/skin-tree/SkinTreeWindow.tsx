@@ -3,9 +3,9 @@ import { createStore, produce } from "solid-js/store";
 import { Dynamic } from "solid-js/web";
 import type { EngineMenu, MenuItem, NodeGlyph, NodeLabel, NodeTrigger, ShellNode, SkinAction, SkinEvent, SkinShell, SlotKey, ViewKey } from "../../ipc/commands/dto_skin_tree";
 import { useSlotRegister } from "./slots";
-import type { DisableCause, SkinSignalSet } from "../../ipc/commands/dto_skin_run";
+import type { SkinSignalSet } from "../../ipc/commands/dto_skin_run";
 import { skinSignals } from "../../stores/skin-signals.store";
-import { applyTreeOp, fired, initialTreeState, pageView, signalFlags, type TreeState } from "./signalEffects";
+import { applyTreeOp, fired, initialTreeState, pageView, signalFlags, type StateCause, type TreeState } from "./signalEffects";
 import type { TreePieces } from "./tree_pieces";
 import { dispatchSkinAction, registerShellRunner } from "../../actions/skin.actions";
 import { handleOpenDocs, openSettingsTab } from "../../actions/app_menu.actions";
@@ -207,11 +207,15 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
   const role = (): ShellNode["role"] => props.node.role;
   const press = (): SkinAction | undefined => pressAction(n());
   const fx = () => tree.state.nodes[n().id];
-  const disabled = (): boolean => fx()?.state === "disabled";
-  /** The Host's words for why this node is disabled (plan CR1). */
+  /** Refused (plan CR1): in its Disabled art for a refusal, so not
+   *  pressable, and saying why. The pack's unfocused-window look draws the
+   *  same art (`windowInactive`) on a node that stays pressable (lead
+   *  ruling): an inactive window's caption buttons still work. */
+  const disabled = (): boolean => fx()?.state === "disabled" && fx()?.cause !== "windowInactive";
+  /** The Host's words for why this node is refused (plan CR1). */
   const disabledReason = (): string | undefined => {
     const cause = fx()?.cause;
-    return cause ? skinSignals()?.disabledReasons[cause] : undefined;
+    return cause && cause !== "windowInactive" ? skinSignals()?.disabledReasons[cause] : undefined;
   };
   const slotKey = (): SlotKey | undefined => {
     const r = role();
@@ -297,6 +301,11 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
     },
     get "data-state"() {
       return fx()?.state;
+    },
+    // Why the node shows its Disabled art: a refusal's cause, or
+    // `windowInactive` (the pack's unfocused-window look).
+    get "data-state-cause"() {
+      return fx()?.state === "disabled" ? fx()?.cause : undefined;
     },
     // A text field's served inset (plan SK5): its text keeps clear of the
     // pack's controls laid over it.
@@ -513,7 +522,7 @@ const SkinTreeWindow: Component<{
   const [nameEdits, setNameEdits] = createSignal(0);
   const root = (): ShellNode[] => props.shell.root;
 
-  const treeOp = (node: string, action: SkinAction, cause?: DisableCause): boolean => {
+  const treeOp = (node: string, action: SkinAction, cause?: StateCause): boolean => {
     let done = false;
     setState(produce((s) => (done = applyTreeOp(s, node, action, root(), cause))));
     return done;

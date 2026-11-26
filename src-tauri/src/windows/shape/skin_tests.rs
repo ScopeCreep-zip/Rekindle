@@ -102,7 +102,10 @@ fn a_window_the_skin_does_not_frame_keeps_its_rectangle() {
 #[test]
 fn a_community_window_wears_the_community_frame_and_the_browser_none() {
     assert_eq!(frame_of(WindowKind::Community), Some(SkinWindow::Community));
-    assert_eq!(frame_of_label("community-0123456789abcdef"), Some(SkinWindow::Community));
+    assert_eq!(
+        frame_of_label("community-0123456789abcdef"),
+        Some(SkinWindow::Community)
+    );
     assert_eq!(frame_of_label("community-browser"), None);
     assert_eq!(frame_of_label("buddy-list"), Some(SkinWindow::Main));
     assert_eq!(frame_of_label("settings"), None);

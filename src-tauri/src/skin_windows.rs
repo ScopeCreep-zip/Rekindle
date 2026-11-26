@@ -2,8 +2,9 @@
 //! step 3, design §2.5): each window's OS focus (`OnActivate` /
 //! `OnDeactivate`), its opening with what it shows from the start (a chat
 //! window's own peer, lead decision 48) and its closing. Only the windows
-//! drawn from a skin tree carry signals: the buddy list, chat windows and
-//! the pack popups they launch (plan SK2-A5).
+//! drawn from a skin tree carry signals: the buddy list, chat windows, a
+//! community window (plan SKW1: the pack's chat frame) and the pack popups
+//! they launch (plan SK2-A5). The community browser is no skin tree.
 //!
 //! The shell announces its windows; the Host never enumerates them (ADR
 //! 0010). A window opened while a Host runs announces itself (`opened`);
@@ -18,12 +19,12 @@ use tauri::{AppHandle, Manager, Runtime, Window, WindowEvent};
 use crate::state::SharedState;
 use crate::window_labels::WindowKind;
 
-/// Whether the window labelled `label` is drawn from a skin tree.
+/// Whether the window labelled `label` is drawn from a skin tree: the
+/// windows wearing a pack frame (`frame_of_label`, which leaves out the
+/// community browser) and the pack popups.
 fn is_skin_window(label: &str) -> bool {
-    matches!(
-        WindowKind::of_label(label),
-        Some(WindowKind::BuddyList | WindowKind::Chat | WindowKind::SkinPopup)
-    )
+    crate::windows::frame_of_label(label).is_some()
+        || matches!(WindowKind::of_label(label), Some(WindowKind::SkinPopup))
 }
 
 fn host<R: Runtime>(app: &AppHandle<R>) -> Option<std::sync::Arc<rekindle_node::host::Host>> {
