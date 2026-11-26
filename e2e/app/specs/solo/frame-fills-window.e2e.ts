@@ -186,9 +186,12 @@ describe("the pack frame reaches the window's edges; a side tab protrudes beside
     });
   }
 
-  // The edge check's mutation proof: Combat's main window with one of its
-  // frame art layers at the right edge hidden must disagree with the
-  // silhouette (drawn pixels gone inside it); restored, it agrees again.
+  // The edge check's mutation proof (lead): a real transparency gap inside
+  // the silhouette must be caught. Hiding the right-edge frame art alone
+  // leaves the window's ground (clipped to the silhouette) there, so it
+  // changes colour, not alpha (logged: before, art hidden); clearing the
+  // ground too makes the gap. Whether art is drawn at all (colour against
+  // the ground) is a different test, not this one.
   it("combat: a frame art layer hidden at the right edge is caught by the edge check", async () => {
     const pack = builtinPacks().find((p) => p.file === "combat");
     if (!pack) throw new Error("no built-in pack combat");
@@ -198,14 +201,25 @@ describe("the pack frame reaches the window's edges; a side tab protrudes beside
     await switchTo(browser, BUDDY);
     await skinShown(browser, href);
     await browser.pause(1500);
-    // Every frame art layer reaching the right edge: the frame draws one
-    // spot from more than one layer (a first run hid only the top-right
-    // piece and another layer still drew those pixels, so nothing showed).
+    // A point inside the right-edge frame art, and its colour before.
+    const [w, h] = (await browser.execute(() => [window.innerWidth, window.innerHeight])) as [number, number];
+    const shoot = async (): Promise<Rgba> => decodePng(Buffer.from(await browser.takeScreenshot(), "base64"));
+    const at = (img: Rgba, x: number, y: number): string => {
+      const s = img.width / w;
+      const i = (Math.round(y * s) * img.width + Math.round(x * s)) * 4;
+      return `rgba(${img.data[i]},${img.data[i + 1]},${img.data[i + 2]},${img.data[i + 3]})`;
+    };
+    const probePoint: [number, number] = [w - 6, Math.round(h / 2)];
+    const before = at(await shoot(), ...probePoint);
+    // 1. Every frame art layer reaching the right edge hidden (the frame
+    //    draws one spot from more than one layer). The window's ground
+    //    (`.app-frame`, clipped to the silhouette) still fills there, so
+    //    this changes colour, not alpha: no gap yet.
     const hidden = (await browser.execute(() => {
-      const w = window.innerWidth;
+      const vw = window.innerWidth;
       const layers = Array.from(document.querySelectorAll<HTMLElement>(".skin-frame i")).filter((i) => {
         const r = i.getBoundingClientRect();
-        return r.right >= w - 1 && r.width > 0 && r.height > 0 && getComputedStyle(i).backgroundImage !== "none";
+        return r.right >= vw - 1 && r.width > 0 && r.height > 0 && getComputedStyle(i).backgroundImage !== "none";
       });
       for (const layer of layers) {
         layer.style.setProperty("visibility", "hidden", "important");
@@ -218,16 +232,22 @@ describe("the pack frame reaches the window's edges; a side tab protrudes beside
     })) as string[];
     if (hidden.length === 0) throw new Error("combat: no frame art layer at the right edge to hide");
     await browser.pause(500);
-    const [w, h] = (await browser.execute(() => [window.innerWidth, window.innerHeight])) as [number, number];
-    const img = decodePng(Buffer.from(await browser.takeScreenshot(), "base64"));
+    const artHidden = at(await shoot(), ...probePoint);
+    // 2. The ground cleared too: a real transparency gap inside the
+    //    silhouette, which the edge check must catch.
+    await browser.execute(() => document.querySelector<HTMLElement>(".app-frame")?.style.setProperty("background", "transparent", "important"));
+    await browser.pause(500);
+    const img = await shoot();
+    const gap = at(img, ...probePoint);
     const scale = img.width / w;
     const cut = silhouette("combat", "main", w, h, Math.round(scale * 1000));
     const edge = Math.round(16 * scale);
     const off = disagreements(img, cut, [[0, edge], [img.width - edge, img.width]], 4);
-    console.log(`[tab] combat mutation: hid ${hidden.length} frame layers at the right edge ${JSON.stringify(hidden)}; edges vs silhouette: drawn outside ${off.outsideDrawn}, clear inside ${off.insideClear}; ${JSON.stringify(off.first)}`);
+    console.log(`[tab] combat mutation: hid ${hidden.length} frame layers at the right edge ${JSON.stringify(hidden)}; pixel ${probePoint.join(",")} before ${before}, art hidden ${artHidden}, ground cleared ${gap}; edges vs silhouette: drawn outside ${off.outsideDrawn}, clear inside ${off.insideClear}; ${JSON.stringify(off.first)}`);
     await shot("combat-main-mutated");
     await browser.execute(() => {
       for (const l of Array.from(document.querySelectorAll<HTMLElement>('.skin-frame i[data-mutated="1"]'))) l.style.removeProperty("visibility");
+      document.querySelector<HTMLElement>(".app-frame")?.style.removeProperty("background");
     });
     expect({ caught: off.insideClear > 0 }).toEqual({ caught: true });
   });
