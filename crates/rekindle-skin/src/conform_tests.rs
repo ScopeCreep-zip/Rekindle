@@ -10,7 +10,9 @@ fn symbiosis() -> &'static [u8] {
 
 fn alternate() -> SkinManifest {
     let bytes = symbiosis();
-    served(bytes, &package::read(bytes).unwrap(), address()).unwrap()
+    served(bytes, &package::read(bytes).unwrap(), address())
+        .unwrap()
+        .0
 }
 
 fn original() -> SkinManifest {
@@ -97,7 +99,7 @@ fn the_alternate_has_its_own_address() {
     assert_ne!(address(), sym);
     assert!(builtin::by_address(address()).is_none());
     let p = package::read(symbiosis()).unwrap();
-    assert_eq!(served(symbiosis(), &p, &sym).unwrap(), original());
+    assert_eq!(served(symbiosis(), &p, &sym).unwrap().0, original());
     let other = builtin::find("builtin:combat").unwrap().1.bytes;
     let q = package::read(other).unwrap();
     assert!(served(other, &q, address()).is_err());

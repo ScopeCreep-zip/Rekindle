@@ -31,8 +31,8 @@ TabHeader TabStrip
     TabDownloadButton Tab(Files) target [0, -2, 87, 24] art [0, 2, 87, 20] Size
     TabDownloadButton.Communities Tab(Communities) label "Communities" cover [8, 4, 71, 12] target [0, -4, 87, 24] art [0, 4, 87, 20] Size
 Bottom Decor target [0, 0, 376, 170] art [0, 0, 376, 170] Frame
-AdArea AdArea
-  AdView Part
+AdArea Decor
+  AdView AdArea
 ButtonHolder ButtonBar
   FriendsButtons ButtonRow(Friends)
     FriendsButtons.TabAddButton Group

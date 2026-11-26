@@ -6,8 +6,8 @@
 // tree, whose status area is the pack's status field (StatusField.tsx).
 
 import { browser, expect } from "@wdio/globals";
-import { NET_WAIT_MS, gone, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
-import { BUDDY, openSettings, underTree } from "../../../walk/nav.ts";
+import { NET_WAIT_MS, gone, press, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
+import { BUDDY, SETTINGS, closeSettings, openSettings, underTree } from "../../../walk/nav.ts";
 import { createIdentity, newUser, type User } from "../../journeys.ts";
 import { applySkin, skinShown } from "../../journeys_skins.ts";
 import { decodePng } from "../../png.ts";
@@ -24,16 +24,33 @@ const FIELD = ".skin-status-edit";
  * How many pixels inside the status field's box change when `selector`
  * (the paused line or the input) is hidden: what of it is seen there.
  */
-async function seenInField(selector: string): Promise<number> {
-  const box = (await browser.execute(() => {
-    const r = document.querySelector(".skin-status")?.getBoundingClientRect();
-    return r ? [r.x, r.y, r.width, r.height, innerWidth] : null;
-  })) as number[] | null;
-  if (!box) throw new Error("no status field");
-  const served = decodePng(Buffer.from(await browser.takeScreenshot(), "base64"));
+async function seenInField(selector: string, within = ".skin-status"): Promise<number> {
+  const box = await boxOf(within);
+  const served = await screen();
   await browser.execute((sel: string) => document.querySelector<HTMLElement>(sel)?.style.setProperty("visibility", "hidden"), selector);
-  const hidden = decodePng(Buffer.from(await browser.takeScreenshot(), "base64"));
+  const hidden = await screen();
   await browser.execute((sel: string) => document.querySelector<HTMLElement>(sel)?.style.removeProperty("visibility"), selector);
+  return changedIn(box, served, hidden);
+}
+
+type Png = ReturnType<typeof decodePng>;
+
+async function screen(): Promise<Png> {
+  return decodePng(Buffer.from(await browser.takeScreenshot(), "base64"));
+}
+
+/** `selector`'s box in CSS px, with the window's width for the scale. */
+async function boxOf(selector: string): Promise<number[]> {
+  const box = (await browser.execute((sel: string) => {
+    const r = document.querySelector(sel)?.getBoundingClientRect();
+    return r ? [r.x, r.y, r.width, r.height, innerWidth] : null;
+  }, selector)) as number[] | null;
+  if (!box) throw new Error(`no ${selector}`);
+  return box;
+}
+
+/** Pixels inside `box` that differ between two screenshots. */
+function changedIn(box: number[], served: Png, hidden: Png): number {
   const scale = served.width / box[4];
   const [x, y, w, h] = box.slice(0, 4).map((v) => Math.round(v * scale));
   let changed = 0;
@@ -46,8 +63,76 @@ async function seenInField(selector: string): Promise<number> {
   return changed;
 }
 
-/** Every built-in pack that lays the buddy list's status field. */
-const PACKS = ["symbiosis", "combat", "onyx", "alloy", "xslimfire", "simple-x", "total-chaos", "xfire-classic"];
+/** Every built-in pack that lays the buddy list's status field (XGlow's since TXZ). */
+const PACKS = ["symbiosis", "combat", "onyx", "alloy", "xslimfire", "simple-x", "total-chaos", "xfire-classic", "xglow"];
+
+/** Typed text, while the field is edited, changes the field's pixels; the
+ *  edit is then left (blur), which puts back the Host's stored message. */
+async function typedSeen(): Promise<number> {
+  const field = await browser.$(FIELD);
+  // The driver's element click focuses the input (as the away-message test);
+  // press() dispatches events in the page, which focus nothing.
+  await field.click();
+  // The first click into a window the driver has not focused yet may only
+  // raise it (Linux, Symbiosis's first field): once, logged, it clicks again.
+  if (!(await waitUntil(async () => !(await browser.$(PAUSED).isDisplayed().catch(() => false)), 5_000, "").then(() => true, () => false))) {
+    console.log(`[paused] the first click did not focus the status field (active: ${await browser.execute(() => document.activeElement?.className ?? "none")}); clicking again`);
+    await field.click();
+  }
+  await gone(browser, PAUSED, NET_WAIT_MS);
+  await field.clearValue();
+  await browser.pause(300);
+  const box = await boxOf(".skin-status");
+  const empty = await screen();
+  await browser.keys("txz typed text".split(""));
+  await browser.pause(300);
+  const typed = await screen();
+  await shot("paused-field-typing");
+  await browser.execute(() => (document.activeElement as HTMLElement | null)?.blur());
+  await shown(browser, PAUSED, NET_WAIT_MS);
+  return changedIn(box, empty, typed);
+}
+
+/** The status list's arrow, found by its served role (`statusList`, the
+ *  pack's DownArrow), is on top at its centre and opens the list; what it is
+ *  and what opened are logged. */
+async function arrowOpens(): Promise<string> {
+  const ARROW = '.skin-tree [data-skin-role="statusList"]';
+  const top = (await browser.execute((sel: string) => {
+    const a = Array.from(document.querySelectorAll<HTMLElement>(sel)).find((e) => !e.closest("[hidden]") && e.getBoundingClientRect().width > 0);
+    if (!a) return `no statusList node (nodes with a status role: ${Array.from(document.querySelectorAll<HTMLElement>('[data-skin-role^="status"]')).map((e) => `${e.dataset.skinNode}(${e.dataset.skinRole}) ${e.tagName.toLowerCase()}.${e.className}`).join(", ") || "none"})`;
+    const r = a.getBoundingClientRect();
+    const at = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+    const what = `${a.dataset.skinNode} ${a.tagName.toLowerCase()}.${a.className || "-"} aria-haspopup=${a.getAttribute("aria-haspopup")}`;
+    return at && a.contains(at) ? `on top: ${what}` : `covered by ${at?.tagName.toLowerCase()}.${(at as HTMLElement | null)?.className ?? "-"} (arrow ${what})`;
+  }, ARROW)) as string;
+  console.log(`[paused] status list arrow: ${top}`);
+  if (!top.startsWith("on top")) return top;
+  await press(browser, await browser.$(ARROW));
+  const opened = await waitUntil(async () => (await browser.$('[role="menu"]').isDisplayed().catch(() => false)), NET_WAIT_MS, "").then(() => true, () => false);
+  // The pack's arrow is a pack menu (Kobalte's Menubar: its entries are
+  // `menuitem`s), the shell's status list a radio group: either way the
+  // Host's statuses are its entries, read once they have rendered.
+  const items = async (): Promise<string[]> =>
+    (await browser.execute(() => {
+      const m = document.querySelector<HTMLElement>('[role="menu"]');
+      return m ? Array.from(m.querySelectorAll('[role="menuitem"], [role="menuitemradio"]')).map((i) => i.textContent?.trim() ?? "") : [];
+    })) as string[];
+  if (opened) await waitUntil(async () => (await items()).length > 0, 5_000, "").catch(() => undefined);
+  const entries = opened ? await items() : [];
+  const menuClass = (await browser.execute(() => document.querySelector<HTMLElement>('[role="menu"]')?.className ?? "none")) as string;
+  console.log(`[paused] status list opened: ${opened} (${menuClass} items ${JSON.stringify(entries)})`);
+  if (!opened) return "the arrow did not open the status list";
+  await browser.keys(["Escape"]);
+  await gone(browser, '[role="menu"]', NET_WAIT_MS);
+  // Kobalte's menubar stays in menubar mode after Escape (the next press on
+  // another bar title then did not open it: Combat's Settings never opened):
+  // focus leaves the bar.
+  await browser.execute(() => (document.activeElement as HTMLElement | null)?.blur());
+  const statuses = ["Online", "Away", "Busy"];
+  const missing = statuses.filter((st) => !entries.some((e) => e.startsWith(st)));
+  return missing.length === 0 ? "opens the status list" : `the status list lacks ${missing.join(", ")} (entries ${JSON.stringify(entries)})`;
+}
 
 describe("a paused inbound route is said in the tree's status field, which stays usable", function () {
   this.timeout(600_000);
@@ -76,6 +161,10 @@ describe("a paused inbound route is said in the tree's status field, which stays
       await switchTo(browser, BUDDY);
       await openSettings(browser, "Appearance");
       const href = await applySkin(browser, me, pack.name);
+      // Settings closes after each switch, so the next pack's opens fresh
+      // and frontmost (left open, its Appearance tab took no click).
+      await switchTo(browser, SETTINGS);
+      await closeSettings(browser);
       await switchTo(browser, BUDDY);
       await skinShown(browser, href);
       // Evidence first (a pack that shows no line): the status node's and
@@ -110,8 +199,100 @@ describe("a paused inbound route is said in the tree's status field, which stays
       const line = await seenInField(PAUSED);
       const input = await seenInField(FIELD);
       console.log(`[paused] ${file}: hiding the line changes ${line} px, hiding the input ${input} px (one text: line >= 20, input < 20)`);
+      // Every pack (the five that pass and the two that do not): the line's
+      // own paint and box, and the status input's ground, opaque or not.
+      const paint = (await browser.execute(() => {
+        const l = document.querySelector<HTMLElement>(".skin-status-paused");
+        const i = document.querySelector<HTMLElement>(".skin-status-edit");
+        const box = (e: HTMLElement | null): string => {
+          if (!e) return "none";
+          const r = e.getBoundingClientRect();
+          return `${Math.round(r.x)},${Math.round(r.y)} ${Math.round(r.width)}x${Math.round(r.height)}`;
+        };
+        const alpha = (c: string): number => {
+          const m = /rgba?\(([^)]+)\)/.exec(c);
+          if (!m) return c === "transparent" ? 0 : 1;
+          const parts = m[1].split(",").map((v) => parseFloat(v));
+          return parts.length === 4 ? parts[3] : 1;
+        };
+        const li = l ? getComputedStyle(l) : null;
+        const ii = i ? getComputedStyle(i) : null;
+        return JSON.stringify({
+          line: { box: box(l), color: li?.color, background: li?.backgroundColor, backgroundImage: li?.backgroundImage },
+          input: { box: box(i), background: ii?.backgroundColor, opaque: ii ? alpha(ii.backgroundColor) === 1 : null, backgroundImage: ii?.backgroundImage },
+        });
+      })) as string;
+      console.log(`[paused] ${file} paint: ${paint}`);
+      // Lead (Alloy, 15 px): a line not seen, measured before anything
+      // changes: every element at its centre, topmost first, with its
+      // stacking and paint, and the line's text colour against the ground
+      // under it.
+      if (line < 20) {
+        const stack = (await browser.execute(() => {
+          const l = document.querySelector<HTMLElement>(".skin-status-paused");
+          if (!l) return "no line";
+          const r = l.getBoundingClientRect();
+          const cs = getComputedStyle(l);
+          const at = document.elementsFromPoint(r.x + r.width / 2, r.y + r.height / 2).slice(0, 8).map((e) => {
+            const c = getComputedStyle(e);
+            const node = (e as HTMLElement).closest<HTMLElement>("[data-skin-node]")?.dataset.skinNode ?? "-";
+            return `${e.tagName.toLowerCase()}.${(e as HTMLElement).className || "-"} in ${node} z=${c.zIndex} pos=${c.position} bg=${c.backgroundColor} art=${c.backgroundImage === "none" ? "none" : c.backgroundImage.split("/").pop()?.slice(0, 24)} op=${c.opacity}`;
+          });
+          return JSON.stringify({ lineColour: cs.color, lineBg: cs.backgroundColor, lineFont: `${cs.fontSize} ${cs.fontWeight}`, lineText: (l.textContent ?? "").slice(0, 40), at });
+        })) as string;
+        console.log(`[paused] ${file} not seen; stack at the line: ${stack}`);
+        // Is the line painted at all? Its own visibility, and what has the
+        // focus (the line steps aside while the status input has it); then
+        // the focus is taken off and the line measured again.
+        const state = (await browser.execute(() => {
+          const l = document.querySelector<HTMLElement>(".skin-status-paused");
+          const c = l ? getComputedStyle(l) : null;
+          const a = document.activeElement as HTMLElement | null;
+          return JSON.stringify({
+            display: c?.display, visibility: c?.visibility, opacity: c?.opacity, pointerEvents: c?.pointerEvents,
+            active: a ? `${a.tagName.toLowerCase()}.${a.className || "-"}` : "none", windowFocused: document.hasFocus(),
+          });
+        })) as string;
+        console.log(`[paused] ${file} line state: ${state}`);
+        await browser.execute(() => (document.activeElement as HTMLElement | null)?.blur());
+        await browser.pause(500);
+        console.log(`[paused] ${file} after blurring the focused element: hiding the line changes ${await seenInField(PAUSED)} px`);
+        // Does the input cover it? The line is out of hit-testing
+        // (pointer-events: none), so its place in the stack is not in the
+        // list above: the input is hidden and the line measured again, with
+        // both their stacking contexts named.
+        const ctx = (await browser.execute(() => {
+          const ctxOf = (e: HTMLElement | null): string => {
+            const out: string[] = [];
+            for (let n = e; n && n !== document.body; n = n.parentElement) {
+              const c = getComputedStyle(n);
+              const makes = c.zIndex !== "auto" || c.opacity !== "1" || c.transform !== "none" || c.filter !== "none" || c.isolation === "isolate" || c.mixBlendMode !== "normal" || c.willChange !== "auto" || c.contain !== "none";
+              if (makes) out.push(`${n.tagName.toLowerCase()}.${n.className || "-"} z=${c.zIndex} op=${c.opacity} tf=${c.transform !== "none"} filter=${c.filter !== "none"}`);
+            }
+            return out.join(" < ");
+          };
+          const input = document.querySelector<HTMLElement>(".skin-status-edit");
+          const line = document.querySelector<HTMLElement>(".skin-status-paused");
+          return JSON.stringify({ line: ctxOf(line), input: ctxOf(input), inputBg: input ? getComputedStyle(input).backgroundColor : "-" });
+        })) as string;
+        console.log(`[paused] ${file} stacking contexts: ${ctx}`);
+        await browser.execute(() => document.querySelector<HTMLElement>(".skin-status-edit")?.style.setProperty("visibility", "hidden", "important"));
+        await browser.pause(300);
+        console.log(`[paused] ${file} with the input hidden: hiding the line changes ${await seenInField(PAUSED)} px`);
+        await browser.execute(() => document.querySelector<HTMLElement>(".skin-status-edit")?.style.removeProperty("visibility"));
+      }
       await shot(`${file}-paused-field`);
-      expect({ pack: file, lineSeen: line >= 20, inputSeen: input >= 20 }).toEqual({ pack: file, lineSeen: true, inputSeen: false });
+      // TXZ (the Host raises a text control over the art-only siblings it
+      // overlaps; Alloy's and Simple X's StatusWrapper, XGlow's StatusMiddle):
+      // our name is seen, typed text is seen while editing, and the status
+      // list's arrow still opens it (an interactive sibling keeps its order).
+      const name = (await browser.$(".skin-name-text").isExisting()) ? await seenInField(".skin-name-text", ".skin-name") : -1;
+      const typed = await typedSeen();
+      const arrow = await arrowOpens();
+      console.log(`[paused] ${file}: name ${name} px (-1: no name field), typed text ${typed} px while editing, arrow ${arrow}`);
+      expect({ pack: file, lineSeen: line >= 20, inputSeen: input >= 20, nameSeen: name === -1 || name >= 20, typedSeen: typed >= 20, arrow }).toEqual({
+        pack: file, lineSeen: true, inputSeen: false, nameSeen: true, typedSeen: true, arrow: "opens the status list",
+      });
     });
   }
 

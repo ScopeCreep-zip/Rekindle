@@ -504,7 +504,7 @@ export async function openGroup(b: Browser, name: string): Promise<void> {
 }
 
 /** In the open community window, open Community Settings on `tab`. */
-async function communitySettings(b: Browser, tab: string): Promise<void> {
+export async function communitySettings(b: Browser, tab: string): Promise<void> {
   if (!(await present(b, ".modal-container .form-tabs"))) {
     await (await shown(b, '[title="Community Settings"]')).click();
     await shown(b, ".modal-container .form-tabs");

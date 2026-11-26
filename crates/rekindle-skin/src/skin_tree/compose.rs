@@ -91,7 +91,7 @@ pub fn strip_buddy_list(nodes: &mut [SkinNode]) {
             let children = content(n);
             empty(n);
             n.children = children;
-        } else if buddy_list_only(n.role) {
+        } else if buddy_list_only(n.role) || ad_frame(n) {
             empty(n);
         } else {
             strip_buddy_list(&mut n.children);
@@ -151,6 +151,14 @@ fn slot(id: String, key: SlotKey, y: NodeSpan, z: i16) -> SkinNode {
         children: Vec::new(),
         disabled_by: None,
     }
+}
+
+/// Whether `n` is the ad's frame: art or a group holding only the ad
+/// (StealthX's `AdArea` around its `AdView`, Total Chaos's `AdBar`), which
+/// goes with the ad.
+fn ad_frame(n: &SkinNode) -> bool {
+    matches!(n.role, NodeRole::Decor | NodeRole::Group)
+        && matches!(n.children.as_slice(), [only] if only.role == NodeRole::AdArea)
 }
 
 fn empty(n: &mut SkinNode) {

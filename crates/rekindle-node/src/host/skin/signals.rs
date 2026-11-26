@@ -380,11 +380,13 @@ pub(crate) const fn signal_reason(signal: DisableSignal) -> &'static str {
     }
 }
 
-/// Every known window's set, by label: `friend` looks a key up in the
-/// session.
+/// Every known window's set, by label, judged on the selection the window
+/// shows (a popup's is its launcher's, `Launchers::selection_window`, plan
+/// E7.7 HSC1): `friend` looks a key up in the session.
 pub(crate) fn window_sets(
     inputs: &Inputs,
     selections: &super::actions::Selections,
+    launchers: &super::actions::Launchers,
     world: &SkinWorld,
     friend: impl Fn(&str) -> Option<FriendState>,
 ) -> BTreeMap<String, SkinSignalSet> {
@@ -393,7 +395,7 @@ pub(crate) fn window_sets(
     windows
         .into_iter()
         .map(|window| {
-            let selection = selections.get(&window);
+            let selection = selections.get(&launchers.selection_window(&window));
             let f = match &selection {
                 Some(SkinSelection::Friend { public_key }) => friend(public_key),
                 _ => None,
@@ -458,9 +460,13 @@ pub(crate) fn changed(ctx: &DaemonContext, world: &SkinWorld) -> Vec<(String, Sk
     let sets = {
         let session = ctx.session.read();
         let inputs = ctx.skin.signals.inputs.lock();
-        window_sets(&inputs, &ctx.skin.selection, world, |k| {
-            session.as_ref().and_then(|s| s.friends.get(k).cloned())
-        })
+        window_sets(
+            &inputs,
+            &ctx.skin.selection,
+            &ctx.skin.launchers,
+            world,
+            |k| session.as_ref().and_then(|s| s.friends.get(k).cloned()),
+        )
     };
     let mut last = ctx.skin.signals.last.lock();
     last.retain(|w, _| sets.contains_key(w));

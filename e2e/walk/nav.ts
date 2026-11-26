@@ -72,7 +72,24 @@ export async function openSettings(b: Browser, tab: string): Promise<void> {
   await inBuddy(b);
   await menu(b, "Rekindle", "Profile");
   await switchTo(b, SETTINGS);
-  await (await byText(b, ".form-tab", tab)).click();
+  // Settings has sometimes opened blank (its tab rail never drawn; lead,
+  // 2026-11-26). If the tab is not found, its page's state is logged before
+  // the failure, so the rare open that fails carries its own evidence.
+  const tabEl = await byText(b, ".form-tab", tab).catch(async (e: unknown) => {
+    const page = await b
+      .execute(() => ({
+        ready: document.readyState,
+        bodyChars: document.body?.innerHTML.length ?? -1,
+        tabs: document.querySelectorAll(".form-tab").length,
+        hasTauri: "__TAURI_INTERNALS__" in window,
+        scripts: document.scripts.length,
+        url: location.pathname + location.search,
+      }))
+      .catch((err: unknown) => ({ unreadable: String(err).slice(0, 120) }));
+    console.log(`[settings-blank] tab ${tab} not found; Settings page: ${JSON.stringify(page)}`);
+    throw e;
+  });
+  await tabEl.click();
   await waitUntil(
     async () => (await (await b.$(".form-tab-active")).getText()).trim() === tab,
     WAIT_MS,
