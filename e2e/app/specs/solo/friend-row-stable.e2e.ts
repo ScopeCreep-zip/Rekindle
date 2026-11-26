@@ -93,6 +93,15 @@ describe("a friend row survives a signal push, and a double-click opens the chat
       console.log(`[row] ${file}: after the push: ${await where()}; rows added/removed: ${JSON.stringify(await browser.execute(() => (window as unknown as { __rowLog?: string[] }).__rowLog ?? []))}`);
       await shot(`${file}-row-selected`);
       expect({ pack: file, rowKept: kept.same }).toEqual({ pack: file, rowKept: true });
+      // WCAG 1.3.1 (lead): the row is described by its section's label,
+      // which is a heading naming the section it now sits in.
+      const named = (await browser.execute(() => {
+        const r = Array.from(document.querySelectorAll<HTMLElement>(".buddy-item")).find((e) => (e.textContent ?? "").includes("Cara"));
+        const label = r?.getAttribute("aria-describedby") ? document.getElementById(r.getAttribute("aria-describedby")!) : null;
+        return { role: label?.getAttribute("role") ?? "none", level: label?.getAttribute("aria-level") ?? "none", text: (label?.textContent ?? "").trim() };
+      })) as { role: string; level: string; text: string };
+      console.log(`[row] ${file}: Cara's section label: ${JSON.stringify(named)}`);
+      expect({ pack: file, role: named.role, names: named.text.startsWith("Online") }).toEqual({ pack: file, role: "heading", names: true });
       await openChat(browser, "Cara");
       const chat = await browser.getWindowHandle();
       console.log(`[row] ${file}: double-click opened ${chat}`);

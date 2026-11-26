@@ -1,4 +1,4 @@
-import { Component, createSignal, JSX, Show, For } from "solid-js";
+import { Component, createSignal, createUniqueId, JSX, Show, For } from "solid-js";
 import type { Friend } from "../../stores/friends.store";
 import { handleRenameFriendGroup } from "../../actions/buddy.actions";
 import BuddyItem from "./BuddyItem";
@@ -74,6 +74,10 @@ const BuddyGroup: Component<BuddyGroupProps> = (props) => {
   const ordered = () => [...online(), ...offline()];
   const sectionOf = (f: Friend): "Online" | "Offline" => (f.status === "offline" ? "Offline" : "Online");
   const section = (f: Friend): Friend[] => (sectionOf(f) === "Online" ? online() : offline());
+  // Each section's label is a heading screen readers can jump between, and
+  // every row is described by its section's label (WCAG 1.3.1: the meaning
+  // the per-section groups gave, kept with one list).
+  const sectionIds = { Online: createUniqueId(), Offline: createUniqueId() };
 
   const renderBuddy = (friend: Friend) =>
     props.renderItem(
@@ -99,6 +103,7 @@ const BuddyGroup: Component<BuddyGroupProps> = (props) => {
         unreachable={friend.unreachable}
         identityPinMismatch={friend.identityPinMismatch}
         selected={props.selectedKey === friend.publicKey}
+        describedBy={isPendingGroup() ? undefined : sectionIds[sectionOf(friend)]}
         onDoubleClick={props.onDoubleClick}
         onSelect={props.onSelect}
       />,
@@ -146,7 +151,7 @@ const BuddyGroup: Component<BuddyGroupProps> = (props) => {
             {(friend) => (
               <div class="buddy-subgroup" data-buddy-section={sectionOf(friend)}>
                 <Show when={section(friend)[0] === friend}>
-                  <div class="buddy-subgroup-header">
+                  <div class="buddy-subgroup-header" id={sectionIds[sectionOf(friend)]} role="heading" aria-level="2">
                     {sectionOf(friend)} ({section(friend).length})
                   </div>
                 </Show>
