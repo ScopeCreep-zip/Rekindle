@@ -72,7 +72,7 @@ export async function handleUnbanMember(
 // `voiceChannels[channelId].participants`).
 export async function handleServerMuteMember(
   communityId: string,
-  channelId: string,
+  channelId: string | null,
   targetPseudonym: string,
   muted: boolean,
 ): Promise<void> {
@@ -87,7 +87,7 @@ export async function handleServerMuteMember(
 
 export async function handleServerDeafenMember(
   communityId: string,
-  channelId: string,
+  channelId: string | null,
   targetPseudonym: string,
   deafened: boolean,
 ): Promise<void> {

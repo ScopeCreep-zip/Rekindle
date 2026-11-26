@@ -1,5 +1,5 @@
 import type { Undecryptable } from "../commands/types";
-import type { SkinApplied } from "../commands/dto";
+import type { DeniedCapabilities, SkinApplied } from "../commands/dto";
 /**
  * The daemon-vocabulary half of the `community-event` channel.
  *
@@ -242,7 +242,7 @@ export type GovernanceEvent =
   | { inviteRevoked: { community: string; codeHash: string } }
   | { inviteExpired: { community: string; codeHash: string } }
   | { channelPermissionsChanged: { community: string; channel: string } }
-  | { effectivePermissionsChanged: { community: string; member: string } }
+  | { effectivePermissionsChanged: { community: string; member: string; denied: DeniedCapabilities } }
   | { governanceRebuilt: { community: string } }
   | {
       governanceOpQuarantined: {

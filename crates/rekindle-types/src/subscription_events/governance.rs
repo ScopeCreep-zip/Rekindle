@@ -148,7 +148,15 @@ pub enum GovernanceEvent {
     /// flags when `member` is us, and re-renders the member otherwise.
     /// Triggered by: the Host, from the merged governance
     /// (`permission_events.rs`).
-    EffectivePermissionsChanged { community: String, member: String },
+    ///
+    /// `denied` is `member`'s capabilities it lacks now, each with the
+    /// Host's reason (`CommunityView::denied`): our window replaces its map
+    /// with it, so a grant or revoke enables or disables controls live.
+    EffectivePermissionsChanged {
+        community: String,
+        member: String,
+        denied: crate::dto::community_capability::DeniedCapabilities,
+    },
 
     /// The CRDT governance state was rebuilt from the DHT.
     ///
