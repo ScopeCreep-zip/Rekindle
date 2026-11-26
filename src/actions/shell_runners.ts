@@ -13,7 +13,7 @@ import { addToast } from "../stores/toast.store";
 import { errorMessage } from "../utils/error";
 import { callsState } from "../stores/calls.store";
 import { handleAcceptGroupCall, handleAcceptIncomingCall, handleEndDmCall, handleEndGroupCall, handleStartDmCall } from "./calls.actions";
-import { handleSetMuted } from "./voice.actions";
+import { handleJoinVoice, handleSetMuted } from "./voice.actions";
 import { handleOpenGroupChat } from "./group-dm.actions";
 import { handleCopyPublicKey } from "./buddy.actions";
 import { handleQuit, handleReportBug, openSettingsTab } from "./app_menu.actions";
@@ -142,6 +142,17 @@ export function mainOps(op: ShellOp): boolean {
         const { community, channel } = op.arg.target.arg;
         commands.openCommunityWindow(community, channel).catch((e) => addToast(errorMessage(e), "error"));
       }
+      return true;
+    // A community selected in the Communities row drives the pack's Call
+    // and Profile too (plan E7.7 HSC1, Xfire's selected-item semantics):
+    // Call joins its voice channel; Profile opens its window, where its
+    // info lives.
+    case "call":
+      if (op.arg.kind !== "joinVoice") return false;
+      void handleJoinVoice(op.arg.arg.channel, op.arg.arg.community);
+      return true;
+    case "openCommunityInfo":
+      commands.openCommunityWindow(op.arg.community).catch((e) => addToast(errorMessage(e), "error"));
       return true;
     // The Communities row (plan CB1): the selected community's window.
     case "openCommunity":

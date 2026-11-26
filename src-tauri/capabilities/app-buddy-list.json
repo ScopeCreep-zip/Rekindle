@@ -89,6 +89,10 @@
     "allow-decline-group-call",
     "allow-end-group-call",
     "allow-get-missed-calls",
-    "allow-mute-caller-temp"
+    "allow-mute-caller-temp",
+    "allow-join-voice-channel",
+    "allow-report-local-video-capabilities",
+    "allow-set-active-channel",
+    "allow-set-mute"
   ]
 }

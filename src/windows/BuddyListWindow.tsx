@@ -61,7 +61,7 @@ import {
 } from "../ipc/channels";
 import { setSkinSignals } from "../stores/skin-signals.store";
 import { registerShellRunner, runAddressedShellOp } from "../actions/skin.actions";
-import { chatOpenOps, friendOps, mainOps, menuOps, popupOps, transferOps } from "../actions/shell_runners";
+import { chatOpenOps, friendOps, mainOps, menuOps, muteOps, popupOps, transferOps } from "../actions/shell_runners";
 import type { ShellOp } from "../ipc/commands/dto_skin_run";
 import { handleHide } from "../actions/titlebar.actions";
 import { handleToggleAddFriend } from "../actions/buddy.actions";
@@ -220,7 +220,7 @@ const BuddyListWindow: Component = () => {
     // The groups the main window's trees serve (shell_runners): its menus,
     // popups, a friend's profile and chat, a room, downloads, Copy Key and
     // Show Voice. No call or mute: no main tree lays one.
-    for (const run of [menuOps, popupOps, friendOps, chatOpenOps, transferOps, mainOps]) {
+    for (const run of [menuOps, popupOps, friendOps, chatOpenOps, transferOps, mainOps, muteOps]) {
       unlisteners.push(Promise.resolve(registerShellRunner(run)));
     }
     unlisteners.push(subscribePairingLinkHandler());
