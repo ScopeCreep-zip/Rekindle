@@ -36,8 +36,15 @@ async fn an_ingested_op_never_sets_signed_here() {
         .unwrap()
         .genesis_cert = Some(cert);
     let gov = host.governance();
-    // Gossip.
-    gov.on_governance_op("c1", ops[1].encoded.clone()).await;
+    // A read at its locator, which a gossip triggers (lead ruling
+    // 2026-11-26 item 1: a gossiped op is stored only as that read
+    // returns it; this host is offline, so the read's receive is fed).
+    assert!(
+        rekindle_governance_runtime::op_log::receive_op(&gov, "c1", ops[1].encoded.clone())
+            .await
+            .unwrap(),
+        "the op read at its locator is stored"
+    );
     // Our own signer, then our op echoed back by gossip.
     gov.store_signed_governance_op("c1", &ops[2]).await.unwrap();
     gov.on_governance_op("c1", ops[2].encoded.clone()).await;

@@ -150,7 +150,7 @@ fn deps_behind(
     deps.expect_spawn_held_write()
         .returning(|_, write| drop(write));
     deps.expect_publish_governance_op()
-        .returning(|_, _, _| Ok(OpOutcome::Landed));
+        .returning(|_, _, _| Ok(crate::deps::OpPublication::settled(Ok(OpOutcome::Landed))));
     (deps, stored)
 }
 

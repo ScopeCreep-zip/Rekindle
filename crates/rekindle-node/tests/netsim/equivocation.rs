@@ -281,7 +281,7 @@ fn fork_seq(ops: &[Held]) -> Option<u64> {
 /// device key on the op set and state it held before its last op
 /// (`held`, `state`), so at that op's seq: the op a restored copy would
 /// sign, injected without one.
-fn forged_fork(
+pub(crate) fn forged_fork(
     community: &Community,
     held: &[HeldOp],
     state: &rekindle_governance::state::GovernanceState,

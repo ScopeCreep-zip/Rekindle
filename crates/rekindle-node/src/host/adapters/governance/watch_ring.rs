@@ -13,7 +13,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use rekindle_governance_runtime::watch_ring::{ring_successors, RING_K};
+use rekindle_governance_runtime::watch_ring::{ring_op_records, RING_K};
 use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
 use rekindle_records::port::OpenIntent;
 use rekindle_transport::broadcast::dht_writes::{self, LeaseId};
@@ -77,7 +77,9 @@ impl HostGovernance {
                 return;
             };
             let wanted = match (my_pseudonym(community), &community.governance_state) {
-                (Some(me), Some(state)) => ring_successors(community_id, state, &me, RING_K)
+                // Each successor's `M(p)` and its endorsed `M(p,d)`s: every
+                // op log a successor writes (ADR 0022 rule 3).
+                (Some(me), Some(state)) => ring_op_records(community_id, state, &me, RING_K)
                     .into_iter()
                     .collect(),
                 _ => BTreeSet::new(),

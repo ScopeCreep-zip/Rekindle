@@ -135,17 +135,14 @@ pub async fn store_received_op<D: GovernanceRuntimeDeps>(
         .genesis_cert(community_id)
         .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(community_id.to_owned()))?;
     let state = deps.governance_state(community_id).unwrap_or_default();
-    let record = match &decoded.op.body {
-        // A `MemberJoined` names its own record (op #0, or a re-join that
-        // binds a fresh record, owner-proved).
-        GovernanceEntry::MemberJoined { member_record, .. } => Some(member_record.clone()),
-        _ => state.op_record(
+    let record = own_record(&decoded.op).or_else(|| {
+        state.op_record(
             &cert,
             community_id,
             &decoded.op.author,
             &decoded.op.device_key,
-        ),
-    };
+        )
+    });
     let Some(author_record) = record else {
         return Ok(None);
     };
@@ -175,6 +172,161 @@ pub async fn store_received_op<D: GovernanceRuntimeDeps>(
         .store_governance_op(community_id, &op)
         .await?;
     Ok(Some(hash))
+}
+
+/// The gossip path (`governanceOp @74`, lead ruling 2026-11-26, items 1
+/// and 5): a gossiped op is only *seen*. It names where it lives (its
+/// author's op log, ADR 0011's `OpRef` locator), and the gossip triggers a
+/// read there at once; only what that read returns is received
+/// ([`receive_op`]) and so merged, cited as a dep or named in a frontier.
+/// A different op of the same device at that seq is a fork proof (D15).
+/// An op the read does not return is not stored: a member that gossips an
+/// op and never lands it leaves nothing a joiner's walk (plan D8, E3.2
+/// S6 (4)) cannot fetch. When it lands later, the author's record watch
+/// and the frontier sweep read it there. [`Gossiped::NotLanded`]: the
+/// read did not return it yet (the gossip leaves before the author's
+/// append lands, ruling item 2), so the caller reads its locator again
+/// ([`LANDING_READS`]).
+///
+/// # Errors
+/// No cert is pinned, the op store failed, or the read failed.
+pub async fn receive_gossiped_op<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    gossiped: Vec<u8>,
+) -> Result<Gossiped, GovernanceRuntimeError> {
+    let Some(op_ref) = gossiped_locator(deps, community_id, &gossiped).await? else {
+        return Ok(Gossiped::NotStored);
+    };
+    let logs = crate::op_walk::WalkLogCache::default();
+    let at_locator = deps.op_store().fetch_governance_op(&op_ref, &logs).await?;
+    let Some(at_locator) = at_locator else {
+        tracing::debug!(
+            community = community_id,
+            op = %hex::encode(op_ref.op_hash.0),
+            record = %op_ref.author_record,
+            seq = op_ref.author_seq,
+            "gossiped governance op seen, not on its author's log: not merged"
+        );
+        return Ok(Gossiped::NotLanded);
+    };
+    if held_from_encoded(&op_ref, at_locator.clone()).is_some() {
+        return Ok(Gossiped::of(
+            receive_op(deps, community_id, at_locator).await?,
+        ));
+    }
+    // Another op of the same device at the same seq is on the log: the two
+    // signed ops are a fork proof (D15), stored as a frontier's fork proof
+    // is (`anti_entropy`), and the verify holds both as `Equivocation`,
+    // never merged.
+    let forked = OpEnvelope::read(&at_locator).is_some_and(|landed| {
+        landed.author == op_ref.author
+            && landed.seq == op_ref.author_seq
+            && landed.device_key == op_ref.device_key
+    });
+    if !forked {
+        return Ok(Gossiped::NotStored);
+    }
+    receive_op(deps, community_id, at_locator).await?;
+    let proof = store_received_op(deps, community_id, gossiped).await?;
+    if proof.is_some() {
+        crate::dht_hydration::rebuild_governance(deps, community_id).await;
+    }
+    Ok(Gossiped::of(proof.is_some()))
+}
+
+/// What [`receive_gossiped_op`] did with a gossiped op.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Gossiped {
+    /// The read at its locator returned it and it was stored.
+    Stored,
+    /// Not stored: held already, unreadable, its author's record unknown,
+    /// or refused.
+    NotStored,
+    /// Its author's log does not serve it yet: seen, not merged.
+    NotLanded,
+}
+
+impl Gossiped {
+    fn of(stored: bool) -> Self {
+        if stored {
+            Self::Stored
+        } else {
+            Self::NotStored
+        }
+    }
+}
+
+/// The waits before each further read at a seen op's locator (ruling
+/// 2026-11-26 item 1, "held as seen until a read at its locator returns
+/// it"): the gossip leaves before the author's append, whose landing waits
+/// on a DHT set (two set latencies, and the outbox's retries behind a
+/// failed one), so the reads back off over about two minutes; past them, a
+/// watched or swept frontier names the op once it lands.
+pub const LANDING_READS: [std::time::Duration; 7] = [
+    std::time::Duration::from_secs(1),
+    std::time::Duration::from_secs(2),
+    std::time::Duration::from_secs(4),
+    std::time::Duration::from_secs(8),
+    std::time::Duration::from_secs(16),
+    std::time::Duration::from_secs(32),
+    std::time::Duration::from_secs(64),
+];
+
+/// Where the gossiped op `encoded` lives, when it reads, is not held yet
+/// and its author's record is known (its own `MemberJoined`'s record, or
+/// the merged state's, as [`store_received_op`] resolves it).
+async fn gossiped_locator<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community_id: &str,
+    encoded: &[u8],
+) -> Result<Option<OpRef>, GovernanceRuntimeError> {
+    let Some(envelope) = OpEnvelope::read(encoded) else {
+        return Ok(None);
+    };
+    let held = deps.op_store().governance_ops(community_id).await?;
+    if held.iter().any(|op| op.hash == envelope.hash) {
+        return Ok(None);
+    }
+    let cert = deps
+        .genesis_cert(community_id)
+        .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(community_id.to_owned()))?;
+    let state = deps.governance_state(community_id).unwrap_or_default();
+    let named = match read_op(encoded) {
+        Ok(ReadOp::Known(decoded)) => own_record(&decoded.op),
+        _ => None,
+    };
+    let record = named
+        .or_else(|| state.op_record(&cert, community_id, &envelope.author, &envelope.device_key));
+    Ok(record.map(|author_record| OpRef {
+        op_hash: envelope.hash,
+        author: envelope.author,
+        author_record,
+        author_seq: envelope.seq,
+        device_key: envelope.device_key,
+    }))
+}
+
+/// The record an op names as its own, before any merge binds it: a
+/// `MemberJoined` names its member record (op #0, or a re-join that binds
+/// a fresh record, owner-proved), and a device's first op carries its own
+/// `DeviceKey` endorsement (ADR 0022: "A device's first op (seq 0 in its
+/// chain) is the op that carries its own `DeviceKey` endorsement"), whose
+/// `deviceRecord` is the `M(p,d)` that device's chain lives on (ADR 0022
+/// rule 3). A reader that resolved that op through the merged state alone
+/// finds no binding yet and reads `M(p)`, where the op never is, so the
+/// device's ops never land for it (ADR 0011: the `OpRef` locator is where
+/// the op is). The endorsement itself is judged at the merge
+/// (`DeviceView::absorb`); a false claim only names a record that does
+/// not serve the op's hash.
+fn own_record(op: &GovernanceOp) -> Option<String> {
+    match &op.body {
+        GovernanceEntry::MemberJoined { member_record, .. } => Some(member_record.clone()),
+        GovernanceEntry::DeviceKey(e) if e.device_key == op.device_key => {
+            Some(e.device_record.clone())
+        }
+        _ => None,
+    }
 }
 
 /// [`receive_op`] for an op this reader cannot interpret: stored, when new

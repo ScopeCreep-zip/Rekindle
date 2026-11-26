@@ -69,7 +69,15 @@ async fn an_op_log_reader_without_the_code_is_admitted_nowhere() {
     let owner = SigningKey::from_bytes(&[0xC4; 32])
         .verifying_key()
         .to_bytes();
-    let record = vld0(&dflt_opaque_record_key(&owner, member_record::SUBKEY_COUNT));
+    // Created first: the op names the key `create` returns, as
+    // `create_member_record` does, so readers read the log it names.
+    let log = crate::scenarios::ForgedLog::create(
+        &community.sim,
+        &[0xC4; 32],
+        &vld0(&dflt_opaque_record_key(&owner, member_record::SUBKEY_COUNT)),
+    )
+    .await;
+    let record = log.record().to_owned();
     let proof = invite_proof_bytes(&anchor, &author, &record, &code_hash);
     let joined = GovernanceOp {
         device_key: author.0,
@@ -92,6 +100,10 @@ async fn an_op_log_reader_without_the_code_is_admitted_nowhere() {
         sig: [0; 64],
     };
     let (joined, _) = signed(&anchor, &forger, joined);
+    // Landed on the forger's op log, so every reader's gossip read returns
+    // it and the receive bound judges it (lead ruling 2026-11-26 item 1:
+    // an op never read at its locator is never merged, whatever it holds).
+    log.land(std::slice::from_ref(&joined)).await;
     for node in &community.nodes {
         (node.host.governance())
             .on_governance_op(&anchor, joined.clone())

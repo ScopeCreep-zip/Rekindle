@@ -3,7 +3,8 @@
 //! it, so the task never waits on the network. While the creator's op log
 //! cannot land (`Fault::WriteFails` on its member record), the role it
 //! assigns on a member's onboarding answers (the control handler, awaited
-//! inline) reaches the member at once.
+//! inline) stands in the creator's state at once, and reaches the member
+//! once it lands (lead ruling 2026-11-26 items 1 and 4).
 
 use std::time::Duration;
 
@@ -81,6 +82,18 @@ async fn onboarding_answers_never_wait_on_the_network() {
             },
         )))
         .await;
+    // The creator's handler answered without the landing: its own state
+    // holds the assignment while its op log cannot land (lead ruling
+    // 2026-11-26 item 4). The member merges it only once it is readable
+    // on the creator's op log (item 1), so the log heals before the
+    // member's check: the old setup had the member merge an op that had
+    // not landed, which the ruling removes.
+    let member = community.pseudonym(1).await;
+    assert!(
+        crate::devices::sees_role(&community, 0, &member, &role_id).await,
+        "the creator assigned the role at once, before it landed"
+    );
+    community.sim.fault(Fault::Heal);
     let granted = eventually(&community.sim, Duration::from_secs(60), || async {
         community.holds_role(1, &role_id).await
     })
@@ -116,7 +129,8 @@ async fn generations(community: &Community) -> Vec<u64> {
 /// after the one minted at origin, so every reader accepts it (plan D20,
 /// `current + 1`); the rotation worker queues it, so with the creator's op
 /// log unable to land, neither request waits (S6b) and the first bump is
-/// on every node before one network answer's deadline. The second is held
+/// on the author before one network answer's deadline; every reader merges
+/// it once it lands (lead ruling 2026-11-26 items 1 and 4). The second is held
 /// until the first's append landed (S7d-keys.8: seq n + 1 is signed only
 /// after seq n's append landed), then reaches every reader.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
@@ -138,15 +152,19 @@ async fn a_manual_rotation_never_waits_and_every_reader_accepts_its_bump() {
             )))
             .await;
     }
+    // The author applies its own bump at once (lead ruling 2026-11-26
+    // item 4); a reader merges it only once it is readable on the
+    // creator's op log (item 1), so the readers' check moves past the
+    // heal: the old setup had them merge a bump that had not landed.
     let first = eventually(
         &community.sim,
         rekindle_types::config::NETWORK_ANSWER_DEADLINE,
-        || async { generations(&community).await == vec![2, 2, 2] },
+        || async { generations(&community).await[0] == 2 },
     )
     .await;
     assert!(
         first,
-        "the first bump on every reader: {:?}",
+        "the first bump on the author at once: {:?}",
         generations(&community).await
     );
     let barrier = (community.nodes[0].host.governance()).unlock_barrier(&community.anchor);
@@ -155,6 +173,17 @@ async fn a_manual_rotation_never_waits_and_every_reader_accepts_its_bump() {
         "the second bump is held behind the first's append"
     );
     community.sim.fault(Fault::Heal);
+    let first = eventually(
+        &community.sim,
+        rekindle_types::config::NETWORK_ANSWER_DEADLINE * 2,
+        || async { generations(&community).await.iter().all(|g| *g >= 2) },
+    )
+    .await;
+    assert!(
+        first,
+        "the first bump on every reader: {:?}",
+        generations(&community).await
+    );
     let accepted = eventually(
         &community.sim,
         rekindle_types::config::NETWORK_ANSWER_DEADLINE * 2,

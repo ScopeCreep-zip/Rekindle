@@ -83,10 +83,19 @@ async fn a_lamport_zero_entry_never_becomes_the_creator() {
     let author = PseudonymKey(forger.verifying_key().to_bytes());
     let owner = SigningKey::from_bytes(&[0xEF; 32]);
     let owner_public = owner.verifying_key().to_bytes();
-    let record = vld0(&dflt_opaque_record_key(
-        &owner_public,
-        member_record::SUBKEY_COUNT,
-    ));
+    // The forger creates its member record first: the op names the key the
+    // create returns (with its encryption part), as `create_member_record`
+    // does, so readers read the op log where the op says it is.
+    let log = ForgedLog::create(
+        &community.sim,
+        &[0xEF; 32],
+        &vld0(&dflt_opaque_record_key(
+            &owner_public,
+            member_record::SUBKEY_COUNT,
+        )),
+    )
+    .await;
+    let record = log.record().to_owned();
     let joined = GovernanceOp {
         device_key: author.0,
         author: author.clone(),
@@ -128,6 +137,10 @@ async fn a_lamport_zero_entry_never_becomes_the_creator() {
         sig: [0; 64],
     };
     let (renamed, _) = signed(&anchor, &forger, renamed);
+    // The forger lands both on its op log, as any author does: a gossiped
+    // op is merged only once a read at its locator returns it (lead ruling
+    // 2026-11-26 item 1), and the property here is the merge's.
+    log.land(&[joined.clone(), renamed.clone()]).await;
     for node in &community.nodes {
         let governance = node.host.governance();
         governance.on_governance_op(&anchor, joined.clone()).await;
@@ -152,6 +165,68 @@ async fn a_lamport_zero_entry_never_becomes_the_creator() {
             "node {i}: the creator stays the genesis author"
         );
         assert_eq!(view["name"], name, "node {i}: the name is unchanged");
+    }
+}
+
+/// The op log of a member record the test owns (`owner_seed`'s key), on
+/// a node of the forger's own: a forged op is merged only once a read at
+/// its locator returns it (lead ruling 2026-11-26 item 1), so the forger
+/// lands it there as any author does.
+pub(crate) struct ForgedLog {
+    node: rekindle_netsim::Node,
+    writer: String,
+    record: String,
+}
+
+impl ForgedLog {
+    /// Create the member record with `owner_seed`'s key; `opaque` is the
+    /// bare key the owner's public key and the schema derive.
+    pub(crate) async fn create(
+        sim: &rekindle_netsim::Netsim,
+        owner_seed: &[u8; 32],
+        opaque: &str,
+    ) -> Self {
+        let node = sim.add_node();
+        sim.set_ready(node.index, true);
+        let writer = rekindle_crypto::keypair_text::keypair_text_from_signing(
+            &SigningKey::from_bytes(owner_seed),
+        );
+        let port = node.ports.records.start_session().expect("a session");
+        let (lease, created, _) = port
+            .create(&rekindle_records::schema::member_record(), Some(&writer))
+            .await
+            .expect("create the member record");
+        port.release(lease).await;
+        // `create` returns the opaque key with its encryption part
+        // (`VLD0:<opaque>:<secret>`); the opaque part is the owner's.
+        assert!(
+            created.starts_with(&format!("{opaque}:")),
+            "the forger's record {created} is the owner's opaque key {opaque}"
+        );
+        Self {
+            node,
+            writer,
+            record: created,
+        }
+    }
+
+    /// The record key as `create` returned it: the one the forged ops name.
+    pub(crate) fn record(&self) -> &str {
+        &self.record
+    }
+
+    /// Append `ops` (signed, in seq order) to the record's op log.
+    pub(crate) async fn land(&self, ops: &[Vec<u8>]) {
+        let port = self.node.ports.records.start_session().expect("a session");
+        rekindle_records::chain::append_at(
+            port.as_ref(),
+            &self.record,
+            member_record::GOV_HEAD,
+            &self.writer,
+            ops,
+        )
+        .await
+        .expect("append the op log");
     }
 }
 

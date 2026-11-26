@@ -15,7 +15,7 @@ use super::roles::RoleTable;
 use super::slot_recovery::SlotRecovery;
 use super::types::{
     CardText, CommunityDhtOpenSetup, CommunityInsert, CommunityMembership, DhtRecordInfo,
-    DiscoveredMember, MekSnapshot, OnlineMemberSnapshot, OpLanding, OpOutcome, UserStatusKind,
+    DiscoveredMember, MekSnapshot, OnlineMemberSnapshot, OpLanding, UserStatusKind,
 };
 use crate::error::GovernanceRuntimeError;
 use crate::event::GovernanceRuntimeEvent;
@@ -472,8 +472,12 @@ pub trait GovernanceRuntimeDeps: Send + Sync + 'static {
         community_id: &str,
         checkpoint: &rekindle_types::governance::Checkpoint,
     );
-    /// Gossip our stored op (`governanceOp @74`) before its install, which
-    /// prunes a removed member that must still hear the op removing it.
+    /// Gossip our stored op (`governanceOp @74`) once its outbox row is
+    /// stored ([`publish_governance_op`](Self::publish_governance_op)) and
+    /// before its install, which prunes a removed member that must still
+    /// hear the op removing it. Gossip only tells readers to read the op at
+    /// its locator; they merge it once that read returns it (lead ruling
+    /// 2026-11-26, items 1 and 5).
     fn gossip_governance_op(&self, community_id: &str, encoded: &[u8]);
 
     /// Queue our encoded op on the governance-op outbox stream
@@ -483,9 +487,12 @@ pub trait GovernanceRuntimeDeps: Send + Sync + 'static {
     /// `VaultKey::MemberRecordOwner{community}` (origin stores it before the
     /// row; S6 at join), then writes our `Frontier` (`M`/3).
     ///
-    /// The op is applied and gossiped before this runs and nothing cancels
-    /// it, so every wait but the invite link's answers with an
-    /// [`OpOutcome`] (plan E3.2 S6b; RV4 review M1, Matrix's local echo):
+    /// Returns once the row is durable, before the op is gossiped or
+    /// installed (lead ruling 2026-11-26, item 2: an abort between gossip
+    /// and enqueue can no longer lose an honest op); the returned
+    /// [`OpPublication`] is the wait. Nothing cancels the row, so every
+    /// wait but the invite link's answers with an
+    /// [`OpOutcome`](crate::deps::OpOutcome) (plan E3.2 S6b; RV4 review M1, Matrix's local echo):
     /// [`OpLanding::FirstAttempt`] waits for the first attempt, at most
     /// `GOVERNANCE_ANSWER_BOUND`; [`OpLanding::Queued`] only for the row.
     /// A `Pending` op is announced (`GovernanceEvent::OpPublication`) when it
@@ -497,7 +504,7 @@ pub trait GovernanceRuntimeDeps: Send + Sync + 'static {
         community_id: &str,
         encoded: Vec<u8>,
         landing: OpLanding,
-    ) -> Result<OpOutcome, GovernanceRuntimeError>;
+    ) -> Result<crate::deps::OpPublication, GovernanceRuntimeError>;
 
     /// Fire-and-forget spawn of a text-MEK rotation task for a newly
     /// observed ban. Delegates to the existing

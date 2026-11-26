@@ -300,7 +300,7 @@ impl HostGovernance {
         };
         let queued = std::sync::atomic::AtomicBool::new(false);
         let publish_ops = async {
-            match self
+            let published = match self
                 .publish_governance_op(
                     community,
                     outcome.joined.encoded.clone(),
@@ -308,6 +308,10 @@ impl HostGovernance {
                 )
                 .await
             {
+                Ok(publication) => publication.landed().await,
+                Err(error) => Err(error),
+            };
+            match published {
                 Ok(rekindle_governance_runtime::OpOutcome::Landed) => Ok(()),
                 // The outbox answers landed or queued; a held write is the
                 // write path's answer, never the publication's.

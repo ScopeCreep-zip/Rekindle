@@ -528,14 +528,17 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
     };
     let publish_ops = async {
         for op in genesis_ops {
+            // The row first, then the gossip (lead ruling 2026-11-26, item 2).
+            let publication = deps
+                .publish_governance_op(
+                    &anchor_key,
+                    op.encoded.clone(),
+                    crate::deps::OpLanding::FirstAttempt,
+                )
+                .await
+                .map_err(|e| e.to_string())?;
             deps.gossip_governance_op(&anchor_key, &op.encoded);
-            deps.publish_governance_op(
-                &anchor_key,
-                op.encoded,
-                crate::deps::OpLanding::FirstAttempt,
-            )
-            .await
-            .map_err(|e| e.to_string())?;
+            publication.landed().await.map_err(|e| e.to_string())?;
         }
         Ok(())
     };
