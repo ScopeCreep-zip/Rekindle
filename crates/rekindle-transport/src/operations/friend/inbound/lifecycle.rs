@@ -160,6 +160,14 @@ pub(super) async fn accept_crossing_request(
             f.mailbox_dht_key = Some(req.mailbox_dht_key.to_string());
         }
     });
+    // Their chain, named by their request, now that they are accepted
+    // (decision 67 item 2).
+    if !crate::operations::dm::stream::adopt_chain(host, req.sender_hex, req.chain_record_key).await
+    {
+        tracing::error!(peer = %req.sender_hex,
+            "cross-request auto-accept: their chain record was not stored; not answering");
+        return;
+    }
     // Exactly one side initiates: the lower identity opens the session with
     // its accept; the higher side's session opens when that arrives. Their
     // request does not prove ours arrived, so only the side whose accept

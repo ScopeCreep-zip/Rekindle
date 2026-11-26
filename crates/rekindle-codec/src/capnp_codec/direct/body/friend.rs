@@ -54,6 +54,11 @@ pub struct FriendRequest {
     pub auth: RequestAuth,
     /// Our reply inbox and its one-time writer (plan RV2).
     pub reply: InboxCapability,
+    /// Our dm participant record to the addressee (decision 67 item 2):
+    /// its `HEAD` is on the network before the request leaves, and the
+    /// accepter adopts it only once it accepts, so our first DM after the
+    /// friendship lands on a chain it already watches. Never a presence key.
+    pub chain_record_key: String,
 }
 
 impl FriendRequest {
@@ -69,6 +74,7 @@ impl FriendRequest {
         }
         b.set_reply_inbox_key(&self.reply.record_key);
         b.set_reply_writer(&self.reply.writer);
+        b.set_chain_record_key(&self.chain_record_key);
     }
 
     pub(super) fn read(r: friend_request::Reader<'_>) -> Result<Self, CodecError> {
@@ -82,6 +88,7 @@ impl FriendRequest {
             mailbox_dht_key: opt_record_key(r.get_mailbox_dht_key(), "mailbox key")?,
             auth: request_auth(r)?,
             reply: reply_inbox(r)?,
+            chain_record_key: record_key(r.get_chain_record_key(), "request chain record key")?,
         })
     }
 }
@@ -128,11 +135,22 @@ fn request_auth(r: friend_request::Reader<'_>) -> Result<RequestAuth, CodecError
 /// the init opens is the acceptance, and the init carries what today's
 /// `FriendAccept` carried for `respond_to_session`; the requester never
 /// initiates from our bundle, so none is sent.
+///
+/// It also carries (decision 67 item 2) our presence key and our dm chain
+/// record to the requester: the accept is the consent, and it has a durable
+/// copy in the requester's reply inbox (plan RV2), so a new friend's first
+/// presence and first DM never wait on an `app_call` (F3). Both are inside
+/// the PreKeyInit's sealed, signed payload. Both are required.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct FriendAccept {
     pub profile_dht_key: String,
     pub route_blob: Vec<u8>,
     pub mailbox_dht_key: String,
+    /// Our presence key (the `FriendsKey` an accept used to send apart).
+    pub friends_key: FriendsKey,
+    /// Our dm participant record to the requester (the key a
+    /// `StreamRecord` used to send apart).
+    pub chain_record_key: String,
 }
 
 impl FriendAccept {
@@ -140,6 +158,9 @@ impl FriendAccept {
         b.set_profile_dht_key(&self.profile_dht_key);
         b.set_route_blob(&self.route_blob);
         b.set_mailbox_dht_key(&self.mailbox_dht_key);
+        b.set_friends_key_epoch(self.friends_key.epoch);
+        b.set_friends_key(&self.friends_key.key);
+        b.set_chain_record_key(&self.chain_record_key);
     }
 
     pub(super) fn read(r: friend_accept::Reader<'_>) -> Result<Self, CodecError> {
@@ -147,6 +168,11 @@ impl FriendAccept {
             profile_dht_key: opt_record_key(r.get_profile_dht_key(), "profile key")?,
             route_blob: data(r.get_route_blob())?,
             mailbox_dht_key: opt_record_key(r.get_mailbox_dht_key(), "mailbox key")?,
+            friends_key: FriendsKey {
+                epoch: r.get_friends_key_epoch(),
+                key: fixed(r.get_friends_key(), "accept friends key")?,
+            },
+            chain_record_key: record_key(r.get_chain_record_key(), "accept chain record key")?,
         })
     }
 }

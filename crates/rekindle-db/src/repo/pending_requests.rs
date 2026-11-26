@@ -29,6 +29,9 @@ pub struct Answer {
     /// The reply inbox the request carried and its one-time writer (plan
     /// RV2): our first contact is written there too.
     pub reply: Option<(String, String)>,
+    /// The requester's dm chain record (decision 67 item 2), adopted once
+    /// the request is accepted.
+    pub chain_record_key: Option<String>,
 }
 
 /// A request as it arrives.
@@ -45,6 +48,8 @@ pub struct Incoming<'a> {
     /// The reply inbox's record key and one-time writer (plan RV2).
     pub reply_inbox_key: &'a str,
     pub reply_writer: &'a str,
+    /// The requester's dm chain record (decision 67 item 2).
+    pub chain_record_key: &'a str,
 }
 
 /// Store a request, replacing an earlier, different one from the same
@@ -63,7 +68,8 @@ pub fn upsert(
             "SELECT 1 FROM pending_friend_requests \
              WHERE owner_key = ?1 AND public_key = ?2 AND display_name = ?3 AND message = ?4 \
                AND profile_dht_key IS ?5 AND route_blob IS ?6 AND mailbox_dht_key IS ?7 \
-               AND invite_id IS ?8 AND reply_inbox_key = ?9 AND reply_writer = ?10",
+               AND invite_id IS ?8 AND reply_inbox_key = ?9 AND reply_writer = ?10 \
+               AND chain_record_key = ?11",
             params![
                 owner_key,
                 request.public_key,
@@ -75,6 +81,7 @@ pub fn upsert(
                 request.invite_id,
                 request.reply_inbox_key,
                 request.reply_writer,
+                request.chain_record_key,
             ],
             |_| Ok(()),
         )
@@ -86,8 +93,9 @@ pub fn upsert(
     conn.execute(
         "INSERT OR REPLACE INTO pending_friend_requests \
          (owner_key, public_key, display_name, message, received_at, profile_dht_key, \
-          route_blob, mailbox_dht_key, invite_id, reply_inbox_key, reply_writer) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+          route_blob, mailbox_dht_key, invite_id, reply_inbox_key, reply_writer, \
+          chain_record_key) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
         params![
             owner_key,
             request.public_key,
@@ -100,6 +108,7 @@ pub fn upsert(
             request.invite_id,
             request.reply_inbox_key,
             request.reply_writer,
+            request.chain_record_key,
         ],
     )?;
     Ok(true)
@@ -139,7 +148,7 @@ pub fn answer(
 ) -> rusqlite::Result<Option<Answer>> {
     conn.query_row(
         "SELECT display_name, profile_dht_key, mailbox_dht_key, route_blob, invite_id, \
-                    reply_inbox_key, reply_writer \
+                    reply_inbox_key, reply_writer, chain_record_key \
              FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
         params![owner_key, public_key],
         |row| {
@@ -150,6 +159,7 @@ pub fn answer(
                 route_blob: row.get(3)?,
                 invite_id: row.get(4)?,
                 reply: Some((row.get(5)?, row.get(6)?)),
+                chain_record_key: Some(row.get(7)?),
             })
         },
     )
@@ -200,6 +210,7 @@ mod tests {
             invite_id: Some("invite"),
             reply_inbox_key: "VLD0:reply",
             reply_writer: "VLD0:pub:sec",
+            chain_record_key: "VLD0:chain",
         }
     }
 

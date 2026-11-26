@@ -618,6 +618,8 @@ CREATE TABLE IF NOT EXISTS pending_friend_requests (
     -- Plan RV2: the reply inbox the request carried and its one-time writer.
     reply_inbox_key TEXT NOT NULL,
     reply_writer TEXT NOT NULL,
+    -- Decision 67 item 2: the requester's dm chain record, adopted once accepted.
+    chain_record_key TEXT NOT NULL,
     PRIMARY KEY (owner_key, public_key)
 );
 

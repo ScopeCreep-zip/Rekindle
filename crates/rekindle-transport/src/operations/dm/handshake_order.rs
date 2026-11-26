@@ -88,7 +88,7 @@ pub fn waits_for(client_id: &str) -> Vec<String> {
 /// The client-id prefixes of the rows whose dependents a handshake row
 /// `client_id` takes over when stored (plan HOL1): a PreKeyInit, the first
 /// contact a waiting `FriendAccept` or `SessionResetAccept` row hands off
-/// to as it settles `sent` (`handshake::attempt_first_contact`), takes over
+/// to as it settles `sent` (`first_contact_durable::attempt_waiting`), takes over
 /// what waited for that row, so a friend-gated frame queued while the first
 /// contact waited for the peer's prekey record waits for the PreKeyInit's
 /// receipt, not for the hand-off. Every other row takes over nothing.

@@ -3,7 +3,7 @@
 //! prekey record (plan E2.4); an accept is the PreKeyInit that opens the
 //! session from theirs; a reject is sealed.
 
-use rekindle_codec::capnp_codec::direct::{DirectBody, FriendAccept};
+use rekindle_codec::capnp_codec::direct::{DirectBody, FriendAccept, FriendsKey};
 use rekindle_crypto::signal::PreKeyBundle;
 
 use super::handshake;
@@ -29,7 +29,13 @@ pub async fn send_friend_request(
 }
 
 /// Accept `to`'s request: open the session from `bundle` (picked from their
-/// prekey record), carrying our records as its first payload.
+/// prekey record), carrying our records as its first payload, with our
+/// presence key and our dm chain record to them (decision 67 item 2): the
+/// record is made here, locally, like the reply inbox a request carries
+/// (`friend::inbox::create_reply`), and the accept's row puts its `HEAD` on
+/// the network before each attempt (`handshake::attempt`), so the key it
+/// names is always a record the requester finds. No `StreamRecord` follows:
+/// the record is held from here on, so the first append finds it.
 ///
 /// # Errors
 /// `Failed` when our profile and mailbox were not published (waits while
@@ -50,10 +56,22 @@ pub async fn send_friend_accept(
             "sending friend accept with empty route blob — peer will fetch from DHT profile"
         );
     }
+    let presence = host
+        .session()
+        .read()
+        .as_ref()
+        .and_then(|s| s.presence_key.clone())
+        .ok_or_else(|| FriendError::NotReady("no presence key to accept with".into()))?;
+    let chain = host.participant_writer(to).await?;
     let accept = DirectBody::FriendAccept(FriendAccept {
         profile_dht_key: own.profile_dht_key,
         route_blob,
         mailbox_dht_key: own.mailbox_dht_key,
+        friends_key: FriendsKey {
+            epoch: presence.epoch(),
+            key: *presence.as_bytes(),
+        },
+        chain_record_key: chain.record_key,
     });
     let frame =
         super::frame::initiate_frame(host, to, bundle, &accept, super::frame::Position::default())

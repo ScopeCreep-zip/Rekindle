@@ -98,6 +98,11 @@ async fn a_members_first_group_frame_opens_the_session_and_a_strangers_does_not(
         profile_dht_key: String::new(),
         route_blob: Vec::new(),
         mailbox_dht_key: String::new(),
+        friends_key: rekindle_codec::capnp_codec::direct::FriendsKey {
+            epoch: 1,
+            key: [7; 32],
+        },
+        chain_record_key: format!("VLD0:{}", "A".repeat(43)),
     });
     init_from(&host, owner, &bob_host, &friend_accept).await;
     assert!(!established(&host, owner, bob).await);

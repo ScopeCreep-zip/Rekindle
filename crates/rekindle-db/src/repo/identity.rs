@@ -434,8 +434,9 @@ mod tests {
             "INSERT INTO friends (owner_key, public_key, added_at, friendship_state) \
                VALUES ('{OWNER}', 'carol', 1, 'pending_out'); \
              INSERT INTO pending_friend_requests \
-               (owner_key, public_key, display_name, received_at, reply_inbox_key, reply_writer) \
-               VALUES ('{OWNER}', 'dave', 'Dave', 1, 'VLD0:reply', 'VLD0:writer'); \
+               (owner_key, public_key, display_name, received_at, reply_inbox_key, reply_writer, \
+                chain_record_key) \
+               VALUES ('{OWNER}', 'dave', 'Dave', 1, 'VLD0:reply', 'VLD0:writer', 'VLD0:chain'); \
              INSERT INTO messages (owner_key, conversation_id, conversation_type, sender_key, body, timestamp) \
                VALUES ('{OWNER}', 'bob', 'dm', '{OWNER}', 'mine', 1), \
                       ('{OWNER}', 'bob', 'dm', 'bob', 'theirs', 2); \
