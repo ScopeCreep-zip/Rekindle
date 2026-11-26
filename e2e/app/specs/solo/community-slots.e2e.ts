@@ -71,9 +71,16 @@ describe("a skinned community window's slots and the content mounted in them (SK
   this.timeout(1_200_000);
   const me: User = { ...newUser("cslots"), displayName: "Ari" };
 
+  // The community window opens once and stays open: a skin switch re-skins
+  // it in place. Re-opening it after a close waited for a new handle that
+  // never came (the window keeps its label, so its handle is not new).
+  let community = "";
   before(async () => {
     await createIdentity(browser, me);
     await createCommunity(browser, me, "Slot Hall");
+    await switchTo(browser, BUDDY);
+    await openCommunity(browser, "Slot Hall");
+    community = await browser.getWindowHandle();
   });
 
   for (const file of PACKS) {
@@ -83,8 +90,7 @@ describe("a skinned community window's slots and the content mounted in them (SK
       await switchTo(browser, BUDDY);
       await openSettings(browser, "Appearance");
       const href = await applySkin(browser, me, pack.name);
-      await switchTo(browser, BUDDY);
-      await openCommunity(browser, "Slot Hall");
+      await browser.switchToWindow(community);
       await skinShown(browser, href);
       await browser.pause(2000);
       console.log(`[slots] ${file}: ${await slotEvidence()}`);
@@ -94,8 +100,6 @@ describe("a skinned community window's slots and the content mounted in them (SK
       expect({ pack: file, layoutFillsChatArea: near(b.layout, b.area) }).toEqual({ pack: file, layoutFillsChatArea: true });
       expect({ pack: file, composerWithinChatEdit: within(b.composer, b.edit) }).toEqual({ pack: file, composerWithinChatEdit: true });
       if (b.send) expect({ pack: file, partFillsChatSend: near(b.sendPart, b.send) }).toEqual({ pack: file, partFillsChatSend: true });
-      await browser.closeWindow();
-      await switchTo(browser, BUDDY);
     });
   }
 
@@ -108,10 +112,10 @@ describe("a skinned community window's slots and the content mounted in them (SK
     if (!from || !to) throw new Error("no built-in symbiosis/alloy");
     await switchTo(browser, BUDDY);
     await openSettings(browser, "Appearance");
-    await applySkin(browser, me, from.name);
-    await switchTo(browser, BUDDY);
-    await openCommunity(browser, "Slot Hall");
-    const handle = await browser.getWindowHandle();
+    const fromHref = await applySkin(browser, me, from.name);
+    await browser.switchToWindow(community);
+    await skinShown(browser, fromHref);
+    const handle = community;
     const draft = `draft ${Date.now() % 100000}`;
     const field = await browser.$(".message-input-field");
     await field.click();
