@@ -65,9 +65,25 @@ describe("Settings keyboard tabs", function () {
     await expectTab("about");
     await browser.keys(Key.Home);
     await expectTab("profile");
-    await browser.keys(Key.Tab);
-    expect(await browser.execute(() => document.activeElement?.id)).toBe("main-content");
-    await browser.keys([Key.Shift, Key.Tab]);
-    await expectTab("profile");
+    // Tab leaves the rail for the panel. The test driver's Tab is a synthetic
+    // KeyboardEvent (vendored key_input.rs emulates Backspace, Delete, the
+    // arrows and Enter, not Tab), and an untrusted Tab never moves focus, so
+    // the sequential focus order is read from the page instead: the rail's
+    // one tab stop is the selected tab, and the next tabbable element after
+    // it, in document order (all tabindex 0 or native), is the panel.
+    const order = (await browser.execute(() => {
+      const tabbable = Array.from(document.querySelectorAll<HTMLElement>("a[href], button, input, select, textarea, [tabindex]")).filter((e) => {
+        if (e.tabIndex < 0 || (e as HTMLButtonElement).disabled) return false;
+        const r = e.getBoundingClientRect();
+        return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== "hidden";
+      });
+      const ids = tabbable.map((e) => e.id || `${e.tagName.toLowerCase()}.${e.className}`);
+      const rail = document.querySelector('[role="tablist"][aria-label="Settings sections"]');
+      const inRail = tabbable.filter((e) => rail?.contains(e)).map((e) => e.id);
+      const at = ids.indexOf("settings-tab-profile");
+      return { inRail, next: ids[at + 1] ?? null, before: ids[at - 1] ?? null, positive: tabbable.filter((e) => e.tabIndex > 0).length };
+    })) as { inRail: string[]; next: string | null; before: string | null; positive: number };
+    console.log(`[settings-keys] tab order: ${JSON.stringify(order)}`);
+    expect({ inRail: order.inRail, next: order.next, positive: order.positive }).toEqual({ inRail: ["settings-tab-profile"], next: "main-content", positive: 0 });
   });
 });
