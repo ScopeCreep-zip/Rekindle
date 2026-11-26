@@ -9,7 +9,7 @@
 
 import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, switchTo, waitForHandle, waitUntil } from "../../../walk/helpers.ts";
-import { BUDDY, openSettings } from "../../../walk/nav.ts";
+import { BUDDY, SETTINGS, closeSettings, openSettings } from "../../../walk/nav.ts";
 import { type Peer, startFleet, stopFleet } from "../../fleet.ts";
 import { createIdentity, friendRow, newUser, openChat, type User } from "../../journeys.ts";
 import { applySkin, skinShown } from "../../journeys_skins.ts";
@@ -41,6 +41,11 @@ describe("a friend row survives a signal push, and a double-click opens the chat
       await switchTo(browser, BUDDY);
       await openSettings(browser, "Appearance");
       const href = await applySkin(browser, me, pack.name);
+      // Settings closes after each switch, so the next pack's opens fresh
+      // and frontmost (left open behind the chat window this test opens,
+      // its Appearance tab took no click for Alloy).
+      await switchTo(browser, SETTINGS);
+      await closeSettings(browser);
       await switchTo(browser, BUDDY);
       await skinShown(browser, href);
       // Cara appears offline first, so her presence moves her from the
