@@ -9,7 +9,7 @@ use rekindle_types::dto::skin_action::SkinAction as A;
 use rekindle_types::dto::skin_run::{CallTarget, GroupCallInvitee, SkinSelection};
 use rekindle_types::friend::GameInfoState;
 
-use super::actions::Selections;
+use super::actions::{Launchers, Selections};
 use super::rooms::{self, Rooms};
 use crate::daemon::dispatch::DaemonContext;
 
@@ -102,6 +102,7 @@ pub(crate) struct GroupCall {
 async fn group_call(
     ctx: &DaemonContext,
     selections: &Selections,
+    launchers: &Launchers,
     request: &IpcRequest,
 ) -> Result<Option<GroupCall>, IpcResponse> {
     let IpcRequest::RunSkinAction {
@@ -112,7 +113,9 @@ async fn group_call(
     else {
         return Ok(None);
     };
-    let Some(SkinSelection::Group { group_id }) = selections.get(window) else {
+    let Some(SkinSelection::Group { group_id }) =
+        selections.get(&launchers.selection_window(window))
+    else {
         return Ok(None);
     };
     let (Ok(db), Ok(owner)) = (ctx.require_db(), ctx.require_owner()) else {
@@ -146,27 +149,32 @@ async fn group_call(
 }
 
 /// [`Reads`] for `request`; empty for anything but a `RunSkinAction`.
+/// Every read follows the selection the pressed window shows (a popup's is
+/// its launcher's, `Launchers::selection_window`, plan E7.7 HSC1).
 ///
 /// # Errors
 /// 500 when the rooms or the selected group cannot be read.
 pub(crate) async fn load(
     ctx: &DaemonContext,
     selections: &Selections,
+    launchers: &Launchers,
     request: &IpcRequest,
 ) -> Result<Reads, IpcResponse> {
-    let rooms = rooms::load(ctx, selections, request).await?;
+    let rooms = rooms::load(ctx, selections, launchers, request).await?;
     let friend_game = match request {
         IpcRequest::RunSkinAction {
             window,
             action: A::JoinFriend,
             ..
-        } => selections.friend(window).and_then(|key| {
-            ctx.session
-                .read()
-                .as_ref()
-                .and_then(|s| s.friends.get(&key))
-                .and_then(|f| f.game_info.clone())
-        }),
+        } => selections
+            .friend(&launchers.selection_window(window))
+            .and_then(|key| {
+                ctx.session
+                    .read()
+                    .as_ref()
+                    .and_then(|s| s.friends.get(&key))
+                    .and_then(|f| f.game_info.clone())
+            }),
         _ => None,
     };
     let show_call = match request {
@@ -182,18 +190,18 @@ pub(crate) async fn load(
             action: A::VoiceChat,
             ..
         } => selections
-            .friend(window)
+            .friend(&launchers.selection_window(window))
             .and_then(|key| ctx.skin.signals.ringing_from(&key)),
         _ => None,
     };
-    let group_call = group_call(ctx, selections, request).await?;
+    let group_call = group_call(ctx, selections, launchers, request).await?;
     let in_call = match request {
         IpcRequest::RunSkinAction { window, action, .. } => {
             let signals = &ctx.skin.signals;
             in_call(
                 window,
                 action,
-                selections.get(window),
+                selections.get(&launchers.selection_window(window)),
                 |g| signals.our_group_call(g),
                 |p| signals.call_in_with(p),
             )
@@ -202,7 +210,7 @@ pub(crate) async fn load(
     };
     let community = match request {
         IpcRequest::RunSkinAction { window, .. } => {
-            let selection = selections.get(window);
+            let selection = selections.get(&launchers.selection_window(window));
             match &selection {
                 Some(SkinSelection::Community { community, .. }) => {
                     let views = super::community::load(ctx, Some(community)).await;
