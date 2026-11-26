@@ -11,12 +11,19 @@
 // never `aria-disabled`; the checks go by cause, never by node name. And an
 // inactive window's close button still closes it (Symbiosis's community
 // window, which wears the pack's chat frame and follows its signals, SKW1).
+//
+// Lead (owner's rule: a disabled control is *visibly* disabled): every
+// refused node looks different from its enabled self. Its box is shot as
+// served, then as its enabled self (`data-state="normal"`, no
+// `aria-disabled` or `data-disabled-by`), and at least 20 pixels must differ
+// (Combat's round Open/Leave drew the same art in both).
 
 import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, switchTo, waitUntil } from "../../../walk/helpers.ts";
 import { BUDDY, openSettings } from "../../../walk/nav.ts";
 import { createCommunity, createIdentity, newUser, openCommunity, type User } from "../../journeys.ts";
 import { applySkin, skinShown } from "../../journeys_skins.ts";
+import { decodePng } from "../../png.ts";
 import { shot } from "../../shots.ts";
 import { builtinPacks } from "../../skin-pack.ts";
 
@@ -29,6 +36,50 @@ interface Disabled {
   by: string;
   opacity: string;
   cause: string;
+}
+
+/**
+ * How many pixels inside each refused node's box change when it is drawn as
+ * its enabled self instead (its attributes put back after), by node.
+ */
+async function disabledLook(ids: string[]): Promise<Record<string, number>> {
+  const width = (await browser.execute(() => innerWidth)) as number;
+  const served = decodePng(Buffer.from(await browser.takeScreenshot(), "base64"));
+  const scale = served.width / width;
+  const out: Record<string, number> = {};
+  for (const id of ids) {
+    const box = (await browser.execute((node: string) => {
+      const n = document.querySelector<HTMLElement>(`.skin-tree [data-skin-node="${node}"][aria-disabled="true"]`);
+      if (!n) return null;
+      const r = n.getBoundingClientRect();
+      const keep = { state: n.getAttribute("data-state"), by: n.getAttribute("data-disabled-by") };
+      (window as unknown as { __cr1Keep: unknown }).__cr1Keep = keep;
+      n.setAttribute("data-state", "normal");
+      n.removeAttribute("aria-disabled");
+      n.removeAttribute("data-disabled-by");
+      return [r.x, r.y, r.width, r.height];
+    }, id)) as number[] | null;
+    if (!box) continue;
+    const enabled = decodePng(Buffer.from(await browser.takeScreenshot(), "base64"));
+    await browser.execute((node: string) => {
+      const n = document.querySelector<HTMLElement>(`.skin-tree [data-skin-node="${node}"]`);
+      const keep = (window as unknown as { __cr1Keep: { state: string | null; by: string | null } }).__cr1Keep;
+      if (!n) return;
+      if (keep.state !== null) n.setAttribute("data-state", keep.state);
+      n.setAttribute("aria-disabled", "true");
+      if (keep.by !== null) n.setAttribute("data-disabled-by", keep.by);
+    }, id);
+    const [x, y, w, h] = box.map((v) => Math.round(v * scale));
+    let changed = 0;
+    for (let row = Math.max(0, y); row < Math.min(served.height, y + h); row++) {
+      for (let col = Math.max(0, x); col < Math.min(served.width, x + w); col++) {
+        const i = (row * served.width + col) * 4;
+        if (Math.abs(served.data[i] - enabled.data[i]) + Math.abs(served.data[i + 1] - enabled.data[i + 1]) + Math.abs(served.data[i + 2] - enabled.data[i + 2]) > 48) changed++;
+      }
+    }
+    out[id] = changed;
+  }
+  return out;
 }
 
 /** The current window's drawn nodes in their Disabled art for `windowInactive`: `aria-disabled` must be absent. */
@@ -87,6 +138,8 @@ describe("a disabled node says why (CR1)", function () {
           })),
       )) as Disabled[];
       for (const d of nodes) console.log(`[cr1] ${file} ${d.node}: cause=${d.cause || "?"} by=${d.by || "?"} opacity=${d.opacity} reason="${d.reason}"`);
+      const look = await disabledLook(nodes.map((d) => d.node));
+      console.log(`[cr1] ${file} disabled vs enabled self, pixels changed: ${JSON.stringify(look)} (visibly disabled at 20)`);
       const inactive = await inactiveNodes();
       console.log(`[cr1] ${file} windowInactive (pressable, not aria-disabled): ${JSON.stringify(inactive)}`);
       await shot(`${file}-disabled`);
@@ -98,6 +151,8 @@ describe("a disabled node says why (CR1)", function () {
       // By cause: every refused node names a refusal cause and who draws it.
       expect(nodes.filter((d) => d.cause === "" || d.cause === "windowInactive" || d.by === "").map((d) => d.node)).toEqual([]);
       expect(inactive.filter((i) => i.ariaDisabled !== null).map((i) => i.node)).toEqual([]);
+      // Visibly disabled: each refused node differs from its enabled self.
+      expect(Object.entries(look).filter(([, n]) => n < 20).map(([id]) => id)).toEqual([]);
     });
   }
 
