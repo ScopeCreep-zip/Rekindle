@@ -57,6 +57,10 @@ export type ShellPanel =
 
 export type CallOp =
   | { kind: "voice"; arg: { friend: string } }
+  | { kind: "answer"; arg: { callId: string } }
+  | { kind: "joinGroup"; arg: { groupId: string; callId: string } }
+  | { kind: "leave"; arg: { callId: string } }
+  | { kind: "leaveGroup"; arg: { groupId: string; callId: string } }
   | { kind: "video"; arg: { friend: string } }
   | { kind: "end" }
   | { kind: "mute" }
@@ -67,6 +71,12 @@ export type CallOp =
 export type CallTarget =
   | { kind: "call"; arg: { callId: string } }
   | { kind: "voice"; arg: { community: string; channel: string } };
+
+/** One prefilled member of a group-scoped Start Group Call (Rust `GroupCallInvitee`). */
+export interface GroupCallInvitee {
+  pubkey: string;
+  displayName: string;
+}
 
 export type ShellOp =
   | { kind: "dragWindow" }
@@ -87,6 +97,10 @@ export type ShellOp =
   | { kind: "setState"; arg: ArgOf<"setState"> }
   | { kind: "playSound"; arg: ArgOf<"playSound"> }
   | { kind: "openPanel"; arg: ShellPanel }
+  | {
+      kind: "startGroupCall";
+      arg: { groupId: string; groupName: string; members: GroupCallInvitee[] };
+    }
   | { kind: "openChat"; arg: { friend: string } }
   | { kind: "openProfile"; arg: { friend: string } }
   | { kind: "openSafetyNumber"; arg: { friend: string } }

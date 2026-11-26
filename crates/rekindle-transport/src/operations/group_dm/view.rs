@@ -6,13 +6,13 @@
 use rekindle_dm::GroupDmDeps;
 use rekindle_types::dto::dm::DmMessage;
 use rekindle_types::dto::group_dm::{GroupDmView, GroupDmViewMember};
-use rekindle_types::group_dm::GroupDmRosterMember;
+use rekindle_types::group_dm::{group_call_refused, GroupCallRoster, GroupDmRosterMember};
 
 use super::{friend_error, parse_group_id};
 use crate::operations::friend::{state, FriendError, FriendHost};
 
 /// Why an unanswered invite's room actions wait.
-const NOT_JOINED: &str = "accept the invite first";
+const NOT_JOINED: &str = rekindle_types::group_dm::ACCEPT_INVITE_FIRST;
 
 async fn members(deps: &dyn GroupDmDeps, roster: &[GroupDmRosterMember]) -> Vec<GroupDmViewMember> {
     let mut out = Vec::with_capacity(roster.len());
@@ -25,6 +25,11 @@ async fn members(deps: &dyn GroupDmDeps, roster: &[GroupDmRosterMember]) -> Vec<
     out
 }
 
+/// A held group's roster as a group call reads it.
+fn held(roster: &[GroupDmRosterMember]) -> GroupCallRoster {
+    GroupCallRoster::Held(roster.iter().map(|m| m.identity.clone()).collect())
+}
+
 /// Every invite we have not answered, newest first, then every group we
 /// are in.
 ///
@@ -35,6 +40,7 @@ pub async fn list(host: &dyn FriendHost) -> Result<Vec<GroupDmView>, FriendError
     let deps = deps.as_ref();
     let invites = deps.invites().await.map_err(|e| friend_error(&e))?;
     let groups = deps.groups().await.map_err(|e| friend_error(&e))?;
+    let me = deps.own_identity();
     let mut views = Vec::with_capacity(invites.len() + groups.len());
     for pending in invites {
         let invite = pending.invite;
@@ -48,10 +54,10 @@ pub async fn list(host: &dyn FriendHost) -> Result<Vec<GroupDmView>, FriendError
             favourite: false,
             rename_refused: Some(NOT_JOINED.to_owned()),
             invite_refused: Some(NOT_JOINED.to_owned()),
+            call_refused: group_call_refused(&GroupCallRoster::Invited, &me),
         });
     }
     let local = local_flags(host).await?;
-    let me = deps.own_identity();
     for group in groups {
         let group_id = rekindle_dm::group::group_id_hex(&group.group_id);
         let (origin_peer, favourite) = local.get(&group_id).cloned().unwrap_or_default();
@@ -65,6 +71,7 @@ pub async fn list(host: &dyn FriendHost) -> Result<Vec<GroupDmView>, FriendError
             favourite,
             rename_refused: rekindle_dm::rename_refused(&group.roster, &me),
             invite_refused: rekindle_dm::invite_refused(&group.roster, &me),
+            call_refused: group_call_refused(&held(group.roster.members()), &me),
         });
     }
     Ok(views)

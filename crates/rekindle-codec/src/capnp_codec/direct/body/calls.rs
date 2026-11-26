@@ -177,6 +177,9 @@ pub struct GroupCallOffer {
     pub participants: Vec<String>,
     pub wrapped_call_key: Vec<u8>,
     pub expires_at_ms: u64,
+    /// The group DM the call belongs to (`None` for a buddy-list group
+    /// call); the receiver admits it only from a member of that roster.
+    pub group_id: Option<String>,
 }
 
 impl GroupCallOffer {
@@ -191,6 +194,7 @@ impl GroupCallOffer {
         );
         b.set_wrapped_call_key(&self.wrapped_call_key);
         b.set_expires_at_ms(self.expires_at_ms);
+        b.set_group_id(self.group_id.as_deref().unwrap_or_default());
     }
 
     pub(super) fn read(r: group_call_offer::Reader<'_>) -> Result<Self, CodecError> {
@@ -202,6 +206,7 @@ impl GroupCallOffer {
             participants: text_list(r.get_participants())?,
             wrapped_call_key: data(r.get_wrapped_call_key())?,
             expires_at_ms: r.get_expires_at_ms(),
+            group_id: Some(text(r.get_group_id())?).filter(|g| !g.is_empty()),
         })
     }
 }

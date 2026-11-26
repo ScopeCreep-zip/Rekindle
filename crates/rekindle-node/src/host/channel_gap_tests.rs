@@ -12,9 +12,30 @@ use super::channel_change_tests::{channel_events, reader, AUTHOR, EDIT_CHANNEL};
 use crate::host::adapters::channel::HostChannel;
 use crate::host::Host;
 
+/// `state` with the `@everyone` role at `DEFAULT_EVERYONE`, as every
+/// genesis seeds it: a member views every channel no overwrite closes
+/// (the channel ingest's VIEW gate, plan E3.2 SEC).
+pub(crate) fn everyone(mut state: GovernanceState) -> GovernanceState {
+    state.roles.insert(
+        rekindle_types::id::RoleId([0; 16]),
+        rekindle_governance::state::RoleState {
+            name: "everyone".into(),
+            permissions: rekindle_types::permissions::DEFAULT_EVERYONE,
+            position: 0,
+            color: 0,
+            hoist: false,
+            mentionable: false,
+            self_assignable: false,
+            exclusion_group: None,
+            stamp: rekindle_governance::fixture::stamp(0),
+        },
+    );
+    state
+}
+
 /// The merged state of `c1` with its one text channel.
 pub(crate) fn with_channel() -> GovernanceState {
-    let mut gov = GovernanceState::default();
+    let mut gov = everyone(GovernanceState::default());
     gov.channels.insert(
         ChannelId::from_hex(EDIT_CHANNEL).expect("channel id"),
         ChannelState {

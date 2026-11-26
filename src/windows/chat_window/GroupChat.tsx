@@ -25,10 +25,14 @@ import DisappearingTimerControl from "../../components/chat/DisappearingTimerCon
 import InviteToRoomModal from "../../components/chat/InviteToRoomModal";
 import GameLobbyCard from "../../components/chat/GameLobbyCard";
 import { subscribeGroupChatEvents } from "../../handlers/group-dm.handlers";
+import StartGroupCallModal, { type GroupCallTarget } from "../../components/buddy-list/StartGroupCallModal";
+import { registerShellRunner } from "../../actions/skin.actions";
 import type { Message } from "../../stores/chat.store";
 import { SlotMount } from "../../components/skin-tree/slots";
 import SkinTreeWindow from "../../components/skin-tree/SkinTreeWindow";
 import { skinShell } from "../../hooks/useSkin";
+import { callsState } from "../../stores/calls.store";
+import { handleAcceptGroupCall, handleEndGroupCall } from "../../actions/calls.actions";
 
 /// The chat window's group mode (plan E2.6): the group's stored history
 /// (`group_dm_messages`) with members' messages as they arrive, its members
@@ -69,6 +73,16 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
     setHistoryReady(true);
     window.addEventListener("focus", onFocus);
   });
+  // GV2: this group's Call (HostGroupVoiceChat) answers with Start Group
+  // Call for this group, shown here, where it was pressed.
+  const [callTarget, setCallTarget] = createSignal<GroupCallTarget | null>(null);
+  onCleanup(
+    registerShellRunner((op) => {
+      if (op.kind !== "startGroupCall") return false;
+      setCallTarget(op.arg);
+      return true;
+    }),
+  );
   onCleanup(() => {
     window.removeEventListener("focus", onFocus);
     for (const p of unlisteners) p.then((unlisten) => unlisten());
@@ -95,6 +109,38 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
   // verdict (`renameRefused`, `inviteRefused`) disables each with its reason.
   const renameRefused = (): string | null => group()?.renameRefused ?? "This group is not in your list.";
   const inviteRefused = (): string | null => group()?.inviteRefused ?? "This group is not in your list.";
+  // The Host's verdict on calling (GroupDmView.callRefused); the stand-in
+  // is only for a group no longer listed, never for the verdict itself.
+  const callRefused = (): string | null => {
+    const g = group();
+    return g ? g.callRefused : "This group is not in your list.";
+  };
+  // The group's call in every layout (never hidden): this group's call when
+  // active (Leave), ringing (Join), else Call, which opens Start Group Call
+  // for the group, its other members ticked (GV2).
+  const activeCall = (): string | null =>
+    callsState.activeGroupCall?.groupId === groupId ? callsState.activeGroupCall.callId : null;
+  const ringingCall = (): string | null =>
+    callsState.incomingGroupCalls.find((c) => c.groupId === groupId)?.callId ?? null;
+  // Our own ring for this group (GV3): Cancel ends it.
+  const ourRing = (): string | null =>
+    callsState.outgoingGroupCall?.groupId === groupId ? callsState.outgoingGroupCall.callId : null;
+  function pressCall(): void {
+    const active = activeCall();
+    if (active) return void handleEndGroupCall(active);
+    const ours = ourRing();
+    if (ours) return void handleEndGroupCall(ours);
+    const ringing = ringingCall();
+    if (ringing) return void handleAcceptGroupCall(ringing);
+    if (callRefused() !== null) return;
+    setCallTarget({
+      groupId,
+      groupName: name(),
+      members: members()
+        .filter((m) => m.key !== authState.publicKey)
+        .map((m) => ({ pubkey: m.key, displayName: m.label })),
+    });
+  }
   const [renaming, setRenaming] = createSignal<string | null>(null);
   const [inviting, setInviting] = createSignal(false);
   const [roomError, setRoomError] = createSignal<string | null>(null);
@@ -156,6 +202,15 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
             />
           </form>
         </Show>
+        <button
+          class="form-btn-secondary group-chat-action"
+          aria-disabled={activeCall() === null && ourRing() === null && ringingCall() === null && callRefused() !== null ? "true" : undefined}
+          title={activeCall() ? "Leave the call" : ourRing() ? "Cancel the call" : ringingCall() ? "Join the call" : (callRefused() ?? `Call ${name()}`)}
+          aria-description={activeCall() === null && ourRing() === null && ringingCall() === null ? (callRefused() ?? undefined) : undefined}
+          onClick={pressCall}
+        >
+          {activeCall() ? "Leave call" : ourRing() ? "Cancel call" : ringingCall() ? "Join call" : "Call"}
+        </button>
         <button
           class="form-btn-secondary group-chat-action"
           aria-disabled={inviteRefused() !== null ? "true" : undefined}
@@ -226,6 +281,11 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
           </div>
         </Show>
       </div>
+      <StartGroupCallModal
+        isOpen={callTarget() !== null}
+        group={callTarget()}
+        onClose={() => setCallTarget(null)}
+      />
     </>
   );
 };

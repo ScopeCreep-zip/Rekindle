@@ -12,7 +12,7 @@ import type { ShellOp } from "../ipc/commands/dto_skin_run";
 import { addToast } from "../stores/toast.store";
 import { errorMessage } from "../utils/error";
 import { callsState } from "../stores/calls.store";
-import { handleEndDmCall, handleStartDmCall } from "./calls.actions";
+import { handleAcceptGroupCall, handleAcceptIncomingCall, handleEndDmCall, handleEndGroupCall, handleStartDmCall } from "./calls.actions";
 import { handleSetMuted } from "./voice.actions";
 import { handleOpenGroupChat } from "./group-dm.actions";
 import { handleCopyPublicKey } from "./buddy.actions";
@@ -74,8 +74,10 @@ export function transferOps(op: ShellOp): boolean {
   return true;
 }
 
-/** A pack's `VoiceChat` and `LeaveVoiceChat`: a 1:1 call started with the
- *  friend the Host named, or the active (or our ringing) call ended. Mute is
+/** A pack's `VoiceChat`, `HostVoiceChat`, `LeaveVoiceChat` and
+ *  `CancelVoiceChat`: a 1:1 call started, a ringing call answered or a
+ *  group's joined, a call left or our own ring cancelled, as the Host
+ *  named by the window's call (plan CAP1, GV3). Mute is
  *  `muteOps`, a separate group: not every window that calls lays it. */
 export function callOps(op: ShellOp): boolean {
   if (op.kind !== "call") return false;
@@ -85,9 +87,30 @@ export function callOps(op: ShellOp): boolean {
     case "video":
       void handleStartDmCall(call.arg.friend, "", call.kind === "video");
       return true;
+    // A pack's Answer (VoiceChat while a friend's call rings, plan CAP1):
+    // accept that call, never place one.
+    case "answer":
+      void handleAcceptIncomingCall(call.arg.callId);
+      return true;
+    // A pack's Join (GroupVoiceChat, or VoiceChat in a group window, while
+    // the group's call rings): join that call, never start one.
+    case "joinGroup":
+      void handleAcceptGroupCall(call.arg.callId);
+      return true;
+    // A pack's Leave/Cancel in a chat window (GV3): end that 1:1 call.
+    case "leave":
+      void handleEndDmCall(call.arg.callId);
+      return true;
+    // In a group window: leave the group call, or cancel our own ring.
+    case "leaveGroup":
+      void handleEndGroupCall(call.arg.callId);
+      return true;
     case "end": {
+      // The window's 1:1 call (active, or our own ring); with none, say so:
+      // the Host asked for an end this window has no call for.
       const active = callsState.activeCall ?? callsState.outgoingCall;
       if (active) void handleEndDmCall(active.callId);
+      else addToast("call end has no 1:1 call in this window", "error");
       return true;
     }
     default:

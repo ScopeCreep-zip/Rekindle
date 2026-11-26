@@ -25,6 +25,7 @@ pub mod lifecycle; // Plan CE1 — local end first, durable CallEnd, consent.
 pub mod media_owner; // Plan CE2 — media is owned per call id.
 pub mod outbound; // Phase 14.n — caller-side entry points (start_dm_call, etc.).
 pub mod registry;
+mod trace; // Finding OBS1 — one info line per call operation.
 
 // Ring timers live on the deps trait:
 //   - Receiver-side: `CallSignalingDeps::spawn_incoming_call_timeout`
@@ -42,8 +43,8 @@ mod tests; // Phase 14.j — handler-level regression coverage for audit-fixed p
 pub use deps::CallSignalingDeps;
 pub use event::CallSignalEvent;
 pub use group_handlers::{
-    handle_group_accept_received, handle_group_call_payload, handle_group_decline_received,
-    handle_incoming_group_invite, GroupInvite,
+    check_group_scope, handle_group_accept_received, handle_group_call_payload,
+    handle_group_decline_received, handle_incoming_group_invite, GroupInvite,
 };
 pub use handlers::{
     handle_accept_received, handle_decline_received, handle_incoming_invite,

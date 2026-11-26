@@ -56,7 +56,7 @@ pub async fn fetch_attachment_to_cache<D: FilesDeps>(
     channel_id: &str,
     attachment_id_hex: &str,
 ) -> Result<FetchedAttachment, FilesError> {
-    deps.require_permission(community_id, permissions::READ_HISTORY)?;
+    deps.require_permission(community_id, Some(channel_id), permissions::READ_HISTORY)?;
     deps.ensure_cache_open(community_id)?;
 
     let offer = fetch_offer(deps, community_id, channel_id, attachment_id_hex).await?;

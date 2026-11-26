@@ -10,9 +10,10 @@ use rekindle_ipc::protocol::{GroupDmRequest, IpcRequest, IpcResponse, LobbyReque
 use rekindle_transport::operations::group_dm;
 use rekindle_types::dto::group_lobby::LobbyView;
 use rekindle_types::dto::skin_action::SkinAction as A;
-use rekindle_types::dto::skin_run::{ShellOp, SkinRun, SkinSelection};
+use rekindle_types::dto::skin_run::{CallOp, ShellOp, ShellPanel, SkinRun, SkinSelection};
 
 use super::actions::{Mapped, Selections};
+use super::reads::{GroupCall, InCall};
 use crate::daemon::dispatch::DaemonContext;
 
 /// The selected group's state.
@@ -187,4 +188,77 @@ pub(crate) async fn load(
         .transpose()
         .map_err(|e| IpcResponse::error(500, format!("the room's lobby cannot be read: {e}")))?;
     Ok(rooms)
+}
+
+/// A group window's join: the selected group's call in progress that we
+/// are not in, joined through the shell (`CallOp::JoinGroup`).
+///
+/// # Errors
+/// 409 when no group is selected, or the group has no call to join.
+pub(crate) fn join_group(group: Option<&GroupCall>) -> Result<Mapped, IpcResponse> {
+    match group {
+        Some(GroupCall {
+            group_id,
+            call_id: Some(call_id),
+            ..
+        }) => Ok(Mapped::Run(SkinRun::Shell(ShellOp::Call(
+            CallOp::JoinGroup {
+                group_id: group_id.clone(),
+                call_id: call_id.clone(),
+            },
+        )))),
+        Some(_) => Err(IpcResponse::error(
+            409,
+            "No call in this group is in progress.",
+        )),
+        None => Err(IpcResponse::error(
+            409,
+            "GroupVoiceChat acts on the selected group: none is selected",
+        )),
+    }
+}
+
+/// A window's leave (and a group window's cancel): the group's call
+/// through `CallOp::LeaveGroup`, a chat window's 1:1 call through
+/// `CallOp::Leave`.
+///
+/// # Errors
+/// 409 when the window is in no call, the reason its capability is off.
+pub(crate) fn leave(in_call: Option<&InCall>) -> Result<Mapped, IpcResponse> {
+    let op = match in_call {
+        Some(InCall::Group {
+            group_id,
+            call_id: Some(call_id),
+        }) => CallOp::LeaveGroup {
+            group_id: group_id.clone(),
+            call_id: call_id.clone(),
+        },
+        Some(InCall::Direct {
+            call_id: Some(call_id),
+        }) => CallOp::Leave {
+            call_id: call_id.clone(),
+        },
+        Some(InCall::Group { call_id: None, .. }) => {
+            return Err(IpcResponse::error(409, "You're not in this group's call."))
+        }
+        Some(InCall::Direct { call_id: None }) | None => {
+            return Err(IpcResponse::error(409, "You're not in a call with them."))
+        }
+    };
+    Ok(Mapped::Run(SkinRun::Shell(ShellOp::Call(op))))
+}
+
+/// A group window's host (`AppHostGroupVoiceChat`, and the `hostVoiceChat`
+/// Symbiosis draws on its Host button): the Start Group Call panel scoped
+/// to the selected group and prefilled from its roster; with no group
+/// selected (the buddy list) the plain panel.
+pub(crate) fn host_group(group: Option<&GroupCall>) -> Mapped {
+    Mapped::Run(SkinRun::Shell(match group {
+        Some(g) => ShellOp::StartGroupCall {
+            group_id: g.group_id.clone(),
+            group_name: g.group_name.clone(),
+            members: g.members.clone(),
+        },
+        None => ShellOp::OpenPanel(ShellPanel::StartGroupCall),
+    }))
 }

@@ -1,5 +1,6 @@
 //! A community's channel and category administration (plan E3.1 E1).
 
+use rekindle_governance::overwrite::OverwriteTarget;
 use rekindle_ipc::protocol::ChannelRequest;
 
 use super::{channel, community, hex16, name, slowmode, text, Checked, MAX_TOPIC_LEN};
@@ -8,8 +9,6 @@ use super::{channel, community, hex16, name, slowmode, text, Checked, MAX_TOPIC_
 const MAX_ORDERED: usize = 1024;
 /// Most tags a forum channel carries.
 const MAX_FORUM_TAGS: usize = 32;
-/// Longest overwrite target: a role id's text or a pseudonym's hex.
-const MAX_TARGET_LEN: usize = 128;
 
 fn ordered(ids: &[String], check: impl Fn(&str) -> Checked) -> Checked {
     if ids.len() > MAX_ORDERED {
@@ -21,21 +20,19 @@ fn ordered(ids: &[String], check: impl Fn(&str) -> Checked) -> Checked {
     ids.iter().try_for_each(|id| check(id))
 }
 
+/// An overwrite targets a role by its 32 lowercase hex or a member by its
+/// 64: the one canonical key the governance merge stores and every
+/// permission reader looks up (`OverwriteTarget`). Anything else would be
+/// stored under a key no reader finds, so it is refused here.
 fn target(target_type: &str, target_id: &str) -> Checked {
-    if !matches!(target_type, "role" | "member") {
-        return Err(rekindle_ipc::protocol::IpcResponse::error(
-            400,
-            "an overwrite targets a role or a member",
-        ));
-    }
-    text(target_id, MAX_TARGET_LEN, "overwrite target")?;
-    if target_id.is_empty() {
-        return Err(rekindle_ipc::protocol::IpcResponse::error(
-            400,
-            "an overwrite names its target",
-        ));
-    }
-    Ok(())
+    OverwriteTarget::parse(target_type, target_id)
+        .map(drop)
+        .ok_or_else(|| {
+            rekindle_ipc::protocol::IpcResponse::error(
+                400,
+                "an overwrite targets a role (32 lowercase hex) or a member (64 lowercase hex)",
+            )
+        })
 }
 
 /// Channel and category administration: names, ids, tags and targets.

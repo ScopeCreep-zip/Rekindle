@@ -234,7 +234,11 @@ pub fn open_buddy_list(app: &AppHandle) -> Result<(), String> {
     )?
     .title("Rekindle")
     .max_inner_size(400.0, 900.0);
-    finish(builder, WindowKind::BuddyList).map(drop)
+    finish(builder, WindowKind::BuddyList)?;
+    // A skin window: the Host serves its signals from now on (plan CR1); one
+    // opened before the Host is announced when it starts (`announce_open`).
+    crate::skin_windows::opened(app, labels::BUDDY_LIST, None, None);
+    Ok(())
 }
 
 /// What a chat window shows: a 1:1 conversation with a friend (identity

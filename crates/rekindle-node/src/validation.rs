@@ -559,6 +559,8 @@ mod expressions;
 mod friends;
 mod group_dm;
 mod local_search;
+#[cfg(test)]
+mod overwrite_target_tests;
 mod pins;
 mod rich_messaging;
 #[cfg(test)]

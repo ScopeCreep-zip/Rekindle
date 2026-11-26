@@ -131,7 +131,14 @@ pub trait FilesDeps: FileCacheDeps {
 
     // ── Permissions + slowmode + mentions ──────────────────────────
 
-    fn require_permission(&self, community_id: &str, permission: u64) -> Result<(), FilesError>;
+    /// Require `permission` on `channel_id` (its overwrites applied), or
+    /// community-wide for `None`.
+    fn require_permission(
+        &self,
+        community_id: &str,
+        channel_id: Option<&str>,
+        permission: u64,
+    ) -> Result<(), FilesError>;
 
     fn enforce_slowmode(
         &self,

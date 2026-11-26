@@ -94,8 +94,10 @@ export const voiceCommands = {
     invoke<void>("send_call_reaction", { callId, emoji }),
   /// Wave 12 W12.9 — group calls. Initiator fans out a per-recipient
   /// wrapped call_key to every invitee.
-  startGroupCall: (participantPubkeys: string[], video: boolean) =>
-    invoke<string>("start_group_call", { participantPubkeys, video }),
+  /** `groupId`: the group the call is for (GV2), null outside a group; the
+   *  Host refuses a participant outside that group's roster. */
+  startGroupCall: (participantPubkeys: string[], video: boolean, groupId: string | null) =>
+    invoke<string>("start_group_call", { participantPubkeys, video, groupId }),
   acceptGroupCall: (callId: string) =>
     invoke<void>("accept_group_call", { callId }),
   declineGroupCall: (callId: string, reason?: string) =>

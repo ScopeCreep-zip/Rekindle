@@ -19,6 +19,7 @@ fn group(id: char, pending: bool) -> GroupDmView {
         favourite: false,
         rename_refused: None,
         invite_refused: None,
+        call_refused: None,
     }
 }
 

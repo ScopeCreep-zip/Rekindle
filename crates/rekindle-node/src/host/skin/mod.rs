@@ -16,7 +16,10 @@ mod capability_tests;
 mod draft;
 pub(crate) mod failure;
 pub(crate) mod ids;
+#[cfg(test)]
+mod leave_tests;
 pub(crate) mod login;
+pub(crate) mod press_trace;
 pub(crate) mod reads;
 pub(crate) mod rooms;
 mod serve;

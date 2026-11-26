@@ -13,7 +13,7 @@ use crate::host::adapters::channel::HostChannel;
 use crate::host::Host;
 
 /// `AUTHOR`'s post `message_id` with `body`, as a record read hands it on.
-fn post(message_id: &str, body: &str) -> ReceivedPost {
+pub(super) fn post(message_id: &str, body: &str) -> ReceivedPost {
     let lamport_ts = 3;
     let at = BodyPosition {
         anchor: "c1",

@@ -34,6 +34,10 @@ use rekindle_transport::operations::group_dm;
 pub(crate) struct Call {
     /// The 1:1 peer; `None` for a group call.
     peer: Option<String>,
+    /// The group DM a group call belongs to, from the `groupId` on
+    /// `CallEvent::Incoming`/`Connected` (`GroupCallOffer.group_id`,
+    /// roster-checked by `rekindle_calls::signaling::check_group_scope`).
+    group: Option<String>,
     pub(crate) ringing: bool,
     pub(crate) outgoing: bool,
 }
@@ -158,11 +162,13 @@ impl Inputs {
                 call_id,
                 from,
                 is_group,
+                group_id,
                 ..
             } => {
                 let peer = (!is_group).then(|| from.clone());
                 let call = Call {
                     peer,
+                    group: group_id.clone(),
                     ringing: true,
                     outgoing: false,
                 };
@@ -173,18 +179,38 @@ impl Inputs {
             } => {
                 let call = Call {
                     peer: Some(peer_key.clone()),
+                    group: None,
                     ringing: true,
                     outgoing: true,
                 };
                 self.calls.insert(call_id.clone(), call);
             }
-            CallEvent::Connected { call_id, direct } => {
+            CallEvent::GroupStarted {
+                call_id, group_id, ..
+            } => {
+                let call = Call {
+                    peer: None,
+                    group: group_id.clone(),
+                    ringing: true,
+                    outgoing: true,
+                };
+                self.calls.insert(call_id.clone(), call);
+            }
+            CallEvent::Connected {
+                call_id,
+                direct,
+                group_id,
+            } => {
                 let call = self.calls.entry(call_id.clone()).or_insert(Call {
                     peer: None,
+                    group: None,
                     ringing: false,
                     outgoing: false,
                 });
                 call.ringing = false;
+                if group_id.is_some() {
+                    call.group.clone_from(group_id);
+                }
                 if let Some(direct) = direct {
                     call.peer = Some(direct.peer_key.clone());
                 }
@@ -236,6 +262,50 @@ impl Inputs {
             }),
             VoiceScope::Dm { .. } => None,
         }
+    }
+
+    /// The id of the incoming 1:1 call from `peer` that is ringing, the
+    /// call Xfire's `AppVoiceChat` answers.
+    pub(crate) fn ringing_from(&self, peer: &str) -> Option<String> {
+        self.calls
+            .iter()
+            .find(|(_, c)| c.peer.as_deref() == Some(peer) && c.ringing && !c.outgoing)
+            .map(|(call_id, _)| call_id.clone())
+    }
+
+    /// The call of the group DM `group_id`: the one whose signaling
+    /// carries that group id (never matched by members, so two groups of
+    /// the same people each see only their own call).
+    pub(crate) fn group_call(&self, group_id: &str) -> Option<(&String, &Call)> {
+        self.calls
+            .iter()
+            .find(|(_, c)| c.peer.is_none() && c.group.as_deref() == Some(group_id))
+    }
+
+    /// The id of the group's call in progress that we are not in (it is
+    /// ringing here), the call Xfire's group `AppGroupVoiceChat` joins.
+    pub(crate) fn joinable_group_call(&self, group_id: &str) -> Option<String> {
+        self.group_call(group_id)
+            .filter(|(_, c)| c.ringing && !c.outgoing)
+            .map(|(call_id, _)| call_id.clone())
+    }
+
+    /// The id of the group's call that is ours to leave: one we are in,
+    /// or our own that still rings out (its cancel), the call Xfire's
+    /// group `AppLeaveGroupVoiceChat` leaves.
+    pub(crate) fn our_group_call(&self, group_id: &str) -> Option<String> {
+        self.group_call(group_id)
+            .filter(|(_, c)| !c.ringing || c.outgoing)
+            .map(|(call_id, _)| call_id.clone())
+    }
+
+    /// The id of the 1:1 call with `peer` that we are in (connected), the
+    /// call a chat window's `AppLeaveVoiceChat` leaves.
+    pub(crate) fn call_in_with(&self, peer: &str) -> Option<String> {
+        self.calls
+            .iter()
+            .find(|(_, c)| c.peer.as_deref() == Some(peer) && !c.ringing)
+            .map(|(call_id, _)| call_id.clone())
     }
 
     pub(crate) fn call_with(&self, peer: &str) -> Option<&Call> {
@@ -435,6 +505,27 @@ impl SignalState {
     /// `ShowVoiceWindow`'s window ([`Inputs::show_call`]).
     pub(crate) fn show_call(&self) -> Option<CallTarget> {
         self.inputs.lock().show_call()
+    }
+
+    /// `VoiceChat`'s call ([`Inputs::ringing_from`]).
+    pub(crate) fn ringing_from(&self, peer: &str) -> Option<String> {
+        self.inputs.lock().ringing_from(peer)
+    }
+
+    /// A group window's `GroupVoiceChat` call
+    /// ([`Inputs::joinable_group_call`]).
+    pub(crate) fn joinable_group_call(&self, group_id: &str) -> Option<String> {
+        self.inputs.lock().joinable_group_call(group_id)
+    }
+
+    /// A group window's leave or cancel ([`Inputs::our_group_call`]).
+    pub(crate) fn our_group_call(&self, group_id: &str) -> Option<String> {
+        self.inputs.lock().our_group_call(group_id)
+    }
+
+    /// A chat window's leave ([`Inputs::call_in_with`]).
+    pub(crate) fn call_in_with(&self, peer: &str) -> Option<String> {
+        self.inputs.lock().call_in_with(peer)
     }
 }
 
