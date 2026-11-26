@@ -27,7 +27,7 @@ import { artContribution, disabledLookWithBoxes, ownArt } from "../../disabled-l
 import { shot } from "../../shots.ts";
 import { builtinPacks } from "../../skin-pack.ts";
 
-const PACKS = ["symbiosis", "onyx", "combat", "alloy", "xslimfire", "simple-x"];
+const PACKS = ["symbiosis", "onyx", "combat", "alloy", "xslimfire", "simple-x", "spacecowboy"];
 
 interface Disabled {
   node: string;
@@ -39,12 +39,12 @@ interface Disabled {
 }
 
 /** The current window's drawn nodes in their Disabled art for `windowInactive`: `aria-disabled` must be absent. */
-async function inactiveNodes(): Promise<{ node: string; ariaDisabled: string | null }[]> {
+async function inactiveNodes(): Promise<{ node: string; ariaDisabled: string | null; by: string | null }[]> {
   return (await browser.execute(() =>
     Array.from(document.querySelectorAll<HTMLElement>('[data-skin-node][data-state-cause="windowInactive"]'))
       .filter((n) => !n.closest("[hidden]") && n.getBoundingClientRect().width > 0)
-      .map((n) => ({ node: n.dataset.skinNode ?? "", ariaDisabled: n.getAttribute("aria-disabled") })),
-  )) as { node: string; ariaDisabled: string | null }[];
+      .map((n) => ({ node: n.dataset.skinNode ?? "", ariaDisabled: n.getAttribute("aria-disabled"), by: n.getAttribute("data-disabled-by") })),
+  )) as { node: string; ariaDisabled: string | null; by: string | null }[];
 }
 
 describe("a disabled node says why (CR1)", function () {
@@ -114,12 +114,28 @@ describe("a disabled node says why (CR1)", function () {
       console.log(`[cr1] ${file} disabled vs enabled self, pixels changed: ${JSON.stringify(look)} (visibly disabled at 20)`);
       const inactive = await inactiveNodes();
       console.log(`[cr1] ${file} windowInactive (pressable, not aria-disabled): ${JSON.stringify(inactive)}`);
+      // DIS3: a window that only lost focus keeps the pack's look. A node
+      // whose pack has Disabled art (Symbiosis's title buttons: OnDeactivate
+      // → State(Disabled), button_close_disabled) shows that art, so it
+      // differs from Normal; one with none draws as Normal (the served
+      // refusal copy and the Shell dim are refusal-only). Which it is comes
+      // from the art the node draws in each state (`data-disabled-by` is a
+      // refusal's, absent here).
+      const inactiveMeasured = await disabledLookWithBoxes(inactive.map((i) => i.node), true);
+      for (const [id, v] of Object.entries(inactiveMeasured)) console.log(`[dis3] ${file} ${id} windowInactive vs Normal (pack Disabled art: ${v.packArt}): ${v.why}`);
+      const inactiveWrong = Object.entries(inactiveMeasured)
+        .filter(([, v]) => (v.packArt ? v.changed < 20 : v.changed >= 20))
+        .map(([id, v]) => `${id} (pack art ${v.packArt}, ${v.changed} px)`);
+      console.log(`[dis3] ${file} windowInactive looks not as their pack art says: ${JSON.stringify(inactiveWrong)}`);
       await shot(`${file}-disabled`);
       expect(nodes.length).toBeGreaterThan(0);
       expect(nodes.filter((d) => d.reason.trim() === "").map((d) => d.node)).toEqual([]);
       expect(nodes.filter((d) => d.title !== d.reason).map((d) => d.node)).toEqual([]);
       expect(nodes.filter((d) => d.by === "shell" && d.opacity !== "0.5").map((d) => d.node)).toEqual([]);
       expect(nodes.filter((d) => d.by === "pack" && d.opacity !== "1").map((d) => d.node)).toEqual([]);
+      // DIS3: a served copy is the pack's art dimmed by the Host, never dimmed again.
+      expect(nodes.filter((d) => d.by === "served" && d.opacity !== "1").map((d) => d.node)).toEqual([]);
+      expect(inactiveWrong).toEqual([]);
       // By cause: every refused node names a refusal cause and who draws it.
       expect(nodes.filter((d) => d.cause === "" || d.cause === "windowInactive" || d.by === "").map((d) => d.node)).toEqual([]);
       expect(inactive.filter((i) => i.ariaDisabled !== null).map((i) => i.node)).toEqual([]);

@@ -4,7 +4,46 @@
 // its attributes put back after; under 20 is not visibly disabled.
 
 import { browser } from "@wdio/globals";
-import { decodePng } from "./png.ts";
+import { decodePng, type Rgba } from "./png.ts";
+import { saveImage } from "./shots.ts";
+
+/** The computed paint of a node and its art-bearing descendants, for a
+ *  before/after comparison (which property changed between two states). */
+const PAINT_PROPS = ["opacity", "filter", "background-image", "background-position", "background-color", "outline-style", "box-shadow", "color", "transform"];
+
+/** `box` (device px) cut out of `img`. */
+function crop(img: Rgba, [x, y, w, h]: number[]): Rgba {
+  const data = new Uint8Array(w * h * 4);
+  for (let row = 0; row < h; row++) {
+    for (let col = 0; col < w; col++) {
+      const src = ((y + row) * img.width + (x + col)) * 4;
+      if (y + row >= img.height || x + col >= img.width || y + row < 0 || x + col < 0) continue;
+      data.set(img.data.subarray(src, src + 4), (row * w + col) * 4);
+    }
+  }
+  return { width: w, height: h, data };
+}
+
+/** What differs between two crops: the changed pixels' bounding box (crop
+ *  px), the mean and max channel delta over them, how many changed alpha,
+ *  and a diff image (|delta| x4, opaque). */
+function diffOf(a: Rgba, b: Rgba): { summary: string; image: Rgba } {
+  const image: Rgba = { width: a.width, height: a.height, data: new Uint8Array(a.data.length) };
+  let n = 0, sum = 0, max = 0, alpha = 0, x0 = Infinity, y0 = Infinity, x1 = -1, y1 = -1;
+  for (let i = 0; i < a.width * a.height; i++) {
+    const d = [0, 1, 2].map((k) => Math.abs(a.data[i * 4 + k] - b.data[i * 4 + k]));
+    const total = d[0] + d[1] + d[2];
+    for (let k = 0; k < 3; k++) image.data[i * 4 + k] = Math.min(255, d[k] * 4);
+    image.data[i * 4 + 3] = 255;
+    if (total <= 48) continue;
+    n++; sum += total / 3; max = Math.max(max, ...d);
+    if (a.data[i * 4 + 3] !== b.data[i * 4 + 3]) alpha++;
+    const x = i % a.width, y = Math.floor(i / a.width);
+    x0 = Math.min(x0, x); y0 = Math.min(y0, y); x1 = Math.max(x1, x); y1 = Math.max(y1, y);
+  }
+  const box = n ? `[${x0},${y0}..${x1},${y1}] of ${a.width}x${a.height}` : "none";
+  return { summary: `changed ${n}, box ${box}, mean delta ${n ? Math.round(sum / n) : 0}, max ${max}, alpha changed ${alpha}`, image };
+}
 
 /**
  * How many pixels inside each refused node's box change when it is drawn as
@@ -14,36 +53,77 @@ export async function disabledLook(ids: string[]): Promise<Record<string, number
   return Object.fromEntries(Object.entries(await disabledLookWithBoxes(ids)).map(([id, v]) => [id, v.changed]));
 }
 
-/** As `disabledLook`, with each node's box (CSS px), so a node that changes nothing can be found on the shot. */
-export async function disabledLookWithBoxes(ids: string[]): Promise<Record<string, { changed: number; box: number[] }>> {
+/**
+ * As `disabledLook`, with each node's box (CSS px), so a node that changes
+ * nothing can be found on the shot. `inactive` measures instead the nodes a
+ * window that lost focus drew in its `windowInactive` state (not refused).
+ */
+export async function disabledLookWithBoxes(ids: string[], inactive = false): Promise<Record<string, { changed: number; box: number[]; why?: string; packArt?: boolean }>> {
   const width = (await browser.execute(() => innerWidth)) as number;
   const served = decodePng(Buffer.from(await browser.takeScreenshot(), "base64"));
   const scale = served.width / width;
-  const out: Record<string, { changed: number; box: number[] }> = {};
+  const out: Record<string, { changed: number; box: number[]; why?: string; packArt?: boolean }> = {};
+  // The art the marked node draws: its own and its descendants' background
+  // image and position, with their ::before and ::after layers (the served
+  // sheet lays a state's art on these). The served sheet itself is not
+  // readable from the page (skin:// is another origin), its computed result is.
+  const art = async (): Promise<string> =>
+    (await browser.execute(() => {
+      const n = document.querySelector<HTMLElement>('[data-cr1-look="1"]');
+      if (!n) return "";
+      return [n, ...Array.from(n.querySelectorAll<HTMLElement>("*"))]
+        .flatMap((e) => [null, "::before", "::after"].map((p) => {
+          const c = getComputedStyle(e, p);
+          return `${c.backgroundImage}@${c.backgroundPosition}`;
+        }))
+        .join("|");
+    })) as string;
+  const paint = async (): Promise<string[]> =>
+    (await browser.execute((props: string[]) => {
+      const n = document.querySelector<HTMLElement>('[data-cr1-look="1"]');
+      if (!n) return [];
+      return [n, ...Array.from(n.querySelectorAll<HTMLElement>("*"))].map((e, i) => {
+        const c = getComputedStyle(e);
+        const layers = ["::before", "::after"].map((p) => {
+          const l = getComputedStyle(e, p);
+          return `${p}=${l.backgroundImage.split("/").pop()?.slice(0, 40)}@${l.backgroundPosition}`;
+        });
+        return `${i}:${e.tagName.toLowerCase()}.${e.className || "-"} ${props.map((p) => {
+          // An image's file name, not its served origin (every url shares
+          // the skin:// prefix, so a cut from the start hid which art it is).
+          const v = c.getPropertyValue(p);
+          return `${p}=${v.includes("url(") ? v.replace(/url\("?[^")]*\/([^/")]+)"?\)/g, "url(…/$1)").slice(0, 120) : v.slice(0, 60)}`;
+        }).join(" ")} ${layers.join(" ")} hover=${e.matches(":hover")} focus=${e.matches(":focus-visible")}`;
+      });
+    }, PAINT_PROPS)) as string[];
   for (const id of ids) {
-    const box = (await browser.execute((node: string) => {
+    const box = (await browser.execute((node: string, inactiveOnly: boolean) => {
       const drawn = (sel: string): HTMLElement | undefined =>
         Array.from(document.querySelectorAll<HTMLElement>(sel)).find((e) => !e.closest("[hidden]") && e.getBoundingClientRect().width > 0);
-      const n = drawn(`.skin-tree [data-skin-node="${node}"][aria-disabled="true"]`);
+      const n = drawn(inactiveOnly ? `.skin-tree [data-skin-node="${node}"][data-state-cause="windowInactive"]` : `.skin-tree [data-skin-node="${node}"][aria-disabled="true"]`);
       if (!n) return null;
       n.setAttribute("data-cr1-look", "1");
       const r = n.getBoundingClientRect();
-      const keep = { state: n.getAttribute("data-state"), by: n.getAttribute("data-disabled-by") };
+      const keep = { state: n.getAttribute("data-state"), by: n.getAttribute("data-disabled-by"), cause: n.getAttribute("data-state-cause"), aria: n.getAttribute("aria-disabled") };
       (window as unknown as { __cr1Keep: unknown }).__cr1Keep = keep;
       n.setAttribute("data-state", "normal");
       n.removeAttribute("aria-disabled");
       n.removeAttribute("data-disabled-by");
+      n.removeAttribute("data-state-cause");
       return [r.x, r.y, r.width, r.height];
-    }, id)) as number[] | null;
+    }, id, inactive)) as number[] | null;
     if (!box) continue;
     const enabled = decodePng(Buffer.from(await browser.takeScreenshot(), "base64"));
+    const normalPaint = inactive ? await paint() : [];
+    const normalArt = inactive ? await art() : "";
     await browser.execute(() => {
       const n = document.querySelector<HTMLElement>('[data-cr1-look="1"]');
-      const keep = (window as unknown as { __cr1Keep: { state: string | null; by: string | null } }).__cr1Keep;
+      const keep = (window as unknown as { __cr1Keep: { state: string | null; by: string | null; cause: string | null; aria: string | null } }).__cr1Keep;
       if (!n) return;
       if (keep.state !== null) n.setAttribute("data-state", keep.state);
-      n.setAttribute("aria-disabled", "true");
+      if (keep.aria !== null) n.setAttribute("aria-disabled", keep.aria);
       if (keep.by !== null) n.setAttribute("data-disabled-by", keep.by);
+      if (keep.cause !== null) n.setAttribute("data-state-cause", keep.cause);
       n.removeAttribute("data-cr1-look");
     });
     const [x, y, w, h] = box.map((v) => Math.round(v * scale));
@@ -55,6 +135,29 @@ export async function disabledLookWithBoxes(ids: string[]): Promise<Record<strin
       }
     }
     out[id] = { changed, box: box.map(Math.round) };
+    if (inactive) {
+      // Which pixels differ, and why: the node's paint in its served state
+      // (windowInactive) against its Normal self, property by property.
+      await browser.execute((node: string) => {
+        const n = Array.from(document.querySelectorAll<HTMLElement>(`.skin-tree [data-skin-node="${node}"][data-state-cause="windowInactive"]`)).find((e) => e.getBoundingClientRect().width > 0);
+        n?.setAttribute("data-cr1-look", "1");
+      }, id);
+      const servedPaint = await paint();
+      // The pack's own Disabled art for this node: the art it draws in its
+      // served windowInactive state differs from its Normal art.
+      out[id].packArt = (await art()) !== normalArt;
+      await browser.execute(() => document.querySelector('[data-cr1-look="1"]')?.removeAttribute("data-cr1-look"));
+      const changedProps = servedPaint.map((line, i) => (line === normalPaint[i] ? null : `${line}  ->  ${normalPaint[i] ?? "(absent)"}`)).filter((l) => l !== null);
+      const pad = Math.round(4 * scale);
+      const region = [x - pad, y - pad, w + 2 * pad, h + 2 * pad];
+      const a = crop(served, region);
+      const b = crop(enabled, region);
+      const d = diffOf(a, b);
+      saveImage(`inactive-${id}-served`, a);
+      saveImage(`inactive-${id}-normal`, b);
+      saveImage(`inactive-${id}-diff`, d.image);
+      out[id].why = `${d.summary}; paint differs: ${changedProps.length ? JSON.stringify(changedProps) : "none"}`;
+    }
   }
   return out;
 }

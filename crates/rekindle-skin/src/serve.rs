@@ -28,11 +28,12 @@ use crate::output::tokens_css;
 use crate::package::{self, Package};
 use crate::regions::css::skin_css;
 use crate::regions::labels::label_css;
-use crate::regions::still;
 use crate::regions::title::title_css;
 use crate::registry::{resolve, Base, TokenEntry, ENTRIES};
 use crate::shape;
-use crate::{manifest, tokens};
+use crate::tokens;
+
+mod image;
 
 /// The stylesheet's file name.
 pub const TOKENS_CSS: &str = "tokens.css";
@@ -181,11 +182,12 @@ pub(crate) fn files(p: &Package<'_>) -> BTreeMap<String, Vec<u8>> {
 /// not emit (never for a package the helper returned).
 pub fn stylesheet(bytes: &[u8], address: &str) -> Result<Stylesheet, SkinError> {
     let p = package::read(bytes)?;
-    let m = crate::conform::served(bytes, &p, address)?;
+    let (m, made) = crate::conform::served(bytes, &p, address)?;
     let (v, resolved) = active_resolved(&p, &m)?;
     let mut css = tokens_css(&resolved).ok_or_else(|| unreadable("tokens do not emit"))?;
     let base = format!("{}/{address}", origin());
-    let images = files(&p);
+    let mut images = files(&p);
+    images.extend(made);
     css.push_str(&skin_css(&m, &images, &base).ok_or_else(|| unreadable("regions"))?);
     css.push_str(&title_css(&m, &images, &resolved));
     css.push_str(&label_css(&m, &images, &resolved));
@@ -292,7 +294,7 @@ fn sheet_images(css: &str, base: &str) -> Vec<String> {
 /// decode at its declared size (never for a package the helper returned).
 pub fn frames(bytes: &[u8], address: &str) -> Result<Vec<SkinWindowFrame>, SkinError> {
     let p = package::read(bytes)?;
-    let m = crate::conform::served(bytes, &p, address)?;
+    let (m, _) = crate::conform::served(bytes, &p, address)?;
     let images = files(&p);
     m.windows
         .iter()
@@ -326,19 +328,7 @@ pub fn body(bytes: &[u8], address: &str, file: File<'_>) -> Result<Option<Body>,
             bytes: stylesheet(bytes, address)?.css.into_bytes(),
         })),
         File::Image { hash, ext } => {
-            let p = package::read(bytes)?;
-            let found = p
-                .files()
-                .find(|(name, data)| {
-                    name.rsplit_once('.').map(|(_, e)| e) == Some(ext)
-                        && blake3::hash(data).to_hex().as_str() == hash
-                })
-                .map(|(_, data)| data.to_vec());
-            let bytes = match found {
-                Some(bytes) => Some(bytes),
-                None if ext == "png" => still_named(&p, hash)?,
-                None => None,
-            };
+            let bytes = image::named(bytes, address, hash, ext)?;
             Ok(bytes.map(|bytes| Body {
                 content_type: if ext == "gif" {
                     "image/gif"
@@ -351,20 +341,10 @@ pub fn body(bytes: &[u8], address: &str, file: File<'_>) -> Result<Option<Body>,
     }
 }
 
-/// The still (`skin_css`'s reduced-motion first frame, [`still::stills`])
-/// of the package's animated region image whose PNG has address `hash`.
-fn still_named(p: &Package<'_>, hash: &str) -> Result<Option<Vec<u8>>, SkinError> {
-    let m = manifest::parse(p)?;
-    let stills = still::stills(&m, &files(p)).map_err(|e| unreadable(&e.to_string()))?;
-    Ok(stills
-        .into_values()
-        .find(|png| blake3::hash(png).to_hex().as_str() == hash))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{builtin, validate};
+    use crate::{builtin, manifest, validate};
 
     const H: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
@@ -452,9 +432,11 @@ mod tests {
             }
             assert_eq!(union, whole, "{}", pack.id);
             let p = package::read(&c.bytes).unwrap();
-            let m = manifest::served(&p).unwrap();
+            let (m, made) = manifest::served_made(&p).unwrap();
             let base = format!("{}/{a}", origin());
-            let (_, trees) = shape::frame_parts(&m, &files(&p), &base).unwrap();
+            let mut images = files(&p);
+            images.extend(made);
+            let (_, trees) = shape::frame_parts(&m, &images, &base).unwrap();
             for href in &applied.images {
                 let outside = applied.css.matches(&format!("url(\"{href}\")")).count()
                     > trees

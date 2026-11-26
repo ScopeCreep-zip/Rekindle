@@ -34,7 +34,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, doubleClick, switchTo, waitForHandle } from "../../../walk/helpers.ts";
-import { BUDDY, SETTINGS, closeSettings, openSettings } from "../../../walk/nav.ts";
+import { BUDDY, SETTINGS, openSettings } from "../../../walk/nav.ts";
 import { type Peer, peerSendDm, startFleet, stopFleet } from "../../fleet.ts";
 import { createIdentity, friendRow, newUser, seesMessage, type User } from "../../journeys.ts";
 import { applySkin, skinShown } from "../../journeys_skins.ts";
@@ -127,7 +127,41 @@ async function probe(w: number, h: number, crop: string, extra: [number, number]
 }
 
 /** Measure, log, shoot and require the frame, the paint and the tab for the current window. */
+/** Points whose painters are logged, per pack window (lead: StealthX's two
+ *  solid blue rectangles at the bottom corners, x 112-135 and 377-400,
+ *  y 555-615, are not its art). */
+const PAINTER_POINTS: Record<string, [number, number][]> = {
+  "stealthx-main": [[123, 585], [388, 585]],
+};
+
+/** Every element at (x, y), topmost first: tag, class, node, role, z and paint. */
+async function paintersAt(x: number, y: number): Promise<string[]> {
+  return (await browser.execute((px: number, py: number) => document.elementsFromPoint(px, py).slice(0, 8).map((e) => {
+    const c = getComputedStyle(e);
+    const n = (e as HTMLElement).closest<HTMLElement>("[data-skin-node]");
+    const art = c.backgroundImage === "none" ? "none" : c.backgroundImage.split("/").pop()?.slice(0, 30);
+    const border = c.borderImageSource === "none" ? "none" : c.borderImageSource.split("/").pop()?.slice(0, 30);
+    return `${e.tagName.toLowerCase()}.${(e as HTMLElement).className || "-"} node=${n?.dataset.skinNode ?? "-"} role=${n?.dataset.skinRole ?? "-"} state=${n?.dataset.state ?? "-"} z=${c.zIndex} bg=${c.backgroundColor} art=${art} clip=${c.backgroundClip} border-image=${border} op=${c.opacity}`;
+  }), x, y)) as string[];
+}
+
+/** The page's root paint: html, body, the window root and .skin-frame (the
+ *  shape layer's ground lies in the frame's content box, shape/css.rs). */
+async function rootPaint(): Promise<string> {
+  return (await browser.execute(() => {
+    const one = (name: string, e: Element | null): string => {
+      if (!e) return `${name}: none`;
+      const c = getComputedStyle(e);
+      return `${name}: bg=${c.backgroundColor} art=${c.backgroundImage === "none" ? "none" : "set"} clip=${c.backgroundClip} padding=${c.padding} isolation=${c.isolation} display=${c.display} border-image=${c.borderImageSource === "none" ? "none" : "set"}`;
+    };
+    return [one("html", document.documentElement), one("body", document.body), one("root", document.querySelector(".app-frame")), one("skin-frame", document.querySelector(".skin-frame"))].join(" | ");
+  })) as string;
+}
+
 async function frameFills(file: string, label: string): Promise<void> {
+  for (const [x, y] of PAINTER_POINTS[`${file}-${label}`] ?? []) {
+    console.log(`[painters] ${file} ${label} at ${x},${y}: ${JSON.stringify(await paintersAt(x, y))}`);
+  }
   const tab = label === "main" ? TABS[file] : undefined;
   const m = await measure(tab?.node ?? "");
   const [w, h] = m.window;
@@ -141,17 +175,32 @@ async function frameFills(file: string, label: string): Promise<void> {
   // Symbiosis's tab column) is outside the silhouette, so it is expected.
   const cut = silhouette(file, label === "chat" ? "chat" : "main", w, h, Math.round(scale * 1000));
   const edge = Math.round(16 * scale);
-  const off = disagreements(img, cut, [[0, edge], [img.width - edge, img.width]], 12);
+  // All four edges: the leftmost and rightmost 16 px, and the top and bottom 16 px.
+  const off = disagreements(img, cut, [[0, edge], [img.width - edge, img.width]], 12, [[0, edge], [img.height - edge, img.height]]);
   console.log(`[tab] ${file} ${label}: frame=${JSON.stringify(m.art)} tree=${JSON.stringify(m.tree)} window=${JSON.stringify(m.window)} tab=${JSON.stringify(m.tab)} px=${JSON.stringify(px)} outside=${JSON.stringify(m.outside)}`);
-  console.log(`[tab] ${file} ${label} edges vs silhouette (16 px each side): drawn outside ${off.outsideDrawn}, clear inside ${off.insideClear}; ${JSON.stringify(off.first)}`);
+  console.log(`[tab] ${file} ${label} edges vs silhouette (16 px on all four sides): drawn outside ${off.outsideDrawn}, clear inside ${off.insideClear}; ${JSON.stringify(off.first)}`);
   await shot(`${file}-${label}-frame`);
+  // Lead (Linux, WebKitGTK): a point expected clear but drawn (a tab
+  // column's point, or a corner outside the silhouette) is logged with
+  // every painter under it and the page's root paint.
+  const inside = (x: number, y: number): boolean =>
+    !cut.rects || cut.rects.some((r) => x * scale >= r.x && x * scale < r.x + r.width && y * scale >= r.y && y * scale < r.y + r.height);
+  const alphaAt = (x: number, y: number): number => img.data[(Math.round(y * scale) * img.width + Math.round(x * scale)) * 4 + 3];
+  const corners: [number, number][] = [[1, 1], [w - 2, 1], [1, h - 2], [w - 2, h - 2]];
+  const drawnClear = [
+    ...(tab ? Object.entries(px).filter(([k]) => Number(k.split(",")[0]) >= w - 10 && k !== tabPoint?.join(",")).filter(([, a]) => a !== 0).map(([k]) => k.split(",").map(Number) as [number, number]) : []),
+    ...corners.filter(([x, y]) => !inside(x, y) && alphaAt(x, y) !== 0),
+  ];
+  // The root paint for every window, so a window drawn clear is the contrast.
+  console.log(`[clear-drawn] ${file} ${label} root: ${await rootPaint()} (points drawn where clear: ${drawnClear.length})`);
+  if (drawnClear.length > 0) {
+    for (const [x, y] of drawnClear) console.log(`[clear-drawn] ${file} ${label} at ${x},${y} alpha ${alphaAt(x, y)}: ${JSON.stringify(await paintersAt(x, y))}`);
+  }
   expect({ window: label, tree: m.tree }).toEqual({ window: label, tree: [0, 0, w, h] });
   expect({ window: label, outside: m.outside }).toEqual({ window: label, outside: [] });
-  // The frame's edges: every one on the window's, but the right edge stops
-  // the tab's width short where the pack hangs a tab.
-  const want: Box = [m.tree[0], m.tree[1], m.tree[2] - (tab ? tab.artWidth : 0), m.tree[3]];
-  const short = m.art.map((v, i) => Math.abs(v - want[i]));
-  expect({ window: label, frame: m.art, short: short.map((d) => d > 1) }).toEqual({ window: label, frame: m.art, short: [false, false, false, false] });
+  // Where the frame reaches is the silhouette's to say (StealthX's starts
+  // 110 px in, Space Cowboy's below the top): the four edge bands above,
+  // pixel by pixel, are the check; an element's box is not its drawn extent.
   expect({ window: label, edgesOffSilhouette: off.outsideDrawn + off.insideClear, first: off.first }).toEqual({ window: label, edgesOffSilhouette: 0, first: [] });
   const right = Object.entries(px).filter(([k]) => Number(k.split(",")[0]) >= w - 10 && k !== tabPoint?.join(","));
   if (!tab) return;
@@ -183,6 +232,8 @@ describe("the pack frame reaches the window's edges; a side tab protrudes beside
     chat = await waitForHandle(browser, (h) => h.startsWith("chat-") && !before.includes(h));
     await browser.switchToWindow(chat);
     await seesMessage(browser, me, "frame check");
+    await switchTo(browser, BUDDY);
+    await openSettings(browser, "Appearance");
   });
 
   after(async () => {
@@ -193,12 +244,10 @@ describe("the pack frame reaches the window's edges; a side tab protrudes beside
     it(`${file}: the main and chat windows' frames reach their edges, a side tab (if any) protruding in a transparent column`, async () => {
       const pack = builtinPacks().find((p) => p.file === file);
       if (!pack) throw new Error(`no built-in pack ${file}`);
-      await switchTo(browser, BUDDY);
-      await openSettings(browser, "Appearance");
-      const href = await applySkin(browser, me, pack.name);
-      // Settings closes after each switch, so the next pack's opens fresh.
+      // Settings stays open from before(), so a pack whose menus live in a
+      // popup (StealthX) cannot keep the next switch from Settings.
       await switchTo(browser, SETTINGS);
-      await closeSettings(browser);
+      const href = await applySkin(browser, me, pack.name);
       await switchTo(browser, BUDDY);
       await skinShown(browser, href);
       await browser.pause(1500);
@@ -219,8 +268,7 @@ describe("the pack frame reaches the window's edges; a side tab protrudes beside
   it("combat: a frame art layer hidden at the right edge is caught by the edge check", async () => {
     const pack = builtinPacks().find((p) => p.file === "combat");
     if (!pack) throw new Error("no built-in pack combat");
-    await switchTo(browser, BUDDY);
-    await openSettings(browser, "Appearance");
+    await switchTo(browser, SETTINGS);
     const href = await applySkin(browser, me, pack.name);
     await switchTo(browser, BUDDY);
     await skinShown(browser, href);
