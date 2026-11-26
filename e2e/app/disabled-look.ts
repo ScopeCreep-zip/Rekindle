@@ -80,25 +80,34 @@ export async function ownArt(nodeId: string): Promise<string> {
       .filter((e, i, all): e is HTMLElement => !!e && all.indexOf(e) === i)
       .map((e) => `${e.dataset.skinNode}(${e.dataset.skinRole}) art=${getComputedStyle(e).backgroundImage.split("/").pop()?.slice(0, 16) ?? "-"}`);
     if (!url) return done(`no art; under: ${JSON.stringify(under)}`);
-    const img = new Image();
-    img.onload = () => {
-      const c = document.createElement("canvas");
-      c.width = Math.max(1, Math.round(r.width));
-      c.height = Math.max(1, Math.round(r.height));
-      const g = c.getContext("2d")!;
-      const [px, py] = cs.backgroundPosition.split(" ").map((v) => parseFloat(v) || 0);
-      const size = cs.backgroundSize.split(" ").map((v) => parseFloat(v));
-      const w = Number.isFinite(size[0]) ? size[0] : img.width;
-      const h = Number.isFinite(size[1]) ? size[1] : img.height;
-      g.drawImage(img, px, py, w, h);
-      const all = g.getImageData(0, 0, c.width, c.height).data;
-      let opaque = 0;
-      for (let i = 3; i < all.length; i += 4) if (all[i] > 200) opaque++;
-      const centre = g.getImageData(Math.floor(c.width / 2), Math.floor(c.height / 2), 1, 1).data[3];
-      const cover = Math.round((opaque / (c.width * c.height)) * 100);
-      done(`image ${img.width}x${img.height} at ${cs.backgroundPosition} size ${cs.backgroundSize} over box ${c.width}x${c.height}: alpha at centre ${centre}, opaque cover ${cover}%; under: ${JSON.stringify(under)}`);
+    // The art comes from the skin:// protocol, another origin: an <img> of
+    // it taints a canvas, so its bytes are fetched and decoded as a bitmap.
+    // Any failure is said, and a guard answers if nothing does.
+    const guard = setTimeout(() => done(`art not decoded within 10 s; under: ${JSON.stringify(under)}`), 10_000);
+    const finish = (text: string): void => {
+      clearTimeout(guard);
+      done(text);
     };
-    img.onerror = () => done(`image failed to load; under: ${JSON.stringify(under)}`);
-    img.src = url;
+    fetch(url)
+      .then((res) => (res.ok ? res.blob() : Promise.reject(new Error(`HTTP ${res.status}`))))
+      .then((blob) => createImageBitmap(blob))
+      .then((img) => {
+        const c = document.createElement("canvas");
+        c.width = Math.max(1, Math.round(r.width));
+        c.height = Math.max(1, Math.round(r.height));
+        const g = c.getContext("2d")!;
+        const [px, py] = cs.backgroundPosition.split(" ").map((v) => parseFloat(v) || 0);
+        const size = cs.backgroundSize.split(" ").map((v) => parseFloat(v));
+        const w = Number.isFinite(size[0]) ? size[0] : img.width;
+        const h = Number.isFinite(size[1]) ? size[1] : img.height;
+        g.drawImage(img, px, py, w, h);
+        const all = g.getImageData(0, 0, c.width, c.height).data;
+        let opaque = 0;
+        for (let i = 3; i < all.length; i += 4) if (all[i] > 200) opaque++;
+        const centre = g.getImageData(Math.floor(c.width / 2), Math.floor(c.height / 2), 1, 1).data[3];
+        const cover = Math.round((opaque / (c.width * c.height)) * 100);
+        finish(`image ${img.width}x${img.height} at ${cs.backgroundPosition} size ${cs.backgroundSize} over box ${c.width}x${c.height}: alpha at centre ${centre}, opaque cover ${cover}%; under: ${JSON.stringify(under)}`);
+      })
+      .catch((e: unknown) => finish(`art not read (${String(e).slice(0, 120)}); under: ${JSON.stringify(under)}`));
   }), nodeId)) as string;
 }
