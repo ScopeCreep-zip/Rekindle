@@ -92,7 +92,7 @@ describe("a community window's Call, Mute, Join and Profile act on its community
   // it. Selection is per view (the Friends view sends its own), so the
   // buttons pressed are ones a pack draws outside any view's row, shown
   // with the Communities view: Alloy's Join (`JoinButton`) and voice join
-  // (`JoinChatButton`), in its info view. With the community selected, the Host answers them
+  // (`HostChatButton`, its JoinChatTab's Host with no session), in its info view. With the community selected, the Host answers them
   // for the community: no server listed, no voice channel.
   it("a community selected in the buddy list drives Alloy's Join and voice join", async () => {
     await browser.closeWindow().catch(() => undefined);
