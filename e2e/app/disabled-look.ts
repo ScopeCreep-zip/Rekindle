@@ -88,7 +88,12 @@ export async function disabledLookWithBoxes(ids: string[], inactive = false): Pr
           const l = getComputedStyle(e, p);
           return `${p}=${l.backgroundImage.split("/").pop()?.slice(0, 40)}@${l.backgroundPosition}`;
         });
-        return `${i}:${e.tagName.toLowerCase()}.${e.className || "-"} ${props.map((p) => `${p}=${c.getPropertyValue(p).slice(0, 60)}`).join(" ")} ${layers.join(" ")} hover=${e.matches(":hover")} focus=${e.matches(":focus-visible")}`;
+        return `${i}:${e.tagName.toLowerCase()}.${e.className || "-"} ${props.map((p) => {
+          // An image's file name, not its served origin (every url shares
+          // the skin:// prefix, so a cut from the start hid which art it is).
+          const v = c.getPropertyValue(p);
+          return `${p}=${v.includes("url(") ? v.replace(/url\("?[^")]*\/([^/")]+)"?\)/g, "url(…/$1)").slice(0, 120) : v.slice(0, 60)}`;
+        }).join(" ")} ${layers.join(" ")} hover=${e.matches(":hover")} focus=${e.matches(":focus-visible")}`;
       });
     }, PAINT_PROPS)) as string[];
   for (const id of ids) {
