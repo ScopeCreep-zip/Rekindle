@@ -161,24 +161,16 @@ async function frameFills(file: string, label: string): Promise<void> {
   // Symbiosis's tab column) is outside the silhouette, so it is expected.
   const cut = silhouette(file, label === "chat" ? "chat" : "main", w, h, Math.round(scale * 1000));
   const edge = Math.round(16 * scale);
-  const off = disagreements(img, cut, [[0, edge], [img.width - edge, img.width]], 12);
+  // All four edges: the leftmost and rightmost 16 px, and the top and bottom 16 px.
+  const off = disagreements(img, cut, [[0, edge], [img.width - edge, img.width]], 12, [[0, edge], [img.height - edge, img.height]]);
   console.log(`[tab] ${file} ${label}: frame=${JSON.stringify(m.art)} tree=${JSON.stringify(m.tree)} window=${JSON.stringify(m.window)} tab=${JSON.stringify(m.tab)} px=${JSON.stringify(px)} outside=${JSON.stringify(m.outside)}`);
-  console.log(`[tab] ${file} ${label} edges vs silhouette (16 px each side): drawn outside ${off.outsideDrawn}, clear inside ${off.insideClear}; ${JSON.stringify(off.first)}`);
+  console.log(`[tab] ${file} ${label} edges vs silhouette (16 px on all four sides): drawn outside ${off.outsideDrawn}, clear inside ${off.insideClear}; ${JSON.stringify(off.first)}`);
   await shot(`${file}-${label}-frame`);
   expect({ window: label, tree: m.tree }).toEqual({ window: label, tree: [0, 0, w, h] });
   expect({ window: label, outside: m.outside }).toEqual({ window: label, outside: [] });
-  // The frame's edges reach the silhouette's own extent (the shaper decides
-  // where the window is: StealthX's frame starts 110 px in, by its shape),
-  // and on a tab's side stop the tab's art width short of it.
-  const sil = cut.rects && cut.rects.length > 0
-    ? cut.rects.reduce<Box>(
-        (b, r) => [Math.min(b[0], r.x / scale), Math.min(b[1], r.y / scale), Math.max(b[2], (r.x + r.width) / scale), Math.max(b[3], (r.y + r.height) / scale)],
-        [Infinity, Infinity, -Infinity, -Infinity],
-      )
-    : m.tree;
-  const want: Box = [sil[0], sil[1], sil[2] - (tab ? tab.artWidth : 0), sil[3]].map((v) => Math.round(v)) as Box;
-  const short = m.art.map((v, i) => Math.abs(v - want[i]));
-  expect({ window: label, frame: m.art, short: short.map((d) => d > 1) }).toEqual({ window: label, frame: m.art, short: [false, false, false, false] });
+  // Where the frame reaches is the silhouette's to say (StealthX's starts
+  // 110 px in, Space Cowboy's below the top): the four edge bands above,
+  // pixel by pixel, are the check; an element's box is not its drawn extent.
   expect({ window: label, edgesOffSilhouette: off.outsideDrawn + off.insideClear, first: off.first }).toEqual({ window: label, edgesOffSilhouette: 0, first: [] });
   const right = Object.entries(px).filter(([k]) => Number(k.split(",")[0]) >= w - 10 && k !== tabPoint?.join(","));
   if (!tab) return;

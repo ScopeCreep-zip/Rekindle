@@ -46,18 +46,23 @@ export function disagreements(
   cut: Cut,
   columns?: [number, number][],
   log = 6,
+  rows?: [number, number][],
 ): { outsideDrawn: number; insideClear: number; first: string[] } {
   const inside = new Uint8Array(img.width * img.height);
   for (const r of cut.rects ?? [{ x: 0, y: 0, width: img.width, height: img.height }]) {
     for (let y = r.y; y < Math.min(r.y + r.height, img.height); y++) inside.fill(1, y * img.width + r.x, y * img.width + Math.min(r.x + r.width, img.width));
   }
-  const counted = (x: number): boolean => !columns || columns.some(([from, to]) => x >= from && x < to);
+  // A pixel counts when it lies in any listed band (columns or rows); with
+  // no bands at all, every pixel counts.
+  const inBand = (v: number, bands: [number, number][]): boolean => bands.some(([from, to]) => v >= from && v < to);
+  const counted = (x: number, y: number): boolean =>
+    (!columns && !rows) || (columns !== undefined && inBand(x, columns)) || (rows !== undefined && inBand(y, rows));
   let outsideDrawn = 0;
   let insideClear = 0;
   const first: string[] = [];
   for (let i = 0; i < inside.length; i++) {
     const x = i % img.width;
-    if (!counted(x)) continue;
+    if (!counted(x, Math.floor(i / img.width))) continue;
     const alpha = img.data[i * 4 + 3];
     const drawn = alpha >= cut.alphaOpaque;
     if (drawn === (inside[i] === 1)) continue;
