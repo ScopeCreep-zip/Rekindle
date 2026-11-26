@@ -9,7 +9,7 @@
 // voice join answer for it. Each button's state is logged as `[hsc1]` and shot.
 
 import { browser, expect } from "@wdio/globals";
-import { NET_WAIT_MS, byText, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
+import { NET_WAIT_MS, byText, shown, switchTo, waitForHandle, waitUntil } from "../../../walk/helpers.ts";
 import { BUDDY, openSettings } from "../../../walk/nav.ts";
 import { communitiesTab, createCommunity, createIdentity, newUser, openCommunity, type User } from "../../journeys.ts";
 import { applySkin, skinShown } from "../../journeys_skins.ts";
@@ -106,10 +106,14 @@ describe("a community window's Call, Mute, Join and Profile act on its community
     await (await byText(browser, ".community-item", name.slice(0, 24), NET_WAIT_MS)).click();
     // Alloy's Join and voice join stand in its info view's ButtonHolder
     // (goldens/alloy.txt: InfoView, ButtonHolder > JoinChatTab, JoinButton),
-    // the side panel its INFO button opens, as Xfire's showed the selected
-    // item with them.
+    // the panel its INFO button opens (a popup window), as Xfire's showed
+    // the selected item with them.
     const infoButton = await browser.$('.skin-tree [data-skin-node="InfoViewButton"]');
     await infoButton.click();
+    // The info view is its own skin popup window (`popup-buddy-list-Info…`),
+    // showing the selected community; its Join buttons are read there.
+    const popup = await waitForHandle(browser, (h) => h.startsWith("popup-buddy-list-Info"), NET_WAIT_MS);
+    await browser.switchToWindow(popup);
     await waitUntil(async () => (await button("JoinButton")).shown, NET_WAIT_MS, "Alloy's info view never showed its Join button");
     // The selection reaches the Host asynchronously and its verdict comes
     // back as the window's capabilities: wait for it, never read once.
