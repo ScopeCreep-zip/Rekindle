@@ -48,17 +48,6 @@ export const MANAGE_EVENTS = 1n << 48n;
 export const CREATE_EVENTS = 1n << 49n;
 export const ADMINISTRATOR = 1n << 50n;
 
-export const CREATE_INSTANT_INVITE = CREATE_INVITES;
-export const VIEW_CHANNEL = VIEW_CHANNELS;
-export const READ_MESSAGE_HISTORY = READ_HISTORY;
-// Was `0n` — a stray placeholder bit never allocated, unlike its three
-// siblings above which correctly alias the canonical constant. Nothing
-// in the tree consumes this yet (confirmed via knip), so this is a
-// dead-alias fix, not new scope: the Rust side's equivalent is
-// `MANAGE_NICKNAMES` (rekindle-types/src/permissions.rs:16, bit 8).
-export const CHANGE_NICKNAME = MANAGE_NICKNAMES;
-export const USE_VAD = USE_VOICE_ACTIVITY;
-
 export function permissionBits(value: string | bigint | null | undefined): bigint {
   if (typeof value === "bigint") return value;
   return BigInt(value || "0");

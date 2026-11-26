@@ -11,7 +11,7 @@ import {
   KICK_MEMBERS,
   BAN_MEMBERS,
   MODERATE_MEMBERS,
-  CREATE_INSTANT_INVITE,
+  CREATE_INVITES,
   VIEW_AUDIT_LOG,
   VIEW_INSIGHTS,
   MANAGE_EXPRESSIONS,
@@ -57,7 +57,7 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
   const canKick = createMemo(() => hasPermission(myPerms(), KICK_MEMBERS));
   const canBan = createMemo(() => hasPermission(myPerms(), BAN_MEMBERS));
   const canModerate = createMemo(() => hasPermission(myPerms(), MODERATE_MEMBERS));
-  const canCreateInvite = createMemo(() => hasPermission(myPerms(), CREATE_INSTANT_INVITE));
+  const canCreateInvite = createMemo(() => hasPermission(myPerms(), CREATE_INVITES));
   const canViewAuditLog = createMemo(() => hasPermission(myPerms(), VIEW_AUDIT_LOG));
   const canViewInsights = createMemo(() => hasPermission(myPerms(), VIEW_INSIGHTS));
   const canManageExpressions = createMemo(() => hasPermission(myPerms(), MANAGE_EXPRESSIONS));
