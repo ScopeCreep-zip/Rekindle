@@ -8,10 +8,10 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use rekindle_codec::capnp_envelope::{encode_community_envelope, encode_signed_envelope};
 use rekindle_codec::community::envelope::{sign_envelope, CommunityEnvelope, SignedEnvelope};
-use rekindle_codec::ingress::{gossip_datagram, DIRECT_TAG};
+use rekindle_codec::ingress::{gossip_datagram, DIRECT_TAG, VOICE_TAG};
 use rekindle_records::port::{AppCallId, AppMessagePort, PeerTarget, PortError};
 
-use super::{dispatch_app_call, dispatch_app_message};
+use super::{dispatch_app_call, dispatch_app_message, route_inbound, CallLanes, Inbound};
 use crate::gossip::DedupCache;
 use crate::handler::{InboundHandler, TransportEvent};
 use crate::payload::rpc::{CallResponse, InboundCall};
@@ -21,15 +21,32 @@ use crate::payload::rpc::{CallResponse, InboundCall};
 enum Seen {
     Direct(Vec<u8>),
     DirectCall(Vec<u8>),
-    Gossip { community: String, sender: String },
-    Forward { ttl: u8 },
+    Gossip {
+        community: String,
+        sender: String,
+    },
+    Forward {
+        ttl: u8,
+    },
+    /// A media datagram handed to `on_media`.
+    Media(Vec<u8>),
+    /// A stalled call's handler ran to its end.
+    CallDone,
+    /// A bare media-key call reached `on_call`.
+    MediaKey,
 }
+
+/// How long a stalled call's handler runs: past Veilid's 5 s answer
+/// deadline and the transport's `CALL_DEADLINE`.
+const STALL: std::time::Duration = std::time::Duration::from_secs(12);
 
 #[derive(Default)]
 struct Recorder {
     seen: Mutex<Vec<Seen>>,
     /// Its bare-request handler runs twice past `CALL_DEADLINE`.
     slow_calls: bool,
+    /// Its 1:1 call handler runs for [`STALL`].
+    stall_direct_calls: bool,
     /// The slow handler calls that ran to their end.
     finished: std::sync::atomic::AtomicUsize,
 }
@@ -57,8 +74,16 @@ impl InboundHandler for Recorder {
         self.seen.lock().push(Seen::Direct(datagram.to_vec()));
     }
 
+    fn on_media(&self, raw: &[u8], _arrived: std::time::Instant) {
+        self.seen.lock().push(Seen::Media(raw.to_vec()));
+    }
+
     async fn on_direct_call(&self, datagram: &[u8], _route: Option<&str>) -> Option<Vec<u8>> {
         self.seen.lock().push(Seen::DirectCall(datagram.to_vec()));
+        if self.stall_direct_calls {
+            tokio::time::sleep(STALL).await;
+            self.seen.lock().push(Seen::CallDone);
+        }
         // `[DIRECT_TAG, 0]` stands for a call the Host left unanswered.
         (datagram.get(1) != Some(&0)).then(|| b"reply".to_vec())
     }
@@ -84,7 +109,11 @@ impl InboundHandler for Recorder {
         false
     }
 
-    async fn on_call(&self, _sender: Option<&str>, _request: InboundCall) -> CallResponse {
+    async fn on_call(&self, _sender: Option<&str>, request: InboundCall) -> CallResponse {
+        if let InboundCall::VoiceMediaKey(_) = request {
+            self.seen.lock().push(Seen::MediaKey);
+            return CallResponse::Ack;
+        }
         if self.slow_calls {
             tokio::time::sleep(crate::operations::direct::CALL_DEADLINE * 2).await;
             self.finished
@@ -237,11 +266,13 @@ async fn untagged_and_malformed_datagrams_reach_no_handler() {
 async fn a_direct_call_is_answered_and_a_gossip_call_is_refused() {
     let handler = Arc::new(Recorder::default());
     let replies = Replies::default();
+    let keys = parking_lot::Mutex::default();
     let datagram = [DIRECT_TAG, 9];
-    dispatch_app_call(&handler, &replies, AppCallId(1), &datagram, None).await;
+    dispatch_app_call(&handler, &replies, &keys, AppCallId(1), &datagram, None).await;
     dispatch_app_call(
         &handler,
         &replies,
+        &keys,
         AppCallId(2),
         &gossip_datagram(&signed(5)),
         None,
@@ -261,8 +292,9 @@ async fn a_direct_call_is_answered_and_a_gossip_call_is_refused() {
 async fn a_direct_call_left_unanswered_gets_no_reply() {
     let handler = Arc::new(Recorder::default());
     let replies = Replies::default();
+    let keys = parking_lot::Mutex::default();
     let datagram = [DIRECT_TAG, 0];
-    dispatch_app_call(&handler, &replies, AppCallId(1), &datagram, None).await;
+    dispatch_app_call(&handler, &replies, &keys, AppCallId(1), &datagram, None).await;
     assert_eq!(handler.seen(), [Seen::DirectCall(datagram.to_vec())]);
     assert!(replies.0.lock().is_empty());
 }
@@ -274,13 +306,22 @@ async fn a_direct_call_left_unanswered_gets_no_reply() {
 async fn a_gossip_call_is_refused_before_any_decode() {
     let handler = Arc::new(Recorder::default());
     let replies = Replies::default();
+    let keys = parking_lot::Mutex::default();
     let mut framed = vec![rekindle_codec::ingress::GOSSIP_TAG];
     framed.extend(crate::frame::encode(crate::frame::TypeId::CommunityLeave, b"x").unwrap());
     for (n, datagram) in [vec![rekindle_codec::ingress::GOSSIP_TAG, 0xFF], framed]
         .into_iter()
         .enumerate()
     {
-        dispatch_app_call(&handler, &replies, AppCallId(n as u64), &datagram, None).await;
+        dispatch_app_call(
+            &handler,
+            &replies,
+            &keys,
+            AppCallId(n as u64),
+            &datagram,
+            None,
+        )
+        .await;
     }
     assert_eq!(handler.seen(), []);
     assert_eq!(
@@ -353,4 +394,121 @@ async fn a_bare_request_past_the_deadline_finishes_its_work() {
         1,
         "the handler's work goes on past the deadline"
     );
+}
+
+/// Plan E4.1 S3: a media datagram reaches `on_media` at once while an
+/// app_call handler is stalled 12 s: the call is served on the app-call
+/// lane, so the loop's next datagram never queues behind it. The clock is
+/// paused, so the stall passes without waiting.
+#[tokio::test(start_paused = true)]
+async fn media_is_delivered_while_a_call_is_stalled() {
+    let handler = Arc::new(Recorder {
+        stall_direct_calls: true,
+        ..Recorder::default()
+    });
+    let replies = Arc::new(Replies::default());
+    let lanes = CallLanes {
+        lane: crate::subscriptions::lanes::AppCallLane::default(),
+        messages: Arc::clone(&replies) as Arc<dyn AppMessagePort>,
+        media_keys: Arc::default(),
+    };
+    let mut dedup = DedupCache::new(64);
+    let call = Inbound::Call {
+        call_id: AppCallId(1),
+        message: vec![DIRECT_TAG, 5],
+        route: None,
+    };
+    route_inbound(&handler, &mut dedup, &lanes, call).await;
+    let media = vec![VOICE_TAG, 1, 0, 0, 0, 9];
+    route_inbound(
+        &handler,
+        &mut dedup,
+        &lanes,
+        Inbound::Message(media.clone()),
+    )
+    .await;
+    let seen = handler.seen();
+    assert!(
+        seen.contains(&Seen::Media(media)),
+        "media delivered: {seen:?}"
+    );
+    assert!(
+        !seen.contains(&Seen::CallDone),
+        "media must not wait behind the stalled call: {seen:?}"
+    );
+    tokio::time::sleep(STALL + std::time::Duration::from_secs(1)).await;
+    assert_eq!(handler.seen().last(), Some(&Seen::CallDone));
+    assert_eq!(*replies.0.lock(), [b"reply".to_vec()]);
+}
+
+/// Plan E4.1 S3: the bare media-key branch admits a `VoiceMediaKey` and a
+/// `VoiceMediaKeyRequest`, metered per requester (one past its burst is
+/// NAKed before the handler, another requester is still admitted), and no
+/// other control variant: the key's ack and a `MEKRotated` are NAKed and
+/// reach no handler.
+#[tokio::test]
+async fn the_bare_media_key_branch_admits_two_variants_per_requester_bucket() {
+    use rekindle_codec::community::envelope::ControlPayload;
+    let control =
+        |payload| encode_community_envelope(&CommunityEnvelope::control(payload)).expect("encode");
+    let key = control(ControlPayload::VoiceMediaKey {
+        community_id: "c".into(),
+        channel_id: "ch".into(),
+        sender: "flooder".into(),
+        recipient: "me".into(),
+        key_index: 1,
+        sealed: vec![7; 80],
+        signature: vec![8; 64],
+    });
+    let request = control(ControlPayload::VoiceMediaKeyRequest {
+        community_id: "c".into(),
+        channel_id: "ch".into(),
+        requester: "honest".into(),
+        sender: "me".into(),
+        key_index: 1,
+    });
+    let ack = control(ControlPayload::VoiceMediaKeyAck {
+        community_id: "c".into(),
+        channel_id: "ch".into(),
+        sender: "me".into(),
+        recipient: "flooder".into(),
+        key_index: 1,
+    });
+    let rotated = control(ControlPayload::MEKRotated {
+        channel_id: Some("general".into()),
+        new_generation: 9,
+        rotator_pseudonym: Some("bb".repeat(32)),
+    });
+    let handler = Arc::new(Recorder::default());
+    let replies = Replies::default();
+    let keys = parking_lot::Mutex::default();
+    let burst = super::super::bare_envelope::MEDIA_KEY_BURST;
+    let calls = std::iter::repeat_n(&key, burst as usize + 1)
+        .chain([&request, &ack, &rotated])
+        .enumerate();
+    for (n, datagram) in calls {
+        dispatch_app_call(
+            &handler,
+            &replies,
+            &keys,
+            AppCallId(n as u64),
+            datagram,
+            None,
+        )
+        .await;
+    }
+    let reached = handler
+        .seen()
+        .iter()
+        .filter(|s| **s == Seen::MediaKey)
+        .count();
+    assert_eq!(
+        reached,
+        burst as usize + 1,
+        "the burst and the other requester"
+    );
+    let nak = crate::operations::direct::NAK.to_vec();
+    let mut expected = vec![b"ACK".to_vec(); burst as usize];
+    expected.extend([nak.clone(), b"ACK".to_vec(), nak.clone(), nak]);
+    assert_eq!(*replies.0.lock(), expected);
 }

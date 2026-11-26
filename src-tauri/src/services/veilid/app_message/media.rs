@@ -169,7 +169,7 @@ fn handle_media_envelope(
     let is_video = super::video_payload_channel_from_bytes(&signed.envelope_bytes).is_some();
     state
         .gossip_ingress
-        .push(crate::services::veilid::ingress_queue::IngressItem::Gossip { signed, is_video });
+        .push(rekindle_transport::subscriptions::lanes::IngressItem::Gossip { signed, is_video });
 }
 
 /// Transport feedback about our outbound stream to one peer: verified,

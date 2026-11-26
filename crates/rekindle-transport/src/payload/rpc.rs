@@ -140,6 +140,15 @@ pub enum InboundCall {
     /// then answers `CallResponse::Ok` with the encoded `frontierResponse`
     /// envelope; anything else is a NAK.
     FrontierRequest { request: Vec<u8> },
+    /// A call-media key or key request (plan E4.1 S3, ADR 0016), bare: only
+    /// a `ControlPayload::VoiceMediaKey` or `VoiceMediaKeyRequest` (the
+    /// decoder admits nothing else), metered per requester before it
+    /// arrives here. Its authority is inside the payload (the sender's
+    /// pseudonym signature over a key sealed to us; a request is answered
+    /// only with a key sealed to the requester). The handler answers
+    /// `CallResponse::Ok` with the encoded `VoiceMediaKeyAck` envelope,
+    /// `Ack` with nothing to return, anything else is a NAK.
+    VoiceMediaKey(rekindle_codec::community::envelope::ControlPayload),
 }
 
 /// Response from the handler to an inbound RPC.

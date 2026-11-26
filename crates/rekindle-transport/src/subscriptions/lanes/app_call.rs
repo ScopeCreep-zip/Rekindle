@@ -1,4 +1,6 @@
-//! Inbound `app_call`s, answered concurrently (plan C7.22).
+//! Inbound `app_call`s, answered concurrently (plan C7.22). Moved from the
+//! desktop's `services/veilid/app_call_lane.rs` (plan E4.1 S3): the
+//! transport's dispatch loop serves its calls here too.
 //!
 //! An `app_call` has a deadline that a `ValueChange` does not: veilid-core
 //! waits `network.rpc.timeout_ms` (5 s) for the app's answer and then drops
@@ -20,10 +22,8 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
+use rekindle_lifecycle::SessionScope;
 use tokio::sync::Semaphore;
-use veilid_core::VeilidUpdate;
-
-use crate::state::AppState;
 
 /// Most inbound calls served at once. Calls are low-rate (MEK transfers,
 /// media keys, bootstrap, attachment chunks); the bound only stops a flood
@@ -47,14 +47,14 @@ impl Default for AppCallLane {
 }
 
 impl AppCallLane {
-    /// Serve `update` (an `AppCall`) on the login scope, or drop it when
-    /// the lane is full.
-    pub fn dispatch(
-        &self,
-        app_handle: &tauri::AppHandle,
-        state: &Arc<AppState>,
-        update: VeilidUpdate,
-    ) {
+    /// Serve `call` (one inbound `app_call`'s whole handling) on `scope`,
+    /// the unlocked session's, or drop it when the lane is full. Both hosts
+    /// route their calls here: the transport's dispatch loop and the
+    /// desktop's (plan E4.1 S3).
+    pub fn dispatch<F>(&self, scope: &Arc<SessionScope>, call: F)
+    where
+        F: std::future::Future<Output = ()> + Send + 'static,
+    {
         let Ok(slot) = Arc::clone(&self.slots).try_acquire_owned() else {
             let dropped = self.drops.fetch_add(1, Ordering::Relaxed) + 1;
             tracing::warn!(
@@ -63,15 +63,9 @@ impl AppCallLane {
             );
             return;
         };
-        let app_handle = app_handle.clone();
-        let state_task = Arc::clone(state);
-        crate::state_helpers::login_scope_or_closed(state).spawn_or_drop(
-            "inbound app_call",
-            async move {
-                crate::services::veilid::handle_veilid_update(&app_handle, &state_task, update)
-                    .await;
-                drop(slot);
-            },
-        );
+        scope.spawn_or_drop("inbound app_call", async move {
+            call.await;
+            drop(slot);
+        });
     }
 }

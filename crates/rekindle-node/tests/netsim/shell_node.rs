@@ -116,6 +116,10 @@ impl InboundHandler for ShellInbound {
             .unwrap_or_else(|| rekindle_lifecycle::SessionScope::closed("no host"))
     }
 
+    fn on_media(&self, _raw: &[u8], _arrived: std::time::Instant) {
+        // The shell's media stays in src-tauri until F1, like its calls.
+    }
+
     async fn on_direct(&self, datagram: &[u8]) {
         if let Some(host) = self.host() {
             host.receive_direct(datagram).await;

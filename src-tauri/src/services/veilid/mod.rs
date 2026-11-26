@@ -5,17 +5,14 @@ use veilid_core::VeilidUpdate;
 
 use crate::state::AppState;
 
-pub(crate) mod app_call_lane;
 pub(crate) mod app_message;
 mod control;
 mod control_event_records;
 mod control_events;
-pub(crate) mod control_ingress;
 mod control_moderation;
 mod dht_watch;
 mod inbound_unported;
 mod ingest_outcome;
-pub(crate) mod ingress_queue;
 mod lifecycle;
 mod network;
 pub(crate) mod route_publish;

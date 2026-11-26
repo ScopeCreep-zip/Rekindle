@@ -25,14 +25,17 @@
 //! staleness-checked. That is also why the drop-oldest overflow below is
 //! safe: a shed DHT update is re-read on the next watch tick.
 //!
-//! [`GossipIngressQueue`]: crate::services::veilid::ingress_queue::GossipIngressQueue
+//! Moved from the desktop's `services/veilid/control_ingress.rs` (plan
+//! E4.1 S3); generic over the queued update, so the transport holds it
+//! without naming Veilid's update type.
+//!
+//! [`GossipIngressQueue`]: super::gossip::GossipIngressQueue
 
 use std::collections::VecDeque;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use parking_lot::Mutex;
 use tokio::sync::Notify;
-use veilid_core::VeilidUpdate;
 
 /// Bounded depth. `ValueChange`/`AppCall` are LOW-rate versus media
 /// (watch ticks, membership/governance edits, call signaling), so 512
@@ -43,18 +46,27 @@ pub const CONTROL_INGRESS_QUEUE_MAX: usize = 512;
 
 /// FIFO queue between the Veilid dispatch loop and the control worker.
 ///
-/// Elements are owned `VeilidUpdate`s (`ValueChange`/`AppCall`) awaiting
-/// `handle_veilid_update`. Unlike the gossip queue there is nothing to
-/// pre-decode, so the raw update is stored as-is.
-#[derive(Default)]
-pub struct ControlIngressQueue {
-    inner: Mutex<VecDeque<VeilidUpdate>>,
+/// Elements are owned updates (the desktop's `ValueChange`s) awaiting
+/// their handler. Unlike the gossip queue there is nothing to pre-decode,
+/// so the raw update is stored as-is.
+pub struct ControlIngressQueue<T> {
+    inner: Mutex<VecDeque<T>>,
     notify: Notify,
     /// Control events shed under overflow (drop-oldest).
     pub drops: AtomicU64,
 }
 
-impl ControlIngressQueue {
+impl<T> Default for ControlIngressQueue<T> {
+    fn default() -> Self {
+        Self {
+            inner: Mutex::new(VecDeque::new()),
+            notify: Notify::new(),
+            drops: AtomicU64::new(0),
+        }
+    }
+}
+
+impl<T> ControlIngressQueue<T> {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -65,7 +77,7 @@ impl ControlIngressQueue {
     /// dropped DHT update is re-read on the next watch tick; governance
     /// merges are order-independent), so under pressure we evict the
     /// front and keep the newest. Rate-limited warn + counter surface it.
-    pub fn push(&self, update: VeilidUpdate) {
+    pub fn push(&self, update: T) {
         {
             let mut q = self.inner.lock();
             if q.len() >= CONTROL_INGRESS_QUEUE_MAX {
@@ -85,7 +97,7 @@ impl ControlIngressQueue {
 
     /// Await the next update (FIFO). Cancel-safe: a `Notify` permit is
     /// only consumed when the queue really was empty.
-    pub async fn pop(&self) -> VeilidUpdate {
+    pub async fn pop(&self) -> T {
         loop {
             if let Some(update) = self.inner.lock().pop_front() {
                 return update;
@@ -103,30 +115,20 @@ impl ControlIngressQueue {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use veilid_core::{VeilidLog, VeilidLogLevel};
 
-    // `Log` is a variant this queue never actually carries (the dispatch
-    // loop only pushes `ValueChange`/`AppCall`), but it is the one
-    // trivially-constructible `VeilidUpdate` — perfect for exercising the
-    // queue's FIFO/overflow mechanics with a distinguishable tag.
-    fn update(tag: u64) -> VeilidUpdate {
-        VeilidUpdate::Log(Box::new(VeilidLog {
-            log_level: VeilidLogLevel::Info,
-            message: tag.to_string(),
-            backtrace: None,
-        }))
+    // The queue is generic over its update: a bare tag exercises its
+    // FIFO/overflow mechanics.
+    fn update(tag: u64) -> u64 {
+        tag
     }
 
-    fn tag_of(update: &VeilidUpdate) -> u64 {
-        match update {
-            VeilidUpdate::Log(log) => log.message.parse().expect("tag parse"),
-            _ => panic!("unexpected update variant in test"),
-        }
+    fn tag_of(update: &u64) -> u64 {
+        *update
     }
 
     #[test]
     fn fifo_order_preserved() {
-        let q = ControlIngressQueue::new();
+        let q = ControlIngressQueue::<u64>::new();
         q.push(update(1));
         q.push(update(2));
         q.push(update(3));
@@ -139,7 +141,7 @@ mod tests {
 
     #[test]
     fn overflow_drops_oldest_and_counts() {
-        let q = ControlIngressQueue::new();
+        let q = ControlIngressQueue::<u64>::new();
         for i in 0..CONTROL_INGRESS_QUEUE_MAX as u64 {
             q.push(update(i));
         }
@@ -158,7 +160,7 @@ mod tests {
 
     #[test]
     fn sustained_overflow_keeps_counting() {
-        let q = ControlIngressQueue::new();
+        let q = ControlIngressQueue::<u64>::new();
         for i in 0..(CONTROL_INGRESS_QUEUE_MAX as u64 + 100) {
             q.push(update(i));
         }
@@ -168,7 +170,7 @@ mod tests {
 
     #[tokio::test]
     async fn pop_wakes_on_push() {
-        let q = std::sync::Arc::new(ControlIngressQueue::new());
+        let q = std::sync::Arc::new(ControlIngressQueue::<u64>::new());
         let q2 = std::sync::Arc::clone(&q);
         let waiter = tokio::spawn(async move { tag_of(&q2.pop().await) });
         // Give the waiter a moment to park on notified().

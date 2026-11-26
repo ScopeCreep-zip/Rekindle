@@ -1,8 +1,10 @@
 //! The ingress tags of `app_message`/`app_call` datagrams (§6 ingress
 //! ledger): the first byte names what follows, so every ingress path
 //! routes by it and none trial-decodes. The media tags (`'V'`, `'M'`,
-//! `'P'`, `'T'`, `'R'`) live with the media plane in
-//! `rekindle_voice::media_frame`; these never collide with them.
+//! `'P'`, `'T'`, `'R'`) are here too (plan E4.1 S3, moved from
+//! `rekindle_voice::media_frame` and `receiver_report`, which re-export
+//! them), so the transport's dispatch routes media without the media
+//! plane; none collides with another.
 //!
 //! An untagged datagram is dropped. The untagged formats still accepted on
 //! `app_call` (transport frames, the community capnp arms) keep their
@@ -27,6 +29,23 @@ pub const LIVENESS_TAG: u8 = b'L';
 /// The length of a liveness probe: the tag and its nonce.
 pub const LIVENESS_PROBE_LEN: usize = 17;
 
+/// A voice packet (`VoicePacket`, Cap'n Proto) after the route's
+/// `transport_seq` (`rekindle_voice::media_frame`).
+pub const VOICE_TAG: u8 = b'V';
+/// A signed community envelope of the video plane (video fragments,
+/// parity, frame acks, keyframe requests) after the sequence number.
+pub const ENVELOPE_TAG: u8 = b'M';
+/// Padding the pacer sends to probe the route (plan E4.3.3): zero bytes
+/// after the sequence number, counted by the estimator, discarded on
+/// arrival. str0m sends blank padding the same way (`poll_packet_padding`).
+pub const PADDING_TAG: u8 = b'P';
+/// A `TransportFeedback` report (plan E4.3.2); no sequence number.
+pub const FEEDBACK_TAG: u8 = b'T';
+/// An RFC 3550 receiver report (`VoiceReceiverReport`), sibling to the
+/// voice packet's tag. Reports ride the same media route as the audio they
+/// describe, so they measure the path actually in use.
+pub const RECEIVER_REPORT_TAG: u8 = b'R';
+
 /// What an inbound datagram carries, by its first byte.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Ingress<'a> {
@@ -34,6 +53,10 @@ pub enum Ingress<'a> {
     Direct(&'a [u8]),
     /// [`GOSSIP_TAG`]; the bytes after the tag.
     Gossip(&'a [u8]),
+    /// A media tag ([`VOICE_TAG`], [`ENVELOPE_TAG`], [`PADDING_TAG`],
+    /// [`FEEDBACK_TAG`], [`RECEIVER_REPORT_TAG`]); the whole datagram, tag
+    /// included, as the media plane reads it.
+    Media(&'a [u8]),
     /// Neither: not a 1:1 message or gossip.
     Untagged,
 }
@@ -44,6 +67,10 @@ pub fn classify(datagram: &[u8]) -> Ingress<'_> {
     match datagram.split_first() {
         Some((&DIRECT_TAG, rest)) => Ingress::Direct(rest),
         Some((&GOSSIP_TAG, rest)) => Ingress::Gossip(rest),
+        Some((
+            &(VOICE_TAG | ENVELOPE_TAG | PADDING_TAG | FEEDBACK_TAG | RECEIVER_REPORT_TAG),
+            _,
+        )) => Ingress::Media(datagram),
         _ => Ingress::Untagged,
     }
 }
@@ -93,6 +120,17 @@ mod tests {
         assert_eq!(classify(&[DIRECT_TAG, 7]), Ingress::Direct(&[7]));
         assert_eq!(classify(&[GOSSIP_TAG]), Ingress::Gossip(&[]));
         assert_eq!(classify(&[]), Ingress::Untagged);
+        // Every media tag routes as media, with the whole datagram.
+        for tag in [
+            VOICE_TAG,
+            ENVELOPE_TAG,
+            PADDING_TAG,
+            FEEDBACK_TAG,
+            RECEIVER_REPORT_TAG,
+        ] {
+            assert_eq!(classify(&[tag, 1, 2]), Ingress::Media(&[tag, 1, 2]));
+        }
+        assert_eq!(classify(&[LIVENESS_TAG, 0]), Ingress::Untagged);
         // A bare `SignedEnvelope` (the pre-E2.3 gossip wire) is untagged.
         let bare = encode_signed_envelope(&signed());
         assert_eq!(classify(&bare), Ingress::Untagged);
