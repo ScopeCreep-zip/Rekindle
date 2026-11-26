@@ -46,8 +46,8 @@ MenuBar MenuBar
   HelpMenuText MenuTitle label "Help"
     HelpMenuTextT Part
     HelpMenu Part target [0, -7, 28, 24] art [0, 7, 28, 12] Size
-AdArea AdArea
-  AdView Part
+AdArea Decor
+  AdView AdArea
 TabHeader TabStrip
   TabNormalButton Tab(Friends) target [0, -2, 65, 24] art [0, 2, 65, 19] Size
   TabServerButton Tab(Servers) target [0, -3, 65, 24] art [0, 3, 65, 18] Size
