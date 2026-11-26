@@ -37,8 +37,16 @@ function getInitialTab(): SettingsTab {
   return TAB_LABELS.find((tab) => tab.id === requested)?.id ?? "profile";
 }
 
+/** While mounted (a tab's resources still loading), the panel says it is busy. */
+const PanelBusy: Component<{ set: (busy: boolean) => void }> = (props) => {
+  onMount(() => props.set(true));
+  onCleanup(() => props.set(false));
+  return null;
+};
+
 const SettingsWindow: Component = () => {
   const [activeTab, setActiveTab] = createSignal<SettingsTab>(getInitialTab());
+  const [panelBusy, setPanelBusy] = createSignal(false);
 
   let unlistenSwitchTab: Promise<UnlistenFn> | undefined;
 
@@ -88,10 +96,19 @@ const SettingsWindow: Component = () => {
           )}
         </For>
       </div>
-      <div class="settings-content" id="main-content" tabindex="0" role="tabpanel" aria-labelledby={`settings-tab-${activeTab()}`}>
+      <div
+        class="settings-content"
+        id="main-content"
+        tabindex="0"
+        role="tabpanel"
+        aria-labelledby={`settings-tab-${activeTab()}`}
+        aria-busy={panelBusy() ? "true" : undefined}
+      >
         <Show when={activeTab() === "profile"}>
-          {/* Keep the rail focused while the Profile resources load. */}
-          <Suspense><ProfileTab /></Suspense>
+          {/* Profile's resources load under their own boundary: the rail and
+              this panel stay mounted (focus keeps its place), and the panel
+              is aria-busy until Profile renders. */}
+          <Suspense fallback={<PanelBusy set={setPanelBusy} />}><ProfileTab /></Suspense>
         </Show>
         <Show when={activeTab() === "application"}><ApplicationTab /></Show>
         <Show when={activeTab() === "appearance"}><AppearanceTab /></Show>

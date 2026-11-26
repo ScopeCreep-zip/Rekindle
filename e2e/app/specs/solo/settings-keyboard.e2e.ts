@@ -39,6 +39,28 @@ describe("Settings keyboard tabs", function () {
     await expectTab("application");
     await expect(browser.$('[role="tabpanel"]')).toHaveText(expect.stringContaining("Start with System"));
     await shot("application-selected-by-keyboard");
+    // Back to Profile, whose resources load again on mount: the panel is
+    // watched throughout. It must stay a labelled tabpanel the whole time
+    // (aria-busy while Profile is pending, lead) and end not busy. A test
+    // cannot hold the resource (no product hook), so whether a busy state
+    // was caught is logged as evidence, not asserted.
+    await browser.execute(() => {
+      const panel = document.getElementById("main-content");
+      const w = window as unknown as { __panelStates?: string[] };
+      w.__panelStates = [];
+      if (!panel) return;
+      const record = (): void => {
+        w.__panelStates!.push(`${panel.getAttribute("role")}|${panel.getAttribute("aria-labelledby")}|${panel.getAttribute("aria-busy") ?? "-"}`);
+      };
+      new MutationObserver(record).observe(panel, { attributes: true, attributeFilter: ["aria-busy", "aria-labelledby", "role"] });
+    });
+    await browser.keys(Key.Home);
+    await expectTab("profile");
+    await expect(browser.$('[role="tabpanel"]')).toHaveText(expect.stringContaining("Display Name"));
+    const states = (await browser.execute(() => (window as unknown as { __panelStates?: string[] }).__panelStates ?? [])) as string[];
+    console.log(`[settings-keys] panel states going to Profile: ${JSON.stringify(states)} (busy seen: ${states.some((s) => s.endsWith("|true"))})`);
+    expect(states.every((s) => s.startsWith("tabpanel|settings-tab-"))).toBe(true);
+    expect(await browser.$("#main-content").getAttribute("aria-busy")).toBeNull();
     await browser.keys(Key.End);
     await expectTab("about");
     await browser.keys(Key.Home);
