@@ -13,18 +13,20 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, edited]
 
-permissions:
-  contents: read
-  pull-requests: write
+permissions: {}
 
 jobs:
   size:
     name: Label PR size
     runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: write   # the size label and the review hint
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Apply size label
         uses: codelytv/pr-size-labeler@19c335e7695ba922de938806dd129f0a9b992644 # v1
