@@ -1,12 +1,20 @@
 import { hostInvoke, invoke } from "../invoke";
 import type { ImageKind } from "./system";
-import type { OpPublicationState } from "../channels/community_subscription_events";
+import type { CatchUpView, KeyStatus, OpPublicationState } from "../channels/community_subscription_events";
 
 /// A voice message as the Host decoded it: the Ogg Opus audio and the
 /// duration and waveform read from it (base64 fields).
 /** This device's standing in a community (`DeviceStatus`, plan E3.2 / ADR 0022 rule 4):
  *  `needsReenrol` while it holds no key endorsed for our current member record. */
 export type DeviceStatus = "enrolled" | "needsReenrol";
+
+/** A governance write's answer (`OpOutcome`, plan E3.2 S7d-keys.8): `pending` while the
+ *  outbox has not landed the op; `heldOpId` names a write the unlock barrier holds, unsigned,
+ *  as the community's `CatchUp` pending list lists it (null once signed). */
+export interface GovernanceWriteAnswer {
+  pending: boolean;
+  heldOpId: string | null;
+}
 
 export interface VoiceMessageAudioView {
   audio: string;
@@ -74,7 +82,7 @@ export const communityCommands = {
       description: string | null;
       iconHash?: string | null;
       bannerHash?: string | null;
-      channels: { id: string; name: string; channelType: string; categoryId?: string; topic?: string; forumTags?: string[]; stageSpeakers?: string[]; stageModerator?: string | null; notificationLevel?: "all" | "mentions" | "nothing"; notificationSoundRef?: string | null }[];
+      channels: { id: string; name: string; channelType: string; categoryId?: string; topic?: string; forumTags?: string[]; stageSpeakers?: string[]; stageModerator?: string | null; notificationLevel?: "all" | "mentions" | "nothing"; notificationSoundRef?: string | null; locked: boolean; lockedReason: string }[];
       categories?: { id: string; name: string; sortOrder: number }[];
       myRole: string | null;
       myRoleIds: string[];
@@ -106,6 +114,10 @@ export const communityCommands = {
       opPublications?: Record<string, OpPublicationState>;
       /** Whether this device may write here (`CommunityView::device_status`, ADR 0022 rule 4). */
       deviceStatus: DeviceStatus;
+      /** The unlock barrier's held governance writes (`CommunityView::catch_up`); later changes arrive as `catchUp`. */
+      catchUp?: CatchUpView;
+      /** Our community key, as the Host states it (`CommunityView::key_status`); changes arrive as `keyStatus`. */
+      keyStatus: KeyStatus;
     }[]>("get_community_details"),
   getCommunityMembers: (communityId: string) =>
     hostInvoke<{
@@ -432,7 +444,9 @@ export const communityCommands = {
   leaveCommunity: (communityId: string) =>
     hostInvoke<unknown>("leave_community", { communityId }).then(() => undefined),
   deleteChannel: (communityId: string, channelId: string) =>
-    hostInvoke<unknown>("delete_channel", { communityId, channelId }).then(() => undefined),
+    hostInvoke<GovernanceWriteAnswer & { deleted: string }>("delete_channel", { communityId, channelId }).then(
+      () => undefined,
+    ),
   renameChannel: (communityId: string, channelId: string, newName: string) =>
     hostInvoke<void>("rename_channel", { communityId, channelId, newName }),
   /**

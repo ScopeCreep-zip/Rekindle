@@ -163,6 +163,8 @@
 .channel-item	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .channel-item-selected	text	var(--color-xfire-text)	--color-xfire-accent 25% over --color-xfire-bg-dark	1.0	false
 .channel-item:hover	text	var(--color-xfire-text)	--color-xfire-overlay 5% over --color-xfire-bg-dark	1.0	false
+.channel-locked-icon	text	var(--color-xfire-text-secondary)	--color-xfire-accent 25% over --color-xfire-bg-dark	1.0	true
+.channel-locked-icon	text	var(--color-xfire-text-secondary)	--color-xfire-bg-dark	1.0	true
 .channel-manage-icon	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
 .channel-manage-name	text	var(--color-xfire-text)	--color-xfire-bg-panel	1.0	false
 .channel-manage-type	text	var(--color-xfire-text-dim)	--color-xfire-overlay 8% over --color-xfire-bg-panel	1.0	false
@@ -453,6 +455,8 @@
 .invite-url-masked	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
 .invite-url-masked:hover	text	var(--color-xfire-text)	--color-xfire-bg-panel	1.0	false
 .join-stepper-row	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
+.key-pending-notice	text	var(--color-xfire-text)	--color-xfire-accent 20% over --color-xfire-bg-dark	1.0	false
+.key-pending-since	text	var(--color-xfire-text-secondary)	--color-xfire-accent 20% over --color-xfire-bg-dark	1.0	false
 .local-search-hit	text	var(--color-xfire-text)	--color-xfire-bg-panel	1.0	false
 .local-search-hit	text hovered	var(--color-xfire-text)	--color-xfire-accent 12% over --color-xfire-bg-panel	1.0	false
 .local-search-hit-kind	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
@@ -488,6 +492,10 @@
 .message-automod-blur	text	var(--color-xfire-text-secondary)	--color-xfire-bg-panel	1.0	false
 .message-automod-reveal-btn	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
 .message-automod-reveal-btn	text	var(--color-xfire-text)	--color-xfire-bg-panel	1.0	false
+.message-damaged	text	var(--color-xfire-danger-text)	--color-xfire-bg-dark	1.0	false
+.message-damaged	text	var(--color-xfire-danger-text)	--color-xfire-bg-panel	1.0	false
+.message-damaged-icon	text	var(--color-xfire-danger-text)	--color-xfire-bg-dark	1.0	true
+.message-damaged-icon	text	var(--color-xfire-danger-text)	--color-xfire-bg-panel	1.0	true
 .message-decrypt-failed	text	var(--color-xfire-text-secondary)	--color-xfire-bg-dark	1.0	false
 .message-decrypt-failed	text	var(--color-xfire-text-secondary)	--color-xfire-bg-panel	1.0	false
 .message-decrypt-failed-icon	text	var(--color-xfire-text-secondary)	--color-xfire-bg-dark	1.0	false

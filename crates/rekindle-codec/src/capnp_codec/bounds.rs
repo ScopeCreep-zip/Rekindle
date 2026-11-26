@@ -191,6 +191,13 @@ pub const CHECKPOINT_HINT_REQUEST_BOUND: Bound = Bound {
     max_words: 64,
 };
 
+/// `FrontierRequest` (`community_governance.capnp`, plan E3.2
+/// S7d-keys.8): its cap, and 64 words.
+pub const FRONTIER_REQUEST_BOUND: Bound = Bound {
+    max_bytes: crate::frontier_request::FRONTIER_REQUEST_MAX_BYTES,
+    max_words: 64,
+};
+
 /// `CheckpointHintResponse` (`community_governance.capnp`): its cap, as
 /// packed bytes.
 pub const CHECKPOINT_HINT_RESPONSE_BOUND: Bound =

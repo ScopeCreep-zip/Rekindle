@@ -171,8 +171,13 @@ export function createCommunityWindowState() {
   const ownRemoval = createMemo(() => activeCommunity()?.removed ?? null);
   /// A join the inviter refused after it returned (plan JW): the Host's words.
   const joinWithdrawn = createMemo(() => activeCommunity()?.withdrawn?.reasonText ?? null);
+  /// A restricted channel whose roster we are not on (FX3): the Host's words.
+  const channelLocked = createMemo(() => (activeChannel()?.locked ? (activeChannel()?.lockedReason ?? "") : null));
+  /// FX3: waiting for the community's current key from a member.
+  const keyPending = createMemo(() => (activeCommunity()?.keyStatus?.state === "pending" ? activeCommunity()!.keyStatus! : null));
   const canPostInChannel = createMemo(() => {
     if (ownRemoval() || joinWithdrawn()) return false;
+    if (channelLocked() !== null) return false;
     if (!isAnnouncementChannel()) return canSendMessages();
     return canManageCommunity();
   });
@@ -243,7 +248,7 @@ export function createCommunityWindowState() {
     myPerms, canManageChannels, canManageMessages, canRequestToSpeak,
     canManageCommunity, canSendMessages, canBypassSlowmode, gameServers,
     isAnnouncementChannel, isForumChannel, isStageChannel, isVoiceChannel,
-    isTextPaneVisible, ownRemoval, joinWithdrawn, canPostInChannel, activeVoiceChannelState, isConnectedToActiveStage,
+    isTextPaneVisible, ownRemoval, joinWithdrawn, channelLocked, keyPending, canPostInChannel, activeVoiceChannelState, isConnectedToActiveStage,
     channelTypingUsers, upcomingEvents, shouldShowOnboarding, shouldShowWelcome,
     sidebarServerList, formatTimeUntilEvent,
   };

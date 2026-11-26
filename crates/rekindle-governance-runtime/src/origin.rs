@@ -498,8 +498,12 @@ async fn seed_community<D: GovernanceRuntimeDeps>(
         let lock = deps.rebuild_lock(&anchor_key);
         let _installing = lock.lock().await;
         deps.insert_community(insert);
+        // Every genesis op is ours, signed above: stored `signed_here`
+        // (plan E3.2 S7d-keys.3), the unlock barrier's local head (.8).
         for op in &genesis_ops {
-            deps.op_store().store_governance_op(&anchor_key, op).await?;
+            deps.op_store()
+                .store_signed_governance_op(&anchor_key, op)
+                .await?;
         }
     }
 

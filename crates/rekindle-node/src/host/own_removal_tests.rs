@@ -88,7 +88,7 @@ async fn removed_host(dir: &tempfile::TempDir) -> (Arc<crate::host::Host>, Pseud
     (host, bea)
 }
 
-fn data(answer: rekindle_ipc::IpcResponse) -> serde_json::Value {
+pub(super) fn data(answer: rekindle_ipc::IpcResponse) -> serde_json::Value {
     match answer {
         rekindle_ipc::IpcResponse::Ok { data, .. } => data,
         other => panic!("not an answer: {other:?}"),
@@ -115,7 +115,7 @@ async fn views_list_and_info_carry_our_removal() {
 
     let list = data(handle_list(&host.ctx, DaemonState::Operational));
     assert_eq!(list[0]["removed"]["by"], serde_json::json!(bea.to_hex()));
-    let info = data(handle_info(&host.ctx, DaemonState::Operational, "c1"));
+    let info = data(handle_info(&host.ctx, DaemonState::Operational, "c1").await);
     assert_eq!(info["removed"]["by"], serde_json::json!(bea.to_hex()));
     host.shutdown().await.unwrap();
 }

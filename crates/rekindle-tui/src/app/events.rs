@@ -144,6 +144,29 @@ impl App {
         Action::Render
     }
 
+    /// A toast the user reads, then a redraw.
+    fn toast(&mut self, text: String, level: ToastLevel) -> Action {
+        self.notifications.push(text, level);
+        Action::Render
+    }
+
+    /// Our community key went missing or behind, or arrived (KP): the
+    /// Host's status, shown as it says.
+    fn key_status_toast(&mut self, status: &rekindle_types::dto::community::KeyStatus) -> Action {
+        let (text, level) = match status.state {
+            rekindle_types::dto::community::KeyState::Pending => (
+                "Waiting for the community key from a member who holds it".to_owned(),
+                ToastLevel::Warning,
+            ),
+            rekindle_types::dto::community::KeyState::Current => {
+                ("Community key received".to_owned(), ToastLevel::Info)
+            }
+        };
+        self.notifications.push(text, level);
+        self.load_dashboard_data();
+        Action::Render
+    }
+
     /// Convert a daemon subscription event into a TUI action.
     ///
     /// Every `SubscriptionEvent` variant is explicitly matched — no wildcard.
@@ -300,8 +323,7 @@ impl App {
                 ..
             }) => {
                 let toast = format!("{} joined", member_label(pseudonym, display_name.as_deref()));
-                self.notifications.push(toast, ToastLevel::Info);
-                Some(Action::Render)
+                Some(self.toast(toast, ToastLevel::Info))
             }
             // Our leave or Forget: the dashboard drops the community (a
             // no-op for one it does not list).
@@ -310,11 +332,7 @@ impl App {
                 Some(Action::Render)
             }
             SubscriptionEvent::Membership(MembershipEvent::Left { ref pseudonym, .. }) => {
-                self.notifications.push(
-                    crate::helpers::abbreviate_key(pseudonym).clone(),
-                    ToastLevel::Info,
-                );
-                Some(Action::Render)
+                Some(self.toast(crate::helpers::abbreviate_key(pseudonym).clone(), ToastLevel::Info))
             }
             // Our withdrawn join (published in place of `Forgotten`): the
             // dashboard drops the community and says why.
@@ -331,9 +349,7 @@ impl App {
             }
             SubscriptionEvent::Friend(FriendEvent::Rejected { .. }) => {
                 self.reload_friends();
-                self.notifications
-                    .push("Friend request rejected".into(), ToastLevel::Warning);
-                Some(Action::Render)
+                Some(self.toast("Friend request rejected".into(), ToastLevel::Warning))
             }
             // A permission change re-reads the community as a channel change
             // does (plan E3.2 S9): the dashboard shows what we may do.
@@ -345,31 +361,27 @@ impl App {
                 self.load_dashboard_data();
                 Some(Action::Render)
             }
+            // Our community key went missing or behind, or arrived (KP):
+            // the Host's status, shown as it says.
+            SubscriptionEvent::Governance(GovernanceEvent::KeyStatus { ref status, .. }) => {
+                Some(self.key_status_toast(status))
+            }
             SubscriptionEvent::Social(SocialEvent::ThreadCreated { ref thread, .. }) => {
-                self.notifications
-                    .push(format!("Thread created: {}", thread.name), ToastLevel::Info);
-                Some(Action::Render)
+                Some(self.toast(format!("Thread created: {}", thread.name), ToastLevel::Info))
             }
             SubscriptionEvent::Social(SocialEvent::EventCreated { ref event, .. }) => {
-                self.notifications
-                    .push(format!("Event created: {}", event.title), ToastLevel::Info);
-                Some(Action::Render)
+                Some(self.toast(format!("Event created: {}", event.title), ToastLevel::Info))
             }
             SubscriptionEvent::Social(SocialEvent::EventReminder {
                 ref title,
                 minutes_until_start,
                 ..
-            }) => {
-                self.notifications.push(
-                    format!("{title} starts in {minutes_until_start} min"),
-                    ToastLevel::Warning,
-                );
-                Some(Action::Render)
-            }
+            }) => Some(self.toast(
+                format!("{title} starts in {minutes_until_start} min"),
+                ToastLevel::Warning,
+            )),
             SubscriptionEvent::Social(SocialEvent::GameServerAdded { ref server, .. }) => {
-                self.notifications
-                    .push(format!("Game server added: {}", server.label), ToastLevel::Info);
-                Some(Action::Render)
+                Some(self.toast(format!("Game server added: {}", server.label), ToastLevel::Info))
             }
             SubscriptionEvent::System(SystemEvent::SkinChanged { .. }) => Some(self.reskin(&event)),
             SubscriptionEvent::System(SystemEvent::QuickWipeChanged {
@@ -388,16 +400,15 @@ impl App {
             SubscriptionEvent::Friend(FriendEvent::IdentityPinMismatch {
                 ref display_name, ..
             }) => {
-                self.notifications.push(
+                self.reload_friends();
+                Some(self.toast(
                     format!(
                         "{}'s keys are not signed by the identity you know. Nothing was \
                          sent; verify their safety number.",
                         crate::helpers::sanitize_for_display(display_name)
                     ),
                     ToastLevel::Error,
-                );
-                self.reload_friends();
-                Some(Action::Render)
+                ))
             }
             // The Host's app-level alerts (a refused memory lock, unsent
             // changes kept, a declined request): shown as the Host wrote them.
@@ -405,18 +416,13 @@ impl App {
                 ref title,
                 ref body,
                 ..
-            }) => {
-                self.notifications
-                    .push(format!("{title}: {body}"), ToastLevel::Warning);
-                Some(Action::Render)
-            }
+            }) => Some(self.toast(format!("{title}: {body}"), ToastLevel::Warning)),
             SubscriptionEvent::Friend(FriendEvent::HandshakeFailed { ref reason, .. }) => {
-                self.notifications.push(
+                self.reload_friends();
+                Some(self.toast(
                     format!("Secure session not set up: {reason}"),
                     ToastLevel::Warning,
-                );
-                self.reload_friends();
-                Some(Action::Render)
+                ))
             }
             SubscriptionEvent::Friend(
                 FriendEvent::HandshakeRetrying { .. }

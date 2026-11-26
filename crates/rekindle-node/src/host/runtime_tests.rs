@@ -41,6 +41,8 @@ mod community_info;
 mod expression_upload_tests;
 #[path = "friend_code_wait_tests.rs"]
 mod friend_code_wait;
+#[path = "frontier_tests.rs"]
+mod frontier_tests;
 #[path = "governance_seed_tests.rs"]
 mod governance_seed;
 #[path = "held_threads_tests.rs"]
@@ -55,6 +57,8 @@ mod mek_transfer_tests;
 mod membership;
 #[path = "onboarding_bounds_tests.rs"]
 mod onboarding_bounds;
+#[path = "op_publications_tests.rs"]
+mod op_publications;
 #[path = "own_frontier_record_tests.rs"]
 mod own_frontier_record;
 #[path = "own_member_record_tests.rs"]
@@ -86,6 +90,9 @@ mod skin_serve;
 #[cfg(unix)]
 #[path = "skin_trial_tests.rs"]
 mod skin_trial;
+#[cfg(all(feature = "webdriver-test", debug_assertions))]
+#[path = "webdriver_tests.rs"]
+mod webdriver_tests;
 #[path = "withdrawal_tests.rs"]
 mod withdrawal;
 

@@ -3,7 +3,8 @@
 
 use rekindle_types::dht_layout::dm_participant;
 
-use super::{local_value, page, ChainError};
+use super::local::local_value;
+use super::{page, ChainError};
 use crate::port::{OpenIntent, RecordPort};
 use crate::schema;
 

@@ -123,6 +123,8 @@ mod tests {
     ) -> CommunityState {
         CommunityState {
             genesis_cert: None,
+            key_pending_since_ms: None,
+            published_key_status: None,
             held_threads: std::collections::HashSet::new(),
             id: "gov-id".to_string(),
             name: "T".to_string(),
@@ -147,6 +149,7 @@ mod tests {
             member_routes: rekindle_presence::community::MemberRouteCache::default(),
             head_hints: rekindle_node::host::community::state::HeadHints::default(),
             outbox_streams: std::sync::Arc::default(),
+            outbox_unmapped: std::sync::Arc::default(),
             snapshot_requests: rekindle_transport::gossip::RateLimiter::default(),
             anchor: Some("gov-key".to_string()),
             my_member_record: None,
@@ -166,6 +169,8 @@ mod tests {
             tasks: None,
             leases: rekindle_records::lease::CommunityLeases::default(),
             loops_started: false,
+            departing: false,
+            departure_running: false,
             open_community_records: CommunityRecords {
                 governance_overflow_keys: overflow_keys,
                 ..CommunityRecords::default()

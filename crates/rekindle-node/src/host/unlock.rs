@@ -417,6 +417,11 @@ pub(crate) async fn teardown(ctx: &DaemonContext, reason: EndReason) {
             tracing::warn!(%stuck, "unlock scope did not stop in time");
         }
     }
+    // The community scopes are children of the stopped unlock scope: kept,
+    // the next unlock's `community_scope` handed back a closed one and every
+    // community task it started (the unlock barrier's rounds among them) was
+    // dropped. Both modes forget them here.
+    ctx.community_scopes.lock().clear();
     ctx.outbox.stop();
     ctx.game.forget();
     super::adapters::files::close(ctx);
@@ -451,6 +456,15 @@ pub(crate) async fn teardown(ctx: &DaemonContext, reason: EndReason) {
             transport.want_routes();
         }
     }
+    // Every unlock re-arms its barriers on both modes (plan E3.2
+    // S7d-keys.8): the shell keeps its community store across a log-out, and
+    // a kept barrier read as passed let the next unlock's first write sign
+    // with every ring peer silent.
+    ctx.communities.unlock_barriers().clear();
+    // The follow-up and card refresh markers go with the scope their tasks
+    // ran on (plan E3.2 S7l, JP1): kept, the shell's next unlock never
+    // started either task.
+    ctx.communities.reset_session_state();
     if ctx.mode == HostMode::Daemon {
         crate::daemon::dispatch::daemon_release_communities(ctx);
     }

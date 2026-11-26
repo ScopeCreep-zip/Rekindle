@@ -41,6 +41,7 @@ pub mod device_signer;
 pub mod dht_hydration;
 pub mod error;
 pub mod event;
+pub mod frontier_exchange;
 pub mod genesis;
 pub mod hint_chain;
 pub mod hinted_walk;
@@ -75,6 +76,8 @@ pub mod segments;
 pub mod successor;
 pub mod successor_invites;
 pub mod transfer;
+pub mod unlock_barrier;
+mod unlock_hold;
 pub mod verify_cache;
 pub mod watch_ring;
 

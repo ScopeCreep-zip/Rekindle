@@ -8,7 +8,6 @@ use rekindle_node::host::{OwnRecordKeys, UnlockedView};
 
 use crate::services;
 use crate::state::{IdentityState, SharedState, UserStatus};
-use crate::state_helpers;
 
 /// The unlock's keys and projection into `AppState`, the loaders, and, with
 /// a window and a node, the network stages.
@@ -172,16 +171,12 @@ fn network_stages(
 }
 
 /// The Host's own records are up: the keys into the `NodeHandle` projection
-/// its readers use and the community keys we are behind on (→ E3.1).
+/// its readers use. The community keys we hold behind are the Host's
+/// community sync phase's to ask for, never the shell's (FX3).
 pub(super) fn own_records(state: &SharedState, keys: &OwnRecordKeys) {
     if let Some(nh) = state.node.write().as_mut() {
         nh.profile_dht_key.clone_from(&keys.profile);
         nh.friend_list_dht_key.clone_from(&keys.friend_list);
         nh.mailbox_dht_key.clone_from(&keys.mailbox);
-    }
-    if state_helpers::our_route_blob(state).is_some() {
-        if let Ok(governance) = state_helpers::host_governance(state) {
-            governance.recover_behind_meks();
-        }
     }
 }

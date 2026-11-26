@@ -235,7 +235,8 @@ pub enum CommunityChannelCmd {
 }
 
 /// Channel permission overwrite subcommands (the host reviews each as a
-/// governance write; `--yes`/`--confirm` answer it without a terminal).
+/// consequential governance write, `SetChannelOverwrite` /
+/// `DeleteChannelOverwrite`; `--yes` commits it without a terminal).
 #[derive(Subcommand)]
 pub enum OverwriteCmd {
     /// Set a channel's overwrite for one target.

@@ -181,10 +181,13 @@ impl HostGovernance {
         };
         let fingerprint =
             invite_fingerprint(community).ok_or("the community id is not a record key")?;
+        // A revoke held behind our unlanded ops is in effect here at once.
+        let barriers = self.ctx.communities.unlock_barriers();
         let mut live: Vec<_> = gov
             .invites
             .iter()
             .filter(|(_, inv)| inv.expires_at.is_none_or(|exp| exp > now))
+            .filter(|(id, _)| !barriers.withdraws_invite(community, id))
             .collect();
         live.sort_by_key(|(id, _)| **id);
         Ok(live

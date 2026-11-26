@@ -276,7 +276,11 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// 161 (plan E7.2 G6): `group_lobbies` and `group_lobby_members`, each group's game lobbies.
 /// 162 (owed item GD): `messages.reply_to_client_id`, a DM's or group DM's parent client id
 /// as carried, served whether or not the parent is held.
-pub const SCHEMA_VERSION: i64 = 162;
+/// 163 (plan E3.2 S7d-keys.8): `communities.departing`, a leave that took effect locally
+/// before its `MemberLeft` was signed.
+/// 164 (plan FX3 follow-up KP): `messages.undecryptable_reason`, a channel message stored without
+/// its body (`'damaged'`): its signed outbox entry names a key we hold and the body does not open.
+pub const SCHEMA_VERSION: i64 = 164;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

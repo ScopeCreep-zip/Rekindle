@@ -80,6 +80,10 @@ pub enum ChannelMessageEvent {
         /// stored with `automod_blurred` and every frontend renders it
         /// blurred.
         automod_blurred: bool,
+        /// The post was stored without its body, and why (`body` is
+        /// `None`): never "waiting for its key", which a held post is.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        undecryptable: Option<crate::dto::channel_message::Undecryptable>,
     },
     /// A message was edited.
     /// Triggered by: an edit entry in its author's record (plan E3.3).

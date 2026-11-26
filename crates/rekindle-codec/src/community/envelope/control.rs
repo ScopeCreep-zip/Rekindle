@@ -263,6 +263,10 @@ pub enum ControlPayload {
     CheckpointHintRequest { request: Vec<u8> },
     /// An encoded `CheckpointHintResponse` (plan E3.2 S7c.5).
     CheckpointHintResponse { response: Vec<u8> },
+    /// An encoded, signed `FrontierRequest` (plan E3.2 S7d-keys.8).
+    FrontierRequest { request: Vec<u8> },
+    /// The responder's own encoded `Frontier` (plan E3.2 S7d-keys.8).
+    FrontierResponse { frontier: Vec<u8> },
     /// A partial responder's answer to a `BootstrapRequest` for `anchor`
     /// (plan E3.2 S7c.8): ask another member, not a refusal.
     BootstrapPartial { anchor: String },

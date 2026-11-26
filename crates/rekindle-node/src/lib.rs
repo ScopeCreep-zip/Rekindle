@@ -47,6 +47,10 @@
 // `rekindle_utils::text::{prefix, abbreviate}` instead (plan C2).
 #![deny(clippy::string_slice)]
 
+// The real-app suite's switch (`host::webdriver`) is for debug builds only.
+#[cfg(all(feature = "webdriver-test", not(debug_assertions)))]
+compile_error!("the webdriver-test feature is for debug builds only");
+
 pub mod daemon;
 pub mod host;
 pub mod state;

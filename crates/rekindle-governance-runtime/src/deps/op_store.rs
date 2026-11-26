@@ -49,6 +49,15 @@ pub trait GovernanceOpStore: Send + Sync {
         community_id: &str,
         op: &crate::op_log::HeldOp,
     ) -> Result<(), GovernanceRuntimeError>;
+    /// The highest seq this device signed under `device_key` in the
+    /// community (`signed_here` ops only, plan E3.2 S7d-keys.3): the unlock
+    /// barrier's local head (S7d-keys.8), never an op of ours re-learnt
+    /// from a peer.
+    async fn signed_here_head(
+        &self,
+        community_id: &str,
+        device_key: &[u8; 32],
+    ) -> Result<Option<u64>, GovernanceRuntimeError>;
     /// Record each op's fate in the last merge.
     async fn set_governance_op_fates(
         &self,

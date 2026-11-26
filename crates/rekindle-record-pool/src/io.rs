@@ -9,9 +9,11 @@ use rekindle_records::port::{
 use super::{range, to_port, RecordPool};
 use rekindle_records::port::PortError;
 
-/// How the pool reports a set that failed: `TryAgain` is a write short of consensus, the node
-/// offline or the fanout below consensus, which Veilid answers alike (0.5.8 `set_value.rs:710-738`);
-/// nothing was stored locally or queued. Anything else is the error.
+/// How the pool reports a set that failed: `TryAgain` is a write short of consensus that Veilid
+/// errors on (offline before the fanout, an outbound error, or a fanout below consensus at the max
+/// seq: fork `e1158844` `set_value.rs:248-255,276-290,306-308`); nothing was stored locally or
+/// queued. A fanout below consensus otherwise answers `Ok(None)` ([`RecordPool::set`]). Anything
+/// else is the error.
 ///
 /// # Errors
 /// Every kind but `TryAgain`, as [`to_port`](crate::to_port).
@@ -234,20 +236,43 @@ impl RecordPool {
                     self.moved(&key, subkey, before).await
                 }
                 Ok(Some(rival)) => Ok(SetOutcome::Superseded(rival)),
-                // `None` is ours at consensus: below it Veilid answers
-                // `TryAgain` and stores nothing (0.5.8 `set_value.rs:731-738` →
-                // `local_record_store_interface.rs:60-62`), mapped by
-                // `set_failed`. An identical value kept its seq and re-sent the
-                // stored bytes (`set_value.rs:353-366`), unless written above.
-                Ok(None) => Ok(if identical && above.is_none() {
-                    SetOutcome::Unchanged
-                } else {
-                    SetOutcome::Landed
-                }),
+                // `None` is ours at consensus *or* a fanout that ended below
+                // it: under `AllowOffline(false)` the offline handler bails
+                // `TryAgain` before writing or queuing, and `set_value` turns
+                // that into `Ok(None)` unless the write closes the subkey (fork
+                // `e1158844` `set_value.rs:731-738` →
+                // `local_record_store_interface.rs:61-62`, then
+                // `set_value.rs:306-308`). Only a landing writes the local copy
+                // (`set_value.rs:741-746`), so the local seq tells them apart.
+                // An identical value re-sent the stored bytes at their seq
+                // (`set_value.rs:353-366`), so its seq cannot move either way:
+                // the local copy is already ours, stored only by a landed write
+                // or a network read (a missed write stores nothing), and it
+                // stays `Unchanged`, never `Landed`.
+                Ok(None) if identical && above.is_none() => Ok(SetOutcome::Unchanged),
+                Ok(None) => self.landed_or_missed(&key, subkey, before).await,
                 Err(e) => set_failed(&e),
             };
         }
         self.moved(&key, subkey, before).await
+    }
+
+    /// For a set Veilid answered `Ok(None)`: `Landed` when the local seq
+    /// moved past `before` (a landing writes it, `set_value.rs:741-746`),
+    /// else `Offline`, a fanout below consensus that stored nothing.
+    async fn landed_or_missed(
+        &self,
+        key: &str,
+        subkey: u32,
+        before: Option<u32>,
+    ) -> Result<SetOutcome, PortError> {
+        let after = self.local_seq(key, subkey).await.map_err(|e| to_port(&e))?;
+        Ok(if after.is_some() && after != before {
+            SetOutcome::Landed
+        } else {
+            tracing::debug!(key, subkey, "dht set: the fanout ended below consensus");
+            SetOutcome::Offline
+        })
     }
 
     /// `Landed` when the local seq moved past `before`, else `Unchanged`.

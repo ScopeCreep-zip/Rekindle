@@ -193,6 +193,9 @@ pub fn control_into_event(
         | ControlPayload::CheckpointStateResponse { .. }
         | ControlPayload::CheckpointHintRequest { .. }
         | ControlPayload::CheckpointHintResponse { .. }
+        // A frontier request and its answer travel by app_call (S7d-keys.8).
+        | ControlPayload::FrontierRequest { .. }
+        | ControlPayload::FrontierResponse { .. }
         // A partial responder's bootstrap answer, read by the joiner's call.
         | ControlPayload::BootstrapPartial { .. }
         | ControlPayload::BootstrapRefused { .. }

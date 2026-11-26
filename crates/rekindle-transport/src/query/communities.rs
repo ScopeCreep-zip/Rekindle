@@ -116,5 +116,8 @@ pub fn community_detail(
         our_pseudonym: membership.pseudonym_key.clone(),
         our_roles: our_roles.iter().map(|id| id.to_hex()).collect(),
         removed: None,
+        catch_up: None,
+        op_publications: std::collections::BTreeMap::new(),
+        mek_generation: 0,
     }
 }
