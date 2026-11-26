@@ -82,7 +82,7 @@ const fn end(offset: i16, size: u16) -> NodeSpan {
 }
 
 /// Symbiosis re-laid (x spans only), measured at its served minimum.
-/// Its main window (368 x 555; `InfoBar` spans x 5–350) and its chat
+/// Its main window (355 x 555, its InfoView strip given up, plan E7.7 TAB1; `InfoBar` spans x 5–350) and its chat
 /// window (332 wide; `InfoBar` spans x 5–314) carry the same title row
 /// (`MainWindow.xml:55-57`, `ChatWindow.xml:64-66`: `ButtonMinimize`,
 /// `ButtonMaximize`, `ButtonClose` at `JustX=Right` 49, 25 and 5 in an

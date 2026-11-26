@@ -318,8 +318,11 @@ fn builtin_silhouettes_match_their_goldens() {
             (308, vec![r(41, 6, 3, 1), r(40, 7, 5, 10), r(16, 17, 19, 1)]),
         ),
         (
+            // Plan E7.7 TAB1: the frame fills the window (the InfoView strip
+            // is given up), so its rows run 13 px wider and the tab's column
+            // no longer steps the right edge: 13 rows, not 39.
             "builtin:symbiosis",
-            (39, vec![r(7, 0, 372, 1), r(5, 1, 376, 1), r(4, 2, 378, 1)]),
+            (13, vec![r(7, 0, 385, 1), r(5, 1, 389, 1), r(4, 2, 391, 1)]),
         ),
         (
             "builtin:total-chaos",

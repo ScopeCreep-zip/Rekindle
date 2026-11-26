@@ -29,6 +29,7 @@
 //! - Two target boxes still never overlap: every grown strip is free of
 //!   every other box.
 
+use super::target::meet;
 use super::validate::{overlap, HIT};
 
 /// The strip `d` px deep beside `g` on `axis`, after it or before it.
@@ -109,6 +110,33 @@ impl GrowLimits<'_> {
         area[i] = grow(area[i], axis, !first, d);
     }
 
+    /// Whether neighbour `j` can give candidate `i` the strip `band` on
+    /// `axis`: the strip is free but for `j`'s box, and meets `j`'s art only
+    /// where `j`'s art is wide enough to keep 24 px clear of it and the
+    /// strip lies on its edge (plan E7.7 TAB1: Symbiosis's `StatusChanger`
+    /// abuts its 322 px `Status` text, 5 px from the window's edge once the
+    /// strip is given up; the text's last pixel column is its to press). The
+    /// text box `j` draws is `j`'s own and no wall to `i` there.
+    fn spares(&self, area: &[[i32; 4]], i: usize, j: usize, band: [i32; 4], axis: usize) -> bool {
+        let art = self.arts[j];
+        let over = meet(band, art);
+        let edge = |hit: [i32; 4]| {
+            hit[axis] == art[axis] || hit[axis] + hit[axis + 2] == art[axis] + art[axis + 2]
+        };
+        if over.is_some_and(|hit| art[axis + 2] - hit[axis + 2] < 2 * HIT || !edge(hit)) {
+            return false;
+        }
+        let walls = |wall: &[i32; 4]| over.is_none() || *wall != art;
+        inside(band, self.window)
+            && !self.walls[i]
+                .iter()
+                .filter(|wall| walls(wall))
+                .any(|wall| overlap(band, *wall))
+            && (0..area.len())
+                .filter(|&other| other != j && (self.near)(i, other))
+                .all(|other| !overlap(band, area[other]))
+    }
+
     /// Takes what candidate `i` still lacks on `axis` from one neighbour's
     /// box on a side (see the module doc).
     fn borrow(&self, area: &mut [[i32; 4]], i: usize, axis: usize) {
@@ -122,7 +150,7 @@ impl GrowLimits<'_> {
                 .filter(|&j| (self.near)(i, j) && overlap(band, area[j]))
                 .collect();
             let [j] = owners[..] else { continue };
-            if overlap(band, self.arts[j]) || !self.free(area, i, band, Some(j)) {
+            if !self.spares(area, i, j, band, axis) {
                 continue;
             }
             let was = area[j][axis + 2];
