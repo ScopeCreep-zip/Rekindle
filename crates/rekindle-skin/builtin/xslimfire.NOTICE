@@ -221,3 +221,6 @@ Contrast changes (minimal Oklab-lightness walk) (9 made)
   bg.primary: #0d0d0d -> #0d0d0c (1.4.3 .channel-voice-join-btn text.on-fill on status.online tint.fill over bg.dark: 4.49:1 -> passes, required 4.50:1)
   danger.text: #ff5955 -> #ff5d58 (1.4.3 .removal-banner danger.text on status.busy 30% over bg.dark: 4.40:1 -> passes, required 4.50:1)
   menubar.text: #0264b4 -> #287cce (1.4.3 menubar.text on menubar.bg: 3.22:1 -> 4.50:1, required 4.50:1)
+
+Source corrections (our copy of the pack source differs from the author's)
+  xSLIMFIREpopups.xml:5 MainInfoViewPopup X: "MainRightOuterEdge.RIGHT-15" -> "ResizeRight.RIGHT-15". xSLIMFIRE's main window has no MainRightOuterEdge tile (Xfire's own loader refuses a missing anchor tile: "XML Skin matching component (%ws) not found"); its right outer edge tile is ResizeRight (xSLIMFIREmainwindow.xml:38, JustX=RIGHT ResizeY=100). Plan SK2 lead decision 54.
