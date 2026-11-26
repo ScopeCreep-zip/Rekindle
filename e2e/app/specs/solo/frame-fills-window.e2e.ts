@@ -127,7 +127,27 @@ async function probe(w: number, h: number, crop: string, extra: [number, number]
 }
 
 /** Measure, log, shoot and require the frame, the paint and the tab for the current window. */
+/** Points whose painters are logged, per pack window (lead: StealthX's two
+ *  solid blue rectangles at the bottom corners, x 112-135 and 377-400,
+ *  y 555-615, are not its art). */
+const PAINTER_POINTS: Record<string, [number, number][]> = {
+  "stealthx-main": [[123, 585], [388, 585]],
+};
+
+/** Every element at (x, y), topmost first: tag, class, node, role, z and paint. */
+async function paintersAt(x: number, y: number): Promise<string[]> {
+  return (await browser.execute((px: number, py: number) => document.elementsFromPoint(px, py).slice(0, 8).map((e) => {
+    const c = getComputedStyle(e);
+    const n = (e as HTMLElement).closest<HTMLElement>("[data-skin-node]");
+    const art = c.backgroundImage === "none" ? "none" : c.backgroundImage.split("/").pop()?.slice(0, 30);
+    return `${e.tagName.toLowerCase()}.${(e as HTMLElement).className || "-"} node=${n?.dataset.skinNode ?? "-"} role=${n?.dataset.skinRole ?? "-"} state=${n?.dataset.state ?? "-"} z=${c.zIndex} bg=${c.backgroundColor} art=${art} op=${c.opacity}`;
+  }), x, y)) as string[];
+}
+
 async function frameFills(file: string, label: string): Promise<void> {
+  for (const [x, y] of PAINTER_POINTS[`${file}-${label}`] ?? []) {
+    console.log(`[painters] ${file} ${label} at ${x},${y}: ${JSON.stringify(await paintersAt(x, y))}`);
+  }
   const tab = label === "main" ? TABS[file] : undefined;
   const m = await measure(tab?.node ?? "");
   const [w, h] = m.window;
