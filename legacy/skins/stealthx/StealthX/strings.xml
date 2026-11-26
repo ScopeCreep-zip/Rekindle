@@ -1,0 +1,63 @@
+<Strings lang="en">
+    <String name="AddButtonTip" resourceid="221" />
+    <String name="ChatButtonTip" resourceid="222" />
+    <String name="GameButtonTip" resourceid="224" />
+    <String name="InfoButtonTip" resourceid="226" />
+    <String name="UserNameText" resourceid="227" />
+    <String name="XfireMenu" resourceid="228" />
+    <String name="ToolsMenu" resourceid="229" />
+    <String name="HelpMenu" resourceid="231" />
+    <String name="GCSystemMenu" resourceid="228" />
+    <String name="GCActionsMenu" resourceid="436" />
+    <String name="GCHelpMenu" resourceid="231" />
+    <String name="ExpandButtonTip" resourceid="232" />
+    <String name="RetractButtonTip" resourceid="233" />
+    <String name="MinimizeButtonTip" resourceid="234" />
+    <String name="MaximizeButtonTip" resourceid="270" />
+    <String name="CloseButtonTip" resourceid="236" />
+    <String name="ChatTitle" resourceid="237" />
+    <String name="SendMessageTip" resourceid="238" />
+    <String name="FriendsTitle" resourceid="244" />
+    <String name="ServerTitle" resourceid="245" />
+    <String name="TypingMessage" resourceid="318" />
+    <String name="RefreshButtonTip" resourceid="263" />
+    <String name="AddServerButtonTip" resourceid="265" />
+    <String name="DownloadTitle" resourceid="288" />
+    <String name="StartDownloadButtonTip" resourceid="290" />
+    <String name="StopDownloadButtonTip" resourceid="292" />
+    <String name="ExecuteDownloadButtonTip" resourceid="294" />
+    <String name="DownloadButtonTip" resourceid="390" />
+    <String name="DisabledGameButtonTip" resourceid="393" />
+    <String name="DisabledJoinChatTooltip" resourceid="398" />
+    <String name="DisabledHostChatButtonTooltip" resourceid="746" />
+    <String name="DisabledChatButtonTip" resourceid="423" />
+    <String name="CallButtonTip" resourceid="522" />
+    <String name="AnswerButtonTip" resourceid="523" />
+    <String name="EndCallButtonTip" resourceid="782" />
+    <String name="HostVoiceChatButtonTip" resourceid="744" />
+    <String name="JoinVoiceChatButtonTip" resourceid="639" />
+    <String name="LeaveVoiceChatButtonTip" resourceid="745" />
+    <String name="HostGameLobbyButtonTip" resourceid="768" />
+    <String name="LeaveGameLobbyButtonTip" resourceid="767" />
+    <String name="LaunchGameLobbyButtonTip" resourceid="769" />
+    
+    <String name="MyBtnAddFriendText">Add Friend</String>
+    <String name="MyBtnChatText">Chat</String>
+    <String name="MyBtnGameText">Play</String>
+    <String name="MyBtnInfoText">Profile</String>
+    <String name="MyBtnAddServerText">Add Server</String>
+    <String name="MyBtnRefreshText">Refresh</String>
+    <String name="MyBtnDownText">Download</String>
+    <String name="MyBtnStopText">Stop</String>
+    <String name="MyBtnExecuteText">Execute</String>
+    <String name="MyBtnFindText">Search</String>
+    <String name="MyBtnInfoViewText">Infoview</String>
+    <String name="MyBtnHostChatText">Host Chat</String>
+    <String name="MyBtnJoinChatText">Join Chat</String>
+    <String name="MyBtnLeaveChatText">Leave Chat</String>
+    <String name="MyBtnSendText">Send Text</String>
+    <String name="MyBtnHostLobbyText">Host Lobby</String>
+    <String name="MyBtnJoinLobbyText">Join Lobby</String>
+    <String name="MyBtnLeaveLobbyText">Leave Lobby</String>
+    <String name="MyBtnLaunchLobbyText">Launch Lobby</String>
+</Strings>

@@ -1,0 +1,23 @@
+<Tile Name="MainChatWindow" ResizeX="100" ResizeY="100" Component="MainChatWindow">
+    <Tile Name="MainBackground" X="112" Y="0" ResizeX="100" ResizeY="100" Component="MainBackground">
+        <Tile Name="MainBackgroundCol" X="0" Y="0" IndentLeft="24" IndentTop="33" IndentRight="23" IndentBottom="33" ResizeX="100" ResizeY="100" Component="MainBackgroundCol">
+            <Tile Name="ChatArea" X="2" IndentRight="2" Y="2" IndentBottom="40" ResizeX="100" ResizeY="100" Component="ChatArea" />
+            <Tile Name="ChatEdit" X="2" IndentRight="2" Y="ChatArea.BOTTOM+5" IndentBottom="1" ResizeX="100" ResizeY="100" Component="ChatEdit" />
+        </Tile>
+
+        <Tile Name="ChatMenuButton" X="2" JustY="CENTER" Z="50" Component="ChatMenuButton" />
+        <Tile Name="InfoViewButton" X="1" JustX="RIGHT" JustY="CENTER" Z="50" Component="InfoViewButton" />
+
+        <Tile Name="UserNameText" Y="8" X="22" ResizeX="100" IndentRight="100" Component="UserNameText" />
+
+        <Tile Name="WndClose" JustX="RIGHT" X="21" Y="7" Component="WndClose" />
+        <Tile Name="WndMax" JustX="RIGHT" X="WndClose.LEFT-3" Y="7" Component="WndMax" />
+        <Tile Name="WndMin" JustX="RIGHT" X="WndMax.LEFT-3" Y="7" Component="WndMin" />
+
+        <Tile Name="ResizeRight" JustX="RIGHT" ResizeY="100" Component="ResizeRight" />
+        <Tile Name="ResizeBottom" JustY="BOTTOM" ResizeX="100" Component="ResizeBottom" />
+        <Tile Name="ResizeBottomRight" JustX="RIGHT" JustY="BOTTOM" Component="ResizeBottomRight" />
+
+        <Tile Name="ChatTypingMessage" Y="ResizeBottom.TOP-12" X="22" IndentRight="22" Component="TypingMessage" />
+    </Tile>
+</Tile>
