@@ -15,7 +15,8 @@
 //   3. a window with a tab: its left points are painted, the tab's own
 //      pixels are opaque, and the tab's column above and below it (the same
 //      right points, clear of the tab) is alpha 0; the tab's right edge is
-//      the window's and its target is 13x115.
+//      the window's and it is 115 tall (its press area may reach back over
+//      the frame: Symbiosis serves target [-5, 0, 18, 115], art 13 wide).
 // A pack whose frame stops short of an edge with no tab recorded here fails,
 // naming the gap. (Symbiosis's minimum width is proven where it is computed:
 // a programmatic resize is not bound by a window's content minimum on macOS.)
@@ -39,9 +40,12 @@ import { builtinPacks } from "../../skin-pack.ts";
 import { befriendFleet } from "../../social.ts";
 
 const PACKS = ["symbiosis", "combat", "onyx", "alloy", "xslimfire"];
-/** The side tab a pack hangs off its main window's right edge, and its height. */
-const TABS: Record<string, { node: string; size: [number, number] }> = {
-  symbiosis: { node: "MainInfoViewButton", size: [13, 115] },
+/** The side tab a pack hangs off its main window's right edge: its node,
+ *  its art's width (the column it protrudes in) and its height. Its press
+ *  area may reach further back over the frame (Symbiosis serves
+ *  `target [-5, 0, 18, 115] art [5, 0, 13, 115]`). */
+const TABS: Record<string, { node: string; artWidth: number; height: number }> = {
+  symbiosis: { node: "MainInfoViewButton", artWidth: 13, height: 115 },
 };
 
 const CROPS = path.join(import.meta.dirname, "..", "..", "out", "shots", "frame-fills-window", "crops");
@@ -125,7 +129,7 @@ async function frameFills(file: string, label: string): Promise<void> {
   expect({ window: label, outside: m.outside }).toEqual({ window: label, outside: [] });
   // The frame's edges: every one on the window's, but the right edge stops
   // the tab's width short where the pack hangs a tab.
-  const want: Box = [m.tree[0], m.tree[1], m.tree[2] - (tab ? tab.size[0] : 0), m.tree[3]];
+  const want: Box = [m.tree[0], m.tree[1], m.tree[2] - (tab ? tab.artWidth : 0), m.tree[3]];
   const off = m.art.map((v, i) => Math.abs(v - want[i]));
   expect({ window: label, frame: m.art, short: off.map((d) => d > 1) }).toEqual({ window: label, frame: m.art, short: [false, false, false, false] });
   const left = Object.entries(px).filter(([k]) => Number(k.split(",")[0]) < 20);
@@ -136,7 +140,9 @@ async function frameFills(file: string, label: string): Promise<void> {
     return;
   }
   if (!m.tab || !tabPoint) throw new Error(`${file}: no drawn ${tab.node}`);
-  expect({ tabRight: m.tab[2], size: [m.tab[2] - m.tab[0], m.tab[3] - m.tab[1]] }).toEqual({ tabRight: w, size: tab.size });
+  // Its right edge is the window's and it is the tab's height; its width is
+  // its press area's (logged), which may reach back over the frame.
+  expect({ tabRight: m.tab[2], height: m.tab[3] - m.tab[1] }).toEqual({ tabRight: w, height: tab.height });
   // The tab is drawn; the column above and below it is transparent.
   expect({ window: label, tabAlpha: px[tabPoint.join(",")] }).toEqual({ window: label, tabAlpha: 255 });
   expect({ window: label, columnNotClear: right.filter(([, a]) => a !== 0) }).toEqual({ window: label, columnNotClear: [] });
