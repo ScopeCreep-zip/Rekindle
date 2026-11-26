@@ -144,6 +144,7 @@ Major changes to [`/docs/security/`](.) and adjacent:
 ### 10. Funder and audit acknowledgements
 
 Audits performed:
+
 - (e.g.) "Trail of Bits engagement on the daemon IPC bus —
   see /docs/security/audits/2026-trail-of-bits-ipc.pdf."
 

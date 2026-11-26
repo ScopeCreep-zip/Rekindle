@@ -6,7 +6,7 @@ protocol stack.
 
 ## At a glance
 
-```
+```text
 ┌────────────────────────────────────────────────────────────┐
 │  Rust unit + integration tests   (cargo test --workspace)  │
 │  ├── Pure-logic crates: deterministic, fast (<1s)          │

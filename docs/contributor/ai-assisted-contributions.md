@@ -18,7 +18,7 @@ AI tool, the commit message **must** include an `Assisted-by:`
 trailer naming the tool and its version (the same place
 `Co-authored-by:` would go):
 
-```
+```text
 Subject line summarising the change
 
 Longer explanation if needed.
@@ -56,13 +56,13 @@ If you are unsure, **disclose**.
 
 The format is one line, the same as `Co-authored-by:`:
 
-```
+```text
 Assisted-by: <tool-name>:<version> [<harness>] [<flags>]
 ```
 
 Examples:
 
-```
+```text
 Assisted-by: claude-opus-4.7 (Claude Code 1.0)
 Assisted-by: github-copilot 1.241.0
 Assisted-by: cursor 0.50.0 (claude-sonnet-4)
@@ -89,7 +89,7 @@ an AI-assisted PR.
 
 ### Frontend tier (TypeScript / SolidJS)
 
-```
+```text
 src/components/  ← presentation only
 src/stores/       ← reactive signals + IPC calls; no business logic
 src/handlers/     ← event subscriptions; dispatch to stores
@@ -116,7 +116,7 @@ rules in `.semgrep.yml` cover the literal-pattern cases.
 
 ### Backend tier (Rust workspace)
 
-```
+```text
 Tier 1 — types          (zero deps)
 Tier 2 — secrets         (sole crypto boundary)
 Tier 3 — codec, records  (DHT, signed envelopes)

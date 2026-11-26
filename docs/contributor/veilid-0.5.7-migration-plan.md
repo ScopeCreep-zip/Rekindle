@@ -30,7 +30,7 @@ segments, and PQXDH. See §7.
 
 **This is a hard blocker, not a cleanup.** Verified:
 
-```
+```sh
 $ cargo update -p veilid-core --precise 0.5.7 --dry-run
 error: failed to select a version for `libsqlite3-sys`.
     ... required by package `rusqlite v0.39.0`
@@ -215,7 +215,7 @@ test suite, and a manual two-node attach/DHT/messaging smoke run.
 
 This is where the architecture actually gets smaller.
 
-### 2.1 UPnP — make it configurable, then A/B it. Do not just delete.
+### 2.1 UPnP — make it configurable, then A/B it. Do not just delete
 
 An earlier draft called this the cheapest win in the plan. It isn't.
 See gap-audit §1.1 for the full trace; the short version:

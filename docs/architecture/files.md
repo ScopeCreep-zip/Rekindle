@@ -71,7 +71,7 @@ the rarest chunk and ask the smallest set of peers that hold it.
 
 ## Per-file FEK (Signal/Matrix pattern)
 
-```
+```text
 plaintext chunks ─encrypt(FEK)─▶ chunk ciphertext ─store─▶ peer cache
                                                                  │
 plaintext FEK ─wrap(channel MEK)─▶ wrapped_fek ─in offer─────────┘
@@ -126,7 +126,7 @@ Verification:
 
 ## Filesystem cache
 
-```
+```text
 <data>/state/{pk}.files/<scope name>/<attachment name>/<chunk_index>.bin
 ```
 
@@ -156,7 +156,7 @@ nothing writes it since plan step E3.1 moved the community pictures into
 
 ## LRU eviction with pinned-skip
 
-```
+```text
 ChunkCache {
     config:      CacheConfig { root_dir, byte_budget: 1 GiB default },
     lru:         LruCache<(attachment_id, chunk_index), bytes_on_disk>,
@@ -187,7 +187,7 @@ chunks themselves are durable.
 
 ## Swarm fetch protocol
 
-```
+```text
 Requester                                                   Holders
    │                                                         │
    │── gossip: AttachmentBitmap interest ───────────────▶    │

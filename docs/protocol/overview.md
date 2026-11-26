@@ -11,7 +11,7 @@ Each user's identity is an Ed25519 keypair generated locally on first run. The
 public key serves as the user's permanent address. There are no usernames,
 passwords, or email addresses. The private key never leaves the device.
 
-```
+```text
 Identity creation:
   1. Generate Ed25519 keypair
   2. Derive X25519 key for Diffie-Hellman
@@ -24,7 +24,7 @@ Identity creation:
 
 ## 1:1 Message Flow (Friends)
 
-```
+```text
 ┌───────────┐                                              ┌───────────┐
 │  Sender   │                                              │ Receiver  │
 │           │                                              │           │
@@ -72,7 +72,7 @@ A 1:1 datagram is the ingress tag `'D'` followed by one packed Cap'n Proto
 `rekindle-codec::capnp_codec::direct`). Community gossip is tagged `'G'`
 (`rekindle-codec::ingress`). An untagged datagram is dropped.
 
-```
+```text
 DmFrame {
   typeId  :UInt16     // the kind (type_id.rs); decides the body
   sender  :Data       // 32-byte Ed25519 identity (identity == address)

@@ -476,7 +476,8 @@ ecosystem.
 **Where used.**
 
 - **Per-community pseudonym derivation:**
-  ```
+
+  ```text
   pseudonym_seed = HKDF-SHA256(
       ikm:  master_secret,
       salt: "rekindle-community-pseudonym-v1",
@@ -484,21 +485,26 @@ ecosystem.
   )
   Ed25519::from_seed(pseudonym_seed)
   ```
+
 - **Slot keypair derivation** (`rekindle-secrets/src/derive.rs`):
-  ```
+
+  ```text
   slot_seed_per_subkey = HKDF-SHA256(
       ikm:  community_slot_seed,
       salt: none,
       info: "rekindle-slot-" ‖ decimal(slot_index),
   )
   ```
+
 - **Group DM MEK:** random, wrapped per recipient in the `GroupDmInvite`
   (the 2-party ECDH MEK went with the 1:1 SMPL path, plan E2.3; 1:1 DMs
   are the friend's ratchet stream). E2.6 replaces it with sender-owned keys.
 - **Group DM MEK ratchet:**
-  ```
+
+  ```text
   mek_n+1 = HKDF-SHA256(mek_n, info="rekindle-dm-ratchet-v1")
   ```
+
 - **Direct call secret** (within `rekindle-calls`): the SFrame scope
   secret for the call.
 - **SFrame** (`rekindle-secrets::sframe`, RFC 9605 §4.4.2): HKDF-SHA512

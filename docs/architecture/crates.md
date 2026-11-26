@@ -23,7 +23,7 @@ This file is the inventory and the tier diagram.
 The list below mirrors `[workspace] members` in the repository root
 `Cargo.toml`. Counts are `.rs` files under each crate's `src/`.
 
-```
+```text
 crates/
 # ── Tier 1 — Vocabulary ───────────────────────────────────────────────
 ├── rekindle-types/                 (35) shared IDs, enums, error taxonomy
@@ -149,7 +149,7 @@ dependency where it is unavoidable (`rekindle-sync` uses Veilid's
 
 ## Visual Tier Diagram
 
-```
+```text
    ┌─────────────────┐                  ┌──────────────────┐
    │ src-tauri       │                  │ rekindle, -tui   │
    │ (desktop app)   │                  │ (rekindle-client)│

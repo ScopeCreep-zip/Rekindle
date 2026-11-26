@@ -35,6 +35,7 @@ accounts, and control your social graph. Rekindle takes a different approach:
 ## Features
 
 ### Messaging
+
 - End-to-end encrypted 1:1 chat via Signal Protocol (X3DH + Double Ratchet)
 - Separate chat windows per conversation (classic IM style, not tabbed)
 - Typing indicators, local read tracking, message history persisted in SQLite
@@ -42,6 +43,7 @@ accounts, and control your social graph. Rekindle takes a different approach:
 - Cap'n Proto wire format for compact, zero-copy serialization
 
 ### Communities
+
 - Create or join communities with text and voice channels
 - Community server daemon (child process) for message relay and state management
 - Role-based permissions with bitmask system (create/edit/delete/assign roles)
@@ -52,6 +54,7 @@ accounts, and control your social graph. Rekindle takes a different approach:
 - Group encryption via per-channel Media Encryption Keys (AES-256-GCM, primitives ready)
 
 ### Voice Chat
+
 - Opus codec at 48kHz mono with voice activity detection
 - Audio processing pipeline: RNNoise denoising + AEC3 echo cancellation
 - Adaptive jitter buffer and multi-participant audio mixer
@@ -60,12 +63,14 @@ accounts, and control your social graph. Rekindle takes a different approach:
 - Global shortcut mute toggle (Ctrl+Shift+M)
 
 ### Game Detection
+
 - Cross-platform process scanning (Windows, macOS, Linux)
 - JSON game database mapping process names to game metadata
 - "Playing: Game Name" status published to your DHT profile
 - Friends see what you're playing in real time on their buddy list
 
 ### Identity and Security
+
 - Ed25519 keypair identity — no central authority, no registration
 - `rekindle-vault` (SQLCipher page-level AES-256-CBC + per-entry AES-256-GCM,
   Argon2id passphrase KDF) protects private keys — see
@@ -75,6 +80,7 @@ accounts, and control your social graph. Rekindle takes a different approach:
 - Four-layer encryption stack (see [docs/security/overview.md](docs/security/overview.md))
 
 ### Desktop Integration
+
 - Frameless skinned windows with custom titlebar (classic IM aesthetic)
 - System tray with status controls (online, away, busy, offline)
 - Friend groups, nicknames, avatars
@@ -85,7 +91,7 @@ accounts, and control your social graph. Rekindle takes a different approach:
 
 Rekindle is structured as a four-layer stack:
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │                     SolidJS Frontend                    │
 │  Windows, components, stores, handlers, styles          │
@@ -125,7 +131,7 @@ the desktop shell.
 
 ## Project Structure
 
-```
+```text
 src/                           Frontend (SolidJS + Tailwind 4)
   windows/                     One component per Tauri window
   components/                  Reusable UI (titlebar, buddy-list, chat, voice)

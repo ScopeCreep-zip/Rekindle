@@ -14,7 +14,7 @@ followed off a cliff.
 ## 1. What the project is, as documented today
 
 - **Rekindle is a 1:1 reimplementation of the Xfire client** on Tauri 2
-  + SolidJS + Veilid, with no central server (`ARCHITECTURE.md:10`).
+  - SolidJS + Veilid, with no central server (`ARCHITECTURE.md:10`).
 - **Communities v2.0 is flat governance** — no coordinator, no
   privileged nodes, every member a full peer. The **Schwarzschild
   Principle**: the genesis keypair "collapses behind a horizon" — it

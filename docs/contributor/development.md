@@ -38,18 +38,21 @@ GTK/WebKitGTK dependencies. macOS and Windows users should use manual setup.
 ### Manual Setup (macOS / Non-Nix)
 
 **Rust:**
+
 ```bash
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
 rustup default stable
 ```
 
 **Node.js:**
+
 ```bash
 # Install Node.js 22+ via nvm, fnm, or system package manager
 npm install -g pnpm
 ```
 
 **Cap'n Proto compiler** (`capnp`):
+
 ```bash
 # macOS
 brew install capnp
@@ -63,6 +66,7 @@ sudo apt install capnproto
 **Tauri 2 System Dependencies:**
 
 Linux (Debian/Ubuntu):
+
 ```bash
 sudo apt update
 sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
@@ -70,6 +74,7 @@ sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file \
 ```
 
 macOS:
+
 ```bash
 xcode-select --install
 ```
@@ -77,6 +82,7 @@ xcode-select --install
 ### Windows Setup
 
 **Prerequisites:**
+
 - [Visual Studio 2026](https://visualstudio.microsoft.com/downloads/) (or 2022)
   with the **"Desktop development with C++"** workload
 - [CMake](https://cmake.org/download/) (`winget install Kitware.CMake`)
@@ -298,11 +304,13 @@ All Rust IPC structs must use `#[serde(rename_all = "camelCase")]` to match
 JavaScript naming conventions.
 
 Channel event enums use adjacently tagged serialization:
+
 ```rust
 #[serde(rename_all = "camelCase", tag = "type", content = "data")]
 ```
 
 The `UserStatus` enum uses lowercase serialization:
+
 ```rust
 #[serde(rename_all = "lowercase")]  // → "online", "away", "busy", "offline", "invisible"
 ```
@@ -411,6 +419,7 @@ and [`../architecture/services-pattern.md`](../architecture/services-pattern.md)
 ### VS Code
 
 Recommended extensions:
+
 - `tauri-apps.tauri-vscode` — Tauri integration
 - `rust-lang.rust-analyzer` — Rust language server
 - `bradlc.vscode-tailwindcss` — Tailwind CSS IntelliSense

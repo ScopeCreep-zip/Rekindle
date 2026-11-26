@@ -125,7 +125,7 @@ Rekindle accepts AI-assisted contributions and requires you to
 disclose them via an `Assisted-by:` trailer in the commit message —
 the same place `Co-authored-by:` would go:
 
-```
+```text
 Assisted-by: claude-opus-4.7 (Claude Code 1.0)
 ```
 
