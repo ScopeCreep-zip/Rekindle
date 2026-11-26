@@ -92,8 +92,50 @@ describe("a rotated key we lack: pending until a holder answers, then current", 
   });
 
   it("Cara comes back and answers: the key is current and the notice goes", async () => {
+    // Lead (the ~38 s unanswered executeScript in this step, twice): a page
+    // heartbeat (requestAnimationFrame and a 250 ms timer) records every gap
+    // over 500 ms with the window's visibility and focus, and a
+    // MutationObserver counts the window's DOM changes, so a throttled
+    // background page (a gap, no changes) tells itself from a re-render
+    // flood (changes spike). Each notice poll is timed too.
+    await browser.execute(() => {
+      const w = window as unknown as { __hb?: { gaps: string[]; mutations: number; last: number } };
+      if (w.__hb) return;
+      const hb = { gaps: [] as string[], mutations: 0, last: performance.now() };
+      w.__hb = hb;
+      const beat = (src: string) => {
+        const now = performance.now();
+        if (now - hb.last > 500) hb.gaps.push(`${src} gap ${Math.round(now - hb.last)} ms ending ${new Date().toISOString()} visibility=${document.visibilityState} focus=${document.hasFocus()} mutations=${hb.mutations}`);
+        hb.last = now;
+      };
+      const frame = () => {
+        beat("raf");
+        requestAnimationFrame(frame);
+      };
+      requestAnimationFrame(frame);
+      setInterval(() => beat("timer"), 250);
+      new MutationObserver((records) => {
+        hb.mutations += records.length;
+      }).observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true });
+    });
+    const handle = await browser.getWindowHandle();
+    console.log(`[key-hb] polling window ${handle}`);
     await peers[0].resume();
-    await waitUntil(async () => (await keyNotice()) === "", NET_WAIT_MS * 3, "the key never became current after Cara came back");
+    const polls: string[] = [];
+    await waitUntil(
+      async () => {
+        const t0 = Date.now();
+        const notice = await keyNotice();
+        const ms = Date.now() - t0;
+        if (ms > 1000) polls.push(`poll took ${ms} ms ending ${new Date().toISOString()}`);
+        return notice === "";
+      },
+      NET_WAIT_MS * 3,
+      "the key never became current after Cara came back",
+    );
+    const hb = (await browser.execute(() => (window as unknown as { __hb?: { gaps: string[]; mutations: number } }).__hb ?? null)) as { gaps: string[]; mutations: number } | null;
+    console.log(`[key-hb] slow polls: ${JSON.stringify(polls)}`);
+    console.log(`[key-hb] page gaps: ${JSON.stringify(hb?.gaps ?? [])}; mutations in all: ${hb?.mutations ?? "none"}`);
     console.log("[key] current");
     await shot("key-current");
   });
