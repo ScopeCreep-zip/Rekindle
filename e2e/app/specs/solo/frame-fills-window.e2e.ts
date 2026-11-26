@@ -198,28 +198,37 @@ describe("the pack frame reaches the window's edges; a side tab protrudes beside
     await switchTo(browser, BUDDY);
     await skinShown(browser, href);
     await browser.pause(1500);
+    // Every frame art layer reaching the right edge: the frame draws one
+    // spot from more than one layer (a first run hid only the top-right
+    // piece and another layer still drew those pixels, so nothing showed).
     const hidden = (await browser.execute(() => {
       const w = window.innerWidth;
-      const layer = Array.from(document.querySelectorAll<HTMLElement>(".skin-frame i")).find((i) => {
+      const layers = Array.from(document.querySelectorAll<HTMLElement>(".skin-frame i")).filter((i) => {
         const r = i.getBoundingClientRect();
-        return r.right >= w - 1 && r.height > 50 && getComputedStyle(i).backgroundImage !== "none";
+        return r.right >= w - 1 && r.width > 0 && r.height > 0 && getComputedStyle(i).backgroundImage !== "none";
       });
-      if (!layer) return "";
-      layer.style.setProperty("visibility", "hidden", "important");
-      layer.dataset.mutated = "1";
-      const r = layer.getBoundingClientRect();
-      return `${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}`;
-    })) as string;
-    if (!hidden) throw new Error("combat: no frame art layer at the right edge to hide");
+      for (const layer of layers) {
+        layer.style.setProperty("visibility", "hidden", "important");
+        layer.dataset.mutated = "1";
+      }
+      return layers.map((l) => {
+        const r = l.getBoundingClientRect();
+        return `${Math.round(r.left)},${Math.round(r.top)} ${Math.round(r.width)}x${Math.round(r.height)}`;
+      });
+    })) as string[];
+    if (hidden.length === 0) throw new Error("combat: no frame art layer at the right edge to hide");
+    await browser.pause(500);
     const [w, h] = (await browser.execute(() => [window.innerWidth, window.innerHeight])) as [number, number];
     const img = decodePng(Buffer.from(await browser.takeScreenshot(), "base64"));
     const scale = img.width / w;
     const cut = silhouette("combat", "main", w, h, Math.round(scale * 1000));
     const edge = Math.round(16 * scale);
     const off = disagreements(img, cut, [[0, edge], [img.width - edge, img.width]], 4);
-    console.log(`[tab] combat mutation: hid the frame layer at ${hidden}; edges vs silhouette: drawn outside ${off.outsideDrawn}, clear inside ${off.insideClear}; ${JSON.stringify(off.first)}`);
+    console.log(`[tab] combat mutation: hid ${hidden.length} frame layers at the right edge ${JSON.stringify(hidden)}; edges vs silhouette: drawn outside ${off.outsideDrawn}, clear inside ${off.insideClear}; ${JSON.stringify(off.first)}`);
     await shot("combat-main-mutated");
-    await browser.execute(() => document.querySelector<HTMLElement>('.skin-frame i[data-mutated="1"]')?.style.removeProperty("visibility"));
+    await browser.execute(() => {
+      for (const l of Array.from(document.querySelectorAll<HTMLElement>('.skin-frame i[data-mutated="1"]'))) l.style.removeProperty("visibility");
+    });
     expect({ caught: off.insideClear > 0 }).toEqual({ caught: true });
   });
 
