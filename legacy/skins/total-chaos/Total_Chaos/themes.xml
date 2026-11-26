@@ -1,0 +1,84 @@
+<Themes>
+	<Theme name="default">
+		<Colors>
+			<Color name="AdAreaCG">RGBA(8,16,32,0)</Color>	<!-- careful with AdAreaCG: uses lots of black.gif -->
+			<Color name="GenBG">RGBA(49,52,49,0)</Color>
+			<Color name="TitleBar">RGBA(0,0,0,0)</Color>
+			<Color name="TitleBG">RGBA(45,45,45,0)</Color>
+			<Color name="BuddyViewFriendText">RGBA(230,230,230)</Color>
+			<Color name="BuddyViewFofText">RGBA(180,180,180)</Color>
+			<Color name="BuddyViewOfflineText">RGBA(120,120,120,0)</Color>
+			<Color name="BuddyViewClanText">RGBA(0,200,0,0)</Color>
+			<Color name="BuddyViewSelected">RGBA(20,20,20,0)</Color>
+			<Color name="BuddyViewSelectedText">RGBA(60,200,0,0)</Color>
+			<Color name="HeaderText">RGBA(255,255,255,0)</Color>
+			<Color name="DownloadText">RGBA(230,230,230,0)</Color>
+			<Color name="ChannelText">RGBA(180,180,180,0)</Color>
+			<Color name="TopLevelText">RGBA(120,120,120,0)</Color>
+			<Color name="ScrollbarColorBG">RGBA(45,45,45,0)</Color>
+			
+			<Color name="ChatViewCG">RGBA(45,45,45,0)</Color>
+			<Color name="ChatEditBG">RGBA(33,33,33,0)</Color>
+			<Color name="ChatPersonalCG">RGBA(160,160,160,0)</Color>
+			<Color name="ChatOtherCG">RGBA(0,150,10,0)</Color>
+			<Color name="ChatOtherTextCG">RGBA(0,230,10,0)</Color>
+			<Color name="ChatPersonalTextCG">RGBA(210,210,210,0)</Color>
+			<Color name="TypingNotificationCG">RGBA(200,200,200,0)</Color>
+			
+			
+		</Colors>
+		<ColorShifts>
+		</ColorShifts>
+		<Sounds>
+		</Sounds>
+		<Bitmaps>
+			<Bitmap name="VOICESERVER">infoview/icon_voice_server.gif</Bitmap>
+			<Bitmap name="MICON">infoview/icon_mic_green.gif</Bitmap>
+			<Bitmap name="MICOFF">infoview/icon_mic_grey.gif</Bitmap>
+			<Bitmap name="SPEAKERON">infoview/icon_speaker_green.gif</Bitmap>
+			<Bitmap name="SPEAKEROFF">infoview/icon_speaker_grey.gif</Bitmap>
+			
+			<Bitmap name="SCROLLBACKGROUNDHORZLEFT">scrollbar/scrollbar-hgut-left.png</Bitmap>
+			<Bitmap name="SCROLLBACKGROUNDHORZMIDDLE">scrollbar/scrollbar-hgut-middle.png</Bitmap>
+			<Bitmap name="SCROLLBACKGROUNDHORZRIGHT">scrollbar/scrollbar-hgut-right.png</Bitmap>
+			<Bitmap name="SCROLLBACKGROUNDVERTBOTTOM">scrollbar/scrollbar-vgut-bottom.png</Bitmap>
+			<Bitmap name="SCROLLBACKGROUNDVERTMIDDLE">scrollbar/scrollbar-vgut-middle.png</Bitmap>
+			<Bitmap name="SCROLLBACKGROUNDVERTTOP">scrollbar/scrollbar-vgut-top.png</Bitmap>
+			<Bitmap name="SCROLLDOWNDISABLED">scrollbar/scrollbar-bottom.png</Bitmap>
+			<Bitmap name="SCROLLDOWNDOWN">scrollbar/scrollbar-bottom.png</Bitmap>
+			<Bitmap name="SCROLLDOWNHOVER">scrollbar/scrollbar-bottom.png</Bitmap>
+			<Bitmap name="SCROLLDOWNNORM">scrollbar/scrollbar-bottom.png</Bitmap>
+			<Bitmap name="SCROLLGRIPPERHORZLEFT">scrollbar/scrollbar-hgrip-left.png</Bitmap>
+			<Bitmap name="SCROLLGRIPPERHORZLEFTDOWN">scrollbar/scrollbar-hgrip-left.png</Bitmap>
+			<Bitmap name="SCROLLGRIPPERHORZLEFTHOVER">scrollbar/scrollbar-hgrip-left.png</Bitmap>
+			<Bitmap name="SCROLLGRIPPERHORZMIDDLE">scrollbar/scrollbar-hgrip-middle.png</Bitmap>
+			<Bitmap name="SCROLLGRIPPERHORZMIDDLEDOWN">scrollbar/scrollbar-hgrip-middle.png</Bitmap>
+			<Bitmap name="SCROLLGRIPPERHORZMIDDLEHOVER">scrollbar/scrollbar-hgrip-middle.png</Bitmap>
+			<Bitmap name="SCROLLGRIPPERHORZRIGHT">scrollbar/scrollbar-hgrip-right.png</Bitmap>
+			<Bitmap name="SCROLLGRIPPERHORZRIGHTDOWN">scrollbar/scrollbar-hgrip-right.png</Bitmap>
+			<Bitmap name="SCROLLGRIPPERHORZRIGHTHOVER">scrollbar/scrollbar-hgrip-right.png</Bitmap>
+			<Bitmap name="SCROLLGRIPPERVERTBOTTOM">scrollbar/scrollbar-vgrip-bottom.png</Bitmap>
+			<Bitmap name="SCROLLGRIPPERVERTBOTTOMDOWN">scrollbar/scrollbar-vgrip-bottom.png</Bitmap>
+			<Bitmap name="SCROLLGRIPPERVERTBOTTOMHOVER">scrollbar/scrollbar-vgrip-bottom.png</Bitmap>
+			<Bitmap name="SCROLLGRIPPERVERTMIDDLE">scrollbar/scrollbar-vgrip-middle.png</Bitmap>
+			<Bitmap name="SCROLLGRIPPERVERTMIDDLEDOWN">scrollbar/scrollbar-vgrip-middle.png</Bitmap>
+			<Bitmap name="SCROLLGRIPPERVERTMIDDLEHOVER">scrollbar/scrollbar-vgrip-middle.png</Bitmap>
+			<Bitmap name="SCROLLGRIPPERVERTTOP">scrollbar/scrollbar-vgrip-top.png</Bitmap>
+			<Bitmap name="SCROLLGRIPPERVERTTOPDOWN">scrollbar/scrollbar-vgrip-top.png</Bitmap>
+			<Bitmap name="SCROLLGRIPPERVERTTOPHOVER">scrollbar/scrollbar-vgrip-top.png</Bitmap>
+			<Bitmap name="SCROLLLEFTDISABLED">scrollbar/scrollbar-left.png</Bitmap>
+			<Bitmap name="SCROLLLEFTDOWN">scrollbar/scrollbar-left.png</Bitmap>
+			<Bitmap name="SCROLLLEFTHOVER">scrollbar/scrollbar-left.png</Bitmap>
+			<Bitmap name="SCROLLLEFTNORM">scrollbar/scrollbar-left.png</Bitmap>
+			<Bitmap name="SCROLLRIGHTDISABLED">scrollbar/scrollbar-right.png</Bitmap>
+			<Bitmap name="SCROLLRIGHTDOWN">scrollbar/scrollbar-right.png</Bitmap>
+			<Bitmap name="SCROLLRIGHTHOVER">scrollbar/scrollbar-right.png</Bitmap>
+			<Bitmap name="SCROLLRIGHTNORM">scrollbar/scrollbar-right.png</Bitmap>
+			<Bitmap name="SCROLLUPDISABLED">scrollbar/scrollbar-top.png</Bitmap>
+			<Bitmap name="SCROLLUPDOWN">scrollbar/scrollbar-top.png</Bitmap>
+			<Bitmap name="SCROLLUPHOVER">scrollbar/scrollbar-top.png</Bitmap>
+			<Bitmap name="SCROLLUPNORM">scrollbar/scrollbar-top.png</Bitmap>
+			
+		</Bitmaps>
+	</Theme>
+</Themes>

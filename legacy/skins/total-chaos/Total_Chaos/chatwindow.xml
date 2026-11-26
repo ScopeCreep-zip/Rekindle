@@ -1,0 +1,33 @@
+<Tile Name="StandardChatWindow" ResizeX="100" ResizeY="100" Component="MainWindow">
+	<Tile Name="ChatMainTitleBar" Z="2" ResizeX="100" ResizeY="0" Component="ChatMainTitleBar">
+		<Tile Name="ChatMenuCenter" Z="2" JustX="CENTER" Component="ChatMenuCenter">
+			<Tile Name="FileMenu" X="11" Y="14" Z="12" Component="FileMenu"></Tile>
+			<Tile Name="ChatToolsMenu" X="FileMenu.RIGHT+2" Y="14" Z="12" Component="ChatToolsMenu"></Tile>
+			<Tile Name="ChatHelpMenu" X="ChatToolsMenu.RIGHT+2" Y="14" Z="12" Component="ChatHelpMenu"></Tile>
+		</Tile>
+		<Tile Name="ChatMinimize" JustX="RIGHT" X="27" Y="10" Z="2" Component="ChatMinimize"></Tile>
+		<Tile Name="ChatMaximize" X="ChatMinimize.RIGHT+1" Y="10" Z="2" Component="ChatMaximize"></Tile>
+		<Tile Name="ChatClose" X="ChatMaximize.RIGHT+1" Y="10" Z="2" Component="ChatClose"></Tile>
+	</Tile>
+	<Tile Name="ChatMiddle" Y="ChatMainTitleBar.BOTTOM" ResizeX="100" ResizeY="100" IndentBottom="59" Component="ChatMiddle">
+		<Tile Name="ChatExpandButton" JustY="CENTER" JustX="RIGHT" Z="2" Component="ChatExpandButton"></Tile>
+		<Tile Name="ChatAreaTitle" X="49" IndentRight="49" ResizeX="100" Component="ChatAreaTitle">
+			<Tile Name="UserNameText" X="10" IndentTop="1" Component="UserNameText"></Tile>
+			<Tile Name="TypingMessage" X="UserNameText.Right+6" IndentTop="1" Component="TypingMessage"></Tile>
+		</Tile>
+		<Tile Name="ChatAreaOutline" X="49" IndentRight="49" Y="ChatAreaTitle.BOTTOM" ResizeX="100" ResizeY="70" Component="ChatAreaOutline">
+			<Tile Name="ChatArea" X="1" IndentRight="1" ResizeX="100" ResizeY="100" Component="ChatArea"></Tile>
+		</Tile>
+		<Tile Name="ChatEditOutline" X="49" IndentRight="49" Y="ChatAreaOutline.BOTTOM" IndentBottom="5" ResizeX="100" ResizeY="30" Component="ChatEditOutline">
+			<Tile Name="ChatEdit" X="1" IndentRight="1" Y="1" IndentBottom="1" ResizeX="100" ResizeY="100" Component="ChatEdit"></Tile>
+		</Tile>
+	</Tile>
+	<Tile Name="ChatBottom" Y="ChatMiddle.BOTTOM" ResizeX="100" Component="ChatBottom">
+		<Tile Name="ChatBottomMiddle" JustX="CENTER" Component="ChatBottomMiddle"></Tile>
+		<Tile Name="BottomLeft" X="0" Y="13" Z="3" Component="BottomLeft"></Tile>
+		<Tile Name="BottomRight" JustX="RIGHT" X="0" Y="13" Z="3" Component="BottomRight"></Tile>
+	</Tile>
+	<Tile Name="ChatImBG" JustX="CENTER" Y="ChatMiddle.BOTTOM+1" Z="4" Component="ChatImBG">
+		<Tile Name="ChatImButton" X="43" Z="4" Component="ChatImButton"></Tile>
+	</Tile>
+</Tile>
