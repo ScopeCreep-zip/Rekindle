@@ -33,7 +33,9 @@ const WINDOW_TEXT: &[Constraint] = &on(&["bg.dark", "bg.primary"], 450);
 const FILL: &[Constraint] = &on(&["progress.bg"], 300);
 /// WCAG 1.4.11: a track's outline against the window ground.
 const OUTLINE: &[Constraint] = &on(&["bg.dark"], 300);
-const PROGRESS_TEXT: &[Constraint] = &on(&["progress.bg"], 450);
+/// WCAG 1.4.3: a progress value is drawn beside its bar on the panel
+/// ground, never on the bar (Settings; lead ruling 2026-11-26).
+const PROGRESS_TEXT: &[Constraint] = &on(&["bg.panel"], 450);
 /// WCAG 1.4.11: the thumb against its track.
 const THUMB: &[Constraint] = &on(&["scrollbar.track"], 300);
 const TOOLTIP_TEXT: &[Constraint] = &on(&["tooltip.bg"], 450);

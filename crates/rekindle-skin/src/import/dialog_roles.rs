@@ -41,7 +41,10 @@ pub const DERIVE: &[(&str, Derivation)] = &[
     ("input.text", same("text.base")),
     // Xfire selects with its selected-row colour.
     ("input.selection.bg", same("accent.fill")),
-    ("input.selection.bg-inactive", mix("accent.fill", "input.bg", 400)),
+    (
+        "input.selection.bg-inactive",
+        mix("accent.fill", "input.bg", 400),
+    ),
     ("selection.text", same("text.base")),
     ("menubar.text", same("text.base")),
     // The registry's own `text.disabled` mix, over the pack's list text.
@@ -113,8 +116,10 @@ pub fn filled(
         if tokens.contains_key(*id) {
             continue;
         }
-        let view: BTreeMap<&str, TokenValue> =
-            tokens.iter().map(|(k, v)| (k.as_str(), v.clone())).collect();
+        let view: BTreeMap<&str, TokenValue> = tokens
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.clone()))
+            .collect();
         let all_set = d.sources().iter().all(|s| view.contains_key(s));
         if let Some(v) = all_set.then(|| d.apply(&view)).flatten() {
             tokens.insert((*id).to_owned(), v);

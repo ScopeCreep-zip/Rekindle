@@ -227,8 +227,10 @@ fn ground_parts(ground: &str) -> Vec<&str> {
 
 /// What the walk may move to fix `fg` on `ground`, in order, each with the
 /// colour it moves away from: the text token itself, then the opaque ground
-/// beneath a tint, then (when the text is a fixed role) the ground's
-/// tints. A derived colour the skin omits is moved through the colour it
+/// (itself, or beneath its tints), then (when the text is a fixed role) the
+/// ground's tints. The ground moves only when no lightness of the text
+/// passes: text already at the end it walks to (a pack's white title text
+/// on its own strip's colour, ST1). A derived colour the skin omits is moved through the colour it
 /// follows (plan E7.7.7 e777n: white on `status.online 60% over bg.dark`
 /// moves the skin's `bg.primary`).
 pub(crate) fn targets(
@@ -245,9 +247,7 @@ pub(crate) fn targets(
     let parts = ground_parts(ground);
     if settable(fg) {
         push(Some(fg.to_owned()), ground);
-        if parts.len() > 1 {
-            push(owner(parts[0], tokens), fg);
-        }
+        push(owner(parts[0], tokens), fg);
     } else {
         for part in parts {
             push(owner(part, tokens), fg);

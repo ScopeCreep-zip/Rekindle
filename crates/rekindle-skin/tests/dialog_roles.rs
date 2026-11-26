@@ -2,7 +2,8 @@
 //! E7.7.3 item 1, E7.7.7): a pack's named colour or the documented
 //! derivation over the colours it defines, never a registry default.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
 
 use rekindle_skin::import::dialog_roles::DERIVE;
 use rekindle_skin::registry::DIALOG;
@@ -24,19 +25,33 @@ fn rgb(t: &BTreeMap<String, TokenValue>, id: &str) -> [u8; 3] {
     }
 }
 
+/// Why a built-in's role can be unset: a pack whose source tree is not in
+/// `legacy/skins/<id>/` (the README lists it) cannot be re-imported, so it
+/// keeps the roles of its last import. The row stays red until its source
+/// is found; the reason is read from the tree, never a list here.
+fn unset_reason(id: &str) -> &'static str {
+    let tree = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../legacy/skins").join(id);
+    if tree.is_dir() {
+        "its source is in legacy/skins: re-import it (a refused import names the pair the walk cannot settle)"
+    } else {
+        "no source tree in legacy/skins (see its README), so it cannot be re-imported"
+    }
+}
+
 /// Includes `input.text`: with `TextFieldTextCG` unmapped no XML pack's
 /// field text is its own (see the import unit test for the proof).
 #[test]
 fn every_builtin_sets_every_dialog_role() {
+    let mut unset = Vec::new();
     for pack in &builtin::PACKS {
         let t = tokens_of(pack.id);
-        for id in DERIVE.iter().map(|(id, _)| *id) {
-            assert!(t.contains_key(id), "{}: {id} unset", pack.id);
-        }
-        for e in DIALOG {
-            assert!(t.contains_key(e.id), "{}: {} unset", pack.id, e.id);
+        let roles = DERIVE.iter().map(|(id, _)| *id).chain(DIALOG.iter().map(|e| e.id));
+        let missing: BTreeSet<&str> = roles.filter(|id| !t.contains_key(*id)).collect();
+        if !missing.is_empty() {
+            unset.push(format!("{}: {missing:?} unset: {}", pack.id, unset_reason(pack.id)));
         }
     }
+    assert!(unset.is_empty(), "{unset:#?}");
 }
 
 /// Symbiosis's `Themes.xml` (lines 16, 27, 29, 48-53).

@@ -24,13 +24,14 @@ use std::collections::BTreeMap;
 
 use rekindle_types::dto::skin::{SkinBase, SkinContrast, TokenValue};
 
+pub use dialog::DIALOG;
 pub use fonts::{font, FontFace, FONTS};
 pub use slots::{IconSlot, SoundCue};
-pub use dialog::DIALOG;
 
 /// Every row: the base table, then the dialog roles.
-pub const ENTRIES: &[TokenEntry] = &ALL;
-const ALL: [TokenEntry; table::BASE.len() + DIALOG.len()] = concat(table::BASE, DIALOG);
+pub const ENTRIES: &[TokenEntry] = &BASE_THEN_DIALOG;
+const BASE_THEN_DIALOG: [TokenEntry; table::BASE.len() + DIALOG.len()] =
+    concat(table::BASE, DIALOG);
 
 const fn concat<const N: usize>(a: &[TokenEntry], b: &[TokenEntry]) -> [TokenEntry; N] {
     assert!(a.len() + b.len() == N && !a.is_empty());

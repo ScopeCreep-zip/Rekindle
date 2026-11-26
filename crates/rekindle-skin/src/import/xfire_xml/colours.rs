@@ -79,8 +79,14 @@ pub const NAMES: &[(&str, Target)] = &[
     ("PushButtonDownCG", Target::Shift),
     ("PushButtonHoverCG", Target::Shift),
     // The group-chat room-name box; the dialog fields are TextField*CG's.
-    ("RoomNameEditBGCG", Target::Dropped("room-name box (input.bg is TextFieldBGCG's)")),
-    ("RoomNameEditTextCG", Target::Dropped("room-name box (input.text is TextFieldTextCG's)")),
+    (
+        "RoomNameEditBGCG",
+        Target::Dropped("room-name box (input.bg is TextFieldBGCG's)"),
+    ),
+    (
+        "RoomNameEditTextCG",
+        Target::Dropped("room-name box (input.text is TextFieldTextCG's)"),
+    ),
     ("ScrollbarBGCG", Target::Token("scrollbar.track")),
     ("ScrollbarCG", Target::Shift),
     ("SideCG", Target::Shift),
@@ -94,7 +100,10 @@ pub const NAMES: &[(&str, Target)] = &[
     // The dialog text field (bg.input stays ChatEditBGCG's chat edit box).
     ("TextFieldBGCG", Target::Token("input.bg")),
     ("TextFieldTextCG", Target::Token("input.text")),
-    ("TextFieldTextHighlightCG", Target::Token("input.selection.bg")),
+    (
+        "TextFieldTextHighlightCG",
+        Target::Token("input.selection.bg"),
+    ),
     (
         "TextFieldTextHighlightInactiveCG",
         Target::Token("input.selection.bg-inactive"),
