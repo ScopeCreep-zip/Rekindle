@@ -132,6 +132,22 @@ describe("a paused inbound route is said in the tree's status field, which stays
           return JSON.stringify({ lineColour: cs.color, lineBg: cs.backgroundColor, lineFont: `${cs.fontSize} ${cs.fontWeight}`, lineText: (l.textContent ?? "").slice(0, 40), at });
         })) as string;
         console.log(`[paused] ${file} not seen; stack at the line: ${stack}`);
+        // Is the line painted at all? Its own visibility, and what has the
+        // focus (the line steps aside while the status input has it); then
+        // the focus is taken off and the line measured again.
+        const state = (await browser.execute(() => {
+          const l = document.querySelector<HTMLElement>(".skin-status-paused");
+          const c = l ? getComputedStyle(l) : null;
+          const a = document.activeElement as HTMLElement | null;
+          return JSON.stringify({
+            display: c?.display, visibility: c?.visibility, opacity: c?.opacity, pointerEvents: c?.pointerEvents,
+            active: a ? `${a.tagName.toLowerCase()}.${a.className || "-"}` : "none", windowFocused: document.hasFocus(),
+          });
+        })) as string;
+        console.log(`[paused] ${file} line state: ${state}`);
+        await browser.execute(() => (document.activeElement as HTMLElement | null)?.blur());
+        await browser.pause(500);
+        console.log(`[paused] ${file} after blurring the focused element: hiding the line changes ${await seenInField(PAUSED)} px`);
       }
       await shot(`${file}-paused-field`);
       expect({ pack: file, lineSeen: line >= 20, inputSeen: input >= 20 }).toEqual({ pack: file, lineSeen: true, inputSeen: false });
