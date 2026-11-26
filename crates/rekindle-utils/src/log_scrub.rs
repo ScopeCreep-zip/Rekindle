@@ -412,7 +412,7 @@ mod tests {
 
     #[test]
     fn a_shared_key_tags_alike_across_scrubbers() {
-        let key = "00112233445566778899aabbccddeeff00112233445566778899AABBCCDDEEFF";
+        let key = rekindle_test_fixtures::HEX_KEY_64;
         let one = super::key_from(Some(key)).unwrap();
         let two = super::key_from(Some(key)).unwrap();
         assert_eq!(super::tag_with(&one, HEX64), super::tag_with(&two, HEX64));

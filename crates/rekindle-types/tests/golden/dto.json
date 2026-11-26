@@ -295,8 +295,8 @@
       "010",
       "101"
     ],
-    "token": "ababababababababababababaq",
-    "url": "rekindle://add/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/VLD0:abc/ababababababababababababaq"
+    "token": "abcdefghijklmnopqrstuvwx2q",
+    "url": "rekindle://add/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/VLD0:abc/abcdefghijklmnopqrstuvwx2q"
   },
   "friends.gameInfo.cannotLaunch": {
     "elapsedSeconds": 30,

@@ -139,7 +139,9 @@ async fn create_identity_without_a_name_uses_the_fallback() {
     let dir = tempfile::TempDir::new().unwrap();
     let (_root, state) = test_env(dir.path()).await;
 
-    let created = create(&state, "pass", None).await.unwrap();
+    let created = create(&state, rekindle_test_fixtures::PASSPHRASE, None)
+        .await
+        .unwrap();
 
     assert!(
         created.display_name.starts_with("User_"),
@@ -154,7 +156,9 @@ async fn a_blank_name_is_refused_not_taken_for_none() {
     let dir = tempfile::TempDir::new().unwrap();
     let (root, state) = test_env(dir.path()).await;
 
-    let refused = create(&state, "pass", Some("   ")).await.unwrap_err();
+    let refused = create(&state, rekindle_test_fixtures::PASSPHRASE, Some("   "))
+        .await
+        .unwrap_err();
 
     assert_eq!(code(&refused), 400);
     assert!(rekindle_db::registry::load(&root.registry())

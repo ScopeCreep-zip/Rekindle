@@ -1,6 +1,7 @@
 use super::*;
 
 use crate::host::fixture::Fixture;
+use rekindle_test_fixtures::PASSPHRASE;
 
 #[tokio::test]
 async fn create_lock_unlock_round_trips_and_lists() {
@@ -9,7 +10,7 @@ async fn create_lock_unlock_round_trips_and_lists() {
         &f.root,
         &f.stores(),
         Some("Alice"),
-        "pass",
+        PASSPHRASE,
         1,
         &rekindle_utils::random::OsRandom,
     )
@@ -30,7 +31,9 @@ async fn create_lock_unlock_round_trips_and_lists() {
     assert!(f.db.current().is_err());
     assert!(f.vault.lock().is_none());
 
-    let again = unlock(&f.root, &f.stores(), &pk, "pass", 2).await.unwrap();
+    let again = unlock(&f.root, &f.stores(), &pk, PASSPHRASE, 2)
+        .await
+        .unwrap();
     assert_eq!(again.public_key, pk);
     assert_eq!(again.display_name, "Alice");
 }
@@ -46,7 +49,7 @@ async fn the_device_op_key_survives_lock_and_unlock() {
         &f.root,
         &f.stores(),
         None,
-        "pass",
+        PASSPHRASE,
         1,
         &rekindle_utils::random::OsRandom,
     )
@@ -60,7 +63,9 @@ async fn the_device_op_key_survives_lock_and_unlock() {
     drop(made);
     lock(&f.stores()).await;
     assert!(f.device_vault.lock().is_none());
-    unlock(&f.root, &f.stores(), &pk, "pass", 2).await.unwrap();
+    unlock(&f.root, &f.stores(), &pk, PASSPHRASE, 2)
+        .await
+        .unwrap();
     let guard = f.device_vault.lock();
     let held = load_device_op_key(guard.as_ref().unwrap(), "c1").unwrap();
     assert_eq!(held.as_deref(), Some(&[4; 32]));
@@ -73,7 +78,7 @@ async fn a_default_name_is_given_when_none_is() {
         &f.root,
         &f.stores(),
         Some("  "),
-        "pass",
+        PASSPHRASE,
         1,
         &rekindle_utils::random::OsRandom,
     )
@@ -124,7 +129,7 @@ async fn unknown_identities_are_not_found_and_delete_removes_everything() {
         &f.root,
         &f.stores(),
         None,
-        "pass",
+        PASSPHRASE,
         1,
         &rekindle_utils::random::OsRandom,
     )
@@ -144,7 +149,7 @@ async fn unknown_identities_are_not_found_and_delete_removes_everything() {
     let cached = f.root.identity_files(&pk).join("scope").join("attachment");
     std::fs::create_dir_all(&cached).unwrap();
     std::fs::write(cached.join("0.bin"), b"chunk").unwrap();
-    delete(&f.root, &f.attempts, &pk, "pass", 3).unwrap();
+    delete(&f.root, &f.attempts, &pk, PASSPHRASE, 3).unwrap();
     assert!(!f.root.identity_vault(&pk).exists());
     assert!(!f.root.identity_db(&pk).exists());
     assert!(
@@ -153,7 +158,7 @@ async fn unknown_identities_are_not_found_and_delete_removes_everything() {
     );
     assert!(list(&f.root).unwrap().is_empty());
     assert!(matches!(
-        delete(&f.root, &f.attempts, &pk, "pass", 4),
+        delete(&f.root, &f.attempts, &pk, PASSPHRASE, 4),
         Err(IdentityError::NotFound)
     ));
 }
@@ -165,7 +170,7 @@ async fn a_rename_reaches_the_registry() {
         &f.root,
         &f.stores(),
         Some("Old"),
-        "pass",
+        PASSPHRASE,
         1,
         &rekindle_utils::random::OsRandom,
     )
@@ -186,7 +191,7 @@ async fn an_exported_identity_imports_on_another_root_and_unlocks() {
         &a.root,
         &a.stores(),
         Some("Mover"),
-        "pass",
+        PASSPHRASE,
         1,
         &rekindle_utils::random::OsRandom,
     )
@@ -195,7 +200,7 @@ async fn an_exported_identity_imports_on_another_root_and_unlocks() {
     let pk = made.public_key.clone();
     drop(made);
     // Exported while unlocked: read through the live vault.
-    let archive = export(&a.root, &a.stores(), &pk, "pass", 2).unwrap();
+    let archive = export(&a.root, &a.stores(), &pk, PASSPHRASE, 2).unwrap();
     assert!(matches!(
         export(&a.root, &a.stores(), &pk, "wrong", 3),
         Err(IdentityError::WrongPassphrase)
@@ -222,7 +227,7 @@ async fn an_exported_identity_imports_on_another_root_and_unlocks() {
         &b.root,
         &b.attempts,
         &archive,
-        "pass",
+        PASSPHRASE,
         5,
         &rekindle_utils::random::OsRandom,
     )
@@ -234,7 +239,7 @@ async fn an_exported_identity_imports_on_another_root_and_unlocks() {
             &b.root,
             &b.attempts,
             &archive,
-            "pass",
+            PASSPHRASE,
             6,
             &rekindle_utils::random::OsRandom
         )
@@ -243,7 +248,7 @@ async fn an_exported_identity_imports_on_another_root_and_unlocks() {
     ));
     // The archive carries no device secret (ADR 0022 rule 4): the imported
     // vault holds no key to the exporting device's vault.
-    let (imported, _) = VaultStore::open(&b.root.identity_vault(&pk), "pass").unwrap();
+    let (imported, _) = VaultStore::open(&b.root.identity_vault(&pk), PASSPHRASE).unwrap();
     assert_eq!(
         imported
             .get(&rekindle_vault::VaultKey::DeviceVaultSecret)
@@ -251,7 +256,9 @@ async fn an_exported_identity_imports_on_another_root_and_unlocks() {
         None
     );
     drop(imported);
-    let unlocked = unlock(&b.root, &b.stores(), &pk, "pass", 7).await.unwrap();
+    let unlocked = unlock(&b.root, &b.stores(), &pk, PASSPHRASE, 7)
+        .await
+        .unwrap();
     assert_eq!(unlocked.display_name, "Mover");
     // The unlock minted this device's own vault under a fresh key; the
     // exporting device still holds its own.
@@ -275,7 +282,7 @@ async fn an_archive_naming_a_path_is_refused() {
         &a.root,
         &a.stores(),
         None,
-        "pass",
+        PASSPHRASE,
         1,
         &rekindle_utils::random::OsRandom,
     )
@@ -283,7 +290,7 @@ async fn an_archive_naming_a_path_is_refused() {
     .unwrap();
     let pk = made.public_key.clone();
     drop(made);
-    let bytes = export(&a.root, &a.stores(), &pk, "pass", 2).unwrap();
+    let bytes = export(&a.root, &a.stores(), &pk, PASSPHRASE, 2).unwrap();
     let mut parsed = archive::Archive::decode(&bytes).unwrap();
     parsed.entry.public_key = "../escape".into();
     let b = Fixture::new();
@@ -292,7 +299,7 @@ async fn an_archive_naming_a_path_is_refused() {
             &b.root,
             &b.attempts,
             &parsed.encode().unwrap(),
-            "pass",
+            PASSPHRASE,
             3,
             &rekindle_utils::random::OsRandom
         )
@@ -308,7 +315,7 @@ async fn a_rotated_identity_unlocks_under_its_new_key_only() {
         &f.root,
         &f.stores(),
         Some("Turner"),
-        "pass",
+        PASSPHRASE,
         1,
         &rekindle_utils::random::OsRandom,
     )
@@ -328,7 +335,7 @@ async fn a_rotated_identity_unlocks_under_its_new_key_only() {
     ));
     assert!(!f.root.identity_vault(&next.public_key_hex()).exists());
 
-    let entry = rotate(&f.root, &f.stores(), &old, &pending, "pass", 3)
+    let entry = rotate(&f.root, &f.stores(), &old, &pending, PASSPHRASE, 3)
         .await
         .unwrap();
     assert_eq!(entry.public_key, next.public_key_hex());
@@ -340,10 +347,10 @@ async fn a_rotated_identity_unlocks_under_its_new_key_only() {
         "the old key's cache names are unreachable under the new key"
     );
     assert!(matches!(
-        unlock(&f.root, &f.stores(), &old, "pass", 4).await,
+        unlock(&f.root, &f.stores(), &old, PASSPHRASE, 4).await,
         Err(IdentityError::NotFound)
     ));
-    let unlocked = unlock(&f.root, &f.stores(), &entry.public_key, "pass", 5)
+    let unlocked = unlock(&f.root, &f.stores(), &entry.public_key, PASSPHRASE, 5)
         .await
         .unwrap();
     assert_eq!(unlocked.display_name, "Turner");
@@ -370,7 +377,7 @@ async fn a_rotation_journalled_before_a_crash_completes_at_the_next_unlock() {
         &f.root,
         &f.stores(),
         Some("Turner"),
-        "pass",
+        PASSPHRASE,
         1,
         &rekindle_utils::random::OsRandom,
     )
@@ -385,7 +392,9 @@ async fn a_rotation_journalled_before_a_crash_completes_at_the_next_unlock() {
     lock(&f.stores()).await;
     std::fs::write(f.root.identity_db(&next.public_key_hex()), b"torn copy").unwrap();
 
-    let unlocked = unlock(&f.root, &f.stores(), &old, "pass", 2).await.unwrap();
+    let unlocked = unlock(&f.root, &f.stores(), &old, PASSPHRASE, 2)
+        .await
+        .unwrap();
     assert_eq!(unlocked.public_key, next.public_key_hex());
     assert_eq!(*unlocked.secret, *next.secret_key_bytes());
     assert!(!f.root.identity_vault(&old).exists());
@@ -420,7 +429,7 @@ async fn remove_needs_no_passphrase_and_a_missing_identity_is_not_found() {
         &f.root,
         &f.stores(),
         None,
-        "pass",
+        PASSPHRASE,
         1,
         &rekindle_utils::random::OsRandom,
     )
@@ -489,7 +498,7 @@ async fn a_rotation_keeps_the_armed_duress_passphrase_and_panic_shortcut() {
         &f.root,
         &f.stores(),
         Some("Turner"),
-        "pass",
+        PASSPHRASE,
         1,
         &rekindle_utils::random::OsRandom,
     )
@@ -514,7 +523,9 @@ async fn a_rotation_keeps_the_armed_duress_passphrase_and_panic_shortcut() {
     journal_rotation(&f.stores(), &journal(*next.secret_key_bytes())).unwrap();
     lock(&f.stores()).await;
 
-    let unlocked = unlock(&f.root, &f.stores(), &old, "pass", 2).await.unwrap();
+    let unlocked = unlock(&f.root, &f.stores(), &old, PASSPHRASE, 2)
+        .await
+        .unwrap();
     let new_key = unlocked.public_key.clone();
     assert_eq!(new_key, next.public_key_hex());
     assert!(matches!(

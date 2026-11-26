@@ -173,6 +173,7 @@ gtk = "0.18"
 windows = { version = "0.62", features = [ "Win32_Foundation", "Win32_Graphics_Gdi" ] }
 
 [dev-dependencies]
+rekindle-test-fixtures = { path = "../crates/rekindle-test-fixtures" }
 # `log_capture`: the log-line tests read their lines through it.
 proptest = "1"
 rekindle-utils = { path = "../crates/rekindle-utils", features = [ "test-support" ] }

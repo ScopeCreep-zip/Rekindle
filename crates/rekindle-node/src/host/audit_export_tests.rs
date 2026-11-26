@@ -57,7 +57,9 @@ async fn audit_export_is_reviewed_then_writes_the_log_to_the_picked_path() {
             Caller::shell(),
             IpcRequest::IntentCommit {
                 intent_id: review.intent_id,
-                proof: IntentProof::Passphrase("pass".to_string().into()),
+                proof: IntentProof::Passphrase(
+                    rekindle_test_fixtures::PASSPHRASE.to_string().into(),
+                ),
             },
         )
         .await;

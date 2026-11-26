@@ -107,7 +107,7 @@ async fn a_held_thread_stays_held_across_a_lock_and_unlock() {
             Caller::shell(),
             IpcRequest::Unlock {
                 identity: ann.public_key,
-                passphrase: "pass".into(),
+                passphrase: rekindle_test_fixtures::PASSPHRASE.into(),
             },
         )
         .await;
