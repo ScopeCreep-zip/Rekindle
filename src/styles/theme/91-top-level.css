@@ -435,6 +435,29 @@
       forced-color-adjust: none;
     }
 
+    /* The drawn checkboxes and radios (plan ST1): forced colours strip the
+     * checked fill, so a checked box takes the system highlight and its
+     * mark the highlight text, and every box keeps a system outline. */
+    input[type="checkbox"],
+    input[type="radio"] {
+      border-color: ButtonText;
+    }
+
+    input[type="checkbox"]:checked,
+    input[type="radio"]:checked {
+      background-color: Highlight;
+      border-color: Highlight;
+      forced-color-adjust: none;
+    }
+
+    input[type="checkbox"]:checked::after {
+      border-color: HighlightText;
+    }
+
+    input[type="radio"]:checked::after {
+      background-color: HighlightText;
+    }
+
     /* Focus rings — forced-colors strips outline colors unless we ask
      * for the system focus token explicitly. The offset stays the
      * components' (outset, or inset on rows and tabs in clipping lists). */

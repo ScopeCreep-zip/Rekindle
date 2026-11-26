@@ -146,6 +146,7 @@ const NotificationsTab: Component = () => {
           max="1"
           step="0.05"
           value={settingsState.ringtoneVolume}
+          style={{ "--range-fill": `${settingsState.ringtoneVolume * 100}%` }}
           onInput={(e) =>
             handleSliderChange(
               "ringtoneVolume",
