@@ -73,6 +73,12 @@ async function typedSeen(): Promise<number> {
   // The driver's element click focuses the input (as the away-message test);
   // press() dispatches events in the page, which focus nothing.
   await field.click();
+  // The first click into a window the driver has not focused yet may only
+  // raise it (Linux, Symbiosis's first field): once, logged, it clicks again.
+  if (!(await waitUntil(async () => !(await browser.$(PAUSED).isDisplayed().catch(() => false)), 5_000, "").then(() => true, () => false))) {
+    console.log(`[paused] the first click did not focus the status field (active: ${await browser.execute(() => document.activeElement?.className ?? "none")}); clicking again`);
+    await field.click();
+  }
   await gone(browser, PAUSED, NET_WAIT_MS);
   await field.clearValue();
   await browser.pause(300);
