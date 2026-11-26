@@ -123,13 +123,14 @@ pub fn served(package: &Package<'_>) -> Result<SkinManifest, SkinError> {
 /// Communities clone copied, [`crate::skin_tree::cover`]), then every
 /// window's menu-title labels (plan SK4b, [`crate::skin_tree::titles`]) and
 /// text-field insets (plan SK5, [`crate::skin_tree::inset`]) and the target
-/// boxes of small interactive nodes (plan SK7, [`crate::skin_tree::target`]),
+/// boxes of small interactive nodes (plan SK7, [`crate::skin_tree::target`])
+/// and who dims each one (plan CR1, [`crate::skin_tree::disabled`]),
 /// then the Community window composed from the pack's own windows (plan
 /// SK17-6, [`crate::skin_tree::compose`]).
 ///
 /// # Errors
-/// A glyph label's or menu title's picture missing from `package` or not
-/// decoding.
+/// A glyph label's or menu title's picture, or a disabled node's Normal or
+/// Disabled piece, missing from `package` or not decoding.
 pub fn place(manifest: &mut SkinManifest, package: &Package<'_>) -> Result<(), SkinError> {
     // Plan SK15b: content texts sized to the served words and every chain
     // resolved first, so each pass after lays numeric spans.
@@ -146,6 +147,7 @@ pub fn place(manifest: &mut SkinManifest, package: &Package<'_>) -> Result<(), S
         crate::skin_tree::cover::glyphs(main, package)?;
         crate::skin_tree::label_style::worded(main, package)?;
     }
+    let mut measured = crate::skin_tree::disabled::Measured::default();
     for layout in manifest.windows.values_mut() {
         crate::skin_tree::titles::menus(layout, package)?;
         crate::skin_tree::brand::nodes(layout);
@@ -155,7 +157,7 @@ pub fn place(manifest: &mut SkinManifest, package: &Package<'_>) -> Result<(), S
         crate::skin_tree::text_box::lay(layout);
         crate::skin_tree::inset::fields(layout);
         crate::skin_tree::target::nodes(layout);
-        crate::skin_tree::disabled::nodes(layout);
+        crate::skin_tree::disabled::nodes(layout, package, &mut measured)?;
     }
     // Plan SK17-6: the Community window wears the pack's own frame, the
     // served layout of its room window, else its chat, else its buddy list.
