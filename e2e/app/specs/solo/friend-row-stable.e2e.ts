@@ -51,10 +51,13 @@ describe("a friend row survives a signal push, and a double-click opens the chat
       // Cara appears offline first, so her presence moves her from the
       // group's Offline section to its Online one after the click (lead:
       // the move must keep her row's element).
+      // A row's section, as the one keyed list marks it (`data-buddy-section`)
+      // or as the two section lists did (each a `.buddy-subgroup` labelled
+      // Online or Offline), so the control branch runs this same test.
       const sectionNow = async (): Promise<string> =>
         (await browser.execute(() => {
           const r = Array.from(document.querySelectorAll<HTMLElement>(".buddy-item")).find((e) => (e.textContent ?? "").includes("Cara"));
-          return r?.closest<HTMLElement>("[data-buddy-section]")?.dataset.buddySection ?? "none";
+          return (r?.closest<HTMLElement>("[data-buddy-section]")?.dataset.buddySection ?? r?.closest<HTMLElement>(".buddy-subgroup[aria-label]")?.getAttribute("aria-label") ?? "none");
         })) as string;
       await peers[0].cli(["presence", "set", "--status", "invisible"]);
       await waitUntil(async () => (await sectionNow()) === "Offline", NET_WAIT_MS, "Cara never showed offline");
@@ -66,7 +69,7 @@ describe("a friend row survives a signal push, and a double-click opens the chat
         (await browser.execute(() => {
           const r = Array.from(document.querySelectorAll<HTMLElement>(".buddy-item")).find((e) => (e.textContent ?? "").includes("Cara"));
           return JSON.stringify({
-            section: r?.closest<HTMLElement>("[data-buddy-section]")?.dataset.buddySection ?? "none",
+            section: (r?.closest<HTMLElement>("[data-buddy-section]")?.dataset.buddySection ?? r?.closest<HTMLElement>(".buddy-subgroup[aria-label]")?.getAttribute("aria-label") ?? "none"),
             status: r?.querySelector("[role=img]")?.getAttribute("aria-label") ?? "none",
           });
         })) as string;
@@ -80,7 +83,7 @@ describe("a friend row survives a signal push, and a double-click opens the chat
             : [];
         new MutationObserver((records) => {
           for (const rec of records) {
-            for (const n of Array.from(rec.addedNodes)) for (const f of cara(n)) w.__rowLog!.push(`${new Date().toISOString()} added in ${f.closest<HTMLElement>("[data-buddy-section]")?.dataset.buddySection ?? "none"}`);
+            for (const n of Array.from(rec.addedNodes)) for (const f of cara(n)) w.__rowLog!.push(`${new Date().toISOString()} added in ${f.closest<HTMLElement>("[data-buddy-section]")?.dataset.buddySection ?? f.closest<HTMLElement>(".buddy-subgroup[aria-label]")?.getAttribute("aria-label") ?? "none"}`);
             for (const n of Array.from(rec.removedNodes)) if (cara(n).length > 0) w.__rowLog!.push(`${new Date().toISOString()} removed`);
           }
         }).observe(document.body, { subtree: true, childList: true });
