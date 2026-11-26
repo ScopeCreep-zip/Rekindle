@@ -47,8 +47,8 @@ MenuBar MenuBar
   MenuDiv5 Decor
   MenuDiv6 Decor
 MenuClip Decor
-AdBG AdArea
-  AdArea Part
+AdBG Decor
+  AdArea AdArea
 ListViewBG Decor
 TabbedControl Views
   BuddyView View(Friends)
