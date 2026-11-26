@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8" ?> 
+<!DOCTYPE SkinDescription SYSTEM "xfireskin.dtd">
+
+<SkinDescription>
+ 	<Author Type="original">Xfire, Inc.</Author>
+ 	<Author Type="contributor">Tim Brengle</Author>
+ 	<Website>http://www.xfire.com/</Website>
+ 	<Name>Xfire</Name>
+ 	<LongName>Xfire</LongName>
+ 	<Version>3</Version>
+ 	<CompatibleVersion>1.58</CompatibleVersion>
+</SkinDescription>

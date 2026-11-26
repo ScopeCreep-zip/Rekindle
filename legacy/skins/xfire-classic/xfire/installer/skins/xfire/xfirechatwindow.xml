@@ -1,0 +1,247 @@
+<Tile Name="XfireChatMainWindow"
+	Component="ChatMainWindow"
+	>
+	<Tile Name="ChatTitleBar"
+		IndentLeft="14"
+		IndentRight="13+14"
+		ResizeX="100"
+		ResizeY="0"
+		Component="ChatTitleBar"
+		>
+		<Tile Name="ChatVent" JustX="CENTER" Y="5" Component="Vent"></Tile>
+		<Tile Name="TheChatX"
+			X="23"
+			Y="20"
+			Component="TheX"
+			>
+			<Tile Name="TheChatXCover" Component="TheXCover"></Tile>
+		</Tile>
+		<Tile Name="ChatUserNameField"
+			X="TheChatX.RIGHT+3"
+			Y="TheChatX.TOP+1"
+			ResizeX="100"
+			IndentRight="66"
+			OutdentRight="0"
+			Component="UserNameField"
+			>
+			<Tile Name="ChatUserNameText" X="14" Y="0" Component="UserNameText"></Tile>
+			<Tile Name="ChatWindowTitle" X="ChatUserNameText.RIGHT" Y="ChatUserNameText.TOP" Component="ChatWindowTitle"></Tile>
+		</Tile>
+		<Tile Name="MinimizeChatBox"
+			X="ChatUserNameField.RIGHT+1"
+			Y="ChatUserNameField.TOP"
+			Component="MinimizeBox"
+			>
+		</Tile>
+		<Tile Name="CloseChatBox"
+			X="MinimizeChatBox.RIGHT+1"
+			Y="MinimizeChatBox.TOP"
+			Component="CloseChatBox"
+			>
+		</Tile>
+		<Tile Name="ResizeChatUp"
+			MinHeight="5"
+			ResizeX="100"
+			Z="2"
+			Component="ResizeUp"
+			>
+		</Tile>
+	</Tile>
+	<Tile Name="ChatGripperTopLeft"
+		Z="6"
+		X="0"
+		Y="ChatTitleBar.BOTTOM-15"
+		Component="GripperTopLeft"
+		>
+	</Tile>
+	<Tile Name="ChatGripperTopRight"
+		Z="6"
+		X="13"
+		JustX="RIGHT"
+		Y="ChatTitleBar.BOTTOM-15"
+		Component="GripperTopRight"
+		>
+	</Tile>
+	<Tile Name="ChatBaseBoard"
+		Z="4"
+		X="0"
+		Y="0"
+		JustY="BOTTOM"
+		ResizeX="100"
+		ResizeY="0"
+		IndentLeft="13"
+		IndentRight="10+16"
+		Component="ChatBaseBoard"
+		>
+		<Tile Name="SendChatButton" JustX="RIGHT" X="25" Y="8" Component="SendButton"></Tile>
+		<Tile Name="ResizeChatDown" JustY="BOTTOM" ResizeX="100" Z="2" Component="ResizeDown"></Tile>
+		<Tile Name="ChatTypingMessage"
+			X="45"
+			Y="8"
+			IndentRight="SendChatButton.width+30"
+			Component="TypingMessage"
+			>
+		</Tile>
+	</Tile>
+	<Tile Name="ChatLeftOuterEdge"
+		Z="4"
+		X="0"
+		Y="ChatGripperTopLeft.BOTTOM-16"
+		ResizeX="0"
+		ResizeY="100"
+		IndentBottom="ChatBaseBoard.height+14"
+		Component="ChatLeftOuterEdge"
+		>
+	</Tile>
+	<Tile Name="ChatRightOuterEdge"
+		Z="4"
+		X="13"
+		Y="ChatGripperTopRight.BOTTOM-16"
+		JustX="RIGHT"
+		ResizeX="0"
+		ResizeY="100"
+		IndentBottom="ChatBaseBoard.height+14"
+		Component="ChatRightOuterEdge"
+		>
+	</Tile>
+	<Tile Name="ChatGripperBottomLeft"
+		Z="5"
+		X="0"
+		Y="ChatLeftOuterEdge.BOTTOM-17"
+		Component="ChatGripperBottomLeft"
+		>
+	</Tile>
+	<Tile Name="ChatGripperBottomRight"
+		Z="5"
+		X="13"
+		Y="ChatRightOuterEdge.BOTTOM-17"
+		JustX="RIGHT"
+		Component="ChatGripperBottomRight"
+		>
+	</Tile>
+	<Tile Name="ChatInnerBevel"
+		Z="-1"
+		X="ChatLeftOuterEdge.RIGHT"
+		Y="ChatTitleBar.BOTTOM-6"
+		ResizeX="100"
+		ResizeY="100"
+		IndentRight="ChatRightOuterEdge.width+13"
+		IndentBottom="ChatBaseBoard.height-2"
+		Component="InnerBevel"
+		>
+		<Tile Name="ChatTopBevel" ResizeX="100" ResizeY="0" Component="TopBevel"></Tile>
+		<Tile Name="ChatBottomBevel" JustY="BOTTOM" ResizeX="100" ResizeY="0" Component="BottomBevel"></Tile>
+		<Tile Name="ChatMiddleBevel"
+			Y="ChatTopBevel.BOTTOM"
+			ResizeX="100"
+			ResizeY="100"
+			IndentBottom="ChatBottomBevel.height"
+			Component="MiddleBevel"
+			>
+		</Tile>
+		<Tile Name="InnerBevelBG" Z="-1" ResizeX="100" ResizeY="100" Component="InnerBevelBG"></Tile>
+		<Tile Name="ChatMenuBar"
+			ResizeX="100"
+			X="7"
+			IndentRight="6"
+			Y="8"
+			Component="MenuBar"
+			>
+			<Tile Name="SystemMenuText"
+				X="33"
+				Y="3"
+				Z="10"
+				Component="SystemMenuText"
+				>
+				<Tile Name="SystemMenu"
+					X="0"
+					Y="0"
+					Z="-2"
+					ResizeX="100"
+					ResizeY="100"
+					OutdentLeft="2"
+					OutdentRight="2"
+					OutdentTop="3"
+					OutdentBottom="1"
+					Component="SystemMenu"
+					>
+				</Tile>
+			</Tile>
+			<Tile Name="ActionsMenuText"
+				X="SystemMenuText.RIGHT+10"
+				Y="3"
+				Z="10"
+				Component="ActionsMenuText"
+				>
+				<Tile Name="ActionsMenu"
+					X="0"
+					Y="0"
+					Z="-2"
+					ResizeX="100"
+					ResizeY="100"
+					OutdentLeft="2"
+					OutdentRight="2"
+					OutdentTop="3"
+					OutdentBottom="1"
+					Component="ActionsMenu"
+					>
+				</Tile>
+			</Tile>
+			<Tile Name="HelpMenuText"
+				X="ActionsMenuText.RIGHT+10"
+				Y="3"
+				Z="10"
+				Component="HelpMenuText"
+				>
+				<Tile Name="HelpMenu"
+					X="0"
+					Y="0"
+					Z="-2"
+					ResizeX="100"
+					ResizeY="100"
+					OutdentLeft="2"
+					OutdentRight="2"
+					OutdentTop="3"
+					OutdentBottom="1"
+					Component="HelpMenu"
+					>
+				</Tile>
+			</Tile>
+		</Tile>
+		<Tile Name="ChatArea"
+			X="16"
+			IndentRight="8"
+			Y="ChatMenuBar.BOTTOM"
+			IndentBottom="19+20"
+			ResizeX="100"
+			ResizeY="80"
+			Component="ChatArea"
+			>
+		</Tile>
+		<Tile Name="ChatDivider"
+			Z="2"
+			X="6"
+			IndentRight="5"
+			Y="ChatArea.BOTTOM"
+			ResizeX="100"
+			Component="Divider"
+			>
+		</Tile>
+		<Tile Name="ChatEdit"
+			X="16"
+			IndentRight="16"
+			Y="ChatDivider.BOTTOM"
+			ResizeX="100"
+			ResizeY="100"
+			IndentBottom="19"
+			Component="ChatEdit"
+			>
+		</Tile>
+	</Tile>
+	<Tile Name="InfoViewButton"
+		JustY="CENTER"
+		X="ChatRightOuterEdge.RIGHT"
+		Component="ChatInfoViewButton"
+		>
+	</Tile>
+</Tile>

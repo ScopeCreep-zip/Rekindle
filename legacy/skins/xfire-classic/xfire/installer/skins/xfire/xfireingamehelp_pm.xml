@@ -1,0 +1,216 @@
+<ActiveWindow>
+
+  <Tile Name="Help" ResizeX="100" ResizeY="100" Component="XIGHelp">
+    <Tile Name="ActiveOutline"
+          ResizeX="100"
+          ResizeY="100"
+          Component="XIGActiveOutline"
+          >
+    </Tile>
+    <Tile Name="Titlebar"
+          ResizeX="100"
+          X="12" 
+          IndentRight="12" 
+          Y="1" 
+          Component="XIGTitlebar"
+          >
+      <Tile Name="Logo"
+            X="22"
+            Y="16"
+            Component="XIGLogo"
+            >
+      </Tile>
+      <Tile Name="Nameplate"
+            X="Logo.RIGHT+6"
+            IndentRight="134"
+            Y="16"
+            ResizeX="100"
+            Component="XIGPlate"
+            >
+        <Tile Name="NameplateText"
+              X="14"
+              Y="0"
+              IndentRight="14"
+              ResizeX="100"
+              Component="XIGNameplateText"
+              >
+        </Tile>
+      </Tile>
+      <Tile Name="Clockplate"
+            X="Nameplate.RIGHT+5"
+            Y="Nameplate.TOP"
+            Component="XIGPlate"
+            MinWidth="62"
+              >
+        <Tile Name="ClockText"
+              X="4"
+              Y="0"
+              Component="XIGClockText"
+              >
+        </Tile>
+      </Tile>
+      <Tile Name="CloseBox"
+            X="Clockplate.RIGHT+5"
+            Y="Clockplate.TOP"
+            Component="XIGCloseBox"
+            ControlId="320"
+            TabOrder="20"
+            >
+      </Tile>
+    </Tile>
+    <Tile Name="LeftEdge"
+          X="1"
+          Y="69"
+          IndentBottom="53"
+          ResizeY="100"
+          Component="XIGLeftEdge"
+            >
+    </Tile>
+    <Tile Name="RightEdge"
+          X="1"
+          Y="LeftEdge.TOP"
+          JustX="RIGHT" 
+          IndentBottom="55"
+          ResizeY="100"
+          Component="XIGRightEdge"
+            >
+    </Tile>
+    <Tile Name="BottomEdge"
+          X="14"
+          Y="1"
+          JustY="BOTTOM"
+          IndentRight="13"
+          ResizeX="100"
+          Component="XIGBottomEdge"
+          >
+      <Tile Name="OpacitySlider"
+            X="39"
+            Y="11"
+            JustX="RIGHT"
+            MinWidth="70" 
+            Component="XIGOpacitySlider"
+            ControlId="310"
+            TabOrder="10"
+            Default="setfocuscontrol"
+            FocusedColor="XIGFocusedRectColor"
+            >
+        <Tile Name="OpacityTrack"
+              ResizeX="100"
+              Stretch="ToContent"
+              Component="XIGSliderTrack"
+              >
+        </Tile>
+        <Tile Name="OpacityGripper"
+              ResizeY="100"
+              Stretch="ToContent"
+              Component="XIGSliderGripper"
+              >
+        </Tile>
+      </Tile>
+    </Tile>
+    <Tile Name="GripperTopLeft"
+          X="1"
+          Y="LeftEdge.TOP-30"
+          Component="XIGGripperTopLeft"
+          >
+    </Tile>
+    <Tile Name="GripperTopRight"
+          X="1"
+          Y="GripperTopLeft.TOP"
+          JustX="RIGHT" 
+          Component="XIGGripperTopRight"
+          >
+    </Tile>
+    <Tile Name="GripperBottomLeft"
+          X="1"
+          Y="26"
+          JustY="BOTTOM"
+          Component="XIGGripperBottomLeft"
+          >
+    </Tile>
+    <Tile Name="GripperBottomRight"
+          X="1"
+          Y="26"
+          JustY="BOTTOM"
+          JustX="RIGHT" 
+          Component="XIGGripperBottomRight"
+          >
+    </Tile>
+    <Tile Name="InnerBevel"
+          X="9"
+          Y="46"
+          IndentRight="9"
+          IndentBottom="36"
+          ResizeX="100"
+          ResizeY="100"
+          Component="XIGInnerBevel"
+          Z="10"
+          >
+    </Tile>
+    <Tile Name="BackDrop"
+          X="12"
+          Y="50"
+          IndentRight="12"
+          IndentBottom="40"
+          ResizeX="100"
+          ResizeY="100"
+          Component="BvBk"
+          Z="-10"
+          >
+    </Tile>
+    <Tile Name="MenuBackDrop"
+          X="20"
+          Y="55"
+          IndentRight="20"
+          ResizeX="100"
+          Component="XIGMenuBar"
+          Z="-9"
+          >
+      <Tile Name="TabNormalText" X="21" Y="3" Z="4" Component="TabNormalText">
+        <Tile Name="TabNormalButton" X="0" Y="0" Z="-1" ResizeX="100" ResizeY="100" OutdentLeft="4" OutdentRight="18" OutdentTop="1" OutdentBottom="0" Component="XIGFriendInActiveTab" 
+              ControlId="330" TabOrder="30"/>
+      </Tile>
+      <Tile Name="TabChatText" X="TabNormalText.RIGHT+15" Y="3" Z="3" Component="XIGTabChatText">
+        <Tile Name="TabChatButton" X="0" Y="0" Z="-1" ResizeX="100" ResizeY="100" OutdentLeft="4" OutdentRight="18" OutdentTop="1" OutdentBottom="0" Component="XIGChatInActiveTab" 
+              ControlId="340" TabOrder="40" />
+      </Tile>
+      <Tile Name="TabOptionsText" X="TabChatText.RIGHT+15" Y="3" Z="3" Component="XIGTabOptionsText">
+        <Tile Name="TabOptionButton" X="0" Y="0" Z="-1" ResizeX="100" ResizeY="100" OutdentLeft="4" OutdentRight="18" OutdentTop="1" OutdentBottom="0" Component="XIGOptionInActiveTab" 
+              ControlId="350" TabOrder="50" />
+      </Tile>
+      <Tile Name="TabHelpText" X="TabOptionsText.RIGHT+15" Y="3" Z="3" Component="XIGTabHelpText">
+        <Tile Name="TabHelpButton" X="0" Y="0" Z="-1" ResizeX="100" ResizeY="100" OutdentLeft="4" OutdentRight="18" OutdentTop="1" OutdentBottom="0" Component="XIGActiveTab" />
+      </Tile>
+    </Tile>
+    <Tile Name="FriendsHeader"
+          X="16"
+          Y="MenuBackDrop.BOTTOM-2"
+          ResizeX="100"
+          IndentRight="15"
+          Component="XIGControlHeader"
+          >
+    </Tile>
+    <Tile Name="HelpTextVertScrollbar"
+          X="16" 
+          Y="FriendsHeader.BOTTOM" 
+          JustX="RIGHT" 
+          ResizeY="100" 
+          IndentTop="0" 
+          IndentBottom="50" 
+          Component="XIGVertScrollbar"
+          AttachedControlId="450"
+              >
+    </Tile>
+    <Tile Name="HelpText"
+          X="20"
+          Y="FriendsHeader.BOTTOM"
+          ResizeX="100"
+          ResizeY="100"
+          IndentRight="25"
+          IndentBottom="46" 
+          Component="XIGHelpText"
+          ControlId="450"
+          >
+    </Tile>
+  </Tile>
+</ActiveWindow>
