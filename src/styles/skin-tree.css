@@ -293,6 +293,26 @@
     height: 100%;
     min-height: 0;
   }
+  /* The composer in a pack's edit slot fills the box the pack draws for
+   * it (Symbiosis's `ChatEdit` is 50 px): no padding of its own, and the
+   * field takes the height left beside its buttons (its own 48 px plus
+   * 8 px padding spilled 14 px past the slot). */
+  .skin-slot-mount > .message-input-wrapper {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    padding: 0;
+  }
+  .skin-slot-mount > .message-input-wrapper > .message-input-shell {
+    flex: 1;
+    min-height: 0;
+  }
+  .skin-slot-mount .message-input-shell > .message-input-field {
+    align-self: stretch;
+    height: auto;
+    min-height: 0;
+  }
   [data-skin-role="slot:chatArea"] :is(.group-chat-header, .chat-peer-status) {
     flex-wrap: nowrap;
     overflow-x: auto;
