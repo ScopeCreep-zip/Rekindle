@@ -43,7 +43,11 @@ export type SkinSelection =
   | { kind: "media"; arg: { path: string } }
   | { kind: "group"; arg: { groupId: string } }
   /** A friend group's header (plan E7.15 IV5); null is the default group. */
-  | { kind: "friendGroup"; arg: { groupId: number | null } };
+  | { kind: "friendGroup"; arg: { groupId: number | null } }
+  /** A community window (plan E7.7 HSC1): its community, the channel it
+   *  shows and the game server selected in its SERVERS list (null: none
+   *  yet; Join takes the first listed). */
+  | { kind: "community"; arg: { community: string; channel: string | null; server: string | null } };
 
 export type ShellPanel =
   | "addFriend"
@@ -64,7 +68,9 @@ export type CallOp =
   | { kind: "video"; arg: { friend: string } }
   | { kind: "end" }
   | { kind: "mute" }
-  | { kind: "unmute" };
+  | { kind: "unmute" }
+  /** A community window's Call / Host Voice (plan E7.7 HSC1). */
+  | { kind: "joinVoice"; arg: { community: string; channel: string } };
 
 /** `CallTarget`: the window `ShowVoiceWindow` brings up (plan E7.2 G-item
  *  A), the active call's, else the community voice session's. */
@@ -102,6 +108,8 @@ export type ShellOp =
       arg: { groupId: string; groupName: string; members: GroupCallInvitee[] };
     }
   | { kind: "openChat"; arg: { friend: string } }
+  /** A community window's Profile / View Profile (plan E7.7 HSC1). */
+  | { kind: "openCommunityInfo"; arg: { community: string } }
   | { kind: "openProfile"; arg: { friend: string } }
   | { kind: "openSafetyNumber"; arg: { friend: string } }
   | { kind: "openGameInvite"; arg: { friend: string } }

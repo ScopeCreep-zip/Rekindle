@@ -13,6 +13,7 @@ import { friendsState } from "../stores/friends.store";
 import { voiceState, setVoiceState } from "../stores/voice.store";
 import { communityState } from "../stores/community.store";
 import { addToast } from "../stores/toast.store";
+import { errorMessage } from "../utils/error";
 import { probeAndReportLocalVideoCapabilities } from "./video.actions";
 
 let voiceEventUnlisten: UnlistenFn | null = null;
@@ -192,7 +193,8 @@ export async function handleSetMuted(muted: boolean): Promise<void> {
     await commands.setMute(muted);
     setVoiceState("isMuted", muted);
   } catch (e) {
-    console.error("Failed to set mute:", e);
+    // Never silent: the Host's words (a pack's Mute in any window).
+    addToast(errorMessage(e), "error");
   }
 }
 

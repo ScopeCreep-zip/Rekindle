@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "app-community",
-  "description": "App-command grants for `community-*` windows: the full community feature surface (channels, categories, roles, moderation, bans/timeouts, invites, threads, events, polls, emoji/stickers/soundboard, automod, onboarding, analytics, audit log, in-community voice/video, game servers, attachments, re-enrolling this device after a re-join). The largest grant by design — this window is the app's most feature-dense surface. No plugin grants: attachment pick/save dialogs run in Rust (`upload_attachment`, `download_attachment`), and link-preview cards open through `open_external_url`.",
+  "description": "App-command grants for `community-*` windows: the full community feature surface (channels, categories, roles, moderation, bans/timeouts, invites, threads, events, polls, emoji/stickers/soundboard, automod, onboarding, analytics, audit log, in-community voice/video, game servers, attachments, re-enrolling this device after a re-join). The largest grant by design \u2014 this window is the app's most feature-dense surface. No plugin grants: attachment pick/save dialogs run in Rust (`upload_attachment`, `download_attachment`), and link-preview cards open through `open_external_url`.",
   "windows": [
     "community-*"
   ],
@@ -166,6 +166,9 @@
     "allow-upload-emoji",
     "allow-upload-soundboard-sound",
     "allow-upload-sticker",
-    "allow-vote-poll"
+    "allow-vote-poll",
+    "allow-open-settings-window",
+    "allow-run-skin-action",
+    "allow-set-skin-selection"
   ]
 }

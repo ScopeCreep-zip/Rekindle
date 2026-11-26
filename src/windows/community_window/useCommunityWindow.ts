@@ -31,6 +31,10 @@ import type { Thread } from "../../stores/community.store";
 import { createCommunityWindowState } from "./state";
 import { startEventStream, subscribeCommunityFocusChannel, subscribeSkinSignals } from "../../ipc/channels";
 import { setSkinSignals } from "../../stores/skin-signals.store";
+import { registerShellRunner, sendSkinSelection } from "../../actions/skin.actions";
+import { muteOps } from "../../actions/shell_runners";
+import { handleJoinVoice } from "../../actions/voice.actions";
+import type { ShellOp } from "../../ipc/commands/dto_skin_run";
 
 /// Orchestrating view-model hook for `CommunityWindow`. Owns the effects,
 /// event handlers, and Veilid subscription lifecycle on top of the signals
@@ -324,10 +328,41 @@ export function useCommunityWindow() {
     }
   }
 
+  // The window's skin selection (plan E7.7 HSC1): its community and the
+  // channel it shows, on open and on every change, so the pack's Call,
+  // Mute, Join and Profile act on this community and are drawn disabled
+  // with the Host's reason when they cannot. The SERVERS list selects no
+  // row (each row has its own Join), so the server is none: the Host's
+  // Join takes the first listed.
+  createEffect(() => {
+    const community = selectedCommunityId();
+    if (!community) return;
+    void sendSkinSelection({ kind: "community", arg: { community, channel: selectedChannelId() || null, server: null } });
+  });
+
+  // What the Host maps a community window's presses to (plan E7.7 HSC1):
+  // Call / Host Voice joins the community's voice channel, Profile opens
+  // this community's info (its settings panel); Mute is the shared
+  // muteOps, and Join is the Host's own (a game launch through the intent
+  // dialog), with no shell op.
+  const communityOps = (op: ShellOp): boolean => {
+    if (op.kind === "call" && op.arg.kind === "joinVoice") {
+      void handleJoinVoice(op.arg.arg.channel, op.arg.arg.community);
+      return true;
+    }
+    if (op.kind === "openCommunityInfo") {
+      if (op.arg.community === selectedCommunityId()) s.setShowSettings(true);
+      return true;
+    }
+    return false;
+  };
+  const unregisterRunners = [communityOps, muteOps].map((run) => registerShellRunner(run));
+
   onCleanup(() => {
     for (const p of unlisteners) {
       p.then((unlisten) => unlisten());
     }
+    for (const off of unregisterRunners) off();
     window.removeEventListener("keydown", searchShortcutHandler);
   });
 
