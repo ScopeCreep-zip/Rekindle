@@ -83,6 +83,9 @@
 //!                                      id mapping and the built-in sound
 //!                                      banks (plan E7.7.3).
 //!     cargo xtask check-inline-modules No inline `mod name { … }` (gate item 1).
+//!     cargo xtask outline-modules [--crate <name>]
+//!                                      Move each inline module body to
+//!                                      `<stem>_<name>.rs` (the fixer).
 //!     cargo xtask perf                 Run the ignored wall-clock reports in
 //!                                      release, by hand; never in `check`.
 //!     cargo xtask retrofit-allow-reasons
@@ -139,6 +142,7 @@ mod motion;
 mod no_emitter;
 mod no_managed_db;
 mod no_shape_ipc;
+mod outline_modules;
 mod overlay_layers;
 mod pair_model;
 mod perf;
@@ -301,6 +305,12 @@ enum Command {
     CheckWorkspaceLints,
     /// Verify no inline `mod name { … }` (bodies live in `<stem>_<name>.rs` files).
     CheckInlineModules,
+    /// Move each inline module body to `<stem>_<name>.rs` beside its parent.
+    OutlineModules {
+        /// Only this workspace member (package name).
+        #[arg(long = "crate")]
+        krate: Option<String>,
+    },
     /// Run the `#[ignore]`d wall-clock reports in release (by hand; not part of `check`).
     Perf,
     /// One-shot helper: add `reason = "TODO: justify"` to bare allows.
@@ -550,6 +560,9 @@ fn dispatch(cmd: &Command) -> Result<()> {
         Command::BaselineDuplication => duplication::write_baseline(&root),
         Command::CheckWorkspaceLints => duplication::check_workspace_lints(&root),
         Command::CheckInlineModules => inline_modules::check_inline_modules(&root),
+        Command::OutlineModules { krate } => {
+            outline_modules::outline_modules(&root, krate.as_deref())
+        }
         Command::Perf => perf::perf(&root),
         Command::RetrofitAllowReasons { dry_run } => {
             allow_reasons::retrofit_allow_reasons(&root, *dry_run)

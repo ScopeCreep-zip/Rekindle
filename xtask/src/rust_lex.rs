@@ -6,6 +6,8 @@
 //! every rewrite, because the xtask does not enable
 //! `proc-macro2/span-locations` (see `xtask/Cargo.toml`).
 
+use std::ops::Range;
+
 /// One significant token.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Tok {
@@ -20,9 +22,10 @@ pub(crate) struct Token {
     pub(crate) end: usize,
 }
 
-/// A file's tokens.
+/// A file's tokens and the byte ranges of its string and char literals.
 pub(crate) struct Lexed {
     pub(crate) tokens: Vec<Token>,
+    pub(crate) literals: Vec<Range<usize>>,
 }
 
 /// An inline `mod name { … }` block found in the text.
@@ -31,6 +34,14 @@ pub(crate) struct ModBlock {
     pub(crate) name: String,
     /// Offset of the `mod` keyword.
     pub(crate) mod_kw: usize,
+    /// Offset just past the module's name.
+    pub(crate) name_end: usize,
+    /// Offset of the body's `{`.
+    pub(crate) open: usize,
+    /// Offset of the body's matching `}`.
+    pub(crate) close: usize,
+    /// Brace depth of the declaration (0 = a file-level item).
+    pub(crate) depth: usize,
 }
 
 fn is_ident_byte(c: u8) -> bool {
@@ -99,7 +110,7 @@ pub(crate) fn lex(src: &str) -> Lexed {
             i += 1;
         }
     }
-    Lexed { tokens }
+    Lexed { tokens, literals }
 }
 
 fn block_comment_end(b: &[u8], mut i: usize) -> usize {
@@ -225,10 +236,14 @@ pub(crate) fn mod_blocks(src: &str, lexed: &Lexed) -> Vec<ModBlock> {
                     }
                     None
                 });
-                if close.is_some() {
+                if let Some(close) = close {
                     out.push(ModBlock {
                         name: text(k + 1).trim_start_matches("r#").to_owned(),
                         mod_kw: t[k].start,
+                        name_end: t[k + 1].end,
+                        open: t[k + 2].start,
+                        close,
+                        depth,
                     });
                 }
             }
