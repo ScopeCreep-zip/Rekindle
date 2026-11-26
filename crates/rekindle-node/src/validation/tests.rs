@@ -1,10 +1,9 @@
 //! `validate_request` against every rule it enforces.
 
 use super::*;
-use rekindle_ipc::protocol::CommunityRequest;
 use rekindle_ipc::protocol::{
-    ActivityRequest, ChannelMessageRequest, ChannelRequest, LifecycleRequest, MemberRequest,
-    SettingsRequest,
+    ActivityRequest, ChannelMessageRequest, ChannelRequest, CommunityRequest, LifecycleRequest,
+    MemberRequest, SettingsRequest,
 };
 use rekindle_types::key_format::{MAX_DESCRIPTION_LEN, MAX_NOTE_LEN};
 use rekindle_types::member::MAX_TIMEOUT_SECONDS;
@@ -47,9 +46,10 @@ fn short_and_multibyte_keys_are_400_not_a_panic() {
 fn friend_add_needs_a_friend_code_and_a_bounded_note() {
     let add = |code: String, message: String| IpcRequest::FriendAddFromCode { code, message };
     let code = format!(
-        "rekindle://add/{}/VLD0:{}/abcdefghijklmnopqrstuvwx2q",
+        "rekindle://add/{}/VLD0:{}/{}",
         "ab".repeat(32),
-        "a".repeat(43)
+        "a".repeat(43),
+        rekindle_test_fixtures::FRIEND_TOKEN
     );
     assert!(!rejected(&add(code.clone(), "hi\nthere".into())));
     assert!(rejected(&add("ab".repeat(32), String::new())));
@@ -403,7 +403,7 @@ fn deletes_name_a_key_and_typed_proofs_are_bounded() {
 fn display_names() {
     let create = |name: &str| IpcRequest::IdentityCreate {
         display_name: Some(name.into()),
-        passphrase: "pass".into(),
+        passphrase: rekindle_test_fixtures::PASSPHRASE.into(),
     };
     assert!(!rejected(&create("  alice  ")));
     assert!(!rejected(&create(&"日".repeat(
@@ -416,7 +416,7 @@ fn display_names() {
     assert!(rejected(&create("   ")));
     assert!(!rejected(&IpcRequest::IdentityCreate {
         display_name: None,
-        passphrase: "pass".into(),
+        passphrase: rekindle_test_fixtures::PASSPHRASE.into(),
     }));
     assert!(rejected(&create("hello\x00world")));
 }

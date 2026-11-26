@@ -277,7 +277,7 @@ async fn overflow_page_with_wrong_author_is_dropped() {
     assert_eq!(
         flattened.len(),
         1,
-        "mis-authored overflow page must be dropped"
+        "misauthored overflow page must be dropped"
     );
     assert_eq!(mock.outstanding(), 0, "every borrow must be released");
 }

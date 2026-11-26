@@ -192,7 +192,7 @@ mod tests {
             &f.root,
             &f.stores(),
             None,
-            "pass",
+            rekindle_test_fixtures::PASSPHRASE,
             1,
             &rekindle_utils::random::OsRandom,
         )

@@ -194,12 +194,12 @@ pub enum Error<E = rusqlite::Error> {
     /// The connection to the SQLite has been closed and cannot be queried any more.
     ConnectionClosed,
 
-    /// An error occured while closing the SQLite connection.
+    /// An error occurred while closing the SQLite connection.
     /// This `Error` variant contains the [`Connection`], which can be used to retry the close operation
-    /// and the underlying [`rusqlite::Error`] that made it impossile to close the database.
+    /// and the underlying [`rusqlite::Error`] that made it impossible to close the database.
     Close((Connection, rusqlite::Error)),
 
-    /// An application-specific error occured.
+    /// An application-specific error occurred.
     Error(E),
 }
 

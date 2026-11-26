@@ -93,7 +93,7 @@ pub async fn create_invite<D: GovernanceRuntimeDeps>(
     // registry as `slot_range_start 0` and derives its slot keypair from
     // that. Segment 0 is implicit and never listed in
     // `gov_state.segments`, so a match against a segment-≥1 registry
-    // means the value is corrupt and the invite would mis-route every
+    // means the value is corrupt and the invite would misroute every
     // joiner who used it. Refuse rather than ship the break.
     if let Some(segment) = gov_state
         .segments

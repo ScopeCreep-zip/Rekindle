@@ -155,7 +155,7 @@ mod tests {
                 Caller::shell(),
                 IpcRequest::IdentityCreate {
                     display_name: Some("Ann".into()),
-                    passphrase: "pass".into(),
+                    passphrase: rekindle_test_fixtures::PASSPHRASE.into(),
                 },
             )
             .await;

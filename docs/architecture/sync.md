@@ -15,7 +15,7 @@ session store; the record itself is the rendezvous.
 A single DFLT (single-owner, multi-subkey) record per identity, with
 **4 well-known subkeys** mapped to specific concerns:
 
-```
+```text
 DFLT { o_cnt: 4 }
 ├── Subkey 0: Sync manifest
 │       Encrypted directory of communities, friends, DM threads, paired
@@ -52,7 +52,7 @@ Pairing is a short-lived `app_call` handshake gated by a one-time code.
 The existing device displays the code (plus a QR encoding the full
 triple); the new device transcribes or scans it and dials back.
 
-```
+```text
         Existing device                         New device
         ─────────────────                       ──────────
                                                 

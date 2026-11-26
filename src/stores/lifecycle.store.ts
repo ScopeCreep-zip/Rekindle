@@ -18,7 +18,7 @@ import type { LifecycleState } from "../ipc/commands/dto";
  */
 const [lifecycleState, setLifecycleState] = createSignal<LifecycleState>("starting");
 
-export { lifecycleState, setLifecycleState };
+export { setLifecycleState };
 
 /** Ready to accept an unlock/login — the backend's `can_unlock()` gate. */
 export const canUnlock = (): boolean => lifecycleState() === "locked";

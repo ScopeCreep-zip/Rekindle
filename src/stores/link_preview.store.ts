@@ -5,7 +5,7 @@ import { createStore } from "solid-js/store";
 // only forwards a preview whose sender wrote that message in that
 // channel, and the key keeps it attached to exactly that message.
 
-export interface LinkPreviewData {
+interface LinkPreviewData {
   url: string;
   title?: string;
   description?: string;

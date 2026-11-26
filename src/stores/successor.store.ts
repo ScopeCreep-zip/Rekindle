@@ -15,8 +15,6 @@
 import { createStore, produce } from "solid-js/store";
 import type { GovernanceEvent } from "../ipc/channels/community_subscription_events";
 import type { SuccessorOffer } from "../ipc/commands/community";
-import { eventStreamLive } from "../ipc/channels";
-import { handleGetCommunitySuccessors } from "../actions/community/successor";
 
 interface SuccessorState {
   /** Per community, its offered successors by new anchor. */
@@ -59,20 +57,15 @@ export function applySuccessorEvent(g: GovernanceEvent): boolean {
   return true;
 }
 
-const tracked = new Set<string>();
-
-/** Read `community`'s successor snapshot once this window's event stream
- *  is live; once per community per window. */
-export function trackSuccessors(community: string): void {
-  if (tracked.has(community)) return;
-  tracked.add(community);
-  void eventStreamLive().then(() => readSuccessors(community));
+/** The event sequence number now; a snapshot read after it yields to any
+ *  offer an event set since. */
+export function successorSeq(): number {
+  return seq;
 }
 
-async function readSuccessors(community: string): Promise<void> {
-  const before = seq;
-  const snapshot = await handleGetCommunitySuccessors(community);
-  if (!snapshot) return;
+/** Apply a successor snapshot read after `before`: an offer an event set
+ *  since then is the newer statement and is kept. */
+export function applySuccessorSnapshot(snapshot: SuccessorOffer[], before: number): void {
   for (const offer of snapshot) {
     if ((setBy.get(offerKey(offer.community, offer.newAnchor)) ?? 0) <= before) putOffer(offer);
   }
@@ -95,4 +88,3 @@ export function successorsOf(community: string): SuccessorOffer[] {
   return Object.values(successorState.offers[community] ?? {});
 }
 
-export { successorState };

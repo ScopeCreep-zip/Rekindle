@@ -364,7 +364,7 @@ pub fn reconstruct_frame(
     // carry real (unpadded) bytes, so the last data shard is SHORT; only
     // a full shard (any parity, or any non-last data shard) gives the
     // true RS shard size. Taking `.first()` could pick the short shard
-    // and mis-size every other shard (notably the only-short-data+parity
+    // and wrongly size every other shard (notably the only-short-data+parity
     // case). The full shards are the maximum; the short last shard is ≤.
     let shard_size = received_data
         .iter()
@@ -381,7 +381,7 @@ pub fn reconstruct_frame(
         let i = usize::from(*idx);
         if i >= usize::from(data_count) || payload.len() > shard_size {
             // Out-of-range index, or a payload longer than a shard —
-            // corrupt; skip rather than mis-place.
+            // corrupt; skip rather than misplace.
             continue;
         }
         // Re-synthesize the FEC zero-padding RS expects: the sender

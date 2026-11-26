@@ -267,7 +267,7 @@ mod tests {
     /// G4: the cursor records its entry's stream seq; a cursor that
     /// absorbed a remembered seq past the entry keeps the older one.
     #[test]
-    fn a_cursor_records_its_entrys_stream_seq() {
+    fn a_cursor_records_its_entry_stream_seq() {
         let conn = fixture::conn();
         let at = (OWNER, "group_dm:g", "w");
         assert_eq!(stream_seq(&conn, OWNER, at.1, at.2).unwrap(), 0);

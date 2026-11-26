@@ -547,7 +547,7 @@ mod tests {
     /// declares a link, as Total Chaos's logo does; Rekindle's menus
     /// unchanged otherwise).
     #[test]
-    fn a_served_shell_carries_the_registrys_menus() {
+    fn a_served_shell_carries_the_registry_menus() {
         use rekindle_types::dto::skin_action::EngineMenu;
         let registry = MenuRegistry::rekindle();
         assert!(!registry.menus.is_empty());

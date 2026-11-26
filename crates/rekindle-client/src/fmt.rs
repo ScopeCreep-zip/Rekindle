@@ -184,7 +184,7 @@ mod tests {
     #[test]
     fn keys() {
         assert_eq!(abbreviate_key("abcdef"), "abcdef");
-        let key = "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890";
+        let key = rekindle_test_fixtures::HEX_KEY_64;
         assert_eq!(abbreviate_key(key), "abcdef12…7890");
     }
 

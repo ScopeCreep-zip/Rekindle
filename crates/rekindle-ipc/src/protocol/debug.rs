@@ -455,7 +455,7 @@ mod tests {
 
     #[test]
     fn no_passphrase_or_archive_reaches_debug_output() {
-        let secret = "correct horse battery staple";
+        let secret = rekindle_test_fixtures::PASSPHRASE_SPOKEN;
         for request in [
             IpcRequest::Unlock {
                 identity: "pk".into(),

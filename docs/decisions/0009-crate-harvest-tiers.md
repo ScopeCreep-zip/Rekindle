@@ -51,8 +51,7 @@ Both crates own key material and live alongside `rekindle-secrets`
 as the cryptographic / persistent boundary. They are the only
 non-`secrets` crates allowed to import crypto libraries directly.
 
-### Tier 3 — `rekindle-events`, `rekindle-idempotency`,
-`rekindle-mek-rotation`, `rekindle-analytics`
+### Tier 3 — `rekindle-events`, `rekindle-idempotency`, `rekindle-mek-rotation`, `rekindle-analytics`
 
 These crates carry local state with `tokio` async surface but no
 DHT / Veilid dependency. `rekindle-analytics` is allowed `rusqlite`

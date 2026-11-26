@@ -54,3 +54,6 @@ rekindle-types = { path = "../crates/rekindle-types" }
 # `post` tables; its one Brotli stream is decoded with the decompressor
 # already in the lockfile through reqwest's `brotli` (BSD-3-Clause/MIT).
 brotli-decompressor = "5"
+
+[dev-dependencies]
+rekindle-test-fixtures = { path = "../crates/rekindle-test-fixtures" }

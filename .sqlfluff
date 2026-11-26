@@ -11,7 +11,7 @@
 dialect = sqlite
 templater = raw
 exclude_rules =
-    # Disabled — tableless SELECTs are common in Rekindle's schema
+    # Disabled — tableless SELECT statements are common in Rekindle's schema
     # for one-shot upserts.
     AM04,
     # Allow trailing-comma trade-offs in long INSERT lists.

@@ -1,7 +1,7 @@
 import { Component, For, Show, createEffect, createSignal } from "solid-js";
-import { successorsOf, trackSuccessors } from "../../../stores/successor.store";
+import { successorsOf } from "../../../stores/successor.store";
 import { communityState } from "../../../stores/community.store";
-import { handlePublishSuccessor } from "../../../actions/community/successor";
+import { handlePublishSuccessor, trackSuccessors } from "../../../actions/community/successor";
 import FormField from "../../common/FormField";
 
 interface SuccessorSectionProps {

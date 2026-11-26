@@ -1,7 +1,7 @@
 import { Component, For, Show, createEffect, createSignal } from "solid-js";
-import { openSuccessorOffers, trackSuccessors } from "../../stores/successor.store";
+import { openSuccessorOffers } from "../../stores/successor.store";
 import { communityState } from "../../stores/community.store";
-import { handleFollowSuccessor } from "../../actions/community/successor";
+import { handleFollowSuccessor, trackSuccessors } from "../../actions/community/successor";
 
 /**
  * Successor communities the Host offered (ADR 0011, plan E3.2 S7s.4, lead

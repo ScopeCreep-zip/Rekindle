@@ -47,7 +47,7 @@ export async function handleJoinCommunity(inviteUrl: string): Promise<void> {
 /// once its row is listed. The row comes only from the Host's
 /// `MetadataChanged` (`HostGovernance::join`'s `CommunityJoined`) or
 /// hydration, never from this reply (decision (41)).
-export function loadJoinedCommunity(communityId: string): void {
+function loadJoinedCommunity(communityId: string): void {
   addToast("Joined community!", "success");
   onCommunityListed(communityId, () => handleSelectCommunity(communityId));
 }

@@ -1,6 +1,7 @@
 import { commands } from "../../ipc/commands";
 import type { CoCreationSnapshot } from "../../ipc/commands/community";
-import { dropCreatorInvite, watchCreation } from "../../stores/co-creator.store";
+import { eventStreamLive } from "../../ipc/channels";
+import { applyCoCreationSnapshot, coCreationSeq, dropCreatorInvite, watchCreation } from "../../stores/co-creator.store";
 import { errorMessage } from "../../utils/error";
 
 // Co-creation (plan E3.2 S7s.3f). Every call is a `hostInvoke`: the Host's
@@ -19,6 +20,20 @@ export async function handleCreateWithCoCreators(
 }
 
 /// The Host's co-creation snapshot, or null (logged) when it is not read.
+let coCreationTracked = false;
+
+/** Read the Host's co-creation snapshot once this window's event stream is
+ *  live; once per window, from whichever co-creation view mounts first. */
+export function trackCoCreation(): void {
+  if (coCreationTracked) return;
+  coCreationTracked = true;
+  void eventStreamLive().then(async () => {
+    const before = coCreationSeq();
+    const snapshot = await handleGetCoCreation();
+    if (snapshot) applyCoCreationSnapshot(snapshot, before);
+  });
+}
+
 export async function handleGetCoCreation(): Promise<CoCreationSnapshot | null> {
   try {
     return await commands.getCoCreation();

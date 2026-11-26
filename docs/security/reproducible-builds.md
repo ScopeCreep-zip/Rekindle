@@ -106,10 +106,12 @@ Even without full reproducibility, users can do partial verification:
 1. **Build from source** following
    [`../user/install.md`](../user/install.md) "Building from source".
 2. **Generate the SBOM** locally:
+
    ```sh
    cargo install cargo-cyclonedx --locked
    cargo cyclonedx --format json
    ```
+
 3. **Compare the dependency graph** against the released SBOM. The
    CycloneDX file lists every crate version; mismatches are easy to
    spot.

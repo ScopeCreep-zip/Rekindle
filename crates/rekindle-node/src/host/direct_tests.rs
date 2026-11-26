@@ -57,7 +57,7 @@ pub(super) async fn ann_on(host: Arc<Host>) -> (Arc<Host>, [u8; 32]) {
         host.root(),
         &host.identity_stores(),
         Some("Ann"),
-        "pass",
+        rekindle_test_fixtures::PASSPHRASE,
         1,
         &rekindle_utils::random::OsRandom,
     )
@@ -71,7 +71,7 @@ pub(super) async fn ann_on(host: Arc<Host>) -> (Arc<Host>, [u8; 32]) {
             Caller::shell(),
             IpcRequest::Unlock {
                 identity: ann.clone(),
-                passphrase: "pass".into(),
+                passphrase: rekindle_test_fixtures::PASSPHRASE.into(),
             },
         )
         .await;

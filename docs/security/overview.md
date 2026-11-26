@@ -6,7 +6,7 @@ during normal operation.
 
 ## Encryption Layer Stack
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────┐
 │  Layer 5: Audit Chain (tamper-evident integrity)            │
 │  BLAKE3-keyed MAC chain (rekindle-audit)                    │
@@ -74,7 +74,7 @@ private-route path.
 
 ### Session Establishment (PQXDH)
 
-```
+```text
 Alice initiates a session with Bob:
 
 1. Read Bob's prekey record (named in his profile's subkey 5), check every
@@ -314,7 +314,7 @@ identity secret. See [`../architecture/audit-chain.md`](../architecture/audit-ch
 
 ## Identity System
 
-```
+```text
 Traditional:  username + password → central server validates → session token
 Rekindle:     passphrase → unlock local vault → Ed25519 keypair = identity
 ```
@@ -336,7 +336,7 @@ Rekindle:     passphrase → unlock local vault → Ed25519 keypair = identity
 
 ### Adding Friends
 
-```
+```text
 1. Alice obtains Bob's public key (paste, QR code, invite link, deep link)
 2. Alice sends FriendRequest via Veilid app_message to Bob's DHT route
    - Request includes: display name, profile DHT key, route blob,
@@ -354,6 +354,7 @@ Rekindle:     passphrase → unlock local vault → Ed25519 keypair = identity
 ### Invite Links
 
 Friend requests can also be initiated via Ed25519-signed `InviteBlob`s:
+
 - `create_invite_blob()` creates a signed blob with identity info, profile/
   route/mailbox keys, and an `invite_id` correlation token (no prekeys)
 - The blob is base64url-encoded into a `rekindle://invite/{blob}` deep link

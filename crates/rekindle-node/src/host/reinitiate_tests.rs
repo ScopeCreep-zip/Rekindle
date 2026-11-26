@@ -30,7 +30,7 @@ async fn ann_and_bob(dir: &tempfile::TempDir) -> (std::sync::Arc<Host>, String, 
             Caller::shell(),
             IpcRequest::Unlock {
                 identity: ann_key.clone(),
-                passphrase: "pass".into(),
+                passphrase: rekindle_test_fixtures::PASSPHRASE.into(),
             },
         )
         .await;

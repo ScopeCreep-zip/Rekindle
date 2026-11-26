@@ -321,7 +321,7 @@ the binaries pre-installed.
 - [shfmt](https://github.com/mvdan/sh)
 - [nixfmt RFC-48](https://github.com/NixOS/nixfmt)
 - [statix](https://github.com/oppiliappan/statix)
-- [deadnix](https://github.com/nix-community/deadnix)
+- [deadnix](https://github.com/astro/deadnix)
 - [gitleaks](https://github.com/gitleaks/gitleaks)
 - [lefthook](https://lefthook.dev/)
 - [`../security/supply-chain-policy.md`](../security/supply-chain-policy.md)

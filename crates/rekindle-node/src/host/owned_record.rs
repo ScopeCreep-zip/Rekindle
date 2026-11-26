@@ -275,7 +275,8 @@ mod tests {
     async fn unlocked() -> (super::super::fixture::Fixture, String) {
         let fixture = super::super::fixture::Fixture::new();
         let dir = fixture.root.state.clone();
-        let (vault, key) = VaultStore::create(&dir.join("pk.vault"), "pass").unwrap();
+        let (vault, key) =
+            VaultStore::create(&dir.join("pk.vault"), rekindle_test_fixtures::PASSPHRASE).unwrap();
         *fixture.vault.lock() = Some(vault);
         let db = rekindle_db::open(&dir.join("pk.db"), key.as_bytes()).unwrap();
         db.call(|c| {

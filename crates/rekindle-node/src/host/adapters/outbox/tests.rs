@@ -262,7 +262,7 @@ async fn a_post_waiting_past_its_deadline_fails_because_the_key_did_not_arrive()
 
 /// Our departure from a community discards its waiting posts, and only its.
 #[tokio::test]
-async fn our_departure_discards_the_communitys_waiting_posts() {
+async fn our_departure_discards_the_community_waiting_posts() {
     let dir = tempfile::tempdir().unwrap();
     let outbox = Arc::new(Outbox::new(
         host(dir.path(), Arc::new(Senders::default())).await,

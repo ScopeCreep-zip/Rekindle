@@ -6,7 +6,7 @@ import type { TransferRow } from "../ipc/commands/dto_transfer";
  * once the Downloads view first shows, then kept by `TransferEvent`s. Rows
  * are the Host's; nothing here decides what a transfer may do.
  */
-export interface TransfersState {
+interface TransfersState {
   rows: Record<string, TransferRow>;
   /** The attachment ids in the Host's order (newest first). */
   order: string[];

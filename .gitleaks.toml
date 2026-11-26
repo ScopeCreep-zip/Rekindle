@@ -1,8 +1,8 @@
 # gitleaks — secret-scanning configuration.
 # Spec: https://github.com/gitleaks/gitleaks
 #
-# Run with:  gitleaks detect --source . --verbose
-#            gitleaks detect --staged --verbose   (pre-commit)
+# Run with:  gitleaks git --config .gitleaks.toml --redact      (full history)
+#            gitleaks git --staged --config .gitleaks.toml      (pre-commit)
 #
 # We extend the default ruleset with project-specific allowlists for
 # false positives (test fixtures with deliberately-weak keys, hex
@@ -16,13 +16,8 @@ useDefault = true
 
 # ─── Repository-wide allowlist ──────────────────────────────────────────
 [[allowlists]]
-description = "Hex strings and example pubkeys in docs / tests"
-# Match only inside markdown and Rust test files. Outside these,
-# the default rule set applies.
+description = "Legacy reverse-engineering tree, changelog, SBOMs and lockfiles"
 paths = [
-    '''docs/.*\.md$''',
-    '''.*/tests/.*\.rs$''',
-    '''e2e/fixtures/.*''',
     '''legacy/.*''',
     '''CHANGELOG\.md$''',
     '''.*\.cdx\.json$''',
@@ -43,8 +38,8 @@ regexes = [
     '''AABBCCDDEEFF''',
     # Project-specific placeholders
     '''VLD0:[A-Za-z0-9_-]{0,8}\\.\\.\\.''',
-    '''\\b[Pp]laceholder[Kk]ey\\b''',
-    '''\\b[Pp]laceholder[Tt]oken\\b''',
+    '''\\b(?:Placeholder|placeholder)[Kk]ey\\b''',
+    '''\\b(?:Placeholder|placeholder)[Tt]oken\\b''',
 ]
 
 # ─── Custom rules in addition to the default pack ───────────────────────
@@ -58,8 +53,7 @@ keywords = ["STRONGHOLD"]
 [[rules]]
 id = "ed25519-private-key-hex"
 description = "Possible 64-byte Ed25519 private key in hex"
-# 128 hex chars (64 bytes) on its own line. Tightened with negative
-# lookbehinds via the allowlist regexes above.
+# 128 hex chars (64 bytes) after an Ed25519 secret-key name.
 regex = '''(?i)(?:ed25519[_-]?(?:secret|private|priv)|priv_key|secret_key)[\s:=\"']*([a-f0-9]{128})'''
 keywords = ["ed25519", "secret_key", "priv_key", "private_key"]
 
@@ -74,3 +68,40 @@ id = "stronghold-passphrase"
 description = "Hard-coded Stronghold passphrase"
 regex = '''(?i)stronghold[_-]?passphrase[\s:=\"']*([^\"'\s][^\"']{8,})'''
 keywords = ["stronghold_passphrase", "STRONGHOLD_PASSPHRASE"]
+
+# The canonical static test fixtures (owner ruling 2026-11-26: "identify our regular test
+# identities and items and make sure they're static so that we can make detection rules to be
+# mindful of them"). The values live once in crates/rekindle-test-fixtures/src/lib.rs, each built
+# from a documented ramp no real key or token has: hex fixtures repeat `abcdef1234567890`, base32
+# tokens start `abcdefghijklmnopqrstuvwx`. Both values here are also the ones gitleaks flagged in
+# history (HEX_KEY_64: rekindle-client fmt.rs and the rekindle-cli helpers tests; FRIEND_TOKEN:
+# rekindle-types tests/golden/dto.json). Only these exact secrets, and only in crate source,
+# tests and goldens, are allowed (AND): any other value in a test, or these values anywhere
+# else, is still reported. `cargo xtask check-test-fixtures` keeps tests on the canonical crate.
+#
+# generic-api-key (default pack) with the fixture-aware allowlists. They are attached to the rule,
+# not global: gitleaks applies a global allowlist's `paths` before its `condition`, so a global
+# AND entry would drop every secret in those paths.
+[[rules]]
+id = "generic-api-key"
+
+[[rules.allowlists]]
+description = "Canonical static test fixtures (rekindle-test-fixtures), owner ruling 2026-11-26"
+condition = "AND"
+regexTarget = "secret"
+regexes = [
+    '''^(?:abcdef1234567890){4}$''',
+    '''^abcdefghijklmnopqrstuvwx2q$''',
+]
+paths = [
+    '''(?:^|/)crates/[\w-]+/(?:src|tests)/.+\.rs$''',
+    '''(?:^|/)crates/[\w-]+/tests/golden/[\w-]+\.json$''',
+]
+
+# A Rust identifier quoted in a dated research note, read by generic-api-key as a secret.
+[[rules.allowlists]]
+description = "Rust identifier in docs/research/2026-10-04-standards-audit.md"
+condition = "AND"
+regexTarget = "secret"
+regexes = ['''^to_legacy_u32$''']
+paths = ['''(?:^|/)docs/research/2026-10-04-standards-audit\.md$''']

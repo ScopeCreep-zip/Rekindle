@@ -35,4 +35,5 @@ rusqlite = { version = "0.39", features = [ "bundled-sqlcipher" ] }
 rusqlite = { version = "0.39", features = [ "bundled-sqlcipher-vendored-openssl" ] }
 
 [dev-dependencies]
+rekindle-test-fixtures = { path = "../rekindle-test-fixtures" }
 tempfile = "3"

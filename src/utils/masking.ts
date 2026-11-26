@@ -4,7 +4,7 @@
  * Example: maskString("rekindle://abcdefghijklmnop", "rekindle://", 8, 6)
  *          → "rekindle://abcdefgh...klmnop"
  */
-export function maskString(
+function maskString(
   value: string,
   prefix: string,
   keepStart: number,
