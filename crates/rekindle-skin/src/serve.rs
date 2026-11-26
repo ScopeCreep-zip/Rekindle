@@ -472,8 +472,7 @@ mod tests {
 
     /// Plan SK4: a tree-laid window's shell serves its minimum with the
     /// frame's outsets, the value the desktop's fit applies
-    /// ([`shape::min_window`]); Symbiosis's main window is 355 wide: its
-    /// InfoView strip is given up (plan E7.7 TAB1), so the frame fills it.
+    /// ([`shape::min_window`]); Symbiosis's main window is 368 wide.
     #[test]
     fn a_shell_serves_its_windows_minimum_with_the_outsets() {
         let pack = builtin::PACKS.iter().find(|p| p.id == "symbiosis").unwrap();
@@ -487,7 +486,7 @@ mod tests {
             .iter()
             .find(|s| s.window == rekindle_types::dto::skin::SkinWindow::Main && s.popup.is_none())
             .unwrap();
-        assert_eq!(shell.min_width, 355);
+        assert_eq!(shell.min_width, 368);
         assert_eq!(
             Some((shell.min_width, shell.min_height)),
             shape::min_window(main)
