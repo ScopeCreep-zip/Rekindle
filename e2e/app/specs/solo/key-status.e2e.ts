@@ -12,9 +12,10 @@
 // key_status_after_unlock's.
 
 import { browser } from "@wdio/globals";
-import { NET_WAIT_MS, waitUntil } from "../../../walk/helpers.ts";
+import { NET_WAIT_MS, byText, doubleClick, switchTo, waitUntil } from "../../../walk/helpers.ts";
+import { BUDDY } from "../../../walk/nav.ts";
 import { type Peer, peerCreateCommunity, peerInvite, peerJoinCommunity, peerKick, peerMemberCount, peerOwnPseudonym, startFleet, stopFleet } from "../../fleet.ts";
-import { createIdentity, joinCommunity, logOut, newUser, openCommunity, selectChannel, unlock, type User } from "../../journeys.ts";
+import { communitiesTab, createIdentity, joinCommunity, logOut, newUser, openCommunity, selectChannel, unlock, type User } from "../../journeys.ts";
 import { shot } from "../../shots.ts";
 
 const COMMUNITY = `Key Watch ${Date.now() % 100000}`;
@@ -119,7 +120,16 @@ describe("a rotated key we lack: pending until a holder answers, then current", 
       }).observe(document.body, { subtree: true, childList: true, attributes: true, characterData: true });
     });
     const handle = await browser.getWindowHandle();
-    console.log(`[key-hb] polling window ${handle}`);
+    // The asserted window comes to the front first (lead): a background,
+    // hidden page is throttled by WebKit (the heartbeat showed it), and
+    // WebDriver's switch does not raise a window. A double-click on the
+    // community's row asks the app to raise its existing window.
+    await switchTo(browser, BUDDY);
+    await communitiesTab(browser);
+    await doubleClick(browser, await byText(browser, ".community-item", COMMUNITY.slice(0, 24), NET_WAIT_MS));
+    await browser.switchToWindow(handle);
+    const front = (await browser.execute(() => ({ visibility: document.visibilityState, focus: document.hasFocus() }))) as { visibility: string; focus: boolean };
+    console.log(`[key-hb] polling window ${handle}, raised: ${JSON.stringify(front)}`);
     await peers[0].resume();
     const polls: string[] = [];
     await waitUntil(
