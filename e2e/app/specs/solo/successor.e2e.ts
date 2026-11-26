@@ -21,6 +21,7 @@ import { NET_WAIT_MS, byText, resolveIntent, shown, sleep, waitUntil } from "../
 import { type Peer, peerCreateCommunity, peerInvite, peerJoinCommunity, peerReviewed, startFleet, stopFleet } from "../../fleet.ts";
 import { communitySettings, createCommunity, createIdentity, createInvite, joinCommunity, newUser, openCommunity, type User } from "../../journeys.ts";
 import { inBuddy } from "../../../walk/nav.ts";
+import { showSkinView } from "../../journeys_skins.ts";
 import { shot } from "../../shots.ts";
 
 const PEERS_TOWN = "Moving Town";
@@ -32,10 +33,11 @@ async function peerHolds(peer: Peer, name: string): Promise<number> {
   return (list ?? []).filter((c) => c.name === name).length;
 }
 
-/** The app's buddy list Communities rows named `name`. */
+/** The app's buddy list Communities rows named `name` (the view opened by
+ *  the pack's own control under a skin's tree, plan SK2-N4). */
 async function appHolds(name: string): Promise<number> {
   await inBuddy(browser);
-  await (await shown(browser, '.buddy-tab[title^="Communities"]')).click();
+  await showSkinView(browser, "communities");
   const names = (await browser.execute(() =>
     Array.from(document.querySelectorAll(".community-item")).map((e) => (e.textContent ?? "").trim()),
   )) as string[];
@@ -73,7 +75,7 @@ describe("a re-created community is offered to its members", function () {
     await peerReviewed(founder, ["community", "publish-successor", "-c", anchor]);
 
     await inBuddy(browser);
-    await (await shown(browser, '.buddy-tab[title^="Friends"]')).click();
+    await showSkinView(browser, "friends");
     const row = await byText(browser, ".pending-item", "moved to a new community", NET_WAIT_MS);
     expect(await row.getText()).toContain(PEERS_TOWN);
     await shot("follow-offered");
@@ -104,13 +106,19 @@ describe("a re-created community is offered to its members", function () {
     await byText(browser, ".modal-container .settings-value", "Re-created:", NET_WAIT_MS);
     await shot("recreated-in-settings");
 
+    let offered = "";
     await waitUntil(
       async () => {
-        const offers = (await founder.cli(["community", "successors", "-c", OUR_TOWN])) as unknown[] | null;
-        return (offers ?? []).length === 1;
+        // The snapshot is `{ offers, link_requests }` (successor.rs
+        // successor_snapshot), not a list.
+        const snap = (await founder.cli(["community", "successors", "-c", OUR_TOWN])) as { offers?: unknown[] } | null;
+        offered = JSON.stringify(snap).slice(0, 300);
+        return (snap?.offers ?? []).length === 1;
       },
       NET_WAIT_MS,
       "the peer was never offered the re-created community",
-    );
+    ).catch((e: unknown) => {
+      throw new Error(`${(e as Error).message}; its last snapshot: ${offered}`);
+    });
   });
 });

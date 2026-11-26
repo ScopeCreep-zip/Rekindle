@@ -53,10 +53,41 @@ describe("after Escape closes the status menu, the next menu title opens (lead)"
       await closeSettings(browser);
       await switchTo(browser, BUDDY);
 
-      // Control: no status menu first.
+      // Control: no status menu first. What the press meets (every match of
+      // the title, what is on top at its centre, the focus and the window's
+      // focus), and the trigger's state at once, 100 ms and 1 s after: a menu
+      // that never opens, or one that opens and shuts.
+      const before = (await browser.execute((sel: string) => {
+        const all = Array.from(document.querySelectorAll<HTMLElement>(sel));
+        const t = all.find((e) => e.getBoundingClientRect().width > 0);
+        const r = t?.getBoundingClientRect();
+        const top = r ? document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2) : null;
+        return JSON.stringify({
+          matches: all.length,
+          trigger: t ? `${t.tagName.toLowerCase()}.${t.className} node=${t.dataset.skinNode} expanded=${t.getAttribute("aria-expanded")}` : "none",
+          topIsTrigger: !!(t && top && t.contains(top)),
+          top: top ? `${top.tagName.toLowerCase()}.${(top as HTMLElement).className}` : "none",
+          active: document.activeElement ? `${document.activeElement.tagName.toLowerCase()}.${(document.activeElement as HTMLElement).className}` : "none",
+          windowFocused: document.hasFocus(),
+        });
+      }, FILE_MENU)) as string;
+      const expanded = async (): Promise<string> =>
+        (await browser.execute((sel: string) => `${document.querySelector(sel)?.getAttribute("aria-expanded")}/${document.querySelectorAll('[role="menu"]').length}`, FILE_MENU)) as string;
       await press(browser, await shown(browser, FILE_MENU));
+      const at0 = await expanded();
+      await browser.pause(100);
+      const at100 = await expanded();
       const control = await opens();
+      const at1s = await expanded();
+      console.log(`[mbesc] ${file} control press: before ${before}; expanded/menus at once ${at0}, 100 ms ${at100}, after wait ${at1s}`);
       if (control) await closeMenu();
+      let controlSecond: boolean | null = null;
+      if (!control) {
+        await press(browser, await shown(browser, FILE_MENU));
+        controlSecond = await opens();
+        console.log(`[mbesc] ${file} control second press: ${controlSecond}`);
+        if (controlSecond) await closeMenu();
+      }
 
       // A press right after the status menu's Escape.
       await statusThenEscape();
