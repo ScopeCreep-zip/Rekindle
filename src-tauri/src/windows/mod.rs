@@ -124,6 +124,21 @@ const fn accepts_first_mouse(kind: WindowKind) -> bool {
     )
 }
 
+/// How a window of `kind`'s page runs while it is in the background
+/// (Tauri's `BackgroundThrottlingPolicy`, macOS 14+; Linux and Windows
+/// ignore it). A window that can carry live media (a call window, a chat
+/// window's video call, a community window's voice and video) decodes and
+/// answers keyframe and consent requests in its page, so it is never
+/// throttled; every other window is throttled, not suspended (lead ruling).
+const fn background_policy(kind: WindowKind) -> BackgroundThrottlingPolicy {
+    match kind {
+        WindowKind::Call | WindowKind::Chat | WindowKind::Community => {
+            BackgroundThrottlingPolicy::Disabled
+        }
+        _ => BackgroundThrottlingPolicy::Throttle,
+    }
+}
+
 fn base_builder<'a>(
     app: &'a AppHandle,
     kind: WindowKind,
@@ -149,7 +164,7 @@ fn base_builder<'a>(
         .shadow(false)
         .accept_first_mouse(accepts_first_mouse(kind))
         .resizable(true)
-        .background_throttling(BackgroundThrottlingPolicy::Throttle)
+        .background_throttling(background_policy(kind))
         .on_navigation(move |url| navigation::is_app_origin(url, dev_origin.as_ref()))
         .on_new_window(|_, _| NewWindowResponse::Deny)
         .on_permission_request(move |_, permission| {
