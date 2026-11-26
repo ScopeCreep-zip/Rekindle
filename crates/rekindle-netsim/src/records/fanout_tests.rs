@@ -344,7 +344,8 @@ fn cut_closest(sim: &Netsim, key: &str) -> Vec<usize> {
 /// no window slot, so the next candidate the queue holds fills it,
 /// `fanout_queue.rs:771-813`), and those nodes hold the value for a later
 /// read from that side. With only the ten closest placed, the writer
-/// reaches two and the set answers `TryAgain`.
+/// reaches two and the set answers `Ok(None)` with nothing stored
+/// (`set_value.rs:306-308`).
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_partition_cutting_the_closest_replicas_widens_the_window() {
     let (sim, nodes) = Netsim::nodes(20, 73);

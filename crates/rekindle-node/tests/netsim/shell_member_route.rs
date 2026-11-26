@@ -13,13 +13,15 @@ use std::time::Duration;
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, MemberRequest};
 use rekindle_netsim::Fault;
+use rekindle_types::dht_layout::member_record::FRONTIER;
 
+use crate::equivocation::{create_role, shows, unlock};
 use crate::harness::{eventually, start_with, Community};
 use crate::shell_node::SimMode;
 
 /// A community of `n` whose node `shell` is a desktop-mode member; every
 /// other node is a daemon, node 0 the creator. All have joined.
-async fn with_shell_member(n: usize, shell: usize, seed: u64) -> Community {
+pub(crate) async fn with_shell_member(n: usize, shell: usize, seed: u64) -> Community {
     let mode = |i| {
         if i == shell {
             SimMode::Shell
@@ -180,4 +182,64 @@ async fn online_members_are_one_source_on_both_modes() {
             community.nodes[i].mode
         );
     }
+}
+
+/// Node `i`'s member record in node 0's merged roster.
+async fn record_of(community: &Community, i: usize) -> String {
+    let hex = community.pseudonym(i).await;
+    let state = community.nodes[0]
+        .host
+        .governance()
+        .governance_state(&community.anchor)
+        .expect("node 0's governance");
+    (state.members.iter())
+        .find(|(p, _)| p.to_hex() == hex)
+        .map(|(_, m)| m.member_record.clone())
+        .expect("node i is in node 0's roster")
+}
+
+/// Plan E3.2 S7l on the desktop's mode: a teardown forgets the post-rebuild
+/// follow-up's marker. Node 1, a shell-mode member, logs out while a
+/// follow-up waits out its delay (a rebuild just installed node 0's role),
+/// and unlocks again in the same app session: the next rebuild's follow-up
+/// republishes its frontier (`M`/3), never skipped on the "running" marker
+/// the stopped task left in the store the shell keeps across a log-out.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_re_unlock_on_the_shell_runs_the_post_rebuild_follow_up_again() {
+    let community = with_shell_member(2, 1, 3131).await;
+    let record = record_of(&community, 1).await;
+    let limit = Duration::from_secs(120);
+    tokio::time::sleep(Duration::from_secs(60)).await;
+    create_role(&community, 0, "before-logout").await;
+    assert!(
+        eventually(&community.sim, limit, || shows(
+            &community,
+            1,
+            "before-logout"
+        ))
+        .await,
+        "node 1 rebuilds with node 0's role"
+    );
+    // Under the follow-up's least delay, so its task is still waiting.
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    community.nodes[1].ok(IpcRequest::Logout).await;
+    unlock(&community, 1).await;
+    tokio::time::sleep(Duration::from_secs(60)).await;
+
+    let seq = || community.sim.network_get(&record, FRONTIER).map(|v| v.seq);
+    let before = seq();
+    create_role(&community, 0, "after-unlock").await;
+    assert!(
+        eventually(&community.sim, limit, || shows(
+            &community,
+            1,
+            "after-unlock"
+        ))
+        .await,
+        "node 1 rebuilds with node 0's second role"
+    );
+    assert!(
+        eventually(&community.sim, limit, || async { seq() > before }).await,
+        "the re-unlock's follow-up republishes node 1's frontier"
+    );
 }

@@ -15,7 +15,7 @@ use crate::overwrite::OverwriteTarget;
 use crate::state::GovernanceState;
 
 mod roster;
-pub use roster::channel_read_roster;
+pub use roster::{channel_read_roster, is_restricted};
 #[cfg(test)]
 mod overwrite_tests;
 

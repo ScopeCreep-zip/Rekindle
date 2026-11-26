@@ -66,8 +66,11 @@ pub(crate) async fn restore(
                 )
             }),
     );
+    // A community we are leaving is in no session list: its leave took
+    // effect locally before the restart (plan E3.2 S7d-keys.8).
     let memberships: HashMap<String, CommunityMembership> = states
         .values()
+        .filter(|state| !state.departing)
         .map(|state| (state.id.clone(), membership(state)))
         .collect();
     *ctx.communities.map().write() = states;
@@ -235,6 +238,7 @@ fn assemble(community: &CommunityRow, load: &CommunityLoad) -> CommunityState {
         member_profiles: profiles_of(id, &load.members),
         // NULL column: the community never set a policy.
         presence_policy: community.presence_policy.clone().unwrap_or_default(),
+        departing: community.departing,
         ..with_own_profile(CommunityState::new(id), community, &load.members)
     }
 }

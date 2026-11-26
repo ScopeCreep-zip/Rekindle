@@ -7,6 +7,7 @@
 
 use std::time::Duration;
 
+use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
 use rekindle_ipc::protocol::{
     ChannelMessageRequest, CommunityRequest, IpcRequest, LifecycleRequest,
 };
@@ -114,8 +115,10 @@ async fn generations(community: &Community) -> Vec<u64> {
 /// A manual community-key rotation's `MEKGenerationBump` names the key
 /// after the one minted at origin, so every reader accepts it (plan D20,
 /// `current + 1`); the rotation worker queues it, so with the creator's op
-/// log unable to land, two rotations in a row finish on every node before
-/// one network answer's deadline (S6b).
+/// log unable to land, neither request waits (S6b) and the first bump is
+/// on every node before one network answer's deadline. The second is held
+/// until the first's append landed (S7d-keys.8: seq n + 1 is signed only
+/// after seq n's append landed), then reaches every reader.
 #[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn a_manual_rotation_never_waits_and_every_reader_accepts_its_bump() {
     let community = Community::of(3, 233).await;
@@ -135,9 +138,26 @@ async fn a_manual_rotation_never_waits_and_every_reader_accepts_its_bump() {
             )))
             .await;
     }
-    let accepted = eventually(
+    let first = eventually(
         &community.sim,
         rekindle_types::config::NETWORK_ANSWER_DEADLINE,
+        || async { generations(&community).await == vec![2, 2, 2] },
+    )
+    .await;
+    assert!(
+        first,
+        "the first bump on every reader: {:?}",
+        generations(&community).await
+    );
+    let barrier = (community.nodes[0].host.governance()).unlock_barrier(&community.anchor);
+    assert!(
+        barrier.view().is_some_and(|v| !v.pending.is_empty()),
+        "the second bump is held behind the first's append"
+    );
+    community.sim.fault(Fault::Heal);
+    let accepted = eventually(
+        &community.sim,
+        rekindle_types::config::NETWORK_ANSWER_DEADLINE * 2,
         || async { generations(&community).await == vec![3, 3, 3] },
     )
     .await;

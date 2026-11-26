@@ -5,9 +5,10 @@ use rekindle_records::port::{RecordSchema, ReportScope, SetOutcome};
 
 use super::*;
 
-/// H1: a set below consensus answers `TryAgain` (0.5.8
-/// `set_value.rs:731-738` → `local_record_store_interface.rs:60-62`), the
-/// pool's `Offline`, with the local seq not moved; the replicas that took
+/// H1: a set below consensus answers `Ok(None)` with nothing stored (fork
+/// `e1158844` `set_value.rs:731-738` → `local_record_store_interface.rs:61-62`,
+/// then `set_value.rs:306-308`), the pool's `Offline` since the local seq
+/// did not move; the replicas that took
 /// it keep it, and the next set (another value at the same seq) comes back
 /// superseded by that partial value
 /// (`set_value.rs:224-241,561-623,753-757`).
@@ -82,15 +83,16 @@ async fn a_partial_set_comes_back_as_our_own_stale_value() {
     }
 }
 
-/// Item 15: an identical re-push that ends below consensus is not
-/// `Unchanged`. Veilid re-sends the stored bytes at their seq
-/// (0.5.8 `set_value.rs:353-366`) and, short of consensus with
-/// `AllowOffline(false)`, answers `TryAgain` (`set_value.rs:731-738` →
-/// `local_record_store_interface.rs:60-62`), so the pool reports it
-/// `Offline`; healed, the same re-push reaches consensus and is
-/// `Unchanged`.
+/// An identical re-push is `Unchanged` whether or not it reaches consensus
+/// (DHT1, correcting VU2 item 15). Veilid re-sends the stored bytes at their
+/// seq (0.5.8 `set_value.rs:353-366`) and, short of consensus with
+/// `AllowOffline(false)`, answers `Ok(None)` (fork `e1158844`
+/// `set_value.rs:731-738` → `local_record_store_interface.rs:61-62`, then
+/// `:306-308`), as it does at consensus, and the local seq moves in
+/// neither case. The value is already ours (it landed first), never a
+/// missed new value; a new value below consensus is `Offline` (H1).
 #[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn an_identical_re_push_below_consensus_answers_try_again() {
+async fn an_identical_re_push_below_consensus_stays_unchanged() {
     // Ten nodes, as in `a_partial_set_comes_back_as_our_own_stale_value`.
     let (sim, nodes) = Netsim::nodes(10, 44);
     let pool = nodes[0].ports.records.start_session().unwrap();
@@ -108,13 +110,61 @@ async fn an_identical_re_push_below_consensus_answers_try_again() {
     });
     assert_eq!(
         pool.set(lease, 0, b"v0".to_vec(), None).await.unwrap(),
-        SetOutcome::Offline
+        SetOutcome::Unchanged
     );
     sim.fault(Fault::Heal);
     assert_eq!(
         pool.set(lease, 0, b"v0".to_vec(), None).await.unwrap(),
         SetOutcome::Unchanged
     );
+}
+
+/// DHT1 (E2.5 durable `dht_write`): a durable write whose fanout ends below
+/// consensus hears `Ok(None)` from Veilid with nothing stored (fork
+/// `e1158844` `set_value.rs:306-308`); the pool reports it `Offline` by the
+/// unmoved local seq, so `set_durable` holds it, and the re-push lands it
+/// once the network takes it.
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_durable_write_below_consensus_is_held_and_lands_on_the_re_push() {
+    let (sim, nodes) = Netsim::nodes(3, 45);
+    let pool = nodes[0].ports.records.start_session().unwrap();
+    let (lease, key, _) = pool
+        .create(&RecordSchema::Dflt { owner_subkeys: 2 }, None)
+        .await
+        .unwrap();
+    let mut settled = pool.settled();
+    sim.fault(Fault::WriteFails {
+        node: 0,
+        of: Writes::Subkey {
+            subkey: 1,
+            record: Some(crate::Records::CreatedDflt(2)),
+        },
+    });
+    assert_eq!(
+        pool.set_durable(lease, 1, b"op".to_vec(), None)
+            .await
+            .unwrap(),
+        SetOutcome::Offline,
+        "held, not landed"
+    );
+    assert_eq!(pool.held_writes(), vec![(key.clone(), 1)]);
+    assert!(settled.try_recv().is_err(), "a miss settles nothing");
+    let local = pool
+        .inspect(lease, Some(&[1u32][..]), ReportScope::Local)
+        .await
+        .unwrap();
+    assert_eq!(local.local_seqs, vec![None], "nothing stored locally");
+    sim.fault(Fault::Heal);
+    let event = tokio::time::timeout(std::time::Duration::from_secs(120), settled.recv())
+        .await
+        .expect("the re-push settles it")
+        .unwrap();
+    assert_eq!(
+        (event.record_key, event.subkey, event.landed),
+        (key.clone(), 1, true)
+    );
+    assert!(pool.held_writes().is_empty());
+    assert_eq!(sim.network_get(&key, 1).unwrap().data, b"op");
 }
 
 /// H2: re-pushing the local copy unchanged while a replica holds a newer
@@ -189,7 +239,7 @@ async fn a_partition_splits_the_replicas() {
 }
 
 /// RV4 L3: a set that only `k` replicas accept (`Fault::WritePartial`) is
-/// `Offline` (Veilid's `TryAgain`) with nothing stored locally (`AllowOffline(false)`,
+/// `Offline` (Veilid's `Ok(None)`, the local seq not moved) with nothing stored locally (`AllowOffline(false)`,
 /// 0.5.8 `local_record_store_interface.rs:60-63`), the `k` closest replicas hold
 /// it, so another node's get already sees it. Once the fault lifts, the same
 /// value re-sent has no local copy to resend, so it is a fresh encryption, a

@@ -141,6 +141,21 @@ pub(super) fn decode_bare_checkpoint_hint_request(
     }
 }
 
+/// A bare `frontierRequest` (plan E3.2 S7d-keys.8), routed like the
+/// snapshot request.
+pub(super) fn decode_bare_frontier_request(raw: &[u8]) -> Option<crate::payload::rpc::InboundCall> {
+    match rekindle_codec::capnp_envelope::try_decode_community_envelope(raw)
+        .ok()
+        .flatten()
+        .and_then(CommunityEnvelope::into_control)
+    {
+        Some(ControlPayload::FrontierRequest { request }) => {
+            Some(crate::payload::rpc::InboundCall::FrontierRequest { request })
+        }
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{decode_bare_attachment_request, decode_bare_mek_transfer};

@@ -16,7 +16,8 @@ pub enum Fault {
     DhtOffline { node: usize, offline: bool },
     /// Every set by the node that `of` selects lands below consensus (no
     /// replica accepts it and nothing is stored, as a Veilid `set_value`
-    /// can), until [`Fault::Heal`]; its other writes are unaffected.
+    /// can; the writer hears `Ok(None)`, as [`Fault::WritePartial`]), until
+    /// [`Fault::Heal`]; its other writes are unaffected.
     WriteFails { node: usize, of: Writes },
     /// Every set by the node that `of` selects reaches only the
     /// `accepting` replicas closest to the record, which store it, until
@@ -26,9 +27,9 @@ pub enum Fault {
     /// `set_value.rs:711-738`), and one with more as landed, so only
     /// fewer is below consensus. With
     /// `AllowOffline(false)` the writer stores and queues nothing locally
-    /// (`local_record_store_interface.rs:60-62`) and hears `TryAgain`
-    /// (0.5.8 `set_value.rs:731-738`), never `Ok(None)`, while a reader whose fanout reaches an accepting replica sees the
-    /// value.
+    /// (`local_record_store_interface.rs:61-62`) and hears `Ok(None)`
+    /// (fork `e1158844` `set_value.rs:731-738` then `:306-308`), while a
+    /// reader whose fanout reaches an accepting replica sees the value.
     WritePartial {
         node: usize,
         of: Writes,
@@ -193,6 +194,25 @@ pub enum Fault {
     /// [`routes`](crate::routes)), and its live Unordered routes fail end
     /// to end as [`Fault::LoopbackFailures`] until UDP returns or they die.
     UdpBlocked { node: usize, blocked: bool },
+    /// The node's Ordered (General) route loses every unordered send to it
+    /// (or no longer does), while ordered sends and route tests to it, and
+    /// unordered sends to its Unordered (Media) route, arrive. Veilid chooses
+    /// and proves a private route's hops on that route's one ordering alone
+    /// (0.5.8 fork `route_allocate.rs:580-588`, the pair probe `:897-936`)
+    /// and tests it on that ordering (loopback `tasks/ping_validator.rs`
+    /// `:673-676`, the remote test PreferOrdered `:692-697`). A routed
+    /// operation carries the *sender's* sequencing and every hop filters the
+    /// next hop by it (`rpc_processor/rpc_route.rs:26-29`, `:87-90`); Veilid
+    /// adapts a preference only to the sender's own safety route
+    /// (`route_compile.rs:106-110`, `safety.rs:33-38`
+    /// `for_route_orderings`), never to the receiver's route. So a
+    /// `PreferUnordered` send crosses UDP hop pairs nobody proved, where a
+    /// 1.5–3 KB question goes as fragments with no retransmit
+    /// (`veilid-tools/src/assembly_buffer.rs:15-21`): lost, a statement
+    /// still "sent", a question timed out, the route never declared dead.
+    /// Real-app DL1/DL2 (2026-11-25): unordered 1:1 calls to such routes
+    /// arrived 8/48, ordered ones 119/122.
+    UnprovenUnorderedHops { node: usize, unproven: bool },
     /// The node's process stalled `ms` (a suspended or starved executor).
     /// From 2.5 s on, Veilid 0.5.8's attachment manager sends the
     /// unchanged attachment state again ([`attach`](crate::attach)).
@@ -427,6 +447,13 @@ impl Netsim {
             Fault::LoopbackFailures { node, class } => self.net.break_route(node, class),
             Fault::RouteDead { node, id } => self.net.kill_route(node, &id),
             Fault::UdpBlocked { node, blocked } => self.net.block_udp(node, blocked),
+            Fault::UnprovenUnorderedHops { node, unproven } => {
+                toggle(
+                    &mut self.net.inner.lock().faults.unproven_unordered,
+                    node,
+                    unproven,
+                );
+            }
             Fault::Stall { node, ms } => self.stall(node, std::time::Duration::from_millis(ms)),
             Fault::Detach { node, detached } => self.detach(node, detached),
             Fault::InternetReady { node, ready } => self.internet_ready(node, ready),

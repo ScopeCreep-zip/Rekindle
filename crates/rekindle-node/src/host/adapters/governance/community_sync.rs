@@ -75,6 +75,10 @@ async fn run(host: HostGovernance, stop: CancellationToken) {
         if count == FIRST_TICKS {
             ticks = tokio::time::interval_at(tokio::time::Instant::now() + TICK, TICK);
         }
+        // The key status is local state, published whatever our presence.
+        for community in host.sync_targets() {
+            host.refresh_key_status(&community);
+        }
         let route = host.our_route_blob_impl();
         // While our status hides presence the whole phase is silent: a
         // member that quit sends no key request, and an Invisible one must not be told apart from it.

@@ -340,10 +340,25 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
           </Show>
         }
       >
-        <div class="message-decrypt-failed">
-          <SkinGlyph name="lock" class="message-decrypt-failed-icon" />
-          Unable to decrypt — waiting for encryption keys
-        </div>
+        {/* KP: a post that does not open under the key it names says so in
+            the Host's words (never "waiting": no key will come); a body
+            missing for another reason keeps the waiting text. */}
+        <Show
+          when={props.message.undecryptable}
+          fallback={
+            <div class="message-decrypt-failed">
+              <SkinGlyph name="lock" class="message-decrypt-failed-icon" />
+              Unable to decrypt — waiting for encryption keys
+            </div>
+          }
+        >
+          {(u) => (
+            <div class="message-damaged" data-reason={u().reason}>
+              <SkinGlyph name="lock" class="message-damaged-icon" />
+              {u().reasonText}
+            </div>
+          )}
+        </Show>
       </Show>
       </Show>
 

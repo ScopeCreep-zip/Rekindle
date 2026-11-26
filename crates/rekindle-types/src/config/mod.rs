@@ -303,7 +303,7 @@ pub enum StabilityPreference {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SequencingPreference {
-    /// No ordering guarantee.
+    /// No ordering guarantee: Veilid's `PreferUnordered` (UDP first).
     NoPreference,
     /// Prefer ordered delivery (default).
     #[default]
@@ -356,6 +356,21 @@ impl Default for SafetyConfig {
             voice: SafetyProfile::default_voice(),
             dht: SafetyProfile::default_dht(),
             rpc: SafetyProfile::default_rpc(),
+        }
+    }
+}
+
+impl SafetyConfig {
+    /// The profile `class` is sent under: the one class-to-profile lookup
+    /// (one row per [`crate::message::MessageClass`], no other table).
+    #[must_use]
+    pub fn for_class(&self, class: crate::message::MessageClass) -> &SafetyProfile {
+        use crate::message::MessageClass;
+        match class {
+            MessageClass::Text => &self.text,
+            MessageClass::Voice => &self.voice,
+            MessageClass::Rpc => &self.rpc,
+            MessageClass::Dht => &self.dht,
         }
     }
 }

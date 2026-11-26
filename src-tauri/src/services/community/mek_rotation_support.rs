@@ -8,7 +8,9 @@
 //! * `update_generation_state` — mirror the cache write into AppState.communities
 //! * `persist_mek` — Stronghold persistence wrapper
 //! * `emit_rotation_event` — Tauri MekRotated emit
-//! * `my_pseudonym_hex` / `my_pseudonym` / `pseudonym_from_hex`
+//!
+//! Deleted with the last-resort mint's election (FX3), their only user:
+//! `my_pseudonym_hex`, `my_pseudonym`, `pseudonym_from_hex`.
 //!
 //! What moved into the crate (and was deleted from this file):
 //! * `RotationRecipient`, `online_recipients` — `MekDistributeDeps` methods
@@ -21,7 +23,6 @@
 use std::sync::Arc;
 
 use rekindle_types::channel_keys::KeyScope;
-use rekindle_types::id::PseudonymKey;
 
 use crate::state::AppState;
 
@@ -69,23 +70,4 @@ pub(crate) fn emit_rotation_event(
             },
         ),
     );
-}
-
-pub(crate) fn my_pseudonym_hex(state: &Arc<AppState>, community_id: &str) -> Option<String> {
-    let communities = state.communities.read();
-    communities
-        .get(community_id)
-        .and_then(|community| community.my_pseudonym_key.clone())
-}
-
-pub(crate) fn my_pseudonym(state: &Arc<AppState>, community_id: &str) -> Option<PseudonymKey> {
-    my_pseudonym_hex(state, community_id)
-        .as_deref()
-        .and_then(pseudonym_from_hex)
-}
-
-pub(crate) fn pseudonym_from_hex(hex_str: &str) -> Option<PseudonymKey> {
-    let bytes = hex::decode(hex_str).ok()?;
-    let bytes: [u8; 32] = bytes.try_into().ok()?;
-    Some(PseudonymKey(bytes))
 }

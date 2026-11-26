@@ -190,8 +190,6 @@ async fn dispatch_command(
         Command::Dm(cmd) => dm::dispatch(&cmd, client, mode).await,
         Command::Group(cmd) => group_dm::dispatch(&cmd, client, mode).await,
         Command::Community(cmd) => community::dispatch(&cmd, client, mode).await,
-        Command::Role(cmd) => governance::dispatch_role(&cmd, client, mode).await,
-        Command::Moderate(cmd) => governance::dispatch_moderate(&cmd, client, mode).await,
         Command::Channel(cmd) => channel::dispatch(&cmd, client, mode).await,
         Command::Voice(cmd) => voice::dispatch(&cmd, client, mode).await,
         Command::Key(cmd) => keys::dispatch(&cmd, client, mode).await,

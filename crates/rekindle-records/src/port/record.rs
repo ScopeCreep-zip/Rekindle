@@ -24,9 +24,12 @@ pub enum SetOutcome {
     Landed,
     /// The write did not reach consensus: the node is offline, or the
     /// fanout ended below consensus, which Veilid also calls offline
-    /// (`was_offline`) and answers with the same `TryAgain` (0.5.8
-    /// `set_value.rs:710-738` → `local_record_store_interface.rs:60-62`,
-    /// `AllowOffline(false)`). Nothing was stored locally or queued; the
+    /// (`was_offline`): under `AllowOffline(false)` its offline handler bails
+    /// `TryAgain` before writing or queuing (fork `e1158844`
+    /// `set_value.rs:710-738` → `local_record_store_interface.rs:61-62`),
+    /// which `set_value` returns as `Ok(None)` unless the write closes the
+    /// subkey (`set_value.rs:306-308`); the pool reads that `Ok(None)` by the
+    /// local seq, which only a landing moves. Nothing was stored locally or queued; the
     /// replicas that took a partial value keep it: a replica writes the
     /// subkey when the set arrives, whatever the fanout ends on, and nothing
     /// takes it back (`inbound_set_value`, `set_value.rs:909-923`).
@@ -35,9 +38,12 @@ pub enum SetOutcome {
     /// that won the tally), returned here. A settled value whose data and
     /// writer are ours is `Landed` or `Unchanged`, never this.
     Superseded(RecordValue),
-    /// The value equals the local copy: Veilid re-sent the stored bytes at
-    /// their seq (0.5.8 `set_value.rs:353-366`) and that re-push reached
-    /// consensus with no other value settling. The local seq did not move.
+    /// The value equals the local copy, which is already ours: Veilid re-sent
+    /// the stored bytes at their seq (0.5.8 `set_value.rs:353-366`) and no
+    /// other value settled. The local seq did not move, so Veilid's `Ok(None)`
+    /// cannot say whether this re-push reached consensus; the local copy was
+    /// stored only by an earlier landed write or a network read (a missed
+    /// write stores nothing). Never a missed new value: that is `Offline`.
     Unchanged,
 }
 

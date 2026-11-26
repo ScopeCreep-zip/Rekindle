@@ -212,3 +212,64 @@ async fn route_death_reaches_the_owner_only() {
         RouteState::Available { .. }
     ));
 }
+
+/// An unordered send to an Ordered route whose hops were proven only on its
+/// ordering is lost (a question times out), while an ordered one to the
+/// same route arrives and an unordered one to the Media (Unordered) route
+/// arrives ([`Fault::UnprovenUnorderedHops`]).
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn unordered_sends_to_an_ordered_route_cross_unproven_hops() {
+    let (sim, mut nodes) = Netsim::nodes(2, 5);
+    let _pump = sim.start();
+    nodes[1].ports.routes.want_own();
+    let mut blobs = Vec::new();
+    for class in [RouteClass::General, RouteClass::Media] {
+        let blob = tokio::time::timeout(
+            Duration::from_secs(5),
+            nodes[1].ports.routes.available_own(class),
+        )
+        .await
+        .unwrap();
+        blobs.push(blob);
+    }
+    attached(&mut nodes[1]).await;
+    let general = nodes[0].ports.routes.import(&blobs[0]).unwrap();
+    let media = nodes[0].ports.routes.import(&blobs[1]).unwrap();
+    sim.fault(Fault::UnprovenUnorderedHops {
+        node: 1,
+        unproven: true,
+    });
+    let (ordered, unordered) = (
+        SafetyProfile::default_text(),
+        SafetyProfile::default_voice(),
+    );
+    let messages = &nodes[0].ports.messages;
+    messages
+        .send(&general, &unordered, b"lost".to_vec())
+        .await
+        .unwrap();
+    messages
+        .send(&general, &ordered, b"ordered".to_vec())
+        .await
+        .unwrap();
+    assert!(
+        matches!(recv(&mut nodes[1]).await, PortEvent::AppMessage { message, .. } if message == b"ordered"),
+        "the unordered message is lost, the ordered one arrives"
+    );
+    nodes[0]
+        .ports
+        .messages
+        .send(&media, &unordered, b"media".to_vec())
+        .await
+        .unwrap();
+    assert!(
+        matches!(recv(&mut nodes[1]).await, PortEvent::AppMessage { message, .. } if message == b"media"),
+        "media frames to the Unordered route arrive"
+    );
+    let answer = nodes[0]
+        .ports
+        .messages
+        .call(&general, &unordered, b"q".to_vec())
+        .await;
+    assert!(matches!(answer, Err(PortError::Timeout(_))));
+}

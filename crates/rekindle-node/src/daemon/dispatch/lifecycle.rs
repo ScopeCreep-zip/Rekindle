@@ -128,11 +128,10 @@ fn unlocked_memberships(
 }
 
 /// The daemon's half of a teardown (`host::unlock::teardown`), after the
-/// unlock scope stopped: the community scopes, the subscription state, the
+/// unlock scope stopped and its community scopes went: the subscription state, the
 /// per-community runtime (its lease ids name the pool that is ending), the
 /// broadcast mesh and the bus's event source.
 pub(crate) async fn daemon_teardown(ctx: &DaemonContext) {
-    ctx.community_scopes.lock().clear();
     let subscriptions = ctx.subscriptions.write().take();
     if let Some(subscriptions) = subscriptions {
         subscriptions.shutdown().await;

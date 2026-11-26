@@ -142,6 +142,8 @@ pub fn encode_control_payload(
         CP::CheckpointStateResponse { response } => b.set_checkpoint_state_response(response),
         CP::CheckpointHintRequest { request } => b.set_checkpoint_hint_request(request),
         CP::CheckpointHintResponse { response } => b.set_checkpoint_hint_response(response),
+        CP::FrontierRequest { request } => b.set_frontier_request(request),
+        CP::FrontierResponse { frontier } => b.set_frontier_response(frontier),
         CP::BootstrapPartial { anchor } => b.set_bootstrap_partial(anchor),
         CP::BootstrapRefused { anchor, reason } => {
             let mut r = b.reborrow().init_bootstrap_refused();
@@ -249,6 +251,12 @@ pub fn decode_control_payload(r: schema::Reader<'_>) -> Result<ControlPayload, C
         }),
         Which::CheckpointHintResponse(response) => Ok(ControlPayload::CheckpointHintResponse {
             response: response.map_err(|e| capnp_err(&e))?.to_vec(),
+        }),
+        Which::FrontierRequest(request) => Ok(ControlPayload::FrontierRequest {
+            request: request.map_err(|e| capnp_err(&e))?.to_vec(),
+        }),
+        Which::FrontierResponse(frontier) => Ok(ControlPayload::FrontierResponse {
+            frontier: frontier.map_err(|e| capnp_err(&e))?.to_vec(),
         }),
         Which::BootstrapPartial(anchor) => Ok(ControlPayload::BootstrapPartial {
             anchor: text_to_string(anchor.map_err(|e| capnp_err(&e))?)?,

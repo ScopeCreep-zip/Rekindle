@@ -156,6 +156,15 @@ async fn community(governance: &HostGovernance, community_id: &str, stop: &Cance
     // lead decision 63): a key endorsed only under an ended membership
     // drops its stale record binding before any write.
     governance.catch_up_own_device(community_id);
+    // The unlock barrier's rounds (plan E3.2 S7d-keys.8): our governance
+    // writes are held until it passed.
+    governance.spawn_unlock_barrier(community_id);
+    // A leave that took effect locally before this unlock: its `MemberLeft`
+    // is signed once the barrier passed, then the community is forgotten
+    // (plan E3.2 S7d-keys.8). Nothing of it is caught up or re-keyed.
+    if governance.resume_departure(community_id) {
+        return;
+    }
     // Still keyless after a restart: watch our inviter's key drop again
     // (plan RV2d; the watch is not persisted).
     governance.rearm_key_drop(community_id).await;

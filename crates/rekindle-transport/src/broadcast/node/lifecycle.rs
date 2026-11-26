@@ -59,7 +59,10 @@ impl TransportNode {
         let shared_state = SharedState::new();
         let (ports, events) = rekindle_protocol::ports::VeilidPorts::start(
             &node_config,
-            config.safety.dht.clone(),
+            config
+                .safety
+                .for_class(rekindle_types::message::MessageClass::Dht)
+                .clone(),
             shared_state.follow_ready(),
             Arc::new(move || rekindle_utils::Clock::now_ms(clock.as_ref())),
         )

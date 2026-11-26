@@ -21,18 +21,20 @@
 //! the network as a message does: lost to a partition, a detached caller,
 //! or the drop fault ([`Network::lost_in_transit`]).
 
+use std::collections::HashSet;
 use std::sync::Arc;
 use std::time::Duration;
 
 use rekindle_records::port::{
     check_message_len, AppCallId, AppMessagePort, PeerTarget, PortError, PortEvent,
 };
-use rekindle_types::config::{SafetyProfile, ANONYMITY_HOP_FLOOR};
+use rekindle_types::config::{SafetyProfile, SequencingPreference, ANONYMITY_HOP_FLOOR};
 use tokio::sync::oneshot;
 
 use crate::latency;
 use crate::loopback::ROUTE_MIN_IDLE;
-use crate::network::Network;
+use crate::network::{Network, RouteEntry};
+use crate::routes::RouteOrdering;
 
 /// Veilid's default RPC timeout (`network.rpc.timeout_ms`,
 /// Veilid 0.5.8 `veilid_config.rs:944`).
@@ -56,6 +58,21 @@ pub fn call_timeout(profile: &SafetyProfile) -> Duration {
 /// (`rekindle-protocol` `ports.rs` `send_error`).
 fn not_started() -> PortError {
     PortError::Send("try again: not started up".into())
+}
+
+/// Whether a send under `profile` to `route` is lost on hops never proven
+/// on its ordering ([`crate::Fault::UnprovenUnorderedHops`]): the route is
+/// Ordered, its owner under the fault, and the send unordered (our
+/// `NoPreference` is Veilid's `PreferUnordered`, `rekindle-protocol`
+/// `dht/backend.rs:37`).
+fn lost_on_unproven_hops(
+    faulted: &HashSet<usize>,
+    route: &RouteEntry,
+    profile: &SafetyProfile,
+) -> bool {
+    route.ordering == RouteOrdering::Ordered
+        && profile.sequencing == SequencingPreference::NoPreference
+        && faulted.contains(&route.node)
 }
 
 /// A node's app messages and calls.
@@ -82,14 +99,19 @@ impl FakeMessages {
 
     /// The node owning `target`'s route, `None` when its owner released
     /// it, it is broken end to end ([`crate::loopback`]), `target` is dead
-    /// from outside ([`crate::Fault::OutsideDead`]), or this node's pool
-    /// safety routes fail ([`crate::Fault::PoolRoutesFail`]): what is sent
-    /// is lost; `RouteUnusable` when this node's cache does not
+    /// from outside ([`crate::Fault::OutsideDead`]), this node's pool
+    /// safety routes fail ([`crate::Fault::PoolRoutesFail`]), or `profile`'s
+    /// unordered send crosses its unproven hops
+    /// ([`crate::Fault::UnprovenUnorderedHops`]): what is sent is lost; `RouteUnusable` when this node's cache does not
     /// resolve it (Veilid's `NoConnection`, [`crate::routes`]) or the first
     /// hop of its safety route fails ([`crate::Fault::RouteLinkFailure`], a
     /// `Send` error: our side, the peer's route kept);
     /// `Send` when this node is detached.
-    fn route_owner(&self, target: &PeerTarget) -> Result<Option<usize>, PortError> {
+    fn route_owner(
+        &self,
+        target: &PeerTarget,
+        profile: &SafetyProfile,
+    ) -> Result<Option<usize>, PortError> {
         if self.net.inner.lock().faults.detached.contains(&self.node) {
             return Err(not_started());
         }
@@ -112,22 +134,26 @@ impl FakeMessages {
         {
             return Ok(None);
         }
-        Ok(self
-            .net
-            .inner
-            .lock()
+        let inner = self.net.inner.lock();
+        Ok(inner
             .routes
             .get(target.as_str())
+            .filter(|r| !lost_on_unproven_hops(&inner.faults.unproven_unordered, r, profile))
             .map(|r| r.node))
     }
 }
 
 impl FakeMessages {
     /// A message to `target` over a pool safety route.
-    async fn send_over(&self, target: &PeerTarget, message: Vec<u8>) -> Result<(), PortError> {
+    async fn send_over(
+        &self,
+        target: &PeerTarget,
+        profile: &SafetyProfile,
+        message: Vec<u8>,
+    ) -> Result<(), PortError> {
         check_message_len(&message)?;
         self.net.awake(self.node).await;
-        let Some(to) = self.route_owner(target)? else {
+        let Some(to) = self.route_owner(target, profile)? else {
             // Dispatched into a released route: lost, and still "sent".
             return Ok(());
         };
@@ -167,7 +193,7 @@ impl FakeMessages {
         if let Some(slot) = self.net.inner.lock().nodes.get_mut(self.node) {
             slot.app_calls += 1;
         }
-        let Some(to) = self.route_owner(target)? else {
+        let Some(to) = self.route_owner(target, profile)? else {
             // Into a released route: no answer comes back.
             tokio::time::sleep(call_timeout(profile)).await;
             return Err(PortError::Timeout("app call timed out".into()));
@@ -257,10 +283,10 @@ impl AppMessagePort for FakeMessages {
     async fn send(
         &self,
         target: &PeerTarget,
-        _profile: &SafetyProfile,
+        profile: &SafetyProfile,
         message: Vec<u8>,
     ) -> Result<(), PortError> {
-        self.send_over(target, message).await
+        self.send_over(target, profile, message).await
     }
 
     async fn call(

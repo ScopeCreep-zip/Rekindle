@@ -309,7 +309,12 @@ impl HostGovernance {
                 .await
             {
                 Ok(rekindle_governance_runtime::OpOutcome::Landed) => Ok(()),
-                Ok(rekindle_governance_runtime::OpOutcome::Pending) => {
+                // The outbox answers landed or queued; a held write is the
+                // write path's answer, never the publication's.
+                Ok(
+                    rekindle_governance_runtime::OpOutcome::Pending
+                    | rekindle_governance_runtime::OpOutcome::Held { .. },
+                ) => {
                     queued.store(true, std::sync::atomic::Ordering::Relaxed);
                     Ok(())
                 }
@@ -415,16 +420,17 @@ impl HostGovernance {
         outcome: &rekindle_governance_runtime::join_flow::JoinStagesOutcome,
     ) -> Result<(), String> {
         use rekindle_governance_runtime::deps::GovernanceOpStore as _;
-        for op in outcome
-            .walked
-            .iter()
-            .chain(std::iter::once(&outcome.joined))
-        {
+        for op in &outcome.walked {
             self.store_governance_op(community, op)
                 .await
                 .map_err(|e| format!("community joined, op not stored: {e}"))?;
         }
-        Ok(())
+        // Our `MemberJoined` is the op our own signer just made: stored
+        // `signed_here` (plan E3.2 S7d-keys.3), so the unlock barrier reads
+        // it as our signed head, never as a restore of a lost log (.8).
+        self.store_signed_governance_op(community, &outcome.joined)
+            .await
+            .map_err(|e| format!("community joined, op not stored: {e}"))
     }
 
     async fn store_own_member_row(

@@ -8,6 +8,19 @@
 //! the awaiting-key release and the user's Retry: both queue the row, and
 //! the sender writes it when it can). After a drain lands, the author's own
 //! `HeadAdvanced` for subkey 4 tells readers to diff our outbox.
+//!
+//! Every channel of a community appends to the one outbox chain of our
+//! member record, but each channel is its own stream, drained on its own
+//! (`rekindle_outbox` runs a stream's drain per stream). Two drains of one
+//! chain would read the same tip and write the same chain seq, and the
+//! later head would replace the earlier: a post lost while its row reads
+//! sent (Mac FX3, 2026-11-24). So one drain at a time holds a chain, from
+//! its tip read through its head write ([`ChainLocks`]), and the chain
+//! refuses a stale append (`chain::append_exact`'s `SeqMoved`) should any
+//! writer miss the lock.
+
+use std::collections::HashMap;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use rekindle_channel::outbox_chain::OutboxWriter;
@@ -23,8 +36,34 @@ use super::HostChannel;
 use crate::host::adapters::governance::removal_posts::REMOVED_NOT_DELIVERED;
 use crate::host::adapters::outbox::{post_of_row, StreamSender};
 
-/// The `channel_post` sender over the Host's channel adapter.
-pub(crate) struct ChannelPostSender(pub(crate) HostChannel);
+/// One lock per outbox chain we write, by member record key: a community's
+/// drains, whatever their channel, append to it one at a time.
+#[derive(Default)]
+struct ChainLocks(parking_lot::Mutex<HashMap<String, Arc<tokio::sync::Mutex<()>>>>);
+
+impl ChainLocks {
+    /// The lock of the chain headed in `member_record`.
+    fn of(&self, member_record: &str) -> Arc<tokio::sync::Mutex<()>> {
+        Arc::clone(self.0.lock().entry(member_record.to_owned()).or_default())
+    }
+}
+
+/// The `channel_post` sender over the Host's channel adapter: one sender
+/// serves every channel's stream, so its locks cover all of them.
+pub(crate) struct ChannelPostSender {
+    channel: HostChannel,
+    chains: ChainLocks,
+}
+
+impl ChannelPostSender {
+    /// The sender over `channel`.
+    pub(crate) fn new(channel: HostChannel) -> Self {
+        Self {
+            channel,
+            chains: ChainLocks::default(),
+        }
+    }
+}
 
 #[async_trait]
 impl StreamSender for ChannelPostSender {
@@ -36,14 +75,14 @@ impl StreamSender for ChannelPostSender {
     }
 
     async fn send_stream(&self, rows: &[OutboxRow]) -> Vec<AttemptOutcome> {
-        self.0.drain_stream(rows).await
+        self.channel.drain_stream(&self.chains, rows).await
     }
 }
 
 impl HostChannel {
     /// Drain `rows`, one `channel_post` stream's due rows in queue order:
     /// the outcomes of a prefix.
-    async fn drain_stream(&self, rows: &[OutboxRow]) -> Vec<AttemptOutcome> {
+    async fn drain_stream(&self, chains: &ChainLocks, rows: &[OutboxRow]) -> Vec<AttemptOutcome> {
         let mut posts = Vec::with_capacity(rows.len());
         for row in rows {
             match post_of_row(row) {
@@ -83,8 +122,13 @@ impl HostChannel {
             anchor: &community,
             author: &own.author,
         };
+        // Held from the tip read to the head write: another channel's drain
+        // on this chain reads the head this one wrote.
+        let chain = chains.of(&own.member_record);
+        let one_append = chain.lock().await;
         let now = self.ctx().clock.now_ms();
         let drained = drain_posts(self, &writer, &posts, now).await;
+        drop(one_append);
         let landed = drained.iter().any(|d| matches!(d, DrainOutcome::Sent(_)));
         let outcomes = (posts.iter().zip(&drained))
             .map(|(item, outcome)| self.outcome_of(&item.post, &own.author, outcome))

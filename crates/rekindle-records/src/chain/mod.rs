@@ -34,15 +34,14 @@ mod page;
 #[cfg(test)]
 mod tests;
 
-use crate::port::OpenIntent;
 pub use create::{create_participant, publish_participant};
+use local::own_head_at;
 pub use local::{local_newest_entry, local_pages_after};
 pub use rekindle_codec::capnp_codec::chain::PagePointer;
 use rekindle_codec::capnp_codec::chain::{ChainHead, ChainPage};
 use rekindle_types::dht_layout::dm_participant;
 
-use crate::lease::LeaseId;
-use crate::port::{PortError, RecordPort, RecordValue, ReportScope, SetOutcome};
+use crate::port::{PortError, RecordPort, SetOutcome};
 use crate::schema;
 
 /// Rounds of an append whose `HEAD` write a newer `HEAD` superseded: each
@@ -317,6 +316,16 @@ async fn append_after(
             newest,
             retired_through,
         };
+        // Our own head moved while the page was written (another append of
+        // ours won the race to it): writing ours would replace that entry,
+        // so the append is refused and retried at the next seq.
+        if let (HeadRead::Local, Some(expected)) = (read, expected) {
+            let next = own_head_at(port, record, head_subkey).await?;
+            let next = next.map_or(0, |h| h.newest.last_seq) + 1;
+            if next != expected {
+                return Err(ChainError::SeqMoved { expected, next });
+            }
+        }
         let outcome = port
             .write_own_once(record, head_subkey, page::encode_head(&head)?, Some(writer))
             .await?;
@@ -364,45 +373,6 @@ async fn write_page(
         first_seq,
         last_seq,
     })
-}
-
-/// The writer's own `HEAD`, from its local copy, never the network: the
-/// append's `HEAD` write is the check against a newer one ([`append_after`]).
-///
-/// A get with no local copy goes to the network whatever its refresh mode
-/// (0.5.8 `get_value.rs:161-169`), and an unwritten subkey has no value to
-/// reach consensus on, so that fanout runs to `get_value_timeout_ms`, 10 s
-/// (`veilid_config.rs:1007`): a chain's first append waited that long, and
-/// past it on an unready internet (the pool's retry waits for readiness),
-/// before it wrote anything (E2.5i). The write needs no read first: its seq
-/// follows our copy (`set_value.rs:346-385`), and a replica holding a newer
-/// value, or another at that seq, answers with it (`set_value.rs:825-845`),
-/// which the set stores as our copy and reports as
-/// [`SetOutcome::Superseded`] (`set_value.rs:741-760`).
-async fn own_head_at(
-    port: &dyn RecordPort,
-    record: &str,
-    head_subkey: u32,
-) -> Result<Option<ChainHead>, ChainError> {
-    let lease = port.acquire(record, None, OpenIntent::Check).await?;
-    let local = local_value(port, lease, head_subkey).await;
-    port.release(lease).await;
-    local?.map_or(Ok(None), |v| page::decode_head(&v.data))
-}
-
-/// The leased record's local copy of `subkey`, `None` when there is none.
-async fn local_value(
-    port: &dyn RecordPort,
-    lease: LeaseId,
-    subkey: u32,
-) -> Result<Option<RecordValue>, PortError> {
-    let report = port
-        .inspect(lease, Some(&[subkey]), ReportScope::Local)
-        .await?;
-    if report.local_seqs.first().copied().flatten().is_none() {
-        return Ok(None);
-    }
-    port.get(lease, subkey, false).await
 }
 
 /// `entries` cut, in order, into the fewest runs that each fit one page

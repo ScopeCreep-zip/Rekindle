@@ -221,7 +221,10 @@ async fn commit(
             move |_| passphrase_ok,
             now_ms,
             |request| async move {
-                let response = ctx.dispatch_in_lane(request, caller, acknowledged).await;
+                // The result cache wraps this run in its own future, which
+                // holds it more than once: the dispatch is boxed off it
+                // (clippy large_futures).
+                let response = Box::pin(ctx.dispatch_in_lane(request, caller, acknowledged)).await;
                 ran(ctx, response, reversibility, undo_owner, inverse)
             },
         )

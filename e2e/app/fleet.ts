@@ -445,6 +445,14 @@ export async function peerInvite(peer: Peer, anchor: string, uses = 1): Promise<
 }
 
 /** How many members `peer`'s view of community `anchor` counts. */
+/** `peer`'s own pseudonym in community `anchor` (community info's `ourPseudonym`): what the CLI's member commands take. */
+export async function peerOwnPseudonym(peer: Peer, anchor: string): Promise<string> {
+  const info = (await peer.cli(["community", "info", "--community", anchor])) as { ourPseudonym?: string; our_pseudonym?: string } | null;
+  const key = info?.ourPseudonym ?? info?.our_pseudonym ?? "";
+  if (!/^[0-9a-f]{64}$/i.test(key)) throw new Error(`${peer.displayName}: community info served no pseudonym for ${anchor.slice(0, 16)}… (${JSON.stringify(info).slice(0, 200)})`);
+  return key;
+}
+
 export async function peerMemberCount(peer: Peer, anchor: string): Promise<number> {
   const info = (await peer.cli(["community", "info", "--community", anchor])) as { member_count?: number; memberCount?: number } | null;
   return info?.member_count ?? info?.memberCount ?? 0;

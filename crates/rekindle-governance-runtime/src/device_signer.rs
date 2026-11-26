@@ -58,6 +58,11 @@ pub fn device_op_key<D: GovernanceRuntimeDeps + ?Sized>(
     let mut secret = zeroize::Zeroizing::new([0u8; 32]);
     deps.rng().fill(secret.as_mut_slice());
     deps.store_device_op_key(community, &secret)?;
+    // A key generated now was never held by any other copy of this data
+    // root, so nothing was signed under it elsewhere: the unlock barrier
+    // (plan E3.2 S7d-keys.8) has nothing to catch up for it.
+    deps.unlock_barrier(community)
+        .complete(Some(crate::unlock_barrier::BarrierPhase::Passed));
     Ok(SigningKey::from_bytes(&secret))
 }
 
@@ -154,6 +159,46 @@ pub fn op_record_of<D: GovernanceRuntimeDeps>(
             Ok(e.device_record.clone())
         }
         _ => own_op_record(deps, community, state),
+    }
+}
+
+/// Whether `entry`, one of ours, carries this device's own endorsement and
+/// so is routed under it, not the state's ([`op_record_of`]): our
+/// `MemberJoined`, or a `DeviceKey` of our held key.
+///
+/// # Errors
+/// The device vault's.
+pub fn carries_own_endorsement<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community: &str,
+    entry: &rekindle_types::governance::GovernanceEntry,
+) -> Result<bool, GovernanceRuntimeError> {
+    use rekindle_types::governance::GovernanceEntry;
+    match entry {
+        GovernanceEntry::MemberJoined { .. } => Ok(true),
+        GovernanceEntry::DeviceKey(e) => is_own_key(deps, community, e),
+        _ => Ok(false),
+    }
+}
+
+/// ADR 0022 rule 3 at the call: an op of this device is refused unless its
+/// key is endorsed in `state`'s device set for the current member record
+/// ([`own_op_record`]'s rule), before the op is held or signed. A member
+/// the state does not admit passes here: admission is decided in the state
+/// the op is built on (`apply::write_signed`).
+///
+/// # Errors
+/// [`GovernanceRuntimeError::DeviceUnendorsed`],
+/// [`GovernanceRuntimeError::DeviceOpKeyMissing`], or [`own_op_record`]'s
+/// other refusals.
+pub fn refuse_unendorsed<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community: &str,
+    state: &GovernanceState,
+) -> Result<(), GovernanceRuntimeError> {
+    match own_op_record(deps, community, state) {
+        Ok(_) | Err(GovernanceRuntimeError::MemberRecordMissing(_)) => Ok(()),
+        Err(e) => Err(e),
     }
 }
 

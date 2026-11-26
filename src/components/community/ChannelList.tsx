@@ -150,6 +150,11 @@ const ChannelList: Component<ChannelListProps> = (props) => {
         >
           <SkinGlyph name={channelIcon(channel)} class={channelIconClass(channel)} />
           <span class="channel-name">{channel.name}</span>
+          <Show when={channel.locked}>
+            <span class="channel-locked" title={channel.lockedReason} aria-label={channel.lockedReason ? `Locked: ${channel.lockedReason}` : "Locked"}>
+              <SkinGlyph name="lock" class="channel-locked-icon" />
+            </span>
+          </Show>
           {(presenceByChannel()[channel.id] ?? 0) > 0 && (
             <span
               class="channel-presence-badge"
