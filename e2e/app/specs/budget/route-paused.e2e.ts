@@ -6,7 +6,7 @@
 // tree, whose status area is the pack's status field (StatusField.tsx).
 
 import { browser, expect } from "@wdio/globals";
-import { NET_WAIT_MS, gone, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
+import { NET_WAIT_MS, gone, press, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
 import { BUDDY, SETTINGS, closeSettings, openSettings, underTree } from "../../../walk/nav.ts";
 import { createIdentity, newUser, type User } from "../../journeys.ts";
 import { applySkin, skinShown } from "../../journeys_skins.ts";
@@ -24,16 +24,33 @@ const FIELD = ".skin-status-edit";
  * How many pixels inside the status field's box change when `selector`
  * (the paused line or the input) is hidden: what of it is seen there.
  */
-async function seenInField(selector: string): Promise<number> {
-  const box = (await browser.execute(() => {
-    const r = document.querySelector(".skin-status")?.getBoundingClientRect();
-    return r ? [r.x, r.y, r.width, r.height, innerWidth] : null;
-  })) as number[] | null;
-  if (!box) throw new Error("no status field");
-  const served = decodePng(Buffer.from(await browser.takeScreenshot(), "base64"));
+async function seenInField(selector: string, within = ".skin-status"): Promise<number> {
+  const box = await boxOf(within);
+  const served = await screen();
   await browser.execute((sel: string) => document.querySelector<HTMLElement>(sel)?.style.setProperty("visibility", "hidden"), selector);
-  const hidden = decodePng(Buffer.from(await browser.takeScreenshot(), "base64"));
+  const hidden = await screen();
   await browser.execute((sel: string) => document.querySelector<HTMLElement>(sel)?.style.removeProperty("visibility"), selector);
+  return changedIn(box, served, hidden);
+}
+
+type Png = ReturnType<typeof decodePng>;
+
+async function screen(): Promise<Png> {
+  return decodePng(Buffer.from(await browser.takeScreenshot(), "base64"));
+}
+
+/** `selector`'s box in CSS px, with the window's width for the scale. */
+async function boxOf(selector: string): Promise<number[]> {
+  const box = (await browser.execute((sel: string) => {
+    const r = document.querySelector(sel)?.getBoundingClientRect();
+    return r ? [r.x, r.y, r.width, r.height, innerWidth] : null;
+  }, selector)) as number[] | null;
+  if (!box) throw new Error(`no ${selector}`);
+  return box;
+}
+
+/** Pixels inside `box` that differ between two screenshots. */
+function changedIn(box: number[], served: Png, hidden: Png): number {
   const scale = served.width / box[4];
   const [x, y, w, h] = box.slice(0, 4).map((v) => Math.round(v * scale));
   let changed = 0;
@@ -46,8 +63,44 @@ async function seenInField(selector: string): Promise<number> {
   return changed;
 }
 
-/** Every built-in pack that lays the buddy list's status field. */
-const PACKS = ["symbiosis", "combat", "onyx", "alloy", "xslimfire", "simple-x", "total-chaos", "xfire-classic"];
+/** Every built-in pack that lays the buddy list's status field (XGlow's since TXZ). */
+const PACKS = ["symbiosis", "combat", "onyx", "alloy", "xslimfire", "simple-x", "total-chaos", "xfire-classic", "xglow"];
+
+/** Typed text, while the field is edited, changes the field's pixels; the
+ *  edit is then left (blur), which puts back the Host's stored message. */
+async function typedSeen(): Promise<number> {
+  const field = await browser.$(FIELD);
+  await press(browser, field);
+  await gone(browser, PAUSED, NET_WAIT_MS);
+  await field.clearValue();
+  await browser.pause(300);
+  const box = await boxOf(".skin-status");
+  const empty = await screen();
+  await browser.keys("txz typed text".split(""));
+  await browser.pause(300);
+  const typed = await screen();
+  await shot("paused-field-typing");
+  await browser.execute(() => (document.activeElement as HTMLElement | null)?.blur());
+  await shown(browser, PAUSED, NET_WAIT_MS);
+  return changedIn(box, empty, typed);
+}
+
+/** The status list's arrow is on top at its centre and opens the list. */
+async function arrowOpens(): Promise<string> {
+  const top = (await browser.execute(() => {
+    const a = document.querySelector<HTMLElement>(".skin-status-list");
+    if (!a) return "no arrow";
+    const r = a.getBoundingClientRect();
+    const at = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+    return at && a.contains(at) ? "on top" : `covered by ${at?.tagName.toLowerCase()}.${(at as HTMLElement | null)?.className ?? "-"}`;
+  })) as string;
+  if (top !== "on top") return top;
+  await press(browser, await browser.$(".skin-status-list"));
+  await shown(browser, ".status-picker-dropdown", NET_WAIT_MS);
+  await browser.keys(["Escape"]);
+  await gone(browser, ".status-picker-dropdown", NET_WAIT_MS);
+  return "opens the status list";
+}
 
 describe("a paused inbound route is said in the tree's status field, which stays usable", function () {
   this.timeout(600_000);
@@ -195,18 +248,19 @@ describe("a paused inbound route is said in the tree's status field, which stays
         await browser.pause(300);
         console.log(`[paused] ${file} with the input hidden: hiding the line changes ${await seenInField(PAUSED)} px`);
         await browser.execute(() => document.querySelector<HTMLElement>(".skin-status-edit")?.style.removeProperty("visibility"));
-        // Confirmation (Codex handoff, verified from the manifests: Alloy and
-        // Simple X serve StatusWrapper z=4 over StatusEdit z=3, tripled to 12
-        // over 9): the status field's context raised to the wrapper's must
-        // bring the line into view.
-        await browser.execute(() => document.querySelector<HTMLElement>(".skin-status")?.style.setProperty("z-index", "12", "important"));
-        await browser.pause(300);
-        console.log(`[paused] ${file} with .skin-status at z-index 12: hiding the line changes ${await seenInField(PAUSED)} px`);
-        await shot(`${file}-paused-field-raised`);
-        await browser.execute(() => document.querySelector<HTMLElement>(".skin-status")?.style.removeProperty("z-index"));
       }
       await shot(`${file}-paused-field`);
-      expect({ pack: file, lineSeen: line >= 20, inputSeen: input >= 20 }).toEqual({ pack: file, lineSeen: true, inputSeen: false });
+      // TXZ (the Host raises a text control over the art-only siblings it
+      // overlaps; Alloy's and Simple X's StatusWrapper, XGlow's StatusMiddle):
+      // our name is seen, typed text is seen while editing, and the status
+      // list's arrow still opens it (an interactive sibling keeps its order).
+      const name = (await browser.$(".skin-name-text").isExisting()) ? await seenInField(".skin-name-text", ".skin-name") : -1;
+      const typed = await typedSeen();
+      const arrow = await arrowOpens();
+      console.log(`[paused] ${file}: name ${name} px (-1: no name field), typed text ${typed} px while editing, arrow ${arrow}`);
+      expect({ pack: file, lineSeen: line >= 20, inputSeen: input >= 20, nameSeen: name === -1 || name >= 20, typedSeen: typed >= 20, arrow }).toEqual({
+        pack: file, lineSeen: true, inputSeen: false, nameSeen: true, typedSeen: true, arrow: "opens the status list",
+      });
     });
   }
 
