@@ -12,7 +12,7 @@ workspace = true
 [features]
 # `test_support::MemDht`: other crates' tests drive their callers through a
 # real pool over it.
-test-support = []
+test-support = [  ]
 
 [dependencies]
 async-trait = "0.1"

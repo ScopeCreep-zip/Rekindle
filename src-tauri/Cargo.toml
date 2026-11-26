@@ -47,9 +47,9 @@ rekindle-presence = { path = "../crates/rekindle-presence" }
 rekindle-records = { path = "../crates/rekindle-records" }
 rekindle-route = { path = "../crates/rekindle-route" }
 rekindle-secrets = { path = "../crates/rekindle-secrets" }
+rekindle-skin = { path = "../crates/rekindle-skin" }
 rekindle-sync = { path = "../crates/rekindle-sync" }
 rekindle-types = { path = "../crates/rekindle-types" }
-rekindle-skin = { path = "../crates/rekindle-skin" }
 rekindle-vault = { path = "../crates/rekindle-vault" }
 rekindle-video = { path = "../crates/rekindle-video" }
 
@@ -63,9 +63,9 @@ rekindle-crypto = { path = "../crates/rekindle-crypto" }
 rekindle-node = { path = "../crates/rekindle-node" }
 rekindle-outbox = { path = "../crates/rekindle-outbox" }
 # `HostApi`, `Caller` (plan E1.1): every GUI request reaches the Host through them.
-rekindle-ipc = { path = "../crates/rekindle-ipc" }
 rekindle-game-detect = { path = "../crates/rekindle-game-detect" }
 rekindle-idle = { path = "../crates/rekindle-idle" }
+rekindle-ipc = { path = "../crates/rekindle-ipc" }
 rekindle-protocol = { path = "../crates/rekindle-protocol" }
 rekindle-utils = { path = "../crates/rekindle-utils", features = [ "retry", "log-scrub" ] }
 rekindle-voice = { path = "../crates/rekindle-voice" }
@@ -174,8 +174,8 @@ windows = { version = "0.62", features = [ "Win32_Foundation", "Win32_Graphics_G
 
 [dev-dependencies]
 # `log_capture`: the log-line tests read their lines through it.
-rekindle-utils = { path = "../crates/rekindle-utils", features = [ "test-support" ] }
 proptest = "1"
+rekindle-utils = { path = "../crates/rekindle-utils", features = [ "test-support" ] }
 tempfile = "3"
 # `host::test_fixtures`: the relay tests start a real offline Host (plan GI3).
 rekindle-node = { path = "../crates/rekindle-node", features = [ "test-fixtures" ] }

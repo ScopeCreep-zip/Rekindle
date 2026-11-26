@@ -27,7 +27,7 @@ jobs:
     name: cargo-audit (RustSec)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install cargo-audit
         run: cargo install cargo-audit --locked
@@ -39,10 +39,10 @@ jobs:
     name: cargo-deny (advisories / bans / licenses / sources)
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - name: Install cargo-deny
-        uses: EmbarkStudios/cargo-deny-action@v2
+        uses: EmbarkStudios/cargo-deny-action@81891abc19297b21343b15ef67dc61e4aea74fda # v2
         with:
           command: check
           # All four sub-checks. The deny.toml config drives behaviour.
@@ -52,7 +52,7 @@ jobs:
     name: pnpm audit
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - uses: ./.github/actions/setup-pnpm
 

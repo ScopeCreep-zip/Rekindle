@@ -19,6 +19,6 @@ thiserror = { workspace = true }
 tokio = { workspace = true, features = [ "macros", "sync" ] }
 
 [dev-dependencies]
-tokio = { workspace = true, features = [ "macros", "rt", "sync" ] }
 parking_lot = { workspace = true }
 proptest = "1"
+tokio = { workspace = true, features = [ "macros", "rt", "sync" ] }

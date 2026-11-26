@@ -184,8 +184,8 @@ mod tests {
     #[test]
     fn keys() {
         assert_eq!(abbreviate_key("abcdef"), "abcdef");
-        let key = "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890";
-        assert_eq!(abbreviate_key(key), "abcdef12…7890");
+        let key = "0102030405060708010203040506070801020304050607080102030405060708";
+        assert_eq!(abbreviate_key(key), "01020304…0708");
     }
 
     #[test]

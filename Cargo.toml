@@ -2,7 +2,7 @@
 resolver = "2"
 # The Veilid contract tests build veilid-core with `mock-api`, which must never
 # unify into this graph (plan VU decision 6, ADR 0021): their own workspace.
-exclude = ["contract/veilid"]
+exclude = [ "contract/veilid" ]
 members = [
     "src-tauri",
     "crates/vendor/tauri-plugin-wdio-webdriver",
