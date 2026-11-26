@@ -8,7 +8,7 @@
 // element; then a double-click opens her chat window, which is closed.
 
 import { browser, expect } from "@wdio/globals";
-import { NET_WAIT_MS, switchTo, waitForHandle } from "../../../walk/helpers.ts";
+import { NET_WAIT_MS, switchTo, waitForHandle, waitUntil } from "../../../walk/helpers.ts";
 import { BUDDY, openSettings } from "../../../walk/nav.ts";
 import { type Peer, startFleet, stopFleet } from "../../fleet.ts";
 import { createIdentity, friendRow, newUser, openChat, type User } from "../../journeys.ts";
@@ -43,6 +43,16 @@ describe("a friend row survives a signal push, and a double-click opens the chat
       const href = await applySkin(browser, me, pack.name);
       await switchTo(browser, BUDDY);
       await skinShown(browser, href);
+      // Cara appears offline first, so her presence moves her from the
+      // group's Offline section to its Online one after the click (lead:
+      // the move must keep her row's element).
+      const sectionNow = async (): Promise<string> =>
+        (await browser.execute(() => {
+          const r = Array.from(document.querySelectorAll<HTMLElement>(".buddy-item")).find((e) => (e.textContent ?? "").includes("Cara"));
+          return r?.closest<HTMLElement>("[data-buddy-section]")?.dataset.buddySection ?? "none";
+        })) as string;
+      await peers[0].cli(["presence", "set", "--status", "invisible"]);
+      await waitUntil(async () => (await sectionNow()) === "Offline", NET_WAIT_MS, "Cara never showed offline");
       const row = await friendRow(browser, "Cara");
       // Evidence (lead, Symbiosis's replaced row): Cara's section (the
       // group's Online or Offline list) and status before the click and
@@ -51,7 +61,7 @@ describe("a friend row survives a signal push, and a double-click opens the chat
         (await browser.execute(() => {
           const r = Array.from(document.querySelectorAll<HTMLElement>(".buddy-item")).find((e) => (e.textContent ?? "").includes("Cara"));
           return JSON.stringify({
-            section: r?.closest(".buddy-subgroup")?.getAttribute("aria-label") ?? "none",
+            section: r?.closest<HTMLElement>("[data-buddy-section]")?.dataset.buddySection ?? "none",
             status: r?.querySelector("[role=img]")?.getAttribute("aria-label") ?? "none",
           });
         })) as string;
@@ -65,14 +75,16 @@ describe("a friend row survives a signal push, and a double-click opens the chat
             : [];
         new MutationObserver((records) => {
           for (const rec of records) {
-            for (const n of Array.from(rec.addedNodes)) for (const f of cara(n)) w.__rowLog!.push(`${new Date().toISOString()} added in ${f.closest(".buddy-subgroup")?.getAttribute("aria-label") ?? "none"}`);
+            for (const n of Array.from(rec.addedNodes)) for (const f of cara(n)) w.__rowLog!.push(`${new Date().toISOString()} added in ${f.closest<HTMLElement>("[data-buddy-section]")?.dataset.buddySection ?? "none"}`);
             for (const n of Array.from(rec.removedNodes)) if (cara(n).length > 0) w.__rowLog!.push(`${new Date().toISOString()} removed`);
           }
         }).observe(document.body, { subtree: true, childList: true });
       }, row as unknown as HTMLElement);
       console.log(`[row] ${file}: before the click: ${await where()}`);
       await row.click();
-      await browser.pause(2000);
+      await peers[0].cli(["presence", "set", "--status", "online"]);
+      await waitUntil(async () => (await sectionNow()) === "Online", NET_WAIT_MS, "Cara never came back online");
+      await browser.pause(1000);
       const kept = (await browser.execute(() => {
         const r = Array.from(document.querySelectorAll<HTMLElement>(".buddy-item")).find((e) => (e.textContent ?? "").includes("Cara"));
         return { same: (r as (HTMLElement & { __rowOnce?: number }) | undefined)?.__rowOnce === 1, signals: document.querySelector<HTMLElement>(".skin-tree")?.dataset.skinSignals ?? "no tree" };
