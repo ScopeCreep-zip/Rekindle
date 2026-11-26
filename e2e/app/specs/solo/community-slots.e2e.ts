@@ -4,8 +4,14 @@
 // slot node's box, each child the shell mounted in it (Solid's Portal
 // wrapper) with its box and display, the community layout's box and its
 // parents up to the slot, and the window's size; shot.
+//
+// Then the slots slice's proof (lead): the community layout fills its
+// chatArea slot (its box equals the slot's, ±1: it stopped at its content
+// height, 337 of 449 px, in an unsized Portal wrapper), the composer lies
+// within chatEdit (it overflowed by 14 px), and the shell's part fills
+// chatSend.
 
-import { browser } from "@wdio/globals";
+import { browser, expect } from "@wdio/globals";
 import { switchTo } from "../../../walk/helpers.ts";
 import { BUDDY, openSettings } from "../../../walk/nav.ts";
 import { createCommunity, createIdentity, newUser, openCommunity, type User } from "../../journeys.ts";
@@ -13,7 +19,32 @@ import { applySkin, skinShown } from "../../journeys_skins.ts";
 import { shot } from "../../shots.ts";
 import { builtinPacks } from "../../skin-pack.ts";
 
-const PACKS = ["symbiosis", "alloy"];
+const PACKS = ["symbiosis", "alloy", "xslimfire"];
+
+type Box = [number, number, number, number];
+
+/** The boxes the proof compares: each slot's, its mounted part's, the layout's and the composer's. */
+async function slotBoxes(): Promise<{ area: Box | null; layout: Box | null; edit: Box | null; composer: Box | null; send: Box | null; sendPart: Box | null }> {
+  return (await browser.execute(() => {
+    const box = (e: Element | null | undefined): [number, number, number, number] | null => {
+      if (!e) return null;
+      const r = e.getBoundingClientRect();
+      return [r.left, r.top, r.right, r.bottom];
+    };
+    const slot = (k: string) => document.querySelector(`.skin-tree [data-skin-role="slot:${k}"]`);
+    return {
+      area: box(slot("chatArea")),
+      layout: box(document.querySelector(".community-layout")),
+      edit: box(slot("chatEdit")),
+      composer: box(document.querySelector(".message-input-wrapper")),
+      send: box(slot("chatSend")),
+      sendPart: box(slot("chatSend")?.firstElementChild),
+    };
+  })) as { area: Box | null; layout: Box | null; edit: Box | null; composer: Box | null; send: Box | null; sendPart: Box | null };
+}
+
+const near = (a: Box | null, b: Box | null): boolean => !!a && !!b && a.every((v, i) => Math.abs(v - b[i]) <= 1);
+const within = (a: Box | null, b: Box | null): boolean => !!a && !!b && a[0] >= b[0] - 1 && a[1] >= b[1] - 1 && a[2] <= b[2] + 1 && a[3] <= b[3] + 1;
 
 async function slotEvidence(): Promise<string> {
   return (await browser.execute(() => {
@@ -58,6 +89,11 @@ describe("a skinned community window's slots and the content mounted in them (SK
       await browser.pause(2000);
       console.log(`[slots] ${file}: ${await slotEvidence()}`);
       await shot(`${file}-community`);
+      const b = await slotBoxes();
+      console.log(`[slots-proof] ${file}: ${JSON.stringify(b)}`);
+      expect({ pack: file, layoutFillsChatArea: near(b.layout, b.area) }).toEqual({ pack: file, layoutFillsChatArea: true });
+      expect({ pack: file, composerWithinChatEdit: within(b.composer, b.edit) }).toEqual({ pack: file, composerWithinChatEdit: true });
+      if (b.send) expect({ pack: file, partFillsChatSend: near(b.sendPart, b.send) }).toEqual({ pack: file, partFillsChatSend: true });
       await browser.closeWindow();
       await switchTo(browser, BUDDY);
     });
