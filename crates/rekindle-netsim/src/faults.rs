@@ -16,7 +16,8 @@ pub enum Fault {
     DhtOffline { node: usize, offline: bool },
     /// Every set by the node that `of` selects lands below consensus (no
     /// replica accepts it and nothing is stored, as a Veilid `set_value`
-    /// can), until [`Fault::Heal`]; its other writes are unaffected.
+    /// can; the writer hears `Ok(None)`, as [`Fault::WritePartial`]), until
+    /// [`Fault::Heal`]; its other writes are unaffected.
     WriteFails { node: usize, of: Writes },
     /// Every set by the node that `of` selects reaches only the
     /// `accepting` replicas closest to the record, which store it, until
@@ -26,9 +27,9 @@ pub enum Fault {
     /// `set_value.rs:711-738`), and one with more as landed, so only
     /// fewer is below consensus. With
     /// `AllowOffline(false)` the writer stores and queues nothing locally
-    /// (`local_record_store_interface.rs:60-62`) and hears `TryAgain`
-    /// (0.5.8 `set_value.rs:731-738`), never `Ok(None)`, while a reader whose fanout reaches an accepting replica sees the
-    /// value.
+    /// (`local_record_store_interface.rs:61-62`) and hears `Ok(None)`
+    /// (fork `e1158844` `set_value.rs:731-738` then `:306-308`), while a
+    /// reader whose fanout reaches an accepting replica sees the value.
     WritePartial {
         node: usize,
         of: Writes,

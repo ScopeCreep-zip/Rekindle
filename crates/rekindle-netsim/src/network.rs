@@ -172,6 +172,10 @@ pub(crate) struct NodeSlot {
     /// The inspects the node's app asked for (`DhtPort::inspect`), by
     /// record key, for a scenario that a record is never polled.
     pub app_inspects: HashMap<String, u64>,
+    /// Of those, the ones in a network scope, which run a fanout; a
+    /// `Local` inspect reads only the local store (0.5.8
+    /// `routing_context.rs:962`: "local-only and non-blocking").
+    pub app_network_inspects: HashMap<String, u64>,
     /// The gets the node's app sent to the network (`DhtPort::get` not
     /// answered from the local copy), by record key, for a scenario that a
     /// read costs only the gets it needs.
@@ -237,6 +241,7 @@ impl NodeSlot {
             watches: HashMap::new(),
             outbound: crate::records::outbound::OutboundWatches::default(),
             app_inspects: HashMap::new(),
+            app_network_inspects: HashMap::new(),
             app_gets: HashMap::new(),
             app_sets: 0,
             app_resends: 0,
@@ -325,6 +330,12 @@ impl Network {
     /// Count one inspect `node`'s app sent for `key` (`app_inspects`).
     pub(crate) fn count_app_inspect(&self, node: usize, key: &str) {
         tally(&mut self.inner.lock().nodes[node].app_inspects, key);
+    }
+
+    /// Count one network-scope inspect `node`'s app sent for `key`
+    /// (`app_network_inspects`).
+    pub(crate) fn count_app_network_inspect(&self, node: usize, key: &str) {
+        tally(&mut self.inner.lock().nodes[node].app_network_inspects, key);
     }
 
     pub(crate) fn new(seed: u64) -> Arc<Self> {
