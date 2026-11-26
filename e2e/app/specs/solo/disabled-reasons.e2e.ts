@@ -108,7 +108,7 @@ describe("a disabled node says why (CR1)", function () {
         // Lead: the node's own art's alpha at its box centre (the served
         // image drawn at the node's background size and position), and every
         // node with art under that point (which one draws the button seen).
-        const art = (await browser.executeAsync((nid: string, done: (r: string) => void) => {
+        const art = (await browser.execute((nid: string) => new Promise<string>((done) => {
           const n = document.querySelector<HTMLElement>(`.skin-tree [data-skin-node="${nid}"]`);
           if (!n) return done("no node");
           const cs = getComputedStyle(n);
@@ -136,7 +136,7 @@ describe("a disabled node says why (CR1)", function () {
           };
           img.onerror = () => done(`image failed to load; under: ${JSON.stringify(under)}`);
           img.src = url;
-        }, id)) as string;
+        }), id)) as string;
         console.log(`[cr1] ${file} ${id} own art: ${art}`);
       }
       console.log(`[cr1] ${file} disabled vs enabled self, pixels changed: ${JSON.stringify(look)} (visibly disabled at 20)`);
