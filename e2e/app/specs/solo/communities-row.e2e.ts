@@ -10,6 +10,7 @@ import { NET_WAIT_MS, press, shown, switchTo, waitForHandle, waitUntil } from ".
 import { BUDDY, closeModal, openSettings } from "../../../walk/nav.ts";
 import { createCommunity, createIdentity, newUser, type User } from "../../journeys.ts";
 import { applySkin, showSkinView, skinShown } from "../../journeys_skins.ts";
+import { disabledLook } from "../../disabled-look.ts";
 import { shot } from "../../shots.ts";
 import { builtinPacks } from "../../skin-pack.ts";
 
@@ -119,6 +120,11 @@ describe("the Communities view's row: Open / Leave / New in every pack (CB1)", f
         "",
       ).catch(() => undefined);
       console.log(`[cb] ${file} nothing selected (signals live): ${JSON.stringify(before)}`);
+      // Visibly disabled (lead, CR1; Combat's round Open/Leave drew one art
+      // in both states): each differs from its enabled self in 20+ pixels.
+      const look = await disabledLook([NODES.open, NODES.leave]);
+      console.log(`[cb] ${file} Open/Leave disabled vs enabled self, pixels changed: ${JSON.stringify(look)} (visibly disabled at 20)`);
+      expect({ pack: file, notVisiblyDisabled: Object.entries(look).filter(([, n]) => n < 20).map(([id]) => id) }).toEqual({ pack: file, notVisiblyDisabled: [] });
       await shot("nothing-selected");
       // The view itself shows too, not only its row: in Classic views and
       // button rows share one control group, so a page that shows the row
