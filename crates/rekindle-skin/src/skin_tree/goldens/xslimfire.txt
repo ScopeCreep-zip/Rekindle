@@ -19,6 +19,11 @@ BaseBoard Group
       StopDownloadButton Button
       ExecuteDownloadButton Button
       DownloadInfoButton Button
+    FriendsButtons.Communities ButtonRow(Communities)
+      CommunitiesOpen Button
+      CommunitiesLeave Button
+        CommunitiesLeaveText.Communities Part label "Leave"
+      CommunitiesNew Button
 ResizeTopLeft Button target [0, 0, 24, 24] art [0, 0, 8, 8] Size
 ResizeTopRight Button target [-16, 0, 24, 24] art [16, 0, 8, 8] Short
 ResizeBottomLeft Button target [0, -14, 24, 24] art [0, 14, 10, 10] Size

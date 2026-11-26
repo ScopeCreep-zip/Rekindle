@@ -15,6 +15,8 @@ pub(crate) mod capability;
 mod capability_tests;
 pub(crate) mod community;
 #[cfg(test)]
+mod community_row_tests;
+#[cfg(test)]
 mod community_tests;
 mod draft;
 pub(crate) mod failure;

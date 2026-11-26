@@ -11,6 +11,7 @@ pub mod brand;
 pub mod chat_roles;
 pub mod chat_slots;
 mod clip;
+pub mod community_row;
 pub mod compose;
 pub mod content;
 pub mod cover;
@@ -27,6 +28,7 @@ pub mod pieces;
 pub mod place;
 pub mod popup;
 pub mod roles;
+pub mod row_pages;
 mod settle;
 mod span_css;
 mod tab_step;
@@ -40,6 +42,8 @@ pub mod validate;
 mod anchor_tests;
 #[cfg(test)]
 mod chat_tests;
+#[cfg(test)]
+mod community_row_tests;
 #[cfg(test)]
 mod community_tests;
 #[cfg(test)]
@@ -66,6 +70,8 @@ mod overlap_tests;
 mod place_tests;
 #[cfg(test)]
 mod rail_tests;
+#[cfg(test)]
+mod row_pages_tests;
 #[cfg(test)]
 mod settle_tests;
 #[cfg(test)]

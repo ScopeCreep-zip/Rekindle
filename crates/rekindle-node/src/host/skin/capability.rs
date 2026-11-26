@@ -359,6 +359,9 @@ pub(crate) fn allows(
         // Only the creator names the room (lead decision 1a; the others
         // drop a rename from anyone else, `group_dm/rename.rs`).
         C::RenameRoom => matches!(group, Some(Group::Joined { creator: true, .. })),
+        // The Communities row's Open and Leave act on the selected
+        // community (plan E7.7).
+        C::OpenCommunity | C::LeaveCommunity => matches!(selected, Selected::Community { .. }),
         C::OpenSelected => media_exists(selected),
         // Deleting a room is leaving it (SK2-G §6).
         C::DeleteSelected => media_exists(selected) || matches!(group, Some(Group::Joined { .. })),
@@ -457,5 +460,8 @@ fn why(capability: Capability, inputs: &Inputs, selected: Selected<'_>) -> &'sta
         }
         C::OpenSelected | C::UploadSelected => "Select a picture or video first.",
         C::DeleteSelected => "Select a picture, a video or a room first.",
+        // The Communities row (plan CB1): the words its Open and Leave
+        // answer a press with (`community::SELECT_COMMUNITY`).
+        C::OpenCommunity | C::LeaveCommunity => super::community::SELECT_COMMUNITY,
     }
 }

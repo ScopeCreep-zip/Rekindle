@@ -388,6 +388,10 @@ pub const fn button_words(action: &SkinAction) -> Option<&'static str> {
         SkinAction::HostVoiceChat => "Host Voice",
         SkinAction::VoiceChat => "Join Voice",
         SkinAction::LeaveVoiceChat => "Leave Voice",
+        // The Communities row (plan E7.7, [`super::community_row`]).
+        SkinAction::OpenCommunity => "Open",
+        SkinAction::LeaveCommunity => "Leave",
+        SkinAction::StartCommunity => "New",
         _ => return None,
     })
 }
@@ -401,7 +405,9 @@ pub const fn button_words(action: &SkinAction) -> Option<&'static str> {
 /// art-less part, the info popup's `TalkingStateButton` (a state tile the
 /// engine draws while the user talks), is not named for text.
 fn is_button_text(n: &SkinNode) -> bool {
-    let name = n.id.rsplit('.').next().unwrap_or(&n.id);
+    // A Host clone's id carries `.Communities` ([`super::community_row`]).
+    let id = n.id.strip_suffix(".Communities").unwrap_or(&n.id);
+    let name = id.rsplit('.').next().unwrap_or(id);
     n.role == NodeRole::Part
         && n.art.is_none()
         && n.label.is_none()

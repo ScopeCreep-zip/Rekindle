@@ -44,7 +44,8 @@ export type SkinSelection =
   | { kind: "group"; arg: { groupId: string } }
   /** A friend group's header (plan E7.15 IV5); null is the default group. */
   | { kind: "friendGroup"; arg: { groupId: number | null } }
-  /** A community window (plan E7.7 HSC1): its community, the channel it
+  /** A community: a buddy-list Communities row (plan CB1: channel and
+   *  server null) or a community window (plan E7.7 HSC1): its community, the channel it
    *  shows and the game server selected in its SERVERS list (null: none
    *  yet; Join takes the first listed). */
   | { kind: "community"; arg: { community: string; channel: string | null; server: string | null } };
@@ -57,7 +58,9 @@ export type ShellPanel =
   | "createCommunity"
   | "joinCommunity"
   | "shortcuts"
-  | "notifications";
+  | "notifications"
+  /** The Communities row's New (plan E7.7): a chooser, Create or Join. */
+  | "communityStart";
 
 export type CallOp =
   | { kind: "voice"; arg: { friend: string } }
@@ -127,6 +130,9 @@ export type ShellOp =
       kind: "chooseDownloadDest";
       arg: { attachmentId: string; target: TransferTarget; suggestedName: string };
     }
+  /** The Communities row (plan E7.7): the selected community's window, or its leave. */
+  | { kind: "openCommunity"; arg: { community: string } }
+  | { kind: "leaveCommunity"; arg: { community: string } }
   | { kind: "reportBug" }
   | { kind: "copyKey" }
   | { kind: "editName" }

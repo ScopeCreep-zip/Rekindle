@@ -29,6 +29,8 @@ pub enum ShellPanel {
     JoinCommunity,
     Shortcuts,
     Notifications,
+    /// The Communities row's New (plan E7.7): a chooser, Create or Join.
+    CommunityStart,
 }
 
 /// A 1:1 call operation: the shell's call commands own calls until plan
@@ -221,6 +223,16 @@ pub enum ShellOp {
     OpenSearch {
         scope: super::local_search::LocalSearchScope,
     },
+    /// The window of the selected `community` (the Communities row's Open,
+    /// plan E7.7).
+    OpenCommunity {
+        community: String,
+    },
+    /// Leave the selected `community`: the shell runs the existing leave,
+    /// which goes through the Host's leave intent (ADR 0019).
+    LeaveCommunity {
+        community: String,
+    },
     ReportBug,
     CopyKey,
     EditName,
@@ -291,7 +303,9 @@ pub enum SkinSelection {
     FriendGroup {
         group_id: Option<i64>,
     },
-    /// A community window (plan E7.7 HSC1): its community, the channel
+    /// A community (plan E7.7): a row selected in the buddy list's
+    /// Communities view (plan CB1: channel and server `None`), or a
+    /// community window (HSC1): its community, the channel
     /// it shows (`None` before one is shown) and the game server selected
     /// in its "SERVERS" list (`None`: Join takes the first listed). The
     /// window sends it on open and on every channel or server change.

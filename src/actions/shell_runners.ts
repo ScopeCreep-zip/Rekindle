@@ -17,6 +17,7 @@ import { handleSetMuted } from "./voice.actions";
 import { handleOpenGroupChat } from "./group-dm.actions";
 import { handleCopyPublicKey } from "./buddy.actions";
 import { handleQuit, handleReportBug, openSettingsTab } from "./app_menu.actions";
+import { handleLeaveCommunity } from "./community/lifecycle";
 
 /** The File, Tool and Help menus' own items: Settings on a tab, Report Bug,
  *  Exit (the buddy list, chat windows and the popups that carry them). */
@@ -125,7 +126,8 @@ export function muteOps(op: ShellOp): boolean {
   return true;
 }
 
-/** The buddy list's own: Copy Key, and Show Voice (plan E7.2 A: the call
+/** The buddy list's own: Copy Key, the Communities row's Open and Leave
+ *  (plan CB1), and Show Voice (plan E7.2 A: the call
  *  window forward, or the community window on the voice channel the user
  *  is in), the Host's `ShowVoiceWindow`, which only the main window lays. */
 export function mainOps(op: ShellOp): boolean {
@@ -140,6 +142,15 @@ export function mainOps(op: ShellOp): boolean {
         const { community, channel } = op.arg.target.arg;
         commands.openCommunityWindow(community, channel).catch((e) => addToast(errorMessage(e), "error"));
       }
+      return true;
+    // The Communities row (plan CB1): the selected community's window.
+    case "openCommunity":
+      commands.openCommunityWindow(op.arg.community).catch((e) => addToast(errorMessage(e), "error"));
+      return true;
+    case "leaveCommunity":
+      // The Host's leave intent asks first (ADR 0019); the row then goes in
+      // every window (dropCommunity here, LF1's forgotten in the others).
+      void handleLeaveCommunity(op.arg.community);
       return true;
     default:
       return false;

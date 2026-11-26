@@ -232,8 +232,12 @@ pub fn targets(tree: &SkinTree, window: (i32, i32)) -> Vec<Laid> {
     let keeps = |i: usize, id: &str| {
         !apart.apart(&live[i].0.id, id) && !keep::kin(&tree.root, live[i].0, id)
     };
+    // A place of a button bar's grid is taken whichever row shows
+    // ([`keep::Grid`]).
+    let grid = keep::Grid::new(&tree.root);
     let near = |i: usize, j: usize| {
-        i != j && !apart.apart(&live[i].0.id, &live[j].0.id) && !overlap(live[i].1, live[j].1)
+        let (a, b) = (&live[i].0.id, &live[j].0.id);
+        i != j && (!apart.apart(a, b) || grid.shares(a, b)) && !overlap(live[i].1, live[j].1)
     };
     let laid_over = |i: usize, j: usize| {
         i != j && !apart.apart(&live[i].0.id, &live[j].0.id) && overlap(live[i].1, live[j].1)

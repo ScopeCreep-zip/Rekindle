@@ -22,6 +22,10 @@
 //!   cannot be launched.
 //! - `ViewProfile`/`ProfileFriend` open the community's info panel
 //!   (`ShellOp::OpenCommunityInfo`).
+//!
+//! The buddy list's Communities row (plan CB1) selects a community the same
+//! way (channel and server `None`); its Open and Leave map here too
+//! ([`row`]).
 
 use std::collections::BTreeMap;
 
@@ -250,6 +254,31 @@ pub(crate) fn verdict(
     Some(words.map_or(CommunityVerdict::Holds, |w| {
         CommunityVerdict::Refused(w.to_owned())
     }))
+}
+
+/// The Host's reason the buddy list's Communities row refuses Open and
+/// Leave (and their capability is `cannot`) while no community is selected.
+pub(crate) const SELECT_COMMUNITY: &str = "Select a community first.";
+
+/// The buddy list's Communities row (plan CB1): Open is the selected
+/// community's window, Leave the shell's leave, which goes through the
+/// Host's leave intent (ADR 0019); both are refused with
+/// [`SELECT_COMMUNITY`] while no community is selected.
+pub(crate) fn row(action: &A, community: Option<&str>) -> Result<Mapped, IpcResponse> {
+    let community = community
+        .map(str::to_owned)
+        .ok_or_else(|| IpcResponse::error(409, SELECT_COMMUNITY))?;
+    let op = match action {
+        A::OpenCommunity => ShellOp::OpenCommunity { community },
+        A::LeaveCommunity => ShellOp::LeaveCommunity { community },
+        _ => {
+            return Err(IpcResponse::error(
+                400,
+                format!("{action:?} is no Communities row action"),
+            ))
+        }
+    };
+    Ok(Mapped::Run(SkinRun::Shell(op)))
 }
 
 /// A community window's press of `action`: `None` for an action the

@@ -69,6 +69,13 @@ popup MainMenuPopup
           StopButtonText Part label "Stop"
         ExecuteButton Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
           ExecuteButtonText Part label "Execute"
+      FriendsButtons.Communities ButtonRow(Communities)
+        CommunitiesOpen Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
+          ChatButtonText.Communities Part label "Open"
+        CommunitiesLeave Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
+          StopButtonText.Communities Part label "Leave"
+        CommunitiesNew Button target [0, 0, 110, 21] art [0, 0, 110, 21] Short
+          AddServerButtonText.Communities Part label "New"
     InfoJoinChatTab ButtonBar
       HostChatButton Button target [0, 0, 110, 24] art [0, 0, 110, 21] Size
         HostChatButtonText Part label "Host Voice"

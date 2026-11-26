@@ -104,6 +104,12 @@ TabsButtonsContainer ButtonBar
     NotificationsButtonBar.Separator1 Decor
     DeleteNotification Button
     NotificationsButtonBar.Separator2 Decor
+  ChatRoomsButtonBar.Communities ButtonRow(Communities)
+    CommunitiesOpen Button
+    ChatRoomsButtonBar.Separator1.Communities Decor
+    CommunitiesLeave Button
+    ChatRoomsButtonBar.Separator2.Communities Decor
+    CommunitiesNew Button
 MainInfoViewButton Button target [0, 0, 13, 115] art [0, 0, 13, 115] Spacing
 popup MainInfoViewPopup
   MainInfoResizeR Button target [-14, 0, 24, 509] art [14, 0, 10, 509] Size

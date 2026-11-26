@@ -212,7 +212,10 @@ export type SkinAction =
         | "showSafetyNumber"
         | "showGameInvite"
         | "videoChat"
-        | "openNotifications";
+        | "openNotifications"
+        | "openCommunity"
+        | "leaveCommunity"
+        | "startCommunity";
     };
 
 /** `Capability`: what the selection allows (`OnAppCan<X>`). */
@@ -242,7 +245,9 @@ export type Capability =
   | "delete"
   | "deleteSelected"
   | "openSelected"
-  | "uploadSelected";
+  | "uploadSelected"
+  | "openCommunity"
+  | "leaveCommunity";
 
 /** `AppSignal` (serde `tag = "kind"`, `content = "arg"`). */
 export type AppSignal =
