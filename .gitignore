@@ -109,10 +109,14 @@ ehthumbs.db
 # Legacy RE artifacts (large binaries, unpacked installer). The built-in
 # skin packs' verified source trees under legacy/skins/ are kept: they are
 # the importer's inputs (legacy/skins/README.md), stored byte-for-byte.
+# So are the original download archives of every surviving Xfire skin under
+# legacy/skins-src/ (legacy/skins-src/README.md).
 # ------------------------------------------------------------
 /legacy/*
 !/legacy/skins/
 !/legacy/skins/**
+!/legacy/skins-src/
+!/legacy/skins-src/**
 
 # ------------------------------------------------------------
 # Misc
