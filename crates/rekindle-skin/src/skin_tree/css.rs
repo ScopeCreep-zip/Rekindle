@@ -34,6 +34,13 @@ const fn is_input(role: NodeRole) -> bool {
     matches!(role, NodeRole::NameField | NodeRole::StatusText)
 }
 
+/// The state the served refusal copy (`NodeArt::refused`, plan DIS3)
+/// draws on: the shell's `data-state="disabled"` for any cause but
+/// `windowInactive` (the Host-sent cause of the pack's unfocused-window
+/// look, SkinTreeWindow.tsx), so a window-inactive node keeps the pack's
+/// own Disabled art, or its Normal art where the pack draws none.
+const REFUSED: &str = "[data-state=\"disabled\"]:not([data-state-cause=\"windowInactive\"])";
+
 /// What every node's rule reads: the window's root selector, its package
 /// images and base, and each node's box in the smallest window.
 struct Ctx<'a> {
@@ -278,16 +285,25 @@ fn node(out: &mut String, (n, prev): (&SkinNode, &[SkinNode]), ctx: &Ctx<'_>) ->
     if let Some(over) = after {
         let _ = writeln!(out, "  {sel}::after {{\n    {over}\n  }}");
     }
-    for (state, set) in n.art.iter().flat_map(|a| a.states.iter()) {
-        let pseudo = match state {
-            RegionState::Hover => ":hover",
-            RegionState::Down => ":active",
-            // The shell's `data-state="disabled"` (SkinTreeWindow.tsx), set
-            // for a refusal and for the pack's unfocused-window look alike;
-            // `aria-disabled` marks only a refusal (CR1, lead ruling (a)).
-            RegionState::Disabled => "[data-state=\"disabled\"]",
-            _ => continue,
-        };
+    let states = n.art.iter().flat_map(|a| {
+        a.states
+            .iter()
+            .filter_map(|(state, set)| {
+                let pseudo = match state {
+                    RegionState::Hover => ":hover",
+                    RegionState::Down => ":active",
+                    // The shell's `data-state="disabled"` (SkinTreeWindow.tsx),
+                    // set for a refusal and for the pack's unfocused-window look
+                    // alike; `aria-disabled` marks only a refusal (CR1, lead
+                    // ruling (a)).
+                    RegionState::Disabled => "[data-state=\"disabled\"]",
+                    _ => return None,
+                };
+                Some((pseudo, set))
+            })
+            .chain(a.refused.as_ref().map(|set| (REFUSED, set)))
+    });
+    for (pseudo, set) in states {
         let (main, over) = layers(set, images, base, outer)?;
         let _ = writeln!(out, "  {sel}{pseudo} {{\n    {main}\n  }}");
         match over {
@@ -437,8 +453,9 @@ mod tests {
     fn served(id: &str) -> (SkinTree, String) {
         let (_, b) = builtin::find(&format!("{}{id}", builtin::PREFIX)).unwrap();
         let p = package::read(b.bytes).unwrap();
-        let mut m = manifest::served(&p).unwrap();
-        let files = images::validate(&p, &m).unwrap();
+        let (mut m, made) = manifest::served_made(&p).unwrap();
+        let mut files = images::validate(&p, &m).unwrap();
+        files.extend(made);
         let l = m.windows.remove(&SkinWindow::Main).unwrap();
         let tree = l.tree.clone().unwrap();
         let css = super::tree_css(".f", &tree, &l, &files, "x").unwrap();

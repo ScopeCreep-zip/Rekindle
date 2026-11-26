@@ -48,8 +48,11 @@ pub fn run(bytes: &[u8]) -> Result<Canonical, SkinError> {
     // for the Host's placements is refused (design `sk2a` §3). What is
     // written is the author's manifest, so the package stays its own.
     let mut served = manifest.clone();
-    manifest::place(&mut served, &package)?;
-    shape::check(&served, &images)?;
+    // The Disabled copies the serve draws are checked with the art they
+    // are drawn as, never written into the package.
+    let mut drawn = images.clone();
+    drawn.extend(manifest::place(&mut served, &package)?);
+    shape::check(&served, &drawn)?;
     for v in &manifest.variants {
         let skin = parsed.get(&v.tokens).ok_or_else(|| missing(&v.tokens))?;
         let base = Base::of(v.base, v.contrast);
