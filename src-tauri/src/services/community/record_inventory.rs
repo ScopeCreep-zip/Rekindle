@@ -143,6 +143,8 @@ mod tests {
             sealed_pages: rekindle_node::host::community::sealed_pages::SealedPages::default(),
             removal_watch: std::collections::BTreeMap::new(),
             key_drop: None,
+            own_record_watch: None,
+            own_key_retired_shown: false,
             key_drop_writer: std::sync::Arc::default(),
             beat_view: rekindle_presence::community::BeatView::default(),
             on_screen: rekindle_presence::community::OnScreen::default(),

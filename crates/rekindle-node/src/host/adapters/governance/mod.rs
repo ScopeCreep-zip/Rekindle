@@ -90,6 +90,7 @@ mod op_publish;
 mod op_record_owner;
 mod ops;
 mod own_pages;
+mod own_record_watch;
 mod own_removal;
 mod permission_events;
 pub(crate) mod pins;
