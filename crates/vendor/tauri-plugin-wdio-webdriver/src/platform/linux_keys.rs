@@ -66,7 +66,8 @@ pub(super) fn dispatch(
     // SAFETY: GDK allocated this union with the matching key-event variant. It
     // owns one reference to the attached window and releases it with the event.
     unsafe {
-        let event_key = &mut (*event.to_glib_none_mut().0).key;
+        let raw: *mut gdk::ffi::GdkEvent = event.to_glib_none_mut().0;
+        let event_key = &mut (*raw).key;
         event_key.window = window.to_glib_full();
         event_key.send_event = 1;
         event_key.time = time;
