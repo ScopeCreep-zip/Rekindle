@@ -288,7 +288,11 @@
     font-family: var(--font-family-xfire);
     font-size: 12px;
     color: var(--color-xfire-text);
-    overflow: hidden;
+    /* clip, not hidden: a hidden-overflow root is still a scroll container,
+     * and the browser scrolled it sideways to bring a focused popover into
+     * view (the member profile popup clipped the window's left column).
+     * A window never scrolls as a page; its parts scroll inside. */
+    overflow: clip;
     user-select: none;
   }
 

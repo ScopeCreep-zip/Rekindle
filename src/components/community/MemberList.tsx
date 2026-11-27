@@ -312,6 +312,16 @@ const MemberList: Component<MemberListProps> = (props) => {
 
     const popover = () => (
       <Popover
+        // Kept inside the window (the member list sits at its right edge):
+        // opens to the left, flips or slides when it does not fit, may cover
+        // its row rather than leave the window, and is capped to the space
+        // the window has (fitViewport), scrolling inside when taller.
+        placement="left-start"
+        flip
+        slide
+        overlap
+        fitViewport
+        overflowPadding={8}
         open={isOpen()}
         onOpenChange={(open) =>
           setOpenProfileFor(open ? member.pseudonymKey : null)
