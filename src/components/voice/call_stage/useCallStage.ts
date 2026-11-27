@@ -109,7 +109,9 @@ export function useCallStage() {
       const selfKey = selfPseudonymForActiveCall();
       // Before the roster row hydrates, the tile reads our voice-roster entry
       // (the Host's name) by key; the global name never stands in.
-      const selfName = selfKey ? (memberNameForActiveCall(selfKey) ?? "") : (authState.displayName ?? "");
+      const selfName = selfKey
+        ? (memberNameForActiveCall(selfKey) ?? "")
+        : (authState.displayName ?? "");
       if (pipe && camOn) {
         if (pipe.nativeCapture?.()) {
           const nativeCanvas = pipe.nativeSelfCanvas?.() ?? null;

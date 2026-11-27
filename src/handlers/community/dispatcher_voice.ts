@@ -21,7 +21,7 @@ import { withCommunity } from "./community_reread";
 function mirrorRosterAdd(
   communityId: string,
   channelId: string,
-  entries: { pseudonymKey: string; displayName: string }[],
+  entries: { pseudonymKey: string; displayName: string }[]
 ): void {
   if (voiceState.activeCallType !== "community" || voiceState.channelId !== channelId) return;
   const community = communityState.communities[communityId];
