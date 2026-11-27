@@ -440,7 +440,17 @@ pub fn spawn_host_stream(
                         crate::windows::follow_event(&app, &state, &sequenced.event);
                         let event = WebviewEvent::Subscription(sequenced.event);
                         if let Some(envelope) = event.envelope(Some(sequenced.cursor)) {
-                            state.event_router.deliver(&envelope, &event.audience());
+                            state
+                                .event_router
+                                .deliver_if(&envelope, &event.audience(), || match &event {
+                                    WebviewEvent::Subscription(
+                                        SubscriptionEvent::IntentPending {
+                                            hold_id: Some(hold_id),
+                                            review,
+                                        },
+                                    ) => host.holds_review(*hold_id, review.intent_id),
+                                    _ => true,
+                                });
                         }
                     }
                     StreamFrame::InvalidSession => state

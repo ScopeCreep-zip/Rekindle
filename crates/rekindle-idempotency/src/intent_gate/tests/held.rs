@@ -19,6 +19,8 @@ fn a_held_review_keeps_its_publication_id_until_consumed() {
         vec![(first.intent_id, first.intent_id)]
     );
     assert!(gate.held_reviews(&who(2), 0).is_empty(), "another owner's");
+    assert!(!gate.holds_review(first.intent_id, first.intent_id, &who(2), 0));
+    assert!(!gate.holds_review(first.intent_id, first.intent_id, &ME, 10));
     assert!(gate.held_reviews(&ME, 10).is_empty(), "expired");
 
     let mut changed = initial;
@@ -34,6 +36,8 @@ fn a_held_review_keeps_its_publication_id_until_consumed() {
         panic!("changed facts must be reviewed again");
     };
     assert_ne!(first.intent_id, refreshed.intent_id);
+    assert!(!gate.holds_review(first.intent_id, first.intent_id, &ME, 1));
+    assert!(gate.holds_review(first.intent_id, refreshed.intent_id, &ME, 1));
     assert_eq!(
         ids(&gate.held_reviews(&ME, 1)),
         vec![(first.intent_id, refreshed.intent_id)],

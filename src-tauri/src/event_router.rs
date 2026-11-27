@@ -138,10 +138,10 @@ impl WebviewRouter {
         &self,
         label: String,
         channel: Channel<OutboundEnvelope>,
-        replay: impl IntoIterator<Item = OutboundEnvelope>,
+        snapshot: impl FnOnce() -> Vec<OutboundEnvelope>,
     ) {
         let mut subs = self.subs.write();
-        for envelope in replay {
+        for envelope in snapshot() {
             if let Err(e) = channel.send(envelope) {
                 tracing::debug!(window = %label, error = %e, "event replay send failed");
             }
@@ -165,7 +165,22 @@ impl WebviewRouter {
 
     /// Send `envelope` to every registered window in `audience`.
     pub fn deliver(&self, envelope: &OutboundEnvelope, audience: &Audience) {
-        for (label, channel) in self.subs.read().iter() {
+        self.deliver_if(envelope, audience, || true);
+    }
+
+    /// Recheck a live event under the same dispatch lock that orders new
+    /// subscribers' snapshots, then deliver it to the matching windows.
+    pub fn deliver_if(
+        &self,
+        envelope: &OutboundEnvelope,
+        audience: &Audience,
+        is_current: impl FnOnce() -> bool,
+    ) {
+        let subs = self.subs.read();
+        if !is_current() {
+            return;
+        }
+        for (label, channel) in subs.iter() {
             if audience.includes(label) {
                 if let Err(e) = channel.send(envelope.clone()) {
                     tracing::debug!(window = %label, error = %e, "event send failed");
