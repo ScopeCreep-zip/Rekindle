@@ -1,20 +1,9 @@
-import { Component, Show } from "solid-js";
-import SkinGlyph from "../../components/common/SkinGlyph";
-import ChannelChat from "./ChannelChat";
-import CallStage from "./CallStage";
-import EventsPanel from "../../components/community/EventsPanel";
-import GameServerList from "../../components/community/GameServerList";
-import ForumChannelView from "../../components/community/ForumChannelView";
-import StagePanel from "../../components/community/StagePanel";
-import WelcomeScreen from "../../components/community/WelcomeScreen";
-import GovernancePublicationStatus from "../../components/community/GovernancePublicationStatus";
-import CommunityDeviceStatus from "../../components/community/CommunityDeviceStatus";
-import { communityState } from "../../stores/community.store";
+import { type Component, Show } from "solid-js";
 import {
   handleAddGameServer,
+  handleCreateForumPost,
   handleRemoveGameServer,
   handleSetChannelTopic,
-  handleCreateForumPost,
 } from "../../actions/community.actions";
 import {
   handleJoinVoice,
@@ -22,6 +11,17 @@ import {
   handleRequestToSpeak,
   handleRespondToSpeakRequest,
 } from "../../actions/voice.actions";
+import SkinGlyph from "../../components/common/SkinGlyph";
+import CommunityDeviceStatus from "../../components/community/CommunityDeviceStatus";
+import EventsPanel from "../../components/community/EventsPanel";
+import ForumChannelView from "../../components/community/ForumChannelView";
+import GameServerList from "../../components/community/GameServerList";
+import GovernancePublicationStatus from "../../components/community/GovernancePublicationStatus";
+import StagePanel from "../../components/community/StagePanel";
+import WelcomeScreen from "../../components/community/WelcomeScreen";
+import { communityState } from "../../stores/community.store";
+import CallStage from "./CallStage";
+import ChannelChat from "./ChannelChat";
 import type { CommunityVm } from "./useCommunityWindow";
 
 /// Center column: game-server list, events panel, welcome screen, or the
@@ -47,167 +47,227 @@ const CommunityMainPane: Component<{ vm: CommunityVm }> = (props) => {
         />
       </Show>
       <Show when={!vm.showServers()}>
-      <Show when={vm.showEvents() && vm.activeCommunity()} fallback={
-        <Show when={vm.shouldShowWelcome() && vm.activeCommunity()?.welcomeScreen} fallback={
-          <Show when={vm.activeChannel()} fallback={
-            <div class="empty-placeholder">
-              <div class="empty-placeholder-title">Select a channel</div>
-              <div class="empty-placeholder-subtitle">Choose a community and channel to start chatting</div>
-            </div>
-          }>
-            <div class="community-channel-header">
-              <SkinGlyph name={vm.channelHeaderIcon()} class="community-channel-header-icon" />
-              <span class="community-channel-header-name">{vm.activeChannel()!.name}</span>
-              {/* Never-hide: the topic (or "Set topic…") is always drawn; one we
+        <Show
+          when={vm.showEvents() && vm.activeCommunity()}
+          fallback={
+            <Show
+              when={vm.shouldShowWelcome() && vm.activeCommunity()?.welcomeScreen}
+              fallback={
+                <Show
+                  when={vm.activeChannel()}
+                  fallback={
+                    <div class="empty-placeholder">
+                      <div class="empty-placeholder-title">Select a channel</div>
+                      <div class="empty-placeholder-subtitle">
+                        Choose a community and channel to start chatting
+                      </div>
+                    </div>
+                  }
+                >
+                  <div class="community-channel-header">
+                    <SkinGlyph
+                      name={vm.channelHeaderIcon()}
+                      class="community-channel-header-icon"
+                    />
+                    <span class="community-channel-header-name">{vm.activeChannel()!.name}</span>
+                    {/* Never-hide: the topic (or "Set topic…") is always drawn; one we
                   may not edit says why, in the Host's words. */}
-              <Show when={true}>
-                <Show when={vm.editingTopic()} fallback={
-                  <span
-                    class={`channel-topic ${vm.denied("setTopic") === null ? "channel-topic-editable" : "channel-topic-denied"}`}
-                    title={vm.denied("setTopic") ?? undefined}
-                    aria-disabled={vm.denied("setTopic") !== null ? "true" : undefined}
-                    aria-description={vm.denied("setTopic") ?? undefined}
-                    onClick={() => {
-                      if (vm.denied("setTopic") === null) {
-                        vm.setTopicDraft(vm.activeChannel()?.topic ?? "");
-                        vm.setEditingTopic(true);
+                    <Show when={true}>
+                      <Show
+                        when={vm.editingTopic()}
+                        fallback={
+                          <button
+                            type="button"
+                            class={`channel-topic ${vm.denied("setTopic") === null ? "channel-topic-editable" : "channel-topic-denied"}`}
+                            title={vm.denied("setTopic") ?? undefined}
+                            aria-disabled={vm.denied("setTopic") !== null ? "true" : undefined}
+                            aria-description={vm.denied("setTopic") ?? undefined}
+                            onClick={() => {
+                              if (vm.denied("setTopic") === null) {
+                                vm.setTopicDraft(vm.activeChannel()?.topic ?? "");
+                                vm.setEditingTopic(true);
+                              }
+                            }}
+                          >
+                            {vm.activeChannel()?.topic || "Set topic..."}
+                          </button>
+                        }
+                      >
+                        <input
+                          class="form-input channel-topic-header-input"
+                          type="text"
+                          value={vm.topicDraft()}
+                          onInput={(e) => vm.setTopicDraft(e.currentTarget.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              handleSetChannelTopic(
+                                vm.selectedCommunityId(),
+                                vm.selectedChannelId(),
+                                vm.topicDraft()
+                              );
+                              vm.setEditingTopic(false);
+                            }
+                            if (e.key === "Escape") {
+                              vm.setEditingTopic(false);
+                            }
+                          }}
+                          onBlur={() => {
+                            handleSetChannelTopic(
+                              vm.selectedCommunityId(),
+                              vm.selectedChannelId(),
+                              vm.topicDraft()
+                            );
+                            vm.setEditingTopic(false);
+                          }}
+                          placeholder="Channel topic..."
+                        />
+                      </Show>
+                    </Show>
+                    <Show
+                      when={
+                        vm.activeCommunity()?.description &&
+                        !vm.activeChannel()?.topic &&
+                        !vm.editingTopic()
                       }
-                    }}
+                    >
+                      <span class="community-description-hint">
+                        {vm.activeCommunity()!.description}
+                      </span>
+                    </Show>
+                    <span class="header-btn-group">
+                      <button
+                        type="button"
+                        class={`action-bar-btn header-add-btn ${vm.rightPanel() === "pins" ? "header-btn-active" : ""}`}
+                        onClick={vm.handleTogglePins}
+                        title="Pinned Messages"
+                      >
+                        <SkinGlyph name="pin" />
+                        <Show when={vm.pins().length > 0}>
+                          <span class="channel-header-badge">{vm.pins().length}</span>
+                        </Show>
+                      </button>
+                      <button
+                        type="button"
+                        class={`action-bar-btn header-add-btn ${vm.rightPanel() === "threadList" || vm.rightPanel() === "thread" ? "header-btn-active" : ""}`}
+                        onClick={vm.handleToggleThreadList}
+                        title="Threads"
+                      >
+                        <SkinGlyph name="thread" />
+                        <Show when={vm.activeThreadCount() > 0}>
+                          <span class="channel-header-badge">{vm.activeThreadCount()}</span>
+                        </Show>
+                      </button>
+                      <button
+                        type="button"
+                        class={`action-bar-btn header-add-btn ${vm.rightPanel() === "members" ? "header-btn-active" : ""}`}
+                        onClick={vm.handleToggleMembers}
+                        title="Members"
+                        aria-label={
+                          vm.rightPanel() === "members"
+                            ? "Hide members panel"
+                            : "Show members panel"
+                        }
+                        aria-pressed={vm.rightPanel() === "members"}
+                      >
+                        <SkinGlyph name="room" />
+                      </button>
+                    </span>
+                  </div>
+                  <Show
+                    when={vm.isForumChannel()}
+                    fallback={
+                      <Show
+                        when={vm.isStageChannel()}
+                        fallback={
+                          <Show when={vm.isVoiceChannel()} fallback={<ChannelChat vm={vm} />}>
+                            <CallStage vm={vm} />
+                          </Show>
+                        }
+                      >
+                        <StagePanel
+                          channel={vm.activeChannel()!}
+                          voiceChannel={vm.activeVoiceChannelState()}
+                          members={vm.activeCommunity()!.members}
+                          myPseudonymKey={vm.activeCommunity()?.myPseudonymKey ?? null}
+                          isConnectedToChannel={vm.isConnectedToActiveStage()}
+                          canModerate={vm.canManageMessages()}
+                          canRequestToSpeak={vm.canRequestToSpeak()}
+                          onJoinStage={() =>
+                            void handleJoinVoice(vm.selectedChannelId(), vm.selectedCommunityId())
+                          }
+                          onLeaveStage={() => void handleLeaveVoice()}
+                          onRequestToSpeak={() =>
+                            void handleRequestToSpeak(
+                              vm.selectedCommunityId(),
+                              vm.selectedChannelId()
+                            )
+                          }
+                          onApproveRequest={(requesterPseudonym) =>
+                            void handleRespondToSpeakRequest(
+                              vm.selectedCommunityId(),
+                              vm.selectedChannelId(),
+                              requesterPseudonym,
+                              true
+                            )
+                          }
+                          onDenyRequest={(requesterPseudonym) =>
+                            void handleRespondToSpeakRequest(
+                              vm.selectedCommunityId(),
+                              vm.selectedChannelId(),
+                              requesterPseudonym,
+                              false
+                            )
+                          }
+                        />
+                      </Show>
+                    }
                   >
-                    {vm.activeChannel()?.topic || "Set topic..."}
-                  </span>
-                }>
-                  <input
-                    class="form-input channel-topic-header-input"
-                    type="text"
-                    value={vm.topicDraft()}
-                    onInput={(e) => vm.setTopicDraft(e.currentTarget.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        handleSetChannelTopic(vm.selectedCommunityId(), vm.selectedChannelId(), vm.topicDraft());
-                        vm.setEditingTopic(false);
-                      }
-                      if (e.key === "Escape") {
-                        vm.setEditingTopic(false);
-                      }
-                    }}
-                    onBlur={() => {
-                      handleSetChannelTopic(vm.selectedCommunityId(), vm.selectedChannelId(), vm.topicDraft());
-                      vm.setEditingTopic(false);
-                    }}
-                    placeholder="Channel topic..."
-                  />
-                </Show>
-              </Show>
-              <Show when={vm.activeCommunity()?.description && !vm.activeChannel()?.topic && !vm.editingTopic()}>
-                <span class="community-description-hint">{vm.activeCommunity()!.description}</span>
-              </Show>
-              <span class="header-btn-group">
-                <button
-                  class={`action-bar-btn header-add-btn ${vm.rightPanel() === "pins" ? "header-btn-active" : ""}`}
-                  onClick={vm.handleTogglePins}
-                  title="Pinned Messages"
-                >
-                  <SkinGlyph name="pin" />
-                  <Show when={vm.pins().length > 0}>
-                    <span class="channel-header-badge">{vm.pins().length}</span>
+                    <ForumChannelView
+                      channel={vm.activeChannel()!}
+                      threads={communityState.channelThreads[vm.selectedChannelId()] ?? []}
+                      onOpenThread={vm.handleOpenThread}
+                      nameOf={vm.memberName}
+                      onCreatePost={async (name, body, forumTag) => {
+                        const threadId = await handleCreateForumPost(
+                          vm.selectedCommunityId(),
+                          vm.selectedChannelId(),
+                          name,
+                          body,
+                          forumTag
+                        );
+                        if (!threadId) return false;
+                        const thread = (
+                          communityState.channelThreads[vm.selectedChannelId()] ?? []
+                        ).find((item) => item.id === threadId);
+                        if (thread) vm.handleOpenThread(thread);
+                        return true;
+                      }}
+                    />
                   </Show>
-                </button>
-                <button
-                  class={`action-bar-btn header-add-btn ${vm.rightPanel() === "threadList" || vm.rightPanel() === "thread" ? "header-btn-active" : ""}`}
-                  onClick={vm.handleToggleThreadList}
-                  title="Threads"
-                >
-                  <SkinGlyph name="thread" />
-                  <Show when={vm.activeThreadCount() > 0}>
-                    <span class="channel-header-badge">{vm.activeThreadCount()}</span>
-                  </Show>
-                </button>
-                <button
-                  class={`action-bar-btn header-add-btn ${vm.rightPanel() === "members" ? "header-btn-active" : ""}`}
-                  onClick={vm.handleToggleMembers}
-                  title="Members"
-                  aria-label={vm.rightPanel() === "members" ? "Hide members panel" : "Show members panel"}
-                  aria-pressed={vm.rightPanel() === "members"}
-                >
-                  <SkinGlyph name="room" />
-                </button>
-              </span>
-            </div>
-            <Show when={vm.isForumChannel()} fallback={
-              <Show when={vm.isStageChannel()} fallback={
-                <Show when={vm.isVoiceChannel()} fallback={<ChannelChat vm={vm} />}>
-                  <CallStage vm={vm} />
                 </Show>
-              }>
-                <StagePanel
-                  channel={vm.activeChannel()!}
-                  voiceChannel={vm.activeVoiceChannelState()}
-                  members={vm.activeCommunity()!.members}
-                  myPseudonymKey={vm.activeCommunity()?.myPseudonymKey ?? null}
-                  isConnectedToChannel={vm.isConnectedToActiveStage()}
-                  canModerate={vm.canManageMessages()}
-                  canRequestToSpeak={vm.canRequestToSpeak()}
-                  onJoinStage={() => void handleJoinVoice(vm.selectedChannelId(), vm.selectedCommunityId())}
-                  onLeaveStage={() => void handleLeaveVoice()}
-                  onRequestToSpeak={() => void handleRequestToSpeak(vm.selectedCommunityId(), vm.selectedChannelId())}
-                  onApproveRequest={(requesterPseudonym) =>
-                    void handleRespondToSpeakRequest(
-                      vm.selectedCommunityId(),
-                      vm.selectedChannelId(),
-                      requesterPseudonym,
-                      true,
-                    )}
-                  onDenyRequest={(requesterPseudonym) =>
-                    void handleRespondToSpeakRequest(
-                      vm.selectedCommunityId(),
-                      vm.selectedChannelId(),
-                      requesterPseudonym,
-                      false,
-                    )}
-                />
-              </Show>
-            }>
-              <ForumChannelView
-                channel={vm.activeChannel()!}
-                threads={communityState.channelThreads[vm.selectedChannelId()] ?? []}
-                onOpenThread={vm.handleOpenThread}
-                nameOf={vm.memberName}
-                onCreatePost={async (name, body, forumTag) => {
-                  const threadId = await handleCreateForumPost(
-                    vm.selectedCommunityId(),
-                    vm.selectedChannelId(),
-                    name,
-                    body,
-                    forumTag,
-                  );
-                  if (!threadId) return false;
-                  const thread = (communityState.channelThreads[vm.selectedChannelId()] ?? [])
-                    .find((item) => item.id === threadId);
-                  if (thread) vm.handleOpenThread(thread);
-                  return true;
+              }
+            >
+              <WelcomeScreen
+                screen={vm.activeCommunity()!.welcomeScreen!}
+                communityName={vm.activeCommunity()!.name}
+                onChannelClick={(channelId) => {
+                  vm.handleSelectChannel(channelId);
+                  vm.setShowWelcomeForCommunity(null);
                 }}
               />
             </Show>
-          </Show>
-        }>
-          <WelcomeScreen
-            screen={vm.activeCommunity()!.welcomeScreen!}
-            communityName={vm.activeCommunity()!.name}
-            onChannelClick={(channelId) => {
-              vm.handleSelectChannel(channelId);
-              vm.setShowWelcomeForCommunity(null);
+          }
+        >
+          <EventsPanel
+            communityId={vm.selectedCommunityId()}
+            myPseudonymKey={vm.activeCommunity()?.myPseudonymKey ?? null}
+            onCreateEvent={() => vm.setShowCreateEvent(true)}
+            onEditEvent={(event) => {
+              vm.setEditingEvent(event);
+              vm.setShowCreateEvent(true);
             }}
           />
         </Show>
-      }>
-        <EventsPanel
-          communityId={vm.selectedCommunityId()}
-          myPseudonymKey={vm.activeCommunity()?.myPseudonymKey ?? null}
-          onCreateEvent={() => vm.setShowCreateEvent(true)}
-          onEditEvent={(event) => { vm.setEditingEvent(event); vm.setShowCreateEvent(true); }}
-        />
-      </Show>
       </Show>
     </div>
   );

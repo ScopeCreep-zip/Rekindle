@@ -1,18 +1,21 @@
+import { refreshCommunityMembers } from "../../handlers/community/members_refresh";
 import { commands } from "../../ipc/commands";
-import { setCommunityState, communityState } from "../../stores/community.store";
-import { addToast } from "../../stores/toast.store";
-import { decodeBase64ToBytes } from "../../utils/base64";
 import type { CommunityProfilePatch, WelcomeScreen } from "../../ipc/commands/dto";
 import { isCommandError } from "../../ipc/commands/dto";
+import { communityState, setCommunityState } from "../../stores/community.store";
+import { addToast } from "../../stores/toast.store";
+import { decodeBase64ToBytes } from "../../utils/base64";
 import { errorMessage } from "../../utils/error";
-import { refreshCommunityMembers } from "../../handlers/community/members_refresh";
 
 /**
  * Send `patch`, our card's edit in one community (plan PF2: each field
  * unchanged, cleared or set, so a partial change never wipes another field),
  * then show the card as the Host now holds it.
  */
-export async function handleUpdateCommunityProfile(communityId: string, patch: CommunityProfilePatch): Promise<boolean> {
+export async function handleUpdateCommunityProfile(
+  communityId: string,
+  patch: CommunityProfilePatch
+): Promise<boolean> {
   try {
     await commands.updateCommunityProfile(communityId, patch);
     const detail = (await commands.getCommunityDetails()).find((d) => d.id === communityId);
@@ -42,7 +45,7 @@ export async function handleUpdateCommunityProfile(communityId: string, patch: C
 /// Pick a file in the native dialog and upload it. Null if cancelled.
 export async function handleUploadAttachment(
   communityId: string,
-  channelId: string,
+  channelId: string
 ): Promise<string | null> {
   try {
     const id = await commands.uploadAttachment(communityId, channelId);
@@ -61,7 +64,7 @@ export async function handleUploadAttachment(
 export async function handleDownloadAttachment(
   communityId: string,
   channelId: string,
-  attachmentId: string,
+  attachmentId: string
 ): Promise<boolean> {
   try {
     return await commands.downloadAttachment(communityId, channelId, attachmentId);
@@ -76,7 +79,7 @@ export async function handleDownloadAttachment(
 export async function handleRevealAttachment(
   communityId: string,
   channelId: string,
-  attachmentId: string,
+  attachmentId: string
 ): Promise<void> {
   try {
     await commands.revealDownloadedAttachment(communityId, channelId, attachmentId);
@@ -92,12 +95,14 @@ export async function handleLoadVoiceMessage(
   communityId: string,
   channelId: string,
   attachmentId: string,
-  mimeType: string,
+  mimeType: string
 ): Promise<{ blob: Blob; durationMs: number; waveform: Uint8Array } | null> {
   try {
     const view = await commands.getVoiceMessageAudio(communityId, channelId, attachmentId);
     return {
-      blob: new Blob([decodeBase64ToBytes(view.audio) as Uint8Array<ArrayBuffer>], { type: mimeType }),
+      blob: new Blob([decodeBase64ToBytes(view.audio) as Uint8Array<ArrayBuffer>], {
+        type: mimeType,
+      }),
       durationMs: view.durationMs,
       waveform: decodeBase64ToBytes(view.waveform),
     };
@@ -112,7 +117,7 @@ export async function handleLoadVoiceMessage(
 export async function handlePinAttachment(
   communityId: string,
   attachmentId: string,
-  pinned: boolean,
+  pinned: boolean
 ): Promise<void> {
   try {
     await commands.pinAttachment(communityId, attachmentId, pinned);
@@ -130,9 +135,7 @@ export async function handlePinAttachment(
  * Backend validates `MANAGE_COMMUNITY` and that the segment is full;
  * returns the new `segment_index`.
  */
-export async function handleExpandCommunitySegment(
-  communityId: string,
-): Promise<number | null> {
+export async function handleExpandCommunitySegment(communityId: string): Promise<number | null> {
   try {
     const newIndex = await commands.expandCommunitySegment(communityId);
     addToast(`Community expanded — segment ${newIndex} ready for new members`, "success");
@@ -146,7 +149,9 @@ export async function handleExpandCommunitySegment(
 }
 
 export async function handleSetNotificationOverride(
-  communityId: string, channelId: string, level: "all" | "mentions" | "nothing"
+  communityId: string,
+  channelId: string,
+  level: "all" | "mentions" | "nothing"
 ): Promise<void> {
   try {
     await commands.setChannelNotificationLevel(communityId, channelId, level);
@@ -170,7 +175,7 @@ export async function handleSetNotificationOverride(
 export async function handleSetChannelNotificationSound(
   communityId: string,
   channelId: string,
-  soundRef: string | null,
+  soundRef: string | null
 ): Promise<void> {
   try {
     await commands.setNotificationSound(communityId, channelId, soundRef);
@@ -184,7 +189,7 @@ export async function handleSetChannelNotificationSound(
         "channels",
         index,
         "notificationSoundRef",
-        soundRef,
+        soundRef
       );
     }
     addToast("Notification sound updated", "success");
@@ -215,7 +220,11 @@ function isWelcomeScreen(v: unknown): v is WelcomeScreen {
     o.channels.every((c: unknown) => {
       if (c === null || typeof c !== "object") return false;
       const e = c as Record<string, unknown>;
-      return typeof e.channelId === "string" && typeof e.description === "string" && (e.emoji === null || typeof e.emoji === "string");
+      return (
+        typeof e.channelId === "string" &&
+        typeof e.description === "string" &&
+        (e.emoji === null || typeof e.emoji === "string")
+      );
     })
   );
 }
@@ -244,7 +253,7 @@ export async function handleLoadWelcomeScreen(communityId: string): Promise<void
 export async function handleSubmitOnboarding(
   communityId: string,
   answers: { questionId: string; selectedOptions: string[] }[],
-  acknowledgedRules?: boolean,
+  acknowledgedRules?: boolean
 ): Promise<boolean> {
   try {
     await commands.submitOnboardingAnswers(communityId, answers, acknowledgedRules);

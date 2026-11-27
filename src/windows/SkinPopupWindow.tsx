@@ -1,13 +1,12 @@
-import { Component, Show, onCleanup, onMount } from "solid-js";
-import type { UnlistenFn } from "@tauri-apps/api/event";
-import SkinTreeWindow from "../components/skin-tree/SkinTreeWindow";
-import Infoview from "../components/infoview/Infoview";
-import { popupName, skinPopupShell } from "../hooks/useSkin";
-import { startEventStream, subscribeSkinSignals } from "../ipc/channels";
-import { setSkinSignals } from "../stores/skin-signals.store";
-import { registerShellRunner } from "../actions/skin.actions";
+import { type Component, onCleanup, onMount, Show } from "solid-js";
 import { callOps, chatOpenOps, friendOps, menuOps, transferOps } from "../actions/shell_runners";
+import { registerShellRunner } from "../actions/skin.actions";
 import { handleClose } from "../actions/titlebar.actions";
+import Infoview from "../components/infoview/Infoview";
+import SkinTreeWindow from "../components/skin-tree/SkinTreeWindow";
+import { popupName, skinPopupShell } from "../hooks/useSkin";
+import { startEventStream, subscribeSkinSignals, type UnlistenFn } from "../ipc/channels";
+import { setSkinSignals } from "../stores/skin-signals.store";
 import { setWindowKind } from "../utils/window_kind";
 
 /**
@@ -29,8 +28,8 @@ const SkinPopupWindow: Component = () => {
           if (op.kind !== "close") return false;
           handleClose();
           return true;
-        }),
-      ),
+        })
+      )
     );
     // The groups the pack popups' trees serve (shell_runners): the menus
     // a main-menu popup carries, a friend's profile and chat, downloads,

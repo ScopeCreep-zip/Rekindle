@@ -1,7 +1,7 @@
-import { Component } from "solid-js";
-import SimpleInputModal from "../common/SimpleInputModal";
-import { friendsState, setFriendsState } from "../../stores/friends.store";
+import type { Component } from "solid-js";
 import { commands } from "../../ipc/commands";
+import { friendsState, setFriendsState } from "../../stores/friends.store";
+import SimpleInputModal from "../common/SimpleInputModal";
 
 const NewChatModal: Component = () => {
   function handleClose(): void {

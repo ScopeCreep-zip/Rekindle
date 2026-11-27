@@ -8,10 +8,10 @@ font glyph. Each glyph keeps the font's em square (units per em, flipped at
 the ascent), so at 1em it sits where and at the size the font glyph did.
 
 Source: src/assets/fonts/SymbolsNerdFontMono-Regular.woff2 (its name and
-version are read from the font and recorded in the NOTICE); the codepoints
-are src/icons.ts's constants. Symbols Nerd Font bundles several icon sets
-under different licences, so each glyph is mapped to its set by its name in
-the font and its codepoint range (the Nerd Fonts glyph-set table), and a
+version are read from the font and recorded in the NOTICE). The glyph map
+references src/icons.ts constants where the app also uses the font glyph.
+Symbols Nerd Font bundles several icon sets under different licences. Each
+glyph is mapped by its font name and its codepoint range, and a
 glyph of a set with no recorded licence is refused. The NOTICE lists the
 sets actually used, each with its licence text in src/assets/icons/.
 
@@ -47,71 +47,73 @@ SETS = [
     },
 ]
 
-# Glyph name -> src/icons.ts constant. The Community window's roles use the
-# Host's names (community_icon, src/styles/generated/community_icon.ts); the
-# rest are the shell's own.
+# Glyph name -> the src/icons.ts constant where the app also shows the font
+# glyph, or a codepoint (with its Nerd Fonts name) for an icon only a skinned
+# window shows.
+# The Community window's roles use the Host's names (community_icon,
+# src/styles/generated/community_icon.ts); the rest are the shell's own.
 GLYPHS = {
     "voice.server": "ICON_VOLUME_HIGH",
-    "mic.on": "ICON_MIC",
-    "mic.off": "ICON_MIC_OFF",
-    "speaker.on": "ICON_HEADPHONES",
-    "speaker.muted": "ICON_VOLUME_OFF",
-    "speaker.off": "ICON_HEADPHONES_OFF",
-    "fold.open": "ICON_CHEVRON_DOWN",
-    "fold.closed": "ICON_CHEVRON_RIGHT",
+    "mic.on": 0xF036C,  # nf-md-microphone
+    "mic.off": 0xF036D,  # nf-md-microphone_off
+    "speaker.on": 0xF02CB,  # nf-md-headphones
+    "speaker.muted": 0xF0581,
+    "speaker.off": 0xF07CE,  # nf-md-headphones_off
+    "fold.open": 0xF0140,  # nf-md-chevron_down
+    "fold.closed": 0xF0142,  # nf-md-chevron_right
     "room": "ICON_COMMUNITIES",
-    "chat": "ICON_CHANNEL_TEXT",
+    "chat": 0xF0423,  # nf-md-pound
     "account-remove": "ICON_ACCOUNT_REMOVE",
-    "archive": "ICON_ARCHIVE",
-    "arrow-down": "ICON_ARROW_DOWN",
-    "arrow-up": "ICON_ARROW_UP",
-    "ban": "ICON_BAN",
+    "archive": 0xF003C,  # nf-md-archive
+    "arrow-down": 0xF0045,  # nf-md-arrow_down
+    "arrow-up": 0xF005D,  # nf-md-arrow_up
+    "ban": 0xF029B,  # nf-md-gavel
     "bell": "ICON_BELL",
     "check": "ICON_CHECK",
-    "check-all": "ICON_CHECK_ALL",
-    "close": "ICON_CLOSE",
-    "close-circle": "ICON_CLOSE_CIRCLE",
-    "copy": "ICON_COPY",
-    "delete": "ICON_DELETE",
-    "dots": "ICON_DOTS",
-    "download": "ICON_DOWNLOAD",
-    "emoticon": "ICON_EMOTICON",
-    "eye": "ICON_EYE",
-    "file": "ICON_FILE",
-    "file-image": "ICON_FILE_IMAGE",
-    "folder": "ICON_FOLDER",
-    "folder-open": "ICON_FOLDER_OPEN",
-    "forward": "ICON_FORWARD",
+    "check-all": 0xF012D,  # nf-md-check_all
+    "close": 0xF0156,  # nf-md-close
+    "close-circle": 0xF0159,  # nf-md-close_circle
+    "copy": 0xF018F,  # nf-md-content_copy
+    "delete": 0xF01B4,  # nf-md-delete
+    "dots": 0xF01D8,  # nf-md-dots_horizontal
+    "download": 0xF01DA,  # nf-md-download
+    "emoticon": 0xF01F2,  # nf-md-emoticon_outline
+    "eye": 0xF0208,  # nf-md-eye
+    "file": 0xF0214,  # nf-md-file
+    "file-image": 0xF021F,  # nf-md-file_image
+    "folder": 0xF024B,  # nf-md-folder
+    "folder-open": 0xF0770,  # nf-md-folder_open
+    "forward": 0xF0496,  # nf-md-share
     "gamepad": "ICON_GAMEPAD",
     "hangup": "ICON_HANGUP",
     "key": "ICON_KEY",
-    "lock": "ICON_LOCK",
+    "lock": 0xF033E,
     "logout": "ICON_LOGOUT",
-    "megaphone": "ICON_MEGAPHONE",
-    "open-in-new": "ICON_OPEN_IN_NEW",
-    "paperclip": "ICON_PAPERCLIP",
-    "pause": "ICON_PAUSE",
-    "pencil": "ICON_PENCIL",
-    "perms": "ICON_PERMS",
+    "megaphone": 0xF00E6,  # nf-md-bullhorn
+    "open-in-new": 0xF03CC,  # nf-md-open_in_new
+    "paperclip": 0xF03E2,  # nf-md-paperclip
+    "pause": 0xF03E4,
+    "pencil": 0xF03EB,  # nf-md-pencil
+    "perms": 0xF099D,  # nf-md-shield_lock
     "phone": "ICON_PHONE",
-    "pin": "ICON_PIN",
-    "pip": "ICON_PIP",
-    "play": "ICON_PLAY",
+    "pin": 0xF0403,  # nf-md-pin
+    "pip": 0xF0E57,  # nf-md-picture_in_picture_bottom_right
+    "play": 0xF040A,
     "plus": "ICON_PLUS",
-    "plus-box": "ICON_PLUS_BOX",
-    "refresh": "ICON_REFRESH",
-    "reply": "ICON_REPLY",
-    "save": "ICON_SAVE",
-    "screen-share": "ICON_SCREEN_SHARE",
-    "search": "ICON_SEARCH",
-    "server": "ICON_SERVER",
-    "settings": "ICON_SETTINGS",
+    "plus-box": 0xF0416,  # nf-md-plus_box
+    "refresh": 0xF0450,  # nf-md-refresh
+    "reply": 0xF045A,  # nf-md-reply
+    "save": 0xF0193,  # nf-md-content_save
+    "screen-share": 0xF1483,  # nf-md-monitor_share
+    "search": 0xF0349,  # nf-md-magnify
+    "server": 0xF048B,  # nf-md-server
+    "settings": 0xF0493,  # nf-md-cog
     "shield": "ICON_SHIELD",
-    "thread": "ICON_THREAD",
-    "timeout": "ICON_TIMEOUT",
-    "timer-sand": "ICON_TIMER_SAND",
+    "thread": 0xF0367,  # nf-md-message_reply
+    "timeout": 0xF0954,  # nf-md-clock
+    "timer-sand": 0xF051F,  # nf-md-timer_sand
     "video": "ICON_VIDEO",
-    "video-off": "ICON_VIDEO_OFF",
+    "video-off": 0xF0568,  # nf-md-video_off
 }
 
 
@@ -140,31 +142,39 @@ def main() -> int:
     cps = codepoints()
     lines = []
     used = {}
-    for name, const in GLYPHS.items():
-        if const not in cps:
-            print(f"{const} is not in src/icons.ts", file=sys.stderr)
+    for name, source in GLYPHS.items():
+        cp = cps.get(source) if isinstance(source, str) else source
+        if cp is None:
+            print(f"{source} is not in src/icons.ts", file=sys.stderr)
             return 1
-        cp = cps[const]
         glyph = cmap.get(cp)
         if glyph is None:
-            print(f"{const} U+{cp:X} is not in the font", file=sys.stderr)
+            print(f"{name} U+{cp:X} is not in the font", file=sys.stderr)
             return 1
         s = set_of(glyph, cp)
         if s is None:
-            print(f"{const} U+{cp:X} ({glyph}) is from an icon set with no recorded licence; refusing", file=sys.stderr)
+            print(f"{name} U+{cp:X} ({glyph}) is from an icon set with no recorded licence; refusing", file=sys.stderr)
             return 1
         used.setdefault(s["name"], (s, []))[1].append(name)
         pen = SVGPathPen(glyphs)
         # Font units, y up from the baseline -> SVG, y down from the em top.
         glyphs[glyph].draw(TransformPen(pen, (1, 0, 0, -1, 0, ascent)))
         advance = font["hmtx"][glyph][0]
-        lines.append(f'  "{name}": {{ x: {(advance - em) // 2}, d: "{pen.getCommands()}" }},')
+        key = name if re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", name) else f'"{name}"'
+        left = (advance - em) // 2
+        path = pen.getCommands()
+        inline = f'  {key}: {{ x: {left}, d: "{path}" }},'
+        # Match the checked-in Biome width when laying out each outline.
+        if len(inline) <= 100:
+            lines.append(inline)
+        else:
+            lines.append(f'  {key}: {{\n    x: {left},\n    d: "{path}",\n  }},')
     family = font["name"].getDebugName(1)
     version = font["name"].getDebugName(5)
     sets_line = "; ".join(f"{s['name']} by {s['by'].split(' (')[0]}, {s['licence']}" for s, _ in used.values())
     OUT.write_text(
         "// Generated by scripts/skin_glyphs.py from src/assets/fonts/SymbolsNerdFontMono-Regular.woff2\n"
-        f"// ({family}, {version}) at src/icons.ts's codepoints. Do not edit: regenerate.\n"
+        f"// ({family}, {version}) with the codepoints named in the generator. Do not edit: regenerate.\n"
         f"// {sets_line}: src/assets/icons/NOTICE.md.\n\n"
         "/** One glyph: its path in the font's em square, and the square's left edge. */\n"
         "export interface GlyphArt {\n  x: number;\n  d: string;\n}\n\n"
@@ -191,7 +201,7 @@ def main() -> int:
         "## Source\n\n"
         f"- Font: **{family}**, `{version}` (the font's own name table), the file\n"
         "  `src/assets/fonts/SymbolsNerdFontMono-Regular.woff2` the app ships\n"
-        f"- {len(lines)} icons, at the codepoints `src/icons.ts` names. Symbols Nerd Font bundles several\n"
+        f"- {len(lines)} icons at the codepoints in the generator and `src/icons.ts`. Symbols Nerd Font bundles several\n"
         "  icon sets under different licences; each icon is mapped to its set by its glyph name and its\n"
         "  codepoint range, and an icon of a set with no recorded licence is refused. The sets used:\n\n"
         + "\n".join(sections)

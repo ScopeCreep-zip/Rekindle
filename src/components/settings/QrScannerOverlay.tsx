@@ -1,8 +1,8 @@
-import { Component, createSignal, onCleanup, Show } from "solid-js";
 import { Dialog } from "@kobalte/core/dialog";
-import { returnFocusToOpener } from "../../utils/dialog_focus";
 import QrScanner from "qr-scanner";
+import { type Component, createSignal, onCleanup, Show } from "solid-js";
 import { commands } from "../../ipc/commands";
+import { returnFocusToOpener } from "../../utils/dialog_focus";
 
 interface QrScannerOverlayProps {
   onResult: (decoded: string) => void;
@@ -51,7 +51,7 @@ const QrScannerOverlay: Component<QrScannerOverlayProps> = (props) => {
         // (laptops typically have only one — qr-scanner falls back
         // gracefully).
         preferredCamera: "environment",
-      },
+      }
     );
     // A backend-native camera session owns the device exclusively —
     // and a busy camera surfaces NO getUserMedia error: the scanner
@@ -86,32 +86,21 @@ const QrScannerOverlay: Component<QrScannerOverlayProps> = (props) => {
     // closes it, and focus goes back to the button that opened it.
     <Dialog open={true} onOpenChange={(open) => !open && props.onClose()} modal={true}>
       <Dialog.Portal>
-      <div class="qr-scanner-overlay">
-      <Dialog.Content class="qr-scanner-overlay-card" {...returnFocusToOpener()}>
-        <div class="qr-scanner-overlay-header">
-          <Dialog.Title class="form-field-label">Scan pairing QR</Dialog.Title>
-          <Dialog.CloseButton class="form-btn-secondary">
-            Close
-          </Dialog.CloseButton>
+        <div class="qr-scanner-overlay">
+          <Dialog.Content class="qr-scanner-overlay-card" {...returnFocusToOpener()}>
+            <div class="qr-scanner-overlay-header">
+              <Dialog.Title class="form-field-label">Scan pairing QR</Dialog.Title>
+              <Dialog.CloseButton class="form-btn-secondary">Close</Dialog.CloseButton>
+            </div>
+            <Show when={!error()} fallback={<div class="search-panel-error">{error()}</div>}>
+              <video ref={startScanner} class="qr-scanner-video" autoplay playsinline muted />
+              <div class="settings-hint">
+                Hold the existing device's QR code in front of the camera. Decoding happens locally
+                — nothing is sent over the network.
+              </div>
+            </Show>
+          </Dialog.Content>
         </div>
-        <Show
-          when={!error()}
-          fallback={<div class="search-panel-error">{error()}</div>}
-        >
-          <video
-            ref={startScanner}
-            class="qr-scanner-video"
-            autoplay
-            playsinline
-            muted
-          />
-          <div class="settings-hint">
-            Hold the existing device's QR code in front of the camera.
-            Decoding happens locally — nothing is sent over the network.
-          </div>
-        </Show>
-      </Dialog.Content>
-      </div>
       </Dialog.Portal>
     </Dialog>
   );

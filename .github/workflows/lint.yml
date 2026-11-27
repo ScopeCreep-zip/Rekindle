@@ -55,6 +55,9 @@ jobs:
   frontend:
     name: Frontend (biome / stylelint / knip)
     runs-on: ubuntu-24.04
+    env:
+      # Pin pnpm's runtime for install and exec. The shared action bootstraps Node from the 22 range.
+      npm_config_use_node_version: "22.22.2" # Stylelint 18 requires ^22.22.2 on Node 22.
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:

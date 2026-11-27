@@ -1,16 +1,25 @@
-import type { FriendInfo, Message as IpcMessage } from "../ipc/commands";
-import type { DmMessage } from "../ipc/commands/dto_dm";
 import type { DmHistoryGap } from "../ipc/channels/chat_events";
-import type { ExpressionInfo } from "../ipc/commands";
-import type { Friend } from "../stores/friends.store";
-import type { GameInfo } from "../ipc/commands/dto";
-import type { NotJoinableReason } from "../ipc/commands/types";
-import type { DeviceStatus } from "../ipc/commands/community";
-import type { Message } from "../stores/chat.store";
-import type { AutoModRule, Community, Channel, Expression, Member, MemberLocation } from "../stores/community.store";
-import type { MemberGroup } from "../ipc/commands/dto";
-import type { ChannelDeniedCapabilities, DeniedCapabilities, MemberModeration } from "../ipc/commands/dto_capabilities";
 import type { KeyStatus } from "../ipc/channels/community_subscription_events";
+import type { ExpressionInfo, FriendInfo, Message as IpcMessage } from "../ipc/commands";
+import type { DeviceStatus } from "../ipc/commands/community";
+import type { GameInfo, MemberGroup } from "../ipc/commands/dto";
+import type {
+  ChannelDeniedCapabilities,
+  DeniedCapabilities,
+  MemberModeration,
+} from "../ipc/commands/dto_capabilities";
+import type { DmMessage } from "../ipc/commands/dto_dm";
+import type { NotJoinableReason } from "../ipc/commands/types";
+import type { Message } from "../stores/chat.store";
+import type {
+  AutoModRule,
+  Channel,
+  Community,
+  Expression,
+  Member,
+  MemberLocation,
+} from "../stores/community.store";
+import type { Friend } from "../stores/friends.store";
 
 /** Convert a single backend FriendInfo to a frontend Friend. */
 function transformFriend(f: FriendInfo): Friend {
@@ -21,7 +30,15 @@ function transformFriend(f: FriendInfo): Friend {
     status: (f.status as Friend["status"]) ?? "offline",
     statusMessage: f.statusMessage ?? null,
     gameInfo: f.gameInfo
-      ? { gameName: f.gameInfo.gameName, gameId: f.gameInfo.gameId, startedAt: null, serverAddress: f.gameInfo.serverAddress ?? null, iconKey: f.gameInfo.iconKey, joinable: f.gameInfo.joinable, joinableReason: f.gameInfo.joinableReason }
+      ? {
+          gameName: f.gameInfo.gameName,
+          gameId: f.gameInfo.gameId,
+          startedAt: null,
+          serverAddress: f.gameInfo.serverAddress ?? null,
+          iconKey: f.gameInfo.iconKey,
+          joinable: f.gameInfo.joinable,
+          joinableReason: f.gameInfo.joinableReason,
+        }
       : null,
     group: f.groupLabel,
     groupId: f.groupId,
@@ -38,7 +55,7 @@ function transformFriend(f: FriendInfo): Friend {
 }
 
 /** Convert an array of FriendInfo into a keyed Record for the store. */
-export function transformFriendMap(friends: FriendInfo[]): Record<string, Friend> {
+function transformFriendMap(friends: FriendInfo[]): Record<string, Friend> {
   const map: Record<string, Friend> = {};
   for (const f of friends) {
     map[f.publicKey] = transformFriend(f);
@@ -54,11 +71,20 @@ export function transformFriendMap(friends: FriendInfo[]): Record<string, Friend
  * events, and a snapshot read before the presence read lands after it and
  * would put a friend back offline. A new row takes the snapshot's.
  */
-export function foldFriendSnapshot(friends: FriendInfo[], held: Record<string, Friend>): Record<string, Friend> {
+export function foldFriendSnapshot(
+  friends: FriendInfo[],
+  held: Record<string, Friend>
+): Record<string, Friend> {
   const next = transformFriendMap(friends);
   for (const [key, row] of Object.entries(next)) {
     const live = held[key];
-    if (live) next[key] = { ...row, status: live.status, gameInfo: live.gameInfo, statusMessage: live.statusMessage };
+    if (live)
+      next[key] = {
+        ...row,
+        status: live.status,
+        gameInfo: live.gameInfo,
+        statusMessage: live.statusMessage,
+      };
   }
   return next;
 }
@@ -68,10 +94,18 @@ export function foldFriendSnapshot(friends: FriendInfo[], held: Record<string, F
 function transformMessage(m: IpcMessage): Message {
   const decryptionFailed = m.decryptionFailed ?? m.body === "(decryption failed)";
   return {
-    id: m.id, senderId: m.senderId, body: decryptionFailed ? "" : m.body, timestamp: m.timestamp,
-    isOwn: m.isOwn, serverMessageId: m.serverMessageId,
-    decryptionFailed, undecryptable: m.undecryptable ?? null, automodBlurred: m.automodBlurred ?? false,
-    reactions: m.reactions, pinned: m.pinned, poll: m.poll,
+    id: m.id,
+    senderId: m.senderId,
+    body: decryptionFailed ? "" : m.body,
+    timestamp: m.timestamp,
+    isOwn: m.isOwn,
+    serverMessageId: m.serverMessageId,
+    decryptionFailed,
+    undecryptable: m.undecryptable ?? null,
+    automodBlurred: m.automodBlurred ?? false,
+    reactions: m.reactions,
+    pinned: m.pinned,
+    poll: m.poll,
     forwardedFromAuthor: m.forwardedFromAuthor ?? null,
     forwardedFromName: m.forwardedFromName ?? null,
     attachment: m.attachment
@@ -140,8 +174,45 @@ export function transformMessages(msgs: IpcMessage[]): Message[] {
 }
 
 /** Backend channel DTO → store Channel (handles the channelType→type rename+cast). */
-export function transformChannel(ch: { id: string; name: string; channelType: string; categoryId?: string; topic?: string; forumTags?: string[]; stageSpeakers?: string[]; stageModerator?: string | null; slowmodeSeconds?: number; nsfw?: boolean; messageRecordKey?: string; mekGeneration?: number; notificationLevel?: "all" | "mentions" | "nothing"; notificationSoundRef?: string | null; locked?: boolean; lockedReason?: string; denied?: ChannelDeniedCapabilities }): Channel {
-  return { denied: ch.denied ?? {}, locked: ch.locked ?? false, lockedReason: ch.lockedReason, id: ch.id, name: ch.name, type: ch.channelType as Channel["type"], unreadCount: 0, categoryId: ch.categoryId, topic: ch.topic ?? "", forumTags: ch.forumTags ?? undefined, stageSpeakers: ch.stageSpeakers ?? undefined, stageModerator: ch.stageModerator ?? null, slowmodeSeconds: ch.slowmodeSeconds, nsfw: ch.nsfw, messageRecordKey: ch.messageRecordKey, mekGeneration: ch.mekGeneration, notificationLevel: ch.notificationLevel ?? "all", notificationSoundRef: ch.notificationSoundRef ?? null };
+export function transformChannel(ch: {
+  id: string;
+  name: string;
+  channelType: string;
+  categoryId?: string;
+  topic?: string;
+  forumTags?: string[];
+  stageSpeakers?: string[];
+  stageModerator?: string | null;
+  slowmodeSeconds?: number;
+  nsfw?: boolean;
+  messageRecordKey?: string;
+  mekGeneration?: number;
+  notificationLevel?: "all" | "mentions" | "nothing";
+  notificationSoundRef?: string | null;
+  locked?: boolean;
+  lockedReason?: string;
+  denied?: ChannelDeniedCapabilities;
+}): Channel {
+  return {
+    denied: ch.denied ?? {},
+    locked: ch.locked ?? false,
+    lockedReason: ch.lockedReason,
+    id: ch.id,
+    name: ch.name,
+    type: ch.channelType as Channel["type"],
+    unreadCount: 0,
+    categoryId: ch.categoryId,
+    topic: ch.topic ?? "",
+    forumTags: ch.forumTags ?? undefined,
+    stageSpeakers: ch.stageSpeakers ?? undefined,
+    stageModerator: ch.stageModerator ?? null,
+    slowmodeSeconds: ch.slowmodeSeconds,
+    nsfw: ch.nsfw,
+    messageRecordKey: ch.messageRecordKey,
+    mekGeneration: ch.mekGeneration,
+    notificationLevel: ch.notificationLevel ?? "all",
+    notificationSoundRef: ch.notificationSoundRef ?? null,
+  };
 }
 
 export function transformExpression(expression: ExpressionInfo): Expression {
@@ -183,24 +254,60 @@ export function transformAutoModRule(rule: {
 
 /** Backend community detail DTO → store Community. */
 export function transformCommunityDetail(c: {
-  id: string; name: string; description: string | null;
+  id: string;
+  name: string;
+  description: string | null;
   iconHash?: string | null;
   bannerHash?: string | null;
-  channels: { id: string; name: string; channelType: string; categoryId?: string; topic?: string; forumTags?: string[]; stageSpeakers?: string[]; stageModerator?: string | null; slowmodeSeconds?: number; nsfw?: boolean; messageRecordKey?: string; mekGeneration?: number; notificationLevel?: "all" | "mentions" | "nothing"; notificationSoundRef?: string | null; locked?: boolean; lockedReason?: string }[];
+  channels: {
+    id: string;
+    name: string;
+    channelType: string;
+    categoryId?: string;
+    topic?: string;
+    forumTags?: string[];
+    stageSpeakers?: string[];
+    stageModerator?: string | null;
+    slowmodeSeconds?: number;
+    nsfw?: boolean;
+    messageRecordKey?: string;
+    mekGeneration?: number;
+    notificationLevel?: "all" | "mentions" | "nothing";
+    notificationSoundRef?: string | null;
+    locked?: boolean;
+    lockedReason?: string;
+  }[];
   categories?: { id: string; name: string; sortOrder: number }[];
-  roles?: { id: string; name: string; color: number; tagColours: { dark: number; light: number }; permissions: string; position: number; hoist: boolean; mentionable: boolean; selfAssignable?: boolean }[];
-  myRoleIds?: string[]; myPseudonymKey?: string | null; mekGeneration?: number;
-  myPermissions: string; myChannelPermissions: Record<string, string>;
-  memberRegistryKey?: string; anchor?: string | null;
+  roles?: {
+    id: string;
+    name: string;
+    color: number;
+    tagColours: { dark: number; light: number };
+    permissions: string;
+    position: number;
+    hoist: boolean;
+    mentionable: boolean;
+    selfAssignable?: boolean;
+  }[];
+  myRoleIds?: string[];
+  myPseudonymKey?: string | null;
+  mekGeneration?: number;
+  myPermissions: string;
+  myChannelPermissions: Record<string, string>;
+  memberRegistryKey?: string;
+  anchor?: string | null;
   onboardingComplete?: boolean;
   weAreCreator: boolean;
   deviceStatus: DeviceStatus;
   myDisplayName: string;
   myCardName?: string;
   myCustomStatus?: string;
-  myBio?: string | null; myPronouns?: string | null;
-  myAvatarRef?: string; myBannerRef?: string;
-  myThemeColor?: number | null; myBadges?: string[];
+  myBio?: string | null;
+  myPronouns?: string | null;
+  myAvatarRef?: string;
+  myBannerRef?: string;
+  myThemeColor?: number | null;
+  myBadges?: string[];
   removed?: {
     banned: boolean;
     by: string | null;
@@ -211,19 +318,26 @@ export function transformCommunityDetail(c: {
   denied?: DeniedCapabilities;
 }): Community {
   return {
-    id: c.id, name: c.name, description: c.description ?? null,
+    id: c.id,
+    name: c.name,
+    description: c.description ?? null,
     iconHash: c.iconHash ?? null,
     bannerHash: c.bannerHash ?? null,
     iconDataUrl: null,
     bannerDataUrl: null,
     channels: c.channels.map(transformChannel),
     categories: c.categories ?? [],
-    members: [], membersState: "loading", roles: c.roles ?? [],
-    myRoleIds: c.myRoleIds ?? [], myPseudonymKey: c.myPseudonymKey ?? null,
-    myPermissions: c.myPermissions, myChannelPermissions: c.myChannelPermissions,
+    members: [],
+    membersState: "loading",
+    roles: c.roles ?? [],
+    myRoleIds: c.myRoleIds ?? [],
+    myPseudonymKey: c.myPseudonymKey ?? null,
+    myPermissions: c.myPermissions,
+    myChannelPermissions: c.myChannelPermissions,
     mekGeneration: c.mekGeneration ?? 0,
     events: [],
-    memberRegistryKey: c.memberRegistryKey, anchor: c.anchor ?? null,
+    memberRegistryKey: c.memberRegistryKey,
+    anchor: c.anchor ?? null,
     onboardingComplete: c.onboardingComplete ?? true,
     weAreCreator: c.weAreCreator,
     deviceStatus: c.deviceStatus,
@@ -246,20 +360,30 @@ export function transformCommunityDetail(c: {
 
 /** Build a Record<id, Community> from an array of backend details. */
 export function transformCommunityMap(
-  details: Parameters<typeof transformCommunityDetail>[0][],
+  details: Parameters<typeof transformCommunityDetail>[0][]
 ): Record<string, Community> {
   const map: Record<string, Community> = {};
-  for (const c of details) { map[c.id] = transformCommunityDetail(c); }
+  for (const c of details) {
+    map[c.id] = transformCommunityDetail(c);
+  }
   return map;
 }
 
 /** Backend member DTO → store Member. */
 export function transformMember(m: {
-  pseudonymKey: string; displayName: string; fingerprint: string; customStatus?: string; roleIds: string[];
-  displayRole: string; status: string; timeoutUntil: number | null;
+  pseudonymKey: string;
+  displayName: string;
+  fingerprint: string;
+  customStatus?: string;
+  roleIds: string[];
+  displayRole: string;
+  status: string;
+  timeoutUntil: number | null;
   gameInfo?: GameInfo | null;
-  bio?: string | null; pronouns?: string | null;
-  themeColor?: number | null; badges?: string[];
+  bio?: string | null;
+  pronouns?: string | null;
+  themeColor?: number | null;
+  badges?: string[];
   location?: MemberLocation | null;
   lastActive?: number;
   group: MemberGroup;
@@ -269,10 +393,14 @@ export function transformMember(m: {
   return {
     // The Host's name, never empty: the card name, else the short
     // fingerprint (plan E3.4 S6); the window computes no name.
-    pseudonymKey: m.pseudonymKey, displayName: m.displayName, fingerprint: m.fingerprint,
+    pseudonymKey: m.pseudonymKey,
+    displayName: m.displayName,
+    fingerprint: m.fingerprint,
     customStatus: m.customStatus ?? null,
     roleIds: m.roleIds,
-    displayRole: m.displayRole, status: m.status, timeoutUntil: m.timeoutUntil ?? null,
+    displayRole: m.displayRole,
+    status: m.status,
+    timeoutUntil: m.timeoutUntil ?? null,
     gameInfo: m.gameInfo ?? null,
     bio: m.bio ?? null,
     pronouns: m.pronouns ?? null,
@@ -288,15 +416,27 @@ export function transformMember(m: {
 
 /** Minimal friendAdded event data → default Friend for store insertion. */
 export function transformNewFriend(
-  publicKey: string, displayName: string, friendshipState: string, groupLabel: string,
+  publicKey: string,
+  displayName: string,
+  friendshipState: string,
+  groupLabel: string
 ): Friend {
   return {
-    publicKey, displayName, nickname: null, status: "offline" as const,
-    statusMessage: null, gameInfo: null, group: groupLabel,
+    publicKey,
+    displayName,
+    nickname: null,
+    status: "offline" as const,
+    statusMessage: null,
+    gameInfo: null,
+    group: groupLabel,
     // A friend is added in no group (the Host's `Added`).
-    groupId: null, unreadCount: 0,
-    lastSeenAt: null, voiceChannel: null,
-    friendshipState: (friendshipState === "accepted" ? "accepted" : "pendingOut") as Friend["friendshipState"],
+    groupId: null,
+    unreadCount: 0,
+    lastSeenAt: null,
+    voiceChannel: null,
+    friendshipState: (friendshipState === "accepted"
+      ? "accepted"
+      : "pendingOut") as Friend["friendshipState"],
     handshakeError: null,
     handshakeRetrying: false,
     unreachable: false,
@@ -306,8 +446,23 @@ export function transformNewFriend(
   };
 }
 
-
 /** Presence event game data → store GameInfo. */
-export function transformGameInfo(g: { gameName: string; gameId?: number | null; elapsedSeconds?: number | null; serverAddress?: string | null; iconKey: string | null; joinable: boolean; joinableReason: NotJoinableReason | null }): GameInfo {
-  return { gameName: g.gameName, gameId: g.gameId ?? null, startedAt: g.elapsedSeconds ?? null, serverAddress: g.serverAddress ?? null, iconKey: g.iconKey, joinable: g.joinable, joinableReason: g.joinableReason };
+export function transformGameInfo(g: {
+  gameName: string;
+  gameId?: number | null;
+  elapsedSeconds?: number | null;
+  serverAddress?: string | null;
+  iconKey: string | null;
+  joinable: boolean;
+  joinableReason: NotJoinableReason | null;
+}): GameInfo {
+  return {
+    gameName: g.gameName,
+    gameId: g.gameId ?? null,
+    startedAt: g.elapsedSeconds ?? null,
+    serverAddress: g.serverAddress ?? null,
+    iconKey: g.iconKey,
+    joinable: g.joinable,
+    joinableReason: g.joinableReason,
+  };
 }

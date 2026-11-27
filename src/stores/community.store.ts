@@ -1,14 +1,22 @@
 import { batch } from "solid-js";
+import { createStore, produce, reconcile } from "solid-js/store";
 import type {
   OpPublicationState,
   OpQuarantineReason,
 } from "../ipc/channels/community_subscription_events";
-import { createStore, produce, reconcile } from "solid-js/store";
-import type { Message } from "./chat.store";
 import type {
-  GameInfo, InviteDto, MemberGroup, OnboardingConfig, WelcomeScreen,
+  GameInfo,
+  InviteDto,
+  MemberGroup,
+  OnboardingConfig,
+  WelcomeScreen,
 } from "../ipc/commands/dto";
-import type { ChannelDeniedCapabilities, DeniedCapabilities, MemberModeration } from "../ipc/commands/dto_capabilities";
+import type {
+  ChannelDeniedCapabilities,
+  DeniedCapabilities,
+  MemberModeration,
+} from "../ipc/commands/dto_capabilities";
+import type { Message } from "./chat.store";
 
 export interface Channel {
   id: string;
@@ -16,7 +24,16 @@ export interface Channel {
   /** The channel controls we lack here, each with the Host's reason
    *  (`CommunityChannelView::denied`, judged with the channel's overwrites). */
   denied?: ChannelDeniedCapabilities;
-  type: "text" | "voice" | "announcement" | "forum" | "stage" | "directory" | "media" | "events" | "dm";
+  type:
+    | "text"
+    | "voice"
+    | "announcement"
+    | "forum"
+    | "stage"
+    | "directory"
+    | "media"
+    | "events"
+    | "dm";
   unreadCount: number;
   categoryId?: string;
   topic?: string;
@@ -126,10 +143,9 @@ export interface Role {
   exclusionGroup?: string;
 }
 
+import type { DeviceStatus } from "../ipc/commands/community";
 // Declared once in the IPC layer, which mirrors the Rust contract.
 import type { SoundboardMeta } from "../ipc/commands/types";
-import type { DeviceStatus } from "../ipc/commands/community";
-export type { SoundboardMeta };
 
 export interface Expression {
   id: string;
@@ -170,22 +186,10 @@ export interface EventRsvp {
 // the same way once `ipc/channels/community_subscription_events.ts`
 // needed them too and src/ipc/ (the dependency-cruiser leaf) couldn't
 // import them back out of this store.
-import type {
-  DayOfWeek,
-  EventLocation,
-  GameServer,
-  RecurrenceFrequency,
-  RecurrenceRule,
-  Thread,
-} from "../ipc/commands/types";
-export type {
-  DayOfWeek,
-  EventLocation,
-  GameServer,
-  RecurrenceFrequency,
-  RecurrenceRule,
-  Thread,
-};
+import type { EventLocation, GameServer, RecurrenceRule, Thread } from "../ipc/commands/types";
+
+export type { GameServer, Thread };
+
 import type { KeyStatus } from "../ipc/channels/community_subscription_events";
 
 /**
@@ -380,7 +384,12 @@ export { communityState, setCommunityState };
  */
 export function setCommunityMembers(community: string, members: Member[]): void {
   batch(() => {
-    setCommunityState("communities", community, "members", reconcile(members, { key: "pseudonymKey" }));
+    setCommunityState(
+      "communities",
+      community,
+      "members",
+      reconcile(members, { key: "pseudonymKey" })
+    );
     setCommunityState("communities", community, "membersState", "known");
   });
 }
@@ -405,9 +414,12 @@ export function markMembersFailed(community: string, reason: string): void {
  * a copy without the key merges it into the store, so the row stayed.
  */
 export function dropCommunity(id: string): void {
-  setCommunityState("communities", produce((communities) => {
-    delete communities[id];
-  }));
+  setCommunityState(
+    "communities",
+    produce((communities) => {
+      delete communities[id];
+    })
+  );
   if (communityState.activeCommunity === id) {
     setCommunityState("activeCommunity", null);
     setCommunityState("activeChannel", null);

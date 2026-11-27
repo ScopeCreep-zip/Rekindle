@@ -1,6 +1,7 @@
-import type { Undecryptable } from "../commands/types";
 import type { SkinApplied } from "../commands/dto";
 import type { DeniedCapabilities } from "../commands/dto_capabilities";
+import type { Undecryptable } from "../commands/types";
+
 /**
  * The daemon-vocabulary half of the `community-event` channel.
  *
@@ -12,22 +13,29 @@ import type { DeniedCapabilities } from "../commands/dto_capabilities";
  * between the two) tells them apart.
  */
 
-import type { CommunityEvent } from "./community_events";
-import type { TypingContext, UnreadChanged } from "./chat_events";
 import type { EventInfo, GameServer, Thread } from "../commands/types";
+import type { TypingContext, UnreadChanged } from "./chat_events";
+import type { CommunityEvent } from "./community_events";
 
 /** Why an inviter refused a join (`rekindle_types::join_refusal::JoinRefusal`). */
-export type JoinRefusal = "INVITE_USED_UP" | "INVITE_NO_LONGER_VALID" | "INVITE_UNKNOWN" | "NOT_ADMITTED";
+type JoinRefusal = "INVITE_USED_UP" | "INVITE_NO_LONGER_VALID" | "INVITE_UNKNOWN" | "NOT_ADMITTED";
 
 /** Membership events from the daemon vocabulary. */
-export type MembershipEvent =
+type MembershipEvent =
   /**
    * Our join was withdrawn after it returned: the inviter refused it on a
    * retried exchange and the Host forgot the community (plan E3.1/JN1).
    * `reasonText` is the Host's words for the user; render it as given.
    */
   | { joinWithdrawn: { community: string; reason: JoinRefusal; reasonText: string } }
-  | { joinRequested: { community: string; pseudonym: string; displayName: string; hasInvite: boolean } }
+  | {
+      joinRequested: {
+        community: string;
+        pseudonym: string;
+        displayName: string;
+        hasInvite: boolean;
+      };
+    }
   | { joinProgress: { community: string; stage: string; status: string } }
   | {
       joined: {
@@ -39,7 +47,14 @@ export type MembershipEvent =
       };
     }
   /** The name on a member's verified card, first read or changed (plan E3.2 F9-2). */
-  | { memberCardChanged: { community: string; pseudonym: string; displayName: string; customStatus?: string } }
+  | {
+      memberCardChanged: {
+        community: string;
+        pseudonym: string;
+        displayName: string;
+        customStatus?: string;
+      };
+    }
   | { left: { community: string; pseudonym: string } }
   /** We no longer hold the community: our leave, withdrawn join or Forget (plan E3.2). Device-scoped; a repeat is a no-op. */
   | { forgotten: { community: string } }
@@ -65,12 +80,25 @@ export type MembershipEvent =
       };
     }
   | { unbanned: { community: string; targetPseudonym: string } }
-  | { timedOut: { community: string; targetPseudonym: string; durationSeconds: number; reason: string | null } }
+  | {
+      timedOut: {
+        community: string;
+        targetPseudonym: string;
+        durationSeconds: number;
+        reason: string | null;
+      };
+    }
   | { timeoutRemoved: { community: string; targetPseudonym: string } }
   | { timeoutStatusChanged: { community: string; pseudonym: string; timeoutUntil: number | null } }
   | { rolesChanged: { community: string; pseudonym: string; roleIds: string[] } }
   | { onboardingCompleted: { community: string; pseudonym: string; roleIds: string[] } }
-  | { onboardingAnswersSubmitted: { community: string; senderPseudonym: string; answerCount: number } }
+  | {
+      onboardingAnswersSubmitted: {
+        community: string;
+        senderPseudonym: string;
+        answerCount: number;
+      };
+    }
   | { membersRefreshed: { community: string } }
   | {
       /**
@@ -86,7 +114,7 @@ export type MembershipEvent =
     };
 
 /** System-level signals from the daemon vocabulary. */
-export type SystemEvent =
+type SystemEvent =
   /** **This peer's** own observation of the join rate. */
   | {
       raidDetected: {
@@ -243,7 +271,13 @@ export type GovernanceEvent =
   | { inviteRevoked: { community: string; codeHash: string } }
   | { inviteExpired: { community: string; codeHash: string } }
   | { channelPermissionsChanged: { community: string; channel: string } }
-  | { effectivePermissionsChanged: { community: string; member: string; denied: DeniedCapabilities } }
+  | {
+      effectivePermissionsChanged: {
+        community: string;
+        member: string;
+        denied: DeniedCapabilities;
+      };
+    }
   | { governanceRebuilt: { community: string } }
   | {
       governanceOpQuarantined: {
@@ -316,7 +350,7 @@ export type OpPublicationState =
   | { kind: "failed"; reason: string };
 
 /** Social events — reactions, pins, threads, scheduled events, servers. */
-export type SocialEvent =
+type SocialEvent =
   | {
       reactionAdded: {
         community: string;
@@ -480,8 +514,7 @@ export type CommunitySubscriptionEvent =
    * carries the distinction and the backend routes on it.
    */
   | {
-      typing:
-        // `name`: the typist's name as the Host states it, never empty (card name, else short fingerprint).
+      typing: // `name`: the typist's name as the Host states it, never empty (card name, else short fingerprint).
         | { started: { context: TypingContext; who: string; name: string } }
         | { stopped: { context: TypingContext; who: string } };
     }
@@ -490,9 +523,7 @@ export type CommunitySubscriptionEvent =
 export type AnyCommunityEvent = CommunityEvent | CommunitySubscriptionEvent;
 
 /** Whether this is the desktop's `{ type, data }` envelope. */
-export function isLegacyCommunityEvent(
-  event: AnyCommunityEvent,
-): event is CommunityEvent {
+export function isLegacyCommunityEvent(event: AnyCommunityEvent): event is CommunityEvent {
   return "type" in event;
 }
 
@@ -504,7 +535,7 @@ export interface CatchUpView {
 }
 
 /** One governance write held by the unlock barrier. */
-export interface PendingGovOp {
+interface PendingGovOp {
   opId: string;
   kind: PendingGovKind;
   target: { member: string | null; channel: string | null; role: string | null };
@@ -515,15 +546,54 @@ export interface PendingGovOp {
 
 /** One per `GovernanceEntry` arm (`PendingGovKind`). */
 type PendingGovKind =
-  | "channelCreated" | "channelEdited" | "channelDeleted" | "roleEdited" | "rolesChanged" | "roleDeleted"
-  | "ban" | "unban" | "join" | "memberRecordMoved" | "leave" | "kick" | "approveMember" | "rejectMember"
-  | "timeout" | "removeTimeout" | "communityEdited" | "notificationDefault" | "keyRotation"
-  | "categoryCreated" | "categoryEdited" | "categoryDeleted" | "permissionsChanged"
-  | "threadCreated" | "threadArchived" | "threadUnarchived" | "eventCreated" | "eventArchived" | "eventRsvp"
-  | "expressionAdded" | "expressionRemoved" | "modReport" | "onboardingConfig" | "welcomeScreen"
-  | "adminDelete" | "segmentAdded" | "autoModRule" | "inviteCreated" | "inviteRevoked" | "attachmentPinned"
-  | "communityPolicy" | "checkpoint" | "successor" | "deviceKey" | "deviceRetired" | "deviceReadmit"
-  | "successorLinkRequest" | "successorLink";
+  | "channelCreated"
+  | "channelEdited"
+  | "channelDeleted"
+  | "roleEdited"
+  | "rolesChanged"
+  | "roleDeleted"
+  | "ban"
+  | "unban"
+  | "join"
+  | "memberRecordMoved"
+  | "leave"
+  | "kick"
+  | "approveMember"
+  | "rejectMember"
+  | "timeout"
+  | "removeTimeout"
+  | "communityEdited"
+  | "notificationDefault"
+  | "keyRotation"
+  | "categoryCreated"
+  | "categoryEdited"
+  | "categoryDeleted"
+  | "permissionsChanged"
+  | "threadCreated"
+  | "threadArchived"
+  | "threadUnarchived"
+  | "eventCreated"
+  | "eventArchived"
+  | "eventRsvp"
+  | "expressionAdded"
+  | "expressionRemoved"
+  | "modReport"
+  | "onboardingConfig"
+  | "welcomeScreen"
+  | "adminDelete"
+  | "segmentAdded"
+  | "autoModRule"
+  | "inviteCreated"
+  | "inviteRevoked"
+  | "attachmentPinned"
+  | "communityPolicy"
+  | "checkpoint"
+  | "successor"
+  | "deviceKey"
+  | "deviceRetired"
+  | "deviceReadmit"
+  | "successorLinkRequest"
+  | "successorLink";
 
 /** Our community key against governance's generation, as the Host states it
  *  (`rekindle_types::dto::community::KeyStatus`; `CommunityView::key_status`,

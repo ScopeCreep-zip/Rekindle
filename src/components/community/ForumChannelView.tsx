@@ -1,7 +1,7 @@
-import { Component, For, Show, createMemo, createSignal } from "solid-js";
-import SkinGlyph from "../common/SkinGlyph";
+import { type Component, createMemo, createSignal, For, Show } from "solid-js";
 import type { Channel, Thread } from "../../stores/community.store";
 import { formatRelativeTime, messageCount } from "../../utils/formatting";
+import SkinGlyph from "../common/SkinGlyph";
 
 interface ForumChannelViewProps {
   channel: Channel;
@@ -21,12 +21,15 @@ const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
   // The controls stay shown, disabled with the reasons (owner: never hidden).
   // A channel we may not read (the Host's lock, e.g. a view overwrite) is
   // shown locked with the Host's words, never as an empty forum.
-  const lockReason = (): string | null => (props.channel.locked ? (props.channel.lockedReason ?? "") : null);
+  const lockReason = (): string | null =>
+    props.channel.locked ? (props.channel.lockedReason ?? "") : null;
   const postDenied = (): string | null => {
     const lock = lockReason();
     if (lock !== null) return lock;
     const denied = props.channel.denied ?? {};
-    const reasons = [denied.createPublicThreads, denied.sendInThreads].filter((r): r is string => !!r);
+    const reasons = [denied.createPublicThreads, denied.sendInThreads].filter(
+      (r): r is string => !!r
+    );
     return reasons.length > 0 ? reasons.join(" ") : null;
   };
   const [title, setTitle] = createSignal("");
@@ -35,7 +38,7 @@ const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
   const [isSubmitting, setIsSubmitting] = createSignal(false);
 
   const sortedThreads = createMemo(() =>
-    [...props.threads].sort((a, b) => b.lastMessageAt - a.lastMessageAt),
+    [...props.threads].sort((a, b) => b.lastMessageAt - a.lastMessageAt)
   );
 
   const visibleThreads = createMemo(() => {
@@ -76,6 +79,7 @@ const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
           </div>
         </div>
         <button
+          type="button"
           class="forum-channel-new-post-btn"
           onClick={() => setComposerOpen(true)}
           disabled={postDenied() !== null}
@@ -90,6 +94,7 @@ const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
       <Show when={(props.channel.forumTags?.length ?? 0) > 0}>
         <div class="forum-channel-tags">
           <button
+            type="button"
             class={`forum-channel-tag ${activeTag() === null ? "forum-channel-tag-active" : ""}`}
             onClick={() => setActiveTag(null)}
           >
@@ -98,6 +103,7 @@ const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
           <For each={props.channel.forumTags ?? []}>
             {(tag) => (
               <button
+                type="button"
                 class={`forum-channel-tag ${activeTag() === tag ? "forum-channel-tag-active" : ""}`}
                 onClick={() => setActiveTag(tag)}
               >
@@ -112,7 +118,11 @@ const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
         <div class="forum-channel-composer">
           <div class="forum-channel-composer-header">
             <div class="forum-channel-composer-title">Create forum post</div>
-            <button class="forum-channel-composer-close" onClick={() => setComposerOpen(false)}>
+            <button
+              type="button"
+              class="forum-channel-composer-close"
+              onClick={() => setComposerOpen(false)}
+            >
               <SkinGlyph name="close" />
             </button>
           </div>
@@ -143,10 +153,11 @@ const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
             onInput={(e) => setBody(e.currentTarget.value)}
           />
           <div class="forum-channel-composer-actions">
-            <button class="btn btn-secondary" onClick={() => setComposerOpen(false)}>
+            <button type="button" class="btn btn-secondary" onClick={() => setComposerOpen(false)}>
               Cancel
             </button>
             <button
+              type="button"
               class="btn btn-primary"
               onClick={() => void handleSubmit()}
               disabled={isSubmitting() || postDenied() !== null}
@@ -160,24 +171,36 @@ const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
       </Show>
 
       <div class="forum-channel-thread-list">
-        <Show when={visibleThreads().length > 0} fallback={
-          <Show when={lockReason() !== null} fallback={
-            <div class="forum-channel-empty">
-              <div class="forum-channel-empty-title">No posts yet</div>
-              {/* Where the Host denies posting, its reason, never the invitation. */}
-              <div class="forum-channel-empty-subtitle">{postDenied() ?? "Start the first thread for this forum channel."}</div>
-            </div>
-          }>
-            <div class="forum-channel-empty forum-channel-locked" role="status">
-              <SkinGlyph name="lock" />
-              <div class="forum-channel-empty-title">This forum is locked</div>
-              <div class="forum-channel-empty-subtitle">{lockReason()}</div>
-            </div>
-          </Show>
-        }>
+        <Show
+          when={visibleThreads().length > 0}
+          fallback={
+            <Show
+              when={lockReason() !== null}
+              fallback={
+                <div class="forum-channel-empty">
+                  <div class="forum-channel-empty-title">No posts yet</div>
+                  {/* Where the Host denies posting, its reason, never the invitation. */}
+                  <div class="forum-channel-empty-subtitle">
+                    {postDenied() ?? "Start the first thread for this forum channel."}
+                  </div>
+                </div>
+              }
+            >
+              <div class="forum-channel-empty forum-channel-locked" role="status">
+                <SkinGlyph name="lock" />
+                <div class="forum-channel-empty-title">This forum is locked</div>
+                <div class="forum-channel-empty-subtitle">{lockReason()}</div>
+              </div>
+            </Show>
+          }
+        >
           <For each={visibleThreads()}>
             {(thread) => (
-              <button class="forum-channel-thread-card" onClick={() => props.onOpenThread(thread)}>
+              <button
+                type="button"
+                class="forum-channel-thread-card"
+                onClick={() => props.onOpenThread(thread)}
+              >
                 <div class="forum-channel-thread-topline">
                   <div class="forum-channel-thread-name">{thread.name}</div>
                   <Show when={thread.forumTag}>
@@ -185,7 +208,9 @@ const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
                   </Show>
                 </div>
                 <div class="forum-channel-thread-meta">
-                  Started by {props.nameOf(thread.creatorPseudonym)} · {messageCount(thread.messageCount)} · {formatRelativeTime(thread.lastMessageAt * 1000)}
+                  Started by {props.nameOf(thread.creatorPseudonym)} ·{" "}
+                  {messageCount(thread.messageCount)} ·{" "}
+                  {formatRelativeTime(thread.lastMessageAt * 1000)}
                 </div>
               </button>
             )}

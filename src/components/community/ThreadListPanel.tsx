@@ -1,7 +1,7 @@
-import { Component, For, Show, createSignal, createMemo } from "solid-js";
-import SkinGlyph from "../common/SkinGlyph";
+import { type Component, createMemo, createSignal, For, Show } from "solid-js";
 import type { Thread } from "../../stores/community.store";
 import { formatRelativeTime, messageCount } from "../../utils/formatting";
+import SkinGlyph from "../common/SkinGlyph";
 
 interface ThreadListPanelProps {
   threads: Thread[];
@@ -31,12 +31,16 @@ const ThreadListPanel: Component<ThreadListPanelProps> = (props) => {
   const active = createMemo(() => sortedThreads().filter((t) => !t.archived));
   const archived = createMemo(() => sortedThreads().filter((t) => t.archived));
   const item = (thread: Thread) => (
-    <div class={`thread-list-item${thread.archived ? " thread-archived" : ""}`} onClick={() => props.onSelectThread(thread.id)}>
-      <div class="thread-list-item-name">{thread.name}</div>
-      <div class="thread-list-item-meta">
+    <button
+      type="button"
+      class={`thread-list-item${thread.archived ? " thread-archived" : ""}`}
+      onClick={() => props.onSelectThread(thread.id)}
+    >
+      <span class="thread-list-item-name">{thread.name}</span>
+      <span class="thread-list-item-meta">
         {messageCount(thread.messageCount)} - {formatRelativeTime(thread.lastMessageAt * 1000)}
-      </div>
-    </div>
+      </span>
+    </button>
   );
 
   return (
@@ -44,7 +48,12 @@ const ThreadListPanel: Component<ThreadListPanelProps> = (props) => {
       <div class="thread-panel-header">
         <SkinGlyph name="thread" />
         Threads
-        <button class="modal-close-btn" onClick={props.onClose} aria-label="Close threads panel">
+        <button
+          type="button"
+          class="modal-close-btn"
+          onClick={props.onClose}
+          aria-label="Close threads panel"
+        >
           <SkinGlyph name="close" />
         </button>
       </div>
@@ -58,12 +67,14 @@ const ThreadListPanel: Component<ThreadListPanelProps> = (props) => {
         />
         <div class="thread-list-sort-row">
           <button
+            type="button"
             class={`event-filter-btn ${sortMode() === "activity" ? "event-filter-active" : ""}`}
             onClick={() => setSortMode("activity")}
           >
             Recent
           </button>
           <button
+            type="button"
             class={`event-filter-btn ${sortMode() === "created" ? "event-filter-active" : ""}`}
             onClick={() => setSortMode("created")}
           >

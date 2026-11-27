@@ -5,14 +5,26 @@ import { hostInvoke } from "../invoke";
 import type { JoinSource, NotJoinableReason } from "./types";
 
 /** Why a row's Add to Favorites or Remove is refused (`ServerRefusal`). */
-export type ServerRefusal = "alreadyFavourite" | "noNumericGame" | "badAddress" | "notRemovable" | "refreshing";
+export type ServerRefusal =
+  | "alreadyFavourite"
+  | "noNumericGame"
+  | "badAddress"
+  | "notRemovable"
+  | "refreshing";
 
 /** A server as the last Refresh found it (`ServerInfo`, plan E7.2 G4): never queried, being
  *  queried, its answer, or why there was none (the Host's words). */
 export type ServerInfo =
   | { kind: "notQueried" }
   | { kind: "querying" }
-  | { kind: "answered"; name: string; map: string; players: number; maxPlayers: number; pingMs: number }
+  | {
+      kind: "answered";
+      name: string;
+      map: string;
+      players: number;
+      maxPlayers: number;
+      pingMs: number;
+    }
   | { kind: "unanswered"; reason: string };
 
 /** One of a row's actions, as the Host allows it (`ServerVerdict`): the reason is present

@@ -1,6 +1,6 @@
-import { Component, For, Show, createMemo, createSignal, onMount } from "solid-js";
-import { commands } from "../../ipc/commands";
+import { type Component, createMemo, createSignal, For, onMount, Show } from "solid-js";
 import type { HiddenGameView } from "../../ipc/commands";
+import { commands } from "../../ipc/commands";
 import type { GameTotalView } from "../../ipc/commands/dto";
 
 /// The hide list (plan E7.2): games never shown to anyone, picked from the
@@ -13,12 +13,18 @@ const HiddenGamesSection: Component = () => {
   const [error, setError] = createSignal<string | null>(null);
 
   onMount(() => {
-    commands.getHiddenGames().then(setHidden).catch((e) => setError(String(e)));
-    commands.getGameTotals().then(setPlayed).catch((e) => setError(String(e)));
+    commands
+      .getHiddenGames()
+      .then(setHidden)
+      .catch((e) => setError(String(e)));
+    commands
+      .getGameTotals()
+      .then(setPlayed)
+      .catch((e) => setError(String(e)));
   });
 
   const hideable = createMemo(() =>
-    played().filter((game) => !hidden().some((h) => h.gameId === game.gameId)),
+    played().filter((game) => !hidden().some((h) => h.gameId === game.gameId))
   );
 
   async function change(run: () => Promise<HiddenGameView[]>): Promise<void> {
@@ -43,6 +49,7 @@ const HiddenGamesSection: Component = () => {
             <div class="blocked-user-item">
               <span class="buddy-name">{game.gameName}</span>
               <button
+                type="button"
                 class="form-btn-secondary"
                 onClick={() => void change(() => commands.unhideGame(game.gameId))}
               >
@@ -66,6 +73,7 @@ const HiddenGamesSection: Component = () => {
             </For>
           </select>
           <button
+            type="button"
             class="form-btn-secondary"
             disabled={pick() === null}
             onClick={() => {
@@ -78,8 +86,8 @@ const HiddenGamesSection: Component = () => {
         </div>
       </Show>
       <div class="settings-hint">
-        A hidden game is never shown to friends, nor in the game time they
-        see. It still counts toward your own game time.
+        A hidden game is never shown to friends, nor in the game time they see. It still counts
+        toward your own game time.
       </div>
     </>
   );

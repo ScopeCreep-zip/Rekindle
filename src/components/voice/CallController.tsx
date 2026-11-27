@@ -1,8 +1,8 @@
-import { Component } from "solid-js";
-import IncomingCallModal from "./IncomingCallModal";
+import type { Component } from "solid-js";
 import CallWaitingBanner from "./CallWaitingBanner";
-import OutgoingCallPanel from "./OutgoingCallPanel";
 import GroupCallPanel from "./GroupCallPanel";
+import IncomingCallModal from "./IncomingCallModal";
+import OutgoingCallPanel from "./OutgoingCallPanel";
 
 // The call shell, mounted once in the buddy list: the incoming-call
 // modal, the call-waiting banner and the outgoing and group panels. A

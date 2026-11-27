@@ -1,19 +1,18 @@
+import { markChannelReadToLatest } from "../../actions/community/channels";
+import { handleLoadExpressions } from "../../actions/community/lifecycle";
+import { handleLoadChannelMessages } from "../../actions/community/messages";
+import { setTypingUsers } from "../../actions/community/shared";
 import type { CommunityEvent } from "../../ipc/channels";
+import type { UnreadChanged } from "../../ipc/channels/chat_events";
 import type {
   ChannelMessageEvent,
   CommunitySubscriptionEvent,
 } from "../../ipc/channels/community_subscription_events";
-import { setCommunityState, communityState } from "../../stores/community.store";
-import { commands } from "../../ipc/commands";
-import { addToast } from "../../stores/toast.store";
 import type { Message } from "../../stores/chat.store";
-import type { UnreadChanged } from "../../ipc/channels/chat_events";
+import { communityState, setCommunityState } from "../../stores/community.store";
 import { linkPreviewKey, setLinkPreviews } from "../../stores/link_preview.store";
-import { transformHistoryGap, transformMessages } from "../../utils/transformers";
-import { setTypingUsers } from "../../actions/community/shared";
-import { markChannelReadToLatest } from "../../actions/community/channels";
-import { handleLoadExpressions } from "../../actions/community/lifecycle";
-import { handleLoadChannelMessages } from "../../actions/community/messages";
+import { addToast } from "../../stores/toast.store";
+import { transformHistoryGap } from "../../utils/transformers";
 
 type NewChannelMessage = Extract<ChannelMessageEvent, { new: unknown }>["new"];
 
@@ -72,7 +71,7 @@ function applyAttachmentDownloaded(channel: string, attachmentId: string): void 
   const idx = messages.findIndex((m) => m.attachment?.attachmentId === attachmentId);
   if (idx < 0) return;
   setCommunityState("channelMessages", channel, idx, "attachment", (att) =>
-    att ? { ...att, downloaded: true } : att,
+    att ? { ...att, downloaded: true } : att
   );
 }
 
@@ -100,14 +99,18 @@ function applyDelete(channel: string, messageId: string, removedBy: string | nul
   if (!msgs) return;
   if (removedBy === null) {
     setCommunityState("channelMessages", channel, (prev) =>
-      prev.filter((m) => m.serverMessageId !== messageId),
+      prev.filter((m) => m.serverMessageId !== messageId)
     );
     return;
   }
   const idx = msgs.findIndex((m) => m.serverMessageId === messageId);
   if (idx < 0) return;
   setCommunityState("channelMessages", channel, idx, (m) => ({
-    ...m, body: "", editedAt: undefined, attachment: undefined, removedBy,
+    ...m,
+    body: "",
+    editedAt: undefined,
+    attachment: undefined,
+    removedBy,
   }));
 }
 
@@ -128,11 +131,15 @@ function applyChannelGapClosed(community: string, sender: string, throughSeq: nu
   const channels = communityState.communities[community]?.channels ?? [];
   for (const { id } of channels) {
     const msgs = communityState.channelMessages[id];
-    if (!msgs?.some((m) => m.senderId === sender && (m.historyGapThrough ?? Infinity) <= throughSeq)) {
+    if (
+      !msgs?.some((m) => m.senderId === sender && (m.historyGapThrough ?? Infinity) <= throughSeq)
+    ) {
       continue;
     }
     setCommunityState("channelMessages", id, (prev) =>
-      prev.filter((m) => !(m.senderId === sender && (m.historyGapThrough ?? Infinity) <= throughSeq)),
+      prev.filter(
+        (m) => !(m.senderId === sender && (m.historyGapThrough ?? Infinity) <= throughSeq)
+      )
     );
   }
 }
@@ -141,7 +148,7 @@ function applyReactionAdded(
   channel: string,
   messageId: string,
   emoji: string,
-  reactor: string,
+  reactor: string
 ): void {
   const msgs = communityState.channelMessages[channel];
   if (!msgs) return;
@@ -171,7 +178,7 @@ function applyReactionRemoved(
   channel: string,
   messageId: string,
   emoji: string,
-  reactor: string,
+  reactor: string
 ): void {
   const msgs = communityState.channelMessages[channel];
   if (!msgs) return;
@@ -189,7 +196,7 @@ function applyReactionRemoved(
       channel,
       idx,
       "reactions",
-      reactions.filter((_, i) => i !== existingIdx),
+      reactions.filter((_, i) => i !== existingIdx)
     );
   } else {
     setCommunityState("channelMessages", channel, idx, "reactions", existingIdx, {
@@ -325,7 +332,7 @@ export function reduceSubscriptionMessages(event: CommunitySubscriptionEvent): v
         m.channelSendStatus.channel,
         m.channelSendStatus.messageId,
         m.channelSendStatus.state,
-        m.channelSendStatus.reason,
+        m.channelSendStatus.reason
       );
     } else if ("channelHistoryGap" in m) {
       const g = m.channelHistoryGap;
@@ -334,7 +341,10 @@ export function reduceSubscriptionMessages(event: CommunitySubscriptionEvent): v
       const g = m.channelHistoryGapClosed;
       applyChannelGapClosed(g.community, g.senderPseudonym, g.throughSeq);
     } else if ("attachmentDownloaded" in m) {
-      applyAttachmentDownloaded(m.attachmentDownloaded.channel, m.attachmentDownloaded.attachmentId);
+      applyAttachmentDownloaded(
+        m.attachmentDownloaded.channel,
+        m.attachmentDownloaded.attachmentId
+      );
     } else if ("expressionAssetReady" in m) {
       // Architecture §18.4 — the eager fetch landed; re-pull the
       // community's expressions so the picker shows the resolved bytes.
@@ -383,7 +393,7 @@ export function reduceSubscriptionSystem(event: CommunitySubscriptionEvent): voi
     addToast(
       `Raid detected: ${joinsInWindow} joins in the last ${joinIntervalSeconds}s ` +
         `(threshold ${maxJoinsPerInterval}). Consider pausing invites.`,
-      "error",
+      "error"
     );
     return;
   }

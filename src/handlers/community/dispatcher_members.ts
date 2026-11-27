@@ -1,23 +1,35 @@
 import { batch } from "solid-js";
 import { produce, reconcile } from "solid-js/store";
+import { handleLoadChannelThreads } from "../../actions/community/events_threads";
+import {
+  handleLoadAutoModRules,
+  handleLoadExpressions,
+  handleResolveCommunityImageDataUrls,
+} from "../../actions/community/lifecycle";
 import type { CommunityEvent } from "../../ipc/channels";
 import type {
   CommunitySubscriptionEvent,
   GovernanceEvent,
 } from "../../ipc/channels/community_subscription_events";
-import { applyJoinProgress, resetJoinProgress, type JoinStageStatus } from "../../stores/join.store";
-import { applySuccessorEvent } from "../../stores/successor.store";
-import { transformCommunityDetail } from "../../utils/transformers";
-import { handleResolveCommunityImageDataUrls } from "../../actions/community/lifecycle";
-import { type Community, setCommunityState, setCommunityMembers, communityState, dropCommunity } from "../../stores/community.store";
 import { commands } from "../../ipc/commands";
+import {
+  type Community,
+  communityState,
+  dropCommunity,
+  setCommunityMembers,
+  setCommunityState,
+} from "../../stores/community.store";
+import {
+  applyJoinProgress,
+  type JoinStageStatus,
+  resetJoinProgress,
+} from "../../stores/join.store";
+import { applySuccessorEvent } from "../../stores/successor.store";
 import { addToast } from "../../stores/toast.store";
 import { removalText } from "../../utils/removal_text";
 import { transformChannel, transformMember } from "../../utils/transformers";
-import { refreshCommunityMembers, refreshForUnlistedMember } from "./members_refresh";
 import { withCommunity } from "./community_reread";
-import { handleLoadExpressions, handleLoadAutoModRules } from "../../actions/community/lifecycle";
-import { handleLoadChannelThreads } from "../../actions/community/events_threads";
+import { refreshCommunityMembers, refreshForUnlistedMember } from "./members_refresh";
 
 // A pending rebuild needs the full view even if a later permission event
 // supersedes its request. Scope reads to a row so a reply from before a
@@ -34,12 +46,22 @@ function readCommunityPermissions(community: string, rebuild: boolean): void {
     .getCommunityDetails()
     .then((details) => {
       const detail = details.find((d) => d.id === community);
-      if (!detail || communityState.communities[community] !== row || permissionReads.get(row) !== read) return;
+      if (
+        !detail ||
+        communityState.communities[community] !== row ||
+        permissionReads.get(row) !== read
+      )
+        return;
       permissionReads.delete(row);
       batch(() => {
         setCommunityState("communities", community, "myPermissions", detail.myPermissions);
         setCommunityState("communities", community, "denied", reconcile(detail.denied ?? {}));
-        setCommunityState("communities", community, "myChannelPermissions", detail.myChannelPermissions);
+        setCommunityState(
+          "communities",
+          community,
+          "myChannelPermissions",
+          detail.myChannelPermissions
+        );
         setCommunityState("communities", community, "weAreCreator", detail.weAreCreator);
         setCommunityState("communities", community, "deviceStatus", detail.deviceStatus);
         if (read.rebuild) {
@@ -58,8 +80,12 @@ function readCommunityPermissions(community: string, rebuild: boolean): void {
         // A permission-only event doesn't replace the rest of a channel.
         for (const ch of detail.channels) {
           setCommunityState(
-            "communities", community, "channels", (c) => c.id === ch.id,
-            "denied", reconcile(ch.denied ?? {}),
+            "communities",
+            community,
+            "channels",
+            (c) => c.id === ch.id,
+            "denied",
+            reconcile(ch.denied ?? {})
           );
         }
       });
@@ -87,7 +113,7 @@ export function reduceMembership(event: CommunityEvent): boolean {
 /// plan JW): every window takes the state, one says it.
 export function reduceSubscriptionMembership(
   event: CommunitySubscriptionEvent,
-  notices = false,
+  notices = false
 ): void {
   if ("system" in event) {
     return;
@@ -141,7 +167,10 @@ function applyMembershipRow(m: MembershipEvent, notices: boolean): void {
     const { community, pseudonym, displayName, customStatus } = m.memberCardChanged;
     const c = communityState.communities[community];
     if (c?.myPseudonymKey && c.myPseudonymKey.toLowerCase() === pseudonym.toLowerCase()) {
-      setCommunityState("communities", community, { myDisplayName: displayName, myCustomStatus: customStatus ?? null });
+      setCommunityState("communities", community, {
+        myDisplayName: displayName,
+        myCustomStatus: customStatus ?? null,
+      });
       // The event names the shown name; the set-name form's prefill is the
       // card name as set, which only the Host's view states.
       commands
@@ -154,7 +183,10 @@ function applyMembershipRow(m: MembershipEvent, notices: boolean): void {
     }
     const idx = (c?.members ?? []).findIndex((x) => x.pseudonymKey === pseudonym);
     if (idx >= 0) {
-      setCommunityState("communities", community, "members", idx, { displayName, customStatus: customStatus ?? null });
+      setCommunityState("communities", community, "members", idx, {
+        displayName,
+        customStatus: customStatus ?? null,
+      });
     } else {
       refreshForUnlistedMember(community, pseudonym);
     }
@@ -175,7 +207,7 @@ function applyMembershipRow(m: MembershipEvent, notices: boolean): void {
       return;
     }
     setCommunityState("communities", r.community, "members", (prev) =>
-      prev.filter((x) => x.pseudonymKey !== r.targetPseudonym),
+      prev.filter((x) => x.pseudonymKey !== r.targetPseudonym)
     );
     return;
   }
@@ -185,7 +217,7 @@ function applyMembershipRow(m: MembershipEvent, notices: boolean): void {
   if ("removed" in m || "left" in m) {
     const { community, pseudonym } = "left" in m ? m.left : m.removed;
     setCommunityState("communities", community, "members", (prev) =>
-      prev.filter((x) => x.pseudonymKey !== pseudonym),
+      prev.filter((x) => x.pseudonymKey !== pseudonym)
     );
     return;
   }
@@ -319,7 +351,8 @@ function applyGovernance(g: GovernanceEvent): void {
   // FX3: the community key we hold, current or waiting on a key holder.
   if ("keyStatus" in g) {
     const { community, status } = g.keyStatus;
-    if (communityState.communities[community]) setCommunityState("communities", community, "keyStatus", status);
+    if (communityState.communities[community])
+      setCommunityState("communities", community, "keyStatus", status);
     return;
   }
   // The ban list changed (plan E3.2 S9): a shown ban list reads it again
@@ -349,7 +382,7 @@ function applyGovernance(g: GovernanceEvent): void {
           permissions: String(r.permissions),
           // The store uses `undefined` for absent, Tier 1 uses `null`.
           exclusionGroup: r.exclusionGroup ?? undefined,
-        })),
+        }))
       );
       // A role's hoist or position moves members between groups.
       refreshCommunityMembers(community);
@@ -389,7 +422,7 @@ function applyGovernance(g: GovernanceEvent): void {
         slowmodeSeconds: ch.slowmodeSeconds ?? undefined,
         locked: ch.locked ?? false,
         lockedReason: ch.lockedReason,
-      })),
+      }))
     );
     setCommunityState(
       "communities",
@@ -399,7 +432,7 @@ function applyGovernance(g: GovernanceEvent): void {
         id: cat.id,
         name: cat.name,
         sortOrder: cat.sortOrder,
-      })),
+      }))
     );
     return;
   }
@@ -432,7 +465,8 @@ function applyGovernance(g: GovernanceEvent): void {
     // (plan E7.15), when this window shows the invites.
     const community = g.inviteCreated.community;
     if (communityState.communityInvites[community] !== undefined) {
-      void commands.listCommunityInvites(community)
+      void commands
+        .listCommunityInvites(community)
         .then((invites) => setCommunityState("communityInvites", community, invites))
         .catch((e) => console.error("[Community] Failed to re-list invites:", e));
     }
@@ -464,7 +498,13 @@ function applyGovernance(g: GovernanceEvent): void {
     if (state.kind !== "landed") {
       setCommunityState("opPublications", community, (prev) => ({ ...(prev ?? {}), [op]: state }));
     } else if (communityState.opPublications[community]?.[op]) {
-      setCommunityState("opPublications", community, produce((ops) => { delete ops[op]; }));
+      setCommunityState(
+        "opPublications",
+        community,
+        produce((ops) => {
+          delete ops[op];
+        })
+      );
     }
     return;
   }
@@ -472,7 +512,7 @@ function applyGovernance(g: GovernanceEvent): void {
   if ("inviteRevoked" in g || "inviteExpired" in g) {
     const { community, codeHash } = "inviteRevoked" in g ? g.inviteRevoked : g.inviteExpired;
     setCommunityState("communityInvites", community, (prev) =>
-      (prev ?? []).filter((inv) => inv.codeHash !== codeHash),
+      (prev ?? []).filter((inv) => inv.codeHash !== codeHash)
     );
     return;
   }
@@ -480,7 +520,7 @@ function applyGovernance(g: GovernanceEvent): void {
   if ("inviteUsed" in g) {
     const { community, codeHash, uses } = g.inviteUsed;
     setCommunityState("communityInvites", community, (prev) =>
-      (prev ?? []).map((inv) => (inv.codeHash === codeHash ? { ...inv, uses } : inv)),
+      (prev ?? []).map((inv) => (inv.codeHash === codeHash ? { ...inv, uses } : inv))
     );
     return;
   }

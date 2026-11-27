@@ -190,6 +190,7 @@
     cursor: pointer;
     text-align: center;
     overflow: hidden;
+    width: 100%;
   }
   .soundboard-panel-clip:hover {
     background: color-mix(in srgb, var(--color-xfire-accent) 15%, var(--color-xfire-bg-input));

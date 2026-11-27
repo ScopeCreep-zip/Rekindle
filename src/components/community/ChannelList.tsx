@@ -1,11 +1,11 @@
-import { Component, For, Show, createSignal, createMemo, JSX } from "solid-js";
-import SkinGlyph from "../common/SkinGlyph";
 import { ContextMenu } from "@kobalte/core/context-menu";
-import type { Channel, Category, Member } from "../../stores/community.store";
+import { type Component, createMemo, createSignal, For, type JSX, Show } from "solid-js";
+import type { Category, Channel, Member } from "../../stores/community.store";
 import { voiceState } from "../../stores/voice.store";
-import CategoryHeader from "./CategoryHeader";
 import { rovingList } from "../../utils/roving_list";
 import type { GlyphName } from "../common/glyph_art";
+import SkinGlyph from "../common/SkinGlyph";
+import CategoryHeader from "./CategoryHeader";
 
 interface ChannelListProps {
   channels: Channel[];
@@ -45,7 +45,7 @@ const ChannelList: Component<ChannelListProps> = (props) => {
   }
 
   const sortedCategories = createMemo(() =>
-    [...props.categories].sort((a, b) => a.sortOrder - b.sortOrder),
+    [...props.categories].sort((a, b) => a.sortOrder - b.sortOrder)
   );
 
   // Roster grouping: count the other members focused on each channel. Drives
@@ -66,9 +66,9 @@ const ChannelList: Component<ChannelListProps> = (props) => {
   // Architecture §10.8 — text-in-voice channels are only visible while the
   // viewer is connected to the parent voice channel.
   const visibleChannels = createMemo(() =>
-    props.channels.filter((ch) =>
-      !ch.parentVoiceChannelId || ch.parentVoiceChannelId === voiceState.channelId,
-    ),
+    props.channels.filter(
+      (ch) => !ch.parentVoiceChannelId || ch.parentVoiceChannelId === voiceState.channelId
+    )
   );
 
   const categorizedChannels = createMemo(() => {
@@ -164,7 +164,12 @@ const ChannelList: Component<ChannelListProps> = (props) => {
           <SkinGlyph name={channelIcon(channel)} class={channelIconClass(channel)} />
           <span class="channel-name">{channel.name}</span>
           <Show when={channel.locked}>
-            <span class="channel-locked" title={channel.lockedReason} aria-label={channel.lockedReason ? `Locked: ${channel.lockedReason}` : "Locked"}>
+            <span
+              class="channel-locked"
+              role="img"
+              title={channel.lockedReason}
+              aria-label={channel.lockedReason ? `Locked: ${channel.lockedReason}` : "Locked"}
+            >
               <SkinGlyph name="lock" class="channel-locked-icon" />
             </span>
           </Show>
@@ -174,7 +179,9 @@ const ChannelList: Component<ChannelListProps> = (props) => {
               title={membersHere(presenceByChannel()[channel.id])}
               aria-label={membersHere(presenceByChannel()[channel.id])}
             >
-              <span class="channel-presence-dot" aria-hidden="true">●</span>
+              <span class="channel-presence-dot" aria-hidden="true">
+                ●
+              </span>
               {presenceByChannel()[channel.id]}
             </span>
           )}
@@ -183,6 +190,7 @@ const ChannelList: Component<ChannelListProps> = (props) => {
           )}
           {channel.type === "voice" && (
             <button
+              type="button"
               class="channel-voice-join-btn"
               title="Join Voice"
               aria-label={`Join voice channel ${channel.name}`}
@@ -204,13 +212,15 @@ const ChannelList: Component<ChannelListProps> = (props) => {
     <div class="channel-list" ref={rovingList(".channel-item")}>
       <For each={categorizedChannels()}>
         {(group) => {
-          const isCollapsed = () => group.category ? collapsedCategories().has(group.category.id) : false;
+          const isCollapsed = () =>
+            group.category ? collapsedCategories().has(group.category.id) : false;
 
           return (
             <>
-              <Show when={group.category} fallback={
-                <div class="channel-section-header">Channels</div>
-              }>
+              <Show
+                when={group.category}
+                fallback={<div class="channel-section-header">Channels</div>}
+              >
                 {(cat) => (
                   <ContextMenu>
                     {/* Never-hide: the category's menu is always there; its items are
@@ -248,9 +258,7 @@ const ChannelList: Component<ChannelListProps> = (props) => {
                 )}
               </Show>
               <Show when={!isCollapsed()}>
-                <For each={group.channels}>
-                  {(channel) => renderChannel(channel)}
-                </For>
+                <For each={group.channels}>{(channel) => renderChannel(channel)}</For>
               </Show>
             </>
           );
@@ -260,6 +268,7 @@ const ChannelList: Component<ChannelListProps> = (props) => {
       {/* Never-hide: drawn always, disabled with the Host's reason. */}
       <Show when={props.onCreateCategory}>
         <button
+          type="button"
           class="channel-create-category-btn"
           onClick={() => props.onCreateCategory?.()}
           disabled={props.manageDenied !== null}
