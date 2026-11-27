@@ -13,6 +13,7 @@ import type { Browser } from "webdriverio";
 import { NET_WAIT_MS, byText, resolveIntent, shown, typeInto, waitUntil } from "../../../walk/helpers.ts";
 import { communitySettings, createCommunity, createIdentity, openCommunity, type User } from "../../journeys.ts";
 import { applySkin, skinShown } from "../../journeys_skins.ts";
+import { openSettings } from "../../../walk/nav.ts";
 import { shot } from "../../shots.ts";
 
 const b = browser as unknown as Browser;
@@ -83,6 +84,8 @@ describe("converted controls (FE-LINT slice C)", function () {
     await closeSettings();
 
     await shotsIn("symbiosis");
+    // Settings → Appearance applies the skin (applySkin works in that window).
+    await openSettings(b, "Appearance");
     await skinShown(b, await applySkin(b, ada, "Alloy"));
     await shotsIn("alloy");
   });
