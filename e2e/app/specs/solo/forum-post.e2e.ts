@@ -122,11 +122,13 @@ describe("forum post accepted as one request (FT1)", function () {
     expect({
       disabledWithReason: reason.length > 0 && described === reason,
       dimmed,
+      // The empty forum states the Host's reason, never the invitation to post.
+      emptyState: (await (await shown(browser, ".forum-channel-empty-subtitle")).getText()).trim() === reason,
       refused: refusal.code,
       bitmask: /0x[0-9a-f]{4,}/i.test(refusal.message) || /0x[0-9a-f]{4,}/i.test(reason),
       channelId: refusal.message.includes(deniedId) || reason.includes(deniedId),
       cards: (await browser.$$(".forum-channel-thread-card")).length,
-    }).toEqual({ disabledWithReason: true, dimmed: true, refused: 403, bitmask: false, channelId: false, cards: 0 });
+    }).toEqual({ disabledWithReason: true, dimmed: true, emptyState: true, refused: 403, bitmask: false, channelId: false, cards: 0 });
   });
 
   it("shows the accepted starter once, including after opening the thread again", async () => {

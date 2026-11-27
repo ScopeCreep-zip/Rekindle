@@ -164,7 +164,8 @@ const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
           <Show when={lockReason() !== null} fallback={
             <div class="forum-channel-empty">
               <div class="forum-channel-empty-title">No posts yet</div>
-              <div class="forum-channel-empty-subtitle">Start the first thread for this forum channel.</div>
+              {/* Where the Host denies posting, its reason, never the invitation. */}
+              <div class="forum-channel-empty-subtitle">{postDenied() ?? "Start the first thread for this forum channel."}</div>
             </div>
           }>
             <div class="forum-channel-empty forum-channel-locked" role="status">
