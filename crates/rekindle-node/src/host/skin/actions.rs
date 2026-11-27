@@ -149,7 +149,8 @@ impl Views {
     }
 }
 
-/// Where an admitted run is run (plan SK2-N4): a view switch pressed in a
+/// Where an admitted run is run (plan SK2-N4): a view switch or opening
+/// the notifications panel in a
 /// popup is its launcher's, since a popup holds no views (rule N4 places
 /// the Communities view in the main tree only; StealthX's `MainMenuPopup`
 /// rail switches the main window's views); that window's answer is
@@ -161,9 +162,14 @@ pub(crate) fn addressed(
     run: SkinRun,
 ) -> (SkinRun, Option<(String, ShellOp)>) {
     match (run, launchers.of(window)) {
-        (SkinRun::Shell(op @ (ShellOp::ShowView(_) | ShellOp::GroupPage { .. })), Some(to)) => {
-            (SkinRun::Launcher { window: to.clone() }, Some((to, op)))
-        }
+        (
+            SkinRun::Shell(
+                op @ (ShellOp::ShowView(_)
+                | ShellOp::GroupPage { .. }
+                | ShellOp::OpenPanel(ShellPanel::Notifications)),
+            ),
+            Some(to),
+        ) => (SkinRun::Launcher { window: to.clone() }, Some((to, op))),
         (run, _) => (run, None),
     }
 }
@@ -412,7 +418,9 @@ pub(crate) fn map(
         A::CreateCommunity => panel(ShellPanel::CreateCommunity),
         A::JoinCommunity => panel(ShellPanel::JoinCommunity),
         A::ShowShortcuts => panel(ShellPanel::Shortcuts),
-        A::OpenNotifications => panel(ShellPanel::Notifications),
+        A::OpenNotifications | A::ShowView(EngineView::Notifications) => {
+            panel(ShellPanel::Notifications)
+        }
         A::ShowSettings(tab) => shell(ShellOp::ShowSettings(*tab)),
         A::ReportBug => shell(ShellOp::ReportBug),
         A::CopyKey => shell(ShellOp::CopyKey),

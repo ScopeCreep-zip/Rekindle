@@ -10,6 +10,7 @@ use crate::daemon::DaemonState;
 use crate::host::gate::Acknowledged;
 use crate::host::skin::actions::Resolved;
 use rekindle_ipc::protocol::{BusPayload, IpcRequest, IpcResponse, Lane};
+use rekindle_types::dto::skin_run::{ShellOp, ShellPanel, SkinRun};
 use rekindle_types::subscription_events::{SubscriptionEvent, SystemEvent};
 
 use crate::daemon::shutdown::{ExitReason, REQUEST_DRAIN_DEADLINE};
@@ -345,6 +346,9 @@ impl DaemonContext {
         let answered = crate::host::gate::run(self, request, caller).await;
         match (run, pressed_in, &answered) {
             (Some(run), Some(window), IpcResponse::Ok { .. }) => {
+                if matches!(run, SkinRun::Shell(ShellOp::OpenPanel(ShellPanel::Notifications))) {
+                    self.skin.signals.notifications_opened(&self.journal);
+                }
                 let (run, elsewhere) =
                     crate::host::skin::actions::addressed(&self.skin.launchers, &window, run);
                 self.skin.views.record(&window, &run, elsewhere.as_ref());
