@@ -279,6 +279,71 @@ impl<R: Runtime + 'static> PlatformExecutor<R> for LinuxExecutor<R> {
         }
     }
 
+    /// The script's awaited value straight from WebKitGTK's
+    /// `webkit_web_view_call_async_javascript_function` (2.40+, our floor, plan E7.10;
+    /// <https://webkitgtk.org/reference/webkitgtk/stable/method.WebView.call_async_javascript_function.html>):
+    /// it runs `body` as a function body, awaits a returned promise, and answers with its value
+    /// or the error that stopped it. A document replaced mid-call fails here at once (its
+    /// context is gone), so no page global and no poll can be left waiting on it.
+    async fn call_async_function(&self, body: &str) -> Result<Value, WebDriverErrorResponse> {
+        let id = EVAL_SEQ.fetch_add(1, Ordering::Relaxed);
+        let label = self.window.label().to_owned();
+        let queued = Instant::now();
+        tracing::debug!(id, window = %label, body_len = body.len(), "async call queued for the main thread");
+        let (tx, rx) = oneshot::channel();
+        // The body becomes an async IIFE expression, so the frame wrapper (which evaluates an
+        // expression in the selected frame) can carry it, and its promise is the function's return.
+        let expression = format!("(async function () {{ {body} }})()");
+        let body_owned = format!(
+            "return {};",
+            wrap_script_for_frame_context(&expression, &self.frame_context)
+        );
+
+        let result = self.window.with_webview(move |webview| {
+            tracing::debug!(id, waited = ?queued.elapsed(), "async call running on the main thread");
+            let webview = webview.inner().clone();
+            let tx = Arc::new(parking_lot::Mutex::new(Some(tx)));
+            let ctx = MainContext::default();
+            ctx.spawn_local(async move {
+                let result = webview
+                    .call_async_javascript_function_future(&body_owned, None, None, None)
+                    .await;
+                let response: Result<Value, String> = match result {
+                    Ok(js_value) => Ok(js_value_to_json(&js_value)),
+                    Err(e) => Err(e.to_string()),
+                };
+                match &response {
+                    Ok(_) => tracing::debug!(id, elapsed = ?queued.elapsed(), "async call answered"),
+                    Err(error) => tracing::debug!(id, elapsed = ?queued.elapsed(), %error, "async call failed in the web process"),
+                }
+                if let Some(tx) = tx.lock().take() {
+                    if tx.send(response).is_err() {
+                        tracing::debug!(id, elapsed = ?queued.elapsed(), "async call answer arrived after its caller stopped waiting");
+                    }
+                }
+            });
+        });
+
+        if let Err(e) = result {
+            tracing::debug!(id, window = %label, error = %e, "async call could not reach the webview");
+            return Err(WebDriverErrorResponse::javascript_error(
+                &e.to_string(),
+                None,
+            ));
+        }
+
+        let timeout = std::time::Duration::from_millis(self.timeouts.script);
+        match tokio::time::timeout(timeout, rx).await {
+            Ok(Ok(Ok(value))) => Ok(value),
+            Ok(Ok(Err(error))) => Err(WebDriverErrorResponse::javascript_error(&error, None)),
+            Ok(Err(_)) => Err(WebDriverErrorResponse::unknown_error("Channel closed")),
+            Err(_) => {
+                tracing::debug!(id, window = %label, elapsed = ?queued.elapsed(), "async call timed out waiting for its answer");
+                Err(WebDriverErrorResponse::script_timeout())
+            }
+        }
+    }
+
     // =========================================================================
     // Screenshots
     // =========================================================================
