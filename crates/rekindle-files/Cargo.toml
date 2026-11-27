@@ -15,12 +15,12 @@ base64 = "0.22"
 blake3 = "1"
 # Voice messages: Opus in Ogg, encoded and decoded by the Host (plan E5.1),
 # with the binding the media engine (rekindle-voice) uses.
-opus = "0.3"
 hex = { workspace = true }
 lru = "0.19"
+opus = "0.3"
 parking_lot = { workspace = true }
-rekindle-crypto = { path = "../rekindle-crypto" }
 rekindle-codec = { path = "../rekindle-codec" }
+rekindle-crypto = { path = "../rekindle-crypto" }
 rekindle-secrets = { path = "../rekindle-secrets" }
 rekindle-types = { path = "../rekindle-types" }
 rekindle-utils = { path = "../rekindle-utils" }

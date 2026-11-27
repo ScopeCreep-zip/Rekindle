@@ -116,7 +116,7 @@ async fn a_shell_host_selects_a_role_delete_from_gui_written_state() {
         host.root(),
         &host.identity_stores(),
         Some("Ann"),
-        "pass",
+        rekindle_test_fixtures::PASSPHRASE,
         1,
         &rekindle_utils::random::OsRandom,
     )

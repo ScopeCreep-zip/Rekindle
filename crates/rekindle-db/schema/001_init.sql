@@ -1,5 +1,6 @@
 -- Rekindle initial schema migration
--- Creates all core tables for identity, friends, messaging, communities, and Signal protocol state.
+-- Creates all core tables for identity, friends, messaging, communities, and
+-- Signal protocol state.
 
 CREATE TABLE IF NOT EXISTS identity (
     id INTEGER PRIMARY KEY,
@@ -19,8 +20,10 @@ CREATE TABLE IF NOT EXISTS identity (
     -- This device's id: 16 random bytes, lowercase hex, minted once by the
     -- own-records stage (`repo::identity::ensure_device_id`); the prekey
     -- device list and the personal sync record name it, neither replaces it.
-    device_id TEXT CHECK(device_id IS NULL
-        OR (length(device_id) = 32 AND device_id NOT GLOB '*[^0-9a-f]*')),
+    device_id TEXT CHECK (
+        device_id IS null
+        OR (length(device_id) = 32 AND device_id NOT GLOB '*[^0-9a-f]*')
+    ),
     -- This device's prekey record (plan E2.4, DFLT(101)); its owner
     -- keypair is in the vault (`OwnerKey::Prekeys`).
     prekey_record_key TEXT,
@@ -28,8 +31,10 @@ CREATE TABLE IF NOT EXISTS identity (
     -- 16 random bytes, unpadded lowercase base32, minted with the identity
     -- (`rekindle_secrets::friend_token::mint`); rotating it refuses requests
     -- sent with the old code.
-    friend_request_token TEXT NOT NULL CHECK(length(friend_request_token) = 26
-        AND friend_request_token NOT GLOB '*[^a-z2-7]*'),
+    friend_request_token TEXT NOT NULL CHECK (
+        length(friend_request_token) = 26
+        AND friend_request_token NOT GLOB '*[^a-z2-7]*'
+    ),
     -- Our friend code's current request inbox (plan RV2e): an
     -- SMPL(o_cnt 1, [writer]) record whose writer is derived from the token,
     -- published in our profile's CODE_INBOX subkey and rolled after each
@@ -39,22 +44,22 @@ CREATE TABLE IF NOT EXISTS identity (
     -- `ProfileBio` (0x0171), never in the profile record (its key travels in
     -- every invite and friend code). NULL: none. 190 characters at most
     -- (Discord's About Me).
-    bio TEXT CHECK(bio IS NULL OR (length(bio) BETWEEN 1 AND 190))
+    bio TEXT CHECK (bio IS null OR (length(bio) BETWEEN 1 AND 190))
 );
 
 CREATE TABLE IF NOT EXISTS friend_groups (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     name TEXT NOT NULL,
     sort_order INTEGER NOT NULL DEFAULT 0,
-    UNIQUE(owner_key, name)
+    UNIQUE (owner_key, name)
 );
 
 CREATE TABLE IF NOT EXISTS friends (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     public_key TEXT NOT NULL,
     display_name TEXT,
-    group_id INTEGER REFERENCES friend_groups(id) ON DELETE SET NULL,
+    group_id INTEGER REFERENCES friend_groups (id) ON DELETE SET NULL,
     added_at INTEGER NOT NULL,
     dht_record_key TEXT,
     last_seen_at INTEGER,
@@ -64,7 +69,7 @@ CREATE TABLE IF NOT EXISTS friends (
     -- `Unfriended` notice is still queued; the row keeps their routing
     -- information until nothing is queued to them.
     friendship_state TEXT NOT NULL
-        CHECK(friendship_state IN ('pending_out', 'accepted', 'removing')),
+    CHECK (friendship_state IN ('pending_out', 'accepted', 'removing')),
     -- Phase 2 Track A.2 — Friend's most-recently-seen DeviceId
     -- (hex Ed25519 device pubkey). NULL until they advertise via the
     -- DeviceList owner subkey on their per-pair inbox.
@@ -72,8 +77,8 @@ CREATE TABLE IF NOT EXISTS friends (
     -- Plan E2.5: the friend's current friend-presence key (their
     -- `FriendsKey`), which opens their profile's STATUS and GAME_INFO.
     -- Cleared when we remove them; the row goes when they or we block.
-    presence_epoch INTEGER CHECK(presence_epoch > 0),
-    presence_key BLOB CHECK(length(presence_key) = 32),
+    presence_epoch INTEGER CHECK (presence_epoch > 0),
+    presence_key BLOB CHECK (length(presence_key) = 32),
     -- Plan E2.5 (MSR): our dm participant record for this conversation
     -- (its owner keypair is `VaultKey::DmParticipantOwner`), whose chain
     -- holds our stream to them, and theirs (their `StreamRecord`), whose
@@ -87,11 +92,14 @@ CREATE TABLE IF NOT EXISTS friends (
     -- Plan E7.2: the bio their last `ProfileBio` (0x0171) stated, kept only
     -- from an accepted friend; cleared when we remove them, gone with the row
     -- when they remove or block us or we block them.
-    bio TEXT CHECK(bio IS NULL OR (length(bio) BETWEEN 1 AND 190)),
+    bio TEXT CHECK (bio IS null OR (length(bio) BETWEEN 1 AND 190)),
     -- Plan E7.1: the conversation's disappearing-message timer, seconds
     -- (0 = off), set by either side with a `DisappearingTimer` (0x0160).
-    disappearing_seconds INTEGER NOT NULL DEFAULT 0 CHECK(disappearing_seconds >= 0),
-    -- Plan RV2: our request's reply inbox (`rekindle_records::schema::request_inbox`,
+    disappearing_seconds INTEGER NOT NULL DEFAULT 0 CHECK (
+        disappearing_seconds >= 0
+    ),
+    -- Plan RV2: our request's reply inbox
+    -- (`rekindle_records::schema::request_inbox`,
     -- its owner keypair in the vault), held and watched while the row is
     -- `pending_out`: the accepter writes its first contact there as well as
     -- by `app_call`.
@@ -101,8 +109,8 @@ CREATE TABLE IF NOT EXISTS friends (
     -- outbox row then holds it, ruling R2), then cleared.
     peer_reply_inbox_key TEXT,
     peer_reply_writer TEXT,
-    CHECK((peer_reply_inbox_key IS NULL) = (peer_reply_writer IS NULL)),
-    CHECK((presence_epoch IS NULL) = (presence_key IS NULL)),
+    CHECK ((peer_reply_inbox_key IS null) = (peer_reply_writer IS null)),
+    CHECK ((presence_epoch IS null) = (presence_key IS null)),
     PRIMARY KEY (owner_key, public_key)
 );
 
@@ -111,9 +119,9 @@ CREATE TABLE IF NOT EXISTS friends (
 -- is sent to each accepted friend as a ratcheted `FriendsKey`; a new epoch
 -- is minted on every unfriend or block.
 CREATE TABLE IF NOT EXISTS presence_keys (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
-    epoch INTEGER NOT NULL CHECK(epoch > 0),
-    key BLOB NOT NULL CHECK(length(key) = 32),
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
+    epoch INTEGER NOT NULL CHECK (epoch > 0),
+    "key" BLOB NOT NULL CHECK (length("key") = 32),
     created_at INTEGER NOT NULL,
     PRIMARY KEY (owner_key, epoch)
 );
@@ -124,32 +132,37 @@ CREATE TABLE IF NOT EXISTS presence_keys (
 -- friend code slot's roll budget is a second bucket of the same shape,
 -- one row per (identity, `kind`).
 CREATE TABLE IF NOT EXISTS route_budget (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
-    kind TEXT NOT NULL CHECK(kind IN ('routes', 'code_rolls')),
-    tokens INTEGER NOT NULL CHECK(tokens >= 0),
-    refilled_ms INTEGER NOT NULL CHECK(refilled_ms >= 0),
-    week_start_ms INTEGER NOT NULL CHECK(week_start_ms >= 0),
-    week_spent INTEGER NOT NULL CHECK(week_spent >= 0),
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
+    kind TEXT NOT NULL CHECK (kind IN ('routes', 'code_rolls')),
+    tokens INTEGER NOT NULL CHECK (tokens >= 0),
+    refilled_ms INTEGER NOT NULL CHECK (refilled_ms >= 0),
+    week_start_ms INTEGER NOT NULL CHECK (week_start_ms >= 0),
+    week_spent INTEGER NOT NULL CHECK (week_spent >= 0),
     PRIMARY KEY (owner_key, kind)
 );
 
 -- Plan E2.6: a group DM (3-8 members, no governance). `group_id` is the
 -- 16 random bytes the creator minted, in hex; `roster` is the signed
--- invite's member list (JSON array of `rekindle_types::group_dm::GroupDmRosterMember`)
+-- invite's member list (JSON array of
+-- `rekindle_types::group_dm::GroupDmRosterMember`)
 -- and `epoch` our own sending key's current epoch.
 CREATE TABLE IF NOT EXISTS group_dms (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
-    group_id TEXT NOT NULL CHECK(length(group_id) = 32),
-    name TEXT NOT NULL CHECK(length(name) > 0),
-    roster TEXT NOT NULL CHECK(json_valid(roster) AND json_type(roster) = 'array'),
-    epoch INTEGER NOT NULL CHECK(epoch >= 0),
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
+    group_id TEXT NOT NULL CHECK (length(group_id) = 32),
+    name TEXT NOT NULL CHECK (length(name) > 0),
+    roster TEXT NOT NULL CHECK (
+        json_valid(roster) AND json_type(roster) = 'array'
+    ),
+    epoch INTEGER NOT NULL CHECK (epoch >= 0),
     created_at INTEGER NOT NULL,
     -- Plan E7.1: the group's disappearing-message timer (0 = off).
-    disappearing_seconds INTEGER NOT NULL DEFAULT 0 CHECK(disappearing_seconds >= 0),
+    disappearing_seconds INTEGER NOT NULL DEFAULT 0 CHECK (
+        disappearing_seconds >= 0
+    ),
     -- SK2-G §6 (plan E7.2 G7): the friend whose chat this group was created
     -- from (`EnterAttachedRoom` opens it), and our own "Chat Rooms" flag.
-    origin_peer TEXT CHECK(origin_peer IS NULL OR length(origin_peer) = 64),
-    favourite INTEGER NOT NULL DEFAULT 0 CHECK(favourite IN (0, 1)),
+    origin_peer TEXT CHECK (origin_peer IS null OR length(origin_peer) = 64),
+    favourite INTEGER NOT NULL DEFAULT 0 CHECK (favourite IN (0, 1)),
     PRIMARY KEY (owner_key, group_id)
 );
 
@@ -159,11 +172,13 @@ CREATE TABLE IF NOT EXISTS group_dms (
 CREATE TABLE IF NOT EXISTS group_dm_sender_keys (
     owner_key TEXT NOT NULL,
     group_id TEXT NOT NULL,
-    member TEXT NOT NULL CHECK(length(member) = 64),
-    epoch INTEGER NOT NULL CHECK(epoch >= 0),
-    key BLOB NOT NULL CHECK(length(key) = 32),
+    member TEXT NOT NULL CHECK (length(member) = 64),
+    epoch INTEGER NOT NULL CHECK (epoch >= 0),
+    "key" BLOB NOT NULL CHECK (length("key") = 32),
     PRIMARY KEY (owner_key, group_id, member, epoch),
-    FOREIGN KEY (owner_key, group_id) REFERENCES group_dms(owner_key, group_id) ON DELETE CASCADE
+    FOREIGN KEY (owner_key, group_id) REFERENCES group_dms (
+        owner_key, group_id
+    ) ON DELETE CASCADE
 );
 
 -- Plan E2.6 (decided 2026-10-21): each member's group chain (a
@@ -173,10 +188,12 @@ CREATE TABLE IF NOT EXISTS group_dm_sender_keys (
 CREATE TABLE IF NOT EXISTS group_dm_chains (
     owner_key TEXT NOT NULL,
     group_id TEXT NOT NULL,
-    member TEXT NOT NULL CHECK(length(member) = 64),
-    record_key TEXT NOT NULL CHECK(length(record_key) > 0),
+    member TEXT NOT NULL CHECK (length(member) = 64),
+    record_key TEXT NOT NULL CHECK (length(record_key) > 0),
     PRIMARY KEY (owner_key, group_id, member),
-    FOREIGN KEY (owner_key, group_id) REFERENCES group_dms(owner_key, group_id) ON DELETE CASCADE
+    FOREIGN KEY (owner_key, group_id) REFERENCES group_dms (
+        owner_key, group_id
+    ) ON DELETE CASCADE
 );
 
 -- Plan E7.2 G6 (SK2-G §5): each game lobby in a group, folded from the
@@ -188,15 +205,17 @@ CREATE TABLE IF NOT EXISTS group_dm_chains (
 CREATE TABLE IF NOT EXISTS group_lobbies (
     owner_key TEXT NOT NULL,
     group_id TEXT NOT NULL,
-    lobby_id TEXT NOT NULL CHECK(length(lobby_id) = 32),
-    host_key TEXT NOT NULL CHECK(length(host_key) = 64),
-    game_id INTEGER NOT NULL CHECK(game_id > 0),
-    state TEXT NOT NULL CHECK(state IN ('open', 'launched', 'closed')),
-    server TEXT CHECK(server IS NULL OR length(server) > 0),
+    lobby_id TEXT NOT NULL CHECK (length(lobby_id) = 32),
+    host_key TEXT NOT NULL CHECK (length(host_key) = 64),
+    game_id INTEGER NOT NULL CHECK (game_id > 0),
+    state TEXT NOT NULL CHECK (state IN ('open', 'launched', 'closed')),
+    server TEXT CHECK (server IS null OR length(server) > 0),
     opened_at INTEGER NOT NULL,
-    CHECK(state != 'launched' OR server IS NOT NULL),
+    CHECK (state != 'launched' OR server IS NOT null),
     PRIMARY KEY (owner_key, group_id, lobby_id),
-    FOREIGN KEY (owner_key, group_id) REFERENCES group_dms(owner_key, group_id) ON DELETE CASCADE
+    FOREIGN KEY (owner_key, group_id) REFERENCES group_dms (
+        owner_key, group_id
+    ) ON DELETE CASCADE
 );
 
 -- Plan E7.2 G6: each member who joined a lobby and has not left it (never
@@ -205,10 +224,12 @@ CREATE TABLE IF NOT EXISTS group_lobbies (
 CREATE TABLE IF NOT EXISTS group_lobby_members (
     owner_key TEXT NOT NULL,
     group_id TEXT NOT NULL,
-    lobby_id TEXT NOT NULL CHECK(length(lobby_id) = 32),
-    member_key TEXT NOT NULL CHECK(length(member_key) = 64),
+    lobby_id TEXT NOT NULL CHECK (length(lobby_id) = 32),
+    member_key TEXT NOT NULL CHECK (length(member_key) = 64),
     PRIMARY KEY (owner_key, group_id, lobby_id, member_key),
-    FOREIGN KEY (owner_key, group_id) REFERENCES group_dms(owner_key, group_id) ON DELETE CASCADE
+    FOREIGN KEY (owner_key, group_id) REFERENCES group_dms (
+        owner_key, group_id
+    ) ON DELETE CASCADE
 );
 
 -- Plan decision 67 item 3: our place in a group's rendezvous record (the
@@ -233,10 +254,10 @@ CREATE TABLE IF NOT EXISTS group_dm_rendezvous (
 -- for at most `DELIVERY_HORIZON` (D24, Q2b: 30 days) from `received_at`
 -- (milliseconds); `invite` is the encoded `GroupDmInvite` (0x0120) body.
 CREATE TABLE IF NOT EXISTS group_dm_invites (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
-    group_id TEXT NOT NULL CHECK(length(group_id) = 32),
-    from_key TEXT NOT NULL CHECK(length(from_key) = 64),
-    invite BLOB NOT NULL CHECK(length(invite) > 0),
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
+    group_id TEXT NOT NULL CHECK (length(group_id) = 32),
+    from_key TEXT NOT NULL CHECK (length(from_key) = 64),
+    invite BLOB NOT NULL CHECK (length(invite) > 0),
     received_at INTEGER NOT NULL,
     PRIMARY KEY (owner_key, group_id)
 );
@@ -249,39 +270,41 @@ CREATE TABLE IF NOT EXISTS group_dm_invites (
 -- row found at unlock means the creation died: each is sent
 -- `CreatorWithdrawn` (0x0193) and the rows are deleted.
 CREATE TABLE IF NOT EXISTS creator_invites (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
-    anchor TEXT NOT NULL CHECK(length(anchor) > 0),
-    inviter_key TEXT NOT NULL CHECK(length(inviter_key) = 64),
-    community_name TEXT NOT NULL CHECK(length(community_name) > 0),
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
+    anchor TEXT NOT NULL CHECK (length(anchor) > 0),
+    inviter_key TEXT NOT NULL CHECK (length(inviter_key) = 64),
+    community_name TEXT NOT NULL CHECK (length(community_name) > 0),
     received_at INTEGER NOT NULL,
-    accepted INTEGER NOT NULL DEFAULT 0 CHECK(accepted IN (0, 1)),
+    accepted INTEGER NOT NULL DEFAULT 0 CHECK (accepted IN (0, 1)),
     PRIMARY KEY (owner_key, anchor)
 );
 
 CREATE TABLE IF NOT EXISTS pending_creations (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
-    anchor TEXT NOT NULL CHECK(length(anchor) > 0),
-    co_creator TEXT NOT NULL CHECK(length(co_creator) = 64),
-    answered INTEGER NOT NULL DEFAULT 0 CHECK(answered IN (0, 1)),
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
+    anchor TEXT NOT NULL CHECK (length(anchor) > 0),
+    co_creator TEXT NOT NULL CHECK (length(co_creator) = 64),
+    answered INTEGER NOT NULL DEFAULT 0 CHECK (answered IN (0, 1)),
     PRIMARY KEY (owner_key, anchor, co_creator)
 );
 
 CREATE TABLE IF NOT EXISTS messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     conversation_id TEXT NOT NULL,
-    conversation_type TEXT NOT NULL CHECK(conversation_type IN ('dm', 'group_dm', 'channel')),
+    conversation_type TEXT NOT NULL CHECK (
+        conversation_type IN ('dm', 'group_dm', 'channel')
+    ),
     sender_key TEXT NOT NULL,
     body TEXT NOT NULL,
     automod_blurred INTEGER NOT NULL DEFAULT 0,
     timestamp INTEGER NOT NULL,
     is_read INTEGER NOT NULL DEFAULT 0,
-    reply_to_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
+    reply_to_id INTEGER REFERENCES messages (id) ON DELETE SET NULL,
     -- A DM's or group DM's parent as its frame named it (the parent's client
     -- id), kept whether or not the parent is held: a reply to a message we
     -- never received is served as-is ("message unavailable").
     reply_to_client_id TEXT,
-    attachment_json TEXT CHECK(json_valid(attachment_json)),
+    attachment_json TEXT CHECK (json_valid(attachment_json)),
     mek_generation INTEGER,
     lamport_ts INTEGER DEFAULT 0,
     message_id TEXT,
@@ -292,7 +315,11 @@ CREATE TABLE IF NOT EXISTS messages (
     -- (plan E2.5) moves it to `sent` when its record slot settles with it,
     -- or `failed`; a received message is `delivered`.
     send_state TEXT NOT NULL DEFAULT 'delivered'
-        CHECK(send_state IN ('awaiting_key', 'queued', 'sent', 'delivered', 'read', 'failed')),
+    CHECK (
+        send_state IN (
+            'awaiting_key', 'queued', 'sent', 'delivered', 'read', 'failed'
+        )
+    ),
     -- Why our `failed` post was not delivered, as the user reads it (plan
     -- E3.2 S7l/S9, F9-1 and F9-3): its key never came, or it was written
     -- past the slot head of our removal. Read only while `failed`; a retry
@@ -301,28 +328,30 @@ CREATE TABLE IF NOT EXISTS messages (
     -- A direct message's place in its DM stream (plan E2.5, r10): ours is
     -- our outbox seq to the peer, a received one the sender's; a
     -- `ReadUpTo` names it. NULL for a channel message.
-    stream_seq INTEGER CHECK(stream_seq IS NULL OR stream_seq >= 1),
+    stream_seq INTEGER CHECK (stream_seq IS null OR stream_seq >= 1),
     -- A history gap (plan E2.5, D23): a local marker row, never sent.
     -- The peer's chain entries up to this seq were retired before we
     -- fetched them; body empty, sender the peer. In a channel (plan E3.3)
     -- the sender's outbox reaches this chain seq and no read reached it,
     -- marked in every channel we read. NULL for a message.
     history_gap_through INTEGER
-        CHECK(history_gap_through IS NULL OR history_gap_through >= 1),
+    CHECK (history_gap_through IS null OR history_gap_through >= 1),
     -- The message mentions us (plan E3.1, D25): written by the receive
     -- pipeline from `rekindle_channel::mentions`; counts unread mentions.
-    mentions_me INTEGER NOT NULL DEFAULT 0 CHECK(mentions_me IN (0, 1)),
+    mentions_me INTEGER NOT NULL DEFAULT 0 CHECK (mentions_me IN (0, 1)),
     -- A channel message stored without its body (plan KP): its author's
     -- signed outbox entry names a key we hold and the body does not open
     -- under it. Body empty; NULL for every readable message.
-    undecryptable_reason TEXT CHECK(undecryptable_reason IS NULL OR undecryptable_reason IN ('damaged')),
+    undecryptable_reason TEXT CHECK (
+        undecryptable_reason IS null OR undecryptable_reason IN ('damaged')
+    ),
     -- An edited channel message (plan E3.3, rules E1 and E2): when its
     -- author last edited it (seconds), that edit's author seq (only a
     -- later one replaces it), and how many edits we applied (a reader caps
     -- a message at 10). NULL and 0 for an unedited message.
     edited_at INTEGER,
-    edit_seq INTEGER NOT NULL DEFAULT 0 CHECK(edit_seq >= 0),
-    edit_count INTEGER NOT NULL DEFAULT 0 CHECK(edit_count BETWEEN 0 AND 10),
+    edit_seq INTEGER NOT NULL DEFAULT 0 CHECK (edit_seq >= 0),
+    edit_count INTEGER NOT NULL DEFAULT 0 CHECK (edit_count BETWEEN 0 AND 10),
     -- The author's tombstone (plan E3.3 E3): when it deleted the message.
     -- The body and every revision are purged and later edits refused; the
     -- row stays, so a re-read of the author's record never restores it.
@@ -335,44 +364,57 @@ CREATE TABLE IF NOT EXISTS messages (
     -- (seconds, 0 = none) and when it is deleted (ms). Our own copy's
     -- `expire_at` is set at send, a received one's at its first display
     -- (Signal's rule); NULL while it has not started.
-    expire_seconds INTEGER NOT NULL DEFAULT 0 CHECK(expire_seconds >= 0),
-    expire_at INTEGER CHECK(expire_at IS NULL OR expire_at >= 0),
+    expire_seconds INTEGER NOT NULL DEFAULT 0 CHECK (expire_seconds >= 0),
+    expire_at INTEGER CHECK (expire_at IS null OR expire_at >= 0),
     -- Plan E7.1: a timer-change notice, a local timeline row (never sent):
     -- `sender_key` set the conversation's timer to this many seconds (0 =
     -- off). Body empty; it carries the timer it set as `expire_seconds`, so
     -- it disappears like a message (Signal's EXPIRATION_UPDATE row). NULL
     -- for a message.
     timer_notice_seconds INTEGER
-        CHECK(timer_notice_seconds IS NULL OR timer_notice_seconds >= 0),
-    CHECK(expire_at IS NULL OR expire_seconds > 0),
-    CHECK(timer_notice_seconds IS NULL OR (body = '' AND expire_seconds = timer_notice_seconds)),
-    CHECK(deleted_at IS NULL OR (body = '' AND edited_at IS NULL)),
-    CHECK(deleted_by IS NULL OR deleted_at IS NOT NULL)
+    CHECK (timer_notice_seconds IS null OR timer_notice_seconds >= 0),
+    CHECK (expire_at IS null OR expire_seconds > 0),
+    CHECK (
+        timer_notice_seconds IS null
+        OR (body = '' AND expire_seconds = timer_notice_seconds)
+    ),
+    CHECK (deleted_at IS null OR (body = '' AND edited_at IS null)),
+    CHECK (deleted_by IS null OR deleted_at IS NOT null)
 );
 
-CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(owner_key, conversation_id, timestamp);
+CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages (
+    owner_key, conversation_id, timestamp
+);
 -- A sender's posts in a conversation by time: the slowmode gate's nearest
 -- earlier post (repo::messages::channel::latest_by_sender_at_or_before).
 CREATE INDEX IF NOT EXISTS idx_messages_sender_time
-  ON messages(owner_key, conversation_id, sender_key, timestamp);
+ON messages (owner_key, conversation_id, sender_key, timestamp);
 -- The expiry task's next deadline (plan E7.1).
 CREATE INDEX IF NOT EXISTS idx_messages_expire_at
-  ON messages(owner_key, expire_at) WHERE expire_at IS NOT NULL;
-CREATE INDEX IF NOT EXISTS idx_messages_unread ON messages(owner_key, conversation_id, is_read) WHERE is_read = 0;
+ON messages (owner_key, expire_at)
+WHERE expire_at IS NOT null;
+CREATE INDEX IF NOT EXISTS idx_messages_unread ON messages (
+    owner_key, conversation_id, is_read
+)
+WHERE is_read = 0;
 CREATE INDEX IF NOT EXISTS idx_messages_stream_seq
-  ON messages(owner_key, conversation_id, sender_key, stream_seq) WHERE stream_seq IS NOT NULL;
+ON messages (owner_key, conversation_id, sender_key, stream_seq)
+WHERE stream_seq IS NOT null;
 -- A row with no client id (a channel message from a path that carries
 -- none) is deduplicated by its sender and time; a row with one by its
 -- author's client id, so two messages in one millisecond stay two, and a
 -- peer cannot reuse our id to suppress or overwrite our row.
 CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_dedup
-  ON messages(owner_key, conversation_id, conversation_type, sender_key, timestamp)
-  WHERE message_id IS NULL;
+ON messages (
+    owner_key, conversation_id, conversation_type, sender_key, timestamp
+)
+WHERE message_id IS null;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_message_id
-  ON messages(owner_key, conversation_id, sender_key, message_id) WHERE message_id IS NOT NULL;
+ON messages (owner_key, conversation_id, sender_key, message_id)
+WHERE message_id IS NOT null;
 
 CREATE TABLE IF NOT EXISTS communities (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     id TEXT NOT NULL,
     name TEXT NOT NULL,
     description TEXT,
@@ -392,13 +434,13 @@ CREATE TABLE IF NOT EXISTS communities (
     my_segment_index INTEGER NOT NULL DEFAULT 0,
     -- Our presence beats' count (`M`/1 `seq`, plan E3.4 S1): advanced and
     -- persisted before each beat is written, never reused.
-    beat_seq INTEGER NOT NULL DEFAULT 0 CHECK(beat_seq >= 0),
+    beat_seq INTEGER NOT NULL DEFAULT 0 CHECK (beat_seq >= 0),
     -- The pinned GenesisCert (plan E3.2), as the anchor's subkey 0 holds it.
     genesis_cert BLOB,
     -- Local-only presence sharing consent (default-deny). JSON-encoded
     -- PresenceSharingPolicy; NULL falls back to the default-deny policy.
     -- Never published to the registry — this is the user's private choice.
-    presence_policy TEXT CHECK(json_valid(presence_policy)),
+    presence_policy TEXT CHECK (json_valid(presence_policy)),
     -- Our own removal from the community (plan E3.2 S9, A/B R5-2): the
     -- remover's display name as we knew it when the removal was first
     -- merged, so the banner names who removed us after the teardown and a
@@ -409,16 +451,28 @@ CREATE TABLE IF NOT EXISTS communities (
     -- the community is hidden and its content keys are gone; each unlock
     -- signs the op once the barrier passes (or drops it on a restore) and
     -- then forgets the row.
-    departing INTEGER NOT NULL DEFAULT 0 CHECK(departing IN (0, 1)),
+    departing INTEGER NOT NULL DEFAULT 0 CHECK (departing IN (0, 1)),
     PRIMARY KEY (owner_key, id)
 );
 
 CREATE TABLE IF NOT EXISTS channels (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     id TEXT NOT NULL,
     community_id TEXT NOT NULL,
     name TEXT NOT NULL,
-    channel_type TEXT NOT NULL CHECK(channel_type IN ('text', 'voice', 'announcement', 'forum', 'stage', 'directory', 'media', 'events', 'dm')),
+    channel_type TEXT NOT NULL CHECK (
+        channel_type IN (
+            'text',
+            'voice',
+            'announcement',
+            'forum',
+            'stage',
+            'directory',
+            'media',
+            'events',
+            'dm'
+        )
+    ),
     sort_order INTEGER NOT NULL DEFAULT 0,
     category_id TEXT,
     topic TEXT NOT NULL DEFAULT '',
@@ -432,11 +486,13 @@ CREATE TABLE IF NOT EXISTS channels (
     -- the parent voice.
     parent_voice_channel_id TEXT,
     PRIMARY KEY (owner_key, id),
-    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities (
+        owner_key, id
+    ) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS community_members (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     community_id TEXT NOT NULL,
     pseudonym_key TEXT NOT NULL,
     -- The member's verified card (`M`/0, signed by its pseudonym, plan
@@ -463,14 +519,16 @@ CREATE TABLE IF NOT EXISTS community_members (
     bio TEXT,
     pronouns TEXT,
     theme_color INTEGER,
-    badges TEXT NOT NULL DEFAULT '[]' CHECK(json_valid(badges)),
+    badges TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(badges)),
     -- BLAKE3 content references for avatar + banner. The bytes
     -- themselves live in the local Lost Cargo cache or as an inline
     -- expression asset (architecture §32 Week 15).
     avatar_ref TEXT,
     banner_ref TEXT,
     PRIMARY KEY (owner_key, community_id, pseudonym_key),
-    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities (
+        owner_key, id
+    ) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS community_roles (
@@ -488,7 +546,9 @@ CREATE TABLE IF NOT EXISTS community_roles (
     -- Architecture §19.4 — mutually exclusive role groups (NULL = independent).
     exclusion_group TEXT,
     PRIMARY KEY (owner_key, community_id, role_id),
-    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities (
+        owner_key, id
+    ) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS community_categories (
@@ -498,7 +558,9 @@ CREATE TABLE IF NOT EXISTS community_categories (
     name TEXT NOT NULL,
     sort_order INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (owner_key, community_id, id),
-    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities (
+        owner_key, id
+    ) ON DELETE CASCADE
 );
 
 -- Per-channel permission overwrites (role or member specific allow/deny).
@@ -506,18 +568,27 @@ CREATE TABLE IF NOT EXISTS channel_overwrites (
     owner_key TEXT NOT NULL,
     community_id TEXT NOT NULL,
     channel_id TEXT NOT NULL,
-    target_type TEXT NOT NULL CHECK(target_type IN ('role', 'member')),
+    target_type TEXT NOT NULL CHECK (target_type IN ('role', 'member')),
     target_id TEXT NOT NULL,
     allow INTEGER NOT NULL DEFAULT 0,
     deny INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (owner_key, community_id, channel_id, target_type, target_id),
-    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities (
+        owner_key, id
+    ) ON DELETE CASCADE
 );
 
 -- Performance indexes for JOIN keys
-CREATE INDEX IF NOT EXISTS idx_friends_group_id ON friends(owner_key, group_id);
-CREATE INDEX IF NOT EXISTS idx_channels_community_id ON channels(owner_key, community_id);
-CREATE INDEX IF NOT EXISTS idx_community_members_community ON community_members(owner_key, community_id, pseudonym_key);
+CREATE INDEX IF NOT EXISTS idx_friends_group_id ON friends (
+    owner_key, group_id
+);
+CREATE INDEX IF NOT EXISTS idx_channels_community_id ON channels (
+    owner_key, community_id
+);
+CREATE INDEX IF NOT EXISTS idx_community_members_community
+ON community_members (
+    owner_key, community_id, pseudonym_key
+);
 
 -- Phase 4 — tamper-evident audit chain. One row per audit-worthy action
 -- (friend add/remove, channel join/leave, identity rotate, vault unlock).
@@ -526,16 +597,16 @@ CREATE INDEX IF NOT EXISTS idx_community_members_community ON community_members(
 -- broken chain emits `SystemEvent::AuditChainBroken` and a typed
 -- `notification-event` toast.
 CREATE TABLE IF NOT EXISTS audit_entries (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     cursor INTEGER NOT NULL,
     prev_mac BLOB NOT NULL,
     mac BLOB NOT NULL,
-    payload_json TEXT NOT NULL CHECK(json_valid(payload_json)),
+    payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
     PRIMARY KEY (owner_key, cursor)
 );
 
 CREATE TABLE IF NOT EXISTS pending_friend_requests (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     public_key TEXT NOT NULL,
     display_name TEXT NOT NULL,
     message TEXT NOT NULL DEFAULT '',
@@ -556,15 +627,15 @@ CREATE TABLE IF NOT EXISTS pending_friend_requests (
 -- Surfaced via `getMissedCalls` for the BuddyList badge.
 CREATE TABLE IF NOT EXISTS missed_calls (
     call_id TEXT NOT NULL,
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     peer_key TEXT NOT NULL,
-    kind INTEGER NOT NULL CHECK(kind IN (0, 1)),
+    kind INTEGER NOT NULL CHECK (kind IN (0, 1)),
     expired_at INTEGER NOT NULL,
     PRIMARY KEY (owner_key, call_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_missed_calls_owner_peer
-    ON missed_calls(owner_key, peer_key, expired_at DESC);
+ON missed_calls (owner_key, peer_key, expired_at DESC);
 
 -- Our nickname for a contact, bound to the key it was given for (live
 -- finding 79, research batch 13): `contact_key` is the contact's key now
@@ -574,7 +645,7 @@ CREATE INDEX IF NOT EXISTS idx_missed_calls_owner_peer
 -- (our removal, theirs, a cancelled request) deletes it; a block keeps it,
 -- the key unchanged. A user-chosen label, never a confirm token.
 CREATE TABLE IF NOT EXISTS friend_nicknames (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     contact_key TEXT NOT NULL,
     for_key TEXT NOT NULL,
     nickname TEXT NOT NULL,
@@ -582,7 +653,7 @@ CREATE TABLE IF NOT EXISTS friend_nicknames (
 );
 
 CREATE TABLE IF NOT EXISTS blocked_users (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     public_key TEXT NOT NULL,
     display_name TEXT NOT NULL DEFAULT '',
     blocked_at INTEGER NOT NULL,
@@ -593,11 +664,11 @@ CREATE TABLE IF NOT EXISTS blocked_users (
 -- When channel_id is NULL, the preference applies to the whole community.
 -- level: 0 = AllMessages, 1 = MentionsOnly, 2 = None (muted)
 CREATE TABLE IF NOT EXISTS notification_preferences (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     community_id TEXT NOT NULL,
     channel_id TEXT NOT NULL DEFAULT '',
     level INTEGER NOT NULL DEFAULT 0
-        CHECK(level IN (0, 1, 2)),
+    CHECK (level IN (0, 1, 2)),
     -- Architecture §32 Phase 7 Week 25 — per-community + per-channel
     -- notification sound override. NULL means "inherit from the next
     -- level up": channel row falls through to the (community_id, '')
@@ -606,19 +677,22 @@ CREATE TABLE IF NOT EXISTS notification_preferences (
     -- the community soundboard (`ExpressionAdded { kind: "sound" }`).
     sound_ref TEXT,
     PRIMARY KEY (owner_key, community_id, channel_id),
-    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities (
+        owner_key, id
+    ) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS app_settings (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     quiet_hours_enabled INTEGER NOT NULL DEFAULT 0,
     quiet_hours_start_minute INTEGER NOT NULL DEFAULT 1320
-        CHECK(quiet_hours_start_minute >= 0 AND quiet_hours_start_minute < 1440),
+    CHECK (quiet_hours_start_minute >= 0 AND quiet_hours_start_minute < 1440),
     quiet_hours_end_minute INTEGER NOT NULL DEFAULT 420
-        CHECK(quiet_hours_end_minute >= 0 AND quiet_hours_end_minute < 1440),
+    CHECK (quiet_hours_end_minute >= 0 AND quiet_hours_end_minute < 1440),
     -- Architecture §17.2 — IANA timezone string (e.g.,
     -- "America/Los_Angeles") drives DST-aware quiet-hours resolution.
-    -- The frontend defaults to `Intl.DateTimeFormat().resolvedOptions().timeZone`
+    -- The frontend defaults to
+    -- `Intl.DateTimeFormat().resolvedOptions().timeZone`
     -- on first save; "UTC" is the safe seed when no row exists.
     quiet_hours_timezone TEXT NOT NULL DEFAULT 'UTC',
     -- Architecture §32 Phase 7 Week 25 — global Do Not Disturb. When 1,
@@ -627,7 +701,7 @@ CREATE TABLE IF NOT EXISTS app_settings (
     -- The user-facing UI surfaces it as a one-click toggle in the tray
     -- menu separate from the time-bounded quiet hours.
     do_not_disturb INTEGER NOT NULL DEFAULT 0
-        CHECK(do_not_disturb IN (0, 1)),
+    CHECK (do_not_disturb IN (0, 1)),
     -- Architecture §28.8 line 3220 — link preview generation reveals the
     -- user's IP to the target server (the OpenGraph fetch bypasses
     -- Veilid). When 0, the sender skips the fetch entirely so URLs
@@ -635,93 +709,124 @@ CREATE TABLE IF NOT EXISTS app_settings (
     -- created by another setting (do-not-disturb, quiet hours) must not
     -- switch previews on (plan A1.7, C7.28).
     link_previews_enabled INTEGER NOT NULL DEFAULT 0
-        CHECK(link_previews_enabled IN (0, 1)),
+    CHECK (link_previews_enabled IN (0, 1)),
     -- The user's preferences (plan D1; `rekindle_types::preferences`):
     -- one column per field, defaults matching `Preferences::default`.
-    notifications_enabled INTEGER NOT NULL DEFAULT 1 CHECK(notifications_enabled IN (0, 1)),
-    notification_sound INTEGER NOT NULL DEFAULT 1 CHECK(notification_sound IN (0, 1)),
-    start_minimized INTEGER NOT NULL DEFAULT 0 CHECK(start_minimized IN (0, 1)),
+    notifications_enabled INTEGER NOT NULL DEFAULT 1 CHECK (
+        notifications_enabled IN (0, 1)
+    ),
+    notification_sound INTEGER NOT NULL DEFAULT 1 CHECK (
+        notification_sound IN (0, 1)
+    ),
+    start_minimized INTEGER NOT NULL DEFAULT 0 CHECK (
+        start_minimized IN (0, 1)
+    ),
     -- Game detection scans the process table for the local game-time
     -- history only (plan E7.2); set only by `SetGameDetection`, which
     -- starts or stops the scanner, never by the bulk preference save.
-    game_detection_enabled INTEGER NOT NULL DEFAULT 1 CHECK(game_detection_enabled IN (0, 1)),
+    game_detection_enabled INTEGER NOT NULL DEFAULT 1 CHECK (
+        game_detection_enabled IN (0, 1)
+    ),
     -- The current game shown to friends (plan E7.2, prod research batch 7):
     -- opt-in, off by default, split from detection. Set only by the
     -- trust-changing `SetShareCurrentGame`.
-    share_current_game INTEGER NOT NULL DEFAULT 0 CHECK(share_current_game IN (0, 1)),
+    share_current_game INTEGER NOT NULL DEFAULT 0 CHECK (
+        share_current_game IN (0, 1)
+    ),
     game_scan_interval_secs INTEGER NOT NULL DEFAULT 15
-        CHECK(game_scan_interval_secs BETWEEN 1 AND 3600),
+    CHECK (game_scan_interval_secs BETWEEN 1 AND 3600),
     input_device TEXT,
     output_device TEXT,
     video_device_id TEXT,
     video_device_label TEXT,
-    input_volume REAL NOT NULL DEFAULT 1.0 CHECK(input_volume BETWEEN 0.0 AND 1.0),
-    output_volume REAL NOT NULL DEFAULT 1.0 CHECK(output_volume BETWEEN 0.0 AND 1.0),
-    noise_suppression INTEGER NOT NULL DEFAULT 1 CHECK(noise_suppression IN (0, 1)),
-    echo_cancellation INTEGER NOT NULL DEFAULT 1 CHECK(echo_cancellation IN (0, 1)),
-    auto_away_minutes INTEGER NOT NULL DEFAULT 10 CHECK(auto_away_minutes BETWEEN 0 AND 1440),
+    input_volume REAL NOT NULL DEFAULT 1.0 CHECK (
+        input_volume BETWEEN 0.0 AND 1.0
+    ),
+    output_volume REAL NOT NULL DEFAULT 1.0 CHECK (
+        output_volume BETWEEN 0.0 AND 1.0
+    ),
+    noise_suppression INTEGER NOT NULL DEFAULT 1 CHECK (
+        noise_suppression IN (0, 1)
+    ),
+    echo_cancellation INTEGER NOT NULL DEFAULT 1 CHECK (
+        echo_cancellation IN (0, 1)
+    ),
+    auto_away_minutes INTEGER NOT NULL DEFAULT 10 CHECK (
+        auto_away_minutes BETWEEN 0 AND 1440
+    ),
     auto_volunteer_relay_for_new_friends INTEGER NOT NULL DEFAULT 0
-        CHECK(auto_volunteer_relay_for_new_friends IN (0, 1)),
-    ringtone_enabled INTEGER NOT NULL DEFAULT 1 CHECK(ringtone_enabled IN (0, 1)),
-    ringtone_volume REAL NOT NULL DEFAULT 0.4 CHECK(ringtone_volume BETWEEN 0.0 AND 1.0),
-    in_call_dnd_auto_enable INTEGER NOT NULL DEFAULT 1 CHECK(in_call_dnd_auto_enable IN (0, 1)),
+    CHECK (auto_volunteer_relay_for_new_friends IN (0, 1)),
+    ringtone_enabled INTEGER NOT NULL DEFAULT 1 CHECK (
+        ringtone_enabled IN (0, 1)
+    ),
+    ringtone_volume REAL NOT NULL DEFAULT 0.4 CHECK (
+        ringtone_volume BETWEEN 0.0 AND 1.0
+    ),
+    in_call_dnd_auto_enable INTEGER NOT NULL DEFAULT 1 CHECK (
+        in_call_dnd_auto_enable IN (0, 1)
+    ),
     -- What an OS notification shows (prod research batch 7): the sender's
     -- name and the message, the name only, or nothing.
     notification_content TEXT NOT NULL DEFAULT 'name_only'
-        CHECK(notification_content IN ('name_and_message', 'name_only', 'nothing')),
+    CHECK (
+        notification_content IN ('name_and_message', 'name_only', 'nothing')
+    ),
     -- DM read receipts (plan E2.5, r10): opt-in, reciprocal, off by default.
     -- Set only by the trust-changing `SetReadReceiptsEnabled`, never by the
     -- bulk preference save; it never goes on the wire.
     read_receipts_enabled INTEGER NOT NULL DEFAULT 0
-        CHECK(read_receipts_enabled IN (0, 1)),
+    CHECK (read_receipts_enabled IN (0, 1)),
     -- Game totals shared with friends (plan E7.2): opt-in, off by default.
     -- Set only by the trust-changing `SetShareGameTotals`, never by the
     -- bulk preference save; the totals go as ratchet-sealed DmFrame
     -- `GameTotals` (0x0172), never in the profile record.
     share_game_totals INTEGER NOT NULL DEFAULT 0
-        CHECK(share_game_totals IN (0, 1)),
+    CHECK (share_game_totals IN (0, 1)),
     -- The local activity feed (plan E7.15, Infoview design §3.3): on by
     -- default, local only. Set only by `SetKeepActivityLog`, which clears
     -- `activity_log` when it turns it off; never by the bulk save.
     keep_activity_log INTEGER NOT NULL DEFAULT 1
-        CHECK(keep_activity_log IN (0, 1)),
+    CHECK (keep_activity_log IN (0, 1)),
     -- The identity's skin and sound bank (plan E7.7.2): a built-in
     -- (`rekindle_skin::builtin`) or a `skin_packages` row (`pkg:<hash>`),
     -- which the Host checks before writing. Device-bound, not synced.
     skin_id TEXT NOT NULL DEFAULT 'builtin:symbiosis'
-        CHECK(skin_id GLOB 'builtin:*' OR skin_id GLOB 'pkg:*'),
+    CHECK (skin_id GLOB 'builtin:*' OR skin_id GLOB 'pkg:*'),
     sound_bank TEXT NOT NULL DEFAULT 'builtin:defaults'
-        CHECK(sound_bank GLOB 'builtin:*' OR sound_bank GLOB 'pkg:*'),
+    CHECK (sound_bank GLOB 'builtin:*' OR sound_bank GLOB 'pkg:*'),
     -- The quick wipe's panic shortcut (plan E7.1, roadmap 8.2): an
     -- accelerator such as `CommandOrControl+Shift+F12`, written only by
     -- the Protected `ArmQuickWipe` and cleared by `DisarmQuickWipe`. NULL
     -- means the shortcut is unarmed: `QuickWipeTrigger` answers 409.
-    panic_shortcut TEXT DEFAULT NULL
-        CHECK(panic_shortcut IS NULL OR (
-            length(panic_shortcut) BETWEEN 3 AND 64
-            AND panic_shortcut GLOB '*?+?*'
-            AND panic_shortcut NOT GLOB '*[^A-Za-z0-9+]*')),
+    panic_shortcut TEXT DEFAULT null
+    CHECK (panic_shortcut IS null OR (
+        length(panic_shortcut) BETWEEN 3 AND 64
+        AND panic_shortcut GLOB '*?+?*'
+        AND panic_shortcut NOT GLOB '*[^A-Za-z0-9+]*'
+    )),
     PRIMARY KEY (owner_key)
 );
 
 -- The identity's skin library (plan E7.7.2): each package the helper
 -- validated, as its canonical bytes, addressed by their BLAKE3.
 CREATE TABLE IF NOT EXISTS skin_packages (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
-    hash TEXT NOT NULL CHECK(length(hash) = 64 AND hash NOT GLOB '*[^0-9a-f]*'),
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
+    hash TEXT NOT NULL CHECK (
+        length(hash) = 64 AND hash NOT GLOB '*[^0-9a-f]*'
+    ),
     manifest_json TEXT NOT NULL,
-    bytes BLOB NOT NULL CHECK(length(bytes) <= 16777216),
+    bytes BLOB NOT NULL CHECK (length(bytes) <= 16777216),
     imported_at INTEGER NOT NULL,
-    origin TEXT NOT NULL CHECK(origin IN ('import', 'received', 'authored')),
+    origin TEXT NOT NULL CHECK (origin IN ('import', 'received', 'authored')),
     PRIMARY KEY (owner_key, hash)
 );
 
 -- The input-channel choice per input device (`Preferences::input_channels`,
 -- plan C7.24b): a device without rows averages all its channels.
 CREATE TABLE IF NOT EXISTS app_input_channels (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     device_name TEXT NOT NULL,
-    channel INTEGER NOT NULL CHECK(channel BETWEEN 0 AND 65535),
+    channel INTEGER NOT NULL CHECK (channel BETWEEN 0 AND 65535),
     PRIMARY KEY (owner_key, device_name, channel)
 );
 
@@ -736,10 +841,12 @@ CREATE TABLE IF NOT EXISTS channel_slowmode_state (
     channel_id TEXT NOT NULL,
     last_send_ms INTEGER NOT NULL,
     PRIMARY KEY (owner_key, community_id, channel_id),
-    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities (
+        owner_key, id
+    ) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_channel_slowmode_state_owner
-    ON channel_slowmode_state(owner_key, community_id);
+ON channel_slowmode_state (owner_key, community_id);
 
 -- The community members we block, by pseudonym (plan E3.1 F3, D26). An
 -- identity-key block cannot match a community post without linking the
@@ -748,14 +855,18 @@ CREATE INDEX IF NOT EXISTS idx_channel_slowmode_state_owner
 CREATE TABLE IF NOT EXISTS community_blocks (
     owner_key TEXT NOT NULL,
     community_id TEXT NOT NULL,
-    pseudonym TEXT NOT NULL CHECK (pseudonym <> '' AND pseudonym = lower(pseudonym)),
+    pseudonym TEXT NOT NULL CHECK (
+        pseudonym != '' AND pseudonym = lower(pseudonym)
+    ),
     blocked_at INTEGER NOT NULL CHECK (blocked_at >= 0),
     PRIMARY KEY (owner_key, community_id, pseudonym),
-    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities (
+        owner_key, id
+    ) ON DELETE CASCADE
 );
 
 CREATE TABLE IF NOT EXISTS outgoing_invites (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     invite_id TEXT NOT NULL,
     url TEXT NOT NULL DEFAULT '',
     -- The invite's request inbox record (plan E2.5, D17).
@@ -763,7 +874,16 @@ CREATE TABLE IF NOT EXISTS outgoing_invites (
     created_at INTEGER NOT NULL,
     expires_at INTEGER NOT NULL,
     status TEXT NOT NULL DEFAULT 'pending'
-        CHECK(status IN ('pending', 'responded', 'accepted', 'rejected', 'cancelled', 'expired')),
+    CHECK (
+        status IN (
+            'pending',
+            'responded',
+            'accepted',
+            'rejected',
+            'cancelled',
+            'expired'
+        )
+    ),
     accepted_by TEXT,
     PRIMARY KEY (owner_key, invite_id)
 );
@@ -783,7 +903,9 @@ CREATE TABLE IF NOT EXISTS community_threads (
     last_message_at INTEGER NOT NULL DEFAULT 0,
     message_count INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (owner_key, community_id, id),
-    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities (
+        owner_key, id
+    ) ON DELETE CASCADE
 );
 
 -- Threads held at receipt because their creator was timed out (plan E3.1
@@ -793,10 +915,12 @@ CREATE TABLE IF NOT EXISTS community_held_threads (
     owner_key TEXT NOT NULL,
     community_id TEXT NOT NULL,
     thread_id TEXT NOT NULL
-        CHECK(length(thread_id) = 32 AND thread_id NOT GLOB '*[^0-9a-f]*'),
-    held_at INTEGER NOT NULL CHECK(held_at >= 0),
+    CHECK (length(thread_id) = 32 AND thread_id NOT GLOB '*[^0-9a-f]*'),
+    held_at INTEGER NOT NULL CHECK (held_at >= 0),
     PRIMARY KEY (owner_key, community_id, thread_id),
-    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities (
+        owner_key, id
+    ) ON DELETE CASCADE
 );
 
 -- Thread messages (messages within a thread).
@@ -814,10 +938,12 @@ CREATE TABLE IF NOT EXISTS thread_messages (
     timestamp INTEGER NOT NULL,
     reply_to_id TEXT,
     UNIQUE (owner_key, community_id, thread_id, message_id),
-    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities (
+        owner_key, id
+    ) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_thread_messages_thread
-    ON thread_messages(owner_key, community_id, thread_id, timestamp);
+ON thread_messages (owner_key, community_id, thread_id, timestamp);
 
 -- Community events (scheduled events with RSVPs).
 CREATE TABLE IF NOT EXISTS community_events (
@@ -836,19 +962,21 @@ CREATE TABLE IF NOT EXISTS community_events (
     -- Cancelled. CHECK constraint matches the EventStatus enum
     -- (`rekindle-types::event::EventStatus`).
     status TEXT NOT NULL DEFAULT 'scheduled'
-        CHECK(status IN ('scheduled', 'active', 'completed', 'cancelled')),
+    CHECK (status IN ('scheduled', 'active', 'completed', 'cancelled')),
     -- Architecture §21 line 2624 — peer-cached cover image hex hash.
     cover_image_ref TEXT,
     -- Architecture §21 line 2628 — JSON-serialized RecurrenceRule.
     -- NULL for one-off events; non-NULL holds the full struct so the
     -- frontend can render "every 2 weeks on Mon, Wed" without back-end
     -- date math.
-    recurrence_json TEXT CHECK(json_valid(recurrence_json)),
+    recurrence_json TEXT CHECK (json_valid(recurrence_json)),
     -- Architecture §21 line 2629 — JSON-serialized EventLocation enum.
     -- Falls back to channel_id-based VoiceChannel for legacy rows.
-    location_json TEXT CHECK(json_valid(location_json)),
+    location_json TEXT CHECK (json_valid(location_json)),
     PRIMARY KEY (owner_key, community_id, id),
-    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities (
+        owner_key, id
+    ) ON DELETE CASCADE
 );
 
 -- Event RSVPs (one per member per event).
@@ -858,9 +986,11 @@ CREATE TABLE IF NOT EXISTS event_rsvps (
     event_id TEXT NOT NULL,
     pseudonym_key TEXT NOT NULL,
     -- `RsvpStatus` (rekindle-types::event).
-    status TEXT NOT NULL CHECK(status IN ('going', 'interested', 'declined')),
+    status TEXT NOT NULL CHECK (status IN ('going', 'interested', 'declined')),
     PRIMARY KEY (owner_key, community_id, event_id, pseudonym_key),
-    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities (
+        owner_key, id
+    ) ON DELETE CASCADE
 );
 
 -- Channel pinned messages.
@@ -872,7 +1002,9 @@ CREATE TABLE IF NOT EXISTS channel_pins (
     pinned_by TEXT NOT NULL,
     pinned_at INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (owner_key, community_id, channel_id, message_id),
-    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities (
+        owner_key, id
+    ) ON DELETE CASCADE
 );
 
 -- Game servers shared within a community.
@@ -886,7 +1018,9 @@ CREATE TABLE IF NOT EXISTS game_servers (
     added_by TEXT NOT NULL,
     created_at INTEGER NOT NULL,
     PRIMARY KEY (owner_key, community_id, id),
-    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities (
+        owner_key, id
+    ) ON DELETE CASCADE
 );
 
 -- Locally cached invite codes (raw code never stored in DHT, only code_hash).
@@ -909,7 +1043,9 @@ CREATE TABLE IF NOT EXISTS community_invites (
     expires_at INTEGER,
     created_at INTEGER NOT NULL,
     PRIMARY KEY (owner_key, community_id, code_hash),
-    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities (
+        owner_key, id
+    ) ON DELETE CASCADE
 );
 
 -- Strand Relay Network (architecture §13). For each friend who has volunteered
@@ -917,7 +1053,7 @@ CREATE TABLE IF NOT EXISTS community_invites (
 -- we can publish a padded relay pool subkey on our profile DHT record. Bob
 -- adds rows here when he receives a `RelayOffer` from Carol.
 CREATE TABLE IF NOT EXISTS strand_relay_offers (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     relay_pseudonym TEXT NOT NULL,
     relay_route_blob BLOB NOT NULL,
     received_at INTEGER NOT NULL,
@@ -926,9 +1062,10 @@ CREATE TABLE IF NOT EXISTS strand_relay_offers (
 
 -- Strand Relay outbound: when *we* volunteer to relay for a friend, we keep
 -- the dedicated route id locally so we can revoke it later and so we know
--- which friend a given inbound RelayEnvelope is meant for (matched by route id).
+-- which friend a given inbound RelayEnvelope is meant for (matched by route
+-- id).
 CREATE TABLE IF NOT EXISTS strand_relay_volunteered (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     friend_public_key TEXT NOT NULL,
     relay_route_id TEXT NOT NULL,
     relay_route_blob BLOB NOT NULL,
@@ -942,13 +1079,15 @@ CREATE TABLE IF NOT EXISTS strand_relay_volunteered (
 -- numeric counters; no PII beyond pseudonyms which are already public
 -- within a community.
 CREATE TABLE IF NOT EXISTS peer_reliability (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     community_id TEXT NOT NULL,
     peer_pseudonym TEXT NOT NULL,
     success_count INTEGER NOT NULL DEFAULT 0,
     failure_count INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (owner_key, community_id, peer_pseudonym),
-    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities (
+        owner_key, id
+    ) ON DELETE CASCADE
 );
 
 -- Mobile push relay registrations (architecture §17.3 Tier 3). A self-
@@ -957,11 +1096,11 @@ CREATE TABLE IF NOT EXISTS peer_reliability (
 -- content-free wake. Stored locally so the client can re-register or
 -- revoke from any session.
 CREATE TABLE IF NOT EXISTS push_relay_registrations (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     relay_pseudonym TEXT NOT NULL,
     device_push_token TEXT NOT NULL,
-    platform TEXT NOT NULL CHECK(platform IN ('fcm', 'apns', 'self')),
-    record_keys_json TEXT NOT NULL CHECK(json_valid(record_keys_json)),
+    platform TEXT NOT NULL CHECK (platform IN ('fcm', 'apns', 'self')),
+    record_keys_json TEXT NOT NULL CHECK (json_valid(record_keys_json)),
     created_at INTEGER NOT NULL,
     PRIMARY KEY (owner_key, relay_pseudonym)
 );
@@ -971,14 +1110,16 @@ CREATE TABLE IF NOT EXISTS push_relay_registrations (
 -- separate append-only log so "leaves in last 7 days" stays computable.
 CREATE TABLE IF NOT EXISTS community_member_leaves (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     community_id TEXT NOT NULL,
     pseudonym_key TEXT NOT NULL,
     left_at INTEGER NOT NULL,
-    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities (
+        owner_key, id
+    ) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_member_leaves_recent
-    ON community_member_leaves(owner_key, community_id, left_at);
+ON community_member_leaves (owner_key, community_id, left_at);
 
 -- Voice session join/leave log (architecture §24.1). Used to compute
 -- "peak concurrent voice" per channel — events stream in as voice
@@ -986,22 +1127,24 @@ CREATE INDEX IF NOT EXISTS idx_member_leaves_recent
 -- to find the maximum concurrent count.
 CREATE TABLE IF NOT EXISTS voice_session_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     community_id TEXT NOT NULL,
     channel_id TEXT NOT NULL,
     member_pseudonym TEXT NOT NULL,
-    event_type TEXT NOT NULL CHECK(event_type IN ('join', 'leave')),
+    event_type TEXT NOT NULL CHECK (event_type IN ('join', 'leave')),
     occurred_at INTEGER NOT NULL,
-    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities (
+        owner_key, id
+    ) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_voice_session_events_channel
-    ON voice_session_events(owner_key, community_id, channel_id, occurred_at);
+ON voice_session_events (owner_key, community_id, channel_id, occurred_at);
 
 -- Local cache of devices paired to this identity (architecture §28.4).
 -- The authoritative list lives in subkey 3 of the personal DFLT record;
 -- this is just a fast read/write target for the settings UI.
 CREATE TABLE IF NOT EXISTS paired_devices (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     device_id TEXT NOT NULL,
     device_public_key TEXT NOT NULL,
     display_name TEXT NOT NULL DEFAULT '',
@@ -1017,64 +1160,71 @@ CREATE TABLE IF NOT EXISTS paired_devices (
 -- ratchet-sealed DmFrame content.
 CREATE TABLE IF NOT EXISTS game_sessions (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
-    game_id INTEGER NOT NULL CHECK(game_id > 0),
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
+    game_id INTEGER NOT NULL CHECK (game_id > 0),
     started_at INTEGER NOT NULL,
     ended_at INTEGER NOT NULL,
-    CHECK(ended_at >= started_at)
+    CHECK (ended_at >= started_at)
 );
-CREATE INDEX IF NOT EXISTS idx_game_sessions_game ON game_sessions(owner_key, game_id);
+CREATE INDEX IF NOT EXISTS idx_game_sessions_game ON game_sessions (
+    owner_key, game_id
+);
 
 -- Games never shown to anyone (plan E7.2, prod research batch 7;
 -- `rekindle_db::repo::hidden_games`): a hidden game is still recorded in
 -- `game_sessions` for the local history, but it is never the current game
 -- friends see and never in the totals sent to them.
 CREATE TABLE IF NOT EXISTS hidden_games (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
-    game_id INTEGER NOT NULL CHECK(game_id > 0),
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
+    game_id INTEGER NOT NULL CHECK (game_id > 0),
     PRIMARY KEY (owner_key, game_id)
 );
 
--- Our favourite game servers (plan E7.2; `rekindle_db::repo::favourite_servers`):
+-- Our favourite game servers (plan E7.2;
+-- `rekindle_db::repo::favourite_servers`):
 -- a game, the `ServerAddress` text (host:port, parsed before it is stored)
 -- and a label. Local only; a friend's chat window offers each as a game
 -- invite (community servers are `game_servers`).
 CREATE TABLE IF NOT EXISTS favourite_servers (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
-    game_id INTEGER NOT NULL CHECK(game_id > 0),
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
+    game_id INTEGER NOT NULL CHECK (game_id > 0),
     address TEXT NOT NULL,
-    label TEXT NOT NULL CHECK(length(label) <= 64),
+    label TEXT NOT NULL CHECK (length(label) <= 64),
     added_at INTEGER NOT NULL,
     PRIMARY KEY (owner_key, game_id, address)
 );
 
--- Servers we ourselves visited (plan E7.2 G3, SK2-G §3; `rekindle_db::repo::recent_servers`):
--- written when our own presence shows a server or we launch to one. Local only, never sent;
--- at most 50 rows (the oldest `last_seen` goes first); cleared when game detection is
+-- Servers we ourselves visited (plan E7.2 G3, SK2-G §3;
+-- `rekindle_db::repo::recent_servers`): written when our own presence shows a
+-- server or we launch to one. Local only, never sent; at most 50 rows (the
+-- oldest `last_seen` goes first); cleared when game detection is
 -- turned off.
 CREATE TABLE IF NOT EXISTS recent_servers (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
-    game_id INTEGER NOT NULL CHECK(game_id > 0),
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
+    game_id INTEGER NOT NULL CHECK (game_id > 0),
     address TEXT NOT NULL,
     last_seen INTEGER NOT NULL,
     PRIMARY KEY (owner_key, game_id, address)
 );
 
--- File transfers (plan E7.2 G12, SK2-G design §4; `rekindle_db::repo::transfers`):
+-- File transfers (plan E7.2 G12, SK2-G design §4;
+-- `rekindle_db::repo::transfers`):
 -- the Downloads view. `target` is plan E5.1's AttachmentTarget as JSON (G12:
 -- the channel arm). `chunks_done`/`bytes_done` are the resume checkpoint: the
 -- held chunks stay in the chunk cache, and a resumed fetch asks only for the
 -- rest. Never sent.
 CREATE TABLE IF NOT EXISTS transfers (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     attachment_id TEXT NOT NULL,
     target_json TEXT NOT NULL,
-    direction TEXT NOT NULL CHECK(direction IN ('download')),
-    state TEXT NOT NULL CHECK(state IN ('queued', 'active', 'paused', 'done', 'failed')),
-    chunks_done INTEGER NOT NULL DEFAULT 0 CHECK(chunks_done >= 0),
-    chunk_count INTEGER NOT NULL DEFAULT 0 CHECK(chunk_count >= 0),
-    bytes_done INTEGER NOT NULL DEFAULT 0 CHECK(bytes_done >= 0),
-    total INTEGER NOT NULL DEFAULT 0 CHECK(total >= 0),
+    direction TEXT NOT NULL CHECK (direction IN ('download')),
+    state TEXT NOT NULL CHECK (
+        state IN ('queued', 'active', 'paused', 'done', 'failed')
+    ),
+    chunks_done INTEGER NOT NULL DEFAULT 0 CHECK (chunks_done >= 0),
+    chunk_count INTEGER NOT NULL DEFAULT 0 CHECK (chunk_count >= 0),
+    bytes_done INTEGER NOT NULL DEFAULT 0 CHECK (bytes_done >= 0),
+    total INTEGER NOT NULL DEFAULT 0 CHECK (total >= 0),
     dest_name TEXT NOT NULL,
     dest_path TEXT NOT NULL,
     started_at INTEGER NOT NULL,
@@ -1088,12 +1238,14 @@ CREATE TABLE IF NOT EXISTS transfers (
 CREATE TABLE IF NOT EXISTS friend_game_totals (
     owner_key TEXT NOT NULL,
     friend_key TEXT NOT NULL,
-    game_id INTEGER NOT NULL CHECK(game_id > 0),
-    total_secs INTEGER NOT NULL CHECK(total_secs >= 0),
+    game_id INTEGER NOT NULL CHECK (game_id > 0),
+    total_secs INTEGER NOT NULL CHECK (total_secs >= 0),
     last_played INTEGER NOT NULL,
     PRIMARY KEY (owner_key, friend_key, game_id),
-    FOREIGN KEY (owner_key, friend_key) REFERENCES friends(owner_key, public_key)
-        ON DELETE CASCADE
+    FOREIGN KEY (owner_key, friend_key) REFERENCES friends (
+        owner_key, public_key
+    )
+    ON DELETE CASCADE
 );
 
 -- The local activity feed (plan E7.15, IV1; `rekindle_db::repo::activity`):
@@ -1106,18 +1258,26 @@ CREATE TABLE IF NOT EXISTS friend_game_totals (
 -- is `kind`.
 CREATE TABLE IF NOT EXISTS activity_log (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     at INTEGER NOT NULL,
-    kind TEXT NOT NULL CHECK(kind IN ('startedGame', 'stoppedGame', 'firstPlayed',
+    kind TEXT NOT NULL CHECK (kind IN (
+        'startedGame', 'stoppedGame', 'firstPlayed',
         'renamedSelf', 'statusMessage', 'bioChanged', 'nowFriends',
-        'favouriteAdded', 'joinedCommunity')),
+        'favouriteAdded', 'joinedCommunity'
+    )),
     subject_key TEXT,
     payload_json TEXT NOT NULL,
-    FOREIGN KEY (owner_key, subject_key) REFERENCES friends(owner_key, public_key)
-        ON DELETE CASCADE
+    FOREIGN KEY (owner_key, subject_key) REFERENCES friends (
+        owner_key, public_key
+    )
+    ON DELETE CASCADE
 );
-CREATE INDEX IF NOT EXISTS idx_activity_log_at ON activity_log(owner_key, at DESC, id DESC);
-CREATE INDEX IF NOT EXISTS idx_activity_log_subject ON activity_log(owner_key, subject_key);
+CREATE INDEX IF NOT EXISTS idx_activity_log_at ON activity_log (
+    owner_key, at DESC, id DESC
+);
+CREATE INDEX IF NOT EXISTS idx_activity_log_subject ON activity_log (
+    owner_key, subject_key
+);
 
 -- What the activity worker last saw of each friend (plan E7.15, IV2;
 -- `rekindle_db::repo::activity::seen`): the fields the feed compares,
@@ -1125,16 +1285,18 @@ CREATE INDEX IF NOT EXISTS idx_activity_log_subject ON activity_log(owner_key, s
 -- what the worker saw, never the friend row it already updated. Local only.
 -- `game_json` is the `rekindle_types::friend::GameInfoState`.
 CREATE TABLE IF NOT EXISTS activity_seen (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     friend_key TEXT NOT NULL,
-    accepted INTEGER NOT NULL CHECK(accepted IN (0, 1)),
+    accepted INTEGER NOT NULL CHECK (accepted IN (0, 1)),
     display_name TEXT NOT NULL,
     status_message TEXT,
     bio TEXT,
     game_json TEXT,
     PRIMARY KEY (owner_key, friend_key),
-    FOREIGN KEY (owner_key, friend_key) REFERENCES friends(owner_key, public_key)
-        ON DELETE CASCADE
+    FOREIGN KEY (owner_key, friend_key) REFERENCES friends (
+        owner_key, public_key
+    )
+    ON DELETE CASCADE
 );
 
 -- Read markers (plan E3.1, D25; `rekindle_db::repo::read_markers`): per
@@ -1143,29 +1305,41 @@ CREATE TABLE IF NOT EXISTS activity_seen (
 -- advances. Private: synced only through the personal-sync record, never
 -- sent to other members. Unread counts are messages after the marker.
 CREATE TABLE IF NOT EXISTS read_markers (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
-    scope_kind TEXT NOT NULL CHECK(scope_kind IN ('channel', 'dm')),
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
+    scope_kind TEXT NOT NULL CHECK (scope_kind IN ('channel', 'dm')),
     community_id TEXT,
     channel_id TEXT,
     peer_key TEXT,
-    last_read_seq INTEGER NOT NULL CHECK(last_read_seq >= 0),
+    last_read_seq INTEGER NOT NULL CHECK (last_read_seq >= 0),
     updated_at INTEGER NOT NULL,
-    CHECK((scope_kind = 'channel' AND community_id IS NOT NULL AND channel_id IS NOT NULL
-           AND peer_key IS NULL)
-       OR (scope_kind = 'dm' AND peer_key IS NOT NULL AND community_id IS NULL
-           AND channel_id IS NULL)),
-    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE,
-    FOREIGN KEY (owner_key, peer_key) REFERENCES friends(owner_key, public_key) ON DELETE CASCADE
+    CHECK ((
+        scope_kind = 'channel'
+        AND community_id IS NOT null
+        AND channel_id IS NOT null
+        AND peer_key IS null
+    )
+    OR (
+        scope_kind = 'dm' AND peer_key IS NOT null AND community_id IS null
+        AND channel_id IS null
+    )),
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities (
+        owner_key, id
+    ) ON DELETE CASCADE,
+    FOREIGN KEY (owner_key, peer_key) REFERENCES friends (
+        owner_key, public_key
+    ) ON DELETE CASCADE
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_read_markers_channel
-  ON read_markers(owner_key, community_id, channel_id) WHERE scope_kind = 'channel';
+ON read_markers (owner_key, community_id, channel_id)
+WHERE scope_kind = 'channel';
 CREATE UNIQUE INDEX IF NOT EXISTS idx_read_markers_dm
-  ON read_markers(owner_key, peer_key) WHERE scope_kind = 'dm';
+ON read_markers (owner_key, peer_key)
+WHERE scope_kind = 'dm';
 
 -- Pending pairing sessions — short-lived rows the existing device
 -- writes when generating a code, the new device drops as it accepts.
 CREATE TABLE IF NOT EXISTS pending_pairings (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     pairing_code TEXT NOT NULL,
     pairing_salt BLOB NOT NULL,
     created_at INTEGER NOT NULL,
@@ -1183,33 +1357,39 @@ CREATE TABLE IF NOT EXISTS pending_pairings (
 -- `signed_here` is 1 only for an op this device signed (the local signed
 -- log self-detection trusts, plan S7d-keys.9), never for an ingested one.
 CREATE TABLE IF NOT EXISTS governance_ops (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     community_id TEXT NOT NULL,
-    op_hash BLOB NOT NULL CHECK(length(op_hash) = 32),
+    op_hash BLOB NOT NULL CHECK (length(op_hash) = 32),
     author TEXT NOT NULL,
     device_key TEXT NOT NULL,
-    device_seq INTEGER NOT NULL CHECK(device_seq >= 0),
-    lamport INTEGER NOT NULL CHECK(lamport >= 0),
-    issued_at INTEGER NOT NULL CHECK(issued_at >= 0),
+    device_seq INTEGER NOT NULL CHECK (device_seq >= 0),
+    lamport INTEGER NOT NULL CHECK (lamport >= 0),
+    issued_at INTEGER NOT NULL CHECK (issued_at >= 0),
     op BLOB NOT NULL,
-    state TEXT NOT NULL CHECK(state IN ('applied','pending_deps','quarantined','equivocation')),
-    signed_here INTEGER NOT NULL CHECK(signed_here IN (0,1)),
+    state TEXT NOT NULL CHECK (
+        state IN ('applied', 'pending_deps', 'quarantined', 'equivocation')
+    ),
+    signed_here INTEGER NOT NULL CHECK (signed_here IN (0, 1)),
     PRIMARY KEY (owner_key, community_id, op_hash),
-    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities (
+        owner_key, id
+    ) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_governance_ops_state
-    ON governance_ops(owner_key, community_id, state);
+ON governance_ops (owner_key, community_id, state);
 
 CREATE TABLE IF NOT EXISTS governance_heads (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     community_id TEXT NOT NULL,
     device_key TEXT NOT NULL,
     author TEXT NOT NULL,
     member_record TEXT NOT NULL,
-    head_seq INTEGER NOT NULL CHECK(head_seq >= 0),
-    frontier_hash BLOB NOT NULL CHECK(length(frontier_hash) = 32),
+    head_seq INTEGER NOT NULL CHECK (head_seq >= 0),
+    frontier_hash BLOB NOT NULL CHECK (length(frontier_hash) = 32),
     PRIMARY KEY (owner_key, community_id, device_key),
-    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities (
+        owner_key, id
+    ) ON DELETE CASCADE
 );
 
 -- Each member's device-key set (ADR 0022 rules 2, 6, 7; plan E3.2
@@ -1220,19 +1400,25 @@ CREATE TABLE IF NOT EXISTS governance_heads (
 -- evidence names the key (permanent, rule 2). `fork_evidence` is the
 -- fork-evidence hash the endorsement answers, NULL when it answers none.
 CREATE TABLE IF NOT EXISTS governance_devices (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     community_id TEXT NOT NULL,
     member TEXT NOT NULL,
     device_key TEXT NOT NULL,
-    incarnation INTEGER NOT NULL CHECK(incarnation >= 0),
+    incarnation INTEGER NOT NULL CHECK (incarnation >= 0),
     device_record TEXT NOT NULL,
-    state TEXT NOT NULL CHECK(state IN ('pending','effective','inert','retired')),
-    fork_evidence BLOB CHECK(fork_evidence IS NULL OR length(fork_evidence) = 32),
+    state TEXT NOT NULL CHECK (
+        state IN ('pending', 'effective', 'inert', 'retired')
+    ),
+    fork_evidence BLOB CHECK (
+        fork_evidence IS null OR length(fork_evidence) = 32
+    ),
     PRIMARY KEY (owner_key, community_id, device_key, incarnation),
-    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities (
+        owner_key, id
+    ) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_governance_devices_member
-    ON governance_devices(owner_key, community_id, member);
+ON governance_devices (owner_key, community_id, member);
 
 -- Checkpoint hints (plan E3.2 S7c.6): every (height, round, digest) a held
 -- `Checkpoint` op carries, written after each rebuild. `op_hash` is the
@@ -1243,17 +1429,19 @@ CREATE INDEX IF NOT EXISTS idx_governance_devices_member
 -- is the `stateRoot` preimage (`canonical_state ‖ canonical_cut`) of a
 -- usable hint, kept once verified and served from here.
 CREATE TABLE IF NOT EXISTS governance_checkpoints (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     community_id TEXT NOT NULL,
-    height INTEGER NOT NULL CHECK(height >= 1),
-    round INTEGER NOT NULL CHECK(round >= 0 AND round <= 4294967295),
-    digest BLOB NOT NULL CHECK(length(digest) = 32),
-    op_hash BLOB NOT NULL CHECK(length(op_hash) = 32),
-    dir_size INTEGER NOT NULL CHECK(dir_size >= 0),
-    state TEXT NOT NULL CHECK(state IN ('proposed','usable','equivocated')),
+    height INTEGER NOT NULL CHECK (height >= 1),
+    round INTEGER NOT NULL CHECK (round >= 0 AND round <= 4294967295),
+    digest BLOB NOT NULL CHECK (length(digest) = 32),
+    op_hash BLOB NOT NULL CHECK (length(op_hash) = 32),
+    dir_size INTEGER NOT NULL CHECK (dir_size >= 0),
+    state TEXT NOT NULL CHECK (state IN ('proposed', 'usable', 'equivocated')),
     snapshot BLOB,
     PRIMARY KEY (owner_key, community_id, height, round, digest),
-    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities (
+        owner_key, id
+    ) ON DELETE CASCADE
 );
 
 -- A community joined from a checkpoint hint (plan E3.2 S7c.8 (1), Synapse
@@ -1264,13 +1452,15 @@ CREATE TABLE IF NOT EXISTS governance_checkpoints (
 -- hint's checkpoint, `state_root` the hinted snapshot's digest, compared
 -- with the backfilled state's when the row is cleared.
 CREATE TABLE IF NOT EXISTS governance_partial (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     community_id TEXT NOT NULL,
-    height INTEGER NOT NULL CHECK(height >= 1),
-    digest BLOB NOT NULL CHECK(length(digest) = 32),
-    state_root BLOB NOT NULL CHECK(length(state_root) = 32),
+    height INTEGER NOT NULL CHECK (height >= 1),
+    digest BLOB NOT NULL CHECK (length(digest) = 32),
+    state_root BLOB NOT NULL CHECK (length(state_root) = 32),
     PRIMARY KEY (owner_key, community_id),
-    FOREIGN KEY (owner_key, community_id) REFERENCES communities(owner_key, id) ON DELETE CASCADE
+    FOREIGN KEY (owner_key, community_id) REFERENCES communities (
+        owner_key, id
+    ) ON DELETE CASCADE
 );
 
 -- The outbox (plan E2.5, D22; `rekindle_outbox`, `rekindle_db::repo::
@@ -1283,24 +1473,40 @@ CREATE TABLE IF NOT EXISTS governance_partial (
 -- `deadline` is `DELIVERY_HORIZON` (D24) after the enqueue unless the
 -- stream sets a shorter one. A settled row is deleted.
 CREATE TABLE IF NOT EXISTS outbox (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
-    stream TEXT NOT NULL CHECK(length(stream) > 0),
-    stream_seq INTEGER NOT NULL CHECK(stream_seq >= 1),
-    client_id TEXT NOT NULL CHECK(length(client_id) > 0),
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
+    stream TEXT NOT NULL CHECK (length(stream) > 0),
+    stream_seq INTEGER NOT NULL CHECK (stream_seq >= 1),
+    client_id TEXT NOT NULL CHECK (length(client_id) > 0),
     kind TEXT NOT NULL
-        CHECK(kind IN ('dm', 'group_dm', 'governance_op', 'friend_handshake', 'dht_write', 'channel_post', 'media_key', 'mek_transfer', 'bootstrap')),
+    CHECK (
+        kind IN (
+            'dm',
+            'group_dm',
+            'governance_op',
+            'friend_handshake',
+            'dht_write',
+            'channel_post',
+            'media_key',
+            'mek_transfer',
+            'bootstrap'
+        )
+    ),
     payload BLOB NOT NULL,
-    state TEXT NOT NULL CHECK(state IN ('awaiting_key', 'queued', 'sent', 'delivered', 'read', 'failed')),
-    attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts >= 0),
+    state TEXT NOT NULL CHECK (
+        state IN (
+            'awaiting_key', 'queued', 'sent', 'delivered', 'read', 'failed'
+        )
+    ),
+    attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
     next_at INTEGER NOT NULL,
     deadline INTEGER NOT NULL,
     wedge_reason TEXT,
     -- The peer's ack that arrived before the row's send landed (its chain
     -- append, live A/B finding 42): the row settles at it once it lands.
-    peer_ack TEXT CHECK(peer_ack IN ('delivered', 'read')),
+    peer_ack TEXT CHECK (peer_ack IN ('delivered', 'read')),
     -- The local echo this row projects onto (`messages.send_state`);
     -- NULL for a send with no echo (a DHT write).
-    echo_id INTEGER REFERENCES messages(id) ON DELETE SET NULL,
+    echo_id INTEGER REFERENCES messages (id) ON DELETE SET NULL,
     -- The client id of the row of the same stream this one waits for (plan
     -- HOL1, lead decision 47): a `friend_handshake` row is attempted once
     -- that row has settled (left the table), never because of its place in
@@ -1315,9 +1521,9 @@ CREATE INDEX IF NOT EXISTS idx_outbox_next_at ON outbox (owner_key, next_at);
 -- Each stream's last assigned `stream_seq`: a settled row is deleted, and
 -- a seq is never handed out twice (the peer acknowledges by it).
 CREATE TABLE IF NOT EXISTS outbox_streams (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     stream TEXT NOT NULL,
-    last_seq INTEGER NOT NULL CHECK(last_seq >= 1),
+    last_seq INTEGER NOT NULL CHECK (last_seq >= 1),
     PRIMARY KEY (owner_key, stream)
 );
 
@@ -1325,16 +1531,17 @@ CREATE TABLE IF NOT EXISTS outbox_streams (
 -- of `writer`'s chain on `stream` this identity has applied (or passed as
 -- a duplicate, or skipped as retired). Committed only after the entry's
 -- effect commits. `stream_seq` (plan E2.6 G4) is the writer's outbox stream
--- seq of the entry the cursor was committed on (0: none known): a group member's hints are stored by stream seq
+-- seq of the entry the cursor was committed on (0: none known): a group
+-- member's hints are stored by stream seq
 -- without moving the cursor, so a retired stretch is a history gap only
 -- when a stream seq between this one and the first entry after the retire
 -- mark is not held.
 CREATE TABLE IF NOT EXISTS stream_cursors (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     stream TEXT NOT NULL,
     writer TEXT NOT NULL,
-    seq INTEGER NOT NULL CHECK(seq >= 0),
-    stream_seq INTEGER NOT NULL DEFAULT 0 CHECK(stream_seq >= 0),
+    seq INTEGER NOT NULL CHECK (seq >= 0),
+    stream_seq INTEGER NOT NULL DEFAULT 0 CHECK (stream_seq >= 0),
     updated_at INTEGER NOT NULL,
     PRIMARY KEY (owner_key, stream, writer)
 );
@@ -1346,10 +1553,10 @@ CREATE TABLE IF NOT EXISTS stream_cursors (
 -- seq applied by any path. Every row is above its cursor; the cursor's
 -- move deletes the rows it passes.
 CREATE TABLE IF NOT EXISTS stream_applied (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     stream TEXT NOT NULL,
     writer TEXT NOT NULL,
-    seq INTEGER NOT NULL CHECK(seq >= 1),
+    seq INTEGER NOT NULL CHECK (seq >= 1),
     PRIMARY KEY (owner_key, stream, writer, seq)
 );
 
@@ -1361,10 +1568,10 @@ CREATE TABLE IF NOT EXISTS stream_applied (
 -- entry up to it belongs to a row the peer acknowledged (no outbox row
 -- left); retired entries' rows go.
 CREATE TABLE IF NOT EXISTS chain_entries (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     peer TEXT NOT NULL,
-    chain_seq INTEGER NOT NULL CHECK(chain_seq >= 1),
-    stream_seq INTEGER NOT NULL CHECK(stream_seq >= 1),
+    chain_seq INTEGER NOT NULL CHECK (chain_seq >= 1),
+    stream_seq INTEGER NOT NULL CHECK (stream_seq >= 1),
     appended_at INTEGER,
     -- The frame sealed with this seq (its hint), kept until it lands.
     frame BLOB,
@@ -1374,7 +1581,7 @@ CREATE TABLE IF NOT EXISTS chain_entries (
 -- Client ids already applied from each peer stream (plan E2.5, D22): a
 -- resend of a frame we hold is acknowledged, not shown twice.
 CREATE TABLE IF NOT EXISTS received (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     stream TEXT NOT NULL,
     client_id TEXT NOT NULL,
     PRIMARY KEY (owner_key, stream, client_id)
@@ -1387,7 +1594,7 @@ CREATE TABLE IF NOT EXISTS received (
 -- address; `peer_device` its device id (hex), empty until its device list
 -- (E2.4) names one.
 CREATE TABLE IF NOT EXISTS ratchet_sessions (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     peer_identity TEXT NOT NULL,
     peer_device TEXT NOT NULL,
     record BLOB NOT NULL,
@@ -1399,7 +1606,7 @@ CREATE TABLE IF NOT EXISTS ratchet_sessions (
 -- transaction that accepts the friend's SessionResetAccept init, deleted on
 -- their decline, expired at the backend-hold lifetime.
 CREATE TABLE IF NOT EXISTS session_reset_requests (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     peer TEXT NOT NULL,
     requested_at INTEGER NOT NULL,
     PRIMARY KEY (owner_key, peer)
@@ -1415,13 +1622,15 @@ CREATE TABLE IF NOT EXISTS session_reset_requests (
 -- gets `retired_at` and stays usable; the archive sweep deletes a retired
 -- or consumed row 30 days on.
 CREATE TABLE IF NOT EXISTS signal_prekeys (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
-    id INTEGER NOT NULL CHECK(id BETWEEN 1 AND 2147483647),
-    kind TEXT NOT NULL CHECK(kind IN ('opk', 'spk', 'pq_opk', 'pq_lr')),
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
+    id INTEGER NOT NULL CHECK (id BETWEEN 1 AND 2147483647),
+    kind TEXT NOT NULL CHECK (kind IN ('opk', 'spk', 'pq_opk', 'pq_lr')),
     secret BLOB NOT NULL,
     public BLOB NOT NULL,
     created_at INTEGER NOT NULL,
-    published_subkey INTEGER NOT NULL CHECK(published_subkey BETWEEN 0 AND 100),
+    published_subkey INTEGER NOT NULL CHECK (
+        published_subkey BETWEEN 0 AND 100
+    ),
     consumed_at INTEGER,
     retired_at INTEGER,
     PRIMARY KEY (owner_key, kind, id)
@@ -1431,22 +1640,23 @@ CREATE TABLE IF NOT EXISTS signal_prekeys (
 -- the pick skips them. A row is swept once the peer's record no longer
 -- lists the id, or by the archive sweep.
 CREATE TABLE IF NOT EXISTS prekey_slots_used (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     peer TEXT NOT NULL,
     device_id TEXT NOT NULL,
-    opk_id INTEGER NOT NULL CHECK(opk_id BETWEEN 1 AND 2147483647),
+    opk_id INTEGER NOT NULL CHECK (opk_id BETWEEN 1 AND 2147483647),
     used_at INTEGER NOT NULL,
     PRIMARY KEY (owner_key, peer, device_id, opk_id)
 );
 
 -- The `PreKeyRejected` notices we sent (plan E2.4 B5): one per initiator
 -- base key (`base_key_hash` = BLAKE3 derive-key under
--- `PREKEY_REJECTED_BASE_KEY`, `prekey_record::base_key_hash`), at most 10 per sender per
+-- `PREKEY_REJECTED_BASE_KEY`, `prekey_record::base_key_hash`), at most 10 per
+-- sender per
 -- 3 h. Kept for the 30-day archive horizon.
 CREATE TABLE IF NOT EXISTS prekey_rejections (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     sender TEXT NOT NULL,
-    base_key_hash BLOB NOT NULL CHECK(length(base_key_hash) = 32),
+    base_key_hash BLOB NOT NULL CHECK (length(base_key_hash) = 32),
     sent_at INTEGER NOT NULL,
     PRIMARY KEY (owner_key, base_key_hash)
 );
@@ -1455,10 +1665,10 @@ CREATE TABLE IF NOT EXISTS prekey_rejections (
 -- E2.4 B8, B9): an LR-only init seen again is a replay and is dropped.
 -- Kept while the last-resort key is held.
 CREATE TABLE IF NOT EXISTS prekey_lr_inits (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
-    lr_id INTEGER NOT NULL CHECK(lr_id BETWEEN 1 AND 2147483647),
-    spk_id INTEGER NOT NULL CHECK(spk_id BETWEEN 1 AND 2147483647),
-    base_key BLOB NOT NULL CHECK(length(base_key) = 32),
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
+    lr_id INTEGER NOT NULL CHECK (lr_id BETWEEN 1 AND 2147483647),
+    spk_id INTEGER NOT NULL CHECK (spk_id BETWEEN 1 AND 2147483647),
+    base_key BLOB NOT NULL CHECK (length(base_key) = 32),
     seen_at INTEGER NOT NULL,
     PRIMARY KEY (owner_key, lr_id, spk_id, base_key)
 );
@@ -1469,15 +1679,17 @@ CREATE TABLE IF NOT EXISTS prekey_lr_inits (
 -- `VerifiedKeyChanged` escalation); committing the escalated action
 -- clears them.
 CREATE TABLE IF NOT EXISTS signal_identities (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     peer_identity TEXT NOT NULL,
     identity_key BLOB NOT NULL
-        CHECK(typeof(identity_key) = 'blob' AND length(identity_key) = 32),
-    verified INTEGER NOT NULL DEFAULT 0 CHECK(verified IN (0, 1)),
-    verified_at INTEGER CHECK(verified_at IS NULL OR verified_at >= 0),
-    changed_from_key BLOB CHECK(changed_from_key IS NULL
-        OR (typeof(changed_from_key) = 'blob' AND length(changed_from_key) = 32)),
-    changed_at INTEGER CHECK(changed_at IS NULL OR changed_at >= 0),
+    CHECK (typeof(identity_key) = 'blob' AND length(identity_key) = 32),
+    verified INTEGER NOT NULL DEFAULT 0 CHECK (verified IN (0, 1)),
+    verified_at INTEGER CHECK (verified_at IS null OR verified_at >= 0),
+    changed_from_key BLOB CHECK (
+        changed_from_key IS null
+        OR (typeof(changed_from_key) = 'blob' AND length(changed_from_key) = 32)
+    ),
+    changed_at INTEGER CHECK (changed_at IS null OR changed_at >= 0),
     PRIMARY KEY (owner_key, peer_identity)
 );
 
@@ -1489,23 +1701,30 @@ CREATE TABLE IF NOT EXISTS signal_identities (
 -- not read back is quarantined (`quarantined_at`): skipped by every later
 -- replay, so it never blocks the others, and swept by the same age bound.
 CREATE TABLE IF NOT EXISTS unprocessed (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     peer_identity TEXT NOT NULL,
-    header_dh BLOB NOT NULL CHECK(typeof(header_dh) = 'blob' AND length(header_dh) = 32),
-    header_n INTEGER NOT NULL CHECK(header_n BETWEEN 0 AND 4294967295),
-    type_id INTEGER NOT NULL CHECK(type_id BETWEEN 0 AND 65535),
+    header_dh BLOB NOT NULL CHECK (
+        typeof(header_dh) = 'blob' AND length(header_dh) = 32
+    ),
+    header_n INTEGER NOT NULL CHECK (header_n BETWEEN 0 AND 4294967295),
+    type_id INTEGER NOT NULL CHECK (type_id BETWEEN 0 AND 65535),
     plaintext BLOB NOT NULL,
-    attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts >= 0),
-    received_at INTEGER NOT NULL CHECK(received_at >= 0),
-    quarantined_at INTEGER CHECK(quarantined_at IS NULL OR quarantined_at >= 0),
+    attempts INTEGER NOT NULL DEFAULT 0 CHECK (attempts >= 0),
+    received_at INTEGER NOT NULL CHECK (received_at >= 0),
+    quarantined_at INTEGER CHECK (
+        quarantined_at IS null OR quarantined_at >= 0
+    ),
     -- The stored message's client id, set in the transaction that stores it
     -- (plan E7.1), so its expiry deletes a row a crash left behind and a
     -- replay cannot bring an expired message back.
-    client_id TEXT CHECK(client_id IS NULL OR length(client_id) BETWEEN 1 AND 64),
+    client_id TEXT CHECK (
+        client_id IS null OR length(client_id) BETWEEN 1 AND 64
+    ),
     PRIMARY KEY (owner_key, peer_identity, header_dh, header_n)
 );
 CREATE INDEX IF NOT EXISTS idx_unprocessed_client_id
-    ON unprocessed(owner_key, client_id) WHERE client_id IS NOT NULL;
+ON unprocessed (owner_key, client_id)
+WHERE client_id IS NOT null;
 
 -- The send log (plan E2.5, D24 send half): every user-content ratchet
 -- message we sent, written in the ratchet's transaction, so a peer that
@@ -1517,45 +1736,57 @@ CREATE INDEX IF NOT EXISTS idx_unprocessed_client_id
 -- current session and archives the row (`archived_at`); rows older than
 -- `DELIVERY_HORIZON` are pruned.
 CREATE TABLE IF NOT EXISTS message_send_log (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     peer TEXT NOT NULL,
-    msg_id BLOB NOT NULL CHECK(typeof(msg_id) = 'blob' AND length(msg_id) = 32),
-    type_id INTEGER NOT NULL CHECK(type_id BETWEEN 0 AND 65535),
-    ratchet_key BLOB NOT NULL CHECK(typeof(ratchet_key) = 'blob' AND length(ratchet_key) = 32),
+    msg_id BLOB NOT NULL CHECK (
+        typeof(msg_id) = 'blob' AND length(msg_id) = 32
+    ),
+    type_id INTEGER NOT NULL CHECK (type_id BETWEEN 0 AND 65535),
+    ratchet_key BLOB NOT NULL CHECK (
+        typeof(ratchet_key) = 'blob' AND length(ratchet_key) = 32
+    ),
     plaintext_sealed BLOB NOT NULL,
-    sent_at INTEGER NOT NULL CHECK(sent_at >= 0),
-    archived_at INTEGER CHECK(archived_at IS NULL OR archived_at >= 0),
+    sent_at INTEGER NOT NULL CHECK (sent_at >= 0),
+    archived_at INTEGER CHECK (archived_at IS null OR archived_at >= 0),
     -- The content's client id (plan E7.1), so a disappearing message's
     -- expiry deletes its logged plaintext; NULL for a kind with none.
-    client_id TEXT CHECK(client_id IS NULL OR length(client_id) BETWEEN 1 AND 64),
+    client_id TEXT CHECK (
+        client_id IS null OR length(client_id) BETWEEN 1 AND 64
+    ),
     PRIMARY KEY (owner_key, peer, msg_id)
 );
 CREATE INDEX IF NOT EXISTS idx_message_send_log_client_id
-    ON message_send_log(owner_key, client_id) WHERE client_id IS NOT NULL;
+ON message_send_log (owner_key, client_id)
+WHERE client_id IS NOT null;
 
 -- Our retry requests (plan E2.5, D24): a ratchet message from `peer` we
 -- could not open, held (`pending`) until the source's CaughtUp, then sent
 -- at most `MAX_PER_MESSAGE` times per message (`sent_count`) and
 -- `MAX_PER_PEER` times per peer per `PEER_WINDOW` (`retry_request_sends`).
 CREATE TABLE IF NOT EXISTS retry_requests (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     peer TEXT NOT NULL,
-    msg_id BLOB NOT NULL CHECK(typeof(msg_id) = 'blob' AND length(msg_id) = 32),
-    observed_ratchet_key BLOB NOT NULL CHECK(typeof(observed_ratchet_key) = 'blob' AND length(observed_ratchet_key) = 32),
-    pending INTEGER NOT NULL CHECK(pending IN (0, 1)),
-    sent_count INTEGER NOT NULL DEFAULT 0 CHECK(sent_count >= 0),
-    failed_at INTEGER NOT NULL CHECK(failed_at >= 0),
+    msg_id BLOB NOT NULL CHECK (
+        typeof(msg_id) = 'blob' AND length(msg_id) = 32
+    ),
+    observed_ratchet_key BLOB NOT NULL CHECK (
+        typeof(observed_ratchet_key) = 'blob'
+        AND length(observed_ratchet_key) = 32
+    ),
+    pending INTEGER NOT NULL CHECK (pending IN (0, 1)),
+    sent_count INTEGER NOT NULL DEFAULT 0 CHECK (sent_count >= 0),
+    failed_at INTEGER NOT NULL CHECK (failed_at >= 0),
     PRIMARY KEY (owner_key, peer, msg_id)
 );
 
 -- Each retry request sent, for the per-peer window (plan E2.5).
 CREATE TABLE IF NOT EXISTS retry_request_sends (
-    owner_key TEXT NOT NULL REFERENCES identity(public_key) ON DELETE CASCADE,
+    owner_key TEXT NOT NULL REFERENCES identity (public_key) ON DELETE CASCADE,
     peer TEXT NOT NULL,
-    sent_at INTEGER NOT NULL CHECK(sent_at >= 0)
+    sent_at INTEGER NOT NULL CHECK (sent_at >= 0)
 );
 CREATE INDEX IF NOT EXISTS idx_retry_request_sends_peer
-    ON retry_request_sends(owner_key, peer, sent_at);
+ON retry_request_sends (owner_key, peer, sent_at);
 
 -- FTS5 indexes for local search (architecture §23). External-content tables
 -- per https://sqlite.org/fts5.html#external_content_tables — index lives in
@@ -1567,38 +1798,49 @@ CREATE INDEX IF NOT EXISTS idx_retry_request_sends_peer
 -- variant the FTS5 reference recommends for case- and accent-insensitive
 -- matching). No `porter` stemming because it's English-only and Rekindle
 -- targets multilingual chat. bm25() ranking is built-in.
-CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5 (
     body,
-    content='messages',
-    content_rowid='id',
-    tokenize='unicode61 remove_diacritics 2'
+    content = 'messages',
+    content_rowid = 'id',
+    tokenize = 'unicode61 remove_diacritics 2'
 );
 
 CREATE TRIGGER IF NOT EXISTS messages_fts_ai AFTER INSERT ON messages BEGIN
-    INSERT INTO messages_fts(rowid, body) VALUES (new.id, new.body);
+    INSERT INTO messages_fts (rowid, body) VALUES (new.id, new.body);
 END;
 CREATE TRIGGER IF NOT EXISTS messages_fts_ad AFTER DELETE ON messages BEGIN
-    INSERT INTO messages_fts(messages_fts, rowid, body) VALUES('delete', old.id, old.body);
+    INSERT INTO messages_fts (messages_fts, rowid, body) VALUES (
+        'delete', old.id, old.body
+    );
 END;
 CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE ON messages BEGIN
-    INSERT INTO messages_fts(messages_fts, rowid, body) VALUES('delete', old.id, old.body);
-    INSERT INTO messages_fts(rowid, body) VALUES (new.id, new.body);
+    INSERT INTO messages_fts (messages_fts, rowid, body) VALUES (
+        'delete', old.id, old.body
+    );
+    INSERT INTO messages_fts (rowid, body) VALUES (new.id, new.body);
 END;
 
-CREATE VIRTUAL TABLE IF NOT EXISTS thread_messages_fts USING fts5(
+CREATE VIRTUAL TABLE IF NOT EXISTS thread_messages_fts USING fts5 (
     body,
-    content='thread_messages',
-    content_rowid='id',
-    tokenize='unicode61 remove_diacritics 2'
+    content = 'thread_messages',
+    content_rowid = 'id',
+    tokenize = 'unicode61 remove_diacritics 2'
 );
 
-CREATE TRIGGER IF NOT EXISTS thread_messages_fts_ai AFTER INSERT ON thread_messages BEGIN
-    INSERT INTO thread_messages_fts(rowid, body) VALUES (new.id, new.body);
+CREATE TRIGGER IF NOT EXISTS thread_messages_fts_ai
+AFTER INSERT ON thread_messages BEGIN
+    INSERT INTO thread_messages_fts (rowid, body) VALUES (new.id, new.body);
 END;
-CREATE TRIGGER IF NOT EXISTS thread_messages_fts_ad AFTER DELETE ON thread_messages BEGIN
-    INSERT INTO thread_messages_fts(thread_messages_fts, rowid, body) VALUES('delete', old.id, old.body);
+CREATE TRIGGER IF NOT EXISTS thread_messages_fts_ad
+AFTER DELETE ON thread_messages BEGIN
+    INSERT INTO thread_messages_fts (thread_messages_fts, rowid, body) VALUES (
+        'delete', old.id, old.body
+    );
 END;
-CREATE TRIGGER IF NOT EXISTS thread_messages_fts_au AFTER UPDATE ON thread_messages BEGIN
-    INSERT INTO thread_messages_fts(thread_messages_fts, rowid, body) VALUES('delete', old.id, old.body);
-    INSERT INTO thread_messages_fts(rowid, body) VALUES (new.id, new.body);
+CREATE TRIGGER IF NOT EXISTS thread_messages_fts_au
+AFTER UPDATE ON thread_messages BEGIN
+    INSERT INTO thread_messages_fts (thread_messages_fts, rowid, body) VALUES (
+        'delete', old.id, old.body
+    );
+    INSERT INTO thread_messages_fts (rowid, body) VALUES (new.id, new.body);
 END;

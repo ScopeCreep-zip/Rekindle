@@ -95,7 +95,7 @@ mod tests {
     use super::{FriendCode, FriendCodeError, MAX_FRIEND_CODE_URL_LEN};
 
     const B64: &str = "um7m8HxBluv6XceSaB3dK9Lq0ZpWtYv1NcRe4Gh7Jf2";
-    const TOKEN: &str = "abcdefghijklmnopqrstuvwx2q";
+    const TOKEN: &str = rekindle_test_fixtures::FRIEND_TOKEN;
 
     fn pk() -> String {
         "ab".repeat(32)

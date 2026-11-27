@@ -4,7 +4,7 @@ import { createStore } from "solid-js/store";
 import type { Message as IpcMessage } from "../ipc/commands/types";
 import type { DeliveryRetry } from "../ipc/channels/chat_events";
 
-export type MessageStatus =
+type MessageStatus =
   | "sending"
   | "awaiting_key"
   | "queued"
@@ -19,7 +19,7 @@ export interface ReactionGroup {
   reactors: string[];
 }
 
-export interface PollAnswer {
+interface PollAnswer {
   index: number;
   text: string;
   voteCount: number;
@@ -79,7 +79,6 @@ export interface Message extends Omit<IpcMessage, "sendState"> {
 
 /** VOICE_MESSAGE bit on `Message.flags` per architecture §16.4. */
 export const FLAG_VOICE_MESSAGE = 0x10;
-export const FLAG_SUPPRESS_NOTIFICATIONS = 0x20;
 
 export interface MessageAttachment {
   attachmentId: string;
@@ -91,14 +90,14 @@ export interface MessageAttachment {
   downloaded: boolean;
 }
 
-export interface Conversation {
+interface Conversation {
   peerId: string;
   messages: Message[];
   isTyping: boolean;
   lastRead: number;
 }
 
-export interface ChatState {
+interface ChatState {
   conversations: Record<string, Conversation>;
   activeConversation: string | null;
 }
@@ -117,14 +116,14 @@ export { chatState, setChatState };
  * `selectedIds` keys are `serverMessageId` strings ("msg_<uuid>"). The local
  * SQLite numeric `id` is not used — server ids are what flow through governance.
  */
-export interface BulkSelectionState {
+interface BulkSelectionState {
   channelId: string;
   selectedIds: Set<string>;
 }
 
 const [bulkSelection, setBulkSelection] = createSignal<BulkSelectionState | null>(null);
 
-export { bulkSelection, setBulkSelection };
+export { bulkSelection };
 
 export function toggleBulkSelected(messageId: string): void {
   const current = bulkSelection();

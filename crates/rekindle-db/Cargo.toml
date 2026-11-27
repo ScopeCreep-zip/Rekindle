@@ -54,7 +54,7 @@ rusqlite = { version = "0.39", features = [ "bundled-sqlcipher-vendored-openssl"
 test-support = [ "dep:rand", "dep:rekindle-codec" ]
 
 [dev-dependencies]
-rekindle-codec = { path = "../rekindle-codec" }
 rand = { workspace = true }
+rekindle-codec = { path = "../rekindle-codec" }
 tempfile = "3"
 tokio = { workspace = true, features = [ "macros", "rt", "rt-multi-thread" ] }

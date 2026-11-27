@@ -65,7 +65,7 @@ risking an accidental enable of writes.
 
 Allowed transitions (verbatim from the daemon):
 
-```
+```text
 Stopped       → Starting
 Starting      → Locked        (network up, vault file exists)
 Starting      → Stopped       (init failed)

@@ -50,7 +50,7 @@ screen-reader announcements work on every page.
 
 ## Directory Structure
 
-```
+```text
 src/
 ├── main.tsx                          Entry point, path-based routing,
 │                                     global CallController + AnnounceRegion

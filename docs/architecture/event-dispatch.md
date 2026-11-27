@@ -6,7 +6,7 @@ How the Tauri backend sends events to its windows. Decision records:
 
 ## Pipeline
 
-```
+```text
 emitter ──► event_dispatch::emit / emit_journaled ──► one mpsc queue
                                                           │
                                        dispatch loop (one task)

@@ -162,6 +162,7 @@ governance, channel messages, threads, events, voice / stage / video,
 expressions, files, link previews, audit, automod, raid detection.
 
 ### `notification-event` + `network-status`
+
 (`channels/notification_channel.rs`)
 
 `NotificationEvent { MessageReceived, SystemAlert, UpdateAvailable, SessionResetRequested,

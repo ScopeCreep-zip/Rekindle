@@ -12,11 +12,10 @@
 
 import { createStore, produce } from "solid-js/store";
 import type { FriendEvent } from "../ipc/channels/chat_events";
-import { eventStreamLive } from "../ipc/channels";
-import { handleGetCoCreation } from "../actions/community/co_create";
+import type { CoCreationSnapshot } from "../ipc/commands/community";
 
 /** A friend's invite to co-create `communityName`, held until answered. */
-export interface CreatorInvite {
+interface CreatorInvite {
   anchor: string;
   peerKey: string;
   communityName: string;
@@ -91,20 +90,15 @@ export function applyCoCreatorEvent(friend: FriendEvent): boolean {
   return false;
 }
 
-let tracked = false;
-
-/** Read the Host's snapshot once this window's event stream is live; once
- *  per window, from whichever co-creation view mounts first. */
-export function trackCoCreation(): void {
-  if (tracked) return;
-  tracked = true;
-  void eventStreamLive().then(readCoCreation);
+/** The event sequence number now; a snapshot read after it yields to any
+ *  state an event set since. */
+export function coCreationSeq(): number {
+  return seq;
 }
 
-async function readCoCreation(): Promise<void> {
-  const before = seq;
-  const snapshot = await handleGetCoCreation();
-  if (!snapshot) return;
+/** Apply the Host's co-creation snapshot read after `before`: a state an
+ *  event set since then is the newer statement and is kept. */
+export function applyCoCreationSnapshot(snapshot: CoCreationSnapshot, before: number): void {
   const fresh = (key: string): boolean => (setBy.get(key) ?? 0) <= before;
   setCoCreatorState(
     produce((s) => {

@@ -209,7 +209,7 @@ async fn claim_in_candidate<D: GovernanceRuntimeDeps>(
     let mut segment_full = false;
     // Architecture §6.2 Step 7: one inspect fanout → the present-subkey set.
     // Empty = "no value present" (not "seq == 0") so an occupied-but-seq-0
-    // slot is never mis-claimed; the same set is reused by Step 12 presence
+    // slot is never misclaimed; the same set is reused by Step 12 presence
     // collection so it reads only occupied slots, never a blind 0..255 sweep.
     let present = deps.inspect_dht_record_present_subkeys(lease).await?;
     let mut present_set: std::collections::HashSet<u32> = present.iter().copied().collect();

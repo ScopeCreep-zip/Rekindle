@@ -106,7 +106,7 @@ export function releaseRemoteStream(r: RemoteStream): void {
 
 /** One painted frame: its wire timestamp (sender capture wall clock, ms
  *  mod 2^32) and the local wall-clock ms it was painted at. */
-export interface RenderedFrame {
+interface RenderedFrame {
   timestamp: number;
   renderedAtMs: number;
 }

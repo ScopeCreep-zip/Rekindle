@@ -24,7 +24,7 @@ import type {
   NotificationSubscriptionEvent,
 } from "./notification_events";
 import type { IntentReview, LifecycleState, SkinApplied, SkinApplyFailure, SkinTrial } from "../commands/dto";
-import type { ActivityListItem, SettingsTab } from "../commands/types";
+import type { SettingsTab } from "../commands/types";
 import type { InfoviewView } from "../commands/dto_infoview";
 import type { SkinSignalSet } from "../commands/dto_skin_run";
 
@@ -329,19 +329,6 @@ export function subscribeSkinApplyFailed(
 }
 
 /** The quick wipe's state the Host published when an arm or disarm committed. */
-/**
- * Subscribe to new activity feed entries (`SystemEvent::ActivityAppended`,
- * plan E7.15): the buddy list and chat windows receive them on
- * `activity-event`, newest first, names resolved by the Host.
- */
-export function subscribeActivity(
-  onAppended: (entries: ActivityListItem[]) => void,
-): Promise<UnlistenFn> {
-  return on<{ system: { activityAppended: { entries: ActivityListItem[] } } }>(
-    "activity-event",
-    (payload) => onAppended(payload.system.activityAppended.entries),
-  );
-}
 
 /**
  * Subscribe to this window's Infoview pushes (`SystemEvent::Infoview`,

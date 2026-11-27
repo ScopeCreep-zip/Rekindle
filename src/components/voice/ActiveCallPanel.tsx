@@ -10,7 +10,7 @@ import VideoCallPanel from "./VideoCallPanel";
 import ReactionsTray from "./ReactionsTray";
 import ReactionFloater from "./ReactionFloater";
 
-export interface ActiveCallPanelProps {
+interface ActiveCallPanelProps {
   call: CallEntry;
   /** "inline" docks under the DM header; "popout" fills the call window. */
   mode?: "inline" | "popout";

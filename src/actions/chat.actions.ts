@@ -156,10 +156,6 @@ export async function handleLoadHistory(
   }
 }
 
-export function handleMarkRead(peerId: string): void {
-  handleResetUnread(peerId);
-}
-
 /// The client id of the newest of the peer's messages this window has
 /// rendered while it has focus, or null: the Host sends our read marker
 /// for it when our receipts setting is on (plan E2.5).

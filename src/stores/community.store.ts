@@ -290,7 +290,7 @@ export interface Community {
   mySegmentIndex?: number;
 }
 
-export interface SegmentInfo {
+interface SegmentInfo {
   segmentIndex: number;
   registryKey: string;
   anchor: string;
@@ -308,7 +308,7 @@ export interface VoiceChannelState {
   pendingRequests?: string[];
 }
 
-export interface CommunityState {
+interface CommunityState {
   communities: Record<string, Community>;
   activeCommunity: string | null;
   activeChannel: string | null;
@@ -331,7 +331,7 @@ export interface CommunityState {
 }
 
 /** One quarantined governance op, as the backend announced it. */
-export interface QuarantinedOp {
+interface QuarantinedOp {
   author: string;
   reason: OpQuarantineReason;
   cause: string | null;

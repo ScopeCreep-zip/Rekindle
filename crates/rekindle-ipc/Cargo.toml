@@ -10,6 +10,7 @@ license = "MIT"
 workspace = true
 
 [dependencies]
+async-trait = "0.1"
 blake3 = "1"
 dirs = "6"
 parking_lot = { workspace = true }
@@ -21,7 +22,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-async-trait = "0.1"
 tracing = { workspace = true }
 uuid = { version = "1", features = [ "v4", "v7", "serde" ] }
 zeroize = { version = "1", features = [ "derive" ] }
@@ -50,5 +50,6 @@ widestring = "1"
 blake3 = "1"
 
 [dev-dependencies]
+rekindle-test-fixtures = { path = "../rekindle-test-fixtures" }
 tempfile = "3"
 tokio = { workspace = true, features = [ "test-util", "macros" ] }

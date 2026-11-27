@@ -11,7 +11,7 @@ the IPC commands in **`src-tauri/src/commands/game.rs`**.
 
 ## What it does
 
-```
+```text
 ┌────────────────────────────────────────────────────────┐
 │  game_service.rs (Tauri background task)                │
 │                                                         │
@@ -50,7 +50,7 @@ protocol.
 
 ## The game database
 
-```
+```text
 crates/rekindle-game-detect/src/default_games.json
 ```
 
@@ -132,7 +132,7 @@ The combined server address (`server_ip:server_port`) is what powers the
 
 ## Joining a friend's server
 
-```
+```text
 ┌────────────────┐                ┌────────────────────┐
 │ Friend's buddy │  click "Join"  │ commands::game::    │
 │ list entry     │ ────────────▶  │ launch_game_to_     │

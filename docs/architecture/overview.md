@@ -8,7 +8,7 @@ provides peer-to-peer transport and distributed storage.
 
 ## Layer Stack
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │                     SolidJS Frontend                    │
 │  8 windows, components, stores, handlers, styles        │
@@ -87,7 +87,7 @@ Eleven of these crates are recent harvest extractions; see
 
 ## Directory Tree
 
-```
+```text
 src/
 ├── main.tsx                          Entry point, path-based routing
 ├── windows/                          One component per Tauri window (7)
@@ -250,7 +250,7 @@ to the system tray on close.
 
 ## Data Flow: Sending a 1:1 Message
 
-```
+```text
 ┌──────────┐    invoke()     ┌──────────┐  ratchet / seal    ┌────────────────┐
 │ Frontend │ ──────────────→ │  Tauri   │ ────────────────→  │ rekindle-crypto│
 │ MessageInput│ send_message │ commands │                    │ + rekindle-db  │
@@ -272,7 +272,7 @@ to the system tray on close.
 
 ## Data Flow: Receiving a 1:1 Message
 
-```
+```text
 ┌──────────────┐  VeilidUpdate::AppMessage  ┌──────────────┐
 │   Veilid     │ ────────────────────────→  │ veilid::     │
 │   Network    │                            │ dispatch     │
@@ -311,7 +311,7 @@ CRDT governance, MEK rotation, plate-gate scaling — lives in
 [`communities-channels.md`](communities-channels.md), and
 [`communities-governance.md`](communities-governance.md).
 
-```
+```text
             ┌──────────────────────────────────────────────────┐
             │                  Sender                          │
             │  send_channel_message → MEK encrypt → envelope   │

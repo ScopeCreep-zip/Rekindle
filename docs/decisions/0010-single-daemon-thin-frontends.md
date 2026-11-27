@@ -76,6 +76,7 @@ lock:
 The embedded-core precedents (Matrix SDK clients, librespot, Transmission) work only because each
 frontend is a separate device or keeps separate state, which contradicts the requirement.
 Distribution follows the same split:
+
 - Debian ships one package per frontend that depends on a core or daemon package, plus a
   metapackage (transmission, weechat, docker);
 - Homebrew uses a formula for the daemon and CLI plus a cask for the app.

@@ -81,4 +81,3 @@ export function dmPeerDecodeCodecsFor(
   return videoState.dmPeerDecodeCodecs[peerPubkey];
 }
 
-export { videoState };

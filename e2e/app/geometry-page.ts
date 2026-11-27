@@ -206,9 +206,9 @@ export function overlaps(rootEl: Element, skip: string[]): Clash[] {
       // pressing part on purpose (a text-drawn pack's menu title carries
       // the label, its Part child the press), not a neighbour's.
       if (ownLabel(a.el, b.el) || ownLabel(b.el, a.el)) continue;
-      const ix = Math.min(a.box.x + a.box.w, b.box.x + b.box.w) - Math.max(a.box.x, b.box.x);
-      const iy = Math.min(a.box.y + a.box.h, b.box.y + b.box.h) - Math.max(a.box.y, b.box.y);
-      if (ix > 1 && iy > 1) out.push({ a: g.describe(a.el), b: g.describe(b.el), boxA: a.box, boxB: b.box });
+      const overlapX = Math.min(a.box.x + a.box.w, b.box.x + b.box.w) - Math.max(a.box.x, b.box.x);
+      const overlapY = Math.min(a.box.y + a.box.h, b.box.y + b.box.h) - Math.max(a.box.y, b.box.y);
+      if (overlapX > 1 && overlapY > 1) out.push({ a: g.describe(a.el), b: g.describe(b.el), boxA: a.box, boxB: b.box });
     }
   }
   return out.slice(0, 12);

@@ -15,6 +15,11 @@ updates:
       time: "09:00"
       timezone: "Etc/UTC"
     open-pull-requests-limit: 10
+    # Supply-chain cooldown (Semgrep dependabot-missing-cooldown): a
+    # version update waits until the release is 14 days old; security
+    # updates are exempt from cooldown and still open at once.
+    cooldown:
+      default-days: 14
     labels:
       - "dependencies"
       - "rust"
@@ -42,6 +47,11 @@ updates:
       time: "09:00"
       timezone: "Etc/UTC"
     open-pull-requests-limit: 10
+    # Supply-chain cooldown (Semgrep dependabot-missing-cooldown): a
+    # version update waits until the release is 14 days old; security
+    # updates are exempt from cooldown and still open at once.
+    cooldown:
+      default-days: 14
     labels:
       - "dependencies"
       - "javascript"
@@ -65,6 +75,11 @@ updates:
       time: "09:00"
       timezone: "Etc/UTC"
     open-pull-requests-limit: 5
+    # Supply-chain cooldown (Semgrep dependabot-missing-cooldown): a
+    # version update waits until the release is 14 days old; security
+    # updates are exempt from cooldown and still open at once.
+    cooldown:
+      default-days: 14
     labels:
       - "dependencies"
       - "github-actions"

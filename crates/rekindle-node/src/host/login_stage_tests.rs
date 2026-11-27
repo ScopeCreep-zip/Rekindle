@@ -73,7 +73,7 @@ async fn an_unlock_restores_the_stored_meks() {
             Caller::shell(),
             IpcRequest::Unlock {
                 identity: ann.public_key,
-                passphrase: "pass".into(),
+                passphrase: rekindle_test_fixtures::PASSPHRASE.into(),
             },
         )
         .await;

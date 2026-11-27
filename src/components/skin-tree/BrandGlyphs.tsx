@@ -7,7 +7,7 @@ import { Dynamic } from "solid-js/web";
 import type { BrandGlyphName } from "../../ipc/commands/dto";
 
 /** The full flame. */
-export const RekindleMark: Component = () => (
+const RekindleMark: Component = () => (
   <svg class="skin-node-glyph-svg skin-node-glyph-brand" viewBox="219 178 580 580" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
     <defs>
       <linearGradient id="rk-outer" gradientUnits="userSpaceOnUse" x1="650" y1="250" x2="390" y2="745">
@@ -39,7 +39,7 @@ export const RekindleMark: Component = () => (
 );
 
 /** The two-layer flame for boxes of 16 px or less. */
-export const RekindleMarkSmall: Component = () => (
+const RekindleMarkSmall: Component = () => (
   <svg class="skin-node-glyph-svg skin-node-glyph-brand" viewBox="219 178 580 580" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
     <defs>
       <linearGradient id="rks-outer" gradientUnits="userSpaceOnUse" x1="650" y1="250" x2="390" y2="745">
@@ -60,7 +60,7 @@ export const RekindleMarkSmall: Component = () => (
 );
 
 /** The flame and the word "Rekindle" (`rk-word`, filled from the label's colour). */
-export const RekindleWordmark: Component = () => (
+const RekindleWordmark: Component = () => (
   <svg class="skin-node-glyph-svg skin-node-glyph-brand" viewBox="0 0 438.2 100" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
     <defs>
       <linearGradient id="rk-outer" gradientUnits="userSpaceOnUse" x1="650" y1="250" x2="390" y2="745">

@@ -19,9 +19,9 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 
 [features]
-fixture = []
+fixture = [  ]
 
 [dev-dependencies]
-rekindle-governance = { path = ".", features = ["fixture"] }
-rekindle-codec = { path = "../rekindle-codec" }
 proptest = "1"
+rekindle-codec = { path = "../rekindle-codec" }
+rekindle-governance = { path = ".", features = [ "fixture" ] }

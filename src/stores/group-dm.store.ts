@@ -4,7 +4,7 @@ import type { Message } from "./chat.store";
 
 /** One group's chat window state: its stored history and who is typing
  *  (member key → the Host's name for them while typing, null once stopped). */
-export interface GroupConversation {
+interface GroupConversation {
   messages: Message[];
   typing: Record<string, string | null>;
 }

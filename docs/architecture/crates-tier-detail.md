@@ -72,6 +72,7 @@ Dependencies: `blake3`, `serde`, `zeroize`.
 Rekindle's wire types and their encodings, with no Veilid (plan C8,
 ADR 0014). Every tier crate that needs a wire type depends on this crate, not
 on `rekindle-protocol`. Modules:
+
 - the generated `*_capnp` modules (built from `schemas/` by this crate's
   `build.rs`), `capnp_codec` and `capnp_envelope`;
 - `community` (`CommunityEnvelope`, `ControlPayload`, the community

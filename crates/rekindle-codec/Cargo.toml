@@ -10,7 +10,6 @@ license = "MIT"
 workspace = true
 
 [dependencies]
-zeroize = "1"
 base64 = "0.22"
 blake3 = "1"
 capnp = { workspace = true }
@@ -21,6 +20,7 @@ rekindle-utils = { path = "../rekindle-utils" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+zeroize = "1"
 
 [build-dependencies]
 capnpc = { workspace = true }

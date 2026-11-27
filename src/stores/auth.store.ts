@@ -7,7 +7,7 @@ export type UserStatus = "online" | "away" | "busy" | "offline" | "invisible";
 // Our own game, as the Host reports it (`dto::presence::OwnGame`).
 import type { OwnGame } from "../ipc/commands/dto";
 
-export interface AuthState {
+interface AuthState {
   isLoggedIn: boolean;
   publicKey: string | null;
   displayName: string | null;

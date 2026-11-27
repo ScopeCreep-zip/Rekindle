@@ -1,23 +1,52 @@
 //! systemd integration (`Type=notify`): `READY=1` once the bus accepts
 //! connections, the watchdog keep-alive (`WatchdogSec=`), and `STOPPING=1`
-//! when shutdown begins. Outside systemd every call is a no-op.
+//! when shutdown begins. Outside systemd every call is a no-op; systemd runs
+//! only on Linux, so on every other OS no service manager is told anything.
 
 use std::time::Duration;
 
 use crate::daemon::heartbeat::Heartbeat;
 
+/// The `sd_notify(3)` states this daemon sends.
+#[derive(Clone, Copy)]
+enum Signal {
+    Ready,
+    Stopping,
+    Watchdog,
+    WatchdogTrigger,
+}
+
+#[cfg(target_os = "linux")]
+fn send(signal: Signal) -> std::io::Result<()> {
+    let state = match signal {
+        Signal::Ready => sd_notify::NotifyState::Ready,
+        Signal::Stopping => sd_notify::NotifyState::Stopping,
+        Signal::Watchdog => sd_notify::NotifyState::Watchdog,
+        Signal::WatchdogTrigger => sd_notify::NotifyState::WatchdogTrigger,
+    };
+    sd_notify::notify(false, &[state])
+}
+
+#[cfg(not(target_os = "linux"))]
+fn send(_signal: Signal) -> std::io::Result<()> {
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "systemd runs only on Linux",
+    ))
+}
+
 /// Tell systemd the daemon is ready.
 pub fn notify_ready() {
-    notify(sd_notify::NotifyState::Ready, "READY=1");
+    notify(Signal::Ready, "READY=1");
 }
 
 /// Tell systemd shutdown has begun (`sd_notify(3)` `STOPPING=1`).
 pub fn notify_stopping() {
-    notify(sd_notify::NotifyState::Stopping, "STOPPING=1");
+    notify(Signal::Stopping, "STOPPING=1");
 }
 
-fn notify(state: sd_notify::NotifyState<'_>, name: &str) {
-    match sd_notify::notify(false, &[state]) {
+fn notify(signal: Signal, name: &str) {
+    match send(signal) {
         Ok(()) => tracing::info!("sd_notify: {name} sent"),
         Err(e) => tracing::debug!(error = %e, "sd_notify: {name} failed (not under systemd?)"),
     }
@@ -26,10 +55,18 @@ fn notify(state: sd_notify::NotifyState<'_>, name: &str) {
 /// How often to ping the watchdog: half of `$WATCHDOG_USEC`, as
 /// `sd_watchdog_enabled(3)` recommends; `None` when systemd expects no
 /// pings.
+#[cfg(target_os = "linux")]
 #[must_use]
 pub fn keepalive_interval() -> Option<Duration> {
     let mut usec = 0;
     sd_notify::watchdog_enabled(false, &mut usec).then(|| Duration::from_micros(usec) / 2)
+}
+
+/// No systemd outside Linux, so no watchdog expects pings.
+#[cfg(not(target_os = "linux"))]
+#[must_use]
+pub fn keepalive_interval() -> Option<Duration> {
+    None
 }
 
 /// Ping the watchdog every `interval` while the subscriber's heartbeat is
@@ -47,13 +84,13 @@ pub async fn keep_alive(interval: Option<Duration>, heartbeat: &Heartbeat) {
         ticks.tick().await;
         if heartbeat.is_fresh() {
             reported = false;
-            if let Err(e) = sd_notify::notify(false, &[sd_notify::NotifyState::Watchdog]) {
+            if let Err(e) = send(Signal::Watchdog) {
                 tracing::warn!(error = %e, "sd_notify: watchdog ping failed");
             }
         } else if !reported {
             reported = true;
             tracing::error!("bus subscriber stalled; triggering the watchdog");
-            if let Err(e) = sd_notify::notify(false, &[sd_notify::NotifyState::WatchdogTrigger]) {
+            if let Err(e) = send(Signal::WatchdogTrigger) {
                 tracing::error!(error = %e, "sd_notify: WATCHDOG=trigger failed");
             }
         }

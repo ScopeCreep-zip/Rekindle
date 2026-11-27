@@ -21,7 +21,7 @@ for the chiral-network architecture.
 
 ## Layer stack
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │                     SolidJS Frontend                    │
 │  Windows, components, stores, handlers, styles          │
@@ -109,7 +109,7 @@ side effects.
   - Layer 4 — AES-256-GCM with per-channel MEK (communities) or Signal
     Protocol (1:1 friends).
   - Layer 5 — `rekindle-vault` at rest: SQLCipher page-level AES-256-CBC
-    + per-entry AES-256-GCM, keyed by an Argon2id-derived master secret.
+    - per-entry AES-256-GCM, keyed by an Argon2id-derived master secret.
 - **Identity:** Ed25519 keypairs. No usernames or passwords. Pseudonyms
   per community for unlinkability.
 - **Community governance:** SMPL DHT records with `o_cnt: 0` (creation

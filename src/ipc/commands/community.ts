@@ -38,7 +38,7 @@ export interface SuccessorOffer {
 
 /** `SuccessorLinkRequested` (rekindle-types `dto::community`): a
  *  transfer's link request asking us, as `successorLinkRequested` carries it. */
-export interface SuccessorLinkRequested {
+interface SuccessorLinkRequested {
   community: string;
   request: string;
   recipient: string;

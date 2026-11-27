@@ -33,7 +33,7 @@ identity.
 
 ### Roles
 
-```
+```text
 Alice            Carol (mutual friend, volunteer relay)         Bob
 ─────            ──────────────────────────────────             ───
                                                                 
@@ -80,7 +80,7 @@ Alice            Carol (mutual friend, volunteer relay)         Bob
 
 ### Message types
 
-```
+```text
 RelayOffer     (0x0130, ratchet)  { relayRouteBlob, relayPseudonym }   // dedicated route Carol just created for Bob
 RelayWithdraw  (0x0131, ratchet)  { relayPseudonym }                   // Carol revokes her offer
 RelayOfferAck  (0x0132, ratchet)  { ok, reason }                       // Bob's app_call reply: confirms receipt, adds to pool
@@ -139,7 +139,7 @@ privacy posture.
 
 ### Three tiers
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────┐
 │  TIER 1: Foreground Veilid                                    │
 │   App is in the foreground. The device runs a full Veilid     │
@@ -190,7 +190,7 @@ where the platform vendor cannot see anything.
 
 ### Registration protocol
 
-```
+```text
 Device                              Relay daemon
 ──────                              ────────────
 

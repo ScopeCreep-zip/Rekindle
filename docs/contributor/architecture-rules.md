@@ -11,6 +11,7 @@ document once and refer back to the gate column when you're not
 sure whether something is allowed.
 
 Cross-references:
+
 - [`ai-assisted-contributions.md`](ai-assisted-contributions.md) —
   what AI tools commonly get wrong
 - [`style-guide.md`](style-guide.md) — code conventions
@@ -29,7 +30,7 @@ Lower-numbered tiers know nothing about higher tiers. **Lower tiers
 never depend on higher tiers — including transitively.** The lowest
 tiers are pure logic: zero I/O, zero async, zero side effects.
 
-```
+```text
 ┌──────────────────────────────────────────────────────────────────┐
 │  Tier 7   self-contained features                                 │
 │           rekindle-dm, rekindle-calls, rekindle-files,            │
@@ -116,7 +117,7 @@ deliberate future exception would require editing the check in
 
 ## 2. Frontend tier hierarchy (TypeScript / SolidJS)
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────┐
 │  src/windows/        composes per-window UI from components     │
 ├─────────────────────────────────────────────────────────────────┤

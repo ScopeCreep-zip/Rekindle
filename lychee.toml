@@ -63,13 +63,11 @@ exclude_path = [
 ]
 
 # Headers to send. Some GitHub raw-content URLs need this.
-headers = [
-    "accept = text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-]
+header = { "accept" = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" }
 
 # Don't fail on absence of fragment IDs (`#section`); many target
 # pages don't use stable anchors.
-include_fragments = false
+include_fragments = "none"
 
 # Run only over markdown — code comments are out of scope for now.
-file_types = ["markdown"]
+extensions = ["md"]

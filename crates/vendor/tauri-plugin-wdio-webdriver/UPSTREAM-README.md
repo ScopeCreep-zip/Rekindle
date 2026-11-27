@@ -153,12 +153,14 @@ let builder = builder.plugin(tauri_plugin_wdio_webdriver::init_with_port(9515));
 ```
 
 Port resolution order:
+
 1. `init_with_port(port)` — uses the specified port (ignores env var)
 2. `init()` — checks `TAURI_WEBDRIVER_PORT` env var, falls back to 4445
 
 ## W3C WebDriver Endpoints
 
 ### Session Management
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/status` | Server status |
@@ -166,12 +168,14 @@ Port resolution order:
 | DELETE | `/session/{id}` | Delete session |
 
 ### Timeouts
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/session/{id}/timeouts` | Get timeouts |
 | POST | `/session/{id}/timeouts` | Set timeouts |
 
 ### Navigation
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/session/{id}/url` | Get current URL |
@@ -182,6 +186,7 @@ Port resolution order:
 | POST | `/session/{id}/refresh` | Refresh page |
 
 ### Elements
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/session/{id}/element` | Find element |
@@ -206,6 +211,7 @@ Port resolution order:
 | GET | `/session/{id}/element/{eid}/screenshot` | Element screenshot |
 
 ### Shadow DOM
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/session/{id}/element/{eid}/shadow` | Get shadow root |
@@ -213,6 +219,7 @@ Port resolution order:
 | POST | `/session/{id}/shadow/{sid}/elements` | Find all in shadow |
 
 ### Windows
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/session/{id}/window` | Get window handle |
@@ -233,18 +240,21 @@ using the window's current display scale factor. Position changes are completed
 before a requested size is applied, including moves between displays.
 
 ### Frames
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/session/{id}/frame` | Switch to frame |
 | POST | `/session/{id}/frame/parent` | Switch to parent |
 
 ### Scripts
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/session/{id}/execute/sync` | Execute sync script |
 | POST | `/session/{id}/execute/async` | Execute async script |
 
 ### Cookies
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/session/{id}/cookie` | Get all cookies |
@@ -254,6 +264,7 @@ before a requested size is applied, including moves between displays.
 | DELETE | `/session/{id}/cookie/{name}` | Delete cookie |
 
 ### Alerts
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/session/{id}/alert/dismiss` | Dismiss alert |
@@ -262,12 +273,14 @@ before a requested size is applied, including moves between displays.
 | POST | `/session/{id}/alert/text` | Send alert text |
 
 ### Actions
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | POST | `/session/{id}/actions` | Perform actions |
 | DELETE | `/session/{id}/actions` | Release actions |
 
 ### Document
+
 | Method | Endpoint | Description |
 |--------|----------|-------------|
 | GET | `/session/{id}/source` | Get page source |
@@ -286,8 +299,8 @@ before a requested size is applied, including moves between displays.
 
 ## See Also
 
-- [Plugin Setup Guide](../tauri-service/docs/plugin-setup.md) — Full setup instructions including this plugin
-- [Platform Support](../tauri-service/docs/platform-support.md) — Per-platform details
+- [Plugin Setup Guide](https://github.com/webdriverio/desktop-mobile/blob/ba733f664e034976499fd3d43cf940f357f904c4/packages/tauri-service/docs/plugin-setup.md) — Full setup instructions including this plugin
+- [Platform Support](https://github.com/webdriverio/desktop-mobile/blob/ba733f664e034976499fd3d43cf940f357f904c4/packages/tauri-service/docs/platform-support.md) — Per-platform details
 - [Upstream repository](https://github.com/Choochmeque/tauri-plugin-webdriver) — Original project
 
 ## License

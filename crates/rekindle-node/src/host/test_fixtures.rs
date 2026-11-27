@@ -78,7 +78,7 @@ pub async fn create_ann(host: &Host) -> rekindle_types::dto::identity::IdentityV
             Caller::shell(),
             IpcRequest::IdentityCreate {
                 display_name: Some("Ann".into()),
-                passphrase: "pass".into(),
+                passphrase: rekindle_test_fixtures::PASSPHRASE.into(),
             },
         )
         .await;

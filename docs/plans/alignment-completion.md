@@ -682,10 +682,9 @@ plan ends up unexecutable, so this is the enumeration instead.
 Generated from `invoke.rs` against `IpcRequest`, matched on token sets
 so `join_community` ↔ `CommunityJoin` counts as covered.
 
-
 **A threads/pins/reactions — 15**
 
-```
+```text
 add_reaction
 archive_thread
 create_thread
@@ -703,10 +702,9 @@ unarchive_thread
 unpin_message
 ```
 
-
 **B events/polls — 13**
 
-```
+```text
 cancel_event
 close_poll
 create_event
@@ -722,10 +720,9 @@ set_event_rsvp
 vote_poll
 ```
 
-
 **C dm+calls — 16**
 
-```
+```text
 accept_dm_call
 accept_dm_invite
 accept_group_call
@@ -744,10 +741,9 @@ start_dm_call
 start_group_call
 ```
 
-
 **D governance admin — 24**
 
-```
+```text
 create_category
 delete_automod_rule
 delete_category
@@ -774,10 +770,9 @@ set_welcome_screen
 submit_onboarding_answers
 ```
 
-
 **E attachments/expressions — 8**
 
-```
+```text
 delete_emoji
 download_attachment
 list_expressions
@@ -788,10 +783,9 @@ upload_soundboard_sound
 upload_sticker
 ```
 
-
 **F read-only — 13**
 
-```
+```text
 audit_export
 audit_verify
 debug_gossip_state
@@ -807,10 +801,9 @@ search_messages
 vault_diagnostics
 ```
 
-
 **G channel admin — 9**
 
-```
+```text
 edit_channel_message
 forward_channel_message
 mark_channel_read
@@ -822,10 +815,9 @@ set_channel_notification_level
 set_channel_topic
 ```
 
-
 **H friends/social — 20**
 
-```
+```text
 accept_request
 accept_session_reset
 block_user
@@ -848,10 +840,9 @@ respond_to_speak_request
 unblock_user
 ```
 
-
 **I device sync/pairing — 12**
 
-```
+```text
 accept_pairing_code
 ensure_personal_sync_record
 read_paired_devices
@@ -866,10 +857,9 @@ write_sync_preferences
 write_sync_read_state
 ```
 
-
 **J relay/push — 6**
 
-```
+```text
 list_push_relay_registrations
 list_received_relay_offers
 register_with_push_relay
@@ -878,10 +868,9 @@ unregister_with_push_relay
 volunteer_relay
 ```
 
-
 **K game presence — 5**
 
-```
+```text
 add_game_server
 get_game_name
 get_game_servers
@@ -889,10 +878,9 @@ launch_game_to_server
 remove_game_server
 ```
 
-
 **L notifications/prefs — 11**
 
-```
+```text
 get_community_default_notification_level
 get_do_not_disturb
 get_notification_sound
@@ -906,10 +894,9 @@ set_preferences
 set_quiet_hours
 ```
 
-
 **M voice moderation — 5**
 
-```
+```text
 get_stage_hand_raises
 send_voice_message
 set_deafen
@@ -917,10 +904,9 @@ set_mute
 set_voice_mode
 ```
 
-
 **N identity/lifecycle — 8**
 
-```
+```text
 check_for_updates
 delete_identity
 dev_disable_watch
@@ -931,7 +917,6 @@ pqxdh_bundle_info
 update_community_profile
 ```
 
-
 ### Deliberately not ported — 41
 
 Window management, native capture, media plumbing and image rendering
@@ -939,7 +924,7 @@ are GUI concepts. A CLI has no window to open and no canvas to paint,
 so these stay desktop-only. Naming them is the point: an unlisted gap
 reads as an oversight.
 
-```
+```text
 default_media_capabilities
 derive_video_stream_id
 dm_peer_video_decode_codecs
@@ -985,7 +970,7 @@ unregister_native_preview_channel
 
 ### Needs a decision — 5
 
-```
+```text
 list_identities
 mark_read
 prepare_chat_session

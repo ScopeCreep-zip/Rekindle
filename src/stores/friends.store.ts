@@ -6,7 +6,7 @@ import type { GameInfo } from "../ipc/commands/dto";
 
 export type { GameInfo } from "../ipc/commands/dto";
 
-export type FriendshipState = "pendingOut" | "accepted";
+type FriendshipState = "pendingOut" | "accepted";
 
 export interface Friend {
   publicKey: string;
@@ -56,7 +56,7 @@ export interface OutgoingInvite {
   acceptedBy: string | null;
 }
 
-export interface FriendsState {
+interface FriendsState {
   friends: Record<string, Friend>;
   pendingRequests: PendingRequest[];
   outgoingInvites: OutgoingInvite[];

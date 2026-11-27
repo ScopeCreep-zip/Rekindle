@@ -89,7 +89,11 @@ mod tests {
     #[test]
     fn the_journal_round_trips_and_clears() {
         let dir = tempfile::TempDir::new().unwrap();
-        let (vault, _) = VaultStore::create(&dir.path().join("a.vault"), "pass").unwrap();
+        let (vault, _) = VaultStore::create(
+            &dir.path().join("a.vault"),
+            rekindle_test_fixtures::PASSPHRASE,
+        )
+        .unwrap();
         assert!(load(&vault).unwrap().is_none());
         let pending = PendingRotation {
             secret: Zeroizing::new([7; 32]),

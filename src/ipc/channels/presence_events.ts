@@ -19,7 +19,7 @@
 import type { NotJoinableReason } from "../commands/types";
 
 /** What a peer is playing, when the emitter actually looked. */
-export type GameActivity =
+type GameActivity =
   | "idle"
   | {
       playing: {
@@ -82,9 +82,4 @@ export function gameName(snapshot: PresenceSnapshot): string | null {
   const game = snapshot.game;
   if (game === null || game === "idle") return null;
   return game.playing.gameName;
-}
-
-/** Whether a game was observed at all (running or stopped). */
-export function gameObserved(snapshot: PresenceSnapshot): boolean {
-  return snapshot.game !== null;
 }
