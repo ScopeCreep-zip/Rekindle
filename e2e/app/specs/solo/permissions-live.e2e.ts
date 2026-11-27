@@ -78,13 +78,13 @@ describe("a role granted or taken back changes the open community window live", 
 
   it("granted Manage Channels, the control enables in the open window", async () => {
     role = await peerCreateRole(peers[0], anchor, "Builders", MANAGE_CHANNELS);
-    await peerAssignRole(peers[0], anchor, await ownCommunityPseudonym(browser, me.displayName), role);
+    await peerAssignRole(peers[0], anchor, await ownCommunityPseudonym(browser), role);
     await controlIs(true, "after the grant (no reopening)");
     await shot("after-grant");
   });
 
   it("the role taken back, the control is disabled with a reason again", async () => {
-    await peerUnassignRole(peers[0], anchor, await ownCommunityPseudonym(browser, me.displayName), role);
+    await peerUnassignRole(peers[0], anchor, await ownCommunityPseudonym(browser), role);
     await controlIs(false, "after the role was taken back");
     await shot("after-revoke");
   });

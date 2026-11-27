@@ -60,7 +60,7 @@ describe("Settings → Bans shows a ban made while it is open (BansChanged)", fu
   });
 
   it("Ari's open ban list gains Bea when Cara bans her", async () => {
-    await peerAssignRole(peers[0], anchor, await ownCommunityPseudonym(browser, me.displayName), mods);
+    await peerAssignRole(peers[0], anchor, await ownCommunityPseudonym(browser), mods);
     // The grant reaches Ari's window live: the Bans tab enables.
     await waitUntil(
       async () => {
@@ -73,17 +73,22 @@ describe("Settings → Bans shows a ban made while it is open (BansChanged)", fu
       NET_WAIT_MS,
       "Ari's Bans tab never enabled (the Mods role did not arrive)",
     );
+    // Bea joined by CLI and set no name in this community, so the Host's
+    // ban list names her by her pseudonym's short form (moderation.rs
+    // `short`: its first 12 hex digits and "…", 306–318), not "Bea".
+    const bea = await peerOwnPseudonym(peers[1], anchor);
+    const beaListed = `${bea.slice(0, 12)}…`;
     await communitySettings(browser, "Bans");
-    expect(await bannedShown()).not.toContain("Bea");
+    expect(await bannedShown()).not.toContain(beaListed);
     await shot("bans-before");
-    await peerBan(peers[0], anchor, await peerOwnPseudonym(peers[1], anchor));
+    await peerBan(peers[0], anchor, bea);
     let shown: string[] = [];
     await waitUntil(
-      async () => (shown = await bannedShown()).some((n) => n.includes("Bea")),
+      async () => (shown = await bannedShown()).includes(beaListed),
       NET_WAIT_MS * 2,
       "",
     ).catch(() => {
-      throw new Error(`Ari's open ban list never showed Bea (shows ${JSON.stringify(shown)})`);
+      throw new Error(`Ari's open ban list never showed Bea as ${beaListed} (shows ${JSON.stringify(shown)})`);
     });
     await shot("bans-after-live");
   });
