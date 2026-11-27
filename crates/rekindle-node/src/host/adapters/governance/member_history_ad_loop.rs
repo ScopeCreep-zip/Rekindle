@@ -85,7 +85,7 @@ pub(super) async fn run(host: HostGovernance, stop: CancellationToken) {
 
 impl HostGovernance {
     /// The current `KeyScope::Community` key of `community_id`.
-    fn community_key(&self, community_id: &str) -> Option<MediaEncryptionKey> {
+    pub(super) fn community_key(&self, community_id: &str) -> Option<MediaEncryptionKey> {
         (self.ctx.mek_cache.read())
             .current(community_id, KeyScope::Community)
             .cloned()

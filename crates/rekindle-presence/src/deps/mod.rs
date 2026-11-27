@@ -8,15 +8,17 @@
 
 pub mod community;
 pub mod friend;
+pub mod session_presence;
 
 pub use community::{
     CommunityPresenceDeps, DiscoveredMemberRow, OnlineMember, PresenceCredentials, RowWrite,
-    SegmentDescriptor, SelfPresenceSnapshot, VoicePresenceRow,
+    SegmentDescriptor, SelfPresenceSnapshot,
 };
 pub use friend::{
     FriendPresenceDeps, FriendPresenceEvent, GameInfoSnapshot, SetFriendStatusOutcome,
     StatusPublisherDeps,
 };
+pub use session_presence::{shared_session, SessionPresence, VoicePresenceRow};
 
 /// Errors surfaced by the public entry points across both traits.
 /// Lives at the module root so both `friend.rs` and `community.rs`

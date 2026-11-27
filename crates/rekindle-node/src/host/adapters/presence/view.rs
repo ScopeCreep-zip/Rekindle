@@ -6,12 +6,18 @@
 //! shows is published as `PresenceEvent::CommunityMemberChanged`, the
 //! event the member list already renders, so a member whose beats stop
 //! turns offline on every reader without a new write.
+//!
+//! Each change of what the beats show, and each expiry, hands the shell's
+//! voice roster every member's voice claim ([`reconcile_voice`], plan E3.4
+//! S8-pre); a beat's sealed extras are opened with our current community
+//! key ([`take_extras`]).
 
 use std::sync::Weak;
 use std::time::Duration;
 
-use rekindle_codec::member_record::{BeatState, PresenceBeat};
+use rekindle_codec::member_record::{BeatState, PresenceBeat, RecordScope, SealedExtras};
 use rekindle_presence::community::Observed;
+use rekindle_types::channel_keys::KeyScope;
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::presence::SessionStatus;
 use rekindle_types::subscription_events::{PresenceEvent, PresenceSnapshot, SubscriptionEvent};
@@ -52,7 +58,50 @@ pub(crate) fn observe(
     if let Some(shown) = observed.shown {
         publish(ctx, community, member, shown);
     }
+    if observed.shown.is_some() || observed.voice_changed {
+        reconcile_voice(ctx, community);
+    }
     observed
+}
+
+/// Open `author`'s `sealed` extras from its beat `seq` at `at` with our
+/// current community key and keep what our sharing policy shares back
+/// (plan E3.4 S8-pre); a generation we don't hold opens nothing. On
+/// `rekindled`, which shares nothing, nothing is kept.
+pub(crate) fn take_extras(
+    ctx: &DaemonContext,
+    at: RecordScope<'_>,
+    author: &PseudonymKey,
+    seq: u64,
+    sealed: &SealedExtras,
+) {
+    let community = at.community_id;
+    let policy = super::session_presence(ctx)
+        .map(|session| session.presence_policy(community))
+        .unwrap_or_default();
+    let key = (ctx.mek_cache.read())
+        .current(community, KeyScope::Community)
+        .cloned();
+    let extras = rekindle_presence::community::open_extras(sealed, key.as_ref(), at, &policy);
+    if let Some(state) = ctx.communities.map().write().get_mut(community) {
+        state.beat_view.set_extras(&author.to_hex(), seq, extras);
+    }
+}
+
+/// Hand the shell's voice roster every member's voice claim in
+/// `community` as its beats show it now (plan E3.4 S8-pre: the beat
+/// ring's `voiceChannel` view feeds the reconcile). Nothing on `rekindled`,
+/// which holds no voice session.
+pub(crate) fn reconcile_voice(ctx: &DaemonContext, community: &str) {
+    let Some(session) = super::session_presence(ctx) else {
+        return;
+    };
+    let rows = (ctx.communities.map().read())
+        .get(community)
+        .map(|c| c.beat_view.voice_rows());
+    if let Some(rows) = rows {
+        session.reconcile_voice_roster(community, rows);
+    }
 }
 
 /// What `member` (pseudonym hex) shows in `community`'s beat view now.
@@ -120,8 +169,13 @@ fn expire_all(ctx: &DaemonContext) -> Option<u64> {
             }
         }
     }
+    let mut communities = std::collections::BTreeSet::new();
     for (community, member) in turned {
         publish(ctx, &community, member, BeatState::Offline);
+        communities.insert(community);
+    }
+    for community in communities {
+        reconcile_voice(ctx, &community);
     }
     next
 }

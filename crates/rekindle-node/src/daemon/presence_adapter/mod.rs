@@ -52,6 +52,7 @@ mod deps_impl;
 mod events;
 mod lifecycle;
 mod registry;
+mod session_presence;
 mod state_reads;
 pub mod supervisor;
 

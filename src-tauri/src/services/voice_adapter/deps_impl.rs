@@ -448,6 +448,8 @@ impl VoiceSessionDeps for VoiceAdapter {
     }
 
     async fn end_channel_session(&self, community_id: &str, channel_id: &str) {
+        // Our beat says we left at once (plan E3.4 S8-pre).
+        crate::services::presence_adapter::voice_presence_changed(&self.state, community_id);
         // The media-ready gate flips not-ready for the session that ended.
         crate::services::community::media_ready_runtime::clear_media_ready(
             &self.state,

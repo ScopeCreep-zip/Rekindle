@@ -38,6 +38,13 @@ impl super::Host {
         self.ctx.journal.publish_state(key, event)
     }
 
+    /// We joined or left a voice channel in `community_id` (plan E3.4
+    /// S8-pre): the shell calls this when its voice session starts or ends,
+    /// until E4.1 makes voice the Host's.
+    pub async fn voice_presence_changed(&self, community_id: &str) {
+        super::adapters::presence::voice_changed(&self.ctx, community_id).await;
+    }
+
     /// The session state `key` ended: no later window is handed it.
     pub fn clear_state(&self, key: &str) {
         self.ctx.journal.clear_state(key);

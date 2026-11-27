@@ -58,6 +58,9 @@ impl ShellHooks for Shell {
             rekindle_vault::new_handle(),
         )
     }
+    fn session_presence(&self) -> Arc<dyn rekindle_presence::SessionPresence> {
+        Arc::new(crate::sim_session_presence::SimSessionPresence::default())
+    }
     async fn community_records_ready(
         &self,
         community_id: &str,

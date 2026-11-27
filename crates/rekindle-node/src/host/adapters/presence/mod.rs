@@ -26,6 +26,7 @@ use async_trait::async_trait;
 use parking_lot::RwLock;
 use rekindle_codec::member_record::BeatState;
 use rekindle_presence::community::{BeatEngine, BeatSink};
+use rekindle_presence::SessionPresence;
 use rekindle_types::presence::SessionStatus;
 
 use super::governance::HostGovernance;
@@ -122,6 +123,27 @@ async fn run_on_screen(ctx: Weak<DaemonContext>, stop: tokio_util::sync::Cancell
         };
         HostGovernance::new(ctx).inspect_on_screen().await;
     }
+}
+
+/// The shell's session signals (plan E3.4 S8-pre); `None` on `rekindled`,
+/// which holds no voice session and shares nothing: its beats carry the
+/// status alone.
+pub(crate) fn session_presence(ctx: &DaemonContext) -> Option<Arc<dyn SessionPresence>> {
+    ctx.shell.as_ref().map(|shell| shell.session_presence())
+}
+
+/// We joined or left a voice channel in `community` (plan E3.4 "Constant
+/// rate": an explicit action writes at once): our beat says it now, and
+/// the voice roster is handed what the members' beats show, so the members
+/// already in the channel are found without waiting on their next beat.
+pub(crate) async fn voice_changed(ctx: &DaemonContext, community: &str) {
+    let engine = ctx.own_presence.beats.read().clone();
+    if let Some(engine) = engine {
+        if let Err(error) = engine.voice_changed(community).await {
+            tracing::warn!(%error, "voice beat not written");
+        }
+    }
+    view::reconcile_voice(ctx, community);
 }
 
 /// Write our `Departed` beat in `community`, which we are leaving.

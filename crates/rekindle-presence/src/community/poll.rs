@@ -126,7 +126,7 @@ async fn run_tick<D: CommunityPresenceDeps>(
     // Read-side reciprocity policy (local-only, default-deny): a signal
     // we don't share, we don't get to read off peers' rows. Read once
     // before the scan so every row is filtered against the same policy.
-    let our_policy = deps.presence_policy(community_id);
+    let our_policy = deps.session_presence().presence_policy(community_id);
 
     let mut discovered = Vec::new();
     let mut online_count = 0usize;
@@ -190,12 +190,11 @@ async fn run_tick<D: CommunityPresenceDeps>(
                 known_member_keys.insert(row.pseudonym_hex.clone());
                 // Presence-derived voice membership for the roster
                 // reconcile — stale rows included so ghosts expire.
-                voice_rows.push(crate::deps::VoicePresenceRow {
-                    pseudonym_hex: row.pseudonym_hex.clone(),
-                    display_name: row.presence.display_name.clone(),
-                    voice_channel_id: row_voice_channel,
-                    fresh: row.online_member.is_some(),
-                });
+                voice_rows.push(crate::deps::VoicePresenceRow::claim(
+                    row.pseudonym_hex.clone(),
+                    row_voice_channel,
+                    row.online_member.is_some(),
+                ));
                 online_count += usize::from(row.online_member.is_some());
                 discovered.push((descriptor.segment_index, subkey, row.presence));
             }
@@ -218,7 +217,8 @@ async fn run_tick<D: CommunityPresenceDeps>(
     // hand the scan's presence-derived membership to the voice layer —
     // members whose VoiceJoin gossip was lost get added, ghosts whose
     // rows say "left" or whose heartbeat went stale get expired.
-    deps.reconcile_voice_roster(community_id, voice_rows);
+    deps.session_presence()
+        .reconcile_voice_roster(community_id, voice_rows);
     // Member profile diff: read prior snapshots, compose via the
     // pure `compute_profile_diff`, apply + fire MembersRefreshed
     // only when at least one entry changed (wave 5 D1).

@@ -103,18 +103,10 @@ pub async fn write_our_presence<D: CommunityPresenceDeps>(deps: &D, write: Prese
     // sharing policy permits BEFORE signing, then move the surviving
     // identity-revealing signals (location/activity) out of the plaintext
     // into a MEK-encrypted blob so only current members can read them.
-    let policy = deps.presence_policy(community_id);
-    let mut session =
-        crate::community::policy::apply_sharing_policy(deps.self_session(community_id), &policy);
-    let extras = rekindle_types::presence::SessionExtras {
-        location: session.location.take(),
-        activity: session.activity.take(),
-    };
-    let session_extras_encrypted = if extras.location.is_some() || extras.activity.is_some() {
-        deps.encrypt_session_extras_with_current_mek(community_id, &extras)
-    } else {
-        None
-    };
+    let port = deps.session_presence();
+    let (session, extras) = crate::deps::shared_session(&*port, community_id);
+    let session_extras_encrypted = extras
+        .and_then(|extras| deps.encrypt_session_extras_with_current_mek(community_id, &extras));
     // Voice-roster membership claim (MatrixRTC `m.rtc.member` pattern) —
     // CLEARTEXT on the presence row, not in the MEK-encrypted extras.
     //
@@ -131,7 +123,7 @@ pub async fn write_our_presence<D: CommunityPresenceDeps>(deps: &D, write: Prese
     // is already members-only (W26-signed, in the SMPL registry) and
     // already carries `in_call`/`call_type` in cleartext, so the channel
     // id adds no meaningful exposure.
-    let active_voice_channel = deps.active_voice_channel(community_id);
+    let active_voice_channel = port.active_voice_channel(community_id);
     let status = session.status.as_wire_str().to_string();
 
     let mut presence = MemberPresence {

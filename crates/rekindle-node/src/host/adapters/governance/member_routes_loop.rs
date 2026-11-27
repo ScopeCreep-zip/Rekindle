@@ -12,14 +12,16 @@
 
 use std::collections::BTreeMap;
 
-use rekindle_codec::member_record::BeatState;
+use rekindle_codec::member_record::{BeatState, RecordScope};
 use rekindle_governance_runtime::member_card::{write_own_beat, OwnBeat, OwnRecord};
 use rekindle_governance_runtime::member_routes::write_routes;
 use rekindle_governance_runtime::GovernanceRuntimeDeps;
+use rekindle_presence::community::seal_extras;
 use rekindle_records::port::{RouteClass, RouteState};
 use tokio_util::sync::CancellationToken;
 
 use super::HostGovernance;
+use crate::host::adapters::presence;
 
 pub(super) async fn run(host: HostGovernance, stop: CancellationToken) {
     let routes = match host.transport() {
@@ -131,10 +133,28 @@ impl HostGovernance {
             .next_beat_seq(community_id)
             .await
             .map_err(|e| format!("beat seq: {e}"))?;
+        // A present beat says our voice channel and carries our sealed
+        // extras (plan E3.4 S8-pre); an offline or departed one says
+        // nothing more than its state.
+        let session = presence::session_presence(&self.ctx).filter(|_| state.is_present());
+        let (voice_channel, extras) = match session {
+            Some(session) => {
+                let key = self.community_key(community_id);
+                let at = RecordScope {
+                    community_id,
+                    member_record: &keys.record,
+                };
+                let extras = seal_extras(&*session, community_id, key.as_ref(), at, &*self.ctx.rng);
+                (session.active_voice_channel(community_id), extras)
+            }
+            None => (None, None),
+        };
         let beat = OwnBeat {
             seq,
             state,
             now_ms: self.ctx.clock.now_ms(),
+            voice_channel,
+            extras,
         };
         write_own_beat(&*port, &keys.own(community_id), &beat).await
     }

@@ -200,6 +200,8 @@ impl InboundHandler for ShellInbound {
 pub struct BareShell {
     cache: Arc<RwLock<MekCache>>,
     keys: Arc<dyn ChannelKeyProvider>,
+    /// The voice session and rosters (plan E3.4 S8-pre).
+    pub session: Arc<crate::sim_session_presence::SimSessionPresence>,
 }
 
 impl Default for BareShell {
@@ -211,6 +213,7 @@ impl Default for BareShell {
                 rekindle_vault::new_handle(),
             ),
             cache,
+            session: Arc::default(),
         }
     }
 }
@@ -251,6 +254,10 @@ impl ShellHooks for BareShell {
     }
     fn channel_keys(&self) -> Arc<dyn ChannelKeyProvider> {
         Arc::clone(&self.keys)
+    }
+
+    fn session_presence(&self) -> Arc<dyn rekindle_presence::SessionPresence> {
+        Arc::clone(&self.session) as Arc<dyn rekindle_presence::SessionPresence>
     }
     async fn community_records_ready(
         &self,
