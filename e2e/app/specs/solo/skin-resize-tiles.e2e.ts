@@ -9,13 +9,15 @@
 //      size (cargo xtask skin-silhouette, silhouette.ts): no gap the CSS
 //      leaves, no art outside the cut;
 //   2. no row is painted twice: no displayed frame-layer tile
-//      (`.skin-frame > i`) draws a `row-*`/`node-*` image for a row the skin
-//      tree also paints. The pre-fix importer served Total Chaos's title row
-//      both as the tree's `MainTitleBar` (OutdentLeft 1) and as three
-//      un-outdented frame tiles (`row-maintitlebar-left`, `node-maintitlebar-
-//      middle`, `node-maintitlebar-right`, 52 px tall at x 0): a 1 px
-//      difference no pixel check holds reliably, and a serve-side error the
-//      silhouette shares, so this structural check is the one that sees it.
+//      (`.skin-frame > i`) shares a band with a tile drawing an image a
+//      painted tree node draws over an overlapping box (frames are served at
+//      their content hash, so the same art is the same URL). The pre-fix
+//      importer served Total Chaos's title row both as the tree's
+//      `MainTitleBar` (OutdentLeft 1) and as three un-outdented frame tiles
+//      52 px tall at x 0 (left cap, middle repeat, right cap; the middle and
+//      right are the tree's own images, the left cap the uncropped one): a
+//      1 px difference no pixel check holds reliably, and a serve-side error
+//      the silhouette shares, so this structural check is the one that sees it.
 //   3. no two painted skin nodes draw the same image at the same position
 //      and size over overlapping boxes.
 
@@ -55,25 +57,64 @@ async function settledSize(): Promise<[number, number]> {
   return size;
 }
 
-/** Displayed frame tiles drawing a row the skin tree also paints: a tile's
- *  `row-<row>-*` / `node-<row>-*` image names a node the tree lays (case
- *  aside: `MainTitleBar` is `maintitlebar`). */
-async function rowTilesTwice(): Promise<string[]> {
+/**
+ * Frame tiles of a row the tree also paints. The Host serves each image at its
+ * content hash (`regions::css::href`, `{base}/{blake3}.{ext}`) and frame slots
+ * carry no source name, so the same art is the same URL: a displayed frame
+ * tile whose background is an image a painted tree node (or its `::before` /
+ * `::after` layer) draws, over an overlapping box, repeats that row. A row's
+ * tiles share one band (top and height), and a row's pieces need not all be
+ * byte-identical to the tree's (Total Chaos's left cap is the uncropped
+ * 75x52 where the tree draws a 74x52 crop), so every displayed tile in a band
+ * holding such a tile is reported: the whole row is painted twice.
+ */
+async function frameRepeatsTreeArt(): Promise<string[]> {
   return (await browser.execute(() => {
-    const treeNodes = new Set(
-      Array.from(document.querySelectorAll<HTMLElement>(".skin-tree [data-skin-node]")).map((el) =>
-        (el.getAttribute("data-skin-node") ?? "").toLowerCase()
-      )
-    );
-    const out: string[] = [];
-    for (const tile of Array.from(document.querySelectorAll<HTMLElement>(".skin-frame > i"))) {
-      const st = getComputedStyle(tile);
-      if (st.display === "none" || st.backgroundImage === "none") continue;
-      const file = /([^/"]+)\.png/.exec(st.backgroundImage)?.[1] ?? "";
-      const row = /^(?:row|node)-([a-z0-9]+)-/.exec(file)?.[1];
-      if (row && treeNodes.has(row)) out.push(file);
+    const urls = (bg: string) => Array.from(bg.matchAll(/url\("?([^")]+)"?\)/g), (m) => m[1]);
+    const shown = (el: HTMLElement) => {
+      const st = getComputedStyle(el);
+      const r = el.getBoundingClientRect();
+      return st.display !== "none" && st.visibility !== "hidden" && r.width > 0 && r.height > 0;
+    };
+    const overlap = (a: DOMRect, b: DOMRect) =>
+      Math.min(a.right, b.right) > Math.max(a.left, b.left) &&
+      Math.min(a.bottom, b.bottom) > Math.max(a.top, b.top);
+    const nodes = Array.from(document.querySelectorAll<HTMLElement>(".skin-tree [data-skin-node]"))
+      .filter(shown)
+      .map((el) => ({
+        node: el.getAttribute("data-skin-node") ?? "",
+        urls: [
+          ...urls(getComputedStyle(el).backgroundImage),
+          ...urls(getComputedStyle(el, "::before").backgroundImage),
+          ...urls(getComputedStyle(el, "::after").backgroundImage),
+        ],
+        rect: el.getBoundingClientRect(),
+      }))
+      .filter((n) => n.urls.length > 0);
+    const tiles = Array.from(document.querySelectorAll<HTMLElement>(".skin-frame > i"))
+      .map((el, i) => ({ slot: i + 1, el }))
+      .filter((t) => shown(t.el))
+      .map((t) => ({
+        slot: t.slot,
+        art: urls(getComputedStyle(t.el).backgroundImage),
+        rect: t.el.getBoundingClientRect(),
+      }))
+      .filter((t) => t.art.length > 0);
+    const hash = (u: string) => (/([0-9a-f]{8})[0-9a-f]*\.(?:png|gif)$/.exec(u) ?? [])[1] ?? u.slice(-12);
+    const band = (r: DOMRect) => `${Math.round(r.top)}:${Math.round(r.height)}`;
+    const repeated = new Map<string, string>();
+    for (const t of tiles) {
+      for (const n of nodes) {
+        const same = t.art.find((u) => n.urls.includes(u));
+        if (same && overlap(t.rect, n.rect)) {
+          repeated.set(band(t.rect), n.node);
+          break;
+        }
+      }
     }
-    return out;
+    return tiles
+      .filter((t) => repeated.has(band(t.rect)))
+      .map((t) => `frame slot ${t.slot} (${hash(t.art[0])}, band ${band(t.rect)}) repeats ${repeated.get(band(t.rect))}`);
   })) as string[];
 }
 
@@ -156,16 +197,16 @@ describe("a pack's tiles join at its minimum and when resized larger (SKC4c)", f
           ]
         );
         const doubled = await doubledArt();
-        const twice = await rowTilesTwice();
+        const twice = await frameRepeatsTreeArt();
         console.log(
-          `[resize-tiles] ${pack.name} ${label} ${w}x${h}: edges drawn outside ${off.outsideDrawn}, clear inside ${off.insideClear} ${JSON.stringify(off.first)}; doubled art ${JSON.stringify(doubled)}; frame tiles repeating a tree row ${JSON.stringify(twice)}`
+          `[resize-tiles] ${pack.name} ${label} ${w}x${h}: edges drawn outside ${off.outsideDrawn}, clear inside ${off.insideClear} ${JSON.stringify(off.first)}; doubled art ${JSON.stringify(doubled)}; frame tiles repeating tree art ${JSON.stringify(twice)}`
         );
         await shot(`${pack.file}-${label}`);
         if (off.outsideDrawn + off.insideClear > 0)
           faults.push(`${pack.name} ${label}: edges ${off.outsideDrawn}/${off.insideClear}`);
         if (doubled.length > 0) faults.push(`${pack.name} ${label}: doubled ${doubled.join(", ")}`);
         if (twice.length > 0)
-          faults.push(`${pack.name} ${label}: frame tiles repeat a tree row: ${twice.join(", ")}`);
+          faults.push(`${pack.name} ${label}: frame tiles repeat tree art: ${twice.join(", ")}`);
       }
     }
     expect(faults).toEqual([]);
