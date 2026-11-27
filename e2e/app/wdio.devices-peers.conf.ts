@@ -7,10 +7,18 @@
 import { base } from "./base.conf.ts";
 import { APP_CAPABILITY, type AppCapability } from "./launcher.ts";
 
-const user = { capabilities: { [APP_CAPABILITY]: { window: "login", display: "x11" } satisfies AppCapability } as WebdriverIO.Capabilities };
+const user = {
+  capabilities: {
+    [APP_CAPABILITY]: { window: "login", display: "x11" } satisfies AppCapability,
+  } as WebdriverIO.Capabilities,
+};
 
 export const config: WebdriverIO.MultiRemoteConfig = {
   ...base,
-  specs: ["./specs/devices/call-end.e2e.ts", "./specs/devices/group-call-names.e2e.ts"],
+  specs: [
+    "./specs/devices/call-end.e2e.ts",
+    "./specs/devices/group-call-names.e2e.ts",
+    "./specs/devices/video-tile-names.e2e.ts",
+  ],
   capabilities: { alice: user, bob: structuredClone(user), carol: structuredClone(user) },
 };
