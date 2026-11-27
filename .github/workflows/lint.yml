@@ -30,6 +30,8 @@ on:
     branches: [main, "codex/**"]
   pull_request:
     branches: [main, "codex/**"]
+  # The merge queue tests each entry on top of the entries ahead of it (GitHub merge queue).
+  merge_group:
   workflow_dispatch:
 
 concurrency:
