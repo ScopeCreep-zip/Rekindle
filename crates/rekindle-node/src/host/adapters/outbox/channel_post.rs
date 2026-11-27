@@ -19,11 +19,12 @@
 
 use std::sync::Arc;
 
+use rekindle_channel::deps::PendingThreadReply;
 use rekindle_db::repo::outbox as repo;
 use rekindle_outbox::{
     Deadline, Entry, Outbox, OutboxError, OutboxRow, StreamKind, OUTBOX_DEADLINE,
 };
-use rekindle_types::message::ChannelPost;
+use rekindle_types::message::{ChannelPost, PostEntry};
 
 use super::{storage, HostOutbox, OutboxSlot};
 use crate::host::runtime::Host;
@@ -47,6 +48,38 @@ pub(super) fn post_entry(post: &ChannelPost, deadline: Deadline) -> Result<Entry
         payload: serde_json::to_vec(post).map_err(|e| storage(&e))?,
         deadline,
     })
+}
+
+/// Read row-less echoes on exactly this thread's stream.
+pub(crate) async fn pending_thread_replies(
+    db: &rekindle_db::Db,
+    owner: String,
+    community: &str,
+    thread: &str,
+) -> Result<Vec<PendingThreadReply>, OutboxError> {
+    let stream = StreamKind::ChannelPost.stream(&format!("{community}:{thread}"));
+    let rows = db
+        .call(move |conn| repo::pending_stream_rows(conn, &owner, &stream))
+        .await
+        .map_err(|e| storage(&e))?;
+    let mut replies = Vec::new();
+    for row in rows {
+        let row = super::row_of(row)?;
+        let post = post_of_row(&row).map_err(|e| storage(&e))?;
+        if let PostEntry::ThreadReply {
+            body, sent_at_ms, ..
+        } = post.entry
+        {
+            replies.push(PendingThreadReply {
+                message_id: post.message,
+                body,
+                sent_at_ms,
+                stream_seq: u64::try_from(row.stream_seq).map_err(|e| storage(&e))?,
+                send_state: row.state,
+            });
+        }
+    }
+    Ok(replies)
 }
 
 impl ChannelPosts {

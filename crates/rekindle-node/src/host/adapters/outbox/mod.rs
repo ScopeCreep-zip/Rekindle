@@ -38,6 +38,7 @@ use tokio::sync::broadcast;
 
 use stored::stored_of;
 
+pub(super) use channel_post::pending_thread_replies;
 pub use channel_post::{post_of_row, ChannelPosts};
 pub use dht_write::save_unsent;
 pub use dm::OutboxSlot;

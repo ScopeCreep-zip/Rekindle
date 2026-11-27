@@ -106,6 +106,7 @@ mod segment_request;
 mod table_events;
 mod thread_events;
 
+pub(crate) mod capability_words;
 mod checkpoint_rows;
 mod checkpoint_state;
 mod frontier;

@@ -279,6 +279,9 @@ pub struct CommunityChannelView {
     /// The Host's words for why, empty when not locked.
     #[serde(default)]
     pub locked_reason: String,
+    /// Channel controls we cannot use here, each with the Host's reason.
+    #[serde(default)]
+    pub denied: super::community_capability::ChannelDeniedCapabilities,
 }
 
 /// A channel category of a [`CommunityView`].

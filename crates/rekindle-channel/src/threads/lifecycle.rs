@@ -57,6 +57,7 @@ pub(super) fn prepare_thread<D: ChannelMessagingDeps>(
     let creator_pseudonym = deps
         .my_pseudonym_hex(community_id)
         .ok_or_else(|| ChannelError::PseudonymKeyMissing(community_id.into()))?;
+    let created_at = deps.now_secs();
     Ok(ThreadCreation {
         entry: GovernanceEntry::ThreadCreated {
             thread_id: ThreadId(thread_id),
@@ -74,10 +75,10 @@ pub(super) fn prepare_thread<D: ChannelMessagingDeps>(
             starter_message_id: starter_message_id.to_owned(),
             creator_pseudonym,
             forum_tag,
-            created_at: deps.now_secs(),
+            created_at,
             archived: false,
             auto_archive_seconds: u32::try_from(auto_archive_seconds).unwrap_or(u32::MAX),
-            last_message_at: 0,
+            last_message_at: created_at,
             message_count: 0,
         },
     })

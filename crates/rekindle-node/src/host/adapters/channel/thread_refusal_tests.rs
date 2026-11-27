@@ -35,7 +35,7 @@ fn a_timed_out_member_creates_no_thread_until_the_timeout_ends() {
     let gov = timed_out(member.clone());
     let refused = refuse_timed_out_thread(&thread(), &gov, &member, 159).unwrap_err();
     assert!(
-        matches!(&refused, ChannelError::PermissionDenied(m) if m.contains("160")),
+        matches!(&refused, ChannelError::PermissionDenied(m) if m == "Your timeout ends in 1 second."),
         "{refused}"
     );
     assert!(refuse_timed_out_thread(&thread(), &gov, &member, 160).is_ok());

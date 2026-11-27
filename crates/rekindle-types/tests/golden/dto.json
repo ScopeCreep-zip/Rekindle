@@ -143,6 +143,18 @@
     "displayName": "Bea",
     "pseudonymKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   },
+  "community.channelView": {
+    "channelType": "forum",
+    "denied": {
+      "createPublicThreads": "You need the Create Public Threads permission.",
+      "sendInThreads": "You need the Send In Threads permission."
+    },
+    "id": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c",
+    "locked": false,
+    "lockedReason": "",
+    "name": "Ideas",
+    "notificationLevel": "default"
+  },
   "community.inviteCreated": {
     "codeHash": "abababababababababababababababababababababababababababababababab",
     "expiresAt": 1700604800,

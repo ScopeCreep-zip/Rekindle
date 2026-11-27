@@ -14,6 +14,11 @@ use rekindle_types::permissions::{
 use crate::overwrite::OverwriteTarget;
 use crate::state::GovernanceState;
 
+mod capabilities;
+pub use capabilities::{
+    channel_denial, channel_permission_name, denied_in_channel, CapabilityDenial,
+};
+
 mod roster;
 pub use roster::{channel_read_roster, is_restricted};
 #[cfg(test)]

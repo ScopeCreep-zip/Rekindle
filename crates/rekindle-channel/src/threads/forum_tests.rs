@@ -218,6 +218,14 @@ impl ChannelMessagingDeps for ForumDeps {
         unexpected_dependency()
     }
 
+    async fn pending_thread_replies(
+        &self,
+        _community_id: &str,
+        _thread_id: &str,
+    ) -> Result<Vec<crate::deps::PendingThreadReply>, ChannelError> {
+        unexpected_dependency()
+    }
+
     async fn queue_post(&self, _post: &ChannelPost) -> Result<(), ChannelError> {
         unexpected_dependency()
     }
@@ -293,6 +301,14 @@ impl ChannelMessagingDeps for ForumDeps {
         _community_id: &str,
         _thread_id: &str,
     ) -> Option<ThreadInfoSnapshot> {
+        unexpected_dependency()
+    }
+
+    async fn thread_created_at(
+        &self,
+        _community_id: &str,
+        _op: &rekindle_types::governance::OpHash,
+    ) -> Result<u64, ChannelError> {
         unexpected_dependency()
     }
 

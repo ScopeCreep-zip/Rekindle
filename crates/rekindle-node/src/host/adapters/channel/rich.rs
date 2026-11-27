@@ -9,7 +9,7 @@ use rekindle_channel::deps::ThreadInfoSnapshot;
 use rekindle_channel::error::ChannelError;
 use rekindle_channel::ChannelMessagingDeps;
 use rekindle_types::dto::channel_message::ChannelMessageView;
-use rekindle_types::message::SendState;
+use rekindle_types::dto::community_capability::ChannelCapability;
 use rekindle_types::permissions;
 use rekindle_types::thread::{ThreadInfo, ThreadReplyOutcome};
 
@@ -84,11 +84,7 @@ fn message_view(view: rekindle_channel::ThreadMessageView) -> ChannelMessageView
         forwarded_from_name: None,
         attachment: None,
         flags: 0,
-        send_state: if view.is_own {
-            SendState::Sent
-        } else {
-            SendState::Delivered
-        },
+        send_state: view.send_state,
         failure_reason: None,
         edited_at: None,
         removed_by: None,
@@ -145,8 +141,11 @@ impl HostChannel {
         community_id: &str,
         thread: NewThread<'_>,
     ) -> Result<String, ChannelError> {
-        self.refuse_removed(community_id)?;
-        self.require(community_id, thread.channel_id, permissions::VIEW_CHANNELS)?;
+        self.require_thread_capability(
+            community_id,
+            thread.channel_id,
+            ChannelCapability::CreatePublicThreads,
+        )?;
         rekindle_channel::create_thread(
             self,
             community_id,
@@ -244,7 +243,7 @@ impl HostChannel {
         body: &str,
     ) -> Result<ThreadReplyOutcome, ChannelError> {
         let channel = self.thread_parent(community_id, thread_id)?;
-        self.require(community_id, &channel, permissions::SEND_IN_THREADS)?;
+        self.require_thread_capability(community_id, &channel, ChannelCapability::SendInThreads)?;
         let sent =
             rekindle_channel::send_thread_message(self, community_id, thread_id, body).await?;
         let outcome = ThreadReplyOutcome {

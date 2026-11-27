@@ -17,7 +17,7 @@ use rekindle_governance::state::GovernanceState;
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps;
 use rekindle_records::lease::{CommunityLeases, LeaseId};
 use rekindle_types::attachment::AttachmentOffer;
-use rekindle_types::governance::GovernanceEntry;
+use rekindle_types::governance::{GovernanceEntry, OpHash};
 use rekindle_types::id::{ChannelId, PseudonymKey};
 
 use super::HostChannel;
@@ -132,6 +132,17 @@ impl ChannelMessagingDeps for HostChannel {
 
     // ---------- The outbox's channel_post stream (plan E2.5) ----------
 
+    async fn pending_thread_replies(
+        &self,
+        community_id: &str,
+        thread_id: &str,
+    ) -> Result<Vec<rekindle_channel::deps::PendingThreadReply>, ChannelError> {
+        let (owner, db) = self.owner_and_db()?;
+        super::super::outbox::pending_thread_replies(&db, owner, community_id, thread_id)
+            .await
+            .map_err(adapter)
+    }
+
     async fn queue_post(&self, post: &ChannelPost) -> Result<(), ChannelError> {
         self.queue_post_impl(post).await
     }
@@ -228,6 +239,23 @@ impl ChannelMessagingDeps for HostChannel {
             .map(super::rich::thread_snapshot)
     }
 
+    async fn thread_created_at(
+        &self,
+        community_id: &str,
+        op: &OpHash,
+    ) -> Result<u64, ChannelError> {
+        let (owner, db) = self.owner_and_db()?;
+        let community = community_id.to_owned();
+        let hash = op.0;
+        db.call(move |conn| {
+            rekindle_db::repo::governance_ops::get_op(conn, &owner, &community, &hash)
+        })
+        .await
+        .map_err(adapter)?
+        .map(|op| op.issued_at)
+        .ok_or_else(|| ChannelError::Storage("Thread creation metadata is unavailable.".into()))
+    }
+
     // ---------- Expressions / Mesh / Governance / Permissions ----------
 
     fn upload_expression_to_cache(
@@ -283,10 +311,16 @@ impl ChannelMessagingDeps for HostChannel {
                 self.ctx().clock.now_secs(),
             )?;
         }
+        let creates_thread = matches!(entry, GovernanceEntry::ThreadCreated { .. });
         rekindle_governance_runtime::apply::write_entry(&self.gov, community_id, entry)
             .await
             .map(drop)
             .map_err(|e| match e {
+                rekindle_governance_runtime::GovernanceRuntimeError::PermissionDenied
+                    if creates_thread =>
+                {
+                    super::thread_refusal::thread_create_refused()
+                }
                 rekindle_governance_runtime::GovernanceRuntimeError::PermissionDenied => {
                     ChannelError::PermissionDenied(e.to_string())
                 }
