@@ -240,11 +240,20 @@ describe("Settings follows the theme's dialog roles (ST1)", function () {
     await tab("Profile");
     const field = '.settings-content input.form-input[type="text"]';
     await shown(browser, field, NET_WAIT_MS);
-    await browser.execute((sel: string) => {
-      const f = document.querySelector<HTMLInputElement>(sel);
-      f?.focus();
-      f?.select();
-    }, field);
+    // Select the field's whole text right before each sample, and say what
+    // holds: with the OS window unfocused the field can lose its focus and
+    // selection between samples, and a shot with no selection is no answer
+    // about the highlight's colour (the Mac's run at 14c97d213).
+    const selectAll = async (when: string): Promise<void> => {
+      const held = (await browser.execute((sel: string) => {
+        const f = document.querySelector<HTMLInputElement>(sel);
+        f?.focus();
+        f?.select();
+        return { focused: document.activeElement === f, start: f?.selectionStart ?? -1, end: f?.selectionEnd ?? -1, length: f?.value.length ?? -1 };
+      }, field)) as { focused: boolean; start: number; end: number; length: number };
+      console.log(`[st1] selection ${when}: ${JSON.stringify(held)}`);
+      expect({ focused: held.focused, whole: held.start === 0 && held.end === held.length && held.length > 0 }).toEqual({ focused: true, whole: true });
+    };
     const read = async (): Promise<{ focus: string; bg: string; fg: string; want: Record<string, string> }> =>
       (await browser.execute((sel: string) => {
         const probe = document.createElement("div");
@@ -276,12 +285,14 @@ describe("Settings follows the theme's dialog roles (ST1)", function () {
     await browser.execute(() => {
       document.documentElement.dataset.windowFocus = "active";
     });
+    await selectAll("before the focused sample");
     const focused = await read();
     await shot("selection-focused");
     const focusedPaint = await paintedSelection(field, "selection-focused-field");
     await browser.execute(() => {
       document.documentElement.dataset.windowFocus = "inactive";
     });
+    await selectAll("before the unfocused sample");
     const unfocused = await read();
     await shot("selection-unfocused");
     const unfocusedPaint = await paintedSelection(field, "selection-unfocused-field");
