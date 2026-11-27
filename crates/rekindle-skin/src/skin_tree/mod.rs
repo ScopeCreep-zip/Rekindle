@@ -21,6 +21,7 @@ pub mod dim;
 pub mod disabled;
 mod fit;
 pub mod import;
+mod import_sizing;
 pub mod inset;
 mod keep;
 pub mod label_style;

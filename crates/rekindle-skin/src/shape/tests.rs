@@ -114,6 +114,28 @@ fn checked_with(
 }
 
 #[test]
+fn sizing_metadata_adds_optional_axes_and_refuses_impossible_limits() {
+    let (layout, _) = from_nine(SkinWindow::Main, &nine()).unwrap();
+    let legacy = serde_json::to_value(&layout).unwrap();
+    assert!(legacy.get("sizeHints").is_none());
+    assert_eq!(
+        serde_json::from_value::<WindowLayout>(legacy).unwrap(),
+        layout
+    );
+    assert_eq!(
+        checked(&nine(), |layout| {
+            layout.size_hints.default_height = Some(22);
+            layout.size_hints.max_height = Some(50);
+        }),
+        Ok(())
+    );
+    assert!(checked(&nine(), |layout| layout.size_hints.max_width =
+        Some(layout.min_width - 1))
+    .is_err());
+    assert!(checked(&nine(), |layout| layout.size_hints.default_height = Some(0)).is_err());
+}
+
+#[test]
 fn a_well_formed_frame_passes() {
     assert_eq!(checked(&nine(), |_| {}), Ok(()));
 }

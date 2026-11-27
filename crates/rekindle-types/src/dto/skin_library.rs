@@ -160,5 +160,7 @@ pub struct SkinWindowFrame {
 pub struct SkinFrames {
     /// The skin the frames are of.
     pub id: String,
+    /// The same content-addressed stylesheet URI as SkinApplied.
+    pub tokens_href: String,
     pub windows: Vec<SkinWindowFrame>,
 }

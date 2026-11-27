@@ -164,6 +164,8 @@ webkit2gtk = { version = "2.0.2", features = [ "v2_4" ] }
 # widget input shape from a cairo region, through gtk's re-exported cairo. The same gtk 0.18 tauri compiles against, so
 # `WebviewWindow::gtk_window()` type-matches; already locked, no new crate.
 gtk = "0.18"
+# Typed GTK3 Wayland window for the framed-window CSD announcement.
+gdkwayland = "=0.18.2"
 
 [target.'cfg(windows)'.dependencies]
 # Shaped windows (plan SK0 S3, `windows/shape/win32_region.rs`): SetWindowRgn,

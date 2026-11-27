@@ -23,6 +23,7 @@ pub(super) fn frame() -> WindowLayout {
         content: Z,
         min_width: 30,
         min_height: 20,
+        size_hints: Default::default(),
         tiles: Vec::new(),
         title: None,
         tree: None,

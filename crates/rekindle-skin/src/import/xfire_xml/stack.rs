@@ -236,6 +236,7 @@ fn build(window: SkinWindow, rows: &[Stacked], content_row: usize) -> Result<Bui
             content,
             min_width: u16_of(&file, min_width)?,
             min_height: u16_of(&file, top + bottom)?,
+            size_hints: Default::default(),
             tiles,
             tree: None,
             title: None,

@@ -157,6 +157,7 @@ pub fn from_nine(
             content,
             min_width: u16_of(&file, min_width)?,
             min_height: u16_of(&file, min_height)?,
+            size_hints: Default::default(),
             tiles,
             tree: None,
             title: None,

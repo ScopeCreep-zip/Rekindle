@@ -39,6 +39,7 @@ import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, byText, resolveIntent, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
+import { OUT_DIR as WALK_LOGS } from "../../../walk/launch.ts";
 import { BUDDY, SETTINGS, openSettings } from "../../../walk/nav.ts";
 import { type Peer, startFleet, stopFleet } from "../../fleet.ts";
 import { createIdentity, newUser, openChat, type User } from "../../journeys.ts";
@@ -109,6 +110,13 @@ describe("a skinned window is the skin's shape", function () {
 
   after(async () => {
     await stopFleet(peers);
+    if (NATIVE_WAYLAND) {
+      const worker = process.env.WDIO_WORKER_ID;
+      if (!worker || !/^\d+-\d+$/.test(worker)) throw new Error("The native run did not name its app log");
+      const log = readFileSync(path.join(WALK_LOGS, `wdio-${worker}.log`), "utf8");
+      const degraded = log.split("\n").filter((line) => line.includes("window_shape_degraded"));
+      expect(degraded).toEqual([]);
+    }
   });
 
   /** Apply `pack` from Settings → Appearance (its radio, then the intent review). */
@@ -211,7 +219,7 @@ describe("a skinned window is the skin's shape", function () {
       Object.assign(found, await measure(pack, "main", "buddy-list", href));
       Object.assign(found, await titleStrip("buddy-list"));
       if (!NATIVE_WAYLAND) {
-        // A resize recomputes the cut (the shaper reshapes on Resized).
+        // A resize queues a fresh native allocation pass for the cut.
         await sizeWindow(browser, { width: BUDDY_LIST.def.width + 60, height: BUDDY_LIST.def.height + 80 });
         Object.assign(found, await measure(pack, "main", "buddy-list-resized", href));
         await sizeWindow(browser, BUDDY_LIST.def);

@@ -95,11 +95,15 @@ const LINK_ID = "rekindle-skin";
  */
 export function useSkin(): void {
   let stopped = false;
-  const unsubscribe = subscribeSkinEvents(applySkin);
+  let received = false;
+  const unsubscribe = subscribeSkinEvents((skin) => {
+    received = true;
+    applySkin(skin);
+  });
   void commands
     .getSkin()
     .then((skin) => {
-      if (!stopped) applySkin(skin);
+      if (!stopped && !received) applySkin(skin);
     })
     .catch((err: unknown) => console.error("get_skin failed — this window shows no skin", err));
   onCleanup(() => {
@@ -129,11 +133,19 @@ let loading: HTMLLinkElement | null = null;
  * sheet and the base always belong to the same skin. On any failure the
  * shown skin stays and the error is reported.
  */
-function applySkin(skin: SkinApplied): void {
+function applySkin(skin: SkinApplied | null): void {
   const mine = ++generation;
   loading?.remove();
   loading = null;
   const shown = document.getElementById(LINK_ID) as HTMLLinkElement | null;
+  if (skin === null) {
+    shown?.remove();
+    delete document.documentElement.dataset.skinBase;
+    setShells([]);
+    setSkinTitleLogo(undefined);
+    setSheetsLinked((n) => n + 1);
+    return;
+  }
   if (shown?.getAttribute("href") === skin.tokensHref) {
     document.documentElement.dataset.skinBase = skin.base;
     setShells(skin.shells ?? []);

@@ -271,6 +271,7 @@ pub fn frame(popup: &PopupLayout, window_min_height: u16) -> WindowLayout {
         content: none,
         min_width: popup.width,
         min_height,
+        size_hints: Default::default(),
         tiles: Vec::new(),
         title: None,
         tree: None,

@@ -42,6 +42,8 @@ use crate::windows::SettingsTab;
 pub enum WebviewEvent {
     /// The shared vocabulary every frontend observes.
     Subscription(SubscriptionEvent),
+    /// Present the rectangular base in a framed desktop window.
+    SkinFrameBase { window: String },
     /// The app lifecycle state machine moved.
     Lifecycle {
         state: rekindle_lifecycle::LifecycleState,
@@ -72,6 +74,7 @@ impl WebviewEvent {
     pub fn channel(&self) -> &'static str {
         match self {
             Self::Subscription(e) => subscription_channel(e),
+            Self::SkinFrameBase { .. } => "skin-event",
             Self::Lifecycle { .. } => "lifecycle-event",
             Self::PairingLinkRefused => "pairing-link-refused",
             Self::SettingsSwitchTab(_) => "settings-switch-tab",
@@ -83,6 +86,9 @@ impl WebviewEvent {
     fn payload(&self) -> Result<serde_json::Value, serde_json::Error> {
         match self {
             Self::Subscription(e) => serde_json::to_value(e),
+            Self::SkinFrameBase { .. } => Ok(serde_json::json!({
+                "system": { "skinChanged": { "skin": null } },
+            })),
             Self::Lifecycle { state, at_ms } => serde_json::to_value(LifecyclePayload {
                 state: *state,
                 at_ms: *at_ms,
@@ -99,6 +105,7 @@ impl WebviewEvent {
     pub fn audience(&self) -> Audience {
         match self {
             Self::Subscription(e) => subscription_audience(e),
+            Self::SkinFrameBase { window } => Audience::labels([window.clone()]),
             Self::Lifecycle { .. } => Audience::kinds(&WindowKind::ALL),
             Self::PairingLinkRefused => Audience::labels([labels::BUDDY_LIST.to_owned()]),
             Self::SettingsSwitchTab(_) => Audience::labels([labels::SETTINGS.to_owned()]),
@@ -143,10 +150,19 @@ fn buddy_list() -> Audience {
 
 fn subscription_audience(event: &SubscriptionEvent) -> Audience {
     match event {
-        // Every window shows the skin, the login window included (plan
-        // E7.7.2): each swaps its stylesheet.
+        // Framed windows receive this same event from their native
+        // allocation controller after applying the matching geometry.
+        // Replaying an old Host cursor must not bypass that controller.
         SubscriptionEvent::System(SystemEvent::SkinChanged { .. }) => {
-            Audience::kinds(&WindowKind::ALL)
+            Audience::kinds(&[
+                WindowKind::Login,
+                WindowKind::Settings,
+                WindowKind::Call,
+                WindowKind::Profile,
+                WindowKind::SkinEditor,
+                WindowKind::SkinPopup,
+            ])
+            .with_labels([labels::community_label(None)])
         }
         // "Keep this skin?" is asked where skins are chosen: Settings →
         // Appearance renders it from the payload (plan E7.7.2). The quick

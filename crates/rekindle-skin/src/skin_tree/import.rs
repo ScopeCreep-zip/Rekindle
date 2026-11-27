@@ -29,6 +29,7 @@ use super::anchor_client::{client_box, client_inset, to_tile};
 use super::clip::{clip, Art, Images};
 use super::content::{self, Link};
 use super::fit::fit;
+use super::import_sizing::root_size_hints;
 use super::layer::layer_of;
 use super::outdent;
 use super::passes::{by_view, pages, qualify, rows_by_view, tab_views};
@@ -557,6 +558,7 @@ pub fn add(
         limit_of(declared, "MinHeight").unwrap_or(0),
     );
     fit(&mut tree, pack_min, rows, &mut built.0)?;
+    built.0.size_hints = root_size_hints(declared, tree.outsets)?;
     if tree
         .boxes(0, 0)
         .iter()

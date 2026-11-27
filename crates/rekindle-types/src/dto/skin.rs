@@ -242,6 +242,7 @@ pub struct Insets {
 /// The frame layout types (plan SK0 S1), in their own module beside the manifest.
 pub use super::skin_layout::{
     FrameTile, PopupAnchor, PopupEdge, PopupLayout, SkinWindow, TileAxis, WindowLayout,
+    WindowSizeHints,
 };
 
 /// The region states, Rekindle's own enums.
