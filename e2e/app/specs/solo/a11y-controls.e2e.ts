@@ -14,8 +14,8 @@
 
 import { browser, expect } from "@wdio/globals";
 import type { Browser } from "webdriverio";
-import { NET_WAIT_MS, byText, resolveIntent, shown, typeInto, waitUntil } from "../../../walk/helpers.ts";
-import { communitySettings, createCommunity, createIdentity, openCommunity, type User } from "../../journeys.ts";
+import { NET_WAIT_MS, byText, gone, resolveIntent, shown, typeInto, waitUntil } from "../../../walk/helpers.ts";
+import { communitySettings, createCommunity, createIdentity, openCommunity, selectChannel, setCommunityName, setLocationSharing, type User } from "../../journeys.ts";
 import { applySkin, skinShown } from "../../journeys_skins.ts";
 import { openSettings } from "../../../walk/nav.ts";
 import { shot } from "../../shots.ts";
@@ -29,18 +29,72 @@ const ROLE = "Greeter";
 /** Close Community Settings, back to the window. */
 async function closeSettings(): Promise<void> {
   await b.keys("Escape");
-  await waitUntil(async () => !(await (await b.$(".modal-container .form-tabs")).isDisplayed().catch(() => false)), NET_WAIT_MS, "Community Settings did not close");
+  await gone(b, ".modal-container .form-tabs", NET_WAIT_MS);
+}
+
+/** The community window's content ground: the first opaque background under
+ *  the middle of the message area, the element that paints it, and every
+ *  theme colour token that resolves to that colour in this window. */
+interface Ground {
+  bg: string;
+  painter: string;
+  tokens: Record<string, string>;
+}
+
+async function groundOfContent(): Promise<Ground> {
+  return (await b.execute(() => {
+    const area = document.querySelector(".community-main")!.getBoundingClientRect();
+    let el: Element | null = document.elementFromPoint(area.left + area.width / 2, area.top + area.height / 2);
+    let bg = "";
+    for (; el; el = el.parentElement) {
+      const c = getComputedStyle(el).backgroundColor;
+      if (c && !/rgba\([^)]*,\s*0\)$/.test(c) && c !== "transparent") {
+        bg = c;
+        break;
+      }
+    }
+    const painter = el ? `${el.tagName.toLowerCase()}.${typeof el.className === "string" ? el.className.split(/\s+/).slice(0, 2).join(".") : ""}` : "none";
+    // Every --color-xfire-* token the sheets name, resolved in this window.
+    const names = new Set<string>();
+    for (const sheet of Array.from(document.styleSheets)) {
+      let rules: CSSRuleList;
+      try {
+        rules = sheet.cssRules;
+      } catch {
+        continue;
+      }
+      for (const m of Array.from(rules).map((r) => r.cssText).join("\n").matchAll(/--color-xfire-[a-z0-9-]+/g)) names.add(m[0]);
+    }
+    const probe = document.createElement("span");
+    document.body.appendChild(probe);
+    const tokens: Record<string, string> = {};
+    for (const name of names) {
+      probe.style.color = `var(${name})`;
+      tokens[name] = getComputedStyle(probe).color;
+    }
+    probe.remove();
+    return { bg, painter, tokens };
+  })) as Ground;
 }
 
 /** The community window and its Roles tab, saved under `skin`'s name. */
-async function shotsIn(skin: string): Promise<void> {
+async function shotsIn(skin: string, href: string): Promise<Ground> {
   await openCommunity(b, PLACE);
+  await skinShown(b, href);
+  await selectChannel(b, "general");
   await shown(b, ".category-header");
+  await byText(b, ".member-item .member-name", ada.displayName, NET_WAIT_MS);
+  await byText(b, ".channel-presence-badge", "1", NET_WAIT_MS);
+  await gone(b, ".governance-publication", NET_WAIT_MS);
+  await gone(b, ".toast-item", NET_WAIT_MS);
+  const ground = await groundOfContent();
   await shot(`community-${skin}`);
   await communitySettings(b, "Roles");
   await byText(b, ".settings-role-row", ROLE, NET_WAIT_MS);
+  await gone(b, ".toast-item", NET_WAIT_MS);
   await shot(`roles-${skin}`);
   await closeSettings();
+  return ground;
 }
 
 /** Whether the app runs on macOS, where Tab skips buttons (see the header). */
@@ -107,6 +161,8 @@ describe("converted controls (FE-LINT slice C)", function () {
     await createIdentity(b, ada);
     await createCommunity(b, ada, PLACE);
     await openCommunity(b, PLACE);
+    await setCommunityName(b, ada, ada.displayName);
+    await setLocationSharing(b, ada, true);
     await communitySettings(b, "Roles");
     await (await byText(b, ".modal-container .form-btn-secondary", "Create Role")).click();
     await typeInto(await shown(b, 'input[placeholder="Role name..."]'), ROLE);
@@ -115,11 +171,27 @@ describe("converted controls (FE-LINT slice C)", function () {
     await byText(b, ".settings-role-row", ROLE, NET_WAIT_MS);
     await closeSettings();
 
-    await shotsIn("symbiosis");
-    // Settings → Appearance applies the skin (applySkin works in that window).
     await openSettings(b, "Appearance");
-    await skinShown(b, await applySkin(b, ada, "Alloy"));
-    await shotsIn("alloy");
+    const symbiosis = await applySkin(b, ada, "Symbiosis");
+    const darkGround = await shotsIn("symbiosis", symbiosis);
+    await openSettings(b, "Appearance");
+    const alloy = await applySkin(b, ada, "Alloy");
+    expect(alloy).not.toBe(symbiosis);
+    const lightGround = await shotsIn("alloy", alloy);
+
+    // The content's ground follows its token under each skin: the tokens that
+    // paint it under Symbiosis must paint it under Alloy too, at Alloy's
+    // values. A ground that stays Symbiosis's while its token changed is the
+    // window not taking the skin (a product fault, not capture timing).
+    const paintedBy = Object.keys(darkGround.tokens).filter((t) => darkGround.tokens[t] === darkGround.bg);
+    const follows = paintedBy.filter((t) => lightGround.tokens[t] === lightGround.bg);
+    const changed = paintedBy.filter((t) => lightGround.tokens[t] !== darkGround.tokens[t]);
+    console.log(
+      `[a11y] content ground: Symbiosis ${darkGround.bg} (${darkGround.painter}), Alloy ${lightGround.bg} (${lightGround.painter}); ` +
+        `painted by ${JSON.stringify(paintedBy)}; Alloy's values ${JSON.stringify(Object.fromEntries(paintedBy.map((t) => [t, lightGround.tokens[t]])))}; ` +
+        `following under Alloy ${JSON.stringify(follows)}; changed by Alloy ${JSON.stringify(changed)}`,
+    );
+    expect({ paintedByAToken: paintedBy.length > 0, followsUnderAlloy: follows.length > 0 }).toEqual({ paintedByAToken: true, followsUnderAlloy: true });
   });
 
   it("are reached by Tab with a visible ring and work with Enter and Space", async () => {
