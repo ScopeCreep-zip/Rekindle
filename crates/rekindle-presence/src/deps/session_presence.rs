@@ -1,12 +1,10 @@
-//! Our session signals and the voice roster, as the beat path reads them
-//! (plan E3.4 S8-pre, decided 2026-11-26): the voice channel we are in,
-//! our session and sharing policy (the sealed `extras`), and the voice
-//! roster the members' beats feed. The frontend that holds a voice session
-//! implements it (the GUI over its voice engine, until E4.1 makes voice the
-//! Host's and replaces only the implementation); the registry poll reads
-//! the same port until S8b deletes it.
-
-use rekindle_types::presence::{MemberSession, PresenceSharingPolicy, SessionExtras};
+//! The shell's voice state, as the beat path reads it (plan E3.4 S8-pre,
+//! ruled by the lead 2026-11-26 on `58eb04bd7`): the voice channel we are
+//! in and the voice roster the members' beats feed, and nothing else. Our
+//! session and sharing policy are the Host's own state, never the shell's.
+//! The frontend that holds a voice session implements it (the GUI over its
+//! voice engine) until E4.1 makes voice the Host's and deletes it; the
+//! registry poll reads the same port until S8b deletes the poll.
 
 pub trait SessionPresence: Send + Sync + 'static {
     /// Voice channel the LOCAL user is connected to in this community, if
@@ -18,14 +16,6 @@ pub trait SessionPresence: Send + Sync + 'static {
     /// reconciliation (add lost-VoiceJoin members, expire ghosts).
     /// Fire-and-forget: the add/remove decisions live in `rekindle-voice`.
     fn reconcile_voice_roster(&self, community_id: &str, rows: Vec<VoicePresenceRow>);
-
-    /// The local user's session in this community: status, focused
-    /// channel (`my_session_location`) and last-active.
-    fn self_session(&self, community_id: &str) -> MemberSession;
-
-    /// The local user's per-community sharing policy (default-deny).
-    /// Local-only, never published: applied before anything is sealed.
-    fn presence_policy(&self, community_id: &str) -> PresenceSharingPolicy;
 }
 
 /// Presence-derived voice membership view of one community member,
@@ -60,25 +50,4 @@ impl VoicePresenceRow {
             fresh,
         }
     }
-}
-
-/// Our session in `community_id` as our sharing policy lets us publish it
-/// (`apply_sharing_policy`, default-deny), with the identity-revealing
-/// signals (location, activity) taken out into the extras that are only
-/// ever published sealed under the community key; `None` extras when the
-/// policy shares neither.
-#[must_use]
-pub fn shared_session(
-    port: &dyn SessionPresence,
-    community_id: &str,
-) -> (MemberSession, Option<SessionExtras>) {
-    let policy = port.presence_policy(community_id);
-    let mut session =
-        crate::community::policy::apply_sharing_policy(port.self_session(community_id), &policy);
-    let extras = SessionExtras {
-        location: session.location.take(),
-        activity: session.activity.take(),
-    };
-    let shared = (extras.location.is_some() || extras.activity.is_some()).then_some(extras);
-    (session, shared)
 }

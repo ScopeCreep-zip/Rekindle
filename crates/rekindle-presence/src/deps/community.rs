@@ -12,9 +12,9 @@ use crate::deps::PresenceError;
 
 #[async_trait]
 pub trait CommunityPresenceDeps: Send + Sync + 'static {
-    /// Our session signals and the voice roster (plan E3.4 S8-pre): the
-    /// same port the beat path reads, so the registry row and the beat say
-    /// the same voice channel and extras until S8a removes the row.
+    /// The shell's voice state (plan E3.4 S8-pre): the same port the beat
+    /// path reads, so the registry row and the beat say the same voice
+    /// channel until S8a removes the row.
     fn session_presence(&self) -> std::sync::Arc<dyn super::SessionPresence>;
 
     /// The scope of the session this work belongs to. A poll tick stops
@@ -46,6 +46,19 @@ pub trait CommunityPresenceDeps: Send + Sync + 'static {
     /// row carries — read once under the communities lock so the
     /// write path doesn't have to juggle six clones inline.
     fn self_presence_snapshot(&self, community_id: &str) -> SelfPresenceSnapshot;
+
+    /// The local user's session in this community (status, game, focused
+    /// channel, last-active), as the Host holds it (plan E3.4 S8-pre
+    /// ruling: never a shell copy), the same session our beat seals.
+    fn self_session(&self, community_id: &str) -> rekindle_types::presence::MemberSession;
+
+    /// The local user's per-community sharing policy (default-deny), the
+    /// Host's (`set_presence_policy`). Local-only, never published:
+    /// applied before the row is signed.
+    fn presence_policy(
+        &self,
+        community_id: &str,
+    ) -> rekindle_types::presence::PresenceSharingPolicy;
 
     /// W11.2 — encrypt the local history ranges with the current
     /// community MEK. Returns `None` when MEK is missing (the caller

@@ -6,7 +6,6 @@ use std::collections::BTreeMap;
 
 use parking_lot::Mutex;
 use rekindle_presence::VoicePresenceRow;
-use rekindle_types::presence::{MemberSession, PresenceSharingPolicy};
 
 #[derive(Default)]
 pub struct SimSessionPresence {
@@ -23,13 +22,5 @@ impl rekindle_presence::SessionPresence for SimSessionPresence {
 
     fn reconcile_voice_roster(&self, community_id: &str, rows: Vec<VoicePresenceRow>) {
         self.rosters.lock().push((community_id.to_owned(), rows));
-    }
-
-    fn self_session(&self, _community_id: &str) -> MemberSession {
-        MemberSession::default()
-    }
-
-    fn presence_policy(&self, _community_id: &str) -> PresenceSharingPolicy {
-        PresenceSharingPolicy::default()
     }
 }

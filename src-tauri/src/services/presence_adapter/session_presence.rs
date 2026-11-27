@@ -1,6 +1,6 @@
-//! The GUI's session signals (plan E3.4 S8-pre): its voice engine's
-//! channel, its focused channel and sharing policy, and the voice roster
-//! reconcile over its voice signaling. The Host's beat path reads them
+//! The GUI's voice state (plan E3.4 S8-pre ruling): its voice engine's
+//! channel and the voice roster reconcile over its voice signaling, and
+//! nothing else (our session and consent are the Host's). The Host's beat path reads them
 //! through `ShellHooks::session_presence`, and the registry poll through
 //! `CommunityPresenceDeps::session_presence`, until E4.1 makes voice the
 //! Host's.
@@ -35,38 +35,6 @@ pub(crate) fn voice_presence_changed(state: &Arc<AppState>, community_id: &str) 
 }
 
 impl rekindle_presence::SessionPresence for DesktopSessionPresence {
-    fn self_session(&self, community_id: &str) -> rekindle_types::presence::MemberSession {
-        // The identity's status is the session vocabulary (one language
-        // for friends and community presence).
-        let status = state_helpers::identity_status(&self.state).unwrap_or_default();
-        let location = {
-            let communities = self.state.communities.read();
-            communities
-                .get(community_id)
-                .and_then(|c| c.my_session_location.clone())
-        };
-        rekindle_types::presence::MemberSession {
-            status,
-            location,
-            // Activity (game string) is policy-gated and wired in a
-            // follow-up; the session always carries a fresh last_active
-            // so peers can bucket our last-seen.
-            activity: None,
-            last_active: rekindle_utils::timestamp_secs(),
-        }
-    }
-
-    fn presence_policy(
-        &self,
-        community_id: &str,
-    ) -> rekindle_types::presence::PresenceSharingPolicy {
-        let communities = self.state.communities.read();
-        communities
-            .get(community_id)
-            .map(|c| c.presence_policy.clone())
-            .unwrap_or_default()
-    }
-
     fn active_voice_channel(&self, community_id: &str) -> Option<String> {
         let ve = self.state.voice_engine.lock();
         ve.as_ref()

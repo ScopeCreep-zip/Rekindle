@@ -18,7 +18,7 @@ pub use friend::{
     FriendPresenceDeps, FriendPresenceEvent, GameInfoSnapshot, SetFriendStatusOutcome,
     StatusPublisherDeps,
 };
-pub use session_presence::{shared_session, SessionPresence, VoicePresenceRow};
+pub use session_presence::{SessionPresence, VoicePresenceRow};
 
 /// Errors surfaced by the public entry points across both traits.
 /// Lives at the module root so both `friend.rs` and `community.rs`

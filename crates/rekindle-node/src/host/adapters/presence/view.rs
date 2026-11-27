@@ -66,8 +66,8 @@ pub(crate) fn observe(
 
 /// Open `author`'s `sealed` extras from its beat `seq` at `at` with our
 /// current community key and keep what our sharing policy shares back
-/// (plan E3.4 S8-pre); a generation we don't hold opens nothing. On
-/// `rekindled`, which shares nothing, nothing is kept.
+/// (the Host's, plan E3.4 S8-pre); a generation we don't hold opens
+/// nothing.
 pub(crate) fn take_extras(
     ctx: &DaemonContext,
     at: RecordScope<'_>,
@@ -76,9 +76,7 @@ pub(crate) fn take_extras(
     sealed: &SealedExtras,
 ) {
     let community = at.community_id;
-    let policy = super::session_presence(ctx)
-        .map(|session| session.presence_policy(community))
-        .unwrap_or_default();
+    let policy = super::presence_policy(ctx, community);
     let key = (ctx.mek_cache.read())
         .current(community, KeyScope::Community)
         .cloned();

@@ -126,7 +126,7 @@ async fn run_tick<D: CommunityPresenceDeps>(
     // Read-side reciprocity policy (local-only, default-deny): a signal
     // we don't share, we don't get to read off peers' rows. Read once
     // before the scan so every row is filtered against the same policy.
-    let our_policy = deps.session_presence().presence_policy(community_id);
+    let our_policy = deps.presence_policy(community_id);
 
     let mut discovered = Vec::new();
     let mut online_count = 0usize;

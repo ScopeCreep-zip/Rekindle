@@ -23,13 +23,22 @@ use super::DaemonPresenceAdapter;
 #[async_trait]
 impl CommunityPresenceDeps for DaemonPresenceAdapter {
     fn session_presence(&self) -> std::sync::Arc<dyn rekindle_presence::SessionPresence> {
-        std::sync::Arc::new(super::session_presence::DaemonSessionPresence {
-            ctx: std::sync::Arc::clone(&self.ctx),
-        })
+        std::sync::Arc::new(super::session_presence::DaemonSessionPresence)
     }
 
     fn now_secs(&self) -> u64 {
         self.ctx.clock.now_secs()
+    }
+
+    fn self_session(&self, community_id: &str) -> rekindle_types::presence::MemberSession {
+        crate::host::adapters::presence::own_session(&self.ctx, community_id)
+    }
+
+    fn presence_policy(
+        &self,
+        community_id: &str,
+    ) -> rekindle_types::presence::PresenceSharingPolicy {
+        crate::host::adapters::presence::presence_policy(&self.ctx, community_id)
     }
 
     fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope> {

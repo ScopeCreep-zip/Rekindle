@@ -12,15 +12,6 @@ pub struct MockSessionPresence {
 }
 
 impl crate::deps::SessionPresence for MockSessionPresence {
-    fn self_session(&self, _community_id: &str) -> rekindle_types::presence::MemberSession {
-        rekindle_types::presence::MemberSession::default()
-    }
-    fn presence_policy(
-        &self,
-        _community_id: &str,
-    ) -> rekindle_types::presence::PresenceSharingPolicy {
-        rekindle_types::presence::PresenceSharingPolicy::default()
-    }
     fn active_voice_channel(&self, _community_id: &str) -> Option<String> {
         self.state.lock().active_voice_channel.clone()
     }

@@ -29,6 +29,23 @@ impl CommunityPresenceDeps for PresenceAdapter {
         rekindle_utils::timestamp_secs()
     }
 
+    /// The Host's (plan E3.4 S8-pre ruling); no session without one.
+    fn self_session(&self, community_id: &str) -> rekindle_types::presence::MemberSession {
+        (self.state.host.current())
+            .map(|host| host.own_community_session(community_id))
+            .unwrap_or_default()
+    }
+
+    /// The Host's consent; default-deny without one.
+    fn presence_policy(
+        &self,
+        community_id: &str,
+    ) -> rekindle_types::presence::PresenceSharingPolicy {
+        (self.state.host.current())
+            .map(|host| host.presence_policy(community_id))
+            .unwrap_or_default()
+    }
+
     fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope> {
         state_helpers::login_scope_or_closed(&self.state)
     }

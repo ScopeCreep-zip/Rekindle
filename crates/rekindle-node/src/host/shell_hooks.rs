@@ -146,10 +146,11 @@ pub trait ShellHooks: Send + Sync {
     /// adapters move at E3.5.
     fn channel_keys(&self) -> Arc<dyn rekindle_types::channel_keys::ChannelKeyProvider>;
 
-    /// The shell's session signals (plan E3.4 S8-pre): its voice session's
-    /// channel and its session and sharing policy, which our beat carries,
-    /// and its voice roster, which the members' beats feed, until E4.1
-    /// makes voice the Host's.
+    /// The shell's voice state (plan E3.4 S8-pre, the `channel_keys()`
+    /// pattern): its voice session's channel, which our beat carries, and
+    /// its voice roster, which the members' beats feed; nothing else (our
+    /// session and consent are the Host's). E4.1 deletes it when voice
+    /// becomes the Host's.
     fn session_presence(&self) -> Arc<dyn rekindle_presence::SessionPresence>;
 
     /// The governance runtime handed over a community's session leases:

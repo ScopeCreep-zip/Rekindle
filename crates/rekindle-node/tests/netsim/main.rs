@@ -11,6 +11,7 @@ mod backfill_gate;
 mod barrier;
 mod beat_engine;
 mod beat_expiry;
+mod beat_extras;
 mod beat_on_screen;
 mod behind_key_repair;
 mod bootstrap_nak;

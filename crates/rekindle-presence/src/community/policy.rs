@@ -15,7 +15,8 @@
 //! never see finer than that unless the user opts into `Exact`.
 
 use rekindle_types::presence::{
-    LastSeenPrecision, MemberSession, PresenceSharingPolicy, SessionStatus, ShareScope,
+    LastSeenPrecision, MemberSession, PresenceSharingPolicy, SessionExtras, SessionStatus,
+    ShareScope,
 };
 
 /// Seconds in one hour — the coarse last-seen bucket width.
@@ -71,6 +72,25 @@ pub fn filter_incoming(
 #[must_use]
 pub fn coarsen_to_bucket(secs: u64) -> u64 {
     secs - (secs % HOUR_SECS)
+}
+
+/// `session` as `policy` lets us publish it ([`apply_sharing_policy`],
+/// default-deny), with the identity-revealing signals (location, activity)
+/// taken out into the extras that are only ever published sealed under the
+/// community key; `None` extras when the policy shares neither. The
+/// registry row and our beat both publish through it (plan E3.4 S8-pre).
+#[must_use]
+pub fn shared_session(
+    session: MemberSession,
+    policy: &PresenceSharingPolicy,
+) -> (MemberSession, Option<SessionExtras>) {
+    let mut session = apply_sharing_policy(session, policy);
+    let extras = SessionExtras {
+        location: session.location.take(),
+        activity: session.activity.take(),
+    };
+    let shared = (extras.location.is_some() || extras.activity.is_some()).then_some(extras);
+    (session, shared)
 }
 
 #[cfg(test)]

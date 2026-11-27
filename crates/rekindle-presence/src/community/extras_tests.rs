@@ -13,7 +13,6 @@ use rekindle_types::presence::{
 };
 
 use super::{open_extras, seal_extras};
-use crate::deps::{SessionPresence, VoicePresenceRow};
 
 /// The member record our sealed extras are bound to.
 const EXTRAS_SCOPE: RecordScope<'static> = RecordScope {
@@ -21,30 +20,14 @@ const EXTRAS_SCOPE: RecordScope<'static> = RecordScope {
     member_record: "VLD0:member-record",
 };
 
-/// Our session: the longest location and activity, under `policy`.
-struct Session {
-    policy: PresenceSharingPolicy,
-}
-
-impl SessionPresence for Session {
-    fn active_voice_channel(&self, _community_id: &str) -> Option<String> {
-        Some("v".repeat(MAX_CHANNEL_ID))
-    }
-
-    fn reconcile_voice_roster(&self, _community_id: &str, _rows: Vec<VoicePresenceRow>) {}
-
-    fn self_session(&self, _community_id: &str) -> MemberSession {
-        MemberSession {
-            location: Some(SessionLocation::Text {
-                channel_id: "c".repeat(MAX_CHANNEL_ID),
-            }),
-            activity: Some("a".repeat(MAX_ACTIVITY)),
-            ..MemberSession::default()
-        }
-    }
-
-    fn presence_policy(&self, _community_id: &str) -> PresenceSharingPolicy {
-        self.policy.clone()
+/// Our session: the longest location and activity.
+fn longest_session() -> MemberSession {
+    MemberSession {
+        location: Some(SessionLocation::Text {
+            channel_id: "c".repeat(MAX_CHANNEL_ID),
+        }),
+        activity: Some("a".repeat(MAX_ACTIVITY)),
+        ..MemberSession::default()
     }
 }
 
@@ -61,14 +44,12 @@ fn sharing_all() -> PresenceSharingPolicy {
 /// carries no extras at all, even with the key held.
 #[test]
 fn the_default_policy_seals_no_extras() {
-    let session = Session {
-        policy: PresenceSharingPolicy::default(),
-    };
+    let policy = PresenceSharingPolicy::default();
     let key = MediaEncryptionKey::from_bytes([3; 32], 1);
     assert_eq!(
         seal_extras(
-            &session,
-            EXTRAS_SCOPE.community_id,
+            longest_session(),
+            &policy,
             Some(&key),
             EXTRAS_SCOPE,
             &Seeded::new(1)
@@ -81,16 +62,14 @@ fn the_default_policy_seals_no_extras() {
 /// the sealed extras.
 #[test]
 fn the_extras_carry_only_what_the_policy_shares() {
-    let session = Session {
-        policy: PresenceSharingPolicy {
-            share_location: ShareScope::None,
-            ..sharing_all()
-        },
+    let policy = PresenceSharingPolicy {
+        share_location: ShareScope::None,
+        ..sharing_all()
     };
     let key = MediaEncryptionKey::from_bytes([3; 32], 1);
     let sealed = seal_extras(
-        &session,
-        EXTRAS_SCOPE.community_id,
+        longest_session(),
+        &policy,
         Some(&key),
         EXTRAS_SCOPE,
         &Seeded::new(1),
@@ -107,8 +86,8 @@ fn the_extras_carry_only_what_the_policy_shares() {
     // Without a key nothing is sealed: extras are never written in the clear.
     assert_eq!(
         seal_extras(
-            &session,
-            EXTRAS_SCOPE.community_id,
+            longest_session(),
+            &policy,
             None,
             EXTRAS_SCOPE,
             &Seeded::new(1)
@@ -122,13 +101,11 @@ fn the_extras_carry_only_what_the_policy_shares() {
 /// shares nothing keeps nothing.
 #[test]
 fn the_extras_do_not_open_after_a_rotation() {
-    let session = Session {
-        policy: sharing_all(),
-    };
+    let policy = sharing_all();
     let old = MediaEncryptionKey::from_bytes([3; 32], 1);
     let sealed = seal_extras(
-        &session,
-        EXTRAS_SCOPE.community_id,
+        longest_session(),
+        &policy,
         Some(&old),
         EXTRAS_SCOPE,
         &Seeded::new(1),
@@ -159,13 +136,11 @@ fn the_extras_do_not_open_after_a_rotation() {
 /// session can seal is still exactly 512 B.
 #[test]
 fn the_beat_stays_512_bytes_with_the_longest_voice_channel_and_full_extras() {
-    let session = Session {
-        policy: sharing_all(),
-    };
+    let policy = sharing_all();
     let key = MediaEncryptionKey::from_bytes([3; 32], u64::MAX);
     let extras = seal_extras(
-        &session,
-        EXTRAS_SCOPE.community_id,
+        longest_session(),
+        &policy,
         Some(&key),
         EXTRAS_SCOPE,
         &Seeded::new(1),
@@ -174,7 +149,7 @@ fn the_beat_stays_512_bytes_with_the_longest_voice_channel_and_full_extras() {
     let beat = PresenceBeat {
         seq: u64::MAX,
         state: BeatState::Busy,
-        voice_channel: session.active_voice_channel(EXTRAS_SCOPE.community_id),
+        voice_channel: Some("v".repeat(MAX_CHANNEL_ID)),
         beat_number: u64::MAX,
         extras,
     };

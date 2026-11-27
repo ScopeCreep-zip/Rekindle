@@ -7,7 +7,7 @@ use super::*;
 #[derive(Default)]
 struct Recorder(parking_lot::Mutex<Vec<String>>);
 
-/// The test shells hold no voice session and share nothing.
+/// The test shells hold no voice session.
 struct NoVoice;
 
 impl rekindle_presence::SessionPresence for NoVoice {
@@ -20,17 +20,6 @@ impl rekindle_presence::SessionPresence for NoVoice {
         _community_id: &str,
         _rows: Vec<rekindle_presence::VoicePresenceRow>,
     ) {
-    }
-
-    fn self_session(&self, _community_id: &str) -> rekindle_types::presence::MemberSession {
-        rekindle_types::presence::MemberSession::default()
-    }
-
-    fn presence_policy(
-        &self,
-        _community_id: &str,
-    ) -> rekindle_types::presence::PresenceSharingPolicy {
-        rekindle_types::presence::PresenceSharingPolicy::default()
     }
 }
 

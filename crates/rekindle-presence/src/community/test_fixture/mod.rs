@@ -46,6 +46,15 @@ impl CommunityPresenceDeps for MockCommunityDeps {
             state: std::sync::Arc::clone(&self.state),
         })
     }
+    fn self_session(&self, _community_id: &str) -> rekindle_types::presence::MemberSession {
+        rekindle_types::presence::MemberSession::default()
+    }
+    fn presence_policy(
+        &self,
+        _community_id: &str,
+    ) -> rekindle_types::presence::PresenceSharingPolicy {
+        rekindle_types::presence::PresenceSharingPolicy::default()
+    }
     /// A fixed clock: the fixture's runs are reproducible.
     fn now_secs(&self) -> u64 {
         1_700_000_000

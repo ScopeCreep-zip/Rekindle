@@ -11,21 +11,21 @@ use rekindle_secrets::keys::MediaEncryptionKey;
 use rekindle_types::presence::{MemberSession, PresenceSharingPolicy, SessionExtras};
 use rekindle_utils::random::RandomSource;
 
-use crate::community::policy::filter_incoming;
-use crate::deps::{shared_session, SessionPresence};
+use crate::community::policy::{filter_incoming, shared_session};
 
-/// Our extras for the beat at `at`, sealed under `key` (the current
+/// Our `session`'s extras as `policy` (our sharing consent, the Host's)
+/// lets them out, for the beat at `at`, sealed under `key` (the current
 /// community text key); `None` when the policy shares nothing or we hold no
 /// key: extras are never written in the clear.
 #[must_use]
 pub fn seal_extras(
-    port: &dyn SessionPresence,
-    community_id: &str,
+    session: MemberSession,
+    policy: &PresenceSharingPolicy,
     key: Option<&MediaEncryptionKey>,
     at: RecordScope<'_>,
     rng: &dyn RandomSource,
 ) -> Option<SealedExtras> {
-    let (_, extras) = shared_session(port, community_id);
+    let (_, extras) = shared_session(session, policy);
     let (extras, key) = (extras?, key?);
     match SealedExtras::seal(&extras, key, at, rng) {
         Ok(sealed) => Some(sealed),

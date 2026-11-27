@@ -18,6 +18,7 @@
 
 pub(crate) mod card_game;
 pub(crate) mod mesh;
+mod own_session;
 pub(crate) mod view;
 
 use std::sync::{Arc, Weak};
@@ -31,6 +32,7 @@ use rekindle_types::presence::SessionStatus;
 
 use super::governance::HostGovernance;
 use crate::daemon::dispatch::DaemonContext;
+pub(crate) use own_session::{own_session, presence_policy};
 
 /// The unlock's beat engine, while one runs or until the teardown's quit.
 pub(crate) type BeatSlot = Arc<RwLock<Option<Arc<BeatEngine>>>>;
@@ -125,9 +127,9 @@ async fn run_on_screen(ctx: Weak<DaemonContext>, stop: tokio_util::sync::Cancell
     }
 }
 
-/// The shell's session signals (plan E3.4 S8-pre); `None` on `rekindled`,
-/// which holds no voice session and shares nothing: its beats carry the
-/// status alone.
+/// The shell's voice state (plan E3.4 S8-pre ruling: only its voice
+/// channel and roster); `None` on `rekindled`, which holds no voice
+/// session. Our session and consent are the Host's ([`own_session`]).
 pub(crate) fn session_presence(ctx: &DaemonContext) -> Option<Arc<dyn SessionPresence>> {
     ctx.shell.as_ref().map(|shell| shell.session_presence())
 }
