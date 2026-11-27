@@ -25,7 +25,11 @@ const ActivityFeed: Component<{ entries: ActivityListItem[]; more: InfoviewActio
 
   const shown = createMemo(() => {
     const seen = new Set<number>();
-    return [...props.entries, ...older()].filter((e) => !seen.has(e.id) && (seen.add(e.id), true));
+    return [...props.entries, ...older()].filter((entry) => {
+      if (seen.has(entry.id)) return false;
+      seen.add(entry.id);
+      return true;
+    });
   });
   const cursor = (): number | null => {
     const n = next();

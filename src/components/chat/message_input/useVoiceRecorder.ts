@@ -40,7 +40,9 @@ export function useVoiceRecorder(args: VoiceRecorderArgs) {
       window.clearTimeout(limitHandle);
       limitHandle = null;
     }
-    recorderStream?.getTracks().forEach((t) => t.stop());
+    recorderStream?.getTracks().forEach((track) => {
+      track.stop();
+    });
     recorderStream = null;
     recorder = null;
     recorderChunks = [];

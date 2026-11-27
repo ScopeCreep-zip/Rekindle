@@ -21,7 +21,9 @@ export function createPipToggle(ctx: PanelCtx): PipController {
     const v = pipBridgeVideo.value;
     if (!v) return;
     if (v.srcObject instanceof MediaStream) {
-      v.srcObject.getTracks().forEach((t) => t.stop());
+      v.srcObject.getTracks().forEach((track) => {
+        track.stop();
+      });
     }
     v.srcObject = null;
   }

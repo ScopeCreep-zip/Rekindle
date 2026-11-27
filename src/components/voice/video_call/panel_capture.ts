@@ -206,7 +206,9 @@ export function createCaptureController(ctx: PanelCtx): CaptureController {
       const msg = e instanceof Error ? e.message : String(e);
       ctx.setError(`Camera failed: ${msg}`);
       void commands.reportMediaCaptureError("camera", msg);
-      ctx.cameraStream?.getTracks().forEach((t) => t.stop());
+      ctx.cameraStream?.getTracks().forEach((track) => {
+        track.stop();
+      });
       ctx.cameraStream = null;
       ctx.setCameraCapture(null);
     }
@@ -228,7 +230,9 @@ export function createCaptureController(ctx: PanelCtx): CaptureController {
       return;
     }
     ctx.sender.stop("camera");
-    ctx.cameraStream?.getTracks().forEach((t) => t.stop());
+    ctx.cameraStream?.getTracks().forEach((track) => {
+      track.stop();
+    });
     ctx.cameraStream = null;
     ctx.setCameraCapture(null);
     if (ctx.localCameraVideoRef.value) {
@@ -261,7 +265,9 @@ export function createCaptureController(ctx: PanelCtx): CaptureController {
       const msg = e instanceof Error ? e.message : String(e);
       ctx.setError(`Screen share failed: ${msg}`);
       void commands.reportMediaCaptureError("screen", msg);
-      ctx.screenStream?.getTracks().forEach((t) => t.stop());
+      ctx.screenStream?.getTracks().forEach((track) => {
+        track.stop();
+      });
       ctx.screenStream = null;
       ctx.setScreenCapture(null);
     }
@@ -269,7 +275,9 @@ export function createCaptureController(ctx: PanelCtx): CaptureController {
 
   async function stopScreen(): Promise<void> {
     ctx.sender.stop("screen");
-    ctx.screenStream?.getTracks().forEach((t) => t.stop());
+    ctx.screenStream?.getTracks().forEach((track) => {
+      track.stop();
+    });
     ctx.screenStream = null;
     ctx.setScreenCapture(null);
     if (ctx.localScreenVideoRef.value) {

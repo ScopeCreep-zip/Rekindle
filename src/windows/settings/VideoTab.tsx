@@ -59,7 +59,9 @@ const VideoTab: Component = () => {
         video: true,
         audio: false,
       });
-      stream.getTracks().forEach((t) => t.stop());
+      stream.getTracks().forEach((track) => {
+        track.stop();
+      });
     } catch (e) {
       const msg = e instanceof Error ? `${e.name}: ${e.message}` : String(e);
       setVideoEnumError(msg);
