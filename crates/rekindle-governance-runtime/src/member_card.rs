@@ -279,7 +279,7 @@ pub struct MemberRecordRef<'a> {
 
 /// Read `subkey` of `member.record`, refusing a record whose descriptor
 /// owner is not `member.owner`.
-async fn read_pinned(
+pub(crate) async fn read_pinned(
     port: &dyn RecordPort,
     member: &MemberRecordRef<'_>,
     subkey: u32,

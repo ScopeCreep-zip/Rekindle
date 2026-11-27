@@ -45,6 +45,7 @@ mod event_control;
 mod event_reminders;
 mod event_rsvps;
 mod key_status;
+mod member_history_ad_loop;
 mod member_routes_loop;
 mod successor;
 mod transfer;

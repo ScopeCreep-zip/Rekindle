@@ -109,6 +109,7 @@ mod logs;
 mod mek_transfer_retry;
 mod member_call_reread;
 mod member_events;
+mod member_history_ad;
 mod member_routes;
 mod mesh_routes;
 mod mod_report;
