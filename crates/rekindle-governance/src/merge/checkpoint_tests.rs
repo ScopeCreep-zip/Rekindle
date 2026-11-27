@@ -11,7 +11,7 @@ use crate::checkpoint::{
     is_strict_majority, state_root, tally,
 };
 use crate::checksum::{canonical_state, roster_checksum};
-use crate::fixture::{cert, op};
+use crate::fixture::{cert, op, FIXTURE_ANCHOR};
 use crate::op::{OpRejection, VerifiedOp};
 
 fn body(height: u64, prev: Option<&VerifiedOp>, cut: &[&VerifiedOp]) -> Checkpoint {
@@ -193,7 +193,7 @@ fn a_cut_without_the_previous_cut_is_refused() {
 #[test]
 fn the_first_eligible_set_is_the_creator_set() {
     assert_eq!(
-        eligible_set(&cert(&pk(1), AdmissionMode::Open), None),
+        eligible_set(&cert(&pk(1), AdmissionMode::Open), FIXTURE_ANCHOR, None),
         vec![pk(1)]
     );
 }
@@ -203,12 +203,12 @@ fn the_eligible_set_is_taken_at_the_previous_checkpoints_cut() {
     let c = cert(&pk(1), AdmissionMode::Open);
     let (at_cut, _) = merge_cut(&c, &community());
     assert_eq!(
-        eligible_set(&c, Some(&at_cut)),
+        eligible_set(&c, FIXTURE_ANCHOR, Some(&at_cut)),
         (1..=4).map(pk).collect::<Vec<_>>()
     );
     let (after_kick, _) = merge_cut(&c, &plus(2, 1, kick(4, 1)));
     assert_eq!(
-        eligible_set(&c, Some(&after_kick)),
+        eligible_set(&c, FIXTURE_ANCHOR, Some(&after_kick)),
         (1..=3).map(pk).collect::<Vec<_>>()
     );
 }

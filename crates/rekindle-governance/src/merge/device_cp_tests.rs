@@ -9,10 +9,13 @@ use rekindle_types::governance::{
 };
 use rekindle_types::id::PseudonymKey;
 
-use super::op_proptests::{joined, pk};
+use super::op_proptests::{invite, joined, pk};
 use super::resume_tests::split;
 use super::{merge, merge_cut, merge_from, merge_outcome};
-use crate::checkpoint::{state_preimage, state_root_of, CutSnapshot};
+use crate::checkpoint::{
+    checkpoint_digest, eligible_set, eligible_set_hash, state_preimage, state_root_of, tally,
+    CutSnapshot,
+};
 use crate::checksum::canonical_state;
 use crate::device::{
     device_set_hash, endorsement_signing_bytes, retirement_evidence_hash, retirement_signing_bytes,
@@ -281,4 +284,43 @@ fn the_creators_second_device_is_endorsed_under_the_certs_record() {
     assert!(second.iter().all(|h| resumed.applied.contains(h)));
     assert_eq!(resumed.state, full.state);
     assert_eq!(resumed.quarantined, full.quarantined);
+}
+
+/// A member whose every device key is retired at the previous checkpoint's
+/// cut is outside the next checkpoint's electorate, so its endorsement
+/// counts for nothing (plan E3.2 S7d-keys.12, the ADR 0018 electorate rule).
+#[test]
+fn a_member_with_only_retired_keys_does_not_endorse_a_checkpoint() {
+    let c = cert(&pk(1), AdmissionMode::Open);
+    let c0 = op(&pk(1), 0, &[], 0, joined(1, None));
+    let c1 = op(&pk(1), 1, &[&c0], 1, invite(8));
+    let kept = op(&who(8), 0, &[&c1], 2, joined_with_device(8, 3));
+    let gone = op(&who(9), 0, &[&c1], 3, joined_with_device(9, 4));
+    let retired = op(&who(9), 1, &[&gone], 4, device_op(9, 1, 4, 0, 9));
+    let (at_cut, _) = merge_cut(&c, &[c0, c1, kept, gone, retired]);
+    assert!(at_cut.members.contains_key(&who(9)), "still a member");
+    let electorate = eligible_set(&c, ANCHOR, Some(&at_cut));
+    assert!(electorate.contains(&who(8)), "an effective key counts");
+    assert!(!electorate.contains(&who(9)), "only retired keys");
+    let body = Checkpoint {
+        height: 2,
+        round: 0,
+        prev: None,
+        cut: Vec::new(),
+        frontier_hash: [0; 32],
+        dir_root: [0; 32],
+        dir_size: 0,
+        state_root: [0; 32],
+        state_size: 0,
+        mek_generation: 1,
+        eligible_set_hash: eligible_set_hash(&electorate),
+        pages: Vec::new(),
+    };
+    let votes = tally(&electorate, [(&who(8), &body), (&who(9), &body)]);
+    let endorsers = votes.get(&checkpoint_digest(&body)).expect("a digest");
+    assert!(endorsers.contains(&who(8).0));
+    assert!(
+        !endorsers.contains(&who(9).0),
+        "no endorsement from retired keys"
+    );
 }

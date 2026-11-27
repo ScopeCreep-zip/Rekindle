@@ -15,12 +15,14 @@ use crate::state::GovernanceState;
 
 /// One reader's replay inputs: the pinned cert, the verified op set and
 /// the community id the directory's leaves carry (the anchor record's
-/// opaque key bytes).
+/// opaque key bytes), and the anchor itself, the context device keys are
+/// endorsed in.
 #[derive(Clone, Copy)]
 pub struct Replay<'a> {
     pub cert: &'a GenesisCert,
     pub ops: &'a [VerifiedOp],
     pub community_id: [u8; 32],
+    pub anchor: &'a str,
 }
 
 impl Replay<'_> {
@@ -105,9 +107,9 @@ impl Replay<'_> {
                 if !p.cut.iter().all(inside) {
                     return None;
                 }
-                eligible_set(self.cert, Some(&self.state_at(&p.cut)))
+                eligible_set(self.cert, self.anchor, Some(&self.state_at(&p.cut)))
             }
-            None => eligible_set(self.cert, None),
+            None => eligible_set(self.cert, self.anchor, None),
         };
         let (state, index) = merge_cut(self.cert, &closure);
         let head_hashes: Vec<OpHash> = heads.iter().map(|r| r.op_hash).collect();

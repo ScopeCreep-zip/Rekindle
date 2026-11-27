@@ -80,7 +80,7 @@ pub(super) fn height_one(cert: &GenesisCert, first: &[HeldOp]) -> (Checkpoint, V
         state_root: state_root(&at_cut, &cut),
         state_size: u32::try_from(preimage.len()).expect("fits"),
         mek_generation: 0,
-        eligible_set_hash: eligible_set_hash(&eligible_set(cert, None)),
+        eligible_set_hash: eligible_set_hash(&eligible_set(cert, "VLD0:anchor", None)),
         pages: Vec::new(),
     };
     (checkpoint, preimage)
