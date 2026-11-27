@@ -51,6 +51,9 @@ lefthook run pre-push            # cargo clippy + cargo test
 every subsequent `git commit` and `git push` runs the configured
 linters automatically.
 
+src/ipc/invoke.ts is the only source file allowed to import the Tauri core Channel and invoke names directly.
+The boundary exposes typed IPC to the rest of the frontend.
+
 ### Per-tool ad-hoc
 
 Each linter is also runnable on its own:
