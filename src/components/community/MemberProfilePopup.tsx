@@ -141,6 +141,7 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
           <button
             class="profile-popup-join-btn"
             disabled={props.member.gameInfo?.joinable !== true}
+            title={props.member.gameInfo?.joinable === true ? undefined : notJoinableText(props.member.gameInfo)}
             aria-describedby={props.member.gameInfo?.joinable === true ? undefined : "profile-popup-join-reason"}
             onClick={() => {
               const info = props.member.gameInfo;
