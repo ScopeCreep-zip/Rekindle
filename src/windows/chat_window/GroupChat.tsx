@@ -87,7 +87,7 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
     for (const p of unlisteners) p.then((unlisten) => unlisten());
   });
 
-  const held = createMemo(() => !!group() && !group()!.pending);
+  const held = createMemo(() => !!group() && !group().pending);
 
   // The message our next send replies to (plan G-replies), from a bubble's
   // Reply; cleared once sent or dismissed.

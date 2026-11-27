@@ -73,11 +73,11 @@ const ProfileWindow: Component = () => {
         <VerifiedBadge view={safety.view()} />
         <Show when={friend()}>
           <div class="profile-status-row">
-            <StatusDot status={friend()!.status} />
-            <span class="profile-status-label">{friend()!.status}</span>
+            <StatusDot status={friend().status} />
+            <span class="profile-status-label">{friend().status}</span>
           </div>
-          <Show when={friend()!.statusMessage}>
-            <div class="profile-status-message">{friend()!.statusMessage}</div>
+          <Show when={friend().statusMessage}>
+            <div class="profile-status-message">{friend().statusMessage}</div>
           </Show>
         </Show>
         <div class="profile-section">
@@ -94,15 +94,15 @@ const ProfileWindow: Component = () => {
           <div class="profile-section">
             <div class="profile-section-label">Currently Playing</div>
             <div class="profile-game-name">
-              <GameIcon iconKey={friend()!.gameInfo!.iconKey} />
-              <span>{friend()!.gameInfo!.gameName}</span>
+              <GameIcon iconKey={friend().gameInfo!.iconKey} />
+              <span>{friend().gameInfo!.gameName}</span>
             </div>
-            <Show when={friend()!.gameInfo!.serverAddress}>
-              <div class="profile-game-server">on {friend()!.gameInfo!.serverAddress}</div>
+            <Show when={friend().gameInfo!.serverAddress}>
+              <div class="profile-game-server">on {friend().gameInfo!.serverAddress}</div>
             </Show>
-            <Show when={friend()!.gameInfo!.startedAt}>
+            <Show when={friend().gameInfo!.startedAt}>
               <div class="profile-game-elapsed">
-                {formatElapsed(friend()!.gameInfo!.startedAt!)}
+                {formatElapsed(friend().gameInfo!.startedAt!)}
               </div>
             </Show>
           </div>
