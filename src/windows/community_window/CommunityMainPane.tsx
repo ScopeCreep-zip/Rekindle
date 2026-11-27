@@ -63,7 +63,7 @@ const CommunityMainPane: Component<{ vm: CommunityVm }> = (props) => {
               <Show when={true}>
                 <Show when={vm.editingTopic()} fallback={
                   <span
-                    class={`channel-topic ${vm.denied("setTopic") === null ? "channel-topic-editable" : ""}`}
+                    class={`channel-topic ${vm.denied("setTopic") === null ? "channel-topic-editable" : "channel-topic-denied"}`}
                     title={vm.denied("setTopic") ?? undefined}
                     aria-disabled={vm.denied("setTopic") !== null ? "true" : undefined}
                     aria-description={vm.denied("setTopic") ?? undefined}
