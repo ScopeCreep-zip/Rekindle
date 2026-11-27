@@ -1,26 +1,39 @@
-import { Channel } from "@tauri-apps/api/core";
-import { hostInvoke, invoke } from "../invoke";
+import { type Channel, hostInvoke, invoke } from "../invoke";
 import type {
-  BackgroundSyncReport, Codec, CommunityAnalytics, CommunityVideoFrameMsg, DeviceList, DmVideoFrameMsg, LinkPreview, MediaCapabilities, MessageSearch, NativePreviewFrameMsg, PairingAccept, PairingQrPayload, PairingSession, SearchResult, SendVideoFrameRequest, SyncManifest, SyncPreferences, VideoTopologyReason, VideoTrackLabel,
+  BackgroundSyncReport,
+  Codec,
+  CommunityAnalytics,
+  CommunityVideoFrameMsg,
+  DeviceList,
+  DmVideoFrameMsg,
+  LinkPreview,
+  MediaCapabilities,
+  MessageSearch,
+  NativePreviewFrameMsg,
+  PairingAccept,
+  PairingQrPayload,
+  PairingSession,
+  SearchResult,
+  SendVideoFrameRequest,
+  SyncManifest,
+  SyncPreferences,
+  VideoTopologyReason,
+  VideoTrackLabel,
 } from "./types_sync";
 
 export const syncCommands = {
   // Strand Relay Network (architecture §13)
-  volunteerRelay: (friendPublicKey: string) =>
-    invoke<void>("volunteer_relay", { friendPublicKey }),
-  revokeRelay: (friendPublicKey: string) =>
-    invoke<void>("revoke_relay", { friendPublicKey }),
-  listReceivedRelayOffers: () =>
-    invoke<string[]>("list_received_relay_offers"),
-  listVolunteeredRelayFriends: () =>
-    invoke<string[]>("list_volunteered_relay_friends"),
+  volunteerRelay: (friendPublicKey: string) => invoke<void>("volunteer_relay", { friendPublicKey }),
+  revokeRelay: (friendPublicKey: string) => invoke<void>("revoke_relay", { friendPublicKey }),
+  listReceivedRelayOffers: () => invoke<string[]>("list_received_relay_offers"),
+  listVolunteeredRelayFriends: () => invoke<string[]>("list_volunteered_relay_friends"),
 
   // Mobile Push Relay (architecture §17.3)
   registerWithPushRelay: (
     relayPseudonym: string,
     devicePushToken: string,
     platform: "fcm" | "apns" | "self",
-    recordKeys: string[],
+    recordKeys: string[]
   ) =>
     invoke<void>("register_with_push_relay", {
       relayPseudonym,
@@ -43,7 +56,7 @@ export const syncCommands = {
     pairingCode: string,
     pairingSaltHex: string,
     existingDeviceRouteBlobHex: string,
-    displayName: string,
+    displayName: string
   ) =>
     invoke<PairingAccept>("accept_pairing_code", {
       pairingCode,
@@ -52,28 +65,21 @@ export const syncCommands = {
       displayName,
     }),
   readSyncManifest: () => invoke<SyncManifest | null>("read_sync_manifest"),
-  writeSyncManifest: (manifest: SyncManifest) =>
-    invoke<void>("write_sync_manifest", { manifest }),
+  writeSyncManifest: (manifest: SyncManifest) => invoke<void>("write_sync_manifest", { manifest }),
   readSyncPreferences: () => invoke<SyncPreferences>("read_sync_preferences"),
   writeSyncPreferences: (preferences: SyncPreferences) =>
     invoke<SyncPreferences>("write_sync_preferences", { preferences }),
   readPairedDevices: () => invoke<DeviceList>("read_paired_devices"),
   writePairedDevices: (devices: DeviceList) =>
     invoke<DeviceList>("write_paired_devices", { devices }),
-  fetchLinkPreview: (
-    communityId: string,
-    channelId: string,
-    messageId: string,
-    url: string,
-  ) =>
+  fetchLinkPreview: (communityId: string, channelId: string, messageId: string, url: string) =>
     invoke<LinkPreview>("fetch_link_preview", {
       communityId,
       channelId,
       messageId,
       url,
     }),
-  runBackgroundSync: () =>
-    invoke<BackgroundSyncReport>("run_background_sync"),
+  runBackgroundSync: () => invoke<BackgroundSyncReport>("run_background_sync"),
   /**
    * Send one encoded frame chunk (from the WebCodecs VideoEncoder
    * output) into the community video stream. The backend MEK-encrypts,
@@ -81,11 +87,7 @@ export const syncCommands = {
    * fragment, and broadcasts via gossip. Returns the number of
    * fragments dispatched (data + parity).
    */
-  sendVideoFrame: (
-    communityId: string,
-    channelId: string,
-    request: SendVideoFrameRequest,
-  ) =>
+  sendVideoFrame: (communityId: string, channelId: string, request: SendVideoFrameRequest) =>
     invoke<number>("send_video_frame", { communityId, channelId, request }),
   /**
    * W11.4 (P6.2) — send one encoded video frame to a 1:1 DM peer.
@@ -94,10 +96,7 @@ export const syncCommands = {
    * Backend chunks to the 4 KB transport budget and wraps each chunk in a
    * `DmVideoFragment` payload. Returns the number of fragments sent.
    */
-  sendDmVideoFrame: (
-    peerPubkey: string,
-    request: SendVideoFrameRequest,
-  ) =>
+  sendDmVideoFrame: (peerPubkey: string, request: SendVideoFrameRequest) =>
     invoke<number>("send_dm_video_frame", { peerPubkey, request }),
   /**
    * Phase 11 Tier 1 — register the per-peer `ipc::Channel` the video
@@ -106,10 +105,7 @@ export const syncCommands = {
    * pushes each reassembled DM frame straight to `onFrame`; re-registering
    * for the same peer replaces the prior handle.
    */
-  registerDmVideoChannel: (
-    peerPubkey: string,
-    onFrame: Channel<DmVideoFrameMsg>,
-  ) =>
+  registerDmVideoChannel: (peerPubkey: string, onFrame: Channel<DmVideoFrameMsg>) =>
     invoke<void>("register_dm_video_channel", { peerPubkey, onFrame }),
   /** Phase 11 Tier 1 — drop the per-peer video channel on panel unmount. */
   unregisterDmVideoChannel: (peerPubkey: string) =>
@@ -122,11 +118,7 @@ export const syncCommands = {
    * `getDisplayMedia()` track in the same call (architecture §10.6).
    * Returns lowercase hex.
    */
-  deriveVideoStreamId: (
-    communityId: string,
-    channelId: string,
-    trackLabel: VideoTrackLabel,
-  ) =>
+  deriveVideoStreamId: (communityId: string, channelId: string, trackLabel: VideoTrackLabel) =>
     invoke<string>("derive_video_stream_id", {
       communityId,
       channelId,
@@ -139,8 +131,7 @@ export const syncCommands = {
    * `CommunityEvent::VideoSessionConfig`; this helper remains exposed
    * for CLI / TUI frontends and tests that want the baseline floor.
    */
-  defaultMediaCapabilities: () =>
-    invoke<MediaCapabilities>("default_media_capabilities"),
+  defaultMediaCapabilities: () => invoke<MediaCapabilities>("default_media_capabilities"),
   /**
    * Phase B — frontend reports its one-shot WebView WebCodecs probe
    * matrix at app startup. Backend updates every active session's
@@ -181,7 +172,7 @@ export const syncCommands = {
     peerId: string | null,
     codec: Codec,
     ok: boolean,
-    detail?: string,
+    detail?: string
   ) =>
     invoke<void>("report_video_encoder_status", {
       communityId,
@@ -195,14 +186,14 @@ export const syncCommands = {
   reportVideoRenderFacts: (
     streamId: string,
     sender: string,
-    frames: { timestamp: number; renderedAtMs: number }[],
+    frames: { timestamp: number; renderedAtMs: number }[]
   ) => invoke<void>("report_video_render_facts", { streamId, sender, frames }),
   reportVideoDecoderStatus: (
     communityId: string,
     senderPseudonym: string,
     streamId: string,
     ok: boolean,
-    errorMessage?: string,
+    errorMessage?: string
   ) =>
     invoke<void>("report_video_decoder_status", {
       communityId,
@@ -215,11 +206,7 @@ export const syncCommands = {
    * Architecture §10.6 line 4081 — receiver lost too many inter-frames
    * and asks the sender to mark the next frame as a keyframe.
    */
-  sendVideoKeyframeRequest: (
-    communityId: string,
-    channelId: string,
-    streamIdHex: string,
-  ) =>
+  sendVideoKeyframeRequest: (communityId: string, channelId: string, streamIdHex: string) =>
     invoke<void>("send_video_keyframe_request", {
       communityId,
       channelId,
@@ -230,10 +217,8 @@ export const syncCommands = {
    * backend's native capture stack (Linux GStreamer vp8enc) passed its
    * availability probe. Feature detection, never OS sniffing.
    */
-  nativeVideoCaptureAvailable: () =>
-    invoke<boolean>("native_video_capture_available"),
-  listNativeVideoDevices: () =>
-    invoke<{ displayName: string }[]>("list_native_video_devices"),
+  nativeVideoCaptureAvailable: () => invoke<boolean>("native_video_capture_available"),
+  listNativeVideoDevices: () => invoke<{ displayName: string }[]>("list_native_video_devices"),
   /**
    * Active native stream id (hex) when a backend camera session runs.
    * Webview camera consumers (QR scanner) must check this first: a
@@ -245,7 +230,7 @@ export const syncCommands = {
     communityId: string,
     channelId: string,
     trackLabel: string,
-    deviceLabel: string | null,
+    deviceLabel: string | null
   ) =>
     invoke<string>("start_native_video", {
       communityId,
@@ -270,7 +255,7 @@ export const syncCommands = {
     channelId: string,
     streamIdHex: string,
     relayHostPseudonym: string | null,
-    reason: VideoTopologyReason,
+    reason: VideoTopologyReason
   ) =>
     invoke<void>("notify_video_topology_change", {
       communityId,
@@ -286,10 +271,7 @@ export const syncCommands = {
    * control events (acks, keyframe requests, topology) still ride
    * `community-event`. Re-registering replaces the prior handle.
    */
-  registerCommunityVideoChannel: (
-    communityId: string,
-    onFrame: Channel<CommunityVideoFrameMsg>,
-  ) =>
+  registerCommunityVideoChannel: (communityId: string, onFrame: Channel<CommunityVideoFrameMsg>) =>
     invoke<void>("register_community_video_channel", { communityId, onFrame }),
   /** Phase 11 Tier 1 — drop the per-community video channel on unmount. */
   unregisterCommunityVideoChannel: (communityId: string) =>
@@ -304,6 +286,5 @@ export const syncCommands = {
   registerNativePreviewChannel: (onFrame: Channel<NativePreviewFrameMsg>) =>
     invoke<void>("register_native_preview_channel", { onFrame }),
   /** Drop the native self-view channel when the native camera stops. */
-  unregisterNativePreviewChannel: () =>
-    invoke<void>("unregister_native_preview_channel"),
+  unregisterNativePreviewChannel: () => invoke<void>("unregister_native_preview_channel"),
 };

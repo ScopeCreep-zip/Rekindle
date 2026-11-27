@@ -1,6 +1,6 @@
-import { Component, createEffect, createSignal } from "solid-js";
-import type { Community } from "../../../stores/community.store";
+import { type Component, createEffect, createSignal, createUniqueId } from "solid-js";
 import { commands, type PresenceSharingPolicy } from "../../../ipc/commands";
+import type { Community } from "../../../stores/community.store";
 import { addToast } from "../../../stores/toast.store";
 import FormField from "../../common/FormField";
 
@@ -22,6 +22,9 @@ const DEFAULT_POLICY: PresenceSharingPolicy = {
  * opting out redacts the next presence write right away.
  */
 const PrivacyTab: Component<PrivacyTabProps> = (props) => {
+  const channelPresenceId = createUniqueId();
+  const activityPresenceId = createUniqueId();
+  const lastSeenId = createUniqueId();
   const [policy, setPolicy] = createSignal<PresenceSharingPolicy>(DEFAULT_POLICY);
   const [loaded, setLoaded] = createSignal(false);
   const [saving, setSaving] = createSignal(false);
@@ -29,7 +32,8 @@ const PrivacyTab: Component<PrivacyTabProps> = (props) => {
   createEffect(() => {
     const id = props.community.id;
     if (!id) return;
-    void commands.getPresencePolicy(id)
+    void commands
+      .getPresencePolicy(id)
       .then((p) => {
         setPolicy(p);
         setLoaded(true);
@@ -59,9 +63,8 @@ const PrivacyTab: Component<PrivacyTabProps> = (props) => {
     <div class="settings-section">
       <FormField label="Appear online">
         <div class="settings-hint">
-          When off, you appear offline to everyone here while staying fully
-          connected (Invisible). This is the only signal shared by default —
-          everything below is off until you turn it on.
+          When off, you appear offline to everyone here while staying fully connected (Invisible).
+          This is the only signal shared by default — everything below is off until you turn it on.
         </div>
         <label class="automod-enabled-toggle">
           <input
@@ -74,17 +77,21 @@ const PrivacyTab: Component<PrivacyTabProps> = (props) => {
         </label>
       </FormField>
 
-      <FormField label="Share which channel you're in">
+      <FormField label="Share which channel you're in" controlId={channelPresenceId}>
         <div class="settings-hint">
-          Others can't see what channel you're in unless you turn this on. If
-          you don't share it, you won't see where other members are either.
+          Others can't see what channel you're in unless you turn this on. If you don't share it,
+          you won't see where other members are either.
         </div>
         <select
+          id={channelPresenceId}
           class="form-select"
           value={policy().shareLocation}
           disabled={disabled()}
           onChange={(e) =>
-            void persist({ ...policy(), shareLocation: e.currentTarget.value as PresenceSharingPolicy["shareLocation"] })
+            void persist({
+              ...policy(),
+              shareLocation: e.currentTarget.value as PresenceSharingPolicy["shareLocation"],
+            })
           }
         >
           <option value="none">Don't share</option>
@@ -92,17 +99,21 @@ const PrivacyTab: Component<PrivacyTabProps> = (props) => {
         </select>
       </FormField>
 
-      <FormField label="Share activity / game">
+      <FormField label="Share activity / game" controlId={activityPresenceId}>
         <div class="settings-hint">
-          Share what you're playing or doing. Off by default; reciprocal —
-          hidden both ways unless shared.
+          Share what you're playing or doing. Off by default; reciprocal — hidden both ways unless
+          shared.
         </div>
         <select
+          id={activityPresenceId}
           class="form-select"
           value={policy().shareActivity}
           disabled={disabled()}
           onChange={(e) =>
-            void persist({ ...policy(), shareActivity: e.currentTarget.value as PresenceSharingPolicy["shareActivity"] })
+            void persist({
+              ...policy(),
+              shareActivity: e.currentTarget.value as PresenceSharingPolicy["shareActivity"],
+            })
           }
         >
           <option value="none">Don't share</option>
@@ -110,18 +121,21 @@ const PrivacyTab: Component<PrivacyTabProps> = (props) => {
         </select>
       </FormField>
 
-      <FormField label="Last seen">
+      <FormField label="Last seen" controlId={lastSeenId}>
         <div class="settings-hint">
-          Hidden by default. "Recently" shows only an hour-coarse bucket;
-          "Exact time" reveals a precise timestamp. You see peers' last-seen
-          only at the precision you expose yourself.
+          Hidden by default. "Recently" shows only an hour-coarse bucket; "Exact time" reveals a
+          precise timestamp. You see peers' last-seen only at the precision you expose yourself.
         </div>
         <select
+          id={lastSeenId}
           class="form-select"
           value={policy().lastSeen}
           disabled={disabled()}
           onChange={(e) =>
-            void persist({ ...policy(), lastSeen: e.currentTarget.value as PresenceSharingPolicy["lastSeen"] })
+            void persist({
+              ...policy(),
+              lastSeen: e.currentTarget.value as PresenceSharingPolicy["lastSeen"],
+            })
           }
         >
           <option value="hidden">Hidden</option>

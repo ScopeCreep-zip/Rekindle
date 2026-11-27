@@ -1,6 +1,6 @@
 import { createStore } from "solid-js/store";
 
-export interface Notification {
+interface Notification {
   id: string;
   /**
    * Wave 12 W12.8 — `missed_call` rows surface in the notification panel
@@ -8,12 +8,7 @@ export interface Notification {
    * a `chat-event::callMissed` (callee never answered) or
    * `chat-event::callTimedOut` (caller's offer expired) fires.
    */
-  type:
-    | "message"
-    | "friend_request"
-    | "community_invite"
-    | "system"
-    | "missed_call";
+  type: "message" | "friend_request" | "community_invite" | "system" | "missed_call";
   title: string;
   body: string;
   timestamp: number;
@@ -47,10 +42,9 @@ interface NotificationState {
   notifications: Notification[];
 }
 
-const [notificationState, setNotificationState] =
-  createStore<NotificationState>({
-    notifications: [],
-  });
+const [notificationState, setNotificationState] = createStore<NotificationState>({
+  notifications: [],
+});
 
 /// The inbox rows not yet read. Message, channel and DM counts are the
 /// Host's (`UnreadChanged`, plan E3.1 D25); this store keeps no counter.
@@ -66,12 +60,7 @@ export function markNotificationRead(id: string): void {
 }
 
 export function markAllNotificationsRead(): void {
-  setNotificationState(
-    "notifications",
-    (n) => !n.read,
-    "read",
-    true,
-  );
+  setNotificationState("notifications", (n) => !n.read, "read", true);
 }
 
 export { notificationState, setNotificationState };

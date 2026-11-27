@@ -8,14 +8,13 @@
  * shown by the registered undo presenter (a toast with Undo).
  */
 
-import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { Channel, invoke as tauriInvoke } from "@tauri-apps/api/core";
 import type { Done, IntentReview, UndoOffer } from "./commands/dto";
 import { isCommandError } from "./commands/dto";
 
-export async function invoke<T>(
-  cmd: string,
-  args?: Record<string, unknown>,
-): Promise<T> {
+export { Channel };
+
+export async function invoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   return tauriInvoke<T>(cmd, args);
 }
 
@@ -41,10 +40,7 @@ export function registerUndoPresenter(presenter: UndoPresenter): void {
  * any) was committed. Rejects with the `CommandError` the Host answered
  * (`{ type: "cancelled" }` when the user cancelled the review).
  */
-export async function hostInvoke<T>(
-  cmd: string,
-  args?: Record<string, unknown>,
-): Promise<T> {
+export async function hostInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
   let done: Done<T>;
   try {
     done = await invoke<Done<T>>(cmd, args);

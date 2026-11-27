@@ -9,12 +9,17 @@ import { errorMessage } from "../utils/error";
  * E7.15 IV3). True once launched. A review the user cancelled shows
  * nothing; a refusal shows the Host's message.
  */
-export async function handleLaunchGame(gameId: number, server: string | null, source: JoinSource): Promise<boolean> {
+export async function handleLaunchGame(
+  gameId: number,
+  server: string | null,
+  source: JoinSource
+): Promise<boolean> {
   try {
     await commands.launchGame(gameId, server, source);
     return true;
   } catch (e) {
-    if (!(isCommandError(e) && e.type === "cancelled")) addToast(`Game not launched: ${errorMessage(e)}`, "error");
+    if (!(isCommandError(e) && e.type === "cancelled"))
+      addToast(`Game not launched: ${errorMessage(e)}`, "error");
     return false;
   }
 }

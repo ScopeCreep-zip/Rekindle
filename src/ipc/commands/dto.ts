@@ -152,7 +152,7 @@ export interface OnboardingConfig {
   guideSteps: GuideStep[];
 }
 
-export interface OnboardingQuestion {
+interface OnboardingQuestion {
   questionId: string;
   title: string;
   description: string | null;
@@ -161,7 +161,7 @@ export interface OnboardingQuestion {
   options: OnboardingOption[];
 }
 
-export interface OnboardingOption {
+interface OnboardingOption {
   optionId: string;
   title: string;
   description: string | null;
@@ -254,12 +254,7 @@ export type LifecycleState =
 
 export type IntentKind = string;
 
-type IntentClass =
-  | "routine"
-  | "consequential"
-  | "trustChanging"
-  | "destructive"
-  | "protected";
+type IntentClass = "routine" | "consequential" | "trustChanging" | "destructive" | "protected";
 
 type ProofRequired = "none" | "commit" | "acknowledge" | "typeSubject" | "passphrase";
 
@@ -348,11 +343,7 @@ export interface IntentReview {
 }
 
 /** The proof a commit carries. */
-export type IntentProof =
-  | "commit"
-  | "acknowledged"
-  | { typed: string }
-  | { passphrase: string };
+export type IntentProof = "commit" | "acknowledged" | { typed: string } | { passphrase: string };
 
 /** How an action that ran can be taken back while it lasts. */
 export interface UndoOffer {

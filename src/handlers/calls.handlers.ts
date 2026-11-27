@@ -7,4 +7,4 @@
 // barrel for those, and got the subscription wiring in the same
 // import — one name covering two tiers.
 
-export { subscribeCallEvents, refreshMissedCalls } from "./calls/events";
+export { refreshMissedCalls, subscribeCallEvents } from "./calls/events";

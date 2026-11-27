@@ -1,4 +1,4 @@
-import { Component, For, Show } from "solid-js";
+import { type Component, For, Show } from "solid-js";
 import type { SkinDraft, SkinDraftReport } from "../../ipc/commands/dto_skin_draft";
 
 /**
@@ -21,7 +21,7 @@ const SkinEditorMeta: Component<{
     return l === "noneStated" ? null : l.text;
   };
   return (
-    <div class="skin-editor-meta" role="group" aria-label="Skin details">
+    <section class="skin-editor-meta" aria-label="Skin details">
       <label class="skin-editor-field">
         <span class="form-label">Name</span>
         <input
@@ -87,7 +87,7 @@ const SkinEditorMeta: Component<{
           }
         />
       </label>
-      <div class="skin-editor-credits" aria-label="Credits the export carries">
+      <section class="skin-editor-credits" aria-label="Credits the export carries">
         <span class="form-label">Credits</span>
         <ul>
           <For each={props.report.credits.authors}>
@@ -105,8 +105,8 @@ const SkinEditorMeta: Component<{
             </details>
           )}
         </Show>
-      </div>
-    </div>
+      </section>
+    </section>
   );
 };
 

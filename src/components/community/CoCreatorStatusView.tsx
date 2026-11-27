@@ -1,8 +1,7 @@
-import { Component, For, Show, createEffect, createSignal } from "solid-js";
-
+import { type Component, createEffect, createSignal, For, Show } from "solid-js";
+import { handleCancelCreation, handleRemoveCoCreator } from "../../actions/community/co_create";
 import { coCreatorState, stopWatchingCreation } from "../../stores/co-creator.store";
 import { friendsState } from "../../stores/friends.store";
-import { handleCancelCreation, handleRemoveCoCreator } from "../../actions/community/co_create";
 
 interface CoCreatorStatusViewProps {
   anchor: string;
@@ -68,7 +67,9 @@ const CoCreatorStatusView: Component<CoCreatorStatusViewProps> = (props) => {
           {([peer, status]) => (
             <li class="co-create-status-row">
               <span class="buddy-name">{nameOf(peer)}</span>
-              <span class={`co-create-status-badge co-create-status-${status}`}>{statusLabel(status)}</span>
+              <span class={`co-create-status-badge co-create-status-${status}`}>
+                {statusLabel(status)}
+              </span>
               <Show when={removable(status)}>
                 <button
                   type="button"
@@ -85,7 +86,9 @@ const CoCreatorStatusView: Component<CoCreatorStatusViewProps> = (props) => {
         </For>
       </ul>
       <Show when={error()}>
-        <div class="form-error" role="alert">{error()}</div>
+        <div class="form-error" role="alert">
+          {error()}
+        </div>
       </Show>
       <div class="form-field-row">
         <button

@@ -96,7 +96,7 @@ function writeZip(entries: Map<string, Buffer>): Buffer {
  * Settings → Import (the real library path): its manifest, renamed `name`
  * under the id `id`, changed by `edit`; every other member as shipped.
  */
-export function derivedPack(file: string, id: string, name: string, edit: (manifest: Record<string, unknown>) => void): Buffer {
+function derivedPack(file: string, id: string, name: string, edit: (manifest: Record<string, unknown>) => void): Buffer {
   const entry = `${file}.rkskin`;
   const zip = members(readFileSync(path.join(BUILTIN_DIR, entry)), entry);
   const bytes = zip.get("manifest.json");

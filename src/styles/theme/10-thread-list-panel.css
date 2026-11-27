@@ -74,6 +74,9 @@
     border-radius: 4px;
     cursor: pointer;
     transition: background var(--motion-duration-fast);
+    display: block;
+    width: 100%;
+    text-align: left;
   }
 
   .thread-list-item:hover {
@@ -84,12 +87,14 @@
     font-size: 12px;
     font-weight: 600;
     color: var(--color-xfire-text);
+    display: block;
   }
 
   .thread-list-item-meta {
     font-size: 10px;
     color: var(--color-xfire-text-dim);
     margin-top: 2px;
+    display: block;
   }
 
   .thread-archived {
@@ -255,6 +260,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+    text-align: left;
   }
 
   /* ─── Announcement channel icon ─── */
