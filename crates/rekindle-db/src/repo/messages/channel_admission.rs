@@ -13,6 +13,7 @@ pub struct Placeholder {
 }
 
 /// The keys and metadata of a post as its verified chain carries them.
+#[derive(Clone, Copy)]
 pub struct Post<'a> {
     pub owner: &'a str,
     pub community: &'a str,
