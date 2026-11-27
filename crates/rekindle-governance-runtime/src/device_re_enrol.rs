@@ -33,15 +33,29 @@ pub fn needed<D: GovernanceRuntimeDeps>(
     ) {
         return Ok(true);
     }
+    Ok(retired_from(deps, community)?.is_some())
+}
+
+/// The sequence from which this device's installed key is retired.
+///
+/// # Errors
+/// Reading the held device key or deriving our pseudonym failed.
+pub fn retired_from<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    community: &str,
+) -> Result<Option<u64>, GovernanceRuntimeError> {
     let (Some(state), Some(held)) = (
         deps.governance_state(community),
         deps.device_op_key(community)?,
     ) else {
-        return Ok(false);
+        return Ok(None);
     };
     let key = SigningKey::from_bytes(&held).verifying_key().to_bytes();
     let (author, _) = crate::op_log::own_pseudonym(deps, community)?;
-    Ok((state.devices.member(&author)).is_some_and(|md| md.retired_from(&key).is_some()))
+    Ok(state
+        .devices
+        .member(&author)
+        .and_then(|member| member.retired_from(&key)))
 }
 
 /// The `lastSeq` our old key is retired at: the barrier's maximum after a

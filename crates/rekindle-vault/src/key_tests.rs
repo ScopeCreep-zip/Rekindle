@@ -9,6 +9,7 @@ fn every_variant() -> Vec<VaultKey> {
         VaultKey::AccountOwnerKeypair,
         VaultKey::PersonalSyncOwnerKeypair,
         VaultKey::PrekeyRecordOwnerKeypair,
+        VaultKey::PendingPrekeyOwner,
         VaultKey::PendingRotation,
         VaultKey::CommunityMek { community: c() },
         VaultKey::CommunityMekGeneration {

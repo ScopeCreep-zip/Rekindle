@@ -38,7 +38,10 @@ pub(crate) async fn handle_device_re_enrol(ctx: &DaemonContext, state: DaemonSta
     if !state.can_write() {
         return state_error(state, "write");
     }
-    let written = Box::pin(adapter(ctx).re_enrol_everywhere()).await;
+    let written = match Box::pin(adapter(ctx).re_enrol_everywhere()).await {
+        Ok(written) => written,
+        Err(error) => return IpcResponse::error(500, format!("device re-enrolment: {error}")),
+    };
     if written.is_empty() {
         return IpcResponse::error(409, "no community holds this device's key");
     }

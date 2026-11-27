@@ -299,6 +299,7 @@ impl Host {
             own_profile_lease: Arc::new(parking_lot::Mutex::new(None)),
             own_prekey_lease: Arc::new(parking_lot::Mutex::new(None)),
             own_prekey_writes: Arc::new(tokio::sync::Mutex::new(())),
+            device_re_enrol: tokio::sync::Mutex::new(()),
             game: crate::host::game_stage::GameControl::default(),
             network_strength: strength,
             infoview: crate::host::infoview::OpenViews::default(),

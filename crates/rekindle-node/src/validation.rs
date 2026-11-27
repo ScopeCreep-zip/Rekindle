@@ -397,6 +397,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::IdentityWipe
         | IpcRequest::QuickWipeDisarm
         | IpcRequest::QuickWipeTrigger
+        | IpcRequest::IntentListHeld
         | IpcRequest::IntentCancel { .. }
         // The bus server owns subscriptions; dispatch refuses them.
         | IpcRequest::Subscribe { .. }

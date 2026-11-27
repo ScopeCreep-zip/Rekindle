@@ -128,7 +128,7 @@ pub fn login_row(
 
 /// This device's id, set to `minted` (16 random bytes, lowercase hex)
 /// when the row has none: the prekey device list and the personal sync
-/// record both name it (plan E2.4), and nothing replaces it once set.
+/// record both name it (plan E2.4). Re-enrolling the device replaces it.
 ///
 /// # Errors
 /// The write failed (`minted` is not 32 lowercase hex characters).
@@ -146,6 +146,35 @@ pub fn ensure_device_id(
         params![public_key],
         |row| row.get(0),
     )
+}
+
+/// Swap this device's prekey record and id in the same transaction as
+/// the new prekey set. Used only after an acknowledged re-enrolment.
+///
+/// # Errors
+/// The identity row or replacement material could not be stored.
+pub fn replace_device_prekeys(
+    conn: &mut Connection,
+    public_key: &str,
+    device_id: &str,
+    record_key: &str,
+    key_set: &MintedSet,
+) -> rusqlite::Result<()> {
+    let tx = conn.transaction()?;
+    let updated = tx.execute(
+        "UPDATE identity SET device_id = ?2, prekey_record_key = ?3 WHERE public_key = ?1",
+        params![public_key, device_id, record_key],
+    )?;
+    if updated != 1 {
+        return Err(rusqlite::Error::QueryReturnedNoRows);
+    }
+    crate::erase::delete(
+        &tx,
+        "DELETE FROM signal_prekeys WHERE owner_key = ?1",
+        params![public_key],
+    )?;
+    crate::prekeys::store_set_rows(&tx, public_key, key_set)?;
+    tx.commit()
 }
 
 /// Set the display name.

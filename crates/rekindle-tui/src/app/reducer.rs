@@ -237,6 +237,11 @@ impl App {
                 self.search.close();
             }
             Action::ShowIntent(review) => self.intent.show(*review),
+            Action::RefreshHeldReviews => self.load_held_reviews(),
+            Action::HeldReviewsLoaded {
+                generation,
+                reviews,
+            } => self.apply_held_reviews(generation, reviews),
             Action::ApplySkin(skin) => self.apply_skin(&skin),
             Action::OwnPresence(snapshot) => self.nav.dashboard_mut().apply_own_presence(&snapshot),
             Action::CommitIntent { review, proof } => self.spawn_commit_intent(*review, proof),

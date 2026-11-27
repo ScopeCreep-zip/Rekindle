@@ -100,6 +100,42 @@ impl HostGovernance {
         }
     }
 
+    /// A re-enrolment may arrive through a peer's record, without any
+    /// changes on the retired device's now read-only record.
+    pub(super) fn note_retirement_after_rebuild(&self, community: &str) {
+        if let Ok(Some(retired_from)) =
+            rekindle_governance_runtime::device_re_enrol::retired_from(self, community)
+        {
+            self.report_own_retirement(
+                community,
+                GovernanceRuntimeError::OwnKeyRetired {
+                    community: community.to_owned(),
+                    retired_from,
+                },
+            );
+        }
+    }
+
+    fn report_own_retirement(&self, community: &str, error: GovernanceRuntimeError) {
+        let first = self
+            .ctx
+            .communities
+            .map()
+            .write()
+            .get_mut(community)
+            .is_some_and(first_retired_notice);
+        tracing::warn!(community, %error, first, "own device key retired");
+        if first {
+            GovernanceRuntimeDeps::emit_event(
+                self,
+                GovernanceRuntimeEvent::OwnKeyRetired {
+                    community_id: community.to_owned(),
+                    notice: error.to_string(),
+                },
+            );
+        }
+    }
+
     /// Our op record changed: on a head change (or one we did not observe)
     /// receive what a copy wrote and check our key; a retirement stops
     /// signing (`OpSigner::checked` refuses from the merged state) and is
@@ -124,18 +160,7 @@ impl HostGovernance {
         {
             Ok(()) => {}
             Err(error @ GovernanceRuntimeError::OwnKeyRetired { .. }) => {
-                let first = (self.ctx.communities.map().write().get_mut(community_id))
-                    .is_some_and(first_retired_notice);
-                tracing::warn!(community_id, %error, first, "own device key retired");
-                if first {
-                    GovernanceRuntimeDeps::emit_event(
-                        self,
-                        GovernanceRuntimeEvent::OwnKeyRetired {
-                            community_id: community_id.to_owned(),
-                            notice: error.to_string(),
-                        },
-                    );
-                }
+                self.report_own_retirement(community_id, error);
             }
             Err(error) => {
                 tracing::debug!(community_id, record, %error, "own record change not read");
