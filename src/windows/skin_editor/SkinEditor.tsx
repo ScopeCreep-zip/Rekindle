@@ -146,6 +146,7 @@ const SkinEditor: Component = () => {
       <Show when={p.suggestion}>
         {(s) => (
           <button
+            type="button"
             class="form-btn-secondary skin-suggest"
             aria-label={`Use ${hex(s().rgb)} for ${s().token} (${ratio(s().ratioX100)})`}
             onClick={() => set(s().token, colour(hex(s().rgb)))}
@@ -161,17 +162,18 @@ const SkinEditor: Component = () => {
   return (
     <div class="skin-editor" aria-label="Skin editor" role="region">
       <div class="skin-editor-bar">
-        <button class="form-btn-secondary" onClick={() => void startFromCurrent()}>
+        <button type="button" class="form-btn-secondary" onClick={() => void startFromCurrent()}>
           Start from the current skin
         </button>
         <button
+          type="button"
           class="form-btn-secondary"
           disabled={!report()?.exportable}
           onClick={() => void exportDraft()}
         >
           Export…
         </button>
-        <button class="form-btn-secondary" onClick={() => void exportSchema()}>
+        <button type="button" class="form-btn-secondary" onClick={() => void exportSchema()}>
           Export JSON Schema…
         </button>
       </div>

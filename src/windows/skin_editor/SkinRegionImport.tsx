@@ -108,6 +108,7 @@ const SkinRegionImport: Component<{
         </select>
       </Show>
       <button
+        type="button"
         class="form-btn-secondary"
         disabled={!region()}
         onClick={() => void importRegion()}

@@ -100,7 +100,7 @@ const ProfileTab: Component = () => {
       <div class="settings-section-title">Avatar</div>
       <div class="avatar-upload-section">
         <Avatar displayName={authState.displayName ?? "?"} size={64} avatarUrl={authState.avatarUrl ?? undefined} />
-        <button class="avatar-upload-btn" onClick={handleAvatarUpload}>
+        <button type="button" class="avatar-upload-btn" onClick={handleAvatarUpload}>
           Change Avatar
         </button>
         <span class="avatar-upload-hint">PNG, JPEG, or GIF (max 256KB)</span>
@@ -118,7 +118,7 @@ const ProfileTab: Component = () => {
               if (e.key === "Enter") handleSaveName((e.currentTarget as HTMLInputElement).value);
             }}
           />
-          <button class="form-btn-primary" onClick={() => handleSaveName(name.value())}>Save</button>
+          <button type="button" class="form-btn-primary" onClick={() => handleSaveName(name.value())}>Save</button>
         </div>
       </FormField>
       <div class="settings-section-title">Status Message</div>
@@ -133,7 +133,7 @@ const ProfileTab: Component = () => {
             onInput={(e: InputEvent) => setStatusMsgInput((e.target as HTMLInputElement).value)}
             onKeyDown={(e: KeyboardEvent) => { if (e.key === "Enter") handleSaveStatusMessage(); }}
           />
-          <button class="form-btn-primary" onClick={handleSaveStatusMessage}>Save</button>
+          <button type="button" class="form-btn-primary" onClick={handleSaveStatusMessage}>Save</button>
         </div>
       </FormField>
       <div class="settings-section-title">Bio</div>
@@ -151,7 +151,7 @@ const ProfileTab: Component = () => {
           <span id="bio-count" class="bio-count" classList={{ "bio-count-over": bioLength() > MAX_BIO_LEN }}>
             {bioLength()} of {MAX_BIO_LEN} characters
           </span>
-          <button class="form-btn-primary" disabled={bioLength() > MAX_BIO_LEN} onClick={handleSaveBio}>
+          <button type="button" class="form-btn-primary" disabled={bioLength() > MAX_BIO_LEN} onClick={handleSaveBio}>
             Save
           </button>
         </div>

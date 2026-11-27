@@ -175,8 +175,8 @@ const PrivacyTab: Component = () => {
       </div>
       <div class="settings-section-title">Identity</div>
       <div class="form-field-row">
-        <button class="form-btn-secondary" disabled>Export Identity</button>
-        <button class="form-btn-secondary" disabled>Import Identity</button>
+        <button type="button" class="form-btn-secondary" disabled>Export Identity</button>
+        <button type="button" class="form-btn-secondary" disabled>Import Identity</button>
       </div>
       <div class="settings-hint">Identity export/import requires Stronghold integration.</div>
       <QuickWipeSection />
@@ -192,7 +192,7 @@ const PrivacyTab: Component = () => {
           {(user) => (
             <div class="blocked-user-item">
               <span class="buddy-name">{user.displayName || user.publicKey.slice(0, 12) + "..."}</span>
-              <button class="form-btn-secondary" onClick={() => handleUnblock(user.publicKey)}>
+              <button type="button" class="form-btn-secondary" onClick={() => handleUnblock(user.publicKey)}>
                 Unblock
               </button>
             </div>

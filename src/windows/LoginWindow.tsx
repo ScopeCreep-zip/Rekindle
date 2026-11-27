@@ -164,6 +164,7 @@ const LoginWindow: Component = () => {
                   <Avatar displayName={id.displayName} size={64} />
                   <div class="account-bubble-name">{id.displayName}</div>
                   <button
+                    type="button"
                     class="account-bubble-delete"
                     aria-label={`Delete ${id.displayName}`}
                     onClick={(e: MouseEvent) => void deleteIdentity(id, e)}
@@ -177,7 +178,7 @@ const LoginWindow: Component = () => {
           <Show when={error() !== null}>
             <div class="form-error" role="alert">{error()}</div>
           </Show>
-          <button class="account-create-btn" onClick={() => { setPassphrase(""); setDisplayName(""); setError(null); setMode("create"); }}>
+          <button type="button" class="account-create-btn" onClick={() => { setPassphrase(""); setDisplayName(""); setError(null); setMode("create"); }}>
             + Create New Identity
           </button>
         </div>

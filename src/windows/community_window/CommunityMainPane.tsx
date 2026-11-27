@@ -99,6 +99,7 @@ const CommunityMainPane: Component<{ vm: CommunityVm }> = (props) => {
               </Show>
               <span class="header-btn-group">
                 <button
+                  type="button"
                   class={`action-bar-btn header-add-btn ${vm.rightPanel() === "pins" ? "header-btn-active" : ""}`}
                   onClick={vm.handleTogglePins}
                   title="Pinned Messages"
@@ -109,6 +110,7 @@ const CommunityMainPane: Component<{ vm: CommunityVm }> = (props) => {
                   </Show>
                 </button>
                 <button
+                  type="button"
                   class={`action-bar-btn header-add-btn ${vm.rightPanel() === "threadList" || vm.rightPanel() === "thread" ? "header-btn-active" : ""}`}
                   onClick={vm.handleToggleThreadList}
                   title="Threads"
@@ -119,6 +121,7 @@ const CommunityMainPane: Component<{ vm: CommunityVm }> = (props) => {
                   </Show>
                 </button>
                 <button
+                  type="button"
                   class={`action-bar-btn header-add-btn ${vm.rightPanel() === "members" ? "header-btn-active" : ""}`}
                   onClick={vm.handleToggleMembers}
                   title="Members"

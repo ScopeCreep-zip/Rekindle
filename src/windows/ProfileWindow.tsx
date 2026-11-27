@@ -148,6 +148,7 @@ const ProfileWindow: Component = () => {
         <Show when={friend()}>
           <div class="profile-actions">
             <button
+              type="button"
               class="form-btn-secondary"
               onClick={() => commands.openChatWindow(publicKey)}
             >
@@ -155,6 +156,7 @@ const ProfileWindow: Component = () => {
             </button>
             {/* Wave 12 W12.8 — call buttons in profile header. */}
             <button
+              type="button"
               class="form-btn-secondary"
               title="Start a voice call"
               onClick={() => void handleStartDmCall(publicKey, displayName(), false)}
@@ -162,6 +164,7 @@ const ProfileWindow: Component = () => {
               <span class="nf-icon">{ICON_PHONE}</span> Voice Call
             </button>
             <button
+              type="button"
               class="form-btn-secondary"
               title="Start a video call"
               onClick={() => void handleStartDmCall(publicKey, displayName(), true)}
@@ -170,6 +173,7 @@ const ProfileWindow: Component = () => {
             </button>
             <Show when={!confirmRemove()}>
               <button
+                type="button"
                 class="form-btn-danger"
                 onClick={() => setConfirmRemove(true)}
               >
@@ -178,12 +182,14 @@ const ProfileWindow: Component = () => {
             </Show>
             <Show when={confirmRemove()}>
               <button
+                type="button"
                 class="form-btn-danger"
                 onClick={() => handleRemoveFriend(publicKey)}
               >
                 Confirm Remove
               </button>
               <button
+                type="button"
                 class="form-btn-secondary"
                 onClick={() => setConfirmRemove(false)}
               >

@@ -179,6 +179,7 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
         <VerifiedBadge view={safety.view()} />
         <Show when={isFriend()}>
           <button
+            type="button"
             class="chat-safety-btn"
             onClick={() => setShowSafety(!showSafety())}
             title="Safety number"
@@ -189,6 +190,7 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
             <span class="nf-icon" aria-hidden="true">{ICON_SHIELD}</span>
           </button>
           <button
+            type="button"
             class="chat-safety-btn"
             onClick={() => setShowInvite(!showInvite())}
             title="Invite to a game"
@@ -208,6 +210,7 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
           when={!activeCallWithPeer() && !outgoingToThisPeer()}
           fallback={
             <button
+              type="button"
               class="chat-call-btn chat-call-btn-active"
               onClick={hangup}
               title="End call"
@@ -218,6 +221,7 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
           }
         >
           <button
+            type="button"
             class="chat-call-btn"
             onClick={() => startCall(false)}
             title="Voice call"
@@ -226,6 +230,7 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
             <span class="nf-icon" aria-hidden="true">{ICON_PHONE}</span>
           </button>
           <button
+            type="button"
             class="chat-call-btn"
             onClick={() => startCall(true)}
             title="Video call"

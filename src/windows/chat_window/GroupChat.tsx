@@ -185,6 +185,7 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
           when={renaming() !== null}
           fallback={
             <button
+              type="button"
               class="form-btn-secondary group-chat-action"
               aria-disabled={renameRefused() !== null ? "true" : undefined}
               aria-describedby={renameRefused() !== null ? "group-rename-reason" : undefined}
@@ -207,6 +208,7 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
           </form>
         </Show>
         <button
+          type="button"
           class="form-btn-secondary group-chat-action"
           aria-disabled={activeCall() === null && ourRing() === null && ringingCall() === null && callRefused() !== null ? "true" : undefined}
           title={activeCall() ? "Leave the call" : ourRing() ? "Cancel the call" : ringingCall() ? "Join the call" : (callRefused() ?? `Call ${name()}`)}
@@ -216,6 +218,7 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
           {activeCall() ? "Leave call" : ourRing() ? "Cancel call" : ringingCall() ? "Join call" : "Call"}
         </button>
         <button
+          type="button"
           class="form-btn-secondary group-chat-action"
           aria-disabled={inviteRefused() !== null ? "true" : undefined}
           aria-describedby={inviteRefused() !== null ? "group-invite-reason" : undefined}
@@ -227,6 +230,7 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
         <span class="sr-only" id="group-rename-reason">{renameRefused()}</span>
         <span class="sr-only" id="group-invite-reason">{inviteRefused()}</span>
         <button
+          type="button"
           class="form-btn-secondary group-chat-leave"
           aria-label={`Leave ${name()}`}
           onClick={() => void leave()}

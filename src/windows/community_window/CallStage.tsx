@@ -30,6 +30,7 @@ const CallStage: Component<{ vm: CommunityVm }> = (props) => {
               Voice channel — join to talk, turn on your camera, or share your screen.
             </div>
             <button
+              type="button"
               class="call-stage-join-btn"
               onClick={() => void handleJoinVoice(vm.selectedChannelId(), vm.selectedCommunityId())}
             >

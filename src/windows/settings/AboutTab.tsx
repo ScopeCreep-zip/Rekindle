@@ -39,6 +39,7 @@ const AboutTab: Component = () => {
       <div class="settings-section-title">Updates</div>
       <div class="update-check-row">
         <button
+          type="button"
           class="form-btn-secondary"
           onClick={handleCheckUpdates}
           disabled={checkingUpdates()}

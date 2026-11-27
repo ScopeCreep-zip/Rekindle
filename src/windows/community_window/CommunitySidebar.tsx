@@ -26,6 +26,7 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
         <span class="community-sidebar-title">Communities</span>
         <span class="header-btn-group">
           <button
+            type="button"
             class="action-bar-btn header-add-btn"
             onClick={() => vm.setShowJoinCommunity(true)}
             title="Join Community"
@@ -33,6 +34,7 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
             <SkinGlyph name="room" />
           </button>
           <button
+            type="button"
             class="action-bar-btn header-add-btn"
             onClick={() => vm.setShowCreateCommunity(true)}
             title="Create Community"
@@ -52,6 +54,7 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
           <span class="community-sidebar-title">Channels</span>
           <span class="header-btn-group">
             <button
+              type="button"
               class="action-bar-btn header-add-btn"
               onClick={() => vm.setShowSettings(true)}
               title="Community Settings"
@@ -60,6 +63,7 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
             </button>
             <Show when={vm.canManageChannels()}>
               <button
+                type="button"
                 class="action-bar-btn header-add-btn"
                 onClick={() => vm.setShowCreateChannel(true)}
                 title="Create Channel"
@@ -102,6 +106,7 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
                   {vm.gameNameCache().get(server.gameId) ?? server.label}
                 </span>
                 <button
+                  type="button"
                   class="sidebar-server-join-btn"
                   onClick={() => {
                     const id = parseInt(server.gameId, 10);
@@ -113,6 +118,7 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
               </div>
             ))}
             <button
+              type="button"
               class="sidebar-section-more"
               onClick={() => { vm.setShowServers(true); vm.setShowEvents(false); }}
             >
@@ -137,6 +143,7 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
               </div>
             ))}
             <button
+              type="button"
               class="sidebar-section-more"
               onClick={() => { vm.setShowEvents(true); vm.setShowServers(false); }}
             >
@@ -158,6 +165,7 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
            *  channel). Cmd/Ctrl-F still scopes to the active
            *  channel as before. */}
           <button
+            type="button"
             class="community-leave-btn"
             title="Search this community (Cmd/Ctrl+F or Cmd/Ctrl+K searches the open channel)"
             aria-label="Search community"
@@ -169,6 +177,7 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
             <SkinGlyph name="search" /> Search
           </button>
           <button
+            type="button"
             class="community-leave-btn"
             onClick={() => void handleLeaveCommunity(vm.selectedCommunityId())}
           >

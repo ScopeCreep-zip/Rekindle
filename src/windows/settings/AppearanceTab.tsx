@@ -127,6 +127,7 @@ const AppearanceTab: Component = () => {
       </Show>
       <div class="skin-actions">
         <button
+          type="button"
           class="skin-row-btn skin-info"
           aria-label={`Credits for ${skin.name}`}
           aria-expanded={creditsOf() === skin.id}
@@ -137,6 +138,7 @@ const AppearanceTab: Component = () => {
         </button>
         <Show when={library()?.login !== skin.id}>
           <button
+            type="button"
             class="skin-row-btn skin-action"
             onClick={() => void run(() => commands.setLoginSkin(skin.id))}
           >
@@ -145,6 +147,7 @@ const AppearanceTab: Component = () => {
         </Show>
         <Show when={skin.importedAt !== null}>
           <button
+            type="button"
             class="skin-row-btn skin-action"
             disabled={shown() === skin.id || library()?.active === skin.id}
             onClick={() => void run(() => commands.removeSkin(skin.id))}
@@ -174,7 +177,7 @@ const AppearanceTab: Component = () => {
         {(f) => (
           <div class="settings-hint skin-error" role="alert">
             {failureText(f(), library()?.skins.find((s) => s.id === f().skin)?.name ?? f().skin)}{" "}
-            <button class="skin-row-btn skin-action" onClick={() => setFailed(null)}>
+            <button type="button" class="skin-row-btn skin-action" onClick={() => setFailed(null)}>
               Dismiss
             </button>
           </div>
@@ -187,7 +190,7 @@ const AppearanceTab: Component = () => {
         {(alt) => (
           <div class="settings-hint skin-alternate">
             {`${shownEntry()!.name} has ${shownEntry()!.shortTargets} control${shownEntry()!.shortTargets === 1 ? "" : "s"} under 24 px. ${alt().name} meets target sizes.`}{" "}
-            <button class="skin-row-btn skin-action" onClick={() => void run(() => commands.selectSkin(alt().id))}>
+            <button type="button" class="skin-row-btn skin-action" onClick={() => void run(() => commands.selectSkin(alt().id))}>
               Use {alt().name}
             </button>
           </div>
@@ -197,7 +200,7 @@ const AppearanceTab: Component = () => {
         <For each={library()?.skins ?? []}>{row}</For>
       </div>
       <div class="skin-import">
-        <button class="form-btn-secondary" onClick={() => fileInput?.click()}>
+        <button type="button" class="form-btn-secondary" onClick={() => fileInput?.click()}>
           Import skin…
         </button>
         <input
@@ -213,6 +216,7 @@ const AppearanceTab: Component = () => {
           }}
         />
         <button
+          type="button"
           class="form-btn-secondary"
           onClick={() => void run(() => commands.openSkinEditorWindow())}
         >
