@@ -61,12 +61,18 @@ fn rgba(tokens: &BTreeMap<String, String>, name: &str) -> Result<[f64; 4], Strin
     hex(value).ok_or_else(|| format!("`{name}: {value}` is not a hex colour"))
 }
 
+/// Whether `name` is a colour token of `tokens` drawn below full opacity.
+#[must_use]
+pub fn translucent(tokens: &BTreeMap<String, String>, name: &str) -> bool {
+    rgba(tokens, name).is_ok_and(|[_, _, _, a]| a < 1.0)
+}
+
 /// An opaque token's colour; a translucent one is no ground.
 pub fn token(tokens: &BTreeMap<String, String>, name: &str) -> Result<Rgb, String> {
-    let [r, g, b, a] = rgba(tokens, name)?;
-    if a < 1.0 {
+    if translucent(tokens, name) {
         return Err(format!("`{name}` is translucent: a ground must be opaque"));
     }
+    let [r, g, b, _] = rgba(tokens, name)?;
     Ok([r, g, b])
 }
 
