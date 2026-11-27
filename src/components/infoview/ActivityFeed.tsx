@@ -16,7 +16,9 @@ const PAGE = 20;
  * View More is the Host's `activityMore{before}`: older rows page in below,
  * in place (`ActivityList`), not a website.
  */
-const ActivityFeed: Component<{ entries: ActivityListItem[]; more: InfoviewAction | null }> = (props) => {
+const ActivityFeed: Component<{ entries: ActivityListItem[]; more: InfoviewAction | null }> = (
+  props
+) => {
   const [older, setOlder] = createSignal<ActivityListItem[]>([]);
   // The cursor for the next older page: the section's first, then each page's.
   const [next, setNext] = createSignal<number | null | undefined>(undefined);
@@ -60,7 +62,10 @@ const ActivityFeed: Component<{ entries: ActivityListItem[]; more: InfoviewActio
       entry = createSignal<string | null>(null);
       gameNames.set(id, entry);
       const set = entry[1];
-      commands.getGameName(id).then(set).catch(() => set(null));
+      commands
+        .getGameName(id)
+        .then(set)
+        .catch(() => set(null));
     }
     return entry[0]() ?? `Game ${id}`;
   }
@@ -101,7 +106,10 @@ const ActivityFeed: Component<{ entries: ActivityListItem[]; more: InfoviewActio
           {error()}
         </div>
       </Show>
-      <Show when={shown().length > 0} fallback={<div class="activity-feed-empty">No activity yet.</div>}>
+      <Show
+        when={shown().length > 0}
+        fallback={<div class="activity-feed-empty">No activity yet.</div>}
+      >
         <ul class="activity-feed-list">
           <For each={shown()}>
             {(e) => (
@@ -121,7 +129,12 @@ const ActivityFeed: Component<{ entries: ActivityListItem[]; more: InfoviewActio
         </ul>
       </Show>
       <Show when={cursor() !== null}>
-        <button type="button" class="form-btn-secondary activity-feed-more" disabled={loading()} onClick={() => void viewMore()}>
+        <button
+          type="button"
+          class="form-btn-secondary activity-feed-more"
+          disabled={loading()}
+          onClick={() => void viewMore()}
+        >
           View More
         </button>
       </Show>

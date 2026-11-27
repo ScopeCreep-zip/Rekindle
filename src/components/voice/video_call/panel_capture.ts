@@ -62,7 +62,7 @@ async function resolveSavedCamera(): Promise<string | undefined> {
     }
     void commands.reportMediaCaptureError(
       "camera-saved-device",
-      `saved camera not in device list (id=${savedId ?? "-"}, label=${savedLabel ?? "-"}) — using default`,
+      `saved camera not in device list (id=${savedId ?? "-"}, label=${savedLabel ?? "-"}) — using default`
     );
   } catch {
     // Preference read / enumeration unavailable — default camera.
@@ -81,7 +81,7 @@ export function createCaptureController(ctx: PanelCtx): CaptureController {
     // (the probe is OnceLock-cached backend-side — this is cheap).
     if (!ctx.nativeCaptureAvailable() && ctx.props.mode === "community") {
       ctx.setNativeCaptureAvailable(
-        await commands.nativeVideoCaptureAvailable().catch(() => false),
+        await commands.nativeVideoCaptureAvailable().catch(() => false)
       );
     }
     if (ctx.nativeCaptureAvailable() && ctx.props.mode === "community") {
@@ -111,7 +111,7 @@ export function createCaptureController(ctx: PanelCtx): CaptureController {
             const m = e instanceof Error ? e.message : String(e);
             void commands.reportMediaCaptureError(
               "camera-native-preview",
-              `self-view createImageBitmap failed: ${m}`,
+              `self-view createImageBitmap failed: ${m}`
             );
           })
           .finally(() => {
@@ -127,7 +127,7 @@ export function createCaptureController(ctx: PanelCtx): CaptureController {
           ctx.props.communityId,
           ctx.props.channelId,
           "camera",
-          prefs.videoDeviceLabel ?? null,
+          prefs.videoDeviceLabel ?? null
         );
         ctx.setCameraOn(true);
       } catch (e) {
@@ -165,7 +165,7 @@ export function createCaptureController(ctx: PanelCtx): CaptureController {
         const firstMsg = first instanceof Error ? first.message : String(first);
         void commands.reportMediaCaptureError(
           "camera-saved-device",
-          `saved camera unavailable (${firstMsg}) — retrying default`,
+          `saved camera unavailable (${firstMsg}) — retrying default`
         );
         stream = await open(undefined);
         ctx.setError("Saved camera unavailable — using default camera");
@@ -189,7 +189,7 @@ export function createCaptureController(ctx: PanelCtx): CaptureController {
         void commands.reportMediaCaptureError(
           "camera-settings",
           `delivered ${s.width}x${s.height}@${s.frameRate ?? "?"}fps ` +
-            `(wanted ${width}x${height}@${frameRate})`,
+            `(wanted ${width}x${height}@${frameRate})`
         );
       }
       ctx.cameraStream = stream;

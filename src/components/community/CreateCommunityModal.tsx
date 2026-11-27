@@ -8,7 +8,12 @@ import { handleCreateWithCoCreators, trackCoCreation } from "../../actions/commu
 import { coCreatorState, stopWatchingCreation } from "../../stores/co-creator.store";
 import { friendsState } from "../../stores/friends.store";
 import CoCreatorStatusView from "./CoCreatorStatusView";
-import { CREATE_WAIT_REASON, canCreateCommunity, networkLabel, trackNetworkStatus } from "../../stores/network.store";
+import {
+  CREATE_WAIT_REASON,
+  canCreateCommunity,
+  networkLabel,
+  trackNetworkStatus,
+} from "../../stores/network.store";
 
 // The Host's cap on named co-creators (`MAX_ADDITIONAL_CREATORS`); the
 // picker stops there, and the Host still refuses anything past it.
@@ -47,7 +52,8 @@ const CreateCommunityModal: Component<CreateCommunityModalProps> = (props) => {
       setSubmitting(false);
       // A watched creation that finished while the dialog was closed.
       const watching = coCreatorState.watching;
-      if (watching && coCreatorState.finished[watching.anchor] !== undefined) stopWatchingCreation();
+      if (watching && coCreatorState.finished[watching.anchor] !== undefined)
+        stopWatchingCreation();
     }
   });
 
@@ -91,9 +97,14 @@ const CreateCommunityModal: Component<CreateCommunityModalProps> = (props) => {
               autofocus
             />
             <div class="group-dm-picker-hint" id="co-creator-hint">
-              Co-creators (optional, friends only, up to {MAX_CO_CREATORS}): {picked().length} chosen
+              Co-creators (optional, friends only, up to {MAX_CO_CREATORS}): {picked().length}{" "}
+              chosen
             </div>
-            <fieldset class="group-dm-picker" aria-label="Co-creators" aria-describedby="co-creator-hint">
+            <fieldset
+              class="group-dm-picker"
+              aria-label="Co-creators"
+              aria-describedby="co-creator-hint"
+            >
               <Show
                 when={friends().length > 0}
                 fallback={<div class="empty-placeholder-subtitle">No friends to name</div>}
@@ -119,7 +130,9 @@ const CreateCommunityModal: Component<CreateCommunityModalProps> = (props) => {
               </div>
             </Show>
             <Show when={error()}>
-              <div class="form-error" role="alert">{error()}</div>
+              <div class="form-error" role="alert">
+                {error()}
+              </div>
             </Show>
             <div class="form-field-row">
               <button

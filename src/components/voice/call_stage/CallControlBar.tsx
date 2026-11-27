@@ -58,10 +58,7 @@ const CallControlBar: Component<{
   };
   return (
     <div class="call-control-bar">
-      <div
-        class="call-control-quality"
-        title={qualityTooltip()}
-      >
+      <div class="call-control-quality" title={qualityTooltip()}>
         <span
           class="call-control-quality-dot"
           classList={{
@@ -70,8 +67,7 @@ const CallControlBar: Component<{
               voiceState.connectionQuality === "fair" ||
               voiceState.connectionQuality === "recovering",
             "call-control-quality-poor":
-              voiceState.connectionQuality === "poor" ||
-              voiceState.connectionQuality === "lost",
+              voiceState.connectionQuality === "poor" || voiceState.connectionQuality === "lost",
           }}
           aria-hidden="true"
         />

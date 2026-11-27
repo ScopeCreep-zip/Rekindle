@@ -19,8 +19,7 @@ const ThreadStarter: Component<ThreadStarterProps> = (props) => {
       onClick={props.onClick}
     >
       <SkinGlyph name="thread" />
-      {props.threadName} ({props.messageCount})
-      <Show when={props.archived}>{" · archived"}</Show>
+      {props.threadName} ({props.messageCount})<Show when={props.archived}>{" · archived"}</Show>
     </button>
   );
 };

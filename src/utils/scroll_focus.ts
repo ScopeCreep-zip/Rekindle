@@ -21,7 +21,12 @@ export function createScrollFocus<E extends HTMLElement>() {
     const resize = new ResizeObserver(schedule);
     const content = new MutationObserver(schedule);
     resize.observe(node);
-    content.observe(node, { childList: true, subtree: true, characterData: true, attributes: true });
+    content.observe(node, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+    });
     node.addEventListener("load", schedule, true);
     schedule();
 

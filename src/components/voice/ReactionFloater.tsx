@@ -11,10 +11,7 @@ const ReactionFloater: Component = () => {
     <div class="call-reaction-floater" aria-hidden="true">
       <For each={callsState.recentReactions}>
         {(r) => (
-          <span
-            class="call-reaction-float"
-            onAnimationEnd={() => removeCallReaction(r.id)}
-          >
+          <span class="call-reaction-float" onAnimationEnd={() => removeCallReaction(r.id)}>
             {r.emoji}
           </span>
         )}

@@ -25,7 +25,9 @@ const ART_NAME: Record<EngineMenu, string> = {
 export const InBar = createContext(false);
 
 /** The pack's `MenuBar` node: the menus' container. */
-export const PackMenuBar: Component<{ attrs: Record<string, unknown>; children: JSX.Element }> = (props) => (
+export const PackMenuBar: Component<{ attrs: Record<string, unknown>; children: JSX.Element }> = (
+  props
+) => (
   <Menubar class="skin-menubar" {...props.attrs}>
     <InBar.Provider value={true}>{props.children}</InBar.Provider>
   </Menubar>
@@ -43,7 +45,9 @@ const BarItems: Component<{ items: MenuItem[]; run: (item: MenuItem) => void }> 
               <Menubar.Separator class="menu-dropdown-separator" />
             </Show>
             <Menubar.Item
-              class={item.danger ? "menu-dropdown-item menu-dropdown-item-danger" : "menu-dropdown-item"}
+              class={
+                item.danger ? "menu-dropdown-item menu-dropdown-item-danger" : "menu-dropdown-item"
+              }
               onSelect={() => props.run(item)}
             >
               {item.label}
@@ -67,7 +71,11 @@ interface MenuProps {
 
 const Menu: Component<MenuProps> = (props) => (
   <Menubar.Menu>
-    <Menubar.Trigger class="skin-menu" {...props.attrs} aria-label={props.label ?? ART_NAME[props.menu]}>
+    <Menubar.Trigger
+      class="skin-menu"
+      {...props.attrs}
+      aria-label={props.label ?? ART_NAME[props.menu]}
+    >
       {props.children}
     </Menubar.Trigger>
     <BarItems items={props.items} run={props.run} />
@@ -105,7 +113,9 @@ export const PackContextMenu: Component<Omit<MenuProps, "menu">> = (props) => (
                 <ContextMenu.Separator class="menu-dropdown-separator" />
               </Show>
               <ContextMenu.Item
-                class={item.danger ? "context-menu-item menu-dropdown-item-danger" : "context-menu-item"}
+                class={
+                  item.danger ? "context-menu-item menu-dropdown-item-danger" : "context-menu-item"
+                }
                 onSelect={() => props.run(item)}
               >
                 {item.label}

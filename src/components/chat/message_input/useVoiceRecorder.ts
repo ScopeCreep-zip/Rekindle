@@ -57,11 +57,7 @@ export function useVoiceRecorder(args: VoiceRecorderArgs) {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       recorderStream = stream;
-      const mimeCandidates = [
-        "audio/ogg; codecs=opus",
-        "audio/webm; codecs=opus",
-        "audio/webm",
-      ];
+      const mimeCandidates = ["audio/ogg; codecs=opus", "audio/webm; codecs=opus", "audio/webm"];
       const mime = mimeCandidates.find((m) => MediaRecorder.isTypeSupported(m)) ?? "";
       recorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
       recorderChunks = [];

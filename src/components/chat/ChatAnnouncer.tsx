@@ -63,7 +63,12 @@ const ChatAnnouncer: Component<ChatAnnouncerProps> = (props) => {
   });
 
   return (
-    <div class="sr-only chat-announcer" aria-live="polite" aria-relevant="additions" aria-atomic="false">
+    <div
+      class="sr-only chat-announcer"
+      aria-live="polite"
+      aria-relevant="additions"
+      aria-atomic="false"
+    >
       <For each={lines()}>{(line) => <p>{line.text}</p>}</For>
     </div>
   );

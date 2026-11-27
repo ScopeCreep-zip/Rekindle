@@ -17,15 +17,20 @@ const BansTab: Component<BansTabProps> = (props) => {
   let readSeq = 0;
   createEffect(
     on(
-      () => [props.canBan, props.communityId, communityState.communities[props.communityId]?.bansRevision ?? 0] as const,
+      () =>
+        [
+          props.canBan,
+          props.communityId,
+          communityState.communities[props.communityId]?.bansRevision ?? 0,
+        ] as const,
       ([canBan, communityId]) => {
         if (!canBan) return;
         const seq = ++readSeq;
         void handleGetBanList(communityId).then((list) => {
           if (seq === readSeq) setBanList(list);
         });
-      },
-    ),
+      }
+    )
   );
 
   async function handleUnban(pseudonymKey: string): Promise<void> {
@@ -34,14 +39,17 @@ const BansTab: Component<BansTabProps> = (props) => {
 
   return (
     <div class="settings-section">
-      <Show when={banList().length > 0} fallback={
-        <div class="settings-hint">No banned members.</div>
-      }>
+      <Show
+        when={banList().length > 0}
+        fallback={<div class="settings-hint">No banned members.</div>}
+      >
         <For each={banList()}>
           {(banned) => (
             <div class="settings-list-item">
               <div class="settings-list-info">
-                <span class="settings-list-name">{banned.displayName || banned.pseudonymKey.slice(0, 16)}</span>
+                <span class="settings-list-name">
+                  {banned.displayName || banned.pseudonymKey.slice(0, 16)}
+                </span>
               </div>
               <button
                 type="button"

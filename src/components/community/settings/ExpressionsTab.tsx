@@ -38,7 +38,9 @@ const ExpressionsTab: Component<ExpressionsTabProps> = (props) => {
         <For each={props.community.expressions}>
           {(x) => (
             <div class="settings-list-item">
-              <span>:{x.name}: ({x.kind})</span>
+              <span>
+                :{x.name}: ({x.kind})
+              </span>
               <button
                 type="button"
                 class="form-btn-danger"

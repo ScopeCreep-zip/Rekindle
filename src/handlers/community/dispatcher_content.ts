@@ -4,7 +4,6 @@ import { addToast } from "../../stores/toast.store";
 import type { Message } from "../../stores/chat.store";
 import { transformEvent } from "../../actions/community/shared";
 
-
 // ── Daemon vocabulary ──────────────────────────────────────────────
 //
 // Each body below is the `{ type, data }` case it replaced, moved
@@ -49,7 +48,7 @@ export function reduceSubscriptionContent(event: CommunitySubscriptionEvent): vo
     const { community, eventId } = s.eventDeleted;
     if (communityState.communities[community]) {
       setCommunityState("communities", community, "events", (prev) =>
-        (prev ?? []).filter((e) => e.id !== eventId),
+        (prev ?? []).filter((e) => e.id !== eventId)
       );
     }
     return;
@@ -66,7 +65,14 @@ export function reduceSubscriptionContent(event: CommunitySubscriptionEvent): vo
     const rsvpIdx = events[eventIdx].rsvps.findIndex((r) => r.pseudonymKey === pseudonym);
     if (rsvpIdx >= 0) {
       setCommunityState(
-        "communities", community, "events", eventIdx, "rsvps", rsvpIdx, "status", status,
+        "communities",
+        community,
+        "events",
+        eventIdx,
+        "rsvps",
+        rsvpIdx,
+        "status",
+        status
       );
     } else {
       setCommunityState("communities", community, "events", eventIdx, "rsvps", (prev) => [
@@ -83,7 +89,7 @@ export function reduceSubscriptionContent(event: CommunitySubscriptionEvent): vo
       // The creator's own window may already hold it from its reload
       // after create; the merged governance announces each thread once.
       setCommunityState("channelThreads", thread.channelId, (prev) =>
-        prev?.some((t) => t.id === thread.id) ? prev : [...(prev ?? []), thread],
+        prev?.some((t) => t.id === thread.id) ? prev : [...(prev ?? []), thread]
       );
     }
     return;
@@ -105,11 +111,13 @@ export function reduceSubscriptionContent(event: CommunitySubscriptionEvent): vo
       // or show it when none waits (sent from another window, or the
       // bubble was replaced).
       const waiting = existing.findIndex(
-        (m) => m.isOwn && m.status === "sending" && (body === null || m.body === body),
+        (m) => m.isOwn && m.status === "sending" && (body === null || m.body === body)
       );
       if (waiting >= 0) {
         setCommunityState("threadMessages", threadId, waiting, (m) => ({
-          ...m, serverMessageId: messageId, status: "sent" as const,
+          ...m,
+          serverMessageId: messageId,
+          status: "sent" as const,
         }));
         return;
       }
@@ -157,7 +165,7 @@ export function reduceSubscriptionContent(event: CommunitySubscriptionEvent): vo
   if ("gameServerRemoved" in s) {
     const { community, serverId } = s.gameServerRemoved;
     setCommunityState("gameServers", community, (prev) =>
-      (prev ?? []).filter((x) => x.id !== serverId),
+      (prev ?? []).filter((x) => x.id !== serverId)
     );
     return;
   }
@@ -172,7 +180,9 @@ export function reduceSubscriptionContent(event: CommunitySubscriptionEvent): vo
  * open thread's header and the thread list show it (plan E7.13 M76). */
 function countThreadReply(threadId: string, timestamp: number): void {
   for (const channelId of Object.keys(communityState.channelThreads)) {
-    const idx = (communityState.channelThreads[channelId] ?? []).findIndex((t) => t.id === threadId);
+    const idx = (communityState.channelThreads[channelId] ?? []).findIndex(
+      (t) => t.id === threadId
+    );
     if (idx < 0) continue;
     setCommunityState("channelThreads", channelId, idx, (t) => ({
       ...t,

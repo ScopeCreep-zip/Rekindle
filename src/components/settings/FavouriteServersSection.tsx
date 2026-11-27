@@ -16,8 +16,14 @@ const FavouriteServersSection: Component = () => {
   const [error, setError] = createSignal<string | null>(null);
 
   onMount(() => {
-    commands.getFavouriteServers().then(setFavourites).catch((e) => setError(String(e)));
-    commands.getGameTotals().then(setPlayed).catch((e) => setError(String(e)));
+    commands
+      .getFavouriteServers()
+      .then(setFavourites)
+      .catch((e) => setError(String(e)));
+    commands
+      .getGameTotals()
+      .then(setPlayed)
+      .catch((e) => setError(String(e)));
   });
 
   async function change(run: () => Promise<FavouriteServerView[]>): Promise<boolean> {
@@ -44,7 +50,9 @@ const FavouriteServersSection: Component = () => {
     <>
       <div class="settings-section-title">Favourite Servers</div>
       <Show when={error()}>
-        <div class="form-error" role="alert">{error()}</div>
+        <div class="form-error" role="alert">
+          {error()}
+        </div>
       </Show>
       <Show
         when={favourites().length > 0}
@@ -60,7 +68,9 @@ const FavouriteServersSection: Component = () => {
                 type="button"
                 class="form-btn-secondary"
                 aria-label={`Remove ${fav.label || fav.address}`}
-                onClick={() => void change(() => commands.removeFavouriteServer(fav.gameId, fav.address))}
+                onClick={() =>
+                  void change(() => commands.removeFavouriteServer(fav.gameId, fav.address))
+                }
               >
                 Remove
               </button>
@@ -77,9 +87,7 @@ const FavouriteServersSection: Component = () => {
             onChange={(e) => setGame(e.currentTarget.value ? Number(e.currentTarget.value) : null)}
           >
             <option value="">Choose a game…</option>
-            <For each={played()}>
-              {(g) => <option value={g.gameId}>{g.gameName}</option>}
-            </For>
+            <For each={played()}>{(g) => <option value={g.gameId}>{g.gameName}</option>}</For>
           </select>
           <input
             class="form-input"
@@ -107,8 +115,8 @@ const FavouriteServersSection: Component = () => {
         </div>
       </Show>
       <div class="settings-hint">
-        A favourite can be sent to a friend as a game invite while the game
-        is shown to friends (Privacy).
+        A favourite can be sent to a friend as a game invite while the game is shown to friends
+        (Privacy).
       </div>
     </>
   );

@@ -88,9 +88,7 @@ const InviteLinkTab: Component<InviteLinkTabProps> = (props) => {
   }
 
   const activeInvites = () =>
-    friendsState.outgoingInvites.filter(
-      (inv) => inv.inviteId !== currentInviteId(),
-    );
+    friendsState.outgoingInvites.filter((inv) => inv.inviteId !== currentInviteId());
 
   return (
     <div class="add-friend-section">
@@ -106,17 +104,16 @@ const InviteLinkTab: Component<InviteLinkTabProps> = (props) => {
         <OwnRecordsWait active={generating()} />
         <Show when={generatedInvite()}>
           <div class="add-friend-invite-result">
-            <textarea
-              class="add-friend-invite-text"
-              readOnly
-              value={generatedInvite()}
-              rows={3}
-            />
+            <textarea class="add-friend-invite-text" readOnly value={generatedInvite()} rows={3} />
             <div class="add-friend-invite-actions">
               <button type="button" class="add-friend-copy-btn" onClick={handleCopy}>
                 {copied() ? "Copied!" : "Copy"}
               </button>
-              <button type="button" class="add-friend-cancel-btn" onClick={handleCancelCurrentInvite}>
+              <button
+                type="button"
+                class="add-friend-cancel-btn"
+                onClick={handleCancelCurrentInvite}
+              >
                 Cancel Invite
               </button>
             </div>
@@ -145,12 +142,8 @@ const InviteLinkTab: Component<InviteLinkTabProps> = (props) => {
                     {maskInviteUrl(invite.url)}
                   </span>
                 </Show>
-                <span class="invite-time">
-                  {formatRelativeTime(invite.createdAt)}
-                </span>
-                <span class="invite-time">
-                  expires in {formatTimeUntil(invite.expiresAt)}
-                </span>
+                <span class="invite-time">{formatRelativeTime(invite.createdAt)}</span>
+                <span class="invite-time">expires in {formatTimeUntil(invite.expiresAt)}</span>
                 <Show when={invite.url}>
                   <button
                     type="button"
@@ -187,7 +180,11 @@ const InviteLinkTab: Component<InviteLinkTabProps> = (props) => {
         <Show when={error()}>
           <div class="form-error">{error()}</div>
         </Show>
-        <button class="form-btn-primary" type="submit" disabled={adding() || !inviteString().trim()}>
+        <button
+          class="form-btn-primary"
+          type="submit"
+          disabled={adding() || !inviteString().trim()}
+        >
           Add from Invite
         </button>
       </form>

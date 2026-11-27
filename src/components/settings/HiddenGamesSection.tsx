@@ -13,12 +13,18 @@ const HiddenGamesSection: Component = () => {
   const [error, setError] = createSignal<string | null>(null);
 
   onMount(() => {
-    commands.getHiddenGames().then(setHidden).catch((e) => setError(String(e)));
-    commands.getGameTotals().then(setPlayed).catch((e) => setError(String(e)));
+    commands
+      .getHiddenGames()
+      .then(setHidden)
+      .catch((e) => setError(String(e)));
+    commands
+      .getGameTotals()
+      .then(setPlayed)
+      .catch((e) => setError(String(e)));
   });
 
   const hideable = createMemo(() =>
-    played().filter((game) => !hidden().some((h) => h.gameId === game.gameId)),
+    played().filter((game) => !hidden().some((h) => h.gameId === game.gameId))
   );
 
   async function change(run: () => Promise<HiddenGameView[]>): Promise<void> {
@@ -80,8 +86,8 @@ const HiddenGamesSection: Component = () => {
         </div>
       </Show>
       <div class="settings-hint">
-        A hidden game is never shown to friends, nor in the game time they
-        see. It still counts toward your own game time.
+        A hidden game is never shown to friends, nor in the game time they see. It still counts
+        toward your own game time.
       </div>
     </>
   );

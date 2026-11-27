@@ -41,7 +41,15 @@ const RolesTab: Component<RolesTabProps> = (props) => {
   const [editRoleSelfAssignable, setEditRoleSelfAssignable] = createSignal(false);
   const [savingRole, setSavingRole] = createSignal(false);
 
-  function startEditRole(role: { id: string; name: string; color: number; permissions: string; hoist: boolean; mentionable: boolean; selfAssignable?: boolean }): void {
+  function startEditRole(role: {
+    id: string;
+    name: string;
+    color: number;
+    permissions: string;
+    hoist: boolean;
+    mentionable: boolean;
+    selfAssignable?: boolean;
+  }): void {
     setEditingRoleId(role.id);
     setEditRoleName(role.name);
     setEditRoleColor(colorIntToHex(role.color));
@@ -63,7 +71,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
         newRolePerms().toString(),
         newRoleHoist(),
         newRoleMentionable(),
-        newRoleSelfAssignable(),
+        newRoleSelfAssignable()
       );
       setNewRoleName("");
       setNewRoleColor("#000000");
@@ -91,7 +99,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
         null,
         editRoleHoist(),
         editRoleMentionable(),
-        editRoleSelfAssignable(),
+        editRoleSelfAssignable()
       );
       addToast("Role updated", "success");
       setEditingRoleId(null);
@@ -115,34 +123,44 @@ const RolesTab: Component<RolesTabProps> = (props) => {
       </div>
       <For each={[...props.community.roles].sort((a, b) => b.position - a.position)}>
         {(role) => (
-          <Show when={editingRoleId() === role.id} fallback={
-            <div
-              class="settings-role-row"
-              onClick={() => role.id !== EVERYONE_ROLE_ID && startEditRole(role)}
-            >
-              <span
-                class="settings-role-color"
-                style={{ "--settings-role-color": role.color ? colorIntToHex(role.color) : tokenVar("text.dim") }}
-              />
-              <RoleTag name={role.name} color={role.color} tagColours={role.tagColours} />
-              <span class="settings-role-position">pos: {role.position}</span>
-              <Show when={role.hoist}>
-                <span class="settings-role-position">hoisted</span>
-              </Show>
-              <div class="settings-role-actions">
-                <Show when={role.id !== EVERYONE_ROLE_ID}>
-                  <button
-                    type="button"
-                    class="form-btn-danger"
-                    onClick={(e) => { e.stopPropagation(); deleteRole(role.id); }}
-                    title="Delete Role"
-                  >
-                    <SkinGlyph name="delete" />
-                  </button>
+          <Show
+            when={editingRoleId() === role.id}
+            fallback={
+              <div
+                class="settings-role-row"
+                onClick={() => role.id !== EVERYONE_ROLE_ID && startEditRole(role)}
+              >
+                <span
+                  class="settings-role-color"
+                  style={{
+                    "--settings-role-color": role.color
+                      ? colorIntToHex(role.color)
+                      : tokenVar("text.dim"),
+                  }}
+                />
+                <RoleTag name={role.name} color={role.color} tagColours={role.tagColours} />
+                <span class="settings-role-position">pos: {role.position}</span>
+                <Show when={role.hoist}>
+                  <span class="settings-role-position">hoisted</span>
                 </Show>
+                <div class="settings-role-actions">
+                  <Show when={role.id !== EVERYONE_ROLE_ID}>
+                    <button
+                      type="button"
+                      class="form-btn-danger"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteRole(role.id);
+                      }}
+                      title="Delete Role"
+                    >
+                      <SkinGlyph name="delete" />
+                    </button>
+                  </Show>
+                </div>
               </div>
-            </div>
-          }>
+            }
+          >
             <div class="settings-section settings-section-accented">
               <FormField label="Name" controlId={editRoleNameId}>
                 <input
@@ -203,10 +221,20 @@ const RolesTab: Component<RolesTabProps> = (props) => {
                 />
               </FormField>
               <div class="form-field-row">
-                <button type="button" class="form-btn-primary" onClick={handleSaveEditRole} disabled={savingRole()}>
+                <button
+                  type="button"
+                  class="form-btn-primary"
+                  onClick={handleSaveEditRole}
+                  disabled={savingRole()}
+                >
                   <SkinGlyph name="save" /> {savingRole() ? "Saving..." : "Save"}
                 </button>
-                <button type="button" class="form-btn-secondary" onClick={() => setEditingRoleId(null)} disabled={savingRole()}>
+                <button
+                  type="button"
+                  class="form-btn-secondary"
+                  onClick={() => setEditingRoleId(null)}
+                  disabled={savingRole()}
+                >
                   <SkinGlyph name="close" /> Cancel
                 </button>
               </div>
@@ -214,15 +242,14 @@ const RolesTab: Component<RolesTabProps> = (props) => {
           </Show>
         )}
       </For>
-      <Show when={showNewRole()} fallback={
-        <button
-          type="button"
-          class="form-btn-secondary"
-          onClick={() => setShowNewRole(true)}
-        >
-          <SkinGlyph name="plus-box" /> Create Role
-        </button>
-      }>
+      <Show
+        when={showNewRole()}
+        fallback={
+          <button type="button" class="form-btn-secondary" onClick={() => setShowNewRole(true)}>
+            <SkinGlyph name="plus-box" /> Create Role
+          </button>
+        }
+      >
         <div class="settings-section settings-section-success">
           <FormField label="Name" controlId={newRoleNameId}>
             <input
@@ -292,11 +319,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
             >
               <SkinGlyph name="save" /> {creatingRole() ? "Creating..." : "Create"}
             </button>
-            <button
-              type="button"
-              class="form-btn-secondary"
-              onClick={() => setShowNewRole(false)}
-            >
+            <button type="button" class="form-btn-secondary" onClick={() => setShowNewRole(false)}>
               <SkinGlyph name="close" /> Cancel
             </button>
           </div>

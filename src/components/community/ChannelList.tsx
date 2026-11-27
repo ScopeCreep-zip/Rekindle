@@ -38,7 +38,7 @@ const ChannelList: Component<ChannelListProps> = (props) => {
   }
 
   const sortedCategories = createMemo(() =>
-    [...props.categories].sort((a, b) => a.sortOrder - b.sortOrder),
+    [...props.categories].sort((a, b) => a.sortOrder - b.sortOrder)
   );
 
   // Roster grouping: count members focused on each channel. Drives the
@@ -57,9 +57,9 @@ const ChannelList: Component<ChannelListProps> = (props) => {
   // Architecture §10.8 — text-in-voice channels are only visible while the
   // viewer is connected to the parent voice channel.
   const visibleChannels = createMemo(() =>
-    props.channels.filter((ch) =>
-      !ch.parentVoiceChannelId || ch.parentVoiceChannelId === voiceState.channelId,
-    ),
+    props.channels.filter(
+      (ch) => !ch.parentVoiceChannelId || ch.parentVoiceChannelId === voiceState.channelId
+    )
   );
 
   const categorizedChannels = createMemo(() => {
@@ -155,16 +155,20 @@ const ChannelList: Component<ChannelListProps> = (props) => {
           <SkinGlyph name={channelIcon(channel)} class={channelIconClass(channel)} />
           <span class="channel-name">{channel.name}</span>
           <Show when={channel.locked}>
-            <span class="channel-locked" role="img" title={channel.lockedReason} aria-label={channel.lockedReason ? `Locked: ${channel.lockedReason}` : "Locked"}>
+            <span
+              class="channel-locked"
+              role="img"
+              title={channel.lockedReason}
+              aria-label={channel.lockedReason ? `Locked: ${channel.lockedReason}` : "Locked"}
+            >
               <SkinGlyph name="lock" class="channel-locked-icon" />
             </span>
           </Show>
           {(presenceByChannel()[channel.id] ?? 0) > 0 && (
-            <span
-              class="channel-presence-badge"
-              title={`${presenceByChannel()[channel.id]} here`}
-            >
-              <span class="channel-presence-dot" aria-hidden="true">●</span>
+            <span class="channel-presence-badge" title={`${presenceByChannel()[channel.id]} here`}>
+              <span class="channel-presence-dot" aria-hidden="true">
+                ●
+              </span>
               {presenceByChannel()[channel.id]}
             </span>
           )}
@@ -195,13 +199,15 @@ const ChannelList: Component<ChannelListProps> = (props) => {
     <div class="channel-list" ref={rovingList(".channel-item")}>
       <For each={categorizedChannels()}>
         {(group) => {
-          const isCollapsed = () => group.category ? collapsedCategories().has(group.category.id) : false;
+          const isCollapsed = () =>
+            group.category ? collapsedCategories().has(group.category.id) : false;
 
           return (
             <>
-              <Show when={group.category} fallback={
-                <div class="channel-section-header">Channels</div>
-              }>
+              <Show
+                when={group.category}
+                fallback={<div class="channel-section-header">Channels</div>}
+              >
                 {(cat) => (
                   <ContextMenu>
                     {/* Never-hide: the category's menu is always there; its items are
@@ -239,9 +245,7 @@ const ChannelList: Component<ChannelListProps> = (props) => {
                 )}
               </Show>
               <Show when={!isCollapsed()}>
-                <For each={group.channels}>
-                  {(channel) => renderChannel(channel)}
-                </For>
+                <For each={group.channels}>{(channel) => renderChannel(channel)}</For>
               </Show>
             </>
           );

@@ -18,7 +18,9 @@ const SkinEditorWindow: Component = () => {
   setWindowKind("skin-editor");
   return (
     <div class="app-frame">
-      <a href="#main-content" class="skip-link">Skip to the skin editor</a>
+      <a href="#main-content" class="skip-link">
+        Skip to the skin editor
+      </a>
       <Titlebar title="Skin Editor" />
       <div class="settings-content" id="main-content" tabindex="-1">
         <SkinEditor />

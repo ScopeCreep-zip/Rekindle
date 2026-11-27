@@ -28,8 +28,8 @@ const SkinPopupWindow: Component = () => {
           if (op.kind !== "close") return false;
           handleClose();
           return true;
-        }),
-      ),
+        })
+      )
     );
     // The groups the pack popups' trees serve (shell_runners): the menus
     // a main-menu popup carries, a friend's profile and chat, downloads,

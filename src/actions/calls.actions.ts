@@ -22,7 +22,7 @@ import { errorMessage } from "../utils/error";
 export async function handleStartDmCall(
   peerKey: string,
   _displayName: string,
-  video: boolean,
+  video: boolean
 ): Promise<void> {
   try {
     await commands.startDmCall(peerKey, video);
@@ -65,7 +65,7 @@ export async function handleEndDmCall(callId: string, reason?: string): Promise<
 export async function handleStartGroupCall(
   participantPubkeys: string[],
   video: boolean,
-  groupId: string | null = null,
+  groupId: string | null = null
 ): Promise<string | null> {
   if (participantPubkeys.length === 0) {
     addToast("Group call needs at least one invitee", "error");
@@ -92,10 +92,7 @@ export async function handleAcceptGroupCall(callId: string): Promise<void> {
   }
 }
 
-export async function handleDeclineGroupCall(
-  callId: string,
-  reason?: string,
-): Promise<void> {
+export async function handleDeclineGroupCall(callId: string, reason?: string): Promise<void> {
   stopActiveRing();
   try {
     await commands.declineGroupCall(callId, reason);
@@ -158,10 +155,7 @@ export async function handleAcceptIncomingCall(callId: string): Promise<void> {
   }
 }
 
-export async function handleDeclineIncomingCall(
-  callId: string,
-  reason?: string,
-): Promise<void> {
+export async function handleDeclineIncomingCall(callId: string, reason?: string): Promise<void> {
   stopActiveRing();
   try {
     await commands.declineDmCall(callId, reason);

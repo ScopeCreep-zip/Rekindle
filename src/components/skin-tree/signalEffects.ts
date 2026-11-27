@@ -9,7 +9,14 @@
 // `GroupPage` (the page a control group shows) and `ShowView`. Nothing
 // here decides a capability, and nothing is hidden that the pack does not
 // hide.
-import type { EngineView, NodeTrigger, ShellNode, SkinAction, SkinEvent, ViewKey } from "../../ipc/commands/dto_skin_tree";
+import type {
+  EngineView,
+  NodeTrigger,
+  ShellNode,
+  SkinAction,
+  SkinEvent,
+  ViewKey,
+} from "../../ipc/commands/dto_skin_tree";
 import type { DisableCause, DisableSignal, SkinSignalSet } from "../../ipc/commands/dto_skin_run";
 
 type NodeStateName = "normal" | "disabled" | "down";
@@ -111,7 +118,13 @@ export interface Fired {
 }
 
 /** The signals a disabled node's reason may name (plan CR1's `DisableCause`, beside the capabilities). */
-const SIGNAL_CAUSES: readonly DisableSignal[] = ["disconnected", "activeUserTyping", "voiceRinging", "userStartedTalking", "newNotification"];
+const SIGNAL_CAUSES: readonly DisableSignal[] = [
+  "disconnected",
+  "activeUserTyping",
+  "voiceRinging",
+  "userStartedTalking",
+  "newNotification",
+];
 
 /** The cause a state event names: a capability the window cannot use, an
  *  active signal, or the window losing focus. */
@@ -131,7 +144,7 @@ function causeOf(on: SkinEvent): StateCause | undefined {
 export function fired(
   root: ShellNode[],
   before: { set: SkinSignalSet | null; view: ViewKey } | null,
-  now: { set: SkinSignalSet | null; view: ViewKey },
+  now: { set: SkinSignalSet | null; view: ViewKey }
 ): Fired[] {
   const out: Fired[] = [];
   const walk = (list: ShellNode[]): void => {
@@ -151,7 +164,12 @@ export function fired(
 
 /** A trigger on a state event, not a pointer press. */
 function stateEvent(t: NodeTrigger): boolean {
-  return t.on.kind === "activate" || t.on.kind === "deactivate" || t.on.kind === "app" || t.on.kind === "show";
+  return (
+    t.on.kind === "activate" ||
+    t.on.kind === "deactivate" ||
+    t.on.kind === "app" ||
+    t.on.kind === "show"
+  );
 }
 
 /**
@@ -160,10 +178,20 @@ function stateEvent(t: NodeTrigger): boolean {
  * a tree operation, or a view switch this tree keeps only for its own art
  * (a popup with no views, whose launcher the Host addresses, SK2-N4).
  */
-export function applyTreeOp(state: TreeState, node: string, run: SkinAction, root: ShellNode[], cause?: StateCause): boolean {
+export function applyTreeOp(
+  state: TreeState,
+  node: string,
+  run: SkinAction,
+  root: ShellNode[],
+  cause?: StateCause
+): boolean {
   switch (run.kind) {
     case "setState":
-      state.nodes[node] = { ...state.nodes[node], state: run.arg, cause: run.arg === "disabled" ? cause : undefined };
+      state.nodes[node] = {
+        ...state.nodes[node],
+        state: run.arg,
+        cause: run.arg === "disabled" ? cause : undefined,
+      };
       return true;
     case "showTile":
     case "hideTile": {
@@ -232,5 +260,8 @@ export function signalFlags(set: SkinSignalSet | null): string {
     ["disconnected", set.disconnected],
     ["newNotification", set.newNotification],
   ];
-  return flags.filter(([, on]) => on).map(([name]) => name).join(" ");
+  return flags
+    .filter(([, on]) => on)
+    .map(([name]) => name)
+    .join(" ");
 }

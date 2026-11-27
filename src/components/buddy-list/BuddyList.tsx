@@ -1,5 +1,13 @@
 import { addToast } from "../../stores/toast.store";
-import { type Component, createEffect, createMemo, createSignal, For, type JSX, Show } from "solid-js";
+import {
+  type Component,
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  type JSX,
+  Show,
+} from "solid-js";
 import { ContextMenu } from "@kobalte/core/context-menu";
 import { friendsState } from "../../stores/friends.store";
 import { buddyListUI } from "../../stores/buddylist-ui.store";
@@ -13,11 +21,7 @@ import {
   handleBlockUser,
   handleResetSignalSession,
 } from "../../actions/buddy.actions";
-import {
-  handleRevokeRelay,
-  handleVolunteerRelay,
-  relayState,
-} from "../../actions/relay.actions";
+import { handleRevokeRelay, handleVolunteerRelay, relayState } from "../../actions/relay.actions";
 import { handleStartDmCall } from "../../actions/calls.actions";
 import { sendSkinSelection } from "../../actions/skin.actions";
 import { handleLaunchGame } from "../../actions/game.actions";
@@ -36,7 +40,6 @@ function matchesSearch(friend: Friend, query: string): boolean {
   if (friend.displayName.toLowerCase().includes(q)) return true;
   return friend.nickname?.toLowerCase().includes(q) ?? false;
 }
-
 
 /** Join the friend's game server through the Host's review; a refusal is shown. */
 async function joinFriendGame(friend: Friend): Promise<void> {
@@ -64,7 +67,7 @@ const BuddyList: Component = () => {
         ? { kind: "friend", arg: { publicKey: key } }
         : group !== null
           ? { kind: "friendGroup", arg: { groupId: group.groupId } }
-          : null,
+          : null
     );
   });
   const [newGroupTarget, setNewGroupTarget] = createSignal<string | null>(null);
@@ -85,10 +88,7 @@ const BuddyList: Component = () => {
     }
     const statusOrder = { online: 0, away: 1, busy: 2, offline: 3, invisible: 3 };
     for (const group of Object.values(groups)) {
-      group.sort(
-        (a, b) =>
-          (statusOrder[a.status] ?? 3) - (statusOrder[b.status] ?? 3),
-      );
+      group.sort((a, b) => (statusOrder[a.status] ?? 3) - (statusOrder[b.status] ?? 3));
     }
     if (pendingOut.length > 0) {
       groups[AWAITING_RESPONSE] = pendingOut;
@@ -116,7 +116,7 @@ const BuddyList: Component = () => {
   /** Our groups a friend can move to (not the pending-request list); the
    *  Host's default group moves them out of any group (id null). */
   const existingGroups = createMemo(() =>
-    Object.keys(groupedFriends()).filter((name) => name !== AWAITING_RESPONSE),
+    Object.keys(groupedFriends()).filter((name) => name !== AWAITING_RESPONSE)
   );
 
   function handleDblClick(publicKey: string): void {
@@ -182,10 +182,7 @@ const BuddyList: Component = () => {
     return (
       <ContextMenu.Portal>
         <ContextMenu.Content class="context-menu">
-          <ContextMenu.Item
-            class="context-menu-item"
-            onSelect={() => commands.openChatWindow(key)}
-          >
+          <ContextMenu.Item class="context-menu-item" onSelect={() => commands.openChatWindow(key)}>
             Chat
           </ContextMenu.Item>
           {/* Wave 12 W12.8 — quick-call entries so the user doesn't have
@@ -226,9 +223,7 @@ const BuddyList: Component = () => {
           </ContextMenu.Item>
 
           <ContextMenu.Sub>
-            <ContextMenu.SubTrigger class="context-menu-item">
-              Move to Group
-            </ContextMenu.SubTrigger>
+            <ContextMenu.SubTrigger class="context-menu-item">Move to Group</ContextMenu.SubTrigger>
             <ContextMenu.Portal>
               <ContextMenu.SubContent class="context-menu">
                 <For each={existingGroups()}>
@@ -242,10 +237,7 @@ const BuddyList: Component = () => {
                   )}
                 </For>
                 <ContextMenu.Separator class="context-menu-separator" />
-                <ContextMenu.Item
-                  class="context-menu-item"
-                  onSelect={() => setNewGroupTarget(key)}
-                >
+                <ContextMenu.Item class="context-menu-item" onSelect={() => setNewGroupTarget(key)}>
                   + New Group…
                 </ContextMenu.Item>
               </ContextMenu.SubContent>
@@ -255,9 +247,7 @@ const BuddyList: Component = () => {
           <ContextMenu.Item
             class="context-menu-item"
             onSelect={() =>
-              relayState.volunteeredFor[key]
-                ? handleRevokeRelay(key)
-                : handleVolunteerRelay(key)
+              relayState.volunteeredFor[key] ? handleRevokeRelay(key) : handleVolunteerRelay(key)
             }
           >
             {relayState.volunteeredFor[key]
@@ -273,10 +263,10 @@ const BuddyList: Component = () => {
           </ContextMenu.Item>
 
           {/* B6 — explicit Signal session reset. Confirms with the user
-            * because the safety stance forbids auto-rehandshake; the
-            * user is expected to verify the peer's safety number
-            * out-of-band before resuming sensitive conversations on
-            * the new session. */}
+           * because the safety stance forbids auto-rehandshake; the
+           * user is expected to verify the peer's safety number
+           * out-of-band before resuming sensitive conversations on
+           * the new session. */}
           <ContextMenu.Item
             class="context-menu-item"
             onSelect={() =>
@@ -309,17 +299,23 @@ const BuddyList: Component = () => {
 
   return (
     <ScrollArea class="buddy-list" ref={rovingList(".buddy-item")}>
-      <Show when={hasFriends()} fallback={
-        <div class="empty-placeholder">
-          <div class="empty-placeholder-title">No Friends Yet</div>
-          <div class="empty-placeholder-subtitle">Add a friend to get started</div>
-        </div>
-      }>
-        <Show when={hasFilteredResults()} fallback={
+      <Show
+        when={hasFriends()}
+        fallback={
           <div class="empty-placeholder">
-            <div class="empty-placeholder-subtitle">No matches</div>
+            <div class="empty-placeholder-title">No Friends Yet</div>
+            <div class="empty-placeholder-subtitle">Add a friend to get started</div>
           </div>
-        }>
+        }
+      >
+        <Show
+          when={hasFilteredResults()}
+          fallback={
+            <div class="empty-placeholder">
+              <div class="empty-placeholder-subtitle">No matches</div>
+            </div>
+          }
+        >
           <For each={groupNames()}>
             {(name) => (
               <BuddyGroup
@@ -327,8 +323,14 @@ const BuddyList: Component = () => {
                 groupId={groupIdOf(name)}
                 friends={groupedFriends()[name] ?? []}
                 selectedKey={selectedKey()}
-                groupSelected={name !== AWAITING_RESPONSE && selectedGroup()?.groupId === groupIdOf(name) && selectedGroup() !== null}
-                onSelectGroup={name === AWAITING_RESPONSE ? undefined : () => handleSelectGroup(groupIdOf(name))}
+                groupSelected={
+                  name !== AWAITING_RESPONSE &&
+                  selectedGroup()?.groupId === groupIdOf(name) &&
+                  selectedGroup() !== null
+                }
+                onSelectGroup={
+                  name === AWAITING_RESPONSE ? undefined : () => handleSelectGroup(groupIdOf(name))
+                }
                 onDoubleClick={handleDblClick}
                 onSelect={handleSelectFriend}
                 renderItem={(friend, item) => (

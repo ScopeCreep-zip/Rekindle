@@ -26,7 +26,9 @@ const SoundboardPanel: Component = () => {
   });
 
   // The Host's verdict for the voice channel we are in, or null when we may.
-  const useDenied = createMemo(() => channelDeniedFor(community(), voiceState.channelId, "useSoundboard"));
+  const useDenied = createMemo(() =>
+    channelDeniedFor(community(), voiceState.channelId, "useSoundboard")
+  );
 
   function play(expressionId: string): void {
     const c = community();

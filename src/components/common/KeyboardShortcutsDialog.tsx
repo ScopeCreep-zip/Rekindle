@@ -30,7 +30,7 @@ const KeyboardShortcutsDialog: Component = () => {
       size="md"
     >
       {/* The list scrolls on a short window: it is a named, focusable
-        * region so the keyboard can scroll it (SC 2.1.1). */}
+       * region so the keyboard can scroll it (SC 2.1.1). */}
       <section
         class="shortcuts-help"
         aria-label="All shortcuts"

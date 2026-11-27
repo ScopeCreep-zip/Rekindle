@@ -22,7 +22,8 @@ export function subscribeBuddyListCommunityEvents(): Promise<UnlistenFn> {
     // drops it. The other membership events are the community windows'.
     if ("membership" in event) {
       const m = event.membership;
-      if ("kicked" in m || "banned" in m || "joinWithdrawn" in m) reduceSubscriptionMembership(event, true);
+      if ("kicked" in m || "banned" in m || "joinWithdrawn" in m)
+        reduceSubscriptionMembership(event, true);
       else if ("forgotten" in m) reduceSubscriptionMembership(event);
       return;
     }

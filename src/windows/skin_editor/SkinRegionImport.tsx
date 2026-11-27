@@ -25,7 +25,9 @@ const SkinRegionImport: Component<{
   const colours = () => props.report.tokens.filter((t) => t.value.type === "color");
 
   const fitValue = (): RegionFit =>
-    fit() === "nineSlice" ? { type: "nineSlice", data: insets() } : { type: fit() as "stretch" | "tile" };
+    fit() === "nineSlice"
+      ? { type: "nineSlice", data: insets() }
+      : { type: fit() as "stretch" | "tile" };
 
   async function importRegion(): Promise<void> {
     try {
@@ -33,7 +35,7 @@ const SkinRegionImport: Component<{
         props.draft,
         region(),
         fitValue(),
-        slot()?.carriesText ? backing() || null : null,
+        slot()?.carriesText ? backing() || null : null
       );
       if (next) props.onImported(next);
     } catch (e) {

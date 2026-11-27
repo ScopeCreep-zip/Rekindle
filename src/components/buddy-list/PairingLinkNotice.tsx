@@ -8,8 +8,7 @@ const PairingLinkNotice: Component = () => (
   <Show when={pairingLinkRefused()}>
     <div class="sec-review" role="status">
       <p class="sec-review-fact">
-        A link tried to pair a new device with this account. Pair from Settings with a pairing
-        code.
+        A link tried to pair a new device with this account. Pair from Settings with a pairing code.
       </p>
       <button type="button" class="sec-btn-secondary" onClick={() => setPairingLinkRefused(false)}>
         OK

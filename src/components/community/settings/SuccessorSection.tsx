@@ -27,8 +27,10 @@ const SuccessorSection: Component<SuccessorSectionProps> = (props) => {
   createEffect(() => trackSuccessors(props.communityId));
   const offers = () => successorsOf(props.communityId);
   // Never-hide: Re-create is drawn for everyone; the Host says why not.
-  const denied = (): string | null => deniedFor(communityState.communities[props.communityId], "offerSuccessor");
-  const reasonText = (reason: string): string => (reason === "transfer" ? "Handed over" : "Re-created");
+  const denied = (): string | null =>
+    deniedFor(communityState.communities[props.communityId], "offerSuccessor");
+  const reasonText = (reason: string): string =>
+    reason === "transfer" ? "Handed over" : "Re-created";
   const heldText = (anchor: string): string =>
     communityState.communities[anchor] ? "you are a member" : "not joined here";
 
@@ -63,7 +65,9 @@ const SuccessorSection: Component<SuccessorSectionProps> = (props) => {
         )}
       </Show>
       <Show when={error()}>
-        <div class="form-error" role="alert">{error()}</div>
+        <div class="form-error" role="alert">
+          {error()}
+        </div>
       </Show>
       <Show
         when={offers().length > 0}

@@ -29,9 +29,7 @@ const OnboardingWizard: Component<OnboardingWizardProps> = (props) => {
   const [rulesAcknowledged, setRulesAcknowledged] = createSignal(false);
 
   const isGated = createMemo(() => props.config.mode === "gated");
-  const showRulesStep = createMemo(
-    () => isGated() && Boolean(props.config.welcomeMessage),
-  );
+  const showRulesStep = createMemo(() => isGated() && Boolean(props.config.welcomeMessage));
 
   const totalSteps = () => {
     let count = 0;
@@ -42,12 +40,10 @@ const OnboardingWizard: Component<OnboardingWizardProps> = (props) => {
     return Math.max(count, 1);
   };
 
-  const welcomeOffset = () =>
-    showRulesStep() || props.config.welcomeMessage ? 1 : 0;
+  const welcomeOffset = () => (showRulesStep() || props.config.welcomeMessage ? 1 : 0);
   const questionsEnd = () => welcomeOffset() + props.config.questions.length;
 
-  const isWelcomeStep = () =>
-    !showRulesStep() && props.config.welcomeMessage && step() === 0;
+  const isWelcomeStep = () => !showRulesStep() && props.config.welcomeMessage && step() === 0;
   const isRulesStep = () => showRulesStep() && step() === 0;
   const isQuestionStep = () => {
     const s = step();
@@ -108,11 +104,7 @@ const OnboardingWizard: Component<OnboardingWizardProps> = (props) => {
         selectedOptions: answers()[q.questionId] || [],
       }));
       const ack = isGated() ? rulesAcknowledged() : undefined;
-      const success = await handleSubmitOnboarding(
-        props.communityId,
-        onboardingAnswers,
-        ack,
-      );
+      const success = await handleSubmitOnboarding(props.communityId, onboardingAnswers, ack);
       if (success) {
         props.onComplete();
       }
@@ -138,8 +130,8 @@ const OnboardingWizard: Component<OnboardingWizardProps> = (props) => {
       <div class="onboarding-wizard">
         <Show when={isGated()}>
           <div class="onboarding-wizard-gated-banner" role="status">
-            This community requires onboarding before you can participate.
-            Complete the steps below to continue.
+            This community requires onboarding before you can participate. Complete the steps below
+            to continue.
           </div>
         </Show>
         <div class="onboarding-wizard-header">

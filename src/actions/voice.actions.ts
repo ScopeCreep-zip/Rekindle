@@ -47,25 +47,13 @@ export async function initVoiceEventListener(): Promise<UnlistenFn> {
       ]);
     } else if ("left" in event) {
       const { pseudonym } = event.left;
-      setVoiceState("participants", (prev) =>
-        prev.filter((p) => p.publicKey !== pseudonym),
-      );
+      setVoiceState("participants", (prev) => prev.filter((p) => p.publicKey !== pseudonym));
     } else if ("speakingChanged" in event) {
       const { pseudonym, speaking } = event.speakingChanged;
-      setVoiceState(
-        "participants",
-        (p) => p.publicKey === pseudonym,
-        "isSpeaking",
-        speaking,
-      );
+      setVoiceState("participants", (p) => p.publicKey === pseudonym, "isSpeaking", speaking);
     } else if ("muteChanged" in event) {
       const { targetPseudonym, muted } = event.muteChanged;
-      setVoiceState(
-        "participants",
-        (p) => p.publicKey === targetPseudonym,
-        "isMuted",
-        muted,
-      );
+      setVoiceState("participants", (p) => p.publicKey === targetPseudonym, "isMuted", muted);
     } else if ("connectionQuality" in event) {
       const q = event.connectionQuality;
       setVoiceState("connectionQuality", q.quality);
@@ -206,10 +194,7 @@ export async function handleToggleDeafen(): Promise<void> {
   }
 }
 
-export async function handleRequestToSpeak(
-  communityId: string,
-  channelId: string,
-): Promise<void> {
+export async function handleRequestToSpeak(communityId: string, channelId: string): Promise<void> {
   try {
     await commands.requestToSpeak(communityId, channelId);
   } catch (e) {
@@ -221,15 +206,10 @@ export async function handleRespondToSpeakRequest(
   communityId: string,
   channelId: string,
   requesterPseudonym: string,
-  granted: boolean,
+  granted: boolean
 ): Promise<void> {
   try {
-    await commands.respondToSpeakRequest(
-      communityId,
-      channelId,
-      requesterPseudonym,
-      granted,
-    );
+    await commands.respondToSpeakRequest(communityId, channelId, requesterPseudonym, granted);
   } catch (e) {
     console.error("Failed to respond to speak request:", e);
   }

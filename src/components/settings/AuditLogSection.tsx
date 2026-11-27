@@ -51,11 +51,13 @@ const AuditLogSection: Component = () => {
     <>
       <div class="settings-section-title">Audit Log</div>
       <div class="settings-hint">
-        Every security-relevant action on this identity is chained in a tamper-evident log. Verify checks
-        the whole chain; Export saves it to a file you choose.
+        Every security-relevant action on this identity is chained in a tamper-evident log. Verify
+        checks the whole chain; Export saves it to a file you choose.
       </div>
       <Show when={error()}>
-        <div class="form-error" role="alert">{error()}</div>
+        <div class="form-error" role="alert">
+          {error()}
+        </div>
       </Show>
       <Show when={result()}>
         {(r) => (
@@ -72,10 +74,20 @@ const AuditLogSection: Component = () => {
         )}
       </Show>
       <div class="form-field-row">
-        <button type="button" class="form-btn-secondary" disabled={busy()} onClick={() => void verify()}>
+        <button
+          type="button"
+          class="form-btn-secondary"
+          disabled={busy()}
+          onClick={() => void verify()}
+        >
           Verify audit log
         </button>
-        <button type="button" class="form-btn-secondary" disabled={busy()} onClick={() => void exportLog()}>
+        <button
+          type="button"
+          class="form-btn-secondary"
+          disabled={busy()}
+          onClick={() => void exportLog()}
+        >
           Export audit log…
         </button>
       </div>

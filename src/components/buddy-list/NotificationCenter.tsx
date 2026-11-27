@@ -49,12 +49,12 @@ const NotificationCenter: Component = () => {
         }
         aria-expanded={open()}
       >
-        <span class="nf-icon nf-icon-md" aria-hidden="true">{ICON_BELL}</span>
+        <span class="nf-icon nf-icon-md" aria-hidden="true">
+          {ICON_BELL}
+        </span>
         <Show when={unreadNotifications() > 0}>
           <span class="notification-badge">
-            {unreadNotifications() > 99
-              ? "99+"
-              : unreadNotifications()}
+            {unreadNotifications() > 99 ? "99+" : unreadNotifications()}
           </span>
         </Show>
       </button>
@@ -77,9 +77,7 @@ const NotificationCenter: Component = () => {
           <div class="notification-panel-list">
             <Show
               when={notificationState.notifications.length > 0}
-              fallback={
-                <div class="notification-empty">No notifications</div>
-              }
+              fallback={<div class="notification-empty">No notifications</div>}
             >
               <For each={notificationState.notifications}>
                 {(notification) => (
@@ -91,21 +89,14 @@ const NotificationCenter: Component = () => {
                     }
                   >
                     <div class="notification-item-content">
-                      <span class="notification-title">
-                        {notification.title}
-                      </span>
-                      <span class="notification-body">
-                        {notification.body}
-                      </span>
+                      <span class="notification-title">{notification.title}</span>
+                      <span class="notification-body">{notification.body}</span>
                       <span class="notification-time">
                         {formatRelativeTime(notification.timestamp)}
                       </span>
                       {/* Wave 12 W12.8 — missed-call action row. */}
                       <Show
-                        when={
-                          notification.type === "missed_call" &&
-                          notification.peerKey != null
-                        }
+                        when={notification.type === "missed_call" && notification.peerKey != null}
                       >
                         <div class="notification-actions">
                           <button
@@ -120,7 +111,9 @@ const NotificationCenter: Component = () => {
                               markNotificationRead(notification.id);
                             }}
                           >
-                            <span class="nf-icon" aria-hidden="true">{ICON_PHONE}</span>
+                            <span class="nf-icon" aria-hidden="true">
+                              {ICON_PHONE}
+                            </span>
                             Call back
                           </button>
                           <button
@@ -133,7 +126,9 @@ const NotificationCenter: Component = () => {
                               markNotificationRead(notification.id);
                             }}
                           >
-                            <span class="nf-icon" aria-hidden="true">{ICON_SEND}</span>
+                            <span class="nf-icon" aria-hidden="true">
+                              {ICON_SEND}
+                            </span>
                             Message
                           </button>
                         </div>
@@ -147,7 +142,9 @@ const NotificationCenter: Component = () => {
                         title="Mark as read"
                         aria-label="Mark notification as read"
                       >
-                        <span class="nf-icon nf-icon-sm" aria-hidden="true">{ICON_CHECK}</span>
+                        <span class="nf-icon nf-icon-sm" aria-hidden="true">
+                          {ICON_CHECK}
+                        </span>
                       </button>
                     </Show>
                   </div>

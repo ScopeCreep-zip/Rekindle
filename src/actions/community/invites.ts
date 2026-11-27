@@ -6,7 +6,7 @@ import type { InviteCreated, InviteDto } from "../../ipc/commands/dto";
 export async function handleCreateCommunityInvite(
   communityId: string,
   maxUses: number,
-  expiresInSeconds?: number,
+  expiresInSeconds?: number
 ): Promise<InviteCreated | null> {
   try {
     const result = await commands.createCommunityInvite(communityId, maxUses, expiresInSeconds);
@@ -23,13 +23,13 @@ export async function handleCreateCommunityInvite(
 
 export async function handleRevokeCommunityInvite(
   communityId: string,
-  inviteId: string,
+  inviteId: string
 ): Promise<boolean> {
   try {
     await commands.revokeCommunityInvite(communityId, inviteId);
     // Optimistic store removal
     setCommunityState("communityInvites", communityId, (prev) =>
-      (prev ?? []).filter((inv) => inv.inviteId !== inviteId),
+      (prev ?? []).filter((inv) => inv.inviteId !== inviteId)
     );
     return true;
   } catch (err) {
@@ -39,9 +39,7 @@ export async function handleRevokeCommunityInvite(
   }
 }
 
-export async function handleListCommunityInvites(
-  communityId: string,
-): Promise<InviteDto[]> {
+export async function handleListCommunityInvites(communityId: string): Promise<InviteDto[]> {
   try {
     const invites = await commands.listCommunityInvites(communityId);
     setCommunityState("communityInvites", communityId, invites);

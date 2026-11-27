@@ -1,4 +1,12 @@
-import { type Component, Show, createEffect, createMemo, createSignal, createUniqueId, onCleanup } from "solid-js";
+import {
+  type Component,
+  Show,
+  createEffect,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  onCleanup,
+} from "solid-js";
 import SkinGlyph from "../common/SkinGlyph";
 import { commands } from "../../ipc/commands";
 import type { CallEntry } from "../../stores/calls.store";
@@ -54,21 +62,29 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
 
   const isVideoCall = createMemo(() => props.call.kind === "video");
 
-  const peerSpeaking = createMemo(() =>
-    voiceState.participants.find((p) => p.publicKey === props.call.peerKey)?.isSpeaking ?? false,
+  const peerSpeaking = createMemo(
+    () =>
+      voiceState.participants.find((p) => p.publicKey === props.call.peerKey)?.isSpeaking ?? false
   );
 
   const peerStatus = createMemo(() => friendsState.friends[props.call.peerKey]?.status ?? "online");
 
   const qualityBars = (): number => {
     switch (voiceState.connectionQuality) {
-      case "excellent": return 4;
-      case "good": return 3;
-      case "fair": return 2;
-      case "recovering": return 2;
-      case "poor": return 1;
-      case "lost": return 0;
-      default: return 3;
+      case "excellent":
+        return 4;
+      case "good":
+        return 3;
+      case "fair":
+        return 2;
+      case "recovering":
+        return 2;
+      case "poor":
+        return 1;
+      case "lost":
+        return 0;
+      default:
+        return 3;
     }
   };
 
@@ -76,11 +92,7 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
   // toggle so the peer's UI mounts/unmounts tiles in sync. Best-effort:
   // a failed ping is non-fatal because the actual frame stream (or
   // absence of it) is the authoritative truth.
-  async function pingMediaState(
-    audio: boolean,
-    video: boolean,
-    screen: boolean,
-  ): Promise<void> {
+  async function pingMediaState(audio: boolean, video: boolean, screen: boolean): Promise<void> {
     try {
       await commands.sendCallMediaState(props.call.callId, audio, video, screen);
     } catch (e) {
@@ -265,8 +277,7 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
         when={
           voiceState.cameraOn ||
           voiceState.screenShareOn ||
-          (props.call.peerMediaState?.video ??
-            (props.call.kind === "video")) ||
+          (props.call.peerMediaState?.video ?? props.call.kind === "video") ||
           (props.call.peerMediaState?.screen ?? false)
         }
       >

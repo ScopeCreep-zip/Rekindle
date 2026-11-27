@@ -7,11 +7,7 @@ import {
   handleUploadSoundboardSound,
   handleUploadSticker,
 } from "../../actions/community.actions";
-import {
-  servedPermissions,
-  hasPermission,
-  USE_SOUNDBOARD,
-} from "../../ipc/permissions";
+import { servedPermissions, hasPermission, USE_SOUNDBOARD } from "../../ipc/permissions";
 import { deniedFor } from "../../utils/denied";
 
 type ExpressionTab = "emoji" | "sticker" | "soundboard";
@@ -26,14 +22,22 @@ interface ExpressionPickerProps {
   activeVoiceChannelId?: string | null;
 }
 
-function expressionSelectionValue(mode: "reaction" | "message", expressionId: string, name: string): string {
+function expressionSelectionValue(
+  mode: "reaction" | "message",
+  expressionId: string,
+  name: string
+): string {
   if (mode === "reaction") {
     return `custom:${expressionId}`;
   }
   return `:${name}:`;
 }
 
-function stickerSelectionValue(mode: "reaction" | "message", expressionId: string, name: string): string {
+function stickerSelectionValue(
+  mode: "reaction" | "message",
+  expressionId: string,
+  name: string
+): string {
   if (mode === "reaction") {
     return `custom:${expressionId}`;
   }
@@ -51,7 +55,9 @@ function sanitizeExpressionName(fileName: string): string {
 // Architecture §18.3 — measure duration via Web Audio decodeAudioData.
 async function measureAudioDuration(bytes: ArrayBuffer): Promise<number> {
   // Web Audio API's AudioContext is async-only.
-  const AudioCtor = (window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext);
+  const AudioCtor =
+    window.AudioContext ??
+    (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
   if (!AudioCtor) {
     throw new Error("Web Audio API unavailable in this environment");
   }
@@ -70,7 +76,9 @@ const ExpressionPicker: Component<ExpressionPickerProps> = (props) => {
 
   const filtered = createMemo(() => {
     const query = props.searchQuery.trim().toLowerCase();
-    const all = (community()?.expressions ?? []).filter((expression) => expression.kind === activeTab());
+    const all = (community()?.expressions ?? []).filter(
+      (expression) => expression.kind === activeTab()
+    );
     if (!query) return all;
     return all.filter((expression) => expression.name.toLowerCase().includes(query));
   });
@@ -85,11 +93,7 @@ const ExpressionPicker: Component<ExpressionPickerProps> = (props) => {
   // Architecture §10.9 — soundboard play requires USE_SOUNDBOARD;
   // backend re-validates on every received SoundboardPlay envelope so
   // a member with the perm revoked mid-session can't keep playing.
-  const canPlaySoundboard = createMemo(() =>
-    hasPermission(myPerms(), USE_SOUNDBOARD),
-  );
-
-
+  const canPlaySoundboard = createMemo(() => hasPermission(myPerms(), USE_SOUNDBOARD));
 
   async function uploadEmoji(): Promise<void> {
     const input = document.createElement("input");
@@ -102,7 +106,12 @@ const ExpressionPicker: Component<ExpressionPickerProps> = (props) => {
       document.body.removeChild(input);
       if (!file) return;
       const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
-      await handleUploadEmoji(props.communityId, sanitizeExpressionName(file.name), bytes, file.type);
+      await handleUploadEmoji(
+        props.communityId,
+        sanitizeExpressionName(file.name),
+        bytes,
+        file.type
+      );
     };
     input.click();
   }
@@ -118,7 +127,12 @@ const ExpressionPicker: Component<ExpressionPickerProps> = (props) => {
       document.body.removeChild(input);
       if (!file) return;
       const bytes = Array.from(new Uint8Array(await file.arrayBuffer()));
-      await handleUploadSticker(props.communityId, sanitizeExpressionName(file.name), bytes, file.type);
+      await handleUploadSticker(
+        props.communityId,
+        sanitizeExpressionName(file.name),
+        bytes,
+        file.type
+      );
     };
     input.click();
   }
@@ -155,7 +169,7 @@ const ExpressionPicker: Component<ExpressionPickerProps> = (props) => {
         bytes,
         durationSeconds,
         1.0,
-        emoji && emoji.trim().length > 0 ? emoji.trim() : undefined,
+        emoji && emoji.trim().length > 0 ? emoji.trim() : undefined
       );
     };
     input.click();
@@ -191,10 +205,18 @@ const ExpressionPicker: Component<ExpressionPickerProps> = (props) => {
   }
 
   const uploadLabel = createMemo(() =>
-    activeTab() === "emoji" ? "Upload emoji" : activeTab() === "sticker" ? "Upload sticker" : "Upload sound",
+    activeTab() === "emoji"
+      ? "Upload emoji"
+      : activeTab() === "sticker"
+        ? "Upload sticker"
+        : "Upload sound"
   );
   const emptyLabel = createMemo(() =>
-    activeTab() === "emoji" ? "No custom emoji yet" : activeTab() === "sticker" ? "No stickers yet" : "No soundboard sounds yet",
+    activeTab() === "emoji"
+      ? "No custom emoji yet"
+      : activeTab() === "sticker"
+        ? "No stickers yet"
+        : "No soundboard sounds yet"
   );
 
   return (
@@ -223,9 +245,13 @@ const ExpressionPicker: Component<ExpressionPickerProps> = (props) => {
         </button>
       </div>
       <div class="emoji-picker-section-label expression-picker-header">
-        <span>Community {activeTab() === "emoji" ? "Emoji" : activeTab() === "sticker" ? "Stickers" : "Sounds"}</span>
+        <span>
+          Community{" "}
+          {activeTab() === "emoji" ? "Emoji" : activeTab() === "sticker" ? "Stickers" : "Sounds"}
+        </span>
         {/* Never-hide: drawn always, disabled with the Host's reason. */}
-        <button type="button"
+        <button
+          type="button"
           class="expression-picker-upload-btn"
           onClick={uploadCurrent}
           disabled={uploadDenied() !== null}
@@ -251,23 +277,26 @@ const ExpressionPicker: Component<ExpressionPickerProps> = (props) => {
                     : `:${expression.name}:`
                 }
                 disabled={
-                  expression.kind === "soundboard"
-                  && (!props.activeVoiceChannelId || !canPlaySoundboard())
+                  expression.kind === "soundboard" &&
+                  (!props.activeVoiceChannelId || !canPlaySoundboard())
                 }
                 onClick={() => selectExpression(expression)}
               >
-                <Show when={expression.kind === "soundboard"} fallback={
-                  <Show
-                    when={expression.inlineDataUrl}
-                    fallback={<span class="expression-picker-fallback">:{expression.name}:</span>}
-                  >
-                    <img
-                      class="expression-picker-image"
-                      src={expression.inlineDataUrl!}
-                      alt={`:${expression.name}:`}
-                    />
-                  </Show>
-                }>
+                <Show
+                  when={expression.kind === "soundboard"}
+                  fallback={
+                    <Show
+                      when={expression.inlineDataUrl}
+                      fallback={<span class="expression-picker-fallback">:{expression.name}:</span>}
+                    >
+                      <img
+                        class="expression-picker-image"
+                        src={expression.inlineDataUrl!}
+                        alt={`:${expression.name}:`}
+                      />
+                    </Show>
+                  }
+                >
                   <span class="expression-picker-soundboard-glyph">
                     {expression.soundMeta?.emoji ?? "🔊"}
                   </span>

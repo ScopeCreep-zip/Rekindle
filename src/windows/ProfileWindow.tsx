@@ -1,4 +1,13 @@
-import { type Component, createMemo, createResource, createSignal, For, onMount, onCleanup, Show } from "solid-js";
+import {
+  type Component,
+  createMemo,
+  createResource,
+  createSignal,
+  For,
+  onMount,
+  onCleanup,
+  Show,
+} from "solid-js";
 import { formatDuration, formatRelativeTime } from "../utils/formatting";
 import Titlebar from "../components/titlebar/Titlebar";
 import Avatar from "../components/common/Avatar";
@@ -101,9 +110,7 @@ const ProfileWindow: Component = () => {
               <div class="profile-game-server">on {friend().gameInfo!.serverAddress}</div>
             </Show>
             <Show when={friend().gameInfo!.startedAt}>
-              <div class="profile-game-elapsed">
-                {formatElapsed(friend().gameInfo!.startedAt!)}
-              </div>
+              <div class="profile-game-elapsed">{formatElapsed(friend().gameInfo!.startedAt!)}</div>
             </Show>
           </div>
         </Show>
@@ -132,13 +139,12 @@ const ProfileWindow: Component = () => {
         </Show>
         <div class="profile-section">
           <div class="profile-section-label">Mutual Communities</div>
-          <Show when={mutualCommunities().length > 0} fallback={
-            <div class="profile-empty-hint">No mutual communities</div>
-          }>
+          <Show
+            when={mutualCommunities().length > 0}
+            fallback={<div class="profile-empty-hint">No mutual communities</div>}
+          >
             <For each={mutualCommunities()}>
-              {(community) => (
-                <div class="profile-mutual-item">{community.name}</div>
-              )}
+              {(community) => <div class="profile-mutual-item">{community.name}</div>}
             </For>
           </Show>
         </div>
@@ -172,11 +178,7 @@ const ProfileWindow: Component = () => {
               <span class="nf-icon">{ICON_VIDEO}</span> Video Call
             </button>
             <Show when={!confirmRemove()}>
-              <button
-                type="button"
-                class="form-btn-danger"
-                onClick={() => setConfirmRemove(true)}
-              >
+              <button type="button" class="form-btn-danger" onClick={() => setConfirmRemove(true)}>
                 <span class="nf-icon">{ICON_ACCOUNT_REMOVE}</span> Remove Friend
               </button>
             </Show>

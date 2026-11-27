@@ -6,12 +6,12 @@ import { errorMessage } from "../../utils/error";
 
 export async function handleRemoveCommunityMember(
   communityId: string,
-  pseudonymKey: string,
+  pseudonymKey: string
 ): Promise<void> {
   try {
     await commands.removeCommunityMember(communityId, pseudonymKey);
     setCommunityState("communities", communityId, "members", (members) =>
-      members.filter((m) => m.pseudonymKey !== pseudonymKey),
+      members.filter((m) => m.pseudonymKey !== pseudonymKey)
     );
   } catch (e) {
     console.error("Failed to remove community member:", e);
@@ -22,7 +22,7 @@ export async function handleRemoveCommunityMember(
 export async function handleUpdateCommunityInfo(
   communityId: string,
   name: string | null,
-  description: string | null,
+  description: string | null
 ): Promise<void> {
   try {
     await commands.updateCommunityInfo(communityId, name, description);
@@ -38,14 +38,11 @@ export async function handleUpdateCommunityInfo(
   }
 }
 
-export async function handleBanMember(
-  communityId: string,
-  pseudonymKey: string,
-): Promise<void> {
+export async function handleBanMember(communityId: string, pseudonymKey: string): Promise<void> {
   try {
     await commands.banMember(communityId, pseudonymKey);
     setCommunityState("communities", communityId, "members", (members) =>
-      members.filter((m) => m.pseudonymKey !== pseudonymKey),
+      members.filter((m) => m.pseudonymKey !== pseudonymKey)
     );
   } catch (e) {
     console.error("Failed to ban member:", e);
@@ -53,10 +50,7 @@ export async function handleBanMember(
   }
 }
 
-export async function handleUnbanMember(
-  communityId: string,
-  pseudonymKey: string,
-): Promise<void> {
+export async function handleUnbanMember(communityId: string, pseudonymKey: string): Promise<void> {
   try {
     await commands.unbanMember(communityId, pseudonymKey);
   } catch (e) {
@@ -76,7 +70,7 @@ export async function handleServerMuteMember(
   /** The member's voice channel, or null when none is known: the Host refuses that in its words. */
   channelId: string | null,
   targetPseudonym: string,
-  muted: boolean,
+  muted: boolean
 ): Promise<void> {
   try {
     await commands.serverMuteMember(communityId, channelId, targetPseudonym, muted);
@@ -93,15 +87,10 @@ export async function handleServerDeafenMember(
   /** The member's voice channel, or null when none is known: the Host refuses that in its words. */
   channelId: string | null,
   targetPseudonym: string,
-  deafened: boolean,
+  deafened: boolean
 ): Promise<void> {
   try {
-    await commands.serverDeafenMember(
-      communityId,
-      channelId,
-      targetPseudonym,
-      deafened,
-    );
+    await commands.serverDeafenMember(communityId, channelId, targetPseudonym, deafened);
     addToast(deafened ? "Member server-deafened" : "Member un-deafened", "success");
   } catch (e) {
     console.error("Failed to server-deafen member:", e);
@@ -109,9 +98,7 @@ export async function handleServerDeafenMember(
   }
 }
 
-export async function handleGetBanList(
-  communityId: string,
-): Promise<CommunityBanView[]> {
+export async function handleGetBanList(communityId: string): Promise<CommunityBanView[]> {
   try {
     return await commands.getBanList(communityId);
   } catch (e) {
@@ -121,9 +108,7 @@ export async function handleGetBanList(
   }
 }
 
-export async function handleRotateMek(
-  communityId: string,
-): Promise<void> {
+export async function handleRotateMek(communityId: string): Promise<void> {
   try {
     await commands.rotateMek(communityId);
   } catch (e) {
@@ -135,7 +120,7 @@ export async function handleRotateMek(
 export async function handleGetAuditLog(
   communityId: string,
   beforeTimestamp?: number,
-  limit: number = 50,
+  limit: number = 50
 ): Promise<CommunityAuditEntry[]> {
   try {
     return await commands.getAuditLog(communityId, beforeTimestamp, limit);
@@ -149,7 +134,7 @@ export async function handleTimeoutMember(
   communityId: string,
   pseudonymKey: string,
   durationSeconds: number,
-  reason: string | null,
+  reason: string | null
 ): Promise<void> {
   try {
     await commands.timeoutMember(communityId, pseudonymKey, durationSeconds, reason);
@@ -170,7 +155,7 @@ export async function handleTimeoutMember(
 
 export async function handleRemoveTimeout(
   communityId: string,
-  pseudonymKey: string,
+  pseudonymKey: string
 ): Promise<void> {
   try {
     await commands.removeTimeout(communityId, pseudonymKey);
@@ -202,7 +187,7 @@ export async function loadCommunityBlocks(communityId: string): Promise<Set<stri
 export async function handleSetCommunityBlock(
   communityId: string,
   pseudonymKey: string,
-  blocked: boolean,
+  blocked: boolean
 ): Promise<boolean> {
   try {
     if (blocked) {

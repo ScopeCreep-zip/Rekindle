@@ -1,6 +1,11 @@
 import { type Component, For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { commands } from "../../ipc/commands";
-import { subscribeSkinApplyFailed, subscribeSkinEvents, subscribeSkinTrial, type SkinApplyFailed } from "../../ipc/channels";
+import {
+  subscribeSkinApplyFailed,
+  subscribeSkinEvents,
+  subscribeSkinTrial,
+  type SkinApplyFailed,
+} from "../../ipc/channels";
 import type { SkinEntry, SkinLibrary, SkinTrial } from "../../ipc/commands/dto";
 import { isCommandError } from "../../ipc/commands/dto";
 import SkinTrialPrompt from "../../components/settings/SkinTrialPrompt";
@@ -19,10 +24,13 @@ function refusal(e: unknown): string | null {
 
 /** Why a window could not show a skin, as one sentence (plan SK2-T1). */
 function failureText(f: SkinApplyFailed, name: string): string {
-  const why = f.cause.type === "imageDecode"
-    ? `its image ${f.cause.data.path.split("/").pop() ?? f.cause.data.path} did not load`
-    : "its style sheet did not load";
-  const after = f.reverted ? "It was on trial, so the previous skin is back." : "The skin shown before stays.";
+  const why =
+    f.cause.type === "imageDecode"
+      ? `its image ${f.cause.data.path.split("/").pop() ?? f.cause.data.path} did not load`
+      : "its style sheet did not load";
+  const after = f.reverted
+    ? "It was on trial, so the previous skin is back."
+    : "The skin shown before stays.";
   return `${name} could not be shown: ${why}. ${after}`;
 }
 
@@ -59,9 +67,10 @@ const AppearanceTab: Component = () => {
     setError(null);
     try {
       const answer = await action();
-      const lib = answer !== null && typeof answer === "object" && "skins" in answer
-        ? (answer as SkinLibrary)
-        : await commands.listSkins();
+      const lib =
+        answer !== null && typeof answer === "object" && "skins" in answer
+          ? (answer as SkinLibrary)
+          : await commands.listSkins();
       if (mine === latest) apply(lib);
     } catch (e) {
       if (mine === latest) setError(refusal(e));
@@ -199,7 +208,11 @@ const AppearanceTab: Component = () => {
         {(hint) => (
           <div class="settings-hint skin-alternate">
             {`${hint().current.name} has ${hint().current.shortTargets} control${hint().current.shortTargets === 1 ? "" : "s"} under 24 px. ${hint().alternate.name} meets target sizes.`}{" "}
-            <button type="button" class="skin-row-btn skin-action" onClick={() => void run(() => commands.selectSkin(hint().alternate.id))}>
+            <button
+              type="button"
+              class="skin-row-btn skin-action"
+              onClick={() => void run(() => commands.selectSkin(hint().alternate.id))}
+            >
               Use {hint().alternate.name}
             </button>
           </div>
@@ -234,7 +247,11 @@ const AppearanceTab: Component = () => {
         <span class="settings-hint">A skin is checked before it is added.</span>
       </div>
       <Show when={error()}>
-        {(message) => <div class="settings-hint skin-error" role="alert">{message()}</div>}
+        {(message) => (
+          <div class="settings-hint skin-error" role="alert">
+            {message()}
+          </div>
+        )}
       </Show>
     </>
   );

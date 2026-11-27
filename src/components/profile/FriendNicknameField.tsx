@@ -35,7 +35,9 @@ const FriendNicknameField: Component<FriendNicknameFieldProps> = (props) => {
 
   return (
     <div class="profile-section">
-      <label class="profile-section-label" for="friend-nickname">Nickname (only you see it)</label>
+      <label class="profile-section-label" for="friend-nickname">
+        Nickname (only you see it)
+      </label>
       <div class="settings-list-actions">
         <input
           id="friend-nickname"
@@ -43,7 +45,8 @@ const FriendNicknameField: Component<FriendNicknameFieldProps> = (props) => {
           value={value()}
           onInput={(e) => setValue(e.currentTarget.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter" && e.currentTarget.value !== "") void write(e.currentTarget.value);
+            if (e.key === "Enter" && e.currentTarget.value !== "")
+              void write(e.currentTarget.value);
           }}
         />
         <button
@@ -55,7 +58,12 @@ const FriendNicknameField: Component<FriendNicknameFieldProps> = (props) => {
           Save
         </button>
         <Show when={props.nickname !== null}>
-          <button type="button" class="form-btn-secondary" disabled={saving()} onClick={() => void write(null)}>
+          <button
+            type="button"
+            class="form-btn-secondary"
+            disabled={saving()}
+            onClick={() => void write(null)}
+          >
             Clear
           </button>
         </Show>

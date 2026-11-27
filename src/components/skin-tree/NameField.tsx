@@ -8,7 +8,11 @@ import { handleSetDisplayName } from "../../actions/auth.actions";
  * pack's double-click; plan SK2-A5), Enter saves and Escape cancels.
  * `edit` counts the edit requests: each new one opens the editor.
  */
-const NameField: Component<{ attrs: Record<string, unknown>; edit: number; children: JSX.Element }> = (props) => {
+const NameField: Component<{
+  attrs: Record<string, unknown>;
+  edit: number;
+  children: JSX.Element;
+}> = (props) => {
   const [editing, setEditing] = createSignal(false);
   const [value, setValue] = createSignal("");
   function start(): void {

@@ -6,7 +6,11 @@ import type {
   DmVideoFrameMsg,
   SessionVideoConfig,
 } from "../../../ipc/commands";
-import { type UnlistenFn, subscribeCommunityEvents, subscribeVoiceEvents } from "../../../ipc/channels";
+import {
+  type UnlistenFn,
+  subscribeCommunityEvents,
+  subscribeVoiceEvents,
+} from "../../../ipc/channels";
 import { isLegacyCommunityEvent } from "../../../ipc/channels/community_subscription_events";
 import { setVoiceState, voiceState } from "../../../stores/voice.store";
 import { probeAndReportLocalVideoCapabilities } from "../../../actions/video.actions";
@@ -198,7 +202,7 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
                 return false;
               }
               return true;
-            }),
+            })
           );
         } else if (event.type === "videoKeyframeRequest") {
           sender.forceKeyframe(event.data.streamId);
@@ -250,7 +254,7 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
           msg.keyframe,
           msg.codec,
           msg.timestamp,
-          msg.payloadB64,
+          msg.payloadB64
         );
       };
       communityFrameChannel = ch;
@@ -265,7 +269,7 @@ export function useVideoCallPanel(props: VideoCallPanelProps) {
           msg.keyframe,
           msg.codec,
           msg.timestamp,
-          msg.encodedPayloadB64,
+          msg.encodedPayloadB64
         );
       };
       dmFrameChannel = ch;

@@ -16,7 +16,7 @@ const GroupDmList: Component = () => {
   const groups = createMemo(() =>
     all()
       .filter((g) => !g.pending)
-      .sort((a, b) => a.name.localeCompare(b.name)),
+      .sort((a, b) => a.name.localeCompare(b.name))
   );
 
   async function run(answer: Promise<string | null>): Promise<void> {
@@ -28,18 +28,20 @@ const GroupDmList: Component = () => {
   return (
     <Show when={all().length > 0}>
       <section class="group-dm-section" aria-label="Group chats">
-        <div class="pending-header"><span>Group Chats</span></div>
+        <div class="pending-header">
+          <span>Group Chats</span>
+        </div>
         <Show when={error()}>
-          <div class="form-error" role="alert">{error()}</div>
+          <div class="form-error" role="alert">
+            {error()}
+          </div>
         </Show>
         <For each={invites()}>
           {(invite) => (
             <article class="pending-item" aria-label={`Invite to ${invite.name}`}>
               <div class="pending-info">
                 <span class="buddy-name">{invite.name}</span>
-                <span class="pending-message">
-                  {invite.members.map((m) => m.label).join(", ")}
-                </span>
+                <span class="pending-message">{invite.members.map((m) => m.label).join(", ")}</span>
               </div>
               <button
                 type="button"

@@ -69,9 +69,10 @@ const CategoryManager: Component<CategoryManagerProps> = (props) => {
         {(cat, index) => (
           <div class="channel-manage-row">
             <SkinGlyph name="folder" class="channel-manage-icon" />
-            <Show when={renamingCategoryId() === cat.id} fallback={
-              <span class="channel-manage-name">{cat.name}</span>
-            }>
+            <Show
+              when={renamingCategoryId() === cat.id}
+              fallback={<span class="channel-manage-name">{cat.name}</span>}
+            >
               <input
                 class="form-input channel-rename-input"
                 type="text"
@@ -132,15 +133,14 @@ const CategoryManager: Component<CategoryManagerProps> = (props) => {
           </div>
         )}
       </For>
-      <Show when={showNewCategory()} fallback={
-        <button
-          type="button"
-          class="form-btn-secondary"
-          onClick={() => setShowNewCategory(true)}
-        >
-          <SkinGlyph name="plus-box" /> Create Category
-        </button>
-      }>
+      <Show
+        when={showNewCategory()}
+        fallback={
+          <button type="button" class="form-btn-secondary" onClick={() => setShowNewCategory(true)}>
+            <SkinGlyph name="plus-box" /> Create Category
+          </button>
+        }
+      >
         <div class="channel-create-inline">
           <input
             class="form-input"

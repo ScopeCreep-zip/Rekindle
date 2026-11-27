@@ -38,7 +38,20 @@ interface CommunitySettingsModalProps {
   onClose: () => void;
 }
 
-type TabId = "overview" | "channels" | "members" | "invites" | "roles" | "bans" | "audit-log" | "security" | "automod" | "analytics" | "privacy" | "welcome" | "expressions";
+type TabId =
+  | "overview"
+  | "channels"
+  | "members"
+  | "invites"
+  | "roles"
+  | "bans"
+  | "audit-log"
+  | "security"
+  | "automod"
+  | "analytics"
+  | "privacy"
+  | "welcome"
+  | "expressions";
 
 const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) => {
   const [activeTab, setActiveTab] = createSignal<TabId>("overview");
@@ -56,9 +69,14 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
   const canViewAuditLog = createMemo(() => hasPermission(myPerms(), VIEW_AUDIT_LOG));
   const canManageExpressions = createMemo(() => hasPermission(myPerms(), MANAGE_EXPRESSIONS));
 
-  const isAdmin = createMemo(() =>
-    canManageCommunity() || canManageChannels() || canManageRoles() || canKick() || canBan()
-      || canManageExpressions()
+  const isAdmin = createMemo(
+    () =>
+      canManageCommunity() ||
+      canManageChannels() ||
+      canManageRoles() ||
+      canKick() ||
+      canBan() ||
+      canManageExpressions()
   );
 
   // Never-hide: every tab is listed; one we may not open is disabled with
@@ -93,7 +111,7 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
     setConfirmAction(opts);
   }
 
-  const modalTitle = createMemo(() => isAdmin() ? "Community Settings" : "Community Info");
+  const modalTitle = createMemo(() => (isAdmin() ? "Community Settings" : "Community Info"));
 
   return (
     <Modal isOpen={props.isOpen} title={modalTitle()} onClose={props.onClose} size="lg">
@@ -116,7 +134,10 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
 
       <div class="settings-content">
         <Show when={activeTab() === "overview"}>
-          <OverviewTab community={props.community} manageDenied={deniedFor(props.community, "manageCommunity")} />
+          <OverviewTab
+            community={props.community}
+            manageDenied={deniedFor(props.community, "manageCommunity")}
+          />
         </Show>
         <Show when={activeTab() === "channels"}>
           <ChannelsTab community={props.community} canManageChannels={canManageChannels()} />
@@ -176,7 +197,10 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
         message={confirmAction()?.message ?? ""}
         danger
         confirmLabel={confirmAction()?.confirmLabel ?? "Confirm"}
-        onConfirm={() => { confirmAction()?.action(); setConfirmAction(null); }}
+        onConfirm={() => {
+          confirmAction()?.action();
+          setConfirmAction(null);
+        }}
         onCancel={() => setConfirmAction(null)}
       />
     </Modal>

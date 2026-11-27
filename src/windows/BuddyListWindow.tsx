@@ -60,12 +60,24 @@ import {
 } from "../ipc/channels";
 import { setSkinSignals } from "../stores/skin-signals.store";
 import { registerShellRunner, runAddressedShellOp } from "../actions/skin.actions";
-import { chatOpenOps, friendOps, mainOps, menuOps, muteOps, popupOps, transferOps } from "../actions/shell_runners";
+import {
+  chatOpenOps,
+  friendOps,
+  mainOps,
+  menuOps,
+  muteOps,
+  popupOps,
+  transferOps,
+} from "../actions/shell_runners";
 import type { ShellOp } from "../ipc/commands/dto_skin_run";
 import { handleHide } from "../actions/titlebar.actions";
 import { handleToggleAddFriend } from "../actions/buddy.actions";
 import { setShortcutsHelpOpen } from "../stores/shortcuts_help.store";
-import { handleToggleCreateCommunity, handleToggleJoinCommunity, handleToggleNewChat } from "../components/buddy-list/BottomActionBar";
+import {
+  handleToggleCreateCommunity,
+  handleToggleJoinCommunity,
+  handleToggleNewChat,
+} from "../components/buddy-list/BottomActionBar";
 import { fetchAvatarUrl } from "../ipc/avatar";
 import { commands } from "../ipc/commands";
 import type { NetworkStatusEvent } from "../ipc/channels";
@@ -206,9 +218,11 @@ const BuddyListWindow: Component = () => {
     unlisteners.push(subscribeBuddyListVoiceEvents());
     // Each community's arrival, from the Host's one create and join path.
     unlisteners.push(subscribeBuddyListCommunityEvents());
-    unlisteners.push(subscribeNetworkStatus((event: NetworkStatusEvent) => {
-      setNetworkAttached(event.isAttached);
-    }));
+    unlisteners.push(
+      subscribeNetworkStatus((event: NetworkStatusEvent) => {
+        setNetworkAttached(event.isAttached);
+      })
+    );
     unlisteners.push(subscribeProfileUpdates(handleProfileUpdated));
     // This window's skin signals: the tree applies the triggers they fire.
     unlisteners.push(subscribeSkinSignals(setSkinSignals));
@@ -263,7 +277,9 @@ const BuddyListWindow: Component = () => {
     <div class="app-frame buddy-list-window" data-skin-window="main">
       <SkinFrame />
       {/* Architecture §32 a11y — keyboard skip link past menu/identity rail. */}
-      <a href="#main-content" class="skip-link">Skip to buddy list</a>
+      <a href="#main-content" class="skip-link">
+        Skip to buddy list
+      </a>
       {/* A skin that lays this window as its component tree (plan SK2-S2)
        *  draws it whole; without one (the built-in default) the app's own
        *  layout stays. */}
@@ -280,7 +296,9 @@ const BuddyListWindow: Component = () => {
             <UserIdentityBar />
             <TabBar />
             {/* Search filters the Friends and Communities lists only. */}
-            <Show when={buddyListUI.activeTab === "friends" || buddyListUI.activeTab === "communities"}>
+            <Show
+              when={buddyListUI.activeTab === "friends" || buddyListUI.activeTab === "communities"}
+            >
               <SearchBar />
             </Show>
             <PairingLinkNotice />
@@ -332,7 +350,10 @@ const BuddyListWindow: Component = () => {
       />
       <CallController />
       <NewGroupModal />
-      <InviteToRoomModal groupId={buddyListUI.inviteToRoom} onClose={() => setBuddyListUI("inviteToRoom", null)} />
+      <InviteToRoomModal
+        groupId={buddyListUI.inviteToRoom}
+        onClose={() => setBuddyListUI("inviteToRoom", null)}
+      />
       <CommunityStartModal
         isOpen={buddyListUI.showCommunityStart}
         onClose={() => setBuddyListUI("showCommunityStart", false)}

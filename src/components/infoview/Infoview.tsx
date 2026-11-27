@@ -1,7 +1,21 @@
-import { type Component, For, Match, Show, Switch, createSignal, onCleanup, onMount } from "solid-js";
+import {
+  type Component,
+  For,
+  Match,
+  Show,
+  Switch,
+  createSignal,
+  onCleanup,
+  onMount,
+} from "solid-js";
 import { commands } from "../../ipc/commands";
 import { subscribeInfoview } from "../../ipc/channels";
-import type { InfoviewAction, InfoviewRequest, InfoviewSection, InfoviewView } from "../../ipc/commands/dto_infoview";
+import type {
+  InfoviewAction,
+  InfoviewRequest,
+  InfoviewSection,
+  InfoviewView,
+} from "../../ipc/commands/dto_infoview";
 import type { FriendInfo } from "../../ipc/commands/types";
 import { addToast } from "../../stores/toast.store";
 import { formatDuration } from "../../utils/formatting";
@@ -56,7 +70,8 @@ function run(action: InfoviewAction): void {
       commands.openProfileWindow(action.publicKey).catch(failed);
       return;
     case "joinServer":
-      if (action.gameId !== null) void handleLaunchGame(action.gameId, action.server, action.source);
+      if (action.gameId !== null)
+        void handleLaunchGame(action.gameId, action.server, action.source);
       return;
     case "activityMore":
       return;
@@ -120,7 +135,10 @@ const Section: Component<{ section: InfoviewSection }> = (props) => (
       {(s) => (
         <section class="infoview-section" aria-label="Your communities">
           <div class="infoview-section-title">Your Communities</div>
-          <Show when={s().rows.length > 0} fallback={<div class="infoview-empty">No communities yet.</div>}>
+          <Show
+            when={s().rows.length > 0}
+            fallback={<div class="infoview-empty">No communities yet.</div>}
+          >
             <ul class="infoview-list">
               <For each={s().rows}>
                 {(row) => (
@@ -148,7 +166,10 @@ const Section: Component<{ section: InfoviewSection }> = (props) => (
       {(s) => (
         <section class="infoview-section" aria-label="Friends playing now">
           <div class="infoview-section-title">Friends Playing Now</div>
-          <Show when={s().rows.length > 0} fallback={<div class="infoview-empty">No friends in a game.</div>}>
+          <Show
+            when={s().rows.length > 0}
+            fallback={<div class="infoview-empty">No friends in a game.</div>}
+          >
             <ul class="infoview-list">
               <For each={s().rows}>
                 {(row) => (
@@ -174,7 +195,9 @@ const Section: Component<{ section: InfoviewSection }> = (props) => (
           <Show when={s().friend.nickname}>
             <div class="infoview-meta">{s().friend.displayName}</div>
           </Show>
-          <div class="infoview-meta">{s().blocked ? "Blocked" : s().friend.statusMessage ?? s().friend.status}</div>
+          <div class="infoview-meta">
+            {s().blocked ? "Blocked" : (s().friend.statusMessage ?? s().friend.status)}
+          </div>
           <div class="infoview-actions">
             <For each={s().actions}>
               {(a) => (
@@ -218,7 +241,8 @@ const Section: Component<{ section: InfoviewSection }> = (props) => (
             <div class="infoview-text">{s().description}</div>
           </Show>
           <div class="infoview-meta">
-            {s().memberCount} {s().memberCount === 1 ? "member" : "members"}, {s().onlineCount} online
+            {s().memberCount} {s().memberCount === 1 ? "member" : "members"}, {s().onlineCount}{" "}
+            online
           </div>
           <Show when={s().removed}>
             {(r) => (
@@ -244,13 +268,19 @@ const Section: Component<{ section: InfoviewSection }> = (props) => (
       {(s) => (
         <section class="infoview-section" aria-label="Events">
           <div class="infoview-section-title">Events</div>
-          <Show when={s().events.length > 0} fallback={<div class="infoview-empty">No upcoming events.</div>}>
+          <Show
+            when={s().events.length > 0}
+            fallback={<div class="infoview-empty">No upcoming events.</div>}
+          >
             <ul class="infoview-list">
               <For each={s().events}>
                 {(ev) => (
                   <li class="infoview-row">
                     <span class="infoview-text">{ev.title}</span>
-                    <time class="infoview-meta" dateTime={new Date(ev.startTime * 1000).toISOString()}>
+                    <time
+                      class="infoview-meta"
+                      dateTime={new Date(ev.startTime * 1000).toISOString()}
+                    >
                       {new Date(ev.startTime * 1000).toLocaleString()}
                     </time>
                   </li>

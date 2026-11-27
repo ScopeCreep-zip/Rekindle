@@ -19,11 +19,15 @@ const RoleTag: Component<RoleTagProps> = (props) => {
   return (
     <span
       class={hex() ? "role-tag role-tag-coloured" : "role-tag role-tag-default"}
-      style={hex() && props.tagColours ? {
-        background: `color-mix(in srgb, ${hex()} 25%, transparent)`,
-        "--role-tag-dark": colorIntToHex(props.tagColours.dark, "#000000"),
-        "--role-tag-light": colorIntToHex(props.tagColours.light, "#000000"),
-      } : {}}
+      style={
+        hex() && props.tagColours
+          ? {
+              background: `color-mix(in srgb, ${hex()} 25%, transparent)`,
+              "--role-tag-dark": colorIntToHex(props.tagColours.dark, "#000000"),
+              "--role-tag-light": colorIntToHex(props.tagColours.light, "#000000"),
+            }
+          : {}
+      }
     >
       {props.name}
     </span>

@@ -52,7 +52,7 @@ const VoiceMessagePlayer: Component<VoiceMessagePlayerProps> = (props) => {
         props.communityId,
         props.channelId,
         props.attachment.attachmentId,
-        props.attachment.mimeType,
+        props.attachment.mimeType
       );
       if (!loadedNote) return null;
       setDurationMs(loadedNote.durationMs);
@@ -125,9 +125,9 @@ const VoiceMessagePlayer: Component<VoiceMessagePlayerProps> = (props) => {
         {Array.from({ length: totalBars() }, (_v, i) => {
           const peak = waveform()[i] ?? 0;
           const heightPx =
-            PEAK_HEIGHT_MIN_PX +
-            ((PEAK_HEIGHT_MAX_PX - PEAK_HEIGHT_MIN_PX) * peak) / 255;
-          const klass = i < playedBars() ? "voice-message-bar voice-message-bar-played" : "voice-message-bar";
+            PEAK_HEIGHT_MIN_PX + ((PEAK_HEIGHT_MAX_PX - PEAK_HEIGHT_MIN_PX) * peak) / 255;
+          const klass =
+            i < playedBars() ? "voice-message-bar voice-message-bar-played" : "voice-message-bar";
           return (
             <span
               class={klass}

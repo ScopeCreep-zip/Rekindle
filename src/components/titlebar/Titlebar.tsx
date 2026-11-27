@@ -34,7 +34,9 @@ const Titlebar: Component<TitlebarProps> = (props) => {
         onClick={handleMinimize}
         aria-label="Minimize window"
       >
-        <span class="xfire-titlebar-glyph" aria-hidden="true">&#x2014;</span>
+        <span class="xfire-titlebar-glyph" aria-hidden="true">
+          &#x2014;
+        </span>
       </button>
       {props.showMaximize && (
         <button
@@ -43,7 +45,9 @@ const Titlebar: Component<TitlebarProps> = (props) => {
           onClick={handleMaximize}
           aria-label="Maximize window"
         >
-          <span class="xfire-titlebar-glyph" aria-hidden="true">&#x25A1;</span>
+          <span class="xfire-titlebar-glyph" aria-hidden="true">
+            &#x25A1;
+          </span>
         </button>
       )}
       <button
@@ -52,7 +56,9 @@ const Titlebar: Component<TitlebarProps> = (props) => {
         onClick={props.hideOnClose ? handleHide : handleClose}
         aria-label={props.hideOnClose ? "Hide window" : "Close window"}
       >
-        <span class="xfire-titlebar-glyph" aria-hidden="true">&#x2715;</span>
+        <span class="xfire-titlebar-glyph" aria-hidden="true">
+          &#x2715;
+        </span>
       </button>
     </div>
   );

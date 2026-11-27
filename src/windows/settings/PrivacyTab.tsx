@@ -10,7 +10,9 @@ import QuickWipeSection from "../../components/settings/QuickWipeSection";
 import AuditLogSection from "../../components/settings/AuditLogSection";
 
 const PrivacyTab: Component = () => {
-  const [blockedUsers, setBlockedUsers] = createSignal<{ publicKey: string; displayName: string; blockedAt: number }[]>([]);
+  const [blockedUsers, setBlockedUsers] = createSignal<
+    { publicKey: string; displayName: string; blockedAt: number }[]
+  >([]);
   const [error, setError] = createSignal<string | null>(null);
   // `null` until the stored value loads: the box is unticked and disabled,
   // never showing a value it has not read (walk row ST28 read the initial
@@ -21,14 +23,17 @@ const PrivacyTab: Component = () => {
   const [keepActivity, setKeepActivity] = createSignal<boolean | null>(null);
 
   onMount(() => {
-    commands.getPreferences().then((p) => {
-      setReadReceipts(p.readReceiptsEnabled);
-      setShareGameTotals(p.shareGameTotals);
-      setShareCurrentGame(p.shareCurrentGame);
-      setKeepActivity(p.keepActivityLog);
-    }).catch((e) => {
-      console.error("Failed to load the privacy settings:", e);
-    });
+    commands
+      .getPreferences()
+      .then((p) => {
+        setReadReceipts(p.readReceiptsEnabled);
+        setShareGameTotals(p.shareGameTotals);
+        setShareCurrentGame(p.shareCurrentGame);
+        setKeepActivity(p.keepActivityLog);
+      })
+      .catch((e) => {
+        console.error("Failed to load the privacy settings:", e);
+      });
   });
 
   // The Host reviews the change (a trust-changing intent); the switch shows
@@ -85,9 +90,12 @@ const PrivacyTab: Component = () => {
   }
 
   const loadBlocked = (): void => {
-    commands.getBlockedUsers().then(setBlockedUsers).catch((e) => {
-      console.error("Failed to load blocked users:", e);
-    });
+    commands
+      .getBlockedUsers()
+      .then(setBlockedUsers)
+      .catch((e) => {
+        console.error("Failed to load blocked users:", e);
+      });
   };
   // The Host's `blockChanged` (from any window or frontend) re-reads the list.
   const unsubscribe = subscribeChatEvents((event) => {
@@ -126,8 +134,8 @@ const PrivacyTab: Component = () => {
         <span class="buddy-name">Read receipts</span>
       </label>
       <div class="settings-hint">
-        Friends see that you read their messages only when both of you turn
-        read receipts on. They are never sent while you appear Invisible.
+        Friends see that you read their messages only when both of you turn read receipts on. They
+        are never sent while you appear Invisible.
       </div>
       <div class="settings-section-title">Current Game</div>
       <label class="settings-option">
@@ -140,8 +148,8 @@ const PrivacyTab: Component = () => {
         <span class="buddy-name">Show friends the game I'm playing</span>
       </label>
       <div class="settings-hint">
-        Off, games are still detected for your own game time, but friends
-        never see what you play. Hidden games are never shown either way.
+        Off, games are still detected for your own game time, but friends never see what you play.
+        Hidden games are never shown either way.
       </div>
       <HiddenGamesSection />
       <div class="settings-section-title">Game Time</div>
@@ -155,9 +163,9 @@ const PrivacyTab: Component = () => {
         <span class="buddy-name">Share game time with friends</span>
       </label>
       <div class="settings-hint">
-        Friends see how long you have played each game, sent to them
-        end-to-end encrypted. Turning it off stops new totals; friends keep
-        what they last received until you are no longer friends.
+        Friends see how long you have played each game, sent to them end-to-end encrypted. Turning
+        it off stops new totals; friends keep what they last received until you are no longer
+        friends.
       </div>
       <div class="settings-section-title">Activity Feed</div>
       <label class="settings-option">
@@ -170,13 +178,17 @@ const PrivacyTab: Component = () => {
         <span class="buddy-name">Keep an activity feed of my friends</span>
       </label>
       <div class="settings-hint">
-        Your friends' games, name and status changes, kept on this device
-        only and never sent anywhere. Turning it off clears the feed.
+        Your friends' games, name and status changes, kept on this device only and never sent
+        anywhere. Turning it off clears the feed.
       </div>
       <div class="settings-section-title">Identity</div>
       <div class="form-field-row">
-        <button type="button" class="form-btn-secondary" disabled>Export Identity</button>
-        <button type="button" class="form-btn-secondary" disabled>Import Identity</button>
+        <button type="button" class="form-btn-secondary" disabled>
+          Export Identity
+        </button>
+        <button type="button" class="form-btn-secondary" disabled>
+          Import Identity
+        </button>
       </div>
       <div class="settings-hint">Identity export/import requires Stronghold integration.</div>
       <QuickWipeSection />
@@ -185,14 +197,21 @@ const PrivacyTab: Component = () => {
       <Show when={error()}>
         <div class="form-error">{error()}</div>
       </Show>
-      <Show when={blockedUsers().length > 0} fallback={
-        <div class="settings-hint">No blocked users.</div>
-      }>
+      <Show
+        when={blockedUsers().length > 0}
+        fallback={<div class="settings-hint">No blocked users.</div>}
+      >
         <For each={blockedUsers()}>
           {(user) => (
             <div class="blocked-user-item">
-              <span class="buddy-name">{user.displayName || `${user.publicKey.slice(0, 12)}...`}</span>
-              <button type="button" class="form-btn-secondary" onClick={() => handleUnblock(user.publicKey)}>
+              <span class="buddy-name">
+                {user.displayName || `${user.publicKey.slice(0, 12)}...`}
+              </span>
+              <button
+                type="button"
+                class="form-btn-secondary"
+                onClick={() => handleUnblock(user.publicKey)}
+              >
                 Unblock
               </button>
             </div>

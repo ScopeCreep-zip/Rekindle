@@ -10,9 +10,7 @@ const PermissionCheckboxList: Component<PermissionCheckboxListProps> = (props) =
   <For each={PERMISSION_CATEGORIES}>
     {(category) => (
       <div>
-        <div class="settings-category-label">
-          {category.name}
-        </div>
+        <div class="settings-category-label">{category.name}</div>
         <For each={category.permissions}>
           {(perm) => (
             <label class="settings-option">

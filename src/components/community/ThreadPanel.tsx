@@ -65,7 +65,8 @@ const ThreadPanel: Component<ThreadPanelProps> = (props) => {
             <div class="thread-panel-title-group">
               <span class="thread-panel-title">{thread().name}</span>
               <div class="thread-panel-meta">
-                Started by {props.nameOf(thread().creatorPseudonym)} · {thread().messageCount} messages
+                Started by {props.nameOf(thread().creatorPseudonym)} · {thread().messageCount}{" "}
+                messages
                 <Show when={thread().lastMessageAt > 0}>
                   {` · last active ${new Date(thread().lastMessageAt * 1000).toLocaleString()}`}
                 </Show>
@@ -116,8 +117,16 @@ const ThreadPanel: Component<ThreadPanelProps> = (props) => {
                   senderName={senderName(msg)}
                   myPseudonymKey={props.myPseudonymKey}
                   onReply={props.onReply}
-                  onReaction={props.onReaction ? (emoji) => props.onReaction!(msg.serverMessageId!, emoji) : undefined}
-                  onRemoveReaction={props.onRemoveReaction ? (emoji) => props.onRemoveReaction!(msg.serverMessageId!, emoji) : undefined}
+                  onReaction={
+                    props.onReaction
+                      ? (emoji) => props.onReaction!(msg.serverMessageId!, emoji)
+                      : undefined
+                  }
+                  onRemoveReaction={
+                    props.onRemoveReaction
+                      ? (emoji) => props.onRemoveReaction!(msg.serverMessageId!, emoji)
+                      : undefined
+                  }
                   onPin={props.onPin}
                   onCreatePoll={props.onCreatePoll}
                   onEdit={props.onEdit}
@@ -131,7 +140,9 @@ const ThreadPanel: Component<ThreadPanelProps> = (props) => {
           <div class="message-input-wrapper">
             <textarea
               class="message-input message-input-field"
-              placeholder={thread().archived ? "Reply to reactivate thread..." : "Reply to thread..."}
+              placeholder={
+                thread().archived ? "Reply to reactivate thread..." : "Reply to thread..."
+              }
               value={body()}
               onInput={(e) => setBody(e.currentTarget.value)}
               onKeyDown={handleKeyDown}

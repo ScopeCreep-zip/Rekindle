@@ -66,8 +66,22 @@ const CommunityRightPanel: Component<{ vm: CommunityVm }> = (props) => {
               onArchive={vm.handleArchiveActiveThread}
               onUnarchive={handleUnarchiveThread}
               onReply={vm.handleReply}
-              onReaction={(messageId, emoji) => handleAddReaction(vm.selectedCommunityId(), vm.selectedChannelId(), messageId, emoji)}
-              onRemoveReaction={(messageId, emoji) => handleRemoveReaction(vm.selectedCommunityId(), vm.selectedChannelId(), messageId, emoji)}
+              onReaction={(messageId, emoji) =>
+                handleAddReaction(
+                  vm.selectedCommunityId(),
+                  vm.selectedChannelId(),
+                  messageId,
+                  emoji
+                )
+              }
+              onRemoveReaction={(messageId, emoji) =>
+                handleRemoveReaction(
+                  vm.selectedCommunityId(),
+                  vm.selectedChannelId(),
+                  messageId,
+                  emoji
+                )
+              }
               onPin={(messageId) => {
                 const msg = vm.channelMessages().find((m) => m.serverMessageId === messageId);
                 if (msg?.pinned) {
@@ -78,9 +92,16 @@ const CommunityRightPanel: Component<{ vm: CommunityVm }> = (props) => {
               }}
               onCreatePoll={(messageId) => vm.setCreatePollTarget(messageId)}
               onEdit={(messageId, currentBody) => vm.setEditState({ messageId, body: currentBody })}
-              onDelete={(messageId) => void handleDeleteChannelMessage(vm.selectedChannelId(), messageId)}
+              onDelete={(messageId) =>
+                void handleDeleteChannelMessage(vm.selectedChannelId(), messageId)
+              }
               onVotePoll={(pollId, selectedAnswers) =>
-                handleVotePoll(vm.selectedCommunityId(), vm.selectedChannelId(), pollId, selectedAnswers)
+                handleVotePoll(
+                  vm.selectedCommunityId(),
+                  vm.selectedChannelId(),
+                  pollId,
+                  selectedAnswers
+                )
               }
               onClosePoll={(pollId) =>
                 handleClosePoll(vm.selectedCommunityId(), vm.selectedChannelId(), pollId)

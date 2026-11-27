@@ -34,7 +34,6 @@ export function handleSelectStatus(value: string): void {
 }
 
 const StatusPicker: Component<StatusPickerProps> = (props) => {
-
   return (
     <DropdownMenu placement="top-start">
       <DropdownMenu.Trigger class="buddy-item status-picker">
@@ -53,7 +52,11 @@ const StatusPicker: Component<StatusPickerProps> = (props) => {
                 // A radio item keeps its menu open by default (Kobalte
                 // `MenuRadioItem`, closeOnSelect false): choosing a status
                 // closes the picker, as Xfire's did.
-                <DropdownMenu.RadioItem class="context-menu-item" value={option.value} closeOnSelect>
+                <DropdownMenu.RadioItem
+                  class="context-menu-item"
+                  value={option.value}
+                  closeOnSelect
+                >
                   <StatusDot status={option.value} />
                   <span class="status-picker-label">{option.label}</span>
                 </DropdownMenu.RadioItem>

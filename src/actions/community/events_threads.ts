@@ -17,7 +17,7 @@ export async function handleLoadEvents(communityId: string): Promise<void> {
 
 export async function handleCreateEvent(
   communityId: string,
-  request: CreateEventRequest,
+  request: CreateEventRequest
 ): Promise<string | null> {
   try {
     const eventId = await commands.createEvent(communityId, request);
@@ -39,20 +39,26 @@ export async function handleEditEvent(
   startTime?: number,
   endTime?: number,
   channelId?: string,
-  maxAttendees?: number,
+  maxAttendees?: number
 ): Promise<void> {
   try {
-    await commands.editEvent(communityId, eventId, title, description, startTime, endTime, channelId, maxAttendees);
+    await commands.editEvent(
+      communityId,
+      eventId,
+      title,
+      description,
+      startTime,
+      endTime,
+      channelId,
+      maxAttendees
+    );
   } catch (e) {
     console.error("Failed to edit event:", e);
     addToast("Failed to edit event", "error");
   }
 }
 
-export async function handleDeleteEvent(
-  communityId: string,
-  eventId: string,
-): Promise<void> {
+export async function handleDeleteEvent(communityId: string, eventId: string): Promise<void> {
   try {
     await commands.deleteEvent(communityId, eventId);
   } catch (e) {
@@ -61,10 +67,7 @@ export async function handleDeleteEvent(
   }
 }
 
-export async function handleCancelEvent(
-  communityId: string,
-  eventId: string,
-): Promise<void> {
+export async function handleCancelEvent(communityId: string, eventId: string): Promise<void> {
   try {
     await commands.cancelEvent(communityId, eventId);
   } catch (e) {
@@ -76,7 +79,7 @@ export async function handleCancelEvent(
 export async function handleRsvpEvent(
   communityId: string,
   eventId: string,
-  status: string,
+  status: string
 ): Promise<void> {
   try {
     await commands.rsvpEvent(communityId, eventId, status);
@@ -92,7 +95,7 @@ export async function handleCreateThread(
   name: string,
   starterMessageId: string,
   forumTag?: string | null,
-  autoArchiveSeconds?: number,
+  autoArchiveSeconds?: number
 ): Promise<string | null> {
   try {
     const threadId = await commands.createThread(
@@ -101,7 +104,7 @@ export async function handleCreateThread(
       name,
       starterMessageId,
       forumTag,
-      autoArchiveSeconds,
+      autoArchiveSeconds
     );
     // Thread will arrive via broadcast — but optimistically reload
     await handleLoadChannelThreads(communityId, channelId);
@@ -114,8 +117,8 @@ export async function handleCreateThread(
 }
 
 export async function handleLoadChannelThreads(
-    communityId: string,
-    channelId: string,
+  communityId: string,
+  channelId: string
 ): Promise<void> {
   try {
     // Every thread, archived ones flagged: the list shows them apart and
@@ -133,7 +136,7 @@ export async function handleCreateForumPost(
   channelId: string,
   name: string,
   body: string,
-  forumTag?: string | null,
+  forumTag?: string | null
 ): Promise<string | null> {
   const starterMessageId = `forum-post-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
   const threadId = await handleCreateThread(
@@ -141,7 +144,7 @@ export async function handleCreateForumPost(
     channelId,
     name,
     starterMessageId,
-    forumTag,
+    forumTag
   );
   if (!threadId) return null;
   await handleSendThreadMessage(communityId, threadId, body);
@@ -152,7 +155,7 @@ export async function handleCreateForumPost(
 export async function handleSendThreadMessage(
   communityId: string,
   threadId: string,
-  body: string,
+  body: string
 ): Promise<void> {
   if (!body.trim()) return;
   const trimmed = body.trim();
@@ -176,7 +179,7 @@ export async function handleSendThreadMessage(
   try {
     await commands.sendThreadMessage(communityId, threadId, trimmed);
     setCommunityState("threadMessages", threadId, (msgs) =>
-      msgs.map((m) => (m.id === tempId ? { ...m, status: "sent" as const } : m)),
+      msgs.map((m) => (m.id === tempId ? { ...m, status: "sent" as const } : m))
     );
     // A reply after the archive revives the thread (the Host's listing,
     // `is_thread_archived`): re-read it rather than decide it here.
@@ -185,7 +188,7 @@ export async function handleSendThreadMessage(
     console.error("Failed to send thread message:", e);
     addToast("Failed to send thread message", "error");
     setCommunityState("threadMessages", threadId, (msgs) =>
-      msgs.map((m) => (m.id === tempId ? { ...m, status: "failed" as const } : m)),
+      msgs.map((m) => (m.id === tempId ? { ...m, status: "failed" as const } : m))
     );
   }
 }
@@ -193,7 +196,7 @@ export async function handleSendThreadMessage(
 export async function handleLoadThreadMessages(
   communityId: string,
   threadId: string,
-  limit: number,
+  limit: number
 ): Promise<void> {
   try {
     const messages = await commands.getThreadMessages(communityId, threadId, limit);
@@ -204,7 +207,7 @@ export async function handleLoadThreadMessages(
     setCommunityState("threadMessages", threadId, (prev) => {
       const held = new Set(mapped.map((m) => m.serverMessageId).filter(Boolean));
       const later = (prev ?? []).filter((m) =>
-        m.serverMessageId ? !held.has(m.serverMessageId) : m.isOwn,
+        m.serverMessageId ? !held.has(m.serverMessageId) : m.isOwn
       );
       return [...mapped, ...later];
     });
@@ -214,10 +217,7 @@ export async function handleLoadThreadMessages(
   }
 }
 
-export async function handleArchiveThread(
-  communityId: string,
-  threadId: string,
-): Promise<void> {
+export async function handleArchiveThread(communityId: string, threadId: string): Promise<void> {
   try {
     await commands.archiveThread(communityId, threadId);
   } catch (e) {
@@ -226,10 +226,7 @@ export async function handleArchiveThread(
   }
 }
 
-export async function handleUnarchiveThread(
-  communityId: string,
-  threadId: string,
-): Promise<void> {
+export async function handleUnarchiveThread(communityId: string, threadId: string): Promise<void> {
   try {
     await commands.unarchiveThread(communityId, threadId);
   } catch (e) {
@@ -242,7 +239,7 @@ export async function handleAddGameServer(
   communityId: string,
   gameId: string,
   label: string,
-  address: string,
+  address: string
 ): Promise<string | null> {
   try {
     const serverId = await commands.addGameServer(communityId, gameId, label, address);
@@ -259,14 +256,11 @@ export async function handleAddGameServer(
   }
 }
 
-export async function handleRemoveGameServer(
-  communityId: string,
-  serverId: string,
-): Promise<void> {
+export async function handleRemoveGameServer(communityId: string, serverId: string): Promise<void> {
   try {
     await commands.removeGameServer(communityId, serverId);
     setCommunityState("gameServers", communityId, (prev) =>
-      (prev ?? []).filter((s) => s.id !== serverId),
+      (prev ?? []).filter((s) => s.id !== serverId)
     );
   } catch (e) {
     console.error("Failed to remove game server:", e);

@@ -1,4 +1,12 @@
-import { type Component, type JSX, Show, children, createContext, createSignal, useContext } from "solid-js";
+import {
+  type Component,
+  type JSX,
+  Show,
+  children,
+  createContext,
+  createSignal,
+  useContext,
+} from "solid-js";
 import { Portal } from "solid-js/web";
 import type { SlotKey } from "../../ipc/commands/dto_skin_tree";
 
@@ -32,7 +40,9 @@ export const SlotProvider: Component<{ children: JSX.Element }> = (props) => {
 };
 
 /** A slot node's ref: registers its element as the slot `key`'s target. */
-export function useSlotRegister(): ((key: SlotKey, el: HTMLElement | undefined) => void) | undefined {
+export function useSlotRegister():
+  | ((key: SlotKey, el: HTMLElement | undefined) => void)
+  | undefined {
   return useContext(SlotContext)?.register;
 }
 
@@ -56,7 +66,10 @@ export const SlotMount: Component<{ slot: SlotKey; children: JSX.Element }> = (p
   return (
     <Show when={target()} fallback={part()}>
       {(el) => (
-        <Portal mount={el()} ref={(container: HTMLDivElement) => container.classList.add("skin-slot-mount")}>
+        <Portal
+          mount={el()}
+          ref={(container: HTMLDivElement) => container.classList.add("skin-slot-mount")}
+        >
           {part()}
         </Portal>
       )}

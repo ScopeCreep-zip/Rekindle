@@ -131,9 +131,7 @@ const ActiveGroupCallPanel: Component = () => {
                       {participantName(pubkey).slice(0, 1).toUpperCase()}
                     </div>
                     <div class="group-call-tile-name">{participantName(pubkey)}</div>
-                    <div class="group-call-tile-status">
-                      {accepted() ? "in call" : "ringing…"}
-                    </div>
+                    <div class="group-call-tile-status">{accepted() ? "in call" : "ringing…"}</div>
                   </div>
                 );
               }}

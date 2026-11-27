@@ -6,13 +6,15 @@ const DevicesTab: Component = () => {
   // Architecture §28.4 — paired devices list. The pairing flow itself
   // lives inside `AddDeviceModal`; this tab only renders the existing
   // device list and the button that opens the modal.
-  const [pairedDevices, setPairedDevices] = createSignal<{
-    deviceId: string;
-    devicePublicKey: string;
-    displayName: string;
-    pairedAt: number;
-    unpairedAt?: number;
-  }[]>([]);
+  const [pairedDevices, setPairedDevices] = createSignal<
+    {
+      deviceId: string;
+      devicePublicKey: string;
+      displayName: string;
+      pairedAt: number;
+      unpairedAt?: number;
+    }[]
+  >([]);
   const [addDeviceOpen, setAddDeviceOpen] = createSignal(false);
 
   async function loadDevices(): Promise<void> {
@@ -35,17 +37,12 @@ const DevicesTab: Component = () => {
     <>
       <div class="settings-section-title">Devices</div>
       <div class="settings-hint">
-        Pair another device so it can read the same communities and
-        direct messages. Each paired device keeps its own keys; the
-        handshake uses a one-time 12-word code with a 5-minute expiry
+        Pair another device so it can read the same communities and direct messages. Each paired
+        device keeps its own keys; the handshake uses a one-time 12-word code with a 5-minute expiry
         (architecture §28.4).
       </div>
       <div class="settings-button-row">
-        <button
-          class="form-btn-primary"
-          type="button"
-          onClick={() => setAddDeviceOpen(true)}
-        >
+        <button class="form-btn-primary" type="button" onClick={() => setAddDeviceOpen(true)}>
           Add a device…
         </button>
       </div>

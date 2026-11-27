@@ -13,7 +13,12 @@ const NodeLabelView: Component<{ label: NodeLabel }> = (props) => {
   const box = (): JSX.CSSProperties | undefined => {
     const c = props.label.cover;
     return c
-      ? { "--label-x": `${c[0]}px`, "--label-y": `${c[1]}px`, "--label-w": `${c[2]}px`, "--label-h": `${c[3]}px` }
+      ? {
+          "--label-x": `${c[0]}px`,
+          "--label-y": `${c[1]}px`,
+          "--label-w": `${c[2]}px`,
+          "--label-h": `${c[3]}px`,
+        }
       : undefined;
   };
   // A word one size too wide for its box (SK5: "Rekindle" in Symbiosis's
@@ -67,9 +72,17 @@ const CommunitiesGlyph: Component = () => (
     <circle cx="12" cy="7" r="3.2" fill="currentColor" />
     <path d="M6.5 19c0-3.2 2.5-5.6 5.5-5.6s5.5 2.4 5.5 5.6z" fill="currentColor" />
     <circle cx="5" cy="9.5" r="2.3" fill="currentColor" opacity="0.8" />
-    <path d="M1 18.5c0-2.4 1.8-4.2 4-4.2 1 0 1.9.3 2.6.9-1.2 1-2 2.3-2.3 3.8z" fill="currentColor" opacity="0.8" />
+    <path
+      d="M1 18.5c0-2.4 1.8-4.2 4-4.2 1 0 1.9.3 2.6.9-1.2 1-2 2.3-2.3 3.8z"
+      fill="currentColor"
+      opacity="0.8"
+    />
     <circle cx="19" cy="9.5" r="2.3" fill="currentColor" opacity="0.8" />
-    <path d="M23 18.5c0-2.4-1.8-4.2-4-4.2-1 0-1.9.3-2.6.9 1.2 1 2 2.3 2.3 3.8z" fill="currentColor" opacity="0.8" />
+    <path
+      d="M23 18.5c0-2.4-1.8-4.2-4-4.2-1 0-1.9.3-2.6.9 1.2 1 2 2.3 2.3 3.8z"
+      fill="currentColor"
+      opacity="0.8"
+    />
   </svg>
 );
 
@@ -87,6 +100,8 @@ const NODE_GLYPHS: Record<NodeGlyph, Component> = {
 };
 
 /** A built-in glyph, sized by its box. */
-const NodeGlyphView: Component<{ glyph: NodeGlyph }> = (props) => <Dynamic component={NODE_GLYPHS[props.glyph]} />;
+const NodeGlyphView: Component<{ glyph: NodeGlyph }> = (props) => (
+  <Dynamic component={NODE_GLYPHS[props.glyph]} />
+);
 
 export default NodeLabelView;

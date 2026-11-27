@@ -31,8 +31,8 @@ const GameInvitePicker: Component<{ peerId: string; peerName: string }> = (props
         when={favourites().length > 0}
         fallback={
           <div class="settings-hint">
-            No server to invite to: add a favourite server under Settings,
-            and show friends the game you play (Privacy).
+            No server to invite to: add a favourite server under Settings, and show friends the game
+            you play (Privacy).
           </div>
         }
       >
@@ -51,7 +51,9 @@ const GameInvitePicker: Component<{ peerId: string; peerName: string }> = (props
           </For>
         </ul>
       </Show>
-      <div class="settings-hint" role="status">{status()}</div>
+      <div class="settings-hint" role="status">
+        {status()}
+      </div>
     </div>
   );
 };

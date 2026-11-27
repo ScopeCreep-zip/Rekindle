@@ -39,7 +39,10 @@ const SimpleInputModal: Component<SimpleInputModalProps> = (props) => {
     if (!v) return;
     if (props.validate) {
       const err = props.validate(v);
-      if (err) { setError(err); return; }
+      if (err) {
+        setError(err);
+        return;
+      }
     }
     setError(null);
     setSubmitting(true);

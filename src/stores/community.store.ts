@@ -5,9 +5,17 @@ import type {
 import { createStore, produce, reconcile } from "solid-js/store";
 import type { Message } from "./chat.store";
 import type {
-  GameInfo, InviteDto, MemberGroup, OnboardingConfig, WelcomeScreen,
+  GameInfo,
+  InviteDto,
+  MemberGroup,
+  OnboardingConfig,
+  WelcomeScreen,
 } from "../ipc/commands/dto";
-import type { ChannelDeniedCapabilities, DeniedCapabilities, MemberModeration } from "../ipc/commands/dto_capabilities";
+import type {
+  ChannelDeniedCapabilities,
+  DeniedCapabilities,
+  MemberModeration,
+} from "../ipc/commands/dto_capabilities";
 
 export interface Channel {
   id: string;
@@ -15,7 +23,16 @@ export interface Channel {
   /** The channel controls we lack here, each with the Host's reason
    *  (`CommunityChannelView::denied`, judged with the channel's overwrites). */
   denied?: ChannelDeniedCapabilities;
-  type: "text" | "voice" | "announcement" | "forum" | "stage" | "directory" | "media" | "events" | "dm";
+  type:
+    | "text"
+    | "voice"
+    | "announcement"
+    | "forum"
+    | "stage"
+    | "directory"
+    | "media"
+    | "events"
+    | "dm";
   unreadCount: number;
   categoryId?: string;
   topic?: string;
@@ -168,12 +185,7 @@ export interface EventRsvp {
 // the same way once `ipc/channels/community_subscription_events.ts`
 // needed them too and src/ipc/ (the dependency-cruiser leaf) couldn't
 // import them back out of this store.
-import type {
-  EventLocation,
-  GameServer,
-  RecurrenceRule,
-  Thread,
-} from "../ipc/commands/types";
+import type { EventLocation, GameServer, RecurrenceRule, Thread } from "../ipc/commands/types";
 export type { GameServer, Thread };
 import type { KeyStatus } from "../ipc/channels/community_subscription_events";
 
@@ -362,7 +374,12 @@ export { communityState, setCommunityState };
  * open across the re-reads a join, a rejoin or a role change sets off.
  */
 export function setCommunityMembers(community: string, members: Member[]): void {
-  setCommunityState("communities", community, "members", reconcile(members, { key: "pseudonymKey" }));
+  setCommunityState(
+    "communities",
+    community,
+    "members",
+    reconcile(members, { key: "pseudonymKey" })
+  );
 }
 
 /**
@@ -371,9 +388,12 @@ export function setCommunityMembers(community: string, members: Member[]): void 
  * a copy without the key merges it into the store, so the row stayed.
  */
 export function dropCommunity(id: string): void {
-  setCommunityState("communities", produce((communities) => {
-    delete communities[id];
-  }));
+  setCommunityState(
+    "communities",
+    produce((communities) => {
+      delete communities[id];
+    })
+  );
   if (communityState.activeCommunity === id) {
     setCommunityState("activeCommunity", null);
     setCommunityState("activeChannel", null);

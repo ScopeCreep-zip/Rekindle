@@ -19,7 +19,12 @@ export async function handleSendMessage(to: string, body: string): Promise<void>
   const trimmed = body.trim();
   if (!trimmed) return;
   try {
-    upsertOwnMessage(to, transformDmMessage(await afterDraftReports(`dm:${to}`, () => commands.sendMessage(to, trimmed))));
+    upsertOwnMessage(
+      to,
+      transformDmMessage(
+        await afterDraftReports(`dm:${to}`, () => commands.sendMessage(to, trimmed))
+      )
+    );
   } catch {
     await handleLoadHistory(to, 50);
   }
@@ -34,7 +39,12 @@ export async function handleSendMessage(to: string, body: string): Promise<void>
 export function upsertOwnMessage(to: string, message: Message): void {
   const existing = chatState.conversations[to];
   if (!existing) {
-    setChatState("conversations", to, { peerId: to, messages: [message], isTyping: false, lastRead: 0 });
+    setChatState("conversations", to, {
+      peerId: to,
+      messages: [message],
+      isTyping: false,
+      lastRead: 0,
+    });
     return;
   }
   setChatState("conversations", to, "messages", (msgs) => withOwnRow(msgs, message));
@@ -61,7 +71,7 @@ export function handleKeyDown(
   e: KeyboardEvent,
   to: string,
   getBody: () => string,
-  clearInput: () => void,
+  clearInput: () => void
 ): void {
   if (e.key === "Enter" && !e.shiftKey) {
     e.preventDefault();
@@ -79,10 +89,7 @@ export function handleDraftChanged(to: string, body: string): void {
   void sendDraftReport(`dm:${to}`, () => commands.sendTyping(to, body.trim().length > 0));
 }
 
-export function handleIncomingMessage(
-  peerId: string,
-  message: Message,
-): void {
+export function handleIncomingMessage(peerId: string, message: Message): void {
   const existing = chatState.conversations[peerId];
   if (existing) {
     // The backend's message id names the row: a message already shown
@@ -91,7 +98,11 @@ export function handleIncomingMessage(
       ? existing.messages.findIndex((m) => m.serverMessageId === message.serverMessageId)
       : -1;
     if (idx >= 0) {
-      setChatState("conversations", peerId, "messages", idx, (m) => ({ ...m, ...message, id: m.id }));
+      setChatState("conversations", peerId, "messages", idx, (m) => ({
+        ...m,
+        ...message,
+        id: m.id,
+      }));
       return;
     }
     setChatState("conversations", peerId, {
@@ -110,10 +121,7 @@ export function handleIncomingMessage(
 
 /// Render the peer's typing as the backend emitted it: the start, and the
 /// stop on their stop, their message, or the backend's expiry (plan E2.3).
-export function handleTypingIndicator(
-  peerId: string,
-  isTyping: boolean,
-): void {
+export function handleTypingIndicator(peerId: string, isTyping: boolean): void {
   const existing = chatState.conversations[peerId];
   if (existing) {
     setChatState("conversations", peerId, {
@@ -123,10 +131,7 @@ export function handleTypingIndicator(
   }
 }
 
-export async function handleLoadHistory(
-  peerId: string,
-  limit: number,
-): Promise<void> {
+export async function handleLoadHistory(peerId: string, limit: number): Promise<void> {
   try {
     const messages = await commands.getMessageHistory(peerId, limit);
     const mapped = messages.map(transformDmMessage);
@@ -139,7 +144,7 @@ export async function handleLoadHistory(
     const newest = mapped.reduce((t, m) => Math.max(t, m.timestamp), 0);
     const stored = new Set(mapped.map((m) => m.serverMessageId).filter(Boolean));
     const live = (existing?.messages ?? []).filter(
-      (m) => m.serverMessageId && !stored.has(m.serverMessageId) && m.timestamp > newest,
+      (m) => m.serverMessageId && !stored.has(m.serverMessageId) && m.timestamp > newest
     );
     if (mapped.length > 0 || live.length > 0 || !existing || existing.messages.length === 0) {
       setChatState("conversations", peerId, {
@@ -177,7 +182,8 @@ export function handleResetUnread(peerId: string): void {
       .markRead(peerId, renderedThrough(peerId))
       .then(() => {
         const messages = chatState.conversations[peerId]?.messages ?? [];
-        if (awaitsExpiry(messages, disappearingState.timers[peerId])) void handleLoadHistory(peerId, Math.max(50, messages.length));
+        if (awaitsExpiry(messages, disappearingState.timers[peerId]))
+          void handleLoadHistory(peerId, Math.max(50, messages.length));
       })
       .catch((e) => {
         console.error("Failed to mark read:", e);

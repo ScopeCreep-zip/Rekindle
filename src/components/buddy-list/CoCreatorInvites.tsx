@@ -31,7 +31,9 @@ const CoCreatorInvites: Component = () => {
       <div class="pending-section">
         <div class="pending-header">Co-creator Invites ({invites().length})</div>
         <Show when={error()}>
-          <div class="form-error" role="alert">{error()}</div>
+          <div class="form-error" role="alert">
+            {error()}
+          </div>
         </Show>
         <For each={invites()}>
           {(invite) => (

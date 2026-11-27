@@ -32,11 +32,7 @@ import {
   pickEncoderCodec,
   reportEncoderStatus,
 } from "./encoder_config";
-import {
-  FIRST_CHUNK_DEADLINE_MS,
-  RECREATE_COOLDOWN_MS,
-  freshTrack,
-} from "./sender_types";
+import { FIRST_CHUNK_DEADLINE_MS, RECREATE_COOLDOWN_MS, freshTrack } from "./sender_types";
 import type {
   SenderRoute,
   TrackLabel,
@@ -47,10 +43,7 @@ import type {
 
 export type { SenderRoute, VideoSender } from "./sender_types";
 
-export function createVideoSender(
-  route: SenderRoute,
-  onError: (msg: string) => void,
-): VideoSender {
+export function createVideoSender(route: SenderRoute, onError: (msg: string) => void): VideoSender {
   const tracks: Record<TrackLabel, TrackState> = {
     camera: freshTrack(),
     screen: freshTrack(),
@@ -207,8 +200,8 @@ export function createVideoSender(
           buildEncoderConfig(
             constraints,
             effectiveBitrate(configuredKbps, appliedShape().fps),
-            appliedShape(),
-          ),
+            appliedShape()
+          )
         );
         currentCodec = constraints.codec;
         ts.lastKeyframeMs = 0; // force a keyframe so receivers re-sync
@@ -233,8 +226,8 @@ export function createVideoSender(
         buildEncoderConfig(
           constraints,
           effectiveBitrate(configuredKbps, appliedShape().fps),
-          appliedShape(),
-        ),
+          appliedShape()
+        )
       );
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -338,8 +331,8 @@ export function createVideoSender(
               buildEncoderConfig(
                 constraints!,
                 effectiveBitrate(configuredKbps, appliedShape().fps),
-                appliedShape(),
-              ),
+                appliedShape()
+              )
             );
             currentCodec = constraints!.codec;
             ts.lastKeyframeMs = performance.now();
@@ -383,8 +376,8 @@ export function createVideoSender(
               buildEncoderConfig(
                 constraints!,
                 effectiveBitrate(configuredKbps, appliedShape().fps),
-                appliedShape(),
-              ),
+                appliedShape()
+              )
             );
             ts.lastKeyframeMs = now; // reconfigure already emits a keyframe
           } catch (e) {
@@ -449,7 +442,7 @@ export function createVideoSender(
         route.channelId,
         streamIdHex,
         null,
-        "initial",
+        "initial"
       );
     }
 

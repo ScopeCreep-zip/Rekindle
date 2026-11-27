@@ -48,7 +48,7 @@ const OverviewTab: Component<OverviewTabProps> = (props) => {
       await handleUpdateCommunityInfo(
         props.community.id,
         nameChanged ? newName : null,
-        descChanged ? newDesc : null,
+        descChanged ? newDesc : null
       );
       addToast("Community updated", "success");
     } finally {
@@ -95,8 +95,15 @@ const OverviewTab: Component<OverviewTabProps> = (props) => {
       <SuccessorSection communityId={props.community.id} />
       <div class="settings-section-title">This device</div>
       <CommunityDeviceStatus communityId={props.community.id} />
-        <div class="settings-actions-sticky">
-        <button type="button" class="form-btn-primary" onClick={handleSaveOverview} disabled={savingOverview() || props.manageDenied !== null} title={props.manageDenied ?? undefined} aria-description={props.manageDenied ?? undefined}>
+      <div class="settings-actions-sticky">
+        <button
+          type="button"
+          class="form-btn-primary"
+          onClick={handleSaveOverview}
+          disabled={savingOverview() || props.manageDenied !== null}
+          title={props.manageDenied ?? undefined}
+          aria-description={props.manageDenied ?? undefined}
+        >
           <SkinGlyph name="save" /> {savingOverview() ? "Saving..." : "Save Changes"}
         </button>
       </div>

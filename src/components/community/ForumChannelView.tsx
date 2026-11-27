@@ -21,7 +21,7 @@ const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
   const [isSubmitting, setIsSubmitting] = createSignal(false);
 
   const sortedThreads = createMemo(() =>
-    [...props.threads].sort((a, b) => b.lastMessageAt - a.lastMessageAt),
+    [...props.threads].sort((a, b) => b.lastMessageAt - a.lastMessageAt)
   );
 
   const visibleThreads = createMemo(() => {
@@ -60,7 +60,11 @@ const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
             </Show>
           </div>
         </div>
-        <button type="button" class="forum-channel-new-post-btn" onClick={() => setComposerOpen(true)}>
+        <button
+          type="button"
+          class="forum-channel-new-post-btn"
+          onClick={() => setComposerOpen(true)}
+        >
           <SkinGlyph name="plus" />
           New post
         </button>
@@ -93,7 +97,11 @@ const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
         <div class="forum-channel-composer">
           <div class="forum-channel-composer-header">
             <div class="forum-channel-composer-title">Create forum post</div>
-            <button type="button" class="forum-channel-composer-close" onClick={() => setComposerOpen(false)}>
+            <button
+              type="button"
+              class="forum-channel-composer-close"
+              onClick={() => setComposerOpen(false)}
+            >
               <SkinGlyph name="close" />
             </button>
           </div>
@@ -127,7 +135,12 @@ const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
             <button type="button" class="btn btn-secondary" onClick={() => setComposerOpen(false)}>
               Cancel
             </button>
-            <button type="button" class="btn btn-primary" onClick={() => void handleSubmit()} disabled={isSubmitting()}>
+            <button
+              type="button"
+              class="btn btn-primary"
+              onClick={() => void handleSubmit()}
+              disabled={isSubmitting()}
+            >
               {isSubmitting() ? "Posting..." : "Create post"}
             </button>
           </div>
@@ -135,15 +148,24 @@ const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
       </Show>
 
       <div class="forum-channel-thread-list">
-        <Show when={visibleThreads().length > 0} fallback={
-          <div class="forum-channel-empty">
-            <div class="forum-channel-empty-title">No posts yet</div>
-            <div class="forum-channel-empty-subtitle">Start the first thread for this forum channel.</div>
-          </div>
-        }>
+        <Show
+          when={visibleThreads().length > 0}
+          fallback={
+            <div class="forum-channel-empty">
+              <div class="forum-channel-empty-title">No posts yet</div>
+              <div class="forum-channel-empty-subtitle">
+                Start the first thread for this forum channel.
+              </div>
+            </div>
+          }
+        >
           <For each={visibleThreads()}>
             {(thread) => (
-              <button type="button" class="forum-channel-thread-card" onClick={() => props.onOpenThread(thread)}>
+              <button
+                type="button"
+                class="forum-channel-thread-card"
+                onClick={() => props.onOpenThread(thread)}
+              >
                 <div class="forum-channel-thread-topline">
                   <div class="forum-channel-thread-name">{thread.name}</div>
                   <Show when={thread.forumTag}>
@@ -151,7 +173,8 @@ const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
                   </Show>
                 </div>
                 <div class="forum-channel-thread-meta">
-                  Started by {props.nameOf(thread.creatorPseudonym)} · {thread.messageCount} messages · {formatRelativeTime(thread.lastMessageAt * 1000)}
+                  Started by {props.nameOf(thread.creatorPseudonym)} · {thread.messageCount}{" "}
+                  messages · {formatRelativeTime(thread.lastMessageAt * 1000)}
                 </div>
               </button>
             )}

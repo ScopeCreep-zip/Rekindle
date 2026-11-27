@@ -19,7 +19,7 @@ const RenameChannelModal: Component<RenameChannelModalProps> = (props) => (
     placeholder="Channel name..."
     submitLabel="Rename"
     initialValue={props.currentName}
-    validate={(name) => name === props.currentName ? "Name is unchanged" : null}
+    validate={(name) => (name === props.currentName ? "Name is unchanged" : null)}
   />
 );
 

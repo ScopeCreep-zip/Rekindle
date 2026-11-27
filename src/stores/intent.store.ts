@@ -10,15 +10,8 @@
  */
 
 import { createStore } from "solid-js/store";
-import {
-  hostInvoke,
-  invoke,
-  registerIntentPresenter,
-  registerUndoPresenter,
-} from "../ipc/invoke";
-import type {
-  CommandError, Done, IntentProof, IntentReview, UndoOffer,
-} from "../ipc/commands/dto";
+import { hostInvoke, invoke, registerIntentPresenter, registerUndoPresenter } from "../ipc/invoke";
+import type { CommandError, Done, IntentProof, IntentReview, UndoOffer } from "../ipc/commands/dto";
 import { isCommandError } from "../ipc/commands/dto";
 import { errorMessage } from "../utils/error";
 import { kindPhrase } from "../utils/intent_text";

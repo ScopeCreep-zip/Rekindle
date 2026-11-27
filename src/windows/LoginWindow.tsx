@@ -176,9 +176,20 @@ const LoginWindow: Component = () => {
             </For>
           </div>
           <Show when={error() !== null}>
-            <div class="form-error" role="alert">{error()}</div>
+            <div class="form-error" role="alert">
+              {error()}
+            </div>
           </Show>
-          <button type="button" class="account-create-btn" onClick={() => { setPassphrase(""); setDisplayName(""); setError(null); setMode("create"); }}>
+          <button
+            type="button"
+            class="account-create-btn"
+            onClick={() => {
+              setPassphrase("");
+              setDisplayName("");
+              setError(null);
+              setMode("create");
+            }}
+          >
             + Create New Identity
           </button>
         </div>
@@ -255,7 +266,6 @@ const LoginWindow: Component = () => {
           </LoadingButton>
         </form>
       </Show>
-
     </div>
   );
 };

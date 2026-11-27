@@ -47,7 +47,10 @@ const CallStage: Component<{ vm: CommunityVm }> = (props) => {
                 <div class="call-stage-gallery">
                   <For each={stage.tiles()}>
                     {(tile) => (
-                      <ParticipantTile tile={tile} onSpotlight={() => stage.toggleSpotlight(tile.key)} />
+                      <ParticipantTile
+                        tile={tile}
+                        onSpotlight={() => stage.toggleSpotlight(tile.key)}
+                      />
                     )}
                   </For>
                 </div>
@@ -63,7 +66,10 @@ const CallStage: Component<{ vm: CommunityVm }> = (props) => {
                   <div class="call-stage-filmstrip">
                     <For each={stage.filmstrip()}>
                       {(tile) => (
-                        <ParticipantTile tile={tile} onSpotlight={() => stage.toggleSpotlight(tile.key)} />
+                        <ParticipantTile
+                          tile={tile}
+                          onSpotlight={() => stage.toggleSpotlight(tile.key)}
+                        />
                       )}
                     </For>
                   </div>

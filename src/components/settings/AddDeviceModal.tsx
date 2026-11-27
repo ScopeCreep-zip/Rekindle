@@ -1,4 +1,11 @@
-import { type Component, Show, createEffect, createSignal, onCleanup, createUniqueId } from "solid-js";
+import {
+  type Component,
+  Show,
+  createEffect,
+  createSignal,
+  onCleanup,
+  createUniqueId,
+} from "solid-js";
 import type { JSX } from "solid-js";
 
 import Modal from "../common/Modal";
@@ -176,7 +183,7 @@ const AddDeviceModal: Component<AddDeviceModalProps> = (props) => {
 
   function importPairingUri(): void {
     const raw = window.prompt(
-      "Paste pairing URI (rekindle://pair?code=...&salt=...&route=...) from the existing device",
+      "Paste pairing URI (rekindle://pair?code=...&salt=...&route=...) from the existing device"
     );
     if (!raw) return;
     if (!applyPairingUri(raw)) {
@@ -246,7 +253,7 @@ const AddDeviceModal: Component<AddDeviceModalProps> = (props) => {
         expiresAt: session.expiresAt,
       },
       null,
-      2,
+      2
     );
   }
 
@@ -254,14 +261,12 @@ const AddDeviceModal: Component<AddDeviceModalProps> = (props) => {
     return (
       <div class="add-device-stage" aria-live="polite">
         <p class="add-device-paragraph">
-          Pairing links your devices so each one can read the same
-          communities and direct messages. Each device keeps its own
-          keys — your master identity is never copied across the wire.
+          Pairing links your devices so each one can read the same communities and direct messages.
+          Each device keeps its own keys — your master identity is never copied across the wire.
         </p>
         <p class="add-device-paragraph add-device-privacy">
-          The handshake uses a 12-word code (~40 bits) + a random salt;
-          HKDF(code, salt) is the symmetric key. Pairing codes expire
-          after 5 minutes.
+          The handshake uses a 12-word code (~40 bits) + a random salt; HKDF(code, salt) is the
+          symmetric key. Pairing codes expire after 5 minutes.
         </p>
         <div class="add-device-stage-actions">
           <button
@@ -270,15 +275,9 @@ const AddDeviceModal: Component<AddDeviceModalProps> = (props) => {
             onClick={() => void generatePairing()}
             disabled={generatingPairing()}
           >
-            {generatingPairing()
-              ? "Generating…"
-              : "I'm the existing device — show pairing code"}
+            {generatingPairing() ? "Generating…" : "I'm the existing device — show pairing code"}
           </button>
-          <button
-            class="sec-btn-secondary"
-            type="button"
-            onClick={() => setStage("scan-paste")}
-          >
+          <button class="sec-btn-secondary" type="button" onClick={() => setStage("scan-paste")}>
             I'm the new device — scan or paste a code
           </button>
         </div>
@@ -292,9 +291,8 @@ const AddDeviceModal: Component<AddDeviceModalProps> = (props) => {
     return (
       <div class="add-device-stage" aria-live="polite">
         <div class="add-device-banner" role="status">
-          <strong>Code expires in {formatCountdown()}.</strong>{" "}
-          The new device must scan or accept this code before then; the
-          existing device approves automatically once the new device
+          <strong>Code expires in {formatCountdown()}.</strong> The new device must scan or accept
+          this code before then; the existing device approves automatically once the new device
           replies.
         </div>
         <Show when={pairingQrSvg()}>
@@ -334,18 +332,17 @@ const AddDeviceModal: Component<AddDeviceModalProps> = (props) => {
                 >
                   Copy pairing link
                 </button>
-                <button
-                  class="sec-btn-secondary"
-                  type="button"
-                  onClick={() => setStage("intro")}
-                >
+                <button class="sec-btn-secondary" type="button" onClick={() => setStage("intro")}>
                   Back
                 </button>
               </div>
             </FormField>
           )}
         </Show>
-        <FormField label="Or paste this bundle on the new device (manual fallback)" controlId={manualPairingBundleId}>
+        <FormField
+          label="Or paste this bundle on the new device (manual fallback)"
+          controlId={manualPairingBundleId}
+        >
           <textarea
             id={manualPairingBundleId}
             class="form-input"
@@ -364,30 +361,17 @@ const AddDeviceModal: Component<AddDeviceModalProps> = (props) => {
     return (
       <div class="add-device-stage" aria-live="polite">
         <p class="add-device-paragraph">
-          Run this on a brand-new device that needs to join your
-          existing identity. Scan the QR shown on the existing device, or
-          paste the link / bundle.
+          Run this on a brand-new device that needs to join your existing identity. Scan the QR
+          shown on the existing device, or paste the link / bundle.
         </p>
         <div class="settings-button-row">
-          <button
-            class="sec-btn-secondary"
-            type="button"
-            onClick={() => setScannerOpen(true)}
-          >
+          <button class="sec-btn-secondary" type="button" onClick={() => setScannerOpen(true)}>
             Scan QR code
           </button>
-          <button
-            class="sec-btn-secondary"
-            type="button"
-            onClick={importPairingUri}
-          >
+          <button class="sec-btn-secondary" type="button" onClick={importPairingUri}>
             Paste pairing link
           </button>
-          <button
-            class="sec-btn-secondary"
-            type="button"
-            onClick={importPairingBundle}
-          >
+          <button class="sec-btn-secondary" type="button" onClick={importPairingBundle}>
             Paste bundle JSON
           </button>
         </div>
@@ -446,20 +430,12 @@ const AddDeviceModal: Component<AddDeviceModalProps> = (props) => {
             type="button"
             onClick={() => void acceptPairing()}
             disabled={
-              accepting()
-              || !acceptCode()
-              || !acceptSalt()
-              || !acceptRoute()
-              || !acceptName()
+              accepting() || !acceptCode() || !acceptSalt() || !acceptRoute() || !acceptName()
             }
           >
             {accepting() ? "Accepting…" : "Accept pairing"}
           </button>
-          <button
-            class="sec-btn-secondary"
-            type="button"
-            onClick={() => setStage("intro")}
-          >
+          <button class="sec-btn-secondary" type="button" onClick={() => setStage("intro")}>
             Back
           </button>
         </div>
@@ -474,15 +450,10 @@ const AddDeviceModal: Component<AddDeviceModalProps> = (props) => {
           <strong>Device added: {acceptedDeviceName() ?? "this device"}.</strong>
         </p>
         <p class="add-device-paragraph">
-          Both devices now sync read state, preferences, and onboarding
-          flags through the personal SMPL record. You can manage paired
-          devices from the Devices tab.
+          Both devices now sync read state, preferences, and onboarding flags through the personal
+          SMPL record. You can manage paired devices from the Devices tab.
         </p>
-        <button
-          class="sec-btn-commit"
-          type="button"
-          onClick={props.onClose}
-        >
+        <button class="sec-btn-commit" type="button" onClick={props.onClose}>
           Done
         </button>
       </div>
@@ -491,10 +462,14 @@ const AddDeviceModal: Component<AddDeviceModalProps> = (props) => {
 
   function modalTitle(): string {
     switch (stage()) {
-      case "show-qr": return "Add a device — show code";
-      case "scan-paste": return "Add a device — scan or paste";
-      case "complete": return "Device added";
-      default: return "Add a device";
+      case "show-qr":
+        return "Add a device — show code";
+      case "scan-paste":
+        return "Add a device — scan or paste";
+      case "complete":
+        return "Device added";
+      default:
+        return "Add a device";
     }
   }
 

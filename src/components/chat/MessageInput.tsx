@@ -26,7 +26,8 @@ const MessageInput: Component<MessageInputProps> = (props) => {
     setBody,
     getTextarea: () => textareaRef,
   });
-  const mentionOpen = () => mentions.mentionQuery() !== null && mentions.mentionCandidates().length > 0;
+  const mentionOpen = () =>
+    mentions.mentionQuery() !== null && mentions.mentionCandidates().length > 0;
   const recorder = useVoiceRecorder({
     communityId: () => props.communityId,
     channelId: () => props.peerId,
@@ -120,7 +121,10 @@ const MessageInput: Component<MessageInputProps> = (props) => {
           <button
             type="button"
             class="edit-mode-cancel"
-            onClick={() => { props.onEditCancel?.(); clearInput(); }}
+            onClick={() => {
+              props.onEditCancel?.();
+              clearInput();
+            }}
             title="Cancel edit (Esc)"
             aria-label="Cancel edit"
           >
@@ -129,10 +133,7 @@ const MessageInput: Component<MessageInputProps> = (props) => {
         </div>
       </Show>
       <Show when={!props.editMode}>
-        <ReplyPreview
-          replyTo={props.replyTo ?? null}
-          onDismiss={() => props.onDismissReply?.()}
-        />
+        <ReplyPreview replyTo={props.replyTo ?? null} onDismiss={() => props.onDismissReply?.()} />
       </Show>
       <Show when={slowmode.effectiveDisabled() && !props.editMode}>
         <div class="typing-indicator">
@@ -156,8 +157,16 @@ const MessageInput: Component<MessageInputProps> = (props) => {
             <button
               class={`message-input-mic-btn ${recorder.recording() ? "message-input-mic-btn-active" : ""}`}
               type="button"
-              title={recorder.recording() ? "Release to send (mousedown to record)" : "Hold to record voice"}
-              aria-label={recorder.recording() ? "Recording voice — release to send" : "Hold to record a voice message"}
+              title={
+                recorder.recording()
+                  ? "Release to send (mousedown to record)"
+                  : "Hold to record voice"
+              }
+              aria-label={
+                recorder.recording()
+                  ? "Recording voice — release to send"
+                  : "Hold to record a voice message"
+              }
               aria-pressed={recorder.recording()}
               onMouseDown={() => void recorder.startRecording()}
               onMouseUp={() => void recorder.stopRecording(true)}
@@ -192,7 +201,9 @@ const MessageInput: Component<MessageInputProps> = (props) => {
                 <EmojiPicker
                   communityId={props.communityId}
                   mode="message"
-                  activeVoiceChannelId={voiceState.activeCallType === "community" ? voiceState.channelId : null}
+                  activeVoiceChannelId={
+                    voiceState.activeCallType === "community" ? voiceState.channelId : null
+                  }
                   onSelect={insertEmoji}
                   onClose={() => setShowEmojiPicker(false)}
                 />
@@ -212,7 +223,9 @@ const MessageInput: Component<MessageInputProps> = (props) => {
             aria-autocomplete="list"
             aria-expanded={mentionOpen()}
             aria-controls={mentionOpen() ? mentionListId : undefined}
-            aria-activedescendant={mentionOpen() ? mentionOptionId(mentions.mentionSelected()) : undefined}
+            aria-activedescendant={
+              mentionOpen() ? mentionOptionId(mentions.mentionSelected()) : undefined
+            }
           />
           {/* Xfire's chat window has a Send button (plan E7.7.7, CLAUDE.md
            * "1:1 Xfire look"); Enter still sends. */}
@@ -238,7 +251,12 @@ const MessageInput: Component<MessageInputProps> = (props) => {
            * name the active option while the textarea retains DOM focus.
            * The options stay outside the sequential focus order. */}
           <Show when={mentionOpen()}>
-            <div class="mention-popover" role="listbox" id={mentionListId} aria-label="Mention suggestions">
+            <div
+              class="mention-popover"
+              role="listbox"
+              id={mentionListId}
+              aria-label="Mention suggestions"
+            >
               <For each={mentions.mentionCandidates()}>
                 {(candidate, index) => (
                   <div
@@ -253,7 +271,9 @@ const MessageInput: Component<MessageInputProps> = (props) => {
                       mentions.applyMention(candidate);
                     }}
                   >
-                    <span class={`mention-popover-tag mention-popover-tag-${candidate.kind}`}>{candidate.kind}</span>
+                    <span class={`mention-popover-tag mention-popover-tag-${candidate.kind}`}>
+                      {candidate.kind}
+                    </span>
                     <span class="mention-popover-label">{candidate.label}</span>
                   </div>
                 )}

@@ -4,8 +4,14 @@ import { returnFocusToOpener } from "../../utils/dialog_focus";
 import OwnRecordsWait from "./OwnRecordsWait";
 import { cancelReview, commitReview, intentState } from "../../stores/intent.store";
 import {
-  commitLabel, escalationText, factText, kindPhrase, notifiesText, reversibilityText,
-  subjectLabel, typedName,
+  commitLabel,
+  escalationText,
+  factText,
+  kindPhrase,
+  notifiesText,
+  reversibilityText,
+  subjectLabel,
+  typedName,
 } from "../../utils/intent_text";
 
 /**
@@ -179,10 +185,16 @@ const IntentDialog: Component = () => {
                    *  until our identity is published (plan E2.5 FC3). */}
                   <OwnRecordsWait active={intentState.busy} />
                   <Show when={intentState.error !== null}>
-                    <div class="form-error" role="alert">{intentState.error}</div>
+                    <div class="form-error" role="alert">
+                      {intentState.error}
+                    </div>
                   </Show>
                   <div class="intent-dialog-actions">
-                    <button type="button" class="sec-btn-secondary" onClick={() => void cancelReview()}>
+                    <button
+                      type="button"
+                      class="sec-btn-secondary"
+                      onClick={() => void cancelReview()}
+                    >
                       Cancel
                     </button>
                     <Show

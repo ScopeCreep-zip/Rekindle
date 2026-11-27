@@ -118,13 +118,13 @@ const SkinEditor: Component = () => {
     text.toLowerCase().includes(query().trim().toLowerCase());
   const tokens = createMemo(() =>
     (report()?.tokens ?? []).filter(
-      (t) => t.value.type === "color" && (matches(t.id) || matches(t.css)),
-    ),
+      (t) => t.value.type === "color" && (matches(t.id) || matches(t.css))
+    )
   );
   /** Failing pairs first, then the rest; each filtered by the search. */
   const pairs = createMemo(() => {
     const shown = (report()?.pairs ?? []).filter(
-      (p) => matches(p.fg) || matches(p.ground) || matches(p.rule),
+      (p) => matches(p.fg) || matches(p.ground) || matches(p.rule)
     );
     return [...shown.filter((p) => !p.pass), ...shown.filter((p) => p.pass)];
   });
@@ -190,12 +190,20 @@ const SkinEditor: Component = () => {
         <Show when={schemaSaved()}>{" JSON Schema saved."}</Show>
       </div>
       <Show when={error()}>
-        {(m) => <div class="settings-hint skin-error" role="alert">{m()}</div>}
+        {(m) => (
+          <div class="settings-hint skin-error" role="alert">
+            {m()}
+          </div>
+        )}
       </Show>
       <Show when={editorInput()}>
         {(input) => (
           <>
-            <SkinEditorMeta draft={input().draft} report={input().report} onChange={(d) => void check(d)} />
+            <SkinEditorMeta
+              draft={input().draft}
+              report={input().report}
+              onChange={(d) => void check(d)}
+            />
             <SkinRegionImport
               draft={input().draft}
               report={input().report}

@@ -61,8 +61,7 @@ export const accountCommands = {
     hostInvoke<{ groupId: number }>("create_friend_group", { name }),
   renameFriendGroup: (groupId: number, name: string) =>
     hostInvoke<unknown>("rename_friend_group", { groupId, name }),
-  deleteFriendGroup: (groupId: number) =>
-    hostInvoke<unknown>("delete_friend_group", { groupId }),
+  deleteFriendGroup: (groupId: number) => hostInvoke<unknown>("delete_friend_group", { groupId }),
 
   /** Set (or clear, with null) the local alias shown for one friend.
    *  Distinct from `setNickname`, which changes the user's own display

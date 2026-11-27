@@ -103,7 +103,7 @@ const CreateEventModal: Component<CreateEventModalProps> = (props) => {
         start,
         end,
         undefined,
-        max && !Number.isNaN(max) ? max : undefined,
+        max && !Number.isNaN(max) ? max : undefined
       );
     } else {
       await handleCreateEvent(props.communityId, {
@@ -120,7 +120,11 @@ const CreateEventModal: Component<CreateEventModalProps> = (props) => {
   const isValid = () => title().trim() && startDate() && startTime();
 
   return (
-    <Modal isOpen={props.isOpen} title={props.isEditing ? "Edit Event" : "Create Event"} onClose={props.onClose}>
+    <Modal
+      isOpen={props.isOpen}
+      title={props.isEditing ? "Edit Event" : "Create Event"}
+      onClose={props.onClose}
+    >
       <form class="form-group" onSubmit={handleSubmit}>
         <input
           class="form-input"

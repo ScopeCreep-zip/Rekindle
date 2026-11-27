@@ -58,11 +58,13 @@ const DisappearingTimerControl: Component<{ conversation: string; label: string 
               class="chat-disappearing-panel"
               role="group"
               aria-label="Disappearing messages"
-              onKeyDown={(e) => { if (e.key === "Escape") setOpen(false); }}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") setOpen(false);
+              }}
             >
               <p class="chat-disappearing-help">
-                New messages disappear this long after they are sent, or after they are read for
-                the person receiving them. Copies already saved, or kept by a modified app, are not
+                New messages disappear this long after they are sent, or after they are read for the
+                person receiving them. Copies already saved, or kept by a modified app, are not
                 removed.
               </p>
               <div class="chat-disappearing-presets" role="radiogroup" aria-label="Timer">
@@ -118,7 +120,9 @@ const DisappearingTimerControl: Component<{ conversation: string; label: string 
                 </p>
               </Show>
               <Show when={error()}>
-                <p class="form-error" role="alert">{error()}</p>
+                <p class="form-error" role="alert">
+                  {error()}
+                </p>
               </Show>
             </div>
           </Show>

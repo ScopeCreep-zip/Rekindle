@@ -19,11 +19,14 @@ const CommunityList: Component<CommunityListProps> = (props) => {
 
   return (
     <div class="community-list">
-      <For each={list()} fallback={
-        <div class="empty-placeholder">
-          <div class="empty-placeholder-subtitle">No communities</div>
-        </div>
-      }>
+      <For
+        each={list()}
+        fallback={
+          <div class="empty-placeholder">
+            <div class="empty-placeholder-subtitle">No communities</div>
+          </div>
+        }
+      >
         {(community: Community) => (
           <ContextMenu>
             <ContextMenu.Trigger
@@ -31,12 +34,8 @@ const CommunityList: Component<CommunityListProps> = (props) => {
               class={`community-item ${props.selectedId === community.id ? "community-item-selected" : ""}`}
               onClick={() => props.onSelect(community.id)}
             >
-              <div class="community-icon">
-                {community.name.charAt(0).toUpperCase()}
-              </div>
-              <span class="community-name">
-                {community.name}
-              </span>
+              <div class="community-icon">{community.name.charAt(0).toUpperCase()}</div>
+              <span class="community-name">{community.name}</span>
               <Show when={unreads(community) > 0}>
                 <span class="community-unread-badge">{unreads(community)}</span>
               </Show>

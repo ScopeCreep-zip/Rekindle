@@ -12,7 +12,13 @@ import type { ShellOp } from "../ipc/commands/dto_skin_run";
 import { addToast } from "../stores/toast.store";
 import { errorMessage } from "../utils/error";
 import { callsState } from "../stores/calls.store";
-import { handleAcceptGroupCall, handleAcceptIncomingCall, handleEndDmCall, handleEndGroupCall, handleStartDmCall } from "./calls.actions";
+import {
+  handleAcceptGroupCall,
+  handleAcceptIncomingCall,
+  handleEndDmCall,
+  handleEndGroupCall,
+  handleStartDmCall,
+} from "./calls.actions";
 import { handleJoinVoice, handleSetMuted } from "./voice.actions";
 import { handleOpenGroupChat } from "./group-dm.actions";
 import { handleCopyPublicKey } from "./buddy.actions";
@@ -71,7 +77,9 @@ export function chatOpenOps(op: ShellOp): boolean {
  *  no path reaches the webview. */
 export function transferOps(op: ShellOp): boolean {
   if (op.kind !== "chooseDownloadDest") return false;
-  transferCommands.start(op.arg.attachmentId, op.arg.target).catch((e) => addToast(errorMessage(e), "error"));
+  transferCommands
+    .start(op.arg.attachmentId, op.arg.target)
+    .catch((e) => addToast(errorMessage(e), "error"));
   return true;
 }
 
@@ -137,10 +145,14 @@ export function mainOps(op: ShellOp): boolean {
       return true;
     case "showCall":
       if (op.arg.target.kind === "call") {
-        commands.openCallWindow(op.arg.target.arg.callId).catch((e) => addToast(errorMessage(e), "error"));
+        commands
+          .openCallWindow(op.arg.target.arg.callId)
+          .catch((e) => addToast(errorMessage(e), "error"));
       } else {
         const { community, channel } = op.arg.target.arg;
-        commands.openCommunityWindow(community, channel).catch((e) => addToast(errorMessage(e), "error"));
+        commands
+          .openCommunityWindow(community, channel)
+          .catch((e) => addToast(errorMessage(e), "error"));
       }
       return true;
     // A community selected in the Communities row drives the pack's Call
@@ -152,11 +164,15 @@ export function mainOps(op: ShellOp): boolean {
       void handleJoinVoice(op.arg.arg.channel, op.arg.arg.community);
       return true;
     case "openCommunityInfo":
-      commands.openCommunityWindow(op.arg.community).catch((e) => addToast(errorMessage(e), "error"));
+      commands
+        .openCommunityWindow(op.arg.community)
+        .catch((e) => addToast(errorMessage(e), "error"));
       return true;
     // The Communities row (plan CB1): the selected community's window.
     case "openCommunity":
-      commands.openCommunityWindow(op.arg.community).catch((e) => addToast(errorMessage(e), "error"));
+      commands
+        .openCommunityWindow(op.arg.community)
+        .catch((e) => addToast(errorMessage(e), "error"));
       return true;
     case "leaveCommunity":
       // The Host's leave intent asks first (ADR 0019); the row then goes in

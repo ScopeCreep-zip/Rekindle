@@ -31,7 +31,10 @@ const ThreadListPanel: Component<ThreadListPanelProps> = (props) => {
   const active = createMemo(() => sortedThreads().filter((t) => !t.archived));
   const archived = createMemo(() => sortedThreads().filter((t) => t.archived));
   const item = (thread: Thread) => (
-    <div class={`thread-list-item${thread.archived ? " thread-archived" : ""}`} onClick={() => props.onSelectThread(thread.id)}>
+    <div
+      class={`thread-list-item${thread.archived ? " thread-archived" : ""}`}
+      onClick={() => props.onSelectThread(thread.id)}
+    >
       <div class="thread-list-item-name">{thread.name}</div>
       <div class="thread-list-item-meta">
         {thread.messageCount} messages - {formatRelativeTime(thread.lastMessageAt * 1000)}
@@ -44,7 +47,12 @@ const ThreadListPanel: Component<ThreadListPanelProps> = (props) => {
       <div class="thread-panel-header">
         <SkinGlyph name="thread" />
         Threads
-        <button type="button" class="modal-close-btn" onClick={props.onClose} aria-label="Close threads panel">
+        <button
+          type="button"
+          class="modal-close-btn"
+          onClick={props.onClose}
+          aria-label="Close threads panel"
+        >
           <SkinGlyph name="close" />
         </button>
       </div>

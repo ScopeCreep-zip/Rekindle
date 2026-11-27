@@ -2,7 +2,11 @@ import { type Component, For, Show } from "solid-js";
 import SkinGlyph from "../common/SkinGlyph";
 import { voiceState } from "../../stores/voice.store";
 import VoiceParticipantItem from "./VoiceParticipant";
-import { handleToggleMute, handleToggleDeafen, handleLeaveVoice } from "../../actions/voice.actions";
+import {
+  handleToggleMute,
+  handleToggleDeafen,
+  handleLeaveVoice,
+} from "../../actions/voice.actions";
 
 /// Compact sidebar "connected" strip. Quick mute / deafen / leave plus the
 /// participant list — reachable from any channel while in a call. The full

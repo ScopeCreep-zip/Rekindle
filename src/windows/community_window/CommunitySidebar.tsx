@@ -46,7 +46,10 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
       <CommunityList
         selectedId={vm.selectedCommunityId()}
         onSelect={vm.handleSelectCommunity}
-        onSettings={(id) => { vm.handleSelectCommunity(id); vm.setShowSettings(true); }}
+        onSettings={(id) => {
+          vm.handleSelectCommunity(id);
+          vm.setShowSettings(true);
+        }}
         onLeave={() => void handleLeaveCommunity(vm.selectedCommunityId())}
       />
       <Show when={vm.activeCommunity()}>
@@ -62,7 +65,8 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
               <SkinGlyph name="settings" />
             </button>
             {/* Never-hide: drawn always, disabled with the Host's reason. */}
-            <button type="button"
+            <button
+              type="button"
               class="action-bar-btn header-add-btn"
               onClick={() => vm.setShowCreateChannel(true)}
               disabled={vm.denied("manageChannels") !== null}
@@ -85,10 +89,16 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
           onVoiceJoin={(channelId) => handleJoinVoice(channelId, vm.selectedCommunityId())}
           onRename={(channelId, currentName) => vm.setRenameTarget({ channelId, currentName })}
           onDelete={(channelId) => handleDeleteChannel(vm.selectedCommunityId(), channelId)}
-          onRenameCategory={(categoryId, currentName) => vm.setRenameCategoryTarget({ categoryId, currentName })}
-          onDeleteCategory={(categoryId) => handleDeleteCategory(vm.selectedCommunityId(), categoryId)}
+          onRenameCategory={(categoryId, currentName) =>
+            vm.setRenameCategoryTarget({ categoryId, currentName })
+          }
+          onDeleteCategory={(categoryId) =>
+            handleDeleteCategory(vm.selectedCommunityId(), categoryId)
+          }
           onCreateCategory={() => vm.setShowCreateCategory(true)}
-          onSetNotification={(channelId, level) => handleSetNotificationOverride(vm.selectedCommunityId(), channelId, level)}
+          onSetNotification={(channelId, level) =>
+            handleSetNotificationOverride(vm.selectedCommunityId(), channelId, level)
+          }
         />
 
         {/* Sidebar: Game Servers (collapsible). Shown with no servers too:
@@ -111,7 +121,8 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
                   class="sidebar-server-join-btn"
                   onClick={() => {
                     const id = parseInt(server.gameId, 10);
-                    if (!Number.isNaN(id)) void commands.launchGame(id, server.address, "community");
+                    if (!Number.isNaN(id))
+                      void commands.launchGame(id, server.address, "community");
                   }}
                 >
                   Join
@@ -121,7 +132,10 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
             <button
               type="button"
               class="sidebar-section-more"
-              onClick={() => { vm.setShowServers(true); vm.setShowEvents(false); }}
+              onClick={() => {
+                vm.setShowServers(true);
+                vm.setShowEvents(false);
+              }}
             >
               All servers
             </button>
@@ -140,13 +154,18 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
             {vm.upcomingEvents().map((event) => (
               <div class="sidebar-event-row">
                 <span class="sidebar-event-title">{event.title}</span>
-                <span class="sidebar-event-countdown">{vm.formatTimeUntilEvent(event.startTime)}</span>
+                <span class="sidebar-event-countdown">
+                  {vm.formatTimeUntilEvent(event.startTime)}
+                </span>
               </div>
             ))}
             <button
               type="button"
               class="sidebar-section-more"
-              onClick={() => { vm.setShowEvents(true); vm.setShowServers(false); }}
+              onClick={() => {
+                vm.setShowEvents(true);
+                vm.setShowServers(false);
+              }}
             >
               All events
             </button>

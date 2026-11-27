@@ -17,8 +17,8 @@ const AddFriendModal: Component = () => {
         if (isOpen && tab() === "invite") {
           handleLoadOutgoingInvites();
         }
-      },
-    ),
+      }
+    )
   );
 
   createEffect(
@@ -26,7 +26,7 @@ const AddFriendModal: Component = () => {
       if (friendsState.showAddFriend && currentTab === "invite") {
         handleLoadOutgoingInvites();
       }
-    }),
+    })
   );
 
   function handleClose(): void {
@@ -34,11 +34,7 @@ const AddFriendModal: Component = () => {
   }
 
   return (
-    <Modal
-      isOpen={friendsState.showAddFriend}
-      title="Add Friend"
-      onClose={handleClose}
-    >
+    <Modal isOpen={friendsState.showAddFriend} title="Add Friend" onClose={handleClose}>
       <div class="form-tabs-equal">
         <button
           type="button"

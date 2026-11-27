@@ -20,13 +20,17 @@ function iconVar(name: CommunityIcon): string {
  * and the font glyph's box, never a font glyph. Decorative unless `label`
  * names it; a `title` shows on hover as before.
  */
-const SkinGlyph: Component<{ name: GlyphName; class?: string; title?: string; label?: string }> = (props) => {
+const SkinGlyph: Component<{ name: GlyphName; class?: string; title?: string; label?: string }> = (
+  props
+) => {
   const served = createMemo(() => {
     skinSheetLinked();
     const name = props.name;
     if (!servable(name)) return undefined;
     const prop = iconVar(name);
-    return getComputedStyle(document.documentElement).getPropertyValue(prop).trim() !== "" ? prop : undefined;
+    return getComputedStyle(document.documentElement).getPropertyValue(prop).trim() !== ""
+      ? prop
+      : undefined;
   });
   const art = () => GLYPH_ART[props.name];
   return (
@@ -41,7 +45,11 @@ const SkinGlyph: Component<{ name: GlyphName; class?: string; title?: string; la
       aria-hidden={props.label ? undefined : "true"}
     >
       <Show when={!served()}>
-        <svg class="skin-glyph-svg" viewBox={`${art().x} 0 ${GLYPH_EM} ${GLYPH_EM}`} aria-hidden="true">
+        <svg
+          class="skin-glyph-svg"
+          viewBox={`${art().x} 0 ${GLYPH_EM} ${GLYPH_EM}`}
+          aria-hidden="true"
+        >
           <path d={art().d} />
         </svg>
       </Show>

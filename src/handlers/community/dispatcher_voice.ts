@@ -21,7 +21,7 @@ import { withCommunity } from "./community_reread";
 function mirrorRosterAdd(
   communityId: string,
   channelId: string,
-  entries: { pseudonymKey: string; displayName: string | null }[],
+  entries: { pseudonymKey: string; displayName: string | null }[]
 ): void {
   if (voiceState.activeCallType !== "community" || voiceState.channelId !== channelId) return;
   const community = communityState.communities[communityId];
@@ -29,9 +29,7 @@ function mirrorRosterAdd(
   // Handshake-carried name wins (it never depends on registry-scan
   // timing); members store is the fallback; truncated key is last.
   const nameFor = (pk: string, carried: string | null): string =>
-    carried ??
-    community?.members.find((m) => m.pseudonymKey === pk)?.displayName ??
-    pk.slice(0, 8);
+    carried ?? community?.members.find((m) => m.pseudonymKey === pk)?.displayName ?? pk.slice(0, 8);
   for (const { pseudonymKey: pk, displayName } of entries) {
     if (pk === self) continue;
     setVoiceState("participants", (prev) => {
@@ -73,10 +71,7 @@ export function reduceVoice(event: CommunityEvent): boolean {
     // a single toast, no spam. Voice keeps working.
     const { peers } = event.data;
     const names = peers.map((p) => p.slice(0, 8)).join(", ");
-    addToast(
-      `Video unavailable: no compatible codec with ${names || "current peers"}`,
-      "error",
-    );
+    addToast(`Video unavailable: no compatible codec with ${names || "current peers"}`, "error");
     return true;
   } else if (event.type === "videoEnvelopeRejected") {
     // Phase F — a gossiped video envelope failed signature or shape
@@ -84,10 +79,7 @@ export function reduceVoice(event: CommunityEvent): boolean {
     // so the asymmetric-drop case is observable from the UI without
     // grepping structured logs.
     const { senderPseudonym, reason } = event.data;
-    addToast(
-      `Dropped video from ${senderPseudonym.slice(0, 8)}: ${reason}`,
-      "error",
-    );
+    addToast(`Dropped video from ${senderPseudonym.slice(0, 8)}: ${reason}`, "error");
     return true;
   }
   return false;
@@ -107,9 +99,7 @@ export function reduceSubscriptionCrypto(event: CommunitySubscriptionEvent): voi
     return;
   }
 
-  const idx = communityState.communities[community].channels.findIndex(
-    (ch) => ch.id === channel,
-  );
+  const idx = communityState.communities[community].channels.findIndex((ch) => ch.id === channel);
   if (idx >= 0) {
     setCommunityState("communities", community, "channels", idx, "mekGeneration", generation);
   }
@@ -131,7 +121,7 @@ export function reduceSubscriptionCrypto(event: CommunitySubscriptionEvent): voi
 export function reduceSubscriptionVoice(event: VoiceSubscriptionEvent): void {
   const v = event.voice;
 
-if ("soundboardPlayed" in v) {
+  if ("soundboardPlayed" in v) {
     // Architecture §10.9 — peer triggered a soundboard sound. The
     // backend already gated permissions, rate-limit, and cooldown;
     // we look up the cached expression and play it locally.
@@ -169,9 +159,7 @@ if ("soundboardPlayed" in v) {
       if (state.participants.includes(pseudonym)) return state;
       return { ...state, participants: [...state.participants, pseudonym] };
     });
-    mirrorRosterAdd(community, channel, [
-      { pseudonymKey: pseudonym, displayName },
-    ]);
+    mirrorRosterAdd(community, channel, [{ pseudonymKey: pseudonym, displayName }]);
     return;
   }
 
@@ -185,7 +173,7 @@ if ("soundboardPlayed" in v) {
     setCommunityState("voiceChannels", channel, (prev) => {
       const state = prev ?? { participants: [], mode: "mesh" as const, hostPseudonym: null };
       const merged = Array.from(
-        new Set([...state.participants, ...participants.map((p) => p.pseudonymKey)]),
+        new Set([...state.participants, ...participants.map((p) => p.pseudonymKey)])
       );
       return { ...state, participants: merged };
     });
@@ -195,7 +183,7 @@ if ("soundboardPlayed" in v) {
       participants.map((p) => ({
         pseudonymKey: p.pseudonymKey,
         displayName: p.displayName,
-      })),
+      }))
     );
     return;
   }
@@ -235,7 +223,7 @@ if ("soundboardPlayed" in v) {
     const channel = scope.community.channel;
     if (voiceState.activeCallType === "community" && voiceState.channelId === channel) {
       setVoiceState("participants", (prev) =>
-        prev.map((p) => (p.publicKey === pseudonym ? { ...p, isConfirmed: true } : p)),
+        prev.map((p) => (p.publicKey === pseudonym ? { ...p, isConfirmed: true } : p))
       );
     }
     return;
@@ -279,15 +267,17 @@ if ("soundboardPlayed" in v) {
     // does not hold yet rather than write under a missing row.
     withCommunity(community, () =>
       setCommunityState(
-        "communities", community, "channels",
+        "communities",
+        community,
+        "channels",
         (ch) => ch.id === channel,
         (ch) => ({
           ...ch,
           topic: topic ?? ch.topic,
           stageSpeakers: speakers,
           stageModerator: moderatorPseudonym,
-        }),
-      ),
+        })
+      )
     );
     setCommunityState("voiceChannels", channel, (prev) => {
       const state = prev ?? { participants: [], mode: "mcu" as const, hostPseudonym: null };
@@ -326,14 +316,14 @@ if ("soundboardPlayed" in v) {
       return {
         ...prev,
         pendingRequests: (prev.pendingRequests ?? []).filter(
-          (value) => value !== requesterPseudonym,
+          (value) => value !== requesterPseudonym
         ),
       };
     });
     void refreshStageHandRaises(community, channel);
     addToast(
       granted ? "Request to speak approved" : "Request to speak denied",
-      granted ? "success" : "info",
+      granted ? "success" : "info"
     );
   }
 }

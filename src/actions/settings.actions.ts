@@ -15,8 +15,7 @@ export async function handleLoadSettings(): Promise<void> {
       startMinimized: prefs.startMinimized,
       showGameActivity: prefs.gameDetectionEnabled,
       autoAwayMinutes: prefs.autoAwayMinutes,
-      autoVolunteerRelayForNewFriends:
-        prefs.autoVolunteerRelayForNewFriends ?? false,
+      autoVolunteerRelayForNewFriends: prefs.autoVolunteerRelayForNewFriends ?? false,
       ringtoneEnabled: prefs.ringtoneEnabled ?? true,
       ringtoneVolume: prefs.ringtoneVolume ?? 0.4,
       inCallDndAutoEnable: prefs.inCallDndAutoEnable ?? true,
@@ -27,9 +26,7 @@ export async function handleLoadSettings(): Promise<void> {
   }
 }
 
-export async function handleSaveSettings(
-  settings: Partial<SettingsState>,
-): Promise<void> {
+export async function handleSaveSettings(settings: Partial<SettingsState>): Promise<void> {
   try {
     const currentPrefs = await commands.getPreferences();
     const updated = {

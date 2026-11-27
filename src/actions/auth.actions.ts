@@ -6,7 +6,7 @@ import { errorMessage } from "../utils/error";
 
 export async function handleLogin(
   publicKey: string,
-  passphrase: string,
+  passphrase: string
 ): Promise<{ success: true } | { success: false; error: string }> {
   try {
     const result = await commands.login(publicKey, passphrase);
@@ -28,7 +28,7 @@ export async function handleLogin(
 
 export async function handleCreateIdentity(
   passphrase: string,
-  displayName?: string,
+  displayName?: string
 ): Promise<{ success: true } | { success: false; error: string }> {
   try {
     const result = await commands.createIdentity(passphrase, displayName);

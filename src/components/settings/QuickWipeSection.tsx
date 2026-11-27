@@ -46,7 +46,8 @@ const QuickWipeSection: Component = () => {
     } catch (e) {
       setError(`Quick wipe not armed: ${errorMessage(e)}`);
       // A refusal, not a cancelled review: the chord was what failed.
-      const refused = typeof e === "object" && e !== null && (e as { type?: unknown }).type === "failed";
+      const refused =
+        typeof e === "object" && e !== null && (e as { type?: unknown }).type === "failed";
       setOfferAlone(chord !== null && refused);
     }
   }
@@ -72,17 +73,20 @@ const QuickWipeSection: Component = () => {
     <>
       <div class="settings-section-title">Quick Wipe</div>
       <div class="settings-hint">
-        Entering the duress passphrase at any passphrase prompt, or pressing
-        the panic shortcut while logged in, deletes every identity on this
-        device with its messages, keys and files, the settings, logs and
-        skins, and closes Rekindle. It cannot be undone. Arming again
+        Entering the duress passphrase at any passphrase prompt, or pressing the panic shortcut
+        while logged in, deletes every identity on this device with its messages, keys and files,
+        the settings, logs and skins, and closes Rekindle. It cannot be undone. Arming again
         replaces the duress passphrase.
       </div>
       <Show when={error()}>
-        <div class="form-error" role="alert">{error()}</div>
+        <div class="form-error" role="alert">
+          {error()}
+        </div>
       </Show>
       <Show when={status()}>
-        <div class="settings-hint" role="status">{status()}</div>
+        <div class="settings-hint" role="status">
+          {status()}
+        </div>
       </Show>
       <input
         class="form-input"
@@ -115,11 +119,21 @@ const QuickWipeSection: Component = () => {
         onInput={(e) => setShortcut(e.currentTarget.value)}
       />
       <div class="form-field-row">
-        <button type="button" class="form-btn-secondary" disabled={!canArm()} onClick={() => void arm(chordEntered())}>
+        <button
+          type="button"
+          class="form-btn-secondary"
+          disabled={!canArm()}
+          onClick={() => void arm(chordEntered())}
+        >
           Arm Quick Wipe
         </button>
         <Show when={offerAlone()}>
-          <button type="button" class="form-btn-secondary" disabled={!canArm()} onClick={() => void arm(null)}>
+          <button
+            type="button"
+            class="form-btn-secondary"
+            disabled={!canArm()}
+            onClick={() => void arm(null)}
+          >
             Arm Without Shortcut
           </button>
         </Show>

@@ -24,7 +24,9 @@ import DisappearingTimerControl from "../../components/chat/DisappearingTimerCon
 import InviteToRoomModal from "../../components/chat/InviteToRoomModal";
 import GameLobbyCard from "../../components/chat/GameLobbyCard";
 import { subscribeGroupChatEvents } from "../../handlers/group-dm.handlers";
-import StartGroupCallModal, { type GroupCallTarget } from "../../components/buddy-list/StartGroupCallModal";
+import StartGroupCallModal, {
+  type GroupCallTarget,
+} from "../../components/buddy-list/StartGroupCallModal";
 import { registerShellRunner } from "../../actions/skin.actions";
 import type { Message } from "../../stores/chat.store";
 import { SlotMount } from "../../components/skin-tree/slots";
@@ -63,7 +65,7 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
   const onFocus = (): void => handleGroupDisplayed(groupId);
   onMount(async () => {
     unlisteners.push(
-      ...subscribeGroupChatEvents(groupId, () => authState.publicKey ?? "", onFocus),
+      ...subscribeGroupChatEvents(groupId, () => authState.publicKey ?? "", onFocus)
     );
     void startEventStream(() => void hydrateState());
     await hydrateState();
@@ -80,7 +82,7 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
       if (op.kind !== "startGroupCall") return false;
       setCallTarget(op.arg);
       return true;
-    }),
+    })
   );
   onCleanup(() => {
     window.removeEventListener("focus", onFocus);
@@ -106,8 +108,10 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
 
   // Rename and Invite (plan E7.2 G7/G8) are always listed; the Host's
   // verdict (`renameRefused`, `inviteRefused`) disables each with its reason.
-  const renameRefused = (): string | null => group()?.renameRefused ?? "This group is not in your list.";
-  const inviteRefused = (): string | null => group()?.inviteRefused ?? "This group is not in your list.";
+  const renameRefused = (): string | null =>
+    group()?.renameRefused ?? "This group is not in your list.";
+  const inviteRefused = (): string | null =>
+    group()?.inviteRefused ?? "This group is not in your list.";
   // The Host's verdict on calling (GroupDmView.callRefused); the stand-in
   // is only for a group no longer listed, never for the verdict itself.
   const callRefused = (): string | null => {
@@ -157,93 +161,140 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
     <>
       {/* A pack's chat tree (plan SK17-2) draws the window; the group's name
        *  is its chatTitle; without one, the app's titlebar. */}
-      <Show when={skinShell("chat")} keyed fallback={<Titlebar title={`Chat — ${name()}`} showMaximize />}>
-        {(shell) => <SkinTreeWindow shell={shell} views={() => null} communities={() => null} chatTitle={name} />}
+      <Show
+        when={skinShell("chat")}
+        keyed
+        fallback={<Titlebar title={`Chat — ${name()}`} showMaximize />}
+      >
+        {(shell) => (
+          <SkinTreeWindow
+            shell={shell}
+            views={() => null}
+            communities={() => null}
+            chatTitle={name}
+          />
+        )}
       </Show>
       <div id="main-content" tabindex="-1" class="window-main">
-      {/* The chat area is one mount (one Portal, one container) holding, in
-       *  this order, the group's own controls (members, timer, rename,
-       *  invite, leave, its lobby) and then the messages: two mounts append
-       *  in effect order, and a skin re-applied could draw the messages
-       *  above the controls. */}
-      <SlotMount slot="chatArea">
-      <div class="group-chat-header">
-        <ul
-          class="group-chat-members"
-          aria-label={`Members of ${name()}`}
-          title={members()
-            .map((m) => m.label)
-            .join(", ")}
-        >
-          <For each={members()}>{(m) => <li class="group-chat-member">{m.label}</li>}</For>
-        </ul>
-        <Show when={held()}>
-          <DisappearingTimerControl conversation={groupId} label={name()} />
-        </Show>
-        <Show
-          when={renaming() !== null}
-          fallback={
+        {/* The chat area is one mount (one Portal, one container) holding, in
+         *  this order, the group's own controls (members, timer, rename,
+         *  invite, leave, its lobby) and then the messages: two mounts append
+         *  in effect order, and a skin re-applied could draw the messages
+         *  above the controls. */}
+        <SlotMount slot="chatArea">
+          <div class="group-chat-header">
+            <ul
+              class="group-chat-members"
+              aria-label={`Members of ${name()}`}
+              title={members()
+                .map((m) => m.label)
+                .join(", ")}
+            >
+              <For each={members()}>{(m) => <li class="group-chat-member">{m.label}</li>}</For>
+            </ul>
+            <Show when={held()}>
+              <DisappearingTimerControl conversation={groupId} label={name()} />
+            </Show>
+            <Show
+              when={renaming() !== null}
+              fallback={
+                <button
+                  type="button"
+                  class="form-btn-secondary group-chat-action"
+                  aria-disabled={renameRefused() !== null ? "true" : undefined}
+                  aria-describedby={renameRefused() !== null ? "group-rename-reason" : undefined}
+                  title={renameRefused() ?? `Rename ${name()}`}
+                  onClick={() => renameRefused() === null && setRenaming(name())}
+                >
+                  Rename
+                </button>
+              }
+            >
+              <form class="group-chat-rename" onSubmit={(e) => void rename(e)}>
+                <input
+                  class="form-input group-chat-rename-input"
+                  aria-label={`New name for ${name()}`}
+                  value={renaming() ?? ""}
+                  onInput={(e) => setRenaming(e.currentTarget.value)}
+                  onKeyDown={(e) => e.key === "Escape" && setRenaming(null)}
+                  ref={(el) => queueMicrotask(() => el.select())}
+                />
+              </form>
+            </Show>
             <button
               type="button"
               class="form-btn-secondary group-chat-action"
-              aria-disabled={renameRefused() !== null ? "true" : undefined}
-              aria-describedby={renameRefused() !== null ? "group-rename-reason" : undefined}
-              title={renameRefused() ?? `Rename ${name()}`}
-              onClick={() => renameRefused() === null && setRenaming(name())}
+              aria-disabled={
+                activeCall() === null &&
+                ourRing() === null &&
+                ringingCall() === null &&
+                callRefused() !== null
+                  ? "true"
+                  : undefined
+              }
+              title={
+                activeCall()
+                  ? "Leave the call"
+                  : ourRing()
+                    ? "Cancel the call"
+                    : ringingCall()
+                      ? "Join the call"
+                      : (callRefused() ?? `Call ${name()}`)
+              }
+              aria-description={
+                activeCall() === null && ourRing() === null && ringingCall() === null
+                  ? (callRefused() ?? undefined)
+                  : undefined
+              }
+              onClick={pressCall}
             >
-              Rename
+              {activeCall()
+                ? "Leave call"
+                : ourRing()
+                  ? "Cancel call"
+                  : ringingCall()
+                    ? "Join call"
+                    : "Call"}
             </button>
-          }
-        >
-          <form class="group-chat-rename" onSubmit={(e) => void rename(e)}>
-            <input
-              class="form-input group-chat-rename-input"
-              aria-label={`New name for ${name()}`}
-              value={renaming() ?? ""}
-              onInput={(e) => setRenaming(e.currentTarget.value)}
-              onKeyDown={(e) => e.key === "Escape" && setRenaming(null)}
-              ref={(el) => queueMicrotask(() => el.select())}
-            />
-          </form>
-        </Show>
-        <button
-          type="button"
-          class="form-btn-secondary group-chat-action"
-          aria-disabled={activeCall() === null && ourRing() === null && ringingCall() === null && callRefused() !== null ? "true" : undefined}
-          title={activeCall() ? "Leave the call" : ourRing() ? "Cancel the call" : ringingCall() ? "Join the call" : (callRefused() ?? `Call ${name()}`)}
-          aria-description={activeCall() === null && ourRing() === null && ringingCall() === null ? (callRefused() ?? undefined) : undefined}
-          onClick={pressCall}
-        >
-          {activeCall() ? "Leave call" : ourRing() ? "Cancel call" : ringingCall() ? "Join call" : "Call"}
-        </button>
-        <button
-          type="button"
-          class="form-btn-secondary group-chat-action"
-          aria-disabled={inviteRefused() !== null ? "true" : undefined}
-          aria-describedby={inviteRefused() !== null ? "group-invite-reason" : undefined}
-          title={inviteRefused() ?? `Invite friends to ${name()}`}
-          onClick={() => inviteRefused() === null && setInviting(true)}
-        >
-          Invite…
-        </button>
-        <span class="sr-only" id="group-rename-reason">{renameRefused()}</span>
-        <span class="sr-only" id="group-invite-reason">{inviteRefused()}</span>
-        <button
-          type="button"
-          class="form-btn-secondary group-chat-leave"
-          aria-label={`Leave ${name()}`}
-          onClick={() => void leave()}
-        >
-          Leave
-        </button>
-      </div>
-      <Show when={roomError()}>
-        {(message) => <div class="form-error group-chat-error" role="alert">{message()}</div>}
-      </Show>
-      <InviteToRoomModal groupId={inviting() ? groupId : null} onClose={() => setInviting(false)} />
-      <Show when={held()}>
-        <GameLobbyCard groupId={groupId} memberNames={memberNames()} />
-      </Show>
+            <button
+              type="button"
+              class="form-btn-secondary group-chat-action"
+              aria-disabled={inviteRefused() !== null ? "true" : undefined}
+              aria-describedby={inviteRefused() !== null ? "group-invite-reason" : undefined}
+              title={inviteRefused() ?? `Invite friends to ${name()}`}
+              onClick={() => inviteRefused() === null && setInviting(true)}
+            >
+              Invite…
+            </button>
+            <span class="sr-only" id="group-rename-reason">
+              {renameRefused()}
+            </span>
+            <span class="sr-only" id="group-invite-reason">
+              {inviteRefused()}
+            </span>
+            <button
+              type="button"
+              class="form-btn-secondary group-chat-leave"
+              aria-label={`Leave ${name()}`}
+              onClick={() => void leave()}
+            >
+              Leave
+            </button>
+          </div>
+          <Show when={roomError()}>
+            {(message) => (
+              <div class="form-error group-chat-error" role="alert">
+                {message()}
+              </div>
+            )}
+          </Show>
+          <InviteToRoomModal
+            groupId={inviting() ? groupId : null}
+            onClose={() => setInviting(false)}
+          />
+          <Show when={held()}>
+            <GameLobbyCard groupId={groupId} memberNames={memberNames()} />
+          </Show>
           <MessageList
             messages={messages()}
             ownName={authState.displayName ?? "You"}
@@ -256,7 +307,10 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
           />
         </SlotMount>
         <SlotMount slot="typingNotice">
-          <TypingIndicator isTyping={typingNames().length > 0} peerName={typingNames().join(", ")} />
+          <TypingIndicator
+            isTyping={typingNames().length > 0}
+            peerName={typingNames().join(", ")}
+          />
         </SlotMount>
         {/* A group send waits until our identity is published (plan E2.5
          *  FC3); the composer says so while it is not. */}
@@ -269,7 +323,9 @@ const GroupChat: Component<{ groupId: string }> = (props) => {
             replyTo={(() => {
               const m = replying();
               if (!m?.serverMessageId) return null;
-              const senderName = m.isOwn ? (authState.displayName ?? "You") : (memberNames()[m.senderId] ?? name());
+              const senderName = m.isOwn
+                ? (authState.displayName ?? "You")
+                : (memberNames()[m.senderId] ?? name());
               return { senderName, body: m.body, messageId: m.serverMessageId };
             })()}
             onDismissReply={() => setReplying(null)}

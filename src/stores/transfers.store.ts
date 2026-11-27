@@ -13,6 +13,10 @@ interface TransfersState {
   loaded: boolean;
 }
 
-const [transfersState, setTransfersState] = createStore<TransfersState>({ rows: {}, order: [], loaded: false });
+const [transfersState, setTransfersState] = createStore<TransfersState>({
+  rows: {},
+  order: [],
+  loaded: false,
+});
 
 export { transfersState, setTransfersState };

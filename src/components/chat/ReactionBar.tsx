@@ -23,7 +23,8 @@ const ReactionBar: Component<ReactionBarProps> = (props) => {
       <div class="reaction-bar">
         <For each={props.reactions}>
           {(reaction) => {
-            const isActive = () => props.myPseudonymKey ? reaction.reactors.includes(props.myPseudonymKey) : false;
+            const isActive = () =>
+              props.myPseudonymKey ? reaction.reactors.includes(props.myPseudonymKey) : false;
             return (
               <button
                 type="button"
@@ -35,11 +36,17 @@ const ReactionBar: Component<ReactionBarProps> = (props) => {
               >
                 <Show
                   when={resolveCustomEmojiSrc(reaction.emoji)}
-                  fallback={<span class="reaction-chip-emoji" aria-hidden="true">{reaction.emoji}</span>}
+                  fallback={
+                    <span class="reaction-chip-emoji" aria-hidden="true">
+                      {reaction.emoji}
+                    </span>
+                  }
                 >
                   {(src) => <img class="reaction-chip-expression" src={src()} alt="" />}
                 </Show>
-                <span class="reaction-chip-count" aria-hidden="true">{reaction.count}</span>
+                <span class="reaction-chip-count" aria-hidden="true">
+                  {reaction.count}
+                </span>
               </button>
             );
           }}

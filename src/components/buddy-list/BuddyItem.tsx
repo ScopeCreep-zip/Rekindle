@@ -129,7 +129,9 @@ const BuddyItem: Component<BuddyItemProps> = (props) => {
         </Show>
         <Show when={props.identityPinMismatch}>
           <Tooltip text={identityPinMismatchText(props.displayName)}>
-            <div class="buddy-identity-mismatch" role="alert">Identity key mismatch</div>
+            <div class="buddy-identity-mismatch" role="alert">
+              Identity key mismatch
+            </div>
           </Tooltip>
         </Show>
         <Show when={props.unreachable}>
@@ -150,7 +152,9 @@ const BuddyItem: Component<BuddyItemProps> = (props) => {
         </Show>
       </div>
       <Show when={props.voiceChannel}>
-        <span class="buddy-voice-icon nf-icon" title="In voice channel">{ICON_VOLUME_HIGH}</span>
+        <span class="buddy-voice-icon nf-icon" title="In voice channel">
+          {ICON_VOLUME_HIGH}
+        </span>
       </Show>
       <Show when={props.unreadCount > 0}>
         <span class="buddy-unread-badge">{props.unreadCount}</span>

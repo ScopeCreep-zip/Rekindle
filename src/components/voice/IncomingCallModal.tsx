@@ -2,10 +2,7 @@ import { type Component, Show, createEffect, createSignal, onCleanup } from "sol
 import { Dialog } from "@kobalte/core/dialog";
 import { returnFocusToOpener } from "../../utils/dialog_focus";
 import { callsState } from "../../stores/calls.store";
-import {
-  handleAcceptIncomingCall,
-  handleDeclineIncomingCall,
-} from "../../actions/calls.actions";
+import { handleAcceptIncomingCall, handleDeclineIncomingCall } from "../../actions/calls.actions";
 import { commands } from "../../ipc/commands";
 
 /// Wave 12 W12.1+W12.3 — incoming-call modal mounted globally in
@@ -15,7 +12,7 @@ import { commands } from "../../ipc/commands";
 /// the active call's controls. The queue advances naturally as the
 /// user accepts / declines and the store removes entries.
 const IncomingCallModal: Component = () => {
-  const head = (): typeof callsState.incomingCalls[number] | undefined => {
+  const head = (): (typeof callsState.incomingCalls)[number] | undefined => {
     if (callsState.activeCall != null) return undefined;
     return callsState.incomingCalls[0];
   };
@@ -52,7 +49,10 @@ const IncomingCallModal: Component = () => {
           <Dialog.Portal>
             <Dialog.Overlay class="modal-overlay" />
             <div class="modal-overlay-positioner">
-              <Dialog.Content class="modal-container modal-container-sm incoming-call-modal" {...returnFocusToOpener()}>
+              <Dialog.Content
+                class="modal-container modal-container-sm incoming-call-modal"
+                {...returnFocusToOpener()}
+              >
                 <div class="incoming-call-modal-header">
                   <Dialog.Title class="incoming-call-title">
                     Incoming {entry().kind} call
@@ -128,10 +128,7 @@ const IncomingCallModal: Component = () => {
                         await commands
                           .muteCallerTemp(entry().peerKey, 60 * 60 * 1000)
                           .catch((e) => console.warn("muteCallerTemp:", e));
-                        void handleDeclineIncomingCall(
-                          entry().callId,
-                          "user is unavailable",
-                        );
+                        void handleDeclineIncomingCall(entry().callId, "user is unavailable");
                       }}
                     >
                       Mute caller for 1 hour

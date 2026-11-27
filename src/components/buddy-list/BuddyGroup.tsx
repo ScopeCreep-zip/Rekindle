@@ -72,7 +72,8 @@ const BuddyGroup: Component<BuddyGroupProps> = (props) => {
   const online = () => props.friends.filter((f) => f.status !== "offline");
   const offline = () => props.friends.filter((f) => f.status === "offline");
   const ordered = () => [...online(), ...offline()];
-  const sectionOf = (f: Friend): "Online" | "Offline" => (f.status === "offline" ? "Offline" : "Online");
+  const sectionOf = (f: Friend): "Online" | "Offline" =>
+    f.status === "offline" ? "Offline" : "Online";
   const section = (f: Friend): Friend[] => (sectionOf(f) === "Online" ? online() : offline());
   // Each section's label is a heading screen readers can jump between, and
   // every row is described by its section's label (WCAG 1.3.1: the meaning
@@ -106,31 +107,30 @@ const BuddyGroup: Component<BuddyGroupProps> = (props) => {
         describedBy={isPendingGroup() ? undefined : sectionIds[sectionOf(friend)]}
         onDoubleClick={props.onDoubleClick}
         onSelect={props.onSelect}
-      />,
+      />
     );
 
   return (
     <div class={isPendingGroup() ? "buddy-group-pending" : ""}>
-      <Show when={!renaming()} fallback={
-        <div class="group-create-inline">
-          <input
-            class="group-create-input"
-            type="text"
-            value={renameValue()}
-            onInput={(e) => setRenameValue(e.currentTarget.value)}
-            onKeyDown={handleRenameKeyDown}
-            onBlur={() => commitRename()}
-            autofocus
-          />
-          <button
-            type="button"
-            class="form-btn-primary"
-            onClick={() => commitRename()}
-          >
-            OK
-          </button>
-        </div>
-      }>
+      <Show
+        when={!renaming()}
+        fallback={
+          <div class="group-create-inline">
+            <input
+              class="group-create-input"
+              type="text"
+              value={renameValue()}
+              onInput={(e) => setRenameValue(e.currentTarget.value)}
+              onKeyDown={handleRenameKeyDown}
+              onBlur={() => commitRename()}
+              autofocus
+            />
+            <button type="button" class="form-btn-primary" onClick={() => commitRename()}>
+              OK
+            </button>
+          </div>
+        }
+      >
         <div
           class="buddy-group-header"
           classList={{ "buddy-group-header-selected": !!props.groupSelected }}
@@ -147,20 +147,28 @@ const BuddyGroup: Component<BuddyGroupProps> = (props) => {
         </div>
       </Show>
       <Show when={!collapsed()}>
-        <Show when={isPendingGroup()} fallback={
-          <For each={ordered()}>
-            {(friend) => (
-              <div class="buddy-subgroup" data-buddy-section={sectionOf(friend)}>
-                <Show when={section(friend)[0] === friend}>
-                  <div class="buddy-subgroup-header" id={sectionIds[sectionOf(friend)]} role="heading" aria-level="2">
-                    {sectionOf(friend)} ({section(friend).length})
-                  </div>
-                </Show>
-                {renderBuddy(friend)}
-              </div>
-            )}
-          </For>
-        }>
+        <Show
+          when={isPendingGroup()}
+          fallback={
+            <For each={ordered()}>
+              {(friend) => (
+                <div class="buddy-subgroup" data-buddy-section={sectionOf(friend)}>
+                  <Show when={section(friend)[0] === friend}>
+                    <div
+                      class="buddy-subgroup-header"
+                      id={sectionIds[sectionOf(friend)]}
+                      role="heading"
+                      aria-level="2"
+                    >
+                      {sectionOf(friend)} ({section(friend).length})
+                    </div>
+                  </Show>
+                  {renderBuddy(friend)}
+                </div>
+              )}
+            </For>
+          }
+        >
           <For each={props.friends}>{renderBuddy}</For>
         </Show>
       </Show>

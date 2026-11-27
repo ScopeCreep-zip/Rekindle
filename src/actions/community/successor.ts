@@ -1,7 +1,11 @@
 import { commands } from "../../ipc/commands";
 import type { SuccessorOffer } from "../../ipc/commands/community";
 import { eventStreamLive } from "../../ipc/channels";
-import { applySuccessorSnapshot, markSuccessorFollowed, successorSeq } from "../../stores/successor.store";
+import {
+  applySuccessorSnapshot,
+  markSuccessorFollowed,
+  successorSeq,
+} from "../../stores/successor.store";
 import { errorMessage } from "../../utils/error";
 
 // Successor communities (ADR 0011, plan E3.2 S7s.4). Every write is a
@@ -13,7 +17,9 @@ import { errorMessage } from "../../utils/error";
 /// The successors the Host's snapshot (`CommunitySuccessors`) offers for
 /// `community`, or null (logged) when it is not read. Its link requests
 /// (SS4) are answered by the co-creator link view, not here.
-export async function handleGetCommunitySuccessors(community: string): Promise<SuccessorOffer[] | null> {
+export async function handleGetCommunitySuccessors(
+  community: string
+): Promise<SuccessorOffer[] | null> {
   try {
     return (await commands.getCommunitySuccessors(community)).offers;
   } catch (e) {
@@ -51,7 +57,10 @@ export async function handlePublishSuccessor(community: string): Promise<string 
 /// Follow `newAnchor`, a successor of `community`, with the invite sealed to
 /// us; the old community is kept. The Host's error, or null once followed
 /// (the row then leaves).
-export async function handleFollowSuccessor(community: string, newAnchor: string): Promise<string | null> {
+export async function handleFollowSuccessor(
+  community: string,
+  newAnchor: string
+): Promise<string | null> {
   try {
     await commands.followCommunitySuccessor(community, newAnchor);
     markSuccessorFollowed(newAnchor);

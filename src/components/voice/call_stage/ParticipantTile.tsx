@@ -21,7 +21,7 @@ const ParticipantTile: Component<{
 
   const isSpeaking = createMemo(() => participant()?.isSpeaking ?? false);
   const isMuted = createMemo(() =>
-    props.tile.isLocal ? voiceState.isMuted : (participant()?.isMuted ?? false),
+    props.tile.isLocal ? voiceState.isMuted : (participant()?.isMuted ?? false)
   );
   const name = createMemo(() => participant()?.displayName ?? props.tile.displayName);
 

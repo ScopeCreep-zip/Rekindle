@@ -33,7 +33,7 @@ const ChannelOverwriteEditor: Component<ChannelOverwriteEditorProps> = (props) =
         overwriteTargetType(),
         targetId,
         Number(overwriteAllow()),
-        Number(overwriteDeny()),
+        Number(overwriteDeny())
       );
       addToast(`Permission overwrite saved for #${props.channelName}`, "success");
     } catch (e) {
@@ -50,7 +50,7 @@ const ChannelOverwriteEditor: Component<ChannelOverwriteEditorProps> = (props) =
         props.communityId,
         props.channelId,
         overwriteTargetType(),
-        targetId,
+        targetId
       );
       setOverwriteAllow(0n);
       setOverwriteDeny(0n);
@@ -81,9 +81,7 @@ const ChannelOverwriteEditor: Component<ChannelOverwriteEditorProps> = (props) =
         >
           <option value="">Select target...</option>
           <For each={props.roles}>
-            {(role) => (
-              <option value={String(role.id)}>{role.name}</option>
-            )}
+            {(role) => <option value={String(role.id)}>{role.name}</option>}
           </For>
         </select>
       </div>

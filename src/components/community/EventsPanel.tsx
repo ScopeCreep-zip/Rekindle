@@ -3,7 +3,12 @@ import { communityState } from "../../stores/community.store";
 import type { EventRsvp, ScheduledEvent } from "../../stores/community.store";
 import { formatEventCountdown } from "../../utils/time";
 import EventAttendees from "./EventAttendees";
-import { handleRsvpEvent, handleDeleteEvent, handleCancelEvent, handleLoadEvents } from "../../actions/community.actions";
+import {
+  handleRsvpEvent,
+  handleDeleteEvent,
+  handleCancelEvent,
+  handleLoadEvents,
+} from "../../actions/community.actions";
 import { deniedFor } from "../../utils/denied";
 
 interface EventsPanelProps {
@@ -39,10 +44,14 @@ function rsvpCount(rsvps: EventRsvp[], status: string): number {
 
 function statusBadgeClass(status: string): string {
   switch (status) {
-    case "active": return "event-status-badge event-status-active";
-    case "completed": return "event-status-badge event-status-completed";
-    case "cancelled": return "event-status-badge event-status-cancelled";
-    default: return "event-status-badge event-status-scheduled";
+    case "active":
+      return "event-status-badge event-status-active";
+    case "completed":
+      return "event-status-badge event-status-completed";
+    case "cancelled":
+      return "event-status-badge event-status-cancelled";
+    default:
+      return "event-status-badge event-status-scheduled";
   }
 }
 
@@ -54,13 +63,15 @@ const EventCard: Component<{
 }> = (props) => {
   const myStatus = createMemo(() => myRsvpStatus(props.event.rsvps, props.myPseudonymKey));
   const goingCount = createMemo(() => rsvpCount(props.event.rsvps, "going"));
-  const isInteractable = createMemo(() =>
-    props.event.status === "scheduled" || props.event.status === "active"
+  const isInteractable = createMemo(
+    () => props.event.status === "scheduled" || props.event.status === "active"
   );
   // Editing, cancelling and deleting an event need MANAGE_EVENTS on the
   // Host, whoever created it (plan E3.2 S9): the backend's flags decide,
   // not a creator check here.
-  const manageDenied = createMemo(() => deniedFor(communityState.communities[props.communityId], "manageEvents"));
+  const manageDenied = createMemo(() =>
+    deniedFor(communityState.communities[props.communityId], "manageEvents")
+  );
 
   function handleRsvp(status: string): void {
     handleRsvpEvent(props.communityId, props.event.id, status);
@@ -118,35 +129,40 @@ const EventCard: Component<{
           </button>
           <span class="event-rsvp-count">
             {goingCount()} going
-            <Show when={props.event.maxAttendees}>
-              {` / ${props.event.maxAttendees}`}
-            </Show>
+            <Show when={props.event.maxAttendees}>{` / ${props.event.maxAttendees}`}</Show>
           </span>
         </div>
       </Show>
       <Show when={!isInteractable()}>
         <div class="event-rsvp-row">
-          <span class="event-rsvp-count">
-            {goingCount()} attended
-          </span>
+          <span class="event-rsvp-count">{goingCount()} attended</span>
         </div>
       </Show>
       <EventAttendees communityId={props.communityId} eventId={props.event.id} />
       {/* Never-hide: drawn always, disabled with the Host's reason. */}
-      <fieldset class="event-card-actions" disabled={manageDenied() !== null} title={manageDenied() ?? undefined} aria-description={manageDenied() ?? undefined}>
-          <Show when={isInteractable() && props.onEditEvent}>
-            <button type="button" class="form-btn-secondary" onClick={() => props.onEditEvent!(props.event)}>
-              Edit
-            </button>
-          </Show>
-          <Show when={isInteractable()}>
-            <button type="button" class="form-btn-secondary" onClick={handleCancel}>
-              Cancel Event
-            </button>
-          </Show>
-          <button type="button" class="form-btn-danger" onClick={handleDelete}>
-            Delete Event
+      <fieldset
+        class="event-card-actions"
+        disabled={manageDenied() !== null}
+        title={manageDenied() ?? undefined}
+        aria-description={manageDenied() ?? undefined}
+      >
+        <Show when={isInteractable() && props.onEditEvent}>
+          <button
+            type="button"
+            class="form-btn-secondary"
+            onClick={() => props.onEditEvent!(props.event)}
+          >
+            Edit
           </button>
+        </Show>
+        <Show when={isInteractable()}>
+          <button type="button" class="form-btn-secondary" onClick={handleCancel}>
+            Cancel Event
+          </button>
+        </Show>
+        <button type="button" class="form-btn-danger" onClick={handleDelete}>
+          Delete Event
+        </button>
       </fieldset>
     </div>
   );
@@ -154,7 +170,9 @@ const EventCard: Component<{
 
 const EventsPanel: Component<EventsPanelProps> = (props) => {
   // Never-hide: + New Event is drawn always, disabled with the Host's reason.
-  const createDenied = createMemo(() => deniedFor(communityState.communities[props.communityId], "createEvents"));
+  const createDenied = createMemo(() =>
+    deniedFor(communityState.communities[props.communityId], "createEvents")
+  );
   const [loaded, setLoaded] = createSignal(false);
   const [filter, setFilter] = createSignal<StatusFilter>("upcoming");
 
@@ -179,7 +197,8 @@ const EventsPanel: Component<EventsPanelProps> = (props) => {
     <div class="event-list">
       <div class="form-row">
         <span class="form-label">Community Events</span>
-        <button type="button"
+        <button
+          type="button"
           class="form-btn-primary"
           onClick={props.onCreateEvent}
           disabled={createDenied() !== null}

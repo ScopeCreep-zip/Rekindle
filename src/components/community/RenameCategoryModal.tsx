@@ -19,7 +19,7 @@ const RenameCategoryModal: Component<RenameCategoryModalProps> = (props) => (
     placeholder="Category name..."
     submitLabel="Rename"
     initialValue={props.currentName}
-    validate={(name) => name === props.currentName ? "Name is unchanged" : null}
+    validate={(name) => (name === props.currentName ? "Name is unchanged" : null)}
   />
 );
 

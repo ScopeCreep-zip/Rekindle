@@ -1,7 +1,12 @@
 import { commands } from "../../ipc/commands";
 import type { CoCreationSnapshot } from "../../ipc/commands/community";
 import { eventStreamLive } from "../../ipc/channels";
-import { applyCoCreationSnapshot, coCreationSeq, dropCreatorInvite, watchCreation } from "../../stores/co-creator.store";
+import {
+  applyCoCreationSnapshot,
+  coCreationSeq,
+  dropCreatorInvite,
+  watchCreation,
+} from "../../stores/co-creator.store";
 import { errorMessage } from "../../utils/error";
 
 // Co-creation (plan E3.2 S7s.3f). Every call is a `hostInvoke`: the Host's
@@ -13,7 +18,7 @@ import { errorMessage } from "../../utils/error";
 /// with the Host's reason, so the form stays open.
 export async function handleCreateWithCoCreators(
   name: string,
-  coCreators: string[],
+  coCreators: string[]
 ): Promise<void> {
   const created = await commands.createCommunityWithCoCreators(name, coCreators);
   watchCreation(created.anchor, created.name, created.pendingCoCreators);
@@ -44,7 +49,10 @@ export async function handleGetCoCreation(): Promise<CoCreationSnapshot | null> 
 }
 
 /// Remove `identity` from the creation of `anchor`; the Host's error, or null.
-export async function handleRemoveCoCreator(anchor: string, identity: string): Promise<string | null> {
+export async function handleRemoveCoCreator(
+  anchor: string,
+  identity: string
+): Promise<string | null> {
   try {
     await commands.removeCoCreator(anchor, identity);
     return null;
@@ -65,7 +73,10 @@ export async function handleCancelCreation(anchor: string): Promise<string | nul
 
 /// Answer the held co-creator invite to `anchor`; the Host's error, or
 /// null once answered (the row is then dropped).
-export async function handleAnswerCreatorInvite(anchor: string, accept: boolean): Promise<string | null> {
+export async function handleAnswerCreatorInvite(
+  anchor: string,
+  accept: boolean
+): Promise<string | null> {
   try {
     await commands.answerCreatorInvite(anchor, accept);
     dropCreatorInvite(anchor);

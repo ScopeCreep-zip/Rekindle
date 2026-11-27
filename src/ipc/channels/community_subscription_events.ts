@@ -27,7 +27,14 @@ type MembershipEvent =
    * `reasonText` is the Host's words for the user; render it as given.
    */
   | { joinWithdrawn: { community: string; reason: JoinRefusal; reasonText: string } }
-  | { joinRequested: { community: string; pseudonym: string; displayName: string; hasInvite: boolean } }
+  | {
+      joinRequested: {
+        community: string;
+        pseudonym: string;
+        displayName: string;
+        hasInvite: boolean;
+      };
+    }
   | { joinProgress: { community: string; stage: string; status: string } }
   | {
       joined: {
@@ -39,7 +46,14 @@ type MembershipEvent =
       };
     }
   /** The name on a member's verified card, first read or changed (plan E3.2 F9-2). */
-  | { memberCardChanged: { community: string; pseudonym: string; displayName: string; customStatus?: string } }
+  | {
+      memberCardChanged: {
+        community: string;
+        pseudonym: string;
+        displayName: string;
+        customStatus?: string;
+      };
+    }
   | { left: { community: string; pseudonym: string } }
   /** We no longer hold the community: our leave, withdrawn join or Forget (plan E3.2). Device-scoped; a repeat is a no-op. */
   | { forgotten: { community: string } }
@@ -65,12 +79,25 @@ type MembershipEvent =
       };
     }
   | { unbanned: { community: string; targetPseudonym: string } }
-  | { timedOut: { community: string; targetPseudonym: string; durationSeconds: number; reason: string | null } }
+  | {
+      timedOut: {
+        community: string;
+        targetPseudonym: string;
+        durationSeconds: number;
+        reason: string | null;
+      };
+    }
   | { timeoutRemoved: { community: string; targetPseudonym: string } }
   | { timeoutStatusChanged: { community: string; pseudonym: string; timeoutUntil: number | null } }
   | { rolesChanged: { community: string; pseudonym: string; roleIds: string[] } }
   | { onboardingCompleted: { community: string; pseudonym: string; roleIds: string[] } }
-  | { onboardingAnswersSubmitted: { community: string; senderPseudonym: string; answerCount: number } }
+  | {
+      onboardingAnswersSubmitted: {
+        community: string;
+        senderPseudonym: string;
+        answerCount: number;
+      };
+    }
   | { membersRefreshed: { community: string } }
   | {
       /**
@@ -243,7 +270,13 @@ export type GovernanceEvent =
   | { inviteRevoked: { community: string; codeHash: string } }
   | { inviteExpired: { community: string; codeHash: string } }
   | { channelPermissionsChanged: { community: string; channel: string } }
-  | { effectivePermissionsChanged: { community: string; member: string; denied: DeniedCapabilities } }
+  | {
+      effectivePermissionsChanged: {
+        community: string;
+        member: string;
+        denied: DeniedCapabilities;
+      };
+    }
   | { governanceRebuilt: { community: string } }
   | {
       governanceOpQuarantined: {
@@ -480,8 +513,7 @@ export type CommunitySubscriptionEvent =
    * carries the distinction and the backend routes on it.
    */
   | {
-      typing:
-        // `name`: the typist's name as the Host states it, never empty (card name, else short fingerprint).
+      typing: // `name`: the typist's name as the Host states it, never empty (card name, else short fingerprint).
         | { started: { context: TypingContext; who: string; name: string } }
         | { stopped: { context: TypingContext; who: string } };
     }
@@ -490,9 +522,7 @@ export type CommunitySubscriptionEvent =
 export type AnyCommunityEvent = CommunityEvent | CommunitySubscriptionEvent;
 
 /** Whether this is the desktop's `{ type, data }` envelope. */
-export function isLegacyCommunityEvent(
-  event: AnyCommunityEvent,
-): event is CommunityEvent {
+export function isLegacyCommunityEvent(event: AnyCommunityEvent): event is CommunityEvent {
   return "type" in event;
 }
 
@@ -515,15 +545,54 @@ interface PendingGovOp {
 
 /** One per `GovernanceEntry` arm (`PendingGovKind`). */
 type PendingGovKind =
-  | "channelCreated" | "channelEdited" | "channelDeleted" | "roleEdited" | "rolesChanged" | "roleDeleted"
-  | "ban" | "unban" | "join" | "memberRecordMoved" | "leave" | "kick" | "approveMember" | "rejectMember"
-  | "timeout" | "removeTimeout" | "communityEdited" | "notificationDefault" | "keyRotation"
-  | "categoryCreated" | "categoryEdited" | "categoryDeleted" | "permissionsChanged"
-  | "threadCreated" | "threadArchived" | "threadUnarchived" | "eventCreated" | "eventArchived" | "eventRsvp"
-  | "expressionAdded" | "expressionRemoved" | "modReport" | "onboardingConfig" | "welcomeScreen"
-  | "adminDelete" | "segmentAdded" | "autoModRule" | "inviteCreated" | "inviteRevoked" | "attachmentPinned"
-  | "communityPolicy" | "checkpoint" | "successor" | "deviceKey" | "deviceRetired" | "deviceReadmit"
-  | "successorLinkRequest" | "successorLink";
+  | "channelCreated"
+  | "channelEdited"
+  | "channelDeleted"
+  | "roleEdited"
+  | "rolesChanged"
+  | "roleDeleted"
+  | "ban"
+  | "unban"
+  | "join"
+  | "memberRecordMoved"
+  | "leave"
+  | "kick"
+  | "approveMember"
+  | "rejectMember"
+  | "timeout"
+  | "removeTimeout"
+  | "communityEdited"
+  | "notificationDefault"
+  | "keyRotation"
+  | "categoryCreated"
+  | "categoryEdited"
+  | "categoryDeleted"
+  | "permissionsChanged"
+  | "threadCreated"
+  | "threadArchived"
+  | "threadUnarchived"
+  | "eventCreated"
+  | "eventArchived"
+  | "eventRsvp"
+  | "expressionAdded"
+  | "expressionRemoved"
+  | "modReport"
+  | "onboardingConfig"
+  | "welcomeScreen"
+  | "adminDelete"
+  | "segmentAdded"
+  | "autoModRule"
+  | "inviteCreated"
+  | "inviteRevoked"
+  | "attachmentPinned"
+  | "communityPolicy"
+  | "checkpoint"
+  | "successor"
+  | "deviceKey"
+  | "deviceRetired"
+  | "deviceReadmit"
+  | "successorLinkRequest"
+  | "successorLink";
 
 /** Our community key against governance's generation, as the Host states it
  *  (`rekindle_types::dto::community::KeyStatus`; `CommunityView::key_status`,

@@ -9,7 +9,7 @@ export async function handleCreateChannel(
   name: string,
   channelType: string,
   categoryId?: string,
-  parentVoiceChannelId?: string,
+  parentVoiceChannelId?: string
 ): Promise<string> {
   try {
     const channelId = await commands.createChannel(
@@ -17,22 +17,26 @@ export async function handleCreateChannel(
       name,
       channelType,
       categoryId,
-      parentVoiceChannelId,
+      parentVoiceChannelId
     );
     // The Host merges our ChannelCreated and may publish `channelsChanged`
     // (the new channel in it) before this call answers (walk 18 (d): the
     // channel was listed twice); add it only when not yet listed.
-    setCommunityState("communities", communityId, "channels", (chs) => chs.some((ch) => ch.id === channelId) ? chs : [
-      ...chs,
-      {
-        id: channelId,
-        name,
-        type: channelType as Channel["type"],
-        unreadCount: 0,
-        categoryId,
-        parentVoiceChannelId: parentVoiceChannelId ?? null,
-      },
-    ]);
+    setCommunityState("communities", communityId, "channels", (chs) =>
+      chs.some((ch) => ch.id === channelId)
+        ? chs
+        : [
+            ...chs,
+            {
+              id: channelId,
+              name,
+              type: channelType as Channel["type"],
+              unreadCount: 0,
+              categoryId,
+              parentVoiceChannelId: parentVoiceChannelId ?? null,
+            },
+          ]
+    );
     return channelId;
   } catch (e) {
     const msg = typeof e === "string" ? e : "Failed to create channel";
@@ -108,7 +112,14 @@ export async function handleLoadUnreadCounts(communityId: string): Promise<void>
       for (const { channelId, unreadCount } of counts) {
         const chIdx = community.channels.findIndex((ch) => ch.id === channelId);
         if (chIdx >= 0) {
-          setCommunityState("communities", communityId, "channels", chIdx, "unreadCount", unreadCount);
+          setCommunityState(
+            "communities",
+            communityId,
+            "channels",
+            chIdx,
+            "unreadCount",
+            unreadCount
+          );
         }
       }
     }
@@ -117,14 +128,11 @@ export async function handleLoadUnreadCounts(communityId: string): Promise<void>
   }
 }
 
-export async function handleDeleteChannel(
-  communityId: string,
-  channelId: string,
-): Promise<void> {
+export async function handleDeleteChannel(communityId: string, channelId: string): Promise<void> {
   try {
     await commands.deleteChannel(communityId, channelId);
     setCommunityState("communities", communityId, "channels", (chs) =>
-      chs.filter((ch) => ch.id !== channelId),
+      chs.filter((ch) => ch.id !== channelId)
     );
     // If the deleted channel was selected, clear selection
     if (communityState.activeChannel === channelId) {
@@ -139,14 +147,17 @@ export async function handleDeleteChannel(
 export async function handleRenameChannel(
   communityId: string,
   channelId: string,
-  newName: string,
+  newName: string
 ): Promise<void> {
   try {
     await commands.renameChannel(communityId, channelId, newName);
-    setCommunityState("communities", communityId, "channels",
+    setCommunityState(
+      "communities",
+      communityId,
+      "channels",
       (ch) => ch.id === channelId,
       "name",
-      newName,
+      newName
     );
   } catch (e) {
     console.error("Failed to rename channel:", e);
@@ -154,15 +165,15 @@ export async function handleRenameChannel(
   }
 }
 
-export async function handleCreateCategory(
-  communityId: string,
-  name: string,
-): Promise<void> {
+export async function handleCreateCategory(communityId: string, name: string): Promise<void> {
   try {
     const { categoryId } = await commands.createCategory(communityId, name);
     const community = communityState.communities[communityId];
     if (community) {
-      const maxSortOrder = community.categories.reduce((max, cat) => Math.max(max, cat.sortOrder), -1);
+      const maxSortOrder = community.categories.reduce(
+        (max, cat) => Math.max(max, cat.sortOrder),
+        -1
+      );
       setCommunityState("communities", communityId, "categories", (cats) => [
         ...cats,
         { id: categoryId, name, sortOrder: maxSortOrder + 1 },
@@ -174,18 +185,15 @@ export async function handleCreateCategory(
   }
 }
 
-export async function handleDeleteCategory(
-  communityId: string,
-  categoryId: string,
-): Promise<void> {
+export async function handleDeleteCategory(communityId: string, categoryId: string): Promise<void> {
   try {
     await commands.deleteCategory(communityId, categoryId);
     setCommunityState("communities", communityId, "categories", (cats) =>
-      cats.filter((cat) => cat.id !== categoryId),
+      cats.filter((cat) => cat.id !== categoryId)
     );
     // Unset categoryId on channels that belonged to this category
     setCommunityState("communities", communityId, "channels", (chs) =>
-      chs.map((ch) => ch.categoryId === categoryId ? { ...ch, categoryId: undefined } : ch),
+      chs.map((ch) => (ch.categoryId === categoryId ? { ...ch, categoryId: undefined } : ch))
     );
   } catch (e) {
     console.error("Failed to delete category:", e);
@@ -196,14 +204,17 @@ export async function handleDeleteCategory(
 export async function handleRenameCategory(
   communityId: string,
   categoryId: string,
-  newName: string,
+  newName: string
 ): Promise<void> {
   try {
     await commands.renameCategory(communityId, categoryId, newName);
-    setCommunityState("communities", communityId, "categories",
+    setCommunityState(
+      "communities",
+      communityId,
+      "categories",
       (cat) => cat.id === categoryId,
       "name",
-      newName,
+      newName
     );
   } catch (e) {
     console.error("Failed to rename category:", e);
@@ -214,14 +225,17 @@ export async function handleRenameCategory(
 export async function handleMoveChannel(
   communityId: string,
   channelId: string,
-  categoryId: string | null,
+  categoryId: string | null
 ): Promise<void> {
   try {
     await commands.moveChannel(communityId, channelId, categoryId);
-    setCommunityState("communities", communityId, "channels",
+    setCommunityState(
+      "communities",
+      communityId,
+      "channels",
       (ch) => ch.id === channelId,
       "categoryId",
-      categoryId ?? undefined,
+      categoryId ?? undefined
     );
   } catch (e) {
     console.error("Failed to move channel:", e);
@@ -232,14 +246,17 @@ export async function handleMoveChannel(
 export async function handleSetChannelTopic(
   communityId: string,
   channelId: string,
-  topic: string,
+  topic: string
 ): Promise<void> {
   try {
     await commands.setChannelTopic(communityId, channelId, topic);
-    setCommunityState("communities", communityId, "channels",
+    setCommunityState(
+      "communities",
+      communityId,
+      "channels",
       (ch) => ch.id === channelId,
       "topic",
-      topic,
+      topic
     );
   } catch (e) {
     console.error("Failed to set channel topic:", e);
@@ -250,14 +267,17 @@ export async function handleSetChannelTopic(
 export async function handleSetChannelForumTags(
   communityId: string,
   channelId: string,
-  forumTags: string[],
+  forumTags: string[]
 ): Promise<void> {
   try {
     await commands.setChannelForumTags(communityId, channelId, forumTags);
-    setCommunityState("communities", communityId, "channels",
+    setCommunityState(
+      "communities",
+      communityId,
+      "channels",
       (ch) => ch.id === channelId,
       "forumTags",
-      forumTags.length > 0 ? forumTags : undefined,
+      forumTags.length > 0 ? forumTags : undefined
     );
   } catch (e) {
     console.error("Failed to set forum tags:", e);
@@ -267,7 +287,7 @@ export async function handleSetChannelForumTags(
 
 export async function handleReorderChannels(
   communityId: string,
-  channelIds: string[],
+  channelIds: string[]
 ): Promise<void> {
   try {
     await commands.reorderChannels(communityId, channelIds);
@@ -292,16 +312,18 @@ export async function handleReorderChannels(
 
 export async function handleReorderCategories(
   communityId: string,
-  categoryIds: string[],
+  categoryIds: string[]
 ): Promise<void> {
   try {
     await commands.reorderCategories(communityId, categoryIds);
     // Optimistic update — reassign sortOrder based on new ordering
     setCommunityState("communities", communityId, "categories", (cats) =>
-      cats.map((cat) => {
-        const newOrder = categoryIds.indexOf(cat.id);
-        return newOrder >= 0 ? { ...cat, sortOrder: newOrder } : cat;
-      }).sort((a, b) => a.sortOrder - b.sortOrder),
+      cats
+        .map((cat) => {
+          const newOrder = categoryIds.indexOf(cat.id);
+          return newOrder >= 0 ? { ...cat, sortOrder: newOrder } : cat;
+        })
+        .sort((a, b) => a.sortOrder - b.sortOrder)
     );
   } catch (e) {
     console.error("Failed to reorder categories:", e);
@@ -312,7 +334,7 @@ export async function handleReorderCategories(
 export async function handleSetSlowmode(
   communityId: string,
   channelId: string,
-  seconds: number,
+  seconds: number
 ): Promise<void> {
   try {
     await commands.setSlowmode(communityId, channelId, seconds);
@@ -321,7 +343,14 @@ export async function handleSetSlowmode(
     if (community) {
       const idx = community.channels.findIndex((ch) => ch.id === channelId);
       if (idx >= 0) {
-        setCommunityState("communities", communityId, "channels", idx, "slowmodeSeconds", seconds || undefined);
+        setCommunityState(
+          "communities",
+          communityId,
+          "channels",
+          idx,
+          "slowmodeSeconds",
+          seconds || undefined
+        );
       }
     }
   } catch (e) {

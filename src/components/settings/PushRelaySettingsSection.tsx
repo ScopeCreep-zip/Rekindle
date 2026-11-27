@@ -13,8 +13,9 @@ const PushRelaySettingsSection: Component = () => {
   const pushTokenId = createUniqueId();
   const platformId = createUniqueId();
   const recordKeysId = createUniqueId();
-  const [registrations, setRegistrations] =
-    createSignal<{ pseudonym: string; platform: string; recordKeys: string[] }[]>([]);
+  const [registrations, setRegistrations] = createSignal<
+    { pseudonym: string; platform: string; recordKeys: string[] }[]
+  >([]);
   const [relayPseudonym, setRelayPseudonym] = createSignal("");
   const [deviceToken, setDeviceToken] = createSignal("");
   const [platform, setPlatform] = createSignal<"fcm" | "apns" | "self">("self");
@@ -28,7 +29,7 @@ const PushRelaySettingsSection: Component = () => {
         pseudonym,
         platform: plat,
         recordKeys: safeParse(json),
-      })),
+      }))
     );
   }
 
@@ -79,35 +80,30 @@ const PushRelaySettingsSection: Component = () => {
       <details class="settings-details" id="mobile-tier-explanation">
         <summary>How notifications reach a backgrounded device</summary>
         <p>
-          <strong>Tier 1 — Local watch</strong> (lowest latency, this device only):
-          your device watches the DHT directly while running. No external service
-          involved.
+          <strong>Tier 1 — Local watch</strong> (lowest latency, this device only): your device
+          watches the DHT directly while running. No external service involved.
         </p>
         <p>
-          <strong>Tier 2 — Friend relay</strong> (peer-to-peer, no token):
-          friends optionally watch your records and forward updates over Veilid
-          while your device is suspended.
+          <strong>Tier 2 — Friend relay</strong> (peer-to-peer, no token): friends optionally watch
+          your records and forward updates over Veilid while your device is suspended.
         </p>
         <p>
-          <strong>Tier 3 — Push relay daemon</strong> (mobile background): a
-          separate <code>rekindle-push-relay</code> daemon watches DHT records
-          on your behalf and sends a content-free wake to FCM / APNs. The
-          daemon learns request timing and watched record keys, but never reads
-          message content (which stays MEK-encrypted at rest).
+          <strong>Tier 3 — Push relay daemon</strong> (mobile background): a separate{" "}
+          <code>rekindle-push-relay</code> daemon watches DHT records on your behalf and sends a
+          content-free wake to FCM / APNs. The daemon learns request timing and watched record keys,
+          but never reads message content (which stays MEK-encrypted at rest).
         </p>
         <p class="settings-hint">
-          Tier 3 should be opt-in, not the default. Most users will be served
-          by Tier 1 alone; Tier 2 covers brief background windows; Tier 3 is
-          only useful for fully-offline mobile clients.
+          Tier 3 should be opt-in, not the default. Most users will be served by Tier 1 alone; Tier
+          2 covers brief background windows; Tier 3 is only useful for fully-offline mobile clients.
         </p>
       </details>
 
       <div class="settings-section-title">Push relay registration</div>
       <div class="settings-hint">
-        Discovery is out-of-band — paste the relay's pseudonym and your push
-        token below. Register the keys you want it to watch (comma or newline
-        separated). Tokens are stored locally and never displayed in
-        plaintext after registration.
+        Discovery is out-of-band — paste the relay's pseudonym and your push token below. Register
+        the keys you want it to watch (comma or newline separated). Tokens are stored locally and
+        never displayed in plaintext after registration.
       </div>
 
       <FormField label="Relay pseudonym (hex)" controlId={relayPseudonymId}>
@@ -175,9 +171,7 @@ const PushRelaySettingsSection: Component = () => {
               <div class="push-relay-meta">
                 <span class="buddy-name">{reg.pseudonym.slice(0, 20)}…</span>
                 <span class="push-relay-platform">{reg.platform}</span>
-                <span class="push-relay-watch-count">
-                  {reg.recordKeys.length} record(s)
-                </span>
+                <span class="push-relay-watch-count">{reg.recordKeys.length} record(s)</span>
               </div>
               <button
                 type="button"

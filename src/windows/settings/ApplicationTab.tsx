@@ -3,7 +3,11 @@ import FormField from "../../components/common/FormField";
 import SettingsSelect, { type SettingsSelectOption } from "../../components/common/SettingsSelect";
 import FavouriteServersSection from "../../components/settings/FavouriteServersSection";
 import { settingsState } from "../../stores/settings.store";
-import { handleSaveSettings, handleSetAutoAway, handleSetGameDetection } from "../../actions/settings.actions";
+import {
+  handleSaveSettings,
+  handleSetAutoAway,
+  handleSetGameDetection,
+} from "../../actions/settings.actions";
 
 /** Auto-away after these minutes of inactivity; 0 turns it off. */
 const AUTO_AWAY_OPTIONS: SettingsSelectOption[] = [
@@ -49,8 +53,8 @@ const ApplicationTab: Component = () => {
         <span class="buddy-name">Detect running games</span>
       </label>
       <div class="settings-hint">
-        Records your game time on this computer. Whether friends see the
-        game you play is under Privacy.
+        Records your game time on this computer. Whether friends see the game you play is under
+        Privacy.
       </div>
       <FavouriteServersSection />
       <div class="settings-section-title">Auto-Away</div>

@@ -78,9 +78,7 @@ const CallWindow: Component = () => {
         fallback={
           <div class="empty-placeholder">
             <div class="empty-placeholder-title">Call ended</div>
-            <div class="empty-placeholder-subtitle">
-              You can close this window.
-            </div>
+            <div class="empty-placeholder-subtitle">You can close this window.</div>
           </div>
         }
       >

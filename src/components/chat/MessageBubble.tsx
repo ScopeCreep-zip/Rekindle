@@ -59,7 +59,6 @@ interface MessageBubbleProps {
   channelId?: string;
 }
 
-
 const MessageBubble: Component<MessageBubbleProps> = (props) => {
   const [showEmojiPicker, setShowEmojiPicker] = createSignal(false);
   const [revealedBlurred, setRevealedBlurred] = createSignal(false);
@@ -73,35 +72,47 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
   });
 
   const senderClass = () =>
-    props.message.isOwn
-      ? "chat-message-sender-self"
-      : "chat-message-sender-other";
+    props.message.isOwn ? "chat-message-sender-self" : "chat-message-sender-other";
 
   const statusIcon = (): GlyphName | null => {
     if (!props.message.isOwn || !props.message.status) return null;
     switch (props.message.status) {
-      case "sending": return "dots";
-      case "sent": return "check";
-      case "delivered": return "check-all";
-      case "read": return "eye";
+      case "sending":
+        return "dots";
+      case "sent":
+        return "check";
+      case "delivered":
+        return "check-all";
+      case "read":
+        return "eye";
       case "awaiting_key":
-      case "queued": return "timeout";
-      case "failed": return "close-circle";
-      default: return null;
+      case "queued":
+        return "timeout";
+      case "failed":
+        return "close-circle";
+      default:
+        return null;
     }
   };
 
   // The state in words (§13): the icon's tooltip and accessible name.
   const statusText = () => {
     switch (props.message.status) {
-      case "sending": return "Sending";
-      case "sent": return "Sent";
-      case "delivered": return "Delivered";
-      case "read": return "Read";
+      case "sending":
+        return "Sending";
+      case "sent":
+        return "Sent";
+      case "delivered":
+        return "Delivered";
+      case "read":
+        return "Read";
       case "awaiting_key":
-      case "queued": return "Queued";
-      case "failed": return "Failed";
-      default: return undefined;
+      case "queued":
+        return "Queued";
+      case "failed":
+        return "Failed";
+      default:
+        return undefined;
     }
   };
 
@@ -141,7 +152,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
   /** A voice message: the Host decodes its duration and waveform from the
    *  audio (plan E5.1), so nothing is read from the message body. */
   const isVoice = createMemo(
-    () => props.message.flags != null && (props.message.flags & FLAG_VOICE_MESSAGE) !== 0,
+    () => props.message.flags != null && (props.message.flags & FLAG_VOICE_MESSAGE) !== 0
   );
 
   /** The moderator who removed it, by their name in this community when
@@ -149,7 +160,9 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
   const removedByName = (): string => {
     const by = props.message.removedBy ?? "";
     const community = props.communityId ? communityState.communities[props.communityId] : undefined;
-    return community?.members?.find((m) => m.pseudonymKey === by)?.displayName ?? `${by.slice(0, 8)}…`;
+    return (
+      community?.members?.find((m) => m.pseudonymKey === by)?.displayName ?? `${by.slice(0, 8)}…`
+    );
   };
 
   // Architecture §32 a11y — the bubble's accessible name: sender, time and
@@ -175,17 +188,25 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
       </Show>
       <div class="chat-message-header">
         <span class={senderClass()}>{props.senderName}</span>
-        <span class="chat-message-timestamp">
-          {formatTimestamp(props.message.timestamp)}
-        </span>
+        <span class="chat-message-timestamp">{formatTimestamp(props.message.timestamp)}</span>
         <Show when={props.message.editedAt}>
           <span class="edit-indicator">(edited)</span>
         </Show>
         <Show when={props.message.expireAt !== undefined || (props.message.expireSeconds ?? 0) > 0}>
-          <ExpiryIndicator expireAt={props.message.expireAt} expireSeconds={props.message.expireSeconds} />
+          <ExpiryIndicator
+            expireAt={props.message.expireAt}
+            expireSeconds={props.message.expireSeconds}
+          />
         </Show>
         <Show when={statusIcon()}>
-          {(icon) => <SkinGlyph name={icon()} class={statusClass()} title={statusText()} label={statusText()} />}
+          {(icon) => (
+            <SkinGlyph
+              name={icon()}
+              class={statusClass()}
+              title={statusText()}
+              label={statusText()}
+            />
+          )}
         </Show>
         <Show when={props.message.isOwn && props.message.status === "awaiting_key"}>
           <span class="message-status-note">Waiting for the community key</span>
@@ -193,8 +214,14 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
         <Show when={props.message.isOwn && props.message.retry}>
           {(retry) => <span class="message-status-note">{deliveryRetryText(retry())}</span>}
         </Show>
-        <Show when={props.message.isOwn && props.message.status === "failed" && props.message.failureReason}>
-          <span class="message-status-note message-status-note-failed">{props.message.failureReason}</span>
+        <Show
+          when={
+            props.message.isOwn && props.message.status === "failed" && props.message.failureReason
+          }
+        >
+          <span class="message-status-note message-status-note-failed">
+            {props.message.failureReason}
+          </span>
         </Show>
         <Show when={props.message.status === "failed"}>
           <button
@@ -219,11 +246,17 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
           </Show>
         </Show>
         {/* Action toolbar: the header row's last item, shown on hover or
-          * keyboard focus, so it takes its own space instead of covering the
-          * sender, timestamp and status (plan MA1). */}
+         * keyboard focus, so it takes its own space instead of covering the
+         * sender, timestamp and status (plan MA1). */}
         <div class="message-actions">
           <Show when={props.onReply}>
-            <button type="button" class="message-action-btn" title="Reply" aria-label="Reply" onClick={() => props.onReply?.(props.message)}>
+            <button
+              type="button"
+              class="message-action-btn"
+              title="Reply"
+              aria-label="Reply"
+              onClick={() => props.onReply?.(props.message)}
+            >
               <SkinGlyph name="reply" />
             </button>
           </Show>
@@ -265,32 +298,63 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
             </button>
           </Show>
           <Show when={props.onCreateThread && props.message.serverMessageId}>
-            <button type="button" class="message-action-btn" title="Create Thread" aria-label="Create thread" onClick={() => props.onCreateThread?.(props.message.serverMessageId!)}>
+            <button
+              type="button"
+              class="message-action-btn"
+              title="Create Thread"
+              aria-label="Create thread"
+              onClick={() => props.onCreateThread?.(props.message.serverMessageId!)}
+            >
               <SkinGlyph name="thread" />
             </button>
           </Show>
           <Show when={props.onCreatePoll && props.message.serverMessageId && !props.message.poll}>
-            <button type="button" class="message-action-btn" title="Create Poll" aria-label="Create poll" onClick={() => props.onCreatePoll?.(props.message.serverMessageId!)}>
+            <button
+              type="button"
+              class="message-action-btn"
+              title="Create Poll"
+              aria-label="Create poll"
+              onClick={() => props.onCreatePoll?.(props.message.serverMessageId!)}
+            >
               <SkinGlyph name="plus-box" />
             </button>
           </Show>
           <Show when={props.onForward && props.message.serverMessageId}>
-            <button type="button" class="message-action-btn" title="Forward" aria-label="Forward message" onClick={() => props.onForward?.(props.message.serverMessageId!)}>
+            <button
+              type="button"
+              class="message-action-btn"
+              title="Forward"
+              aria-label="Forward message"
+              onClick={() => props.onForward?.(props.message.serverMessageId!)}
+            >
               <SkinGlyph name="forward" />
             </button>
           </Show>
           <Show when={props.message.isOwn && props.onEdit && props.message.serverMessageId}>
-            <button type="button" class="message-action-btn" title="Edit" aria-label="Edit message" onClick={() => props.onEdit?.(props.message.serverMessageId!, props.message.body)}>
+            <button
+              type="button"
+              class="message-action-btn"
+              title="Edit"
+              aria-label="Edit message"
+              onClick={() => props.onEdit?.(props.message.serverMessageId!, props.message.body)}
+            >
               <SkinGlyph name="pencil" />
             </button>
           </Show>
           <Show when={props.onDelete && props.message.serverMessageId}>
-            <button type="button" class="message-action-btn" title="Delete" aria-label="Delete message" onClick={() => props.onDelete?.(props.message.serverMessageId!)}>
+            <button
+              type="button"
+              class="message-action-btn"
+              title="Delete"
+              aria-label="Delete message"
+              onClick={() => props.onDelete?.(props.message.serverMessageId!)}
+            >
               <SkinGlyph name="delete" />
             </button>
           </Show>
           <Show when={!props.message.isOwn && props.onAdminDelete && props.message.serverMessageId}>
-            <button type="button"
+            <button
+              type="button"
               class="message-action-btn"
               title={props.adminDeleteDenied ?? "Remove as moderator"}
               aria-label="Remove message as moderator"
@@ -335,42 +399,48 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
         when={!props.message.removedBy}
         fallback={<div class="message-removed">Removed by {removedByName()}</div>}
       >
-      <Show
-        when={props.message.decryptionFailed}
-        fallback={
-          <Show
-            when={props.message.automodBlurred && !revealedBlurred()}
-            fallback={<MessageRichBody communityId={props.communityId} body={props.message.body} />}
-          >
-            <div class="message-automod-blur">
-              <div class="message-automod-blur-text">Hidden by AutoMod on this client</div>
-              <button type="button" class="message-automod-reveal-btn" onClick={() => setRevealedBlurred(true)}>
-                Reveal
-              </button>
-            </div>
-          </Show>
-        }
-      >
-        {/* KP: a post that does not open under the key it names says so in
-            the Host's words (never "waiting": no key will come); a body
-            missing for another reason keeps the waiting text. */}
         <Show
-          when={props.message.undecryptable}
+          when={props.message.decryptionFailed}
           fallback={
-            <div class="message-decrypt-failed">
-              <SkinGlyph name="lock" class="message-decrypt-failed-icon" />
-              Unable to decrypt — waiting for encryption keys
-            </div>
+            <Show
+              when={props.message.automodBlurred && !revealedBlurred()}
+              fallback={
+                <MessageRichBody communityId={props.communityId} body={props.message.body} />
+              }
+            >
+              <div class="message-automod-blur">
+                <div class="message-automod-blur-text">Hidden by AutoMod on this client</div>
+                <button
+                  type="button"
+                  class="message-automod-reveal-btn"
+                  onClick={() => setRevealedBlurred(true)}
+                >
+                  Reveal
+                </button>
+              </div>
+            </Show>
           }
         >
-          {(u) => (
-            <div class="message-damaged" data-reason={u().reason}>
-              <SkinGlyph name="lock" class="message-damaged-icon" />
-              {u().reasonText}
-            </div>
-          )}
+          {/* KP: a post that does not open under the key it names says so in
+            the Host's words (never "waiting": no key will come); a body
+            missing for another reason keeps the waiting text. */}
+          <Show
+            when={props.message.undecryptable}
+            fallback={
+              <div class="message-decrypt-failed">
+                <SkinGlyph name="lock" class="message-decrypt-failed-icon" />
+                Unable to decrypt — waiting for encryption keys
+              </div>
+            }
+          >
+            {(u) => (
+              <div class="message-damaged" data-reason={u().reason}>
+                <SkinGlyph name="lock" class="message-damaged-icon" />
+                {u().reasonText}
+              </div>
+            )}
+          </Show>
         </Show>
-      </Show>
       </Show>
 
       {/* Architecture §28.8 — sender-fetched OpenGraph card. The
@@ -425,7 +495,11 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
         {(poll) => (
           <PollCard
             poll={poll()}
-            onVote={props.onVotePoll ? (selectedAnswers) => props.onVotePoll!(poll().pollId, selectedAnswers) : undefined}
+            onVote={
+              props.onVotePoll
+                ? (selectedAnswers) => props.onVotePoll!(poll().pollId, selectedAnswers)
+                : undefined
+            }
             onClose={props.onClosePoll ? () => props.onClosePoll!(poll().pollId) : undefined}
           />
         )}

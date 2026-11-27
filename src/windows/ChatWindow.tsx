@@ -25,7 +25,9 @@ const ChatWindow: Component = () => {
   // The groups the chat trees serve (shell_runners): the File, Tool and
   // Help menus, a pack popup, the friend's profile, a call and mute. No
   // friend chat, room or download: no chat tree lays one.
-  const unregister = [menuOps, popupOps, friendOps, callOps, muteOps].map((run) => registerShellRunner(run));
+  const unregister = [menuOps, popupOps, friendOps, callOps, muteOps].map((run) =>
+    registerShellRunner(run)
+  );
   onMount(async () => {
     // A group window's selection is its group (as a 1:1 window's is its
     // friend, useChatSearchChord): the Host builds the group's call, and
@@ -45,31 +47,31 @@ const ChatWindow: Component = () => {
     // `chat-window` scopes the chat window's skin surfaces (plan E7.7.7).
     // `data-skin-window` names the skin's chat frame layout (plan SK0 S2).
     <SlotProvider>
-    <div class="app-frame chat-window" data-skin-window="chat">
-      <SkinFrame />
-      {/* Architecture §32 a11y — keyboard skip link past the header. */}
-      <a href="#main-content" class="skip-link">Skip to messages</a>
-      <Switch
-        fallback={
-          <>
-            <Titlebar title="Chat" showMaximize />
-            <div class="empty-placeholder">
-              <div class="empty-placeholder-title">No conversation selected</div>
-              <div class="empty-placeholder-subtitle">
-                Open a chat from the buddy list.
+      <div class="app-frame chat-window" data-skin-window="chat">
+        <SkinFrame />
+        {/* Architecture §32 a11y — keyboard skip link past the header. */}
+        <a href="#main-content" class="skip-link">
+          Skip to messages
+        </a>
+        <Switch
+          fallback={
+            <>
+              <Titlebar title="Chat" showMaximize />
+              <div class="empty-placeholder">
+                <div class="empty-placeholder-title">No conversation selected</div>
+                <div class="empty-placeholder-subtitle">Open a chat from the buddy list.</div>
               </div>
-            </div>
-          </>
-        }
-      >
-        <Match when={group}>
-          <GroupChat groupId={group} />
-        </Match>
-        <Match when={peer}>
-          <DirectChat peerId={peer} />
-        </Match>
-      </Switch>
-    </div>
+            </>
+          }
+        >
+          <Match when={group}>
+            <GroupChat groupId={group} />
+          </Match>
+          <Match when={peer}>
+            <DirectChat peerId={peer} />
+          </Match>
+        </Switch>
+      </div>
     </SlotProvider>
   );
 };

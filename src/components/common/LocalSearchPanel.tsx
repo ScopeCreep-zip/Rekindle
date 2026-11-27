@@ -2,7 +2,11 @@ import { type Component, For, Show, createEffect, createSignal, on, onCleanup } 
 import Modal from "./Modal";
 import { commands } from "../../ipc/commands";
 import { transferCommands } from "../../ipc/commands/dto_transfer";
-import { type LocalHit, type LocalSearchScope, localSearchCommands } from "../../ipc/commands/dto_local_search";
+import {
+  type LocalHit,
+  type LocalSearchScope,
+  localSearchCommands,
+} from "../../ipc/commands/dto_local_search";
 import { localSearchScope, setLocalSearchScope } from "../../stores/local_search.store";
 import { communityState } from "../../stores/community.store";
 import { handleOpenGroupChat } from "../../actions/group-dm.actions";
@@ -71,7 +75,9 @@ function showHere(id: string | undefined): boolean {
 
 /** The community holding channel `channelId`, in this window's community store. */
 function communityOfChannel(channelId: string): string | undefined {
-  return Object.values(communityState.communities).find((c) => c.channels.some((ch) => ch.id === channelId))?.id;
+  return Object.values(communityState.communities).find((c) =>
+    c.channels.some((ch) => ch.id === channelId)
+  )?.id;
 }
 
 /** Open the item a hit names (plan E7.2 G11): each kind opens where that item lives. */
@@ -84,7 +90,10 @@ async function openHit(hit: LocalHit): Promise<void> {
     case "member":
       return commands.openCommunityWindow(hit.arg.community);
     case "server":
-      return sendSkinSelection({ kind: "server", arg: { gameId: hit.arg.gameId, address: hit.arg.address } });
+      return sendSkinSelection({
+        kind: "server",
+        arg: { gameId: hit.arg.gameId, address: hit.arg.address },
+      });
     case "file":
       await transferCommands.start(hit.arg.attachmentId, hit.arg.target);
       return;
@@ -122,7 +131,7 @@ const LocalSearchPanel: Component = () => {
       setQuery("");
       setHits([]);
       setError(null);
-    }),
+    })
   );
 
   // Search as the user types, after a short pause; only the latest answer shows.
@@ -144,10 +153,10 @@ const LocalSearchPanel: Component = () => {
           },
           (e) => {
             if (mine === generation) setError(errorMessage(e));
-          },
+          }
         );
       }, 200);
-    }),
+    })
   );
 
   const open = (hit: LocalHit): void => {
@@ -158,7 +167,12 @@ const LocalSearchPanel: Component = () => {
   return (
     <Show when={localSearchScope()}>
       {(scope) => (
-        <Modal isOpen title={scopeTitle(scope())} onClose={() => setLocalSearchScope(null)} size="md">
+        <Modal
+          isOpen
+          title={scopeTitle(scope())}
+          onClose={() => setLocalSearchScope(null)}
+          size="md"
+        >
           <div class="local-search">
             <input
               class="form-input local-search-input"
@@ -169,7 +183,13 @@ const LocalSearchPanel: Component = () => {
               ref={(el) => queueMicrotask(() => el.focus())}
               onInput={(e) => setQuery(e.currentTarget.value)}
             />
-            <Show when={error()}>{(message) => <div class="form-error" role="alert">{message()}</div>}</Show>
+            <Show when={error()}>
+              {(message) => (
+                <div class="form-error" role="alert">
+                  {message()}
+                </div>
+              )}
+            </Show>
             <Show when={query().trim() && hits().length === 0 && !error()}>
               <div class="settings-hint">No results</div>
             </Show>

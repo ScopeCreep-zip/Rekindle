@@ -115,7 +115,7 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
     void handleSetChannelNotificationSound(
       cid(),
       props.channel.id,
-      soundRef.length > 0 ? soundRef : null,
+      soundRef.length > 0 ? soundRef : null
     );
   }
 
@@ -152,9 +152,10 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
     <div>
       <div class="channel-manage-row">
         <SkinGlyph name={channelTypeIcon()} class="channel-manage-icon" />
-        <Show when={renaming()} fallback={
-          <span class="channel-manage-name">{props.channel.name}</span>
-        }>
+        <Show
+          when={renaming()}
+          fallback={<span class="channel-manage-name">{props.channel.name}</span>}
+        >
           <input
             class="form-input channel-rename-input"
             type="text"
@@ -232,11 +233,13 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
             <select
               class="form-select"
               value={props.channel.categoryId ?? ""}
-              onChange={(e) => void handleMoveChannel(
-                cid(),
-                props.channel.id,
-                e.currentTarget.value === "" ? null : e.currentTarget.value,
-              )}
+              onChange={(e) =>
+                void handleMoveChannel(
+                  cid(),
+                  props.channel.id,
+                  e.currentTarget.value === "" ? null : e.currentTarget.value
+                )
+              }
             >
               <option value="">No category</option>
               <For each={props.community.categories}>
@@ -249,21 +252,26 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
       {/* Slowmode label / inline editor */}
       <Show when={props.canManageChannels}>
         <div class="channel-settings-inline">
-          <Show when={editingSlowmode()} fallback={
-            <span class="channel-settings-inline-row">
-              <Show when={props.channel.slowmodeSeconds}>
-                <span class="channel-slowmode-label">{props.channel.slowmodeSeconds}s slowmode</span>
-              </Show>
-              <button
-                type="button"
-                class="form-btn-secondary channel-manage-btn"
-                onClick={startEditSlowmode}
-                title="Set Slowmode"
-              >
-                Slowmode
-              </button>
-            </span>
-          }>
+          <Show
+            when={editingSlowmode()}
+            fallback={
+              <span class="channel-settings-inline-row">
+                <Show when={props.channel.slowmodeSeconds}>
+                  <span class="channel-slowmode-label">
+                    {props.channel.slowmodeSeconds}s slowmode
+                  </span>
+                </Show>
+                <button
+                  type="button"
+                  class="form-btn-secondary channel-manage-btn"
+                  onClick={startEditSlowmode}
+                  title="Set Slowmode"
+                >
+                  Slowmode
+                </button>
+              </span>
+            }
+          >
             <span class="channel-settings-inline-row">
               <input
                 class="form-input channel-slowmode-input"
@@ -277,10 +285,18 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
                 }}
                 placeholder="Seconds"
               />
-              <button type="button" class="form-btn-primary channel-manage-btn" onClick={submitSlowmode}>
+              <button
+                type="button"
+                class="form-btn-primary channel-manage-btn"
+                onClick={submitSlowmode}
+              >
                 <SkinGlyph name="save" />
               </button>
-              <button type="button" class="form-btn-secondary channel-manage-btn" onClick={cancelSlowmode}>
+              <button
+                type="button"
+                class="form-btn-secondary channel-manage-btn"
+                onClick={cancelSlowmode}
+              >
                 Cancel
               </button>
             </span>
@@ -290,21 +306,24 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
       {/* Topic inline editor */}
       <Show when={props.canManageChannels}>
         <div class="channel-settings-inline">
-          <Show when={editingTopic()} fallback={
-            <span class="channel-settings-inline-row">
-              <Show when={props.channel.topic}>
-                <span class="channel-topic-label">{props.channel.topic}</span>
-              </Show>
-              <button
-                type="button"
-                class="form-btn-secondary channel-manage-btn"
-                onClick={startEditTopic}
-                title="Set Topic"
-              >
-                Topic
-              </button>
-            </span>
-          }>
+          <Show
+            when={editingTopic()}
+            fallback={
+              <span class="channel-settings-inline-row">
+                <Show when={props.channel.topic}>
+                  <span class="channel-topic-label">{props.channel.topic}</span>
+                </Show>
+                <button
+                  type="button"
+                  class="form-btn-secondary channel-manage-btn"
+                  onClick={startEditTopic}
+                  title="Set Topic"
+                >
+                  Topic
+                </button>
+              </span>
+            }
+          >
             <span class="channel-settings-inline-row">
               <input
                 class="form-input channel-topic-input"
@@ -317,10 +336,18 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
                 }}
                 placeholder="Channel topic..."
               />
-              <button type="button" class="form-btn-primary channel-manage-btn" onClick={submitTopic}>
+              <button
+                type="button"
+                class="form-btn-primary channel-manage-btn"
+                onClick={submitTopic}
+              >
                 <SkinGlyph name="save" />
               </button>
-              <button type="button" class="form-btn-secondary channel-manage-btn" onClick={cancelTopic}>
+              <button
+                type="button"
+                class="form-btn-secondary channel-manage-btn"
+                onClick={cancelTopic}
+              >
                 Cancel
               </button>
             </span>
@@ -332,7 +359,9 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
           not just admins (it's a personal preference). */}
       <div class="channel-settings-inline">
         <span class="channel-settings-inline-row">
-          <label class="channel-notif-label" for={notificationLevelId}>Notifications:</label>
+          <label class="channel-notif-label" for={notificationLevelId}>
+            Notifications:
+          </label>
           <select
             class="form-select channel-notif-select"
             id={notificationLevelId}
@@ -346,7 +375,9 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
             <option value="mentions">Mentions only</option>
             <option value="nothing">Nothing</option>
           </select>
-          <label class="channel-notif-label" for={notificationSoundId}>Sound:</label>
+          <label class="channel-notif-label" for={notificationSoundId}>
+            Sound:
+          </label>
           <select
             class="form-select channel-notif-select"
             id={notificationSoundId}
@@ -355,30 +386,31 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
           >
             <option value="">(default)</option>
             <For each={soundboardSounds()}>
-              {(sound) => (
-                <option value={sound.contentHash}>{sound.name}</option>
-              )}
+              {(sound) => <option value={sound.contentHash}>{sound.name}</option>}
             </For>
           </select>
         </span>
       </div>
       <Show when={props.canManageChannels && props.channel.type === "forum"}>
         <div class="channel-settings-inline">
-          <Show when={editingForumTags()} fallback={
-            <span class="channel-settings-inline-row">
-              <Show when={(props.channel.forumTags?.length ?? 0) > 0}>
-                <span class="channel-topic-label">{props.channel.forumTags?.join(", ")}</span>
-              </Show>
-              <button
-                type="button"
-                class="form-btn-secondary channel-manage-btn"
-                onClick={startEditForumTags}
-                title="Set Forum Tags"
-              >
-                Forum Tags
-              </button>
-            </span>
-          }>
+          <Show
+            when={editingForumTags()}
+            fallback={
+              <span class="channel-settings-inline-row">
+                <Show when={(props.channel.forumTags?.length ?? 0) > 0}>
+                  <span class="channel-topic-label">{props.channel.forumTags?.join(", ")}</span>
+                </Show>
+                <button
+                  type="button"
+                  class="form-btn-secondary channel-manage-btn"
+                  onClick={startEditForumTags}
+                  title="Set Forum Tags"
+                >
+                  Forum Tags
+                </button>
+              </span>
+            }
+          >
             <span class="channel-settings-inline-row">
               <input
                 class="form-input channel-topic-input"
@@ -391,10 +423,18 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
                 }}
                 placeholder="news, updates, support"
               />
-              <button type="button" class="form-btn-primary channel-manage-btn" onClick={submitForumTags}>
+              <button
+                type="button"
+                class="form-btn-primary channel-manage-btn"
+                onClick={submitForumTags}
+              >
                 <SkinGlyph name="save" />
               </button>
-              <button type="button" class="form-btn-secondary channel-manage-btn" onClick={cancelForumTags}>
+              <button
+                type="button"
+                class="form-btn-secondary channel-manage-btn"
+                onClick={cancelForumTags}
+              >
                 Cancel
               </button>
             </span>

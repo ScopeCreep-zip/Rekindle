@@ -98,13 +98,7 @@ export type EngineView =
   | "communities";
 
 /** `OverlayPart`. */
-type OverlayPart =
-  | "fps"
-  | "clock"
-  | "alert"
-  | "webCam"
-  | "voiceOverlay"
-  | "browser";
+type OverlayPart = "fps" | "clock" | "alert" | "webCam" | "voiceOverlay" | "browser";
 
 /** `SkinSettingsTab`. */
 type SkinSettingsTab =

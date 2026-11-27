@@ -1,8 +1,22 @@
-import { type Component, For, Show, createEffect, createSignal, createMemo, type JSX } from "solid-js";
+import {
+  type Component,
+  For,
+  Show,
+  createEffect,
+  createSignal,
+  createMemo,
+  type JSX,
+} from "solid-js";
 import SkinGlyph from "../common/SkinGlyph";
 import { ContextMenu } from "@kobalte/core/context-menu";
 import { Popover } from "@kobalte/core/popover";
-import { EVERYONE_ROLE_ID, type Member, type Role, type RoleTagColours, communityState } from "../../stores/community.store";
+import {
+  EVERYONE_ROLE_ID,
+  type Member,
+  type Role,
+  type RoleTagColours,
+  communityState,
+} from "../../stores/community.store";
 import StatusDot from "../status/StatusDot";
 import type { MemberGroup } from "../../ipc/commands/dto";
 import RoleTag from "./RoleTag";
@@ -58,7 +72,9 @@ const MemberList: Component<MemberListProps> = (props) => {
   // (WCAG 2.4.3), not to the vanished popout button.
   function editOwnProfile(pseudonymKey: string): void {
     setOpenProfileFor(null);
-    document.querySelector<HTMLElement>(`.member-item[data-pseudonym="${CSS.escape(pseudonymKey)}"]`)?.focus();
+    document
+      .querySelector<HTMLElement>(`.member-item[data-pseudonym="${CSS.escape(pseudonymKey)}"]`)
+      ?.focus();
     setEditingProfile(true);
   }
   const [blocked, setBlocked] = createSignal<Set<string>>(new Set());
@@ -94,7 +110,9 @@ const MemberList: Component<MemberListProps> = (props) => {
     return null;
   }
 
-  function memberRoles(member: Member): { name: string; color: number; tagColours?: RoleTagColours }[] {
+  function memberRoles(
+    member: Member
+  ): { name: string; color: number; tagColours?: RoleTagColours }[] {
     const resolved = member.roleIds
       .map((id) => props.roles.find((r) => r.id === id))
       .filter((r): r is Role => r != null && r.name !== "@everyone")
@@ -121,9 +139,7 @@ const MemberList: Component<MemberListProps> = (props) => {
 
   const filteredMembers = createMemo(() => {
     const q = searchQuery().toLowerCase();
-    return q
-      ? props.members.filter((m) => m.displayName.toLowerCase().includes(q))
-      : props.members;
+    return q ? props.members.filter((m) => m.displayName.toLowerCase().includes(q)) : props.members;
   });
 
   // The groups are the Host's (`Member.group`, Discord's member list rules
@@ -165,17 +181,18 @@ const MemberList: Component<MemberListProps> = (props) => {
     const mod = () => member.moderation;
     const voiceChannelId = () => memberVoiceChannelId(member);
     const assignableRoles = () =>
-      props.roles
-        .filter((r) => r.id !== EVERYONE_ROLE_ID)
-        .sort((a, b) => b.position - a.position);
+      props.roles.filter((r) => r.id !== EVERYONE_ROLE_ID).sort((a, b) => b.position - a.position);
 
     return (
       <ContextMenu.Portal>
         <ContextMenu.Content class="context-menu">
           {/* Never-hide: drawn always, disabled with this member's reason. */}
           <ContextMenu.Sub>
-            <ContextMenu.SubTrigger class="context-menu-item" disabled={mod().manageRoles !== null}
-            title={mod().manageRoles ?? undefined}>
+            <ContextMenu.SubTrigger
+              class="context-menu-item"
+              disabled={mod().manageRoles !== null}
+              title={mod().manageRoles ?? undefined}
+            >
               <SkinGlyph name="shield" class="context-menu-icon" />
               Manage Roles
             </ContextMenu.SubTrigger>
@@ -188,9 +205,7 @@ const MemberList: Component<MemberListProps> = (props) => {
                       <ContextMenu.CheckboxItem
                         class="context-menu-item"
                         checked={hasRole()}
-                        onChange={() =>
-                          toggleRole(member.pseudonymKey, role.id, hasRole())
-                        }
+                        onChange={() => toggleRole(member.pseudonymKey, role.id, hasRole())}
                       >
                         <ContextMenu.ItemIndicator class="context-menu-indicator">
                           ✓
@@ -206,8 +221,11 @@ const MemberList: Component<MemberListProps> = (props) => {
 
           {/* Never-hide. */}
           <ContextMenu.Sub>
-            <ContextMenu.SubTrigger class="context-menu-item" disabled={mod().timeout !== null}
-            title={mod().timeout ?? undefined}>
+            <ContextMenu.SubTrigger
+              class="context-menu-item"
+              disabled={mod().timeout !== null}
+              title={mod().timeout ?? undefined}
+            >
               <SkinGlyph name="timeout" class="context-menu-icon" />
               Timeout
             </ContextMenu.SubTrigger>
@@ -218,12 +236,7 @@ const MemberList: Component<MemberListProps> = (props) => {
                     <ContextMenu.Item
                       class="context-menu-item"
                       onSelect={() =>
-                        handleTimeoutMember(
-                          props.communityId,
-                          member.pseudonymKey,
-                          t.seconds,
-                          null,
-                        )
+                        handleTimeoutMember(props.communityId, member.pseudonymKey, t.seconds, null)
                       }
                     >
                       {t.label}
@@ -254,7 +267,12 @@ const MemberList: Component<MemberListProps> = (props) => {
             title={mod().deafen ?? undefined}
             onSelect={() =>
               // No known channel goes as null: the Host's refusal says why.
-              handleServerDeafenMember(props.communityId, voiceChannelId(), member.pseudonymKey, true)
+              handleServerDeafenMember(
+                props.communityId,
+                voiceChannelId(),
+                member.pseudonymKey,
+                true
+              )
             }
           >
             <SkinGlyph name="speaker.off" class="context-menu-icon" />
@@ -279,9 +297,7 @@ const MemberList: Component<MemberListProps> = (props) => {
             class="context-menu-item context-menu-item-danger"
             disabled={mod().ban !== null}
             title={mod().ban ?? undefined}
-            onSelect={() =>
-              void handleBanMember(props.communityId, member.pseudonymKey)
-            }
+            onSelect={() => void handleBanMember(props.communityId, member.pseudonymKey)}
           >
             <SkinGlyph name="ban" class="context-menu-icon" />
             Ban Member
@@ -317,9 +333,7 @@ const MemberList: Component<MemberListProps> = (props) => {
         fitViewport
         overflowPadding={8}
         open={isOpen()}
-        onOpenChange={(open) =>
-          setOpenProfileFor(open ? member.pseudonymKey : null)
-        }
+        onOpenChange={(open) => setOpenProfileFor(open ? member.pseudonymKey : null)}
       >
         <Popover.Trigger as="div" class="member-item" data-pseudonym={member.pseudonymKey}>
           <StatusDot status={memberStatus(member)} />
@@ -342,10 +356,17 @@ const MemberList: Component<MemberListProps> = (props) => {
             </Show>
             <div class="member-roles-row">
               <For each={roles()}>
-                {(role) => <RoleTag name={role.name} color={role.color} tagColours={role.tagColours} />}
+                {(role) => (
+                  <RoleTag name={role.name} color={role.color} tagColours={role.tagColours} />
+                )}
               </For>
               <Show when={member.timeoutUntil}>
-                <SkinGlyph name="timeout" class="timeout-indicator" title="Timed out" label="Timed out" />
+                <SkinGlyph
+                  name="timeout"
+                  class="timeout-indicator"
+                  title="Timed out"
+                  label="Timed out"
+                />
               </Show>
             </div>
           </div>
@@ -378,9 +399,7 @@ const MemberList: Component<MemberListProps> = (props) => {
         onScreen(list);
       }}
     >
-      <div class="member-list-header">
-        Members — {props.members.length}
-      </div>
+      <div class="member-list-header">Members — {props.members.length}</div>
       <div class="member-search-wrapper">
         <input
           class="member-search-input"

@@ -17,7 +17,6 @@ import AboutTab from "./settings/AboutTab";
 import { rovingList } from "../utils/roving_list";
 import { setWindowKind } from "../utils/window_kind";
 
-
 const TAB_LABELS: { id: SettingsTab; label: string }[] = [
   { id: "profile", label: "Profile" },
   { id: "application", label: "Application" },
@@ -66,7 +65,9 @@ const SettingsWindow: Component = () => {
   return (
     <div class="app-frame">
       {/* Architecture §32 a11y — keyboard skip link past tab rail. */}
-      <a href="#main-content" class="skip-link">Skip to settings content</a>
+      <a href="#main-content" class="skip-link">
+        Skip to settings content
+      </a>
       <Titlebar title="Settings" />
       {/* Finding V4: `activeTab` is the one selection; the rail exposes it as
           a WAI-ARIA tablist (WCAG 4.1.2) and the active look keys off
@@ -107,17 +108,37 @@ const SettingsWindow: Component = () => {
           {/* Profile's resources load under their own boundary: the rail and
               this panel stay mounted (focus keeps its place), and the panel
               is aria-busy until Profile renders. */}
-          <Suspense fallback={<PanelBusy set={setPanelBusy} />}><ProfileTab /></Suspense>
+          <Suspense fallback={<PanelBusy set={setPanelBusy} />}>
+            <ProfileTab />
+          </Suspense>
         </Show>
-        <Show when={activeTab() === "application"}><ApplicationTab /></Show>
-        <Show when={activeTab() === "appearance"}><AppearanceTab /></Show>
-        <Show when={activeTab() === "notifications"}><NotificationsTab /></Show>
-        <Show when={activeTab() === "audio"}><AudioTab /></Show>
-        <Show when={activeTab() === "video"}><VideoTab /></Show>
-        <Show when={activeTab() === "privacy"}><PrivacyTab /></Show>
-        <Show when={activeTab() === "devices"}><DevicesTab /></Show>
-        <Show when={activeTab() === "mobile"}><PushRelaySettingsSection /></Show>
-        <Show when={activeTab() === "about"}><AboutTab /></Show>
+        <Show when={activeTab() === "application"}>
+          <ApplicationTab />
+        </Show>
+        <Show when={activeTab() === "appearance"}>
+          <AppearanceTab />
+        </Show>
+        <Show when={activeTab() === "notifications"}>
+          <NotificationsTab />
+        </Show>
+        <Show when={activeTab() === "audio"}>
+          <AudioTab />
+        </Show>
+        <Show when={activeTab() === "video"}>
+          <VideoTab />
+        </Show>
+        <Show when={activeTab() === "privacy"}>
+          <PrivacyTab />
+        </Show>
+        <Show when={activeTab() === "devices"}>
+          <DevicesTab />
+        </Show>
+        <Show when={activeTab() === "mobile"}>
+          <PushRelaySettingsSection />
+        </Show>
+        <Show when={activeTab() === "about"}>
+          <AboutTab />
+        </Show>
       </div>
     </div>
   );

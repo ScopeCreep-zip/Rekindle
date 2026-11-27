@@ -35,7 +35,12 @@ export function subscribeBuddyListGroupDmEvents(): Promise<UnlistenFn> {
   return subscribeGroupDmEvents(applyListEvent);
 }
 
-function applySendStatus(groupId: string, clientId: string, state: SendState, retry: DeliveryRetry | null): void {
+function applySendStatus(
+  groupId: string,
+  clientId: string,
+  state: SendState,
+  retry: DeliveryRetry | null
+): void {
   const convo = groupDmState.conversations[groupId];
   if (!convo) return;
   const idx = convo.messages.findIndex((m) => m.serverMessageId === clientId);
@@ -59,7 +64,10 @@ function upsertOwnRow(groupId: string, row: ReturnType<typeof transformDmMessage
   setGroupDmState("conversations", groupId, "messages", (msgs) => withOwnRow(msgs, row));
 }
 
-function appendMessage(groupId: string, m: Extract<GroupDmEvent, { message: unknown }>["message"]): void {
+function appendMessage(
+  groupId: string,
+  m: Extract<GroupDmEvent, { message: unknown }>["message"]
+): void {
   const convo = groupDmState.conversations[groupId];
   if (!convo) {
     setGroupDmState("conversations", groupId, { messages: [], typing: {} });
@@ -100,7 +108,7 @@ function applyHistoryGap(groupId: string, member: string, throughSeq: number): v
     return;
   }
   const held = convo.messages.some(
-    (m) => m.senderId === member && m.historyGapThrough === throughSeq,
+    (m) => m.senderId === member && m.historyGapThrough === throughSeq
   );
   if (held) return;
   setGroupDmState("conversations", groupId, "messages", (msgs) => [...msgs, marker]);
@@ -115,7 +123,11 @@ function setTyping(groupId: string, who: string, name: string | null): void {
 
 // The group's disappearing timer changed (its notice joins the timeline),
 // or the Host deleted expired messages (plan E7.1).
-function applyDisappearing(groupId: string, event: ChannelMessageEvent, ownKey: () => string): void {
+function applyDisappearing(
+  groupId: string,
+  event: ChannelMessageEvent,
+  ownKey: () => string
+): void {
   if ("disappearingTimerChanged" in event) {
     const change = event.disappearingTimerChanged;
     if (conversationId(change.context) !== groupId) return;
@@ -129,7 +141,9 @@ function applyDisappearing(groupId: string, event: ChannelMessageEvent, ownKey: 
   if ("messagesExpired" in event) {
     const gone = event.messagesExpired;
     if (conversationId(gone.context) !== groupId || !groupDmState.conversations[groupId]) return;
-    setGroupDmState("conversations", groupId, "messages", (rows) => withoutExpired(rows, gone.clientIds));
+    setGroupDmState("conversations", groupId, "messages", (rows) =>
+      withoutExpired(rows, gone.clientIds)
+    );
   }
 }
 
@@ -138,12 +152,17 @@ function applyDisappearing(groupId: string, event: ChannelMessageEvent, ownKey: 
 export function subscribeGroupChatEvents(
   groupId: string,
   ownKey: () => string,
-  onDisplayed: () => void,
+  onDisplayed: () => void
 ): Promise<UnlistenFn>[] {
   const lifecycle = subscribeGroupDmEvents((event) => {
     applyListEvent(event);
     if ("sendStatus" in event && event.sendStatus.groupId === groupId) {
-      applySendStatus(groupId, event.sendStatus.clientId, event.sendStatus.state, event.sendStatus.retry);
+      applySendStatus(
+        groupId,
+        event.sendStatus.clientId,
+        event.sendStatus.state,
+        event.sendStatus.retry
+      );
     }
     // Our own committed row (plan E6.11): the Host's row, once, by its
     // stored id; never an unread or a notification.

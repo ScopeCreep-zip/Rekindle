@@ -60,7 +60,7 @@ export class VideoPlayoutBuffer {
     this.lastTimestamp = frame.timestamp;
     this.playoutDelayMs = Math.min(
       PLAYOUT_MAX_DELAY_MS,
-      Math.max(PLAYOUT_MIN_DELAY_MS, this.jitterMs * PLAYOUT_JITTER_MULTIPLIER),
+      Math.max(PLAYOUT_MIN_DELAY_MS, this.jitterMs * PLAYOUT_JITTER_MULTIPLIER)
     );
 
     // Late-drop: already played past this seq, or a duplicate.

@@ -27,10 +27,7 @@ let assertiveClear: ReturnType<typeof setTimeout> | null = null;
 
 export { politeMessage, assertiveMessage };
 
-export function announce(
-  message: string,
-  priority: "polite" | "assertive" = "polite",
-): void {
+export function announce(message: string, priority: "polite" | "assertive" = "polite"): void {
   if (!message) return;
   if (priority === "assertive") {
     if (assertiveClear) clearTimeout(assertiveClear);

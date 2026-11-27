@@ -40,8 +40,7 @@ export function useMentionAutocomplete(args: MentionAutocompleteArgs) {
     const community = communityState.communities[communityId];
     if (!community) return [];
     const lc = q.toLowerCase();
-    const matches = (text: string): boolean =>
-      lc.length === 0 || text.toLowerCase().startsWith(lc);
+    const matches = (text: string): boolean => lc.length === 0 || text.toLowerCase().startsWith(lc);
 
     const candidates: MentionCandidate[] = [];
 
@@ -72,7 +71,11 @@ export function useMentionAutocomplete(args: MentionAutocompleteArgs) {
     if (candidates.length < 8) {
       for (const member of community.members ?? []) {
         if (matches(member.displayName)) {
-          candidates.push({ token: member.displayName, label: `@${member.displayName}`, kind: "member" });
+          candidates.push({
+            token: member.displayName,
+            label: `@${member.displayName}`,
+            kind: "member",
+          });
           if (candidates.length >= 8) break;
         }
       }
@@ -81,7 +84,8 @@ export function useMentionAutocomplete(args: MentionAutocompleteArgs) {
     return candidates;
   });
 
-  const mentionSelected = () => Math.min(selectedIndex(), Math.max(0, mentionCandidates().length - 1));
+  const mentionSelected = () =>
+    Math.min(selectedIndex(), Math.max(0, mentionCandidates().length - 1));
 
   function findMentionContext(value: string, caretIndex: number): string | null {
     // Look back from caret for the start of the active mention token. A

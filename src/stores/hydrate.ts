@@ -5,7 +5,12 @@ import { fetchAvatarUrl } from "../ipc/avatar";
 import { friendsState, setFriendsState } from "./friends.store";
 import { reconcile } from "solid-js/store";
 import { setCommunityState, setCommunityMembers } from "./community.store";
-import { foldFriendSnapshot, transformExpression, transformCommunityMap, transformMember } from "../utils/transformers";
+import {
+  foldFriendSnapshot,
+  transformExpression,
+  transformCommunityMap,
+  transformMember,
+} from "../utils/transformers";
 import {
   handleLoadAutoModRules,
   handleResolveCommunityImageDataUrls,
@@ -60,20 +65,31 @@ export async function hydrateState(): Promise<void> {
     // replay, so one opened after an op's `Pending` reads it here).
     setCommunityState(
       "opPublications",
-      reconcile(Object.fromEntries(details.map((c) => [c.id, c.opPublications ?? {}]))),
+      reconcile(Object.fromEntries(details.map((c) => [c.id, c.opPublications ?? {}])))
     );
     // Hydrate members for each community (fire-and-forget, parallel)
     for (const c of details) {
-      commands.getCommunityMembers(c.id).then((members) => {
-        setCommunityMembers(c.id, members.map(transformMember));
-      }).catch((e) => {
-        console.error(`Failed to hydrate members for ${c.id}:`, e);
-      });
-      commands.listExpressions(c.id).then((expressions) => {
-        setCommunityState("communities", c.id, "expressions", expressions.map(transformExpression));
-      }).catch((e) => {
-        console.error(`Failed to hydrate expressions for ${c.id}:`, e);
-      });
+      commands
+        .getCommunityMembers(c.id)
+        .then((members) => {
+          setCommunityMembers(c.id, members.map(transformMember));
+        })
+        .catch((e) => {
+          console.error(`Failed to hydrate members for ${c.id}:`, e);
+        });
+      commands
+        .listExpressions(c.id)
+        .then((expressions) => {
+          setCommunityState(
+            "communities",
+            c.id,
+            "expressions",
+            expressions.map(transformExpression)
+          );
+        })
+        .catch((e) => {
+          console.error(`Failed to hydrate expressions for ${c.id}:`, e);
+        });
       void handleLoadAutoModRules(c.id);
       void handleResolveCommunityImageDataUrls(c.id);
     }

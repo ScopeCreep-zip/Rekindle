@@ -21,7 +21,9 @@ const PollCard: Component<PollCardProps> = (props) => {
       return;
     }
     setSelectedAnswers((prev) =>
-      prev.includes(index) ? prev.filter((value) => value !== index) : [...prev, index].sort((a, b) => a - b),
+      prev.includes(index)
+        ? prev.filter((value) => value !== index)
+        : [...prev, index].sort((a, b) => a - b)
     );
   }
 

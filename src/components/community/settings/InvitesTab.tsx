@@ -126,7 +126,11 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
             <button type="button" class="form-btn-primary" onClick={submitInvite}>
               Create
             </button>
-            <button type="button" class="form-btn-secondary" onClick={() => setCreatingInvite(false)}>
+            <button
+              type="button"
+              class="form-btn-secondary"
+              onClick={() => setCreatingInvite(false)}
+            >
               Cancel
             </button>
           </div>
@@ -150,19 +154,13 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
           >
             Copy Link
           </button>
-          <button
-            type="button"
-            class="form-btn-secondary"
-            onClick={() => setCreatedLink(null)}
-          >
+          <button type="button" class="form-btn-secondary" onClick={() => setCreatedLink(null)}>
             Dismiss
           </button>
         </div>
       </Show>
 
-      <Show when={invites().length > 0} fallback={
-        <div class="settings-hint">No invites yet.</div>
-      }>
+      <Show when={invites().length > 0} fallback={<div class="settings-hint">No invites yet.</div>}>
         <div class="settings-hint">
           Ask the person joining to check this matches what their screen shows.
         </div>
@@ -174,7 +172,9 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
                 <span class="settings-list-role">
                   by {(() => {
                     const community = communityState.communities[props.communityId];
-                    const member = community?.members.find((m) => m.pseudonymKey === invite.createdBy);
+                    const member = community?.members.find(
+                      (m) => m.pseudonymKey === invite.createdBy
+                    );
                     return member?.displayName ?? `${invite.createdBy.slice(0, 8)}...`;
                   })()}
                 </span>
@@ -185,7 +185,11 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
                   Uses: {invite.uses} / {invite.maxUses}
                   {" \u00B7 "}
                   Expires: {formatExpiry(invite.expiresAt)}
-                  <Show when={invite.expiresAt !== null && invite.expiresAt <= Math.floor(Date.now() / 1000)}>
+                  <Show
+                    when={
+                      invite.expiresAt !== null && invite.expiresAt <= Math.floor(Date.now() / 1000)
+                    }
+                  >
                     {" (expired)"}
                   </Show>
                 </span>
@@ -200,16 +204,17 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
                 </button>
                 <Show when={invite.url}>
                   {(url) => (
-                  <button
-                    type="button"
-                    class="form-btn-secondary"
-                    onClick={() => copyToClipboard(url(), invite.codeHash)}
-                  >
-                    {copiedHash() === invite.codeHash ? "Copied!" : "Copy Link"}
-                  </button>
+                    <button
+                      type="button"
+                      class="form-btn-secondary"
+                      onClick={() => copyToClipboard(url(), invite.codeHash)}
+                    >
+                      {copiedHash() === invite.codeHash ? "Copied!" : "Copy Link"}
+                    </button>
                   )}
                 </Show>
-                <button type="button"
+                <button
+                  type="button"
                   class="form-btn-secondary"
                   onClick={() => revokeInvite(invite.inviteId)}
                   disabled={revokingHash() === invite.inviteId || props.revokeDenied !== null}

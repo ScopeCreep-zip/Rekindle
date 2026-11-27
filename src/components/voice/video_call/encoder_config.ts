@@ -15,7 +15,7 @@ import type { SenderRoute } from "./sender_types";
  *  reported — equally not configurable. */
 export function pickEncoderCodec(
   local: MediaCapabilities | null,
-  negotiated: Codec,
+  negotiated: Codec
 ): { ok: boolean; reason?: string } {
   if (!local) {
     return { ok: false, reason: "local capabilities not probed yet" };
@@ -75,7 +75,7 @@ export function encoderConstraints(route: SenderRoute): SessionVideoConfig["enco
 export function buildEncoderConfig(
   constraints: SessionVideoConfig["encoder"],
   bitrate: number,
-  shape?: { width: number; height: number; fps: number },
+  shape?: { width: number; height: number; fps: number }
 ): VideoEncoderConfig {
   const base: VideoEncoderConfig = {
     codec: wireCodecToWebCodecsString(constraints.codec),
@@ -109,7 +109,7 @@ export function reportEncoderStatus(
   route: SenderRoute,
   codec: Codec,
   ok: boolean,
-  detail: string,
+  detail: string
 ): void {
   void commands
     .reportVideoEncoderStatus(
@@ -117,7 +117,7 @@ export function reportEncoderStatus(
       route.mode === "dm" ? route.peerId : null,
       codec,
       ok,
-      detail,
+      detail
     )
     .catch(() => {
       // Logging side-channel only — never disturb the pipeline.

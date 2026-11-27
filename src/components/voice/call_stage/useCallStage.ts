@@ -159,8 +159,7 @@ export function useCallStage() {
       if (p) withVideo.add(p.publicKey);
       put(out, `remote-${r.streamId}`, {
         canvas: r.canvas,
-        displayName:
-          memberNameForActiveCall(r.senderPseudonym) ?? p?.displayName ?? "Participant",
+        displayName: memberNameForActiveCall(r.senderPseudonym) ?? p?.displayName ?? "Participant",
         publicKey: p?.publicKey ?? r.senderPseudonym,
         isLocal: false,
         isScreen: false,

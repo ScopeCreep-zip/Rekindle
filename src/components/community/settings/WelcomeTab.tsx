@@ -1,8 +1,16 @@
 import { type Component, For, createEffect, createSignal } from "solid-js";
 import type { Community } from "../../../stores/community.store";
 import { commands } from "../../../ipc/commands";
-import type { OnboardingConfig, OnboardingConfigEdit, WelcomeChannelEntry, WelcomeScreen } from "../../../ipc/commands/dto";
-import { handleLoadOnboardingConfig, handleLoadWelcomeScreen } from "../../../actions/community/profile";
+import type {
+  OnboardingConfig,
+  OnboardingConfigEdit,
+  WelcomeChannelEntry,
+  WelcomeScreen,
+} from "../../../ipc/commands/dto";
+import {
+  handleLoadOnboardingConfig,
+  handleLoadWelcomeScreen,
+} from "../../../actions/community/profile";
 import { addToast } from "../../../stores/toast.store";
 import OnboardingQuestionsEditor from "./OnboardingQuestionsEditor";
 
@@ -35,9 +43,13 @@ const WelcomeTab: Component<WelcomeTabProps> = (props) => {
   createEffect(() => {
     const id = props.community.id;
     if (!id) return;
-    void commands.getWelcomeScreen(id).then(setScreen)
+    void commands
+      .getWelcomeScreen(id)
+      .then(setScreen)
       .catch((e) => console.error("Failed to load welcome screen:", e));
-    void commands.getOnboardingConfig(id).then(setFlow)
+    void commands
+      .getOnboardingConfig(id)
+      .then(setFlow)
       .catch((e) => console.error("Failed to load onboarding:", e));
   });
 
@@ -68,7 +80,11 @@ const WelcomeTab: Component<WelcomeTabProps> = (props) => {
     }));
   }
 
-  async function save(what: string, write: () => Promise<void>, reload: () => Promise<void>): Promise<void> {
+  async function save(
+    what: string,
+    write: () => Promise<void>,
+    reload: () => Promise<void>
+  ): Promise<void> {
     setSaving(true);
     try {
       await write();
@@ -114,7 +130,11 @@ const WelcomeTab: Component<WelcomeTabProps> = (props) => {
               <input
                 class="form-input welcome-emoji"
                 value={entry.emoji ?? ""}
-                onInput={(e) => setEntry(i(), { emoji: e.currentTarget.value === "" ? null : e.currentTarget.value })}
+                onInput={(e) =>
+                  setEntry(i(), {
+                    emoji: e.currentTarget.value === "" ? null : e.currentTarget.value,
+                  })
+                }
               />
             </label>
             <label class="welcome-field">
@@ -128,7 +148,9 @@ const WelcomeTab: Component<WelcomeTabProps> = (props) => {
             <button
               type="button"
               class="form-btn-secondary"
-              onClick={() => setScreen((s) => ({ ...s, channels: s.channels.filter((_, j) => j !== i()) }))}
+              onClick={() =>
+                setScreen((s) => ({ ...s, channels: s.channels.filter((_, j) => j !== i()) }))
+              }
             >
               Remove
             </button>
@@ -136,18 +158,25 @@ const WelcomeTab: Component<WelcomeTabProps> = (props) => {
         )}
       </For>
       <div class="settings-list-actions">
-        <button type="button" class="form-btn-secondary" onClick={addEntry} disabled={channels().length === 0}>
+        <button
+          type="button"
+          class="form-btn-secondary"
+          onClick={addEntry}
+          disabled={channels().length === 0}
+        >
           Feature a channel
         </button>
         <button
           type="button"
           class="form-btn-primary"
           disabled={saving()}
-          onClick={() => void save(
-            "Welcome screen",
-            () => commands.setWelcomeScreen(id(), screen()),
-            () => handleLoadWelcomeScreen(id()),
-          )}
+          onClick={() =>
+            void save(
+              "Welcome screen",
+              () => commands.setWelcomeScreen(id(), screen()),
+              () => handleLoadWelcomeScreen(id())
+            )
+          }
         >
           Save welcome screen
         </button>
@@ -167,7 +196,9 @@ const WelcomeTab: Component<WelcomeTabProps> = (props) => {
         <select
           class="form-select"
           value={flow().mode}
-          onChange={(e) => setFlow((f) => ({ ...f, mode: e.currentTarget.value as OnboardingConfig["mode"] }))}
+          onChange={(e) =>
+            setFlow((f) => ({ ...f, mode: e.currentTarget.value as OnboardingConfig["mode"] }))
+          }
         >
           <option value="default">Default: roles at once</option>
           <option value="guided">Guided: questions first</option>
@@ -179,10 +210,12 @@ const WelcomeTab: Component<WelcomeTabProps> = (props) => {
         <textarea
           class="form-textarea"
           value={flow().welcomeMessage ?? ""}
-          onInput={(e) => setFlow((f) => ({
-            ...f,
-            welcomeMessage: e.currentTarget.value === "" ? null : e.currentTarget.value,
-          }))}
+          onInput={(e) =>
+            setFlow((f) => ({
+              ...f,
+              welcomeMessage: e.currentTarget.value === "" ? null : e.currentTarget.value,
+            }))
+          }
         />
       </label>
       <fieldset class="welcome-defaults">
@@ -211,16 +244,18 @@ const WelcomeTab: Component<WelcomeTabProps> = (props) => {
           type="button"
           class="form-btn-primary"
           disabled={saving()}
-          onClick={() => void save(
-            "Onboarding",
-            () => commands.setOnboardingConfig(id(), flow()),
-            // The Host minted the new items' ids: edit on from its flow, so a
-            // second save keeps them instead of sending new items again.
-            async () => {
-              setFlow(await commands.getOnboardingConfig(id()));
-              await handleLoadOnboardingConfig(id());
-            },
-          )}
+          onClick={() =>
+            void save(
+              "Onboarding",
+              () => commands.setOnboardingConfig(id(), flow()),
+              // The Host minted the new items' ids: edit on from its flow, so a
+              // second save keeps them instead of sending new items again.
+              async () => {
+                setFlow(await commands.getOnboardingConfig(id()));
+                await handleLoadOnboardingConfig(id());
+              }
+            )
+          }
         >
           Save onboarding
         </button>

@@ -2,7 +2,12 @@ import { type Component, For, type JSX, Show, createEffect, createSignal } from 
 import { DropdownMenu } from "@kobalte/core/dropdown-menu";
 import { authState } from "../../stores/auth.store";
 import { handleSetStatusMessage } from "../../actions/auth.actions";
-import { isNetworkConnected, networkLabel, routeStatus, trackNetworkStatus } from "../../stores/network.store";
+import {
+  isNetworkConnected,
+  networkLabel,
+  routeStatus,
+  trackNetworkStatus,
+} from "../../stores/network.store";
 import StatusDot from "../status/StatusDot";
 import { handleSelectStatus, statusOptions } from "../status/StatusPicker";
 
@@ -63,7 +68,9 @@ export const StatusText: Component<{ attrs: Record<string, unknown> }> = (props)
 };
 
 /** N3's `DownArrow`: opens Online/Away/Busy/Appear Offline. */
-export const StatusList: Component<{ attrs: Record<string, unknown>; children: JSX.Element }> = (props) => (
+export const StatusList: Component<{ attrs: Record<string, unknown>; children: JSX.Element }> = (
+  props
+) => (
   <DropdownMenu placement="bottom-end">
     <DropdownMenu.Trigger class="skin-status-list" {...props.attrs} aria-label="Status">
       {props.children}

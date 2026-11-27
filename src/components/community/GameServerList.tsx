@@ -105,7 +105,8 @@ const GameServerList: Component<GameServerListProps> = (props) => {
                   >
                     Join
                   </button>
-                  <button type="button"
+                  <button
+                    type="button"
                     class="game-server-remove-btn"
                     onClick={() => props.onRemove(props.communityId, server.id)}
                     disabled={props.manageDenied !== null}
@@ -121,27 +122,36 @@ const GameServerList: Component<GameServerListProps> = (props) => {
           </div>
         )}
       </For>
-      <fieldset class="game-server-add-form" disabled={props.manageDenied !== null} title={props.manageDenied ?? undefined} aria-description={props.manageDenied ?? undefined}>
-          <input
-            class="form-input"
-            placeholder="Game ID"
-            value={addGameId()}
-            onInput={(e) => setAddGameId(e.currentTarget.value)}
-          />
-          <input
-            class="form-input"
-            placeholder="Label"
-            value={addLabel()}
-            onInput={(e) => setAddLabel(e.currentTarget.value)}
-          />
-          <input
-            class="form-input"
-            placeholder="ip:port"
-            value={addAddress()}
-            onInput={(e) => setAddAddress(e.currentTarget.value)}
-            onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
-          />
-          <button type="button" class="form-btn-primary" onClick={handleAdd}>Add</button>
+      <fieldset
+        class="game-server-add-form"
+        disabled={props.manageDenied !== null}
+        title={props.manageDenied ?? undefined}
+        aria-description={props.manageDenied ?? undefined}
+      >
+        <input
+          class="form-input"
+          placeholder="Game ID"
+          value={addGameId()}
+          onInput={(e) => setAddGameId(e.currentTarget.value)}
+        />
+        <input
+          class="form-input"
+          placeholder="Label"
+          value={addLabel()}
+          onInput={(e) => setAddLabel(e.currentTarget.value)}
+        />
+        <input
+          class="form-input"
+          placeholder="ip:port"
+          value={addAddress()}
+          onInput={(e) => setAddAddress(e.currentTarget.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") handleAdd();
+          }}
+        />
+        <button type="button" class="form-btn-primary" onClick={handleAdd}>
+          Add
+        </button>
       </fieldset>
     </div>
   );

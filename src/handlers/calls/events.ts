@@ -18,7 +18,7 @@ function pushMissedCallNotification(
   callId: string,
   peerKey: string,
   kind: "audio" | "video",
-  outgoing: boolean,
+  outgoing: boolean
 ): void {
   const friend = friendsState.friends[peerKey];
   const name = friend?.displayName ?? `${peerKey.slice(0, 12)}…`;
@@ -284,7 +284,7 @@ export function subscribeCallEvents({ owner }: { owner: boolean }): Promise<Unli
       const cur = callsState.activeGroupCall;
       if (cur && cur.callId === callId) {
         setCallsState("activeGroupCall", "accepted", (a) =>
-          a.filter((p) => p !== participantPubkey),
+          a.filter((p) => p !== participantPubkey)
         );
       }
       return;
@@ -307,10 +307,7 @@ export function subscribeCallEvents({ owner }: { owner: boolean }): Promise<Unli
       // Wave 12 W12.6 — peer flipped audio/video/screen. Drop if our
       // local last-update is newer (last-write-wins per timestamp).
       const { callId, audio, video, screen, timestampMs } = call.mediaStateChanged;
-      const updateSlot = (
-        slot: "activeCall" | "outgoingCall",
-        entry: CallEntry | null,
-      ): void => {
+      const updateSlot = (slot: "activeCall" | "outgoingCall", entry: CallEntry | null): void => {
         if (entry == null || entry.callId !== callId) return;
         const cur = entry.peerMediaState;
         if (cur && cur.timestampMs >= timestampMs) return;
@@ -369,12 +366,15 @@ export function subscribeCallEvents({ owner }: { owner: boolean }): Promise<Unli
 export async function refreshMissedCalls(): Promise<void> {
   try {
     const rows = await commands.getMissedCalls();
-    setCallsState("missed", rows.map((r) => ({
-      callId: r.callId,
-      peerKey: r.peerKey,
-      kind: r.kind,
-      expiredAt: r.expiredAt,
-    })));
+    setCallsState(
+      "missed",
+      rows.map((r) => ({
+        callId: r.callId,
+        peerKey: r.peerKey,
+        kind: r.kind,
+        expiredAt: r.expiredAt,
+      }))
+    );
   } catch (e) {
     console.error("Failed to refresh missed calls:", e);
   }

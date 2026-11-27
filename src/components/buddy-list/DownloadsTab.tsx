@@ -30,16 +30,19 @@ const DownloadsTab: Component = () => {
     try {
       await action();
     } catch (e) {
-      if (!(isCommandError(e) && e.type === "cancelled")) addToast(`${what}: ${errorMessage(e)}`, "error");
+      if (!(isCommandError(e) && e.type === "cancelled"))
+        addToast(`${what}: ${errorMessage(e)}`, "error");
     }
   };
   const start = (): void => {
     const r = selected();
-    if (r && can("startDownload")) void run("Download not started", () => transferCommands.start(r.attachmentId, r.target));
+    if (r && can("startDownload"))
+      void run("Download not started", () => transferCommands.start(r.attachmentId, r.target));
   };
   const stop = (): void => {
     const r = selected();
-    if (r && can("stopDownload")) void run("Download not stopped", () => transferCommands.stop(r.attachmentId));
+    if (r && can("stopDownload"))
+      void run("Download not stopped", () => transferCommands.stop(r.attachmentId));
   };
   const execute = (row: TransferRow | undefined = selected()): void => {
     if (row) void run("Download not shown", () => transferCommands.open(row.attachmentId));
@@ -59,7 +62,10 @@ const DownloadsTab: Component = () => {
 
   return (
     <>
-      <FilesView onSelect={(r) => setSelectedId(r?.attachmentId ?? null)} onExecute={(r) => execute(r)} />
+      <FilesView
+        onSelect={(r) => setSelectedId(r?.attachmentId ?? null)}
+        onExecute={(r) => execute(r)}
+      />
       <div class="downloads-tab-actions" role="toolbar" aria-label="Download actions">
         {button("Start", "startDownload", start)}
         {button("Stop", "stopDownload", stop)}

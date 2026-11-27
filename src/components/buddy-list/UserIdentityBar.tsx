@@ -63,21 +63,28 @@ const UserIdentityBar: Component = () => {
           avatarUrl={authState.avatarUrl ?? undefined}
         />
         <StatusDot status={authState.status} />
-        <Show when={!editing()} fallback={
-          <input
-            class="identity-bar-edit"
-            value={editValue()}
-            onInput={(e: InputEvent) => setEditValue((e.target as HTMLInputElement).value)}
-            onKeyDown={handleEditKeyDown}
-            onBlur={commitEdit}
-            autofocus
-          />
-        }>
+        <Show
+          when={!editing()}
+          fallback={
+            <input
+              class="identity-bar-edit"
+              value={editValue()}
+              onInput={(e: InputEvent) => setEditValue((e.target as HTMLInputElement).value)}
+              onKeyDown={handleEditKeyDown}
+              onBlur={commitEdit}
+              autofocus
+            />
+          }
+        >
           <span class="identity-bar-name" onClick={startEditing} title="Click to edit display name">
             {authState.displayName ?? "Unknown"}
           </span>
         </Show>
-        <span class="identity-bar-key" onClick={handleCopyPublicKey} title="Click to copy public key">
+        <span
+          class="identity-bar-key"
+          onClick={handleCopyPublicKey}
+          title="Click to copy public key"
+        >
           {truncatedKey()}
         </span>
         <Show when={authState.gameInfo}>
@@ -89,17 +96,20 @@ const UserIdentityBar: Component = () => {
         </Show>
         <NotificationCenter />
       </div>
-      <Show when={!editingStatus()} fallback={
-        <input
-          class="identity-bar-status-msg-edit"
-          value={statusEditValue()}
-          onInput={(e: InputEvent) => setStatusEditValue((e.target as HTMLInputElement).value)}
-          onKeyDown={handleStatusKeyDown}
-          onBlur={commitStatusEdit}
-          placeholder="Set a status message..."
-          autofocus
-        />
-      }>
+      <Show
+        when={!editingStatus()}
+        fallback={
+          <input
+            class="identity-bar-status-msg-edit"
+            value={statusEditValue()}
+            onInput={(e: InputEvent) => setStatusEditValue((e.target as HTMLInputElement).value)}
+            onKeyDown={handleStatusKeyDown}
+            onBlur={commitStatusEdit}
+            placeholder="Set a status message..."
+            autofocus
+          />
+        }
+      >
         <div
           class="identity-bar-status-msg"
           onClick={startEditingStatus}

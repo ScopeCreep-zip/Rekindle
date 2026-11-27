@@ -68,7 +68,9 @@ const CoCreatorStatusView: Component<CoCreatorStatusViewProps> = (props) => {
           {([peer, status]) => (
             <li class="co-create-status-row">
               <span class="buddy-name">{nameOf(peer)}</span>
-              <span class={`co-create-status-badge co-create-status-${status}`}>{statusLabel(status)}</span>
+              <span class={`co-create-status-badge co-create-status-${status}`}>
+                {statusLabel(status)}
+              </span>
               <Show when={removable(status)}>
                 <button
                   type="button"
@@ -85,7 +87,9 @@ const CoCreatorStatusView: Component<CoCreatorStatusViewProps> = (props) => {
         </For>
       </ul>
       <Show when={error()}>
-        <div class="form-error" role="alert">{error()}</div>
+        <div class="form-error" role="alert">
+          {error()}
+        </div>
       </Show>
       <div class="form-field-row">
         <button

@@ -22,9 +22,7 @@ const CommunityListCompact: Component = () => {
     return all.filter((c) => c.name.toLowerCase().includes(query));
   });
 
-  const hasAnyCommunities = createMemo(() =>
-    Object.keys(communityState.communities).length > 0,
-  );
+  const hasAnyCommunities = createMemo(() => Object.keys(communityState.communities).length > 0);
 
   function handleDoubleClick(community: Community): void {
     commands.openCommunityWindow(community.id);
@@ -40,69 +38,77 @@ const CommunityListCompact: Component = () => {
   });
   createEffect(() => {
     const id = selected();
-    void sendSkinSelection(id !== null ? { kind: "community", arg: { community: id, channel: null, server: null } } : null);
+    void sendSkinSelection(
+      id !== null
+        ? { kind: "community", arg: { community: id, channel: null, server: null } }
+        : null
+    );
   });
 
   return (
     <ScrollArea class="buddy-list">
-      <Show when={hasAnyCommunities()} fallback={
-        <div class="empty-placeholder">
-          <div class="empty-placeholder-title">No Communities</div>
-          <div class="empty-placeholder-subtitle">Create or join a community to get started</div>
-        </div>
-      }>
-        <Show when={filteredCommunities().length > 0} fallback={
+      <Show
+        when={hasAnyCommunities()}
+        fallback={
           <div class="empty-placeholder">
-            <div class="empty-placeholder-subtitle">No matches</div>
+            <div class="empty-placeholder-title">No Communities</div>
+            <div class="empty-placeholder-subtitle">Create or join a community to get started</div>
           </div>
-        }>
+        }
+      >
+        <Show
+          when={filteredCommunities().length > 0}
+          fallback={
+            <div class="empty-placeholder">
+              <div class="empty-placeholder-subtitle">No matches</div>
+            </div>
+          }
+        >
           {/* One listbox of the rows, laid out as the list's own children. */}
           <div class="community-listbox" role="listbox" aria-label="Communities">
-          <For each={filteredCommunities()}>
-            {(community) => {
-              const unreads = () => communityUnreads(community);
-              return (
-                <div
-                  class={`community-item${selected() === community.id ? " community-item-selected" : ""}`}
-                  role="option"
-                  tabIndex={0}
-                  aria-selected={selected() === community.id}
-                  onClick={() => setSelected(community.id)}
-                  onDblClick={() => handleDoubleClick(community)}
-                  onKeyDown={(e) => {
-                    // Enter opens, Space selects, as a double-click and a click do.
-                    if (e.key === "Enter") handleDoubleClick(community);
-                    else if (e.key === " ") {
-                      e.preventDefault();
-                      setSelected(community.id);
-                    }
-                  }}
-                  title={`Double-click to open ${community.name}`}
-                >
-                  <Show
-                    when={community.iconDataUrl}
-                    fallback={
-                      <div class="community-icon">
-                        {community.name.charAt(0).toUpperCase()}
-                      </div>
-                    }
+            <For each={filteredCommunities()}>
+              {(community) => {
+                const unreads = () => communityUnreads(community);
+                return (
+                  <div
+                    class={`community-item${selected() === community.id ? " community-item-selected" : ""}`}
+                    role="option"
+                    tabIndex={0}
+                    aria-selected={selected() === community.id}
+                    onClick={() => setSelected(community.id)}
+                    onDblClick={() => handleDoubleClick(community)}
+                    onKeyDown={(e) => {
+                      // Enter opens, Space selects, as a double-click and a click do.
+                      if (e.key === "Enter") handleDoubleClick(community);
+                      else if (e.key === " ") {
+                        e.preventDefault();
+                        setSelected(community.id);
+                      }
+                    }}
+                    title={`Double-click to open ${community.name}`}
                   >
-                    {(url) => (
-                      <img
-                        class="community-icon community-icon-image"
-                        src={url()}
-                        alt={community.name}
-                      />
-                    )}
-                  </Show>
-                  <span class="community-name">{community.name}</span>
-                  <Show when={unreads() > 0}>
-                    <span class="buddy-unread-badge">{unreads()}</span>
-                  </Show>
-                </div>
-              );
-            }}
-          </For>
+                    <Show
+                      when={community.iconDataUrl}
+                      fallback={
+                        <div class="community-icon">{community.name.charAt(0).toUpperCase()}</div>
+                      }
+                    >
+                      {(url) => (
+                        <img
+                          class="community-icon community-icon-image"
+                          src={url()}
+                          alt={community.name}
+                        />
+                      )}
+                    </Show>
+                    <span class="community-name">{community.name}</span>
+                    <Show when={unreads() > 0}>
+                      <span class="buddy-unread-badge">{unreads()}</span>
+                    </Show>
+                  </div>
+                );
+              }}
+            </For>
           </div>
         </Show>
       </Show>

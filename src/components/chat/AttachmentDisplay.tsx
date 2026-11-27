@@ -34,7 +34,7 @@ const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
 
   // Pinning is a community-wide setting: the backend's base flags.
   const myPerms = createMemo((): bigint =>
-    servedPermissions(communityState.communities[props.communityId]),
+    servedPermissions(communityState.communities[props.communityId])
   );
   const canPin = createMemo(() => hasPermission(myPerms(), MANAGE_COMMUNITY));
 
@@ -45,7 +45,7 @@ const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
       await handleDownloadAttachment(
         props.communityId,
         props.channelId,
-        props.attachment.attachmentId,
+        props.attachment.attachmentId
       );
     } finally {
       setDownloading(false);
@@ -53,11 +53,7 @@ const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
   }
 
   async function handleRevealClick(): Promise<void> {
-    await handleRevealAttachment(
-      props.communityId,
-      props.channelId,
-      props.attachment.attachmentId,
-    );
+    await handleRevealAttachment(props.communityId, props.channelId, props.attachment.attachmentId);
   }
 
   async function handlePinClick(): Promise<void> {

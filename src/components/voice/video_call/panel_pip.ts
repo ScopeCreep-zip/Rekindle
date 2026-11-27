@@ -42,10 +42,7 @@ export function createPipToggle(ctx: PanelCtx): PipController {
       // PiP shows a remote peer (every entry in remotes() is a peer now
       // — the self-view is a direct getUserMedia preview, not a stream).
       const remote = ctx.remotes()[0];
-      if (
-        remote &&
-        typeof (remote.canvas as HTMLCanvasElement).captureStream === "function"
-      ) {
+      if (remote && typeof (remote.canvas as HTMLCanvasElement).captureStream === "function") {
         const stream = (remote.canvas as HTMLCanvasElement).captureStream(30);
         if (!pipBridgeVideo.value) {
           const v = document.createElement("video");

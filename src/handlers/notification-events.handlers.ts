@@ -8,9 +8,7 @@ import { callsState } from "../stores/calls.store";
 // short-circuit message OS notifications / sounds. The user-facing
 // modal still surfaces; only the noisy ambient channels are gated.
 function inCallSuppress(): boolean {
-  return (
-    settingsState.inCallDndAutoEnable && callsState.activeCall != null
-  );
+  return settingsState.inCallDndAutoEnable && callsState.activeCall != null;
 }
 
 // Architecture §32 Phase 5 W18 + Phase 7 W25 — when a community-defined
@@ -19,14 +17,17 @@ function inCallSuppress(): boolean {
 // DND, quiet hours and rate limiting; this layer is purely "play the
 // resolved sound asset, if any". Falls back silently to the bundled
 // default sound when the asset isn't cached locally.
-function playNotificationSound(communityId: string | undefined, soundRef: string | null | undefined): void {
+function playNotificationSound(
+  communityId: string | undefined,
+  soundRef: string | null | undefined
+): void {
   if (!settingsState.soundEnabled) return;
   if (inCallSuppress()) return;
   if (!soundRef || !communityId) return;
   const community = communityState.communities[communityId];
   if (!community) return;
   const asset = (community.expressions ?? []).find(
-    (expr) => expr.kind === "soundboard" && expr.contentHash === soundRef,
+    (expr) => expr.kind === "soundboard" && expr.contentHash === soundRef
   );
   const dataUrl = asset?.inlineDataUrl;
   if (!dataUrl) return;

@@ -27,7 +27,7 @@ export async function handleLoadDisappearingTimer(conversation: string): Promise
  *  (or a cancelled review), else the Host's error. */
 export async function handleSetDisappearingTimer(
   conversation: string,
-  seconds: number,
+  seconds: number
 ): Promise<string | null> {
   try {
     await commands.disappearingSet(conversation, seconds);
@@ -76,13 +76,19 @@ export function withoutExpired(messages: Message[], clientIds: string[]): Messag
  * every incoming message (Linux 2026-11-24: an own row re-rendered from a
  * stale stored state 49 ms after a reply landed).
  */
-export function awaitsExpiry(messages: Message[], timer: DisappearingTimerView | undefined): boolean {
+export function awaitsExpiry(
+  messages: Message[],
+  timer: DisappearingTimerView | undefined
+): boolean {
   const liveMayExpire = timer === undefined || timer.seconds > 0;
   return messages.some(
     (m) =>
       m.serverMessageId !== undefined &&
       m.historyGapThrough === undefined &&
       ((m.expireSeconds === undefined && liveMayExpire) ||
-        (m.expireSeconds !== undefined && !m.isOwn && m.expireSeconds > 0 && m.expireAt === undefined)),
+        (m.expireSeconds !== undefined &&
+          !m.isOwn &&
+          m.expireSeconds > 0 &&
+          m.expireAt === undefined))
   );
 }

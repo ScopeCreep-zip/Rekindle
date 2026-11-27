@@ -25,7 +25,10 @@ const GameInviteList: Component<{ peerId: string; peerName: string }> = (props) 
       const { gameId, server } = friend.gameInvite;
       void commands.getGameName(gameId).then((gameName) => {
         // The newest invite for a game replaces an older one.
-        setInvites((list) => [...list.filter((i) => i.gameId !== gameId), { gameId, server, gameName }]);
+        setInvites((list) => [
+          ...list.filter((i) => i.gameId !== gameId),
+          { gameId, server, gameName },
+        ]);
       });
     });
   });

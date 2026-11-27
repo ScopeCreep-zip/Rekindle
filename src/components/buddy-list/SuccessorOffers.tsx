@@ -21,7 +21,9 @@ const SuccessorOffers: Component = () => {
   // A successor we already hold (we published it, or followed it from
   // another window) has nothing to follow.
   const offers = () =>
-    openSuccessorOffers().filter((offer) => communityState.communities[offer.newAnchor] === undefined);
+    openSuccessorOffers().filter(
+      (offer) => communityState.communities[offer.newAnchor] === undefined
+    );
   const nameOf = (community: string): string =>
     communityState.communities[community]?.name ?? `${community.slice(0, 12)}…`;
   const movedText = (reason: string): string =>
@@ -40,7 +42,9 @@ const SuccessorOffers: Component = () => {
       <div class="pending-section">
         <div class="pending-header">Moved Communities ({offers().length})</div>
         <Show when={error()}>
-          <div class="form-error" role="alert">{error()}</div>
+          <div class="form-error" role="alert">
+            {error()}
+          </div>
         </Show>
         <For each={offers()}>
           {(offer) => (

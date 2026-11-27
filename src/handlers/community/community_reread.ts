@@ -1,4 +1,8 @@
-import { setCommunityState, setCommunityMembers, communityState } from "../../stores/community.store";
+import {
+  setCommunityState,
+  setCommunityMembers,
+  communityState,
+} from "../../stores/community.store";
 import { commands } from "../../ipc/commands";
 import { transformCommunityDetail, transformMember } from "../../utils/transformers";
 import {

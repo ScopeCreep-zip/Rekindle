@@ -1,11 +1,40 @@
-import { type Component, For, type JSX, Match, Show, Switch, createContext, createEffect, createSignal, onCleanup, untrack, useContext } from "solid-js";
+import {
+  type Component,
+  For,
+  type JSX,
+  Match,
+  Show,
+  Switch,
+  createContext,
+  createEffect,
+  createSignal,
+  onCleanup,
+  untrack,
+  useContext,
+} from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { Dynamic } from "solid-js/web";
-import type { EngineMenu, MenuItem, ShellNode, SkinAction, SkinShell, SlotKey, ViewKey } from "../../ipc/commands/dto_skin_tree";
+import type {
+  EngineMenu,
+  MenuItem,
+  ShellNode,
+  SkinAction,
+  SkinShell,
+  SlotKey,
+  ViewKey,
+} from "../../ipc/commands/dto_skin_tree";
 import { useSlotRegister } from "./slots";
 import type { SkinSignalSet } from "../../ipc/commands/dto_skin_run";
 import { skinSignals } from "../../stores/skin-signals.store";
-import { applyTreeOp, fired, initialTreeState, pageView, signalFlags, type StateCause, type TreeState } from "./signalEffects";
+import {
+  applyTreeOp,
+  fired,
+  initialTreeState,
+  pageView,
+  signalFlags,
+  type StateCause,
+  type TreeState,
+} from "./signalEffects";
 import type { TreePieces } from "./tree_pieces";
 import { dispatchSkinAction, registerShellRunner } from "../../actions/skin.actions";
 import { handleOpenDocs, openSettingsTab } from "../../actions/app_menu.actions";
@@ -13,7 +42,19 @@ import { actionLabel } from "../../utils/skin_action_words";
 import { InBar, PackContextMenu, PackMenu, PackMenuBar } from "./PackMenus";
 import AdArea from "./AdArea";
 import NodeLabelView from "./NodeLabelView";
-import { actionAttr, hasFriendsView, holdsControls, holdsNonMenuControls, isPointer, parents, pointerTriggers, pressAction, rightMenu, roleAttr, type PointerEvent } from "./nodeQueries";
+import {
+  actionAttr,
+  hasFriendsView,
+  holdsControls,
+  holdsNonMenuControls,
+  isPointer,
+  parents,
+  pointerTriggers,
+  pressAction,
+  rightMenu,
+  roleAttr,
+  type PointerEvent,
+} from "./nodeQueries";
 
 /** What every node of one window's tree reads. */
 interface Tree {
@@ -97,7 +138,16 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
       .map((on) => on.kind)
       .join(" ");
   const inputRole = (): boolean =>
-    ["nameField", "statusText", "statusList", "menuBar", "views", "view", "adArea", "infoView"].includes(role().kind);
+    [
+      "nameField",
+      "statusText",
+      "statusList",
+      "menuBar",
+      "views",
+      "view",
+      "adArea",
+      "infoView",
+    ].includes(role().kind);
 
   /** This node takes a pointer event only when it is the nearest node
    *  that listens (a press on a button is never its frame's window drag). */
@@ -109,7 +159,13 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
     if (ts.length === 0) return;
     // A served menu opens itself in this event (Kobalte, which must see
     // the event undisturbed); only a menu with no items yet goes to the Host.
-    const runs = ts.filter((t) => !((t.run.kind === "menu" || t.run.kind === "contextMenu") && tree.menus(t.run.arg).length > 0));
+    const runs = ts.filter(
+      (t) =>
+        !(
+          (t.run.kind === "menu" || t.run.kind === "contextMenu") &&
+          tree.menus(t.run.arg).length > 0
+        )
+    );
     if (runs.length === 0) return;
     if (on === "rightClick" || on === "rightDown") e.preventDefault();
     for (const t of runs) tree.run(n().id, t.run);
@@ -128,7 +184,11 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
   // button, a target and a focus stop the size of the frame.
   const drags = (): boolean => (n().triggers ?? []).some((t) => t.run.kind === "dragWindow");
   const pressable = (): boolean =>
-    press() !== undefined && !role().kind.startsWith("menu") && role().kind !== "drag" && !drags() && !holdsControls(n());
+    press() !== undefined &&
+    !role().kind.startsWith("menu") &&
+    role().kind !== "drag" &&
+    !drags() &&
+    !holdsControls(n());
   // Inside a menu bar every element is a menu title or presentational
   // (ARIA menubar's required owned elements).
   const inBar = useContext(InBar);
@@ -158,7 +218,9 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
     // pack's controls laid over it.
     get style() {
       const i = n().inset;
-      return i ? { "--field-inset-left": `${i.left}px`, "--field-inset-right": `${i.right}px` } : undefined;
+      return i
+        ? { "--field-inset-left": `${i.left}px`, "--field-inset-right": `${i.right}px` }
+        : undefined;
     },
     get "aria-disabled"() {
       return disabled() ? "true" : undefined;
@@ -179,14 +241,18 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
     get hidden() {
       return hidden() || undefined;
     },
-    onPointerDown: (e: PointerEvent & globalThis.PointerEvent) => fire(e.button === 2 ? "rightDown" : "leftDown", e),
+    onPointerDown: (e: PointerEvent & globalThis.PointerEvent) =>
+      fire(e.button === 2 ? "rightDown" : "leftDown", e),
     onClick: (e: MouseEvent) => fire("click", e),
     onDblClick: (e: MouseEvent) => fire("doubleClick", e),
     onContextMenu: (e: MouseEvent) => fire("rightClick", e),
   };
   // The same attributes (getters kept, so they stay reactive) plus a
   // button's role, focus, name and keyboard press.
-  const buttonAttrs: Record<string, unknown> = Object.defineProperties({}, Object.getOwnPropertyDescriptors(attrs));
+  const buttonAttrs: Record<string, unknown> = Object.defineProperties(
+    {},
+    Object.getOwnPropertyDescriptors(attrs)
+  );
   Object.defineProperties(buttonAttrs, {
     role: { get: () => "button", enumerable: true },
     tabindex: { get: () => (hidden() ? undefined : 0), enumerable: true },
@@ -196,7 +262,10 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
     "aria-label": { get: () => n().label?.text ?? tree.label(press()!), enumerable: true },
     // A refused button's tooltip is the Host's reason (plan CR1), as its
     // aria-description is; otherwise its label, read in full on hover.
-    title: { get: () => (disabled() ? disabledReason() : undefined) ?? n().label?.text, enumerable: true },
+    title: {
+      get: () => (disabled() ? disabledReason() : undefined) ?? n().label?.text,
+      enumerable: true,
+    },
     class: { get: () => "skin-tree-button", enumerable: true },
     onKeyDown: {
       value: (e: KeyboardEvent) => {
@@ -218,7 +287,9 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
   );
   const menuOf = (): EngineMenu | undefined => {
     const a = press();
-    return a && (a.kind === "menu" || a.kind === "contextMenu") && tree.menus(a.arg).length > 0 ? a.arg : undefined;
+    return a && (a.kind === "menu" || a.kind === "contextMenu") && tree.menus(a.arg).length > 0
+      ? a.arg
+      : undefined;
   };
   const ctxMenu = (): EngineMenu | undefined => {
     const m = rightMenu(n());
@@ -227,17 +298,33 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
   const runItem = (item: MenuItem): void => tree.run(n().id, item.run);
 
   return (
-    <Switch fallback={<div {...attrs} role={inBar ? "none" : undefined}>{children()}</div>}>
+    <Switch
+      fallback={
+        <div {...attrs} role={inBar ? "none" : undefined}>
+          {children()}
+        </div>
+      }
+    >
       <Match when={menuOf()}>
         {(menu) => (
-          <PackMenu attrs={attrs} menu={menu()} label={n().label?.text} items={tree.menus(menu())} run={runItem}>
+          <PackMenu
+            attrs={attrs}
+            menu={menu()}
+            label={n().label?.text}
+            items={tree.menus(menu())}
+            run={runItem}
+          >
             {children()}
           </PackMenu>
         )}
       </Match>
       <Match when={ctxMenu()}>
         {(menu) => (
-          <PackContextMenu attrs={pressable() ? buttonAttrs : attrs} items={tree.menus(menu())} run={runItem}>
+          <PackContextMenu
+            attrs={pressable() ? buttonAttrs : attrs}
+            items={tree.menus(menu())}
+            run={runItem}
+          >
             {children()}
           </PackContextMenu>
         )}
@@ -330,7 +417,9 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
         {(files) => (
           <div {...attrs}>
             {children()}
-            <div class="skin-tree-view-content">{files()(() => tree.run(n().id, { kind: "openDownload" }))}</div>
+            <div class="skin-tree-view-content">
+              {files()(() => tree.run(n().id, { kind: "openDownload" }))}
+            </div>
           </div>
         )}
       </Match>
@@ -339,7 +428,12 @@ const SkinNodeView: Component<{ node: ShellNode }> = (props) => {
       </Match>
       {/* Art is hidden from assistive tech, unless it holds a control
        *  (a control under aria-hidden is unreachable, axe aria-hidden-focus). */}
-      <Match when={(role().kind === "logo" || role().kind === "part" || role().kind === "decor") && !holdsControls(n())}>
+      <Match
+        when={
+          (role().kind === "logo" || role().kind === "part" || role().kind === "decor") &&
+          !holdsControls(n())
+        }
+      >
         <div {...attrs} aria-hidden="true">
           {children()}
         </div>
@@ -418,10 +512,11 @@ const SkinTreeWindow: Component<{
         default:
           return false;
       }
-    }),
+    })
   );
 
-  const menus = (menu: EngineMenu): MenuItem[] => props.shell.menus.menus.find((m) => m.menu === menu)?.items ?? [];
+  const menus = (menu: EngineMenu): MenuItem[] =>
+    props.shell.menus.menus.find((m) => m.menu === menu)?.items ?? [];
 
   return (
     <TreeCtx.Provider

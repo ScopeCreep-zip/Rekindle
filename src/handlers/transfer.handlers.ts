@@ -13,16 +13,20 @@ function applyTransferEvent(event: TransferEvent): void {
   if ("removed" in event) {
     const id = event.removed.attachmentId;
     setTransfersState("order", (order) => order.filter((o) => o !== id));
-    setTransfersState("rows", produce((rows) => {
-      delete rows[id];
-    }));
+    setTransfersState(
+      "rows",
+      produce((rows) => {
+        delete rows[id];
+      })
+    );
     return;
   }
-  const id = "stateChanged" in event
-    ? event.stateChanged.attachmentId
-    : "progress" in event
-      ? event.progress.attachmentId
-      : event.downloadComplete.attachmentId;
+  const id =
+    "stateChanged" in event
+      ? event.stateChanged.attachmentId
+      : "progress" in event
+        ? event.progress.attachmentId
+        : event.downloadComplete.attachmentId;
   if (!transfersState.rows[id]) {
     void loadTransfers();
     return;

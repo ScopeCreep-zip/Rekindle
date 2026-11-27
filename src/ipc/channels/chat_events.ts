@@ -129,7 +129,14 @@ export type GroupDmEvent =
   /** The group's lobby changed (plan E7.2 G6); null when there is none. */
   | { lobby: { groupId: string; lobby: LobbyView | null } }
   /** A group send's state; `retry` while unanswered attempts are retried (plan SR2b). */
-  | { sendStatus: { groupId: string; clientId: string; state: SendState; retry: DeliveryRetry | null } }
+  | {
+      sendStatus: {
+        groupId: string;
+        clientId: string;
+        state: SendState;
+        retry: DeliveryRetry | null;
+      };
+    }
   | {
       message: {
         groupId: string;
@@ -170,7 +177,14 @@ export type FriendEvent =
   | { profileKeyRotated: { peerKey: string; newProfileDhtKey: string } }
   | { nicknameChanged: { peerKey: string; nickname: string | null } }
   | { displayNameChanged: { peerKey: string; displayName: string } }
-  | { groupChanged: { peerKey: string; groupId: number | null; group: string | null; groupLabel: string } }
+  | {
+      groupChanged: {
+        peerKey: string;
+        groupId: number | null;
+        group: string | null;
+        groupLabel: string;
+      };
+    }
   | { keyChanged: { peerKey: string; newKey: string } }
   | { handshakeFailed: { peerKey: string; reason: string } }
   | { handshakeRetrying: { peerKey: string } }
