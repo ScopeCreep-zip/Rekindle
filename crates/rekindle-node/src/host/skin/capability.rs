@@ -120,6 +120,7 @@ pub(crate) struct LobbyCaps {
 /// each recompute (`signals::load_world`).
 #[derive(Debug, Clone, Default)]
 pub(crate) struct SkinWorld {
+    pub unread_alert: bool,
     pub accepted_friends: usize,
     /// Accepted friends whose presence names a server.
     pub friend_servers: usize,

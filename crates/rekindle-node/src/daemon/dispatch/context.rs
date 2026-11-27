@@ -346,8 +346,12 @@ impl DaemonContext {
         let answered = crate::host::gate::run(self, request, caller).await;
         match (run, pressed_in, &answered) {
             (Some(run), Some(window), IpcResponse::Ok { .. }) => {
-                if matches!(run, SkinRun::Shell(ShellOp::OpenPanel(ShellPanel::Notifications))) {
-                    self.skin.signals.notifications_opened(&self.journal);
+                if matches!(
+                    run,
+                    SkinRun::Shell(ShellOp::OpenPanel(ShellPanel::Notifications))
+                ) {
+                    self.journal.acknowledge_alerts();
+                    self.skin.signals.poke();
                 }
                 let (run, elsewhere) =
                     crate::host::skin::actions::addressed(&self.skin.launchers, &window, run);
