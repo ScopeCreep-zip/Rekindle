@@ -6,6 +6,7 @@ pub mod channel_message;
 pub mod command;
 pub mod community;
 pub mod community_capability;
+pub mod community_profile;
 pub mod dm;
 pub mod friends;
 pub mod group_dm;
