@@ -68,6 +68,15 @@ describe("the member profile popup stays inside the community window", function 
     const editing = await fit();
     console.log(`[popfit] editing: ${JSON.stringify(editing)}`);
     await shot("popup-editing");
+    // Why Kobalte kept its first position (its transform did not move when
+    // the editor grew): a second later (a late update), then after a window
+    // resize event (floating-ui's autoUpdate listens for it, beside its
+    // ResizeObserver on the positioner).
+    await browser.pause(1000);
+    console.log(`[popfit] editing +1 s: ${JSON.stringify(await fit())}`);
+    await browser.execute(() => window.dispatchEvent(new Event("resize")));
+    await browser.pause(500);
+    console.log(`[popfit] after a resize event: ${JSON.stringify(await fit())}`);
     expect({ opened: inside(opened), editing: inside(editing) }).toEqual({
       opened: { inside: true, noScroll: true },
       editing: { inside: true, noScroll: true },
