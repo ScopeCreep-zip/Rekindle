@@ -29,6 +29,7 @@ import { acceptRequest, createCommunity, createIdentity, friendCode, logOut, new
 import { showSkinView } from "../../journeys_skins.ts";
 import { BUDDY, LOGIN, SETTINGS, inBuddy } from "../../../walk/nav.ts";
 import { shot } from "../../shots.ts";
+import { pageLog, recordPage } from "../../../walk/probe.ts";
 
 const COMMUNITY = "Restore Hall";
 
@@ -133,7 +134,17 @@ describe("a restored copy re-enrols the device: the original is told and offered
     const deeFriends = (await dee.cli(["friend", "list"])) as { publicKey?: string; displayName?: string }[] | null;
     const ariKey = (deeFriends ?? []).find((f) => f.displayName === me.displayName)?.publicKey ?? (deeFriends ?? [])[0]?.publicKey;
     if (!ariKey) throw new Error(`Dee's friend list has no Ari: ${JSON.stringify(deeFriends).slice(0, 200)}`);
+    // The second review is gated on the Host's own event: the window's
+    // channel delivers an IntentPending whose review is acceptSessionReset
+    // (walk/probe.ts wraps the channel's callback), while the re-enrolment
+    // is still the review on show. Only then is the first one answered.
+    await recordPage(browser, [], ['"kind":"acceptSessionReset"']);
     await dee.cli(["friend", "reset-session", ariKey]);
+    await waitUntil(
+      async () => /\+\d+ms event /.test(await pageLog(browser)),
+      NET_WAIT_MS,
+      "the Host did not hold Dee's session reset while re-enrolment was still open",
+    );
     expect(await reviewSays(browser)).toContain("this device's key in every community");
     await shot("two-held-reviews");
 
@@ -146,6 +157,9 @@ describe("a restored copy re-enrols the device: the original is told and offered
     await waitUntil(
       async () => {
         next = ((await (await browser.$(".intent-dialog")).getText().catch(() => "")) ?? "").replace(/\s+/g, " ");
+        // The probe above saw the Host hold the session reset (its
+        // acceptSessionReset review) while the re-enrolment was on show, so
+        // the next review shown is that one: anything but the re-enrolment.
         return next !== "" && !next.includes("this device's key in every community");
       },
       NET_WAIT_MS,
