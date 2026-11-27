@@ -931,7 +931,7 @@ CREATE TABLE IF NOT EXISTS community_held_threads (
 -- Thread messages (messages within a thread).
 -- Thread reply messages (architecture §11). The synthetic `id` PK is
 -- required by FTS5 (`content_rowid` must be a single INTEGER column),
--- with the original logical key kept as a UNIQUE constraint.
+-- with the author-scoped logical key kept as a UNIQUE constraint.
 CREATE TABLE IF NOT EXISTS thread_messages (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     owner_key TEXT NOT NULL,
@@ -942,7 +942,7 @@ CREATE TABLE IF NOT EXISTS thread_messages (
     body TEXT NOT NULL DEFAULT '',
     timestamp INTEGER NOT NULL,
     reply_to_id TEXT,
-    UNIQUE (owner_key, community_id, thread_id, message_id),
+    UNIQUE (owner_key, community_id, thread_id, sender_pseudonym, message_id),
     FOREIGN KEY (owner_key, community_id) REFERENCES communities (
         owner_key, id
     ) ON DELETE CASCADE
