@@ -5,6 +5,13 @@ import type { Message } from "../../stores/chat.store";
 import type { CreateEventRequest } from "../../ipc/commands";
 import { transformMessages } from "../../utils/transformers";
 import { transformEvent } from "./shared";
+import { errorMessage } from "../../utils/error";
+import type { ThreadDelivery } from "../../ipc/commands/dto";
+
+/** A reply's row status from how the Host says it left us (plan FT1). */
+function deliveryStatus(delivery: ThreadDelivery): "queued" | "sent" {
+  return delivery === "queued" ? "queued" : "sent";
+}
 
 export async function handleLoadEvents(communityId: string): Promise<void> {
   try {
@@ -135,18 +142,16 @@ export async function handleCreateForumPost(
   body: string,
   forumTag?: string | null,
 ): Promise<string | null> {
-  const starterMessageId = `forum-post-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
-  const threadId = await handleCreateThread(
-    communityId,
-    channelId,
-    name,
-    starterMessageId,
-    forumTag,
-  );
-  if (!threadId) return null;
-  await handleSendThreadMessage(communityId, threadId, body);
-  await handleLoadChannelThreads(communityId, channelId);
-  return threadId;
+  // One Host request creates the thread and queues its starter (plan FT1):
+  // created, or refused with nothing created and the Host's reason shown.
+  try {
+    const created = await commands.createForumPost(communityId, channelId, name, body.trim(), forumTag);
+    await handleLoadChannelThreads(communityId, channelId);
+    return created.threadId;
+  } catch (e) {
+    addToast(errorMessage(e), "error");
+    return null;
+  }
 }
 
 export async function handleSendThreadMessage(
@@ -174,16 +179,17 @@ export async function handleSendThreadMessage(
     .flat()
     .find((t) => t.id === threadId && t.archived)?.channelId;
   try {
-    await commands.sendThreadMessage(communityId, threadId, trimmed);
+    // Queued in the outbox or delivered (plan FT1); a refusal is the only error.
+    const sent = await commands.sendThreadMessage(communityId, threadId, trimmed);
     setCommunityState("threadMessages", threadId, (msgs) =>
-      msgs.map((m) => (m.id === tempId ? { ...m, status: "sent" as const } : m)),
+      msgs.map((m) => (m.id === tempId ? { ...m, status: deliveryStatus(sent.delivery) } : m)),
     );
     // A reply after the archive revives the thread (the Host's listing,
     // `is_thread_archived`): re-read it rather than decide it here.
     if (archivedIn) await handleLoadChannelThreads(communityId, archivedIn);
   } catch (e) {
-    console.error("Failed to send thread message:", e);
-    addToast("Failed to send thread message", "error");
+    console.error("Thread message refused:", e);
+    addToast(errorMessage(e), "error");
     setCommunityState("threadMessages", threadId, (msgs) =>
       msgs.map((m) => (m.id === tempId ? { ...m, status: "failed" as const } : m)),
     );

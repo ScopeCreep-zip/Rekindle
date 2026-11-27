@@ -9,7 +9,8 @@ interface ForumChannelViewProps {
   onOpenThread: (thread: Thread) => void;
   /** A pseudonym's display name (the window's member resolver). */
   nameOf: (pseudonymKey: string) => string;
-  onCreatePost: (name: string, body: string, forumTag?: string | null) => Promise<void> | void;
+  /** Whether the Host created the post: the draft is cleared only then (plan FT1). */
+  onCreatePost: (name: string, body: string, forumTag?: string | null) => Promise<boolean>;
 }
 
 const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
@@ -38,7 +39,8 @@ const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
     if (!nextTitle || !nextBody || isSubmitting()) return;
     setIsSubmitting(true);
     try {
-      await props.onCreatePost(nextTitle, nextBody, selectedTag() || null);
+      // A refusal keeps the whole draft open for another try.
+      if (!(await props.onCreatePost(nextTitle, nextBody, selectedTag() || null))) return;
       setTitle("");
       setBody("");
       setSelectedTag("");

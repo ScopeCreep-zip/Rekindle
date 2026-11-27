@@ -562,3 +562,22 @@ export interface TargetModeration {
   ban: boolean;
   timeout: boolean;
 }
+
+/** Plan FT1: how a thread reply left us: `queued` in our durable outbox
+ *  (it sends it later), or `delivered`, also handed to the mesh. A mesh
+ *  failure after the queue is `queued`, never an error. */
+export type ThreadDelivery = "queued" | "delivered";
+
+/** `send_thread_message`'s answer (`rekindle_types::thread::ThreadReplyOutcome`). */
+export interface ThreadReplyOutcome {
+  messageId: string;
+  delivery: ThreadDelivery;
+}
+
+/** `create_forum_post`'s answer (`rekindle_types::thread::ForumPostCreated`): the
+ *  thread and its starter, created as one; a refusal creates nothing. */
+export interface ForumPostCreated {
+  threadId: string;
+  starterMessageId: string;
+  starter: ThreadDelivery;
+}
