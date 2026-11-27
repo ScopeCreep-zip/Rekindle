@@ -282,8 +282,9 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// its body (`'damaged'`): its signed outbox entry names a key we hold and the body does not open.
 /// 165 (plan decision 67 item 3): `group_dm_rendezvous`, each member's place in its group's
 /// rendezvous record.
-/// 167 (JI1): `community_invites.join_inbox_key` retains the minted inbox across unlocks.
-pub const SCHEMA_VERSION: i64 = 167;
+/// 167 (SEC5): `thread_messages` scopes each reply id to its verified author.
+/// 168 (JI1): `community_invites.join_inbox_key` retains the minted inbox across unlocks.
+pub const SCHEMA_VERSION: i64 = 168;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]
