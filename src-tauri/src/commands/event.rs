@@ -26,25 +26,14 @@ pub async fn subscribe_events(
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
     let label = window.label().to_owned();
-    let host = state.host.current();
-    let Some(from) = from else {
-        // Read under the router's lock, inside `register`: an alert
-        // published after this snapshot is delivered live once the window
-        // is registered, and one in both is processed once (by its cursor).
-        let window = label.clone();
-        let snapshot = std::iter::once(()).flat_map(move |()| {
-            host.as_ref()
-                .map(|host| crate::event_snapshot::standing_for(host, &window))
-                .unwrap_or_default()
-        });
-        state.event_router.register(label, channel, snapshot);
-        return Ok(());
+    let snapshot = || match (state.host.current(), from) {
+        (Some(host), None) => crate::event_snapshot::standing_for(&host, &label),
+        (Some(host), Some(from)) => crate::event_snapshot::resume_for(&host, &label, from),
+        (None, None) => Vec::new(),
+        (None, Some(_)) => vec![OutboundEnvelope::invalid_session()],
     };
-    let replay = match host {
-        Some(host) => crate::event_snapshot::resume_for(&host, &label, from),
-        // Before the host starts there is no journal to replay from.
-        None => vec![OutboundEnvelope::invalid_session()],
-    };
-    state.event_router.register(label, channel, replay);
+    state
+        .event_router
+        .register(label.clone(), channel, snapshot);
     Ok(())
 }

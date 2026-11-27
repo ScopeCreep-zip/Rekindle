@@ -55,3 +55,47 @@ async fn a_resume_is_handed_the_standing_alert_and_the_held_set_after_its_replay
     assert_eq!(resumed[1].cursor, Some(at));
     t.shutdown().await;
 }
+
+#[tokio::test]
+async fn a_resume_reconstructs_a_review_raised_after_the_window_went_away() {
+    use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
+    use rekindle_ipc::{Caller, HostApi};
+    use rekindle_node::host::test_fixtures::{create_ann, hold_reinitiation};
+
+    let t = TestHost::start().await;
+    create_ann(&t.host).await;
+    let at = t.host.publish_standing(alert());
+
+    hold_reinitiation(&t.host, "ab".repeat(32)).await;
+    let snapshot = t.host.held_reviews();
+    let SubscriptionEvent::HeldReviews(held) = &snapshot else {
+        panic!("expected the held set");
+    };
+    assert_eq!(held.len(), 1);
+    assert_eq!(held[0].hold_id, held[0].review.intent_id);
+
+    let expected = serde_json::to_value(snapshot.clone()).unwrap();
+    let resumed = resume_for(&t.host, crate::window_labels::BUDDY_LIST, at);
+    let envelope = resumed.last().expect("held snapshot after replay");
+    assert!(envelope.standing);
+    assert!(envelope.cursor.is_none());
+    assert_eq!(envelope.payload, expected);
+
+    assert!(matches!(
+        t.host
+            .call(
+                Caller::shell(),
+                IpcRequest::IntentCancel {
+                    intent_id: held[0].review.intent_id
+                }
+            )
+            .await,
+        IpcResponse::Ok { .. }
+    ));
+    let resumed = resume_for(&t.host, crate::window_labels::BUDDY_LIST, at);
+    assert_eq!(
+        resumed.last().unwrap().payload,
+        serde_json::json!({"heldReviews": []})
+    );
+    t.shutdown().await;
+}

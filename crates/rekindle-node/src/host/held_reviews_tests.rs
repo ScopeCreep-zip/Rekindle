@@ -71,9 +71,12 @@ async fn a_held_review_is_handed_to_a_later_subscriber_until_it_is_resolved() {
         let (first, hold_id) = raise(&host, &bob).await;
         assert_eq!(hold_id, Some(first), "the live event names its hold");
         assert_eq!(held(&host), vec![(first, first)], "exactly one");
+        assert!(host.holds_review(first, first));
 
         let (latest, _) = raise(&host, &bob).await;
         assert_ne!(latest, first);
+        assert!(!host.holds_review(first, first));
+        assert!(host.holds_review(latest, latest));
         assert_eq!(
             held(&host),
             vec![(latest, latest)],
@@ -91,6 +94,7 @@ async fn a_held_review_is_handed_to_a_later_subscriber_until_it_is_resolved() {
         let answer = host.call(Caller::shell(), answer).await;
         assert!(!matches!(answer, IpcResponse::Error { .. }), "{answer:?}");
         assert!(held(&host).is_empty(), "resolved (commit: {commit})");
+        assert!(!host.holds_review(latest, latest));
     }
 }
 

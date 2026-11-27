@@ -379,6 +379,22 @@ impl<A, O: GateOwner, R: Clone + Send + Sync + 'static> IntentGate<A, O, R> {
         held
     }
 
+    /// Whether the backend publication still names an unexpired hold.
+    #[must_use]
+    pub fn holds_review(
+        &self,
+        hold_id: IntentId,
+        intent_id: IntentId,
+        owner: &O,
+        now_ms: u64,
+    ) -> bool {
+        self.pending.lock().get(&intent_id).is_some_and(|pending| {
+            pending.original_id == hold_id
+                && pending.owner == *owner
+                && pending.review.expires_at_ms > now_ms
+        })
+    }
+
     /// The held action's selection, for recomputing its facts at commit.
     pub fn selection(&self, intent_id: IntentId, owner: &O) -> Option<Selection> {
         self.pending

@@ -79,6 +79,24 @@ impl super::Host {
         SubscriptionEvent::HeldReviews(held)
     }
 
+    /// Recheck a queued backend review just before delivering it to the shell.
+    #[must_use]
+    pub fn holds_review(
+        &self,
+        hold_id: rekindle_types::intent::IntentId,
+        intent_id: rekindle_types::intent::IntentId,
+    ) -> bool {
+        self.ctx.require_owner().is_ok_and(|identity| {
+            let owner = IntentOwner {
+                conn: None,
+                identity,
+            };
+            self.ctx
+                .intents
+                .holds_review(hold_id, intent_id, &owner, self.ctx.clock.now_ms())
+        })
+    }
+
     /// A fresh `SystemAlert` id, for an alert the shell raises through
     /// the Host ([`Self::publish_standing`]).
     #[must_use]
