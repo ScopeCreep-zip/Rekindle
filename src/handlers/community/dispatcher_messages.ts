@@ -4,12 +4,11 @@ import type {
   CommunitySubscriptionEvent,
 } from "../../ipc/channels/community_subscription_events";
 import { setCommunityState, communityState } from "../../stores/community.store";
-import { commands } from "../../ipc/commands";
 import { addToast } from "../../stores/toast.store";
 import type { Message } from "../../stores/chat.store";
 import type { UnreadChanged } from "../../ipc/channels/chat_events";
 import { linkPreviewKey, setLinkPreviews } from "../../stores/link_preview.store";
-import { transformHistoryGap, transformMessages } from "../../utils/transformers";
+import { transformHistoryGap } from "../../utils/transformers";
 import { setTypingUsers } from "../../actions/community/shared";
 import { markChannelReadToLatest } from "../../actions/community/channels";
 import { handleLoadExpressions } from "../../actions/community/lifecycle";

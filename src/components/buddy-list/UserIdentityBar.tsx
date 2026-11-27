@@ -15,7 +15,7 @@ const UserIdentityBar: Component = () => {
   function truncatedKey(): string {
     const key = authState.publicKey;
     if (!key) return "";
-    return key.slice(0, 8) + "..." + key.slice(-6);
+    return `${key.slice(0, 8)}...${key.slice(-6)}`;
   }
 
   function startEditing(): void {

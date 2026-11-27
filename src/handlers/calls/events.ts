@@ -21,7 +21,7 @@ function pushMissedCallNotification(
   outgoing: boolean,
 ): void {
   const friend = friendsState.friends[peerKey];
-  const name = friend?.displayName ?? peerKey.slice(0, 12) + "…";
+  const name = friend?.displayName ?? `${peerKey.slice(0, 12)}…`;
   setNotificationState("notifications", (prev) => [
     ...prev,
     {

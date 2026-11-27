@@ -191,7 +191,7 @@ const PrivacyTab: Component = () => {
         <For each={blockedUsers()}>
           {(user) => (
             <div class="blocked-user-item">
-              <span class="buddy-name">{user.displayName || user.publicKey.slice(0, 12) + "..."}</span>
+              <span class="buddy-name">{user.displayName || `${user.publicKey.slice(0, 12)}...`}</span>
               <button type="button" class="form-btn-secondary" onClick={() => handleUnblock(user.publicKey)}>
                 Unblock
               </button>

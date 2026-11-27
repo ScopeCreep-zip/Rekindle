@@ -6,7 +6,6 @@ import type {
 } from "../../ipc/channels/community_subscription_events";
 import { applyJoinProgress, resetJoinProgress, type JoinStageStatus } from "../../stores/join.store";
 import { applySuccessorEvent } from "../../stores/successor.store";
-import { transformCommunityDetail } from "../../utils/transformers";
 import { handleResolveCommunityImageDataUrls } from "../../actions/community/lifecycle";
 import { setCommunityState, setCommunityMembers, communityState, dropCommunity } from "../../stores/community.store";
 import { commands } from "../../ipc/commands";

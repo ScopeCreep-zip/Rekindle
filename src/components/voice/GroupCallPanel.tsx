@@ -102,7 +102,7 @@ const ActiveGroupCallPanel: Component = () => {
   };
 
   const participantName = (key: string): string => {
-    return friendsState.friends[key]?.displayName ?? key.slice(0, 8) + "…";
+    return friendsState.friends[key]?.displayName ?? `${key.slice(0, 8)}…`;
   };
 
   return (

@@ -312,7 +312,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
         {(replyMsg) => (
           <div class="reply-snippet">
             <span class="reply-snippet-sender">{props.replyToSender ?? ""}</span>
-            {replyMsg().body.length > 60 ? replyMsg().body.slice(0, 60) + "..." : replyMsg().body}
+            {replyMsg().body.length > 60 ? `${replyMsg().body.slice(0, 60)}...` : replyMsg().body}
           </div>
         )}
       </Show>

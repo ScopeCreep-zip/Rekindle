@@ -36,7 +36,7 @@ const DirectChat: Component<{ peerId: string }> = (props) => {
 
   const peerName = createMemo(() => {
     const friend = friendsState.friends[peerId];
-    return friend?.displayName ?? peerId.slice(0, 12) + "...";
+    return friend?.displayName ?? `${peerId.slice(0, 12)}...`;
   });
 
   // Reactive memo — tracks the global store, so any presence event that

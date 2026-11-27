@@ -49,7 +49,7 @@ const ProfileWindow: Component = () => {
   });
 
   const displayName = createMemo(() => {
-    return friend()?.displayName ?? publicKey.slice(0, 16) + "...";
+    return friend()?.displayName ?? `${publicKey.slice(0, 16)}...`;
   });
 
   const mutualCommunities = createMemo(() => {

@@ -41,7 +41,7 @@ const PendingRequests: Component = () => {
             <div class="pending-item">
               <div class="pending-info">
                 <span class="buddy-name">
-                  {request.displayName || request.publicKey.slice(0, 12) + "..."}
+                  {request.displayName || `${request.publicKey.slice(0, 12)}...`}
                 </span>
                 <Show when={request.message}>
                   <span class="pending-message">{request.message}</span>

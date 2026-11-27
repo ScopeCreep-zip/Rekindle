@@ -1,7 +1,5 @@
 import { commands } from "../ipc/commands";
 import { setChatState, chatState } from "../stores/chat.store";
-import { authState } from "../stores/auth.store";
-import { friendsState, setFriendsState } from "../stores/friends.store";
 import type { Message } from "../stores/chat.store";
 import { transformDmMessage } from "../utils/transformers";
 import { awaitsExpiry } from "./disappearing.actions";

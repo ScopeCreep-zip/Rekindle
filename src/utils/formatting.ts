@@ -10,7 +10,7 @@ export function formatDateFromSecs(ts: number): string {
 
 /** Truncate a key to first 8 + ellipsis + last 8 chars (e.g. "abc12345\u2026xyz12345"). */
 export function truncateKey(key: string): string {
-  if (key.length > 16) return key.slice(0, 8) + "\u2026" + key.slice(-8);
+  if (key.length > 16) return `${key.slice(0, 8)}\u2026${key.slice(-8)}`;
   return key;
 }
 

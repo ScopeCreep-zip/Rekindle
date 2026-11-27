@@ -81,7 +81,7 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
   }
 
   function truncateHash(hash: string): string {
-    if (hash.length > 12) return hash.slice(0, 12) + "...";
+    if (hash.length > 12) return `${hash.slice(0, 12)}...`;
     return hash;
   }
 
@@ -174,7 +174,7 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
                   by {(() => {
                     const community = communityState.communities[props.communityId];
                     const member = community?.members.find((m) => m.pseudonymKey === invite.createdBy);
-                    return member?.displayName ?? (invite.createdBy.slice(0, 8) + "...");
+                    return member?.displayName ?? `${invite.createdBy.slice(0, 8)}...`;
                   })()}
                 </span>
                 <span class="invite-fingerprint">

@@ -12,9 +12,6 @@ import { useSlowmode } from "./message_input/useSlowmode";
 import type { MessageInputProps } from "./message_input/types";
 import { SlotMount } from "../skin-tree/slots";
 
-const ICON_MIC = "\u{F036C}"; // nf-md-microphone
-const ICON_MIC_OFF = "\u{F036D}"; // nf-md-microphone_off
-
 const MessageInput: Component<MessageInputProps> = (props) => {
   const [body, setBody] = createSignal("");
   const [showEmojiPicker, setShowEmojiPicker] = createSignal(false);

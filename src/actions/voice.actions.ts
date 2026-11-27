@@ -8,7 +8,6 @@
 import { commands } from "../ipc/commands";
 import { type UnlistenFn, subscribeVoiceEvents } from "../ipc/channels";
 import { callType, sessionKey } from "../ipc/channels/voice_events";
-import { friendsState } from "../stores/friends.store";
 import { voiceState, setVoiceState } from "../stores/voice.store";
 import { communityState } from "../stores/community.store";
 import { addToast } from "../stores/toast.store";
