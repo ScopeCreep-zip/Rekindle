@@ -11,8 +11,9 @@
 // nobody, the cause is on the Host's side.
 
 import { browser } from "@wdio/globals";
-import { NET_WAIT_MS, shown } from "../../../walk/helpers.ts";
-import { createCommunity, createIdentity, newUser, openCommunity, selectChannel, type User } from "../../journeys.ts";
+import { NET_WAIT_MS, byText, communityWindowLabel, doubleClick, shown, switchTo } from "../../../walk/helpers.ts";
+import { inBuddy } from "../../../walk/nav.ts";
+import { communitiesTab, createCommunity, createIdentity, newUser, selectChannel, type User } from "../../journeys.ts";
 import { shot } from "../../shots.ts";
 
 const COMMUNITY = `Members Probe ${Date.now() % 100000}`;
@@ -58,7 +59,31 @@ describe("MEMBERS — 0 probe: what the Host serves for a new community's creato
   it("logs the Host's member set beside the panel's header for 30 s", async () => {
     await createIdentity(browser, me);
     await createCommunity(browser, me, COMMUNITY);
-    await openCommunity(browser, COMMUNITY);
+    // openCommunity's own steps, so the panel is watched from the moment the
+    // window is switched to (it waits for the sidebar first): every change of
+    // the member panel's header and row count, timed from the page's load.
+    await inBuddy(browser);
+    const label = await communityWindowLabel(browser, COMMUNITY);
+    await communitiesTab(browser);
+    await doubleClick(browser, await byText(browser, ".community-item", COMMUNITY.slice(0, 24), NET_WAIT_MS));
+    await switchTo(browser, label, NET_WAIT_MS);
+    await browser.execute(() => {
+      const log: string[] = [];
+      (window as unknown as { __panel: string[] }).__panel = log;
+      const read = (): string => {
+        const header = document.querySelector(".member-list-header")?.textContent?.trim() ?? "(no header)";
+        const rows = document.querySelectorAll(".member-item[data-pseudonym]").length;
+        return `${header}, ${rows} rows`;
+      };
+      let last = read();
+      log.push(`${Math.round(performance.now())}ms since load: attached, ${last}`);
+      new MutationObserver(() => {
+        const now = read();
+        if (now !== last) log.push(`${Math.round(performance.now())}ms since load: ${now}`);
+        last = now;
+      }).observe(document.body, { childList: true, subtree: true, characterData: true });
+    });
+    await shown(browser, ".community-sidebar", NET_WAIT_MS);
     await selectChannel(browser, "general");
     await shown(browser, ".member-list-header", NET_WAIT_MS);
     let last = "";
@@ -70,5 +95,7 @@ describe("MEMBERS — 0 probe: what the Host serves for a new community's creato
       await browser.pause(2000);
     }
     await shot("members-panel");
+    const timeline = (await browser.execute(() => (window as unknown as { __panel?: string[] }).__panel ?? [])) as string[];
+    for (const line of timeline) console.log(`[members] panel ${line}`);
   });
 });
