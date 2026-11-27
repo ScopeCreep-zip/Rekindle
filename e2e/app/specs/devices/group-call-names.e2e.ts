@@ -11,13 +11,24 @@
 // fingerprint; passing Bob's alias for her would leak it, addendum 2) and
 // herself with "(you)" (the Host's isSelf), with no run of 8+ hex
 // anywhere in the call's UI, and nothing in the window shows as a sliver
-// (a text or status element visible at under 4 px tall). Accepting a call
+// (a text or status element visible at under 4 px tall). The banner is
+// seen, not only laid out (hiding it changes its pixels, painted.ts), in
+// Symbiosis and in Alloy: a pack's skin tree, whose nodes stack at 3 x its Z
+// (Symbiosis's list at Z 30), once painted over it. Accepting a call
 // opens the microphone: Linux only (no TCC prompt on the Mac).
 
 import { expect, multiRemoteBrowser } from "@wdio/globals";
 import type { Browser } from "webdriverio";
-import { byText, NET_WAIT_MS, press, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
-import { BUDDY } from "../../../walk/nav.ts";
+import {
+  byText,
+  gone,
+  NET_WAIT_MS,
+  press,
+  shown,
+  switchTo,
+  waitUntil,
+} from "../../../walk/helpers.ts";
+import { BUDDY, openSettings } from "../../../walk/nav.ts";
 import {
   acceptRequest,
   createIdentity,
@@ -28,6 +39,7 @@ import {
   requestFriend,
   type User,
 } from "../../journeys.ts";
+import { applySkin, skinShown } from "../../journeys_skins.ts";
 import { painted } from "../../painted.ts";
 import { shot } from "../../shots.ts";
 
@@ -48,6 +60,58 @@ async function identity(b: Browser): Promise<{ publicKey: string; fingerprint: s
     const { publicKey, fingerprint } = (await invoke("get_identity")).value;
     return { publicKey, fingerprint };
   })) as { publicKey: string; fingerprint: string };
+}
+
+/** Bob starts a group voice call to `keys` through the Host; its call id. */
+async function startCall(b: Browser, keys: string[]): Promise<string> {
+  return (await b.execute(async (k: string[]) => {
+    const { invoke } = (
+      window as unknown as {
+        __TAURI_INTERNALS__: {
+          invoke(cmd: string, args: unknown): Promise<{ value: string } | string>;
+        };
+      }
+    ).__TAURI_INTERNALS__;
+    const out = await invoke("start_group_call", {
+      participantPubkeys: k,
+      video: false,
+      groupId: null,
+    });
+    return typeof out === "string" ? out : out.value;
+  }, keys)) as string;
+}
+
+/** The banner as it paints: its computed stacking and what sits on top at its centre. */
+async function bannerLayer(b: Browser): Promise<Record<string, string>> {
+  return (await b.execute(() => {
+    const el = document.querySelector<HTMLElement>(".group-call-incoming-banner")!;
+    const st = getComputedStyle(el);
+    const r = el.getBoundingClientRect();
+    const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+    const name = (e: Element | null): string =>
+      e
+        ? `${e.tagName.toLowerCase()}${typeof e.className === "string" && e.className ? `.${e.className.split(/\s+/)[0]}` : ""}${e.getAttribute("data-skin-node") ? `[${e.getAttribute("data-skin-node")}]` : ""}`
+        : "none";
+    return {
+      opacity: st.opacity,
+      visibility: st.visibility,
+      zIndex: st.zIndex,
+      position: st.position,
+      onTop: name(top),
+      onTopIsBanner: String(top !== null && el.contains(top)),
+    };
+  })) as Record<string, string>;
+}
+
+/** Alice sees Bob's banner in the pack she shows: laid out, its layer logged, painted. */
+async function bannerSeen(a: Browser, pack: string): Promise<{ painted: boolean; text: string }> {
+  await switchTo(a, BUDDY);
+  const banner = await shown(a, ".group-call-incoming-banner", NET_WAIT_MS);
+  const text = (await banner.getText()).replace(/\s+/g, " ");
+  console.log(`[group-call] ${pack}: banner layer ${JSON.stringify(await bannerLayer(a))}`);
+  const paint = await painted(a, ".group-call-incoming-banner");
+  console.log(`[group-call] ${pack}: banner painted ${JSON.stringify(paint)}`);
+  return { painted: paint.changed >= paint.total / 2, text };
 }
 
 /** `from` and `to` become friends: `from` asks with `to`'s code, `to` accepts. */
@@ -75,24 +139,32 @@ describe("a group call names its members as the Host serves them (VN2)", functio
     const [{ publicKey: aliceKey }, { publicKey: carolKey, fingerprint: carolName }] =
       await Promise.all([identity(a), identity(c)]);
 
-    // Bob starts the group voice call to Alice and Carol through the Host.
+    // Bob calls Alice and Carol; Alice, in Symbiosis (the default pack), sees
+    // his banner and declines; Bob ends the call.
     await switchTo(b, BUDDY);
-    await b.execute(
-      async (keys: string[]) => {
-        const { invoke } = (
-          window as unknown as {
-            __TAURI_INTERNALS__: { invoke(cmd: string, args: unknown): Promise<unknown> };
-          }
-        ).__TAURI_INTERNALS__;
-        await invoke("start_group_call", { participantPubkeys: keys, video: false, groupId: null });
-      },
-      [aliceKey, carolKey]
-    );
+    const first = await startCall(b, [aliceKey, carolKey]);
+    const inSymbiosis = await bannerSeen(a, "Symbiosis");
+    await shot("group-call-incoming-symbiosis");
+    await press(a, await byText(a, ".group-call-incoming-banner button", "Decline"));
+    await b.execute(async (id: string) => {
+      const { invoke } = (
+        window as unknown as {
+          __TAURI_INTERNALS__: { invoke(cmd: string, args: unknown): Promise<unknown> };
+        }
+      ).__TAURI_INTERNALS__;
+      await invoke("end_group_call", { callId: id, reason: null });
+    }, first);
+    await gone(a, ".group-call-incoming-banner", NET_WAIT_MS);
 
-    // Alice's incoming banner names the caller as the Host serves him.
+    // Alice moves to Alloy; Bob calls again; she sees his banner there too.
+    await openSettings(a, "Appearance");
+    const alloy = await applySkin(a, alice, "Alloy");
     await switchTo(a, BUDDY);
-    const banner = await shown(a, ".group-call-incoming-banner", NET_WAIT_MS);
-    const bannerText = (await banner.getText()).replace(/\s+/g, " ");
+    await skinShown(a, alloy);
+    await switchTo(b, BUDDY);
+    await startCall(b, [aliceKey, carolKey]);
+    const inAlloy = await bannerSeen(a, "Alloy");
+    const bannerText = inAlloy.text;
     console.log(`[group-call] Alice's banner: ${bannerText}`);
     const place = (await a.execute(() => {
       const box = document.querySelector(".group-call-incoming-banner")!.getBoundingClientRect();
@@ -124,10 +196,7 @@ describe("a group call names its members as the Host serves them (VN2)", functio
       window: number[];
     };
     console.log(`[group-call] banner ${JSON.stringify(place)}`);
-    // Seen, not only laid out: hiding the banner changes most of its box's pixels.
-    const bannerPaint = await painted(a, ".group-call-incoming-banner");
-    console.log(`[group-call] banner painted: ${JSON.stringify(bannerPaint)}`);
-    await shot("group-call-incoming");
+    await shot("group-call-incoming-alloy");
 
     // She accepts: her call grid names each member. Every sample counts, from
     // the first tile drawn: each tile's name is one the Host served (Bob,
@@ -237,7 +306,8 @@ describe("a group call names its members as the Host serves them (VN2)", functio
       bannerInWindow: place.inWindow,
       bannerBelowChrome: place.belowChrome,
       bannerTextClear: place.metaClear,
-      bannerPainted: bannerPaint.changed >= bannerPaint.total / 2,
+      bannerPaintedSymbiosis: inSymbiosis.painted,
+      bannerPaintedAlloy: inAlloy.painted,
       slivers,
     }).toEqual({
       caller: true,
@@ -247,7 +317,8 @@ describe("a group call names its members as the Host serves them (VN2)", functio
       bannerInWindow: true,
       bannerBelowChrome: true,
       bannerTextClear: true,
-      bannerPainted: true,
+      bannerPaintedSymbiosis: true,
+      bannerPaintedAlloy: true,
       slivers: [],
     });
   });
