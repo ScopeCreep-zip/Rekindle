@@ -15,9 +15,25 @@ import { applySkin, skinShown } from "../../journeys_skins.ts";
 import { shot } from "../../shots.ts";
 import { artElements, frameNodeDetail, frameNodes, windowKind } from "../../skin-art.ts";
 import { builtinPacks } from "../../skin-pack.ts";
+import { sizeWindow } from "../../windows.ts";
 import { befriendFleet } from "../../social.ts";
 
 const PACKS = ["combat", "alloy", "onyx", "xslimfire", "simple-x", "symbiosis", "total-chaos", "xfire-classic"];
+
+/** Packs whose composer is laid as a share of the content (SKW3): it must
+ *  keep its share when the window is resized. */
+const SHARE_COMPOSER = new Set(["xfire-classic"]);
+
+/** The composer's box height, one text line's height in it, and the
+ *  viewport's height (CSS px). */
+async function composer(): Promise<{ height: number; line: number; inner: number }> {
+  return (await browser.execute(() => {
+    const box = document.querySelector<HTMLElement>(".message-input-wrapper");
+    const field = box?.querySelector<HTMLElement>("textarea");
+    const lh = field ? parseFloat(getComputedStyle(field).lineHeight) || parseFloat(getComputedStyle(field).fontSize) * 1.2 : 0;
+    return { height: box ? Math.round(box.getBoundingClientRect().height) : 0, line: Math.round(lh), inner: innerHeight };
+  })) as { height: number; line: number; inner: number };
+}
 /** The window whose frame a pack's community window wears (SKW1): its chat
  *  window's, or its buddy list's where the pack ships no chat window (Total
  *  Chaos, whose group chat has no pack frame either: a known finding). */
@@ -63,6 +79,7 @@ describe("skinned windows keep their pack art (SB1)", function () {
       const href = await applySkin(browser, me, pack.name);
       const counts: Record<string, number> = {};
       const frames: Record<string, { nodes: string[]; defaultTitlebar: boolean }> = {};
+      const composers: { label: string; ok: boolean; tracks: boolean }[] = [];
       for (const [i, w] of windows.entries()) {
         await browser.switchToWindow(w.handle);
         await skinShown(browser, href);
@@ -87,11 +104,27 @@ describe("skinned windows keep their pack art (SB1)", function () {
           )) as string[];
           console.log(`[frame] ${file} chat top-left: ${JSON.stringify(at)}`);
         }
+        // SKW3: the composer is usable (a text line tall or more), and a pack
+        // that lays it as a share keeps that share when the window grows.
+        if (w.label !== "buddy-list") {
+          const a = await composer();
+          const width = (await browser.execute(() => innerWidth)) as number;
+          await sizeWindow(browser, { width, height: a.inner + 120 });
+          const b = await composer();
+          await sizeWindow(browser, { width, height: a.inner });
+          const share = (c: { height: number; inner: number }): number => Math.round((c.height / c.inner) * 1000) / 1000;
+          console.log(`[composer] ${file} ${w.label}: ${a.height} px of ${a.inner} (${share(a)}), line ${a.line}; grown: ${b.height} of ${b.inner} (${share(b)})`);
+          composers.push({ label: w.label, ok: a.height >= a.line && a.line > 0, tracks: Math.abs(share(a) - share(b)) < 0.03 });
+        }
         // Named so a pack's windows sort side by side (chat, group chat, community).
         await shot(`${file}-${i}-${w.label}`);
         expect(kind).toBe(w.kind);
       }
       for (const w of windows) expect(counts[w.label]).toBeGreaterThan(0);
+      expect({ pack: file, short: composers.filter((c) => !c.ok).map((c) => c.label) }).toEqual({ pack: file, short: [] });
+      if (SHARE_COMPOSER.has(file)) {
+        expect({ pack: file, untracked: composers.filter((c) => !c.tracks).map((c) => c.label) }).toEqual({ pack: file, untracked: [] });
+      }
       // Frame parity (lead, SKW1): the group-chat and community windows wear
       // the pack's frame, the one its chat window draws (today the pack's
       // ChatWindow is every chat-like window's source): the same title strip,
