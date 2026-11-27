@@ -215,7 +215,7 @@ pub async fn fetch_state_snapshot<D: GovernanceRuntimeDeps>(
             invite: None,
         };
         let request = match invite_code {
-            Some(code) => request.with_invite_code(code),
+            Some(code) => request.with_invite_code(code)?,
             None => request,
         };
         let encoded = request.encode(me).map_err(|e| {

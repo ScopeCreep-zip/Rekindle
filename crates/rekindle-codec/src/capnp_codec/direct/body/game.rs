@@ -15,10 +15,9 @@ pub struct GameInvite {
 }
 
 impl GameInvite {
-    pub(super) fn write(&self, mut b: game_invite::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: game_invite::Builder<'_>) {
         b.set_game_id(self.game_id);
         b.set_server(self.server.as_str());
-        Ok(())
     }
 
     pub(super) fn read(r: game_invite::Reader<'_>) -> Result<Self, CodecError> {
@@ -48,9 +47,8 @@ pub struct ProfileBio {
 }
 
 impl ProfileBio {
-    pub(super) fn write(&self, mut b: profile_bio::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: profile_bio::Builder<'_>) {
         b.set_bio(self.bio.as_deref().unwrap_or(""));
-        Ok(())
     }
 
     pub(super) fn read(r: profile_bio::Reader<'_>) -> Result<Self, CodecError> {

@@ -29,7 +29,8 @@ pub(super) const MAX_ATTEMPTS: usize = 32;
 /// their nonzero bytes drawn from `rng`.
 pub(super) fn padding(cost: usize, rng: &dyn RandomSource) -> Vec<u8> {
     let cost = cost.max(MIN_COST);
-    // ⌈cost / 7⌉, at least one word since cost ≥ MIN_COST.
+    // ⌈cost / 7⌉, at least one word since cost ≥ MIN_COST. The division
+    // leaves room to add one even when cost is usize::MAX.
     let words = NonZeroUsize::MIN.saturating_add(cost.saturating_sub(1) / MAX_WORD_COST);
     let mut out = vec![[0u8; 8]; words.get()];
     // Spread the cost evenly: every word costs `cost / words` or one more,
@@ -38,6 +39,7 @@ pub(super) fn padding(cost: usize, rng: &dyn RandomSource) -> Vec<u8> {
     // (1 to 6) neither underflow nor overflow it.
     let (base, extra) = (cost / words, cost % words);
     for (i, word) in out.iter_mut().enumerate() {
+        // The word's share is 2..=7, so neither operation saturates.
         let nonzero = base.saturating_sub(1).saturating_add(usize::from(i < extra));
         let mut drawn = vec![0u8; nonzero];
         rng.fill(&mut drawn);

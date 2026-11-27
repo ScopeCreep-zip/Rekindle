@@ -27,7 +27,7 @@ fn round_trips_with_the_unsigned_form() {
     assert_eq!(decoded.signed, s);
     assert_eq!(
         decoded.unsigned,
-        genesis_unsigned_bytes(&s.cert, &s.anchor_owner)
+        genesis_unsigned_bytes(&s.cert, &s.anchor_owner).unwrap(),
     );
 }
 

@@ -223,12 +223,11 @@ impl std::fmt::Debug for GroupDmAccept {
 }
 
 impl GroupDmAccept {
-    pub(super) fn write(&self, mut b: group_dm_accept::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: group_dm_accept::Builder<'_>) {
         b.set_group_id(&self.group_id);
         b.set_epoch(self.epoch);
         b.set_sender_key(&self.sender_key);
         b.set_chain_record_key(&self.chain_record_key);
-        Ok(())
     }
 
     pub(super) fn read(r: group_dm_accept::Reader<'_>) -> Result<Self, CodecError> {
@@ -248,9 +247,8 @@ pub struct GroupDmDecline {
 }
 
 impl GroupDmDecline {
-    pub(super) fn write(&self, mut b: group_dm_decline::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: group_dm_decline::Builder<'_>) {
         b.set_group_id(&self.group_id);
-        Ok(())
     }
 
     pub(super) fn read(r: group_dm_decline::Reader<'_>) -> Result<Self, CodecError> {
@@ -269,10 +267,9 @@ pub struct GroupDmLeave {
 }
 
 impl GroupDmLeave {
-    pub(super) fn write(&self, mut b: group_dm_leave::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: group_dm_leave::Builder<'_>) {
         b.set_group_id(&self.group_id);
         b.set_epoch(self.epoch);
-        Ok(())
     }
 
     pub(super) fn read(r: group_dm_leave::Reader<'_>) -> Result<Self, CodecError> {
@@ -314,10 +311,9 @@ pub struct GroupDmRename {
 }
 
 impl GroupDmRename {
-    pub(super) fn write(&self, mut b: group_dm_rename::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: group_dm_rename::Builder<'_>) {
         b.set_group_id(&self.group_id);
         b.set_name(&self.name);
-        Ok(())
     }
 
     pub(super) fn read(r: group_dm_rename::Reader<'_>) -> Result<Self, CodecError> {
@@ -354,11 +350,10 @@ impl std::fmt::Debug for GroupContent {
 }
 
 impl GroupContent {
-    pub(super) fn write(&self, mut b: group_content::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: group_content::Builder<'_>) {
         b.set_group_id(&self.group_id);
         b.set_epoch(self.epoch);
         b.set_sealed(&self.sealed);
-        Ok(())
     }
 
     /// An empty ciphertext is malformed.

@@ -140,8 +140,8 @@ fn a_full_voice_packet_decodes() {
             timestamp: 1_792_860_061_000,
             sframe: noise(11, n),
             sig: noise(12, 64),
-        }.unwrap()
-        .encode()
+        }
+        .encode().unwrap()
     });
     VoicePacket::decode(&bytes).unwrap();
 }
@@ -166,8 +166,8 @@ fn a_full_transport_feedback_decodes() {
                 })
                 .collect(),
             sig: noise(14, 64),
-        }.unwrap()
-        .encode()
+        }
+        .encode().unwrap()
     });
     TransportFeedback::decode(&bytes).unwrap();
 }
@@ -273,7 +273,7 @@ fn the_prekey_head_slot_and_a_full_device_list_decode() {
     };
     let bytes = identity::encode_prekey_head(&head).unwrap();
     assert!(bytes.len() <= prekeys::MAX_SUBKEY_VALUE_LEN);
-    assert_eq!(identity::decode_prekey_head(&bytes.unwrap()).unwrap(), head);
+    assert_eq!(identity::decode_prekey_head(&bytes).unwrap(), head);
     let slot = identity::OpkSlot {
         opk_id: u32::MAX,
         opk: array(27),
@@ -284,7 +284,7 @@ fn the_prekey_head_slot_and_a_full_device_list_decode() {
     };
     let bytes = identity::encode_opk_slot(&slot).unwrap();
     assert!(bytes.len() <= prekeys::MAX_SUBKEY_VALUE_LEN);
-    assert_eq!(identity::decode_opk_slot(&bytes.unwrap()).unwrap(), slot);
+    assert_eq!(identity::decode_opk_slot(&bytes).unwrap(), slot);
     let list = largest_fitting(prekeys::MAX_SUBKEY_VALUE_LEN, |n| {
         identity::encode_prekey_record_list(&identity::PrekeyRecordList {
             devices: (0..n as u64)

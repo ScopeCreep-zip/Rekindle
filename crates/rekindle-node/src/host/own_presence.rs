@@ -332,7 +332,7 @@ impl OwnPresence {
 
     /// Write `shown` (the game as the status shows it) to GAME_INFO, sealed.
     async fn write_game(&self, shown: Option<&Game>) -> Result<(), String> {
-        let bytes = shown.map_or_else(Vec::new, |game| {
+        let bytes = if let Some(game) = shown {
             rekindle_codec::capnp_codec::presence::encode_game_status(
                 &rekindle_codec::capnp_codec::presence::GameInfo {
                     game_id: game.id,
@@ -342,7 +342,10 @@ impl OwnPresence {
                     server_address: game.server_address.clone().map(String::from),
                 },
             )
-        });
+            .map_err(|error| format!("encode game info: {error}"))?
+        } else {
+            Vec::new()
+        };
         let (owner, key) = self
             .presence_key()
             .ok_or("no friend-presence key yet: the game is not written in the clear")?;

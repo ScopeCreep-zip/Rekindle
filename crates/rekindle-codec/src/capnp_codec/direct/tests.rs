@@ -400,6 +400,7 @@ fn absent_optionals_round_trip_and_bad_lengths_are_refused() {
     // A 15-byte client id is not a UUID.
     let bytes = encode_root::<crate::direct_capnp::dm_delete::Owned>(|mut b| {
         b.set_target_client_id(&[1; 15]);
+        Ok(())
     });
     assert!(DirectBody::decode(DmTypeId::DmDelete, &bytes.unwrap()).is_err());
     // An empty-bodied kind with bytes, and bytes of another kind.
@@ -409,7 +410,7 @@ fn absent_optionals_round_trip_and_bad_lengths_are_refused() {
 
 /// The `'D'` datagram length of `frame`.
 pub(super) fn datagram_len(frame: &DmFrame) -> usize {
-    1 + frame.encode().len()
+    1 + frame.encode().unwrap().len()
 }
 
 /// A PreKeyInit whose first payload is `body`, at full PQXDH size.
@@ -424,7 +425,7 @@ pub(super) fn pre_key_init(body: &DirectBody) -> DmFrame {
     DmFrame {
         type_id: DmTypeId::PreKeyInit,
         sender: [0x77; 32],
-        body: FrameBody::PreKeyInit(init(body.type_id(), content.encode().len() + AEAD_TAG_LEN)),
+        body: FrameBody::PreKeyInit(init(body.type_id(), content.encode().unwrap().len() + AEAD_TAG_LEN)),
     }
 }
 
@@ -440,7 +441,7 @@ fn sealed(body: &DirectBody) -> DmFrame {
         sender: [0x77; 32],
         body: FrameBody::Sealed(SealedBody {
             enc: [0x44; 32],
-            ciphertext: vec![0x5A; content.encode().len() + AEAD_TAG_LEN],
+            ciphertext: vec![0x5A; content.encode().unwrap().len() + AEAD_TAG_LEN],
             signature: [0x66; 64],
         }),
     }

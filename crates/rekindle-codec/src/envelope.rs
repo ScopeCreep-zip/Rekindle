@@ -137,11 +137,9 @@ pub fn deserialize_payload<T: for<'de> Deserialize<'de>>(
 ///
 /// Returns `None` if TTL is already 0 (don't forward).
 pub fn forward_envelope(signed: &SignedEnvelope) -> Option<SignedEnvelope> {
-    if signed.ttl == 0 {
-        return None;
-    }
+    let ttl = signed.ttl.checked_sub(1)?;
     let mut forwarded = signed.clone();
-    forwarded.ttl = signed.ttl.saturating_sub(1);
+    forwarded.ttl = ttl;
     Some(forwarded)
 }
 

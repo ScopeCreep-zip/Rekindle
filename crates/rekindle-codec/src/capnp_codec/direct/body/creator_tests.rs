@@ -14,6 +14,7 @@ fn a_creator_join_names_its_own_anchor() {
         encode_root::<creator_join::Owned>(|mut b| {
             b.set_anchor(key('A').as_str());
             b.set_invite(invite);
+            Ok(())
         })
     };
     let link = |anchor: &str| {
@@ -37,11 +38,13 @@ fn bad_creator_bodies_are_refused() {
         b.set_anchor(key('A').as_str());
         b.set_pseudonym(&[1; 31]);
         b.set_signature(&[2; 64]);
+        Ok(())
     });
     assert!(DirectBody::decode(DmTypeId::CreatorAccept, &accept.unwrap()).is_err());
     let invite = encode_root::<creator_invite::Owned>(|mut b| {
         b.set_anchor(key('A').as_str());
         b.set_community_name("a\u{1b}b");
+        Ok(())
     });
     assert!(DirectBody::decode(DmTypeId::CreatorInvite, &invite.unwrap()).is_err());
 }

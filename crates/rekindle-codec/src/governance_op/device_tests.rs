@@ -209,13 +209,13 @@ fn the_cert_carries_and_signs_the_creator_device() {
     };
     let decoded = decode_genesis(&encode_genesis(&signed).unwrap()).unwrap();
     assert_eq!(decoded.signed.cert, signed.cert);
-    let base = genesis_unsigned_bytes(&signed.cert, &[2; 32]);
+    let base = genesis_unsigned_bytes(&signed.cert, &[2; 32]).unwrap();
     assert_eq!(decoded.unsigned, base);
-    assert_ne!(genesis_unsigned_bytes(&cert(None), &[2; 32]), base);
+    assert_ne!(genesis_unsigned_bytes(&cert(None), &[2; 32]).unwrap(), base);
     let mut tampered = endorsement(6);
     tampered.endorsement_sig[0] ^= 1;
     assert_ne!(
-        genesis_unsigned_bytes(&cert(Some(tampered)), &[2; 32]),
+        genesis_unsigned_bytes(&cert(Some(tampered)), &[2; 32]).unwrap(),
         base
     );
 }

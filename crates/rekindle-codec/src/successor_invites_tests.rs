@@ -70,7 +70,7 @@ fn a_full_first_page_fits_one_subkey_and_round_trips() {
     };
     let bytes = encode_invites_page(&page).unwrap();
     assert!(bytes.len() <= MAX_SUBKEY_SIZE, "{} bytes", bytes.len());
-    assert_eq!(decode_invites_page(&bytes.unwrap()).unwrap(), page);
+    assert_eq!(decode_invites_page(&bytes).unwrap(), page);
 }
 
 #[test]

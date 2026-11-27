@@ -78,9 +78,10 @@ async fn init_len(from: &Party, to: &Party, first: &DirectBody) -> usize {
         chain_seq: 0,
         content_hint: rekindle_codec::capnp_codec::direct::ContentHint::Default,
         sent_at_ms: u64::MAX,
-        payload: first.encode(),
+        payload: first.encode().unwrap(),
     }
-    .encode();
+    .encode()
+    .unwrap();
     let init = rekindle_db::ratchet::initiate_and_record_outbound(
         &from.db,
         &from.local,

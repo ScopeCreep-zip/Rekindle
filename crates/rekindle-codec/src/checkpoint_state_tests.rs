@@ -106,7 +106,7 @@ fn a_joiners_invite_code_hash_round_trips_and_is_signed() {
     let joiner = request(&key).with_invite_code(&"ab".repeat(16)).unwrap();
     let encoded = joiner.encode(&key).unwrap();
     assert!(encoded.len() <= CHECKPOINT_STATE_REQUEST_MAX_BYTES);
-    assert_eq!(decode_checkpoint_state_request(&encoded).unwrap(), joiner.unwrap());
+    assert_eq!(decode_checkpoint_state_request(&encoded).unwrap(), joiner);
     let sig = sign(&key, &request(&key).signing_bytes().unwrap());
     let invite = joiner.invite.as_ref().unwrap();
     let mut builder = capnp::message::Builder::new_default();
@@ -134,8 +134,8 @@ fn only_the_invite_code_proves_a_joiners_request() {
     let code = "ab".repeat(16);
     let joiner = request(&key).with_invite_code(&code).unwrap();
     let decoded = decode_checkpoint_state_request(&joiner.encode(&key).unwrap()).unwrap();
-    assert!(decoded.invite_proven_by(&code));
-    assert!(!decoded.invite_proven_by(&"cd".repeat(16)));
+    assert!(decoded.invite_proven_by(&code).unwrap());
+    assert!(!decoded.invite_proven_by(&"cd".repeat(16)).unwrap());
     let hash_only = CheckpointStateRequest {
         invite: Some(PreJoinInvite {
             code_hash: rekindle_secrets::invite::hash_invite_code(&code),
@@ -145,15 +145,15 @@ fn only_the_invite_code_proves_a_joiners_request() {
     };
     let decoded = decode_checkpoint_state_request(&hash_only.encode(&key).unwrap()).unwrap();
     assert!(
-        !decoded.invite_proven_by(&code),
+        !decoded.invite_proven_by(&code).unwrap(),
         "the hash without the code"
     );
     let moved = CheckpointStateRequest {
         offset: 0,
-        ..joiner.clone().unwrap()
+        ..joiner.clone()
     };
-    assert!(!moved.invite_proven_by(&code), "the tag binds the offset");
-    assert!(!request(&key).invite_proven_by(&code), "a member's request");
+    assert!(!moved.invite_proven_by(&code).unwrap(), "the tag binds the offset");
+    assert!(!request(&key).invite_proven_by(&code).unwrap(), "a member's request");
 }
 
 #[test]

@@ -70,14 +70,13 @@ pub struct DmText {
 }
 
 impl DmText {
-    pub(super) fn write(&self, mut b: dm_text::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: dm_text::Builder<'_>) {
         b.set_client_id(&self.client_id);
         b.set_body(&self.body);
         if let Some(parent) = &self.reply_to {
             b.set_reply_to(parent);
         }
         b.set_expire_seconds(self.expire_seconds);
-        Ok(())
     }
 
     pub(super) fn read(r: dm_text::Reader<'_>) -> Result<Self, CodecError> {
@@ -105,11 +104,10 @@ pub struct DmEdit {
 }
 
 impl DmEdit {
-    pub(super) fn write(&self, mut b: dm_edit::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: dm_edit::Builder<'_>) {
         b.set_target_client_id(&self.target_client_id);
         b.set_body(&self.body);
         b.set_edited_at(self.edited_at);
-        Ok(())
     }
 
     pub(super) fn read(r: dm_edit::Reader<'_>) -> Result<Self, CodecError> {
@@ -128,9 +126,8 @@ pub struct DmDelete {
 }
 
 impl DmDelete {
-    pub(super) fn write(&self, mut b: dm_delete::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: dm_delete::Builder<'_>) {
         b.set_target_client_id(&self.target_client_id);
-        Ok(())
     }
 
     pub(super) fn read(r: dm_delete::Reader<'_>) -> Result<Self, CodecError> {
@@ -150,11 +147,10 @@ pub struct DmReaction {
 }
 
 impl DmReaction {
-    pub(super) fn write(&self, mut b: dm_reaction::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: dm_reaction::Builder<'_>) {
         b.set_target_client_id(&self.target_client_id);
         b.set_emoji(&self.emoji);
         b.set_add(self.add);
-        Ok(())
     }
 
     pub(super) fn read(r: dm_reaction::Reader<'_>) -> Result<Self, CodecError> {
@@ -179,9 +175,8 @@ pub struct ReadUpTo {
 }
 
 impl ReadUpTo {
-    pub(super) fn write(&self, mut b: read_up_to::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: read_up_to::Builder<'_>) {
         b.set_stream_seq(self.stream_seq);
-        Ok(())
     }
 
     pub(super) fn read(r: read_up_to::Reader<'_>) -> Self {
@@ -198,9 +193,8 @@ pub struct Typing {
 }
 
 impl Typing {
-    pub(super) fn write(&self, mut b: typing::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: typing::Builder<'_>) {
         b.set_typing(self.typing);
-        Ok(())
     }
 
     pub(super) fn read(r: typing::Reader<'_>) -> Self {
@@ -219,12 +213,11 @@ pub struct DisappearingTimer {
 }
 
 impl DisappearingTimer {
-    pub(super) fn write(&self, mut b: disappearing_timer::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: disappearing_timer::Builder<'_>) {
         b.set_seconds(self.seconds);
         if let Some(group_id) = &self.group_id {
             b.set_group_id(group_id);
         }
-        Ok(())
     }
 
     /// A group id that is neither empty nor 16 bytes is malformed.

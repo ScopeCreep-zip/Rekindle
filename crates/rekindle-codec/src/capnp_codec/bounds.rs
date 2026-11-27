@@ -77,13 +77,12 @@ impl Bound {
     /// The bound of a type whose schema caps it at `max_words` words: the
     /// segment table's word and each word at [`PACKED_WORD_MAX_BYTES`].
     #[must_use]
-    pub const fn schema(max_words: usize) -> Self {
+    pub const fn schema(max_words: u16) -> Self {
+        let max_words = max_words as usize;
         Self {
-            // Schema bounds are a few hundred words; a bound past
-            // `usize::MAX` bytes would refuse nothing anyway.
-            max_bytes: max_words
-                .saturating_add(1)
-                .saturating_mul(PACKED_WORD_MAX_BYTES),
+            // u16 bounds are at most 65,535 words. The segment table and
+            // packed words fit in usize on every supported platform.
+            max_bytes: (max_words + 1) * PACKED_WORD_MAX_BYTES,
             max_words,
         }
     }

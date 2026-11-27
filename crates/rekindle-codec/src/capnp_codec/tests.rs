@@ -214,15 +214,15 @@ fn the_prekey_record_round_trips() {
 #[test]
 fn every_prekey_record_value_fits_its_subkey() {
     use rekindle_types::dht_layout::prekeys::MAX_SUBKEY_VALUE_LEN;
-    let head = identity::encode_prekey_head(&full_head()).len();
-    let slot = identity::encode_opk_slot(&full_slot()).len();
+    let head = identity::encode_prekey_head(&full_head()).unwrap().len();
+    let slot = identity::encode_opk_slot(&full_slot()).unwrap().len();
     let list = identity::encode_prekey_record_list(&identity::PrekeyRecordList {
         devices: vec![identity::PrekeyDevice {
             device_id: [0xFF; 16],
             record_key: format!("VLD0:{}", "A".repeat(43)),
         }],
     })
-    .len();
+    .unwrap().len();
     for (what, len) in [("head", head), ("slot", slot), ("device list", list)] {
         assert!(len <= MAX_SUBKEY_VALUE_LEN, "{what} {len} B");
     }

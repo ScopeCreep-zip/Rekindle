@@ -14,9 +14,9 @@ fn signed() -> SignedEnvelope {
 
 #[test]
 fn a_gossip_datagram_classifies_as_gossip_and_decodes() {
-    let datagram = gossip_datagram(&signed());
+    let datagram = gossip_datagram(&signed()).unwrap();
     assert_eq!(datagram[0], GOSSIP_TAG);
-    let Ingress::Gossip(bytes) = classify(&datagram.unwrap()) else {
+    let Ingress::Gossip(bytes) = classify(&datagram) else {
         panic!("a gossip datagram must classify as gossip");
     };
     let back = decode_signed_envelope(bytes).unwrap();

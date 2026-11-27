@@ -30,10 +30,9 @@ pub struct CreatorInvite {
 }
 
 impl CreatorInvite {
-    pub(super) fn write(&self, mut b: creator_invite::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: creator_invite::Builder<'_>) {
         b.set_anchor(&self.anchor);
         b.set_community_name(&self.community_name);
-        Ok(())
     }
 
     pub(super) fn read(r: creator_invite::Reader<'_>) -> Result<Self, CodecError> {
@@ -53,11 +52,10 @@ pub struct CreatorAccept {
 }
 
 impl CreatorAccept {
-    pub(super) fn write(&self, mut b: creator_accept::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: creator_accept::Builder<'_>) {
         b.set_anchor(&self.anchor);
         b.set_pseudonym(&self.pseudonym);
         b.set_signature(&self.signature);
-        Ok(())
     }
 
     pub(super) fn read(r: creator_accept::Reader<'_>) -> Result<Self, CodecError> {
@@ -76,9 +74,8 @@ pub struct CreatorDecline {
 }
 
 impl CreatorDecline {
-    pub(super) fn write(&self, mut b: creator_decline::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: creator_decline::Builder<'_>) {
         b.set_anchor(&self.anchor);
-        Ok(())
     }
 
     pub(super) fn read(r: creator_decline::Reader<'_>) -> Result<Self, CodecError> {
@@ -96,9 +93,8 @@ pub struct CreatorWithdrawn {
 }
 
 impl CreatorWithdrawn {
-    pub(super) fn write(&self, mut b: creator_withdrawn::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: creator_withdrawn::Builder<'_>) {
         b.set_anchor(&self.anchor);
-        Ok(())
     }
 
     pub(super) fn read(r: creator_withdrawn::Reader<'_>) -> Result<Self, CodecError> {
@@ -116,10 +112,9 @@ pub struct CreatorJoin {
 }
 
 impl CreatorJoin {
-    pub(super) fn write(&self, mut b: creator_join::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: creator_join::Builder<'_>) {
         b.set_anchor(&self.anchor);
         b.set_invite(&self.invite);
-        Ok(())
     }
 
     /// The invite must be a full invite link to `anchor` itself.

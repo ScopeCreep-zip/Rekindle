@@ -28,6 +28,7 @@ fn bad_game_invites_are_refused() {
         crate::capnp_codec::direct::encode_root::<game_invite::Owned>(|mut b| {
             b.set_game_id(game_id);
             b.set_server(server);
+            Ok(())
         })
     };
     for server in [

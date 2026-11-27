@@ -45,7 +45,7 @@ fn a_short_digest_is_refused() {
     };
     let mut msg = capnp::message::Builder::new_default();
     let mut b = msg.init_root::<super::checkpoint_entry::Builder<'_>>();
-    super::write_checkpoint(b.reborrow(), &c);
+    super::write_checkpoint(b.reborrow(), &c).unwrap();
     assert!(super::read_checkpoint(b.reborrow_as_reader()).is_ok());
     b.set_state_root(&[3; 31]);
     assert!(super::read_checkpoint(b.into_reader()).is_err());

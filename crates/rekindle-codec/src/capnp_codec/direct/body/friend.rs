@@ -62,7 +62,7 @@ pub struct FriendRequest {
 }
 
 impl FriendRequest {
-    pub(super) fn write(&self, mut b: friend_request::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: friend_request::Builder<'_>) {
         b.set_display_name(&self.display_name);
         b.set_message(&self.message);
         b.set_profile_dht_key(&self.profile_dht_key);
@@ -75,7 +75,6 @@ impl FriendRequest {
         b.set_reply_inbox_key(&self.reply.record_key);
         b.set_reply_writer(&self.reply.writer);
         b.set_chain_record_key(&self.chain_record_key);
-        Ok(())
     }
 
     pub(super) fn read(r: friend_request::Reader<'_>) -> Result<Self, CodecError> {
@@ -155,14 +154,13 @@ pub struct FriendAccept {
 }
 
 impl FriendAccept {
-    pub(super) fn write(&self, mut b: friend_accept::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: friend_accept::Builder<'_>) {
         b.set_profile_dht_key(&self.profile_dht_key);
         b.set_route_blob(&self.route_blob);
         b.set_mailbox_dht_key(&self.mailbox_dht_key);
         b.set_friends_key_epoch(self.friends_key.epoch);
         b.set_friends_key(&self.friends_key.key);
         b.set_chain_record_key(&self.chain_record_key);
-        Ok(())
     }
 
     pub(super) fn read(r: friend_accept::Reader<'_>) -> Result<Self, CodecError> {
@@ -189,9 +187,8 @@ pub struct SessionResetRequest {
 }
 
 impl SessionResetRequest {
-    pub(super) fn write(&self, mut b: session_reset_request::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: session_reset_request::Builder<'_>) {
         b.set_reason(&self.reason);
-        Ok(())
     }
 
     pub(super) fn read(r: session_reset_request::Reader<'_>) -> Result<Self, CodecError> {
@@ -212,7 +209,7 @@ pub struct PreKeyRejected {
 }
 
 impl PreKeyRejected {
-    pub(super) fn write(&self, mut b: pre_key_rejected::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: pre_key_rejected::Builder<'_>) {
         b.set_signed_prekey_id(self.signed_prekey_id);
         match self.one_time_prekey_id {
             Some(id) => b.reborrow().init_one_time_prekey().set_id(id),
@@ -223,7 +220,6 @@ impl PreKeyRejected {
             PqPrekey::LastResort(id) => b.reborrow().init_pq_prekey().set_last_resort(id),
         }
         b.set_base_key_hash(&self.base_key_hash);
-        Ok(())
     }
 
     pub(super) fn read(r: pre_key_rejected::Reader<'_>) -> Result<Self, CodecError> {
@@ -260,9 +256,8 @@ pub struct SessionResetDecline {
 }
 
 impl SessionResetDecline {
-    pub(super) fn write(&self, mut b: session_reset_decline::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: session_reset_decline::Builder<'_>) {
         b.set_reason(&self.reason);
-        Ok(())
     }
 
     pub(super) fn read(r: session_reset_decline::Reader<'_>) -> Result<Self, CodecError> {
@@ -279,9 +274,8 @@ pub struct ProfileKeyRotated {
 }
 
 impl ProfileKeyRotated {
-    pub(super) fn write(&self, mut b: profile_key_rotated::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: profile_key_rotated::Builder<'_>) {
         b.set_new_profile_dht_key(&self.new_profile_dht_key);
-        Ok(())
     }
 
     pub(super) fn read(r: profile_key_rotated::Reader<'_>) -> Result<Self, CodecError> {
@@ -303,11 +297,10 @@ pub struct IdentityRotated {
 }
 
 impl IdentityRotated {
-    pub(super) fn write(&self, mut b: identity_rotated::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: identity_rotated::Builder<'_>) {
         b.set_new_identity(&self.new_identity);
         b.set_sig_old(&self.sig_old);
         b.set_sig_new(&self.sig_new);
-        Ok(())
     }
 
     pub(super) fn read(r: identity_rotated::Reader<'_>) -> Result<Self, CodecError> {
@@ -337,10 +330,9 @@ impl std::fmt::Debug for FriendsKey {
 }
 
 impl FriendsKey {
-    pub(super) fn write(&self, mut b: friends_key::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: friends_key::Builder<'_>) {
         b.set_epoch(self.epoch);
         b.set_key(&self.key);
-        Ok(())
     }
 
     pub(super) fn read(r: friends_key::Reader<'_>) -> Result<Self, CodecError> {
@@ -364,12 +356,11 @@ pub struct StreamRecord {
 }
 
 impl StreamRecord {
-    pub(super) fn write(&self, mut b: stream_record::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: stream_record::Builder<'_>) {
         b.set_record_key(&self.record_key);
         if let Some(group_id) = &self.group_id {
             b.set_group_id(group_id);
         }
-        Ok(())
     }
 
     /// A group id that is neither empty nor 16 bytes is malformed.
@@ -400,11 +391,10 @@ pub struct RetryRequest {
 }
 
 impl RetryRequest {
-    pub(super) fn write(&self, mut b: retry_request::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: retry_request::Builder<'_>) {
         b.set_msg_id(&self.msg_id);
         b.set_observed_ratchet_key(&self.observed_ratchet_key);
         b.set_ts(self.ts);
-        Ok(())
     }
 
     pub(super) fn read(r: retry_request::Reader<'_>) -> Result<Self, CodecError> {

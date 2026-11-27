@@ -121,11 +121,13 @@ fn group_bodies_hold_their_shapes() {
     assert!(DirectBody::decode(DmTypeId::GroupContent, &empty.encode().unwrap()).is_err());
     let bad_id = encode_root::<crate::direct_capnp::group_dm_decline::Owned>(|mut b| {
         b.set_group_id([1; 15].as_slice());
+        Ok(())
     });
     assert!(DirectBody::decode(DmTypeId::GroupDmDecline, &bad_id.unwrap()).is_err());
     let bad_stream = encode_root::<crate::direct_capnp::stream_record::Owned>(|mut b| {
         b.set_record_key(dht_key());
         b.set_group_id([1; 3].as_slice());
+        Ok(())
     });
     assert!(DirectBody::decode(DmTypeId::StreamRecord, &bad_stream.unwrap()).is_err());
 }

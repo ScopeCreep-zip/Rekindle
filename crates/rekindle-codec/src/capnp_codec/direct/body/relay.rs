@@ -24,10 +24,9 @@ pub struct RelayEnvelope {
 }
 
 impl RelayEnvelope {
-    pub(super) fn write(&self, mut b: relay_envelope::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: relay_envelope::Builder<'_>) {
         b.set_target_pubkey(&self.target_pubkey);
         b.set_inner_payload(&self.inner_payload);
-        Ok(())
     }
 
     pub(super) fn read(r: relay_envelope::Reader<'_>) -> Result<Self, CodecError> {
@@ -46,10 +45,9 @@ pub struct RelayOffer {
 }
 
 impl RelayOffer {
-    pub(super) fn write(&self, mut b: relay_offer::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: relay_offer::Builder<'_>) {
         b.set_relay_route_blob(&self.relay_route_blob);
         b.set_relay_pseudonym(&self.relay_pseudonym);
-        Ok(())
     }
 
     pub(super) fn read(r: relay_offer::Reader<'_>) -> Result<Self, CodecError> {
@@ -67,9 +65,8 @@ pub struct RelayWithdraw {
 }
 
 impl RelayWithdraw {
-    pub(super) fn write(&self, mut b: relay_withdraw::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: relay_withdraw::Builder<'_>) {
         b.set_relay_pseudonym(&self.relay_pseudonym);
-        Ok(())
     }
 
     pub(super) fn read(r: relay_withdraw::Reader<'_>) -> Result<Self, CodecError> {
@@ -87,10 +84,9 @@ pub struct RelayOfferAck {
 }
 
 impl RelayOfferAck {
-    pub(super) fn write(&self, mut b: relay_offer_ack::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: relay_offer_ack::Builder<'_>) {
         b.set_ok(self.ok);
         b.set_reason(&self.reason);
-        Ok(())
     }
 
     pub(super) fn read(r: relay_offer_ack::Reader<'_>) -> Result<Self, CodecError> {
@@ -108,9 +104,8 @@ pub struct StatusRequest {
 }
 
 impl StatusRequest {
-    pub(super) fn write(&self, mut b: status_request::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: status_request::Builder<'_>) {
         b.set_target_pubkey(&self.target_pubkey);
-        Ok(())
     }
 
     pub(super) fn read(r: status_request::Reader<'_>) -> Result<Self, CodecError> {
@@ -133,13 +128,12 @@ pub struct StatusResponse {
 }
 
 impl StatusResponse {
-    pub(super) fn write(&self, mut b: status_response::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: status_response::Builder<'_>) {
         b.set_target_pubkey(&self.target_pubkey);
         b.set_status(&self.status);
         b.set_status_message(self.status_message.as_deref().unwrap_or_default());
         b.set_last_seen(self.last_seen);
         b.set_route_blob(&self.route_blob);
-        Ok(())
     }
 
     pub(super) fn read(r: status_response::Reader<'_>) -> Result<Self, CodecError> {
@@ -188,9 +182,8 @@ pub struct UnregisterPushRelay {
 }
 
 impl UnregisterPushRelay {
-    pub(super) fn write(&self, mut b: unregister_push_relay::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: unregister_push_relay::Builder<'_>) {
         b.set_device_push_token(&self.device_push_token);
-        Ok(())
     }
 
     pub(super) fn read(r: unregister_push_relay::Reader<'_>) -> Result<Self, CodecError> {
@@ -208,9 +201,8 @@ pub struct WakeNotify {
 }
 
 impl WakeNotify {
-    pub(super) fn write(&self, mut b: wake_notify::Builder<'_>) -> Result<(), CodecError> {
+    pub(super) fn write(&self, mut b: wake_notify::Builder<'_>) {
         b.set_ts(self.ts);
-        Ok(())
     }
 
     pub(super) fn read(r: wake_notify::Reader<'_>) -> Self {

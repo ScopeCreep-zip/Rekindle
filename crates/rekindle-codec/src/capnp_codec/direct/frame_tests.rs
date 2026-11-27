@@ -95,6 +95,7 @@ fn an_unallocated_type_id_or_a_short_key_is_refused() {
         root.set_type_id(0x0109);
         root.set_sender(&[1; 32]);
         write_ratchet(root.init_body().init_ratchet(), &ratchet(8));
+        Ok(())
     });
     assert!(matches!(
         DmFrame::decode(&bytes.unwrap()),
@@ -104,6 +105,7 @@ fn an_unallocated_type_id_or_a_short_key_is_refused() {
         root.set_type_id(DmTypeId::DmText.as_u16());
         root.set_sender(&[1; 31]);
         write_ratchet(root.init_body().init_ratchet(), &ratchet(8));
+        Ok(())
     });
     assert!(DmFrame::decode(&bytes.unwrap()).is_err());
 }

@@ -122,6 +122,9 @@ pub enum RatchetError {
     /// an identity that is not the address.
     #[error(transparent)]
     Crypto(#[from] CryptoError),
+    /// A prekey record could not be encoded for publication.
+    #[error(transparent)]
+    Codec(#[from] rekindle_codec::CodecError),
     /// A PreKeyInit names a prekey we do not hold: never ours, already
     /// consumed, or past the archive. The init gets a `PreKeyRejected`
     /// when the friend gate admits its sender (plan E2.4 B5).
