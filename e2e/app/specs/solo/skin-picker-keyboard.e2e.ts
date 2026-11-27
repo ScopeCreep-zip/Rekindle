@@ -60,6 +60,18 @@ describe("Settings → Appearance scales to every built-in by keyboard (skin cat
     const foreign = before.actionStops.filter((s) => !s.startsWith(`${before.inUse}:`));
     expect({ missing, listStops: before.listStops, foreign }).toEqual({ missing: [], listStops: 1, foreign: [] });
 
+    // The login-skin badge starts where the row's other under-name lines do.
+    const insets = (await browser.execute(() => {
+      const row = document.querySelector(".skin-badge")?.closest(".skin-row");
+      const x = (sel: string): number | null => {
+        const e = row?.querySelector(sel);
+        return e ? Math.round(e.getBoundingClientRect().left + Number.parseFloat(getComputedStyle(e).paddingLeft)) : null;
+      };
+      return { badge: x(".skin-badge"), sizes: x(".skin-access") };
+    })) as { badge: number | null; sizes: number | null };
+    console.log(`[picker] under-name text starts: badge ${insets.badge}, sizes ${insets.sizes}`);
+    expect(insets.badge !== null && insets.badge === insets.sizes).toBe(true);
+
     // The arrows choose the next skin; the reachable actions follow it.
     await browser.execute(() => document.querySelector<HTMLInputElement>(".skin-row-shown input[type=radio]")?.focus());
     await browser.keys(Key.ArrowDown);
