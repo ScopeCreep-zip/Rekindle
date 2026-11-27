@@ -133,7 +133,8 @@ impl HostGovernance {
             .next_beat_seq(community_id)
             .await
             .map_err(|e| format!("beat seq: {e}"))?;
-        // A present beat says our voice channel (the shell's, until E4.1)
+        // A present beat says our voice channel (the shell's until E4.1, the
+        // Host's own on `rekindled`)
         // and carries our extras sealed from our own session and consent
         // (the Host's, plan E3.4 S8-pre); an offline or departed one says
         // nothing more than its state.
@@ -146,8 +147,8 @@ impl HostGovernance {
             let session = presence::own_session(&self.ctx, community_id);
             let policy = presence::presence_policy(&self.ctx, community_id);
             let extras = seal_extras(session, &policy, key.as_ref(), at, &*self.ctx.rng);
-            let voice_channel = presence::session_presence(&self.ctx)
-                .and_then(|session| session.active_voice_channel(community_id));
+            let voice_channel =
+                presence::session_presence(&self.ctx).active_voice_channel(community_id);
             (voice_channel, extras)
         } else {
             (None, None)

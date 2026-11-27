@@ -6,12 +6,18 @@
 //! daemon mode: a shell-mode node answers no bootstrap request in the
 //! netsim (`shell_node.rs`: that answer is `src-tauri`'s until F1), so the
 //! two shell members join through it, as `shell_member_route` does.
+//!
+//! A daemon member's voice session is the Host's own (`host::own_voice`):
+//! its `VoiceJoin` and `VoiceLeave` write its beat at once, so a shell
+//! member's roster lists it and drops it well inside one scheduled beat.
 
 use std::sync::Arc;
 use std::time::Duration;
 
+use rekindle_ipc::protocol::IpcRequest;
 use rekindle_node::host::ShellHooks;
 
+use crate::beat_engine::AT_ONCE;
 use crate::harness::{eventually, start_with, Community};
 use crate::shell_node::{BareShell, SimMode};
 
@@ -76,5 +82,62 @@ async fn a_voice_join_and_leave_reach_a_peer_roster_from_beats_alone() {
         })
         .await,
         "the member's leave beat takes it out of the peer's voice roster"
+    );
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_daemon_members_voice_join_and_leave_reach_a_shell_roster_at_once() {
+    let shell = Arc::new(BareShell::default());
+    let nodes = start_with(3, 5537, &|i| {
+        if i < 2 {
+            return (SimMode::Daemon, None);
+        }
+        (
+            SimMode::Shell,
+            Some(Arc::clone(&shell) as Arc<dyn ShellHooks>),
+        )
+    })
+    .await;
+    let mut community = Community::create_on(nodes).await;
+    community.join(1).await;
+    community.join(2).await;
+    let anchor = community.anchor.clone();
+    let member = community.pseudonym(1).await;
+
+    let joined = community.nodes[1]
+        .ok(IpcRequest::VoiceJoin {
+            community: anchor.clone(),
+            channel: VOICE.to_owned(),
+            muted: false,
+            deafened: false,
+        })
+        .await;
+    assert_eq!(joined["channel"], VOICE, "the daemon joined the channel");
+    assert!(
+        eventually(&community.sim, AT_ONCE, || async {
+            last_claim(&shell, &anchor, &member, Some(VOICE))
+        })
+        .await,
+        "the join's own beat puts the daemon member in the shell's voice roster at once"
+    );
+
+    let left = community.nodes[1].ok(IpcRequest::VoiceLeave).await;
+    assert_eq!(
+        left["channel"], VOICE,
+        "the daemon left the channel it was in"
+    );
+    assert!(
+        eventually(&community.sim, AT_ONCE, || async {
+            last_claim(&shell, &anchor, &member, None)
+        })
+        .await,
+        "the leave's own beat takes the daemon member out of the shell's voice roster"
+    );
+    assert!(
+        community.nodes[1]
+            .call(IpcRequest::VoiceLeave)
+            .await
+            .is_err(),
+        "a second leave finds no voice session"
     );
 }
