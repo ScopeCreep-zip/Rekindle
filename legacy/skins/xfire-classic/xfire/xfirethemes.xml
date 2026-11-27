@@ -1,0 +1,845 @@
+<Themes>
+	<Theme name="default">
+		<Colors>
+			<Color name="AdAreaCG">RGBA(8,16,32,0)</Color>	<!-- careful with AdAreaCG: uses lots of black.gif -->
+			<Color name="AllServersText"		red="141"	green="190"	blue="255" />
+			<Color name="BevelCG"				red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="BottomBarCG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="BuddyViewBG"			red="8"		green="16"	blue="32"	alpha="0" />
+			<Color name="BuddyViewFofText"		red="0"		green="180"	blue="255"	alpha="0" />
+			<Color name="BuddyViewFriendText"	red="232"	green="232" blue="232"	alpha="0" />
+			<Color name="BuddyViewNonFocus"		red="7"		green="46"	blue="96"	alpha="0" />
+			<Color name="BuddyViewOfflineText"	red="164"	green="164"	blue="164"	alpha="0" />
+			<Color name="BuddyViewClanText"		red="70"	green="120"	blue="225"	alpha="0" />
+			<Color name="BuddyViewSelected"		red="30"	green="73"	blue="140"	alpha="0" />
+			<Color name="BuddyViewSelectedText" red="255"	green="255"	blue="255"	alpha="0" />
+			<Color name="ButtonCG"				red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="ChatMainCG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="ChatMainDeactivatedCG" red="-30"	green="-30"	blue="-30"	alpha="0" />
+			<Color name="ChatOtherCG"			red="0"		green="200"	blue="255"	alpha="0" />
+			<Color name="ChatOtherTextCG"		red="232"	green="232"	blue="232"	alpha="0" />
+			<Color name="ChatPersonalCG"		red="232"	green="232"	blue="232"	alpha="0" />
+			<Color name="ChatPersonalTextCG"	red="232"	green="232"	blue="232"	alpha="0" />
+			<Color name="ChatViewCG"			red="8"		green="16"	blue="32"	alpha="0" />
+			<Color name="FriendsFavoritesText"	red="70"	green="120"	blue="225"	alpha="0" />
+			<Color name="HeaderColor"			red="-34"	green="-8"	blue="40"	alpha="0" />
+			<Color name="HeaderText"			red="255"	green="255"	blue="255"	alpha="0" />
+			<Color name="Hilight"				red="-34"	green="-11"	blue="57"	alpha="0" />
+			<Color name="HilightDown"			red="-34"	green="-11"	blue="57"	alpha="0" />
+			<Color name="HilightHover"			red="-34"	green="-11"	blue="127"	alpha="0" />
+			<Color name="InfoBackDropCG"		red="8"		green="16"	blue="32"	alpha="0" />
+			<Color name="InfoOuterCG"			red="8"		green="16"	blue="32"	alpha="0" />
+			<Color name="InfoViewBG"			red="8"		green="16"	blue="32"	alpha="0" />
+			<Color name="InfoViewFofText"		red="0"		green="180"	blue="255"	alpha="0" />
+			<Color name="InfoViewFriendText"	red="232"	green="232"	blue="232"	alpha="0" />
+			<Color name="InfoViewHyperlink"		red="32"	green="155"	blue="255"	alpha="0" />
+			<Color name="InfoViewOfflineText"	red="164"	green="164"	blue="164"	alpha="0" />
+			<Color name="InfoViewText"			red="232"	green="232"	blue="232"	alpha="0" />
+			<Color name="InnerBevelBkCg"		red="8"		green="16"	blue="32"	alpha="0" />
+			<Color name="LogoCG"				red="-34"	green="-11"	blue="57"	alpha="0" />
+			<Color name="LogoCoverCG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="LogoCoverDown"			red="10"	green="10"	blue="10"	alpha="0" />
+			<Color name="LogoCoverHover"		red="34"	green="34"	blue="34"	alpha="0" />
+			<Color name="LogoDown"				red="-34"	green="-11"	blue="57"	alpha="0" />
+			<Color name="LogoHover"				red="-34"	green="-11"	blue="127"	alpha="0" />
+			<Color name="MainCG"				red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="MainDeactivatedCG"		red="-30"	green="-30"	blue="-30"	alpha="0" />
+			<Color name="MenuBarCG"				red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="MenuDownCG"			red="-30"	green="-30"	blue="-30"	alpha="0" />
+			<Color name="MenuHoverCG"			red="30"	green="30"	blue="30"	alpha="0" />
+			<Color name="MenuTextCG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="ScrollbarColor"		red="-106"	green="-80"	blue="-32" />
+			<Color name="ScrollbarColorBG"		red="8"		green="16"	blue="32"	alpha="0" />
+			<Color name="StatusBackgroundCG"	red="8"		green="16"	blue="32"	alpha="0" />
+			<Color name="StatusCG"				red="232"	green="232"	blue="232"	alpha="0" />
+			<Color name="StatusWrapCG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="TooltipCG"				red="232"	green="232"	blue="232"	alpha="0" />
+			<Color name="TooltipTextCG"			red="30"	green="73"	blue="140"	alpha="0" />
+			<Color name="TypingNotificationCG"	red="8"		green="16"	blue="32"	alpha="0" />
+			<Color name="UserNameBkCG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="UserNameCG"			red="255"	green="255"	blue="255"	alpha="0" />
+			<Color name="VentCG"				red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="VoiceTalkingShift"		red="0"		green="50"	blue="0"	alpha="0" />
+      <Color name="XIGMenuBarCG" red="-146" green="-136" blue="-121" alpha="0"/>
+      <Color name="XIGAlertListCG" red="255" green="128" blue="64" alpha="0"/>
+      <Color name="XIGFocusedColor" red="-128"	green="0"	blue="127" alpha="0"/>
+      <Color name="XIGTitleBarDisabled" red="-32"	green="-32"	blue="-32" alpha="0"/>
+      <Color name="XIGTooltipBG" red="232"	green="232" blue="232" alpha="0"/>
+      <Color name="XIGTooltipText" red="8"		green="16"	blue="32" alpha="0"/>
+      <Color name="XIGFocusedRectColor" red="0" green="128" blue="255" alpha="0"/>
+      <Color name="SpeakerOn">RGBA(0,128,0,0)</Color>
+      <Color name="MicOn">RGBA(128,0,0,0)</Color>
+    </Colors>
+		<ColorShifts>
+		</ColorShifts>
+		<Sounds>
+		</Sounds>
+    <Bitmaps>
+      <Bitmap name="ADBARLEFT">adbar-left.gif</Bitmap>
+      <Bitmap name="ADBARRIGHT">adbar-right.gif</Bitmap>
+      <Bitmap name="ADBARTOPLEFT">adbar-topleft.gif</Bitmap>
+      <Bitmap name="ADBARTOPRIGHT">adbar-topright.gif</Bitmap>
+      <Bitmap name="ARROWDOWN">arrow_down.gif</Bitmap>
+      <Bitmap name="ARROWRIGHT">arrow_right.gif</Bitmap>
+      <Bitmap name="BIGBUTTONLEFTDOWN">buttons/bigbutton-left-down.gif</Bitmap>
+      <Bitmap name="BIGBUTTONLEFTNORM">buttons/bigbutton-left-norm.gif</Bitmap>
+      <Bitmap name="BIGBUTTONMIDDLEDOWN">buttons/bigbutton-middle-down.gif</Bitmap>
+      <Bitmap name="BIGBUTTONMIDDLENORM">buttons/bigbutton-middle-norm.gif</Bitmap>
+      <Bitmap name="BIGBUTTONRIGHTDOWN">buttons/bigbutton-right-down.gif</Bitmap>
+      <Bitmap name="BIGBUTTONRIGHTNORM">buttons/bigbutton-right-norm.gif</Bitmap>
+      <Bitmap name="BLACK">black.gif</Bitmap>
+      <Bitmap name="BOTTOMBARLEFT">bottombar-left.gif</Bitmap>
+      <Bitmap name="BOTTOMBARLEFT">bottombar-left.gif</Bitmap>
+      <Bitmap name="BOTTOMBARMIDDLE">bottombar-middle.gif</Bitmap>
+      <Bitmap name="BOTTOMBARMIDDLE">bottombar-middle.gif</Bitmap>
+      <Bitmap name="BOTTOMBARRIGHT">bottombar-right.gif</Bitmap>
+      <Bitmap name="BOTTOMBARRIGHT">bottombar-right.gif</Bitmap>
+      <Bitmap name="BOTTOMLEFT">bottom-left.gif</Bitmap>
+      <Bitmap name="BOTTOMMIDDLE">bottom-middle.gif</Bitmap>
+      <Bitmap name="BOTTOMRIGHT">bottom-right.gif</Bitmap>
+      <Bitmap name="BUTTONADDDISABLED">buttons/button-add-disabled.gif</Bitmap>
+      <Bitmap name="BUTTONADDDOWN">buttons/button-add-down.gif</Bitmap>
+      <Bitmap name="BUTTONADDHOVER">buttons/button-add-hover.gif</Bitmap>
+      <Bitmap name="BUTTONADDNORMAL">buttons/button-add-normal.gif</Bitmap>
+      <Bitmap name="BUTTONADDSERVERDISABLED">buttons/button-add-favorite-disabled.gif</Bitmap>
+      <Bitmap name="BUTTONADDSERVERDOWN">buttons/button-add-favorite-down.gif</Bitmap>
+      <Bitmap name="BUTTONADDSERVERHOVER">buttons/button-add-favorite-hover.gif</Bitmap>
+      <Bitmap name="BUTTONADDSERVERNORMAL">buttons/button-add-favorite-normal.gif</Bitmap>
+      <Bitmap name="BUTTONARROWDOWN">buttons/button-arrow-down.gif</Bitmap>
+      <Bitmap name="BUTTONARROWHOVER">buttons/button-arrow-hover.gif</Bitmap>
+      <Bitmap name="BUTTONARROWNORM">buttons/button-arrow-norm.gif</Bitmap>
+      <Bitmap name="BUTTONCHATDISABLED">buttons/button-chat-disabled.gif</Bitmap>
+      <Bitmap name="BUTTONCHATDOWN">buttons/button-chat-down.gif</Bitmap>
+      <Bitmap name="BUTTONCHATHOVER">buttons/button-chat-hover.gif</Bitmap>
+      <Bitmap name="BUTTONCHATNORMAL">buttons/button-chat-normal.gif</Bitmap>
+      <Bitmap name="BUTTONCLOSEDOWN">buttons/button-close-down.gif</Bitmap>
+      <Bitmap name="BUTTONCLOSEHOVER">buttons/button-close-hover.gif</Bitmap>
+      <Bitmap name="BUTTONCLOSENORM">buttons/button-close-norm.gif</Bitmap>
+      <Bitmap name="BUTTONDOWNHOVER">buttons/button-send-hover.gif</Bitmap>
+      <Bitmap name="BUTTONEXECUTEDLDISABLED">buttons/button-execute-disabled.gif</Bitmap>
+      <Bitmap name="BUTTONEXECUTEDLDOWN">buttons/button-execute-down.gif</Bitmap>
+      <Bitmap name="BUTTONEXECUTEDLHOVER">buttons/button-execute-hover.gif</Bitmap>
+      <Bitmap name="BUTTONEXECUTEDLNORMAL">buttons/button-execute-normal.gif</Bitmap>
+      <Bitmap name="BUTTONGAMEDISABLED">buttons/button-game-disabled.gif</Bitmap>
+      <Bitmap name="BUTTONGAMEDOWN">buttons/button-game-down.gif</Bitmap>
+      <Bitmap name="BUTTONGAMEHOVER">buttons/button-game-hover.gif</Bitmap>
+      <Bitmap name="BUTTONGAMENORMAL">buttons/button-game-norm.gif</Bitmap>
+      <Bitmap name="BUTTONINFODISABLED">buttons/button-info-disabled.gif</Bitmap>
+      <Bitmap name="BUTTONINFODOWN">buttons/button-info-down.gif</Bitmap>
+      <Bitmap name="BUTTONINFOHOVER">buttons/button-info-hover.gif</Bitmap>
+      <Bitmap name="BUTTONINFONORM">buttons/button-info-norm.gif</Bitmap>
+      <Bitmap name="BUTTONJOINDISABLED">buttons/button-join-disabled.gif</Bitmap>
+      <Bitmap name="BUTTONJOINDOWN">buttons/button-join-down.gif</Bitmap>
+      <Bitmap name="BUTTONJOINHOVER">buttons/button-join-hover.gif</Bitmap>
+      <Bitmap name="BUTTONJOINNORMAL">buttons/button-join-norm.gif</Bitmap>
+      <Bitmap name="BUTTONREFRESHANIMATION">buttons/button-refresh-list-animate.gif</Bitmap>
+      <Bitmap name="BUTTONREFRESHDISABLED">buttons/button-refreshlist-disabled.gif</Bitmap>
+      <Bitmap name="BUTTONREFRESHDOWN">buttons/button-refreshlist-down.gif</Bitmap>
+      <Bitmap name="BUTTONREFRESHHOVER">buttons/button-refreshlist-hover.gif</Bitmap>
+      <Bitmap name="BUTTONREFRESHHOVERANIMATION">buttons/button-refresh-list-animate-hover.gif</Bitmap>
+      <Bitmap name="BUTTONREFRESHNORMAL">buttons/button-refreshlist-normal.gif</Bitmap>
+      <Bitmap name="BUTTONSENDDISABLED">buttons/button-send-disabled.gif</Bitmap>
+      <Bitmap name="BUTTONSENDDOWN">buttons/button-send-down.gif</Bitmap>
+      <Bitmap name="BUTTONSENDNORM">buttons/button-send-norm.gif</Bitmap>
+      <Bitmap name="BUTTONSTARTDLDISABLED">buttons/button-download-disabled.gif</Bitmap>
+      <Bitmap name="BUTTONSTARTDLDOWN">buttons/button-download-down.gif</Bitmap>
+      <Bitmap name="BUTTONSTARTDLHOVER">buttons/button-download-hover.gif</Bitmap>
+      <Bitmap name="BUTTONSTARTDLNORMAL">buttons/button-download-normal.gif</Bitmap>
+      <Bitmap name="BUTTONSTOPDLDISABLED">buttons/button-stop-disabled.gif</Bitmap>
+      <Bitmap name="BUTTONSTOPDLDOWN">buttons/button-stop-down.gif</Bitmap>
+      <Bitmap name="BUTTONSTOPDLHOVER">buttons/button-stop-hover.gif</Bitmap>
+      <Bitmap name="BUTTONSTOPDLNORMAL">buttons/button-stop-normal.gif</Bitmap>
+      <Bitmap name="BUTTONVOICEDISABLED">buttons/button-voice-disabled.gif</Bitmap>
+      <Bitmap name="BUTTONVOICEDOWN">buttons/button-voice-down.gif</Bitmap>
+      <Bitmap name="BUTTONVOICEHOVER">buttons/button-voice-hover.gif</Bitmap>
+      <Bitmap name="BUTTONVOICENORMAL">buttons/button-voice-normal.gif</Bitmap>
+      <Bitmap name="BUTTONVOICETRANSPARENT">buttons/button-voice-trans.gif</Bitmap>
+      <Bitmap name="BUTTONXDOWN">buttons/button-x-down.gif</Bitmap>
+      <Bitmap name="BUTTONXHOVER">buttons/button-x-hover.gif</Bitmap>
+      <Bitmap name="BUTTONXNORM">buttons/button-x-norm.gif</Bitmap>
+      <Bitmap name="CHATBOTTOMLEFT">chatwindow/chat-bottom-left.gif</Bitmap>
+      <Bitmap name="CHATBOTTOMMIDDLE">chatwindow/chat-bottom-middle.gif</Bitmap>
+      <Bitmap name="CHATBOTTOMRIGHT">chatwindow/chat-bottom-right.gif</Bitmap>
+      <Bitmap name="CHATGRIPPERBOTTOMLEFT">chatwindow/chat-gripper-bottomleft.gif</Bitmap>
+      <Bitmap name="CHATGRIPPERBOTTOMRIGHT">chatwindow/chat-gripper-bottomright.gif</Bitmap>
+      <Bitmap name="CHATGRIPPERBOTTOMRIGHTHOVER">chatwindow/chat-gripper-bottomright-hover.gif</Bitmap>
+      <Bitmap name="CHATTITLELEFT">chatwindow/chattitle-left.gif</Bitmap>
+      <Bitmap name="CHATTITLEMIDDLE">chatwindow/chattitle-middle.gif</Bitmap>
+      <Bitmap name="CHATTITLERIGHT">chatwindow/chattitle-right.gif</Bitmap>
+      <Bitmap name="DIVIDERLEFT">divider-left.gif</Bitmap>
+      <Bitmap name="DIVIDERLEFT">divider-left.gif</Bitmap>
+      <Bitmap name="DIVIDERMIDDLE">divider-middle.gif</Bitmap>
+      <Bitmap name="DIVIDERMIDDLE">divider-middle.gif</Bitmap>
+      <Bitmap name="DIVIDERRIGHT">divider-right.gif</Bitmap>
+      <Bitmap name="DIVIDERRIGHT">divider-right.gif</Bitmap>
+      <Bitmap name="GRIPPERBOTTOMLEFT">gripper-bottomleft.gif</Bitmap>
+      <Bitmap name="GRIPPERBOTTOMRIGHT">gripper-bottomright.gif</Bitmap>
+      <Bitmap name="GRIPPERBOTTOMRIGHTHOVER">gripper-bottomright-hover.gif</Bitmap>
+      <Bitmap name="GRIPPERTOPLEFT">gripper-topleft.gif</Bitmap>
+      <Bitmap name="GRIPPERTOPRIGHT">gripper-topright.gif</Bitmap>
+      <Bitmap name="INFOVIEWBOTTOMLEFT">infoview/infoview-bottomleft.gif</Bitmap>
+      <Bitmap name="INFOVIEWBOTTOMMIDDLE">infoview/infoview-bottommiddle.gif</Bitmap>
+      <Bitmap name="INFOVIEWBOTTOMRIGHT">infoview/infoview-bottomright.gif</Bitmap>
+      <Bitmap name="INFOVIEWBOTTOMROWBG">infoview/infoview-buttonbase.gif</Bitmap>
+      <Bitmap name="INFOVIEWBUTTON">infoview/infoview-button.gif</Bitmap>
+      <Bitmap name="INFOVIEWBUTTONARROWLEFT">infoview/infoview-button-arrow-left.gif</Bitmap>
+      <Bitmap name="INFOVIEWBUTTONARROWRIGHT">infoview/infoview-button-arrow-right.gif</Bitmap>
+      <Bitmap name="INFOVIEWBUTTONHOVER">infoview/infoview-button-hover.gif</Bitmap>
+      <Bitmap name="INFOVIEWBUTTONHOVERLEFT">infoview/infoview-button-hoverleft.gif</Bitmap>
+      <Bitmap name="INFOVIEWGRIPPERBOTTOMRIGHT">infoview/infoview-gripper-bottomright.gif</Bitmap>
+      <Bitmap name="INFOVIEWGRIPPERTOPRIGHT">infoview/infoview-gripper-topright.gif</Bitmap>
+      <Bitmap name="INFOVIEWLEFT">infoview/infoview-left.gif</Bitmap>
+      <Bitmap name="INFOVIEWRIGHT">infoview/infoview-right.gif</Bitmap>
+      <Bitmap name="INFOVIEWTOP">infoview/infoview-top.gif</Bitmap>
+      <Bitmap name="INFOVIEWTOPLEFT">infoview/infoview-topleft.gif</Bitmap>
+      <Bitmap name="INFOVIEWTOPRIGHT">infoview/infoview-topright.gif</Bitmap>
+      <Bitmap name="INGAMECHATBL">ingamegraphics/ingame_corner_bottomleft.gif</Bitmap>
+      <Bitmap name="INGAMECHATBM">ingamegraphics/ingame_bottommiddle.gif</Bitmap>
+      <Bitmap name="INGAMECHATBR">ingamegraphics/ingame_corner_bottomright.gif</Bitmap>
+      <Bitmap name="INGAMECHATLM">ingamegraphics/ingame_leftmiddle.gif</Bitmap>
+      <Bitmap name="INGAMECHATMM">black.gif</Bitmap>
+      <Bitmap name="INGAMECHATRM">ingamegraphics/ingame_rightmiddle.gif</Bitmap>
+      <Bitmap name="INGAMECHATTL">ingamegraphics/ingame_corner_topleft.gif</Bitmap>
+      <Bitmap name="INGAMECHATTM">ingamegraphics/ingame_topmiddle.gif</Bitmap>
+      <Bitmap name="INGAMECHATTR">ingamegraphics/ingame_corner_topright.gif</Bitmap>
+      <Bitmap name="INGAMEGRIPBL">ingamegraphics/ingame_gripper_bottomleft.gif</Bitmap>
+      <Bitmap name="INGAMEGRIPBR">ingamegraphics/ingame_gripper_bottomright.gif</Bitmap>
+      <Bitmap name="INGAMEGRIPTL">ingamegraphics/ingame_gripper_topleft.gif</Bitmap>
+      <Bitmap name="INGAMEGRIPTR">ingamegraphics/ingame_gripper_topright.gif</Bitmap>
+      <Bitmap name="INNERBEVELBOTTOMLEFT">innerbevel-bottomleft.gif</Bitmap>
+      <Bitmap name="INNERBEVELBOTTOMMIDDLE">innerbevel-bottommiddle.gif</Bitmap>
+      <Bitmap name="INNERBEVELBOTTOMRIGHT">innerbevel-bottomright.gif</Bitmap>
+      <Bitmap name="INNERBEVELLEFT">innerbevel-left.gif</Bitmap>
+      <Bitmap name="INNERBEVELRIGHT">innerbevel-right.gif</Bitmap>
+      <Bitmap name="INNERBEVELTOPLEFT">innerbevel-topleft.gif</Bitmap>
+      <Bitmap name="INNERBEVELTOPMIDDLE">innerbevel-topmiddle.gif</Bitmap>
+      <Bitmap name="INNERBEVELTOPRIGHT">innerbevel-topright.gif</Bitmap>
+      <Bitmap name="LEFTBORDERBOTTOM">leftborder-bottom.gif</Bitmap>
+      <Bitmap name="LEFTBORDERMIDDLE">leftborder-middle.gif</Bitmap>
+      <Bitmap name="LEFTBORDERTOP">leftborder-top.gif</Bitmap>
+      <Bitmap name="LISTVIEWHEADERARROWDOWN">listview-header-arrowdown.gif</Bitmap>
+      <Bitmap name="LISTVIEWHEADERARROWUP">listview-header-arrowup.gif</Bitmap>
+      <Bitmap name="LISTVIEWHEADERLEFT">listview-header-left.gif</Bitmap>
+      <Bitmap name="LISTVIEWHEADERMIDDLE">listview-header-middle.gif</Bitmap>
+      <Bitmap name="LISTVIEWHEADERRIGHT">listview-header-right.gif</Bitmap>
+      <Bitmap name="LOGOOVERLAY">client-x.gif</Bitmap>
+      <Bitmap name="LOGOX">logo-x.gif</Bitmap>
+      <Bitmap name="LOGOXFIRE">logo-xfire.gif</Bitmap>
+      <Bitmap name="MAINLEFT">main-left.gif</Bitmap>
+      <Bitmap name="MAINMIDDLE">main-middle.gif</Bitmap>
+      <Bitmap name="MAINRIGHT">main-right.gif</Bitmap>
+      <Bitmap name="MENUBARLEFT">menubar-left.gif</Bitmap>
+      <Bitmap name="MENUBARMIDDLE">menubar-middle.gif</Bitmap>
+      <Bitmap name="MENUBARRIGHT">menubar-right.gif</Bitmap>
+      <Bitmap name="MICOFF">infoview/icon_mic_grey.gif</Bitmap>
+      <Bitmap name="MICON">infoview/icon_mic_green.gif</Bitmap>
+      <Bitmap name="MICRING">buttons/button_groupchat_throb.gif</Bitmap>
+      <Bitmap name="RIGHTBORDERBOTTOM">rightborder-bottom.gif</Bitmap>
+      <Bitmap name="RIGHTBORDERMIDDLE">rightborder-middle.gif</Bitmap>
+      <Bitmap name="RIGHTBORDERTOP">rightborder-top.gif</Bitmap>
+      <Bitmap name="SCROLLBACKGROUNDHORZLEFT">scrollbar/scroll-background-horz-left.gif</Bitmap>
+      <Bitmap name="SCROLLBACKGROUNDHORZMIDDLE">scrollbar/scroll-background-horz-middle.gif</Bitmap>
+      <Bitmap name="SCROLLBACKGROUNDHORZRIGHT">scrollbar/scroll-background-horz-right.gif</Bitmap>
+      <Bitmap name="SCROLLBACKGROUNDVERTBOTTOM">scrollbar/scroll-background-vert-bottom.gif</Bitmap>
+      <Bitmap name="SCROLLBACKGROUNDVERTMIDDLE">scrollbar/scroll-background-vert-middle.gif</Bitmap>
+      <Bitmap name="SCROLLBACKGROUNDVERTTOP">scrollbar/scroll-background-vert-top.gif</Bitmap>
+      <Bitmap name="SCROLLDOWNDISABLED">scrollbar/scroll-down-disabled.gif</Bitmap>
+      <Bitmap name="SCROLLDOWNDOWN">scrollbar/scroll-down-down.gif</Bitmap>
+      <Bitmap name="SCROLLDOWNHOVER">scrollbar/scroll-down-hover.gif</Bitmap>
+      <Bitmap name="SCROLLDOWNNORM">scrollbar/scroll-down-norm.gif</Bitmap>
+      <Bitmap name="SCROLLGRIPPERGRIPSHORZ">scrollbar/scroll-gripper-grips-horz.gif</Bitmap>
+      <Bitmap name="SCROLLGRIPPERGRIPSVERT">scrollbar/scroll-gripper-grips-vert.gif</Bitmap>
+      <Bitmap name="SCROLLGRIPPERHORZLEFT">scrollbar/scroll-gripper-horz-left.gif</Bitmap>
+      <Bitmap name="SCROLLGRIPPERHORZLEFTDOWN">scrollbar/scroll-gripper-horz-left-down.gif</Bitmap>
+      <Bitmap name="SCROLLGRIPPERHORZLEFTHOVER">scrollbar/scroll-gripper-horz-left-hover.gif</Bitmap>
+      <Bitmap name="SCROLLGRIPPERHORZMIDDLE">scrollbar/scroll-gripper-horz-middle.gif</Bitmap>
+      <Bitmap name="SCROLLGRIPPERHORZMIDDLEDOWN">scrollbar/scroll-gripper-horz-middle-down.gif</Bitmap>
+      <Bitmap name="SCROLLGRIPPERHORZMIDDLEHOVER">scrollbar/scroll-gripper-horz-middle-hover.gif</Bitmap>
+      <Bitmap name="SCROLLGRIPPERHORZRIGHT">scrollbar/scroll-gripper-horz-right.gif</Bitmap>
+      <Bitmap name="SCROLLGRIPPERHORZRIGHTDOWN">scrollbar/scroll-gripper-horz-right-down.gif</Bitmap>
+      <Bitmap name="SCROLLGRIPPERHORZRIGHTHOVER">scrollbar/scroll-gripper-horz-right-hover.gif</Bitmap>
+      <Bitmap name="SCROLLGRIPPERVERTBOTTOM">scrollbar/scroll-gripper-vert-bottom.gif</Bitmap>
+      <Bitmap name="SCROLLGRIPPERVERTBOTTOMDOWN">scrollbar/scroll-gripper-vert-bottom-down.gif</Bitmap>
+      <Bitmap name="SCROLLGRIPPERVERTBOTTOMHOVER">scrollbar/scroll-gripper-vert-bottom-hover.gif</Bitmap>
+      <Bitmap name="SCROLLGRIPPERVERTMIDDLE">scrollbar/scroll-gripper-vert-middle.gif</Bitmap>
+      <Bitmap name="SCROLLGRIPPERVERTMIDDLEDOWN">scrollbar/scroll-gripper-vert-middle-down.gif</Bitmap>
+      <Bitmap name="SCROLLGRIPPERVERTMIDDLEHOVER">scrollbar/scroll-gripper-vert-middle-hover.gif</Bitmap>
+      <Bitmap name="SCROLLGRIPPERVERTTOP">scrollbar/scroll-gripper-vert-top.gif</Bitmap>
+      <Bitmap name="SCROLLGRIPPERVERTTOPDOWN">scrollbar/scroll-gripper-vert-top-down.gif</Bitmap>
+      <Bitmap name="SCROLLGRIPPERVERTTOPHOVER">scrollbar/scroll-gripper-vert-top-hover.gif</Bitmap>
+      <Bitmap name="SCROLLLEFTDISABLED">scrollbar/scroll-left-disabled.gif</Bitmap>
+      <Bitmap name="SCROLLLEFTDOWN">scrollbar/scroll-left-down.gif</Bitmap>
+      <Bitmap name="SCROLLLEFTHOVER">scrollbar/scroll-left-hover.gif</Bitmap>
+      <Bitmap name="SCROLLLEFTNORM">scrollbar/scroll-left-norm.gif</Bitmap>
+      <Bitmap name="SCROLLRIGHTDISABLED">scrollbar/scroll-right-disabled.gif</Bitmap>
+      <Bitmap name="SCROLLRIGHTDOWN">scrollbar/scroll-right-down.gif</Bitmap>
+      <Bitmap name="SCROLLRIGHTHOVER">scrollbar/scroll-right-hover.gif</Bitmap>
+      <Bitmap name="SCROLLRIGHTNORM">scrollbar/scroll-right-norm.gif</Bitmap>
+      <Bitmap name="SCROLLUPDISABLED">scrollbar/scroll-up-disabled.gif</Bitmap>
+      <Bitmap name="SCROLLUPDOWN">scrollbar/scroll-up-down.gif</Bitmap>
+      <Bitmap name="SCROLLUPHOVER">scrollbar/scroll-up-hover.gif</Bitmap>
+      <Bitmap name="SCROLLUPNORM">scrollbar/scroll-up-norm.gif</Bitmap>
+      <Bitmap name="SPEAKEROFF">infoview/icon_speaker_grey.gif</Bitmap>
+      <Bitmap name="SPEAKERON">infoview/icon_speaker_green.gif</Bitmap>
+      <Bitmap name="ICONSPEAKERTALKING">infoview/icon_speaker_green.gif</Bitmap>
+      <Bitmap name="ICONSPEAKERTALKINGMUTED">infoview/icon_speaker_green_muted.gif</Bitmap>
+      <Bitmap name="ICONSPEAKERNOTTALKING">infoview/icon_speaker_not_talking.gif</Bitmap>
+      <Bitmap name="ICONSPEAKERNOTTALKINGMUTED">infoview/icon_speaker_not_talking_muted.gif</Bitmap>
+      <Bitmap name="STATUSBARLEFT">statusbar-left.gif</Bitmap>
+      <Bitmap name="STATUSBARMIDDLE">statusbar-middle.gif</Bitmap>
+      <Bitmap name="STATUSBARRIGHT">statusbar-right.gif</Bitmap>
+      <Bitmap name="TABCONTROLBASE">tab_control_base.gif</Bitmap>
+      <Bitmap name="TABCONTROLLEFT">tab_control_left.gif</Bitmap>
+      <Bitmap name="TABCONTROLLEFTOFF">tab_control_left_off.gif</Bitmap>
+      <Bitmap name="TABCONTROLLEFTOFF_ANIMATE">tab_left_flash.gif</Bitmap>
+      <Bitmap name="TABCONTROLLEFTFOCUSED">ingamegraphics_pm/ingame-tab-left-tab.gif</Bitmap>
+      <Bitmap name="TABCONTROLMIDDLE">tab_control_middle.gif</Bitmap>
+      <Bitmap name="TABCONTROLMIDDLEOFF">tab_control_middle_off.gif</Bitmap>
+      <Bitmap name="TABCONTROLMIDDLEOFF_ANIMATE">tab_middle_flash.gif</Bitmap>
+      <Bitmap name="TABCONTROLMIDDLEFOCUSED">ingamegraphics_pm/ingame-tab-mid-tab.gif</Bitmap>
+      <Bitmap name="TABCONTROLRIGHT">tab_control_right.gif</Bitmap>
+      <Bitmap name="TABCONTROLRIGHTOFF">tab_control_right_off.gif</Bitmap>
+      <Bitmap name="TABCONTROLRIGHTOFF_ANIMATE">tab_right_flash.gif</Bitmap>
+      <Bitmap name="TABCONTROLRIGHTFOCUSED">ingamegraphics_pm/ingame-tab-right-tab.gif</Bitmap>
+      <Bitmap name="VENTTOP">vent-top.gif</Bitmap>
+      <Bitmap name="VOICESERVER">infoview/icon_voice_server.gif</Bitmap>
+      <Bitmap name="VOICESERVERHOST">infoview/icon_voice_server_host.gif</Bitmap>
+      <Bitmap name="XLOGOINSIDE">ingamegraphics/ig_x.gif</Bitmap>
+      <Bitmap name="XIG_ARROW_LF_DOWN">ingamegraphics_pm/ingame-arrow-lf-down.gif</Bitmap>
+      <Bitmap name="XIG_ARROW_LF_HOVER">ingamegraphics_pm/ingame-arrow-lf-hover.gif</Bitmap>
+      <Bitmap name="XIG_ARROW_LF">ingamegraphics_pm/ingame-arrow-lf.gif</Bitmap>
+      <Bitmap name="XIG_ARROW_RT_DOWN">ingamegraphics_pm/ingame-arrow-rt-down.gif</Bitmap>
+      <Bitmap name="XIG_ARROW_RT_HOVER">ingamegraphics_pm/ingame-arrow-rt-hover.gif</Bitmap>
+      <Bitmap name="XIG_ARROW_RT">ingamegraphics_pm/ingame-arrow-rt.gif</Bitmap>
+      <Bitmap name="XIG_BOT_LF">ingamegraphics_pm/ingame-bot-lf.gif</Bitmap>
+      <Bitmap name="XIG_BOT_MID">ingamegraphics_pm/ingame-bot-mid.gif</Bitmap>
+      <Bitmap name="XIG_BOT_RT">ingamegraphics_pm/ingame-bot-rt.gif</Bitmap>
+      <Bitmap name="XIG_BUT_CHAT_DISABLED">ingamegraphics_pm/ingame-but-chat-disabled.gif</Bitmap>
+      <Bitmap name="XIG_BUT_CHAT_DOWN">ingamegraphics_pm/ingame-but-chat-down.gif</Bitmap>
+      <Bitmap name="XIG_BUT_CHAT_HOVER">ingamegraphics_pm/ingame-but-chat-hover.gif</Bitmap>
+      <Bitmap name="XIG_BUT_CHAT_NORMAL">ingamegraphics_pm/ingame-but-chat-normal.gif</Bitmap>
+      <Bitmap name="XIG_BUT_SEND_DISABLED">ingamegraphics_pm/ingame-but-send-disabled.gif</Bitmap>
+      <Bitmap name="XIG_BUT_SEND_DOWN">ingamegraphics_pm/ingame-but-send-down.gif</Bitmap>
+      <Bitmap name="XIG_BUT_SEND_HOVER">ingamegraphics_pm/ingame-but-send-hover.gif</Bitmap>
+      <Bitmap name="XIG_BUT_SEND_NORMAL">ingamegraphics_pm/ingame-but-send.gif</Bitmap>
+      <Bitmap name="XIG_BUT_TAB">ingamegraphics_pm/ingame-but-tab.gif</Bitmap>
+      <Bitmap name="XIG_SMALL_CLOSE">ingamegraphics_pm/ingame-close.gif</Bitmap>
+      <Bitmap name="XIG_SMALL_CLOSE_HOVER">ingamegraphics_pm/ingame-close-hover.gif</Bitmap>
+      <Bitmap name="XIG_SMALL_CLOSE_DOWN">ingamegraphics_pm/ingame-close-down.gif</Bitmap>
+      <Bitmap name="XIG_SMALL_CLOSE_OFF">ingamegraphics_pm/ingame-close-off.gif</Bitmap>
+      <Bitmap name="XIG_CLOSE">ingamegraphics_pm/button_close.gif</Bitmap>
+      <Bitmap name="XIG_CLOSE_HOVER">ingamegraphics_pm/button_close_hover.gif</Bitmap>
+      <Bitmap name="XIG_CLOSE_DOWN">ingamegraphics_pm/button_close_down.gif</Bitmap>
+      <Bitmap name="XIG_CLOSE_OFF">ingamegraphics_pm/button_close_off.gif</Bitmap>
+      <Bitmap name="XIG_BUTTON_TAB">ingamegraphics_pm/ingame-button-tab.gif</Bitmap>
+      <Bitmap name="XIG_SMALL_BUTTON_TAB">ingamegraphics_pm/ingame-smallbut-tab.gif</Bitmap>
+      <Bitmap name="XIG_DIVIDER_VERT_BOT">ingamegraphics_pm/ingame-divider-vert-bot.gif</Bitmap>
+      <Bitmap name="XIG_DIVIDER_VERT_TOP">ingamegraphics_pm/ingame-divider-vert-top.gif</Bitmap>
+      <Bitmap name="XIG_DIVIDER_VERT_MID">ingamegraphics_pm/ingame-divider-vert-mid.gif</Bitmap>
+      <Bitmap name="XIG_DIVIDER_HORZ_MID">ingamegraphics_pm/ingame-divider-horz-mid.gif</Bitmap>
+      <Bitmap name="XIG_DIVIDER_HORZ_LF">ingamegraphics_pm/ingame-divider-horz-lf.gif</Bitmap>
+      <Bitmap name="XIG_DIVIDER_HORZ_RT">ingamegraphics_pm/ingame-divider-horz-rt.gif</Bitmap>
+      <Bitmap name="XIG_GRIPPER_BOT_RT_HOVER">ingamegraphics_pm/ingame-gripper-botrt-hover.gif</Bitmap>
+      <Bitmap name="XIG_GRIPPER_TOP_LF">ingamegraphics_pm/ingame-gripper-toplf.gif</Bitmap>
+      <Bitmap name="XIG_GRIPPER_BOT_LF">ingamegraphics_pm/ingame-gripper-botlf.gif</Bitmap>
+      <Bitmap name="XIG_GRIPPER_BOT_RT">ingamegraphics_pm/ingame-gripper-botrt.gif</Bitmap>
+      <Bitmap name="XIG_GRIPPER_TOP_RT">ingamegraphics_pm/ingame-gripper-toprt.gif</Bitmap>
+      <Bitmap name="XIG_LEFTBORDER_BOT">ingamegraphics_pm/ingame-leftborder-bot.gif</Bitmap>
+      <Bitmap name="XIG_LEFTBORDER_TOP">ingamegraphics_pm/ingame-leftborder-top.gif</Bitmap>
+      <Bitmap name="XIG_LEFTBORDER_MID">ingamegraphics_pm/ingame-leftborder-mid.gif</Bitmap>
+      <Bitmap name="XIG_RIGHTBORDER_MID">ingamegraphics_pm/ingame-rightborder-mid.gif</Bitmap>
+      <Bitmap name="XIG_RIGHTBORDER_BOT">ingamegraphics_pm/ingame-rightborder-bot.gif</Bitmap>
+      <Bitmap name="XIG_RIGHTBORDER_TOP">ingamegraphics_pm/ingame-rightborder-top.gif</Bitmap>
+      <Bitmap name="XIG_MENUBAR_MID">ingamegraphics_pm/ingame-menubar-mid.gif</Bitmap>
+      <Bitmap name="XIG_SLIDER_KNOB">ingamegraphics_pm/ingame-slider-knob.gif</Bitmap>
+      <Bitmap name="XIGLOGO">ingamegraphics_pm/ingamelogo.gif</Bitmap>
+      <Bitmap name="XIG_INNERBEVEL_BOT_LF">ingamegraphics_pm/ingame-innerbevel-botlf.gif</Bitmap>
+      <Bitmap name="XIG_INNERBEVEL_BOT_MID">ingamegraphics_pm/ingame-innerbevel-botmid.gif</Bitmap>
+      <Bitmap name="XIG_INNERBEVEL_BOT_RT">ingamegraphics_pm/ingame-innerbevel-botrt.gif</Bitmap>
+      <Bitmap name="XIG_INNERBEVEL_TOP_LF">ingamegraphics_pm/ingame-innerbevel-topleft.gif</Bitmap>
+      <Bitmap name="XIG_INNERBEVEL_TOP_MID">ingamegraphics_pm/ingame-innerbevel-top-mid.gif</Bitmap>
+      <Bitmap name="XIG_INNERBEVEL_TOP_RT">ingamegraphics_pm/ingame-innerbevel-toprt.gif</Bitmap>
+      <Bitmap name="XIG_INNERBEVEL_LF">ingamegraphics_pm/ingame-innerbevel-left.gif</Bitmap>
+      <Bitmap name="XIG_INNERBEVEL_RT">ingamegraphics_pm/ingame-innerbevel-right.gif</Bitmap>
+      <Bitmap name="XIG_MENUBAR_LF">ingamegraphics_pm/ingame-menubar-lf.gif</Bitmap>
+      <Bitmap name="XIG_MENUBAR_RT">ingamegraphics_pm/ingame-menubar-rt.gif</Bitmap>
+      <Bitmap name="XIG_OUTLINE_BL">ingamegraphics_pm/ingame-outline-botlf.gif</Bitmap>
+      <Bitmap name="XIG_OUTLINE_TL">ingamegraphics_pm/ingame-outline-toplf.gif</Bitmap>
+      <Bitmap name="XIG_OUTLINE_BOT_RT">ingamegraphics_pm/ingame-outline-botrt.gif</Bitmap>
+      <Bitmap name="XIG_OUTLINE_TOP_RT">ingamegraphics_pm/ingame-outline-toprt.gif</Bitmap>
+      <Bitmap name="XIG_OUTLINE_TOP">ingamegraphics_pm/ingame-outline-top.gif</Bitmap>
+      <Bitmap name="XIG_OUTLINE_BOT">ingamegraphics_pm/ingame-outline-bot.gif</Bitmap>
+      <Bitmap name="XIG_OUTLINE_RT">ingamegraphics_pm/ingame-outline-rt.gif</Bitmap>
+      <Bitmap name="XIG_OUTLINE_LT">ingamegraphics_pm/ingame-outline-lf.gif</Bitmap>
+      <Bitmap name="XIG_SLIDER_BASE">ingamegraphics_pm/ingame-slider-base.gif</Bitmap>
+      <Bitmap name="XIG_SLIDER_BASE_LEFT">ingamegraphics_pm/ingame-slider-base-left.gif</Bitmap>
+      <Bitmap name="XIG_SLIDER_BASE_MID">ingamegraphics_pm/ingame-slider-base-mid.gif</Bitmap>
+      <Bitmap name="XIG_SLIDER_BASE_RIGHT">ingamegraphics_pm/ingame-slider-base-right.gif</Bitmap>
+      <Bitmap name="XIG_SLIDER_TAB">ingamegraphics_pm/ingame-slider-tab.gif</Bitmap>
+      <Bitmap name="XIG_TOP_LF">ingamegraphics_pm/ingame-top-lf.gif</Bitmap>
+      <Bitmap name="XIG_TOP_MID">ingamegraphics_pm/ingame-top-mid.gif</Bitmap>
+      <Bitmap name="XIG_TOP_RT">ingamegraphics_pm/ingame-top-rt.gif</Bitmap>
+      <Bitmap name="NAMEPLATE_LF">ingamegraphics/ig_chatwindow_left.gif</Bitmap>
+      <Bitmap name="NAMEPLATE_MID">ingamegraphics/ig_chatwindow_middle.gif</Bitmap>
+      <Bitmap name="NAMEPLATE_RT">ingamegraphics/ig_chatwindow_right.gif</Bitmap>
+      <Bitmap name="SINGLECHATICON">ingamegraphics_pm/ingame_icon_chat_16x16.gif</Bitmap>
+      <Bitmap name="GROUPCHATICON">ingamegraphics_pm/ingame_groupchat_16x16.gif</Bitmap>
+      <Bitmap name="ALLCHATICON">ingamegraphics_pm/ingame_icon_allchats_16x16.gif</Bitmap>
+      <Bitmap name="ALLCHATICON_HOV">ingamegraphics_pm/ingame_icon_allchHOV_16x16.gif</Bitmap>
+      <Bitmap name="TACKNORMAL">ingamegraphics_pm/button_thumbtack.gif</Bitmap>
+      <Bitmap name="TACKDOWN">ingamegraphics_pm/button_thumbtack_down.gif</Bitmap>
+      <Bitmap name="TACKHOVER">ingamegraphics_pm/button_thumbtack_hover.gif</Bitmap>
+      <Bitmap name="BLACK2">ingamegraphics_pm/black2.gif</Bitmap>
+      <Bitmap name="ALLCHATSLEFTDOWN">ingamegraphics_pm/ingame-allchats-down-lf.gif</Bitmap>
+      <Bitmap name="ALLCHATSMIDDLEDOWN">ingamegraphics_pm/ingame-allchats-down-mid.gif</Bitmap>
+      <Bitmap name="ALLCHATSRIGHTDOWN">ingamegraphics_pm/ingame-allchats-down-rt.gif</Bitmap>
+      <Bitmap name="ALLCHATSLEFTNORMAL">ingamegraphics_pm/ingame-allchats-normal-lf.gif</Bitmap>
+      <Bitmap name="ALLCHATSMIDDLENORMAL">ingamegraphics_pm/ingame-allchats-normal-mid.gif</Bitmap>
+      <Bitmap name="ALLCHATSRIGHTNORMAL">ingamegraphics_pm/ingame-allchats-normal-rt.gif</Bitmap>
+      <Bitmap name="ALLCHATSLEFTFOCUSED">ingamegraphics_pm/ingame-allchats-lf-tab.gif</Bitmap>
+      <Bitmap name="ALLCHATSMIDDLEFOCUSED">ingamegraphics_pm/ingame-allchats-mid-tab.gif</Bitmap>
+      <Bitmap name="ALLCHATSRIGHTFOCUSED">ingamegraphics_pm/ingame-allchats-rt-tab.gif</Bitmap>
+      <Bitmap name="ALERTFRAMETL">ingamegraphics_pm/popup_frame_lf_top.gif</Bitmap>
+      <Bitmap name="ALERTFRAMET">ingamegraphics_pm/popup_frame_mid_top.gif</Bitmap>
+      <Bitmap name="ALERTFRAMETR">ingamegraphics_pm/popup_frame_rt_top.gif</Bitmap>
+      <Bitmap name="ALERTFRAMEL">ingamegraphics_pm/popup_frame_lf_mid.gif</Bitmap>
+      <Bitmap name="ALERTFRAMER">ingamegraphics_pm/popup_frame_rt_mid.gif</Bitmap>
+      <Bitmap name="ALERTFRAMEBL">ingamegraphics_pm/popup_frame_lf_bot.gif</Bitmap>
+      <Bitmap name="ALERTFRAMEB">ingamegraphics_pm/popup_frame_mid_bot.gif</Bitmap>
+      <Bitmap name="ALERTFRAMEBR">ingamegraphics_pm/popup_frame_bot_rt.gif</Bitmap>
+      <Bitmap name="ALERTGRIPTL">ingamegraphics_pm/popup_top_lf.gif</Bitmap>
+      <Bitmap name="ALERTGRIPTR">ingamegraphics_pm/popup_top_rt.gif</Bitmap>
+      <Bitmap name="ALERTGRIPBL">ingamegraphics_pm/popup_bot_lf.gif</Bitmap>
+      <Bitmap name="ALERTGRIPBR">ingamegraphics_pm/popup_bot_rt.gif</Bitmap>
+      <Bitmap name="ALERTHEADERL">ingamegraphics_pm/popup_menubar_lf.gif</Bitmap>
+      <Bitmap name="ALERTHEADERM">ingamegraphics_pm/popup_menubar_mid.gif</Bitmap>
+      <Bitmap name="ALERTHEADERR">ingamegraphics_pm/popup_menubar_rt.gif</Bitmap>
+      <Bitmap name="ALERTOUTLINETL">ingamegraphics_pm/popup_outline_top_lf.gif</Bitmap>
+      <Bitmap name="ALERTOUTLINET">ingamegraphics_pm/popup_outline_top_mid.gif</Bitmap>
+      <Bitmap name="ALERTOUTLINETR">ingamegraphics_pm/popup_outline_top_rt.gif</Bitmap>
+      <Bitmap name="ALERTOUTLINEL">ingamegraphics_pm/popup_outline_mid_lf.gif</Bitmap>
+      <Bitmap name="ALERTOUTLINER">ingamegraphics_pm/popup_outline_mid_rt.gif</Bitmap>
+      <Bitmap name="ALERTOUTLINEBL">ingamegraphics_pm/popup_outline_bot_lf.gif</Bitmap>
+      <Bitmap name="ALERTOUTLINEB">ingamegraphics_pm/popup_outline_bot_mid.gif</Bitmap>
+      <Bitmap name="ALERTOUTLINEBR">ingamegraphics_pm/popup_outline_bot_rt.gif</Bitmap>
+      <Bitmap name="XIG_FOCUS_RECT_TL">ingamegraphics_pm/innerbevel-topleft-tab.gif</Bitmap>
+      <Bitmap name="XIG_FOCUS_RECT_T">ingamegraphics_pm/innerbevel-top-tab.gif</Bitmap>
+      <Bitmap name="XIG_FOCUS_RECT_TR">ingamegraphics_pm/innerbevel-toprt-tab.gif</Bitmap>
+      <Bitmap name="XIG_FOCUS_RECT_L">ingamegraphics_pm/innerbevel-left-tab.gif</Bitmap>
+      <Bitmap name="XIG_FOCUS_RECT_R">ingamegraphics_pm/innerbevel-right-tab.gif</Bitmap>
+      <Bitmap name="XIG_FOCUS_RECT_BL">ingamegraphics_pm/innerbevel-bot-left-tab.gif</Bitmap>
+      <Bitmap name="XIG_FOCUS_RECT_BL_ROUNDED">ingamegraphics_pm/innerbevel-botleft-tab.gif</Bitmap>
+      <Bitmap name="XIG_FOCUS_RECT_B">ingamegraphics_pm/innerbevel-bot-tab.gif</Bitmap>
+      <Bitmap name="XIG_FOCUS_RECT_BR">ingamegraphics_pm/innerbevel-botrt-tab.gif</Bitmap>
+      <Bitmap name="XIG_FOCUS_RECT_BR_ROUNDED">ingamegraphics_pm/innerbevel-botrt-curve-tab.gif</Bitmap>
+      <Bitmap name="BUTTONCHECKBOXUNCHECKED">buttons/ingame-checkbox-unchecked.gif</Bitmap>
+      <Bitmap name="BUTTONCHECKBOXCHECKED">buttons/ingame-checkbox-checked.gif</Bitmap>
+      <Bitmap name="SPEAKERSTATE">ingamegraphics_pm/ingame-speaker.gif</Bitmap>
+      <Bitmap name="MICSTATE">ingamegraphics_pm/ingame-mic.gif</Bitmap>
+      <Bitmap name="INGAMEICONMICSENSITIVITY">ingamegraphics_pm/voice_sensitivity_grey.gif</Bitmap>
+      <Bitmap name="BUTTON_BLANK_NORMAL">buttons/button-blank-norm.gif</Bitmap>
+      <Bitmap name="BUTTON_BLANK_DOWN">buttons/button-blank-down.gif</Bitmap>
+      <Bitmap name="VOICE_BUTTON_ICON_NORMAL">buttons/button-teamspeak-normal-overlay.gif</Bitmap>
+      <Bitmap name="VOICE_BUTTON_ICON_DOWN">buttons/button-teamspeak-down-overlay.gif</Bitmap>
+      <Bitmap name="VOICE_BUTTON_ICON_HOVER">buttons/button-teamspeak-hover-overlay.gif</Bitmap>
+      <Bitmap name="VOICE_BUTTON_ICON_DISABLED">buttons/button-teamspeak-disabled-overlay.gif</Bitmap>
+      <Bitmap name="ADDUSERS_BUTTON_ICON_NORMAL">buttons/icon-invite-users.gif</Bitmap>
+      <Bitmap name="ADDUSERS_BUTTON_ICON_DISABLED">buttons/icon-invite-users-disabled.gif</Bitmap>
+      <Bitmap name="CREATEROOM_BUTTON_ICON_NORMAL">buttons/icon-new-room.gif</Bitmap>
+      <Bitmap name="CREATEROOM_BUTTON_ICON_DISABLED">buttons/icon-new-room-disabled.gif</Bitmap>
+      <Bitmap name="ICON_OK">buttons/icon-ok.gif</Bitmap>
+      <Bitmap name="ICON_OK_DISABLED">buttons/icon-ok-disabled.gif</Bitmap>
+      <Bitmap name="ICON_CANCEL">buttons/icon-cancel.gif</Bitmap>
+    </Bitmaps>
+	</Theme>
+
+	<Theme name="Blues">
+		<Colors>
+			<Color name="AdAreaCG"				red="0"		green="0"	blue="0"	alpha="0" />	<!--careful with AdAreaCG: uses lots of black.gif -->
+			<Color name="AllServersText"		red="45"	green="156"	blue="255" />
+			<Color name="BevelCG"				red="-80"	green="-80"	blue="0"	alpha="0" />
+			<Color name="BottomBarCG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="BuddyViewBG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="BuddyViewFofText"		red="187"	green="210"	blue="255"	alpha="0" />
+			<Color name="BuddyViewFriendText"	red="87"	green="122"	blue="255"	alpha="0" />
+			<Color name="BuddyViewNonFocus"		red="0"		green="76"	blue="106"	alpha="0" />
+			<Color name="BuddyViewOfflineText"	red="164"	green="164"	blue="164"	alpha="0" />
+			<Color name="BuddyViewClanText"		red="0"		green="200"	blue="225"	alpha="0" />
+			<Color name="BuddyViewSelected"		red="0"		green="100"	blue="140"	alpha="0" />
+			<Color name="BuddyViewSelectedText"	red="255"	green="255"	blue="255"	alpha="0" />
+			<Color name="ButtonCG"				red="-34"	green="-11"	blue="87"	alpha="0" />
+			<Color name="ChatMainCG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="ChatMainDeactivatedCG"	red="-30"	green="-30"	blue="-30"	alpha="0" />
+			<Color name="ChatOtherCG"			red="87"	green="122"	blue="255"	alpha="0" />
+			<Color name="ChatOtherTextCG"		red="87"	green="122"	blue="255"	alpha="0" />
+			<Color name="ChatPersonalCG"		red="28"	green="215"	blue="56"	alpha="0" />
+			<Color name="ChatPersonalTextCG"	red="28"	green="215"	blue="56"	alpha="0" />
+			<Color name="ChatViewCG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="FriendsFavoritesText"	red="0"		green="200"	blue="225"	alpha="0" />
+			<Color name="HeaderColor"			red="-34"	green="-8"	blue="40" />
+			<Color name="HeaderText"			red="255"	green="255"	blue="255"	alpha="0" />
+			<Color name="Hilight"				red="-34"	green="-11"	blue="57"	alpha="0" />
+			<Color name="HilightDown"			red="-34"	green="-11"	blue="57"	alpha="0" />
+			<Color name="HilightHover"			red="-34"	green="-11"	blue="127"	alpha="0" />
+			<Color name="InfoBackDropCG"		red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="InfoOuterCG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="InfoViewBG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="InfoViewFofText"		red="28"	green="215"	blue="56"	alpha="0" />
+			<Color name="InfoViewFriendText"	red="87"	green="122"	blue="255"	alpha="0" />
+			<Color name="InfoViewHyperlink"		red="32"	green="155"	blue="255"	alpha="0" />
+			<Color name="InfoViewOfflineText"	red="164"	green="164"	blue="164"	alpha="0" />
+			<Color name="InfoViewText"			red="87"	green="122"	blue="255"	alpha="0" />
+			<Color name="InnerBevelBkCg"		red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="LogoCG"				red="-34"	green="-11"	blue="57"	alpha="0" />
+			<Color name="LogoDown"				red="-34"	green="-11"	blue="57"	alpha="0" />
+			<Color name="LogoHover"				red="-34"	green="-11"	blue="127"	alpha="0" />
+			<Color name="MainCG"				red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="MainDeactivatedCG"		red="-30"	green="-30"	blue="-30"	alpha="0" />
+			<Color name="MenuBarCG"				red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="MenuDownCG"			red="-30"	green="-30"	blue="20"	alpha="0" />
+			<Color name="MenuHoverCG"			red="30"	green="30"	blue="80"	alpha="0" />
+			<Color name="MenuTextCG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="ScrollbarColor"		red="-115"	green="-89"	blue="-49" />
+			<Color name="StatusBackgroundCG"	red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="StatusCG"				red="87"	green="122"	blue="255"	alpha="0" />
+			<Color name="StatusWrapCG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="TooltipCG"				red="156"	green="196"	blue="219"	alpha="0" />
+			<Color name="TooltipTextCG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="UserNameBkCG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="UserNameCG"			red="255"	green="255"	blue="255"	alpha="0" />
+			<Color name="VentCG"				red="0"		green="0"	blue="0"	alpha="0" />
+      <Color name="XIGMenuBarCG" red="-146" green="-136" blue="-121" alpha="0"/>
+      <Color name="XIGFocusedColor" red="-128"	green="0"	blue="127" alpha="0"/>
+      <Color name="XIGFocusedRectColor" red="0" green="0" blue="255" alpha="0"/>
+      <Color name="XIGTitleBarDisabled" red="-32"	green="-32"	blue="-32" alpha="0"/>
+      <Color name="XIGAlertListCG" red="255" green="128" blue="64" alpha="0"/>
+    </Colors>
+	</Theme>
+
+	<Theme name="Orange Peel">
+		<Colors>
+			<Color name="AdAreaCG" red="0" green="0" blue="0" alpha="0" /> ;careful with AdAreaCG. it uses lots of black.gif
+			<Color name="AllServersText" red="255" green="192" blue="110" />
+			<Color name="BevelCG" red="100" green="-15" blue="-80" alpha="0" />
+			<Color name="BottomBarCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="BuddyViewBG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="BuddyViewFofText" red="255" green="255" blue="0" alpha="0" />
+			<Color name="BuddyViewFriendText" red="255" green="128" blue="0" alpha="0" />
+			<Color name="BuddyViewNonFocus" red="140" green="70" blue="70" alpha="0" />
+			<Color name="BuddyViewOfflineText" red="164" green="164" blue="164" alpha="0" />
+			<Color name="BuddyViewClanText"	red="232" green="64" blue="0" alpha="0" />
+			<Color name="BuddyViewSelected" red="196" green="98" blue="0" alpha="0" />
+			<Color name="BuddyViewSelectedText" red="255" green="255" blue="255" alpha="0" />
+			<Color name="ButtonCG" red="215" green="90" blue="0" alpha="0" />
+			<Color name="ChatMainCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="ChatMainDeactivatedCG" red="-30" green="-30" blue="-30" alpha="0" />
+			<Color name="ChatOtherCG" red="255" green="128" blue="0" alpha="0" />
+			<Color name="ChatOtherTextCG" red="255" green="128" blue="0" alpha="0" />
+			<Color name="ChatPersonalCG" red="255" green="255" blue="0" alpha="0" />
+			<Color name="ChatPersonalTextCG" red="255" green="255" blue="0" alpha="0" />
+			<Color name="ChatViewCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="FriendsFavoritesText" red="232" green="64" blue="0" alpha="0" />
+			<Color name="HeaderColor" red="164" green="82" blue="0" />
+			<Color name="HeaderText" red="255" green="255" blue="255" alpha="0" />
+			<Color name="Hilight" red="188" green="60" blue="-100" alpha="0" />
+			<Color name="HilightDown" red="10" green="-20" blue="-150" alpha="0" />
+			<Color name="HilightHover" red="90" green="60" blue="-100" alpha="0" />
+			<Color name="InfoBackDropCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="InfoOuterCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="InfoViewBG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="InfoViewFofText" red="255" green="255" blue="0" alpha="0" />
+			<Color name="InfoViewFriendText" red="255" green="128" blue="0" alpha="0" />
+			<Color name="InfoViewHyperlink" red="32" green="155" blue="255" alpha="0" />
+			<Color name="InfoViewOfflineText" red="164" green="164" blue="164" alpha="0" />
+			<Color name="InfoViewText" red="255" green="128" blue="0" alpha="0" />
+			<Color name="InnerBevelBkCg" red="0" green="0" blue="0" alpha="0" />
+			<Color name="LogoCG" red="60" green="0" blue="-80" alpha="0" />
+			<Color name="LogoDown" red="30" green="-30" blue="-110" alpha="0" />
+			<Color name="LogoHover" red="160" green="80" blue="0" alpha="0" />
+			<Color name="MainCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="MainDeactivatedCG" red="-30" green="-30" blue="-30" alpha="0" />
+			<Color name="MenuBarCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="MenuDownCG" red="20" green="-40" blue="-120" alpha="0" />
+			<Color name="MenuHoverCG" red="60" green="0" blue="-80" alpha="0" />
+			<Color name="MenuTextCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="ScrollbarColor" red="88" green="6" blue="-76" />
+			<Color name="StatusBackgroundCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="StatusCG" red="255" green="128" blue="0" alpha="0" />
+			<Color name="StatusWrapCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="TooltipCG" red="255" green="187" blue="119" alpha="0" />
+			<Color name="TooltipTextCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="UserNameBkCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="UserNameCG" red="255" green="255" blue="255" alpha="0" />
+			<Color name="VentCG" red="0" green="0" blue="0" alpha="0" />
+      <Color name="XIGMenuBarCG" red="-146" green="-136" blue="-121" alpha="0"/>
+      <Color name="XIGFocusedColor" red="127"	green="0"	blue="-128" alpha="0"/>
+      <Color name="XIGFocusedRectColor" red="0" green="0" blue="255" alpha="0"/>
+      <Color name="XIGTitleBarDisabled" red="-32"	green="-32"	blue="-32" alpha="0"/>
+      <Color name="XIGAlertListCG" red="255" green="128" blue="64" alpha="0"/>
+    </Colors>
+	</Theme>
+
+	<Theme name="Ruby Red">
+		<Colors>
+			<Color name="AdAreaCG" red="0" green="0" blue="0" alpha="0" /> <!-- careful with AdAreaCG: uses lots of black.gif -->
+			<Color name="AllServersText" red="255" green="110" blue="110" />
+			<Color name="BevelCG" red="50" green="-80" blue="-80" alpha="0" />
+			<Color name="BottomBarCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="BuddyViewBG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="BuddyViewFofText" red="255" green="255" blue="0" alpha="0" />
+			<Color name="BuddyViewFriendText" red="255" green="68" blue="46" alpha="0" />
+			<Color name="BuddyViewNonFocus" red="200" green="76" blue="0" alpha="0" />
+			<Color name="BuddyViewOfflineText" red="164" green="164" blue="164" alpha="0" />
+			<Color name="BuddyViewClanText"	red="255" green="128" blue="0" alpha="0" />
+			<Color name="BuddyViewSelected" red="180" green="0" blue="0" alpha="0" />
+			<Color name="BuddyViewSelectedText" red="255" green="255" blue="255" alpha="0" />
+			<Color name="ButtonCG" red="187" green="-11" blue="-34" alpha="0" />
+			<Color name="ChatMainCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="ChatMainDeactivatedCG" red="-30" green="-30" blue="-30" alpha="0" />
+			<Color name="ChatOtherCG" red="255" green="68" blue="46" alpha="0" />
+			<Color name="ChatOtherTextCG" red="255" green="68" blue="46" alpha="0" />
+			<Color name="ChatPersonalCG" red="255" green="255" blue="0" alpha="0" />
+			<Color name="ChatPersonalTextCG" red="255" green="255" blue="0" alpha="0" />
+			<Color name="ChatViewCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="FriendsFavoritesText" red="255" green="128" blue="0" alpha="0" />
+			<Color name="HeaderColor" red="164" green="0" blue="0" />
+			<Color name="HeaderText" red="255" green="255" blue="255" alpha="0" />
+			<Color name="Hilight" red="137" green="-11" blue="-34" alpha="0" />
+			<Color name="HilightDown" red="137" green="-11" blue="-34" alpha="0" />
+			<Color name="HilightHover" red="207" green="-11" blue="-34" alpha="0" />
+			<Color name="InfoBackDropCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="InfoOuterCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="InfoViewBG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="InfoViewFofText" red="255" green="255" blue="0" alpha="0" />
+			<Color name="InfoViewFriendText" red="255" green="68" blue="46" alpha="0" />
+			<Color name="InfoViewHyperlink" red="32" green="155" blue="255" alpha="0" />
+			<Color name="InfoViewOfflineText" red="164" green="164" blue="164" alpha="0" />
+			<Color name="InfoViewText" red="255" green="122" blue="87" alpha="0" />
+			<Color name="InnerBevelBkCg" red="0" green="0" blue="0" alpha="0" />
+			<Color name="LogoCG" red="57" green="-11" blue="-34" alpha="0" />
+			<Color name="LogoDown" red="37" green="-31" blue="-54" alpha="0" />
+			<Color name="LogoHover" red="127" green="-11" blue="-34" alpha="0" />
+			<Color name="MainCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="MainDeactivatedCG" red="-30" green="-30" blue="-30" alpha="0" />
+			<Color name="MenuBarCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="MenuDownCG" red="20" green="-30" blue="-30" alpha="0" />
+			<Color name="MenuHoverCG" red="80" green="30" blue="30" alpha="0" />
+			<Color name="MenuTextCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="ScrollbarColor" red="88" green="-76" blue="-76" />
+			<Color name="StatusBackgroundCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="StatusCG" red="255" green="68" blue="46" alpha="0" />
+			<Color name="StatusWrapCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="TooltipCG" red="219" green="196" blue="156" alpha="0" />
+			<Color name="TooltipTextCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="UserNameBkCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="UserNameCG" red="255" green="255" blue="255" alpha="0" />
+			<Color name="VentCG" red="0" green="0" blue="0" alpha="0" />
+      <Color name="XIGMenuBarCG" red="-146" green="-136" blue="-121" alpha="0"/>
+      <Color name="XIGFocusedColor" red="127"	green="-128"	blue="-128" alpha="0"/>
+      <Color name="XIGFocusedRectColor" red="0" green="0" blue="255" alpha="0"/>
+      <Color name="XIGTitleBarDisabled" red="-32"	green="-32"	blue="-32" alpha="0"/>
+      <Color name="XIGAlertListCG" red="255" green="128" blue="64" alpha="0"/>
+    </Colors>
+	</Theme>
+
+	<Theme name="Yellow Banana">
+		<Colors>
+			<Color name="AdAreaCG" red="0" green="0" blue="0" alpha="0" /> <!-- careful with AdAreaCG: uses lots of black.gif -->
+			<Color name="AllServersText" red="255" green="255" blue="130" />
+			<Color name="BevelCG" red="100" green="100" blue="-80" alpha="0" />
+			<Color name="BottomBarCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="BuddyViewBG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="BuddyViewFofText" red="255" green="128" blue="0" alpha="0" />
+			<Color name="BuddyViewFriendText" red="255" green="255" blue="0" alpha="0" />
+			<Color name="BuddyViewNonFocus" red="64" green="64" blue="0" alpha="0" />
+			<Color name="BuddyViewOfflineText" red="164" green="164" blue="164" alpha="0" />
+			<Color name="BuddyViewClanText"	red="255" green="180" blue="0" alpha="0" />
+			<Color name="BuddyViewSelected" red="128" green="128" blue="0" alpha="0" />
+			<Color name="BuddyViewSelectedText" red="255" green="255" blue="255" alpha="0" />
+			<Color name="ButtonCG" red="130" green="130" blue="-160" alpha="0" />
+			<Color name="ChatMainCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="ChatMainDeactivatedCG" red="-30" green="-30" blue="-30" alpha="0" />
+			<Color name="ChatOtherCG" red="255" green="255" blue="0" alpha="0" />
+			<Color name="ChatOtherTextCG" red="255" green="255" blue="0" alpha="0" />
+			<Color name="ChatPersonalCG" red="255" green="128" blue="0" alpha="0" />
+			<Color name="ChatPersonalTextCG" red="255" green="128" blue="0" alpha="0" />
+			<Color name="ChatViewCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="FriendsFavoritesText" red="255" green="180" blue="0" alpha="0" />
+			<Color name="HeaderColor" red="128" green="128" blue="-34" />
+			<Color name="HeaderText" red="0" green="0" blue="0" alpha="0" />
+			<Color name="Hilight" red="130" green="130" blue="-160" alpha="0" />
+			<Color name="HilightDown" red="10" green="10" blue="-150" alpha="0" />
+			<Color name="HilightHover" red="90" green="90" blue="-100" alpha="0" />
+			<Color name="InfoBackDropCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="InfoOuterCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="InfoViewBG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="InfoViewFofText" red="255" green="128" blue="0" alpha="0" />
+			<Color name="InfoViewFriendText" red="255" green="255" blue="0" alpha="0" />
+			<Color name="InfoViewHyperlink" red="32" green="155" blue="255" alpha="0" />
+			<Color name="InfoViewOfflineText" red="164" green="164" blue="164" alpha="0" />
+			<Color name="InfoViewText" red="255" green="255" blue="0" alpha="0" />
+			<Color name="InnerBevelBkCg" red="0" green="0" blue="0" alpha="0" />
+			<Color name="LogoCG" red="60" green="60" blue="-80" alpha="0" />
+			<Color name="LogoDown" red="30" green="30" blue="-110" alpha="0" />
+			<Color name="LogoHover" red="160" green="160" blue="0" alpha="0" />
+			<Color name="MainCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="MainDeactivatedCG" red="-30" green="-30" blue="-30" alpha="0" />
+			<Color name="MenuBarCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="MenuDownCG" red="20" green="20" blue="-120" alpha="0" />
+			<Color name="MenuHoverCG" red="60" green="60" blue="-80" alpha="0" />
+			<Color name="MenuTextCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="ScrollbarColor" red="52" green="52" blue="-110" />
+			<Color name="StatusBackgroundCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="StatusCG" red="255" green="255" blue="0" alpha="0" />
+			<Color name="StatusWrapCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="TooltipCG" red="255" green="255" blue="119" alpha="0" />
+			<Color name="TooltipTextCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="UserNameBkCG" red="0" green="0" blue="0" alpha="0" />
+			<Color name="UserNameCG" red="255" green="255" blue="255" alpha="0" />
+			<Color name="VentCG" red="0" green="0" blue="0" alpha="0" />
+      <Color name="XIGMenuBarCG" red="-146" green="-136" blue="-121" alpha="0"/>
+      <Color name="XIGFocusedColor" red="127"	green="127"	blue="-128" alpha="0"/>
+      <Color name="XIGFocusedRectColor" red="0" green="0" blue="255" alpha="0"/>
+      <Color name="XIGTitleBarDisabled" red="-32"	green="-32"	blue="-32" alpha="0"/>
+      <Color name="XIGAlertListCG" red="255" green="128" blue="64" alpha="0"/>
+    </Colors>
+	</Theme>
+	
+	<Theme name="Lime Green">
+		<Colors>
+			<Color name="AdAreaCG">RGBA(0,0,0,0)</Color>	<!-- careful with AdAreaCG: uses lots of black.gif -->
+			<Color name="AllServersText"		red="192"	green="192"	blue="192" />
+			<Color name="BevelCG"				red="-64"		green="64"	blue="-64"	alpha="0" />
+			<Color name="BottomBarCG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="BuddyViewBG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="BuddyViewFofText"		red="0"		green="128"	blue="0"	alpha="0" />
+			<Color name="BuddyViewFriendText"	red="255"	green="255" blue="255"	alpha="0" />
+			<Color name="BuddyViewNonFocus"		red="0"		green="64"	blue="0"	alpha="0" />
+			<Color name="BuddyViewOfflineText"	red="128"	green="128"	blue="128"	alpha="0" />
+			<Color name="BuddyViewClanText"		red="0"	green="255"	blue="0"	alpha="0" />
+			<Color name="BuddyViewSelected"		red="0"	green="128"	blue="0"	alpha="0" />
+			<Color name="BuddyViewSelectedText" red="255"	green="255"	blue="255"	alpha="0" />
+			<Color name="ButtonCG"				red="-64"		green="64"	blue="-64"	alpha="0" />
+			<Color name="ChatMainCG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="ChatMainDeactivatedCG" red="-30"	green="-30"	blue="-30"	alpha="0" />
+			<Color name="ChatOtherCG"			red="0"		green="255"	blue="0"	alpha="0" />
+			<Color name="ChatOtherTextCG"		red="0"	green="255"	blue="0"	alpha="0" />
+			<Color name="ChatPersonalCG"		red="0"	green="128"	blue="0"	alpha="0" />
+			<Color name="ChatPersonalTextCG"	red="0"	green="255"	blue="0"	alpha="0" />
+			<Color name="ChatViewCG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="FriendsFavoritesText"	red="0"	green="255"	blue="0"	alpha="0" />
+			<Color name="HeaderColor"			red="-64"	green="64"	blue="-64"	alpha="0" />
+			<Color name="HeaderText"			red="255"	green="255"	blue="255"	alpha="0" />
+			<Color name="Hilight"				red="0"	green="128"	blue="0"	alpha="0" />
+			<Color name="HilightDown"			red="0"	green="128"	blue="0"	alpha="0" />
+			<Color name="HilightHover"			red="0"	green="128"	blue="0"	alpha="0" />
+			<Color name="InfoBackDropCG"		red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="InfoOuterCG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="InfoViewBG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="InfoViewFofText"		red="0"		green="192"	blue="0"	alpha="0" />
+			<Color name="InfoViewFriendText"	red="0"	green="255"	blue="0"	alpha="0" />
+			<Color name="InfoViewHyperlink"		red="0"	green="255"	blue="0"	alpha="0" />
+			<Color name="InfoViewOfflineText"	red="128"	green="128"	blue="128"	alpha="0" />
+			<Color name="InfoViewText"			red="0"	green="255"	blue="0"	alpha="0" />
+			<Color name="InnerBevelBkCg"		red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="LogoCG"				red="0"	green="64"	blue="0"	alpha="0" />
+			<Color name="LogoCoverCG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="LogoCoverDown"			red="0"	green="0"	blue="0"	alpha="0" />
+			<Color name="LogoCoverHover"		red="32"	green="32"	blue="32"	alpha="0" />
+			<Color name="LogoDown"				red="0"	green="128"	blue="0"	alpha="0" />
+			<Color name="LogoHover"				red="0"	green="64"	blue="0"	alpha="0" />
+			<Color name="MainCG"				red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="MainDeactivatedCG"		red="-30"	green="-30"	blue="-30"	alpha="0" />
+			<Color name="MenuBarCG"				red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="MenuDownCG"			red="0"	green="128"	blue="0"	alpha="0" />
+			<Color name="MenuHoverCG"			red="0"	green="64"	blue="0"	alpha="0" />
+			<Color name="MenuTextCG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="ScrollbarColor"		red="-64"	green="64"	blue="-64" />
+			<Color name="ScrollbarColorBG"		red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="StatusBackgroundCG"	red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="StatusCG"				red="0"	green="255"	blue="0"	alpha="0" />
+			<Color name="StatusWrapCG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="TooltipCG"				red="255"	green="255"	blue="255"	alpha="0" />
+			<Color name="TooltipTextCG"			red="0"	green="0"	blue="0"	alpha="0" />
+			<Color name="TypingNotificationCG"	red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="UserNameBkCG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="UserNameCG"			red="255"	green="255"	blue="255"	alpha="0" />
+			<Color name="VentCG"				red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="VoiceTalkingShift"		red="-64"		green="64"	blue="-64"	alpha="0" />
+      <Color name="XIGMenuBarCG" red="-146" green="-136" blue="-121" alpha="0"/>
+      <Color name="XIGFocusedColor" red="-128"	green="127"	blue="-64" alpha="0"/>
+      <Color name="XIGFocusedRectColor" red="0" green="0" blue="255" alpha="0"/>
+      <Color name="XIGTitleBarDisabled" red="-32"	green="-32"	blue="-32" alpha="0"/>
+      <Color name="XIGAlertListCG" red="255" green="128" blue="64" alpha="0"/>
+    </Colors>
+	</Theme>
+	
+	<Theme name="Monochrome">
+		<Colors>
+			<Color name="AdAreaCG">RGBA(0,0,0,0)</Color>	<!-- careful with AdAreaCG: uses lots of black.gif -->
+			<Color name="AllServersText"			red="192"	green="192"	blue="192" />
+			<Color name="BevelCG"				red="-30"		green="-30"	blue="-30"	alpha="0" />
+			<Color name="BottomBarCG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="BuddyViewBG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="BuddyViewFofText"		red="128"		green="128"	blue="128"	alpha="0" />
+			<Color name="BuddyViewFriendText"		red="255"	green="255" blue="255"	alpha="0" />
+			<Color name="BuddyViewNonFocus"		red="64"		green="64"	blue="64"	alpha="0" />
+			<Color name="BuddyViewOfflineText"		red="128"	green="128"	blue="128"	alpha="0" />
+			<Color name="BuddyViewClanText"		red="255"	green="255"	blue="255"	alpha="0" />
+			<Color name="BuddyViewSelected"		red="128"	green="128"	blue="128"	alpha="0" />
+			<Color name="BuddyViewSelectedText" 	red="255"	green="255"	blue="255"	alpha="0" />
+			<Color name="ButtonCG"				red="-30"		green="-30"	blue="-30"	alpha="0" />
+			<Color name="ChatMainCG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="ChatMainDeactivatedCG" 	red="-30"	green="-30"	blue="-30"	alpha="0" />
+			<Color name="ChatOtherCG"			red="255"		green="255"	blue="255"	alpha="0" />
+			<Color name="ChatOtherTextCG"			red="255"	green="255"	blue="255"	alpha="0" />
+			<Color name="ChatPersonalCG"			red="128"	green="128"	blue="128"	alpha="0" />
+			<Color name="ChatPersonalTextCG"		red="255"	green="255"	blue="255"	alpha="0" />
+			<Color name="ChatViewCG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="FriendsFavoritesText"		red="255"	green="255"	blue="255"	alpha="0" />
+			<Color name="HeaderColor"			red="-30"	green="-30"	blue="-30"	alpha="0" />
+			<Color name="HeaderText"			red="255"	green="255"	blue="255"	alpha="0" />
+			<Color name="Hilight"				red="-30"	green="-30"	blue="-30"	alpha="0" />
+			<Color name="HilightDown"			red="-30"	green="-30"	blue="-30"	alpha="0" />
+			<Color name="HilightHover"			red="-30"	green="-30"	blue="-30"	alpha="0" />
+			<Color name="InfoBackDropCG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="InfoOuterCG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="InfoViewBG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="InfoViewFofText"			red="64"		green="64"	blue="64"	alpha="0" />
+			<Color name="InfoViewFriendText"		red="128"	green="128"	blue="128"	alpha="0" />
+			<Color name="InfoViewHyperlink"		red="255"	green="255"	blue="255"	alpha="0" />
+			<Color name="InfoViewOfflineText"		red="128"	green="128"	blue="128"	alpha="0" />
+			<Color name="InfoViewText"			red="128"	green="128"	blue="128"	alpha="0" />
+			<Color name="InnerBevelBkCg"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="LogoCG"				red="0"	green="0"	blue="0"	alpha="0" />
+			<Color name="LogoCoverCG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="LogoCoverDown"			red="0"	green="0"	blue="0"	alpha="0" />
+			<Color name="LogoCoverHover"			red="32"	green="32"	blue="32"	alpha="0" />
+			<Color name="LogoDown"				red="128"	green="128"	blue="128"	alpha="0" />
+			<Color name="LogoHover"				red="64"	green="64"	blue="64"	alpha="0" />
+			<Color name="MainCG"				red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="MainDeactivatedCG"		red="-30"	green="-30"	blue="-30"	alpha="0" />
+			<Color name="MenuBarCG"				red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="MenuDownCG"			red="128"	green="128"	blue="128"	alpha="0" />
+			<Color name="MenuHoverCG"			red="64"	green="64"	blue="64"	alpha="0" />
+			<Color name="MenuTextCG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="ScrollbarColor"			red="-30"	green="-30"	blue="-30" />
+			<Color name="ScrollbarColorBG"		red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="StatusBackgroundCG"		red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="StatusCG"				red="255"	green="255"	blue="255"	alpha="0" />
+			<Color name="StatusWrapCG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="TooltipCG"				red="255"	green="255"	blue="255"	alpha="0" />
+			<Color name="TooltipTextCG"			red="0"	green="0"	blue="0"	alpha="0" />
+			<Color name="TypingNotificationCG"		red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="UserNameBkCG"			red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="UserNameCG"			red="255"	green="255"	blue="255"	alpha="0" />
+			<Color name="VentCG"				red="0"		green="0"	blue="0"	alpha="0" />
+			<Color name="VoiceTalkingShift"		red="-30"		green="-30"	blue="-30"	alpha="0" />
+      <Color name="XIGMenuBarCG" red="-146" green="-136" blue="-121" alpha="0"/>
+      <Color name="XIGFocusedColor" red="127"	green="127"	blue="127" alpha="0"/>
+      <Color name="XIGFocusedRectColor" red="0" green="0" blue="255" alpha="0"/>
+      <Color name="XIGTitleBarDisabled" red="-32"	green="-32"	blue="-32" alpha="0"/>
+      <Color name="XIGAlertListCG" red="255" green="128" blue="64" alpha="0"/>
+    </Colors>
+	</Theme>
+</Themes>

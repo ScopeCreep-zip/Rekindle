@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE Components SYSTEM "XfireSkin.dtd">
+
+<Components>
+    <Component Name="XIGAddFriend" Class="MainWindow" MinWidth="298" MinHeight="200" DefaultWidth="298" DefaultHeight="200" DefaultX="470" DefaultY="10">
+        <Triggers>
+            <Trigger Type="OnActiveMode">ShowTile</Trigger>
+        </Triggers>
+    </Component>
+    
+    <Component Name="XIGAddFriendTitle" Class="Text" Stretch="ToContent" Events="Transparent">
+        <Text Align="Left" Font="Arial" Size="11" Bold="True" Color="XIGSystemDialogTitleCG">XIGAddFriendTitle</Text>
+    </Component>
+    
+    <Component Name="XIGAddFriendUsernameText" Class="Text" MinHeight="14" Stretch="ToContent" Events="Transparent">
+        <Text Font="Arial" Size="12" Bold="False" Color="XIGSystemDialogTextCG">XfireUsernameText</Text>
+    </Component>
+    
+    <Component Name="XIGAddFriendUsernameEdit" Class="PrefEdit" MaxLength="64" Stretch="ToContent" ControlLabel="XfireUsername" CaretColor="XIGCaretCG" SelectionColor="ListColorSelectedCG" SelectionColor_InActive="TextFieldTextHighlightInactiveCG" SelectionTextColor="ListColorSelectedTextCG" SelectionSelectorColor="XIGCaretCG">
+        <Fonts>
+            <Font Type="Text" Font="Arial" Size="12" Bold="False" Color="ListFriendTextCG" />
+        </Fonts>
+    </Component>
+</Components>

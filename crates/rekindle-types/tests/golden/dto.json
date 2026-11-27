@@ -1567,6 +1567,18 @@
     "kind": "share",
     "permille": 1000
   },
+  "skin.nodeSpan.shareAfterEnd": {
+    "at": {
+      "kind": "after",
+      "offset": {
+        "gap": 0,
+        "sibling": "Divider"
+      }
+    },
+    "end": 19,
+    "kind": "share",
+    "permille": 1000
+  },
   "skin.run.launcher": {
     "arg": {
       "window": "buddy-list"

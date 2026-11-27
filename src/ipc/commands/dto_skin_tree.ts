@@ -441,11 +441,12 @@ type NodeAnchor =
   | { kind: "centre"; offset: { by: number; before: number; after: number } }
   | { kind: "after"; offset: { sibling: string; gap: number } };
 
-/** `NodeSpan` (serde `tag = "kind"`): one axis of a box, px. */
+/** `NodeSpan` (serde `tag = "kind"`): one axis of a box, px. A share's `end` is the px held back
+ *  before the parent's far edge (absent when 0; plan SKW3); the Host lays every span into CSS. */
 type NodeSpan =
   | { kind: "fixed"; at: NodeAnchor; size: number }
   | { kind: "stretch"; start: number; end: number }
-  | { kind: "share"; at: NodeAnchor; permille: number };
+  | { kind: "share"; at: NodeAnchor; permille: number; end?: number };
 
 /** `PopupAnchor`: the popup's left side `offset` px from the launching window's `edge`. */
 interface PopupAnchor {

@@ -1,0 +1,11 @@
+<Tile Name="OnyxInGameAlertWindow" ResizeX="100" ResizeY="100" Component="InGameAlertWindow"
+	>
+<!--  -->
+	<Tile Name="InGameAlert" X="0" Y="0" ResizeX="100" ResizeY="100" Component="InGameAlertSkin"></Tile>
+<!--  -->
+	<Tile Name="MainTitleBar" Z="2" X="4" Y="5" ResizeX="100" ResizeY="0" Component="InGameAlertTitleBar"></Tile>
+<!--  -->	
+	<Tile Name="MiddleMessageArea" X="7" Y="28" IndentRight="7" IndentBottom="9" ResizeX="100" ResizeY="100" Z="100" Component="InGameMiddleMessageArea"></Tile>
+<!--  -->
+	<Tile Name="TextTile" X="7" Y="28" IndentRight="7" IndentBottom="9" ResizeX="100" ResizeY="100" Z="100" Component="InGameTextTile"></Tile>
+</Tile>

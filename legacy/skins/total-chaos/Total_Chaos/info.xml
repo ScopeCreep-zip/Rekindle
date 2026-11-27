@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8" ?> 
+<!DOCTYPE SkinDescription SYSTEM "xfireskin.dtd">
+
+<SkinDescription>
+ 	<Author Type="original">Ryan Dunn</Author>
+ 	<Website>http://www.totalchaos.org.uk/</Website>
+ 	<Name>Total Chaos</Name>
+ 	<LongName>Total Chaos</LongName>
+ 	<Version>0</Version>
+ 	<CompatibleVersion>1.59</CompatibleVersion>
+</SkinDescription>

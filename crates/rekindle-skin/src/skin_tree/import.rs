@@ -509,6 +509,8 @@ pub fn add(
             by_name.entry(name.to_ascii_lowercase()).or_insert(c);
         }
     }
+    let laid = super::status_field::add(window, layout, &by_name)?;
+    let layout = laid.as_ref().unwrap_or(layout);
     let popups = components
         .iter()
         .filter(|n| n.name.eq_ignore_ascii_case("Popups"))

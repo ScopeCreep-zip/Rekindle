@@ -16,7 +16,9 @@ use super::anchor::{i16_of, Axis, Pos};
 use super::import::bad;
 
 /// The share `pct` percent of the parent laid from `pos`, with the start
-/// and end insets and the component's cap.
+/// and end insets and the component's cap: one laid from its start is
+/// that share of the box between its start and its end inset (plan SKW3:
+/// xfire-classic's chat `ChatArea`, `ResizeY=80 IndentBottom="19+20"`).
 pub(super) fn share(
     pos: Pos,
     pct: u16,
@@ -27,11 +29,11 @@ pub(super) fn share(
     if max.is_some() {
         return Err(bad(format!("{}: a capped share", ax.pos())));
     }
-    let at = match (pos, at_end, centred) {
-        (Pos::Num(p), _, true) => Anchor::centre(i16_of(p)?),
-        (Pos::Num(p), true, false) => Anchor::End(i16_of(p + end_in)?),
+    let (at, end) = match (pos, at_end, centred) {
+        (Pos::Num(p), _, true) => (Anchor::centre(i16_of(p)?), 0),
+        (Pos::Num(p), true, false) => (Anchor::End(i16_of(p + end_in)?), 0),
         (Pos::Num(p) | Pos::Ref(super::anchor::At::Start(p)), false, false) => {
-            Anchor::Start(i16_of(p + start_in)?)
+            (Anchor::Start(i16_of(p + start_in)?), i16_of(end_in)?)
         }
         _ => {
             return Err(bad(format!(
@@ -43,12 +45,16 @@ pub(super) fn share(
     Ok(NodeSpan::Share {
         at,
         permille: pct * 10,
+        end,
     })
 }
 
 /// A tile `by` px past the far edge of `sibling` (a share, or a tile
 /// chained past one), of its own `size`, or stretched (`resize` 100) or a
-/// share of what remains past its start.
+/// share of what remains between its start and its end inset (plan SKW3,
+/// lead ruling b: xfire-classic's chat `ChatEdit`, `Y=Divider.BOTTOM
+/// ResizeY=100 IndentBottom=19`, `xfirechatwindow.xml:211-238`, stops 19 px
+/// short of its area's far edge).
 pub(super) fn chained(
     (sibling, by): (String, i32),
     size: u16,
@@ -69,15 +75,10 @@ pub(super) fn chained(
     };
     match resize {
         None => Ok(NodeSpan::Fixed { at, size }),
-        // A stretch past a moving edge reaches the parent's far edge: the
-        // whole of what remains, so it holds no end inset.
-        Some(100) if end_in != 0 => Err(bad(format!(
-            "{}: a stretch past a moving edge with an end inset",
-            ax.pos()
-        ))),
         Some(pct) => Ok(NodeSpan::Share {
             at,
             permille: pct * 10,
+            end: i16_of(end_in)?,
         }),
     }
 }

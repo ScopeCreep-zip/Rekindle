@@ -260,6 +260,7 @@ fn content_samples(add: &mut impl FnMut(&str, Value)) {
         to(NodeSpan::Share {
             at: Anchor::Start(0),
             permille: 800,
+            end: 0,
         }),
     );
     add(
@@ -270,6 +271,18 @@ fn content_samples(add: &mut impl FnMut(&str, Value)) {
                 gap: 0,
             },
             permille: 1000,
+            end: 0,
+        }),
+    );
+    add(
+        "skin.nodeSpan.shareAfterEnd",
+        to(NodeSpan::Share {
+            at: Anchor::After {
+                sibling: "Divider".into(),
+                gap: 0,
+            },
+            permille: 1000,
+            end: 19,
         }),
     );
     add(
