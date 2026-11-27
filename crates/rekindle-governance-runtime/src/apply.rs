@@ -477,10 +477,8 @@ fn sign_ours<D: GovernanceRuntimeDeps>(
     let first_op = matches!(entry, GovernanceEntry::MemberJoined { .. });
     let device = device_signer::device_op_key(deps, ours.community_id, first_op)?;
     device_signer::carry_first_device(entry, &key, ours.community_id, &device, ours.state);
-    let signer = device_signer::OpSigner {
-        author: ours.author,
-        device: &device,
-    };
+    let signer =
+        device_signer::OpSigner::checked(ours.community_id, ours.state, ours.author, &device)?;
     op_log::build_op(
         ours.community_id,
         ours.cert,

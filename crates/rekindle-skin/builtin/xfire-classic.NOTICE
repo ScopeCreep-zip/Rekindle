@@ -28,7 +28,7 @@ Colours (68 defined)
   BuddyViewOfflineText RGBA(164,164,164,0) -> token status.offline-text
   BuddyViewClanText RGBA(70,120,225,0) -> token text.clan
   BuddyViewSelected RGBA(30,73,140,0) -> token accent.fill
-  BuddyViewSelectedText RGBA(255,255,255,0) -> registry-fixed accent.fg (a skin cannot set it)
+  BuddyViewSelectedText RGBA(255,255,255,0) -> token selection.text
   ButtonCG RGBA(0,0,0,0) -> image shift (baked)
   ChatMainCG RGBA(0,0,0,0) -> image shift (baked)
   ChatMainDeactivatedCG RGBA(-30,-30,-30,0) -> image shift (baked)
@@ -63,14 +63,14 @@ Colours (68 defined)
   MenuBarCG RGBA(0,0,0,0) -> image shift (baked)
   MenuDownCG RGBA(-30,-30,-30,0) -> image shift (baked)
   MenuHoverCG RGBA(30,30,30,0) -> image shift (baked)
-  MenuTextCG RGBA(0,0,0,0) -> not mapped: no registry role menubar.text yet
+  MenuTextCG RGBA(0,0,0,0) -> token menubar.text
   ScrollbarColor RGBA(-106,-80,-32,0) -> image shift (baked)
-  ScrollbarColorBG RGBA(8,16,32,0) -> not mapped: no registry role scrollbar.track yet
+  ScrollbarColorBG RGBA(8,16,32,0) -> token scrollbar.track
   StatusBackgroundCG RGBA(8,16,32,0) -> token bg.status
   StatusCG RGBA(232,232,232,0) -> token text.status
   StatusWrapCG RGBA(0,0,0,0) -> image shift (baked)
-  TooltipCG RGBA(232,232,232,0) -> not mapped: no registry role tooltip.bg yet
-  TooltipTextCG RGBA(30,73,140,0) -> not mapped: no registry role tooltip.text yet
+  TooltipCG RGBA(232,232,232,0) -> token tooltip.bg
+  TooltipTextCG RGBA(30,73,140,0) -> token tooltip.text
   TypingNotificationCG RGBA(8,16,32,0) -> image shift (baked)
   UserNameBkCG RGBA(0,0,0,0) -> image shift (baked)
   UserNameCG RGBA(255,255,255,0) -> not mapped: no registry role self.name yet
@@ -333,10 +333,17 @@ Dropped
   layout tiles: 0
   sounds, strings, popups, other bitmaps and the in-game overlay (XIG) are not read.
 
-Contrast changes (minimal Oklab-lightness walk) (6 made)
+Contrast changes (minimal Oklab-lightness walk) (13 made)
   accent.text: #1e498c -> #4e7cc3 (1.4.3 accent.text on bg.dark: 2.15:1 -> 4.51:1, required 4.50:1)
   accent.text: #4e7cc3 -> #5584cb (1.4.3 accent.text on bg.tertiary: 4.05:1 -> 4.50:1, required 4.50:1)
   text.clan: #4678e1 -> #4d80e9 (1.4.3 text.clan on bg.tertiary: 4.09:1 -> 4.53:1, required 4.50:1)
   bg.primary: #081020 -> #060d1d (D4 text.on-fill on status.online 60.0% over bg.dark: 4.44:1 -> passes, required 4.50:1)
   accent.text: #5584cb -> #5585cc (1.4.3 .announcement-icon accent.text on accent.fill 25% over bg.dark: 4.47:1 -> passes, required 4.50:1)
   bg.primary: #060d1d -> #060c1c (1.4.3 .channel-voice-join-btn text.on-fill on status.online tint.fill over bg.dark: 4.49:1 -> passes, required 4.50:1)
+  titlebar.start: #b4b4b4 -> #686868 (1.4.3 titlebar.text on titlebar.start: 1.67:1 -> 4.50:1, required 4.50:1)
+  titlebar.end: #b5b5b5 -> #686868 (1.4.3 titlebar.text on titlebar.end: 1.65:1 -> 4.50:1, required 4.50:1)
+  progress.fill: #1e498c -> #345fa4 (1.4.11 progress.fill on progress.bg: 2.15:1 -> 3.00:1, required 3.00:1)
+  titlebar.end: #686868 -> #4a4a4a (1.4.11 .skin-menu:focus-visible boundary focus-outline on titlebar.end: 1.90:1 -> 3.03:1, required 3.00:1)
+  titlebar.start: #686868 -> #4a4a4a (1.4.11 .skin-menu:focus-visible boundary focus-outline on titlebar.start: 1.90:1 -> 3.03:1, required 3.00:1)
+  titlebar.end: #4a4a4a -> #383838 (1.4.3 .xfire-titlebar-btn titlebar.text on titlebar.end: 3.73:1 -> 4.53:1, required 4.50:1)
+  titlebar.start: #4a4a4a -> #383838 (1.4.3 .xfire-titlebar-btn titlebar.text on titlebar.start: 3.73:1 -> 4.53:1, required 4.50:1)

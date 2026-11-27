@@ -306,58 +306,36 @@
 .form-btn-danger	text	var(--color-xfire-danger-fg)	--color-xfire-danger var(--tint-fill) over --color-xfire-bg-dark	1.0	false
 .form-btn-danger	text	var(--color-xfire-danger-fg)	--color-xfire-danger var(--tint-fill) over --color-xfire-bg-panel	1.0	false
 .form-btn-danger	text hovered	var(--color-xfire-danger-fg)	--color-xfire-danger	1.0	false
-.form-btn-primary	icon	var(--color-xfire-accent-fg)	--color-xfire-accent	0.7	true
-.form-btn-primary	icon hovered	var(--color-xfire-accent-fg)	--color-xfire-accent 80% over --color-xfire-fill-shade	0.7	true
-.form-btn-primary	text	var(--color-xfire-accent-fg)	--color-xfire-accent	1.0	false
-.form-btn-primary	text hovered	var(--color-xfire-accent-fg)	--color-xfire-accent 80% over --color-xfire-fill-shade	1.0	false
-.form-btn-secondary	icon	var(--color-xfire-text)	--color-xfire-overlay 8% over --color-xfire-accent 10% over --color-xfire-bg-panel	0.7	true
-.form-btn-secondary	icon	var(--color-xfire-text)	--color-xfire-overlay 8% over --color-xfire-bg-dark	0.7	true
-.form-btn-secondary	icon	var(--color-xfire-text)	--color-xfire-overlay 8% over --color-xfire-bg-panel	0.7	true
-.form-btn-secondary	icon	var(--color-xfire-text)	--color-xfire-overlay 8% over --color-xfire-bg-secondary	0.7	true
-.form-btn-secondary	icon	var(--color-xfire-text)	--color-xfire-overlay 8% over --color-xfire-bg-secondary 96% over --color-xfire-bg-dark	0.7	true
-.form-btn-secondary	icon	var(--color-xfire-text)	--color-xfire-overlay 8% over --color-xfire-busy 30% over --color-xfire-bg-dark	0.7	true
-.form-btn-secondary	icon hovered	var(--color-xfire-text)	--color-xfire-overlay 12% over --color-xfire-accent 10% over --color-xfire-bg-panel	0.7	true
-.form-btn-secondary	icon hovered	var(--color-xfire-text)	--color-xfire-overlay 12% over --color-xfire-bg-dark	0.7	true
-.form-btn-secondary	icon hovered	var(--color-xfire-text)	--color-xfire-overlay 12% over --color-xfire-bg-panel	0.7	true
-.form-btn-secondary	icon hovered	var(--color-xfire-text)	--color-xfire-overlay 12% over --color-xfire-bg-secondary	0.7	true
-.form-btn-secondary	icon hovered	var(--color-xfire-text)	--color-xfire-overlay 12% over --color-xfire-bg-secondary 96% over --color-xfire-bg-dark	0.7	true
-.form-btn-secondary	icon hovered	var(--color-xfire-text)	--color-xfire-overlay 12% over --color-xfire-busy 30% over --color-xfire-bg-dark	0.7	true
-.form-btn-secondary	text	var(--color-xfire-text)	--color-xfire-overlay 8% over --color-xfire-accent 10% over --color-xfire-bg-panel	1.0	false
-.form-btn-secondary	text	var(--color-xfire-text)	--color-xfire-overlay 8% over --color-xfire-bg-dark	1.0	false
-.form-btn-secondary	text	var(--color-xfire-text)	--color-xfire-overlay 8% over --color-xfire-bg-panel	1.0	false
-.form-btn-secondary	text	var(--color-xfire-text)	--color-xfire-overlay 8% over --color-xfire-bg-secondary	1.0	false
-.form-btn-secondary	text	var(--color-xfire-text)	--color-xfire-overlay 8% over --color-xfire-bg-secondary 96% over --color-xfire-bg-dark	1.0	false
-.form-btn-secondary	text	var(--color-xfire-text)	--color-xfire-overlay 8% over --color-xfire-busy 30% over --color-xfire-bg-dark	1.0	false
-.form-btn-secondary	text hovered	var(--color-xfire-text)	--color-xfire-overlay 12% over --color-xfire-accent 10% over --color-xfire-bg-panel	1.0	false
-.form-btn-secondary	text hovered	var(--color-xfire-text)	--color-xfire-overlay 12% over --color-xfire-bg-dark	1.0	false
-.form-btn-secondary	text hovered	var(--color-xfire-text)	--color-xfire-overlay 12% over --color-xfire-bg-panel	1.0	false
-.form-btn-secondary	text hovered	var(--color-xfire-text)	--color-xfire-overlay 12% over --color-xfire-bg-secondary	1.0	false
-.form-btn-secondary	text hovered	var(--color-xfire-text)	--color-xfire-overlay 12% over --color-xfire-bg-secondary 96% over --color-xfire-bg-dark	1.0	false
-.form-btn-secondary	text hovered	var(--color-xfire-text)	--color-xfire-overlay 12% over --color-xfire-busy 30% over --color-xfire-bg-dark	1.0	false
+.form-btn-danger:disabled	text	var(--color-xfire-text-disabled)	--color-xfire-bg-secondary	1.0	false
+.form-btn-primary	icon	var(--color-xfire-selection-text)	--color-xfire-accent 100% over --color-xfire-bg-dark	0.7	true
+.form-btn-primary	icon	var(--color-xfire-selection-text)	--color-xfire-accent 100% over --color-xfire-bg-panel	0.7	true
+.form-btn-primary	text	var(--color-xfire-selection-text)	--color-xfire-accent 100% over --color-xfire-bg-dark	1.0	false
+.form-btn-primary	text	var(--color-xfire-selection-text)	--color-xfire-accent 100% over --color-xfire-bg-panel	1.0	false
+.form-btn-primary:disabled	text	var(--color-xfire-text-disabled)	--color-xfire-bg-secondary	1.0	false
+.form-btn-secondary	icon	var(--color-xfire-text)	--color-xfire-bg-secondary	0.7	true
+.form-btn-secondary	icon hovered	var(--color-xfire-text)	--color-xfire-accent 12% over --color-xfire-bg-secondary	0.7	true
+.form-btn-secondary	text	var(--color-xfire-text)	--color-xfire-bg-secondary	1.0	false
+.form-btn-secondary	text hovered	var(--color-xfire-text)	--color-xfire-accent 12% over --color-xfire-bg-secondary	1.0	false
+.form-btn-secondary:disabled	text	var(--color-xfire-text-disabled)	--color-xfire-bg-secondary	1.0	false
 .form-error	text	var(--color-xfire-danger-text)	--color-xfire-bg-dark	1.0	false
 .form-error	text	var(--color-xfire-danger-text)	--color-xfire-bg-panel	1.0	false
-.form-field-label	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
-.form-field-label	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
+.form-field-label	text	var(--color-xfire-text-status)	--color-xfire-bg-dark	1.0	false
+.form-field-label	text	var(--color-xfire-text-status)	--color-xfire-bg-panel	1.0	false
 .form-hint	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .form-hint	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
-.form-input	boundary	var(--color-xfire-control-border)	--color-xfire-bg-dark	1.0	true
-.form-input	boundary	var(--color-xfire-control-border)	--color-xfire-bg-panel	1.0	true
-.form-input	text	var(--color-xfire-text)	--color-xfire-bg-input	1.0	false
-.form-label	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
-.form-label	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
-.form-select	boundary	var(--color-xfire-control-border)	--color-xfire-bg-dark	1.0	true
-.form-select	boundary	var(--color-xfire-control-border)	--color-xfire-bg-panel	1.0	true
-.form-select	text	var(--color-xfire-text)	--color-xfire-bg-input	1.0	false
-.form-tab	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
-.form-tab	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
-.form-tab-active	text	var(--color-xfire-accent-text)	--color-xfire-bg-dark	1.0	false
-.form-tab-active	text	var(--color-xfire-accent-text)	--color-xfire-bg-panel	1.0	false
-.form-tab.active	text	var(--color-xfire-accent-text)	--color-xfire-bg-dark	1.0	false
-.form-tab.active	text	var(--color-xfire-accent-text)	--color-xfire-bg-panel	1.0	false
-.form-tab:hover:not(.form-tab-active)	text	var(--color-xfire-text-primary)	--color-xfire-bg-dark	1.0	false
-.form-tab:hover:not(.form-tab-active)	text	var(--color-xfire-text-primary)	--color-xfire-bg-panel	1.0	false
-.form-tab[aria-selected="true"]	text	var(--color-xfire-accent-text)	--color-xfire-bg-dark	1.0	false
-.form-tab[aria-selected="true"]	text	var(--color-xfire-accent-text)	--color-xfire-bg-panel	1.0	false
+.form-input	boundary	var(--color-xfire-progress-outline)	--color-xfire-bg-dark	1.0	true
+.form-input	boundary	var(--color-xfire-progress-outline)	--color-xfire-bg-panel	1.0	true
+.form-input	text	var(--color-xfire-input-text)	--color-xfire-input-bg	1.0	false
+.form-label	text	var(--color-xfire-text-status)	--color-xfire-bg-dark	1.0	false
+.form-label	text	var(--color-xfire-text-status)	--color-xfire-bg-panel	1.0	false
+.form-select	boundary	var(--color-xfire-progress-outline)	--color-xfire-bg-dark	1.0	true
+.form-select	boundary	var(--color-xfire-progress-outline)	--color-xfire-bg-panel	1.0	true
+.form-select	text	var(--color-xfire-input-text)	--color-xfire-input-bg	1.0	false
+.form-select:disabled	text	var(--color-xfire-text-disabled)	--color-xfire-input-bg	1.0	false
+.form-tab	text	var(--color-xfire-menubar-text)	--color-xfire-menubar-bg	1.0	false
+.form-tab-active	text	var(--color-xfire-selection-text)	--color-xfire-accent 100% over --color-xfire-menubar-bg	1.0	false
+.form-tab.active	text	var(--color-xfire-selection-text)	--color-xfire-accent 100% over --color-xfire-menubar-bg	1.0	false
+.form-tab[aria-selected="true"]	text	var(--color-xfire-selection-text)	--color-xfire-accent 100% over --color-xfire-menubar-bg	1.0	false
 .form-tabs-equal .form-tab	text	var(--color-xfire-offline-text)	--color-xfire-bg-dark	1.0	false
 .form-tabs-equal .form-tab	text	var(--color-xfire-offline-text)	--color-xfire-bg-panel	1.0	false
 .form-textarea	text	var(--color-xfire-text)	--color-xfire-bg-input	1.0	false
@@ -630,6 +608,12 @@
 .poll-create-remove-btn	text hovered	var(--color-xfire-text-primary)	--color-xfire-accent 12% over --color-xfire-bg-panel	1.0	false
 .profile-bio	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
 .profile-display-name	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
+.profile-editor-btn	text	var(--color-xfire-text)	--color-xfire-accent 15% over --color-xfire-bg-panel	1.0	false
+.profile-editor-btn	text hovered	var(--color-xfire-text)	--color-xfire-accent 25% over --color-xfire-bg-panel	1.0	false
+.profile-editor-image-placeholder	text	var(--color-xfire-text-dim)	--color-xfire-bg-secondary	1.0	false
+.profile-editor-input	text	var(--color-xfire-text)	--color-xfire-bg 80% over --color-xfire-bg-panel	1.0	false
+.profile-editor-label	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
+.profile-editor-textarea	text	var(--color-xfire-text)	--color-xfire-bg 80% over --color-xfire-bg-panel	1.0	false
 .profile-empty-hint	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .profile-game-elapsed	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .profile-game-name	text	var(--color-xfire-ingame-text)	--color-xfire-bg-dark	1.0	false
@@ -641,12 +625,6 @@
 .profile-popup-badge	text	var(--color-xfire-text)	--color-xfire-accent 15% over --color-xfire-bg-primary	1.0	false
 .profile-popup-bio	text	var(--color-xfire-text-dim)	--color-xfire-bg-primary	1.0	false
 .profile-popup-custom-status	text	var(--color-xfire-text)	--color-xfire-bg-primary	1.0	false
-.profile-popup-edit-btn	text	var(--color-xfire-text)	--color-xfire-accent 15% over --color-xfire-bg-primary	1.0	false
-.profile-popup-edit-btn	text hovered	var(--color-xfire-text)	--color-xfire-accent 25% over --color-xfire-bg-primary	1.0	false
-.profile-popup-edit-image-placeholder	text	var(--color-xfire-text-dim)	--color-xfire-bg-secondary	1.0	false
-.profile-popup-edit-input	text	var(--color-xfire-text)	--color-xfire-bg 80% over --color-xfire-bg-primary	1.0	false
-.profile-popup-edit-label	text	var(--color-xfire-text-dim)	--color-xfire-bg-primary	1.0	false
-.profile-popup-edit-textarea	text	var(--color-xfire-text)	--color-xfire-bg 80% over --color-xfire-bg-primary	1.0	false
 .profile-popup-empty-hint	text	var(--color-xfire-text-secondary)	--color-xfire-bg-primary	1.0	false
 .profile-popup-game-name	text	var(--color-xfire-ingame-text)	--color-xfire-bg-primary	1.0	false
 .profile-popup-game-server	text	var(--color-xfire-text-dim)	--color-xfire-bg-primary	1.0	false
@@ -732,21 +710,29 @@
 .settings-about-text	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
 .settings-about-value	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
 .settings-audit-collapsible summary:hover	text	var(--color-xfire-text-primary)	--color-xfire-bg-panel	1.0	false
-.settings-category-label	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
+.settings-category-label	text	var(--color-xfire-text-status)	--color-xfire-bg-panel	1.0	false
 .settings-copy-btn	text	var(--color-xfire-text)	--color-xfire-overlay 8% over --color-xfire-bg-dark	1.0	false
 .settings-copy-btn	text	var(--color-xfire-text)	--color-xfire-overlay 8% over --color-xfire-bg-panel	1.0	false
 .settings-copy-btn	text hovered	var(--color-xfire-text)	--color-xfire-overlay 15% over --color-xfire-bg-dark	1.0	false
 .settings-copy-btn	text hovered	var(--color-xfire-text)	--color-xfire-overlay 15% over --color-xfire-bg-panel	1.0	false
-.settings-hint	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
-.settings-hint	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
-.settings-hint	text	var(--color-xfire-text-dim)	--color-xfire-bg-primary	1.0	false
+.settings-hint	text	var(--color-xfire-text-status)	--color-xfire-bg-dark	1.0	false
+.settings-hint	text	var(--color-xfire-text-status)	--color-xfire-bg-panel	1.0	false
+.settings-hint	text	var(--color-xfire-text-status)	--color-xfire-bg-primary	1.0	false
 .settings-hint-inline	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .settings-hint-inline	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
 .settings-list-date	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
 .settings-list-name	text	var(--color-xfire-text)	--color-xfire-bg-panel	1.0	false
 .settings-role-position	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
-.settings-section-title	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
-.settings-section-title	text	var(--color-xfire-text)	--color-xfire-bg-panel	1.0	false
+.settings-section-title	text	var(--color-xfire-text-secondary)	--color-xfire-bg-dark	1.0	false
+.settings-section-title	text	var(--color-xfire-text-secondary)	--color-xfire-bg-panel	1.0	false
+.settings-select-item	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
+.settings-select-item:focus-visible	boundary	var(--color-xfire-selection-text)	--color-xfire-accent 100% over --color-xfire-bg-dark	1.0	true
+.settings-select-item[data-highlighted]	text	var(--color-xfire-selection-text)	--color-xfire-accent 100% over --color-xfire-bg-dark	1.0	false
+.settings-select-item[data-selected]	text	var(--color-xfire-selection-text)	--color-xfire-accent 100% over --color-xfire-bg-dark	1.0	false
+.settings-select-trigger	boundary	var(--color-xfire-progress-outline)	--color-xfire-bg-dark	1.0	true
+.settings-select-trigger	boundary	var(--color-xfire-progress-outline)	--color-xfire-bg-panel	1.0	true
+.settings-select-trigger	text	var(--color-xfire-input-text)	--color-xfire-input-bg	1.0	false
+.settings-select-trigger:disabled	text	var(--color-xfire-text-disabled)	--color-xfire-input-bg	1.0	false
 .settings-subheading	text	var(--color-xfire-text)	--color-xfire-bg-panel	1.0	false
 .settings-subsection-title	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
 .settings-value	text	var(--color-xfire-text)	--color-xfire-bg-panel	1.0	false
@@ -763,16 +749,11 @@
 .sidebar-server-join-btn	text	var(--color-xfire-accent-text)	--color-xfire-bg-dark	1.0	false
 .sidebar-server-join-btn	text hovered	var(--color-xfire-accent-text)	--color-xfire-accent 15% over --color-xfire-bg-dark	1.0	false
 .sidebar-server-row	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
-.skin-access	text	var(--color-xfire-text-dim)	--color-xfire-accent 12% over --color-xfire-bg-dark	1.0	false
 .skin-access	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .skin-ad-banner	text	var(--color-xfire-text-on-fill)	--color-xfire-accent	1.0	false
-.skin-badge	text	var(--color-xfire-text-dim)	--color-xfire-accent 12% over --color-xfire-bg-dark	1.0	false
 .skin-badge	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
-.skin-credits	text	var(--color-xfire-text)	--color-xfire-accent 12% over --color-xfire-bg-dark	1.0	false
 .skin-credits	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
-.skin-credits-stated	text	var(--color-xfire-text-dim)	--color-xfire-accent 12% over --color-xfire-bg-dark	1.0	false
 .skin-credits-stated	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
-.skin-credits-term	text	var(--color-xfire-text-dim)	--color-xfire-accent 12% over --color-xfire-bg-dark	1.0	false
 .skin-credits-term	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .skin-menu:focus-visible	boundary	var(--color-xfire-focus-outline)	--color-xfire-bg-dark	1.0	true
 .skin-menu:focus-visible	boundary	var(--color-xfire-focus-outline)	--color-xfire-titlebar-end	1.0	true
@@ -789,18 +770,11 @@
 .skin-pair	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
 .skin-pair-apca	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .skin-pair-rule	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
-.skin-row-btn	text	var(--color-xfire-text)	--color-xfire-overlay 8% over --color-xfire-accent 10% over --color-xfire-bg-panel	1.0	false
-.skin-row-btn	text	var(--color-xfire-text)	--color-xfire-overlay 8% over --color-xfire-bg-dark	1.0	false
-.skin-row-btn	text	var(--color-xfire-text)	--color-xfire-overlay 8% over --color-xfire-bg-panel	1.0	false
-.skin-row-btn	text	var(--color-xfire-text)	--color-xfire-overlay 8% over --color-xfire-bg-secondary	1.0	false
-.skin-row-btn	text	var(--color-xfire-text)	--color-xfire-overlay 8% over --color-xfire-bg-secondary 96% over --color-xfire-bg-dark	1.0	false
-.skin-row-btn	text	var(--color-xfire-text)	--color-xfire-overlay 8% over --color-xfire-busy 30% over --color-xfire-bg-dark	1.0	false
-.skin-row-btn	text hovered	var(--color-xfire-text)	--color-xfire-overlay 12% over --color-xfire-accent 10% over --color-xfire-bg-panel	1.0	false
-.skin-row-btn	text hovered	var(--color-xfire-text)	--color-xfire-overlay 12% over --color-xfire-bg-dark	1.0	false
-.skin-row-btn	text hovered	var(--color-xfire-text)	--color-xfire-overlay 12% over --color-xfire-bg-panel	1.0	false
-.skin-row-btn	text hovered	var(--color-xfire-text)	--color-xfire-overlay 12% over --color-xfire-bg-secondary	1.0	false
-.skin-row-btn	text hovered	var(--color-xfire-text)	--color-xfire-overlay 12% over --color-xfire-bg-secondary 96% over --color-xfire-bg-dark	1.0	false
-.skin-row-btn	text hovered	var(--color-xfire-text)	--color-xfire-overlay 12% over --color-xfire-busy 30% over --color-xfire-bg-dark	1.0	false
+.skin-row-btn	text	var(--color-xfire-text)	--color-xfire-bg-secondary	1.0	false
+.skin-row-btn	text hovered	var(--color-xfire-text)	--color-xfire-accent 12% over --color-xfire-bg-secondary	1.0	false
+.skin-row-btn:disabled	text	var(--color-xfire-text-disabled)	--color-xfire-bg-secondary	1.0	false
+.skin-row-shown	text	var(--color-xfire-selection-text)	--color-xfire-accent 100% over --color-xfire-bg-dark	1.0	false
+.skin-row-shown :is(.skin-access, .skin-badge, .skin-credits, .skin-credits-stated, .skin-credits-term, .skin-credits-value, .skin-credits-url, .skin-credits-licence)	text	var(--color-xfire-selection-text)	--color-xfire-accent 100% over --color-xfire-bg-dark	1.0	false
 .skin-status-edit	text	var(--color-xfire-text)	--color-xfire-bg-status	1.0	false
 .skin-status-edit::placeholder	text	var(--color-xfire-text-dim)	--color-xfire-bg-status	1.0	false
 .skin-status-edit:focus-visible	boundary	var(--color-xfire-focus-outline)	--color-xfire-bg-dark	1.0	true
@@ -909,13 +883,15 @@
 .xfire-titlebar-btn	text	color-mix(in srgb, var(--color-xfire-titlebar-text) 60%, transparent)	--color-xfire-titlebar-start	1.0	false
 .xfire-titlebar-btn-close:hover	text	var(--color-xfire-danger-fg)	--color-xfire-danger var(--tint-fill-strong) over --color-xfire-titlebar-end	1.0	false
 .xfire-titlebar-btn-close:hover	text	var(--color-xfire-danger-fg)	--color-xfire-danger var(--tint-fill-strong) over --color-xfire-titlebar-start	1.0	false
-.xfire-titlebar-btn:hover	text	var(--color-xfire-titlebar-text)	--color-xfire-overlay 10% over --color-xfire-titlebar-end	1.0	false
-.xfire-titlebar-btn:hover	text	var(--color-xfire-titlebar-text)	--color-xfire-overlay 10% over --color-xfire-titlebar-start	1.0	false
+.xfire-titlebar-btn:hover	text	var(--color-xfire-titlebar-text)	--color-xfire-titlebar-text 15% over --color-xfire-titlebar-end	1.0	false
+.xfire-titlebar-btn:hover	text	var(--color-xfire-titlebar-text)	--color-xfire-titlebar-text 15% over --color-xfire-titlebar-start	1.0	false
 .xfire-titlebar-logo	text	var(--color-xfire-titlebar-text)	--color-xfire-titlebar-end	1.0	false
 .xfire-titlebar-logo	text	var(--color-xfire-titlebar-text)	--color-xfire-titlebar-start	1.0	false
 .xfire-titlebar-text	text	var(--color-xfire-titlebar-text)	--color-xfire-titlebar-end	1.0	false
 .xfire-titlebar-text	text	var(--color-xfire-titlebar-text)	--color-xfire-titlebar-start	1.0	false
+::selection	text	var(--color-xfire-selection-text)	--color-xfire-input-selection-bg 99.9% over --color-xfire-input-bg	1.0	false
+:root[data-window-focus="inactive"] ::selection	text	var(--color-xfire-input-text)	--color-xfire-input-selection-bg-inactive 99.9% over --color-xfire-input-bg	1.0	false
 body	icon	var(--color-xfire-text)	--color-xfire-bg-dark	0.48	true
 body	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
 html	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
-option	text	var(--color-xfire-text)	--color-xfire-bg-input	1.0	false
+option	text	var(--color-xfire-text)	--color-xfire-input-bg	1.0	false

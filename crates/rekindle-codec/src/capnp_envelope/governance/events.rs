@@ -19,7 +19,7 @@ use rekindle_types::id::{EventId, ThreadId};
 pub(super) fn write_thread_created(
     mut p: schema_pkg::thread_created_entry::Builder<'_>,
     e: &GovernanceEntry,
-) {
+) -> Result<(), CodecError> {
     let GovernanceEntry::ThreadCreated {
         thread_id,
         parent_channel_id,
@@ -38,15 +38,16 @@ pub(super) fn write_thread_created(
     uuid16_to_capnp(p.reborrow().init_parent_channel_id(), &parent_channel_id.0);
     p.set_name(name);
     p.set_thread_type(thread_type);
-    let mut inv_list = p.reborrow().init_invited(len_u32(invited.len()));
-    for (i, k) in invited.iter().enumerate() {
-        pseudonym_key_to_capnp(inv_list.reborrow().get(len_u32(i)), k);
+    let mut inv_list = p.reborrow().init_invited(len_u32(invited.len())?);
+    for (i, k) in (0u32..).zip(invited.iter()) {
+        pseudonym_key_to_capnp(inv_list.reborrow().get(i), k);
     }
     p.set_has_forum_tag(forum_tag.is_some());
     if let Some(t) = forum_tag {
         p.set_forum_tag(t);
     }
     p.set_auto_archive_seconds(auto_archive_seconds);
+    Ok(())
 }
 
 pub(super) fn write_thread_archived(
@@ -70,7 +71,7 @@ pub(super) fn write_thread_unarchived(
 pub(super) fn write_event_created(
     mut p: schema_pkg::event_created_entry::Builder<'_>,
     e: &GovernanceEntry,
-) {
+) -> Result<(), CodecError> {
     let GovernanceEntry::EventCreated {
         event_id,
         name,
@@ -112,7 +113,7 @@ pub(super) fn write_event_created(
     }
     p.set_has_recurrence(recurrence.is_some());
     if let Some(r) = recurrence {
-        write_recurrence_rule_via_event_capnp(p.reborrow().init_recurrence(), r);
+        write_recurrence_rule_via_event_capnp(p.reborrow().init_recurrence(), r)?;
     }
     p.set_has_location(location.is_some());
     if let Some(loc) = location {
@@ -122,6 +123,7 @@ pub(super) fn write_event_created(
     if let Some(s) = status {
         p.set_status(event_status_to_capnp(*s));
     }
+    Ok(())
 }
 
 pub(super) fn write_event_archived(

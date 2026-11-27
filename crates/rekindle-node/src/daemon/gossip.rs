@@ -140,7 +140,13 @@ pub async fn run_worker(ctx: Arc<DaemonContext>, mut rx: GossipReceiver) {
                 }
                 GossipRequest::Forward(signed) => {
                     let community_id = signed.community_id.clone();
-                    rekindle_gossip::send_to_mesh_raw(Arc::clone(&adapter), &community_id, signed);
+                    if let Err(error) = rekindle_gossip::send_to_mesh_raw(
+                        Arc::clone(&adapter),
+                        &community_id,
+                        signed,
+                    ) {
+                        tracing::warn!(community = %community_id, %error, "queued gossip datagram refused");
+                    }
                 }
             }
         };

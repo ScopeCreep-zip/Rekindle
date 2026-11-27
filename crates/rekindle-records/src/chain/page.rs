@@ -38,7 +38,7 @@ fn malformed(what: &'static str, reason: impl Into<String>) -> ChainError {
 
 /// The page's bytes, for its one write.
 pub(super) fn encode_page(page: &ChainPage) -> Result<Vec<u8>, ChainError> {
-    fits("chain page", wire::encode_chain_page(page), PAGE_CAP)
+    fits("chain page", wire::encode_chain_page(page)?, PAGE_CAP)
 }
 
 /// The longest page key a `HEAD` may name, for sizing a page before the
@@ -75,7 +75,11 @@ pub(super) fn runs(entries: &[Vec<u8>]) -> Result<Vec<&[Vec<u8>]>, ChainError> {
 
 /// The `HEAD` value: the newest page and the retire mark.
 pub(super) fn encode_head(head: &ChainHead) -> Result<Vec<u8>, ChainError> {
-    fits("chain head", wire::encode_chain_head(head), PARTICIPANT_CAP)
+    fits(
+        "chain head",
+        wire::encode_chain_head(head)?,
+        PARTICIPANT_CAP,
+    )
 }
 
 /// A pointer names a page and a non-empty range starting at 1 or later.
@@ -121,8 +125,8 @@ pub(super) fn decode_head(bytes: &[u8]) -> Result<Option<ChainHead>, ChainError>
 }
 
 /// The empty `HEAD`, a new record's first write.
-pub(super) fn empty_head() -> Vec<u8> {
-    wire::encode_empty_chain_head()
+pub(super) fn empty_head() -> Result<Vec<u8>, ChainError> {
+    Ok(wire::encode_empty_chain_head()?)
 }
 
 /// A page read from the network, checked against the pointer that led to

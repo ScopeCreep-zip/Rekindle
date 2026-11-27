@@ -11,21 +11,23 @@ use crate::error::CodecError;
 pub(super) fn write_event_created(
     p: cap::event_created_payload::Builder<'_>,
     payload: &ControlPayload,
-) {
+) -> Result<(), CodecError> {
     let ControlPayload::EventCreated { event } = payload else {
         unreachable!("write_event_created: variant mismatch")
     };
-    write_event_info(p.init_event(), event);
+    write_event_info(p.init_event(), event)?;
+    Ok(())
 }
 
 pub(super) fn write_event_updated(
     p: cap::event_updated_payload::Builder<'_>,
     payload: &ControlPayload,
-) {
+) -> Result<(), CodecError> {
     let ControlPayload::EventUpdated { event } = payload else {
         unreachable!("write_event_updated: variant mismatch")
     };
-    write_event_info(p.init_event(), event);
+    write_event_info(p.init_event(), event)?;
+    Ok(())
 }
 
 pub(super) fn write_event_deleted(

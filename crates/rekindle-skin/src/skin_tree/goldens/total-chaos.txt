@@ -6,8 +6,8 @@ MainTitleBar Drag
   Minimize Button target [-12, -6, 24, 24] art [12, 6, 12, 12] Size
   Maximize Button target [0, -6, 12, 24] art [0, 6, 12, 12] Short
   Close Button target [0, -6, 24, 24] art [0, 6, 12, 12] Size
-AdBar AdArea
-  AdArea Part
+AdBar Decor
+  AdArea AdArea
 MenuBar MenuBar
   MenuBg Part
     FileMenu MenuTitle label "Rekindle" cover [15, 0, 47, 18] target [0, -3, 67, 24] art [0, 3, 67, 18] Size

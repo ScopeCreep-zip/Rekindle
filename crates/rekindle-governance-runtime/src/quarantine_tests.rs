@@ -41,7 +41,8 @@ fn newer_kind_wire(unsigned: &[u8], arm: u16, signer: &Member) -> (Vec<u8>, [u8;
 /// fetched op.
 fn newer_kind_op(world: &mut World, author: &Member, signer: &Member) -> HeldOp {
     let (op, _) = world.build(author, invite(9, "newer"), Deps::Frontier);
-    let (unsigned, sig, wire) = newer_kind_wire(&op_unsigned_bytes(op.op()), 0x7fff, signer);
+    let (unsigned, sig, wire) =
+        newer_kind_wire(&op_unsigned_bytes(op.op()).unwrap(), 0x7fff, signer);
     let op_ref = OpRef {
         op_hash: op_hash(&unsigned, &sig),
         device_key: author.device.verifying_key().to_bytes(),

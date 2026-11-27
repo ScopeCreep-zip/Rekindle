@@ -554,11 +554,17 @@ export type MemberGroup =
   | { kind: "online" }
   | { kind: "offline" };
 
-/** The moderation actions we may take against one member (Tier 1
- *  `TargetModeration`): each the governance validator's verdict on the
- *  entry it writes, computed by the Host (plan E3.2 S9). */
-export interface TargetModeration {
-  kick: boolean;
-  ban: boolean;
-  timeout: boolean;
+/** One field of a community profile edit (plan PF2, `rekindle_types::dto::community_profile::ProfileField`). */
+export type ProfileField<T> = { op: "unchanged" } | { op: "clear" } | { op: "set"; value: T };
+
+/** `update_community_profile`'s patch: every field explicit (PF2). */
+export interface CommunityProfilePatch {
+  bio: ProfileField<string>;
+  pronouns: ProfileField<string>;
+  themeColor: ProfileField<number>;
+  badges: ProfileField<string[]>;
+  avatarRef: ProfileField<string>;
+  bannerRef: ProfileField<string>;
+  customStatus: ProfileField<string>;
+  displayName: ProfileField<string>;
 }

@@ -9,7 +9,7 @@ use rekindle_types::permissions::{ADMINISTRATOR, ALL};
 
 use super::*;
 use crate::checkpoint::{eligible_set, eligible_set_hash};
-use crate::fixture::{cert, merge_entries_under};
+use crate::fixture::{cert, merge_entries_under, FIXTURE_ANCHOR};
 use crate::permissions::{compute_permissions, holds_creator_seat};
 use crate::state::{GovernanceState, RoleState};
 use crate::validate::target::{may_moderate, outranks, TargetAction};
@@ -161,9 +161,9 @@ fn a_further_creator_is_a_member_only_after_its_member_joined() {
 
 #[test]
 fn the_first_checkpoint_hashes_the_whole_creator_set() {
-    let set = eligible_set(&cert_with(1, &[3, 2]), None);
+    let set = eligible_set(&cert_with(1, &[3, 2]), FIXTURE_ANCHOR, None);
     assert_eq!(set, vec![pseudo(1), pseudo(2), pseudo(3)]);
-    let alone = eligible_set(&cert_with(1, &[]), None);
+    let alone = eligible_set(&cert_with(1, &[]), FIXTURE_ANCHOR, None);
     assert_ne!(eligible_set_hash(&set), eligible_set_hash(&alone));
 }
 

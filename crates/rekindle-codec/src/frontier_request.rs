@@ -42,11 +42,11 @@ pub struct FrontierRequest {
 }
 
 impl FrontierRequest {
-    fn signing_bytes(&self) -> Vec<u8> {
+    fn signing_bytes(&self) -> Result<Vec<u8>, CodecError> {
         let mut out = domains::FRONTIER_REQUEST.as_bytes().to_vec();
-        put_lp(&mut out, self.community.as_bytes());
+        put_lp(&mut out, self.community.as_bytes())?;
         out.extend_from_slice(&self.requester);
-        out
+        Ok(out)
     }
 
     /// Sign by the requester's pseudonym `key` and encode.
@@ -60,7 +60,7 @@ impl FrontierRequest {
             ));
         }
         check_len("community id", self.community.len(), MAX_COMMUNITY)?;
-        let sig = sign(key, &self.signing_bytes());
+        let sig = sign(key, &self.signing_bytes()?);
         let mut builder = capnp::message::Builder::new_default();
         {
             let mut b = builder.init_root::<frontier_request::Builder<'_>>();
@@ -68,7 +68,7 @@ impl FrontierRequest {
             b.set_requester(&self.requester);
             b.set_sig(&sig);
         }
-        let out = pack(&builder);
+        let out = pack(&builder)?;
         check_size("frontier request", &out, FRONTIER_REQUEST_MAX_BYTES)?;
         Ok(out)
     }
@@ -92,7 +92,7 @@ pub fn decode_frontier_request(data: &[u8]) -> Result<FrontierRequest, CodecErro
     };
     verify(
         &request.requester,
-        &request.signing_bytes(),
+        &request.signing_bytes()?,
         b.get_sig().map_err(|e| capnp_err(&e))?,
         "frontier request",
     )?;

@@ -9,8 +9,9 @@
 //! validated package (the Host's `SkinFrames`, [`skin`]); a window with no
 //! frame, or a skin with no layout for it, keeps its whole rectangle,
 //! without the shadow. One function cuts a window, whatever the platform:
-//! - Linux: GDK input shape (Wayland input region, X11 SHAPE input) plus
-//!   the X11 bounding shape ([`linux`]);
+//! - Linux: the GtkWindow's widget input shape (Wayland input region, X11
+//!   SHAPE input), kept by GTK across realize and every allocation; the
+//!   page's alpha draws the silhouette ([`linux`]);
 //! - Windows: `SetWindowRgn` ([`win32_region`]);
 //! - macOS: a cursor tracker toggling click-through ([`macos`]).
 //!

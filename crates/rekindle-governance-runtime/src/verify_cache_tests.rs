@@ -49,7 +49,7 @@ fn chain(len: usize) -> Vec<HeldOp> {
 fn bad_signature(op: &HeldOp) -> HeldOp {
     let mut decoded = decode_op(&op.encoded).unwrap().op;
     decoded.sig[0] ^= 1;
-    let hash = op_hash(&op_unsigned_bytes(&decoded), &decoded.sig);
+    let hash = op_hash(&op_unsigned_bytes(&decoded).unwrap(), &decoded.sig);
     HeldOp {
         hash,
         encoded: encode_op(&decoded).unwrap(),

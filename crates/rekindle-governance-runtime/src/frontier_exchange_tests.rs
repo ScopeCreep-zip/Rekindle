@@ -25,7 +25,7 @@ fn signed_head() -> (GenesisCert, OpRef, Vec<u8>) {
         body: meta("C"),
         sig: [0; 64],
     };
-    let unsigned = op_unsigned_bytes(&op);
+    let unsigned = op_unsigned_bytes(&op).unwrap();
     op.sig = key.sign(&op_signing_bytes(ANCHOR, &unsigned)).to_bytes();
     let head = OpRef {
         op_hash: op_hash(&unsigned, &op.sig),

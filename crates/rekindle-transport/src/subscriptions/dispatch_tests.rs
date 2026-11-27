@@ -171,7 +171,7 @@ async fn a_direct_datagram_reaches_only_the_direct_handler() {
 async fn a_gossip_datagram_is_delivered_and_forwarded() {
     let handler = Arc::new(Recorder::default());
     let envelope = signed(5);
-    message(&handler, &gossip_datagram(&envelope)).await;
+    message(&handler, &gossip_datagram(&envelope).unwrap()).await;
     assert_eq!(
         handler.seen(),
         [
@@ -200,7 +200,7 @@ async fn a_relayed_copy_is_suppressed_but_a_re_send_of_the_same_content_is_deliv
     assert_eq!(first.envelope_bytes, resent.envelope_bytes);
 
     for envelope in [&first, &relayed, &resent] {
-        dispatch_app_message(&handler, &mut dedup, &gossip_datagram(envelope)).await;
+        dispatch_app_message(&handler, &mut dedup, &gossip_datagram(envelope).unwrap()).await;
     }
     let gossip = Seen::Gossip {
         community: "gov-key".into(),
@@ -221,7 +221,7 @@ async fn a_relayed_copy_is_suppressed_but_a_re_send_of_the_same_content_is_deliv
 async fn untagged_and_malformed_datagrams_reach_no_handler() {
     let handler = Arc::new(Recorder::default());
     // The pre-E2.3 wire: a bare `SignedEnvelope`, valid and signed.
-    message(&handler, &encode_signed_envelope(&signed(5))).await;
+    message(&handler, &encode_signed_envelope(&signed(5)).unwrap()).await;
     // A transport frame header, an empty datagram, a broken gossip body.
     message(&handler, &[0x01, 0x10, 0, 0]).await;
     message(&handler, &[]).await;
@@ -229,7 +229,7 @@ async fn untagged_and_malformed_datagrams_reach_no_handler() {
     // A gossip envelope with a forged signature.
     let mut forged = signed(5);
     forged.envelope_bytes[4] ^= 0xFF;
-    message(&handler, &gossip_datagram(&forged)).await;
+    message(&handler, &gossip_datagram(&forged).unwrap()).await;
     assert_eq!(handler.seen(), []);
 }
 
@@ -243,7 +243,7 @@ async fn a_direct_call_is_answered_and_a_gossip_call_is_refused() {
         &handler,
         &replies,
         AppCallId(2),
-        &gossip_datagram(&signed(5)),
+        &gossip_datagram(&signed(5)).unwrap(),
         None,
     )
     .await;

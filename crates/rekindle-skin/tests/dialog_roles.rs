@@ -1,0 +1,198 @@
+//! Every built-in sets every dialog role from its own colours (plan
+//! E7.7.3 item 1, E7.7.7): a pack's named colour or art, or the registry's
+//! one derivation table over the colours it defines (ST1 ruling 4), never a
+//! registry default.
+
+use std::collections::{BTreeMap, BTreeSet};
+use std::path::Path;
+
+use rekindle_skin::registry::{
+    dialog, dialog_walk, entry_in, resolve, resolve_unwalked, Base, ENTRIES,
+};
+use rekindle_skin::{access, builtin, manifest, package, tokens};
+use rekindle_types::dto::skin::TokenValue;
+
+fn variant_of(id: &str) -> (BTreeMap<String, TokenValue>, Base) {
+    let pack = builtin::PACKS.iter().find(|p| p.id == id).unwrap();
+    let pkg = package::read(pack.bytes).unwrap();
+    let m = manifest::parse(&pkg).unwrap();
+    let v = &m.variants[0];
+    let t = tokens::parse(&v.tokens, pkg.get(&v.tokens).unwrap()).unwrap();
+    (t, Base::of(v.base, v.contrast))
+}
+
+fn tokens_of(id: &str) -> BTreeMap<String, TokenValue> {
+    variant_of(id).0
+}
+
+fn rgb(t: &BTreeMap<String, TokenValue>, id: &str) -> [u8; 3] {
+    match &t[id] {
+        TokenValue::Color { r, g, b, .. } => [*r, *g, *b],
+        v => panic!("{id}: {v:?}"),
+    }
+}
+
+/// Why a built-in's role can be unset: a pack whose source tree is not in
+/// `legacy/skins/<id>/` (the README lists it) cannot be re-imported, so it
+/// keeps the roles of its last import. The row stays red until its source
+/// is found; the reason is read from the tree, never a list here.
+fn unset_reason(id: &str) -> &'static str {
+    let tree = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../legacy/skins")
+        .join(id);
+    if tree.is_dir() {
+        "its source is in legacy/skins: re-import it (a refused import names the pair the walk cannot settle)"
+    } else {
+        "no source tree in legacy/skins (see its README), so it cannot be re-imported"
+    }
+}
+
+/// Includes `input.text`: with `TextFieldTextCG` unmapped no XML pack's
+/// field text is its own (see the import unit test for the proof).
+#[test]
+fn every_builtin_sets_every_dialog_role() {
+    let mut unset = Vec::new();
+    for pack in &builtin::PACKS {
+        let t = tokens_of(pack.id);
+        let missing: BTreeSet<&str> = dialog::roles().filter(|id| !t.contains_key(*id)).collect();
+        if !missing.is_empty() {
+            unset.push(format!(
+                "{}: {missing:?} unset: {}",
+                pack.id,
+                unset_reason(pack.id)
+            ));
+        }
+    }
+    assert!(unset.is_empty(), "{unset:#?}");
+}
+
+/// Symbiosis's `Themes.xml` (lines 16, 27, 29, 48-53).
+#[test]
+fn symbiosis_takes_its_own_dialog_colours() {
+    let t = tokens_of("symbiosis");
+    for (id, want) in [
+        ("input.bg", [30, 30, 30]),
+        ("input.text", [255, 255, 255]),
+        ("input.selection.bg", [0, 109, 166]),
+        ("menubar.text", [143, 185, 215]),
+        ("text.disabled", [180, 180, 180]),
+        ("tooltip.bg", [56, 56, 56]),
+        ("tooltip.text", [231, 231, 231]),
+        ("selection.text", [255, 255, 255]),
+    ] {
+        assert_eq!(rgb(&t, id), want, "{id}");
+    }
+}
+
+fn walked(notice: &str, id: &str) -> bool {
+    notice.lines().any(|l| l.starts_with(&format!("  {id}: #")))
+}
+
+/// The registry's derivation of `id` over what `t` derives, before any
+/// dialog walk.
+fn derived(t: &BTreeMap<String, TokenValue>, base: Base, id: &str) -> Option<TokenValue> {
+    let d = entry_in(ENTRIES, id)?.derivation?;
+    let served = resolve_unwalked(ENTRIES, base, t);
+    let view: BTreeMap<&str, TokenValue> = served.into_iter().map(|(e, v)| (e.id, v)).collect();
+    d.apply(&view)
+}
+
+/// Model an xfire-classic package from before dialog roles were imported.
+fn legacy_classic_variant() -> (BTreeMap<String, TokenValue>, Base) {
+    let (mut t, base) = variant_of("xfire-classic");
+    t.retain(|id, _| !dialog::is_role(id));
+    (t, base)
+}
+
+/// `registry::resolve` derives missing dialog roles from the pack's own
+/// colours (ST1 ruling 4). A role differs from its derivation only where
+/// the dialog walk moved it (lead round 4 b).
+/// Fail-without: resolve's dialog rows following only a token the skin
+/// sets serves `menubar.bg` the default #0a0a0a, not its #060c1c.
+#[test]
+fn xfire_classic_is_served_every_dialog_role_from_its_own_colours() {
+    let (t, base) = legacy_classic_variant();
+    let served = resolve(ENTRIES, base, &t);
+    let view: BTreeMap<&str, TokenValue> = served.iter().map(|(e, v)| (e.id, v.clone())).collect();
+    let mut filled = t.clone();
+    dialog::fill(&mut filled, base);
+    let moved = dialog_walk::settle(&mut filled, base, &dialog::is_role).changes;
+    for id in dialog::roles() {
+        if !moved.iter().any(|c| c.token == id) {
+            assert_eq!(Some(view[id].clone()), derived(&t, base, id), "{id}");
+        }
+    }
+}
+
+/// Lead round 4 b: derived dialog roles are ours, so load settles them by
+/// the importer's dialog walk, and xfire-classic's served tokens pass
+/// every pair that names a dialog role (its derived `progress.fill`
+/// among them).
+/// Fail-without: `resolve` returning `resolve_unwalked` leaves its derived
+/// `progress.fill` under 3:1 on its track.
+#[test]
+fn xfire_classic_served_tokens_pass_every_dialog_constraint() {
+    let (t, base) = legacy_classic_variant();
+    let names_role = |m: &access::Measured| {
+        dialog::is_role(&m.fg)
+            || dialog_walk::ground_parts(&m.ground)
+                .iter()
+                .any(|g| dialog::is_role(g))
+    };
+    let failing: Vec<String> = access::measured(base, &resolve(ENTRIES, base, &t))
+        .into_iter()
+        .filter(|m| !m.passes() && names_role(m))
+        .map(|m| format!("{} on {}: {:.2}", m.fg, m.ground, m.ratio))
+        .collect();
+    assert!(failing.is_empty(), "{failing:#?}");
+}
+
+/// The title ground of a pack with a strip is its strip's, not the
+/// strip-less derivation (Symbiosis's charcoal strip, not its blue accent).
+#[test]
+fn symbiosis_title_ground_comes_from_its_strip() {
+    let (t, base) = variant_of("symbiosis");
+    for id in ["titlebar.start", "titlebar.end"] {
+        let mut strip_less = t.clone();
+        strip_less.remove(id);
+        assert_ne!(Some(t[id].clone()), derived(&strip_less, base, id), "{id}");
+    }
+}
+
+/// The INI packs name no text field, selection, progress well or thumb
+/// colour: each is the derivation over the pack's settled colours (ST1
+/// ruling 2), unless the dialog walk moved it or a dialog role it reads
+/// (recorded in the NOTICE). A base colour never moves for them.
+#[test]
+fn ini_packs_derive_the_roles_they_do_not_name() {
+    for (id, notice) in [
+        ("alloy", include_str!("../builtin/alloy.NOTICE")),
+        ("combat", include_str!("../builtin/combat.NOTICE")),
+        ("simple-x", include_str!("../builtin/simple-x.NOTICE")),
+        ("xglow", include_str!("../builtin/xglow.NOTICE")),
+    ] {
+        let (t, base) = variant_of(id);
+        for role in [
+            "input.bg",
+            "input.text",
+            "input.selection.bg",
+            "input.selection.bg-inactive",
+            "progress.bg",
+            "progress.outline",
+            "progress.text",
+            "scrollbar.thumb",
+        ] {
+            let d = entry_in(ENTRIES, role).unwrap().derivation.unwrap();
+            let moved = walked(notice, role)
+                || d.sources()
+                    .iter()
+                    .any(|s| dialog::is_role(s) && walked(notice, s));
+            let mut unset = t.clone();
+            unset.remove(role);
+            assert!(
+                moved || Some(t[role].clone()) == derived(&unset, base, role),
+                "{id}: {role}"
+            );
+        }
+    }
+}

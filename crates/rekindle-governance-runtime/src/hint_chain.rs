@@ -159,7 +159,7 @@ pub async fn verified_hints<D: GovernanceRuntimeDeps>(
     let mut chain: Vec<VerifiedHint> = Vec::new();
     for level in levels(deps, anchor, asker).await.iter().rev() {
         let below = chain.last().map(|h| (&h.link, &h.snapshot.state));
-        let Some(link) = endorsed_link(cert, below, level) else {
+        let Some(link) = endorsed_link(cert, anchor, below, level) else {
             break;
         };
         let pages_hold = match pages(deps, &link.body.pages).await {

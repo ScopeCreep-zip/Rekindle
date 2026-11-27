@@ -62,7 +62,7 @@
     min-height: 0;
   }
 
-  @media (max-width: 1100px) {
+  @media (width <= 1100px) {
     .stage-panel-grid {
       grid-template-columns: 1fr;
     }
@@ -380,7 +380,7 @@
 
   /* Architecture §32 Phase 5 W15 — per-community avatar + banner edit row. */
 
-  .profile-popup-edit-avatar {
+  .profile-editor-avatar {
     width: 48px;
     height: 48px;
     border-radius: 50%;
@@ -388,7 +388,7 @@
     border: 1px solid var(--color-xfire-border);
   }
 
-  .profile-popup-edit-banner {
+  .profile-editor-banner {
     width: 200px;
     height: 60px;
     object-fit: cover;
@@ -396,7 +396,7 @@
     border: 1px solid var(--color-xfire-border);
   }
 
-  .profile-popup-edit-image-placeholder {
+  .profile-editor-image-placeholder {
     font-size: 11px;
     color: var(--color-xfire-text-dim);
     padding: 6px 8px;

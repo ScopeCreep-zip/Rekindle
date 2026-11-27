@@ -66,6 +66,7 @@
       border-image: var(--skin-region-titlebar-btn-close--disabled--still, var(--skin-region-titlebar-btn-close--disabled, var(--skin-region-titlebar-btn-close--still, var(--skin-region-titlebar-btn-close))));
     }
   }
+
   @media (forced-colors: active) {
     .xfire-titlebar,
     :where(:root[data-window-inactive]) .xfire-titlebar,

@@ -16,6 +16,8 @@ import type { Message } from "../../stores/chat.store";
 import type { EditMode } from "../../components/chat/message_input/types";
 import type { ScheduledEvent, Thread } from "../../stores/community.store";
 import { formatEventCountdown as formatTimeUntilEvent } from "../../utils/time";
+import type { CommunityCapability } from "../../ipc/commands/dto_capabilities";
+import { deniedFor } from "../../utils/denied";
 
 export type RightPanel = "members" | "pins" | "threadList" | "thread" | null;
 
@@ -175,6 +177,8 @@ export function createCommunityWindowState() {
   const channelLocked = createMemo(() => (activeChannel()?.locked ? (activeChannel()?.lockedReason ?? "") : null));
   /// FX3: waiting for the community's current key from a member.
   const keyPending = createMemo(() => (activeCommunity()?.keyStatus?.state === "pending" ? activeCommunity()!.keyStatus! : null));
+  /// Why we may not do `cap` here, in the Host's words (never-hide), or null.
+  const denied = (cap: CommunityCapability): string | null => deniedFor(activeCommunity(), cap);
   const canPostInChannel = createMemo(() => {
     if (ownRemoval() || joinWithdrawn()) return false;
     if (channelLocked() !== null) return false;
@@ -248,7 +252,7 @@ export function createCommunityWindowState() {
     myPerms, canManageChannels, canManageMessages, canRequestToSpeak,
     canManageCommunity, canSendMessages, canBypassSlowmode, gameServers,
     isAnnouncementChannel, isForumChannel, isStageChannel, isVoiceChannel,
-    isTextPaneVisible, ownRemoval, joinWithdrawn, channelLocked, keyPending, canPostInChannel, activeVoiceChannelState, isConnectedToActiveStage,
+    isTextPaneVisible, denied, ownRemoval, joinWithdrawn, channelLocked, keyPending, canPostInChannel, activeVoiceChannelState, isConnectedToActiveStage,
     channelTypingUsers, upcomingEvents, shouldShowOnboarding, shouldShowWelcome,
     sidebarServerList, formatTimeUntilEvent,
   };

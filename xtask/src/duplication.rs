@@ -73,13 +73,13 @@ pub fn report(label: &str, offenders: Vec<Offender>, root: &Path, hint: &str) ->
     if fresh.is_empty() {
         return Ok(());
     }
-    for o in &fresh {
-        for l in &o.lines {
-            println!("{l}");
-        }
-    }
+    let details = fresh
+        .iter()
+        .flat_map(|offender| offender.lines.iter().map(String::as_str))
+        .collect::<Vec<_>>()
+        .join("\n");
     Err(anyhow!(
-        "{} new {label} duplication(s).\n{hint}\n\
+        "{details}\n{} new {label} duplication(s).\n{hint}\n\
          If the duplication is deliberate, record it with \
          `cargo xtask baseline-duplication` and say why in the commit.",
         fresh.len()
@@ -362,6 +362,7 @@ pub fn check_duplicate_types(root: &Path) -> Result<()> {
 }
 
 pub fn collect_duplicate_types(root: &Path) -> Result<Vec<Offender>> {
+    let tests = crate::test_code::TestCode::load(root)?;
     let mut by_name: BTreeMap<String, Vec<(String, String, usize)>> = BTreeMap::new();
 
     for subdir in ["crates", "src-tauri/src"] {
@@ -371,7 +372,7 @@ pub fn collect_duplicate_types(root: &Path) -> Result<Vec<Offender>> {
                 .unwrap_or(&path)
                 .display()
                 .to_string();
-            if rel.contains("/tests/") || rel.contains("/benches/") {
+            if tests.is_test(&path) {
                 continue;
             }
             let Ok(src) = std::fs::read_to_string(&path) else {

@@ -26,7 +26,7 @@ Colours (63 defined)
   ChatPersonalTextCG RGBA(231,231,231,0) -> not mapped: no registry role chat.self.text yet
   ChatTitleCG RGBA(255,255,255,0) -> token titlebar.text
   ChatViewBGCG RGBA(30,30,30,0) -> token bg.panel
-  DisabledTextCG RGBA(180,180,180,0) -> not mapped: no registry role text.disabled yet
+  DisabledTextCG RGBA(180,180,180,0) -> token text.disabled
   HeaderTextCG RGBA(255,255,255,0) -> token text.secondary
   InfoViewBGCG RGBA(20,20,20,0) -> token bg.secondary
   InfoViewTextCG RGBA(255,255,255,0) -> not mapped: no registry role profile.text yet
@@ -37,16 +37,16 @@ Colours (63 defined)
   ListColorInActive RGBA(5,8,10,0) -> dropped: defined, never referenced
   ListColorSelectedCG RGBA(23,124,193,0) -> token accent.fill
   ListColorSelectedDiabledCG RGBA(47,81,105,0) -> not mapped: no registry role list.selected.bg.inactive yet
-  ListColorSelectedTextCG RGBA(255,255,255,0) -> registry-fixed accent.fg (a skin cannot set it)
+  ListColorSelectedTextCG RGBA(255,255,255,0) -> token selection.text
   ListFoFTextCG RGBA(143,185,215,0) -> dropped: friends of friends (E7.8 research)
   ListFriendTextCG RGBA(231,231,231,0) -> token text.base
   ListOfflineTextCG RGBA(125,125,125,0) -> token status.offline-text
-  MenuTextCG RGBA(143,185,215,0) -> not mapped: no registry role menubar.text yet
-  ProgBarBGCG RGBA(125,125,125,0) -> not mapped: no registry role progress.bg yet
-  ProgBarFillCG RGBA(143,185,215,0) -> not mapped: no registry role progress.fill yet
-  ProgBarOutlineCG RGBA(125,125,125,0) -> not mapped: no registry role progress.border yet
-  ProgBarTextCG RGBA(231,231,231,0) -> not mapped: no registry role progress.text yet
-  ScrollbarBGCG RGBA(0,0,0,0) -> not mapped: no registry role scrollbar.track yet
+  MenuTextCG RGBA(143,185,215,0) -> token menubar.text
+  ProgBarBGCG RGBA(125,125,125,0) -> token progress.bg
+  ProgBarFillCG RGBA(143,185,215,0) -> token progress.fill
+  ProgBarOutlineCG RGBA(125,125,125,0) -> token progress.outline
+  ProgBarTextCG RGBA(231,231,231,0) -> token progress.text
+  ScrollbarBGCG RGBA(0,0,0,0) -> token scrollbar.track
   ScrollbarCG RGBA(0,0,0,0) -> image shift (baked)
   StatusBackgroundCG RGBA(24,24,24,0) -> token bg.status
   StatusTextCG RGBA(150,150,150,0) -> token text.status
@@ -55,12 +55,12 @@ Colours (63 defined)
   TextDepth3 RGBA(27,161,253,0) -> dropped: server browser and file depth colours
   TextDepth4 RGBA(143,185,215,0) -> dropped: server browser and file depth colours
   TextFavServersCG RGBA(143,185,215,0) -> dropped: server browser and file depth colours
-  TextFieldBGCG RGBA(30,30,30,0) -> not mapped: no registry role input.bg (bg.input is ChatEditBGCG's) yet
-  TextFieldTextCG RGBA(255,255,255,0) -> not mapped: no registry role input.text yet
-  TextFieldTextHighlightCG RGBA(0,109,166,0) -> not mapped: no registry role selection.bg yet
-  TextFieldTextHighlightInactiveCG RGBA(0,109,166,0) -> not mapped: no registry role selection.bg.inactive yet
-  ToolTipBGCG RGBA(56,56,56,0) -> not mapped: no registry role tooltip.bg yet
-  ToolTipTextCG RGBA(231,231,231,0) -> not mapped: no registry role tooltip.text yet
+  TextFieldBGCG RGBA(30,30,30,0) -> token input.bg
+  TextFieldTextCG RGBA(255,255,255,0) -> token input.text
+  TextFieldTextHighlightCG RGBA(0,109,166,0) -> token input.selection.bg
+  TextFieldTextHighlightInactiveCG RGBA(0,109,166,0) -> token input.selection.bg-inactive
+  ToolTipBGCG RGBA(56,56,56,0) -> token tooltip.bg
+  ToolTipTextCG RGBA(231,231,231,0) -> token tooltip.text
   UserNameCG RGBA(255,255,255,0) -> not mapped: no registry role self.name yet
   UserTypingMessageCG RGBA(255,255,255,0) -> not mapped: no registry role chat.typing.text yet
   XfireLogoCG RGBA(0,0,0,0) -> image shift (baked)
@@ -452,7 +452,7 @@ Dropped
   layout tiles: 0
   sounds, strings, popups, other bitmaps and the in-game overlay (XIG) are not read.
 
-Contrast changes (minimal Oklab-lightness walk) (15 made)
+Contrast changes (minimal Oklab-lightness walk) (19 made)
   accent.text: #177cc1 -> #1a7ec3 (1.4.3 accent.text on bg.dark: 4.42:1 -> 4.54:1, required 4.50:1)
   accent.text: #1a7ec3 -> #2183c8 (1.4.3 accent.text on bg.secondary: 4.22:1 -> 4.51:1, required 4.50:1)
   accent.text: #2183c8 -> #2b8bd0 (1.4.3 accent.text on bg.panel: 4.08:1 -> 4.53:1, required 4.50:1)
@@ -468,3 +468,7 @@ Contrast changes (minimal Oklab-lightness walk) (15 made)
   accent.text: #2d8dd2 -> #3191d6 (1.4.3 .announcement-icon accent.text on accent.fill 25% over bg.dark: 4.32:1 -> passes, required 4.50:1)
   status.offline-text: #878787 -> #909090 (1.4.3 .buddy-handshake-retrying status.offline-text on accent.fill 30% over bg.dark: 4.02:1 -> passes, required 4.50:1)
   accent.text: #3191d6 -> #3292d7 (1.4.3 .chat-mention accent.text on accent.fill 9% over bg.panel: 4.48:1 -> passes, required 4.50:1)
+  progress.fill: #8fb9d7 -> #b6e2ff (1.4.11 progress.fill on progress.bg: 1.97:1 -> 3.00:1, required 3.00:1)
+  progress.bg: #7d7d7d -> #686868 (1.4.3 progress.text on progress.bg: 3.32:1 -> 4.50:1, required 4.50:1)
+  titlebar.end: #4c4c4c -> #3d3d3d (1.4.11 .skin-menu:focus-visible boundary focus-outline on titlebar.end: 2.37:1 -> 3.00:1, required 3.00:1)
+  titlebar.start: #4c4c4c -> #3d3d3d (1.4.11 .skin-menu:focus-visible boundary focus-outline on titlebar.start: 2.37:1 -> 3.00:1, required 3.00:1)
