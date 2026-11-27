@@ -490,15 +490,16 @@ export function subscribeProfileUpdates(
   });
 }
 
-/// A review of an action the backend began (`SubscriptionEvent::IntentPending`)
-/// and the hold it belongs to: `holdId` is the Host's id for the backend's
-/// hold, the same across the review's refreshes (null for none).
-export function subscribeIntentEvents(
-  onReview: (review: IntentReview, holdId: string | null) => void,
-): Promise<UnlistenFn> {
-  return on<{ intentPending: { review: IntentReview; holdId: string | null } }>("intent-event", (payload) => {
-    onReview(payload.intentPending.review, payload.intentPending.holdId);
-  });
+/// The Host's reviews (plan S7d-keys.10 part 2b): a live review of an
+/// action the backend began (`intentPending`, `holdId` the backend's hold,
+/// stable across refreshes, or null), or the complete set of held reviews
+/// (`heldReviews`, a standing snapshot, empty included).
+export type IntentEvent =
+  | { intentPending: { review: IntentReview; holdId: string | null } }
+  | { heldReviews: { review: IntentReview; holdId: string }[] };
+
+export function subscribeIntentEvents(onEvent: (event: IntentEvent) => void): Promise<UnlistenFn> {
+  return on<IntentEvent>("intent-event", onEvent);
 }
 
 /// A pairing link arrived from the OS and was refused
