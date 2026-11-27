@@ -11,6 +11,8 @@ interface ThreadPanelProps {
   communityId: string;
   messages: Message[];
   onClose: () => void;
+  /** The Host's reason we may not reply in this thread's channel (SEND_IN_THREADS), or null. */
+  replyDenied: string | null;
   onSend: (communityId: string, threadId: string, body: string) => void;
   onArchive: (communityId: string, threadId: string) => void;
   onUnarchive: (communityId: string, threadId: string) => void;
@@ -130,6 +132,9 @@ const ThreadPanel: Component<ThreadPanelProps> = (props) => {
             <textarea
               class="message-input message-input-field"
               placeholder={thread().archived ? "Reply to reactivate thread..." : "Reply to thread..."}
+              disabled={props.replyDenied !== null}
+              title={props.replyDenied ?? undefined}
+              aria-description={props.replyDenied ?? undefined}
               value={body()}
               onInput={(e) => setBody(e.currentTarget.value)}
               onKeyDown={handleKeyDown}

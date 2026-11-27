@@ -16,6 +16,14 @@ interface ForumChannelViewProps {
 const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
   const [activeTag, setActiveTag] = createSignal<string | null>(null);
   const [composerOpen, setComposerOpen] = createSignal(false);
+  // A forum post is a new thread and its starter, so it needs both thread
+  // capabilities (plan FT1d); each lacking one carries the Host's reason.
+  // The controls stay shown, disabled with the reasons (owner: never hidden).
+  const postDenied = (): string | null => {
+    const denied = props.channel.denied ?? {};
+    const reasons = [denied.createPublicThreads, denied.sendInThreads].filter((r): r is string => !!r);
+    return reasons.length > 0 ? reasons.join(" ") : null;
+  };
   const [title, setTitle] = createSignal("");
   const [body, setBody] = createSignal("");
   const [selectedTag, setSelectedTag] = createSignal<string>("");
@@ -62,7 +70,13 @@ const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
             </Show>
           </div>
         </div>
-        <button class="forum-channel-new-post-btn" onClick={() => setComposerOpen(true)}>
+        <button
+          class="forum-channel-new-post-btn"
+          onClick={() => setComposerOpen(true)}
+          disabled={postDenied() !== null}
+          title={postDenied() ?? undefined}
+          aria-description={postDenied() ?? undefined}
+        >
           <SkinGlyph name="plus" />
           New post
         </button>
@@ -127,7 +141,13 @@ const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
             <button class="btn btn-secondary" onClick={() => setComposerOpen(false)}>
               Cancel
             </button>
-            <button class="btn btn-primary" onClick={() => void handleSubmit()} disabled={isSubmitting()}>
+            <button
+              class="btn btn-primary"
+              onClick={() => void handleSubmit()}
+              disabled={isSubmitting() || postDenied() !== null}
+              title={postDenied() ?? undefined}
+              aria-description={postDenied() ?? undefined}
+            >
               {isSubmitting() ? "Posting..." : "Create post"}
             </button>
           </div>

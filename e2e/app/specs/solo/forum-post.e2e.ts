@@ -61,6 +61,7 @@ describe("forum post accepted as one request (FT1)", function () {
   let peers: Peer[] = [];
   let anchor = "";
   let writable = "";
+  let deniedId = "";
 
   before(async () => {
     await createIdentity(browser, member);
@@ -68,6 +69,7 @@ describe("forum post accepted as one request (FT1)", function () {
     const [cara] = peers;
     anchor = await peerCreateCommunity(cara, COMMUNITY);
     const denied = await createForum(cara, anchor, DENIED);
+    deniedId = denied;
     writable = await createForum(cara, anchor, WRITABLE);
     await peerReviewed(cara, [
       "community", "channel", "overwrite", "set", "-c", anchor, "-C", denied,
@@ -83,17 +85,37 @@ describe("forum post accepted as one request (FT1)", function () {
     await stopFleet(peers);
   });
 
-  it("keeps the draft and shows the Host's reason when creating a post is refused", async () => {
+  it("keeps New post disabled with the Host's reason where posting is denied, and the Host refuses in words", async () => {
     await openForum(DENIED);
-    await composePost();
-    const toast = await byText(browser, ".toast-error", "permission denied", NET_WAIT_MS);
-    expect((await toast.getText()).toLowerCase()).toContain("permission denied");
-    expect(await (await shown(browser, TITLE_INPUT)).getValue()).toBe(TITLE);
-    expect(await (await shown(browser, BODY_INPUT)).getValue()).toBe(BODY);
-    expect(await browser.$$(".forum-channel-thread-card")).toHaveLength(0);
-    await shot("refused-draft");
-    await (await shown(browser, ".forum-channel-composer-actions .btn-secondary")).click();
-    await gone(browser, COMPOSER);
+    // Never hidden: the control stays, disabled, with the Host's reason (FT1d).
+    const newPost = await shown(browser, ".forum-channel-new-post-btn", NET_WAIT_MS);
+    await waitUntil(async () => !(await newPost.isEnabled()), NET_WAIT_MS, "New post stayed enabled in the forum where posting is denied");
+    const reason = (await newPost.getAttribute("title")) ?? "";
+    const described = (await newPost.getAttribute("aria-description")) ?? "";
+    console.log(`[forum] New post's reason: ${reason}`);
+    await shot("new-post-disabled");
+    // The Host's own refusal, asked directly as the button would: its reason
+    // is in words, never a permission bitmask or a channel id (FT1d).
+    const refusal = (await browser.execute(async (community: string, channel: string) => {
+      const { invoke } = (window as unknown as {
+        __TAURI_INTERNALS__: { invoke(cmd: string, args: unknown): Promise<unknown> };
+      }).__TAURI_INTERNALS__;
+      try {
+        await invoke("create_forum_post", { communityId: community, channelId: channel, title: "Refused", forumTag: null, body: "Refused" });
+        return { code: 0, message: "" };
+      } catch (e) {
+        const failed = e as { type?: string; data?: { code?: number; message?: string } };
+        return { code: failed.data?.code ?? -1, message: failed.data?.message ?? JSON.stringify(e) };
+      }
+    }, anchor, deniedId)) as { code: number; message: string };
+    console.log(`[forum] the Host's refusal: ${JSON.stringify(refusal)}`);
+    expect({
+      disabledWithReason: reason.length > 0 && described === reason,
+      refused: refusal.code,
+      bitmask: /0x[0-9a-f]{4,}/i.test(refusal.message) || /0x[0-9a-f]{4,}/i.test(reason),
+      channelId: refusal.message.includes(deniedId) || reason.includes(deniedId),
+      cards: (await browser.$$(".forum-channel-thread-card")).length,
+    }).toEqual({ disabledWithReason: true, refused: 403, bitmask: false, channelId: false, cards: 0 });
   });
 
   it("shows the accepted starter once, including after opening the thread again", async () => {
@@ -107,6 +129,18 @@ describe("forum post accepted as one request (FT1)", function () {
     // keyed by its author and id), so only its presence and uniqueness count.
     expect((id ?? "").length).toBeGreaterThan(0);
     expect(await starterRows()).toEqual([id]);
+    // The Host counts our own queued starter (FT1d): the card and the open
+    // thread read "1 message" before it is sent.
+    await waitUntil(
+      async () => / · 1 message · /.test(await (await byText(browser, ".forum-channel-thread-card", TITLE)).getText()),
+      NET_WAIT_MS,
+      "the post's card did not read 1 message before the starter was sent",
+    );
+    await waitUntil(
+      async () => / · 1 message\b/.test(await (await browser.$(".thread-panel-meta")).getText()),
+      NET_WAIT_MS,
+      "the open thread's header did not read 1 message before the starter was sent",
+    );
     await shot("accepted-starter");
 
     await (await shown(browser, '.thread-panel button[aria-label="Close thread"]')).click();
