@@ -1,4 +1,4 @@
-import { type Component, createSignal, onMount, For, Show } from "solid-js";
+import { type Component, createSignal, onMount, For, Show, createUniqueId } from "solid-js";
 import FormField from "../../components/common/FormField";
 import { settingsState } from "../../stores/settings.store";
 import { handleSaveSettings } from "../../actions/settings.actions";
@@ -6,6 +6,10 @@ import { commands } from "../../ipc/commands";
 import type { NotificationContent, QuietHoursSettings } from "../../ipc/commands/types";
 
 const NotificationsTab: Component = () => {
+  const notificationDetailId = createUniqueId();
+  const quietHoursStartId = createUniqueId();
+  const quietHoursEndId = createUniqueId();
+  const quietHoursTimezoneId = createUniqueId();
   // Architecture §17.2 / §17.3 — Do Not Disturb + quiet hours.
   const [dnd, setDnd] = createSignal<boolean>(false);
   // Quiet hours, including the IANA timezone for DST-aware resolution
@@ -168,8 +172,9 @@ const NotificationsTab: Component = () => {
         </span>
       </label>
 
-      <FormField label="Notifications show">
+      <FormField label="Notifications show" controlId={notificationDetailId}>
         <select
+          id={notificationDetailId}
           class="form-select"
           value={settingsState.notificationContent}
           onChange={(e) =>
@@ -232,8 +237,9 @@ const NotificationsTab: Component = () => {
         />
         <span class="buddy-name">Enable quiet hours</span>
       </label>
-      <FormField label="Start hour (0–23)">
+      <FormField label="Start hour (0–23)" controlId={quietHoursStartId}>
         <input
+          id={quietHoursStartId}
           class="form-input"
           type="number"
           min={0}
@@ -246,8 +252,9 @@ const NotificationsTab: Component = () => {
           }}
         />
       </FormField>
-      <FormField label="End hour (0–23)">
+      <FormField label="End hour (0–23)" controlId={quietHoursEndId}>
         <input
+          id={quietHoursEndId}
           class="form-input"
           type="number"
           min={0}
@@ -260,8 +267,9 @@ const NotificationsTab: Component = () => {
           }}
         />
       </FormField>
-      <FormField label="Timezone">
+      <FormField label="Timezone" controlId={quietHoursTimezoneId}>
         <select
+          id={quietHoursTimezoneId}
           class="form-select"
           value={qh()?.timezone ?? ""}
           disabled={qh()?.enabled !== true}

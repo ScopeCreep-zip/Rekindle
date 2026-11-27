@@ -1,9 +1,11 @@
-import { type Component, onMount, For, Show } from "solid-js";
+import { type Component, onMount, For, Show, createUniqueId } from "solid-js";
 import FormField from "../../components/common/FormField";
 import { settingsState, setSettingsState } from "../../stores/settings.store";
 import { commands } from "../../ipc/commands";
 
 const AudioTab: Component = () => {
+  const inputDeviceId = createUniqueId();
+  const outputDeviceId = createUniqueId();
   // Plan §Failure 1 — load enumerated audio devices + the persisted
   // selection when the audio tab opens. Which device a call opens when the
   // saved one is missing is the backend's decision (plan C7.24).
@@ -69,8 +71,9 @@ const AudioTab: Component = () => {
   return (
     <>
       <div class="settings-section-title">Audio Devices</div>
-      <FormField label="Input Device">
+      <FormField label="Input Device" controlId={inputDeviceId}>
         <select
+          id={inputDeviceId}
           class="form-select"
           value={settingsState.selectedInputDevice ?? ""}
           onChange={(e) => {
@@ -107,8 +110,9 @@ const AudioTab: Component = () => {
           </FormField>
         )}
       </Show>
-      <FormField label="Output Device">
+      <FormField label="Output Device" controlId={outputDeviceId}>
         <select
+          id={outputDeviceId}
           class="form-select"
           value={settingsState.selectedOutputDevice ?? ""}
           onChange={(e) => {

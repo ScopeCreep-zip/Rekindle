@@ -1,4 +1,4 @@
-import { type Component, Show, createSignal, createEffect } from "solid-js";
+import { type Component, Show, createSignal, createEffect, createUniqueId } from "solid-js";
 import SkinGlyph from "../../common/SkinGlyph";
 import type { Community } from "../../../stores/community.store";
 import { handleUpdateCommunityInfo } from "../../../actions/community.actions";
@@ -14,6 +14,8 @@ interface OverviewTabProps {
 }
 
 const OverviewTab: Component<OverviewTabProps> = (props) => {
+  const communityNameId = createUniqueId();
+  const descriptionId = createUniqueId();
   const [editName, setEditName] = createSignal("");
   const [editDescription, setEditDescription] = createSignal("");
   const [copied, setCopied] = createSignal(false);
@@ -55,11 +57,12 @@ const OverviewTab: Component<OverviewTabProps> = (props) => {
 
   return (
     <div class="settings-section">
-      <FormField label="Community Name">
+      <FormField label="Community Name" controlId={props.canManage ? communityNameId : undefined}>
         <Show when={props.canManage} fallback={
           <div class="settings-value">{props.community.name}</div>
         }>
           <input
+            id={communityNameId}
             class="form-input"
             type="text"
             value={editName()}
@@ -67,11 +70,12 @@ const OverviewTab: Component<OverviewTabProps> = (props) => {
           />
         </Show>
       </FormField>
-      <FormField label="Description">
+      <FormField label="Description" controlId={props.canManage ? descriptionId : undefined}>
         <Show when={props.canManage} fallback={
           <div class="settings-value">{props.community.description || "No description set."}</div>
         }>
           <textarea
+            id={descriptionId}
             class="form-textarea"
             rows={3}
             value={editDescription()}

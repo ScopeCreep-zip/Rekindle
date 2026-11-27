@@ -1,4 +1,4 @@
-import { type Component, Show, createEffect, createSignal, onCleanup } from "solid-js";
+import { type Component, Show, createEffect, createSignal, onCleanup, createUniqueId } from "solid-js";
 import type { JSX } from "solid-js";
 
 import Modal from "../common/Modal";
@@ -43,6 +43,11 @@ type Stage = "intro" | "show-qr" | "scan-paste" | "complete";
  *    becomes useless after the existing device's next refresh.
  */
 const AddDeviceModal: Component<AddDeviceModalProps> = (props) => {
+  const manualPairingBundleId = createUniqueId();
+  const pairingCodeId = createUniqueId();
+  const pairingSaltId = createUniqueId();
+  const pairingRouteId = createUniqueId();
+  const deviceNameId = createUniqueId();
   const [stage, setStage] = createSignal<Stage>("intro");
   const [pairingSession, setPairingSession] = createSignal<{
     pairingCode: string;
@@ -340,8 +345,9 @@ const AddDeviceModal: Component<AddDeviceModalProps> = (props) => {
             </FormField>
           )}
         </Show>
-        <FormField label="Or paste this bundle on the new device (manual fallback)">
+        <FormField label="Or paste this bundle on the new device (manual fallback)" controlId={manualPairingBundleId}>
           <textarea
+            id={manualPairingBundleId}
             class="form-input"
             rows={8}
             readOnly
@@ -397,32 +403,36 @@ const AddDeviceModal: Component<AddDeviceModalProps> = (props) => {
             onClose={() => setScannerOpen(false)}
           />
         </Show>
-        <FormField label="Pairing code">
+        <FormField label="Pairing code" controlId={pairingCodeId}>
           <input
+            id={pairingCodeId}
             class="form-input"
             type="text"
             value={acceptCode()}
             onInput={(e) => setAcceptCode(e.currentTarget.value)}
           />
         </FormField>
-        <FormField label="Pairing salt (hex)">
+        <FormField label="Pairing salt (hex)" controlId={pairingSaltId}>
           <input
+            id={pairingSaltId}
             class="form-input"
             type="text"
             value={acceptSalt()}
             onInput={(e) => setAcceptSalt(e.currentTarget.value)}
           />
         </FormField>
-        <FormField label="Existing-device route blob (hex)">
+        <FormField label="Existing-device route blob (hex)" controlId={pairingRouteId}>
           <input
+            id={pairingRouteId}
             class="form-input"
             type="text"
             value={acceptRoute()}
             onInput={(e) => setAcceptRoute(e.currentTarget.value)}
           />
         </FormField>
-        <FormField label="This device's display name">
+        <FormField label="This device's display name" controlId={deviceNameId}>
           <input
+            id={deviceNameId}
             class="form-input"
             type="text"
             value={acceptName()}

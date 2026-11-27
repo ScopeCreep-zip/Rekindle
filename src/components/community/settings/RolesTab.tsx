@@ -1,4 +1,4 @@
-import { type Component, For, Show, createSignal } from "solid-js";
+import { type Component, For, Show, createSignal, createUniqueId } from "solid-js";
 import SkinGlyph from "../../common/SkinGlyph";
 import type { Community } from "../../../stores/community.store";
 import { EVERYONE_ROLE_ID } from "../../../stores/community.store";
@@ -20,6 +20,10 @@ interface RolesTabProps {
 }
 
 const RolesTab: Component<RolesTabProps> = (props) => {
+  const editRoleNameId = createUniqueId();
+  const editRoleColorId = createUniqueId();
+  const newRoleNameId = createUniqueId();
+  const newRoleColorId = createUniqueId();
   const [showNewRole, setShowNewRole] = createSignal(false);
   const [creatingRole, setCreatingRole] = createSignal(false);
   const [newRoleName, setNewRoleName] = createSignal("");
@@ -140,17 +144,19 @@ const RolesTab: Component<RolesTabProps> = (props) => {
             </div>
           }>
             <div class="settings-section settings-section-accented">
-              <FormField label="Name">
+              <FormField label="Name" controlId={editRoleNameId}>
                 <input
+                  id={editRoleNameId}
                   class="form-input"
                   type="text"
                   value={editRoleName()}
                   onInput={(e) => setEditRoleName(e.currentTarget.value)}
                 />
               </FormField>
-              <FormField label="Color">
+              <FormField label="Color" controlId={editRoleColorId}>
                 <div class="form-field-row">
                   <input
+                    id={editRoleColorId}
                     type="color"
                     value={editRoleColor()}
                     onInput={(e) => setEditRoleColor(e.currentTarget.value)}
@@ -218,8 +224,9 @@ const RolesTab: Component<RolesTabProps> = (props) => {
         </button>
       }>
         <div class="settings-section settings-section-success">
-          <FormField label="Name">
+          <FormField label="Name" controlId={newRoleNameId}>
             <input
+              id={newRoleNameId}
               class="form-input"
               type="text"
               placeholder="Role name..."
@@ -227,9 +234,10 @@ const RolesTab: Component<RolesTabProps> = (props) => {
               onInput={(e) => setNewRoleName(e.currentTarget.value)}
             />
           </FormField>
-          <FormField label="Color">
+          <FormField label="Color" controlId={newRoleColorId}>
             <div class="form-field-row">
               <input
+                id={newRoleColorId}
                 type="color"
                 value={newRoleColor()}
                 onInput={(e) => setNewRoleColor(e.currentTarget.value)}

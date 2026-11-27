@@ -1,4 +1,4 @@
-import { type Component, createSignal, onMount, For, Show } from "solid-js";
+import { type Component, createSignal, onMount, For, Show, createUniqueId } from "solid-js";
 import FormField from "../../components/common/FormField";
 import { settingsState, setSettingsState } from "../../stores/settings.store";
 import { commands } from "../../ipc/commands";
@@ -11,6 +11,7 @@ interface CameraOption {
 }
 
 const VideoTab: Component = () => {
+  const cameraDeviceId = createUniqueId();
   // Plan §Failure 2 — the persisted selection lives on
   // `settingsState.selectedVideoDeviceId/Label` and on
   // `Preferences.videoDeviceId/videoDeviceLabel`. The LABEL is the
@@ -122,8 +123,9 @@ const VideoTab: Component = () => {
   return (
     <>
       <div class="settings-section-title">Camera</div>
-      <FormField label="Camera Device">
+      <FormField label="Camera Device" controlId={cameraDeviceId}>
         <select
+          id={cameraDeviceId}
           class="form-select"
           value={selectedKey()}
           onChange={(e) => {

@@ -1,4 +1,4 @@
-import { type Component, createEffect, createSignal } from "solid-js";
+import { type Component, createEffect, createSignal, createUniqueId } from "solid-js";
 import type { Community } from "../../../stores/community.store";
 import { commands, type PresenceSharingPolicy } from "../../../ipc/commands";
 import { addToast } from "../../../stores/toast.store";
@@ -22,6 +22,9 @@ const DEFAULT_POLICY: PresenceSharingPolicy = {
  * opting out redacts the next presence write right away.
  */
 const PrivacyTab: Component<PrivacyTabProps> = (props) => {
+  const channelPresenceId = createUniqueId();
+  const activityPresenceId = createUniqueId();
+  const lastSeenId = createUniqueId();
   const [policy, setPolicy] = createSignal<PresenceSharingPolicy>(DEFAULT_POLICY);
   const [loaded, setLoaded] = createSignal(false);
   const [saving, setSaving] = createSignal(false);
@@ -74,12 +77,13 @@ const PrivacyTab: Component<PrivacyTabProps> = (props) => {
         </label>
       </FormField>
 
-      <FormField label="Share which channel you're in">
+      <FormField label="Share which channel you're in" controlId={channelPresenceId}>
         <div class="settings-hint">
           Others can't see what channel you're in unless you turn this on. If
           you don't share it, you won't see where other members are either.
         </div>
         <select
+          id={channelPresenceId}
           class="form-select"
           value={policy().shareLocation}
           disabled={disabled()}
@@ -92,12 +96,13 @@ const PrivacyTab: Component<PrivacyTabProps> = (props) => {
         </select>
       </FormField>
 
-      <FormField label="Share activity / game">
+      <FormField label="Share activity / game" controlId={activityPresenceId}>
         <div class="settings-hint">
           Share what you're playing or doing. Off by default; reciprocal —
           hidden both ways unless shared.
         </div>
         <select
+          id={activityPresenceId}
           class="form-select"
           value={policy().shareActivity}
           disabled={disabled()}
@@ -110,13 +115,14 @@ const PrivacyTab: Component<PrivacyTabProps> = (props) => {
         </select>
       </FormField>
 
-      <FormField label="Last seen">
+      <FormField label="Last seen" controlId={lastSeenId}>
         <div class="settings-hint">
           Hidden by default. "Recently" shows only an hour-coarse bucket;
           "Exact time" reveals a precise timestamp. You see peers' last-seen
           only at the precision you expose yourself.
         </div>
         <select
+          id={lastSeenId}
           class="form-select"
           value={policy().lastSeen}
           disabled={disabled()}

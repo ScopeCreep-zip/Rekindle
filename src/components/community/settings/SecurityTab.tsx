@@ -1,4 +1,4 @@
-import { type Component, Show, createEffect, createMemo, createSignal } from "solid-js";
+import { type Component, Show, createEffect, createMemo, createSignal, createUniqueId } from "solid-js";
 import SkinGlyph from "../../common/SkinGlyph";
 import type { Community } from "../../../stores/community.store";
 import type { ConfirmOptions } from "./types";
@@ -18,6 +18,8 @@ interface SecurityTabProps {
 }
 
 const SecurityTab: Component<SecurityTabProps> = (props) => {
+  const defaultNotificationsId = createUniqueId();
+  const communityRulesId = createUniqueId();
   const [rotating, setRotating] = createSignal(false);
   const [expanding, setExpanding] = createSignal(false);
 
@@ -159,13 +161,14 @@ const SecurityTab: Component<SecurityTabProps> = (props) => {
 
       {/* Architecture §17.1 tier 2 — community-wide default notification level. */}
       <Show when={canManageCommunity()}>
-        <FormField label="Default Notifications (community-wide)">
+        <FormField label="Default Notifications (community-wide)" controlId={defaultNotificationsId}>
           <div class="settings-hint">
             Sets the default notification level for every channel in this
             community. Members can still override per-channel locally
             (architecture §17.1 tier 1).
           </div>
           <select
+            id={defaultNotificationsId}
             class="form-select"
             value={defaultNotifLevel()}
             disabled={savingDefaultLevel()}
@@ -206,8 +209,9 @@ const SecurityTab: Component<SecurityTabProps> = (props) => {
             />
           </div>
         </FormField>
-        <FormField label="Community rules (optional Markdown)">
+        <FormField label="Community rules (optional Markdown)" controlId={communityRulesId}>
           <textarea
+            id={communityRulesId}
             class="form-input"
             rows={6}
             value={policyText()}

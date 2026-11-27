@@ -1,4 +1,4 @@
-import { type Component, For, Show, createSignal, onMount } from "solid-js";
+import { type Component, For, Show, createSignal, onMount, createUniqueId } from "solid-js";
 import { commands } from "../../ipc/commands";
 import FormField from "../common/FormField";
 
@@ -9,6 +9,10 @@ import FormField from "../common/FormField";
 /// `rekindle-push-relay` daemon can register the desktop client as a
 /// test consumer (platform="self") and verify wake plumbing.
 const PushRelaySettingsSection: Component = () => {
+  const relayPseudonymId = createUniqueId();
+  const pushTokenId = createUniqueId();
+  const platformId = createUniqueId();
+  const recordKeysId = createUniqueId();
   const [registrations, setRegistrations] =
     createSignal<{ pseudonym: string; platform: string; recordKeys: string[] }[]>([]);
   const [relayPseudonym, setRelayPseudonym] = createSignal("");
@@ -106,8 +110,9 @@ const PushRelaySettingsSection: Component = () => {
         plaintext after registration.
       </div>
 
-      <FormField label="Relay pseudonym (hex)">
+      <FormField label="Relay pseudonym (hex)" controlId={relayPseudonymId}>
         <input
+          id={relayPseudonymId}
           type="text"
           class="form-input"
           value={relayPseudonym()}
@@ -116,8 +121,9 @@ const PushRelaySettingsSection: Component = () => {
           aria-describedby="mobile-tier-explanation"
         />
       </FormField>
-      <FormField label="Device push token">
+      <FormField label="Device push token" controlId={pushTokenId}>
         <input
+          id={pushTokenId}
           type="text"
           class="form-input"
           value={deviceToken()}
@@ -125,8 +131,9 @@ const PushRelaySettingsSection: Component = () => {
           placeholder="FCM registration id / APNs device token / opaque self id"
         />
       </FormField>
-      <FormField label="Platform">
+      <FormField label="Platform" controlId={platformId}>
         <select
+          id={platformId}
           class="form-input"
           value={platform()}
           onChange={(e) => setPlatform(e.currentTarget.value as "fcm" | "apns" | "self")}
@@ -136,8 +143,9 @@ const PushRelaySettingsSection: Component = () => {
           <option value="apns">APNs (iOS)</option>
         </select>
       </FormField>
-      <FormField label="Record keys to watch">
+      <FormField label="Record keys to watch" controlId={recordKeysId}>
         <textarea
+          id={recordKeysId}
           class="form-input"
           rows={3}
           value={recordKeysInput()}

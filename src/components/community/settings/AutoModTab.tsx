@@ -1,4 +1,4 @@
-import { type Component, For, createEffect, createSignal } from "solid-js";
+import { type Component, For, createEffect, createSignal, createUniqueId } from "solid-js";
 import type { Community } from "../../../stores/community.store";
 import {
   handleDeleteAutoModRule,
@@ -12,6 +12,10 @@ interface AutoModTabProps {
 }
 
 const AutoModTab: Component<AutoModTabProps> = (props) => {
+  const ruleNameId = createUniqueId();
+  const keywordsId = createUniqueId();
+  const regexPatternsId = createUniqueId();
+  const actionId = createUniqueId();
   const [editingRuleId, setEditingRuleId] = createSignal<string | null>(null);
   const [name, setName] = createSignal("");
   const [keywords, setKeywords] = createSignal("");
@@ -104,11 +108,12 @@ const AutoModTab: Component<AutoModTabProps> = (props) => {
         </div>
       </FormField>
 
-      <FormField label="Rule Name">
-        <input class="form-input" value={name()} onInput={(e) => setName(e.currentTarget.value)} placeholder="Blocked words" />
+      <FormField label="Rule Name" controlId={ruleNameId}>
+        <input id={ruleNameId} class="form-input" value={name()} onInput={(e) => setName(e.currentTarget.value)} placeholder="Blocked words" />
       </FormField>
-      <FormField label="Keywords">
+      <FormField label="Keywords" controlId={keywordsId}>
         <textarea
+          id={keywordsId}
           class="form-textarea"
           rows={6}
           value={keywords()}
@@ -116,8 +121,9 @@ const AutoModTab: Component<AutoModTabProps> = (props) => {
           placeholder="One keyword per line"
         />
       </FormField>
-      <FormField label="Regex Patterns">
+      <FormField label="Regex Patterns" controlId={regexPatternsId}>
         <textarea
+          id={regexPatternsId}
           class="form-textarea"
           rows={4}
           value={regexPatterns()}
@@ -125,8 +131,8 @@ const AutoModTab: Component<AutoModTabProps> = (props) => {
           placeholder="One regex per line"
         />
       </FormField>
-      <FormField label="Action">
-        <select class="form-select" value={action()} onChange={(e) => setAction(e.currentTarget.value as "blockLocally" | "blurContent" | "alertModerators")}>
+      <FormField label="Action" controlId={actionId}>
+        <select id={actionId} class="form-select" value={action()} onChange={(e) => setAction(e.currentTarget.value as "blockLocally" | "blurContent" | "alertModerators")}>
           <option value="blockLocally">Block locally</option>
           <option value="blurContent">Blur content</option>
           <option value="alertModerators">Alert moderators</option>

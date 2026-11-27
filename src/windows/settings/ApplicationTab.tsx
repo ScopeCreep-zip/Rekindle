@@ -1,10 +1,11 @@
-import type { Component } from "solid-js";
+import { type Component, createUniqueId } from "solid-js";
 import FormField from "../../components/common/FormField";
 import FavouriteServersSection from "../../components/settings/FavouriteServersSection";
 import { settingsState } from "../../stores/settings.store";
 import { handleSaveSettings, handleSetAutoAway, handleSetGameDetection } from "../../actions/settings.actions";
 
 const ApplicationTab: Component = () => {
+  const awayTimeoutId = createUniqueId();
   function handleToggle(key: keyof typeof settingsState): void {
     handleSaveSettings({ [key]: !settingsState[key] });
   }
@@ -43,8 +44,9 @@ const ApplicationTab: Component = () => {
       </div>
       <FavouriteServersSection />
       <div class="settings-section-title">Auto-Away</div>
-      <FormField label="Go away after inactivity">
+      <FormField label="Go away after inactivity" controlId={awayTimeoutId}>
         <select
+          id={awayTimeoutId}
           class="form-select"
           value={settingsState.autoAwayMinutes}
           onChange={(e) =>

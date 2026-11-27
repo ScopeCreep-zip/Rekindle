@@ -1,4 +1,4 @@
-import { type Component, Show, createEffect, createSignal } from "solid-js";
+import { type Component, Show, createEffect, createSignal, createUniqueId } from "solid-js";
 import { commands } from "../../../ipc/commands";
 import { isCommandError } from "../../../ipc/commands/dto";
 import { communityState } from "../../../stores/community.store";
@@ -13,6 +13,7 @@ import FormField from "../../common/FormField";
  * the Host's `myDisplayName`. Our identity name is never used here.
  */
 const MyNameSection: Component<{ communityId: string }> = (props) => {
+  const localNameId = createUniqueId();
   const community = () => communityState.communities[props.communityId];
   const [draft, setDraft] = createSignal("");
   const [busy, setBusy] = createSignal(false);
@@ -39,9 +40,10 @@ const MyNameSection: Component<{ communityId: string }> = (props) => {
 
   return (
     <form class="my-name-section" onSubmit={(e) => void save(e)}>
-      <FormField label="Your name in this community" error={error()}>
+      <FormField label="Your name in this community" error={error()} controlId={localNameId}>
         <div class="form-field-row my-name-row">
           <input
+            id={localNameId}
             class="form-input"
             type="text"
             aria-describedby="my-name-hint"
