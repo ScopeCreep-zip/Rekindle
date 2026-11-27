@@ -19,6 +19,7 @@ pub(super) enum Failure {
     TransitionLimit,
     SizeRefused,
     PaintTimeout,
+    PaintMismatch,
     InvalidSurface,
 }
 
@@ -51,11 +52,13 @@ pub(super) struct Settling {
     transitions: Vec<(Canvas, Margins)>,
     expected: Option<Canvas>,
     corrected: bool,
+    paint_retry: bool,
 }
 
 impl Settling {
     pub fn select(&mut self, target: Canvas, fixed: bool, now: Instant) -> Option<Canvas> {
         self.reset_transition();
+        self.paint_retry = false;
         self.requested = None;
         self.deferred = fixed.then_some(target);
         if fixed {
@@ -70,6 +73,7 @@ impl Settling {
 
     pub fn state_changed(&mut self, fixed: bool, now: Instant) -> Option<Canvas> {
         self.reset_transition();
+        self.paint_retry = false;
         if fixed {
             if let Some(request) = self.requested.take() {
                 self.deferred = Some(request.target);
@@ -142,6 +146,18 @@ impl Settling {
         self.reset_transition();
     }
 
+    /// A root paint can see a newer native allocation. Allow one resample.
+    pub fn painted(&mut self, matches: bool) -> Result<bool, Failure> {
+        if matches {
+            self.paint_retry = false;
+            return Ok(true);
+        }
+        if std::mem::replace(&mut self.paint_retry, true) {
+            return Err(Failure::PaintMismatch);
+        }
+        Ok(false)
+    }
+
     pub fn degraded(&mut self) {
         self.requested = None;
         self.deferred = None;
@@ -150,6 +166,7 @@ impl Settling {
 
     pub fn reset_surface(&mut self) {
         self.margins = Margins::default();
+        self.paint_retry = false;
         self.reset_transition();
     }
 

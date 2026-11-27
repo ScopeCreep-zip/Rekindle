@@ -197,9 +197,15 @@ impl Controller {
             scale,
             "painted GTK window allocation"
         );
-        if measured != stamp.canvas || scale != stamp.scale {
-            self.applied.set(None);
-            widget.queue_allocate();
+        let matches = measured == stamp.canvas && scale == stamp.scale;
+        let painted = self.settling.borrow_mut().painted(matches);
+        match painted {
+            Ok(true) => {}
+            Ok(false) => {
+                self.applied.set(None);
+                widget.queue_allocate();
+            }
+            Err(reason) => self.degrade(widget, reason),
         }
     }
 
@@ -352,12 +358,17 @@ impl Controller {
             widget.queue_allocate();
             return;
         }
-        let Allocation::Accept { override_size } = self.settling.borrow().allocation(
-            canvas,
-            root_canvas(&root),
-            fixed(state),
-            Instant::now(),
-        ) else {
+        let measured = root_canvas(&root);
+        if self.wayland && canvas.0 > 0 && canvas.1 > 0 && canvas != measured {
+            self.freeze(widget, &root);
+            widget.queue_allocate();
+            return;
+        }
+        let Allocation::Accept { override_size } =
+            self.settling
+                .borrow()
+                .allocation(canvas, measured, fixed(state), Instant::now())
+        else {
             return;
         };
         let logical_canvas = (f64::from(canvas.0), f64::from(canvas.1));

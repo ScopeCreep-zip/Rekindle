@@ -1,5 +1,18 @@
 use super::*;
 
+#[test]
+fn a_second_unconfirmed_root_paint_is_a_failure() {
+    let mut settling = Settling::default();
+    assert_eq!(settling.painted(false), Ok(false));
+    // An allocation pass alone cannot prove the root painted at its size.
+    settling.applied();
+    assert_eq!(settling.painted(false), Err(Failure::PaintMismatch));
+    settling.reset_surface();
+    assert_eq!(settling.painted(false), Ok(false));
+    assert_eq!(settling.painted(true), Ok(true));
+    assert_eq!(settling.painted(false), Ok(false));
+}
+
 fn left(value: i32) -> Margins {
     Margins {
         left: value,
