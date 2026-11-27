@@ -404,6 +404,7 @@
   "identity.shown": {
     "communities": 2,
     "displayName": "Ann",
+    "fingerprint": "aaaa aaaa",
     "friendListDhtKey": "VLD0:fffffffffffffffffffffffffffffffffffffffffff",
     "mailboxDhtKey": "VLD0:mmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmmm",
     "profileDhtKey": "VLD0:ppppppppppppppppppppppppppppppppppppppppppp",
@@ -413,10 +414,12 @@
   "identity.summary": {
     "createdAt": 1700000000000,
     "displayName": "Ann",
+    "fingerprint": "aaaa aaaa",
     "publicKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   },
   "identity.view": {
     "displayName": "Ann",
+    "fingerprint": "aaaa aaaa",
     "publicKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   },
   "infoview.subject.community": {

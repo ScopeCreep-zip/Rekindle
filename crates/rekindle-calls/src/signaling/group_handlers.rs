@@ -24,7 +24,7 @@ use rekindle_types::group_dm::GroupCallRoster;
 use crate::error::CallError;
 use crate::group::unwrap_call_key;
 use crate::group_state::{GroupCallState, GroupCallStatus};
-use crate::signaling::deps::CallSignalingDeps;
+use crate::signaling::deps::{named_participants, peer_shown_name, CallSignalingDeps};
 use crate::signaling::event::CallSignalEvent;
 use crate::signaling::trace;
 use crate::state::CallKind;
@@ -232,19 +232,6 @@ pub fn handle_incoming_group_invite<D: CallSignalingDeps + ?Sized>(
     // round-trips. Decoding failure (unknown variant) defaults to
     // Audio to match 1:1 behavior.
     let _ = CallKind::from_u8(offer_kind).unwrap_or(CallKind::Audio);
-    let display_name = {
-        let name = deps.friend_display_name(sender_hex);
-        if name.is_empty() {
-            if initiator_pubkey.len() > 16 {
-                format!("{}…", &initiator_pubkey[..16])
-            } else {
-                initiator_pubkey.to_string()
-            }
-        } else {
-            name
-        }
-    };
-
     if initiator_x25519_pub.len() != 32 {
         tracing::warn!(call_id = %call_id, "GroupCallOffer with bad x25519 length");
         return;
@@ -283,6 +270,14 @@ pub fn handle_incoming_group_invite<D: CallSignalingDeps + ?Sized>(
         }
     };
 
+    let (Ok(display_name), Ok(named)) = (
+        peer_shown_name(deps, sender_hex),
+        named_participants(deps, &participants),
+    ) else {
+        tracing::warn!(call_id = %call_id, "GroupCallOffer with malformed participant key");
+        return;
+    };
+
     deps.group_registry().insert(GroupCallState {
         call_id: call_id.to_string(),
         initiator_pubkey: initiator_pubkey.to_string(),
@@ -301,7 +296,7 @@ pub fn handle_incoming_group_invite<D: CallSignalingDeps + ?Sized>(
         call_id: call_id.to_string(),
         initiator_public_key: sender_hex.to_string(),
         initiator_display_name: display_name,
-        participants,
+        participants: named,
         kind: offer_kind,
         expires_at_ms,
         group_id,

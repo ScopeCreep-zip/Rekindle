@@ -48,6 +48,14 @@ pub struct DirectCallInfo {
     pub expected_local_camera: bool,
 }
 
+/// An invited DM-call participant, named by the Host.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CallParticipant {
+    pub public_key: String,
+    pub display_name: String,
+}
+
 /// Call lifecycle and in-call signalling.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
@@ -61,7 +69,7 @@ pub enum CallEvent {
         /// `"audio"` or `"video"`.
         kind: String,
         /// Everyone invited, for a group call. Empty for a 1:1.
-        participants: Vec<String>,
+        participants: Vec<CallParticipant>,
         is_group: bool,
         expires_at_ms: u64,
         /// The group DM a group call belongs to (`GroupCallOffer.group_id`,
@@ -89,7 +97,7 @@ pub enum CallEvent {
         /// `"audio"` or `"video"`.
         kind: String,
         /// Everyone invited, us first.
-        participants: Vec<String>,
+        participants: Vec<CallParticipant>,
         /// The group DM the call belongs to (`GroupCallOffer.group_id`);
         /// `None` for a buddy-list group call.
         group_id: Option<String>,

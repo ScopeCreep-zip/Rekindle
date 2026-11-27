@@ -26,19 +26,6 @@ pub use signaling::{CallRegistry, CallSignalEvent, CallSignalingDeps, GroupCallR
 pub use state::{CallKind, CallState, CallStatus};
 pub use state_machine::{CallInput, CallStateMachine, Effect};
 
-/// Truncate a hex pubkey to a short display form (16 chars + ellipsis).
-/// Used by signaling handlers as the fallback when a friend has no
-/// display_name set. Public so the src-tauri adapter's emit_event
-/// mappings can use the same truncation.
-#[must_use]
-pub fn short_pubkey_helper(pk: &str) -> String {
-    if pk.len() > 16 {
-        format!("{}…", &pk[..16])
-    } else {
-        pk.to_string()
-    }
-}
-
 // Wave 12 W12.9 — re-export the X25519 types so consumer crates
 // (src-tauri/services/group_calls.rs) don't have to depend on
 // x25519-dalek directly.

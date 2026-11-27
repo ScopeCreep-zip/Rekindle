@@ -14,6 +14,8 @@ use async_trait::async_trait;
 use rekindle_codec::capnp_codec::direct::DirectBody;
 
 use rekindle_types::group_dm::GroupCallRoster;
+use rekindle_types::key_format::public_key_hex;
+use rekindle_types::subscription_events::CallParticipant;
 
 use crate::error::CallError;
 use crate::signaling::event::CallSignalEvent;
@@ -54,9 +56,8 @@ pub trait CallSignalingDeps: Send + Sync + 'static {
     /// case (the adapter looks up the map; this trait method abstracts).
     fn is_peer_temp_muted(&self, peer_pubkey_hex: &str) -> bool;
 
-    /// Resolve a peer's display name for UI surfaces (friend list
-    /// lookup; falls back to truncated pubkey hex).
-    fn friend_display_name(&self, peer_pubkey_hex: &str) -> String;
+    /// The display name held in the Host's friend list.
+    fn friend_display_name(&self, peer_pubkey_hex: &str) -> Option<String>;
 
     // --- Media capabilities ---
 
@@ -226,4 +227,40 @@ pub trait CallSignalingDeps: Send + Sync + 'static {
     /// Tauri payload and calls `event_emit::emit_live` or
     /// `emit_journaled` as appropriate.
     fn emit_event(&self, event: CallSignalEvent);
+}
+
+/// The name shown for a DM call peer.
+///
+/// # Errors
+/// The public key is malformed.
+pub fn friend_shown_name(
+    public_key: &str,
+    friend_name: Option<String>,
+) -> Result<String, CallError> {
+    let key = public_key_hex(public_key).map_err(|error| CallError::invalid(error.to_string()))?;
+    Ok(friend_name
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| rekindle_crypto::identity::short_key_fingerprint(&key.to_bytes())))
+}
+
+pub(super) fn peer_shown_name<D: CallSignalingDeps + ?Sized>(
+    deps: &D,
+    public_key: &str,
+) -> Result<String, CallError> {
+    friend_shown_name(public_key, deps.friend_display_name(public_key))
+}
+
+pub(super) fn named_participants<D: CallSignalingDeps + ?Sized>(
+    deps: &D,
+    participants: &[String],
+) -> Result<Vec<CallParticipant>, CallError> {
+    participants
+        .iter()
+        .map(|key| {
+            Ok(CallParticipant {
+                display_name: peer_shown_name(deps, key)?,
+                public_key: key.clone(),
+            })
+        })
+        .collect()
 }

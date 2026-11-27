@@ -2,7 +2,9 @@
 //! `DirectCallInfo` (1:1) and without (group), the two shapes the
 //! webview distinguishes.
 
-use rekindle_types::subscription_events::{CallEvent, DirectCallInfo, SubscriptionEvent};
+use rekindle_types::subscription_events::{
+    CallEvent, CallParticipant, DirectCallInfo, SubscriptionEvent,
+};
 
 use crate::{id, pk, text, Sample};
 
@@ -61,6 +63,13 @@ pub fn samples() -> Vec<Sample> {
     all
 }
 
+fn participant(key: char, name: &str) -> CallParticipant {
+    CallParticipant {
+        public_key: pk(key),
+        display_name: name.into(),
+    }
+}
+
 fn setup() -> Vec<Sample> {
     vec![
         ev(
@@ -70,7 +79,7 @@ fn setup() -> Vec<Sample> {
                 from: pk('b'),
                 display_name: text("Bob"),
                 kind: text("video"),
-                participants: vec![pk('b'), pk('c')],
+                participants: vec![participant('b', "Bob"), participant('c', "cccc cccc")],
                 is_group: true,
                 expires_at_ms: 1_760_000_030_000,
                 group_id: Some(group_dm_id()),
@@ -92,7 +101,7 @@ fn setup() -> Vec<Sample> {
             CallEvent::GroupStarted {
                 call_id: call_id(),
                 kind: text("audio"),
-                participants: vec![pk('a'), pk('b')],
+                participants: vec![participant('a', "aaaa aaaa"), participant('b', "Bob")],
                 group_id: Some(group_dm_id()),
                 expires_at_ms: 1_760_000_030_000,
             },
