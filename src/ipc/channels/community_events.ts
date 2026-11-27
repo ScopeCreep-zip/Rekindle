@@ -15,6 +15,21 @@ import type { CommunityVideoEvent } from "./community_video_events";
  * {@link isLegacyCommunityEvent} discriminates the two.
  */
 
+/** A scheduled community event as eventCreated and eventUpdated carry it. */
+interface ScheduledEventView {
+  id: string;
+  title: string;
+  description: string;
+  creatorPseudonym: string;
+  startTime: number;
+  endTime: number | null;
+  channelId: string | null;
+  maxAttendees: number | null;
+  createdAt: number;
+  status: string;
+  rsvps: { pseudonymKey: string; status: string }[];
+}
+
 export type CommunityEvent =
   | {
       // Architecture §18.4 — eager-fetched expression bytes have landed.
@@ -209,38 +224,14 @@ export type CommunityEvent =
       type: "eventCreated";
       data: {
         communityId: string;
-        event: {
-          id: string;
-          title: string;
-          description: string;
-          creatorPseudonym: string;
-          startTime: number;
-          endTime: number | null;
-          channelId: string | null;
-          maxAttendees: number | null;
-          createdAt: number;
-          status: string;
-          rsvps: { pseudonymKey: string; status: string }[];
-        };
+        event: ScheduledEventView;
       };
     }
   | {
       type: "eventUpdated";
       data: {
         communityId: string;
-        event: {
-          id: string;
-          title: string;
-          description: string;
-          creatorPseudonym: string;
-          startTime: number;
-          endTime: number | null;
-          channelId: string | null;
-          maxAttendees: number | null;
-          createdAt: number;
-          status: string;
-          rsvps: { pseudonymKey: string; status: string }[];
-        };
+        event: ScheduledEventView;
       };
     }
   | {

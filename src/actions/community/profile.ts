@@ -1,5 +1,5 @@
 import { commands } from "../../ipc/commands";
-import { setCommunityState, communityState } from "../../stores/community.store";
+import { type Channel, setCommunityState, communityState } from "../../stores/community.store";
 import { addToast } from "../../stores/toast.store";
 import { decodeBase64ToBytes } from "../../utils/base64";
 import type { WelcomeScreen } from "../../ipc/commands/dto";
@@ -165,17 +165,18 @@ export async function handleExpandCommunitySegment(
   }
 }
 
+/** Set one field of a channel row this window holds (nothing when it holds none). */
+function setHeldChannelField<K extends keyof Channel>(communityId: string, channelId: string, key: K, value: Channel[K]): void {
+  if (!communityState.communities[communityId]?.channels.some((c) => c.id === channelId)) return;
+  setCommunityState("communities", communityId, "channels", (c) => c.id === channelId, key, value);
+}
+
 export async function handleSetNotificationOverride(
   communityId: string, channelId: string, level: "all" | "mentions" | "nothing"
 ): Promise<void> {
   try {
     await commands.setChannelNotificationLevel(communityId, channelId, level);
-    const community = communityState.communities[communityId];
-    if (!community) return;
-    const index = community.channels.findIndex((channel) => channel.id === channelId);
-    if (index >= 0) {
-      setCommunityState("communities", communityId, "channels", index, "notificationLevel", level);
-    }
+    setHeldChannelField(communityId, channelId, "notificationLevel", level);
   } catch (e) {
     console.error("Failed to update channel notification level:", e);
     addToast("Failed to update notification settings", "error");
@@ -194,19 +195,7 @@ export async function handleSetChannelNotificationSound(
 ): Promise<void> {
   try {
     await commands.setNotificationSound(communityId, channelId, soundRef);
-    const community = communityState.communities[communityId];
-    if (!community) return;
-    const index = community.channels.findIndex((channel) => channel.id === channelId);
-    if (index >= 0) {
-      setCommunityState(
-        "communities",
-        communityId,
-        "channels",
-        index,
-        "notificationSoundRef",
-        soundRef,
-      );
-    }
+    setHeldChannelField(communityId, channelId, "notificationSoundRef", soundRef);
     addToast("Notification sound updated", "success");
   } catch (e) {
     console.error("Failed to update channel notification sound:", e);

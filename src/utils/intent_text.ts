@@ -33,19 +33,20 @@ export function subjectLabel(subject: Subject): string {
   }
   if ("community" in subject) return subject.community.name;
   if ("channel" in subject) return `#${subject.channel.name} in ${subject.channel.communityName}`;
-  if ("role" in subject) return subject.role.name;
-  if ("file" in subject) return subject.file.name;
-  if ("link" in subject) return subject.link.host;
-  if ("ownIdentity" in subject) return subject.ownIdentity.name;
-  return subject.named.name;
+  return nameOf(subject);
 }
 
 /** What a typed proof must match: the object's own name. */
 export function typedName(subject: Subject): string {
   // The full fingerprint, never a nickname (`Subject::typed_name`, finding 79).
   if ("person" in subject) return subject.person.fingerprint;
-  if ("community" in subject) return subject.community.name;
   if ("channel" in subject) return subject.channel.name;
+  return nameOf(subject);
+}
+
+/** A subject's own name, for every kind both labels name alike (not a person or a channel). */
+function nameOf(subject: Exclude<Subject, { person: unknown } | { channel: unknown }>): string {
+  if ("community" in subject) return subject.community.name;
   if ("role" in subject) return subject.role.name;
   if ("file" in subject) return subject.file.name;
   if ("link" in subject) return subject.link.host;

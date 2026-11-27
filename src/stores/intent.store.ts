@@ -66,13 +66,20 @@ function settle(): void {
   showFirst();
 }
 
+/** The open review, marked busy for one answer; undefined when there is none or one is already being answered. */
+function takeOpenReview(): Pending | undefined {
+  const pending = queue[0];
+  if (pending === undefined || intentState.busy) return undefined;
+  setIntentState({ busy: true, error: null });
+  return pending;
+}
+
 /** Commit the open review with `proof`. A review whose facts changed comes
  *  back fresh and is shown again; a refused proof (401) keeps the dialog open
  *  with the reason; an expired or unknown review rejects the call. */
 export async function commitReview(proof: IntentProof): Promise<void> {
-  const pending = queue[0];
-  if (pending === undefined || intentState.busy) return;
-  setIntentState({ busy: true, error: null });
+  const pending = takeOpenReview();
+  if (pending === undefined) return;
   try {
     const done = await invoke<Done<unknown>>("intent_commit", {
       intentId: pending.review.intentId,
@@ -103,9 +110,8 @@ export async function commitReview(proof: IntentProof): Promise<void> {
  *  answer, `{ type: "cancelled" }`, or with the error `intent_cancel` met
  *  (the review had expired). */
 export async function cancelReview(): Promise<void> {
-  const pending = queue[0];
-  if (pending === undefined || intentState.busy) return;
-  setIntentState({ busy: true, error: null });
+  const pending = takeOpenReview();
+  if (pending === undefined) return;
   try {
     const done = await invoke<Done<CommandError>>("intent_cancel", {
       intentId: pending.review.intentId,

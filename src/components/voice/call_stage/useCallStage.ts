@@ -1,7 +1,7 @@
 import { createMemo, createSignal } from "solid-js";
 import { voiceState } from "../../../stores/voice.store";
 import { authState } from "../../../stores/auth.store";
-import { communityState } from "../../../stores/community.store";
+import { type Community, communityState } from "../../../stores/community.store";
 import { activePipeline } from "./pipeline_store";
 
 /// Community voice keys `voiceState.participants` by the per-community
@@ -11,14 +11,15 @@ import { activePipeline } from "./pipeline_store";
 /// channel list (channel ids are globally unique). `null` until the
 /// community's pseudonym is hydrated.
 function selfPseudonymForActiveCall(): string | null {
+  return activeCallCommunity()?.myPseudonymKey ?? null;
+}
+
+/// The community that owns the active voice channel (channel ids are
+/// globally unique), or `null` outside a community call.
+function activeCallCommunity(): Community | null {
   const chId = voiceState.channelId;
   if (!chId) return null;
-  for (const c of Object.values(communityState.communities)) {
-    if (c.channels.some((ch) => ch.id === chId)) {
-      return c.myPseudonymKey;
-    }
-  }
-  return null;
+  return Object.values(communityState.communities).find((c) => c.channels.some((ch) => ch.id === chId)) ?? null;
 }
 
 /// Durable display-name lookup for a call tile. The voice-participant
@@ -29,15 +30,8 @@ function selfPseudonymForActiveCall(): string | null {
 /// the transport — resolve from it first; the voice entry stays as the
 /// fallback for members whose roster row hasn't hydrated yet.
 function memberNameForActiveCall(pseudonym: string): string | null {
-  const chId = voiceState.channelId;
-  if (!chId) return null;
-  for (const c of Object.values(communityState.communities)) {
-    if (c.channels.some((ch) => ch.id === chId)) {
-      const member = c.members.find((m) => m.pseudonymKey === pseudonym);
-      return member && member.displayName !== "" ? member.displayName : null;
-    }
-  }
-  return null;
+  const member = activeCallCommunity()?.members.find((m) => m.pseudonymKey === pseudonym);
+  return member && member.displayName !== "" ? member.displayName : null;
 }
 
 /// One cell in the call gallery. `publicKey` (when present) lets the tile

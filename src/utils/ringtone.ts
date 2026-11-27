@@ -107,41 +107,13 @@ function startTone(spec: ToneSpec, volume: number): RingHandle {
   };
 }
 
-export function playIncomingRing(opts?: { volume?: number }): RingHandle {
-  return startTone(
-    {
-      frequencies: [440, 480],
-      onMs: 2000,
-      offMs: 4000,
-      attackMs: 10,
-      releaseMs: 50,
-    },
-    opts?.volume ?? 0.4,
-  );
+/** A player for `spec`, at the caller's volume or `volume` by default. */
+function tone(spec: ToneSpec, volume: number): (opts?: { volume?: number }) => RingHandle {
+  return (opts) => startTone(spec, opts?.volume ?? volume);
 }
 
-export function playOutgoingRingback(opts?: { volume?: number }): RingHandle {
-  return startTone(
-    {
-      frequencies: [425],
-      onMs: 1000,
-      offMs: 3000,
-      attackMs: 10,
-      releaseMs: 50,
-    },
-    opts?.volume ?? 0.3,
-  );
-}
+export const playIncomingRing = tone({ frequencies: [440, 480], onMs: 2000, offMs: 4000, attackMs: 10, releaseMs: 50 }, 0.4);
 
-export function playBusyTone(opts?: { volume?: number }): RingHandle {
-  return startTone(
-    {
-      frequencies: [480, 620],
-      onMs: 500,
-      offMs: 500,
-      attackMs: 5,
-      releaseMs: 25,
-    },
-    opts?.volume ?? 0.25,
-  );
-}
+export const playOutgoingRingback = tone({ frequencies: [425], onMs: 1000, offMs: 3000, attackMs: 10, releaseMs: 50 }, 0.3);
+
+export const playBusyTone = tone({ frequencies: [480, 620], onMs: 500, offMs: 500, attackMs: 5, releaseMs: 25 }, 0.25);

@@ -1,5 +1,6 @@
 import { commands } from "../ipc/commands";
 import type { NetworkStatus } from "../ipc/commands";
+import type { Preferences } from "../ipc/commands/types";
 import { setSettingsState } from "../stores/settings.store";
 import type { SettingsState } from "../stores/settings.store";
 import { addToast } from "../stores/toast.store";
@@ -27,41 +28,29 @@ export async function handleLoadSettings(): Promise<void> {
   }
 }
 
+/** Each Settings field `handleSaveSettings` stores, and the preference it is stored as. */
+const PREFERENCE_OF: readonly (readonly [keyof SettingsState, keyof Preferences])[] = [
+  ["notifications", "notificationsEnabled"],
+  ["soundEnabled", "notificationSound"],
+  ["autoStart", "autoStart"],
+  ["startMinimized", "startMinimized"],
+  ["autoVolunteerRelayForNewFriends", "autoVolunteerRelayForNewFriends"],
+  ["ringtoneEnabled", "ringtoneEnabled"],
+  ["ringtoneVolume", "ringtoneVolume"],
+  ["inCallDndAutoEnable", "inCallDndAutoEnable"],
+  ["notificationContent", "notificationContent"],
+];
+
 export async function handleSaveSettings(
   settings: Partial<SettingsState>,
 ): Promise<void> {
   try {
-    const currentPrefs = await commands.getPreferences();
-    const updated = {
-      ...currentPrefs,
-      ...(settings.notifications !== undefined && {
-        notificationsEnabled: settings.notifications,
-      }),
-      ...(settings.soundEnabled !== undefined && {
-        notificationSound: settings.soundEnabled,
-      }),
-      ...(settings.autoStart !== undefined && {
-        autoStart: settings.autoStart,
-      }),
-      ...(settings.startMinimized !== undefined && {
-        startMinimized: settings.startMinimized,
-      }),
-      ...(settings.autoVolunteerRelayForNewFriends !== undefined && {
-        autoVolunteerRelayForNewFriends: settings.autoVolunteerRelayForNewFriends,
-      }),
-      ...(settings.ringtoneEnabled !== undefined && {
-        ringtoneEnabled: settings.ringtoneEnabled,
-      }),
-      ...(settings.ringtoneVolume !== undefined && {
-        ringtoneVolume: settings.ringtoneVolume,
-      }),
-      ...(settings.inCallDndAutoEnable !== undefined && {
-        inCallDndAutoEnable: settings.inCallDndAutoEnable,
-      }),
-      ...(settings.notificationContent !== undefined && {
-        notificationContent: settings.notificationContent,
-      }),
-    };
+    const updated: Preferences = { ...(await commands.getPreferences()) };
+    // Each setting the caller gave replaces its stored preference.
+    for (const [setting, pref] of PREFERENCE_OF) {
+      const value = settings[setting];
+      if (value !== undefined) Object.assign(updated, { [pref]: value });
+    }
     await commands.setPreferences(updated);
     setSettingsState(settings);
   } catch (e) {

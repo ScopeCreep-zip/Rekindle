@@ -1,7 +1,7 @@
 import type { CommunityEvent } from "../../ipc/channels";
 import type { CommunitySubscriptionEvent } from "../../ipc/channels/community_subscription_events";
 import type { VoiceSubscriptionEvent } from "../../ipc/channels/voice_events";
-import { setCommunityState, communityState } from "../../stores/community.store";
+import { type VoiceChannelState, setCommunityState, communityState } from "../../stores/community.store";
 import { commands } from "../../ipc/commands";
 import { addToast } from "../../stores/toast.store";
 import { announce } from "../../stores/announce.store";
@@ -10,6 +10,11 @@ import { voiceState, setVoiceState } from "../../stores/voice.store";
 import { setVideoSessionConfig } from "../../stores/video.store";
 import { refreshStageHandRaises } from "../../actions/community/shared";
 import { withCommunity } from "./community_reread";
+
+/** Update a voice channel's state, starting from an empty one in `mode` when the channel has none yet. */
+function updateVoiceChannel(channel: string, mode: VoiceChannelState["mode"], update: (state: VoiceChannelState) => VoiceChannelState): void {
+  setCommunityState("voiceChannels", channel, (prev) => update(prev ?? { participants: [], mode, hostPseudonym: null }));
+}
 
 /// Mirror signaling membership into the call-UI roster
 /// (`voiceState.participants`), keyed by per-community pseudonym — the
@@ -164,8 +169,7 @@ if ("soundboardPlayed" in v) {
     const { scope, pseudonym, displayName } = v.joined;
     if (!("community" in scope)) return;
     const { community, channel } = scope.community;
-    setCommunityState("voiceChannels", channel, (prev) => {
-      const state = prev ?? { participants: [], mode: "mesh" as const, hostPseudonym: null };
+    updateVoiceChannel(channel, "mesh", (state) => {
       if (state.participants.includes(pseudonym)) return state;
       return { ...state, participants: [...state.participants, pseudonym] };
     });
@@ -182,8 +186,7 @@ if ("soundboardPlayed" in v) {
     const { scope, participants } = v.rosterUpdated;
     if (!("community" in scope)) return;
     const { community, channel } = scope.community;
-    setCommunityState("voiceChannels", channel, (prev) => {
-      const state = prev ?? { participants: [], mode: "mesh" as const, hostPseudonym: null };
+    updateVoiceChannel(channel, "mesh", (state) => {
       const merged = Array.from(
         new Set([...state.participants, ...participants.map((p) => p.pseudonymKey)]),
       );
@@ -260,8 +263,7 @@ if ("soundboardPlayed" in v) {
     if (!("community" in scope)) return;
     const channel = scope.community.channel;
     // Update voice channel state
-    setCommunityState("voiceChannels", channel, (prev) => {
-      const state = prev ?? { participants: [], mode: "mesh" as const, hostPseudonym: null };
+    updateVoiceChannel(channel, "mesh", (state) => {
       return { ...state, mode: mode as "mesh" | "mcu", hostPseudonym };
     });
     // Trigger the Rust set_voice_mode command so our local transport/MCU loop updates
@@ -289,8 +291,7 @@ if ("soundboardPlayed" in v) {
         }),
       ),
     );
-    setCommunityState("voiceChannels", channel, (prev) => {
-      const state = prev ?? { participants: [], mode: "mcu" as const, hostPseudonym: null };
+    updateVoiceChannel(channel, "mcu", (state) => {
       return {
         ...state,
         mode: "mcu",
@@ -307,8 +308,7 @@ if ("soundboardPlayed" in v) {
     const { scope, requesterPseudonym } = v.speakRequested;
     if (!("community" in scope)) return;
     const channel = scope.community.channel;
-    setCommunityState("voiceChannels", channel, (prev) => {
-      const state = prev ?? { participants: [], mode: "mcu" as const, hostPseudonym: null };
+    updateVoiceChannel(channel, "mcu", (state) => {
       const pendingRequests = state.pendingRequests ?? [];
       if (pendingRequests.includes(requesterPseudonym)) return state;
       return { ...state, pendingRequests: [...pendingRequests, requesterPseudonym] };
