@@ -21,6 +21,8 @@ import { groupDigits } from "./safety_number";
 const KIND_WORDS: Partial<Record<IntentKind, string>> = {
   // E3.4 S6 contract: "Change your name in this community".
   setCommunityDisplayName: "Change your name in this community",
+  // E3.2 S7d-keys.10: "Re-enrol", hyphenated as the Host words it ("Re-enrol this device").
+  reEnrolDevice: "Re-enrol device",
 };
 
 /** `deleteChannel` → `Delete channel`, unless the kind has its own words. */
