@@ -5,6 +5,10 @@ import { createIdentity, newUser, type User } from "../../journeys.ts";
 
 interface HeldSkinList {
   active?: string;
+  /** The held reply's skin names, recorded when it was held. */
+  heldNames?: string[];
+  /** Set when the held reply was let go (after the second choice landed). */
+  released: boolean;
   consumed: boolean;
   release?: () => void;
   restore: () => void;
@@ -46,7 +50,7 @@ describe("Settings Appearance handles a late skin library response", function ()
       const page = window as ProbeWindow;
       const fetch = page.fetch;
       const realFetch = fetch.bind(page);
-      const state: HeldSkinList = { consumed: false, restore: () => { page.fetch = fetch; } };
+      const state: HeldSkinList = { released: false, consumed: false, restore: () => { page.fetch = fetch; } };
       page.heldSkinList = state;
       page.fetch = async (input, init) => {
         const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -64,6 +68,7 @@ describe("Settings Appearance handles a late skin library response", function ()
 
         // Hold a real response from the first switch and leave every later request flowing.
         state.active = library.active;
+        state.heldNames = library.skins.map((skin) => skin.name);
         const json = response.json.bind(response);
         response.json = async () => {
           const body = await json();
@@ -86,13 +91,30 @@ describe("Settings Appearance handles a late skin library response", function ()
 
       await selectSkin(second, me);
       await waitUntil(() => currentSkin().then((name) => name === second), 30_000, `${second} did not become current`);
-      await browser.execute(() => (window as ProbeWindow).heldSkinList?.release?.());
+      await browser.execute(() => {
+        const held = (window as ProbeWindow).heldSkinList;
+        if (held?.release) held.released = true;
+        held?.release?.();
+      });
       await waitUntil(
         () => browser.execute(() => (window as ProbeWindow).heldSkinList?.consumed === true),
         10_000,
         "Tauri did not consume the delayed response",
       );
-      expect(await currentSkin()).toBe(second);
+      // The fixture's own guard: a run that never held a real reply, or never
+      // let it go after the second choice, is "fixture did not hold", never a
+      // verdict on the app.
+      const fixture = (await browser.execute(() => {
+        const held = (window as ProbeWindow).heldSkinList;
+        return { active: held?.active ?? null, names: held?.heldNames ?? [], released: held?.released ?? false, consumed: held?.consumed ?? false };
+      })) as { active: string | null; names: string[]; released: boolean; consumed: boolean };
+      console.log(`[stale] held reply: active ${fixture.active}, ${fixture.names.length} skins (${fixture.names.slice(0, 4).join(", ")}…), released ${fixture.released}, consumed ${fixture.consumed}; first ${first}, second ${second}`);
+      if (!fixture.active || fixture.names.length === 0 || !fixture.released || !fixture.consumed) {
+        throw new Error(`fixture did not hold: ${JSON.stringify(fixture)}`);
+      }
+      const shown = await currentSkin();
+      console.log(`[stale] in use after the old reply landed: ${shown} (want ${second})`);
+      expect(shown).toBe(second);
     } finally {
       await browser.execute(() => {
         const page = window as ProbeWindow;
