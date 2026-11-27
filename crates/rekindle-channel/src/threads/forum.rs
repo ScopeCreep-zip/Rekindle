@@ -95,3 +95,7 @@ pub fn prepare_forum_post<D: ChannelMessagingDeps>(
     )?;
     Ok((thread, starter, prepared))
 }
+
+#[cfg(test)]
+#[path = "forum_tests.rs"]
+mod tests;
