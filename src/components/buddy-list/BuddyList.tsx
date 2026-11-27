@@ -308,7 +308,7 @@ const BuddyList: Component = () => {
   }
 
   return (
-    <ScrollArea class="buddy-list" ref={rovingList(".buddy-item")}>
+    <ScrollArea class="buddy-list" ref={rovingList(".buddy-group-header, .buddy-item")}>
       <Show when={hasFriends()} fallback={
         <div class="empty-placeholder">
           <div class="empty-placeholder-title">No Friends Yet</div>
@@ -320,6 +320,7 @@ const BuddyList: Component = () => {
             <div class="empty-placeholder-subtitle">No matches</div>
           </div>
         }>
+          <div class="buddy-tree" role="tree" aria-label="Friends">
           <For each={groupNames()}>
             {(name) => (
               <BuddyGroup
@@ -340,6 +341,7 @@ const BuddyList: Component = () => {
               />
             )}
           </For>
+          </div>
         </Show>
       </Show>
       <SimpleInputModal

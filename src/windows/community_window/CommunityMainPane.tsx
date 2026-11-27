@@ -62,7 +62,8 @@ const CommunityMainPane: Component<{ vm: CommunityVm }> = (props) => {
                   may not edit says why, in the Host's words. */}
               <Show when={true}>
                 <Show when={vm.editingTopic()} fallback={
-                  <span
+                  <button
+                    type="button"
                     class={`channel-topic ${vm.denied("setTopic") === null ? "channel-topic-editable" : ""}`}
                     title={vm.denied("setTopic") ?? undefined}
                     aria-disabled={vm.denied("setTopic") !== null ? "true" : undefined}
@@ -75,7 +76,7 @@ const CommunityMainPane: Component<{ vm: CommunityVm }> = (props) => {
                     }}
                   >
                     {vm.activeChannel()?.topic || "Set topic..."}
-                  </span>
+                  </button>
                 }>
                   <input
                     class="form-input channel-topic-header-input"

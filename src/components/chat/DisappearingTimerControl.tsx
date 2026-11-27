@@ -53,10 +53,9 @@ const DisappearingTimerControl: Component<{ conversation: string; label: string 
             <span class="chat-disappearing-value">{durationText(seconds())}</span>
           </button>
           <Show when={open()}>
-            <div
+            <fieldset
               id={panelId}
               class="chat-disappearing-panel"
-              role="group"
               aria-label="Disappearing messages"
               onKeyDown={(e) => { if (e.key === "Escape") setOpen(false); }}
             >
@@ -65,21 +64,20 @@ const DisappearingTimerControl: Component<{ conversation: string; label: string 
                 the person receiving them. Copies already saved, or kept by a modified app, are not
                 removed.
               </p>
-              <div class="chat-disappearing-presets" role="radiogroup" aria-label="Timer">
+              <fieldset class="chat-disappearing-presets" aria-label="Timer">
                 <For each={v().presets}>
                   {(preset) => (
                     <button
                       type="button"
                       class="chat-disappearing-preset"
-                      role="radio"
-                      aria-checked={preset === seconds()}
+                      aria-pressed={preset === seconds()}
                       onClick={() => void choose(preset)}
                     >
                       {durationText(preset)}
                     </button>
                   )}
                 </For>
-              </div>
+              </fieldset>
               <div class="form-field-row">
                 <label class="chat-disappearing-custom-label" for={`${panelId}-amount`}>
                   Custom
@@ -120,7 +118,7 @@ const DisappearingTimerControl: Component<{ conversation: string; label: string 
               <Show when={error()}>
                 <p class="form-error" role="alert">{error()}</p>
               </Show>
-            </div>
+            </fieldset>
           </Show>
         </div>
       )}

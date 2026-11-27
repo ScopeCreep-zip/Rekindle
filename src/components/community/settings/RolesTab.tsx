@@ -1,4 +1,5 @@
 import { type Component, For, Show, createSignal, createUniqueId } from "solid-js";
+import { Dynamic } from "solid-js/web";
 import SkinGlyph from "../../common/SkinGlyph";
 import type { Community } from "../../../stores/community.store";
 import { EVERYONE_ROLE_ID } from "../../../stores/community.store";
@@ -116,25 +117,29 @@ const RolesTab: Component<RolesTabProps> = (props) => {
       <For each={[...props.community.roles].sort((a, b) => b.position - a.position)}>
         {(role) => (
           <Show when={editingRoleId() === role.id} fallback={
-            <div
-              class="settings-role-row"
-              onClick={() => role.id !== EVERYONE_ROLE_ID && startEditRole(role)}
-            >
-              <span
-                class="settings-role-color"
-                style={{ "--settings-role-color": role.color ? colorIntToHex(role.color) : tokenVar("text.dim") }}
-              />
-              <RoleTag name={role.name} color={role.color} tagColours={role.tagColours} />
-              <span class="settings-role-position">pos: {role.position}</span>
-              <Show when={role.hoist}>
-                <span class="settings-role-position">hoisted</span>
-              </Show>
+            <div class="settings-role-row">
+              <Dynamic
+                component={role.id === EVERYONE_ROLE_ID ? "div" : "button"}
+                type={role.id === EVERYONE_ROLE_ID ? undefined : "button"}
+                class="settings-role-summary"
+                onClick={role.id === EVERYONE_ROLE_ID ? undefined : () => startEditRole(role)}
+              >
+                <span
+                  class="settings-role-color"
+                  style={{ "--settings-role-color": role.color ? colorIntToHex(role.color) : tokenVar("text.dim") }}
+                />
+                <RoleTag name={role.name} color={role.color} tagColours={role.tagColours} />
+                <span class="settings-role-position">pos: {role.position}</span>
+                <Show when={role.hoist}>
+                  <span class="settings-role-position">hoisted</span>
+                </Show>
+              </Dynamic>
               <div class="settings-role-actions">
                 <Show when={role.id !== EVERYONE_ROLE_ID}>
                   <button
                     type="button"
                     class="form-btn-danger"
-                    onClick={(e) => { e.stopPropagation(); deleteRole(role.id); }}
+                    onClick={() => deleteRole(role.id)}
                     title="Delete Role"
                   >
                     <SkinGlyph name="delete" />

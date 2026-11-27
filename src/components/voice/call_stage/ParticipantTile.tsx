@@ -36,7 +36,6 @@ const ParticipantTile: Component<{
         "call-stage-tile-mirror": props.tile.mirror === true,
         "call-stage-tile-screen": props.tile.isScreen,
       }}
-      onDblClick={() => props.onSpotlight?.()}
     >
       <Show
         when={props.tile.canvas}
@@ -75,6 +74,16 @@ const ParticipantTile: Component<{
         />
       </Show>
 
+      <button
+        type="button"
+        class="call-stage-tile-spotlight-btn"
+        aria-pressed={!!props.spotlighted}
+        aria-label={`Spotlight ${name()}`}
+        onDblClick={() => props.onSpotlight?.()}
+        onClick={(e) => {
+          if (e.detail === 0) props.onSpotlight?.();
+        }}
+      />
       <div class="call-stage-tile-overlay">
         <Show when={props.tile.isScreen}>
           <SkinGlyph name="screen-share" class="call-stage-tile-badge" />

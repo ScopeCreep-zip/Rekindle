@@ -40,6 +40,18 @@ interface BuddyItemProps {
   onSelect: (publicKey: string) => void;
 }
 
+/** The header of the group `row` is listed under: the nearest level-1 node before it. */
+function groupHeaderOf(row: HTMLElement): HTMLElement | null {
+  const tree = row.closest('[role="tree"]');
+  if (!tree) return null;
+  const nodes = Array.from(tree.querySelectorAll<HTMLElement>('[role="treeitem"]'));
+  const at = nodes.indexOf(row);
+  for (let i = at - 1; i >= 0; i--) {
+    if (nodes[i].getAttribute("aria-level") === "1") return nodes[i];
+  }
+  return null;
+}
+
 const BuddyItem: Component<BuddyItemProps> = (props) => {
   function handleDblClick(): void {
     props.onDoubleClick(props.publicKey, props.displayName);
@@ -49,13 +61,20 @@ const BuddyItem: Component<BuddyItemProps> = (props) => {
     props.onSelect(props.publicKey);
   }
 
-  // Plan E7.3: the row is a roving-tabindex list item (`roving_list.ts`):
-  // focusing it selects it, as a click does, and Enter opens the chat, as a
-  // double click does.
+  // Plan E7.3: the row is a roving-tabindex tree node (`roving_list.ts`,
+  // APG Treeview): focusing it selects it, as a click does, Enter opens the
+  // chat, as a double click does, and ArrowLeft moves to its group's header.
   function handleKeyDown(e: KeyboardEvent): void {
-    if (e.key === "Enter" && e.target === e.currentTarget) {
+    if (e.target !== e.currentTarget) return;
+    if (e.key === "Enter") {
       e.preventDefault();
       handleDblClick();
+    } else if (e.key === "ArrowLeft") {
+      const header = groupHeaderOf(e.currentTarget as HTMLElement);
+      if (header) {
+        e.preventDefault();
+        header.focus();
+      }
     }
   }
 
@@ -91,6 +110,10 @@ const BuddyItem: Component<BuddyItemProps> = (props) => {
   return (
     <div
       class={`buddy-item ${props.selected ? "buddy-item-selected" : ""}`}
+      role="treeitem"
+      tabIndex={-1}
+      aria-level={2}
+      aria-selected={props.selected}
       aria-describedby={props.describedBy}
       onClick={handleClick}
       onDblClick={handleDblClick}

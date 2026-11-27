@@ -48,23 +48,24 @@ const SoundboardPanel: Component = () => {
           <span class="soundboard-panel-count">{sounds().length}</span>
         </button>
         <Show when={!collapsed()}>
-          <div class="soundboard-panel-grid" role="list">
+          <ul class="soundboard-panel-grid">
             <For each={sounds()}>
               {(s) => (
-                <button
-                  type="button"
-                  role="listitem"
-                  class="soundboard-panel-clip"
-                  title={useDenied() ?? s.name}
-                  aria-description={useDenied() ?? undefined}
-                  disabled={useDenied() !== null}
-                  onClick={() => play(s.id)}
-                >
-                  <span class="soundboard-panel-clip-name">{s.name}</span>
-                </button>
+                <li class="soundboard-panel-item">
+                  <button
+                    type="button"
+                    class="soundboard-panel-clip"
+                    title={useDenied() ?? s.name}
+                    aria-description={useDenied() ?? undefined}
+                    disabled={useDenied() !== null}
+                    onClick={() => play(s.id)}
+                  >
+                    <span class="soundboard-panel-clip-name">{s.name}</span>
+                  </button>
+                </li>
               )}
             </For>
-          </div>
+          </ul>
         </Show>
       </div>
     </Show>

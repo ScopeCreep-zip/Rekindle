@@ -229,13 +229,15 @@ const MembersTab: Component<MembersTabProps> = (props) => {
                   {(role) => {
                     const has = () => member.roleIds.includes(role.id);
                     return (
-                      <div
-                        class={`role-picker-item ${has() ? "role-picker-item-active" : ""}`}
-                        onClick={() => toggleMemberRole(member.pseudonymKey, role.id, has())}
-                      >
-                        <input type="checkbox" class="role-picker-checkbox" checked={has()} readOnly />
+                      <label class={`role-picker-item ${has() ? "role-picker-item-active" : ""}`}>
+                        <input
+                          type="checkbox"
+                          class="role-picker-checkbox"
+                          checked={has()}
+                          onChange={() => toggleMemberRole(member.pseudonymKey, role.id, has())}
+                        />
                         {role.name}
-                      </div>
+                      </label>
                     );
                   }}
                 </For>
