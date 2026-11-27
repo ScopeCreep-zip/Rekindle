@@ -15,7 +15,7 @@
 import { multiRemoteBrowser } from "@wdio/globals";
 import type { Browser } from "webdriverio";
 import { NET_WAIT_MS, byText, gone, press, resolveIntent, shown, switchTo, typeInto, waitUntil } from "../../../walk/helpers.ts";
-import { BUDDY, menu, setValue } from "../../../walk/nav.ts";
+import { BUDDY, menu, setValue, underTree } from "../../../walk/nav.ts";
 import { joinFromStage, voiceNames } from "../../../walk/rows-voice.ts";
 import { appLogPath, countInLog, RECONCILE_RESENT } from "../../host_log.ts";
 import { shot } from "../../shots.ts";
@@ -58,10 +58,12 @@ async function leaveVoice(b: Browser): Promise<void> {
 }
 
 /** `b` quits its app from the buddy list's Rekindle menu (the tray's Quit):
- *  the pack's own menu under a skin, else the app's menu bar. */
+ *  under a skin the pack's menu, whose item the Host labels Xfire's "Exit"
+ *  (MenuRegistry, EngineMenu::File: Exit runs SkinAction::Quit), else the
+ *  app's menu bar's "Quit". */
 async function quitApp(b: Browser): Promise<void> {
   await switchTo(b, BUDDY);
-  await menu(b, "Rekindle", "Quit");
+  await menu(b, "Rekindle", (await underTree(b)) ? "Exit" : "Quit");
 }
 
 describe("voice join, leave and quit reach the roster by beat, both members in real apps (S8-pre)", function () {
