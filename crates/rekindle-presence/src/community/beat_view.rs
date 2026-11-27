@@ -14,10 +14,16 @@
 //! - **Ordering.** A beat carries its writer's persisted, increasing `seq`
 //!   (`communities.beat_seq`); a beat at or below the seq held is an older
 //!   copy (a lagging replica or a repeated hint) and changes nothing.
+//! - **Voice** (plan E3.4 S8-pre): a member present and live claims its
+//!   beat's `voiceChannel`; [`BeatView::voice_rows`] is what the voice
+//!   roster reconcile is handed on each change and expiry.
 
 use std::collections::BTreeMap;
 
 use rekindle_codec::member_record::{BeatState, PresenceBeat, BEAT_PERIOD_MS};
+use rekindle_types::presence::SessionExtras;
+
+use crate::deps::VoicePresenceRow;
 
 /// How long a beat shows its member live: 3 × the 5-minute mean beat
 /// period (plan E3.4 "Staleness"; Matrix Synapse's federation timeout is
@@ -60,7 +66,7 @@ pub fn beat_is_live(beat_number: u64, arrived_at_ms: Option<u64>, now_ms: u64) -
 }
 
 /// One member's last beat and what it shows.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct Entry {
     seq: u64,
     state: BeatState,
@@ -71,6 +77,22 @@ struct Entry {
     shown: BeatState,
     /// When the beat reached us (our clock, ms).
     seen_at: u64,
+    /// The beat's voice channel.
+    voice_channel: Option<String>,
+    /// The beat's extras, opened with our community key and filtered by
+    /// our sharing policy (`None` when absent, sealed under a generation we
+    /// don't hold, or not shared back).
+    extras: Option<SessionExtras>,
+}
+
+impl Entry {
+    /// The voice channel the member claims now: its beat's, while it shows
+    /// present.
+    fn voice_claim(&self) -> Option<&str> {
+        self.voice_channel
+            .as_deref()
+            .filter(|_| self.shown.is_present())
+    }
 }
 
 /// What a beat changed.
@@ -82,6 +104,8 @@ pub struct Observed {
     /// What the member shows now, when it differs from what it showed
     /// (a member never seen showed offline).
     pub shown: Option<BeatState>,
+    /// The member's voice claim ([`BeatView::voice_rows`]) changed.
+    pub voice_changed: bool,
 }
 
 /// The beat view of one community, by member pseudonym (hex).
@@ -100,8 +124,8 @@ impl BeatView {
         arrived_at_ms: Option<u64>,
         now_ms: u64,
     ) -> Observed {
-        let held = self.members.get(member).copied();
-        if held.is_some_and(|h| beat.seq <= h.seq) {
+        let held = self.members.get(member).cloned();
+        if held.as_ref().is_some_and(|h| beat.seq <= h.seq) {
             return Observed::default();
         }
         let live_until = live_until(beat.beat_number, arrived_at_ms);
@@ -110,21 +134,50 @@ impl BeatView {
         } else {
             BeatState::Offline
         };
-        self.members.insert(
-            member.to_owned(),
-            Entry {
-                seq: beat.seq,
-                state: beat.state,
-                live_until,
-                shown,
-                seen_at: now_ms,
-            },
-        );
-        let was = held.map_or(BeatState::Offline, |h| h.shown);
+        let entry = Entry {
+            seq: beat.seq,
+            state: beat.state,
+            live_until,
+            shown,
+            seen_at: now_ms,
+            voice_channel: beat.voice_channel.clone(),
+            extras: None,
+        };
+        let voice_changed = held.as_ref().and_then(Entry::voice_claim) != entry.voice_claim();
+        self.members.insert(member.to_owned(), entry);
+        let was = held.as_ref().map_or(BeatState::Offline, |h| h.shown);
         Observed {
             state_changed: held.map(|h| h.state) != Some(beat.state),
             shown: (was != shown).then_some(shown),
+            voice_changed,
         }
+    }
+
+    /// Keep `extras`, opened from `member`'s beat `seq`, while that beat is
+    /// the one held.
+    pub fn set_extras(&mut self, member: &str, seq: u64, extras: Option<SessionExtras>) {
+        if let Some(entry) = self.members.get_mut(member).filter(|e| e.seq == seq) {
+            entry.extras = extras;
+        }
+    }
+
+    /// `member`'s opened extras, when its beat carried ones we can read.
+    #[must_use]
+    pub fn extras(&self, member: &str) -> Option<&SessionExtras> {
+        self.members.get(member).and_then(|e| e.extras.as_ref())
+    }
+
+    /// Every member's voice claim, for the voice roster reconcile: the
+    /// beat's channel while the member shows present (`fresh`), none once
+    /// its beat is offline, departed or stale, so a ghost expires.
+    #[must_use]
+    pub fn voice_rows(&self) -> Vec<VoicePresenceRow> {
+        (self.members.iter())
+            .map(|(member, e)| {
+                let claim = e.voice_claim().map(str::to_owned);
+                VoicePresenceRow::claim(member.clone(), claim, e.shown.is_present())
+            })
+            .collect()
     }
 
     /// What `member` shows now (offline when never seen).

@@ -31,7 +31,7 @@ const FIRST_TICKS: u32 = 3;
 const TICK: Duration = Duration::from_secs(30);
 
 /// Start the community sync, the anti-entropy loop, the member routes
-/// writer, the beat engine and the invite expiry timer in `scope` (the unlock's).
+/// writer, the history ad writer, the beat engine and the invite expiry timer in `scope` (the unlock's).
 ///
 /// # Errors
 /// The scope is closed (the unlock is ending).
@@ -45,6 +45,7 @@ pub(crate) fn start(
     let markers = host.clone();
     let sweeps = host.clone();
     let routes = host.clone();
+    let history_ad = host.clone();
     scope.spawn_with_token("read marker write-behind", move |stop| {
         super::unread::write_behind(markers, stop)
     })?;
@@ -54,6 +55,9 @@ pub(crate) fn start(
     })?;
     scope.spawn_with_token("member routes", move |stop| {
         super::member_routes_loop::run(routes, stop)
+    })?;
+    scope.spawn_with_token("member history ad", move |stop| {
+        super::member_history_ad_loop::run(history_ad, stop)
     })?;
     crate::host::adapters::presence::start(ctx, scope)?;
     scope.spawn_with_token("community invite expiry", move |stop| {
