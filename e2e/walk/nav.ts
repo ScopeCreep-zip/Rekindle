@@ -3,7 +3,7 @@
 // menu bar, the Settings window and modals.
 
 import type { Browser } from "webdriverio";
-import { NET_WAIT_MS, WAIT_MS, byText, gone, present, press, resolveIntent, shown, switchTo, typeInto, waitUntil } from "./helpers.ts";
+import { NET_WAIT_MS, WAIT_MS, byText, gone, present, press, resolveIntent, shown, switchTo, typeInto, waitUntil, xpathString } from "./helpers.ts";
 
 export const LOGIN = "login";
 export const BUDDY = "buddy-list";
@@ -195,7 +195,7 @@ function settingsSelect(labelId: string): string {
 export async function chooseSetting(b: Browser, labelId: string, option: string): Promise<void> {
   await press(b, await shown(b, settingsSelect(labelId)));
   await shown(b, ".settings-select-content", NET_WAIT_MS);
-  await press(b, await shown(b, `//*[contains(@class,"settings-select-item")][normalize-space(.)="${option}"]`));
+  await press(b, await shown(b, `//*[contains(@class,"settings-select-item")][normalize-space(.)=${xpathString(option)}]`));
   await gone(b, ".settings-select-content");
 }
 
