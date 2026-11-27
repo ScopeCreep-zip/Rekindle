@@ -1,3 +1,4 @@
+import { batch } from "solid-js";
 import { produce, reconcile } from "solid-js/store";
 import type { CommunityEvent } from "../../ipc/channels";
 import type {
@@ -8,7 +9,7 @@ import { applyJoinProgress, resetJoinProgress, type JoinStageStatus } from "../.
 import { applySuccessorEvent } from "../../stores/successor.store";
 import { transformCommunityDetail } from "../../utils/transformers";
 import { handleResolveCommunityImageDataUrls } from "../../actions/community/lifecycle";
-import { setCommunityState, setCommunityMembers, communityState, dropCommunity } from "../../stores/community.store";
+import { type Community, setCommunityState, setCommunityMembers, communityState, dropCommunity } from "../../stores/community.store";
 import { commands } from "../../ipc/commands";
 import { addToast } from "../../stores/toast.store";
 import { removalText } from "../../utils/removal_text";
@@ -18,17 +19,52 @@ import { withCommunity } from "./community_reread";
 import { handleLoadExpressions, handleLoadAutoModRules } from "../../actions/community/lifecycle";
 import { handleLoadChannelThreads } from "../../actions/community/events_threads";
 
-// Each permission event re-reads the community's view from the Host, and two
-// reads can answer out of order (a grant's reply after a later revoke's), so
-// only the newest read of a community applies: an older reply would put back
-// what the Host has since changed (the same rule as Appearance's skin list).
-const latestPermissionRead = new Map<string, number>();
+// A pending rebuild needs the full view even if a later permission event
+// supersedes its request. Scope reads to a row so a reply from before a
+// leave can't update the replacement row after rejoining.
+const permissionReads = new WeakMap<Community, { rebuild: boolean }>();
 
-/** Start a permission read of `community`; the returned check says whether it is still the newest. */
-function permissionRead(community: string): () => boolean {
-  const mine = (latestPermissionRead.get(community) ?? 0) + 1;
-  latestPermissionRead.set(community, mine);
-  return () => latestPermissionRead.get(community) === mine;
+function readCommunityPermissions(community: string, rebuild: boolean): void {
+  const row = communityState.communities[community];
+  if (!row) return;
+  const read = { rebuild: rebuild || permissionReads.get(row)?.rebuild === true };
+  permissionReads.set(row, read);
+
+  void commands
+    .getCommunityDetails()
+    .then((details) => {
+      const detail = details.find((d) => d.id === community);
+      if (!detail || communityState.communities[community] !== row || permissionReads.get(row) !== read) return;
+      permissionReads.delete(row);
+      batch(() => {
+        setCommunityState("communities", community, "myPermissions", detail.myPermissions);
+        setCommunityState("communities", community, "denied", reconcile(detail.denied ?? {}));
+        setCommunityState("communities", community, "myChannelPermissions", detail.myChannelPermissions);
+        setCommunityState("communities", community, "weAreCreator", detail.weAreCreator);
+        setCommunityState("communities", community, "deviceStatus", detail.deviceStatus);
+        if (read.rebuild) {
+          setCommunityState("communities", community, {
+            name: detail.name,
+            description: detail.description ?? null,
+            roles: detail.roles ?? [],
+            channels: detail.channels.map(transformChannel),
+            categories: detail.categories ?? [],
+            myRoleIds: detail.myRoleIds,
+            mekGeneration: detail.mekGeneration ?? 0,
+            removed: detail.removed ?? null,
+          });
+          return;
+        }
+        // A permission-only event doesn't replace the rest of a channel.
+        for (const ch of detail.channels) {
+          setCommunityState(
+            "communities", community, "channels", (c) => c.id === ch.id,
+            "denied", reconcile(ch.denied ?? {}),
+          );
+        }
+      });
+    })
+    .catch(() => {});
 }
 
 /// Membership / governance / moderation-alert slice of the community
@@ -476,31 +512,7 @@ function applyGovernance(g: GovernanceEvent): void {
     if (denied) setCommunityState("communities", community, "denied", reconcile(denied));
     // Our rank may have moved, so the per-member moderation verdicts too.
     refreshCommunityMembers(community);
-    const newest = permissionRead(community);
-    commands
-      .getCommunityDetails()
-      .then((details) => {
-        const detail = details.find((d) => d.id === community);
-        if (!detail || !newest()) return;
-        setCommunityState("communities", community, "myPermissions", detail.myPermissions);
-        setCommunityState("communities", community, "denied", reconcile(detail.denied ?? {}));
-        // Each channel's controls, judged with its overwrites (CAPR): re-read
-        // with the community's.
-        for (const ch of detail.channels) {
-          setCommunityState("communities", community, "channels", (c) => c.id === ch.id, "denied", reconcile(ch.denied ?? {}));
-        }
-        setCommunityState(
-          "communities",
-          community,
-          "myChannelPermissions",
-          detail.myChannelPermissions,
-        );
-        // A creator seat gained or lost names us here too.
-        setCommunityState("communities", community, "weAreCreator", detail.weAreCreator);
-        // So may this device's standing (a key endorsed or revoked, ADR 0022 rule 4).
-        setCommunityState("communities", community, "deviceStatus", detail.deviceStatus);
-      })
-      .catch(() => {});
+    readCommunityPermissions(community, false);
     return;
   }
 
@@ -508,38 +520,7 @@ function applyGovernance(g: GovernanceEvent): void {
     // A CRDT rebuild moves everything at once, so this is the one
     // governance event with no payload and a full re-read.
     const { community } = g.governanceRebuilt;
-    const newest = permissionRead(community);
-    commands
-      .getCommunityDetails()
-      .then((details) => {
-        const detail = details.find((c: { id: string }) => c.id === community);
-        if (detail && newest()) {
-          setCommunityState("communities", community, "name", detail.name);
-          setCommunityState("communities", community, "description", detail.description ?? null);
-          setCommunityState("communities", community, "roles", detail.roles ?? []);
-          setCommunityState(
-            "communities",
-            community,
-            "channels",
-            detail.channels.map(transformChannel),
-          );
-          setCommunityState("communities", community, "categories", detail.categories ?? []);
-          setCommunityState("communities", community, "myRoleIds", detail.myRoleIds);
-          setCommunityState("communities", community, "myPermissions", detail.myPermissions);
-          // A full re-read: the community's denied map and every channel's
-          // (carried by transformChannel above) are replaced (CAPR contract).
-          setCommunityState("communities", community, "denied", reconcile(detail.denied ?? {}));
-          setCommunityState(
-            "communities",
-            community,
-            "myChannelPermissions",
-            detail.myChannelPermissions,
-          );
-          setCommunityState("communities", community, "mekGeneration", detail.mekGeneration ?? 0);
-          setCommunityState("communities", community, "removed", detail.removed ?? null);
-        }
-      })
-      .catch(() => {});
+    readCommunityPermissions(community, true);
     // Also refresh members so the member list shows up
     commands
       .getCommunityMembers(community)
