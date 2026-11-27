@@ -17,7 +17,7 @@ import {
   handleUpdateCommunityProfile,
 } from "../../actions/community.actions";
 import { addToast } from "../../stores/toast.store";
-import { colourField, listField, refField, textField } from "../../utils/profile_field";
+import { colourField, editedField, listField, refField, textField } from "../../utils/profile_field";
 
 interface MemberProfilePopupProps {
   communityId: string;
@@ -252,13 +252,13 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
     setSaving(true);
     try {
       const ok = await handleUpdateCommunityProfile(props.communityId, {
-        bio: textField(bio, baseline.bio),
-        pronouns: textField(pronouns, baseline.pronouns),
-        themeColor: colourField(themeColor, baseline.themeColor),
-        badges: listField(badges, baseline.badges),
+        bio: editedField(bioDraft(), initialBio(), () => textField(bio, baseline.bio)),
+        pronouns: editedField(pronounsDraft(), initialPronouns(), () => textField(pronouns, baseline.pronouns)),
+        themeColor: editedField(themeColorDraft(), initialThemeColorHex(), () => colourField(themeColor, baseline.themeColor)),
+        badges: editedField(badgesDraft(), initialBadges(), () => listField(badges, baseline.badges)),
         avatarRef: refField(avatarRefDraft(), baseline.avatarRef),
         bannerRef: refField(bannerRefDraft(), baseline.bannerRef),
-        customStatus: textField(customStatusDraft().trim(), baseline.customStatus),
+        customStatus: editedField(customStatusDraft(), initialCustomStatus(), () => textField(customStatusDraft().trim(), baseline.customStatus)),
         displayName: { op: "unchanged" },
       });
       if (ok) setEditing(false);

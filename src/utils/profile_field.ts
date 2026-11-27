@@ -39,3 +39,14 @@ export function colourField(next: number | null, baseline: number | null): Profi
 export function listField(next: string[], baseline: string[]): ProfileField<string[]> {
   return fieldOp(next, baseline, (v) => v.length === 0, (a, b) => a !== null && b !== null && a.length === b.length && a.every((x, i) => x === b[i]));
 }
+
+/**
+ * A field the form shows as text (bio, pronouns, status, colour, badges):
+ * untouched while its text is what the form showed when editing began, so a
+ * value that does not survive the round trip through the form (an unset
+ * colour shown as a default, badges re-split, text trimmed) is never sent
+ * as an edit; otherwise `op` builds the edit.
+ */
+export function editedField<T>(draft: string, shownAtStart: string, op: () => ProfileField<T>): ProfileField<T> {
+  return draft === shownAtStart ? { op: "unchanged" } : op();
+}
