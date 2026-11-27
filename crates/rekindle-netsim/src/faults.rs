@@ -135,6 +135,21 @@ pub enum Fault {
     /// owner releases it. Each importer's own remote route test fails, and it
     /// hears `dead_remote` ([`crate::loopback`]).
     OutsideDead { node: usize, class: RouteClass },
+    /// The importer's next remote route test of the owner's live route of
+    /// `class` loses its answer, while the route lives and every call over
+    /// it is answered: the live case of 2026-11-26 (diag RC6), a 3-hop
+    /// round trip near Veilid's answer wait, where one status ping's answer
+    /// came back past it. Veilid drops a late answer (0.5.8
+    /// `operation_waiter.rs:179-193`), so the single test fails, and Veilid
+    /// removes the import from that importer's cache and tells it alone
+    /// `dead_remote` (`ping_validator.rs:741-744`, [`crate::loopback`]); the
+    /// owner's loopback passes, so it is never told and never republishes.
+    /// One test only: the importer's later tests of the route pass.
+    RemoteTestLost {
+        importer: usize,
+        owner: usize,
+        class: RouteClass,
+    },
     /// The node's allocations of `class` fail their route test (or test
     /// again): Veilid allocates the route, its test over the network gets
     /// no answer, so it releases the route and answers `TryAgain`
@@ -422,6 +437,11 @@ impl Netsim {
             Fault::RouteDeath { node } => self.kill_routes(node),
             Fault::RouteSilentDeath { node, class } => self.net.silence_route(node, class),
             Fault::OutsideDead { node, class } => self.net.kill_outside(node, class),
+            Fault::RemoteTestLost {
+                importer,
+                owner,
+                class,
+            } => self.net.lose_remote_test(importer, owner, class),
             Fault::AllocationTestFails {
                 node,
                 class,

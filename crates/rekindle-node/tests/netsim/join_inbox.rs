@@ -3,7 +3,8 @@
 use std::time::Duration;
 
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, LifecycleRequest};
-use rekindle_netsim::Fault;
+use rekindle_netsim::{Fault, RELEASES_PEER_ROUTE};
+use rekindle_records::port::RouteClass;
 
 use crate::harness::{eventually, Community};
 
@@ -81,13 +82,34 @@ async fn join_inbox_nobody_online() {
 async fn join_inbox_route_dead() {
     let mut community = Community::create(4, 7931).await;
     let link = community.invite().await;
-    // The outgoing app route is unavailable. DHT publication and watches
-    // continue to work through their separate transport.
-    community.sim.fault(Fault::DropFrom {
-        node: 1,
-        per_mille: 1000,
+    community.sim.quiesce().await;
+    let (inviter, joiner) = (community.nodes[0].index, community.nodes[1].index);
+    let releases = || {
+        community
+            .sim
+            .trace()
+            .of(joiner)
+            .filter(|event| *event == RELEASES_PEER_ROUTE)
+            .count()
+    };
+    let before = releases();
+    community.sim.fault(Fault::CallStalls {
+        node: inviter,
+        stall: Some(Duration::from_secs(24 * 3600)),
+    });
+    community.sim.fault(Fault::RemoteTestLost {
+        importer: joiner,
+        owner: inviter,
+        class: RouteClass::General,
     });
     join(&community, 1, link).await;
+    assert!(
+        eventually(&community.sim, LIMIT, || std::future::ready(
+            releases() > before
+        ))
+        .await,
+        "the joiner retires the unavailable inviter route"
+    );
     assert!(contains(&community, &community.pseudonym(1).await).await);
     assert!(holds_key(&community, 1).await);
 }
