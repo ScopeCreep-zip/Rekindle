@@ -96,9 +96,13 @@
 '.form-error' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.form-hint' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.form-label' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
-# Selected text (plan ST1): the text-field highlight, focused and unfocused.
-'::selection' = { on = ["--color-xfire-input-selection-bg"] }
-':root[data-window-focus="inactive"] ::selection' = { on = ["--color-xfire-input-selection-bg-inactive"] }
+# Selected text (plan ST1): the text-field highlight, focused and unfocused,
+# declared 99.9% over the field so WebKit paints the token as declared (an
+# opaque author selection colour is swapped by blendWithWhite; see the rule in
+# 00-primitives.css). 99.9% moves the painted colour under a quarter of an
+# 8-bit step, so its contrast is the token's.
+'::selection' = { on = ["--color-xfire-input-selection-bg 99.9% over --color-xfire-input-bg"] }
+':root[data-window-focus="inactive"] ::selection' = { on = ["--color-xfire-input-selection-bg-inactive 99.9% over --color-xfire-input-bg"] }
 '.form-btn-primary' = { on = ["--color-xfire-accent 100% over --color-xfire-bg-dark", "--color-xfire-accent 100% over --color-xfire-bg-panel"] }
 '.form-btn-primary:disabled' = { on = ["--color-xfire-bg-secondary"] }
 '.form-btn-danger:disabled' = { on = ["--color-xfire-bg-secondary"] }

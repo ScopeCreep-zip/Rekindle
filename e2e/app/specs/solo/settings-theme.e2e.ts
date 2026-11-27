@@ -284,8 +284,8 @@ describe("Settings follows the theme's dialog roles (ST1)", function () {
     });
     console.log(`[st1] selection: focused ${JSON.stringify(focused)}; unfocused ${JSON.stringify(unfocused)}`);
     console.log(`[st1] selection painted: focused ${JSON.stringify(focusedPaint)}; unfocused ${JSON.stringify(unfocusedPaint)}`);
-    expect({ focus: focused.focus, bg: focused.bg, fg: focused.fg }).toEqual({ focus: "active", bg: focused.want.active, fg: focused.want.activeText });
-    expect({ bg: unfocused.bg, fg: unfocused.fg }).toEqual({ bg: unfocused.want.inactive, fg: unfocused.want.inactiveText });
+    expect({ focus: focused.focus, fg: focused.fg }).toEqual({ focus: "active", fg: focused.want.activeText });
+    expect({ focus: unfocused.focus, fg: unfocused.fg }).toEqual({ focus: "inactive", fg: unfocused.want.inactiveText });
     // What the user sees: the painted highlight is the token itself.
     expect({ focused: focusedPaint.painted, unfocused: unfocusedPaint.painted }).toEqual({ focused: focused.want.active, unfocused: unfocused.want.inactive });
   });

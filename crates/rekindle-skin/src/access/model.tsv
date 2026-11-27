@@ -889,8 +889,8 @@
 .xfire-titlebar-logo	text	var(--color-xfire-titlebar-text)	--color-xfire-titlebar-start	1.0	false
 .xfire-titlebar-text	text	var(--color-xfire-titlebar-text)	--color-xfire-titlebar-end	1.0	false
 .xfire-titlebar-text	text	var(--color-xfire-titlebar-text)	--color-xfire-titlebar-start	1.0	false
-::selection	text	var(--color-xfire-selection-text)	--color-xfire-input-selection-bg	1.0	false
-:root[data-window-focus="inactive"] ::selection	text	var(--color-xfire-input-text)	--color-xfire-input-selection-bg-inactive	1.0	false
+::selection	text	var(--color-xfire-selection-text)	--color-xfire-input-selection-bg 99.9% over --color-xfire-input-bg	1.0	false
+:root[data-window-focus="inactive"] ::selection	text	var(--color-xfire-input-text)	--color-xfire-input-selection-bg-inactive 99.9% over --color-xfire-input-bg	1.0	false
 body	icon	var(--color-xfire-text)	--color-xfire-bg-dark	0.48	true
 body	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
 html	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false

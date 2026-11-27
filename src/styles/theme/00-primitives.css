@@ -237,16 +237,27 @@
 
   /* Selected text, as Xfire's text-field highlight: the focused window's
    * highlight with the selected text colour, the unfocused window's
-   * inactive highlight with the field's own text. */
+   * inactive highlight with the field's own text.
+   *
+   * Both selection grounds are declared just short of opaque, on purpose:
+   * WebKit paints an opaque author ::selection background through
+   * RenderElement::selectionBackgroundColor (RenderElement.cpp) →
+   * RenderTheme::transformSelectionBackgroundColor → blendWithWhite
+   * (ColorBlending.cpp:61), which swaps it for the alpha-204 colour that
+   * matches it over WHITE; over our dark fields that painted (6,78,147) for
+   * (22,123,192). A non-opaque author colour is left alone in both of
+   * WebKit's branches, so the 99.9% mix (inside the build's Safari 16.4
+   * floor) paints the token exactly (settings-theme
+   * asserts the pixels). Do not "simplify" it back to the bare token. */
   ::selection {
-    background-color: var(--color-xfire-input-selection-bg);
+    background-color: color-mix(in srgb, var(--color-xfire-input-selection-bg) 99.9%, transparent);
     color: var(--color-xfire-selection-text);
   }
 
   /* The unfocused window's selection: keyed on the window's focus state
    * (window_focus.ts), since the build drops ::selection:window-inactive. */
   :root[data-window-focus="inactive"] ::selection {
-    background-color: var(--color-xfire-input-selection-bg-inactive);
+    background-color: color-mix(in srgb, var(--color-xfire-input-selection-bg-inactive) 99.9%, transparent);
     color: var(--color-xfire-input-text);
   }
 

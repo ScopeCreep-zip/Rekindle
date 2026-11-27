@@ -197,13 +197,16 @@ pub fn parse_ground(ground: &str) -> Result<Ground<'_>, String> {
         let (Some(token), Some(pct), None) = (words.next(), words.next(), words.next()) else {
             return Err(format!("`{tint}` is not `<token> <N>%`"));
         };
+        // A CSS percentage may be fractional: the text-field selection is
+        // declared 99.9% (00-primitives.css: WebKit swaps an opaque author
+        // selection colour, blendWithWhite, and leaves a non-opaque one).
         let literal = pct
             .strip_suffix('%')
-            .and_then(|n| n.parse::<u8>().ok())
-            .is_some_and(|n| (1..=100).contains(&n));
+            .and_then(|n| n.parse::<f64>().ok())
+            .is_some_and(|n| n > 0.0 && n <= 100.0);
         if !literal && share_token(pct).is_none() {
             return Err(format!(
-                "`{pct}` is not a percentage 1–100% or `var(--tint-…)`"
+                "`{pct}` is not a percentage above 0% up to 100% or `var(--tint-…)`"
             ));
         }
         tints.push((token, pct));
@@ -358,6 +361,15 @@ mod tests {
         let rows = parse_model(text).unwrap();
         assert!(rows.len() > 100, "{}", rows.len());
         assert_eq!(model().len(), rows.len());
+    }
+
+    #[test]
+    fn a_ground_share_may_be_a_fractional_percentage_above_zero_up_to_100() {
+        assert_eq!(parse_ground("--a 99.9% over --b").unwrap().tints, vec![("--a", "99.9%")]);
+        assert!(parse_ground("--a 100% over --b").is_ok());
+        for bad in ["--a 0% over --b", "--a 100.1% over --b", "--a -5% over --b", "--a NaN% over --b"] {
+            assert!(parse_ground(bad).is_err(), "{bad}");
+        }
     }
 
     #[test]
