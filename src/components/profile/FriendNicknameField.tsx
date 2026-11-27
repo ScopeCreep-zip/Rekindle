@@ -47,6 +47,7 @@ const FriendNicknameField: Component<FriendNicknameFieldProps> = (props) => {
           }}
         />
         <button
+          type="button"
           class="form-btn-primary"
           disabled={saving() || value() === ""}
           onClick={() => void write(value())}
@@ -54,7 +55,7 @@ const FriendNicknameField: Component<FriendNicknameFieldProps> = (props) => {
           Save
         </button>
         <Show when={props.nickname !== null}>
-          <button class="form-btn-secondary" disabled={saving()} onClick={() => void write(null)}>
+          <button type="button" class="form-btn-secondary" disabled={saving()} onClick={() => void write(null)}>
             Clear
           </button>
         </Show>

@@ -74,6 +74,7 @@ const RelaySettingsSection: Component = () => {
             <div class="relay-row">
               <span class="buddy-name">{displayName(key)}</span>
               <button
+                type="button"
                 class="form-btn-secondary"
                 onClick={() => handleRevokeRelay(key)}
               >
@@ -109,6 +110,7 @@ const RelaySettingsSection: Component = () => {
             <div class="relay-row">
               <span class="buddy-name">{displayName(key)}</span>
               <button
+                type="button"
                 class="form-btn-primary"
                 onClick={() => handleVolunteerRelay(key)}
               >

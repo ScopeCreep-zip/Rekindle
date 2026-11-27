@@ -72,10 +72,10 @@ const AuditLogSection: Component = () => {
         )}
       </Show>
       <div class="form-field-row">
-        <button class="form-btn-secondary" disabled={busy()} onClick={() => void verify()}>
+        <button type="button" class="form-btn-secondary" disabled={busy()} onClick={() => void verify()}>
           Verify audit log
         </button>
-        <button class="form-btn-secondary" disabled={busy()} onClick={() => void exportLog()}>
+        <button type="button" class="form-btn-secondary" disabled={busy()} onClick={() => void exportLog()}>
           Export audit log…
         </button>
       </div>

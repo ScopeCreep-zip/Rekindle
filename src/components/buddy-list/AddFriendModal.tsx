@@ -41,6 +41,7 @@ const AddFriendModal: Component = () => {
     >
       <div class="form-tabs-equal">
         <button
+          type="button"
           class="form-tab"
           classList={{ active: tab() === "invite" }}
           onClick={() => setTab("invite")}
@@ -48,6 +49,7 @@ const AddFriendModal: Component = () => {
           Invite Link
         </button>
         <button
+          type="button"
           class="form-tab"
           classList={{ active: tab() === "key" }}
           onClick={() => setTab("key")}

@@ -42,6 +42,7 @@ const GroupDmList: Component = () => {
                 </span>
               </div>
               <button
+                type="button"
                 class="pending-btn-accept"
                 aria-label={`Accept invite to ${invite.name}`}
                 onClick={() => void run(handleAcceptGroupDm(invite.groupId))}
@@ -49,6 +50,7 @@ const GroupDmList: Component = () => {
                 Accept
               </button>
               <button
+                type="button"
                 class="pending-btn-reject"
                 aria-label={`Decline invite to ${invite.name}`}
                 onClick={() => void run(handleDeclineGroupDm(invite.groupId))}
@@ -61,6 +63,7 @@ const GroupDmList: Component = () => {
         <For each={groups()}>
           {(group) => (
             <button
+              type="button"
               class="group-dm-row"
               onDblClick={() => handleOpenGroupChat(group.groupId)}
               onKeyDown={(e) => e.key === "Enter" && handleOpenGroupChat(group.groupId)}

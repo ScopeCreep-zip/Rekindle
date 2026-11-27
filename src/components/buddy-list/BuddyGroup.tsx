@@ -123,6 +123,7 @@ const BuddyGroup: Component<BuddyGroupProps> = (props) => {
             autofocus
           />
           <button
+            type="button"
             class="form-btn-primary"
             onClick={() => commitRename()}
           >

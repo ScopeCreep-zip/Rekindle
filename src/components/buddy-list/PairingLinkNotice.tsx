@@ -11,7 +11,7 @@ const PairingLinkNotice: Component = () => (
         A link tried to pair a new device with this account. Pair from Settings with a pairing
         code.
       </p>
-      <button class="sec-btn-secondary" onClick={() => setPairingLinkRefused(false)}>
+      <button type="button" class="sec-btn-secondary" onClick={() => setPairingLinkRefused(false)}>
         OK
       </button>
     </div>

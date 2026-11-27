@@ -15,6 +15,7 @@ const TabBar: Component = () => (
     <For each={TABS}>
       {(t, i) => (
         <button
+          type="button"
           class={`buddy-tab ${buddyListUI.activeTab === t.tab ? "buddy-tab-active" : ""}`}
           role="tab"
           aria-selected={buddyListUI.activeTab === t.tab}

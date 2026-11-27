@@ -43,6 +43,7 @@ const HiddenGamesSection: Component = () => {
             <div class="blocked-user-item">
               <span class="buddy-name">{game.gameName}</span>
               <button
+                type="button"
                 class="form-btn-secondary"
                 onClick={() => void change(() => commands.unhideGame(game.gameId))}
               >
@@ -66,6 +67,7 @@ const HiddenGamesSection: Component = () => {
             </For>
           </select>
           <button
+            type="button"
             class="form-btn-secondary"
             disabled={pick() === null}
             onClick={() => {

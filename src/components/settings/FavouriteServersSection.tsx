@@ -57,6 +57,7 @@ const FavouriteServersSection: Component = () => {
                 {fav.label || fav.address} ({fav.gameName}, {fav.address})
               </span>
               <button
+                type="button"
                 class="form-btn-secondary"
                 aria-label={`Remove ${fav.label || fav.address}`}
                 onClick={() => void change(() => commands.removeFavouriteServer(fav.gameId, fav.address))}
@@ -96,6 +97,7 @@ const FavouriteServersSection: Component = () => {
             onInput={(e) => setLabel(e.currentTarget.value)}
           />
           <button
+            type="button"
             class="form-btn-secondary"
             disabled={game() === null || address().trim() === ""}
             onClick={() => void add()}

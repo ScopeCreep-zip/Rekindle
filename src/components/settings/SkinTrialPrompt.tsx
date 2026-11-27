@@ -23,10 +23,10 @@ const SkinTrialPrompt: Component<{
       </p>
     </section>
     <div class="skin-trial-actions">
-      <button class="sec-btn-commit" onClick={() => props.onAnswer(true)}>
+      <button type="button" class="sec-btn-commit" onClick={() => props.onAnswer(true)}>
         Keep this skin
       </button>
-      <button class="sec-btn-secondary" onClick={() => props.onAnswer(false)}>
+      <button type="button" class="sec-btn-secondary" onClick={() => props.onAnswer(false)}>
         Revert
       </button>
     </div>

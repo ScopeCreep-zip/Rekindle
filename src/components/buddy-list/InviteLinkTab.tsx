@@ -96,6 +96,7 @@ const InviteLinkTab: Component<InviteLinkTabProps> = (props) => {
     <div class="add-friend-section">
       <div class="add-friend-generate">
         <button
+          type="button"
           class="form-btn-primary"
           onClick={handleGenerate}
           disabled={generating()}
@@ -112,10 +113,10 @@ const InviteLinkTab: Component<InviteLinkTabProps> = (props) => {
               rows={3}
             />
             <div class="add-friend-invite-actions">
-              <button class="add-friend-copy-btn" onClick={handleCopy}>
+              <button type="button" class="add-friend-copy-btn" onClick={handleCopy}>
                 {copied() ? "Copied!" : "Copy"}
               </button>
-              <button class="add-friend-cancel-btn" onClick={handleCancelCurrentInvite}>
+              <button type="button" class="add-friend-cancel-btn" onClick={handleCancelCurrentInvite}>
                 Cancel Invite
               </button>
             </div>
@@ -152,6 +153,7 @@ const InviteLinkTab: Component<InviteLinkTabProps> = (props) => {
                 </span>
                 <Show when={invite.url}>
                   <button
+                    type="button"
                     class="invite-copy-btn"
                     onClick={() => navigator.clipboard.writeText(invite.url)}
                   >
@@ -159,6 +161,7 @@ const InviteLinkTab: Component<InviteLinkTabProps> = (props) => {
                   </button>
                 </Show>
                 <button
+                  type="button"
                   class="invite-cancel-btn"
                   onClick={() => handleCancelListInvite(invite.inviteId)}
                 >

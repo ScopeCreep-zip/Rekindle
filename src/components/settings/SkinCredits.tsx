@@ -42,6 +42,7 @@ const SkinCredits: Component<{ skin: SkinEntry; id: string }> = (props) => {
                     <>
                       <span class="skin-credits-url">{url()}</span>
                       <button
+                        type="button"
                         class="skin-row-btn skin-action"
                         aria-label={`Open the source of ${props.skin.name}`}
                         onClick={() => void commands.openExternalUrl(url())}

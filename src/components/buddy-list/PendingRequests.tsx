@@ -48,18 +48,21 @@ const PendingRequests: Component = () => {
                 </Show>
               </div>
               <button
+                type="button"
                 class="pending-btn-accept"
                 onClick={() => onAccept(request.publicKey)}
               >
                 Accept
               </button>
               <button
+                type="button"
                 class="pending-btn-reject"
                 onClick={() => onReject(request.publicKey)}
               >
                 Reject
               </button>
               <button
+                type="button"
                 class="pending-btn-block"
                 onClick={() => onBlock(request.publicKey)}
               >

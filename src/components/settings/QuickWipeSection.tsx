@@ -115,15 +115,15 @@ const QuickWipeSection: Component = () => {
         onInput={(e) => setShortcut(e.currentTarget.value)}
       />
       <div class="form-field-row">
-        <button class="form-btn-secondary" disabled={!canArm()} onClick={() => void arm(chordEntered())}>
+        <button type="button" class="form-btn-secondary" disabled={!canArm()} onClick={() => void arm(chordEntered())}>
           Arm Quick Wipe
         </button>
         <Show when={offerAlone()}>
-          <button class="form-btn-secondary" disabled={!canArm()} onClick={() => void arm(null)}>
+          <button type="button" class="form-btn-secondary" disabled={!canArm()} onClick={() => void arm(null)}>
             Arm Without Shortcut
           </button>
         </Show>
-        <button class="form-btn-secondary" onClick={() => void disarm()}>
+        <button type="button" class="form-btn-secondary" onClick={() => void disarm()}>
           Disarm Quick Wipe
         </button>
       </div>

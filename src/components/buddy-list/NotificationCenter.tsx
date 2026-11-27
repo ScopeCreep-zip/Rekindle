@@ -38,6 +38,7 @@ const NotificationCenter: Component = () => {
   return (
     <div class="notification-bell-wrapper" ref={panelRef}>
       <button
+        type="button"
         class="notification-bell"
         onClick={toggle}
         title="Notifications"
@@ -64,6 +65,7 @@ const NotificationCenter: Component = () => {
             <span class="notification-panel-title">Notifications</span>
             <Show when={unreadNotifications() > 0}>
               <button
+                type="button"
                 class="notification-mark-all"
                 onClick={markAllNotificationsRead}
               >
@@ -139,6 +141,7 @@ const NotificationCenter: Component = () => {
                     </div>
                     <Show when={!notification.read}>
                       <button
+                        type="button"
                         class="notification-mark-read"
                         onClick={() => markNotificationRead(notification.id)}
                         title="Mark as read"

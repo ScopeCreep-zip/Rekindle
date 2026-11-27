@@ -147,6 +147,7 @@ const PushRelaySettingsSection: Component = () => {
       </FormField>
       <div class="form-field-row">
         <button
+          type="button"
           class="form-btn-primary"
           disabled={busy()}
           onClick={() => handleRegister()}
@@ -171,6 +172,7 @@ const PushRelaySettingsSection: Component = () => {
                 </span>
               </div>
               <button
+                type="button"
                 class="form-btn-secondary"
                 disabled={busy()}
                 onClick={() => handleUnregister(reg.pseudonym)}
