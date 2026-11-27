@@ -308,7 +308,10 @@ mod tests {
     #[test]
     fn a_record_s_draws_do_not_depend_on_another_record_s_order() {
         let a_then_b = Latency::new(9);
-        let a_first = (a_then_b.draw_op(0, GET, "a", &[1]), a_then_b.draw_op(0, GET, "b", &[1]));
+        let a_first = (
+            a_then_b.draw_op(0, GET, "a", &[1]),
+            a_then_b.draw_op(0, GET, "b", &[1]),
+        );
         let b_then_a = Latency::new(9);
         let b_first = b_then_a.draw_op(0, GET, "b", &[1]);
         let a_second = b_then_a.draw_op(0, GET, "a", &[1]);
