@@ -13,7 +13,7 @@ const RED = [215, 48, 67] as const;
 const BLUE = [48, 101, 218] as const;
 const AVATAR_PREVIEW = 'img[alt="Avatar preview"]';
 const BANNER_PREVIEW = 'img[alt="Banner preview"]';
-const FORM = ".profile-popup-edit-form";
+const FORM = ".profile-editor-form";
 const NEW_BIO = "A new bio, saved by this window";
 const NEW_STATUS = "The Host changed this status while the editor was open";
 
@@ -114,7 +114,7 @@ async function openEdit(pseudonym: string): Promise<void> {
 }
 
 async function editField(label: string): Promise<Awaited<ReturnType<typeof browser.$>>> {
-  return (await byText(browser, ".profile-popup-edit-label", label)).$("input, textarea");
+  return (await byText(browser, ".profile-editor-label", label)).$("input, textarea");
 }
 
 describe("per-community profile survives a reopened window (PF2)", function () {
@@ -169,7 +169,7 @@ describe("per-community profile survives a reopened window (PF2)", function () {
     await painted(AVATAR_PREVIEW, RED, "pf2-reopened-avatar");
     await painted(BANNER_PREVIEW, BLUE, "pf2-reopened-banner");
     await press(browser, await shown(browser, 'button[aria-label="Remove banner"]'));
-    await byText(browser, ".profile-popup-edit-image-placeholder", "No banner");
+    await byText(browser, ".profile-editor-image-placeholder", "No banner");
     await gone(browser, BANNER_PREVIEW);
     await saveProfile();
     const cleared = await readOwnProfile(communityId, pseudonym);
@@ -178,7 +178,7 @@ describe("per-community profile survives a reopened window (PF2)", function () {
 
     await reopenProfile(pseudonym);
     await painted(AVATAR_PREVIEW, RED, "pf2-avatar-after-clearing-banner");
-    await byText(browser, ".profile-popup-edit-image-placeholder", "No banner");
+    await byText(browser, ".profile-editor-image-placeholder", "No banner");
     await gone(browser, BANNER_PREVIEW);
     await gone(browser, 'button[aria-label="Remove banner"]');
     await shot("pf2-banner-still-absent");
@@ -186,7 +186,7 @@ describe("per-community profile survives a reopened window (PF2)", function () {
     const before = await (await editField("Custom status")).getValue();
     await typeInto(await editField("Bio"), NEW_BIO);
     await publishStatus(communityId, NEW_STATUS);
-    await byText(browser, ".profile-popup-custom-status", NEW_STATUS, NET_WAIT_MS);
+    await byText(browser, ".member-item .member-custom-status", NEW_STATUS, NET_WAIT_MS);
     expect(await (await editField("Custom status")).getValue()).toBe(before);
     await saveProfile();
     const merged = await readOwnProfile(communityId, pseudonym);
@@ -194,7 +194,7 @@ describe("per-community profile survives a reopened window (PF2)", function () {
     expect(merged?.customStatus).toBe(NEW_STATUS);
     expect(merged?.avatarRef).toBe(saved?.avatarRef);
     expect(merged?.bannerRef ?? null).toBeNull();
-    await byText(browser, ".profile-popup-custom-status", NEW_STATUS, NET_WAIT_MS);
+    await byText(browser, ".member-item .member-custom-status", NEW_STATUS, NET_WAIT_MS);
     await shot("pf2-new-bio-and-host-status");
   });
 });

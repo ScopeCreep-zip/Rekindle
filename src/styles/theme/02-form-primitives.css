@@ -257,13 +257,14 @@
   .profile-popup {
     /* relative, not fixed: Kobalte positions and measures its own wrapper
      * (strategy absolute) and copies this z-index onto it; a fixed popup
-     * left that wrapper empty, so it never saw the editor grow and never
-     * slid it back inside the window. */
+     * left that wrapper empty, so it measured nothing and never slid the
+     * popup back inside the window. Kobalte places it only as it opens, so
+     * our profile editor is its own dialog (CommunityProfileEditor). */
     position: relative;
     z-index: var(--z-popover);
     min-width: 200px;
     /* Never wider or taller than the window leaves it (Kobalte's
-     * fitViewport); the editor scrolls inside. */
+     * fitViewport); a long card scrolls inside. */
     max-width: min(280px, var(--kb-popper-content-available-width, 280px));
     max-height: var(--kb-popper-content-available-height, 100vh);
     overflow-y: auto;

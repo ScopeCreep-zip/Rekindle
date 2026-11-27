@@ -299,7 +299,7 @@
     letter-spacing: 0.5px;
   }
 
-  .profile-popup-edit-form {
+  .profile-editor-form {
     display: flex;
     flex-direction: column;
     gap: 6px;
@@ -307,7 +307,7 @@
     border-top: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
   }
 
-  .profile-popup-edit-label {
+  .profile-editor-label {
     display: flex;
     flex-direction: column;
     gap: 2px;
@@ -315,8 +315,8 @@
     color: var(--color-xfire-text-dim);
   }
 
-  .profile-popup-edit-input,
-  .profile-popup-edit-textarea {
+  .profile-editor-input,
+  .profile-editor-textarea {
     background: color-mix(in srgb, var(--color-xfire-bg) 80%, transparent);
     border: 1px solid color-mix(in srgb, var(--color-xfire-offline) 40%, transparent);
     color: var(--color-xfire-text);
@@ -327,13 +327,13 @@
     resize: vertical;
   }
 
-  .profile-popup-edit-input:focus,
-  .profile-popup-edit-textarea:focus {
+  .profile-editor-input:focus,
+  .profile-editor-textarea:focus {
     outline: none;
     border-color: var(--color-xfire-accent);
   }
 
-  .profile-popup-edit-color {
+  .profile-editor-color {
     width: 40px;
     height: 22px;
     padding: 0;
@@ -342,23 +342,23 @@
     cursor: pointer;
   }
 
-  .profile-popup-edit-actions {
+  .profile-editor-actions {
     display: flex;
     gap: 6px;
     margin-top: 2px;
   }
 
 
-  .profile-popup-edit-btn:hover:not(:disabled) {
+  .profile-editor-btn:hover:not(:disabled) {
     background: color-mix(in srgb, var(--color-xfire-accent) 25%, transparent);
   }
 
-  .profile-popup-edit-btn:disabled {
+  .profile-editor-btn:disabled {
     opacity: 0.55;
     cursor: not-allowed;
   }
 
-  .profile-popup-edit-btn-secondary {
+  .profile-editor-btn-secondary {
     background: transparent;
     border-color: color-mix(in srgb, var(--color-xfire-offline) 40%, transparent);
   }

@@ -8,6 +8,7 @@ import type { MemberGroup } from "../../ipc/commands/dto";
 import RoleTag from "./RoleTag";
 import { rovingList } from "../../utils/roving_list";
 import MemberProfilePopup from "./MemberProfilePopup";
+import CommunityProfileEditor from "./CommunityProfileEditor";
 import { useMembersOnScreen } from "../../hooks/useMembersOnScreen";
 import {
   handleRemoveCommunityMember,
@@ -56,6 +57,17 @@ function groupLabel(group: MemberGroup): string {
 const MemberList: Component<MemberListProps> = (props) => {
   const [searchQuery, setSearchQuery] = createSignal("");
   const [openProfileFor, setOpenProfileFor] = createSignal<string | null>(null);
+  const [editingProfile, setEditingProfile] = createSignal(false);
+
+  // "Edit profile" in our popout: the popout closes and the editor opens in
+  // its own dialog. Focus goes to our row (the popout's trigger) first, so
+  // the dialog records it as its opener and gives focus back to it on close
+  // (WCAG 2.4.3), not to the vanished popout button.
+  function editOwnProfile(pseudonymKey: string): void {
+    setOpenProfileFor(null);
+    document.querySelector<HTMLElement>(`.member-item[data-pseudonym="${CSS.escape(pseudonymKey)}"]`)?.focus();
+    setEditingProfile(true);
+  }
   const [blocked, setBlocked] = createSignal<Set<string>>(new Set());
   const onScreen = useMembersOnScreen(() => props.communityId);
 
@@ -361,6 +373,7 @@ const MemberList: Component<MemberListProps> = (props) => {
           member={member}
           roles={props.roles}
           myPseudonymKey={props.myPseudonymKey}
+          onEditProfile={() => editOwnProfile(member.pseudonymKey)}
         />
       </Popover>
     );
@@ -409,6 +422,11 @@ const MemberList: Component<MemberListProps> = (props) => {
           </>
         )}
       </For>
+      <CommunityProfileEditor
+        communityId={props.communityId}
+        isOpen={editingProfile()}
+        onClose={() => setEditingProfile(false)}
+      />
     </div>
   );
 };
