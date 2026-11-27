@@ -71,7 +71,9 @@
 //!   task has not run for 5 minutes ([`crate::routes`]). The task runs only
 //!   at the stages past published peer info
 //!   (`public_internet/controller/tasks.rs:113-122`), here a node that is
-//!   attached, DHT-online, ready and awake. Not modelled: a test lost to a
+//!   attached, DHT-online, ready and awake. A test whose answer comes
+//!   back past the wait on a live, slow route is lost
+//!   ([`crate::Fault::RemoteTestLost`]). Not modelled: a test lost to a
 //!   partition or a drop.
 
 use std::time::Duration;
@@ -182,6 +184,7 @@ impl Network {
         let wait = u64::try_from(crate::RPC_TIMEOUT.as_micros()).unwrap_or(u64::MAX);
         let idle = u64::try_from(ROUTE_MIN_IDLE.as_micros()).unwrap_or(u64::MAX);
         let mut dead: Vec<(usize, String)> = Vec::new();
+        let mut taken: Vec<(usize, String)> = Vec::new();
         {
             let mut guard = self.inner.lock();
             let inner = &mut *guard;
@@ -199,9 +202,11 @@ impl Network {
                 let mut ids: Vec<String> = slot.imported.keys().cloned().collect();
                 ids.sort();
                 for id in ids {
+                    let lost = faults.test_lost.contains(&(node, id.clone()));
                     let answers = routes.contains_key(&id)
                         && !faults.outside_dead.contains(&id)
-                        && !faults.loopback.contains_key(&id);
+                        && !faults.loopback.contains_key(&id)
+                        && !lost;
                     let Some(entry) = slot.imported.get_mut(&id) else {
                         continue;
                     };
@@ -223,12 +228,21 @@ impl Network {
                                 entry.valid = Some(now);
                             } else {
                                 entry.failing = Some(now.saturating_add(wait));
+                                if lost {
+                                    taken.push((node, id.clone()));
+                                }
                             }
                         }
                         // A test in flight, or none due.
                         Some(_) | None => {}
                     }
                 }
+            }
+        }
+        {
+            let lost = &mut self.inner.lock().faults.test_lost;
+            for key in &taken {
+                lost.remove(key);
             }
         }
         for (node, id) in dead {
@@ -335,6 +349,20 @@ impl Network {
             .map(|(id, _)| id.clone())
             .collect();
         inner.faults.outside_dead.extend(ids);
+    }
+
+    /// [`crate::Fault::RemoteTestLost`]: `importer`'s next remote test of
+    /// `owner`'s live route of `class` loses its answer.
+    pub(crate) fn lose_remote_test(&self, importer: usize, owner: usize, class: RouteClass) {
+        let tag = crate::routes::class_tag(class);
+        let mut inner = self.inner.lock();
+        let ids: Vec<String> = inner
+            .routes
+            .iter()
+            .filter(|(id, r)| r.node == owner && crate::routes::is_class(id, owner, tag))
+            .map(|(id, _)| id.clone())
+            .collect();
+        (inner.faults.test_lost).extend(ids.into_iter().map(|id| (importer, id)));
     }
 
     /// Whether route `id` is dead from outside ([`crate::Fault::OutsideDead`]).
