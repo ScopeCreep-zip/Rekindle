@@ -295,6 +295,12 @@ describe("a restored copy re-enrols the device: the original is told and offered
     );
     console.log(`[reenrol] alert: ${(await alert.getText()).replace(/\s+/g, " ").slice(0, 200)}`);
     await shot("signing-stopped");
+    // Where focus is when Escape is pressed (the panel takes it on open).
+    const focused = (await browser.execute(() => {
+      const el = document.activeElement;
+      return el ? `${el.tagName.toLowerCase()}.${el.className}`.slice(0, 120) : "none";
+    })) as string;
+    console.log(`[reenrol] focus before Escape: ${focused}`);
     await browser.keys("Escape");
     await gone(browser, ".notification-panel");
     await unlockAgain();
