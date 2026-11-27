@@ -244,7 +244,15 @@ describe("Settings follows the theme's dialog roles (ST1)", function () {
     // holds: with the OS window unfocused the field can lose its focus and
     // selection between samples, and a shot with no selection is no answer
     // about the highlight's colour (the Mac's run at 14c97d213).
+    // A just-mounted field is empty for its first render pass (~50 ms) and
+    // then takes its stored value, which leaves the caret at the end
+    // (selection-collapse-probe, 846cd3538): select only once it holds the name.
     const selectAll = async (when: string): Promise<void> => {
+      await waitUntil(
+        async () => (await browser.execute((sel: string) => document.querySelector<HTMLInputElement>(sel)?.value ?? "", field)) === me.displayName,
+        NET_WAIT_MS,
+        `the Display Name field never held "${me.displayName}"`,
+      );
       const held = (await browser.execute((sel: string) => {
         const f = document.querySelector<HTMLInputElement>(sel);
         f?.focus();
