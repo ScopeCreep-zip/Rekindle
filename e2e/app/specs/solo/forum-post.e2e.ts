@@ -135,6 +135,12 @@ describe("forum post accepted as one request (FT1)", function () {
       NET_WAIT_MS,
       "the post's card never read 1 message",
     );
+    // The open thread's header follows the same served row (it kept "0 messages").
+    await waitUntil(
+      async () => / · 1 message\b/.test(await (await browser.$(".thread-panel-meta")).getText()),
+      NET_WAIT_MS,
+      "the open thread's header never read 1 message",
+    );
     await shot("starter-sent");
     // Ari is the only one in the forum: the channel's presence badge counts the
     // other members here, so it shows nothing (it read "1" with a dot, Ari

@@ -58,7 +58,15 @@ export function createCommunityWindowState() {
   >(null);
   const [replyTo, setReplyTo] = createSignal<{ senderName: string; body: string; messageId?: string } | null>(null);
   const [pins, setPins] = createSignal<{ messageId: string; channelId: string; pinnedBy: string; pinnedAt: number }[]>([]);
-  const [activeThread, setActiveThread] = createSignal<Thread | null>(null);
+  // The open thread, as opened; `activeThread` below is its live row in the
+  // Host's thread list, so the header's count and activity follow a reload
+  // (the opened copy kept "0 messages" after the card read "1 message").
+  const [openedThread, setActiveThread] = createSignal<Thread | null>(null);
+  const activeThread = createMemo((): Thread | null => {
+    const opened = openedThread();
+    if (!opened) return null;
+    return (communityState.channelThreads[opened.channelId] ?? []).find((t) => t.id === opened.id) ?? opened;
+  });
   const [editingTopic, setEditingTopic] = createSignal(false);
   const [topicDraft, setTopicDraft] = createSignal("");
   const [editState, setEditState] = createSignal<EditMode | null>(null);
