@@ -219,7 +219,8 @@ pub(crate) async fn replace_for_re_enrol(
     let db = ctx.db.current().map_err(|e| e.to_string())?;
     let identity = rekindle_crypto::Identity::from_secret_bytes(&seed);
     let keys = mint_set(&identity, ctx.rng.as_ref(), ctx.clock.now_ms_i64());
-    let (first, later) = split_first_contact(set_values(&keys));
+    let values = set_values(&keys).map_err(|error| error.to_string())?;
+    let (first, later) = split_first_contact(values);
     let device_id = hex::encode(rekindle_utils::random::id_bytes_16_from(ctx.rng.as_ref()));
 
     let (lease, key, keypair) = record::create_prekey_record(pool.as_ref())
