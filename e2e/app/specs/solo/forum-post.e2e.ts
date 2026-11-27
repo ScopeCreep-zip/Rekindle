@@ -99,7 +99,9 @@ describe("forum post accepted as one request (FT1)", function () {
     await byText(browser, ".thread-panel-title", TITLE, NET_WAIT_MS);
     await byText(browser, THREAD_MESSAGE, BODY, NET_WAIT_MS);
     const [id] = await starterRows();
-    expect(id ?? "").toMatch(/^tmsg_[0-9a-f]+$/i);
+    // The Host's id for the starter is opaque to the shell (SEC5: a reply is
+    // keyed by its author and id), so only its presence and uniqueness count.
+    expect((id ?? "").length).toBeGreaterThan(0);
     expect(await starterRows()).toEqual([id]);
     await shot("accepted-starter");
 
