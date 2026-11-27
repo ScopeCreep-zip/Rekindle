@@ -94,16 +94,18 @@ impl Settling {
         if canvas.0 <= 0 || canvas.1 <= 0 || canvas != root {
             return AllocationDecision::Await;
         }
-        if let Some(request) = self.requested {
-            if canvas != request.target && !fixed && self.expected.is_none() {
-                return if now >= request.deadline {
-                    AllocationDecision::Accept {
-                        override_size: true,
-                    }
-                } else {
-                    AllocationDecision::Await
-                };
-            }
+        if let Some(request) = self.requested
+            && canvas != request.target
+            && !fixed
+            && self.expected.is_none()
+        {
+            return if now >= request.deadline {
+                AllocationDecision::Accept {
+                    override_size: true,
+                }
+            } else {
+                AllocationDecision::Await
+            };
         }
         AllocationDecision::Accept {
             override_size: self.requested.is_some_and(|r| canvas != r.target),

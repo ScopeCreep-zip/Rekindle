@@ -277,15 +277,14 @@ pub async fn presented_skin(window: &WebviewWindow) -> Option<SkinApplied> {
         .get(window.label())?
         .presented
         .subscribe();
-    let skin = tokio::time::timeout(
+    tokio::time::timeout(
         std::time::Duration::from_secs(15),
         presented.wait_for(Option::is_some),
     )
     .await
     .ok()?
     .ok()?
-    .clone();
-    skin
+    .clone()
 }
 
 /// Attach before the first show. GTK owns the realized root and calls its

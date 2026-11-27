@@ -113,10 +113,10 @@ pub(super) fn start(
             } else {
                 false
             };
-            if want != ignoring.load(Ordering::Relaxed) {
-                if let Err(e) = set(&window, &ignoring, want) {
-                    tracing::debug!(error = %e, label = window.label(), "cursor toggle failed");
-                }
+            if want != ignoring.load(Ordering::Relaxed)
+                && let Err(e) = set(&window, &ignoring, want)
+            {
+                tracing::debug!(error = %e, label = window.label(), "cursor toggle failed");
             }
             let tick = if visible {
                 CURSOR_TICK

@@ -28,6 +28,7 @@ struct Stamp {
     height: u32,
     scale: u64,
     fixed: bool,
+    #[cfg(windows)]
     surface: usize,
 }
 
@@ -43,10 +44,10 @@ pub(super) fn queue(window: &WebviewWindow, shaped: &Arc<Shaped>) {
         let turn = Arc::clone(&scoped);
         if let Err(error) = window.run_on_main_thread(move || {
             turn.queued.store(false, Ordering::Release);
-            if is_current(&target, &turn) {
-                if let Err(error) = allocate(&target, &turn) {
-                    tracing::warn!(%error, label = target.label(), "native window allocation failed");
-                }
+            if is_current(&target, &turn)
+                && let Err(error) = allocate(&target, &turn)
+            {
+                tracing::warn!(%error, label = target.label(), "native window allocation failed");
             }
         }) {
             scoped.queued.store(false, Ordering::Release);
@@ -137,7 +138,8 @@ fn allocate(window: &WebviewWindow, shaped: &Arc<Shaped>) -> Result<(), String> 
         height: size.height,
         scale: scale.to_bits(),
         fixed,
-        surface: surface(window)?,
+        #[cfg(windows)]
+        surface: window.hwnd().map_err(|error| error.to_string())?.0.addr(),
     };
     if native.applied != Some(stamp) {
         let silhouette = fitted
@@ -160,19 +162,6 @@ fn allocate(window: &WebviewWindow, shaped: &Arc<Shaped>) -> Result<(), String> 
     publish(window, shaped, &generation, fitted);
     report_fit(window, shaped, &generation, fits, canvas);
     Ok(())
-}
-
-#[cfg(windows)]
-fn surface(window: &WebviewWindow) -> Result<usize, String> {
-    window
-        .hwnd()
-        .map(|hwnd| hwnd.0.addr())
-        .map_err(|e| e.to_string())
-}
-
-#[cfg(target_os = "macos")]
-fn surface(_: &WebviewWindow) -> Result<usize, String> {
-    Ok(0)
 }
 
 #[cfg(windows)]
