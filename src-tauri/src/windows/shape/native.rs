@@ -44,9 +44,10 @@ pub(super) fn queue(window: &WebviewWindow, shaped: &Arc<Shaped>) {
         let turn = Arc::clone(&scoped);
         if let Err(error) = window.run_on_main_thread(move || {
             turn.queued.store(false, Ordering::Release);
-            if is_current(&target, &turn)
-                && let Err(error) = allocate(&target, &turn)
-            {
+            if !is_current(&target, &turn) {
+                return;
+            }
+            if let Err(error) = allocate(&target, &turn) {
                 tracing::warn!(%error, label = target.label(), "native window allocation failed");
             }
         }) {

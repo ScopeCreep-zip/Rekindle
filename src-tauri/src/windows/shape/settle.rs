@@ -94,10 +94,9 @@ impl Settling {
         if canvas.0 <= 0 || canvas.1 <= 0 || canvas != root {
             return AllocationDecision::Await;
         }
-        if let Some(request) = self.requested
-            && canvas != request.target
-            && !fixed
-            && self.expected.is_none()
+        if let Some(request) = self
+            .requested
+            .filter(|request| canvas != request.target && !fixed && self.expected.is_none())
         {
             return if now >= request.deadline {
                 AllocationDecision::Accept {
