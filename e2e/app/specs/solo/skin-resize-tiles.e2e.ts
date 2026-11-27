@@ -41,13 +41,14 @@ async function builtinPacks(): Promise<{ name: string; file: string }[]> {
     const { invoke } = (
       window as unknown as {
         __TAURI_INTERNALS__: {
-          invoke(cmd: string): Promise<{ skins: { id: string; name: string }[] }>;
+          invoke(cmd: string): Promise<{ value: { skins: { id: string; name: string }[] } }>;
         };
       }
     ).__TAURI_INTERNALS__;
     return invoke("list_skins");
-  })) as { skins: { id: string; name: string }[] };
-  return library.skins
+  })) as { value: { skins: { id: string; name: string }[] } };
+  // A Host call answers `Done { value, undo }` (dto/command.rs).
+  return library.value.skins
     .filter((s) => s.id.startsWith("builtin:"))
     .map((s) => ({ name: s.name, file: s.id.slice("builtin:".length) }));
 }
