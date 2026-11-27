@@ -324,7 +324,9 @@ fn builtin_silhouettes_match_their_goldens() {
         (
             "builtin:total-chaos",
             (
-                107,
+                // 106 since SK0 composites faint layers: the top bevel's two
+                // diagonals join (`composite_tests`), merging one row group.
+                106,
                 vec![r(198, 0, 72, 2), r(167, 2, 134, 1), r(166, 3, 136, 1)],
             ),
         ),

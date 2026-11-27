@@ -12,6 +12,8 @@
 //! [`ReadOp::Unknown`]), which the caller quarantines with that reason (D15).
 //! A retired body arm is [`CodecError::UnknownGovernanceArm`].
 
+#[cfg(test)]
+mod canonical_tests;
 mod device;
 #[cfg(test)]
 mod device_bound_tests;
@@ -154,12 +156,19 @@ fn packed_literal(segment: &[u8]) -> Result<Vec<u8>, CodecError> {
 
 /// The canonical unsigned bytes of `op`: the bytes its author signs (after
 /// `GOV_OP ‖ anchor`) and the op hash covers (before the signature).
+///
+/// # Errors
+/// The op does not read back or canonicalize; a signer must not sign, and
+/// a reader must not compare, anything in its place.
 pub fn op_unsigned_bytes(op: &GovernanceOp) -> Result<Vec<u8>, CodecError> {
     let builder = build(op)?;
-    builder
-        .get_root_as_reader::<governance_op::Reader<'_>>()
-        .and_then(canonical)
-        .map_err(|e| capnp_err(&e))
+    unsigned_of(builder.get_root_as_reader::<governance_op::Reader<'_>>())
+}
+
+/// The canonical form of a root that may not have read back: its error,
+/// never empty bytes in its place.
+fn unsigned_of(root: capnp::Result<governance_op::Reader<'_>>) -> Result<Vec<u8>, CodecError> {
+    canonical(root.map_err(|e| capnp_err(&e))?)
 }
 
 /// Decode an op off the network, with its canonical unsigned bytes; an op
@@ -203,7 +212,7 @@ pub fn read_op(data: &[u8]) -> Result<ReadOp, CodecError> {
     let author = PseudonymKey(fixed(data_field(r.get_author())?, "governance op author")?);
     let device_key = fixed(data_field(r.get_device_key())?, "governance op device key")?;
     let sig = fixed(data_field(r.get_sig())?, "governance op sig")?;
-    let unsigned = received_unsigned(r).map_err(|e| capnp_err(&e))?;
+    let unsigned = received_unsigned(r)?;
     let unknown = |what| {
         Ok(ReadOp::Unknown(UnknownOp {
             author: author.clone(),
@@ -235,6 +244,8 @@ pub fn read_op(data: &[u8]) -> Result<ReadOp, CodecError> {
         sig,
         device_key,
     };
+    // A recomputation that fails refuses the op; only one that differs is
+    // a newer version's fields.
     if op_unsigned_bytes(&op)? != unsigned {
         return unknown(Uninterpretable::Version);
     }
@@ -244,36 +255,53 @@ pub fn read_op(data: &[u8]) -> Result<ReadOp, CodecError> {
 /// The canonical unsigned form of a received op: the message copied as it
 /// came (fields beyond this reader's schema included), `sig` cleared, then
 /// canonicalized, so it equals the author's [`op_unsigned_bytes`].
-fn received_unsigned(r: governance_op::Reader<'_>) -> capnp::Result<Vec<u8>> {
+fn received_unsigned(r: governance_op::Reader<'_>) -> Result<Vec<u8>, CodecError> {
+    let copy = without_sig(r).map_err(|e| capnp_err(&e))?;
+    unsigned_of(copy.get_root_as_reader::<governance_op::Reader<'_>>())
+}
+
+/// `r` copied as it came, `sig` cleared.
+fn without_sig(
+    r: governance_op::Reader<'_>,
+) -> capnp::Result<capnp::message::Builder<capnp::message::HeapAllocator>> {
     let mut copy = capnp::message::Builder::new_default();
     copy.set_root(r)?;
     let root = copy.get_root::<governance_op::Builder<'_>>()?;
     let mut fields: capnp::dynamic_struct::Builder<'_> =
         capnp::dynamic_value::Builder::from(root).downcast();
     fields.clear_named("sig")?;
-    canonical(copy.get_root_as_reader::<governance_op::Reader<'_>>()?)
+    Ok(copy)
 }
 
 /// `r` in Cap'n Proto canonical form (one segment, preorder, truncated),
-/// as bytes.
-fn canonical(r: governance_op::Reader<'_>) -> capnp::Result<Vec<u8>> {
+/// as bytes. One that is too large for one segment, or that does not come
+/// out as exactly one non-empty segment, is refused, never clamped or
+/// emptied.
+fn canonical(r: governance_op::Reader<'_>) -> Result<Vec<u8>, CodecError> {
+    let size = r.total_size().map_err(|e| capnp_err(&e))?;
     // One first segment that holds it all (plus the root pointer): the
     // canonical form is a single segment.
-    let words = r
-        .total_size()?
+    let words = size
         .word_count
         .checked_add(1)
-        .and_then(|w| u32::try_from(w).ok())
-        .ok_or_else(|| capnp::Error::failed("governance op too large for one segment".to_owned()))?;
+        .and_then(|words| u32::try_from(words).ok())
+        .ok_or_else(|| {
+            CodecError::Serialization(format!(
+                "governance op is {} words, too large for one segment",
+                size.word_count
+            ))
+        })?;
     let mut out = capnp::message::Builder::new(
         capnp::message::HeapAllocator::new().first_segment_words(words),
     );
-    out.set_root_canonical(r)?;
-    Ok(out
-        .get_segments_for_output()
-        .first()
-        .map(|s| s.to_vec())
-        .ok_or_else(|| capnp::Error::failed("canonical form has no segment".to_owned()))?)
+    out.set_root_canonical(r).map_err(|e| capnp_err(&e))?;
+    match &out.get_segments_for_output()[..] {
+        [segment] if !segment.is_empty() => Ok(segment.to_vec()),
+        segments => Err(CodecError::Serialization(format!(
+            "governance op canonicalized to {} segment(s), not one non-empty segment",
+            segments.len()
+        ))),
+    }
 }
 
 /// Encode a member record's `Frontier` (`M`/3), refusing more than

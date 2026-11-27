@@ -1,6 +1,7 @@
 //! Shaped windows (plan SK0 S1): each window kind's frame layout as the
-//! skin lays it, a 1-bit mask per tile derived from its image, and the window's opaque region as
-//! device-pixel rectangles.
+//! skin lays it, a mask per tile derived from its image (its opaque bits and
+//! its faint pixels), and the window's opaque region, decided from the
+//! composited alpha of every layer, as device-pixel rectangles.
 //!
 //! Xfire cut its windows with 1-bit Win32 regions built from rectangles
 //! (`Xfire.exe` imports `SetWindowRgn`/`CreateRectRgn`/`CombineRgn`, not
@@ -15,6 +16,7 @@
 
 mod build;
 mod check;
+mod composite;
 pub mod css;
 mod mask;
 mod nodes;
@@ -24,6 +26,8 @@ pub mod title;
 #[cfg(test)]
 mod ad_tests;
 #[cfg(test)]
+mod composite_tests;
+#[cfg(test)]
 mod nodes_tests;
 #[cfg(test)]
 mod tests;
@@ -32,7 +36,7 @@ pub(crate) use build::u16_of;
 pub use build::{from_nine, tile, tile_path};
 pub use check::{check, MAX_RECTS, MAX_WINDOW_HEIGHT, MAX_WINDOW_WIDTH};
 pub use css::{frame_css, frame_parts, layered, min_window, TreeSheet, MAX_FRAME_TILES};
-pub use mask::{of_layout, Mask, ALPHA_OPAQUE};
+pub use mask::{of_layout, Faint, Mask, ALPHA_OPAQUE};
 pub use nodes::outline_nodes;
 pub use silhouette::{content_area, silhouette, Area, Rect, SCALE_ONE};
 

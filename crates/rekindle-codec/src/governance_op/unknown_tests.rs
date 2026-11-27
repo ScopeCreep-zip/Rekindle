@@ -44,8 +44,8 @@ fn with_arm(unsigned: &[u8], arm: u16) -> Vec<u8> {
 #[test]
 fn a_sealed_known_op_reads_back_with_its_signed_bytes() {
     let op = left_op();
-    let unsigned = op_unsigned_bytes(&op);
-    let bytes = seal_op(&unsigned.unwrap(), &op.sig).unwrap();
+    let unsigned = op_unsigned_bytes(&op).unwrap();
+    let bytes = seal_op(&unsigned, &op.sig).unwrap();
     let ReadOp::Known(decoded) = read_op(&bytes).unwrap() else {
         panic!("a known op reads as known");
     };
