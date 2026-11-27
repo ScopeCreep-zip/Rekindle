@@ -2,7 +2,7 @@
 // and accepts its starter. Cara supplies one denied and one writable
 // forum, so the test uses actual governance instead of a mocked answer.
 import { browser, expect } from "@wdio/globals";
-import { byText, gone, NET_WAIT_MS, shown } from "../../../walk/helpers.ts";
+import { byText, gone, NET_WAIT_MS, shown, waitUntil } from "../../../walk/helpers.ts";
 import { setValue } from "../../../walk/nav.ts";
 import { type Peer, peerCreateCommunity, peerInvite, peerReviewed, startFleet, stopFleet } from "../../fleet.ts";
 import { createIdentity, joinCommunity, newUser, openCommunity, type User } from "../../journeys.ts";
@@ -18,6 +18,9 @@ const CREATE = ".forum-channel-composer-actions .btn-primary";
 const TITLE_INPUT = ".forum-channel-input";
 const BODY_INPUT = ".forum-channel-body";
 const THREAD_MESSAGE = ".thread-panel .chat-message";
+
+/** How long the community key and then the starter's send may take: generous, so only a real stall fails. */
+const KEY_WAIT_MS = 300_000;
 
 /** CREATE_PUBLIC_THREADS (bit 45); VIEW_CHANNELS and SEND_IN_THREADS stay allowed. */
 const CREATE_PUBLIC_THREADS = "0x200000000000";
@@ -106,5 +109,24 @@ describe("forum post accepted as one request (FT1)", function () {
     await byText(browser, THREAD_MESSAGE, BODY, NET_WAIT_MS);
     expect(await starterRows()).toEqual([id]);
     await shot("starter-after-reopen");
+
+    // Ari joined Cara's community, so the starter waits for the community
+    // key from Cara (the "Waiting for the community key" banner) and stays
+    // queued; once the key arrives the outbox writes it and its row turns
+    // sent (FT1: ChannelSendStatus on the thread's own id). A banner that
+    // never clears within this bound is a key-delivery finding.
+    const keyFrom = Date.now();
+    await waitUntil(async () => !(await browser.$(".key-pending-notice").isExisting()), KEY_WAIT_MS, "").catch(() => {
+      throw new Error(`the community key never arrived: the key-pending banner still shows after ${KEY_WAIT_MS / 1000} s (a key-delivery finding)`);
+    });
+    console.log(`[forum] community key arrived after ${Math.round((Date.now() - keyFrom) / 1000)} s`);
+    const sentFrom = Date.now();
+    await waitUntil(
+      async () => browser.$(`${THREAD_MESSAGE}[data-message-id="${id}"] .message-status-sent`).isExisting(),
+      KEY_WAIT_MS,
+      `the starter ${id} never turned sent after the key arrived`,
+    );
+    console.log(`[forum] starter sent ${Math.round((Date.now() - sentFrom) / 1000)} s after the key`);
+    await shot("starter-sent");
   });
 });
