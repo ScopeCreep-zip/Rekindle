@@ -22,25 +22,23 @@ interface Served {
 }
 
 async function served(name: string): Promise<Served> {
-  return (await browser.executeAsync((communityName: string, done: (v: Served) => void) => {
+  return (await browser.execute(async (communityName: string): Promise<Served> => {
     const call = (window as unknown as { __TAURI_INTERNALS__: { invoke: (cmd: string, args?: unknown) => Promise<{ value: unknown }> } }).__TAURI_INTERNALS__.invoke;
     const header = document.querySelector(".member-list-header")?.textContent?.trim() ?? "(no header)";
-    void (async () => {
-      try {
-        const details = (await call("get_community_details")).value as { id: string; name: string; myPseudonymKey: string | null }[];
-        const c = details.find((d) => d.name === communityName);
-        if (!c) return done({ header, community: null, me: null, members: "community not in get_community_details" });
-        const members = (await call("get_community_members", { communityId: c.id })).value as { pseudonymKey: string; displayName: string; status: string }[];
-        done({
-          header,
-          community: c.id,
-          me: c.myPseudonymKey,
-          members: members.map((m) => ({ key: m.pseudonymKey.slice(0, 12), name: m.displayName, status: m.status })),
-        });
-      } catch (e) {
-        done({ header, community: null, me: null, members: `error: ${e instanceof Error ? e.message : JSON.stringify(e)}` });
-      }
-    })();
+    try {
+      const details = (await call("get_community_details")).value as { id: string; name: string; myPseudonymKey: string | null }[];
+      const c = details.find((d) => d.name === communityName);
+      if (!c) return { header, community: null, me: null, members: "community not in get_community_details" };
+      const members = (await call("get_community_members", { communityId: c.id })).value as { pseudonymKey: string; displayName: string; status: string }[];
+      return {
+        header,
+        community: c.id,
+        me: c.myPseudonymKey,
+        members: members.map((m) => ({ key: m.pseudonymKey.slice(0, 12), name: m.displayName, status: m.status })),
+      };
+    } catch (e) {
+      return { header, community: null, me: null, members: `error: ${e instanceof Error ? e.message : JSON.stringify(e)}` };
+    }
   }, name)) as Served;
 }
 
