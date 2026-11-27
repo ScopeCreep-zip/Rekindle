@@ -8,7 +8,7 @@
 // three seconds. The value trap is the spec's own, set on this one element.
 
 import { browser } from "@wdio/globals";
-import { NET_WAIT_MS, shown } from "../../../walk/helpers.ts";
+import { NET_WAIT_MS, byText, press, shown } from "../../../walk/helpers.ts";
 import { openSettings } from "../../../walk/nav.ts";
 import { createIdentity, newUser, type User } from "../../journeys.ts";
 import { shot } from "../../shots.ts";
@@ -21,7 +21,11 @@ describe("selection collapse probe (Settings → Profile, Display Name)", functi
 
   it("logs what happens to a fresh selection over three seconds", async () => {
     await createIdentity(browser, me);
-    await openSettings(browser, "Profile");
+    // settings-theme selects right after switching to Profile; a settled
+    // window kept the selection (98c48fd04's run), so the probe now does the
+    // same: another tab first, then Profile, then select at once.
+    await openSettings(browser, "Application");
+    await press(browser, await byText(browser, ".form-tab", "Profile"));
     await shown(browser, FIELD, NET_WAIT_MS);
     await browser.execute((sel: string) => {
       const f = document.querySelector<HTMLInputElement>(sel);
@@ -58,7 +62,9 @@ describe("selection collapse probe (Settings → Profile, Display Name)", functi
       log.push(`${now()} selected ${f.selectionStart}-${f.selectionEnd} of ${f.value.length}, focused ${document.activeElement === f}, hasFocus ${document.hasFocus()}`);
       let ticks = 0;
       const poll = setInterval(() => {
-        log.push(`${now()} poll ${f.selectionStart}-${f.selectionEnd} active ${document.activeElement === f}`);
+        const current = document.querySelector<HTMLInputElement>(sel);
+        const same = current === f;
+        log.push(`${now()} poll ${f.selectionStart}-${f.selectionEnd} active ${document.activeElement === f} same-element ${same}${same ? "" : ` (new element ${current?.selectionStart}-${current?.selectionEnd}, active ${document.activeElement === current})`}`);
         if (++ticks >= 30) clearInterval(poll);
       }, 100);
     }, FIELD);
