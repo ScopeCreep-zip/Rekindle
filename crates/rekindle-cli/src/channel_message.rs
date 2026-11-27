@@ -14,11 +14,11 @@ use rekindle_client::fmt;
 use rekindle_client::DaemonClient;
 use rekindle_ipc::protocol::{ChannelMessageRequest, LifecycleRequest};
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
-use rekindle_types::display::CommunityDetail;
 use rekindle_types::dto::channel_message::ChannelMessageView;
 use rekindle_types::dto::community::CommunityMemberView;
 
 use crate::cli::ChannelCmd;
+use crate::community_ref;
 use crate::helpers;
 use crate::output::{format, OutputMode};
 
@@ -37,23 +37,8 @@ pub async fn target(
     community: &str,
     channel: &str,
 ) -> anyhow::Result<ChannelTarget> {
-    let detail: CommunityDetail = serde_json::from_value(
-        helpers::send(
-            client,
-            IpcRequest::Community(CommunityRequest::Lifecycle(
-                LifecycleRequest::CommunityInfo {
-                    anchor: community.to_owned(),
-                },
-            )),
-        )
-        .await?,
-    )?;
-    let channel_id = detail
-        .channels
-        .iter()
-        .find(|c| c.id == channel || c.name == channel)
-        .map(|c| c.id.clone())
-        .ok_or_else(|| anyhow::anyhow!("no channel '{channel}' in '{community}'"))?;
+    let detail = community_ref::detail(client, community).await?;
+    let channel_id = community_ref::channel_id(&detail, channel)?.to_owned();
     Ok(ChannelTarget {
         anchor: detail.anchor,
         channel_id,
