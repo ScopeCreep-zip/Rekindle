@@ -2,7 +2,7 @@
 //! forum-post), gated on channel-scoped permissions.
 
 use rekindle_types::id::PseudonymKey;
-use rekindle_types::permissions::{CREATE_PRIVATE_THREADS, MANAGE_THREADS, SEND_MESSAGES};
+use rekindle_types::permissions::{CREATE_PRIVATE_THREADS, CREATE_PUBLIC_THREADS, MANAGE_THREADS};
 
 use super::has;
 use crate::permissions::compute_permissions;
@@ -23,7 +23,7 @@ pub(super) fn validate_thread_create(
     let channel_perms = compute_permissions(writer, Some(&parent_channel_id), state, 0);
 
     match thread_type {
-        "public" => has(channel_perms, SEND_MESSAGES),
+        "public" => has(channel_perms, CREATE_PUBLIC_THREADS),
         "private" => {
             has(channel_perms, CREATE_PRIVATE_THREADS)
                 && invited.iter().all(|invitee| invitee != writer)
@@ -42,7 +42,7 @@ pub(super) fn validate_thread_create(
                                 .is_some_and(|tags| tags.iter().any(|candidate| candidate == tag))
                         })
                 })
-                && has(channel_perms, SEND_MESSAGES)
+                && has(channel_perms, CREATE_PUBLIC_THREADS)
         }
         _ => false,
     }

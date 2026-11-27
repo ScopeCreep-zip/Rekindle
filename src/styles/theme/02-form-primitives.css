@@ -200,6 +200,14 @@
     letter-spacing: 0.05em;
   }
 
+  /* The member list before the Host's first answer: no count, no rows,
+   * this one quiet line (MEMBERS - 0 was the empty list read as "none"). */
+  .member-list-loading {
+    padding: 4px 12px;
+    font-size: 11px;
+    color: var(--color-xfire-text-dim);
+  }
+
   .member-item {
     display: flex;
     align-items: center;

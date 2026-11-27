@@ -208,6 +208,13 @@
     gap: 8px;
   }
 
+  /* Posting denied here: still shown, in the theme's disabled text (never a
+   * fade, ST1), with the Host's reason as its title. */
+  .forum-channel-new-post-btn:disabled {
+    color: var(--color-xfire-text-disabled);
+    cursor: not-allowed;
+  }
+
   .forum-channel-tag {
     border: 1px solid var(--color-xfire-border);
     background: var(--color-xfire-bg-secondary);

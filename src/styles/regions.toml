@@ -245,6 +245,7 @@
 '.channel-presence-badge' = { on = ["--color-xfire-accent 25% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
 '.channel-presence-dot' = { on = ["--color-xfire-accent 25% over --color-xfire-bg-dark", "--color-xfire-bg-dark"], graphic = true }
 '.member-list-header' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.member-list-loading' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.role-tag-default' = { on = ["--color-xfire-accent 25% over --color-xfire-bg-dark", "--color-xfire-accent 25% over --color-xfire-bg-panel", "--color-xfire-accent 25% over --color-xfire-bg-primary"] }
 '.profile-popup-status' = { on = ["--color-xfire-bg-primary"] }
 '.profile-popup-lastseen' = { on = ["--color-xfire-bg-primary"] }
@@ -454,6 +455,7 @@
 '.thread-panel-archive-btn:hover' = { on = ["--color-xfire-overlay 8% over --color-xfire-bg-dark"] }
 '.forum-channel-title' = { on = ["--color-xfire-bg-dark"] }
 '.forum-channel-topic' = { on = ["--color-xfire-bg-dark"] }
+'.forum-channel-new-post-btn:disabled' = { on = ["--color-xfire-bg-dark"] }
 '.forum-channel-tag' = { on = ["--color-xfire-bg-secondary"] }
 '.forum-channel-tag-active' = { on = ["--color-xfire-accent 15% over --color-xfire-bg-secondary"] }
 '.forum-channel-composer-title' = { on = ["--color-xfire-bg-secondary"] }
@@ -488,6 +490,7 @@
 '.messages-loading-spinner' = { on = ["--color-xfire-bg-panel"] }
 '.dm-history-gap' = { on = ["--color-xfire-bg-panel"] }
 '.channel-topic' = { on = ["--color-xfire-bg-dark"] }
+'.channel-topic-denied' = { on = ["--color-xfire-bg-dark"] }
 '.announcement-icon' = { on = ["--color-xfire-accent 25% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
 '.game-server-group-header' = { on = ["--color-xfire-bg-dark"] }
 '.game-server-icon' = { on = ["--color-xfire-bg-dark"] }

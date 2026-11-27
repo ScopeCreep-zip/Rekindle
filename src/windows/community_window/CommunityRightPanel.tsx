@@ -1,4 +1,5 @@
 import { Component, Show, Switch, Match } from "solid-js";
+import { channelDeniedFor } from "../../utils/denied";
 import MemberList from "../../components/community/MemberList";
 import ThreadPanel from "../../components/community/ThreadPanel";
 import ThreadListPanel from "../../components/community/ThreadListPanel";
@@ -28,6 +29,7 @@ const CommunityRightPanel: Component<{ vm: CommunityVm }> = (props) => {
           <Match when={vm.rightPanel() === "members"}>
             <MemberList
               members={vm.activeCommunity()!.members}
+              state={vm.activeCommunity()!.membersState}
               communityId={vm.selectedCommunityId()}
               roles={vm.activeCommunity()!.roles}
               myPseudonymKey={vm.activeCommunity()?.myPseudonymKey ?? null}
@@ -62,6 +64,7 @@ const CommunityRightPanel: Component<{ vm: CommunityVm }> = (props) => {
               communityId={vm.selectedCommunityId()}
               messages={vm.threadMessages()}
               onClose={vm.handleCloseThread}
+              replyDenied={channelDeniedFor(vm.activeCommunity(), vm.activeThread()?.channelId, "sendInThreads")}
               onSend={handleSendThreadMessage}
               onArchive={vm.handleArchiveActiveThread}
               onUnarchive={handleUnarchiveThread}

@@ -57,7 +57,7 @@ DASVS (below) covers the desktop-specific concerns ASVS does not.
 | V7 | No `dbg!` / `todo!` / `unimplemented!` in shipped code | **Met** | Lints `dbg_macro = "deny"`, `todo = "deny"`, `unimplemented = "deny"` in workspace `Cargo.toml`. |
 | V9 — Communications | Transport encryption | **Met** | Veilid hop-by-hop + Signal/MEK end-to-end. [`overview.md`](overview.md). |
 | V9 | Certificate / key validation | **Met** | Ed25519 envelope signatures verified before processing. [`../architecture/communities.md`](../architecture/communities.md) §4. |
-| V10 — Malicious Code | Dependency vetting | **Partial** | `cargo-audit` + `cargo-deny` in CI; `cargo-vet` config in [`/supply-chain/`](../../supply-chain/). [`supply-chain-policy.md`](supply-chain-policy.md). |
+| V10 — Malicious Code | Dependency vetting | **Partial** | `cargo-deny` (advisories, bans, licenses, sources) in CI; `cargo-vet` config in [`/supply-chain/`](../../supply-chain/). [`supply-chain-policy.md`](supply-chain-policy.md). |
 | V10 | Build provenance | **Open** | Reproducible-build CI verification deferred to post-1.0. [`reproducible-builds.md`](reproducible-builds.md). |
 | V11 — Business Logic | Replay prevention | **Met** | Veilid sequence numbers per subkey + Lamport ordering + dedup cache. |
 | V11 | Rate limiting | **Met** | Per-sender gossip rate limit (10 msg/s default token bucket); per-IPC-connection rate limit (100 req/s). |
@@ -94,7 +94,7 @@ Software Component Verification Standard. Three levels (L1, L2, L3).
 |---------|--------|-------|
 | Component inventory (SBOM) | **Met** | CycloneDX SBOMs generated on tag push by `.github/workflows/sbom.yml`; published with each release. |
 | Component-origin verification | **Met** | `deny.toml` `[sources]` restricts to crates.io + explicitly-named git remotes. `cargo-vet` config in [`/supply-chain/`](../../supply-chain/). |
-| Vulnerability scanning | **Met** | `cargo-audit` (RustSec) + `cargo-deny check advisories` in `audit.yml`; `pnpm audit` for the JS side. |
+| Vulnerability scanning | **Met** | `cargo-deny check advisories` (RustSec advisory-db, one policy in `deny.toml`) in `audit.yml`; `pnpm audit` for the JS side. |
 | License compliance | **Met** | `deny.toml` `[licenses]` allowlist + `dependency-review.yml` PR check. |
 | Pinned versions | **Met** | `Cargo.lock`, `pnpm-lock.yaml`, `flake.lock` all committed. |
 | Audit-trail / provenance | **Partial** | CI runs are public; reproducible-build verification still open. [`reproducible-builds.md`](reproducible-builds.md). |
@@ -112,7 +112,7 @@ P2P desktop are listed.
 | Category | Status | Where |
 |----------|--------|-------|
 | A02 — Cryptographic Failures | **Met** | Five-layer encryption stack ([`overview.md`](overview.md)); approved primitives ([`crypto-primitives.md`](crypto-primitives.md)); reader-validates governance ([`../architecture/communities.md`](../architecture/communities.md)). |
-| A03 — Software Supply Chain Failures | **Met** | `cargo-audit`, `cargo-deny`, `cargo-vet`, `dependabot`, SBOM, KEV monitoring. [`supply-chain-policy.md`](supply-chain-policy.md). |
+| A03 — Software Supply Chain Failures | **Met** | `cargo-deny`, `cargo-vet`, `dependabot`, SBOM, KEV monitoring. [`supply-chain-policy.md`](supply-chain-policy.md). |
 | A06 — Vulnerable & Outdated Components | **Met** | Same as A03 plus weekly Dependabot bumps. |
 | A09 — Logging & Monitoring Failures | **Partial** | Structured logging is in place; central log aggregation is N/A (no servers). [`incident-response.md`](incident-response.md). |
 | A10 — Mishandling of Exceptional Conditions | **Partial** | `unwrap()` and `expect()` reduction is open work tracked in [`../roadmap.md`](../roadmap.md). |
@@ -140,7 +140,7 @@ Other practices apply when targeting federal procurement.
 | PW.7 — Review and/or analyze human-readable code | **Met** | PR template requires test results, security review questions, subsystem checklist. [`../../.github/PULL_REQUEST_TEMPLATE.md`](../../.github/PULL_REQUEST_TEMPLATE.md). |
 | PW.8 — Test executable code | **Met** | `cargo test --workspace`, property tests for CRDT merge, netsim scenarios, the real-app suite (`pnpm test:app`, run by the gate on macOS and Linux), full CI in `.github/workflows/ci.yml`. [`../contributor/testing.md`](../contributor/testing.md). |
 | PW.9 — Configure the software to have secure settings by default | **Met** | E2E on, no telemetry, no plaintext fallback, no auto-recovery of compromised sessions. |
-| RV.1 — Identify and confirm vulnerabilities on an ongoing basis | **Met** | `cargo-audit` daily + KEV check weekly + Dependabot weekly. |
+| RV.1 — Identify and confirm vulnerabilities on an ongoing basis | **Met** | `cargo-deny` advisories daily + KEV check weekly + Dependabot weekly. |
 | RV.2 — Assess, prioritize, and remediate vulnerabilities | **Met** | [`incident-response.md`](incident-response.md) defines P0–P3 categories and SLAs. |
 | RV.3 — Analyze vulnerabilities to identify their root causes | **Met** | Post-mortem template in [`incident-response.md`](incident-response.md). |
 
@@ -183,7 +183,7 @@ high-value families and document where each is addressed.
 | RA — Risk Assessment | Documented threat model. | [`threat-model.md`](threat-model.md) |
 | SA — System & Services Acquisition | Dependency vetting via `cargo-vet`. | [`../../supply-chain/`](../../supply-chain/) |
 | SC — System & Communications Protection | Five-layer encryption stack. | [`overview.md`](overview.md) |
-| SI — System & Information Integrity | `cargo-audit`, `cargo-deny`, KEV check, Dependabot. | `.github/workflows/audit.yml`, `kev-check.yml` |
+| SI — System & Information Integrity | `cargo-deny`, KEV check, Dependabot. | `.github/workflows/audit.yml`, `kev-check.yml` |
 | SR — Supply Chain Risk Management | See NIST 800-161 below. | [`supply-chain-policy.md`](supply-chain-policy.md) |
 
 Out of scope: PE (Physical), PS (Personnel), PM (Program Management
