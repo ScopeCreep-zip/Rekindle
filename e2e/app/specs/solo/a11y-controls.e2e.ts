@@ -13,11 +13,28 @@
 //    with the ring is the Linux run's (WebKitGTK tabs to every control).
 
 import { browser, expect } from "@wdio/globals";
-import type { Browser } from "webdriverio";
-import { NET_WAIT_MS, byText, gone, resolveIntent, shown, typeInto, waitUntil } from "../../../walk/helpers.ts";
-import { communitySettings, createCommunity, createIdentity, newUser, openCommunity, selectChannel, setCommunityName, setLocationSharing, type User } from "../../journeys.ts";
-import { applySkin, skinShown } from "../../journeys_skins.ts";
+import { type Browser, Key } from "webdriverio";
+import {
+  byText,
+  gone,
+  NET_WAIT_MS,
+  resolveIntent,
+  shown,
+  typeInto,
+  waitUntil,
+} from "../../../walk/helpers.ts";
 import { openSettings } from "../../../walk/nav.ts";
+import {
+  communitySettings,
+  createCommunity,
+  createIdentity,
+  newUser,
+  openCommunity,
+  selectChannel,
+  setCommunityName,
+  type User,
+} from "../../journeys.ts";
+import { applySkin, skinShown } from "../../journeys_skins.ts";
 import { shot } from "../../shots.ts";
 import { builtinPacks } from "../../skin-pack.ts";
 
@@ -58,7 +75,9 @@ async function groundMatches(skin: string, href: string): Promise<void> {
       probe.remove();
     }
   }, declared);
-  console.log(`[a11y] ${skin} community sheet ${colours.href}; message ground ${colours.shown}, declared ${colours.declared} (${declared})`);
+  console.log(
+    `[a11y] ${skin} community sheet ${colours.href}; message ground ${colours.shown}, declared ${colours.declared} (${declared})`
+  );
   expect(colours.href).toBe(href);
   expect(colours.shown).toBe(colours.declared);
 }
@@ -69,7 +88,6 @@ async function shotsIn(skin: string, href: string): Promise<void> {
   await selectChannel(b, "general");
   await shown(b, ".category-header");
   await byText(b, ".member-item .member-name", ada.displayName, NET_WAIT_MS);
-  await byText(b, ".channel-presence-badge", "1", NET_WAIT_MS);
   await gone(b, ".governance-publication", NET_WAIT_MS);
   await gone(b, ".toast-item", NET_WAIT_MS);
   await shown(b, ".community-main .chat-message-area", NET_WAIT_MS);
@@ -93,16 +111,73 @@ async function onMac(): Promise<boolean> {
  * and a drawn outline); on macOS by focusing it directly (Tab reach is the
  * Linux run's), its ring then reported as `macOS: focused directly`.
  */
+/** Whether the focused element's whole focus ring lies inside every clipping
+ *  ancestor's box: the outline's outer edge is its box grown by width plus
+ *  offset (an inset ring, a negative offset, stays inside). */
+async function ringFits(): Promise<{
+  target: string;
+  offset: string;
+  fits: boolean;
+  ring: number[];
+  clip: number[];
+}> {
+  return (await b.execute(() => {
+    const el = document.activeElement as HTMLElement;
+    const st = getComputedStyle(el);
+    const grow = Math.max(
+      0,
+      Number.parseFloat(st.outlineWidth) + Number.parseFloat(st.outlineOffset)
+    );
+    const r = el.getBoundingClientRect();
+    const ring = new DOMRect(r.left - grow, r.top - grow, r.width + 2 * grow, r.height + 2 * grow);
+    let clip = new DOMRect(0, 0, window.innerWidth, window.innerHeight);
+    for (let a = el.parentElement; a; a = a.parentElement) {
+      const as = getComputedStyle(a);
+      if (as.overflowX === "visible" && as.overflowY === "visible") continue;
+      const c = a.getBoundingClientRect();
+      const left = Math.max(clip.left, c.left);
+      const top = Math.max(clip.top, c.top);
+      clip = new DOMRect(
+        left,
+        top,
+        Math.min(clip.right, c.right) - left,
+        Math.min(clip.bottom, c.bottom) - top
+      );
+    }
+    const round = (d: DOMRect) =>
+      [d.left, d.top, d.right, d.bottom].map((v) => Math.round(v * 10) / 10);
+    const cls = typeof el.className === "string" ? el.className.split(/\s+/)[0] : "";
+    const drawn =
+      el.matches(":focus-visible") &&
+      st.outlineStyle !== "none" &&
+      Number.parseFloat(st.outlineWidth) > 0;
+    return {
+      target: `${el.tagName.toLowerCase()}.${cls}`,
+      offset: st.outlineOffset,
+      fits:
+        drawn &&
+        ring.left >= clip.left - 0.5 &&
+        ring.top >= clip.top - 0.5 &&
+        ring.right <= clip.right + 0.5 &&
+        ring.bottom <= clip.bottom + 0.5,
+      ring: round(ring),
+      clip: round(clip),
+    };
+  })) as { target: string; offset: string; fits: boolean; ring: number[]; clip: number[] };
+}
+
 async function tabTo(selector: string, text = ""): Promise<{ ring: string }> {
   if (await onMac()) {
     const focused = (await b.execute(
       (sel: string, want: string) => {
-        const el = Array.from(document.querySelectorAll<HTMLElement>(sel)).find((e) => (e.textContent ?? "").includes(want));
+        const el = Array.from(document.querySelectorAll<HTMLElement>(sel)).find((e) =>
+          (e.textContent ?? "").includes(want)
+        );
         el?.focus();
         return el !== undefined && document.activeElement === el;
       },
       selector,
-      text,
+      text
     )) as boolean;
     if (!focused) throw new Error(`${selector}${text ? ` "${text}"` : ""} could not take focus`);
     return { ring: "macOS: focused directly" };
@@ -114,9 +189,10 @@ async function tabTo(selector: string, text = ""): Promise<{ ring: string }> {
       (await b.execute(() => {
         const el = document.activeElement as HTMLElement | null;
         if (!el || el === document.body) return `body(hasFocus=${document.hasFocus()})`;
-        const cls = typeof el.className === "string" ? el.className.split(/\s+/).slice(0, 2).join(".") : "";
+        const cls =
+          typeof el.className === "string" ? el.className.split(/\s+/).slice(0, 2).join(".") : "";
         return `${el.tagName.toLowerCase()}${cls ? `.${cls}` : ""}`;
-      })) as string,
+      })) as string
     );
     const at = (await b.execute(
       (sel: string, want: string) => {
@@ -125,18 +201,24 @@ async function tabTo(selector: string, text = ""): Promise<{ ring: string }> {
         const style = getComputedStyle(el);
         return {
           visible: el.matches(":focus-visible"),
-          ring: style.outlineStyle === "none" || style.outlineWidth === "0px" ? "" : `${style.outlineWidth} ${style.outlineStyle} ${style.outlineColor}`,
+          ring:
+            style.outlineStyle === "none" || style.outlineWidth === "0px"
+              ? ""
+              : `${style.outlineWidth} ${style.outlineStyle} ${style.outlineColor}`,
         };
       },
       selector,
-      text,
+      text
     )) as { visible: boolean; ring: string } | null;
     if (at) {
-      if (!at.visible || at.ring === "") throw new Error(`${selector} has focus but no visible focus ring (${JSON.stringify(at)})`);
+      if (!at.visible || at.ring === "")
+        throw new Error(`${selector} has focus but no visible focus ring (${JSON.stringify(at)})`);
       return { ring: at.ring };
     }
   }
-  throw new Error(`Tab never reached ${selector}${text ? ` "${text}"` : ""}; focus after each Tab: ${trail.join(" > ")}`);
+  throw new Error(
+    `Tab never reached ${selector}${text ? ` "${text}"` : ""}; focus after each Tab: ${trail.join(" > ")}`
+  );
 }
 
 describe("converted controls (FE-LINT slice C)", function () {
@@ -147,7 +229,6 @@ describe("converted controls (FE-LINT slice C)", function () {
     await createCommunity(b, ada, PLACE);
     await openCommunity(b, PLACE);
     await setCommunityName(b, ada, ada.displayName);
-    await setLocationSharing(b, ada, true);
     await communitySettings(b, "Roles");
     await (await byText(b, ".modal-container .form-btn-secondary", "Create Role")).click();
     await typeInto(await shown(b, 'input[placeholder="Role name..."]'), ROLE);
@@ -171,7 +252,9 @@ describe("converted controls (FE-LINT slice C)", function () {
     // The window holds several category headers (Servers, Upcoming): the one
     // under test is the one with focus.
     const expanded = async (): Promise<string | null> =>
-      (await b.execute(() => document.activeElement?.getAttribute("aria-expanded") ?? null)) as string | null;
+      (await b.execute(() => document.activeElement?.getAttribute("aria-expanded") ?? null)) as
+        | string
+        | null;
     if (!(await onMac())) {
       // Give the community webview keyboard focus before the first Tab.
       await (await shown(b, ".community-channel-header-name")).click();
@@ -181,10 +264,20 @@ describe("converted controls (FE-LINT slice C)", function () {
     const headerRing = await tabTo(header);
     const before = await expanded();
     await b.keys("Enter");
-    await waitUntil(async () => (await expanded()) !== before, NET_WAIT_MS, "Enter did not fold the category");
+    await waitUntil(
+      async () => (await expanded()) !== before,
+      NET_WAIT_MS,
+      "Enter did not fold the category"
+    );
     await b.keys(" ");
-    await waitUntil(async () => (await expanded()) === before, NET_WAIT_MS, "Space did not unfold the category");
-    console.log(`[a11y] category header: ring ${headerRing.ring}; Enter folds, Space unfolds (aria-expanded ${before})`);
+    await waitUntil(
+      async () => (await expanded()) === before,
+      NET_WAIT_MS,
+      "Space did not unfold the category"
+    );
+    console.log(
+      `[a11y] category header: ring ${headerRing.ring}; Enter folds, Space unfolds (aria-expanded ${before})`
+    );
     await shot("keyboard-category-header");
 
     // The channel topic opens its editor on Enter; Escape leaves it.
@@ -203,7 +296,51 @@ describe("converted controls (FE-LINT slice C)", function () {
     await shown(b, ".settings-section-accented input.form-input");
     console.log(`[a11y] role summary: ring ${roleRing.ring}; Space opens the role editor`);
     await shot("keyboard-role-editor");
+    await b.keys("Escape");
 
-    expect({ header: headerRing.ring !== "", topic: topicRing.ring !== "", role: roleRing.ring !== "" }).toEqual({ header: true, topic: true, role: true });
+    // The full ring on every full-width row: the spec's targets and the
+    // window's other row kinds, each focused after a trusted key (keyboard
+    // modality, so :focus-visible draws), its ring inside its clipping lists.
+    const cut: string[] = [];
+    const sweep = async (selector: string, name: string, text = ""): Promise<void> => {
+      await b.keys(Key.Shift);
+      const focused = (await b.execute(
+        (sel: string, want: string) => {
+          const el = Array.from(document.querySelectorAll<HTMLElement>(sel)).find((e) =>
+            (e.textContent ?? "").includes(want)
+          );
+          el?.focus();
+          return el !== undefined && document.activeElement === el;
+        },
+        selector,
+        text
+      )) as boolean;
+      if (!focused) throw new Error(`${name}: ${selector} could not take focus`);
+      const fit = await ringFits();
+      console.log(`[a11y] ring ${name}: ${JSON.stringify(fit)}`);
+      if (!fit.fits) cut.push(`${name} ${JSON.stringify(fit)}`);
+      await shot(`ring-${name}`);
+    };
+    await communitySettings(b, "Roles");
+    await sweep(".settings-role-summary", "role-summary", ROLE);
+    await sweep(".form-tab", "settings-tab", "Roles");
+    await b.keys("Escape");
+    await openCommunity(b, PLACE);
+    await sweep(".category-header", "category-header");
+    await sweep(".channel-item", "channel-row", "general");
+    await sweep(".member-item", "member-row");
+    await sweep(".channel-topic", "channel-topic");
+
+    expect({
+      header: headerRing.ring !== "",
+      topic: topicRing.ring !== "",
+      role: roleRing.ring !== "",
+      cut,
+    }).toEqual({
+      header: true,
+      topic: true,
+      role: true,
+      cut: [],
+    });
   });
 });
