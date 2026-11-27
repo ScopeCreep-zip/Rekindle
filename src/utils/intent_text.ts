@@ -122,6 +122,9 @@ export function factText(fact: Fact): string {
       "Confirming does not verify it.";
   }
   if ("membersAffected" in fact) return `${fact.membersAffected.count} members are affected.`;
+  // The Host words this fact itself (Fact::device_re_enrolment, the plan's
+  // text with its seq); the shell adds nothing.
+  if ("deviceReEnrolment" in fact) return fact.deviceReEnrolment.statement;
   return `${fact.messagesDeleted.count} messages are deleted for members.`;
 }
 
