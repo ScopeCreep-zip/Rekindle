@@ -4,7 +4,7 @@ use rekindle_ipc::protocol::LifecycleRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, SettingsRequest};
 use rekindle_types::dto::community_profile::ProfileField;
 
-use crate::cli::CommunityCmd;
+use crate::cli::{CommunityCmd, ProfileArgs};
 use crate::governance;
 use crate::helpers;
 use crate::output::OutputMode;
@@ -86,33 +86,8 @@ pub async fn dispatch(
             community,
             name,
             clear,
-        } => {
-            let display_name = match (name, clear) {
-                (Some(name), false) => ProfileField::Set(name.clone()),
-                (None, true) => ProfileField::Clear,
-                _ => anyhow::bail!("give a name or --clear"),
-            };
-            settings(
-                client,
-                mode,
-                SettingsRequest::CommunitySetDisplayName {
-                    community: community.clone(),
-                    display_name,
-                },
-            )
-            .await
-        }
-        CommunityCmd::Profile(args) => {
-            settings(
-                client,
-                mode,
-                SettingsRequest::CommunityUpdateProfile {
-                    community: args.community.clone(),
-                    patch: args.patch()?,
-                },
-            )
-            .await
-        }
+        } => set_name(client, mode, community, name.as_deref(), *clear).await,
+        CommunityCmd::Profile(args) => update_profile(client, mode, args).await,
         CommunityCmd::Forget { community } => {
             let value = helpers::send(
                 client,
@@ -578,9 +553,44 @@ async fn lifecycle(
     format::print_structured(&value, mode)
 }
 
-#[cfg(test)]
-#[path = "community_removal_tests.rs"]
-mod removal_tests;
+async fn set_name(
+    client: &DaemonClient,
+    mode: OutputMode,
+    community: &str,
+    name: Option<&str>,
+    clear: bool,
+) -> anyhow::Result<()> {
+    let display_name = match (name, clear) {
+        (Some(name), false) => ProfileField::Set(name.to_owned()),
+        (None, true) => ProfileField::Clear,
+        _ => anyhow::bail!("give a name or --clear"),
+    };
+    settings(
+        client,
+        mode,
+        SettingsRequest::CommunitySetDisplayName {
+            community: community.to_owned(),
+            display_name,
+        },
+    )
+    .await
+}
+
+async fn update_profile(
+    client: &DaemonClient,
+    mode: OutputMode,
+    args: &ProfileArgs,
+) -> anyhow::Result<()> {
+    settings(
+        client,
+        mode,
+        SettingsRequest::CommunityUpdateProfile {
+            community: args.community.clone(),
+            patch: args.patch()?,
+        },
+    )
+    .await
+}
 
 async fn settings(
     client: &DaemonClient,
@@ -594,3 +604,7 @@ async fn settings(
     .await?;
     format::print_structured(&value, mode)
 }
+
+#[cfg(test)]
+#[path = "community_removal_tests.rs"]
+mod removal_tests;

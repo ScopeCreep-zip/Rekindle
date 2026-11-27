@@ -27,6 +27,7 @@ mod transfer;
 pub use activity::{ActivityArgs, InfoviewCmd};
 pub use channel::{ChannelCmd, CommunityChannelCmd, OverwriteCmd, VoiceCmd};
 pub use community::{CommunityCmd, InviteCmd, ModerateCmd, RoleCmd};
+pub(crate) use community_profile::ProfileArgs;
 pub use config::{ConfigCmd, ExportCmd, ImportCmd};
 pub use group_dm::GroupDmCmd;
 pub use identity::{IdentityCmd, InitArgs, StatusArgs, UnlockArgs};
