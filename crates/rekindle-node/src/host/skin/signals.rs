@@ -21,7 +21,7 @@ use rekindle_types::dto::skin_signals::{
 };
 use rekindle_types::friend::FriendState;
 use rekindle_types::subscription_events::{
-    CallEvent, NetworkEvent, StreamFrame, SubscriptionEvent, SystemEvent, TypingContext,
+    CallEvent, Cursor, NetworkEvent, Sequenced, StreamFrame, SubscriptionEvent, SystemEvent, TypingContext,
     TypingEvent, VoiceEvent, VoiceScope,
 };
 
@@ -56,7 +56,8 @@ pub(crate) struct Inputs {
     /// cleared when no call is left.
     self_muted: bool,
     disconnected: bool,
-    unseen_notification: BTreeSet<String>,
+    unseen_notification: bool,
+    notifications_read_through: Option<Cursor>,
     /// Our voice session, from `VoiceEvent::LocalJoined`; cleared by the
     /// `VoiceEvent::Left` that names us (`own`), as our own leave does
     /// (`rekindle_voice::session::leave_voice`).
@@ -66,13 +67,11 @@ pub(crate) struct Inputs {
 }
 
 impl Inputs {
-    /// The shell's window focus. A window that gains focus has seen its
-    /// notifications.
+    /// The shell's window focus, independent of unread alerts.
     pub(crate) fn set_focus(&mut self, window: &str, focused: bool) {
         self.windows.insert(window.to_owned());
         if focused {
             self.focused.insert(window.to_owned());
-            self.unseen_notification.remove(window);
         } else {
             self.focused.remove(window);
         }
@@ -87,7 +86,6 @@ impl Inputs {
     pub(crate) fn close(&mut self, window: &str) {
         self.windows.remove(window);
         self.focused.remove(window);
-        self.unseen_notification.remove(window);
     }
 
     pub(crate) fn in_call(&self) -> bool {
@@ -141,15 +139,6 @@ impl Inputs {
                 self.disconnected = !is_attached;
                 true
             }
-            SubscriptionEvent::Notification(_) => {
-                self.unseen_notification = self
-                    .windows
-                    .iter()
-                    .filter(|w| !self.focused.contains(*w))
-                    .cloned()
-                    .collect();
-                true
-            }
             // A transfer's state is read from `transfers`, and the
             // own-records stage from `FriendStores::own_records`
             // (`load_world`).
@@ -159,6 +148,21 @@ impl Inputs {
             | SubscriptionEvent::Transfer(_) => true,
             _ => false,
         }
+    }
+
+    pub(crate) fn fold_stream(&mut self, event: &Sequenced) -> bool {
+        if matches!(event.event, SubscriptionEvent::Notification(_)) {
+            let read = self.notifications_read_through.is_some_and(|cursor| {
+                cursor.epoch == event.cursor.epoch && cursor.seq >= event.cursor.seq
+            });
+            return !read && !std::mem::replace(&mut self.unseen_notification, true);
+        }
+        self.fold(&event.event)
+    }
+
+    pub(crate) fn notifications_opened(&mut self, head: Cursor) {
+        self.notifications_read_through = Some(head);
+        self.unseen_notification = false;
     }
 
     fn fold_call(&mut self, event: &CallEvent) -> bool {
@@ -330,7 +334,7 @@ pub(crate) fn compute(
     let mut set = SkinSignalSet {
         focused: inputs.focused.contains(window),
         disconnected: inputs.disconnected,
-        new_notification: inputs.unseen_notification.contains(window),
+        new_notification: inputs.unseen_notification,
         ..SkinSignalSet::default()
     };
     for capability in EVERY_CAPABILITY {
@@ -428,6 +432,13 @@ impl SignalState {
         self.poke();
     }
 
+    /// Acknowledge alerts through the current journal head, including ones
+    /// the signal worker has yet to fold.
+    pub(crate) fn notifications_opened(&self, journal: &rekindle_events::SessionJournal) {
+        self.inputs.lock().notifications_opened(journal.head());
+        self.poke();
+    }
+
     /// `ShowVoiceWindow`'s window ([`Inputs::show_call`]).
     pub(crate) fn show_call(&self) -> Option<CallTarget> {
         self.inputs.lock().show_call()
@@ -502,7 +513,7 @@ pub(crate) async fn run_worker(ctx: Arc<DaemonContext>) {
                     let own = ctx.require_owner().ok();
                     let mut inputs = ctx.skin.signals.inputs.lock();
                     inputs.set_own(own);
-                    if !inputs.fold(&s.event) {
+                    if !inputs.fold_stream(&s) {
                         continue;
                     }
                 }
