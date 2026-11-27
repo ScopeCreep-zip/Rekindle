@@ -1,5 +1,5 @@
 import { browser, expect } from "@wdio/globals";
-import { resolveIntent, shown, waitUntil } from "../../../walk/helpers.ts";
+import { NET_WAIT_MS, resolveIntent, shown, waitUntil } from "../../../walk/helpers.ts";
 import { openSettings } from "../../../walk/nav.ts";
 import { createIdentity, newUser, type User } from "../../journeys.ts";
 
@@ -48,7 +48,9 @@ describe("Settings Appearance handles a late skin library response", function ()
   it("keeps the newest skin when a previous list response arrives later", async () => {
     await createIdentity(browser, me);
     await openSettings(browser, "Appearance");
-    await shown(browser, ".skin-row-shown .skin-name");
+    // The library list arrives from the Host; on a loaded machine it took
+    // longer than the default 10 s (the control's first run): applySkin's wait.
+    await shown(browser, ".skin-row-shown .skin-name", NET_WAIT_MS);
 
     const original = await currentSkin();
     const choices = await browser.execute(() =>
