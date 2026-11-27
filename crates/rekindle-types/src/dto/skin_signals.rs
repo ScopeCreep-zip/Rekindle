@@ -86,8 +86,7 @@ pub struct SkinSignalSet {
     pub talking: bool,
     /// The node is not attached to the network (`OnDisconnected`).
     pub disconnected: bool,
-    /// A notification arrived since the window last had focus
-    /// (`OnNewNotification`).
+    /// The session has an unread system alert (`OnNewNotification`).
     pub new_notification: bool,
     /// The Host's words for each cause that can disable a node now (plan
     /// E7.7 CR1): every capability in `cannot` and every active

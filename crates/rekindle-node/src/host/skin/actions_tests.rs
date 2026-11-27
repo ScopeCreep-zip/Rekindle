@@ -4,10 +4,12 @@
 
 use rekindle_ipc::protocol::{GroupDmRequest, IpcRequest, IpcResponse, ServersRequest};
 use rekindle_types::dto::local_search::LocalSearchScope;
+use rekindle_types::dto::skin::SkinWindow;
 use rekindle_types::dto::skin_action::{
     EngineMenu, EngineView, PackUrl, SkinAction as A, SkinSettingsTab,
 };
 use rekindle_types::dto::skin_run::{CallOp, ShellOp, ShellPanel, SkinRun, SkinSelection};
+use rekindle_types::dto::skin_tree::ShellNode;
 use rekindle_types::presence::SessionStatus;
 
 use super::actions::{addressed, map, resolve, Launchers, Mapped, Resolved, Selected, Views};
@@ -492,6 +494,95 @@ fn a_popups_view_switch_is_addressed_to_its_launcher() {
     );
     launchers.set(popup, None);
     assert_eq!(addressed(&launchers, popup, show()), (show(), None));
+}
+
+fn press_for(nodes: &[ShellNode], matches: &impl Fn(&A) -> bool) -> Option<String> {
+    nodes.iter().find_map(|node| {
+        if node.triggers.iter().any(|t| t.presses() && matches(&t.run)) {
+            Some(node.id.clone())
+        } else {
+            press_for(&node.children, matches)
+        }
+    })
+}
+
+#[test]
+fn every_built_in_skin_routes_its_notifications_control_to_the_inbox() {
+    let inbox = ShellOp::OpenPanel(ShellPanel::Notifications);
+    let skin = SkinState::default();
+    let resolve_press = |window: &str, node: String, action: A| {
+        let request = IpcRequest::RunSkinAction {
+            window: window.into(),
+            node,
+            action,
+        };
+        let Ok(Resolved::Run { run, .. }) = resolve(&skin, &Reads::default(), request) else {
+            panic!("the notifications control did not resolve to a shell operation");
+        };
+        addressed(&skin.launchers, window, run)
+    };
+    for pack in &rekindle_skin::builtin::PACKS {
+        let address = blake3::hash(pack.bytes).to_hex();
+        let served = rekindle_skin::serve::stylesheet(pack.bytes, address.as_str()).unwrap();
+        let mut mains = served
+            .shells
+            .iter()
+            .filter(|shell| shell.window == SkinWindow::Main);
+        let main = mains.clone().find(|shell| shell.popup.is_none()).unwrap();
+        let (shell, menu_node) = mains
+            .find_map(|shell| {
+                press_for(&shell.root, &|a| *a == A::Menu(EngineMenu::File))
+                    .map(|node| (shell, node))
+            })
+            .unwrap_or_else(|| panic!("{} has no Rekindle menu control", pack.id));
+        let item = shell
+            .menus
+            .items(EngineMenu::File)
+            .iter()
+            .find(|item| item.label == "Notifications")
+            .unwrap_or_else(|| panic!("{} has no Notifications menu item", pack.id));
+        let (window, expected) = if let Some(popup) = &shell.popup {
+            assert!(
+                press_for(&main.root, &|a| {
+                    matches!(a, A::LaunchPopup(target) if target.popup == popup.name)
+                })
+                .is_some(),
+                "{} has no launcher for {}",
+                pack.id,
+                popup.name
+            );
+            (
+                format!("popup-buddy-list-{}", popup.name),
+                (
+                    SkinRun::Launcher {
+                        window: "buddy-list".into(),
+                    },
+                    Some(("buddy-list".into(), inbox.clone())),
+                ),
+            )
+        } else {
+            ("buddy-list".into(), (SkinRun::Shell(inbox.clone()), None))
+        };
+        assert_eq!(
+            resolve_press(&window, menu_node, item.run.clone()),
+            expected,
+            "{}",
+            pack.id
+        );
+
+        if pack.id == "symbiosis" {
+            let node = press_for(&main.root, &|a| *a == A::OpenNotifications);
+            assert_eq!(node.as_deref(), Some("ButtonNotificationsTab"));
+            assert_eq!(
+                resolve_press("buddy-list", node.unwrap(), A::OpenNotifications),
+                (SkinRun::Shell(inbox.clone()), None)
+            );
+        }
+    }
+    assert_eq!(
+        run(&A::ShowView(EngineView::Notifications)),
+        SkinRun::Shell(inbox)
+    );
 }
 
 /// `SearchFor` pressed in `window` (SK2-G §8), as `resolve` maps it.
