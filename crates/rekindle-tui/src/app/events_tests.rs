@@ -2,6 +2,7 @@
 //! `DaemonClient` connected to a `BusServer` this test serves on a
 //! temporary socket (`DaemonClient::from_bus`), so no daemon is started.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use rekindle_ipc::registry::ClearanceRegistry;
@@ -411,6 +412,7 @@ async fn a_permission_change_rereads_the_dashboard_live() {
         GovernanceEvent::EffectivePermissionsChanged {
             community: "c1".into(),
             member: "bob".into(),
+            denied: BTreeMap::default(),
         },
     ));
     assert!(matches!(action, Some(Action::Render)));

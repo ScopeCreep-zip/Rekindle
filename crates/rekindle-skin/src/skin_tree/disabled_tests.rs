@@ -1,39 +1,17 @@
 //! The served `disabledBy` of each interactive node (plan E7.7 CR1).
 
-use rekindle_types::dto::skin::RegionState;
-use rekindle_types::dto::skin_tree::{DisabledBy, NodeRole, SkinNode};
+use rekindle_types::dto::skin::{RegionState, SkinManifest};
+use rekindle_types::dto::skin_tree::{DisabledBy, NodePieces, NodeRole, SkinNode};
 
 use rekindle_image::{Rgba, RgbaImage};
 
 use super::disabled::{pack_art, visible_difference, Measured, VISIBLE_PIXELS};
 use super::golden_tests::main_layout;
-use crate::package::Package;
+use super::test_support::{each, find, pack};
 use crate::{builtin, manifest, package};
-
-fn pack(id: &str) -> Package<'static> {
-    let (_, b) = builtin::find(&format!("builtin:{id}")).unwrap();
-    package::read(b.bytes).unwrap()
-}
 
 fn is_pack_art(id: &str, n: &SkinNode) -> bool {
     pack_art(n, &pack(id), &mut Measured::default()).unwrap()
-}
-
-fn find<'a>(nodes: &'a [SkinNode], id: &str) -> Option<&'a SkinNode> {
-    nodes.iter().find_map(|n| {
-        if n.id == id {
-            Some(n)
-        } else {
-            find(&n.children, id)
-        }
-    })
-}
-
-fn each(nodes: &[SkinNode], f: &mut impl FnMut(&SkinNode)) {
-    for n in nodes {
-        f(n);
-        each(&n.children, f);
-    }
 }
 
 #[test]
@@ -49,13 +27,15 @@ fn xslimfire_chat_button_is_disabled_by_its_packs_art() {
 /// dims it (served pieces: 658 of 1710 pixels differ at all, none by
 /// more than the channel delta; real app: 12 px changed, under the 20 px bar).
 #[test]
-fn total_chaos_communities_open_is_disabled_by_the_shell() {
+fn total_chaos_communities_open_is_disabled_by_a_served_copy() {
     let tree = main_layout("total-chaos").tree.unwrap();
     let open = find(&tree.root, "CommunitiesOpen").unwrap();
     let art = open.art.as_ref().unwrap();
     assert!(art.states.contains_key(&RegionState::Disabled));
     assert_ne!(art.states.get(&RegionState::Disabled), Some(&art.normal));
-    assert_eq!(open.disabled_by, Some(DisabledBy::Shell));
+    // DIS3: a refusal shows the serve's visibly dimmed copy; the near-copy
+    // stays the pack's window-inactive look.
+    assert_eq!(open.disabled_by, Some(DisabledBy::Served));
 }
 
 fn image(w: u32, h: u32, p: [u8; 4]) -> RgbaImage {
@@ -142,18 +122,42 @@ fn no_disabled_look_is_the_shells_to_dim() {
     assert!(!is_pack_art("xslimfire", &chat));
 }
 
-/// The rule before CR1b: any Disabled state at all, equal to Normal or not.
-fn had_disabled_state(n: &SkinNode) -> bool {
+/// The rule before CR1b: any Disabled state the pack wrote, equal to
+/// Normal or not, read from the authored manifest (lead ruling 3, never
+/// the served one): the node's or a part's Disabled set is one of
+/// `authored`'s. A node the placements add (Total Chaos's Communities
+/// clone) carries the authored set it copies.
+fn had_disabled_state(n: &SkinNode, authored: &[NodePieces]) -> bool {
     let has = |c: &SkinNode| {
         c.art
             .as_ref()
-            .is_some_and(|a| a.states.contains_key(&RegionState::Disabled))
+            .and_then(|a| a.states.get(&RegionState::Disabled))
+            .is_some_and(|set| authored.contains(set))
     };
     n.label.is_none()
         && (has(n)
             || n.children
                 .iter()
                 .any(|c| c.role == NodeRole::Part && has(c)))
+}
+
+/// Every Disabled set the authored manifest `m` ships, over every tree.
+fn authored_disabled(m: &SkinManifest) -> Vec<NodePieces> {
+    let mut sets = Vec::new();
+    for l in m.windows.values() {
+        for tree in l.tree.iter().chain(l.popups.values().map(|p| &p.tree)) {
+            each(&tree.root, &mut |n| {
+                if let Some(set) = n
+                    .art
+                    .as_ref()
+                    .and_then(|a| a.states.get(&RegionState::Disabled))
+                {
+                    sets.push(set.clone());
+                }
+            });
+        }
+    }
+    sets
 }
 
 /// Plan CR1b and DIS2: every built-in node that ships a Disabled state but
@@ -172,6 +176,7 @@ fn builtin_nodes_whose_disabled_art_is_not_visibly_distinct_are_dimmed_by_the_sh
     for b in builtin::PACKS {
         let p = package::read(b.bytes).unwrap();
         let m = manifest::served(&p).unwrap();
+        let authored = authored_disabled(&manifest::parse(&p).unwrap());
         for (window, l) in &m.windows {
             let trees = l.tree.iter().map(|t| (format!("{window:?}"), t)).chain(
                 l.popups
@@ -181,8 +186,8 @@ fn builtin_nodes_whose_disabled_art_is_not_visibly_distinct_are_dimmed_by_the_sh
             for (at, tree) in trees {
                 each(&tree.root, &mut |n| {
                     if n.interactive()
-                        && had_disabled_state(n)
-                        && n.disabled_by == Some(DisabledBy::Shell)
+                        && had_disabled_state(n, &authored)
+                        && matches!(n.disabled_by, Some(DisabledBy::Served | DisabledBy::Shell))
                     {
                         moved.push(format!("{} {at} {}", b.id, n.id));
                     }

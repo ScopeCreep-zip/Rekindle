@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE Components SYSTEM "XfireSkin.dtd">
+
+<Components>
+    <Component Name="XIGEditModeOverlay" Class="MainWindow" />
+    
+    <Component Name="XIGEditModeTileDragger" Class="Tile" DrawOnTopMost="True">
+        <Triggers>
+            <Trigger Type="OnLeftButtonDown">AppDragWindow</Trigger>
+        </Triggers>
+        <Images State="Normal">
+            <Image Type="TopLeft">xig_overlay_top_left</Image>
+            <Image Type="Top">xig_overlay_top_middle</Image>
+            <Image Type="TopRight">xig_overlay_top_right</Image>
+            <Image Type="Left">xig_overlay_leftside_middle</Image>
+            <Image Type="Middle">xig_overlay_window_filler</Image>
+            <Image Type="Right">xig_overlay_rightside_middle</Image>
+            <Image Type="BottomLeft">xig_overlay_bottom_left</Image>
+            <Image Type="Bottom">xig_overlay_bottom_middle</Image>
+            <Image Type="BottomRight">xig_overlay_bottom_right</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="XIGEditModeOverlayName" Class="WindowNameText" Stretch="ToFit" DrawOnTopMost="True" Events="Transparent">
+        <Text Align="Center" Font="Arial" Size="11" Bold="True" Color="XIGEditModeTitleCG" />
+    </Component>
+    
+    <Component Name="XIGEditModeOverlayGripper" Class="OverlayOptionsButton" MinWidth="14" MinHeight="14" ControlType="Gripper" />
+    
+    <Component Name="XIGEditModeOverlayGripperLarge" Class="Tile" MinWidth="14" MaxWidth="14" MinHeight="14" MaxHeight="14" Stretch="ToFit" DrawOnTopMost="True">
+        <Triggers>
+            <Trigger Type="OnLeftButtonDown">ResizeBR</Trigger>
+        </Triggers>
+        <Images State="Normal">
+            <Image Type="Middle">button_xig_edit_mode_gripper_bottom_right_norm</Image>
+        </Images>
+    </Component>
+    
+    
+    
+    <!--
+    //////////////////////////////////////////////
+    // Buttons
+    //////////////////////////////////////////////
+    -->
+    <Component Name="XIGEditModeButtonOptions" Class="OverlayOptionsButton" MinWidth="27" MaxWidth="27" MinHeight="19" MaxHeight="19" Stretch="ToContent" ControlType="Options" />
+    
+    <Component Name="XIGEditModeButtonSmallOptions" Class="PushButton" MinWidth="27" MaxWidth="27" MinHeight="19" MaxHeight="19" Stretch="ToContent" ToolTipTile="XIGToolTipPopup" DrawOnTopMost="True">
+        <Triggers>
+            <Trigger Type="OnClick">OpenOverlayOptionsDlg</Trigger>
+        </Triggers>
+        <Images State="Normal">
+            <Image Type="Middle">button_xig_edit_mode_settings_small_small_down</Image>
+        </Images>
+        <Images State="Hover">
+            <Image Type="Middle">button_xig_edit_mode_settings_small_hover</Image>
+        </Images>
+        <Images State="Down">
+            <Image Type="Middle">button_xig_edit_mode_settings_small_down</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="XIGEditModeButtonLargeOptions" Class="PushButton" MinWidth="27" MaxWidth="27" MinHeight="19" MaxHeight="19" Stretch="ToContent" ToolTipTile="XIGToolTipPopup" DrawOnTopMost="True">
+        <Triggers>
+            <Trigger Type="OnClick">OpenOverlayOptionsDlg</Trigger>
+        </Triggers>
+        <Images State="Normal">
+            <Image Type="Middle">button_xig_edit_mode_settings_large_norm</Image>
+        </Images>
+        <Images State="Hover">
+            <Image Type="Middle">button_xig_edit_mode_settings_large_hover</Image>
+        </Images>
+        <Images State="Down">
+            <Image Type="Middle">button_xig_edit_mode_settings_large_down</Image>
+        </Images>
+    </Component>
+</Components>

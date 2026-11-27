@@ -263,7 +263,11 @@ fn crop_art(
             states.insert(k, p);
         }
     }
-    Ok(Some(NodeArt { normal, states }))
+    Ok(Some(NodeArt {
+        normal,
+        states,
+        refused: None,
+    }))
 }
 
 /// The slots a set may hold to be trimmed across `y` (rows, a one-row set:
@@ -367,7 +371,11 @@ fn trim_art(
         }
         return Ok(None);
     }
-    Ok(Some(NodeArt { normal, states }))
+    Ok(Some(NodeArt {
+        normal,
+        states,
+        refused: None,
+    }))
 }
 
 /// Clips each of `nodes` (in a parent `(w, h)` px, or `None` on an axis

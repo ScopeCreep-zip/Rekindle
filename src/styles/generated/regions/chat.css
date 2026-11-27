@@ -35,7 +35,7 @@
     padding: inherit;
     border-radius: inherit;
     background:
-      linear-gradient(var(--skin-region-chat-call-button-backing), var(--skin-region-chat-call-button-backing)) var(--skin-region-chat-call-button-slice-left, 0px) var(--skin-region-chat-call-button-slice-top, 0px) / calc(100% - var(--skin-region-chat-call-button-slice-left, 0px) - var(--skin-region-chat-call-button-slice-right, 0px)) calc(100% - var(--skin-region-chat-call-button-slice-top, 0px) - var(--skin-region-chat-call-button-slice-bottom, 0px)) no-repeat padding-box,
+      linear-gradient(var(--skin-region-chat-call-button-backing), var(--skin-region-chat-call-button-backing)) var(--skin-region-chat-call-button-slice-left, 0%) var(--skin-region-chat-call-button-slice-top, 0%) / calc(100% - var(--skin-region-chat-call-button-slice-left, 0%) - var(--skin-region-chat-call-button-slice-right, 0%)) calc(100% - var(--skin-region-chat-call-button-slice-top, 0%) - var(--skin-region-chat-call-button-slice-bottom, 0%)) no-repeat padding-box,
       linear-gradient(var(--skin-region-chat-call-button-backing), var(--skin-region-chat-call-button-backing)) no-repeat content-box;
     pointer-events: none;
   }
@@ -68,7 +68,7 @@
     padding: inherit;
     border-radius: inherit;
     background:
-      linear-gradient(var(--skin-region-chat-call-button-active-backing), var(--skin-region-chat-call-button-active-backing)) var(--skin-region-chat-call-button-active-slice-left, 0px) var(--skin-region-chat-call-button-active-slice-top, 0px) / calc(100% - var(--skin-region-chat-call-button-active-slice-left, 0px) - var(--skin-region-chat-call-button-active-slice-right, 0px)) calc(100% - var(--skin-region-chat-call-button-active-slice-top, 0px) - var(--skin-region-chat-call-button-active-slice-bottom, 0px)) no-repeat padding-box,
+      linear-gradient(var(--skin-region-chat-call-button-active-backing), var(--skin-region-chat-call-button-active-backing)) var(--skin-region-chat-call-button-active-slice-left, 0%) var(--skin-region-chat-call-button-active-slice-top, 0%) / calc(100% - var(--skin-region-chat-call-button-active-slice-left, 0%) - var(--skin-region-chat-call-button-active-slice-right, 0%)) calc(100% - var(--skin-region-chat-call-button-active-slice-top, 0%) - var(--skin-region-chat-call-button-active-slice-bottom, 0%)) no-repeat padding-box,
       linear-gradient(var(--skin-region-chat-call-button-active-backing), var(--skin-region-chat-call-button-active-backing)) no-repeat content-box;
     pointer-events: none;
   }
@@ -124,7 +124,7 @@
     padding: inherit;
     border-radius: inherit;
     background:
-      linear-gradient(var(--skin-region-chat-send-button-backing), var(--skin-region-chat-send-button-backing)) var(--skin-region-chat-send-button-slice-left, 0px) var(--skin-region-chat-send-button-slice-top, 0px) / calc(100% - var(--skin-region-chat-send-button-slice-left, 0px) - var(--skin-region-chat-send-button-slice-right, 0px)) calc(100% - var(--skin-region-chat-send-button-slice-top, 0px) - var(--skin-region-chat-send-button-slice-bottom, 0px)) no-repeat padding-box,
+      linear-gradient(var(--skin-region-chat-send-button-backing), var(--skin-region-chat-send-button-backing)) var(--skin-region-chat-send-button-slice-left, 0%) var(--skin-region-chat-send-button-slice-top, 0%) / calc(100% - var(--skin-region-chat-send-button-slice-left, 0%) - var(--skin-region-chat-send-button-slice-right, 0%)) calc(100% - var(--skin-region-chat-send-button-slice-top, 0%) - var(--skin-region-chat-send-button-slice-bottom, 0%)) no-repeat padding-box,
       linear-gradient(var(--skin-region-chat-send-button-backing), var(--skin-region-chat-send-button-backing)) no-repeat content-box;
     pointer-events: none;
   }

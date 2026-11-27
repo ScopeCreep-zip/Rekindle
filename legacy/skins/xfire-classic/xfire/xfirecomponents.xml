@@ -1,0 +1,4424 @@
+<Components>
+	<Component Name="MainWindow"
+		Class="MainWindow"
+		MinWidth="287"
+		MinHeight="430"
+		DefaultWidth="287"
+		DefaultHeight="430"
+		ResizeX="100"
+		ResizeY="100"
+	/>
+
+	<Component Name="ChatMainWindow"
+		Class="MainWindow"
+		MinWidth="300"
+		MinHeight="270"
+		DefaultWidth="376"
+		DefaultHeight="316"
+		ResizeX="100"
+		ResizeY="100"
+	/>
+
+  <Component Name="XIGClock"
+             Class="MainWindow"
+             MinWidth="160"
+             MinHeight="50"
+             DefaultX="470" 
+             DefaultY="140" 
+             DefaultWidth="150"
+             DefaultHeight="50"
+             >
+    <Triggers>
+      <Trigger Type="OnActiveMode">ShowTile</Trigger>
+    </Triggers>
+  </Component>
+
+  <Component Name="XIGFPS"
+             Class="MainWindow"
+             MinWidth="160"
+             MinHeight="50"
+             DefaultX="470" 
+             DefaultY="200" 
+             DefaultWidth="150"
+             DefaultHeight="50"
+             >
+    <Triggers>
+      <Trigger Type="OnActiveMode">ShowTile</Trigger>
+    </Triggers>
+  </Component>
+
+  <Component Name="XIGInviteUsersToRoomDlg"
+               Class="MainWindow"
+               MinWidth="275"
+               MinHeight="350"
+               DefaultX="470" 
+               DefaultY="10" 
+               DefaultWidth="275"
+               DefaultHeight="350"
+             >
+    <Triggers>
+      <Trigger Type="OnShowInviteUsersToRoom">ShowWindow</Trigger>
+      <Trigger Type="OnDisconnected">HideWindow</Trigger>
+    </Triggers>
+  </Component>
+
+  <Component Name="MainTitleBar"
+		Class="Tile"
+		Default="Activate"
+		MinHeight="51"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">AppDragWindow</Trigger>
+			<Trigger Type="OnDeactivate">State(Disabled)</Trigger>
+			<Trigger Type="OnActivate">State(Normal)</Trigger>
+			<Trigger Type="OnDoubleClick">AppMaximize</Trigger>
+			<Trigger Type="OnRightClick">ContextMenuSys</Trigger>
+		</Triggers>
+		<Images state="Normal" Color="MainCG">
+			<Image Type="topleft">MAINLEFT</Image>
+			<Image Type="top">MAINMIDDLE</Image>
+			<Image Type="topright">MAINRIGHT</Image>
+		</Images>
+		<Images state="Disabled" Color="MainDeactivatedCG">
+			<Image Type="topleft">MAINLEFT</Image>
+			<Image Type="top">MAINMIDDLE</Image>
+			<Image Type="topright">MAINRIGHT</Image>
+		</Images>
+	</Component>
+
+  <Component Name="XIGInviteUsersToRoomDlgTitle"  
+             Class="Text"
+             Stretch="ToContent"
+             Events="Transparent"             
+             >
+    <Text Color="UserNameCG" Font="Arial" Bold="true" Size="12">InviteMorePeopleText</Text>
+  </Component>
+
+  <Component Name="ChatTitleBar"
+		MinHeight="51"
+		Class="Tile"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">AppDragWindow</Trigger>
+			<Trigger Type="OnDeactivate">State(Disabled)</Trigger>
+			<Trigger Type="OnActivate">State(Normal)</Trigger>
+			<Trigger Type="OnDoubleClick">AppMaximize</Trigger>
+		</Triggers>
+		<Images state="Normal" Color="ChatMainCG">
+			<Image Type="topleft">MAINLEFT</Image>
+			<Image Type="top">MAINMIDDLE</Image>
+			<Image Type="topright">MAINRIGHT</Image>
+		</Images>
+		<Images state="Disabled" Color="ChatMainDeactivatedCG">
+			<Image Type="topleft">MAINLEFT</Image>
+			<Image Type="top">MAINMIDDLE</Image>
+			<Image Type="topright">MAINRIGHT</Image>
+		</Images>
+	</Component>
+
+	<Component Name="ResizeUp"
+		Class="Tile"
+		MinHeight="5"
+ 		Cursor="ResizeNS"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">ResizeT</Trigger>
+		</Triggers>
+	</Component>
+
+	<Component Name="Vent"
+		Class="Tile"
+		Stretch="ToContent"
+		Events="Transparent"
+		>
+		<Images Color="VentCG">
+			<Image Type="middle">VENTTOP</Image>
+		</Images>
+	</Component>
+
+	<Component Name="XfireLogo"
+		Class="Tile"
+		Stretch="ToContent"
+		Cursor="Hand"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">AppLaunchUrl(http://www.xfire.com/)</Trigger>
+		</Triggers>
+		<Images Color="LogoCG">
+			<Image Type="middle">LOGOXFIRE</Image>
+		</Images>
+	</Component>
+
+	<Component Name="TheX"
+		Class="Tile"
+		Stretch="ToContent"
+    DrawOnTopmost="true"
+		>
+		<Images Color="LogoCG">
+			<Image Type="middle">LOGOX</Image>
+		</Images>
+	</Component>
+
+	<Component Name="TheXCover"
+		Class="Menu"
+		Stretch="ToContent"
+		Accelerator="ALT( )"
+    MouseOver="false"
+    DrawOnTopmost="true"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">MenuSys</Trigger>
+			<Trigger Type="OnDoubleClick">AppClose</Trigger>
+		</Triggers>
+		<Images State="Normal">
+			<Image Type="middle">LOGOOVERLAY</Image>
+		</Images>
+		<Images State="Down" Color="LogoCoverDown">
+			<Image Type="middle">LOGOOVERLAY</Image>
+		</Images>
+		<Images State="Hover" Color="LogoCoverHover">
+			<Image Type="middle">LOGOOVERLAY</Image>
+		</Images>
+	</Component>
+
+	<Component Name="UserNameField"
+		Class="Tile"
+		Stretch="ToContent"
+		Events="Transparent"
+		>
+		<Images Color="UserNameBkCG">
+			<Image type="left">CHATTITLELEFT</Image>
+			<Image type="middle">CHATTITLEMIDDLE</Image>
+			<Image type="right">CHATTITLERIGHT</Image>
+		</Images>
+	</Component>
+
+	<Component Name="UserNameText"
+		Class="Text"
+		Stretch="ToContent"
+		Events="Transparent"
+		>
+		<Text Color="UserNameCG" Font="Arial" Bold="true" Size="12">UserNameText</Text>
+	</Component>
+
+	<Component Name="CloseBox"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="MinimizeButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">AppMinimize</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="ButtonCG">
+			<Image Type="middle">BUTTONCLOSENORM</Image>
+		</Images>
+		<Images State="Down" Color="ButtonCG">
+			<Image Type="middle">BUTTONCLOSEDOWN</Image>
+		</Images>
+		<Images State="Hover" Color="ButtonCG">
+			<Image Type="middle">BUTTONCLOSEHOVER</Image>
+		</Images>
+	</Component>
+
+	<Component Name="BaseBoard"
+		Class="Tile"
+		MinHeight="68"
+		>
+		<Images Color="MainCG">
+			<Image Type="bottomleft">BOTTOMLEFT</Image>
+			<Image Type="bottom">BOTTOMMIDDLE</Image>
+			<Image Type="bottomright">BOTTOMRIGHT</Image>
+		</Images>
+	</Component>
+
+	<Component Name="ResizeDown"
+		Class="Tile"
+		MinHeight="5"
+		Cursor="ResizeNS"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">ResizeB</Trigger>
+		</Triggers>
+	</Component>
+	
+	<Component Name="ButtonRow"
+		Class="Tile"
+		Stretch="ToContent"
+	/>
+
+	<Component Name="AddButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="AddButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">AddFriend</Trigger>
+			<Trigger Type="OnAppCanAddFriend">State(Normal)</Trigger>
+			<Trigger Type="OnAppCannotAddFriend">State(Disabled)</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="ButtonCG">
+			<Image Type="middle">BUTTONADDNORMAL</Image>
+		</Images>
+		<Images State="Down" Color="ButtonCG">
+			<Image Type="middle">BUTTONADDDOWN</Image>
+		</Images>
+		<Images State="Hover" Color="ButtonCG">
+			<Image Type="middle">BUTTONADDHOVER</Image>
+		</Images>
+		<Images State="Disabled" Color="ButtonCG">
+			<Image Type="middle">BUTTONADDDISABLED</Image>
+		</Images>
+	</Component>
+
+	<Component Name="AddServerButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="AddServerButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">AddServer</Trigger>
+			<Trigger Type="OnAppCanAddServer">State(Normal)</Trigger>
+			<Trigger Type="OnAppCannotAddServer">State(Disabled)</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="ButtonCG">
+			<Image Type="middle">BUTTONADDSERVERNORMAL</Image>
+		</Images>
+		<Images State="Down" Color="ButtonCG">
+			<Image Type="middle">BUTTONADDSERVERDOWN</Image>
+		</Images>
+		<Images State="Hover" Color="ButtonCG">
+			<Image Type="middle">BUTTONADDSERVERHOVER</Image>
+		</Images>
+		<Images State="Disabled" Color="ButtonCG">
+			<Image Type="middle">BUTTONADDSERVERDISABLED</Image>
+		</Images>
+	</Component>
+
+	<Component Name="BigBrowseFileButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="DownloadButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">DownloadInfo</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="Hilight">
+			<Image Type="left">BIGBUTTONLEFTNORM</Image>
+			<Image Type="middle">BIGBUTTONMIDDLENORM</Image>
+			<Image Type="right">BIGBUTTONRIGHTNORM</Image>
+		</Images>
+		<Images State="Down" Color="Hilight">
+			<Image Type="left">BIGBUTTONLEFTDOWN</Image>
+			<Image Type="middle">BIGBUTTONMIDDLEDOWN</Image>
+			<Image Type="right">BIGBUTTONRIGHTDOWN</Image>
+		</Images>
+	</Component>
+
+	<Component Name="BigBrowseFileText"
+		Class="Text"
+		Stretch="ToContent"
+		Events="Transparent"
+		>
+		<Text Font="Arial" Bold="true" Size="11" Color="HeaderText">BigBrowseFileText</Text>
+	</Component>
+
+	<Component Name="StartDownloadButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="StartDownloadButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">StartDownload</Trigger>
+			<Trigger Type="OnAppCanStartDownload">State(Normal)</Trigger>
+			<Trigger Type="OnAppCannotStartDownload">State(Disabled)</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="ButtonCG">
+			<Image Type="middle">BUTTONSTARTDLNORMAL</Image>
+		</Images>
+		<Images State="Down" Color="ButtonCG">
+			<Image Type="middle">BUTTONSTARTDLDOWN</Image>
+		</Images>
+		<Images State="Hover" Color="ButtonCG">
+			<Image Type="middle">BUTTONSTARTDLHOVER</Image>
+		</Images>
+		<Images State="Disabled" Color="ButtonCG">
+			<Image Type="middle">BUTTONSTARTDLDISABLED</Image>
+		</Images>
+	</Component>
+
+	<Component Name="ChatButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		ToolTip="ChatButtonTip"
+		DisabledTooltip="DisabledChatButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">ChatFriend</Trigger>
+			<Trigger Type="OnAppCanChat">State(Normal)</Trigger>
+			<Trigger Type="OnAppCannotChat">State(Disabled)</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="ButtonCG">
+			<Image Type="middle">BUTTONCHATNORMAL</Image>
+		</Images>
+		<Images State="Down" Color="ButtonCG">
+			<Image Type="middle">BUTTONCHATDOWN</Image>
+		</Images>
+		<Images State="Hover" Color="ButtonCG">
+			<Image Type="middle">BUTTONCHATHOVER</Image>
+		</Images>
+		<Images State="Disabled" Color="ButtonCG">
+			<Image Type="middle">BUTTONCHATDISABLED</Image>
+		</Images>
+	</Component>
+
+	<Component Name="RefreshButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="RefreshButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">RefreshServer</Trigger>
+			<Trigger Type="OnAppStartRefreshServers">Animate(Type=Repeat,Delay=4,Repeat=-1)</Trigger>
+			<Trigger Type="OnAppStopRefreshServers">AnimateStop</Trigger>
+			<Trigger Type="OnAppCannotRefreshServer">State(Disabled)</Trigger>
+			<Trigger Type="OnAppCanRefreshServer">State(Normal)</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="ButtonCG">
+			<Image Type="middle">BUTTONREFRESHANIMATION</Image>
+		</Images>
+		<Images State="Down" Color="ButtonCG">
+			<Image Type="middle">BUTTONREFRESHDOWN</Image>
+		</Images>
+		<Images State="Hover" Color="ButtonCG">
+			<Image Type="middle">BUTTONREFRESHHOVERANIMATION</Image>
+		</Images>
+		<Images State="Disabled" Color="ButtonCG">
+			<Image Type="middle">BUTTONREFRESHDISABLED</Image>
+		</Images>
+	</Component>
+
+	<Component Name="StopDownLoadButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="StopDownloadButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">StopDownload</Trigger>
+			<Trigger Type="OnAppCanStopDownload">State(Normal)</Trigger>
+			<Trigger Type="OnAppCannotStopDownload">State(Disabled)</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="ButtonCG">
+			<Image Type="middle">BUTTONSTOPDLNORMAL</Image>
+		</Images>
+		<Images State="Down" Color="ButtonCG">
+			<Image Type="middle">BUTTONSTOPDLDOWN</Image>
+		</Images>
+		<Images State="Hover" Color="ButtonCG">
+			<Image Type="middle">BUTTONSTOPDLHOVER</Image>
+		</Images>
+		<Images State="Disabled" Color="ButtonCG">
+			<Image Type="middle">BUTTONSTOPDLHOVER</Image>
+		</Images>
+	</Component>
+
+	<Component Name="GameButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="GameButtonTip"
+		DisabledTooltip="DisabledGameButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">JoinFriend</Trigger>
+			<Trigger Type="OnAppCanJoin">State(Normal)</Trigger>
+			<Trigger Type="OnAppCannotJoin">State(Disabled)</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="ButtonCG">
+			<Image Type="middle">BUTTONGAMENORMAL</Image>
+		</Images>
+		<Images State="Down" Color="ButtonCG">
+			<Image Type="middle">BUTTONGAMEDOWN</Image>
+		</Images>
+		<Images State="Hover" Color="ButtonCG">
+			<Image Type="middle">BUTTONGAMEHOVER</Image>
+		</Images>
+		<Images State="Disabled" Color="ButtonCG">
+			<Image Type="middle">BUTTONGAMEDISABLED</Image>
+		</Images>
+	</Component>
+
+	<Component Name="ExecuteDownloadButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="ExecuteDownloadButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">ExecuteDownload</Trigger>
+			<Trigger Type="OnAppCanExecuteDownload">State(Normal)</Trigger>
+			<Trigger Type="OnAppCannotExecuteDownload">State(Disabled)</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="ButtonCG">
+			<Image Type="middle">BUTTONEXECUTEDLNORMAL</Image>
+		</Images>
+		<Images State="Disabled" Color="ButtonCG">
+			<Image Type="middle">BUTTONEXECUTEDLDISABLED</Image>
+		</Images>
+		<Images State="Down" Color="ButtonCG">
+			<Image Type="middle">BUTTONEXECUTEDLDOWN</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InfoButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="InfoButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">ProfileFriend</Trigger>
+			<Trigger Type="OnAppCanProfile">State(Normal)</Trigger>
+			<Trigger Type="OnAppCannotProfile">State(Disabled)</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="ButtonCG">
+			<Image Type="middle">BUTTONINFONORM</Image>
+		</Images>
+		<Images State="Hover" Color="ButtonCG">
+			<Image Type="middle">BUTTONINFOHOVER</Image>
+		</Images>
+		<Images State="Down" Color="ButtonCG">
+			<Image Type="middle">BUTTONINFODOWN</Image>
+		</Images>
+		<Images State="Disabled" Color="ButtonCG">
+			<Image Type="middle">BUTTONINFODISABLED</Image>
+		</Images>
+	</Component>
+
+	<Component Name="DownloadInfoButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="DownloadButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">DownloadInfo</Trigger>
+			<Trigger Type="OnAppCanProfile">State(Normal)</Trigger>
+			<Trigger Type="OnAppCannotProfile">State(Disabled)</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="ButtonCG">
+			<Image Type="middle">BUTTONINFONORM</Image>
+		</Images>
+		<Images State="Hover" Color="ButtonCG">
+			<Image Type="middle">BUTTONINFONORM</Image>
+		</Images>
+		<Images State="Down" Color="ButtonCG">
+			<Image Type="middle">BUTTONINFONORM</Image>
+		</Images>
+		<Images State="Disabled" Color="ButtonCG">
+			<Image Type="middle">BUTTONINFONORM</Image>
+		</Images>
+	</Component>
+
+	<Component Name="StatusWrapper"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images Color="StatusWrapCG">
+			<Image Type="left">STATUSBARLEFT</Image>
+			<Image Type="middle">STATUSBARMIDDLE</Image>
+			<Image Type="right">STATUSBARRIGHT</Image>
+		</Images>
+	</Component>
+
+	<Component Name="StatusEdit"
+		Class="StatusView"
+		MinHeight="15"
+		>
+		<Text Font="Arial" Bold="true" Size="11" Color="StatusCG" Background="StatusBackgroundCG">StatusText</Text>
+	</Component>
+
+	<Component Name="DownArrow"
+		Class="Menu"
+		Stretch="ToContent"
+		Accelerator="ALT(s)"
+		MouseOver="false"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">MenuStatus</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="ButtonCG">
+			<Image Type="middle">BUTTONARROWNORM</Image>
+		</Images>
+		<Images State="Down" Color="ButtonCG">
+			<Image Type="middle">BUTTONARROWDOWN</Image>
+		</Images>
+		<Images State="Hover" Color="ButtonCG">
+			<Image Type="middle">BUTTONARROWHOVER</Image>
+		</Images>
+	</Component>
+
+	<Component Name="LeftOuterEdge"
+		Class="Tile"
+		MinWidth="9"
+		Cursor="ResizeWE"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">ResizeL</Trigger>
+		</Triggers>
+		<Images Color="MainCG">
+			<Image Type="top">LEFTBORDERTOP</Image>
+			<Image Type="middle">LEFTBORDERMIDDLE</Image>
+			<Image Type="bottom">LEFTBORDERBOTTOM</Image>
+		</Images>
+	</Component>
+
+	<Component Name="ChatLeftOuterEdge"
+		Class="Tile"
+		MinWidth="9"
+		Cursor="ResizeWE"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">ResizeL</Trigger>
+		</Triggers>
+		<Images Color="ChatMainCG">
+			<Image Type="top">LEFTBORDERTOP</Image>
+			<Image Type="middle">LEFTBORDERMIDDLE</Image>
+			<Image Type="bottom">LEFTBORDERBOTTOM</Image>
+		</Images>
+	</Component>
+
+	<Component Name="MainRightOuterEdge"
+		Class="Tile"
+		MinWidth="9"
+		Cursor="ResizeWE"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">ResizeR</Trigger>
+		</Triggers>
+		<Images Color="MainCG">
+			<Image Type="top">RIGHTBORDERTOP</Image>
+			<Image Type="middle">RIGHTBORDERMIDDLE</Image>
+			<Image Type="bottom">RIGHTBORDERBOTTOM</Image>
+		</Images>
+	</Component>
+
+	<Component Name="ChatRightOuterEdge"
+		Class="Tile"
+		MinWidth="9"
+		Cursor="ResizeWE"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">ResizeR</Trigger>
+		</Triggers>
+		<Images Color="ChatMainCG">
+			<Image Type="top">RIGHTBORDERTOP</Image>
+			<Image Type="middle">RIGHTBORDERMIDDLE</Image>
+			<Image Type="bottom">RIGHTBORDERBOTTOM</Image>
+		</Images>
+	</Component>
+
+	<Component Name="GripperTopLeft"
+		Class="Tile"
+		Stretch="ToContent"
+		Cursor="ResizeNWSE"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">ResizeUL</Trigger>
+		</Triggers>
+		<Images Color="Hilight">
+			<Image Type="middle">GRIPPERTOPLEFT</Image>
+		</Images>
+	</Component>
+
+	<Component Name="GripperTopRight"
+		Class="Tile"
+		Stretch="ToContent"
+		Cursor="ResizeNESW"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">ResizeUR</Trigger>
+		</Triggers>
+		<Images Color="Hilight">
+			<Image Type="middle">GRIPPERTOPRIGHT</Image>
+		</Images>
+	</Component>
+
+	<Component Name="GripperBottomLeft"
+		Class="Tile"
+		MinWidth="28"
+		Stretch="ToContent"
+		Cursor="ResizeNESW"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">ResizeBL</Trigger>
+		</Triggers>
+		<Images Color="Hilight">
+			<Image Type="middle">GRIPPERBOTTOMLEFT</Image>
+		</Images>
+	</Component>
+
+	<Component Name="ChatGripperBottomLeft"
+		Class="Tile"
+		Stretch="ToContent"
+		Cursor="ResizeNESW"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">ResizeBL</Trigger>
+		</Triggers>
+		<Images Color="Hilight">
+			<Image Type="middle">CHATGRIPPERBOTTOMLEFT</Image>
+		</Images>
+	</Component>
+
+	<Component Name="GripperBottomRight"
+		Class="Tile"
+		MinWidth="28"
+		Stretch="ToContent"
+		Cursor="ResizeNWSE"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">ResizeBR</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="Hilight">
+			<Image Type="middle">GRIPPERBOTTOMRIGHT</Image>
+		</Images>
+		<Images State="Hover" Color="Hilight">
+			<Image Type="middle">GRIPPERBOTTOMRIGHTHOVER</Image>
+		</Images>
+	</Component>
+
+	<Component Name="ChatGripperBottomRight"
+		Class="Tile"
+		Stretch="ToContent"
+		Cursor="ResizeNWSE"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">ResizeBR</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="Hilight">
+			<Image Type="middle">CHATGRIPPERBOTTOMRIGHT</Image>
+		</Images>
+		<Images State="Hover" Color="Hilight">
+			<Image Type="middle">CHATGRIPPERBOTTOMRIGHTHOVER</Image>
+		</Images>
+	</Component>
+
+	<Component Name="BottomBar"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images Color="BottomBarCG">
+			<Image Type="left">BOTTOMBARLEFT</Image>
+			<Image Type="middle">BOTTOMBARMIDDLE</Image>
+			<Image Type="right">BOTTOMBARRIGHT</Image>
+		</Images>
+	</Component>
+
+	<Component Name="ChatBottomBar"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images Color="ChatMainCG">
+			<Image Type="left">BOTTOMBARLEFT</Image>
+			<Image Type="middle">BOTTOMBARMIDDLE</Image>
+			<Image Type="right">BOTTOMBARRIGHT</Image>
+		</Images>
+	</Component>
+
+	<Component Name="PartnerGraphic"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images>
+			<Image Type="middle">%partnergraphic%</Image>
+		</Images>
+	</Component>
+
+	<Component Name="PartnerFrame"
+		Class="PushButton"
+		Cursor="Hand"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">AppLaunchUrl(http://www.xfire.com/xf/partner.php?partner=%partnername%)</Trigger>
+		</Triggers>
+		<Images Color="BottomBarCG">
+			<Image Type="left">bottombar-ad-left.gif</Image>
+			<Image Type="right">bottombar-ad-right.gif</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="InfoViewButton"
+		Class="SkinLauncher"
+		Stretch="ToContent"
+		Default="click"
+		Accelerator="ALT(VK_RIGHT)"
+		Tooltip="ExpandButtonTip"
+		>
+		<Triggers>
+  			<Trigger Type="OnClick">LaunchSkin</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="Hilight">
+			<Image Type="middle">INFOVIEWBUTTON</Image>
+		</Images>
+		<Images State="Hover" Color="Hilight">
+			<Image Type="middle">INFOVIEWBUTTONHOVER</Image>
+		</Images>
+		<Images State="Overlay">
+			<Image Type="middle">INFOVIEWBUTTONARROWRIGHT</Image>
+		</Images>
+		<Popup SaveState="1">MainInfoViewPopup</Popup>
+	</Component>
+
+	<Component Name="ChatInfoViewButton"
+		Class="SkinLauncher"
+		Stretch="ToContent"
+		Default="click"
+		Accelerator="ALT(VK_RIGHT)"
+		Tooltip="ExpandButtonTip"
+		>
+		<Triggers>
+  			<Trigger Type="OnClick">LaunchSkin</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="Hilight">
+			<Image Type="middle">INFOVIEWBUTTON</Image>
+		</Images>
+		<Images State="Hover" Color="Hilight">
+			<Image Type="middle">INFOVIEWBUTTONHOVER</Image>
+		</Images>
+		<Images State="Overlay">
+			<Image Type="middle">INFOVIEWBUTTONARROWRIGHT</Image>
+		</Images>
+		<Popup SaveState="1">ChatInfoViewPopup</Popup>	
+	</Component>
+
+	<Component Name="GroupChatInfoViewButton"
+		Class="SkinLauncher"
+		Stretch="ToContent"
+		Default="click"
+		Accelerator="ALT(VK_RIGHT)"
+		Tooltip="ExpandButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">LaunchSkin</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="Hilight">
+			<Image Type="middle">INFOVIEWBUTTON</Image>
+		</Images>
+		<Images State="Hover" Color="Hilight">
+			<Image Type="middle">INFOVIEWBUTTONHOVER</Image>
+		</Images>
+		<Images State="Overlay">
+			<Image Type="middle">INFOVIEWBUTTONARROWRIGHT</Image>
+		</Images>
+		<Popup SaveState="1">GroupChatInfoViewPopup</Popup>
+	</Component>
+	
+	<Component Name="InnerBevel"
+		Class="Tile"
+	/>
+
+	<Component Name="TopBevel"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images Color="BevelCG">
+			<Image Type="topleft">INNERBEVELTOPLEFT</Image>
+			<Image Type="top">INNERBEVELTOPMIDDLE</Image>
+			<Image Type="topright">INNERBEVELTOPRIGHT</Image>
+		</Images>
+	</Component>
+
+	<Component Name="BottomBevel"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images Color="BevelCG">
+			<Image Type="bottomleft">INNERBEVELBOTTOMLEFT</Image>
+			<Image Type="bottom">INNERBEVELBOTTOMMIDDLE</Image>
+			<Image Type="bottomright">INNERBEVELBOTTOMRIGHT</Image>
+		</Images>
+	</Component>
+
+	<Component Name="MiddleBevel"
+		Class="Tile"
+		>
+		<Images Color="BevelCG">
+			<Image Type="left">INNERBEVELLEFT</Image>
+			<Image Type="right">INNERBEVELRIGHT</Image>
+		</Images>
+	</Component>
+
+	<Component Name="MenuBar"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images Color="MenuBarCG">
+			<Image Type="left">MENUBARLEFT</Image>
+			<Image Type="middle">MENUBARMIDDLE</Image>
+			<Image Type="right">MENUBARRIGHT</Image>
+		</Images>
+	</Component>
+
+	<Component Name="XfireMenuText"
+		Class="Text"
+		Stretch="ToContent"
+		Events="Transparent"
+		>
+		<Text Color="MenuTextCG" Font="Arial" Size="11" Bold="true">XfireMenu</Text>
+	</Component>
+
+	<Component Name="FileMenu"
+		Class="Menu"
+		Accelerator='ALT("XfireMenu")'
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">MenuFile</Trigger>
+		</Triggers>
+		<Images State="Hover" Color="MenuHoverCG">
+			<Image Type="middle">MENUBARMIDDLE</Image>
+		</Images>
+		<Images State="Down" Color="MenuDownCG">
+			<Image Type="Middle">MENUBARMIDDLE</Image>
+		</Images>
+	</Component>
+
+	<Component Name="ToolsMenuText"
+		Class="Text"
+		Stretch="ToContent"
+		Events="Transparent"
+		>
+		<Text Color="MenuTextCG" Font="Arial" Size="11" Bold="true">ToolsMenu</Text>
+	</Component>
+
+	<Component Name="ToolsMenu"
+		Class="Menu"
+		Accelerator='Alt("ToolsMenu")'
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">MenuTool</Trigger>
+		</Triggers>
+		<Images State="Down" Color="MenuDownCG">
+			<Image Type="middle">MENUBARMIDDLE</Image>
+		</Images>
+		<Images State="Hover" Color="MenuHoverCG">
+			<Image Type="middle">MENUBARMIDDLE</Image>
+		</Images>
+	</Component>
+
+	<Component Name="HelpMenuText"
+		Class="Text"
+		Stretch="ToContent"
+		Events="Transparent"
+		>
+		<Text Color="MenuTextCG" Font="Arial" Size="11" Bold="true">HelpMenu</Text>
+	</Component>
+
+	<Component Name="HelpMenu"
+		Class="Menu"	
+		Accelerator='ALT("HelpMenu")'
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">MenuHelp</Trigger>
+		</Triggers>
+		<Images State="Hover" Color="MenuHoverCG">
+			<Image Type="middle">MENUBARMIDDLE</Image>
+		</Images>
+		<Images State="Down" Color="MenuDownCG">
+			<Image Type="middle">MENUBARMIDDLE</Image>
+		</Images>
+	</Component>
+
+	<Component Name="Divider"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images Color="BevelCG">
+			<Image Type="bottomleft">DIVIDERLEFT</Image>
+			<Image Type="bottom">DIVIDERMIDDLE</Image>
+			<Image Type="bottomright">DIVIDERRIGHT</Image>
+		</Images>
+	</Component>
+
+	<Component Name="BuddyView"
+		Class="BuddyListView"
+		WindowFocus="true"
+		Color="BuddyViewBG"
+		Scrollbar="DefaultScrollbar"
+		>
+		<Text color_friend="BuddyViewFriendText"
+			color_fof="BuddyViewFofText"
+			color_offline="BuddyViewOfflineText"
+			color_clan="BuddyViewClanText"
+			color_selected="BuddyViewSelected"
+			color_nonfocus="BuddyViewNonFocus"
+			color_selectedtext="BuddyViewSelectedText"
+			color_header="HeaderText"
+			Font="Arial" Bold="true" Size="11"
+			>
+		</Text>
+		<Images HeaderColor="HeaderColor">
+			<Image Type="HeaderLeft">LISTVIEWHEADERLEFT</Image>
+			<Image Type="HeaderMiddle">LISTVIEWHEADERMIDDLE</Image>
+			<Image Type="HeaderRight">LISTVIEWHEADERRIGHT</Image>
+			<Image Type="HeaderArrowUp">LISTVIEWHEADERARROWUP</Image>
+			<Image Type="HeaderArrowDown">LISTVIEWHEADERARROWDOWN</Image>
+			<Image Type="Collapsed">ARROWRIGHT</Image>
+			<Image Type="Expanded">ARROWDOWN</Image>
+		</Images>
+	</Component>
+
+	<Component Name="BvBk"
+		Class="Tile"
+                Events="Transparent"
+		>
+		<Images>
+			<Image Type="middle">BLACK</Image>
+		</Images>
+	</Component>
+
+	<Component Name="AdArea"
+		Class="Tile"
+		MinHeight="60"
+		>
+		<Images Color="AdAreaCG">
+			<Image Type="topleft">ADBARTOPLEFT</Image>
+			<Image Type="left">ADBARLEFT</Image>
+			<Image Type="top">BLACK</Image>
+			<Image Type="middle">BLACK</Image>
+			<Image Type="topright">ADBARTOPRIGHT</Image>
+			<Image Type="right">ADBARRIGHT</Image>
+		</Images>
+	</Component>
+
+	<Component Name="AdView"
+		Class="AdView"
+		MinWidth="234"
+		MinHeight="60"
+	/>
+
+	<Component Name="DefaultScrollbar"
+		Class="Scrollbar"
+		>
+		<Images State="Normal" Color="ScrollbarColor" ColorBG="ScrollbarColorBG">
+			<Image Type="ScrollLeft">SCROLLLEFTNORM</Image>
+			<Image Type="ScrollRight">SCROLLRIGHTNORM</Image>
+			
+			<Image Type="ScrollUp">SCROLLUPNORM</Image>
+			<Image Type="ScrollDown">SCROLLDOWNNORM</Image>
+			
+			<Image Type="ScrollHorzGripperLeft">SCROLLGRIPPERHORZLEFT</Image>
+			<Image Type="ScrollHorzGripperMiddle">SCROLLGRIPPERHORZMIDDLE</Image>
+			<Image Type="ScrollHorzGripperOverlay">SCROLLGRIPPERGRIPSHORZ</Image>
+			<Image Type="ScrollHorzGripperRight">SCROLLGRIPPERHORZRIGHT</Image>
+			
+			<Image Type="ScrollVertGripperTop">SCROLLGRIPPERVERTTOP</Image>
+			<Image Type="ScrollVertGripperMiddle">SCROLLGRIPPERVERTMIDDLE</Image>
+			<Image Type="ScrollVertGripperOverlay">SCROLLGRIPPERGRIPSVERT</Image>
+			<Image Type="ScrollVertGripperBottom">SCROLLGRIPPERVERTBOTTOM</Image>
+			
+			<Image Type="ScrollHorzGutterLeft">SCROLLBACKGROUNDHORZLEFT</Image>
+			<Image Type="ScrollHorzGutterMiddle">SCROLLBACKGROUNDHORZMIDDLE</Image>
+			<Image Type="ScrollHorzGutterRight">SCROLLBACKGROUNDHORZRIGHT</Image>
+			
+			<Image Type="ScrollVertGutterTop">SCROLLBACKGROUNDVERTTOP</Image>
+			<Image Type="ScrollVertGutterMiddle">SCROLLBACKGROUNDVERTMIDDLE</Image>
+			<Image Type="ScrollVertGutterBottom">SCROLLBACKGROUNDVERTBOTTOM</Image>
+		</Images>
+		<Images State="Hover" Color="ScrollbarColor" ColorBG="ScrollbarColorBG">
+			<Image Type="ScrollLeft">SCROLLLEFTHOVER</Image>
+			<Image Type="ScrollRight">SCROLLRIGHTHOVER</Image>
+			
+			<Image Type="ScrollUp">SCROLLUPHOVER</Image>
+			<Image Type="ScrollDown">SCROLLDOWNHOVER</Image>
+			
+			<Image Type="ScrollHorzGripperLeft">SCROLLGRIPPERHORZLEFTHOVER</Image>
+			<Image Type="ScrollHorzGripperMiddle">SCROLLGRIPPERHORZMIDDLEHOVER</Image>
+			<Image Type="ScrollHorzGripperRight">SCROLLGRIPPERHORZRIGHTHOVER</Image>
+			
+			<Image Type="ScrollVertGripperTop">SCROLLGRIPPERVERTTOPHOVER</Image>
+			<Image Type="ScrollVertGripperMiddle">SCROLLGRIPPERVERTMIDDLEHOVER</Image>
+			<Image Type="ScrollVertGripperBottom">SCROLLGRIPPERVERTBOTTOMHOVER</Image>
+		</Images>
+		<Images State="Down" Color="ScrollbarColor" ColorBG="ScrollbarColorBG">
+			<Image Type="ScrollLeft">SCROLLLEFTDOWN</Image>
+			<Image Type="ScrollRight">SCROLLRIGHTDOWN</Image>
+			
+			<Image Type="ScrollUp">SCROLLUPDOWN</Image>
+			<Image Type="ScrollDown">SCROLLDOWNDOWN</Image>
+			
+			<Image Type="ScrollHorzGripperLeft">SCROLLGRIPPERHORZLEFTDOWN</Image>
+			<Image Type="ScrollHorzGripperMiddle">SCROLLGRIPPERHORZMIDDLEDOWN</Image>
+			<Image Type="ScrollHorzGripperRight">SCROLLGRIPPERHORZRIGHTDOWN</Image>
+			
+			<Image Type="ScrollVertGripperTop">SCROLLGRIPPERVERTTOPDOWN</Image>
+			<Image Type="ScrollVertGripperMiddle">SCROLLGRIPPERVERTMIDDLEDOWN</Image>
+			<Image Type="ScrollVertGripperBottom">SCROLLGRIPPERVERTBOTTOMDOWN</Image>
+		</Images>
+		<Images State="Disabled" Color="ScrollbarColor" ColorBG="ScrollbarColorBG">
+			<Image Type="ScrollLeft">SCROLLLEFTDISABLED</Image>
+			<Image Type="ScrollRight">SCROLLRIGHTDISABLED</Image>
+			
+			<Image Type="ScrollUp">SCROLLUPDISABLED</Image>
+			<Image Type="ScrollDown">SCROLLDOWNDISABLED</Image>
+		</Images>
+	</Component>
+
+	<Component Name="TabHeader"
+		Class="Tile"
+		MinHeight="15"
+		>
+		<Images Color="BuddyViewBG">
+			<Image Type="middle">TABCONTROLBASE</Image>
+		</Images>
+	</Component>
+
+	<Component Name="TabNormalText"
+		Class="Text"
+		MinWidth="40"
+		MinHeight="15"
+		Stretch="ToContent"
+		Events="Transparent"
+		>
+		<Text Align="center" Color="HeaderText" Font="Arial" Size="11" Bold="true">FriendsTitle</Text>
+	</Component>
+
+	<Component Name="TabNormalButton"
+		Class="PushButton"
+		Default="lbtndown"
+		GroupId="1"
+		PushType="Sticky"
+		Accelerator="ALT(1)"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">GroupMessage(0)</Trigger>
+			<Trigger Type="OnAppStartingLogin">GroupMessage(0)</Trigger>
+		</Triggers>
+		<Images State="Normal">
+			<Image Type="left">TABCONTROLLEFTOFF</Image>
+			<Image Type="middle">TABCONTROLMIDDLEOFF</Image>
+			<Image Type="right">TABCONTROLRIGHTOFF</Image>
+		</Images>
+		<Images State="Down" Color="HeaderColor" ZModifier="1">
+			<Image Type="left">TABCONTROLLEFT</Image>
+			<Image Type="middle">TABCONTROLMIDDLE</Image>
+			<Image Type="right">TABCONTROLRIGHT</Image>
+		</Images>
+	</Component>
+
+	<Component Name="TabServerText"
+		Class="Text"
+		MinWidth="40"
+		MinHeight="15"
+		Stretch="ToContent"
+		Events="Transparent"
+		>
+		<Text Align="center" Color="HeaderText" Font="Arial" Size="11" Bold="true">ServerTitle</Text>
+	</Component>
+
+	<Component Name="TabServerButton"
+		Class="PushButton"
+		GroupId="1"
+		PushType="Sticky"
+		Accelerator="ALT(2)"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">GroupMessage(1)</Trigger>
+		</Triggers>
+		<Images State="Normal">
+			<Image Type="left">TABCONTROLLEFTOFF</Image>
+			<Image Type="middle">TABCONTROLMIDDLEOFF</Image>
+			<Image Type="right">TABCONTROLRIGHTOFF</Image>
+		</Images>
+		<Images State="Down" Color="HeaderColor" ZModifier="1">
+			<Image Type="left">TABCONTROLLEFT</Image>
+			<Image Type="middle">TABCONTROLMIDDLE</Image>
+			<Image Type="right">TABCONTROLRIGHT</Image>
+		</Images>
+	</Component>
+
+	<Component Name="TabDownloadText"
+		Class="Text"
+		MinWidth="40"
+		MinHeight="15"
+		Stretch="ToContent"
+		Events="Transparent"
+		>
+		<Text Align="center" Color="HeaderText" Font="Arial" Size="11" Bold="true">DownloadTitle</Text>
+	</Component>
+
+	<Component Name="TabDownloadButton"
+		Class="PushButton"
+		GroupId="1"
+		PushType="Sticky"
+		Accelerator="ALT(3)"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">GroupMessage(2)</Trigger>
+			<Trigger Type="Onxfireurldownload">GroupMessage(2)</Trigger>
+      <Trigger Type="OnShowVideos">GroupMessage(2)</Trigger>
+      <Trigger Type="OnDownloadComplete">Animate(Type=Repeat,Delay=7,Repeat=-1,Action=1)</Trigger>
+		</Triggers>
+		<Images State="Normal">
+			<Image Type="left">TABCONTROLLEFTOFF_ANIMATE</Image>
+			<Image Type="middle">TABCONTROLMIDDLEOFF_ANIMATE</Image>
+			<Image Type="right">TABCONTROLRIGHTOFF_ANIMATE</Image>
+		</Images>
+		<Images State="Down" Color="HeaderColor" ZModifier="1">
+			<Image Type="left">TABCONTROLLEFT</Image>
+			<Image Type="middle">TABCONTROLMIDDLE</Image>
+			<Image Type="right">TABCONTROLRIGHT</Image>
+		</Images>
+	</Component>
+
+	<Component Name="TabbedControl"
+		Class="TabControl"
+		Stretch="ToContent"
+		ControlGroupId="1"
+	/>
+
+	<Component Name="ServerView"
+		Class="ServerView"
+		WindowFocus="true"
+		Color="BuddyViewBG"
+		Scrollbar="DefaultScrollbar"
+		>
+		<Text color_recent="BuddyViewFriendText"
+			color_favorites="BuddyViewFofText"
+			color_friendsfavorites="FriendsFavoritesText"
+			color_all="AllServersText"
+			color_selected="BuddyViewSelected"
+			color_nonfocus="BuddyViewNonFocus"
+			color_selectedtext="BuddyViewSelectedText"
+			color_header="HeaderText"
+			Font="Arial" Bold="true" Size="11"
+			>
+		</Text>
+		<Images HeaderColor="HeaderColor">
+			<Image Type="HeaderLeft">LISTVIEWHEADERLEFT</Image>
+			<Image Type="HeaderMiddle">LISTVIEWHEADERMIDDLE</Image>
+			<Image Type="HeaderRight">LISTVIEWHEADERRIGHT</Image>
+			<Image Type="HeaderArrowUp">LISTVIEWHEADERARROWUP</Image>
+			<Image Type="HeaderArrowDown">LISTVIEWHEADERARROWDOWN</Image>
+			<Image Type="Collapsed">ARROWRIGHT</Image>
+			<Image Type="Expanded">ARROWDOWN</Image>
+		</Images>
+	</Component>
+
+	<Component Name="DownloadView"
+		Class="DownloadView"
+		WindowFocus="true"
+		Color="BuddyViewBG"
+		Scrollbar="DefaultScrollbar"
+		>
+		<Text color_selected="BuddyViewSelected"
+			color_nonfocus="BuddyViewNonFocus"
+			color_selectedtext="BuddyViewSelectedText"
+			color_header="HeaderText"
+			Font="Arial" Bold="true" Size="11"
+		/>
+		<Images HeaderColor="HeaderColor">
+			<Image Type="HeaderLeft">LISTVIEWHEADERLEFT</Image>
+			<Image Type="HeaderMiddle">LISTVIEWHEADERMIDDLE</Image>
+			<Image Type="HeaderRight">LISTVIEWHEADERRIGHT</Image>
+			<Image Type="HeaderArrowUp">LISTVIEWHEADERARROWUP</Image>
+			<Image Type="HeaderArrowDown">LISTVIEWHEADERARROWDOWN</Image>
+			<Image Type="Collapsed">ARROWRIGHT</Image>
+			<Image Type="Expanded">ARROWDOWN</Image>
+		</Images>
+		<ProgressBar OutlineColor="UserNameCG"
+			BGColor="BuddyViewBG"
+			FillColor="BuddyViewFriendText"
+			TextColor="BuddyViewFriendText"
+			Radius="6"
+			FillRadius="2"
+		/>
+	</Component>
+
+	<Component Name="ChatArea"
+		Class="ChatArea"
+		Color="ChatViewCG"
+		Scrollbar="DefaultScrollbar"
+		>
+		<Text color_other="ChatOtherCG"
+			color_othertext="ChatOtherTextCG"
+			color_personal="ChatPersonalCG"
+			color_personaltext="ChatPersonalTextCG"
+		/>
+	</Component>
+
+	<Component Name="GroupChatArea"
+		Class="GroupChatArea"
+		Color="ChatViewCG"
+		Scrollbar="DefaultScrollbar"
+		>
+		<Text color_other="ChatOtherCG"
+			color_othertext="ChatOtherTextCG"
+			color_personal="ChatPersonalCG"
+			color_personaltext="ChatPersonalTextCG"
+		/>
+	</Component>
+
+	<Component Name="ChatEdit"
+		Class="ChatEdit"
+		WindowFocus="True"
+		Color="ChatViewCG"
+		Scrollbar="DefaultScrollbar"
+		>
+		<Text color="ChatPersonalTextCG" />
+	</Component>
+
+	<Component Name="GroupChatEdit"
+		Class="GroupChatEdit"
+		WindowFocus="True"
+		Color="ChatViewCG"
+		Scrollbar="DefaultScrollbar"
+		>
+		<Text color="ChatPersonalTextCG" />
+	</Component>
+
+	<Component Name="InnerBevelBG"
+		Class="Tile"
+		Stretch="ToFit"
+		>
+		<Images Color="InnerBevelBkCg">
+			<Image Type="middle">BLACK</Image>
+		</Images>
+	</Component>
+
+	<Component Name="SystemMenuText"
+		Class="Text"
+		Stretch="ToContent"
+		Events="Transparent"
+		>
+		<Text Color="MenuTextCG" Font="Arial" Size="11" Bold="true">GCSystemMenu</Text>
+	</Component>
+
+	<Component Name="SystemMenu"
+		Class="Menu"
+		Accelerator='ALT("GCSystemMenu")'
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">MenuSystem</Trigger>
+		</Triggers>
+		<Images State="Hover" Color="MenuHoverCG">
+			<Image Type="middle">MENUBARMIDDLE</Image>
+		</Images>
+		<Images State="Down" Color="MenuDownCG">
+			<Image Type="middle">MENUBARMIDDLE</Image>
+		</Images>
+	</Component>
+
+	<Component Name="GCSystemMenu"
+		Class="Menu"
+		Accelerator='ALT("GCSystemMenu")'
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">MenuGCSystem</Trigger>
+		</Triggers>
+		<Images State="Hover" Color="MenuHoverCG">
+			<Image Type="middle">MENUBARMIDDLE</Image>
+		</Images>
+		<Images State="Down" Color="MenuDownCG">
+			<Image Type="middle">MENUBARMIDDLE</Image>
+		</Images>
+	</Component>
+
+	<Component Name="ActionsMenuText"
+		Class="Text"
+		Stretch="ToContent"
+		Events="Transparent"
+		>
+		<Text Color="MenuTextCG" Font="Arial" Size="11" Bold="true">GCActionsMenu</Text>
+	</Component>
+
+	<Component Name="ActionsMenu"
+		Class="Menu"
+		Accelerator='ALT("GCActionsMenu")'
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">MenuCWActions</Trigger>
+		</Triggers>
+		<Images State="Hover" Color="MenuHoverCG">
+			<Image Type="middle">MENUBARMIDDLE</Image>
+		</Images>
+		<Images State="Down" Color="MenuDownCG">
+			<Image Type="middle">MENUBARMIDDLE</Image>
+		</Images>
+	</Component>
+
+	<Component Name="GCActionsMenu"
+		Class="Menu"
+		Accelerator='ALT("GCActionsMenu")'
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">MenuGCActions</Trigger>
+		</Triggers>
+		<Images State="Hover" Color="MenuHoverCG">
+			<Image Type="middle">MENUBARMIDDLE</Image>
+		</Images>
+		<Images State="Down" Color="MenuDownCG">
+			<Image Type="middle">MENUBARMIDDLE</Image>
+		</Images>
+	</Component>
+
+	<Component Name="ChatHelpMenuText"
+		Class="Text"
+		Stretch="ToContent"
+		Events="Transparent"
+		>
+		<Text Color="MenuTextCG" Font="Arial" Size="11" Bold="true">HelpMenu</Text>
+	</Component>
+
+	<Component Name="GCHelpMenuText"
+		Class="Text"
+		Stretch="ToContent"
+		Events="Transparent"
+		>
+		<Text Color="MenuTextCG" Font="Arial" Size="11" Bold="true">GCHelpMenu</Text>
+	</Component>
+
+	<Component Name="ChatHelpMenu"
+		Class="Menu"
+		Accelerator='ALT("GCHelpMenu")'
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">MenuCWHelp</Trigger>
+		</Triggers>
+		<Images State="Down" Color="MenuDownCG">
+			<Image Type="middle">MENUBARMIDDLE</Image>
+		</Images>
+		<Images State="Hover" Color="MenuHoverCG">
+			<Image Type="middle">MENUBARMIDDLE</Image>
+		</Images>
+	</Component>
+
+	<Component Name="GCHelpMenu"
+		Class="Menu"
+		Accelerator='ALT("GCHelpMenu")'
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">MenuGCHelp</Trigger>
+		</Triggers>
+		<Images State="Down" Color="MenuDownCG">
+			<Image Type="middle">MENUBARMIDDLE</Image>
+		</Images>
+		<Images State="Hover" Color="MenuHoverCG">
+			<Image Type="middle">MENUBARMIDDLE</Image>
+		</Images>
+	</Component>
+
+	<Component Name="TypingMessage"
+		Class="Text"
+		Stretch="ToContent"
+		Events="Transparent"
+		>
+		<Triggers>
+			<Trigger Type="OnActiveUserTyping">State(Disabled)</Trigger>
+			<Trigger Type="OnActiveUserNotTyping">State(Normal)</Trigger>
+		</Triggers>
+		<Text State="Disabled" Color="TypingNotificationCG" Font="Arial" Bold="true">TypingMessage</Text>
+		<Text State="Normal" />
+	</Component>
+
+	<Component Name="SendButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="SendMessageTip"
+		>
+		<Triggers>
+			<Trigger Type="OnAppCanChat">State(Normal)</Trigger>
+			<Trigger Type="OnAppCannotChat">State(Disabled)</Trigger>
+			<Trigger Type="OnClick">SendMessage</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="ButtonCG">
+			<Image Type="middle">BUTTONSENDNORM</Image>
+		</Images>
+		<Images State="Hover" Color="ButtonCG">
+			<Image Type="middle">BUTTONDOWNHOVER</Image>
+		</Images>
+		<Images State="Disabled" Color="ButtonCG">
+			<Image Type="middle">BUTTONSENDDISABLED</Image>
+		</Images>
+		<Images State="Down" Color="ButtonCG">
+			<Image Type="middle">BUTTONSENDDOWN</Image>
+		</Images>
+	</Component>
+
+	<Component Name="GroupSendButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="SendMessageTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">SendMessage</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="ButtonCG">
+			<Image Type="middle">BUTTONSENDNORM</Image>
+		</Images>
+		<Images State="Hover" Color="ButtonCG">
+			<Image Type="middle">BUTTONDOWNHOVER</Image>
+		</Images>
+		<Images State="Disabled" Color="ButtonCG">
+			<Image Type="middle">BUTTONSENDDISABLED</Image>
+		</Images>
+		<Images State="Down" Color="ButtonCG">
+			<Image Type="middle">BUTTONSENDDOWN</Image>
+		</Images>
+	</Component>
+
+	<Component Name="ChatBaseBoard"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images Color="MainCG">
+			<Image Type="bottomleft">CHATBOTTOMLEFT</Image>
+			<Image Type="bottom">CHATBOTTOMMIDDLE</Image>
+			<Image Type="bottomright">CHATBOTTOMRIGHT</Image>
+		</Images>
+	</Component>
+
+	<Component Name="CloseChatBox"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="CloseButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">AppClose</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="ButtonCG">
+			<Image Type="middle">BUTTONXNORM</Image>
+		</Images>
+		<Images State="Hover" Color="ButtonCG">
+			<Image Type="middle">BUTTONXHOVER</Image>
+		</Images>
+		<Images State="Down" Color="ButtonCG">
+			<Image Type="middle">BUTTONXDOWN</Image>
+		</Images>
+		<Images State="Disabled" Color="ButtonCG">
+		</Images>
+	</Component>
+
+	<Component Name="MinimizeBox"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="MinimizeButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">AppMinimize</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="ButtonCG">
+			<Image Type="middle">BUTTONCLOSENORM</Image>
+		</Images>
+		<Images State="Hover" Color="ButtonCG">
+			<Image Type="middle">BUTTONCLOSEHOVER</Image>
+		</Images>
+		<Images State="Down" Color="ButtonCG">
+			<Image Type="middle">BUTTONCLOSEDOWN</Image>
+		</Images>
+		<Images State="Disabled" Color="ButtonCG">
+		</Images>
+	</Component>
+
+	<Component Name="ChatWindowTitle"
+		Class="Text"
+		Stretch="ToContent"
+		Events="Transparent"
+		>
+		<Text Color="UserNameCG" Font="Arial" Size="12">ChatTitle</Text>
+	</Component>
+
+	<Component Name="GroupChatWindowTitle"
+		Class="Text"
+		Stretch="ToContent"
+		Events="Transparent"
+		>
+		<Text Color="UserNameCG" Font="Arial" Size="12">GroupChatTitle</Text>
+	</Component>
+
+	<Component Name="InGameMainWindow"
+		MinWidth="200"
+		MinHeight="200"
+		ResizeX="100"
+		ResizeY="100"
+		Class="MainWindow"
+		>
+		<Text color_personal="ChatPersonalCG"
+			color_personaltext="ChatPersonalTextCG"
+			color_other="ChatOtherCG"
+			color_othertext="ChatOtherTextCG"
+		/>
+	</Component>
+
+	<Component Name="InGameAlertWindow"
+		MinWidth="200"
+		MinHeight="80"
+		ResizeX="100"
+		ResizeY="100"
+		Class="MainWindow"
+		>
+		<Text color_personal="ChatPersonalCG"
+			color_personaltext="ChatPersonalTextCG"
+			color_other="ChatOtherCG"
+			color_othertext="ChatOtherTextCG"
+		/>
+	</Component>
+
+	<Component Name="InGameBGback"
+		Class="Tile"
+		>
+		<Images Color="UserNameBkCG">
+			<Image Type="middle">BLACK</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InGameTitle"
+		Class="Tile"
+		MinHeight="14"
+		Stretch="ToContent"
+		>
+		<Images Color="ChatMainCG">
+			<Image Type="topleft">ingamegraphics/ig_main_topleft.gif</Image>
+			<Image Type="top">ingamegraphics/ig_main_topmiddle.gif</Image>
+			<Image Type="topright">ingamegraphics/ig_main_topright.gif</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InGameChatBottom"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images Color="ChatMainCG">
+			<Image Type="bottomleft">ingamegraphics/ig_main_bottomleft.gif</Image>
+			<Image Type="bottom">ingamegraphics/ig_main_bottommiddle.gif</Image>
+			<Image Type="bottomright">ingamegraphics/ig_main_bottomright.gif</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InGameMiddleTile"
+		Class="Tile"
+		>
+		<Images Color="ChatMainCG">
+			<Image Type="topleft">ingamegraphics/ig_edge_lefttop.gif</Image>
+			<Image Type="left">ingamegraphics/ig_edge_leftmiddle.gif</Image>
+			<Image Type="bottomleft">ingamegraphics/ig_edge_leftbottom.gif</Image>
+			
+			<Image Type="topright">ingamegraphics/ig_edge_righttop.gif</Image>
+			<Image Type="right">ingamegraphics/ig_edge_rightmiddle.gif</Image>
+			<Image Type="bottomright">ingamegraphics/ig_edge_rightbottom.gif</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InGameInnerBevel"
+		Class="Tile"
+		>
+		<Images Color="BevelCG">
+			<Image Type="topleft">ingamegraphics/ig_innerbevel_topleft.gif</Image>
+			<Image Type="left">ingamegraphics/ig_innerbevel_leftmiddle.gif</Image>
+			<Image Type="bottomleft">ingamegraphics/ig_innerbevel_bottomleft.gif</Image>
+			
+			<Image Type="top">ingamegraphics/ig_innerbevel_topmiddle.gif</Image>
+			<Image Type="bottom">ingamegraphics/ig_innerbevel_bottommiddle.gif</Image>
+			
+			<Image Type="topright">ingamegraphics/ig_innerbevel_topright.gif</Image>
+			<Image Type="right">ingamegraphics/ig_innerbevel_rightmiddle.gif</Image>
+			<Image Type="bottomright">ingamegraphics/ig_innerbevel_bottomright.gif</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InGameGripperTopLeft"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images Color="Hilight">
+			<Image Type="middle">ingamegraphics/ig_gripper_topleft.gif</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InGameGripperTopRight"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images Color="Hilight">
+			<Image Type="middle">ingamegraphics/ig_gripper_topright.gif</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InGameGripperBottomLeft"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images Color="Hilight">
+			<Image Type="middle">ingamegraphics/ig_gripper_bottomleft.gif</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InGameGripperBottomRight"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images Color="Hilight">
+			<Image Type="middle">ingamegraphics/ig_gripper_bottomright.gif</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InGameXCover"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images>
+			<Image Type="middle">LOGOOVERLAY</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InGameNameBG"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images Color="UserNameBkCG">
+			<Image Type="left">NAMEPLATE_LF</Image>
+			<Image Type="middle">NAMEPLATE_MID</Image>
+			<Image Type="right">NAMEPLATE_RT</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InGameMainTitle"
+		Class="Text"
+		Stretch="ToContent"
+		MinHeight="14"
+		>
+		<Text Color="UserNameCG" Font="Arial" Bold="true" Size="12" />
+	</Component>
+
+	<Component Name="InGameMainFooter"
+		Class="Text"
+		Stretch="ToContent"
+		MinHeight="14"
+		>
+		<Text Color="UserNameCG" Font="Arial" Bold="true" Size="12" />
+	</Component>
+
+	<Component Name="InGameMainEditArea"
+		Class="Text"
+		MinHeight="14"
+		Stretch="ToContent"
+		>
+		<Text Color="ChatPersonalTextCG" Font="Arial" Bold="false" Size="12" />
+	</Component>
+
+	<Component Name="InGameMainChatArea"
+		Class="Text"
+		>
+		<Text Color="ChatOtherTextCG" Font="Arial" Bold="false" Size="12" />
+	</Component>
+
+	<Component Name="InGameMainClock"
+		Class="Text"
+		MinWidth="42"
+		MinHeight="14"
+		Stretch="ToContent"
+		>
+		<Text Color="UserNameCG" Font="Arial" Bold="true" Size="12" />
+	</Component>
+
+	<Component Name="InGameChatTile"
+		Class="Tile"
+	/>
+
+  <Component Name="XIGAlertContainer"
+		Class="Tile"
+	/>
+
+  <Component Name="InGameTextTile"
+		Class="Text"
+		>
+		<Text Color="UserNameCG" Font="Tahoma" Size="12" />
+	</Component>
+
+	<Component Name="InGameMainBodyBG"
+		Class="Tile"
+		>
+		<Images Color="InGameTypeBG">
+			<Image Type="middle">INGAMECHATMM</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InGameMainBody"
+		Class="Tile"
+		Events="Transparent"
+    DrawOnTopmost="true"
+		>
+		<Images Color="MainCG">
+			<Image Type="topleft">INGAMECHATTL</Image>
+			<Image Type="top">INGAMECHATTM</Image>
+			<Image Type="topright">INGAMECHATTR</Image>
+			
+			<Image Type="left">INGAMECHATLM</Image>
+			<Image Type="right">INGAMECHATRM</Image>
+			
+			<Image Type="bottomleft">INGAMECHATBL</Image>
+			<Image Type="bottom">INGAMECHATBM</Image>
+			<Image Type="bottomright">INGAMECHATBR</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InGameMainGrippers"
+		Class="Tile"
+    DrawOnTopmost="true"
+		Events="Transparent"
+		>
+		<Images Color="Hilight">
+			<Image Type="topleft">INGAMEGRIPTL</Image>
+			<Image Type="topright">INGAMEGRIPTR</Image>
+			<Image Type="bottomleft">INGAMEGRIPBL</Image>
+			<Image Type="bottomright">INGAMEGRIPBR</Image>
+		</Images>
+	</Component>
+
+  <Component Name="XIGAlertContainerOuter"
+		Class="Tile"
+		Events="Transparent"
+		>
+    <Triggers>
+      <Trigger Type="OnDeactivate">State(Disabled)</Trigger>
+      <Trigger Type="OnActivate">State(Normal)</Trigger>
+    </Triggers>
+    <Images State="Normal" Color="MainCG">
+      <Image Type="topleft">ALERTFRAMETL</Image>
+      <Image Type="top">ALERTFRAMET</Image>
+      <Image Type="topright">ALERTFRAMETR</Image>
+
+      <Image Type="left">ALERTFRAMEL</Image>
+      <Image Type="right">ALERTFRAMER</Image>
+
+      <Image Type="bottomleft">ALERTFRAMEBL</Image>
+      <Image Type="bottom">ALERTFRAMEB</Image>
+      <Image Type="bottomright">ALERTFRAMEBR</Image>
+    </Images>
+    <Images State="Disabled" Color="XIGTitleBarDisabled">
+      <Image Type="topleft">ALERTFRAMETL</Image>
+      <Image Type="top">ALERTFRAMET</Image>
+      <Image Type="topright">ALERTFRAMETR</Image>
+
+      <Image Type="left">ALERTFRAMEL</Image>
+      <Image Type="right">ALERTFRAMER</Image>
+
+      <Image Type="bottomleft">ALERTFRAMEBL</Image>
+      <Image Type="bottom">ALERTFRAMEB</Image>
+      <Image Type="bottomright">ALERTFRAMEBR</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGAlertContainerGrippers"
+		Class="Tile"
+    DrawOnTopmost="true"
+		Events="Transparent"
+		>
+    <Images Color="Hilight">
+      <Image Type="topleft">ALERTGRIPTL</Image>
+      <Image Type="topright">ALERTGRIPTR</Image>
+      <Image Type="bottomleft">ALERTGRIPBL</Image>
+      <Image Type="bottomright">ALERTGRIPBR</Image>
+    </Images>
+  </Component>
+
+  <Component Name="MainInfoWindow"
+		Class="Tile"
+		DefaultWidth="315"
+		DefaultHeight="100"
+		MinWidth="173"
+		MinHeight="100"
+		BindX="false"
+		BindY="true"
+		ResizeY="100"
+	/>
+
+	<Component Name="InfoTopRow"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images Color="InfoOuterCG">
+			<Image Type="topleft">INFOVIEWTOPLEFT</Image>
+			<Image Type="top">INFOVIEWTOP</Image>
+			<Image Type="topright">INFOVIEWTOPRIGHT</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InfoBottomRow"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images Color="InfoOuterCG">
+			<Image Type="bottomleft">INFOVIEWBOTTOMLEFT</Image>
+			<Image Type="bottom">INFOVIEWBOTTOMMIDDLE</Image>
+			<Image Type="bottomright">INFOVIEWBOTTOMRIGHT</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InfoMiddleRow"
+		Class="Tile"
+		>
+		<Images Color="InfoOuterCG">
+			<Image Type="left">INFOVIEWLEFT</Image>
+			<Image Type="right">INFOVIEWRIGHT</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InfoInfoResizeRight"
+		Class="Tile"
+		MinWidth="9"
+		Cursor="ResizeWE"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">ResizeR</Trigger>
+		</Triggers>
+	</Component>
+
+	<Component Name="InfoInfoViewButton"
+		Class="SkinLauncher"
+		Stretch="ToContent"
+		Accelerator="ALT(VK_LEFT)"
+		Tooltip="RetractButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">LaunchSkin</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="Hilight">
+			<Image Type="middle">INFOVIEWBUTTON</Image>
+		</Images>
+		<Images State="Hover" Color="Hilight">
+			<Image Type="middle">INFOVIEWBUTTONHOVERLEFT</Image>
+		</Images>
+		<Images State="Overlay">
+			<Image Type="middle">INFOVIEWBUTTONARROWLEFT</Image>
+		</Images>
+		<Popup SaveState="1">MainInfoViewPopup</Popup>
+	</Component>
+
+	<Component Name="ChatInfoInfoViewButton"
+		Class="SkinLauncher"
+		Stretch="ToContent"
+		Accelerator="ALT(VK_LEFT)"
+		Tooltip="RetractButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">LaunchSkin</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="Hilight">
+			<Image Type="middle">INFOVIEWBUTTON</Image>
+		</Images>
+		<Images State="Hover" Color="Hilight">
+			<Image Type="middle">INFOVIEWBUTTONHOVERLEFT</Image>
+		</Images>
+		<Images State="Overlay">
+			<Image Type="middle">INFOVIEWBUTTONARROWLEFT</Image>
+		</Images>
+		<Popup SaveState="1">ChatInfoViewPopup</Popup>
+	</Component>
+
+	<Component Name="GroupChatInfoInfoViewButton"
+		Class="SkinLauncher"
+		Stretch="ToContent"
+		Accelerator="ALT(VK_LEFT)"
+		Tooltip="RetractButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">LaunchSkin</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="Hilight">
+			<Image Type="middle">INFOVIEWBUTTON</Image>
+		</Images>
+		<Images State="Hover" Color="Hilight">
+			<Image Type="middle">INFOVIEWBUTTONHOVERLEFT</Image>
+		</Images>
+		<Images State="Overlay">
+			<Image Type="middle">INFOVIEWBUTTONARROWLEFT</Image>
+		</Images>
+		<Popup SaveState="1">GroupChatInfoViewPopup</Popup>
+	</Component>
+
+	<Component Name="InfoBackDrop"
+		Class="Tile"
+		>
+		<Images Color="InfoOuterCG">
+			<Image Type="middle">BLACK</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InfoInfoView"
+		Class="InfoView"
+		Color="InfoViewBG"
+		Scrollbar="DefaultScrollbar"
+		>
+		<Text Color="InfoViewText"
+			color_friend="InfoViewFriendText"
+			color_fof="InfoViewFofText"
+			color_recent="BuddyViewFriendChat"
+			color_favorites="BuddyViewFofText"
+			color_friendsfavorites="FriendsFavoritesText"
+			color_all="AllServersText"
+			color_offline="InfoViewOfflineText"
+			color_hyperlink="InfoViewHyperlink"
+			Font="Arial"
+			Size="11"
+		/>
+	</Component>
+
+	<Component Name="InfoInfoGripperTR"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images Color="Hilight">
+			<Image Type="middle">INFOVIEWGRIPPERTOPRIGHT</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InfoInfoGripperBR"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images Color="Hilight">
+			<Image Type="middle">INFOVIEWGRIPPERBOTTOMRIGHT</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InfoJoinGameTab"
+		Class="TabControl"
+		Stretch="ToContent"
+		ControlGroupId="6"
+		GroupId="6"
+		>
+		<Triggers>
+			<!-- in a group chat and there is no current game lobby and this user is allowed to select one -->
+			<Trigger Type="OnAppCanHostGameLobby">GroupMessage(0)</Trigger>
+
+			<!-- either in a game lobby and we can join or in the context of a friend that is playing a network game that is joinable for this user -->
+			<Trigger Type="OnAppCanJoin">GroupMessage(1)</Trigger>
+
+			<!-- in a group chat and in the game lobby and this user is NOT the host -->
+			<Trigger Type="OnAppCanLeaveGameLobby">GroupMessage(2)</Trigger>
+
+			<!-- in a group chat and this user IS the host -->
+			<Trigger Type="OnAppCanLaunchGameLobby">GroupMessage(3)</Trigger>
+
+			<!-- either in a game lobby and the button is disabled or in the context of a friend that is not playing a game that this user can join -->
+			<Trigger Type="OnAppCannotJoin">GroupMessage(4)</Trigger>
+		</Triggers>
+		<!-- this is just to get the size correctly laid out -->
+		<Images>
+			<Image Type="middle">BUTTONJOINNORMAL</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="InGameHostGameLobbyButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="HostGameLobbyButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">HostGameLobby</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="ButtonCG">
+			<Image Type="middle">BUTTONJOINNORMAL</Image>
+		</Images>
+		<Images State="Hover" Color="ButtonCG">
+			<Image Type="middle">BUTTONJOINHOVER</Image>
+		</Images>
+		<Images State="Down" Color="ButtonCG">
+			<Images Type="middle">BUTTONJOINDOWN</Images>
+		</Images>
+	</Component>
+
+	<Component Name="InGameJoinGameLobbyButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="GameButtonTip"
+		DisabledTooltip="DisabledGameButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">JoinFriend</Trigger>
+			<Trigger Type="OnAppCanJoin">State(Normal)</Trigger>
+			<Trigger Type="OnAppCannotJoin">State(Disabled)</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="ButtonCG">
+			<Image Type="middle">BUTTONJOINNORMAL</Image>
+		</Images>
+		<Images State="Hover" Color="ButtonCG">
+			<Image Type="middle">BUTTONJOINHOVER</Image>
+		</Images>
+		<Images State="Down" Color="ButtonCG">
+			<Image Type="middle">BUTTONJOINDOWN</Image>
+		</Images>
+		<Images State="Disabled" Color="ButtonCG">
+			<Image Type="middle">BUTTONJOINDISABLED</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InGameLeaveGameLobbyButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="LeaveGameLobbyButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">LeaveGameLobby</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="ButtonCG">
+			<Image Type="middle">BUTTONJOINNORMAL</Image>
+		</Images>
+		<Images State="Hover" Color="ButtonCG">
+			<Image Type="middle">BUTTONJOINHOVER</Image>
+		</Images>
+		<Images State="Down" Color="ButtonCG">
+			<Image Type="middle">BUTTONJOINDOWN</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InGameLaunchGameLobbyButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="LaunchGameLobbyButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">LaunchGameLobby</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="ButtonCG">
+			<Image Type="middle">BUTTONJOINNORMAL</Image>
+		</Images>
+		<Images State="Hover" Color="ButtonCG">
+			<Image Type="middle">BUTTONJOINHOVER</Image>
+		</Images>
+		<Images State="Down" Color="ButtonCG">
+			<Image Type="middle">BUTTONJOINDOWN</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InGameDisabledGameLobbyButton"
+		Class="Tile"
+		Stretch="ToContent"
+		Tooltip="DisabledGameButtonTip"
+		>
+		<Images Color="ButtonCG">
+			<Image Type="middle">BUTTONJOINDISABLED</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InfoJoinGameButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="GameButtonTip"
+		DisabledTooltip="DisabledGameButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">JoinFriend</Trigger>
+			<Trigger Type="OnAppCanJoin">State(Normal)</Trigger>
+			<Trigger Type="OnAppCannotJoin">State(Disabled)</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="ButtonCG">
+			<Image Type="middle">BUTTONJOINNORMAL</Image>
+		</Images>
+		<Images State="Hover" Color="ButtonCG">
+			<Image Type="middle">BUTTONJOINHOVER</Image>
+		</Images>
+		<Images State="Disabled" Color="ButtonCG">
+			<Image Type="middle">BUTTONJOINDISABLED</Image>
+		</Images>
+		<Images State="Down" Color="ButtonCG">
+			<Image Type="middle">BUTTONJOINDOWN</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="InfoJoinChatTab"
+		Class="TabControl"
+		Stretch="ToContent"
+		ControlGroupId="5"
+		GroupId="5"
+		>
+		<Triggers>
+			<Trigger Type="OnAppCanHostVoiceChat">GroupMessage(0)</Trigger>
+			<Trigger Type="OnAppCannotVoiceChat">GroupMessage(0)</Trigger>
+			<Trigger Type="OnAppCanVoiceChat">GroupMessage(1)</Trigger>
+			<Trigger Type="OnAppCanLeaveVoiceChat">GroupMessage(2)</Trigger>
+		</Triggers>
+		<Images>
+			<Image Type="middle">BUTTONVOICENORMAL</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="InfoJoinGroupChatTab"
+		Class="TabControl"
+		Stretch="ToContent"
+		ControlGroupId="5"
+		GroupId="5"
+		>
+		<Triggers>
+			<!-- no current hosted voice chat and we are allowed to host -->
+			<Trigger Type="OnAppCanHostVoiceChat">GroupMessage(0)</Trigger>
+
+			<!-- no current hosted voice chat and we are not allowed to host -->
+			<Trigger Type="OnAppCannotHostVoiceChat">GroupMessage(3)</Trigger>
+
+			<!-- current voice chat and we are allowed to join (not already joined) -->
+			<Trigger Type="OnAppCanVoiceChat">GroupMessage(1)</Trigger>
+
+			<!-- current voice chat and we are not allowed to join (not already joined) -->
+			<Trigger Type="OnAppCannotVoiceChat">GroupMessage(1)</Trigger>
+
+			<!-- current voice chat and we are allready joined. we may leave -->
+			<Trigger Type="OnAppCanLeaveVoiceChat">GroupMessage(2)</Trigger>
+		</Triggers>
+		<Images>
+			<Image Type="middle">BUTTONVOICENORMAL</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InfoHostChatButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="CallButtonTip"
+		DisabledTooltip="DisabledHostChatButtonTooltip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">AppHostVoiceChat</Trigger>
+			<Trigger Type="OnAppCanHostVoiceChat">State(Normal)</Trigger>
+			<Trigger Type="OnAppCannotVoiceChat">State(Disabled)</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="ButtonCG">
+			<Image Type="middle">BUTTONVOICENORMAL</Image>
+		</Images>
+		<Images State="Hover" Color="ButtonCG">
+			<Image Type="middle">BUTTONVOICEHOVER</Image>
+		</Images>
+		<Images State="Disabled" Color="ButtonCG">
+			<Image Type="middle">BUTTONVOICEDISABLED</Image>
+		</Images>
+		<Images State="Down" Color="ButtonCG">
+			<Image Type="middle">BUTTONVOICEDOWN</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="InfoHostGroupChatButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="HostVoiceChatButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">AppHostGroupVoiceChat</Trigger>
+			<Trigger Type="OnAppCanHostVoiceChat">State(Normal)</Trigger>
+			<Trigger Type="OnAppCannotHostVoiceChat">State(Disabled)</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="ButtonCG">
+			<Image Type="middle">BUTTONVOICENORMAL</Image>
+		</Images>
+		<Images State="Hover" Color="ButtonCG">
+			<Image Type="middle">BUTTONVOICEHOVER</Image>
+		</Images>
+		<Images State="Disabled" Color="ButtonCG">
+			<Image Type="middle">BUTTONVOICEDISABLED</Image>
+		</Images>
+		<Images State="Down" Color="ButtonCG">
+			<Image Type="middle">BUTTONVOICEDOWN</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InfoJoinChatButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="AnswerButtonTip"
+		DisabledTooltip="DisabledJoinChatTooltip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">AppVoiceChat</Trigger>
+			<Trigger Type="OnAppVoiceRinging">Animate(Type=Repeat,Delay=4,Repeat=10,Action=1)</Trigger>
+			<Trigger Type="OnAppCanVoiceChat">State(Normal)</Trigger>
+			<Trigger Type="OnAppCannotVoiceChat">State(Disabled)</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="ButtonCG">
+			<Image Type="middle">MICRING</Image>
+		</Images>
+		<Images State="Hover" Color="ButtonCG">
+			<Image Type="middle">BUTTONVOICEHOVER</Image>
+		</Images>
+		<Images State="Disabled" Color="ButtonCG">
+			<Image Type="middle">BUTTONVOICEDISABLED</Image>
+		</Images>
+		<Images State="Down" Color="ButtonCG">
+			<Image Type="middle">BUTTONVOICEDOWN</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="InfoJoinGroupChatButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="JoinVoiceChatButtonTip"
+		DisabledTooltip="DisabledJoinChatTooltip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">AppGroupVoiceChat</Trigger>
+			<Trigger Type="OnAppCanVoiceChat">State(Normal)</Trigger>
+			<Trigger Type="OnAppCannotVoiceChat">State(Disabled)</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="ButtonCG">
+			<Image Type="middle">MICRING</Image>
+		</Images>
+		<Images State="Hover" Color="ButtonCG">
+			<Image Type="middle">BUTTONVOICEHOVER</Image>
+		</Images>
+		<Images State="Disabled" Color="ButtonCG">
+			<Image Type="middle">BUTTONVOICEDISABLED</Image>
+		</Images>
+		<Images State="Down" Color="ButtonCG">
+			<Image Type="middle">BUTTONVOICEDOWN</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="InfoLeaveChatButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="EndCallButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">AppLeaveVoiceChat</Trigger>
+			<Trigger Type="OnAppCanVoiceChat">State(Normal)</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="ButtonCG">
+			<Image Type="middle">BUTTONVOICENORMAL</Image>
+		</Images>
+		<Images State="Hover" Color="ButtonCG">
+			<Image Type="middle">BUTTONVOICEHOVER</Image>
+		</Images>
+		<Images State="Down" Color="ButtonCG">
+			<Image Type="middle">BUTTONVOICEDOWN</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InfoLeaveGroupChatButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="LeaveVoiceChatButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">AppLeaveGroupVoiceChat</Trigger>
+			<Trigger Type="OnAppCanVoiceChat">State(Normal)</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="ButtonCG">
+			<Image Type="middle">BUTTONVOICENORMAL</Image>
+		</Images>
+		<Images State="Hover" Color="ButtonCG">
+			<Image Type="middle">BUTTONVOICEHOVER</Image>
+		</Images>
+		<Images State="Down" Color="ButtonCG">
+			<Image Type="middle">BUTTONVOICEDOWN</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="InfoTalkingStateButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Events="Transparent"
+		>
+		<Triggers>
+			<Trigger Type="OnAppUserStoppedTalking">State(Normal)</Trigger>
+			<Trigger Type="OnAppUserStartedTalking">State(Disabled)</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="ButtonCG">
+			<Image Type="middle">BUTTONVOICETRANSPARENT</Image>
+		</Images>
+		<Images State="Disabled" Color="VoiceTalkingShift">
+			<Image Type="middle">BUTTONVOICEHOVER</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="InfoDisabledChatButton"
+		Class="Tile"
+		Stretch="ToContent"
+		Tooltip="DisabledHostChatButtonTooltip"
+		>
+		<Images Color="ButtonCG">
+			<Image Type="middle">BUTTONVOICEDISABLED</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InfoInfoBottomRowBG"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images State="Normal" Color="InfoOuterCG">
+			<Image Type="middle">INFOVIEWBOTTOMROWBG</Image>
+		</Images>
+	</Component>
+
+	<Component Name="GroupChatInfoView"
+		Class="GroupChatUserList"
+		Color="InfoViewBG"
+		Scrollbar="DefaultScrollbar"
+		>
+		<Text Color="InfoViewText"
+			Color_friend="InfoViewFriendText"
+			Color_fof="InfoViewFofText"
+			Color_offline="InfoViewOfflineText"
+			Color_hyperlink="InfoViewHyperlink"
+			Color_selected="BuddyViewSelected"
+			Color_nonfocus="BuddyViewNonFocus"
+			Color_selectedtext="BuddyViewSelectedText"
+			Font="Arial"
+			Bold="true"
+			Size="11"
+			Color_header="HeaderText"
+		/>
+		<Images HeaderColor="HeaderColor">
+			<Image Type="HeaderLeft">LISTVIEWHEADERLEFT</Image>
+			<Image Type="HeaderMiddle">LISTVIEWHEADERMIDDLE</Image>
+			<Image Type="HeaderRight">LISTVIEWHEADERRIGHT</Image>
+			<Image Type="HeaderArrowUp">LISTVIEWHEADERARROWUP</Image>
+			<Image Type="HeaderArrowDown">LISTVIEWHEADERARROWDOWN</Image>
+			<Image Type="VoiceServer">VOICESERVERHOST</Image>
+			<Image Type="MicOn">MICON</Image>
+			<Image Type="MicOff">MICOFF</Image>
+			<Image Type="SpeakerOn">ICONSPEAKERTALKING</Image>
+      <Image Type="SpeakerOnButMuted">ICONSPEAKERTALKINGMUTED</Image>
+      <Image Type="SpeakerOff">ICONSPEAKERNOTTALKING</Image>
+      <Image Type="SpeakerOffButMuted">ICONSPEAKERNOTTALKINGMUTED</Image>
+    </Images>
+	</Component>
+  <Component Name="XIGFriends"
+             Class="MainWindow"
+             MinWidth="450"
+             MinHeight="320"
+             DefaultX="287" 
+             DefaultY="224" 
+             DefaultWidth="450"
+             DefaultHeight="320"
+             >
+    <Triggers>
+      <Trigger Type="OnShowHome">ShowWindow</Trigger>
+      <Trigger Type="OnShowFriends">ShowWindow</Trigger>
+    </Triggers>
+  </Component>
+
+  <Component Name="XIGHelp"
+             Class="MainWindow"
+             MinWidth="450"
+             MinHeight="320"
+             >
+    <Triggers>
+      <Trigger Type="OnShowHelp">ShowWindow</Trigger>
+    </Triggers>
+  </Component>
+
+  <Component Name="XIGOptions"
+             Class="MainWindow"
+             MinWidth="450"
+             MinHeight="320"
+             >
+    <Triggers>
+      <Trigger Type="OnShowOptions">ShowWindow</Trigger>
+    </Triggers>
+  </Component>
+
+  <Component Name="XIGChats"
+             Class="MainWindow"
+             MinWidth="450"
+             MinHeight="320"
+             >
+    <Triggers>
+      <Trigger Type="OnShowChats">ShowWindow</Trigger>
+    </Triggers>
+  </Component>
+  
+  <Component Name="XIGAlert"
+             Class="MainWindow"
+             MinWidth="238"
+             MinHeight="120"
+             DefaultX="786" 
+             DefaultY="648" 
+             DefaultWidth="238"
+             DefaultHeight="120"
+             >
+    <Triggers>
+      <Trigger Type="OnActiveMode">ShowTile</Trigger>
+    </Triggers>
+  </Component>
+
+  <Component Name="XIGVoice"
+             Class="MainWindow"
+             MinWidth="166"
+             MinHeight="316"
+             DefaultX="10" 
+             DefaultY="340" 
+             DefaultWidth="166"
+             DefaultHeight="316"
+             >
+    <Triggers>
+      <Trigger Type="OnActiveMode">ShowVoiceChatWindow</Trigger>
+      <Trigger Type="OnIncomingVoiceChat">ShowVoiceChatWindow</Trigger>
+      <Trigger Type="OnOutgoingVoiceChat">ShowVoiceChatWindow</Trigger>
+      <Trigger Type="OnStartVoiceChat">ShowVoiceChatWindow</Trigger>
+      <Trigger Type="OnEndVoiceChat">ShowVoiceChatWindow</Trigger>
+      <Trigger Type="OnActiveMode">ShowTile</Trigger>
+    </Triggers>
+  </Component>
+
+  <Component Name="XIGTitlebar"
+             Class="Tile"
+             Stretch="ToContent"
+             >
+    <Triggers>
+      <Trigger Type="OnDeactivate">State(Disabled)</Trigger>
+      <Trigger Type="OnActivate">State(Normal)</Trigger>
+      <Trigger Type="OnLeftButtonDown">AppDragWindow</Trigger>
+    </Triggers>
+    <Images State="Normal">
+      <Image Type="left">XIG_TOP_LF</Image>
+      <Image Type="middle">XIG_TOP_MID</Image>
+      <Image Type="right">XIG_TOP_RT</Image>
+    </Images>
+    <Images State="Disabled" Color="XIGTitleBarDisabled">
+      <Image Type="left">XIG_TOP_LF</Image>
+      <Image Type="middle">XIG_TOP_MID</Image>
+      <Image Type="right">XIG_TOP_RT</Image>
+    </Images>
+  </Component>
+  <Component Name="XIGLogo"
+             Class="Tile"
+             Stretch="ToContent"
+             DrawOnTopmost="true"
+             >
+    <Images State="Normal">
+      <Image Type="middle">XIGLOGO</Image>
+    </Images>
+  </Component>
+  <Component Name="XIGPlate"
+             Class="Tile"
+             Stretch="ToContent"
+             Events="Transparent"             
+             >
+    <Images State="Normal">
+      <Image Type="left">NAMEPLATE_LF</Image>
+      <Image Type="middle">NAMEPLATE_MID</Image>
+      <Image Type="right">NAMEPLATE_RT</Image>
+    </Images>
+  </Component>
+  <Component Name="XIGNameplateText"
+             Class="Text"
+             Stretch="ToContent"
+              Events="Transparent"             
+             >
+    <Text Color="UserNameCG" Font="Arial" Bold="true" Size="12" >UserNameText</Text>
+  </Component>
+  <Component Name="XIGClockText"
+             Class="Text"
+             Stretch="ToContent"
+             Events="Transparent"
+             >
+    <Text Color="UserNameCG" Font="Arial" Bold="true" Size="12" >%clock%</Text>
+  </Component>
+
+  <Component Name="XIGLeftEdge"
+             Class="Tile"
+             Stretch="ToContent"
+             Events="Transparent"
+             >
+    <Images State="Normal">
+      <Image Type="top">XIG_LEFTBORDER_TOP</Image>
+      <Image Type="middle">XIG_LEFTBORDER_MID</Image>
+      <Image Type="bottom">XIG_LEFTBORDER_BOT</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGRightEdge"
+             Class="Tile"
+             Stretch="ToContent"
+             Events="Transparent"
+             >
+    <Images State="Normal">
+      <Image Type="top">XIG_RIGHTBORDER_TOP</Image>
+      <Image Type="middle">XIG_RIGHTBORDER_MID</Image>
+      <Image Type="bottom">XIG_RIGHTBORDER_BOT</Image>
+    </Images>
+  </Component>
+  <Component Name="XIGBottomEdge"
+             Class="Tile"
+             Stretch="ToContent"
+             Events="Transparent"
+             >
+    <Images State="Normal">
+      <Image Type="left">XIG_BOT_LF</Image>
+      <Image Type="middle">XIG_BOT_MID</Image>
+      <Image Type="right">XIG_BOT_RT</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGGripperTopLeft"
+		Class="Tile"
+		Stretch="ToContent"
+		Cursor="ResizeNWSE"
+    DrawOnTopmost="true"
+		>
+    <Triggers>
+      <Trigger Type="OnLeftButtonDown">ResizeUL</Trigger>
+    </Triggers>
+    <Images Color="Hilight">
+      <Image Type="middle">XIG_GRIPPER_TOP_LF</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGGripperTopRight"
+		Class="Tile"
+		Stretch="ToContent"
+		Cursor="ResizeNESW"
+    DrawOnTopmost="true"
+		>
+    <Triggers>
+      <Trigger Type="OnLeftButtonDown">ResizeUR</Trigger>
+    </Triggers>
+    <Images Color="Hilight">
+      <Image Type="middle">XIG_GRIPPER_TOP_RT</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGGripperBottomLeft"
+		Class="Tile"
+		Stretch="ToContent"
+		Cursor="ResizeNESW"
+    DrawOnTopmost="true"
+		>
+    <Triggers>
+      <Trigger Type="OnLeftButtonDown">ResizeBL</Trigger>
+    </Triggers>
+    <Images Color="Hilight">
+      <Image Type="middle">XIG_GRIPPER_BOT_LF</Image>
+    </Images>
+  </Component>
+  <Component Name="XIGGripperBottomRight"
+		Class="PushButton"
+		Stretch="ToContent"
+		Cursor="ResizeNWSE"
+    DrawOnTopmost="true"
+		>
+    <Triggers>
+      <Trigger Type="OnLeftButtonDown">ResizeBR</Trigger>
+    </Triggers>
+    <Images State="Normal" Color="Hilight">
+      <Image Type="middle">XIG_GRIPPER_BOT_RT</Image>
+    </Images>
+    <Images State="Hover" Color="Hilight">
+      <Image Type="middle">XIG_GRIPPER_BOT_RT_HOVER</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGCloseBox"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="CloseButtonTip"
+    TooltipTile="XIGTooltipPopup"
+    DrawOnTopmost="true"
+		>
+    <Triggers>
+      <Trigger Type="OnClick">AppClose</Trigger>
+    </Triggers>
+    <Images State="Normal" Color="ButtonCG">
+      <Image Type="middle">XIG_CLOSE</Image>
+    </Images>
+    <Images State="Down" Color="ButtonCG">
+      <Image Type="middle">XIG_CLOSE_DOWN</Image>
+    </Images>
+    <Images State="Hover" Color="ButtonCG">
+      <Image Type="middle">XIG_CLOSE_HOVER</Image>
+    </Images>
+    <Images State="Focused" Color="XIGFocusedColor">
+      <Image Type="middle">XIG_BUTTON_TAB</Image>
+    </Images>
+  </Component>
+  
+  <Component Name="XIGInnerBevel"
+             Class="Tile"
+          	 Events="Transparent"
+              DrawOnTopmost="true"
+             >
+    <Images Color="BevelCG">
+      <Image Type="topleft">XIG_INNERBEVEL_TOP_LF</Image>
+      <Image Type="left">XIG_INNERBEVEL_LF</Image>
+      <Image Type="bottomleft">XIG_INNERBEVEL_BOT_LF</Image>
+
+      <Image Type="top">XIG_INNERBEVEL_TOP_MID</Image>
+      <Image Type="bottom">XIG_INNERBEVEL_BOT_MID</Image>
+
+      <Image Type="topright">XIG_INNERBEVEL_TOP_RT</Image>
+      <Image Type="right">XIG_INNERBEVEL_RT</Image>
+      <Image Type="bottomright">XIG_INNERBEVEL_BOT_RT</Image>
+    </Images>
+  </Component>
+  
+  <Component Name="XIGActiveOutline"
+              Class="Tile"
+              DrawOnTopmost="true"
+          		Events="Transparent"
+              >
+    <Images>
+      <Image Type="topleft">XIG_OUTLINE_TL</Image>
+      <Image Type="left">XIG_OUTLINE_LT</Image>
+      <Image Type="bottomleft">XIG_OUTLINE_BL</Image>
+
+      <Image Type="top">XIG_OUTLINE_TOP</Image>
+      <Image Type="bottom">XIG_OUTLINE_BOT</Image>
+
+      <Image Type="topright">XIG_OUTLINE_TOP_RT</Image>
+      <Image Type="right">XIG_OUTLINE_RT</Image>
+      <Image Type="bottomright">XIG_OUTLINE_BOT_RT</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGAlertOutline"
+              Class="Tile"
+              DrawOnTopmost="true"
+          		Events="Transparent"
+              >
+    <Images State="Normal">
+      <Image Type="topleft">ALERTOUTLINETL</Image>
+      <Image Type="left">ALERTOUTLINEL</Image>
+      <Image Type="bottomleft">ALERTOUTLINEBL</Image>
+
+      <Image Type="top">ALERTOUTLINET</Image>
+      <Image Type="bottom">ALERTOUTLINEB</Image>
+
+      <Image Type="topright">ALERTOUTLINETR</Image>
+      <Image Type="right">ALERTOUTLINER</Image>
+      <Image Type="bottomright">ALERTOUTLINEBR</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGMenuBar"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+    <Images Color="XIGMenuBarCG">
+      <Image Type="left">MENUBARLEFT</Image>
+      <Image Type="middle">MENUBARMIDDLE</Image>
+      <Image Type="right">MENUBARRIGHT</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGAllChatsBorder"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+    <Images Color="XIGMenuBarCG">
+      <Image Type="middle">MENUBARMIDDLE</Image>
+    </Images>
+  </Component>
+  
+  <Component Name="XIGChatMenuBar"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+    <Images Color="XIGMenuBarCG">
+      <Image Type="left">MENUBARLEFT</Image>
+      <Image Type="middle">MENUBARMIDDLE</Image>
+    </Images>
+  </Component>
+  <Component Name="XIGControlHeader"
+             Class="Tile"
+             Stretch="ToContent"
+             DrawOnTopmost="true"
+             >
+    <Images Color="HeaderColor">
+      <Image Type="middle">LISTVIEWHEADERMIDDLE</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGHelpText"
+             Class="HelpText"
+             Stretch="ToContent"
+             DrawOnTopmost="true"
+             >
+    <Fonts>
+      <Font Type="UserLink" 
+        Font="Arial" 
+        Bold="true" 
+        Size="12"
+        Color="ChatOtherCG"
+        />
+      <Font Type="User" 
+        Font="Arial" 
+        Bold="false" 
+        Size="12"
+        Color="ChatOtherTextCG"
+        />
+    </Fonts>
+    <Images State="UserIcon">
+      <Image Type="middle">SINGLECHATICON</Image>
+    </Images>
+    <Images State="UserIconOverlay">
+      <Image Type="middle">SINGLECHATICON</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGOpacitySlider"
+             Class="SliderControl"
+             Stretch="ToContent" 
+             Range="255"
+             Step="1"
+             MinHeight="12"
+             Type="Opacity"
+		         Tooltip="AdjustOpacityTip"
+             TooltipTile="XIGTooltipPopup" 
+             >
+  </Component>
+
+  <Component Name="XIGSpeakerSlider"
+             Class="SliderControl"
+             Stretch="ToContent" 
+             Range="100"
+             Step="1"
+             MinHeight="12"
+             Tooltip="AdjustSpeakerVolumeTip"
+             TooltipTile="XIGTooltipPopup"
+             Type="Speaker"
+             >
+  </Component>
+
+  <Component Name="XIGMicSlider"
+             Class="SliderControl"
+             Stretch="ToContent" 
+             Range="100"
+             Step="1"
+             MinHeight="12"
+             Tooltip="AdjustMicVolumeTip"
+             TooltipTile="XIGTooltipPopup"
+             Type="Mic"
+             >
+  </Component>
+
+  <Component Name="XIGMicSensitivitySlider"
+             Class="SliderControl"
+             Stretch="ToContent" 
+             Range="100"
+             Step="1"
+             MinHeight="12"
+             Tooltip="AdjustMicSensitivityTip"
+             TooltipTile="XIGTooltipPopup"
+             Type="MicSensitivity"
+             >
+  </Component>
+
+  <Component Name="XIGSliderTrack"
+             Class="Tile"
+             Type="Track"
+             Stretch="ToContent" 
+             DrawOnTopmost="true"
+             >
+    <Images State="Normal">
+      <Image Type="left">XIG_SLIDER_BASE_LEFT</Image>
+      <Image Type="middle">XIG_SLIDER_BASE_MID</Image>
+      <Image Type="right">XIG_SLIDER_BASE_RIGHT</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGSliderGripper"
+             Class="Tile"
+             Type="Gripper"
+             Stretch="ToContent" 
+             DrawOnTopmost="true"
+             >
+    <Images State="Normal" Color="ButtonCG">
+      <Image Type="middle">XIG_SLIDER_KNOB</Image>
+    </Images>
+  </Component>
+  
+  <Component Name="XIGActiveTab"
+             Class="Tile"
+             Stretch="ToContent"
+             DrawOnTopmost="true"
+             >
+    <Images State="Normal" Color="HeaderColor">
+      <Image Type="left">TABCONTROLLEFT</Image>
+      <Image Type="middle">TABCONTROLMIDDLE</Image>
+      <Image Type="right">TABCONTROLRIGHT</Image>
+    </Images>
+  </Component>
+  <Component Name="XIGChatInActiveTab"
+             Class="PushButton"
+             Stretch="ToContent"
+             DrawOnTopmost="true"
+             >
+    <Triggers>
+      <Trigger Type="OnClick">ShowChats</Trigger>
+    </Triggers>
+    <Images State="Normal">
+      <Image Type="left">TABCONTROLLEFT</Image>
+      <Image Type="middle">TABCONTROLMIDDLE</Image>
+      <Image Type="right">TABCONTROLRIGHT</Image>
+    </Images>
+    <Images State="Focused" Color="XIGFocusedColor">
+      <Image Type="left">TABCONTROLLEFTFOCUSED</Image>
+      <Image Type="middle">TABCONTROLMIDDLEFOCUSED</Image>
+      <Image Type="right">TABCONTROLRIGHTFOCUSED</Image>
+    </Images>
+  </Component>
+
+
+  <Component Name="XIGOptionInActiveTab"
+             Class="PushButton"
+             Stretch="ToContent"
+             DrawOnTopmost="true"
+             >
+    <Triggers>
+      <Trigger Type="OnClick">ShowOptions</Trigger>
+    </Triggers>
+    <Images State="Normal">
+      <Image Type="left">TABCONTROLLEFT</Image>
+      <Image Type="middle">TABCONTROLMIDDLE</Image>
+      <Image Type="right">TABCONTROLRIGHT</Image>
+    </Images>
+    <Images State="Focused" Color="XIGFocusedColor">
+      <Image Type="left">TABCONTROLLEFTFOCUSED</Image>
+      <Image Type="middle">TABCONTROLMIDDLEFOCUSED</Image>
+      <Image Type="right">TABCONTROLRIGHTFOCUSED</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGHelpInActiveTab"
+             Class="PushButton"
+             Stretch="ToContent"
+             DrawOnTopmost="true"
+             >
+    <Triggers>
+      <Trigger Type="OnClick">ShowHelp</Trigger>
+    </Triggers>
+    <Images State="Normal">
+      <Image Type="left">TABCONTROLLEFT</Image>
+      <Image Type="middle">TABCONTROLMIDDLE</Image>
+      <Image Type="right">TABCONTROLRIGHT</Image>
+    </Images>
+    <Images State="Focused" Color="XIGFocusedColor">
+      <Image Type="left">TABCONTROLLEFTFOCUSED</Image>
+      <Image Type="middle">TABCONTROLMIDDLEFOCUSED</Image>
+      <Image Type="right">TABCONTROLRIGHTFOCUSED</Image>
+    </Images>
+  </Component>
+  
+  <Component Name="XIGFriendInActiveTab"
+             Class="PushButton"
+             Stretch="ToContent"
+             DrawOnTopmost="true"
+             >
+    <Triggers>
+      <Trigger Type="OnClick">ShowFriends</Trigger>
+    </Triggers>
+    <Images State="Normal">
+      <Image Type="left">TABCONTROLLEFT</Image>
+      <Image Type="middle">TABCONTROLMIDDLE</Image>
+      <Image Type="right">TABCONTROLRIGHT</Image>
+    </Images>
+    <Images State="Focused" Color="XIGFocusedColor">
+      <Image Type="left">TABCONTROLLEFTFOCUSED</Image>
+      <Image Type="middle">TABCONTROLMIDDLEFOCUSED</Image>
+      <Image Type="right">TABCONTROLRIGHTFOCUSED</Image>
+    </Images>
+  </Component>
+  
+  <Component Name="XIGTabChatText"
+		Class="Text"
+		MinWidth="40"
+		MinHeight="15"
+		Stretch="ToContent"
+		Events="Transparent"
+		>
+    <Text Align="center" Color="HeaderText" Font="Arial" Size="11" Bold="true">ChatsTextTitle</Text>
+  </Component>
+
+  <Component Name="XIGTabHelpText"
+		Class="Text"
+		MinWidth="40"
+		MinHeight="15"
+		Stretch="ToContent"
+		Events="Transparent"
+		>
+    <Text Align="center" Color="HeaderText" Font="Arial" Size="11" Bold="true">HelpTextTitle</Text>
+  </Component>
+
+  <Component Name="XIGTabOptionsText"
+		Class="Text"
+		MinWidth="40"
+		MinHeight="15"
+		Stretch="ToContent"
+		Events="Transparent"
+		>
+    <Text Align="center" Color="HeaderText" Font="Arial" Size="11" Bold="true">OptionsTextTitle</Text>
+  </Component>
+
+  <Component Name="XIGFriendsFilterText"
+             Class="Text"
+             Stretch="ToContent"
+             MinWidth="110"
+            >
+    <Text Align="center" Color="HeaderText" Font="Arial" Size="11" Bold="true">%friends_filter:5%</Text>
+  </Component>
+  <Component Name="XIGFriendsBrowseBack"
+             Stretch="ToContent" 
+             Class="PushButton"
+             DrawOnTopmost="true"
+             Tooltip="PrevFilterTip" 
+             TooltipTile="XIGTooltipPopup" 
+           >
+    <Triggers>
+      <Trigger Type="OnClick">BrowseBack</Trigger>
+    </Triggers>
+    <Images State="Normal" Color="HeaderColor">
+      <Image Type="middle">XIG_ARROW_LF</Image>
+    </Images>
+    <Images State="Down" Color="HeaderColor">
+      <Image Type="middle">XIG_ARROW_LF_DOWN</Image>
+    </Images>
+    <Images State="Hover" Color="HeaderColor">
+      <Image Type="middle">XIG_ARROW_LF_HOVER</Image>
+    </Images>
+    <Images State="Focused" Color="XIGFocusedColor">
+      <Image Type="middle">XIG_SMALL_BUTTON_TAB</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGFriendsBrowseForward"
+             Stretch="ToContent" 
+             Class="PushButton"
+             DrawOnTopmost="true"
+             Tooltip="NextFilterTip" 
+             TooltipTile="XIGTooltipPopup" 
+             >
+    <Triggers>
+      <Trigger Type="OnClick">BrowseForward</Trigger>
+    </Triggers>
+    <Images State="Normal" Color="HeaderColor">
+      <Image Type="middle">XIG_ARROW_RT</Image>
+    </Images>
+    <Images State="Down" Color="HeaderColor">
+      <Image Type="middle">XIG_ARROW_RT_DOWN</Image>
+    </Images>
+    <Images State="Hover" Color="HeaderColor">
+      <Image Type="middle">XIG_ARROW_RT_HOVER</Image>
+    </Images>
+    <Images State="Focused" Color="XIGFocusedColor">
+      <Image Type="middle">XIG_SMALL_BUTTON_TAB</Image>
+    </Images>
+  </Component>
+  <Component Name="XIGFriendsList"
+		Class="FriendsList"
+    TooltipTile="XIGTooltipPopup" 
+    Default="setfocuscontrol"   
+  	>
+    <Fonts>
+      <Font Type="DisplayName" 
+        Font="Arial" 
+        Bold="true" 
+        Size="11"
+        Color="BuddyViewFriendText"
+        />
+      <Font Type="FofDisplayName" 
+        Font="Arial" 
+        Bold="true" 
+        Size="11"
+        Color="BuddyViewFofText"
+        />
+      <Font Type="OfflineDisplayName" 
+        Font="Arial" 
+        Bold="false" 
+        Italics="false" 
+        Size="11"
+        Color="BuddyViewOfflineText"
+        />
+      <Font Type="Status" 
+        Font="Arial" 
+        Bold="false" 
+        Size="10"
+        Color="BuddyViewFriendText"
+        />
+      <Font Type="SelectedDisplayName" 
+        Font="Arial" 
+        Bold="true" 
+        Italics="false" 
+        Size="11"
+        Color="BuddyViewSelectedText"
+        />
+    </Fonts>
+    <Triggers>
+      <Trigger Type="OnClick">ChatFriend</Trigger>
+    </Triggers>
+    <Images State="Focused" Color="XIGFocusedColor">
+      <Image Type="topleft">XIG_FOCUS_RECT_TL</Image>
+      <Image Type="top">XIG_FOCUS_RECT_T</Image>
+      <Image Type="topright">XIG_FOCUS_RECT_TR</Image>
+
+      <Image Type="left">XIG_FOCUS_RECT_L</Image>
+      <Image Type="right">XIG_FOCUS_RECT_R</Image>
+
+      <Image Type="bottomleft">XIG_FOCUS_RECT_BL_ROUNDED</Image>
+      <Image Type="bottom">XIG_FOCUS_RECT_B</Image>
+      <Image Type="bottomright">XIG_FOCUS_RECT_BR_ROUNDED</Image>
+    </Images>
+  </Component>
+  
+  <Component Name="XIGListItemBG"
+        Class="Tile">
+  </Component>
+  
+  <Component Name="XIGListItemBGSelected"
+        Class="Tile"
+        DrawOnTopmost="true"
+        >
+    <Images State="Normal" Color="BuddyViewSelected">
+      <!--BuddyViewSelected-->
+      <Image Type="middle">black.gif</Image>
+    </Images>
+  </Component>
+  
+  <Component Name="XIGListItemBGAlert"
+        Class="Tile">
+    <Images State="Normal" Color="XIGAlertListCG">
+      <Image Type="middle">BLACK2</Image>
+    </Images>
+    <Images State="Disabled">
+      <!--hack until we fix custom image states-->
+      <Image Type="left">ALLCHATICON</Image>
+      <Image Type="middle">ALLCHATICON_HOV</Image>
+      <Image Type="right">GROUPCHATICON</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGVertScrollbar"
+    Class="VertScrollbar" 
+		Stretch="ToContent"
+		Scrollbar="DefaultScrollbar"
+    >
+  </Component>
+  
+  <Component Name="XIGStartChat"
+		    Class="PushButton"
+		    Stretch="ToContent"
+		    ToolTip="ChatButtonTip"
+		    DisabledTooltip="DisabledChatButtonTip"
+        TooltipTile="XIGTooltipPopup" 
+        DrawOnTopmost="true"
+        >
+    <Triggers>
+      <Trigger Type="OnClick">ChatFriend</Trigger>
+    </Triggers>
+    <Images State="Normal" Color="ButtonCG">
+      <Image Type="middle">XIG_BUT_CHAT_NORMAL</Image>
+    </Images>
+    <Images State="Down" Color="ButtonCG">
+      <Image Type="middle">XIG_BUT_CHAT_DOWN</Image>
+    </Images>
+    <Images State="Hover" Color="ButtonCG">
+      <Image Type="middle">XIG_BUT_CHAT_HOVER</Image>
+    </Images>
+    <Images State="Disabled" Color="ButtonCG">
+      <Image Type="middle">XIG_BUT_CHAT_DISABLED</Image>
+    </Images>
+    <Images State="Focused" Color="XIGFocusedColor">
+      <Image Type="middle">XIG_BUT_TAB</Image>
+    </Images>
+  </Component>
+  <Component Name="XIGTile"
+             Class="Tile"
+       		   Events="Transparent"
+             >
+  </Component>
+  <Component Name="XIGHorzDivider"
+             Class="Tile"
+             Stretch="ToContent"
+             DrawOnTopmost="true"
+       		   Events="Transparent"
+             >
+    <Images State="Normal" Color="BevelCG">
+      <Image Type="left">XIG_DIVIDER_HORZ_LF</Image>
+      <Image Type="middle">XIG_DIVIDER_HORZ_MID</Image>
+      <Image Type="right">XIG_DIVIDER_HORZ_RT</Image>
+    </Images>
+  </Component>
+  <Component Name="XIGVertDivider"
+             Class="Tile"
+             Stretch="ToContent"
+             DrawOnTopmost="true"
+       		   Events="Transparent"
+             >
+    <Images State="Normal" Color="BevelCG">
+      <Image Type="top">XIG_DIVIDER_VERT_TOP</Image>
+      <Image Type="middle">XIG_DIVIDER_VERT_MID</Image>
+      <Image Type="bottom">XIG_DIVIDER_VERT_BOT</Image>
+    </Images>
+  </Component>
+  <Component Name="XIGCommonChatArea" 
+    Class="ChatArea"
+		>
+    <Fonts>
+      <Font Type="RoomLink" 
+        Font="Arial" 
+        Bold="true" 
+        Size="12"
+        Color="FriendsFavoritesText"
+        />
+      <Font Type="Room" 
+        Font="Arial" 
+        Bold="false" 
+        Size="12"
+        Color="FriendsFavoritesText"
+        />
+      <Font Type="UserLink" 
+        Font="Arial" 
+        Bold="true" 
+        Size="12"
+        Color="ChatOtherCG"
+        />
+      <Font Type="User" 
+        Font="Arial" 
+        Bold="false" 
+        Size="12"
+        Color="ChatOtherTextCG"
+        />
+      <Font Type="SendLink" 
+        Font="Tahoma" 
+        Bold="true" 
+        Size="12"
+        Color="ChatPersonalCG"
+        />
+      <Font Type="Send" 
+        Font="Tahoma" 
+        Bold="false" 
+        Size="12"
+        Color="ChatPersonalTextCG"
+        />
+    </Fonts>
+    <!--
+    <Images>
+      <Image Type="UserIcon">SINGLECHATICON</Image>
+      <Image Type="UserIconOverlay">SINGLECHATICON</Image>
+      <Image Type="RoomIcon">GROUPCHATICON</Image>
+      <Image Type="RoomIconOverlay">GROUPCHATICON</Image>
+      <Image Type="SystemMsgIcon">GROUPCHATICON</Image>
+      <Image Type="SystemMsgIconOverlay">GROUPCHATICON</Image>
+    </Images>
+    -->
+    <Images State="UserIcon">
+      <Image Type="middle">SINGLECHATICON</Image>
+    </Images>
+    <Images State="UserIconOverlay">
+      <Image Type="middle">SINGLECHATICON</Image>
+    </Images>
+    <Images State="RoomIcon">
+      <Image Type="middle">GROUPCHATICON</Image>
+    </Images>
+    <Images State="RoomIconOverlay">
+      <Image Type="middle">GROUPCHATICON</Image>
+    </Images>
+    <!--
+    <Images State="SystemMsgIcon">
+      <Image Type="middle">SYSMSGICON</Image>
+    </Images>
+    <Images State="SystemMsgIconOverlay">
+      <Image Type="middle">SYSMSGICON</Image>
+    </Images>
+    -->
+  </Component>
+  <Component Name="XIGChatsList"
+		         Class="ChatsList"
+             TooltipTile="XIGTooltipPopup" 
+  	>
+    <Fonts>
+      <Font Type="DisplayName" 
+        Font="Arial" 
+        Bold="true" 
+        Size="11"
+        Color="BuddyViewFriendText"
+        />
+      <Font Type="OfflineDisplayName" 
+        Font="Arial" 
+        Bold="false" 
+        Italics="false" 
+        Size="11"
+        Color="BuddyViewOfflineText"
+        />
+      <Font Type="SelectedDisplayName" 
+        Font="Arial" 
+        Bold="true" 
+        Italics="false" 
+        Size="11"
+        Color="BuddyViewSelectedText"
+        />
+    </Fonts>
+    <Images State="AllChatsIcon">
+      <Image Type="middle">ALLCHATICON</Image>
+    </Images>
+    <Images State="RoomIcon">
+      <Image Type="middle">GROUPCHATICON</Image>
+    </Images>
+    <Images State="SingleChatIcon">
+      <Image Type="middle">SINGLECHATICON</Image>
+    </Images>
+    <Images State="Disabled">
+      <Image Type="middle">SINGLECHATICON</Image>
+    </Images>
+    <Images State="Focused" Color="XIGFocusedColor">
+      <Image Type="topleft">XIG_FOCUS_RECT_TL</Image>
+      <Image Type="top">XIG_FOCUS_RECT_T</Image>
+      <Image Type="topright">XIG_FOCUS_RECT_TR</Image>
+
+      <Image Type="left">XIG_FOCUS_RECT_L</Image>
+      <Image Type="right">XIG_FOCUS_RECT_R</Image>
+
+      <Image Type="bottomleft">XIG_FOCUS_RECT_BL</Image>
+      <Image Type="bottom">XIG_FOCUS_RECT_B</Image>
+      <Image Type="bottomright">XIG_FOCUS_RECT_BR</Image>
+    </Images>
+  </Component>
+  
+  <Component Name="XIGChatEdit" 
+             Class="ChatEdit"
+             Stretch="ToContent"
+             Default="setfocuscontrol"
+             >
+    <Fonts>
+      <Font Type="Text" 
+        Font="Tahoma" 
+        Bold="false" 
+        Size="12"
+        Color="ChatPersonalTextCG"
+        />
+    </Fonts>
+  </Component>
+  <Component Name="XIGChatsTitleIcon"
+             Class="Tile"
+             Stretch="ToContent"
+             DrawOnTopmost="true"
+             >
+    <Images State="Normal">
+      <Image Type="middle">%chat_title_icon:15%</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGChatsTitleText"
+		Class="Text"
+    Events="Transparent"
+		>
+    <Text Color="BuddyViewFriendText" Font="Arial" Bold="true" Size="11" >%chat_title:15%</Text>
+  </Component>
+  
+  <Component Name="XIGChatsTitleClose"
+             Class="PushButton"
+             Stretch="ToContent"
+             DrawOnTopmost="true"
+		         ToolTip="CloseChatTip"
+             TooltipTile="XIGTooltipPopup" 
+             >
+    <Triggers>
+      <Trigger Type="OnClick">AttachedClose</Trigger>
+    </Triggers>
+    <Images State="Normal">
+      <Image Type="middle">XIG_SMALL_CLOSE</Image>
+    </Images>
+    <Images State="Hover">
+      <Image Type="middle">XIG_SMALL_CLOSE_HOVER</Image>
+    </Images>
+    <Images State="Down">
+      <Image Type="middle">XIG_SMALL_CLOSE_DOWN</Image>
+    </Images>
+    <Images State="Focused" Color="XIGFocusedColor">
+      <Image Type="middle">XIG_SMALL_BUTTON_TAB</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGOverlayFrame"
+             Class="Tile"
+             >
+    <Triggers>
+      <Trigger Type="OnInActiveMode">HideTile</Trigger>
+    </Triggers>
+  </Component>
+  
+  <Component Name="XIGThumbTack"
+             Stretch="ToContent" 
+             Class="TabControl"
+             >
+    <Triggers>
+      <Trigger Type="OnTacked">GroupMessage(1)</Trigger>
+      <Trigger Type="OnUnTacked">GroupMessage(0)</Trigger>
+    </Triggers>
+    <Images State="Focused" Color="XIGFocusedColor">
+      <Image Type="middle">XIG_BUTTON_TAB</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGThumbUnTacked"
+             Stretch="ToContent" 
+             Class="PushButton"
+		         ToolTip="TackWindowTip"
+             TooltipTile="XIGTooltipPopup" 
+             DrawOnTopmost="true">
+    <Triggers>
+      <Trigger Type="OnClick">TackWindow</Trigger>
+    </Triggers>
+    <Images State="Normal">
+      <Image Type="middle">TACKNORMAL</Image>
+    </Images>
+    <Images State="Hover">
+      <Image Type="middle">TACKHOVER</Image>
+    </Images>
+    <Images State="Focused" Color="XIGFocusedColor">
+      <Image Type="middle">XIG_BUTTON_TAB</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGThumbTacked"
+             Stretch="ToContent" 
+             Class="PushButton"
+		         ToolTip="UntackWindowTip"
+             TooltipTile="XIGTooltipPopup" 
+             DrawOnTopmost="true">
+    <Triggers>
+      <Trigger Type="OnClick">UnTackWindow</Trigger>
+    </Triggers>
+    <Images State="Normal">
+      <Image Type="middle">TACKDOWN</Image>
+    </Images>
+    <Images State="Focused" Color="XIGFocusedColor">
+      <Image Type="middle">XIG_BUTTON_TAB</Image>
+    </Images>
+  </Component>
+  
+  <Component Name="XIGOverlayHeader"
+             Stretch="ToContent"
+             Class="Tile"
+             DrawOnTopmost="true">
+    <Triggers>
+      <Trigger Type="OnLeftButtonDown">AppDragWindow</Trigger>
+    </Triggers>
+    <Images State="Normal">
+      <Image Type="middle">XIG_BOT_MID</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGAlertTile" 
+             Class="AlertControl"
+             >
+    <Fonts>
+      <Font Type="RoomLink" 
+        Font="Arial" 
+        Bold="true" 
+        Size="12"
+        Color="FriendsFavoritesText"
+        />
+      <Font Type="Room" 
+        Font="Arial" 
+        Bold="false" 
+        Size="12"
+        Color="FriendsFavoritesText"
+        />
+      <Font Type="UserLink" 
+        Font="Arial" 
+        Bold="true" 
+        Size="12"
+        Color="ChatOtherCG"
+        />
+      <Font Type="User" 
+        Font="Arial" 
+        Bold="false" 
+        Size="12"
+        Color="ChatOtherTextCG"
+        />
+      <Font Type="SendLink" 
+        Font="Tahoma" 
+        Bold="true" 
+        Size="12"
+        Color="ChatPersonalCG"
+        />
+      <Font Type="Send" 
+        Font="Tahoma" 
+        Bold="false" 
+        Size="12"
+        Color="ChatPersonalTextCG"
+        />
+    </Fonts>
+    <!--
+    <Images>
+      <Image Type="UserIcon">SINGLECHATICON</Image>
+      <Image Type="UserIconOverlay">SINGLECHATICON</Image>
+      <Image Type="RoomIcon">GROUPCHATICON</Image>
+      <Image Type="RoomIconOverlay">GROUPCHATICON</Image>
+      <Image Type="SystemMsgIcon">GROUPCHATICON</Image>
+      <Image Type="SystemMsgIconOverlay">GROUPCHATICON</Image>
+    </Images>
+    -->
+    <Images State="UserIcon">
+      <Image Type="middle">SINGLECHATICON</Image>
+    </Images>
+    <Images State="UserIconOverlay">
+      <Image Type="middle">SINGLECHATICON</Image>
+    </Images>
+    <Images State="RoomIcon">
+      <Image Type="middle">GROUPCHATICON</Image>
+    </Images>
+    <Images State="RoomIconOverlay">
+      <Image Type="middle">GROUPCHATICON</Image>
+    </Images>
+    <!--
+    <Images State="SystemMsgIcon">
+      <Image Type="middle">SYSMSGICON</Image>
+    </Images>
+    <Images State="SystemMsgIconOverlay">
+      <Image Type="middle">SYSMSGICON</Image>
+    </Images>
+    -->
+  </Component>
+
+  <Component Name="XIGActiveTitleBG"
+             Stretch="ToContent"
+             Class="Tile"
+             DrawOnTopmost="true">
+    <Triggers>
+      <Trigger Type="OnLeftButtonDown">AppDragWindow</Trigger>
+    </Triggers>
+    <Images State="Normal">
+      <Image Type="left">ALERTHEADERL</Image>
+      <Image Type="middle">ALERTHEADERM</Image>
+      <Image Type="right">ALERTHEADERR</Image>
+    </Images>
+  </Component>
+  
+  <Component Name="XIGBRResizeZone"
+             Class="Tile"
+             MinWidth="20"
+             MinHeight="20"
+             >
+    <Triggers>
+      <Trigger Type="OnLeftButtonDown">ResizeBR</Trigger>
+    </Triggers>
+  </Component>
+  
+  <Component Name="XIGBLResizeZone"
+             Class="Tile"
+             MinWidth="20"
+             MinHeight="20"
+             >
+    <Triggers>
+      <Trigger Type="OnLeftButtonDown">ResizeBL</Trigger>
+    </Triggers>
+  </Component>
+
+  <Component Name="XIGRightResizeZone"
+             Class="Tile"
+             MinWidth="10"
+             >
+    <Triggers>
+      <Trigger Type="OnLeftButtonDown">ResizeR</Trigger>
+    </Triggers>
+  </Component>
+
+  <Component Name="XIGLeftResizeZone"
+             Class="Tile"
+             MinWidth="10"
+             >
+    <Triggers>
+      <Trigger Type="OnLeftButtonDown">ResizeL</Trigger>
+    </Triggers>
+  </Component>
+
+  <Component Name="XIGTopResizeZone"
+             Class="Tile"
+             MinHeight="10"
+             >
+    <Triggers>
+      <Trigger Type="OnLeftButtonDown">ResizeT</Trigger>
+    </Triggers>
+  </Component>
+
+  <Component Name="XIGBottomResizeZone"
+             Class="Tile"
+             MinHeight="10"
+             >
+    <Triggers>
+      <Trigger Type="OnLeftButtonDown">ResizeB</Trigger>
+    </Triggers>
+  </Component>
+
+  <Component Name="XIGAlertTitle"
+             Class="Text"
+             Stretch="ToContent"
+             MinHeight="12" 
+              Events="Transparent"             
+             >
+    <Text Color="UserNameCG" Font="Arial" Bold="true" Size="12" >AlertTitleText</Text>
+  </Component>
+
+  <Component Name="XIGAlertPlate"
+             Class="Tile"
+             Stretch="ToContent"
+             Events="Transparent"   
+            DrawOnTopmost="true"
+             >
+    <Images State="Normal">
+      <Image Type="left">NAMEPLATE_LF</Image>
+      <Image Type="middle">NAMEPLATE_MID</Image>
+      <Image Type="right">NAMEPLATE_RT</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGAllChatsButton"
+             Class="AllChatsControl"
+             PushType="Sticky"
+             Stretch="ToContent" 
+             DrawOnTopmost="true"
+             >
+    <Images State="Normal">
+      <Image Type="left">ALLCHATSLEFTNORMAL</Image>
+      <Image Type="middle">ALLCHATSMIDDLENORMAL</Image>
+      <Image Type="right">ALLCHATSRIGHTNORMAL</Image>
+    </Images>
+    <Images State="Down" Color="Hilight">
+      <Image Type="left">ALLCHATSLEFTDOWN</Image>
+      <Image Type="middle">ALLCHATSMIDDLEDOWN</Image>
+      <Image Type="right">ALLCHATSRIGHTDOWN</Image>
+    </Images>
+    <Images State="Focused" Color="XIGFocusedColor">
+      <Image Type="left">ALLCHATSLEFTFOCUSED</Image>
+      <Image Type="middle">ALLCHATSMIDDLEFOCUSED</Image>
+      <Image Type="right">ALLCHATSRIGHTFOCUSED</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGAllChatsIcon"
+             Class="Tile"
+             Events="Transparent"
+             Stretch="ToContent"
+             DrawOnTopmost="true"
+             >
+    <Images State="Normal">
+      <Image Type="middle">ALLCHATICON</Image>
+    </Images>
+    <Images State="Hover">
+      <Image Type="middle">ALLCHATICON_HOV</Image>
+    </Images>
+    <Images State="Disabled">
+      <Image Type="middle">GROUPCHATICON</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGAllChatsText"
+		Class="Text"
+		Stretch="ToContent"
+    Events="Transparent"
+		>
+    <Text Color="HeaderText" Font="Arial" Bold="true" Size="11" >AllChatsViewText</Text>
+  </Component>
+
+  <Component Name="XIGTooltip"
+             Class="Tooltip"
+             Stretch="ToContent"
+             Color="BuddyViewFriendText"
+             >
+    <Text Color="BuddyViewBG" Font="Arial" Size="11" Indent="3">%s</Text>
+  </Component>
+
+  <Component Name="XIGOptionsAlertCheckbox"
+             Class="Checkbox"
+             DrawOnTopmost="true"
+             Stretch="ToContent"
+             >
+    <Triggers>
+      <Trigger Type="OnCheckboxChecked">EnableAlert</Trigger>
+      <Trigger Type="OnCheckboxUnchecked">DisableAlert</Trigger>
+      <Trigger Type="OnPrefAlertEnabled">State(Down)</Trigger>
+    </Triggers>
+    <Images State="Normal">
+      <Image Type="middle">BUTTONCHECKBOXUNCHECKED</Image>
+    </Images>
+    <Images State="Down">
+      <Image Type="middle">BUTTONCHECKBOXCHECKED</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGOptionsAlertText"
+             Class="Text"
+             Stretch="ToContent"
+             MinHeight="14"
+             >
+    <Text Color="UserNameCG" Font="Arial" Bold="false" Size="12">DisplayAlertOverlay</Text>
+  </Component>
+
+  <Component Name="XIGOptionsClockCheckbox"
+             Class="Checkbox"
+             DrawOnTopmost="true"
+             Stretch="ToContent"
+             >
+    <Triggers>
+      <Trigger Type="OnCheckboxChecked">EnableClock</Trigger>
+      <Trigger Type="OnCheckboxUnchecked">DisableClock</Trigger>
+      <Trigger Type="OnPrefClockEnabled">State(Down)</Trigger>
+    </Triggers>
+    <Images State="Normal">
+      <Image Type="middle">BUTTONCHECKBOXUNCHECKED</Image>
+    </Images>
+    <Images State="Down">
+      <Image Type="middle">BUTTONCHECKBOXCHECKED</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGOptionsClockText"
+             Class="Text"
+             Stretch="ToContent"
+             MinHeight="14"
+             >
+    <Text Color="UserNameCG" Font="Arial" Bold="false" Size="12">DisplayClockOverlay</Text>
+  </Component>
+
+  <Component Name="XIGOptionsFPSCheckbox"
+             Class="Checkbox"
+             DrawOnTopmost="true"
+             Stretch="ToContent"
+             >
+    <Triggers>
+      <Trigger Type="OnCheckboxChecked">EnableFPS</Trigger>
+      <Trigger Type="OnCheckboxUnchecked">DisableFPS</Trigger>
+      <Trigger Type="OnPrefFPSEnabled">State(Down)</Trigger>
+    </Triggers>
+    <Images State="Normal">
+      <Image Type="middle">BUTTONCHECKBOXUNCHECKED</Image>
+    </Images>
+    <Images State="Down">
+      <Image Type="middle">BUTTONCHECKBOXCHECKED</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGOptionsFPSText"
+             Class="Text"
+             Stretch="ToContent"
+             MinHeight="14"
+             >
+    <Text Color="UserNameCG" Font="Arial" Bold="false" Size="12">DisplayFPSOverlay</Text>
+  </Component>
+
+  <Component Name="XIGClockWindowToggle"
+             Default="Activate"
+             Stretch="ToContent" 
+             Class="TabControl"
+             >
+    <Triggers>
+      <Trigger Type="OnActiveMode">GroupMessage(0)</Trigger>
+      <Trigger Type="OnInActiveMode">GroupMessage(1)</Trigger>
+    </Triggers>
+  </Component>
+
+  <Component Name="XIGClockWindowActive"
+             Class="Tile"
+             >
+    <Triggers>
+      <Trigger Type="OnLeftButtonDown">AppDragWindow</Trigger>
+      <Trigger Type="OnActivate">State(Normal)</Trigger>
+      <Trigger Type="OnTabActivated">UpdateClock</Trigger>
+    </Triggers>
+  </Component>
+
+  <Component Name="XIGClockWindowInActive"
+             Class="Tile"
+             >
+    <Triggers>
+      <Trigger Type="OnActiveMode">HideTile</Trigger>
+      <Trigger Type="OnTabActivated">UpdateClock</Trigger>
+    </Triggers>
+  </Component>
+
+  <Component Name="XIGSpeakerState"
+             Stretch="ToContent" 
+             Class="TabControl"
+             >
+    <Triggers>
+      <Trigger Type="OnSpeakerOff">GroupMessage(0)</Trigger>
+      <Trigger Type="OnSpeakerOn">GroupMessage(1)</Trigger>
+    </Triggers>
+  </Component>
+
+  <Component Name="XIGSpeakerStateOff"
+             Stretch="ToContent" 
+             Class="PushButton"
+             DrawOnTopmost="true"
+             >
+    <Images State="Normal">
+      <Image Type="middle">SPEAKERSTATE</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGSpeakerStateOn"
+             Stretch="ToContent" 
+             Class="PushButton"
+             DrawOnTopmost="true"
+             >
+    <Images State="Normal" Color="SpeakerOn">
+      <Image Type="middle">SPEAKERSTATE</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGMicState"
+             Stretch="ToContent" 
+             Class="TabControl"
+             >
+    <Triggers>
+      <Trigger Type="OnAppUserStoppedTalking">GroupMessage(0)</Trigger>
+      <Trigger Type="OnAppUserStartedTalking">GroupMessage(1)</Trigger>
+    </Triggers>
+  </Component>
+
+  <Component Name="XIGMicStateOff"
+             Stretch="ToContent" 
+             Class="PushButton"
+             DrawOnTopmost="true"
+             >
+    <Images State="Normal">
+      <Image Type="middle">MICSTATE</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGMicStateOn"
+             Stretch="ToContent" 
+             Class="PushButton"
+             DrawOnTopmost="true"
+             >
+    <Images State="Normal" Color="MicOn">
+      <Image Type="middle">MICSTATE</Image>
+    </Images>
+  </Component>
+
+  <Component Name = "XIGCloseVoiceBox"
+             Class = "CloseVoiceBox"
+             Stretch = "ToContent"
+             DrawOnTopmost="true"
+             TooltipTile="XIGTooltipPopup" 
+             >
+    <Triggers>
+      <Trigger Type="OnClick">EndVoiceChat</Trigger>
+    </Triggers>
+    <Images State="Normal" Color="ButtonCG">
+      <Image Type="middle">XIG_CLOSE</Image>
+    </Images>
+    <Images State="Down" Color="ButtonCG">
+      <Image Type="middle">XIG_CLOSE_DOWN</Image>
+    </Images>
+    <Images State="Hover" Color="ButtonCG">
+      <Image Type="middle">XIG_CLOSE_HOVER</Image>
+    </Images>
+    <Images State="Focused" Color="XIGFocusedColor">
+      <Image Type="middle">XIG_BUTTON_TAB</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGPushToTalkState"
+             Stretch="ToContent" 
+             Class="TabControl"
+             MinHeight="16"
+             >
+    <Triggers>
+      <Trigger Type="OnPushToTalkOff">GroupMessage(0)</Trigger>
+      <Trigger Type="OnPushToTalkOn">GroupMessage(1)</Trigger>
+    </Triggers>
+  </Component>
+
+  <Component Name="XIGPushToTalkOff"
+             Stretch="ToContent" 
+             Class="Tile"
+             MinHeight="16"
+             >
+  </Component>
+
+  <Component Name="XIGPushToTalkOn"
+             Stretch="ToContent" 
+             Class="Tile"
+             >
+  </Component>
+
+  <Component Name="XIGPushTalkOnText"
+             Class="Text"
+             Stretch="ToContent"
+             Events="Transparent"
+             >
+    <Text Color="UserNameCG" Font="Arial" Bold="false" Size="11" >%push_to_talk%</Text>
+  </Component>
+
+  <Component Name="XIGMicSensitivityIcon"
+             Stretch="ToContent" 
+             Class="Tile"
+             DrawOnTopmost="true"
+             >
+    <Images State="Normal">
+      <Image Type="middle">INGAMEICONMICSENSITIVITY</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGCallReflectorButtonChats"
+             Class="CallReflectorButton"
+             DrawOnTopmost="true"
+	           Stretch="ToContent"
+             TooltipTile="XIGTooltipPopup" 
+             ButtonType="ChatsVoice"
+             >
+    <Images State="Normal" Color="PushButtonCG">
+      <Image Type="middle">BUTTON_BLANK_NORMAL</Image>
+    </Images>
+    <Images State="Hover" Color="PushButtonCG">
+      <Image Type="middle">BUTTON_BLANK_NORMAL</Image>
+    </Images>
+    <Images State="Down" Color="PushButtonCG">
+      <Image Type="middle">BUTTON_BLANK_DOWN</Image>
+    </Images>
+    <Images State="Disabled" Color="PushButtonDisabledCG">
+      <Image Type="middle">BUTTON_BLANK_NORMAL</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGCallReflectorButton"
+           Class="CallReflectorButton"
+           DrawOnTopmost="true"
+           Stretch="ToContent"
+           TooltipTile="XIGTooltipPopup" 
+           ButtonType="Voice"
+             >
+    <Images State="Normal" Color="PushButtonCG">
+      <Image Type="middle">BUTTON_BLANK_NORMAL</Image>
+    </Images>
+    <Images State="Hover" Color="PushButtonCG">
+      <Image Type="middle">BUTTON_BLANK_NORMAL</Image>
+    </Images>
+    <Images State="Down" Color="PushButtonCG">
+      <Image Type="middle">BUTTON_BLANK_DOWN</Image>
+    </Images>
+    <Images State="Disabled" Color="PushButtonDisabledCG">
+      <Image Type="middle">BUTTON_BLANK_NORMAL</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGCallReflectorButtonOverlay"
+           Class="CallReflectorButton"
+           DrawOnTopmost="true"
+           Stretch="ToContent"
+           TooltipTile="XIGTooltipPopup" 
+           ButtonType="OverlayVoice"
+             >
+    <Images State="Normal" Color="PushButtonCG">
+      <Image Type="middle">BUTTON_BLANK_NORMAL</Image>
+    </Images>
+    <Images State="Hover" Color="PushButtonCG">
+      <Image Type="middle">BUTTON_BLANK_NORMAL</Image>
+    </Images>
+    <Images State="Down" Color="PushButtonCG">
+      <Image Type="middle">BUTTON_BLANK_DOWN</Image>
+    </Images>
+    <Images State="Disabled" Color="PushButtonDisabledCG">
+      <Image Type="middle">BUTTON_BLANK_NORMAL</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGCallIcon"
+             Class="Tile"
+             DrawOnTopmost="true"
+             Events="Transparent"
+             Stretch="ToContent"
+             >
+    <Images State="Normal" Color="IconCG">
+      <Image Type = "middle">VOICE_BUTTON_ICON_NORMAL</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGCallRingingIcon"
+             Class="Tile"
+             DrawOnTopmost="true"
+             Events="Transparent"
+             Stretch="ToContent"
+             >
+    <Images State="Normal" Color="IconCG">
+      <Image Type = "middle">VOICE_BUTTON_ICON_HOVER</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGCallConnectedIcon"
+             Class="Tile"
+             DrawOnTopmost="true"
+             Events="Transparent"
+             Stretch="ToContent"
+             >
+    <Images State="Normal" Color="IconCG">
+      <Image Type = "middle">VOICE_BUTTON_ICON_NORMAL</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGCallTalkingIcon"
+             Class="Tile"
+             DrawOnTopmost="true"
+             Events="Transparent"
+             Stretch="ToContent"
+             >
+    <Images State="Normal" Color="TalkingStateCG">
+      <Image Type = "middle">VOICE_BUTTON_ICON_HOVER</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGCallDisabledIcon"
+             Class="Tile"
+             DrawOnTopmost="true"
+             Events="Transparent"
+             Stretch="ToContent"
+             >
+    <Images State="Normal" Color="IconCG">
+      <Image Type = "middle">VOICE_BUTTON_ICON_DISABLED</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGClockOverlayText"
+             Class="Text"
+             Stretch="ToContent"
+             Events="Transparent"
+             >
+    <Text Align="Center" Color="UserNameCG" Font="Arial" Bold="true" Size="12" >%clock%</Text>
+  </Component>
+
+  <Component Name="XIGClockOverlayTextInActive"
+             Class="Text"
+             Stretch="ToContent"
+             Events="Transparent"
+             >
+    <Text Align="Center" Color="UserNameCG" Font="Arial" Bold="true" Size="16" >%clock%</Text>
+  </Component>
+
+  <Component Name="XIGFPSText"
+             Class="Text"
+             Stretch="ToContent"
+             Events="Transparent"
+             >
+    <Text Align="Center" Color="UserNameCG" Font="Arial" Bold="true" Size="12" >FPSText</Text>
+  </Component>
+  
+  <Component Name="XIGFPSOverlayText"
+             Class="Text"
+             Stretch="ToContent"
+             Events="Transparent"
+             >
+    <Text Align="Center" Color="UserNameCG" Font="Arial" Bold="true" Size="12" >%fps%</Text>
+  </Component>
+
+  <Component Name="XIGFPSTextInActive"
+             Class="Text"
+             Stretch="ToContent"
+             Events="Transparent"
+             >
+    <Text Align="Center" Color="UserNameCG" Font="Arial" Bold="true" Size="16" >FPSText</Text>
+  </Component>
+
+  <Component Name="XIGFPSOverlayTextInActive"
+             Class="Text"
+             Stretch="ToContent"
+             Events="Transparent"
+             >
+    <Text Align="Center" Color="UserNameCG" Font="Arial" Bold="true" Size="16" >%fps%</Text>
+  </Component>
+
+  <Component Name="XIGVoiceChatTitle"
+             Class="Text"
+             Stretch="ToContent"
+             Events="Transparent"
+             >
+    <Text Color="UserNameCG" Font="Arial" Bold="true" Size="12" >%voice_chat_title%</Text>
+  </Component>
+
+  <Component Name="XIGNewRoomButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		ToolTip="NewRoomButtonTip"
+    DrawOnTopmost="true"
+    TooltipTile="XIGTooltipPopup" 
+		>
+    <Triggers>
+      <Trigger Type="OnClick">NewRoom</Trigger>
+    </Triggers>
+    <Images State="Normal" Color="PushButtonCG">
+      <Image Type = "middle">BUTTON_BLANK_NORMAL</Image>
+    </Images>
+    <Images State="Hover" Color="PushButtonCG">
+      <Image Type = "middle">BUTTON_BLANK_NORMAL</Image>
+    </Images>
+    <Images State="Down" Color="PushButtonCG">
+      <Image Type = "middle">BUTTON_BLANK_DOWN</Image>
+    </Images>
+    <Images State="Disabled" Color="PushButtonDisabledCG">
+      <Image Type = "middle">BUTTON_BLANK_NORMAL</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGNewRoomIcon"
+             Class="Tile"
+             Events="Transparent"
+             DrawOnTopmost="true" 
+             Stretch="ToContent"
+             >
+    <Images State="Normal" Color="IconCG">
+      <Image Type="middle">CREATEROOM_BUTTON_ICON_NORMAL</Image>
+    </Images>
+    <Images State="Hover" Color="IconHoverCG">
+      <Image Type="middle">CREATEROOM_BUTTON_ICON_NORMAL</Image>
+    </Images>
+    <Images State="Disabled" Color="IconCG">
+      <Image Type="middle">CREATEROOM_BUTTON_ICON_DISABLED</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGInviteUsersButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		ToolTip="InviteUsersButtonTip"
+    DrawOnTopmost="true"
+    TooltipTile="XIGTooltipPopup" 
+    ButtonType="RoomInvite"
+		>
+    <Triggers>
+      <Trigger Type="OnClick">InviteUsersToRoom</Trigger>
+    </Triggers>
+    <Images State="Normal" Color="PushButtonCG">
+      <Image Type = "middle">BUTTON_BLANK_NORMAL</Image>
+    </Images>
+    <Images State="Hover" Color="PushButtonCG">
+      <Image Type = "middle">BUTTON_BLANK_NORMAL</Image>
+    </Images>
+    <Images State="Down" Color="PushButtonCG">
+      <Image Type = "middle">BUTTON_BLANK_DOWN</Image>
+    </Images>
+    <Images State="Disabled" Color="PushButtonDisabledCG">
+      <Image Type = "middle">BUTTON_BLANK_NORMAL</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGInviteUsersIcon"
+             Class="Tile"
+             Events="Transparent"
+             DrawOnTopmost="true" 
+             Stretch="ToContent"
+             >
+    <Images State="Normal" Color="IconCG">
+      <Image Type="middle">ADDUSERS_BUTTON_ICON_NORMAL</Image>
+    </Images>
+    <Images State="Hover" Color="IconHoverCG">
+      <Image Type="middle">ADDUSERS_BUTTON_ICON_NORMAL</Image>
+    </Images>
+    <Images State="Disabled" Color="IconCG">
+      <Image Type="middle">ADDUSERS_BUTTON_ICON_DISABLED</Image>
+    </Images>
+  </Component>
+
+  <Component Name="SystemDialogCloseBox"
+             Class="PushButton"
+             Stretch="ToContent"
+             DrawOnTopmost="true"
+             Tooltip="CloseButtonTip"
+             TooltipTile="XIGTooltipPopup"
+             >
+    <Triggers>
+      <Trigger Type="OnClick">HideWindow</Trigger>
+    </Triggers>
+    <Images State="Normal" Color="TitleButtonCG">
+      <Image Type="middle">BUTTONSMALLNORMAL</Image>
+    </Images>
+    <Images State="Down" Color="TitleButtonCG">
+      <Image Type="middle">BUTTONSMALLDOWN</Image>
+    </Images>
+    <Images State="Hover" Color="TitleButtonCG">
+      <Image Type="middle">BUTTONSMALLHOVER</Image>
+    </Images>
+    <Images State="Overlay" Color="TitleButtonOverlayCG">
+      <Image Type="middle">ICONCLOSE</Image>
+    </Images>
+    <Images State="Focused" Color="XIGGraphicFocusedColor">
+      <Image Type="middle">BUTTONSMALLTAB</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGOutlineTile"
+             Class="Tile"
+             Stretch="ToContent"
+             OutlineColor="OutlineTileCG"
+             >
+  </Component>
+
+  <Component Name="XIGOKIcon"
+             Class="Tile"
+             Events="Transparent"
+             DrawOnTopmost="true" 
+             Stretch="ToContent"
+             >
+    <Images State="Normal" Color="IconCG">
+      <Image Type="middle">ICON_OK</Image>
+    </Images>
+    <Images State="Hover" Color="IconHoverCG">
+      <Image Type="middle">ICON_OK</Image>
+    </Images>
+    <Images State="Disabled" Color="IconCG">
+      <Image Type="middle">ICON_OK_DISABLED</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGCancelIcon"
+             Class="Tile"
+             Events="Transparent"
+             DrawOnTopmost="true" 
+             Stretch="ToContent"
+             >
+    <Images State="Normal" Color="IconCG">
+      <Image Type="middle">ICON_CANCEL</Image>
+    </Images>
+    <Images State="Hover" Color="IconHoverCG">
+      <Image Type="middle">ICON_CANCEL</Image>
+    </Images>
+  </Component>
+  
+  <Component Name="XIGInviteUsersFriendsList"
+             Class="InviteUsersFriendsList"
+             TooltipTile="XIGTooltipPopup"
+             SelectedFocusColor="BuddyViewFriendText"
+             >
+    <Fonts>
+      <Font Type="DisplayName" 
+        Font="Arial" 
+        Bold="true" 
+        Size="11"
+        Color="BuddyViewFriendText"
+        />
+      <Font Type="FofDisplayName" 
+        Font="Arial" 
+        Bold="true" 
+        Size="11"
+        Color="BuddyViewFofText"
+        />
+      <Font Type="OfflineDisplayName" 
+        Font="Arial" 
+        Bold="false" 
+        Italics="false" 
+        Size="11"
+        Color="UserListOfflineText"
+        />
+      <Font Type="Status" 
+        Font="Arial" 
+        Bold="false" 
+        Size="10"
+        Color="BuddyViewFriendText"
+        />
+      <Font Type="SelectedDisplayName" 
+        Font="Arial" 
+        Bold="true" 
+        Italics="false" 
+        Size="11"
+        Color="BuddyViewSelectedText"
+        />
+    </Fonts>
+  </Component>
+
+  <Component Name="XIGMultSelectInstructions"  
+             Class="Text"
+             Multiline="true" 
+             Events="Transparent"
+             >
+    <Text Color="UserNameCG" Font="Arial" Bold="false" Size="12">MultiSelectInstructionsText</Text>
+  </Component>
+
+  <Component Name="XIGRoomInvitationText"  
+             Class="Text"
+             Multiline="true" 
+             Events="Transparent"
+             >
+    <Text Color="UserNameCG" Font="Arial" Bold="false" Size="12">%room_invitation_text%</Text>
+  </Component>
+
+  <Component
+      Name = "InGameAlertWindowBorderBottom"
+      Stretch="ToContent" 
+      Class = "Tile">
+    <Triggers>
+      <Trigger Type = "OnDeactivate">State(Disabled)</Trigger>
+      <Trigger Type = "OnActivate">State(Normal)</Trigger>
+    </Triggers>
+    <Images State="Normal" Color="InGameBorderColor">
+      <Image Type = "topleft">INGAMEBOTTOMLF</Image>
+      <Image Type = "top">INGAMEBOTTOMMID</Image>
+      <Image Type = "topright">INGAMEBOTTOMRT</Image>
+    </Images>
+    <Images State="Disabled" Color="EdgeDeactivatedCG">
+      <Image Type = "topleft">INGAMEBOTTOMLF</Image>
+      <Image Type = "top">INGAMEBOTTOMMID</Image>
+      <Image Type = "topright">INGAMEBOTTOMRT</Image>
+    </Images>
+  </Component>
+
+  <Component
+      Name = "InGameAlertWindowBorderSides"
+      Class = "Tile">
+    <Images
+        State = "Normal"
+        Color = "InGameBorderColor">
+      <Image Type = "topleft">POPUPEDGELFTOP</Image>
+      <Image Type = "left">POPUPEDGELFMID</Image>
+      <Image Type = "bottomleft">POPUPEDGELFBOT</Image>
+      <Image Type = "topright">POPUPEDGERTTOP</Image>
+      <Image Type = "right">POPUPEDGERTMID</Image>
+      <Image Type = "bottomright">POPUPEDGERTBOT</Image>
+    </Images>
+  </Component>
+
+  <Component Name = "XIGActiveVoiceControl"
+             Class = "ActiveVoice"
+             Events = "Transparent">
+    <Fonts>
+      <Font
+          Type = "ActiveFont"
+          Font = "Arial"
+          Size = "11"
+          Color = "BuddyViewFriendText"/>
+      <Font
+          Type = "InactiveFont"
+          Font = "Arial"
+          Size = "11"
+          Color = "BuddyViewOfflineText"/>
+    </Fonts>
+    <!-- HACK to get images to work right with custom states -->
+    <Images State="Disabled">
+      <Image Type="Left">ICONSPEAKERTALKING</Image>
+      <Image Type="Right">ICONSPEAKERNOTTALKING</Image>
+    </Images>
+    <Images State="ActiveIcon">
+      <Image Type="middle">ICONSPEAKERTALKING</Image>
+    </Images>
+    <Images State="InactiveIcon">
+      <Image Type="middle">ICONSPEAKERNOTTALKING</Image>
+    </Images>
+  </Component>
+
+  <Component
+      Name = "XIGWindowToggle"
+      Default = "Activate"
+      Stretch = "ToContent"
+      Class = "TabControl">
+    <Triggers>
+      <Trigger Type = "OnActiveMode">GroupMessage(0)</Trigger>
+      <Trigger Type = "OnInActiveMode">GroupMessage(1)</Trigger>
+    </Triggers>
+  </Component>
+  <Component
+      Name = "XIGWindowToggleActive"
+      Class = "Tile">
+    <Triggers>
+      <Trigger Type = "OnActivate">State(Normal)</Trigger>
+    </Triggers>
+  </Component>
+  <Component
+      Name = "XIGWindowToggleInActive"
+      Class = "Tile">
+    <Triggers>
+      <Trigger Type = "OnActiveMode">HideTile</Trigger>
+    </Triggers>
+  </Component>
+
+  <Component Name="XIGMessageBox"
+             Class="MainWindow"
+             MinWidth="400"
+             MinHeight="250"
+             DefaultX="470"
+             DefaultY="10"
+             DefaultWidth="325"
+             DefaultHeight="200"
+             >
+  </Component>
+
+  <Component Name="XIGDialogBoxCaption"
+             Class="Text"
+             Stretch="ToContent"
+             Events="Transparent">
+    <Text Color="UserNameCG"
+          Font="Arial"
+          Bold="true"
+          Size="12">%dialog_box_caption%</Text>
+  </Component>
+
+  <Component Name="XIGDialogBoxText"
+             Class="Text"
+             Stretch="ToContent"
+             Events="Transparent">
+    <Text Color="UserNameCG"
+          Font="Arial"
+          Bold="true"
+          Size="12">%dialog_box_text%</Text>
+  </Component>
+
+  <Component Name="XIGDialogBoxOKButton"
+             Class="PushButton"
+             Stretch="ToContent"
+             DrawOnTopmost="true"
+             Tooltip="OKText"
+             TooltipTile="XIGTooltipPopup"
+             >
+    <Triggers>
+      <Trigger Type="OnClick">DialogBoxOK</Trigger>
+    </Triggers>
+    <Images State="Normal" Color="TitleButtonCG">
+      <Image Type="middle">BUTTON_BLANK_NORMAL</Image>
+    </Images>
+    <Images State="Down" Color="TitleButtonCG">
+      <Image Type="middle">BUTTON_BLANK_DOWN</Image>
+    </Images>
+    <Images State="Hover" Color="TitleButtonCG">
+      <Image Type="middle">BUTTON_BLANK_NORMAL</Image>
+    </Images>
+    <Images State="Overlay" Color="TitleButtonOverlayCG">
+      <Image Type="middle">ICONOK</Image>
+    </Images>
+    <Images State="Focused" Color="XIGGraphicFocusedColor">
+      <Image Type="middle">BUTTONNORMALTAB</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGDialogBoxCancelButton"
+             Class="PushButton"
+             Stretch="ToContent"
+             DrawOnTopmost="true"
+             Tooltip="CancelText"
+             TooltipTile="XIGTooltipPopup"
+             >
+    <Triggers>
+      <Trigger Type="OnClick">DialogBoxCancel</Trigger>
+    </Triggers>
+    <Images State="Normal" Color="TitleButtonCG">
+      <Image Type="middle">BUTTON_BLANK_NORMAL</Image>
+    </Images>
+    <Images State="Down" Color="TitleButtonCG">
+      <Image Type="middle">BUTTON_BLANK_DOWN</Image>
+    </Images>
+    <Images State="Hover" Color="TitleButtonCG">
+      <Image Type="middle">BUTTON_BLANK_NORMAL</Image>
+    </Images>
+    <Images State="Overlay" Color="TitleButtonOverlayCG">
+      <Image Type="middle">ICONCANCEL</Image>
+    </Images>
+    <Images State="Focused" Color="XIGGraphicFocusedColor">
+      <Image Type="middle">BUTTONNORMALTAB</Image>
+    </Images>
+  </Component>
+
+  <Component Name="XIGDialogBoxCloseBox"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="CloseButtonTip"
+    TooltipTile="XIGTooltipPopup"
+    DrawOnTopmost="true"
+		>
+    <Triggers>
+      <Trigger Type="OnClick">DialogBoxCancel</Trigger>
+    </Triggers>
+    <Images State="Normal" Color="ButtonCG">
+      <Image Type="middle">XIG_CLOSE</Image>
+    </Images>
+    <Images State="Down" Color="ButtonCG">
+      <Image Type="middle">XIG_CLOSE_DOWN</Image>
+    </Images>
+    <Images State="Hover" Color="ButtonCG">
+      <Image Type="middle">XIG_CLOSE_HOVER</Image>
+    </Images>
+    <Images State="Focused" Color="XIGFocusedColor">
+      <Image Type="middle">XIG_BUTTON_TAB</Image>
+    </Images>
+  </Component>
+
+</Components>

@@ -26,12 +26,8 @@ pub use executor_util::wrap_script_for_frame_context;
 pub use pointer_input::PointerInputState;
 
 /// Every command-group trait, for the handlers: `use crate::platform::prelude::*;`.
-pub mod prelude {
-    pub use super::{
-        ActionOps, CookieAlertOps, ElementA11yOps, ElementFindOps, ElementStateOps, NavigationOps,
-        PlatformExecutor, ScriptOps, WindowOps,
-    };
-}
+#[path = "mod_prelude.rs"]
+pub mod prelude;
 
 mod pointer_input;
 

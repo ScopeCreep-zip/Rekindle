@@ -30,8 +30,9 @@
 use rekindle_types::dto::skin::WindowLayout;
 use rekindle_types::dto::skin_tree::{NodeRole, SkinNode, SlotKey};
 
-/// The large window the slot lift also compares boxes in.
-const LARGE: (i32, i32) = (1200, 900);
+/// The large window the slot lift (and [`super::text_top`]) also compares
+/// boxes in.
+pub(super) const LARGE: (i32, i32) = (1200, 900);
 
 /// Runs both passes on `layout`'s tree (a window without one is left).
 pub fn serve(layout: &mut WindowLayout) {

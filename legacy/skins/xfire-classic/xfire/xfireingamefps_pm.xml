@@ -1,0 +1,123 @@
+<Overlay>
+
+  <Tile Name="FPSWindow" ResizeX="100" ResizeY="100" Features="FPS" Component="XIGFPS">
+
+    <Tile Name="FPSWindowToggle"
+          ResizeX="100"
+          ResizeY="100"
+          ControlId="701" 
+          AttachedControlId="701" 
+          Component="XIGClockWindowToggle"
+          >
+
+      <Tile Name="FPSActiveContainer"
+         ResizeX="100"
+         ResizeY="100"
+         Component="XIGClockWindowActive"
+          >
+
+        <Tile Name="ActiveAlertOutline"
+              ResizeX="100"
+              ResizeY="100"
+              Component="XIGAlertOutline"
+            >
+        </Tile>
+
+        <Tile Name="FPSTitleValue"
+              X="15"
+              Y="15"
+              Component="XIGFPSOverlayText"
+              Z="3"
+              >
+        </Tile>
+
+        <Tile Name="ActiveAlertContainerOuter"  
+              ResizeX="100"
+              ResizeY="100"
+              Z="19"
+              Component="XIGAlertContainerOuter"
+              >
+        </Tile>
+
+        <Tile Name="ActiveAlertContainerGrippers"
+            ResizeX="100"
+            ResizeY="100"
+            Z="20"
+            Component="XIGAlertContainerGrippers"
+      			>
+        </Tile>
+
+        <Tile Name="ActiveTitleBG"
+            ResizeX="100"
+            ResizeY="100"
+            Component="BvBk"
+              >
+        </Tile>
+
+        <Tile Name="OpacitySlider"
+              X="25" 
+              Y="18" 
+              MinWidth="50" 
+              JustX="RIGHT"
+              Component="XIGOpacitySlider"
+              TabOrder="10"
+              ControlId="310"
+              FocusedColor="XIGFocusedRectColor"
+            >
+          <Tile Name="OpacityTrack"
+                ResizeX="100"
+                Stretch="ToContent"
+                Component="XIGSliderTrack"
+              >
+          </Tile>
+          <Tile Name="OpacityGripper"
+                ResizeY="100"
+                Stretch="ToContent"
+                Component="XIGSliderGripper"
+              >
+          </Tile>
+        </Tile>
+
+        <Tile Name="ThumbTack" 
+              X="8" 
+              Y="8" 
+              JustX="RIGHT" 
+              ControlId="720" 
+              AttachedControlId="720" 
+              Component="XIGThumbTack"
+              TabOrder="20"
+                >
+          <Tile Name="ThumbUnTacked"
+                Component="XIGThumbUnTacked"
+                >
+          </Tile>
+          <Tile Name="ThumbTacked"
+                Component="XIGThumbTacked"
+                >
+          </Tile>
+        </Tile>
+      </Tile>
+
+      <Tile Name="FPSWindowInActive"
+            ResizeX="100"
+            ResizeY="100"
+            Component="XIGClockWindowInActive"
+        >
+        <Tile Name="BlackBG"
+              ResizeX="100"
+              ResizeY="100"
+              Component="BvBk"
+            >
+          <Tile Name="FPSOverlayTextInActive"
+                JustX="Center"
+                JustY="Center" 
+                Z="100" 
+                Component="XIGFPSOverlayTextInActive"
+              >
+          </Tile>
+        </Tile>
+      </Tile>
+    </Tile>
+</Tile>
+  
+</Overlay>

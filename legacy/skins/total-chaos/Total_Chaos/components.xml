@@ -1,0 +1,1934 @@
+<Components>
+	<Component Name="MainWindow"
+		Class="MainWindow"
+		MinWidth="470"
+		MinHeight="380"
+	/>
+
+	<Component Name="GroupChatMainWindow"
+		Class="MainWindow"
+		MinWidth="470"
+		MinHeight="380"
+	/>
+
+	<Component Name="InGameMainWindow"
+		Class="MainWindow"
+		MinWidth="350"
+		MinHeight="180"
+		>
+		<Text ColorPersonal="FriendNameColor" ColorOther="FoFNameColor" />
+	</Component>
+
+	<Component Name="InGameAlertWindow"
+		Class="MainWindow"
+		MinWidth="100"
+		MinHeight="80"
+		>
+		<Text ColorPersonal="FriendNameColor" ColorOther="FoFNameColor" Font="Arial" Size="10" />
+	</Component>
+
+	<Component Name="DefaultScrollbar"
+		Class="Scrollbar"
+		>
+		<Images State="Normal" ColorBG="ScrollbarColorBG">
+			<Image Type="ScrollLeft">SCROLLLEFTNORM</Image>
+			<Image Type="ScrollRight">SCROLLRIGHTNORM</Image>
+			
+			<Image Type="ScrollUp">SCROLLUPNORM</Image>
+			<Image Type="ScrollDown">SCROLLDOWNNORM</Image>
+			
+			<Image Type="ScrollHorzGripperLeft">SCROLLGRIPPERHORZLEFT</Image>
+			<Image Type="ScrollHorzGripperMiddle">SCROLLGRIPPERHORZMIDDLE</Image>
+			<Image Type="ScrollHorzGripperRight">SCROLLGRIPPERHORZRIGHT</Image>
+			
+			<Image Type="ScrollVertGripperTop">SCROLLGRIPPERVERTTOP</Image>
+			<Image Type="ScrollVertGripperMiddle">SCROLLGRIPPERVERTMIDDLE</Image>
+			<Image Type="ScrollVertGripperBottom">SCROLLGRIPPERVERTBOTTOM</Image>
+			
+			<Image Type="ScrollHorzGutterLeft">SCROLLBACKGROUNDHORZLEFT</Image>
+			<Image Type="ScrollHorzGutterMiddle">SCROLLBACKGROUNDHORZMIDDLE</Image>
+			<Image Type="ScrollHorzGutterRight">SCROLLBACKGROUNDHORZRIGHT</Image>
+			
+			<Image Type="ScrollVertGutterTop">SCROLLBACKGROUNDVERTTOP</Image>
+			<Image Type="ScrollVertGutterMiddle">SCROLLBACKGROUNDVERTMIDDLE</Image>
+			<Image Type="ScrollVertGutterBottom">SCROLLBACKGROUNDVERTBOTTOM</Image>
+		</Images>
+		<Images State="Hover" ColorBG="ScrollbarColorBG">
+			<Image Type="ScrollLeft">SCROLLLEFTHOVER</Image>
+			<Image Type="ScrollRight">SCROLLRIGHTHOVER</Image>
+			
+			<Image Type="ScrollUp">SCROLLUPHOVER</Image>
+			<Image Type="ScrollDown">SCROLLDOWNHOVER</Image>
+			
+			<Image Type="ScrollHorzGripperLeft">SCROLLGRIPPERHORZLEFTHOVER</Image>
+			<Image Type="ScrollHorzGripperMiddle">SCROLLGRIPPERHORZMIDDLEHOVER</Image>
+			<Image Type="ScrollHorzGripperRight">SCROLLGRIPPERHORZRIGHTHOVER</Image>
+			
+			<Image Type="ScrollVertGripperTop">SCROLLGRIPPERVERTTOPHOVER</Image>
+			<Image Type="ScrollVertGripperMiddle">SCROLLGRIPPERVERTMIDDLEHOVER</Image>
+			<Image Type="ScrollVertGripperBottom">SCROLLGRIPPERVERTBOTTOMHOVER</Image>
+		</Images>
+		<Images State="Down" ColorBG="ScrollbarColorBG">
+			<Image Type="ScrollLeft">SCROLLLEFTDOWN</Image>
+			<Image Type="ScrollRight">SCROLLRIGHTDOWN</Image>
+			
+			<Image Type="ScrollUp">SCROLLUPDOWN</Image>
+			<Image Type="ScrollDown">SCROLLDOWNDOWN</Image>
+			
+			<Image Type="ScrollHorzGripperLeft">SCROLLGRIPPERHORZLEFTDOWN</Image>
+			<Image Type="ScrollHorzGripperMiddle">SCROLLGRIPPERHORZMIDDLEDOWN</Image>
+			<Image Type="ScrollHorzGripperRight">SCROLLGRIPPERHORZRIGHTDOWN</Image>
+			
+			<Image Type="ScrollVertGripperTop">SCROLLGRIPPERVERTTOPDOWN</Image>
+			<Image Type="ScrollVertGripperMiddle">SCROLLGRIPPERVERTMIDDLEDOWN</Image>
+			<Image Type="ScrollVertGripperBottom">SCROLLGRIPPERVERTBOTTOMDOWN</Image>
+		</Images>
+		<Images State="Disabled" ColorBG="ScrollbarColorBG">
+			<Image Type="ScrollLeft">SCROLLLEFTDISABLED</Image>
+			<Image Type="ScrollRight">SCROLLRIGHTDISABLED</Image>
+			
+			<Image Type="ScrollUp">SCROLLUPDISABLED</Image>
+			<Image Type="ScrollDown">SCROLLDOWNDISABLED</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="Content"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="left">main/main-content-left-repeat.png</Image>
+			<Image Type="middle">main/main-content-bg.png</Image>
+			<Image Type="right">main/main-content-right-repeat.png</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="ChatMiddle"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="left">chat/chat-left-repeat.png</Image>
+			<Image Type="right">chat/chat-right-repeat.png</Image>
+			<Image Type="middle">main/main-ad-repeat.png</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="UserNameText"
+		Class="Text"
+		Stretch="ToContent"
+		Events="Transparent"
+		>
+		<Text Color="HeaderText" Font="Arial" Size="10">UserNameText</Text>
+	</Component>
+
+	<Component Name="GroupChatTitle"
+		Class="Text"
+		Stretch="ToContent"
+		Events="Transparent"
+		>
+		<Text Color="HeaderText" Font="Arial" Size="10">Group Chat Room</Text>
+	</Component>
+	
+	<Component Name="ChatBottom"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="left">chat/chat-bottom-left.png</Image>
+			<Image Type="middle">chat/chat-bottom-repeat.png</Image>
+			<Image Type="right">chat/chat-bottom-right.png</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="ChatBottomMiddle"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="middle">chat/chat-bottom-center.png</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="AdBar"
+		Class="Tile"
+		Stretch="ToContent">
+		<Images Color="TitleBar">
+			<Image Type="left">main/main-ad-left.png</Image>
+			<Image Type="middle">main/main-ad-repeat.png</Image>
+			<Image Type="right">main/main-ad-right.png</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="MenuBar"
+		Class="Tile"
+		Stretch="ToContent">
+		<Images Color="TitleBar">
+			<Image Type="left">main/main-menubar-left.png</Image>
+			<Image Type="middle">main/main-menubar-repeat.png</Image>
+			<Image Type="right">main/main-menubar-right.png</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="MenuBg"
+		Class="Tile"
+		Stretch="ToContent">
+		<Images Color="TitleBar">
+			<Image Type="middle">main/main-menubar-center.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="MainTitleBar"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Triggers>
+			<Trigger Type="OnDoubleClick">AppMaximize</Trigger>
+			<Trigger Type="OnRightClick">ContextMenuSys</Trigger>
+			<Trigger Type="OnLeftButtonDown">AppDragWindow</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="left">main/main-top-left.png</Image>
+			<Image Type="middle">main/main-top-repeat.png</Image>
+			<Image Type="center">main/main-top-middle.png</Image>
+			<Image Type="right">main/main-top-right.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="ChatMainTitleBar"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Triggers>
+			<Trigger Type="OnDoubleClick">AppMaximize</Trigger>
+			<Trigger Type="OnRightClick">ContextMenuSys</Trigger>
+			<Trigger Type="OnLeftButtonDown">AppDragWindow</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="left">chat/chat-menu-left.png</Image>
+			<Image Type="middle">chat/chat-menu-repeat.png</Image>
+			<Image Type="right">chat/chat-menu-right.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="ChatMenuCenter"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="middle">chat/chat-menu-center.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InGameMainTitle"
+		Class="Text"
+		Stretch="ToContent"
+		MinHeight="12"
+		>
+		<Text color="HeaderText" Font="Arial" Size="10" />
+	</Component>
+
+	<Component Name="FileMenu"
+		Class="Menu"
+		Stretch="ToContent"
+		Accelerator="ALT('XfireMenu')"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">MenuFile</Trigger>
+		</Triggers>
+		<Images State="Hover" Color="TitleBar">
+			<Image Type="middle">main/main-menubar-xfire-hover.png</Image>
+		</Images>
+		<Images State="Down" Color="TitleBar">
+			<Image Type="middle">main/main-menubar-xfire-pressed.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="GCFileMenu"
+		Class="Menu"
+		Stretch="ToContent"
+		Accelerator="ALT('GCSystemMenu')"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">MenuGCSystem</Trigger>
+		</Triggers>
+		<Images State="Hover" Color="TitleBar">
+			<Image Type="middle">main/main-menubar-xfire-hover.png</Image>
+		</Images>
+		<Images State="Down" Color="TitleBar">
+			<Image Type="middle">main/main-menubar-xfire-pressed.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="ToolsMenu"
+		Class="Menu"
+		Stretch="ToContent"
+		Accelerator="ALT('ToolsMenu')"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">MenuTool</Trigger>
+		</Triggers>
+		<Images State="Hover" Color="TitleBar">
+			<Image Type="middle">main/main-menubar-tools-hover.png</Image>
+		</Images>
+		<Images State="Down" Color="TitleBar">
+			<Image Type="middle">main/main-menubar-tools-pressed.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="ChatToolsMenu"
+		Class="Menu"
+		Stretch="ToContent"
+		Accelerator="ALT('GCActionsMenu')"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">MenuCWActions</Trigger>
+		</Triggers>
+		<Images State="Hover" Color="TitleBar">
+			<Image Type="middle">main/main-menubar-tools-hover.png</Image>
+		</Images>
+		<Images State="Down" Color="TitleBar">
+			<Image Type="middle">main/main-menubar-tools-pressed.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="GCToolsMenu"
+		Class="Menu"
+		Stretch="ToContent"
+		Accelerator="ALT('GCActionsMenu')"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">MenuGCActions</Trigger>
+		</Triggers>
+		<Images State="Hover" Color="TitleBar">
+			<Image Type="middle">main/main-menubar-tools-hover.png</Image>
+		</Images>
+		<Images State="Down" Color="TitleBar">
+			<Image Type="middle">main/main-menubar-tools-pressed.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="HelpMenu"
+		Class="Menu"
+		Stretch="ToContent"
+		Accelerator="ALT('HelpMenu')"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">MenuHelp</Trigger>
+		</Triggers>
+		<Images State="Hover" Color="TitleBar">
+			<Image Type="middle">main/main-menubar-help-hover.png</Image>
+		</Images>
+		<Images State="Down" Color="TitleBar">
+			<Image Type="middle">main/main-menubar-help-pressed.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="ChatHelpMenu"
+		Class="Menu"
+		Accelerator="ALT('HelpMenu')"
+		Stretch="ToContent"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">MenuCWHelp</Trigger>
+		</Triggers>
+		<Images State="Hover" Color="TitleBar">
+			<Image Type="middle">main/main-menubar-help-hover.png</Image>
+		</Images>
+		<Images State="Down" Color="TitleBar">
+			<Image Type="middle">main/main-menubar-help-pressed.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="GCHelpMenu"
+		Class="Menu"
+		Stretch="ToContent"
+		Accelerator="ALT('GCHelpMenu')"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">MenuGCHelp</Trigger>
+		</Triggers>
+		<Images State="Hover" Color="TitleBar">
+			<Image Type="middle">main/main-menubar-help-hover.png</Image>
+		</Images>
+		<Images State="Down" Color="TitleBar">
+			<Image Type="middle">main/main-menubar-help-pressed.png</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="AdArea"
+		Class="AdView"
+		MinWidth="236"
+		MinHeight="60"
+	/>
+	
+	<Component Name="TabbedControl"
+		Class="TabControl"
+		ControlGroupId="1"
+		>
+		<Images State="Normal" Color="HeaderColor">
+			<Image Type="Left">main/main-content-header-left.png</Image>
+			<Image Type="Right">main/main-content-header-left.png</Image>
+			<Image Type="Bottom">main/main-content-bottom.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="BuddyView"
+		Class="BuddyListView"
+		WindowFocus="true"
+		Color="TitleBG"
+		Scrollbar="DefaultScrollbar"
+		>
+		<Text 	color_friend="BuddyViewFriendText"
+			color_fof="BuddyViewFofText"
+			color_offline="BuddyViewOfflineText"
+			color_clan="BuddyViewClanText"
+			color_selected="BuddyViewSelected"
+			color_selectedtext="BuddyViewSelectedText"
+			color_header="HeaderText"
+			Font="Arial" Size="10"
+			>
+		</Text>
+		<Images State="Normal">
+			<Image Type="HeaderLeft">main/main-content-header-left.png</Image>
+			<Image Type="HeaderMiddle">main/main-content-header-middle.png</Image>
+			<Image Type="HeaderRight">main/main-content-header-left.png</Image>
+			<Image Type="HeaderArrowUp">main/main-content-header-arrowup.png</Image>
+			<Image Type="HeaderArrowDown">main/main-content-header-arrowdown.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="ServerView"
+		Class="ServerView"
+		WindowFocus="true"
+		Scrollbar="DefaultScrollbar"
+		Color="TitleBG"
+		>
+		<Text 	color_recent="BuddyViewFofText"
+			color_favorites="BuddyViewClanText"
+			color_friendsfavorites="BuddyViewFriendText"
+			color_all="BuddyViewFofText"
+			color_selected="BuddyViewSelected"
+			color_selectedtext="BuddyViewSelectedText"
+			color_header="HeaderText"
+			Font="Arial" Size="10"
+			>
+		</Text>
+		<Images State="Normal">
+			<Image Type="HeaderLeft">main/main-content-header-left.png</Image>
+			<Image Type="HeaderMiddle">main/main-content-header-middle.png</Image>
+			<Image Type="HeaderRight">main/main-content-header-left.png</Image>
+			<Image Type="HeaderArrowUp">main/main-content-header-arrowup.png</Image>
+			<Image Type="HeaderArrowDown">main/main-content-header-arrowdown.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="DownloadView"
+		Class="DownloadView"
+		WindowFocus="true"
+		Scrollbar="DefaultScrollbar"
+		Color="TitleBG"
+		>
+		<Text 	color_selected="BuddyViewSelected"
+			color_nonfocus="BuddyViewNonFocus"
+			color_selectedtext="BuddyViewSelectedText"
+			color_header="HeaderText"
+			ColorDownloads="DownloadText"
+			ColorChannel="ChannelText"
+			ColorTopLevel="TopLevelText"
+			Font="Arial" Size="10"
+		/>
+		<ProgressBar OutlineColor="MenuTextCG" BGColor="UserNameCG" FillColor="ProgressFill" TextColor="ProgressFill" />
+		<Images State="Normal">
+			<Image Type="HeaderLeft">main/main-content-header-left.png</Image>
+			<Image Type="HeaderMiddle">main/main-content-header-middle.png</Image>
+			<Image Type="HeaderRight">main/main-content-header-left.png</Image>
+			<Image Type="HeaderArrowUp">main/main-content-header-arrowup.png</Image>
+			<Image Type="HeaderArrowDown">main/main-content-header-arrowdown.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="Title"
+		Class="Tile"	
+		Stretch="ToContent">
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">AppDragWindow</Trigger>
+		</Triggers>
+		<Images Color="TitleBar">
+			<Image type="middle">main/main-top-middle.png</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="BottomCenter"
+		Class="Tile"	
+		Stretch="ToContent">
+		<Images Color="TitleBar">
+			<Image type="middle">main/main-bottom-center.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InGameTextTile"
+		Class="Text"
+		>
+		<Text color="ChannelText" font="Arial" size="10" />
+	</Component>
+
+	<Component Name="BottomBar"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="left">main/main-bottom-left.png</Image>
+			<Image Type="middle">main/main-bottom-repeat.png</Image>
+			<Image Type="right">main/main-bottom-right.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="AddButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="Add A Friend"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">AddFriend</Trigger>
+			<!-- <Trigger Type="OnClick">PlaySound(OfflineSound)</Trigger> -->
+		</Triggers>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-1-1.png</Image>
+		</Images>
+		<Images State="Hover" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-1-1-hover.png</Image>
+		</Images>
+		<Images State="Down" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-1-1-pressed.png</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="TCLink"
+		Class="PushButton"
+		Stretch="ToContent"
+		Cursor="Hand"
+		ToolTip="Total Chaos Site"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">AppLaunchUrl(http://www.totalchaos.org.uk/)</Trigger>
+		</Triggers>
+		<Images State="Hover">
+			<Image Type="middle">main/bottom-tclink-hover.png</Image>
+		</Images>
+		<Images State="Down">
+			<Image Type="middle">main/bottom-tclink-pressed.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="AddServerButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="AddServerButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">AddServer</Trigger>
+			<Trigger Type="OnAppCannotAddServer">State(Disabled)</Trigger>
+			<Trigger Type="OnAppCanAddServer">State(Normal)</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-2-1.png</Image>
+		</Images>
+		<Images State="Hover" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-2-1-hover.png</Image>
+		</Images>
+		<Images State="Down" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-2-1-pressed.png</Image>
+		</Images>
+		<Images State="Disabled" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-2-1-disabled.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="StartDownloadButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="StartDownloadButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">StartDownload</Trigger>
+			<Trigger Type="OnAppCannotStartDownload">State(Disabled)</Trigger>
+			<Trigger Type="OnAppCanStartDownload">State(Normal)</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-3-1.png</Image>
+		</Images>
+		<Images State="Hover" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-3-1-hover.png</Image>
+		</Images>
+		<Images State="Down" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-3-1-pressed.png</Image>
+		</Images>
+		<Images State="Disabled" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-3-1-disabled.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="ImButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="ChatButtonTip"
+		DisabledTooltip="DisabledChatButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnAppCanChat">State(Normal)</Trigger>
+			<Trigger Type="OnAppCannotChat">State(Disabled)</Trigger>
+			<Trigger Type="OnClick">ChatFriend</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-1-2.png</Image>
+		</Images>
+		<Images State="Hover" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-1-2-hover.png</Image>
+		</Images>
+		<Images State="Down" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-1-2-pressed.png</Image>
+		</Images>
+		<Images State="Disabled" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-1-2-disabled.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="RefreshButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="RefreshButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnAppCanRefreshServer">State(Normal)</Trigger>
+			<Trigger Type="OnAppCannotRefreshServer">State(Disabled)</Trigger>
+			<Trigger Type="OnClick">RefreshServer</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-2-2.png</Image>
+		</Images>
+		<Images State="Hover" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-2-2-hover.png</Image>
+		</Images>
+		<Images State="Down" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-2-2-pressed.png</Image>
+		</Images>
+		<Images State="Disabled" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-2-2-disabled.png</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="PlaceHolder"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-placeholder.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="StopDownloadButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="StopDownloadButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnAppCanStopDownload">State(Normal)</Trigger>
+			<Trigger Type="OnAppCannotStopDownload">State(Disabled)</Trigger>
+			<Trigger Type="OnClick">StopDownload</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-3-2.png</Image>
+		</Images>
+		<Images State="Hover" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-3-2-hover.png</Image>
+		</Images>
+		<Images State="Down" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-3-2-pressed.png</Image>
+		</Images>
+		<Images State="Disabled" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-3-2-disabled.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="JoinButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="GameButtonTip"
+		DisabledTooltip="DisabledGameButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnAppCanJoin">State(Normal)</Trigger>
+			<Trigger Type="OnAppCannotJoin">State(Disabled)</Trigger>
+			<Trigger Type="OnClick">JoinFriend</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-1-4.png</Image>
+		</Images>
+		<Images State="Hover" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-1-4-hover.png</Image>
+		</Images>
+		<Images State="Down" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-1-4-pressed.png</Image>
+		</Images>
+		<Images State="Disabled" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-1-4-disabled.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="ExecuteDownloadButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="ExecuteDownloadButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnAppCanExecuteDownload">State(Normal)</Trigger>
+			<Trigger Type="OnAppCannotExecuteDownload">State(Disabled)</Trigger>
+			<Trigger Type="OnClick">ExecuteDownload</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-3-3.png</Image>
+		</Images>
+		<Images State="Hover" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-3-3-hover.png</Image>
+		</Images>
+		<Images State="Down" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-3-3-pressed.png</Image>
+		</Images>
+		<Images State="Disabled" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-3-3-disabled.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InfoButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="InfoButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnAppCanProfile">State(Normal)</Trigger>
+			<Trigger Type="OnAppCannotProfile">State(Disabled)</Trigger>
+			<Trigger Type="OnClick">ProfileFriend</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-1-3.png</Image>
+		</Images>
+		<Images State="Hover" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-1-3-hover.png</Image>
+		</Images>
+		<Images State="Down" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-1-3-pressed.png</Image>
+		</Images>
+		<Images State="Disabled" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-1-3-disabled.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="DownloadInfoButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="DownloadButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnAppCanProfile">State(Normal)</Trigger>
+			<Trigger Type="OnAppCannotProfile">State(Disabled)</Trigger>
+			<Trigger Type="OnClick">DownloadInfo</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-3-4.png</Image>
+		</Images>
+		<Images State="Hover" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-3-4-hover.png</Image>
+		</Images>
+		<Images State="Down" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-3-4-pressed.png</Image>
+		</Images>
+		<Images State="Disabled" Color="TitleBar">
+			<Image Type="middle">main/main-buttons-3-4-disabled.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="ExpandButton"
+		Class="SkinLauncher"
+		Stretch="ToContent"
+		Accelerator="ALT(VK_RIGHT)"
+		Tooltip="ExpandButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">LaunchSkin</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="middle">main/main-infobutton.png</Image>
+		</Images>
+		<Images State="Hover" Color="TitleBar">
+			<Image Type="middle">main/main-infobutton-hover.png</Image>
+		</Images>
+		<Images State="Down" Color="TitleBar">
+			<Image Type="middle">main/main-infobutton-pressed.png</Image>
+		</Images>
+		<Images State="Disabled" Color="TitleBar">
+			<Image Type="middle">main/main-infobutton-disabled.png</Image>
+		</Images>
+		<Popup SaveState="1">InfoPopup</Popup>
+	</Component>
+	
+	<Component Name="ChatExpandButton"
+		Class="SkinLauncher"
+		Default="click"
+		Stretch="ToContent"
+		Accelerator="ALT(VK_RIGHT)"
+		Tooltip="ExpandButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">LaunchSkin</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="middle">main/main-infobutton.png</Image>
+		</Images>
+		<Images State="Hover" Color="TitleBar">
+			<Image Type="middle">main/main-infobutton-hover.png</Image>
+		</Images>
+		<Images State="Down" Color="TitleBar">
+			<Image Type="middle">main/main-infobutton-pressed.png</Image>
+		</Images>
+		<Images State="Disabled" Color="TitleBar">
+			<Image Type="middle">main/main-infobutton-disabled.png</Image>
+		</Images>
+		<Popup SaveState="1">ChatInfoPopup</Popup>
+	</Component>
+
+	<Component Name="GroupExpandButton"
+		Class="SkinLauncher"
+		Default="click"
+		Stretch="ToContent"
+		Accelerator="ALT(VK_RIGHT)"
+		Tooltip="ExpandButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">LaunchSkin</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="middle">main/main-infobutton.png</Image>
+		</Images>
+		<Images State="Hover" Color="TitleBar">
+			<Image Type="middle">main/main-infobutton-hover.png</Image>
+		</Images>
+		<Images State="Down" Color="TitleBar">
+			<Image Type="middle">main/main-infobutton-pressed.png</Image>
+		</Images>
+		<Images State="Disabled" Color="TitleBar">
+			<Image Type="middle">main/main-infobutton-disabled.png</Image>
+		</Images>
+		<Popup SaveState="1">GroupInfoPopup</Popup>
+	</Component>
+	
+	<Component Name="CloseInfoView"
+		Class="SkinLauncher"
+		Stretch="ToContent"
+		Accelerator="ALT(VK_LEFT)"
+		Tooltip="Close Info Window"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">LaunchSkin</Trigger>
+		</Triggers>
+		<Popup SaveState="1">InfoPopup</Popup>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="middle">infoview/info-button-close.png</Image>
+		</Images>
+		<Images State="Hover" Color="TitleBar">
+			<Image Type="middle">infoview/info-button-close-hover.png</Image>
+		</Images>
+		<Images State="Down" Color="TitleBar">
+			<Image Type="middle">infoview/info-button-close-pressed.png</Image>
+		</Images>
+		<Images State="Disabled" Color="TitleBar">
+			<Image Type="middle">infoview/info-button-close-disabled.png</Image>
+		</Images>
+		<Popup SaveState="1">InfoPopup</Popup>
+	</Component>
+	
+	<Component Name="ChatCloseInfoView"
+		Class="SkinLauncher"
+		Stretch="ToContent"
+		Accelerator="ALT(VK_LEFT)"
+		Tooltip="Close Info Window"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">LaunchSkin</Trigger>
+		</Triggers>
+		<Popup SaveState="1">ChatInfoPopup</Popup>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="middle">infoview/info-button-close.png</Image>
+		</Images>
+		<Images State="Hover" Color="TitleBar">
+			<Image Type="middle">infoview/info-button-close-hover.png</Image>
+		</Images>
+		<Images State="Down" Color="TitleBar">
+			<Image Type="middle">infoview/info-button-close-pressed.png</Image>
+		</Images>
+		<Images State="Disabled" Color="TitleBar">
+			<Image Type="middle">infoview/info-button-close-disabled.png</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="GroupChatCloseInfoView"
+		Class="SkinLauncher"
+		Stretch="ToContent"
+		Accelerator="ALT(VK_LEFT)"
+		Tooltip="Close Info Window"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">LaunchSkin</Trigger>
+		</Triggers>
+		<Popup SaveState="1">GroupInfoPopup</Popup>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="middle">infoview/info-button-close.png</Image>
+		</Images>
+		<Images State="Hover" Color="TitleBar">
+			<Image Type="middle">infoview/info-button-close-hover.png</Image>
+		</Images>
+		<Images State="Down" Color="TitleBar">
+			<Image Type="middle">infoview/info-button-close-pressed.png</Image>
+		</Images>
+		<Images State="Disabled" Color="TitleBar">
+			<Image Type="middle">infoview/info-button-close-disabled.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="StatusEdit"
+		Class="StatusView"
+		MinHeight="20"
+		ShowBevel="true"
+	/>
+
+	<Component Name="DownArrow"
+		Class="Menu"
+		MinWidth="16"
+		MinHeight="16"
+		Accelerator="ALT(s)"
+		Stretch="ToContent"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">MenuStatus</Trigger>
+		</Triggers>
+		<Images State="Graphics">
+			<Image Type="middle">statusarrow.gif</Image>
+		</Images>
+		<Images State="BtnDown">
+			<Image Type="middle">statusarrow_down.gif</Image>
+		</Images>
+	</Component>
+
+	<Component Name="Logo"
+		Class="Menu"
+		Stretch="ToContent"
+		Accelerator="ALT( )"
+		MouseOver="false"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">MenuSys</Trigger>
+		</Triggers>
+		<Images State="Normal">
+			<Image Type="middle">main/main-menu.png</Image>
+		</Images>
+		<Images State="Hover">
+			<Image Type="middle">main/main-menu-hover.png</Image>
+		</Images>
+		<Images State="Down">
+			<Image Type="middle">main/main-menu-pressed.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InGameLogo"
+		Class="Menu"
+		Stretch="ToContent"
+		>
+		<Images>
+			<Image Type="middle">xicon.gif</Image>
+		</Images>
+	</Component>
+
+	<Component Name="Minimize"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="MinimizeButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">AppMinimize</Trigger>
+		</Triggers>
+		<Images State="Normal">
+			<Image Type="middle">main/main-minimise.png</Image>
+		</Images>
+		<Images State="Hover">
+			<Image Type="middle">main/main-minimise-hover.png</Image>
+		</Images>
+		<Images State="Down">
+			<Image Type="middle">main/main-minimise-pressed.png</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="ChatMinimize"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="MinimizeButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">AppMinimize</Trigger>
+		</Triggers>
+		<Images State="Hover">
+			<Image Type="middle">chat/chat-minimise-hover.png</Image>
+		</Images>
+		<Images State="Down">
+			<Image Type="middle">chat/chat-minimise-pressed.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="Maximize"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="MaximizeButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">AppMaximize</Trigger>
+		</Triggers>
+		<Images State="Normal">
+			<Image Type="middle">main/main-maximise.png</Image>
+		</Images>
+		<Images State="Hover">
+			<Image Type="middle">main/main-maximise-hover.png</Image>
+		</Images>
+		<Images State="Down">
+			<Image Type="middle">main/main-maximise-pressed.png</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="ChatMaximize"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="MaximizeButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">AppMaximize</Trigger>
+		</Triggers>
+		<Images State="Hover">
+			<Image Type="middle">chat/chat-maximise-hover.png</Image>
+		</Images>
+		<Images State="Down">
+			<Image Type="middle">chat/chat-maximise-pressed.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="Close"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="CloseButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">AppMinimize</Trigger>
+		</Triggers>
+		<Images State="Normal">
+			<Image Type="middle">main/main-close.png</Image>
+		</Images>
+		<Images State="Hover">
+			<Image Type="middle">main/main-close-hover.png</Image>
+		</Images>
+		<Images State="Down">
+			<Image Type="middle">main/main-close-pressed.png</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="TabHeader"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images State="Normal">
+			<Image Type="middle">main/main-content-tabbg.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="TabNormalButton"
+		Class="PushButton"
+		Default="lbtndown"
+		GroupId="1"
+		PushType="Sticky"
+		Accelerator="ALT(1)"
+		Stretch="ToContent"
+		>
+		<Triggers>
+			<!-- index 0 is for the normal tab view -->
+			<Trigger Type="OnLeftButtonDown">GroupMessage(0)</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="middle">main/main-content-friends-pressed.png</Image>
+		</Images>
+		<Images State="Down" Color="TitleBar">
+			<Image Type="middle">main/main-content-friends-hover.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="TabServerButton"
+		Class="PushButton"
+		GroupId="1"
+		PushType="Sticky"
+		Accelerator="ALT(2)"
+		Stretch="ToContent"
+		>
+		<Triggers>
+			<!-- index 0 is for the normal tab view -->
+			<Trigger Type="OnLeftButtonDown">GroupMessage(1)</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="middle">main/main-content-servers-pressed.png</Image>
+		</Images>
+		<Images State="Down" Color="TitleBar">
+			<Image Type="middle">main/main-content-servers-hover.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="TabDownloadButton"
+		Class="PushButton"
+		GroupId="1"
+		PushType="Sticky"
+		Accelerator="ALT(3)"
+		Stretch="ToContent"
+		>
+		<Triggers>
+			<!-- index 0 is for the normal tab view -->
+			<Trigger Type="OnLeftButtonDown">GroupMessage(2)</Trigger>
+			<Trigger Type="Onxfireurldownload">GroupMessage(2)</Trigger>
+			<Trigger Type="OnDownloadComplete">Animate(Type=Repeat,Delay=7,Repeat=-1,Action=1)</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="middle">main/main-content-files-pressed.png</Image>
+		</Images>
+		<Images State="Down" Color="TitleBar">
+			<Image Type="middle">main/main-content-files-hover.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="BottomRight"
+		Class="Tile"
+		Cursor="ResizeNWSE"
+		Stretch="ToContent"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">ResizeBR</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="middle">main/main-resize-br.png</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="BottomLeft"
+		Class="Tile"
+		Cursor="ResizeNESW"
+		Stretch="ToContent"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">ResizeBL</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="middle">main/main-resize-bl.png</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="TopLeft"
+		Class="Tile"
+		Cursor="ResizeNWSE"
+		Stretch="ToContent"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">ResizeUL</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="middle">main/main-resize-tl.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="TopRight"
+		Class="Tile"
+		Cursor="ResizeNESW"
+		Stretch="ToContent"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">ResizeUR</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="middle">main/main-resize-tr.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="ChatArea"
+		Class="ChatArea"
+		Color="ChatViewCG"
+		Scrollbar="DefaultScrollbar"
+		>
+		<Text 	color_other="ChatOtherCG"
+			color_othertext="ChatOtherTextCG"
+			color_personal="ChatPersonalCG"
+			color_personaltext="ChatPersonalTextCG"
+			Font="Arial" Size="10"
+		/>
+	</Component>
+	
+	<Component Name="ChatAreaOutline"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="left">main/main-content-header-left.png</Image>
+			<Image Type="right">main/main-content-header-left.png</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="ChatAreaTitle"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="left">main/main-content-header-left.png</Image>
+			<Image Type="middle">main/main-content-header-middle.png</Image>
+			<Image Type="right">main/main-content-header-left.png</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="GroupChatArea"
+		Class="GroupChatArea"
+		Color="ChatViewCG"
+		Scrollbar="DefaultScrollbar"
+		>
+		<Text 	color_other="ChatOtherCG"
+			color_othertext="ChatOtherTextCG"
+			color_personal="ChatPersonalCG"
+			color_personaltext="ChatPersonalTextCG"
+			Font="Arial" Size="10"
+		/>
+	</Component>
+
+	<Component Name="ChatEdit"
+		Class="ChatEdit"
+		WindowFocus="true"
+		Color="ChatEditBG"
+		Scrollbar="DefaultScrollbar"
+		>
+		<Text color="ChatPersonalTextCG" />
+	</Component>
+	
+	<Component Name="ChatEditOutline"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="left">main/main-content-header-left.png</Image>
+			<Image Type="top">chat/chat-greenpixel.png</Image>
+			<Image Type="bottom">chat/chat-greenpixel.png</Image>
+			<Image Type="right">main/main-content-header-left.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="GroupChatEdit"
+		Class="GroupChatEdit"
+		WindowFocus="true"
+		Color="ChatEditBG"
+		Scrollbar="DefaultScrollbar"
+		>
+		<Text color="ChatPersonalTextCG" />
+	</Component>
+
+	<Component Name="ChatImButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="SendMessageTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">SendMessage</Trigger>
+		</Triggers>
+		<Images State="Hover">
+			<Image Type="middle">chat/chat-button-send-hover.png</Image>
+		</Images>
+		<Images State="Down">
+			<Image Type="middle">chat/chat-button-send-pressed.png</Image>
+		</Images>
+		<Images State="Disabled">
+			<Image Type="middle">chat/chat-button-send-disabled.png</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="ChatImBG"
+		Class="Tile"
+		Stretch="ToContent"
+		>		
+		<Images State="Normal">
+			<Image Type="middle">chat/chat-button-send.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="TypingMessage"
+		Class="Text"
+		Stretch="ToContent"
+		events="Transparent"
+		>
+		<Triggers>
+			<Trigger Type="OnActiveUserTyping">State(Disabled)</Trigger>
+			<Trigger Type="OnActiveUserNotTyping">State(Normal)</Trigger>
+		</Triggers>
+		<Text State="Normal"></Text>
+		<Text State="Disabled" Color="TypingNotificationCG" font="Arial" size="10">(Typing)</Text>
+	</Component>
+	
+	<Component Name="GroupTypingMessage"
+		Class="Text"
+		Stretch="ToContent"
+		events="Transparent"
+		>
+		<Triggers>
+			<Trigger Type="OnActiveUserTyping">State(Disabled)</Trigger>
+			<Trigger Type="OnActiveUserNotTyping">State(Normal)</Trigger>
+		</Triggers>
+		<Text State="Normal"></Text>
+		<Text State="Disabled" Color="TypingNotificationCG" font="Arial" size="10">TypingMessage</Text>
+	</Component>
+
+	<Component Name="ChatClose"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="CloseButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">AppClose</Trigger>
+		</Triggers>
+		<Images State="Hover">
+			<Image Type="middle">chat/chat-close-hover.png</Image>
+		</Images>
+		<Images State="Down">
+			<Image Type="middle">chat/chat-close-pressed.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InGameMainChatArea"
+		Class="Text"
+		>
+		<Text Color="ChatOtherTextCG" Font="Arial" Bold="false" Size="10" />
+	</Component>
+	
+	<Component Name="InGameMainEditArea"
+		Class="Text"
+		MinHeight="14"
+		Stretch="ToContent"
+		>
+		<Text Color="ChatPersonalTextCG" Font="Arial" Bold="false" Size="10" />
+	</Component>
+
+	<Component Name="InGameMainFooter"
+		Class="Text"
+		Stretch="ToContent"
+		MinHeight="12"
+		>
+		<Text color="ChannelText" font="Arial" bold="false" size="10" />
+	</Component>
+
+	<Component Name="InGameMainClock"
+		Class="Text"
+		Stretch="ToContent"
+		>
+		<Text color="TitleBG" font="Arial" bold="true" size="0" />
+	</Component>
+
+	<Component Name="InGameHeader"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images>
+			<Image Type="left">main/main-content-header-left.png</Image>
+			<Image Type="right">main/main-content-header-left.png</Image>
+			<Image Type="middle">main/main-content-header-middle.png</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="InGame"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images>
+			<Image Type="left">main/main-content-header-left.png</Image>
+			<Image Type="right">main/main-content-header-left.png</Image>
+			<Image Type="middle">main/main-content-header-middle.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InGameBG"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images>
+			<Image Type="left">main/main-content-header-left.png</Image>
+			<Image Type="right">main/main-content-header-left.png</Image>
+			<Image Type="bottom">main/main-content-bottom.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InGameFuckingStupidPieceOfShitWillNotWorkFuckingBackroundColorMotherFucker"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images>
+			<Image Type="middle">main/main-content-bg.png</Image>
+		</Images>
+	</Component>
+
+
+	<Component Name="InfoWindow"
+		Class="Tile"
+		DefaultWidth="400"
+		DefaultHeight="100"
+		MinWidth="173"
+		MinHeight="100"
+		ResizeX="0"
+		ResizeY="100"
+		BindX="false"
+		BindY="true"
+	/>
+
+	<Component Name="ChatInfoWindow"
+		Class="Tile"
+		DefaultWidth="400"
+		DefaultHeight="100"
+		MinWidth="173"
+		MinHeight="100"
+		ResizeX="0"
+		ResizeY="100"
+		BindX="false"
+		BindY="true"
+	/>
+
+	<Component Name="GroupInfoWindow"
+		Class="Tile"
+		MinWidth="173"
+		MinHeight="100"
+		ResizeX="0"
+		ResizeY="100"
+		BindX="false"
+		BindY="true"
+	/>
+
+	<Component Name="XfireTopRow"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images Color="TitleBar">
+			<Image Type="left">infoview/info-topleft.png</Image>
+			<Image Type="middle">infoview/info-top-repeat.png</Image>
+			<Image Type="right">infoview/info-topright.png</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="InfoMiddle"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images Color="TitleBar">
+			<Image Type="left">infoview/info-left-repeat.png</Image>
+			<Image Type="right">infoview/info-right-repeat.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InfoOutline"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images Color="TitleBar">
+			<Image Type="top">main/main-content-bottom.png</Image>
+			<Image Type="right">main/main-content-header-left.png</Image>
+			<Image Type="bottom">main/main-content-bottom.png</Image>
+			<Image Type="left">main/main-content-header-left.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InfoView"
+		Class="InfoView"
+		Scrollbar="DefaultScrollbar"
+		Color="TitleBG"
+		>
+		<Text 	Color="BuddyViewFriendText"
+			color_friend="BuddyViewFriendText"
+			color_fof="BuddyViewFofText"
+			color_recent="BuddyViewFriendChat"
+			color_favorites="HeaderText"
+			color_friendsfavorites="BuddyViewFriendText"
+			color_all="BuddyViewFriendText"
+			color_offline="BuddyViewOfflineText"
+			color_hyperlink="BuddyViewSelectedText"
+			Font="Arial" Size="10"
+		/>
+	</Component>
+
+	<Component Name="InfoBG"
+		Class="Tile"
+		>
+		<Images Color="TitleBar">
+			<Image Type="middle">main/main-content-bg.png</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="InGameMiddle"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images Color="TitleBar">
+			<Image Type="left">ingame/game-left-repeat.png</Image>
+			<Image Type="topleft">ingame/game-left-top.png</Image>
+			<Image Type="topright">ingame/game-right-top.png</Image>
+			<Image Type="right">ingame/game-right-repeat.png</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="InGameBottom"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images Color="TitleBar">
+			<Image Type="left">ingame/game-bottom-left.png</Image>
+			<Image Type="middle">ingame/game-bottom-repeat.png</Image>
+			<Image Type="right">ingame/game-bottom-right.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InGameBottomMiddle"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images Color="TitleBar">
+			<Image Type="middle">ingame/game-bottom-middle.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InfoTopLeft"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images Color="TitleBar">
+			<Image Type="top">infoview/info-left-top.png</Image>
+			<Image Type="bottom">infoview/info-left-bottom.png</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="InfoTopRight"
+		Class="Tile"
+		Stretch="ToContent"
+		Cursor="ResizeWE"
+		>
+		<Triggers>
+			<Trigger Type="OnLeftButtonDown">ResizeR</Trigger>
+		</Triggers>
+		<Images Color="TitleBar">
+			<Image Type="top">infoview/info-right-top.png</Image>
+			<Image Type="bottom">infoview/info-right-bottom.png</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="InfoBottomRow"
+		Class="Tile"
+		Stretch="ToContent"
+		>
+		<Images Color="TitleBar">
+			<Image Type="left">infoview/info-bottomleft.png</Image>
+			<Image Type="middle">infoview/info-bottom-repeat.png</Image>
+			<Image Type="right">infoview/info-bottomright.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="InfoJoinButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="GameButtonTip"
+		DisabledTooltip="DisabledGameButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnAppCanJoin">State(Normal)</Trigger>
+			<Trigger Type="OnAppCannotJoin">State(Disabled)</Trigger>
+			<Trigger Type="OnClick">JoinFriend</Trigger>
+		</Triggers>
+		<Images State="Normal" Color="TitleBar">
+			<Image Type="middle">infoview/info-button-join.png</Image>
+		</Images>
+		<Images State="Hover" Color="TitleBar">
+			<Image Type="middle">infoview/info-button-join-hover.png</Image>
+		</Images>
+		<Images State="Down" Color="TitleBar">
+			<Image Type="middle">infoview/info-button-join-pressed.png</Image>
+		</Images>
+		<Images State="Disabled" Color="TitleBar">
+			<Image Type="middle">infoview/info-button-join-disabled.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="GroupInfoView"
+		Class="GroupChatUserList"
+		Scrollbar="DefaultScrollbar"
+		Color="TitleBG"
+		>
+		<Text 	Color="BuddyViewFriendText"
+			Color_friend="BuddyViewFriendText"
+			Color_fof="BuddyViewFofText"
+			Color_offline="BuddyViewOfflineText"
+			Color_hyperlink="BuddyViewClanText"
+			Color_selected="BuddyViewSelected"
+			Color_selectedtext="BuddyViewSelectedText"
+			Font="Arial"
+			Size="10"
+			Color_header="HeaderText"
+		/>
+		<Images>
+			<Image Type="HeaderLeft">main/main-content-header-left.png</Image>
+			<Image Type="HeaderMiddle">main/main-content-header-middle.png</Image>
+			<Image Type="HeaderRight">main/main-content-header-left.png</Image>
+			<Image Type="HeaderArrowUp">main/main-content-header-arrowup.png</Image>
+			<Image Type="HeaderArrowDown">main/main-content-header-arrowdown.png</Image>
+			<Image Type="VoiceServer">VOICESERVER</Image>
+			<Image Type="MicOn">MICON</Image>
+			<Image Type="MicOff">MICOFF</Image>
+			<Image Type="SpeakerOn">SPEAKERON</Image>
+			<Image Type="SpeakerOff">SPEAKEROFF</Image>
+		</Images>
+	</Component>
+
+	<Component Name="JoinChatTab"
+		Class="TabControl"
+		Stretch="ToContent"
+		ControlGroupId="5"
+		GroupId="5"
+		>
+		<Triggers>
+			<!-- no current hosted voice chat and we are allowed to host -->
+			<Trigger Type="OnAppCanHostVoiceChat">GroupMessage(0)</Trigger>
+			
+			<!-- no current hosted voice chat and we are not allowed to host -->
+			<Trigger Type="OnAppCannotVoiceChat">GroupMessage(0)</Trigger>
+			
+			<!-- someone is calling us -->
+			<Trigger Type="OnAppCanVoiceChat">GroupMessage(1)</Trigger>
+			
+			<!-- current voice chat and we are allready joined. we may leave -->
+			<Trigger Type="OnAppCanLeaveVoiceChat">GroupMessage(2)</Trigger>
+		</Triggers>
+		<Images>
+			<Image Type="middle">infoview/info-button-mic.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="ChatJoinChatTab"
+		Class="TabControl"
+		Stretch="ToContent"
+		ControlGroupId="5"
+		GroupId="5"
+		>
+		<Triggers>
+			<!-- no current hosted voice chat and we are allowed to host -->
+			<Trigger Type="OnAppCanHostVoiceChat">GroupMessage(0)</Trigger>
+
+			<!-- no current hosted voice chat and we are not allowed to host -->
+			<Trigger Type="OnAppCannotHostVoiceChat">GroupMessage(3)</Trigger>
+
+			<!-- current voice chat and we are allowed to join (not already joined) -->
+			<Trigger Type="OnAppCanVoiceChat">GroupMessage(1)</Trigger>
+
+			<!-- current voice chat and we are not allowed to join (not already joined) -->
+			<Trigger Type="OnAppCannotVoiceChat">GroupMessage(1)</Trigger>
+
+			<!-- current voice chat and we are allready joined. we may leave -->
+			<Trigger Type="OnAppCanLeaveVoiceChat">GroupMessage(2)</Trigger>
+		</Triggers>
+		<Images>
+			<Image Type="middle">infoview/info-button-mic.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="CloseChatInfoView"
+		Class="SkinLauncher"
+		MinWidth="1"
+		MinHeight="1"
+		Accelerator="ALT(VK_LEFT)"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">LaunchSkin</Trigger>
+		</Triggers>
+		<Popup SaveState="1">ChatInfoPopup</Popup>
+	</Component>
+	
+	<Component Name="HostChatButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="CallButtonTip"
+		DisabledTooltip="DisabledHostChatButtonTooltip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">AppHostVoiceChat</Trigger>
+			<Trigger Type="OnAppCanHostVoiceChat">State(Normal)</Trigger>
+			<Trigger Type="OnAppCannotVoiceChat">State(Disabled)</Trigger>
+		</Triggers>
+		<Images State="Normal">
+			<Image Type="middle">infoview/info-button-mic.png</Image>
+		</Images>
+		<Images State="Hover">
+			<Image Type="middle">infoview/info-button-mic-hover.png</Image>
+		</Images>
+		<Images State="Disabled">
+			<Image Type="middle">infoview/info-button-mic-disabled.png</Image>
+		</Images>
+		<Images State="Down">
+			<Image Type="middle">infoview/info-button-mic-pressed.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="GroupHostChatButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="HostVoiceChatButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">AppHostGroupVoiceChat</Trigger>
+			<Trigger Type="OnAppCanHostVoiceChat">State(Normal)</Trigger>
+		</Triggers>
+		<Images State="Normal">
+			<Image Type="middle">infoview/info-button-mic.png</Image>
+		</Images>
+		<Images State="Hover">
+			<Image Type="middle">infoview/info-button-mic-hover.png</Image>
+		</Images>
+		<Images State="Down">
+			<Image Type="middle">infoview/info-button-mic-pressed.png</Image>
+		</Images>
+	</Component>
+	
+	<Component Name="JoinChatButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="AnswerButtonTip"
+		DisabledTooltip="DisabledJoinChatTooltip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">AppVoiceChat</Trigger>
+			<Trigger Type="OnAppVoiceRinging">Animate(Type=Repeat,Delay=4,Repeat=10,Action=1)</Trigger>
+			<Trigger Type="OnAppCanVoiceChat">State(Normal)</Trigger>
+			<Trigger Type="OnAppCannotVoiceChat">State(Disabled)</Trigger>
+		</Triggers>
+		<Images State="Normal">
+			<Image Type="middle">infoview/info-button-mic.png</Image>
+		</Images>
+		<Images State="Hover">
+			<Image Type="middle">infoview/info-button-mic-hover.png</Image>
+		</Images>
+		<Images State="Disabled">
+			<Image Type="middle">infoview/info-button-mic-disabled.png</Image>
+		</Images>
+		<Images State="Down">
+			<Image Type="middle">infoview/info-button-mic-pressed.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="GroupJoinChatButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="JoinVoiceChatButtonTip"
+		DisabledTooltip="DisabledJoinChatTooltip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">AppGroupVoiceChat</Trigger>
+			<Trigger Type="OnAppVoiceRinging">Animate(Type=Repeat,Delay=4,Repeat=10,Action=1)</Trigger>
+			<Trigger Type="OnAppCanVoiceChat">State(Normal)</Trigger>
+			<Trigger Type="OnAppCannotVoiceChat">State(Disabled)</Trigger>
+		</Triggers>
+		<Images State="Normal">
+			<Image Type="middle">infoview/info-button-mic.png</Image>
+		</Images>
+		<Images State="Hover">
+			<Image Type="middle">infoview/info-button-mic-hover.png</Image>
+		</Images>
+		<Images State="Disabled">
+			<Image Type="middle">infoview/info-button-mic-disabled.png</Image>
+		</Images>
+		<Images State="Down">
+			<Image Type="middle">infoview/info-button-mic-pressed.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="LeaveChatButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="EndCallButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">AppLeaveVoiceChat</Trigger>
+			<Trigger Type="OnAppCanVoiceChat">State(Normal)</Trigger>
+		</Triggers>
+		<Images State="Normal">
+			<Image Type="middle">infoview/info-button-mic.png</Image>
+		</Images>
+		<Images State="Hover">
+			<Image Type="middle">infoview/info-button-mic-hover.png</Image>
+		</Images>
+		<Images State="Down">
+			<Image Type="middle">infoview/info-button-mic-pressed.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="GroupLeaveChatButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="LeaveVoiceChatButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">AppLeaveGroupVoiceChat</Trigger>
+		</Triggers>
+		<Images State="Normal">
+			<Image Type="middle">infoview/info-button-mic.png</Image>
+		</Images>
+		<Images State="Hover">
+			<Image Type="middle">infoview/info-button-mic-hover.png</Image>
+		</Images>
+		<Images State="Down">
+			<Image Type="middle">infoview/info-button-mic-pressed.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="DisabledChatButton"
+		Class="Tile"
+		Stretch="ToContent"
+		Tooltip="DisabledHostChatButtonTooltip"
+		>
+		<Images State="Normal">
+			<Image Type="middle">infoview/info-button-mic-disabled.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="JoinGameTab"
+		Class="TabControl"
+		Stretch="ToContent"
+		ControlGroupId="6"
+		GroupId="6"
+		>
+		<Triggers>
+			<!-- in a group chat and there is no current game lobby and this user is allowed to select one -->
+			<Trigger Type="OnAppCanHostGameLobby">GroupMessage(0)</Trigger>
+
+			<!-- either in a game lobby and we can join or in the context of a friend that is playing a network game that is joinable for this user -->
+			<Trigger Type="OnAppCanJoin">GroupMessage(1)</Trigger>
+
+			<!-- in a group chat and in the game lobby and this user is NOT the host -->
+			<Trigger Type="OnAppCanLeaveGameLobby">GroupMessage(2)</Trigger>
+
+			<!-- in a group chat and this user IS the host -->
+			<Trigger Type="OnAppCanLaunchGameLobby">GroupMessage(3)</Trigger>
+
+			<!-- either in a game lobby and the button is disabled or in the context of a friend that is not playing a game that this user can join -->
+			<Trigger Type="OnAppCannotJoin">GroupMessage(4)</Trigger>
+		</Triggers>
+		<Images>
+			<!-- this is just to get the size correctly laid out -->
+			<Image Type="middle">infoview/info-button-join.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="HostGameLobbyButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="HostGameLobbyButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">HostGameLobby</Trigger>
+		</Triggers>
+		<Images State="Normal">
+			<Image Type="middle" Color="TitleBar">infoview/info-button-join.png</Image>
+		</Images>
+		<Images State="Hover">
+			<Image Type="middle" Color="TitleBar">infoview/info-button-join-hover.png</Image>
+		</Images>
+		<Images State="Down">
+			<Image Type="middle" Color="TitleBar">infoview/info-button-join-pressed.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="JoinGameLobbyButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="GameButtonTip"
+		DisabledTooltip="DisabledGameButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">JoinFriend</Trigger>
+			<Trigger Type="OnAppCanJoin">State(Normal)</Trigger>
+			<Trigger Type="OnAppCannotJoin">State(Disabled)</Trigger>
+		</Triggers>
+		<Images State="Normal">
+			<Image Type="middle" Color="TitleBar">infoview/info-button-join.png</Image>
+		</Images>
+		<Images State="Hover">
+			<Image Type="middle" Color="TitleBar">infoview/info-button-join-hover.png</Image>
+		</Images>
+		<Images State="Down">
+			<Image Type="middle" Color="TitleBar">infoview/info-button-join-pressed.png</Image>
+		</Images>
+		<Images State="Disabled">
+			<Image Type="middle" Color="TitleBar">infoview/info-button-join-disabled.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="LeaveGameLobbyButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="LeaveGameLobbyButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">LeaveGameLobby</Trigger>
+		</Triggers>
+		<Images State="Normal">
+			<Image Type="middle" Color="TitleBar">infoview/info-button-join.png</Image>
+		</Images>
+		<Images State="Hover">
+			<Image Type="middle" Color="TitleBar">infoview/info-button-join-hover.png</Image>
+		</Images>
+		<Images State="Down">
+			<Image Type="middle" Color="TitleBar">infoview/info-button-join-pressed.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="LaunchGameLobbyButton"
+		Class="PushButton"
+		Stretch="ToContent"
+		Tooltip="LaunchGameLobbyButtonTip"
+		>
+		<Triggers>
+			<Trigger Type="OnClick">LaunchGameLobby</Trigger>
+		</Triggers>
+		<Images State="Normal">
+			<Image Type="middle">infoview/info-button-join.png</Image>
+		</Images>
+		<Images State="Hover" Color="TitleBar">
+			<Image Type="middle">infoview/info-button-join-hover.png</Image>
+		</Images>
+		<Images State="Down" Color="TitleBar">
+			<Image Type="middle">infoview/info-button-join-pressed.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="DisabledLobbyButton"
+		Class="Tile"
+		Stretch="ToContent"
+		Tooltip="DisabledGameButtonTip"
+		>
+		<Images>
+			<Image Type="middle" Color="TitleBar">infoview/info-button-join-disabled.png</Image>
+		</Images>
+	</Component>
+
+	<Component Name="TabButtonArea"
+		Class="TabControl"
+		ControlGroupId="1"
+		Stretch="ToContent"
+	/>
+	
+	<Component Name="ButtonArea"
+		Class="Tile"
+		Stretch="ToContent"
+	/>
+</Components>

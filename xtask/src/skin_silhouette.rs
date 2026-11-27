@@ -11,7 +11,8 @@
 //! Prints `{"alphaOpaque":128,"rects":[{"x","y","width","height"}…]}`, the
 //! rects in device pixels, or `"rects":null` when the skin lays no frame for
 //! that window (it keeps its rectangle). `alphaOpaque` is the alpha from
-//! which a pixel is part of the window (`rekindle_skin::shape::ALPHA_OPAQUE`).
+//! which a pixel is part of the window (`rekindle_skin::shape::ALPHA_OPAQUE`),
+//! applied to the composited alpha of every layer laid on it.
 //! `content` is the layout's content rectangle at that size (the pack's
 //! views box, `rekindle_skin::shape::content_area`, plan SK2), in logical
 //! px, for the spec to hold the page's content box to; `null` when the
@@ -112,7 +113,7 @@ pub(crate) fn skin_silhouette(args: &Args) -> Result<()> {
             let masks = w
                 .masks
                 .into_iter()
-                .map(|m| Mask::from_bits(m.width, m.height, m.bits))
+                .map(|m| Mask::from_parts(m.width, m.height, m.bits, m.faint))
                 .collect::<Option<Vec<_>>>()
                 .ok_or_else(|| anyhow!("{pack}: a malformed tile mask in {window}"))?;
             let rects = silhouette(&w.layout, &masks, width, height, scale).map_err(|e| {

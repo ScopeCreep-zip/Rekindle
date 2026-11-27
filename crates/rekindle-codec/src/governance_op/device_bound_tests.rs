@@ -132,8 +132,8 @@ fn the_extended_set_bound_is_what_fits_one_op() {
 /// `DeviceReEnrol` 1,946, each element 7.
 #[test]
 fn the_bounds_derivation_matches_the_encoding() {
-    let words = |n| op_unsigned_bytes(&worst_case_device_op(n)).len() / 8;
-    let re_enrol_words = |n| op_unsigned_bytes(&worst_case_re_enrol_op(n)).len() / 8;
+    let words = |n| op_unsigned_bytes(&worst_case_device_op(n)).unwrap().len() / 8;
+    let re_enrol_words = |n| op_unsigned_bytes(&worst_case_re_enrol_op(n)).unwrap().len() / 8;
     assert_eq!(words(0), 1_928);
     assert_eq!(re_enrol_words(0), 1_946);
     assert_eq!(words(2) - words(1), 7);
