@@ -82,6 +82,11 @@
 //!                                      Write the Xfire game icons, the game
 //!                                      id mapping and the built-in sound
 //!                                      banks (plan E7.7.3).
+//!     cargo xtask check-near-duplicates
+//!                                      No near-duplicate Rust code (`syn`
+//!                                      pass; gate item 2, not yet in `check`).
+//!     cargo xtask check-token-clones   The pinned jscpd over Rust + TS/TSX
+//!                                      (gate item 2, not yet in `check`).
 //!     cargo xtask check-inline-modules No inline `mod name { … }` (gate item 1).
 //!     cargo xtask outline-modules [--crate <name>]
 //!                                      Move each inline module body to
@@ -141,6 +146,7 @@ mod key_erasure;
 mod literals;
 mod log_scrub;
 mod motion;
+mod near_duplicates;
 mod no_emitter;
 mod no_managed_db;
 mod no_shape_ipc;
@@ -161,6 +167,7 @@ mod supply_chain;
 mod test_code;
 mod test_fixtures;
 mod theme_literals;
+mod token_clones;
 mod veilid_boundary;
 mod veilid_dht_calls;
 mod walk;
@@ -303,6 +310,10 @@ enum Command {
     CheckDuplicateTypes,
     /// Verify no TS body or CSS rule is duplicated across files.
     CheckFrontendDuplication,
+    /// Verify no near-duplicate Rust function, statement run or file pair (`syn` pass).
+    CheckNearDuplicates,
+    /// Run the pinned jscpd over Rust and TS/TSX; refuse its ignore markers.
+    CheckTokenClones,
     /// Rewrite `xtask/known-duplication.txt` from the current tree.
     BaselineDuplication,
     /// Verify every workspace member inherits `[workspace.lints]`.
@@ -570,6 +581,8 @@ fn dispatch(cmd: &Command) -> Result<()> {
         Command::CheckFrontendDuplication => {
             frontend_duplication::check_frontend_duplication(&root)
         }
+        Command::CheckNearDuplicates => near_duplicates::check_near_duplicates(&root),
+        Command::CheckTokenClones => token_clones::check_token_clones(&root),
         Command::BaselineDuplication => duplication::write_baseline(&root),
         Command::CheckWorkspaceLints => duplication::check_workspace_lints(&root),
         Command::CheckInlineModules => inline_modules::check_inline_modules(&root),
