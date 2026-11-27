@@ -11,24 +11,17 @@ use rekindle_records::port::RecordPort;
 use rekindle_secrets::ed25519_dalek::SigningKey;
 use rekindle_secrets::keys::MediaEncryptionKey;
 use rekindle_types::id::{ChannelId, PseudonymKey};
+use rekindle_types::presence::fixture::history_range;
 use rekindle_types::presence::HistoryRange;
 use rekindle_utils::random::OsRandom;
 
 use super::{advertised, read_history_ad, write_history_ad};
 use crate::member_card::{MemberRecordRef, OwnRecord};
 
-fn range(channel: u8, newest: u64) -> HistoryRange {
-    HistoryRange {
-        channel_id: ChannelId([channel; 16]),
-        oldest_lamport: 1,
-        newest_lamport: newest,
-    }
-}
-
 #[test]
 fn an_ad_carries_the_most_recently_active_channels_up_to_its_bound() {
     let ranges: Vec<HistoryRange> = (0..=u8::try_from(HISTORY_AD_MAX_RANGES).unwrap())
-        .map(|i| range(i, u64::from(i) + 10))
+        .map(|i| history_range(i, u64::from(i) + 10))
         .collect();
     let picked = advertised(ranges);
     assert_eq!(picked.len(), HISTORY_AD_MAX_RANGES);
@@ -65,7 +58,7 @@ async fn a_written_ad_is_read_back_from_the_member_record() {
     assert_eq!(read_history_ad(&*pool, &at).await.unwrap(), None);
 
     let key = MediaEncryptionKey::from_bytes([2; 32], 3);
-    let ranges = advertised(vec![range(1, 5), range(2, 9)]);
+    let ranges = advertised(vec![history_range(1, 5), history_range(2, 9)]);
     write_history_ad(&*pool, &own, &ranges, &key, &OsRandom)
         .await
         .unwrap();

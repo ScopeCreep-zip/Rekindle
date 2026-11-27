@@ -11,6 +11,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::id::{ChannelId, PseudonymKey};
 
+#[cfg(any(test, feature = "fixture"))]
+pub mod fixture;
 pub mod limits;
 pub mod session;
 
