@@ -124,6 +124,7 @@ mod outbox_partial_drain;
 mod outbox_stream_independence;
 mod own_removal;
 mod own_removal_quiet;
+mod own_removal_void;
 mod pair;
 mod pins;
 mod pool_route_loss;
