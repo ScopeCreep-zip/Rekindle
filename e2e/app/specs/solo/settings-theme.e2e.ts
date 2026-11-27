@@ -267,21 +267,27 @@ describe("Settings follows the theme's dialog roles (ST1)", function () {
         probe.remove();
         return out;
       }, field)) as { focus: string; bg: string; fg: string; want: Record<string, string> };
+    // Both rules are keyed on <html data-window-focus> (window_focus.ts sets
+    // it from the window's focus and blur). The OS can hold the window
+    // unfocused (a locked screen, another app in front), so each sample sets
+    // the state it measures, and the real one is restored after.
+    const realFocus = (await browser.execute(() => document.documentElement.dataset.windowFocus ?? "")) as string;
+    console.log(`[st1] selection: the window's own focus state is "${realFocus}"`);
+    await browser.execute(() => {
+      document.documentElement.dataset.windowFocus = "active";
+    });
     const focused = await read();
     await shot("selection-focused");
     const focusedPaint = await paintedSelection(field, "selection-focused-field");
-    // The window's blur sets this attribute (window_focus.ts); the driver
-    // cannot take the OS focus away without another window taking it, so
-    // the attribute the blur sets is set here to read the unfocused rule.
     await browser.execute(() => {
       document.documentElement.dataset.windowFocus = "inactive";
     });
     const unfocused = await read();
     await shot("selection-unfocused");
     const unfocusedPaint = await paintedSelection(field, "selection-unfocused-field");
-    await browser.execute(() => {
-      document.documentElement.dataset.windowFocus = document.hasFocus() ? "active" : "inactive";
-    });
+    await browser.execute((was: string) => {
+      document.documentElement.dataset.windowFocus = was;
+    }, realFocus);
     console.log(`[st1] selection: focused ${JSON.stringify(focused)}; unfocused ${JSON.stringify(unfocused)}`);
     console.log(`[st1] selection painted: focused ${JSON.stringify(focusedPaint)}; unfocused ${JSON.stringify(unfocusedPaint)}`);
     expect({ focus: focused.focus, fg: focused.fg }).toEqual({ focus: "active", fg: focused.want.activeText });
