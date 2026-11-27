@@ -300,6 +300,7 @@ const REKINDLE_ISOLATION_COMMANDS = Object.freeze([
   "set_onboarding_config",
   "set_preferences",
   "set_presence_policy",
+  "set_presence_policy_field",
   "set_quiet_hours",
   "set_read_receipts_enabled",
   "set_share_current_game",
