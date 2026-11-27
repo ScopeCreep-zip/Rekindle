@@ -8,7 +8,7 @@
 //! [`XfireCredit`] (Combat: Xfire's download page, `dl_1032.html:596`, "The
 //! Combat skin is an official skin created by Xfire."; its zip holds no
 //! author). Every other skin is third-party work published without a
-//! licence. All three say Rekindle's MIT licence does not cover the pack.
+//! licence. All three say Rekindle's MIT OR Apache-2.0 licence does not cover the pack.
 
 use super::ImportError;
 use crate::manifest::text::is_bidi_control;
@@ -101,8 +101,8 @@ pub enum Authorship<'a> {
     ThirdParty,
 }
 
-const NOT_MIT: &str = "Not covered by Rekindle's MIT licence; provenance and every change are \
-                       in the NOTICE beside the package.";
+const NOT_MIT: &str = "Not covered by Rekindle's MIT OR Apache-2.0 licence; provenance and \
+                       every change are in the NOTICE beside the package.";
 
 impl Authorship<'_> {
     /// The manifest's `license` text.
@@ -145,7 +145,9 @@ impl Authorship<'_> {
                     .to_owned()
             }
         };
-        format!("Licence\n  {body}\n  Rekindle's MIT LICENSE does not cover this pack.\n")
+        format!(
+            "Licence\n  {body}\n  Rekindle's MIT OR Apache-2.0 licence does not cover this pack.\n"
+        )
     }
 }
 

@@ -135,4 +135,5 @@ For the full set of conventions, see [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ## License
 
-Rekindle is released under the [MIT License](LICENSE).
+Rekindle is released under the MIT License or the Apache License 2.0, at your option
+([LICENSE-MIT](LICENSE-MIT), [LICENSE-APACHE](LICENSE-APACHE)).

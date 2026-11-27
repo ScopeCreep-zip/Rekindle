@@ -4,7 +4,7 @@ version = "0.1.0"
 publish = false
 edition = "2021"
 description = "The skin package format rekindle-skin/1: the strict in-memory zip walk, the manifest rules, the token profile and the closed token registry (plan E7.7.1)"
-license = "MIT"
+license.workspace = true
 # Two test binaries: `tests/skin.rs` holds the shared zip writer and both
 # suites; `tests/serve_budget.rs` times the built-ins' stylesheets alone, so
 # no sibling test loads the CPU while it measures.
