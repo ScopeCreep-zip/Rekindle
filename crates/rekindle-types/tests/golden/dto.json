@@ -146,8 +146,12 @@
   "community.channelView": {
     "channelType": "forum",
     "denied": {
+      "bypassSlowmode": "You need the Bypass Slowmode permission.",
       "createPublicThreads": "You need the Create Public Threads permission.",
-      "sendInThreads": "You need the Send In Threads permission."
+      "mentionEveryone": "You need the Mention Everyone permission.",
+      "requestToSpeak": "You need the Request to Speak permission.",
+      "sendInThreads": "You need the Send In Threads permission.",
+      "sendMessages": "You need the Send Messages permission."
     },
     "id": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c",
     "locked": false,

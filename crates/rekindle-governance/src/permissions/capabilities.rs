@@ -6,18 +6,18 @@
 //! holds everything (decision (53)); a timeout (step 7 of
 //! [`super::compute_permissions`]) is named only when the member would
 //! hold the capability without it; else the missing permission. The
-//! channel-scoped controls (a moderator's delete, the soundboard) are
-//! judged with the channel's overwrites, as the validator judges their
-//! entries, and name an overwrite when it is the cause.
+//! channel-scoped controls are judged with the channel's overwrites, as
+//! the validator judges their entries, and name an overwrite when it is
+//! the cause.
 
 use rekindle_types::dto::community_capability::{ChannelCapability, CommunityCapability};
 use rekindle_types::id::{ChannelId, PseudonymKey};
 pub use rekindle_types::permissions::PERMISSION_NAMES;
 use rekindle_types::permissions::{
-    self, BAN_MEMBERS, CREATE_EVENTS, CREATE_EXPRESSIONS, CREATE_INVITES, CREATE_PUBLIC_THREADS,
-    KICK_MEMBERS, MANAGE_CHANNELS, MANAGE_COMMUNITY, MANAGE_EVENTS, MANAGE_EXPRESSIONS,
-    MANAGE_MESSAGES, MANAGE_ROLES, SEND_IN_THREADS, TIMEOUT_MEMBERS, USE_SOUNDBOARD,
-    VIEW_AUDIT_LOG, VIEW_INSIGHTS,
+    self, BAN_MEMBERS, BYPASS_SLOWMODE, CREATE_EVENTS, CREATE_EXPRESSIONS, CREATE_INVITES,
+    CREATE_PUBLIC_THREADS, KICK_MEMBERS, MANAGE_CHANNELS, MANAGE_COMMUNITY, MANAGE_EVENTS,
+    MANAGE_EXPRESSIONS, MANAGE_MESSAGES, MANAGE_ROLES, MENTION_EVERYONE, REQUEST_TO_SPEAK,
+    SEND_IN_THREADS, SEND_MESSAGES, TIMEOUT_MEMBERS, USE_SOUNDBOARD, VIEW_AUDIT_LOG, VIEW_INSIGHTS,
 };
 
 use super::{compute_permissions, holds_creator_seat};
@@ -163,6 +163,10 @@ pub const fn channel_permission_bit(cap: ChannelCapability) -> u64 {
         ChannelCapability::UseSoundboard => USE_SOUNDBOARD,
         ChannelCapability::CreatePublicThreads => CREATE_PUBLIC_THREADS,
         ChannelCapability::SendInThreads => SEND_IN_THREADS,
+        ChannelCapability::SendMessages => SEND_MESSAGES,
+        ChannelCapability::BypassSlowmode => BYPASS_SLOWMODE,
+        ChannelCapability::RequestToSpeak => REQUEST_TO_SPEAK,
+        ChannelCapability::MentionEveryone => MENTION_EVERYONE,
     }
 }
 
