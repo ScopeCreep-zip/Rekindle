@@ -18,17 +18,21 @@ feature-depth = 1
 
 # ─── Advisories ─────────────────────────────────────────────────────────
 #
-# RustSec advisory database. Any `vulnerability` is denied; `unmaintained`
-# / `unsound` / `notice` are warnings the maintainer must triage. Yanked
-# crates always fail.
+# RustSec advisory database. This is the single advisory policy (plan §3.0,
+# 2026-11-27): CI runs no separate cargo-audit, whose own ignore list drifted
+# from this one. Every vulnerability, and every unmaintained or unsound
+# advisory on any crate in the graph (direct or transitive), fails, which is
+# what `cargo audit --deny warnings` enforced. Yanked crates always fail.
 #
-# When a transient false-positive blocks CI, add the advisory ID to
-# `ignore` with a `// reason` line. Do not blanket-ignore.
+# An advisory that cannot be fixed by an upgrade goes in `ignore` with its
+# reachability analysis and a review date. Do not blanket-ignore.
 
 [advisories]
 db-path = "$CARGO_HOME/advisory-dbs"
 db-urls = [ "https://github.com/rustsec/advisory-db" ]
 yanked = "deny"
+unmaintained = "all"
+unsound = "all"
 # Each ignore below records its reachability analysis (plan SC1, 2026-11-20)
 # and is reviewed at the next quarterly audit (docs/contributor/
 # dependency-audit.md), review by 2027-02-20, or as soon as a compatible
@@ -52,6 +56,19 @@ ignore = [
     # defines it); our only glib use is `Cast` in src-tauri/src/platform.rs.
     # Fixed in glib 0.20, which tauri's GTK 3 stack cannot take.
     { id = "RUSTSEC-2024-0429", reason = "glib: VariantStrIter is never called in our tree; gtk-rs 0.18 is pinned by tauri/wry's GTK 3 stack (review by 2027-02-20)" },
+    # lru 0.7.8 (via reed-solomon-erasure 6.0.0, the latest release, which
+    # pins lru ^0.7.8 <- rekindle-video FEC, in the desktop app). Advisory:
+    # `LruCache::pop()` is not panic-safe; UB needs a key whose `Drop`
+    # panics during `pop()` and a later eviction after `catch_unwind`.
+    # Not reachable: reed-solomon-erasure-6.0.0/src/core.rs:349 declares
+    # `LruCache<Vec<usize>, Arc<Matrix<F>>>` (neither `Vec<usize>` nor
+    # `Arc<Matrix>` can panic on drop), and the crate only calls
+    # `cache.get` (core.rs:704) and `cache.put` (core.rs:728), never `pop`.
+    # The workspace does use `catch_unwind` (rekindle-lifecycle/src/scope.rs:207
+    # wraps every session task), so the analysis rests on the key and value
+    # types, not on the absence of `catch_unwind`. lru 0.16.4 (ratatui-core
+    # 0.1.0) is gone: ratatui-core 0.1.2 takes lru 0.18.5 (patched >= 0.18.2).
+    { id = "RUSTSEC-2026-0253", reason = "lru 0.7.8 via reed-solomon-erasure 6.0.0 (latest): key Vec<usize> and value Arc<Matrix> cannot panic on drop and the crate never calls pop (core.rs:349/704/728); no patched release takes lru >= 0.18.2 (review by 2027-02-20)" },
     # libsqlite3-sys 0.37.0 (bundled SQLCipher; via rusqlite 0.39, ours and
     # veilid-core 0.5.8's keyvaluedb-sqlite -> async-sqlite, ADR 0017).
     # SQLite < 3.54.0 can return uninitialized page-cache memory when it

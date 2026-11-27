@@ -1,10 +1,15 @@
-# Supply-chain audit — RustSec advisory DB + cargo-deny policy.
+# Supply-chain audit — cargo-deny (RustSec advisory DB, bans, licenses,
+# sources) + pnpm audit.
 #
 # Runs on every PR, every push to main, and on a daily schedule so a
 # newly-disclosed CVE in a transitive dep is caught even when the
 # repo is otherwise quiet.
 #
-# Policy lives in deny.toml. See docs/security/supply-chain-policy.md.
+# One advisory policy: deny.toml [advisories]. cargo-deny's advisories check
+# reads the RustSec advisory-db ("used to detect issues for crates by looking
+# in an advisory database", cargo-deny book, checks/advisories); a separate
+# cargo-audit job kept a second, drifting ignore list and is gone (plan §3.0).
+# See docs/security/supply-chain-policy.md.
 
 # Our own composite actions (.github/actions/<name>) are referenced as
 # ScopeCreep-zip/Rekindle/.github/actions/<name>@<full 40-char sha>, never
@@ -31,20 +36,6 @@ permissions:
   contents: read
 
 jobs:
-  cargo-audit:
-    name: cargo-audit (RustSec)
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-
-      - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
-
-      - name: Audit
-        run: cargo audit --deny warnings
-
   cargo-deny:
     name: cargo-deny (advisories / bans / licenses / sources)
     runs-on: ubuntu-24.04
