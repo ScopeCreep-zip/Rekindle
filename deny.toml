@@ -73,7 +73,6 @@ ignore = [
     # report now uses postcard, our wire codec), `atty` (clap 3 came only
     # from nnnoiseless's default `bin` CLI feature, now off). Each entry
     # below has no maintained drop-in today; the reason names who pulls it.
-    { id = "RUSTSEC-2023-0089", reason = "atomic-polyfill: via heapless 0.7 <- postcard 1 (our wire codec, pinned to it); on our targets it re-exports core atomics; goes with postcard's heapless bump (review by 2027-02-20)" },
     { id = "RUSTSEC-2026-0150", reason = "audiopus_sys: libopus build crate under opus 0.3 (rekindle-voice, rekindle-files); libopus itself is maintained; advisory is the CMake 4 build break, not a defect in code; replacing the Opus binding is its own media-engine slice (ADR 0015) (review by 2027-02-20)" },
     { id = "RUSTSEC-2026-0543", reason = "chrono: our direct use (quiet hours, CLI/TUI/xtask timestamps) moves to a maintained time crate in its own slice with chrono-tz; no safe upgrade exists (review by 2027-02-20)" },
     { id = "RUSTSEC-2026-0555", reason = "chrono-tz: quiet-hours IANA zones in src-tauri; replaced together with chrono in its own slice; no safe upgrade exists (review by 2027-02-20)" },
