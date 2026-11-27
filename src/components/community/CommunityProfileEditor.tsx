@@ -1,5 +1,5 @@
 import { asImageKind } from "../../ipc/commands/system";
-import { Component, Show, createEffect, createSignal } from "solid-js";
+import { Component, Show, createEffect, createSignal, untrack } from "solid-js";
 import { colorIntToHex, parseColorHex } from "../../utils/color";
 import LoadingButton from "../common/LoadingButton";
 import Modal from "../common/Modal";
@@ -78,17 +78,21 @@ const CommunityProfileEditor: Component<CommunityProfileEditorProps> = (props) =
   const [bannerDataUrl, setBannerDataUrl] = createSignal<string | null>(null);
   const [uploadingImage, setUploadingImage] = createSignal<"avatar" | "banner" | null>(null);
 
-  // Each opening starts from the card as it is now.
+  // Each opening starts from the card as it is then, and only an opening:
+  // the card is read untracked, so a Host change while the dialog is open
+  // (a MemberCardChanged) never resets the drafts the user is typing (PF2).
   createEffect(() => {
     if (!props.isOpen) return;
-    baseline = takeBaseline();
-    setBioDraft(initialBio());
-    setPronounsDraft(initialPronouns());
-    setCustomStatusDraft(initialCustomStatus());
-    setThemeColorDraft(initialThemeColorHex());
-    setBadgesDraft(initialBadges());
-    setAvatarRefDraft(baseline.avatarRef);
-    setBannerRefDraft(baseline.bannerRef);
+    untrack(() => {
+      baseline = takeBaseline();
+      setBioDraft(initialBio());
+      setPronounsDraft(initialPronouns());
+      setCustomStatusDraft(initialCustomStatus());
+      setThemeColorDraft(initialThemeColorHex());
+      setBadgesDraft(initialBadges());
+      setAvatarRefDraft(baseline.avatarRef);
+      setBannerRefDraft(baseline.bannerRef);
+    });
   });
 
   createEffect(() => {
