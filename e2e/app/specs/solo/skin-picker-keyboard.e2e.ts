@@ -68,6 +68,26 @@ describe("Settings → Appearance scales to every built-in by keyboard (skin cat
     console.log(`[picker] after ArrowDown: in use ${after.inUse}; action stops ${JSON.stringify(after.actionStops)}`);
     await shot("picker-after-arrow");
     const afterForeign = after.actionStops.filter((s) => !s.startsWith(`${after.inUse}:`));
-    expect({ moved: after.inUse !== before.inUse, foreign: afterForeign }).toEqual({ moved: true, foreign: [] });
+    // The Host's refresh after a choice must leave the focus on the checked
+    // radio (a list rebuilt from fresh entries replaced it, and the second
+    // arrow then did nothing: codex-relay's finding).
+    const focusOnChecked = async (): Promise<boolean> =>
+      (await browser.execute(() => {
+        const a = document.activeElement as HTMLInputElement | null;
+        return !!a && a.type === "radio" && a.checked && !!a.closest(".skin-row-shown");
+      })) as boolean;
+    await browser.pause(1500);
+    const keptAfterFirst = await focusOnChecked();
+    // A second arrow from that same, real focus.
+    await browser.keys(Key.ArrowDown);
+    await waitUntil(async () => (await reach()).inUse !== after.inUse, NET_WAIT_MS, "the second ArrowDown did not choose the next skin");
+    const second = await reach();
+    await browser.pause(1500);
+    const keptAfterSecond = await focusOnChecked();
+    console.log(`[picker] after the second ArrowDown: in use ${second.inUse}; focus kept ${keptAfterFirst}/${keptAfterSecond}`);
+    await shot("picker-after-second-arrow");
+    expect({ moved: after.inUse !== before.inUse, foreign: afterForeign, keptAfterFirst, secondMoved: second.inUse !== after.inUse, keptAfterSecond }).toEqual({
+      moved: true, foreign: [], keptAfterFirst: true, secondMoved: true, keptAfterSecond: true,
+    });
   });
 });
