@@ -1,15 +1,15 @@
-import { type Component, For, Show, onMount, onCleanup } from "solid-js";
+import { type Component, For, onCleanup, onMount, Show } from "solid-js";
+import { handleStartDmCall } from "../../actions/calls.actions";
+import { ICON_BELL, ICON_CHECK, ICON_PHONE, ICON_SEND } from "../../icons";
+import { commands } from "../../ipc/commands";
 import { buddyListUI, setBuddyListUI } from "../../stores/buddylist-ui.store";
 import {
+  markAllNotificationsRead,
+  markNotificationRead,
   notificationState,
   unreadNotifications,
-  markNotificationRead,
-  markAllNotificationsRead,
 } from "../../stores/notification.store";
-import { ICON_BELL, ICON_CHECK, ICON_PHONE, ICON_SEND } from "../../icons";
 import { formatRelativeTime } from "../../utils/formatting";
-import { handleStartDmCall } from "../../actions/calls.actions";
-import { commands } from "../../ipc/commands";
 
 const NotificationCenter: Component = () => {
   const open = (): boolean => buddyListUI.showNotifications;

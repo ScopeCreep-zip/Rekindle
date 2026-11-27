@@ -1,7 +1,7 @@
-import { type Component, For, Show, createMemo, createSignal } from "solid-js";
+import { type Component, createMemo, createSignal, For, Show } from "solid-js";
+import { handlePlaySoundboard } from "../../actions/community.actions";
 import { communityState } from "../../stores/community.store";
 import { voiceState } from "../../stores/voice.store";
-import { handlePlaySoundboard } from "../../actions/community.actions";
 import { channelDeniedFor } from "../../utils/denied";
 
 /// Plan §Failure 6 — soundboard panel rendered alongside the voice

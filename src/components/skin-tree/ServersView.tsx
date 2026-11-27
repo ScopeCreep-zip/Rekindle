@@ -1,26 +1,26 @@
 import {
   type Component,
-  For,
-  Show,
   createEffect,
   createSignal,
+  For,
   onCleanup,
   onMount,
+  Show,
 } from "solid-js";
 import { handleLaunchGame } from "../../actions/game.actions";
 import { sendSkinSelection } from "../../actions/skin.actions";
 import { subscribeServersView } from "../../ipc/channels";
 import { commands } from "../../ipc/commands";
+import { isCommandError } from "../../ipc/commands/dto";
 import {
-  serverCommands,
   type ServerCategory,
   type ServerInfo,
   type ServerRefusal,
   type ServerRow,
   type ServerVerdict,
+  serverCommands,
   type ServersView as View,
 } from "../../ipc/commands/dto_servers";
-import { isCommandError } from "../../ipc/commands/dto";
 import { addToast } from "../../stores/toast.store";
 import { errorMessage } from "../../utils/error";
 import { formatRelativeTime } from "../../utils/formatting";

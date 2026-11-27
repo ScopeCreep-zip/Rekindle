@@ -1,9 +1,9 @@
-import { type Component, For, Show, createEffect, createSignal } from "solid-js";
-import { successorsOf } from "../../../stores/successor.store";
-import { communityState } from "../../../stores/community.store";
+import { type Component, createEffect, createSignal, For, Show } from "solid-js";
 import { handlePublishSuccessor, trackSuccessors } from "../../../actions/community/successor";
-import FormField from "../../common/FormField";
+import { communityState } from "../../../stores/community.store";
+import { successorsOf } from "../../../stores/successor.store";
 import { deniedFor } from "../../../utils/denied";
+import FormField from "../../common/FormField";
 
 interface SuccessorSectionProps {
   communityId: string;

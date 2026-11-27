@@ -1,5 +1,5 @@
 import { commands } from "../../ipc/commands";
-import { setCommunityState, communityState } from "../../stores/community.store";
+import { communityState, setCommunityState } from "../../stores/community.store";
 import { addToast } from "../../stores/toast.store";
 import { computeDisplayRoleName } from "./shared";
 

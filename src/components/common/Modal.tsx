@@ -1,7 +1,7 @@
-import { type Component, type JSX, Show } from "solid-js";
-import SkinGlyph from "./SkinGlyph";
 import { Dialog } from "@kobalte/core/dialog";
+import { type Component, type JSX, Show } from "solid-js";
 import { returnFocusToOpener } from "../../utils/dialog_focus";
+import SkinGlyph from "./SkinGlyph";
 
 interface ModalProps {
   isOpen: boolean;

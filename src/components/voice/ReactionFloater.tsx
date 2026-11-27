@@ -1,6 +1,6 @@
 import { type Component, For } from "solid-js";
-import { callsState } from "../../stores/calls.store";
 import { removeCallReaction } from "../../actions/calls.actions";
+import { callsState } from "../../stores/calls.store";
 
 // Wave 12 W12.11 — overlay that floats incoming + outgoing in-call
 // reactions over the panel. Each glyph animates upward over ~2 s and

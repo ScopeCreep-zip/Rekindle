@@ -2,7 +2,6 @@ import { onCleanup, onMount } from "solid-js";
 import { createStore } from "solid-js/store";
 import { handleGetNetworkStatus } from "../actions/settings.actions";
 import {
-  type UnlistenFn,
   eventStreamLive,
   subscribeNetworkStatus,
   subscribeNetworkStrength,
@@ -10,14 +9,15 @@ import {
   subscribeOwnRouteDown,
   subscribeRouteDeaths,
   subscribeRoutePaused,
+  type UnlistenFn,
 } from "../ipc/channels";
-import { addToast } from "./toast.store";
 import type {
   OwnRecordsPhase,
   OwnRouteClass,
   RouteAvailability,
   RoutePauseCause,
 } from "../ipc/channels/notification_events";
+import { addToast } from "./toast.store";
 
 /**
  * The node's network state, as the Host reports it: the `network-status`

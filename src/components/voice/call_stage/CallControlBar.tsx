@@ -1,14 +1,14 @@
 import { type Component, Show } from "solid-js";
-import SkinGlyph from "../../common/SkinGlyph";
-import { setVoiceState, voiceState } from "../../../stores/voice.store";
 import {
-  handleToggleMute,
-  handleToggleDeafen,
   handleLeaveVoice,
+  handleToggleDeafen,
+  handleToggleMute,
 } from "../../../actions/voice.actions";
 import { q8ToPercent } from "../../../ipc/channels/voice_events";
-import SoundboardPanel from "../SoundboardPanel";
+import { setVoiceState, voiceState } from "../../../stores/voice.store";
+import SkinGlyph from "../../common/SkinGlyph";
 import ReactionsTray from "../ReactionsTray";
+import SoundboardPanel from "../SoundboardPanel";
 
 /// Bottom-centred call controls for the main-pane call stage. Every voice
 /// control has room here (the old sidebar strip clipped at ~180px): mute,

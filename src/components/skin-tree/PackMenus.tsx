@@ -1,6 +1,6 @@
-import { type Component, For, type JSX, Show, createContext, useContext } from "solid-js";
-import { Menubar } from "@kobalte/core/menubar";
 import { ContextMenu } from "@kobalte/core/context-menu";
+import { Menubar } from "@kobalte/core/menubar";
+import { type Component, createContext, For, type JSX, Show, useContext } from "solid-js";
 import type { EngineMenu, MenuItem } from "../../ipc/commands/dto_skin_tree";
 
 /// The accessible name of a menu title the Host serves no label for: its

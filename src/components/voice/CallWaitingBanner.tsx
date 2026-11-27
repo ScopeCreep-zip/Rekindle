@@ -1,10 +1,10 @@
-import { type Component, Show, createEffect, createSignal, onCleanup } from "solid-js";
-import { callsState } from "../../stores/calls.store";
+import { type Component, createEffect, createSignal, onCleanup, Show } from "solid-js";
 import {
   handleAcceptIncomingCall,
   handleDeclineIncomingCall,
   handleEndDmCall,
 } from "../../actions/calls.actions";
+import { callsState } from "../../stores/calls.store";
 
 // Wave 12 W12.3 — slim banner that appears when a NEW incoming call
 // arrives while an active call is already in progress. The full

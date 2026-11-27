@@ -1,6 +1,6 @@
-import { createMemo, createSignal, type Accessor, type Setter } from "solid-js";
+import { type Accessor, createMemo, createSignal, type Setter } from "solid-js";
+import { hasPermission, MENTION_EVERYONE, servedPermissions } from "../../../ipc/permissions";
 import { communityState } from "../../../stores/community.store";
-import { servedPermissions, hasPermission, MENTION_EVERYONE } from "../../../ipc/permissions";
 
 // Architecture §28.5 — mentions: `@user`, `@role`, `@everyone`,
 // `@here`. Backend resolves by display-name (members) or role-name

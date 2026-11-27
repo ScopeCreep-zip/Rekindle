@@ -1,4 +1,4 @@
-import { type UnlistenFn, subscribeIntentEvents } from "../ipc/channels";
+import { subscribeIntentEvents, type UnlistenFn } from "../ipc/channels";
 import { presentReview } from "../stores/intent.store";
 
 /**

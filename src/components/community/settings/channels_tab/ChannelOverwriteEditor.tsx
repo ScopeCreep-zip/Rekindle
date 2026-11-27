@@ -1,9 +1,9 @@
-import { type Component, For, Show, createSignal } from "solid-js";
-import SkinGlyph from "../../../common/SkinGlyph";
-import type { Role } from "../../../../stores/community.store";
+import { type Component, createSignal, For, Show } from "solid-js";
 import { commands } from "../../../../ipc/commands";
-import { togglePermBit, PERMISSION_CATEGORIES } from "../../../../ipc/permissions";
+import { PERMISSION_CATEGORIES, togglePermBit } from "../../../../ipc/permissions";
+import type { Role } from "../../../../stores/community.store";
 import { addToast } from "../../../../stores/toast.store";
+import SkinGlyph from "../../../common/SkinGlyph";
 
 interface ChannelOverwriteEditorProps {
   communityId: string;

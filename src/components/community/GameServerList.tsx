@@ -1,7 +1,7 @@
-import { type Component, For, Show, createMemo, createSignal, createEffect } from "solid-js";
-import SkinGlyph from "../common/SkinGlyph";
-import type { GameServer } from "../../stores/community.store";
+import { type Component, createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { commands } from "../../ipc/commands";
+import type { GameServer } from "../../stores/community.store";
+import SkinGlyph from "../common/SkinGlyph";
 
 interface GameServerListProps {
   servers: GameServer[];

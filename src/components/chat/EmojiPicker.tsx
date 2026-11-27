@@ -1,7 +1,6 @@
-import { type Component, For, Show, createSignal, createMemo, onMount, onCleanup } from "solid-js";
-
-import ExpressionPicker from "../community/ExpressionPicker";
+import { type Component, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { useReducedMotion } from "../../hooks/useReducedMotion";
+import ExpressionPicker from "../community/ExpressionPicker";
 
 const EMOJI_CATEGORIES: { name: string; icon: string; emojis: string[] }[] = [
   {

@@ -1,15 +1,15 @@
-import { type Component, Match, Switch, onCleanup, onMount } from "solid-js";
-import { type UnlistenFn, subscribeSkinSignals } from "../ipc/channels";
-import { setSkinSignals } from "../stores/skin-signals.store";
+import { type Component, Match, onCleanup, onMount, Switch } from "solid-js";
+import { callOps, friendOps, menuOps, muteOps, popupOps } from "../actions/shell_runners";
+import { registerShellRunner, sendSkinSelection } from "../actions/skin.actions";
 import SkinFrame from "../components/common/SkinFrame";
+import { SlotProvider } from "../components/skin-tree/slots";
 import Titlebar from "../components/titlebar/Titlebar";
+import { useChatSearchChord } from "../hooks/useChatSearchChord";
+import { subscribeSkinSignals, type UnlistenFn } from "../ipc/channels";
+import { setSkinSignals } from "../stores/skin-signals.store";
+import { setWindowKind } from "../utils/window_kind";
 import DirectChat from "./chat_window/DirectChat";
 import GroupChat from "./chat_window/GroupChat";
-import { SlotProvider } from "../components/skin-tree/slots";
-import { useChatSearchChord } from "../hooks/useChatSearchChord";
-import { setWindowKind } from "../utils/window_kind";
-import { registerShellRunner, sendSkinSelection } from "../actions/skin.actions";
-import { callOps, friendOps, menuOps, muteOps, popupOps } from "../actions/shell_runners";
 
 /// The one chat window (plan E2.3): `?peer=<identity key>` is a 1:1
 /// conversation, `?group=<group id>` a group DM (32 hex, plan E2.6

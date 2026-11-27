@@ -1,12 +1,12 @@
 import { type Component, createSignal } from "solid-js";
-import FilesView from "../skin-tree/FilesView";
 import { isCommandError } from "../../ipc/commands/dto";
 import type { Capability } from "../../ipc/commands/dto_skin_tree";
-import { transferCommands, type TransferRow } from "../../ipc/commands/dto_transfer";
+import { type TransferRow, transferCommands } from "../../ipc/commands/dto_transfer";
 import { skinSignals } from "../../stores/skin-signals.store";
-import { transfersState } from "../../stores/transfers.store";
 import { addToast } from "../../stores/toast.store";
+import { transfersState } from "../../stores/transfers.store";
 import { errorMessage } from "../../utils/error";
+import FilesView from "../skin-tree/FilesView";
 
 /**
  * The app's own layout's Downloads tab (Xfire's Downloads; plan E7.2 G12):

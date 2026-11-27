@@ -1,6 +1,6 @@
-import { type Component, createSignal, createUniqueId, type JSX, Show, For } from "solid-js";
-import type { Friend } from "../../stores/friends.store";
+import { type Component, createSignal, createUniqueId, For, type JSX, Show } from "solid-js";
 import { handleRenameFriendGroup } from "../../actions/buddy.actions";
+import type { Friend } from "../../stores/friends.store";
 import BuddyItem from "./BuddyItem";
 
 interface BuddyGroupProps {

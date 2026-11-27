@@ -1,18 +1,17 @@
+import type { JSX } from "solid-js";
 import {
   type Component,
-  Show,
   createEffect,
   createSignal,
-  onCleanup,
   createUniqueId,
+  onCleanup,
+  Show,
 } from "solid-js";
-import type { JSX } from "solid-js";
-
-import Modal from "../common/Modal";
-import FormField from "../common/FormField";
-import QrScannerOverlay from "./QrScannerOverlay";
-import { addToast } from "../../stores/toast.store";
 import { commands } from "../../ipc/commands";
+import { addToast } from "../../stores/toast.store";
+import FormField from "../common/FormField";
+import Modal from "../common/Modal";
+import QrScannerOverlay from "./QrScannerOverlay";
 
 interface AddDeviceModalProps {
   isOpen: boolean;

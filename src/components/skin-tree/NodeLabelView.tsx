@@ -1,4 +1,4 @@
-import { type Component, type JSX, Show, createSignal, onCleanup } from "solid-js";
+import { type Component, createSignal, type JSX, onCleanup, Show } from "solid-js";
 import { Dynamic } from "solid-js/web";
 import type { NodeGlyph, NodeLabel } from "../../ipc/commands/dto_skin_tree";
 import { BrandGlyph } from "./BrandGlyphs";

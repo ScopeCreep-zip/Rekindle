@@ -1,10 +1,10 @@
-import { type Component, For } from "solid-js";
 import { DropdownMenu } from "@kobalte/core/dropdown-menu";
+import { type Component, For } from "solid-js";
 import { commands } from "../../ipc/commands";
+import type { UserStatus } from "../../stores/auth.store";
 import { setAuthState } from "../../stores/auth.store";
 import { addToast } from "../../stores/toast.store";
 import { errorMessage } from "../../utils/error";
-import type { UserStatus } from "../../stores/auth.store";
 import StatusDot from "./StatusDot";
 
 interface StatusOption {

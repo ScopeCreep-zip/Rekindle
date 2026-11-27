@@ -1,4 +1,4 @@
-import { type Component, For, Show, createEffect, createSignal } from "solid-js";
+import { type Component, createEffect, createSignal, For, Show } from "solid-js";
 import type { MessagePoll } from "../../stores/chat.store";
 
 interface PollCardProps {

@@ -1,8 +1,8 @@
 import { type Component, createSignal, onMount, Show } from "solid-js";
 import FormField from "../../components/common/FormField";
 import SettingsSelect from "../../components/common/SettingsSelect";
-import { settingsState, setSettingsState } from "../../stores/settings.store";
 import { commands } from "../../ipc/commands";
+import { setSettingsState, settingsState } from "../../stores/settings.store";
 
 /** One camera choice: the webview deviceId when the webview path lists
  *  it, and the label both paths resolve by. */

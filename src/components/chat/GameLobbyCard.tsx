@@ -1,14 +1,14 @@
 import {
   type Component,
-  For,
-  Show,
   createResource,
   createSignal,
+  For,
   onCleanup,
   onMount,
+  Show,
 } from "solid-js";
+import { subscribeGroupDmEvents, type UnlistenFn } from "../../ipc/channels";
 import { commands, type LobbyRefusal, type LobbyVerdict, type LobbyView } from "../../ipc/commands";
-import { type UnlistenFn, subscribeGroupDmEvents } from "../../ipc/channels";
 import { authState } from "../../stores/auth.store";
 import { errorMessage } from "../../utils/error";
 

@@ -1,4 +1,4 @@
-import { type Component, For, createMemo } from "solid-js";
+import { type Component, createMemo, For } from "solid-js";
 
 import { communityState } from "../../stores/community.store";
 

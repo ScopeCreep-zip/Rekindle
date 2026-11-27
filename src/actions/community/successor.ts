@@ -1,6 +1,6 @@
+import { eventStreamLive } from "../../ipc/channels";
 import { commands } from "../../ipc/commands";
 import type { SuccessorOffer } from "../../ipc/commands/community";
-import { eventStreamLive } from "../../ipc/channels";
 import {
   applySuccessorSnapshot,
   markSuccessorFollowed,

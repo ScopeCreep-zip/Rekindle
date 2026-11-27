@@ -1,19 +1,19 @@
-import { type Component, For, Show, createSignal } from "solid-js";
-import SkinGlyph from "../../common/SkinGlyph";
-import StatusDot from "../../status/StatusDot";
-import RoleTag from "../RoleTag";
-import GovernancePublicationStatus from "../GovernancePublicationStatus";
+import { type Component, createSignal, For, Show } from "solid-js";
+import {
+  handleAssignRole,
+  handleBanMember,
+  handleExpandCommunitySegment,
+  handleRemoveCommunityMember,
+  handleRemoveTimeout,
+  handleTimeoutMember,
+  handleUnassignRole,
+} from "../../../actions/community.actions";
 import type { Community, Member, Role } from "../../../stores/community.store";
 import { EVERYONE_ROLE_ID } from "../../../stores/community.store";
-import {
-  handleRemoveCommunityMember,
-  handleBanMember,
-  handleAssignRole,
-  handleUnassignRole,
-  handleTimeoutMember,
-  handleRemoveTimeout,
-  handleExpandCommunitySegment,
-} from "../../../actions/community.actions";
+import SkinGlyph from "../../common/SkinGlyph";
+import StatusDot from "../../status/StatusDot";
+import GovernancePublicationStatus from "../GovernancePublicationStatus";
+import RoleTag from "../RoleTag";
 
 interface MembersTabProps {
   community: Community;

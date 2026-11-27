@@ -1,11 +1,11 @@
 import { reconcile } from "solid-js/store";
 import { commands, type GroupDmView } from "../ipc/commands";
-import { groupDmState, setGroupDmState } from "../stores/group-dm.store";
-import { transformDmMessage } from "../utils/transformers";
-import { errorMessage } from "../utils/error";
-import { awaitsExpiry } from "./disappearing.actions";
-import { afterDraftReports, sendDraftReport } from "../utils/draft_reports";
 import { disappearingState } from "../stores/disappearing.store";
+import { groupDmState, setGroupDmState } from "../stores/group-dm.store";
+import { afterDraftReports, sendDraftReport } from "../utils/draft_reports";
+import { errorMessage } from "../utils/error";
+import { transformDmMessage } from "../utils/transformers";
+import { awaitsExpiry } from "./disappearing.actions";
 
 // Group DMs (plan E2.6). Each action calls the Host and renders what it
 // answers; validation, the member caps and the review are the Host's.

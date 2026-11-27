@@ -1,12 +1,12 @@
-import { type Component, Show, createSignal, onMount } from "solid-js";
-import type { FriendCodeView } from "../../ipc/commands/dto";
+import { type Component, createSignal, onMount, Show } from "solid-js";
 import {
   handleAddFriendFromCode,
   handleGetFriendCode,
   handleRotateFriendToken,
 } from "../../actions/buddy.actions";
-import FriendCodeCard from "./FriendCodeCard";
+import type { FriendCodeView } from "../../ipc/commands/dto";
 import OwnRecordsWait from "../common/OwnRecordsWait";
+import FriendCodeCard from "./FriendCodeCard";
 
 interface PublicKeyTabProps {
   onClose: () => void;

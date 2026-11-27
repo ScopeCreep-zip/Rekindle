@@ -4,28 +4,28 @@ import {
   createResource,
   createSignal,
   For,
-  onMount,
   onCleanup,
+  onMount,
   Show,
 } from "solid-js";
-import { formatDuration, formatRelativeTime } from "../utils/formatting";
-import Titlebar from "../components/titlebar/Titlebar";
-import Avatar from "../components/common/Avatar";
-import StatusDot from "../components/status/StatusDot";
-import { friendsState } from "../stores/friends.store";
-import { communityState } from "../stores/community.store";
-import { subscribeProfilePresenceEvents } from "../handlers/presence-events.handlers";
-import { hydrateState } from "../stores/hydrate";
-import { commands } from "../ipc/commands";
 import { handleRemoveFriend } from "../actions/buddy.actions";
 import { handleStartDmCall } from "../actions/calls.actions";
-import { ICON_SEND, ICON_ACCOUNT_REMOVE, ICON_PHONE, ICON_VIDEO } from "../icons";
-import { startEventStream } from "../ipc/channels";
-import SafetyNumberPanel from "../components/profile/SafetyNumberPanel";
-import VerifiedBadge from "../components/profile/VerifiedBadge";
-import { useSafetyNumber } from "../hooks/useSafetyNumber";
+import Avatar from "../components/common/Avatar";
 import GameIcon from "../components/game/GameIcon";
 import FriendNicknameField from "../components/profile/FriendNicknameField";
+import SafetyNumberPanel from "../components/profile/SafetyNumberPanel";
+import VerifiedBadge from "../components/profile/VerifiedBadge";
+import StatusDot from "../components/status/StatusDot";
+import Titlebar from "../components/titlebar/Titlebar";
+import { subscribeProfilePresenceEvents } from "../handlers/presence-events.handlers";
+import { useSafetyNumber } from "../hooks/useSafetyNumber";
+import { ICON_ACCOUNT_REMOVE, ICON_PHONE, ICON_SEND, ICON_VIDEO } from "../icons";
+import { startEventStream } from "../ipc/channels";
+import { commands } from "../ipc/commands";
+import { communityState } from "../stores/community.store";
+import { friendsState } from "../stores/friends.store";
+import { hydrateState } from "../stores/hydrate";
+import { formatDuration, formatRelativeTime } from "../utils/formatting";
 import { setWindowKind } from "../utils/window_kind";
 
 function getKeyFromUrl(): string {

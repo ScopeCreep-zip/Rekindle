@@ -1,7 +1,7 @@
-import { type Component, For, Show, createSignal } from "solid-js";
+import { type Component, createSignal, For, Show } from "solid-js";
+import { handleAnswerCreatorInvite, trackCoCreation } from "../../actions/community/co_create";
 import { coCreatorState } from "../../stores/co-creator.store";
 import { friendsState } from "../../stores/friends.store";
-import { handleAnswerCreatorInvite, trackCoCreation } from "../../actions/community/co_create";
 
 /**
  * Co-creator invites a friend sent us (plan E3.2 S7s.3f), beside the

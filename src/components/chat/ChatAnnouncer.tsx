@@ -1,4 +1,4 @@
-import { type Component, For, createEffect, createSignal } from "solid-js";
+import { type Component, createEffect, createSignal, For } from "solid-js";
 import type { Message } from "../../stores/chat.store";
 import { timerNoticeText } from "../../utils/disappearing";
 import { messageAnnouncement } from "../../utils/message_announcement";

@@ -1,4 +1,4 @@
-import { type Component, Show, createMemo } from "solid-js";
+import { type Component, createMemo, Show } from "solid-js";
 import { skinSheetLinked } from "../../hooks/useSkin";
 import { COMMUNITY_ICONS, type CommunityIcon } from "../../styles/generated/community_icon";
 import { GLYPH_ART, GLYPH_EM, type GlyphName } from "./glyph_art";

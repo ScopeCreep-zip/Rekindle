@@ -1,5 +1,8 @@
-import { type Component, For, createEffect, createSignal } from "solid-js";
-import type { Community } from "../../../stores/community.store";
+import { type Component, createEffect, createSignal, For } from "solid-js";
+import {
+  handleLoadOnboardingConfig,
+  handleLoadWelcomeScreen,
+} from "../../../actions/community/profile";
 import { commands } from "../../../ipc/commands";
 import type {
   OnboardingConfig,
@@ -7,10 +10,7 @@ import type {
   WelcomeChannelEntry,
   WelcomeScreen,
 } from "../../../ipc/commands/dto";
-import {
-  handleLoadOnboardingConfig,
-  handleLoadWelcomeScreen,
-} from "../../../actions/community/profile";
+import type { Community } from "../../../stores/community.store";
 import { addToast } from "../../../stores/toast.store";
 import OnboardingQuestionsEditor from "./OnboardingQuestionsEditor";
 

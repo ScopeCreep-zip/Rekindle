@@ -1,7 +1,7 @@
-import { type Component, For, Show, onMount, onCleanup } from "solid-js";
-import { type UnlistenFn, subscribeCommunityEvents } from "../../ipc/channels";
+import { type Component, For, onCleanup, onMount, Show } from "solid-js";
+import { subscribeCommunityEvents, type UnlistenFn } from "../../ipc/channels";
 import { isLegacyCommunityEvent } from "../../ipc/channels/community_subscription_events";
-import { joinProgress, applyJoinProgress, type JoinStageStatus } from "../../stores/join.store";
+import { applyJoinProgress, type JoinStageStatus, joinProgress } from "../../stores/join.store";
 
 /**
  * Display-only "dial-in" stepper for the community join flow. Mirrors

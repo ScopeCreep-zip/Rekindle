@@ -1,9 +1,9 @@
-import { type Component, For, Show, createEffect, createSignal, on } from "solid-js";
 import { Dialog } from "@kobalte/core/dialog";
-import { returnFocusToOpener } from "../../utils/dialog_focus";
-import { friendsState } from "../../stores/friends.store";
+import { type Component, createEffect, createSignal, For, on, Show } from "solid-js";
 import { handleStartGroupCall } from "../../actions/calls.actions";
 import type { GroupCallInvitee } from "../../ipc/commands/dto_skin_run";
+import { friendsState } from "../../stores/friends.store";
+import { returnFocusToOpener } from "../../utils/dialog_focus";
 
 // Wave 12 W12.10 — friend multi-select dialog for starting a group
 // call. Audio/video toggle + checkbox list + Call button. Closes on

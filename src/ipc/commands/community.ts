@@ -1,10 +1,10 @@
-import { hostInvoke, invoke } from "../invoke";
-import type { ImageKind } from "./system";
 import type {
   CatchUpView,
   KeyStatus,
   OpPublicationState,
 } from "../channels/community_subscription_events";
+import { hostInvoke, invoke } from "../invoke";
+import type { ImageKind } from "./system";
 
 /// A voice message as the Host decoded it: the Ogg Opus audio and the
 /// duration and waveform read from it (base64 fields).
@@ -25,6 +25,13 @@ export interface VoiceMessageAudioView {
   durationMs: number;
   waveform: string;
 }
+
+import type { CommunityBanView, CommunityProfilePatch, MemberGroup, ProfileField } from "./dto";
+import type {
+  ChannelDeniedCapabilities,
+  DeniedCapabilities,
+  MemberModeration,
+} from "./dto_capabilities";
 import type {
   AutoModRuleInfo,
   CommunityPolicy,
@@ -33,12 +40,6 @@ import type {
   QuietHoursSettings,
   SendChannelMessageResult,
 } from "./types";
-import type { CommunityBanView, CommunityProfilePatch, MemberGroup, ProfileField } from "./dto";
-import type {
-  ChannelDeniedCapabilities,
-  DeniedCapabilities,
-  MemberModeration,
-} from "./dto_capabilities";
 
 /** `SuccessorOffer` (rekindle-types `dto::community`): a successor both
  *  sides link, as `communitySuccessorOffered` carries it. */

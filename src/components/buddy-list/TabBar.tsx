@@ -1,5 +1,5 @@
 import { type Component, For } from "solid-js";
-import { buddyListUI, switchTab, type BuddyListTab } from "../../stores/buddylist-ui.store";
+import { type BuddyListTab, buddyListUI, switchTab } from "../../stores/buddylist-ui.store";
 
 /** The app's own layout's tabs (a skin's tree switches its views itself):
  *  Xfire's Friends, Servers and Downloads, and Rekindle's Communities. */

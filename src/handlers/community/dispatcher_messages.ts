@@ -1,18 +1,18 @@
+import { markChannelReadToLatest } from "../../actions/community/channels";
+import { handleLoadExpressions } from "../../actions/community/lifecycle";
+import { handleLoadChannelMessages } from "../../actions/community/messages";
+import { setTypingUsers } from "../../actions/community/shared";
 import type { CommunityEvent } from "../../ipc/channels";
+import type { UnreadChanged } from "../../ipc/channels/chat_events";
 import type {
   ChannelMessageEvent,
   CommunitySubscriptionEvent,
 } from "../../ipc/channels/community_subscription_events";
-import { setCommunityState, communityState } from "../../stores/community.store";
-import { addToast } from "../../stores/toast.store";
 import type { Message } from "../../stores/chat.store";
-import type { UnreadChanged } from "../../ipc/channels/chat_events";
+import { communityState, setCommunityState } from "../../stores/community.store";
 import { linkPreviewKey, setLinkPreviews } from "../../stores/link_preview.store";
+import { addToast } from "../../stores/toast.store";
 import { transformHistoryGap } from "../../utils/transformers";
-import { setTypingUsers } from "../../actions/community/shared";
-import { markChannelReadToLatest } from "../../actions/community/channels";
-import { handleLoadExpressions } from "../../actions/community/lifecycle";
-import { handleLoadChannelMessages } from "../../actions/community/messages";
 
 type NewChannelMessage = Extract<ChannelMessageEvent, { new: unknown }>["new"];
 

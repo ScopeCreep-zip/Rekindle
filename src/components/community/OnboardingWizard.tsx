@@ -1,9 +1,8 @@
-import { type Component, For, Show, createMemo, createSignal } from "solid-js";
-
-import Modal from "../common/Modal";
-import LoadingButton from "../common/LoadingButton";
+import { type Component, createMemo, createSignal, For, Show } from "solid-js";
 import { handleSubmitOnboarding } from "../../actions/community.actions";
-import type { OnboardingConfig, OnboardingAnswer } from "../../ipc/commands/dto";
+import type { OnboardingAnswer, OnboardingConfig } from "../../ipc/commands/dto";
+import LoadingButton from "../common/LoadingButton";
+import Modal from "../common/Modal";
 
 interface OnboardingWizardProps {
   communityId: string;

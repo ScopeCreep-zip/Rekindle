@@ -1,6 +1,6 @@
-import { type Component, For, Show, createMemo } from "solid-js";
-import SkinGlyph from "../common/SkinGlyph";
+import { type Component, createMemo, For, Show } from "solid-js";
 import type { Channel, Member, VoiceChannelState } from "../../stores/community.store";
+import SkinGlyph from "../common/SkinGlyph";
 
 interface StagePanelProps {
   channel: Channel;

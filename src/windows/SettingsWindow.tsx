@@ -1,21 +1,21 @@
-import { type Component, createSignal, For, Show, Suspense, onMount, onCleanup } from "solid-js";
-import { type UnlistenFn, startEventStream, subscribeSettingsTab } from "../ipc/channels";
-import Titlebar from "../components/titlebar/Titlebar";
-import PushRelaySettingsSection from "../components/settings/PushRelaySettingsSection";
+import { type Component, createSignal, For, onCleanup, onMount, Show, Suspense } from "solid-js";
 import { handleLoadSettings } from "../actions/settings.actions";
-import { hydrateState } from "../stores/hydrate";
+import PushRelaySettingsSection from "../components/settings/PushRelaySettingsSection";
+import Titlebar from "../components/titlebar/Titlebar";
+import { startEventStream, subscribeSettingsTab, type UnlistenFn } from "../ipc/channels";
 import type { SettingsTab } from "../ipc/commands/types";
-import ProfileTab from "./settings/ProfileTab";
-import ApplicationTab from "./settings/ApplicationTab";
-import AppearanceTab from "./settings/AppearanceTab";
-import NotificationsTab from "./settings/NotificationsTab";
-import AudioTab from "./settings/AudioTab";
-import VideoTab from "./settings/VideoTab";
-import PrivacyTab from "./settings/PrivacyTab";
-import DevicesTab from "./settings/DevicesTab";
-import AboutTab from "./settings/AboutTab";
+import { hydrateState } from "../stores/hydrate";
 import { rovingList } from "../utils/roving_list";
 import { setWindowKind } from "../utils/window_kind";
+import AboutTab from "./settings/AboutTab";
+import AppearanceTab from "./settings/AppearanceTab";
+import ApplicationTab from "./settings/ApplicationTab";
+import AudioTab from "./settings/AudioTab";
+import DevicesTab from "./settings/DevicesTab";
+import NotificationsTab from "./settings/NotificationsTab";
+import PrivacyTab from "./settings/PrivacyTab";
+import ProfileTab from "./settings/ProfileTab";
+import VideoTab from "./settings/VideoTab";
 
 const TAB_LABELS: { id: SettingsTab; label: string }[] = [
   { id: "profile", label: "Profile" },

@@ -1,6 +1,6 @@
-import { type Component, For, createEffect, createSignal } from "solid-js";
-import Modal from "../common/Modal";
+import { type Component, createEffect, createSignal, For } from "solid-js";
 import { handleCreatePoll } from "../../actions/community.actions";
+import Modal from "../common/Modal";
 
 interface CreatePollModalProps {
   isOpen: boolean;

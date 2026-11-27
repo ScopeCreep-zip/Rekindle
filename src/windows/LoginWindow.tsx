@@ -1,15 +1,15 @@
-import { type Component, createSignal, onMount, onCleanup, For, Show } from "solid-js";
-import Titlebar from "../components/titlebar/Titlebar";
+import { type Component, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { handleCreateIdentity, handleLogin } from "../actions/auth.actions";
 import Avatar from "../components/common/Avatar";
 import LoadingButton from "../components/common/LoadingButton";
-import { handleLogin, handleCreateIdentity } from "../actions/auth.actions";
+import Titlebar from "../components/titlebar/Titlebar";
+import { startEventStream } from "../ipc/channels";
+import { subscribeLifecycleEvents } from "../ipc/channels/subscriptions";
 import { commands, type IdentitySummary } from "../ipc/commands";
 import { isCancelled } from "../ipc/commands/dto";
 import { canUnlock, setLifecycleState } from "../stores/lifecycle.store";
-import { subscribeLifecycleEvents } from "../ipc/channels/subscriptions";
 import { errorMessage } from "../utils/error";
 import { truncateKey } from "../utils/formatting";
-import { startEventStream } from "../ipc/channels";
 import { setWindowKind } from "../utils/window_kind";
 
 type Mode = "picker" | "login" | "create";

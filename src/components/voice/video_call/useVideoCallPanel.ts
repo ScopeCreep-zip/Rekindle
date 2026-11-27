@@ -1,21 +1,21 @@
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
-import { Channel } from "../../../ipc/invoke";
-import { commands } from "../../../ipc/commands";
+import { probeAndReportLocalVideoCapabilities } from "../../../actions/video.actions";
+import {
+  subscribeCommunityEvents,
+  subscribeVoiceEvents,
+  type UnlistenFn,
+} from "../../../ipc/channels";
+import { isLegacyCommunityEvent } from "../../../ipc/channels/community_subscription_events";
 import type {
   CommunityVideoFrameMsg,
   DmVideoFrameMsg,
   SessionVideoConfig,
 } from "../../../ipc/commands";
-import {
-  type UnlistenFn,
-  subscribeCommunityEvents,
-  subscribeVoiceEvents,
-} from "../../../ipc/channels";
-import { isLegacyCommunityEvent } from "../../../ipc/channels/community_subscription_events";
-import { setVoiceState, voiceState } from "../../../stores/voice.store";
-import { probeAndReportLocalVideoCapabilities } from "../../../actions/video.actions";
+import { commands } from "../../../ipc/commands";
+import { Channel } from "../../../ipc/invoke";
 import { setDmPeerDecodeCodecs, videoSessionConfigFor } from "../../../stores/video.store";
-import { releaseRemoteStream, type RemoteStream } from "./codec_utils";
+import { setVoiceState, voiceState } from "../../../stores/voice.store";
+import { type RemoteStream, releaseRemoteStream } from "./codec_utils";
 import { createCaptureController } from "./panel_capture";
 import type { PanelCtx, Ref } from "./panel_ctx";
 import { createDecodePipeline } from "./panel_decode";
@@ -27,6 +27,7 @@ import { createVideoSender, type SenderRoute } from "./video_sender";
 // modules that consume it (panel_capture / panel_decode / panel_pip),
 // so declaring the type here closed four module cycles.
 export type { VideoCallPanelProps } from "./panel_ctx";
+
 import type { VideoCallPanelProps } from "./panel_ctx";
 
 export function useVideoCallPanel(props: VideoCallPanelProps) {

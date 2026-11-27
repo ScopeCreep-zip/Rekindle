@@ -26,8 +26,8 @@
 // platform (empty encode list) reports and proceeds — the user can
 // watch video without sending.
 
-import { commands } from "../ipc/commands";
 import type { Codec, MediaCapabilities, ScalabilityMode } from "../ipc/commands";
+import { commands } from "../ipc/commands";
 import { wireCodecToWebCodecsString } from "../utils/webcodecs";
 
 const PROBE_WIDTH = 854;

@@ -1,7 +1,7 @@
-import { type Component, createSignal, createEffect, createMemo, For, Show } from "solid-js";
-import Modal from "../common/Modal";
+import { type Component, createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { handleCreateChannel, handleSetChannelForumTags } from "../../actions/community.actions";
 import { communityState } from "../../stores/community.store";
+import Modal from "../common/Modal";
 
 interface CreateChannelModalProps {
   isOpen: boolean;

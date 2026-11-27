@@ -1,7 +1,7 @@
-import { type Component, Show, createMemo, onCleanup } from "solid-js";
-import SkinGlyph from "../../common/SkinGlyph";
-import Avatar from "../../common/Avatar";
+import { type Component, createMemo, onCleanup, Show } from "solid-js";
 import { voiceState } from "../../../stores/voice.store";
+import Avatar from "../../common/Avatar";
+import SkinGlyph from "../../common/SkinGlyph";
 import type { CallTile } from "./useCallStage";
 
 /// One gallery cell: a live video surface (remote decoder canvas or local

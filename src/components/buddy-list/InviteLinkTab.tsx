@@ -1,13 +1,13 @@
-import { type Component, Show, For, createSignal } from "solid-js";
-import { friendsState } from "../../stores/friends.store";
+import { type Component, createSignal, For, Show } from "solid-js";
 import {
-  handleGenerateInvite,
   handleAddFriendFromInvite,
   handleCancelInvite,
+  handleGenerateInvite,
 } from "../../actions/buddy.actions";
+import { friendsState } from "../../stores/friends.store";
 import { maskInviteUrl } from "../../utils/masking";
-import OwnRecordsWait from "../common/OwnRecordsWait";
 import { formatRelativeTime, formatTimeUntil } from "../../utils/time";
+import OwnRecordsWait from "../common/OwnRecordsWait";
 
 interface InviteLinkTabProps {
   onClose: () => void;

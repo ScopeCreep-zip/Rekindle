@@ -1,18 +1,18 @@
 import { type Component, Show } from "solid-js";
-import SkinGlyph from "../../components/common/SkinGlyph";
-import CommunityList from "../../components/community/CommunityList";
-import ChannelList from "../../components/community/ChannelList";
-import VoicePanel from "../../components/voice/VoicePanel";
-import CategoryHeader from "../../components/community/CategoryHeader";
-import { voiceState } from "../../stores/voice.store";
-import { commands } from "../../ipc/commands";
-import { handleJoinVoice } from "../../actions/voice.actions";
 import {
-  handleDeleteChannel,
   handleDeleteCategory,
+  handleDeleteChannel,
   handleLeaveCommunity,
   handleSetNotificationOverride,
 } from "../../actions/community.actions";
+import { handleJoinVoice } from "../../actions/voice.actions";
+import SkinGlyph from "../../components/common/SkinGlyph";
+import CategoryHeader from "../../components/community/CategoryHeader";
+import ChannelList from "../../components/community/ChannelList";
+import CommunityList from "../../components/community/CommunityList";
+import VoicePanel from "../../components/voice/VoicePanel";
+import { commands } from "../../ipc/commands";
+import { voiceState } from "../../stores/voice.store";
 import type { CommunityVm } from "./useCommunityWindow";
 
 /// Left navigation rail: community list, channel list, collapsible game

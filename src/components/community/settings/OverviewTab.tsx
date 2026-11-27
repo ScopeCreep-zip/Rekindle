@@ -1,12 +1,12 @@
-import { type Component, Show, createSignal, createEffect, createUniqueId } from "solid-js";
-import SkinGlyph from "../../common/SkinGlyph";
-import type { Community } from "../../../stores/community.store";
+import { type Component, createEffect, createSignal, createUniqueId, Show } from "solid-js";
 import { handleUpdateCommunityInfo } from "../../../actions/community.actions";
+import type { Community } from "../../../stores/community.store";
 import { addToast } from "../../../stores/toast.store";
 import FormField from "../../common/FormField";
-import SuccessorSection from "./SuccessorSection";
+import SkinGlyph from "../../common/SkinGlyph";
 import CommunityDeviceStatus from "../CommunityDeviceStatus";
 import MyNameSection from "./MyNameSection";
+import SuccessorSection from "./SuccessorSection";
 
 interface OverviewTabProps {
   community: Community;

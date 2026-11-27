@@ -1,39 +1,39 @@
-import { type Component, For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
-import { type UnlistenFn, startEventStream } from "../../ipc/channels";
-import OwnRecordsWait from "../../components/common/OwnRecordsWait";
-import Titlebar from "../../components/titlebar/Titlebar";
-import MessageList from "../../components/chat/MessageList";
-import TypingIndicator from "../../components/chat/TypingIndicator";
-import MessageInput from "../../components/chat/MessageInput";
-import { authState } from "../../stores/auth.store";
-import { groupDmState } from "../../stores/group-dm.store";
-import { hydrateState } from "../../stores/hydrate";
+import { type Component, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { handleAcceptGroupCall, handleEndGroupCall } from "../../actions/calls.actions";
+import { handleLoadDisappearingTimer } from "../../actions/disappearing.actions";
 import {
   handleDiscardGroupSend,
+  handleGroupDisplayed,
   handleGroupDraftChanged,
   handleLeaveGroupDm,
+  handleLoadGroupDms,
+  handleLoadGroupMessages,
   handleRenameGroupDm,
   handleRetryGroupSend,
   handleSendGroupDm,
-  handleLoadGroupDms,
-  handleLoadGroupMessages,
-  handleGroupDisplayed,
 } from "../../actions/group-dm.actions";
-import { handleLoadDisappearingTimer } from "../../actions/disappearing.actions";
-import DisappearingTimerControl from "../../components/chat/DisappearingTimerControl";
-import InviteToRoomModal from "../../components/chat/InviteToRoomModal";
-import GameLobbyCard from "../../components/chat/GameLobbyCard";
-import { subscribeGroupChatEvents } from "../../handlers/group-dm.handlers";
+import { registerShellRunner } from "../../actions/skin.actions";
 import StartGroupCallModal, {
   type GroupCallTarget,
 } from "../../components/buddy-list/StartGroupCallModal";
-import { registerShellRunner } from "../../actions/skin.actions";
-import type { Message } from "../../stores/chat.store";
-import { SlotMount } from "../../components/skin-tree/slots";
+import DisappearingTimerControl from "../../components/chat/DisappearingTimerControl";
+import GameLobbyCard from "../../components/chat/GameLobbyCard";
+import InviteToRoomModal from "../../components/chat/InviteToRoomModal";
+import MessageInput from "../../components/chat/MessageInput";
+import MessageList from "../../components/chat/MessageList";
+import TypingIndicator from "../../components/chat/TypingIndicator";
+import OwnRecordsWait from "../../components/common/OwnRecordsWait";
 import SkinTreeWindow from "../../components/skin-tree/SkinTreeWindow";
+import { SlotMount } from "../../components/skin-tree/slots";
+import Titlebar from "../../components/titlebar/Titlebar";
+import { subscribeGroupChatEvents } from "../../handlers/group-dm.handlers";
 import { skinShell } from "../../hooks/useSkin";
+import { startEventStream, type UnlistenFn } from "../../ipc/channels";
+import { authState } from "../../stores/auth.store";
 import { callsState } from "../../stores/calls.store";
-import { handleAcceptGroupCall, handleEndGroupCall } from "../../actions/calls.actions";
+import type { Message } from "../../stores/chat.store";
+import { groupDmState } from "../../stores/group-dm.store";
+import { hydrateState } from "../../stores/hydrate";
 
 /// The chat window's group mode (plan E2.6): the group's stored history
 /// (`group_dm_messages`) with members' messages as they arrive, its members

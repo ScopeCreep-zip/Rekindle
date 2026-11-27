@@ -1,5 +1,5 @@
 import { type Component, For } from "solid-js";
-import { PERMISSION_CATEGORIES, hasPermission } from "../../../ipc/permissions";
+import { hasPermission, PERMISSION_CATEGORIES } from "../../../ipc/permissions";
 
 interface PermissionCheckboxListProps {
   permissions: bigint;

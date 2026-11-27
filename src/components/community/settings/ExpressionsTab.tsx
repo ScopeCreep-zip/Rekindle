@@ -1,7 +1,7 @@
-import { type Component, For, Show, onMount } from "solid-js";
-import type { Community } from "../../../stores/community.store";
-import { commands } from "../../../ipc/commands";
+import { type Component, For, onMount, Show } from "solid-js";
 import { handleLoadExpressions } from "../../../actions/community.actions";
+import { commands } from "../../../ipc/commands";
+import type { Community } from "../../../stores/community.store";
 import { addToast } from "../../../stores/toast.store";
 
 interface ExpressionsTabProps {

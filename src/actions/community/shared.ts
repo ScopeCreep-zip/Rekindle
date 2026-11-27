@@ -1,8 +1,8 @@
 import { createStore } from "solid-js/store";
-import { commands } from "../../ipc/commands";
-import { setCommunityState, communityState } from "../../stores/community.store";
-import type { Role, ScheduledEvent } from "../../stores/community.store";
 import type { EventInfo } from "../../ipc/commands";
+import { commands } from "../../ipc/commands";
+import type { Role, ScheduledEvent } from "../../stores/community.store";
+import { communityState, setCommunityState } from "../../stores/community.store";
 
 // Typing indicator state
 interface TypingUser {
@@ -11,7 +11,8 @@ interface TypingUser {
 }
 
 const [typingUsersStore, setTypingUsers] = createStore<Record<string, TypingUser[]>>({});
-export { typingUsersStore as typingUsers, setTypingUsers };
+
+export { setTypingUsers, typingUsersStore as typingUsers };
 
 export function computeDisplayRoleName(roleIds: string[], roles: Role[]): string {
   const highestRole = roleIds

@@ -1,8 +1,8 @@
-import { type Component, For, Show, createMemo, createSignal } from "solid-js";
-import SkinGlyph from "../common/SkinGlyph";
-import { disappearingState } from "../../stores/disappearing.store";
+import { type Component, createMemo, createSignal, For, Show } from "solid-js";
 import { handleSetDisappearingTimer } from "../../actions/disappearing.actions";
+import { disappearingState } from "../../stores/disappearing.store";
 import { CUSTOM_UNITS, durationText } from "../../utils/disappearing";
+import SkinGlyph from "../common/SkinGlyph";
 
 /** The chat window's disappearing-messages control (plan E7.1): a header
  *  button showing the timer in force, opening the Host's presets and a

@@ -1,7 +1,7 @@
-import { type Component, For, Show, createSignal, onCleanup, onMount } from "solid-js";
+import { type Component, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { handleLaunchGame } from "../../actions/game.actions";
 import { subscribeChatEvents } from "../../ipc/channels";
 import { commands } from "../../ipc/commands";
-import { handleLaunchGame } from "../../actions/game.actions";
 
 interface Invite {
   gameId: number;

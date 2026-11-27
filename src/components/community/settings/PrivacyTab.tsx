@@ -1,6 +1,6 @@
 import { type Component, createEffect, createSignal, createUniqueId } from "solid-js";
-import type { Community } from "../../../stores/community.store";
 import { commands, type PresenceSharingPolicy } from "../../../ipc/commands";
+import type { Community } from "../../../stores/community.store";
 import { addToast } from "../../../stores/toast.store";
 import FormField from "../../common/FormField";
 

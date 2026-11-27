@@ -1,10 +1,10 @@
 import { type Component, createSignal, createUniqueId, onMount, Show } from "solid-js";
+import { handleSaveSettings } from "../../actions/settings.actions";
 import FormField from "../../components/common/FormField";
 import SettingsSelect, { type SettingsSelectOption } from "../../components/common/SettingsSelect";
-import { settingsState } from "../../stores/settings.store";
-import { handleSaveSettings } from "../../actions/settings.actions";
 import { commands } from "../../ipc/commands";
 import type { NotificationContent, QuietHoursSettings } from "../../ipc/commands/types";
+import { settingsState } from "../../stores/settings.store";
 
 /** What an OS notification shows of a message. */
 const NOTIFICATION_CONTENT_OPTIONS: SettingsSelectOption[] = [

@@ -1,9 +1,9 @@
 import { type Component, createSignal, Show } from "solid-js";
-import { authState } from "../../stores/auth.store";
-import { handleCopyPublicKey } from "../../actions/buddy.actions";
 import { handleSetDisplayName, handleSetStatusMessage } from "../../actions/auth.actions";
-import StatusDot from "../status/StatusDot";
+import { handleCopyPublicKey } from "../../actions/buddy.actions";
+import { authState } from "../../stores/auth.store";
 import Avatar from "../common/Avatar";
+import StatusDot from "../status/StatusDot";
 import NotificationCenter from "./NotificationCenter";
 
 const UserIdentityBar: Component = () => {

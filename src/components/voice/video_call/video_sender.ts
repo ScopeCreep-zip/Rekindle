@@ -16,13 +16,14 @@
 // hazard); and scheduling prefers requestVideoFrameCallback, which —
 // unlike requestAnimationFrame — keeps firing while the window is
 // occluded on macOS.
-import { commands } from "../../../ipc/commands";
-import type { Codec } from "../../../ipc/commands";
+
 import { localVideoCapabilities } from "../../../actions/video.actions";
+import type { Codec } from "../../../ipc/commands";
+import { commands } from "../../../ipc/commands";
 import {
+  bytesToBase64,
   KEYFRAME_INTERVAL_MS,
   KEYFRAME_MIN_INTERVAL_MS,
-  bytesToBase64,
   randomStreamIdHex,
 } from "./codec_utils";
 import {
@@ -32,7 +33,6 @@ import {
   pickEncoderCodec,
   reportEncoderStatus,
 } from "./encoder_config";
-import { FIRST_CHUNK_DEADLINE_MS, RECREATE_COOLDOWN_MS, freshTrack } from "./sender_types";
 import type {
   SenderRoute,
   TrackLabel,
@@ -40,6 +40,7 @@ import type {
   VideoSender,
   VideoWithRVFC,
 } from "./sender_types";
+import { FIRST_CHUNK_DEADLINE_MS, freshTrack, RECREATE_COOLDOWN_MS } from "./sender_types";
 
 export type { SenderRoute, VideoSender } from "./sender_types";
 

@@ -1,14 +1,14 @@
+import { refreshStageHandRaises } from "../../actions/community/shared";
 import type { CommunityEvent } from "../../ipc/channels";
 import type { CommunitySubscriptionEvent } from "../../ipc/channels/community_subscription_events";
 import type { VoiceSubscriptionEvent } from "../../ipc/channels/voice_events";
-import { setCommunityState, communityState } from "../../stores/community.store";
 import { commands } from "../../ipc/commands";
-import { addToast } from "../../stores/toast.store";
 import { announce } from "../../stores/announce.store";
+import { communityState, setCommunityState } from "../../stores/community.store";
 import { settingsState } from "../../stores/settings.store";
-import { voiceState, setVoiceState } from "../../stores/voice.store";
+import { addToast } from "../../stores/toast.store";
 import { setVideoSessionConfig } from "../../stores/video.store";
-import { refreshStageHandRaises } from "../../actions/community/shared";
+import { setVoiceState, voiceState } from "../../stores/voice.store";
 import { withCommunity } from "./community_reread";
 
 /// Mirror signaling membership into the call-UI roster

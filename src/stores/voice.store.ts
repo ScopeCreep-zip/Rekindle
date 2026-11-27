@@ -80,4 +80,4 @@ const [voiceState, setVoiceState] = createStore<VoiceState>({
   mediaReady: null,
 });
 
-export { voiceState, setVoiceState };
+export { setVoiceState, voiceState };

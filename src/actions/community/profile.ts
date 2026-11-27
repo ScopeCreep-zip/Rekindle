@@ -1,11 +1,11 @@
+import { refreshCommunityMembers } from "../../handlers/community/members_refresh";
 import { commands } from "../../ipc/commands";
-import { setCommunityState, communityState } from "../../stores/community.store";
-import { addToast } from "../../stores/toast.store";
-import { decodeBase64ToBytes } from "../../utils/base64";
 import type { CommunityProfilePatch, WelcomeScreen } from "../../ipc/commands/dto";
 import { isCommandError } from "../../ipc/commands/dto";
+import { communityState, setCommunityState } from "../../stores/community.store";
+import { addToast } from "../../stores/toast.store";
+import { decodeBase64ToBytes } from "../../utils/base64";
 import { errorMessage } from "../../utils/error";
-import { refreshCommunityMembers } from "../../handlers/community/members_refresh";
 
 /**
  * Send `patch`, our card's edit in one community (plan PF2: each field

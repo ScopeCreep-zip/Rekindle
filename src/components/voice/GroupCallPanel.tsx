@@ -1,12 +1,12 @@
-import { type Component, For, Show, createEffect, createSignal, onCleanup } from "solid-js";
-import SkinGlyph from "../common/SkinGlyph";
-import { callsState } from "../../stores/calls.store";
-import { friendsState } from "../../stores/friends.store";
+import { type Component, createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import {
   handleAcceptGroupCall,
   handleDeclineGroupCall,
   handleEndGroupCall,
 } from "../../actions/calls.actions";
+import { callsState } from "../../stores/calls.store";
+import { friendsState } from "../../stores/friends.store";
+import SkinGlyph from "../common/SkinGlyph";
 
 // Wave 12 W12.10 — group call surfaces.
 //

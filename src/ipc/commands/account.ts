@@ -1,17 +1,17 @@
 import { hostInvoke } from "../invoke";
-import type { FriendInfo } from "./types";
 import type {
   BlockedUser,
+  FriendCodeView,
+  FriendInviteCreated,
   IdentityShown,
   IdentitySummary,
   IdentityView,
-  FriendInviteCreated,
   OutgoingInvite,
   PendingRequest,
   SafetyNumberView,
-  FriendCodeView,
 } from "./dto";
 import type { DmMessage } from "./dto_dm";
+import type { FriendInfo } from "./types";
 
 export const accountCommands = {
   // Identity: Host calls (plan E1.1). A blank name is no name: the Host

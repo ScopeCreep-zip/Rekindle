@@ -1,8 +1,8 @@
-import type { CommunitySubscriptionEvent } from "../../ipc/channels/community_subscription_events";
-import { setCommunityState, communityState } from "../../stores/community.store";
-import { addToast } from "../../stores/toast.store";
-import type { Message } from "../../stores/chat.store";
 import { transformEvent } from "../../actions/community/shared";
+import type { CommunitySubscriptionEvent } from "../../ipc/channels/community_subscription_events";
+import type { Message } from "../../stores/chat.store";
+import { communityState, setCommunityState } from "../../stores/community.store";
+import { addToast } from "../../stores/toast.store";
 
 // ── Daemon vocabulary ──────────────────────────────────────────────
 //

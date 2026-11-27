@@ -1,20 +1,20 @@
-import { commands } from "../ipc/commands";
-import { setAuthState } from "./auth.store";
-import type { UserStatus } from "./auth.store";
-import { fetchAvatarUrl } from "../ipc/avatar";
-import { friendsState, setFriendsState } from "./friends.store";
 import { reconcile } from "solid-js/store";
-import { setCommunityState, setCommunityMembers } from "./community.store";
-import {
-  foldFriendSnapshot,
-  transformExpression,
-  transformCommunityMap,
-  transformMember,
-} from "../utils/transformers";
 import {
   handleLoadAutoModRules,
   handleResolveCommunityImageDataUrls,
 } from "../actions/community.actions";
+import { fetchAvatarUrl } from "../ipc/avatar";
+import { commands } from "../ipc/commands";
+import {
+  foldFriendSnapshot,
+  transformCommunityMap,
+  transformExpression,
+  transformMember,
+} from "../utils/transformers";
+import type { UserStatus } from "./auth.store";
+import { setAuthState } from "./auth.store";
+import { setCommunityMembers, setCommunityState } from "./community.store";
+import { friendsState, setFriendsState } from "./friends.store";
 
 /**
  * Hydrate frontend stores from the Rust backend.

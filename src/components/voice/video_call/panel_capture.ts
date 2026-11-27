@@ -3,9 +3,9 @@
 // Extracted from useVideoCallPanel.ts; plain functions of the shared
 // PanelCtx (no SolidJS owner-scoped primitives here).
 
-import { Channel } from "../../../ipc/invoke";
-import { commands } from "../../../ipc/commands";
 import type { NativePreviewFrameMsg } from "../../../ipc/commands";
+import { commands } from "../../../ipc/commands";
+import { Channel } from "../../../ipc/invoke";
 import { videoSessionConfigFor } from "../../../stores/video.store";
 import { decodeBase64ToBytes } from "./codec_utils";
 import type { PanelCtx } from "./panel_ctx";

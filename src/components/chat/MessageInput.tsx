@@ -1,16 +1,16 @@
-import { type Component, For, createSignal, createEffect, createUniqueId, Show } from "solid-js";
-import SkinGlyph from "../common/SkinGlyph";
 import { Popover } from "@kobalte/core/popover";
+import { type Component, createEffect, createSignal, createUniqueId, For, Show } from "solid-js";
 import { canSend } from "../../actions/chat.actions";
 import { handleUploadAttachment } from "../../actions/community.actions";
-import EmojiPicker from "./EmojiPicker";
-import ReplyPreview from "./ReplyPreview";
 import { voiceState } from "../../stores/voice.store";
-import { useMentionAutocomplete } from "./message_input/useMentionAutocomplete";
-import { useVoiceRecorder } from "./message_input/useVoiceRecorder";
-import { useSlowmode } from "./message_input/useSlowmode";
-import type { MessageInputProps } from "./message_input/types";
+import SkinGlyph from "../common/SkinGlyph";
 import { SlotMount } from "../skin-tree/slots";
+import EmojiPicker from "./EmojiPicker";
+import type { MessageInputProps } from "./message_input/types";
+import { useMentionAutocomplete } from "./message_input/useMentionAutocomplete";
+import { useSlowmode } from "./message_input/useSlowmode";
+import { useVoiceRecorder } from "./message_input/useVoiceRecorder";
+import ReplyPreview from "./ReplyPreview";
 
 const MessageInput: Component<MessageInputProps> = (props) => {
   const [body, setBody] = createSignal("");

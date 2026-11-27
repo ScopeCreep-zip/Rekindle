@@ -1,11 +1,11 @@
 import { type Component, For } from "solid-js";
-import type { Channel, Role } from "../../../stores/community.store";
 import type {
   GuideStep,
   OnboardingConfigEdit,
   OnboardingOptionEdit,
   OnboardingQuestionEdit,
 } from "../../../ipc/commands/dto";
+import type { Channel, Role } from "../../../stores/community.store";
 
 interface OnboardingQuestionsEditorProps {
   flow: OnboardingConfigEdit;

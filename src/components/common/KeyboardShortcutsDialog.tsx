@@ -1,8 +1,8 @@
 import { type Component, For, onCleanup, onMount } from "solid-js";
-import Modal from "./Modal";
-import { createScrollFocus } from "../../utils/scroll_focus";
-import { SHORTCUT_SECTIONS, isHelpChord, keyLabel } from "../../utils/keyboard_shortcuts";
 import { setShortcutsHelpOpen, shortcutsHelpOpen } from "../../stores/shortcuts_help.store";
+import { isHelpChord, keyLabel, SHORTCUT_SECTIONS } from "../../utils/keyboard_shortcuts";
+import { createScrollFocus } from "../../utils/scroll_focus";
+import Modal from "./Modal";
 
 /**
  * The keyboard-shortcuts help dialog (wiring guide §13f): every shortcut

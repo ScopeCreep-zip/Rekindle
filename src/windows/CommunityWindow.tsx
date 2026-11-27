@@ -1,17 +1,17 @@
 import { type Component, Show } from "solid-js";
-import Titlebar from "../components/titlebar/Titlebar";
 import SkinTreeWindow from "../components/skin-tree/SkinTreeWindow";
 import { SlotMount, SlotProvider } from "../components/skin-tree/slots";
-import { skinShell } from "../hooks/useSkin";
-import { removalText } from "../utils/removal_text";
-import { useCommunityWindow } from "./community_window/useCommunityWindow";
-import CommunitySidebar from "./community_window/CommunitySidebar";
-import CommunityMainPane from "./community_window/CommunityMainPane";
-import CommunityRightPanel from "./community_window/CommunityRightPanel";
-import CommunityModals from "./community_window/CommunityModals";
+import Titlebar from "../components/titlebar/Titlebar";
 import CallPipelineHost from "../components/voice/call_stage/CallPipelineHost";
-import { setWindowKind } from "../utils/window_kind";
+import { skinShell } from "../hooks/useSkin";
 import { formatTimestamp } from "../utils/formatting";
+import { removalText } from "../utils/removal_text";
+import { setWindowKind } from "../utils/window_kind";
+import CommunityMainPane from "./community_window/CommunityMainPane";
+import CommunityModals from "./community_window/CommunityModals";
+import CommunityRightPanel from "./community_window/CommunityRightPanel";
+import CommunitySidebar from "./community_window/CommunitySidebar";
+import { useCommunityWindow } from "./community_window/useCommunityWindow";
 
 const CommunityWindow: Component = () => {
   const vm = useCommunityWindow();

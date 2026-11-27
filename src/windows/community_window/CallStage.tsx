@@ -1,11 +1,11 @@
 import { type Component, For, Show } from "solid-js";
-import SkinGlyph from "../../components/common/SkinGlyph";
-import ParticipantTile from "../../components/voice/call_stage/ParticipantTile";
-import CallControlBar from "../../components/voice/call_stage/CallControlBar";
-import { useCallStage } from "../../components/voice/call_stage/useCallStage";
-import { activePipeline } from "../../components/voice/call_stage/pipeline_store";
-import ChannelChat from "./ChannelChat";
 import { handleJoinVoice } from "../../actions/voice.actions";
+import SkinGlyph from "../../components/common/SkinGlyph";
+import CallControlBar from "../../components/voice/call_stage/CallControlBar";
+import ParticipantTile from "../../components/voice/call_stage/ParticipantTile";
+import { activePipeline } from "../../components/voice/call_stage/pipeline_store";
+import { useCallStage } from "../../components/voice/call_stage/useCallStage";
+import ChannelChat from "./ChannelChat";
 import type { CommunityVm } from "./useCommunityWindow";
 
 /// Main-pane conferencing surface for a community voice channel. When the

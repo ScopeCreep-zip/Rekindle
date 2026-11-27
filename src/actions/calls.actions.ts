@@ -1,8 +1,8 @@
 import { commands } from "../ipc/commands";
-import { addToast } from "../stores/toast.store";
 import { callsState, setCallsState } from "../stores/calls.store";
-import { stopActiveRing } from "./calls_ring";
+import { addToast } from "../stores/toast.store";
 import { errorMessage } from "../utils/error";
+import { stopActiveRing } from "./calls_ring";
 
 /// Initiate an outgoing call. The backend returns the `call_id` once
 /// the offer has been delivered and (synchronously) the

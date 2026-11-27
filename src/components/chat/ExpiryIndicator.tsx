@@ -1,6 +1,6 @@
-import { type Component, Show, createMemo, createSignal, onCleanup } from "solid-js";
-import SkinGlyph from "../common/SkinGlyph";
+import { type Component, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { remainingShort, remainingText } from "../../utils/disappearing";
+import SkinGlyph from "../common/SkinGlyph";
 
 // One clock for every indicator on the page, running only while one is
 // shown. It only redraws the countdown: the Host deletes the message at

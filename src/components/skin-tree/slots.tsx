@@ -1,10 +1,10 @@
 import {
   type Component,
-  type JSX,
-  Show,
   children,
   createContext,
   createSignal,
+  type JSX,
+  Show,
   useContext,
 } from "solid-js";
 import { Portal } from "solid-js/web";

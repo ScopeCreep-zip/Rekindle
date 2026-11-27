@@ -1,40 +1,40 @@
-import {
-  type Component,
-  For,
-  Show,
-  createEffect,
-  createSignal,
-  createMemo,
-  type JSX,
-} from "solid-js";
-import SkinGlyph from "../common/SkinGlyph";
 import { ContextMenu } from "@kobalte/core/context-menu";
 import { Popover } from "@kobalte/core/popover";
 import {
+  type Component,
+  createEffect,
+  createMemo,
+  createSignal,
+  For,
+  type JSX,
+  Show,
+} from "solid-js";
+import {
+  handleAssignRole,
+  handleBanMember,
+  handleRemoveCommunityMember,
+  handleServerDeafenMember,
+  handleServerMuteMember,
+  handleSetCommunityBlock,
+  handleTimeoutMember,
+  handleUnassignRole,
+  loadCommunityBlocks,
+} from "../../actions/community.actions";
+import { useMembersOnScreen } from "../../hooks/useMembersOnScreen";
+import type { MemberGroup } from "../../ipc/commands/dto";
+import {
+  communityState,
   EVERYONE_ROLE_ID,
   type Member,
   type Role,
   type RoleTagColours,
-  communityState,
 } from "../../stores/community.store";
-import StatusDot from "../status/StatusDot";
-import type { MemberGroup } from "../../ipc/commands/dto";
-import RoleTag from "./RoleTag";
 import { rovingList } from "../../utils/roving_list";
-import MemberProfilePopup from "./MemberProfilePopup";
+import SkinGlyph from "../common/SkinGlyph";
+import StatusDot from "../status/StatusDot";
 import CommunityProfileEditor from "./CommunityProfileEditor";
-import { useMembersOnScreen } from "../../hooks/useMembersOnScreen";
-import {
-  handleRemoveCommunityMember,
-  handleBanMember,
-  handleAssignRole,
-  handleUnassignRole,
-  handleTimeoutMember,
-  handleServerMuteMember,
-  handleServerDeafenMember,
-  handleSetCommunityBlock,
-  loadCommunityBlocks,
-} from "../../actions/community.actions";
+import MemberProfilePopup from "./MemberProfilePopup";
+import RoleTag from "./RoleTag";
 
 interface MemberListProps {
   members: Member[];

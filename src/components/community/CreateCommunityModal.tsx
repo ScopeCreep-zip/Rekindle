@@ -1,19 +1,18 @@
-import { type Component, For, Show, createEffect, createSignal } from "solid-js";
-
-import Modal from "../common/Modal";
-import LoadingButton from "../common/LoadingButton";
-import { errorMessage } from "../../utils/error";
-import { handleCreateCommunity } from "../../actions/community.actions";
+import { type Component, createEffect, createSignal, For, Show } from "solid-js";
 import { handleCreateWithCoCreators, trackCoCreation } from "../../actions/community/co_create";
+import { handleCreateCommunity } from "../../actions/community.actions";
 import { coCreatorState, stopWatchingCreation } from "../../stores/co-creator.store";
 import { friendsState } from "../../stores/friends.store";
-import CoCreatorStatusView from "./CoCreatorStatusView";
 import {
   CREATE_WAIT_REASON,
   canCreateCommunity,
   networkLabel,
   trackNetworkStatus,
 } from "../../stores/network.store";
+import { errorMessage } from "../../utils/error";
+import LoadingButton from "../common/LoadingButton";
+import Modal from "../common/Modal";
+import CoCreatorStatusView from "./CoCreatorStatusView";
 
 // The Host's cap on named co-creators (`MAX_ADDITIONAL_CREATORS`); the
 // picker stops there, and the Host still refuses anything past it.

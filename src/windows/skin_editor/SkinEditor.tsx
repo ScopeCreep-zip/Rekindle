@@ -1,14 +1,14 @@
-import { type Component, For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { type Component, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { commands } from "../../ipc/commands";
-import SkinEditorMeta from "./SkinEditorMeta";
-import SkinRegionImport from "./SkinRegionImport";
+import { isCommandError } from "../../ipc/commands/dto";
 import type {
   SkinDraft,
   SkinDraftReport,
   SkinPairCheck,
   TokenValue,
 } from "../../ipc/commands/dto_skin_draft";
-import { isCommandError } from "../../ipc/commands/dto";
+import SkinEditorMeta from "./SkinEditorMeta";
+import SkinRegionImport from "./SkinRegionImport";
 
 /** `#rrggbb` of an sRGB triple. */
 function hex([r, g, b]: [number, number, number]): string {

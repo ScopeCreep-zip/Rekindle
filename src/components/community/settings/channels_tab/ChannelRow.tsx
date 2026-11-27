@@ -1,19 +1,19 @@
-import { type Component, For, Show, createSignal, createUniqueId } from "solid-js";
-import SkinGlyph from "../../../common/SkinGlyph";
-import type { Channel, Community } from "../../../../stores/community.store";
+import { type Component, createSignal, createUniqueId, For, Show } from "solid-js";
 import {
-  handleRenameChannel,
   handleDeleteChannel,
-  handleSetSlowmode,
-  handleSetChannelTopic,
-  handleSetChannelForumTags,
-  handleReorderChannels,
   handleMoveChannel,
-  handleSetNotificationOverride,
+  handleRenameChannel,
+  handleReorderChannels,
+  handleSetChannelForumTags,
   handleSetChannelNotificationSound,
+  handleSetChannelTopic,
+  handleSetNotificationOverride,
+  handleSetSlowmode,
 } from "../../../../actions/community.actions";
-import ChannelOverwriteEditor from "./ChannelOverwriteEditor";
+import type { Channel, Community } from "../../../../stores/community.store";
 import type { GlyphName } from "../../../common/glyph_art";
+import SkinGlyph from "../../../common/SkinGlyph";
+import ChannelOverwriteEditor from "./ChannelOverwriteEditor";
 
 interface ChannelRowProps {
   community: Community;

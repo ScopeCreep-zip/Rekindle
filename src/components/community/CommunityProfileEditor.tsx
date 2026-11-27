@@ -1,12 +1,10 @@
-import { asImageKind } from "../../ipc/commands/system";
-import { Component, Show, createEffect, createSignal, untrack } from "solid-js";
-import { colorIntToHex, parseColorHex } from "../../utils/color";
-import LoadingButton from "../common/LoadingButton";
-import Modal from "../common/Modal";
-import { communityState } from "../../stores/community.store";
-import { commands } from "../../ipc/commands";
+import { Component, createEffect, createSignal, Show, untrack } from "solid-js";
 import { handleUpdateCommunityProfile } from "../../actions/community.actions";
+import { commands } from "../../ipc/commands";
+import { asImageKind } from "../../ipc/commands/system";
+import { communityState } from "../../stores/community.store";
 import { addToast } from "../../stores/toast.store";
+import { colorIntToHex, parseColorHex } from "../../utils/color";
 import {
   colourField,
   editedField,
@@ -14,6 +12,8 @@ import {
   refField,
   textField,
 } from "../../utils/profile_field";
+import LoadingButton from "../common/LoadingButton";
+import Modal from "../common/Modal";
 
 interface CommunityProfileEditorProps {
   communityId: string;

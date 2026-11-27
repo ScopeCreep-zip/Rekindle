@@ -1,8 +1,8 @@
-import { type UnlistenFn, subscribeNotificationEvents } from "../ipc/channels";
+import { subscribeNotificationEvents, type UnlistenFn } from "../ipc/channels";
+import { callsState } from "../stores/calls.store";
+import { communityState } from "../stores/community.store";
 import { setNotificationState } from "../stores/notification.store";
 import { settingsState } from "../stores/settings.store";
-import { communityState } from "../stores/community.store";
-import { callsState } from "../stores/calls.store";
 
 // Wave 12 W12.2 — true when an in-call DND auto-suppression should
 // short-circuit message OS notifications / sounds. The user-facing

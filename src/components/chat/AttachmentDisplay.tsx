@@ -1,16 +1,16 @@
-import { type Component, Show, createMemo, createSignal } from "solid-js";
-import SkinGlyph from "../common/SkinGlyph";
-import type { MessageAttachment } from "../../stores/chat.store";
+import { type Component, createMemo, createSignal, Show } from "solid-js";
 import {
   handleDownloadAttachment,
   handlePinAttachment,
   handleRevealAttachment,
 } from "../../actions/community.actions";
 import { hasPermission, MANAGE_COMMUNITY } from "../../ipc/permissions";
+import type { MessageAttachment } from "../../stores/chat.store";
 import { communityState } from "../../stores/community.store";
-import { servedPermissions } from "../../utils/permissions";
 import { formatSize } from "../../utils/formatting";
+import { servedPermissions } from "../../utils/permissions";
 import type { GlyphName } from "../common/glyph_art";
+import SkinGlyph from "../common/SkinGlyph";
 
 interface AttachmentDisplayProps {
   communityId: string;

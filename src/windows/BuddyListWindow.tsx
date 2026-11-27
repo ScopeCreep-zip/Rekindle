@@ -1,65 +1,12 @@
 import { subscribeBackendIntents } from "../handlers/intent.handlers";
-import { type Component, type JSX, onMount, onCleanup, createSignal, Show } from "solid-js";
-import SkinFrame from "../components/common/SkinFrame";
-import SkinTreeWindow from "../components/skin-tree/SkinTreeWindow";
-import NameField from "../components/skin-tree/NameField";
-import { StatusList, StatusText } from "../components/skin-tree/StatusField";
-import FilesView from "../components/skin-tree/FilesView";
-import Infoview from "../components/infoview/Infoview";
-import { skinShell } from "../hooks/useSkin";
-import Titlebar from "../components/titlebar/Titlebar";
-import MenuBar from "../components/buddy-list/MenuBar";
-import UserIdentityBar from "../components/buddy-list/UserIdentityBar";
-import TabBar from "../components/buddy-list/TabBar";
-import DownloadsTab from "../components/buddy-list/DownloadsTab";
-import ServersView from "../components/skin-tree/ServersView";
-import SearchBar, { focusSearchInput } from "../components/buddy-list/SearchBar";
-import PendingRequests from "../components/buddy-list/PendingRequests";
-import CoCreatorInvites from "../components/buddy-list/CoCreatorInvites";
-import SuccessorOffers from "../components/buddy-list/SuccessorOffers";
-import BuddyList from "../components/buddy-list/BuddyList";
-import CommunityListCompact from "../components/buddy-list/CommunityListCompact";
-import BottomActionBar from "../components/buddy-list/BottomActionBar";
-import RouteStatus from "../components/buddy-list/RouteStatus";
-import AddFriendModal from "../components/buddy-list/AddFriendModal";
-import NewChatModal from "../components/buddy-list/NewChatModal";
-import PairingLinkNotice from "../components/buddy-list/PairingLinkNotice";
-import CreateCommunityModal from "../components/community/CreateCommunityModal";
-import JoinCommunityModal from "../components/community/JoinCommunityModal";
-import StartGroupCallModal from "../components/buddy-list/StartGroupCallModal";
-import CommunityStartModal from "../components/buddy-list/CommunityStartModal";
-import NewGroupModal from "../components/buddy-list/NewGroupModal";
-import InviteToRoomModal from "../components/chat/InviteToRoomModal";
-import GroupDmList from "../components/buddy-list/GroupDmList";
-import { subscribeBuddyListGroupDmEvents } from "../handlers/group-dm.handlers";
-import { subscribeBuddyListTransferEvents } from "../handlers/transfer.handlers";
+
+// The intent handler loads the store that registers the review and undo presenters.
+
+import { type Component, createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
+import { handleLoadPendingRequests, handleToggleAddFriend } from "../actions/buddy.actions";
 import { handleLoadGroupDms } from "../actions/group-dm.actions";
-import StatusPicker from "../components/status/StatusPicker";
-import NetworkIndicator from "../components/status/NetworkIndicator";
-import { authState, setAuthState } from "../stores/auth.store";
-import { buddyListUI, setBuddyListUI } from "../stores/buddylist-ui.store";
-import { switchTab } from "../stores/buddylist-ui.store";
-import { handleLoadPendingRequests } from "../actions/buddy.actions";
-import { handleGetGameStatus } from "../actions/settings.actions";
-import { subscribeBuddyListChatEvents } from "../handlers/chat-events.handlers";
-import { subscribeBuddyListPresenceEvents } from "../handlers/presence-events.handlers";
-import { subscribeBuddyListVoiceEvents } from "../handlers/voice.handlers";
-import { subscribeBuddyListCommunityEvents } from "../handlers/community/buddy_list_communities";
-import { subscribePairingLinkHandler } from "../handlers/pairing-link.handler";
-import { refreshMissedCalls, subscribeCallEvents } from "../handlers/calls.handlers";
-import { subscribeNotificationHandler } from "../handlers/notification-events.handlers";
-import CallController from "../components/voice/CallController";
-import { type UnlistenFn, startEventStream } from "../ipc/channels";
 import { handleHydrateRelayState } from "../actions/relay.actions";
-import { hydrateState } from "../stores/hydrate";
-import {
-  subscribeNetworkStatus,
-  subscribeProfileUpdates,
-  subscribeSkinSignals,
-  subscribeSkinShell,
-} from "../ipc/channels";
-import { setSkinSignals } from "../stores/skin-signals.store";
-import { registerShellRunner, runAddressedShellOp } from "../actions/skin.actions";
+import { handleGetGameStatus } from "../actions/settings.actions";
 import {
   chatOpenOps,
   friendOps,
@@ -69,18 +16,72 @@ import {
   popupOps,
   transferOps,
 } from "../actions/shell_runners";
-import type { ShellOp } from "../ipc/commands/dto_skin_run";
+import { registerShellRunner, runAddressedShellOp } from "../actions/skin.actions";
 import { handleHide } from "../actions/titlebar.actions";
-import { handleToggleAddFriend } from "../actions/buddy.actions";
-import { setShortcutsHelpOpen } from "../stores/shortcuts_help.store";
-import {
+import AddFriendModal from "../components/buddy-list/AddFriendModal";
+import BottomActionBar, {
   handleToggleCreateCommunity,
   handleToggleJoinCommunity,
   handleToggleNewChat,
 } from "../components/buddy-list/BottomActionBar";
+import BuddyList from "../components/buddy-list/BuddyList";
+import CoCreatorInvites from "../components/buddy-list/CoCreatorInvites";
+import CommunityListCompact from "../components/buddy-list/CommunityListCompact";
+import CommunityStartModal from "../components/buddy-list/CommunityStartModal";
+import DownloadsTab from "../components/buddy-list/DownloadsTab";
+import GroupDmList from "../components/buddy-list/GroupDmList";
+import MenuBar from "../components/buddy-list/MenuBar";
+import NewChatModal from "../components/buddy-list/NewChatModal";
+import NewGroupModal from "../components/buddy-list/NewGroupModal";
+import PairingLinkNotice from "../components/buddy-list/PairingLinkNotice";
+import PendingRequests from "../components/buddy-list/PendingRequests";
+import RouteStatus from "../components/buddy-list/RouteStatus";
+import SearchBar, { focusSearchInput } from "../components/buddy-list/SearchBar";
+import StartGroupCallModal from "../components/buddy-list/StartGroupCallModal";
+import SuccessorOffers from "../components/buddy-list/SuccessorOffers";
+import TabBar from "../components/buddy-list/TabBar";
+import UserIdentityBar from "../components/buddy-list/UserIdentityBar";
+import InviteToRoomModal from "../components/chat/InviteToRoomModal";
+import SkinFrame from "../components/common/SkinFrame";
+import CreateCommunityModal from "../components/community/CreateCommunityModal";
+import JoinCommunityModal from "../components/community/JoinCommunityModal";
+import Infoview from "../components/infoview/Infoview";
+import FilesView from "../components/skin-tree/FilesView";
+import NameField from "../components/skin-tree/NameField";
+import ServersView from "../components/skin-tree/ServersView";
+import SkinTreeWindow from "../components/skin-tree/SkinTreeWindow";
+import { StatusList, StatusText } from "../components/skin-tree/StatusField";
+import NetworkIndicator from "../components/status/NetworkIndicator";
+import StatusPicker from "../components/status/StatusPicker";
+import Titlebar from "../components/titlebar/Titlebar";
+import CallController from "../components/voice/CallController";
+import { refreshMissedCalls, subscribeCallEvents } from "../handlers/calls.handlers";
+import { subscribeBuddyListChatEvents } from "../handlers/chat-events.handlers";
+import { subscribeBuddyListCommunityEvents } from "../handlers/community/buddy_list_communities";
+import { subscribeBuddyListGroupDmEvents } from "../handlers/group-dm.handlers";
+import { subscribeNotificationHandler } from "../handlers/notification-events.handlers";
+import { subscribePairingLinkHandler } from "../handlers/pairing-link.handler";
+import { subscribeBuddyListPresenceEvents } from "../handlers/presence-events.handlers";
+import { subscribeBuddyListTransferEvents } from "../handlers/transfer.handlers";
+import { subscribeBuddyListVoiceEvents } from "../handlers/voice.handlers";
+import { skinShell } from "../hooks/useSkin";
 import { fetchAvatarUrl } from "../ipc/avatar";
-import { commands } from "../ipc/commands";
 import type { NetworkStatusEvent } from "../ipc/channels";
+import {
+  startEventStream,
+  subscribeNetworkStatus,
+  subscribeProfileUpdates,
+  subscribeSkinShell,
+  subscribeSkinSignals,
+  type UnlistenFn,
+} from "../ipc/channels";
+import { commands } from "../ipc/commands";
+import type { ShellOp } from "../ipc/commands/dto_skin_run";
+import { authState, setAuthState } from "../stores/auth.store";
+import { buddyListUI, setBuddyListUI, switchTab } from "../stores/buddylist-ui.store";
+import { hydrateState } from "../stores/hydrate";
+import { setShortcutsHelpOpen } from "../stores/shortcuts_help.store";
+import { setSkinSignals } from "../stores/skin-signals.store";
 import { setWindowKind } from "../utils/window_kind";
 
 function handleKeyboardShortcuts(e: KeyboardEvent): void {

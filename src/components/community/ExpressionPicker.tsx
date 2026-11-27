@@ -1,13 +1,12 @@
-import { type Component, For, Show, createMemo, createSignal } from "solid-js";
-
-import { communityState } from "../../stores/community.store";
+import { type Component, createMemo, createSignal, For, Show } from "solid-js";
 import {
   handlePlaySoundboard,
   handleUploadEmoji,
   handleUploadSoundboardSound,
   handleUploadSticker,
 } from "../../actions/community.actions";
-import { servedPermissions, hasPermission, USE_SOUNDBOARD } from "../../ipc/permissions";
+import { hasPermission, servedPermissions, USE_SOUNDBOARD } from "../../ipc/permissions";
+import { communityState } from "../../stores/community.store";
 import { deniedFor } from "../../utils/denied";
 
 type ExpressionTab = "emoji" | "sticker" | "soundboard";

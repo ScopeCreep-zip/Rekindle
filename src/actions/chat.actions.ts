@@ -1,11 +1,11 @@
 import { commands } from "../ipc/commands";
-import { setChatState, chatState } from "../stores/chat.store";
 import type { Message } from "../stores/chat.store";
-import { transformDmMessage } from "../utils/transformers";
-import { awaitsExpiry } from "./disappearing.actions";
+import { chatState, setChatState } from "../stores/chat.store";
+import { disappearingState } from "../stores/disappearing.store";
 import { afterDraftReports, sendDraftReport } from "../utils/draft_reports";
 import { withOwnRow } from "../utils/own_rows";
-import { disappearingState } from "../stores/disappearing.store";
+import { transformDmMessage } from "../utils/transformers";
+import { awaitsExpiry } from "./disappearing.actions";
 
 /**
  * Send `body` to `to`. Nothing is drawn here: once the send commits, the

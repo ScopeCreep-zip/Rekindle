@@ -1,4 +1,4 @@
-import { type Component, Show, createEffect, createSignal } from "solid-js";
+import { type Component, createEffect, createSignal, Show } from "solid-js";
 import { commands } from "../../ipc/commands";
 import { addToast } from "../../stores/toast.store";
 

@@ -1,11 +1,11 @@
-import { type Component, For, Show, createSignal, createMemo, type JSX } from "solid-js";
-import SkinGlyph from "../common/SkinGlyph";
 import { ContextMenu } from "@kobalte/core/context-menu";
-import type { Channel, Category, Member } from "../../stores/community.store";
+import { type Component, createMemo, createSignal, For, type JSX, Show } from "solid-js";
+import type { Category, Channel, Member } from "../../stores/community.store";
 import { voiceState } from "../../stores/voice.store";
-import CategoryHeader from "./CategoryHeader";
 import { rovingList } from "../../utils/roving_list";
 import type { GlyphName } from "../common/glyph_art";
+import SkinGlyph from "../common/SkinGlyph";
+import CategoryHeader from "./CategoryHeader";
 
 interface ChannelListProps {
   channels: Channel[];

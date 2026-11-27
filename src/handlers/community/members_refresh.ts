@@ -1,5 +1,5 @@
-import { setCommunityMembers, communityState } from "../../stores/community.store";
 import { commands } from "../../ipc/commands";
+import { communityState, setCommunityMembers } from "../../stores/community.store";
 import { transformMember } from "../../utils/transformers";
 
 // The member list's groups are the Host's (`CommunityMemberView.group`), so

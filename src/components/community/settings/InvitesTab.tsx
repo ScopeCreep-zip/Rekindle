@@ -1,13 +1,13 @@
-import { type Component, For, Show, createSignal, createEffect, onCleanup } from "solid-js";
+import { type Component, createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import {
   handleCreateCommunityInvite,
-  handleRevokeCommunityInvite,
   handleListCommunityInvites,
+  handleRevokeCommunityInvite,
 } from "../../../actions/community.actions";
-import { communityState } from "../../../stores/community.store";
 import type { InviteDto } from "../../../ipc/commands/dto";
-import { formatExpiry } from "../../../utils/formatting";
+import { communityState } from "../../../stores/community.store";
 import { addToast } from "../../../stores/toast.store";
+import { formatExpiry } from "../../../utils/formatting";
 
 interface InvitesTabProps {
   communityId: string;

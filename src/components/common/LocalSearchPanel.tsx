@@ -1,19 +1,19 @@
-import { type Component, For, Show, createEffect, createSignal, on, onCleanup } from "solid-js";
-import Modal from "./Modal";
+import { type Component, createEffect, createSignal, For, on, onCleanup, Show } from "solid-js";
+import { handleOpenGroupChat } from "../../actions/group-dm.actions";
+import { sendSkinSelection } from "../../actions/skin.actions";
 import { commands } from "../../ipc/commands";
-import { transferCommands } from "../../ipc/commands/dto_transfer";
 import {
   type LocalHit,
   type LocalSearchScope,
   localSearchCommands,
 } from "../../ipc/commands/dto_local_search";
-import { localSearchScope, setLocalSearchScope } from "../../stores/local_search.store";
+import { transferCommands } from "../../ipc/commands/dto_transfer";
 import { communityState } from "../../stores/community.store";
-import { handleOpenGroupChat } from "../../actions/group-dm.actions";
-import { sendSkinSelection } from "../../actions/skin.actions";
+import { localSearchScope, setLocalSearchScope } from "../../stores/local_search.store";
 import { addToast } from "../../stores/toast.store";
 import { errorMessage } from "../../utils/error";
 import { formatTimestamp } from "../../utils/formatting";
+import Modal from "./Modal";
 
 /** The panel's title for each scope the Host opens it in. */
 function scopeTitle(scope: LocalSearchScope): string {

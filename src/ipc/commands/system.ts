@@ -1,5 +1,27 @@
 import { hostInvoke, invoke } from "../invoke";
 import type {
+  AuditExported,
+  AuditVerified,
+  GameTotalView,
+  GossipDiagnostics,
+  LifecycleState,
+  OnboardingAnswer,
+  OnboardingConfig,
+  OnboardingConfigEdit,
+  OwnGame,
+  OwnPresenceView,
+  SessionStatus,
+  SkinApplied,
+  SkinApplyFailure,
+  SkinEntry,
+  SkinLibrary,
+  WelcomeScreen,
+} from "./dto";
+import type { InfoviewRequest, InfoviewView } from "./dto_infoview";
+import type { RegionFit, SkinDraft, SkinDraftReport } from "./dto_skin_draft";
+import type { SkinSelection } from "./dto_skin_run";
+import type { SkinAction } from "./dto_skin_tree";
+import type {
   ActivityListItem,
   FavouriteServerView,
   HiddenGameView,
@@ -10,30 +32,6 @@ import type {
   QuickWipeState,
   SettingsTab,
 } from "./types";
-import type {
-  OnboardingConfig,
-  OnboardingConfigEdit,
-  WelcomeScreen,
-  OnboardingAnswer,
-  GossipDiagnostics,
-} from "./dto";
-import type {
-  AuditExported,
-  AuditVerified,
-  GameTotalView,
-  LifecycleState,
-  OwnGame,
-  OwnPresenceView,
-  SessionStatus,
-  SkinApplied,
-  SkinApplyFailure,
-  SkinEntry,
-  SkinLibrary,
-} from "./dto";
-import type { RegionFit, SkinDraft, SkinDraftReport } from "./dto_skin_draft";
-import type { InfoviewRequest, InfoviewView } from "./dto_infoview";
-import type { SkinSelection } from "./dto_skin_run";
-import type { SkinAction } from "./dto_skin_tree";
 
 /// The picture formats the Host accepts (`rekindle_types::ImageKind`,
 /// serialized as its MIME type).

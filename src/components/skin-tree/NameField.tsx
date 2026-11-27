@@ -1,6 +1,6 @@
-import { type Component, type JSX, Show, createEffect, createSignal } from "solid-js";
-import { authState } from "../../stores/auth.store";
+import { type Component, createEffect, createSignal, type JSX, Show } from "solid-js";
 import { handleSetDisplayName } from "../../actions/auth.actions";
+import { authState } from "../../stores/auth.store";
 
 /**
  * N1 (design §3): our display name in the pack's `UserNameField`. It

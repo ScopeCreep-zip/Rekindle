@@ -1,8 +1,7 @@
-import { type Component, For, Show, createEffect, createSignal } from "solid-js";
-
+import { type Component, createEffect, createSignal, For, Show } from "solid-js";
+import { handleCancelCreation, handleRemoveCoCreator } from "../../actions/community/co_create";
 import { coCreatorState, stopWatchingCreation } from "../../stores/co-creator.store";
 import { friendsState } from "../../stores/friends.store";
-import { handleCancelCreation, handleRemoveCoCreator } from "../../actions/community/co_create";
 
 interface CoCreatorStatusViewProps {
   anchor: string;

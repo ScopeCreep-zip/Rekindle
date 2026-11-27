@@ -1,12 +1,12 @@
-import { type Component, For, Show, createSignal } from "solid-js";
-import SkinGlyph from "../../../common/SkinGlyph";
-import type { Community } from "../../../../stores/community.store";
+import { type Component, createSignal, For, Show } from "solid-js";
 import {
-  handleReorderCategories,
   handleCreateCategory,
   handleDeleteCategory,
   handleRenameCategory,
+  handleReorderCategories,
 } from "../../../../actions/community.actions";
+import type { Community } from "../../../../stores/community.store";
+import SkinGlyph from "../../../common/SkinGlyph";
 
 interface CategoryManagerProps {
   community: Community;

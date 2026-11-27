@@ -1,48 +1,48 @@
 import {
   type Component,
-  onMount,
-  onCleanup,
+  createEffect,
   createMemo,
   createSignal,
-  createEffect,
+  onCleanup,
+  onMount,
   Show,
 } from "solid-js";
-import { type UnlistenFn, startEventStream } from "../../ipc/channels";
-import Titlebar from "../../components/titlebar/Titlebar";
-import MessageList from "../../components/chat/MessageList";
-import MessageInput from "../../components/chat/MessageInput";
-import OwnRecordsWait from "../../components/common/OwnRecordsWait";
-import TypingIndicator from "../../components/chat/TypingIndicator";
-import StatusDot from "../../components/status/StatusDot";
-import { chatState, setChatState, type Message } from "../../stores/chat.store";
-import { authState } from "../../stores/auth.store";
-import { friendsState } from "../../stores/friends.store";
-import { callsState } from "../../stores/calls.store";
+import { handleEndDmCall, handleStartDmCall } from "../../actions/calls.actions";
 import {
+  handleDiscardSendMessage,
+  handleDraftChanged,
   handleLoadHistory,
   handleResetUnread,
   handleRetrySendMessage,
-  handleDiscardSendMessage,
   handleSendMessage,
-  handleDraftChanged,
 } from "../../actions/chat.actions";
-import { handleStartDmCall, handleEndDmCall } from "../../actions/calls.actions";
-import { subscribeDmChatEvents } from "../../handlers/chat-events.handlers";
-import { subscribeBuddyListPresenceEvents } from "../../handlers/presence-events.handlers";
-import { subscribeCallEvents } from "../../handlers/calls.handlers";
-import { hydrateState } from "../../stores/hydrate";
-import { ICON_PHONE, ICON_VIDEO, ICON_HANGUP, ICON_SHIELD, ICON_GAMEPAD } from "../../icons";
-import SafetyNumberPanel from "../../components/profile/SafetyNumberPanel";
+import { handleLoadDisappearingTimer } from "../../actions/disappearing.actions";
+import DisappearingTimerControl from "../../components/chat/DisappearingTimerControl";
 import GameInviteList from "../../components/chat/GameInviteList";
 import GameInvitePicker from "../../components/chat/GameInvitePicker";
+import MessageInput from "../../components/chat/MessageInput";
+import MessageList from "../../components/chat/MessageList";
+import TypingIndicator from "../../components/chat/TypingIndicator";
+import OwnRecordsWait from "../../components/common/OwnRecordsWait";
+import SafetyNumberPanel from "../../components/profile/SafetyNumberPanel";
 import VerifiedBadge from "../../components/profile/VerifiedBadge";
-import { useSafetyNumber } from "../../hooks/useSafetyNumber";
-import { identityPinMismatchText } from "../../utils/identity_pin";
-import DisappearingTimerControl from "../../components/chat/DisappearingTimerControl";
-import { handleLoadDisappearingTimer } from "../../actions/disappearing.actions";
-import { SlotMount } from "../../components/skin-tree/slots";
 import SkinTreeWindow from "../../components/skin-tree/SkinTreeWindow";
+import { SlotMount } from "../../components/skin-tree/slots";
+import StatusDot from "../../components/status/StatusDot";
+import Titlebar from "../../components/titlebar/Titlebar";
+import { subscribeCallEvents } from "../../handlers/calls.handlers";
+import { subscribeDmChatEvents } from "../../handlers/chat-events.handlers";
+import { subscribeBuddyListPresenceEvents } from "../../handlers/presence-events.handlers";
+import { useSafetyNumber } from "../../hooks/useSafetyNumber";
 import { skinShell } from "../../hooks/useSkin";
+import { ICON_GAMEPAD, ICON_HANGUP, ICON_PHONE, ICON_SHIELD, ICON_VIDEO } from "../../icons";
+import { startEventStream, type UnlistenFn } from "../../ipc/channels";
+import { authState } from "../../stores/auth.store";
+import { callsState } from "../../stores/calls.store";
+import { chatState, type Message, setChatState } from "../../stores/chat.store";
+import { friendsState } from "../../stores/friends.store";
+import { hydrateState } from "../../stores/hydrate";
+import { identityPinMismatchText } from "../../utils/identity_pin";
 
 /// The chat window's 1:1 mode: a conversation with a friend or a
 /// community member, with its call controls and typing indicator.

@@ -1,24 +1,24 @@
 import { type Component, Show } from "solid-js";
-import MessageList from "../../components/chat/MessageList";
+import {
+  handleAddReaction,
+  handleAdminDeleteChannelMessage,
+  handleBulkDeleteChannelMessages,
+  handleClosePoll,
+  handleDeleteChannelMessage,
+  handleEditChannelMessage,
+  handlePinMessage,
+  handleRemoveReaction,
+  handleRetryChannelMessage,
+  handleUnpinMessage,
+  handleVotePoll,
+} from "../../actions/community.actions";
 import MessageInput from "../../components/chat/MessageInput";
+import MessageList from "../../components/chat/MessageList";
 import { SlotMount } from "../../components/skin-tree/slots";
 import { skinShell } from "../../hooks/useSkin";
 import { communityState } from "../../stores/community.store";
-import { removalText } from "../../utils/removal_text";
 import { channelDeniedFor } from "../../utils/denied";
-import {
-  handleBulkDeleteChannelMessages,
-  handleRetryChannelMessage,
-  handleAddReaction,
-  handleRemoveReaction,
-  handlePinMessage,
-  handleUnpinMessage,
-  handleVotePoll,
-  handleClosePoll,
-  handleEditChannelMessage,
-  handleDeleteChannelMessage,
-  handleAdminDeleteChannelMessage,
-} from "../../actions/community.actions";
+import { removalText } from "../../utils/removal_text";
 import type { CommunityVm } from "./useCommunityWindow";
 
 /// The channel message list + composer for a community text (or text-in-voice)

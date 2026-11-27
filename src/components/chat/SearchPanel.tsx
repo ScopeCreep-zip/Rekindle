@@ -1,14 +1,14 @@
-import { type Component, For, Show, createMemo, createSignal } from "solid-js";
 import { Dialog } from "@kobalte/core/dialog";
-import { returnFocusToOpener } from "../../utils/dialog_focus";
+import { type Component, createMemo, createSignal, For, Show } from "solid-js";
 import {
   commands,
+  type HasFilter,
   type SearchHit,
   type SearchResult,
   type SearchSort,
-  type HasFilter,
 } from "../../ipc/commands";
 import { communityState } from "../../stores/community.store";
+import { returnFocusToOpener } from "../../utils/dialog_focus";
 import { formatTimestamp } from "../../utils/formatting";
 
 // Architecture §23 — local FTS5 search across messages, threads, DMs.

@@ -1,9 +1,9 @@
-import { type Component, For, Show, createEffect, createSignal, on } from "solid-js";
 import { Dialog } from "@kobalte/core/dialog";
-import { returnFocusToOpener } from "../../utils/dialog_focus";
-import { friendsState } from "../../stores/friends.store";
-import { buddyListUI, setBuddyListUI } from "../../stores/buddylist-ui.store";
+import { type Component, createEffect, createSignal, For, on, Show } from "solid-js";
 import { handleCreateGroupDm } from "../../actions/group-dm.actions";
+import { buddyListUI, setBuddyListUI } from "../../stores/buddylist-ui.store";
+import { friendsState } from "../../stores/friends.store";
+import { returnFocusToOpener } from "../../utils/dialog_focus";
 
 // "New group" (plan E2.6): pick 2–7 friends and a name. The Host checks
 // the roster and the name and shows the review (Consequential); the

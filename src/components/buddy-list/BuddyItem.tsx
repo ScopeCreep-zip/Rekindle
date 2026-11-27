@@ -1,15 +1,15 @@
 import { type Component, Show } from "solid-js";
-import { formatDuration } from "../../utils/formatting";
-import StatusDot from "../status/StatusDot";
-import Tooltip from "../common/Tooltip";
-import type { UserStatus } from "../../stores/auth.store";
-import { ICON_VOLUME_HIGH } from "../../icons";
-import { formatRelativeTime } from "../../utils/time";
-import { identityPinMismatchText } from "../../utils/identity_pin";
 import { handleRetryHandshake } from "../../actions/buddy.actions";
-import GameIcon from "../game/GameIcon";
+import { ICON_VOLUME_HIGH } from "../../icons";
 import type { DeliveryRetry } from "../../ipc/channels/chat_events";
+import type { UserStatus } from "../../stores/auth.store";
 import { deliveryRetryText } from "../../utils/delivery_retry";
+import { formatDuration } from "../../utils/formatting";
+import { identityPinMismatchText } from "../../utils/identity_pin";
+import { formatRelativeTime } from "../../utils/time";
+import Tooltip from "../common/Tooltip";
+import GameIcon from "../game/GameIcon";
+import StatusDot from "../status/StatusDot";
 
 interface BuddyItemProps {
   publicKey: string;

@@ -7,11 +7,13 @@
 // dispatcher's "has no handler in this window" (skin.actions runShellOp),
 // never a silent drop, since an imported pack may lay what no built-in does.
 import { commands } from "../ipc/commands";
-import { transferCommands } from "../ipc/commands/dto_transfer";
 import type { ShellOp } from "../ipc/commands/dto_skin_run";
+import { transferCommands } from "../ipc/commands/dto_transfer";
+import { callsState } from "../stores/calls.store";
 import { addToast } from "../stores/toast.store";
 import { errorMessage } from "../utils/error";
-import { callsState } from "../stores/calls.store";
+import { handleQuit, handleReportBug, openSettingsTab } from "./app_menu.actions";
+import { handleCopyPublicKey } from "./buddy.actions";
 import {
   handleAcceptGroupCall,
   handleAcceptIncomingCall,
@@ -19,11 +21,9 @@ import {
   handleEndGroupCall,
   handleStartDmCall,
 } from "./calls.actions";
-import { handleJoinVoice, handleSetMuted } from "./voice.actions";
-import { handleOpenGroupChat } from "./group-dm.actions";
-import { handleCopyPublicKey } from "./buddy.actions";
-import { handleQuit, handleReportBug, openSettingsTab } from "./app_menu.actions";
 import { handleLeaveCommunity } from "./community/lifecycle";
+import { handleOpenGroupChat } from "./group-dm.actions";
+import { handleJoinVoice, handleSetMuted } from "./voice.actions";
 
 /** The File, Tool and Help menus' own items: Settings on a tab, Report Bug,
  *  Exit (the buddy list, chat windows and the popups that carry them). */

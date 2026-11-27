@@ -1,12 +1,12 @@
 import { reconcile } from "solid-js/store";
 import { commands } from "../ipc/commands";
-import { setFriendsState, friendsState } from "../stores/friends.store";
+import { type FriendCodeView, isCancelled } from "../ipc/commands/dto";
 import { authState } from "../stores/auth.store";
 import type { OutgoingInvite } from "../stores/friends.store";
-import { foldFriendSnapshot } from "../utils/transformers";
-import { errorMessage } from "../utils/error";
-import { isCancelled, type FriendCodeView } from "../ipc/commands/dto";
+import { friendsState, setFriendsState } from "../stores/friends.store";
 import { addToast } from "../stores/toast.store";
+import { errorMessage } from "../utils/error";
+import { foldFriendSnapshot } from "../utils/transformers";
 
 /** Open the chat with a friend; a refusal or failure says so in the Host's words, never silently. */
 export function handleDoubleClickFriend(publicKey: string): void {

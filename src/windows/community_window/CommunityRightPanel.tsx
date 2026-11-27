@@ -1,20 +1,20 @@
-import { type Component, Show, Switch, Match } from "solid-js";
-import MemberList from "../../components/community/MemberList";
-import ThreadPanel from "../../components/community/ThreadPanel";
-import ThreadListPanel from "../../components/community/ThreadListPanel";
-import PinnedMessagesPanel from "../../components/community/PinnedMessagesPanel";
-import { communityState } from "../../stores/community.store";
+import { type Component, Match, Show, Switch } from "solid-js";
 import {
-  handlePinMessage,
-  handleUnpinMessage,
-  handleSendThreadMessage,
-  handleUnarchiveThread,
   handleAddReaction,
-  handleRemoveReaction,
-  handleVotePoll,
   handleClosePoll,
   handleDeleteChannelMessage,
+  handlePinMessage,
+  handleRemoveReaction,
+  handleSendThreadMessage,
+  handleUnarchiveThread,
+  handleUnpinMessage,
+  handleVotePoll,
 } from "../../actions/community.actions";
+import MemberList from "../../components/community/MemberList";
+import PinnedMessagesPanel from "../../components/community/PinnedMessagesPanel";
+import ThreadListPanel from "../../components/community/ThreadListPanel";
+import ThreadPanel from "../../components/community/ThreadPanel";
+import { communityState } from "../../stores/community.store";
 import type { CommunityVm } from "./useCommunityWindow";
 
 /// Phase 3 unified right rail: members, pinned messages, thread list, or

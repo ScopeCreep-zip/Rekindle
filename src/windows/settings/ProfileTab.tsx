@@ -1,16 +1,16 @@
-import { type Component, createSignal, createResource, For, Show } from "solid-js";
+import { type Component, createResource, createSignal, For, Show } from "solid-js";
+import { handleSetAvatar } from "../../actions/settings.actions";
 import Avatar from "../../components/common/Avatar";
 import FormField from "../../components/common/FormField";
-import { authState, setAuthState } from "../../stores/auth.store";
-import { handleSetAvatar } from "../../actions/settings.actions";
+import GameIcon from "../../components/game/GameIcon";
+import { useDraft } from "../../hooks/useDraft";
+import { fetchAvatarUrl } from "../../ipc/avatar";
 import { commands } from "../../ipc/commands";
+import { authState, setAuthState } from "../../stores/auth.store";
 import { addToast } from "../../stores/toast.store";
 import { errorMessage } from "../../utils/error";
-import { fetchAvatarUrl } from "../../ipc/avatar";
-import GameIcon from "../../components/game/GameIcon";
 import { formatDuration } from "../../utils/formatting";
 import { formatRelativeTime } from "../../utils/time";
-import { useDraft } from "../../hooks/useDraft";
 
 /// The Host's cap (`rekindle_types::presence::limits::MAX_BIO_LEN`,
 /// Discord's About Me); the Host refuses a longer one.

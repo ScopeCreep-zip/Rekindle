@@ -1,5 +1,4 @@
-import { type Component, For, Show, createMemo, onMount } from "solid-js";
-import { friendsState } from "../../stores/friends.store";
+import { type Component, createMemo, For, onMount, Show } from "solid-js";
 import {
   handleHydrateRelayState,
   handleRevokeRelay,
@@ -7,6 +6,7 @@ import {
   relayState,
 } from "../../actions/relay.actions";
 import { handleSaveSettings } from "../../actions/settings.actions";
+import { friendsState } from "../../stores/friends.store";
 import { settingsState } from "../../stores/settings.store";
 
 /// Strand Relay Network (architecture §13) configuration block: shows

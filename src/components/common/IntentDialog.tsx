@@ -1,7 +1,10 @@
-import { type Component, createEffect, createSignal, For, Match, Show, Switch } from "solid-js";
 import { Dialog } from "@kobalte/core/dialog";
+import { type Component, createEffect, createSignal, For, Match, Show, Switch } from "solid-js";
 import { returnFocusToOpener } from "../../utils/dialog_focus";
 import OwnRecordsWait from "./OwnRecordsWait";
+
+// The intent store registers the review and undo presenters at import time.
+
 import { cancelReview, commitReview, intentState } from "../../stores/intent.store";
 import {
   commitLabel,

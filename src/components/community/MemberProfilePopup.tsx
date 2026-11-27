@@ -1,15 +1,15 @@
-import { type Component, Show, For, createSignal } from "solid-js";
-import { colorIntToHex } from "../../utils/color";
 import { Popover } from "@kobalte/core/popover";
-import type { Member, Role } from "../../stores/community.store";
+import { type Component, createSignal, For, Show } from "solid-js";
+import { handleSelfAssignRole, handleSelfUnassignRole } from "../../actions/community.actions";
+import { handleLaunchGame } from "../../actions/game.actions";
 import type { GameInfo } from "../../ipc/commands/dto";
-import { EVERYONE_ROLE_ID, communityState } from "../../stores/community.store";
+import type { Member, Role } from "../../stores/community.store";
+import { communityState, EVERYONE_ROLE_ID } from "../../stores/community.store";
+import { addToast } from "../../stores/toast.store";
+import { colorIntToHex } from "../../utils/color";
+import { notJoinableText } from "../../utils/joinable_text";
 import StatusDot from "../status/StatusDot";
 import RoleTag from "./RoleTag";
-import { handleLaunchGame } from "../../actions/game.actions";
-import { notJoinableText } from "../../utils/joinable_text";
-import { handleSelfAssignRole, handleSelfUnassignRole } from "../../actions/community.actions";
-import { addToast } from "../../stores/toast.store";
 
 interface MemberProfilePopupProps {
   communityId: string;

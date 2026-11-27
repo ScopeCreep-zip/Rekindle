@@ -1,4 +1,4 @@
-import { type Component, For, Show, createEffect, createMemo, onMount, onCleanup } from "solid-js";
+import { type Component, createEffect, createMemo, For, onCleanup, onMount, Show } from "solid-js";
 import type { Message } from "../../stores/chat.store";
 import {
   bulkSelection,
@@ -7,10 +7,10 @@ import {
   toggleBulkSelected,
 } from "../../stores/chat.store";
 import type { Thread } from "../../stores/community.store";
-import MessageBubble from "./MessageBubble";
+import { timerNoticeText } from "../../utils/disappearing";
 import LiveRegion from "../common/LiveRegion";
 import ChatAnnouncer from "./ChatAnnouncer";
-import { timerNoticeText } from "../../utils/disappearing";
+import MessageBubble from "./MessageBubble";
 
 interface MessageListProps {
   communityId?: string;

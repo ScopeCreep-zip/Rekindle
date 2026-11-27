@@ -1,9 +1,9 @@
-import { type Component, Show, For, createSignal, createEffect } from "solid-js";
-import SkinGlyph from "../common/SkinGlyph";
-import type { Thread } from "../../stores/community.store";
+import { type Component, createEffect, createSignal, For, Show } from "solid-js";
 import type { Message } from "../../stores/chat.store";
+import type { Thread } from "../../stores/community.store";
 import MessageBubble from "../chat/MessageBubble";
 import LiveRegion from "../common/LiveRegion";
+import SkinGlyph from "../common/SkinGlyph";
 
 interface ThreadPanelProps {
   thread: Thread | null;

@@ -1,36 +1,35 @@
-import { type Component, For, Show, createSignal, createEffect, createMemo } from "solid-js";
-import Modal from "../common/Modal";
-import ConfirmDialog from "../common/ConfirmDialog";
-import type { Community } from "../../stores/community.store";
+import { type Component, createEffect, createMemo, createSignal, For, Show } from "solid-js";
+import type { CommunityCapability } from "../../ipc/commands/dto_capabilities";
 import {
-  servedPermissions,
-  hasPermission,
-  MANAGE_CHANNELS,
-  MANAGE_COMMUNITY,
-  MANAGE_ROLES,
-  KICK_MEMBERS,
   BAN_MEMBERS,
   CREATE_INVITES,
-  VIEW_AUDIT_LOG,
+  hasPermission,
+  KICK_MEMBERS,
+  MANAGE_CHANNELS,
+  MANAGE_COMMUNITY,
   MANAGE_EXPRESSIONS,
+  MANAGE_ROLES,
+  servedPermissions,
+  VIEW_AUDIT_LOG,
 } from "../../ipc/permissions";
-import OverviewTab from "./settings/OverviewTab";
-import ChannelsTab from "./settings/ChannelsTab";
-import MembersTab from "./settings/MembersTab";
-import RolesTab from "./settings/RolesTab";
-import BansTab from "./settings/BansTab";
-import SecurityTab from "./settings/SecurityTab";
-import InvitesTab from "./settings/InvitesTab";
+import type { Community } from "../../stores/community.store";
+import { deniedFor } from "../../utils/denied";
+import ConfirmDialog from "../common/ConfirmDialog";
+import Modal from "../common/Modal";
+import AnalyticsTab from "./settings/AnalyticsTab";
 import AuditLogTab from "./settings/AuditLogTab";
 import AutoModTab from "./settings/AutoModTab";
-import AnalyticsTab from "./settings/AnalyticsTab";
-import PrivacyTab from "./settings/PrivacyTab";
-import WelcomeTab from "./settings/WelcomeTab";
+import BansTab from "./settings/BansTab";
+import ChannelsTab from "./settings/ChannelsTab";
 import ExpressionsTab from "./settings/ExpressionsTab";
-
+import InvitesTab from "./settings/InvitesTab";
+import MembersTab from "./settings/MembersTab";
+import OverviewTab from "./settings/OverviewTab";
+import PrivacyTab from "./settings/PrivacyTab";
+import RolesTab from "./settings/RolesTab";
+import SecurityTab from "./settings/SecurityTab";
 import type { ConfirmOptions } from "./settings/types";
-import type { CommunityCapability } from "../../ipc/commands/dto_capabilities";
-import { deniedFor } from "../../utils/denied";
+import WelcomeTab from "./settings/WelcomeTab";
 
 interface CommunitySettingsModalProps {
   isOpen: boolean;

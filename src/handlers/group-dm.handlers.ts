@@ -1,16 +1,16 @@
-import { type UnlistenFn, subscribeChatEvents, subscribeGroupDmEvents } from "../ipc/channels";
+import { applyTimerChanged, withoutExpired } from "../actions/disappearing.actions";
+import { handleLoadGroupDms } from "../actions/group-dm.actions";
+import { subscribeChatEvents, subscribeGroupDmEvents, type UnlistenFn } from "../ipc/channels";
+import type { DeliveryRetry } from "../ipc/channels/chat_events";
 import {
-  conversationId,
   type ChannelMessageEvent,
+  conversationId,
   type GroupDmEvent,
 } from "../ipc/channels/chat_events";
-import { applyTimerChanged, withoutExpired } from "../actions/disappearing.actions";
 import type { SendState } from "../ipc/commands";
-import type { DeliveryRetry } from "../ipc/channels/chat_events";
 import { groupDmState, setGroupDmState } from "../stores/group-dm.store";
-import { handleLoadGroupDms } from "../actions/group-dm.actions";
-import { transformDmMessage, transformHistoryGap } from "../utils/transformers";
 import { withOwnRow } from "../utils/own_rows";
+import { transformDmMessage, transformHistoryGap } from "../utils/transformers";
 
 // Group-DM events (plan E2.6). The Host decides every change; an invite
 // arrives whole and is shown as is, and a roster change (join, leave, key

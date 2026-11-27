@@ -1,9 +1,9 @@
 import { type Component, createMemo, createSignal, ErrorBoundary, For, Show } from "solid-js";
-import type { SafetyNumberView } from "../../ipc/commands/dto";
 import { handleSetVerified } from "../../actions/verification.actions";
+import type { SafetyNumberView } from "../../ipc/commands/dto";
 import { addToast } from "../../stores/toast.store";
-import { groupDigits } from "../../utils/safety_number";
 import { qrPath, qrSize } from "../../utils/qr";
+import { groupDigits } from "../../utils/safety_number";
 import VerifiedBadge from "./VerifiedBadge";
 
 /**

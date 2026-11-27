@@ -1,19 +1,19 @@
 import { batch } from "solid-js";
 import { reconcile } from "solid-js/store";
-import { type UnlistenFn, subscribeChatEvents } from "../ipc/channels";
-import { conversationId } from "../ipc/channels/chat_events";
-import { applyTimerChanged, withoutExpired } from "../actions/disappearing.actions";
-import type { DmHistoryGap, DmSendStatus, FriendEvent } from "../ipc/channels/chat_events";
-import { friendsState, setFriendsState } from "../stores/friends.store";
-import { applyCoCreatorEvent } from "../stores/co-creator.store";
-import { chatState, setChatState } from "../stores/chat.store";
+import { handleRefreshFriends } from "../actions/buddy.actions";
 import {
-  handleTypingIndicator,
   handleIncomingMessage,
   handleResetUnread,
+  handleTypingIndicator,
   upsertOwnMessage,
 } from "../actions/chat.actions";
-import { handleRefreshFriends } from "../actions/buddy.actions";
+import { applyTimerChanged, withoutExpired } from "../actions/disappearing.actions";
+import { subscribeChatEvents, type UnlistenFn } from "../ipc/channels";
+import type { DmHistoryGap, DmSendStatus, FriendEvent } from "../ipc/channels/chat_events";
+import { conversationId } from "../ipc/channels/chat_events";
+import { chatState, setChatState } from "../stores/chat.store";
+import { applyCoCreatorEvent } from "../stores/co-creator.store";
+import { friendsState, setFriendsState } from "../stores/friends.store";
 import { transformDmMessage, transformHistoryGap, transformNewFriend } from "../utils/transformers";
 
 // A DM we sent changed delivery state (`dmSendStatus`): the

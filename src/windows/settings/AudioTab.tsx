@@ -1,9 +1,9 @@
-import { type Component, onMount, For, Show } from "solid-js";
+import { type Component, For, onMount, Show } from "solid-js";
 import FormField from "../../components/common/FormField";
 import SettingsSelect, { type SettingsSelectOption } from "../../components/common/SettingsSelect";
-import { settingsState, setSettingsState } from "../../stores/settings.store";
-import { commands } from "../../ipc/commands";
 import type { AudioDeviceInfo } from "../../ipc/commands";
+import { commands } from "../../ipc/commands";
+import { setSettingsState, settingsState } from "../../stores/settings.store";
 
 /** A device list's choices: "" is the system default, then each device,
  *  the one the system uses marked "(default)". */

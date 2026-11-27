@@ -1,15 +1,16 @@
 import {
   type Component,
+  createSignal,
   For,
   Match,
-  Show,
-  Switch,
-  createSignal,
   onCleanup,
   onMount,
+  Show,
+  Switch,
 } from "solid-js";
-import { commands } from "../../ipc/commands";
+import { handleLaunchGame } from "../../actions/game.actions";
 import { subscribeInfoview } from "../../ipc/channels";
+import { commands } from "../../ipc/commands";
 import type {
   InfoviewAction,
   InfoviewRequest,
@@ -19,7 +20,6 @@ import type {
 import type { FriendInfo } from "../../ipc/commands/types";
 import { addToast } from "../../stores/toast.store";
 import { formatDuration } from "../../utils/formatting";
-import { handleLaunchGame } from "../../actions/game.actions";
 import { notJoinableText } from "../../utils/joinable_text";
 import ActivityFeed from "./ActivityFeed";
 

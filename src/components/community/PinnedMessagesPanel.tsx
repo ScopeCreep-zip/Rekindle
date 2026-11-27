@@ -1,8 +1,8 @@
-import { type Component, For, Show, createMemo } from "solid-js";
-import SkinGlyph from "../common/SkinGlyph";
+import { type Component, createMemo, For, Show } from "solid-js";
 import type { Message } from "../../stores/chat.store";
-import MessageBubble from "../chat/MessageBubble";
 import { formatDateFromSecs } from "../../utils/formatting";
+import MessageBubble from "../chat/MessageBubble";
+import SkinGlyph from "../common/SkinGlyph";
 
 interface PinInfo {
   messageId: string;

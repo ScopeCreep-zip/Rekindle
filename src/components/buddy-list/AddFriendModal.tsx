@@ -1,7 +1,7 @@
-import { type Component, Show, createSignal, createEffect, on } from "solid-js";
-import Modal from "../common/Modal";
-import { friendsState, setFriendsState } from "../../stores/friends.store";
+import { type Component, createEffect, createSignal, on, Show } from "solid-js";
 import { handleLoadOutgoingInvites } from "../../actions/buddy.actions";
+import { friendsState, setFriendsState } from "../../stores/friends.store";
+import Modal from "../common/Modal";
 import InviteLinkTab from "./InviteLinkTab";
 import PublicKeyTab from "./PublicKeyTab";
 

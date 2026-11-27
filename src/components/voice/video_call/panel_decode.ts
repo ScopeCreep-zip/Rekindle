@@ -3,15 +3,15 @@
 // useVideoCallPanel.ts; plain functions of the shared PanelCtx (no
 // SolidJS owner-scoped primitives here).
 
-import { commands } from "../../../ipc/commands";
 import type { Codec } from "../../../ipc/commands";
+import { commands } from "../../../ipc/commands";
 import { videoSessionConfigFor } from "../../../stores/video.store";
 import {
   DEBUG_VIDEO_LATENCY,
+  decodeBase64ToBytes,
   KEYFRAME_REQUEST_MIN_INTERVAL_MS,
   RENDER_REPORT_INTERVAL_MS,
   type RemoteStream,
-  decodeBase64ToBytes,
   releaseRemoteStream,
   wireCodecToWebCodecsString,
 } from "./codec_utils";

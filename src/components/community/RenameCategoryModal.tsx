@@ -1,6 +1,6 @@
 import type { Component } from "solid-js";
-import SimpleInputModal from "../common/SimpleInputModal";
 import { handleRenameCategory } from "../../actions/community.actions";
+import SimpleInputModal from "../common/SimpleInputModal";
 
 interface RenameCategoryModalProps {
   isOpen: boolean;

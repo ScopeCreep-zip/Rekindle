@@ -1,7 +1,7 @@
-import { type Component, For, Show, createMemo, createSignal } from "solid-js";
-import SkinGlyph from "../common/SkinGlyph";
+import { type Component, createMemo, createSignal, For, Show } from "solid-js";
 import type { Channel, Thread } from "../../stores/community.store";
 import { formatRelativeTime } from "../../utils/formatting";
+import SkinGlyph from "../common/SkinGlyph";
 
 interface ForumChannelViewProps {
   channel: Channel;

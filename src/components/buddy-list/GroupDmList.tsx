@@ -1,10 +1,10 @@
-import { type Component, For, Show, createMemo, createSignal } from "solid-js";
-import { groupDmState } from "../../stores/group-dm.store";
+import { type Component, createMemo, createSignal, For, Show } from "solid-js";
 import {
   handleAcceptGroupDm,
   handleDeclineGroupDm,
   handleOpenGroupChat,
 } from "../../actions/group-dm.actions";
+import { groupDmState } from "../../stores/group-dm.store";
 
 // The buddy list's group DMs (plan E2.6): invites we have not answered,
 // with Accept (reviewed by the Host, TrustChanging) and Decline, then the

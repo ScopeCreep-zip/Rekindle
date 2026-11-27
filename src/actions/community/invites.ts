@@ -1,7 +1,7 @@
 import { commands } from "../../ipc/commands";
+import type { InviteCreated, InviteDto } from "../../ipc/commands/dto";
 import { setCommunityState } from "../../stores/community.store";
 import { addToast } from "../../stores/toast.store";
-import type { InviteCreated, InviteDto } from "../../ipc/commands/dto";
 
 export async function handleCreateCommunityInvite(
   communityId: string,

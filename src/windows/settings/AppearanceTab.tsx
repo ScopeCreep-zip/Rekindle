@@ -1,15 +1,15 @@
-import { type Component, For, Show, createSignal, onCleanup, onMount } from "solid-js";
-import { commands } from "../../ipc/commands";
+import { type Component, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import SkinCredits from "../../components/settings/SkinCredits";
+import SkinTrialPrompt from "../../components/settings/SkinTrialPrompt";
 import {
+  type SkinApplyFailed,
   subscribeSkinApplyFailed,
   subscribeSkinEvents,
   subscribeSkinTrial,
-  type SkinApplyFailed,
 } from "../../ipc/channels";
+import { commands } from "../../ipc/commands";
 import type { SkinEntry, SkinLibrary, SkinTrial } from "../../ipc/commands/dto";
 import { isCommandError } from "../../ipc/commands/dto";
-import SkinTrialPrompt from "../../components/settings/SkinTrialPrompt";
-import SkinCredits from "../../components/settings/SkinCredits";
 
 /** A Host refusal as the line the tab shows. */
 function refusal(e: unknown): string | null {

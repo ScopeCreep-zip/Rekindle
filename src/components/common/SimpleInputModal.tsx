@@ -1,6 +1,6 @@
-import { type Component, type JSX, Show, createSignal, createEffect } from "solid-js";
-import Modal from "./Modal";
+import { type Component, createEffect, createSignal, type JSX, Show } from "solid-js";
 import LoadingButton from "./LoadingButton";
+import Modal from "./Modal";
 
 interface SimpleInputModalProps {
   isOpen: boolean;

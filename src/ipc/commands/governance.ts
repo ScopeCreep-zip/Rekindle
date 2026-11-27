@@ -1,4 +1,5 @@
 import { hostInvoke, invoke } from "../invoke";
+import type { CommunityAuditEntry, InviteCreated, InviteDto } from "./dto";
 import type {
   CreateEventRequest,
   EventInfo,
@@ -6,7 +7,6 @@ import type {
   Message,
   PresenceSharingPolicy,
 } from "./types";
-import type { CommunityAuditEntry, InviteCreated, InviteDto } from "./dto";
 
 export const governanceCommands = {
   // Reactions

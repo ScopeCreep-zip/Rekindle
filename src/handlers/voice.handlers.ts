@@ -6,7 +6,7 @@
 // both touch. Splitting the handle from its two callers was the only
 // thing standing in the way of an acyclic tier order.
 
-import { type UnlistenFn, subscribeVoiceEvents } from "../ipc/channels";
+import { subscribeVoiceEvents, type UnlistenFn } from "../ipc/channels";
 import { friendsState, setFriendsState } from "../stores/friends.store";
 
 export function subscribeBuddyListVoiceEvents(): Promise<UnlistenFn> {

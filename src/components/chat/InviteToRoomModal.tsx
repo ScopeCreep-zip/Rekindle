@@ -1,9 +1,9 @@
-import { type Component, For, Show, createSignal } from "solid-js";
 import { Dialog } from "@kobalte/core/dialog";
-import { returnFocusToOpener } from "../../utils/dialog_focus";
+import { type Component, createSignal, For, Show } from "solid-js";
+import { handleInviteToGroupDm } from "../../actions/group-dm.actions";
 import { friendsState } from "../../stores/friends.store";
 import { groupDmState } from "../../stores/group-dm.store";
-import { handleInviteToGroupDm } from "../../actions/group-dm.actions";
+import { returnFocusToOpener } from "../../utils/dialog_focus";
 
 // "Invite to room" (plan E7.2 G8): pick friends to add to a group we
 // created. Every friend not already in it is listed; one the Host cannot

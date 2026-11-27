@@ -19,4 +19,4 @@ const [transfersState, setTransfersState] = createStore<TransfersState>({
   loaded: false,
 });
 
-export { transfersState, setTransfersState };
+export { setTransfersState, transfersState };

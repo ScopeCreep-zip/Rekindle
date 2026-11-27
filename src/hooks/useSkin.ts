@@ -1,6 +1,6 @@
 import { createSignal, onCleanup } from "solid-js";
-import { commands } from "../ipc/commands";
 import { subscribeSkinEvents } from "../ipc/channels";
+import { commands } from "../ipc/commands";
 import type { BrandGlyphName, SkinApplied, SkinApplyFailure } from "../ipc/commands/dto";
 import type { SkinShell } from "../ipc/commands/dto_skin_tree";
 

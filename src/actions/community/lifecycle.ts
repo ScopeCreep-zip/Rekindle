@@ -1,21 +1,21 @@
+import { onCommunityListed } from "../../handlers/community/community_listed";
 import { commands } from "../../ipc/commands";
+import { isCancelled } from "../../ipc/commands/dto";
 import { asImageKind } from "../../ipc/commands/system";
 import {
-  setCommunityState,
-  setCommunityMembers,
   communityState,
+  dropCommunity,
+  setCommunityMembers,
+  setCommunityState,
 } from "../../stores/community.store";
-import { onCommunityListed } from "../../handlers/community/community_listed";
 import { addToast } from "../../stores/toast.store";
 import { errorMessage } from "../../utils/error";
-import { isCancelled } from "../../ipc/commands/dto";
 import {
   transformAutoModRule,
   transformExpression,
   transformMember,
 } from "../../utils/transformers";
 import { handleLoadUnreadCounts } from "./channels";
-import { dropCommunity } from "../../stores/community.store";
 
 /// Create a community. A refused create (a cancelled review, a node not
 /// yet attached) rejects with the Host's error, so the form that asked

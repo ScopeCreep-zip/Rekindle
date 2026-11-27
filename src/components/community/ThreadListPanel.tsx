@@ -1,7 +1,7 @@
-import { type Component, For, Show, createSignal, createMemo } from "solid-js";
-import SkinGlyph from "../common/SkinGlyph";
+import { type Component, createMemo, createSignal, For, Show } from "solid-js";
 import type { Thread } from "../../stores/community.store";
 import { formatRelativeTime } from "../../utils/formatting";
+import SkinGlyph from "../common/SkinGlyph";
 
 interface ThreadListPanelProps {
   threads: Thread[];

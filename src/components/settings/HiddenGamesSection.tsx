@@ -1,6 +1,6 @@
-import { type Component, For, Show, createMemo, createSignal, onMount } from "solid-js";
-import { commands } from "../../ipc/commands";
+import { type Component, createMemo, createSignal, For, onMount, Show } from "solid-js";
 import type { HiddenGameView } from "../../ipc/commands";
+import { commands } from "../../ipc/commands";
 import type { GameTotalView } from "../../ipc/commands/dto";
 
 /// The hide list (plan E7.2): games never shown to anyone, picked from the

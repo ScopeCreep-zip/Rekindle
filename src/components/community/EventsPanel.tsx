@@ -1,15 +1,15 @@
-import { type Component, For, Show, createSignal, createMemo, onMount } from "solid-js";
-import { communityState } from "../../stores/community.store";
+import { type Component, createMemo, createSignal, For, onMount, Show } from "solid-js";
+import {
+  handleCancelEvent,
+  handleDeleteEvent,
+  handleLoadEvents,
+  handleRsvpEvent,
+} from "../../actions/community.actions";
 import type { EventRsvp, ScheduledEvent } from "../../stores/community.store";
+import { communityState } from "../../stores/community.store";
+import { deniedFor } from "../../utils/denied";
 import { formatEventCountdown } from "../../utils/time";
 import EventAttendees from "./EventAttendees";
-import {
-  handleRsvpEvent,
-  handleDeleteEvent,
-  handleCancelEvent,
-  handleLoadEvents,
-} from "../../actions/community.actions";
-import { deniedFor } from "../../utils/denied";
 
 interface EventsPanelProps {
   communityId: string;

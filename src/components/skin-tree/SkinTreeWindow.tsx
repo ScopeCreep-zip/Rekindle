@@ -1,19 +1,22 @@
 import {
   type Component,
-  For,
-  type JSX,
-  Match,
-  Show,
-  Switch,
   createContext,
   createEffect,
   createSignal,
+  For,
+  type JSX,
+  Match,
   onCleanup,
+  Show,
+  Switch,
   untrack,
   useContext,
 } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { Dynamic } from "solid-js/web";
+import { handleOpenDocs, openSettingsTab } from "../../actions/app_menu.actions";
+import { dispatchSkinAction, registerShellRunner } from "../../actions/skin.actions";
+import type { SkinSignalSet } from "../../ipc/commands/dto_skin_run";
 import type {
   EngineMenu,
   MenuItem,
@@ -23,23 +26,8 @@ import type {
   SlotKey,
   ViewKey,
 } from "../../ipc/commands/dto_skin_tree";
-import { useSlotRegister } from "./slots";
-import type { SkinSignalSet } from "../../ipc/commands/dto_skin_run";
 import { skinSignals } from "../../stores/skin-signals.store";
-import {
-  applyTreeOp,
-  fired,
-  initialTreeState,
-  pageView,
-  signalFlags,
-  type StateCause,
-  type TreeState,
-} from "./signalEffects";
-import type { TreePieces } from "./tree_pieces";
-import { dispatchSkinAction, registerShellRunner } from "../../actions/skin.actions";
-import { handleOpenDocs, openSettingsTab } from "../../actions/app_menu.actions";
 import { actionLabel } from "../../utils/skin_action_words";
-import { InBar, PackContextMenu, PackMenu, PackMenuBar } from "./PackMenus";
 import AdArea from "./AdArea";
 import NodeLabelView from "./NodeLabelView";
 import {
@@ -48,13 +36,25 @@ import {
   holdsControls,
   holdsNonMenuControls,
   isPointer,
+  type PointerEvent,
   parents,
   pointerTriggers,
   pressAction,
   rightMenu,
   roleAttr,
-  type PointerEvent,
 } from "./nodeQueries";
+import { InBar, PackContextMenu, PackMenu, PackMenuBar } from "./PackMenus";
+import {
+  applyTreeOp,
+  fired,
+  initialTreeState,
+  pageView,
+  type StateCause,
+  signalFlags,
+  type TreeState,
+} from "./signalEffects";
+import { useSlotRegister } from "./slots";
+import type { TreePieces } from "./tree_pieces";
 
 /** What every node of one window's tree reads. */
 interface Tree {

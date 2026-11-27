@@ -1,27 +1,25 @@
-import type { FriendInfo, Message as IpcMessage } from "../ipc/commands";
-import type { DmMessage } from "../ipc/commands/dto_dm";
 import type { DmHistoryGap } from "../ipc/channels/chat_events";
-import type { ExpressionInfo } from "../ipc/commands";
-import type { Friend } from "../stores/friends.store";
-import type { GameInfo } from "../ipc/commands/dto";
-import type { NotJoinableReason } from "../ipc/commands/types";
+import type { KeyStatus } from "../ipc/channels/community_subscription_events";
+import type { ExpressionInfo, FriendInfo, Message as IpcMessage } from "../ipc/commands";
 import type { DeviceStatus } from "../ipc/commands/community";
-import type { Message } from "../stores/chat.store";
-import type {
-  AutoModRule,
-  Community,
-  Channel,
-  Expression,
-  Member,
-  MemberLocation,
-} from "../stores/community.store";
-import type { MemberGroup } from "../ipc/commands/dto";
+import type { GameInfo, MemberGroup } from "../ipc/commands/dto";
 import type {
   ChannelDeniedCapabilities,
   DeniedCapabilities,
   MemberModeration,
 } from "../ipc/commands/dto_capabilities";
-import type { KeyStatus } from "../ipc/channels/community_subscription_events";
+import type { DmMessage } from "../ipc/commands/dto_dm";
+import type { NotJoinableReason } from "../ipc/commands/types";
+import type { Message } from "../stores/chat.store";
+import type {
+  AutoModRule,
+  Channel,
+  Community,
+  Expression,
+  Member,
+  MemberLocation,
+} from "../stores/community.store";
+import type { Friend } from "../stores/friends.store";
 
 /** Convert a single backend FriendInfo to a frontend Friend. */
 function transformFriend(f: FriendInfo): Friend {

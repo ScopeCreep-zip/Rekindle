@@ -1,13 +1,13 @@
 import { type Component } from "solid-js";
-import FormField from "../../components/common/FormField";
-import SettingsSelect, { type SettingsSelectOption } from "../../components/common/SettingsSelect";
-import FavouriteServersSection from "../../components/settings/FavouriteServersSection";
-import { settingsState } from "../../stores/settings.store";
 import {
   handleSaveSettings,
   handleSetAutoAway,
   handleSetGameDetection,
 } from "../../actions/settings.actions";
+import FormField from "../../components/common/FormField";
+import SettingsSelect, { type SettingsSelectOption } from "../../components/common/SettingsSelect";
+import FavouriteServersSection from "../../components/settings/FavouriteServersSection";
+import { settingsState } from "../../stores/settings.store";
 
 /** Auto-away after these minutes of inactivity; 0 turns it off. */
 const AUTO_AWAY_OPTIONS: SettingsSelectOption[] = [

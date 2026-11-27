@@ -1,10 +1,10 @@
-import { type Component, For, Show, createSignal } from "solid-js";
-import { friendsState } from "../../stores/friends.store";
+import { type Component, createSignal, For, Show } from "solid-js";
 import {
   handleAcceptRequest,
-  handleRejectRequest,
   handleBlockUser,
+  handleRejectRequest,
 } from "../../actions/buddy.actions";
+import { friendsState } from "../../stores/friends.store";
 
 const PendingRequests: Component = () => {
   const [error, setError] = createSignal<string | null>(null);

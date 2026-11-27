@@ -1,20 +1,9 @@
 import { type Component, Show } from "solid-js";
-import SkinGlyph from "../../components/common/SkinGlyph";
-import ChannelChat from "./ChannelChat";
-import CallStage from "./CallStage";
-import EventsPanel from "../../components/community/EventsPanel";
-import GameServerList from "../../components/community/GameServerList";
-import ForumChannelView from "../../components/community/ForumChannelView";
-import StagePanel from "../../components/community/StagePanel";
-import WelcomeScreen from "../../components/community/WelcomeScreen";
-import GovernancePublicationStatus from "../../components/community/GovernancePublicationStatus";
-import CommunityDeviceStatus from "../../components/community/CommunityDeviceStatus";
-import { communityState } from "../../stores/community.store";
 import {
   handleAddGameServer,
+  handleCreateForumPost,
   handleRemoveGameServer,
   handleSetChannelTopic,
-  handleCreateForumPost,
 } from "../../actions/community.actions";
 import {
   handleJoinVoice,
@@ -22,6 +11,17 @@ import {
   handleRequestToSpeak,
   handleRespondToSpeakRequest,
 } from "../../actions/voice.actions";
+import SkinGlyph from "../../components/common/SkinGlyph";
+import CommunityDeviceStatus from "../../components/community/CommunityDeviceStatus";
+import EventsPanel from "../../components/community/EventsPanel";
+import ForumChannelView from "../../components/community/ForumChannelView";
+import GameServerList from "../../components/community/GameServerList";
+import GovernancePublicationStatus from "../../components/community/GovernancePublicationStatus";
+import StagePanel from "../../components/community/StagePanel";
+import WelcomeScreen from "../../components/community/WelcomeScreen";
+import { communityState } from "../../stores/community.store";
+import CallStage from "./CallStage";
+import ChannelChat from "./ChannelChat";
 import type { CommunityVm } from "./useCommunityWindow";
 
 /// Center column: game-server list, events panel, welcome screen, or the

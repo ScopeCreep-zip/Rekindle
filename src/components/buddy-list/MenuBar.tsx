@@ -1,5 +1,5 @@
-import type { Component } from "solid-js";
 import { Menubar } from "@kobalte/core/menubar";
+import type { Component } from "solid-js";
 import {
   handleOpenDocs,
   handleQuit,

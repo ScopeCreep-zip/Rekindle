@@ -1,17 +1,17 @@
-import { type Component, Show, createSignal } from "solid-js";
-import { handleToggleAddFriend } from "../../actions/buddy.actions";
+import { type Component, createSignal, Show } from "solid-js";
 import { handleLogout } from "../../actions/auth.actions";
-import { setFriendsState } from "../../stores/friends.store";
-import { buddyListUI, setBuddyListUI } from "../../stores/buddylist-ui.store";
-import { canCreateCommunity, networkLabel, trackNetworkStatus } from "../../stores/network.store";
+import { handleToggleAddFriend } from "../../actions/buddy.actions";
 import {
-  ICON_NEW_CHAT,
   ICON_ADD_FRIEND,
-  ICON_PLUS,
   ICON_COMMUNITIES,
-  ICON_LOGOUT,
   ICON_KEYBOARD,
+  ICON_LOGOUT,
+  ICON_NEW_CHAT,
+  ICON_PLUS,
 } from "../../icons";
+import { buddyListUI, setBuddyListUI } from "../../stores/buddylist-ui.store";
+import { setFriendsState } from "../../stores/friends.store";
+import { canCreateCommunity, networkLabel, trackNetworkStatus } from "../../stores/network.store";
 import { setShortcutsHelpOpen } from "../../stores/shortcuts_help.store";
 
 export function handleToggleNewChat(): void {

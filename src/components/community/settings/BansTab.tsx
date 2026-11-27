@@ -1,8 +1,8 @@
-import { type Component, For, Show, createSignal, createEffect, on } from "solid-js";
-import SkinGlyph from "../../common/SkinGlyph";
+import { type Component, createEffect, createSignal, For, on, Show } from "solid-js";
 import { handleGetBanList, handleUnbanMember } from "../../../actions/community.actions";
 import type { CommunityBanView } from "../../../ipc/commands/dto";
 import { communityState } from "../../../stores/community.store";
+import SkinGlyph from "../../common/SkinGlyph";
 
 interface BansTabProps {
   communityId: string;

@@ -1,8 +1,8 @@
-import { commands } from "../../ipc/commands";
-import { setCommunityState, communityState } from "../../stores/community.store";
-import { addToast } from "../../stores/toast.store";
-import type { Message } from "../../stores/chat.store";
 import type { CreateEventRequest } from "../../ipc/commands";
+import { commands } from "../../ipc/commands";
+import type { Message } from "../../stores/chat.store";
+import { communityState, setCommunityState } from "../../stores/community.store";
+import { addToast } from "../../stores/toast.store";
 import { transformMessages } from "../../utils/transformers";
 import { transformEvent } from "./shared";
 

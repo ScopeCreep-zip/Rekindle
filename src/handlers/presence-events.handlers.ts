@@ -1,12 +1,12 @@
-import { type UnlistenFn, subscribePresenceEvents } from "../ipc/channels";
+import { subscribePresenceEvents, type UnlistenFn } from "../ipc/channels";
 import type { PresenceEvent, PresenceSnapshot } from "../ipc/channels/presence_events";
 import { gameName } from "../ipc/channels/presence_events";
-import { friendsState, setFriendsState } from "../stores/friends.store";
-import { communityState, setCommunityState } from "../stores/community.store";
-import { authState, setAuthState } from "../stores/auth.store";
 import type { UserStatus } from "../stores/auth.store";
-import { refreshCommunityMembers, refreshForUnlistedMember } from "./community/members_refresh";
+import { authState, setAuthState } from "../stores/auth.store";
+import { communityState, setCommunityState } from "../stores/community.store";
+import { friendsState, setFriendsState } from "../stores/friends.store";
 import { transformGameInfo } from "../utils/transformers";
+import { refreshCommunityMembers, refreshForUnlistedMember } from "./community/members_refresh";
 
 /**
  * Who the event is about, and what was observed about them.

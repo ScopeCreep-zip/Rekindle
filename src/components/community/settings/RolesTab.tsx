@@ -1,19 +1,19 @@
-import { type Component, For, Show, createSignal, createUniqueId } from "solid-js";
-import SkinGlyph from "../../common/SkinGlyph";
-import type { Community } from "../../../stores/community.store";
-import { EVERYONE_ROLE_ID } from "../../../stores/community.store";
-import RoleTag from "../RoleTag";
-import PermissionCheckboxList from "./PermissionCheckboxList";
-import FormField from "../../common/FormField";
-import { colorIntToHex, hexToColorInt } from "../../../utils/color";
-import { togglePermBit } from "../../../ipc/permissions";
+import { type Component, createSignal, createUniqueId, For, Show } from "solid-js";
 import {
   handleCreateRole,
-  handleEditRole,
   handleDeleteRole,
+  handleEditRole,
 } from "../../../actions/community.actions";
+import { togglePermBit } from "../../../ipc/permissions";
+import type { Community } from "../../../stores/community.store";
+import { EVERYONE_ROLE_ID } from "../../../stores/community.store";
 import { addToast } from "../../../stores/toast.store";
 import { tokenVar } from "../../../styles/generated/tokens";
+import { colorIntToHex, hexToColorInt } from "../../../utils/color";
+import FormField from "../../common/FormField";
+import SkinGlyph from "../../common/SkinGlyph";
+import RoleTag from "../RoleTag";
+import PermissionCheckboxList from "./PermissionCheckboxList";
 
 interface RolesTabProps {
   community: Community;

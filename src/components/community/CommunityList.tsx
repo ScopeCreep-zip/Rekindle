@@ -1,7 +1,7 @@
-import { type Component, For, Show } from "solid-js";
-import SkinGlyph from "../common/SkinGlyph";
 import { ContextMenu } from "@kobalte/core/context-menu";
-import { communityState, type Community } from "../../stores/community.store";
+import { type Component, For, Show } from "solid-js";
+import { type Community, communityState } from "../../stores/community.store";
+import SkinGlyph from "../common/SkinGlyph";
 
 interface CommunityListProps {
   selectedId?: string;

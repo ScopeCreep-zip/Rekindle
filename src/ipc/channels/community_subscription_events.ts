@@ -1,6 +1,7 @@
-import type { Undecryptable } from "../commands/types";
 import type { SkinApplied } from "../commands/dto";
 import type { DeniedCapabilities } from "../commands/dto_capabilities";
+import type { Undecryptable } from "../commands/types";
+
 /**
  * The daemon-vocabulary half of the `community-event` channel.
  *
@@ -12,9 +13,9 @@ import type { DeniedCapabilities } from "../commands/dto_capabilities";
  * between the two) tells them apart.
  */
 
-import type { CommunityEvent } from "./community_events";
-import type { TypingContext, UnreadChanged } from "./chat_events";
 import type { EventInfo, GameServer, Thread } from "../commands/types";
+import type { TypingContext, UnreadChanged } from "./chat_events";
+import type { CommunityEvent } from "./community_events";
 
 /** Why an inviter refused a join (`rekindle_types::join_refusal::JoinRefusal`). */
 type JoinRefusal = "INVITE_USED_UP" | "INVITE_NO_LONGER_VALID" | "INVITE_UNKNOWN" | "NOT_ADMITTED";

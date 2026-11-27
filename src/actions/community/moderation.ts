@@ -1,6 +1,6 @@
 import { commands } from "../../ipc/commands";
 import type { CommunityAuditEntry, CommunityBanView } from "../../ipc/commands/dto";
-import { setCommunityState, communityState } from "../../stores/community.store";
+import { communityState, setCommunityState } from "../../stores/community.store";
 import { addToast } from "../../stores/toast.store";
 import { errorMessage } from "../../utils/error";
 

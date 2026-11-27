@@ -1,32 +1,35 @@
 import { batch } from "solid-js";
 import { produce, reconcile } from "solid-js/store";
+import { handleLoadChannelThreads } from "../../actions/community/events_threads";
+import {
+  handleLoadAutoModRules,
+  handleLoadExpressions,
+  handleResolveCommunityImageDataUrls,
+} from "../../actions/community/lifecycle";
 import type { CommunityEvent } from "../../ipc/channels";
 import type {
   CommunitySubscriptionEvent,
   GovernanceEvent,
 } from "../../ipc/channels/community_subscription_events";
-import {
-  applyJoinProgress,
-  resetJoinProgress,
-  type JoinStageStatus,
-} from "../../stores/join.store";
-import { applySuccessorEvent } from "../../stores/successor.store";
-import { handleResolveCommunityImageDataUrls } from "../../actions/community/lifecycle";
+import { commands } from "../../ipc/commands";
 import {
   type Community,
-  setCommunityState,
-  setCommunityMembers,
   communityState,
   dropCommunity,
+  setCommunityMembers,
+  setCommunityState,
 } from "../../stores/community.store";
-import { commands } from "../../ipc/commands";
+import {
+  applyJoinProgress,
+  type JoinStageStatus,
+  resetJoinProgress,
+} from "../../stores/join.store";
+import { applySuccessorEvent } from "../../stores/successor.store";
 import { addToast } from "../../stores/toast.store";
 import { removalText } from "../../utils/removal_text";
 import { transformChannel, transformMember } from "../../utils/transformers";
-import { refreshCommunityMembers, refreshForUnlistedMember } from "./members_refresh";
 import { withCommunity } from "./community_reread";
-import { handleLoadExpressions, handleLoadAutoModRules } from "../../actions/community/lifecycle";
-import { handleLoadChannelThreads } from "../../actions/community/events_threads";
+import { refreshCommunityMembers, refreshForUnlistedMember } from "./members_refresh";
 
 // A pending rebuild needs the full view even if a later permission event
 // supersedes its request. Scope reads to a row so a reply from before a

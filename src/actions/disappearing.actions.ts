@@ -1,11 +1,11 @@
-import { commands } from "../ipc/commands";
-import { isCancelled } from "../ipc/commands/dto";
 import type { DisappearingTimerChanged } from "../ipc/channels/chat_events";
 import { conversationId } from "../ipc/channels/chat_events";
+import { commands } from "../ipc/commands";
+import { isCancelled } from "../ipc/commands/dto";
+import type { DisappearingTimerView } from "../ipc/commands/dto_dm";
 import type { Message } from "../stores/chat.store";
 import { disappearingState, setDisappearingState } from "../stores/disappearing.store";
 import { errorMessage } from "../utils/error";
-import type { DisappearingTimerView } from "../ipc/commands/dto_dm";
 
 // Disappearing messages (plan E7.1). The Host holds the timer, its presets,
 // each message's expiry and the deletion; the window reads the timer, asks

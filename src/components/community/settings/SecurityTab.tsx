@@ -1,19 +1,19 @@
 import {
   type Component,
-  Show,
   createEffect,
   createMemo,
   createSignal,
   createUniqueId,
+  Show,
 } from "solid-js";
-import SkinGlyph from "../../common/SkinGlyph";
-import type { Community } from "../../../stores/community.store";
-import type { ConfirmOptions } from "./types";
 import { handleRotateMek } from "../../../actions/community.actions";
+import { type CommunityPolicy, commands } from "../../../ipc/commands";
+import type { Community } from "../../../stores/community.store";
 import { addToast } from "../../../stores/toast.store";
-import { commands, type CommunityPolicy } from "../../../ipc/commands";
-import FormField from "../../common/FormField";
 import { deniedFor } from "../../../utils/denied";
+import FormField from "../../common/FormField";
+import SkinGlyph from "../../common/SkinGlyph";
+import type { ConfirmOptions } from "./types";
 
 interface SecurityTabProps {
   community: Community;

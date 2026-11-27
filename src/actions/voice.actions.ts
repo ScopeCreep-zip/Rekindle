@@ -5,12 +5,12 @@
 // subscription are different tiers; sharing a module made every
 // component that renders a call control import the subscription wiring.
 
-import { commands } from "../ipc/commands";
-import { type UnlistenFn, subscribeVoiceEvents } from "../ipc/channels";
+import { subscribeVoiceEvents, type UnlistenFn } from "../ipc/channels";
 import { callType, sessionKey } from "../ipc/channels/voice_events";
-import { voiceState, setVoiceState } from "../stores/voice.store";
+import { commands } from "../ipc/commands";
 import { communityState } from "../stores/community.store";
 import { addToast } from "../stores/toast.store";
+import { setVoiceState, voiceState } from "../stores/voice.store";
 import { errorMessage } from "../utils/error";
 import { probeAndReportLocalVideoCapabilities } from "./video.actions";
 

@@ -1,7 +1,7 @@
 import { commands } from "../../ipc/commands";
-import { setCommunityState, communityState } from "../../stores/community.store";
-import { addToast } from "../../stores/toast.store";
 import type { Channel } from "../../stores/community.store";
+import { communityState, setCommunityState } from "../../stores/community.store";
+import { addToast } from "../../stores/toast.store";
 import { refreshStageHandRaises } from "./shared";
 
 export async function handleCreateChannel(

@@ -8,13 +8,13 @@
 // which must start inside the pointer event that began them.
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { commands } from "../ipc/commands";
-import type { TransferRow } from "../ipc/commands/dto_transfer";
-import type { Edge, SkinAction } from "../ipc/commands/dto_skin_tree";
+import { isCancelled } from "../ipc/commands/dto";
 import type { ShellOp, SkinRun, SkinSelection } from "../ipc/commands/dto_skin_run";
+import type { Edge, SkinAction } from "../ipc/commands/dto_skin_tree";
+import type { TransferRow } from "../ipc/commands/dto_transfer";
+import { setLocalSearchScope } from "../stores/local_search.store";
 import { addToast } from "../stores/toast.store";
 import { errorMessage } from "../utils/error";
-import { isCancelled } from "../ipc/commands/dto";
-import { setLocalSearchScope } from "../stores/local_search.store";
 import { handleClose, handleMaximize, handleMinimize } from "./titlebar.actions";
 
 /** Each pack edge's OS resize direction (Tauri `ResizeDirection`). */

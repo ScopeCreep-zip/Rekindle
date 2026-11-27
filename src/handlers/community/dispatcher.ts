@@ -1,18 +1,18 @@
 import {
-  type UnlistenFn,
   subscribeCommunityEvents,
   subscribeVoiceEvents,
+  type UnlistenFn,
 } from "../../ipc/channels";
-import { reduceMembership, reduceSubscriptionMembership } from "./dispatcher_members";
 import { isLegacyCommunityEvent } from "../../ipc/channels/community_subscription_events";
+import { reduceSubscriptionContent } from "./dispatcher_content";
+import { reduceMembership, reduceSubscriptionMembership } from "./dispatcher_members";
 import {
   reduceMessages,
   reduceSubscriptionMessages,
   reduceSubscriptionSystem,
   reduceSubscriptionTyping,
 } from "./dispatcher_messages";
-import { reduceVoice, reduceSubscriptionCrypto, reduceSubscriptionVoice } from "./dispatcher_voice";
-import { reduceSubscriptionContent } from "./dispatcher_content";
+import { reduceSubscriptionCrypto, reduceSubscriptionVoice, reduceVoice } from "./dispatcher_voice";
 
 const SUBSCRIPTION_SLICES = [
   reduceSubscriptionMembership,

@@ -1,7 +1,7 @@
-import { type Component, For, type JSX, Show, createEffect, createSignal } from "solid-js";
 import { DropdownMenu } from "@kobalte/core/dropdown-menu";
-import { authState } from "../../stores/auth.store";
+import { type Component, createEffect, createSignal, For, type JSX, Show } from "solid-js";
 import { handleSetStatusMessage } from "../../actions/auth.actions";
+import { authState } from "../../stores/auth.store";
 import {
   isNetworkConnected,
   networkLabel,

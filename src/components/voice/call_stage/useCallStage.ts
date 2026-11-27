@@ -1,7 +1,7 @@
 import { createMemo, createSignal } from "solid-js";
-import { voiceState } from "../../../stores/voice.store";
 import { authState } from "../../../stores/auth.store";
 import { communityState } from "../../../stores/community.store";
+import { voiceState } from "../../../stores/voice.store";
 import { activePipeline } from "./pipeline_store";
 
 /// Community voice keys `voiceState.participants` by the per-community

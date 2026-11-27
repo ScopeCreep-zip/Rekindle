@@ -1,22 +1,22 @@
 import {
   type Component,
-  Show,
   createEffect,
   createMemo,
   createSignal,
   createUniqueId,
   onCleanup,
+  Show,
 } from "solid-js";
-import SkinGlyph from "../common/SkinGlyph";
+import { handleEndDmCall } from "../../actions/calls.actions";
 import { commands } from "../../ipc/commands";
 import type { CallEntry } from "../../stores/calls.store";
-import { voiceState, setVoiceState } from "../../stores/voice.store";
-import { settingsState, setSettingsState } from "../../stores/settings.store";
 import { friendsState } from "../../stores/friends.store";
-import { handleEndDmCall } from "../../actions/calls.actions";
-import VideoCallPanel from "./VideoCallPanel";
-import ReactionsTray from "./ReactionsTray";
+import { setSettingsState, settingsState } from "../../stores/settings.store";
+import { setVoiceState, voiceState } from "../../stores/voice.store";
+import SkinGlyph from "../common/SkinGlyph";
 import ReactionFloater from "./ReactionFloater";
+import ReactionsTray from "./ReactionsTray";
+import VideoCallPanel from "./VideoCallPanel";
 
 interface ActiveCallPanelProps {
   call: CallEntry;

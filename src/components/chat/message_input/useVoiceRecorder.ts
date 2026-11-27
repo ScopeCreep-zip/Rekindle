@@ -1,6 +1,6 @@
 import { createSignal, onCleanup } from "solid-js";
-import { bytesToBase64 } from "../../../utils/base64";
 import { handleSendVoiceMessage } from "../../../actions/community.actions";
+import { bytesToBase64 } from "../../../utils/base64";
 
 /** The longest voice message (`rekindle_files::voice_note::MAX_DURATION_MS`):
  *  the recorder stops at exactly this, and the PCM handed over is cut to it,

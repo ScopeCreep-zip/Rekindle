@@ -1,6 +1,6 @@
-import { type Component, For, Show, createSignal, onMount } from "solid-js";
-import { commands } from "../../ipc/commands";
+import { type Component, createSignal, For, onMount, Show } from "solid-js";
 import type { FavouriteServerView } from "../../ipc/commands";
+import { commands } from "../../ipc/commands";
 import type { GameTotalView } from "../../ipc/commands/dto";
 
 /// Personal favourite game servers (plan E7.2): a game we have played, a

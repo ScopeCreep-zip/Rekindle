@@ -1,9 +1,9 @@
-import { type Component, For, Show, createMemo, createSignal } from "solid-js";
-import SkinGlyph from "../common/SkinGlyph";
-import { communityState } from "../../stores/community.store";
-import { handleForwardChannelMessage } from "../../actions/community.actions";
 import { Dialog } from "@kobalte/core/dialog";
+import { type Component, createMemo, createSignal, For, Show } from "solid-js";
+import { handleForwardChannelMessage } from "../../actions/community.actions";
+import { communityState } from "../../stores/community.store";
 import { returnFocusToOpener } from "../../utils/dialog_focus";
+import SkinGlyph from "../common/SkinGlyph";
 
 interface ForwardMessageDialogProps {
   sourceCommunityId: string;

@@ -1,12 +1,12 @@
 import { commands } from "../../ipc/commands";
-import { setCommunityState, communityState } from "../../stores/community.store";
-import { addToast } from "../../stores/toast.store";
-import { clearBulkSelection } from "../../stores/chat.store";
-import { transformMessages } from "../../utils/transformers";
-import { mergeRead } from "../../utils/message_merge";
 import { isCommandError } from "../../ipc/commands/dto";
-import { errorMessage } from "../../utils/error";
+import { clearBulkSelection } from "../../stores/chat.store";
+import { communityState, setCommunityState } from "../../stores/community.store";
+import { addToast } from "../../stores/toast.store";
 import { afterDraftReports, sendDraftReport } from "../../utils/draft_reports";
+import { errorMessage } from "../../utils/error";
+import { mergeRead } from "../../utils/message_merge";
+import { transformMessages } from "../../utils/transformers";
 
 export async function handleSendChannelMessage(
   channelId: string,

@@ -1,10 +1,10 @@
-import { type Component, For, Show, createEffect, createMemo, createSignal } from "solid-js";
-import { communityState } from "../../stores/community.store";
-import { buddyListUI } from "../../stores/buddylist-ui.store";
-import { commands } from "../../ipc/commands";
-import type { Community } from "../../stores/community.store";
-import ScrollArea from "../common/ScrollArea";
+import { type Component, createEffect, createMemo, createSignal, For, Show } from "solid-js";
 import { sendSkinSelection } from "../../actions/skin.actions";
+import { commands } from "../../ipc/commands";
+import { buddyListUI } from "../../stores/buddylist-ui.store";
+import type { Community } from "../../stores/community.store";
+import { communityState } from "../../stores/community.store";
+import ScrollArea from "../common/ScrollArea";
 
 function communityUnreads(community: Community): number {
   let total = 0;

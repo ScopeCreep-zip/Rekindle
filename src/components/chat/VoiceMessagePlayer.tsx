@@ -1,7 +1,7 @@
 import { type Component, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
-import SkinGlyph from "../common/SkinGlyph";
-import type { MessageAttachment } from "../../stores/chat.store";
 import { handleLoadVoiceMessage } from "../../actions/community.actions";
+import type { MessageAttachment } from "../../stores/chat.store";
+import SkinGlyph from "../common/SkinGlyph";
 
 interface VoiceMessagePlayerProps {
   communityId: string;

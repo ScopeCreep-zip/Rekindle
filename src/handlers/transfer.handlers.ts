@@ -1,7 +1,7 @@
 import { produce } from "solid-js/store";
-import { type UnlistenFn, subscribeTransfers } from "../ipc/channels";
-import type { TransferEvent } from "../ipc/commands/dto_transfer";
 import { loadTransfers } from "../actions/transfer.actions";
+import { subscribeTransfers, type UnlistenFn } from "../ipc/channels";
+import type { TransferEvent } from "../ipc/commands/dto_transfer";
 import { setTransfersState, transfersState } from "../stores/transfers.store";
 
 // File transfers (plan E7.2 G12): the Host's list, kept by its events. An

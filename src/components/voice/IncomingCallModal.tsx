@@ -1,9 +1,9 @@
-import { type Component, Show, createEffect, createSignal, onCleanup } from "solid-js";
 import { Dialog } from "@kobalte/core/dialog";
-import { returnFocusToOpener } from "../../utils/dialog_focus";
-import { callsState } from "../../stores/calls.store";
+import { type Component, createEffect, createSignal, onCleanup, Show } from "solid-js";
 import { handleAcceptIncomingCall, handleDeclineIncomingCall } from "../../actions/calls.actions";
 import { commands } from "../../ipc/commands";
+import { callsState } from "../../stores/calls.store";
+import { returnFocusToOpener } from "../../utils/dialog_focus";
 
 /// Wave 12 W12.1+W12.3 — incoming-call modal mounted globally in
 /// CallController. Reads the head of `callsState.incomingCalls`. While

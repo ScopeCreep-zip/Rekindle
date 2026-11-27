@@ -1,9 +1,9 @@
-import { commands } from "../ipc/commands";
 import type { NetworkStatus } from "../ipc/commands";
-import { setSettingsState } from "../stores/settings.store";
-import type { SettingsState } from "../stores/settings.store";
-import { addToast } from "../stores/toast.store";
+import { commands } from "../ipc/commands";
 import { asImageKind } from "../ipc/commands/system";
+import type { SettingsState } from "../stores/settings.store";
+import { setSettingsState } from "../stores/settings.store";
+import { addToast } from "../stores/toast.store";
 
 export async function handleLoadSettings(): Promise<void> {
   try {

@@ -9,6 +9,8 @@
 // `GroupPage` (the page a control group shows) and `ShowView`. Nothing
 // here decides a capability, and nothing is hidden that the pack does not
 // hide.
+
+import type { DisableCause, DisableSignal, SkinSignalSet } from "../../ipc/commands/dto_skin_run";
 import type {
   EngineView,
   NodeTrigger,
@@ -17,7 +19,6 @@ import type {
   SkinEvent,
   ViewKey,
 } from "../../ipc/commands/dto_skin_tree";
-import type { DisableCause, DisableSignal, SkinSignalSet } from "../../ipc/commands/dto_skin_run";
 
 type NodeStateName = "normal" | "disabled" | "down";
 

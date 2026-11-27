@@ -1,6 +1,6 @@
-import { type Component, For, createEffect, createSignal, createUniqueId } from "solid-js";
-import type { Community } from "../../../stores/community.store";
+import { type Component, createEffect, createSignal, createUniqueId, For } from "solid-js";
 import { handleDeleteAutoModRule, handleSetAutoModRule } from "../../../actions/community.actions";
+import type { Community } from "../../../stores/community.store";
 import { addToast } from "../../../stores/toast.store";
 import FormField from "../../common/FormField";
 

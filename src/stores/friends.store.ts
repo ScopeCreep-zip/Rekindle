@@ -1,8 +1,8 @@
-import type { SendState } from "../ipc/commands/types";
-import type { DeliveryRetry } from "../ipc/channels/chat_events";
 import { createStore } from "solid-js/store";
-import type { UserStatus } from "./auth.store";
+import type { DeliveryRetry } from "../ipc/channels/chat_events";
 import type { GameInfo } from "../ipc/commands/dto";
+import type { SendState } from "../ipc/commands/types";
+import type { UserStatus } from "./auth.store";
 
 type FriendshipState = "pendingOut" | "accepted";
 

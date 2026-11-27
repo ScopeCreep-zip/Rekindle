@@ -1,4 +1,4 @@
-import { addToast } from "../../stores/toast.store";
+import { ContextMenu } from "@kobalte/core/context-menu";
 import {
   type Component,
   createEffect,
@@ -8,29 +8,29 @@ import {
   type JSX,
   Show,
 } from "solid-js";
-import { ContextMenu } from "@kobalte/core/context-menu";
-import { friendsState } from "../../stores/friends.store";
-import { buddyListUI } from "../../stores/buddylist-ui.store";
-import type { Friend } from "../../stores/friends.store";
 import {
-  handleDoubleClickFriend,
-  handleRemoveFriend,
+  handleBlockUser,
   handleCancelRequest,
   handleCreateFriendGroup,
+  handleDoubleClickFriend,
   handleMoveFriendToGroup,
-  handleBlockUser,
+  handleRemoveFriend,
   handleResetSignalSession,
 } from "../../actions/buddy.actions";
-import { handleRevokeRelay, handleVolunteerRelay, relayState } from "../../actions/relay.actions";
 import { handleStartDmCall } from "../../actions/calls.actions";
-import { sendSkinSelection } from "../../actions/skin.actions";
 import { handleLaunchGame } from "../../actions/game.actions";
-import { notJoinableText } from "../../utils/joinable_text";
+import { handleRevokeRelay, handleVolunteerRelay, relayState } from "../../actions/relay.actions";
+import { sendSkinSelection } from "../../actions/skin.actions";
 import { commands } from "../../ipc/commands";
-import BuddyGroup from "./BuddyGroup";
-import ScrollArea from "../common/ScrollArea";
+import { buddyListUI } from "../../stores/buddylist-ui.store";
+import type { Friend } from "../../stores/friends.store";
+import { friendsState } from "../../stores/friends.store";
+import { addToast } from "../../stores/toast.store";
+import { notJoinableText } from "../../utils/joinable_text";
 import { rovingList } from "../../utils/roving_list";
+import ScrollArea from "../common/ScrollArea";
 import SimpleInputModal from "../common/SimpleInputModal";
+import BuddyGroup from "./BuddyGroup";
 
 /** The list of our sent requests, shown as a group of its own. */
 const AWAITING_RESPONSE = "Awaiting Response";

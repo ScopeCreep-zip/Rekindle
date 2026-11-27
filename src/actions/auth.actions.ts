@@ -1,7 +1,7 @@
+import { fetchAvatarUrl } from "../ipc/avatar";
 import { commands } from "../ipc/commands";
 import { authState, setAuthState } from "../stores/auth.store";
 import { addToast } from "../stores/toast.store";
-import { fetchAvatarUrl } from "../ipc/avatar";
 import { errorMessage } from "../utils/error";
 
 export async function handleLogin(

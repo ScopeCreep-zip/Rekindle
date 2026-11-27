@@ -1,13 +1,13 @@
-import { type Component, createSignal, onCleanup, onMount, For, Show } from "solid-js";
-import { subscribeChatEvents } from "../../ipc/channels";
-import FormField from "../../components/common/FormField";
-import RelaySettingsSection from "../../components/settings/RelaySettingsSection";
-import { authState } from "../../stores/auth.store";
-import { commands } from "../../ipc/commands";
+import { type Component, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { handleUnblockUser } from "../../actions/buddy.actions";
+import FormField from "../../components/common/FormField";
+import AuditLogSection from "../../components/settings/AuditLogSection";
 import HiddenGamesSection from "../../components/settings/HiddenGamesSection";
 import QuickWipeSection from "../../components/settings/QuickWipeSection";
-import AuditLogSection from "../../components/settings/AuditLogSection";
+import RelaySettingsSection from "../../components/settings/RelaySettingsSection";
+import { subscribeChatEvents } from "../../ipc/channels";
+import { commands } from "../../ipc/commands";
+import { authState } from "../../stores/auth.store";
 
 const PrivacyTab: Component = () => {
   const [blockedUsers, setBlockedUsers] = createSignal<

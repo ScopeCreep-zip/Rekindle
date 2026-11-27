@@ -1,20 +1,3 @@
-import type { ShellOp } from "../commands/dto_skin_run";
-import { Channel, invoke } from "../invoke";
-import type { TransferEvent } from "../commands/dto_transfer";
-import type { ServersView } from "../commands/dto_servers";
-import type { ChatEvent, GroupDmEvent } from "./chat_events";
-import type { PresenceEvent, PresenceSubscriptionEvent } from "./presence_events";
-import type { VoiceEvent, VoiceSubscriptionEvent } from "./voice_events";
-import type { AnyCommunityEvent } from "./community_subscription_events";
-import type {
-  NetworkStatusEvent,
-  NetworkSubscriptionEvent,
-  OwnRecordsPhase,
-  OwnRouteClass,
-  RoutePauseCause,
-  NotificationEvent,
-  NotificationSubscriptionEvent,
-} from "./notification_events";
 import type {
   IntentReview,
   LifecycleState,
@@ -22,9 +5,25 @@ import type {
   SkinApplyFailure,
   SkinTrial,
 } from "../commands/dto";
-import type { SettingsTab } from "../commands/types";
 import type { InfoviewView } from "../commands/dto_infoview";
-import type { SkinSignalSet } from "../commands/dto_skin_run";
+import type { ServersView } from "../commands/dto_servers";
+import type { ShellOp, SkinSignalSet } from "../commands/dto_skin_run";
+import type { TransferEvent } from "../commands/dto_transfer";
+import type { SettingsTab } from "../commands/types";
+import { Channel, invoke } from "../invoke";
+import type { ChatEvent, GroupDmEvent } from "./chat_events";
+import type { AnyCommunityEvent } from "./community_subscription_events";
+import type {
+  NetworkStatusEvent,
+  NetworkSubscriptionEvent,
+  NotificationEvent,
+  NotificationSubscriptionEvent,
+  OwnRecordsPhase,
+  OwnRouteClass,
+  RoutePauseCause,
+} from "./notification_events";
+import type { PresenceEvent, PresenceSubscriptionEvent } from "./presence_events";
+import type { VoiceEvent, VoiceSubscriptionEvent } from "./voice_events";
 
 /// Where this window is in the host's event stream
 /// (`rekindle_types::subscription_events::Cursor`, plan D3.2).

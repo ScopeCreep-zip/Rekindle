@@ -1,6 +1,6 @@
-import { type Component, For, Show, createMemo, createResource } from "solid-js";
+import { type Component, createMemo, createResource, For, Show } from "solid-js";
+import { type CommunityAnalytics, commands, type DailyTimeseries } from "../../../ipc/commands";
 import type { Community } from "../../../stores/community.store";
-import { commands, type CommunityAnalytics, type DailyTimeseries } from "../../../ipc/commands";
 
 // Architecture §24 — local-only community analytics. Computed entirely
 // client-side from SQLite + governance state; never broadcast.

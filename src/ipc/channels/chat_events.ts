@@ -5,8 +5,8 @@
  */
 
 import type { DmMessage } from "../commands/dto_dm";
-import type { SendState } from "../commands/types";
 import type { LobbyView } from "../commands/dto_lobby";
+import type { SendState } from "../commands/types";
 
 /** DM / conversation message from the daemon vocabulary. */
 interface DirectMessageReceived {

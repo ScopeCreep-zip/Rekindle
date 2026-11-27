@@ -1,6 +1,6 @@
-import { type Component, Show, createSignal } from "solid-js";
-import SkinGlyph from "../../../common/SkinGlyph";
+import { type Component, createSignal, Show } from "solid-js";
 import { handleCreateChannel } from "../../../../actions/community.actions";
+import SkinGlyph from "../../../common/SkinGlyph";
 
 type ChannelType =
   | "text"

@@ -1,12 +1,12 @@
-import { type Component, Show, createMemo, onCleanup, onMount } from "solid-js";
+import { type Component, createMemo, onCleanup, onMount, Show } from "solid-js";
+import { initVoiceEventListener } from "../actions/voice.actions";
 import Titlebar from "../components/titlebar/Titlebar";
 import ActiveCallPanel from "../components/voice/ActiveCallPanel";
-import { callsState, setCallsState, type CallEntry } from "../stores/calls.store";
 import { subscribeCallEvents } from "../handlers/calls.handlers";
+import { startEventStream, type UnlistenFn } from "../ipc/channels";
 import { commands } from "../ipc/commands";
+import { type CallEntry, callsState, setCallsState } from "../stores/calls.store";
 import { setVoiceState } from "../stores/voice.store";
-import { type UnlistenFn, startEventStream } from "../ipc/channels";
-import { initVoiceEventListener } from "../actions/voice.actions";
 import { setWindowKind } from "../utils/window_kind";
 
 /// The call window: the one place a connected 1:1 call's controls and

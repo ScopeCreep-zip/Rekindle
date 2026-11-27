@@ -1,12 +1,12 @@
 import { type Component, Show } from "solid-js";
-import { titleLogo } from "../../hooks/useSkin";
-import { BrandGlyph } from "../skin-tree/BrandGlyphs";
 import {
-  handleMinimize,
   handleClose,
   handleHide,
   handleMaximize,
+  handleMinimize,
 } from "../../actions/titlebar.actions";
+import { titleLogo } from "../../hooks/useSkin";
+import { BrandGlyph } from "../skin-tree/BrandGlyphs";
 
 interface TitlebarProps {
   title: string;

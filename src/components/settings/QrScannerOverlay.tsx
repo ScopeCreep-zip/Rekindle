@@ -1,8 +1,8 @@
-import { type Component, createSignal, onCleanup, Show } from "solid-js";
 import { Dialog } from "@kobalte/core/dialog";
-import { returnFocusToOpener } from "../../utils/dialog_focus";
 import QrScanner from "qr-scanner";
+import { type Component, createSignal, onCleanup, Show } from "solid-js";
 import { commands } from "../../ipc/commands";
+import { returnFocusToOpener } from "../../utils/dialog_focus";
 
 interface QrScannerOverlayProps {
   onResult: (decoded: string) => void;

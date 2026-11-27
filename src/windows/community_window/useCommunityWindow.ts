@@ -1,44 +1,43 @@
-import { createEffect, onMount, onCleanup } from "solid-js";
-import { communityState, setCommunityState } from "../../stores/community.store";
-import { initVoiceEventListener } from "../../actions/voice.actions";
-import { subscribeCommunityPresenceEvents } from "../../handlers/presence-events.handlers";
+import { createEffect, onCleanup, onMount } from "solid-js";
+import {
+  handleArchiveThread,
+  handleGetChannelPins,
+  handleLoadChannelMessages,
+  handleLoadChannelThreads,
+  handleLoadEvents,
+  handleLoadGameServers,
+  handleLoadOlderMessages,
+  handleLoadOnboardingConfig,
+  handleLoadThreadMessages,
+  handleLoadWelcomeScreen,
+  handleSendChannelMessage,
+  handleSendChannelTyping,
+  handleSelectChannel as storeSyncSelectChannel,
+  handleSelectCommunity as storeSyncSelectCommunity,
+} from "../../actions/community.actions";
+import { muteOps } from "../../actions/shell_runners";
+import { registerShellRunner, sendSkinSelection } from "../../actions/skin.actions";
+import { handleJoinVoice, initVoiceEventListener } from "../../actions/voice.actions";
+import type { GlyphName } from "../../components/common/glyph_art";
 import {
   subscribeCommunityEventDispatcher,
   subscribeCommunityVoiceEvents,
 } from "../../handlers/community.handlers";
-import { hydrateState } from "../../stores/hydrate";
+import { subscribeCommunityPresenceEvents } from "../../handlers/presence-events.handlers";
 import {
-  handleLoadChannelMessages,
-  handleLoadOlderMessages,
-  handleSendChannelMessage,
-  handleSelectCommunity as storeSyncSelectCommunity,
-  handleSelectChannel as storeSyncSelectChannel,
-  handleGetChannelPins,
-  handleSendChannelTyping,
-  handleLoadThreadMessages,
-  handleArchiveThread,
-  handleLoadChannelThreads,
-  handleLoadGameServers,
-  handleLoadEvents,
-  handleLoadOnboardingConfig,
-  handleLoadWelcomeScreen,
-} from "../../actions/community.actions";
-import { commands } from "../../ipc/commands";
-import type { GlyphName } from "../../components/common/glyph_art";
-import type { Message } from "../../stores/chat.store";
-import type { Thread } from "../../stores/community.store";
-import { createCommunityWindowState } from "./state";
-import {
-  type UnlistenFn,
   startEventStream,
   subscribeCommunityFocusChannel,
   subscribeSkinSignals,
+  type UnlistenFn,
 } from "../../ipc/channels";
-import { setSkinSignals } from "../../stores/skin-signals.store";
-import { registerShellRunner, sendSkinSelection } from "../../actions/skin.actions";
-import { muteOps } from "../../actions/shell_runners";
-import { handleJoinVoice } from "../../actions/voice.actions";
+import { commands } from "../../ipc/commands";
 import type { ShellOp } from "../../ipc/commands/dto_skin_run";
+import type { Message } from "../../stores/chat.store";
+import type { Thread } from "../../stores/community.store";
+import { communityState, setCommunityState } from "../../stores/community.store";
+import { hydrateState } from "../../stores/hydrate";
+import { setSkinSignals } from "../../stores/skin-signals.store";
+import { createCommunityWindowState } from "./state";
 
 /// Orchestrating view-model hook for `CommunityWindow`. Owns the effects,
 /// event handlers, and Veilid subscription lifecycle on top of the signals
