@@ -14,11 +14,15 @@ interface Fit {
   box: { left: number; top: number; right: number; bottom: number };
   viewport: { width: number; height: number };
   scroll: { page: number; body: number; root: number };
+  /** What Kobalte measured and set: its positioner's inline style (the transform and the fitViewport variables) and the popup's resolved limits. */
+  kobalte: { positioner: string; maxWidth: string; maxHeight: string; height: string };
 }
 
 async function fit(): Promise<Fit> {
   return (await browser.execute(() => {
-    const r = document.querySelector(".profile-popup")?.getBoundingClientRect();
+    const el = document.querySelector(".profile-popup");
+    const r = el?.getBoundingClientRect();
+    const cs = el ? getComputedStyle(el) : null;
     return {
       box: { left: Math.round(r?.left ?? -1), top: Math.round(r?.top ?? -1), right: Math.round(r?.right ?? -1), bottom: Math.round(r?.bottom ?? -1) },
       viewport: { width: window.innerWidth, height: window.innerHeight },
@@ -26,6 +30,12 @@ async function fit(): Promise<Fit> {
         page: document.scrollingElement?.scrollLeft ?? 0,
         body: document.body.scrollLeft,
         root: document.getElementById("root")?.scrollLeft ?? 0,
+      },
+      kobalte: {
+        positioner: el?.parentElement?.getAttribute("style") ?? "(none)",
+        maxWidth: cs?.maxWidth ?? "",
+        maxHeight: cs?.maxHeight ?? "",
+        height: cs?.height ?? "",
       },
     };
   })) as Fit;
