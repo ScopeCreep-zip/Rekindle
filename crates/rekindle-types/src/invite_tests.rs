@@ -21,9 +21,9 @@ fn invite_secrets_serde_roundtrip() {
 
     let secrets = InviteSecrets {
         join_inbox: Some(JoinInboxCapability {
-            join_inbox: "VLD0:inbox".into(),
-            join_inbox_writer: Zeroizing::new("writer is secret".into()),
-            join_inbox_slots: 3,
+            record_key: "VLD0:inbox".into(),
+            writer: Zeroizing::new("writer is secret".into()),
+            slots: 3,
         }),
         ..secrets
     };
@@ -32,8 +32,5 @@ fn invite_secrets_serde_roundtrip() {
     assert_eq!(json["joinInbox"], "VLD0:inbox");
     assert_eq!(json["joinInboxSlots"], 3);
     let back: InviteSecrets = serde_json::from_value(json).unwrap();
-    assert_eq!(
-        &*back.join_inbox.unwrap().join_inbox_writer,
-        "writer is secret"
-    );
+    assert_eq!(&*back.join_inbox.unwrap().writer, "writer is secret");
 }

@@ -37,7 +37,7 @@ impl OutboxSlot {
             .read()
             .clone()
             .ok_or("join inbox outbox is locked")?;
-        let scope = format!("{SCOPE_PREFIX}{}", capability.join_inbox);
+        let scope = format!("{SCOPE_PREFIX}{}", capability.record_key);
         let client_id = hex::encode(locator.op_hash.0);
         let payload = serde_json::to_vec(&Submission {
             community: community.to_owned(),
@@ -75,9 +75,9 @@ pub(super) async fn submit(
         return AttemptOutcome::Wedged("unreadable join inbox submission".into());
     };
     let capability = &row.capability;
-    if stream.strip_prefix(STREAM_PREFIX) != Some(capability.join_inbox.as_str())
-        || !layout::valid_slots(capability.join_inbox_slots)
-        || key_format::record_key(&capability.join_inbox).is_err()
+    if stream.strip_prefix(STREAM_PREFIX) != Some(capability.record_key.as_str())
+        || !layout::valid_slots(capability.slots)
+        || key_format::record_key(&capability.record_key).is_err()
         || row.sealed.is_empty()
         || row.sealed.len() > layout::MAX_ENTRY_LEN
     {
@@ -103,8 +103,8 @@ pub(super) async fn submit(
     }
     let Ok(lease) = pool
         .acquire(
-            &capability.join_inbox,
-            Some(capability.join_inbox_writer.as_str()),
+            &capability.record_key,
+            Some(capability.writer.as_str()),
             OpenIntent::Check,
         )
         .await
@@ -121,7 +121,7 @@ async fn write_empty_slot(
     lease: rekindle_records::lease::LeaseId,
     row: &Submission,
 ) -> AttemptOutcome {
-    let slots = Vec::from_iter(layout::slots(row.capability.join_inbox_slots));
+    let slots = Vec::from_iter(layout::slots(row.capability.slots));
     let Ok(values) = pool.read_hinted(lease, &slots).await else {
         return AttemptOutcome::Deferred;
     };

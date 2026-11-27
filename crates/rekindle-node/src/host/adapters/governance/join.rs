@@ -307,7 +307,7 @@ impl HostGovernance {
             .iter()
             .find(|(_, invite)| invite.code_hash == proof.code_hash)
             .ok_or("join invite not in merged state")?;
-        if u32::from(capability.join_inbox_slots) != invite.max_uses {
+        if u32::from(capability.slots) != invite.max_uses {
             return Err("slot count does not match the invite".into());
         }
         let inviter = key_format::pseudonym_hex(&outcome.invite.inviter_pseudonym)
