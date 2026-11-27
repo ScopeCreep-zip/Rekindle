@@ -97,6 +97,18 @@ describe("voice join, leave and quit reach the roster by beat, both members in r
     const resentBefore = countInLog(ariLog, RECONCILE_RESENT);
     await joinVoice(a);
     const joinTook = await listsWithin(a, 2, BEAT_MS, "Ari joins with Cara already in");
+    // With both listed, Ari's voice status says so: the handshake came with
+    // her session (VN3), so a "connected" that arrived during the join is
+    // never overwritten by "waiting for others".
+    let status = "";
+    await waitUntil(
+      async () => (status = ((await (await a.$(".voice-panel-status")).getText()) ?? "").trim()) === "Voice Connected",
+      NET_WAIT_MS,
+      "",
+    ).catch(() => {
+      throw new Error(`Ari's voice status reads "${status}" while her panel lists both members`);
+    });
+    console.log(`[beats] Ari's voice status with both listed: ${status}`);
     // Cara is named as the member list names her (the Host's shown name,
     // contract VN1): never a raw 64-hex key, in the voice panel or on the stage.
     const rawKeys = (await a.execute(() =>

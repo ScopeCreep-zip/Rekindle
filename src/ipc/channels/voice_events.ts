@@ -100,7 +100,19 @@ export type VoiceEvent =
       };
     }
   /** **We** joined a call and the audio pipeline is running. */
-  | { localJoined: { scope: VoiceScope } }
+  /**
+   * Our session started. It carries the session's join handshake and media
+   * readiness as they stand (contract VN3: snapshotted under the lock their
+   * transitions take), so no handshake or media event of the session can
+   * fall before it and be lost; later events advance them.
+   */
+  | {
+      localJoined: {
+        scope: VoiceScope;
+        joinHandshake: "announced" | "seen" | "connected";
+        mediaReady: { ready: boolean; reason: string };
+      };
+    }
   | { speakingChanged: { scope: VoiceScope; pseudonym: string; speaking: boolean } }
   /** Machine-wide — no scope, since a device can change with no call. */
   | { deviceChanged: { deviceType: string; deviceName: string; reason: string } }
