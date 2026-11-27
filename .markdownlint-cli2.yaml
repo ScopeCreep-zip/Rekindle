@@ -55,6 +55,8 @@ ignores:
   - "dist/**"
   - "src-tauri/gen/**"
   - "legacy/**"
+  # Verbatim upstream licence text, reproduced exactly (as in typos.toml).
+  - "src/assets/fonts/LICENSE-NerdFonts.md"
   - "CHANGELOG.md"
   - "**/CHANGELOG.md"
 
