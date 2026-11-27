@@ -1,7 +1,7 @@
 //! SKC3: the roles [`super::wired`] gives a tile the name tables lack, and
 //! the name rows the census's unknown components added.
 
-use rekindle_types::dto::skin_action::{NodeTrigger, SkinAction, SkinEvent};
+use rekindle_types::dto::skin_action::{EngineMenu, NodeTrigger, PackUrl, SkinAction, SkinEvent};
 use rekindle_types::dto::skin_tree::{Edge, NodeRole, SlotKey};
 
 use super::roles::{Facts, Role};
@@ -25,9 +25,11 @@ fn a_classless_container_without_art_is_a_group() {
     let group = Some(Role::Shows(NodeRole::Group));
     assert_eq!(wired::role(&facts(Some("Tile"), false, &kids), &[]), group);
     assert_eq!(wired::role(&facts(None, false, &kids), &[]), group);
-    // Art of its own is decor ([`roles::role`]); no children is no container.
+    // Art of its own is decor ([`roles::role`]); no children is no
+    // container but an unwired tile laying nothing (SKC4).
     assert_eq!(wired::role(&facts(Some("Tile"), true, &kids), &[]), None);
-    assert_eq!(wired::role(&facts(Some("Tile"), false, &[]), &[]), None);
+    let decor = Some(Role::Shows(NodeRole::Decor));
+    assert_eq!(wired::role(&facts(Some("Tile"), false, &[]), &[]), decor);
     assert_eq!(wired::role(&facts(Some("Text"), false, &kids), &[]), None);
 }
 
@@ -38,7 +40,9 @@ fn a_childless_tile_dragging_the_window_is_a_drag_strip() {
         wired::role(&facts(Some("Menu"), true, &[]), &drag),
         Some(Role::Shows(NodeRole::Drag))
     );
-    assert_eq!(wired::role(&facts(Some("Menu"), true, &[]), &[]), None);
+    // Unwired, it is the pack's picture, never a drag strip (SKC4).
+    let decor = Some(Role::Shows(NodeRole::Decor));
+    assert_eq!(wired::role(&facts(Some("Menu"), true, &[]), &[]), decor);
 }
 
 #[test]
@@ -49,10 +53,11 @@ fn a_wired_push_button_or_grip_is_a_button_run_by_its_trigger() {
         wired::role(&facts(Some("PushButton"), true, &[]), &close),
         button
     );
-    // An unwired push button, or a wired tile of another class, is not one.
+    // An unwired push button is its art (SKC4), a wired tile of another
+    // class is not a button.
     assert_eq!(
         wired::role(&facts(Some("PushButton"), true, &[]), &[]),
-        None
+        Some(Role::Shows(NodeRole::Decor))
     );
     assert_eq!(wired::role(&facts(Some("Text"), false, &[]), &close), None);
     let grip = on(SkinEvent::LeftDown, SkinAction::Resize(Edge::Left));
@@ -69,4 +74,49 @@ fn the_status_arrow_and_typing_text_are_named() {
         chat_roles::role("TYPING", Some("TYPING"), None, &f),
         Some(Role::Shows(NodeRole::Slot(SlotKey::TypingNotice)))
     );
+}
+
+/// SKC4: a `Menu` is a control like a `PushButton` (Mountain Dew's
+/// `[MtDewLogo]` pack link); one popping an engine menu is its title
+/// (Xbox 360's `[File]` `MenuFile`); the system menu's is Xfire's X logo
+/// (CleanX's chat `[XfireX]`, Guild Wars UI's `Sysmenu`, both `MenuSys`).
+#[test]
+fn a_wired_menu_is_a_button_a_menu_title_or_the_system_menu_logo() {
+    let menu = |m| on(SkinEvent::LeftDown, SkinAction::Menu(m));
+    let f = facts(Some("Menu"), true, &[]);
+    assert_eq!(
+        wired::role(&f, &menu(EngineMenu::File)),
+        Some(Role::Acts(NodeRole::MenuTitle, None))
+    );
+    assert_eq!(
+        wired::role(&facts(Some("PushButton"), true, &[]), &menu(EngineMenu::Tool)),
+        Some(Role::Acts(NodeRole::MenuTitle, None))
+    );
+    assert_eq!(
+        wired::role(&f, &menu(EngineMenu::Sys)),
+        Some(Role::Shows(NodeRole::Logo))
+    );
+    let link = on(
+        SkinEvent::LeftDown,
+        SkinAction::LaunchUrl(PackUrl {
+            url: "http://www.mountaindew.com/".to_owned(),
+        }),
+    );
+    assert_eq!(
+        wired::role(&f, &link),
+        Some(Role::Acts(NodeRole::Button, None))
+    );
+    // A text field is no control: wired or not, it is not decor.
+    assert_eq!(wired::role(&facts(Some("Text"), true, &[]), &[]), None);
+}
+
+/// SKC4: an unwired tile holding none is decor, its art or (undefined,
+/// spec A8) nothing: Wolf ET's `[WolfETLogo]` `Class=Menu`, FEAR's
+/// `[TIGraphic]` `Class=Tile` naming a bitmap the pack lacks.
+#[test]
+fn an_unwired_childless_picture_or_control_is_decor() {
+    let decor = Some(Role::Shows(NodeRole::Decor));
+    assert_eq!(wired::role(&facts(Some("Menu"), true, &[]), &[]), decor);
+    assert_eq!(wired::role(&facts(Some("Tile"), false, &[]), &[]), decor);
+    assert_eq!(wired::role(&facts(None, false, &[]), &[]), decor);
 }
