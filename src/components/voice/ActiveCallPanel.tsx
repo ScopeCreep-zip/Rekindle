@@ -268,7 +268,7 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
           (props.call.peerMediaState?.screen ?? false)
         }
       >
-        <VideoCallPanel mode="dm" peerId={props.call.peerKey} visible />
+        <VideoCallPanel mode="dm" peerId={props.call.peerKey} peerName={props.call.displayName} visible />
       </Show>
 
       <details class="active-call-devices">

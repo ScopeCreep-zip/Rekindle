@@ -1,3 +1,4 @@
+import type { CallParticipant } from "../ipc/channels/chat_events";
 import { createStore } from "solid-js/store";
 
 /** Plan §Failure 5 — frontend mirror of backend call state. The backend
@@ -50,8 +51,8 @@ export interface GroupCallEntry {
   /** Friendly name to render in headers. */
   displayName: string;
   kind: "audio" | "video";
-  /** All invited participants (hex Ed25519). Includes the initiator. */
-  participants: string[];
+  /** All invited participants, each with the Host's name. Includes the initiator. */
+  participants: CallParticipant[];
   /** The group the call is for (GV2), as the Host says; null outside one. */
   groupId: string | null;
   /** Subset that have accepted so far. */

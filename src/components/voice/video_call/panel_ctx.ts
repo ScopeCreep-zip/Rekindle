@@ -25,6 +25,8 @@ export type VideoCallPanelProps =
       mode: "dm";
       /** Hex-encoded peer Ed25519 public key. */
       peerId: string;
+      /** The peer's name as the Host serves it for the call (contract VN2). */
+      peerName: string;
       visible: boolean;
     };
 

@@ -197,6 +197,13 @@ interface DirectCallInfo {
   expectedLocalCamera: boolean;
 }
 
+/** A group call's member: its key and the Host's name for it (the friend's
+ *  shown name, else the fingerprint form; contract VN2). */
+export interface CallParticipant {
+  publicKey: string;
+  displayName: string;
+}
+
 export type CallEvent =
   | {
       incoming: {
@@ -204,8 +211,9 @@ export type CallEvent =
         from: string;
         displayName: string;
         kind: string;
-        /** Everyone invited, for a group call. Empty for a 1:1. */
-        participants: string[];
+        /** Everyone invited, for a group call, each with the Host's name
+         *  for that friend (contract VN2). Empty for a 1:1. */
+        participants: CallParticipant[];
         isGroup: boolean;
         /** The group the call is for (GV2); null for a buddy-list call or a 1:1. */
         groupId: string | null;
@@ -227,7 +235,7 @@ export type CallEvent =
       groupStarted: {
         callId: string;
         kind: string;
-        participants: string[];
+        participants: CallParticipant[];
         groupId: string | null;
         expiresAtMs: number;
       };

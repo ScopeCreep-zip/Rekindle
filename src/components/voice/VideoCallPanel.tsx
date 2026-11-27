@@ -1,4 +1,5 @@
 import { Component, For, Show } from "solid-js";
+import { voiceState } from "../../stores/voice.store";
 import { useVideoCallPanel, type VideoCallPanelProps } from "./video_call/useVideoCallPanel";
 
 // Architecture §10.6 — interim video pipeline. The browser captures via
@@ -22,6 +23,13 @@ import { useVideoCallPanel, type VideoCallPanelProps } from "./video_call/useVid
 // (+ `video_sender.ts` / `codec_utils.ts`).
 
 const VideoCallPanel: Component<VideoCallPanelProps> = (props) => {
+  // A tile is labelled with its sender's name from the call's served
+  // participants (contract VN2): the DM call's peer, or the voice roster in
+  // a community call. Never a key.
+  const senderName = (sender: string): string =>
+    props.mode === "dm"
+      ? props.peerName
+      : (voiceState.participants.find((p) => p.publicKey === sender)?.displayName ?? "");
   const vm = useVideoCallPanel(props);
 
   return (
@@ -78,7 +86,7 @@ const VideoCallPanel: Component<VideoCallPanelProps> = (props) => {
                   }
                 }}
               />
-              <div class="video-call-tile-label">{remote.senderPseudonym.slice(0, 8)}</div>
+              <div class="video-call-tile-label">{senderName(remote.senderPseudonym)}</div>
             </div>
           )}
         </For>

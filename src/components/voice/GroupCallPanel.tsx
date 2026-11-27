@@ -1,7 +1,6 @@
 import { Component, For, Show, createEffect, createSignal, onCleanup } from "solid-js";
 import SkinGlyph from "../common/SkinGlyph";
 import { callsState } from "../../stores/calls.store";
-import { friendsState } from "../../stores/friends.store";
 import {
   handleAcceptGroupCall,
   handleDeclineGroupCall,
@@ -101,10 +100,6 @@ const ActiveGroupCallPanel: Component = () => {
     return `${m}:${s.toString().padStart(2, "0")}`;
   };
 
-  const participantName = (key: string): string => {
-    return friendsState.friends[key]?.displayName ?? key.slice(0, 8) + "…";
-  };
-
   return (
     <Show when={call()}>
       {(c) => (
@@ -117,8 +112,8 @@ const ActiveGroupCallPanel: Component = () => {
           </div>
           <div class="group-call-grid">
             <For each={c().participants}>
-              {(pubkey) => {
-                const accepted = () => c().accepted.includes(pubkey);
+              {(member) => {
+                const accepted = () => c().accepted.includes(member.publicKey);
                 return (
                   <div
                     class="group-call-tile"
@@ -128,9 +123,9 @@ const ActiveGroupCallPanel: Component = () => {
                     }}
                   >
                     <div class="group-call-tile-avatar">
-                      {participantName(pubkey).slice(0, 1).toUpperCase()}
+                      {member.displayName.slice(0, 1).toUpperCase()}
                     </div>
-                    <div class="group-call-tile-name">{participantName(pubkey)}</div>
+                    <div class="group-call-tile-name">{member.displayName}</div>
                     <div class="group-call-tile-status">
                       {accepted() ? "in call" : "ringing…"}
                     </div>
