@@ -137,7 +137,7 @@ pub async fn read_device_list(
 /// The record's head followed by every one-time slot.
 fn record_subkeys() -> Vec<u32> {
     std::iter::once(layout::HEAD)
-        .chain(layout::FIRST_SLOT..layout::SUBKEY_COUNT)
+        .chain(layout::FIRST_SLOT..u32::from(layout::SUBKEY_COUNT))
         .collect()
 }
 

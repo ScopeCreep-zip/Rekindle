@@ -23,6 +23,8 @@ use rekindle_types::subscription_events::{
     GameActivity, PresenceEvent, PresenceSnapshot, SubscriptionEvent,
 };
 
+mod game;
+
 /// How long the teardown waits for the Offline write; the write itself runs
 /// on (Signal Desktop bounds its shutdown queue drain the same way).
 const OFFLINE_WRITE_WAIT: Duration = Duration::from_secs(10);
@@ -328,31 +330,6 @@ impl OwnPresence {
         if let Err(e) = self.write_details(true).await {
             tracing::warn!(error = %e, "game info not resealed; retrying");
         }
-    }
-
-    /// Write `shown` (the game as the status shows it) to GAME_INFO, sealed.
-    async fn write_game(&self, shown: Option<&Game>) -> Result<(), String> {
-        let bytes = if let Some(game) = shown {
-            rekindle_codec::capnp_codec::presence::encode_game_status(
-                &rekindle_codec::capnp_codec::presence::GameInfo {
-                    game_id: game.id,
-                    game_name: game.name.clone(),
-                    server_info: game.server_info.clone(),
-                    elapsed_seconds: self.elapsed_seconds(game),
-                    server_address: game.server_address.clone().map(String::from),
-                },
-            )
-            .map_err(|error| format!("encode game info: {error}"))?
-        } else {
-            Vec::new()
-        };
-        let (owner, key) = self
-            .presence_key()
-            .ok_or("no friend-presence key yet: the game is not written in the clear")?;
-        let sealed =
-            rekindle_secrets::friend_presence::seal(&key, &owner, subkeys::GAME_INFO, &bytes)
-                .map_err(|e| format!("seal game info: {e}"))?;
-        self.write_profile(subkeys::GAME_INFO, sealed).await
     }
 
     /// The idle stage's reading: auto-away sets Away over Online, keeping
