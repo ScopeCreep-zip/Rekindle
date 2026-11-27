@@ -1,0 +1,48 @@
+<Tile Name="GroupChatWindow" Component="GroupChatMainWindow">
+	<Tile Name="TopLeft" Z="1" X="0" Y="0" ResizeX="0" ResizeY="0" Component="CTopLeft"></Tile>
+	<Tile Name="Top" Z="1" Y="0" X="20" IndentRight="24" ResizeX="100" ResizeY="100" Component="CTop"></Tile>	
+	<Tile Name="TopRight" Z="1" X="0" Y="0" JustX="RIGHT" ResizeX="0" ResizeY="0" Component="CTopRight"></Tile>
+	<Tile Name="CHATSCLogo" Z="4" X="0" Y="1" Component="CHATSCLOGO"></Tile>
+	<Tile Name="LeftEdge" Z="1" Y="31" IndentBottom="57" ResizeX="100" ResizeY="100" Component="CLeftEdge"></Tile>
+	<Tile Name="Middle" Z="1" X="20" Y="30" IndentRight="24" IndentBottom="57" ResizeX="100" ResizeY="100" Component="CMiddle"></Tile>
+	<Tile Name="RightEdge" Z="1" JustX="RIGHT" Y="31" IndentBottom="57" ResizeX="100" ResizeY="100" Component="CRightEdge"></Tile>
+	<Tile Name="BottomLeft" X="0" Y="0" JustY="BOTTOM" ResizeX="0" ResizeY="0" Component="CBottomLeft"></Tile>
+	<Tile Name="Bottom" Z="1" X="20" Y="0" JustY="BOTTOM" IndentRight="24" ResizeX="100" ResizeY="100" Component="CBottom"></Tile>	
+	<Tile Name="BottomRight" JustY="BOTTOM" JustX="RIGHT" ResizeX="0" ResizeY="0" Component="CBottomRight"></Tile>
+	<Tile Name="MainTitleBar" Z="5" JustX="RIGHT" X="30" Y="45" ResizeX="100" ResizeY="0" Component="MainTitleBar">
+		<Tile Name="Logo" Z="4" X="4" Y="3" Component="Logo"></Tile>
+		<Tile Name="Title" Z="4" X="Logo.RIGHT+2" Y="3" ResizeX="100" Component="ChatTitle"></Tile>
+	</Tile>
+	<Tile Name="MenuBar" X="30" Y="64" Z="1" ResizeX="100" ResizeY="0" IndentRight="31" Component="MenuBar">
+		<Tile Name="XfireMenuText" X="0" Y="1" Z="10" Component="GCXfireMenuText">
+			<Tile Name="FileMenu" X="0" Y="0" Z="-2" ResizeX="100" ResizeY="100" OutdentLeft="3" OutdentRight="3" OutdentTop="0" OutdentBottom="4" Component="GCFileMenu"></Tile>
+		</Tile>
+		<Tile Name="ToolsMenuText" X="XfireMenuText.RIGHT+18" Y="1" Z="10" Component="GCToolsMenuText">
+			<Tile Name="ToolsMenu" X="0" Y="0" Z="-2" ResizeX="100" ResizeY="100" OutdentLeft="3" OutdentRight="3" OutdentTop="0" OutdentBottom="4" Component="GCToolsMenu"></Tile>
+		</Tile>
+		<Tile Name="HelpMenuText" X="ToolsMenuText.RIGHT+18" Y="1" Z="10" Component="GCHelpMenuText">
+			<Tile Name="HelpMenu" X="0" Y="0" Z="-2" ResizeX="100" ResizeY="100" OutdentLeft="3" OutdentRight="3" OutdentTop="0" OutdentBottom="4" Component="GCHelpMenu"></Tile>
+		</Tile>
+	</Tile>
+	<Tile Name="TopButtonBar" Z="20" JustX="RIGHT" X="30" Y="31" IndentRight="0" ResizeY="0" Component="TopButtonBar">
+		<Tile Name="Minimize" JustX="RIGHT" X="34" Y="0" Z="2" Component="Minimize"></Tile>
+		<Tile Name="Maximize" JustX="RIGHT" X="17" Y="0" Z="2" Component="Maximize"></Tile>
+		<Tile Name="ChatClose" JustX="RIGHT" X="0" Y="0" Z="2" Component="ChatClose"></Tile>
+	</Tile>	
+	<Tile Name="ListViewBG1" X="26" Y="63" Z="5" IndentRight="30" IndentBottom="131" ResizeX="100" ResizeY="100" Component="ListViewBG"></Tile>
+	<Tile Name="Divider" Z="6" Y="81" X="27" IndentRight="31" ResizeX="100" Component="Divider"></Tile>
+	<Tile Name="GroupChatArea" Z="5" X="27" IndentRight="31" Y="82" IndentBottom="132" ResizeX="100" ResizeY="100" Component="GroupChatArea">
+	</Tile>
+	<Tile Name="ListViewBG2" X="26" Y="GroupChatArea.BOTTOM+5" Z="5" IndentRight="92" IndentBottom="65" ResizeX="100" ResizeY="100" Component="ListViewBG">
+	<Tile Name="GroupChatEdit" Z="5" X="1" IndentRight="1" Y="GroupChatArea.BOTTOM+6" ResizeX="100" ResizeY="100" IndentBottom="1" Component="GroupChatEdit"></Tile>
+	</Tile>
+	<Tile Name="ExpandButton" JustX="RIGHT" X="3" JustY="CENTER" Z="1" Component="GroupExpandButton"></Tile>
+	<Tile Name="ImButton" Z="5" JustX="RIGHT" JustY="BOTTOM" X="31" Y="100" Component="GroupChatImButton"></Tile>
+	<Tile Name="ResizeLeft" X="18" ResizeY="100" Z="40" Component="ResizeLeft"></Tile>
+	<Tile Name="ResizeRight" JustX="RIGHT" X="22" ResizeY="100" Z="40" Component="ResizeRight"></Tile>
+	<Tile Name="ResizeUp" Y="28" ResizeX="100" Z="40" Component="ResizeUp"></Tile>
+	<Tile Name="ResizeDown" JustY="BOTTOM" Y="55" ResizeX="100" Z="40" Component="ResizeDown"></Tile>
+	<Tile Name="BRGripper" JustX="RIGHT" X="22" JustY="BOTTOM" Y="55" ResizeX="100" Z="40" Component="BRGripper"></Tile>
+	<Tile Name="MGEAR" X="0" Y="0" JustY="BOTTOM" Z="4" Component="MGEAR"></Tile>
+	<Tile Name="BGEAR" JustX="RIGHT" X="0" Y="0" JustY="BOTTOM" Z="4" Component="BGEAR"></Tile>
+</Tile>
