@@ -19,9 +19,13 @@ use std::collections::BTreeMap;
 use rekindle_types::dto::skin::{
     SkinBase, SkinContrast, SkinError, SkinManifest, SkinRule, SkinVariant, TokenValue,
 };
-use rekindle_types::dto::skin_action::{MenuRegistry, PackUrl, SkinAction};
+use rekindle_types::dto::skin_action::{
+    AppSignal, EngineView, MenuRegistry, PackUrl, SkinAction, SkinEvent,
+};
 use rekindle_types::dto::skin_library::{SkinPaletteColour, SkinTileMask, SkinWindowFrame};
-use rekindle_types::dto::skin_tree::{NodeGlyph, SkinNode, SkinShell};
+use rekindle_types::dto::skin_tree::{
+    NodeGlyph, NodeRole, ShellNode, SkinNode, SkinShell, ViewKey,
+};
 
 use crate::generate::tui_colours;
 use crate::output::tokens_css;
@@ -242,10 +246,39 @@ fn shells(
                     popup.shell(t.window, name, min, own(&t.css))
                 }
             };
+            notifications_inbox(&mut shell.root);
             shell.menus = menus.clone();
             Ok(shell)
         })
         .collect()
+}
+
+/// The webview handles view switches inside its tree. A notifications
+/// press goes to the Host so it can acknowledge alerts and open the inbox.
+fn notifications_inbox(nodes: &mut [ShellNode]) {
+    for node in nodes {
+        for trigger in &mut node.triggers {
+            if trigger.on.pointer()
+                && trigger.run == SkinAction::ShowView(EngineView::Notifications)
+            {
+                trigger.run = SkinAction::OpenNotifications;
+            }
+        }
+        // The gear's visited/unvisited art pages with the unread signal
+        // while the user is in any view.
+        if node.triggers.iter().any(|trigger| {
+            trigger.on == SkinEvent::App(AppSignal::NewNotification)
+                && matches!(trigger.run, SkinAction::GroupPage { group, .. } if Some(group) == node.control_group)
+        }) {
+            for page in &mut node.children {
+                if page.role == NodeRole::ButtonRow(ViewKey::Notifications) {
+                    page.role = NodeRole::Decor;
+                    page.shows_with = None;
+                }
+            }
+        }
+        notifications_inbox(&mut node.children);
+    }
 }
 
 /// The pack's own link (plan SK10): the first `LaunchUrl` a node of its

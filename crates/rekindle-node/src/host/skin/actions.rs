@@ -149,22 +149,29 @@ impl Views {
     }
 }
 
-/// Where an admitted run is run (plan SK2-N4): a view switch pressed in a
-/// popup is its launcher's, since a popup holds no views (rule N4 places
-/// the Communities view in the main tree only; StealthX's `MainMenuPopup`
-/// rail switches the main window's views); that window's answer is
-/// [`ShellOp`] on its own channel, and the popup is answered
-/// [`SkinRun::Launcher`]. Every other run answers the window pressed.
+/// The notifications inbox belongs to the buddy list. A view switch in a
+/// popup belongs to its launcher (plan SK2-N4). For operations addressed
+/// to another window, the caller receives [`SkinRun::Launcher`] and the
+/// destination receives the [`ShellOp`] on its channel.
 pub(crate) fn addressed(
     launchers: &Launchers,
     window: &str,
     run: SkinRun,
 ) -> (SkinRun, Option<(String, ShellOp)>) {
-    match (run, launchers.of(window)) {
-        (SkinRun::Shell(op @ (ShellOp::ShowView(_) | ShellOp::GroupPage { .. })), Some(to)) => {
-            (SkinRun::Launcher { window: to.clone() }, Some((to, op)))
+    const BUDDY_LIST: &str = "buddy-list";
+    let SkinRun::Shell(op) = run else {
+        return (run, None);
+    };
+    let to = match op {
+        ShellOp::OpenPanel(ShellPanel::Notifications) if window != BUDDY_LIST => {
+            Some(BUDDY_LIST.to_owned())
         }
-        (run, _) => (run, None),
+        ShellOp::ShowView(_) | ShellOp::GroupPage { .. } => launchers.of(window),
+        _ => None,
+    };
+    match to {
+        Some(to) => (SkinRun::Launcher { window: to.clone() }, Some((to, op))),
+        None => (SkinRun::Shell(op), None),
     }
 }
 
@@ -412,7 +419,9 @@ pub(crate) fn map(
         A::CreateCommunity => panel(ShellPanel::CreateCommunity),
         A::JoinCommunity => panel(ShellPanel::JoinCommunity),
         A::ShowShortcuts => panel(ShellPanel::Shortcuts),
-        A::OpenNotifications => panel(ShellPanel::Notifications),
+        A::OpenNotifications | A::ShowView(EngineView::Notifications) => {
+            panel(ShellPanel::Notifications)
+        }
         A::ShowSettings(tab) => shell(ShellOp::ShowSettings(*tab)),
         A::ReportBug => shell(ShellOp::ReportBug),
         A::CopyKey => shell(ShellOp::CopyKey),

@@ -9,6 +9,10 @@
 
 pub(crate) mod actions;
 #[cfg(test)]
+mod actions_routes_tests;
+#[cfg(test)]
+mod actions_test_support;
+#[cfg(test)]
 mod actions_tests;
 pub(crate) mod capability;
 #[cfg(test)]

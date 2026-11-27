@@ -4,6 +4,42 @@ use crate::{builtin, manifest, validate};
 const H: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
 #[test]
+fn symbiosis_notifications_art_pages_outside_the_notifications_view() {
+    use rekindle_types::dto::skin::SkinWindow;
+
+    let symbiosis = builtin::find(builtin::DEFAULT).unwrap().1;
+    let sheet = stylesheet(symbiosis.bytes, H).unwrap();
+    let main = sheet
+        .shells
+        .iter()
+        .find(|shell| shell.window == SkinWindow::Main && shell.popup.is_none())
+        .unwrap();
+    let tab = main
+        .root
+        .iter()
+        .find(|node| node.id == "ButtonNotificationsTab")
+        .unwrap();
+    let pager = tab
+        .children
+        .iter()
+        .find(|node| node.id == "ButtonNotificationsTabControl")
+        .unwrap();
+    let group = pager.control_group.unwrap();
+    for (page, signal) in [
+        (0, AppSignal::NotificationsVisited),
+        (1, AppSignal::NewNotification),
+    ] {
+        assert!(pager.triggers.iter().any(|trigger| {
+            trigger.on == SkinEvent::App(signal)
+                && trigger.run == SkinAction::GroupPage { group, page }
+        }));
+        let art = &pager.children[usize::from(page)];
+        assert_eq!(art.role, NodeRole::Decor);
+        assert_eq!(art.shows_with, None);
+    }
+}
+
+#[test]
 fn only_a_package_address_and_one_file_parse() {
     assert_eq!(
         parse_path(&format!("/{H}/tokens.css")),
