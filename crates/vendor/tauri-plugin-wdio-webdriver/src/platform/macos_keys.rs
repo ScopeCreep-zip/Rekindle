@@ -1,12 +1,53 @@
 //! Deliver an AppKit key event to the selected WKWebView's content responder.
 
+use std::time::Duration;
+
 use objc2_app_kit::{NSEvent, NSEventModifierFlags, NSEventType, NSView};
 use objc2_foundation::{NSPoint, NSProcessInfo, NSString};
 use objc2_web_kit::WKWebView;
 
-use super::{ModifierState, NativeKey};
+use tauri::{Runtime, WebviewWindow};
+use tokio::sync::oneshot;
 
-pub(super) fn dispatch(
+use super::{ModifierState, NativeKey};
+use crate::server::response::WebDriverErrorResponse;
+
+pub(super) async fn dispatch_to_window<R: Runtime>(
+    window: &WebviewWindow<R>,
+    key: NativeKey,
+    is_down: bool,
+    modifiers: ModifierState,
+    timeout_ms: u64,
+) -> Result<(), WebDriverErrorResponse> {
+    let (tx, rx) = oneshot::channel();
+    window
+        .with_webview(move |webview| {
+            if tx.is_closed() {
+                return;
+            }
+            // SAFETY: this callback runs on AppKit's thread with the live WKWebView.
+            let accepted = unsafe {
+                dispatch(
+                    &*webview.inner().cast::<WKWebView>(),
+                    key,
+                    is_down,
+                    modifiers,
+                )
+            };
+            let _ = tx.send(accepted);
+        })
+        .map_err(|error| WebDriverErrorResponse::unknown_error(&error.to_string()))?;
+    match tokio::time::timeout(Duration::from_millis(timeout_ms), rx).await {
+        Ok(Ok(Ok(()))) => Ok(()),
+        Ok(Ok(Err(error))) => Err(WebDriverErrorResponse::element_not_interactable(error)),
+        Ok(Err(_)) => Err(WebDriverErrorResponse::unknown_error(
+            "Native key dispatch channel closed",
+        )),
+        Err(_) => Err(WebDriverErrorResponse::script_timeout()),
+    }
+}
+
+fn dispatch(
     webview: &WKWebView,
     key: NativeKey,
     down: bool,

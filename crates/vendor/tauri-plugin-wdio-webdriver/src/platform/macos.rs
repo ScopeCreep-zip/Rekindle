@@ -219,38 +219,17 @@ impl<R: Runtime + 'static> PlatformExecutor<R> for MacOSExecutor<R> {
         is_down: bool,
         modifiers: super::ModifierState,
     ) -> Result<(), WebDriverErrorResponse> {
-        let (tx, rx) = oneshot::channel();
-        self.window
-            .with_webview(move |webview| {
-                if tx.is_closed() {
-                    return;
-                }
-                // SAFETY: this callback runs on AppKit's thread with the live WKWebView.
-                let accepted = unsafe {
-                    super::macos_keys::dispatch(
-                        &*webview.inner().cast::<WKWebView>(),
-                        key,
-                        is_down,
-                        modifiers,
-                    )
-                };
-                let _ = tx.send(accepted);
-            })
-            .map_err(|error| WebDriverErrorResponse::unknown_error(&error.to_string()))?;
-        match tokio::time::timeout(std::time::Duration::from_millis(self.timeouts.script), rx).await
-        {
-            Ok(Ok(Ok(()))) => Ok(()),
-            Ok(Ok(Err(error))) => Err(WebDriverErrorResponse::element_not_interactable(error)),
-            Ok(Err(_)) => Err(WebDriverErrorResponse::unknown_error(
-                "Native key dispatch channel closed",
-            )),
-            Err(_) => Err(WebDriverErrorResponse::script_timeout()),
-        }
+        super::macos_keys::dispatch_to_window(
+            &self.window,
+            key,
+            is_down,
+            modifiers,
+            self.timeouts.script,
+        )
+        .await
     }
 
-    // =========================================================================
-    // Core JavaScript Execution
-    // =========================================================================
+    // Core JavaScript execution.
 
     async fn evaluate_js(&self, script: &str) -> Result<Value, WebDriverErrorResponse> {
         let (tx, rx) = oneshot::channel();
