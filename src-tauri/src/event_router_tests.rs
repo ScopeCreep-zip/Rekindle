@@ -33,7 +33,9 @@ fn audience_matches_labels_and_kinds() {
 #[test]
 fn a_resolved_backend_review_cannot_follow_the_new_windows_empty_snapshot() {
     use std::cell::Cell;
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
+
+    use parking_lot::Mutex;
     use tauri::ipc::InvokeResponseBody;
 
     let router = WebviewRouter::default();
@@ -52,7 +54,7 @@ fn a_resolved_backend_review_cannot_follow_the_new_windows_empty_snapshot() {
         let InvokeResponseBody::Json(json) = body else {
             panic!("event envelope is JSON");
         };
-        capture.lock().unwrap().push(json);
+        capture.lock().push(json);
         Ok(())
     });
     router.register("buddy-list".into(), channel, || {
@@ -76,7 +78,7 @@ fn a_resolved_backend_review_cannot_follow_the_new_windows_empty_snapshot() {
         still_held.get()
     });
 
-    let received = seen.lock().unwrap();
+    let received = seen.lock();
     assert_eq!(received.len(), 1);
     let envelope: serde_json::Value = serde_json::from_str(&received[0]).unwrap();
     assert_eq!(envelope["payload"], serde_json::json!({"heldReviews": []}));
