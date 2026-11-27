@@ -11,6 +11,7 @@ use rekindle_types::subscription_events::{CallEvent, DirectCallInfo, Subscriptio
 
 use super::actions::{map, Mapped, Selected as Selection};
 use super::capability::{allows, Group, Selected, SkinWorld};
+use super::capability_tests::call_participants;
 use super::reads::{in_call, InCall, Reads};
 use super::signals::Inputs;
 
@@ -77,7 +78,7 @@ fn a_group_windows_leave_leaves_the_group_call_we_are_in() {
         from: "b".into(),
         display_name: "B".into(),
         kind: "audio".into(),
-        participants: vec!["b".into(), "me".into()],
+        participants: call_participants(&["b", "me"]),
         is_group: true,
         expires_at_ms: 0,
         group_id: Some("g1".into()),
@@ -160,7 +161,7 @@ fn cancel_ends_our_own_group_ring() {
     i.fold(&SubscriptionEvent::Call(CallEvent::GroupStarted {
         call_id: "gc2".into(),
         kind: "audio".into(),
-        participants: vec!["me".into(), "b".into(), "c".into()],
+        participants: call_participants(&["me", "b", "c"]),
         group_id: Some("g1".into()),
         expires_at_ms: 0,
     }));

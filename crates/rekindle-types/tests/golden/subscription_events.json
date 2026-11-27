@@ -46,8 +46,14 @@
         "groupId": "6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d6d",
         "kind": "audio",
         "participants": [
-          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          {
+            "displayName": "aaaa aaaa",
+            "publicKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          },
+          {
+            "displayName": "Bob",
+            "publicKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
         ]
       }
     }
@@ -63,8 +69,14 @@
         "isGroup": true,
         "kind": "video",
         "participants": [
-          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-          "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          {
+            "displayName": "Bob",
+            "publicKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          {
+            "displayName": "cccc cccc",
+            "publicKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+          }
         ]
       }
     }

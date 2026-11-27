@@ -53,7 +53,6 @@ async fn invite_stores_peer_video_decode_codecs() {
             sender_hex: &sender,
             call_id: "call-codecs-i",
             offer_kind: 1,
-            initiator_pubkey: &sender,
             initiator_x25519_pub: &initiator_x,
             expires_at_ms: 9_999_999_999_999,
             video_decode_codecs: &["vp8".to_string(), "h264".to_string()],

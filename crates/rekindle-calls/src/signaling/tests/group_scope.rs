@@ -6,6 +6,8 @@
 use std::collections::HashMap;
 
 use rekindle_codec::capnp_codec::direct::DirectBody;
+use rekindle_crypto::identity::short_key_fingerprint;
+use rekindle_types::subscription_events::CallParticipant;
 
 use super::mocks::MockDeps;
 use crate::signaling::deps::CallSignalingDeps;
@@ -75,6 +77,8 @@ async fn a_call_in_one_of_two_same_member_groups_rings_with_its_own_group_id() {
         MockDeps::with_identity([2; 32]),
     );
     let (a, b) = (alice.owner_key().unwrap(), bob.owner_key().unwrap());
+    alice.friend_names.lock().insert(b.clone(), "Bob".into());
+    bob.friend_names.lock().insert(a.clone(), "Alice".into());
     let same: &[&str] = &[a.as_str(), b.as_str()];
     rosters(&alice, &[("g1", same), ("g2", same)]);
     rosters(&bob, &[("g1", same), ("g2", same)]);
@@ -98,12 +102,51 @@ async fn a_call_in_one_of_two_same_member_groups_rings_with_its_own_group_id() {
         .collect();
     assert_eq!(
         started,
-        vec![(call_id, Some("g2".to_owned()), vec![a.clone(), b.clone()])]
+        vec![(
+            call_id,
+            Some("g2".to_owned()),
+            vec![
+                CallParticipant {
+                    public_key: a.clone(),
+                    display_name: short_key_fingerprint(&hex::decode(&a).unwrap()),
+                },
+                CallParticipant {
+                    public_key: b.clone(),
+                    display_name: "Bob".into(),
+                },
+            ],
+        )]
     );
     let (to, offer) = offers(&alice).pop().expect("one offer");
     assert_eq!(to, b);
     handle_group_call_payload(&*bob, &a, offer).await;
     assert_eq!(incoming_group(&bob), vec![Some("g2".to_owned())]);
+    let (caller, participants) = bob
+        .emitted_events()
+        .into_iter()
+        .find_map(|event| match event {
+            CallSignalEvent::IncomingGroupCall {
+                initiator_display_name,
+                participants,
+                ..
+            } => Some((initiator_display_name, participants)),
+            _ => None,
+        })
+        .expect("incoming group call");
+    assert_eq!(caller, "Alice");
+    assert_eq!(
+        participants,
+        [
+            CallParticipant {
+                public_key: a,
+                display_name: "Alice".into()
+            },
+            CallParticipant {
+                display_name: short_key_fingerprint(&hex::decode(&b).unwrap()),
+                public_key: b,
+            },
+        ],
+    );
 }
 
 #[tokio::test]

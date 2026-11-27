@@ -56,13 +56,8 @@ impl CallSignalingDeps for CallsAdapter {
             .is_some_and(|&until| until > now_ms)
     }
 
-    fn friend_display_name(&self, peer_pubkey_hex: &str) -> String {
-        // Return raw display_name (or "" if friend not found / empty).
-        // The crate's handlers check `is_empty()` and apply their own
-        // fallback using `initiator_pubkey` (which may differ from
-        // `peer_pubkey_hex` in edge cases). Doing the fallback inside
-        // the adapter would short-circuit that logic.
-        crate::state_helpers::friend_display_name(&self.state, peer_pubkey_hex).unwrap_or_default()
+    fn friend_display_name(&self, peer_pubkey_hex: &str) -> Option<String> {
+        crate::state_helpers::friend_display_name(&self.state, peer_pubkey_hex)
     }
 
     fn local_video_decode_codecs(&self) -> Vec<String> {

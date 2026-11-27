@@ -2,15 +2,6 @@
 
 use serde::Serialize;
 
-// ── Video-cluster event payloads ────────────────────────────────────
-//
-// Payload structs for the `CommunityEvent` video variants (newtype
-// form). Wire-identical to the former inline struct variants under
-// `serde(tag = "type", content = "data")` — proven by the snapshot
-// tests in `wire_tests.rs`, which pass unchanged across the
-// conversion. The frontend TS contract (`src/ipc/channels.ts`) is
-// untouched.
-
 use rekindle_video::SessionVideoConfig;
 
 /// Architecture §10.6 — receiver requests an I-frame.
@@ -50,7 +41,15 @@ pub struct VideoSessionConfigEvent {
 pub struct VideoCodecIncompatibleEvent {
     pub community_id: String,
     pub channel_id: String,
-    pub peers: Vec<String>,
+    pub peers: Vec<VideoCodecIncompatiblePeer>,
+}
+
+/// A blocking peer's community pseudonym and member-list name.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoCodecIncompatiblePeer {
+    pub pseudonym_key: String,
+    pub display_name: String,
 }
 
 /// The allocator's video encoder target (plan E4.3.3): each media route's
@@ -82,15 +81,13 @@ pub struct NativeVideoErrorEvent {
 /// verification at the receive boundary. Surfaced to the UI so the
 /// asymmetric-drop case (one peer rejects, the other doesn't) is
 /// observable from frontend signals instead of grep.
-///
-/// `communityId` / `senderPseudonym` may be the sentinel string
-/// `"<unknown>"` when the envelope failed to deserialize before
-/// those routing fields could be read.
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VideoEnvelopeRejectedEvent {
     pub community_id: String,
     pub sender_pseudonym: String,
+    pub display_name: String,
     pub reason: String,
 }
 

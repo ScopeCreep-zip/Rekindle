@@ -254,6 +254,14 @@ impl HostGovernance {
     }
 }
 
+impl super::HostGovernance {
+    /// The member list's shown name for a community pseudonym.
+    #[must_use]
+    pub fn member_shown_name(&self, community_id: &str, pseudonym: &PseudonymKey) -> String {
+        resolved_member_name(&self.ctx.communities, community_id, pseudonym)
+    }
+}
+
 /// The name a community renders for `pseudonym`: its card's, else its
 /// short pseudonym fingerprint; never empty (plan E3.4 S6).
 pub(crate) fn shown_name(card_name: Option<String>, pseudonym: &PseudonymKey) -> String {
@@ -272,9 +280,17 @@ pub(crate) fn member_shown_name(
     member_hex: &str,
 ) -> String {
     let pseudonym = PseudonymKey::from_hex_lossy(member_hex);
+    resolved_member_name(communities, community_id, &pseudonym)
+}
+
+fn resolved_member_name(
+    communities: &CommunityStore,
+    community_id: &str,
+    pseudonym: &PseudonymKey,
+) -> String {
     shown_name(
-        communities.member_card_name(community_id, &pseudonym),
-        &pseudonym,
+        communities.member_card_name(community_id, pseudonym),
+        pseudonym,
     )
 }
 

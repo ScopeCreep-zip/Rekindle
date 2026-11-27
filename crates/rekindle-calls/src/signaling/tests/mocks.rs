@@ -162,6 +162,7 @@ pub(super) struct MockDeps {
     pub(super) group_registry: Arc<MockGroupRegistry>,
     /// Which call's media runs (plan CE2), as the desktop adapter keeps it.
     pub(super) media: crate::signaling::CallMediaOwner,
+    pub(super) friend_names: Mutex<HashMap<String, String>>,
     owner_key: String,
     identity_secret: [u8; 32],
     /// Our group DMs' rosters, by group id (`group_roster`).
@@ -185,6 +186,7 @@ impl MockDeps {
                 inner: Mutex::new(HashMap::new()),
             }),
             media: crate::signaling::CallMediaOwner::default(),
+            friend_names: Mutex::new(HashMap::new()),
             owner_key: "aa".repeat(32),
             group_rosters: Mutex::new(HashMap::new()),
             invited_groups: Mutex::new(HashSet::new()),
@@ -239,8 +241,8 @@ impl CallSignalingDeps for MockDeps {
     fn is_peer_temp_muted(&self, _peer: &str) -> bool {
         false
     }
-    fn friend_display_name(&self, _peer: &str) -> String {
-        "Mock Friend".into()
+    fn friend_display_name(&self, peer: &str) -> Option<String> {
+        self.friend_names.lock().get(peer).cloned()
     }
     fn local_video_decode_codecs(&self) -> Vec<String> {
         vec!["vp9".to_string()]

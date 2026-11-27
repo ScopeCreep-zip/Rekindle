@@ -11,7 +11,7 @@ use rekindle_types::dto::transfer::{TransferRow, TransferState, TransferTarget};
 use rekindle_ipc::protocol::IpcResponse;
 use rekindle_types::dto::skin_action::SkinAction as A;
 use rekindle_types::dto::skin_run::{CallOp, ShellOp, SkinRun};
-use rekindle_types::subscription_events::{CallEvent, SubscriptionEvent};
+use rekindle_types::subscription_events::{CallEvent, CallParticipant, SubscriptionEvent};
 
 use super::actions::{map, Mapped, Selected as Selection};
 use super::capability::{allows, Group, LobbyCaps, Selected, SkinWorld};
@@ -411,6 +411,15 @@ fn voice_chat_runs_answer_on_the_ringing_call() {
     ));
 }
 
+pub(super) fn call_participants(keys: &[&str]) -> Vec<CallParticipant> {
+    keys.iter()
+        .map(|&key| CallParticipant {
+            public_key: key.into(),
+            display_name: format!("Name of {key}"),
+        })
+        .collect()
+}
+
 fn group_incoming(
     call_id: &str,
     group_id: &str,
@@ -422,7 +431,7 @@ fn group_incoming(
         from: from.into(),
         display_name: "A".into(),
         kind: "voice".into(),
-        participants: invited.iter().map(|k| (*k).to_owned()).collect(),
+        participants: call_participants(invited),
         is_group: true,
         expires_at_ms: 0,
         group_id: Some(group_id.into()),
@@ -509,7 +518,7 @@ fn two_groups_with_the_same_members_each_match_only_their_own_call() {
         from: "a".into(),
         display_name: "A".into(),
         kind: "voice".into(),
-        participants: vec!["me".into(), "b".into()],
+        participants: call_participants(&["me", "b"]),
         is_group: true,
         expires_at_ms: 0,
         group_id: None,

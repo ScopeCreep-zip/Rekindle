@@ -11,7 +11,7 @@ use rekindle_types::group_dm::{group_call_refused, GroupCallRoster};
 use crate::error::CallError;
 use crate::group::{generate_call_key, wrap_call_key};
 use crate::group_state::{GroupCallState, GroupCallStatus};
-use crate::signaling::deps::CallSignalingDeps;
+use crate::signaling::deps::{named_participants, peer_shown_name, CallSignalingDeps};
 use crate::signaling::event::CallSignalEvent;
 use crate::signaling::group_handlers::check_members;
 pub use crate::signaling::trace::{
@@ -20,7 +20,7 @@ pub use crate::signaling::trace::{
 };
 use crate::state::{CallKind, CallState, CallStatus};
 use crate::X25519StaticSecret;
-use crate::{derive_call_key, fresh_keypair, short_pubkey_helper};
+use crate::{derive_call_key, fresh_keypair};
 use rekindle_codec::capnp_codec::direct::{
     CallAccept, CallClosed, CallInvite, DirectBody, GroupCallMember, GroupCallOffer,
     GroupCallParticipantLeft,
@@ -40,6 +40,7 @@ pub(super) async fn start_dm_call_untraced<D: CallSignalingDeps + ?Sized>(
     peer_public_key: &str,
     kind: CallKind,
 ) -> Result<String, CallError> {
+    let display_name = peer_shown_name(deps, peer_public_key)?;
     let call_id = deps.fresh_call_id();
     let (my_secret, my_pub) = fresh_keypair();
     let initiator_pubkey = deps.owner_key()?;
@@ -86,15 +87,6 @@ pub(super) async fn start_dm_call_untraced<D: CallSignalingDeps + ?Sized>(
         )));
     }
 
-    let display_name = {
-        let name = deps.friend_display_name(peer_public_key);
-        if name.is_empty() {
-            short_pubkey_helper(peer_public_key)
-        } else {
-            name
-        }
-    };
-
     deps.emit_event(CallSignalEvent::CallStarted {
         call_id: call_id.clone(),
         peer_public_key: peer_public_key.to_string(),
@@ -140,6 +132,7 @@ pub(super) async fn accept_dm_call_untraced<D: CallSignalingDeps + ?Sized>(
         (call.peer_pubkey.clone(), peer_x25519)
     };
 
+    let display_name = peer_shown_name(deps, &peer_pubkey)?;
     let (my_secret, my_pub) = fresh_keypair();
     let call_key = derive_call_key(&my_secret, &peer_x25519, call_id)?;
 
@@ -199,17 +192,10 @@ pub(super) async fn accept_dm_call_untraced<D: CallSignalingDeps + ?Sized>(
     deps.emit_event(CallSignalEvent::CallConnected {
         call_id: call_id.to_string(),
         peer_public_key: peer_pubkey.clone(),
+        peer_display_name: display_name.clone(),
         kind,
     });
     deps.present_active_call(call_id);
-    let display_name = {
-        let name = deps.friend_display_name(&peer_pubkey);
-        if name.is_empty() {
-            short_pubkey_helper(&peer_pubkey)
-        } else {
-            name
-        }
-    };
     deps.emit_event(CallSignalEvent::ConversationFocusRequested {
         peer_public_key: peer_pubkey,
         peer_display_name: display_name,
@@ -306,6 +292,8 @@ pub(super) async fn start_group_call_untraced<D: CallSignalingDeps + ?Sized>(
         }
     }
 
+    let participants = named_participants(deps, &all_participants)?;
+
     // Capture secret bytes for the per-invitee wrap before moving
     // `my_secret` into the registry entry.
     let secret_bytes = my_secret.to_bytes();
@@ -322,7 +310,7 @@ pub(super) async fn start_group_call_untraced<D: CallSignalingDeps + ?Sized>(
     });
     deps.emit_event(CallSignalEvent::GroupCallStarted {
         call_id: call_id.clone(),
-        participants: all_participants.clone(),
+        participants,
         kind: kind.as_u8(),
         expires_at_ms,
         group_id: group_id.clone(),

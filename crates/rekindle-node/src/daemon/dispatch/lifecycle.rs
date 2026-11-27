@@ -219,12 +219,15 @@ async fn attach_client(
             return IpcResponse::error(500, format!("client not registered: {e}"));
         }
     }
-    let view = ctx.require_session(|session| rekindle_types::dto::identity::IdentityView {
-        public_key: session.identity.public_key_hex.clone(),
-        display_name: session.identity.display_name.clone(),
+    let view = ctx.require_session(|session| {
+        crate::host::identity::view(
+            session.identity.public_key_hex.clone(),
+            session.identity.display_name.clone(),
+        )
     });
     match view {
-        Ok(view) => IpcResponse::ok(&view),
+        Ok(Ok(view)) => IpcResponse::ok(&view),
+        Ok(Err(e)) => super::identity::identity_error(&e),
         Err(e) => e,
     }
 }

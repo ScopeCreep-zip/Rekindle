@@ -34,7 +34,7 @@ impl CallsAdapter {
                     rekindle_types::subscription_events::CallEvent::Incoming {
                         call_id: call_id.clone(),
                         from: from_public_key.clone(),
-                        display_name: from_display_name.clone(),
+                        display_name: from_display_name,
                         kind: kind_str(kind),
                         // A 1:1 call lists nobody: the caller is
                         // already `from`, and the callee is us.
@@ -68,9 +68,9 @@ impl CallsAdapter {
             CallSignalEvent::CallConnected {
                 call_id,
                 peer_public_key,
+                peer_display_name,
                 kind,
             } => {
-                let display_name = self.display_name_with_fallback(&peer_public_key);
                 crate::event_dispatch::emit_call(
                     &self.app_handle,
                     rekindle_types::subscription_events::CallEvent::Connected {
@@ -79,7 +79,7 @@ impl CallsAdapter {
                         direct: Some(rekindle_types::subscription_events::DirectCallInfo {
                             kind: kind_str(kind),
                             peer_key: peer_public_key,
-                            peer_display_name: display_name,
+                            peer_display_name,
                             expected_local_camera: matches!(kind, CallKind::Video),
                         }),
                     },
@@ -194,7 +194,7 @@ impl CallsAdapter {
                     rekindle_types::subscription_events::CallEvent::Incoming {
                         call_id: call_id.clone(),
                         from: initiator_public_key.clone(),
-                        display_name: initiator_display_name.clone(),
+                        display_name: initiator_display_name,
                         kind: kind_u8_str(kind),
                         participants,
                         is_group: true,
