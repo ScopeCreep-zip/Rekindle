@@ -176,6 +176,8 @@ export function createCommunityWindowState() {
   /// A restricted channel whose roster we are not on (FX3): the Host's words.
   const channelLocked = createMemo(() => (activeChannel()?.locked ? (activeChannel()?.lockedReason ?? "") : null));
   /// FX3: waiting for the community's current key from a member.
+  /** The Host's labels for the governance writes it holds (S7d-keys.10). */
+  const catchUpPending = createMemo(() => activeCommunity()?.catchUp?.pending ?? []);
   const keyPending = createMemo(() => (activeCommunity()?.keyStatus?.state === "pending" ? activeCommunity()!.keyStatus! : null));
   /// Why we may not do `cap` here, in the Host's words (never-hide), or null.
   const denied = (cap: CommunityCapability): string | null => deniedFor(activeCommunity(), cap);
@@ -252,7 +254,7 @@ export function createCommunityWindowState() {
     myPerms, canManageChannels, canManageMessages, canRequestToSpeak,
     canManageCommunity, canSendMessages, canBypassSlowmode, gameServers,
     isAnnouncementChannel, isForumChannel, isStageChannel, isVoiceChannel,
-    isTextPaneVisible, denied, ownRemoval, joinWithdrawn, channelLocked, keyPending, canPostInChannel, activeVoiceChannelState, isConnectedToActiveStage,
+    isTextPaneVisible, denied, ownRemoval, joinWithdrawn, channelLocked, keyPending, catchUpPending, canPostInChannel, activeVoiceChannelState, isConnectedToActiveStage,
     channelTypingUsers, upcomingEvents, shouldShowOnboarding, shouldShowWelcome,
     sidebarServerList, formatTimeUntilEvent,
   };

@@ -10,7 +10,7 @@ import type { Message } from "../stores/chat.store";
 import type { AutoModRule, Community, Channel, Expression, Member, MemberLocation } from "../stores/community.store";
 import type { MemberGroup } from "../ipc/commands/dto";
 import type { ChannelDeniedCapabilities, DeniedCapabilities, MemberModeration } from "../ipc/commands/dto_capabilities";
-import type { KeyStatus } from "../ipc/channels/community_subscription_events";
+import type { CatchUpView, KeyStatus } from "../ipc/channels/community_subscription_events";
 
 /** Convert a single backend FriendInfo to a frontend Friend. */
 function transformFriend(f: FriendInfo): Friend {
@@ -207,6 +207,7 @@ export function transformCommunityDetail(c: {
     reason?: string | null;
   } | null;
   keyStatus?: KeyStatus | null;
+  catchUp?: CatchUpView | null;
   denied?: DeniedCapabilities;
 }): Community {
   return {
@@ -237,6 +238,7 @@ export function transformCommunityDetail(c: {
     myBadges: c.myBadges ?? [],
     removed: c.removed ?? null,
     keyStatus: c.keyStatus ?? null,
+    catchUp: c.catchUp ?? null,
     denied: c.denied ?? {},
   };
 }
