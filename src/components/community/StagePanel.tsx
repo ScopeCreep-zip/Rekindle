@@ -23,9 +23,11 @@ interface StagePanelProps {
 }
 
 const StagePanel: Component<StagePanelProps> = (props) => {
-  const memberName = (pseudonymKey: string): string =>
-    props.members.find((member) => member.pseudonymKey === pseudonymKey)?.displayName
-      ?? `${pseudonymKey.slice(0, 12)}...`;
+  // Names and fingerprints as the Host serves them (contracts VN1, VN2); a
+  // key outside the member list is never shown, not even in part.
+  const memberOf = (pseudonymKey: string) => props.members.find((member) => member.pseudonymKey === pseudonymKey);
+  const memberName = (pseudonymKey: string): string => memberOf(pseudonymKey)?.displayName ?? "Unknown member";
+  const memberFingerprint = (pseudonymKey: string): string => memberOf(pseudonymKey)?.fingerprint ?? "";
 
   const speakers = createMemo(() => props.voiceChannel?.speakers ?? props.channel.stageSpeakers ?? []);
   const participants = createMemo(() => props.voiceChannel?.participants ?? []);
@@ -104,7 +106,7 @@ const StagePanel: Component<StagePanelProps> = (props) => {
                 {(speaker) => (
                   <div class="stage-panel-member-card">
                     <div class="stage-panel-member-name">{memberName(speaker)}</div>
-                    <div class="stage-panel-member-meta">{speaker.slice(0, 12)}...</div>
+                    <div class="stage-panel-member-meta">{memberFingerprint(speaker)}</div>
                   </div>
                 )}
               </For>
@@ -123,7 +125,7 @@ const StagePanel: Component<StagePanelProps> = (props) => {
                 {(participant) => (
                   <div class="stage-panel-member-card">
                     <div class="stage-panel-member-name">{memberName(participant)}</div>
-                    <div class="stage-panel-member-meta">{participant.slice(0, 12)}...</div>
+                    <div class="stage-panel-member-meta">{memberFingerprint(participant)}</div>
                   </div>
                 )}
               </For>
@@ -145,7 +147,7 @@ const StagePanel: Component<StagePanelProps> = (props) => {
                   <div class="stage-panel-request-card">
                     <div>
                       <div class="stage-panel-member-name">{memberName(requester)}</div>
-                      <div class="stage-panel-member-meta">{requester.slice(0, 12)}...</div>
+                      <div class="stage-panel-member-meta">{memberFingerprint(requester)}</div>
                     </div>
                     <div class="stage-panel-request-actions">
                       <button

@@ -4,7 +4,9 @@
 // joins the stage as audience: "Request to speak" is shown, disabled, with
 // the Host's reason as its title, in the theme's disabled text. At the
 // default window size, the Audience header and Ari's own row show without a
-// scroll: inside every clipping ancestor's box and the window. Joining a
+// scroll: inside every clipping ancestor's box and the window. No run of 8+
+// hex shows anywhere in the stage panel (names and fingerprints are the
+// Host's, never a key or a slice of one). Joining a
 // stage opens the microphone: Linux only (no TCC prompt on the Mac).
 
 import { browser, expect } from "@wdio/globals";
@@ -97,9 +99,12 @@ describe("a stage's raise hand is shown, disabled with the Host's reason (PN1)",
       };
     })) as { header: { inside: boolean; el: number[]; clip: number[] }; row: { inside: boolean; el: number[]; clip: number[] }; scrolled: number; window: number[] };
     console.log(`[stage] window ${fit.window.join("x")}, panel scrolled ${fit.scrolled}; Audience header ${JSON.stringify(fit.header)}; our row ${JSON.stringify(fit.row)}`);
+    const panelText = (await browser.execute(() => document.querySelector(".stage-panel")?.textContent ?? "")) as string;
+    const hexRuns = panelText.toLowerCase().match(/[0-9a-f]{8,}/g) ?? [];
+    console.log(`[stage] audience row: ${await (await browser.$(".stage-panel-grid .stage-panel-section:last-child .stage-panel-member-card")).getText().catch(() => "")}; hex runs in the panel: ${hexRuns.length}`);
     await shot("request-to-speak-denied");
     expect({ shown: await request.isDisplayed(), disabled: state.disabled, reason: state.reason.length > 0, dimmed: state.dimmed })
       .toEqual({ shown: true, disabled: true, reason: true, dimmed: true });
-    expect({ scrolled: fit.scrolled, header: fit.header.inside, row: fit.row.inside }).toEqual({ scrolled: 0, header: true, row: true });
+    expect({ scrolled: fit.scrolled, header: fit.header.inside, row: fit.row.inside, hexRuns }).toEqual({ scrolled: 0, header: true, row: true, hexRuns: [] });
   });
 });
