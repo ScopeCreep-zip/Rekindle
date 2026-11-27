@@ -49,6 +49,7 @@ mod event_rsvps;
 mod key_status;
 mod member_routes_loop;
 mod re_enrol;
+mod retirement_pointer;
 mod successor;
 mod transfer;
 pub(crate) use co_create::PendingCreations;

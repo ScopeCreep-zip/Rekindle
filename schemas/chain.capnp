@@ -19,6 +19,14 @@ struct PagePointer {
 struct ChainHead {
     newest @0 :PagePointer;
     retiredThrough @1 :UInt64;
+    # GOV_HEAD only. A locator for the successor's signed seq-0 DeviceReEnrol.
+    deviceRetirement @2 :DeviceRetirementPointer;
+}
+
+struct DeviceRetirementPointer {
+    opHash @0 :Data;
+    successorKey @1 :Data;
+    successorRecord @2 :Text;
 }
 
 # A page's only subkey: its entries, from `firstSeq` up, and the page

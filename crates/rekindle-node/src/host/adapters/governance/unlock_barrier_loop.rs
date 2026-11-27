@@ -26,7 +26,6 @@ use rekindle_governance_runtime::{
     GovernanceRuntimeError,
 };
 use rekindle_secrets::ed25519_dalek::SigningKey;
-use rekindle_types::dht_layout::member_record::GOV_HEAD;
 use rekindle_types::display_catch_up::CatchUpView;
 use rekindle_types::display_catch_up::PendingGovTarget;
 use rekindle_types::id::PseudonymKey;
@@ -194,14 +193,23 @@ impl HostGovernance {
             Err(_) => return None,
         };
         let port = GovernanceRuntimeDeps::record_port(self).ok()?;
-        let read = rekindle_records::chain::read_log_after(
+        let (read, retirement) = rekindle_records::chain::read_log_with_retirement(
             &*port,
             &record,
-            GOV_HEAD,
             local_head.unwrap_or(0),
         )
         .await
         .ok()?;
+        if let Some(pointer) = retirement {
+            let received = rekindle_governance_runtime::retirement_pointer::receive(
+                self, &*port, community, &record, d, pointer,
+            )
+            .await
+            .ok()?;
+            if received {
+                rekindle_governance_runtime::rebuild_governance(self, community).await;
+            }
+        }
         Some(
             (read.entries.iter())
                 .filter_map(|e| rekindle_codec::governance_op::decode_op(&e.ciphertext).ok())

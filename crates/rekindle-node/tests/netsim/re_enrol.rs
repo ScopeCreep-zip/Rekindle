@@ -322,6 +322,100 @@ async fn re_enrol_from_a_cloned_root_retires_the_original_key() {
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_solo_members_original_device_learns_its_re_enrolment_from_its_own_record() {
+    use rekindle_types::subscription_events::NotificationEvent;
+
+    let mut community = Community::create(2, 7031).await;
+    community.nodes[0].ok(IpcRequest::Lock).await;
+    let backup = crate::data_root::snapshot(&community.sim, &community.nodes[0]);
+    crate::devices::unlock(&community, 0).await;
+    crate::equivocation::create_role(&community, 0, "after the copy").await;
+
+    community.nodes[1].ok(IpcRequest::Lock).await;
+    crate::data_root::restore(&community.sim, &community.nodes[1], &backup);
+    let unused = community.nodes.remove(1);
+    let mut copy = unused.restart(&community.sim, Duration::from_secs(1)).await;
+    copy.public_key = community.nodes[0].public_key.clone();
+    community.nodes.push(copy);
+    crate::devices::unlock(&community, 1).await;
+
+    let original_events = community.nodes[0].events().await;
+    let held = wait_for_review(&community, 1).await;
+    let original = community.nodes[0].host.governance();
+    let state = original.governance_state(&community.anchor).unwrap();
+    let old_record = rekindle_governance_runtime::device_signer::own_op_record(
+        &original,
+        &community.anchor,
+        &state,
+    )
+    .unwrap();
+    assert!(
+        eventually(&community.sim, LIMIT, || async {
+            community
+                .sim
+                .watchers_of_dflt(rekindle_types::dht_layout::member_record::SUBKEY_COUNT)
+                .get(&old_record)
+                .is_some_and(|watchers| watchers.contains(&0))
+        })
+        .await,
+        "the original's own-record watch is armed"
+    );
+    for node in &community.nodes {
+        let gov = node.host.governance();
+        assert_eq!(
+            gov.governance_state(&community.anchor)
+                .unwrap()
+                .members
+                .len(),
+            1
+        );
+        assert!(gov.mesh_peers(&community.anchor).is_empty());
+    }
+    assert!(review(&community, 0).is_none());
+
+    let answer = community.nodes[1]
+        .ok(IpcRequest::IntentCommit {
+            intent_id: held.review.intent_id,
+            proof: IntentProof::Acknowledged,
+        })
+        .await;
+    assert!(answer["reEnrolled"][0].get("error").is_none(), "{answer:?}");
+    wait_for_review(&community, 0).await;
+    let port = original.record_port().unwrap();
+    let (old_log, pointer) =
+        rekindle_records::chain::read_log_with_retirement(&*port, &old_record, 0)
+            .await
+            .unwrap();
+    assert!(!old_log.entries.is_empty(), "the old log stays reachable");
+    let pointer = pointer.expect("the old GOV_HEAD has a retirement pointer");
+    assert_eq!(pointer.successor_key, community_key(&community, 1));
+    assert_ne!(pointer.successor_record, old_record);
+    assert!(original_events.any(|event| matches!(
+        event,
+        SubscriptionEvent::Notification(NotificationEvent::SystemAlert { title, .. })
+            if title == "Signing stopped"
+    )));
+    let state = original.governance_state(&community.anchor).unwrap();
+    let (author, _) =
+        rekindle_governance_runtime::op_log::own_pseudonym(&original, &community.anchor).unwrap();
+    let device = rekindle_governance_runtime::device_signer::device_op_key(
+        &original,
+        &community.anchor,
+        false,
+    )
+    .unwrap();
+    assert!(matches!(
+        rekindle_governance_runtime::device_signer::OpSigner::checked(
+            &community.anchor,
+            &state,
+            author,
+            &device,
+        ),
+        Err(rekindle_governance_runtime::GovernanceRuntimeError::OwnKeyRetired { .. })
+    ));
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn re_enrol_reopens_the_old_prekey_owner_if_cutover_stops_before_commit() {
     let mut community = restore_creator(7030).await;
     let first = wait_for_review(&community, 0).await;

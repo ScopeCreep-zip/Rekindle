@@ -137,9 +137,10 @@ pub fn retire(
     device_key: [u8; 32],
     last_seq: u64,
 ) -> Result<DeviceRetired, DeviceWriteError> {
-    let incarnation = (held.endorsements.keys())
-        .find(|(_, k)| *k == device_key)
-        .map(|(inc, _)| *inc)
+    let author = PseudonymKey(p.verifying_key().to_bytes());
+    let incarnation = held
+        .endorsement_for(&author, community, member_record, &device_key)
+        .map(|endorsement| endorsement.incarnation)
         .ok_or(DeviceWriteError::NotEndorsed)?;
     let mut r = DeviceRetired {
         device_key,
