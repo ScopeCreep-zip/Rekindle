@@ -13,7 +13,7 @@
 //! keypair is lost can no longer be written.
 
 use serde::{Deserialize, Serialize};
-use zeroize::Zeroize;
+use zeroize::{Zeroize, Zeroizing};
 
 use crate::{VaultError, VaultKey, VaultStore};
 
@@ -44,7 +44,8 @@ impl OwnerKey {
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OwnerEntry {
     pub record_key: String,
-    pub keypair: String,
+    #[serde(with = "owner_text")]
+    pub keypair: Zeroizing<String>,
 }
 
 impl std::fmt::Debug for OwnerEntry {
@@ -53,6 +54,21 @@ impl std::fmt::Debug for OwnerEntry {
             .field("record_key", &self.record_key)
             .field("keypair", &"<redacted>")
             .finish()
+    }
+}
+
+mod owner_text {
+    use serde::{Deserialize, Deserializer, Serializer};
+    use zeroize::Zeroizing;
+
+    pub(super) fn serialize<S: Serializer>(value: &str, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(value)
+    }
+
+    pub(super) fn deserialize<'de, D: Deserializer<'de>>(
+        deserializer: D,
+    ) -> Result<Zeroizing<String>, D::Error> {
+        String::deserialize(deserializer).map(Zeroizing::new)
     }
 }
 

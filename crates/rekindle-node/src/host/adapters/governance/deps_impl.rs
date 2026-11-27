@@ -186,9 +186,15 @@ impl GovernanceRuntimeDeps for HostGovernance {
         lease: LeaseId,
         subkey: u32,
         value: Vec<u8>,
-        writer: Option<String>,
+        writer: Option<zeroize::Zeroizing<String>>,
     ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError> {
-        self.set_dht_value_impl(lease, subkey, value, writer).await
+        self.set_dht_value_impl(
+            lease,
+            subkey,
+            value,
+            writer.as_ref().map(|key| key.as_str()),
+        )
+        .await
     }
 
     async fn inspect_dht_record_local_seqs(

@@ -53,9 +53,9 @@ mod reads;
 pub(crate) mod transaction;
 mod write;
 
+use rekindle_secrets::record_writer::RecordWriterSecret;
 use std::{collections::BTreeSet, sync::Arc};
 
-use rekindle_crypto::keypair_text::keypair_text_from_signing;
 use rekindle_records::port::{
     DhtBackend, DhtCallError, DhtErrorKind, OpenIntent, RecordDescriptor, RecordReport,
     RecordSchema, RecordValue, ReportScope, WriterKey,
@@ -181,7 +181,7 @@ impl SimDht {
     }
 
     /// The writer the record is open with, or "record not open".
-    fn opened(&self, key: &str) -> Result<Option<String>, DhtCallError> {
+    fn opened(&self, key: &str) -> Result<Option<RecordWriterSecret>, DhtCallError> {
         self.net.inner.lock().nodes[self.node]
             .opened
             .get(key)
@@ -196,10 +196,10 @@ impl SimDht {
             .get(key)
             .ok_or_else(|| error(DhtErrorKind::KeyNotFound, key.to_string()))?;
         let owner = if record.creator == self.node {
-            inner.owners.get(key).map(|keypair| WriterKey {
-                keypair: keypair.clone(),
-                public: public_text(&record.owner),
-            })
+            inner
+                .owners
+                .get(key)
+                .map(|keypair| WriterKey::new(public_text(&record.owner), keypair.clone()))
         } else {
             None
         };
@@ -247,7 +247,7 @@ impl SimDht {
         writer: Option<&WriterKey>,
         rehydrate: bool,
     ) -> Result<RecordDescriptor, DhtCallError> {
-        let writer = writer.map(|w| w.keypair.clone());
+        let writer = writer.map(|w| w.keypair().clone());
         let known = self.net.inner.lock().nodes[self.node].known.contains(key);
         if !known {
             // Inspect subkey 0 for the descriptor, stopping at the first
@@ -287,10 +287,10 @@ impl DhtBackend for SimDht {
     fn parse_writer(&self, text: &str) -> Result<WriterKey, DhtCallError> {
         let public =
             writer_public(text).map_err(|e| error(DhtErrorKind::ParseError, e.to_string()))?;
-        Ok(WriterKey {
-            keypair: text.to_string(),
-            public: public_text(&public),
-        })
+        Ok(WriterKey::new(
+            public_text(&public),
+            RecordWriterSecret::from_text(text),
+        ))
     }
 
     fn check_key(&self, key: &str) -> Result<String, DhtCallError> {
@@ -314,16 +314,18 @@ impl DhtBackend for SimDht {
         let count = schema.subkey_count();
         let owner = owner.map_or_else(
             || {
-                let mut secret = [0u8; 32];
-                self.rng.fill(&mut secret);
-                keypair_text_from_signing(&rekindle_secrets::ed25519_dalek::SigningKey::from_bytes(
-                    &secret,
-                ))
+                let mut secret = zeroize::Zeroizing::new([0u8; 32]);
+                self.rng.fill(secret.as_mut_slice());
+                let signing = rekindle_secrets::ed25519_dalek::SigningKey::from_bytes(&secret);
+                RecordWriterSecret::from_parts(
+                    &public_text(&signing.verifying_key().to_bytes()),
+                    secret.as_slice(),
+                )
             },
-            |w| w.keypair.clone(),
+            |w| w.keypair().clone(),
         );
-        let public =
-            writer_public(&owner).map_err(|e| error(DhtErrorKind::ParseError, e.to_string()))?;
+        let public = writer_public(owner.expose())
+            .map_err(|e| error(DhtErrorKind::ParseError, e.to_string()))?;
         // The encryption key after the owner, as 0.5.8 `create_record.rs:82-93`.
         let encryption_key = new_encryption_key(self.rng.as_ref());
         let key = record_key_text(&public, schema, &encryption_key);
@@ -572,7 +574,7 @@ impl DhtBackend for SimDht {
             subkeys: wanted,
             expiration: expiration_us.filter(|e| *e != 0),
             count,
-            member: watches::member_of(record, writer.as_deref()),
+            member: watches::member_of(record, writer.as_ref().map(RecordWriterSecret::expose)),
         });
         let active = desired.is_some();
         watches::desire(&mut inner, self.node, key, desired, now);

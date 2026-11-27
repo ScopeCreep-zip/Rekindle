@@ -19,11 +19,14 @@ async-trait = "0.1"
 futures = { workspace = true }
 parking_lot = { workspace = true }
 rekindle-lifecycle = { path = "../rekindle-lifecycle" }
+rekindle-secrets = { path = "../rekindle-secrets" }
 rekindle-records = { path = "../rekindle-records" }
 rekindle-utils = { path = "../rekindle-utils" }
 tokio = { workspace = true }
 tokio-util = "0.7"
 tracing = { workspace = true }
+
+zeroize = "1"
 
 [dev-dependencies]
 tokio = { workspace = true, features = [ "test-util" ] }

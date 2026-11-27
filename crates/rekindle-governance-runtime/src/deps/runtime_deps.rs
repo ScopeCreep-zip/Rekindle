@@ -239,7 +239,7 @@ pub trait GovernanceRuntimeDeps: Send + Sync + 'static {
         lease: LeaseId,
         subkey: u32,
         value: Vec<u8>,
-        writer: Option<String>,
+        writer: Option<zeroize::Zeroizing<String>>,
     ) -> Result<Option<Vec<u8>>, GovernanceRuntimeError>;
 
     /// Per-subkey seq numbers from this node's local cache, indexed by

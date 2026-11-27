@@ -228,7 +228,7 @@ pub trait RecordPort: Send + Sync {
         &self,
         schema: &RecordSchema,
         owner: Option<&str>,
-    ) -> Result<(LeaseId, String, String), PortError>;
+    ) -> Result<(LeaseId, String, zeroize::Zeroizing<String>), PortError>;
 
     /// The record key a lease borrows, while it is held.
     fn key_of(&self, lease: LeaseId) -> Option<String>;

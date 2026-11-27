@@ -41,6 +41,8 @@ tracing = { workspace = true }
 veilid-core = { version = "0.5", default-features = true, features = [ "app-lifecycle" ] }
 
 
+zeroize = "1"
+
 [dev-dependencies]
 proptest = "1"
 # `tests/log_scrub_veilid.rs` checks the log scrubber against the real

@@ -30,10 +30,10 @@ struct TestDht {
 #[async_trait::async_trait]
 impl DhtBackend for TestDht {
     fn parse_writer(&self, text: &str) -> Result<WriterKey, DhtCallError> {
-        Ok(WriterKey {
-            keypair: text.to_string(),
-            public: text.to_string(),
-        })
+        Ok(WriterKey::new(
+            text.to_owned(),
+            rekindle_secrets::record_writer::RecordWriterSecret::from_text(text),
+        ))
     }
 
     fn check_key(&self, key: &str) -> Result<String, DhtCallError> {
