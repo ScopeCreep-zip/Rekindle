@@ -17,7 +17,7 @@ use super::super::{
     desired, fitting, is_current, is_latest, logical::LogicalShape, publish, report_fit, settle,
     sizing, skin, Shaped,
 };
-use settle::{Allocation, Failure, Settling, Update, PAINT_WAIT, SIZE_WAIT};
+use settle::{AllocationDecision, MarginUpdate, Settling, ShapeSettleError, PAINT_WAIT, SIZE_WAIT};
 
 type Canvas = (i32, i32);
 
@@ -122,7 +122,7 @@ impl Controller {
         // tao installs a placeholder titlebar on Wayland. Clear it before
         // GTK can realize a client-decorated window and rewrite our margins.
         if self.wayland && widget.is_realized() {
-            self.degrade(widget, Failure::InvalidSurface);
+            self.degrade(widget, ShapeSettleError::InvalidSurface);
         } else if self.wayland {
             widget.set_titlebar(None::<&gtk::Widget>);
         }
@@ -168,7 +168,7 @@ impl Controller {
                     root.announce_csd();
                     self.csd_ready.set(true);
                 }
-                _ => self.degrade(widget, Failure::InvalidSurface),
+                _ => self.degrade(widget, ShapeSettleError::InvalidSurface),
             }
         }
         if let Some(clock) = widget.frame_clock() {
@@ -242,7 +242,7 @@ impl Controller {
             let sizing = sizing(&generation, self.shaped.frame);
             if let Err(error) = self.target.set_size_constraints(sizing.constraints()) {
                 tracing::warn!(%error, label = self.label(), "GTK size constraints not set");
-                self.degrade(widget, Failure::SizeRefused);
+                self.degrade(widget, ShapeSettleError::SizeRefused);
                 return;
             }
             let size = LogicalSize::new(sizing.wanted.0, sizing.wanted.1).cast::<i32>();
@@ -285,7 +285,7 @@ impl Controller {
                 if let Some(hold) = controller.hold.borrow_mut().as_mut() {
                     hold.watchdog = None;
                 }
-                controller.degrade(&widget, Failure::PaintTimeout);
+                controller.degrade(&widget, ShapeSettleError::PaintTimeout);
             }
         });
         self.hold.replace(Some(PaintHold {
@@ -294,7 +294,7 @@ impl Controller {
         }));
     }
 
-    fn degrade(&self, widget: &gtk::ApplicationWindow, reason: Failure) {
+    fn degrade(&self, widget: &gtk::ApplicationWindow, reason: ShapeSettleError) {
         let generation = desired(self.target.app_handle());
         let allocation = widget.allocation();
         if let Some(root) = widget.window() {
@@ -364,7 +364,7 @@ impl Controller {
             widget.queue_allocate();
             return;
         }
-        let Allocation::Accept { override_size } =
+        let AllocationDecision::Accept { override_size } =
             self.settling
                 .borrow()
                 .allocation(canvas, measured, fixed(state), Instant::now())
@@ -385,7 +385,7 @@ impl Controller {
             .ok()
             .and_then(|shape| LogicalShape::project(&shape, canvas, scale));
             let Some(projected) = projected else {
-                self.degrade(widget, Failure::InvalidAllocation);
+                self.degrade(widget, ShapeSettleError::InvalidAllocation);
                 return;
             };
             Some(projected)
@@ -411,8 +411,8 @@ impl Controller {
                 .borrow_mut()
                 .update(canvas, margins, fixed(state));
             match update {
-                Ok(Update::Ready) => {}
-                Ok(Update::SetMargins { expected, restore }) => {
+                Ok(MarginUpdate::Ready) => {}
+                Ok(MarginUpdate::SetMargins { expected, restore }) => {
                     self.freeze(widget, &root);
                     set_margins(&root, margins);
                     let measured = root_canvas(&root);

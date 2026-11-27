@@ -13,7 +13,7 @@ const MAX_TRANSITIONS: usize = 4;
 type Canvas = (i32, i32);
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum Failure {
+pub(super) enum ShapeSettleError {
     InvalidAllocation,
     RepeatedTransition,
     TransitionLimit,
@@ -24,13 +24,13 @@ pub(super) enum Failure {
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum Allocation {
+pub(super) enum AllocationDecision {
     Await,
     Accept { override_size: bool },
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub(super) enum Update {
+pub(super) enum MarginUpdate {
     Ready,
     SetMargins {
         expected: Canvas,
@@ -90,22 +90,22 @@ impl Settling {
         root: Canvas,
         fixed: bool,
         now: Instant,
-    ) -> Allocation {
+    ) -> AllocationDecision {
         if canvas.0 <= 0 || canvas.1 <= 0 || canvas != root {
-            return Allocation::Await;
+            return AllocationDecision::Await;
         }
         if let Some(request) = self.requested {
             if canvas != request.target && !fixed && self.expected.is_none() {
                 return if now >= request.deadline {
-                    Allocation::Accept {
+                    AllocationDecision::Accept {
                         override_size: true,
                     }
                 } else {
-                    Allocation::Await
+                    AllocationDecision::Await
                 };
             }
         }
-        Allocation::Accept {
+        AllocationDecision::Accept {
             override_size: self.requested.is_some_and(|r| canvas != r.target),
         }
     }
@@ -115,20 +115,20 @@ impl Settling {
         canvas: Canvas,
         desired: Margins,
         fixed: bool,
-    ) -> Result<Update, Failure> {
+    ) -> Result<MarginUpdate, ShapeSettleError> {
         if self.margins == desired {
-            return Ok(Update::Ready);
+            return Ok(MarginUpdate::Ready);
         }
         let visible = self.margins.visible(canvas);
         if visible.0 <= 0 || visible.1 <= 0 {
-            return Err(Failure::InvalidAllocation);
+            return Err(ShapeSettleError::InvalidAllocation);
         }
         let transition = (canvas, desired);
         if self.transitions.contains(&transition) {
-            return Err(Failure::RepeatedTransition);
+            return Err(ShapeSettleError::RepeatedTransition);
         }
         if self.transitions.len() == MAX_TRANSITIONS {
-            return Err(Failure::TransitionLimit);
+            return Err(ShapeSettleError::TransitionLimit);
         }
         self.transitions.push(transition);
         let restore =
@@ -138,7 +138,7 @@ impl Settling {
         let expected = desired.canvas(visible);
         self.expected = Some(restore.unwrap_or(expected));
         self.margins = desired;
-        Ok(Update::SetMargins { expected, restore })
+        Ok(MarginUpdate::SetMargins { expected, restore })
     }
 
     pub fn applied(&mut self) {
@@ -147,13 +147,13 @@ impl Settling {
     }
 
     /// A root paint can see a newer native allocation. Allow one resample.
-    pub fn painted(&mut self, matches: bool) -> Result<bool, Failure> {
+    pub fn painted(&mut self, matches: bool) -> Result<bool, ShapeSettleError> {
         if matches {
             self.paint_retry = false;
             return Ok(true);
         }
         if std::mem::replace(&mut self.paint_retry, true) {
-            return Err(Failure::PaintMismatch);
+            return Err(ShapeSettleError::PaintMismatch);
         }
         Ok(false)
     }

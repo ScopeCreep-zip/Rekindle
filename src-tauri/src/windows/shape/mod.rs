@@ -21,11 +21,13 @@ mod skin;
 mod win32_region;
 
 use std::collections::HashMap;
+use std::future::Future;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
 use rekindle_ipc::protocol::IpcRequest;
+use rekindle_lifecycle::SessionScope;
 use rekindle_types::dto::skin::SkinWindow;
 use rekindle_types::dto::skin_library::{SkinApplied, SkinApplyFailure};
 use tauri::{AppHandle, Manager, WebviewWindow, WindowEvent};
@@ -51,6 +53,7 @@ struct Shaped {
     presented: watch::Sender<Option<SkinApplied>>,
     applied: Mutex<Option<Arc<Generation>>>,
     unfitted: AtomicU64,
+    tasks: Arc<SessionScope>,
     #[cfg(not(target_os = "linux"))]
     native: Mutex<native::State>,
     #[cfg(not(target_os = "linux"))]
@@ -59,8 +62,15 @@ struct Shaped {
     current: Arc<Mutex<Option<Silhouette>>>,
     #[cfg(target_os = "macos")]
     ignoring: Arc<AtomicBool>,
-    #[cfg(target_os = "macos")]
-    stop: tokio_util::sync::CancellationToken,
+}
+
+impl Shaped {
+    fn spawn(&self, name: &'static str, task: impl Future<Output = ()> + Send + 'static) {
+        // Native callbacks can arrive on a UI thread outside the runtime.
+        let runtime = tauri::async_runtime::handle();
+        let _entered = runtime.inner().enter();
+        self.tasks.spawn_or_drop(name, task);
+    }
 }
 
 struct ShapeRegistry {
@@ -251,7 +261,7 @@ fn report_fit(
         skin: skin.id.clone(),
         cause: SkinApplyFailure::WindowTooSmall { width, height },
     };
-    tauri::async_runtime::spawn(async move {
+    shaped.spawn("report constrained skin window", async move {
         if let Err(error) = crate::host_call::call::<()>(&state, request).await {
             tracing::warn!(?error, "window skin size could not be reported");
         }
@@ -287,6 +297,10 @@ pub fn attach(window: &WebviewWindow, frame: Option<SkinWindow>) {
         presented: watch::channel(None).0,
         applied: Mutex::default(),
         unfitted: AtomicU64::new(0),
+        tasks: SessionScope::new(
+            "window shape",
+            Arc::new(|task| tracing::error!(task, "window shape task panicked")),
+        ),
         #[cfg(not(target_os = "linux"))]
         native: Mutex::default(),
         #[cfg(not(target_os = "linux"))]
@@ -295,8 +309,6 @@ pub fn attach(window: &WebviewWindow, frame: Option<SkinWindow>) {
         current: Arc::new(Mutex::new(None)),
         #[cfg(target_os = "macos")]
         ignoring: Arc::new(AtomicBool::new(false)),
-        #[cfg(target_os = "macos")]
-        stop: tokio_util::sync::CancellationToken::new(),
     });
     let app = window.app_handle();
     registry(app)
@@ -308,7 +320,7 @@ pub fn attach(window: &WebviewWindow, frame: Option<SkinWindow>) {
         window.clone(),
         Arc::clone(&scoped.current),
         Arc::clone(&scoped.ignoring),
-        scoped.stop.clone(),
+        scoped.tasks.token(),
     );
 
     let target = window.clone();
@@ -357,8 +369,7 @@ fn forget(window: &WebviewWindow, shaped: &Arc<Shaped>) {
     {
         windows.remove(window.label());
     }
-    #[cfg(target_os = "macos")]
-    shaped.stop.cancel();
+    shaped.tasks.token().cancel();
 }
 
 fn begin_fetch(app: &AppHandle) -> u64 {

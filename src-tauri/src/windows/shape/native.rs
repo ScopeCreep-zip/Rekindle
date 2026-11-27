@@ -36,11 +36,11 @@ pub(super) fn queue(window: &WebviewWindow, shaped: &Arc<Shaped>) {
         return;
     }
     let window = window.clone();
-    let shaped = Arc::clone(shaped);
-    tauri::async_runtime::spawn(async move {
+    let scoped = Arc::clone(shaped);
+    shaped.spawn("sample native window allocation", async move {
         tokio::task::yield_now().await;
         let target = window.clone();
-        let turn = Arc::clone(&shaped);
+        let turn = Arc::clone(&scoped);
         if let Err(error) = window.run_on_main_thread(move || {
             turn.queued.store(false, Ordering::Release);
             if is_current(&target, &turn) {
@@ -49,7 +49,7 @@ pub(super) fn queue(window: &WebviewWindow, shaped: &Arc<Shaped>) {
                 }
             }
         }) {
-            shaped.queued.store(false, Ordering::Release);
+            scoped.queued.store(false, Ordering::Release);
             tracing::warn!(%error, label = window.label(), "window allocation not queued");
         }
     });
@@ -58,9 +58,12 @@ pub(super) fn queue(window: &WebviewWindow, shaped: &Arc<Shaped>) {
 fn request_after(window: &WebviewWindow, shaped: &Arc<Shaped>) {
     let target = window.clone();
     let scoped = Arc::clone(shaped);
-    tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(SIZE_WAIT).await;
-        queue(&target, &scoped);
+    let stop = shaped.tasks.token();
+    shaped.spawn("wait for native window size", async move {
+        tokio::select! {
+            () = stop.cancelled() => {}
+            () = tokio::time::sleep(SIZE_WAIT) => queue(&target, &scoped),
+        }
     });
 }
 
