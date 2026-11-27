@@ -68,9 +68,6 @@ async function tabTo(selector: string, text = ""): Promise<{ ring: string }> {
     if (!focused) throw new Error(`${selector}${text ? ` "${text}"` : ""} could not take focus`);
     return { ring: "macOS: focused directly" };
   }
-  // Keyboard focus in the page first, as a user clicks into a window before
-  // tabbing: a click on the channel header's name (no control), then Tab.
-  await (await shown(b, ".community-channel-header-name")).click();
   const trail: string[] = [];
   for (let i = 0; i < 80; i++) {
     await b.keys("Tab");
@@ -128,8 +125,14 @@ describe("converted controls (FE-LINT slice C)", function () {
   it("are reached by Tab with a visible ring and work with Enter and Space", async () => {
     await openCommunity(b, PLACE);
     const header = ".category-header";
-    const expanded = async (): Promise<string | null> => (await (await b.$(header)).getAttribute("aria-expanded"));
-    await b.execute(() => (document.activeElement as HTMLElement | null)?.blur());
+    // The window holds several category headers (Servers, Upcoming): the one
+    // under test is the one with focus.
+    const expanded = async (): Promise<string | null> =>
+      (await b.execute(() => document.activeElement?.getAttribute("aria-expanded") ?? null)) as string | null;
+    if (!(await onMac())) {
+      // Give the community webview keyboard focus before the first Tab.
+      await (await shown(b, ".community-channel-header-name")).click();
+    }
 
     // A category header folds on Enter and unfolds on Space.
     const headerRing = await tabTo(header);
@@ -150,8 +153,8 @@ describe("converted controls (FE-LINT slice C)", function () {
     await b.keys("Escape");
 
     // A role's summary opens its editor on Space.
+    // The Roles tab click leaves focus inside the modal for Tab navigation.
     await communitySettings(b, "Roles");
-    await b.execute(() => (document.activeElement as HTMLElement | null)?.blur());
     const roleRing = await tabTo(".settings-role-summary", ROLE);
     await b.keys(" ");
     await shown(b, ".settings-section-accented input.form-input");
