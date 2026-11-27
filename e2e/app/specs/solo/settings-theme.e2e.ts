@@ -253,6 +253,8 @@ describe("Settings follows the theme's dialog roles (ST1)", function () {
       }, field)) as { focused: boolean; start: number; end: number; length: number };
       console.log(`[st1] selection ${when}: ${JSON.stringify(held)}`);
       expect({ focused: held.focused, whole: held.start === 0 && held.end === held.length && held.length > 0 }).toEqual({ focused: true, whole: true });
+      // The paint settles before the capture, as selection-paint-probe waits.
+      await browser.pause(300);
     };
     const read = async (): Promise<{ focus: string; bg: string; fg: string; want: Record<string, string> }> =>
       (await browser.execute((sel: string) => {
@@ -287,15 +289,15 @@ describe("Settings follows the theme's dialog roles (ST1)", function () {
     });
     await selectAll("before the focused sample");
     const focused = await read();
-    await shot("selection-focused");
     const focusedPaint = await paintedSelection(field, "selection-focused-field");
+    await shot("selection-focused");
     await browser.execute(() => {
       document.documentElement.dataset.windowFocus = "inactive";
     });
     await selectAll("before the unfocused sample");
     const unfocused = await read();
-    await shot("selection-unfocused");
     const unfocusedPaint = await paintedSelection(field, "selection-unfocused-field");
+    await shot("selection-unfocused");
     await browser.execute((was: string) => {
       document.documentElement.dataset.windowFocus = was;
     }, realFocus);
