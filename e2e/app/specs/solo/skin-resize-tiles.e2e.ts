@@ -94,12 +94,15 @@ async function frameUnderBrand(): Promise<{
       const r = el.getBoundingClientRect();
       return st.display !== "none" && st.visibility !== "hidden" && r.width > 0 && r.height > 0;
     };
-    const marks = Array.from(document.querySelectorAll<HTMLElement>(".skin-tree [data-skin-node]"))
-      .filter(
-        (el) =>
-          shown(el) &&
-          el.querySelector(":scope > svg.skin-node-glyph-brand, svg.skin-node-glyph-brand")
-      )
+    // Each mark names only its own node (the nearest skin node holding the
+    // SVG), never the layout ancestors that contain it.
+    const owners = new Set(
+      Array.from(document.querySelectorAll(".skin-tree svg.skin-node-glyph-brand"))
+        .map((svg) => svg.closest<HTMLElement>("[data-skin-node]"))
+        .filter((el): el is HTMLElement => el !== null)
+    );
+    const marks = Array.from(owners)
+      .filter((el) => shown(el))
       .map((el) => ({
         node: el.getAttribute("data-skin-node") ?? "",
         r: el.getBoundingClientRect(),
