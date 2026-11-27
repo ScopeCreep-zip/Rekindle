@@ -1,4 +1,4 @@
-import { type Component, For, createSignal, createEffect, Show } from "solid-js";
+import { type Component, For, createSignal, createEffect, createUniqueId, Show } from "solid-js";
 import SkinGlyph from "../common/SkinGlyph";
 import { Popover } from "@kobalte/core/popover";
 import { canSend } from "../../actions/chat.actions";
@@ -18,6 +18,8 @@ const ICON_MIC_OFF = "\u{F036D}"; // nf-md-microphone_off
 const MessageInput: Component<MessageInputProps> = (props) => {
   const [body, setBody] = createSignal("");
   const [showEmojiPicker, setShowEmojiPicker] = createSignal(false);
+  const mentionListId = createUniqueId();
+  const mentionOptionId = (index: number) => `${mentionListId}-option-${index}`;
   let textareaRef: HTMLTextAreaElement | undefined;
 
   const mentions = useMentionAutocomplete({
@@ -27,6 +29,7 @@ const MessageInput: Component<MessageInputProps> = (props) => {
     setBody,
     getTextarea: () => textareaRef,
   });
+  const mentionOpen = () => mentions.mentionQuery() !== null && mentions.mentionCandidates().length > 0;
   const recorder = useVoiceRecorder({
     communityId: () => props.communityId,
     channelId: () => props.peerId,
@@ -210,13 +213,9 @@ const MessageInput: Component<MessageInputProps> = (props) => {
             aria-label={props.label}
             role="combobox"
             aria-autocomplete="list"
-            aria-expanded={mentions.mentionQuery() !== null && mentions.mentionCandidates().length > 0}
-            aria-controls="mention-popover-list"
-            aria-activedescendant={
-              mentions.mentionQuery() !== null && mentions.mentionCandidates().length > 0
-                ? `mention-row-${mentions.mentionSelected()}`
-                : undefined
-            }
+            aria-expanded={mentionOpen()}
+            aria-controls={mentionOpen() ? mentionListId : undefined}
+            aria-activedescendant={mentionOpen() ? mentionOptionId(mentions.mentionSelected()) : undefined}
           />
           {/* Xfire's chat window has a Send button (plan E7.7.7, CLAUDE.md
            * "1:1 Xfire look"); Enter still sends. */}
@@ -239,18 +238,16 @@ const MessageInput: Component<MessageInputProps> = (props) => {
            * Implements the ARIA combobox listbox pattern (2026-canon):
            * arrow keys move `mentionSelected`, Enter applies, Esc
            * dismisses; the textarea uses `aria-activedescendant` to
-           * point at the focused row without moving DOM focus. Each row is
-           * a `<li role="option">` carrying that id; no nested button —
-           * the textarea owns focus and mouse interactions live on the
-           * option element itself so the focus target and id-referenced
-           * node are the same. */}
-          <Show when={mentions.mentionQuery() !== null && mentions.mentionCandidates().length > 0}>
-            <ul class="mention-popover" role="listbox" id="mention-popover-list">
+           * name the active option while the textarea retains DOM focus.
+           * The options stay outside the sequential focus order. */}
+          <Show when={mentionOpen()}>
+            <div class="mention-popover" role="listbox" id={mentionListId} aria-label="Mention suggestions">
               <For each={mentions.mentionCandidates()}>
                 {(candidate, index) => (
-                  <li
+                  <div
                     role="option"
-                    id={`mention-row-${index()}`}
+                    tabIndex={-1}
+                    id={mentionOptionId(index())}
                     aria-selected={index() === mentions.mentionSelected()}
                     class={`mention-popover-row ${index() === mentions.mentionSelected() ? "mention-popover-row-active" : ""}`}
                     onMouseEnter={() => mentions.setMentionSelected(index())}
@@ -261,10 +258,10 @@ const MessageInput: Component<MessageInputProps> = (props) => {
                   >
                     <span class={`mention-popover-tag mention-popover-tag-${candidate.kind}`}>{candidate.kind}</span>
                     <span class="mention-popover-label">{candidate.label}</span>
-                  </li>
+                  </div>
                 )}
               </For>
-            </ul>
+            </div>
           </Show>
         </div>
       </Show>

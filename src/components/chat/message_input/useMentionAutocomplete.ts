@@ -29,7 +29,7 @@ export function useMentionAutocomplete(args: MentionAutocompleteArgs) {
   // `mentionQuery == null` means no active picker (last keystroke wasn't
   // preceded by a `@` token).
   const [mentionQuery, setMentionQuery] = createSignal<string | null>(null);
-  const [mentionSelected, setMentionSelected] = createSignal(0);
+  const [selectedIndex, setMentionSelected] = createSignal(0);
 
   // Build the candidate list once per query change. Limited to 8 rows so
   // the popover never overruns the input.
@@ -80,6 +80,8 @@ export function useMentionAutocomplete(args: MentionAutocompleteArgs) {
 
     return candidates;
   });
+
+  const mentionSelected = () => Math.min(selectedIndex(), Math.max(0, mentionCandidates().length - 1));
 
   function findMentionContext(value: string, caretIndex: number): string | null {
     // Look back from caret for the start of the active mention token. A
@@ -147,12 +149,12 @@ export function useMentionAutocomplete(args: MentionAutocompleteArgs) {
     if (candidates.length > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        setMentionSelected((i) => (i + 1) % candidates.length);
+        setMentionSelected((mentionSelected() + 1) % candidates.length);
         return true;
       }
       if (e.key === "ArrowUp") {
         e.preventDefault();
-        setMentionSelected((i) => (i - 1 + candidates.length) % candidates.length);
+        setMentionSelected((mentionSelected() - 1 + candidates.length) % candidates.length);
         return true;
       }
       if (e.key === "Enter" || e.key === "Tab") {

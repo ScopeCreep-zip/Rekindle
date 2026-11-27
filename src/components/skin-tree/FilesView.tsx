@@ -71,7 +71,7 @@ const FilesView: Component<{ onExecute: (row: TransferRow) => void; onSelect?: (
                   <div
                     class="files-view-row"
                     role="option"
-                    tabindex="0"
+                    tabIndex={0}
                     aria-selected={selected() === id}
                     data-state={r().state}
                     onClick={() => void select(r())}

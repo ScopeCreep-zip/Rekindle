@@ -161,7 +161,7 @@ const ServersView: Component = () => {
                   <div
                     class="servers-view-row"
                     role="option"
-                    tabindex="0"
+                    tabIndex={0}
                     aria-selected={selected() === rowKey(r)}
                     onClick={() => select(r)}
                     onKeyDown={(e) => {
