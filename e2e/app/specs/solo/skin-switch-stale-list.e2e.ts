@@ -1,5 +1,5 @@
 import { browser, expect } from "@wdio/globals";
-import { NET_WAIT_MS, resolveIntent, shown, waitUntil } from "../../../walk/helpers.ts";
+import { NET_WAIT_MS, resolveIntent, waitUntil } from "../../../walk/helpers.ts";
 import { openSettings } from "../../../walk/nav.ts";
 import { createIdentity, newUser, type User } from "../../journeys.ts";
 
@@ -48,9 +48,22 @@ describe("Settings Appearance handles a late skin library response", function ()
   it("keeps the newest skin when a previous list response arrives later", async () => {
     await createIdentity(browser, me);
     await openSettings(browser, "Appearance");
-    // The library list arrives from the Host; on a loaded machine it took
-    // longer than the default 10 s (the control's first run): applySkin's wait.
-    await shown(browser, ".skin-row-shown .skin-name", NET_WAIT_MS);
+    // Opening Settings from the menu posts a Profile-tab request; if it lands
+    // after the first tab click, Appearance is restored before arming (patch
+    // by codex-relay). Once the reply is held a remount would be invalid
+    // (the sameMount guard).
+    await waitUntil(async () => {
+      if (await currentSkin()) return true;
+      const tab = await browser.$('//*[@role="tab" and normalize-space(.)="Appearance"]');
+      try {
+        if ((await tab.isExisting()) && (await tab.getAttribute("aria-selected")) !== "true") {
+          await tab.click();
+        }
+      } catch {
+        // Re-query on the next attempt if the window just replaced its rail.
+      }
+      return false;
+    }, NET_WAIT_MS, "fixture could not prepare Settings Appearance before arming the reply hold");
 
     const original = await currentSkin();
     const choices = await browser.execute(() =>
