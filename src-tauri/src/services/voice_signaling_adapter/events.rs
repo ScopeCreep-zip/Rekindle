@@ -116,27 +116,22 @@ pub(super) fn emit(
             community_id,
             channel_id,
             state: stage,
+            media_ready,
             peer,
             display_name,
         } => {
-            // Media-ready input: the three-way handshake stage.
-            let handshake = match stage.as_str() {
-                "seen" => Some(rekindle_voice::transport::JoinHandshake::Seen),
-                "connected" => Some(rekindle_voice::transport::JoinHandshake::Connected),
-                _ => None,
-            };
-            if let Some(hs) = handshake {
-                crate::services::community::media_ready_runtime::update_media_ready(
+            let scope = community_scope(community_id, channel_id);
+            if let Some(media_ready) = media_ready {
+                crate::services::community::media_ready_runtime::emit(
                     state,
-                    &community_id,
-                    &channel_id,
-                    |i| i.handshake = hs,
+                    scope.clone(),
+                    media_ready,
                 );
             }
             crate::event_dispatch::emit_voice(
                 app_handle,
-                rekindle_types::subscription_events::VoiceEvent::JoinHandshake {
-                    scope: community_scope(community_id, channel_id),
+                VoiceEvent::JoinHandshake {
+                    scope,
                     state: stage,
                     peer,
                     display_name,

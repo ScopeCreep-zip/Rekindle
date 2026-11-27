@@ -20,6 +20,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use rekindle_codec::community::envelope::CommunityEnvelope;
+use rekindle_types::subscription_events::{JoinHandshake, VoiceMediaReady};
 
 use crate::transport::VoiceTransport;
 
@@ -84,8 +85,8 @@ pub enum CommunityVoiceEvent {
     VoiceJoinHandshake {
         community_id: String,
         channel_id: String,
-        /// "seen" | "connected" — wire string, backend-owned vocabulary.
-        state: String,
+        state: JoinHandshake,
+        media_ready: Option<VoiceMediaReady>,
         peer: Option<String>,
         display_name: Option<String>,
     },
