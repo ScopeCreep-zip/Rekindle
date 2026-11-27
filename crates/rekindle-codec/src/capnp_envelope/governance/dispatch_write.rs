@@ -7,6 +7,8 @@
 use crate::community_governance_capnp::governance_entry as schema;
 use rekindle_types::governance::GovernanceEntry;
 
+use crate::error::CodecError;
+
 use super::channels::{
     write_category_archived, write_category_created, write_category_updated,
     write_channel_archived, write_channel_created, write_channel_updated,
@@ -36,7 +38,7 @@ use super::roles::{
     write_role_archived, write_role_assignment, write_role_definition, write_role_unassignment,
 };
 
-pub(crate) fn write_governance_entry(b: schema::Builder<'_>, e: &GovernanceEntry) {
+pub(crate) fn write_governance_entry(b: schema::Builder<'_>, e: &GovernanceEntry) -> Result<(), CodecError> {
     let mut b = b;
     match e {
         GovernanceEntry::AdminDelete {
@@ -102,7 +104,7 @@ pub(crate) fn write_governance_entry(b: schema::Builder<'_>, e: &GovernanceEntry
             write_channel_created(b.reborrow().init_channel_created(), e);
         }
         GovernanceEntry::ChannelUpdated { .. } => {
-            write_channel_updated(b.reborrow().init_channel_updated(), e);
+            write_channel_updated(b.reborrow().init_channel_updated(), e)?;
         }
         GovernanceEntry::CommunityMeta { .. } => {
             write_community_meta(b.reborrow().init_community_meta(), e);
@@ -135,10 +137,10 @@ pub(crate) fn write_governance_entry(b: schema::Builder<'_>, e: &GovernanceEntry
             reason,
         } => write_mod_report(b.reborrow().init_mod_report(), report_id, target, reason),
         GovernanceEntry::EventCreated { .. } => {
-            write_event_created(b.reborrow().init_event_created(), e);
+            write_event_created(b.reborrow().init_event_created(), e)?;
         }
         GovernanceEntry::ExpressionAdded { .. } => {
-            write_expression_added(b.reborrow().init_expression_added(), e);
+            write_expression_added(b.reborrow().init_expression_added(), e)?;
         }
         GovernanceEntry::ExpressionRemoved { expression_id } => {
             write_expression_removed(b.reborrow().init_expression_removed(), expression_id);
@@ -158,9 +160,9 @@ pub(crate) fn write_governance_entry(b: schema::Builder<'_>, e: &GovernanceEntry
             *generation,
             trigger_departed,
             cascade_skipped,
-        ),
+        )?,
         GovernanceEntry::OnboardingConfig { .. } => {
-            write_onboarding_config(b.reborrow().init_onboarding_config(), e);
+            write_onboarding_config(b.reborrow().init_onboarding_config(), e)?;
         }
         GovernanceEntry::PermissionOverwrite { .. } => {
             write_permission_overwrite(b.reborrow().init_permission_overwrite(), e);
@@ -190,7 +192,7 @@ pub(crate) fn write_governance_entry(b: schema::Builder<'_>, e: &GovernanceEntry
             write_thread_unarchived(b.reborrow().init_thread_unarchived(), *thread_id);
         }
         GovernanceEntry::ThreadCreated { .. } => {
-            write_thread_created(b.reborrow().init_thread_created(), e);
+            write_thread_created(b.reborrow().init_thread_created(), e)?;
         }
         GovernanceEntry::TimeoutEntry { .. } => {
             write_timeout_entry(b.reborrow().init_timeout_entry(), e);
@@ -211,7 +213,7 @@ pub(crate) fn write_governance_entry(b: schema::Builder<'_>, e: &GovernanceEntry
             invite_proof.as_ref(),
             owner_proof,
             first_device.as_ref(),
-        ),
+        )?,
         GovernanceEntry::MemberRecordMoved {
             member_record,
             member_record_owner,
@@ -223,7 +225,7 @@ pub(crate) fn write_governance_entry(b: schema::Builder<'_>, e: &GovernanceEntry
             owner_proof,
         ),
         GovernanceEntry::MemberLeft { heads } => {
-            write_member_left(b.reborrow().init_member_left(), heads);
+            write_member_left(b.reborrow().init_member_left(), heads)?;
         }
         GovernanceEntry::MemberRemoved {
             target,
@@ -236,15 +238,15 @@ pub(crate) fn write_governance_entry(b: schema::Builder<'_>, e: &GovernanceEntry
             reason.as_deref(),
             heads,
             *target_seq_frontier,
-        ),
+        )?,
         GovernanceEntry::Checkpoint(c) => {
-            super::checkpoint::write_checkpoint(b.reborrow().init_checkpoint(), c);
+            super::checkpoint::write_checkpoint(b.reborrow().init_checkpoint(), c)?;
         }
         GovernanceEntry::CommunitySuccessor(s) => {
-            super::successor::write_community_successor(b.reborrow().init_community_successor(), s);
+            super::successor::write_community_successor(b.reborrow().init_community_successor(), s)?;
         }
         GovernanceEntry::DeviceKey(e) => {
-            crate::governance_op::write_device_key(b.reborrow().init_device_key(), e);
+            crate::governance_op::write_device_key(b.reborrow().init_device_key(), e)?;
         }
         GovernanceEntry::DeviceRetired(r) => {
             crate::governance_op::write_device_retired(b.reborrow().init_device_retired(), r);
@@ -253,7 +255,7 @@ pub(crate) fn write_governance_entry(b: schema::Builder<'_>, e: &GovernanceEntry
             crate::governance_op::write_device_readmit(b.reborrow().init_device_readmit(), r);
         }
         GovernanceEntry::SuccessorLinkRequest(r) => {
-            super::successor::write_link_request(b.reborrow().init_successor_link_request(), r);
+            super::successor::write_link_request(b.reborrow().init_successor_link_request(), r)?;
         }
         GovernanceEntry::SuccessorLink(l) => {
             super::successor::write_link(b.reborrow().init_successor_link(), l);
@@ -269,6 +271,7 @@ pub(crate) fn write_governance_entry(b: schema::Builder<'_>, e: &GovernanceEntry
         GovernanceEntry::WelcomeScreen {
             description,
             channels,
-        } => write_welcome_screen(b.reborrow().init_welcome_screen(), description, channels),
+        } => write_welcome_screen(b.reborrow().init_welcome_screen(), description, channels)?,
     }
+    Ok(())
 }

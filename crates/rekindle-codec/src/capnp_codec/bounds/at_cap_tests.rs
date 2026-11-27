@@ -90,7 +90,7 @@ fn a_full_signed_envelope_decodes() {
             envelope_bytes: noise(3, n),
             signature: noise(4, 64),
             ttl: 5,
-        })
+        }).unwrap()
     });
     decode_signed_envelope(&bytes).unwrap();
 }
@@ -126,7 +126,7 @@ fn a_full_governance_entry_decodes() {
             policy_text: Some(text(9, n)),
             max_joins_per_interval: 20,
             join_interval_seconds: 3_600,
-        })
+        }).unwrap()
     });
     decode_governance_entry(&bytes).unwrap();
 }
@@ -141,7 +141,7 @@ fn a_full_voice_packet_decodes() {
             sframe: noise(11, n),
             sig: noise(12, 64),
         }
-        .encode()
+        .encode().unwrap()
     });
     VoicePacket::decode(&bytes).unwrap();
 }
@@ -167,7 +167,7 @@ fn a_full_transport_feedback_decodes() {
                 .collect(),
             sig: noise(14, 64),
         }
-        .encode()
+        .encode().unwrap()
     });
     TransportFeedback::decode(&bytes).unwrap();
 }
@@ -180,7 +180,7 @@ fn a_full_voice_signaling_message_decodes() {
             channel_id: hex(15, 16),
             sender_key: noise(16, 32),
             payload: text(17, n).into_bytes(),
-        })
+        }).unwrap()
     });
     voice::decode_signaling(&bytes).unwrap();
 }
@@ -199,7 +199,7 @@ fn the_largest_chain_head_decodes() {
         retired_through: u64::MAX,
     };
     let bytes = chain::encode_chain_head(&head);
-    assert_eq!(chain::decode_chain_head(&bytes).unwrap(), Some(head));
+    assert_eq!(chain::decode_chain_head(&bytes.unwrap()).unwrap(), Some(head));
 }
 
 /// The head a writer puts on a new record decodes as a chain with nothing
@@ -207,12 +207,12 @@ fn the_largest_chain_head_decodes() {
 #[test]
 fn the_empty_chain_head_decodes_as_no_page() {
     let empty = chain::encode_empty_chain_head();
-    assert_eq!(chain::decode_chain_head(&empty).unwrap(), None);
+    assert_eq!(chain::decode_chain_head(&empty.unwrap()).unwrap(), None);
     let mut builder = capnp::message::Builder::new_default();
     builder
         .init_root::<crate::chain_capnp::chain_head::Builder<'_>>()
         .set_retired_through(1);
-    let bogus = crate::capnp_codec::pack(&builder);
+    let bogus = crate::capnp_codec::pack(&builder).unwrap();
     assert!(chain::decode_chain_head(&bogus).is_err());
 }
 
@@ -230,7 +230,7 @@ fn a_full_chain_page_decodes() {
                 }),
                 first_seq: 4_352,
                 entries: (0..n).map(|i| noise(20 + i as u64, entry_len)).collect(),
-            })
+            }).unwrap()
         });
         chain::decode_chain_page(&bytes).unwrap();
     }
@@ -249,11 +249,11 @@ fn game(seed: u64, name_len: usize) -> presence::GameInfo {
 #[test]
 fn a_full_presence_update_and_game_status_decode() {
     let update = largest_fitting(MAX_SUBKEY_SIZE, |n| {
-        presence::encode_update(2, Some(&game(21, n)), 1_792_860_061_000)
+        presence::encode_update(2, Some(&game(21, n)), 1_792_860_061_000).unwrap()
     });
     presence::decode_update(&update).unwrap();
     let status = largest_fitting(MAX_SUBKEY_SIZE, |n| {
-        presence::encode_game_status(&game(22, n))
+        presence::encode_game_status(&game(22, n)).unwrap()
     });
     presence::decode_game_status(&status).unwrap();
 }
@@ -271,7 +271,7 @@ fn the_prekey_head_slot_and_a_full_device_list_decode() {
         pq_lr_sig: array(26),
         issued_at: 1_792_860_061_000,
     };
-    let bytes = identity::encode_prekey_head(&head);
+    let bytes = identity::encode_prekey_head(&head).unwrap();
     assert!(bytes.len() <= prekeys::MAX_SUBKEY_VALUE_LEN);
     assert_eq!(identity::decode_prekey_head(&bytes).unwrap(), head);
     let slot = identity::OpkSlot {
@@ -282,7 +282,7 @@ fn the_prekey_head_slot_and_a_full_device_list_decode() {
         pq_opk: noise(29, 1_184),
         pq_opk_sig: array(30),
     };
-    let bytes = identity::encode_opk_slot(&slot);
+    let bytes = identity::encode_opk_slot(&slot).unwrap();
     assert!(bytes.len() <= prekeys::MAX_SUBKEY_VALUE_LEN);
     assert_eq!(identity::decode_opk_slot(&bytes).unwrap(), slot);
     let list = largest_fitting(prekeys::MAX_SUBKEY_VALUE_LEN, |n| {
@@ -293,7 +293,7 @@ fn the_prekey_head_slot_and_a_full_device_list_decode() {
                     record_key: record_key(10_000 + i),
                 })
                 .collect(),
-        })
+        }).unwrap()
     });
     identity::decode_prekey_record_list(&list).unwrap();
 }
@@ -310,7 +310,7 @@ fn a_full_friend_list_decodes() {
                 profile_dht_key: Some(record_key(i + 2)),
             })
             .collect();
-        friend::encode_friend_list(&entries)
+        friend::encode_friend_list(&entries).unwrap()
     });
     friend::decode_friend_list(&bytes).unwrap();
 }
@@ -324,7 +324,7 @@ fn a_full_account_header_decodes() {
             avatar_hash: noise(42, 32),
             created_at: 1_792_860_061_000,
             updated_at: 1_792_860_062_000,
-        })
+        }).unwrap()
     });
     account::decode_account_header(&bytes).unwrap();
 }

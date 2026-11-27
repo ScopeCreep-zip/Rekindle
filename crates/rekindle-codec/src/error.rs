@@ -25,4 +25,9 @@ pub enum CodecError {
 
     #[error("verification failed: {0}")]
     Verification(String),
+
+    /// A length past what the wire format can carry (a Cap'n Proto list or
+    /// a `u32` length prefix): refused, never written clamped.
+    #[error("too large to encode: {0}")]
+    TooLargeToEncode(usize),
 }

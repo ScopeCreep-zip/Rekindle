@@ -50,11 +50,11 @@ pub(crate) fn read_device_key(
     })
 }
 
-pub(crate) fn write_device_key(mut b: device_key_entry::Builder<'_>, e: &DeviceEndorsement) {
+pub(crate) fn write_device_key(mut b: device_key_entry::Builder<'_>, e: &DeviceEndorsement) -> Result<(), CodecError> {
     b.set_device_key(&e.device_key);
     b.set_incarnation(e.incarnation);
     b.set_extends_set(&e.extends_set);
-    let n = u32::try_from(e.extends_elements.len()).unwrap_or(u32::MAX);
+    let n = crate::capnp_codec::wire_len(e.extends_elements.len())?;
     let mut list = b.reborrow().init_extends_elements(n);
     for (i, el) in (0..n).zip(&e.extends_elements) {
         let mut w = list.reborrow().get(i);
@@ -69,6 +69,7 @@ pub(crate) fn write_device_key(mut b: device_key_entry::Builder<'_>, e: &DeviceE
     b.set_device_record_owner(e.device_record_owner.as_str());
     b.set_fork_evidence(&e.fork_evidence);
     b.set_endorsement_sig(&e.endorsement_sig);
+    Ok(())
 }
 
 pub(crate) fn read_device_retired(

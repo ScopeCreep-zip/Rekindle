@@ -47,12 +47,11 @@ pub struct SignedMemberCard {
 }
 
 /// `rekindle-card-hpke-v1 ‖ community ‖ hpkeKey`.
-#[must_use]
-pub fn card_hpke_signing_bytes(community_id: &str, hpke_key: &[u8; 32]) -> Vec<u8> {
+pub fn card_hpke_signing_bytes(community_id: &str, hpke_key: &[u8; 32]) -> Result<Vec<u8>, CodecError> {
     let mut out = domains::CARD_HPKE.as_bytes().to_vec();
-    put_lp(&mut out, community_id.as_bytes());
+    put_lp(&mut out, community_id.as_bytes())?;
     out.extend_from_slice(hpke_key);
-    out
+    Ok(out)
 }
 
 /// Verify the pseudonym's cross-signature over `hpke_key` in `community_id`.
@@ -64,7 +63,7 @@ pub fn verify_card_hpke(
 ) -> Result<(), CodecError> {
     verify(
         pseudonym,
-        &card_hpke_signing_bytes(community_id, hpke_key),
+        &card_hpke_signing_bytes(community_id, hpke_key)?,
         hpke_sig,
         "card hpke key",
     )
@@ -104,7 +103,7 @@ impl MemberCard {
         Ok(())
     }
 
-    fn encode_body(&self, hpke_sig: &[u8; 64]) -> Vec<u8> {
+    fn encode_body(&self, hpke_sig: &[u8; 64]) -> Result<Vec<u8>, CodecError> {
         let mut builder = capnp::message::Builder::new_default();
         {
             let mut b = builder.init_root::<member_card_body::Builder<'_>>();
@@ -139,7 +138,7 @@ impl MemberCard {
                 b.set_has_theme_color(true);
                 b.set_theme_color(color);
             }
-            let count = u32::try_from(self.badges.len()).unwrap_or(u32::MAX);
+            let count = crate::capnp_codec::wire_len(self.badges.len())?;
             let mut badges = b.reborrow().init_badges(count);
             for (i, badge) in (0u32..).zip(&self.badges) {
                 badges.set(i, badge.as_str());
@@ -163,10 +162,10 @@ impl MemberCard {
         self.check_bounds()?;
         let hpke_sig = sign(
             pseudonym,
-            &card_hpke_signing_bytes(at.community_id, &self.hpke_key),
+            &card_hpke_signing_bytes(at.community_id, &self.hpke_key)?,
         );
-        let body = self.encode_body(&hpke_sig);
-        let mut signed = at.signing_prefix(domains::MEMBER_CARD);
+        let body = self.encode_body(&hpke_sig)?;
+        let mut signed = at.signing_prefix(domains::MEMBER_CARD)?;
         signed.extend_from_slice(&body);
         let sig = sign(pseudonym, &signed);
         let mut builder = capnp::message::Builder::new_default();
@@ -175,7 +174,7 @@ impl MemberCard {
             root.set_body(&body);
             root.set_sig(&sig);
         }
-        let out = pack(&builder);
+        let out = pack(&builder)?;
         check_size("member card", &out, MEMBER_CARD_MAX_BYTES)?;
         Ok(out)
     }
@@ -217,7 +216,7 @@ pub fn decode_member_card(
         .get_root::<member_card::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;
     let body = root.get_body().map_err(|e| capnp_err(&e))?;
-    let mut signed = at.signing_prefix(domains::MEMBER_CARD);
+    let mut signed = at.signing_prefix(domains::MEMBER_CARD)?;
     signed.extend_from_slice(body);
     verify(
         pseudonym,

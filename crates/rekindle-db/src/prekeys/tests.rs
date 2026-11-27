@@ -26,7 +26,7 @@ fn later(party: &Party, by_ms: i64) -> LocalParty {
 async fn a_stored_set_is_a_whole_record_and_reconciles_to_its_bytes() {
     let bob = Party::new(1);
     let set = mint_set(&bob.local.identity, bob.local.rng.as_ref(), 1_000);
-    let expected = set_values(&set);
+    let expected = set_values(&set).unwrap();
     let published = store_set(&bob.db, &bob.local.owner(), set).await.unwrap();
     assert_eq!(published, expected);
     assert_eq!(published.len(), 1 + 100);

@@ -13,3 +13,14 @@ fn route_unusable_survives_the_port_round_trip() {
         ProtocolError::RouteUnusable(m) if m == "no connection"
     ));
 }
+
+#[test]
+fn oversize_encoding_keeps_its_typed_refusal_through_the_record_port() {
+    let error = ProtocolError::from(rekindle_codec::CodecError::TooLargeToEncode(700_000));
+    let port = PortError::from(error);
+    assert_eq!(port, PortError::TooLargeToEncode(700_000));
+    assert!(matches!(
+        ProtocolError::from(port),
+        ProtocolError::TooLargeToEncode(700_000)
+    ));
+}

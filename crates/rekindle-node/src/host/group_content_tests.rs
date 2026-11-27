@@ -51,7 +51,7 @@ pub(super) async fn group(host: &HostFriends, owner: [u8; 32]) -> GroupSenderKey
 }
 
 pub(super) fn sealed(key: &GroupSenderKey, body: &DirectBody, seq: u64) -> GroupContent {
-    sender_key::seal(key, GID, &bob(), &inner(body, 1_000 + seq, seq)).unwrap()
+    sender_key::seal(key, GID, &bob(), &inner(body, 1_000 + seq, seq).unwrap()).unwrap()
 }
 
 fn text(n: u8, body: &str) -> DirectBody {
@@ -67,7 +67,7 @@ fn entry(key: &GroupSenderKey, n: u8) -> ChainEntry {
     let content = sealed(key, &text(n, "hi"), u64::from(n));
     ChainEntry {
         seq: u64::from(n),
-        ciphertext: DirectBody::GroupContent(content).encode(),
+        ciphertext: DirectBody::GroupContent(content).encode().unwrap(),
     }
 }
 
@@ -370,7 +370,7 @@ async fn a_stretch_after_applied_entries_is_judged_from_the_cursors_stream_seq()
         let content = sealed(key, &text(stream_seq, "hi"), u64::from(stream_seq));
         ChainEntry {
             seq,
-            ciphertext: DirectBody::GroupContent(content).encode(),
+            ciphertext: DirectBody::GroupContent(content).encode().unwrap(),
         }
     }
     let dir = tempfile::tempdir().unwrap();
