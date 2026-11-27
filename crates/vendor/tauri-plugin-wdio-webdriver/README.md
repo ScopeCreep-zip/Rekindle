@@ -58,5 +58,16 @@ check-webdriver-release` keeps it out of every release build.
    which the workspace lints refuse (`float_cmp`, `cast_precision_loss`,
    `cast_possible_truncation`) and which let 2^63 through to a saturating
    cast. `js_value_to_json` returns `Value` (it never failed).
+8. **Linux screenshot options** (`src/platform/linux.rs:304`, the
+   `snapshot_future` call). Upstream takes the snapshot with
+   `SnapshotOptions::NONE`. It now passes
+   `TRANSPARENT_BACKGROUND | INCLUDE_SELECTION_HIGHLIGHTING`, so a Linux shot
+   matches WKWebView's on macOS:
+   - `TRANSPARENT_BACKGROUND` (`8be4da16d`, plan E7.14 on SK0): WebKitGTK
+     otherwise paints its default background under the page, which hides a
+     shaped window's alpha outline;
+   - `INCLUDE_SELECTION_HIGHLIGHTING` (`3dfcf6d6c`, plan ST1): WebKitGTK
+     leaves the text-selection highlight out of a snapshot unless asked, so
+     every Linux shot showed no selected-text band.
 
 Behaviour is otherwise upstream's; upstream's tests are kept.
