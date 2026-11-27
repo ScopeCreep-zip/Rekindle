@@ -381,6 +381,11 @@ async fn a_solo_members_original_device_learns_its_re_enrolment_from_its_own_rec
         .await;
     assert!(answer["reEnrolled"][0].get("error").is_none(), "{answer:?}");
     wait_for_review(&community, 0).await;
+    // The view agrees with the review: the retired original must re-enrol.
+    assert!(
+        crate::devices::device_status(&community, 0, "needsReenrol").await,
+        "the original's device view reads needsReenrol once its key is retired"
+    );
     let port = original.record_port().unwrap();
     let (old_log, pointer) =
         rekindle_records::chain::read_log_with_retirement(&*port, &old_record, 0)
