@@ -72,7 +72,7 @@ export function reduceVoice(event: CommunityEvent): boolean {
     // the call. Backend latches the transition, so this fires once —
     // a single toast, no spam. Voice keeps working.
     const { peers } = event.data;
-    const names = peers.map((p) => p.slice(0, 8)).join(", ");
+    const names = peers.map((p) => p.displayName).join(", ");
     addToast(
       `Video unavailable: no compatible codec with ${names || "current peers"}`,
       "error",
@@ -83,9 +83,9 @@ export function reduceVoice(event: CommunityEvent): boolean {
     // verification at the receive boundary. Surface a warn-level toast
     // so the asymmetric-drop case is observable from the UI without
     // grepping structured logs.
-    const { senderPseudonym, reason } = event.data;
+    const { displayName, reason } = event.data;
     addToast(
-      `Dropped video from ${senderPseudonym.slice(0, 8)}: ${reason}`,
+      `Dropped video from ${displayName}: ${reason}`,
       "error",
     );
     return true;
