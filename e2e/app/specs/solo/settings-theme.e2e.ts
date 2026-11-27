@@ -14,7 +14,8 @@ import { BUDDY, SETTINGS, closeModal, openAddFriend, openSettings } from "../../
 import { NET_WAIT_MS, byText, gone, press, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
 import { createIdentity, newUser, type User } from "../../journeys.ts";
 import { applySkin } from "../../journeys_skins.ts";
-import { shot } from "../../shots.ts";
+import { decodePng } from "../../png.ts";
+import { saveImage, shot } from "../../shots.ts";
 import { ACCESSIBLE_VARIANT, builtinPacks } from "../../skin-pack.ts";
 
 const PACKS = builtinPacks().filter((p) => p.file !== ACCESSIBLE_VARIANT.file);
@@ -187,6 +188,54 @@ describe("Settings follows the theme's dialog roles (ST1)", function () {
     expect({ afterEscape, focusBack, focusAfterEscape }).toEqual({ afterEscape: "30 minutes", focusBack: true, focusAfterEscape: true });
   });
 
+  /**
+   * The selection highlight as painted, not as computed: the most common
+   * colour inside the field's content box that is not the field's own
+   * ground (glyph pixels are a minority of the highlighted run). WebKit
+   * transforms an author ::selection colour as it paints
+   * (RenderThemeMac::transformSelectionBackgroundColor), so only the pixels
+   * say what the user sees. The crop is saved beside the shot.
+   */
+  const paintedSelection = async (sel: string, name: string): Promise<{ painted: string; ground: string }> => {
+    const box = (await browser.execute((s: string) => {
+      const f = document.querySelector<HTMLInputElement>(s);
+      if (!f) return null;
+      const r = f.getBoundingClientRect();
+      const cs = getComputedStyle(f);
+      const pad = (k: string): number => Number.parseFloat(cs.getPropertyValue(k)) || 0;
+      return {
+        x: r.left + pad("padding-left") + pad("border-left-width"),
+        y: r.top + pad("padding-top") + pad("border-top-width"),
+        w: r.width - pad("padding-left") - pad("padding-right") - pad("border-left-width") - pad("border-right-width"),
+        h: r.height - pad("padding-top") - pad("padding-bottom") - pad("border-top-width") - pad("border-bottom-width"),
+        vw: window.innerWidth,
+      };
+    }, sel)) as { x: number; y: number; w: number; h: number; vw: number } | null;
+    if (!box) throw new Error(`no field ${sel}`);
+    const img = decodePng(Buffer.from(await browser.takeScreenshot(), "base64"));
+    const k = img.width / box.vw;
+    const x0 = Math.round(box.x * k), y0 = Math.round(box.y * k);
+    const w = Math.max(1, Math.round(box.w * k)), h = Math.max(1, Math.round(box.h * k));
+    const crop = { width: w, height: h, data: new Uint8Array(w * h * 4) };
+    const counts = new Map<string, number>();
+    for (let y = 0; y < h; y++) {
+      for (let x = 0; x < w; x++) {
+        const i = ((y0 + y) * img.width + (x0 + x)) * 4;
+        const o = (y * w + x) * 4;
+        for (let c = 0; c < 4; c++) crop.data[o + c] = img.data[i + c];
+        const key = `rgb(${img.data[i]}, ${img.data[i + 1]}, ${img.data[i + 2]})`;
+        counts.set(key, (counts.get(key) ?? 0) + 1);
+      }
+    }
+    saveImage(name, crop);
+    const ranked = [...counts.entries()].sort((a, b) => b[1] - a[1]).map(([c]) => c);
+    const ground = (await browser.execute((s: string) => {
+      const f = document.querySelector<HTMLInputElement>(s);
+      return f ? getComputedStyle(f).backgroundColor : "";
+    }, sel)) as string;
+    return { painted: ranked.find((c) => c !== ground) ?? "", ground };
+  };
+
   it("selected text is the theme's highlight, focused and unfocused (ST1)", async () => {
     await tab("Profile");
     const field = '.settings-content input.form-input[type="text"]';
@@ -220,6 +269,7 @@ describe("Settings follows the theme's dialog roles (ST1)", function () {
       }, field)) as { focus: string; bg: string; fg: string; want: Record<string, string> };
     const focused = await read();
     await shot("selection-focused");
+    const focusedPaint = await paintedSelection(field, "selection-focused-field");
     // The window's blur sets this attribute (window_focus.ts); the driver
     // cannot take the OS focus away without another window taking it, so
     // the attribute the blur sets is set here to read the unfocused rule.
@@ -228,12 +278,16 @@ describe("Settings follows the theme's dialog roles (ST1)", function () {
     });
     const unfocused = await read();
     await shot("selection-unfocused");
+    const unfocusedPaint = await paintedSelection(field, "selection-unfocused-field");
     await browser.execute(() => {
       document.documentElement.dataset.windowFocus = document.hasFocus() ? "active" : "inactive";
     });
     console.log(`[st1] selection: focused ${JSON.stringify(focused)}; unfocused ${JSON.stringify(unfocused)}`);
+    console.log(`[st1] selection painted: focused ${JSON.stringify(focusedPaint)}; unfocused ${JSON.stringify(unfocusedPaint)}`);
     expect({ focus: focused.focus, bg: focused.bg, fg: focused.fg }).toEqual({ focus: "active", bg: focused.want.active, fg: focused.want.activeText });
     expect({ bg: unfocused.bg, fg: unfocused.fg }).toEqual({ bg: unfocused.want.inactive, fg: unfocused.want.inactiveText });
+    // What the user sees: the painted highlight is the token itself.
+    expect({ focused: focusedPaint.painted, unfocused: unfocusedPaint.painted }).toEqual({ focused: focused.want.active, unfocused: unfocused.want.inactive });
   });
 
   it("a dialog outside Settings (Add Friend) takes the same text-field roles", async () => {
