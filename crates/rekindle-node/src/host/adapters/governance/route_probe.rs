@@ -30,7 +30,7 @@ impl HostGovernance {
         author: &PseudonymKey,
         seq: u64,
         blob: Vec<u8>,
-        _seen: Observed,
+        seen: Observed,
         dead: bool,
     ) {
         if dead {
@@ -41,6 +41,9 @@ impl HostGovernance {
             if let Some(c) = map.get_mut(community) {
                 c.member_routes.observe(author, seq, blob);
             }
+        }
+        if seen == Observed::Cleared {
+            self.drain_pending_mesh(community);
         }
     }
 
