@@ -19,7 +19,11 @@ interface Catalogue {
   groups: { name: string; permissions: { key: string; label: string; bit: string }[] }[];
 }
 
-async function hostCall<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+/** `cmd` through the window's raw invoke. Its args are always an object:
+ *  WebDriver serialises an absent argument as null, and the isolation hook
+ *  refuses a payload that is not a plain object by throwing, which leaves the
+ *  invoke unanswered (dist-isolation/index.js). */
+async function hostCall<T>(cmd: string, args: Record<string, unknown> = {}): Promise<T> {
   return (await browser.execute(async (c: string, a: Record<string, unknown> | undefined) => {
     const { invoke } = (window as unknown as { __TAURI_INTERNALS__: { invoke(cmd: string, args?: unknown): Promise<{ value: unknown }> } }).__TAURI_INTERNALS__;
     return (await invoke(c, a)).value;
