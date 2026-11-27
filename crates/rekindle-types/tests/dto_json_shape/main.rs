@@ -450,6 +450,7 @@ fn friend_samples(add: &mut impl FnMut(&str, Value)) {
             created_at: Some(1_700_000_000_000),
             url: Some("rekindle://invite/VLD0:g/VLD0:s/0b0b".into()),
             fingerprint: "ab12".repeat(16),
+            inbox_jammed: false,
         }),
     );
 }

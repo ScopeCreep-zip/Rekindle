@@ -65,6 +65,7 @@ mod invite_expiry;
 pub(crate) mod invites;
 mod join;
 mod join_bootstrap;
+pub(crate) mod join_inbox;
 pub(crate) use join::JoinLocks;
 pub(crate) use join_bootstrap::{Exchange, JoinFailure};
 pub(crate) mod key_drop;

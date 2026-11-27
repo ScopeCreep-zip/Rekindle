@@ -292,6 +292,11 @@ impl CommunityStore {
                         .into_values()
                         .chain(std::mem::take(&mut c.removal_watch).into_values())
                         .chain(c.key_drop.take().map(|(_, lease)| lease))
+                        .chain(
+                            std::mem::take(&mut c.join_inboxes)
+                                .into_values()
+                                .map(|watch| watch.lease()),
+                        )
                         .collect(),
                 )
             })

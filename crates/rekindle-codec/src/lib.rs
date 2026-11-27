@@ -20,6 +20,7 @@ pub mod friend;
 pub mod frontier_request;
 pub mod governance_op;
 pub mod ingress;
+pub mod join_locator;
 pub mod member_record;
 pub mod message;
 pub mod presence_row;

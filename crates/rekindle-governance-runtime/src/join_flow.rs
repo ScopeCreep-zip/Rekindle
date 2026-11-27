@@ -87,10 +87,11 @@ async fn decode_invite<D: GovernanceRuntimeDeps>(
         .map_err(|e| {
             GovernanceRuntimeError::Encoding(format!("invalid invite secrets encoding: {e}"))
         })?;
-    let secrets_json = rekindle_secrets::invite::decrypt_invite_secrets(invite_code, &encrypted)
-        .map_err(|e| {
+    let secrets_json = Zeroizing::new(
+        rekindle_secrets::invite::decrypt_invite_secrets(invite_code, &encrypted).map_err(|e| {
             GovernanceRuntimeError::Crypto(format!("failed to decrypt invite secrets: {e}"))
-        })?;
+        })?,
+    );
     serde_json::from_slice(&secrets_json)
         .map_err(|e| GovernanceRuntimeError::Encoding(format!("invalid invite secrets: {e}")))
 }

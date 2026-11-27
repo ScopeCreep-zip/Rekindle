@@ -72,6 +72,7 @@ struct Pending {
 /// Faults in force (plan C9.3).
 #[derive(Debug, Default)]
 pub(crate) struct Faults {
+    pub(crate) paused_watch_placement: HashSet<(usize, String)>,
     /// Per node: how many more DHT calls answer "try again".
     pub try_again: HashMap<usize, u32>,
     /// Nodes whose DHT calls all fail, as with no connection.

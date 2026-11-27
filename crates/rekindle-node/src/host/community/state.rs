@@ -97,6 +97,12 @@ pub struct CommunityState {
     /// each held read-only and watched, by record key.
     #[serde(skip)]
     pub watch_ring: std::collections::BTreeMap<String, rekindle_records::lease::LeaseId>,
+    /// Invite-scoped inbox watches owned by this identity's current session.
+    #[serde(skip)]
+    pub(crate) join_inboxes: std::collections::BTreeMap<
+        String,
+        std::sync::Arc<crate::host::adapters::governance::join_inbox::Watch>,
+    >,
     /// The sealed pages kept warm (plan E3.2 S7, `sealed_pages`).
     #[serde(skip)]
     pub sealed_pages: super::sealed_pages::SealedPages,

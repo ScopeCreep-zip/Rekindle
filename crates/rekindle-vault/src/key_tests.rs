@@ -36,6 +36,7 @@ fn every_variant() -> Vec<VaultKey> {
         VaultKey::RegistryKeypair { community: c() },
         VaultKey::SlotSeed { community: c() },
         VaultKey::MemberRecordOwner { community: c() },
+        VaultKey::JoinInboxOwnerKeypair { invite_id: c() },
         VaultKey::MemberHpkeSecret { community: c() },
         VaultKey::DeviceVaultSecret,
         VaultKey::DeviceOpKey { community: c() },

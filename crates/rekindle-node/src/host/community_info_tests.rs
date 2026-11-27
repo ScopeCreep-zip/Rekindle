@@ -101,6 +101,7 @@ async fn seed_keyed_community(host: &crate::host::Host, owner: &str, gov: Govern
                 KEYED_ANCHOR,
                 (OWN_CODE, "ours", OWN_URL),
                 7,
+                None,
             )
         })
         .await

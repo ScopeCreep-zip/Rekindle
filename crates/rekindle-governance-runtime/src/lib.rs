@@ -52,6 +52,7 @@ pub mod join_deps;
 pub mod join_flow;
 pub mod join_frontier;
 pub mod join_gate;
+pub mod join_inbox;
 pub mod join_stages;
 pub mod join_walk;
 pub mod member_card;

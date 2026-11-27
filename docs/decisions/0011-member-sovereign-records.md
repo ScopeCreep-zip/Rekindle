@@ -35,6 +35,21 @@
   `app_call` carries. Only `K_M(p)` writes it; a joiner watches its inviter's subkey 7 only until it holds a key,
   tries each entry (another joiner's fails the unwrap quietly) and installs through the call path's own receive;
   a delivered key leaves the drop.
+- **Amended 2026-11-27** (plan E3.2 JI1): each invite has an SMPL join inbox
+  with one owner subkey and a writer authorized only for that invite's
+  bounded slots. Decrypted invite secrets contain the record key, writer
+  credential and slot count. Only the minting device holds the owner and
+  watches those slots. A joiner writes a locator for its signed
+  `MemberJoined`, sealed to the inviter with HPKE Base and bound to the
+  invite id. It uses the community pseudonym used for key delivery, under
+  a separate HPKE domain. The inviter fetches the member record and admits
+  its op through the existing bootstrap validation. The minter reads once
+  when the watch is armed, coalesces changes, and reads once more before
+  retirement at revoke, expiry or exhaustion. When both parties are
+  online and a write races remote watch installation, the bootstrap
+  outbox row delivers the join. A write stored while the inviter is
+  offline is read when it next arms the watch.
+
 
 ## Context and problem statement
 
@@ -153,6 +168,8 @@ signature verifies. *(Amended 2026-10-24, ADR 0022: the inner signature is the d
 
 **Discovery.**
 
+- The inviter's watched join inbox adds discovery beside gossip,
+  the bootstrap call, and its outbox row.
 - Op dependencies carry locators (`OpRef`), so any op is fetchable without a directory.
 - Checkpoint ops list directory pages of about 170 members each. *(Amended 2026-10-24, plan S7c: 128 members
   each, so a page is a complete subtree of one RFC 9162 tree; each entry names the member's record and owner.)*

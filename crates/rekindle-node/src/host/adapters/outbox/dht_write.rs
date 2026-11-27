@@ -37,6 +37,7 @@ use rekindle_transport::operations::friend::{self, FriendError};
 use super::{HostOutbox, OutboxSlot, StreamSender};
 use crate::daemon::dispatch::DaemonContext;
 use crate::host::adapters::friends::HostFriends;
+use crate::host::adapters::governance::HostGovernance;
 
 /// Writes our friend list from local state (the transport's builder).
 #[async_trait]
@@ -144,8 +145,12 @@ impl OutboxSlot {
         &self,
         pool: Arc<dyn RecordPort>,
         list: Arc<dyn ListWriter>,
+        governance: HostGovernance,
     ) {
-        let sender = DhtWriteSender::new(move |write| pool.restore_held(vec![write]), list);
+        let held_pool = Arc::clone(&pool);
+        let mut sender =
+            DhtWriteSender::new(move |write| held_pool.restore_held(vec![write]), list);
+        sender.join_inbox = Some((pool, governance));
         self.senders.install(StreamKind::DhtWrite, Arc::new(sender));
         let Some(outbox) = self.current.read().clone() else {
             return;
@@ -164,6 +169,7 @@ impl OutboxSlot {
 struct DhtWriteSender {
     hold: Box<dyn Fn(UnsentWrite) + Send + Sync>,
     list: Arc<dyn ListWriter>,
+    join_inbox: Option<(Arc<dyn RecordPort>, HostGovernance)>,
 }
 
 impl DhtWriteSender {
@@ -171,6 +177,7 @@ impl DhtWriteSender {
         Self {
             hold: Box::new(hold),
             list,
+            join_inbox: None,
         }
     }
 }
@@ -178,8 +185,10 @@ impl DhtWriteSender {
 #[async_trait]
 impl StreamSender for DhtWriteSender {
     async fn send(&self, row: &OutboxRow) -> AttemptOutcome {
-        if row.stream == FRIEND_LIST_STREAM {
-            return AttemptOutcome::Appending(Vec::new());
+        if row.stream == FRIEND_LIST_STREAM
+            || row.stream.starts_with(super::join_inbox::STREAM_PREFIX)
+        {
+            return AttemptOutcome::Appending(row.payload.clone());
         }
         match decode(&row.payload) {
             Some(write) => {
@@ -193,6 +202,11 @@ impl StreamSender for DhtWriteSender {
     /// The friend list's write, handed off by [`Self::send`]: one row is
     /// ever queued on its stream, so one write lands it.
     async fn append(&self, stream: &str, frames: &[(Vec<u8>, i64)]) -> Vec<AttemptOutcome> {
+        if let (Some((pool, host)), Some((payload, _))) = (&self.join_inbox, frames.first()) {
+            if stream.starts_with(super::join_inbox::STREAM_PREFIX) {
+                return vec![super::join_inbox::submit(host, pool.as_ref(), stream, payload).await];
+            }
+        }
         if stream != FRIEND_LIST_STREAM || frames.is_empty() {
             return frames
                 .iter()

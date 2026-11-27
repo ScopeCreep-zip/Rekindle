@@ -105,6 +105,10 @@ pub mod dm_participant;
 #[path = "dht_layout_request_inbox.rs"]
 pub mod request_inbox;
 
+/// Invite-scoped discovery for a newly published community member record.
+#[path = "dht_layout_join_inbox.rs"]
+pub mod join_inbox;
+
 /// Subkey layout for a group DM's rendezvous record (plan decision 67,
 /// item 3): `SMPL(o_cnt: 1, members = 8 one-time writers, m_cnt: 8)`, the
 /// durable path of a group member's first contact to a member who is not

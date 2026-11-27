@@ -515,3 +515,25 @@ impl Netsim {
         );
     }
 }
+
+impl Netsim {
+    /// Delay replica placement of a local watch to exercise the interval
+    /// between accepting the desired state and the remote watch going live.
+    pub fn pause_watch_placement(&self, node: usize, key: &str) {
+        self.net
+            .inner
+            .lock()
+            .faults
+            .paused_watch_placement
+            .insert((node, key.into()));
+    }
+
+    /// Whether the local node has accepted a desired watch on the record.
+    #[must_use]
+    pub fn watch_requested(&self, node: usize, key: &str) -> bool {
+        self.net.inner.lock().nodes[node]
+            .watches
+            .get(key)
+            .is_some_and(Option::is_some)
+    }
+}

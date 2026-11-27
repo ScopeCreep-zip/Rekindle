@@ -8,6 +8,7 @@
 //! names each channel record). Encrypted with HKDF(invite_code).
 
 use serde::{Deserialize, Serialize};
+use zeroize::Zeroizing;
 
 /// Hard ceiling on per-invite reuse. Even if `CommunityPolicy` permits a
 /// higher value, readers reject the entry. Combined with the per-inviter
@@ -44,6 +45,29 @@ pub struct InviteSecrets {
     /// 32-byte slot seed for deriving SMPL member slot keypairs (hex-encoded;
     /// deleted by E3.4).
     pub slot_seed: String,
+    /// Durable discovery capability. An invite minted before JI1 still uses
+    /// the existing bootstrap row and live route.
+    #[serde(flatten, skip_serializing_if = "Option::is_none")]
+    pub join_inbox: Option<JoinInboxCapability>,
+}
+
+/// The invite-scoped SMPL write capability. Only decrypted invite holders
+/// receive it, and the writer text is erased on drop.
+#[derive(Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct JoinInboxCapability {
+    pub join_inbox: String,
+    pub join_inbox_writer: Zeroizing<String>,
+    pub join_inbox_slots: u8,
+}
+
+impl std::fmt::Debug for JoinInboxCapability {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("JoinInboxCapability")
+            .field("join_inbox", &self.join_inbox)
+            .field("join_inbox_slots", &self.join_inbox_slots)
+            .finish_non_exhaustive()
+    }
 }
 
 #[cfg(test)]

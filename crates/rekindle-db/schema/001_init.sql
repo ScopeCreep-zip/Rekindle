@@ -1044,6 +1044,9 @@ CREATE TABLE IF NOT EXISTS community_invites (
     -- joiner fetches+decrypts secrets directly (chiral §12), without
     -- depending on the InviteCreated governance entry being visible.
     secrets_record_key TEXT NOT NULL DEFAULT '',
+    -- This device's durable join discovery record, while held.
+    join_inbox_key TEXT,
+    join_inbox_invite_id TEXT,
     max_uses INTEGER NOT NULL DEFAULT 0,
     expires_at INTEGER,
     created_at INTEGER NOT NULL,
