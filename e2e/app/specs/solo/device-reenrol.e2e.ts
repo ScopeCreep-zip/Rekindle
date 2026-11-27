@@ -83,11 +83,17 @@ describe("a restored copy re-enrols the device: the original is told and offered
     await pendingRequest(browser, hello);
     await acceptRequest(browser, me, hello);
     await createCommunity(browser, me, COMMUNITY);
+    await openCommunity(browser, COMMUNITY);
     // Dee is a member too: a re-enrolment does not write the old record, so
     // the original learns of it from another member who merged the op and
     // carries its locator (the netsim's cloned-root case has four nodes).
+    // She is admitted (her row shows) before the copy is taken.
     await peerJoinCommunity(dee, await createInvite(browser, me, 1));
-    await openCommunity(browser, COMMUNITY);
+    await waitUntil(
+      async () => (await browser.$$(".member-item[data-pseudonym]")).length >= 2,
+      NET_WAIT_MS * 2,
+      "Dee's member row never showed in Ari's community",
+    );
     const dataRoot = (browser.requestedCapabilities as Record<string, unknown>)["rekindle:dataRoot"];
     if (typeof dataRoot !== "string") throw new Error("the launcher handed no rekindle:dataRoot capability");
 
