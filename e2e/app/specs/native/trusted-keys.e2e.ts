@@ -26,11 +26,11 @@ async function expectKey(key: string, trusted: boolean) {
     expect.arrayContaining([
       { type: "keydown", key, trusted },
       { type: "keyup", key, trusted },
-    ]),
+    ])
   );
 }
 
-describe("Native WebDriver keys", function () {
+describe("Native WebDriver keys", () => {
   before(async function () {
     if (process.platform !== "darwin" && process.platform !== "linux") this.skip();
 
