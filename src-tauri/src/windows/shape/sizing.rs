@@ -1,7 +1,7 @@
 //! The size request and coherent limits for a framed window. A resize or
 //! scale notification samples the current allocation without reissuing it.
 
-use rekindle_types::dto::skin::{SkinWindow, WindowLayout};
+use rekindle_types::dto::skin::{SkinWindow, WindowLayout, WindowSizeHints};
 use tauri::{LogicalUnit, WindowSizeConstraints};
 
 use super::skin;
@@ -36,7 +36,7 @@ impl Sizing {
         let minimum = layout
             .and_then(rekindle_skin::shape::min_window)
             .map_or(base.min, |(w, h)| (f64::from(w), f64::from(h)));
-        let hints = layout.map_or_else(Default::default, |layout| layout.size_hints);
+        let hints = layout.map_or_else(WindowSizeHints::default, |layout| layout.size_hints);
         let cap = (frame == SkinWindow::Main).then_some((400.0, 900.0));
         let (width, max_w) = axis(
             base.inner.0,

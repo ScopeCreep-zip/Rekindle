@@ -13,7 +13,7 @@ pub mod popup_place;
 mod rebind;
 mod reveal;
 mod shape;
-pub(crate) use shape::{frame_of_label, presented_skin};
+pub(crate) use shape::presented_skin;
 mod titles;
 
 pub use rebind::follow_event;

@@ -2,7 +2,7 @@
 //! art pieces sized by their names, the built-in packs and node walks.
 
 use rekindle_image::{Rgba, RgbaImage};
-use rekindle_types::dto::skin::{Insets, WindowLayout};
+use rekindle_types::dto::skin::{Insets, WindowLayout, WindowSizeHints};
 use rekindle_types::dto::skin_tree::SkinNode;
 
 use crate::builtin;
@@ -23,7 +23,7 @@ pub(super) fn frame() -> WindowLayout {
         content: Z,
         min_width: 30,
         min_height: 20,
-        size_hints: Default::default(),
+        size_hints: WindowSizeHints::default(),
         tiles: Vec::new(),
         title: None,
         tree: None,

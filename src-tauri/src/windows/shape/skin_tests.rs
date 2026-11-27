@@ -3,7 +3,9 @@
 //! device size, and a kind the skin does not frame keeps its rectangle.
 
 use rekindle_skin::shape::ALPHA_OPAQUE;
-use rekindle_types::dto::skin::{FrameTile, Insets, SkinWindow, TileAxis, WindowLayout};
+use rekindle_types::dto::skin::{
+    FrameTile, Insets, SkinWindow, TileAxis, WindowLayout, WindowSizeHints,
+};
 use rekindle_types::dto::skin_library::{SkinFrames, SkinTileMask, SkinWindowFrame};
 use tauri::PhysicalSize;
 
@@ -34,7 +36,7 @@ fn frames(bits: Vec<u8>) -> SkinFrames {
                 },
                 min_width: 4,
                 min_height: 1,
-                size_hints: Default::default(),
+                size_hints: WindowSizeHints::default(),
                 tiles: vec![FrameTile {
                     image: "title.png".to_owned(),
                     width: 4,

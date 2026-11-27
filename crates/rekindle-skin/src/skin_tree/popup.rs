@@ -14,7 +14,7 @@
 use std::collections::BTreeSet;
 
 use rekindle_types::dto::skin::{
-    Insets, PopupAnchor, PopupEdge, PopupLayout, SkinError, SkinRule, WindowLayout,
+    Insets, PopupAnchor, PopupEdge, PopupLayout, SkinError, SkinRule, WindowLayout, WindowSizeHints,
 };
 use rekindle_types::dto::skin_action::SkinAction;
 use rekindle_types::dto::skin_tree::{Anchor, NodeRole, NodeSpan, SkinNode, SkinTree};
@@ -271,7 +271,7 @@ pub fn frame(popup: &PopupLayout, window_min_height: u16) -> WindowLayout {
         content: none,
         min_width: popup.width,
         min_height,
-        size_hints: Default::default(),
+        size_hints: WindowSizeHints::default(),
         tiles: Vec::new(),
         title: None,
         tree: None,
