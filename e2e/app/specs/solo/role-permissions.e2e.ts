@@ -5,8 +5,7 @@
 // the Host's role carries exactly that bit.
 
 import { browser, expect } from "@wdio/globals";
-import { NET_WAIT_MS, byText, press, resolveIntent, shown, switchTo, typeInto, waitUntil } from "../../../walk/helpers.ts";
-import { BUDDY } from "../../../walk/nav.ts";
+import { NET_WAIT_MS, byText, press, resolveIntent, shown, typeInto, waitUntil } from "../../../walk/helpers.ts";
 import { openCommunitySettings } from "../../../walk/rows-community.ts";
 import { createCommunity, createIdentity, newUser, openCommunity, type User } from "../../journeys.ts";
 import { shot } from "../../shots.ts";
@@ -18,21 +17,6 @@ const TICKED = "ADD_REACTIONS";
 
 interface Catalogue {
   groups: { name: string; permissions: { key: string; label: string; bit: string }[] }[];
-}
-
-/** How one raw invoke of `cmd` ends within 10 s in the current window: its
- *  value's shape, its rejection, or "no answer" (a diagnosis of the 90 s
- *  hang: which window and which command never get an answer). */
-async function probeCall(cmd: string, args: Record<string, unknown> = {}): Promise<string> {
-  return (await browser.execute(async (c: string, a: Record<string, unknown>) => {
-    const { invoke } = (window as unknown as { __TAURI_INTERNALS__: { invoke(cmd: string, args?: unknown): Promise<unknown> } }).__TAURI_INTERNALS__;
-    const timeout = new Promise<string>((done) => setTimeout(() => done("no answer in 10 s"), 10_000));
-    const call = invoke(c, a).then(
-      (v) => `answered (${JSON.stringify(v).slice(0, 60)})`,
-      (e: unknown) => `rejected (${String((e as { message?: string })?.message ?? e).slice(0, 120)})`,
-    );
-    return Promise.race([call, timeout]);
-  }, cmd, args)) as string;
 }
 
 async function hostCall<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -50,14 +34,6 @@ describe("the role editor lists the Host's permission catalogue (PN1)", function
     await createIdentity(browser, me);
     await createCommunity(browser, me, COMMUNITY);
     await openCommunity(browser, COMMUNITY);
-    // Where the catalogue call is answered: the community window, a known
-    // community command there, and the same call from the buddy list.
-    const inCommunity = await probeCall("get_permission_catalogue");
-    const rolesInCommunity = await probeCall("get_permission_catalogue_probe_absent").catch(() => "");
-    await switchTo(browser, BUDDY);
-    const inBuddy = await probeCall("get_permission_catalogue");
-    await openCommunity(browser, COMMUNITY);
-    console.log(`[roles] catalogue in the community window: ${inCommunity}; unregistered command there: ${rolesInCommunity}; catalogue in the buddy list: ${inBuddy}`);
     const catalogue = await hostCall<Catalogue>("get_permission_catalogue");
     await openCommunitySettings(browser, "Roles");
     await press(browser, await byText(browser, ".modal-container .form-btn-secondary", "Create Role"));
