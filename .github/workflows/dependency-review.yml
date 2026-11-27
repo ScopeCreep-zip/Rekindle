@@ -48,4 +48,10 @@ jobs:
             OpenSSL,
             BSL-1.0,
             Unlicense
+          # caniuse-lite is browserslist's build-time browser-support data
+          # (dev only: vite-plugin-solid > @babel/core > browserslist), under
+          # CC-BY-4.0. It is never bundled into the shipped app, so the
+          # attribution licence does not reach a distributed artifact. Scoped
+          # to this one package; CC-BY-4.0 stays off the global allow-list.
+          allow-dependencies-licenses: pkg:npm/caniuse-lite
           comment-summary-in-pr: on-failure
