@@ -324,6 +324,7 @@ impl FriendHost for HostFriends {
         // Releasing the friend's lease closes the record, which is what
         // ends its watch; the key-to-friend mapping is the projection's.
         watch::release_participant(self, peer).await;
+        participant::forget(self, peer);
         self.ctx.friend_stores.watch_retries.lock().forget(peer);
         let lease = self.ctx.friend_watches.leases.lock().remove(peer);
         let pool = self.node().ok().and_then(|node| node.records());

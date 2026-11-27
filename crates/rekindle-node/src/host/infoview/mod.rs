@@ -75,10 +75,7 @@ impl OpenViews {
 /// The window whose selection `window`'s `Selection` follows: the popup's
 /// launcher, or `window` itself when it is not a popup.
 fn launcher(ctx: &DaemonContext, window: &str) -> String {
-    ctx.skin
-        .launchers
-        .of(window)
-        .unwrap_or_else(|| window.to_owned())
+    ctx.skin.launchers.selection_window(window)
 }
 
 /// The subject `asked` names for `window`: `Selection` resolved from the

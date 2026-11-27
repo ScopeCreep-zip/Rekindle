@@ -312,6 +312,17 @@ pub async fn publish(host: &dyn FriendHost, to: &str, record_key: &str) -> Resul
         .map_err(|e| FriendError::NotReady(format!("participant record not on the network: {e}")))
 }
 
+/// A friend's dm chain record named in their `FriendRequest` or
+/// `FriendAccept` (decision 67 item 2), applied as their `StreamRecord`
+/// is: kept for an accepted friend only. Whether it is done.
+pub(crate) async fn adopt_chain(host: &dyn FriendHost, sender: &str, record_key: &str) -> bool {
+    let body = StreamRecord {
+        record_key: record_key.to_string(),
+        group_id: None,
+    };
+    on_stream_record(host, sender, &body).await
+}
+
 /// A friend's `StreamRecord`: kept for an accepted friend only; a key that
 /// replaces one held restarts our cursor on them, and a new key is diffed.
 /// Whether it is done.

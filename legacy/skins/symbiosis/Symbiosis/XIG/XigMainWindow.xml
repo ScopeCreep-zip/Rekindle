@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE Tile SYSTEM "ACE.dtd">
+
+
+<Tile Name="XIGMainWindow" ResizeX="100" ResizeY="100" Component="XIGMainWindow">
+    <!--
+    //////////////////////////////////////////////
+    // Resize Grippers
+    //////////////////////////////////////////////
+    -->
+    <!-- <Tile Name="ResizeGripperTL" Z="26" JustX="Left" JustY="Top" Component="XIGActiveWindowsResizeGripperTL" />
+    <Tile Name="ResizeGripperT" Z="25" JustY="Top" ResizeX="100" IndentRight="ResizeGripperTR.Width" IndentLeft="ResizeGripperTL.Width" Component="XIGActiveWindowsResizeGripperTop" />
+    <Tile Name="ResizeGripperTR" Z="26" JustX="Right" JustY="Top" Component="XIGActiveWindowsResizeGripperTR" />
+    <Tile Name="ResizeGripperL" Z="25" JustX="Left" JustY="Center" ResizeY="100" IndentTop="ResizeGripperTL.Height" IndentBottom="ResizeGripperBL.Height" Component="XIGActiveWindowsResizeGripperL" />
+    <Tile Name="ResizeGripperR" Z="25" JustX="Right" JustY="Center" ResizeY="100" IndentTop="ResizeGripperTR.Height" IndentBottom="ResizeGripperBR.Height" Component="XIGActiveWindowsResizeGripperR" />
+    <Tile Name="ResizeGripperBL" Z="26" JustX="Left" JustY="Bottom" Component="XIGActiveWindowsResizeGripperBL" />
+    <Tile Name="ResizeGripperBottom" Z="25" JustY="Bottom" ResizeX="100" IndentRight="ResizeGripperBR.Width" IndentLeft="ResizeGripperBL.Width"  Component="XIGActiveWindowsResizeGripperBottom" />
+    <Tile Name="ResizeGripperBR" X="4" Y="4" Z="26" JustX="Right" JustY="Bottom" Component="XIGActiveWindowsResizeGripperBR" /> -->
+    
+    
+    
+    <!--
+    //////////////////////////////////////////////
+    // Window Frame
+    //////////////////////////////////////////////
+    -->
+    <Tile Name="TopRow" Z="1" JustY="Top" ResizeX="100" Component="XIGMainWindowTopRow" />
+    <Tile Name="LeftSide" Z="1" JustX="Left" JustY="Top" ResizeY="100" IndentTop="TopRow.Height" IndentBottom="BottomRow.Height" Component="XIGMainWindowLeftSide" />
+    <Tile Name="Background" Z="1" ResizeX="100" ResizeY="100" IndentRight="RightSide.Width" IndentBottom="BottomRow.Height" IndentLeft="LeftSide.Width" IndentTop="TopRow.Height" Component="XIGMainWindowBackground" />
+    <Tile Name="RightSide" Z="1" JustX="Right" JustY="Top" ResizeY="100" IndentTop="TopRow.Height" IndentBottom="BottomRow.Height" Component="XIGMainWindowRightSide" />
+    <Tile Name="BottomRow" Z="1" JustY="Bottom" ResizeX="100" Component="XIGMainWindowBottomRow" />
+    
+    
+    
+    <!--
+    //////////////////////////////////////////////
+    // Content
+    //////////////////////////////////////////////
+    -->
+    <!--[BEGIN] Xfire Logo -->
+    <!-- <Tile Name="XfireLogo" X="4" Y="3" Z="99" Component="XfireLogoNoLink" /> -->
+    <!--[END] Xfire Logo -->
+    
+    
+    <!--[BEGIN] Info Bar -->
+    <Tile Name="InfoBar" Y="5" Z="24" ResizeX="100" IndentLeft="5" IndentRight="5" Component="InfoBar" />
+    <!--[END] Info Bar -->
+    
+    
+    <!--[BEGIN] Window Title -->
+    <Tile Name="MainTitle" X="9" Y="14" ResizeX="100" IndentRight="93" Component="XIGMainWindowTitle" />
+    <!--[END] Window Title -->
+    
+    
+    <!--[BEGIN] Clock -->
+    <Tile Name="MainClock" X="9" Y="14" Z="25" JustX="Right" Component="XIGMainWindowClock" />
+    <!--[END] Clock -->
+    
+    
+    <!--[BEGIN] Content Container -->
+    <Tile Name="ContentContainer" Y="InfoBar.Bottom+1" Z="24" ResizeX="100" ResizeY="100" IndentRight="5" IndentBottom="45" IndentLeft="5" Component="ContentContainer" />
+    <!--[END] Content Container -->
+    
+    
+    <!--[BEGIN] Chat Area -->
+    <Tile Name="MainChatArea" Y="ContentContainer.Top+5" Z="25" ResizeX="100" ResizeY="100" IndentRight="7" IndentBottom="45" IndentLeft="7" Component="XIGMainWindowChatArea" />
+    <!--[END] Chat Area -->
+    
+    
+    <!--[BEGIN] Chat Edit -->
+    <Tile Name="MainEditArea" Y="MainChatArea.Bottom+5" Z="25" ResizeX="100" IndentRight="7" IndentLeft="9" Component="XIGMainWindowChatEdit">
+        <Tile Name="ChatEditContainer" Z="24" ResizeX="100" ResizeY="100" OutdentTop="4" OutdentRight="2" OutdentBottom="1" OutdentLeft="4" Component="TextContainer" />
+    </Tile>
+    <!--[END] Chat Edit -->
+    
+    
+    <!--[BEGIN] Footer -->
+    <Tile Name="MainFooter" X="8" Y="MainEditArea.Bottom+4" Z="26" ResizeX="100" IndentRight="8" Component="XIGMainWindowFooter" />
+    <!--[END] Footer -->
+</Tile>

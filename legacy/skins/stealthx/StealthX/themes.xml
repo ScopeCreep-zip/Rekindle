@@ -1,0 +1,143 @@
+<Themes>
+    <Theme name="default">
+        <Colors>
+            <Color name="MainBackColor" red="21" green="26" blue="30" alpha="0" />
+            <Color name="MainTextColor" red="138" green="141" blue="142" alpha="0" />
+            <Color name="MainListBackColor" red="21" green="26" blue="30" alpha="0" />
+            <Color name="MainStatusBackColor" red="32" green="37" blue="43" alpha="0" />
+
+            <Color name="FriedsOfFriendsTextColor" red="80" green="82" blue="83" alpha="0" />
+            <Color name="FriendsOfflineTextColor" red="80" green="82" blue="83" alpha="0" />
+
+            <Color name="ListSelectBackColor" red="37" green="43" blue="47" alpha="0" />
+        </Colors>
+        
+        <ColorShifts>
+        </ColorShifts>
+        
+        <Sounds>
+        </Sounds>
+        
+        <Bitmaps>
+            <Bitmap name="MAIN_TOP_LEFT">graphics/main_top_left.gif</Bitmap>
+            <Bitmap name="MAIN_TOP_MIDDLE">graphics/main_top_middle.gif</Bitmap>
+            <Bitmap name="MAIN_TOP_RIGHT">graphics/main_top_right.gif</Bitmap>
+            <Bitmap name="MAIN_LEFT">graphics/main_left.gif</Bitmap>
+            <Bitmap name="MAIN_MIDDLE">graphics/main_middle.gif</Bitmap>
+            <Bitmap name="MAIN_RIGHT">graphics/main_right.gif</Bitmap>
+            <Bitmap name="MAIN_BOTTOM_LEFT">graphics/main_bottom_left.gif</Bitmap>
+            <Bitmap name="MAIN_BOTTOM_MIDDLE">graphics/main_bottom_middle.gif</Bitmap>
+            <Bitmap name="MAIN_BOTTOM_RIGHT">graphics/main_bottom_right.gif</Bitmap>
+
+            <Bitmap name="MENU_TOP_LEFT">graphics/menu_bg_top_left.gif</Bitmap>
+            <Bitmap name="MENU_TOP_MIDDLE">graphics/menu_bg_top_middle.gif</Bitmap>
+            <Bitmap name="MENU_TOP_RIGHT">graphics/menu_bg_top_right.gif</Bitmap>
+            <Bitmap name="MENU_LEFT">graphics/menu_bg_left.gif</Bitmap>
+            <Bitmap name="MENU_MIDDLE">graphics/menu_bg_middle.gif</Bitmap>
+            <Bitmap name="MENU_RIGHT">graphics/menu_bg_right.gif</Bitmap>
+            <Bitmap name="MENU_BOTTOM_LEFT">graphics/menu_bg_bottom_left.gif</Bitmap>
+            <Bitmap name="MENU_BOTTOM_MIDDLE">graphics/menu_bg_bottom_middle.gif</Bitmap>
+            <Bitmap name="MENU_BOTTOM_RIGHT">graphics/menu_bg_bottom_right.gif</Bitmap>
+
+            <Bitmap name="INFO_TOP_LEFT">graphics/info_bg_top_left.gif</Bitmap>
+            <Bitmap name="INFO_TOP_MIDDLE">graphics/info_bg_top_middle.gif</Bitmap>
+            <Bitmap name="INFO_TOP_RIGHT">graphics/info_bg_top_right.gif</Bitmap>
+            <Bitmap name="INFO_LEFT">graphics/info_bg_left.gif</Bitmap>
+            <Bitmap name="INFO_MIDDLE">graphics/info_bg_middle.gif</Bitmap>
+            <Bitmap name="INFO_RIGHT">graphics/info_bg_right.gif</Bitmap>
+            <Bitmap name="INFO_BOTTOM_LEFT">graphics/info_bg_bottom_left.gif</Bitmap>
+            <Bitmap name="INFO_BOTTOM_MIDDLE">graphics/info_bg_bottom_middle.gif</Bitmap>
+            <Bitmap name="INFO_BOTTOM_RIGHT">graphics/info_bg_bottom_right.gif</Bitmap>
+
+            <Bitmap name="LIST_HEADER_LEFT">graphics/list_header_left.gif</Bitmap>
+            <Bitmap name="LIST_HEADER_MIDDLE">graphics/list_header_middle.gif</Bitmap>
+            <Bitmap name="LIST_HEADER_RIGHT">graphics/list_header_right.gif</Bitmap>
+            <Bitmap name="LIST_HEADER_ARROW_UP">graphics/list_arrow_up.gif</Bitmap>
+            <Bitmap name="LIST_HEADER_ARROW_DOWN">graphics/list_arrow_down.gif</Bitmap>
+            <Bitmap name="LIST_ARROW_RIGHT">graphics/list_arrow_collapsed.gif</Bitmap>
+            <Bitmap name="LIST_ARROW_DOWN">graphics/list_arrow_expanded.gif</Bitmap>
+
+            <Bitmap name="BUTTON_NORMAL">graphics/btn_normal.gif</Bitmap>
+            <Bitmap name="BUTTON_DOWN">graphics/btn_down.gif</Bitmap>
+            <Bitmap name="BUTTON_HOVER">graphics/btn_over.gif</Bitmap>
+            <Bitmap name="BUTTON_DISABLED">graphics/btn_disabled.gif</Bitmap>
+
+            <Bitmap name="BUTTON_MENU_NORMAL">graphics/btn_menu_normal.gif</Bitmap>
+            <Bitmap name="BUTTON_MENU_OVER">graphics/btn_menu_over.gif</Bitmap>
+            <Bitmap name="BUTTON_MENU_DOWN">graphics/btn_menu_over.gif</Bitmap>
+
+            <Bitmap name="BUTTON_INFO_NORMAL">graphics/btn_info_normal.gif</Bitmap>
+            <Bitmap name="BUTTON_INFO_OVER">graphics/btn_info_over.gif</Bitmap>
+            <Bitmap name="BUTTON_INFO_DOWN">graphics/btn_info_over.gif</Bitmap>
+
+            <Bitmap name="TAB_MIDDLE_NORMAL">graphics/menu_middle.gif</Bitmap>
+            <Bitmap name="TAB_MIDDLE_OVER">graphics/menu_middle_over.gif</Bitmap>
+            <Bitmap name="TAB_MIDDLE_DOWN">graphics/menu_middle_down.gif</Bitmap>
+
+            <Bitmap name="MENUBAR_LEFT">graphics/menu_left.gif</Bitmap>
+            <Bitmap name="MENUBAR_MIDDLE">graphics/menu_middle.gif</Bitmap>
+            <Bitmap name="MENUBAR_RIGHT">graphics/menu_right.gif</Bitmap>
+            <Bitmap name="MENUBAR_MIDDLE_OVER">graphics/menu_middle_over.gif</Bitmap>
+            <Bitmap name="MENUBAR_MIDDLE_DOWN">graphics/menu_middle_down.gif</Bitmap>
+
+            <Bitmap name="WND_MIN_NORMAL">graphics/wnd_min_normal.gif</Bitmap>
+            <Bitmap name="WND_MIN_OVER">graphics/wnd_min_over.gif</Bitmap>
+            <Bitmap name="WND_MAX_NORMAL">graphics/wnd_max_normal.gif</Bitmap>
+            <Bitmap name="WND_MAX_OVER">graphics/wnd_max_over.gif</Bitmap>
+            <Bitmap name="WND_CLOSE_NORMAL">graphics/wnd_close_normal.gif</Bitmap>
+            <Bitmap name="WND_CLOSE_OVER">graphics/wnd_close_over.gif</Bitmap>
+
+            <Bitmap name="WND_XFIRE">graphics/wnd_xfire.gif</Bitmap>
+
+            <Bitmap name="HSCROLL_LEFT_NORMAL">scrollbar/hscroll_left_normal.gif</Bitmap>
+            <Bitmap name="HSCROLL_LEFT_OVER">scrollbar/hscroll_left_over.gif</Bitmap>
+            <Bitmap name="HSCROLL_LEFT_DOWN">scrollbar/hscroll_left_down.gif</Bitmap>
+            <Bitmap name="HSCROLL_LEFT_DISABLED">scrollbar/hscroll_left_disabled.gif</Bitmap>
+
+            <Bitmap name="HSCROLL_RIGHT_NORMAL">scrollbar/hscroll_right_normal.gif</Bitmap>
+            <Bitmap name="HSCROLL_RIGHT_OVER">scrollbar/hscroll_right_over.gif</Bitmap>
+            <Bitmap name="HSCROLL_RIGHT_DOWN">scrollbar/hscroll_right_down.gif</Bitmap>
+            <Bitmap name="HSCROLL_RIGHT_DISABLED">scrollbar/hscroll_right_disabled.gif</Bitmap>
+
+            <Bitmap name="HSCROLL_BG_LEFT">scrollbar/hscroll_bg_left.gif</Bitmap>
+            <Bitmap name="HSCROLL_BG_MIDDLE">scrollbar/hscroll_bg_middle.gif</Bitmap>
+            <Bitmap name="HSCROLL_BG_RIGHT">scrollbar/hscroll_bg_right.gif</Bitmap>
+
+            <Bitmap name="HSCROLL_GRIPPER_LEFT_NORMAL">scrollbar/hscroll_scroll_left_normal.gif</Bitmap>
+            <Bitmap name="HSCROLL_GRIPPER_LEFT_OVER">scrollbar/hscroll_scroll_left_over.gif</Bitmap>
+            <Bitmap name="HSCROLL_GRIPPER_LEFT_DOWN">scrollbar/hscroll_scroll_left_down.gif</Bitmap>
+            <Bitmap name="HSCROLL_GRIPPER_MIDDLE_NORMAL">scrollbar/hscroll_scroll_middle_normal.gif</Bitmap>
+            <Bitmap name="HSCROLL_GRIPPER_MIDDLE_OVER">scrollbar/hscroll_scroll_middle_over.gif</Bitmap>
+            <Bitmap name="HSCROLL_GRIPPER_MIDDLE_DOWN">scrollbar/hscroll_scroll_middle_down.gif</Bitmap>
+            <Bitmap name="HSCROLL_GRIPPER_RIGHT_NORMAL">scrollbar/hscroll_scroll_right_normal.gif</Bitmap>
+            <Bitmap name="HSCROLL_GRIPPER_RIGHT_OVER">scrollbar/hscroll_scroll_right_over.gif</Bitmap>
+            <Bitmap name="HSCROLL_GRIPPER_RIGHT_DOWN">scrollbar/hscroll_scroll_right_down.gif</Bitmap>
+
+            <Bitmap name="VSCROLL_UP_NORMAL">scrollbar/vscroll_up_normal.gif</Bitmap>
+            <Bitmap name="VSCROLL_UP_OVER">scrollbar/vscroll_up_over.gif</Bitmap>
+            <Bitmap name="VSCROLL_UP_DOWN">scrollbar/vscroll_up_down.gif</Bitmap>
+            <Bitmap name="VSCROLL_UP_DISABLED">scrollbar/vscroll_up_disabled.gif</Bitmap>
+
+            <Bitmap name="VSCROLL_DOWN_NORMAL">scrollbar/vscroll_down_normal.gif</Bitmap>
+            <Bitmap name="VSCROLL_DOWN_OVER">scrollbar/vscroll_down_over.gif</Bitmap>
+            <Bitmap name="VSCROLL_DOWN_DOWN">scrollbar/vscroll_down_down.gif</Bitmap>
+            <Bitmap name="VSCROLL_DOWN_DISABLED">scrollbar/vscroll_down_disabled.gif</Bitmap>
+
+            <Bitmap name="VSCROLL_BG_TOP">scrollbar/vscroll_bg_top.gif</Bitmap>
+            <Bitmap name="VSCROLL_BG_MIDDLE">scrollbar/vscroll_bg_middle.gif</Bitmap>
+            <Bitmap name="VSCROLL_BG_BOTTOM">scrollbar/vscroll_bg_bottom.gif</Bitmap>
+
+            <Bitmap name="VSCROLL_GRIPPER_TOP_NORMAL">scrollbar/vscroll_scroll_top_normal.gif</Bitmap>
+            <Bitmap name="VSCROLL_GRIPPER_TOP_OVER">scrollbar/vscroll_scroll_top_over.gif</Bitmap>
+            <Bitmap name="VSCROLL_GRIPPER_TOP_DOWN">scrollbar/vscroll_scroll_top_down.gif</Bitmap>
+            <Bitmap name="VSCROLL_GRIPPER_MIDDLE_NORMAL">scrollbar/vscroll_scroll_middle_normal.gif</Bitmap>
+            <Bitmap name="VSCROLL_GRIPPER_MIDDLE_OVER">scrollbar/vscroll_scroll_middle_over.gif</Bitmap>
+            <Bitmap name="VSCROLL_GRIPPER_MIDDLE_DOWN">scrollbar/vscroll_scroll_middle_down.gif</Bitmap>
+            <Bitmap name="VSCROLL_GRIPPER_BOTTOM_NORMAL">scrollbar/vscroll_scroll_bottom_normal.gif</Bitmap>
+            <Bitmap name="VSCROLL_GRIPPER_BOTTOM_OVER">scrollbar/vscroll_scroll_bottom_over.gif</Bitmap>
+            <Bitmap name="VSCROLL_GRIPPER_BOTTOM_DOWN">scrollbar/vscroll_scroll_bottom_down.gif</Bitmap>
+
+            <Bitmap name="SCROLL_CORNER">scrollbar/scroll_corner.gif</Bitmap>
+        </Bitmaps>
+    </Theme>
+</Themes>

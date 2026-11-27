@@ -1,0 +1,63 @@
+<Popups>
+	<Tile Name="InfoPopup" X="MainWindow.RIGHT-4" Y="0" Z="11" IndentBottom="0" Component="InfoWindow">
+		<Tile Name="XfireTopRow" ResizeX="100" Component="XfireTopRow"></Tile>
+		<Tile Name="XfireBottomRow" ResizeX="100" JustY="BOTTOM" Component="XfireBottomRow"></Tile>
+		<Tile Name="XfireMiddleRow" ResizeX="100" ResizeY="100" Y="XfireTopRow.BOTTOM" IndentBottom="XfireBottomRow.height" Component="XfireMiddleRow"></Tile>
+		<Tile Name="BackDrop" Z="-1" Y="7" X="12" IndentRight="8" IndentBottom="36" ResizeX="100" ResizeY="100" Component="BackDrop"></Tile>
+		<Tile Name="InfoView" Y="7" X="12" IndentRight="8" IndentBottom="36" ResizeX="100" ResizeY="100" Component="InfoView"></Tile>
+		<Tile Name="ResizeRight" JustX="RIGHT" ResizeY="100" Z="4" Component="ResizeRight"></Tile>
+		<Tile Name="JoinButton" JustX="RIGHT" JustY="BOTTOM" Y="9" X="6" Z="3" Component="JoinButton"></Tile>
+		<Tile Name="JoinChatTab" JustX="RIGHT" JustY="BOTTOM" Y="9" X="JoinButton.LEFT-5" Z="3" Component="JoinChatTab">
+			<Tile Name="HostChatButton" ResizeX="100" ResizeY="100" Component="HostChatButton"></Tile>
+			<Tile Name="JoinChatButton" ResizeX="100" ResizeY="100" Component="JoinChatButton"></Tile>
+			<Tile Name="LeaveChatButton" ResizeX="100" ResizeY="100" Component="LeaveChatButton">
+				<Tile Name="TalkingStateButton" Z="10" Component="TalkingStateButton"></Tile>
+			</Tile>
+		</Tile>
+		<Tile Name="CloseInfoView" Z="10" X="-52" Y="23" Component="CloseInfoView"></Tile>
+	</Tile>
+	
+	<Tile Name="ChatInfoPopup" X="MainWindow.RIGHT-4" Y="0" Z="5" IndentBottom="0" Component="ChatInfoWindow">
+		<Tile Name="XfireTopRow" ResizeX="100" Component="XfireTopRow"></Tile>
+		<Tile Name="XfireBottomRow" ResizeX="100" JustY="BOTTOM" Component="XfireBottomRow"></Tile>
+		<Tile Name="XfireMiddleRow" ResizeX="100" ResizeY="100" Y="XfireTopRow.BOTTOM" IndentBottom="XfireBottomRow.height" Component="XfireMiddleRow"></Tile>
+		<Tile Name="BackDrop" Z="-1" Y="7" X="12" IndentRight="8" IndentBottom="36" ResizeX="100" ResizeY="100" Component="BackDrop"></Tile>
+		<Tile Name="InfoView" Y="7" X="12" IndentRight="8" IndentBottom="36" ResizeX="100" ResizeY="100" Component="InfoView"></Tile>
+		<Tile Name="ResizeRight" JustX="RIGHT" ResizeY="100" Z="4" Component="ResizeRight"></Tile>
+		<Tile Name="JoinButton" JustX="RIGHT" JustY="BOTTOM" Y="9" X="8" Z="3" Component="JoinButton"></Tile>
+		<Tile Name="JoinChatTab" JustX="RIGHT" JustY="BOTTOM" Y="9" X="JoinButton.LEFT-5" Z="3" Component="JoinChatTab">
+			<Tile Name="HostChatButton" ResizeX="100" ResizeY="100" Component="HostChatButton"></Tile>
+			<Tile Name="JoinChatButton" ResizeX="100" ResizeY="100" Component="JoinChatButton"></Tile>
+			<Tile Name="LeaveChatButton" ResizeX="100" ResizeY="100" Component="LeaveChatButton"></Tile>
+				<Tile Name="TalkingStateButton" Z="10" Component="TalkingStateButton"></Tile>
+		</Tile>	
+
+		<Tile Name="CloseChatInfoView" Z="10" X="-52" Y="23" Component="CloseChatInfoView"></Tile>
+	</Tile>
+	
+	<Tile Name="GroupInfoPopup" X="MainWindow.RIGHT-4" Y="0" Z="5" IndentBottom="0" Component="GroupInfoWindow">
+		<Tile Name="XfireTopRow" ResizeX="100" Component="XfireTopRow"></Tile>
+		<Tile Name="XfireBottomRow" ResizeX="100" JustY="BOTTOM" Component="XfireBottomRow"></Tile>
+		<Tile Name="XfireMiddleRow" ResizeX="100" ResizeY="100" Y="XfireTopRow.BOTTOM" IndentBottom="XfireBottomRow.height" Component="XfireMiddleRow"></Tile>
+		<Tile Name="BackDrop" Z="-1" Y="7" X="12" IndentRight="8" IndentBottom="36" ResizeX="100" ResizeY="100" Component="BackDrop"></Tile>
+		<Tile Name="InfoView" Y="7" X="12" IndentRight="8" IndentBottom="36" ResizeX="100" ResizeY="100" Component="GroupInfoView"></Tile>
+		<Tile Name="ResizeRight" JustX="RIGHT" ResizeY="100" Z="4" Component="ResizeRight"></Tile>
+		<Tile Name="JoinGameTab" JustX="RIGHT" JustY="BOTTOM" Y="9" X="8" Z="3" Component="JoinGameTab">
+			<Tile Name="HostGameLobbyButton" ResizeX="100" ResizeY="100" Component="HostGameLobbyButton"></Tile>
+			<Tile Name="JoinGameLobbyButton" ResizeX="100" ResizeY="100" Component="JoinGameLobbyButton"></Tile>
+			<Tile Name="LeaveGameLobbyButton" ResizeX="100" ResizeY="100" Component="LeaveGameLobbyButton"></Tile>
+			<Tile Name="LaunchGameLobbyButton" ResizeX="100" ResizeY="100" Component="LaunchGameLobbyButton"></Tile>
+			<Tile Name="DisabledLobbyButton" ResizeX="100" ResizeY="100" Component="DisabledLobbyButton"></Tile>
+		</Tile>
+		<Tile Name="JoinChatTab" JustX="RIGHT" JustY="BOTTOM" Y="9" X="JoinGameTab.LEFT-5" Z="3" Component="JoinChatTab">
+			<Tile Name="HostChatButton" ResizeX="100" ResizeY="100" Component="HostChatButton"></Tile>
+			<Tile Name="JoinChatButton" ResizeX="100" ResizeY="100" Component="JoinChatButton"></Tile>
+			<Tile Name="LeaveChatButton" ResizeX="100" ResizeY="100" Component="LeaveChatButton">
+				<Tile Name="TalkingStateButton" Z="10" Component="TalkingStateButton"></Tile>
+			</Tile>
+			<Tile Name="DisabledChatButton" ResizeX="100" ResizeY="100" Component="DisabledChatButton"></Tile>
+		</Tile>
+
+		<Tile Name="CloseGroupInfoView" Z="10" X="-52" Y="23" Component="CloseGroupInfoView"></Tile>
+	</Tile>
+</Popups>

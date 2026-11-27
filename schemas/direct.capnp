@@ -94,14 +94,22 @@ struct FriendRequest {
   requestToken @7 :Text;                # the friend code's token; empty when it answers an invite
   replyInboxKey @8 :Text;               # plan RV2: the requester's reply inbox, written once by the accepter
   replyWriter @9 :Text;                 # its one-time writer's keypair text (sealed: only the addressee learns it)
+  chainRecordKey @10 :Text;             # decision 67 item 2: the requester's dm participant record to the addressee,
+                                        # its HEAD published before the request leaves; adopted only once accepted
 }
 
 # 0x0101, the first payload of a PreKeyInit: the session it opens is the
-# acceptance, so it carries only where to reach the acceptor.
+# acceptance, so it carries where to reach the acceptor, and (decision 67
+# item 2) what the requester needs before any call reaches it: the
+# acceptor's presence key and its dm chain record. The accept also goes into
+# the requester's reply inbox (RV2), so both have a durable start.
 struct FriendAccept {
   profileDhtKey @0 :Text;
   routeBlob @1 :Data;
   mailboxDhtKey @2 :Text;
+  friendsKeyEpoch @3 :UInt32;           # the acceptor's FriendsKey epoch
+  friendsKey @4 :Data;                  # its 32-byte key (sealed and signed in the PreKeyInit)
+  chainRecordKey @5 :Text;              # the acceptor's dm participant record to the requester
 }
 
 # 0x0007, sealed. It carries no bundle: the requester is the frame's

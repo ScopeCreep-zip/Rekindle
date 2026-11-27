@@ -1,0 +1,20 @@
+<Tile Name="OnyxInGameMainWindow"  ResizeX="100" ResizeY="100" Component="InGameMainWindow">
+<!--  -->	
+	<Tile Name="MainTitle" X="126" Y="11" ResizeX="100" IndentRight="92" Z="10" Component="InGameMainTitle"></Tile>
+	<Tile Name="MainFooter" X="45" Y="16" JustY="BOTTOM" ResizeX="100" IndentRight="45" Z="10" Component="InGameMainFooter"></Tile>
+	<Tile Name="MainEditArea" X="8" Y="42" JustY="BOTTOM" ResizeX="100" IndentRight="8" Z="10" Component="InGameMainEditArea"></Tile>
+	<Tile Name="MainChatArea" X="8" Y="37" ResizeX="100" ResizeY="100" IndentRight="8" IndentBottom="62" Z="20" Component="InGameMainChatArea"></Tile>
+	<Tile Name="MainClock" Z="20" JustX="RIGHT" X="30" Y="11" MinWidth="50" Component="InGameMainClock"></Tile>
+	
+<!--  -->
+	<Tile Name="InGameMain" X="0" Y="0" ResizeX="100" ResizeY="100" Component="InGameMainSkin"></Tile>
+<!--  -->	
+	<Tile Name="MainTitleBar" Z="2" X="103" Y="10" IndentRight="90" ResizeX="100" ResizeY="0" Component="InGameMainTitleBar">
+		<Tile Name="Logo" X="2" Y="1" Component="InGameLogo"></Tile>
+	</Tile>
+<!--  -->	
+	<Tile Name="MiddleMessageArea" X="8" Y="37" IndentRight="8" IndentBottom="62" ResizeX="100" ResizeY="100" Z="100" Component="InGameMiddleMessageArea"></Tile>
+<!--  -->	
+	<Tile Name="TextTile" X="8" Y="37" IndentRight="8" IndentBottom="62" ResizeX="100" ResizeY="100" Z="100" Component="InGameTextTile"></Tile>
+</Tile>
+

@@ -1,0 +1,876 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE Themes SYSTEM "XfireSkin.dtd">
+
+<Themes>
+    <Theme Name="default">
+        <Colors>
+            <Color Name="ChatEditBGCG">RGBA(20,20,20,0)</Color>
+            <Color Name="ChatOtherHyperLinkCG">RGBA(15,104,150,0)</Color>
+            <Color Name="ChatOtherNameCG">RGBA(143,185,215,0)</Color>
+            <Color Name="ChatOtherTextCG">RGBA(143,185,215,0)</Color>
+            <Color Name="ChatPersonalHyperLinkCG">RGBA(15,104,150,0)</Color>
+            <Color Name="ChatPersonalNameCG">RGBA(231,231,231,0)</Color>
+            <Color Name="ChatPersonalTextCG">RGBA(231,231,231,0)</Color>
+            <Color Name="ChatTitleCG">RGBA(255,255,255,0)</Color>
+            <Color Name="ChatViewBGCG">RGBA(30,30,30,0)</Color>
+            <Color Name="DisabledTextCG">RGBA(180,180,180,0)</Color>
+            <Color Name="HeaderTextCG">RGBA(255,255,255,0)</Color>
+            <Color Name="InfoViewBGCG">RGBA(20,20,20,0)</Color>
+            <Color Name="InfoViewTextCG">RGBA(255,255,255,0)</Color>
+            <Color Name="FriendNameCG">RGBA(255,255,255,0)</Color>
+            <Color Name="LinkTextCG">RGBA(15,104,150,0)</Color>
+            <Color Name="ListBGCG">RGBA(10,10,10,0)</Color>
+            <Color Name="ListClanTextCG">RGBA(27,161,253,0)</Color>
+            <Color Name="ListColorInActive">RGBA(5,8,10,0)</Color>
+            <Color Name="ListColorSelectedCG">RGBA(23,124,193,0)</Color>
+            <Color Name="ListColorSelectedDiabledCG">RGBA(47,81,105,0)</Color>
+            <Color Name="ListColorSelectedTextCG">RGBA(255,255,255,0)</Color>
+            <Color Name="ListFoFTextCG">RGBA(143,185,215,0)</Color>
+            <Color Name="ListFriendTextCG">RGBA(231,231,231,0)</Color>
+            <Color Name="ListOfflineTextCG">RGBA(125,125,125,0)</Color>
+            <Color Name="MenuTextCG">RGBA(143,185,215,0)</Color>
+            <Color Name="ProgBarBGCG">RGBA(125,125,125,0)</Color>
+            <Color Name="ProgBarFillCG">RGBA(143,185,215,0)</Color>
+            <Color Name="ProgBarOutlineCG">RGBA(125,125,125,0)</Color>
+            <Color Name="ProgBarTextCG">RGBA(231,231,231,0)</Color>
+            <Color Name="ScrollbarBGCG">RGBA(0,0,0,0)</Color>
+            <Color Name="ScrollbarCG">RGBA(0,0,0,0)</Color>
+            <Color Name="StatusBackgroundCG">RGBA(24,24,24,0)</Color>
+            <Color Name="StatusTextCG">RGBA(150,150,150,0)</Color>
+            <!-- Section headings in: Files, Servers -->
+            <Color Name="TextDepth1">RGBA(143,185,215,0)</Color>
+            <!-- Text color in: Files (only some use this), Servers, Pictures, Video -->
+            <Color Name="TextDepth2">RGBA(231,231,231,0)</Color>
+            <!-- Recently downloaded files -->
+            <Color Name="TextDepth3">RGBA(27,161,253,0)</Color>
+            <Color Name="TextDepth4">RGBA(143,185,215,0)</Color>
+            <Color Name="TextFavServersCG">RGBA(143,185,215,0)</Color>
+            <Color Name="TextFieldBGCG">RGBA(30,30,30,0)</Color>
+            <Color Name="TextFieldTextCG">RGBA(255,255,255,0)</Color>
+            <Color Name="TextFieldTextHighlightCG">RGBA(0,109,166,0)</Color>
+            <Color Name="TextFieldTextHighlightInactiveCG">RGBA(0,109,166,0)</Color>
+            <Color Name="ToolTipBGCG">RGBA(56,56,56,0)</Color>
+            <Color Name="ToolTipTextCG">RGBA(231,231,231,0)</Color>
+            <Color Name="UserNameCG">RGBA(255,255,255,0)</Color>
+            <Color Name="UserTypingMessageCG">RGBA(255,255,255,0)</Color>
+            <Color Name="XfireLogoCG">RGBA(0,0,0,0)</Color>
+            <Color Name="XfireLogoDownCG">RGBA(0,0,0,0)</Color>
+            <Color Name="XfireLogoHoverCG">RGBA(0,0,0,0)</Color>
+            <Color Name="XIGActiveWindowTitleCG">RGBA(200,200,200,0)</Color>
+            <Color Name="XIGBarTextCG">RGBA(255,255,255,0)</Color>
+            <Color Name="XIGCaretCG">RGBA(143,185,215,0)</Color>
+            <!-- FPS, Clock, Voice, WebCam, etc -->
+            <Color Name="XIGEditModeTitleCG">RGBA(255,255,255,0)</Color>
+	    <Color Name="XIGLiveStatsTextCG">RGBA(0,170,255,0)</Color>
+            <Color Name="XIGLiveStatsTextDeactivatedCG">RGBA(0,170,255,0)</Color>
+            <Color Name="XIGFocusedColorCG">RGBA(50,50,50,0)</Color>
+            <Color Name="XIGMusicPlayerTrackTextCG">RGBA(143,185,215,0)</Color>
+            <!-- In general all overlay's text color this includes but isn't limited to
+                 Music Player, Alert, Edit Mode Options, etc. -->
+            <Color Name="XIGOverlayTextCG">RGBA(231,231,231,0)</Color>
+            <Color Name="XIGOverlayTitleCG">RGBA(170,170,170,0)</Color>
+            <!-- In general all System Dialog's title color this includes but isn't limited to
+                 Music Player, Alert, Edit Mode Options, etc. -->
+            <Color Name="XIGSystemDialogTextCG">RGBA(231,231,231,0)</Color>
+            <Color Name="XIGSystemDialogTitleCG">RGBA(56,56,56,0)</Color>
+            <!-- Text color of in-game web browser tabs -->
+            <Color Name="XIGWebTabActiveTextCG">RGBA(255,255,255,0)</Color>
+            <Color Name="XIGWebTabInActiveTextCG">RGBA(127,127,127,0)</Color>
+        </Colors>
+        
+        <ColorShifts>
+        </ColorShifts>
+        
+        <Sounds>
+        </Sounds>
+        
+        <Bitmaps>
+            <!--
+            //////////////////////////////////////////////
+            // Frame 1
+            //////////////////////////////////////////////
+            -->
+            <Bitmap Name="frame1_top_left">Images/default/Frame1/frame1-top-left.gif</Bitmap>
+            <Bitmap Name="frame1_top_middle">Images/default/Frame1/frame1-top-middle.gif</Bitmap>
+            <Bitmap Name="frame1_top_right">Images/default/Frame1/frame1-top-right.gif</Bitmap>
+            
+            <Bitmap Name="frame1_leftside_middle">Images/default/Frame1/frame1-leftside-middle.gif</Bitmap>
+            <Bitmap Name="frame1_window_filler">Images/default/Frame1/frame1-window-filler.gif</Bitmap>
+            <Bitmap Name="frame1_rightside_middle">Images/default/Frame1/frame1-rightside-middle.gif</Bitmap>
+            
+            <Bitmap Name="frame1_bottom_left">Images/default/Frame1/frame1-bottom-left.gif</Bitmap>
+            <Bitmap Name="frame1_bottom_middle">Images/default/Frame1/frame1-bottom-middle.gif</Bitmap>
+            <Bitmap Name="frame1_bottom_right">Images/default/Frame1/frame1-bottom-right.gif</Bitmap>
+            
+            <!-- <Bitmap Name="frame1_gripper_bottom_right_norm">Images/default/Frame1/frame1-gripper-bottom-right-norm.gif</Bitmap>
+            <Bitmap Name="frame1_gripper_bottom_right_hover">Images/default/Frame1/frame1-gripper-bottom-right-hover.gif</Bitmap>
+            <Bitmap Name="frame1_gripper_bottom_right_down">Images/default/Frame1/frame1-gripper-bottom-right-down.gif</Bitmap> -->
+            
+            <Bitmap Name="frame1_xfire_logo_norm">Images/default/Frame1/frame1-xfire-logo-norm.gif</Bitmap>
+            <Bitmap Name="frame1_xfire_logo_hover">Images/default/Frame1/frame1-xfire-logo-hover.gif</Bitmap>
+            <Bitmap Name="frame1_xfire_logo_down">Images/default/Frame1/frame1-xfire-logo-down.gif</Bitmap>
+            
+            <!-- <Bitmap Name="frame1_game_logo_norm">Images/default/Frame1/frame1-game-logo-norm.gif</Bitmap> -->
+            
+            
+            
+            <!--
+            //////////////////////////////////////////////
+            // Frame 2
+            //////////////////////////////////////////////
+            -->
+            <Bitmap Name="frame2_top_left">Images/default/Frame2/frame2-top-left.gif</Bitmap>
+            <Bitmap Name="frame2_top_middle">Images/default/Frame2/frame2-top-middle.gif</Bitmap>
+            <Bitmap Name="frame2_top_right">Images/default/Frame2/frame2-top-right.gif</Bitmap>
+            
+            <Bitmap Name="frame2_leftside_middle">Images/default/Frame2/frame2-leftside-middle.gif</Bitmap>
+            <Bitmap Name="frame2_window_filler">Images/default/Frame2/frame2-window-filler.gif</Bitmap>
+            <Bitmap Name="frame2_rightside_middle">Images/default/Frame2/frame2-rightside-middle.gif</Bitmap>
+            
+            <Bitmap Name="frame2_bottom_left">Images/default/Frame2/frame2-bottom-left.gif</Bitmap>
+            <Bitmap Name="frame2_bottom_middle">Images/default/Frame2/frame2-bottom-middle.gif</Bitmap>
+            <Bitmap Name="frame2_bottom_right">Images/default/Frame2/frame2-bottom-right.gif</Bitmap>
+            
+            <!-- <Bitmap Name="frame2_gripper_bottom_right_norm">Images/default/Frame2/frame2-gripper-bottom-right-norm.gif</Bitmap>
+            <Bitmap Name="frame2_gripper_bottom_right_hover">Images/default/Frame2/frame2-gripper-bottom-right-hover.gif</Bitmap>
+            <Bitmap Name="frame2_gripper_bottom_right_down">Images/default/Frame2/frame2-gripper-bottom-right-down.gif</Bitmap> -->
+            
+            
+            
+            <!--
+            //////////////////////////////////////////////
+            // Frame 3
+            //////////////////////////////////////////////
+            -->
+            <!-- <Bitmap Name="frame3_top_left">Images/default/Frame3/frame3-top-left.gif</Bitmap>
+            <Bitmap Name="frame3_top_middle">Images/default/Frame3/frame3-top-middle.gif</Bitmap>
+            <Bitmap Name="frame3_top_right">Images/default/Frame3/frame3-top-right.gif</Bitmap>
+            
+            <Bitmap Name="frame3_leftside_middle">Images/default/Frame3/frame3-leftside-middle.gif</Bitmap>
+            <Bitmap Name="frame3_windxow_filler">Images/default/Frame3/frame3-window-filler.gif</Bitmap>
+            <Bitmap Name="frame3_rightside_middle">Images/default/Frame3/frame3-rightside-middle.gif</Bitmap>
+            
+            <Bitmap Name="frame3_bottom_left">Images/default/Frame3/frame3-bottom-left.gif</Bitmap>
+            <Bitmap Name="frame3_bottom_middle">Images/default/Frame3/frame3-bottom-middle.gif</Bitmap>
+            <Bitmap Name="frame3_bottom_right">Images/default/Frame3/frame3-bottom-right.gif</Bitmap>
+            
+            <Bitmap Name="frame3_mask_top">Images/default/Frame3/frame3-mask-top.gif</Bitmap>
+            <Bitmap Name="frame3_mask_middle">Images/default/Frame3/frame3-mask-middle.gif</Bitmap>
+            <Bitmap Name="frame3_mask_bottom">Images/default/Frame3/frame3-mask-bottom.gif</Bitmap> -->
+            
+            
+            
+            <!--
+            //////////////////////////////////////////////
+            // Common
+            //////////////////////////////////////////////
+            -->
+            <Bitmap Name="black">Images/default/Common/black.gif</Bitmap>
+            
+            <!--[BEGIN] Button Bar -->
+            <Bitmap Name="button_bar_left_norm">Images/default/Common/button-bar-left-norm.gif</Bitmap>
+            <Bitmap Name="button_bar_middle_norm">Images/default/Common/button-bar-middle-norm.gif</Bitmap>
+            <Bitmap Name="button_bar_right_norm">Images/default/Common/button-bar-right-norm.gif</Bitmap>
+            
+            <Bitmap Name="button_bar_left_small">Images/default/Common/button-bar-left-small.gif</Bitmap>
+            <Bitmap Name="button_bar_middle_small">Images/default/Common/button-bar-middle-small.gif</Bitmap>
+            <Bitmap Name="button_bar_right_small">Images/default/Common/button-bar-right-small.gif</Bitmap>
+            
+            <Bitmap Name="button_bar_left_large">Images/default/Common/button-bar-left-large.gif</Bitmap>
+            <Bitmap Name="button_bar_middle_large">Images/default/Common/button-bar-middle-large.gif</Bitmap>
+            <Bitmap Name="button_bar_right_large">Images/default/Common/button-bar-right-large.gif</Bitmap>
+            
+            <Bitmap Name="button_bar_vertical_separator">Images/default/Common/button-bar-vertical-separator.gif</Bitmap>
+            <!--[END] Button Bar -->
+            
+            <!--[BEGIN] Content Container -->
+            <Bitmap Name="content_container_top_left">Images/default/Common/content-container-top-left.gif</Bitmap>
+            <Bitmap Name="content_container_top_middle">Images/default/Common/content-container-top-middle.gif</Bitmap>
+            <Bitmap Name="content_container_top_right">Images/default/Common/content-container-top-right.gif</Bitmap>
+            <Bitmap Name="content_container_leftside_middle">Images/default/Common/content-container-leftside-middle.gif</Bitmap>
+            <Bitmap Name="content_container_background">Images/default/Common/content-container-background.gif</Bitmap>
+            <Bitmap Name="content_container_rightside_middle">Images/default/Common/content-container-rightside-middle.gif</Bitmap>
+            <Bitmap Name="content_container_bottom_left">Images/default/Common/content-container-bottom-left.gif</Bitmap>
+            <Bitmap Name="content_container_bottom_middle">Images/default/Common/content-container-bottom-middle.gif</Bitmap>
+            <Bitmap Name="content_container_bottom_right">Images/default/Common/content-container-bottom-right.gif</Bitmap>
+            <!--[END] Content Container -->
+            
+            <!--[BEGIN] Header -->
+            <Bitmap Name="header_arrow_down">Images/default/Common/header-arrow-down.gif</Bitmap>
+            <Bitmap Name="header_arrow_up">Images/default/Common/header-arrow-up.gif</Bitmap>
+            <Bitmap Name="header_left">Images/default/Common/header-left.gif</Bitmap>
+            <Bitmap Name="header_middle">Images/default/Common/header-middle.gif</Bitmap>
+            <Bitmap Name="header_right">Images/default/Common/header-right.gif</Bitmap>
+            <!--[END] Header -->
+            
+            <!--[BEGIN] Menus -->
+            <Bitmap Name="menu_help_norm">Images/default/Common/menu-help-norm.gif</Bitmap>
+            <Bitmap Name="menu_tools_norm">Images/default/Common/menu-tools-norm.gif</Bitmap>
+            <Bitmap Name="menu_actions_norm">Images/default/Common/menu-actions-norm.gif</Bitmap>
+            <Bitmap Name="menu_xfire_norm">Images/default/Common/menu-xfire-norm.gif</Bitmap>
+            
+            <Bitmap Name="menu_help_hover">Images/default/Common/menu-help-hover.gif</Bitmap>
+            <Bitmap Name="menu_tools_hover">Images/default/Common/menu-tools-hover.gif</Bitmap>
+            <Bitmap Name="menu_actions_hover">Images/default/Common/menu-actions-hover.gif</Bitmap>
+            <Bitmap Name="menu_xfire_hover">Images/default/Common/menu-xfire-hover.gif</Bitmap>
+            
+            <Bitmap Name="menu_help_down">Images/default/Common/menu-help-down.gif</Bitmap>
+            <Bitmap Name="menu_tools_down">Images/default/Common/menu-tools-down.gif</Bitmap>
+            <Bitmap Name="menu_actions_down">Images/default/Common/menu-actions-down.gif</Bitmap>
+            <Bitmap Name="menu_xfire_down">Images/default/Common/menu-xfire-down.gif</Bitmap>
+            
+            <Bitmap Name="menu_background_left">Images/default/Common/menu-background-left.gif</Bitmap>
+            <Bitmap Name="menu_background_middle">Images/default/Common/menu-background-middle.gif</Bitmap>
+            <Bitmap Name="menu_background_right">Images/default/Common/menu-background-right.gif</Bitmap>
+            <!--[END] Menus -->
+            
+            <Bitmap Name="tab_background_left">Images/default/Common/tab-background-left.gif</Bitmap>
+            <Bitmap Name="tab_background_middle">Images/default/Common/tab-background-middle.gif</Bitmap>
+            <Bitmap Name="tab_background_right">Images/default/Common/tab-background-right.gif</Bitmap>
+            <Bitmap Name="tab_vertical_separator">Images/default/Common/tab-vertical-separator.gif</Bitmap>
+            
+            <!--[BEGIN] Text Field -->
+            <Bitmap Name="text_top_left">Images/default/Common/text-top-left.gif</Bitmap>
+            <Bitmap Name="text_top_middle">Images/default/Common/text-top-middle.gif</Bitmap>
+            <Bitmap Name="text_top_right">Images/default/Common/text-top-right.gif</Bitmap>
+            <Bitmap Name="text_leftside_middle">Images/default/Common/text-leftside-middle.gif</Bitmap>
+            <Bitmap Name="text_middle">Images/default/Common/text-background.gif</Bitmap>
+            <Bitmap Name="text_rightside_middle">Images/default/Common/text-rightside-middle.gif</Bitmap>
+            <Bitmap Name="text_bottom_left">Images/default/Common/text-bottom-left.gif</Bitmap>
+            <Bitmap Name="text_bottom_middle">Images/default/Common/text-bottom-middle.gif</Bitmap>
+            <Bitmap Name="text_bottom_right">Images/default/Common/text-bottom-right.gif</Bitmap>
+            <!--[END] Text Field -->
+            
+            <Bitmap Name="transparent">Images/default/Common/transparent.gif</Bitmap>
+            <Bitmap Name="white">Images/default/Common/white.gif</Bitmap>
+            <Bitmap Name="xfire_list_backdrop">Images/default/Common/xfire-list-backdrop.gif</Bitmap>
+            <!-- <Bitmap Name="xfire_list_background">Images/default/Common/xfire-list-background.gif</Bitmap> -->
+            
+            
+            
+            <!--
+            //////////////////////////////////////////////
+            // Misc
+            //////////////////////////////////////////////
+            -->
+            <!--[BEGIN] Chat Edit Container -->
+            <Bitmap Name="chat_edit_background_middle">Images/default/Misc/chat-edit-background-middle.gif</Bitmap>
+            <!--[END] Chat Edit Container -->
+            
+            <!--[BEGIN] Info Bar -->
+            <Bitmap Name="info_bar_left">Images/default/Misc/info-bar-left.gif</Bitmap>
+            <Bitmap Name="info_bar_middle">Images/default/Misc/info-bar-middle.gif</Bitmap>
+            <Bitmap Name="info_bar_right">Images/default/Misc/info-bar-right.gif</Bitmap>
+            
+            <Bitmap Name="info_bar_left_small">Images/default/Misc/info-bar-left-small.gif</Bitmap>
+            <Bitmap Name="info_bar_middle_small">Images/default/Misc/info-bar-middle-small.gif</Bitmap>
+            <Bitmap Name="info_bar_right_small">Images/default/Misc/info-bar-right-small.gif</Bitmap>
+            <!--[END] Info Bar -->
+            
+            <!-- <Bitmap Name="vertical_separator_left">Images/default/Misc/vertical-separator-left.gif</Bitmap>
+            <Bitmap Name="vertical_separator_middle">Images/default/Misc/vertical-separator-middle.gif</Bitmap>
+            <Bitmap Name="vertical_separator_right">Images/default/Misc/vertical-separator-right.gif</Bitmap>
+            
+            <Bitmap Name="horizontal_separator_left">Images/default/Misc/horizontal-separator-left.gif</Bitmap>
+            <Bitmap Name="horizontal_separator_middle">Images/default/Misc/horizontal-separator-middle.gif</Bitmap>
+            <Bitmap Name="horizontal_separator_right">Images/default/Misc/horizontal-separator-right.gif</Bitmap> -->
+            
+            <!--[BEGIN] Status Bar -->
+            <Bitmap Name="status_bar_left">Images/default/Misc/status-bar-left.gif</Bitmap>
+            <Bitmap Name="status_bar_middle">Images/default/Misc/status-bar-middle.gif</Bitmap>
+            <Bitmap Name="status_bar_right">Images/default/Misc/status-bar-right.gif</Bitmap>
+            <!--[END] Status Bar -->
+            
+            <!--[BEGIN] Xfire Ad -->
+            <!-- <Bitmap Name="xfiread_container_left">Images/default/Misc/xfiread-left.gif</Bitmap>
+            <Bitmap Name="xfiread_container_middle">Images/default/Misc/xfiread-middle.gif</Bitmap>
+            <Bitmap Name="xfiread_container_right">Images/default/Misc/xfiread-right.gif</Bitmap> -->
+            <!--[END] Xfire Ad -->
+            
+            
+            
+            <!--
+            //////////////////////////////////////////////
+            // Scrollbars
+            //////////////////////////////////////////////
+            -->
+            <Bitmap Name="scrollbar_arrow_up_norm">Images/default/Scrollbars/default/Scroll Buttons/scrollbar-arrow-up-norm.gif</Bitmap>
+            <Bitmap Name="scrollbar_arrow_up_hover">Images/default/Scrollbars/default/Scroll Buttons/scrollbar-arrow-up-hover.gif</Bitmap>
+            <Bitmap Name="scrollbar_arrow_up_down">Images/default/Scrollbars/default/Scroll Buttons/scrollbar-arrow-up-down.gif</Bitmap>
+            <Bitmap Name="scrollbar_arrow_up_disabled">Images/default/Scrollbars/default/Scroll Buttons/scrollbar-arrow-up-disabled.gif</Bitmap>
+            
+            <Bitmap Name="scrollbar_arrow_down_norm">Images/default/Scrollbars/default/Scroll Buttons/scrollbar-arrow-down-norm.gif</Bitmap>
+            <Bitmap Name="scrollbar_arrow_down_hover">Images/default/Scrollbars/default/Scroll Buttons/scrollbar-arrow-down-hover.gif</Bitmap>
+            <Bitmap Name="scrollbar_arrow_down_down">Images/default/Scrollbars/default/Scroll Buttons/scrollbar-arrow-down-down.gif</Bitmap>
+            <Bitmap Name="scrollbar_arrow_down_disabled">Images/default/Scrollbars/default/Scroll Buttons/scrollbar-arrow-down-disabled.gif</Bitmap>
+            
+            <Bitmap Name="scrollbar_arrow_left_norm">Images/default/Scrollbars/default/Scroll Buttons/scrollbar-arrow-left-norm.gif</Bitmap>
+            <Bitmap Name="scrollbar_arrow_left_hover">Images/default/Scrollbars/default/Scroll Buttons/scrollbar-arrow-left-hover.gif</Bitmap>
+            <Bitmap Name="scrollbar_arrow_left_down">Images/default/Scrollbars/default/Scroll Buttons/scrollbar-arrow-left-down.gif</Bitmap>
+            <Bitmap Name="scrollbar_arrow_left_disabled">Images/default/Scrollbars/default/Scroll Buttons/scrollbar-arrow-left-disabled.gif</Bitmap>
+            
+            <Bitmap Name="scrollbar_arrow_right_norm">Images/default/Scrollbars/default/Scroll Buttons/scrollbar-arrow-right-norm.gif</Bitmap>
+            <Bitmap Name="scrollbar_arrow_right_hover">Images/default/Scrollbars/default/Scroll Buttons/scrollbar-arrow-right-hover.gif</Bitmap>
+            <Bitmap Name="scrollbar_arrow_right_down">Images/default/Scrollbars/default/Scroll Buttons/scrollbar-arrow-right-down.gif</Bitmap>
+            <Bitmap Name="scrollbar_arrow_right_disabled">Images/default/Scrollbars/default/Scroll Buttons/scrollbar-arrow-right-disabled.gif</Bitmap>
+            
+            <Bitmap Name="scrollbar_vert_gripper_top_norm">Images/default/Scrollbars/default/Grippers/scrollbar-vert-gripper-top-norm.gif</Bitmap>
+            <Bitmap Name="scrollbar_vert_gripper_middle_norm">Images/default/Scrollbars/default/Grippers/scrollbar-vert-gripper-middle-norm.gif</Bitmap>
+            <Bitmap Name="scrollbar_vert_gripper_bottom_norm">Images/default/Scrollbars/default/Grippers/scrollbar-vert-gripper-bottom-norm.gif</Bitmap>
+            
+            <Bitmap Name="scrollbar_vert_gripper_top_hover">Images/default/Scrollbars/default/Grippers/scrollbar-vert-gripper-top-hover.gif</Bitmap>
+            <Bitmap Name="scrollbar_vert_gripper_middle_hover">Images/default/Scrollbars/default/Grippers/scrollbar-vert-gripper-middle-hover.gif</Bitmap>
+            <Bitmap Name="scrollbar_vert_gripper_bottom_hover">Images/default/Scrollbars/default/Grippers/scrollbar-vert-gripper-bottom-hover.gif</Bitmap>
+            
+            <Bitmap Name="scrollbar_vert_gripper_top_down">Images/default/Scrollbars/default/Grippers/scrollbar-vert-gripper-top-down.gif</Bitmap>
+            <Bitmap Name="scrollbar_vert_gripper_middle_down">Images/default/Scrollbars/default/Grippers/scrollbar-vert-gripper-middle-down.gif</Bitmap>
+            <Bitmap Name="scrollbar_vert_gripper_bottom_down">Images/default/Scrollbars/default/Grippers/scrollbar-vert-gripper-bottom-down.gif</Bitmap>
+            
+            <Bitmap Name="scrollbar_horz_gripper_left_norm">Images/default/Scrollbars/default/Grippers/scrollbar-horz-gripper-left-norm.gif</Bitmap>
+            <Bitmap Name="scrollbar_horz_gripper_middle_norm">Images/default/Scrollbars/default/Grippers/scrollbar-horz-gripper-middle-norm.gif</Bitmap>
+            <Bitmap Name="scrollbar_horz_gripper_right_norm">Images/default/Scrollbars/default/Grippers/scrollbar-horz-gripper-right-norm.gif</Bitmap>
+            
+            <Bitmap Name="scrollbar_horz_gripper_left_hover">Images/default/Scrollbars/default/Grippers/scrollbar-horz-gripper-left-hover.gif</Bitmap>
+            <Bitmap Name="scrollbar_horz_gripper_middle_hover">Images/default/Scrollbars/default/Grippers/scrollbar-horz-gripper-middle-hover.gif</Bitmap>
+            <Bitmap Name="scrollbar_horz_gripper_right_hover">Images/default/Scrollbars/default/Grippers/scrollbar-horz-gripper-right-hover.gif</Bitmap>
+            
+            <Bitmap Name="scrollbar_horz_gripper_left_down">Images/default/Scrollbars/default/Grippers/scrollbar-horz-gripper-left-down.gif</Bitmap>
+            <Bitmap Name="scrollbar_horz_gripper_middle_down">Images/default/Scrollbars/default/Grippers/scrollbar-horz-gripper-middle-down.gif</Bitmap>
+            <Bitmap Name="scrollbar_horz_gripper_right_down">Images/default/Scrollbars/default/Grippers/scrollbar-horz-gripper-right-down.gif</Bitmap>
+            
+            <Bitmap Name="scrollbar_horz_gutter_left">Images/default/Scrollbars/default/Gutters/scrollbar-horz-gutter-left.gif</Bitmap>
+            <Bitmap Name="scrollbar_horz_gutter_middle">Images/default/Scrollbars/default/Gutters/scrollbar-horz-gutter-middle.gif</Bitmap>
+            <Bitmap Name="scrollbar_horz_gutter_right">Images/default/Scrollbars/default/Gutters/scrollbar-horz-gutter-right.gif</Bitmap>
+            
+            <Bitmap Name="scrollbar_vert_gutter_top">Images/default/Scrollbars/default/Gutters/scrollbar-vert-gutter-top.gif</Bitmap>
+            <Bitmap Name="scrollbar_vert_gutter_middle">Images/default/Scrollbars/default/Gutters/scrollbar-vert-gutter-middle.gif</Bitmap>
+            <Bitmap Name="scrollbar_vert_gutter_bottom">Images/default/Scrollbars/default/Gutters/scrollbar-vert-gutter-bottom.gif</Bitmap>
+            
+            <Bitmap Name="scrollbar_corner_gutter">Images/default/Scrollbars/default/Gutters/scrollbar-corner-gutter.gif</Bitmap>
+            
+            <Bitmap Name="scrollbar_vert_gripper_grips">Images/default/Scrollbars/default/Grippers/scrollbar-vert-gripper-grips.gif</Bitmap>
+            <Bitmap Name="scrollbar_horz_gripper_grips">Images/default/Scrollbars/default/Grippers/scrollbar-horz-gripper-grips.gif</Bitmap>
+            
+            
+            
+            <!--
+            //////////////////////////////////////////////
+            // Icons
+            //////////////////////////////////////////////
+            -->
+            <Bitmap Name="icon_alert_1">Images/default/Icons/icon-alert-1.gif</Bitmap>
+            <Bitmap Name="icon_alert_2">Images/default/Icons/icon-alert-2.gif</Bitmap>
+            <Bitmap Name="icon_alert_3">Images/default/Icons/icon-alert-3.gif</Bitmap>
+            <Bitmap Name="icon_alert_4">Images/default/Icons/icon-alert-4.gif</Bitmap>
+            <Bitmap Name="icon_alert_5">Images/default/Icons/icon-alert-5.gif</Bitmap>
+            <Bitmap Name="icon_alert_6">Images/default/Icons/icon-alert-6.gif</Bitmap>
+            <Bitmap Name="icon_alert_7">Images/default/Icons/icon-alert-7.gif</Bitmap>
+            <Bitmap Name="icon_alert_8">Images/default/Icons/icon-alert-8.gif</Bitmap>
+            <Bitmap Name="icon_alert_9">Images/default/Icons/icon-alert-9.gif</Bitmap>
+            <Bitmap Name="icon_alert_9+">Images/default/Icons/icon-alert-9+.gif</Bitmap>
+            <Bitmap Name="icon_chat">Images/default/Icons/icon-chat.gif</Bitmap>
+            <Bitmap Name="icon_group_chat">Images/default/Icons/icon-groupchat.gif</Bitmap>
+            <Bitmap Name="icon_server_unmuted">Images/default/Icons/icon-server-unmuted.gif</Bitmap>
+            <Bitmap Name="icon_speaker_gray">Images/default/Icons/icon-speaker-gray.gif</Bitmap>
+            <Bitmap Name="icon_speaker_unmuted">Images/default/Icons/icon-speaker-unmuted.gif</Bitmap>
+            <Bitmap Name="icon_speaker_muted">Images/default/Icons/icon-speaker-muted.gif</Bitmap>
+            <Bitmap Name="icon_speaker_silent">Images/default/Icons/icon-speaker-not-talking.gif</Bitmap>
+            
+            
+            
+            <!--
+            //////////////////////////////////////////////
+            // Buttons
+            //////////////////////////////////////////////
+            -->
+            <!-- Common -->
+            <Bitmap Name="button_ok_norm">Images/default/Buttons/ok-norm.gif</Bitmap>
+            <Bitmap Name="button_ok_hover">Images/default/Buttons/ok-hover.gif</Bitmap>
+            <Bitmap Name="button_ok_down">Images/default/Buttons/ok-down.gif</Bitmap>
+            <Bitmap Name="button_ok_disabled">Images/default/Buttons/ok-disabled.gif</Bitmap>
+            
+            <Bitmap Name="button_cancel_norm">Images/default/Buttons/cancel-norm.gif</Bitmap>
+            <Bitmap Name="button_cancel_hover">Images/default/Buttons/cancel-hover.gif</Bitmap>
+            <Bitmap Name="button_cancel_down">Images/default/Buttons/cancel-down.gif</Bitmap>
+            <Bitmap Name="button_cancel_disabled">Images/default/Buttons/cancel-disabled.gif</Bitmap>
+            
+            <Bitmap Name="button_checkbox_unchecked">Images/default/Buttons/checkbox-unchecked.gif</Bitmap>
+            <Bitmap Name="button_checkbox_checked">Images/default/Buttons/checkbox-checked.gif</Bitmap>
+            <Bitmap Name="button_checkbox_disabled">Images/default/Buttons/checkbox-disabled.gif</Bitmap>
+            
+            <Bitmap Name="button_close_norm">Images/default/Buttons/close-norm.gif</Bitmap>
+            <Bitmap Name="button_close_hover">Images/default/Buttons/close-hover.gif</Bitmap>
+            <Bitmap Name="button_close_down">Images/default/Buttons/close-down.gif</Bitmap>
+            <Bitmap Name="button_close_disabled">Images/default/Buttons/close-disabled.gif</Bitmap>
+            
+            <Bitmap Name="button_maximize_norm">Images/default/Buttons/maximize-norm.gif</Bitmap>
+            <Bitmap Name="button_maximize_hover">Images/default/Buttons/maximize-hover.gif</Bitmap>
+            <Bitmap Name="button_maximize_down">Images/default/Buttons/maximize-down.gif</Bitmap>
+            <Bitmap Name="button_maximize_disabled">Images/default/Buttons/maximize-disabled.gif</Bitmap>
+            
+            <Bitmap Name="button_minimize_norm">Images/default/Buttons/minimize-norm.gif</Bitmap>
+            <Bitmap Name="button_minimize_hover">Images/default/Buttons/minimize-hover.gif</Bitmap>
+            <Bitmap Name="button_minimize_down">Images/default/Buttons/minimize-down.gif</Bitmap>
+            <Bitmap Name="button_minimize_disabled">Images/default/Buttons/minimize-disabled.gif</Bitmap>
+            
+            
+            <!-- Info view buttons -->
+            <Bitmap Name="button_info_out_norm">Images/default/Buttons/infoview-out-norm.gif</Bitmap>
+            <Bitmap Name="button_info_out_hover">Images/default/Buttons/infoview-out-hover.gif</Bitmap>
+            <Bitmap Name="button_info_out_down">Images/default/Buttons/infoview-out-down.gif</Bitmap>
+            
+            <Bitmap Name="button_info_in_norm">Images/default/Buttons/infoview-in-norm.gif</Bitmap>
+            <Bitmap Name="button_info_in_hover">Images/default/Buttons/infoview-in-hover.gif</Bitmap>
+            <Bitmap Name="button_info_in_down">Images/default/Buttons/infoview-in-down.gif</Bitmap>
+            
+            
+            <!-- Friends Tab Buttons -->
+            <Bitmap Name="button_friends_tab_norm">Images/default/Buttons/tab-friends-norm.gif</Bitmap>
+            <Bitmap Name="button_friends_tab_hover">Images/default/Buttons/tab-friends-hover.gif</Bitmap>
+            <Bitmap Name="button_friends_tab_down">Images/default/Buttons/tab-friends-down.gif</Bitmap>
+            
+            <Bitmap Name="button_friend_add_norm">Images/default/Buttons/friends-add-norm.gif</Bitmap>
+            <Bitmap Name="button_friend_add_hover">Images/default/Buttons/friends-add-hover.gif</Bitmap>
+            <Bitmap Name="button_friend_add_down">Images/default/Buttons/friends-add-down.gif</Bitmap>
+            <Bitmap Name="button_friend_add_disabled">Images/default/Buttons/friends-add-disabled.gif</Bitmap>
+            
+            <Bitmap Name="button_friend_add_norm_large">Images/default/Buttons/friends-add-norm-large.gif</Bitmap>
+            <Bitmap Name="button_friend_add_hover_large">Images/default/Buttons/friends-add-hover-large.gif</Bitmap>
+            <Bitmap Name="button_friend_add_down_large">Images/default/Buttons/friends-add-down-large.gif</Bitmap>
+            <Bitmap Name="button_friend_add_disabled_large">Images/default/Buttons/friends-add-disabled-large.gif</Bitmap>
+            
+            <Bitmap Name="button_friend_chat_norm">Images/default/Buttons/friends-chat-norm.gif</Bitmap>
+            <Bitmap Name="button_friend_chat_hover">Images/default/Buttons/friends-chat-hover.gif</Bitmap>
+            <Bitmap Name="button_friend_chat_down">Images/default/Buttons/friends-chat-down.gif</Bitmap>
+            <Bitmap Name="button_friend_chat_disabled">Images/default/Buttons/friends-chat-disabled.gif</Bitmap>
+            
+            <Bitmap Name="button_friend_info_norm">Images/default/Buttons/friends-info-norm.gif</Bitmap>
+            <Bitmap Name="button_friend_info_hover">Images/default/Buttons/friends-info-hover.gif</Bitmap>
+            <Bitmap Name="button_friend_info_down">Images/default/Buttons/friends-info-down.gif</Bitmap>
+            <Bitmap Name="button_friend_info_disabled">Images/default/Buttons/friends-info-disabled.gif</Bitmap>
+            
+            <Bitmap Name="button_friend_info_norm_large">Images/default/Buttons/friends-info-norm-large.gif</Bitmap>
+            <Bitmap Name="button_friend_info_hover_large">Images/default/Buttons/friends-info-hover-large.gif</Bitmap>
+            <Bitmap Name="button_friend_info_down_large">Images/default/Buttons/friends-info-down-large.gif</Bitmap>
+            <Bitmap Name="button_friend_info_disabled_large">Images/default/Buttons/friends-info-disabled-large.gif</Bitmap>
+            
+            <Bitmap Name="button_join_game_norm">Images/default/Buttons/friends-joingame-norm.gif</Bitmap>
+            <Bitmap Name="button_join_game_hover">Images/default/Buttons/friends-joingame-hover.gif</Bitmap>
+            <Bitmap Name="button_join_game_down">Images/default/Buttons/friends-joingame-down.gif</Bitmap>
+            <Bitmap Name="button_join_game_disabled">Images/default/Buttons/friends-joingame-disabled.gif</Bitmap>
+
+            
+            <!-- Chat Rooms Tab Buttons -->
+            <Bitmap Name="button_chatrooms_tab_norm">Images/default/Buttons/tab-chatrooms-norm.gif</Bitmap>
+            <Bitmap Name="button_chatrooms_tab_hover">Images/default/Buttons/tab-chatrooms-hover.gif</Bitmap>
+            <Bitmap Name="button_chatrooms_tab_down">Images/default/Buttons/tab-chatrooms-down.gif</Bitmap>
+            
+            <Bitmap Name="button_chatroom_create_norm">Images/default/Buttons/chatrooms-create-norm.gif</Bitmap>
+            <Bitmap Name="button_chatroom_create_hover">Images/default/Buttons/chatrooms-create-hover.gif</Bitmap>
+            <Bitmap Name="button_chatroom_create_down">Images/default/Buttons/chatrooms-create-down.gif</Bitmap>
+            <Bitmap Name="button_chatroom_create_disabled">Images/default/Buttons/chatrooms-create-disabled.gif</Bitmap>
+            
+            <Bitmap Name="button_chatroom_create_norm_large">Images/default/Buttons/chatrooms-create-norm-large.gif</Bitmap>
+            <Bitmap Name="button_chatroom_create_hover_large">Images/default/Buttons/chatrooms-create-hover-large.gif</Bitmap>
+            <Bitmap Name="button_chatroom_create_down_large">Images/default/Buttons/chatrooms-create-down-large.gif</Bitmap>
+            <Bitmap Name="button_chatroom_create_disabled_large">Images/default/Buttons/chatrooms-create-disabled-large.gif</Bitmap>
+            
+            <Bitmap Name="button_chatroom_enter_norm">Images/default/Buttons/chatrooms-enter-norm.gif</Bitmap>
+            <Bitmap Name="button_chatroom_enter_hover">Images/default/Buttons/chatrooms-enter-hover.gif</Bitmap>
+            <Bitmap Name="button_chatroom_enter_down">Images/default/Buttons/chatrooms-enter-down.gif</Bitmap>
+            <Bitmap Name="button_chatroom_enter_disabled">Images/default/Buttons/chatrooms-enter-disabled.gif</Bitmap>
+            
+            <Bitmap Name="button_chatroom_invite_norm">Images/default/Buttons/chatrooms-invite-norm.gif</Bitmap>
+            <Bitmap Name="button_chatroom_invite_hover">Images/default/Buttons/chatrooms-invite-hover.gif</Bitmap>
+            <Bitmap Name="button_chatroom_invite_down">Images/default/Buttons/chatrooms-invite-down.gif</Bitmap>
+            <Bitmap Name="button_chatroom_invite_disabled">Images/default/Buttons/chatrooms-invite-disabled.gif</Bitmap>
+            
+            
+            <!-- Servers Tab Buttons -->
+            <Bitmap Name="button_servers_tab_norm">Images/default/Buttons/tab-servers-norm.gif</Bitmap>
+            <Bitmap Name="button_servers_tab_hover">Images/default/Buttons/tab-servers-hover.gif</Bitmap>
+            <Bitmap Name="button_servers_tab_down">Images/default/Buttons/tab-servers-down.gif</Bitmap>
+            
+            <Bitmap Name="button_server_favorite_norm">Images/default/Buttons/servers-favorite-norm.gif</Bitmap>
+            <Bitmap Name="button_server_favorite_hover">Images/default/Buttons/servers-favorite-hover.gif</Bitmap>
+            <Bitmap Name="button_server_favorite_down">Images/default/Buttons/servers-favorite-down.gif</Bitmap>
+            <Bitmap Name="button_server_favorite_disabled">Images/default/Buttons/servers-favorite-disabled.gif</Bitmap>
+            
+            <Bitmap Name="button_server_refresh_norm">Images/default/Buttons/servers-refresh-norm.gif</Bitmap>
+            <Bitmap Name="button_server_refresh_hover">Images/default/Buttons/servers-refresh-hover.gif</Bitmap>
+            <Bitmap Name="button_server_refresh_down">Images/default/Buttons/servers-refresh-down.gif</Bitmap>
+            <Bitmap Name="button_server_refresh_disabled">Images/default/Buttons/servers-refresh-disabled.gif</Bitmap>
+            
+            <Bitmap Name="button_server_refresh_norm_large">Images/default/Buttons/servers-refresh-norm-large.gif</Bitmap>
+            <Bitmap Name="button_server_refresh_hover_large">Images/default/Buttons/servers-refresh-hover-large.gif</Bitmap>
+            <Bitmap Name="button_server_refresh_down_large">Images/default/Buttons/servers-refresh-down-large.gif</Bitmap>
+            <Bitmap Name="button_server_refresh_disabled_large">Images/default/Buttons/servers-refresh-disabled-large.gif</Bitmap>
+            
+            
+            <!-- Files, Pictures, Videos Tab & Shared Buttons -->
+            <Bitmap Name="button_files_tab_norm">Images/default/Buttons/tab-files-norm.gif</Bitmap>
+            <Bitmap Name="button_files_tab_hover">Images/default/Buttons/tab-files-hover.gif</Bitmap>
+            <Bitmap Name="button_files_tab_down">Images/default/Buttons/tab-files-down.gif</Bitmap>
+            
+            <Bitmap Name="button_pictures_tab_norm">Images/default/Buttons/tab-pictures-norm.gif</Bitmap>
+            <Bitmap Name="button_pictures_tab_hover">Images/default/Buttons/tab-pictures-hover.gif</Bitmap>
+            <Bitmap Name="button_pictures_tab_down">Images/default/Buttons/tab-pictures-down.gif</Bitmap>
+            
+            <Bitmap Name="button_notifications_tab_norm">Images/default/Buttons/tab-notifications-norm.gif</Bitmap>
+            <Bitmap Name="button_notifications_tab_hover">Images/default/Buttons/tab-notifications-hover.gif</Bitmap>
+            <Bitmap Name="button_notifications_tab_down">Images/default/Buttons/tab-notifications-down.gif</Bitmap>
+            <Bitmap Name="button_notifications_tab_new">Images/default/Buttons/tab-notifications-new.gif</Bitmap>
+            
+            <Bitmap Name="button_videos_tab_norm">Images/default/Buttons/tab-videos-norm.gif</Bitmap>
+            <Bitmap Name="button_videos_tab_hover">Images/default/Buttons/tab-videos-hover.gif</Bitmap>
+            <Bitmap Name="button_videos_tab_down">Images/default/Buttons/tab-videos-down.gif</Bitmap>
+            
+            <Bitmap Name="button_delete_norm">Images/default/Buttons/files-delete-norm.gif</Bitmap>
+            <Bitmap Name="button_delete_hover">Images/default/Buttons/files-delete-hover.gif</Bitmap>
+            <Bitmap Name="button_delete_down">Images/default/Buttons/files-delete-down.gif</Bitmap>
+            <Bitmap Name="button_delete_disabled">Images/default/Buttons/files-delete-disabled.gif</Bitmap>
+            
+            <Bitmap Name="button_search_norm">Images/default/Buttons/files-search-norm.gif</Bitmap>
+            <Bitmap Name="button_search_hover">Images/default/Buttons/files-search-hover.gif</Bitmap>
+            <Bitmap Name="button_search_down">Images/default/Buttons/files-search-down.gif</Bitmap>
+            <Bitmap Name="button_search_disabled">Images/default/Buttons/files-search-disabled.gif</Bitmap>
+            
+            <Bitmap Name="button_search_norm_large">Images/default/Buttons/files-search-norm-large.gif</Bitmap>
+            <Bitmap Name="button_search_hover_large">Images/default/Buttons/files-search-hover-large.gif</Bitmap>
+            <Bitmap Name="button_search_down_large">Images/default/Buttons/files-search-down-large.gif</Bitmap>
+            <Bitmap Name="button_search_disabled_large">Images/default/Buttons/files-search-disabled-large.gif</Bitmap>
+            
+            <Bitmap Name="button_upload_norm">Images/default/Buttons/files-upload-norm.gif</Bitmap>
+            <Bitmap Name="button_upload_hover">Images/default/Buttons/files-upload-hover.gif</Bitmap>
+            <Bitmap Name="button_upload_down">Images/default/Buttons/files-upload-down.gif</Bitmap>
+            <Bitmap Name="button_upload_disabled">Images/default/Buttons/files-upload-disabled.gif</Bitmap>
+            
+            <Bitmap Name="button_file_open_norm">Images/default/Buttons/files-open-norm.gif</Bitmap>
+            <Bitmap Name="button_file_open_hover">Images/default/Buttons/files-open-hover.gif</Bitmap>
+            <Bitmap Name="button_file_open_down">Images/default/Buttons/files-open-down.gif</Bitmap>
+            <Bitmap Name="button_file_open_disabled">Images/default/Buttons/files-open-disabled.gif</Bitmap>
+            
+            <Bitmap Name="button_status_norm">Images/default/Buttons/status-arrow-norm.gif</Bitmap>
+            <Bitmap Name="button_status_hover">Images/default/Buttons/status-arrow-hover.gif</Bitmap>
+            <Bitmap Name="button_status_down">Images/default/Buttons/status-arrow-down.gif</Bitmap>
+            
+            <Bitmap Name="button_videos_search_norm_large">Images/default/Buttons/videos-search-norm-large.gif</Bitmap>
+            <Bitmap Name="button_videos_search_hover_large">Images/default/Buttons/videos-search-hover-large.gif</Bitmap>
+            <Bitmap Name="button_videos_search_down_large">Images/default/Buttons/videos-search-down-large.gif</Bitmap>
+            <Bitmap Name="button_videos_search_disabled_large">Images/default/Buttons/videos-search-disabled-large.gif</Bitmap>
+            
+            
+            <!-- Chat Window -->
+            <Bitmap Name="button_send_norm">Images/default/Buttons/chat-send-norm.gif</Bitmap>
+            <Bitmap Name="button_send_hover">Images/default/Buttons/chat-send-hover.gif</Bitmap>
+            <Bitmap Name="button_send_down">Images/default/Buttons/chat-send-down.gif</Bitmap>
+            <Bitmap Name="button_send_disabled">Images/default/Buttons/chat-send-disabled.gif</Bitmap>
+            
+            <Bitmap Name="button_send_norm_large">Images/default/Buttons/chat-send-norm-large.gif</Bitmap>
+            <Bitmap Name="button_send_hover_large">Images/default/Buttons/chat-send-hover-large.gif</Bitmap>
+            <Bitmap Name="button_send_down_large">Images/default/Buttons/chat-send-down-large.gif</Bitmap>
+            <Bitmap Name="button_send_disabled_large">Images/default/Buttons/chat-send-disabled-large.gif</Bitmap>
+            
+            <Bitmap Name="button_join_norm">Images/default/Buttons/chat-join-norm.gif</Bitmap>
+            <Bitmap Name="button_join_hover">Images/default/Buttons/chat-join-hover.gif</Bitmap>
+            <Bitmap Name="button_join_down">Images/default/Buttons/chat-join-down.gif</Bitmap>
+            <Bitmap Name="button_join_disabled">Images/default/Buttons/chat-join-disabled.gif</Bitmap>
+            
+            <Bitmap Name="button_call_norm">Images/default/Buttons/chat-call-norm.gif</Bitmap>
+            <Bitmap Name="button_call_hover">Images/default/Buttons/chat-call-hover.gif</Bitmap>
+            <Bitmap Name="button_call_down">Images/default/Buttons/chat-call-down.gif</Bitmap>
+            <Bitmap Name="button_call_disabled">Images/default/Buttons/chat-call-disabled.gif</Bitmap>
+            <Bitmap Name="button_call_ringing">Images/default/Buttons/chat-call-ringing.gif</Bitmap>
+            <Bitmap Name="button_call_connected_norm">Images/default/Buttons/chat-callconnected-norm.gif</Bitmap>
+            <Bitmap Name="button_call_connected_hover">Images/default/Buttons/chat-callconnected-hover.gif</Bitmap>
+            <Bitmap Name="button_call_connected_down">Images/default/Buttons/chat-callconnected-down.gif</Bitmap>
+            <Bitmap Name="button_call_cancel_norm">Images/default/Buttons/chat-callcancel-hover.gif</Bitmap>
+            <Bitmap Name="button_call_cancel_hover">Images/default/Buttons/chat-callcancel-hover.gif</Bitmap>
+            <Bitmap Name="button_call_cancel_down">Images/default/Buttons/chat-callcancel-down.gif</Bitmap>
+            
+            <Bitmap Name="button_mute_mic_norm">Images/default/Buttons/chat-mutemic-norm.gif</Bitmap>
+            <Bitmap Name="button_mute_mic_hover">Images/default/Buttons/chat-mutemic-hover.gif</Bitmap>
+            <Bitmap Name="button_mute_mic_down">Images/default/Buttons/chat-mutemic-down.gif</Bitmap>
+            <Bitmap Name="button_mute_mic_disabled">Images/default/Buttons/chat-mutemic-disabled.gif</Bitmap>
+            <Bitmap Name="button_mute_mic_on">Images/default/Buttons/chat-mutemic-on.gif</Bitmap>
+            
+            <Bitmap Name="button_unmute_mic_norm">Images/default/Buttons/chat-unmutemic-norm.gif</Bitmap>
+            <Bitmap Name="button_unmute_mic_hover">Images/default/Buttons/chat-unmutemic-hover.gif</Bitmap>
+            <Bitmap Name="button_unmute_mic_down">Images/default/Buttons/chat-unmutemic-down.gif</Bitmap>
+            
+            
+            <!-- XIG Web -->
+            <Bitmap Name="button_xig_web_back_norm">Images/default/Buttons/xig-web-back-norm.gif</Bitmap>
+            <Bitmap Name="button_xig_web_back_hover">Images/default/Buttons/xig-web-back-hover.gif</Bitmap>
+            <Bitmap Name="button_xig_web_back_down">Images/default/Buttons/xig-web-back-down.gif</Bitmap>
+            <Bitmap Name="button_xig_web_back_disabled">Images/default/Buttons/xig-web-back-disabled.gif</Bitmap>
+            
+            <Bitmap Name="button_xig_web_forward_norm">Images/default/Buttons/xig-web-forward-norm.gif</Bitmap>
+            <Bitmap Name="button_xig_web_forward_hover">Images/default/Buttons/xig-web-forward-hover.gif</Bitmap>
+            <Bitmap Name="button_xig_web_forward_down">Images/default/Buttons/xig-web-forward-down.gif</Bitmap>
+            <Bitmap Name="button_xig_web_forward_disabled">Images/default/Buttons/xig-web-forward-disabled.gif</Bitmap>
+            
+            <Bitmap Name="button_xig_refresh_norm">Images/default/Buttons/xig-web-refresh-norm.gif</Bitmap>
+            <Bitmap Name="button_xig_refresh_hover">Images/default/Buttons/xig-web-refresh-hover.gif</Bitmap>
+            <Bitmap Name="button_xig_refresh_down">Images/default/Buttons/xig-web-refresh-down.gif</Bitmap>
+            <Bitmap Name="button_xig_refresh_disabled">Images/default/Buttons/xig-web-refresh-disabled.gif</Bitmap>
+            
+            <Bitmap Name="button_xig_web_home_norm">Images/default/Buttons/xig-web-home-norm.gif</Bitmap>
+            <Bitmap Name="button_xig_web_home_hover">Images/default/Buttons/xig-web-home-hover.gif</Bitmap>
+            <Bitmap Name="button_xig_web_home_down">Images/default/Buttons/xig-web-home-down.gif</Bitmap>
+            <Bitmap Name="button_xig_web_home_disabled">Images/default/Buttons/xig-web-home-disabled.gif</Bitmap>
+            
+            <Bitmap Name="button_xig_web_add_tab_norm">Images/default/Buttons/xig-web-add-tab-norm.gif</Bitmap>
+            <Bitmap Name="button_xig_web_add_tab_hover">Images/default/Buttons/xig-web-add-tab-hover.gif</Bitmap>
+            <Bitmap Name="button_xig_web_add_tab_down">Images/default/Buttons/xig-web-add-tab-down.gif</Bitmap>
+            
+            <Bitmap Name="button_xig_web_close_tab_norm">Images/default/Buttons/xig-web-close-tab-norm.gif</Bitmap>
+            <Bitmap Name="button_xig_web_close_tab_hover">Images/default/Buttons/xig-web-close-tab-hover.gif</Bitmap>
+            <Bitmap Name="button_xig_web_close_tab_down">Images/default/Buttons/xig-web-close-tab-down.gif</Bitmap>
+            
+            <Bitmap Name="button_xig_web_next_tab_norm">Images/default/Buttons/xig-web-next-tab-norm.gif</Bitmap>
+            <Bitmap Name="button_xig_web_next_tab_hover">Images/default/Buttons/xig-web-next-tab-hover.gif</Bitmap>
+            <Bitmap Name="button_xig_web_next_tab_down">Images/default/Buttons/xig-web-next-tab-down.gif</Bitmap>
+            <Bitmap Name="button_xig_web_next_tab_disabled">Images/default/Buttons/xig-web-next-tab-disabled.gif</Bitmap>
+            
+            <Bitmap Name="button_xig_web_previous_tab_norm">Images/default/Buttons/xig-web-previous-tab-norm.gif</Bitmap>
+            <Bitmap Name="button_xig_web_previous_tab_hover">Images/default/Buttons/xig-web-previous-tab-hover.gif</Bitmap>
+            <Bitmap Name="button_xig_web_previous_tab_down">Images/default/Buttons/xig-web-previous-tab-down.gif</Bitmap>
+            <Bitmap Name="button_xig_web_previous_tab_disabled">Images/default/Buttons/xig-web-previous-tab-disabled.gif</Bitmap>
+            
+            
+            <!-- XIG Bar -->
+            <Bitmap Name="button_xigbar_broadcast_norm">Images/default/Buttons/xig-bar-broadcast-norm.gif</Bitmap>
+            <Bitmap Name="button_xigbar_broadcast_hover">Images/default/Buttons/xig-bar-broadcast-hover.gif</Bitmap>
+            <Bitmap Name="button_xigbar_broadcast_down">Images/default/Buttons/xig-bar-broadcast-down.gif</Bitmap>
+            
+            <Bitmap Name="button_xigbar_call_norm">Images/default/Buttons/xig-bar-call-norm.gif</Bitmap>
+            <Bitmap Name="button_xigbar_call_hover">Images/default/Buttons/xig-bar-call-hover.gif</Bitmap>
+            <Bitmap Name="button_xigbar_call_down">Images/default/Buttons/xig-bar-call-down.gif</Bitmap>
+            <Bitmap Name="button_xigbar_call_disabled">Images/default/Buttons/xig-bar-call-disabled.gif</Bitmap>
+            <Bitmap Name="button_xigbar_call_connected">Images/default/Buttons/xig-bar-call-connected.gif</Bitmap>
+            
+            <Bitmap Name="button_xigbar_call_cancel_norm">Images/default/Buttons/xig-bar-call-cancel-norm.gif</Bitmap>
+            <Bitmap Name="button_xigbar_call_cancel_hover">Images/default/Buttons/xig-bar-call-cancel-hover.gif</Bitmap>
+            <Bitmap Name="button_xigbar_call_cancel_down">Images/default/Buttons/xig-bar-call-cancel-down.gif</Bitmap>
+            
+            <Bitmap Name="button_xigbar_chats_norm">Images/default/Buttons/xig-bar-chats-norm.gif</Bitmap>
+            <Bitmap Name="button_xigbar_chats_hover">Images/default/Buttons/xig-bar-chats-hover.gif</Bitmap>
+            <Bitmap Name="button_xigbar_chats_down">Images/default/Buttons/xig-bar-chats-down.gif</Bitmap>
+            
+            <Bitmap Name="button_xigbar_edit_norm">Images/default/Buttons/xig-bar-edit-norm.gif</Bitmap>
+            <Bitmap Name="button_xigbar_edit_hover">Images/default/Buttons/xig-bar-edit-hover.gif</Bitmap>
+            <Bitmap Name="button_xigbar_edit_down">Images/default/Buttons/xig-bar-edit-down.gif</Bitmap>
+            
+            <Bitmap Name="button_xigbar_mic_talking">Images/default/Buttons/xig-bar-mutemic-talking.gif</Bitmap>
+            <Bitmap Name="button_xigbar_unmute_norm">Images/default/Buttons/xig-bar-unmute-norm.gif</Bitmap>
+            <Bitmap Name="button_xigbar_unmute_hover">Images/default/Buttons/xig-bar-unmute-hover.gif</Bitmap>
+            <Bitmap Name="button_xigbar_unmute_down">Images/default/Buttons/xig-bar-unmute-down.gif</Bitmap>
+            
+            <Bitmap Name="button_xigbar_music_norm">Images/default/Buttons/xig-bar-music-norm.gif</Bitmap>
+            <Bitmap Name="button_xigbar_music_hover">Images/default/Buttons/xig-bar-music-hover.gif</Bitmap>
+            <Bitmap Name="button_xigbar_music_down">Images/default/Buttons/xig-bar-music-down.gif</Bitmap>
+            
+            <Bitmap Name="button_xigbar_mute_mic_norm">Images/default/Buttons/xig-bar-mutemic-norm.gif</Bitmap>
+            <Bitmap Name="button_xigbar_mute_mic_hover">Images/default/Buttons/xig-bar-mutemic-hover.gif</Bitmap>
+            <Bitmap Name="button_xigbar_mute_mic_down">Images/default/Buttons/xig-bar-mutemic-down.gif</Bitmap>
+            <Bitmap Name="button_xigbar_mute_mic_disabled">Images/default/Buttons/xig-bar-mutemic-disabled.gif</Bitmap>
+            
+            <Bitmap Name="button_xigbar_pictures_norm">Images/default/Buttons/xig-bar-picture-norm.gif</Bitmap>
+            <Bitmap Name="button_xigbar_pictures_hover">Images/default/Buttons/xig-bar-picture-hover.gif</Bitmap>
+            <Bitmap Name="button_xigbar_pictures_down">Images/default/Buttons/xig-bar-picture-down.gif</Bitmap>
+            
+            <Bitmap Name="button_xigbar_video_norm">Images/default/Buttons/xig-bar-video-norm.gif</Bitmap>
+            <Bitmap Name="button_xigbar_video_hover">Images/default/Buttons/xig-bar-video-hover.gif</Bitmap>
+            <Bitmap Name="button_xigbar_video_down">Images/default/Buttons/xig-bar-video-down.gif</Bitmap>
+            
+            <Bitmap Name="button_xigbar_web_norm">Images/default/Buttons/xig-bar-web-norm.gif</Bitmap>
+            <Bitmap Name="button_xigbar_web_hover">Images/default/Buttons/xig-bar-web-hover.gif</Bitmap>
+            <Bitmap Name="button_xigbar_web_down">Images/default/Buttons/xig-bar-web-down.gif</Bitmap>
+            
+            <Bitmap Name="button_xigbar_xfire_norm">Images/default/Buttons/xig-bar-xfirelogo-norm.gif</Bitmap>
+            <Bitmap Name="button_xigbar_xfire_hover">Images/default/Buttons/xig-bar-xfirelogo-hover.gif</Bitmap>
+            
+            
+            <!-- XIG Edit Mode -->
+            <!-- This contains Edit Mode & Edit Mode Options -->
+            <Bitmap Name="button_xig_edit_mode_settings_small_small_down">Images/default/Buttons/xig-editmode-settings-small-norm.gif</Bitmap>
+            <Bitmap Name="button_xig_edit_mode_settings_small_hover">Images/default/Buttons/xig-editmode-settings-small-hover.gif</Bitmap>
+            <Bitmap Name="button_xig_edit_mode_settings_small_down">Images/default/Buttons/xig-editmode-settings-small-down.gif</Bitmap>
+            
+            <Bitmap Name="button_xig_edit_mode_settings_large_norm">Images/default/Buttons/xig-editmode-settings-large-norm.gif</Bitmap>
+            <Bitmap Name="button_xig_edit_mode_settings_large_hover">Images/default/Buttons/xig-editmode-settings-large-hover.gif</Bitmap>
+            <Bitmap Name="button_xig_edit_mode_settings_large_down">Images/default/Buttons/xig-editmode-settings-large-down.gif</Bitmap>
+            
+            <Bitmap Name="button_xig_edit_mode_opt_back_norm">Images/default/Buttons/xig-editmodeopt-back-norm.gif</Bitmap>
+            <Bitmap Name="button_xig_edit_mode_opt_back_hover">Images/default/Buttons/xig-editmodeopt-back-hover.gif</Bitmap>
+            <Bitmap Name="button_xig_edit_mode_opt_back_down">Images/default/Buttons/xig-editmodeopt-back-down.gif</Bitmap>
+            
+            <Bitmap Name="button_xig_edit_mode_gripper_bottom_right_norm">Images/default/XIG/Overlays/EditMode/xig-editmode-gripper-bottom-right-norm.gif</Bitmap>
+            
+            
+            <!-- XIG Active Window -->
+            <Bitmap Name="button_xig_chats_tab_norm">Images/default/Buttons/tab-chats-norm.gif</Bitmap>
+            <Bitmap Name="button_xig_chats_tab_hover">Images/default/Buttons/tab-chats-hover.gif</Bitmap>
+            <Bitmap Name="button_xig_chats_tab_down">Images/default/Buttons/tab-chats-down.gif</Bitmap>
+            
+            <Bitmap Name="button_xig_options_tab_norm">Images/default/Buttons/tab-options-norm.gif</Bitmap>
+            <Bitmap Name="button_xig_options_tab_hover">Images/default/Buttons/tab-options-hover.gif</Bitmap>
+            <Bitmap Name="button_xig_options_tab_down">Images/default/Buttons/tab-options-down.gif</Bitmap>
+            
+            <Bitmap Name="button_xig_help_tab_norm">Images/default/Buttons/tab-help-norm.gif</Bitmap>
+            <Bitmap Name="button_xig_help_tab_hover">Images/default/Buttons/tab-help-hover.gif</Bitmap>
+            <Bitmap Name="button_xig_help_tab_down">Images/default/Buttons/tab-help-down.gif</Bitmap>
+            
+            <Bitmap Name="button_xig_active_window_close_norm">Images/default/Buttons/close-norm.gif</Bitmap>
+            <Bitmap Name="button_xig_active_window_close_hover">Images/default/Buttons/close-hover.gif</Bitmap>
+            <Bitmap Name="button_xig_active_window_close_down">Images/default/Buttons/close-down.gif</Bitmap>
+            <Bitmap Name="button_xig_active_window_close_disabled">Images/default/Buttons/close-disabled.gif</Bitmap>
+            
+            <Bitmap Name="button_xig_active_window_close_chat_norm">Images/default/Buttons/xig-active-window-close-chat-norm.gif</Bitmap>
+            <Bitmap Name="button_xig_active_window_close_chat_hover">Images/default/Buttons/xig-active-window-close-chat-hover.gif</Bitmap>
+            <Bitmap Name="button_xig_active_window_close_chat_down">Images/default/Buttons/xig-active-window-close-chat-down.gif</Bitmap>
+            
+            
+            <!-- XIG Dialog -->
+            <Bitmap Name="button_xig_dialog_cancel_norm">Images/default/Buttons/cancel-norm.gif</Bitmap>
+            <Bitmap Name="button_xig_dialog_cancel_hover">Images/default/Buttons/cancel-hover.gif</Bitmap>
+            <Bitmap Name="button_xig_dialog_cancel_down">Images/default/Buttons/cancel-down.gif</Bitmap>
+            <Bitmap Name="button_xig_dialog_cancel_disabled">Images/default/Buttons/cancel-disabled.gif</Bitmap>
+            
+            <Bitmap Name="button_xig_dialog_close_norm">Images/default/Buttons/xig-system-dialog-close-norm.gif</Bitmap>
+            <Bitmap Name="button_xig_dialog_close_hover">Images/default/Buttons/xig-system-dialog-close-hover.gif</Bitmap>
+            <Bitmap Name="button_xig_dialog_close_down">Images/default/Buttons/xig-system-dialog-close-down.gif</Bitmap>
+            <Bitmap Name="button_xig_dialog_close_disabled">Images/default/Buttons/xig-system-dialog-close-disabled.gif</Bitmap>
+            
+            <Bitmap Name="button_xig_dialog_ok_norm">Images/default/Buttons/ok-norm.gif</Bitmap>
+            <Bitmap Name="button_xig_dialog_ok_hover">Images/default/Buttons/ok-hover.gif</Bitmap>
+            <Bitmap Name="button_xig_dialog_ok_down">Images/default/Buttons/ok-down.gif</Bitmap>
+            <Bitmap Name="button_xig_dialog_ok_disabled">Images/default/Buttons/ok-disabled.gif</Bitmap>
+            
+            
+            <!-- XIG Overlays -->
+            <Bitmap Name="button_xig_overlay_close_norm">Images/default/Buttons/xig-overlay-close-norm.gif</Bitmap>
+            <Bitmap Name="button_xig_overlay_close_hover">Images/default/Buttons/xig-overlay-close-hover.gif</Bitmap>
+            <Bitmap Name="button_xig_overlay_close_down">Images/default/Buttons/xig-overlay-close-down.gif</Bitmap>
+            <Bitmap Name="button_xig_overlay_close_disabled">Images/default/Buttons/xig-overlay-close-disabled.gif</Bitmap>
+            
+            
+            <!-- XIG Music Player -->
+            <Bitmap Name="button_xig_music_play_norm">Images/default/Buttons/xig-music-player-play-norm.gif</Bitmap>
+            <Bitmap Name="button_xig_music_play_hover">Images/default/Buttons/xig-music-player-play-hover.gif</Bitmap>
+            <Bitmap Name="button_xig_music_play_down">Images/default/Buttons/xig-music-player-play-down.gif</Bitmap>
+            
+            <Bitmap Name="button_xig_music_pause_norm">Images/default/Buttons/xig-music-player-pause-norm.gif</Bitmap>
+            <Bitmap Name="button_xig_music_pause_hover">Images/default/Buttons/xig-music-player-pause-hover.gif</Bitmap>
+            <Bitmap Name="button_xig_music_pause_down">Images/default/Buttons/xig-music-player-pause-down.gif</Bitmap>
+            
+            <Bitmap Name="button_xig_music_previous_norm">Images/default/Buttons/xig-music-player-previous-norm.gif</Bitmap>
+            <Bitmap Name="button_xig_music_previous_hover">Images/default/Buttons/xig-music-player-previous-hover.gif</Bitmap>
+            <Bitmap Name="button_xig_music_previous_down">Images/default/Buttons/xig-music-player-previous-down.gif</Bitmap>
+            
+            <Bitmap Name="button_xig_music_next_norm">Images/default/Buttons/xig-music-player-next-norm.gif</Bitmap>
+            <Bitmap Name="button_xig_music_next_hover">Images/default/Buttons/xig-music-player-next-hover.gif</Bitmap>
+            <Bitmap Name="button_xig_music_next_down">Images/default/Buttons/xig-music-player-next-down.gif</Bitmap>
+            
+            <Bitmap Name="button_xig_music_mute_norm">Images/default/Buttons/xig-music-player-mute-norm.gif</Bitmap>
+            
+            
+            
+            <!--
+            //////////////////////////////////////////////
+            // XIG
+            //////////////////////////////////////////////
+            -->
+            <!-- Used to color selected list items -->
+            <Bitmap Name="xig_list_color_selected_background">Images/default/XIG/Common/xig-list-color-selected-background.gif</Bitmap>
+            
+            <!-- Opacity changers -->
+            <Bitmap Name="xig_track_left">Images/default/XIG/Common/xig-track-left.gif</Bitmap>
+            <Bitmap Name="xig_track_middle">Images/default/XIG/Common/xig-track-middle.gif</Bitmap>
+            <Bitmap Name="xig_track_right">Images/default/XIG/Common/xig-track-right.gif</Bitmap>
+            <Bitmap Name="xig_track_gripper">Images/default/XIG/Common/xig-track-gripper.gif</Bitmap>
+            
+            
+            
+            <!--
+            //////////////////////////////////////////////
+            // XIG - Overlays
+            //////////////////////////////////////////////
+            -->
+            <!-- Live Stats -->
+            <Bitmap Name="xig_overlay_outline_top_middle_left">Images/default/XIG/Overlays/Common/xig-overlay-outline-topleft.gif</Bitmap>
+            <Bitmap Name="xig_overlay_outline_top_middle">Images/default/XIG/Overlays/Common/xig-overlay-outline-top.gif</Bitmap>
+            <Bitmap Name="xig_overlay_outline_top_middle_right">Images/default/XIG/Overlays/Common/xig-overlay-outline-topright.gif</Bitmap>
+            <Bitmap Name="xig_overlay_outline_left_middle">Images/default/XIG/Overlays/Common/xig-overlay-outline-left.gif</Bitmap>
+            <Bitmap Name="xig_overlay_outline_right_middle">Images/default/XIG/Overlays/Common/xig-overlay-outline-right.gif</Bitmap>
+            <Bitmap Name="xig_overlay_outline_bottom_left">Images/default/XIG/Overlays/Common/xig-overlay-outline-bottomleft.gif</Bitmap>
+            <Bitmap Name="xig_overlay_outline_bottom_middle">Images/default/XIG/Overlays/Common//xig-overlay-outline-bottom.gif</Bitmap>
+            <Bitmap Name="xig_overlay_outline_bottom_right">Images/default/XIG/Overlays/Common/xig-overlay-outline-bottomright.gif</Bitmap>
+            
+            <Bitmap Name="xig_overlay_top_left">Images/default/XIG/Overlays/LiveStats/xig-overlay-top-left.gif</Bitmap>
+            <Bitmap Name="xig_overlay_top_middle">Images/default/XIG/Overlays/LiveStats/xig-overlay-top-middle.gif</Bitmap>
+            <Bitmap Name="xig_overlay_top_right">Images/default/XIG/Overlays/LiveStats/xig-overlay-top-right.gif</Bitmap>
+            <Bitmap Name="xig_overlay_leftside_middle">Images/default/XIG/Overlays/LiveStats/xig-overlay-leftside-middle.gif</Bitmap>
+            <Bitmap Name="xig_overlay_window_filler">Images/default/XIG/Overlays/LiveStats/xig-overlay-window-filler.gif</Bitmap>
+            <Bitmap Name="xig_overlay_rightside_middle">Images/default/XIG/Overlays/LiveStats/xig-overlay-rightside-middle.gif</Bitmap>
+            <Bitmap Name="xig_overlay_bottom_left">Images/default/XIG/Overlays/LiveStats/xig-overlay-bottom-left.gif</Bitmap>
+            <Bitmap Name="xig_overlay_bottom_middle">Images/default/XIG/Overlays/LiveStats/xig-overlay-bottom-middle.gif</Bitmap>
+            <Bitmap Name="xig_overlay_bottom_right">Images/default/XIG/Overlays/LiveStats/xig-overlay-bottom-right.gif</Bitmap>
+            
+            <!-- Alert -->
+            <Bitmap Name="xig_alert_top_left">Images/default/XIG/Alert/xigalert-top-left.gif</Bitmap>
+            <Bitmap Name="xig_alert_top_middle">Images/default/XIG/Alert/xigalert-top-middle.gif</Bitmap>
+            <Bitmap Name="xig_alert_top_right">Images/default/XIG/Alert/xigalert-top-right.gif</Bitmap>
+            
+            <Bitmap Name="xig_alert_leftside_middle">Images/default/XIG/Alert/xigalert-leftside-middle.gif</Bitmap>
+            <Bitmap Name="xig_alert_rightside_middle">Images/default/XIG/Alert/xigalert-rightside-middle.gif</Bitmap>
+            
+            <Bitmap Name="xig_alert_bottom_left">Images/default/XIG/Alert/xigalert-bottom-left.gif</Bitmap>
+            <Bitmap Name="xig_alert_bottom_middle">Images/default/XIG/Alert/xigalert-bottom-middle.gif</Bitmap>
+            <Bitmap Name="xig_alert_bottom_right">Images/default/XIG/Alert/xigalert-bottom-right.gif</Bitmap>
+            
+            <!-- Bar -->
+            <Bitmap Name="xigbar_logo">Images/default/XIG/Overlays/Bar/xig-bar-logo.gif</Bitmap>
+            <Bitmap Name="xigbar_left">Images/default/XIG/Overlays/Bar/xig-bar-left.gif</Bitmap>
+            <Bitmap Name="xigbar_middle">Images/default/XIG/Overlays/Bar/xig-bar-middle.gif</Bitmap>
+            <Bitmap Name="xigbar_right">Images/default/XIG/Overlays/Bar/xig-bar-right.gif</Bitmap>
+            <Bitmap Name="xigbar_vert_separator">Images/default/XIG/Overlays/Bar/xig-bar-vertbar.gif</Bitmap>
+            
+            <!-- Music Player -->
+            <Bitmap Name="xig_music_volume_bar_on">Images/default/XIG/Overlays/MusicPlayer/xig-music-player-volume-on.gif</Bitmap>
+            <Bitmap Name="xig_music_volume_bar_off">Images/default/XIG/Overlays/MusicPlayer/xig-music-player-volume-off.gif</Bitmap>
+            
+            <!-- <Bitmap Name="xig_music_volume_bar_overlay">Images/default/XIG/Overlays/MusicPlayer/xig-music-player-volume-overlay.gif</Bitmap> -->
+            
+            <Bitmap Name="xig_music_volume_background_left">Images/default/XIG/Overlays/MusicPlayer/xig-music-player-volume-background-left.gif</Bitmap>
+            <Bitmap Name="xig_music_volume_background_middle">Images/default/XIG/Overlays/MusicPlayer/xig-music-player-volume-background-middle.gif</Bitmap>
+            <Bitmap Name="xig_music_volume_background_right">Images/default/XIG/Overlays/MusicPlayer/xig-music-player-volume-background-right.gif</Bitmap>
+            
+            <!-- Web -->
+            <Bitmap Name="xig_web_tab_left_norm">Images/default/XIG/Overlays/Web/xig-web-tab-left-norm.gif</Bitmap>
+            <Bitmap Name="xig_web_tab_middle_norm">Images/default/XIG/Overlays/Web/xig-web-tab-middle-norm.gif</Bitmap>
+            <Bitmap Name="xig_web_tab_right_norm">Images/default/XIG/Overlays/Web/xig-web-tab-right-norm.gif</Bitmap>
+            
+            <Bitmap Name="xig_web_tab_left_hover">Images/default/XIG/Overlays/Web/xig-web-tab-left-hover.gif</Bitmap>
+            <Bitmap Name="xig_web_tab_middle_hover">Images/default/XIG/Overlays/Web/xig-web-tab-middle-hover.gif</Bitmap>
+            <Bitmap Name="xig_web_tab_right_hover">Images/default/XIG/Overlays/Web/xig-web-tab-right-hover.gif</Bitmap>
+            
+            <Bitmap Name="xig_web_tab_left_down">Images/default/XIG/Overlays/Web/xig-web-tab-left-down.gif</Bitmap>
+            <Bitmap Name="xig_web_tab_middle_down">Images/default/XIG/Overlays/Web/xig-web-tab-middle-down.gif</Bitmap>
+            <Bitmap Name="xig_web_tab_right_down">Images/default/XIG/Overlays/Web/xig-web-tab-right-down.gif</Bitmap>
+            
+            <Bitmap Name="xig_web_tab_left_focused">Images/default/XIG/Overlays/Web/xig-web-tab-left-focused.gif</Bitmap>
+            <Bitmap Name="xig_web_tab_middle_focused">Images/default/XIG/Overlays/Web/xig-web-tab-middle-focused.gif</Bitmap>
+            <Bitmap Name="xig_web_tab_right_focused">Images/default/XIG/Overlays/Web/xig-web-tab-right-focused.gif</Bitmap>
+            
+            <Bitmap Name="xig_web_url_background_left">Images/default/XIG/Overlays/Web/xig-web-url-background-left.gif</Bitmap>
+            <Bitmap Name="xig_web_url_background_middle">Images/default/XIG/Overlays/Web/xig-web-url-background-middle.gif</Bitmap>
+            <Bitmap Name="xig_web_url_background_right">Images/default/XIG/Overlays/Web/xig-web-url-background-right.gif</Bitmap>
+            
+            <Bitmap Name="xig_web_tab_background_left">Images/default/XIG/Overlays/Web/xig-web-tab-background-left.gif</Bitmap>
+            <Bitmap Name="xig_web_tab_background_middle">Images/default/XIG/Overlays/Web/xig-web-tab-background-middle.gif</Bitmap>
+            <Bitmap Name="xig_web_tab_background_right">Images/default/XIG/Overlays/Web/xig-web-tab-background-right.gif</Bitmap>
+        </Bitmaps>
+    </Theme>    
+</Themes>

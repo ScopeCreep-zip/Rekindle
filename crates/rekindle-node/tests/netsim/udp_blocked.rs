@@ -118,8 +118,8 @@ async fn a_failed_udp_path_loses_no_friend_accept_call() {
     tokio::time::sleep(Duration::from_secs(60)).await;
     assert_eq!(
         calls(&sim, 0, 1) - to_vic,
-        2,
-        "Uma's two rows (FriendAccept PreKeyInit, FriendsKey), one call each"
+        1,
+        "Uma's one row (the FriendAccept PreKeyInit, which carries her FriendsKey since decision 67 item 2), one call"
     );
     assert!(
         available(&nodes[0], RouteClass::General),

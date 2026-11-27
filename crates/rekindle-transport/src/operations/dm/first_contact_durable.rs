@@ -80,6 +80,9 @@ pub(super) async fn attempt(
     record_key: &str,
     writer: &str,
 ) -> Attempt {
+    if let Some(stopped) = chain_published(host, to, DmTypeId::FriendAccept).await {
+        return stopped;
+    }
     attempt_as(
         host,
         to,
@@ -144,6 +147,64 @@ async fn attempt_as(
                 }
                 _ => called.clone(),
             };
+        }
+    }
+}
+
+/// For a request or an accept (`kind`): the chain record it names to `to`
+/// is on the network before it leaves by any path (decision 67 item 2):
+/// its empty `HEAD` written, as a `StreamRecord`'s row does
+/// (`stream::publish`). `None` once
+/// it is (or no record of ours is held, as after a session reset, which
+/// names none); otherwise the attempt is deferred and the row's backoff
+/// tries again. Only the accept's authenticated answer settles the row
+/// (F2): this write never does.
+pub(super) async fn chain_published(
+    host: &dyn FriendHost,
+    to: &str,
+    kind: DmTypeId,
+) -> Option<Attempt> {
+    if !matches!(kind, DmTypeId::FriendAccept | DmTypeId::FriendRequest) {
+        return None;
+    }
+    let ours = match host.held_participant_writer(to).await {
+        Ok(Some(ours)) => ours,
+        Ok(None) => return None,
+        Err(e) => {
+            tracing::debug!(to = %to, error = %e, "accept deferred: chain record unreadable");
+            return Some(Attempt::Deferred);
+        }
+    };
+    match super::stream::publish(host, to, &ours.record_key).await {
+        Ok(()) => None,
+        Err(e) => {
+            tracing::debug!(to = %to, error = %e, "accept deferred: its chain record is not on the network yet");
+            Some(Attempt::Deferred)
+        }
+    }
+}
+
+/// One attempt of a waiting first contact: their bundle read now opens the
+/// session and commits the PreKeyInit as its own receipted row, which
+/// settles this one; a bundle still not readable is attempted again; any
+/// other failure is shown on their row with Retry.
+pub(super) async fn attempt_waiting(
+    host: &dyn FriendHost,
+    to: &str,
+    first_type_id: u16,
+) -> Attempt {
+    let Some(kind) = DmTypeId::from_u16(first_type_id) else {
+        return Attempt::Wedged(format!("typeId {first_type_id:#06x}"));
+    };
+    match crate::operations::prekeys::open_first_contact(host, to, kind).await {
+        Ok(()) => Attempt::Sent,
+        Err(e @ (FriendError::NotReady(_) | FriendError::Locked)) => {
+            tracing::debug!(to = %to, ?kind, reason = %e, "first contact still waits for their prekeys");
+            Attempt::Deferred
+        }
+        Err(e) => {
+            crate::operations::prekeys::failed(host, to, kind, e.to_string());
+            Attempt::Wedged(e.to_string())
         }
     }
 }

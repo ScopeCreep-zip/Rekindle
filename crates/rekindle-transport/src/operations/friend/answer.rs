@@ -85,6 +85,16 @@ pub async fn accept(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
     let profile_key = friend.dht_record_key.clone();
     state::put(host, friend);
     state::echo_failed(host, public_key, ended, "superseded by a new friendship");
+    // Their chain, named by their request, adopted now that they are
+    // accepted and before our accept can reach them (decision 67 item 2):
+    // their first DM lands on a chain we already watch.
+    if let Some(chain) = &answer.chain_record_key {
+        if !dm::stream::adopt_chain(host, public_key, chain).await {
+            return Err(FriendError::Failed(
+                "their chain record was not stored".into(),
+            ));
+        }
+    }
     // The friendship is stored: every window shows them now (plan E2.6,
     // GC3: the New Group picker missed a friend whose accept was still
     // opening the session below, a DHT read that can take minutes).
@@ -97,8 +107,10 @@ pub async fn accept(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
     // request named; plan E2.4, B2). A failure shows on their row with
     // Retry (B7); the friendship stands, and their side stays pending
     // until a session reaches them.
+    // Our presence key and our chain record ride the accept itself
+    // (decision 67 item 2: `dm::send_friend_accept`), so no FriendsKey row
+    // of ours follows it.
     crate::operations::prekeys::open_or_fail(host, public_key, DmTypeId::FriendAccept).await;
-    super::presence_key::send(host, public_key).await;
     super::game_totals::send(host, public_key).await;
     super::bio::send(host, public_key).await;
     if let Some(profile_key) = &profile_key {
@@ -171,6 +183,9 @@ pub async fn cancel(host: &dyn FriendHost, public_key: &str) -> Result<(), Frien
     .await?;
     state::take(host, public_key);
     state::echo_failed(host, public_key, failed, "the request was cancelled");
+    // Their records are released as a removed friend's are, our chain
+    // record's writer with them (decision 67 item 2).
+    host.unwatch_friend(public_key).await;
     host.sync_reply_inboxes().await;
     super::list_record::queued(host, "a cancel");
     host.publish(SubscriptionEvent::Friend(FriendEvent::Removed {
@@ -205,6 +220,7 @@ pub async fn expire_stale_requests(host: &dyn FriendHost) -> Result<(), FriendEr
     for (public_key, failed) in &outgoing {
         state::take(host, public_key);
         state::echo_failed(host, public_key, failed.clone(), "the request expired");
+        host.unwatch_friend(public_key).await;
         host.publish(SubscriptionEvent::Friend(FriendEvent::Removed {
             peer_key: public_key.clone(),
         }));

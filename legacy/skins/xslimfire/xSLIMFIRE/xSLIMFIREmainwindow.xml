@@ -1,0 +1,85 @@
+<Tile Name="xSLIMFIREMainWindow" Component="MainWindow">
+	<Tile Name="MainTitleBar" Z="1" X="0" Y="0" ResizeX="100" ResizeY="0" Component="MainTitleBar">
+		<Tile Name="XfireLogo" X="20" Y="38" Component="XfireLogo"></Tile>
+		<Tile Name="CloseBox" Z="3" JustX="RIGHT" X="19" Y="0" Component="CloseBox" />
+		<Tile Name="MinimizeBox" Z="3" JustX="RIGHT" X="30" Y="0" Component="MinimizeBox" />
+	</Tile>
+	
+	<Tile Name="BaseBoard" Z="1" X="0" Y="0" JustY="BOTTOM" ResizeX="100" ResizeY="0" Component="BaseBoard">
+		<Tile Name="ButtonArea" Z="2" X="24" Y="78" IndentRight="24" IndentBottom="14" ResizeX="100" Component="TabbedControl">
+			<!-- a row of buttons for each different tab -->
+			<Tile Name="FriendsButtons" ResizeX="100" Component="ButtonRow">
+				<Tile Name="AddButton" Component="AddButton"></Tile>
+				<Tile Name="ChatButton" X="AddButton.RIGHT+3" Component="ChatButton"></Tile>
+				<Tile Name="GameButton1" JustX="RIGHT" X="51" Component="GameButton"></Tile>
+				<Tile Name="InfoButton1" X="GameButton1.RIGHT+3" Component="InfoButton"></Tile>
+			</Tile>
+			<Tile Name="ServersButtons" ResizeX="100" Component="ButtonRow">
+				<Tile Name="AddServerButton" Component="AddServerButton"></Tile>
+				<Tile Name="RefreshButton" X="AddServerButton.RIGHT+3" Component="RefreshButton"></Tile>
+				<Tile Name="GameButton2" JustX="RIGHT" X="51" Component="GameButton"></Tile>
+				<Tile Name="InfoButton2" X="GameButton2.RIGHT+3" Component="InfoButton"></Tile>
+			</Tile>
+			<Tile Name="FilesButtons" ResizeX="100" Component="ButtonRow">
+				<Tile Name="StartDownloadButton" Component="StartDownloadButton"></Tile>
+				<Tile Name="StopDownloadButton" X="StartDownloadButton.RIGHT+3" Component="StopDownLoadButton"></Tile>
+				<Tile Name="ExecuteDownloadButton" JustX="RIGHT" X="51" Component="ExecuteDownloadButton"></Tile>
+				<Tile Name="DownloadInfoButton" X="ExecuteDownloadButton.RIGHT+3" Component="DownloadInfoButton"></Tile>
+			</Tile>
+		</Tile>		
+	</Tile>
+
+	<Tile Name="ResizeTopLeft" Z="5" X="0" Y="0" Component="ResizeTopLeft"></Tile>
+	<Tile Name="ResizeTopRight" Z="5" JustX="RIGHT" X="0" Y="0" Component="ResizeTopRight"></Tile>
+	<Tile Name="ResizeBottomLeft" Z="5" JustY="BOTTOM" X="0" Y="0" Component="ResizeBottomLeft"></Tile>
+	<Tile Name="ResizeBottomRight" Z="5" JustX="RIGHT" JustY="BOTTOM" X="0" Y="0" Component="ResizeBottomRight"></Tile>
+	<Tile Name="ResizeUp" Z="2" X="0" Y="0" ResizeX="100" Component="ResizeUp"></Tile>	
+	<Tile Name="ResizeLeft" X="0" Y="0" ResizeY="100" Z="2" Component="ResizeLeft"></Tile>	
+	<Tile Name="ResizeRight" JustX="RIGHT" Y="0" ResizeY="100" Z="2" Component="ResizeRight"></Tile>
+	<Tile Name="ResizeDown" JustY="BOTTOM" ResizeX="100" Z="4" Component="ResizeDown"></Tile>
+	
+	<Tile Name="Middle" Z="1" X="0" Y="106" ResizeX="100" ResizeY="100" IndentBottom="121" Component="Middle"></Tile>
+
+		<Tile Name="StatusWrapper" Z="2" X="96" Y="39" ResizeX="100" IndentRight="23" Component="StatusWrapper"></Tile>
+		<Tile Name="StatusEdit" X="96" ResizeX="100" Y="45" Z="3" IndentRight="66" Component="StatusEdit" />
+		<Tile Name="DownArrow" X="21" JustX="RIGHT" Y="37" Z="4" Component="DownArrow"></Tile>
+
+		<Tile Name="MenuBar" ResizeX="100" X="38" IndentRight="75" Y="23" Component="MenuBar">
+			<Tile Name="XfireMenuText" X="0" Y="-2" Z="3" Component="XfireMenuText">
+			<Tile Name="XfireMenuTextT" X="0" Y="0" Z="4" IndentBottom="6" Component="XfireMenuTextT" />
+				<Tile Name="FileMenu" X="0" Y="0" Z="-2" ResizeX="100" ResizeY="100" OutdentLeft="2" OutdentRight="2" IndentTop="2" OutdentBottom="2" Component="FileMenu" />
+			</Tile>
+			<Tile Name="ToolsMenuText" X="XfireMenuText.RIGHT+18" Y="-2" Z="3" Component="ToolsMenuText">
+			<Tile Name="ToolsMenuTextT" X="0" Y="0" Z="4" IndentBottom="6" Component="ToolsMenuTextT" />
+				<Tile Name="ToolsMenu" X="0" Y="0" Z="-2" ResizeX="100" ResizeY="100" OutdentLeft="2" OutdentRight="2" IndentTop="2" OutdentBottom="2" Component="ToolsMenu" />
+			</Tile>
+			<Tile Name="HelpMenuText" X="ToolsMenuText.RIGHT+18" Y="-2" Z="3" Component="HelpMenuText">
+			<Tile Name="HelpMenuTextT" X="0" Y="0" Z="4" IndentBottom="6" Component="HelpMenuTextT" />
+				<Tile Name="HelpMenu" X="0" Y="0" Z="-2" ResizeX="100" ResizeY="100" OutdentLeft="2" OutdentRight="2" IndentTop="2" OutdentBottom="2" Component="HelpMenu" />
+			</Tile>
+		</Tile>
+
+		<Tile Name="AdArea" X="16" Z="-2" IndentRight="16" JustY="BOTTOM" Y="50" ResizeX="100" Component="AdArea">
+			<Tile Name="AdView" JustX="CENTER" Y="0" Component="AdView" />
+		</Tile>
+		
+		<Tile Name="TabHeader" X="23" Z="5" Y="65" IndentRight="23" ResizeX="100" Component="TabHeader">
+			<Tile Name="TabNormalButton" X="0" Y="0" Z="6" ResizeX="100" ResizeY="100" Component="TabNormalButton"></Tile>
+			<Tile Name="TabServerButton" X="TabNormalButton.RIGHT+12" Y="1" Z="6" ResizeX="100" ResizeY="100" Component="TabServerButton"></Tile>
+			<Tile Name="TabDownloadButton" X="TabServerButton.RIGHT+12" Y="1" Z="6" ResizeX="100" ResizeY="100" Component="TabDownloadButton"></Tile>
+		</Tile>
+
+		<Tile Name="TabbedControl" X="23" Z="5" Y="90" IndentBottom="118" IndentRight="23" ResizeX="100" ResizeY="100" Component="TabbedControl">
+			<Tile Name="BuddyView" ResizeX="100" ResizeY="100" Component="BuddyView">
+				<Tile Name="BvBk1" ResizeX="100" ResizeY="100" Component="BvBk" />
+			</Tile>
+			<Tile Name="ServerView" ResizeX="100" ResizeY="100" Component="ServerView">
+				<Tile Name="BvBk2" ResizeX="100" ResizeY="100" Component="BvBk" />
+			</Tile>
+			<Tile Name="DownloadView" ResizeX="100" ResizeY="100" Component="DownloadView">
+				<Tile Name="BvBk3" ResizeX="100" ResizeY="100" Component="BvBk" />
+			</Tile>
+		</Tile>
+
+	<Tile Name="InfoViewButton" Z="4" JustY="CENTER" JustX="RIGHT" X="0" IndentTop="21" OutdentBottom="21" Component="InfoViewButton" />
+</Tile>

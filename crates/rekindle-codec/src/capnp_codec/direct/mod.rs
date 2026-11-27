@@ -17,6 +17,8 @@
 //! (`rekindle_types::key_format`, `presence::limits`), keys and record
 //! keys to their shapes.
 
+#[cfg(test)]
+mod accept_fit_tests;
 mod body;
 mod frame;
 #[cfg(test)]

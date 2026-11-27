@@ -257,13 +257,18 @@ registry and channel records announced via a `SegmentAdded` op.
 
 ```rust
 GovernanceEntry::SegmentAdded {
-    segment_index: u16,
-    anchor: TypedKey,
-    registry_key: TypedKey,
-    slot_range: (u16, u16),  // member slot range this segment covers
-    lamport: u64,
+    segment_index: u32,
+    registry_key: String,     // the segment's registry record
+    anchor: String,
+    slot_range_start: u32,    // the global member slot range
+    slot_range_end: u32,      // this segment covers
 }
 ```
+
+The op is ordered by the op DAG (ADR 0011), so it carries no clock of
+its own (`rekindle-types/src/governance/entry.rs`). Segments, the grants'
+`segment_index` and the auto-expand path are deleted with the registry
+slot claim in E3.4.
 
 | Community size | Registry segments | Governance segments | Channel segments |
 |----------------|-------------------|---------------------|------------------|

@@ -328,7 +328,7 @@ export interface ShellNode {
   target?: NodeTarget;
   /** Who draws an interactive node's disabled look (plan E7.7 CR1): "pack", its art has a
    *  disabled state image; "shell", none, so the shell dims it. Absent on other nodes. */
-  disabledBy?: "pack" | "shell";
+  disabledBy?: "pack" | "served" | "shell";
 }
 
 /**
