@@ -142,14 +142,24 @@ pub(crate) fn session_presence(ctx: &DaemonContext) -> Arc<dyn SessionPresence> 
 /// rate": an explicit action writes at once): our beat says it now, and
 /// the voice roster is handed what the members' beats show, so the members
 /// already in the channel are found without waiting on their next beat.
-pub(crate) async fn voice_changed(ctx: &DaemonContext, community: &str) {
-    let engine = ctx.own_presence.beats.read().clone();
-    if let Some(engine) = engine {
-        if let Err(error) = engine.voice_changed(community).await {
-            tracing::warn!(%error, "voice beat not written");
-        }
-    }
+///
+/// The beat's write is a DHT set (seconds on the live network), so it runs
+/// on the unlock's scope and the caller never waits on it: a join or leave
+/// answers once the session is recorded. The engine holds its schedule
+/// across every write and each write reads the session as it is then, so
+/// a join and a quick leave cannot leave the join's beat last.
+pub(crate) fn voice_changed(ctx: &DaemonContext, community: &str) {
     view::reconcile_voice(ctx, community);
+    let Some(engine) = ctx.own_presence.beats.read().clone() else {
+        return;
+    };
+    let community = community.to_owned();
+    ctx.unlock_scope_or_closed()
+        .spawn_or_drop("voice beat", async move {
+            if let Err(error) = engine.voice_changed(&community).await {
+                tracing::warn!(%error, "voice beat not written");
+            }
+        });
 }
 
 /// Write our `Departed` beat in `community`, which we are leaving.

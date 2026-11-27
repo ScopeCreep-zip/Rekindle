@@ -28,10 +28,7 @@ pub(crate) fn voice_presence_changed(state: &Arc<AppState>, community_id: &str) 
     let Some(host) = state.host.current() else {
         return;
     };
-    let community_id = community_id.to_owned();
-    state_helpers::login_scope_or_closed(state).spawn_or_drop("voice presence beat", async move {
-        host.voice_presence_changed(&community_id).await;
-    });
+    host.voice_presence_changed(community_id);
 }
 
 impl rekindle_presence::SessionPresence for DesktopSessionPresence {
@@ -70,7 +67,7 @@ impl rekindle_presence::SessionPresence for DesktopSessionPresence {
             })
             .collect();
         let cid = community_id.to_string();
-        crate::state_helpers::login_scope_or_closed(&self.state).spawn_or_drop(
+        state_helpers::login_scope_or_closed(&self.state).spawn_or_drop(
             "voice roster reconcile",
             async move {
                 rekindle_voice::signaling::reconcile_from_presence(&deps, &cid, views).await;
