@@ -18,6 +18,19 @@ import { withCommunity } from "./community_reread";
 import { handleLoadExpressions, handleLoadAutoModRules } from "../../actions/community/lifecycle";
 import { handleLoadChannelThreads } from "../../actions/community/events_threads";
 
+// Each permission event re-reads the community's view from the Host, and two
+// reads can answer out of order (a grant's reply after a later revoke's), so
+// only the newest read of a community applies: an older reply would put back
+// what the Host has since changed (the same rule as Appearance's skin list).
+const latestPermissionRead = new Map<string, number>();
+
+/** Start a permission read of `community`; the returned check says whether it is still the newest. */
+function permissionRead(community: string): () => boolean {
+  const mine = (latestPermissionRead.get(community) ?? 0) + 1;
+  latestPermissionRead.set(community, mine);
+  return () => latestPermissionRead.get(community) === mine;
+}
+
 /// Membership / governance / moderation-alert slice of the community
 /// event dispatcher. Returns `true` when the event was consumed.
 export function reduceMembership(event: CommunityEvent): boolean {
@@ -463,11 +476,12 @@ function applyGovernance(g: GovernanceEvent): void {
     if (denied) setCommunityState("communities", community, "denied", reconcile(denied));
     // Our rank may have moved, so the per-member moderation verdicts too.
     refreshCommunityMembers(community);
+    const newest = permissionRead(community);
     commands
       .getCommunityDetails()
       .then((details) => {
         const detail = details.find((d) => d.id === community);
-        if (!detail) return;
+        if (!detail || !newest()) return;
         setCommunityState("communities", community, "myPermissions", detail.myPermissions);
         setCommunityState("communities", community, "denied", reconcile(detail.denied ?? {}));
         // Each channel's controls, judged with its overwrites (CAPR): re-read
@@ -494,11 +508,12 @@ function applyGovernance(g: GovernanceEvent): void {
     // A CRDT rebuild moves everything at once, so this is the one
     // governance event with no payload and a full re-read.
     const { community } = g.governanceRebuilt;
+    const newest = permissionRead(community);
     commands
       .getCommunityDetails()
       .then((details) => {
         const detail = details.find((c: { id: string }) => c.id === community);
-        if (detail) {
+        if (detail && newest()) {
           setCommunityState("communities", community, "name", detail.name);
           setCommunityState("communities", community, "description", detail.description ?? null);
           setCommunityState("communities", community, "roles", detail.roles ?? []);
