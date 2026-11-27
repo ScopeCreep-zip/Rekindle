@@ -17,6 +17,36 @@ use super::super::action::{Action, CommandResult, ToastLevel};
 use super::App;
 
 impl App {
+    pub(crate) fn load_held_reviews(&mut self) {
+        self.held_review_generation = self.held_review_generation.wrapping_add(1);
+        let generation = self.held_review_generation;
+        let tx = self.action_tx.clone();
+        let client = Arc::clone(&self.client);
+        tokio::spawn(async move {
+            if let Ok(value) = client.request_ok(IpcRequest::IntentListHeld).await {
+                match serde_json::from_value(value) {
+                    Ok(reviews) => {
+                        let _ = tx.send(Action::HeldReviewsLoaded {
+                            generation,
+                            reviews,
+                        });
+                    }
+                    Err(error) => tracing::warn!(%error, "held reviews could not be decoded"),
+                }
+            }
+        });
+    }
+
+    pub(crate) fn apply_held_reviews(
+        &mut self,
+        generation: u64,
+        reviews: Vec<rekindle_types::intent::HeldReview>,
+    ) {
+        if generation == self.held_review_generation {
+            self.intent.replace_held(reviews);
+        }
+    }
+
     pub(crate) fn load_dashboard_data(&self) {
         let tx = self.action_tx.clone();
         let client = Arc::clone(&self.client);
@@ -378,6 +408,7 @@ impl App {
         tokio::spawn(async move {
             match client.commit_intent(review.intent_id, proof).await {
                 Ok(ran) => {
+                    let _ = tx.send(Action::RefreshHeldReviews);
                     let _ = tx.send(Action::ShowToast {
                         message: format!(
                             "{:?} done ({:?})",
@@ -411,6 +442,7 @@ impl App {
             if let Err(e) = client.cancel_intent(intent_id).await {
                 report_failure(&tx, "cancel", e);
             }
+            let _ = tx.send(Action::RefreshHeldReviews);
         });
     }
 }

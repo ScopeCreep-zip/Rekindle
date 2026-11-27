@@ -45,24 +45,9 @@ pub const PASSPHRASE: &str = "pass";
 pub const PASSPHRASE_SPOKEN: &str = "correct horse";
 
 /// Key-shaped known-answer vectors from published standards, cited by document and section.
-pub mod kat {
-    /// NIST SP 800-38A Appendix F.2.5 (CBC-AES256.Encrypt): the AES-256 key.
-    pub const NIST_SP800_38A_AES256_KEY: &str =
-        "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4";
-}
+#[path = "lib_kat.rs"]
+pub mod kat;
 
 #[cfg(test)]
-mod tests {
-    use super::{BASE32_RAMP, FRIEND_TOKEN, HEX_KEY_64, HEX_RAMP};
-
-    #[test]
-    fn every_secret_shaped_fixture_carries_its_marker() {
-        assert_eq!(HEX_KEY_64, HEX_RAMP.repeat(4));
-        assert!(HEX_KEY_64.bytes().all(|b| b.is_ascii_hexdigit()));
-        assert_eq!(FRIEND_TOKEN.len(), 26);
-        assert!(FRIEND_TOKEN.starts_with(BASE32_RAMP));
-        assert!(FRIEND_TOKEN
-            .bytes()
-            .all(|b| b.is_ascii_lowercase() || (b'2'..=b'7').contains(&b)));
-    }
-}
+#[path = "lib_tests.rs"]
+mod tests;

@@ -1,6 +1,12 @@
-//! A tile's 1-bit mask: opaque where the pixel's alpha is at least
-//! [`ALPHA_OPAQUE`] (a GIF's transparent index decodes to alpha 0, every
-//! other index to 255; a PNG's partial alpha is cut at half, research §7.3).
+//! A layer's mask: the 1-bit plane of the pixels opaque on their own
+//! (alpha at least [`ALPHA_OPAQUE`]: a GIF's transparent index decodes to
+//! alpha 0, every other index to 255; a PNG's partial alpha is cut at half,
+//! research §7.3), and the faint pixels (alpha 1 to `ALPHA_OPAQUE - 1`)
+//! with their alpha. The window decides a pixel from the *composited* alpha
+//! of every layer laid on it, as the webview paints them (source-over,
+//! `A = 1 − Π(1 − aᵢ)`, [`super::silhouette`]): a layer opaque on its own
+//! decides alone, and two faint layers can together reach the threshold,
+//! so the faint pixels travel with the mask.
 //! A mask is never stored: [`of_layout`] derives every tile's from the
 //! package's image at check and serve time (one source for the shape).
 
@@ -14,13 +20,17 @@ use crate::images::decode_png;
 /// The alpha from which a pixel is part of the window.
 pub const ALPHA_OPAQUE: u8 = 128;
 
+/// A faint pixel: (x, y, alpha), alpha in `1..ALPHA_OPAQUE`.
+pub type Faint = (u32, u32, u8);
+
 /// One bit per pixel, rows of `ceil(width / 8)` bytes, most significant
-/// bit first; 1 is opaque.
+/// bit first; 1 is opaque. The faint pixels, sorted by row then column.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Mask {
     width: u32,
     height: u32,
     bits: Vec<u8>,
+    faint: Vec<Faint>,
 }
 
 fn stride(width: u32) -> usize {
@@ -34,15 +44,21 @@ impl Mask {
         let (width, height) = image.dimensions();
         let s = stride(width);
         let mut bits = vec![0u8; s * height as usize];
+        let mut faint = Vec::new();
         for (x, y, px) in image.enumerate_pixels() {
-            if px.0[3] >= ALPHA_OPAQUE {
-                bits[y as usize * s + (x / 8) as usize] |= 0x80 >> (x % 8);
+            match px.0[3] {
+                0 => {}
+                a if a >= ALPHA_OPAQUE => {
+                    bits[y as usize * s + (x / 8) as usize] |= 0x80 >> (x % 8);
+                }
+                a => faint.push((x, y, a)),
             }
         }
         Self {
             width,
             height,
             bits,
+            faint,
         }
     }
 
@@ -73,15 +89,40 @@ impl Mask {
         out
     }
 
-    /// A mask from its packed rows ([`Self::bits`]); `None` when `bits`
-    /// is not `ceil(width / 8) * height` bytes.
+    /// Row `y`'s faint pixels, left to right.
     #[must_use]
-    pub fn from_bits(width: u32, height: u32, bits: Vec<u8>) -> Option<Self> {
-        (bits.len() == stride(width).checked_mul(height as usize)?).then_some(Self {
+    pub fn faint_row(&self, y: u32) -> &[Faint] {
+        let from = self.faint.partition_point(|f| f.1 < y);
+        let to = self.faint.partition_point(|f| f.1 <= y);
+        &self.faint[from..to]
+    }
+
+    /// A mask from its packed rows ([`Self::bits`]) and faint pixels
+    /// ([`Self::faint`]); `None` when `bits` is not
+    /// `ceil(width / 8) * height` bytes, or a faint pixel lies outside the
+    /// mask, on an opaque bit, out of row-then-column order or with an
+    /// alpha outside `1..ALPHA_OPAQUE`.
+    #[must_use]
+    pub fn from_parts(width: u32, height: u32, bits: Vec<u8>, faint: Vec<Faint>) -> Option<Self> {
+        let mask = (bits.len() == stride(width).checked_mul(height as usize)?).then_some(Self {
             width,
             height,
             bits,
-        })
+            faint: Vec::new(),
+        })?;
+        let ordered = faint
+            .windows(2)
+            .all(|p| (p[0].1, p[0].0) < (p[1].1, p[1].0));
+        let valid = faint.iter().all(|&(x, y, a)| {
+            x < width && y < height && a > 0 && a < ALPHA_OPAQUE && !mask.get(x, y)
+        });
+        (ordered && valid).then_some(Self { faint, ..mask })
+    }
+
+    /// The faint pixels, sorted by row then column.
+    #[must_use]
+    pub fn faint(&self) -> &[Faint] {
+        &self.faint
     }
 
     /// The packed rows: `ceil(width / 8)` bytes each, most significant

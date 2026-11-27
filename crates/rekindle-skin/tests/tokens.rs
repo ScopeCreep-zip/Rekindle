@@ -212,15 +212,69 @@ fn registry_defaults_pass_their_constraints_on_every_base() {
                 e.id
             );
         }
+    }
+    // The base table's derivations read only underived sources (lead
+    // round 7, reversing ruling h): a dialog role keeps reading the served
+    // value (`text.base`, the dialog grounds) through `resolve_unwalked`'s
+    // follow chain, because the importers write the pack's own colours
+    // there; `dialog_defaults_pass_their_constraints_on_every_base` holds
+    // the dialog rows instead.
+    for e in registry::BASE_TABLE {
         if let Some(d) = e.derivation {
             for s in d.sources() {
                 assert!(
-                    registry::entry_in(ENTRIES, s).is_some_and(|r| r.derivation.is_none()),
+                    registry::entry_in(registry::BASE_TABLE, s)
+                        .is_some_and(|r| r.derivation.is_none()),
                     "{}",
                     e.id
                 );
             }
         }
+    }
+}
+
+/// Lead round 7: what moved out of the test above for the dialog rows. A
+/// package that carries a registry base's own colours and names no dialog
+/// role (xfire-classic's case: imported before the roles existed) is
+/// served every dialog role derived from those colours and settled by the
+/// dialog walk (`registry::resolve`: `dialog::fill`, then
+/// `dialog_walk::settle`), and every dialog constraint passes on it, as the
+/// validator measures it (`access::measured`).
+/// Fail-without: `resolve` without the dialog walk serves the derived roles
+/// as they come, and a pair fails.
+#[test]
+fn dialog_defaults_pass_their_constraints_on_every_base() {
+    use rekindle_skin::access;
+    use rekindle_skin::registry::{dialog, DIALOG};
+    for base in Base::ALL {
+        let package: std::collections::BTreeMap<String, TokenValue> = registry::BASE_TABLE
+            .iter()
+            .filter(|e| e.class == Class::Themeable && !dialog::is_role(e.id))
+            .map(|e| (e.id.to_owned(), e.defaults.on(base).value()))
+            .collect();
+        let served = resolve(ENTRIES, base, &package);
+        let declared: Vec<(&str, &str)> = DIALOG
+            .iter()
+            .flat_map(|e| {
+                e.constraints
+                    .iter()
+                    .flat_map(|c| c.on.iter().map(|g| (e.id, *g)))
+            })
+            .collect();
+        let measured: Vec<_> = access::measured(base, &served)
+            .into_iter()
+            .filter(|m| declared.contains(&(m.fg.as_str(), m.ground.as_str())))
+            .collect();
+        assert!(
+            measured.len() >= declared.len(),
+            "{base:?}: every dialog pair measured"
+        );
+        let failing: Vec<String> = measured
+            .iter()
+            .filter(|m| !m.passes())
+            .map(|m| format!("{} on {}: {:.2}", m.fg, m.ground, m.ratio))
+            .collect();
+        assert_eq!(failing, Vec::<String>::new(), "{base:?}");
     }
 }
 

@@ -20,6 +20,9 @@ use crate::{literals, walk_source_files};
 
 const REGISTRY: &str = "crates/rekindle-types/src/domains.rs";
 
+/// This gate, whose shape tests quote labels.
+const GATE_FILE: &str = "xtask/src/domain_literals.rs";
+
 /// Does `s` have the shape of a Rekindle domain label?
 ///
 /// Matches the registry's naming rule (`rekindle-<purpose>-v<N>`), a label
@@ -50,6 +53,9 @@ pub(crate) fn is_label_shaped(s: &str) -> bool {
 
 pub(crate) fn check_domain_literals(root: &Path) -> Result<()> {
     let mut hits = Vec::new();
+    let tests = crate::test_code::TestCode::load(root)?;
+    // The registry and this gate, with the test modules they declare.
+    let exempt = [root.join(REGISTRY), root.join(GATE_FILE)].map(|p| p.canonicalize().unwrap_or(p));
     for subdir in ["crates", "src-tauri/src", "src-tauri/tests", "xtask/src"] {
         for path in walk_source_files(&root.join(subdir), &["rs"])? {
             let rel = path
@@ -57,8 +63,11 @@ pub(crate) fn check_domain_literals(root: &Path) -> Result<()> {
                 .unwrap_or(&path)
                 .display()
                 .to_string();
-            // The registry itself, and this gate's own shape tests.
-            if rel == REGISTRY || rel.ends_with("xtask/src/domain_literals.rs") {
+            let declared_by_exempt = tests.is_test(&path)
+                && tests
+                    .declarer(&path)
+                    .is_some_and(|d| exempt.iter().any(|e| e == d));
+            if rel == REGISTRY || rel == GATE_FILE || declared_by_exempt {
                 continue;
             }
             let Ok(src) = std::fs::read_to_string(&path) else {
@@ -91,36 +100,5 @@ pub(crate) fn check_domain_literals(root: &Path) -> Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::is_label_shaped;
-
-    #[test]
-    fn label_shapes() {
-        for s in [
-            "rekindle-gov-op-v1",
-            "rekindle-voice-receiver-report-v1",
-            "rekindle-slot-",
-            "rekindle-mek/1",
-            "rekindle v1 vault-sqlcipher",
-            "ReKindleRootKey",
-        ] {
-            assert!(is_label_shaped(s), "{s}");
-        }
-        for s in [
-            "rekindle",
-            "Rekindle",
-            "rekindle-transport",
-            "rekindle-protocol",
-            "rekindle-e2e-{}",
-            "rekindle_video::send",
-            "rekindle://invite/{}/{}/{}",
-            "rekindle/veilid",
-            "rekindle.vault",
-            "rekindle=info,warn",
-            "rekindle node started and attached",
-            "personal-sync-record",
-        ] {
-            assert!(!is_label_shaped(s), "{s}");
-        }
-    }
-}
+#[path = "domain_literals_tests.rs"]
+mod tests;

@@ -1,0 +1,272 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE Components SYSTEM "XfireSkin.dtd">
+
+<Components>
+    <Component Name="GroupChatMainWindow" Class="MainWindow" MinWidth="400" MinHeight="300" DefaultWidth="400" DefaultHeight="300" />
+    
+    <Component Name="GroupChatIcon" Class="Tile" Stretch="ToContent" Events="Transparent">
+        <Images State="Normal">
+            <Image Type="Middle">icon_group_chat</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="GroupChatVisualLayoutControl" Class="VisualLayoutControl" MinWidth="182" MaxWidth="182" ControlGroupId="77" />
+    
+    <Component Name="GroupChatSponsorContainer" Class="Tile" MinWidth="180" MaxWidth="180" MinHeight="180" MaxHeight="180" />
+    
+    <Component Name="GroupChatSponsorBar" Class="Tile" MinWidth="180" MinHeight="41" MaxHeight="41" Stretch="ToContent">
+        <Images State="Normal">
+            <Image Type="Top">chatroom_sponsor_header</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="GroupChatSponsorText" Class="Text" MinWidth="130" Stretch="ToContent" Events="Transparent">
+        <Text Font="Arial" Size="9" Bold="False" Color="HeaderTextCG">Sponsor</Text>
+    </Component>
+    
+    <Component Name="GroupChatSponsorAd" Class="RoomAdView" MinWidth="182" MinHeight="150" />
+    
+    <Component Name="GroupChatButtonSponsorClose" Class="PushButton" MinWidth="14" MaxWidth="14" MinHeight="16" MaxHeight="16" Stretch="ToContent" DrawOnTopmost="True" ToolTip="ButtonCloseTip" ToolTipTile="XIGToolTipPopup" GroupId="77" Default="Activate">
+        <Triggers>
+            <Trigger Type="OnClick">GroupMessage(0,77)</Trigger>
+            <Trigger Type="OnActivate">State(Normal)</Trigger>
+            <Trigger Type="OnDeactivate">State(Disabled)</Trigger>
+        </Triggers>
+        <Images State="Normal">
+            <Image Type="Middle">button_chatroom_sponsor_close_norm</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="GroupChatUsersList" Class="GroupChatUserList" Color="InfoViewBGCG" Scrollbar="XfireScrollbar">
+        <Text Font="Arial" Size="11" Bold="False" Color="InfoViewTextCG" Color_Friend="ListFriendTextCG" Color_FoF="ListFoFTextCG" Color_Offline="ListOfflineTextCG" Color_Hyperlink="LinkTextCG" Color_Selected="ListColorSelectedCG" Color_NonFocus="ListColorSelectedDiabledCG" Color_SelectedText="ListColorSelectedTextCG" Color_Header="HeaderTextCG" />
+        <Images>
+            <Image Type="HeaderLeft">header_left</Image>
+            <Image Type="HeaderMiddle">header_middle</Image>
+            <Image Type="HeaderRight">header_right</Image>
+            <Image Type="HeaderArrowUp">arrow_up</Image>
+            <Image Type="HeaderArrowDown">arrow_down</Image>
+            <Image Type="VoiceServer">icon_server_unmuted</Image>
+            <Image Type="MicOn">icon_speaker_unmuted</Image>
+            <Image Type="MicOff">icon_speaker_gray</Image>
+            <Image Type="SpeakerOn">icon_speaker_unmuted</Image>
+            <Image Type="SpeakerOnButMuted">icon_speaker_muted</Image>
+            <Image Type="SpeakerOff">icon_speaker_silent</Image>
+            <Image Type="SpeakerOffButMuted">icon_speaker_silent_muted</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="GroupChatArea" Class="GroupChatArea" Color="ChatViewBGCG" Scrollbar="XfireScrollbar">
+        <Text Color_Personal="ChatPersonalNameCG" Color_PersonalText="ChatPersonalTextCG" Color_Other="ChatOtherNameCG" Color_OtherText="ChatOtherTextCG" />
+    </Component>
+    
+    <Component Name="GroupChatEdit" Class="GroupChatEdit" MinHeight="50" MaxHeight="50" WindowFocus="True" Color="ChatEditBGCG" Scrollbar="XfireScrollbar">
+        <Text Color="ChatPersonalTextCG" />
+    </Component>
+    
+    
+    
+    <!--
+    //////////////////////////////////////////////
+    // Buttons
+    //////////////////////////////////////////////
+    -->
+    <Component Name="ButtonGroupChatInfoIn" Class="SkinLauncher" MinWidth="13" MaxWidth="13" MinHeight="115" MaxHeight="115" Stretch="ToContent" Accelerator="ALT(VK_LEFT)" ToolTip="ButtonRetractInfoTip">
+        <Triggers>
+            <Trigger Type="OnClick">LaunchSkin</Trigger>
+        </Triggers>
+        <Images State="Normal">
+            <Image Type="Middle">button_info_in_norm</Image>
+        </Images>
+        <Images State="Hover">
+            <Image Type="Middle">button_info_in_hover</Image>
+        </Images>
+        <Images State="Down">
+            <Image Type="Middle">button_info_in_down</Image>
+        </Images>
+        <Popup SaveState="1">GroupChatInfoViewPopup</Popup>
+    </Component>
+    
+    <Component Name="ButtonGroupChatInfoOut" Class="SkinLauncher" MinWidth="13" MaxWidth="13" MinHeight="115" MaxHeight="115" Stretch="ToContent" Default="Click" Accelerator="ALT(VK_RIGHT)" ToolTip="ButtonExpandInfoTip">
+        <Triggers>
+            <Trigger Type="OnClick">LaunchSkin</Trigger>
+        </Triggers>
+        <Images State="Normal">
+            <Image Type="Middle">button_info_out_norm</Image>
+        </Images>
+        <Images State="Hover">
+            <Image Type="Middle">button_info_out_hover</Image>
+        </Images>
+        <Images State="Down">
+            <Image Type="Middle">button_info_out_down</Image>
+        </Images>
+        <Popup SaveState="1">GroupChatInfoViewPopup</Popup>
+    </Component>
+    
+    <!--[BEGIN] Call Buttons -->
+    <!-- @NOTE These components are into "Components/Common.xml":
+                    - TabbedMute
+                - ChatButtonMuteSelf
+                    - ChatButtonUnmuteSelf
+                    - ChatButtonAnswerCall
+                    - ChatButtonCancelCall -->
+    <Component Name="TabbedGCCall" Class="TabControl" MinWidth="75" MaxWidth="75" MinHeight="41" MaxHeight="41" Stretch="ToContent" ControlGroupId="5" GroupId="5">    
+        <Triggers>
+            <Trigger Type="OnAppCanHostVoiceChat">GroupMessage(0)</Trigger>
+            <Trigger Type="OnAppCannotHostVoiceChat">GroupMessage(0)</Trigger>
+            <Trigger Type="OnAppCanVoiceChat">GroupMessage(1)</Trigger>
+            <Trigger Type="OnAppCanLeaveVoiceChat">GroupMessage(2)</Trigger>
+        </Triggers>
+        <Images>
+            <Image Type="Middle">transparent</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="GroupChatButtonCall" Class="PushButton" MinWidth="75" MaxWidth="75" MinHeight="41" MaxHeight="41" Stretch="ToContent" ToolTip="ButtonGroupHostVoiceChatTip" DisabledToolTip="ButtonGroupHostVoiceChatDisabledTip">
+        <Triggers>
+            <Trigger Type="OnClick">AppHostGroupVoiceChat</Trigger>
+            <Trigger Type="OnAppCanHostVoiceChat">State(Normal)</Trigger>
+            <Trigger Type="OnAppCannotHostVoiceChat">State(Disabled)</Trigger>
+        </Triggers>
+        <Images State="Normal">
+            <Image Type="Middle">button_call_norm</Image>
+        </Images>
+        <Images State="Hover">
+            <Image Type="Middle">button_call_hover</Image>
+        </Images>
+        <Images State="Down">
+            <Image Type="Middle">button_call_down</Image>
+        </Images>
+        <Images State="Disabled">
+            <Image Type="Middle">button_call_disabled</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="GroupChatButtonAnswerCall" Class="PushButton" MinWidth="75" MaxWidth="75" MinHeight="41" MaxHeight="41" Stretch="ToContent" ToolTip="ButtonGroupJoinVoiceChatTip">
+        <Triggers>
+            <Trigger Type="OnClick">AppVoiceChat</Trigger>
+            <!-- <Trigger Type="OnAppVoiceRinging">Animate(Type=Repeat,Delay=4,Repeat=-1,Action=1)</Trigger> -->
+        </Triggers>
+        <Images State="Normal">
+            <Image Type="Middle">button_call_ringing</Image>
+        </Images>
+        <Images State="Hover">
+            <Image Type="Middle">button_call_ringing</Image>
+        </Images>
+        <Images State="Down">
+            <Image Type="Middle">button_call_down</Image>
+        </Images>
+        <Images State="Disabled">
+            <Image Type="Middle">button_call_disabled</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="GroupChatButtonLeaveCall" Class="PushButton" MinWidth="75" MaxWidth="75" MinHeight="41" MaxHeight="41" Stretch="ToContent" ToolTip="ButtonGroupLeaveVoiceChatTip">
+        <Triggers>
+            <Trigger Type="OnClick">AppLeaveGroupVoiceChat</Trigger>
+        </Triggers>
+        <Images State="Normal">
+            <Image Type="Middle">button_call_connected_norm</Image>
+        </Images>
+        <Images State="Hover">
+            <Image Type="Middle">button_call_cancel_hover</Image>
+        </Images>
+        <Images State="Down">
+            <Image Type="Middle">button_call_cancel_down</Image>
+        </Images>
+        <Images State="Disabled">
+            <Image Type="Middle">button_call_disabled</Image>
+        </Images>
+    </Component>
+    <!--[END] Call Buttons -->
+    
+    <!--[BEGIN] Game Lobby Buttons -->
+    <Component Name="TabbedJoinGame" Class="TabControl" MinWidth="75" MaxWidth="75" MinHeight="41" MaxHeight="41" Stretch="ToContent" ControlGroupId="6" GroupId="6">
+        <Triggers>
+            <!-- In a group chat and there is no current game lobby and this user is allowed to select one -->
+            <Trigger Type="OnAppCanHostGameLobby">GroupMessage(0)</Trigger>
+            <!-- Either in a game lobby and we can join or in the context of a friend that is playing a network game that is joinable for this user -->
+            <Trigger Type="OnAppCanJoin">GroupMessage(1)</Trigger>
+            <!-- In a group chat and in the game lobby and this user is NOT the host -->
+            <Trigger Type="OnAppCanLeaveGameLobby">GroupMessage(2)</Trigger>
+            <!-- In a group chat and this user IS the host -->
+            <Trigger Type="OnAppCanLaunchGameLobby">GroupMessage(3)</Trigger>
+            <!-- Either in a game lobby and the button is disabled or in the context of a friend that is not playing a game that this user can join -->
+            <Trigger Type="OnAppCannotJoin">GroupMessage(4)</Trigger>
+        </Triggers>
+        <Images State="Normal">
+            <Image Type="Middle">transparent</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="GroupButtonHostGameLobby" Class="PushButton" MinWidth="75" MaxWidth="75" MinHeight="41" MaxHeight="41" Stretch="ToContent" ToolTip="ButtonGroupHostGameLobbyTip">
+        <Triggers>
+            <Trigger Type="OnClick">HostGameLobby</Trigger>
+        </Triggers>
+        <Images State="Normal">
+            <Image Type="Middle">button_join_game_norm</Image>
+        </Images>
+        <Images State="Hover">
+            <Image Type="MIddle">button_join_game_hover</Image>
+        </Images>
+        <Images State="Down">
+            <Image Type="Middle">button_join_game_down</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="GroupButtonJoinGameLobby" Class="PushButton" MinWidth="75" MaxWidth="75" MinHeight="41" MaxHeight="41" Stretch="ToContent" ToolTip="ButtonJoinGameTip" DisabledToolTip="ButtonJoinGameDisabledTip">
+        <Triggers>
+            <Trigger Type="OnClick">JoinFriend</Trigger>
+            <Trigger Type="OnAppCanJoin">State(Normal)</Trigger>
+            <Trigger Type="OnAppCannotJoin">State(Disabled)</Trigger>
+        </Triggers>
+        <Images State="Normal">
+            <Image Type="Middle">button_join_game_norm</Image>
+        </Images>
+        <Images State="Hover">
+            <Image Type="Middle">button_join_game_hover</Image>
+        </Images>
+        <Images State="Down">
+            <Image Type="Middle">button_join_game_down</Image>
+        </Images>
+        <Images State="Disabled">
+            <Image Type="Middle">button_join_game_disabled</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="GroupButtonLeaveGameLobby" Class="PushButton" MinWidth="75" MaxWidth="75" MinHeight="41" MaxHeight="41" Stretch="ToContent" ToolTip="ButtonGroupLeaveGameLobbyTip">
+        <Triggers>
+            <Trigger Type="OnClick">LeaveGameLobby</Trigger>
+        </Triggers>
+        <Images State="Normal">
+            <Image Type="Middle">button_join_game_norm</Image>
+        </Images>
+        <Images State="Hover">
+            <Image Type="Middle">button_join_game_hover</Image>
+        </Images>
+        <Images State="Down">
+            <Image Type="Middle">button_join_game_down</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="GroupButtonLaunchGameLobby" Class="PushButton" MinWidth="75" MaxWidth="75" MinHeight="41" MaxHeight="41" Stretch="ToContent" ToolTip="ButtonGroupLaunchGameLobbyTip">
+        <Triggers>
+            <Trigger Type="OnClick">LaunchGameLobby</Trigger>
+        </Triggers>
+        <Images State="Normal">
+            <Image Type="Middle">button_join_game_norm</Image>
+        </Images>
+        <Images State="Hover">
+            <Image Type="Middle">button_join_game_hover</Image>
+        </Images>
+        <Images State="Down">
+            <Image Type="Middle">button_join_game_down</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="GroupButtonDisabledGameLobby" Class="PushButton" MinWidth="75" MaxWidth="75" MinHeight="41" MaxHeight="41" Stretch="ToContent" ToolTip="ButtonJoinGameDisabledTip">
+        <Images State="Normal">
+            <Image Type="Middle">button_join_game_disabled</Image>
+        </Images>
+    </Component>
+    <!--[END] Game Lobby Buttons -->
+</Components>

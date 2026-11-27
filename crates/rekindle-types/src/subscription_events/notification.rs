@@ -45,6 +45,10 @@ pub enum NotificationEvent {
     /// ([`NotificationEvent::contact_alert`]), so the notification policy
     /// can leave them out without reading the text.
     SystemAlert {
+        /// Minted by the backend when the alert is made ([`alert_id`]):
+        /// the same in the live event, the journal and the standing
+        /// snapshot, so a window keeps one copy of it.
+        id: String,
         title: String,
         body: String,
         subject: Option<AlertSubject>,
@@ -82,17 +86,29 @@ pub struct AlertSubject {
     pub unnamed_body: String,
 }
 
+/// A fresh [`NotificationEvent::SystemAlert`] id: a time-ordered UUID
+/// (v7) from the caller's clock (`now_ms`) and 10 bytes of its RNG, so no
+/// wall clock or OS randomness is read here.
+#[must_use]
+pub fn alert_id(now_ms: u64, random: [u8; 10]) -> String {
+    uuid::Builder::from_unix_timestamp_millis(now_ms, &random)
+        .into_uuid()
+        .to_string()
+}
+
 impl NotificationEvent {
     /// A [`Self::SystemAlert`] about one contact: `named` is the text with
     /// `display_name` in it, `unnamed` the same text naming no one.
     #[must_use]
     pub fn contact_alert(
+        id: String,
         title: impl Into<String>,
         display_name: impl Into<String>,
         named: impl Into<String>,
         unnamed: impl Into<String>,
     ) -> Self {
         Self::SystemAlert {
+            id,
             title: title.into(),
             body: named.into(),
             subject: Some(AlertSubject {
@@ -104,65 +120,5 @@ impl NotificationEvent {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn postcard_round_trips_every_variant() {
-        let events = vec![
-            NotificationEvent::MessageReceived {
-                title: "t".into(),
-                body: "b".into(),
-                community_id: "c".into(),
-                channel_id: "ch".into(),
-                sound_ref: Some("ping".into()),
-            },
-            NotificationEvent::SystemAlert {
-                title: "t".into(),
-                subject: None,
-                body: "b".into(),
-            },
-            NotificationEvent::UpdateAvailable {
-                version: "1.2.3".into(),
-            },
-            NotificationEvent::CallIncoming {
-                call_id: "id".into(),
-                from: "pk".into(),
-                display_name: "Ada".into(),
-                kind: "audio".into(),
-                expires_at_ms: 1234,
-                is_group: false,
-            },
-        ];
-        for event in events {
-            let bytes = postcard::to_allocvec(&event).expect("postcard encode");
-            let back: NotificationEvent = postcard::from_bytes(&bytes).expect("postcard decode");
-            assert_eq!(format!("{event:?}"), format!("{back:?}"));
-        }
-    }
-
-    /// Pins the JSON `src/ipc/channels/notification_events.ts` parses.
-    #[test]
-    fn json_shape_is_what_the_webview_parses() {
-        let event = NotificationEvent::UpdateAvailable {
-            version: "1.2.3".into(),
-        };
-        assert_eq!(
-            serde_json::to_string(&event).unwrap(),
-            r#"{"updateAvailable":{"version":"1.2.3"}}"#
-        );
-
-        let call = NotificationEvent::CallIncoming {
-            call_id: "id".into(),
-            from: "pk".into(),
-            display_name: "Ada".into(),
-            kind: "audio".into(),
-            expires_at_ms: 1234,
-            is_group: true,
-        };
-        assert_eq!(
-            serde_json::to_string(&call).unwrap(),
-            r#"{"callIncoming":{"callId":"id","from":"pk","displayName":"Ada","kind":"audio","expiresAtMs":1234,"isGroup":true}}"#
-        );
-    }
-}
+#[path = "notification_tests.rs"]
+mod tests;

@@ -66,15 +66,5 @@ pub fn video_frame_key(secret: &[u8; 32], sender_key: &[u8]) -> Zeroizing<[u8; 3
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn video_frame_keys_differ_per_sender_and_from_the_secret() {
-        let secret = fresh();
-        let a = video_frame_key(&secret, b"alice");
-        let b = video_frame_key(&secret, b"bob");
-        assert_ne!(*a, *b);
-        assert_ne!(*a, *secret);
-    }
-}
+#[path = "mod_tests.rs"]
+mod tests;

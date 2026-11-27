@@ -247,3 +247,11 @@ impl GovernanceRuntimeError {
         Self::Adapter(msg.into())
     }
 }
+
+/// An op with no canonical form is never signed or published: the codec's
+/// refusal is an encoding error (`op_log::build_op`).
+impl From<rekindle_codec::CodecError> for GovernanceRuntimeError {
+    fn from(e: rekindle_codec::CodecError) -> Self {
+        Self::Encoding(e.to_string())
+    }
+}

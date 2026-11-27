@@ -85,7 +85,7 @@ pub fn sealed_info(type_id: DmTypeId) -> Option<&'static str> {
 /// `Invalid` when the datagram is over Veilid's message cap: it fails on
 /// every path, so it is refused rather than queued (plan C7.25).
 pub fn wire(frame: &DmFrame) -> Result<Vec<u8>, FriendError> {
-    let encoded = frame.encode();
+    let encoded = frame.encode()?;
     let mut datagram = Vec::with_capacity(encoded.len() + 1);
     datagram.push(DIRECT_TAG);
     datagram.extend_from_slice(&encoded);
@@ -127,13 +127,18 @@ pub struct Position {
     pub chain_seq: u64,
 }
 
-fn content(body: &DirectBody, hint: ContentHint, at: Position, sent_at_ms: u64) -> Vec<u8> {
+fn content(
+    body: &DirectBody,
+    hint: ContentHint,
+    at: Position,
+    sent_at_ms: u64,
+) -> Result<Vec<u8>, rekindle_codec::CodecError> {
     DmContent {
         stream_seq: at.stream_seq,
         chain_seq: at.chain_seq,
         content_hint: hint,
         sent_at_ms,
-        payload: body.encode(),
+        payload: body.encode()?,
     }
     .encode()
 }
@@ -183,7 +188,7 @@ pub async fn ratchet_frame_at(
     let type_id = body.type_id();
     let local = host.local_party()?;
     let peer = peer_address(to)?;
-    let (db, plaintext) = (host.db()?, content(body, hint, at, sent_at_ms));
+    let (db, plaintext) = (host.db()?, content(body, hint, at, sent_at_ms)?);
     let encrypted = if is_logged(type_id) {
         ratchet::encrypt_record_and_log_outbound(
             &db,
@@ -295,7 +300,7 @@ pub async fn initiate_frame(
         &local,
         &peer,
         bundle,
-        &content(first, ContentHint::Default, at, host.clock().now_ms()),
+        &content(first, ContentHint::Default, at, host.clock().now_ms())?,
         &ad_extra(first_type_id),
     )
     .await
@@ -335,7 +340,7 @@ async fn open_frame(
         &local,
         &peer_address(to)?,
         bundle,
-        &content(body, ContentHint::Default, at, host.clock().now_ms()),
+        &content(body, ContentHint::Default, at, host.clock().now_ms())?,
         &ad_extra(type_id),
     )
     .await
@@ -382,9 +387,9 @@ pub fn seal_presession(
     let plaintext = SealedContent {
         nonce,
         sent_at_ms: now_ms,
-        payload: body.encode(),
+        payload: body.encode()?,
     }
-    .encode();
+    .encode()?;
     let sealed = presession::seal(identity, recipient, type_id.as_u16(), info, &plaintext)
         .map_err(|e| FriendError::Invalid(format!("seal {type_id:?}: {e}")))?;
     Ok(DmFrame {

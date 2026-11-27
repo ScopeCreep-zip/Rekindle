@@ -36,7 +36,7 @@ pub use network::{
     NetworkEvent, OwnRecordsPhase, OwnRouteClass, OwnRouteDownSet, OwnRouteOutage,
     RouteAvailability, RoutePauseCause,
 };
-pub use notification::{AlertSubject, NotificationEvent};
+pub use notification::{alert_id, AlertSubject, NotificationEvent};
 pub use presence::{GameActivity, PresenceEvent, PresenceSnapshot};
 pub use scope::EventScope;
 pub use social::SocialEvent;
@@ -57,7 +57,7 @@ use serde::{Deserialize, Serialize};
 /// Tauri webview, which wants the project's camelCase convention.
 /// External tagging is the one representation that satisfies both.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 pub enum SubscriptionEvent {
     /// Channel message lifecycle (new, edited, deleted, pinned, thread).
     ChannelMessage(ChannelMessageEvent),
@@ -96,7 +96,18 @@ pub enum SubscriptionEvent {
     UnreadChanged { context: UnreadContext, count: u32 },
     /// The backend began an action that needs the user's review (plan
     /// D3.3): any connection of the identity renders it and commits it.
-    IntentPending(crate::intent::IntentReview),
+    /// `hold_id` is the publication id of a review the backend holds
+    /// ([`crate::intent::HeldReview::hold_id`]); `None` for a review a
+    /// window started itself.
+    IntentPending {
+        review: crate::intent::IntentReview,
+        hold_id: Option<crate::intent::IntentId>,
+    },
+    /// The complete set of reviews the backend holds for this identity,
+    /// unexpired and uncommitted, empty included (plan E3.2 S7d-keys.10):
+    /// a window's standing snapshot, handed on every subscribe and resume,
+    /// never journaled. It replaces the set the window held.
+    HeldReviews(Vec<crate::intent::HeldReview>),
 }
 
 /// Context for unread count changes.
@@ -132,11 +143,14 @@ pub enum EventCategory {
     Transfer,
     UnreadChanged,
     Intent,
+    /// A window's held-review snapshot (never journaled, so no filter
+    /// ever matches it on a stream).
+    HeldReviews,
 }
 
 impl EventCategory {
     /// Every category, for subscribers that want all of them.
-    pub const ALL: [Self; 17] = [
+    pub const ALL: [Self; 18] = [
         Self::ChannelMessage,
         Self::Typing,
         Self::Presence,
@@ -154,6 +168,7 @@ impl EventCategory {
         Self::Transfer,
         Self::UnreadChanged,
         Self::Intent,
+        Self::HeldReviews,
     ];
 }
 
@@ -177,7 +192,8 @@ impl SubscriptionEvent {
             Self::System(_) => EventCategory::System,
             Self::Transfer(_) => EventCategory::Transfer,
             Self::UnreadChanged { .. } => EventCategory::UnreadChanged,
-            Self::IntentPending(_) => EventCategory::Intent,
+            Self::IntentPending { .. } => EventCategory::Intent,
+            Self::HeldReviews(_) => EventCategory::HeldReviews,
         }
     }
 
@@ -302,7 +318,8 @@ impl SubscriptionEvent {
             | Self::Transfer(_)
             | Self::Notification(_)
             | Self::UnreadChanged { .. }
-            | Self::IntentPending(_)
+            | Self::IntentPending { .. }
+            | Self::HeldReviews(_)
             | Self::Friend(_)
             | Self::GroupDm(_) => None,
         }

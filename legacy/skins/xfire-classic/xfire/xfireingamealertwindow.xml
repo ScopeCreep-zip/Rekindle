@@ -1,0 +1,64 @@
+﻿<Tile Name="XfireInGameAlertWindow"
+	Component="InGameAlertWindow"
+	>
+	<Tile Name="ChatTile"
+		X="0"
+		Y="0"
+		ResizeX="100"
+		ResizeY="100"
+		Component="InGameChatTile"
+		>
+		<Tile Name="MainBody"
+			ResizeX="100"
+			ResizeY="100"
+			IndentLeft="0"
+			IndentTop="0"
+			Z="5"
+			Component="InGameMainBody"
+			>
+			<Tile Name="TheX"
+				X="8"
+				Y="8"
+				Component="TheX"
+				>
+				<Tile Name="TheXCover"
+					Component="InGameXCover"
+					>
+				</Tile>
+			</Tile>
+		</Tile>
+		<Tile Name="MainBodyBG"
+			ResizeX="100"
+			ResizeY="100"
+			IndentLeft="5"
+			IndentRight="5"
+			IndentBottom="5"
+			IndentTop="5"
+			Z="1"
+			Component="InGameMainBodyBG"
+			>
+		</Tile>
+		<Tile Name="MainGrippers"
+			ResizeX="100"
+			ResizeY="100"
+			IndentLeft="0"
+			IndentTop="0"
+			Z="10"
+			Component="InGameMainGrippers"
+			>
+		</Tile>
+	</Tile>
+	<Tile Name="TextTile"
+		X="0"
+		Y="0"
+		ResizeX="100"
+		ResizeY="100"
+		IndentLeft="45"
+		IndentTop="10"
+		IndentBottom="12"
+		IndentRight="12"
+		Z="100"
+		Component="InGameTextTile"
+		>
+	</Tile>
+</Tile>

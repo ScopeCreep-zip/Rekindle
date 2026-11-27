@@ -1,0 +1,65 @@
+<Tile Name="StandardMainWindow" ResizeX="100" ResizeY="100" Component="MainWindow">
+	<Tile Name="MainTitleBar" Z="2" X="0" OutdentLeft="1" Y="0" ResizeX="100" ResizeY="0" Component="MainTitleBar">
+		<Tile Name="TopLeft" X="12" Y="6" Z="3" Component="TopLeft"></Tile>
+		<Tile Name="TopRight" JustX="RIGHT" X="12" Y="6" Z="3" Component="TopRight"></Tile>
+		<Tile Name="Logo" X="27" Y="18" Component="Logo"></Tile>
+		<Tile Name="Title" JustX="CENTER" X="0" Y="0" Component="Title"></Tile>
+		<Tile Name="Minimize" JustX="RIGHT" X="49" Y="11" Component="Minimize"></Tile>
+		<Tile Name="Maximize" X="Minimize.RIGHT" Y="11" Component="Maximize"></Tile>
+		<Tile Name="Close" X="Maximize.RIGHT" Y="11" Component="Close"></Tile>
+	</Tile>
+	<Tile Name="AdBar" Z="2" X="0" OutdentLeft="1" Y="MainTitleBar.BOTTOM" ResizeX="100" ResizeY="0" Component="AdBar">
+		<Tile Name="AdArea" Y="MainTitleBar.BOTTOM" JustX="CENTER" Component="AdArea"></Tile>
+	</Tile>
+	<Tile Name="MenuBar" Z="2" X="0" OutdentLeft="1" Y="AdBar.BOTTOM" ResizeX="100" ResizeY="0" Component="MenuBar">
+		<Tile Name="MenuBg" Y="AdBar.BOTTOM" JustX="CENTER" Component="MenuBg">
+			<Tile Name="FileMenu" X="11" Y="12" Z="12" Component="FileMenu"></Tile>
+			<Tile Name="ToolsMenu" X="FileMenu.RIGHT+2" Y="12" Z="12" Component="ToolsMenu"></Tile>
+			<Tile Name="HelpMenu" X="ToolsMenu.RIGHT+2" Y="12" Z="12" Component="HelpMenu"></Tile>
+		</Tile>
+	</Tile>
+
+	<Tile Name="Content" Z="2" X="0" OutdentLeft="1" Y="MenuBar.BOTTOM" IndentBottom="61" ResizeY="100" ResizeX="100" Component="Content">
+		<Tile Name="ExpandButton" JustY="CENTER" JustX="RIGHT" Z="2" Component="ExpandButton"></Tile>
+		<Tile Name="TabHeader" Y="MenuBar.BOTTOM" JustX="CENTER" Z="2" Component="TabHeader">
+			<Tile Name="TabNormalButton" X="61" Y="0" Z="2" Component="TabNormalButton"></Tile>
+			<Tile Name="TabServerButton" X="TabNormalButton.RIGHT" Y="0" Z="2" Component="TabServerButton"></Tile>
+			<Tile Name="TabDownloadButton" X="TabServerButton.RIGHT" Y="0" Z="2" Component="TabDownloadButton"></Tile>
+		</Tile>
+		
+		<Tile Name="TabbedControl" Y="TabHeader.BOTTOM" X="50" IndentRight="50" ResizeX="100" ResizeY="100" Z="2" Component="TabbedControl">
+			<Tile Name="BuddyView" ResizeX="100" ResizeY="100" Component="BuddyView" IndentRight="1" IndentLeft="1" IndentBottom="1"></Tile>
+			<Tile Name="ServerView" ResizeX="100" ResizeY="100" Component="ServerView" IndentRight="1" IndentLeft="1" IndentBottom="1"></Tile>
+			<Tile Name="DownloadView" ResizeX="100" ResizeY="100" Component="DownloadView" IndentRight="1" IndentLeft="1" IndentBottom="1"></Tile>
+		</Tile>
+	</Tile>
+	
+	<Tile Name="BottomBar" Z="2" X="0" OutdentLeft="1" Y="Content.BOTTOM" ResizeX="100" Component="BottomBar">
+		<Tile Name="BottomLeft" X="0" Y="16" Z="3" Component="BottomLeft"></Tile>
+		<Tile Name="BottomRight" JustX="RIGHT" X="0" Y="16" Z="3" Component="BottomRight"></Tile>
+		<Tile Name="BottomCenter" JustX="CENTER" X="0" Y="0" Component="BottomCenter">
+			<Tile Name="TCLink" X="29" Y="39" Z="12" Component="TCLink"></Tile>
+		</Tile>
+		<Tile Name="TabButtonArea" X="0" Y="0" ResizeX="100" Component="TabButtonArea">
+			<Tile Name="FriendsButtons" ResizeX="100" IndentTop="1" Component="ButtonArea">
+				<Tile Name="AddButton" X="65" Y="19" Component="AddButton"></Tile>
+				<Tile Name="ImButton" X="AddButton.RIGHT-10" Y="19" Component="ImButton"></Tile>
+				<Tile Name="InfoButton" JustX="RIGHT" X="99" Y="19" Component="InfoButton"></Tile>
+				<Tile Name="JoinFriendButton" X="InfoButton.RIGHT-10" Y="19" Component="JoinButton"></Tile>
+			</Tile>
+			<Tile Name="ServersButtons" ResizeX="100" IndentTop="1" Component="ButtonArea">
+				<Tile Name="AddServerButton" X="65" Y="19" IndentTop="1" Component="AddServerButton"></Tile>
+				<Tile Name="RefreshButton" X="AddServerButton.RIGHT-10" Y="19" IndentTop="1" Component="RefreshButton"></Tile>
+				<Tile Name="PlaceHolder" JustX="RIGHT" X="99" Y="19" IndentTop="1" Component="PlaceHolder"></Tile>
+				<Tile Name="JoinServerButton" X="PlaceHolder.RIGHT-10" Y="19" Component="JoinButton"></Tile>
+			</Tile>
+			<Tile Name="FilesButtons" ResizeX="100" IndentTop="2" Component="ButtonArea">
+				<Tile Name="StartDownloadButton" X="65" Y="19" Component="StartDownloadButton"></Tile>
+				<Tile Name="StopDownloadButton" X="StartDownloadButton.RIGHT-10" Y="19" Component="StopDownloadButton"></Tile>
+				<Tile Name="ExecuteDownloadButton" JustX="RIGHT" X="99" Y="19" Component="ExecuteDownloadButton"></Tile>
+				<Tile Name="DownloadInfoButton" X="ExecuteDownloadButton.RIGHT-10" Y="19" Component="DownloadInfoButton"></Tile>
+			</Tile>
+		</Tile>
+	</Tile>	
+
+</Tile>

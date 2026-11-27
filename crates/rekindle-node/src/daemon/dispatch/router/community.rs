@@ -145,6 +145,9 @@ pub(super) async fn route_lifecycle(
         LifecycleRequest::CommunityDeviceRetire { anchor, device_key } => {
             community::handle_device_retire(ctx, state, &anchor, &device_key).await
         }
+        LifecycleRequest::CommunityDeviceReEnrol {} => {
+            community::handle_device_re_enrol(ctx, state).await
+        }
         LifecycleRequest::CommunityDeviceReadmit {
             anchor,
             member,

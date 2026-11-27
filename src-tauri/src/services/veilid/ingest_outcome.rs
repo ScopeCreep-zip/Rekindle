@@ -28,9 +28,11 @@ pub(crate) enum ShellFollowUp {
         community_id: String,
         payload: ControlPayload,
     },
-    /// A thread reply, stored by the Host's channel adapter.
+    /// A thread reply from its authenticated sender, stored by the Host's
+    /// channel adapter.
     ThreadControl {
         community_id: String,
+        sender_pseudonym: String,
         payload: ControlPayload,
     },
     /// Voice signaling, run by the voice signaling adapter.
@@ -110,9 +112,16 @@ impl ShellFollowUp {
             }
             Self::ThreadControl {
                 community_id,
+                sender_pseudonym,
                 payload,
             } => {
-                super::control_events::handle_thread_payload(app, state, &community_id, payload);
+                super::control_events::handle_thread_payload(
+                    app,
+                    state,
+                    &community_id,
+                    &sender_pseudonym,
+                    payload,
+                );
             }
             Self::VoiceSignaling {
                 community_id,

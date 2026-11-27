@@ -26,7 +26,7 @@ use rekindle_types::subscription_events::SubscriptionEvent;
 use zeroize::Zeroizing;
 
 use crate::daemon::dispatch::DaemonContext;
-use crate::host::gate::IntentOwner;
+use crate::host::backend_hold::HoldRefused;
 
 pub(crate) use maintenance::{
     start as start_maintenance, start_prekeys as start_prekey_maintenance,
@@ -493,46 +493,13 @@ impl FriendHost for HostFriends {
                 )
             }
         };
-        let owner = IntentOwner {
-            conn: None,
-            identity: self.ctx.require_owner().map_err(|_| FriendError::Locked)?,
-        };
-        let selection = crate::host::intent_select::select(&self.ctx, &action, kind)
+        crate::host::backend_hold::raise(&self.ctx, action, cancel, kind, same_hold)
             .await
-            .map_err(|e| FriendError::Failed(format!("{e:?}")))?;
-        // One hold per friend and kind: a newer one replaces the older,
-        // which goes without its cancel, but only once the newer fits: a
-        // full gate refuses it and keeps the older (plan audit D-4).
-        let now = self.ctx.clock.now_ms();
-        if !self
-            .ctx
-            .intents
-            .has_room(&owner, |held_action| same_hold(held_action, &action), now)
-        {
-            return Err(FriendError::Conflict(
-                rekindle_idempotency::intent_gate::GateError::TooManyPending.to_string(),
-            ));
-        }
-        self.ctx.intents.retain_held(|held_by, held_action| {
-            !(held_by.conn.is_none()
-                && held_by.identity == owner.identity
-                && same_hold(held_action, &action))
-        });
-        let review = self
-            .ctx
-            .intents
-            .hold(
-                owner,
-                selection,
-                action,
-                cancel,
-                rekindle_idempotency::intent_gate::BACKEND_HOLD_TTL_MS,
-                now,
-            )
-            .map_err(|e| FriendError::Conflict(e.to_string()))?;
-        self.ctx
-            .publish_event(SubscriptionEvent::IntentPending(review));
-        Ok(())
+            .map_err(|refused| match refused {
+                HoldRefused::Locked => FriendError::Locked,
+                HoldRefused::Select(why) => FriendError::Failed(why),
+                HoldRefused::Gate(why) => FriendError::Conflict(why),
+            })
     }
 
     fn own_prekey_lease(&self) -> Option<LeaseId> {

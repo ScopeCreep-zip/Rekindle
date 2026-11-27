@@ -32,6 +32,7 @@ fn a_forget_reaches_every_window_holding_the_community_list() {
 fn notifications_belong_to_the_buddy_list_only() {
     let a = sub(SubscriptionEvent::Notification(
         NotificationEvent::SystemAlert {
+            id: "a".into(),
             title: "t".into(),
             subject: None,
             body: "b".into(),

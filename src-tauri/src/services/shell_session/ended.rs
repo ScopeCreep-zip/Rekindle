@@ -57,6 +57,7 @@ pub(super) async fn ended(state: &SharedState, app: Option<&tauri::AppHandle>, r
             crate::event_dispatch::emit_notification(
                 app,
                 rekindle_types::subscription_events::NotificationEvent::SystemAlert {
+                    id: uuid::Uuid::new_v4().to_string(),
                     title: "Session ended".into(),
                     subject: None,
                     body: format!(

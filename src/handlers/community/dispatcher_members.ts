@@ -1,4 +1,5 @@
-import { produce } from "solid-js/store";
+import { batch } from "solid-js";
+import { produce, reconcile } from "solid-js/store";
 import type { CommunityEvent } from "../../ipc/channels";
 import type {
   CommunitySubscriptionEvent,
@@ -8,7 +9,7 @@ import { applyJoinProgress, resetJoinProgress, type JoinStageStatus } from "../.
 import { applySuccessorEvent } from "../../stores/successor.store";
 import { transformCommunityDetail } from "../../utils/transformers";
 import { handleResolveCommunityImageDataUrls } from "../../actions/community/lifecycle";
-import { setCommunityState, setCommunityMembers, communityState, dropCommunity } from "../../stores/community.store";
+import { type Community, setCommunityState, setCommunityMembers, communityState, dropCommunity } from "../../stores/community.store";
 import { commands } from "../../ipc/commands";
 import { addToast } from "../../stores/toast.store";
 import { removalText } from "../../utils/removal_text";
@@ -17,6 +18,54 @@ import { refreshCommunityMembers, refreshForUnlistedMember } from "./members_ref
 import { withCommunity } from "./community_reread";
 import { handleLoadExpressions, handleLoadAutoModRules } from "../../actions/community/lifecycle";
 import { handleLoadChannelThreads } from "../../actions/community/events_threads";
+
+// A pending rebuild needs the full view even if a later permission event
+// supersedes its request. Scope reads to a row so a reply from before a
+// leave can't update the replacement row after rejoining.
+const permissionReads = new WeakMap<Community, { rebuild: boolean }>();
+
+function readCommunityPermissions(community: string, rebuild: boolean): void {
+  const row = communityState.communities[community];
+  if (!row) return;
+  const read = { rebuild: rebuild || permissionReads.get(row)?.rebuild === true };
+  permissionReads.set(row, read);
+
+  void commands
+    .getCommunityDetails()
+    .then((details) => {
+      const detail = details.find((d) => d.id === community);
+      if (!detail || communityState.communities[community] !== row || permissionReads.get(row) !== read) return;
+      permissionReads.delete(row);
+      batch(() => {
+        setCommunityState("communities", community, "myPermissions", detail.myPermissions);
+        setCommunityState("communities", community, "denied", reconcile(detail.denied ?? {}));
+        setCommunityState("communities", community, "myChannelPermissions", detail.myChannelPermissions);
+        setCommunityState("communities", community, "weAreCreator", detail.weAreCreator);
+        setCommunityState("communities", community, "deviceStatus", detail.deviceStatus);
+        if (read.rebuild) {
+          setCommunityState("communities", community, {
+            name: detail.name,
+            description: detail.description ?? null,
+            roles: detail.roles ?? [],
+            channels: detail.channels.map(transformChannel),
+            categories: detail.categories ?? [],
+            myRoleIds: detail.myRoleIds,
+            mekGeneration: detail.mekGeneration ?? 0,
+            removed: detail.removed ?? null,
+          });
+          return;
+        }
+        // A permission-only event doesn't replace the rest of a channel.
+        for (const ch of detail.channels) {
+          setCommunityState(
+            "communities", community, "channels", (c) => c.id === ch.id,
+            "denied", reconcile(ch.denied ?? {}),
+          );
+        }
+      });
+    })
+    .catch(() => {});
+}
 
 /// Membership / governance / moderation-alert slice of the community
 /// event dispatcher. Returns `true` when the event was consumed.
@@ -261,6 +310,7 @@ function governanceRowCommunity(g: GovernanceEvent): string | null {
   if ("effectivePermissionsChanged" in g) return g.effectivePermissionsChanged.community;
   if ("governanceRebuilt" in g) return g.governanceRebuilt.community;
   if ("keyStatus" in g) return g.keyStatus.community;
+  if ("bansChanged" in g) return g.bansChanged.community;
   return null;
 }
 
@@ -270,6 +320,15 @@ function applyGovernance(g: GovernanceEvent): void {
   if ("keyStatus" in g) {
     const { community, status } = g.keyStatus;
     if (communityState.communities[community]) setCommunityState("communities", community, "keyStatus", status);
+    return;
+  }
+  // The ban list changed (plan E3.2 S9): a shown ban list reads it again
+  // from the Host (`bansRevision`), which holds the list.
+  if ("bansChanged" in g) {
+    const { community } = g.bansChanged;
+    if (communityState.communities[community]) {
+      setCommunityState("communities", community, "bansRevision", (n) => (n ?? 0) + 1);
+    }
     return;
   }
   if ("rolesChanged" in g) {
@@ -444,28 +503,16 @@ function applyGovernance(g: GovernanceEvent): void {
     // Our own permissions moved (plan E3.2 S9): re-read the backend's
     // flags. Another member's change shows through its roles and the
     // member list, which re-render on their own events.
-    const { community, member } = g.effectivePermissionsChanged;
+    const { community, member, denied } = g.effectivePermissionsChanged;
     if (communityState.communities[community]?.myPseudonymKey !== member) return;
+    // What we may no longer do, and why (never-hide), straight from the event.
+    // Every denied map is the Host's whole snapshot (it serializes only the
+    // denied actions), so it replaces the old map by reconcile: Solid merges a
+    // plain object set at a path, which would keep a reason the Host dropped.
+    if (denied) setCommunityState("communities", community, "denied", reconcile(denied));
     // Our rank may have moved, so the per-member moderation verdicts too.
     refreshCommunityMembers(community);
-    commands
-      .getCommunityDetails()
-      .then((details) => {
-        const detail = details.find((d) => d.id === community);
-        if (!detail) return;
-        setCommunityState("communities", community, "myPermissions", detail.myPermissions);
-        setCommunityState(
-          "communities",
-          community,
-          "myChannelPermissions",
-          detail.myChannelPermissions,
-        );
-        // A creator seat gained or lost names us here too.
-        setCommunityState("communities", community, "weAreCreator", detail.weAreCreator);
-        // So may this device's standing (a key endorsed or revoked, ADR 0022 rule 4).
-        setCommunityState("communities", community, "deviceStatus", detail.deviceStatus);
-      })
-      .catch(() => {});
+    readCommunityPermissions(community, false);
     return;
   }
 
@@ -473,34 +520,7 @@ function applyGovernance(g: GovernanceEvent): void {
     // A CRDT rebuild moves everything at once, so this is the one
     // governance event with no payload and a full re-read.
     const { community } = g.governanceRebuilt;
-    commands
-      .getCommunityDetails()
-      .then((details) => {
-        const detail = details.find((c: { id: string }) => c.id === community);
-        if (detail) {
-          setCommunityState("communities", community, "name", detail.name);
-          setCommunityState("communities", community, "description", detail.description ?? null);
-          setCommunityState("communities", community, "roles", detail.roles ?? []);
-          setCommunityState(
-            "communities",
-            community,
-            "channels",
-            detail.channels.map(transformChannel),
-          );
-          setCommunityState("communities", community, "categories", detail.categories ?? []);
-          setCommunityState("communities", community, "myRoleIds", detail.myRoleIds);
-          setCommunityState("communities", community, "myPermissions", detail.myPermissions);
-          setCommunityState(
-            "communities",
-            community,
-            "myChannelPermissions",
-            detail.myChannelPermissions,
-          );
-          setCommunityState("communities", community, "mekGeneration", detail.mekGeneration ?? 0);
-          setCommunityState("communities", community, "removed", detail.removed ?? null);
-        }
-      })
-      .catch(() => {});
+    readCommunityPermissions(community, true);
     // Also refresh members so the member list shows up
     commands
       .getCommunityMembers(community)

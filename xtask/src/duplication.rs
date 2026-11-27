@@ -362,6 +362,7 @@ pub fn check_duplicate_types(root: &Path) -> Result<()> {
 }
 
 pub fn collect_duplicate_types(root: &Path) -> Result<Vec<Offender>> {
+    let tests = crate::test_code::TestCode::load(root)?;
     let mut by_name: BTreeMap<String, Vec<(String, String, usize)>> = BTreeMap::new();
 
     for subdir in ["crates", "src-tauri/src"] {
@@ -371,7 +372,7 @@ pub fn collect_duplicate_types(root: &Path) -> Result<Vec<Offender>> {
                 .unwrap_or(&path)
                 .display()
                 .to_string();
-            if rel.contains("/tests/") || rel.contains("/benches/") {
+            if tests.is_test(&path) {
                 continue;
             }
             let Ok(src) = std::fs::read_to_string(&path) else {

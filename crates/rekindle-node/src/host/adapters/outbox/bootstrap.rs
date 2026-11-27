@@ -37,20 +37,29 @@ fn decode(payload: &[u8]) -> Option<([u8; 32], &str)> {
 
 /// The inviter's route read for an attempt, when it may be called: none
 /// read, or a blob the transport knows dead (plan RV1g B3: Veilid's
-/// `RouteChange` or two timed-out calls, until a newer `M`/6 or the failure
+/// `RouteChange`, until a newer `M`/6, a probe's answer or the failure
 /// cache's expiry), defers the row without a call.
 fn callable(
     read: Option<Vec<u8>>,
     dead: impl FnOnce(&[u8]) -> bool,
 ) -> Result<Vec<u8>, AttemptOutcome> {
     match read {
-        Some(route) if dead(&route) => {
-            tracing::debug!("bootstrap exchange deferred: the inviter's route is known dead");
-            Err(AttemptOutcome::Deferred)
-        }
+        Some(route) if dead(&route) => Err(AttemptOutcome::Deferred),
         Some(route) => Ok(route),
         None => Err(AttemptOutcome::Deferred),
     }
+}
+
+/// Say an attempt that did not land (diag RC3, the AB1 `route_trace`
+/// pattern): at info, so a real-app log shows the row draining; the
+/// community id and the attempt number only, no name or content.
+fn not_landed(community: &str, row: &OutboxRow, reason: &str) {
+    tracing::info!(
+        community,
+        attempt = row.attempts.saturating_add(1),
+        %reason,
+        "bootstrap exchange attempt did not land; the row stays queued"
+    );
 }
 
 struct BootstrapSender(HostGovernance);
@@ -79,9 +88,17 @@ impl StreamSender for BootstrapSender {
             return AttemptOutcome::Wedged("our MemberJoined is not held".into());
         };
         let read = governance.inviter_route(community, inviter_record).await;
+        let reason = if read.is_some() {
+            "the inviter's route is known dead"
+        } else {
+            "the inviter's route was not read"
+        };
         let route = match callable(read, |blob| governance.route_declared_dead(blob)) {
             Ok(route) => route,
-            Err(outcome) => return outcome,
+            Err(outcome) => {
+                not_landed(community, row, reason);
+                return outcome;
+            }
         };
         use crate::host::adapters::governance::Exchange;
         match (governance)
@@ -93,13 +110,19 @@ impl StreamSender for BootstrapSender {
                 AttemptOutcome::Receipted
             }
             Exchange::Refused(refused) => {
+                tracing::info!(
+                    community,
+                    attempt = row.attempts.saturating_add(1),
+                    %refused,
+                    "bootstrap exchange refused: the join is withdrawn"
+                );
                 governance
                     .withdraw_refused_join(community, &hash, &refused)
                     .await;
                 AttemptOutcome::Superseded(refused.to_string())
             }
             Exchange::Unanswered(reason) => {
-                tracing::debug!(community, %reason, "bootstrap exchange not answered");
+                not_landed(community, row, &reason);
                 AttemptOutcome::Deferred
             }
         }
@@ -176,29 +199,4 @@ impl OutboxSlot {
 }
 
 #[cfg(test)]
-mod tests {
-    #[test]
-    fn a_payload_round_trips_its_hash_and_record() {
-        let payload = super::encode(&[7; 32], "VLD0:rec");
-        assert_eq!(super::decode(&payload), Some(([7; 32], "VLD0:rec")));
-        assert_eq!(super::decode(&payload[..32]), None);
-        assert_eq!(super::decode(&payload[..10]), None);
-    }
-
-    #[test]
-    fn a_dead_inviter_route_defers_the_row_without_a_call() {
-        use super::{callable, AttemptOutcome};
-        assert!(matches!(
-            callable(Some(b"A".to_vec()), |b| b == b"A"),
-            Err(AttemptOutcome::Deferred)
-        ));
-        assert!(matches!(
-            callable(None, |_| false),
-            Err(AttemptOutcome::Deferred)
-        ));
-        assert_eq!(
-            callable(Some(b"B".to_vec()), |b| b == b"A").ok(),
-            Some(b"B".to_vec())
-        );
-    }
-}
+mod tests;

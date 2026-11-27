@@ -181,7 +181,8 @@ impl App {
         match event {
             // An action the backend began, waiting for this identity's
             // review (plan D3.4).
-            SubscriptionEvent::IntentPending(review) => Some(Action::ShowIntent(Box::new(review))),
+            SubscriptionEvent::IntentPending { review, hold_id: None } => Some(Action::ShowIntent(Box::new(review))),
+            SubscriptionEvent::IntentPending { hold_id: Some(_), .. } | SubscriptionEvent::HeldReviews(_) => Some(Action::RefreshHeldReviews),
             // Our own presence (plan E1.2): the dashboard shows it live.
             SubscriptionEvent::Presence(
                 rekindle_types::subscription_events::PresenceEvent::SelfChanged { snapshot, .. },
@@ -390,6 +391,8 @@ impl App {
             }) => Some(self.quick_wipe_toast(armed, shortcut.as_deref())),
 
             // ── Silent events (no UI impact) ─────────────────────────────
+            // A GUI window's standing snapshot (`event_snapshot` in the
+            // shell), never journaled: the daemon's stream never carries it.
             SubscriptionEvent::System(
                 SystemEvent::BootstrapRequested { .. }
                 | SystemEvent::BootstrapReceived { .. }

@@ -169,6 +169,7 @@ impl IntentKind {
         Self::RotateMek,
         Self::RetireDevice,
         Self::EnrolDevice,
+        Self::ReEnrolDevice,
         Self::RegisterWithPushRelay,
         Self::SetLinkPreviewsEnabled,
         Self::SetReadReceiptsEnabled,

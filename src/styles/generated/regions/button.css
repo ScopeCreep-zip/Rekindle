@@ -17,7 +17,7 @@
     padding: inherit;
     border-radius: inherit;
     background:
-      linear-gradient(var(--skin-region-button-secondary-backing), var(--skin-region-button-secondary-backing)) var(--skin-region-button-secondary-slice-left, 0px) var(--skin-region-button-secondary-slice-top, 0px) / calc(100% - var(--skin-region-button-secondary-slice-left, 0px) - var(--skin-region-button-secondary-slice-right, 0px)) calc(100% - var(--skin-region-button-secondary-slice-top, 0px) - var(--skin-region-button-secondary-slice-bottom, 0px)) no-repeat padding-box,
+      linear-gradient(var(--skin-region-button-secondary-backing), var(--skin-region-button-secondary-backing)) var(--skin-region-button-secondary-slice-left, 0%) var(--skin-region-button-secondary-slice-top, 0%) / calc(100% - var(--skin-region-button-secondary-slice-left, 0%) - var(--skin-region-button-secondary-slice-right, 0%)) calc(100% - var(--skin-region-button-secondary-slice-top, 0%) - var(--skin-region-button-secondary-slice-bottom, 0%)) no-repeat padding-box,
       linear-gradient(var(--skin-region-button-secondary-backing), var(--skin-region-button-secondary-backing)) no-repeat content-box;
     pointer-events: none;
   }
@@ -50,7 +50,7 @@
     padding: inherit;
     border-radius: inherit;
     background:
-      linear-gradient(var(--skin-region-button-primary-backing), var(--skin-region-button-primary-backing)) var(--skin-region-button-primary-slice-left, 0px) var(--skin-region-button-primary-slice-top, 0px) / calc(100% - var(--skin-region-button-primary-slice-left, 0px) - var(--skin-region-button-primary-slice-right, 0px)) calc(100% - var(--skin-region-button-primary-slice-top, 0px) - var(--skin-region-button-primary-slice-bottom, 0px)) no-repeat padding-box,
+      linear-gradient(var(--skin-region-button-primary-backing), var(--skin-region-button-primary-backing)) var(--skin-region-button-primary-slice-left, 0%) var(--skin-region-button-primary-slice-top, 0%) / calc(100% - var(--skin-region-button-primary-slice-left, 0%) - var(--skin-region-button-primary-slice-right, 0%)) calc(100% - var(--skin-region-button-primary-slice-top, 0%) - var(--skin-region-button-primary-slice-bottom, 0%)) no-repeat padding-box,
       linear-gradient(var(--skin-region-button-primary-backing), var(--skin-region-button-primary-backing)) no-repeat content-box;
     pointer-events: none;
   }

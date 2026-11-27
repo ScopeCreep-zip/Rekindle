@@ -58,15 +58,17 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
             >
               <SkinGlyph name="settings" />
             </button>
-            <Show when={vm.canManageChannels()}>
-              <button
-                class="action-bar-btn header-add-btn"
-                onClick={() => vm.setShowCreateChannel(true)}
-                title="Create Channel"
-              >
-                <SkinGlyph name="plus-box" />
-              </button>
-            </Show>
+            {/* Never-hide: drawn always, disabled with the Host's reason. */}
+            <button
+              class="action-bar-btn header-add-btn"
+              onClick={() => vm.setShowCreateChannel(true)}
+              disabled={vm.denied("manageChannels") !== null}
+              title={vm.denied("manageChannels") ?? "Create Channel"}
+              aria-label="Create Channel"
+              aria-description={vm.denied("manageChannels") ?? undefined}
+            >
+              <SkinGlyph name="plus-box" />
+            </button>
           </span>
         </div>
         <ChannelList
@@ -75,7 +77,7 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
           members={vm.activeCommunity()!.members}
           selectedId={vm.selectedChannelId()}
           communityId={vm.selectedCommunityId()}
-          canManage={vm.canManageChannels()}
+          manageDenied={vm.denied("manageChannels")}
           onSelect={vm.handleSelectChannel}
           onVoiceJoin={(channelId) => handleJoinVoice(channelId, vm.selectedCommunityId())}
           onRename={(channelId, currentName) => vm.setRenameTarget({ channelId, currentName })}

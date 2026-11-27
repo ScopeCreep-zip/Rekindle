@@ -86,6 +86,9 @@ pub fn acknowledgement(facts: &[Fact], escalations: &[Escalation]) -> &'static s
                 RecipientKind::Site => "I understand this site will see my IP address.",
             }),
             Fact::PresenceVisible => Some("I understand they can see when I am online."),
+            Fact::DeviceReEnrolment { .. } => {
+                Some("I understand this device's key is replaced in every community.")
+            }
             _ => None,
         })
     };

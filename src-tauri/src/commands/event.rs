@@ -10,11 +10,13 @@ use crate::state::SharedState;
 ///
 /// `from` is `None` for a window that just opened: it hydrates its history
 /// from the database, so only the session's standing events (a security
-/// alert raised before it subscribed, plan E7.1) are handed to it. A window
+/// alert raised before it subscribed, plan E7.1) and the reviews the backend
+/// holds (`heldReviews`) are handed to it. A window
 /// that reloaded passes the last cursor it processed (plan D3.2) and
 /// receives the journaled events after it that were addressed to it, then
-/// `resumed`; or `invalidSession` when the host can no longer serve the
-/// cursor, and it reloads. The window is identified by the webview that invoked the
+/// `resumed`, then the same standing snapshot (the held reviews included,
+/// plan E3.2 S7d-keys.10); or `invalidSession` when the host can no longer
+/// serve the cursor, and it reloads. The window is identified by the webview that invoked the
 /// command, so it cannot subscribe as another window.
 #[tauri::command]
 pub async fn subscribe_events(
@@ -24,25 +26,14 @@ pub async fn subscribe_events(
     state: State<'_, SharedState>,
 ) -> Result<(), String> {
     let label = window.label().to_owned();
-    let host = state.host.current();
-    let Some(from) = from else {
-        // Read under the router's lock, inside `register`: an alert
-        // published after this snapshot is delivered live once the window
-        // is registered, and one in both is processed once (by its cursor).
-        let window = label.clone();
-        let snapshot = std::iter::once(()).flat_map(move |()| {
-            host.as_ref()
-                .map(|host| crate::event_dispatch::standing_for(host, &window))
-                .unwrap_or_default()
-        });
-        state.event_router.register(label, channel, snapshot);
-        return Ok(());
+    let snapshot = || match (state.host.current(), from) {
+        (Some(host), None) => crate::event_snapshot::standing_for(&host, &label),
+        (Some(host), Some(from)) => crate::event_snapshot::resume_for(&host, &label, from),
+        (None, None) => Vec::new(),
+        (None, Some(_)) => vec![OutboundEnvelope::invalid_session()],
     };
-    let replay = match host {
-        Some(host) => crate::event_dispatch::replay_for(&host, &label, from),
-        // Before the host starts there is no journal to replay from.
-        None => vec![OutboundEnvelope::invalid_session()],
-    };
-    state.event_router.register(label, channel, replay);
+    state
+        .event_router
+        .register(label.clone(), channel, snapshot);
     Ok(())
 }

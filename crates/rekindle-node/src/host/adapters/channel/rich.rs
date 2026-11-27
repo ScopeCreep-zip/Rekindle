@@ -11,7 +11,7 @@ use rekindle_channel::ChannelMessagingDeps;
 use rekindle_types::dto::channel_message::ChannelMessageView;
 use rekindle_types::message::SendState;
 use rekindle_types::permissions;
-use rekindle_types::thread::ThreadInfo;
+use rekindle_types::thread::{thread_reply_key, ThreadInfo};
 
 use super::HostChannel;
 
@@ -67,6 +67,9 @@ pub(crate) fn thread_snapshot(info: ThreadInfo) -> ThreadInfoSnapshot {
 }
 
 fn message_view(view: rekindle_channel::ThreadMessageView) -> ChannelMessageView {
+    let server_message_id = view
+        .server_message_id
+        .map(|message_id| thread_reply_key(&view.sender_pseudonym, &message_id));
     ChannelMessageView {
         id: 0,
         sender_id: view.sender_pseudonym,
@@ -76,7 +79,7 @@ fn message_view(view: rekindle_channel::ThreadMessageView) -> ChannelMessageView
         automod_blurred: false,
         timestamp: i64::try_from(view.timestamp_ms).unwrap_or(i64::MAX),
         is_own: view.is_own,
-        server_message_id: view.server_message_id,
+        server_message_id,
         reactions: None,
         pinned: None,
         poll: None,

@@ -76,7 +76,7 @@ pub fn encode_control_payload(
     use ControlPayload as CP;
     match payload {
         CP::MemberLeave { .. } => write_member_leave(b.reborrow().init_member_leave(), payload),
-        CP::MemberJoined { .. } => write_member_joined(b.reborrow().init_member_joined(), payload),
+        CP::MemberJoined { .. } => write_member_joined(b.reborrow().init_member_joined(), payload)?,
         CP::Kick { .. } => write_kick(b.reborrow().init_kick(), payload),
         CP::MEKRotated { .. } => write_mek_rotated(b.reborrow().init_mek_rotated(), payload),
         CP::RequestMEK { .. } => write_request_mek(b.reborrow().init_request_mek(), payload),
@@ -88,7 +88,7 @@ pub fn encode_control_payload(
             write_request_segment_expansion(b.reborrow().init_request_segment_expansion(), payload);
         }
         CP::OnboardingComplete { .. } => {
-            write_onboarding_complete(b.reborrow().init_onboarding_complete(), payload);
+            write_onboarding_complete(b.reborrow().init_onboarding_complete(), payload)?;
         }
         CP::ReactionAdded { .. } => {
             write_reaction_added(b.reborrow().init_reaction_added(), payload);
@@ -102,8 +102,8 @@ pub fn encode_control_payload(
         CP::MessageUnpinned { .. } => {
             write_message_unpinned(b.reborrow().init_message_unpinned(), payload);
         }
-        CP::EventCreated { .. } => write_event_created(b.reborrow().init_event_created(), payload),
-        CP::EventUpdated { .. } => write_event_updated(b.reborrow().init_event_updated(), payload),
+        CP::EventCreated { .. } => write_event_created(b.reborrow().init_event_created(), payload)?,
+        CP::EventUpdated { .. } => write_event_updated(b.reborrow().init_event_updated(), payload)?,
         CP::EventDeleted { .. } => write_event_deleted(b.reborrow().init_event_deleted(), payload),
         CP::EventRsvpChanged { .. } => {
             write_event_rsvp_changed(b.reborrow().init_event_rsvp_changed(), payload);
@@ -118,7 +118,7 @@ pub fn encode_control_payload(
             write_game_server_removed(b.reborrow().init_game_server_removed(), payload);
         }
         CP::SubmitOnboardingAnswers { .. } => {
-            write_submit_onboarding_answers(b.reborrow().init_submit_onboarding_answers(), payload);
+            write_submit_onboarding_answers(b.reborrow().init_submit_onboarding_answers(), payload)?;
         }
         CP::BootstrapRequest { .. } => {
             write_bootstrap_request(b.reborrow().init_bootstrap_request(), payload);
@@ -160,13 +160,13 @@ pub fn encode_control_payload(
         CP::VoiceModeSwitch { .. } => {
             write_voice_mode_switch(b.reborrow().init_voice_mode_switch(), payload);
         }
-        CP::StageUpdate { .. } => write_stage_update(b.reborrow().init_stage_update(), payload),
+        CP::StageUpdate { .. } => write_stage_update(b.reborrow().init_stage_update(), payload)?,
         CP::SpeakRequest { .. } => write_speak_request(b.reborrow().init_speak_request(), payload),
         CP::SpeakResponse { .. } => {
             write_speak_response(b.reborrow().init_speak_response(), payload);
         }
         CP::RequestAttachment { .. } => {
-            write_request_attachment(b.reborrow().init_request_attachment(), payload);
+            write_request_attachment(b.reborrow().init_request_attachment(), payload)?;
         }
         CP::AttachmentChunk { .. } => {
             write_attachment_chunk(b.reborrow().init_attachment_chunk(), payload);
@@ -176,7 +176,7 @@ pub fn encode_control_payload(
         }
         CP::VoiceMute { .. } => write_voice_mute(b.reborrow().init_voice_mute(), payload),
         CP::VoiceDeafen { .. } => write_voice_deafen(b.reborrow().init_voice_deafen(), payload),
-        CP::VoiceRoster { .. } => write_voice_roster(b.reborrow().init_voice_roster(), payload),
+        CP::VoiceRoster { .. } => write_voice_roster(b.reborrow().init_voice_roster(), payload)?,
         CP::SoundboardPlay { .. } => {
             write_soundboard_play(b.reborrow().init_soundboard_play(), payload);
         }
@@ -190,7 +190,7 @@ pub fn encode_control_payload(
             write_keyframe_request(b.reborrow().init_keyframe_request(), payload);
         }
         CP::MediaCapabilities { .. } => {
-            write_media_capabilities(b.reborrow().init_media_capabilities(), payload);
+            write_media_capabilities(b.reborrow().init_media_capabilities(), payload)?;
         }
         CP::TopologyChange { .. } => {
             write_topology_change(b.reborrow().init_topology_change(), payload);

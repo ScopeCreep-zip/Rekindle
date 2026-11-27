@@ -1,0 +1,9 @@
+<Tile Name="InGameAlertWindow" ResizeX="100" ResizeY="100" Component="InGameAlertWindow">
+	<Tile Name="InGameAlert" X="0" Y="0" ResizeX="100" ResizeY="100" Component="InGameAlertSkin"></Tile>
+	<Tile Name="InGameAlertLeft" X="0" Y="34" IndentBottom="1" ResizeX="100" ResizeY="100" Component="InGameAlertLeft"></Tile>
+	<Tile Name="InGameAlertMiddle" X="16" Y="34" IndentRight="1" IndentBottom="1" ResizeX="100" ResizeY="100" Component="InGameAlertMiddle"></Tile>
+	<Tile Name="InGameAlertRight" JustX="RIGHT" X="0" Y="34" IndentBottom="1" ResizeX="100" ResizeY="100" Component="InGameAlertRight"></Tile>
+	<Tile Name="TextTile" Z="100" X="27" Y="45" IndentRight="11" IndentBottom="11" ResizeX="100" ResizeY="100" Component="InGameTextTile"></Tile>
+	<Tile Name="ListViewBG" X="26" Y="44" Z="4" IndentRight="10" IndentBottom="10" ResizeX="100" ResizeY="100" Component="ListViewBG"></Tile>
+	<Tile Name="CHATSCLOGO" X="0" Y="0" Z="6" Component="CHATSCLOGO"></Tile>
+</Tile>

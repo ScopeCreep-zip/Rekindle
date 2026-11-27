@@ -268,6 +268,22 @@ impl Subject {
     }
 }
 
+impl Fact {
+    /// The `ReEnrolDevice` review's fact (plan E3.2 S7d-keys.10, verbatim
+    /// with `n` = `last_seq`).
+    #[must_use]
+    pub fn device_re_enrolment(last_seq: u64) -> Self {
+        Self::DeviceReEnrolment {
+            last_seq,
+            statement: format!(
+                "an older backup or another copy of this data wrote under this device's key; \
+                 this device's key is retired at seq {last_seq} and a new one is minted; your DM \
+                 sessions are re-established and contacts are prompted"
+            ),
+        }
+    }
+}
+
 /// A fact the review states. Typed, so each frontend words it in its own
 /// idiom and all state the same facts.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -310,6 +326,11 @@ pub enum Fact {
     /// This many members are affected.
     #[serde(rename_all = "camelCase")]
     MembersAffected { count: u32 },
+    /// This device's key is retired at `last_seq` and a new one minted
+    /// (plan E3.2 S7d-keys.10); `statement` is the Host's words for it
+    /// ([`Fact::device_re_enrolment`]), shown as given.
+    #[serde(rename_all = "camelCase")]
+    DeviceReEnrolment { last_seq: u64, statement: String },
     /// This many messages are deleted for members (plan E3.3 E4: never
     /// "erased", the ciphertext stays in copies).
     #[serde(rename_all = "camelCase")]
@@ -413,6 +434,17 @@ pub struct IntentReview {
     /// review's explicit Cancel control cancels it, never Esc, a click
     /// outside or closing the view.
     pub cancel_sends: bool,
+}
+
+/// A review the backend holds (plan E3.2 S7d-keys.10): the review as it
+/// stands now, under `hold_id`, the id it was first published with, which
+/// stays the same when a commit refreshes its facts and the review's own
+/// `intent_id` changes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HeldReview {
+    pub review: IntentReview,
+    pub hold_id: IntentId,
 }
 
 /// The proof a commit carries (step 3).

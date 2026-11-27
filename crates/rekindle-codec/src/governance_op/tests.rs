@@ -429,7 +429,7 @@ fn every_body_arm_round_trips() {
         let original = op(body, vec![op_ref(1), op_ref(2)]);
         let decoded = decode_op(&encode_op(&original).unwrap()).unwrap();
         assert_eq!(decoded.op, original);
-        assert_eq!(decoded.unsigned, op_unsigned_bytes(&original));
+        assert_eq!(decoded.unsigned, op_unsigned_bytes(&original).unwrap());
     }
 }
 
@@ -457,7 +457,7 @@ fn canonical_bytes_are_stable() {
         // The unsigned form carries no signature and is not the signed form.
         let mut resigned = first.op.clone();
         resigned.sig = [0x11; 64];
-        assert_eq!(op_unsigned_bytes(&resigned), first.unsigned);
+        assert_eq!(op_unsigned_bytes(&resigned).unwrap(), first.unsigned);
         assert_ne!(encode_op(&first.op).unwrap(), first.unsigned);
     }
 }
@@ -471,7 +471,7 @@ fn unknown_and_retired_body_arms_are_reported() {
     root.set_device_key(&[1; 32]);
     root.set_sig(&[2; 64]);
     root.reborrow().init_body().init_obsolete_join_requested();
-    let bytes = crate::capnp_codec::pack(&builder);
+    let bytes = crate::capnp_codec::pack(&builder).unwrap();
     assert!(matches!(
         decode_op(&bytes),
         Err(CodecError::UnknownGovernanceArm(_))
@@ -496,7 +496,7 @@ fn unknown_and_retired_body_arms_are_reported() {
         .set_root(message.get_root::<governance_op::Reader<'_>>().unwrap())
         .unwrap();
     assert!(matches!(
-        decode_op(&crate::capnp_codec::pack(&repacked)),
+        decode_op(&crate::capnp_codec::pack(&repacked).unwrap()),
         Err(CodecError::UnknownGovernanceArm(_))
     ));
 }
@@ -540,7 +540,8 @@ fn max_deps_fit_the_subkey_and_one_more_is_refused() {
     over.deps.push(op_ref(0xFF));
     assert!(encode_op(&over).is_err());
     // A sender that skips the encoder's check is refused on decode.
-    let mut unchecked = super::seal_op(&super::op_unsigned_bytes(&over), &over.sig).unwrap();
+    let mut unchecked =
+        super::seal_op(&super::op_unsigned_bytes(&over).unwrap(), &over.sig).unwrap();
     assert!(decode_op(&unchecked).is_err());
     unchecked.resize(GOVERNANCE_OP_MAX_BYTES + 1, 0);
     assert!(decode_op(&unchecked).is_err());

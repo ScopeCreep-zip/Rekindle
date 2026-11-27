@@ -1,4 +1,4 @@
-import { Component, createSignal, For, Show, onMount, onCleanup } from "solid-js";
+import { Component, createSignal, For, Show, Suspense, onMount, onCleanup } from "solid-js";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { startEventStream, subscribeSettingsTab } from "../ipc/channels";
 import Titlebar from "../components/titlebar/Titlebar";
@@ -15,10 +15,9 @@ import VideoTab from "./settings/VideoTab";
 import PrivacyTab from "./settings/PrivacyTab";
 import DevicesTab from "./settings/DevicesTab";
 import AboutTab from "./settings/AboutTab";
+import { rovingList } from "../utils/roving_list";
 import { setWindowKind } from "../utils/window_kind";
 
-
-const VALID_TABS: SettingsTab[] = ["profile", "application", "appearance", "notifications", "audio", "video", "privacy", "devices", "mobile", "about"];
 
 const TAB_LABELS: { id: SettingsTab; label: string }[] = [
   { id: "profile", label: "Profile" },
@@ -34,16 +33,20 @@ const TAB_LABELS: { id: SettingsTab; label: string }[] = [
 ];
 
 function getInitialTab(): SettingsTab {
-  const params = new URLSearchParams(window.location.search);
-  const tab = params.get("tab");
-  if (tab && VALID_TABS.includes(tab as SettingsTab)) {
-    return tab as SettingsTab;
-  }
-  return "profile";
+  const requested = new URLSearchParams(window.location.search).get("tab");
+  return TAB_LABELS.find((tab) => tab.id === requested)?.id ?? "profile";
 }
+
+/** While mounted (a tab's resources still loading), the panel says it is busy. */
+const PanelBusy: Component<{ set: (busy: boolean) => void }> = (props) => {
+  onMount(() => props.set(true));
+  onCleanup(() => props.set(false));
+  return null;
+};
 
 const SettingsWindow: Component = () => {
   const [activeTab, setActiveTab] = createSignal<SettingsTab>(getInitialTab());
+  const [panelBusy, setPanelBusy] = createSignal(false);
 
   let unlistenSwitchTab: Promise<UnlistenFn> | undefined;
 
@@ -70,7 +73,12 @@ const SettingsWindow: Component = () => {
           a WAI-ARIA tablist (WCAG 4.1.2) and the active look keys off
           `aria-selected`, so the painted tab, the read one and the content
           cannot disagree. */}
-      <div class="form-tabs" role="tablist" aria-label="Settings sections">
+      <div
+        ref={rovingList('[role="tab"]', { orientation: "horizontal", preferSelected: true })}
+        class="form-tabs"
+        role="tablist"
+        aria-label="Settings sections"
+      >
         <For each={TAB_LABELS}>
           {(tab) => (
             <button
@@ -80,6 +88,7 @@ const SettingsWindow: Component = () => {
               aria-selected={activeTab() === tab.id}
               aria-controls="main-content"
               class={`form-tab ${activeTab() === tab.id ? "form-tab-active" : ""}`}
+              onFocus={() => setActiveTab(tab.id)}
               onClick={() => setActiveTab(tab.id)}
             >
               {tab.label}
@@ -87,8 +96,20 @@ const SettingsWindow: Component = () => {
           )}
         </For>
       </div>
-      <div class="settings-content" id="main-content" tabindex="-1" role="tabpanel" aria-labelledby={`settings-tab-${activeTab()}`}>
-        <Show when={activeTab() === "profile"}><ProfileTab /></Show>
+      <div
+        class="settings-content"
+        id="main-content"
+        tabindex="0"
+        role="tabpanel"
+        aria-labelledby={`settings-tab-${activeTab()}`}
+        aria-busy={panelBusy() ? "true" : undefined}
+      >
+        <Show when={activeTab() === "profile"}>
+          {/* Profile's resources load under their own boundary: the rail and
+              this panel stay mounted (focus keeps its place), and the panel
+              is aria-busy until Profile renders. */}
+          <Suspense fallback={<PanelBusy set={setPanelBusy} />}><ProfileTab /></Suspense>
+        </Show>
         <Show when={activeTab() === "application"}><ApplicationTab /></Show>
         <Show when={activeTab() === "appearance"}><AppearanceTab /></Show>
         <Show when={activeTab() === "notifications"}><NotificationsTab /></Show>

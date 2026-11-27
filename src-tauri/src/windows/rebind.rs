@@ -63,7 +63,7 @@ fn peer_key_changed(app: &AppHandle, state: &SharedState, old: &str, new: &str) 
 /// re-places or closes the open pack popups (plan SK2-A5).
 pub fn follow_event(app: &AppHandle, state: &SharedState, event: &SubscriptionEvent) {
     match event {
-        SubscriptionEvent::IntentPending(_) => super::surface_buddy_list(app),
+        SubscriptionEvent::IntentPending { .. } => super::surface_buddy_list(app),
         SubscriptionEvent::Friend(FriendEvent::KeyChanged { peer_key, new_key }) => {
             peer_key_changed(app, state, peer_key, new_key);
         }

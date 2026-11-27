@@ -300,7 +300,7 @@ async fn write_genesis<D: GovernanceRuntimeDeps>(
 ) -> Result<(GenesisCert, Vec<u8>), GovernanceRuntimeError> {
     let (k_a_text, k_a) = owner_signing_key(anchor, "anchor")?;
     let anchor_owner = k_a.verifying_key().to_bytes();
-    let unsigned = genesis::genesis_unsigned_bytes(&cert, &anchor_owner);
+    let unsigned = genesis::genesis_unsigned_bytes(&cert, &anchor_owner)?;
     let message = genesis_signing_bytes(&anchor.record_key, &unsigned);
     let signed = genesis::SignedGenesis {
         anchor_sig: k_a.sign(&message).to_bytes(),

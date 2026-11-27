@@ -38,7 +38,8 @@ pub(crate) fn rebuilds_on(subkeys: &[u32]) -> bool {
 }
 
 impl HostGovernance {
-    /// Handle a watched record's change when it is a ring member record or
+    /// Handle a watched record's change when it is our own op record
+    /// (`own_record_watch`), a ring member record or
     /// a community's registry (`registry_watch`): `true` when it was one,
     /// `false` for any other record. `subkeys` are
     /// the ones the change names; an empty list is a change we did not
@@ -46,6 +47,10 @@ impl HostGovernance {
     /// is dispatched by subkey ([`rebuilds_on`]): only a frontier change
     /// that names a head we lack rebuilds the community.
     pub async fn on_watched_change(&self, record: &str, subkeys: &[u32]) -> bool {
+        if let Some(community) = self.community_of_own_record(record) {
+            self.on_own_record_change(&community, record, subkeys).await;
+            return true;
+        }
         if let Some(community) = self.community_of_key_drop(record) {
             if subkeys.is_empty() || subkeys.contains(&super::key_drop::KEY_DROP) {
                 self.read_key_drop(&community).await;

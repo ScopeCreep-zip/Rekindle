@@ -88,6 +88,18 @@ pub async fn create_ann(host: &Host) -> rekindle_types::dto::identity::IdentityV
     }
 }
 
+/// Ask the Host's friend adapter to raise a session-reinitiation review.
+///
+/// # Panics
+/// The host must have an unlocked identity.
+pub async fn hold_reinitiation(host: &Host, peer: String) {
+    use rekindle_transport::operations::friend::{BackendHold, FriendHost};
+    super::adapters::friends::HostFriends::of(&host.ctx)
+        .hold_backend_intent(BackendHold::SessionReinitiate { peer })
+        .await
+        .unwrap();
+}
+
 /// Ann's community `c1` in the store with a member registry, and its row.
 ///
 /// # Panics

@@ -75,7 +75,10 @@ pub async fn submit(state: &AppState, url: &str) {
         IpcResponse::IntentRequired(review) => {
             if let Some(host) = state.host.current() {
                 host.publish(
-                    rekindle_types::subscription_events::SubscriptionEvent::IntentPending(review),
+                    rekindle_types::subscription_events::SubscriptionEvent::IntentPending {
+                        review,
+                        hold_id: None,
+                    },
                 );
             }
         }
