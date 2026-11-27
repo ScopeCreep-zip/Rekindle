@@ -1,8 +1,6 @@
 //! Community, role, and moderation CLI types.
 //!
-//! All entity references (community, member, role, invite) are `--flag`
-//! arguments that accept double-quoted strings. This handles spaces,
-//! special characters, and multi-word names cleanly.
+//! Quote entity names that contain spaces or shell metacharacters.
 
 use std::path::PathBuf;
 
@@ -98,6 +96,17 @@ pub enum CommunityCmd {
         /// Community name or anchor key.
         #[arg(long, short = 'c')]
         community: String,
+    },
+
+    /// Set the active channel in a community, or clear it by omitting the channel.
+    Focus {
+        /// Community name or anchor key.
+        community: String,
+        /// Channel name or ID.
+        channel: Option<String>,
+        /// Focus a voice channel.
+        #[arg(long)]
+        voice: bool,
     },
 
     /// List joined communities.
