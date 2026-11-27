@@ -80,6 +80,7 @@ const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
         when={downloaded()}
         fallback={
           <button
+            type="button"
             class="attachment-card-btn"
             onClick={() => void handleDownloadClick()}
             disabled={downloading()}
@@ -91,6 +92,7 @@ const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
         }
       >
         <button
+          type="button"
           class="attachment-card-btn"
           onClick={() => void handleRevealClick()}
           title="Show in folder"
@@ -101,6 +103,7 @@ const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
       </Show>
       <Show when={canPin()}>
         <button
+          type="button"
           class={`attachment-card-pin-btn ${pinned() ? "attachment-card-pin-btn-active" : ""}`}
           onClick={() => void handlePinClick()}
           title={pinned() ? "Unpin attachment" : "Pin attachment"}

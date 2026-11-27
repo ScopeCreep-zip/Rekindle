@@ -172,6 +172,7 @@ const EmojiPicker: Component<EmojiPickerProps> = (props) => {
           <For each={EMOJI_CATEGORIES}>
             {(cat, idx) => (
               <button
+                type="button"
                 class={`emoji-picker-tab ${activeCategory() === idx() ? "emoji-picker-tab-active" : ""}`}
                 onClick={() => {
                   setActiveCategory(idx());
@@ -213,6 +214,7 @@ const EmojiPicker: Component<EmojiPickerProps> = (props) => {
                 <For each={cat.emojis}>
                   {(emoji) => (
                     <button
+                      type="button"
                       class="emoji-picker-item"
                       onClick={() => {
                         props.onSelect(emoji);

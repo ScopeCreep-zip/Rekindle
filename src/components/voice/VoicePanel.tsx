@@ -33,6 +33,7 @@ const VoicePanel: Component = () => {
         <Show when={voiceState.isConnected}>
           <div class="voice-panel-controls">
             <button
+              type="button"
               class={`voice-btn ${voiceState.isMuted ? "voice-btn-active" : ""}`}
               onClick={handleToggleMute}
               title={voiceState.isMuted ? "Unmute" : "Mute"}
@@ -42,6 +43,7 @@ const VoicePanel: Component = () => {
               <SkinGlyph name={voiceState.isMuted ? "mic.off" : "mic.on"} />
             </button>
             <button
+              type="button"
               class={`voice-btn ${voiceState.isDeafened ? "voice-btn-active" : ""}`}
               onClick={handleToggleDeafen}
               title={voiceState.isDeafened ? "Undeafen" : "Deafen"}
@@ -51,6 +53,7 @@ const VoicePanel: Component = () => {
               <SkinGlyph name={voiceState.isDeafened ? "speaker.off" : "speaker.on"} />
             </button>
             <button
+              type="button"
               class="voice-btn voice-btn-disconnect"
               onClick={handleLeaveVoice}
               title="Disconnect"

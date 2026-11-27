@@ -124,6 +124,7 @@ const MessageInput: Component<MessageInputProps> = (props) => {
         <div class="edit-mode-header">
           <span>Editing message</span>
           <button
+            type="button"
             class="edit-mode-cancel"
             onClick={() => { props.onEditCancel?.(); clearInput(); }}
             title="Cancel edit (Esc)"

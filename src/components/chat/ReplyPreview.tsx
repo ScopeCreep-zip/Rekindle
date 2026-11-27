@@ -17,6 +17,7 @@ const ReplyPreview: Component<ReplyPreviewProps> = (props) => {
             <span class="reply-preview-body">{reply().body.length > 80 ? reply().body.slice(0, 80) + "..." : reply().body}</span>
           </div>
           <button
+            type="button"
             class="reply-preview-close"
             onClick={props.onDismiss}
             title="Cancel reply"

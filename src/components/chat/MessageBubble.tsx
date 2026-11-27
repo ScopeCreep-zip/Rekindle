@@ -197,6 +197,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
         </Show>
         <Show when={props.message.status === "failed"}>
           <button
+            type="button"
             class="message-retry-btn"
             onClick={handleRetryClick}
             title="Click to retry"
@@ -206,6 +207,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
           </button>
           <Show when={props.onDiscard}>
             <button
+              type="button"
               class="message-discard-btn"
               onClick={handleDiscardClick}
               title="Discard"
@@ -220,7 +222,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
           * sender, timestamp and status (plan MA1). */}
         <div class="message-actions">
           <Show when={props.onReply}>
-            <button class="message-action-btn" title="Reply" aria-label="Reply" onClick={() => props.onReply?.(props.message)}>
+            <button type="button" class="message-action-btn" title="Reply" aria-label="Reply" onClick={() => props.onReply?.(props.message)}>
               <SkinGlyph name="reply" />
             </button>
           </Show>
@@ -252,6 +254,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
           </Show>
           <Show when={props.onPin && props.message.serverMessageId}>
             <button
+              type="button"
               class="message-action-btn"
               title={props.message.pinned ? "Unpin" : "Pin"}
               aria-label={props.message.pinned ? "Unpin message" : "Pin message"}
@@ -261,32 +264,32 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
             </button>
           </Show>
           <Show when={props.onCreateThread && props.message.serverMessageId}>
-            <button class="message-action-btn" title="Create Thread" aria-label="Create thread" onClick={() => props.onCreateThread?.(props.message.serverMessageId!)}>
+            <button type="button" class="message-action-btn" title="Create Thread" aria-label="Create thread" onClick={() => props.onCreateThread?.(props.message.serverMessageId!)}>
               <SkinGlyph name="thread" />
             </button>
           </Show>
           <Show when={props.onCreatePoll && props.message.serverMessageId && !props.message.poll}>
-            <button class="message-action-btn" title="Create Poll" aria-label="Create poll" onClick={() => props.onCreatePoll?.(props.message.serverMessageId!)}>
+            <button type="button" class="message-action-btn" title="Create Poll" aria-label="Create poll" onClick={() => props.onCreatePoll?.(props.message.serverMessageId!)}>
               <SkinGlyph name="plus-box" />
             </button>
           </Show>
           <Show when={props.onForward && props.message.serverMessageId}>
-            <button class="message-action-btn" title="Forward" aria-label="Forward message" onClick={() => props.onForward?.(props.message.serverMessageId!)}>
+            <button type="button" class="message-action-btn" title="Forward" aria-label="Forward message" onClick={() => props.onForward?.(props.message.serverMessageId!)}>
               <SkinGlyph name="forward" />
             </button>
           </Show>
           <Show when={props.message.isOwn && props.onEdit && props.message.serverMessageId}>
-            <button class="message-action-btn" title="Edit" aria-label="Edit message" onClick={() => props.onEdit?.(props.message.serverMessageId!, props.message.body)}>
+            <button type="button" class="message-action-btn" title="Edit" aria-label="Edit message" onClick={() => props.onEdit?.(props.message.serverMessageId!, props.message.body)}>
               <SkinGlyph name="pencil" />
             </button>
           </Show>
           <Show when={props.onDelete && props.message.serverMessageId}>
-            <button class="message-action-btn" title="Delete" aria-label="Delete message" onClick={() => props.onDelete?.(props.message.serverMessageId!)}>
+            <button type="button" class="message-action-btn" title="Delete" aria-label="Delete message" onClick={() => props.onDelete?.(props.message.serverMessageId!)}>
               <SkinGlyph name="delete" />
             </button>
           </Show>
           <Show when={!props.message.isOwn && props.onAdminDelete && props.message.serverMessageId}>
-            <button class="message-action-btn" title="Remove as moderator" aria-label="Remove message as moderator" onClick={() => props.onAdminDelete?.(props.message.serverMessageId!)}>
+            <button type="button" class="message-action-btn" title="Remove as moderator" aria-label="Remove message as moderator" onClick={() => props.onAdminDelete?.(props.message.serverMessageId!)}>
               <SkinGlyph name="delete" />
             </button>
           </Show>
@@ -333,7 +336,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
           >
             <div class="message-automod-blur">
               <div class="message-automod-blur-text">Hidden by AutoMod on this client</div>
-              <button class="message-automod-reveal-btn" onClick={() => setRevealedBlurred(true)}>
+              <button type="button" class="message-automod-reveal-btn" onClick={() => setRevealedBlurred(true)}>
                 Reveal
               </button>
             </div>

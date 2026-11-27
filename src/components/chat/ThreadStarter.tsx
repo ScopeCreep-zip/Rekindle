@@ -13,6 +13,7 @@ interface ThreadStarterProps {
 const ThreadStarter: Component<ThreadStarterProps> = (props) => {
   return (
     <button
+      type="button"
       class="thread-starter-badge"
       classList={{ "thread-starter-archived": props.archived }}
       onClick={props.onClick}

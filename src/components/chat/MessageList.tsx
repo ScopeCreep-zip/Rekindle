@@ -155,6 +155,7 @@ const MessageList: Component<MessageListProps> = (props) => {
             {selectedCount()} selected
           </span>
           <button
+            type="button"
             class="message-list-selection-btn message-list-selection-btn-danger"
             disabled={selectedCount() === 0}
             onClick={handleConfirmBulkDelete}
@@ -162,6 +163,7 @@ const MessageList: Component<MessageListProps> = (props) => {
             Delete
           </button>
           <button
+            type="button"
             class="message-list-selection-btn"
             onClick={() => clearBulkSelection()}
           >
@@ -172,6 +174,7 @@ const MessageList: Component<MessageListProps> = (props) => {
       <Show when={!selectionActive() && props.canBulkDelete && props.channelId}>
         <div class="message-list-mod-toolbar">
           <button
+            type="button"
             class="message-list-mod-btn"
             onClick={handleEnterSelection}
             title="Enter bulk-delete selection mode"

@@ -175,6 +175,7 @@ const SearchPanel: Component<SearchPanelProps> = (props) => {
             <option value="oldest">Oldest</option>
           </select>
           <button
+            type="button"
             class="form-btn-primary"
             onClick={() => void runSearch()}
             disabled={searching() || query().trim().length === 0}
@@ -243,6 +244,7 @@ const SearchPanel: Component<SearchPanelProps> = (props) => {
           <For each={HAS_OPTIONS}>
             {(opt) => (
               <button
+                type="button"
                 class={`search-panel-chip ${hasFilters().includes(opt.value) ? "search-panel-chip-active" : ""}`}
                 onClick={() => toggleHas(opt.value)}
               >

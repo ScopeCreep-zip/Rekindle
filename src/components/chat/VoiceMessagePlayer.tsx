@@ -108,6 +108,7 @@ const VoiceMessagePlayer: Component<VoiceMessagePlayerProps> = (props) => {
   return (
     <div class="voice-message">
       <button
+        type="button"
         class="voice-message-play-btn"
         onClick={() => void togglePlay()}
         disabled={fetching()}

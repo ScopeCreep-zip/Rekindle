@@ -53,6 +53,7 @@ const PollCard: Component<PollCardProps> = (props) => {
         <For each={props.poll.answers}>
           {(answer) => (
             <button
+              type="button"
               class={`poll-card-answer ${isSelected(answer.index) ? "poll-card-answer-selected" : ""}`}
               disabled={props.poll.closed}
               onClick={() => toggleAnswer(answer.index)}
@@ -68,6 +69,7 @@ const PollCard: Component<PollCardProps> = (props) => {
         <div class="poll-card-actions">
           <Show when={props.poll.multiSelect}>
             <button
+              type="button"
               class="poll-card-submit"
               disabled={selectedAnswers().length === 0}
               onClick={submitVote}
@@ -76,7 +78,7 @@ const PollCard: Component<PollCardProps> = (props) => {
             </button>
           </Show>
           <Show when={props.onClose}>
-            <button class="poll-card-close" onClick={() => props.onClose?.()}>
+            <button type="button" class="poll-card-close" onClick={() => props.onClose?.()}>
               Close poll
             </button>
           </Show>

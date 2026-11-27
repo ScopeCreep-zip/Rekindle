@@ -40,6 +40,7 @@ const DisappearingTimerControl: Component<{ conversation: string; label: string 
       {(v) => (
         <div class="chat-disappearing">
           <button
+            type="button"
             class="chat-disappearing-btn"
             classList={{ "chat-disappearing-btn-on": seconds() > 0 }}
             onClick={() => setOpen(!open())}
@@ -68,6 +69,7 @@ const DisappearingTimerControl: Component<{ conversation: string; label: string 
                 <For each={v().presets}>
                   {(preset) => (
                     <button
+                      type="button"
                       class="chat-disappearing-preset"
                       role="radio"
                       aria-checked={preset === seconds()}
@@ -102,6 +104,7 @@ const DisappearingTimerControl: Component<{ conversation: string; label: string 
                   </For>
                 </select>
                 <button
+                  type="button"
                   class="chat-disappearing-set"
                   disabled={!customFits()}
                   onClick={() => void choose(custom()!)}

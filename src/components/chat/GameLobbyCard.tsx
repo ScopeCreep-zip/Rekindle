@@ -77,6 +77,7 @@ const GameLobbyCard: Component<{ groupId: string; memberNames: Record<string, st
   const ActionButton: Component<{ action: string; text: string; verdict: LobbyVerdict; run: () => Promise<LobbyView | null> }> = (b) => (
     <>
       <button
+        type="button"
         class="form-btn-secondary group-chat-action"
         aria-disabled={refusal(b.verdict) !== null ? "true" : undefined}
         aria-describedby={refusal(b.verdict) !== null ? reasonId(b.action) : undefined}
@@ -94,7 +95,7 @@ const GameLobbyCard: Component<{ groupId: string; memberNames: Record<string, st
       <Show
         when={lobby()}
         fallback={
-          <button class="form-btn-secondary group-chat-action" onClick={() => void act(() => commands.lobbyHost(props.groupId))}>
+          <button type="button" class="form-btn-secondary group-chat-action" onClick={() => void act(() => commands.lobbyHost(props.groupId))}>
             Host a game lobby
           </button>
         }
@@ -132,7 +133,7 @@ const GameLobbyCard: Component<{ groupId: string; memberNames: Record<string, st
               {(server) => (
                 <div class="game-lobby-launched" role="status">
                   <span>The game is on at {server()}</span>
-                  <button class="form-btn-primary group-chat-action" onClick={() => void joinGame(view(), server())}>
+                  <button type="button" class="form-btn-primary group-chat-action" onClick={() => void joinGame(view(), server())}>
                     Join the game
                   </button>
                 </div>

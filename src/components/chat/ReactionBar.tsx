@@ -26,6 +26,7 @@ const ReactionBar: Component<ReactionBarProps> = (props) => {
             const isActive = () => props.myPseudonymKey ? reaction.reactors.includes(props.myPseudonymKey) : false;
             return (
               <button
+                type="button"
                 class={`reaction-chip ${isActive() ? "reaction-chip-active" : ""}`}
                 onClick={() => props.onToggle(reaction.emoji)}
                 title={reaction.reactors.join(", ")}
