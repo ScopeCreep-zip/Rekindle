@@ -9,6 +9,7 @@
 // silently (the case the ruling refuses).
 
 import { browser, expect } from "@wdio/globals";
+import { NET_WAIT_MS, waitUntil } from "../../../walk/helpers.ts";
 import { type Peer, stopFleet } from "../../fleet.ts";
 import { createCommunity, createIdentity, newUser, openCommunity, type User } from "../../journeys.ts";
 import { copyDivergesAndReEnrols, signingStoppedShown } from "../../reenrol.ts";
@@ -19,7 +20,7 @@ const COMMUNITY = "Solo Hall";
 describe("a solo member's original device learns its re-enrolment from its own record (S7d-keys.9p2)", function () {
   this.timeout(1_200_000);
   const me: User = { ...newUser("solo"), displayName: "Ari" };
-  let peers: Peer[] = [];
+  const peers: Peer[] = [];
 
   after(async () => {
     await stopFleet(peers);
@@ -30,10 +31,13 @@ describe("a solo member's original device learns its re-enrolment from its own r
     await createCommunity(browser, me, COMMUNITY);
     await openCommunity(browser, COMMUNITY);
     // Ari is the only member: nobody else can carry the retirement.
-    expect(await browser.$$(".member-item[data-pseudonym]")).toHaveLength(1);
+    await waitUntil(
+      async () => (await browser.$$(".member-item[data-pseudonym]")).length === 1,
+      NET_WAIT_MS,
+      "Ari's member row did not appear in the solo community",
+    );
 
-    const copy = await copyDivergesAndReEnrols(browser, me, COMMUNITY, "Ari's copy");
-    peers = [copy];
+    await copyDivergesAndReEnrols(browser, me, COMMUNITY, "Ari's copy", (copy) => peers.push(copy));
 
     const alert = await signingStoppedShown(browser);
     console.log(`[reenrol] solo alert: ${alert.slice(0, 200)}`);

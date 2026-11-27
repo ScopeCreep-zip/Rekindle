@@ -81,8 +81,7 @@ describe("a restored copy re-enrols the device: the original is told and offered
     );
     // The copy, left behind its own record by an op of Ari's, re-enrols
     // (reenrol.ts: the locked root copied, as the netsim's cloned-root case).
-    const copy = await copyDivergesAndReEnrols(browser, me, COMMUNITY, "Ari's copy");
-    peers = [...peers, copy];
+    await copyDivergesAndReEnrols(browser, me, COMMUNITY, "Ari's copy", (copy) => peers.push(copy));
 
     // The original sees its own key retired: the Host's alert, as served.
     console.log(`[reenrol] alert: ${(await signingStoppedShown(browser)).slice(0, 200)}`);

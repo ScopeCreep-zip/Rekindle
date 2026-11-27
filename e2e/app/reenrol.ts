@@ -36,13 +36,21 @@ export async function unlock(b: Browser, user: User): Promise<void> {
  * finds the copy, and its CLI re-enrolment is committed. A copy matching its
  * record has nothing to re-enrol ("this device's key needs no
  * re-enrolment"), so that refusal is retried until the Host finds the copy.
- * Returns the copy; Ari is unlocked in `community`'s window.
+ * Tracks the copy as soon as it starts so teardown can stop it if a later
+ * step fails. Ari ends unlocked in the community window.
  */
-export async function copyDivergesAndReEnrols(b: Browser, user: User, community: string, copyName: string): Promise<Peer> {
+export async function copyDivergesAndReEnrols(
+  b: Browser,
+  user: User,
+  community: string,
+  copyName: string,
+  onCopyStarted: (copy: Peer) => void,
+): Promise<void> {
   const dataRoot = (b as unknown as { requestedCapabilities: Record<string, unknown> }).requestedCapabilities["rekindle:dataRoot"];
   if (typeof dataRoot !== "string") throw new Error("the launcher handed no rekindle:dataRoot capability");
   await logOut(b, user);
   const copy = await startClone(copyName, { dataRoot, passphrase: user.passphrase });
+  onCopyStarted(copy);
   await unlock(b, user);
   await inBuddy(b);
   await openCommunity(b, community);
@@ -76,7 +84,6 @@ export async function copyDivergesAndReEnrols(b: Browser, user: User, community:
     throw new Error(`the copy never found itself behind its own record: ${refusal || (e instanceof Error ? e.message : String(e))}`);
   });
   console.log("[reenrol] the copy's re-enrolment was accepted");
-  return copy;
 }
 
 /** The original's "Signing stopped" alert, as the Host serves it, in the buddy list's notifications; its text. */
