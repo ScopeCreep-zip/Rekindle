@@ -7,36 +7,32 @@ use rekindle_types::dto::{CommandError, Done};
 use rekindle_types::governance::AutoModAction;
 use tauri::State;
 
-use crate::host_call;
 use crate::state::SharedState;
 
-#[tauri::command]
-pub async fn list_automod_rules(
-    state: State<'_, SharedState>,
-    community_id: String,
-) -> Result<Done<Vec<AutoModRuleView>>, CommandError> {
-    host_call::call(
-        &state,
+host_command! {
+    state;
+    pub async fn list_automod_rules(
+        state: State<'_, SharedState>,
+        community_id: String,
+    ) -> Result<Done<Vec<AutoModRuleView>>, CommandError> {
         IpcRequest::Community(CommunityRequest::Members(MemberRequest::AutomodRules {
             community: community_id,
-        })),
-    )
-    .await
+        }))
+    }
 }
 
-#[tauri::command]
-pub async fn set_automod_rule(
-    state: State<'_, SharedState>,
-    community_id: String,
-    rule_id: Option<String>,
-    name: String,
-    enabled: bool,
-    keywords: Vec<String>,
-    regex_patterns: Vec<String>,
-    action: AutoModAction,
-) -> Result<Done<String>, CommandError> {
-    host_call::call(
-        &state,
+host_command! {
+    state;
+    pub async fn set_automod_rule(
+        state: State<'_, SharedState>,
+        community_id: String,
+        rule_id: Option<String>,
+        name: String,
+        enabled: bool,
+        keywords: Vec<String>,
+        regex_patterns: Vec<String>,
+        action: AutoModAction,
+    ) -> Result<Done<String>, CommandError> {
         IpcRequest::Community(CommunityRequest::Members(MemberRequest::AutomodRuleSet {
             community: community_id,
             rule_id,
@@ -45,25 +41,22 @@ pub async fn set_automod_rule(
             keywords,
             regex_patterns,
             action,
-        })),
-    )
-    .await
+        }))
+    }
 }
 
-#[tauri::command]
-pub async fn delete_automod_rule(
-    state: State<'_, SharedState>,
-    community_id: String,
-    rule_id: String,
-) -> Result<Done<()>, CommandError> {
-    host_call::call(
-        &state,
+host_command! {
+    state;
+    pub async fn delete_automod_rule(
+        state: State<'_, SharedState>,
+        community_id: String,
+        rule_id: String,
+    ) -> Result<Done<()>, CommandError> {
         IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::AutomodRuleDelete {
                 community: community_id,
                 rule_id,
             },
-        )),
-    )
-    .await
+        ))
+    }
 }

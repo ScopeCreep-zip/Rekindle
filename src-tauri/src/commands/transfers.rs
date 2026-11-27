@@ -18,12 +18,14 @@ fn transfer(request: TransferRequest) -> IpcRequest {
     IpcRequest::Transfer(request)
 }
 
-/// Every transfer, newest first.
-#[tauri::command]
-pub async fn transfer_list(
-    state: State<'_, SharedState>,
-) -> Result<Done<Vec<TransferRow>>, CommandError> {
-    host_call::call(&state, transfer(TransferRequest::List)).await
+host_command! {
+    state;
+    /// Every transfer, newest first.
+    pub async fn transfer_list(
+        state: State<'_, SharedState>,
+    ) -> Result<Done<Vec<TransferRow>>, CommandError> {
+        transfer(TransferRequest::List)
+    }
 }
 
 /// Start a download: a paused or failed one resumes from its checkpoint;
@@ -65,13 +67,15 @@ pub async fn transfer_start(
     })
 }
 
-/// Pause a running download; its held chunks stay cached.
-#[tauri::command]
-pub async fn transfer_stop(
-    attachment_id: String,
-    state: State<'_, SharedState>,
-) -> Result<Done<()>, CommandError> {
-    host_call::call(&state, transfer(TransferRequest::Stop { attachment_id })).await
+host_command! {
+    state;
+    /// Pause a running download; its held chunks stay cached.
+    pub async fn transfer_stop(
+        attachment_id: String,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<()>, CommandError> {
+        transfer(TransferRequest::Stop { attachment_id })
+    }
 }
 
 /// Show a finished download in the OS file manager. The Host answers only
@@ -94,20 +98,18 @@ pub async fn transfer_open(
     })
 }
 
-/// Forget a transfer (stopping it first); `delete_file` also deletes the
-/// saved file.
-#[tauri::command]
-pub async fn transfer_remove(
-    attachment_id: String,
-    delete_file: bool,
-    state: State<'_, SharedState>,
-) -> Result<Done<()>, CommandError> {
-    host_call::call(
-        &state,
+host_command! {
+    state;
+    /// Forget a transfer (stopping it first); `delete_file` also deletes the
+    /// saved file.
+    pub async fn transfer_remove(
+        attachment_id: String,
+        delete_file: bool,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<()>, CommandError> {
         transfer(TransferRequest::Remove {
             attachment_id,
             delete_file,
-        }),
-    )
-    .await
+        })
+    }
 }

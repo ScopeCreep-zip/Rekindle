@@ -52,11 +52,13 @@ pub async fn intent_cancel(
     })
 }
 
-/// Take back an action that ran, while its offer lasts (`IpcRequest::Undo`).
-#[tauri::command]
-pub async fn undo(
-    id: IntentId,
-    state: State<'_, SharedState>,
-) -> Result<Done<serde_json::Value>, CommandError> {
-    host_call::call(&state, IpcRequest::Undo { id }).await
+host_command! {
+    state;
+    /// Take back an action that ran, while its offer lasts (`IpcRequest::Undo`).
+    pub async fn undo(
+        id: IntentId,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<serde_json::Value>, CommandError> {
+        IpcRequest::Undo { id }
+    }
 }

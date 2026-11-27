@@ -5,51 +5,44 @@ use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
 
-use crate::host_call;
 use crate::state::SharedState;
 
-#[tauri::command]
-pub async fn block_community_member(
-    state: State<'_, SharedState>,
-    community_id: String,
-    pseudonym_key: String,
-) -> Result<Done<()>, CommandError> {
-    host_call::call(
-        &state,
+host_command! {
+    state;
+    pub async fn block_community_member(
+        state: State<'_, SharedState>,
+        community_id: String,
+        pseudonym_key: String,
+    ) -> Result<Done<()>, CommandError> {
         IpcRequest::Community(CommunityRequest::Members(MemberRequest::MemberBlock {
             community: community_id,
             target_pseudonym: pseudonym_key,
-        })),
-    )
-    .await
+        }))
+    }
 }
 
-#[tauri::command]
-pub async fn unblock_community_member(
-    state: State<'_, SharedState>,
-    community_id: String,
-    pseudonym_key: String,
-) -> Result<Done<()>, CommandError> {
-    host_call::call(
-        &state,
+host_command! {
+    state;
+    pub async fn unblock_community_member(
+        state: State<'_, SharedState>,
+        community_id: String,
+        pseudonym_key: String,
+    ) -> Result<Done<()>, CommandError> {
         IpcRequest::Community(CommunityRequest::Members(MemberRequest::MemberUnblock {
             community: community_id,
             target_pseudonym: pseudonym_key,
-        })),
-    )
-    .await
+        }))
+    }
 }
 
-#[tauri::command]
-pub async fn list_community_blocks(
-    state: State<'_, SharedState>,
-    community_id: String,
-) -> Result<Done<Vec<String>>, CommandError> {
-    host_call::call(
-        &state,
+host_command! {
+    state;
+    pub async fn list_community_blocks(
+        state: State<'_, SharedState>,
+        community_id: String,
+    ) -> Result<Done<Vec<String>>, CommandError> {
         IpcRequest::Community(CommunityRequest::Members(MemberRequest::MemberBlockList {
             community: community_id,
-        })),
-    )
-    .await
+        }))
+    }
 }

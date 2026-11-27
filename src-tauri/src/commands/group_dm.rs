@@ -8,277 +8,257 @@ use rekindle_types::dto::{CommandError, Done};
 use rekindle_types::game_server::ServerAddress;
 use tauri::State;
 
-use crate::host_call;
 use crate::state::SharedState;
 
-/// Create a group of us and `members` (2-7 friends) named `name`
-/// (`GroupDmRequest::Create`); the answer is its id.
-#[tauri::command]
-pub async fn group_dm_create(
-    name: String,
-    members: Vec<String>,
-    origin_peer: Option<String>,
-    state: State<'_, SharedState>,
-) -> Result<Done<String>, CommandError> {
-    host_call::call(
-        &state,
+host_command! {
+    state;
+    /// Create a group of us and `members` (2-7 friends) named `name`
+    /// (`GroupDmRequest::Create`); the answer is its id.
+    pub async fn group_dm_create(
+        name: String,
+        members: Vec<String>,
+        origin_peer: Option<String>,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<String>, CommandError> {
         IpcRequest::GroupDm(GroupDmRequest::Create {
             name,
             members,
             origin_peer,
-        }),
-    )
-    .await
+        })
+    }
 }
 
-/// Accept a pending group invite (`GroupDmRequest::Accept`).
-#[tauri::command]
-pub async fn group_dm_accept(
-    group_id: String,
-    state: State<'_, SharedState>,
-) -> Result<Done<serde_json::Value>, CommandError> {
-    host_call::call(
-        &state,
-        IpcRequest::GroupDm(GroupDmRequest::Accept { group_id }),
-    )
-    .await
+host_command! {
+    state;
+    /// Accept a pending group invite (`GroupDmRequest::Accept`).
+    pub async fn group_dm_accept(
+        group_id: String,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<serde_json::Value>, CommandError> {
+        IpcRequest::GroupDm(GroupDmRequest::Accept { group_id })
+    }
 }
 
-/// Decline a pending group invite (`GroupDmRequest::Decline`).
-#[tauri::command]
-pub async fn group_dm_decline(
-    group_id: String,
-    state: State<'_, SharedState>,
-) -> Result<Done<serde_json::Value>, CommandError> {
-    host_call::call(
-        &state,
-        IpcRequest::GroupDm(GroupDmRequest::Decline { group_id }),
-    )
-    .await
+host_command! {
+    state;
+    /// Decline a pending group invite (`GroupDmRequest::Decline`).
+    pub async fn group_dm_decline(
+        group_id: String,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<serde_json::Value>, CommandError> {
+        IpcRequest::GroupDm(GroupDmRequest::Decline { group_id })
+    }
 }
 
-/// Leave a group (`GroupDmRequest::Leave`).
-#[tauri::command]
-pub async fn group_dm_leave(
-    group_id: String,
-    state: State<'_, SharedState>,
-) -> Result<Done<serde_json::Value>, CommandError> {
-    host_call::call(
-        &state,
-        IpcRequest::GroupDm(GroupDmRequest::Leave { group_id }),
-    )
-    .await
+host_command! {
+    state;
+    /// Leave a group (`GroupDmRequest::Leave`).
+    pub async fn group_dm_leave(
+        group_id: String,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<serde_json::Value>, CommandError> {
+        IpcRequest::GroupDm(GroupDmRequest::Leave { group_id })
+    }
 }
 
-/// Rename a group we created (`GroupDmRequest::Rename`).
-#[tauri::command]
-pub async fn group_dm_rename(
-    group_id: String,
-    name: String,
-    state: State<'_, SharedState>,
-) -> Result<Done<serde_json::Value>, CommandError> {
-    host_call::call(
-        &state,
-        IpcRequest::GroupDm(GroupDmRequest::Rename { group_id, name }),
-    )
-    .await
+host_command! {
+    state;
+    /// Rename a group we created (`GroupDmRequest::Rename`).
+    pub async fn group_dm_rename(
+        group_id: String,
+        name: String,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<serde_json::Value>, CommandError> {
+        IpcRequest::GroupDm(GroupDmRequest::Rename { group_id, name })
+    }
 }
 
-/// Invite friends into a group we created (`GroupDmRequest::Invite`).
-#[tauri::command]
-pub async fn group_dm_invite(
-    group_id: String,
-    members: Vec<String>,
-    state: State<'_, SharedState>,
-) -> Result<Done<serde_json::Value>, CommandError> {
-    host_call::call(
-        &state,
-        IpcRequest::GroupDm(GroupDmRequest::Invite { group_id, members }),
-    )
-    .await
+host_command! {
+    state;
+    /// Invite friends into a group we created (`GroupDmRequest::Invite`).
+    pub async fn group_dm_invite(
+        group_id: String,
+        members: Vec<String>,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<serde_json::Value>, CommandError> {
+        IpcRequest::GroupDm(GroupDmRequest::Invite { group_id, members })
+    }
 }
 
-/// Set a DM's or group DM's disappearing-message timer
-/// (`IpcRequest::DisappearingSet`, plan E7.1).
-#[tauri::command]
-pub async fn disappearing_set(
-    conversation: String,
-    seconds: u32,
-    state: State<'_, SharedState>,
-) -> Result<Done<serde_json::Value>, CommandError> {
-    host_call::call(
-        &state,
+host_command! {
+    state;
+    /// Set a DM's or group DM's disappearing-message timer
+    /// (`IpcRequest::DisappearingSet`, plan E7.1).
+    pub async fn disappearing_set(
+        conversation: String,
+        seconds: u32,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<serde_json::Value>, CommandError> {
         IpcRequest::DisappearingSet {
             conversation,
             seconds,
-        },
-    )
-    .await
+        }
+    }
 }
 
-/// The disappearing-message timer a DM or group DM carries now
-/// (`IpcRequest::DisappearingGet`, plan E7.1).
-#[tauri::command]
-pub async fn disappearing_get(
-    conversation: String,
-    state: State<'_, SharedState>,
-) -> Result<Done<DisappearingTimerView>, CommandError> {
-    host_call::call(&state, IpcRequest::DisappearingGet { conversation }).await
+host_command! {
+    state;
+    /// The disappearing-message timer a DM or group DM carries now
+    /// (`IpcRequest::DisappearingGet`, plan E7.1).
+    pub async fn disappearing_get(
+        conversation: String,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<DisappearingTimerView>, CommandError> {
+        IpcRequest::DisappearingGet { conversation }
+    }
 }
 
-/// Send `body` to a group (`GroupDmRequest::Send`), a reply to `reply_to`
-/// (the parent's client id) when given; the answer is the
-/// message's client id once its row and echo are committed (`queued`,
-/// then `GroupDmEvent::SendStatus`).
-#[tauri::command]
-pub async fn group_dm_send(
-    group_id: String,
-    body: String,
-    reply_to: Option<String>,
-    state: State<'_, SharedState>,
-) -> Result<Done<String>, CommandError> {
-    host_call::call(
-        &state,
+host_command! {
+    state;
+    /// Send `body` to a group (`GroupDmRequest::Send`), a reply to `reply_to`
+    /// (the parent's client id) when given; the answer is the
+    /// message's client id once its row and echo are committed (`queued`,
+    /// then `GroupDmEvent::SendStatus`).
+    pub async fn group_dm_send(
+        group_id: String,
+        body: String,
+        reply_to: Option<String>,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<String>, CommandError> {
         IpcRequest::GroupDm(GroupDmRequest::Send {
             group_id,
             body,
             reply_to,
-        }),
-    )
-    .await
+        })
+    }
 }
 
-/// Report the draft to a group (`GroupDmRequest::Typing`): `typing` is
-/// whether it holds text; the Host decides what goes out, as for a peer.
-#[tauri::command]
-pub async fn group_dm_typing(
-    group_id: String,
-    typing: bool,
-    state: State<'_, SharedState>,
-) -> Result<Done<serde_json::Value>, CommandError> {
-    host_call::call(
-        &state,
-        IpcRequest::GroupDm(GroupDmRequest::Typing { group_id, typing }),
-    )
-    .await
+host_command! {
+    state;
+    /// Report the draft to a group (`GroupDmRequest::Typing`): `typing` is
+    /// whether it holds text; the Host decides what goes out, as for a peer.
+    pub async fn group_dm_typing(
+        group_id: String,
+        typing: bool,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<serde_json::Value>, CommandError> {
+        IpcRequest::GroupDm(GroupDmRequest::Typing { group_id, typing })
+    }
 }
 
-/// Every group we are in and every unanswered invite
-/// (`GroupDmRequest::List`).
-#[tauri::command]
-pub async fn group_dm_list(
-    state: State<'_, SharedState>,
-) -> Result<Done<Vec<GroupDmView>>, CommandError> {
-    host_call::call(&state, IpcRequest::GroupDm(GroupDmRequest::List)).await
+host_command! {
+    state;
+    /// Every group we are in and every unanswered invite
+    /// (`GroupDmRequest::List`).
+    pub async fn group_dm_list(
+        state: State<'_, SharedState>,
+    ) -> Result<Done<Vec<GroupDmView>>, CommandError> {
+        IpcRequest::GroupDm(GroupDmRequest::List)
+    }
 }
 
-/// The group's window displayed its messages: received disappearing
-/// timers start (`GroupDmRequest::MarkRead`, plan E7.1).
-#[tauri::command]
-pub async fn group_dm_mark_read(
-    group_id: String,
-    state: State<'_, SharedState>,
-) -> Result<Done<()>, CommandError> {
-    host_call::call(
-        &state,
-        IpcRequest::GroupDm(GroupDmRequest::MarkRead { group_id }),
-    )
-    .await
+host_command! {
+    state;
+    /// The group's window displayed its messages: received disappearing
+    /// timers start (`GroupDmRequest::MarkRead`, plan E7.1).
+    pub async fn group_dm_mark_read(
+        group_id: String,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<()>, CommandError> {
+        IpcRequest::GroupDm(GroupDmRequest::MarkRead { group_id })
+    }
 }
 
-/// The newest `limit` messages of a group before `before` (ms), oldest
-/// first (`GroupDmRequest::Messages`).
-#[tauri::command]
-pub async fn group_dm_messages(
-    group_id: String,
-    limit: u32,
-    before: Option<i64>,
-    state: State<'_, SharedState>,
-) -> Result<Done<Vec<DmMessage>>, CommandError> {
-    let request = IpcRequest::GroupDm(GroupDmRequest::Messages {
-        group_id,
-        limit,
-        before,
-    });
-    host_call::call(&state, request).await
+host_command! {
+    state;
+    /// The newest `limit` messages of a group before `before` (ms), oldest
+    /// first (`GroupDmRequest::Messages`).
+    pub async fn group_dm_messages(
+        group_id: String,
+        limit: u32,
+        before: Option<i64>,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<Vec<DmMessage>>, CommandError> {
+        IpcRequest::GroupDm(GroupDmRequest::Messages {
+            group_id,
+            limit,
+            before,
+        })
+    }
 }
 
-/// `IpcRequest::LobbyHost` (plan E7.2 G6).
-#[tauri::command]
-pub async fn lobby_host(
-    group_id: String,
-    state: State<'_, SharedState>,
-) -> Result<Done<serde_json::Value>, CommandError> {
-    host_call::call(&state, IpcRequest::Lobby(LobbyRequest::Host { group_id })).await
+host_command! {
+    state;
+    /// `IpcRequest::LobbyHost` (plan E7.2 G6).
+    pub async fn lobby_host(
+        group_id: String,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<serde_json::Value>, CommandError> {
+        IpcRequest::Lobby(LobbyRequest::Host { group_id })
+    }
 }
 
-/// `IpcRequest::LobbyJoin` (plan E7.2 G6).
-#[tauri::command]
-pub async fn lobby_join(
-    group_id: String,
-    lobby_id: String,
-    state: State<'_, SharedState>,
-) -> Result<Done<serde_json::Value>, CommandError> {
-    host_call::call(
-        &state,
-        IpcRequest::Lobby(LobbyRequest::Join { group_id, lobby_id }),
-    )
-    .await
+host_command! {
+    state;
+    /// `IpcRequest::LobbyJoin` (plan E7.2 G6).
+    pub async fn lobby_join(
+        group_id: String,
+        lobby_id: String,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<serde_json::Value>, CommandError> {
+        IpcRequest::Lobby(LobbyRequest::Join { group_id, lobby_id })
+    }
 }
 
-/// `IpcRequest::LobbyLeave` (plan E7.2 G6).
-#[tauri::command]
-pub async fn lobby_leave(
-    group_id: String,
-    lobby_id: String,
-    state: State<'_, SharedState>,
-) -> Result<Done<serde_json::Value>, CommandError> {
-    host_call::call(
-        &state,
-        IpcRequest::Lobby(LobbyRequest::Leave { group_id, lobby_id }),
-    )
-    .await
+host_command! {
+    state;
+    /// `IpcRequest::LobbyLeave` (plan E7.2 G6).
+    pub async fn lobby_leave(
+        group_id: String,
+        lobby_id: String,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<serde_json::Value>, CommandError> {
+        IpcRequest::Lobby(LobbyRequest::Leave { group_id, lobby_id })
+    }
 }
 
-/// `IpcRequest::LobbyClose` (plan E7.2 G6).
-#[tauri::command]
-pub async fn lobby_close(
-    group_id: String,
-    lobby_id: String,
-    state: State<'_, SharedState>,
-) -> Result<Done<serde_json::Value>, CommandError> {
-    host_call::call(
-        &state,
-        IpcRequest::Lobby(LobbyRequest::Close { group_id, lobby_id }),
-    )
-    .await
+host_command! {
+    state;
+    /// `IpcRequest::LobbyClose` (plan E7.2 G6).
+    pub async fn lobby_close(
+        group_id: String,
+        lobby_id: String,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<serde_json::Value>, CommandError> {
+        IpcRequest::Lobby(LobbyRequest::Close { group_id, lobby_id })
+    }
 }
 
-/// `IpcRequest::LobbyLaunch` (plan E7.2 G6): `None` launches on our shown
-/// game's server.
-#[tauri::command]
-pub async fn lobby_launch(
-    group_id: String,
-    lobby_id: String,
-    server: Option<ServerAddress>,
-    state: State<'_, SharedState>,
-) -> Result<Done<serde_json::Value>, CommandError> {
-    host_call::call(
-        &state,
+host_command! {
+    state;
+    /// `IpcRequest::LobbyLaunch` (plan E7.2 G6): `None` launches on our shown
+    /// game's server.
+    pub async fn lobby_launch(
+        group_id: String,
+        lobby_id: String,
+        server: Option<ServerAddress>,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<serde_json::Value>, CommandError> {
         IpcRequest::Lobby(LobbyRequest::Launch {
             group_id,
             lobby_id,
             server,
-        }),
-    )
-    .await
+        })
+    }
 }
 
-/// `IpcRequest::LobbyGet` (plan E7.2 G6): the group's lobby, or `null`.
-#[tauri::command]
-pub async fn lobby_get(
-    group_id: String,
-    state: State<'_, SharedState>,
-) -> Result<Done<serde_json::Value>, CommandError> {
-    host_call::call(&state, IpcRequest::Lobby(LobbyRequest::Get { group_id })).await
+host_command! {
+    state;
+    /// `IpcRequest::LobbyGet` (plan E7.2 G6): the group's lobby, or `null`.
+    pub async fn lobby_get(
+        group_id: String,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<serde_json::Value>, CommandError> {
+        IpcRequest::Lobby(LobbyRequest::Get { group_id })
+    }
 }

@@ -50,56 +50,66 @@ pub async fn set_preferences(
     crate::services::preferences::update(state.inner(), |stored| *stored = prefs.prefs).await
 }
 
-/// Turn DM read receipts on or off (`IpcRequest::SetReadReceiptsEnabled`, a
-/// trust-changing intent the Host reviews): the preferences come back.
-#[tauri::command]
-pub async fn set_read_receipts_enabled(
-    enabled: bool,
-    state: State<'_, SharedState>,
-) -> Result<Done<Preferences>, CommandError> {
-    host_call::call(&state, IpcRequest::SetReadReceiptsEnabled { enabled }).await
+host_command! {
+    state;
+    /// Turn DM read receipts on or off (`IpcRequest::SetReadReceiptsEnabled`, a
+    /// trust-changing intent the Host reviews): the preferences come back.
+    pub async fn set_read_receipts_enabled(
+        enabled: bool,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<Preferences>, CommandError> {
+        IpcRequest::SetReadReceiptsEnabled { enabled }
+    }
 }
 
-/// Share our game totals with friends or stop (`IpcRequest::SetShareGameTotals`,
-/// plan E7.2, a trust-changing intent the Host reviews): the preferences
-/// come back.
-#[tauri::command]
-pub async fn set_share_game_totals(
-    enabled: bool,
-    state: State<'_, SharedState>,
-) -> Result<Done<Preferences>, CommandError> {
-    host_call::call(&state, IpcRequest::SetShareGameTotals { enabled }).await
+host_command! {
+    state;
+    /// Share our game totals with friends or stop (`IpcRequest::SetShareGameTotals`,
+    /// plan E7.2, a trust-changing intent the Host reviews): the preferences
+    /// come back.
+    pub async fn set_share_game_totals(
+        enabled: bool,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<Preferences>, CommandError> {
+        IpcRequest::SetShareGameTotals { enabled }
+    }
 }
 
-/// Scan for games or stop (`IpcRequest::SetGameDetection`, plan E7.2):
-/// local only, taking effect at once; the preferences come back.
-#[tauri::command]
-pub async fn set_game_detection(
-    enabled: bool,
-    state: State<'_, SharedState>,
-) -> Result<Done<Preferences>, CommandError> {
-    host_call::call(&state, IpcRequest::SetGameDetection { enabled }).await
+host_command! {
+    state;
+    /// Scan for games or stop (`IpcRequest::SetGameDetection`, plan E7.2):
+    /// local only, taking effect at once; the preferences come back.
+    pub async fn set_game_detection(
+        enabled: bool,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<Preferences>, CommandError> {
+        IpcRequest::SetGameDetection { enabled }
+    }
 }
 
-/// Auto-away's threshold, minutes, 0 off (`IpcRequest::SetAutoAway`, plan
-/// E7.4): local only, applied at once; the preferences come back.
-#[tauri::command]
-pub async fn set_auto_away(
-    minutes: u32,
-    state: State<'_, SharedState>,
-) -> Result<Done<Preferences>, CommandError> {
-    host_call::call(&state, IpcRequest::SetAutoAway { minutes }).await
+host_command! {
+    state;
+    /// Auto-away's threshold, minutes, 0 off (`IpcRequest::SetAutoAway`, plan
+    /// E7.4): local only, applied at once; the preferences come back.
+    pub async fn set_auto_away(
+        minutes: u32,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<Preferences>, CommandError> {
+        IpcRequest::SetAutoAway { minutes }
+    }
 }
 
-/// Show friends our current game or stop (`IpcRequest::SetShareCurrentGame`,
-/// plan E7.2, a trust-changing intent the Host reviews): the preferences
-/// come back.
-#[tauri::command]
-pub async fn set_share_current_game(
-    enabled: bool,
-    state: State<'_, SharedState>,
-) -> Result<Done<Preferences>, CommandError> {
-    host_call::call(&state, IpcRequest::SetShareCurrentGame { enabled }).await
+host_command! {
+    state;
+    /// Show friends our current game or stop (`IpcRequest::SetShareCurrentGame`,
+    /// plan E7.2, a trust-changing intent the Host reviews): the preferences
+    /// come back.
+    pub async fn set_share_current_game(
+        enabled: bool,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<Preferences>, CommandError> {
+        IpcRequest::SetShareCurrentGame { enabled }
+    }
 }
 
 /// What arming or disarming the quick wipe answers.
@@ -183,14 +193,16 @@ where
     arm(shortcut).await
 }
 
-/// Disarm the quick wipe (`IpcRequest::QuickWipeDisarm`, Protected): the
-/// duress passphrase forgotten; the shell releases the panic shortcut when
-/// it commits, on the Host's `QuickWipeChanged`.
-#[tauri::command]
-pub async fn quick_wipe_disarm(
-    state: State<'_, SharedState>,
-) -> Result<Done<QuickWipeState>, CommandError> {
-    host_call::call(&state, IpcRequest::QuickWipeDisarm).await
+host_command! {
+    state;
+    /// Disarm the quick wipe (`IpcRequest::QuickWipeDisarm`, Protected): the
+    /// duress passphrase forgotten; the shell releases the panic shortcut when
+    /// it commits, on the Host's `QuickWipeChanged`.
+    pub async fn quick_wipe_disarm(
+        state: State<'_, SharedState>,
+    ) -> Result<Done<QuickWipeState>, CommandError> {
+        IpcRequest::QuickWipeDisarm
+    }
 }
 
 fn apply_auto_start(app: &tauri::AppHandle, enabled: bool) -> Result<(), String> {

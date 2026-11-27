@@ -50,3 +50,24 @@ fn words_split_camel_case_and_snake_case() {
     assert_eq!(forbidden("direct"), None);
     assert_eq!(forbidden("correct_rectangle"), None);
 }
+
+#[test]
+fn checks_typed_host_forwarding_command_signatures() {
+    let commands = r"
+        host_command! {
+            state;
+            pub async fn set_topic(state: State<'_, SharedState>, topic: String) -> Result<()> {
+                IpcRequest::SetTopic { topic }
+            }
+        }
+        host_command! {
+            state;
+            pub async fn toggle(state: State<'_, SharedState>, click_through: bool) -> Result<()> {
+                IpcRequest::Toggle { click_through }
+            }
+        }
+    ";
+    let hits = scan("command.rs", commands);
+    assert_eq!(hits.len(), 1, "{hits:?}");
+    assert!(hits[0].contains("`toggle`: parameter `click_through`"));
+}

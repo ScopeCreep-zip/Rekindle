@@ -4,6 +4,9 @@
 #![deny(clippy::string_slice)]
 
 mod channels;
+#[macro_use]
+#[path = "commands/host_command.rs"]
+mod host_command;
 pub mod commands;
 pub mod db;
 pub mod db_helpers;

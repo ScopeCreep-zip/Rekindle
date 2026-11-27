@@ -5,23 +5,21 @@ use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
 
-use crate::host_call;
 use crate::state::SharedState;
 
-/// Attach a poll to our message (`CommunityRequest::PollCreate`).
-#[tauri::command]
-pub async fn create_poll(
-    state: State<'_, SharedState>,
-    community_id: String,
-    channel_id: String,
-    message_id: String,
-    question: String,
-    answers: Vec<String>,
-    multi_select: bool,
-    duration_seconds: Option<u64>,
-) -> Result<Done<String>, CommandError> {
-    host_call::call(
-        &state,
+host_command! {
+    state;
+    /// Attach a poll to our message (`CommunityRequest::PollCreate`).
+    pub async fn create_poll(
+        state: State<'_, SharedState>,
+        community_id: String,
+        channel_id: String,
+        message_id: String,
+        question: String,
+        answers: Vec<String>,
+        multi_select: bool,
+        duration_seconds: Option<u64>,
+    ) -> Result<Done<String>, CommandError> {
         IpcRequest::Community(CommunityRequest::Rich(RichRequest::PollCreate {
             community: community_id,
             channel_id,
@@ -30,66 +28,59 @@ pub async fn create_poll(
             answers,
             multi_select,
             duration_seconds,
-        })),
-    )
-    .await
+        }))
+    }
 }
 
-/// Vote in a poll (`CommunityRequest::PollVote`).
-#[tauri::command]
-pub async fn vote_poll(
-    state: State<'_, SharedState>,
-    community_id: String,
-    channel_id: String,
-    poll_id: String,
-    selected_answers: Vec<u8>,
-) -> Result<Done<serde_json::Value>, CommandError> {
-    host_call::call(
-        &state,
+host_command! {
+    state;
+    /// Vote in a poll (`CommunityRequest::PollVote`).
+    pub async fn vote_poll(
+        state: State<'_, SharedState>,
+        community_id: String,
+        channel_id: String,
+        poll_id: String,
+        selected_answers: Vec<u8>,
+    ) -> Result<Done<serde_json::Value>, CommandError> {
         IpcRequest::Community(CommunityRequest::Rich(RichRequest::PollVote {
             community: community_id,
             channel_id,
             poll_id,
             selected_answers,
-        })),
-    )
-    .await
+        }))
+    }
 }
 
-/// Close a poll (`CommunityRequest::PollClose`).
-#[tauri::command]
-pub async fn close_poll(
-    state: State<'_, SharedState>,
-    community_id: String,
-    channel_id: String,
-    poll_id: String,
-) -> Result<Done<serde_json::Value>, CommandError> {
-    host_call::call(
-        &state,
+host_command! {
+    state;
+    /// Close a poll (`CommunityRequest::PollClose`).
+    pub async fn close_poll(
+        state: State<'_, SharedState>,
+        community_id: String,
+        channel_id: String,
+        poll_id: String,
+    ) -> Result<Done<serde_json::Value>, CommandError> {
         IpcRequest::Community(CommunityRequest::Rich(RichRequest::PollClose {
             community: community_id,
             channel_id,
             poll_id,
-        })),
-    )
-    .await
+        }))
+    }
 }
 
-/// A poll's counts (`CommunityRequest::PollResults`).
-#[tauri::command]
-pub async fn get_poll_results(
-    state: State<'_, SharedState>,
-    community_id: String,
-    channel_id: String,
-    poll_id: String,
-) -> Result<Done<Vec<u32>>, CommandError> {
-    host_call::call(
-        &state,
+host_command! {
+    state;
+    /// A poll's counts (`CommunityRequest::PollResults`).
+    pub async fn get_poll_results(
+        state: State<'_, SharedState>,
+        community_id: String,
+        channel_id: String,
+        poll_id: String,
+    ) -> Result<Done<Vec<u32>>, CommandError> {
         IpcRequest::Community(CommunityRequest::Rich(RichRequest::PollResults {
             community: community_id,
             channel_id,
             poll_id,
-        })),
-    )
-    .await
+        }))
+    }
 }

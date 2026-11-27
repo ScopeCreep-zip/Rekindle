@@ -8,41 +8,43 @@ use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
 use rekindle_types::dto::community::CommunityMemberView;
 use rekindle_types::dto::{CommandError, Done};
 
-/// The composer of a channel changed: `typing` is whether it holds text
-/// (`ChannelMessageRequest::ChannelTyping`; the Host decides what is sent).
-#[tauri::command]
-pub async fn send_channel_typing(
-    community_id: String,
-    channel_id: String,
-    typing: bool,
-    state: State<'_, SharedState>,
-) -> Result<Done<serde_json::Value>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::Messages(
-        ChannelMessageRequest::ChannelTyping {
-            community: community_id,
-            channel: channel_id,
-            typing,
-        },
-    ));
-    crate::host_call::call(&state, request).await
+host_command! {
+    state;
+    /// The composer of a channel changed: `typing` is whether it holds text
+    /// (`ChannelMessageRequest::ChannelTyping`; the Host decides what is sent).
+    pub async fn send_channel_typing(
+        community_id: String,
+        channel_id: String,
+        typing: bool,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<serde_json::Value>, CommandError> {
+        IpcRequest::Community(CommunityRequest::Messages(
+            ChannelMessageRequest::ChannelTyping {
+                community: community_id,
+                channel: channel_id,
+                typing,
+            },
+        ))
+    }
 }
 
-/// The channel we are in, or none (`CommunityRequest::ChannelSetActive`).
-#[tauri::command]
-pub async fn set_active_channel(
-    community_id: String,
-    channel_id: Option<String>,
-    kind: String,
-    state: State<'_, SharedState>,
-) -> Result<Done<serde_json::Value>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::Messages(
-        ChannelMessageRequest::ChannelSetActive {
-            community: community_id,
-            channel: channel_id,
-            kind,
-        },
-    ));
-    crate::host_call::call(&state, request).await
+host_command! {
+    state;
+    /// The channel we are in, or none (`CommunityRequest::ChannelSetActive`).
+    pub async fn set_active_channel(
+        community_id: String,
+        channel_id: Option<String>,
+        kind: String,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<serde_json::Value>, CommandError> {
+        IpcRequest::Community(CommunityRequest::Messages(
+            ChannelMessageRequest::ChannelSetActive {
+                community: community_id,
+                channel: channel_id,
+                kind,
+            },
+        ))
+    }
 }
 
 /// Our presence sharing consent in a community, kept by the Host
@@ -75,59 +77,62 @@ pub async fn get_presence_policy(
     Ok(get_presence_policy_inner(state.inner(), &community_id))
 }
 
-/// A community's member list (`IpcRequest::Community(CommunityRequest::CommunityMembers)`).
-#[tauri::command]
-pub async fn get_community_members(
-    community_id: String,
-    state: State<'_, SharedState>,
-) -> Result<Done<Vec<CommunityMemberView>>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::Lifecycle(
-        LifecycleRequest::CommunityMembers {
-            anchor: community_id,
-        },
-    ));
-    crate::host_call::call(&state, request).await
+host_command! {
+    state;
+    /// A community's member list (`IpcRequest::Community(CommunityRequest::CommunityMembers)`).
+    pub async fn get_community_members(
+        community_id: String,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<Vec<CommunityMemberView>>, CommandError> {
+        IpcRequest::Community(CommunityRequest::Lifecycle(
+            LifecycleRequest::CommunityMembers {
+                anchor: community_id,
+            },
+        ))
+    }
 }
 
-#[tauri::command]
-pub async fn update_community_profile(
-    community_id: String,
-    bio: Option<String>,
-    pronouns: Option<String>,
-    theme_color: Option<u32>,
-    badges: Option<Vec<String>>,
-    avatar_ref: Option<String>,
-    banner_ref: Option<String>,
-    custom_status: Option<String>,
-    state: State<'_, SharedState>,
-) -> Result<Done<()>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::Settings(
-        SettingsRequest::CommunityUpdateProfile {
-            community: community_id,
-            bio,
-            pronouns,
-            theme_color,
-            badges,
-            avatar_ref,
-            banner_ref,
-            custom_status,
-        },
-    ));
-    crate::host_call::call(&state, request).await
+host_command! {
+    state;
+    pub async fn update_community_profile(
+        community_id: String,
+        bio: Option<String>,
+        pronouns: Option<String>,
+        theme_color: Option<u32>,
+        badges: Option<Vec<String>>,
+        avatar_ref: Option<String>,
+        banner_ref: Option<String>,
+        custom_status: Option<String>,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<()>, CommandError> {
+        IpcRequest::Community(CommunityRequest::Settings(
+            SettingsRequest::CommunityUpdateProfile {
+                community: community_id,
+                bio,
+                pronouns,
+                theme_color,
+                badges,
+                avatar_ref,
+                banner_ref,
+                custom_status,
+            },
+        ))
+    }
 }
 
-/// Our name in one community, on our card (plan E3.4 S6); `""` clears it.
-#[tauri::command]
-pub async fn set_community_display_name(
-    community_id: String,
-    display_name: String,
-    state: State<'_, SharedState>,
-) -> Result<Done<()>, CommandError> {
-    let request = IpcRequest::Community(CommunityRequest::Settings(
-        SettingsRequest::CommunitySetDisplayName {
-            community: community_id,
-            display_name,
-        },
-    ));
-    crate::host_call::call(&state, request).await
+host_command! {
+    state;
+    /// Our name in one community, on our card (plan E3.4 S6); `""` clears it.
+    pub async fn set_community_display_name(
+        community_id: String,
+        display_name: String,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<()>, CommandError> {
+        IpcRequest::Community(CommunityRequest::Settings(
+            SettingsRequest::CommunitySetDisplayName {
+                community: community_id,
+                display_name,
+            },
+        ))
+    }
 }

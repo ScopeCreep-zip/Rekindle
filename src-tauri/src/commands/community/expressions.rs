@@ -5,20 +5,18 @@ use rekindle_types::dto::{CommandError, Done};
 use rekindle_types::image_kind::ImageKind;
 use tauri::State;
 
-use crate::host_call;
 use crate::state::SharedState;
 
-/// Upload a custom emoji (the Host's, plan E3.1 E3c).
-#[tauri::command]
-pub async fn upload_emoji(
-    state: State<'_, SharedState>,
-    community_id: String,
-    name: String,
-    bytes: Vec<u8>,
-    kind: ImageKind,
-) -> Result<Done<String>, CommandError> {
-    host_call::call(
-        &state,
+host_command! {
+    state;
+    /// Upload a custom emoji (the Host's, plan E3.1 E3c).
+    pub async fn upload_emoji(
+        state: State<'_, SharedState>,
+        community_id: String,
+        name: String,
+        bytes: Vec<u8>,
+        kind: ImageKind,
+    ) -> Result<Done<String>, CommandError> {
         IpcRequest::Community(CommunityRequest::Expressions(
             ExpressionRequest::EmojiUpload {
                 community: community_id,
@@ -26,23 +24,21 @@ pub async fn upload_emoji(
                 bytes,
                 kind,
             },
-        )),
-    )
-    .await
+        ))
+    }
 }
 
-/// Upload a custom sticker (the Host's, plan E3.1 E3c).
-#[tauri::command]
-pub async fn upload_sticker(
-    state: State<'_, SharedState>,
-    community_id: String,
-    name: String,
-    bytes: Vec<u8>,
-    kind: ImageKind,
-    tags: Option<Vec<String>>,
-) -> Result<Done<String>, CommandError> {
-    host_call::call(
-        &state,
+host_command! {
+    state;
+    /// Upload a custom sticker (the Host's, plan E3.1 E3c).
+    pub async fn upload_sticker(
+        state: State<'_, SharedState>,
+        community_id: String,
+        name: String,
+        bytes: Vec<u8>,
+        kind: ImageKind,
+        tags: Option<Vec<String>>,
+    ) -> Result<Done<String>, CommandError> {
         IpcRequest::Community(CommunityRequest::Expressions(
             ExpressionRequest::StickerUpload {
                 community: community_id,
@@ -51,9 +47,8 @@ pub async fn upload_sticker(
                 kind,
                 tags: tags.unwrap_or_default(),
             },
-        )),
-    )
-    .await
+        ))
+    }
 }
 
 #[tauri::command]
@@ -95,38 +90,34 @@ pub async fn play_soundboard(
     )
 }
 
-/// Delete a custom expression (the Host's, plan E3.1 E3c).
-#[tauri::command]
-pub async fn delete_emoji(
-    state: State<'_, SharedState>,
-    community_id: String,
-    expression_id: String,
-) -> Result<Done<()>, CommandError> {
-    host_call::call(
-        &state,
+host_command! {
+    state;
+    /// Delete a custom expression (the Host's, plan E3.1 E3c).
+    pub async fn delete_emoji(
+        state: State<'_, SharedState>,
+        community_id: String,
+        expression_id: String,
+    ) -> Result<Done<()>, CommandError> {
         IpcRequest::Community(CommunityRequest::Expressions(
             ExpressionRequest::ExpressionDelete {
                 community: community_id,
                 expression_id,
             },
-        )),
-    )
-    .await
+        ))
+    }
 }
 
-/// The community's expressions (the Host's, plan E3.1 E3c).
-#[tauri::command]
-pub async fn list_expressions(
-    state: State<'_, SharedState>,
-    community_id: String,
-) -> Result<Done<Vec<ExpressionInfo>>, CommandError> {
-    host_call::call(
-        &state,
+host_command! {
+    state;
+    /// The community's expressions (the Host's, plan E3.1 E3c).
+    pub async fn list_expressions(
+        state: State<'_, SharedState>,
+        community_id: String,
+    ) -> Result<Done<Vec<ExpressionInfo>>, CommandError> {
         IpcRequest::Community(CommunityRequest::Expressions(
             ExpressionRequest::Expressions {
                 community: community_id,
             },
-        )),
-    )
-    .await
+        ))
+    }
 }

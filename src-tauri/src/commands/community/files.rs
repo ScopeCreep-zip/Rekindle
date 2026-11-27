@@ -44,24 +44,22 @@ pub async fn download_attachment(
     .await
 }
 
-/// A voice message's audio bytes, delivered as a binary IPC response for
-/// the player to wrap in a Blob.
-#[tauri::command]
-pub async fn get_voice_message_audio(
-    community_id: String,
-    channel_id: String,
-    attachment_id: String,
-    state: State<'_, SharedState>,
-) -> Result<Done<VoiceMessageAudioView>, CommandError> {
-    crate::host_call::call(
-        &state,
+host_command! {
+    state;
+    /// A voice message's audio bytes, delivered as a binary IPC response for
+    /// the player to wrap in a Blob.
+    pub async fn get_voice_message_audio(
+        community_id: String,
+        channel_id: String,
+        attachment_id: String,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<VoiceMessageAudioView>, CommandError> {
         pins(PinRequest::VoiceMessageAudio {
             community: community_id,
             channel_id,
             attachment_id,
-        }),
-    )
-    .await
+        })
+    }
 }
 
 /// Show a downloaded attachment in the OS file manager.
@@ -83,50 +81,46 @@ pub async fn reveal_downloaded_attachment(
     .await
 }
 
-/// Send a voice message (architecture §16.4): its attachment id.
-#[tauri::command]
-pub async fn send_voice_message(
-    community_id: String,
-    channel_id: String,
-    pcm_b64: String,
-    state: State<'_, SharedState>,
-) -> Result<Done<String>, CommandError> {
-    use base64::Engine as _;
-    let decode = |b64: &str, what: &str| {
-        base64::engine::general_purpose::STANDARD
-            .decode(b64)
-            .map_err(|e| CommandError::Failed {
-                code: 400,
-                message: format!("invalid {what} base64: {e}"),
-                remediation: None,
-            })
-    };
-    crate::host_call::call(
-        &state,
+host_command! {
+    state;
+    /// Send a voice message (architecture §16.4): its attachment id.
+    pub async fn send_voice_message(
+        community_id: String,
+        channel_id: String,
+        pcm_b64: String,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<String>, CommandError> {
+        use base64::Engine as _;
+        let decode = |b64: &str, what: &str| {
+            base64::engine::general_purpose::STANDARD
+                .decode(b64)
+                .map_err(|e| CommandError::Failed {
+                    code: 400,
+                    message: format!("invalid {what} base64: {e}"),
+                    remediation: None,
+                })
+        };
         pins(PinRequest::VoiceMessageSend {
             community: community_id,
             channel_id,
             pcm: decode(&pcm_b64, "pcm")?,
-        }),
-    )
-    .await
+        })
+    }
 }
 
-/// Pin or unpin an attachment (admin-only; the Host's, plan E3.1 E3b).
-#[tauri::command]
-pub async fn pin_attachment(
-    community_id: String,
-    attachment_id: String,
-    pinned: bool,
-    state: State<'_, SharedState>,
-) -> Result<Done<()>, CommandError> {
-    crate::host_call::call(
-        &state,
+host_command! {
+    state;
+    /// Pin or unpin an attachment (admin-only; the Host's, plan E3.1 E3b).
+    pub async fn pin_attachment(
+        community_id: String,
+        attachment_id: String,
+        pinned: bool,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<()>, CommandError> {
         pins(PinRequest::AttachmentPin {
             community: community_id,
             attachment_id,
             pinned,
-        }),
-    )
-    .await
+        })
+    }
 }

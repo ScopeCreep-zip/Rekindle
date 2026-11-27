@@ -14,87 +14,105 @@ use tauri::State;
 use crate::host_call;
 use crate::state::SharedState;
 
-/// What this window applies: `id`, or with `None` the skin this device
-/// shows now (`IpcRequest::SkinGet`).
-#[tauri::command]
-pub async fn get_skin(
-    id: Option<String>,
-    state: State<'_, SharedState>,
-) -> Result<Done<SkinApplied>, CommandError> {
-    host_call::call(&state, IpcRequest::SkinGet { id }).await
+host_command! {
+    state;
+    /// What this window applies: `id`, or with `None` the skin this device
+    /// shows now (`IpcRequest::SkinGet`).
+    pub async fn get_skin(
+        id: Option<String>,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<SkinApplied>, CommandError> {
+        IpcRequest::SkinGet { id }
+    }
 }
 
-/// The skins (Settings → Appearance): the built-ins, the identity's
-/// library, its choice, the device login skin and a trial in progress.
-#[tauri::command]
-pub async fn list_skins(state: State<'_, SharedState>) -> Result<Done<SkinLibrary>, CommandError> {
-    host_call::call(&state, IpcRequest::SkinList).await
+host_command! {
+    state;
+    /// The skins (Settings → Appearance): the built-ins, the identity's
+    /// library, its choice, the device login skin and a trial in progress.
+    pub async fn list_skins(state: State<'_, SharedState>) -> Result<Done<SkinLibrary>, CommandError> {
+        IpcRequest::SkinList
+    }
 }
 
-/// Import a `.rkskin` package; the Host validates it in the helper and
-/// reviews the import (trust-changing).
-#[tauri::command]
-pub async fn import_skin(
-    bytes: Vec<u8>,
-    state: State<'_, SharedState>,
-) -> Result<Done<SkinEntry>, CommandError> {
-    host_call::call(&state, IpcRequest::SkinImport { bytes }).await
+host_command! {
+    state;
+    /// Import a `.rkskin` package; the Host validates it in the helper and
+    /// reviews the import (trust-changing).
+    pub async fn import_skin(
+        bytes: Vec<u8>,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<SkinEntry>, CommandError> {
+        IpcRequest::SkinImport { bytes }
+    }
 }
 
-/// Remove a library skin (not the one in use or on trial).
-#[tauri::command]
-pub async fn remove_skin(
-    id: String,
-    state: State<'_, SharedState>,
-) -> Result<Done<SkinLibrary>, CommandError> {
-    host_call::call(&state, IpcRequest::SkinRemove { id }).await
+host_command! {
+    state;
+    /// Remove a library skin (not the one in use or on trial).
+    pub async fn remove_skin(
+        id: String,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<SkinLibrary>, CommandError> {
+        IpcRequest::SkinRemove { id }
+    }
 }
 
-/// Choose the identity's skin: a library skin goes on trial and the Host
-/// reverts it unless it is kept (`keep_skin`).
-#[tauri::command]
-pub async fn select_skin(
-    id: String,
-    state: State<'_, SharedState>,
-) -> Result<Done<SkinLibrary>, CommandError> {
-    host_call::call(&state, IpcRequest::SkinSelect { id }).await
+host_command! {
+    state;
+    /// Choose the identity's skin: a library skin goes on trial and the Host
+    /// reverts it unless it is kept (`keep_skin`).
+    pub async fn select_skin(
+        id: String,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<SkinLibrary>, CommandError> {
+        IpcRequest::SkinSelect { id }
+    }
 }
 
-/// Settle the "Keep this skin?" trial of `id`.
-#[tauri::command]
-pub async fn keep_skin(
-    id: String,
-    keep: bool,
-    state: State<'_, SharedState>,
-) -> Result<Done<SkinLibrary>, CommandError> {
-    host_call::call(&state, IpcRequest::SkinKeep { id, keep }).await
+host_command! {
+    state;
+    /// Settle the "Keep this skin?" trial of `id`.
+    pub async fn keep_skin(
+        id: String,
+        keep: bool,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<SkinLibrary>, CommandError> {
+        IpcRequest::SkinKeep { id, keep }
+    }
 }
 
-/// The skin this device's login screen shows, before unlock.
-#[tauri::command]
-pub async fn set_login_skin(
-    id: String,
-    state: State<'_, SharedState>,
-) -> Result<Done<SkinLibrary>, CommandError> {
-    host_call::call(&state, IpcRequest::SkinSetLogin { id }).await
+host_command! {
+    state;
+    /// The skin this device's login screen shows, before unlock.
+    pub async fn set_login_skin(
+        id: String,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<SkinLibrary>, CommandError> {
+        IpcRequest::SkinSetLogin { id }
+    }
 }
 
-/// The skin editor (plan E7.7.5): the Host's report on a draft.
-#[tauri::command]
-pub async fn validate_skin_draft(
-    draft: SkinDraft,
-    state: State<'_, SharedState>,
-) -> Result<Done<SkinDraftReport>, CommandError> {
-    host_call::call(&state, IpcRequest::SkinValidateDraft { draft }).await
+host_command! {
+    state;
+    /// The skin editor (plan E7.7.5): the Host's report on a draft.
+    pub async fn validate_skin_draft(
+        draft: SkinDraft,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<SkinDraftReport>, CommandError> {
+        IpcRequest::SkinValidateDraft { draft }
+    }
 }
 
-/// "Start from the current skin": `id`'s draft, or the skin shown now.
-#[tauri::command]
-pub async fn skin_draft_start(
-    id: Option<String>,
-    state: State<'_, SharedState>,
-) -> Result<Done<SkinDraft>, CommandError> {
-    host_call::call(&state, IpcRequest::SkinDraftStart { id }).await
+host_command! {
+    state;
+    /// "Start from the current skin": `id`'s draft, or the skin shown now.
+    pub async fn skin_draft_start(
+        id: Option<String>,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<SkinDraft>, CommandError> {
+        IpcRequest::SkinDraftStart { id }
+    }
 }
 
 /// Ask where to save the draft, then have the Host validate and write it:
@@ -192,60 +210,58 @@ pub async fn export_skin_schema(
     })
 }
 
-/// A skin node's trigger (plan SK2-A4): the Host's table runs it, a
-/// feature as its own request through the intent gate; any other answers
-/// `dto::skin_run::SkinRun` for the window's shell. The window is the
-/// calling one, by label (lead decision 48): a webview never names
-/// another window's selection.
-#[tauri::command]
-pub async fn run_skin_action(
-    state: State<'_, SharedState>,
-    window: tauri::WebviewWindow,
-    node: String,
-    action: SkinAction,
-) -> Result<Done<serde_json::Value>, CommandError> {
-    host_call::call(
-        &state,
+host_command! {
+    state;
+    /// A skin node's trigger (plan SK2-A4): the Host's table runs it, a
+    /// feature as its own request through the intent gate; any other answers
+    /// `dto::skin_run::SkinRun` for the window's shell. The window is the
+    /// calling one, by label (lead decision 48): a webview never names
+    /// another window's selection.
+    pub async fn run_skin_action(
+        state: State<'_, SharedState>,
+        window: tauri::WebviewWindow,
+        node: String,
+        action: SkinAction,
+    ) -> Result<Done<serde_json::Value>, CommandError> {
         IpcRequest::RunSkinAction {
             window: window.label().to_owned(),
             node,
             action,
-        },
-    )
-    .await
+        }
+    }
 }
 
-/// What the calling skin window has selected, kept by the Host by window
-/// label (plan SK2-A4, lead decision 48).
-#[tauri::command]
-pub async fn set_skin_selection(
-    state: State<'_, SharedState>,
-    window: tauri::WebviewWindow,
-    selection: Option<SkinSelection>,
-) -> Result<Done<()>, CommandError> {
-    let window = window.label().to_owned();
-    host_call::call(&state, IpcRequest::SkinSelectionSet { window, selection }).await
+host_command! {
+    state;
+    /// What the calling skin window has selected, kept by the Host by window
+    /// label (plan SK2-A4, lead decision 48).
+    pub async fn set_skin_selection(
+        state: State<'_, SharedState>,
+        window: tauri::WebviewWindow,
+        selection: Option<SkinSelection>,
+    ) -> Result<Done<()>, CommandError> {
+        let window = window.label().to_owned();
+        IpcRequest::SkinSelectionSet { window, selection }
+    }
 }
 
-/// The calling window could not apply `skin` (`useSkin.ts`: an image did
-/// not decode, or the stylesheet did not load) and kept the skin it
-/// shows. The window only reports; the Host logs it, tells this window
-/// and Settings, and reverts `skin` if it is on trial (plan SK2-T1).
-#[tauri::command]
-pub async fn report_skin_apply_failed(
-    state: State<'_, SharedState>,
-    window: tauri::WebviewWindow,
-    skin: String,
-    cause: SkinApplyFailure,
-) -> Result<Done<()>, CommandError> {
-    let window = window.label().to_owned();
-    host_call::call(
-        &state,
+host_command! {
+    state;
+    /// The calling window could not apply `skin` (`useSkin.ts`: an image did
+    /// not decode, or the stylesheet did not load) and kept the skin it
+    /// shows. The window only reports; the Host logs it, tells this window
+    /// and Settings, and reverts `skin` if it is on trial (plan SK2-T1).
+    pub async fn report_skin_apply_failed(
+        state: State<'_, SharedState>,
+        window: tauri::WebviewWindow,
+        skin: String,
+        cause: SkinApplyFailure,
+    ) -> Result<Done<()>, CommandError> {
+        let window = window.label().to_owned();
         IpcRequest::SkinApplyFailed {
             window,
             skin,
             cause,
-        },
-    )
-    .await
+        }
+    }
 }

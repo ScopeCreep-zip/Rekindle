@@ -14,6 +14,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use quote::ToTokens;
+use syn::parse::{ParseStream, Parser};
 use syn::visit::Visit;
 
 use crate::syn_scan::{scan_rust_dirs, verdict, visit};
@@ -126,22 +127,51 @@ impl Finder<'_> {
     }
 }
 
+impl Finder<'_> {
+    fn check_command(&mut self, signature: &syn::Signature) {
+        let name = signature.ident.to_string();
+        self.check(&name, "name", &name);
+        for input in &signature.inputs {
+            let syn::FnArg::Typed(arg) = input else {
+                continue;
+            };
+            self.check(&name, "parameter", &arg.pat.to_token_stream().to_string());
+            self.check(
+                &name,
+                "parameter type",
+                &arg.ty.to_token_stream().to_string(),
+            );
+        }
+    }
+}
+
+/// Read the typed function inside the Host forwarding macro. An invocation
+/// the check cannot parse is a finding, rather than an unchecked command.
+fn parse_host_command(input: ParseStream<'_>) -> syn::Result<syn::ItemFn> {
+    input.parse::<syn::Ident>()?;
+    input.parse::<syn::Token![;]>()?;
+    input.parse()
+}
+
 impl<'ast> Visit<'ast> for Finder<'_> {
     fn visit_item_fn(&mut self, item: &'ast syn::ItemFn) {
         if is_command(&item.attrs) {
-            let name = item.sig.ident.to_string();
-            self.check(&name, "name", &name);
-            for input in &item.sig.inputs {
-                let syn::FnArg::Typed(arg) = input else {
-                    continue;
-                };
-                let pat = arg.pat.to_token_stream().to_string();
-                self.check(&name, "parameter", &pat);
-                let ty = arg.ty.to_token_stream().to_string();
-                self.check(&name, "parameter type", &ty);
-            }
+            self.check_command(&item.sig);
         }
         syn::visit::visit_item_fn(self, item);
+    }
+
+    fn visit_item_macro(&mut self, item: &'ast syn::ItemMacro) {
+        if item.mac.path.is_ident("host_command") {
+            match parse_host_command.parse2(item.mac.tokens.clone()) {
+                Ok(command) => self.check_command(&command.sig),
+                Err(error) => self.hits.push(format!(
+                    "{}  cannot check host_command! signature: {error}",
+                    self.rel,
+                )),
+            }
+        }
+        syn::visit::visit_item_macro(self, item);
     }
 }
 

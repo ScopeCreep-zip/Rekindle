@@ -6,7 +6,6 @@ use rekindle_types::dto::infoview::InfoviewView;
 use rekindle_types::dto::{CommandError, Done};
 use tauri::State;
 
-use crate::host_call;
 use crate::state::SharedState;
 
 /// The request for `label`'s window. The label is the calling webview's
@@ -19,16 +18,18 @@ fn request(label: &str, subject: InfoviewSubject) -> IpcRequest {
     }
 }
 
-/// `subject`'s Infoview for the calling window (`IpcRequest::InfoviewGet`);
-/// the Host pushes it again to this window as it changes
-/// (`SystemEvent::Infoview`, `infoview-event`).
-#[tauri::command]
-pub async fn get_infoview(
-    window: tauri::WebviewWindow,
-    subject: InfoviewSubject,
-    state: State<'_, SharedState>,
-) -> Result<Done<InfoviewView>, CommandError> {
-    host_call::call(&state, request(window.label(), subject)).await
+host_command! {
+    state;
+    /// `subject`'s Infoview for the calling window (`IpcRequest::InfoviewGet`);
+    /// the Host pushes it again to this window as it changes
+    /// (`SystemEvent::Infoview`, `infoview-event`).
+    pub async fn get_infoview(
+        window: tauri::WebviewWindow,
+        subject: InfoviewSubject,
+        state: State<'_, SharedState>,
+    ) -> Result<Done<InfoviewView>, CommandError> {
+        request(window.label(), subject)
+    }
 }
 
 #[cfg(test)]
