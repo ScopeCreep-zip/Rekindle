@@ -21,6 +21,7 @@ pub struct EvalResultRegistry {
 impl EvalResultRegistry {
     pub fn register(&self, id: String) -> oneshot::Receiver<Value> {
         let (tx, rx) = oneshot::channel();
+        tracing::debug!(%id, "eval registered, awaiting its posted result");
         self.pending.lock().insert(id, tx);
         rx
     }
@@ -28,13 +29,21 @@ impl EvalResultRegistry {
     /// No-op if `id` is unknown or already completed, so a duplicate or late report is harmless.
     pub fn complete(&self, id: &str, result: Value) {
         let sender = self.pending.lock().remove(id);
-        if let Some(tx) = sender {
-            let _ = tx.send(result);
+        match sender {
+            Some(tx) => {
+                if tx.send(result).is_err() {
+                    tracing::debug!(%id, "eval result posted after its caller stopped waiting");
+                } else {
+                    tracing::debug!(%id, "eval result delivered");
+                }
+            }
+            None => tracing::debug!(%id, "eval result posted for an unknown id"),
         }
     }
 
     /// Drop a pending registration (e.g. on timeout) so its sender doesn't leak.
     pub fn cancel(&self, id: &str) {
-        self.pending.lock().remove(id);
+        let was_pending = self.pending.lock().remove(id).is_some();
+        tracing::debug!(%id, was_pending, "eval cancelled on timeout");
     }
 }
