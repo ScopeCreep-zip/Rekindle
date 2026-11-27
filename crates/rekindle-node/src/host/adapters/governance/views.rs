@@ -6,7 +6,7 @@ use std::collections::HashMap;
 
 use rekindle_types::dto::community::{
     CommunityCategoryView, CommunityChannelView, CommunityMemberView, CommunityRoleView,
-    CommunityView, MemberGroup, TargetModeration,
+    CommunityView, MemberGroup, MemberModeration,
 };
 use rekindle_types::dto::member_groups::{group_members, GroupRole};
 use rekindle_types::id::{ChannelId, PseudonymKey};
@@ -14,7 +14,7 @@ use rekindle_types::presence::SessionLocation;
 
 use rekindle_skin::role_tag::SkinGrounds;
 
-use super::capability_words::{channel_controls_loading, channel_denied_of, joined_pseudonym};
+use super::capability_words::joined_pseudonym;
 use super::HostGovernance;
 use crate::host::adapters::presence::view as beat_view;
 use crate::host::community::{display_role_name, CommunityState, RoleDefinition};
@@ -61,6 +61,23 @@ fn my_permissions(
     )
 }
 
+/// The window controls we may not use in `c` at `now_secs`, each with
+/// the Host's reason (plan E3.2 S9); before the first merge every one,
+/// for no governance is merged yet.
+fn my_denied(
+    c: &CommunityState,
+    now_secs: u64,
+) -> rekindle_types::dto::community_capability::DeniedCapabilities {
+    let me = c.my_pseudonym_key.as_deref().and_then(joined_pseudonym);
+    match (c.governance_state.as_ref(), me) {
+        (Some(gov), Some(me)) => super::capability_words::denied_of(&me, gov, now_secs),
+        _ => (rekindle_types::dto::community_capability::CommunityCapability::ALL)
+            .into_iter()
+            .map(|cap| (cap, super::capability_words::NOT_LOADED.to_owned()))
+            .collect(),
+    }
+}
+
 /// Whether we hold a creator seat in `c`'s merged governance (plan E3.2
 /// S7s, `holds_creator_seat`); false before the first merge.
 fn we_are_creator(c: &CommunityState) -> bool {
@@ -96,10 +113,7 @@ pub(crate) fn channel_lock(c: &CommunityState, channel: &str, now_secs: u64) -> 
     use rekindle_types::permissions::VIEW_CHANNELS;
     let gov = c.governance_state.as_ref()?;
     let me = c.my_pseudonym_key.as_deref().and_then(joined_pseudonym)?;
-    let id = hex::decode(channel)
-        .ok()
-        .and_then(|b| <[u8; 16]>::try_from(b).ok())
-        .map(rekindle_types::id::ChannelId)?;
+    let id = ChannelId::from_hex(channel)?;
     if compute_permissions(&me, Some(&id), gov, now_secs) & VIEW_CHANNELS != 0 {
         return None;
     }
@@ -110,6 +124,26 @@ pub(crate) fn channel_lock(c: &CommunityState, channel: &str, now_secs: u64) -> 
     })
 }
 
+/// The controls of `channel` (hex) of `c` we may not use, with the Host's
+/// reasons (plan E3.2 S9); before the first merge every one.
+fn channel_denied(
+    c: &CommunityState,
+    channel: &str,
+    now_secs: u64,
+) -> rekindle_types::dto::community_capability::ChannelDeniedCapabilities {
+    use rekindle_types::dto::community_capability::ChannelCapability;
+    let me = c.my_pseudonym_key.as_deref().and_then(joined_pseudonym);
+    let id = ChannelId::from_hex(channel);
+    match (c.governance_state.as_ref(), me, id) {
+        (Some(gov), Some(me), Some(id)) => {
+            super::capability_words::channel_denied_of(&me, &id, gov, now_secs)
+        }
+        _ => (ChannelCapability::ALL.into_iter())
+            .map(|cap| (cap, super::capability_words::NOT_LOADED.to_owned()))
+            .collect(),
+    }
+}
+
 fn community_view(
     c: &CommunityState,
     own_card: (String, Option<String>, Option<String>),
@@ -118,10 +152,6 @@ fn community_view(
 ) -> CommunityView {
     let (my_display_name, my_card_name, my_custom_status) = own_card;
     let (my_permissions, my_channel_permissions) = my_permissions(c, now_secs);
-    let governance = c
-        .governance_state
-        .as_ref()
-        .zip(c.my_pseudonym_key.as_deref().and_then(joined_pseudonym));
     CommunityView {
         id: c.id.clone(),
         name: c.name.clone(),
@@ -146,10 +176,7 @@ fn community_view(
                 notification_sound_ref: channel.notification_sound_ref.clone(),
                 locked: lock.is_some(),
                 locked_reason: lock.unwrap_or_default(),
-                denied: match governance.as_ref().zip(ChannelId::from_hex(&channel.id)) {
-                    Some(((gov, me), id)) => channel_denied_of(me, &id, gov, now_secs),
-                    None => channel_controls_loading(),
-                },
+                denied: channel_denied(c, &channel.id, now_secs),
             })
             .collect(),
         categories: c
@@ -166,6 +193,7 @@ fn community_view(
         my_permissions,
         my_channel_permissions,
         we_are_creator: we_are_creator(c),
+        denied: my_denied(c, now_secs),
         roles: c.roles.iter().map(|r| role_view(r, shown)).collect(),
         my_pseudonym_key: c.my_pseudonym_key.clone(),
         // The same state `CommunityStore::mek_generation` serves to info.
@@ -304,28 +332,39 @@ fn profile_view(
         location: None,
         last_active: 0,
         group: MemberGroup::Offline,
-        can_moderate_target: TargetModeration::default(),
+        moderation: MemberModeration::refused(super::capability_words::JOIN_UNFINISHED),
         outranks: false,
     }
 }
 
 /// What we may do to `target` by the merged governance `gov` (plan E3.2
 /// S9): each moderation action's validator verdict, and whether we outrank
-/// them; nothing to ourselves, nothing before we hold a pseudonym.
+/// them; nothing to ourselves, nothing before we hold a pseudonym, each
+/// refusal worded by the Host (`capability_words`).
 fn moderation_of(
     gov: &rekindle_governance::state::GovernanceState,
     me: Option<&PseudonymKey>,
     target: &PseudonymKey,
-) -> (TargetModeration, bool) {
-    use rekindle_governance::validate::target::{may_moderate, outranks, TargetAction};
-    let Some(me) = me.filter(|me| *me != target) else {
-        return (TargetModeration::default(), false);
+) -> (MemberModeration, bool) {
+    use super::capability_words::{moderation_words, JOIN_UNFINISHED, YOURSELF};
+    use rekindle_governance::validate::target::{
+        moderation_refusal, outranks, role_menu_refusal, TargetAction,
     };
+    let Some(me) = me else {
+        return (MemberModeration::refused(JOIN_UNFINISHED), false);
+    };
+    if me == target {
+        return (MemberModeration::refused(YOURSELF), false);
+    }
+    let verdict = |action| moderation_refusal(me, target, action, gov).map(moderation_words);
     (
-        TargetModeration {
-            kick: may_moderate(me, target, TargetAction::Kick, gov),
-            ban: may_moderate(me, target, TargetAction::Ban, gov),
-            timeout: may_moderate(me, target, TargetAction::Timeout, gov),
+        MemberModeration {
+            kick: verdict(TargetAction::Kick),
+            ban: verdict(TargetAction::Ban),
+            timeout: verdict(TargetAction::Timeout),
+            manage_roles: role_menu_refusal(me, target, gov).map(moderation_words),
+            mute: verdict(TargetAction::Mute),
+            deafen: verdict(TargetAction::Deafen),
         },
         outranks(me, target, gov),
     )
@@ -483,8 +522,7 @@ impl HostGovernance {
                 let card = (self.ctx.communities)
                     .member_card(community, &target)
                     .unwrap_or_default();
-                let (can_moderate_target, outranks) =
-                    moderation_of(&governance, me.as_ref(), &target);
+                let (moderation, outranks) = moderation_of(&governance, me.as_ref(), &target);
                 CommunityMemberView {
                     display_role: display_role_name(&role_ids, &overlay.roles),
                     // Never empty (plan E3.4 S6): the card's name, else
@@ -501,7 +539,7 @@ impl HostGovernance {
                     location,
                     last_active,
                     pseudonym_key: row.pseudonym_key,
-                    can_moderate_target,
+                    moderation,
                     outranks,
                     ..profile
                 }

@@ -12,7 +12,7 @@ use serde_json::{json, Map, Value};
 use rekindle_types::dto::skin_library::SkinPaletteColour;
 
 use crate::registry::{resolve, Base, Class, TokenEntry, TokenType, ENTRIES, FONTS};
-use crate::tokens::emit::{css_value, declarations};
+use crate::tokens::emit::{css_value, declarations_with};
 use crate::tokens::EXTENSIONS_NAMESPACE;
 
 pub const HEADER: &str =
@@ -35,6 +35,23 @@ fn css_syntax(ty: TokenType) -> Option<&'static str> {
     }
 }
 
+/// The generated stylesheet uses short hex when each channel has two identical digits.
+fn sheet_value(e: &TokenEntry, value: &rekindle_types::dto::skin::TokenValue) -> Option<String> {
+    let value = css_value(e, value)?;
+    let Some(hex) = value.strip_prefix('#').filter(|hex| {
+        hex.as_bytes()
+            .chunks_exact(2)
+            .all(|pair| pair[0] == pair[1])
+    }) else {
+        return Some(value);
+    };
+    Some(
+        std::iter::once('#')
+            .chain(hex.bytes().step_by(2).map(char::from))
+            .collect(),
+    )
+}
+
 /// `src/styles/generated/tokens.css`: `@property` registrations of the
 /// typed tokens, the dark defaults as Tailwind 4 `@theme`, and the light
 /// values that differ, in `@layer xfire-defaults`.
@@ -48,16 +65,17 @@ pub fn tokens_css() -> String {
     let light = defaults(Base::Light);
     let mut out = format!("/* {HEADER}\n *\n * The dark defaults are `@theme`; the light base revalues\n * what differs under `:root[data-skin-base=\"light\"]` (E7.7.2's apply\n * step sets the attribute). */\n");
     for (e, v) in &dark {
-        let (Some(syntax), Some(value)) = (css_syntax(e.ty), css_value(e, v)) else {
+        let (Some(syntax), Some(value)) = (css_syntax(e.ty), sheet_value(e, v)) else {
             continue;
         };
         let _ = write!(
             out,
-            "@property {} {{\n  syntax: \"{syntax}\";\n  inherits: true;\n  initial-value: {value};\n}}\n",
+            "\n@property {} {{\n  syntax: \"{syntax}\";\n  inherits: true;\n  initial-value: {value};\n}}\n",
             e.css
         );
     }
-    let theme = declarations(&dark, 2).expect("registry defaults fit their types");
+    let theme =
+        declarations_with(&dark, 2, sheet_value).expect("registry defaults fit their types");
     let _ = write!(out, "\n@theme {{\n{theme}}}\n");
     let differ: Vec<_> = light
         .into_iter()
@@ -65,7 +83,8 @@ pub fn tokens_css() -> String {
         .filter(|((_, l), (_, d))| l != d)
         .map(|(l, _)| l)
         .collect();
-    let light_decls = declarations(&differ, 4).expect("registry defaults fit their types");
+    let light_decls =
+        declarations_with(&differ, 4, sheet_value).expect("registry defaults fit their types");
     let _ = write!(
         out,
         "\n@layer xfire-defaults {{\n  :root[data-skin-base=\"light\"] {{\n{light_decls}  }}\n}}\n"

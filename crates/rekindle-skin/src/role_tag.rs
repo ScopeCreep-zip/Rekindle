@@ -144,7 +144,7 @@ pub fn readable(colour: u32, base: SkinBase, shown: Option<&SkinGrounds>) -> u32
         return colour & 0x00ff_ffff;
     }
     let up = base == SkinBase::Dark;
-    let walked = walk::lightness_walk(rgb, up, |c| Ok(passes(c)))
+    let walked = walk::lightness_walk(rgb, up, |c| Ok::<_, std::convert::Infallible>(passes(c)))
         .ok()
         .flatten();
     // The walk's end keeps the hue; past it only the achromatic end is left.

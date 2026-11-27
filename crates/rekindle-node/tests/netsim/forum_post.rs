@@ -182,6 +182,14 @@ async fn deny(community: &Community, forum: &str, bea: &str, bits: u64) {
     tokio::time::sleep(SETTLE).await;
 }
 
+fn raw_reply_id(reader_id: &Value) -> &str {
+    reader_id
+        .as_str()
+        .and_then(|id| id.split_once(':'))
+        .expect("a reply id qualified by its author")
+        .1
+}
+
 fn thread_of(created: &serde_json::Value) -> String {
     assert_eq!(
         created["starter"], "queued",
@@ -214,6 +222,26 @@ async fn forum_post_permissions_and_atomic_refusal() {
     let sent = reply(&community, 1, &thread).await.expect("bea replies");
     assert_eq!(sent["sendState"], "queued");
     assert_send_states(&community, &events, &thread, &first["starterMessageId"]).await;
+    let answer_id = sent["messageId"].as_str().expect("reply answer id");
+    assert!(
+        eventually(&community.sim, LIMIT, || async {
+            events.any(|event| {
+                matches!(
+                    event,
+                    SubscriptionEvent::Social(SocialEvent::ThreadMessagePosted {
+                        community: scope,
+                        thread_id,
+                        message_id,
+                        body: Some(body),
+                        ..
+                    }) if scope == &community.anchor && thread_id == &thread
+                        && body == "a reply" && message_id == answer_id
+                )
+            })
+        })
+        .await,
+        "ThreadMessagePosted must use the reply answer id {answer_id}"
+    );
     assert_send_states(&community, &events, &thread, &sent["messageId"]).await;
 
     // Without CREATE_PUBLIC_THREADS (View Channel and Send Messages kept):
@@ -328,7 +356,7 @@ async fn forum_post_pending_rows_match_thread_activity() {
 
     tokio::time::sleep(Duration::from_secs(3)).await;
     let sent = reply(&community, 0, &thread).await.expect("queued reply");
-    let message = sent["messageId"].as_str().unwrap().to_owned();
+    let message = raw_reply_id(&sent["messageId"]).to_owned();
     let node = &community.nodes[0];
     let db = node.db.current().expect("unlocked database");
     let owner = node.public_key.clone().expect("unlocked owner");
@@ -486,7 +514,9 @@ async fn forum_post_starter_fails_when_thread_op_is_abandoned() {
         .expect("durably queued");
     let thread = thread_of(&created);
     let message = created["starterMessageId"].as_str().unwrap();
-    let attempts = forum_posts::expire_creation(&db, message).await.unwrap();
+    let attempts = forum_posts::expire_creation(&db, raw_reply_id(&created["starterMessageId"]))
+        .await
+        .unwrap();
     assert_eq!(attempts, 0, "the starter waits for its unlanded op");
     assert!(
         eventually(&community.sim, LIMIT, || async {

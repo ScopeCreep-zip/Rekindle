@@ -124,9 +124,7 @@
   }
 
   .call-stage-tile-video,
-  .call-stage-tile-canvas,
-
-  .call-stage-tile-video {
+  .call-stage-tile-canvas {
     transform: scaleX(-1); /* mirror own CAMERA preview, Discord-style */
   }
 

@@ -299,3 +299,38 @@ fn the_walk_repairs_a_pair_over_a_derived_ground_through_the_skins_colour() {
     );
     assert!(over_dark.required_x100 >= 450, "{over_dark:?}");
 }
+
+/// Lead round 5 e: only the dialog walk may give up chroma. `#ff0000`
+/// `danger.text` on a `#616161` window passes at no lighter lightness of its own chroma
+/// (the end clamps to #ffad92, 3.4:1; white would pass, 6.2:1), so the base
+/// walk stops unsettled with the pack's red intact rather than greying it.
+#[test]
+fn the_base_walk_never_reduces_chroma() {
+    use crate::import::walk::{settle, WalkResult};
+    let red = color([0xff, 0x00, 0x00]);
+    let mut tokens: BTreeMap<String, TokenValue> = [
+        "bg.primary",
+        "bg.secondary",
+        "bg.panel",
+        "bg.input",
+        "bg.status",
+    ]
+    .into_iter()
+    .map(|id| (id.to_owned(), color([0x61, 0x61, 0x61])))
+    .collect();
+    tokens.insert("danger.text".to_owned(), red.clone());
+    let build = |t: &BTreeMap<String, TokenValue>| {
+        package(&draft(t.clone()), &no_assets())
+            .map(|c| c.bytes)
+            .map_err(crate::import::ImportError::Refused)
+    };
+    let (result, changes) = settle(&mut tokens, Base::Dark, build).unwrap();
+    let WalkResult::Unsettled(u) = result else {
+        panic!("red on #616161 settled: {changes:?}")
+    };
+    assert!(
+        u.why.starts_with("no lightness of danger.text"),
+        "{u:?} after {changes:?}"
+    );
+    assert_eq!(tokens.get("danger.text"), Some(&red), "{changes:?}");
+}

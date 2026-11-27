@@ -59,7 +59,7 @@ async fn author(port: &dyn RecordPort, seed: u8, first_deps: &[OpRef]) -> OpRef 
             },
             sig: [0; 64],
         };
-        let unsigned = op_unsigned_bytes(&op);
+        let unsigned = op_unsigned_bytes(&op).unwrap();
         op.sig = signing
             .sign(&op_signing_bytes(ANCHOR, &unsigned))
             .to_bytes();

@@ -9,6 +9,23 @@ fn the_committed_model_parses_whole() {
 }
 
 #[test]
+fn a_ground_share_may_be_a_fractional_percentage_above_zero_up_to_100() {
+    assert_eq!(
+        parse_ground("--a 99.9% over --b").unwrap().tints,
+        vec![("--a", "99.9%")]
+    );
+    assert!(parse_ground("--a 100% over --b").is_ok());
+    for bad in [
+        "--a 0% over --b",
+        "--a 100.1% over --b",
+        "--a -5% over --b",
+        "--a NaN% over --b",
+    ] {
+        assert!(parse_ground(bad).is_err(), "{bad}");
+    }
+}
+
+#[test]
 fn a_translucent_text_token_composites_and_a_translucent_ground_refuses() {
     let tokens: BTreeMap<String, String> = [
         ("--w".to_string(), "#ffffff80".to_string()),

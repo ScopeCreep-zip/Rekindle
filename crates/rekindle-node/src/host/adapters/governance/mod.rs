@@ -30,6 +30,7 @@ mod anti_entropy_loop;
 pub mod audit;
 mod audit_rows;
 pub(crate) mod automod_rules;
+pub(super) mod capability_words;
 mod catchup;
 mod co_create;
 mod community_events;
@@ -106,7 +107,6 @@ mod segment_request;
 mod table_events;
 mod thread_events;
 
-pub(crate) mod capability_words;
 mod checkpoint_rows;
 mod checkpoint_state;
 mod frontier;

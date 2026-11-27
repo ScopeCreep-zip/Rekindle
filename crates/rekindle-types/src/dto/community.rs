@@ -145,6 +145,13 @@ pub struct CommunityView {
     /// A change arrives as `EffectivePermissionsChanged` naming us, like
     /// the permission flags.
     pub we_are_creator: bool,
+    /// The window's controls we may not use, each with the Host's words
+    /// naming what grants it (a missing permission, our timeout's end, a
+    /// creator seat); a capability we hold is absent (plan E3.2 S9). The
+    /// window shows every control and disables these with the reason: it
+    /// never hides one and never reads the permission bits for it. A change
+    /// arrives on `EffectivePermissionsChanged` naming us, with the new map.
+    pub denied: super::community_capability::DeniedCapabilities,
     pub roles: Vec<CommunityRoleView>,
     pub my_pseudonym_key: Option<String>,
     pub mek_generation: u64,
@@ -279,7 +286,9 @@ pub struct CommunityChannelView {
     /// The Host's words for why, empty when not locked.
     #[serde(default)]
     pub locked_reason: String,
-    /// Channel controls we cannot use here, each with the Host's reason.
+    /// The channel's controls we may not use here, with the Host's words
+    /// (plan E3.2 S9); a held one is absent. Re-read on
+    /// `EffectivePermissionsChanged` naming us.
     #[serde(default)]
     pub denied: super::community_capability::ChannelDeniedCapabilities,
 }
@@ -367,28 +376,51 @@ pub struct CommunityMemberView {
     /// The member-list group this row falls under, decided by the Host
     /// ([`super::member_groups::group_members`]); every frontend renders it.
     pub group: MemberGroup,
-    /// Which moderation actions we may take against this member, as the
-    /// governance validator decides them from the merged state (plan E3.2
-    /// S9); all false on our own row.
-    #[serde(default)]
-    pub can_moderate_target: TargetModeration,
+    /// Each moderation action against this member: `None` when we may
+    /// take it, else the Host's reason, as the governance validator decides
+    /// it from the merged state (plan E3.2 S9); every one refused on our
+    /// own row. The window shows every action and disables the refused.
+    pub moderation: MemberModeration,
     /// Whether we outrank this member in the role hierarchy (the
     /// validator's rank rule): role changes and voice moderation need it.
     #[serde(default)]
     pub outranks: bool,
 }
 
-/// The moderation actions we may take against one member, each the
-/// governance validator's verdict on the entry it writes.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+/// The moderation actions against one member, each the governance
+/// validator's verdict on the entry it writes: `None` (wire `null`) when
+/// allowed, else the Host's words for why not.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub struct TargetModeration {
+pub struct MemberModeration {
     /// `MemberRemoved`.
-    pub kick: bool,
+    pub kick: Option<String>,
     /// `BanEntry`.
-    pub ban: bool,
+    pub ban: Option<String>,
     /// `TimeoutEntry`.
-    pub timeout: bool,
+    pub timeout: Option<String>,
+    /// `RoleAssignment` / `RoleUnassignment` of a role the member cannot
+    /// self-assign.
+    pub manage_roles: Option<String>,
+    /// Server mute (`MUTE_MEMBERS`, rank-strict); no governance entry.
+    pub mute: Option<String>,
+    /// Server deafen (`DEAFEN_MEMBERS`, rank-strict); no governance entry.
+    pub deafen: Option<String>,
+}
+
+impl MemberModeration {
+    /// Every action refused for one `reason`.
+    #[must_use]
+    pub fn refused(reason: &str) -> Self {
+        Self {
+            kick: Some(reason.to_owned()),
+            ban: Some(reason.to_owned()),
+            timeout: Some(reason.to_owned()),
+            manage_roles: Some(reason.to_owned()),
+            mute: Some(reason.to_owned()),
+            deafen: Some(reason.to_owned()),
+        }
+    }
 }
 
 /// The member-list group a member falls under (Discord's member list): a

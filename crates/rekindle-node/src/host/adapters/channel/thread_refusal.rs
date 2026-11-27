@@ -7,7 +7,7 @@
 
 use rekindle_channel::error::ChannelError;
 use rekindle_channel::ingest::timed_out_until;
-use rekindle_governance::permissions::{channel_denial, channel_permission_name, CapabilityDenial};
+use rekindle_governance::permissions::{channel_permission_name, CapabilityDenial};
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
 use rekindle_types::dto::community_capability::ChannelCapability;
@@ -16,7 +16,7 @@ use rekindle_types::id::{ChannelId, PseudonymKey};
 
 use super::HostChannel;
 use crate::host::adapters::governance::capability_words::{
-    denial_words, joined_pseudonym, NOT_LOADED,
+    channel_denied_of, denial_words, joined_pseudonym, NOT_LOADED,
 };
 
 impl HostChannel {
@@ -39,8 +39,8 @@ impl HostChannel {
             return Err(ChannelError::PermissionDenied(NOT_LOADED.into()));
         };
         let now = self.ctx().clock.now_secs();
-        match channel_denial(capability, &me, &channel, &state, now) {
-            Some(denial) => Err(ChannelError::PermissionDenied(denial_words(denial, now))),
+        match channel_denied_of(&me, &channel, &state, now).remove(&capability) {
+            Some(reason) => Err(ChannelError::PermissionDenied(reason)),
             None => Ok(()),
         }
     }

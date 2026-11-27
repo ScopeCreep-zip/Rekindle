@@ -117,13 +117,13 @@ pub(crate) fn outline_source(src: &str, stem: &str) -> Result<Outlined> {
         }
         let name = b.name.as_str();
         let target = format!("{stem}_{name}.rs");
-        let lits: Vec<_> = lexed
+        let literals: Vec<_> = lexed
             .literals
             .iter()
             .filter(|r| r.start > b.open && r.end <= b.close)
             .map(|r| r.start - b.open - 1..r.end - b.open - 1)
             .collect();
-        let body = dedent(&src[b.open + 1..b.close], &lits);
+        let body = dedent(&src[b.open + 1..b.close], &literals);
         let line_start = src[..b.mod_kw].rfind('\n').map_or(0, |n| n + 1);
         let indent_len = src[line_start..].len() - src[line_start..].trim_start().len();
         let indent = &src[line_start..line_start + indent_len];

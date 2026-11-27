@@ -1,11 +1,11 @@
 {
   "ForumPostCreated.queued": {
     "starter": "queued",
-    "starterMessageId": "tmsg_4567",
+    "starterMessageId": "abababababababababababababababababababababababababababababababab:tmsg_4567",
     "threadId": "abababababababababababababababab"
   },
   "ThreadReplyOutcome.queued": {
-    "messageId": "tmsg_0123",
+    "messageId": "abababababababababababababababababababababababababababababababab:tmsg_0123",
     "sendState": "queued"
   },
   "audit.entry": {
@@ -155,6 +155,10 @@
     "name": "Ideas",
     "notificationLevel": "default"
   },
+  "community.denied": {
+    "manageChannels": "You need the Manage Channels permission.",
+    "offerSuccessor": "Only a creator of this community can offer a successor community."
+  },
   "community.inviteCreated": {
     "codeHash": "abababababababababababababababababababababababababababababababab",
     "expiresAt": 1700604800,
@@ -173,11 +177,6 @@
     "uses": 2
   },
   "community.memberView": {
-    "canModerateTarget": {
-      "ban": false,
-      "kick": true,
-      "timeout": true
-    },
     "customStatus": "brb",
     "displayName": "Bea",
     "displayRole": "Shooters",
@@ -188,6 +187,14 @@
       "name": "Shooters"
     },
     "lastActive": 0,
+    "moderation": {
+      "ban": "You need the Ban Members permission.",
+      "deafen": null,
+      "kick": null,
+      "manageRoles": "You can't moderate someone at or above your highest role.",
+      "mute": "You need the Mute Members permission.",
+      "timeout": null
+    },
     "outranks": true,
     "pseudonymKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
     "roleIds": [

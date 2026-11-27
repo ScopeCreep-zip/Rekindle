@@ -6,7 +6,7 @@ use rekindle_types::dto::community_capability::ChannelCapability;
 use rekindle_types::message::SendState;
 
 use super::to;
-use rekindle_types::thread::{ForumPostCreated, ThreadReplyOutcome};
+use rekindle_types::thread::{thread_reply_key, ForumPostCreated, ThreadReplyOutcome};
 use serde_json::Value;
 
 pub fn samples(add: &mut impl FnMut(&str, Value)) {
@@ -43,7 +43,7 @@ pub fn samples(add: &mut impl FnMut(&str, Value)) {
     add(
         "ThreadReplyOutcome.queued",
         serde_json::to_value(ThreadReplyOutcome {
-            message_id: "tmsg_0123".into(),
+            message_id: thread_reply_key(&"ab".repeat(32), "tmsg_0123"),
             send_state: SendState::Queued,
         })
         .expect("serialises"),
@@ -52,7 +52,7 @@ pub fn samples(add: &mut impl FnMut(&str, Value)) {
         "ForumPostCreated.queued",
         serde_json::to_value(ForumPostCreated {
             thread_id: "ab".repeat(16),
-            starter_message_id: "tmsg_4567".into(),
+            starter_message_id: thread_reply_key(&"ab".repeat(32), "tmsg_4567"),
             starter: SendState::Queued,
         })
         .expect("serialises"),

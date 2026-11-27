@@ -4,7 +4,7 @@ use rekindle_channel::error::ChannelError;
 use rekindle_channel::{ChannelMessagingDeps as _, ForumPost};
 use rekindle_governance_runtime::{apply::write_forum_thread, GovernanceRuntimeError};
 use rekindle_types::dto::community_capability::ChannelCapability;
-use rekindle_types::thread::ForumPostCreated;
+use rekindle_types::thread::{thread_reply_key, ForumPostCreated};
 
 use super::HostChannel;
 
@@ -83,7 +83,7 @@ impl HostChannel {
         .await?;
         let created = ForumPostCreated {
             thread_id,
-            starter_message_id: sent.message_id.clone(),
+            starter_message_id: thread_reply_key(&sent.sender_pseudonym, &sent.message_id),
             starter: sent.send_state,
         };
         self.publish_own_reply(community_id, &created.thread_id, body, sent)

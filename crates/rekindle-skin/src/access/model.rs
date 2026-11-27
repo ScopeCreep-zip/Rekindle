@@ -61,12 +61,18 @@ fn rgba(tokens: &BTreeMap<String, String>, name: &str) -> Result<[f64; 4], Strin
     hex(value).ok_or_else(|| format!("`{name}: {value}` is not a hex colour"))
 }
 
+/// Whether `name` is a colour token of `tokens` drawn below full opacity.
+#[must_use]
+pub fn translucent(tokens: &BTreeMap<String, String>, name: &str) -> bool {
+    rgba(tokens, name).is_ok_and(|[_, _, _, a]| a < 1.0)
+}
+
 /// An opaque token's colour; a translucent one is no ground.
 pub fn token(tokens: &BTreeMap<String, String>, name: &str) -> Result<Rgb, String> {
-    let [r, g, b, a] = rgba(tokens, name)?;
-    if a < 1.0 {
+    if translucent(tokens, name) {
         return Err(format!("`{name}` is translucent: a ground must be opaque"));
     }
+    let [r, g, b, _] = rgba(tokens, name)?;
     Ok([r, g, b])
 }
 
@@ -191,13 +197,16 @@ pub fn parse_ground(ground: &str) -> Result<Ground<'_>, String> {
         let (Some(token), Some(pct), None) = (words.next(), words.next(), words.next()) else {
             return Err(format!("`{tint}` is not `<token> <N>%`"));
         };
+        // A CSS percentage may be fractional: the text-field selection is
+        // declared 99.9% (00-primitives.css: WebKit swaps an opaque author
+        // selection colour, blendWithWhite, and leaves a non-opaque one).
         let literal = pct
             .strip_suffix('%')
-            .and_then(|n| n.parse::<u8>().ok())
-            .is_some_and(|n| (1..=100).contains(&n));
+            .and_then(|n| n.parse::<f64>().ok())
+            .is_some_and(|n| n > 0.0 && n <= 100.0);
         if !literal && share_token(pct).is_none() {
             return Err(format!(
-                "`{pct}` is not a percentage 1–100% or `var(--tint-…)`"
+                "`{pct}` is not a percentage above 0% up to 100% or `var(--tint-…)`"
             ));
         }
         tints.push((token, pct));

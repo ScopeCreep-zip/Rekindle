@@ -148,6 +148,7 @@
   @media (prefers-reduced-motion: no-preference) {
     .message-input-mic-btn-active {
       --pulse-min-opacity: 0.55;
+
       animation: opacity-pulse 1s ease-in-out infinite;
     }
   }
