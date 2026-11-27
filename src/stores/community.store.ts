@@ -5,8 +5,9 @@ import type {
 import { createStore, produce, reconcile } from "solid-js/store";
 import type { Message } from "./chat.store";
 import type {
-  GameInfo, InviteDto, MemberGroup, OnboardingConfig, MemberModeration, WelcomeScreen,
+  GameInfo, InviteDto, MemberGroup, OnboardingConfig, WelcomeScreen,
 } from "../ipc/commands/dto";
+import type { MemberModeration } from "../ipc/commands/dto_capabilities";
 
 export interface Channel {
   id: string;

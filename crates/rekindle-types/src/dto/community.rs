@@ -286,6 +286,11 @@ pub struct CommunityChannelView {
     /// The Host's words for why, empty when not locked.
     #[serde(default)]
     pub locked_reason: String,
+    /// The channel's controls we may not use here, with the Host's words
+    /// (plan E3.2 S9); a held one is absent. Re-read on
+    /// `EffectivePermissionsChanged` naming us.
+    #[serde(default)]
+    pub denied: super::community_capability::ChannelDeniedCapabilities,
 }
 
 /// A channel category of a [`CommunityView`].

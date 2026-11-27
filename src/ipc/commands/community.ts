@@ -24,7 +24,8 @@ export interface VoiceMessageAudioView {
 import type {
   AutoModRuleInfo, CommunityPolicy, ExpressionInfo, Message, QuietHoursSettings, SendChannelMessageResult,
 } from "./types";
-import type { CommunityBanView, DeniedCapabilities, MemberGroup, MemberModeration } from "./dto";
+import type { CommunityBanView, MemberGroup } from "./dto";
+import type { ChannelDeniedCapabilities, DeniedCapabilities, MemberModeration } from "./dto_capabilities";
 
 /** `SuccessorOffer` (rekindle-types `dto::community`): a successor both
  *  sides link, as `communitySuccessorOffered` carries it. */
@@ -82,7 +83,7 @@ export const communityCommands = {
       description: string | null;
       iconHash?: string | null;
       bannerHash?: string | null;
-      channels: { id: string; name: string; channelType: string; categoryId?: string; topic?: string; forumTags?: string[]; stageSpeakers?: string[]; stageModerator?: string | null; notificationLevel?: "all" | "mentions" | "nothing"; notificationSoundRef?: string | null; locked: boolean; lockedReason: string }[];
+      channels: { id: string; name: string; channelType: string; categoryId?: string; topic?: string; forumTags?: string[]; stageSpeakers?: string[]; stageModerator?: string | null; notificationLevel?: "all" | "mentions" | "nothing"; notificationSoundRef?: string | null; locked: boolean; lockedReason: string; denied: ChannelDeniedCapabilities }[];
       categories?: { id: string; name: string; sortOrder: number }[];
       myRole: string | null;
       myRoleIds: string[];

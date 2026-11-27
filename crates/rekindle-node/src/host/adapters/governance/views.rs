@@ -76,12 +76,7 @@ fn my_denied(
         (Some(gov), Some(me)) => super::capability_words::denied_of(&me, gov, now_secs),
         _ => (rekindle_types::dto::community_capability::CommunityCapability::ALL)
             .into_iter()
-            .map(|cap| {
-                (
-                    cap,
-                    "This community's rules have not loaded yet.".to_owned(),
-                )
-            })
+            .map(|cap| (cap, super::capability_words::NOT_LOADED.to_owned()))
             .collect(),
     }
 }
@@ -139,6 +134,30 @@ pub(crate) fn channel_lock(c: &CommunityState, channel: &str, now_secs: u64) -> 
     })
 }
 
+/// The controls of `channel` (hex) of `c` we may not use, with the Host's
+/// reasons (plan E3.2 S9); before the first merge every one.
+fn channel_denied(
+    c: &CommunityState,
+    channel: &str,
+    now_secs: u64,
+) -> rekindle_types::dto::community_capability::ChannelDeniedCapabilities {
+    use rekindle_types::dto::community_capability::ChannelCapability;
+    let me = (c.my_pseudonym_key.as_deref())
+        .and_then(|hex| hex::decode(hex).ok()?.try_into().ok())
+        .map(PseudonymKey);
+    let id = (hex::decode(channel).ok())
+        .and_then(|b| <[u8; 16]>::try_from(b).ok())
+        .map(rekindle_types::id::ChannelId);
+    match (c.governance_state.as_ref(), me, id) {
+        (Some(gov), Some(me), Some(id)) => {
+            super::capability_words::channel_denied_of(&me, &id, gov, now_secs)
+        }
+        _ => (ChannelCapability::ALL.into_iter())
+            .map(|cap| (cap, super::capability_words::NOT_LOADED.to_owned()))
+            .collect(),
+    }
+}
+
 fn community_view(
     c: &CommunityState,
     own_card: (String, Option<String>, Option<String>),
@@ -171,6 +190,7 @@ fn community_view(
                 notification_sound_ref: channel.notification_sound_ref.clone(),
                 locked: lock.is_some(),
                 locked_reason: lock.unwrap_or_default(),
+                denied: channel_denied(c, &channel.id, now_secs),
             })
             .collect(),
         categories: c

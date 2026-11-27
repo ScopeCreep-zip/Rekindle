@@ -8,7 +8,8 @@ import type { NotJoinableReason } from "../ipc/commands/types";
 import type { DeviceStatus } from "../ipc/commands/community";
 import type { Message } from "../stores/chat.store";
 import type { AutoModRule, Community, Channel, Expression, Member, MemberLocation } from "../stores/community.store";
-import type { MemberGroup, MemberModeration } from "../ipc/commands/dto";
+import type { MemberGroup } from "../ipc/commands/dto";
+import type { MemberModeration } from "../ipc/commands/dto_capabilities";
 import type { KeyStatus } from "../ipc/channels/community_subscription_events";
 
 /** Convert a single backend FriendInfo to a frontend Friend. */

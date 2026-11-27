@@ -1,5 +1,6 @@
 import type { Undecryptable } from "../commands/types";
-import type { DeniedCapabilities, SkinApplied } from "../commands/dto";
+import type { SkinApplied } from "../commands/dto";
+import type { DeniedCapabilities } from "../commands/dto_capabilities";
 /**
  * The daemon-vocabulary half of the `community-event` channel.
  *

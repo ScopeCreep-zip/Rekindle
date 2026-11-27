@@ -196,3 +196,76 @@ fn mute_and_deafen_need_their_permission_and_a_lower_target() {
         );
     }
 }
+
+/// The channel-scoped controls are judged with the channel's overwrites
+/// (as `AdminDelete` is validated): a moderator whose permission an
+/// overwrite takes away is told the overwrite, one without it the
+/// permission, a timed-out one the timeout.
+#[test]
+fn a_channel_capability_names_the_overwrite_the_permission_or_the_timeout() {
+    use rekindle_types::dto::community_capability::ChannelCapability as Ch;
+    use rekindle_types::governance::GovernanceEntry;
+    use rekindle_types::id::ChannelId;
+    use rekindle_types::permissions::{MANAGE_MESSAGES, USE_SOUNDBOARD};
+
+    use super::denied_in_channel;
+    let room = ChannelId([9; 16]);
+    let mut s = state();
+    s.roles.insert(
+        RoleId([6; 16]),
+        role("Mods", MANAGE_MESSAGES | USE_SOUNDBOARD, 2),
+    );
+    s.role_assignments
+        .entry(key(2))
+        .or_default()
+        .insert(RoleId([6; 16]));
+    let deny = GovernanceEntry::PermissionOverwrite {
+        channel_id: room,
+        target_type: "role".into(),
+        target_id: RoleId([6; 16]).to_hex(),
+        allow: 0,
+        deny: MANAGE_MESSAGES,
+    };
+    crate::merge::apply_entry(&key(9), &deny, crate::fixture::stamp(1), &mut s);
+    let denied =
+        |s: &GovernanceState, who: u8, now: u64| denied_in_channel(&key(who), &room, s, now);
+    assert_eq!(
+        denied(&s, 2, 100),
+        vec![(
+            Ch::ManageMessages,
+            CapabilityDenial::ChannelDenied {
+                permission: "Manage Messages"
+            }
+        )]
+    );
+    assert_eq!(
+        denied(&s, 1, 100),
+        vec![
+            (
+                Ch::ManageMessages,
+                CapabilityDenial::Missing {
+                    permission: "Manage Messages"
+                }
+            ),
+            (
+                Ch::UseSoundboard,
+                CapabilityDenial::Missing {
+                    permission: "Use Soundboard"
+                }
+            ),
+        ]
+    );
+    s.timeouts.insert(
+        key(2),
+        TimeoutState {
+            started_at: 50,
+            duration_seconds: 100,
+            reason: None,
+            stamp: OpStamp::MIN,
+        },
+    );
+    assert!(denied(&s, 2, 100).contains(&(
+        Ch::UseSoundboard,
+        CapabilityDenial::TimedOut { until_secs: 150 }
+    )));
+}

@@ -6,14 +6,18 @@
 //! permission bits for its controls.
 
 use chrono::{DateTime, Local, TimeZone as _};
-use rekindle_governance::permissions::{denied_capabilities, CapabilityDenial};
+use rekindle_governance::permissions::{denied_capabilities, denied_in_channel, CapabilityDenial};
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance::validate::target::TargetRefusal;
-use rekindle_types::dto::community_capability::{CommunityCapability, DeniedCapabilities};
-use rekindle_types::id::PseudonymKey;
+use rekindle_types::dto::community_capability::{
+    ChannelDeniedCapabilities, CommunityCapability, DeniedCapabilities,
+};
+use rekindle_types::id::{ChannelId, PseudonymKey};
 
 /// A member row's actions before we hold a pseudonym here.
 pub(super) const JOIN_UNFINISHED: &str = "You haven't finished joining this community yet.";
+/// Every control before the community's first merge.
+pub(super) const NOT_LOADED: &str = "This community's rules have not loaded yet.";
 /// Our own row's actions.
 pub(super) const YOURSELF: &str = "You can't moderate yourself.";
 
@@ -45,7 +49,30 @@ pub(super) fn denied_of(
         .collect()
 }
 
+/// `member`'s denied channel capabilities in `channel` of `state` at
+/// `now_secs`, worded.
+pub(super) fn channel_denied_of(
+    member: &PseudonymKey,
+    channel: &ChannelId,
+    state: &GovernanceState,
+    now_secs: u64,
+) -> ChannelDeniedCapabilities {
+    denied_in_channel(member, channel, state, now_secs)
+        .into_iter()
+        .map(|(cap, denial)| (cap, denial_words(denial, now_secs)))
+        .collect()
+}
+
 fn words(cap: CommunityCapability, denial: CapabilityDenial, now_secs: u64) -> String {
+    match (cap, denial) {
+        (CommunityCapability::OfferSuccessor, CapabilityDenial::NotCreator) => {
+            "Only a creator of this community can offer a successor community.".to_owned()
+        }
+        (_, denial) => denial_words(denial, now_secs),
+    }
+}
+
+fn denial_words(denial: CapabilityDenial, now_secs: u64) -> String {
     match denial {
         CapabilityDenial::Missing { permission } => {
             format!("You need the {permission} permission.")
@@ -53,12 +80,10 @@ fn words(cap: CommunityCapability, denial: CapabilityDenial, now_secs: u64) -> S
         CapabilityDenial::TimedOut { until_secs } => {
             format!("You're timed out until {}.", clock(until_secs, now_secs))
         }
-        CapabilityDenial::NotCreator => match cap {
-            CommunityCapability::OfferSuccessor => {
-                "Only a creator of this community can offer a successor community.".to_owned()
-            }
-            _ => "Only a creator of this community can do this.".to_owned(),
-        },
+        CapabilityDenial::NotCreator => "Only a creator of this community can do this.".to_owned(),
+        CapabilityDenial::ChannelDenied { permission } => {
+            format!("{permission} is turned off for you in this channel.")
+        }
     }
 }
 
@@ -109,6 +134,19 @@ mod tests {
                 0
             ),
             "Only a creator of this community can offer a successor community."
+        );
+    }
+
+    #[test]
+    fn a_channel_overwrite_is_named_as_the_cause() {
+        assert_eq!(
+            denial_words(
+                CapabilityDenial::ChannelDenied {
+                    permission: "Manage Messages"
+                },
+                0
+            ),
+            "Manage Messages is turned off for you in this channel."
         );
     }
 

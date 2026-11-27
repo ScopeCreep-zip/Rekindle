@@ -16,7 +16,7 @@ use crate::state::GovernanceState;
 
 mod capabilities;
 mod roster;
-pub use capabilities::{denied_capabilities, CapabilityDenial};
+pub use capabilities::{denied_capabilities, denied_in_channel, CapabilityDenial};
 pub use roster::{channel_read_roster, is_restricted};
 #[cfg(test)]
 mod overwrite_tests;
