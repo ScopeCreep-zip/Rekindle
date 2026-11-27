@@ -105,6 +105,9 @@ fn tree() -> Tree {
     t
 }
 
+#[path = "background_art_tests.rs"]
+mod background_art_tests;
+
 /// The fixture's list ground, #101010, is also every window's ground
 /// (`bg.dark` follows `bg.primary`, plan E7.7.7 e777n). White on the online
 /// chip (`status.online` 60% over it) measures 4.44:1 there, under D4's
