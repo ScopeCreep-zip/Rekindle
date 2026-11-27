@@ -7,11 +7,14 @@ import type { Message } from "./chat.store";
 import type {
   GameInfo, InviteDto, MemberGroup, OnboardingConfig, WelcomeScreen,
 } from "../ipc/commands/dto";
-import type { DeniedCapabilities, MemberModeration } from "../ipc/commands/dto_capabilities";
+import type { ChannelDeniedCapabilities, DeniedCapabilities, MemberModeration } from "../ipc/commands/dto_capabilities";
 
 export interface Channel {
   id: string;
   name: string;
+  /** The channel controls we lack here, each with the Host's reason
+   *  (`CommunityChannelView::denied`, judged with the channel's overwrites). */
+  denied?: ChannelDeniedCapabilities;
   type: "text" | "voice" | "announcement" | "forum" | "stage" | "directory" | "media" | "events" | "dm";
   unreadCount: number;
   categoryId?: string;

@@ -467,6 +467,11 @@ function applyGovernance(g: GovernanceEvent): void {
         if (!detail) return;
         setCommunityState("communities", community, "myPermissions", detail.myPermissions);
         setCommunityState("communities", community, "denied", detail.denied ?? {});
+        // Each channel's controls, judged with its overwrites (CAPR): re-read
+        // with the community's.
+        for (const ch of detail.channels) {
+          setCommunityState("communities", community, "channels", (c) => c.id === ch.id, "denied", ch.denied ?? {});
+        }
         setCommunityState(
           "communities",
           community,
@@ -503,7 +508,9 @@ function applyGovernance(g: GovernanceEvent): void {
           setCommunityState("communities", community, "categories", detail.categories ?? []);
           setCommunityState("communities", community, "myRoleIds", detail.myRoleIds);
           setCommunityState("communities", community, "myPermissions", detail.myPermissions);
-        setCommunityState("communities", community, "denied", detail.denied ?? {});
+          // A full re-read: the community's denied map and every channel's
+          // (carried by transformChannel above) are replaced (CAPR contract).
+          setCommunityState("communities", community, "denied", detail.denied ?? {});
           setCommunityState(
             "communities",
             community,
