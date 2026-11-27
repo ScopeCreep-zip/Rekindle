@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::{Listener, LogicalSize, PhysicalPosition, PhysicalSize, Runtime, WebviewWindow};
 
-use crate::platform::executor_util::within_script_timeout;
 use crate::server::response::WebDriverErrorResponse;
 
 /// Element bounding rectangle
@@ -271,7 +270,9 @@ pub trait PlatformExecutor<R: Runtime>: Send + Sync {
                __done({{ __wd_success: false, __wd_error: (e && e.message) || String(e) }});\n\
              }});"
         );
-        within_script_timeout(self.script_timeout_ms(), self.execute_direct_eval(&script)).await
+        // `execute_direct_eval` bounds itself with `within_script_timeout`; a second timer here
+        // would race it and drop its cleanup.
+        self.execute_direct_eval(&script).await
     }
 
     // =========================================================================
