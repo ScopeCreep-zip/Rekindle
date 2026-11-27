@@ -10,6 +10,7 @@ mod exec_window;
 mod executor;
 mod executor_util;
 pub(crate) mod key_input;
+mod native_key;
 mod send_keys;
 
 pub use alert_state::AlertStateManager;
@@ -23,6 +24,7 @@ pub use exec_script::ScriptOps;
 pub use exec_window::WindowOps;
 pub use executor::*;
 pub use executor_util::wrap_script_for_frame_context;
+pub use native_key::NativeKey;
 pub use pointer_input::PointerInputState;
 
 /// Every command-group trait, for the handlers: `use crate::platform::prelude::*;`.
@@ -37,9 +39,13 @@ mod macos;
 mod macos_convert;
 #[cfg(target_os = "macos")]
 mod macos_delegate;
+#[cfg(target_os = "macos")]
+mod macos_keys;
 
 #[cfg(target_os = "linux")]
 mod linux;
+#[cfg(target_os = "linux")]
+mod linux_keys;
 
 use std::sync::Arc;
 use tauri::{Runtime, WebviewWindow};
