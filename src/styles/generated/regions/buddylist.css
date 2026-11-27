@@ -53,7 +53,7 @@
     padding: inherit;
     border-radius: inherit;
     background:
-      linear-gradient(var(--skin-region-buddylist-tab-backing), var(--skin-region-buddylist-tab-backing)) var(--skin-region-buddylist-tab-slice-left, 0px) var(--skin-region-buddylist-tab-slice-top, 0px) / calc(100% - var(--skin-region-buddylist-tab-slice-left, 0px) - var(--skin-region-buddylist-tab-slice-right, 0px)) calc(100% - var(--skin-region-buddylist-tab-slice-top, 0px) - var(--skin-region-buddylist-tab-slice-bottom, 0px)) no-repeat padding-box,
+      linear-gradient(var(--skin-region-buddylist-tab-backing), var(--skin-region-buddylist-tab-backing)) var(--skin-region-buddylist-tab-slice-left, 0%) var(--skin-region-buddylist-tab-slice-top, 0%) / calc(100% - var(--skin-region-buddylist-tab-slice-left, 0%) - var(--skin-region-buddylist-tab-slice-right, 0%)) calc(100% - var(--skin-region-buddylist-tab-slice-top, 0%) - var(--skin-region-buddylist-tab-slice-bottom, 0%)) no-repeat padding-box,
       linear-gradient(var(--skin-region-buddylist-tab-backing), var(--skin-region-buddylist-tab-backing)) no-repeat content-box;
     pointer-events: none;
   }
@@ -147,7 +147,7 @@
     padding: inherit;
     border-radius: inherit;
     background:
-      linear-gradient(var(--skin-region-buddylist-action-button-backing), var(--skin-region-buddylist-action-button-backing)) var(--skin-region-buddylist-action-button-slice-left, 0px) var(--skin-region-buddylist-action-button-slice-top, 0px) / calc(100% - var(--skin-region-buddylist-action-button-slice-left, 0px) - var(--skin-region-buddylist-action-button-slice-right, 0px)) calc(100% - var(--skin-region-buddylist-action-button-slice-top, 0px) - var(--skin-region-buddylist-action-button-slice-bottom, 0px)) no-repeat padding-box,
+      linear-gradient(var(--skin-region-buddylist-action-button-backing), var(--skin-region-buddylist-action-button-backing)) var(--skin-region-buddylist-action-button-slice-left, 0%) var(--skin-region-buddylist-action-button-slice-top, 0%) / calc(100% - var(--skin-region-buddylist-action-button-slice-left, 0%) - var(--skin-region-buddylist-action-button-slice-right, 0%)) calc(100% - var(--skin-region-buddylist-action-button-slice-top, 0%) - var(--skin-region-buddylist-action-button-slice-bottom, 0%)) no-repeat padding-box,
       linear-gradient(var(--skin-region-buddylist-action-button-backing), var(--skin-region-buddylist-action-button-backing)) no-repeat content-box;
     pointer-events: none;
   }

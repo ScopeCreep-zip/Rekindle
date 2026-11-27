@@ -60,10 +60,18 @@ pub fn css_value(e: &TokenEntry, v: &TokenValue) -> Option<String> {
 /// output never does; nothing is emitted partly.
 #[must_use]
 pub fn declarations(resolved: &[(&TokenEntry, TokenValue)], indent: usize) -> Option<String> {
+    declarations_with(resolved, indent, css_value)
+}
+
+pub(crate) fn declarations_with(
+    resolved: &[(&TokenEntry, TokenValue)],
+    indent: usize,
+    format_value: fn(&TokenEntry, &TokenValue) -> Option<String>,
+) -> Option<String> {
     let pad = " ".repeat(indent);
     let mut out = String::new();
     for (e, v) in resolved {
-        let value = css_value(e, v)?;
+        let value = format_value(e, v)?;
         let _ = writeln!(out, "{pad}{}: {value};", e.css);
     }
     Some(out)
