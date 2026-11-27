@@ -29,7 +29,9 @@ const MyNameSection: Component<{ communityId: string }> = (props) => {
     setError(null);
     try {
       // The Host publishes our MemberCardChanged; the window takes the name from it.
-      await commands.setCommunityDisplayName(props.communityId, draft().trim());
+      // An emptied name is an explicit clear (PF2): the fingerprint shows.
+      const name = draft().trim();
+      await commands.setCommunityDisplayName(props.communityId, name === "" ? { op: "clear" } : { op: "set", value: name });
     } catch (err) {
       if (!(isCommandError(err) && err.type === "cancelled")) setError(errorMessage(err));
     } finally {
