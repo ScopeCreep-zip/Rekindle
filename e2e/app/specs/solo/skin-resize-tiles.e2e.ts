@@ -100,7 +100,8 @@ async function frameRepeatsTreeArt(): Promise<string[]> {
         rect: t.el.getBoundingClientRect(),
       }))
       .filter((t) => t.art.length > 0);
-    const hash = (u: string) => (/([0-9a-f]{8})[0-9a-f]*\.(?:png|gif)$/.exec(u) ?? [])[1] ?? u.slice(-12);
+    const hash = (u: string) =>
+      (/([0-9a-f]{8})[0-9a-f]*\.(?:png|gif)$/.exec(u) ?? [])[1] ?? u.slice(-12);
     const band = (r: DOMRect) => `${Math.round(r.top)}:${Math.round(r.height)}`;
     const repeated = new Map<string, string>();
     for (const t of tiles) {
@@ -114,7 +115,10 @@ async function frameRepeatsTreeArt(): Promise<string[]> {
     }
     return tiles
       .filter((t) => repeated.has(band(t.rect)))
-      .map((t) => `frame slot ${t.slot} (${hash(t.art[0])}, band ${band(t.rect)}) repeats ${repeated.get(band(t.rect))}`);
+      .map(
+        (t) =>
+          `frame slot ${t.slot} (${hash(t.art[0])}, band ${band(t.rect)}) repeats ${repeated.get(band(t.rect))}`
+      );
   })) as string[];
 }
 
