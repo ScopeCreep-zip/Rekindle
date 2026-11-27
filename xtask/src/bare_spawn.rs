@@ -22,11 +22,13 @@
 
 use std::path::Path;
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use syn::visit::Visit;
 
+use crate::syn_scan::{verdict, LineCursor};
+
 use crate::test_code::is_test_attr;
-use crate::walk_source_files;
+use crate::walk::{read_files_under, SourcePath};
 
 /// The trees whose tasks belong to a session.
 const SCANNED: &[&str] = &[
@@ -127,11 +129,7 @@ const BARE: &[&[&str]] = &[
 
 struct Finder<'a> {
     rel: &'a str,
-    src: &'a str,
-    /// Byte offset past the previous hit's text, so repeated occurrences
-    /// of the same text report their own lines (no `span-locations` on
-    /// proc-macro2; see xtask/Cargo.toml).
-    cursor: usize,
+    lines: LineCursor<'a>,
     /// Enclosing function names, innermost last.
     fns: Vec<String>,
     hits: Vec<String>,
@@ -152,14 +150,7 @@ impl Finder<'_> {
     }
 
     fn hit(&mut self, needle: &str, fix: &str) {
-        let line = match self.src[self.cursor..].find(needle) {
-            Some(at) => {
-                let abs = self.cursor + at;
-                self.cursor = abs + needle.len();
-                self.src[..abs].matches('\n').count() + 1
-            }
-            None => 0,
-        };
+        let line = self.lines.line(needle);
         let function = self.fns.last().map_or("<top>", String::as_str);
         self.hits.push(format!(
             "{}:{line}  {needle}(…) in `{function}` — {fix}",
@@ -229,8 +220,7 @@ fn scan(rel: &str, src: &str) -> (Vec<String>, std::collections::BTreeSet<usize>
     };
     let mut finder = Finder {
         rel,
-        src,
-        cursor: 0,
+        lines: LineCursor::new(src),
         fns: Vec::new(),
         hits: Vec::new(),
         used: std::collections::BTreeSet::new(),
@@ -244,18 +234,10 @@ pub(crate) fn check_bare_spawn(root: &Path) -> Result<()> {
     let mut hits = Vec::new();
     let mut used = std::collections::BTreeSet::new();
     for dir in SCANNED {
-        for path in walk_source_files(&root.join(dir), &["rs"])? {
-            let rel = path
-                .strip_prefix(root)
-                .unwrap_or(&path)
-                .display()
-                .to_string();
+        for (SourcePath { path, rel }, src) in read_files_under(root, &root.join(dir), &["rs"])? {
             if tests.is_test(&path) {
                 continue;
             }
-            let Ok(src) = std::fs::read_to_string(&path) else {
-                continue;
-            };
             let (file_hits, file_used) = scan(&rel, &src);
             hits.extend(file_hits);
             used.extend(file_used);
@@ -268,16 +250,10 @@ pub(crate) fn check_bare_spawn(root: &Path) -> Result<()> {
             ));
         }
     }
-    if hits.is_empty() {
-        return Ok(());
-    }
-    for h in &hits {
-        eprintln!("    {h}");
-    }
-    Err(anyhow!(
-        "{} bare spawn(s) outside a SessionScope or run_blocking (plan C4, rule B20; F11)",
-        hits.len()
-    ))
+    verdict(
+        &hits,
+        "bare spawn(s) outside a SessionScope or run_blocking (plan C4, rule B20; F11)",
+    )
 }
 
 #[cfg(test)]

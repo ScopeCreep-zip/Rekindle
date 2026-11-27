@@ -5,11 +5,14 @@
 //! erased to its kind, and every identifier that is not a keyword kept only
 //! as a name that a window renames to a positional placeholder (consistent
 //! renaming, jscpd's `--ignore-identifiers=consistent`): `d = a + b` matches
-//! `s = p + q` but not `x = x + x`.
+//! `s = p + q` but not `x = x + x`. `use` items are dropped like attributes
+//! (gate hardening item 2, "Item 2 rulings after the triage").
 
 use std::collections::HashMap;
 
 use proc_macro2::{Delimiter, Spacing, TokenStream, TokenTree};
+
+use crate::structural::{self, Lexeme, KEYWORDS};
 
 /// One normalised token.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -24,6 +27,7 @@ pub(crate) enum Tok {
 #[derive(Default)]
 pub(crate) struct Interner {
     map: HashMap<String, u32>,
+    texts: Vec<String>,
 }
 
 impl Interner {
@@ -31,20 +35,36 @@ impl Interner {
         if let Some(&id) = self.map.get(text) {
             return id;
         }
-        let id = u32::try_from(self.map.len()).unwrap_or(u32::MAX);
+        let id = u32::try_from(self.texts.len()).unwrap_or(u32::MAX);
         self.map.insert(text.to_owned(), id);
+        self.texts.push(text.to_owned());
         id
     }
-}
 
-/// The Rust keywords (strict and reserved ones that occur as identifiers in
-/// a token stream), `true`/`false` and the path roots.
-const KEYWORDS: &[&str] = &[
-    "as", "async", "await", "break", "const", "continue", "crate", "dyn", "else", "enum", "extern",
-    "false", "fn", "for", "if", "impl", "in", "let", "loop", "match", "mod", "move", "mut", "pub",
-    "ref", "return", "self", "Self", "static", "struct", "super", "trait", "true", "type",
-    "unsafe", "use", "where", "while", "yield",
-];
+    /// The structural tokens in `toks` (`crate::structural`).
+    pub(crate) fn structural(&self, toks: &[Tok]) -> usize {
+        let lexemes: Vec<Lexeme> = toks
+            .iter()
+            .map(|t| match *t {
+                Tok::Name(_) => Lexeme::Name,
+                Tok::Fixed(id) => {
+                    let text = usize::try_from(id)
+                        .ok()
+                        .and_then(|i| self.texts.get(i))
+                        .map_or("", String::as_str);
+                    match text.chars().next() {
+                        Some('<') if text.len() > 1 => Lexeme::Literal,
+                        Some(c) if text.len() == 1 && !c.is_alphanumeric() && c != '_' => {
+                            structural::punct(c)
+                        }
+                        _ => structural::word(text),
+                    }
+                }
+            })
+            .collect();
+        structural::count(&lexemes)
+    }
+}
 
 /// Appends the normalised form of `stream` to `out`.
 pub(crate) fn normalise(stream: TokenStream, int: &mut Interner, out: &mut Vec<Tok>) {
@@ -68,6 +88,10 @@ pub(crate) fn normalise(stream: TokenStream, int: &mut Interner, out: &mut Vec<T
             TokenTree::Ident(ident) => {
                 if path_prefix(&trees, i) {
                     i += 3;
+                    continue;
+                }
+                if let Some(semi) = use_item_end(&trees, i) {
+                    i = semi + 1;
                     continue;
                 }
                 let text = ident.to_string();
@@ -115,6 +139,30 @@ fn path_prefix(trees: &[TokenTree], i: usize) -> bool {
         (Some(TokenTree::Punct(a)), Some(TokenTree::Punct(b)))
             if a.as_char() == ':' && a.spacing() == Spacing::Joint && b.as_char() == ':'
     )
+}
+
+/// The index of the `;` ending a `use` item whose `use` is at `i`: one at
+/// the start of the stream or after `;`, a block, an attribute or `pub`.
+fn use_item_end(trees: &[TokenTree], i: usize) -> Option<usize> {
+    if !matches!(trees.get(i), Some(TokenTree::Ident(u)) if u == "use") {
+        return None;
+    }
+    let item_start = match i.checked_sub(1).and_then(|p| trees.get(p)) {
+        None => true,
+        Some(TokenTree::Punct(p)) => p.as_char() == ';',
+        Some(TokenTree::Group(g)) => matches!(g.delimiter(), Delimiter::Brace | Delimiter::Bracket),
+        Some(TokenTree::Ident(p)) => p == "pub",
+        Some(TokenTree::Literal(_)) => false,
+    };
+    if !item_start {
+        return None;
+    }
+    trees
+        .iter()
+        .enumerate()
+        .skip(i)
+        .find(|(_, t)| matches!(t, TokenTree::Punct(p) if p.as_char() == ';'))
+        .map(|(j, _)| j)
 }
 
 /// FNV-1a over 64-bit words.

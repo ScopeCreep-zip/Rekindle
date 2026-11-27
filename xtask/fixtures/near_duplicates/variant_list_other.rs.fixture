@@ -1,0 +1,39 @@
+//! A second enum's or-pattern: the same list shape over other variants.
+
+impl Other {
+    pub fn is_other(self) -> bool {
+        matches!(
+            self,
+            Self::SendMessageOther
+                | Self::EditMessageOther
+                | Self::DeleteMessageOther
+                | Self::AddReactionOther
+                | Self::RemoveReactionOther
+                | Self::PinMessageOther
+                | Self::UnpinMessageOther
+                | Self::CreateThreadOther
+                | Self::ArchiveThreadOther
+                | Self::JoinVoiceOther
+                | Self::LeaveVoiceOther
+                | Self::MuteSelfOther
+                | Self::DeafenSelfOther
+                | Self::StartCallOther
+                | Self::EndCallOther
+                | Self::AcceptCallOther
+                | Self::DeclineCallOther
+                | Self::SendMessageDraftOther
+                | Self::EditMessageDraftOther
+                | Self::DeleteMessageDraftOther
+                | Self::AddReactionDraftOther
+                | Self::RemoveReactionDraftOther
+                | Self::PinMessageDraftOther
+                | Self::UnpinMessageDraftOther
+                | Self::CreateThreadDraftOther
+                | Self::ArchiveThreadDraftOther
+                | Self::JoinVoiceDraftOther
+                | Self::LeaveVoiceDraftOther
+                | Self::MuteSelfDraftOther
+                | Self::DeafenSelfDraftOther
+        )
+    }
+}

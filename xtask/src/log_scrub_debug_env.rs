@@ -9,6 +9,8 @@
 use quote::ToTokens;
 use syn::visit::Visit;
 
+use crate::syn_scan::{visit, LineCursor};
+
 use super::is_test_attr;
 
 /// Every variable only a debug build may read.
@@ -31,8 +33,7 @@ fn named_var(text: &str) -> Option<&'static str> {
 /// item.
 struct Finder<'a> {
     rel: &'a str,
-    src: &'a str,
-    cursor: usize,
+    lines: LineCursor<'a>,
     gated: usize,
     hits: Vec<String>,
 }
@@ -51,17 +52,8 @@ impl Finder<'_> {
     /// One mention of `var`, walked in source order: the line of its next
     /// occurrence (spans carry no lines without `span-locations`).
     fn found(&mut self, var: &str) {
-        let mut line = 0;
-        while let Some(at) = self.src[self.cursor..].find(var) {
-            let abs = self.cursor + at;
-            self.cursor = abs + 1;
-            let start = self.src[..abs].rfind('\n').map_or(0, |i| i + 1);
-            // A comment's mention is no item's (attributes are not walked).
-            if !self.src[start..abs].trim_start().starts_with("//") {
-                line = self.src[..abs].matches('\n').count() + 1;
-                break;
-            }
-        }
+        // A comment's mention is no item's (attributes are not walked).
+        let line = self.lines.line_outside_comments(var);
         if self.gated == 0 {
             self.hits.push(format!(
                 "{}:{line}  {var} named outside #[cfg(debug_assertions)]",
@@ -106,19 +98,16 @@ impl<'ast> Visit<'ast> for Finder<'_> {
 
 /// Every mention of a debug-only variable in `src` outside debug-only code.
 pub(super) fn scan(rel: &str, src: &str) -> Vec<String> {
-    // A file that does not parse is cargo's problem to report.
-    let Ok(parsed) = syn::parse_file(src) else {
-        return Vec::new();
-    };
-    let mut finder = Finder {
-        rel,
+    visit(
         src,
-        cursor: 0,
-        gated: 0,
-        hits: Vec::new(),
-    };
-    finder.visit_file(&parsed);
-    finder.hits
+        Finder {
+            rel,
+            lines: LineCursor::new(src),
+            gated: 0,
+            hits: Vec::new(),
+        },
+    )
+    .map_or_else(Vec::new, |f| f.hits)
 }
 
 #[cfg(test)]

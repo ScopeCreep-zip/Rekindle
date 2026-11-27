@@ -54,3 +54,37 @@ pub(crate) fn walk_source_files(dir: &Path, exts: &[&str]) -> Result<Vec<PathBuf
     }
     Ok(out)
 }
+
+/// A source file and its path relative to the workspace root.
+pub(crate) struct SourcePath {
+    pub(crate) path: PathBuf,
+    pub(crate) rel: String,
+}
+
+/// `walk_source_files(dir, exts)`, each named relative to `root`.
+pub(crate) fn files_under(root: &Path, dir: &Path, exts: &[&str]) -> Result<Vec<SourcePath>> {
+    Ok(walk_source_files(dir, exts)?
+        .into_iter()
+        .map(|path| SourcePath {
+            rel: path
+                .strip_prefix(root)
+                .unwrap_or(&path)
+                .display()
+                .to_string(),
+            path,
+        })
+        .collect())
+}
+
+/// Every readable file `files_under(root, dir, exts)` finds, with its text.
+/// A file that cannot be read is skipped: cargo reports it.
+pub(crate) fn read_files_under(
+    root: &Path,
+    dir: &Path,
+    exts: &[&str],
+) -> Result<Vec<(SourcePath, String)>> {
+    Ok(files_under(root, dir, exts)?
+        .into_iter()
+        .filter_map(|f| std::fs::read_to_string(&f.path).ok().map(|src| (f, src)))
+        .collect())
+}

@@ -25,6 +25,8 @@ use std::path::Path;
 use anyhow::{anyhow, Result};
 use syn::visit::Visit;
 
+use crate::syn_scan::visit;
+
 use crate::walk_source_files;
 
 /// Paths (relative to the workspace root) whose role-id writes are allowed.
@@ -150,16 +152,14 @@ fn names_role_column(text: &str) -> bool {
 }
 
 fn scan(rel: &str, src: &str) -> Vec<String> {
-    // A file that does not parse is cargo's problem to report.
-    let Ok(parsed) = syn::parse_file(src) else {
-        return Vec::new();
-    };
-    let mut finder = Finder {
-        rel,
-        hits: Vec::new(),
-    };
-    finder.visit_file(&parsed);
-    finder.hits
+    visit(
+        src,
+        Finder {
+            rel,
+            hits: Vec::new(),
+        },
+    )
+    .map_or_else(Vec::new, |f| f.hits)
 }
 
 fn scan_sql(rel: &str, src: &str) -> Vec<String> {

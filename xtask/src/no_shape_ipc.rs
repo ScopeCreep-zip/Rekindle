@@ -12,11 +12,11 @@
 
 use std::path::Path;
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use quote::ToTokens;
 use syn::visit::Visit;
 
-use crate::walk_source_files;
+use crate::syn_scan::{scan_rust_dirs, verdict, visit};
 
 /// Words that, alone, name window geometry. "region" alone is not one: the
 /// skin editor's `import_skin_region` imports a stylable UI region of a
@@ -146,43 +146,24 @@ impl<'ast> Visit<'ast> for Finder<'_> {
 }
 
 fn scan(rel: &str, src: &str) -> Vec<String> {
-    // A file that does not parse is cargo's problem to report.
-    let Ok(parsed) = syn::parse_file(src) else {
-        return Vec::new();
-    };
-    let mut finder = Finder {
-        rel,
-        hits: Vec::new(),
-    };
-    finder.visit_file(&parsed);
-    finder.hits
+    visit(
+        src,
+        Finder {
+            rel,
+            hits: Vec::new(),
+        },
+    )
+    .map_or_else(Vec::new, |f| f.hits)
 }
 
 pub(crate) fn check_no_shape_ipc(root: &Path) -> Result<()> {
-    let mut hits = Vec::new();
-    for path in walk_source_files(&root.join("src-tauri/src"), &["rs"])? {
-        let rel = path
-            .strip_prefix(root)
-            .unwrap_or(&path)
-            .display()
-            .to_string();
-        let Ok(src) = std::fs::read_to_string(&path) else {
-            continue;
-        };
-        hits.extend(scan(&rel, &src));
-    }
-    if hits.is_empty() {
-        return Ok(());
-    }
-    for h in &hits {
-        println!("  ✗ {h}");
-    }
-    Err(anyhow!(
-        "{} IPC command(s) take window-shape or click-through input. The \
+    let hits = scan_rust_dirs(root, &["src-tauri/src"], scan)?;
+    verdict(
+        &hits,
+        "IPC command(s) take window-shape or click-through input. The \
          silhouette is computed in Rust (src-tauri/src/windows/shape); no \
          command may take a region or a cursor-ignore flag (plan SK0 S4).",
-        hits.len()
-    ))
+    )
 }
 
 #[cfg(test)]

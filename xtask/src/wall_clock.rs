@@ -39,11 +39,13 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use syn::visit::Visit;
 
+use crate::syn_scan::{skip_test_items, verdict, LineCursor};
+
 use crate::test_code::is_test_attr;
-use crate::walk_source_files;
+use crate::walk::{read_files_under, SourcePath};
 
 /// The crates whose dependency closure runs in the simulator.
 const ROOTS: &[&str] = &["rekindle-node", "rekindle-netsim"];
@@ -158,8 +160,7 @@ fn token_paths(tokens: proc_macro2::TokenStream, out: &mut Vec<Vec<String>>) {
 
 struct Finder<'a> {
     rel: &'a str,
-    src: &'a str,
-    cursor: usize,
+    lines: LineCursor<'a>,
     /// Imported name → full path, from the file's `use` items.
     uses: BTreeMap<String, Vec<String>>,
     hits: Vec<String>,
@@ -222,31 +223,14 @@ impl Finder<'_> {
     }
 
     fn hit(&mut self, needle: &str, fix: &str) {
-        let line = match self.src[self.cursor..].find(needle) {
-            Some(at) => {
-                let abs = self.cursor + at;
-                self.cursor = abs + needle.len();
-                self.src[..abs].matches('\n').count() + 1
-            }
-            None => 0,
-        };
+        let line = self.lines.line(needle);
         self.hits
             .push(format!("{}:{line}  {needle} — {fix}", self.rel));
     }
 }
 
 impl<'ast> Visit<'ast> for Finder<'_> {
-    fn visit_item_mod(&mut self, item: &'ast syn::ItemMod) {
-        if !item.attrs.iter().any(is_test_attr) {
-            syn::visit::visit_item_mod(self, item);
-        }
-    }
-
-    fn visit_item_fn(&mut self, item: &'ast syn::ItemFn) {
-        if !item.attrs.iter().any(is_test_attr) {
-            syn::visit::visit_item_fn(self, item);
-        }
-    }
+    skip_test_items!('ast);
 
     fn visit_impl_item_fn(&mut self, item: &'ast syn::ImplItemFn) {
         if !item.attrs.iter().any(is_test_attr) {
@@ -322,8 +306,7 @@ fn scan(rel: &str, src: &str) -> Vec<String> {
     uses.visit_file(&parsed);
     let mut finder = Finder {
         rel,
-        src,
-        cursor: 0,
+        lines: LineCursor::new(src),
         uses: uses.0,
         hits: Vec::new(),
     };
@@ -375,31 +358,19 @@ pub(crate) fn check_wall_clock(root: &Path) -> Result<()> {
     let tests = crate::test_code::TestCode::load(root)?;
     let mut hits = Vec::new();
     for name in sim_crates(root)? {
-        for path in walk_source_files(&root.join("crates").join(&name).join("src"), &["rs"])? {
-            let rel = path
-                .strip_prefix(root)
-                .unwrap_or(&path)
-                .display()
-                .to_string();
+        for (SourcePath { path, rel }, src) in
+            read_files_under(root, &root.join("crates").join(&name).join("src"), &["rs"])?
+        {
             if tests.is_test(&path) || OUTSIDE_THE_SIM.iter().any(|(p, _)| rel.starts_with(p)) {
                 continue;
             }
-            let Ok(src) = std::fs::read_to_string(&path) else {
-                continue;
-            };
             hits.extend(scan(&rel, &src));
         }
     }
-    if hits.is_empty() {
-        return Ok(());
-    }
-    for h in &hits {
-        eprintln!("    {h}");
-    }
-    Err(anyhow!(
-        "{} wall-clock read(s) in code the netsim runs (plan E2.B)",
-        hits.len()
-    ))
+    verdict(
+        &hits,
+        "wall-clock read(s) in code the netsim runs (plan E2.B)",
+    )
 }
 
 #[cfg(test)]

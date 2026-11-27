@@ -12,10 +12,12 @@
 
 use std::path::Path;
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use syn::visit::Visit;
 
-use crate::{literals, walk_source_files};
+use crate::syn_scan::{scan_rust_dirs, verdict, visit};
+
+use crate::literals;
 
 const DB_TYPES: &[&str] = &["Db", "Db"];
 
@@ -109,45 +111,24 @@ impl<'ast> Visit<'ast> for Finder<'_> {
 }
 
 fn scan(rel: &str, src: &str) -> Vec<String> {
-    // A file that does not parse is cargo's problem to report.
-    let Ok(parsed) = syn::parse_file(src) else {
-        return Vec::new();
-    };
-    let mut finder = Finder {
-        rel,
+    visit(
         src,
-        hits: Vec::new(),
-    };
-    finder.visit_file(&parsed);
-    finder.hits
+        Finder {
+            rel,
+            src,
+            hits: Vec::new(),
+        },
+    )
+    .map_or_else(Vec::new, |f| f.hits)
 }
 
 pub(crate) fn check_no_managed_db(root: &Path) -> Result<()> {
-    let mut hits = Vec::new();
-    for dir in ["src-tauri/src", "src-tauri/tests"] {
-        for path in walk_source_files(&root.join(dir), &["rs"])? {
-            let rel = path
-                .strip_prefix(root)
-                .unwrap_or(&path)
-                .display()
-                .to_string();
-            let Ok(src) = std::fs::read_to_string(&path) else {
-                continue;
-            };
-            hits.extend(scan(&rel, &src));
-        }
-    }
-    if hits.is_empty() {
-        return Ok(());
-    }
-    for h in &hits {
-        println!("  ✗ {h}");
-    }
-    Err(anyhow!(
-        "{} use(s) of the database through Tauri managed state. Reach it with \
+    let hits = scan_rust_dirs(root, &["src-tauri/src", "src-tauri/tests"], scan)?;
+    verdict(
+        &hits,
+        "use(s) of the database through Tauri managed state. Reach it with \
          `state.db.current()` (rekindle_db::DbHandle).",
-        hits.len()
-    ))
+    )
 }
 
 #[cfg(test)]

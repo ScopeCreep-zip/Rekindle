@@ -3,19 +3,14 @@
 //! adapter before `f5227664c` and the Host adapter it became), against an
 //! unrelated module, and on small Type-2 cases.
 
+use crate::structural::test_fixture_sources::{
+    LINT_LIST, S5_DESKTOP_DEPS, S5_DESKTOP_SETUP, S5_HOST_DEPS, S5_HOST_SETUP, UNRELATED,
+    VARIANT_LIST, VARIANT_LIST_OTHER,
+};
 use std::collections::BTreeMap;
 
 use super::tokens::{normalise, renamed_hash, Interner, Tok};
 use super::{scan, Finding, THRESHOLDS};
-
-const S5_DESKTOP_DEPS: &str =
-    include_str!("../fixtures/near_duplicates/s5_desktop_deps.rs.fixture");
-const S5_HOST_DEPS: &str = include_str!("../fixtures/near_duplicates/s5_host_deps.rs.fixture");
-const S5_DESKTOP_SETUP: &str =
-    include_str!("../fixtures/near_duplicates/s5_desktop_setup.rs.fixture");
-const S5_HOST_SETUP: &str = include_str!("../fixtures/near_duplicates/s5_host_setup.rs.fixture");
-const UNRELATED: &str =
-    include_str!("../fixtures/near_duplicates/unrelated_quality_cache.rs.fixture");
 
 fn run(pairs: &[(&str, &str)]) -> Vec<Finding> {
     let sources: BTreeMap<String, String> = pairs
@@ -162,5 +157,26 @@ fn paths_attributes_and_literals_normalise() {
     assert_eq!(
         renamed_hash(&toks("#[allow(x)] crate::a::b::call(1, \"s\");")),
         renamed_hash(&toks("other::call(7, \"t\");"))
+    );
+}
+
+/// The ruling after the triage: a lint-attribute list and a variant list
+/// share no logic, and neither do two or-patterns over different enums
+/// (each a consistent renaming of the other): no list matches a list.
+#[test]
+fn lists_never_match() {
+    for (a, b) in [
+        (LINT_LIST, VARIANT_LIST),
+        (VARIANT_LIST, VARIANT_LIST_OTHER),
+    ] {
+        assert!(run(&[("a/list.rs", a), ("b/list.rs", b)]).is_empty());
+    }
+}
+
+#[test]
+fn use_items_normalise_away() {
+    assert_eq!(
+        renamed_hash(&toks("use a::b::{c, d}; let x = f(1);")),
+        renamed_hash(&toks("let x = f(1);"))
     );
 }

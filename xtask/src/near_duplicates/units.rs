@@ -20,12 +20,17 @@ pub(crate) struct FnUnit {
     pub(crate) end: usize,
     /// Its normalised body.
     pub(crate) toks: Vec<Tok>,
+    /// The structural tokens in its body (`crate::structural`).
+    pub(crate) structural: usize,
 }
 
-/// One block's statements, each normalised, inside function `func`.
+/// One block's statements, each normalised, inside function `func`; a
+/// statement that normalises to nothing (a `use` item) is left out.
 pub(crate) struct BlockUnit {
     pub(crate) func: usize,
     pub(crate) stmts: Vec<Vec<Tok>>,
+    /// The structural tokens of each statement.
+    pub(crate) structural: Vec<usize>,
 }
 
 /// A parsed file's units.
@@ -45,11 +50,13 @@ impl Collect<'_> {
     fn enter(&mut self, name: &syn::Ident, block: &syn::Block) {
         let mut toks = Vec::new();
         normalise(block.to_token_stream(), self.int, &mut toks);
+        let structural = self.int.structural(&toks);
         self.units.fns.push(FnUnit {
             name: name.to_string(),
             start: 0,
             end: 0,
             toks,
+            structural,
         });
         self.stack.push(self.units.fns.len() - 1);
     }
@@ -75,7 +82,7 @@ impl<'ast> Visit<'ast> for Collect<'_> {
     }
     fn visit_block(&mut self, b: &'ast syn::Block) {
         if let Some(&func) = self.stack.last() {
-            let stmts = b
+            let stmts: Vec<Vec<Tok>> = b
                 .stmts
                 .iter()
                 .map(|s| {
@@ -83,8 +90,14 @@ impl<'ast> Visit<'ast> for Collect<'_> {
                     normalise(s.to_token_stream(), self.int, &mut toks);
                     toks
                 })
+                .filter(|toks| !toks.is_empty())
                 .collect();
-            self.units.blocks.push(BlockUnit { func, stmts });
+            let structural = stmts.iter().map(|s| self.int.structural(s)).collect();
+            self.units.blocks.push(BlockUnit {
+                func,
+                stmts,
+                structural,
+            });
         }
         visit::visit_block(self, b);
     }

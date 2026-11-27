@@ -18,18 +18,44 @@
 //! silence jscpd (its ignore marker) and any jscpd config file fail the
 //! check, because a marker in source is an allow-list written in source
 //! (research §1.3).
+//!
+//! Scope: first-party code (`crate::first_party`, the lead's ruling of
+//! 2026-11-26 "Item 2 rulings after the triage"); a vendored third-party
+//! crate is outside by that definition.
+//!
+//! Calibration (same ruling): jscpd is fed the stripped form. The scoped
+//! files are mirrored under the report directory, each Rust file with its
+//! `use` items and attributes blanked (`strip.rs`, lines kept), and jscpd
+//! reads only that mirror, so it never sees an import or a lint list. A Rust
+//! clone then counts only when its span in what jscpd read holds at least
+//! `MIN_STRUCTURAL` structural tokens on both sides (`crate::structural`);
+//! the clones under the floor are counted and printed as such, never hidden.
+//! TS/TSX is read as written. Its list class (lead ruling 2026-11-26):
+//! a clone whose two sides, in two different files, are each only
+//! independent single-variable declarations is a list match, the TS form of
+//! the Rust import and lint lists; the same run repeated in one file stays a
+//! finding (a missing object). See `ts_lists.rs`.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{anyhow, Context, Result};
 use serde::Deserialize;
 
-use crate::walk_source_files;
+use crate::first_party::first_party_files;
+use crate::structural::{LexedText, MIN_STRUCTURAL};
+
+mod strip;
+mod ts_lists;
+
+pub(crate) use strip::strip_rust;
 
 /// The trees jscpd scans, and the formats it reads in them.
 const SCAN: [&str; 4] = ["crates", "src-tauri", "xtask", "src"];
 const FORMATS: &str = "rust,typescript,tsx";
+/// The extensions mirrored for jscpd.
+const MIRRORED: [&str; 3] = ["rs", "ts", "tsx"];
 /// jscpd's ignore marker, written split so this file holds no marker.
 const MARKER: &str = concat!("jscpd", ":ignore");
 /// jscpd's config files, which can carry ignores.
@@ -108,28 +134,98 @@ pub(crate) fn refused_suppressions(root: &Path) -> Result<Vec<String>> {
             out.push(format!("{name}: a jscpd config file can carry ignores"));
         }
     }
-    for dir in SCAN {
-        for path in walk_source_files(&root.join(dir), &["rs", "ts", "tsx", "js", "jsx", "css"])? {
-            let rel = path.strip_prefix(root).unwrap_or(&path).display();
-            if path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .is_some_and(|n| CONFIG_FILES.contains(&n))
-            {
-                out.push(format!("{rel}: a jscpd config file can carry ignores"));
-            }
-            let src = std::fs::read_to_string(&path)?;
-            for line in marker_lines(&src) {
-                out.push(format!("{rel}:{line}: jscpd ignore marker"));
-            }
+    for file in first_party_files(root, &SCAN, &["rs", "ts", "tsx", "js", "jsx", "css"])? {
+        let (path, rel) = (&file.path, &file.rel);
+        if path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| CONFIG_FILES.contains(&n))
+        {
+            out.push(format!("{rel}: a jscpd config file can carry ignores"));
+        }
+        let src = std::fs::read_to_string(path)?;
+        for line in marker_lines(&src) {
+            out.push(format!("{rel}:{line}: jscpd ignore marker"));
         }
     }
     Ok(out)
 }
 
-/// Runs jscpd over `paths` (relative to `root`) and returns its clones.
-pub(crate) fn run_jscpd(root: &Path, paths: &[&str], out_dir: &Path) -> Result<Vec<Duplicate>> {
-    let bin = root.join("node_modules/.bin/jscpd");
+/// Mirrors the first-party files of `trees` under `input`, Rust stripped.
+fn mirror(root: &Path, trees: &[&str], input: &Path) -> Result<()> {
+    if input.exists() {
+        std::fs::remove_dir_all(input)?;
+    }
+    for file in first_party_files(root, trees, &MIRRORED)? {
+        let src = std::fs::read_to_string(&file.path)?;
+        let text = if file.path.extension().is_some_and(|e| e == "rs") {
+            strip_rust(&src)
+        } else {
+            src
+        };
+        let dest = input.join(&file.rel);
+        if let Some(parent) = dest.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(dest, text)?;
+    }
+    Ok(())
+}
+
+/// The lines `side` spans in `text`.
+fn span_text(text: &str, side: &Side) -> String {
+    text.lines()
+        .skip(side.start.saturating_sub(1))
+        .take((side.end + 1).saturating_sub(side.start))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Splits the list matches from the clones: a Rust clone under the
+/// structural floor, or a cross-file TS/TSX clone whose sides are both
+/// independent declarations. `input` holds the text jscpd read, under each
+/// clone's (relative) name.
+pub(crate) fn split_lists(
+    input: &Path,
+    dups: Vec<Duplicate>,
+) -> Result<(Vec<Duplicate>, Vec<Duplicate>)> {
+    let mut lexed: HashMap<String, LexedText> = HashMap::new();
+    let mut structural = |side: &Side| -> Result<usize> {
+        if !lexed.contains_key(&side.name) {
+            let src = std::fs::read_to_string(input.join(&side.name))?;
+            lexed.insert(side.name.clone(), LexedText::new(&src));
+        }
+        Ok(lexed[&side.name].structural(side.start, side.end))
+    };
+    let (mut kept, mut under) = (Vec::new(), Vec::new());
+    for d in dups {
+        let list = if d.format == "rust" {
+            structural(&d.first)?.min(structural(&d.second)?) < MIN_STRUCTURAL
+        } else {
+            let decls = |side: &Side| -> Result<bool> {
+                let text = std::fs::read_to_string(input.join(&side.name))?;
+                Ok(ts_lists::independent_declarations(&span_text(&text, side)))
+            };
+            d.first.name != d.second.name && decls(&d.first)? && decls(&d.second)?
+        };
+        if list {
+            under.push(d);
+        } else {
+            kept.push(d);
+        }
+    }
+    Ok((kept, under))
+}
+
+/// Runs the workspace's jscpd over `paths` (relative to `root`, the tree
+/// jscpd reads) and returns its clones, named relative to `root`.
+pub(crate) fn run_jscpd(
+    workspace: &Path,
+    root: &Path,
+    paths: &[&str],
+    out_dir: &Path,
+) -> Result<Vec<Duplicate>> {
+    let bin = workspace.join("node_modules/.bin/jscpd");
     let status = Command::new(&bin)
         .args(["--ignore-identifiers=consistent", "--max-gap-lines", "2"])
         .args([
@@ -147,11 +243,7 @@ pub(crate) fn run_jscpd(root: &Path, paths: &[&str], out_dir: &Path) -> Result<V
             "--report-name",
             "token-clones",
         ])
-        .args([
-            "--ignore",
-            "**/target/**,**/node_modules/**,**/gen/**",
-            "--absolute",
-        ])
+        .arg("--absolute")
         .arg("--output")
         .arg(out_dir)
         .args(paths)
@@ -188,8 +280,16 @@ pub(crate) fn check_token_clones(root: &Path) -> Result<()> {
     }
     let dir = report_dir(root);
     std::fs::create_dir_all(&dir)?;
-    let present: Vec<&str> = SCAN.into_iter().filter(|d| root.join(d).exists()).collect();
-    let dups = run_jscpd(root, &present, &dir)?;
+    let input = dir.join("input");
+    mirror(root, &SCAN, &input)?;
+    let present: Vec<&str> = SCAN
+        .into_iter()
+        .filter(|d| input.join(d).exists())
+        .collect();
+    let (dups, under) = split_lists(&input, run_jscpd(root, &input, &present, &dir)?)?;
+    for d in &under {
+        println!("    list match (not a clone): {d}");
+    }
     let (mut rust, mut ts) = (0usize, 0usize);
     for d in &dups {
         println!("    {d}");
@@ -200,8 +300,9 @@ pub(crate) fn check_token_clones(root: &Path) -> Result<()> {
         }
     }
     println!(
-        "    token-clones: {} clones (rust {rust}, ts/tsx {ts}), {} refused suppressions",
+        "    token-clones: {} clones (rust {rust}, ts/tsx {ts}), {} list matches, {} refused suppressions",
         dups.len(),
+        under.len(),
         refused.len()
     );
     if dups.is_empty() && refused.is_empty() {

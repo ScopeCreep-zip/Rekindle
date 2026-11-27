@@ -1,0 +1,62 @@
+//! An enum's variant list and an or-pattern over it (the triage's
+//! `rekindle-types/src/intent/all.rs:12-22` and `predicates.rs:24-34` shapes).
+
+impl Intent {
+    pub fn all() -> &'static [Intent] {
+        &[
+            Self::SendMessage,
+            Self::EditMessage,
+            Self::DeleteMessage,
+            Self::AddReaction,
+            Self::RemoveReaction,
+            Self::PinMessage,
+            Self::UnpinMessage,
+            Self::CreateThread,
+            Self::ArchiveThread,
+            Self::JoinVoice,
+            Self::LeaveVoice,
+            Self::MuteSelf,
+            Self::DeafenSelf,
+            Self::StartCall,
+            Self::EndCall,
+            Self::AcceptCall,
+            Self::DeclineCall,
+        ]
+    }
+
+    pub fn is_message(self) -> bool {
+        matches!(
+            self,
+            Self::SendMessage
+                | Self::EditMessage
+                | Self::DeleteMessage
+                | Self::AddReaction
+                | Self::RemoveReaction
+                | Self::PinMessage
+                | Self::UnpinMessage
+                | Self::CreateThread
+                | Self::ArchiveThread
+                | Self::JoinVoice
+                | Self::LeaveVoice
+                | Self::MuteSelf
+                | Self::DeafenSelf
+                | Self::StartCall
+                | Self::EndCall
+                | Self::AcceptCall
+                | Self::DeclineCall
+                | Self::SendMessageDraft
+                | Self::EditMessageDraft
+                | Self::DeleteMessageDraft
+                | Self::AddReactionDraft
+                | Self::RemoveReactionDraft
+                | Self::PinMessageDraft
+                | Self::UnpinMessageDraft
+                | Self::CreateThreadDraft
+                | Self::ArchiveThreadDraft
+                | Self::JoinVoiceDraft
+                | Self::LeaveVoiceDraft
+                | Self::MuteSelfDraft
+                | Self::DeafenSelfDraft
+        )
+    }
+}

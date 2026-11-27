@@ -1,0 +1,18 @@
+//! A crate root's lint list (the triage's `rekindle-asql/src/lib.rs:113-123` shape).
+
+#![warn(
+    clippy::pedantic,
+    clippy::nursery,
+    clippy::cargo,
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::todo,
+    clippy::unimplemented,
+    clippy::indexing_slicing,
+    clippy::dbg_macro,
+    clippy::print_stdout,
+    clippy::print_stderr,
+)]
+
+pub mod pool;

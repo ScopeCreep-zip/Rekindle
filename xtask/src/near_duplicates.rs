@@ -17,9 +17,12 @@
 //! - **file pairs**: the Jaccard index of the two files' shingle sets (a
 //!   ported module).
 //!
-//! Scope: every `.rs` file under `crates/`, `src-tauri/` and `xtask/`, tests
-//! included (rule 1 has no test exemption). Generated code lives in
-//! `OUT_DIR`, outside the walked trees. No baseline, no list.
+//! Scope: first-party code (`crate::first_party`, the lead's ruling of
+//! 2026-11-26 "Item 2 rulings after the triage"): every first-party `.rs`
+//! file under `crates/`, `src-tauri/` and `xtask/`, tests included (rule 1
+//! has no test exemption). A vendored third-party crate is outside by that
+//! definition. Generated code lives in `OUT_DIR`, outside the walked trees.
+//! No baseline, no list.
 //!
 //! Calibration (2026-11-26): the floors and thresholds below were set so the
 //! E4.1 S5 voice-adapter port, reproduced from history in
@@ -28,6 +31,12 @@
 //! module and two same-domain modules that are not a port pass. Shingle sizes
 //! 6, 8, 10, 12 and 16 were measured; 12 separates the port from the
 //! same-domain pairs best (≈ 4.7×).
+//!
+//! Calibration (ruling of 2026-11-26 after the triage): `use` items are
+//! dropped with the attributes (`tokens.rs`), and a function, a statement
+//! run or a function feeding a file pair is compared only when it holds at
+//! least `MIN_STRUCTURAL` structural tokens (`crate::structural`), so a list
+//! of paths, variants or lints never matches another list.
 
 use std::collections::BTreeMap;
 use std::fmt;
@@ -35,7 +44,8 @@ use std::path::Path;
 
 use anyhow::{anyhow, Result};
 
-use crate::walk_source_files;
+use crate::first_party::first_party_files;
+use crate::structural::MIN_STRUCTURAL;
 
 mod compare;
 mod tokens;
@@ -52,6 +62,7 @@ pub(crate) struct Thresholds {
     pub(crate) min_run_tokens: usize,
     pub(crate) min_file_shared: usize,
     pub(crate) file_similarity: f64,
+    pub(crate) min_structural: usize,
 }
 
 /// Tokens per shingle window.
@@ -85,6 +96,7 @@ pub(crate) const THRESHOLDS: Thresholds = Thresholds {
     min_run_tokens: MIN_RUN_TOKENS,
     min_file_shared: MIN_FILE_SHARED,
     file_similarity: FILE_SIMILARITY,
+    min_structural: MIN_STRUCTURAL,
 };
 
 /// One side of a clone.
@@ -154,15 +166,8 @@ pub(crate) fn scan(sources: &BTreeMap<String, String>, t: &Thresholds) -> Result
 /// Runs the pass over the workspace's Rust sources.
 pub(crate) fn check_near_duplicates(root: &Path) -> Result<()> {
     let mut sources = BTreeMap::new();
-    for dir in ["crates", "src-tauri", "xtask"] {
-        for path in walk_source_files(&root.join(dir), &["rs"])? {
-            let rel = path
-                .strip_prefix(root)
-                .unwrap_or(&path)
-                .display()
-                .to_string();
-            sources.insert(rel, std::fs::read_to_string(&path)?);
-        }
+    for file in first_party_files(root, &["crates", "src-tauri", "xtask"], &["rs"])? {
+        sources.insert(file.rel, std::fs::read_to_string(&file.path)?);
     }
     let findings = scan(&sources, &THRESHOLDS)?;
     let mut by_kind: BTreeMap<&str, usize> = BTreeMap::new();

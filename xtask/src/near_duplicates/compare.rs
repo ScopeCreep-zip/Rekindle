@@ -74,7 +74,7 @@ pub(crate) fn function_pairs(
     let mut sets: Vec<Vec<u64>> = Vec::new();
     for (f, file) in files.iter().enumerate() {
         for (u, unit) in file.units.fns.iter().enumerate() {
-            if unit.toks.len() >= t.min_fn_tokens {
+            if unit.toks.len() >= t.min_fn_tokens && unit.structural >= t.min_structural {
                 refs.push((f, u));
                 sets.push(shingles(&unit.toks, t.shingle));
             }
@@ -129,12 +129,14 @@ pub(crate) fn statement_runs(
         .flat_map(|(f, file)| (0..file.units.blocks.len()).map(move |b| (f, b)))
         .collect();
     let stmts_of = |g: usize| &files[blocks[g].0].units.blocks[blocks[g].1].stmts;
+    let structural_of = |g: usize| &files[blocks[g].0].units.blocks[blocks[g].1].structural;
     let mut windows: HashMap<u64, Vec<(usize, usize)>> = HashMap::new();
     for g in 0..blocks.len() {
         let stmts = stmts_of(g);
         for i in 0..stmts.len().saturating_sub(t.run_stmts - 1) {
             let run: Vec<Tok> = stmts[i..i + t.run_stmts].concat();
-            if run.len() >= t.min_run_tokens {
+            let structural: usize = structural_of(g)[i..i + t.run_stmts].iter().sum();
+            if run.len() >= t.min_run_tokens && structural >= t.min_structural {
                 windows.entry(renamed_hash(&run)).or_default().push((g, i));
             }
         }
@@ -219,6 +221,7 @@ pub(crate) fn file_pairs(files: &[Parsed], t: &Thresholds, out: &mut Vec<Finding
                 .units
                 .fns
                 .iter()
+                .filter(|u| u.structural >= t.min_structural)
                 .flat_map(|u| shingles(&u.toks, t.shingle))
                 .collect();
             set.sort_unstable();

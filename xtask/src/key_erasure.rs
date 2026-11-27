@@ -14,8 +14,9 @@ use std::path::Path;
 use anyhow::{anyhow, Result};
 use syn::visit::Visit;
 
-use crate::test_code::is_test_attr;
-use crate::walk_source_files;
+use crate::syn_scan::{skip_test_items, verdict, visit};
+
+use crate::walk::{read_files_under, SourcePath};
 
 /// `rekindle_db::erase::KEY_MATERIAL_TABLES`, read from its source so the
 /// two never disagree.
@@ -72,17 +73,7 @@ struct Finder<'a> {
 }
 
 impl<'ast> Visit<'ast> for Finder<'_> {
-    fn visit_item_mod(&mut self, m: &'ast syn::ItemMod) {
-        if !m.attrs.iter().any(is_test_attr) {
-            syn::visit::visit_item_mod(self, m);
-        }
-    }
-
-    fn visit_item_fn(&mut self, f: &'ast syn::ItemFn) {
-        if !f.attrs.iter().any(is_test_attr) {
-            syn::visit::visit_item_fn(self, f);
-        }
-    }
+    skip_test_items!('ast);
 
     fn visit_expr_call(&mut self, call: &'ast syn::ExprCall) {
         if is_erase_delete(&call.func) {
@@ -103,16 +94,15 @@ impl<'ast> Visit<'ast> for Finder<'_> {
 }
 
 fn scan(rel: &str, src: &str, tables: &[String]) -> Vec<String> {
-    let Ok(parsed) = syn::parse_file(src) else {
-        return Vec::new();
-    };
-    let mut finder = Finder {
-        rel,
-        tables,
-        hits: Vec::new(),
-    };
-    finder.visit_file(&parsed);
-    finder.hits
+    visit(
+        src,
+        Finder {
+            rel,
+            tables,
+            hits: Vec::new(),
+        },
+    )
+    .map_or_else(Vec::new, |f| f.hits)
 }
 
 pub(crate) fn check_key_erasure(root: &Path) -> Result<()> {
@@ -127,31 +117,17 @@ pub(crate) fn check_key_erasure(root: &Path) -> Result<()> {
     }
     let mut hits = Vec::new();
     for dir in dirs {
-        for path in walk_source_files(&dir, &["rs"])? {
-            let rel = path
-                .strip_prefix(root)
-                .unwrap_or(&path)
-                .display()
-                .to_string();
+        for (SourcePath { path, rel }, src) in read_files_under(root, &dir, &["rs"])? {
             if tests.is_test(&path) || rel == ERASE_FILE {
                 continue;
             }
-            let Ok(src) = std::fs::read_to_string(&path) else {
-                continue;
-            };
             hits.extend(scan(&rel, &src, &tables));
         }
     }
-    if hits.is_empty() {
-        return Ok(());
-    }
-    for h in &hits {
-        eprintln!("    {h}");
-    }
-    Err(anyhow!(
-        "{} key-material delete(s) outside rekindle_db::erase::delete (threat model I14)",
-        hits.len()
-    ))
+    verdict(
+        &hits,
+        "key-material delete(s) outside rekindle_db::erase::delete (threat model I14)",
+    )
 }
 
 #[cfg(test)]

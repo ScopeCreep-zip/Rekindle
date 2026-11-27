@@ -22,7 +22,9 @@ use anyhow::{anyhow, Result};
 use quote::ToTokens;
 use syn::visit::Visit;
 
-use crate::walk_source_files;
+use crate::syn_scan::{visit, LineCursor};
+
+use crate::walk::{read_files_under, SourcePath};
 
 /// Last path segments that build a subscriber when reached through
 /// `tracing_subscriber`.
@@ -50,8 +52,7 @@ fn is_subscriber_root(path: &syn::Path) -> bool {
 
 struct Finder<'a> {
     rel: &'a str,
-    src: &'a str,
-    cursor: usize,
+    lines: LineCursor<'a>,
     /// A subscriber root seen inside the statement being walked and not
     /// yet claimed by a deeper statement.
     pending_root: bool,
@@ -60,14 +61,7 @@ struct Finder<'a> {
 
 impl Finder<'_> {
     fn hit(&mut self) {
-        let line = match self.src[self.cursor..].find("tracing_subscriber") {
-            Some(at) => {
-                let abs = self.cursor + at;
-                self.cursor = abs + 1;
-                self.src[..abs].matches('\n').count() + 1
-            }
-            None => 0,
-        };
+        let line = self.lines.line("tracing_subscriber");
         self.hits.push(format!(
             "{}:{line}  tracing subscriber built without log_scrub::{WRITER}",
             self.rel
@@ -116,19 +110,16 @@ impl<'ast> Visit<'ast> for Finder<'_> {
 }
 
 fn scan_subscribers(rel: &str, src: &str) -> Vec<String> {
-    // A file that does not parse is cargo's problem to report.
-    let Ok(parsed) = syn::parse_file(src) else {
-        return Vec::new();
-    };
-    let mut finder = Finder {
-        rel,
+    visit(
         src,
-        cursor: 0,
-        pending_root: false,
-        hits: Vec::new(),
-    };
-    finder.visit_file(&parsed);
-    finder.hits
+        Finder {
+            rel,
+            lines: LineCursor::new(src),
+            pending_root: false,
+            hits: Vec::new(),
+        },
+    )
+    .map_or_else(Vec::new, |f| f.hits)
 }
 
 fn calls_panic_hook(tokens: &str) -> bool {
@@ -177,18 +168,10 @@ pub(crate) fn check_log_scrub(root: &Path) -> Result<()> {
     let tests = crate::test_code::TestCode::load(root)?;
     let mut hits = Vec::new();
     for src_dir in package_src_dirs(root)? {
-        for path in walk_source_files(&src_dir, &["rs"])? {
-            let rel = path
-                .strip_prefix(root)
-                .unwrap_or(&path)
-                .display()
-                .to_string();
+        for (SourcePath { path, rel }, src) in read_files_under(root, &src_dir, &["rs"])? {
             if tests.is_test(&path) {
                 continue;
             }
-            let Ok(src) = std::fs::read_to_string(&path) else {
-                continue;
-            };
             hits.extend(scan_subscribers(&rel, &src));
             hits.extend(debug_env::scan(&rel, &src));
             let is_binary =

@@ -28,10 +28,12 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use syn::visit::Visit;
 
-use crate::walk_source_files;
+use crate::syn_scan::{verdict, visit, LineCursor};
+
+use crate::walk::{read_files_under, SourcePath};
 
 /// A Veilid method and the source paths (relative to the workspace root,
 /// prefix match) allowed to call it.
@@ -80,24 +82,14 @@ const RULES: &[Rule] = &[
 
 struct Finder<'a> {
     rel: &'a str,
-    src: &'a str,
-    /// Byte offset past the previous hit's text, so repeated occurrences
-    /// report their own lines (no `span-locations` on proc-macro2).
-    cursor: usize,
+    lines: LineCursor<'a>,
     hits: Vec<String>,
 }
 
 impl Finder<'_> {
     fn hit(&mut self, method: &str, why: &str) {
         let needle = format!(".{method}(");
-        let line = match self.src[self.cursor..].find(&needle) {
-            Some(at) => {
-                let abs = self.cursor + at;
-                self.cursor = abs + needle.len();
-                self.src[..abs].matches('\n').count() + 1
-            }
-            None => 0,
-        };
+        let line = self.lines.line(&needle);
         self.hits
             .push(format!("{}:{line}  .{method}(…) — {why}", self.rel));
     }
@@ -118,18 +110,15 @@ impl<'ast> Visit<'ast> for Finder<'_> {
 }
 
 fn scan(rel: &str, src: &str) -> Vec<String> {
-    // A file that does not parse is cargo's problem to report.
-    let Ok(parsed) = syn::parse_file(src) else {
-        return Vec::new();
-    };
-    let mut finder = Finder {
-        rel,
+    visit(
         src,
-        cursor: 0,
-        hits: Vec::new(),
-    };
-    finder.visit_file(&parsed);
-    finder.hits
+        Finder {
+            rel,
+            lines: LineCursor::new(src),
+            hits: Vec::new(),
+        },
+    )
+    .map_or_else(Vec::new, |f| f.hits)
 }
 
 /// The source directories of every workspace package that depends on
@@ -185,15 +174,7 @@ fn veilid_free_hits(root: &Path) -> Result<Vec<String>> {
                 }
             }
         }
-        for path in walk_source_files(&dir.join("src"), &["rs"])? {
-            let Ok(src) = std::fs::read_to_string(&path) else {
-                continue;
-            };
-            let rel = path
-                .strip_prefix(root)
-                .unwrap_or(&path)
-                .display()
-                .to_string();
+        for (SourcePath { rel, .. }, src) in read_files_under(root, &dir.join("src"), &["rs"])? {
             hits.extend(names_veilid_core(&rel, &src));
         }
     }
@@ -216,28 +197,11 @@ fn names_veilid_core(rel: &str, src: &str) -> Vec<String> {
 pub(crate) fn check_veilid_dht_calls(root: &Path) -> Result<()> {
     let mut hits = veilid_free_hits(root)?;
     for dir in veilid_linked_sources(root)? {
-        for path in walk_source_files(&dir, &["rs"])? {
-            let rel = path
-                .strip_prefix(root)
-                .unwrap_or(&path)
-                .display()
-                .to_string();
-            let Ok(src) = std::fs::read_to_string(&path) else {
-                continue;
-            };
+        for (SourcePath { rel, .. }, src) in read_files_under(root, &dir, &["rs"])? {
             hits.extend(scan(&rel, &src));
         }
     }
-    if hits.is_empty() {
-        return Ok(());
-    }
-    for h in &hits {
-        println!("  ✗ {h}");
-    }
-    Err(anyhow!(
-        "{} Veilid DHT/route call(s) outside their owner, or Veilid in a port crate (plans C7.11, C9.1).",
-        hits.len()
-    ))
+    verdict(&hits, "Veilid DHT/route call(s) outside their owner, or Veilid in a port crate (plans C7.11, C9.1).")
 }
 
 #[cfg(test)]

@@ -15,10 +15,10 @@
 
 use std::path::Path;
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use syn::visit::Visit;
 
-use crate::walk_source_files;
+use crate::syn_scan::{scan_rust_dirs, verdict, visit, LineCursor};
 
 const EMITTER_METHODS: &[&str] = &[
     "emit",
@@ -31,24 +31,13 @@ const EMITTER_METHODS: &[&str] = &[
 
 struct Finder<'a> {
     rel: &'a str,
-    src: &'a str,
-    /// Byte offset past the previous hit's text, so repeated occurrences
-    /// of the same text report their own lines (no `span-locations` on
-    /// proc-macro2; see xtask/Cargo.toml).
-    cursor: usize,
+    lines: LineCursor<'a>,
     hits: Vec<String>,
 }
 
 impl Finder<'_> {
     fn hit(&mut self, needle: &str, what: &str) {
-        let line = match self.src[self.cursor..].find(needle) {
-            Some(at) => {
-                let abs = self.cursor + at;
-                self.cursor = abs + needle.len();
-                self.src[..abs].matches('\n').count() + 1
-            }
-            None => 0,
-        };
+        let line = self.lines.line(needle);
         self.hits.push(format!("{}:{line}  {what}", self.rel));
     }
 }
@@ -87,44 +76,24 @@ impl<'ast> Visit<'ast> for Finder<'_> {
 }
 
 fn scan(rel: &str, src: &str) -> Vec<String> {
-    // A file that does not parse is cargo's problem to report.
-    let Ok(parsed) = syn::parse_file(src) else {
-        return Vec::new();
-    };
-    let mut finder = Finder {
-        rel,
+    visit(
         src,
-        cursor: 0,
-        hits: Vec::new(),
-    };
-    finder.visit_file(&parsed);
-    finder.hits
+        Finder {
+            rel,
+            lines: LineCursor::new(src),
+            hits: Vec::new(),
+        },
+    )
+    .map_or_else(Vec::new, |f| f.hits)
 }
 
 pub(crate) fn check_no_emitter(root: &Path) -> Result<()> {
-    let mut hits = Vec::new();
-    for path in walk_source_files(&root.join("src-tauri/src"), &["rs"])? {
-        let rel = path
-            .strip_prefix(root)
-            .unwrap_or(&path)
-            .display()
-            .to_string();
-        let Ok(src) = std::fs::read_to_string(&path) else {
-            continue;
-        };
-        hits.extend(scan(&rel, &src));
-    }
-    if hits.is_empty() {
-        return Ok(());
-    }
-    for h in &hits {
-        println!("  ✗ {h}");
-    }
-    Err(anyhow!(
-        "{} Tauri Emitter use(s) in src-tauri. Send webview events with \
-         `event_dispatch::{{emit, emit_journaled, emit_subscription, …}}`.",
-        hits.len()
-    ))
+    let hits = scan_rust_dirs(root, &["src-tauri/src"], scan)?;
+    verdict(
+        &hits,
+        "Tauri Emitter use(s) in src-tauri. Send webview events with \
+         `event_dispatch::{emit, emit_journaled, emit_subscription, …}`.",
+    )
 }
 
 #[cfg(test)]
