@@ -169,6 +169,7 @@ const ChannelList: Component<ChannelListProps> = (props) => {
           )}
           {channel.type === "voice" && (
             <button
+              type="button"
               class="channel-voice-join-btn"
               title="Join Voice"
               aria-label={`Join voice channel ${channel.name}`}
@@ -250,6 +251,7 @@ const ChannelList: Component<ChannelListProps> = (props) => {
 
       <Show when={props.canManage && props.onCreateCategory}>
         <button
+          type="button"
           class="channel-create-category-btn"
           onClick={() => props.onCreateCategory?.()}
           title="Create Category"

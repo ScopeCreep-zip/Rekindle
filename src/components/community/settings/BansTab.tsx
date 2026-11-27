@@ -36,6 +36,7 @@ const BansTab: Component<BansTabProps> = (props) => {
                 <span class="settings-list-name">{banned.displayName || banned.pseudonymKey.slice(0, 16)}</span>
               </div>
               <button
+                type="button"
                 class="form-btn-secondary"
                 onClick={() => handleUnban(banned.pseudonymKey)}
               >

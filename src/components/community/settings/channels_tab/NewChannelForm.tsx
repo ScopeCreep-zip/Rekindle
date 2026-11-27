@@ -33,6 +33,7 @@ const NewChannelForm: Component<NewChannelFormProps> = (props) => {
   return (
     <Show when={showNewChannel()} fallback={
       <button
+        type="button"
         class="form-btn-secondary"
         onClick={() => setShowNewChannel(true)}
       >
@@ -62,6 +63,7 @@ const NewChannelForm: Component<NewChannelFormProps> = (props) => {
           <option value="events">Events</option>
         </select>
         <button
+          type="button"
           class="form-btn-primary"
           onClick={handleCreateCh}
           disabled={!newChannelName().trim() || creatingChannel()}
@@ -69,6 +71,7 @@ const NewChannelForm: Component<NewChannelFormProps> = (props) => {
           {creatingChannel() ? "Creating..." : "Create"}
         </button>
         <button
+          type="button"
           class="form-btn-secondary"
           onClick={() => setShowNewChannel(false)}
         >

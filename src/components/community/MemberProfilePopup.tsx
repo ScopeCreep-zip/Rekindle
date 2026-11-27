@@ -302,6 +302,7 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
             )}
           </Show>
           <button
+            type="button"
             class="profile-popup-join-btn"
             disabled={props.member.gameInfo?.joinable !== true}
             aria-describedby={props.member.gameInfo?.joinable === true ? undefined : "profile-popup-join-reason"}
@@ -333,6 +334,7 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
                 const hasRole = () => props.member.roleIds.includes(role.id);
                 return (
                   <button
+                    type="button"
                     class={`profile-popup-self-role-btn ${hasRole() ? "profile-popup-self-role-btn-active" : ""}`}
                     onClick={() => void handleToggleSelfRole(role)}
                     disabled={updatingRoleId() === role.id}
@@ -368,7 +370,7 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
                     per-community profile is independent of your global identity.
                   </div>
                 </Show>
-                <button class="profile-popup-action-btn" onClick={startEditing}>
+                <button type="button" class="profile-popup-action-btn" onClick={startEditing}>
                   Edit profile
                 </button>
               </div>
@@ -507,7 +509,7 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
         </Show>
         <Show when={!isSelf()}>
           <div class="profile-popup-actions">
-            <button class="profile-popup-action-btn" onClick={handleCopyKey}>Copy Key</button>
+            <button type="button" class="profile-popup-action-btn" onClick={handleCopyKey}>Copy Key</button>
           </div>
         </Show>
       </Popover.Content>

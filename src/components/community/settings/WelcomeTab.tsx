@@ -126,6 +126,7 @@ const WelcomeTab: Component<WelcomeTabProps> = (props) => {
               />
             </label>
             <button
+              type="button"
               class="form-btn-secondary"
               onClick={() => setScreen((s) => ({ ...s, channels: s.channels.filter((_, j) => j !== i()) }))}
             >
@@ -135,10 +136,11 @@ const WelcomeTab: Component<WelcomeTabProps> = (props) => {
         )}
       </For>
       <div class="settings-list-actions">
-        <button class="form-btn-secondary" onClick={addEntry} disabled={channels().length === 0}>
+        <button type="button" class="form-btn-secondary" onClick={addEntry} disabled={channels().length === 0}>
           Feature a channel
         </button>
         <button
+          type="button"
           class="form-btn-primary"
           disabled={saving()}
           onClick={() => void save(
@@ -206,6 +208,7 @@ const WelcomeTab: Component<WelcomeTabProps> = (props) => {
       />
       <div class="settings-list-actions">
         <button
+          type="button"
           class="form-btn-primary"
           disabled={saving()}
           onClick={() => void save(

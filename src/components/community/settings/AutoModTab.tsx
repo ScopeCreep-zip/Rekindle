@@ -93,8 +93,8 @@ const AutoModTab: Component<AutoModTabProps> = (props) => {
                     </div>
                   </div>
                   <div class="automod-rule-actions">
-                    <button class="settings-copy-btn" onClick={() => editRule(rule.ruleId)}>Edit</button>
-                    <button class="form-btn-danger automod-rule-delete-btn" onClick={() => void deleteRule(rule.ruleId)}>Delete</button>
+                    <button type="button" class="settings-copy-btn" onClick={() => editRule(rule.ruleId)}>Edit</button>
+                    <button type="button" class="form-btn-danger automod-rule-delete-btn" onClick={() => void deleteRule(rule.ruleId)}>Delete</button>
                   </div>
                 </div>
               </div>
@@ -137,10 +137,10 @@ const AutoModTab: Component<AutoModTabProps> = (props) => {
         <span>Rule enabled</span>
       </label>
       <div class="settings-actions-sticky">
-        <button class="form-btn-primary" onClick={() => void saveRule()} disabled={saving()}>
+        <button type="button" class="form-btn-primary" onClick={() => void saveRule()} disabled={saving()}>
           {saving() ? "Saving..." : editingRuleId() ? "Save Rule" : "Create Rule"}
         </button>
-        <button class="settings-copy-btn" onClick={resetForm}>Clear</button>
+        <button type="button" class="settings-copy-btn" onClick={resetForm}>Clear</button>
       </div>
     </div>
   );

@@ -44,7 +44,7 @@ const ThreadListPanel: Component<ThreadListPanelProps> = (props) => {
       <div class="thread-panel-header">
         <SkinGlyph name="thread" />
         Threads
-        <button class="modal-close-btn" onClick={props.onClose} aria-label="Close threads panel">
+        <button type="button" class="modal-close-btn" onClick={props.onClose} aria-label="Close threads panel">
           <SkinGlyph name="close" />
         </button>
       </div>
@@ -58,12 +58,14 @@ const ThreadListPanel: Component<ThreadListPanelProps> = (props) => {
         />
         <div class="thread-list-sort-row">
           <button
+            type="button"
             class={`event-filter-btn ${sortMode() === "activity" ? "event-filter-active" : ""}`}
             onClick={() => setSortMode("activity")}
           >
             Recent
           </button>
           <button
+            type="button"
             class={`event-filter-btn ${sortMode() === "created" ? "event-filter-active" : ""}`}
             onClick={() => setSortMode("created")}
           >

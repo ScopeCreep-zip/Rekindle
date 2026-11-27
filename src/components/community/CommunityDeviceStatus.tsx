@@ -48,6 +48,7 @@ const CommunityDeviceStatus: Component<{ communityId: string; notice?: boolean }
           {needs() ? "This device can't post here until it is enrolled again." : "This device is enrolled."}
         </span>
         <button
+          type="button"
           class="form-btn-secondary community-device-enrol"
           disabled={!needs() || busy()}
           aria-describedby={reasonId()}

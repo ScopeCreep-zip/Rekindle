@@ -73,6 +73,7 @@ const ThreadPanel: Component<ThreadPanelProps> = (props) => {
             </div>
             <Show when={!thread().archived}>
               <button
+                type="button"
                 class="thread-panel-archive-btn"
                 onClick={() => props.onArchive(props.communityId, thread().id)}
                 title="Archive thread"
@@ -82,6 +83,7 @@ const ThreadPanel: Component<ThreadPanelProps> = (props) => {
               </button>
             </Show>
             <button
+              type="button"
               class="modal-close-btn"
               onClick={props.onClose}
               aria-label="Close thread"
@@ -93,6 +95,7 @@ const ThreadPanel: Component<ThreadPanelProps> = (props) => {
             <div class="thread-panel-archived" role="status">
               <span>This thread is archived. A reply reopens it.</span>
               <button
+                type="button"
                 class="thread-panel-archive-btn"
                 onClick={() => props.onUnarchive(props.communityId, thread().id)}
               >

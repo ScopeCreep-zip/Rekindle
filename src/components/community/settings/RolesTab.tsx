@@ -128,6 +128,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
               <div class="settings-role-actions">
                 <Show when={role.id !== EVERYONE_ROLE_ID}>
                   <button
+                    type="button"
                     class="form-btn-danger"
                     onClick={(e) => { e.stopPropagation(); deleteRole(role.id); }}
                     title="Delete Role"
@@ -196,10 +197,10 @@ const RolesTab: Component<RolesTabProps> = (props) => {
                 />
               </FormField>
               <div class="form-field-row">
-                <button class="form-btn-primary" onClick={handleSaveEditRole} disabled={savingRole()}>
+                <button type="button" class="form-btn-primary" onClick={handleSaveEditRole} disabled={savingRole()}>
                   <SkinGlyph name="save" /> {savingRole() ? "Saving..." : "Save"}
                 </button>
-                <button class="form-btn-secondary" onClick={() => setEditingRoleId(null)} disabled={savingRole()}>
+                <button type="button" class="form-btn-secondary" onClick={() => setEditingRoleId(null)} disabled={savingRole()}>
                   <SkinGlyph name="close" /> Cancel
                 </button>
               </div>
@@ -209,6 +210,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
       </For>
       <Show when={showNewRole()} fallback={
         <button
+          type="button"
           class="form-btn-secondary"
           onClick={() => setShowNewRole(true)}
         >
@@ -275,6 +277,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
           </FormField>
           <div class="form-field-row">
             <button
+              type="button"
               class="form-btn-primary"
               onClick={handleCreateNewRole}
               disabled={!newRoleName().trim() || creatingRole()}
@@ -282,6 +285,7 @@ const RolesTab: Component<RolesTabProps> = (props) => {
               <SkinGlyph name="save" /> {creatingRole() ? "Creating..." : "Create"}
             </button>
             <button
+              type="button"
               class="form-btn-secondary"
               onClick={() => setShowNewRole(false)}
             >

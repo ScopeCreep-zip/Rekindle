@@ -147,7 +147,7 @@ const SecurityTab: Component<SecurityTabProps> = (props) => {
           All members will automatically receive the new key. Messages encrypted
           with previous keys remain readable.
         </div>
-        <button class="form-btn-danger" onClick={confirmRotateKey} disabled={rotating()}>
+        <button type="button" class="form-btn-danger" onClick={confirmRotateKey} disabled={rotating()}>
           <SkinGlyph name="key" /> {rotating() ? "Rotating..." : "Rotate Encryption Key"}
         </button>
       </FormField>
@@ -214,7 +214,7 @@ const SecurityTab: Component<SecurityTabProps> = (props) => {
             disabled={!policyLoaded() || savingPolicy()}
             onInput={(e) => setPolicyText(e.currentTarget.value)}
           />
-          <button class="form-btn-primary" onClick={() => void savePolicy()} disabled={savingPolicy()}>
+          <button type="button" class="form-btn-primary" onClick={() => void savePolicy()} disabled={savingPolicy()}>
             {savingPolicy() ? "Saving..." : "Save policy"}
           </button>
         </FormField>
@@ -230,6 +230,7 @@ const SecurityTab: Component<SecurityTabProps> = (props) => {
             slot to claim.
           </div>
           <button
+            type="button"
             class="form-btn-secondary"
             onClick={() => void expandSegment()}
             disabled={!isHighestSegmentFull() || expanding()}

@@ -25,6 +25,7 @@ const WelcomeScreen: Component<WelcomeScreenProps> = (props) => {
             <For each={props.screen.channels}>
               {(ch) => (
                 <button
+                  type="button"
                   class="welcome-channel-entry"
                   onClick={() => props.onChannelClick(ch.channelId)}
                 >

@@ -127,10 +127,10 @@ const ChannelOverwriteEditor: Component<ChannelOverwriteEditorProps> = (props) =
           </For>
         </div>
         <div class="form-field-row">
-          <button class="form-btn-primary" onClick={handleSaveOverwrite}>
+          <button type="button" class="form-btn-primary" onClick={handleSaveOverwrite}>
             <SkinGlyph name="save" /> Save Overwrite
           </button>
-          <button class="form-btn-danger" onClick={handleDeleteOverwrite}>
+          <button type="button" class="form-btn-danger" onClick={handleDeleteOverwrite}>
             <SkinGlyph name="delete" /> Remove Overwrite
           </button>
         </div>

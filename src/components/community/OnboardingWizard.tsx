@@ -184,6 +184,7 @@ const OnboardingWizard: Component<OnboardingWizardProps> = (props) => {
                         (answers()[q().questionId] || []).includes(opt.optionId);
                       return (
                         <button
+                          type="button"
                           class="onboarding-option"
                           classList={{ selected: selected() }}
                           onClick={() =>
@@ -222,7 +223,7 @@ const OnboardingWizard: Component<OnboardingWizardProps> = (props) => {
 
         <div class="onboarding-wizard-footer">
           <Show when={step() > 0}>
-            <button class="form-btn-secondary" onClick={() => setStep(step() - 1)}>
+            <button type="button" class="form-btn-secondary" onClick={() => setStep(step() - 1)}>
               Back
             </button>
           </Show>

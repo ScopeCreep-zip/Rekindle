@@ -64,7 +64,7 @@ const AuditLogTab: Component<AuditLogTabProps> = (props) => {
         </For>
       </div>
       <Show when={hasMore() && entries().length > 0}>
-        <button class="form-btn-secondary" onClick={loadMore} disabled={loading()}>
+        <button type="button" class="form-btn-secondary" onClick={loadMore} disabled={loading()}>
           {loading() ? "Loading..." : "Load More"}
         </button>
       </Show>

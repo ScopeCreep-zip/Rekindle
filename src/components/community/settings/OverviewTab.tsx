@@ -83,7 +83,7 @@ const OverviewTab: Component<OverviewTabProps> = (props) => {
       <FormField label="Community ID">
         <div class="form-field-row">
           <span class="settings-value settings-value-mono">{props.community.id}</span>
-          <button class="settings-copy-btn" onClick={handleCopyId}>
+          <button type="button" class="settings-copy-btn" onClick={handleCopyId}>
             <SkinGlyph name="copy" /> {copied() ? "Copied" : "Copy"}
           </button>
         </div>
@@ -94,7 +94,7 @@ const OverviewTab: Component<OverviewTabProps> = (props) => {
       <CommunityDeviceStatus communityId={props.community.id} />
       <Show when={props.canManage}>
         <div class="settings-actions-sticky">
-          <button class="form-btn-primary" onClick={handleSaveOverview} disabled={savingOverview()}>
+          <button type="button" class="form-btn-primary" onClick={handleSaveOverview} disabled={savingOverview()}>
             <SkinGlyph name="save" /> {savingOverview() ? "Saving..." : "Save Changes"}
           </button>
         </div>

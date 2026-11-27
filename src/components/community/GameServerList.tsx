@@ -97,6 +97,7 @@ const GameServerList: Component<GameServerListProps> = (props) => {
                     <div class="game-server-address">{server.address}</div>
                   </div>
                   <button
+                    type="button"
                     class="game-server-join-btn"
                     onClick={() => handleJoin(server.gameId, server.address)}
                     title="Connect to server"
@@ -105,6 +106,7 @@ const GameServerList: Component<GameServerListProps> = (props) => {
                   </button>
                   <Show when={props.canManage}>
                     <button
+                      type="button"
                       class="game-server-remove-btn"
                       onClick={() => props.onRemove(props.communityId, server.id)}
                       title="Remove server"
@@ -139,7 +141,7 @@ const GameServerList: Component<GameServerListProps> = (props) => {
             onInput={(e) => setAddAddress(e.currentTarget.value)}
             onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
           />
-          <button class="form-btn-primary" onClick={handleAdd}>Add</button>
+          <button type="button" class="form-btn-primary" onClick={handleAdd}>Add</button>
         </div>
       </Show>
     </div>

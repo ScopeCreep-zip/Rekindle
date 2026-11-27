@@ -120,6 +120,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
             </Show>
           </div>
           <button
+            type="button"
             class="plate-gate-banner-btn"
             disabled={expanding()}
             onClick={() => void onClickExpand()}
@@ -164,6 +165,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
               <div class="settings-member-actions">
                 <Show when={member.outranks && props.canManageRoles}>
                   <button
+                    type="button"
                     class="form-btn-secondary"
                     onClick={() => setRolePickerTarget(
                       rolePickerTarget() === member.pseudonymKey ? null : member.pseudonymKey
@@ -175,6 +177,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
                 <Show when={member.timeoutUntil ? props.canModerate : member.canModerateTarget.timeout}>
                   <Show when={!member.timeoutUntil} fallback={
                     <button
+                      type="button"
                       class="form-btn-secondary"
                       onClick={() => handleRemoveTimeout(props.community.id, member.pseudonymKey)}
                     >
@@ -203,6 +206,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
                 </Show>
                 <Show when={member.canModerateTarget.kick}>
                   <button
+                    type="button"
                     class="form-btn-secondary"
                     onClick={() => kickMember(member)}
                   >
@@ -211,6 +215,7 @@ const MembersTab: Component<MembersTabProps> = (props) => {
                 </Show>
                 <Show when={member.canModerateTarget.ban}>
                   <button
+                    type="button"
                     class="form-btn-danger"
                     onClick={() => banMember(member)}
                   >

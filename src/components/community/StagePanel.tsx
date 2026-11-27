@@ -54,19 +54,20 @@ const StagePanel: Component<StagePanelProps> = (props) => {
           <Show
             when={props.isConnectedToChannel}
             fallback={
-              <button class="stage-panel-join-btn" onClick={props.onJoinStage}>
+              <button type="button" class="stage-panel-join-btn" onClick={props.onJoinStage}>
                 <SkinGlyph name="phone" />
                 Join stage
               </button>
             }
           >
-            <button class="stage-panel-leave-btn" onClick={props.onLeaveStage}>
+            <button type="button" class="stage-panel-leave-btn" onClick={props.onLeaveStage}>
               <SkinGlyph name="speaker.on" />
               Leave stage
             </button>
           </Show>
           <Show when={props.isConnectedToChannel && !isSpeaker() && props.canRequestToSpeak}>
             <button
+              type="button"
               class="stage-panel-request-btn"
               onClick={props.onRequestToSpeak}
               disabled={hasRaisedHand()}
@@ -146,6 +147,7 @@ const StagePanel: Component<StagePanelProps> = (props) => {
                     </div>
                     <div class="stage-panel-request-actions">
                       <button
+                        type="button"
                         class="stage-panel-approve-btn"
                         onClick={() => props.onApproveRequest(requester)}
                         title="Approve request"
@@ -154,6 +156,7 @@ const StagePanel: Component<StagePanelProps> = (props) => {
                         <SkinGlyph name="check" />
                       </button>
                       <button
+                        type="button"
                         class="stage-panel-deny-btn"
                         onClick={() => props.onDenyRequest(requester)}
                         title="Deny request"

@@ -40,6 +40,7 @@ const ExpressionsTab: Component<ExpressionsTabProps> = (props) => {
             <div class="settings-list-item">
               <span>:{x.name}: ({x.kind})</span>
               <button
+                type="button"
                 class="form-btn-danger"
                 aria-label={`Delete ${x.kind} ${x.name}`}
                 onClick={() => void remove(x.id, x.name)}

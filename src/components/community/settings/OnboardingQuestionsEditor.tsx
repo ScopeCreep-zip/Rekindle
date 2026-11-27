@@ -82,7 +82,7 @@ const OnboardingQuestionsEditor: Component<OnboardingQuestionsEditorProps> = (pr
                       )}
                     </For>
                   </fieldset>
-                  <button class="form-btn-secondary" onClick={() => setQ(qi(), { options: q.options.filter((_, j) => j !== oi()) })}>
+                  <button type="button" class="form-btn-secondary" onClick={() => setQ(qi(), { options: q.options.filter((_, j) => j !== oi()) })}>
                     Remove option
                   </button>
                 </div>
@@ -90,6 +90,7 @@ const OnboardingQuestionsEditor: Component<OnboardingQuestionsEditorProps> = (pr
             </For>
             <div class="settings-list-actions">
               <button
+                type="button"
                 class="form-btn-secondary"
                 onClick={() => setQ(qi(), {
                   options: [...q.options, {
@@ -100,6 +101,7 @@ const OnboardingQuestionsEditor: Component<OnboardingQuestionsEditorProps> = (pr
                 Add option
               </button>
               <button
+                type="button"
                 class="form-btn-secondary"
                 onClick={() => props.setFlow((f) => ({ ...f, questions: f.questions.filter((_, j) => j !== qi()) }))}
               >
@@ -110,6 +112,7 @@ const OnboardingQuestionsEditor: Component<OnboardingQuestionsEditorProps> = (pr
         )}
       </For>
       <button
+        type="button"
         class="form-btn-secondary"
         onClick={() => props.setFlow((f) => ({
           ...f,
@@ -146,6 +149,7 @@ const OnboardingQuestionsEditor: Component<OnboardingQuestionsEditorProps> = (pr
               </select>
             </label>
             <button
+              type="button"
               class="form-btn-secondary"
               onClick={() => props.setFlow((f) => ({ ...f, guideSteps: f.guideSteps.filter((_, j) => j !== si()) }))}
             >
@@ -155,6 +159,7 @@ const OnboardingQuestionsEditor: Component<OnboardingQuestionsEditorProps> = (pr
         )}
       </For>
       <button
+          type="button"
           class="form-btn-secondary"
           onClick={() => props.setFlow((f) => ({
             ...f,

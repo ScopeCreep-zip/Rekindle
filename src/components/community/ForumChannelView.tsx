@@ -60,7 +60,7 @@ const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
             </Show>
           </div>
         </div>
-        <button class="forum-channel-new-post-btn" onClick={() => setComposerOpen(true)}>
+        <button type="button" class="forum-channel-new-post-btn" onClick={() => setComposerOpen(true)}>
           <SkinGlyph name="plus" />
           New post
         </button>
@@ -69,6 +69,7 @@ const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
       <Show when={(props.channel.forumTags?.length ?? 0) > 0}>
         <div class="forum-channel-tags">
           <button
+            type="button"
             class={`forum-channel-tag ${activeTag() === null ? "forum-channel-tag-active" : ""}`}
             onClick={() => setActiveTag(null)}
           >
@@ -77,6 +78,7 @@ const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
           <For each={props.channel.forumTags ?? []}>
             {(tag) => (
               <button
+                type="button"
                 class={`forum-channel-tag ${activeTag() === tag ? "forum-channel-tag-active" : ""}`}
                 onClick={() => setActiveTag(tag)}
               >
@@ -91,7 +93,7 @@ const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
         <div class="forum-channel-composer">
           <div class="forum-channel-composer-header">
             <div class="forum-channel-composer-title">Create forum post</div>
-            <button class="forum-channel-composer-close" onClick={() => setComposerOpen(false)}>
+            <button type="button" class="forum-channel-composer-close" onClick={() => setComposerOpen(false)}>
               <SkinGlyph name="close" />
             </button>
           </div>
@@ -122,10 +124,10 @@ const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
             onInput={(e) => setBody(e.currentTarget.value)}
           />
           <div class="forum-channel-composer-actions">
-            <button class="btn btn-secondary" onClick={() => setComposerOpen(false)}>
+            <button type="button" class="btn btn-secondary" onClick={() => setComposerOpen(false)}>
               Cancel
             </button>
-            <button class="btn btn-primary" onClick={() => void handleSubmit()} disabled={isSubmitting()}>
+            <button type="button" class="btn btn-primary" onClick={() => void handleSubmit()} disabled={isSubmitting()}>
               {isSubmitting() ? "Posting..." : "Create post"}
             </button>
           </div>
@@ -141,7 +143,7 @@ const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
         }>
           <For each={visibleThreads()}>
             {(thread) => (
-              <button class="forum-channel-thread-card" onClick={() => props.onOpenThread(thread)}>
+              <button type="button" class="forum-channel-thread-card" onClick={() => props.onOpenThread(thread)}>
                 <div class="forum-channel-thread-topline">
                   <div class="forum-channel-thread-name">{thread.name}</div>
                   <Show when={thread.forumTag}>

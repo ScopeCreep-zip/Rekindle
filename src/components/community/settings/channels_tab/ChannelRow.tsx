@@ -168,6 +168,7 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
         <Show when={props.canManageChannels}>
           <Show when={!renaming()}>
             <button
+              type="button"
               class="form-btn-secondary channel-manage-btn"
               onClick={startRename}
               title="Rename"
@@ -177,6 +178,7 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
           </Show>
           <Show when={renaming()}>
             <button
+              type="button"
               class="form-btn-primary channel-manage-btn"
               onClick={submitRename}
               title="Save"
@@ -185,6 +187,7 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
             </button>
           </Show>
           <button
+            type="button"
             class="form-btn-danger channel-manage-btn"
             onClick={deleteChannel}
             title="Delete"
@@ -192,6 +195,7 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
             <SkinGlyph name="delete" />
           </button>
           <button
+            type="button"
             class="form-btn-secondary channel-manage-btn"
             onClick={() => setShowOverwrite((v) => !v)}
             title="Permissions"
@@ -199,6 +203,7 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
             <SkinGlyph name="perms" />
           </button>
           <button
+            type="button"
             class="form-btn-secondary channel-manage-btn"
             onClick={moveChannelUp}
             disabled={index() === 0}
@@ -207,6 +212,7 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
             <SkinGlyph name="arrow-up" />
           </button>
           <button
+            type="button"
             class="form-btn-secondary channel-manage-btn"
             onClick={moveChannelDown}
             disabled={index() === props.community.channels.length - 1}
@@ -247,6 +253,7 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
                 <span class="channel-slowmode-label">{props.channel.slowmodeSeconds}s slowmode</span>
               </Show>
               <button
+                type="button"
                 class="form-btn-secondary channel-manage-btn"
                 onClick={startEditSlowmode}
                 title="Set Slowmode"
@@ -268,10 +275,10 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
                 }}
                 placeholder="Seconds"
               />
-              <button class="form-btn-primary channel-manage-btn" onClick={submitSlowmode}>
+              <button type="button" class="form-btn-primary channel-manage-btn" onClick={submitSlowmode}>
                 <SkinGlyph name="save" />
               </button>
-              <button class="form-btn-secondary channel-manage-btn" onClick={cancelSlowmode}>
+              <button type="button" class="form-btn-secondary channel-manage-btn" onClick={cancelSlowmode}>
                 Cancel
               </button>
             </span>
@@ -287,6 +294,7 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
                 <span class="channel-topic-label">{props.channel.topic}</span>
               </Show>
               <button
+                type="button"
                 class="form-btn-secondary channel-manage-btn"
                 onClick={startEditTopic}
                 title="Set Topic"
@@ -307,10 +315,10 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
                 }}
                 placeholder="Channel topic..."
               />
-              <button class="form-btn-primary channel-manage-btn" onClick={submitTopic}>
+              <button type="button" class="form-btn-primary channel-manage-btn" onClick={submitTopic}>
                 <SkinGlyph name="save" />
               </button>
-              <button class="form-btn-secondary channel-manage-btn" onClick={cancelTopic}>
+              <button type="button" class="form-btn-secondary channel-manage-btn" onClick={cancelTopic}>
                 Cancel
               </button>
             </span>
@@ -358,6 +366,7 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
                 <span class="channel-topic-label">{props.channel.forumTags?.join(", ")}</span>
               </Show>
               <button
+                type="button"
                 class="form-btn-secondary channel-manage-btn"
                 onClick={startEditForumTags}
                 title="Set Forum Tags"
@@ -378,10 +387,10 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
                 }}
                 placeholder="news, updates, support"
               />
-              <button class="form-btn-primary channel-manage-btn" onClick={submitForumTags}>
+              <button type="button" class="form-btn-primary channel-manage-btn" onClick={submitForumTags}>
                 <SkinGlyph name="save" />
               </button>
-              <button class="form-btn-secondary channel-manage-btn" onClick={cancelForumTags}>
+              <button type="button" class="form-btn-secondary channel-manage-btn" onClick={cancelForumTags}>
                 Cancel
               </button>
             </span>

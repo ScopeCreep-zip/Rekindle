@@ -214,18 +214,21 @@ const ExpressionPicker: Component<ExpressionPickerProps> = (props) => {
     <div class="expression-picker-section">
       <div class="expression-picker-tabs">
         <button
+          type="button"
           class={`expression-picker-tab ${activeTab() === "emoji" ? "expression-picker-tab-active" : ""}`}
           onClick={() => setActiveTab("emoji")}
         >
           Emoji
         </button>
         <button
+          type="button"
           class={`expression-picker-tab ${activeTab() === "sticker" ? "expression-picker-tab-active" : ""}`}
           onClick={() => setActiveTab("sticker")}
         >
           Stickers
         </button>
         <button
+          type="button"
           class={`expression-picker-tab ${activeTab() === "soundboard" ? "expression-picker-tab-active" : ""}`}
           onClick={() => setActiveTab("soundboard")}
         >
@@ -241,7 +244,7 @@ const ExpressionPicker: Component<ExpressionPickerProps> = (props) => {
               : canUpload()
           }
         >
-          <button class="expression-picker-upload-btn" onClick={uploadCurrent}>
+          <button type="button" class="expression-picker-upload-btn" onClick={uploadCurrent}>
             {uploadLabel()}
           </button>
         </Show>
@@ -254,6 +257,7 @@ const ExpressionPicker: Component<ExpressionPickerProps> = (props) => {
           <For each={filtered()}>
             {(expression) => (
               <button
+                type="button"
                 class="emoji-picker-item expression-picker-item"
                 title={
                   expression.kind === "soundboard"

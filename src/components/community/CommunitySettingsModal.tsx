@@ -116,6 +116,7 @@ const CommunitySettingsModal: Component<CommunitySettingsModalProps> = (props) =
         <For each={tabs()}>
           {(tab) => (
             <button
+              type="button"
               class={`form-tab ${activeTab() === tab.id ? "form-tab-active" : ""}`}
               onClick={() => setActiveTab(tab.id)}
             >

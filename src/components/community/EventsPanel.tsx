@@ -98,18 +98,21 @@ const EventCard: Component<{
       <Show when={isInteractable()}>
         <div class="event-rsvp-row">
           <button
+            type="button"
             class={`event-rsvp-btn ${myStatus() === "going" ? "event-rsvp-active" : ""}`}
             onClick={() => handleRsvp("going")}
           >
             Going
           </button>
           <button
+            type="button"
             class={`event-rsvp-btn ${myStatus() === "maybe" ? "event-rsvp-active" : ""}`}
             onClick={() => handleRsvp("maybe")}
           >
             Maybe
           </button>
           <button
+            type="button"
             class={`event-rsvp-btn ${myStatus() === "declined" ? "event-rsvp-active" : ""}`}
             onClick={() => handleRsvp("declined")}
           >
@@ -134,16 +137,16 @@ const EventCard: Component<{
       <Show when={canManage()}>
         <div class="event-card-actions">
           <Show when={isInteractable() && props.onEditEvent}>
-            <button class="form-btn-secondary" onClick={() => props.onEditEvent!(props.event)}>
+            <button type="button" class="form-btn-secondary" onClick={() => props.onEditEvent!(props.event)}>
               Edit
             </button>
           </Show>
           <Show when={isInteractable()}>
-            <button class="form-btn-secondary" onClick={handleCancel}>
+            <button type="button" class="form-btn-secondary" onClick={handleCancel}>
               Cancel Event
             </button>
           </Show>
-          <button class="form-btn-danger" onClick={handleDelete}>
+          <button type="button" class="form-btn-danger" onClick={handleDelete}>
             Delete Event
           </button>
         </div>
@@ -177,30 +180,34 @@ const EventsPanel: Component<EventsPanelProps> = (props) => {
     <div class="event-list">
       <div class="form-row">
         <span class="form-label">Community Events</span>
-        <button class="form-btn-primary" onClick={props.onCreateEvent}>
+        <button type="button" class="form-btn-primary" onClick={props.onCreateEvent}>
           + New Event
         </button>
       </div>
       <div class="event-filter-row">
         <button
+          type="button"
           class={`event-filter-btn ${filter() === "upcoming" ? "event-filter-active" : ""}`}
           onClick={() => setFilter("upcoming")}
         >
           Upcoming
         </button>
         <button
+          type="button"
           class={`event-filter-btn ${filter() === "active" ? "event-filter-active" : ""}`}
           onClick={() => setFilter("active")}
         >
           Active
         </button>
         <button
+          type="button"
           class={`event-filter-btn ${filter() === "past" ? "event-filter-active" : ""}`}
           onClick={() => setFilter("past")}
         >
           Past
         </button>
         <button
+          type="button"
           class={`event-filter-btn ${filter() === "all" ? "event-filter-active" : ""}`}
           onClick={() => setFilter("all")}
         >
