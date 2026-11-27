@@ -15,7 +15,7 @@
 import { multiRemoteBrowser } from "@wdio/globals";
 import type { Browser } from "webdriverio";
 import { NET_WAIT_MS, byText, gone, press, resolveIntent, shown, switchTo, typeInto, waitUntil } from "../../../walk/helpers.ts";
-import { BUDDY, setValue } from "../../../walk/nav.ts";
+import { BUDDY, menu, setValue } from "../../../walk/nav.ts";
 import { joinFromStage, voiceNames } from "../../../walk/rows-voice.ts";
 import { appLogPath, countInLog, RECONCILE_RESENT } from "../../host_log.ts";
 import { createCommunity, createIdentity, createInvite, joinCommunity, newUser, openCommunity, type User } from "../../journeys.ts";
@@ -56,11 +56,11 @@ async function leaveVoice(b: Browser): Promise<void> {
   await gone(b, ".voice-panel", NET_WAIT_MS);
 }
 
-/** `b` quits its app from the buddy list's Rekindle menu (the tray's Quit). */
+/** `b` quits its app from the buddy list's Rekindle menu (the tray's Quit):
+ *  the pack's own menu under a skin, else the app's menu bar. */
 async function quitApp(b: Browser): Promise<void> {
   await switchTo(b, BUDDY);
-  await press(b, await byText(b, ".menu-bar-item", "Rekindle"));
-  await press(b, await byText(b, ".menu-dropdown-item-danger", "Quit"));
+  await menu(b, "Rekindle", "Quit");
 }
 
 describe("voice join, leave and quit reach the roster by beat, both members in real apps (S8-pre)", function () {
