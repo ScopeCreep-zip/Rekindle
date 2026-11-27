@@ -30,7 +30,7 @@ use crate::prekeys::{self, PrekeyKind};
 use crate::repo::unprocessed::{self, UnprocessedKey};
 use crate::repo::{identity_text, signal_identities};
 use crate::Db;
-use rekindle_crypto::signal::prekey_record::Publish;
+use rekindle_crypto::signal::prekey_record::{CodecError, Publish};
 
 mod open;
 mod peek;
@@ -124,7 +124,7 @@ pub enum RatchetError {
     Crypto(#[from] CryptoError),
     /// A prekey record could not be encoded for publication.
     #[error(transparent)]
-    Codec(#[from] rekindle_codec::CodecError),
+    Codec(#[from] CodecError),
     /// A PreKeyInit names a prekey we do not hold: never ours, already
     /// consumed, or past the archive. The init gets a `PreKeyRejected`
     /// when the friend gate admits its sender (plan E2.4 B5).
