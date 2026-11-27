@@ -114,7 +114,8 @@ pub(super) async fn thread_activity<D: ChannelMessagingDeps>(
     thread_id: &str,
     archived_op: Option<&str>,
 ) -> ThreadActivity {
-    let replies = thread_replies(deps, community_id, thread_id).await;
+    let mut replies = thread_replies(deps, community_id, thread_id).await;
+    replies.retain(|(item, _)| item.admission.is_none());
     let last_activity = (replies.iter())
         .map(|(item, _)| item.committed_at / 1000)
         .max()

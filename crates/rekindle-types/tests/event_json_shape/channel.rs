@@ -8,6 +8,7 @@ use crate::{channel, community, id, pk, text, Sample};
 
 pub const NAMES: &[&str] = &[
     "new",
+    "postAdmissionChanged",
     "edited",
     "deleted",
     "channelSendStatus",
@@ -27,6 +28,7 @@ pub const NAMES: &[&str] = &[
 pub fn variant_name(e: &ChannelMessageEvent) -> &'static str {
     match e {
         ChannelMessageEvent::New { .. } => "new",
+        ChannelMessageEvent::PostAdmissionChanged { .. } => "postAdmissionChanged",
         ChannelMessageEvent::Edited { .. } => "edited",
         ChannelMessageEvent::Deleted { .. } => "deleted",
         ChannelMessageEvent::ChannelSendStatus { .. } => "channelSendStatus",
@@ -131,6 +133,15 @@ pub fn samples() -> Vec<Sample> {
                 message_id: id("msg_", '1'),
                 state: rekindle_types::message::SendState::Sent,
                 reason: None,
+            },
+        ),
+        ev(
+            "postAdmissionChanged",
+            ChannelMessageEvent::PostAdmissionChanged {
+                community: community(),
+                stream_id: channel(),
+                thread: false,
+                pending: true,
             },
         ),
         ev(

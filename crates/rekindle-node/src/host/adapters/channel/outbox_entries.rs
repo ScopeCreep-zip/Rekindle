@@ -33,25 +33,59 @@ impl HostChannel {
             return Vec::new();
         };
         let members = (state.members.iter())
-            .map(|(author, member)| (author.clone(), member.member_record.clone(), u64::MAX));
+            .map(|(author, member)| (author.clone(), member.member_record.clone(), false));
         let departed = (state.departed_heads.iter()).filter_map(|(author, heads)| {
             let record = state.op_log_records.get(author)?;
-            let (head, _) = heads.get(record)?.iter().next_back()?;
-            Some((author.clone(), record.clone(), u64::from(*head)))
+            heads.get(record)?;
+            Some((author.clone(), record.clone(), true))
         });
         // In author order, as the catch-up reads (`catch_up_outboxes`).
         let mut authors: Vec<_> = members.chain(departed).collect();
         authors.sort_unstable_by_key(|(author, _, _)| author.0);
+        let thread = ChannelId::from_hex(channel_id)
+            .is_some_and(|id| state.threads.contains_key(&ThreadId(id.0)));
+        let blocked = match self.blocked_members(community_id).await {
+            Ok(blocked) => blocked,
+            Err(error) => {
+                tracing::warn!(community_id, %error, "post author blocks not read");
+                return Vec::new();
+            }
+        };
         let mut entries = Vec::new();
-        for (author, record, through) in authors {
+        for (author, record, departed) in authors {
+            if state.bans.contains(&author) {
+                continue;
+            }
+            let through = if departed {
+                let Some(through) = self
+                    .departed_lookup_through(&*port, community_id, &author, &record)
+                    .await
+                else {
+                    continue;
+                };
+                through
+            } else {
+                u64::MAX
+            };
+            let author_blocked = blocked.contains(&hex::encode(author.0));
             match read_log_after(&*port, &record, OUTBOX, 0).await {
-                Ok(read) => entries.extend(
-                    (read.entries.iter())
-                        .filter(|e| e.seq <= through)
-                        .filter_map(|e| {
-                            self.entry_of_channel(community_id, channel_id, &author, e)
-                        }),
-                ),
+                Ok(read) => {
+                    for entry in read.entries.iter().filter(|entry| entry.seq <= through) {
+                        if let Some(item) = self
+                            .entry_of_channel(
+                                community_id,
+                                channel_id,
+                                &author,
+                                entry,
+                                thread,
+                                author_blocked,
+                            )
+                            .await
+                        {
+                            entries.push(item);
+                        }
+                    }
+                }
                 Err(error) => {
                     tracing::debug!(community_id, record, %error, "channel outbox not read for a lookup");
                 }
@@ -62,12 +96,14 @@ impl HostChannel {
 
     /// `entry` of `author`'s chain, when it verifies and its tag is that of
     /// the stream `channel_id` (a channel or a thread).
-    fn entry_of_channel(
+    async fn entry_of_channel(
         &self,
         community_id: &str,
         channel_id: &str,
         author: &PseudonymKey,
         entry: &rekindle_records::chain::ChainEntry,
+        thread: bool,
+        blocked: bool,
     ) -> Option<OutboxItem> {
         let at = ChainPosition {
             anchor: community_id,
@@ -83,15 +119,65 @@ impl HostChannel {
             decoded.generation,
             &decoded.channel_tag,
         )?;
-        match &decoded.entry {
-            ChannelRecordEntry::Message(m) if m.sender_pseudonym != hex::encode(author.0) => None,
-            _ => Some(OutboxItem {
-                author: author.clone(),
-                stream_seq: decoded.stream_seq,
-                committed_at: decoded.committed_at,
-                entry: decoded.entry,
-            }),
+        let post = match &decoded.entry {
+            ChannelRecordEntry::Message(m) => Some((&m.sender_pseudonym, m.timestamp)),
+            ChannelRecordEntry::Forward(f) => Some((&f.sender_pseudonym, f.timestamp)),
+            _ => None,
+        };
+        let mut admission = None;
+        if let Some((sender, timestamp)) = post {
+            if blocked || sender != &hex::encode(author.0) {
+                return None;
+            }
+            admission = self
+                .post_admission(
+                    community_id,
+                    channel_id,
+                    author,
+                    &decoded.governance_cut,
+                    thread,
+                    timestamp,
+                )
+                .await
+                .inspect_err(|error| {
+                    tracing::warn!(community_id, channel_id, %error, "post cut not read");
+                })
+                .ok()?;
+            if admission.is_some() && !thread {
+                return None;
+            }
         }
+        Some(OutboxItem {
+            author: author.clone(),
+            stream_seq: decoded.stream_seq,
+            committed_at: decoded.committed_at,
+            entry: decoded.entry,
+            admission,
+        })
+    }
+
+    pub(super) fn post_stream_of_tag(
+        &self,
+        community: &str,
+        generation: u64,
+        tag: &[u8; 16],
+    ) -> Option<(String, Option<String>)> {
+        if let Some(channel) = self.channel_of_tag(community, generation, tag) {
+            return Some((channel, None));
+        }
+        let state = self.governance_state(community)?;
+        let keys = self.keys();
+        let threads: Vec<_> = state
+            .threads
+            .iter()
+            .map(|(id, thread)| (hex::encode(id.0), thread.parent_channel_id))
+            .collect();
+        let streams = threads
+            .iter()
+            .map(|(id, parent)| (id.as_str(), keys.scope_for_text(community, *parent)));
+        let matched = stream_of_tag(&*keys, community, streams, generation, tag)?;
+        let (_, parent) = threads.iter().find(|(id, _)| id == matched)?;
+        Some((matched.to_owned(), Some(parent.to_hex())))
     }
 
     /// The text scope of the stream `stream_id`: a channel's own, or a

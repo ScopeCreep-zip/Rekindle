@@ -66,6 +66,7 @@ pub mod origin_reserve;
 pub mod overflow;
 pub mod own_frontier;
 pub mod partial;
+pub mod post_cut;
 pub mod quarantine;
 pub mod rebuild_flight;
 pub(crate) mod records;

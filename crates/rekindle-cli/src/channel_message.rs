@@ -184,7 +184,20 @@ pub fn history_text(view: &ChannelMessageView, names: &HashMap<String, String>) 
     if view.history_gap_through.is_some() {
         return format!("── {sender}: some earlier messages could not be delivered ──");
     }
-    let body = if let Some(by) = &view.removed_by {
+    use rekindle_types::dto::channel_message::{PostAdmission, PostRefusal};
+    let body = if let Some(admission) = view.admission {
+        match admission {
+            PostAdmission::Pending => "(pending governance verification)",
+            PostAdmission::Refused { reason } => match reason {
+                PostRefusal::MissingCut => "(refused: missing governance reference)",
+                PostRefusal::NotMember => "(refused: author was not a member)",
+                PostRefusal::TimedOut => "(refused: author was timed out)",
+                PostRefusal::UnknownStream => "(refused: stream was unknown)",
+                PostRefusal::MissingPermission => "(refused: author lacked permission to post)",
+            },
+        }
+        .to_owned()
+    } else if let Some(by) = &view.removed_by {
         fmt::removed_by(&fmt::member_name(names, by))
     } else if view.decryption_failed {
         "(encrypted — key not yet received)".to_owned()

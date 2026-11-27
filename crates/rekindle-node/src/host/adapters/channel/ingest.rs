@@ -94,7 +94,15 @@ impl HostChannel {
     /// # Errors
     /// No identity is unlocked, or the store failed.
     pub async fn ingest(&self, post: ReceivedPost) -> Result<Ingested, ChannelError> {
-        self.ingest_as(post, false).await
+        self.ingest_as(post, false, false).await
+    }
+
+    pub(super) async fn ingest_authorized(
+        &self,
+        post: ReceivedPost,
+        backfill: bool,
+    ) -> Result<Ingested, ChannelError> {
+        self.ingest_as(post, backfill, true).await
     }
 
     /// [`ingest`](Self::ingest), with `backfill` when the post was read from
@@ -105,10 +113,11 @@ impl HostChannel {
     ///
     /// # Errors
     /// No identity is unlocked, or the store failed.
-    pub(crate) async fn ingest_as(
+    async fn ingest_as(
         &self,
         post: ReceivedPost,
         backfill: bool,
+        causal_timeout_checked: bool,
     ) -> Result<Ingested, ChannelError> {
         if self
             .ctx()
@@ -133,7 +142,13 @@ impl HostChannel {
             return self.store_removed(owner, &db, post, message_id, by).await;
         }
         let community = post.community_id.as_str();
-        let inputs = self.gate_inputs(&owner, &db, community).await?;
+        let mut inputs = self.gate_inputs(&owner, &db, community).await?;
+        if causal_timeout_checked {
+            // This author's timeout was evaluated at the signed cut. D26
+            // still uses the current local block list and departure boundary.
+            let author = PseudonymKey::from_hex_lossy(&post.message.sender_pseudonym);
+            inputs.gov.timeouts.remove(&author);
+        }
         let author = GatedPost {
             community_id: community,
             channel_id: &post.channel_id,

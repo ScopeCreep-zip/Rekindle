@@ -253,6 +253,20 @@ impl HostChannel {
         Standing::Departed(None)
     }
 
+    /// The last chain position a departed author's history can include.
+    pub(super) async fn departed_lookup_through(
+        &self,
+        port: &dyn rekindle_records::port::RecordPort,
+        community: &str,
+        author: &PseudonymKey,
+        record: &str,
+    ) -> Option<u64> {
+        match self.standing(port, community, author, record).await {
+            Standing::Departed(Some(head)) => Some(u64::from(head.seq)),
+            Standing::Member | Standing::Departed(None) => None,
+        }
+    }
+
     /// The channel of `community_id` whose tag under `generation` is
     /// `tag` ([`stream_of_tag`] over every channel of the merged state).
     pub(crate) fn channel_of_tag(
@@ -294,22 +308,23 @@ impl HostChannel {
         };
         self.check_link(read, entry.seq, &decoded);
         let tag = (decoded.generation, &decoded.channel_tag);
-        let channel_id = match self.channel_of_tag(community_id, tag.0, tag.1) {
-            Some(channel_id) => channel_id,
+        let stream = || self.post_stream_of_tag(community_id, tag.0, tag.1);
+        let (channel_id, parent) = match stream() {
+            Some(stream) => stream,
             // A joiner before its first `MekTransfer` (D11, D16), or a
             // reader owed a converged generation's key it does not hold
             // yet: the cursor stays on this entry and the catch-up the key's
             // install starts reads it again (`outbox_hold.rs`).
             None if self.entry_waits_for_key(community_id, tag.0) => return Ok(Held::Pending),
             // Otherwise the entry is of a channel we do not read, from
-            // before our keys, a thread's, or of a channel whose creation
+            // before our keys, or of a stream whose creation
             // has not merged here yet: it passes, and its writer is diffed
             // again when a merge creates a channel (`outbox_unmapped.rs`).
             // Noted before the second look, so a creation merging between
             // the two is either seen here or re-reads the writer.
             None => {
                 self.note_unmapped(community_id, author, read.member_record);
-                let Some(channel_id) = self.channel_of_tag(community_id, tag.0, tag.1) else {
+                let Some(stream) = stream() else {
                     tracing::info!(
                         community_id,
                         seq = entry.seq,
@@ -317,9 +332,12 @@ impl HostChannel {
                     );
                     return Ok(Held::Stored);
                 };
-                channel_id
+                stream
             }
         };
+        if parent.is_some() && !matches!(&decoded.entry, ChannelRecordEntry::Message(_)) {
+            return Ok(Held::Stored);
+        }
         let author_hex = hex::encode(author);
         let (message, forwarded_from_author) = match decoded.entry {
             ChannelRecordEntry::Message(m) => (m, None),
@@ -388,7 +406,37 @@ impl HostChannel {
             message,
             forwarded_from_author,
         };
-        match self.ingest_as(post.clone(), read.backfill).await? {
+        if self
+            .require_channel_permission(
+                community_id,
+                Some(parent.as_deref().unwrap_or(&channel_id)),
+                rekindle_types::permissions::VIEW_CHANNELS,
+            )
+            .is_err()
+        {
+            return Ok(Held::Stored);
+        }
+        let status = self
+            .record_post_admission(
+                &post,
+                &PseudonymKey(*author),
+                &decoded.governance_cut,
+                read.member_record,
+                parent.is_some(),
+            )
+            .await?;
+        if let Some(held) = status {
+            return Ok(held);
+        }
+        if parent.is_some() {
+            self.set_post_admission(&post, read.member_record, None, true)
+                .await?;
+            return Ok(Held::Stored);
+        }
+        let ingested = self.ingest_authorized(post.clone(), read.backfill).await?;
+        self.set_post_admission(&post, read.member_record, None, false)
+            .await?;
+        match ingested {
             // The gate judged the author departed while this read took it
             // as a member: its departure merged after the standing was
             // taken, so the entry was judged without the departure head

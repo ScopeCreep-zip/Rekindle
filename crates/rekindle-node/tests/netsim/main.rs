@@ -22,6 +22,7 @@ mod channel_focus;
 mod channel_move;
 mod channel_outbox_two_channels;
 mod channel_post_both_ways;
+mod channel_post_cut;
 mod co_creators;
 mod code_request_durable;
 mod code_route_silent_death;

@@ -162,6 +162,7 @@ fn sender_reply(
         m.server_message_id.as_deref() == Some(message_id)
             && m.sender_pseudonym.eq_ignore_ascii_case(sender)
             && !m.decryption_failed
+            && m.admission.is_none()
     })
 }
 

@@ -350,6 +350,16 @@
       }
     }
   },
+  "channelMessage.postAdmissionChanged": {
+    "channelMessage": {
+      "postAdmissionChanged": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "pending": true,
+        "streamId": "ch_cccccccccccccccccccccccccccccccc",
+        "thread": false
+      }
+    }
+  },
   "crypto.mekRequested": {
     "crypto": {
       "mekRequested": {

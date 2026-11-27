@@ -139,6 +139,7 @@ fn the_three_outcomes_print_as_the_gui_words_them() {
 
 fn view(body: &str) -> ChannelMessageView {
     ChannelMessageView {
+        admission: None,
         id: 1,
         sender_id: ANN_PSEUDONYM.into(),
         body: body.into(),

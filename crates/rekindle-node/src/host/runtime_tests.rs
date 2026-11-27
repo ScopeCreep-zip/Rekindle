@@ -9,7 +9,8 @@ use crate::host::shell_hooks;
 use rekindle_ipc::{Caller, ConnId, HostApi};
 use rekindle_secrets::ed25519_dalek::SigningKey;
 
-use governance_seed::{meta, seed_governance, signed_chain, CREATOR_RECORD};
+use governance_seed::meta;
+pub(in crate::host) use governance_seed::{seed_governance, signed_chain, CREATOR_RECORD};
 
 #[path = "attachment_limit_tests.rs"]
 mod attachment_limit;

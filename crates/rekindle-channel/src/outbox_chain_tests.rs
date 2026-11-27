@@ -3,6 +3,7 @@ use rekindle_codec::community::channel_record::ChannelDelete;
 
 fn pending(stream_seq: u64, message_id: String) -> PendingEntry {
     PendingEntry {
+        governance_cut: Vec::new(),
         channel_tag: [7; 16],
         stream_seq,
         generation: 1,

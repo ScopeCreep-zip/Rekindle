@@ -206,6 +206,7 @@ async fn a_release_of_waiting_posts_waits_for_the_one_running() {
         .await
         .unwrap();
     let post = rekindle_types::message::ChannelPost {
+        governance_cut: Vec::new(),
         community: "c1".into(),
         channel: SEND_CHANNEL.into(),
         message: "m1".into(),

@@ -85,6 +85,7 @@ fn samples() -> Map<String, Value> {
     add(
         "channel.message",
         to(rekindle_types::dto::channel_message::ChannelMessageView {
+            admission: None,
             id: 7,
             sender_id: pk('b'),
             body: "hello channel".into(),

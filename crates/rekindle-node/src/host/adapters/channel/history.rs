@@ -6,6 +6,7 @@ use rekindle_channel::error::ChannelError;
 use rekindle_channel::history;
 use rekindle_channel::ChannelMessagingDeps;
 use rekindle_db::repo::messages::channel::{self as rows, StoredChannelMessage};
+use rekindle_db::repo::messages::channel_admission::{self, Placeholder};
 use rekindle_types::dto::channel_message::{ChannelMessageView, MessageAttachment};
 use rekindle_types::message::SendState;
 use rekindle_types::permissions;
@@ -46,8 +47,14 @@ impl HostChannel {
         };
         let (key, channel) = (owner.clone(), channel_id.to_string());
         let before_row = before.map(|b| i64::try_from(b).unwrap_or(i64::MAX));
-        let rows = db
-            .call(move |conn| rows::page(conn, &key, &channel, before_row, limit))
+        let community = community_id.to_owned();
+        let (rows, placeholders) = db
+            .call(move |conn| {
+                Ok((
+                    rows::page(conn, &key, &channel, before_row, limit)?,
+                    channel_admission::page(conn, &key, &community, &channel, before_row, limit)?,
+                ))
+            })
             .await
             .map_err(stored)?;
         let mut messages: Vec<ChannelMessageView> = rows
@@ -72,8 +79,63 @@ impl HostChannel {
                 view.poll = (polls.get(&(id.to_owned(), view.sender_id.clone()))).cloned();
             }
         }
-        messages.sort_by_key(|message| message.timestamp);
-        Ok(messages)
+        Ok(with_placeholders(messages, placeholders, false, limit))
+    }
+}
+
+pub(super) fn with_placeholders(
+    mut messages: Vec<ChannelMessageView>,
+    placeholders: Vec<Placeholder>,
+    thread: bool,
+    limit: u32,
+) -> Vec<ChannelMessageView> {
+    if !placeholders.is_empty() {
+        let held: std::collections::HashSet<_> = messages
+            .iter()
+            .filter_map(|view| Some((view.sender_id.clone(), view.server_message_id.clone()?)))
+            .collect();
+        messages.extend(placeholders.into_iter().filter_map(|mut placeholder| {
+            if thread {
+                placeholder.message_id = rekindle_types::thread::thread_reply_key(
+                    &placeholder.sender,
+                    &placeholder.message_id,
+                );
+            }
+            let key = (placeholder.sender.clone(), placeholder.message_id.clone());
+            (!held.contains(&key)).then(|| placeholder_view(placeholder))
+        }));
+    }
+    messages.sort_by_key(|message| message.timestamp);
+    if messages.len() > limit as usize {
+        messages.drain(..messages.len() - limit as usize);
+    }
+    messages
+}
+
+fn placeholder_view(placeholder: Placeholder) -> ChannelMessageView {
+    ChannelMessageView {
+        id: 0,
+        sender_id: placeholder.sender,
+        body: String::new(),
+        admission: Some(placeholder.status),
+        decryption_failed: false,
+        undecryptable: None,
+        automod_blurred: false,
+        timestamp: placeholder.timestamp,
+        is_own: false,
+        server_message_id: Some(placeholder.message_id),
+        reactions: None,
+        pinned: None,
+        poll: None,
+        forwarded_from_author: None,
+        forwarded_from_name: None,
+        attachment: None,
+        flags: 0,
+        send_state: SendState::Delivered,
+        failure_reason: None,
+        edited_at: None,
+        removed_by: None,
+        history_gap_through: None,
     }
 }
 
@@ -96,6 +158,7 @@ pub(crate) fn stored_view(
             chunk_count: record.chunk_count,
         });
     ChannelMessageView {
+        admission: None,
         id: row.id,
         sender_id: row.sender_key,
         body: row.body,

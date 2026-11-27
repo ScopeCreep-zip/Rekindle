@@ -21,6 +21,7 @@ use crate::error::ChannelError;
 /// One entry a drain commits, before its chain position is known.
 #[derive(Debug, Clone)]
 pub struct PendingEntry {
+    pub governance_cut: Vec<rekindle_types::governance::OpRef>,
     pub channel_tag: [u8; CHANNEL_TAG_LEN],
     /// The per-(author, tag) counter assigned when the entry was queued.
     pub stream_seq: u64,
@@ -97,6 +98,7 @@ pub fn seal_batch(
     for p in pending {
         seq += 1;
         let bytes = OutboxEntry {
+            governance_cut: p.governance_cut.clone(),
             prev,
             channel_tag: p.channel_tag,
             stream_seq: p.stream_seq,

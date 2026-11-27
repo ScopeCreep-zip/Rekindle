@@ -48,6 +48,7 @@ pub async fn send_thread_message<D: ChannelMessagingDeps>(
         timestamp: sent_at_ms / 1000,
     };
     let post = ChannelPost {
+        governance_cut: Vec::new(),
         community: community_id.to_owned(),
         channel: thread_id.to_owned(),
         message: sent.message_id.clone(),
@@ -106,11 +107,16 @@ pub async fn load_thread_messages<D: ChannelMessagingDeps>(
         .rev()
         .take(limit.min(200) as usize)
         .map(|(item, message)| {
-            let body = open_thread_body(deps, community_id, scope, thread_id, &item, &message);
+            let body = if item.admission.is_none() {
+                open_thread_body(deps, community_id, scope, thread_id, &item, &message)
+            } else {
+                None
+            };
             ThreadMessageView {
+                admission: item.admission,
                 is_own: message.sender_pseudonym == my_pseudonym,
                 sender_pseudonym: message.sender_pseudonym.clone(),
-                decryption_failed: body.is_none(),
+                decryption_failed: item.admission.is_none() && body.is_none(),
                 body: body.unwrap_or_default(),
                 timestamp_ms: message.timestamp,
                 server_message_id: message.message_id.clone(),

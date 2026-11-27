@@ -14,6 +14,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod admission;
+
 pub mod automod;
 pub mod awaiting_key;
 pub mod changes;

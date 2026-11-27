@@ -85,6 +85,13 @@ pub enum ChannelMessageEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         undecryptable: Option<crate::dto::channel_message::Undecryptable>,
     },
+    /// A causal-admission placeholder changed. Refresh the named history.
+    PostAdmissionChanged {
+        community: String,
+        stream_id: String,
+        thread: bool,
+        pending: bool,
+    },
     /// A message was edited.
     /// Triggered by: an edit entry in its author's record (plan E3.3).
     Edited {

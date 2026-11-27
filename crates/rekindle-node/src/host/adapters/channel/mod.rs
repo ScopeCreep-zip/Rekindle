@@ -22,6 +22,8 @@ use rekindle_records::port::RecordPort;
 use crate::daemon::dispatch::DaemonContext;
 use crate::host::adapters::governance::HostGovernance;
 
+mod admission;
+
 mod blocks;
 pub(crate) mod changes;
 pub mod deps_impl;

@@ -127,6 +127,25 @@ impl From<UndecryptableReason> for Undecryptable {
     }
 }
 
+/// A post whose causal permission check has yet to admit it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum PostAdmission {
+    Pending,
+    Refused { reason: PostRefusal },
+}
+
+/// Why a post did not pass its causal permission check.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PostRefusal {
+    MissingCut,
+    NotMember,
+    TimedOut,
+    UnknownStream,
+    MissingPermission,
+}
+
 /// One channel message.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -136,6 +155,9 @@ pub struct ChannelMessageView {
     /// The sender's pseudonym.
     pub sender_id: String,
     pub body: String,
+    /// Causal admission status, present for placeholders without a body.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub admission: Option<PostAdmission>,
     /// The body did not open under the generation it names: a frontend
     /// must not render `body` as the sender's words.
     #[serde(default)]

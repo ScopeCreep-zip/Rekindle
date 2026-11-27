@@ -7,7 +7,7 @@ use rekindle_secrets::ed25519_dalek::SigningKey;
 use crate::host::Host;
 
 /// The member record the fixture cert names for its creator.
-pub(super) const CREATOR_RECORD: &str = "VLD0:creator-record";
+pub(in crate::host) const CREATOR_RECORD: &str = "VLD0:creator-record";
 
 pub(super) fn meta(name: &str) -> rekindle_types::governance::GovernanceEntry {
     rekindle_types::governance::GovernanceEntry::CommunityMeta {
@@ -21,7 +21,7 @@ pub(super) fn meta(name: &str) -> rekindle_types::governance::GovernanceEntry {
 /// `key`'s op chain in community `anchor`, signed as production signs
 /// it (the restore verifies it): each op cites the one before it, and the
 /// chain lives in `record`.
-pub(super) fn signed_chain(
+pub(in crate::host) fn signed_chain(
     anchor: &str,
     key: &SigningKey,
     record: &str,
@@ -76,7 +76,7 @@ pub(super) fn signed_chain(
 
 /// Pin a cert naming `creator` for Ann's stored `community` and store
 /// `ops` through the Host's op store, as the warm restore reads them.
-pub(super) async fn seed_governance(
+pub(in crate::host) async fn seed_governance(
     host: &Host,
     owner: &str,
     community: &str,

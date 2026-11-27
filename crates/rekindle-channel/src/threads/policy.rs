@@ -42,6 +42,7 @@ pub fn is_thread_archived(
 /// wraps these into the full Message DTO.
 #[derive(Debug, Clone)]
 pub struct ThreadMessageView {
+    pub admission: Option<rekindle_types::dto::channel_message::PostAdmission>,
     pub sender_pseudonym: String,
     pub body: String,
     /// The body did not open under its key generation at its position

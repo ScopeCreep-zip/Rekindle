@@ -29,6 +29,7 @@ fn notice(claimed: &str) -> ControlPayload {
 
 fn view(author: &str, message_id: &str, opened: bool) -> ThreadMessageView {
     ThreadMessageView {
+        admission: None,
         sender_pseudonym: author.into(),
         body: if opened { "hi".into() } else { String::new() },
         decryption_failed: !opened,
