@@ -1,4 +1,4 @@
-import { produce } from "solid-js/store";
+import { produce, reconcile } from "solid-js/store";
 import type { CommunityEvent } from "../../ipc/channels";
 import type {
   CommunitySubscriptionEvent,
@@ -457,7 +457,10 @@ function applyGovernance(g: GovernanceEvent): void {
     const { community, member, denied } = g.effectivePermissionsChanged;
     if (communityState.communities[community]?.myPseudonymKey !== member) return;
     // What we may no longer do, and why (never-hide), straight from the event.
-    if (denied) setCommunityState("communities", community, "denied", denied);
+    // Every denied map is the Host's whole snapshot (it serializes only the
+    // denied actions), so it replaces the old map by reconcile: Solid merges a
+    // plain object set at a path, which would keep a reason the Host dropped.
+    if (denied) setCommunityState("communities", community, "denied", reconcile(denied));
     // Our rank may have moved, so the per-member moderation verdicts too.
     refreshCommunityMembers(community);
     commands
@@ -466,11 +469,11 @@ function applyGovernance(g: GovernanceEvent): void {
         const detail = details.find((d) => d.id === community);
         if (!detail) return;
         setCommunityState("communities", community, "myPermissions", detail.myPermissions);
-        setCommunityState("communities", community, "denied", detail.denied ?? {});
+        setCommunityState("communities", community, "denied", reconcile(detail.denied ?? {}));
         // Each channel's controls, judged with its overwrites (CAPR): re-read
         // with the community's.
         for (const ch of detail.channels) {
-          setCommunityState("communities", community, "channels", (c) => c.id === ch.id, "denied", ch.denied ?? {});
+          setCommunityState("communities", community, "channels", (c) => c.id === ch.id, "denied", reconcile(ch.denied ?? {}));
         }
         setCommunityState(
           "communities",
@@ -510,7 +513,7 @@ function applyGovernance(g: GovernanceEvent): void {
           setCommunityState("communities", community, "myPermissions", detail.myPermissions);
           // A full re-read: the community's denied map and every channel's
           // (carried by transformChannel above) are replaced (CAPR contract).
-          setCommunityState("communities", community, "denied", detail.denied ?? {});
+          setCommunityState("communities", community, "denied", reconcile(detail.denied ?? {}));
           setCommunityState(
             "communities",
             community,
