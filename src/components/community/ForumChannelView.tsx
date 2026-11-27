@@ -1,7 +1,7 @@
 import { Component, For, Show, createMemo, createSignal } from "solid-js";
 import SkinGlyph from "../common/SkinGlyph";
 import type { Channel, Thread } from "../../stores/community.store";
-import { formatRelativeTime } from "../../utils/formatting";
+import { formatRelativeTime, messageCount } from "../../utils/formatting";
 
 interface ForumChannelViewProps {
   channel: Channel;
@@ -151,7 +151,7 @@ const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
                   </Show>
                 </div>
                 <div class="forum-channel-thread-meta">
-                  Started by {props.nameOf(thread.creatorPseudonym)} · {thread.messageCount} messages · {formatRelativeTime(thread.lastMessageAt * 1000)}
+                  Started by {props.nameOf(thread.creatorPseudonym)} · {messageCount(thread.messageCount)} · {formatRelativeTime(thread.lastMessageAt * 1000)}
                 </div>
               </button>
             )}

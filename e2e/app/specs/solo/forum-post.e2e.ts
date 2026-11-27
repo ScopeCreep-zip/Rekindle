@@ -129,6 +129,12 @@ describe("forum post accepted as one request (FT1)", function () {
       `the starter ${id} never turned sent after the key arrived`,
     );
     console.log(`[forum] starter sent ${Math.round((Date.now() - sentFrom) / 1000)} s after the key`);
+    // The sent starter is the thread's one message, so its card counts it in words.
+    await waitUntil(
+      async () => / · 1 message · /.test(await (await byText(browser, ".forum-channel-thread-card", TITLE)).getText()),
+      NET_WAIT_MS,
+      "the post's card never read 1 message",
+    );
     await shot("starter-sent");
   });
 });

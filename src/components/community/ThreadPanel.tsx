@@ -4,6 +4,7 @@ import type { Thread } from "../../stores/community.store";
 import type { Message } from "../../stores/chat.store";
 import MessageBubble from "../chat/MessageBubble";
 import LiveRegion from "../common/LiveRegion";
+import { messageCount } from "../../utils/formatting";
 
 interface ThreadPanelProps {
   thread: Thread | null;
@@ -65,7 +66,7 @@ const ThreadPanel: Component<ThreadPanelProps> = (props) => {
             <div class="thread-panel-title-group">
               <span class="thread-panel-title">{thread().name}</span>
               <div class="thread-panel-meta">
-                Started by {props.nameOf(thread().creatorPseudonym)} · {thread().messageCount} messages
+                Started by {props.nameOf(thread().creatorPseudonym)} · {messageCount(thread().messageCount)}
                 <Show when={thread().lastMessageAt > 0}>
                   {` · last active ${new Date(thread().lastMessageAt * 1000).toLocaleString()}`}
                 </Show>
