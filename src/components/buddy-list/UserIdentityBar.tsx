@@ -76,17 +76,23 @@ const UserIdentityBar: Component = () => {
             />
           }
         >
-          <span class="identity-bar-name" onClick={startEditing} title="Click to edit display name">
+          <button
+            type="button"
+            class="identity-bar-name"
+            onClick={startEditing}
+            title="Click to edit display name"
+          >
             {authState.displayName ?? "Unknown"}
-          </span>
+          </button>
         </Show>
-        <span
+        <button
+          type="button"
           class="identity-bar-key"
           onClick={handleCopyPublicKey}
           title="Click to copy public key"
         >
           {truncatedKey()}
-        </span>
+        </button>
         <Show when={authState.gameInfo}>
           {(game) => (
             <span class="identity-bar-game" title={`Playing ${game().gameName}`}>
@@ -110,13 +116,14 @@ const UserIdentityBar: Component = () => {
           />
         }
       >
-        <div
+        <button
+          type="button"
           class="identity-bar-status-msg"
           onClick={startEditingStatus}
           title="Click to set status message"
         >
           {authState.statusMessage || "Set a status message..."}
-        </div>
+        </button>
       </Show>
     </div>
   );

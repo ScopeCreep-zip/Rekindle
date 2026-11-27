@@ -142,12 +142,6 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
     }
   }
 
-  function handleBubbleClick(): void {
-    if (props.selectable && props.onToggleSelect) {
-      props.onToggleSelect();
-    }
-  }
-
   /** A voice message: the Host decodes its duration and waveform from the
    *  audio (plan E5.1), so nothing is read from the message body. */
   const isVoice = createMemo(
@@ -174,16 +168,18 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
       class={`chat-message message-enter ${props.selectable ? "chat-message-selectable" : ""} ${props.selected ? "chat-message-selected" : ""}`}
       data-message-id={props.message.serverMessageId ?? undefined}
       aria-label={ariaAnnouncement()}
-      onClick={handleBubbleClick}
     >
       <Show when={props.selectable}>
-        <input
-          type="checkbox"
-          class="chat-message-select-checkbox"
-          checked={props.selected ?? false}
-          onChange={() => props.onToggleSelect?.()}
-          onClick={(e) => e.stopPropagation()}
-        />
+        {/* The whole bubble is the checkbox's label: a click anywhere on it selects. */}
+        <label class="chat-message-select-hit">
+          <input
+            type="checkbox"
+            class="chat-message-select-checkbox"
+            aria-label="Select message"
+            checked={props.selected ?? false}
+            onChange={() => props.onToggleSelect?.()}
+          />
+        </label>
       </Show>
       <div class="chat-message-header">
         <span class={senderClass()}>{props.senderName}</span>

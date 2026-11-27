@@ -9,11 +9,16 @@ interface CategoryHeaderProps {
 
 const CategoryHeader: Component<CategoryHeaderProps> = (props) => {
   return (
-    <div class="category-header" onClick={props.onToggle}>
+    <button
+      type="button"
+      class="category-header"
+      aria-expanded={props.isExpanded}
+      onClick={props.onToggle}
+    >
       {/* The category's fold arrow (plan SK17-7a: fold.open / fold.closed). */}
       <SkinGlyph name={props.isExpanded ? "fold.open" : "fold.closed"} class="category-chevron" />
       <span class="category-name">{props.name}</span>
-    </div>
+    </button>
   );
 };
 

@@ -298,7 +298,7 @@ const BuddyList: Component = () => {
   }
 
   return (
-    <ScrollArea class="buddy-list" ref={rovingList(".buddy-item")}>
+    <ScrollArea class="buddy-list" ref={rovingList(".buddy-group-header, .buddy-item")}>
       <Show
         when={hasFriends()}
         fallback={
@@ -316,32 +316,36 @@ const BuddyList: Component = () => {
             </div>
           }
         >
-          <For each={groupNames()}>
-            {(name) => (
-              <BuddyGroup
-                name={name}
-                groupId={groupIdOf(name)}
-                friends={groupedFriends()[name] ?? []}
-                selectedKey={selectedKey()}
-                groupSelected={
-                  name !== AWAITING_RESPONSE &&
-                  selectedGroup()?.groupId === groupIdOf(name) &&
-                  selectedGroup() !== null
-                }
-                onSelectGroup={
-                  name === AWAITING_RESPONSE ? undefined : () => handleSelectGroup(groupIdOf(name))
-                }
-                onDoubleClick={handleDblClick}
-                onSelect={handleSelectFriend}
-                renderItem={(friend, item) => (
-                  <ContextMenu>
-                    <ContextMenu.Trigger as="div">{item}</ContextMenu.Trigger>
-                    {buddyMenu(friend)}
-                  </ContextMenu>
-                )}
-              />
-            )}
-          </For>
+          <div class="buddy-tree" role="tree" aria-label="Friends">
+            <For each={groupNames()}>
+              {(name) => (
+                <BuddyGroup
+                  name={name}
+                  groupId={groupIdOf(name)}
+                  friends={groupedFriends()[name] ?? []}
+                  selectedKey={selectedKey()}
+                  groupSelected={
+                    name !== AWAITING_RESPONSE &&
+                    selectedGroup()?.groupId === groupIdOf(name) &&
+                    selectedGroup() !== null
+                  }
+                  onSelectGroup={
+                    name === AWAITING_RESPONSE
+                      ? undefined
+                      : () => handleSelectGroup(groupIdOf(name))
+                  }
+                  onDoubleClick={handleDblClick}
+                  onSelect={handleSelectFriend}
+                  renderItem={(friend, item) => (
+                    <ContextMenu>
+                      <ContextMenu.Trigger as="div">{item}</ContextMenu.Trigger>
+                      {buddyMenu(friend)}
+                    </ContextMenu>
+                  )}
+                />
+              )}
+            </For>
+          </div>
         </Show>
       </Show>
       <SimpleInputModal

@@ -31,15 +31,16 @@ const ThreadListPanel: Component<ThreadListPanelProps> = (props) => {
   const active = createMemo(() => sortedThreads().filter((t) => !t.archived));
   const archived = createMemo(() => sortedThreads().filter((t) => t.archived));
   const item = (thread: Thread) => (
-    <div
+    <button
+      type="button"
       class={`thread-list-item${thread.archived ? " thread-archived" : ""}`}
       onClick={() => props.onSelectThread(thread.id)}
     >
-      <div class="thread-list-item-name">{thread.name}</div>
-      <div class="thread-list-item-meta">
+      <span class="thread-list-item-name">{thread.name}</span>
+      <span class="thread-list-item-meta">
         {thread.messageCount} messages - {formatRelativeTime(thread.lastMessageAt * 1000)}
-      </div>
-    </div>
+      </span>
+    </button>
   );
 
   return (

@@ -1,21 +1,26 @@
 import { type Component, For } from "solid-js";
 import { removeToast, type Toast, toastState } from "../../stores/toast.store";
 
-/** One toast. Clicking it dismisses it; its action, if any, runs and dismisses. */
+/** One toast. Its message dismisses it; its action, if any, runs and dismisses. */
 const ToastItem: Component<{ toast: Toast }> = (props) => (
   <div
     class={`toast-item toast-${props.toast.type}`}
     classList={{ "toast-with-action": props.toast.action !== undefined }}
-    onClick={() => removeToast(props.toast.id)}
   >
-    <span>{props.toast.message}</span>
+    <button
+      type="button"
+      class="toast-message"
+      aria-description="Dismiss"
+      onClick={() => removeToast(props.toast.id)}
+    >
+      {props.toast.message}
+    </button>
     {props.toast.action && (
       <button
         type="button"
         class="toast-action-button"
         aria-label={props.toast.action.ariaLabel}
-        onClick={(e) => {
-          e.stopPropagation();
+        onClick={() => {
           const action = props.toast.action;
           removeToast(props.toast.id);
           void action?.run();

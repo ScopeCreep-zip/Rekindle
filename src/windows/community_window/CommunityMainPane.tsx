@@ -76,7 +76,8 @@ const CommunityMainPane: Component<{ vm: CommunityVm }> = (props) => {
                       <Show
                         when={vm.editingTopic()}
                         fallback={
-                          <span
+                          <button
+                            type="button"
                             class={`channel-topic ${vm.denied("setTopic") === null ? "channel-topic-editable" : ""}`}
                             title={vm.denied("setTopic") ?? undefined}
                             aria-disabled={vm.denied("setTopic") !== null ? "true" : undefined}
@@ -89,7 +90,7 @@ const CommunityMainPane: Component<{ vm: CommunityVm }> = (props) => {
                             }}
                           >
                             {vm.activeChannel()?.topic || "Set topic..."}
-                          </span>
+                          </button>
                         }
                       >
                         <input

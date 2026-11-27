@@ -160,9 +160,15 @@ const LoginWindow: Component = () => {
           <div class="account-bubble-grid">
             <For each={identities()}>
               {(id) => (
-                <div class="account-bubble" onClick={() => selectAccount(id)}>
-                  <Avatar displayName={id.displayName} size={64} />
-                  <div class="account-bubble-name">{id.displayName}</div>
+                <div class="account-bubble">
+                  <button
+                    type="button"
+                    class="account-bubble-select"
+                    onClick={() => selectAccount(id)}
+                  >
+                    <Avatar displayName={id.displayName} size={64} />
+                    <span class="account-bubble-name">{id.displayName}</span>
+                  </button>
                   <button
                     type="button"
                     class="account-bubble-delete"

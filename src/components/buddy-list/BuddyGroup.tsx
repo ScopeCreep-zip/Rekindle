@@ -34,6 +34,29 @@ const BuddyGroup: Component<BuddyGroupProps> = (props) => {
     setCollapsed(!collapsed());
   }
 
+  /** Clicking the header selects the group and folds or unfolds it. */
+  function activateHeader(): void {
+    props.onSelectGroup?.();
+    handleToggle();
+  }
+
+  // The header is a tree node (APG Treeview): Enter and Space act as a
+  // click, ArrowRight unfolds a folded group and ArrowLeft folds an open
+  // one; ArrowUp/ArrowDown, Home and End move between rows (roving_list).
+  function handleHeaderKeyDown(e: KeyboardEvent): void {
+    if (e.target !== e.currentTarget) return;
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      activateHeader();
+    } else if (e.key === "ArrowRight" && collapsed()) {
+      e.preventDefault();
+      setCollapsed(false);
+    } else if (e.key === "ArrowLeft" && !collapsed()) {
+      e.preventDefault();
+      setCollapsed(true);
+    }
+  }
+
   function handleGroupContextMenu(e: MouseEvent): void {
     e.preventDefault();
     if (props.groupId === null) return;
@@ -75,9 +98,9 @@ const BuddyGroup: Component<BuddyGroupProps> = (props) => {
   const sectionOf = (f: Friend): "Online" | "Offline" =>
     f.status === "offline" ? "Offline" : "Online";
   const section = (f: Friend): Friend[] => (sectionOf(f) === "Online" ? online() : offline());
-  // Each section's label is a heading screen readers can jump between, and
-  // every row is described by its section's label (WCAG 1.3.1: the meaning
-  // the per-section groups gave, kept with one list).
+  // Every row is described by its section's label (WCAG 1.3.1: the meaning
+  // the per-section groups gave, kept with one list); the label is not a
+  // heading, since a tree's children are its nodes.
   const sectionIds = { Online: createUniqueId(), Offline: createUniqueId() };
 
   const renderBuddy = (friend: Friend) =>
@@ -134,11 +157,13 @@ const BuddyGroup: Component<BuddyGroupProps> = (props) => {
         <div
           class="buddy-group-header"
           classList={{ "buddy-group-header-selected": !!props.groupSelected }}
-          aria-current={props.groupSelected ? "true" : undefined}
-          onClick={() => {
-            props.onSelectGroup?.();
-            handleToggle();
-          }}
+          role="treeitem"
+          tabIndex={-1}
+          aria-level={1}
+          aria-expanded={!collapsed()}
+          aria-selected={!!props.groupSelected}
+          onClick={activateHeader}
+          onKeyDown={handleHeaderKeyDown}
           onContextMenu={handleGroupContextMenu}
         >
           <span aria-hidden="true">{collapsed() ? "▶" : "▼"}</span>
@@ -154,12 +179,7 @@ const BuddyGroup: Component<BuddyGroupProps> = (props) => {
               {(friend) => (
                 <div class="buddy-subgroup" data-buddy-section={sectionOf(friend)}>
                   <Show when={section(friend)[0] === friend}>
-                    <div
-                      class="buddy-subgroup-header"
-                      id={sectionIds[sectionOf(friend)]}
-                      role="heading"
-                      aria-level="2"
-                    >
+                    <div class="buddy-subgroup-header" id={sectionIds[sectionOf(friend)]}>
                       {sectionOf(friend)} ({section(friend).length})
                     </div>
                   </Show>

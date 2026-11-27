@@ -134,13 +134,14 @@ const InviteLinkTab: Component<InviteLinkTabProps> = (props) => {
                   {invite.status === "accepted" ? "Responded" : "Waiting"}
                 </span>
                 <Show when={invite.url}>
-                  <span
+                  <button
+                    type="button"
                     class="invite-url-masked"
                     title="Click to copy invite URL"
                     onClick={() => navigator.clipboard.writeText(invite.url)}
                   >
                     {maskInviteUrl(invite.url)}
-                  </span>
+                  </button>
                 </Show>
                 <span class="invite-time">{formatRelativeTime(invite.createdAt)}</span>
                 <span class="invite-time">expires in {formatTimeUntil(invite.expiresAt)}</span>
