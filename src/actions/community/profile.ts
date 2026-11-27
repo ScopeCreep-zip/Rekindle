@@ -2,39 +2,19 @@ import { commands } from "../../ipc/commands";
 import { setCommunityState, communityState } from "../../stores/community.store";
 import { addToast } from "../../stores/toast.store";
 import { decodeBase64ToBytes } from "../../utils/base64";
-import type { WelcomeScreen } from "../../ipc/commands/dto";
+import type { CommunityProfilePatch, WelcomeScreen } from "../../ipc/commands/dto";
 import { isCommandError } from "../../ipc/commands/dto";
 import { errorMessage } from "../../utils/error";
 import { refreshCommunityMembers } from "../../handlers/community/members_refresh";
 
 /**
- * Changes to our card in one community (plan E3.4 S6b): each field `null`
- * keeps it, an empty value clears it (`""` for text, `[]` for badges); a
- * theme colour has no clear form. A partial change never wipes another field.
+ * Send `patch`, our card's edit in one community (plan PF2: each field
+ * unchanged, cleared or set, so a partial change never wipes another field),
+ * then show the card as the Host now holds it.
  */
-export interface ProfileChange {
-  bio: string | null;
-  pronouns: string | null;
-  themeColor: number | null;
-  badges: string[] | null;
-  avatarRef: string | null;
-  bannerRef: string | null;
-  customStatus: string | null;
-}
-
-/** Send `change` (the Host persists our whole card), then show the card as the Host now holds it. */
-export async function handleUpdateCommunityProfile(communityId: string, change: ProfileChange): Promise<boolean> {
+export async function handleUpdateCommunityProfile(communityId: string, patch: CommunityProfilePatch): Promise<boolean> {
   try {
-    await commands.updateCommunityProfile(
-      communityId,
-      change.bio,
-      change.pronouns,
-      change.themeColor,
-      change.badges,
-      change.avatarRef,
-      change.bannerRef,
-      change.customStatus,
-    );
+    await commands.updateCommunityProfile(communityId, patch);
     const detail = (await commands.getCommunityDetails()).find((d) => d.id === communityId);
     if (detail) {
       setCommunityState("communities", communityId, {
@@ -43,11 +23,11 @@ export async function handleUpdateCommunityProfile(communityId: string, change: 
         myThemeColor: detail.myThemeColor ?? null,
         myBadges: detail.myBadges ?? [],
         myCustomStatus: detail.myCustomStatus ?? null,
+        // Our pictures as the Host now holds them (PF2), never from the edit.
+        myAvatarRef: detail.myAvatarRef ?? null,
+        myBannerRef: detail.myBannerRef ?? null,
       });
     }
-    // The view does not carry our avatar and banner refs: an accepted change sets them.
-    if (change.avatarRef !== null) setCommunityState("communities", communityId, "myAvatarRef", change.avatarRef || null);
-    if (change.bannerRef !== null) setCommunityState("communities", communityId, "myBannerRef", change.bannerRef || null);
     // Our own member row is the Host's too.
     refreshCommunityMembers(communityId);
     addToast("Profile updated", "success");
