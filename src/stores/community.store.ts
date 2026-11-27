@@ -1,3 +1,4 @@
+import { batch } from "solid-js";
 import type {
   OpPublicationState,
   OpQuarantineReason,
@@ -228,6 +229,10 @@ export interface Community {
   channels: Channel[];
   categories: Category[];
   members: Member[];
+  /** Whether `members` holds the Host's member list yet (its first
+   *  `get_community_members` answer). Until then the panel claims no count:
+   *  an empty list before the first read is "not known", not "no members". */
+  membersKnown: boolean;
   roles: Role[];
   myRoleIds: string[];
   /** Our base permission bits (decimal u64 string), from the backend's
@@ -363,7 +368,10 @@ export { communityState, setCommunityState };
  * open across the re-reads a join, a rejoin or a role change sets off.
  */
 export function setCommunityMembers(community: string, members: Member[]): void {
-  setCommunityState("communities", community, "members", reconcile(members, { key: "pseudonymKey" }));
+  batch(() => {
+    setCommunityState("communities", community, "members", reconcile(members, { key: "pseudonymKey" }));
+    setCommunityState("communities", community, "membersKnown", true);
+  });
 }
 
 /**

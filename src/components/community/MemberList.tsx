@@ -30,6 +30,8 @@ import {
 
 interface MemberListProps {
   members: Member[];
+  /** Whether `members` is the Host's list yet; until then no count or rows are shown. */
+  known: boolean;
   communityId: string;
   roles: Role[];
   myPseudonymKey: string | null;
@@ -374,8 +376,13 @@ const MemberList: Component<MemberListProps> = (props) => {
       }}
     >
       <div class="member-list-header">
-        Members — {props.members.length}
+        <Show when={props.known} fallback="Members">
+          Members — {props.members.length}
+        </Show>
       </div>
+      <Show when={!props.known}>
+        <div class="member-list-loading" role="status">Loading members…</div>
+      </Show>
       <div class="member-search-wrapper">
         <input
           class="member-search-input"

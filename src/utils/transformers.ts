@@ -215,7 +215,7 @@ export function transformCommunityDetail(c: {
     bannerDataUrl: null,
     channels: c.channels.map(transformChannel),
     categories: c.categories ?? [],
-    members: [], roles: c.roles ?? [],
+    members: [], membersKnown: false, roles: c.roles ?? [],
     myRoleIds: c.myRoleIds ?? [], myPseudonymKey: c.myPseudonymKey ?? null,
     myPermissions: c.myPermissions, myChannelPermissions: c.myChannelPermissions,
     mekGeneration: c.mekGeneration ?? 0,

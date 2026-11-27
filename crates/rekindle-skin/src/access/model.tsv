@@ -472,6 +472,8 @@
 .member-group-header	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .member-list-header	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .member-list-header	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
+.member-list-loading	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
+.member-list-loading	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
 .member-search-input	text	var(--color-xfire-text)	--color-xfire-bg-input	1.0	false
 .mention-popover-row	text	var(--color-xfire-text-primary)	--color-xfire-bg-secondary	1.0	false
 .mention-popover-tag	text	var(--color-xfire-text-dim)	--color-xfire-overlay 8% over --color-xfire-bg-secondary	1.0	false
