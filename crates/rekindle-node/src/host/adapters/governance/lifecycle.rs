@@ -7,9 +7,9 @@ use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance_runtime::deps::CommunityDhtOpenSetup;
 use rekindle_governance_runtime::GovernanceRuntimeError;
-use rekindle_types::id::PseudonymKey;
+use rekindle_types::id::ChannelId;
 
-use super::HostGovernance;
+use super::{capability_words, HostGovernance};
 
 /// The shortest wait before a post-rebuild follow-up's turn.
 const FOLLOW_UP_DELAY_MIN: std::time::Duration = std::time::Duration::from_secs(2);
@@ -77,50 +77,38 @@ impl HostGovernance {
 
     // ---------- Permissions ----------
 
-    /// Reader-validates permission check against the merged CRDT state.
-    ///
-    /// No privileged shortcut for the daemon: it computes its own
-    /// effective permissions exactly as any other peer would, from the
-    /// governance state, and denies when the bits are absent. A daemon
-    /// that trusted itself here would be a privileged node, which is the
-    /// thing v2.0 removed.
+    /// Check the Host's merged permissions and word any refusal using CAPR.
+    pub(crate) fn require_own_permissions(
+        &self,
+        community_id: &str,
+        channel: Option<&ChannelId>,
+        required: u64,
+    ) -> Result<(), String> {
+        let communities = self.ctx.communities.map().read();
+        let community = communities.get(community_id);
+        let state = community
+            .and_then(|c| c.governance_state.as_ref())
+            .ok_or(capability_words::NOT_LOADED)?;
+        let member = community
+            .and_then(|c| c.my_pseudonym_key.as_deref())
+            .and_then(capability_words::joined_pseudonym)
+            .ok_or(capability_words::JOIN_UNFINISHED)?;
+        capability_words::require_permissions(
+            &member,
+            channel,
+            state,
+            self.ctx.clock.now_secs(),
+            required,
+        )
+    }
+
     pub(super) fn require_permission_impl(
         &self,
         community_id: &str,
-        perm_bits: u64,
+        required: u64,
     ) -> Result<(), GovernanceRuntimeError> {
-        let Some(state) = self.governance_state_impl(community_id) else {
-            return Err(GovernanceRuntimeError::Adapter(
-                "governance state not loaded for permission check".into(),
-            ));
-        };
-        let Some(membership) = self.community_membership_impl(community_id) else {
-            return Err(GovernanceRuntimeError::Adapter(
-                "not a member of this community".into(),
-            ));
-        };
-        let Some(pseudonym_hex) = membership.my_pseudonym_hex else {
-            return Err(GovernanceRuntimeError::Adapter(
-                "no pseudonym for this community".into(),
-            ));
-        };
-        let pseudonym_bytes: [u8; 32] = hex::decode(&pseudonym_hex)
-            .ok()
-            .and_then(|b| b.try_into().ok())
-            .ok_or_else(|| GovernanceRuntimeError::Adapter("invalid pseudonym hex".into()))?;
-        let pseudonym = PseudonymKey(pseudonym_bytes);
-
-        let effective = rekindle_governance::permissions::compute_permissions(
-            &pseudonym,
-            None,
-            &state,
-            self.ctx.clock.now_secs(),
-        );
-        if rekindle_governance::permissions::has_capability(effective, perm_bits) {
-            Ok(())
-        } else {
-            Err(GovernanceRuntimeError::PermissionDenied)
-        }
+        self.require_own_permissions(community_id, None, required)
+            .map_err(GovernanceRuntimeError::PermissionRequired)
     }
 
     // ---------- Join flow ----------

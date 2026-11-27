@@ -249,11 +249,6 @@ impl GovernanceRuntimeDeps for HostGovernance {
         community_id: &str,
         perm_bits: u64,
     ) -> Result<(), GovernanceRuntimeError> {
-        if let Some(shell) = &self.ctx.shell {
-            return shell
-                .require_permission(community_id, perm_bits)
-                .map_err(|_| GovernanceRuntimeError::PermissionDenied);
-        }
         self.require_permission_impl(community_id, perm_bits)
     }
 
