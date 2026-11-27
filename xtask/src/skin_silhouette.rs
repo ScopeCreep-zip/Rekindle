@@ -22,15 +22,15 @@ use anyhow::{anyhow, Context, Result};
 use clap::Args as ClapArgs;
 use serde::Serialize;
 
-use rekindle_skin::builtin::PACKS;
 use rekindle_skin::serve::frames;
 use rekindle_skin::shape::{content_area, silhouette, Area, Mask, ALPHA_OPAQUE};
+use rekindle_skin::{builtin, conform};
 use rekindle_types::dto::skin::SkinWindow;
 
 /// `cargo xtask skin-silhouette`'s arguments.
 #[derive(ClapArgs)]
 pub(crate) struct Args {
-    /// The pack id in `rekindle_skin::builtin::PACKS` (`xfire-classic`).
+    /// The built-in skin id without its prefix (`xfire-classic` or `symbiosis-access`).
     #[arg(long)]
     pack: String,
     /// The frame: `main` (the buddy list) or `chat`.
@@ -98,13 +98,16 @@ pub(crate) fn skin_silhouette(args: &Args) -> Result<()> {
     } = args;
     let (width, height, scale) = (*width, *height, *scale);
     let wanted = frame(window)?;
-    let builtin = PACKS
-        .iter()
-        .find(|b| b.id == pack)
+    let id = format!("{}{pack}", builtin::PREFIX);
+    let (_, pack_bytes) = builtin::find(conform::pack_id(&id))
         .ok_or_else(|| anyhow!("no built-in pack {pack:?} in rekindle_skin::builtin::PACKS"))?;
-    let address = blake3::hash(builtin.bytes).to_hex();
+    let address = if id == conform::ID {
+        conform::address().to_owned()
+    } else {
+        blake3::hash(pack_bytes.bytes).to_hex().to_string()
+    };
     let windows =
-        frames(builtin.bytes, address.as_str()).with_context(|| format!("frames of {pack}"))?;
+        frames(pack_bytes.bytes, &address).with_context(|| format!("frames of {pack}"))?;
     let mut content = None;
     let rects = match windows.into_iter().find(|w| w.window == wanted) {
         None => None,

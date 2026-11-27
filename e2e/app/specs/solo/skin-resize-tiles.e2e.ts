@@ -41,13 +41,14 @@ async function builtinPacks(): Promise<{ name: string; file: string }[]> {
     const { invoke } = (
       window as unknown as {
         __TAURI_INTERNALS__: {
-          invoke(cmd: string): Promise<{ skins: { id: string; name: string }[] }>;
+          invoke(cmd: string): Promise<{ value: { skins: { id: string; name: string }[] } }>;
         };
       }
     ).__TAURI_INTERNALS__;
     return invoke("list_skins");
-  })) as { skins: { id: string; name: string }[] };
-  return library.skins
+  })) as { value: { skins: { id: string; name: string }[] } };
+  // A Host call answers `Done { value, undo }` (dto/command.rs).
+  return library.value.skins
     .filter((s) => s.id.startsWith("builtin:"))
     .map((s) => ({ name: s.name, file: s.id.slice("builtin:".length) }));
 }
@@ -179,60 +180,75 @@ describe("a pack's tiles join at its minimum and when resized larger (SKC4c)", f
   it("every built-in pack: edges match the silhouette and no art is painted twice, at both sizes", async () => {
     await createIdentity(browser, ada);
     const packs = await builtinPacks();
-    console.log(`[resize-tiles] built-in packs: ${packs.map((p) => p.file).join(", ")}`);
+    console.log(
+      `[resize-tiles] built-in packs (${packs.length}): ${packs.map((p) => p.file).join(", ")}`
+    );
     expect(packs.length).toBeGreaterThan(0);
     const faults: string[] = [];
+    // A pack counts as walked only once both sizes were measured: an empty or
+    // short walk must fail, never pass with nothing checked.
+    const walked: string[] = [];
     for (const pack of packs) {
-      // Squeezed below any pack's minimum first: applying the pack grows the
-      // window to the minimum the Host serves for it (window-fit; macOS does
-      // not clamp WebDriver's resize, and a window squeezed after the skin is
-      // applied is not grown back until a skin is applied again).
-      await switchTo(browser, BUDDY);
-      await browser.setWindowSize(200, 300);
-      await openSettings(browser, "Appearance");
-      const href = await applySkin(browser, ada, pack.name);
-      await switchTo(browser, BUDDY);
-      await skinShown(browser, href);
-      const min = await settledSize();
-      if (min[0] <= 200 || min[1] <= 300)
-        faults.push(`${pack.name}: the window never grew to its minimum (${min.join("x")})`);
-      const sizes: [string, () => Promise<void>][] = [
-        ["minimum", async () => undefined],
-        ["larger", async () => browser.setWindowSize(min[0] + 160, min[1] + 120)],
-      ];
-      for (const [label, resize] of sizes) {
-        await resize();
-        const [w, h] = await settledSize();
-        const img = decodePng(Buffer.from(await browser.takeScreenshot(), "base64"));
-        const scale = img.width / w;
-        const cut = silhouette(pack.file, "main", w, h, Math.round(scale * 1000));
-        const edge = Math.round(16 * scale);
-        const off = disagreements(
-          img,
-          cut,
-          [
-            [0, edge],
-            [img.width - edge, img.width],
-          ],
-          12,
-          [
-            [0, edge],
-            [img.height - edge, img.height],
-          ]
+      try {
+        // Squeezed below any pack's minimum first: applying the pack grows the
+        // window to the minimum the Host serves for it (window-fit; macOS does
+        // not clamp WebDriver's resize, and a window squeezed after the skin is
+        // applied is not grown back until a skin is applied again).
+        await switchTo(browser, BUDDY);
+        await browser.setWindowSize(200, 300);
+        await openSettings(browser, "Appearance");
+        const href = await applySkin(browser, ada, pack.name);
+        await switchTo(browser, BUDDY);
+        await skinShown(browser, href);
+        const min = await settledSize();
+        if (min[0] <= 200 || min[1] <= 300)
+          faults.push(`${pack.name}: the window never grew to its minimum (${min.join("x")})`);
+        const sizes: [string, () => Promise<void>][] = [
+          ["minimum", async () => undefined],
+          ["larger", async () => browser.setWindowSize(min[0] + 160, min[1] + 120)],
+        ];
+        for (const [label, resize] of sizes) {
+          await resize();
+          const [w, h] = await settledSize();
+          const img = decodePng(Buffer.from(await browser.takeScreenshot(), "base64"));
+          const scale = img.width / w;
+          const cut = silhouette(pack.file, "main", w, h, Math.round(scale * 1000));
+          const edge = Math.round(16 * scale);
+          const off = disagreements(
+            img,
+            cut,
+            [
+              [0, edge],
+              [img.width - edge, img.width],
+            ],
+            12,
+            [
+              [0, edge],
+              [img.height - edge, img.height],
+            ]
+          );
+          const doubled = await doubledArt();
+          const twice = await frameRepeatsTreeArt();
+          console.log(
+            `[resize-tiles] ${pack.name} ${label} ${w}x${h}: edges drawn outside ${off.outsideDrawn}, clear inside ${off.insideClear} ${JSON.stringify(off.first)}; doubled art ${JSON.stringify(doubled)}; frame tiles repeating tree art ${JSON.stringify(twice)}`
+          );
+          await shot(`${pack.file}-${label}`);
+          if (off.outsideDrawn + off.insideClear > 0)
+            faults.push(`${pack.name} ${label}: edges ${off.outsideDrawn}/${off.insideClear}`);
+          if (doubled.length > 0)
+            faults.push(`${pack.name} ${label}: doubled ${doubled.join(", ")}`);
+          if (twice.length > 0)
+            faults.push(`${pack.name} ${label}: frame tiles repeat tree art: ${twice.join(", ")}`);
+        }
+        walked.push(pack.file);
+      } catch (e) {
+        faults.push(
+          `${pack.file}: not walked: ${(e instanceof Error ? e.message : String(e)).split("\n")[0]}`
         );
-        const doubled = await doubledArt();
-        const twice = await frameRepeatsTreeArt();
-        console.log(
-          `[resize-tiles] ${pack.name} ${label} ${w}x${h}: edges drawn outside ${off.outsideDrawn}, clear inside ${off.insideClear} ${JSON.stringify(off.first)}; doubled art ${JSON.stringify(doubled)}; frame tiles repeating tree art ${JSON.stringify(twice)}`
-        );
-        await shot(`${pack.file}-${label}`);
-        if (off.outsideDrawn + off.insideClear > 0)
-          faults.push(`${pack.name} ${label}: edges ${off.outsideDrawn}/${off.insideClear}`);
-        if (doubled.length > 0) faults.push(`${pack.name} ${label}: doubled ${doubled.join(", ")}`);
-        if (twice.length > 0)
-          faults.push(`${pack.name} ${label}: frame tiles repeat tree art: ${twice.join(", ")}`);
       }
     }
+    console.log(`[resize-tiles] walked ${walked.length} of ${packs.length}: ${walked.join(", ")}`);
     expect(faults).toEqual([]);
+    expect(walked).toEqual(packs.map((p) => p.file));
   });
 });
