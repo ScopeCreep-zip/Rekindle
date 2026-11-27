@@ -465,19 +465,26 @@ export async function peerCreateRole(peer: Peer, anchor: string, name: string, p
   return id;
 }
 
-/** `peer` gives member `member` (pseudonym or display name) role `roleId` in community `anchor`. */
-export async function peerAssignRole(peer: Peer, anchor: string, member: string, roleId: string): Promise<void> {
-  await peerReviewed(peer, ["community", "role", "assign", "--community", anchor, "--member", member, "--role-id", roleId]);
+/** The CLI's member commands take the member's 64-hex pseudonym (the
+ *  daemon refuses a display name: "invalid member pseudonym"). */
+function memberKey(member: string): string {
+  if (!/^[0-9a-f]{64}$/i.test(member)) throw new Error(`--member takes a member's 64-hex pseudonym, not "${member}"`);
+  return member;
 }
 
-/** `peer` bans member `member` (pseudonym or display name) from community `anchor`. */
+/** `peer` gives member `member` (its 64-hex pseudonym) role `roleId` in community `anchor`. */
+export async function peerAssignRole(peer: Peer, anchor: string, member: string, roleId: string): Promise<void> {
+  await peerReviewed(peer, ["community", "role", "assign", "--community", anchor, "--member", memberKey(member), "--role-id", roleId]);
+}
+
+/** `peer` bans member `member` (its 64-hex pseudonym) from community `anchor`. */
 export async function peerBan(peer: Peer, anchor: string, member: string): Promise<void> {
-  await peerReviewed(peer, ["community", "ban", "--community", anchor, "--member", member]);
+  await peerReviewed(peer, ["community", "ban", "--community", anchor, "--member", memberKey(member)]);
 }
 
 /** `peer` takes role `roleId` back from member `member` in community `anchor`. */
 export async function peerUnassignRole(peer: Peer, anchor: string, member: string, roleId: string): Promise<void> {
-  await peerReviewed(peer, ["community", "role", "unassign", "--community", anchor, "--member", member, "--role-id", roleId]);
+  await peerReviewed(peer, ["community", "role", "unassign", "--community", anchor, "--member", memberKey(member), "--role-id", roleId]);
 }
 
 /** `peer` sends `text` to group `groupId` as a reply to the message whose client id is `replyTo` (CLI `--reply-to`, plan G-replies). */
@@ -485,9 +492,9 @@ export async function peerReplyGroup(peer: Peer, groupId: string, text: string, 
   await peer.cli(["group", "send", groupId, text, "--reply-to", replyTo]);
 }
 
-/** `peer` kicks member `member` (pseudonym or display name) from community `anchor`. */
+/** `peer` kicks member `member` (its 64-hex pseudonym) from community `anchor`. */
 export async function peerKick(peer: Peer, anchor: string, member: string): Promise<void> {
-  await peerReviewed(peer, ["community", "kick", "--community", anchor, "--member", member]);
+  await peerReviewed(peer, ["community", "kick", "--community", anchor, "--member", memberKey(member)]);
 }
 
 /** `peer` posts `text` in channel `channel` of community `community` (names or keys). */

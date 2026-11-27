@@ -4,6 +4,14 @@
 
 use serde::{Deserialize, Serialize};
 
+/// The reply id exposed to readers within a thread. The verified author
+/// is a hex pseudonym, so the first colon unambiguously separates it from
+/// the author-chosen wire id.
+#[must_use]
+pub fn thread_reply_key(author: &str, message_id: &str) -> String {
+    format!("{author}:{message_id}")
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ThreadInfo {
@@ -29,26 +37,5 @@ pub struct ThreadInfo {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn thread_info_roundtrip() {
-        let t = ThreadInfo {
-            id: "thr_abcdef".into(),
-            channel_id: "ch_123".into(),
-            name: "design".into(),
-            starter_message_id: "msg_xyz".into(),
-            creator_pseudonym: "abcd".into(),
-            forum_tag: Some("question".into()),
-            created_at: 100,
-            archived: false,
-            auto_archive_seconds: 86_400,
-            last_message_at: 200,
-            message_count: 7,
-        };
-        let json = serde_json::to_string(&t).unwrap();
-        let back: ThreadInfo = serde_json::from_str(&json).unwrap();
-        assert_eq!(t, back);
-    }
-}
+#[path = "thread_tests.rs"]
+mod tests;

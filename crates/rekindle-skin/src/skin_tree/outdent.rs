@@ -215,7 +215,11 @@ fn cut_art(
         }
         return Ok(None);
     }
-    Ok(Some(NodeArt { normal, states }))
+    Ok(Some(NodeArt {
+        normal,
+        states,
+        refused: None,
+    }))
 }
 
 /// Moves `n` inside its parent on each stretched axis an outdent lays past

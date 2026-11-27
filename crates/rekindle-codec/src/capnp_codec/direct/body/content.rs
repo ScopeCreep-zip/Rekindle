@@ -33,13 +33,14 @@ pub struct DmAck {
 }
 
 impl DmAck {
-    pub(super) fn write(&self, mut b: dm_ack::Builder<'_>) {
+    pub(super) fn write(&self, mut b: dm_ack::Builder<'_>) -> Result<(), CodecError> {
         b.set_through(self.through);
         let mut seqs =
-            b.init_stream_seqs(u32::try_from(self.stream_seqs.len()).unwrap_or(u32::MAX));
+            b.init_stream_seqs(crate::capnp_codec::wire_len(self.stream_seqs.len())?);
         for (i, seq) in (0u32..).zip(&self.stream_seqs) {
             seqs.set(i, *seq);
         }
+        Ok(())
     }
 
     pub(super) fn read(r: dm_ack::Reader<'_>) -> Result<Self, CodecError> {
@@ -243,29 +244,5 @@ pub(crate) fn timer_sample() -> DisappearingTimer {
 }
 
 #[cfg(test)]
-mod timer_tests {
-    use super::*;
-    use crate::capnp_codec::direct::{encode_root, DirectBody, DmTypeId};
-    use rekindle_types::disappearing::MAX_SECONDS;
-
-    #[test]
-    fn a_timer_past_four_weeks_refuses_the_frame() {
-        let bytes =
-            |seconds| encode_root::<disappearing_timer::Owned>(|mut b| b.set_seconds(seconds));
-        let ok = DirectBody::decode(DmTypeId::DisappearingTimer, &bytes(MAX_SECONDS)).unwrap();
-        assert_eq!(
-            ok,
-            DirectBody::DisappearingTimer(DisappearingTimer {
-                seconds: MAX_SECONDS,
-                group_id: None,
-            })
-        );
-        assert!(DirectBody::decode(DmTypeId::DisappearingTimer, &bytes(MAX_SECONDS + 1)).is_err());
-        let text = encode_root::<dm_text::Owned>(|mut b| {
-            b.set_client_id(&[1; 16]);
-            b.set_body("hi");
-            b.set_expire_seconds(MAX_SECONDS + 1);
-        });
-        assert!(DirectBody::decode(DmTypeId::DmText, &text).is_err());
-    }
-}
+#[path = "content_timer_tests.rs"]
+mod timer_tests;

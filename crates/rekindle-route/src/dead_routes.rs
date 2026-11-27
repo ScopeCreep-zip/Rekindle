@@ -15,6 +15,15 @@
 //! returns it at a strictly higher seq than the first read after its death
 //! (the peer republished it; [`PeerLiveness::observe`]'s rule).
 //!
+//! A peer whose route is alive never republishes it (its loopback passes,
+//! so Veilid tells it nothing), so a blob whose death was one test ping
+//! lost on a slow round trip would stay refused for the whole
+//! [`FAILURE_CACHE`]. A read that finds it still published at the same seq
+//! one [`REFETCH_GAP`] after its death (or after the last probe) is told to
+//! probe it once by a call (plan RH1r-c S2/S3, inventory item 25): the
+//! probe alone re-imports it, which Veilid allows and re-tests
+//! (`route_remote.rs:21-40`), and an answer clears it ([`DeadRoutes::proven`]).
+//!
 //! Nothing here releases a route: Veilid already dropped a dead remote
 //! route, and a second release is an ERROR (plan C7.9e).
 //!
@@ -24,7 +33,7 @@ use std::collections::HashMap;
 
 use tokio::time::Instant;
 
-use crate::liveness::FAILURE_CACHE;
+use crate::liveness::{FAILURE_CACHE, REFETCH_GAP};
 
 #[derive(Debug, Clone)]
 struct Dead {
@@ -32,6 +41,24 @@ struct Dead {
     /// The record seq of the first read after the death; a strictly higher
     /// one clears the entry.
     seen_seq: Option<u64>,
+    /// When it was last handed out for a probe.
+    probed: Option<Instant>,
+}
+
+/// What a read of a peer's record that returned a blob means for the dead
+/// routes ([`DeadRoutes::observe`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeadRouteVerdict {
+    /// The blob is not dead.
+    NotDead,
+    /// The peer republished it at a higher seq: usable again (B3).
+    Cleared,
+    /// Still dead, no probe due.
+    Held,
+    /// Still published at the same seq one [`REFETCH_GAP`] after its death
+    /// or its last probe: probe it once now (RH1r-c S2/S3). The probe is
+    /// taken: the next read is told again only one gap later.
+    Probe,
 }
 
 /// The node's dead peer route blobs.
@@ -50,6 +77,7 @@ impl DeadRoutes {
                 Dead {
                     at: now,
                     seen_seq: None,
+                    probed: None,
                 },
             );
         }
@@ -75,69 +103,32 @@ impl DeadRoutes {
         self.dead.remove(blob).is_some()
     }
 
-    /// A read of the peer's record returned `blob` at `seq`: the first read
-    /// after its death is the baseline, a strictly higher seq clears it.
-    /// `true` when this read cleared it.
-    pub fn observe(&mut self, blob: &[u8], seq: u64) -> bool {
+    /// A read of the peer's record returned `blob` at `seq` at `now`: the
+    /// first read after its death is the baseline, a strictly higher seq
+    /// clears it, and the baseline seq read again one [`REFETCH_GAP`] after
+    /// the death or the last probe asks for a probe ([`DeadRouteVerdict`]).
+    pub fn observe(&mut self, blob: &[u8], seq: u64, now: Instant) -> DeadRouteVerdict {
+        if !self.is_dead(blob, now) {
+            return DeadRouteVerdict::NotDead;
+        }
         let Some(d) = self.dead.get_mut(blob) else {
-            return false;
+            return DeadRouteVerdict::NotDead;
         };
-        match d.seen_seq {
-            Some(seen) if seq > seen => {
-                self.dead.remove(blob);
-                true
-            }
-            Some(_) => false,
-            None => {
-                d.seen_seq = Some(seq);
-                false
-            }
+        let seen = *d.seen_seq.get_or_insert(seq);
+        if seq > seen {
+            self.dead.remove(blob);
+            return DeadRouteVerdict::Cleared;
+        }
+        let since = d.probed.unwrap_or(d.at);
+        if seq == seen && now.duration_since(since) >= REFETCH_GAP {
+            d.probed = Some(now);
+            DeadRouteVerdict::Probe
+        } else {
+            DeadRouteVerdict::Held
         }
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use std::time::Duration;
-
-    use super::*;
-
-    #[test]
-    fn a_dead_blob_stays_dead_until_the_failure_cache_expires() {
-        let t0 = Instant::now();
-        let mut dead = DeadRoutes::default();
-        assert!(dead.declare(b"A", t0));
-        assert!(!dead.declare(b"A", t0), "already dead");
-        assert!(dead.is_dead(
-            b"A",
-            t0 + FAILURE_CACHE.saturating_sub(Duration::from_secs(1))
-        ));
-        assert!(!dead.is_dead(b"B", t0));
-        assert!(!dead.is_dead(b"A", t0 + FAILURE_CACHE), "expired");
-        assert!(dead.declare(b"A", t0 + FAILURE_CACHE), "declared again");
-    }
-
-    #[test]
-    fn only_a_strictly_higher_seq_after_the_baseline_clears_a_dead_blob() {
-        let t0 = Instant::now();
-        let mut dead = DeadRoutes::default();
-        dead.declare(b"A", t0);
-        assert!(!dead.observe(b"A", 7), "the first read is the baseline");
-        assert!(!dead.observe(b"A", 7), "the same record");
-        assert!(!dead.observe(b"A", 6), "a lagging replica");
-        assert!(dead.is_dead(b"A", t0));
-        assert!(dead.observe(b"A", 8), "republished");
-        assert!(!dead.is_dead(b"A", t0));
-        assert!(!dead.observe(b"B", 9), "never dead");
-    }
-
-    #[test]
-    fn an_answered_call_proves_a_dead_blob() {
-        let t0 = Instant::now();
-        let mut dead = DeadRoutes::default();
-        dead.declare(b"A", t0);
-        assert!(dead.proven(b"A"));
-        assert!(!dead.is_dead(b"A", t0));
-        assert!(!dead.proven(b"A"), "no longer dead");
-    }
-}
+#[path = "dead_routes_tests.rs"]
+mod tests;

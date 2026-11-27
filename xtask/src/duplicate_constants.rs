@@ -156,6 +156,7 @@ fn push_site(
 }
 
 pub(crate) fn check_duplicate_constants(root: &Path) -> Result<()> {
+    let tests = crate::test_code::TestCode::load(root)?;
     let mut by_name: BTreeMap<String, Vec<ConstSite>> = BTreeMap::new();
 
     for subdir in ["crates", "src-tauri/src"] {
@@ -166,8 +167,9 @@ pub(crate) fn check_duplicate_constants(root: &Path) -> Result<()> {
                 .display()
                 .to_string();
             // Fixtures and micro-benchmarks legitimately pick their own
-            // constants; they are not shipped protocol.
-            if rel.contains("/tests/") || rel.contains("/benches/") {
+            // constants; they are not shipped protocol. Test code is known
+            // by how its file is declared (`test_code`), never by its name.
+            if tests.is_test(&path) {
                 continue;
             }
             let Ok(src) = std::fs::read_to_string(&path) else {

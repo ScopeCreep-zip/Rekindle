@@ -44,9 +44,8 @@ fn sign(
     );
     // Point to point: a receiver must never gossip it on.
     signed.ttl = 0;
-    Ok(rekindle_codec::capnp_envelope::encode_signed_envelope(
-        &signed,
-    ))
+    rekindle_codec::capnp_envelope::encode_signed_envelope(&signed)
+        .map_err(|error| format!("encode signed video envelope: {error}"))
 }
 
 /// Sign a video-plane control envelope and queue it for every peer on the

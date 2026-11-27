@@ -16,8 +16,9 @@ use rekindle_types::id::{CategoryId, ChannelId, EventId, PseudonymKey, RoleId, T
 pub(crate) fn write_recurrence_rule_via_event_capnp(
     b: crate::community_event_capnp::recurrence_rule::Builder<'_>,
     r: &RecurrenceRule,
-) {
-    write_recurrence_rule(b, r);
+) -> Result<(), CodecError> {
+    write_recurrence_rule(b, r)?;
+    Ok(())
 }
 
 pub(crate) fn read_recurrence_rule_via_event_capnp(
@@ -42,7 +43,7 @@ pub(crate) fn read_event_location_via_event_capnp(
 fn write_recurrence_rule(
     mut b: crate::community_event_capnp::recurrence_rule::Builder<'_>,
     r: &RecurrenceRule,
-) {
+) -> Result<(), CodecError> {
     use crate::community_event_capnp::RecurrenceFrequency as Cap;
     b.set_frequency(match r.frequency {
         RecurrenceFrequency::Daily => Cap::Daily,
@@ -51,10 +52,10 @@ fn write_recurrence_rule(
     });
     b.set_interval(r.interval);
     if let Some(ref days) = r.days_of_week {
-        let mut list = b.reborrow().init_days_of_week(len_u32(days.len()));
-        for (i, d) in days.iter().enumerate() {
+        let mut list = b.reborrow().init_days_of_week(len_u32(days.len())?);
+        for (i, d) in (0u32..).zip(days.iter()) {
             list.set(
-                len_u32(i),
+                i,
                 match d {
                     DayOfWeek::Sunday => crate::community_event_capnp::DayOfWeek::Sunday,
                     DayOfWeek::Monday => crate::community_event_capnp::DayOfWeek::Monday,
@@ -75,6 +76,7 @@ fn write_recurrence_rule(
     if let Some(c) = r.count {
         b.set_count(c);
     }
+    Ok(())
 }
 
 fn read_recurrence_rule(
@@ -195,7 +197,7 @@ fn parse_channel_id(hex_str: &str) -> Result<ChannelId, CodecError> {
 pub(crate) fn write_event_info(
     mut b: crate::community_event_capnp::event_info::Builder<'_>,
     e: &EventInfo,
-) {
+) -> Result<(), CodecError> {
     b.set_id(&e.id);
     b.set_title(&e.title);
     b.set_description(&e.description);
@@ -214,9 +216,9 @@ pub(crate) fn write_event_info(
     }
     b.set_created_at(e.created_at);
     b.set_status(&e.status);
-    let mut rsvps = b.reborrow().init_rsvps(len_u32(e.rsvps.len()));
-    for (i, rsvp) in e.rsvps.iter().enumerate() {
-        let mut entry = rsvps.reborrow().get(len_u32(i));
+    let mut rsvps = b.reborrow().init_rsvps(len_u32(e.rsvps.len())?);
+    for (i, rsvp) in (0u32..).zip(e.rsvps.iter()) {
+        let mut entry = rsvps.reborrow().get(i);
         entry.set_pseudonym_key(&rsvp.pseudonym_key);
         entry.set_status(&rsvp.status);
     }
@@ -225,12 +227,13 @@ pub(crate) fn write_event_info(
     }
     b.set_has_recurrence(e.recurrence.is_some());
     if let Some(ref r) = e.recurrence {
-        write_recurrence_rule(b.reborrow().init_recurrence(), r);
+        write_recurrence_rule(b.reborrow().init_recurrence(), r)?;
     }
     b.set_has_location(e.location.is_some());
     if let Some(ref loc) = e.location {
         write_event_location(b.reborrow().init_location(), loc);
     }
+    Ok(())
 }
 
 pub(crate) fn read_event_info(
@@ -336,14 +339,15 @@ pub(crate) fn read_voice_roster_entry(
 pub(crate) fn write_onboarding_answer(
     mut b: crate::community_envelope_capnp::onboarding_answer::Builder<'_>,
     a: &OnboardingAnswer,
-) {
+) -> Result<(), CodecError> {
     b.set_question_id(&a.question_id);
     let mut opts = b
         .reborrow()
-        .init_selected_options(len_u32(a.selected_options.len()));
-    for (i, o) in a.selected_options.iter().enumerate() {
-        opts.set(len_u32(i), o.as_str());
+        .init_selected_options(len_u32(a.selected_options.len())?);
+    for (i, o) in (0u32..).zip(a.selected_options.iter()) {
+        opts.set(i, o.as_str());
     }
+    Ok(())
 }
 
 pub(crate) fn read_onboarding_answer(

@@ -457,7 +457,7 @@ pub fn ring_holds(
     !equal_heads || roster_checksum(state) == frontier.roster_checksum
 }
 
-/// Whether the post-cut ops `rest` hold a checkpoint equivocation at
+/// Whether the post-cut ops `rest` of community `anchor` hold a checkpoint equivocation at
 /// `height` (the height of the hint resumed from, whose endorsements are
 /// above its cut): two digests or more for one cut and one
 /// `prevCheckpoint`, each carried by a strict majority of the electorate
@@ -466,11 +466,12 @@ pub fn ring_holds(
 #[must_use]
 pub fn equivocates(
     cert: &GenesisCert,
+    anchor: &str,
     below: Option<&GovernanceState>,
     height: u64,
     rest: &[VerifiedOp],
 ) -> bool {
-    let electorate = eligible_set(cert, below);
+    let electorate = eligible_set(cert, anchor, below);
     let mut groups: BTreeMap<Vec<u8>, Vec<(&PseudonymKey, &Checkpoint)>> = BTreeMap::new();
     for op in rest {
         if let GovernanceEntry::Checkpoint(c) = op.body() {

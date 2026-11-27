@@ -24,7 +24,8 @@ export interface VoiceMessageAudioView {
 import type {
   AutoModRuleInfo, CommunityPolicy, ExpressionInfo, Message, QuietHoursSettings, SendChannelMessageResult,
 } from "./types";
-import type { CommunityBanView, MemberGroup, TargetModeration } from "./dto";
+import type { CommunityBanView, CommunityProfilePatch, MemberGroup, ProfileField } from "./dto";
+import type { ChannelDeniedCapabilities, DeniedCapabilities, MemberModeration } from "./dto_capabilities";
 
 /** `SuccessorOffer` (rekindle-types `dto::community`): a successor both
  *  sides link, as `communitySuccessorOffered` carries it. */
@@ -82,7 +83,7 @@ export const communityCommands = {
       description: string | null;
       iconHash?: string | null;
       bannerHash?: string | null;
-      channels: { id: string; name: string; channelType: string; categoryId?: string; topic?: string; forumTags?: string[]; stageSpeakers?: string[]; stageModerator?: string | null; notificationLevel?: "all" | "mentions" | "nothing"; notificationSoundRef?: string | null; locked: boolean; lockedReason: string }[];
+      channels: { id: string; name: string; channelType: string; categoryId?: string; topic?: string; forumTags?: string[]; stageSpeakers?: string[]; stageModerator?: string | null; notificationLevel?: "all" | "mentions" | "nothing"; notificationSoundRef?: string | null; locked: boolean; lockedReason: string; denied: ChannelDeniedCapabilities }[];
       categories?: { id: string; name: string; sortOrder: number }[];
       myRole: string | null;
       myRoleIds: string[];
@@ -94,6 +95,8 @@ export const communityCommands = {
       onboardingComplete: boolean;
       /** We hold a creator seat now (`CommunityView::we_are_creator`); re-read on `effectivePermissionsChanged` naming us. */
       weAreCreator: boolean;
+      /** The controls we may not use, each with the Host's reason (`CommunityView::denied`); replaced from `effectivePermissionsChanged` naming us. */
+      denied: DeniedCapabilities;
       /** Our name here, never empty: our per-community name, else our short fingerprint (plan E3.4 S6). */
       myDisplayName: string;
       /** Our per-community name as set; absent when unset (the set-name form's prefill). */
@@ -102,6 +105,9 @@ export const communityCommands = {
       myCustomStatus?: string;
       myBio?: string | null;
       myPronouns?: string | null;
+      /** Our saved picture refs (PF2); absent when none is saved. */
+      myAvatarRef?: string;
+      myBannerRef?: string;
       myThemeColor?: number | null;
       myBadges?: string[];
       removed?: {
@@ -141,7 +147,7 @@ export const communityCommands = {
       location?: { kind: "text" | "voice"; channelId: string } | null;
       lastActive: number;
       group: MemberGroup;
-      canModerateTarget: TargetModeration;
+      moderation: MemberModeration;
       outranks: boolean;
     }[]>(
       "get_community_members", { communityId },
@@ -165,28 +171,12 @@ export const communityCommands = {
    */
   getCommunityAvatarDataUrl: (communityId: string, hash: string) =>
     hostInvoke<string | null>("get_community_avatar_data_url", { communityId, hash }),
-  updateCommunityProfile: (
-    communityId: string,
-    bio: string | null,
-    pronouns: string | null,
-    themeColor: number | null,
-    badges: string[] | null,
-    avatarRef: string | null,
-    bannerRef: string | null,
-    customStatus: string | null,
-  ) => hostInvoke<void>("update_community_profile", {
-    communityId,
-    bio,
-    pronouns,
-    themeColor,
-    badges,
-    avatarRef,
-    bannerRef,
-    customStatus,
-  }),
+  /** Our card's edit in this community (plan PF2): each field unchanged, cleared or set. */
+  updateCommunityProfile: (communityId: string, patch: CommunityProfilePatch) =>
+    hostInvoke<void>("update_community_profile", { communityId, patch }),
   /** Our name in this community (`CommunitySetDisplayName`, the Host's review
-   *  SetCommunityDisplayName); `""` clears it and the fingerprint shows. */
-  setCommunityDisplayName: (communityId: string, displayName: string) =>
+   *  SetCommunityDisplayName); a clear shows the fingerprint (PF2). */
+  setCommunityDisplayName: (communityId: string, displayName: ProfileField<string>) =>
     hostInvoke<void>("set_community_display_name", { communityId, displayName }),
   createCommunity: (name: string) =>
     hostInvoke<CommunityCreated>(

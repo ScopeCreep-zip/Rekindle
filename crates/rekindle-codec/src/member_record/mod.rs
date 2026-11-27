@@ -53,18 +53,19 @@ impl<'a> RecordScope<'a> {
 
     /// `domain ‖ community ‖ memberRecord`, each length-prefixed after the
     /// domain, the start of every subkey's signing bytes.
-    pub(crate) fn signing_prefix(self, domain: &str) -> Vec<u8> {
+    pub(crate) fn signing_prefix(self, domain: &str) -> Result<Vec<u8>, CodecError> {
         let mut out = domain.as_bytes().to_vec();
-        put_lp(&mut out, self.community_id.as_bytes());
-        put_lp(&mut out, self.member_record.as_bytes());
-        out
+        put_lp(&mut out, self.community_id.as_bytes())?;
+        put_lp(&mut out, self.member_record.as_bytes())?;
+        Ok(out)
     }
 }
 
 /// Append `u32be(len) ‖ bytes`.
-pub(crate) fn put_lp(out: &mut Vec<u8>, bytes: &[u8]) {
-    out.extend_from_slice(&u32::try_from(bytes.len()).unwrap_or(u32::MAX).to_be_bytes());
+pub(crate) fn put_lp(out: &mut Vec<u8>, bytes: &[u8]) -> Result<(), CodecError> {
+    out.extend_from_slice(&crate::capnp_codec::wire_len(bytes.len())?.to_be_bytes());
     out.extend_from_slice(bytes);
+    Ok(())
 }
 
 /// Refuse a field longer than its bound.

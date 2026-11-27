@@ -8,8 +8,8 @@ Middle Decor target [0, 0, 305, 468] art [0, 0, 305, 468] Frame
 BottomLeft Decor target [0, 0, 16, 53] art [0, 0, 16, 53] Frame
 Bottom Decor target [0, 0, 305, 53] art [0, 0, 305, 53] Frame
 BottomRight Decor target [0, 0, 20, 53] art [0, 0, 20, 53] Frame
-AdAreaBG AdArea
-  AdArea Part
+AdAreaBG Decor
+  AdArea AdArea
 ExpandButton Button target [-4, 0, 24, 47] art [4, 0, 20, 47] Size
 MainTitleBar Drag
   Logo Logo label "Rekindle" cover [0, 0, 16, 16] glyph RekindleMarkSmall target [-6, -5, 24, 24] art [6, 5, 16, 16] Size

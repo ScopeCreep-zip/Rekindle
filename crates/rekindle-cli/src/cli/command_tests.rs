@@ -403,14 +403,44 @@ fn parse_community_set_name() {
     let cli = Cli::try_parse_from(["rekindle", "community", "set-name", "abcd", "Bea"]).unwrap();
     assert!(matches!(
         cli.command,
-        Some(Command::Community(crate::cli::CommunityCmd::SetName { ref community, ref name }))
-            if community == "abcd" && name == "Bea"
+        Some(Command::Community(crate::cli::CommunityCmd::SetName { ref community, ref name, clear }))
+            if community == "abcd" && name.as_deref() == Some("Bea") && !clear
     ));
-    let cli = Cli::try_parse_from(["rekindle", "community", "set-name", "abcd", ""]).unwrap();
+    let cli =
+        Cli::try_parse_from(["rekindle", "community", "set-name", "abcd", "--clear"]).unwrap();
     assert!(matches!(
         cli.command,
-        Some(Command::Community(crate::cli::CommunityCmd::SetName { ref name, .. })) if name.is_empty()
+        Some(Command::Community(crate::cli::CommunityCmd::SetName {
+            name: None,
+            clear: true,
+            ..
+        }))
     ));
+}
+
+#[test]
+fn parse_community_profile_edits() {
+    use rekindle_types::dto::community_profile::ProfileField;
+
+    let cli = Cli::try_parse_from([
+        "rekindle",
+        "community",
+        "profile",
+        "-c",
+        "abcd",
+        "--bio",
+        "At the LAN",
+        "--clear",
+        "banner-ref",
+    ])
+    .unwrap();
+    let Some(Command::Community(crate::cli::CommunityCmd::Profile(args))) = cli.command else {
+        panic!("profile command")
+    };
+    let patch = args.patch().unwrap();
+    assert_eq!(patch.bio, ProfileField::Set("At the LAN".into()));
+    assert_eq!(patch.banner_ref, ProfileField::Clear);
+    assert_eq!(patch.avatar_ref, ProfileField::Unchanged);
 }
 
 /// Friend flags take a display name or nickname as given; `friend_ref`
@@ -455,5 +485,64 @@ fn parse_friend_flags_by_name() {
             panic!("{args:?}");
         };
         assert_eq!(friend, "alice", "{args:?}");
+    }
+}
+
+#[test]
+fn community_focus_maps_arguments_to_the_host_request() {
+    use rekindle_ipc::protocol::{ChannelMessageRequest, CommunityRequest, IpcRequest};
+    use rekindle_types::display::CommunityDetail;
+
+    let detail: CommunityDetail = serde_json::from_value(serde_json::json!({
+        "anchor": "anchor-key",
+        "name": "Dev Team",
+        "description": "",
+        "creator_pseudonyms": [],
+        "created_at": 0,
+        "member_count": 1,
+        "our_pseudonym": "member-key",
+        "our_roles": [],
+        "roles": [],
+        "channels": [
+            { "id": "text-id", "name": "General Chat", "kind": "text", "topic": "",
+              "mekGeneration": 0, "sortOrder": 0 },
+            { "id": "voice-id", "name": "Stand-up", "kind": "voice", "topic": "",
+              "mekGeneration": 0, "sortOrder": 1 }
+        ]
+    }))
+    .unwrap();
+
+    for (tail, expected_channel, expected_kind) in [
+        (&["General Chat"][..], Some("text-id"), "text"),
+        (&["voice-id", "--voice"][..], Some("voice-id"), "voice"),
+        (&[][..], None, "text"),
+    ] {
+        let args = ["rekindle", "community", "focus", "Dev Team"]
+            .into_iter()
+            .chain(tail.iter().copied());
+        let cli = Cli::try_parse_from(args).unwrap();
+        let Some(Command::Community(CommunityCmd::Focus {
+            community,
+            channel,
+            voice,
+        })) = cli.command
+        else {
+            panic!("expected a focus command");
+        };
+        assert_eq!(community, detail.name);
+        let request = crate::community::focus_request(&detail, channel.as_deref(), voice).unwrap();
+        let IpcRequest::Community(CommunityRequest::Messages(
+            ChannelMessageRequest::ChannelSetActive {
+                community,
+                channel,
+                kind,
+            },
+        )) = request
+        else {
+            panic!("expected ChannelSetActive");
+        };
+        assert_eq!(community, detail.anchor);
+        assert_eq!(channel.as_deref(), expected_channel);
+        assert_eq!(kind, expected_kind);
     }
 }

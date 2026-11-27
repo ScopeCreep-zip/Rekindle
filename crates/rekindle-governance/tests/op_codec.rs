@@ -27,7 +27,10 @@ fn signed_op() -> GovernanceOp {
         },
         sig: [0; 64],
     };
-    op.sig = sign_with_pseudonym(&key, &op_signing_bytes(ANCHOR, &op_unsigned_bytes(&op)));
+    op.sig = sign_with_pseudonym(
+        &key,
+        &op_signing_bytes(ANCHOR, &op_unsigned_bytes(&op).unwrap()),
+    );
     op
 }
 

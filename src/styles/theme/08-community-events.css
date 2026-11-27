@@ -91,7 +91,8 @@
     pointer-events: auto;
     cursor: pointer;
     max-width: 320px;
-    word-break: break-word;
+    word-break: normal;
+    overflow-wrap: anywhere;
   }
 
   /* Architecture §32 a11y — toast slide-in only for motion-tolerant users. */

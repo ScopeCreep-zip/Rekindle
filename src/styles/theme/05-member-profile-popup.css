@@ -355,6 +355,7 @@
   @media (prefers-reduced-motion: no-preference) {
     .network-dot-connecting {
       --pulse-min-opacity: 0.3;
+
       animation: opacity-pulse 1.5s ease-in-out infinite;
     }
   }
@@ -427,6 +428,7 @@
   @media (prefers-reduced-motion: no-preference) {
     .join-step-dot-started {
       --pulse-min-opacity: 0.3;
+
       animation: opacity-pulse 1.5s ease-in-out infinite;
     }
   }

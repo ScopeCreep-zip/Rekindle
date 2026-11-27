@@ -147,7 +147,8 @@ async fn release_registry_slot(
 
     let pseudonym =
         crate::crypto::pseudonym::derive_community_pseudonym(signing_key_bytes, &membership.anchor);
-    let bytes = rekindle_codec::presence_row::departure_row(&pseudonym, now_secs);
+    let bytes = rekindle_codec::presence_row::departure_row(&pseudonym, now_secs)
+        .map_err(|e| TransportError::Internal(format!("departure row: {e}")))?;
     let my_pseudonym_hex = hex::encode(pseudonym.verifying_key().to_bytes());
 
     // A table hit while the community holds its registry (the slot writer

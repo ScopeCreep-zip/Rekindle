@@ -38,7 +38,37 @@ fn entry(action: TargetAction, target: PseudonymKey) -> GovernanceEntry {
             reason: None,
             started_at: 0,
         },
+        TargetAction::ManageRoles => GovernanceEntry::RoleUnassignment {
+            target,
+            role_id: rid(2),
+        },
+        TargetAction::Mute | TargetAction::Deafen => {
+            unreachable!("voice moderation writes no governance entry")
+        }
     }
+}
+
+/// `ManageRoles` agrees with the validator's `RoleUnassignment` of a role
+/// the target cannot self-assign, on every pair but a member and itself
+/// (stepping down is the validator's self case; the Host refuses
+/// moderating yourself before asking, `capability_words::YOURSELF`).
+#[test]
+fn manage_roles_is_the_validators_unassignment_verdict() {
+    let state = state();
+    let mut accepted = 0;
+    for w in PEOPLE {
+        for t in PEOPLE.into_iter().filter(|t| *t != w) {
+            let action = TargetAction::ManageRoles;
+            let verdict = validate_write(&pseudo(w), &entry(action, pseudo(t)), &state);
+            assert_eq!(
+                may_moderate(&pseudo(w), &pseudo(t), action, &state),
+                verdict,
+                "{w} on {t}"
+            );
+            accepted += usize::from(verdict);
+        }
+    }
+    assert!(accepted > 0 && accepted < PEOPLE.len() * (PEOPLE.len() - 1));
 }
 
 #[test]

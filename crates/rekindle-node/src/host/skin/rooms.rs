@@ -131,12 +131,14 @@ pub(crate) fn invite(rooms: &Rooms) -> Result<Mapped, IpcResponse> {
 pub(crate) async fn load(
     ctx: &DaemonContext,
     selections: &Selections,
+    launchers: &super::actions::Launchers,
     request: &IpcRequest,
 ) -> Result<Rooms, IpcResponse> {
     let IpcRequest::RunSkinAction { window, action, .. } = request else {
         return Ok(Rooms::default());
     };
-    let Some(selection) = selections.get(window).filter(|_| is_room(action)) else {
+    let at = launchers.selection_window(window);
+    let Some(selection) = selections.get(&at).filter(|_| is_room(action)) else {
         return Ok(Rooms::default());
     };
     let (Ok(db), Ok(owner)) = (ctx.require_db(), ctx.require_owner()) else {

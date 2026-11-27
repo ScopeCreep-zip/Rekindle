@@ -35,10 +35,8 @@ pub use pairwise::GroupFirstContact;
 pub(crate) use pairwise::{member_bundle, opens_member_session};
 pub use review::{key_changes, send_reviewed};
 pub use view::{find, list, mark_read, messages};
-pub(crate) mod first_contact {
-    //! The group first contact, as the prekey rejection flow sees it.
-    pub(crate) use super::pairwise::{acknowledged, began, on_rejected};
-}
+#[path = "mod_first_contact.rs"]
+pub(crate) mod first_contact;
 
 use rekindle_codec::capnp_codec::direct::{DirectBody, GroupId};
 use rekindle_dm::{DmError, Outbound};
@@ -62,6 +60,7 @@ pub(crate) fn friend_error(e: &DmError) -> FriendError {
         | DmError::InvalidName(_)
         | DmError::BadSignature
         | DmError::NotOnRoster(_)
+        | DmError::Codec(_)
         | DmError::KeyMissing { .. } => FriendError::Invalid(e.to_string()),
         DmError::ChainMissing(_) => FriendError::NotReady(e.to_string()),
     }

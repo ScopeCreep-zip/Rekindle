@@ -1,5 +1,11 @@
 import { onCleanup } from "solid-js";
 
+interface RovingListOptions {
+  orientation?: "vertical" | "horizontal";
+  /** Use the selected item as the tab stop, including after external selection. */
+  preferSelected?: boolean;
+}
+
 /**
  * Roving-tabindex list (plan E7.3 "List keyboard traversal", wiring guide §13f;
  * WAI-ARIA APG "Managing focus within composite widgets").
@@ -11,8 +17,15 @@ import { onCleanup } from "solid-js";
  * the menu's trigger already handles for the mouse. Enter (open) stays with each
  * row, which knows what opening it means.
  */
-function attachRovingList(list: HTMLElement, itemSelector: string): () => void {
+function attachRovingList(
+  list: HTMLElement,
+  itemSelector: string,
+  { orientation = "vertical", preferSelected = false }: RovingListOptions = {},
+): () => void {
   let current: HTMLElement | null = null;
+  const horizontal = orientation === "horizontal";
+  const forward = horizontal ? "ArrowRight" : "ArrowDown";
+  const backward = horizontal ? "ArrowLeft" : "ArrowUp";
 
   const items = (): HTMLElement[] =>
     Array.from(list.querySelectorAll<HTMLElement>(itemSelector));
@@ -20,7 +33,8 @@ function attachRovingList(list: HTMLElement, itemSelector: string): () => void {
   function sync(): void {
     const rows = items();
     if (current && !rows.includes(current)) current = null;
-    const active = current ?? rows[0] ?? null;
+    const selected = preferSelected ? rows.find((row) => row.getAttribute("aria-selected") === "true") : undefined;
+    const active = selected ?? current ?? rows[0] ?? null;
     for (const row of rows) {
       const want = row === active ? "0" : "-1";
       if (row.getAttribute("tabindex") !== want) row.setAttribute("tabindex", want);
@@ -59,7 +73,7 @@ function attachRovingList(list: HTMLElement, itemSelector: string): () => void {
     // but only when focus is on the row itself do they open its menu.
     if (!row) return;
     if ((e.key === "F10" && e.shiftKey) || e.key === "ContextMenu") {
-      if (e.target !== row) return;
+      if (horizontal || e.target !== row) return;
       e.preventDefault();
       openMenu(row);
       return;
@@ -67,8 +81,8 @@ function attachRovingList(list: HTMLElement, itemSelector: string): () => void {
     const rows = items();
     const at = rows.indexOf(row);
     let next: HTMLElement | undefined;
-    if (e.key === "ArrowDown") next = rows[at + 1];
-    else if (e.key === "ArrowUp") next = rows[at - 1];
+    if (e.key === forward) next = rows[at + 1] ?? (horizontal ? rows[0] : undefined);
+    else if (e.key === backward) next = rows[at - 1] ?? (horizontal ? rows[rows.length - 1] : undefined);
     else if (e.key === "Home") next = rows[0];
     else if (e.key === "End") next = rows[rows.length - 1];
     else return;
@@ -77,7 +91,11 @@ function attachRovingList(list: HTMLElement, itemSelector: string): () => void {
   }
 
   const observer = new MutationObserver(sync);
-  observer.observe(list, { childList: true, subtree: true });
+  observer.observe(list, {
+    childList: true,
+    subtree: true,
+    ...(preferSelected && { attributeFilter: ["aria-selected"] }),
+  });
   list.addEventListener("focusin", onFocusIn);
   list.addEventListener("keydown", onKeyDown);
   sync();
@@ -90,6 +108,6 @@ function attachRovingList(list: HTMLElement, itemSelector: string): () => void {
 }
 
 /** A `ref` callback that makes the element a roving list for its lifetime. */
-export function rovingList(itemSelector: string): (el: HTMLElement) => void {
-  return (el) => onCleanup(attachRovingList(el, itemSelector));
+export function rovingList(itemSelector: string, options?: RovingListOptions): (el: HTMLElement) => void {
+  return (el) => onCleanup(attachRovingList(el, itemSelector, options));
 }

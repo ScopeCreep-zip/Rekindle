@@ -81,7 +81,7 @@ pub const NAMES: &[(&str, Target)] = &[
     ),
     ("BuddyViewOfflineText", Target::Token("status.offline-text")),
     ("BuddyViewSelected", Target::Token("accent.fill")),
-    ("BuddyViewSelectedText", Target::Fixed("accent.fg")),
+    ("BuddyViewSelectedText", Target::Token("selection.text")),
     ("ButtonCG", Target::Shift),
     ("ChatMainCG", Target::Shift),
     ("ChatMainDeactivatedCG", Target::Shift),
@@ -122,16 +122,16 @@ pub const NAMES: &[(&str, Target)] = &[
     ("MenuBarCG", Target::Shift),
     ("MenuDownCG", Target::Shift),
     ("MenuHoverCG", Target::Shift),
-    ("MenuTextCG", Target::NoRole("menubar.text")),
+    ("MenuTextCG", Target::Token("menubar.text")),
     ("MicOn", VOICE),
     ("ScrollbarColor", Target::Shift),
-    ("ScrollbarColorBG", Target::NoRole("scrollbar.track")),
+    ("ScrollbarColorBG", Target::Token("scrollbar.track")),
     ("SpeakerOn", VOICE),
     ("StatusBackgroundCG", Target::Token("bg.status")),
     ("StatusCG", Target::Token("text.status")),
     ("StatusWrapCG", Target::Shift),
-    ("TooltipCG", Target::NoRole("tooltip.bg")),
-    ("TooltipTextCG", Target::NoRole("tooltip.text")),
+    ("TooltipCG", Target::Token("tooltip.bg")),
+    ("TooltipTextCG", Target::Token("tooltip.text")),
     ("TypingNotificationCG", Target::Shift),
     ("UserNameBkCG", Target::Shift),
     ("UserNameCG", Target::NoRole("self.name")),
@@ -201,12 +201,5 @@ pub fn frame(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_table_is_sorted() {
-        assert!(NAMES.windows(2).all(|w| w[0].0 < w[1].0));
-        assert_eq!(NAMES.len(), 68);
-    }
-}
+#[path = "v3_tests.rs"]
+mod tests;

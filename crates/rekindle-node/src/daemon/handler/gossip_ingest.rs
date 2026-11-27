@@ -179,11 +179,15 @@ impl DaemonHandler {
                 let scope = rekindle_governance_runtime::deps::GovernanceRuntimeDeps::scope(
                     &crate::daemon::dispatch::adapter(&ctx),
                 );
-                let (community, payload, task_scope) =
-                    (community_id.to_string(), payload.clone(), scope.clone());
+                let (community, sender, payload, task_scope) = (
+                    community_id.to_string(),
+                    sender_pseudonym.to_string(),
+                    payload.clone(),
+                    scope.clone(),
+                );
                 scope.spawn_or_drop("thread control", async move {
                     if let Some(event) = channel
-                        .on_thread_control(&community, &payload, &task_scope)
+                        .on_thread_control(&community, &sender, &payload, &task_scope)
                         .await
                     {
                         ctx.publish_event(

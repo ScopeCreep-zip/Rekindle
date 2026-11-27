@@ -6,7 +6,8 @@ import { commands } from "../../ipc/commands";
 interface GameServerListProps {
   servers: GameServer[];
   communityId: string;
-  canManage: boolean;
+  /** Why we may not manage the server list, in the Host's words, or null (never-hide). */
+  manageDenied: string | null;
   onRemove: (communityId: string, serverId: string) => void;
   onAdd: (communityId: string, gameId: string, label: string, address: string) => void;
 }
@@ -103,23 +104,23 @@ const GameServerList: Component<GameServerListProps> = (props) => {
                   >
                     Join
                   </button>
-                  <Show when={props.canManage}>
-                    <button
-                      class="game-server-remove-btn"
-                      onClick={() => props.onRemove(props.communityId, server.id)}
-                      title="Remove server"
-                    >
-                      <SkinGlyph name="delete" />
-                    </button>
-                  </Show>
+                  <button
+                    class="game-server-remove-btn"
+                    onClick={() => props.onRemove(props.communityId, server.id)}
+                    disabled={props.manageDenied !== null}
+                    title={props.manageDenied ?? "Remove server"}
+                    aria-label="Remove server"
+                    aria-description={props.manageDenied ?? undefined}
+                  >
+                    <SkinGlyph name="delete" />
+                  </button>
                 </div>
               )}
             </For>
           </div>
         )}
       </For>
-      <Show when={props.canManage}>
-        <div class="game-server-add-form">
+      <fieldset class="game-server-add-form" disabled={props.manageDenied !== null} title={props.manageDenied ?? undefined} aria-description={props.manageDenied ?? undefined}>
           <input
             class="form-input"
             placeholder="Game ID"
@@ -140,8 +141,7 @@ const GameServerList: Component<GameServerListProps> = (props) => {
             onKeyDown={(e) => { if (e.key === "Enter") handleAdd(); }}
           />
           <button class="form-btn-primary" onClick={handleAdd}>Add</button>
-        </div>
-      </Show>
+      </fieldset>
     </div>
   );
 };

@@ -64,7 +64,7 @@
    * tab over the name's end). */
   .skin-name,
   .skin-status {
-    padding-inline: var(--field-inset-left, 0px) var(--field-inset-right, 0px);
+    padding-inline: var(--field-inset-left, 0) var(--field-inset-right, 0);
   }
   /* A flex item shrinks below its text only with min-width: 0, so a long
    * name ellipsizes inside the pack's name box instead of running off. */
@@ -216,7 +216,7 @@
    * label's colour (accent.text on the cover's bg.secondary, a checked
    * pair), so it reads on a light skin as on a dark one. */
   .skin-node-glyph-brand [id="rk-word"] {
-    fill: currentColor;
+    fill: currentcolor;
   }
   /* The title strip's logo (plan BR) draws the mark in its served box; its
    * word takes the strip's text colour (titlebar.text on the strip, the
@@ -325,7 +325,8 @@
 
   /* A disabled node the pack draws no disabled art for (plan CR1,
    * `disabledBy: shell`) is dimmed so it reads unusable; one with its own
-   * disabled art (`pack`) keeps it as the pack drew it. */
+   * disabled art (`pack`), or the dimmed copy the Host serves as its
+   * disabled art (`served`), shows that art. */
   [data-disabled-by="shell"][aria-disabled="true"] {
     opacity: 0.5;
   }

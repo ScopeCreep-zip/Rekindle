@@ -92,7 +92,7 @@ pub fn set_archived(
     Ok(())
 }
 
-/// A reply received in a thread.
+/// A reply received in a thread, identified by its verified author and wire id.
 pub struct ThreadMessageRow<'a> {
     pub thread_id: &'a str,
     pub message_id: &'a str,
@@ -102,7 +102,7 @@ pub struct ThreadMessageRow<'a> {
     pub reply_to_id: Option<&'a str>,
 }
 
-/// Store `message` once and count it on its thread's row.
+/// Store `message` once per author and wire id and count it on its thread's row.
 ///
 /// # Errors
 /// The insert or the update failed.
@@ -142,3 +142,25 @@ pub fn insert_message(
     }
     Ok(())
 }
+
+/// How many reply rows `thread_id` of `community_id` holds for `owner_key`.
+///
+/// # Errors
+/// The query failed.
+pub fn message_rows(
+    conn: &Connection,
+    owner_key: &str,
+    community_id: &str,
+    thread_id: &str,
+) -> rusqlite::Result<u32> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM thread_messages \
+         WHERE owner_key = ?1 AND community_id = ?2 AND thread_id = ?3",
+        params![owner_key, community_id, thread_id],
+        |row| row.get(0),
+    )
+}
+
+#[cfg(test)]
+#[path = "threads_tests.rs"]
+mod tests;

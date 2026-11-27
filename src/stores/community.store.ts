@@ -5,12 +5,16 @@ import type {
 import { createStore, produce, reconcile } from "solid-js/store";
 import type { Message } from "./chat.store";
 import type {
-  GameInfo, InviteDto, MemberGroup, OnboardingConfig, TargetModeration, WelcomeScreen,
+  GameInfo, InviteDto, MemberGroup, OnboardingConfig, WelcomeScreen,
 } from "../ipc/commands/dto";
+import type { ChannelDeniedCapabilities, DeniedCapabilities, MemberModeration } from "../ipc/commands/dto_capabilities";
 
 export interface Channel {
   id: string;
   name: string;
+  /** The channel controls we lack here, each with the Host's reason
+   *  (`CommunityChannelView::denied`, judged with the channel's overwrites). */
+  denied?: ChannelDeniedCapabilities;
   type: "text" | "voice" | "announcement" | "forum" | "stage" | "directory" | "media" | "events" | "dm";
   unreadCount: number;
   categoryId?: string;
@@ -81,7 +85,7 @@ export interface Member {
   group: MemberGroup;
   /** Which moderation actions we may take against this member: the
    *  governance validator's verdicts, computed by the Host (plan E3.2 S9). */
-  canModerateTarget: TargetModeration;
+  moderation: MemberModeration;
   /** Whether we outrank this member (the validator's rank rule). */
   outranks: boolean;
 }
@@ -238,6 +242,11 @@ export interface Community {
   myPseudonymKey: string | null;
   /** Whether we hold the community's current key (FX3). */
   keyStatus?: KeyStatus | null;
+  /** What we may not do here and why, as the Host says (never-hide): a
+   *  control is disabled with the reason, never hidden. */
+  denied?: DeniedCapabilities;
+  /** Bumped on each `BansChanged` (plan E3.2 S9): a shown ban list re-reads on it. */
+  bansRevision?: number;
   /** Set when we were removed (plan E3.2 S9 own removal): the community
    *  stays as read-only history. */
   /** Set when the inviter refused our join after it returned (plan JW):

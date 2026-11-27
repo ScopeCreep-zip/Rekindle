@@ -4,6 +4,7 @@
 //! (rules 1–10, run by [`crate::shape::check`] before a package is served)
 //! and the stylesheet's one rule per node. The shell renders it in SK2-S2.
 
+pub mod ad;
 mod anchor;
 mod anchor_client;
 mod anchor_share;
@@ -16,12 +17,14 @@ pub mod compose;
 pub mod content;
 pub mod cover;
 pub mod css;
+pub mod dim;
 pub mod disabled;
 mod fit;
 pub mod import;
 pub mod inset;
 mod keep;
 pub mod label_style;
+mod layer;
 mod outdent;
 mod passes;
 pub mod pieces;
@@ -34,6 +37,7 @@ mod span_css;
 mod tab_step;
 pub mod target;
 pub mod text_box;
+pub mod text_top;
 pub mod titles;
 mod triggers;
 pub mod validate;
@@ -82,5 +86,7 @@ mod test_support;
 mod tests;
 #[cfg(test)]
 mod text_box_tests;
+#[cfg(test)]
+mod text_top_tests;
 #[cfg(test)]
 mod triggers_tests;

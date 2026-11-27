@@ -59,7 +59,7 @@ pub struct EndorsedLink {
     pub ops: BTreeSet<OpHash>,
 }
 
-/// The link `endorsements` make on top of `below` (the verified link one
+/// The link `endorsements` of community `anchor` make on top of `below` (the verified link one
 /// height down and the state at its cut; `None` at height 1): every one
 /// carries one digest at one height and round, its height is one above
 /// `below`'s (1 with none), its `prevCheckpoint` is one of `below`'s ops
@@ -70,6 +70,7 @@ pub struct EndorsedLink {
 #[must_use]
 pub fn endorsed_link(
     cert: &GenesisCert,
+    anchor: &str,
     below: Option<(&EndorsedLink, &GovernanceState)>,
     endorsements: &[SignedEndorsement],
 ) -> Option<EndorsedLink> {
@@ -89,7 +90,7 @@ pub fn endorsed_link(
     if !endorsements.iter().all(fits) {
         return None;
     }
-    let electorate = eligible_set(cert, below.map(|(_, state)| state));
+    let electorate = eligible_set(cert, anchor, below.map(|(_, state)| state));
     let votes = tally(
         &electorate,
         endorsements.iter().map(|e| (&e.author, &e.body)),

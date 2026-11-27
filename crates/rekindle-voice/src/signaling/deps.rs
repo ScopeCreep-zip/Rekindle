@@ -139,11 +139,8 @@ pub enum CommunityVoiceEvent {
 /// Permission bit mask values needed by signaling. Mirrors
 /// `rekindle_types::permissions::*` constants so the trait method
 /// callers don't need to depend on `rekindle-types` directly.
-pub mod perms {
-    pub const MANAGE_MESSAGES: u64 = rekindle_types::permissions::MANAGE_MESSAGES;
-    pub const ADMINISTRATOR: u64 = rekindle_types::permissions::ADMINISTRATOR;
-    pub const USE_SOUNDBOARD: u64 = rekindle_types::permissions::USE_SOUNDBOARD;
-}
+#[path = "deps_perms.rs"]
+pub mod perms;
 
 #[async_trait]
 pub trait VoiceSignalingDeps: Send + Sync + 'static {

@@ -321,6 +321,7 @@
   @media (prefers-reduced-motion: no-preference) {
     .network-banner {
       --pulse-min-opacity: 0.3;
+
       animation: opacity-pulse 2s ease-in-out infinite;
     }
   }
