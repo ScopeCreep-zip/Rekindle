@@ -102,7 +102,7 @@ Every dependency's license must match the allowlist in
 
 MIT-0 was added on 2026-11-26 (lead decision): it is OSI-approved and is MIT
 without the attribution condition, so strictly more permissive than MIT and
-compatible with Rekindle's MIT licence. It first entered through Stylelint's
+compatible with Rekindle's MIT OR Apache-2.0 licence. It first entered through Stylelint's
 `@csstools/*` dependencies (FE-LINT).
 
 Copyleft licenses (GPL, AGPL, LGPL) are not on the allowlist.

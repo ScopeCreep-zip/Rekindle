@@ -4,7 +4,7 @@ version = "0.1.0"
 publish = false
 edition = "2021"
 description = "Command-line frontend for Rekindle, a client of the rekindled daemon"
-license = "MIT"
+license.workspace = true
 
 [lints]
 workspace = true

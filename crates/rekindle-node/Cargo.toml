@@ -4,7 +4,7 @@ version = "0.1.0"
 publish = false
 edition = "2021"
 description = "Rekindle daemon — IPC bus, state management, and Veilid bridge"
-license = "MIT"
+license.workspace = true
 
 [lints]
 workspace = true

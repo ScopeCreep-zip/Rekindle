@@ -13,7 +13,7 @@ without any central server.
 
 ### Is it free?
 
-Yes. Rekindle is MIT-licensed open source. There are no premium
+Yes. Rekindle is open source under MIT OR Apache-2.0. There are no premium
 tiers, subscriptions, ads, telemetry, or in-app purchases. There are
 no plans to add any.
 
