@@ -9,7 +9,10 @@
 //
 // Also the held review's standing (part 2b): it survives a reload and shows
 // in a window opened later, a cancel clears it everywhere and the Host
-// raises it again at the next unlock, and the alert is shown once.
+// raises it again at the next unlock, and the alert is shown once. With a
+// second held review (Dee, a CLI friend, resets her session: the Host holds
+// AcceptSessionReset), the answer to the review on show resolves that one
+// only (its holdId), and the other shows next.
 //
 // Its contract
 // (contract-s7dk10b-2026-11-26.md): `rekindle community re-enrol-device`
@@ -21,8 +24,8 @@
 
 import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, byText, gone, resolveIntent, shown, switchTo, typeInto, waitUntil } from "../../../walk/helpers.ts";
-import { type Peer, peerReviewed, startClone, stopFleet } from "../../fleet.ts";
-import { createCommunity, createIdentity, logOut, newUser, openCommunity, type User } from "../../journeys.ts";
+import { type Peer, peerRequestFriend, peerReviewed, startClone, startFleet, stopFleet } from "../../fleet.ts";
+import { acceptRequest, createCommunity, createIdentity, friendCode, logOut, newUser, openCommunity, pendingRequest, type User } from "../../journeys.ts";
 import { showSkinView } from "../../journeys_skins.ts";
 import { BUDDY, LOGIN, SETTINGS, inBuddy } from "../../../walk/nav.ts";
 import { shot } from "../../shots.ts";
@@ -60,6 +63,15 @@ describe("a restored copy re-enrols the device: the original is told and offered
 
   it("the copy's re-enrolment retires the shared key: Signing stopped, then the Host's re-enrol review", async () => {
     await createIdentity(browser, me);
+    // Dee, a friend over the CLI: later her session reset is a second
+    // review the Host holds, beside the re-enrolment.
+    const fleet = await startFleet(["Dee"]);
+    peers = [...fleet];
+    const dee = fleet[0]!;
+    const hello = "hello from Dee";
+    await peerRequestFriend(dee, await friendCode(browser), hello);
+    await pendingRequest(browser, hello);
+    await acceptRequest(browser, me, hello);
     await createCommunity(browser, me, COMMUNITY);
     await openCommunity(browser, COMMUNITY);
     const dataRoot = (browser.requestedCapabilities as Record<string, unknown>)["rekindle:dataRoot"];
@@ -68,7 +80,7 @@ describe("a restored copy re-enrols the device: the original is told and offered
     // The copy: Ari's own files on a second daemon, unlocked with her passphrase;
     // it must hold the community before it re-enrols in it.
     const copy = await startClone("Ari's copy", { dataRoot, passphrase: me.passphrase });
-    peers = [copy];
+    peers = [...peers, copy];
     const communities = (await copy.cli(["community", "list"])) as { name?: string }[] | null;
     if (!(communities ?? []).some((c) => c.name === COMMUNITY)) throw new Error(`the copy holds no ${COMMUNITY}: ${JSON.stringify(communities).slice(0, 200)}`);
     await peerReviewed(copy, REENROL);
@@ -114,11 +126,37 @@ describe("a restored copy re-enrols the device: the original is told and offered
     await unlockAgain();
     expect(await reviewSays(browser)).toContain("this device's key in every community");
 
+    // A second held review: Dee resets her session with Ari, so Ari's Host
+    // also holds AcceptSessionReset. The dialog shows the first held (the
+    // re-enrolment); its answer must resolve that review only (its holdId),
+    // and the session reset must then show.
+    const deeFriends = (await dee.cli(["friend", "list"])) as { publicKey?: string; displayName?: string }[] | null;
+    const ariKey = (deeFriends ?? []).find((f) => f.displayName === me.displayName)?.publicKey ?? (deeFriends ?? [])[0]?.publicKey;
+    if (!ariKey) throw new Error(`Dee's friend list has no Ari: ${JSON.stringify(deeFriends).slice(0, 200)}`);
+    await dee.cli(["friend", "reset-session", ariKey]);
+    expect(await reviewSays(browser)).toContain("this device's key in every community");
+    await shot("two-held-reviews");
+
     // Committed: the dialog answers the review it shows (its holdId).
     const outcome = await resolveIntent(browser, { passphrase: me.passphrase, appearMs: NET_WAIT_MS });
     console.log(`[reenrol] review outcome: ${outcome}`);
-    await shot("reenrol-review-done");
     expect(outcome).toBe("committed");
+    // Only the re-enrolment resolved: the session reset is now the review on show.
+    let next = "";
+    await waitUntil(
+      async () => {
+        next = ((await (await browser.$(".intent-dialog")).getText().catch(() => "")) ?? "").replace(/\s+/g, " ");
+        return next !== "" && !next.includes("this device's key in every community");
+      },
+      NET_WAIT_MS,
+      "after the re-enrolment was committed the session reset review never showed",
+    );
+    console.log(`[reenrol] next held review: ${next.slice(0, 300)}`);
+    await shot("session-reset-review-after-commit");
+    // Cancelled, it leaves; the committed re-enrolment does not come back.
+    expect(await resolveIntent(browser, { passphrase: me.passphrase, cancel: true, appearMs: NET_WAIT_MS })).toBe("cancelled");
+    await gone(browser, ".intent-dialog", NET_WAIT_MS);
+    await shot("reenrol-review-done");
 
     // The Host's "Signing stopped" alert is one alert (de-duplicated by its
     // id) through the reload, the new window and two unlocks.
