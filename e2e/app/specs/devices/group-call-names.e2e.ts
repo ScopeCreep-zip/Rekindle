@@ -6,8 +6,10 @@
 // command the Start Group Call panel sends; the call's own UI is what is
 // tested here). Alice's incoming banner names Bob and sits inside her narrow
 // buddy list without covering its chrome; she accepts, and her call grid
-// names Bob, Carol (not her friend: the group DM roster's name, addendum 2)
-// and herself with "(you)" (the Host's isSelf), with no run of 8+ hex
+// names Bob, Carol by her spaced fingerprint (not Alice's friend, and a call
+// with no group DM has no roster, so the Host's name order ends at the
+// fingerprint; passing Bob's alias for her would leak it, addendum 2) and
+// herself with "(you)" (the Host's isSelf), with no run of 8+ hex
 // anywhere in the call's UI, and nothing in the window shows as a sliver
 // (a text or status element visible at under 4 px tall). Accepting a call
 // opens the microphone: Linux only (no TCC prompt on the Mac).
@@ -26,20 +28,26 @@ import {
   requestFriend,
   type User,
 } from "../../journeys.ts";
+import { painted } from "../../painted.ts";
 import { shot } from "../../shots.ts";
 
 const app = (name: "alice" | "bob" | "carol"): Browser =>
   multiRemoteBrowser.getInstance(name) as unknown as Browser;
 
-async function publicKey(b: Browser): Promise<string> {
+/** `b`'s identity as the Host serves it: its key, and the spaced fingerprint
+ *  the Host names it by where no friend or roster name applies. */
+async function identity(b: Browser): Promise<{ publicKey: string; fingerprint: string }> {
   return (await b.execute(async () => {
     const { invoke } = (
       window as unknown as {
-        __TAURI_INTERNALS__: { invoke(cmd: string): Promise<{ value: { publicKey: string } }> };
+        __TAURI_INTERNALS__: {
+          invoke(cmd: string): Promise<{ value: { publicKey: string; fingerprint: string } }>;
+        };
       }
     ).__TAURI_INTERNALS__;
-    return (await invoke("get_identity")).value.publicKey;
-  })) as string;
+    const { publicKey, fingerprint } = (await invoke("get_identity")).value;
+    return { publicKey, fingerprint };
+  })) as { publicKey: string; fingerprint: string };
 }
 
 /** `from` and `to` become friends: `from` asks with `to`'s code, `to` accepts. */
@@ -57,14 +65,15 @@ describe("a group call names its members as the Host serves them (VN2)", functio
   const bob: User = { ...newUser("gc-bob"), displayName: "Bob" };
   const carol: User = { ...newUser("gc-carol"), displayName: "Carol" };
 
-  it("Alice's incoming banner and call grid name Bob and Carol, never by a key slice", async () => {
+  it("Alice's incoming banner and call grid name Bob, Carol's fingerprint and herself, never by a key slice", async () => {
     const a = app("alice");
     const b = app("bob");
     const c = app("carol");
     await Promise.all([createIdentity(a, alice), createIdentity(b, bob), createIdentity(c, carol)]);
     await befriend(b, bob, a, alice);
     await befriend(b, bob, c, carol);
-    const [aliceKey, carolKey] = await Promise.all([publicKey(a), publicKey(c)]);
+    const [{ publicKey: aliceKey }, { publicKey: carolKey, fingerprint: carolName }] =
+      await Promise.all([identity(a), identity(c)]);
 
     // Bob starts the group voice call to Alice and Carol through the Host.
     await switchTo(b, BUDDY);
@@ -115,12 +124,15 @@ describe("a group call names its members as the Host serves them (VN2)", functio
       window: number[];
     };
     console.log(`[group-call] banner ${JSON.stringify(place)}`);
+    // Seen, not only laid out: hiding the banner changes most of its box's pixels.
+    const bannerPaint = await painted(a, ".group-call-incoming-banner");
+    console.log(`[group-call] banner painted: ${JSON.stringify(bannerPaint)}`);
     await shot("group-call-incoming");
 
     // She accepts: her call grid names each member. Every sample counts, from
     // the first tile drawn: each tile's name is one the Host served (Bob,
-    // Carol, herself with "(you)"), never empty and never anything else.
-    const served = new Set(["Bob", "Carol", "Alice (you)"]);
+    // Carol's fingerprint, herself with "(you)"), never empty or anything else.
+    const served = new Set(["Bob", carolName, "Alice (you)"]);
     const offSamples: string[][] = [];
     let samples = 0;
     const sample = async (): Promise<string[]> => {
@@ -138,13 +150,13 @@ describe("a group call names its members as the Host serves them (VN2)", functio
     await waitUntil(
       async () => {
         names = await sample();
-        return names.includes("Bob") && names.includes("Carol") && names.includes("Alice (you)");
+        return names.includes("Bob") && names.includes(carolName) && names.includes("Alice (you)");
       },
       NET_WAIT_MS,
       ""
     ).catch(() => {
       throw new Error(
-        `Alice's call grid never named Bob, Carol and Alice (you) (it shows ${JSON.stringify(names)})`
+        `Alice's call grid never named Bob, Carol (${carolName}) and Alice (you) (it shows ${JSON.stringify(names)})`
       );
     });
     // And it stays so: 5 s more of samples.
@@ -219,12 +231,13 @@ describe("a group call names its members as the Host serves them (VN2)", functio
 
     expect({
       caller: bannerText.includes("Bob"),
-      names: names.includes("Bob") && names.includes("Carol") && names.includes("Alice (you)"),
+      names: names.includes("Bob") && names.includes(carolName) && names.includes("Alice (you)"),
       offSamples,
       hexRuns,
       bannerInWindow: place.inWindow,
       bannerBelowChrome: place.belowChrome,
       bannerTextClear: place.metaClear,
+      bannerPainted: bannerPaint.changed >= bannerPaint.total / 2,
       slivers,
     }).toEqual({
       caller: true,
@@ -234,6 +247,7 @@ describe("a group call names its members as the Host serves them (VN2)", functio
       bannerInWindow: true,
       bannerBelowChrome: true,
       bannerTextClear: true,
+      bannerPainted: true,
       slivers: [],
     });
   });
