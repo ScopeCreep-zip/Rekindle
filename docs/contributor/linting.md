@@ -59,7 +59,6 @@ Each linter is also runnable on its own:
 # Rust
 cargo fmt --all -- --check
 cargo clippy --workspace --all-targets -- -D warnings
-cargo audit
 cargo deny check
 cargo vet check
 
@@ -110,8 +109,8 @@ Two workflows orchestrate these in CI:
 ### Rust
 
 `rustfmt` and `clippy` are stdlib — no alternatives. For supply-chain
-auditing we use `cargo-audit` (RustSec advisory DB), `cargo-deny`
-(license + bans + sources policy), and `cargo-vet` (cryptographic
+auditing we use `cargo-deny` (RustSec advisory DB through its
+advisories check, plus license + bans + sources policy), and `cargo-vet` (cryptographic
 audit attestations). Specific selection rationale lives in
 [`../security/supply-chain-policy.md`](../security/supply-chain-policy.md)
 and the dedicated agent reports synthesised here.
