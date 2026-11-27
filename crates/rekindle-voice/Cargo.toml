@@ -22,7 +22,7 @@ nnnoiseless = { version = "0.5", default-features = false, features = [ "dasp" ]
 opus = "0.3"
 # Receiver-report wire codec, as rekindle-transport's wire (bincode is
 # unmaintained, RUSTSEC-2025-0141; plan SC1).
-postcard = { version = "1", default-features = false, features = [ "use-std" ] }
+postcard = { version = "1", features = [ "use-std" ] }
 serde = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
