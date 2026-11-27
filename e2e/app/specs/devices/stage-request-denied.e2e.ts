@@ -13,6 +13,8 @@ import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, byText, press, shown } from "../../../walk/helpers.ts";
 import { type Peer, peerCreateCommunity, peerInvite, peerReviewed, startFleet, stopFleet } from "../../fleet.ts";
 import { createIdentity, joinCommunity, newUser, openCommunity, type User } from "../../journeys.ts";
+import { applySkin, skinShown } from "../../journeys_skins.ts";
+import { openSettings } from "../../../walk/nav.ts";
 import { shot } from "../../shots.ts";
 
 const COMMUNITY = `Stage Hall ${Date.now() % 100000}`;
@@ -33,6 +35,10 @@ describe("a stage's raise hand is shown, disabled with the Host's reason (PN1)",
 
   it("Request to speak is disabled with the reason where requestToSpeak is denied", async () => {
     await createIdentity(browser, me);
+    // The default skin, chosen and then checked on the stage's own window
+    // below (a run once showed the app's plain frame instead).
+    await openSettings(browser, "Appearance");
+    const symbiosis = await applySkin(browser, me, "Symbiosis");
     peers = await startFleet(["Cara"]);
     const [cara] = peers;
     const anchor = await peerCreateCommunity(cara!, COMMUNITY);
@@ -47,6 +53,8 @@ describe("a stage's raise hand is shown, disabled with the Host's reason (PN1)",
     ]);
     await joinCommunity(browser, me, await peerInvite(cara!, anchor), COMMUNITY);
     await openCommunity(browser, COMMUNITY);
+    await skinShown(browser, symbiosis);
+    if (!(await (await browser.$(".skin-tree")).isExisting())) throw new Error("the community window is not under Symbiosis's tree");
 
     await (await byText(browser, ".channel-item", STAGE, NET_WAIT_MS)).click();
     await press(browser, await shown(browser, ".stage-panel-join-btn", NET_WAIT_MS));
@@ -99,8 +107,16 @@ describe("a stage's raise hand is shown, disabled with the Host's reason (PN1)",
       };
     })) as { header: { inside: boolean; el: number[]; clip: number[] }; row: { inside: boolean; el: number[]; clip: number[] }; scrolled: number; window: number[] };
     console.log(`[stage] window ${fit.window.join("x")}, panel scrolled ${fit.scrolled}; Audience header ${JSON.stringify(fit.header)}; our row ${JSON.stringify(fit.row)}`);
-    const panelText = (await browser.execute(() => document.querySelector(".stage-panel")?.textContent ?? "")) as string;
-    const hexRuns = panelText.toLowerCase().match(/[0-9a-f]{8,}/g) ?? [];
+    const hexRuns = (await browser.execute(() => {
+      const runs: string[] = [];
+      const panel = document.querySelector(".stage-panel");
+      if (!panel) return runs;
+      const walker = document.createTreeWalker(panel, NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        runs.push(...((n.textContent ?? "").toLowerCase().match(/[0-9a-f]{8,}/g) ?? []));
+      }
+      return runs;
+    })) as string[];
     console.log(`[stage] audience row: ${await (await browser.$(".stage-panel-grid .stage-panel-section:last-child .stage-panel-member-card")).getText().catch(() => "")}; hex runs in the panel: ${hexRuns.length}`);
     await shot("request-to-speak-denied");
     expect({ shown: await request.isDisplayed(), disabled: state.disabled, reason: state.reason.length > 0, dimmed: state.dimmed })
