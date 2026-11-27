@@ -275,6 +275,7 @@ impl VoiceSessionDeps for VoiceAdapter {
 
     fn emit_local_joined(
         &self,
+        session: &rekindle_voice::session_state::VoiceSessionState,
         channel_id: &str,
         community_id: Option<&str>,
         public_key: &str,
@@ -282,6 +283,7 @@ impl VoiceSessionDeps for VoiceAdapter {
     ) {
         event_mapping::emit_local_joined_impl(
             &self.app_handle,
+            session,
             channel_id,
             community_id,
             public_key,
@@ -437,13 +439,22 @@ impl VoiceSessionDeps for VoiceAdapter {
     }
 
     fn stop_devices_and_clear_engine(&self) {
-        let mut ve = self.state.voice_engine.lock();
-        if let Some(ref mut handle) = *ve {
-            handle.engine.stop_capture();
-            handle.engine.stop_playback();
+        let handle = {
+            let mut ve = self.state.voice_engine.lock();
+            if let Some(ref mut handle) = *ve {
+                handle.engine.stop_capture();
+                handle.engine.stop_playback();
+            }
+            ve.take()
+        };
+        if let Some(handle) = handle {
+            crate::services::community::media_ready_runtime::end(
+                &self.state,
+                &handle.session_state,
+                handle.community_id.as_deref(),
+                &handle.channel_id,
+            );
         }
-        *ve = None;
-        drop(ve);
         // The call ended: a window that opens from now on is not shown it.
         if let Some(host) = self.state.host.current() {
             for key in [

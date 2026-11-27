@@ -335,6 +335,7 @@ pub trait VoiceSessionDeps: MediaKeySource + Send + Sync + 'static {
     /// `start_session` after loops are spawned.
     fn emit_local_joined(
         &self,
+        session: &crate::session_state::VoiceSessionState,
         channel_id: &str,
         community_id: Option<&str>,
         public_key: &str,

@@ -59,21 +59,36 @@ pub(super) fn init_voice_session_impl(
     let engine = rekindle_voice::VoiceEngine::new(config)
         .map_err(|e| VoiceError::Session(format!("failed to create voice engine: {e}")))?;
 
-    // First install the engine handle on AppState so
-    // start_audio_devices + create_transport (both AppState-coupled)
-    // can find it.
+    // Build the session transport with full signing-key + AEAD wiring
+    // (Veilid routing context init, ed25519 signing key for
+    // packet signatures, call_key for 1:1 AEAD). The sender_key we
+    // stamp on packets must be our voice self-identity (the community
+    // pseudonym, or owner key for 1:1) so it matches the signing key
+    // installed below and remote peers can verify our signature.
+    let self_voice_id = state_helpers::voice_self_identity(state, community_id);
+    if self_voice_id.is_empty() {
+        return Err(VoiceError::IdentityNotLoaded);
+    }
+    let (transport, egress) = create_transport_impl(
+        state,
+        &self_voice_id,
+        channel_id,
+        community_id,
+        peer_route_blob,
+    );
+    let media = transport.media();
+    let session_state = transport.session_state();
+    let shared_transport = Arc::new(tokio::sync::Mutex::new(transport));
+
     *state.voice_engine.lock() = Some(VoiceEngineHandle {
         engine,
-        // Placeholder transport — overwritten below once we've
-        // built the real one with signing key + AEAD installed.
-        transport: Arc::new(tokio::sync::Mutex::new(
-            rekindle_voice::transport::VoiceTransport::new(channel_id.to_string()),
-        )),
-        media: Arc::default(),
+        transport: Arc::clone(&shared_transport),
+        session_state,
+        media,
         loops: None,
         monitor: None,
         mcu: None,
-        egress: None,
+        egress,
         channel_id: channel_id.to_string(),
         community_id: community_id.map(String::from),
         muted_flag: Arc::clone(&muted_flag),
@@ -106,36 +121,6 @@ pub(super) fn init_voice_session_impl(
                     "voice playback device unavailable — joining without speaker output"
                 );
             }
-        }
-    }
-
-    // Build the real transport with full signing-key + AEAD wiring
-    // (Veilid routing context init, ed25519 signing key for
-    // packet signatures, call_key for 1:1 AEAD). The sender_key we
-    // stamp on packets must be our voice self-identity (the community
-    // pseudonym, or owner key for 1:1) so it matches the signing key
-    // installed below and remote peers can verify our signature.
-    let self_voice_id = state_helpers::voice_self_identity(state, community_id);
-    if self_voice_id.is_empty() {
-        return Err(VoiceError::IdentityNotLoaded);
-    }
-    let (transport, egress) = create_transport_impl(
-        state,
-        &self_voice_id,
-        channel_id,
-        community_id,
-        peer_route_blob,
-    );
-    let media = transport.media();
-    let shared_transport = Arc::new(tokio::sync::Mutex::new(transport));
-
-    // Install the real transport on the handle (overwrite the placeholder).
-    {
-        let mut ve = state.voice_engine.lock();
-        if let Some(ref mut handle) = *ve {
-            handle.transport = Arc::clone(&shared_transport);
-            handle.media = media;
-            handle.egress = egress;
         }
     }
 

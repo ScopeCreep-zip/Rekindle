@@ -3,11 +3,13 @@
 
 use std::sync::Arc;
 
+use rekindle_types::subscription_events::JoinHandshake;
+
 use crate::signaling::deps::{CommunityVoiceEvent, VoiceSignalingDeps};
 
 use super::roster::named_roster;
 
-use super::join::send_confirmed_if_first;
+use super::join::{advance_handshake, send_confirmed_if_first};
 
 /// Handshake leg 2, joiner side: a present member acked our VoiceJoin.
 /// The ack carries the acker's identity + route, so it alone is enough
@@ -74,15 +76,15 @@ pub(in crate::signaling) fn handle_voice_join_ack(
                 .await;
             }
         }
-        if transport.lock().await.advance_handshake_seen() {
-            deps_task.emit_event(CommunityVoiceEvent::VoiceJoinHandshake {
-                community_id: cid.clone(),
-                channel_id: channel_id.clone(),
-                state: "seen".to_string(),
-                peer: Some(acker),
-                display_name: Some(display_name),
-            });
-        }
+        advance_handshake(
+            &*deps_task,
+            &cid,
+            &channel_id,
+            &transport,
+            JoinHandshake::Seen,
+            Some((acker, display_name)),
+        )
+        .await;
         send_confirmed_if_first(&*deps_task, &cid, &channel_id, &transport).await;
     });
 }
@@ -112,15 +114,16 @@ pub(in crate::signaling) fn handle_voice_join_confirmed(
         let peer = sender_pseudonym.to_string();
         deps.scope()
             .spawn_or_drop("voice join confirmed", async move {
-                if transport.lock().await.advance_handshake_seen() {
-                    deps_task.emit_event(CommunityVoiceEvent::VoiceJoinHandshake {
-                        community_id: cid.clone(),
-                        channel_id: ch.clone(),
-                        state: "seen".to_string(),
-                        display_name: Some(deps_task.member_shown_name(&cid, &peer)),
-                        peer: Some(peer),
-                    });
-                }
+                let name = deps_task.member_shown_name(&cid, &peer);
+                advance_handshake(
+                    &*deps_task,
+                    &cid,
+                    &ch,
+                    &transport,
+                    JoinHandshake::Seen,
+                    Some((peer, name)),
+                )
+                .await;
                 send_confirmed_if_first(&*deps_task, &cid, &ch, &transport).await;
             });
     }

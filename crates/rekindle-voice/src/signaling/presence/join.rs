@@ -5,6 +5,7 @@
 use std::sync::Arc;
 
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
+use rekindle_types::subscription_events::JoinHandshake;
 
 use crate::signaling::deps::{CommunityVoiceEvent, VoiceSignalingDeps};
 use crate::signaling::stage::reconcile_stage_transport;
@@ -142,15 +143,16 @@ async fn voice_join_apply(
     // Mutual-join race: if WE are still unseen (joined moments ago and
     // nobody acked yet), this peer's VoiceJoin is itself evidence the
     // channel sees us — count it as our leg 2 and complete our leg 3.
-    let mutual_seen = transport.lock().await.advance_handshake_seen();
-    if mutual_seen {
-        deps.emit_event(CommunityVoiceEvent::VoiceJoinHandshake {
-            community_id: community_id.to_string(),
-            channel_id: channel_id.to_string(),
-            state: "seen".to_string(),
-            peer: Some(sender_key.clone()),
-            display_name: Some(joiner_name),
-        });
+    if advance_handshake(
+        &**deps,
+        community_id,
+        channel_id,
+        &transport,
+        JoinHandshake::Seen,
+        Some((sender_key, joiner_name)),
+    )
+    .await
+    {
         send_confirmed_if_first(&**deps, community_id, channel_id, &transport).await;
     }
 
@@ -187,23 +189,49 @@ pub(in crate::signaling) async fn send_confirmed_if_first(
     channel_id: &str,
     transport: &Arc<tokio::sync::Mutex<VoiceTransport>>,
 ) {
-    if !transport.lock().await.advance_handshake_connected() {
-        return;
+    if advance_handshake(
+        deps,
+        community_id,
+        channel_id,
+        transport,
+        JoinHandshake::Connected,
+        None,
+    )
+    .await
+    {
+        tracing::info!(
+            community = %community_id,
+            channel = %channel_id,
+            "voice join handshake complete (confirmed sent)",
+        );
     }
-    let confirmed = CommunityEnvelope::control(ControlPayload::VoiceJoinConfirmed {
-        channel_id: channel_id.to_string(),
-    });
-    deps.send_to_channel(community_id, channel_id, &confirmed);
-    deps.emit_event(CommunityVoiceEvent::VoiceJoinHandshake {
-        community_id: community_id.to_string(),
-        channel_id: channel_id.to_string(),
-        state: "connected".to_string(),
-        peer: None,
-        display_name: None,
-    });
-    tracing::info!(
-        community = %community_id,
-        channel = %channel_id,
-        "voice join handshake complete (confirmed sent)",
-    );
+}
+
+/// Apply and publish one handshake leg on the same lock as LocalJoined.
+pub(super) async fn advance_handshake(
+    deps: &dyn VoiceSignalingDeps,
+    community_id: &str,
+    channel_id: &str,
+    transport: &tokio::sync::Mutex<VoiceTransport>,
+    stage: JoinHandshake,
+    peer: Option<(String, String)>,
+) -> bool {
+    let session = transport.lock().await.session_state();
+    session.advance_handshake(stage, |media_ready| {
+        if stage == JoinHandshake::Connected {
+            let confirmed = CommunityEnvelope::control(ControlPayload::VoiceJoinConfirmed {
+                channel_id: channel_id.to_string(),
+            });
+            deps.send_to_channel(community_id, channel_id, &confirmed);
+        }
+        let (peer, display_name) = peer.unzip();
+        deps.emit_event(CommunityVoiceEvent::VoiceJoinHandshake {
+            community_id: community_id.to_string(),
+            channel_id: channel_id.to_string(),
+            state: stage,
+            media_ready,
+            peer,
+            display_name,
+        });
+    })
 }
