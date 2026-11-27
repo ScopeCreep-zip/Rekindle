@@ -345,7 +345,7 @@ export interface NodeTarget {
 }
 
 /** `NodeInset`: px from the field's left and right edges (plan SK5). */
-export interface NodeInset {
+interface NodeInset {
   left: number;
   right: number;
   /**

@@ -503,7 +503,7 @@ export interface CatchUpView {
 }
 
 /** One governance write held by the unlock barrier. */
-export interface PendingGovOp {
+interface PendingGovOp {
   opId: string;
   kind: PendingGovKind;
   target: { member: string | null; channel: string | null; role: string | null };

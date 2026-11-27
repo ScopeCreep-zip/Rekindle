@@ -152,7 +152,7 @@ export interface OnboardingConfig {
   guideSteps: GuideStep[];
 }
 
-export interface OnboardingQuestion {
+interface OnboardingQuestion {
   questionId: string;
   title: string;
   description: string | null;
@@ -161,7 +161,7 @@ export interface OnboardingQuestion {
   options: OnboardingOption[];
 }
 
-export interface OnboardingOption {
+interface OnboardingOption {
   optionId: string;
   title: string;
   description: string | null;
