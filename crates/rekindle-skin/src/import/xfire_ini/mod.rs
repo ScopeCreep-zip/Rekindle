@@ -42,6 +42,7 @@ pub mod frame;
 pub mod ini;
 mod notice;
 mod rgba;
+mod theme;
 pub mod title;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -55,17 +56,17 @@ use rekindle_types::dto::skin::{
 
 use super::credit::{Authorship, XfireCredit};
 use super::credits;
-use super::xfire_xml::colours::{absolute, target_in, Target};
 use super::xfire_xml::controls::StateTally;
 use super::xfire_xml::refs::{self, Ref};
 use super::xfire_xml::title as xtitle;
 use super::xfire_xml::{bitmap, ColourRow};
-use super::{base_of, conclude, tree_hash, walk, Control, ImportError, Outcome, Tree};
+use super::{base_of, conclude, tree_hash, Control, ImportError, Outcome, Tree};
 use crate::output::{token_file, zip};
 use crate::package::MANIFEST;
 use frame::read_frame;
 pub use frame::{Frame, Shape, FRAME, MIDDLE_FRAME, OUTER_FRAME, SHAPES};
 use ini::{Ini, Section};
+use theme::read_theme;
 
 /// The `source.format` of an imported package.
 pub const XFIRE_INI_FORMAT: &str = "xfire-ini";
@@ -208,41 +209,6 @@ pub(super) fn file_name(file: &str, key: &str, value: &str) -> Result<String, Im
         });
     }
     Ok(format!("{value}.ini"))
-}
-
-type Theme = (
-    Vec<ColourRow>,
-    BTreeMap<String, TokenValue>,
-    BTreeMap<String, String>,
-);
-
-/// The theme's colours, the tokens they set, and its `Graphics.<ALIAS>`
-/// image aliases; every other key counted in `dropped`.
-fn read_theme(
-    theme: &Section,
-    dropped: &mut BTreeMap<&'static str, usize>,
-    notes: &mut Vec<String>,
-) -> Result<Theme, ImportError> {
-    let (mut rows, mut tokens, mut aliases) = (Vec::new(), BTreeMap::new(), BTreeMap::new());
-    for e in &theme.entries {
-        if let Some(name) = e.key.strip_prefix("ColorGroup.") {
-            let value = rgba::read(name, &e.value, notes)?;
-            let t = target_in(colours::NAMES, name);
-            if let Target::Token(id) = t {
-                tokens.insert(id.to_owned(), walk::color(absolute(name, &e.value, value)?));
-            }
-            rows.push(ColourRow {
-                name: name.to_owned(),
-                value,
-                target: t,
-            });
-        } else if let Some(alias) = e.key.strip_prefix("Graphics.") {
-            aliases.insert(alias.to_ascii_uppercase(), e.value.clone());
-        } else {
-            *dropped.entry("theme keys (sounds, other)").or_default() += 1;
-        }
-    }
-    Ok((rows, tokens, aliases))
 }
 
 /// An image value: a path (it holds a `.`), else a theme `Graphics.<NAME>`

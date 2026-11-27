@@ -6,7 +6,7 @@ use std::fmt::Write as _;
 use rekindle_image::{encode_png, DynamicImage, Rgba, RgbaImage};
 
 use super::*;
-use crate::import::Imported;
+use crate::import::{walk, Imported};
 use crate::validate;
 
 /// The skin's folder: it names `Fixture.ini`; `LongName` differs.
