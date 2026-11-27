@@ -27,10 +27,6 @@
  * generated from `rekindle-skin::registry` (`cargo xtask
  * gen-skin-registry`, plan E7.7.1). */
 @import "./generated/tokens.css";
-@source "../";
-/* The generated token map names each role as a string (`"shadow"`), which
- * Tailwind would read as a utility class. */
-@source not "./generated";
 /* The Xfire skin, split into ordered parts. It was one 7,926-line file,
  * which the 600-line ceiling could not cover. Import order IS cascade
  * order within a layer, so these must stay sorted: parts `00`-`15`, `90`
@@ -83,6 +79,10 @@
 @import "./scrollbar.css";
 @import "./generated/regions.css";
 @import "./generated/regions-a11y.css";
+@source "../";
+/* The generated token map names each role as a string (`"shadow"`), which
+ * Tailwind would read as a utility class. */
+@source not "./generated";
 
 /* The spacing grid (plan E7.12): every gap, padding and margin between
  * controls is a whole multiple of this step, the scale the theme parts
@@ -116,17 +116,17 @@
   :root {
     --sec-font-family: "Segoe UI", "Tahoma", sans-serif;
     --sec-commit-bg: #1565a8;
-    --sec-commit-fg: #ffffff;
+    --sec-commit-fg: #fff;
     --sec-commit-border: #1565a8;
     --sec-danger-bg: #c62828;
-    --sec-danger-fg: #ffffff;
+    --sec-danger-fg: #fff;
     --sec-danger-border: #c62828;
     --sec-secondary-bg: #2e2e2e;
     --sec-secondary-fg: #e7e7e7;
     --sec-secondary-border: #767676;
     --sec-focus: #8cc4ff;
     --sec-focus-ground: #0a0a0a;
-    --sec-hover-shade: #000000;
+    --sec-hover-shade: #000;
     --sec-disabled-bg: #2a2a2a;
     --sec-disabled-fg: #9a9a9a;
     --sec-disabled-border: #4a4a4a;
@@ -138,9 +138,9 @@
     --sec-qr-ink: #0a0a0a;
     --sec-mono-font-family: "Consolas", "Menlo", "DejaVu Sans Mono", monospace;
     --sec-verified-bg: #1b5e20;
-    --sec-verified-fg: #ffffff;
+    --sec-verified-fg: #fff;
     --sec-changed-bg: #8a4b00;
-    --sec-changed-fg: #ffffff;
+    --sec-changed-fg: #fff;
     --sec-review-bg: #121212;
     --sec-review-fg: #e7e7e7;
     --sec-review-muted-fg: #b0b0b0;
@@ -158,20 +158,20 @@
 
   :root[data-skin-base="light"] {
     --sec-commit-bg: #0b5cad;
-    --sec-commit-fg: #ffffff;
+    --sec-commit-fg: #fff;
     --sec-commit-border: #0b5cad;
     --sec-danger-bg: #b3261e;
-    --sec-danger-fg: #ffffff;
+    --sec-danger-fg: #fff;
     --sec-danger-border: #b3261e;
     --sec-secondary-bg: #ececec;
     --sec-secondary-fg: #1a1a1a;
     --sec-secondary-border: #767676;
     --sec-focus: #0b5cad;
-    --sec-focus-ground: #ffffff;
+    --sec-focus-ground: #fff;
     --sec-disabled-bg: #e0e0e0;
     --sec-disabled-fg: #5b5b5b;
     --sec-disabled-border: #9a9a9a;
-    --sec-status-cutout: #ffffff;
+    --sec-status-cutout: #fff;
     --sec-review-bg: #f8fafc;
     --sec-review-fg: #1a1a1a;
     --sec-review-muted-fg: #4a4a4a;
@@ -182,26 +182,26 @@
   @media (prefers-contrast: more) {
     :root,
     :root[data-skin-base="light"] {
-      --sec-commit-bg: #000000;
-      --sec-commit-fg: #ffffff;
-      --sec-commit-border: #ffffff;
+      --sec-commit-bg: #000;
+      --sec-commit-fg: #fff;
+      --sec-commit-border: #fff;
       --sec-danger-bg: #7a0000;
-      --sec-danger-fg: #ffffff;
-      --sec-danger-border: #ffffff;
-      --sec-secondary-bg: #000000;
-      --sec-secondary-fg: #ffffff;
-      --sec-secondary-border: #ffffff;
-      --sec-focus: #ffffff;
-      --sec-focus-ground: #000000;
-      --sec-disabled-bg: #000000;
+      --sec-danger-fg: #fff;
+      --sec-danger-border: #fff;
+      --sec-secondary-bg: #000;
+      --sec-secondary-fg: #fff;
+      --sec-secondary-border: #fff;
+      --sec-focus: #fff;
+      --sec-focus-ground: #000;
+      --sec-disabled-bg: #000;
       --sec-disabled-fg: #a0a0a0;
       --sec-disabled-border: #a0a0a0;
-      --sec-status-cutout: #000000;
-      --sec-review-bg: #000000;
-      --sec-review-fg: #ffffff;
-      --sec-review-muted-fg: #ffffff;
+      --sec-status-cutout: #000;
+      --sec-review-bg: #000;
+      --sec-review-fg: #fff;
+      --sec-review-muted-fg: #fff;
       --sec-review-danger-fg: #ff8a80;
-      --sec-review-border: #ffffff;
+      --sec-review-border: #fff;
     }
   }
 }
@@ -269,13 +269,11 @@
   --z-review-backdrop: 9000;
   --z-review: 9010;            /* the review's content above its backdrop */
   --z-skip-link: 9999;         /* must beat everything for a11y */
-}
 
-/* Elevation shadow for floating surfaces — popups, dropdowns, call
- * banners, pickers. Eight selectors in `xfire-theme.css` each carried
- * the identical `0 4px 12px rgba(0, 0, 0, 0.4)` literal, so restyling
- * "things that float" meant finding all eight. */
-:root {
+  /* Elevation shadow for floating surfaces — popups, dropdowns, call
+   * banners, pickers. Eight selectors in `xfire-theme.css` each carried
+   * the identical `0 4px 12px rgba(0, 0, 0, 0.4)` literal, so restyling
+   * "things that float" meant finding all eight. */
   --shadow-elevated: 0 4px 12px color-mix(in srgb, var(--color-xfire-shadow) 40%, transparent);
 }
 
