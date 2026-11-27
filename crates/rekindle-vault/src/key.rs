@@ -89,6 +89,12 @@ pub enum VaultKey {
     DeviceOpKey {
         community: String,
     },
+    /// Old record and owner retained in the device vault until the
+    /// re-enrolment outbox lands its retirement locator.
+    PendingRetirementOwner {
+        community: String,
+        device: String,
+    },
 
     /// Audit chain MAC key — `("audit", "mac_key")`.
     AuditMacKey,
@@ -164,7 +170,7 @@ impl VaultKey {
             | Self::MemberRecordOwner { .. }
             | Self::MemberHpkeSecret { .. } => "communities",
             Self::AuditMacKey | Self::AuditTail => "audit",
-            Self::DeviceOpKey { .. } => "device",
+            Self::DeviceOpKey { .. } | Self::PendingRetirementOwner { .. } => "device",
             Self::ClientKey { .. } => "clients",
         }
     }
@@ -178,7 +184,10 @@ impl VaultKey {
     pub fn is_device_scoped(&self) -> bool {
         matches!(
             self,
-            Self::DeviceVaultSecret | Self::DeviceOpKey { .. } | Self::PendingPrekeyOwner
+            Self::DeviceVaultSecret
+                | Self::DeviceOpKey { .. }
+                | Self::PendingRetirementOwner { .. }
+                | Self::PendingPrekeyOwner
         )
     }
 
@@ -234,6 +243,9 @@ impl VaultKey {
             Self::MemberHpkeSecret { community } => ("member_hpke_secret", vec![s(community)]),
             Self::DeviceVaultSecret => ("device_vault_key", vec![]),
             Self::DeviceOpKey { community } => ("device_op_key", vec![s(community)]),
+            Self::PendingRetirementOwner { community, device } => {
+                ("pending_retirement_owner", vec![s(community), s(device)])
+            }
             Self::AuditMacKey => ("mac_key", vec![]),
             Self::AuditTail => ("tail", vec![]),
             Self::ClientKey { public_key } => ("client", vec![s(public_key)]),
@@ -320,6 +332,10 @@ impl VaultKey {
             ("device_vault_key", []) => Self::DeviceVaultSecret,
             ("device_op_key", [c]) => Self::DeviceOpKey {
                 community: c.clone(),
+            },
+            ("pending_retirement_owner", [c, d]) => Self::PendingRetirementOwner {
+                community: c.clone(),
+                device: d.clone(),
             },
             ("mac_key", []) => Self::AuditMacKey,
             ("tail", []) => Self::AuditTail,

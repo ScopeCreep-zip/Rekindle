@@ -31,6 +31,7 @@ mod logged_tests;
 #[cfg(test)]
 mod mem_port;
 mod page;
+mod retirement;
 #[cfg(test)]
 mod tests;
 
@@ -40,6 +41,9 @@ pub use local::{local_newest_entry, local_pages_after};
 pub use rekindle_codec::capnp_codec::chain::PagePointer;
 use rekindle_codec::capnp_codec::chain::{ChainHead, ChainPage};
 use rekindle_types::dht_layout::dm_participant;
+pub use retirement::{
+    publish_device_retirement, read_log_with_retirement, DeviceRetirementPointer,
+};
 
 use crate::port::{PortError, RecordPort, SetOutcome};
 use crate::schema;
@@ -187,7 +191,7 @@ enum FirstHead {
     /// Read it as [`HeadRead`] says.
     Read,
     /// The value the caller just read ([`append_at_unless_logged`]).
-    Known(Option<ChainHead>),
+    Known(retirement::HeadValue),
 }
 
 /// [`append`] to the chain whose head is `record`/`head_subkey`; `writer`
@@ -244,8 +248,8 @@ pub async fn append_at_unless_logged(
     entry: Vec<u8>,
     logged: impl Fn(&[u8]) -> bool,
 ) -> Result<LoggedAppend, ChainError> {
-    let head = read_head(port, record, head_subkey).await?;
-    let recent = walk_down(port, head.as_ref().map(|h| h.newest.clone()), cursor).await?;
+    let head = retirement::read_head_value(port, record, head_subkey).await?;
+    let recent = walk_down(port, head.0.as_ref().map(|h| h.newest.clone()), cursor).await?;
     if recent.iter().any(|e| logged(&e.ciphertext)) {
         return Ok(LoggedAppend::AlreadyLogged);
     }
@@ -307,12 +311,16 @@ async fn append_after(
     loop {
         // The first round may chain onto a head the caller just read; a
         // superseded round reads it again.
-        let prev = match (std::mem::replace(&mut first, FirstHead::Read), read) {
+        let (prev, retirement) = match (std::mem::replace(&mut first, FirstHead::Read), read) {
             (FirstHead::Known(head), _) => head,
-            (FirstHead::Read, HeadRead::Local) => own_head_at(port, record, head_subkey).await?,
-            (FirstHead::Read, HeadRead::Network) => read_head(port, record, head_subkey).await?,
+            (FirstHead::Read, HeadRead::Local) => {
+                (own_head_at(port, record, head_subkey).await?, None)
+            }
+            (FirstHead::Read, HeadRead::Network) => {
+                retirement::read_head_value(port, record, head_subkey).await?
+            }
         };
-        // The new head keeps the retire mark of the head it follows.
+        // Carry forward the retire mark and any observed governance locator.
         let retired_through = prev.as_ref().map_or(0, |h| h.retired_through);
         let newest = write_page(port, prev.map(|h| h.newest), expected, entries).await?;
         let head = ChainHead {
@@ -330,7 +338,12 @@ async fn append_after(
             }
         }
         let outcome = port
-            .write_own_once(record, head_subkey, page::encode_head(&head)?, Some(writer))
+            .write_own_once(
+                record,
+                head_subkey,
+                page::encode_head_value(Some(&head), retirement.as_ref())?,
+                Some(writer),
+            )
             .await?;
         // A newer `HEAD` than our copy won: Veilid stored it as our copy
         // (0.5.8 `set_value.rs:741-746`), so the next round chains onto it. The
@@ -438,6 +451,14 @@ pub async fn read_log_after(
     cursor: u64,
 ) -> Result<ChainRead, ChainError> {
     let newest = head_at(port, record, head_subkey).await?;
+    read_unretired(port, newest, cursor).await
+}
+
+async fn read_unretired(
+    port: &dyn RecordPort,
+    newest: Option<PagePointer>,
+    cursor: u64,
+) -> Result<ChainRead, ChainError> {
     let last_seq = newest.as_ref().map_or(0, |p| p.last_seq);
     Ok(ChainRead {
         entries: walk_down(port, newest, cursor).await?,

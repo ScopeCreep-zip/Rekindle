@@ -498,6 +498,17 @@ struct GovernanceOpSender {
     waiters: Arc<OpWaiters>,
 }
 
+impl GovernanceOpSender {
+    async fn send_op(&self, community: &str, record: &str, op: &[u8]) -> Result<(), String> {
+        self.governance
+            .append_own_op(community, record, op.to_vec())
+            .await?;
+        self.governance
+            .publish_retirement_pointer(community, op)
+            .await
+    }
+}
+
 #[async_trait]
 impl StreamSender for GovernanceOpSender {
     async fn send(&self, row: &OutboxRow) -> AttemptOutcome {
@@ -506,11 +517,7 @@ impl StreamSender for GovernanceOpSender {
                 community,
                 record,
                 op,
-            }) => match self
-                .governance
-                .append_own_op(community, record, op.to_vec())
-                .await
-            {
+            }) => match self.send_op(community, record, op).await {
                 Ok(()) => {
                     self.waiters.landed(community, &row.client_id);
                     AttemptOutcome::Sent

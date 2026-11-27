@@ -8,8 +8,6 @@
 //! (`OpSigner::checked`, the check made before each sign), so signing stops
 //! at the change, not at the next write.
 
-use rekindle_types::dht_layout::member_record::GOV_HEAD;
-
 use crate::deps::GovernanceRuntimeDeps;
 use crate::device_signer::{device_op_key, OpSigner};
 use crate::error::GovernanceRuntimeError;
@@ -28,21 +26,25 @@ pub async fn own_record_changed<D: GovernanceRuntimeDeps>(
     record: &str,
 ) -> Result<(), GovernanceRuntimeError> {
     let device = device_op_key(deps, community_id, false)?;
-    let head = deps
-        .op_store()
-        .signed_here_head(community_id, &device.verifying_key().to_bytes())
-        .await?;
+    let key = device.verifying_key().to_bytes();
+    let head = deps.op_store().signed_here_head(community_id, &key).await?;
     let port = deps.record_port()?;
-    let read = rekindle_records::chain::read_log_after(&*port, record, GOV_HEAD, head.unwrap_or(0))
-        .await
-        .map_err(|e| GovernanceRuntimeError::Adapter(format!("own op log: {e}")))?;
-    let mut stored = 0usize;
+    let (read, pointer) =
+        rekindle_records::chain::read_log_with_retirement(&*port, record, head.unwrap_or(0))
+            .await
+            .map_err(|e| GovernanceRuntimeError::Adapter(format!("own op log: {e}")))?;
+    let mut stored = false;
     for entry in read.entries {
         let received =
             crate::op_receive::store_received_op(deps, community_id, entry.ciphertext).await?;
-        stored += usize::from(received.is_some());
+        stored |= received.is_some();
     }
-    if stored > 0 {
+    if let Some(pointer) = pointer {
+        stored |=
+            crate::retirement_pointer::receive(deps, &*port, community_id, record, &key, pointer)
+                .await?;
+    }
+    if stored {
         crate::dht_hydration::rebuild_governance(deps, community_id).await;
     }
     let state = deps.governance_state(community_id).unwrap_or_default();

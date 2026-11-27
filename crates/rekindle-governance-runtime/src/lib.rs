@@ -72,6 +72,7 @@ pub mod partial;
 pub mod quarantine;
 pub mod rebuild_flight;
 pub(crate) mod records;
+pub mod retirement_pointer;
 pub mod roles;
 pub mod roster;
 pub mod seen_frontiers;

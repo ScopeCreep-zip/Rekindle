@@ -120,7 +120,10 @@ impl HostGovernance {
         crate::host::own_prekeys::replace_for_re_enrol(&self.ctx).await?;
         let mut written = Vec::new();
         for community in communities {
-            let outcome = Box::pin(device_re_enrol::re_enrol(self, &community)).await;
+            let outcome = match self.stage_retirement_owner(&community) {
+                Ok(()) => Box::pin(device_re_enrol::re_enrol(self, &community)).await,
+                Err(error) => Err(error),
+            };
             if outcome.is_ok() {
                 self.persist_governance_snapshot(&community).await;
                 if let Err(error) = self.replace_card_secret(&community).await {

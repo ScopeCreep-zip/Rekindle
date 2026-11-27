@@ -2,7 +2,7 @@
 //! `schemas/chain.capnp`). This is the wire shape only: whether a page fits
 //! its pointer and the page before it is `rekindle_records::chain`'s check.
 
-use super::direct::data;
+use super::direct::{data, fixed};
 use super::{bounds, capnp_err, pack, text_to_string, unpack_bounded, CodecError};
 use crate::chain_capnp;
 
@@ -20,6 +20,14 @@ pub struct ChainHead {
     pub newest: PagePointer,
     /// Every entry at or below it is retired (0: none).
     pub retired_through: u64,
+}
+
+/// A locator on a device's old GOV_HEAD. Governance verifies the named op.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeviceRetirementPointer {
+    pub op_hash: [u8; 32],
+    pub successor_key: [u8; 32],
+    pub successor_record: String,
 }
 
 /// One sealed page: its entries from `first_seq` up, and the page before.
@@ -48,11 +56,27 @@ fn read_pointer(r: chain_capnp::page_pointer::Reader<'_>) -> Result<PagePointer,
 
 /// Participant record subkey `HEAD`: the newest page and the retire mark.
 pub fn encode_chain_head(head: &ChainHead) -> Result<Vec<u8>, CodecError> {
+    encode_head_value(Some(head), None)
+}
+
+/// Encode the head and its optional governance retirement locator in one value.
+pub fn encode_head_value(
+    head: Option<&ChainHead>,
+    retirement: Option<&DeviceRetirementPointer>,
+) -> Result<Vec<u8>, CodecError> {
     let mut builder = capnp::message::Builder::new_default();
     {
         let mut root = builder.init_root::<chain_capnp::chain_head::Builder<'_>>();
-        root.set_retired_through(head.retired_through);
-        set_pointer(root.init_newest(), &head.newest);
+        if let Some(head) = head {
+            root.set_retired_through(head.retired_through);
+            set_pointer(root.reborrow().init_newest(), &head.newest);
+        }
+        if let Some(pointer) = retirement {
+            let mut r = root.init_device_retirement();
+            r.set_op_hash(&pointer.op_hash);
+            r.set_successor_key(&pointer.successor_key);
+            r.set_successor_record(pointer.successor_record.as_str());
+        }
     }
     pack(&builder)
 }
@@ -63,9 +87,7 @@ pub fn encode_chain_head(head: &ChainHead) -> Result<Vec<u8>, CodecError> {
 /// `storage_manager/create_record.rs`), so a reader given the key of a record
 /// nobody has written finds no record at all; this value is the first write.
 pub fn encode_empty_chain_head() -> Result<Vec<u8>, CodecError> {
-    let mut builder = capnp::message::Builder::new_default();
-    builder.init_root::<chain_capnp::chain_head::Builder<'_>>();
-    pack(&builder)
+    encode_head_value(None, None)
 }
 
 /// `None`: the empty head ([`encode_empty_chain_head`]), a chain with nothing
@@ -75,22 +97,50 @@ pub fn encode_empty_chain_head() -> Result<Vec<u8>, CodecError> {
 /// The bytes are not a `ChainHead`, or a head naming no page retires
 /// something.
 pub fn decode_chain_head(bytes: &[u8]) -> Result<Option<ChainHead>, CodecError> {
+    decode_head(bytes, false).map(|(head, _)| head)
+}
+
+/// Decode the op-log head and its retirement locator.
+pub fn decode_head_value(
+    bytes: &[u8],
+) -> Result<(Option<ChainHead>, Option<DeviceRetirementPointer>), CodecError> {
+    decode_head(bytes, true)
+}
+
+fn decode_head(
+    bytes: &[u8],
+    read_retirement: bool,
+) -> Result<(Option<ChainHead>, Option<DeviceRetirementPointer>), CodecError> {
     let reader = unpack_bounded(bytes, bounds::CHAIN_HEAD_BOUND)?;
     let r = reader
         .get_root::<chain_capnp::chain_head::Reader<'_>>()
         .map_err(|e| capnp_err(&e))?;
-    if !r.has_newest() {
+    let head = if r.has_newest() {
+        Some(ChainHead {
+            newest: read_pointer(r.get_newest().map_err(|e| capnp_err(&e))?)?,
+            retired_through: r.get_retired_through(),
+        })
+    } else {
         if r.get_retired_through() != 0 {
             return Err(CodecError::Deserialization(
                 "chain head names no page yet retires entries".into(),
             ));
         }
-        return Ok(None);
-    }
-    Ok(Some(ChainHead {
-        newest: read_pointer(r.get_newest().map_err(|e| capnp_err(&e))?)?,
-        retired_through: r.get_retired_through(),
-    }))
+        None
+    };
+    let retirement = if read_retirement && r.has_device_retirement() {
+        let pointer = r.get_device_retirement().map_err(|e| capnp_err(&e))?;
+        Some(DeviceRetirementPointer {
+            op_hash: fixed(pointer.get_op_hash(), "retirement op hash")?,
+            successor_key: fixed(pointer.get_successor_key(), "successor key")?,
+            successor_record: text_to_string(
+                pointer.get_successor_record().map_err(|e| capnp_err(&e))?,
+            )?,
+        })
+    } else {
+        None
+    };
+    Ok((head, retirement))
 }
 
 /// A page's only subkey.
