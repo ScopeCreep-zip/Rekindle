@@ -12,7 +12,7 @@ import type { SkinShell } from "./dto_skin_tree";
 // same reason: it is the FSM state `setup.rs` emits, and both
 // `lifecycleCurrent()` and the channel subscription need to name it.
 
-import type { NotJoinableReason, SessionStatus } from "./types";
+import type { NotJoinableReason, SendState, SessionStatus } from "./types";
 
 export interface GameInfo {
   gameName: string;
