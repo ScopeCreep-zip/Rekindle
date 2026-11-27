@@ -107,6 +107,13 @@ const SkinEditor: Component = () => {
   onMount(() => void startFromCurrent());
   onCleanup(() => style.remove());
 
+  const editorInput = createMemo(() => {
+    const currentDraft = draft();
+    const currentReport = report();
+    return currentDraft && currentReport
+      ? { draft: currentDraft, report: currentReport }
+      : undefined;
+  });
   const matches = (text: string): boolean =>
     text.toLowerCase().includes(query().trim().toLowerCase());
   const tokens = createMemo(() =>
@@ -185,14 +192,18 @@ const SkinEditor: Component = () => {
       <Show when={error()}>
         {(m) => <div class="settings-hint skin-error" role="alert">{m()}</div>}
       </Show>
-      <Show when={draft() && report()}>
-        <SkinEditorMeta draft={draft()!} report={report()!} onChange={(d) => void check(d)} />
-        <SkinRegionImport
-          draft={draft()!}
-          report={report()!}
-          onImported={(d) => void check(d)}
-          onError={(m) => setError(m)}
-        />
+      <Show when={editorInput()}>
+        {(input) => (
+          <>
+            <SkinEditorMeta draft={input().draft} report={input().report} onChange={(d) => void check(d)} />
+            <SkinRegionImport
+              draft={input().draft}
+              report={input().report}
+              onImported={(d) => void check(d)}
+              onError={(m) => setError(m)}
+            />
+          </>
+        )}
       </Show>
       <input
         class="form-input skin-editor-search"
