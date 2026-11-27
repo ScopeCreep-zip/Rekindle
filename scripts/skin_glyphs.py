@@ -158,7 +158,15 @@ def main() -> int:
         # Font units, y up from the baseline -> SVG, y down from the em top.
         glyphs[glyph].draw(TransformPen(pen, (1, 0, 0, -1, 0, ascent)))
         advance = font["hmtx"][glyph][0]
-        lines.append(f'  "{name}": {{ x: {(advance - em) // 2}, d: "{pen.getCommands()}" }},')
+        key = name if re.fullmatch(r"[A-Za-z_$][A-Za-z0-9_$]*", name) else f'"{name}"'
+        left = (advance - em) // 2
+        path = pen.getCommands()
+        inline = f'  {key}: {{ x: {left}, d: "{path}" }},'
+        # Match the checked-in Biome width when laying out each outline.
+        if len(inline) <= 100:
+            lines.append(inline)
+        else:
+            lines.append(f'  {key}: {{\n    x: {left},\n    d: "{path}",\n  }},')
     family = font["name"].getDebugName(1)
     version = font["name"].getDebugName(5)
     sets_line = "; ".join(f"{s['name']} by {s['by'].split(' (')[0]}, {s['licence']}" for s, _ in used.values())
