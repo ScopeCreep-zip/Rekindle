@@ -272,17 +272,54 @@ function applyChannelUnread(u: UnreadChanged): void {
 /// the community key, `queued` once released to its write (plan E3.2 S7l);
 /// a `failed` one carries the backend's `reason` when its key never came.
 function applySendStatus(channel: string, messageId: string, state: string, reason?: string): void {
-  const msgs = communityState.channelMessages[channel];
-  if (!msgs) return;
-  const idx = msgs.findIndex((m) => m.serverMessageId === messageId);
-  if (idx < 0) return;
+  // A thread reply's `channel` is its thread (plan FT1): its rows are the thread's.
+  const list = communityState.channelMessages[channel]
+    ? "channelMessages"
+    : communityState.threadMessages[channel]
+      ? "threadMessages"
+      : null;
+  const idx = list
+    ? communityState[list][channel].findIndex((m) => m.serverMessageId === messageId)
+    : -1;
+  if (list === null || idx < 0) {
+    // Our own reply whose send answer has not come back yet: its row has no
+    // server id to match, so the state waits for that answer (either order).
+    earlySendStates.delete(messageId);
+    earlySendStates.set(messageId, { state, reason });
+    // Only our own posts are announced; one never matched (its window closed)
+    // must not be held forever: the oldest goes past a bound.
+    if (earlySendStates.size > EARLY_SEND_STATES_MAX) {
+      const oldest = earlySendStates.keys().next().value;
+      if (oldest !== undefined) earlySendStates.delete(oldest);
+    }
+    return;
+  }
   if (state === "failed") {
-    setCommunityState("channelMessages", channel, idx, "status", "failed");
-    setCommunityState("channelMessages", channel, idx, "failureReason", reason);
+    setCommunityState(list, channel, idx, "status", "failed");
+    setCommunityState(list, channel, idx, "failureReason", reason);
     addToast(reason ?? "Message not delivered. Resend it.", "error");
   } else if (state === "sent" || state === "queued" || state === "awaiting_key") {
-    setCommunityState("channelMessages", channel, idx, "status", state);
+    setCommunityState(list, channel, idx, "status", state);
   }
+}
+
+/** A `ChannelSendStatus` that came before its row could be matched, by message id (insertion-ordered). */
+const earlySendStates = new Map<string, { state: string; reason?: string }>();
+
+/** How many unmatched send states are held: far above the replies one window has in flight. */
+const EARLY_SEND_STATES_MAX = 256;
+
+/**
+ * The newest send state the Host announced for `messageId` before its row
+ * knew that id (FT1: `ChannelSendStatus` may beat the send's own answer),
+ * taken once; undefined when none came first.
+ */
+export function takeEarlySendState(
+  messageId: string
+): { state: string; reason?: string } | undefined {
+  const early = earlySendStates.get(messageId);
+  earlySendStates.delete(messageId);
+  return early;
 }
 
 export function reduceSubscriptionMessages(event: CommunitySubscriptionEvent): void {

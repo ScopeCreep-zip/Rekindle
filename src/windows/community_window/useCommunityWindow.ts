@@ -37,6 +37,7 @@ import type { Thread } from "../../stores/community.store";
 import { communityState, setCommunityState } from "../../stores/community.store";
 import { hydrateState } from "../../stores/hydrate";
 import { setSkinSignals } from "../../stores/skin-signals.store";
+import { addToast } from "../../stores/toast.store";
 import { createCommunityWindowState } from "./state";
 
 /// Orchestrating view-model hook for `CommunityWindow`. Owns the effects,
@@ -201,6 +202,15 @@ export function useCommunityWindow() {
     // semantics of `handleTogglePins` / `handleToggleThreadList`.
     setRightPanel(rightPanel() === "members" ? null : "members");
   }
+
+  // An open thread the Host stops listing (deleted, or our access to it
+  // lost) closes its panel with the reason, rather than showing the old copy.
+  createEffect(() => {
+    if (s.openedThread() && !s.activeThread()) {
+      handleCloseThread();
+      addToast("This thread is no longer available.", "info");
+    }
+  });
 
   function handleOpenThread(thread: Thread): void {
     setActiveThread(thread);

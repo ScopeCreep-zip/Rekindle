@@ -193,6 +193,45 @@ fn parse_channel_send() {
 }
 
 #[test]
+fn parse_channel_forum_post() {
+    let args = [
+        "rekindle",
+        "channel",
+        "forum-post",
+        "-c",
+        "Guild",
+        "-C",
+        "ideas",
+        "-t",
+        "Share your maps",
+        "-m",
+        "Here is mine",
+    ];
+    for tag in [None, Some("maps")] {
+        let mut argv = args.to_vec();
+        if let Some(tag) = tag {
+            argv.extend(["--tag", tag]);
+        }
+        let cli = Cli::try_parse_from(argv).unwrap();
+        let Some(Command::Channel(ChannelCmd::ForumPost {
+            community,
+            channel,
+            title,
+            message,
+            tag: parsed_tag,
+        })) = cli.command
+        else {
+            panic!("expected a forum post");
+        };
+        assert_eq!(community, "Guild");
+        assert_eq!(channel, "ideas");
+        assert_eq!(title, "Share your maps");
+        assert_eq!(message, "Here is mine");
+        assert_eq!(parsed_tag.as_deref(), tag);
+    }
+}
+
+#[test]
 fn parse_channel_send_with_spaces() {
     let cli = Cli::try_parse_from([
         "rekindle",

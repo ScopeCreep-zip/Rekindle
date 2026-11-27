@@ -12,7 +12,7 @@ import type { SkinShell } from "./dto_skin_tree";
 // same reason: it is the FSM state `setup.rs` emits, and both
 // `lifecycleCurrent()` and the channel subscription need to name it.
 
-import type { NotJoinableReason, SessionStatus } from "./types";
+import type { NotJoinableReason, SendState, SessionStatus } from "./types";
 
 export interface GameInfo {
   gameName: string;
@@ -558,4 +558,21 @@ export interface CommunityProfilePatch {
   bannerRef: ProfileField<string>;
   customStatus: ProfileField<string>;
   displayName: ProfileField<string>;
+}
+
+/** `send_thread_message`'s answer (`rekindle_types::thread::ThreadReplyOutcome`,
+ *  plan FT1): the reply's id and its send state (D22's `SendState`: `queued` in
+ *  our durable outbox, `sent` once written; a mesh failure after the queue is
+ *  `queued`, never an error). Later changes come as `ChannelSendStatus`. */
+export interface ThreadReplyOutcome {
+  messageId: string;
+  sendState: SendState;
+}
+
+/** `create_forum_post`'s answer (`rekindle_types::thread::ForumPostCreated`): the
+ *  thread and its starter, created as one; a refusal creates nothing. */
+export interface ForumPostCreated {
+  threadId: string;
+  starterMessageId: string;
+  starter: SendState;
 }

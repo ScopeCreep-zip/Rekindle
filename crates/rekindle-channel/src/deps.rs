@@ -122,6 +122,16 @@ pub struct ThreadInfoSnapshot {
     pub message_count: u32,
 }
 
+/// Our durable local echo of a reply still waiting to be sent.
+#[derive(Debug, Clone)]
+pub struct PendingThreadReply {
+    pub message_id: String,
+    pub body: String,
+    pub sent_at_ms: u64,
+    pub stream_seq: u64,
+    pub send_state: rekindle_types::message::SendState,
+}
+
 /// Member-profile lookup result — display name + role ids the local
 /// user holds. Used by mention-resolution + notification routing.
 #[derive(Debug, Clone, Default)]
@@ -255,6 +265,13 @@ pub trait ChannelMessagingDeps: Send + Sync {
 
     // ---------- The outbox's channel_post stream (plan E2.5) ----------
 
+    /// Our queued or awaiting-key replies of one thread, including its starter.
+    async fn pending_thread_replies(
+        &self,
+        community_id: &str,
+        thread_id: &str,
+    ) -> Result<Vec<PendingThreadReply>, ChannelError>;
+
     /// Store `post`'s outbox row (a post with a row of its own is persisted
     /// `queued`; an op on other rows, [`PostEntry::has_row`] false, has no
     /// echo); from then on only the outbox moves the post's delivery state.
@@ -327,6 +344,13 @@ pub trait ChannelMessagingDeps: Send + Sync {
         community_id: &str,
         thread_id: &str,
     ) -> Option<ThreadInfoSnapshot>;
+
+    /// A merged thread's creation time from the signed governance op.
+    async fn thread_created_at(
+        &self,
+        community_id: &str,
+        op: &rekindle_types::governance::OpHash,
+    ) -> Result<u64, ChannelError>;
 
     // ---------- Expressions (Files cache + governance state) ----------
 

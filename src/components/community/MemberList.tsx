@@ -26,6 +26,7 @@ import {
   communityState,
   EVERYONE_ROLE_ID,
   type Member,
+  type MembersState,
   type Role,
   type RoleTagColours,
 } from "../../stores/community.store";
@@ -38,6 +39,8 @@ import RoleTag from "./RoleTag";
 
 interface MemberListProps {
   members: Member[];
+  /** Whether `members` is the Host's list yet; until then no count or rows are shown. */
+  state: MembersState;
   communityId: string;
   roles: Role[];
   myPseudonymKey: string | null;
@@ -399,7 +402,18 @@ const MemberList: Component<MemberListProps> = (props) => {
         onScreen(list);
       }}
     >
-      <div class="member-list-header">Members — {props.members.length}</div>
+      <div class="member-list-header">
+        <Show when={props.state === "known"} fallback="Members">
+          Members — {props.members.length}
+        </Show>
+      </div>
+      <Show when={props.state !== "known"}>
+        <div class="member-list-loading" role="status">
+          {props.state === "loading"
+            ? "Loading members…"
+            : `Couldn't load members: ${(props.state as { failed: string }).failed}`}
+        </div>
+      </Show>
       <div class="member-search-wrapper">
         <input
           class="member-search-input"

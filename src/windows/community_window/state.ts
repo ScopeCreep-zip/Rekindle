@@ -70,7 +70,20 @@ export function createCommunityWindowState() {
   const [pins, setPins] = createSignal<
     { messageId: string; channelId: string; pinnedBy: string; pinnedAt: number }[]
   >([]);
-  const [activeThread, setActiveThread] = createSignal<Thread | null>(null);
+  // The open thread, as opened; `activeThread` below is only ever its live
+  // row in the Host's thread list, so the header's count and activity follow
+  // a reload (the opened copy kept "0 messages" after the card read
+  // "1 message"). A thread the Host no longer lists is null, never the old
+  // copy shown as live: the window closes its panel (useCommunityWindow).
+  const [openedThread, setActiveThread] = createSignal<Thread | null>(null);
+  const activeThread = createMemo((): Thread | null => {
+    const opened = openedThread();
+    if (!opened) return null;
+    return (
+      (communityState.channelThreads[opened.channelId] ?? []).find((t) => t.id === opened.id) ??
+      null
+    );
+  });
   const [editingTopic, setEditingTopic] = createSignal(false);
   const [topicDraft, setTopicDraft] = createSignal("");
   const [editState, setEditState] = createSignal<EditMode | null>(null);
@@ -279,6 +292,7 @@ export function createCommunityWindowState() {
     setReplyTo,
     pins,
     setPins,
+    openedThread,
     activeThread,
     setActiveThread,
     activeThreadCount,

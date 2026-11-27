@@ -1,5 +1,10 @@
 import { commands } from "../../ipc/commands";
-import { communityState, setCommunityMembers } from "../../stores/community.store";
+import {
+  communityState,
+  markMembersFailed,
+  setCommunityMembers,
+} from "../../stores/community.store";
+import { errorMessage } from "../../utils/error";
 import { transformMember } from "../../utils/transformers";
 
 // The member list's groups are the Host's (`CommunityMemberView.group`), so
@@ -26,7 +31,10 @@ export function refreshCommunityMembers(community: string): void {
         for (const m of members) asked?.delete(m.pseudonymKey);
       }
     })
-    .catch((e) => console.error(`Failed to refresh members for ${community}:`, e))
+    .catch((e) => {
+      console.error(`Failed to refresh members for ${community}:`, e);
+      markMembersFailed(community, errorMessage(e));
+    })
     .finally(() => {
       inFlight.delete(community);
       if (dirty.delete(community)) refreshCommunityMembers(community);

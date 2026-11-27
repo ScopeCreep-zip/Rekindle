@@ -5,6 +5,7 @@ import {
 } from "../actions/community.actions";
 import { fetchAvatarUrl } from "../ipc/avatar";
 import { commands } from "../ipc/commands";
+import { errorMessage } from "../utils/error";
 import {
   foldFriendSnapshot,
   transformCommunityMap,
@@ -13,7 +14,7 @@ import {
 } from "../utils/transformers";
 import type { UserStatus } from "./auth.store";
 import { setAuthState } from "./auth.store";
-import { setCommunityMembers, setCommunityState } from "./community.store";
+import { markMembersFailed, setCommunityMembers, setCommunityState } from "./community.store";
 import { friendsState, setFriendsState } from "./friends.store";
 
 /**
@@ -76,6 +77,7 @@ export async function hydrateState(): Promise<void> {
         })
         .catch((e) => {
           console.error(`Failed to hydrate members for ${c.id}:`, e);
+          markMembersFailed(c.id, errorMessage(e));
         });
       commands
         .listExpressions(c.id)

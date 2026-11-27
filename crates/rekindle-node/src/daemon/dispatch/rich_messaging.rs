@@ -2,6 +2,7 @@
 //! Host's channel adapter on both modes.
 
 use rekindle_channel::error::ChannelError;
+use rekindle_channel::ForumPost;
 use rekindle_ipc::protocol::IpcResponse;
 use rekindle_ipc::protocol::RichRequest;
 
@@ -19,7 +20,9 @@ fn refused(e: &ChannelError, what: &str) -> IpcResponse {
     let code = match e {
         ChannelError::PermissionDenied(_) => 403,
         ChannelError::ChannelNotFound(_) | ChannelError::CommunityNotFound(_) => 404,
-        ChannelError::InvalidId(_) | ChannelError::BodyTooLarge { .. } => 400,
+        ChannelError::InvalidId(_)
+        | ChannelError::InvalidForumPost(_)
+        | ChannelError::BodyTooLarge { .. } => 400,
         ChannelError::SlowmodeActive { .. } => 429,
         _ => 500,
     };
@@ -44,6 +47,7 @@ fn community_of(request: &RichRequest) -> &str {
         | RichRequest::ThreadListActive { community, .. }
         | RichRequest::ThreadMessages { community, .. }
         | RichRequest::ThreadSend { community, .. }
+        | RichRequest::CreateForumPost { community, .. }
         | RichRequest::PollCreate { community, .. }
         | RichRequest::PollVote { community, .. }
         | RichRequest::PollClose { community, .. }
@@ -144,6 +148,21 @@ pub(crate) async fn handle(
             host.send_thread_message(&key, &thread_id, &body).await,
             "thread send",
         ),
+        RichRequest::CreateForumPost {
+            channel_id,
+            title,
+            forum_tag,
+            body,
+            ..
+        } => {
+            let post = ForumPost {
+                channel_id: &channel_id,
+                title: &title,
+                forum_tag,
+                body: &body,
+            };
+            answer(host.create_forum_post(&key, post).await, "forum post")
+        }
         RichRequest::PollCreate {
             channel_id,
             message_id,

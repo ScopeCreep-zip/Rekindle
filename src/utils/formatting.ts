@@ -67,3 +67,8 @@ export function formatSize(bytes: number): string {
   if (bytes < MB) return `${(bytes / KB).toFixed(1)} KB`;
   return `${(bytes / MB).toFixed(1)} MB`;
 }
+
+/** A thread's message count as words: "1 message", "3 messages". */
+export function messageCount(n: number): string {
+  return `${n} ${n === 1 ? "message" : "messages"}`;
+}

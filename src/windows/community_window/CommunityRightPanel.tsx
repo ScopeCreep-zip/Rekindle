@@ -15,6 +15,7 @@ import PinnedMessagesPanel from "../../components/community/PinnedMessagesPanel"
 import ThreadListPanel from "../../components/community/ThreadListPanel";
 import ThreadPanel from "../../components/community/ThreadPanel";
 import { communityState } from "../../stores/community.store";
+import { channelDeniedFor } from "../../utils/denied";
 import type { CommunityVm } from "./useCommunityWindow";
 
 /// Phase 3 unified right rail: members, pinned messages, thread list, or
@@ -28,6 +29,7 @@ const CommunityRightPanel: Component<{ vm: CommunityVm }> = (props) => {
           <Match when={vm.rightPanel() === "members"}>
             <MemberList
               members={vm.activeCommunity()!.members}
+              state={vm.activeCommunity()!.membersState}
               communityId={vm.selectedCommunityId()}
               roles={vm.activeCommunity()!.roles}
               myPseudonymKey={vm.activeCommunity()?.myPseudonymKey ?? null}
@@ -62,6 +64,11 @@ const CommunityRightPanel: Component<{ vm: CommunityVm }> = (props) => {
               communityId={vm.selectedCommunityId()}
               messages={vm.threadMessages()}
               onClose={vm.handleCloseThread}
+              replyDenied={channelDeniedFor(
+                vm.activeCommunity(),
+                vm.activeThread()?.channelId,
+                "sendInThreads"
+              )}
               onSend={handleSendThreadMessage}
               onArchive={vm.handleArchiveActiveThread}
               onUnarchive={handleUnarchiveThread}

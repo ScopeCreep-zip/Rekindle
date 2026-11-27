@@ -328,6 +328,7 @@ export function transformCommunityDetail(c: {
     channels: c.channels.map(transformChannel),
     categories: c.categories ?? [],
     members: [],
+    membersState: "loading",
     roles: c.roles ?? [],
     myRoleIds: c.myRoleIds ?? [],
     myPseudonymKey: c.myPseudonymKey ?? null,

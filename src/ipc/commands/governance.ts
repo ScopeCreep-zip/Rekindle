@@ -1,5 +1,11 @@
 import { hostInvoke, invoke } from "../invoke";
-import type { CommunityAuditEntry, InviteCreated, InviteDto } from "./dto";
+import type {
+  CommunityAuditEntry,
+  ForumPostCreated,
+  InviteCreated,
+  InviteDto,
+  ThreadReplyOutcome,
+} from "./dto";
 import type {
   CreateEventRequest,
   EventInfo,
@@ -254,9 +260,22 @@ export const governanceCommands = {
       }[]
     >("get_active_threads", { communityId, channelId }),
   sendThreadMessage: (communityId: string, threadId: string, body: string) =>
-    hostInvoke<unknown>("send_thread_message", { communityId, threadId, body }).then(
-      () => undefined
-    ),
+    hostInvoke<ThreadReplyOutcome>("send_thread_message", { communityId, threadId, body }),
+  /** Plan FT1: a forum post's thread and its starter, created as one by the Host. */
+  createForumPost: (
+    communityId: string,
+    channelId: string,
+    title: string,
+    body: string,
+    forumTag?: string | null
+  ) =>
+    hostInvoke<ForumPostCreated>("create_forum_post", {
+      communityId,
+      channelId,
+      title,
+      forumTag: forumTag ?? null,
+      body,
+    }),
   getThreadMessages: (
     communityId: string,
     threadId: string,
