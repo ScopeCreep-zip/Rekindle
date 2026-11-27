@@ -60,13 +60,18 @@ fn the_view_names_our_role_and_carries_our_standing() {
 fn roles_serve_position_labels() {
     use crate::host::adapters::governance::{projection::project, role_ops::role_displays};
     use rekindle_governance::{fixture::stamp, merge::apply_entry, state::GovernanceState};
+    use rekindle_governance_runtime::origin::OWNER_ROLE_ID;
     use rekindle_types::governance::GovernanceEntry;
     use rekindle_types::id::{PseudonymKey, RoleId};
 
-    let owner = RoleId([0xff; 16]);
     let created = RoleId([0x12; 16]);
+    let custom_at_max = RoleId([0x13; 16]);
     let mut governance = GovernanceState::default();
-    for (id, name, position) in [(owner, "Owner", u32::MAX), (created, "Raiders", 7)] {
+    for (id, name, position) in [
+        (OWNER_ROLE_ID, "Owner", u32::MAX),
+        (created, "Raiders", 7),
+        (custom_at_max, "Co-owner", u32::MAX),
+    ] {
         apply_entry(
             &PseudonymKey([1; 32]),
             &GovernanceEntry::RoleDefinition {
@@ -94,12 +99,11 @@ fn roles_serve_position_labels() {
     for roles in [community_roles, cli_roles] {
         let roles = roles.as_array().unwrap();
         let role_by_id = |id: RoleId| roles.iter().find(|role| role["id"] == id.to_hex()).unwrap();
-        assert_eq!(role_by_id(owner)["positionLabel"], "Always first");
-        let created = role_by_id(created);
-        assert_eq!(created["positionLabel"], created["position"].to_string());
-        assert!(roles
-            .iter()
-            .all(|role| role["positionLabel"] != "4294967295"));
+        assert_eq!(role_by_id(OWNER_ROLE_ID)["positionLabel"], "Always first");
+        for id in [created, custom_at_max] {
+            let role = role_by_id(id);
+            assert_eq!(role["positionLabel"], role["position"].to_string());
+        }
     }
 }
 

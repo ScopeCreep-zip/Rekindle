@@ -38,7 +38,7 @@ use crate::origin_reserve::{
 const CREATOR_SLOT: u32 = 0;
 /// Owner role gets the all-ones RoleId so the on-the-wire role tag is
 /// stable across community installs (architecture §Failure 4).
-const OWNER_ROLE_ID: RoleId = RoleId([0xFFu8; 16]);
+pub const OWNER_ROLE_ID: RoleId = RoleId([0xFFu8; 16]);
 /// The owner role's position: above every other role, so it is always first.
 pub const OWNER_ROLE_POSITION: u32 = u32::MAX;
 /// `@everyone`: the all-zero RoleId.

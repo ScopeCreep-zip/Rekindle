@@ -4,12 +4,13 @@
 
 use std::collections::HashMap;
 
+use rekindle_governance_runtime::origin::{OWNER_ROLE_ID, OWNER_ROLE_POSITION};
 use rekindle_types::dto::community::{
     CommunityCategoryView, CommunityChannelView, CommunityMemberView, CommunityRoleView,
     CommunityView, MemberGroup, MemberModeration,
 };
 use rekindle_types::dto::member_groups::{group_members, GroupRole};
-use rekindle_types::id::{ChannelId, PseudonymKey};
+use rekindle_types::id::{ChannelId, PseudonymKey, RoleId};
 use rekindle_types::presence::SessionLocation;
 
 use rekindle_skin::role_tag::SkinGrounds;
@@ -19,8 +20,8 @@ use super::HostGovernance;
 use crate::host::adapters::presence::view as beat_view;
 use crate::host::community::{display_role_name, CommunityState, RoleDefinition};
 
-pub(super) fn role_position_label(position: u32) -> String {
-    if position == rekindle_governance_runtime::origin::OWNER_ROLE_POSITION {
+pub(super) fn role_position_label(id: RoleId, position: u32) -> String {
+    if id == OWNER_ROLE_ID && position == OWNER_ROLE_POSITION {
         "Always first".into()
     } else {
         position.to_string()
@@ -35,7 +36,7 @@ fn role_view(role: &RoleDefinition, shown: Option<&SkinGrounds>) -> CommunityRol
         tag_colours: rekindle_skin::role_tag::colours(role.color, shown),
         permissions: role.permissions.to_string(),
         position: role.position,
-        position_label: role_position_label(role.position),
+        position_label: role_position_label(role.id, role.position),
         hoist: role.hoist,
         mentionable: role.mentionable,
         self_assignable: role.self_assignable,

@@ -1,4 +1,6 @@
-use super::*;
+use crate::display::{CategoryDisplay, ChannelOverviewDisplay, RoleDisplay};
+
+use super::GovernanceEvent;
 
 fn role() -> RoleDisplay {
     RoleDisplay {
