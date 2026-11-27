@@ -9,11 +9,53 @@
 
 use rekindle_events::SessionJournal;
 use rekindle_types::friend::NotJoinableReason;
-use rekindle_types::subscription_events::{Cursor, GameActivity, SubscriptionEvent};
+use rekindle_types::id::PseudonymKey;
+use rekindle_types::key_format::pseudonym_hex;
+use rekindle_types::subscription_events::{
+    Cursor, GameActivity, SubscriptionEvent, VoiceEvent, VoiceScope,
+};
+
+use super::adapters::governance::community_profile::resolved_member_name;
+use super::community::CommunityStore;
 
 /// Journal `event` for every subscriber, stated first.
 pub(crate) fn publish(journal: &SessionJournal, event: SubscriptionEvent) -> Cursor {
     journal.publish(stated(event))
+}
+
+/// State the member-list name on the voice roster and its join events.
+pub(crate) fn with_voice_names(
+    communities: &CommunityStore,
+    mut event: SubscriptionEvent,
+) -> SubscriptionEvent {
+    let SubscriptionEvent::Voice(voice) = &mut event else {
+        return event;
+    };
+    let name = |scope: &VoiceScope, key: &str| {
+        let community = scope.community()?;
+        let pseudonym = PseudonymKey(pseudonym_hex(key).ok()?.to_bytes());
+        Some(resolved_member_name(communities, community, &pseudonym))
+    };
+    match voice {
+        VoiceEvent::Joined {
+            scope: scope @ VoiceScope::Community { .. },
+            pseudonym,
+            display_name,
+            ..
+        } => {
+            *display_name = name(scope, pseudonym);
+        }
+        VoiceEvent::RosterUpdated {
+            scope: scope @ VoiceScope::Community { .. },
+            participants,
+        } => {
+            for participant in participants {
+                participant.display_name = name(scope, &participant.pseudonym_key);
+            }
+        }
+        _ => {}
+    }
+    event
 }
 
 /// Why `game_id` on `server` cannot be joined here, or `None` when "Join

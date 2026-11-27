@@ -10,8 +10,8 @@ use rekindle_types::dto::skin_run::{CallOp, ShellOp, SkinRun, SkinSelection};
 use rekindle_types::subscription_events::{CallEvent, DirectCallInfo, SubscriptionEvent};
 
 use super::actions::{map, Mapped, Selected as Selection};
+use super::call_fixtures::call_participants;
 use super::capability::{allows, Group, Selected, SkinWorld};
-use super::capability_tests::call_participants;
 use super::reads::{in_call, InCall, Reads};
 use super::signals::Inputs;
 

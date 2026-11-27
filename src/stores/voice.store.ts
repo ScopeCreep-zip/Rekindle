@@ -4,7 +4,7 @@ import type { LinkMeasurement } from "../ipc/channels/voice_events";
 
 export interface VoiceParticipant {
   publicKey: string;
-  displayName: string;
+  displayName: string | null;
   isMuted: boolean;
   isSpeaking: boolean;
   /** Three-way handshake: this peer sent VoiceJoinConfirmed (it is
@@ -80,4 +80,4 @@ const [voiceState, setVoiceState] = createStore<VoiceState>({
   mediaReady: null,
 });
 
-export { voiceState, setVoiceState };
+export { setVoiceState, voiceState };

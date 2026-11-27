@@ -1,11 +1,12 @@
-import { Component, For, Show, createEffect, createSignal, onCleanup } from "solid-js";
-import SkinGlyph from "../common/SkinGlyph";
-import { callsState } from "../../stores/calls.store";
+import { type Component, createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import {
   handleAcceptGroupCall,
   handleDeclineGroupCall,
   handleEndGroupCall,
 } from "../../actions/calls.actions";
+import type { CallParticipant } from "../../ipc/channels/chat_events";
+import { callsState } from "../../stores/calls.store";
+import SkinGlyph from "../common/SkinGlyph";
 
 // Wave 12 W12.10 — group call surfaces.
 //
@@ -100,20 +101,24 @@ const ActiveGroupCallPanel: Component = () => {
     return `${m}:${s.toString().padStart(2, "0")}`;
   };
 
+  const isInCall = (participant: CallParticipant) =>
+    participant.isSelf || call()?.accepted.includes(participant.publicKey);
+
   return (
     <Show when={call()}>
       {(c) => (
         <div class="group-call-panel" role="region" aria-label="Group call in progress">
           <div class="group-call-panel-header">
             <span class="group-call-panel-title">
-              Group {c().kind} call · {c().accepted.length}/{c().participants.length}
+              Group {c().kind} call · {c().participants.filter(isInCall).length}/
+              {c().participants.length}
             </span>
             <span class="active-call-timer">{elapsed()}</span>
           </div>
           <div class="group-call-grid">
             <For each={c().participants}>
-              {(member) => {
-                const accepted = () => c().accepted.includes(member.publicKey);
+              {(participant) => {
+                const accepted = () => isInCall(participant);
                 return (
                   <div
                     class="group-call-tile"
@@ -123,15 +128,13 @@ const ActiveGroupCallPanel: Component = () => {
                     }}
                   >
                     <div class="group-call-tile-avatar">
-                      {member.displayName.slice(0, 1).toUpperCase()}
+                      {participant.displayName.slice(0, 1).toUpperCase()}
                     </div>
                     <div class="group-call-tile-name">
-                      {member.displayName}
-                      {member.isSelf ? " (you)" : ""}
+                      {participant.displayName}
+                      {participant.isSelf ? " (you)" : ""}
                     </div>
-                    <div class="group-call-tile-status">
-                      {accepted() ? "in call" : "ringing…"}
-                    </div>
+                    <div class="group-call-tile-status">{accepted() ? "in call" : "ringing…"}</div>
                   </div>
                 );
               }}

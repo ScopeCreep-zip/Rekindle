@@ -283,7 +283,7 @@ pub(crate) fn member_shown_name(
     resolved_member_name(communities, community_id, &pseudonym)
 }
 
-fn resolved_member_name(
+pub(crate) fn resolved_member_name(
     communities: &CommunityStore,
     community_id: &str,
     pseudonym: &PseudonymKey,

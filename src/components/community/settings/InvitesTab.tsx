@@ -1,13 +1,13 @@
-import { Component, For, Show, createSignal, createEffect, onCleanup } from "solid-js";
+import { type Component, createEffect, createSignal, For, onCleanup, Show } from "solid-js";
 import {
   handleCreateCommunityInvite,
-  handleRevokeCommunityInvite,
   handleListCommunityInvites,
+  handleRevokeCommunityInvite,
 } from "../../../actions/community.actions";
-import { communityState } from "../../../stores/community.store";
 import type { InviteDto } from "../../../ipc/commands/dto";
-import { formatExpiry } from "../../../utils/formatting";
+import { communityState } from "../../../stores/community.store";
 import { addToast } from "../../../stores/toast.store";
+import { formatExpiry } from "../../../utils/formatting";
 
 interface InvitesTabProps {
   communityId: string;
@@ -143,24 +143,16 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
             value={createdLink()!}
             onClick={(e) => e.currentTarget.select()}
           />
-          <button
-            class="form-btn-primary"
-            onClick={() => copyToClipboard(createdLink()!)}
-          >
+          <button class="form-btn-primary" onClick={() => copyToClipboard(createdLink()!)}>
             Copy Link
           </button>
-          <button
-            class="form-btn-secondary"
-            onClick={() => setCreatedLink(null)}
-          >
+          <button class="form-btn-secondary" onClick={() => setCreatedLink(null)}>
             Dismiss
           </button>
         </div>
       </Show>
 
-      <Show when={invites().length > 0} fallback={
-        <div class="settings-hint">No invites yet.</div>
-      }>
+      <Show when={invites().length > 0} fallback={<div class="settings-hint">No invites yet.</div>}>
         <div class="settings-hint">
           Ask the person joining to check this matches what their screen shows.
         </div>
@@ -172,8 +164,10 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
                 <span class="settings-list-role">
                   by {(() => {
                     const community = communityState.communities[props.communityId];
-                    const member = community?.members.find((m) => m.pseudonymKey === invite.createdBy);
-                    return member?.displayName ?? (invite.createdBy.slice(0, 8) + "...");
+                    const member = community?.members.find(
+                      (m) => m.pseudonymKey === invite.createdBy
+                    );
+                    return member?.displayName ?? "a member";
                   })()}
                 </span>
                 <span class="invite-fingerprint">
@@ -183,7 +177,11 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
                   Uses: {invite.uses} / {invite.maxUses}
                   {" \u00B7 "}
                   Expires: {formatExpiry(invite.expiresAt)}
-                  <Show when={invite.expiresAt !== null && invite.expiresAt <= Math.floor(Date.now() / 1000)}>
+                  <Show
+                    when={
+                      invite.expiresAt !== null && invite.expiresAt <= Math.floor(Date.now() / 1000)
+                    }
+                  >
                     {" (expired)"}
                   </Show>
                 </span>
@@ -197,12 +195,12 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
                 </button>
                 <Show when={invite.url}>
                   {(url) => (
-                  <button
-                    class="form-btn-secondary"
-                    onClick={() => copyToClipboard(url(), invite.codeHash)}
-                  >
-                    {copiedHash() === invite.codeHash ? "Copied!" : "Copy Link"}
-                  </button>
+                    <button
+                      class="form-btn-secondary"
+                      onClick={() => copyToClipboard(url(), invite.codeHash)}
+                    >
+                      {copiedHash() === invite.codeHash ? "Copied!" : "Copy Link"}
+                    </button>
                   )}
                 </Show>
                 <button

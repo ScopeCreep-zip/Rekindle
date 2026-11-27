@@ -16,8 +16,6 @@
 //!                                      through event_dispatch (ADR 0007).
 //!     cargo xtask check-no-shape-ipc  No IPC command takes a window region
 //!                                      or a cursor-ignore flag (SK0 S4).
-//!     cargo xtask check-no-key-slices  src/ names no one by a slice of a key:
-//!                                      names are the Host's (VN1, VN2).
 //!     cargo xtask check-log-scrub      Every tracing subscriber writes through
 //!                                      ScrubbingMakeWriter; every binary installs the scrubbing panic hook (B19).
 //!     cargo xtask check-capnp-bounds   Every Cap'n Proto read has a
@@ -132,6 +130,7 @@ mod duplication;
 mod file_sizes;
 mod frontend_boundaries;
 mod frontend_duplication;
+mod frontend_key_slices;
 mod gen_isolation_commands;
 mod gen_skin_registry;
 mod icon_glyphs;
@@ -141,7 +140,6 @@ mod inline_modules;
 mod intent_table;
 mod jsx;
 mod key_erasure;
-mod key_slices;
 mod literals;
 mod log_scrub;
 mod motion;
@@ -207,8 +205,6 @@ enum Command {
     CheckNoEmitter,
     /// Verify no IPC command takes a window region, shape or cursor-ignore flag (plan SK0 S4).
     CheckNoShapeIpc,
-    /// Verify src/ names no one by a slice of a key: names are the Host's (contracts VN1, VN2).
-    CheckNoKeySlices,
     /// Verify every log sink and panic hook goes through `log_scrub` (rule B19).
     CheckLogScrub,
     /// Verify every Cap'n Proto read has a traversal bound (no unbounded network decode).
@@ -362,6 +358,10 @@ fn dispatch(cmd: &Command) -> Result<()> {
                     Box::new(|| frontend_boundaries::check_frontend_boundaries(&root)),
                 ),
                 (
+                    "frontend-key-slices",
+                    Box::new(|| frontend_key_slices::check(&root)),
+                ),
+                (
                     "file-sizes",
                     Box::new(|| file_sizes::check_file_sizes(&root)),
                 ),
@@ -392,10 +392,6 @@ fn dispatch(cmd: &Command) -> Result<()> {
                 (
                     "no-shape-ipc",
                     Box::new(|| no_shape_ipc::check_no_shape_ipc(&root)),
-                ),
-                (
-                    "no-key-slices",
-                    Box::new(|| key_slices::check_no_key_slices(&root)),
                 ),
                 ("log-scrub", Box::new(|| log_scrub::check_log_scrub(&root))),
                 ("role-ids", Box::new(|| role_ids::check_role_ids(&root))),
@@ -526,7 +522,6 @@ fn dispatch(cmd: &Command) -> Result<()> {
         Command::CheckDomainLiterals => domain_literals::check_domain_literals(&root),
         Command::CheckNoEmitter => no_emitter::check_no_emitter(&root),
         Command::CheckNoShapeIpc => no_shape_ipc::check_no_shape_ipc(&root),
-        Command::CheckNoKeySlices => key_slices::check_no_key_slices(&root),
         Command::CheckLogScrub => log_scrub::check_log_scrub(&root),
         Command::CheckCapnpBounds => capnp_bounds::check_capnp_bounds(&root),
         Command::CheckKeyErasure => key_erasure::check_key_erasure(&root),

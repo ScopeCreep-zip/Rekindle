@@ -1,4 +1,4 @@
-import { Component, For, Show } from "solid-js";
+import { type Component, For, Show } from "solid-js";
 import type { OpQuarantineReason } from "../../ipc/channels/community_subscription_events";
 import { communityState } from "../../stores/community.store";
 
@@ -35,29 +35,32 @@ const quarantinesCommunity = (reason: OpQuarantineReason) =>
 const GovernancePublicationStatus: Component<{ communityId: string }> = (props) => {
   const states = () => Object.values(communityState.opPublications[props.communityId] ?? {});
   const pending = () => states().filter((s) => s.kind === "pending").length;
-  const failures = () =>
-    states().flatMap((s) => (s.kind === "failed" ? [s.reason] : []));
+  const failures = () => states().flatMap((s) => (s.kind === "failed" ? [s.reason] : []));
   const held = () => Object.values(communityState.quarantinedOps[props.communityId] ?? {});
   const quarantined = () => held().filter((op) => !quarantinesCommunity(op.reason));
   const unreadable = () => held().filter((op) => quarantinesCommunity(op.reason));
   const mismatch = () => communityState.snapshotMismatch[props.communityId] === true;
   const name = () => communityState.communities[props.communityId]?.name ?? "This community";
+  const authorName = (pseudonym: string) =>
+    communityState.communities[props.communityId]?.members.find(
+      (member) => member.pseudonymKey === pseudonym
+    )?.displayName ?? "a member";
   return (
     <Show when={mismatch() || pending() > 0 || failures().length > 0 || held().length > 0}>
       <div class="governance-publication" role="status" aria-live="polite">
         <Show when={unreadable()[0]}>
           {(op) => (
             <div class="governance-publication-failed">
-              {name()} is quarantined: a change by {op().author.slice(0, 8)} is{" "}
-              {QUARANTINE_TEXT[op().reason]}. Update Rekindle to apply it; until then
-              {" "}{name()} shows its state without that change.
+              {name()} is quarantined: a change by {authorName(op().author)} is{" "}
+              {QUARANTINE_TEXT[op().reason]}. Update Rekindle to apply it; until then {name()} shows
+              its state without that change.
             </div>
           )}
         </Show>
         <Show when={mismatch()}>
           <div class="governance-publication-failed">
-            The snapshot of {name()} your inviter's app sent did not match its full history.
-            {" "}{name()} now uses the full history.
+            The snapshot of {name()} your inviter's app sent did not match its full history.{" "}
+            {name()} now uses the full history.
           </div>
         </Show>
         <Show when={pending() > 0}>
@@ -68,12 +71,14 @@ const GovernancePublicationStatus: Component<{ communityId: string }> = (props) 
           </div>
         </Show>
         <For each={failures()}>
-          {(reason) => <div class="governance-publication-failed">Change not applied: {reason}</div>}
+          {(reason) => (
+            <div class="governance-publication-failed">Change not applied: {reason}</div>
+          )}
         </For>
         <For each={quarantined()}>
           {(op) => (
             <div class="governance-publication-failed">
-              Change by {op.author.slice(0, 8)} set aside: {QUARANTINE_TEXT[op.reason]}
+              Change by {authorName(op.author)} set aside: {QUARANTINE_TEXT[op.reason]}
             </div>
           )}
         </For>

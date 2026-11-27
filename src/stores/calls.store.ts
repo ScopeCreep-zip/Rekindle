@@ -1,5 +1,5 @@
-import type { CallParticipant } from "../ipc/channels/chat_events";
 import { createStore } from "solid-js/store";
+import type { CallParticipant } from "../ipc/channels/chat_events";
 
 /** Plan §Failure 5 — frontend mirror of backend call state. The backend
  *  owns truth (state.active_calls); the store is rebuilt entirely from

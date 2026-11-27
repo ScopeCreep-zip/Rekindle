@@ -63,10 +63,11 @@ pub fn samples() -> Vec<Sample> {
     all
 }
 
-fn participant(key: char, name: &str) -> CallParticipant {
+fn participant(key: char, name: &str, is_self: bool) -> CallParticipant {
     CallParticipant {
         public_key: pk(key),
         display_name: name.into(),
+        is_self,
     }
 }
 
@@ -79,7 +80,10 @@ fn setup() -> Vec<Sample> {
                 from: pk('b'),
                 display_name: text("Bob"),
                 kind: text("video"),
-                participants: vec![participant('b', "Bob"), participant('c', "cccc cccc")],
+                participants: vec![
+                    participant('b', "Bob", false),
+                    participant('c', "cccc cccc", true),
+                ],
                 is_group: true,
                 expires_at_ms: 1_760_000_030_000,
                 group_id: Some(group_dm_id()),
@@ -101,7 +105,10 @@ fn setup() -> Vec<Sample> {
             CallEvent::GroupStarted {
                 call_id: call_id(),
                 kind: text("audio"),
-                participants: vec![participant('a', "aaaa aaaa"), participant('b', "Bob")],
+                participants: vec![
+                    participant('a', "aaaa aaaa", true),
+                    participant('b', "Bob", false),
+                ],
                 group_id: Some(group_dm_id()),
                 expires_at_ms: 1_760_000_030_000,
             },

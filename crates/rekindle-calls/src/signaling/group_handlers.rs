@@ -19,12 +19,12 @@ use rekindle_codec::capnp_codec::direct::{
 };
 use x25519_dalek::StaticSecret;
 
-use rekindle_types::group_dm::GroupCallRoster;
+use rekindle_types::group_dm::{GroupCallRoster, GroupDmRosterMember};
 
 use crate::error::CallError;
 use crate::group::unwrap_call_key;
 use crate::group_state::{GroupCallState, GroupCallStatus};
-use crate::signaling::deps::{named_participants, peer_shown_name, CallSignalingDeps};
+use crate::signaling::deps::{group_call_shown_name, named_participants, CallSignalingDeps};
 use crate::signaling::event::CallSignalEvent;
 use crate::signaling::trace;
 use crate::state::CallKind;
@@ -50,21 +50,6 @@ pub async fn handle_group_call_payload<D: CallSignalingDeps + ?Sized>(
             expires_at_ms,
             group_id,
         }) => {
-            // A group id is a claim: only a member of that group, inviting
-            // only its members, rings here as that group's call.
-            if let Some(group) = group_id.as_deref() {
-                let claimed = std::iter::once(sender_hex)
-                    .chain(std::iter::once(initiator_pubkey.as_str()))
-                    .chain(participants.iter().map(String::as_str));
-                if let Err(e) = check_group_scope(deps, group, claimed).await {
-                    tracing::warn!(call_id = %call_id, sender = %sender_hex,
-                        claimed_group = %group, error = %e,
-                        "GroupCallOffer group id refused; offer dropped");
-                    trace::incoming("offer", &call_id, sender_hex, "refused: not the group's");
-                    return;
-                }
-            }
-            trace::incoming("offer", &call_id, sender_hex, "received");
             handle_incoming_group_invite(
                 deps,
                 GroupInvite {
@@ -78,7 +63,8 @@ pub async fn handle_group_call_payload<D: CallSignalingDeps + ?Sized>(
                     expires_at_ms,
                     group_id,
                 },
-            );
+            )
+            .await;
         }
         DirectBody::GroupCallAccept(GroupCallMember { call_id, pubkey }) => {
             let known = deps.group_registry().contains(&call_id);
@@ -169,8 +155,7 @@ pub struct GroupInvite<'a> {
     pub wrapped_call_key: &'a [u8],
     /// Offer expiry, ms since epoch.
     pub expires_at_ms: u64,
-    /// The group DM the call belongs to, already checked against its
-    /// roster by [`check_group_scope`].
+    /// The group DM the offer claims to belong to.
     pub group_id: Option<String>,
 }
 
@@ -183,11 +168,12 @@ pub async fn check_group_scope<'a, D: CallSignalingDeps + ?Sized>(
     deps: &D,
     group_id: &str,
     members: impl IntoIterator<Item = &'a str>,
-) -> Result<(), CallError> {
+) -> Result<Vec<GroupDmRosterMember>, CallError> {
     let GroupCallRoster::Held(roster) = deps.group_roster(group_id).await? else {
         return Err(CallError::NotInGroup(format!("no group {group_id}")));
     };
-    check_members(&roster, group_id, members)
+    check_members(&roster, group_id, members)?;
+    Ok(roster)
 }
 
 /// Refuse unless every key in `members` is in `roster`, the roster of
@@ -196,11 +182,14 @@ pub async fn check_group_scope<'a, D: CallSignalingDeps + ?Sized>(
 /// # Errors
 /// [`CallError::NotInGroup`] naming the first non-member.
 pub fn check_members<'a>(
-    roster: &[String],
+    roster: &[GroupDmRosterMember],
     group_id: &str,
     members: impl IntoIterator<Item = &'a str>,
 ) -> Result<(), CallError> {
-    match members.into_iter().find(|m| !roster.iter().any(|r| r == m)) {
+    match members
+        .into_iter()
+        .find(|m| !roster.iter().any(|member| &member.identity == m))
+    {
         Some(outsider) => Err(CallError::NotInGroup(format!(
             "{outsider} is not in group {group_id}"
         ))),
@@ -211,7 +200,7 @@ pub fn check_members<'a>(
 /// Receiver-side entry into a group call. Mirrors the 1:1
 /// `handle_incoming_invite` shape but with the per-recipient X25519
 /// unwrap.
-pub fn handle_incoming_group_invite<D: CallSignalingDeps + ?Sized>(
+pub async fn handle_incoming_group_invite<D: CallSignalingDeps + ?Sized>(
     deps: &D,
     invite: GroupInvite<'_>,
 ) {
@@ -226,6 +215,26 @@ pub fn handle_incoming_group_invite<D: CallSignalingDeps + ?Sized>(
         expires_at_ms,
         group_id,
     } = invite;
+    // A scoped offer may ring only when every claimed key is a member.
+    let roster = if let Some(group) = group_id.as_deref() {
+        let claimed = std::iter::once(sender_hex)
+            .chain(std::iter::once(initiator_pubkey))
+            .chain(participants.iter().map(String::as_str));
+        match check_group_scope(deps, group, claimed).await {
+            Ok(roster) => roster,
+            Err(e) => {
+                tracing::warn!(call_id = %call_id, sender = %sender_hex,
+                    claimed_group = %group, error = %e,
+                    "GroupCallOffer group id refused; offer dropped");
+                trace::incoming("offer", call_id, sender_hex, "refused: not the group's");
+                return;
+            }
+        }
+    } else {
+        Vec::new()
+    };
+    trace::incoming("offer", call_id, sender_hex, "received");
+
     // `offer_kind` is the wire-format u8 (0=audio, 1=video). The
     // GroupCallState + emitted IncomingGroupCall event both carry the
     // raw u8; we don't need the typed CallKind here, just validate it
@@ -271,10 +280,10 @@ pub fn handle_incoming_group_invite<D: CallSignalingDeps + ?Sized>(
     };
 
     let (Ok(display_name), Ok(named)) = (
-        peer_shown_name(deps, sender_hex),
-        named_participants(deps, &participants),
+        group_call_shown_name(deps, sender_hex, &our_ed_pubkey, &roster),
+        named_participants(deps, &participants, &our_ed_pubkey, &roster),
     ) else {
-        tracing::warn!(call_id = %call_id, "GroupCallOffer with malformed participant key");
+        tracing::warn!(call_id = %call_id, "GroupCallOffer participant names unavailable");
         return;
     };
 

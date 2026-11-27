@@ -11,9 +11,10 @@ use rekindle_types::dto::transfer::{TransferRow, TransferState, TransferTarget};
 use rekindle_ipc::protocol::IpcResponse;
 use rekindle_types::dto::skin_action::SkinAction as A;
 use rekindle_types::dto::skin_run::{CallOp, ShellOp, SkinRun};
-use rekindle_types::subscription_events::{CallEvent, CallParticipant, SubscriptionEvent};
+use rekindle_types::subscription_events::{CallEvent, SubscriptionEvent};
 
 use super::actions::{map, Mapped, Selected as Selection};
+use super::call_fixtures::call_participants;
 use super::capability::{allows, Group, LobbyCaps, Selected, SkinWorld};
 use super::reads::Reads;
 use super::signals::Inputs;
@@ -409,15 +410,6 @@ fn voice_chat_runs_answer_on_the_ringing_call() {
         map(&A::HostVoiceChat, friend(), &Reads::default()),
         Ok(Mapped::Run(SkinRun::Shell(ShellOp::Call(CallOp::Voice { ref friend })))) if friend == "k"
     ));
-}
-
-pub(super) fn call_participants(keys: &[&str]) -> Vec<CallParticipant> {
-    keys.iter()
-        .map(|&key| CallParticipant {
-            public_key: key.into(),
-            display_name: format!("Name of {key}"),
-        })
-        .collect()
 }
 
 fn group_incoming(

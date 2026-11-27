@@ -34,7 +34,7 @@ impl CallsAdapter {
                     rekindle_types::subscription_events::CallEvent::Incoming {
                         call_id: call_id.clone(),
                         from: from_public_key.clone(),
-                        display_name: from_display_name,
+                        display_name: from_display_name.clone(),
                         kind: kind_str(kind),
                         // A 1:1 call lists nobody: the caller is
                         // already `from`, and the callee is us.
@@ -48,10 +48,7 @@ impl CallsAdapter {
                     &self.app_handle,
                     rekindle_types::subscription_events::NotificationEvent::CallIncoming {
                         call_id,
-                        display_name: crate::state_helpers::peer_label(
-                            &self.state,
-                            &from_public_key,
-                        ),
+                        display_name: from_display_name,
                         from: from_public_key,
                         kind: kind_str(kind),
                         expires_at_ms,
@@ -194,7 +191,7 @@ impl CallsAdapter {
                     rekindle_types::subscription_events::CallEvent::Incoming {
                         call_id: call_id.clone(),
                         from: initiator_public_key.clone(),
-                        display_name: initiator_display_name,
+                        display_name: initiator_display_name.clone(),
                         kind: kind_u8_str(kind),
                         participants,
                         is_group: true,
@@ -206,10 +203,7 @@ impl CallsAdapter {
                     &self.app_handle,
                     rekindle_types::subscription_events::NotificationEvent::CallIncoming {
                         call_id,
-                        display_name: crate::state_helpers::peer_label(
-                            &self.state,
-                            &initiator_public_key,
-                        ),
+                        display_name: initiator_display_name,
                         from: initiator_public_key,
                         kind: kind_u8_str(kind),
                         expires_at_ms,

@@ -6,7 +6,7 @@
 //! `io_helpers`) for bodies that would otherwise blow the file-size
 //! cap.
 
-use rekindle_types::subscription_events::{SubscriptionEvent, VoiceEvent};
+use rekindle_types::subscription_events::{SubscriptionEvent, VoiceEvent, VoiceScope};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
@@ -178,10 +178,27 @@ impl VoiceSessionDeps for VoiceAdapter {
             );
             return;
         }
-        crate::event_dispatch::emit_subscription(
-            &self.app_handle,
-            &SubscriptionEvent::Voice(event_mapping::map(event, &scope)),
-        );
+        let mut event = event_mapping::map(event, &scope);
+        if let (
+            VoiceScope::Dm { .. },
+            VoiceEvent::Joined {
+                pseudonym,
+                display_name,
+                ..
+            },
+        ) = (&scope, &mut event)
+        {
+            let name = state_helpers::friend_display_name(&self.state, pseudonym);
+            *display_name =
+                match rekindle_calls::signaling::deps::friend_shown_name(pseudonym, name) {
+                    Ok(name) => Some(name),
+                    Err(error) => {
+                        tracing::warn!(%error, "invalid DM voice participant");
+                        return;
+                    }
+                };
+        }
+        crate::event_dispatch::emit_voice(&self.app_handle, event);
     }
 
     fn scope(&self) -> std::sync::Arc<rekindle_lifecycle::SessionScope> {

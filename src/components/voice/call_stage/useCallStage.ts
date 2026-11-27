@@ -1,7 +1,7 @@
 import { createMemo, createSignal } from "solid-js";
-import { voiceState } from "../../../stores/voice.store";
 import { authState } from "../../../stores/auth.store";
 import { communityState } from "../../../stores/community.store";
+import { voiceState } from "../../../stores/voice.store";
 import { activePipeline } from "./pipeline_store";
 
 /// Community voice keys `voiceState.participants` by the per-community
@@ -10,34 +10,12 @@ import { activePipeline } from "./pipeline_store";
 /// channel — found by matching `voiceState.channelId` to a community's
 /// channel list (channel ids are globally unique). `null` until the
 /// community's pseudonym is hydrated.
-function selfPseudonymForActiveCall(): string | null {
-  const chId = voiceState.channelId;
-  if (!chId) return null;
-  for (const c of Object.values(communityState.communities)) {
-    if (c.channels.some((ch) => ch.id === chId)) {
-      return c.myPseudonymKey;
-    }
-  }
-  return null;
-}
-
-/// Durable display-name lookup for a call tile. The voice-participant
-/// entry flaps with packet timeouts (a >5 s inbound voice stall removes
-/// it and re-adds it on the next packet), so a tile named from it
-/// degrades to the "Participant" placeholder mid-call whenever the
-/// transport hiccups. The community member roster doesn't churn with
-/// the transport — resolve from it first; the voice entry stays as the
-/// fallback for members whose roster row hasn't hydrated yet.
-function memberNameForActiveCall(pseudonym: string): string | null {
-  const chId = voiceState.channelId;
-  if (!chId) return null;
-  for (const c of Object.values(communityState.communities)) {
-    if (c.channels.some((ch) => ch.id === chId)) {
-      const member = c.members.find((m) => m.pseudonymKey === pseudonym);
-      return member && member.displayName !== "" ? member.displayName : null;
-    }
-  }
-  return null;
+function communityForActiveCall() {
+  const channel = voiceState.channelId;
+  if (!channel) return undefined;
+  return Object.values(communityState.communities).find((community) =>
+    community.channels.some((ch) => ch.id === channel)
+  );
 }
 
 /// One cell in the call gallery. `publicKey` (when present) lets the tile
@@ -83,6 +61,7 @@ export function useCallStage() {
   const tiles = createMemo<CallTile[]>(() => {
     const pipe = activePipeline();
     const out: CallTile[] = [];
+    const community = communityForActiveCall();
 
     if (voiceState.isConnected) {
       const camOn = pipe?.cameraOn() ?? false;
@@ -102,7 +81,7 @@ export function useCallStage() {
       // been created yet we therefore show the avatar under a DIFFERENT
       // key ("self-avatar"); the key swap forces a fresh row that mounts
       // the canvas the moment it exists.
-      const selfName = `${authState.displayName ?? "You"} (you)`;
+      const selfName = `${community?.myDisplayName ?? authState.displayName ?? "You"} (you)`;
       if (pipe && camOn) {
         if (pipe.nativeCapture?.()) {
           const nativeCanvas = pipe.nativeSelfCanvas?.() ?? null;
@@ -141,7 +120,7 @@ export function useCallStage() {
       }
       if (!camOn && !scrOn) {
         put(out, "self-avatar", {
-          displayName: `${authState.displayName ?? "You"} (you)`,
+          displayName: selfName,
           avatarUrl: authState.avatarUrl ?? undefined,
           isLocal: true,
           isScreen: false,
@@ -159,9 +138,8 @@ export function useCallStage() {
       if (p) withVideo.add(p.publicKey);
       put(out, `remote-${r.streamId}`, {
         canvas: r.canvas,
-        displayName:
-          memberNameForActiveCall(r.senderPseudonym) ?? p?.displayName ?? "Participant",
-        publicKey: p?.publicKey ?? r.senderPseudonym,
+        displayName: p?.displayName ?? "",
+        publicKey: r.senderPseudonym,
         isLocal: false,
         isScreen: false,
       });
@@ -172,15 +150,12 @@ export function useCallStage() {
     // flow adds us to `voiceState.participants` too (keyed by our
     // community pseudonym), so without this guard we'd show a second
     // (avatar) card for the local user.
-    const selfKey = selfPseudonymForActiveCall();
+    const selfKey = community?.myPseudonymKey;
     for (const p of voiceState.participants) {
       if (selfKey && p.publicKey === selfKey) continue;
       if (withVideo.has(p.publicKey)) continue;
       put(out, `participant-${p.publicKey}`, {
-        // Roster name first: the voice entry's displayName is the raw
-        // pseudonym hex when the join-time member_names snapshot missed
-        // this member.
-        displayName: memberNameForActiveCall(p.publicKey) ?? p.displayName,
+        displayName: p.displayName ?? "",
         publicKey: p.publicKey,
         isLocal: false,
         isScreen: false,

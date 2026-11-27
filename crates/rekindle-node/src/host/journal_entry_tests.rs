@@ -110,3 +110,57 @@ fn a_member_in_minecraft_on_a_server_is_cannot_launch() {
         "the member's live game states why Join Game cannot start it"
     );
 }
+
+#[test]
+fn community_voice_events_use_the_member_list_name() {
+    use rekindle_types::subscription_events::VoiceParticipant;
+
+    let communities = CommunityStore::new(Arc::default());
+    let scope = VoiceScope::Community {
+        community: "c".into(),
+        channel: "voice".into(),
+    };
+    let named = PseudonymKey([0x23; 32]);
+    assert!(communities.note_member_card(
+        "c",
+        &named,
+        rekindle_governance_runtime::CardText {
+            display_name: Some("River".into()),
+            custom_status: None,
+            game: None,
+        },
+    ));
+    let named_key = "23".repeat(32);
+    let raw_key = "ab".repeat(32);
+    let join = SubscriptionEvent::Voice(VoiceEvent::Joined {
+        scope: scope.clone(),
+        pseudonym: named_key.clone(),
+        display_name: Some(named_key.clone()),
+        route_blob: None,
+    });
+    assert!(matches!(
+        with_voice_names(&communities, join),
+        SubscriptionEvent::Voice(VoiceEvent::Joined { display_name: Some(name), .. })
+            if name == "River"
+    ));
+    let roster = SubscriptionEvent::Voice(VoiceEvent::RosterUpdated {
+        scope,
+        participants: vec![
+            VoiceParticipant {
+                pseudonym_key: named_key,
+                display_name: Some("Wire nickname".into()),
+            },
+            VoiceParticipant {
+                pseudonym_key: raw_key.clone(),
+                display_name: Some(raw_key),
+            },
+        ],
+    });
+    let SubscriptionEvent::Voice(VoiceEvent::RosterUpdated { participants, .. }) =
+        with_voice_names(&communities, roster)
+    else {
+        panic!("a voice roster");
+    };
+    assert_eq!(participants[0].display_name.as_deref(), Some("River"));
+    assert_eq!(participants[1].display_name.as_deref(), Some("abab abab"));
+}

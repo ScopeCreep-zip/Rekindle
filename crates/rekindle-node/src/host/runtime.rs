@@ -430,6 +430,7 @@ impl Host {
         &self,
         event: rekindle_types::subscription_events::SubscriptionEvent,
     ) -> rekindle_types::subscription_events::Cursor {
+        let event = super::journal_entry::with_voice_names(&self.ctx.communities, event);
         super::journal_entry::publish(&self.ctx.journal, event)
     }
 

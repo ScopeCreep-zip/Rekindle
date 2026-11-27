@@ -48,10 +48,12 @@
         "participants": [
           {
             "displayName": "aaaa aaaa",
+            "isSelf": true,
             "publicKey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
           },
           {
             "displayName": "Bob",
+            "isSelf": false,
             "publicKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
           }
         ]
@@ -71,10 +73,12 @@
         "participants": [
           {
             "displayName": "Bob",
+            "isSelf": false,
             "publicKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
           },
           {
             "displayName": "cccc cccc",
+            "isSelf": true,
             "publicKey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
           }
         ]

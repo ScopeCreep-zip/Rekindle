@@ -1,35 +1,28 @@
 import type { UnlistenFn } from "@tauri-apps/api/event";
-import { subscribeChatEvents } from "../../ipc/channels";
-import { callsState, setCallsState, type CallEntry } from "../../stores/calls.store";
-import { commands } from "../../ipc/commands";
-import { addToast } from "../../stores/toast.store";
-import { settingsState } from "../../stores/settings.store";
-import { setNotificationState } from "../../stores/notification.store";
-import { setVoiceState } from "../../stores/voice.store";
-import { friendsState } from "../../stores/friends.store";
-import { authState } from "../../stores/auth.store";
-import { playBusyTone, playIncomingRing, playOutgoingRingback } from "../../utils/ringtone";
 import { startRing, stopActiveRing } from "../../actions/calls_ring";
+import { subscribeChatEvents } from "../../ipc/channels";
+import { commands } from "../../ipc/commands";
+import { type CallEntry, callsState, setCallsState } from "../../stores/calls.store";
+import { setNotificationState } from "../../stores/notification.store";
+import { settingsState } from "../../stores/settings.store";
+import { addToast } from "../../stores/toast.store";
+import { setVoiceState } from "../../stores/voice.store";
+import { playBusyTone, playIncomingRing, playOutgoingRingback } from "../../utils/ringtone";
 
 /// Wave 12 W12.8 — push a `missed_call` row into the notification inbox
 /// so the user sees a Call-back / Send Message action even after the
-/// call has terminated. Looks up the friend's display name from the
-/// friends store; falls back to a truncated pubkey otherwise.
+/// call has terminated. The call entry carries the Host's shown name.
 function pushMissedCallNotification(
-  callId: string,
-  peerKey: string,
-  kind: "audio" | "video",
-  outgoing: boolean,
+  { callId, peerKey, displayName, kind }: CallEntry,
+  outgoing: boolean
 ): void {
-  const friend = friendsState.friends[peerKey];
-  const name = friend?.displayName ?? peerKey.slice(0, 12) + "…";
   setNotificationState("notifications", (prev) => [
     ...prev,
     {
       id: crypto.randomUUID(),
       type: "missed_call",
       title: outgoing ? "Call not answered" : "Missed call",
-      body: `${name} (${kind})`,
+      body: `${displayName} (${kind})`,
       timestamp: Date.now(),
       read: false,
       callId,
@@ -103,10 +96,12 @@ export function subscribeCallEvents({ owner }: { owner: boolean }): Promise<Unli
       // payload (as `started` seeds a 1:1's outgoing call): its group's
       // window shows Cancel until it connects or ends.
       const { callId, kind, participants, groupId, expiresAtMs } = call.groupStarted;
+      const self = participants.find((participant) => participant.isSelf);
+      if (!self) return;
       setCallsState("outgoingGroupCall", {
         callId,
-        initiatorKey: authState.publicKey ?? "",
-        displayName: authState.displayName ?? "",
+        initiatorKey: self.publicKey,
+        displayName: self.displayName,
         kind: kind as "audio" | "video",
         participants,
         groupId,
@@ -238,7 +233,7 @@ export function subscribeCallEvents({ owner }: { owner: boolean }): Promise<Unli
       asOwner(stopActiveRing);
       const out = callsState.outgoingCall;
       if (out?.callId === callId) {
-        if (owner) pushMissedCallNotification(out.callId, out.peerKey, out.kind, true);
+        if (owner) pushMissedCallNotification(out, true);
         setCallsState("outgoingCall", null);
         toast("Call timed out — no answer");
       }
@@ -254,7 +249,7 @@ export function subscribeCallEvents({ owner }: { owner: boolean }): Promise<Unli
       const idx = callsState.incomingCalls.findIndex((c) => c.callId === callId);
       if (idx >= 0) {
         const entry = callsState.incomingCalls[idx];
-        if (owner) pushMissedCallNotification(entry.callId, entry.peerKey, entry.kind, false);
+        if (owner) pushMissedCallNotification(entry, false);
         setCallsState("incomingCalls", (prev) => prev.filter((_, i) => i !== idx));
       }
       if (owner) void refreshMissedCalls();
@@ -285,7 +280,7 @@ export function subscribeCallEvents({ owner }: { owner: boolean }): Promise<Unli
       const cur = callsState.activeGroupCall;
       if (cur && cur.callId === callId) {
         setCallsState("activeGroupCall", "accepted", (a) =>
-          a.filter((p) => p !== participantPubkey),
+          a.filter((p) => p !== participantPubkey)
         );
       }
       return;
@@ -308,10 +303,7 @@ export function subscribeCallEvents({ owner }: { owner: boolean }): Promise<Unli
       // Wave 12 W12.6 — peer flipped audio/video/screen. Drop if our
       // local last-update is newer (last-write-wins per timestamp).
       const { callId, audio, video, screen, timestampMs } = call.mediaStateChanged;
-      const updateSlot = (
-        slot: "activeCall" | "outgoingCall",
-        entry: CallEntry | null,
-      ): void => {
+      const updateSlot = (slot: "activeCall" | "outgoingCall", entry: CallEntry | null): void => {
         if (entry == null || entry.callId !== callId) return;
         const cur = entry.peerMediaState;
         if (cur && cur.timestampMs >= timestampMs) return;
@@ -370,12 +362,15 @@ export function subscribeCallEvents({ owner }: { owner: boolean }): Promise<Unli
 export async function refreshMissedCalls(): Promise<void> {
   try {
     const rows = await commands.getMissedCalls();
-    setCallsState("missed", rows.map((r) => ({
-      callId: r.callId,
-      peerKey: r.peerKey,
-      kind: r.kind,
-      expiredAt: r.expiredAt,
-    })));
+    setCallsState(
+      "missed",
+      rows.map((r) => ({
+        callId: r.callId,
+        peerKey: r.peerKey,
+        kind: r.kind,
+        expiredAt: r.expiredAt,
+      }))
+    );
   } catch (e) {
     console.error("Failed to refresh missed calls:", e);
   }

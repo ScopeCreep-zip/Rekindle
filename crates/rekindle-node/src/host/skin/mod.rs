@@ -10,6 +10,8 @@
 pub(crate) mod actions;
 #[cfg(test)]
 mod actions_tests;
+#[cfg(test)]
+mod call_fixtures;
 pub(crate) mod capability;
 #[cfg(test)]
 mod capability_tests;
