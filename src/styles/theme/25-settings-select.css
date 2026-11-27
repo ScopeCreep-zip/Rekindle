@@ -31,8 +31,8 @@
   /* The chevron: a square's two lower borders turned 45°, drawn in the
    * trigger's text colour (no image, no icon font). */
   .settings-select-chevron {
-    border-bottom: 2px solid currentColor;
-    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentcolor;
+    border-right: 2px solid currentcolor;
     flex: none;
     height: 6px;
     margin-top: -3px;

@@ -95,7 +95,6 @@
     padding: 0 8px;
     font-size: 11px;
     color: var(--color-xfire-text-status);
-    flex-shrink: 0;
   }
 
   /* Context menu */
