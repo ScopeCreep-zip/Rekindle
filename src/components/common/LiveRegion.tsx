@@ -1,4 +1,5 @@
 import type { Component, JSX } from "solid-js";
+import { createScrollFocus } from "../../utils/scroll_focus";
 
 interface LiveRegionProps {
   /**
@@ -52,10 +53,14 @@ interface LiveRegionProps {
  * scroller both of them need it to be.
  */
 const LiveRegion: Component<LiveRegionProps> = (props) => {
+  const scrollFocus = createScrollFocus<HTMLDivElement>();
   return (
     <div
       class={props.class}
-      ref={props.ref}
+      ref={(el) => {
+        scrollFocus.setElement(el);
+        props.ref?.(el);
+      }}
       role="log"
       aria-live={props.announces === false ? "off" : (props.priority ?? "polite")}
       aria-relevant="additions"
@@ -63,7 +68,7 @@ const LiveRegion: Component<LiveRegionProps> = (props) => {
       aria-label={props.label ?? "messages"}
       // The region is the scroller: keyboard users scroll it from the tab
       // order (axe `scrollable-region-focusable`, SC 2.1.1; plan E7.3).
-      tabIndex={0}
+      tabIndex={scrollFocus.tabIndex()}
     >
       {props.children}
     </div>
