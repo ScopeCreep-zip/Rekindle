@@ -21,24 +21,20 @@ import { withCommunity } from "./community_reread";
 function mirrorRosterAdd(
   communityId: string,
   channelId: string,
-  entries: { pseudonymKey: string; displayName: string | null }[],
+  entries: { pseudonymKey: string; displayName: string }[],
 ): void {
   if (voiceState.activeCallType !== "community" || voiceState.channelId !== channelId) return;
   const community = communityState.communities[communityId];
   const self = community?.myPseudonymKey;
-  // Handshake-carried name wins (it never depends on registry-scan
-  // timing); members store is the fallback; truncated key is last.
-  const nameFor = (pk: string, carried: string | null): string =>
-    carried ??
-    community?.members.find((m) => m.pseudonymKey === pk)?.displayName ??
-    pk.slice(0, 8);
+  // Each name is the Host's shown name (contract VN1): rendered as served,
+  // never looked up or made from the key here.
   for (const { pseudonymKey: pk, displayName } of entries) {
     if (pk === self) continue;
     setVoiceState("participants", (prev) => {
       const existing = prev.findIndex((p) => p.publicKey === pk);
       if (existing >= 0) {
-        // Upgrade a truncated-key placeholder with the carried name.
-        if (displayName && prev[existing].displayName !== displayName) {
+        // The Host's name for this member changed (a card update): show it.
+        if (prev[existing].displayName !== displayName) {
           return prev.map((p, i) => (i === existing ? { ...p, displayName } : p));
         }
         return prev;
@@ -47,7 +43,7 @@ function mirrorRosterAdd(
         ...prev,
         {
           publicKey: pk,
-          displayName: nameFor(pk, displayName),
+          displayName,
           isMuted: false,
           isSpeaking: false,
         },

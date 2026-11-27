@@ -18,6 +18,7 @@ import { NET_WAIT_MS, byText, gone, press, resolveIntent, shown, switchTo, typeI
 import { BUDDY, menu, setValue } from "../../../walk/nav.ts";
 import { joinFromStage, voiceNames } from "../../../walk/rows-voice.ts";
 import { appLogPath, countInLog, RECONCILE_RESENT } from "../../host_log.ts";
+import { shot } from "../../shots.ts";
 import { createCommunity, createIdentity, createInvite, joinCommunity, newUser, openCommunity, type User } from "../../journeys.ts";
 
 const app = (name: "alice" | "bob"): Browser => multiRemoteBrowser.getInstance(name) as unknown as Browser;
@@ -94,6 +95,17 @@ describe("voice join, leave and quit reach the roster by beat, both members in r
     const resentBefore = countInLog(ariLog, RECONCILE_RESENT);
     await joinVoice(a);
     const joinTook = await listsWithin(a, 2, BEAT_MS, "Ari joins with Cara already in");
+    // Cara is named as the member list names her (the Host's shown name,
+    // contract VN1): never a raw 64-hex key, in the voice panel or on the stage.
+    const rawKeys = (await a.execute(() =>
+      Array.from(document.querySelectorAll(".voice-panel, .call-stage"))
+        .map((el) => el.textContent ?? "")
+        .join(" ")
+        .match(/[0-9a-f]{64}/gi) ?? [],
+    )) as string[];
+    console.log(`[beats] raw keys in Ari's voice panel and stage: ${rawKeys.length}`);
+    await shot("named-in-voice");
+    if (rawKeys.length > 0) throw new Error(`Ari's voice panel or stage names a member by a raw key (${rawKeys.length} found)`);
     console.log(`[beats] Ari's presence reconcile re-sent her voice join ${countInLog(ariLog, RECONCILE_RESENT) - resentBefore} time(s) before Cara was listed`);
 
     // 2. Cara leaves from her own control; Ari's panel drops her.

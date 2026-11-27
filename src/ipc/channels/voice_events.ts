@@ -26,10 +26,12 @@ export type VoiceScope =
   | { community: { community: string; channel: string } }
   | { dm: { peerKey: string } };
 
-/** One participant in a voice roster. */
+/** One participant in a voice roster: its pseudonym and the name the Host
+ *  shows for it (contract VN1: the member list's shown name, the card name
+ *  else the fingerprint form; never absent, never a raw key). */
 export interface VoiceParticipant {
   pseudonymKey: string;
-  displayName: string | null;
+  displayName: string;
 }
 
 export type VoiceEvent =
@@ -37,7 +39,8 @@ export type VoiceEvent =
       joined: {
         scope: VoiceScope;
         pseudonym: string;
-        displayName: string | null;
+        /** The Host's shown name for the joiner (contract VN1). */
+        displayName: string;
         /**
          * The joiner's private-route blob. The desktop ignores it — its
          * transport resolves the route separately — but a CLI voice

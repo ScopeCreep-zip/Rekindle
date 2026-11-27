@@ -42,7 +42,7 @@ export async function initVoiceEventListener(): Promise<UnlistenFn> {
         ...prev.filter((p) => p.publicKey !== pseudonym),
         {
           publicKey: pseudonym,
-          displayName: displayName ?? pseudonym,
+          displayName,
           isMuted: false,
           isSpeaking: false,
         },
