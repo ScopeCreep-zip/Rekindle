@@ -429,6 +429,8 @@ mod op_proptests;
 #[cfg(test)]
 mod proptests;
 #[cfg(test)]
+mod re_enrol_tests;
+#[cfg(test)]
 mod readmit_tests;
 #[cfg(test)]
 mod resume_beside_tests;

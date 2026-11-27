@@ -25,6 +25,7 @@ macro_rules! tally {
 pub mod checkpoint;
 pub mod checksum;
 pub mod device;
+mod device_carried;
 pub mod device_judge;
 pub mod device_writer;
 pub mod diff;

@@ -1,17 +1,19 @@
 //! The device-key bodies (ADR 0022, plan E3.2 S7d-keys.1): `DeviceKeyEntry`
 //! (an op arm, `MemberJoined`'s first device and the `GenesisCert`
-//! creator's), `DeviceRetiredEntry` and `DeviceReadmitEntry`.
+//! creator's), `DeviceRetiredEntry`, `DeviceReadmitEntry` and
+//! `DeviceReEnrolEntry` (S7d-keys.10).
 
 use rekindle_types::governance::{
-    DeviceEndorsement, DeviceReadmit, DeviceRetired, DeviceSetElement, DeviceSetElementKind,
-    MAX_DEVICE_SET_ELEMENTS,
+    DeviceEndorsement, DeviceReEnrol, DeviceReadmit, DeviceRetired, DeviceSetElement,
+    DeviceSetElementKind, MAX_DEVICE_SET_ELEMENTS,
 };
 use rekindle_types::id::PseudonymKey;
 
 use super::{data_field, fixed};
 use crate::capnp_codec::{capnp_err, not_in_schema, text_to_string};
 use crate::community_governance_capnp::{
-    device_key_entry, device_readmit_entry, device_retired_entry, DeviceSetElementKind as WireKind,
+    device_key_entry, device_re_enrol_entry, device_readmit_entry, device_retired_entry,
+    DeviceSetElementKind as WireKind,
 };
 use crate::CodecError;
 
@@ -107,4 +109,18 @@ pub(crate) fn write_device_readmit(mut b: device_readmit_entry::Builder<'_>, r: 
     b.set_new_key(&r.new_key);
     b.set_incarnation(r.incarnation);
     b.set_fork_evidence(&r.fork_evidence);
+}
+
+pub(crate) fn read_device_re_enrol(
+    r: device_re_enrol_entry::Reader<'_>,
+) -> Result<DeviceReEnrol, CodecError> {
+    Ok(DeviceReEnrol {
+        retired: read_device_retired(r.get_retired().map_err(|e| capnp_err(&e))?)?,
+        endorsement: read_device_key(r.get_endorsement().map_err(|e| capnp_err(&e))?)?,
+    })
+}
+
+pub(crate) fn write_device_re_enrol(mut b: device_re_enrol_entry::Builder<'_>, r: &DeviceReEnrol) {
+    write_device_retired(b.reborrow().init_retired(), &r.retired);
+    write_device_key(b.init_endorsement(), &r.endorsement);
 }

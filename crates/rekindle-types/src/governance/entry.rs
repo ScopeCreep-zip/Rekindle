@@ -554,6 +554,12 @@ pub enum GovernanceEntry {
     /// A co-creator's creator link answering a request naming it (lead
     /// decision (46)).
     SuccessorLink(super::successor::SuccessorLink),
+
+    /// A device's re-enrolment after a restore or a clone signal (ADR 0022
+    /// rules 4 and 7, plan E3.2 S7d-keys.10): the retirement of its copied
+    /// key and the endorsement of its new one, signed by the new key at
+    /// its seq 0.
+    DeviceReEnrol(super::device::DeviceReEnrol),
 }
 
 /// The exact value of a member's slot in one channel record, as a

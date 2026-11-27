@@ -24,12 +24,12 @@ use crate::op::VerifiedOp;
 const RECORD: &str = "VLD0:r";
 
 /// The forked member: its pseudonym is seed 2's real key.
-fn t() -> PseudonymKey {
+pub(super) fn t() -> PseudonymKey {
     PseudonymKey(SigningKey::from_bytes(&[2; 32]).verifying_key().to_bytes())
 }
 
 /// `t()`'s endorsement of `[key; 32]` at `incarnation`, answering `fork`.
-fn endorse(key: u8, incarnation: u64, fork: [u8; 32]) -> DeviceEndorsement {
+pub(super) fn endorse(key: u8, incarnation: u64, fork: [u8; 32]) -> DeviceEndorsement {
     let mut e = DeviceEndorsement {
         device_key: [key; 32],
         incarnation,
@@ -62,7 +62,7 @@ fn readmit(fork: [u8; 32]) -> GovernanceEntry {
 }
 
 /// `t()`'s retirement of key 10 (incarnation 1) above seq 0.
-fn retired_10() -> DeviceRetired {
+pub(super) fn retired_10() -> DeviceRetired {
     let mut r = DeviceRetired {
         device_key: [10; 32],
         incarnation: 1,
@@ -79,12 +79,12 @@ fn retire_10() -> GovernanceEntry {
 }
 
 /// The evidence of `retire_10` (ADR 0022 rule 10, amended 2026-11-23).
-fn retirement_10() -> [u8; 32] {
+pub(super) fn retirement_10() -> [u8; 32] {
     retirement_evidence_hash(FIXTURE_ANCHOR, RECORD, &retired_10())
 }
 
 /// `t()`'s join with key 10.
-fn join_t() -> VerifiedOp {
+pub(super) fn join_t() -> VerifiedOp {
     let join = GovernanceEntry::MemberJoined {
         member_record: RECORD.into(),
         member_record_owner: "owner".into(),
@@ -126,7 +126,7 @@ fn forked_member(retired_first: bool) -> (VerifiedOp, VerifiedOp, VerifiedOp) {
     }
 }
 
-fn needs_readmit(out: &MergeOutcome, o: &VerifiedOp) -> bool {
+pub(super) fn needs_readmit(out: &MergeOutcome, o: &VerifiedOp) -> bool {
     let reason = QuarantineReason::DeviceKey {
         refusal: KeyRefusal::NeedsReadmit,
     };

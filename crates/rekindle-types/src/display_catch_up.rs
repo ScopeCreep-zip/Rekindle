@@ -103,6 +103,7 @@ pub enum PendingGovKind {
     DeviceKey,
     DeviceRetired,
     DeviceReadmit,
+    DeviceReEnrol,
     SuccessorLinkRequest,
     SuccessorLink,
 }
@@ -159,6 +160,7 @@ impl PendingGovKind {
             E::DeviceKey { .. } => Self::DeviceKey,
             E::DeviceRetired { .. } => Self::DeviceRetired,
             E::DeviceReadmit { .. } => Self::DeviceReadmit,
+            E::DeviceReEnrol { .. } => Self::DeviceReEnrol,
             E::SuccessorLinkRequest { .. } => Self::SuccessorLinkRequest,
             E::SuccessorLink { .. } => Self::SuccessorLink,
         }

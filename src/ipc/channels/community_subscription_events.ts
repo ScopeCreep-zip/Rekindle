@@ -521,7 +521,7 @@ type PendingGovKind =
   | "threadCreated" | "threadArchived" | "threadUnarchived" | "eventCreated" | "eventArchived" | "eventRsvp"
   | "expressionAdded" | "expressionRemoved" | "modReport" | "onboardingConfig" | "welcomeScreen"
   | "adminDelete" | "segmentAdded" | "autoModRule" | "inviteCreated" | "inviteRevoked" | "attachmentPinned"
-  | "communityPolicy" | "checkpoint" | "successor" | "deviceKey" | "deviceRetired" | "deviceReadmit"
+  | "communityPolicy" | "checkpoint" | "successor" | "deviceKey" | "deviceRetired" | "deviceReadmit" | "deviceReEnrol"
   | "successorLinkRequest" | "successorLink";
 
 /** Our community key against governance's generation, as the Host states it

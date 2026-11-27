@@ -81,7 +81,9 @@ pub fn class_of(entry: &GovernanceEntry) -> OpClass {
         // The transfer's link round (lead decision (46)).
         | G::SuccessorLinkRequest(_)
         | G::SuccessorLink(_) => OpClass::NonPower,
-        G::DeviceKey(_) | G::DeviceRetired(_) | G::DeviceReadmit(_) => OpClass::Device,
+        G::DeviceKey(_) | G::DeviceRetired(_) | G::DeviceReadmit(_) | G::DeviceReEnrol(_) => {
+            OpClass::Device
+        }
     }
 }
 

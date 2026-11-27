@@ -24,8 +24,8 @@ mod automod;
 pub use automod::AutoModAction;
 pub use checkpoint::Checkpoint;
 pub use device::{
-    DeviceEndorsement, DeviceReadmit, DeviceRetired, DeviceSetElement, DeviceSetElementKind,
-    MAX_DEVICE_SET_ELEMENTS,
+    DeviceEndorsement, DeviceReEnrol, DeviceReadmit, DeviceRetired, DeviceSetElement,
+    DeviceSetElementKind, MAX_DEVICE_SET_ELEMENTS,
 };
 pub use entry::{AdmissionMode, GovernanceEntry, SlotHead};
 pub use mod_report::ModReportTarget;

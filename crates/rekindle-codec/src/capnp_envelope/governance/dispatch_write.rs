@@ -252,6 +252,9 @@ pub(crate) fn write_governance_entry(b: schema::Builder<'_>, e: &GovernanceEntry
         GovernanceEntry::DeviceReadmit(r) => {
             crate::governance_op::write_device_readmit(b.reborrow().init_device_readmit(), r);
         }
+        GovernanceEntry::DeviceReEnrol(r) => {
+            crate::governance_op::write_device_re_enrol(b.reborrow().init_device_re_enrol(), r);
+        }
         GovernanceEntry::SuccessorLinkRequest(r) => {
             super::successor::write_link_request(b.reborrow().init_successor_link_request(), r);
         }

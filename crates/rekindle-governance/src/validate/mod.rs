@@ -114,6 +114,11 @@ pub fn well_formed(
             ..
         } if !crate::device::endorsement_well_formed(e) => return false,
         GovernanceEntry::DeviceRetired(r) if !r.well_formed() => return false,
+        GovernanceEntry::DeviceReEnrol(r)
+            if !r.well_formed() || !crate::device::endorsement_well_formed(&r.endorsement) =>
+        {
+            return false;
+        }
         GovernanceEntry::DeviceReadmit(r) if !r.well_formed() => return false,
         // A successor body in none of its four shapes (S7s.3e).
         GovernanceEntry::CommunitySuccessor(s) if s.shape().is_none() => return false,
@@ -196,10 +201,13 @@ fn permitted(writer: &PseudonymKey, entry: &GovernanceEntry, state: &GovernanceS
     // (`p` signs them, ADR 0022 rule 1) and are valid from any carrier, a
     // banned, departed or forked member's included (rule 2, plan E3.2
     // S7d-keys.1), so standing never refuses them; their signatures and
-    // effectiveness are judged at the op's deps (S7d-keys.2).
+    // effectiveness are judged at the op's deps (S7d-keys.2). A
+    // re-enrolment is both (S7d-keys.10).
     if matches!(
         entry,
-        GovernanceEntry::DeviceKey(_) | GovernanceEntry::DeviceRetired(_)
+        GovernanceEntry::DeviceKey(_)
+            | GovernanceEntry::DeviceRetired(_)
+            | GovernanceEntry::DeviceReEnrol(_)
     ) {
         return true;
     }
@@ -239,6 +247,7 @@ fn permitted(writer: &PseudonymKey, entry: &GovernanceEntry, state: &GovernanceS
         | GovernanceEntry::CommunitySuccessor(_)
         | GovernanceEntry::DeviceKey(_)
         | GovernanceEntry::DeviceRetired(_)
+        | GovernanceEntry::DeviceReEnrol(_)
         | GovernanceEntry::SuccessorLinkRequest(_)
         | GovernanceEntry::SuccessorLink(_) => true,
 

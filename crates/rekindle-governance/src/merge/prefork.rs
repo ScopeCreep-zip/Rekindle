@@ -10,6 +10,11 @@
 //! replacement a `DeviceRetired` carrier carries is in no strict past of
 //! that carrier, so it is never pre-fork. A pure function of the op set.
 //!
+//! The one exception is the exempt replacement (ADR 0022 rules 4 and 7,
+//! K4b.4 R3, plan E3.2 S7d-keys.10): the key a `DeviceReEnrol` carries
+//! when its strict past holds no fork event of its member, of concurrent
+//! ones the lowest `(lamport, op_hash)` ([`exempt_replacement`]).
+//!
 //! Every `DeviceReadmit`, own-key or a moderator's, answers one fork event
 //! of its member held at its deps (rule 7, amended 2026-11-23): its
 //! `forkEvidence` is a fork pair's hash or a retirement's
@@ -22,7 +27,7 @@ use rekindle_types::id::PseudonymKey;
 
 use super::resolve::Ancestry;
 use crate::device::{fork_evidence_hash, retirement_evidence_hash};
-use crate::device_judge::{DeviceView, MemberDevices};
+use crate::device_judge::{re_enrol_of, retirement_of, DeviceView, MemberDevices};
 use crate::op::VerifiedOp;
 
 /// Per forked device key, its fork seq: the lowest seq at which `sorted`
@@ -136,7 +141,7 @@ pub(super) fn fork_evidence_of(
                 [ops[j].hash(), ops[k].hash()],
             ));
         }
-        if let GovernanceEntry::DeviceRetired(r) = ops[j].body() {
+        if let Some(r) = retirement_of(ops[j].op()) {
             if retires(md, ops[j]) {
                 out.push(retirement_evidence_hash(anchor, record, r));
             }
@@ -209,17 +214,43 @@ fn endorses(
             ..
         }
         | GovernanceEntry::DeviceKey(e) => Some(e),
-        _ => None,
+        _ => re_enrol_of(op.op()).map(|r| &r.endorsement),
     };
     carried.is_some_and(|e| which(e) && md.endorsements.values().any(|v| v == e))
 }
 
-/// Whether `op` carries a valid `DeviceRetired` (one the view holds).
+/// Whether `op` carries a valid `DeviceRetired` (one the view holds), its
+/// own arm's or a `DeviceReEnrol`'s ([`retirement_of`]).
 fn retires(md: &MemberDevices, op: &VerifiedOp) -> bool {
-    match op.body() {
-        GovernanceEntry::DeviceRetired(r) => {
-            (md.retirements).contains_key(&(r.device_key, r.incarnation, r.last_seq))
-        }
-        _ => false,
-    }
+    retirement_of(op.op())
+        .is_some_and(|r| (md.retirements).contains_key(&(r.device_key, r.incarnation, r.last_seq)))
+}
+
+/// ADR 0022 rule 7's exempt replacement (rules 4 and 7 as amended in K4b.4
+/// R3, plan E3.2 S7d-keys.10): whether the endorsement `at` (incarnation,
+/// key) is the one the member's exempt `DeviceReEnrol` carries among the
+/// ops that `held` (in the judged op's past and the member's). Exempt is a
+/// valid re-enrolment whose strict past holds none of the member's fork
+/// events `events`; of several such (concurrent ones: one in another's past
+/// has it as a fork event) only the lowest `(lamport, op_hash)` is. A pure
+/// function of the judged op's past, so ops already judged stay judged
+/// (rule 6) and a later op whose deps hold both copies' re-enrolments
+/// admits only the lowest one's key.
+pub(super) fn exempt_replacement(
+    ops: &[&VerifiedOp],
+    held: &impl Fn(usize) -> bool,
+    past: &Ancestry,
+    events: &[usize],
+    md: &MemberDevices,
+    at: (u64, [u8; 32]),
+) -> bool {
+    (0..ops.len())
+        .filter(|&j| held(j) && re_enrol_of(ops[j].op()).is_some() && retires(md, ops[j]))
+        .filter(|&j| !events.iter().any(|&f| past.contains(j, f)))
+        .min_by_key(|&j| ops[j].stamp())
+        .and_then(|j| re_enrol_of(ops[j].op()))
+        .is_some_and(|r| {
+            let e = &r.endorsement;
+            (e.incarnation, e.device_key) == at && md.endorsements.get(&at) == Some(e)
+        })
 }

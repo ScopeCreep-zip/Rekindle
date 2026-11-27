@@ -30,7 +30,9 @@ use rekindle_types::governance::{
 };
 use rekindle_types::id::PseudonymKey;
 
-use crate::device::{endorsement_holds, retirement_holds};
+use crate::device::endorsement_holds;
+use crate::device_carried::{note_carrier, take_endorsement, take_retirement};
+pub use crate::device_carried::{re_enrol_of, retirement_of};
 use crate::op::{OpStamp, VerifiedOp};
 use crate::state::GovernanceState;
 
@@ -287,17 +289,17 @@ impl DeviceView {
                 let md = self.members.entry(p.clone()).or_default();
                 take_endorsement(md, p, anchor, e, Some((op.device_key, op.seq)));
             }
-            GovernanceEntry::DeviceRetired(r) => {
+            // A re-enrolment carries both its retirement and its new key's
+            // endorsement, only on the new key's seq 0 (K4b.4 R3); anywhere
+            // else it carries nothing.
+            GovernanceEntry::DeviceRetired(_) | GovernanceEntry::DeviceReEnrol(_) => {
                 let md = self.members.entry(p.clone()).or_default();
-                let held = (md.member_record.as_deref())
-                    .is_some_and(|record| retirement_holds(p, anchor, record, r));
-                if held {
-                    let floor = r.last_seq.max(seen.unwrap_or(0));
-                    let at = md
-                        .retirements
-                        .entry((r.device_key, r.incarnation, r.last_seq))
-                        .or_insert(floor);
-                    *at = (*at).max(floor);
+                if let Some(r) = retirement_of(op) {
+                    take_retirement(md, p, anchor, r, seen);
+                }
+                if let Some(re) = re_enrol_of(op) {
+                    let at = Some((op.device_key, op.seq));
+                    take_endorsement(md, p, anchor, &re.endorsement, at);
                 }
             }
             GovernanceEntry::DeviceReadmit(r) => {
@@ -354,36 +356,6 @@ impl GovernanceState {
             .map(str::to_owned)
             .or_else(|| self.author_record(cert, author))
     }
-}
-
-/// Take `e` into `md` when its signature holds for one of the member's
-/// records, noting its carrier `at` (`None`: the cert).
-fn take_endorsement(
-    md: &mut MemberDevices,
-    p: &PseudonymKey,
-    anchor: &str,
-    e: &DeviceEndorsement,
-    at: Option<([u8; 32], u64)>,
-) {
-    let held = (md.member_records(p, anchor).iter()).any(|r| endorsement_holds(p, anchor, r, e));
-    if held {
-        let k = (e.incarnation, e.device_key);
-        (md.endorsements).entry(k).or_insert_with(|| e.clone());
-        let (carrier, seq) = at.map_or((None, 0), |(key, seq)| (Some(key), seq));
-        note_carrier(md, k, carrier, seq);
-    }
-}
-
-/// Lower the endorsement `k`'s carrier `carrier` to `seq` (a pure min, so
-/// the view stays an order-free union).
-fn note_carrier(md: &mut MemberDevices, k: (u64, [u8; 32]), carrier: Option<[u8; 32]>, seq: u64) {
-    let at = md
-        .carriers
-        .entry(k)
-        .or_default()
-        .entry(carrier)
-        .or_insert(seq);
-    *at = (*at).min(seq);
 }
 
 /// Why an op's key is not judged yet.
@@ -450,6 +422,7 @@ pub fn judge_op_at(
             ..
         } => e.device_key == op.device_key,
         GovernanceEntry::DeviceKey(e) => op.seq == 0 && e.device_key == op.device_key,
+        GovernanceEntry::DeviceReEnrol(r) => r.carried_by(&op.device_key, op.seq),
         _ => false,
     };
     if carries {
@@ -545,7 +518,7 @@ pub fn judged_endorsement<'a>(
             ..
         } => (Some(member_record.as_str()), first_device.as_ref()),
         GovernanceEntry::DeviceKey(e) if op.seq == 0 => (record, Some(e)),
-        _ => (record, None),
+        _ => (record, re_enrol_of(op).map(|r| &r.endorsement)),
     };
     let record = record?;
     let own = carried.filter(|e| {
