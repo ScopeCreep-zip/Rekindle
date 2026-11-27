@@ -562,3 +562,18 @@ export interface TargetModeration {
   ban: boolean;
   timeout: boolean;
 }
+
+/** One field of a community profile edit (plan PF2, `rekindle_types::dto::community_profile::ProfileField`). */
+export type ProfileField<T> = { op: "unchanged" } | { op: "clear" } | { op: "set"; value: T };
+
+/** `update_community_profile`'s patch: every field explicit (PF2). */
+export interface CommunityProfilePatch {
+  bio: ProfileField<string>;
+  pronouns: ProfileField<string>;
+  themeColor: ProfileField<number>;
+  badges: ProfileField<string[]>;
+  avatarRef: ProfileField<string>;
+  bannerRef: ProfileField<string>;
+  customStatus: ProfileField<string>;
+  displayName: ProfileField<string>;
+}

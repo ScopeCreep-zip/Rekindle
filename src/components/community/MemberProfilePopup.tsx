@@ -17,6 +17,7 @@ import {
   handleUpdateCommunityProfile,
 } from "../../actions/community.actions";
 import { addToast } from "../../stores/toast.store";
+import { colourField, listField, refField, textField } from "../../utils/profile_field";
 
 interface MemberProfilePopupProps {
   communityId: string;
@@ -73,11 +74,27 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
   const [saving, setSaving] = createSignal(false);
 
   const myCommunity = () => communityState.communities[props.communityId];
-  const initialBio = () => myCommunity()?.myBio ?? "";
-  const initialPronouns = () => myCommunity()?.myPronouns ?? "";
-  const initialCustomStatus = () => myCommunity()?.myCustomStatus ?? "";
-  const initialThemeColorHex = () => formatColorHex(myCommunity()?.myThemeColor ?? null);
-  const initialBadges = () => (myCommunity()?.myBadges ?? []).join(", ");
+  // The card as editing began (plan PF2): each field's edit is judged
+  // against it, so a Host change to a field the user did not touch (a
+  // MemberCardChanged mid-edit) survives the save.
+  const takeBaseline = () => {
+    const c = myCommunity();
+    return {
+      bio: c?.myBio ?? "",
+      pronouns: c?.myPronouns ?? "",
+      customStatus: c?.myCustomStatus ?? "",
+      themeColor: c?.myThemeColor ?? null,
+      badges: c?.myBadges ?? [],
+      avatarRef: c?.myAvatarRef ?? null,
+      bannerRef: c?.myBannerRef ?? null,
+    };
+  };
+  let baseline = takeBaseline();
+  const initialBio = () => baseline.bio;
+  const initialPronouns = () => baseline.pronouns;
+  const initialCustomStatus = () => baseline.customStatus;
+  const initialThemeColorHex = () => formatColorHex(baseline.themeColor);
+  const initialBadges = () => baseline.badges.join(", ");
 
   const [bioDraft, setBioDraft] = createSignal(initialBio());
   const [pronounsDraft, setPronounsDraft] = createSignal(initialPronouns());
@@ -86,10 +103,10 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
   const [badgesDraft, setBadgesDraft] = createSignal(initialBadges());
 
   const [avatarRefDraft, setAvatarRefDraft] = createSignal<string | null>(
-    myCommunity()?.myAvatarRef ?? null,
+    baseline.avatarRef,
   );
   const [bannerRefDraft, setBannerRefDraft] = createSignal<string | null>(
-    myCommunity()?.myBannerRef ?? null,
+    baseline.bannerRef,
   );
   const [avatarDataUrl, setAvatarDataUrl] = createSignal<string | null>(null);
   const [bannerDataUrl, setBannerDataUrl] = createSignal<string | null>(null);
@@ -196,13 +213,14 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
   }
 
   function startEditing(): void {
+    baseline = takeBaseline();
     setBioDraft(initialBio());
     setPronounsDraft(initialPronouns());
     setCustomStatusDraft(initialCustomStatus());
     setThemeColorDraft(initialThemeColorHex());
     setBadgesDraft(initialBadges());
-    setAvatarRefDraft(myCommunity()?.myAvatarRef ?? null);
-    setBannerRefDraft(myCommunity()?.myBannerRef ?? null);
+    setAvatarRefDraft(baseline.avatarRef);
+    setBannerRefDraft(baseline.bannerRef);
     setEditing(true);
   }
 
@@ -229,24 +247,19 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
       return;
     }
     const themeColor = parseColorHex(themeColorDraft());
-    // Only what changed goes to the Host (plan E3.4 S6b): null keeps a
-    // field, an empty value clears it; the card is the Host's.
-    const c = myCommunity();
-    const text = (next: string, was: string | null | undefined): string | null => (next === (was ?? "") ? null : next);
-    const ref = (next: string | null, was: string | null | undefined): string | null =>
-      next === (was ?? null) ? null : (next ?? "");
-    const wasBadges = c?.myBadges ?? [];
+    // Each field against the card as editing began (PF2): unchanged, cleared
+    // or set; the name is the Overview's, so this form leaves it unchanged.
     setSaving(true);
     try {
       const ok = await handleUpdateCommunityProfile(props.communityId, {
-        bio: text(bio, c?.myBio),
-        pronouns: text(pronouns, c?.myPronouns),
-        // A theme colour has no clear form: only a new colour is sent.
-        themeColor: themeColor !== null && themeColor !== (c?.myThemeColor ?? null) ? themeColor : null,
-        badges: badges.length === wasBadges.length && badges.every((b, i) => b === wasBadges[i]) ? null : badges,
-        avatarRef: ref(avatarRefDraft(), c?.myAvatarRef),
-        bannerRef: ref(bannerRefDraft(), c?.myBannerRef),
-        customStatus: text(customStatusDraft().trim(), c?.myCustomStatus),
+        bio: textField(bio, baseline.bio),
+        pronouns: textField(pronouns, baseline.pronouns),
+        themeColor: colourField(themeColor, baseline.themeColor),
+        badges: listField(badges, baseline.badges),
+        avatarRef: refField(avatarRefDraft(), baseline.avatarRef),
+        bannerRef: refField(bannerRefDraft(), baseline.bannerRef),
+        customStatus: textField(customStatusDraft().trim(), baseline.customStatus),
+        displayName: { op: "unchanged" },
       });
       if (ok) setEditing(false);
     } finally {

@@ -198,6 +198,7 @@ export function transformCommunityDetail(c: {
   myCardName?: string;
   myCustomStatus?: string;
   myBio?: string | null; myPronouns?: string | null;
+  myAvatarRef?: string; myBannerRef?: string;
   myThemeColor?: number | null; myBadges?: string[];
   removed?: {
     banned: boolean;
@@ -233,6 +234,8 @@ export function transformCommunityDetail(c: {
     myPronouns: c.myPronouns ?? null,
     myThemeColor: c.myThemeColor ?? null,
     myBadges: c.myBadges ?? [],
+    myAvatarRef: c.myAvatarRef ?? null,
+    myBannerRef: c.myBannerRef ?? null,
     removed: c.removed ?? null,
     keyStatus: c.keyStatus ?? null,
   };
