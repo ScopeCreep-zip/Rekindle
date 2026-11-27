@@ -65,6 +65,7 @@ pub mod origin;
 pub mod origin_reserve;
 pub mod overflow;
 pub mod own_frontier;
+pub mod own_record_watch;
 pub mod partial;
 pub mod quarantine;
 pub mod rebuild_flight;

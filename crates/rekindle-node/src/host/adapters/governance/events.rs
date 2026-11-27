@@ -135,6 +135,13 @@ impl HostGovernance {
                     },
                 }),
             ),
+            GovernanceRuntimeEvent::OwnKeyRetired { notice, .. } => Some(
+                SubscriptionEvent::Notification(NotificationEvent::SystemAlert {
+                    title: "Signing stopped".to_string(),
+                    subject: None,
+                    body: notice.clone(),
+                }),
+            ),
             GovernanceRuntimeEvent::OnboardingComplete {
                 community_id,
                 pseudonym_hex,
