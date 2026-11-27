@@ -37,7 +37,7 @@ pub(crate) const PANIC_LINTS: [&str; 6] = [
 ];
 
 /// The crates converted so far.
-pub(crate) const PEER_INPUT_CRATES: [&str; 1] = ["rekindle-codec"];
+pub(crate) const PEER_INPUT_CRATES: [&str; 2] = ["rekindle-codec", "rekindle-protocol"];
 
 fn squash(tokens: &str) -> String {
     tokens.chars().filter(|c| !c.is_whitespace()).collect()

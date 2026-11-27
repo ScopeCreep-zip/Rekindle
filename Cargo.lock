@@ -7744,6 +7744,7 @@ dependencies = [
  "hex",
  "hkdf 0.12.4",
  "parking_lot 0.12.5",
+ "proptest",
  "rand 0.8.6",
  "rekindle-codec",
  "rekindle-crypto",
