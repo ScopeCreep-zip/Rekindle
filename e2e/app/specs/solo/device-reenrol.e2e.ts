@@ -24,8 +24,8 @@
 
 import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, byText, gone, resolveIntent, shown, switchTo, typeInto, waitUntil } from "../../../walk/helpers.ts";
-import { type Peer, peerRequestFriend, peerReviewed, startClone, startFleet, stopFleet } from "../../fleet.ts";
-import { acceptRequest, createCommunity, createIdentity, friendCode, logOut, newUser, openCommunity, pendingRequest, type User } from "../../journeys.ts";
+import { type Peer, peerJoinCommunity, peerRequestFriend, peerReviewed, startClone, startFleet, stopFleet } from "../../fleet.ts";
+import { acceptRequest, createCommunity, createIdentity, createInvite, friendCode, logOut, newUser, openCommunity, pendingRequest, type User } from "../../journeys.ts";
 import { showSkinView } from "../../journeys_skins.ts";
 import { BUDDY, LOGIN, SETTINGS, inBuddy } from "../../../walk/nav.ts";
 import { shot } from "../../shots.ts";
@@ -83,6 +83,10 @@ describe("a restored copy re-enrols the device: the original is told and offered
     await pendingRequest(browser, hello);
     await acceptRequest(browser, me, hello);
     await createCommunity(browser, me, COMMUNITY);
+    // Dee is a member too: a re-enrolment does not write the old record, so
+    // the original learns of it from another member who merged the op and
+    // carries its locator (the netsim's cloned-root case has four nodes).
+    await peerJoinCommunity(dee, await createInvite(browser, me, 1));
     await openCommunity(browser, COMMUNITY);
     const dataRoot = (browser.requestedCapabilities as Record<string, unknown>)["rekindle:dataRoot"];
     if (typeof dataRoot !== "string") throw new Error("the launcher handed no rekindle:dataRoot capability");
