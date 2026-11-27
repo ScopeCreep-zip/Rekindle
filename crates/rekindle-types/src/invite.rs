@@ -56,16 +56,19 @@ pub struct InviteSecrets {
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JoinInboxCapability {
-    pub join_inbox: String,
-    pub join_inbox_writer: Zeroizing<String>,
-    pub join_inbox_slots: u8,
+    #[serde(rename = "joinInbox")]
+    pub record_key: String,
+    #[serde(rename = "joinInboxWriter")]
+    pub writer: Zeroizing<String>,
+    #[serde(rename = "joinInboxSlots")]
+    pub slots: u8,
 }
 
 impl std::fmt::Debug for JoinInboxCapability {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("JoinInboxCapability")
-            .field("join_inbox", &self.join_inbox)
-            .field("join_inbox_slots", &self.join_inbox_slots)
+            .field("record_key", &self.record_key)
+            .field("slots", &self.slots)
             .finish_non_exhaustive()
     }
 }

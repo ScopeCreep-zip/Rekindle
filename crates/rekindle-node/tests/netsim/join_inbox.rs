@@ -132,7 +132,7 @@ async fn inbox_key(community: &Community, url: &str) -> String {
         .unwrap()
         .join_inbox
         .unwrap()
-        .join_inbox
+        .record_key
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]

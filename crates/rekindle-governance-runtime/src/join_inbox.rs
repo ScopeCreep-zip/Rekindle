@@ -56,9 +56,9 @@ pub(crate) async fn mint<D: GovernanceRuntimeDeps>(
     opened.map_err(|e| GovernanceRuntimeError::Adapter(format!("publish join inbox: {e}")))?;
     Ok((
         JoinInboxCapability {
-            join_inbox: record_key.clone(),
-            join_inbox_writer: Zeroizing::new(deps.format_writer_keypair(public, *seed)),
-            join_inbox_slots: slots,
+            record_key: record_key.clone(),
+            writer: Zeroizing::new(deps.format_writer_keypair(public, *seed)),
+            slots,
         },
         MintedJoinInbox {
             record_key,
