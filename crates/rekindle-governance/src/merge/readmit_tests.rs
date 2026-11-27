@@ -306,7 +306,7 @@ fn second_fork(cited: usize) -> (MergeOutcome, Vec<VerifiedOp>) {
     (outcome(&all), k12)
 }
 
-fn retired(out: &MergeOutcome, o: &VerifiedOp) -> bool {
+pub(super) fn retired(out: &MergeOutcome, o: &VerifiedOp) -> bool {
     let reason = QuarantineReason::DeviceKey {
         refusal: KeyRefusal::Retired,
     };

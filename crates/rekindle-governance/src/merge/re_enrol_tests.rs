@@ -9,9 +9,7 @@
 use rekindle_types::governance::{DeviceReEnrol, GovernanceEntry};
 
 use super::judge::tests::outcome;
-use super::readmit_tests::{endorse, join_t, needs_readmit, retired_10, t};
-use super::QuarantineReason;
-use crate::device_judge::KeyRefusal;
+use super::readmit_tests::{endorse, join_t, needs_readmit, retired, retired_10, t};
 use crate::fixture::{op, op_on};
 use crate::op::VerifiedOp;
 
@@ -29,13 +27,6 @@ fn re_enrol(key: u8, incarnation: u64, deps: &[&VerifiedOp], at: u64) -> Verifie
 fn later(key: u8, seq: u64, deps: &[&VerifiedOp], at: u64) -> VerifiedOp {
     let leave = GovernanceEntry::MemberLeft { heads: Vec::new() };
     op_on(&t(), [key; 32], seq, deps, at, leave)
-}
-
-fn retired(out: &super::MergeOutcome, o: &VerifiedOp) -> bool {
-    let reason = QuarantineReason::DeviceKey {
-        refusal: KeyRefusal::Retired,
-    };
-    (out.quarantined.iter()).any(|(h, r)| *h == o.hash() && *r == reason)
 }
 
 /// R3, exempt: a re-enrolment with no fork event in its strict past makes
