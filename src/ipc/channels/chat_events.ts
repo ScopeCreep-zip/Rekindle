@@ -107,7 +107,7 @@ export type TypingContext =
 
 /** A group member as an event names them (our nickname or fingerprint,
  *  never a name their payload carries). */
-export interface GroupDmMember {
+interface GroupDmMember {
   publicKey: string;
   displayName: string;
 }
@@ -197,7 +197,7 @@ interface DirectCallInfo {
   expectedLocalCamera: boolean;
 }
 
-export type CallEvent =
+type CallEvent =
   | {
       incoming: {
         callId: string;

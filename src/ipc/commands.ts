@@ -14,7 +14,7 @@ import { systemCommands } from "./commands/system";
 import { syncCommands } from "./commands/sync";
 import { groupDmCommands } from "./commands/group_dm";
 import { lobbyCommands } from "./commands/dto_lobby";
-export type { GroupDmView, GroupDmMemberView } from "./commands/group_dm";
+export type { GroupDmView } from "./commands/group_dm";
 export type { LobbyRefusal, LobbyVerdict, LobbyView } from "./commands/dto_lobby";
 
 export const commands = {

@@ -13,7 +13,7 @@ import { errorMessage } from "../../utils/error";
 /// The successors the Host's snapshot (`CommunitySuccessors`) offers for
 /// `community`, or null (logged) when it is not read. Its link requests
 /// (SS4) are answered by the co-creator link view, not here.
-export async function handleGetCommunitySuccessors(community: string): Promise<SuccessorOffer[] | null> {
+async function handleGetCommunitySuccessors(community: string): Promise<SuccessorOffer[] | null> {
   try {
     return (await commands.getCommunitySuccessors(community)).offers;
   } catch (e) {

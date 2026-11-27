@@ -143,7 +143,7 @@ function presentUndo(offer: UndoOffer): void {
 
 /** Take back the offered action. The inverse is a request of its own: a
  *  review it needs is shown like any other. */
-export async function takeUndo(): Promise<void> {
+async function takeUndo(): Promise<void> {
   const offer = intentState.undo;
   if (offer === null) return;
   clearUndo();

@@ -89,7 +89,7 @@ const [networkState, setNetworkState] = createStore<NetworkState>({
 export { networkState };
 
 /** The paused route's status line (owner decision 65): the Host's cause, worded. */
-export function routePausedText(cause: RoutePauseCause | null): string {
+function routePausedText(cause: RoutePauseCause | null): string {
   return cause === "unreadable"
     ? "Route budget couldn't be read; inbound route paused"
     : "Inbound route paused after repeated failures: possible attack";
