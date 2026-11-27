@@ -23,6 +23,10 @@ pub(super) fn dispatch(
         .default_seat()
         .and_then(|seat| seat.keyboard())
         .ok_or("The selected GTK display has no keyboard")?;
+    // GTK can reroute window events while another widget owns a keyboard grab.
+    if display.device_is_grabbed(&keyboard) || webview.device_is_shadowed(&keyboard) {
+        return Err("A GTK keyboard grab prevents delivery to the selected webview");
+    }
     let base = *match key {
         NativeKey::Tab => constants::Tab,
         NativeKey::Enter => constants::Return,
