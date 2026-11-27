@@ -183,19 +183,32 @@ fn a_failing_pair_is_a_draft_naming_it() {
     validate::run(&d.suggested.unwrap().canonical.bytes).unwrap();
 }
 
+/// Lead ruling 2026-11-26 (it replaces `non_zero_alpha_is_refused`): a
+/// non-zero alpha byte is unused, COLORREF-style, so it is read as 0 and
+/// recorded in the NOTICE, positive or negative; a fourth field no byte
+/// holds still refuses.
 #[test]
-fn non_zero_alpha_is_refused() {
+fn non_zero_alpha_is_ignored_and_recorded() {
+    for written in ["RGBA(16,16,16,9)", "RGBA(16,16,16,-255)"] {
+        let mut t = tree();
+        t.insert(
+            "FixThemes.ini".into(),
+            THEME.replace("RGBA(16,16,16,0)", written).into_bytes(),
+        );
+        let notice = settled(import(&t, FOLDER, "fixture", None).unwrap()).notice;
+        let read = format!("ColorGroup.BuddyViewBG={written} read as RGBA(16,16,16,0)");
+        assert!(notice.contains(&read), "{notice}");
+        assert!(notice.contains("a non-zero alpha byte ignored"), "{notice}");
+        assert!(notice.contains("BuddyViewBG RGBA(16,16,16,0) -> token bg.primary"));
+    }
     let mut t = tree();
     t.insert(
         "FixThemes.ini".into(),
         THEME
-            .replace("RGBA(16,16,16,0)", "RGBA(16,16,16,9)")
+            .replace("RGBA(16,16,16,0)", "RGBA(16,16,16,256)")
             .into_bytes(),
     );
-    assert!(matches!(
-        import(&t, FOLDER, "fixture", None),
-        Err(ImportError::NonZeroAlpha { alpha: 9, .. })
-    ));
+    assert!(import(&t, FOLDER, "fixture", None).is_err());
 }
 
 #[test]

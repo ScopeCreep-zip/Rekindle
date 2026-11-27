@@ -7,11 +7,16 @@
 //!   every reader of four integers reads `(255,255,255,0)`;
 //! * a channel written with a zero fraction, `RGBA(159,171,205.0)`: it is
 //!   205 whether `.0` is a fraction or a mistyped `,0` alpha byte;
-//! * the tuple without its `RGBA` name, `(0,0,0,0)`.
+//! * the tuple without its `RGBA` name, `(0,0,0,0)`;
+//! * a non-zero fourth (alpha) byte, `RGBA(214,214,214,255)` (FluidX's
+//!   `ScrollbarColor`) or `-255` (msn's `StatusBackgroundCG`): the byte is
+//!   unused, COLORREF-style (GDI ignores a COLORREF's high byte), so it is
+//!   read as 0 (lead ruling, 2026-11-26, replacing the refusal). A fourth
+//!   field outside a channel's −255..=255 is no byte and still refuses.
 //!
 //! A negative channel on an absolute colour (a COLORREF byte cast wraps
-//! −230 to 26, a clamp makes it 0) and a non-zero alpha byte have readings
-//! that differ, so they still refuse.
+//! −230 to 26, a clamp makes it 0) has readings that differ, and nothing
+//! shows how Xfire read it, so it still refuses.
 
 use super::super::xfire_xml::colours::parse_rgba;
 use super::super::ImportError;
@@ -52,6 +57,14 @@ pub(super) fn read(
                 *f = int;
                 what.push("a zero fraction dropped");
             }
+        }
+    }
+    if let Some(a) = fields.get_mut(3) {
+        if a.parse::<i32>()
+            .is_ok_and(|v| v != 0 && (-255..=255).contains(&v))
+        {
+            *a = "0";
+            what.push("a non-zero alpha byte ignored (unused, COLORREF-style)");
         }
     }
     let canonical = format!("RGBA({})", fields.join(","));
