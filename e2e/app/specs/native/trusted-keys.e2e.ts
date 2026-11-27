@@ -1,6 +1,12 @@
-import { browser, expect } from "@wdio/globals";
+import { browser } from "@wdio/globals";
 import { Key } from "webdriverio";
 import { shot } from "../../shots.ts";
+
+interface ProbeEvent {
+  type: "keydown" | "keyup";
+  key: string;
+  trusted: boolean;
+}
 
 async function probeState() {
   return browser.execute(() => {
@@ -8,7 +14,7 @@ async function probeState() {
     return {
       focus: document.activeElement?.id,
       activations: Number(probe?.dataset.activations),
-      events: JSON.parse(probe?.dataset.events ?? "[]"),
+      events: JSON.parse(probe?.dataset.events ?? "[]") as ProbeEvent[],
     };
   });
 }
@@ -20,14 +26,32 @@ async function clearEvents() {
   });
 }
 
-async function expectKey(key: string, trusted: boolean) {
-  const { events } = await probeState();
-  expect(events).toEqual(
-    expect.arrayContaining([
-      { type: "keydown", key, trusted },
-      { type: "keyup", key, trusted },
-    ])
-  );
+async function waitForKey(key: string, trusted: boolean, focus: string, activations = 0) {
+  // The Actions response means the toolkit accepted the event. WebKit delivers
+  // it to the page asynchronously before applying the key's default action.
+  let state: Awaited<ReturnType<typeof probeState>> | undefined;
+  try {
+    await browser.waitUntil(
+      async () => {
+        state = await probeState();
+        const { events } = state;
+        return (
+          state.focus === focus &&
+          state.activations === activations &&
+          ["keydown", "keyup"].every((type) =>
+            events.some(
+              (event) => event.type === type && event.key === key && event.trusted === trusted
+            )
+          )
+        );
+      },
+      { timeout: 5_000 }
+    );
+  } catch (cause) {
+    throw new Error(
+      `Expected ${JSON.stringify({ key, trusted, focus, activations })}, observed ${JSON.stringify(state)}. ${String(cause)}`
+    );
+  }
 }
 
 describe("Native WebDriver keys", () => {
@@ -94,8 +118,7 @@ describe("Native WebDriver keys", () => {
 
   it("preserves the scripted element input as a negative control", async () => {
     await browser.$("#native-key-scripted").addValue(Key.Tab);
-    await expectKey("Tab", false);
-    expect((await probeState()).focus).toBe("native-key-scripted");
+    await waitForKey("Tab", false, "native-key-scripted");
     await shot("scripted-tab-stays-in-input");
   });
 
@@ -104,14 +127,12 @@ describe("Native WebDriver keys", () => {
       await browser.execute(() => document.getElementById("native-key-first")?.focus());
       await clearEvents();
       await browser.keys(Key.Tab);
-      await expectKey("Tab", true);
-      expect((await probeState()).focus).toBe("native-key-second");
+      await waitForKey("Tab", true, "native-key-second");
       await shot("native-tab-focuses-second-control");
 
       await clearEvents();
       await browser.action("key").down(Key.Shift).down(Key.Tab).up(Key.Tab).up(Key.Shift).perform();
-      await expectKey("Tab", true);
-      expect((await probeState()).focus).toBe("native-key-first");
+      await waitForKey("Tab", true, "native-key-first");
       await shot("native-shift-tab-focuses-first-control");
     } else {
       await browser.execute(() => document.getElementById("native-key-first")?.focus());
@@ -119,14 +140,12 @@ describe("Native WebDriver keys", () => {
 
     await clearEvents();
     await browser.keys(Key.Enter);
-    await expectKey("Enter", true);
-    expect(await probeState()).toMatchObject({ focus: "native-key-first", activations: 1 });
+    await waitForKey("Enter", true, "native-key-first", 1);
     await shot("native-enter-activates-first-control");
 
     await clearEvents();
     await browser.keys(" ");
-    await expectKey(" ", true);
-    expect(await probeState()).toMatchObject({ focus: "native-key-first", activations: 2 });
+    await waitForKey(" ", true, "native-key-first", 2);
     await shot("native-space-activates-first-control");
   });
 });
