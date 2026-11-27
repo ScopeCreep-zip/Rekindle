@@ -488,6 +488,7 @@
 '.edit-mode-cancel:hover' = { on = ["--color-xfire-accent 15% over --color-xfire-bg-dark"] }
 '.messages-loading-spinner' = { on = ["--color-xfire-bg-panel"] }
 '.dm-history-gap' = { on = ["--color-xfire-bg-panel"] }
+'.stage-panel-request-btn:disabled' = { on = ["--color-xfire-accent 16% over --color-xfire-bg-tertiary"] }
 '.channel-topic' = { on = ["--color-xfire-bg-dark"] }
 '.announcement-icon' = { on = ["--color-xfire-accent 25% over --color-xfire-bg-dark", "--color-xfire-bg-dark"] }
 '.game-server-group-header' = { on = ["--color-xfire-bg-dark"] }

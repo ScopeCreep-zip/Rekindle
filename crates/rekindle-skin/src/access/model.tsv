@@ -808,6 +808,7 @@
 .stage-panel-member-meta	text	var(--color-xfire-text-secondary)	--color-xfire-bg-tertiary	1.0	false
 .stage-panel-member-name	text	var(--color-xfire-text-primary)	--color-xfire-bg-tertiary	1.0	false
 .stage-panel-request-btn	text	var(--color-xfire-text-primary)	--color-xfire-accent 16% over --color-xfire-bg-tertiary	1.0	false
+.stage-panel-request-btn:disabled	text	var(--color-xfire-text-disabled)	--color-xfire-accent 16% over --color-xfire-bg-tertiary	1.0	false
 .stage-panel-section-title	text	var(--color-xfire-text-primary)	--color-xfire-bg-secondary	1.0	false
 .stage-panel-status	text	var(--color-xfire-text-secondary)	--color-xfire-bg-dark	1.0	false
 .stage-panel-title	text	var(--color-xfire-text-primary)	--color-xfire-accent 16% over --color-xfire-bg-secondary	1.0	false
