@@ -43,6 +43,11 @@ const REENROL = ["community", "re-enrol-device"];
 /** Log off and unlock again (the Host raises held reviews at the unlock barrier). */
 async function unlockAgain(): Promise<void> {
   await logOut(browser, ME);
+  await unlock();
+}
+
+/** Unlock from the login window. */
+async function unlock(): Promise<void> {
   await switchTo(browser, LOGIN, NET_WAIT_MS);
   await typeInto(await shown(browser, 'form.login-container input[type="password"]'), ME.passphrase);
   const submit = await browser.$('form.login-container button[type="submit"]');
@@ -82,10 +87,16 @@ describe("a restored copy re-enrols the device: the original is told and offered
     const dataRoot = (browser.requestedCapabilities as Record<string, unknown>)["rekindle:dataRoot"];
     if (typeof dataRoot !== "string") throw new Error("the launcher handed no rekindle:dataRoot capability");
 
-    // The copy: Ari's own files on a second daemon, unlocked with her passphrase;
-    // it must hold the community before it re-enrols in it.
+    // The copy: Ari's own files on a second daemon, unlocked with her
+    // passphrase; it must hold the community before it re-enrols in it. A
+    // backup is taken of a locked root (as the netsim locks the node before
+    // its snapshot): copying the live one raced Veilid's own files (ENOENT).
+    await logOut(browser, me);
     const copy = await startClone("Ari's copy", { dataRoot, passphrase: me.passphrase });
     peers = [...peers, copy];
+    await unlock();
+    await inBuddy(browser);
+    await openCommunity(browser, COMMUNITY);
     const communities = (await copy.cli(["community", "list"])) as { name?: string }[] | null;
     if (!(communities ?? []).some((c) => c.name === COMMUNITY)) throw new Error(`the copy holds no ${COMMUNITY}: ${JSON.stringify(communities).slice(0, 200)}`);
 
