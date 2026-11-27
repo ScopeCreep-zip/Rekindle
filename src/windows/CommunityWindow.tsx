@@ -1,4 +1,4 @@
-import { Component, Show } from "solid-js";
+import { Component, For, Show } from "solid-js";
 import Titlebar from "../components/titlebar/Titlebar";
 import SkinTreeWindow from "../components/skin-tree/SkinTreeWindow";
 import { SlotMount, SlotProvider } from "../components/skin-tree/slots";
@@ -70,6 +70,21 @@ const CommunityWindow: Component = () => {
             <Show when={k().sinceMs}>{(since) => <span class="key-pending-since"> since {formatTimestamp(since())}</span>}</Show>
           </div>
         )}
+      </Show>
+      {/* S7d-keys.10: the governance writes the Host holds until they are
+          signed, each in the Host's words ("Re-enrolling this device"); shown
+          while any is pending, gone when none is. */}
+      <Show when={vm.catchUpPending().length > 0}>
+        <div class="key-pending-notice catch-up-notice" role="status">
+          <For each={vm.catchUpPending()}>
+            {(op, i) => (
+              <>
+                {i() > 0 ? " · " : ""}
+                <span class="catch-up-op">{op.label}</span>
+              </>
+            )}
+          </For>
+        </div>
       </Show>
       <div class="community-layout">
         <CommunitySidebar vm={vm} />

@@ -271,13 +271,39 @@ describe("a restored copy re-enrols the device: the original is told and offered
 
     // Read the normal Host view from the real app after both reviews. The
     // device is enrolled again and the unlock barrier no longer holds its op.
+    // Meanwhile the community window's catch-up line (S7d-keys.10's shell
+    // half) shows the Host's label exactly while the op is held: each sample
+    // reads the Host's view and the line together, and they must agree.
+    await openCommunity(browser, COMMUNITY);
+    const LABEL = "Re-enrolling this device";
+    const disagreements: string[] = [];
+    let heldSeen = false;
+    let shotHeld = false;
     await waitUntil(
       async () => {
         const view = await deviceView();
+        const line = ((await browser.execute(
+          () => document.querySelector(".catch-up-notice")?.textContent ?? "",
+        )) as string).trim();
+        const shows = line.includes(LABEL);
+        if (view?.held) {
+          heldSeen = true;
+          if (!shows) disagreements.push(`held, line "${line}"`);
+          else if (!shotHeld) {
+            shotHeld = true;
+            await shot("catch-up-reenrolling");
+          }
+        } else if (shows) {
+          disagreements.push(`not held, line "${line}"`);
+        }
         return view?.status === "enrolled" && !view.held;
       },
       NET_WAIT_MS * 2,
       "the Host did not restore the device to enrolled and clear its held re-enrolment",
     );
+    const lineAfter = ((await browser.execute(() => document.querySelector(".catch-up-notice")?.textContent ?? "")) as string).trim();
+    console.log(`[reenrol] catch-up line: held seen ${heldSeen}; disagreements ${JSON.stringify(disagreements)}; after "${lineAfter}"`);
+    await shot("catch-up-cleared");
+    expect({ disagreements, clearedAfter: !lineAfter.includes(LABEL) }).toEqual({ disagreements: [], clearedAfter: true });
   });
 });
