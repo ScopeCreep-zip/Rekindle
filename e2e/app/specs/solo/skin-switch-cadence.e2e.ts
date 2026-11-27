@@ -10,7 +10,7 @@
 // never thrown, so one run gives the cadence.
 
 import { browser, expect } from "@wdio/globals";
-import { resolveIntent, switchTo, waitUntil } from "../../../walk/helpers.ts";
+import { byText, resolveIntent, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
 import { SETTINGS, openSettings } from "../../../walk/nav.ts";
 import { createIdentity, newUser, type User } from "../../journeys.ts";
 import { shot } from "../../shots.ts";
@@ -38,6 +38,11 @@ describe("skin switches in a row: does every one apply? (probe)", function () {
       for (const pack of PACKS) {
         n += 1;
         await switchTo(browser, SETTINGS);
+        // As settings-theme does: another tab, then Appearance again, which
+        // mounts the tab afresh (its own list read) right before the choice.
+        await (await byText(browser, ".form-tab", "Application")).click();
+        await (await byText(browser, ".form-tab", "Appearance")).click();
+        await shown(browser, ".skin-row-shown .skin-name");
         if ((await inUse()) === pack.name) continue;
         const before = await inUse();
         const radio = `//*[contains(concat(" ", normalize-space(@class), " "), " skin-row ")][.//*[contains(concat(" ", normalize-space(@class), " "), " skin-name ") and normalize-space(.)="${pack.name}"]]//input[@type="radio"]`;
@@ -51,7 +56,7 @@ describe("skin switches in a row: does every one apply? (probe)", function () {
             return true;
           }
           return false;
-        }, 10_000, "").catch(() => undefined);
+        }, 1_500, "").catch(() => undefined);
         const title = reviewMs >= 0
           ? ((await browser.execute(() => document.querySelector(".intent-dialog")?.textContent?.replace(/\s+/g, " ").trim().slice(0, 120) ?? "")) as string)
           : "";
