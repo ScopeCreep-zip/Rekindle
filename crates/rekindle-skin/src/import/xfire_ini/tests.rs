@@ -534,3 +534,29 @@ fn a_del_byte_is_dropped_and_recorded_other_controls_refuse() {
         Err(ImportError::Format { .. })
     ));
 }
+
+/// SKC2: the written RGBA forms with one reading read as that colour, each
+/// recorded; a negative absolute channel, whose readings differ, refuses.
+#[test]
+fn rgba_forms_with_one_reading_are_normalised_and_recorded() {
+    for (written, what) in [
+        ("RGBA(183,184,184,0,)", "a trailing empty field dropped"),
+        ("RGBA(183,184,184.0)", "a zero fraction dropped"),
+        ("(183,184,184,0)", "the RGBA name added"),
+    ] {
+        let mut t = tree();
+        let theme = THEME.replace("RGBA(183,184,184,0)", written);
+        t.insert("FixThemes.ini".into(), theme.into_bytes());
+        let notice = settled(import(&t, FOLDER, "fixture", None).unwrap()).notice;
+        let read = format!("ColorGroup.BuddyViewFriendText={written} read as RGBA(183,184,184");
+        assert!(notice.contains(&read), "{notice}");
+        assert!(notice.contains(what), "{notice}");
+    }
+    let mut t = tree();
+    let theme = THEME.replace("RGBA(16,16,16,0)", "RGBA(-16,16,16,0)");
+    t.insert("FixThemes.ini".into(), theme.into_bytes());
+    assert!(matches!(
+        import(&t, FOLDER, "fixture", None),
+        Err(ImportError::BadColour { .. })
+    ));
+}

@@ -41,6 +41,7 @@ pub mod controls;
 pub mod frame;
 pub mod ini;
 mod notice;
+mod rgba;
 pub mod title;
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -54,7 +55,7 @@ use rekindle_types::dto::skin::{
 
 use super::credit::{Authorship, XfireCredit};
 use super::credits;
-use super::xfire_xml::colours::{absolute, parse_rgba, target_in, Target};
+use super::xfire_xml::colours::{absolute, target_in, Target};
 use super::xfire_xml::controls::StateTally;
 use super::xfire_xml::refs::{self, Ref};
 use super::xfire_xml::title as xtitle;
@@ -220,11 +221,12 @@ type Theme = (
 fn read_theme(
     theme: &Section,
     dropped: &mut BTreeMap<&'static str, usize>,
+    notes: &mut Vec<String>,
 ) -> Result<Theme, ImportError> {
     let (mut rows, mut tokens, mut aliases) = (Vec::new(), BTreeMap::new(), BTreeMap::new());
     for e in &theme.entries {
         if let Some(name) = e.key.strip_prefix("ColorGroup.") {
-            let value = parse_rgba(name, &e.value)?;
+            let value = rgba::read(name, &e.value, notes)?;
             let t = target_in(colours::NAMES, name);
             if let Target::Token(id) = t {
                 tokens.insert(id.to_owned(), walk::color(absolute(name, &e.value, value)?));
@@ -338,8 +340,12 @@ pub fn read(tree: &Tree, folder: &str) -> Result<Read, ImportError> {
     let (theme_key, theme) =
         parse_file(tree, &file_name(skin_key, "ColorGroupTheme", theme_name)?)?;
     let mut dropped = BTreeMap::new();
-    let (colours, mut tokens, aliases) =
-        read_theme(section(&theme, theme_key, "default")?, &mut dropped)?;
+    let mut normalised = Vec::new();
+    let (colours, mut tokens, aliases) = read_theme(
+        section(&theme, theme_key, "default")?,
+        &mut dropped,
+        &mut normalised,
+    )?;
     let images = controls::Images {
         tree,
         colours: &colours,
@@ -428,6 +434,7 @@ pub fn read(tree: &Tree, folder: &str) -> Result<Read, ImportError> {
     ]
     .into_iter()
     .flat_map(|(f, i)| i.normalised.iter().map(move |r| format!("{f}: {r}")))
+    .chain(normalised.into_iter().map(|r| format!("{theme_key}: {r}")))
     .collect();
     let info = BTreeMap::from([
         ("LongName", long),
