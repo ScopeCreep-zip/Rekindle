@@ -8,7 +8,7 @@ fn minted_tokens_are_distinct_and_match_only_themselves() {
     assert!(a.matches(a.as_str().as_bytes()));
     assert!(!a.matches(b.as_str().as_bytes()));
     assert!(!a.matches(&a.as_str().as_bytes()[..51]));
-    assert!(!format!("{a:?}").contains(a.as_str()));
+    assert_eq!(format!("{a:?}"), "BearerToken(<redacted>)");
 }
 
 #[test]

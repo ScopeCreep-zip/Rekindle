@@ -108,9 +108,7 @@ impl Identity {
 
 impl std::fmt::Debug for Identity {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Identity")
-            .field("public_key", &self.public_key_hex())
-            .finish()
+        f.write_str("Identity(<redacted>)")
     }
 }
 
