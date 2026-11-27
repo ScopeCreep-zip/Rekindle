@@ -104,6 +104,22 @@ fn rule_1_an_unknown_component_without_art_is_refused() {
     assert!(e.to_string().contains("has no role"), "{e}");
 }
 
+/// SKC3: siblings are laid per axis in dependency order: a tile anchored
+/// on y to a later tile that is anchored on x through it is laid (GlazeX's
+/// chat `UserNameField` / `MinimizeBox` / `CloseBox`); a cycle on one axis
+/// stays refused.
+#[test]
+fn anchors_resolve_per_axis_in_dependency_order() {
+    let xml = br#"<Tile Name="W" Component="MainWindow"><Tile Name="UserNameField" X="10" Y="CloseBox.TOP" Component="UserNameField"/><Tile Name="MinimizeBox" X="UserNameField.RIGHT+2" Y="UserNameField.TOP" Component="MinimizeBox"/><Tile Name="CloseBox" X="MinimizeBox.RIGHT+2" Y="6" Component="CloseBox"/></Tile>"#;
+    let kids = root_of(xml);
+    assert_eq!(kids[0].y, fixed(6, 0));
+    assert_eq!(kids[1].y, fixed(6, 0));
+    assert_eq!(kids[2].y, fixed(6, 16));
+    let cycle = br#"<Tile Name="W" Component="MainWindow"><Tile Name="MinimizeBox" X="CloseBox.RIGHT" Component="MinimizeBox"/><Tile Name="CloseBox" X="MinimizeBox.RIGHT" Component="CloseBox"/></Tile>"#;
+    let e = imported(cycle).unwrap_err();
+    assert!(e.to_string().contains("placed before it"), "{e}");
+}
+
 #[test]
 fn rule_2_an_anchor_that_does_not_resolve_is_refused() {
     let xml = br#"<Tile Name="W" Component="MainWindow"><Tile Name="CloseBox" X="Nowhere.RIGHT+1" Component="CloseBox"/></Tile>"#;

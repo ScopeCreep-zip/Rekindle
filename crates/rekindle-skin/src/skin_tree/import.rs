@@ -24,13 +24,14 @@ use rekindle_types::dto::skin_tree::{
     ContentFit, NodeArt, NodePiece, NodePieces, NodeRole, NodeSpan, PieceSlot, SkinNode, SkinTree,
 };
 
-use super::anchor::{axis, chain, outer_for, Sibs, Sizes, X, Y};
+use super::anchor::{chain, outer_for, Sibs, Sizes, X, Y};
 use super::anchor_client::{client_box, client_inset, to_tile};
 use super::clip::{clip, Art, Images};
 use super::content::{self, Link};
 use super::fit::fit;
 use super::outdent;
 use super::passes::{by_view, pages, qualify, rows_by_view, tab_views};
+use super::place_order::{place, Lay};
 use super::roles::{check_grip, role, with_implied, Facts, Role};
 use super::{
     triggers::{self, Pack},
@@ -383,37 +384,22 @@ impl Walk<'_> {
             .iter()
             .map(|t| (t.id.to_ascii_lowercase(), t.wh))
             .collect();
-        let mut placed: Vec<Option<(NodeSpan, NodeSpan)>> = vec![None; tiles.len()];
-        loop {
-            let mut progress = false;
-            let mut first_err = None;
-            for (i, t) in tiles.iter().enumerate() {
-                if placed[i].is_some() {
-                    continue;
-                }
-                let refs = (&names, &sizes);
-                let slot = matches!(t.role.shown(), NodeRole::Slot(_));
-                // A tile of the window's own layout, not of a nested tile.
-                let kind = (slot, path.is_empty());
-                let xy = axis(t.tile, &X, t.wh.0, t.max.0, kind, refs)
-                    .and_then(|x| Ok((x, axis(t.tile, &Y, t.wh.1, t.max.1, kind, refs)?)));
-                match xy {
-                    Ok(xy) => {
-                        names.insert(t.id.to_ascii_lowercase(), xy.clone());
-                        placed[i] = Some(xy);
-                        progress = true;
-                    }
-                    Err(e) => {
-                        first_err.get_or_insert_with(|| bad(format!("{}: {e}", t.id)));
-                    }
-                }
-            }
-            match first_err {
-                None => break,
-                Some(e) if !progress => return Err(e),
-                Some(_) => {}
-            }
-        }
+        let lays: Vec<Lay<'_>> = tiles
+            .iter()
+            .map(|t| Lay {
+                id: &t.id,
+                tile: t.tile,
+                wh: t.wh,
+                max: t.max,
+                slot: matches!(t.role.shown(), NodeRole::Slot(_)),
+            })
+            .collect();
+        let placed: Vec<Option<(NodeSpan, NodeSpan)>> =
+            // The window's own layout's tiles, not a nested tile's.
+            place(&lays, &mut names, &sizes, path.is_empty())?
+                .into_iter()
+                .map(Some)
+                .collect();
         // Plan SK15b: the chains on a content text stay symbolic in the
         // node; its children and the names they see use the laid spans.
         let mut kept: Vec<(NodeSpan, NodeSpan)> = placed
