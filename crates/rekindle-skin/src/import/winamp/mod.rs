@@ -285,8 +285,8 @@ fn manifest(id: &str, read: &Read, source: &str, base: SkinBase) -> SkinManifest
         description: "Imported from a Winamp classic skin; see the NOTICE beside the package."
             .to_owned(),
         license: SkinLicense::Text(
-            "Third-party Winamp skin art. Not covered by Rekindle's MIT licence; provenance and \
-             every change are in the NOTICE beside the package."
+            "Third-party Winamp skin art. Not covered by Rekindle's MIT OR Apache-2.0 licence; \
+             provenance and every change are in the NOTICE beside the package."
                 .to_owned(),
         ),
         source: Some(SkinSource {

@@ -37,8 +37,8 @@ export function useSlowmode(props: MessageInputProps) {
     return `Slowmode: wait ${seconds}s before sending`;
   });
 
-  const effectiveDisabled = createMemo(() =>
-    Boolean(props.disabled) || (cooldownActive() && !props.editMode),
+  const effectiveDisabled = createMemo(
+    () => Boolean(props.disabled) || (cooldownActive() && !props.editMode)
   );
   const effectiveDisabledMessage = createMemo(() => {
     if (cooldownActive() && !props.editMode) return cooldownLabel();

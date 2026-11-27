@@ -1,7 +1,7 @@
-import { Component, For, Show, createEffect, createSignal } from "solid-js";
-import { openSuccessorOffers } from "../../stores/successor.store";
-import { communityState } from "../../stores/community.store";
+import { type Component, createEffect, createSignal, For, Show } from "solid-js";
 import { handleFollowSuccessor, trackSuccessors } from "../../actions/community/successor";
+import { communityState } from "../../stores/community.store";
+import { openSuccessorOffers } from "../../stores/successor.store";
 
 /**
  * Successor communities the Host offered (ADR 0011, plan E3.2 S7s.4, lead
@@ -21,7 +21,9 @@ const SuccessorOffers: Component = () => {
   // A successor we already hold (we published it, or followed it from
   // another window) has nothing to follow.
   const offers = () =>
-    openSuccessorOffers().filter((offer) => communityState.communities[offer.newAnchor] === undefined);
+    openSuccessorOffers().filter(
+      (offer) => communityState.communities[offer.newAnchor] === undefined
+    );
   const nameOf = (community: string): string =>
     communityState.communities[community]?.name ?? `${community.slice(0, 12)}…`;
   const movedText = (reason: string): string =>
@@ -40,7 +42,9 @@ const SuccessorOffers: Component = () => {
       <div class="pending-section">
         <div class="pending-header">Moved Communities ({offers().length})</div>
         <Show when={error()}>
-          <div class="form-error" role="alert">{error()}</div>
+          <div class="form-error" role="alert">
+            {error()}
+          </div>
         </Show>
         <For each={offers()}>
           {(offer) => (

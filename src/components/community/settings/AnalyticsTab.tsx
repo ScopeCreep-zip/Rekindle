@@ -1,6 +1,6 @@
-import { Component, For, Show, createMemo, createResource } from "solid-js";
+import { type Component, createMemo, createResource, For, Show } from "solid-js";
+import { type CommunityAnalytics, commands, type DailyTimeseries } from "../../../ipc/commands";
 import type { Community } from "../../../stores/community.store";
-import { commands, type CommunityAnalytics, type DailyTimeseries } from "../../../ipc/commands";
 
 // Architecture §24 — local-only community analytics. Computed entirely
 // client-side from SQLite + governance state; never broadcast.
@@ -36,17 +36,16 @@ const Sparkline: Component<{ series: DailyTimeseries; label: string }> = (props)
   const ariaSummary = createMemo(() => {
     const samples = props.series.samples;
     if (samples.length === 0) return props.label;
-    const peak = samples.reduce(
-      (best, s) => (s.value > best.value ? s : best),
-      samples[0],
-    );
+    const peak = samples.reduce((best, s) => (s.value > best.value ? s : best), samples[0]);
     const total = samples.reduce((sum, s) => sum + s.value, 0);
     const peakDay = new Date(peak.dayUnixMs).toLocaleDateString();
     return `${props.label}: ${samples.length}-day series, total ${total}, peak ${peak.value} on ${peakDay}`;
   });
   return (
     <div class="analytics-sparkline" role="img" aria-label={ariaSummary()}>
-      <div class="analytics-sparkline-label" aria-hidden="true">{props.label}</div>
+      <div class="analytics-sparkline-label" aria-hidden="true">
+        {props.label}
+      </div>
       <div class="analytics-sparkline-bars" aria-hidden="true">
         <For each={props.series.samples}>
           {(sample) => (
@@ -67,7 +66,7 @@ const Sparkline: Component<{ series: DailyTimeseries; label: string }> = (props)
 const AnalyticsTab: Component<AnalyticsTabProps> = (props) => {
   const [analytics] = createResource<CommunityAnalytics, string>(
     () => props.community.id,
-    (id: string) => commands.getCommunityAnalytics(id),
+    (id: string) => commands.getCommunityAnalytics(id)
   );
 
   return (
@@ -84,12 +83,10 @@ const AnalyticsTab: Component<AnalyticsTabProps> = (props) => {
       <Show when={analytics()}>
         {(data) => (
           <>
-            <div class="settings-section-title" id="analytics-members-heading">Members</div>
-            <div
-              class="analytics-grid"
-              role="group"
-              aria-labelledby="analytics-members-heading"
-            >
+            <div class="settings-section-title" id="analytics-members-heading">
+              Members
+            </div>
+            <section class="analytics-grid" aria-labelledby="analytics-members-heading">
               <div class="analytics-card">
                 <div class="analytics-card-label">Total members</div>
                 <div class="analytics-card-value">{data().members.totalMembers}</div>
@@ -116,42 +113,43 @@ const AnalyticsTab: Component<AnalyticsTabProps> = (props) => {
                   {(data().members.retention7Of30 * 100).toFixed(0)}%
                 </div>
               </div>
-            </div>
+            </section>
             <Sparkline series={data().members.activePerDay} label="Active per day (30d)" />
             <Sparkline series={data().members.joinsPerDay} label="Joins per day (30d)" />
             <Sparkline series={data().members.leavesPerDay} label="Leaves per day (30d)" />
 
-            <div class="settings-section-title" id="analytics-channels-heading">Channels</div>
-            <div role="group" aria-labelledby="analytics-channels-heading">
-            <For each={data().channels}>
-              {(channel) => {
-                const channelName = createMemo(() =>
-                  props.community.channels.find((c) => c.id === channel.channelId)?.name
-                    ?? channel.channelId.slice(0, 8),
-                );
-                return (
-                  <div class="analytics-channel-row">
-                    <div class="analytics-channel-name">#{channelName()}</div>
-                    <div class="analytics-channel-stats">
-                      <span>{channel.messages7d} msgs/7d</span>
-                      <span>{channel.uniquePosters7d} posters</span>
-                      <Show when={channel.peakConcurrentVoice > 0}>
-                        <span>peak voice {channel.peakConcurrentVoice}</span>
-                      </Show>
-                    </div>
-                    <Sparkline series={channel.messagesPerDay} label="" />
-                  </div>
-                );
-              }}
-            </For>
+            <div class="settings-section-title" id="analytics-channels-heading">
+              Channels
             </div>
+            <section aria-labelledby="analytics-channels-heading">
+              <For each={data().channels}>
+                {(channel) => {
+                  const channelName = createMemo(
+                    () =>
+                      props.community.channels.find((c) => c.id === channel.channelId)?.name ??
+                      channel.channelId.slice(0, 8)
+                  );
+                  return (
+                    <div class="analytics-channel-row">
+                      <div class="analytics-channel-name">#{channelName()}</div>
+                      <div class="analytics-channel-stats">
+                        <span>{channel.messages7d} msgs/7d</span>
+                        <span>{channel.uniquePosters7d} posters</span>
+                        <Show when={channel.peakConcurrentVoice > 0}>
+                          <span>peak voice {channel.peakConcurrentVoice}</span>
+                        </Show>
+                      </div>
+                      <Sparkline series={channel.messagesPerDay} label="" />
+                    </div>
+                  );
+                }}
+              </For>
+            </section>
 
-            <div class="settings-section-title" id="analytics-hours-heading">Activity by hour (UTC)</div>
-            <div
-              class="analytics-hours"
-              role="img"
-              aria-labelledby="analytics-hours-heading"
-            >
+            <div class="settings-section-title" id="analytics-hours-heading">
+              Activity by hour (UTC)
+            </div>
+            <div class="analytics-hours" role="img" aria-labelledby="analytics-hours-heading">
               {(() => {
                 const max = maxOfNumbers(data().activityByHour.hourCounts);
                 return (
@@ -170,37 +168,47 @@ const AnalyticsTab: Component<AnalyticsTabProps> = (props) => {
               })()}
             </div>
 
-            <div class="settings-section-title" id="analytics-storage-heading">Storage</div>
-            <div
-              class="analytics-grid"
-              role="group"
-              aria-labelledby="analytics-storage-heading"
-            >
+            <div class="settings-section-title" id="analytics-storage-heading">
+              Storage
+            </div>
+            <section class="analytics-grid" aria-labelledby="analytics-storage-heading">
               <div class="analytics-card">
                 <div class="analytics-card-label">Total</div>
-                <div class="analytics-card-value">{formatBytes(data().storageUsage.totalBytes)}</div>
+                <div class="analytics-card-value">
+                  {formatBytes(data().storageUsage.totalBytes)}
+                </div>
               </div>
               <div class="analytics-card">
                 <div class="analytics-card-label">Messages</div>
-                <div class="analytics-card-value">{formatBytes(data().storageUsage.messageBytes)}</div>
+                <div class="analytics-card-value">
+                  {formatBytes(data().storageUsage.messageBytes)}
+                </div>
               </div>
               <div class="analytics-card">
                 <div class="analytics-card-label">Threads</div>
-                <div class="analytics-card-value">{formatBytes(data().storageUsage.threadMessageBytes)}</div>
+                <div class="analytics-card-value">
+                  {formatBytes(data().storageUsage.threadMessageBytes)}
+                </div>
               </div>
               <div class="analytics-card">
                 <div class="analytics-card-label">Pins</div>
-                <div class="analytics-card-value">{formatBytes(data().storageUsage.channelPinBytes)}</div>
+                <div class="analytics-card-value">
+                  {formatBytes(data().storageUsage.channelPinBytes)}
+                </div>
               </div>
               <div class="analytics-card">
                 <div class="analytics-card-label">Voice events</div>
-                <div class="analytics-card-value">{formatBytes(data().storageUsage.voiceEventBytes)}</div>
+                <div class="analytics-card-value">
+                  {formatBytes(data().storageUsage.voiceEventBytes)}
+                </div>
               </div>
               <div class="analytics-card">
                 <div class="analytics-card-label">Metadata</div>
-                <div class="analytics-card-value">{formatBytes(data().storageUsage.metadataBytes)}</div>
+                <div class="analytics-card-value">
+                  {formatBytes(data().storageUsage.metadataBytes)}
+                </div>
               </div>
-            </div>
+            </section>
 
             <div class="settings-hint">
               Computed in {data().computedInMs} ms · local-only, never broadcast.

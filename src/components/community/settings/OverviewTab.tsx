@@ -1,12 +1,12 @@
-import { Component, Show, createSignal, createEffect } from "solid-js";
-import SkinGlyph from "../../common/SkinGlyph";
-import type { Community } from "../../../stores/community.store";
+import { type Component, createEffect, createSignal, createUniqueId, Show } from "solid-js";
 import { handleUpdateCommunityInfo } from "../../../actions/community.actions";
+import type { Community } from "../../../stores/community.store";
 import { addToast } from "../../../stores/toast.store";
 import FormField from "../../common/FormField";
-import SuccessorSection from "./SuccessorSection";
+import SkinGlyph from "../../common/SkinGlyph";
 import CommunityDeviceStatus from "../CommunityDeviceStatus";
 import MyNameSection from "./MyNameSection";
+import SuccessorSection from "./SuccessorSection";
 
 interface OverviewTabProps {
   community: Community;
@@ -15,6 +15,8 @@ interface OverviewTabProps {
 }
 
 const OverviewTab: Component<OverviewTabProps> = (props) => {
+  const communityNameId = createUniqueId();
+  const descriptionId = createUniqueId();
   const [editName, setEditName] = createSignal("");
   const [editDescription, setEditDescription] = createSignal("");
   const [copied, setCopied] = createSignal(false);
@@ -46,7 +48,7 @@ const OverviewTab: Component<OverviewTabProps> = (props) => {
       await handleUpdateCommunityInfo(
         props.community.id,
         nameChanged ? newName : null,
-        descChanged ? newDesc : null,
+        descChanged ? newDesc : null
       );
       addToast("Community updated", "success");
     } finally {
@@ -56,8 +58,9 @@ const OverviewTab: Component<OverviewTabProps> = (props) => {
 
   return (
     <div class="settings-section">
-      <FormField label="Community Name">
+      <FormField label="Community Name" controlId={communityNameId}>
         <input
+          id={communityNameId}
           class="form-input"
           type="text"
           value={editName()}
@@ -67,8 +70,9 @@ const OverviewTab: Component<OverviewTabProps> = (props) => {
           onInput={(e) => setEditName(e.currentTarget.value)}
         />
       </FormField>
-      <FormField label="Description">
+      <FormField label="Description" controlId={descriptionId}>
         <textarea
+          id={descriptionId}
           class="form-textarea"
           rows={3}
           value={editDescription()}
@@ -82,7 +86,7 @@ const OverviewTab: Component<OverviewTabProps> = (props) => {
       <FormField label="Community ID">
         <div class="form-field-row">
           <span class="settings-value settings-value-mono">{props.community.id}</span>
-          <button class="settings-copy-btn" onClick={handleCopyId}>
+          <button type="button" class="settings-copy-btn" onClick={handleCopyId}>
             <SkinGlyph name="copy" /> {copied() ? "Copied" : "Copy"}
           </button>
         </div>
@@ -91,8 +95,15 @@ const OverviewTab: Component<OverviewTabProps> = (props) => {
       <SuccessorSection communityId={props.community.id} />
       <div class="settings-section-title">This device</div>
       <CommunityDeviceStatus communityId={props.community.id} />
-        <div class="settings-actions-sticky">
-        <button class="form-btn-primary" onClick={handleSaveOverview} disabled={savingOverview() || props.manageDenied !== null} title={props.manageDenied ?? undefined} aria-description={props.manageDenied ?? undefined}>
+      <div class="settings-actions-sticky">
+        <button
+          type="button"
+          class="form-btn-primary"
+          onClick={handleSaveOverview}
+          disabled={savingOverview() || props.manageDenied !== null}
+          title={props.manageDenied ?? undefined}
+          aria-description={props.manageDenied ?? undefined}
+        >
           <SkinGlyph name="save" /> {savingOverview() ? "Saving..." : "Save Changes"}
         </button>
       </div>

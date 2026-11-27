@@ -1,12 +1,12 @@
-import { Component, Show, createSignal, onMount } from "solid-js";
-import type { FriendCodeView } from "../../ipc/commands/dto";
+import { type Component, createSignal, onMount, Show } from "solid-js";
 import {
   handleAddFriendFromCode,
   handleGetFriendCode,
   handleRotateFriendToken,
 } from "../../actions/buddy.actions";
-import FriendCodeCard from "./FriendCodeCard";
+import type { FriendCodeView } from "../../ipc/commands/dto";
 import OwnRecordsWait from "../common/OwnRecordsWait";
+import FriendCodeCard from "./FriendCodeCard";
 
 interface PublicKeyTabProps {
   onClose: () => void;
@@ -75,10 +75,14 @@ const PublicKeyTab: Component<PublicKeyTabProps> = (props) => {
           </div>
         }
       >
-        {(view) => <FriendCodeCard view={view()} rotating={rotating()} onRotate={() => void rotate()} />}
+        {(view) => (
+          <FriendCodeCard view={view()} rotating={rotating()} onRotate={() => void rotate()} />
+        )}
       </Show>
       <Show when={ours() && codeError()}>
-        <div class="form-error" role="alert">{codeError()}</div>
+        <div class="form-error" role="alert">
+          {codeError()}
+        </div>
       </Show>
 
       <div class="add-friend-divider">or paste a friend's code</div>
@@ -102,7 +106,9 @@ const PublicKeyTab: Component<PublicKeyTabProps> = (props) => {
         />
         <OwnRecordsWait active={sending()} />
         <Show when={error()}>
-          <div class="form-error" role="alert">{error()}</div>
+          <div class="form-error" role="alert">
+            {error()}
+          </div>
         </Show>
         <button class="form-btn-primary" type="submit" disabled={sending() || !friendCode().trim()}>
           Send Friend Request

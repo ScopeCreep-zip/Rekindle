@@ -1,16 +1,15 @@
-import { Component, Match, Switch, onCleanup, onMount } from "solid-js";
-import type { UnlistenFn } from "@tauri-apps/api/event";
-import { subscribeSkinSignals } from "../ipc/channels";
-import { setSkinSignals } from "../stores/skin-signals.store";
+import { type Component, Match, onCleanup, onMount, Switch } from "solid-js";
+import { callOps, friendOps, menuOps, muteOps, popupOps } from "../actions/shell_runners";
+import { registerShellRunner, sendSkinSelection } from "../actions/skin.actions";
 import SkinFrame from "../components/common/SkinFrame";
+import { SlotProvider } from "../components/skin-tree/slots";
 import Titlebar from "../components/titlebar/Titlebar";
+import { useChatSearchChord } from "../hooks/useChatSearchChord";
+import { subscribeSkinSignals, type UnlistenFn } from "../ipc/channels";
+import { setSkinSignals } from "../stores/skin-signals.store";
+import { setWindowKind } from "../utils/window_kind";
 import DirectChat from "./chat_window/DirectChat";
 import GroupChat from "./chat_window/GroupChat";
-import { SlotProvider } from "../components/skin-tree/slots";
-import { useChatSearchChord } from "../hooks/useChatSearchChord";
-import { setWindowKind } from "../utils/window_kind";
-import { registerShellRunner, sendSkinSelection } from "../actions/skin.actions";
-import { callOps, friendOps, menuOps, muteOps, popupOps } from "../actions/shell_runners";
 
 /// The one chat window (plan E2.3): `?peer=<identity key>` is a 1:1
 /// conversation, `?group=<group id>` a group DM (32 hex, plan E2.6
@@ -26,7 +25,9 @@ const ChatWindow: Component = () => {
   // The groups the chat trees serve (shell_runners): the File, Tool and
   // Help menus, a pack popup, the friend's profile, a call and mute. No
   // friend chat, room or download: no chat tree lays one.
-  const unregister = [menuOps, popupOps, friendOps, callOps, muteOps].map((run) => registerShellRunner(run));
+  const unregister = [menuOps, popupOps, friendOps, callOps, muteOps].map((run) =>
+    registerShellRunner(run)
+  );
   onMount(async () => {
     // A group window's selection is its group (as a 1:1 window's is its
     // friend, useChatSearchChord): the Host builds the group's call, and
@@ -46,31 +47,31 @@ const ChatWindow: Component = () => {
     // `chat-window` scopes the chat window's skin surfaces (plan E7.7.7).
     // `data-skin-window` names the skin's chat frame layout (plan SK0 S2).
     <SlotProvider>
-    <div class="app-frame chat-window" data-skin-window="chat">
-      <SkinFrame />
-      {/* Architecture §32 a11y — keyboard skip link past the header. */}
-      <a href="#main-content" class="skip-link">Skip to messages</a>
-      <Switch
-        fallback={
-          <>
-            <Titlebar title="Chat" showMaximize />
-            <div class="empty-placeholder">
-              <div class="empty-placeholder-title">No conversation selected</div>
-              <div class="empty-placeholder-subtitle">
-                Open a chat from the buddy list.
+      <div class="app-frame chat-window" data-skin-window="chat">
+        <SkinFrame />
+        {/* Architecture §32 a11y — keyboard skip link past the header. */}
+        <a href="#main-content" class="skip-link">
+          Skip to messages
+        </a>
+        <Switch
+          fallback={
+            <>
+              <Titlebar title="Chat" showMaximize />
+              <div class="empty-placeholder">
+                <div class="empty-placeholder-title">No conversation selected</div>
+                <div class="empty-placeholder-subtitle">Open a chat from the buddy list.</div>
               </div>
-            </div>
-          </>
-        }
-      >
-        <Match when={group}>
-          <GroupChat groupId={group} />
-        </Match>
-        <Match when={peer}>
-          <DirectChat peerId={peer} />
-        </Match>
-      </Switch>
-    </div>
+            </>
+          }
+        >
+          <Match when={group}>
+            <GroupChat groupId={group} />
+          </Match>
+          <Match when={peer}>
+            <DirectChat peerId={peer} />
+          </Match>
+        </Switch>
+      </div>
     </SlotProvider>
   );
 };

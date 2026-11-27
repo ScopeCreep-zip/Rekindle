@@ -1,8 +1,8 @@
-import { Component, For, Show, createMemo, createSignal } from "solid-js";
-import SkinGlyph from "../common/SkinGlyph";
-import { disappearingState } from "../../stores/disappearing.store";
+import { type Component, createMemo, createSignal, For, Show } from "solid-js";
 import { handleSetDisappearingTimer } from "../../actions/disappearing.actions";
+import { disappearingState } from "../../stores/disappearing.store";
 import { CUSTOM_UNITS, durationText } from "../../utils/disappearing";
+import SkinGlyph from "../common/SkinGlyph";
 
 /** The chat window's disappearing-messages control (plan E7.1): a header
  *  button showing the timer in force, opening the Host's presets and a
@@ -40,6 +40,7 @@ const DisappearingTimerControl: Component<{ conversation: string; label: string 
       {(v) => (
         <div class="chat-disappearing">
           <button
+            type="button"
             class="chat-disappearing-btn"
             classList={{ "chat-disappearing-btn-on": seconds() > 0 }}
             onClick={() => setOpen(!open())}
@@ -52,32 +53,33 @@ const DisappearingTimerControl: Component<{ conversation: string; label: string 
             <span class="chat-disappearing-value">{durationText(seconds())}</span>
           </button>
           <Show when={open()}>
-            <div
+            <fieldset
               id={panelId}
               class="chat-disappearing-panel"
-              role="group"
               aria-label="Disappearing messages"
-              onKeyDown={(e) => { if (e.key === "Escape") setOpen(false); }}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") setOpen(false);
+              }}
             >
               <p class="chat-disappearing-help">
-                New messages disappear this long after they are sent, or after they are read for
-                the person receiving them. Copies already saved, or kept by a modified app, are not
+                New messages disappear this long after they are sent, or after they are read for the
+                person receiving them. Copies already saved, or kept by a modified app, are not
                 removed.
               </p>
-              <div class="chat-disappearing-presets" role="radiogroup" aria-label="Timer">
+              <fieldset class="chat-disappearing-presets" aria-label="Timer">
                 <For each={v().presets}>
                   {(preset) => (
                     <button
+                      type="button"
                       class="chat-disappearing-preset"
-                      role="radio"
-                      aria-checked={preset === seconds()}
+                      aria-pressed={preset === seconds()}
                       onClick={() => void choose(preset)}
                     >
                       {durationText(preset)}
                     </button>
                   )}
                 </For>
-              </div>
+              </fieldset>
               <div class="form-field-row">
                 <label class="chat-disappearing-custom-label" for={`${panelId}-amount`}>
                   Custom
@@ -102,6 +104,7 @@ const DisappearingTimerControl: Component<{ conversation: string; label: string 
                   </For>
                 </select>
                 <button
+                  type="button"
                   class="chat-disappearing-set"
                   disabled={!customFits()}
                   onClick={() => void choose(custom()!)}
@@ -115,9 +118,11 @@ const DisappearingTimerControl: Component<{ conversation: string; label: string 
                 </p>
               </Show>
               <Show when={error()}>
-                <p class="form-error" role="alert">{error()}</p>
+                <p class="form-error" role="alert">
+                  {error()}
+                </p>
               </Show>
-            </div>
+            </fieldset>
           </Show>
         </div>
       )}

@@ -1,8 +1,17 @@
-import { Component, Show, createSignal } from "solid-js";
-import SkinGlyph from "../../../common/SkinGlyph";
+import { type Component, createSignal, Show } from "solid-js";
 import { handleCreateChannel } from "../../../../actions/community.actions";
+import SkinGlyph from "../../../common/SkinGlyph";
 
-type ChannelType = "text" | "voice" | "announcement" | "forum" | "stage" | "directory" | "media" | "events" | "dm";
+type ChannelType =
+  | "text"
+  | "voice"
+  | "announcement"
+  | "forum"
+  | "stage"
+  | "directory"
+  | "media"
+  | "events"
+  | "dm";
 
 interface NewChannelFormProps {
   communityId: string;
@@ -31,14 +40,14 @@ const NewChannelForm: Component<NewChannelFormProps> = (props) => {
   }
 
   return (
-    <Show when={showNewChannel()} fallback={
-      <button
-        class="form-btn-secondary"
-        onClick={() => setShowNewChannel(true)}
-      >
-        <SkinGlyph name="plus-box" /> Create Channel
-      </button>
-    }>
+    <Show
+      when={showNewChannel()}
+      fallback={
+        <button type="button" class="form-btn-secondary" onClick={() => setShowNewChannel(true)}>
+          <SkinGlyph name="plus-box" /> Create Channel
+        </button>
+      }
+    >
       <div class="channel-create-inline">
         <input
           class="form-input"
@@ -62,16 +71,14 @@ const NewChannelForm: Component<NewChannelFormProps> = (props) => {
           <option value="events">Events</option>
         </select>
         <button
+          type="button"
           class="form-btn-primary"
           onClick={handleCreateCh}
           disabled={!newChannelName().trim() || creatingChannel()}
         >
           {creatingChannel() ? "Creating..." : "Create"}
         </button>
-        <button
-          class="form-btn-secondary"
-          onClick={() => setShowNewChannel(false)}
-        >
+        <button type="button" class="form-btn-secondary" onClick={() => setShowNewChannel(false)}>
           Cancel
         </button>
       </div>

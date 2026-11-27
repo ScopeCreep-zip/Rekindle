@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 publish = false
 description = "Seeded, deterministic network simulator over the Veilid-free record, route and message ports (plan C9.3)"
-license = "MIT"
+license.workspace = true
 
 [lints]
 workspace = true

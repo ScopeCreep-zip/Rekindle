@@ -12,7 +12,7 @@ export interface VoiceParticipant {
   isConfirmed?: boolean;
 }
 
-export interface VoiceState {
+interface VoiceState {
   isConnected: boolean;
   channelId: string | null;
   isMuted: boolean;
@@ -80,4 +80,4 @@ const [voiceState, setVoiceState] = createStore<VoiceState>({
   mediaReady: null,
 });
 
-export { voiceState, setVoiceState };
+export { setVoiceState, voiceState };

@@ -1,9 +1,9 @@
-import { Component, onMount, For, Show } from "solid-js";
+import { type Component, For, onMount, Show } from "solid-js";
 import FormField from "../../components/common/FormField";
 import SettingsSelect, { type SettingsSelectOption } from "../../components/common/SettingsSelect";
-import { settingsState, setSettingsState } from "../../stores/settings.store";
-import { commands } from "../../ipc/commands";
 import type { AudioDeviceInfo } from "../../ipc/commands";
+import { commands } from "../../ipc/commands";
+import { setSettingsState, settingsState } from "../../stores/settings.store";
 
 /** A device list's choices: "" is the system default, then each device,
  *  the one the system uses marked "(default)". */
@@ -18,28 +18,32 @@ const AudioTab: Component = () => {
   // saved one is missing is the backend's decision (plan C7.24).
 
   onMount(() => {
-    commands.listAudioDevices().then((d) => {
-      setSettingsState("inputDevices", d.inputDevices);
-      setSettingsState("outputDevices", d.outputDevices);
-    }).catch((e) => {
-      console.error("Failed to enumerate audio devices:", e);
-    });
-    commands.getPreferences().then((prefs) => {
-      setSettingsState("selectedInputDevice", prefs.inputDevice);
-      setSettingsState("selectedOutputDevice", prefs.outputDevice);
-      setSettingsState("inputChannels", prefs.inputChannels ?? {});
-    }).catch((e) => {
-      console.error("Failed to load device preferences:", e);
-    });
+    commands
+      .listAudioDevices()
+      .then((d) => {
+        setSettingsState("inputDevices", d.inputDevices);
+        setSettingsState("outputDevices", d.outputDevices);
+      })
+      .catch((e) => {
+        console.error("Failed to enumerate audio devices:", e);
+      });
+    commands
+      .getPreferences()
+      .then((prefs) => {
+        setSettingsState("selectedInputDevice", prefs.inputDevice);
+        setSettingsState("selectedOutputDevice", prefs.outputDevice);
+        setSettingsState("inputChannels", prefs.inputChannels ?? {});
+      })
+      .catch((e) => {
+        console.error("Failed to load device preferences:", e);
+      });
   });
 
   /** The input device the channel choice applies to: the selected one, or
    *  the system default. */
   const inputDevice = () =>
     settingsState.inputDevices.find((d) =>
-      settingsState.selectedInputDevice
-        ? d.id === settingsState.selectedInputDevice
-        : d.isDefault,
+      settingsState.selectedInputDevice ? d.id === settingsState.selectedInputDevice : d.isDefault
     );
 
   /** Channel `index` is captured: listed, or no choice saved (all). */
@@ -68,7 +72,7 @@ const AudioTab: Component = () => {
     try {
       await commands.setAudioDevices(
         settingsState.selectedInputDevice,
-        settingsState.selectedOutputDevice,
+        settingsState.selectedOutputDevice
       );
     } catch (e) {
       console.error("Failed to persist audio device selection:", e);

@@ -3,9 +3,9 @@
 // a function of its arguments plus the video store / capability probe;
 // nothing touches the running encoder.
 
-import { commands } from "../../../ipc/commands";
-import type { Codec, MediaCapabilities, SessionVideoConfig } from "../../../ipc/commands";
 import { localVideoCapabilities } from "../../../actions/video.actions";
+import type { Codec, MediaCapabilities, SessionVideoConfig } from "../../../ipc/commands";
+import { commands } from "../../../ipc/commands";
 import { dmPeerDecodeCodecsFor, videoSessionConfigFor } from "../../../stores/video.store";
 import { wireCodecToWebCodecsString } from "./codec_utils";
 import type { SenderRoute } from "./sender_types";
@@ -15,7 +15,7 @@ import type { SenderRoute } from "./sender_types";
  *  reported — equally not configurable. */
 export function pickEncoderCodec(
   local: MediaCapabilities | null,
-  negotiated: Codec,
+  negotiated: Codec
 ): { ok: boolean; reason?: string } {
   if (!local) {
     return { ok: false, reason: "local capabilities not probed yet" };
@@ -37,7 +37,7 @@ export function pickEncoderCodec(
  *  wire floor applies, but ONLY when we can actually encode it —
  *  otherwise wait (`null`); the store write from the caps fetch
  *  re-runs this via the pump. */
-export function pickDmEncoderCodec(peerId: string): Codec | null {
+function pickDmEncoderCodec(peerId: string): Codec | null {
   const local = localVideoCapabilities();
   if (!local) return null;
   const peerDecode = dmPeerDecodeCodecsFor(peerId);
@@ -75,7 +75,7 @@ export function encoderConstraints(route: SenderRoute): SessionVideoConfig["enco
 export function buildEncoderConfig(
   constraints: SessionVideoConfig["encoder"],
   bitrate: number,
-  shape?: { width: number; height: number; fps: number },
+  shape?: { width: number; height: number; fps: number }
 ): VideoEncoderConfig {
   const base: VideoEncoderConfig = {
     codec: wireCodecToWebCodecsString(constraints.codec),
@@ -109,7 +109,7 @@ export function reportEncoderStatus(
   route: SenderRoute,
   codec: Codec,
   ok: boolean,
-  detail: string,
+  detail: string
 ): void {
   void commands
     .reportVideoEncoderStatus(
@@ -117,7 +117,7 @@ export function reportEncoderStatus(
       route.mode === "dm" ? route.peerId : null,
       codec,
       ok,
-      detail,
+      detail
     )
     .catch(() => {
       // Logging side-channel only — never disturb the pipeline.

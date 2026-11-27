@@ -1,24 +1,43 @@
-import { Component, JSX, Show } from "solid-js";
+import { type Component, createUniqueId, type JSX, Show } from "solid-js";
 
 interface FormFieldProps {
   label?: string;
-  /** Id on the visible label, for a control inside that takes its
-   *  accessible name from it (`aria-labelledby`). */
+  controlId?: string;
   labelId?: string;
   error?: string | null;
   children: JSX.Element;
 }
 
-const FormField: Component<FormFieldProps> = (props) => (
-  <div class="form-field">
-    <Show when={props.label}>
-      <label class="form-field-label" id={props.labelId}>{props.label}</label>
-    </Show>
-    {props.children}
-    <Show when={props.error}>
-      <div class="form-error">{props.error}</div>
-    </Show>
-  </div>
-);
+const FormField: Component<FormFieldProps> = (props) => {
+  const generatedId = createUniqueId();
+  const labelId = () => props.labelId ?? generatedId;
+  const groupAttributes = () =>
+    props.label && !props.controlId && !props.labelId
+      ? { role: "group" as const, "aria-labelledby": labelId() }
+      : {};
+
+  return (
+    <div class="form-field" {...groupAttributes()}>
+      <Show when={props.label}>
+        <Show
+          when={props.controlId}
+          fallback={
+            <span class="form-field-label" id={labelId()}>
+              {props.label}
+            </span>
+          }
+        >
+          <label class="form-field-label" id={props.labelId} for={props.controlId}>
+            {props.label}
+          </label>
+        </Show>
+      </Show>
+      {props.children}
+      <Show when={props.error}>
+        <div class="form-error">{props.error}</div>
+      </Show>
+    </div>
+  );
+};
 
 export default FormField;
