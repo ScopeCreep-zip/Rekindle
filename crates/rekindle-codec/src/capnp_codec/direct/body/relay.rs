@@ -156,13 +156,14 @@ pub struct RegisterPushRelay {
 }
 
 impl RegisterPushRelay {
-    pub(super) fn write(&self, mut b: register_push_relay::Builder<'_>) {
+    pub(super) fn write(&self, mut b: register_push_relay::Builder<'_>) -> Result<(), CodecError> {
         b.set_device_push_token(&self.device_push_token);
         b.set_platform(&self.platform);
         set_text_list(
-            b.init_record_keys(list_len(&self.record_keys)),
+            b.init_record_keys(list_len(&self.record_keys)?),
             &self.record_keys,
         );
+        Ok(())
     }
 
     pub(super) fn read(r: register_push_relay::Reader<'_>) -> Result<Self, CodecError> {

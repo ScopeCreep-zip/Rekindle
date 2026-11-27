@@ -174,7 +174,7 @@ fn a_short_device_key_is_refused() {
         panic!("not a DeviceRetired op");
     };
     d.set_device_key(&[1; 31]);
-    let err = decode_op(&crate::capnp_codec::pack(&builder)).unwrap_err();
+    let err = decode_op(&crate::capnp_codec::pack(&builder).unwrap()).unwrap_err();
     assert!(
         matches!(&err, crate::CodecError::Deserialization(m) if m.starts_with("retired device key is 31 bytes")),
         "{err:?}"
@@ -209,13 +209,13 @@ fn the_cert_carries_and_signs_the_creator_device() {
     };
     let decoded = decode_genesis(&encode_genesis(&signed).unwrap()).unwrap();
     assert_eq!(decoded.signed.cert, signed.cert);
-    let base = genesis_unsigned_bytes(&signed.cert, &[2; 32]);
+    let base = genesis_unsigned_bytes(&signed.cert, &[2; 32]).unwrap();
     assert_eq!(decoded.unsigned, base);
-    assert_ne!(genesis_unsigned_bytes(&cert(None), &[2; 32]), base);
+    assert_ne!(genesis_unsigned_bytes(&cert(None), &[2; 32]).unwrap(), base);
     let mut tampered = endorsement(6);
     tampered.endorsement_sig[0] ^= 1;
     assert_ne!(
-        genesis_unsigned_bytes(&cert(Some(tampered)), &[2; 32]),
+        genesis_unsigned_bytes(&cert(Some(tampered)), &[2; 32]).unwrap(),
         base
     );
 }

@@ -16,6 +16,7 @@ use rekindle_crypto::group::pseudonym::derive_community_pseudonym;
 use rekindle_governance_runtime::member_routes::{read_member_route_at, RoutePin};
 use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
 use rekindle_records::lease::LeaseId;
+use rekindle_route::dead_routes::DeadRouteVerdict;
 use rekindle_types::dht_layout::member_record::ROUTES;
 use rekindle_types::id::PseudonymKey;
 
@@ -39,15 +40,32 @@ pub enum MemberCallError {
 impl HostGovernance {
     /// Take `author`'s verified route blob at DHT `seq` into `community`'s
     /// cache, unless the transport still knows it dead after this read
-    /// (plan RV1g B3: only a strictly newer seq revives a dead blob).
-    fn observe_route(&self, community: &str, author: &PseudonymKey, seq: u64, blob: Vec<u8>) {
-        self.route_read_at(&blob, seq);
-        if self.route_declared_dead(&blob) {
-            return;
-        }
-        let mut map = self.ctx.communities.map().write();
-        if let Some(c) = map.get_mut(community) {
-            c.member_routes.observe(author, seq, blob);
+    /// (plan RV1g B3: only a strictly newer seq revives a dead blob); the
+    /// read's verdict, a probe due included ([`DeadRouteVerdict::Probe`]).
+    pub(super) fn observe_route(
+        &self,
+        community: &str,
+        author: &PseudonymKey,
+        seq: u64,
+        blob: Vec<u8>,
+    ) -> DeadRouteVerdict {
+        let seen = self.route_read_at(&blob, seq);
+        let dead = self.route_declared_dead(&blob);
+        self.take_route(community, author, seq, blob, seen, dead);
+        seen
+    }
+
+    /// [`Self::observe_route`] off a caller that does not wait on a probe:
+    /// one it asks for runs on the community's scope.
+    fn observe_route_or_probe(
+        &self,
+        community: &str,
+        author: &PseudonymKey,
+        seq: u64,
+        blob: Vec<u8>,
+    ) {
+        if self.observe_route(community, author, seq, blob.clone()) == DeadRouteVerdict::Probe {
+            self.spawn_member_route_probe(community, author, seq, blob);
         }
     }
 
@@ -68,7 +86,7 @@ impl HostGovernance {
             member_record: record,
         };
         let routes = decode_member_routes(&bytes, at, &author.0).ok()?;
-        self.observe_route(community, &author, seq, routes.general);
+        self.observe_route_or_probe(community, &author, seq, routes.general);
         Some(seq)
     }
 
@@ -111,7 +129,7 @@ impl HostGovernance {
         let pin = RoutePin::Joined(&owner);
         match read_member_route_at(&*port, community, &record, member, pin).await {
             Ok(Some((seq, blob))) => {
-                self.observe_route(community, member, seq, blob.clone());
+                self.observe_route_or_probe(community, member, seq, blob.clone());
                 Some((seq, blob))
             }
             Ok(None) => None,

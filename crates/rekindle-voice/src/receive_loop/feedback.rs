@@ -71,7 +71,13 @@ impl VoiceReceiveLoop {
                 sig: Vec::new(),
             };
             feedback.sign(&signing_key);
-            let encoded = feedback.encode();
+            let encoded = match feedback.encode() {
+                Ok(encoded) => encoded,
+                Err(error) => {
+                    tracing::warn!(%error, "could not encode voice receiver feedback");
+                    continue;
+                }
+            };
             let mut wire = Vec::with_capacity(1 + encoded.len());
             wire.push(FEEDBACK_TAG);
             wire.extend_from_slice(&encoded);

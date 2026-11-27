@@ -548,7 +548,9 @@ impl VoiceTransport {
             sig: Vec::new(),
         };
         packet.sign(signing_key);
-        Ok(packet.encode())
+        packet
+            .encode()
+            .map_err(|error| VoiceError::Transport(error.to_string()))
     }
 }
 

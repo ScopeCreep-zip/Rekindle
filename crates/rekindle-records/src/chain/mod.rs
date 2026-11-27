@@ -54,6 +54,9 @@ const HEAD_ROUNDS: usize = 3;
 pub enum ChainError {
     #[error(transparent)]
     Port(#[from] PortError),
+    /// An outbound chain value could not be encoded.
+    #[error(transparent)]
+    Codec(#[from] rekindle_codec::CodecError),
     #[error("an append needs at least one entry")]
     EmptyAppend,
     #[error("{what} of {len} bytes exceeds the {cap}-byte subkey limit")]

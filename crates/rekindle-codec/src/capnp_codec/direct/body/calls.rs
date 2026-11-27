@@ -22,16 +22,17 @@ pub struct CallInvite {
 }
 
 impl CallInvite {
-    pub(super) fn write(&self, mut b: call_invite::Builder<'_>) {
+    pub(super) fn write(&self, mut b: call_invite::Builder<'_>) -> Result<(), CodecError> {
         b.set_call_id(&self.call_id);
         b.set_offer_kind(self.offer_kind);
         b.set_initiator_pubkey(&self.initiator_pubkey);
         b.set_initiator_x25519_pub(&self.initiator_x25519_pub);
         b.set_expires_at_ms(self.expires_at_ms);
         set_text_list(
-            b.init_video_decode_codecs(list_len(&self.video_decode_codecs)),
+            b.init_video_decode_codecs(list_len(&self.video_decode_codecs)?),
             &self.video_decode_codecs,
         );
+        Ok(())
     }
 
     pub(super) fn read(r: call_invite::Reader<'_>) -> Result<Self, CodecError> {
@@ -73,13 +74,14 @@ pub struct CallAccept {
 }
 
 impl CallAccept {
-    pub(super) fn write(&self, mut b: call_accept::Builder<'_>) {
+    pub(super) fn write(&self, mut b: call_accept::Builder<'_>) -> Result<(), CodecError> {
         b.set_call_id(&self.call_id);
         b.set_acceptor_x25519_pub(&self.acceptor_x25519_pub);
         set_text_list(
-            b.init_video_decode_codecs(list_len(&self.video_decode_codecs)),
+            b.init_video_decode_codecs(list_len(&self.video_decode_codecs)?),
             &self.video_decode_codecs,
         );
+        Ok(())
     }
 
     pub(super) fn read(r: call_accept::Reader<'_>) -> Result<Self, CodecError> {
@@ -183,18 +185,19 @@ pub struct GroupCallOffer {
 }
 
 impl GroupCallOffer {
-    pub(super) fn write(&self, mut b: group_call_offer::Builder<'_>) {
+    pub(super) fn write(&self, mut b: group_call_offer::Builder<'_>) -> Result<(), CodecError> {
         b.set_call_id(&self.call_id);
         b.set_offer_kind(self.offer_kind);
         b.set_initiator_pubkey(&self.initiator_pubkey);
         b.set_initiator_x25519_pub(&self.initiator_x25519_pub);
         set_text_list(
-            b.reborrow().init_participants(list_len(&self.participants)),
+            b.reborrow().init_participants(list_len(&self.participants)?),
             &self.participants,
         );
         b.set_wrapped_call_key(&self.wrapped_call_key);
         b.set_expires_at_ms(self.expires_at_ms);
         b.set_group_id(self.group_id.as_deref().unwrap_or_default());
+        Ok(())
     }
 
     pub(super) fn read(r: group_call_offer::Reader<'_>) -> Result<Self, CodecError> {

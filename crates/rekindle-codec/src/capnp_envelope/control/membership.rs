@@ -33,7 +33,7 @@ pub(super) fn write_member_leave(
 pub(super) fn write_member_joined(
     mut p: cap::member_joined_payload::Builder<'_>,
     payload: &ControlPayload,
-) {
+) -> Result<(), CodecError> {
     let ControlPayload::MemberJoined {
         pseudonym_key,
         display_name,
@@ -46,15 +46,16 @@ pub(super) fn write_member_joined(
     };
     p.set_pseudonym_key(pseudonym_key);
     p.set_display_name(display_name);
-    let mut list = p.reborrow().init_role_ids(len_u32(role_ids.len()));
-    for (i, id) in role_ids.iter().enumerate() {
-        list.set(len_u32(i), &id.0);
+    let mut list = p.reborrow().init_role_ids(len_u32(role_ids.len())?);
+    for (i, id) in (0u32..).zip(role_ids.iter()) {
+        list.set(i, &id.0);
     }
     p.set_status(status);
     p.set_has_route_blob(route_blob.is_some());
     if let Some(rb) = route_blob {
         p.set_route_blob(rb);
     }
+    Ok(())
 }
 
 pub(super) fn write_request_segment_expansion(
@@ -77,7 +78,7 @@ pub(super) fn write_request_segment_expansion(
 pub(super) fn write_onboarding_complete(
     mut p: cap::onboarding_complete_payload::Builder<'_>,
     payload: &ControlPayload,
-) {
+) -> Result<(), CodecError> {
     let ControlPayload::OnboardingComplete {
         pseudonym_key,
         role_ids,
@@ -86,23 +87,25 @@ pub(super) fn write_onboarding_complete(
         unreachable!("write_onboarding_complete: variant mismatch")
     };
     p.set_pseudonym_key(pseudonym_key);
-    let mut list = p.reborrow().init_role_ids(len_u32(role_ids.len()));
-    for (i, id) in role_ids.iter().enumerate() {
-        list.set(len_u32(i), &id.0);
+    let mut list = p.reborrow().init_role_ids(len_u32(role_ids.len())?);
+    for (i, id) in (0u32..).zip(role_ids.iter()) {
+        list.set(i, &id.0);
     }
+    Ok(())
 }
 
 pub(super) fn write_submit_onboarding_answers(
     mut p: cap::submit_onboarding_answers_payload::Builder<'_>,
     payload: &ControlPayload,
-) {
+) -> Result<(), CodecError> {
     let ControlPayload::SubmitOnboardingAnswers { answers } = payload else {
         unreachable!("write_submit_onboarding_answers: variant mismatch")
     };
-    let mut list = p.reborrow().init_answers(len_u32(answers.len()));
-    for (i, a) in answers.iter().enumerate() {
-        write_onboarding_answer(list.reborrow().get(len_u32(i)), a);
+    let mut list = p.reborrow().init_answers(len_u32(answers.len())?);
+    for (i, a) in (0u32..).zip(answers.iter()) {
+        write_onboarding_answer(list.reborrow().get(i), a)?;
     }
+    Ok(())
 }
 
 pub(super) fn read_member_leave(

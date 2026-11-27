@@ -34,7 +34,7 @@ fn under_each_limit<T>(
     op: &GovernanceOp,
     mut each: impl FnMut(capnp::Result<governance_op::Reader<'_>>) -> T,
 ) -> Vec<T> {
-    let builder = build(op);
+    let builder = build(op).unwrap();
     let segments = builder.get_segments_for_output();
     let words: usize = segments.iter().map(|s| s.len() / 8).sum();
     (0..=words + 8)

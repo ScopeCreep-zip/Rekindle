@@ -8,6 +8,7 @@
 use rekindle_codec::capnp_codec::identity::{
     encode_opk_slot, encode_prekey_head, OpkSlot, PrekeyRecordHead,
 };
+use rekindle_codec::CodecError;
 use rekindle_types::dht_layout::prekeys::{HEAD, SLOT_COUNT};
 use rekindle_types::dto::identity::PrekeyStatus;
 
@@ -23,33 +24,29 @@ pub struct Publish {
 
 impl Publish {
     /// The head's value.
-    #[must_use]
-    pub fn head(head: &PrekeyRecordHead) -> Self {
-        Self {
+    pub fn head(head: &PrekeyRecordHead) -> Result<Self, CodecError> {
+        Ok(Self {
             subkey: HEAD,
-            value: encode_prekey_head(head),
-        }
+            value: encode_prekey_head(head)?,
+        })
     }
 
     /// A minted slot's value.
-    #[must_use]
-    pub fn slot(slot: &MintedSlot) -> Self {
+    pub fn slot(slot: &MintedSlot) -> Result<Self, CodecError> {
         Self::signed_slot(slot.subkey, &slot.record)
     }
 
     /// The value of a slot signed from stored keys, at `subkey`.
-    #[must_use]
-    pub fn signed_slot(subkey: u32, slot: &OpkSlot) -> Self {
-        Self {
+    pub fn signed_slot(subkey: u32, slot: &OpkSlot) -> Result<Self, CodecError> {
+        Ok(Self {
             subkey,
-            value: encode_opk_slot(slot),
-        }
+            value: encode_opk_slot(slot)?,
+        })
     }
 }
 
 /// The values a minted set publishes: the head, then every slot.
-#[must_use]
-pub fn set_values(set: &MintedSet) -> Vec<Publish> {
+pub fn set_values(set: &MintedSet) -> Result<Vec<Publish>, CodecError> {
     std::iter::once(Publish::head(&set.head.record))
         .chain(set.slots.iter().map(Publish::slot))
         .collect()

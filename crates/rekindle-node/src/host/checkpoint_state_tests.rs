@@ -40,7 +40,7 @@ fn state_request(key: &SigningKey, digest: [u8; 32]) -> CheckpointStateRequest {
 fn ask_with(key: &SigningKey, digest: [u8; 32], invite_code: Option<&str>) -> Vec<u8> {
     let request = state_request(key, digest);
     match invite_code {
-        Some(code) => request.with_invite_code(code),
+        Some(code) => request.with_invite_code(code).unwrap(),
         None => request,
     }
     .encode(key)
@@ -202,7 +202,9 @@ async fn a_state_snapshot_request_from_a_non_member_without_a_live_invite_is_ref
             .is_none(),
         "the public code hash without the code is refused"
     );
-    let mut wrong = state_request(&stranger, digest).with_invite_code(&"0bad".repeat(8));
+    let mut wrong = state_request(&stranger, digest)
+        .with_invite_code(&"0bad".repeat(8))
+        .unwrap();
     if let Some(invite) = wrong.invite.as_mut() {
         invite.code_hash.clone_from(&code_hash);
     }
@@ -243,6 +245,7 @@ async fn a_state_snapshot_request_from_a_non_member_without_a_live_invite_is_ref
         invite: None,
     }
     .with_invite_code(&code)
+    .unwrap()
     .encode(&stranger)
     .unwrap();
     let hinted = || async { host.governance().answer_checkpoint_hint(&hint).await };

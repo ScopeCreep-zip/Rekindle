@@ -109,7 +109,7 @@ pub async fn store_set(
     let owner = identity_text(owner);
     in_transaction(db, move |conn| {
         store_set_rows(conn, &owner, &set)?;
-        Ok(set_values(&set))
+        Ok(set_values(&set)?)
     })
     .await
 }
@@ -203,16 +203,21 @@ pub async fn published_values(db: &Db, local: &LocalParty) -> Result<Vec<Publish
                 &lr.public,
                 spk.created_at,
             );
-            values.push(head.map(|head| Publish::head(&head)));
+            values.push(
+                head.map_err(RatchetError::from)
+                    .and_then(|head| Ok(Publish::head(&head)?)),
+            );
         }
         for (subkey, opk, pq) in live_pairs(conn, &owner)? {
             let slot = sign_slot(&local.identity, opk.id, &opk.public, pq.id, &pq.public);
-            values.push(slot.map(|slot| Publish::signed_slot(subkey, &slot)));
+            values.push(
+                slot.map_err(RatchetError::from)
+                    .and_then(|slot| Ok(Publish::signed_slot(subkey, &slot)?)),
+            );
         }
-        Ok(values.into_iter().collect::<Result<Vec<_>, _>>())
+        Ok(values.into_iter().collect())
     })
     .await?
-    .map_err(RatchetError::from)
 }
 
 /// The `PrekeyStatus` read at `now_ms`; `None` before a head exists.
@@ -282,7 +287,7 @@ pub(crate) fn fill_slot(
         pq_opk_id,
     );
     insert_slot(conn, owner, &slot, local.now_ms)?;
-    Ok(Publish::slot(&slot))
+    Ok(Publish::slot(&slot)?)
 }
 
 fn rotate_head(
@@ -315,7 +320,7 @@ fn rotate_head(
         at,
         HEAD,
     )?;
-    Ok(Publish::head(&head.record))
+    Ok(Publish::head(&head.record)?)
 }
 
 /// A stored public key.

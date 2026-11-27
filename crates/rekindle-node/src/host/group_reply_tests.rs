@@ -96,7 +96,9 @@ async fn a_members_reply_to_an_unheld_message_is_stored_and_served_as_is() {
     let unheld = client_id_text(&[0xAB; 16]);
     let entry = ChainEntry {
         seq: 1,
-        ciphertext: DirectBody::GroupContent(sealed(&key, &reply(1, [0xAB; 16]), 1)).encode(),
+        ciphertext: DirectBody::GroupContent(sealed(&key, &reply(1, [0xAB; 16]), 1))
+            .encode()
+            .unwrap(),
     };
 
     sink.apply(&stream, &bob(), &entry).await.unwrap();
@@ -138,7 +140,7 @@ async fn a_tampered_or_forged_reply_is_refused_like_a_tampered_body() {
     for (seq, content) in [(1, tampered), (2, forged)] {
         let entry = ChainEntry {
             seq,
-            ciphertext: DirectBody::GroupContent(content).encode(),
+            ciphertext: DirectBody::GroupContent(content).encode().unwrap(),
         };
         sink.apply(&stream, &bob(), &entry).await.unwrap();
     }
