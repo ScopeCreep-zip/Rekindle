@@ -285,8 +285,19 @@ describe("converted controls (FE-LINT slice C)", function () {
     await b.keys("Enter");
     await shown(b, ".channel-topic-header-input");
     console.log(`[a11y] channel topic: ring ${topicRing.ring}; Enter opens the topic editor`);
+    const editorFocused = (await b.execute(
+      () => document.activeElement?.classList.contains("channel-topic-header-input") ?? false
+    )) as boolean;
     await shot("keyboard-topic-editor");
     await b.keys("Escape");
+    await gone(b, ".channel-topic-header-input");
+    const backOnTopic = (await b.execute(
+      () => document.activeElement?.classList.contains("channel-topic") ?? false
+    )) as boolean;
+    console.log(
+      `[a11y] channel topic: editor focused on open ${editorFocused}; Escape closes it, focus back on the topic ${backOnTopic}`
+    );
+    expect({ editorFocused, backOnTopic }).toEqual({ editorFocused: true, backOnTopic: true });
 
     // A role's summary opens its editor on Space.
     // The Roles tab click leaves focus inside the modal for Tab navigation.
