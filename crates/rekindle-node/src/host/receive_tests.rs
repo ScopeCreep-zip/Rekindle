@@ -161,6 +161,7 @@ fn undecodable_body() -> Vec<u8> {
         payload: vec![0xFF; 3],
     }
     .encode()
+    .unwrap()
 }
 
 /// A message whose content or body does not decode is dropped on receive

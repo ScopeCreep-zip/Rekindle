@@ -23,18 +23,18 @@ pub const HISTORY_AD_MAX_BYTES: usize = 4 * 1024;
 /// The most ranges one ad carries; the writer picks which.
 pub const HISTORY_AD_MAX_RANGES: usize = 64;
 
-fn signing_bytes(at: RecordScope<'_>, mek_generation: u64, sealed: &[u8]) -> Vec<u8> {
-    let mut out = at.signing_prefix(domains::HISTORY_AD);
+fn signing_bytes(at: RecordScope<'_>, mek_generation: u64, sealed: &[u8]) -> Result<Vec<u8>, CodecError> {
+    let mut out = at.signing_prefix(domains::HISTORY_AD)?;
     out.extend_from_slice(&mek_generation.to_be_bytes());
-    put_lp(&mut out, sealed);
-    out
+    put_lp(&mut out, sealed)?;
+    Ok(out)
 }
 
-fn encode_ranges(ranges: &[HistoryRange]) -> Vec<u8> {
+fn encode_ranges(ranges: &[HistoryRange]) -> Result<Vec<u8>, CodecError> {
     let mut builder = capnp::message::Builder::new_default();
     {
         let root = builder.init_root::<history_ranges::Builder<'_>>();
-        let count = u32::try_from(ranges.len()).unwrap_or(u32::MAX);
+        let count = crate::capnp_codec::wire_len(ranges.len())?;
         let mut list = root.init_ranges(count);
         for (i, range) in (0u32..).zip(ranges) {
             let mut r = list.reborrow().get(i);
@@ -81,10 +81,10 @@ pub fn encode_history_ad(
     rng: &dyn RandomSource,
 ) -> Result<Vec<u8>, CodecError> {
     check_len("history ranges", ranges.len(), HISTORY_AD_MAX_RANGES)?;
-    let sealed = seal_member_record_field(key, at.aad(), &encode_ranges(ranges), rng)
+    let sealed = seal_member_record_field(key, at.aad(), &encode_ranges(ranges)?, rng)
         .map_err(|e| CodecError::Serialization(e.to_string()))?;
     let generation = key.generation();
-    let sig = sign(pseudonym, &signing_bytes(at, generation, &sealed));
+    let sig = sign(pseudonym, &signing_bytes(at, generation, &sealed)?);
     let mut builder = capnp::message::Builder::new_default();
     {
         let mut root = builder.init_root::<history_ad_record::Builder<'_>>();
@@ -92,7 +92,7 @@ pub fn encode_history_ad(
         root.set_sealed(&sealed);
         root.set_sig(&sig);
     }
-    let out = pack(&builder);
+    let out = pack(&builder)?;
     check_size("history ad", &out, HISTORY_AD_MAX_BYTES)?;
     Ok(out)
 }
@@ -115,7 +115,7 @@ pub fn decode_history_ad(
     let sealed = root.get_sealed().map_err(|e| capnp_err(&e))?;
     verify(
         pseudonym,
-        &signing_bytes(at, generation, sealed),
+        &signing_bytes(at, generation, sealed)?,
         root.get_sig().map_err(|e| capnp_err(&e))?,
         "history ad",
     )?;

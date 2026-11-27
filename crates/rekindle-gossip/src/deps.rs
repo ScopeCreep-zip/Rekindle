@@ -43,7 +43,7 @@ pub enum GossipError {
     #[error("community not found: {0}")]
     CommunityNotFound(String),
     #[error("encode envelope: {0}")]
-    EncodeFailed(String),
+    EncodeFailed(#[from] rekindle_codec::CodecError),
 }
 
 /// Bag of operations the crate needs from its host. Implemented

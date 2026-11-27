@@ -47,7 +47,7 @@ pub fn device_list(record_key: &str, device_id: &str) -> Result<Vec<u8>, FriendE
             device_id: id,
             record_key: record_key.to_string(),
         }],
-    }))
+    })?)
 }
 
 /// Write `values` to our record, each durable (a miss is re-pushed until it

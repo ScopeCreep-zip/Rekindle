@@ -20,9 +20,10 @@ use crate::schema;
 /// # Errors
 /// The create failed, or the `HEAD` write did not land.
 pub async fn create_participant(port: &dyn RecordPort) -> Result<(String, String), ChainError> {
+    let empty_head = page::empty_head()?;
     let (lease, record_key, owner) = port.create(&schema::dm_participant(), None).await?;
     let written = port
-        .set(lease, dm_participant::HEAD, page::empty_head(), None)
+        .set(lease, dm_participant::HEAD, empty_head, None)
         .await;
     port.release(lease).await;
     written?.require_stored(dm_participant::HEAD)?;
@@ -46,13 +47,14 @@ pub async fn publish_participant(
     record_key: &str,
     writer: &str,
 ) -> Result<(), ChainError> {
+    let empty_head = page::empty_head()?;
     let lease = port
         .acquire(record_key, Some(writer), OpenIntent::Hold)
         .await?;
     let written = match local_value(port, lease, dm_participant::HEAD).await {
         Ok(Some(_)) => Ok(None),
         Ok(None) => port
-            .set(lease, dm_participant::HEAD, page::empty_head(), None)
+            .set(lease, dm_participant::HEAD, empty_head, None)
             .await
             .map(Some),
         Err(e) => Err(e),

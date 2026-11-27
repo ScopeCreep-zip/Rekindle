@@ -77,14 +77,15 @@ pub struct GameTotals {
 }
 
 impl GameTotals {
-    pub(super) fn write(&self, b: game_totals::Builder<'_>) {
-        let mut list = b.init_totals(u32::try_from(self.totals.len()).unwrap_or(u32::MAX));
+    pub(super) fn write(&self, b: game_totals::Builder<'_>) -> Result<(), CodecError> {
+        let mut list = b.init_totals(crate::capnp_codec::wire_len(self.totals.len())?);
         for (i, t) in (0u32..).zip(&self.totals) {
             let mut e = list.reborrow().get(i);
             e.set_game_id(t.game_id);
             e.set_total_secs(t.total_secs);
             e.set_last_played(t.last_played);
         }
+        Ok(())
     }
 
     pub(super) fn read(r: game_totals::Reader<'_>) -> Result<Self, CodecError> {

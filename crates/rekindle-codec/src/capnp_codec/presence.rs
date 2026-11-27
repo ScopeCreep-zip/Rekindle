@@ -19,7 +19,7 @@ pub struct GameInfo {
 
 /// Encode a presence update (status byte + optional game info), stamped
 /// `timestamp_ms` from the caller's clock.
-pub fn encode_update(status: u8, game: Option<&GameInfo>, timestamp_ms: u64) -> Vec<u8> {
+pub fn encode_update(status: u8, game: Option<&GameInfo>, timestamp_ms: u64) -> Result<Vec<u8>, CodecError> {
     let mut builder = capnp::message::Builder::new_default();
     {
         let mut root = builder.init_root::<presence_capnp::presence_update::Builder<'_>>();
@@ -51,7 +51,7 @@ pub fn decode_update(data: &[u8]) -> Result<(u8, Option<GameInfo>), CodecError> 
 }
 
 /// Encode a standalone `GameStatus` (used for DHT subkey 4).
-pub fn encode_game_status(info: &GameInfo) -> Vec<u8> {
+pub fn encode_game_status(info: &GameInfo) -> Result<Vec<u8>, CodecError> {
     let mut builder = capnp::message::Builder::new_default();
     {
         let root = builder.init_root::<presence_capnp::game_status::Builder<'_>>();

@@ -48,7 +48,7 @@ pub(super) fn write_channel_archived(
 pub(super) fn write_channel_updated(
     mut p: schema_pkg::channel_updated_entry::Builder<'_>,
     e: &GovernanceEntry,
-) {
+) -> Result<(), CodecError> {
     let GovernanceEntry::ChannelUpdated {
         channel_id,
         name,
@@ -84,9 +84,9 @@ pub(super) fn write_channel_updated(
     }
     p.set_has_forum_tags(forum_tags.is_some());
     if let Some(tags) = forum_tags {
-        let mut list = p.reborrow().init_forum_tags(len_u32(tags.len()));
-        for (i, t) in tags.iter().enumerate() {
-            list.set(len_u32(i), t.as_str());
+        let mut list = p.reborrow().init_forum_tags(len_u32(tags.len())?);
+        for (i, t) in (0u32..).zip(tags.iter()) {
+            list.set(i, t.as_str());
         }
     }
     p.set_has_position(position.is_some());
@@ -115,6 +115,7 @@ pub(super) fn write_channel_updated(
             uuid16_to_capnp(p.reborrow().init_category_id(), &c.0);
         }
     }
+    Ok(())
 }
 
 pub(super) fn write_category_created(
