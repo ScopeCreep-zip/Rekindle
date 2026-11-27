@@ -257,7 +257,9 @@ const MessageInput: Component<MessageInputProps> = (props) => {
                     role="option"
                     id={`mention-row-${index()}`}
                     aria-selected={index() === mentions.mentionSelected()}
-                    class={`mention-popover-row ${index() === mentions.mentionSelected() ? "mention-popover-row-active" : ""}`}
+                    aria-disabled={candidate.deniedReason !== undefined}
+                    aria-describedby={candidate.deniedReason !== undefined ? `mention-row-${index()}-reason` : undefined}
+                    class={`mention-popover-row ${index() === mentions.mentionSelected() ? "mention-popover-row-active" : ""} ${candidate.deniedReason !== undefined ? "mention-popover-row-denied" : ""}`}
                     onMouseEnter={() => mentions.setMentionSelected(index())}
                     onMouseDown={(e) => {
                       e.preventDefault();
@@ -266,6 +268,9 @@ const MessageInput: Component<MessageInputProps> = (props) => {
                   >
                     <span class={`mention-popover-tag mention-popover-tag-${candidate.kind}`}>{candidate.kind}</span>
                     <span class="mention-popover-label">{candidate.label}</span>
+                    <Show when={candidate.deniedReason}>
+                      {(reason) => <span class="mention-popover-reason" id={`mention-row-${index()}-reason`}>{reason()}</span>}
+                    </Show>
                   </li>
                 )}
               </For>

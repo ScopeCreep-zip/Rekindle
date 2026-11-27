@@ -531,6 +531,8 @@
 '.message-link-preview-title' = { on = ["--color-xfire-bg-secondary"] }
 '.message-link-preview-description' = { on = ["--color-xfire-bg-secondary"] }
 '.mention-popover-row' = { on = ["--color-xfire-bg-secondary"] }
+'.mention-popover-row-denied' = { on = ["--color-xfire-bg-secondary", "--color-xfire-accent 25% over --color-xfire-bg-secondary"] }
+'.mention-popover-reason' = { on = ["--color-xfire-bg-secondary", "--color-xfire-accent 25% over --color-xfire-bg-secondary"] }
 '.mention-popover-tag-special' = { on = ["--color-xfire-mention-everyone 25% over --color-xfire-bg-secondary"] }
 '.mention-popover-tag-role' = { on = ["--color-xfire-accent 13% over --color-xfire-bg-secondary"] }
 '.channel-notif-label' = { on = ["--color-xfire-bg-panel"] }

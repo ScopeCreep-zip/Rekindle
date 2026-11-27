@@ -117,6 +117,18 @@
     cursor: pointer;
   }
 
+  /* @everyone / @here where the Host denies them: listed, in the theme's
+   * disabled text (never a fade, ST1), with the Host's reason beside. */
+  .mention-popover-row-denied {
+    color: var(--color-xfire-text-disabled);
+    cursor: not-allowed;
+  }
+  .mention-popover-reason {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--color-xfire-text-disabled);
+  }
+
   .mention-popover-row-active {
     background: color-mix(in srgb, var(--color-xfire-accent) 25%, transparent);
   }

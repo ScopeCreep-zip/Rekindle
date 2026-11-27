@@ -121,8 +121,8 @@ const ChannelChat: Component<{ vm: CommunityVm }> = (props) => {
             : vm.channelLocked() !== null
               ? vm.channelLocked()!
               : vm.isAnnouncementChannel()
-              ? "Only admins can post in announcement channels"
-              : "You don't have permission to send messages"
+              ? (vm.denied("manageCommunity") ?? "")
+              : (vm.sendDenied() ?? "")
         }
         slowmodeSeconds={vm.activeChannel()?.slowmodeSeconds}
         bypassSlowmode={vm.canBypassSlowmode()}

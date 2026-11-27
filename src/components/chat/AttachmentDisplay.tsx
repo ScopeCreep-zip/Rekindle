@@ -6,9 +6,8 @@ import {
   handlePinAttachment,
   handleRevealAttachment,
 } from "../../actions/community.actions";
-import { hasPermission, MANAGE_COMMUNITY } from "../../ipc/permissions";
 import { communityState } from "../../stores/community.store";
-import { servedPermissions } from "../../utils/permissions";
+import { deniedFor } from "../../utils/denied";
 import { formatSize } from "../../utils/formatting";
 import type { GlyphName } from "../common/glyph_art";
 
@@ -32,11 +31,9 @@ const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
     return community?.pinnedAttachments?.includes(props.attachment.attachmentId) ?? false;
   });
 
-  // Pinning is a community-wide setting: the backend's base flags.
-  const myPerms = createMemo((): bigint =>
-    servedPermissions(communityState.communities[props.communityId]),
-  );
-  const canPin = createMemo(() => hasPermission(myPerms(), MANAGE_COMMUNITY));
+  // Pinning is a community-wide setting: why we may not, in the Host's
+  // words (CAPR manageCommunity), or null.
+  const pinDenied = createMemo(() => deniedFor(communityState.communities[props.communityId], "manageCommunity"));
 
   async function handleDownloadClick(): Promise<void> {
     if (downloading()) return;
@@ -99,15 +96,16 @@ const AttachmentDisplay: Component<AttachmentDisplayProps> = (props) => {
           <span>Show in folder</span>
         </button>
       </Show>
-      <Show when={canPin()}>
-        <button
-          class={`attachment-card-pin-btn ${pinned() ? "attachment-card-pin-btn-active" : ""}`}
-          onClick={() => void handlePinClick()}
-          title={pinned() ? "Unpin attachment" : "Pin attachment"}
-        >
-          <SkinGlyph name="pin" />
-        </button>
-      </Show>
+      <button
+        class={`attachment-card-pin-btn ${pinned() ? "attachment-card-pin-btn-active" : ""}`}
+        onClick={() => void handlePinClick()}
+        disabled={pinDenied() !== null}
+        title={pinDenied() ?? (pinned() ? "Unpin attachment" : "Pin attachment")}
+        aria-label={pinned() ? "Unpin attachment" : "Pin attachment"}
+        aria-description={pinDenied() ?? undefined}
+      >
+        <SkinGlyph name="pin" />
+      </button>
     </div>
   );
 };

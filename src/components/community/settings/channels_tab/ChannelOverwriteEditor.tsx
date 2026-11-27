@@ -2,7 +2,9 @@ import { Component, For, Show, createSignal } from "solid-js";
 import SkinGlyph from "../../../common/SkinGlyph";
 import type { Role } from "../../../../stores/community.store";
 import { commands } from "../../../../ipc/commands";
-import { togglePermBit, PERMISSION_CATEGORIES } from "../../../../ipc/permissions";
+import { hasBits, togglePermBit } from "../../../../ipc/permissions";
+import { usePermissionCatalogue } from "../../../../stores/permission_catalogue";
+import { errorMessage } from "../../../../utils/error";
 import { addToast } from "../../../../stores/toast.store";
 
 interface ChannelOverwriteEditorProps {
@@ -12,16 +14,13 @@ interface ChannelOverwriteEditorProps {
   roles: Role[];
 }
 
-// Raw bit check for overwrite grid (no admin bypass — overwrites are explicit).
-function hasPerm(perms: bigint, bit: bigint): boolean {
-  return (perms & bit) !== 0n;
-}
-
 const ChannelOverwriteEditor: Component<ChannelOverwriteEditorProps> = (props) => {
   const [overwriteTargetType, setOverwriteTargetType] = createSignal("role");
   const [overwriteTargetId, setOverwriteTargetId] = createSignal("");
   const [overwriteAllow, setOverwriteAllow] = createSignal(0n);
   const [overwriteDeny, setOverwriteDeny] = createSignal(0n);
+  // The permissions the grid offers: the Host's catalogue (contract PN1).
+  const catalogue = usePermissionCatalogue();
 
   async function handleSaveOverwrite(): Promise<void> {
     const targetId = overwriteTargetId();
@@ -88,11 +87,17 @@ const ChannelOverwriteEditor: Component<ChannelOverwriteEditorProps> = (props) =
         </select>
       </div>
       <Show when={overwriteTargetId()}>
+        <Show when={catalogue.error}>
+          <div class="settings-hint" role="status">Couldn't load the permission list: {errorMessage(catalogue.error)}</div>
+        </Show>
+        <Show when={catalogue.loading}>
+          <div class="settings-hint" role="status">Loading permissions…</div>
+        </Show>
         <div class="overwrite-perm-grid">
           <span class="overwrite-perm-header">Permission</span>
           <span class="overwrite-perm-header">Allow</span>
           <span class="overwrite-perm-header">Deny</span>
-          <For each={PERMISSION_CATEGORIES}>
+          <For each={catalogue() ?? []}>
             {(category) => (
               <For each={category.permissions}>
                 {(perm) => (
@@ -101,22 +106,22 @@ const ChannelOverwriteEditor: Component<ChannelOverwriteEditorProps> = (props) =
                     <input
                       type="checkbox"
                       class="role-picker-checkbox"
-                      checked={hasPerm(overwriteAllow(), perm.value)}
+                      checked={hasBits(overwriteAllow(), perm.bit)}
                       onChange={() => {
-                        setOverwriteAllow(togglePermBit(overwriteAllow(), perm.value));
-                        if (hasPerm(overwriteDeny(), perm.value)) {
-                          setOverwriteDeny(togglePermBit(overwriteDeny(), perm.value));
+                        setOverwriteAllow(togglePermBit(overwriteAllow(), perm.bit));
+                        if (hasBits(overwriteDeny(), perm.bit)) {
+                          setOverwriteDeny(togglePermBit(overwriteDeny(), perm.bit));
                         }
                       }}
                     />
                     <input
                       type="checkbox"
                       class="role-picker-checkbox"
-                      checked={hasPerm(overwriteDeny(), perm.value)}
+                      checked={hasBits(overwriteDeny(), perm.bit)}
                       onChange={() => {
-                        setOverwriteDeny(togglePermBit(overwriteDeny(), perm.value));
-                        if (hasPerm(overwriteAllow(), perm.value)) {
-                          setOverwriteAllow(togglePermBit(overwriteAllow(), perm.value));
+                        setOverwriteDeny(togglePermBit(overwriteDeny(), perm.bit));
+                        if (hasBits(overwriteAllow(), perm.bit)) {
+                          setOverwriteAllow(togglePermBit(overwriteAllow(), perm.bit));
                         }
                       }}
                     />

@@ -1,6 +1,6 @@
 import { createMemo, createSignal, type Accessor, type Setter } from "solid-js";
 import { communityState } from "../../../stores/community.store";
-import { servedPermissions, hasPermission, MENTION_EVERYONE } from "../../../ipc/permissions";
+import { channelDeniedFor } from "../../../utils/denied";
 
 // Architecture §28.5 — mentions: `@user`, `@role`, `@everyone`,
 // `@here`. Backend resolves by display-name (members) or role-name
@@ -13,6 +13,9 @@ export interface MentionCandidate {
   label: string;
   /** "member" / "role" / "special" — categorizes the picker rows. */
   kind: "member" | "role" | "special";
+  /** Why this one cannot be used here, in the Host's words: listed, not
+   *  selectable (lead, PN1: the user learns why the ping won't work). */
+  deniedReason?: string;
 }
 
 interface MentionAutocompleteArgs {
@@ -45,18 +48,15 @@ export function useMentionAutocomplete(args: MentionAutocompleteArgs) {
 
     const candidates: MentionCandidate[] = [];
 
-    // Architecture §17.2 + §28.5 — @everyone / @here are offered when the
-    // backend's flags for this channel grant MENTION_EVERYONE (plan E3.2
-    // S9); the literal text always renders.
-    const perms = servedPermissions(community, args.channelId());
-    const canMentionEveryone = hasPermission(perms, MENTION_EVERYONE);
-    if (canMentionEveryone) {
-      if (matches("everyone")) {
-        candidates.push({ token: "everyone", label: "@everyone — every member", kind: "special" });
-      }
-      if (matches("here")) {
-        candidates.push({ token: "here", label: "@here — every online member", kind: "special" });
-      }
+    // Architecture §17.2 + §28.5 — @everyone / @here are always listed;
+    // where the Host denies mentionEveryone in this channel (CAPR, judged
+    // with its overwrites) they carry its reason and cannot be picked.
+    const deniedReason = channelDeniedFor(community, args.channelId(), "mentionEveryone") ?? undefined;
+    if (matches("everyone")) {
+      candidates.push({ token: "everyone", label: "@everyone — every member", kind: "special", deniedReason });
+    }
+    if (matches("here")) {
+      candidates.push({ token: "here", label: "@here — every online member", kind: "special", deniedReason });
     }
 
     // @role mentions — mentionable flag gates discovery.
@@ -106,6 +106,8 @@ export function useMentionAutocomplete(args: MentionAutocompleteArgs) {
   }
 
   function applyMention(candidate: MentionCandidate): void {
+    // Listed with the Host's reason, never inserted.
+    if (candidate.deniedReason !== undefined) return;
     const ta = args.getTextarea();
     if (!ta) return;
     const value = args.body();

@@ -452,7 +452,11 @@
 .member-list-header	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .member-list-header	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
 .member-search-input	text	var(--color-xfire-text)	--color-xfire-bg-input	1.0	false
+.mention-popover-reason	text	var(--color-xfire-text-disabled)	--color-xfire-accent 25% over --color-xfire-bg-secondary	1.0	false
+.mention-popover-reason	text	var(--color-xfire-text-disabled)	--color-xfire-bg-secondary	1.0	false
 .mention-popover-row	text	var(--color-xfire-text-primary)	--color-xfire-bg-secondary	1.0	false
+.mention-popover-row-denied	text	var(--color-xfire-text-disabled)	--color-xfire-accent 25% over --color-xfire-bg-secondary	1.0	false
+.mention-popover-row-denied	text	var(--color-xfire-text-disabled)	--color-xfire-bg-secondary	1.0	false
 .mention-popover-tag	text	var(--color-xfire-text-dim)	--color-xfire-overlay 8% over --color-xfire-bg-secondary	1.0	false
 .mention-popover-tag-role	text	var(--color-xfire-accent-text)	--color-xfire-accent 13% over --color-xfire-bg-secondary	1.0	false
 .mention-popover-tag-special	text	var(--color-xfire-mention-everyone)	--color-xfire-mention-everyone 25% over --color-xfire-bg-secondary	1.0	false

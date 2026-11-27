@@ -1,10 +1,15 @@
 import { hostInvoke, invoke } from "../invoke";
+import type { PermissionCatalogue } from "./dto_capabilities";
 import type {
   CreateEventRequest, EventInfo, ExclusionGroupEdit, Message, PresenceSharingPolicy,
 } from "./types";
 import type { CommunityAuditEntry, ForumPostCreated, InviteCreated, InviteDto, ThreadReplyOutcome } from "./dto";
 
 export const governanceCommands = {
+  /** The Host's permission catalogue (contract PN1): every defined bit,
+   *  grouped and labelled, for the role and overwrite editors. */
+  getPermissionCatalogue: () => hostInvoke<PermissionCatalogue>("get_permission_catalogue"),
+
   // Reactions
   addReaction: (communityId: string, channelId: string, messageId: string, emoji: string) =>
     hostInvoke<unknown>("add_reaction", { communityId, channelId, messageId, emoji }).then(() => undefined),

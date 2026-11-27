@@ -16,6 +16,9 @@
 //!                                      through event_dispatch (ADR 0007).
 //!     cargo xtask check-no-shape-ipc  No IPC command takes a window region
 //!                                      or a cursor-ignore flag (SK0 S4).
+//!     cargo xtask check-no-shell-permission-bits
+//!                                      src/ declares no permission bit: the
+//!                                      catalogue is the Host's (PN1).
 //!     cargo xtask check-log-scrub      Every tracing subscriber writes through
 //!                                      ScrubbingMakeWriter; every binary installs the scrubbing panic hook (B19).
 //!     cargo xtask check-capnp-bounds   Every Cap'n Proto read has a
@@ -154,6 +157,7 @@ mod role_ids;
 mod rust_lex;
 mod sec_styles;
 mod sec_surfaces;
+mod shell_permission_bits;
 mod sidecars;
 mod skin_silhouette;
 mod sqlite;
@@ -202,6 +206,8 @@ enum Command {
     CheckNoEmitter,
     /// Verify no IPC command takes a window region, shape or cursor-ignore flag (plan SK0 S4).
     CheckNoShapeIpc,
+    /// Verify src/ declares no permission bit: the catalogue is the Host's (contract PN1).
+    CheckNoShellPermissionBits,
     /// Verify every log sink and panic hook goes through `log_scrub` (rule B19).
     CheckLogScrub,
     /// Verify every Cap'n Proto read has a traversal bound (no unbounded network decode).
@@ -380,6 +386,10 @@ fn dispatch(cmd: &Command) -> Result<()> {
                     "no-shape-ipc",
                     Box::new(|| no_shape_ipc::check_no_shape_ipc(&root)),
                 ),
+                (
+                    "no-shell-permission-bits",
+                    Box::new(|| shell_permission_bits::check_no_shell_permission_bits(&root)),
+                ),
                 ("log-scrub", Box::new(|| log_scrub::check_log_scrub(&root))),
                 ("role-ids", Box::new(|| role_ids::check_role_ids(&root))),
                 (
@@ -509,6 +519,9 @@ fn dispatch(cmd: &Command) -> Result<()> {
         Command::CheckDomainLiterals => domain_literals::check_domain_literals(&root),
         Command::CheckNoEmitter => no_emitter::check_no_emitter(&root),
         Command::CheckNoShapeIpc => no_shape_ipc::check_no_shape_ipc(&root),
+        Command::CheckNoShellPermissionBits => {
+            shell_permission_bits::check_no_shell_permission_bits(&root)
+        }
         Command::CheckLogScrub => log_scrub::check_log_scrub(&root),
         Command::CheckCapnpBounds => capnp_bounds::check_capnp_bounds(&root),
         Command::CheckKeyErasure => key_erasure::check_key_erasure(&root),

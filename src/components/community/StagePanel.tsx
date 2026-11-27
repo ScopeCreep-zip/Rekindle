@@ -18,7 +18,8 @@ interface StagePanelProps {
   /** REQUEST_TO_SPEAK — gates the audience-side hand-raise button.
    *  Without it, the audience member sees the speakers/audience lists
    *  but can't ask to be promoted. */
-  canRequestToSpeak: boolean;
+  /** Why we may not request to speak, in the Host's words, or null. */
+  requestToSpeakDenied: string | null;
 }
 
 const StagePanel: Component<StagePanelProps> = (props) => {
@@ -65,11 +66,13 @@ const StagePanel: Component<StagePanelProps> = (props) => {
               Leave stage
             </button>
           </Show>
-          <Show when={props.isConnectedToChannel && !isSpeaker() && props.canRequestToSpeak}>
+          <Show when={props.isConnectedToChannel && !isSpeaker()}>
             <button
               class="stage-panel-request-btn"
               onClick={props.onRequestToSpeak}
-              disabled={hasRaisedHand()}
+              disabled={hasRaisedHand() || props.requestToSpeakDenied !== null}
+              title={props.requestToSpeakDenied ?? undefined}
+              aria-description={props.requestToSpeakDenied ?? undefined}
               aria-label={hasRaisedHand() ? "Hand raised — waiting for moderator" : "Raise hand to request speaking"}
               aria-pressed={hasRaisedHand()}
             >
