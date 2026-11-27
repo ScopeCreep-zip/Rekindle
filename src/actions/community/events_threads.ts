@@ -6,6 +6,7 @@ import type { CreateEventRequest } from "../../ipc/commands";
 import { transformMessages } from "../../utils/transformers";
 import { transformEvent } from "./shared";
 import { errorMessage } from "../../utils/error";
+import { isCommandError } from "../../ipc/commands/dto";
 import { takeEarlySendState } from "../../handlers/community/dispatcher_messages";
 import type { SendState } from "../../ipc/commands/types";
 
@@ -146,6 +147,14 @@ export async function handleLoadChannelThreads(
     const threads = await commands.getChannelThreads(communityId, channelId);
     setCommunityState("channelThreads", channelId, threads);
   } catch (e) {
+    // The Host refuses the list when we may no longer view the channel (a
+    // view overwrite): it lists no threads to us, so none are shown, never
+    // the list from before, and its reason is said.
+    if (isCommandError(e) && e.type === "failed" && e.data.code === 403) {
+      setCommunityState("channelThreads", channelId, []);
+      addToast(e.data.message, "info");
+      return;
+    }
     console.error("Failed to load channel threads:", e);
     addToast("Failed to load threads", "error");
   }

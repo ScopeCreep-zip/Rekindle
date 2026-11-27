@@ -24,6 +24,8 @@ const KEY_WAIT_MS = 300_000;
 
 /** CREATE_PUBLIC_THREADS (bit 45); VIEW_CHANNELS and SEND_IN_THREADS stay allowed. */
 const CREATE_PUBLIC_THREADS = "0x200000000000";
+/** VIEW_CHANNELS (bit 0). */
+const VIEW_CHANNELS = "0x1";
 
 async function createForum(owner: Peer, anchor: string, name: string): Promise<string> {
   const result = await peerReviewed(owner, ["channel", "create", "-c", anchor, "-n", name, "--kind", "forum"]);
@@ -57,14 +59,16 @@ describe("forum post accepted as one request (FT1)", function () {
 
   const member: User = { ...newUser("ft1"), displayName: "Ari" };
   let peers: Peer[] = [];
+  let anchor = "";
+  let writable = "";
 
   before(async () => {
     await createIdentity(browser, member);
     peers = await startFleet(["Cara"]);
     const [cara] = peers;
-    const anchor = await peerCreateCommunity(cara, COMMUNITY);
+    anchor = await peerCreateCommunity(cara, COMMUNITY);
     const denied = await createForum(cara, anchor, DENIED);
-    await createForum(cara, anchor, WRITABLE);
+    writable = await createForum(cara, anchor, WRITABLE);
     await peerReviewed(cara, [
       "community", "channel", "overwrite", "set", "-c", anchor, "-C", denied,
       "--target", "everyone", "--deny", CREATE_PUBLIC_THREADS,
@@ -146,5 +150,38 @@ describe("forum post accepted as one request (FT1)", function () {
     // other members here, so it shows nothing (it read "1" with a dot, Ari
     // herself, like an unread count).
     expect(await browser.$$(".channel-presence-badge")).toHaveLength(0);
+  });
+
+  it("closes the open thread when the owner takes away our view of its forum", async () => {
+    // The thread is still open from the case before.
+    await byText(browser, ".thread-panel-title", TITLE, NET_WAIT_MS);
+    // Every toast from here, since each shows for a few seconds only.
+    await browser.execute(() => {
+      const seen: string[] = [];
+      (window as unknown as { __toasts: string[] }).__toasts = seen;
+      new MutationObserver(() => {
+        for (const t of document.querySelectorAll(".toast-item")) {
+          const text = (t.textContent ?? "").trim();
+          if (text && !seen.includes(text)) seen.push(text);
+        }
+      }).observe(document.body, { childList: true, subtree: true, characterData: true });
+    });
+    const [cara] = peers;
+    await peerReviewed(cara!, [
+      "community", "channel", "overwrite", "set", "-c", anchor, "-C", writable,
+      "--target", "everyone", "--deny", VIEW_CHANNELS,
+    ]);
+    const from = Date.now();
+    await waitUntil(async () => !(await browser.$(".thread-panel").isExisting()), KEY_WAIT_MS, "").catch(() => {
+      throw new Error(`the open thread still shows ${KEY_WAIT_MS / 1000} s after Cara denied everyone the forum's view`);
+    });
+    console.log(`[forum] the thread closed ${Math.round((Date.now() - from) / 1000)} s after the view deny`);
+    const toasts = (await browser.execute(() => (window as unknown as { __toasts?: string[] }).__toasts ?? [])) as string[];
+    console.log(`[forum] toasts: ${JSON.stringify(toasts)}`);
+    await shot("view-revoked");
+    expect({
+      closedWithReason: toasts.includes("This thread is no longer available."),
+      cards: (await browser.$$(".forum-channel-thread-card")).length,
+    }).toEqual({ closedWithReason: true, cards: 0 });
   });
 });

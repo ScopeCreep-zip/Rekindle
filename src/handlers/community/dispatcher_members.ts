@@ -427,7 +427,13 @@ function applyGovernance(g: GovernanceEvent): void {
   }
 
   if ("channelPermissionsChanged" in g) {
-    const { community } = g.channelPermissionsChanged;
+    const { community, channel } = g.channelPermissionsChanged;
+    // A channel whose threads this window shows re-reads them: an overwrite
+    // can take away our view, and then the Host lists none (an open thread
+    // in it closes; useCommunityWindow).
+    if (communityState.channelThreads[channel] !== undefined) {
+      void handleLoadChannelThreads(community, channel);
+    }
     commands
       .getCommunityDetails()
       .then((details) => {
