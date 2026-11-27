@@ -1,6 +1,6 @@
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { subscribeIntentEvents } from "../ipc/channels";
-import { presentReview } from "../stores/intent.store";
+import { presentHeldReview, presentReview } from "../stores/intent.store";
 
 /**
  * Reviews of actions the backend began (`SubscriptionEvent::IntentPending`,
@@ -11,7 +11,13 @@ import { presentReview } from "../stores/intent.store";
  * friend invite link, plan E2.1); this handler only renders it.
  */
 export function subscribeBackendIntents(): Promise<UnlistenFn> {
-  return subscribeIntentEvents((review) => {
+  return subscribeIntentEvents((review, holdId) => {
+    // A held review (plan S7d-keys.10 part 2b) comes again in the standing
+    // snapshot after a reload and on each refresh: one entry per hold.
+    if (holdId !== null) {
+      presentHeldReview(review, holdId);
+      return;
+    }
     presentReview(review).catch(() => {
       // Cancelled or expired: the Host dropped the action.
     });

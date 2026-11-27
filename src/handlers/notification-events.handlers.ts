@@ -71,10 +71,12 @@ export function subscribeNotificationHandler(): Promise<UnlistenFn> {
       ]);
     } else if ("systemAlert" in event) {
       const data = event.systemAlert;
-      setNotificationState("notifications", (prev) => [
+      // One notification per Host alert id: a standing alert comes again
+      // in the snapshot a reload is sent (plan S7d-keys.10 part 2b).
+      setNotificationState("notifications", (prev) => prev.some((n) => n.id === data.id) ? prev : [
         ...prev,
         {
-          id: crypto.randomUUID(),
+          id: data.id,
           type: "system",
           title: data.title,
           body: data.body,

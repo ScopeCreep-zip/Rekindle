@@ -26,6 +26,8 @@ import { addToast, removeToast } from "./toast.store";
 
 interface Pending {
   review: IntentReview;
+  /** The backend hold this review belongs to (S7d-keys.10 part 2b), or null for a window's own call. */
+  holdId: string | null;
   resolve: (done: Done<unknown>) => void;
   reject: (error: unknown) => void;
 }
@@ -56,9 +58,25 @@ function showFirst(): void {
 /** Hold `review` for the dialog; resolves with its commit's `Done`. */
 export function presentReview(review: IntentReview): Promise<Done<unknown>> {
   return new Promise((resolve, reject) => {
-    queue.push({ review, resolve, reject });
+    queue.push({ review, holdId: null, resolve, reject });
     if (queue.length === 1) showFirst();
   });
+}
+
+/**
+ * Show a review the backend holds (`holdId`): one entry per hold. A hold
+ * already queued takes the newer review (its refresh, a new `intentId`)
+ * in place; the Host resolves the hold, so nothing here awaits it.
+ */
+export function presentHeldReview(review: IntentReview, holdId: string): void {
+  const held = queue.find((p) => p.holdId === holdId);
+  if (held) {
+    held.review = review;
+    if (queue[0] === held) setIntentState({ review, error: null, busy: false });
+    return;
+  }
+  queue.push({ review, holdId, resolve: () => {}, reject: () => {} });
+  if (queue.length === 1) showFirst();
 }
 
 function settle(): void {

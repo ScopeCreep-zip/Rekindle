@@ -29,6 +29,8 @@ export type NotificationEvent =
     }
   | {
       systemAlert: {
+        /** The Host's id for this alert: the same in the live event, the standing snapshot and the journal. */
+        id: string;
         title: string;
         body: string;
         subject: { displayName: string; unnamedBody: string } | null;

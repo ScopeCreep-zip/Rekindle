@@ -44,6 +44,10 @@ interface OutboundEnvelope {
   /// `event-stream` for the stream's own frames.
   channel: string;
   payload: unknown;
+  /// One of the Host's standing envelopes (its current held reviews and
+  /// standing alerts), sent on a first subscribe and again after a resume's
+  /// replay (plan S7d-keys.10 part 2b). It carries no place in the stream.
+  standing?: boolean;
 }
 
 /// The stream's own frames (`event_router::STREAM_CHANNEL`).
@@ -160,6 +164,14 @@ export function startEventStream(reload?: () => void): Promise<void> {
         last = envelope.cursor;
         writeCursor(last);
       }
+      return;
+    }
+    // A standing envelope restates what holds now: it is applied whatever
+    // the window's cursor (a reload resumes past the event that first
+    // announced it) and never moves the cursor. Applying it twice changes
+    // nothing: reviews are kept one per hold, alerts one per id.
+    if (envelope.standing === true) {
+      dispatch(envelope.channel, envelope.payload);
       return;
     }
     const cursor = envelope.cursor;
@@ -478,12 +490,14 @@ export function subscribeProfileUpdates(
   });
 }
 
-/// A review of an action the backend began (`SubscriptionEvent::IntentPending`).
+/// A review of an action the backend began (`SubscriptionEvent::IntentPending`)
+/// and the hold it belongs to: `holdId` is the Host's id for the backend's
+/// hold, the same across the review's refreshes (null for none).
 export function subscribeIntentEvents(
-  onReview: (review: IntentReview) => void,
+  onReview: (review: IntentReview, holdId: string | null) => void,
 ): Promise<UnlistenFn> {
-  return on<{ intentPending: IntentReview }>("intent-event", (payload) => {
-    onReview(payload.intentPending);
+  return on<{ intentPending: { review: IntentReview; holdId: string | null } }>("intent-event", (payload) => {
+    onReview(payload.intentPending.review, payload.intentPending.holdId);
   });
 }
 
