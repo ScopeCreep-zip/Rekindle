@@ -5,6 +5,8 @@ use std::sync::Arc;
 
 use crate::signaling::deps::{CommunityVoiceEvent, VoiceSignalingDeps};
 
+use super::roster::named_roster;
+
 use super::join::send_confirmed_if_first;
 
 /// Handshake leg 2, joiner side: a present member acked our VoiceJoin.
@@ -16,7 +18,6 @@ pub(in crate::signaling) fn handle_voice_join_ack(
     sender_pseudonym: &str,
     channel_id: String,
     joiner_pseudonym: &str,
-    display_name: Option<String>,
     route_blob: Vec<u8>,
 ) {
     let my_pk = deps.my_pseudonym(community_id).unwrap_or_default();
@@ -29,6 +30,8 @@ pub(in crate::signaling) fn handle_voice_join_ack(
     let Some(transport) = deps.transport_handle() else {
         return;
     };
+
+    let display_name = deps.member_shown_name(community_id, sender_pseudonym);
 
     // Surface the acker to the UI exactly like a VoiceJoin would —
     // the joiner may not have seen the acker any other way yet.
@@ -47,8 +50,8 @@ pub(in crate::signaling) fn handle_voice_join_ack(
         if !route_blob.is_empty() {
             let (newly_added, members) = {
                 let mut t = transport.lock().await;
-                let newly = t.add_peer(&acker, &route_blob, display_name.as_deref());
-                (newly, t.roster_participants())
+                let newly = t.add_peer(&acker, &route_blob);
+                (newly, t.peer_keys())
             };
             if newly_added {
                 deps_task.emit_event(CommunityVoiceEvent::VoiceRosterChanged {
@@ -57,7 +60,7 @@ pub(in crate::signaling) fn handle_voice_join_ack(
                     pseudonym_key: acker.clone(),
                     present: true,
                     display_name: display_name.clone(),
-                    roster: members.clone(),
+                    roster: named_roster(&*deps_task, &cid, members),
                 });
                 // Plan C7.20 — the acker added us and sent its key; it
                 // gets ours.
@@ -77,7 +80,7 @@ pub(in crate::signaling) fn handle_voice_join_ack(
                 channel_id: channel_id.clone(),
                 state: "seen".to_string(),
                 peer: Some(acker),
-                display_name,
+                display_name: Some(display_name),
             });
         }
         send_confirmed_if_first(&*deps_task, &cid, &channel_id, &transport).await;
@@ -114,8 +117,8 @@ pub(in crate::signaling) fn handle_voice_join_confirmed(
                         community_id: cid.clone(),
                         channel_id: ch.clone(),
                         state: "seen".to_string(),
+                        display_name: Some(deps_task.member_shown_name(&cid, &peer)),
                         peer: Some(peer),
-                        display_name: None,
                     });
                 }
                 send_confirmed_if_first(&*deps_task, &cid, &ch, &transport).await;

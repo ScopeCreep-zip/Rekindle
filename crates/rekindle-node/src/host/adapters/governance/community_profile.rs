@@ -326,9 +326,18 @@ impl HostGovernance {
     }
 }
 
+impl HostGovernance {
+    /// How the member list names this member from the Host's verified card view.
+    #[must_use]
+    pub fn member_shown_name(&self, community_id: &str, member_hex: &str) -> String {
+        member_shown_name(&self.ctx.communities, community_id, member_hex)
+    }
+}
+
 /// The name a community renders for `pseudonym`: its card's, else its
 /// short pseudonym fingerprint; never empty (plan E3.4 S6).
-pub(crate) fn shown_name(card_name: Option<String>, pseudonym: &PseudonymKey) -> String {
+#[must_use]
+pub fn shown_name(card_name: Option<String>, pseudonym: &PseudonymKey) -> String {
     card_name
         .filter(|n| !n.is_empty())
         .unwrap_or_else(|| rekindle_crypto::identity::short_key_fingerprint(&pseudonym.0))

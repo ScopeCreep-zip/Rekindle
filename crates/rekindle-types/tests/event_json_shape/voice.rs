@@ -109,7 +109,7 @@ fn joined(suffix: &str, scope: VoiceScope) -> Sample {
         VoiceEvent::Joined {
             scope,
             pseudonym: pk('e'),
-            display_name: Some(text("Eve")),
+            display_name: text("Eve"),
             route_blob: Some(vec![1, 2, 3, 4]),
         },
     )
@@ -138,10 +138,16 @@ fn roster() -> Vec<Sample> {
             "rosterUpdated",
             VoiceEvent::RosterUpdated {
                 scope: room(),
-                participants: vec![VoiceParticipant {
-                    pseudonym_key: pk('e'),
-                    display_name: Some(text("Eve")),
-                }],
+                participants: vec![
+                    VoiceParticipant {
+                        pseudonym_key: pk('e'),
+                        display_name: text("Eve"),
+                    },
+                    VoiceParticipant {
+                        pseudonym_key: pk('a'),
+                        display_name: text("aaaa aaaa"),
+                    },
+                ],
             },
         ),
         ev(

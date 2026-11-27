@@ -149,13 +149,11 @@ pub fn build_voice_signaling_deps(
     app: &tauri::AppHandle,
     state: &SharedState,
 ) -> Result<std::sync::Arc<dyn rekindle_voice::signaling::VoiceSignalingDeps>, String> {
-    let pool = state.db.current()?;
     Ok(
         crate::services::voice_signaling_adapter::VoiceSignalingAdapter::new(
             state.clone(),
             app.clone(),
-            pool,
-        ),
+        )?,
     )
 }
 

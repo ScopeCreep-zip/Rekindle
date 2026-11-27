@@ -230,6 +230,7 @@ impl PresenceState {
 #[derive(Debug, Clone)]
 pub struct VoiceParticipantInfo {
     pub pseudonym_key: String,
+    pub display_name: String,
     pub muted: bool,
     pub deafened: bool,
     pub joined_at: u64,
@@ -248,17 +249,26 @@ pub struct VoiceState {
 
 impl VoiceState {
     /// Add or update a voice participant.
-    pub fn join(&mut self, community: &str, channel: &str, pseudonym: &str, timestamp: u64) {
+    pub fn join(
+        &mut self,
+        community: &str,
+        channel: &str,
+        pseudonym: &str,
+        display_name: &str,
+        timestamp: u64,
+    ) {
         let key = (community.to_string(), channel.to_string());
         let participants = self.channels.entry(key).or_default();
         if let Some(p) = participants
             .iter_mut()
             .find(|p| p.pseudonym_key == pseudonym)
         {
+            display_name.clone_into(&mut p.display_name);
             p.last_heartbeat = Instant::now();
         } else {
             participants.push(VoiceParticipantInfo {
                 pseudonym_key: pseudonym.to_string(),
+                display_name: display_name.to_owned(),
                 muted: false,
                 deafened: false,
                 joined_at: timestamp,

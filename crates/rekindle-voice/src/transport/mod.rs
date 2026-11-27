@@ -106,9 +106,6 @@ fn is_no_connection(err: &VoiceError) -> bool {
 pub struct VoicePeer {
     /// When this entry was (first) added to the roster.
     pub added_at: std::time::Instant,
-    /// Display name as carried by the join handshake (VoiceJoin /
-    /// VoiceJoinAck / roster entry). `None` until any leg supplies it.
-    pub display_name: Option<String>,
     /// The peer's media link: the route it advertised (VoiceJoin /
     /// roster / re-resolve), its bandwidth owner and egress driver (plan
     /// E4.3.3).
@@ -260,7 +257,7 @@ impl VoiceTransport {
         scope: Arc<rekindle_lifecycle::SessionScope>,
     ) {
         self.init(sender, sender_key, scope);
-        self.add_peer(peer_key, route_blob, None);
+        self.add_peer(peer_key, route_blob);
         tracing::info!(
             channel = %self.channel_id,
             peer = %peer_key,
@@ -274,21 +271,12 @@ impl VoiceTransport {
     /// the peer is NEW to the roster — callers emit the roster-changed
     /// signaling event on that edge, so repeat VoiceJoin re-announces
     /// (route refresh) don't re-fire membership downstream.
-    pub fn add_peer(
-        &mut self,
-        pseudonym_key: &str,
-        route_blob: &[u8],
-        display_name: Option<&str>,
-    ) -> bool {
+    pub fn add_peer(&mut self, pseudonym_key: &str, route_blob: &[u8]) -> bool {
         // Re-add keeps the original added_at (route upsert, not a
         // fresh join) so the presence-reconcile grace isn't reset by
-        // repeat VoiceJoin announces. A name supplied by any handshake
-        // leg upgrades a missing one; `None` never erases a known name.
+        // repeat VoiceJoin announces.
         if let Some(existing) = self.peers.get_mut(pseudonym_key) {
             existing.link.set_route(route_blob);
-            if let Some(name) = display_name {
-                existing.display_name = Some(name.to_string());
-            }
             tracing::debug!(
                 channel = %self.channel_id,
                 peer = %pseudonym_key,
@@ -308,7 +296,6 @@ impl VoiceTransport {
             pseudonym_key.to_string(),
             VoicePeer {
                 added_at: std::time::Instant::now(),
-                display_name: display_name.map(str::to_string),
                 link,
             },
         );
@@ -343,30 +330,6 @@ impl VoiceTransport {
             .iter()
             .map(|(k, v)| (k.clone(), v.added_at.elapsed().as_secs()))
             .collect()
-    }
-
-    /// `(pseudonym_key, route_blob, display_name)` for every roster
-    /// entry — the roster-broadcast builder's view.
-    pub fn peer_named_entries(&self) -> Vec<(String, Vec<u8>, Option<String>)> {
-        self.peers
-            .iter()
-            .map(|(k, v)| (k.clone(), v.link.route(), v.display_name.clone()))
-            .collect()
-    }
-
-    /// Every remote roster member with the name a handshake carried,
-    /// ordered by key: the roster as signaling knows it (plan C7.29).
-    pub fn roster_participants(&self) -> Vec<crate::signaling::deps::VoiceRosterParticipant> {
-        let mut members: Vec<_> = self
-            .peers
-            .iter()
-            .map(|(k, v)| crate::signaling::deps::VoiceRosterParticipant {
-                pseudonym_key: k.clone(),
-                display_name: v.display_name.clone(),
-            })
-            .collect();
-        members.sort_by(|a, b| a.pseudonym_key.cmp(&b.pseudonym_key));
-        members
     }
 
     /// Remove a peer from the voice mesh. Returns `true` when the

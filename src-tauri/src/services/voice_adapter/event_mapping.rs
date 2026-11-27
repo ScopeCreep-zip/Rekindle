@@ -108,18 +108,6 @@ pub(super) fn merge_quality_event(
 
 pub(super) fn map(event: VoiceSessionEvent, scope: &VoiceScope) -> VoiceEvent {
     match event {
-        VoiceSessionEvent::UserJoined {
-            peer_pubkey,
-            display_name,
-        } => VoiceEvent::Joined {
-            scope: scope.clone(),
-            pseudonym: peer_pubkey,
-            display_name: Some(display_name),
-            // The session-level join fires on the first received voice
-            // packet, by which point the route is already resolved —
-            // the blob rides the gossip announcement instead.
-            route_blob: None,
-        },
         VoiceSessionEvent::UserLeft { peer_pubkey } => VoiceEvent::Left {
             scope: scope.clone(),
             pseudonym: peer_pubkey,
@@ -150,10 +138,10 @@ pub(super) fn map(event: VoiceSessionEvent, scope: &VoiceScope) -> VoiceEvent {
             reason: "voice loop".into(),
             count,
         },
-        VoiceSessionEvent::ConnectionQuality { .. } | VoiceSessionEvent::ReceiveStats { .. } => {
-            unreachable!(
-                "quality/receive-stats are merged + emitted in emit_voice_event before map()"
-            )
+        VoiceSessionEvent::UserJoined { .. }
+        | VoiceSessionEvent::ConnectionQuality { .. }
+        | VoiceSessionEvent::ReceiveStats { .. } => {
+            unreachable!("joined and quality events are handled by emit_voice_event")
         }
     }
 }
@@ -192,29 +180,36 @@ pub(super) fn emit_local_joined_impl(
     // The call we are in and our own place in it are session state (plan
     // C7.29): a window that subscribes after the join is handed them, then
     // the roster, then the live changes.
-    let session_state = [
-        (
-            SESSION_STATE,
-            VoiceEvent::LocalJoined {
-                scope: scope.clone(),
-            },
-        ),
-        (
-            SELF_STATE,
-            VoiceEvent::Joined {
-                scope: scope.clone(),
-                pseudonym: public_key.to_string(),
-                display_name: Some(display_name.to_string()),
-                // This is us joining our own call; nobody needs a route to
-                // reach us from this event.
-                route_blob: None,
-            },
-        ),
-    ];
     if let Some(host) = app
         .try_state::<crate::state::SharedState>()
         .and_then(|state| state.host.current())
     {
+        let display_name = match community_id {
+            Some(community) => host.governance().member_shown_name(community, public_key),
+            None => rekindle_node::host::adapters::governance::shown_name(
+                Some(display_name.to_string()),
+                &rekindle_types::id::PseudonymKey::from_hex_lossy(public_key),
+            ),
+        };
+        let session_state = [
+            (
+                SESSION_STATE,
+                VoiceEvent::LocalJoined {
+                    scope: scope.clone(),
+                },
+            ),
+            (
+                SELF_STATE,
+                VoiceEvent::Joined {
+                    scope: scope.clone(),
+                    pseudonym: public_key.to_string(),
+                    display_name,
+                    // This is us joining our own call; nobody needs a route to
+                    // reach us from this event.
+                    route_blob: None,
+                },
+            ),
+        ];
         for (key, event) in session_state {
             host.publish_state(key, SubscriptionEvent::Voice(event));
         }

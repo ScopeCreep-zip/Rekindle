@@ -42,6 +42,7 @@ use std::sync::Arc;
 use rekindle_codec::community::envelope::{CommunityEnvelope, ControlPayload};
 
 use crate::signaling::deps::{CommunityVoiceEvent, VoiceSignalingDeps};
+use crate::signaling::presence::named_roster;
 
 /// Seconds a roster entry is protected from presence-based removal
 /// after being added. A peer who just announced via gossip won't have
@@ -56,7 +57,6 @@ pub const JOIN_GRACE_SECS: u64 = 45;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PresencePeerView {
     pub pseudonym_hex: String,
-    pub display_name: Option<String>,
     /// The member's voice channel claim, if any.
     pub voice_channel_id: Option<String>,
     /// Row passed the scan's liveness gate (fresh heartbeat +
@@ -215,8 +215,9 @@ pub async fn reconcile_from_presence(
     let (removed, members) = {
         let mut t = transport.lock().await;
         let removed: Vec<bool> = plan.remove.iter().map(|gone| t.remove_peer(gone)).collect();
-        (removed, t.roster_participants())
+        (removed, t.peer_keys())
     };
+    let members = named_roster(&**deps, community_id, members);
     for (gone, was_present) in plan.remove.iter().zip(&removed) {
         tracing::info!(
             community = %community_id,
@@ -235,7 +236,7 @@ pub async fn reconcile_from_presence(
                 channel_id: channel_id.clone(),
                 pseudonym_key: gone.clone(),
                 present: false,
-                display_name: None,
+                display_name: deps.member_shown_name(community_id, gone),
                 roster: members.clone(),
             });
             // Plan C7.20 — an expired peer is a departure: rotate.

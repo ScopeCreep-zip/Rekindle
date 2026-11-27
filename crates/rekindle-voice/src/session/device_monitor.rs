@@ -173,9 +173,7 @@ async fn reselect<D: VoiceSessionDeps + ?Sized>(
         Some(targets.output.id.clone()),
     );
     deps.set_voice_engine_input_channels(prefs.input_channels.clone());
-    crate::session::restart::restart_loops(deps)
-        .await
-        .inspect_err(|e| report_reopen_failure(deps, e))?;
+    crate::session::restart::restart_loops(deps).inspect_err(|e| report_reopen_failure(deps, e))?;
 
     for (kind, selected, was, saved) in [
         ("input", &targets.input, &open.0, &prefs.input_device),
