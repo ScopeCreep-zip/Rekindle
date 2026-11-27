@@ -28,7 +28,7 @@ const CommunityRightPanel: Component<{ vm: CommunityVm }> = (props) => {
           <Match when={vm.rightPanel() === "members"}>
             <MemberList
               members={vm.activeCommunity()!.members}
-              known={vm.activeCommunity()!.membersKnown}
+              state={vm.activeCommunity()!.membersState}
               communityId={vm.selectedCommunityId()}
               roles={vm.activeCommunity()!.roles}
               myPseudonymKey={vm.activeCommunity()?.myPseudonymKey ?? null}

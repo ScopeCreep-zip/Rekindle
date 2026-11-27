@@ -229,10 +229,12 @@ export interface Community {
   channels: Channel[];
   categories: Category[];
   members: Member[];
-  /** Whether `members` holds the Host's member list yet (its first
-   *  `get_community_members` answer). Until then the panel claims no count:
-   *  an empty list before the first read is "not known", not "no members". */
-  membersKnown: boolean;
+  /** Whether `members` holds the Host's member list: `loading` until its
+   *  first `get_community_members` answer, `known` from then on, or the
+   *  reason the first read failed. Until it is known the panel claims no
+   *  count: an empty list before the first answer is "not known", not "no
+   *  members". */
+  membersState: MembersState;
   roles: Role[];
   myRoleIds: string[];
   /** Our base permission bits (decimal u64 string), from the backend's
@@ -370,8 +372,22 @@ export { communityState, setCommunityState };
 export function setCommunityMembers(community: string, members: Member[]): void {
   batch(() => {
     setCommunityState("communities", community, "members", reconcile(members, { key: "pseudonymKey" }));
-    setCommunityState("communities", community, "membersKnown", true);
+    setCommunityState("communities", community, "membersState", "known");
   });
+}
+
+/** Whether a community's member list is the Host's yet (see `Community.membersState`). */
+export type MembersState = "loading" | "known" | { failed: string };
+
+/**
+ * A member read for `community` failed with `reason`: shown only while no
+ * list is known yet. A later refresh that fails keeps the list the panel
+ * already shows.
+ */
+export function markMembersFailed(community: string, reason: string): void {
+  const c = communityState.communities[community];
+  if (!c || c.membersState === "known") return;
+  setCommunityState("communities", community, "membersState", { failed: reason });
 }
 
 /**
