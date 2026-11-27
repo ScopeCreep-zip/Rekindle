@@ -48,7 +48,7 @@ struct Dead {
 /// What a read of a peer's record that returned a blob means for the dead
 /// routes ([`DeadRoutes::observe`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Observed {
+pub enum DeadRouteVerdict {
     /// The blob is not dead.
     NotDead,
     /// The peer republished it at a higher seq: usable again (B3).
@@ -106,25 +106,25 @@ impl DeadRoutes {
     /// A read of the peer's record returned `blob` at `seq` at `now`: the
     /// first read after its death is the baseline, a strictly higher seq
     /// clears it, and the baseline seq read again one [`REFETCH_GAP`] after
-    /// the death or the last probe asks for a probe ([`Observed`]).
-    pub fn observe(&mut self, blob: &[u8], seq: u64, now: Instant) -> Observed {
+    /// the death or the last probe asks for a probe ([`DeadRouteVerdict`]).
+    pub fn observe(&mut self, blob: &[u8], seq: u64, now: Instant) -> DeadRouteVerdict {
         if !self.is_dead(blob, now) {
-            return Observed::NotDead;
+            return DeadRouteVerdict::NotDead;
         }
         let Some(d) = self.dead.get_mut(blob) else {
-            return Observed::NotDead;
+            return DeadRouteVerdict::NotDead;
         };
         let seen = *d.seen_seq.get_or_insert(seq);
         if seq > seen {
             self.dead.remove(blob);
-            return Observed::Cleared;
+            return DeadRouteVerdict::Cleared;
         }
         let since = d.probed.unwrap_or(d.at);
         if seq == seen && now.duration_since(since) >= REFETCH_GAP {
             d.probed = Some(now);
-            Observed::Probe
+            DeadRouteVerdict::Probe
         } else {
-            Observed::Held
+            DeadRouteVerdict::Held
         }
     }
 }

@@ -14,7 +14,7 @@
 //! republished at a higher seq, is cached again and the mesh's held
 //! broadcasts go then (E3.4 S5), not only on the next beat move.
 
-use rekindle_route::dead_routes::Observed;
+use rekindle_route::dead_routes::DeadRouteVerdict;
 use rekindle_transport::liveness::dead::Probed;
 use rekindle_types::id::PseudonymKey;
 
@@ -30,7 +30,7 @@ impl HostGovernance {
         author: &PseudonymKey,
         seq: u64,
         blob: Vec<u8>,
-        seen: Observed,
+        seen: DeadRouteVerdict,
         dead: bool,
     ) {
         if dead {
@@ -42,7 +42,7 @@ impl HostGovernance {
                 c.member_routes.observe(author, seq, blob);
             }
         }
-        if seen == Observed::Cleared {
+        if seen == DeadRouteVerdict::Cleared {
             self.drain_pending_mesh(community);
         }
     }
@@ -65,7 +65,14 @@ impl HostGovernance {
                     community,
                     "a dead member route answered its probe: usable again"
                 );
-                self.take_route(community, author, seq, blob, Observed::Cleared, false);
+                self.take_route(
+                    community,
+                    author,
+                    seq,
+                    blob,
+                    DeadRouteVerdict::Cleared,
+                    false,
+                );
                 true
             }
             Probed::ImportFailed(reason) | Probed::Silent(reason) => {

@@ -13,7 +13,7 @@
 
 use rekindle_governance_runtime::op_log::HeldOp;
 use rekindle_governance_runtime::{BootstrapJoiner, GovernanceRuntimeError};
-use rekindle_route::dead_routes::Observed;
+use rekindle_route::dead_routes::DeadRouteVerdict;
 use rekindle_types::governance::OpRef;
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::join_refusal::JoinRefusal;
@@ -171,7 +171,9 @@ impl HostGovernance {
             // decides whether it may call (plan RH1r-c S2/S3).
             Ok(Some((seq, route))) => {
                 let route = Some(route).filter(|r| !r.is_empty())?;
-                if self.observe_route(community, &inviter, seq, route.clone()) == Observed::Probe {
+                if self.observe_route(community, &inviter, seq, route.clone())
+                    == DeadRouteVerdict::Probe
+                {
                     self.probe_member_route(community, &inviter, seq, route.clone())
                         .await;
                 }

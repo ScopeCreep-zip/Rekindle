@@ -106,7 +106,7 @@ async fn a_cleared_dead_route_drains_the_held_broadcasts() {
     use rekindle_governance::op::OpStamp;
     use rekindle_governance::state::{GovernanceState, MemberState};
     use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
-    use rekindle_route::dead_routes::Observed;
+    use rekindle_route::dead_routes::DeadRouteVerdict;
 
     use crate::host::runtime::tests::{create_ann, offline_host, seed_registry_community};
 
@@ -138,14 +138,14 @@ async fn a_cleared_dead_route_drains_the_held_broadcasts() {
         "the dead route left the mesh empty"
     );
 
-    governance.take_route("c1", &peer, 1, vec![7], Observed::Held, true);
+    governance.take_route("c1", &peer, 1, vec![7], DeadRouteVerdict::Held, true);
     assert!(
         governance.mesh_peers("c1").is_empty(),
         "still dead: not cached"
     );
     assert_eq!(still_held(&host), Some(2), "still dead: nothing sent");
 
-    governance.take_route("c1", &peer, 1, vec![7], Observed::Cleared, false);
+    governance.take_route("c1", &peer, 1, vec![7], DeadRouteVerdict::Cleared, false);
     assert_eq!(
         governance.mesh_peers("c1").len(),
         1,

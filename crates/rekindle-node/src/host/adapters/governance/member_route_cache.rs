@@ -16,7 +16,7 @@ use rekindle_crypto::group::pseudonym::derive_community_pseudonym;
 use rekindle_governance_runtime::member_routes::{read_member_route_at, RoutePin};
 use rekindle_governance_runtime::GovernanceRuntimeDeps as _;
 use rekindle_records::lease::LeaseId;
-use rekindle_route::dead_routes::Observed;
+use rekindle_route::dead_routes::DeadRouteVerdict;
 use rekindle_types::dht_layout::member_record::ROUTES;
 use rekindle_types::id::PseudonymKey;
 
@@ -41,14 +41,14 @@ impl HostGovernance {
     /// Take `author`'s verified route blob at DHT `seq` into `community`'s
     /// cache, unless the transport still knows it dead after this read
     /// (plan RV1g B3: only a strictly newer seq revives a dead blob); the
-    /// read's verdict, a probe due included ([`Observed::Probe`]).
+    /// read's verdict, a probe due included ([`DeadRouteVerdict::Probe`]).
     pub(super) fn observe_route(
         &self,
         community: &str,
         author: &PseudonymKey,
         seq: u64,
         blob: Vec<u8>,
-    ) -> Observed {
+    ) -> DeadRouteVerdict {
         let seen = self.route_read_at(&blob, seq);
         let dead = self.route_declared_dead(&blob);
         self.take_route(community, author, seq, blob, seen, dead);
@@ -64,7 +64,7 @@ impl HostGovernance {
         seq: u64,
         blob: Vec<u8>,
     ) {
-        if self.observe_route(community, author, seq, blob.clone()) == Observed::Probe {
+        if self.observe_route(community, author, seq, blob.clone()) == DeadRouteVerdict::Probe {
             self.spawn_member_route_probe(community, author, seq, blob);
         }
     }

@@ -8,7 +8,7 @@
 //! same code over their route ports, and every import of a peer blob
 //! (`TransportNode::import_route`) already passes here.
 
-use rekindle_route::dead_routes::Observed;
+use rekindle_route::dead_routes::DeadRouteVerdict;
 use tokio::time::Instant;
 
 use super::Liveness;
@@ -54,21 +54,21 @@ impl Liveness {
 
     /// A read of the peer's record returned `blob` at DHT `seq` (B3): what
     /// it means for a dead blob, a probe due included (plan RH1r-c S2/S3,
-    /// [`Observed::Probe`]).
-    pub fn route_read_at(&self, blob: &[u8], seq: u64) -> Observed {
+    /// [`DeadRouteVerdict::Probe`]).
+    pub fn route_read_at(&self, blob: &[u8], seq: u64) -> DeadRouteVerdict {
         let seen = self.dead.lock().observe(blob, seq, Instant::now());
         match seen {
-            Observed::Cleared => tracing::info!(
+            DeadRouteVerdict::Cleared => tracing::info!(
                 blob = %route_trace::blob_tag(blob),
                 seq,
                 "a dead peer route was republished: usable again"
             ),
-            Observed::Probe => tracing::info!(
+            DeadRouteVerdict::Probe => tracing::info!(
                 blob = %route_trace::blob_tag(blob),
                 seq,
                 "a dead peer route is still published one re-fetch gap later: probing it"
             ),
-            Observed::NotDead | Observed::Held => {}
+            DeadRouteVerdict::NotDead | DeadRouteVerdict::Held => {}
         }
         seen
     }
