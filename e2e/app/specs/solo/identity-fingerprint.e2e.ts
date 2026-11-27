@@ -3,7 +3,8 @@
 // Host's fingerprint form (the member list's formatter), never a slice of the
 // key. Ari creates an identity: the identity bar shows `get_identity`'s
 // fingerprint; she logs off, and the login window's account card shows the
-// same fingerprint. Neither ever shows 8+ hex of her key run together.
+// same fingerprint (her key's first 8 hex in two groups of four). Neither
+// ever shows 8+ hex of her key run together.
 
 import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
@@ -18,13 +19,15 @@ async function served(): Promise<{ publicKey: string; fingerprint: string }> {
   })) as { publicKey: string; fingerprint: string };
 }
 
-/** Whether `text` shows 8 or more of `key`'s hex characters in a row. */
+/**
+ * Whether `text` shows 8 or more of `key`'s hex characters run together.
+ * The fingerprint form is the key's first 8 hex in two groups of four
+ * ("a1b2 c3d4"), so only a contiguous run is a key slice; whitespace is
+ * not stripped.
+ */
 function showsKeySlice(text: string, key: string): boolean {
-  const compact = text.replace(/\s+/g, "").toLowerCase();
-  for (let i = 0; i + 8 <= key.length; i += 1) {
-    if (compact.includes(key.slice(i, i + 8).toLowerCase())) return true;
-  }
-  return false;
+  const runs = text.toLowerCase().match(/[0-9a-f]{8,}/g) ?? [];
+  return runs.some((run) => key.toLowerCase().includes(run.slice(0, 8)));
 }
 
 describe("our own identity reads as peers see it: the Host's fingerprint form (VN2)", function () {
