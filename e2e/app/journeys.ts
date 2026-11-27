@@ -336,15 +336,16 @@ export async function ownCommunityPseudonym(b: Browser): Promise<string> {
   await communitySettings(b, "Overview");
   const hint = await shown(b, "#my-name-hint", NET_WAIT_MS);
   const said = (await hint.getText()).replace(/\s+/g, " ").trim();
-  const seenAs = said.replace(/^Members here see you as /, "").replace(/\.$/, "");
+  const seenAs = /^Members here see you as (.+)\.$/.exec(said)?.[1];
   await closeModal(b);
-  if (seenAs === said || seenAs === "") throw new Error(`the Overview did not say how members see us: "${said}"`);
+  if (!seenAs) throw new Error(`the Overview did not say how members see us: "${said}"`);
   let key = "";
   await waitUntil(
     async () => {
       key = (await b.execute((name: string) => {
-        const norm = (t: string | null): string => (t ?? "").replace(/\s+/g, " ");
-        const rows = Array.from(document.querySelectorAll<HTMLElement>(".member-item[data-pseudonym]")).filter((r) => norm(r.textContent).includes(name));
+        const rows = Array.from(document.querySelectorAll<HTMLElement>(".member-item[data-pseudonym]")).filter(
+          (row) => row.querySelector(".member-name")?.textContent?.replace(/\s+/g, " ").trim() === name,
+        );
         return rows.length === 1 ? (rows[0].dataset.pseudonym ?? "") : "";
       }, seenAs)) as string;
       return /^[0-9a-f]{64}$/i.test(key);
