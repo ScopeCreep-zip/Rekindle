@@ -10,8 +10,9 @@
 // configure from that store value. The constants below are runtime
 // tuning (playout buffer + keyframe cadence + diagnostics), not
 // capability negotiation.
-import type { VideoPlayoutBuffer } from "./playout_buffer";
+
 import type { Codec } from "../../../ipc/commands/types_sync";
+import type { VideoPlayoutBuffer } from "./playout_buffer";
 
 // 4s: at the 350 kbps budget a 30-50 KB keyframe costs ~0.7-1.1 s of
 // bucket — a 2 s cadence spent half the budget on keyframes alone.

@@ -44,6 +44,7 @@ fn a_merged_thread_create_is_announced_once() {
     assert_eq!(thread.forum_tag.as_deref(), Some("question"));
     assert_eq!(thread.auto_archive_seconds, 3_600);
     assert_eq!(thread.created_at, 1_000);
+    assert_eq!(thread.last_message_at, thread.created_at);
     assert!(!thread.archived);
 
     // The same state merged again adds no thread.

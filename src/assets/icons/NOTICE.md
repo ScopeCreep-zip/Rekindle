@@ -7,7 +7,7 @@ draws (plan SK17-7a, `SkinGlyph`), written by `scripts/skin_glyphs.py`.
 
 - Font: **Symbols Nerd Font Mono**, `Version 001.000;Nerd Fonts 3.3.0` (the font's own name table), the file
   `src/assets/fonts/SymbolsNerdFontMono-Regular.woff2` the app ships
-- 61 icons, at the codepoints `src/icons.ts` names. Symbols Nerd Font bundles several
+- 61 icons at the codepoints in the generator and `src/icons.ts`. Symbols Nerd Font bundles several
   icon sets under different licences; each icon is mapped to its set by its glyph name and its
   codepoint range, and an icon of a set with no recorded licence is refused. The sets used:
 

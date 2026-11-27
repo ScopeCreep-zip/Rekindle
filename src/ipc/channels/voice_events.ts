@@ -29,7 +29,7 @@ export type VoiceScope =
 /** One participant in a voice roster: its pseudonym and the name the Host
  *  shows for it (contract VN1: the member list's shown name, the card name
  *  else the fingerprint form; never absent, never a raw key). */
-export interface VoiceParticipant {
+interface VoiceParticipant {
   pseudonymKey: string;
   displayName: string;
 }

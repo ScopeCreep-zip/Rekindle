@@ -13,7 +13,11 @@ export function deniedFor(c: Community | undefined, cap: CommunityCapability): s
  * Why we may not do the channel-scoped `cap` in channel `channelId` of `c`
  * (judged with the channel's overwrites by the Host), or null when we may.
  */
-export function channelDeniedFor(c: Community | null | undefined, channelId: string | null | undefined, cap: ChannelCapability): string | null {
+export function channelDeniedFor(
+  c: Community | null | undefined,
+  channelId: string | null | undefined,
+  cap: ChannelCapability
+): string | null {
   if (!c || !channelId) return null;
   return c.channels.find((ch) => ch.id === channelId)?.denied?.[cap] ?? null;
 }

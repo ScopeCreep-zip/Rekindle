@@ -15,10 +15,10 @@ fn each_cause_is_worded_as_itself() {
     assert_eq!(
         words(
             CommunityCapability::BanMembers,
-            CapabilityDenial::TimedOut { until_secs: 7_200 },
+            CapabilityDenial::TimedOut { until_secs: 7_200, permission: "Ban Members" },
             3_600
         ),
-        format!("You're timed out until {}.", clock(7_200, 3_600))
+        format!("You're timed out until {} (3600 seconds remaining). Ban Members is unavailable during the timeout.", clock(7_200, 3_600))
     );
     assert_eq!(
         words(

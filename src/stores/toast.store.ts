@@ -29,7 +29,7 @@ const [toastState, setToastState] = createStore<ToastState>({ toasts: [] });
 export function addToast(
   message: string,
   type: Toast["type"] = "info",
-  action?: ToastAction,
+  action?: ToastAction
 ): number {
   const id = nextId++;
   setToastState("toasts", (prev) => [...prev, { id, message, type, action }]);

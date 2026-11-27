@@ -30,7 +30,7 @@ mod anti_entropy_loop;
 pub mod audit;
 mod audit_rows;
 pub(crate) mod automod_rules;
-mod capability_words;
+pub(super) mod capability_words;
 mod catchup;
 mod co_create;
 mod community_events;
@@ -171,3 +171,5 @@ impl crate::host::Host {
         HostGovernance::new(Arc::clone(&self.ctx))
     }
 }
+
+pub(crate) use ops::store_op_and_head;

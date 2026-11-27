@@ -1,6 +1,6 @@
-import { Component } from "solid-js";
-import SimpleInputModal from "../common/SimpleInputModal";
+import type { Component } from "solid-js";
 import { handleRenameCategory } from "../../actions/community.actions";
+import SimpleInputModal from "../common/SimpleInputModal";
 
 interface RenameCategoryModalProps {
   isOpen: boolean;
@@ -19,7 +19,7 @@ const RenameCategoryModal: Component<RenameCategoryModalProps> = (props) => (
     placeholder="Category name..."
     submitLabel="Rename"
     initialValue={props.currentName}
-    validate={(name) => name === props.currentName ? "Name is unchanged" : null}
+    validate={(name) => (name === props.currentName ? "Name is unchanged" : null)}
   />
 );
 

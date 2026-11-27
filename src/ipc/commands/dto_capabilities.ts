@@ -45,7 +45,11 @@ export type DeniedCapabilities = Partial<Record<CommunityCapability, string>>;
 
 /** A channel-scoped control gate (Tier 1 `ChannelCapability`), judged
  *  with the channel's overwrites. */
-export type ChannelCapability = "manageMessages" | "useSoundboard";
+export type ChannelCapability =
+  | "manageMessages"
+  | "useSoundboard"
+  | "createPublicThreads"
+  | "sendInThreads";
 
 /** The channel controls we lack in one channel, each with the Host's
  *  reason (Tier 1 `ChannelDeniedCapabilities`); a held one is absent. */

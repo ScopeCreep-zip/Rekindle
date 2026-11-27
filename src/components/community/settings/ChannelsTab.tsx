@@ -1,4 +1,4 @@
-import { Component, For, Show } from "solid-js";
+import { type Component, For, Show } from "solid-js";
 import type { Channel, Community } from "../../../stores/community.store";
 import CategoryManager from "./channels_tab/CategoryManager";
 import ChannelRow from "./channels_tab/ChannelRow";

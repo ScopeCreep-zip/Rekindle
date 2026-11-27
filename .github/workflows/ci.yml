@@ -20,18 +20,24 @@
 name: CI
 
 on:
+  # A pull request runs once, on pull_request. push covers only the long-lived
+  # branches a merge lands on (main and the integration branch); a push to a PR
+  # branch would otherwise start a second, identical run (GitHub: "If multiple
+  # triggering events for your workflow occur at the same time, multiple workflow
+  # runs will be triggered").
   push:
-    branches: [main, "codex/**"]
+    branches: [main, codex/communities-merge-cli-claude-remote]
   pull_request:
     branches: [main, "codex/**"]
   # The merge queue tests each entry on top of the entries ahead of it (GitHub merge queue).
   merge_group:
   workflow_dispatch:
 
-# Cancel in-progress runs on the same ref when a new commit lands.
+# A new commit on a pull request cancels that PR's older run; pushes to main and
+# the integration branch never cancel, so every merged commit keeps its result.
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -73,6 +79,10 @@ jobs:
 
       - name: cargo clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: cargo clippy (desktop, webdriver-test)
+        run: cargo clippy -p rekindle-desktop --all-targets --features webdriver-test -- -D warnings
+      - name: WebDriver server absent from release builds
+        run: cargo xtask check-webdriver-release
       - name: cargo test
         run: cargo test --workspace --no-fail-fast
 
@@ -117,7 +127,8 @@ jobs:
 
       - name: Install system deps (Windows)
         if: matrix.os == 'windows-2022'
-        run: choco install capnproto
+        shell: pwsh
+        run: ./scripts/ci/install-capnp-windows.ps1
 
       # rekindle-video-capture links GStreamer on every OS (gstreamer-sys
       # finds it through pkg-config). Install the official 1.26.8 runtime +

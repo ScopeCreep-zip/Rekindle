@@ -1,15 +1,15 @@
-import { Component, Show, For, createSignal } from "solid-js";
-import { colorIntToHex } from "../../utils/color";
 import { Popover } from "@kobalte/core/popover";
-import type { Member, Role } from "../../stores/community.store";
+import { type Component, createSignal, For, Show } from "solid-js";
+import { handleSelfAssignRole, handleSelfUnassignRole } from "../../actions/community.actions";
+import { handleLaunchGame } from "../../actions/game.actions";
 import type { GameInfo } from "../../ipc/commands/dto";
-import { EVERYONE_ROLE_ID, communityState } from "../../stores/community.store";
+import type { Member, Role } from "../../stores/community.store";
+import { communityState, EVERYONE_ROLE_ID } from "../../stores/community.store";
+import { addToast } from "../../stores/toast.store";
+import { colorIntToHex } from "../../utils/color";
+import { notJoinableText } from "../../utils/joinable_text";
 import StatusDot from "../status/StatusDot";
 import RoleTag from "./RoleTag";
-import { handleLaunchGame } from "../../actions/game.actions";
-import { notJoinableText } from "../../utils/joinable_text";
-import { handleSelfAssignRole, handleSelfUnassignRole } from "../../actions/community.actions";
-import { addToast } from "../../stores/toast.store";
 
 interface MemberProfilePopupProps {
   communityId: string;
@@ -55,7 +55,10 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
   const myCommunity = () => communityState.communities[props.communityId];
   const memberRoles = () =>
     props.roles
-      .filter((r) => props.member.roleIds.includes(r.id) && r.id !== EVERYONE_ROLE_ID && r.name !== "@everyone")
+      .filter(
+        (r) =>
+          props.member.roleIds.includes(r.id) && r.id !== EVERYONE_ROLE_ID && r.name !== "@everyone"
+      )
       .sort((a, b) => b.position - a.position);
 
   function formatTimeout(timestamp: number | null): string | null {
@@ -68,7 +71,9 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
   const isSelf = () => props.myPseudonymKey === props.member.pseudonymKey;
   const selfAssignableRoles = () =>
     props.roles
-      .filter((role) => role.selfAssignable && role.id !== EVERYONE_ROLE_ID && role.name !== "@everyone")
+      .filter(
+        (role) => role.selfAssignable && role.id !== EVERYONE_ROLE_ID && role.name !== "@everyone"
+      )
       .sort((a, b) => b.position - a.position);
 
   function handleCopyKey(): void {
@@ -106,7 +111,9 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
           <span>{props.member.status || "online"}</span>
         </div>
         <Show when={props.member.status === "offline" && (props.member.lastActive ?? 0) > 0}>
-          <div class="profile-popup-lastseen">Last seen {formatLastSeen(props.member.lastActive!)}</div>
+          <div class="profile-popup-lastseen">
+            Last seen {formatLastSeen(props.member.lastActive!)}
+          </div>
         </Show>
         <Show when={props.member.customStatus}>
           <div class="profile-popup-custom-status">{props.member.customStatus}</div>
@@ -139,10 +146,17 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
             )}
           </Show>
           <button
+            type="button"
             class="profile-popup-join-btn"
             disabled={props.member.gameInfo?.joinable !== true}
-            title={props.member.gameInfo?.joinable === true ? undefined : notJoinableText(props.member.gameInfo)}
-            aria-describedby={props.member.gameInfo?.joinable === true ? undefined : "profile-popup-join-reason"}
+            title={
+              props.member.gameInfo?.joinable === true
+                ? undefined
+                : notJoinableText(props.member.gameInfo)
+            }
+            aria-describedby={
+              props.member.gameInfo?.joinable === true ? undefined : "profile-popup-join-reason"
+            }
             onClick={() => {
               const info = props.member.gameInfo;
               if (info) void joinMemberGame(info);
@@ -159,7 +173,9 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
         <Show when={memberRoles().length > 0}>
           <div class="profile-popup-roles">
             <For each={memberRoles()}>
-              {(role) => <RoleTag name={role.name} color={role.color} tagColours={role.tagColours} />}
+              {(role) => (
+                <RoleTag name={role.name} color={role.color} tagColours={role.tagColours} />
+              )}
             </For>
           </div>
         </Show>
@@ -171,11 +187,14 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
                 const hasRole = () => props.member.roleIds.includes(role.id);
                 return (
                   <button
+                    type="button"
                     class={`profile-popup-self-role-btn ${hasRole() ? "profile-popup-self-role-btn-active" : ""}`}
                     onClick={() => void handleToggleSelfRole(role)}
                     disabled={updatingRoleId() === role.id}
                   >
-                    <span>{hasRole() ? "Remove" : "Get"} {role.name}</span>
+                    <span>
+                      {hasRole() ? "Remove" : "Get"} {role.name}
+                    </span>
                     <Show when={updatingRoleId() === role.id}>
                       <span>...</span>
                     </Show>
@@ -192,25 +211,31 @@ const MemberProfilePopup: Component<MemberProfilePopupProps> = (props) => {
           <div class="profile-popup-actions">
             <Show
               when={
-                (myCommunity()?.myBio?.trim().length ?? 0) === 0
-                && (myCommunity()?.myPronouns?.trim().length ?? 0) === 0
-                && !myCommunity()?.myAvatarRef
-                && !myCommunity()?.myBannerRef
+                (myCommunity()?.myBio?.trim().length ?? 0) === 0 &&
+                (myCommunity()?.myPronouns?.trim().length ?? 0) === 0 &&
+                !myCommunity()?.myAvatarRef &&
+                !myCommunity()?.myBannerRef
               }
             >
               <div class="profile-popup-empty-hint">
-                Add a bio so peers in this community know who you are. Your
-                per-community profile is independent of your global identity.
+                Add a bio so peers in this community know who you are. Your per-community profile is
+                independent of your global identity.
               </div>
             </Show>
-            <button class="profile-popup-action-btn" onClick={() => props.onEditProfile()}>
+            <button
+              type="button"
+              class="profile-popup-action-btn"
+              onClick={() => props.onEditProfile()}
+            >
               Edit profile
             </button>
           </div>
         </Show>
         <Show when={!isSelf()}>
           <div class="profile-popup-actions">
-            <button class="profile-popup-action-btn" onClick={handleCopyKey}>Copy Key</button>
+            <button type="button" class="profile-popup-action-btn" onClick={handleCopyKey}>
+              Copy Key
+            </button>
           </div>
         </Show>
       </Popover.Content>
