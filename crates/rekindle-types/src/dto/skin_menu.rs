@@ -78,6 +78,7 @@ impl MenuRegistry {
             item("Add Friend…", A::AddFriend),
             item("New Chat…", A::NewChat),
             item("New Group…", A::NewGroup),
+            item("Notifications", A::OpenNotifications),
             apart(item("Create Community…", A::CreateCommunity)),
             item("Join Community…", A::JoinCommunity),
             apart(item("Profile", A::ShowSettings(SkinSettingsTab::Profile))),
