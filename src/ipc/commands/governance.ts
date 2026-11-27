@@ -2,7 +2,7 @@ import { hostInvoke, invoke } from "../invoke";
 import type {
   CreateEventRequest, EventInfo, ExclusionGroupEdit, Message, PresenceSharingPolicy,
 } from "./types";
-import type { CommunityAuditEntry, InviteCreated, InviteDto } from "./dto";
+import type { CommunityAuditEntry, ForumPostCreated, InviteCreated, InviteDto, ThreadReplyOutcome } from "./dto";
 
 export const governanceCommands = {
   // Reactions
@@ -181,7 +181,10 @@ export const governanceCommands = {
     hostInvoke<{ id: string; channelId: string; name: string; starterMessageId: string; creatorPseudonym: string; forumTag?: string | null; createdAt: number; archived: boolean; autoArchiveSeconds: number; lastMessageAt: number; messageCount: number }[]>(
       "get_active_threads", { communityId, channelId }),
   sendThreadMessage: (communityId: string, threadId: string, body: string) =>
-    hostInvoke<unknown>("send_thread_message", { communityId, threadId, body }).then(() => undefined),
+    hostInvoke<ThreadReplyOutcome>("send_thread_message", { communityId, threadId, body }),
+  /** Plan FT1: a forum post's thread and its starter, created as one by the Host. */
+  createForumPost: (communityId: string, channelId: string, title: string, body: string, forumTag?: string | null) =>
+    hostInvoke<ForumPostCreated>("create_forum_post", { communityId, channelId, title, forumTag: forumTag ?? null, body }),
   getThreadMessages: (communityId: string, threadId: string, limit: number, beforeTimestamp?: number) =>
     hostInvoke<Message[]>("get_thread_messages", { communityId, threadId, limit, beforeTimestamp: beforeTimestamp ?? null }),
   archiveThread: (communityId: string, threadId: string) =>

@@ -110,7 +110,10 @@ async fn events(ctx: &DaemonContext, anchor: &str) -> Result<Vec<EventInfo>, Ipc
             events.sort_by_key(|e| e.start_time);
             Ok(events)
         }
-        Err(GovernanceRuntimeError::PermissionDenied) => Ok(Vec::new()),
+        Err(
+            GovernanceRuntimeError::PermissionDenied
+            | GovernanceRuntimeError::PermissionRequired(_),
+        ) => Ok(Vec::new()),
         Err(e) => Err(runtime_refused(&e, "events")),
     }
 }
@@ -250,7 +253,10 @@ async fn community_page(
     sections.push(pinned(ctx, &anchor).await?);
     let servers = match adapter(ctx).game_servers(&anchor).await {
         Ok(servers) => servers,
-        Err(GovernanceRuntimeError::PermissionDenied) => Vec::new(),
+        Err(
+            GovernanceRuntimeError::PermissionDenied
+            | GovernanceRuntimeError::PermissionRequired(_),
+        ) => Vec::new(),
         Err(e) => return Err(runtime_refused(&e, "game servers")),
     };
     sections.push(InfoviewSection::GameServers {
@@ -291,7 +297,10 @@ async fn pinned(ctx: &DaemonContext, anchor: &str) -> Result<InfoviewSection, Ip
     for channel in crate::daemon::dispatch::channel::channel_overviews(ctx, anchor) {
         match host.channel_pins(anchor, &channel.id).await {
             Ok(found) => pins.extend(found),
-            Err(GovernanceRuntimeError::PermissionDenied) => {}
+            Err(
+                GovernanceRuntimeError::PermissionDenied
+                | GovernanceRuntimeError::PermissionRequired(_),
+            ) => {}
             Err(e) => return Err(runtime_refused(&e, "channel pins")),
         }
     }

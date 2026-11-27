@@ -53,7 +53,9 @@ impl ModerationRefusal {
     #[must_use]
     pub fn code(&self) -> u16 {
         match self {
-            Self::NotPermitted(_) => 403,
+            Self::NotPermitted(_) | Self::Failed(GovernanceRuntimeError::PermissionRequired(_)) => {
+                403
+            }
             Self::NotAMember => 404,
             Self::BadTarget | Self::BadMessage => 400,
             Self::Failed(_) => 500,
@@ -68,6 +70,7 @@ impl fmt::Display for ModerationRefusal {
             Self::NotAMember => f.write_str("no pseudonym for this community"),
             Self::BadTarget => f.write_str("the target is not a pseudonym"),
             Self::BadMessage => f.write_str("not a channel or message id"),
+            Self::Failed(GovernanceRuntimeError::PermissionRequired(reason)) => f.write_str(reason),
             Self::Failed(e) => write!(f, "moderation write: {e}"),
         }
     }

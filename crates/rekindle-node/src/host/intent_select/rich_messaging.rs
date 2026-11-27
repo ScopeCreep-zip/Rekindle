@@ -54,6 +54,11 @@ pub(super) fn selection(
             channel_id,
             ..
         }
+        | RichRequest::CreateForumPost {
+            community,
+            channel_id,
+            ..
+        }
         | RichRequest::PollCreate {
             community,
             channel_id,

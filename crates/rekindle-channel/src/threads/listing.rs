@@ -24,31 +24,41 @@ pub async fn list_threads<D: ChannelMessagingDeps>(
         .filter(|(_, thread)| hex::encode(thread.parent_channel_id.0) == channel_id)
     {
         let thread_id_hex = hex::encode(thread_id.0);
-        let mut dto = deps
+        let stored = deps
             .load_thread_metadata(community_id, &thread_id_hex)
-            .await
-            .unwrap_or_else(|| ThreadInfoSnapshot {
+            .await;
+        let mut dto = match stored {
+            Some(row) => row,
+            None => ThreadInfoSnapshot {
                 id: thread_id_hex.clone(),
-                channel_id: channel_id.to_string(),
-                name: thread.name.clone(),
+                channel_id: channel_id.to_owned(),
+                name: String::new(),
                 starter_message_id: String::new(),
-                creator_pseudonym: hex::encode(thread.creator.0),
-                forum_tag: thread.forum_tag.clone(),
-                created_at: thread.created.lamport,
+                creator_pseudonym: String::new(),
+                forum_tag: None,
+                created_at: deps
+                    .thread_created_at(community_id, &thread.created.hash)
+                    .await?,
                 archived: false,
-                auto_archive_seconds: u32::try_from(thread.auto_archive_seconds)
-                    .unwrap_or(u32::MAX),
+                auto_archive_seconds: 0,
                 last_message_at: 0,
                 message_count: 0,
-            });
+            },
+        };
         dto.name.clone_from(&thread.name);
         dto.creator_pseudonym = hex::encode(thread.creator.0);
         dto.forum_tag.clone_from(&thread.forum_tag);
         dto.auto_archive_seconds = u32::try_from(thread.auto_archive_seconds).unwrap_or(u32::MAX);
 
         let archived_op = thread.archived.map(|stamp| hex::encode(stamp.hash.0));
-        let activity =
-            thread_activity(deps, community_id, &thread_id_hex, archived_op.as_deref()).await;
+        let activity = thread_activity(
+            deps,
+            community_id,
+            &thread_id_hex,
+            archived_op.as_deref(),
+            dto.created_at,
+        )
+        .await?;
         dto.last_message_at = activity.last_activity;
         dto.message_count = activity.message_count;
         dto.archived = is_thread_archived(

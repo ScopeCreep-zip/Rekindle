@@ -454,6 +454,7 @@
 '.thread-panel-archive-btn:hover' = { on = ["--color-xfire-overlay 8% over --color-xfire-bg-dark"] }
 '.forum-channel-title' = { on = ["--color-xfire-bg-dark"] }
 '.forum-channel-topic' = { on = ["--color-xfire-bg-dark"] }
+'.forum-channel-new-post-btn:disabled' = { on = ["--color-xfire-bg-dark"] }
 '.forum-channel-tag' = { on = ["--color-xfire-bg-secondary"] }
 '.forum-channel-tag-active' = { on = ["--color-xfire-accent 15% over --color-xfire-bg-secondary"] }
 '.forum-channel-composer-title' = { on = ["--color-xfire-bg-secondary"] }

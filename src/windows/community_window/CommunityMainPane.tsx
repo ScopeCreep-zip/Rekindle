@@ -181,10 +181,11 @@ const CommunityMainPane: Component<{ vm: CommunityVm }> = (props) => {
                     body,
                     forumTag,
                   );
-                  if (!threadId) return;
+                  if (!threadId) return false;
                   const thread = (communityState.channelThreads[vm.selectedChannelId()] ?? [])
                     .find((item) => item.id === threadId);
                   if (thread) vm.handleOpenThread(thread);
+                  return true;
                 }}
               />
             </Show>
