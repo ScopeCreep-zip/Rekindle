@@ -346,9 +346,16 @@ fn print_full_info(value: &serde_json::Value, mode: OutputMode) -> anyhow::Resul
         mode,
     )?;
     format::print_text("")?;
+    print_roles(&roles, mode)
+}
+
+pub(crate) fn print_roles(
+    roles: &[rekindle_types::display::RoleDisplay],
+    mode: OutputMode,
+) -> anyhow::Result<()> {
     table::print_table(
         &["Role", "Position", "Permissions", "ID"],
-        &role_rows(&roles),
+        &role_rows(roles),
         mode,
     )
 }
@@ -382,7 +389,7 @@ fn role_rows(roles: &[rekindle_types::display::RoleDisplay]) -> Vec<Vec<String>>
         .map(|r| {
             vec![
                 r.name.clone(),
-                r.position.to_string(),
+                r.position_label.clone(),
                 format!("{:#x}", r.permissions),
                 r.id.clone(),
             ]

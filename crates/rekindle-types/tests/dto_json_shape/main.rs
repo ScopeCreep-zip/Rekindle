@@ -19,6 +19,7 @@ use std::path::PathBuf;
 use rekindle_types::dto::audit::{AuditEntryView, AuditVerified};
 use rekindle_types::dto::community::{
     CommunityAuditEntry, CommunityBanView, CommunityInviteCreated, CommunityInviteView,
+    CommunityRoleView, RoleTagColours,
 };
 use rekindle_types::dto::friends::{
     BlockedUser, Friend, FriendCodeView, InviteCreated, OutgoingInvite, PendingRequest,
@@ -424,6 +425,25 @@ fn friend_samples(add: &mut impl FnMut(&str, Value)) {
             target_name: Some("Bea".into()),
             details: Some("spam".into()),
             timestamp: 7,
+        }),
+    );
+    add(
+        "community.roleView",
+        to(CommunityRoleView {
+            id: "ff".repeat(16),
+            name: "Owner".into(),
+            color: 0xc1_7c_17,
+            tag_colours: RoleTagColours {
+                dark: 0xc1_7c_17,
+                light: 0x99_61_12,
+            },
+            permissions: rekindle_types::permissions::ADMINISTRATOR.to_string(),
+            position: u32::MAX,
+            position_label: "Always first".into(),
+            hoist: true,
+            mentionable: false,
+            self_assignable: false,
+            exclusion_group: None,
         }),
     );
     add(

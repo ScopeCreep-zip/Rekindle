@@ -56,6 +56,53 @@ fn the_view_names_our_role_and_carries_our_standing() {
     );
 }
 
+#[test]
+fn roles_serve_position_labels() {
+    use crate::host::adapters::governance::{projection::project, role_ops::role_displays};
+    use rekindle_governance::{fixture::stamp, merge::apply_entry, state::GovernanceState};
+    use rekindle_types::governance::GovernanceEntry;
+    use rekindle_types::id::{PseudonymKey, RoleId};
+
+    let owner = RoleId([0xff; 16]);
+    let created = RoleId([0x12; 16]);
+    let mut governance = GovernanceState::default();
+    for (id, name, position) in [(owner, "Owner", u32::MAX), (created, "Raiders", 7)] {
+        apply_entry(
+            &PseudonymKey([1; 32]),
+            &GovernanceEntry::RoleDefinition {
+                role_id: id,
+                name: name.into(),
+                permissions: 0,
+                position,
+                color: 0,
+                hoist: false,
+                mentionable: false,
+                self_assignable: false,
+                exclusion_group: None,
+            },
+            stamp(1),
+            &mut governance,
+        );
+    }
+    let cli_roles = role_displays(&governance, None);
+    let mut state = CommunityState::new("gk");
+    project(&mut state, governance);
+    let view = community_view(&state, own_card_view(&state, None), 0, None);
+    let community_roles = serde_json::to_value(&view.roles).unwrap();
+    let cli_roles = serde_json::to_value(&cli_roles).unwrap();
+
+    for roles in [community_roles, cli_roles] {
+        let roles = roles.as_array().unwrap();
+        let role_by_id = |id: RoleId| roles.iter().find(|role| role["id"] == id.to_hex()).unwrap();
+        assert_eq!(role_by_id(owner)["positionLabel"], "Always first");
+        let created = role_by_id(created);
+        assert_eq!(created["positionLabel"], created["position"].to_string());
+        assert!(roles
+            .iter()
+            .all(|role| role["positionLabel"] != "4294967295"));
+    }
+}
+
 /// A creator (1), an admin (5, position 5, ADMINISTRATOR) and a moderator
 /// (6, position 2, BAN only).
 fn hierarchy() -> rekindle_governance::state::GovernanceState {

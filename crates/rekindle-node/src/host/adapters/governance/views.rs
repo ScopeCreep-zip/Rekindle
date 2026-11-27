@@ -19,6 +19,14 @@ use super::HostGovernance;
 use crate::host::adapters::presence::view as beat_view;
 use crate::host::community::{display_role_name, CommunityState, RoleDefinition};
 
+pub(super) fn role_position_label(position: u32) -> String {
+    if position == rekindle_governance_runtime::origin::OWNER_ROLE_POSITION {
+        "Always first".into()
+    } else {
+        position.to_string()
+    }
+}
+
 fn role_view(role: &RoleDefinition, shown: Option<&SkinGrounds>) -> CommunityRoleView {
     CommunityRoleView {
         id: role.id.to_hex(),
@@ -27,6 +35,7 @@ fn role_view(role: &RoleDefinition, shown: Option<&SkinGrounds>) -> CommunityRol
         tag_colours: rekindle_skin::role_tag::colours(role.color, shown),
         permissions: role.permissions.to_string(),
         position: role.position,
+        position_label: role_position_label(role.position),
         hoist: role.hoist,
         mentionable: role.mentionable,
         self_assignable: role.self_assignable,

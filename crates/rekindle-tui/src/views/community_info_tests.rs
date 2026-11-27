@@ -15,6 +15,7 @@ fn role_lines_use_the_hosts_labels_for_assigned_bits() {
         tag_colours: RoleTagColours { dark: 0, light: 0 },
         permissions: 1 << 59,
         position: 1,
+        position_label: "1".into(),
         hoist: false,
         mentionable: false,
         self_assignable: false,

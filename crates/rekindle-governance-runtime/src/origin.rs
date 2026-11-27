@@ -39,6 +39,8 @@ const CREATOR_SLOT: u32 = 0;
 /// Owner role gets the all-ones RoleId so the on-the-wire role tag is
 /// stable across community installs (architecture §Failure 4).
 const OWNER_ROLE_ID: RoleId = RoleId([0xFFu8; 16]);
+/// The owner role's position: above every other role, so it is always first.
+pub const OWNER_ROLE_POSITION: u32 = u32::MAX;
 /// `@everyone`: the all-zero RoleId.
 const EVERYONE_ROLE_ID: RoleId = RoleId([0u8; 16]);
 
@@ -85,7 +87,7 @@ pub(crate) fn genesis_entries(
             role_id: OWNER_ROLE_ID,
             name: "Owner".into(),
             permissions: permissions::ADMINISTRATOR,
-            position: u32::MAX,
+            position: OWNER_ROLE_POSITION,
             color: 0xC1_7C_17,
             hoist: true,
             mentionable: false,
