@@ -310,7 +310,7 @@ async fn gossiped_locator<D: GovernanceRuntimeDeps>(
 /// The record an op names as its own, before any merge binds it: a
 /// `MemberJoined` names its member record (op #0, or a re-join that binds
 /// a fresh record, owner-proved), and a device's first op carries its own
-/// `DeviceKey` endorsement (ADR 0022: "A device's first op (seq 0 in its
+/// `DeviceKey` or `DeviceReEnrol` endorsement (ADR 0022: "A device's first op (seq 0 in its
 /// chain) is the op that carries its own `DeviceKey` endorsement"), whose
 /// `deviceRecord` is the `M(p,d)` that device's chain lives on (ADR 0022
 /// rule 3). A reader that resolved that op through the merged state alone
@@ -324,6 +324,9 @@ fn own_record(op: &GovernanceOp) -> Option<String> {
         GovernanceEntry::MemberJoined { member_record, .. } => Some(member_record.clone()),
         GovernanceEntry::DeviceKey(e) if e.device_key == op.device_key => {
             Some(e.device_record.clone())
+        }
+        GovernanceEntry::DeviceReEnrol(re_enrol) if re_enrol.carried_by(&op.device_key, op.seq) => {
+            Some(re_enrol.endorsement.device_record.clone())
         }
         _ => None,
     }

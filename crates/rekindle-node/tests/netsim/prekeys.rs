@@ -49,7 +49,7 @@ fn mismatch(event: &FriendEvent) -> Option<&str> {
 /// Whether `node` holds a session reset request for its review.
 async fn holds_review(sim: &Netsim, events: &crate::harness::Events) -> bool {
     eventually(sim, LIMIT, || async {
-        events.any(|e| matches!(e, SubscriptionEvent::IntentPending(_)))
+        events.any(|e| matches!(e, SubscriptionEvent::IntentPending { .. }))
     })
     .await
 }
@@ -181,8 +181,13 @@ async fn a_record_signed_by_another_identity_opens_nothing() {
         8,
         rekindle_utils::timestamp_ms_i64(),
     );
-    sim.forge_write(&record, HEAD, encode_prekey_head(&forged.record), &owner)
-        .expect("an owner write");
+    sim.forge_write(
+        &record,
+        HEAD,
+        encode_prekey_head(&forged.record).unwrap(),
+        &owner,
+    )
+    .expect("an owner write");
 
     let ann_events = nodes[0].events().await;
     nodes[1]

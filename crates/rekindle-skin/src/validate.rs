@@ -11,7 +11,7 @@ use std::collections::BTreeMap;
 use rekindle_types::dto::skin::{SkinError, SkinRule};
 
 use crate::output::{self, Canonical};
-use crate::registry::{resolve, Base, ENTRIES};
+use crate::registry::{resolve, Base, TokenEntry, ENTRIES};
 use crate::{access, images, manifest, package, regions, shape, sounds, tokens};
 
 /// A variant whose token file the package lacks.
@@ -35,6 +35,16 @@ fn missing(tokens: &str) -> SkinError {
 /// # Errors
 /// The first rule the package breaks, naming the entry.
 pub fn run(bytes: &[u8]) -> Result<Canonical, SkinError> {
+    run_on(bytes, ENTRIES)
+}
+
+/// [`run`] with the tokens resolved and held over `table` alone: the import
+/// walks the base rows ([`crate::registry::BASE_TABLE`]) before it derives
+/// any dialog role (ST1 ruling 2).
+///
+/// # Errors
+/// The first rule the package breaks, naming the entry.
+pub fn run_on(bytes: &[u8], table: &[TokenEntry]) -> Result<Canonical, SkinError> {
     let package = package::read(bytes)?;
     let manifest = manifest::parse(&package)?;
     let mut parsed = BTreeMap::new();
@@ -48,12 +58,15 @@ pub fn run(bytes: &[u8]) -> Result<Canonical, SkinError> {
     // for the Host's placements is refused (design `sk2a` §3). What is
     // written is the author's manifest, so the package stays its own.
     let mut served = manifest.clone();
-    manifest::place(&mut served, &package)?;
-    shape::check(&served, &images)?;
+    // The Disabled copies the serve draws are checked with the art they
+    // are drawn as, never written into the package.
+    let mut drawn = images.clone();
+    drawn.extend(manifest::place(&mut served, &package)?);
+    shape::check(&served, &drawn)?;
     for v in &manifest.variants {
         let skin = parsed.get(&v.tokens).ok_or_else(|| missing(&v.tokens))?;
         let base = Base::of(v.base, v.contrast);
-        let resolved = resolve(ENTRIES, base, skin);
+        let resolved = resolve(table, base, skin);
         access::validate(&v.tokens, base, &resolved)?;
         regions::validate(&served, &images, &resolved)?;
         access::icons::validate(&served, &images, base, &resolved)?;

@@ -35,32 +35,29 @@ impl TransportFeedback {
     /// every field but the signature.
     #[must_use]
     pub fn signing_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(
-            TRANSPORT_FEEDBACK.len() + self.reporter_key.len() + 12 + self.arrivals.len() * 2,
-        );
-        out.extend_from_slice(TRANSPORT_FEEDBACK.as_bytes());
-        out.extend_from_slice(&self.reporter_key);
-        out.extend_from_slice(&self.begin_seq.to_le_bytes());
-        out.extend_from_slice(&self.report_time_ms.to_le_bytes());
-        for a in &self.arrivals {
-            out.extend_from_slice(&a.to_le_bytes());
-        }
+        let mut out = [
+            TRANSPORT_FEEDBACK.as_bytes(),
+            &self.reporter_key,
+            &self.begin_seq.to_le_bytes(),
+            &self.report_time_ms.to_le_bytes(),
+        ]
+        .concat();
+        out.extend(self.arrivals.iter().flat_map(|a| a.to_le_bytes()));
         out
     }
 
     /// Packed Cap'n Proto bytes.
-    #[must_use]
-    pub fn encode(&self) -> Vec<u8> {
+        pub fn encode(&self) -> Result<Vec<u8>, CodecError> {
         let mut builder = capnp::message::Builder::new_default();
         {
             let mut root = builder.init_root::<transport_feedback::Builder<'_>>();
             root.set_reporter_key(&self.reporter_key);
             root.set_begin_seq(self.begin_seq);
             root.set_report_time_ms(self.report_time_ms);
-            let len = u32::try_from(self.arrivals.len()).unwrap_or(u32::MAX);
+            let len = crate::capnp_codec::wire_len(self.arrivals.len())?;
             let mut list = root.reborrow().init_arrivals(len);
-            for (i, a) in self.arrivals.iter().enumerate().take(len as usize) {
-                list.set(u32::try_from(i).unwrap_or(u32::MAX), *a);
+            for (i, a) in (0..len).zip(&self.arrivals) {
+                list.set(i, *a);
             }
             root.set_sig(&self.sig);
         }
@@ -104,41 +101,5 @@ impl super::SignedWire for TransportFeedback {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::capnp_codec::SignedWire;
-    use rekindle_secrets::ed25519_dalek::SigningKey;
-
-    fn signed() -> TransportFeedback {
-        let key = SigningKey::from_bytes(&[9u8; 32]);
-        let mut fb = TransportFeedback {
-            reporter_key: key.verifying_key().to_bytes().to_vec(),
-            begin_seq: 4_000_000_000,
-            report_time_ms: 123_456,
-            arrivals: vec![10, NOT_RECEIVED, 0, MAX_ARRIVAL_OFFSET],
-            sig: Vec::new(),
-        };
-        fb.sign(&key);
-        fb
-    }
-
-    #[test]
-    fn round_trip_and_verify() {
-        let fb = signed();
-        let decoded = TransportFeedback::decode(&fb.encode()).unwrap();
-        assert_eq!(decoded, fb);
-        decoded.verify().unwrap();
-    }
-
-    /// Every field is signature-covered: a relay rewriting an arrival
-    /// cannot steer the sender's estimate.
-    #[test]
-    fn tampering_breaks_the_signature() {
-        let mut fb = signed();
-        fb.arrivals[1] = 5;
-        assert!(fb.verify().is_err());
-        let mut fb = signed();
-        fb.begin_seq += 1;
-        assert!(fb.verify().is_err());
-    }
-}
+#[path = "transport_feedback_tests.rs"]
+mod tests;

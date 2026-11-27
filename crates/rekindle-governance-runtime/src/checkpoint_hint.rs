@@ -155,7 +155,7 @@ pub async fn request_hint<D: GovernanceRuntimeDeps>(
         invite: None,
     };
     let request = match invite_code {
-        Some(code) => request.with_invite_code(code),
+        Some(code) => request.with_invite_code(code)?,
         None => request,
     }
     .encode(me)

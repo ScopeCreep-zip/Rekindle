@@ -490,6 +490,7 @@ async fn save_unsent(ctx: &DaemonContext, unsent: Vec<rekindle_records::port::Un
         tracing::info!(saved, "unsent DHT writes kept for the next unlock");
         ctx.publish_event(SubscriptionEvent::Notification(
             NotificationEvent::SystemAlert {
+                id: ctx.alert_id(),
                 title: "Changes still to publish".into(),
                 subject: None,
                 body: format!(

@@ -1,0 +1,158 @@
+<Tile Name="XfireInGameMainWindow"
+	Component="InGameMainWindow"
+	>
+	<Tile Name="MainTitle"
+		X="72"
+		Y="7"
+		ResizeX="60"
+		IndentRight="46"
+		Z="10"
+		Component="InGameMainTitle"
+		>
+	</Tile>
+	<Tile Name="MainFooter"
+		X="48"
+		Y="8"
+		JustY="BOTTOM"
+		ResizeX="100"
+		IndentRight="46"
+		Z="10"
+		Component="InGameMainFooter"
+		>
+	</Tile>
+	<Tile Name="MainEditArea"
+		X="20"
+		Y="37"
+		JustY="BOTTOM"
+		ResizeX="100"
+		IndentRight="20"
+		Z="10"
+		Component="InGameMainEditArea"
+		>
+	</Tile>
+	<Tile Name="MainChatArea"
+		X="20"
+		Y="35"
+		ResizeX="100"
+		ResizeY="100"
+		IndentRight="20"
+		IndentBottom="50"
+		Z="20"
+		Component="InGameMainChatArea"
+		>
+	</Tile>
+	<Tile Name="MainClock"
+		Z="20"
+		JustX="RIGHT"
+		X="38"
+		Y="7"
+		Component="InGameMainClock"
+		>
+	</Tile>
+	<Tile Name="Title"
+		X="0"
+		Y="0"
+		IndentLeft="8"
+		IndentRight="8"
+		ResizeX="100"
+		Z="2"
+		Component="InGameTitle"
+		>
+		<Tile Name="XLogo"
+			X="21"
+			Y="5"
+			Component="TheX"
+			>
+			<Tile Name="TheXCover" Component="InGameXCover"></Tile>
+		</Tile>
+		<Tile Name="NameBG"
+			X="57"
+			Y="7"
+			ResizeX="100"
+			IndentRight="90"
+			Component="InGameNameBG"
+			>
+		</Tile>
+		<Tile Name="TimeBG"
+			X="NameBG.RIGHT + 10"
+			Y="7"
+			MinWidth="50"
+			ResizeX="100"
+			IndentRight="30"
+			Component="InGameNameBG"
+			>
+		</Tile>
+	</Tile>
+	<Tile Name="ChatBottom"
+		JustY="BOTTOM"
+		ResizeX="100"
+		IndentLeft="7"
+		IndentRight="7"
+		Z="2"
+		Component="InGameChatBottom"
+		>
+	</Tile>
+	<Tile Name="MiddleTile"
+		ResizeX="100"
+		ResizeY="100"
+		Y="Title.BOTTOM"
+		IndentBottom="ChatBottom.height+13"
+		IndentTop="13"
+		Z="2"
+		Component="InGameMiddleTile"
+		>
+	</Tile>
+	<Tile Name="InnerBevel"
+		ResizeX="100"
+		ResizeY="100"
+		Y="Title.BOTTOM"
+		IndentTop="-2"
+		IndentBottom="ChatBottom.height-1"
+		IndentLeft="5"
+		IndentRight="5"
+		Z="3"
+		Component="InGameInnerBevel"
+		>
+	</Tile>
+	<Tile Name="BGback"
+		ResizeX="100"
+		ResizeY="100"
+		IndentTop="32"
+		IndentBottom="33"
+		IndentLeft="9"
+		IndentRight="9"
+		Z="0"
+		Component="InGameBGback"
+		>
+	</Tile>
+	<Tile Name="GripperTopLeft"
+		X="0"
+		Y="Title.BOTTOM-8"
+		Z="5"
+		Component="InGameGripperTopLeft"
+		>
+	</Tile>
+	<Tile Name="GripperTopRight"
+		Y="Title.BOTTOM-8"
+		X="0"
+		JustX="RIGHT"
+		Z="5"
+		Component="InGameGripperTopRight"
+		>
+	</Tile>
+	<Tile Name="GripperBottomLeft"
+		JustY="BOTTOM"
+		Y="ChatBottom.TOP+7"
+		Z="5"
+		Component="InGameGripperBottomLeft"
+		>
+	</Tile>
+	<Tile Name="GripperBottomRight"
+		JustY="BOTTOM"
+		JustX="RIGHT"
+		Y="ChatBottom.TOP+7"
+		Z="5"
+		Component="InGameGripperBottomRight"
+		>
+	</Tile>
+</Tile>

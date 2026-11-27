@@ -120,9 +120,10 @@ pub(super) async fn pending(
         chain_seq: 0,
         content_hint: ContentHint::Default,
         sent_at_ms: 1_700_000_000_000,
-        payload: body.encode(),
+        payload: body.encode().unwrap(),
     }
-    .encode();
+    .encode()
+    .unwrap();
     let key = UnprocessedKey {
         peer_identity: from,
         header_dh: [7; 32],

@@ -92,58 +92,9 @@ pub fn to_json(err: &anyhow::Error) -> serde_json::Value {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn this_binary_is_the_cli_the_frontends_name() {
-        assert_eq!(env!("CARGO_BIN_NAME"), rekindle_client::CLI_BIN);
-    }
-
-    #[test]
-    fn unimplemented_exits_69() {
-        let err = anyhow::anyhow!(CliError::Unimplemented("node attach".into()));
-        assert_eq!(exit_code(&err), 69);
-    }
-
-    #[test]
-    fn the_daemons_remediation_wins() {
-        let err = anyhow::anyhow!(ClientError::Daemon {
-            code: 503,
-            message: "resume failed".into(),
-            remediation: Some("check the network".into()),
-        });
-        assert_eq!(remediation(&err).as_deref(), Some("check the network"));
-        assert_eq!(exit_code(&err), 4);
-    }
-
-    #[test]
-    fn local_hints_name_this_binary() {
-        let err = anyhow::anyhow!(ClientError::Timeout { secs: 5 });
-        assert_eq!(
-            remediation(&err).as_deref(),
-            Some(concat!("run: ", cmd!("status")))
-        );
-        assert_eq!(exit_code(&err), 2);
-    }
-}
+#[path = "error_tests.rs"]
+mod tests;
 
 #[cfg(test)]
-mod removal_tests {
-    use super::*;
-
-    /// R3-4: the daemon's removal remediation is printed for its 403, not
-    /// this binary's "run: rekindle unlock".
-    #[test]
-    fn a_removal_403_prints_the_removal_remediation() {
-        let err = anyhow::anyhow!(ClientError::Daemon {
-            code: 403,
-            message: "channel send: you were removed from this community".into(),
-            remediation: Some("you can rejoin with a new invite, or forget the community".into()),
-        });
-        let hint = remediation(&err).unwrap();
-        assert!(hint.contains("new invite"), "{hint}");
-        assert!(!hint.contains("unlock"), "{hint}");
-        assert_eq!(exit_code(&err), 3);
-    }
-}
+#[path = "error_removal_tests.rs"]
+mod removal_tests;

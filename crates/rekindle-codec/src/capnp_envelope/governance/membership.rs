@@ -104,9 +104,9 @@ pub(super) fn write_member_joined(
     invite_proof: Option<&InviteProof>,
     owner_proof: &[u8],
     first_device: Option<&DeviceEndorsement>,
-) {
+) -> Result<(), CodecError> {
     if let Some(device) = first_device {
-        crate::governance_op::write_device_key(p.reborrow().init_first_device(), device);
+        crate::governance_op::write_device_key(p.reborrow().init_first_device(), device)?;
     }
     p.set_owner_proof(owner_proof);
     p.set_member_record(member_record);
@@ -116,6 +116,7 @@ pub(super) fn write_member_joined(
         p.set_invite_code_hash(&proof.code_hash);
         p.set_invite_sig(&proof.sig);
     }
+    Ok(())
 }
 
 pub(super) fn write_member_record_moved(
@@ -135,7 +136,7 @@ pub(super) fn write_member_removed(
     reason: Option<&str>,
     heads: &[SlotHead],
     target_seq_frontier: u64,
-) {
+) -> Result<(), CodecError> {
     super::super::sub_types::pseudonym_key_to_capnp(p.reborrow().init_target(), target);
     p.set_has_reason(reason.is_some());
     if let Some(r) = reason {
@@ -143,19 +144,21 @@ pub(super) fn write_member_removed(
     }
     p.set_target_seq_frontier(target_seq_frontier);
     write_heads(
-        p.init_heads(u32::try_from(heads.len()).unwrap_or(u32::MAX)),
+        p.init_heads(crate::capnp_codec::wire_len(heads.len())?),
         heads,
     );
+    Ok(())
 }
 
 pub(super) fn write_member_left(
     p: schema_pkg::member_left_payload::Builder<'_>,
     heads: &[SlotHead],
-) {
+) -> Result<(), CodecError> {
     write_heads(
-        p.init_heads(u32::try_from(heads.len()).unwrap_or(u32::MAX)),
+        p.init_heads(crate::capnp_codec::wire_len(heads.len())?),
         heads,
     );
+    Ok(())
 }
 
 fn write_heads(

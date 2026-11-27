@@ -555,12 +555,3 @@ export type MemberGroup =
   | { kind: "role"; id: string; name: string }
   | { kind: "online" }
   | { kind: "offline" };
-
-/** The moderation actions we may take against one member (Tier 1
- *  `TargetModeration`): each the governance validator's verdict on the
- *  entry it writes, computed by the Host (plan E3.2 S9). */
-export interface TargetModeration {
-  kick: boolean;
-  ban: boolean;
-  timeout: boolean;
-}

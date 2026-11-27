@@ -77,7 +77,7 @@ pub(crate) async fn install(ctx: &DaemonContext, unlocked: Unlocked) -> Result<I
 /// install, before any frontend has connected, and holds for the session,
 /// so each frontend that connects later is shown it (plan E7.1).
 fn raise_memory_notice(ctx: &DaemonContext, locked: &[bool]) {
-    if let Some(notice) = memory_notice(locked) {
+    if let Some(notice) = memory_notice(locked, ctx.alert_id()) {
         ctx.publish_standing(notice);
     }
 }
@@ -104,6 +104,7 @@ fn held_secrets_locked(ctx: &DaemonContext) -> [bool; 2] {
 /// reach swap, and raising the lock limit (`ulimit -l`) fixes it.
 pub(crate) fn memory_notice(
     locked: &[bool],
+    id: String,
 ) -> Option<rekindle_types::subscription_events::SubscriptionEvent> {
     use rekindle_types::subscription_events::{NotificationEvent, SubscriptionEvent};
     let refused = locked.iter().filter(|l| !**l).count();
@@ -113,6 +114,7 @@ pub(crate) fn memory_notice(
             "the unlocked identity's keys are not in locked memory"
         );
         SubscriptionEvent::Notification(NotificationEvent::SystemAlert {
+            id,
             title: "Keys not in locked memory".into(),
             subject: None,
             body: "The system refused to lock this identity's keys in memory, so they may be \
@@ -187,64 +189,5 @@ async fn restore_audit(
 }
 
 #[cfg(test)]
-mod tests {
-    use rekindle_types::subscription_events::{NotificationEvent, SubscriptionEvent};
-
-    use super::memory_notice;
-
-    #[test]
-    fn every_secret_locked_raises_no_notice() {
-        assert!(memory_notice(&[true, true]).is_none());
-    }
-
-    #[test]
-    fn a_refused_lock_raises_one_system_alert() {
-        let Some(SubscriptionEvent::Notification(NotificationEvent::SystemAlert {
-            title,
-            body,
-            subject,
-        })) = memory_notice(&[true, false])
-        else {
-            panic!("a refused lock is shown to the user");
-        };
-        assert_eq!(title, "Keys not in locked memory");
-        assert!(body.contains("ulimit -l"), "{body}");
-        assert!(subject.is_none());
-        assert!(memory_notice(&[false, false]).is_some());
-    }
-
-    fn is_memory_notice(event: &SubscriptionEvent) -> bool {
-        matches!(
-            event,
-            SubscriptionEvent::Notification(NotificationEvent::SystemAlert { title, .. })
-                if title == "Keys not in locked memory"
-        )
-    }
-
-    /// The notice is raised while the session installs, before any frontend
-    /// has subscribed; both modes' late subscribers still get it.
-    #[tokio::test]
-    async fn the_memory_notice_reaches_a_frontend_that_connects_after_the_unlock() {
-        use rekindle_types::subscription_events::StreamFrame;
-        let dir = tempfile::tempdir().unwrap();
-        let (host, _) = crate::host::gate::tests::host_with_identity(&dir).await;
-        host.ctx.journal.begin();
-        super::raise_memory_notice(&host.ctx, &[true, false]);
-        // The daemon's bus connection, subscribing with no cursor.
-        let mut connected = host.ctx.journal.connect(None);
-        let frame = tokio::time::timeout(std::time::Duration::from_secs(5), connected.next())
-            .await
-            .unwrap();
-        assert!(
-            matches!(&frame, Some(StreamFrame::Event(s)) if is_memory_notice(&s.event)),
-            "{frame:?}"
-        );
-        // The GUI's window that just opened (`subscribe_events`, no cursor).
-        let standing = host.standing();
-        assert_eq!(standing.len(), 1);
-        assert!(is_memory_notice(&standing[0].event));
-        // The next session starts without it.
-        host.ctx.journal.begin();
-        assert!(host.standing().is_empty());
-    }
-}
+#[path = "unlocked_tests.rs"]
+mod tests;

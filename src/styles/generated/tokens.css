@@ -3,285 +3,431 @@
  * The dark defaults are `@theme`; the light base revalues
  * what differs under `:root[data-skin-base="light"]` (E7.7.2's apply
  * step sets the attribute). */
+
 @property --color-xfire-bg-dark {
   syntax: "<color>";
   inherits: true;
   initial-value: #0a0a0a;
 }
+
 @property --color-xfire-bg-panel {
   syntax: "<color>";
   inherits: true;
   initial-value: #1e1e1e;
 }
+
 @property --color-xfire-bg-input {
   syntax: "<color>";
   inherits: true;
   initial-value: #1e1e1e;
 }
+
 @property --color-xfire-bg-status {
   syntax: "<color>";
   inherits: true;
   initial-value: #181818;
 }
+
 @property --color-xfire-bg {
   syntax: "<color>";
   inherits: true;
   initial-value: #0a0a0a;
 }
+
 @property --color-xfire-bg-primary {
   syntax: "<color>";
   inherits: true;
   initial-value: #141414;
 }
+
 @property --color-xfire-bg-secondary {
   syntax: "<color>";
   inherits: true;
   initial-value: #1a1a1a;
 }
+
 @property --color-xfire-bg-tertiary {
   syntax: "<color>";
   inherits: true;
   initial-value: #252525;
 }
+
 @property --color-xfire-border {
   syntax: "<color>";
   inherits: true;
   initial-value: #2a2a2a;
 }
+
 @property --color-xfire-control-border {
   syntax: "<color>";
   inherits: true;
   initial-value: #6b6b6b;
 }
+
 @property --color-xfire-text-primary {
   syntax: "<color>";
   inherits: true;
   initial-value: #e7e7e7;
 }
+
 @property --color-xfire-text-secondary {
   syntax: "<color>";
   inherits: true;
   initial-value: #a0a0a0;
 }
+
 @property --color-xfire-accent {
   syntax: "<color>";
   inherits: true;
   initial-value: #167bc0;
 }
+
 @property --color-xfire-accent-text {
   syntax: "<color>";
   inherits: true;
   initial-value: #3491d8;
 }
+
 @property --color-xfire-accent-fg {
   syntax: "<color>";
   inherits: true;
-  initial-value: #ffffff;
+  initial-value: #fff;
 }
+
 @property --color-xfire-danger {
   syntax: "<color>";
   inherits: true;
   initial-value: #df3337;
 }
+
 @property --color-xfire-danger-fg {
   syntax: "<color>";
   inherits: true;
-  initial-value: #ffffff;
+  initial-value: #fff;
 }
+
 @property --color-xfire-danger-text {
   syntax: "<color>";
   inherits: true;
   initial-value: #ff5955;
 }
+
 @property --color-xfire-text-on-fill {
   syntax: "<color>";
   inherits: true;
-  initial-value: #ffffff;
+  initial-value: #fff;
 }
+
 @property --color-xfire-text {
   syntax: "<color>";
   inherits: true;
   initial-value: #e7e7e7;
 }
+
 @property --color-xfire-text-dim {
   syntax: "<color>";
   inherits: true;
   initial-value: #8fb9d7;
 }
+
 @property --color-xfire-text-disabled {
   syntax: "<color>";
   inherits: true;
   initial-value: #9a9a9a;
 }
+
 @property --color-xfire-text-clan {
   syntax: "<color>";
   inherits: true;
   initial-value: #1ba1fd;
 }
+
 @property --color-xfire-text-status {
   syntax: "<color>";
   inherits: true;
   initial-value: #969696;
 }
+
 @property --color-xfire-text-timestamp {
   syntax: "<color>";
   inherits: true;
   initial-value: #a0a0a0;
 }
+
 @property --color-xfire-online {
   syntax: "<color>";
   inherits: true;
   initial-value: #53d769;
 }
+
 @property --color-xfire-away {
   syntax: "<color>";
   inherits: true;
-  initial-value: #ffcc00;
+  initial-value: #fc0;
 }
+
 @property --color-xfire-ingame {
   syntax: "<color>";
   inherits: true;
   initial-value: #4fc3f7;
 }
+
 @property --color-xfire-online-text {
   syntax: "<color>";
   inherits: true;
   initial-value: #53d769;
 }
+
 @property --color-xfire-away-text {
   syntax: "<color>";
   inherits: true;
-  initial-value: #ffcc00;
+  initial-value: #fc0;
 }
+
 @property --color-xfire-ingame-text {
   syntax: "<color>";
   inherits: true;
   initial-value: #4fc3f7;
 }
+
 @property --color-xfire-busy {
   syntax: "<color>";
   inherits: true;
   initial-value: #ef4444;
 }
+
 @property --color-xfire-offline {
   syntax: "<color>";
   inherits: true;
   initial-value: #7d7d7d;
 }
+
 @property --color-xfire-offline-text {
   syntax: "<color>";
   inherits: true;
   initial-value: #909090;
 }
+
 @property --color-xfire-link {
   syntax: "<color>";
   inherits: true;
   initial-value: #5fa8d3;
 }
+
 @property --color-xfire-focus-outline {
   syntax: "<color>";
   inherits: true;
   initial-value: #5fa8d3;
 }
+
 @property --color-xfire-success {
   syntax: "<color>";
   inherits: true;
   initial-value: #51e385;
 }
+
 @property --color-xfire-success-fill {
   syntax: "<color>";
   inherits: true;
   initial-value: #00892d;
 }
-@property --color-xfire-titlebar-start {
-  syntax: "<color>";
-  inherits: true;
-  initial-value: #0f1a3a;
-}
-@property --color-xfire-titlebar-end {
-  syntax: "<color>";
-  inherits: true;
-  initial-value: #1a2a5e;
-}
+
 @property --color-xfire-titlebar-text {
   syntax: "<color>";
   inherits: true;
   initial-value: #e7e7e7;
 }
+
 @property --tint-fill-strong {
   syntax: "<percentage>";
   inherits: true;
   initial-value: 80%;
 }
+
 @property --tint-fill {
   syntax: "<percentage>";
   inherits: true;
   initial-value: 60%;
 }
+
 @property --tint-fill-soft {
   syntax: "<percentage>";
   inherits: true;
   initial-value: 50%;
 }
+
 @property --color-xfire-shadow {
   syntax: "<color>";
   inherits: true;
-  initial-value: #000000;
+  initial-value: #000;
 }
+
 @property --color-xfire-scrim {
   syntax: "<color>";
   inherits: true;
-  initial-value: #000000;
+  initial-value: #000;
 }
+
 @property --color-xfire-scrim-danger-text {
   syntax: "<color>";
   inherits: true;
   initial-value: #ff5955;
 }
+
 @property --color-xfire-video-backing {
   syntax: "<color>";
   inherits: true;
-  initial-value: #000000;
+  initial-value: #000;
 }
+
 @property --color-xfire-overlay {
   syntax: "<color>";
   inherits: true;
-  initial-value: #ffffff;
+  initial-value: #fff;
 }
+
 @property --color-xfire-shade {
   syntax: "<color>";
   inherits: true;
-  initial-value: #000000;
+  initial-value: #000;
 }
+
 @property --color-xfire-fill-shade {
   syntax: "<color>";
   inherits: true;
-  initial-value: #000000;
+  initial-value: #000;
 }
+
 @property --color-xfire-thread-tag {
   syntax: "<color>";
   inherits: true;
   initial-value: #ffd479;
 }
+
 @property --color-xfire-mention-everyone {
   syntax: "<color>";
   inherits: true;
   initial-value: #ffa170;
 }
+
 @property --color-xfire-mention-role {
   syntax: "<color>";
   inherits: true;
   initial-value: #b59aff;
 }
+
 @property --color-xfire-mention-self {
   syntax: "<color>";
   inherits: true;
   initial-value: #ffaea1;
 }
+
 @property --chrome-height {
   syntax: "<length>";
   inherits: true;
   initial-value: 28px;
+}
+
+@property --color-xfire-titlebar-start {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #0f1a3a;
+}
+
+@property --color-xfire-titlebar-end {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #1a2a5e;
+}
+
+@property --color-xfire-input-bg {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #1e1e1e;
+}
+
+@property --color-xfire-input-text {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #e7e7e7;
+}
+
+@property --color-xfire-input-selection-bg {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #167bc0;
+}
+
+@property --color-xfire-input-selection-bg-inactive {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #3a3a3a;
+}
+
+@property --color-xfire-selection-text {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #fff;
+}
+
+@property --color-xfire-menubar-bg {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #0a0a0a;
+}
+
+@property --color-xfire-menubar-text {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #8fb9d7;
+}
+
+@property --color-xfire-progress-bg {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #1e1e1e;
+}
+
+@property --color-xfire-progress-fill {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #167bc0;
+}
+
+@property --color-xfire-progress-outline {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #6b6b6b;
+}
+
+@property --color-xfire-progress-text {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #e7e7e7;
+}
+
+@property --color-xfire-scrollbar-track {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #0a0a0a;
+}
+
+@property --color-xfire-scrollbar-thumb {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #7d7d7d;
+}
+
+@property --color-xfire-tooltip-bg {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #1a1a1a;
+}
+
+@property --color-xfire-tooltip-text {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #e7e7e7;
 }
 
 @theme {
@@ -299,11 +445,11 @@
   --color-xfire-text-secondary: #a0a0a0;
   --color-xfire-accent: #167bc0;
   --color-xfire-accent-text: #3491d8;
-  --color-xfire-accent-fg: #ffffff;
+  --color-xfire-accent-fg: #fff;
   --color-xfire-danger: #df3337;
-  --color-xfire-danger-fg: #ffffff;
+  --color-xfire-danger-fg: #fff;
   --color-xfire-danger-text: #ff5955;
-  --color-xfire-text-on-fill: #ffffff;
+  --color-xfire-text-on-fill: #fff;
   --color-xfire-text: #e7e7e7;
   --color-xfire-text-dim: #8fb9d7;
   --color-xfire-text-disabled: #9a9a9a;
@@ -311,10 +457,10 @@
   --color-xfire-text-status: #969696;
   --color-xfire-text-timestamp: #a0a0a0;
   --color-xfire-online: #53d769;
-  --color-xfire-away: #ffcc00;
+  --color-xfire-away: #fc0;
   --color-xfire-ingame: #4fc3f7;
   --color-xfire-online-text: #53d769;
-  --color-xfire-away-text: #ffcc00;
+  --color-xfire-away-text: #fc0;
   --color-xfire-ingame-text: #4fc3f7;
   --color-xfire-busy: #ef4444;
   --color-xfire-offline: #7d7d7d;
@@ -323,19 +469,17 @@
   --color-xfire-focus-outline: #5fa8d3;
   --color-xfire-success: #51e385;
   --color-xfire-success-fill: #00892d;
-  --color-xfire-titlebar-start: #0f1a3a;
-  --color-xfire-titlebar-end: #1a2a5e;
   --color-xfire-titlebar-text: #e7e7e7;
   --tint-fill-strong: 80%;
   --tint-fill: 60%;
   --tint-fill-soft: 50%;
-  --color-xfire-shadow: #000000;
-  --color-xfire-scrim: #000000;
+  --color-xfire-shadow: #000;
+  --color-xfire-scrim: #000;
   --color-xfire-scrim-danger-text: #ff5955;
-  --color-xfire-video-backing: #000000;
-  --color-xfire-overlay: #ffffff;
-  --color-xfire-shade: #000000;
-  --color-xfire-fill-shade: #000000;
+  --color-xfire-video-backing: #000;
+  --color-xfire-overlay: #fff;
+  --color-xfire-shade: #000;
+  --color-xfire-fill-shade: #000;
   --color-xfire-thread-tag: #ffd479;
   --color-xfire-mention-everyone: #ffa170;
   --color-xfire-mention-role: #b59aff;
@@ -343,18 +487,35 @@
   --font-family-xfire: "Segoe UI", "Tahoma", sans-serif;
   --font-family-icons: "Symbols Nerd Font Mono";
   --chrome-height: 28px;
+  --color-xfire-titlebar-start: #0f1a3a;
+  --color-xfire-titlebar-end: #1a2a5e;
+  --color-xfire-input-bg: #1e1e1e;
+  --color-xfire-input-text: #e7e7e7;
+  --color-xfire-input-selection-bg: #167bc0;
+  --color-xfire-input-selection-bg-inactive: #3a3a3a;
+  --color-xfire-selection-text: #fff;
+  --color-xfire-menubar-bg: #0a0a0a;
+  --color-xfire-menubar-text: #8fb9d7;
+  --color-xfire-progress-bg: #1e1e1e;
+  --color-xfire-progress-fill: #167bc0;
+  --color-xfire-progress-outline: #6b6b6b;
+  --color-xfire-progress-text: #e7e7e7;
+  --color-xfire-scrollbar-track: #0a0a0a;
+  --color-xfire-scrollbar-thumb: #7d7d7d;
+  --color-xfire-tooltip-bg: #1a1a1a;
+  --color-xfire-tooltip-text: #e7e7e7;
 }
 
 @layer xfire-defaults {
   :root[data-skin-base="light"] {
-    --color-xfire-bg-dark: #ffffff;
-    --color-xfire-bg-panel: #ffffff;
-    --color-xfire-bg-input: #ffffff;
-    --color-xfire-bg-status: #ffffff;
-    --color-xfire-bg: #ffffff;
-    --color-xfire-bg-primary: #ffffff;
-    --color-xfire-bg-secondary: #ffffff;
-    --color-xfire-bg-tertiary: #ffffff;
+    --color-xfire-bg-dark: #fff;
+    --color-xfire-bg-panel: #fff;
+    --color-xfire-bg-input: #fff;
+    --color-xfire-bg-status: #fff;
+    --color-xfire-bg: #fff;
+    --color-xfire-bg-primary: #fff;
+    --color-xfire-bg-secondary: #fff;
+    --color-xfire-bg-tertiary: #fff;
     --color-xfire-border: #d4d4d4;
     --color-xfire-control-border: #767676;
     --color-xfire-text-primary: #1a1a1a;
@@ -379,17 +540,29 @@
     --color-xfire-link: #0a5a9c;
     --color-xfire-focus-outline: #0b5cad;
     --color-xfire-success: #00631d;
-    --color-xfire-titlebar-start: #dbe7f6;
-    --color-xfire-titlebar-end: #c3d6ef;
-    --color-xfire-titlebar-text: #000000;
+    --color-xfire-titlebar-text: #000;
     --tint-fill-strong: 100%;
     --tint-fill: 100%;
     --tint-fill-soft: 100%;
-    --color-xfire-overlay: #000000;
-    --color-xfire-shade: #ffffff;
+    --color-xfire-overlay: #000;
+    --color-xfire-shade: #fff;
     --color-xfire-thread-tag: #7a5500;
     --color-xfire-mention-everyone: #9a3a00;
     --color-xfire-mention-role: #5a32b8;
     --color-xfire-mention-self: #a3261b;
+    --color-xfire-titlebar-start: #dbe7f6;
+    --color-xfire-titlebar-end: #c3d6ef;
+    --color-xfire-input-bg: #fff;
+    --color-xfire-input-text: #1a1a1a;
+    --color-xfire-input-selection-bg-inactive: #d4d4d4;
+    --color-xfire-menubar-bg: #fff;
+    --color-xfire-menubar-text: #0d4363;
+    --color-xfire-progress-bg: #fff;
+    --color-xfire-progress-outline: #767676;
+    --color-xfire-progress-text: #1a1a1a;
+    --color-xfire-scrollbar-track: #fff;
+    --color-xfire-scrollbar-thumb: #737373;
+    --color-xfire-tooltip-bg: #fff;
+    --color-xfire-tooltip-text: #1a1a1a;
   }
 }

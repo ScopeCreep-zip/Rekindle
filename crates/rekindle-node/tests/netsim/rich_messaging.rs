@@ -157,6 +157,17 @@ async fn thread_reply_both_ways() {
     })
     .await;
     assert!(replied, "ann reads bea's reply in the thread");
+    // A distinct receiver (finding SEC4): ann's Host materialises bea's
+    // notice only from bea's verified outbox entry, under bea as author.
+    let bea = community.pseudonym(1).await;
+    let ann_saw = eventually(&community.sim, LIMIT, || async {
+        saw_reply_from(&ann_events, &thread, &bea, "count me in")
+    })
+    .await;
+    assert!(
+        ann_saw,
+        "ann's frontends get bea's reply under bea, body and all"
+    );
     // The mesh never echoes a frame to its sender (plan E7.13 M76): bea's
     // own frontends get her reply from her Host, body and all.
     assert!(
@@ -221,6 +232,20 @@ fn saw_archive(events: &Events, thread: &str, to: bool) -> bool {
             event,
             SubscriptionEvent::Social(SocialEvent::ThreadArchiveChanged { thread_id, archived, .. })
                 if thread_id == thread && *archived == to
+        )
+    })
+}
+
+fn saw_reply_from(events: &Events, thread: &str, author: &str, text: &str) -> bool {
+    SimNode::saw(events, |event| {
+        matches!(
+            event,
+            SubscriptionEvent::Social(SocialEvent::ThreadMessagePosted {
+                thread_id,
+                sender_pseudonym,
+                body: Some(body),
+                ..
+            }) if thread_id == thread && sender_pseudonym.eq_ignore_ascii_case(author) && body == text
         )
     })
 }

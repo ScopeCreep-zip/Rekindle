@@ -187,6 +187,11 @@ pub fn op_record_of<D: GovernanceRuntimeDeps>(
         GovernanceEntry::DeviceKey(e) if is_own_key(deps, community, e)? => {
             Ok(e.device_record.clone())
         }
+        // Our re-enrolment rides its new key's seq 0 on the new `M(p,d)`
+        // it binds (plan E3.2 S7d-keys.10).
+        GovernanceEntry::DeviceReEnrol(r) if is_own_key(deps, community, &r.endorsement)? => {
+            Ok(r.endorsement.device_record.clone())
+        }
         _ => own_op_record(deps, community, state),
     }
 }
@@ -206,6 +211,7 @@ pub fn carries_own_endorsement<D: GovernanceRuntimeDeps>(
     match entry {
         GovernanceEntry::MemberJoined { .. } => Ok(true),
         GovernanceEntry::DeviceKey(e) => is_own_key(deps, community, e),
+        GovernanceEntry::DeviceReEnrol(r) => is_own_key(deps, community, &r.endorsement),
         _ => Ok(false),
     }
 }

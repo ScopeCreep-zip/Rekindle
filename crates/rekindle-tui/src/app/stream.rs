@@ -54,9 +54,13 @@ impl App {
                     let _ = self.action_tx.send(action);
                 }
             }
-            StreamFrame::Resumed(cursor) => self.cursor = Some(cursor),
+            StreamFrame::Resumed(cursor) => {
+                self.cursor = Some(cursor);
+                self.load_held_reviews();
+            }
             StreamFrame::InvalidSession => {
                 self.cursor = None;
+                self.intent.replace_held(Vec::new());
                 self.load_dashboard_data();
                 self.load_skin();
                 if let Err(e) = self.client.subscribe_all(None).await {
@@ -64,6 +68,8 @@ impl App {
                         message: format!("event stream lost: {e}"),
                         level: crate::action::ToastLevel::Error,
                     });
+                } else {
+                    self.load_held_reviews();
                 }
             }
             // The daemon is stopping (plan E7.1). After a wipe there is

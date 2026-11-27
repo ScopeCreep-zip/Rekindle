@@ -63,6 +63,7 @@ impl HostGovernance {
         // One rebuild, two frontend events: the governance and the members.
         if let GovernanceRuntimeEvent::GovernanceRebuilt { community_id } = event {
             self.prune_head_hints(community_id);
+            self.note_retirement_after_rebuild(community_id);
             self.ctx.publish_event(SubscriptionEvent::Governance(
                 GovernanceEvent::GovernanceRebuilt {
                     community: community_id.clone(),
@@ -74,6 +75,11 @@ impl HostGovernance {
                 },
             ));
             return;
+        }
+        // Our key retired by another copy (S7d-keys.9): the alert below and
+        // the re-enrolment review (S7d-keys.10).
+        if let GovernanceRuntimeEvent::OwnKeyRetired { community_id, .. } = event {
+            self.spawn_re_enrol_review(community_id);
         }
         let Some(mapped) = self.map_event(event) else {
             tracing::debug!(?event, "governance event: no frontend counterpart");
@@ -115,6 +121,7 @@ impl HostGovernance {
                 have_manage_community,
             } => Some(SubscriptionEvent::Notification(
                 NotificationEvent::SystemAlert {
+                    id: self.ctx.alert_id(),
                     title: "Joining community…".to_string(),
                     subject: None,
                     body: if *have_manage_community {
@@ -127,12 +134,21 @@ impl HostGovernance {
             )),
             GovernanceRuntimeEvent::HeldWriteRefused { label, reason, .. } => Some(
                 SubscriptionEvent::Notification(NotificationEvent::SystemAlert {
+                    id: self.ctx.alert_id(),
                     title: "Change not made".to_string(),
                     subject: None,
                     body: match label {
                         Some(label) => format!("{label}: {reason}"),
                         None => reason.clone(),
                     },
+                }),
+            ),
+            GovernanceRuntimeEvent::OwnKeyRetired { notice, .. } => Some(
+                SubscriptionEvent::Notification(NotificationEvent::SystemAlert {
+                    id: self.ctx.alert_id(),
+                    title: "Signing stopped".to_string(),
+                    subject: None,
+                    body: notice.clone(),
                 }),
             ),
             GovernanceRuntimeEvent::OnboardingComplete {

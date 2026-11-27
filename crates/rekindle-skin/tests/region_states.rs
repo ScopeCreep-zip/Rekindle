@@ -318,10 +318,10 @@ fn the_app_css_backs_a_text_slot_between_image_and_label() {
     // at z-index -1: after the border-image, under the label (CSS 2.1 App. E).
     assert!(css.contains("  .btn2 {\n    border-image: var(--skin-region-button-secondary);\n    image-rendering: pixelated;\n    position: relative;\n    isolation: isolate;\n  }\n"));
     // Its backing is the image's centre (the padding box inset by the
-    // slice widths, 0 with no skin) and the label's content box.
+    // slice widths, a typed 0% with no skin) and the label's content box.
     let fill = "linear-gradient(var(--skin-region-button-secondary-backing), var(--skin-region-button-secondary-backing))";
     let [t, r, b, l] = ["top", "right", "bottom", "left"]
-        .map(|side| format!("var(--skin-region-button-secondary-slice-{side}, 0px)"));
+        .map(|side| format!("var(--skin-region-button-secondary-slice-{side}, 0%)"));
     let before = format!("  .btn2::before {{\n    content: \"\";\n    position: absolute;\n    inset: 0;\n    z-index: -1;\n    padding: inherit;\n    border-radius: inherit;\n    background:\n      {fill} {l} {t} / calc(100% - {l} - {r}) calc(100% - {t} - {b}) no-repeat padding-box,\n      {fill} no-repeat content-box;\n    pointer-events: none;\n  }}\n");
     assert!(css.contains(&before), "{css}");
     assert_eq!(

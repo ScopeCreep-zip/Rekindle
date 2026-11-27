@@ -1,13 +1,5 @@
 {
-  "$schema": "https://biomejs.dev/schemas/2.4.0/schema.json",
-  "//": [
-    "Biome v2.x — single-binary formatter + linter + import organiser for",
-    "JavaScript / TypeScript / JSX / JSON / CSS. Replaces the eslint +",
-    "prettier + import-sort stack. SolidJS-aware lints are enabled below.",
-    "Run with:  pnpm biome check src/   (or  pnpm exec biome check  if no",
-    "biome script in package.json yet).",
-    "See docs/contributor/linting.md for the full lint stack."
-  ],
+  "$schema": "https://biomejs.dev/schemas/2.4.16/schema.json",
   "vcs": {
     "enabled": true,
     "clientKind": "git",
@@ -106,12 +98,10 @@
   },
   "css": {
     "formatter": {
-      "enabled": false,
-      "//": "Stylelint owns CSS — see .stylelintrc.json for Tailwind 4 + @theme support."
+      "enabled": false
     },
     "linter": {
-      "enabled": false,
-      "//": "Same reason."
+      "enabled": false
     }
   },
   "overrides": [

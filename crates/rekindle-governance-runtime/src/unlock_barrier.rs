@@ -267,6 +267,15 @@ impl UnlockBarrier {
         });
     }
 
+    /// The re-enrolment's re-key (ADR 0022 rule 4, plan E3.2 S7d-keys.10):
+    /// this device's old key is retired and the fresh key just stored was
+    /// never held by any other copy of this data root, so nothing was
+    /// signed under it elsewhere and the barrier passes for it, a restore
+    /// included. Called only once the new key is stored.
+    pub fn re_keyed(&self) {
+        self.phase.send_replace(BarrierPhase::Passed);
+    }
+
     /// `invite_id`'s revoke is held: it is no longer listed or handed out
     /// here, though its `InviteRevoked` waits for our earlier ops to land.
     pub fn withdraw_invite(&self, invite_id: [u8; 16]) {

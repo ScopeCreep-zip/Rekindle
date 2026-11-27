@@ -42,6 +42,7 @@ pub fn samples() -> Vec<Sample> {
         ev(
             "systemAlert",
             NotificationEvent::SystemAlert {
+                id: text("01900000-0000-7000-8000-0000000000a1"),
                 title: text("Network"),
                 subject: None,
                 body: text("Reconnected"),

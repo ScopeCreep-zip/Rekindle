@@ -132,6 +132,7 @@
       border-image: var(--skin-region-scrollbar-corner--windowinactive--still, var(--skin-region-scrollbar-corner--windowinactive, var(--skin-region-scrollbar-corner--still, var(--skin-region-scrollbar-corner))));
     }
   }
+
   @media (forced-colors: active) {
     ::-webkit-scrollbar-track:vertical {
       border-image: none;

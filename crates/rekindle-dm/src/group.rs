@@ -185,7 +185,7 @@ pub fn build_invite(
     creator_chain_key: &str,
     plan: RendezvousPlan<'_>,
     sign: impl FnOnce(&[u8]) -> [u8; 64],
-) -> GroupDmInvite {
+) -> Result<GroupDmInvite, DmError> {
     let mut invite = GroupDmInvite {
         group_id,
         name: name.to_owned(),
@@ -199,8 +199,8 @@ pub fn build_invite(
         slot_writer: String::new(),
         slots: plan.slots.to_vec(),
     };
-    invite.signature = sign(&invite.signing_bytes());
-    invite
+    invite.signature = sign(&invite.signing_bytes()?);
+    Ok(invite)
 }
 
 /// `member`'s slot in the invite's signed plan.
@@ -286,7 +286,7 @@ pub fn verify_invite(invite: &GroupDmInvite, from: &str) -> Result<Roster, DmErr
     let mut creator = [0u8; 32];
     hex::decode_to_slice(&roster.creator().identity, &mut creator)
         .map_err(|_| DmError::InvalidRoster("creator identity".into()))?;
-    rekindle_secrets::sign::verify_signature(&creator, &invite.signing_bytes(), &invite.signature)
+    rekindle_secrets::sign::verify_signature(&creator, &invite.signing_bytes()?, &invite.signature)
         .map_err(|_| DmError::BadSignature)?;
     Ok(roster)
 }

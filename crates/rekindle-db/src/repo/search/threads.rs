@@ -5,6 +5,7 @@
 //! `messages` table so search results are uniform across scopes.
 
 use rekindle_types::search::{MessageSearch, SearchHit, SearchScope, SearchSort};
+use rekindle_types::thread::thread_reply_key;
 use rusqlite::Connection;
 
 pub fn search_thread_messages_table(
@@ -74,7 +75,7 @@ pub fn search_thread_messages_table(
         hits.push(SearchHit {
             scope: SearchScope::Thread,
             conversation_id: format!("{community_id}/{thread_id}"),
-            message_id: Some(message_id),
+            message_id: Some(thread_reply_key(&sender, &message_id)),
             sender_key: sender,
             body,
             timestamp: ts,

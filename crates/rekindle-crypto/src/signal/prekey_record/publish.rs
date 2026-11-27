@@ -8,6 +8,7 @@
 use rekindle_codec::capnp_codec::identity::{
     encode_opk_slot, encode_prekey_head, OpkSlot, PrekeyRecordHead,
 };
+use rekindle_codec::CodecError;
 use rekindle_types::dht_layout::prekeys::{HEAD, SLOT_COUNT};
 use rekindle_types::dto::identity::PrekeyStatus;
 
@@ -23,33 +24,29 @@ pub struct Publish {
 
 impl Publish {
     /// The head's value.
-    #[must_use]
-    pub fn head(head: &PrekeyRecordHead) -> Self {
-        Self {
+    pub fn head(head: &PrekeyRecordHead) -> Result<Self, CodecError> {
+        Ok(Self {
             subkey: HEAD,
-            value: encode_prekey_head(head),
-        }
+            value: encode_prekey_head(head)?,
+        })
     }
 
     /// A minted slot's value.
-    #[must_use]
-    pub fn slot(slot: &MintedSlot) -> Self {
+    pub fn slot(slot: &MintedSlot) -> Result<Self, CodecError> {
         Self::signed_slot(slot.subkey, &slot.record)
     }
 
     /// The value of a slot signed from stored keys, at `subkey`.
-    #[must_use]
-    pub fn signed_slot(subkey: u32, slot: &OpkSlot) -> Self {
-        Self {
+    pub fn signed_slot(subkey: u32, slot: &OpkSlot) -> Result<Self, CodecError> {
+        Ok(Self {
             subkey,
-            value: encode_opk_slot(slot),
-        }
+            value: encode_opk_slot(slot)?,
+        })
     }
 }
 
 /// The values a minted set publishes: the head, then every slot.
-#[must_use]
-pub fn set_values(set: &MintedSet) -> Vec<Publish> {
+pub fn set_values(set: &MintedSet) -> Result<Vec<Publish>, CodecError> {
     std::iter::once(Publish::head(&set.head.record))
         .chain(set.slots.iter().map(Publish::slot))
         .collect()
@@ -88,66 +85,5 @@ pub fn prekey_problem(status: &PrekeyStatus) -> Option<String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use rekindle_types::dht_layout::prekeys::slot_subkey;
-
-    fn healthy() -> PrekeyStatus {
-        PrekeyStatus {
-            device_id: None,
-            record_key: None,
-            spk_id: Some(1),
-            spk_age_secs: Some(3_600),
-            pq_lr_id: Some(2),
-            lr_age_secs: Some(3_600),
-            fresh_slots: SLOT_COUNT,
-            consumed_slots: 0,
-            component_lens: None,
-        }
-    }
-
-    #[test]
-    fn the_problem_names_what_maintenance_failed_to_keep() {
-        assert_eq!(prekey_problem(&healthy()), None);
-        let low = PrekeyStatus {
-            fresh_slots: 3,
-            ..healthy()
-        };
-        assert_eq!(
-            prekey_problem(&low),
-            Some(format!("3/{SLOT_COUNT} fresh slots"))
-        );
-        let stale = PrekeyStatus {
-            spk_age_secs: Some(15 * 86_400),
-            ..healthy()
-        };
-        assert!(prekey_problem(&stale).unwrap().contains("15 days"));
-        let none = PrekeyStatus {
-            spk_age_secs: None,
-            ..healthy()
-        };
-        assert!(prekey_problem(&none).is_some());
-    }
-
-    fn value(subkey: u32) -> Publish {
-        Publish {
-            subkey,
-            value: vec![u8::try_from(subkey % 256).unwrap()],
-        }
-    }
-
-    #[test]
-    fn the_first_contact_part_is_the_head_and_the_watermark_slots() {
-        let slots = u32::try_from(LOW_SLOT_WATERMARK).unwrap() + 5;
-        let mut values: Vec<Publish> = (0..slots).map(|i| value(slot_subkey(i))).collect();
-        values.insert(3, value(HEAD));
-        let (now, later) = split_first_contact(values);
-        assert_eq!(now.len(), 1 + LOW_SLOT_WATERMARK);
-        assert!(now.iter().any(|p| p.subkey == HEAD));
-        assert_eq!(later.len(), 5);
-        assert!(later.iter().all(|p| p.subkey != HEAD));
-
-        let (now, later) = split_first_contact(vec![value(slot_subkey(0))]);
-        assert_eq!((now.len(), later.len()), (1, 0));
-    }
-}
+#[path = "publish_tests.rs"]
+mod tests;

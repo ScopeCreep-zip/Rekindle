@@ -2,9 +2,14 @@
 // screenshots as RGBA pixels, so a window's outline (its alpha) can be
 // measured and laid over a backdrop. PNG as the W3C PNG specification
 // (Third Edition) defines it: the signature, IHDR (§11.2.1), IDAT's zlib
-// stream (§10), and the five scanline filters (§9.2, Paeth §9.4). Only
-// what the drivers write is read: 8-bit truecolour with alpha (colour type
-// 6), not interlaced; anything else is refused, not guessed.
+// stream (§10), and the five scanline filters (§9.2, Paeth §9.4). What the
+// drivers write is read: 8-bit, not interlaced, in any colour type (§11.2.1
+// table 11.1): truecolour with alpha (6, macOS), truecolour (2,
+// WebKitWebDriver on Linux), greyscale (0), greyscale with alpha (4) and
+// palette (3, PLTE and tRNS §11.2.2, §11.3.2.1). A type with no alpha is
+// opaque except where tRNS names a transparent colour, so a window drawn
+// opaque where it should be clear fails a shape check with numbers. Other
+// depths and interlacing are refused, not guessed.
 
 import { deflateSync, inflateSync } from "node:zlib";
 
@@ -25,11 +30,17 @@ function paeth(a: number, b: number, c: number): number {
   return pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
 }
 
+/** Bytes a pixel for each 8-bit colour type. */
+const CHANNELS: Record<number, number> = { 0: 1, 2: 3, 3: 1, 4: 2, 6: 4 };
+
 /** The RGBA pixels of the PNG `png`. */
 export function decodePng(png: Buffer): Rgba {
   if (!png.subarray(0, 8).equals(SIGNATURE)) throw new Error("not a PNG");
   let width = 0;
   let height = 0;
+  let colour = 6;
+  let palette: Buffer | null = null;
+  let trns: Buffer | null = null;
   const idat: Buffer[] = [];
   for (let at = 8; at < png.length; ) {
     const length = png.readUInt32BE(at);
@@ -38,10 +49,15 @@ export function decodePng(png: Buffer): Rgba {
     if (type === "IHDR") {
       width = body.readUInt32BE(0);
       height = body.readUInt32BE(4);
-      const [depth, colour, , , interlace] = body.subarray(8, 13);
-      if (depth !== 8 || colour !== 6 || interlace !== 0) {
-        throw new Error(`PNG is depth ${depth}, colour type ${colour}, interlace ${interlace}: only 8-bit RGBA, not interlaced, is read`);
+      const [depth, type, , , interlace] = body.subarray(8, 13);
+      if (depth !== 8 || !(type in CHANNELS) || interlace !== 0) {
+        throw new Error(`PNG is depth ${depth}, colour type ${type}, interlace ${interlace}: only 8-bit, not interlaced, is read`);
       }
+      colour = type;
+    } else if (type === "PLTE") {
+      palette = body;
+    } else if (type === "tRNS") {
+      trns = body;
     } else if (type === "IDAT") {
       idat.push(body);
     } else if (type === "IEND") {
@@ -49,22 +65,53 @@ export function decodePng(png: Buffer): Rgba {
     }
     at += 12 + length;
   }
+  if (colour === 3 && !palette) throw new Error("PNG colour type 3 has no PLTE");
   const raw = inflateSync(Buffer.concat(idat));
-  const stride = width * 4;
-  const data = new Uint8Array(stride * height);
+  const bpp = CHANNELS[colour];
+  const stride = width * bpp;
+  const px = new Uint8Array(stride * height);
   for (let y = 0; y < height; y++) {
     const filter = raw[y * (stride + 1)];
     const line = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1));
     for (let x = 0; x < stride; x++) {
-      const a = x >= 4 ? data[y * stride + x - 4] : 0;
-      const b = y > 0 ? data[(y - 1) * stride + x] : 0;
-      const c = x >= 4 && y > 0 ? data[(y - 1) * stride + x - 4] : 0;
+      const a = x >= bpp ? px[y * stride + x - bpp] : 0;
+      const b = y > 0 ? px[(y - 1) * stride + x] : 0;
+      const c = x >= bpp && y > 0 ? px[(y - 1) * stride + x - bpp] : 0;
       const predictor = filter === 0 ? 0 : filter === 1 ? a : filter === 2 ? b : filter === 3 ? (a + b) >> 1 : filter === 4 ? paeth(a, b, c) : -1;
       if (predictor < 0) throw new Error(`PNG row ${y} has filter ${filter}`);
-      data[y * stride + x] = (line[x] + predictor) & 0xff;
+      px[y * stride + x] = (line[x] + predictor) & 0xff;
     }
   }
-  return { width, height, data };
+  if (colour === 6) return { width, height, data: px };
+  return { width, height, data: toRgba(px, width * height, colour, palette, trns) };
+}
+
+/** Unfiltered 8-bit pixels of `colour` type as RGBA (§11.2.2, §11.3.2.1:
+ *  tRNS gives a palette entry's alpha, or the one transparent grey or RGB). */
+function toRgba(px: Uint8Array, count: number, colour: number, palette: Buffer | null, trns: Buffer | null): Uint8Array {
+  const out = new Uint8Array(count * 4);
+  const clearGrey = colour === 0 && trns && trns.length >= 2 ? trns.readUInt16BE(0) : -1;
+  const clearRgb = colour === 2 && trns && trns.length >= 6 ? [trns.readUInt16BE(0), trns.readUInt16BE(2), trns.readUInt16BE(4)] : null;
+  for (let i = 0; i < count; i++) {
+    let r: number, g: number, b: number, a: number;
+    if (colour === 0) {
+      r = g = b = px[i];
+      a = px[i] === clearGrey ? 0 : 255;
+    } else if (colour === 4) {
+      r = g = b = px[i * 2];
+      a = px[i * 2 + 1];
+    } else if (colour === 2) {
+      [r, g, b] = [px[i * 3], px[i * 3 + 1], px[i * 3 + 2]];
+      a = clearRgb && r === clearRgb[0] && g === clearRgb[1] && b === clearRgb[2] ? 0 : 255;
+    } else {
+      const k = px[i];
+      if (!palette || k * 3 + 2 >= palette.length) throw new Error(`PNG palette index ${k} outside PLTE`);
+      [r, g, b] = [palette[k * 3], palette[k * 3 + 1], palette[k * 3 + 2]];
+      a = trns && k < trns.length ? trns[k] : 255;
+    }
+    out.set([r, g, b, a], i * 4);
+  }
+  return out;
 }
 
 const CRC_TABLE = Array.from({ length: 256 }, (_, n) => {

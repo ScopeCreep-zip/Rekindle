@@ -72,6 +72,7 @@ pub struct App {
     pub(crate) notifications: NotificationStack,
     pub(crate) search: SearchOverlay,
     pub(crate) intent: IntentOverlay,
+    pub(crate) held_review_generation: u64,
     pub(crate) loading_spinner: Spinner,
     pub(crate) node_was_connected: bool,
     /// The Host's smoothed network bars (`NetworkEvent::Strength`, plan E7.2).
@@ -165,6 +166,7 @@ impl App {
             notifications: NotificationStack::new(),
             search: SearchOverlay::new(),
             intent: IntentOverlay::default(),
+            held_review_generation: 0,
             loading_spinner: Spinner::new(animations, use_unicode),
             node_was_connected: false,
             network_bars: 0,
@@ -204,6 +206,7 @@ impl App {
         self.loading_spinner.set_label("Loading dashboard...");
         self.loading_spinner.start();
         self.load_dashboard_data();
+        self.load_held_reviews();
         self.load_skin();
 
         loop {

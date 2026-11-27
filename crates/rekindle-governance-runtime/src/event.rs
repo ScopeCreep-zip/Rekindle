@@ -151,6 +151,16 @@ pub enum GovernanceRuntimeEvent {
         reason: String,
     },
 
+    /// Our own op record's watch found our device key retired by another
+    /// copy of this data root (ADR 0022 rule 4, plan E3.2 S7d-keys.9):
+    /// signing under it has stopped, and the adapter tells the user once
+    /// (`NotificationEvent::SystemAlert`). `notice` is
+    /// `GovernanceRuntimeError::OwnKeyRetired`'s text.
+    OwnKeyRetired {
+        community_id: String,
+        notice: String,
+    },
+
     /// A community's governance was rebuilt from its record (plan E3.1 C1)
     /// — the host publishes `GovernanceEvent::GovernanceRebuilt` and
     /// `MembershipEvent::MembersRefreshed` for it.

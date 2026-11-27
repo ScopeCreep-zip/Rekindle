@@ -54,7 +54,7 @@ pub(super) fn signed_chain(
             body,
             sig: [0; 64],
         };
-        let unsigned = op_unsigned_bytes(&op);
+        let unsigned = op_unsigned_bytes(&op).unwrap();
         op.sig = rekindle_secrets::derive::sign_with_pseudonym(
             key,
             &op_signing_bytes(anchor, &unsigned),

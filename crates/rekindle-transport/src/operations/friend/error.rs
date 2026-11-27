@@ -52,3 +52,13 @@ impl From<crate::error::TransportError> for FriendError {
         Self::Failed(e.to_string())
     }
 }
+
+impl From<rekindle_codec::CodecError> for FriendError {
+    fn from(error: rekindle_codec::CodecError) -> Self {
+        if matches!(error, rekindle_codec::CodecError::TooLargeToEncode(_)) {
+            Self::Invalid(error.to_string())
+        } else {
+            Self::Failed(format!("encoding outbound content: {error}"))
+        }
+    }
+}

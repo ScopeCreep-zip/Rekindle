@@ -193,3 +193,110 @@ pub(crate) async fn device_list_of(
     };
     device_list(&key, &device).map_err(|e| e.to_string())
 }
+
+/// Rotate the record and the device id after the user's re-enrolment
+/// commit. The replacement is readable before it is named publicly.
+pub(crate) async fn replace_for_re_enrol(
+    ctx: &crate::daemon::dispatch::DaemonContext,
+) -> Result<(), String> {
+    use futures::stream::{self, StreamExt as _, TryStreamExt as _};
+    use rekindle_crypto::signal::prekey_record::{mint_set, set_values, split_first_contact};
+    use rekindle_transport::operations::friend::FriendHost as _;
+
+    let _writes = ctx.own_prekey_writes.lock().await;
+    let friends = super::adapters::friends::HostFriends::of(ctx);
+    let owner = ctx.require_owner().map_err(|_| "the identity is locked")?;
+    let seed = zeroize::Zeroizing::new(ctx.identity_secret().ok_or("the identity is locked")?);
+    let node = friends.node().map_err(|e| e.to_string())?;
+    let pool = node.require_records().map_err(|e| e.to_string())?;
+    let profile = ctx
+        .session
+        .read()
+        .as_ref()
+        .map(|session| session.identity.profile_dht_key.clone())
+        .filter(|key| !key.is_empty())
+        .ok_or("the profile record is not held")?;
+    let db = ctx.db.current().map_err(|e| e.to_string())?;
+    let identity = rekindle_crypto::Identity::from_secret_bytes(&seed);
+    let keys = mint_set(&identity, ctx.rng.as_ref(), ctx.clock.now_ms_i64());
+    let values = set_values(&keys).map_err(|error| error.to_string())?;
+    let (first, later) = split_first_contact(values);
+    let device_id = hex::encode(rekindle_utils::random::id_bytes_16_from(ctx.rng.as_ref()));
+
+    let (lease, key, keypair) = record::create_prekey_record(pool.as_ref())
+        .await
+        .map_err(|e| e.to_string())?;
+    let keypair = zeroize::Zeroizing::new(keypair);
+    let staged = stream::iter(first)
+        .map(|value| {
+            let pool = pool.as_ref();
+            async move {
+                let subkey = value.subkey;
+                record::write_once(pool, lease, subkey, value.value)
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .require_stored(subkey)
+                    .map_err(|e| e.to_string())
+            }
+        })
+        .buffer_unordered(8)
+        .try_collect::<Vec<_>>()
+        .await;
+    if let Err(error) = staged {
+        pool.release(lease).await;
+        return Err(error);
+    }
+    let staged_owner = ctx
+        .vault
+        .lock()
+        .as_ref()
+        .ok_or("the vault is locked")
+        .and_then(|vault| {
+            use zeroize::Zeroize as _;
+            let mut entry = rekindle_vault::typed::owner_keys::OwnerEntry {
+                record_key: key.clone(),
+                keypair: keypair.to_string(),
+            };
+            let result = rekindle_vault::typed::owner_keys::stage_prekey_owner(vault, &entry);
+            entry.keypair.zeroize();
+            result.map_err(|error| {
+                tracing::warn!(%error, "replacement prekey owner not saved");
+                "the replacement prekey owner could not be saved"
+            })
+        });
+    if let Err(error) = staged_owner {
+        pool.release(lease).await;
+        return Err(error.into());
+    }
+    let (db_id, db_key) = (device_id.clone(), key.clone());
+    let saved = db
+        .call(move |conn| {
+            rekindle_db::repo::identity::replace_device_prekeys(
+                conn, &owner, &db_id, &db_key, &keys,
+            )
+        })
+        .await;
+    if let Some(vault) = ctx.vault.lock().as_ref() {
+        let committed = saved.is_ok().then_some(key.as_str());
+        if let Err(error) = rekindle_vault::typed::owner_keys::finish_prekey_owner(vault, committed)
+        {
+            tracing::warn!(%error, "prekey owner will be recovered on unlock");
+        }
+    }
+    if let Err(error) = saved {
+        pool.release(lease).await;
+        return Err(error.to_string());
+    }
+    let old = ctx.own_prekey_lease.lock().replace(lease);
+    if let Some(old) = old {
+        pool.release(old).await;
+    }
+    let list = device_list(&key, &device_id).map_err(|e| e.to_string())?;
+    rekindle_protocol::dht::profile::publish_device_list(pool.as_ref(), &profile, &list)
+        .await
+        .map_err(|e| e.to_string())?;
+    if let Err(error) = rekindle_transport::operations::prekeys::publish(&friends, later).await {
+        tracing::warn!(%error, "remaining prekeys will be reconciled by maintenance");
+    }
+    Ok(())
+}
