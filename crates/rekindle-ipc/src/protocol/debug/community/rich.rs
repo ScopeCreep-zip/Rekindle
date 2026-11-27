@@ -85,6 +85,20 @@ impl std::fmt::Debug for RichRequest {
                 .field("thread_id", thread_id)
                 .field("body_len", &body.len())
                 .finish(),
+            Self::CreateForumPost {
+                community,
+                channel_id,
+                title,
+                forum_tag,
+                body,
+            } => f
+                .debug_struct("CreateForumPost")
+                .field("community", community)
+                .field("channel_id", channel_id)
+                .field("title_len", &title.len())
+                .field("forum_tag_len", &forum_tag.as_ref().map(String::len))
+                .field("body_len", &body.len())
+                .finish(),
             Self::PollCreate {
                 community,
                 channel_id,
