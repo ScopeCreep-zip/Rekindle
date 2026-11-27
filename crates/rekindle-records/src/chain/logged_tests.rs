@@ -7,7 +7,7 @@ use super::{append_at_unless_logged, read_log_after, LoggedAppend};
 use crate::port::RecordPort;
 use crate::schema;
 
-async fn member_record() -> (MemPort, String, String) {
+async fn member_record() -> (MemPort, String, zeroize::Zeroizing<String>) {
     let port = MemPort::default();
     let (lease, key, owner) = port.create(&schema::member_record(), None).await.unwrap();
     port.release(lease).await;

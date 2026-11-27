@@ -19,7 +19,9 @@ use crate::schema;
 ///
 /// # Errors
 /// The create failed, or the `HEAD` write did not land.
-pub async fn create_participant(port: &dyn RecordPort) -> Result<(String, String), ChainError> {
+pub async fn create_participant(
+    port: &dyn RecordPort,
+) -> Result<(String, zeroize::Zeroizing<String>), ChainError> {
     let empty_head = page::empty_head()?;
     let (lease, record_key, owner) = port.create(&schema::dm_participant(), None).await?;
     let written = port

@@ -11,6 +11,7 @@ use rekindle_records::port::{
     DhtBackend, DhtCallError, DhtErrorKind, OpenIntent, PortError, RecordDescriptor, RecordReport,
     RecordSchema, RecordValue, ReportScope, ValueChange, WriterKey,
 };
+use rekindle_secrets::record_writer::RecordWriterSecret;
 use rekindle_types::config::{
     SafetyProfile, SequencingPreference, StabilityPreference, ANONYMITY_HOP_FLOOR,
 };
@@ -80,11 +81,11 @@ fn parse_error(message: String) -> DhtCallError {
 /// The text is not a keypair.
 pub fn parse_keypair(text: &str) -> Result<KeyPair, PortError> {
     text.parse::<KeyPair>()
-        .map_err(|e| PortError::KeyText(format!("keypair: {e}")))
+        .map_err(|_| PortError::KeyText("invalid record keypair".into()))
 }
 
 fn keypair(writer: &WriterKey) -> Result<KeyPair, DhtCallError> {
-    parse_keypair(&writer.keypair).map_err(|e| parse_error(e.to_string()))
+    parse_keypair(writer.keypair().expose()).map_err(|e| parse_error(e.to_string()))
 }
 
 fn record_key(key: &str) -> Result<RecordKey, DhtCallError> {
@@ -92,10 +93,9 @@ fn record_key(key: &str) -> Result<RecordKey, DhtCallError> {
 }
 
 fn writer_key(keypair: &KeyPair) -> WriterKey {
-    WriterKey {
-        keypair: keypair.to_string(),
-        public: keypair.key().to_string(),
-    }
+    let public = keypair.key().to_string();
+    let secret = RecordWriterSecret::from_parts(&public, &keypair.ref_bare_secret().bytes());
+    WriterKey::new(public, secret)
 }
 
 /// The Veilid schema for `schema`.

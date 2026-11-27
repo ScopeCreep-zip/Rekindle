@@ -248,7 +248,7 @@ pub(crate) async fn new_inbox_for(
         .create(&schema, None)
         .await
         .map_err(|e| FriendError::Failed(format!("request inbox not created: {e}")))?;
-    Ok((record_key, Zeroizing::new(owner), lease, writer))
+    Ok((record_key, owner, lease, writer))
 }
 
 /// Redeem `blob`: our sealed `FriendRequest`, admitted by `invite_id`,
