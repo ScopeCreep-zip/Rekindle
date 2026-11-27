@@ -124,14 +124,18 @@ export const LINKED_SHEET = 'var l = document.getElementById("rekindle-skin"); r
  */
 export async function skinShown(b: Browser, href: string): Promise<void> {
   let now = "";
+  // The message names what the window showed when the wait ran out (built
+  // then, not before the wait, when it was always "no sheet").
   await waitUntil(
     async () => {
       now = (await b.execute(LINKED_SHEET)) as string;
       return now === href;
     },
     NET_WAIT_MS,
-    `the window never showed the applied skin (shows ${now || "no sheet"})`,
-  );
+    "",
+  ).catch(() => {
+    throw new Error(`the window never showed the applied skin ${href} (it shows ${now || "no sheet"})`);
+  });
 }
 
 /** In the open Settings → Appearance, `user` makes built-in skin `name` the login skin (its "Use as login skin", then the review), and its row says so. */
