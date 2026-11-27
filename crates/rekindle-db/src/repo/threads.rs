@@ -92,7 +92,7 @@ pub fn set_archived(
     Ok(())
 }
 
-/// A reply received in a thread.
+/// A reply received in a thread, identified by its verified author and wire id.
 pub struct ThreadMessageRow<'a> {
     pub thread_id: &'a str,
     pub message_id: &'a str,
@@ -102,7 +102,7 @@ pub struct ThreadMessageRow<'a> {
     pub reply_to_id: Option<&'a str>,
 }
 
-/// Store `message` once and count it on its thread's row.
+/// Store `message` once per author and wire id and count it on its thread's row.
 ///
 /// # Errors
 /// The insert or the update failed.
@@ -160,3 +160,7 @@ pub fn message_rows(
         |row| row.get(0),
     )
 }
+
+#[cfg(test)]
+#[path = "threads_tests.rs"]
+mod tests;
