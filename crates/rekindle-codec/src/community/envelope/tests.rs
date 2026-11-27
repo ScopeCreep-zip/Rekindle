@@ -325,6 +325,6 @@ fn signed_envelope_capnp_roundtrip() {
         ttl: 5,
     };
     let bytes = encode_signed_envelope(&signed);
-    let back = crate::capnp_envelope::decode_signed_envelope(&bytes).unwrap();
+    let back = crate::capnp_envelope::decode_signed_envelope(&bytes.unwrap()).unwrap();
     assert_eq!(back.community_id, "comm_01");
 }

@@ -18,7 +18,7 @@ pub struct AccountHeader {
     pub updated_at: u64,
 }
 
-pub fn encode_account_header(header: &AccountHeader) -> Vec<u8> {
+pub fn encode_account_header(header: &AccountHeader) -> Result<Vec<u8>, CodecError> {
     let mut builder = capnp::message::Builder::new_default();
     {
         let mut root = builder.init_root::<account_capnp::account_header::Builder<'_>>();

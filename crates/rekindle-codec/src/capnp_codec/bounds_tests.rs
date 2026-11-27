@@ -24,9 +24,9 @@ fn signed(payload_len: usize) -> SignedEnvelope {
 #[test]
 fn the_gossip_envelope_refuses_a_message_that_inflates_past_its_bound() {
     let fits = encode_signed_envelope(&signed(MAX_APP_MESSAGE_LEN));
-    assert!(decode_signed_envelope(&fits).is_ok());
+    assert!(decode_signed_envelope(&fits.unwrap()).is_ok());
 
-    let inflating = encode_signed_envelope(&signed((SIGNED_ENVELOPE_BOUND.max_words + 1) * 8));
+    let inflating = encode_signed_envelope(&signed((SIGNED_ENVELOPE_BOUND.max_words + 1) * 8)).unwrap();
     assert!(inflating.len() < MAX_APP_MESSAGE_LEN, "fits one datagram");
     assert!(decode_signed_envelope(&inflating).is_err());
 
@@ -56,7 +56,7 @@ fn input_over_the_byte_cap_is_refused_before_it_is_read() {
             last_seq: 1,
         },
         retired_through: 7,
-    });
+    }).unwrap();
     assert!(chain::decode_chain_head(&head).is_ok());
     head.resize(super::CHAIN_HEAD_BOUND.max_bytes + 1, 0);
     let err = chain::decode_chain_head(&head).unwrap_err();

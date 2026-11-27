@@ -808,6 +808,7 @@
             "name": "Moderator",
             "permissions": 2251799813685247,
             "position": 1,
+            "positionLabel": "1",
             "selfAssignable": false,
             "tagColours": {
               "dark": 65280,

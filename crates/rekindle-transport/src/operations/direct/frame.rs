@@ -464,7 +464,7 @@ async fn open_init(
 /// failure is the frame's ([`Dropped::Refused`]).
 pub(crate) fn ratchet_dropped(error: &RatchetError) -> Dropped {
     match error {
-        RatchetError::Db(_) => Dropped::Failed,
+        RatchetError::Db(_) | RatchetError::Codec(_) => Dropped::Failed,
         _ => Dropped::Refused,
     }
 }

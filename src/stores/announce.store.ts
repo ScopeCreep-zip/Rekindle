@@ -25,12 +25,9 @@ const ANNOUNCE_CLEAR_MS = 1500;
 let politeClear: ReturnType<typeof setTimeout> | null = null;
 let assertiveClear: ReturnType<typeof setTimeout> | null = null;
 
-export { politeMessage, assertiveMessage };
+export { assertiveMessage, politeMessage };
 
-export function announce(
-  message: string,
-  priority: "polite" | "assertive" = "polite",
-): void {
+export function announce(message: string, priority: "polite" | "assertive" = "polite"): void {
   if (!message) return;
   if (priority === "assertive") {
     if (assertiveClear) clearTimeout(assertiveClear);

@@ -3,7 +3,7 @@ name = "rekindle-idempotency"
 version = "0.1.0"
 publish = false
 edition = "2021"
-license = "MIT"
+license.workspace = true
 description = "LRU + TTL idempotency cache wrapping mutating Tauri commands in Rekindle"
 
 [lints]

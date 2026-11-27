@@ -4,6 +4,10 @@
 
 use serde::{Deserialize, Serialize};
 
+pub use super::community_co_creation::{
+    CoCreationSnapshot, CoCreatorState, HeldCreatorInvite, PendingCoCreation,
+};
+
 /// A freshly minted invite. The raw code rides only inside `url`; the
 /// network sees its hash.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -167,6 +171,12 @@ pub struct CommunityView {
     pub my_theme_color: Option<u32>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub my_badges: Vec<String>,
+    /// The avatar cached for our profile in this community.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub my_avatar_ref: Option<String>,
+    /// The banner cached for our profile in this community.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub my_banner_ref: Option<String>,
     /// Our name in this community as it renders, never empty (plan E3.4
     /// S6): our card's name, else our short pseudonym fingerprint; never
     /// the identity's name. Messages render with it before the member
@@ -553,45 +563,4 @@ pub struct PinnedMessageView {
     pub pinned_by: String,
     /// Seconds, as the receiving peer stored the pin.
     pub pinned_at: u64,
-}
-
-/// A friend's co-creator invite we hold, unanswered or accepted and
-/// waiting for its join link (plan E3.2 S7s.3g, lead decision (33)).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HeldCreatorInvite {
-    pub anchor: String,
-    /// The creator, by identity key.
-    pub peer_key: String,
-    pub community_name: String,
-}
-
-/// One co-creator's state in a creation of ours, in the words of
-/// `FriendEvent::CoCreatorStatus` (`pending`, `accepted`, `declined`,
-/// `removed`).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CoCreatorState {
-    pub peer_key: String,
-    pub status: String,
-}
-
-/// A creation of ours still waiting on its co-creators.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PendingCoCreation {
-    pub anchor: String,
-    pub name: String,
-    /// Every co-creator named, in the order named.
-    pub co_creators: Vec<CoCreatorState>,
-}
-
-/// The co-creation state a window reads once its event stream is live
-/// (plan E3.2 S7s.3g, the VI1 pattern): the held invites and our pending
-/// creations. The friend events then keep it current.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct CoCreationSnapshot {
-    pub invites: Vec<HeldCreatorInvite>,
-    pub creations: Vec<PendingCoCreation>,
 }

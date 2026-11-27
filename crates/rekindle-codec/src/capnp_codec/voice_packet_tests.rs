@@ -18,7 +18,7 @@ fn signed() -> (VoicePacket, SigningKey) {
 #[test]
 fn round_trip_and_verify() {
     let (packet, _) = signed();
-    let decoded = VoicePacket::decode(&packet.encode()).unwrap();
+    let decoded = VoicePacket::decode(&packet.encode().unwrap()).unwrap();
     assert_eq!(decoded, packet);
     assert!(decoded.verify().is_ok());
 }

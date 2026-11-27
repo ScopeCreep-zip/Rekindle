@@ -159,7 +159,7 @@ pub(super) fn write_voice_mode_switch(
 pub(super) fn write_stage_update(
     mut p: cap::stage_update_payload::Builder<'_>,
     payload: &ControlPayload,
-) {
+) -> Result<(), CodecError> {
     let ControlPayload::StageUpdate {
         channel_id,
         topic,
@@ -175,12 +175,13 @@ pub(super) fn write_stage_update(
     if let Some(t) = topic {
         p.set_topic(t);
     }
-    let mut list = p.reborrow().init_speakers(len_u32(speakers.len()));
-    for (i, s) in speakers.iter().enumerate() {
-        list.set(len_u32(i), s.as_str());
+    let mut list = p.reborrow().init_speakers(len_u32(speakers.len())?);
+    for (i, s) in (0u32..).zip(speakers.iter()) {
+        list.set(i, s.as_str());
     }
     p.set_moderator_pseudonym(moderator_pseudonym);
     p.set_lamport(*lamport);
+    Ok(())
 }
 
 pub(super) fn write_speak_request(
@@ -258,7 +259,7 @@ pub(super) fn write_voice_deafen(
 pub(super) fn write_voice_roster(
     mut p: cap::voice_roster_payload::Builder<'_>,
     payload: &ControlPayload,
-) {
+) -> Result<(), CodecError> {
     let ControlPayload::VoiceRoster {
         channel_id,
         participants,
@@ -267,10 +268,11 @@ pub(super) fn write_voice_roster(
         unreachable!("write_voice_roster: variant mismatch")
     };
     p.set_channel_id(channel_id);
-    let mut list = p.reborrow().init_participants(len_u32(participants.len()));
-    for (i, e) in participants.iter().enumerate() {
-        write_voice_roster_entry(list.reborrow().get(len_u32(i)), e);
+    let mut list = p.reborrow().init_participants(len_u32(participants.len())?);
+    for (i, e) in (0u32..).zip(participants.iter()) {
+        write_voice_roster_entry(list.reborrow().get(i), e);
     }
+    Ok(())
 }
 
 pub(super) fn write_soundboard_play(

@@ -1,10 +1,10 @@
-import { Component, createSignal, onMount, Show } from "solid-js";
+import { type Component, createSignal, createUniqueId, onMount, Show } from "solid-js";
+import { handleSaveSettings } from "../../actions/settings.actions";
 import FormField from "../../components/common/FormField";
 import SettingsSelect, { type SettingsSelectOption } from "../../components/common/SettingsSelect";
-import { settingsState } from "../../stores/settings.store";
-import { handleSaveSettings } from "../../actions/settings.actions";
 import { commands } from "../../ipc/commands";
 import type { NotificationContent, QuietHoursSettings } from "../../ipc/commands/types";
+import { settingsState } from "../../stores/settings.store";
 
 /** What an OS notification shows of a message. */
 const NOTIFICATION_CONTENT_OPTIONS: SettingsSelectOption[] = [
@@ -14,6 +14,8 @@ const NOTIFICATION_CONTENT_OPTIONS: SettingsSelectOption[] = [
 ];
 
 const NotificationsTab: Component = () => {
+  const quietHoursStartId = createUniqueId();
+  const quietHoursEndId = createUniqueId();
   // Architecture §17.2 / §17.3 — Do Not Disturb + quiet hours.
   const [dnd, setDnd] = createSignal<boolean>(false);
   // Quiet hours, including the IANA timezone for DST-aware resolution
@@ -32,22 +34,31 @@ const NotificationsTab: Component = () => {
   const [dndLoaded, setDndLoaded] = createSignal(false);
 
   onMount(() => {
-    commands.getLinkPreviewsEnabled().then((on) => {
-      setLinkPreviewsEnabled(on);
-    }).catch((e) => {
-      console.error("Failed to load link-previews setting:", e);
-    });
-    commands.getDoNotDisturb().then((on) => {
-      setDnd(on);
-      setDndLoaded(true);
-    }).catch((e) => {
-      console.error("Failed to load DND:", e);
-    });
-    commands.getQuietHours().then((stored) => {
-      setQh(stored);
-    }).catch((e) => {
-      console.error("Failed to load quiet hours:", e);
-    });
+    commands
+      .getLinkPreviewsEnabled()
+      .then((on) => {
+        setLinkPreviewsEnabled(on);
+      })
+      .catch((e) => {
+        console.error("Failed to load link-previews setting:", e);
+      });
+    commands
+      .getDoNotDisturb()
+      .then((on) => {
+        setDnd(on);
+        setDndLoaded(true);
+      })
+      .catch((e) => {
+        console.error("Failed to load DND:", e);
+      });
+    commands
+      .getQuietHours()
+      .then((stored) => {
+        setQh(stored);
+      })
+      .catch((e) => {
+        console.error("Failed to load quiet hours:", e);
+      });
   });
 
   function handleToggle(key: keyof typeof settingsState): void {
@@ -55,10 +66,7 @@ const NotificationsTab: Component = () => {
   }
 
   // Wave 12 W12.2 — slider for numeric settings (ringtone volume).
-  function handleSliderChange(
-    key: keyof typeof settingsState,
-    value: number,
-  ): void {
+  function handleSliderChange(key: keyof typeof settingsState, value: number): void {
     handleSaveSettings({ [key]: value });
   }
 
@@ -104,8 +112,10 @@ const NotificationsTab: Component = () => {
   // alphabetically. `Intl.supportedValuesOf` is shipped in every
   // WebView2 / WebKit / Gecko version Tauri 2 currently targets.
   const supportedTimezones = (): string[] => {
-    const list = (Intl as unknown as { supportedValuesOf?: (key: string) => string[] })
-      .supportedValuesOf?.("timeZone") ?? [];
+    const list =
+      (Intl as unknown as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.(
+        "timeZone"
+      ) ?? [];
     // The stored zone is always listed: the row defaults to "UTC", which
     // Chromium's catalog omits, and a select without its value shows the
     // first zone instead, a value never read.
@@ -162,12 +172,7 @@ const NotificationsTab: Component = () => {
           step="0.05"
           value={settingsState.ringtoneVolume}
           style={{ "--range-fill": `${settingsState.ringtoneVolume * 100}%` }}
-          onInput={(e) =>
-            handleSliderChange(
-              "ringtoneVolume",
-              Number(e.currentTarget.value),
-            )
-          }
+          onInput={(e) => handleSliderChange("ringtoneVolume", Number(e.currentTarget.value))}
         />
         <span class="settings-hint" style="min-width: 36px; text-align: right;">
           {Math.round(settingsState.ringtoneVolume * 100)}%
@@ -179,9 +184,7 @@ const NotificationsTab: Component = () => {
           checked={settingsState.inCallDndAutoEnable}
           onChange={() => handleToggle("inCallDndAutoEnable")}
         />
-        <span class="buddy-name">
-          Suppress message notifications while in a call
-        </span>
+        <span class="buddy-name">Suppress message notifications while in a call</span>
       </label>
 
       <FormField label="Notifications show" labelId="settings-notification-content-label">
@@ -225,10 +228,9 @@ const NotificationsTab: Component = () => {
         </span>
       </label>
       <div class="settings-hint">
-        When enabled, this device fetches OpenGraph metadata directly from
-        the destination site (the fetch bypasses Veilid). Receivers always
-        re-validate your <code>EMBED_LINKS</code> permission before
-        rendering the card, so disabling here only affects outbound previews.
+        When enabled, this device fetches OpenGraph metadata directly from the destination site (the
+        fetch bypasses Veilid). Receivers always re-validate your <code>EMBED_LINKS</code>{" "}
+        permission before rendering the card, so disabling here only affects outbound previews.
       </div>
 
       {/* Architecture §17.2 — quiet hours suppress notifications
@@ -243,8 +245,9 @@ const NotificationsTab: Component = () => {
         />
         <span class="buddy-name">Enable quiet hours</span>
       </label>
-      <FormField label="Start hour (0–23)">
+      <FormField label="Start hour (0–23)" controlId={quietHoursStartId}>
         <input
+          id={quietHoursStartId}
           class="form-input"
           type="number"
           min={0}
@@ -257,8 +260,9 @@ const NotificationsTab: Component = () => {
           }}
         />
       </FormField>
-      <FormField label="End hour (0–23)">
+      <FormField label="End hour (0–23)" controlId={quietHoursEndId}>
         <input
+          id={quietHoursEndId}
           class="form-input"
           type="number"
           min={0}
@@ -284,7 +288,8 @@ const NotificationsTab: Component = () => {
           <Show when={qh()}>
             {(loaded) => (
               <>
-                {" "}Current local time:{" "}
+                {" "}
+                Current local time:{" "}
                 {new Date().toLocaleTimeString(undefined, {
                   hour: "2-digit",
                   minute: "2-digit",

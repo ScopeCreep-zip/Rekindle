@@ -4,7 +4,7 @@ version = "0.1.0"
 publish = false
 edition = "2021"
 description = "Cryptographic security boundary for Rekindle — all secret key material lives here"
-license = "MIT"
+license.workspace = true
 
 [lints]
 workspace = true

@@ -1,4 +1,4 @@
-import { Component } from "solid-js";
+import type { Component } from "solid-js";
 import { buddyListUI, setBuddyListUI } from "../../stores/buddylist-ui.store";
 
 let searchInputRef: HTMLInputElement | undefined;

@@ -27,32 +27,28 @@ impl VoicePacket {
     /// relay cannot splice a frame under another sender or position.
     #[must_use]
     pub fn sframe_metadata(sender_key: &[u8], sequence: u32, timestamp: u64) -> Vec<u8> {
-        let mut out = Vec::with_capacity(sender_key.len() + 12);
-        out.extend_from_slice(sender_key);
-        out.extend_from_slice(&sequence.to_le_bytes());
-        out.extend_from_slice(&timestamp.to_le_bytes());
-        out
+        [
+            sender_key,
+            &sequence.to_le_bytes(),
+            &timestamp.to_le_bytes(),
+        ]
+        .concat()
     }
 
     /// The bytes the sender signs: the `VOICE_PACKET` domain, then every
     /// field but the signature.
     #[must_use]
     pub fn signing_bytes(&self) -> Vec<u8> {
-        let mut out =
-            Vec::with_capacity(VOICE_PACKET.len() + self.sender_key.len() + 12 + self.sframe.len());
-        out.extend_from_slice(VOICE_PACKET.as_bytes());
-        out.extend_from_slice(&Self::sframe_metadata(
-            &self.sender_key,
-            self.sequence,
-            self.timestamp,
-        ));
-        out.extend_from_slice(&self.sframe);
-        out
+        [
+            VOICE_PACKET.as_bytes(),
+            &Self::sframe_metadata(&self.sender_key, self.sequence, self.timestamp),
+            &self.sframe,
+        ]
+        .concat()
     }
 
     /// Packed Cap'n Proto bytes.
-    #[must_use]
-    pub fn encode(&self) -> Vec<u8> {
+        pub fn encode(&self) -> Result<Vec<u8>, CodecError> {
         let mut builder = capnp::message::Builder::new_default();
         {
             let mut root = builder.init_root::<voice_packet::Builder<'_>>();

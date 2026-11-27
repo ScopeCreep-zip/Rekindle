@@ -4,6 +4,7 @@
 //! shape (and per enum variant), every key camelCase, and the JSON equal to
 //! `tests/golden/dto.json` (`UPDATE_GOLDEN=1` after a deliberate change).
 
+mod community_profile;
 mod dm;
 #[path = "../common/json.rs"]
 mod json;
@@ -265,6 +266,7 @@ fn samples() -> Map<String, Value> {
     friend_samples(&mut add);
     onboarding::samples(&mut add);
     skin::samples(&mut add);
+    community_profile::samples(&mut add);
     dm::samples(&mut add);
     servers::samples(&mut add, &pk('b'));
     local_search::samples(&mut add, &pk('c'));

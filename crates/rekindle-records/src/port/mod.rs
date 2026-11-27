@@ -69,6 +69,9 @@ pub enum PortError {
     Node(String),
     #[error("encoding: {0}")]
     Codec(String),
+    /// A value exceeds the wire encoding's representable range.
+    #[error("too large to encode: {0}")]
+    TooLargeToEncode(usize),
     #[error("crypto: {0}")]
     Crypto(String),
 }

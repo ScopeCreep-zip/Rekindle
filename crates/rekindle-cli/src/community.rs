@@ -1,16 +1,22 @@
 //! Community commands: create, join, leave, list, info.
 
-use rekindle_ipc::protocol::LifecycleRequest;
-use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, SettingsRequest};
-use rekindle_types::dto::permission_catalogue::PermissionCatalogue;
+use rekindle_ipc::protocol::{
+    ChannelMessageRequest, CommunityRequest, IpcRequest, LifecycleRequest,
+};
+use rekindle_types::display::CommunityDetail;
 
 use crate::cli::CommunityCmd;
-use crate::community_watch::watch;
+use crate::community_ref;
 use crate::governance;
 use crate::helpers;
 use crate::output::OutputMode;
 use crate::output::{format, table};
 use rekindle_client::DaemonClient;
+
+mod profile;
+mod roles;
+
+pub(crate) use roles::print_roles;
 
 pub async fn dispatch(
     cmd: &CommunityCmd,
@@ -83,19 +89,12 @@ pub async fn dispatch(
             .await?;
             format::print_structured(&value, mode)
         }
-        CommunityCmd::SetName { community, name } => {
-            let value = helpers::send(
-                client,
-                IpcRequest::Community(CommunityRequest::Settings(
-                    SettingsRequest::CommunitySetDisplayName {
-                        community: community.clone(),
-                        display_name: name.clone(),
-                    },
-                )),
-            )
-            .await?;
-            format::print_structured(&value, mode)
-        }
+        CommunityCmd::SetName {
+            community,
+            name,
+            clear,
+        } => profile::set_name(client, mode, community, name.as_deref(), *clear).await,
+        CommunityCmd::Profile(args) => profile::update(client, mode, args).await,
         CommunityCmd::Forget { community } => {
             let value = helpers::send(
                 client,
@@ -108,47 +107,18 @@ pub async fn dispatch(
             .await?;
             format::print_structured(&value, mode)
         }
-        CommunityCmd::List => {
-            let value = helpers::send(
-                client,
-                IpcRequest::Community(CommunityRequest::Lifecycle(LifecycleRequest::CommunityList)),
-            )
-            .await?;
-            if mode.is_structured() {
-                return format::print_structured(&value, mode);
-            }
-            let rows = value
-                .as_array()
-                .map(|arr| {
-                    arr.iter()
-                        .map(|c| {
-                            vec![
-                                c.get("name")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("?")
-                                    .to_string(),
-                                c.get("memberCount")
-                                    .and_then(serde_json::Value::as_u64)
-                                    .map_or("?".into(), |n| n.to_string()),
-                                c.get("channelCount")
-                                    .and_then(serde_json::Value::as_u64)
-                                    .map_or("?".into(), |n| n.to_string()),
-                                rekindle_client::fmt::abbreviate_key(
-                                    c.get("anchor").and_then(|v| v.as_str()).unwrap_or("?"),
-                                ),
-                                removal_text(c.get("removed")),
-                            ]
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
-            table::print_table(
-                &["Name", "Members", "Channels", "Key", "Standing"],
-                &rows,
-                mode,
-            )
+        CommunityCmd::Focus {
+            community,
+            channel,
+            voice,
+        } => {
+            let detail = community_ref::detail(client, community).await?;
+            let request = focus_request(&detail, channel.as_deref(), *voice)?;
+            let value = helpers::send(client, request).await?;
+            format::print_structured(&value, mode)
         }
-        CommunityCmd::Permissions => permissions(client, mode).await,
+        CommunityCmd::List => list(client, mode).await,
+        CommunityCmd::Permissions => roles::permissions(client, mode).await,
         CommunityCmd::Info { community, full } => {
             let value = helpers::send(
                 client,
@@ -312,23 +282,65 @@ pub async fn dispatch(
         CommunityCmd::Role(sub) => governance::dispatch_role(sub, client, mode).await,
         CommunityCmd::Moderate(sub) => governance::dispatch_moderate(sub, client, mode).await,
         CommunityCmd::Channel(sub) => crate::channel_overwrite::dispatch(sub, client, mode).await,
-        CommunityCmd::Watch { community } => watch(client, community.as_deref(), mode).await,
+        CommunityCmd::Watch { community } => {
+            crate::community_watch::watch(client, community.as_deref(), mode).await
+        }
     }
 }
 
-async fn permissions(client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
-    let value = helpers::send(client, IpcRequest::PermissionCatalogue).await?;
-    let catalogue: PermissionCatalogue = serde_json::from_value(value)?;
+async fn list(client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
+    let value = community_ref::list(client).await?;
     if mode.is_structured() {
-        return format::print_structured(&catalogue, mode);
+        return format::print_structured(&value, mode);
     }
-    for group in catalogue.groups {
-        format::print_text(&group.name)?;
-        for entry in group.permissions {
-            format::print_text(&format!("  {} ({})", entry.label, entry.key))?;
-        }
-    }
-    Ok(())
+    let rows = value
+        .as_array()
+        .map(|arr| {
+            arr.iter()
+                .map(|c| {
+                    vec![
+                        c.get("name")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("?")
+                            .to_string(),
+                        c.get("memberCount")
+                            .and_then(serde_json::Value::as_u64)
+                            .map_or("?".into(), |n| n.to_string()),
+                        c.get("channelCount")
+                            .and_then(serde_json::Value::as_u64)
+                            .map_or("?".into(), |n| n.to_string()),
+                        rekindle_client::fmt::abbreviate_key(
+                            c.get("anchor").and_then(|v| v.as_str()).unwrap_or("?"),
+                        ),
+                        removal_text(c.get("removed")),
+                    ]
+                })
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
+    table::print_table(
+        &["Name", "Members", "Channels", "Key", "Standing"],
+        &rows,
+        mode,
+    )
+}
+
+/// The active-channel request for a community already resolved to its anchor.
+pub fn focus_request(
+    detail: &CommunityDetail,
+    channel: Option<&str>,
+    voice: bool,
+) -> anyhow::Result<IpcRequest> {
+    let channel = channel
+        .map(|channel| community_ref::channel_id(detail, channel).map(str::to_owned))
+        .transpose()?;
+    Ok(IpcRequest::Community(CommunityRequest::Messages(
+        ChannelMessageRequest::ChannelSetActive {
+            community: detail.anchor.clone(),
+            channel,
+            kind: if voice { "voice" } else { "text" }.into(),
+        },
+    )))
 }
 
 /// `community info --full`: the channel list and the roles with their
@@ -349,17 +361,6 @@ fn print_full_info(value: &serde_json::Value, mode: OutputMode) -> anyhow::Resul
     print_roles(&roles, mode)
 }
 
-pub(crate) fn print_roles(
-    roles: &[rekindle_types::display::RoleDisplay],
-    mode: OutputMode,
-) -> anyhow::Result<()> {
-    table::print_table(
-        &["Role", "Position", "Permissions", "ID"],
-        &role_rows(roles),
-        mode,
-    )
-}
-
 fn channel_rows(channels: &[rekindle_types::display::ChannelOverviewDisplay]) -> Vec<Vec<String>> {
     let mut sorted: Vec<_> = channels.iter().collect();
     sorted.sort_by(|a, b| {
@@ -376,22 +377,6 @@ fn channel_rows(channels: &[rekindle_types::display::ChannelOverviewDisplay]) ->
                 c.topic.clone(),
                 c.mek_generation.to_string(),
                 rekindle_client::fmt::abbreviate_key(&c.id),
-            ]
-        })
-        .collect()
-}
-
-fn role_rows(roles: &[rekindle_types::display::RoleDisplay]) -> Vec<Vec<String>> {
-    let mut sorted: Vec<_> = roles.iter().collect();
-    sorted.sort_by(|a, b| b.position.cmp(&a.position).then_with(|| a.id.cmp(&b.id)));
-    sorted
-        .into_iter()
-        .map(|r| {
-            vec![
-                r.name.clone(),
-                r.position_label.clone(),
-                format!("{:#x}", r.permissions),
-                r.id.clone(),
             ]
         })
         .collect()

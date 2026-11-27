@@ -7,6 +7,7 @@ use rekindle_codec::community::envelope::CommunityEnvelope;
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance_runtime::deps::CommunityDhtOpenSetup;
 use rekindle_governance_runtime::GovernanceRuntimeError;
+use rekindle_route::dead_routes::DeadRouteVerdict;
 use rekindle_types::id::ChannelId;
 
 use super::{capability_words, HostGovernance};
@@ -181,11 +182,12 @@ impl HostGovernance {
 
     /// A read of a peer's record returned route `blob` at DHT `seq`: a
     /// strictly newer read of a dead blob makes it usable again (plan RV1g
-    /// B3).
-    pub(crate) fn route_read_at(&self, blob: &[u8], seq: u64) {
-        if let Ok(node) = self.transport() {
-            node.liveness().route_read_at(blob, seq);
-        }
+    /// B3), and the same seq one re-fetch gap after its death asks for a
+    /// probe (plan RH1r-c S2/S3, `route_probe`).
+    pub(crate) fn route_read_at(&self, blob: &[u8], seq: u64) -> DeadRouteVerdict {
+        self.transport().map_or(DeadRouteVerdict::NotDead, |node| {
+            node.liveness().route_read_at(blob, seq)
+        })
     }
 
     // ---------- Hydration ----------

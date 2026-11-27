@@ -1,8 +1,8 @@
-import { Component, createEffect } from "solid-js";
-import SimpleInputModal from "../common/SimpleInputModal";
-import JoinProgressStepper from "./JoinProgressStepper";
+import { type Component, createEffect } from "solid-js";
 import { handleJoinCommunity } from "../../actions/community.actions";
 import { beginJoinProgress, endJoinProgress, resetJoinProgress } from "../../stores/join.store";
+import SimpleInputModal from "../common/SimpleInputModal";
+import JoinProgressStepper from "./JoinProgressStepper";
 
 interface JoinCommunityModalProps {
   isOpen: boolean;

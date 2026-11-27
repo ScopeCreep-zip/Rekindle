@@ -92,7 +92,7 @@ impl HostGovernance {
         community: &str,
         requester: &PseudonymKey,
         invite: Option<&str>,
-        proves: impl Fn(&str) -> bool,
+        proves: impl Fn(&str) -> Result<bool, rekindle_codec::CodecError>,
     ) -> bool {
         let (admitted, bucket) = match invite {
             None => (
@@ -100,10 +100,16 @@ impl HostGovernance {
                 hex::encode(requester.0),
             ),
             Some(code_hash) => {
-                let proven = self
-                    .our_invite_code(community, code_hash)
-                    .await
-                    .is_some_and(|code| proves(&code));
+                let Some(code) = self.our_invite_code(community, code_hash).await else {
+                    return false;
+                };
+                let proven = match proves(&code) {
+                    Ok(proven) => proven,
+                    Err(error) => {
+                        tracing::debug!(community, %error, "checkpoint invite proof refused");
+                        return false;
+                    }
+                };
                 (
                     proven && self.holds_live_invite(community, requester, code_hash),
                     format!("invite:{code_hash}"),

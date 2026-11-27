@@ -10,6 +10,7 @@
 
 use crate::capnp_envelope::encode_signed_envelope;
 use crate::community::envelope::SignedEnvelope;
+use crate::error::CodecError;
 
 /// A 1:1 datagram: a `DmFrame` follows (allocated E2.1).
 pub const DIRECT_TAG: u8 = b'D';
@@ -51,13 +52,9 @@ pub fn classify(datagram: &[u8]) -> Ingress<'_> {
 /// The gossip datagram for `signed`: [`GOSSIP_TAG`] then its Cap'n Proto
 /// encoding. Every gossip send and forward, on both tracks, builds its
 /// bytes here.
-#[must_use]
-pub fn gossip_datagram(signed: &SignedEnvelope) -> Vec<u8> {
-    let encoded = encode_signed_envelope(signed);
-    let mut datagram = Vec::with_capacity(encoded.len() + 1);
-    datagram.push(GOSSIP_TAG);
-    datagram.extend_from_slice(&encoded);
-    datagram
+pub fn gossip_datagram(signed: &SignedEnvelope) -> Result<Vec<u8>, CodecError> {
+    let encoded = encode_signed_envelope(signed)?;
+    Ok([&[GOSSIP_TAG], encoded.as_slice()].concat())
 }
 
 #[cfg(test)]

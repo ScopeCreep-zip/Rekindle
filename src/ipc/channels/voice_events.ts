@@ -27,7 +27,7 @@ export type VoiceScope =
   | { dm: { peerKey: string } };
 
 /** One participant in a voice roster. */
-export interface VoiceParticipant {
+interface VoiceParticipant {
   pseudonymKey: string;
   displayName: string | null;
 }

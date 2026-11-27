@@ -176,6 +176,7 @@
 .channel-section-header	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .channel-slowmode-label	text	var(--color-xfire-text-dim)	--color-xfire-overlay 8% over --color-xfire-bg-panel	1.0	false
 .channel-topic	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
+.channel-topic-denied	text	var(--color-xfire-text-disabled)	--color-xfire-bg-dark	1.0	false
 .channel-topic-label	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
 .channel-unread-badge	text	var(--color-xfire-accent-fg)	--color-xfire-accent	1.0	false
 .channel-voice-join-btn	text	var(--color-xfire-text-on-fill)	--color-xfire-online var(--tint-fill) over --color-xfire-bg-dark	1.0	false
@@ -342,6 +343,7 @@
 .forum-channel-composer-title	text	var(--color-xfire-text-primary)	--color-xfire-bg-secondary	1.0	false
 .forum-channel-empty	text	var(--color-xfire-text-secondary)	--color-xfire-bg-dark	1.0	false
 .forum-channel-empty-title	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
+.forum-channel-new-post-btn:disabled	text	var(--color-xfire-text-disabled)	--color-xfire-bg-dark	1.0	false
 .forum-channel-tag	text	var(--color-xfire-text)	--color-xfire-bg-secondary	1.0	false
 .forum-channel-tag-active	text	var(--color-xfire-text-primary)	--color-xfire-accent 15% over --color-xfire-bg-secondary	1.0	false
 .forum-channel-thread-meta	text	var(--color-xfire-text-secondary)	--color-xfire-bg-secondary	1.0	false
@@ -450,6 +452,8 @@
 .member-group-header	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .member-list-header	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .member-list-header	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
+.member-list-loading	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
+.member-list-loading	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
 .member-search-input	text	var(--color-xfire-text)	--color-xfire-bg-input	1.0	false
 .mention-popover-row	text	var(--color-xfire-text-primary)	--color-xfire-bg-secondary	1.0	false
 .mention-popover-tag	text	var(--color-xfire-text-dim)	--color-xfire-overlay 8% over --color-xfire-bg-secondary	1.0	false
@@ -608,6 +612,12 @@
 .poll-create-remove-btn	text hovered	var(--color-xfire-text-primary)	--color-xfire-accent 12% over --color-xfire-bg-panel	1.0	false
 .profile-bio	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
 .profile-display-name	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
+.profile-editor-btn	text	var(--color-xfire-text)	--color-xfire-accent 15% over --color-xfire-bg-panel	1.0	false
+.profile-editor-btn	text hovered	var(--color-xfire-text)	--color-xfire-accent 25% over --color-xfire-bg-panel	1.0	false
+.profile-editor-image-placeholder	text	var(--color-xfire-text-dim)	--color-xfire-bg-secondary	1.0	false
+.profile-editor-input	text	var(--color-xfire-text)	--color-xfire-bg 80% over --color-xfire-bg-panel	1.0	false
+.profile-editor-label	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
+.profile-editor-textarea	text	var(--color-xfire-text)	--color-xfire-bg 80% over --color-xfire-bg-panel	1.0	false
 .profile-empty-hint	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .profile-game-elapsed	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .profile-game-name	text	var(--color-xfire-ingame-text)	--color-xfire-bg-dark	1.0	false
@@ -619,12 +629,6 @@
 .profile-popup-badge	text	var(--color-xfire-text)	--color-xfire-accent 15% over --color-xfire-bg-primary	1.0	false
 .profile-popup-bio	text	var(--color-xfire-text-dim)	--color-xfire-bg-primary	1.0	false
 .profile-popup-custom-status	text	var(--color-xfire-text)	--color-xfire-bg-primary	1.0	false
-.profile-popup-edit-btn	text	var(--color-xfire-text)	--color-xfire-accent 15% over --color-xfire-bg-primary	1.0	false
-.profile-popup-edit-btn	text hovered	var(--color-xfire-text)	--color-xfire-accent 25% over --color-xfire-bg-primary	1.0	false
-.profile-popup-edit-image-placeholder	text	var(--color-xfire-text-dim)	--color-xfire-bg-secondary	1.0	false
-.profile-popup-edit-input	text	var(--color-xfire-text)	--color-xfire-bg 80% over --color-xfire-bg-primary	1.0	false
-.profile-popup-edit-label	text	var(--color-xfire-text-dim)	--color-xfire-bg-primary	1.0	false
-.profile-popup-edit-textarea	text	var(--color-xfire-text)	--color-xfire-bg 80% over --color-xfire-bg-primary	1.0	false
 .profile-popup-empty-hint	text	var(--color-xfire-text-secondary)	--color-xfire-bg-primary	1.0	false
 .profile-popup-game-name	text	var(--color-xfire-ingame-text)	--color-xfire-bg-primary	1.0	false
 .profile-popup-game-server	text	var(--color-xfire-text-dim)	--color-xfire-bg-primary	1.0	false

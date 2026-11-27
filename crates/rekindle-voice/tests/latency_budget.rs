@@ -162,7 +162,7 @@ fn measure_pipeline_compute_p95() -> Duration {
         };
         ctr += 1;
         packet.sign(&signing_key);
-        let received = VoicePacket::decode(&packet.encode()).expect("decode packet");
+        let received = VoicePacket::decode(&packet.encode().unwrap()).expect("decode packet");
         received.verify().expect("verify");
         let opened = sframe::open(&key, &received.sframe, &metadata).expect("open");
         JitterFrame {

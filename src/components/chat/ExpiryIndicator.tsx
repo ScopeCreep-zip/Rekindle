@@ -1,6 +1,6 @@
-import { Component, Show, createMemo, createSignal, onCleanup } from "solid-js";
-import SkinGlyph from "../common/SkinGlyph";
+import { type Component, createMemo, createSignal, onCleanup, Show } from "solid-js";
 import { remainingShort, remainingText } from "../../utils/disappearing";
+import SkinGlyph from "../common/SkinGlyph";
 
 // One clock for every indicator on the page, running only while one is
 // shown. It only redraws the countdown: the Host deletes the message at
@@ -31,10 +31,13 @@ function unwatchClock(): void {
 const ExpiryIndicator: Component<{ expireAt?: number; expireSeconds?: number }> = (props) => {
   watchClock();
   onCleanup(unwatchClock);
-  const left = createMemo(() => (props.expireAt === undefined ? null : props.expireAt - now()));
+  const countdown = createMemo(() => {
+    const expireAt = props.expireAt;
+    return expireAt === undefined ? undefined : { ms: expireAt - now() };
+  });
   return (
     <Show
-      when={left() !== null}
+      when={countdown()}
       fallback={
         <Show when={(props.expireSeconds ?? 0) > 0}>
           <span class="message-expiry" title="Disappears once read">
@@ -44,11 +47,13 @@ const ExpiryIndicator: Component<{ expireAt?: number; expireSeconds?: number }> 
         </Show>
       }
     >
-      <span class="message-expiry" title={`Disappears in ${remainingText(left()!)}`}>
-        <SkinGlyph name="timer-sand" />
-        <span aria-hidden="true">{remainingShort(left()!)}</span>
-        <span class="sr-only">Disappears in {remainingText(left()!)}</span>
-      </span>
+      {(remaining) => (
+        <span class="message-expiry" title={`Disappears in ${remainingText(remaining().ms)}`}>
+          <SkinGlyph name="timer-sand" />
+          <span aria-hidden="true">{remainingShort(remaining().ms)}</span>
+          <span class="sr-only">Disappears in {remainingText(remaining().ms)}</span>
+        </span>
+      )}
     </Show>
   );
 };

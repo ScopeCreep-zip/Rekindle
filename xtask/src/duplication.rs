@@ -73,13 +73,13 @@ pub fn report(label: &str, offenders: Vec<Offender>, root: &Path, hint: &str) ->
     if fresh.is_empty() {
         return Ok(());
     }
-    for o in &fresh {
-        for l in &o.lines {
-            println!("{l}");
-        }
-    }
+    let details = fresh
+        .iter()
+        .flat_map(|offender| offender.lines.iter().map(String::as_str))
+        .collect::<Vec<_>>()
+        .join("\n");
     Err(anyhow!(
-        "{} new {label} duplication(s).\n{hint}\n\
+        "{details}\n{} new {label} duplication(s).\n{hint}\n\
          If the duplication is deliberate, record it with \
          `cargo xtask baseline-duplication` and say why in the commit.",
         fresh.len()

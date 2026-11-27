@@ -16,7 +16,7 @@ fn request(key: &SigningKey, invite_code: Option<&str>) -> CheckpointHintRequest
         invite: None,
     };
     match invite_code {
-        Some(code) => request.with_invite_code(code),
+        Some(code) => request.with_invite_code(code).unwrap(),
         None => request,
     }
 }
@@ -56,7 +56,7 @@ fn a_hint_request_round_trips_and_its_signature_binds_it() {
     }
     let other = SigningKey::from_bytes(&[4; 32]);
     assert!(request(&key, None).encode(&other).is_err());
-    let sig = sign(&key, &request(&key, None).signing_bytes());
+    let sig = sign(&key, &request(&key, None).signing_bytes().unwrap());
     let mut builder = capnp::message::Builder::new_default();
     {
         let joiner = request(&key, Some("cd"));
@@ -70,7 +70,7 @@ fn a_hint_request_round_trips_and_its_signature_binds_it() {
         b.set_invite_tag(&invite.tag);
         b.set_sig(&sig);
     }
-    assert!(decode_checkpoint_hint_request(&pack(&builder)).is_err());
+    assert!(decode_checkpoint_hint_request(&pack(&builder).unwrap()).is_err());
 }
 
 /// The largest answer, a checkpoint and [`MAX_HINT_ENDORSEMENTS`] longest

@@ -190,7 +190,7 @@ pub(crate) async fn framed(
         let frame = frame::sealed_frame(host, to, body, nonce)?;
         let queued = Framed::Sealed {
             type_id: type_id.as_u16(),
-            body: body.encode(),
+            body: body.encode()?,
             nonce,
         };
         return Ok((frame, queued));

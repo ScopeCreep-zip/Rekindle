@@ -2,13 +2,13 @@ use super::{bounds, capnp_err, pack, text_or_none, unpack_bounded, CodecError};
 use crate::friend::FriendEntry;
 use crate::friend_capnp;
 
-pub fn encode_friend_list(entries: &[FriendEntry]) -> Vec<u8> {
+pub fn encode_friend_list(entries: &[FriendEntry]) -> Result<Vec<u8>, CodecError> {
     let mut builder = capnp::message::Builder::new_default();
     {
         let root = builder.init_root::<friend_capnp::friend_list::Builder<'_>>();
-        let mut list = root.init_friends(u32::try_from(entries.len()).unwrap_or(u32::MAX));
-        for (i, entry) in entries.iter().enumerate() {
-            let mut fe = list.reborrow().get(u32::try_from(i).unwrap_or(u32::MAX));
+        let mut list = root.init_friends(crate::capnp_codec::wire_len(entries.len())?);
+        for (i, entry) in (0u32..).zip(entries.iter()) {
+            let mut fe = list.reborrow().get(i);
             fe.set_public_key(entry.public_key.as_bytes());
             if let Some(ref nick) = entry.nickname {
                 fe.set_nickname(nick.as_str());
