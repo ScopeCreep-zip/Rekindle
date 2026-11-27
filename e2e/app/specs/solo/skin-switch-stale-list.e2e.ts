@@ -39,7 +39,7 @@ describe("Settings Appearance handles a late skin library response", function ()
     const choices = await browser.execute(() =>
       Array.from(document.querySelectorAll(".skin-row .skin-name"), (node) => node.textContent?.trim() ?? ""),
     );
-    const [first, second] = choices.filter((name) => name && name !== original && name !== "Accessible");
+    const [first, second] = choices.filter((name) => name && name !== original && !name.includes("Accessible"));
     if (!first || !second) throw new Error("Expected two other built-in skins");
 
     await browser.execute((expected: string) => {
