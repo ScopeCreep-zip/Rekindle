@@ -9,7 +9,7 @@
 import { browser } from "@wdio/globals";
 import { NET_WAIT_MS, waitUntil } from "../../../walk/helpers.ts";
 import { type Peer, peerAssignRole, peerCreateCommunity, peerCreateRole, peerInvite, peerMemberCount, peerUnassignRole, startFleet, stopFleet } from "../../fleet.ts";
-import { createIdentity, joinCommunity, newUser, openCommunity, selectChannel, type User } from "../../journeys.ts";
+import { createIdentity, joinCommunity, newUser, openCommunity, ownCommunityPseudonym, selectChannel, type User } from "../../journeys.ts";
 import { shot } from "../../shots.ts";
 
 const COMMUNITY = `Perm Watch ${Date.now() % 100000}`;
@@ -78,13 +78,13 @@ describe("a role granted or taken back changes the open community window live", 
 
   it("granted Manage Channels, the control enables in the open window", async () => {
     role = await peerCreateRole(peers[0], anchor, "Builders", MANAGE_CHANNELS);
-    await peerAssignRole(peers[0], anchor, me.displayName, role);
+    await peerAssignRole(peers[0], anchor, await ownCommunityPseudonym(browser, me.displayName), role);
     await controlIs(true, "after the grant (no reopening)");
     await shot("after-grant");
   });
 
   it("the role taken back, the control is disabled with a reason again", async () => {
-    await peerUnassignRole(peers[0], anchor, me.displayName, role);
+    await peerUnassignRole(peers[0], anchor, await ownCommunityPseudonym(browser, me.displayName), role);
     await controlIs(false, "after the role was taken back");
     await shot("after-revoke");
   });

@@ -324,6 +324,27 @@ export async function createCommunity(b: Browser, user: User, name: string): Pro
 }
 
 /** Open community `name`'s window from the buddy list (double-click) and switch to it. */
+/**
+ * Our own pseudonym in the open community window: the member row that names
+ * `displayName` (MemberList.tsx `data-pseudonym`), for the CLI's member
+ * commands, which take a pseudonym.
+ */
+export async function ownCommunityPseudonym(b: Browser, displayName: string): Promise<string> {
+  let key = "";
+  await waitUntil(
+    async () => {
+      key = (await b.execute((name: string) => {
+        const row = Array.from(document.querySelectorAll<HTMLElement>(".member-item[data-pseudonym]")).find((r) => (r.textContent ?? "").includes(name));
+        return row?.dataset.pseudonym ?? "";
+      }, displayName)) as string;
+      return /^[0-9a-f]{64}$/i.test(key);
+    },
+    NET_WAIT_MS,
+    `no member row names ${displayName} with a pseudonym`,
+  );
+  return key;
+}
+
 export async function openCommunity(b: Browser, name: string): Promise<void> {
   await inBuddy(b);
   const label = await communityWindowLabel(b, name);
