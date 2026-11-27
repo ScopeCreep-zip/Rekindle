@@ -176,6 +176,7 @@
 .channel-section-header	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .channel-slowmode-label	text	var(--color-xfire-text-dim)	--color-xfire-overlay 8% over --color-xfire-bg-panel	1.0	false
 .channel-topic	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
+.channel-topic-denied	text	var(--color-xfire-text-disabled)	--color-xfire-bg-dark	1.0	false
 .channel-topic-label	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
 .channel-unread-badge	text	var(--color-xfire-accent-fg)	--color-xfire-accent	1.0	false
 .channel-voice-join-btn	text	var(--color-xfire-text-on-fill)	--color-xfire-online var(--tint-fill) over --color-xfire-bg-dark	1.0	false
@@ -342,6 +343,7 @@
 .forum-channel-composer-title	text	var(--color-xfire-text-primary)	--color-xfire-bg-secondary	1.0	false
 .forum-channel-empty	text	var(--color-xfire-text-secondary)	--color-xfire-bg-dark	1.0	false
 .forum-channel-empty-title	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
+.forum-channel-new-post-btn:disabled	text	var(--color-xfire-text-disabled)	--color-xfire-bg-dark	1.0	false
 .forum-channel-tag	text	var(--color-xfire-text)	--color-xfire-bg-secondary	1.0	false
 .forum-channel-tag-active	text	var(--color-xfire-text-primary)	--color-xfire-accent 15% over --color-xfire-bg-secondary	1.0	false
 .forum-channel-thread-meta	text	var(--color-xfire-text-secondary)	--color-xfire-bg-secondary	1.0	false
@@ -450,6 +452,8 @@
 .member-group-header	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .member-list-header	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .member-list-header	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
+.member-list-loading	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
+.member-list-loading	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
 .member-search-input	text	var(--color-xfire-text)	--color-xfire-bg-input	1.0	false
 .mention-popover-row	text	var(--color-xfire-text-primary)	--color-xfire-bg-secondary	1.0	false
 .mention-popover-tag	text	var(--color-xfire-text-dim)	--color-xfire-overlay 8% over --color-xfire-bg-secondary	1.0	false

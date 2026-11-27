@@ -2,7 +2,9 @@
 
 use super::*;
 use crate::state::{GovernanceState, RoleState};
-use rekindle_types::permissions::{READ_HISTORY, SEND_MESSAGES, VIEW_CHANNELS};
+use rekindle_types::permissions::{
+    CREATE_PUBLIC_THREADS, READ_HISTORY, SEND_MESSAGES, VIEW_CHANNELS,
+};
 use std::collections::{HashMap, HashSet};
 
 fn pseudo(b: u8) -> PseudonymKey {
@@ -156,8 +158,8 @@ fn banned_member_cannot_write() {
 }
 
 #[test]
-fn regular_member_can_create_thread() {
-    let state = state_with_creator_and_roles();
+fn regular_member_needs_the_public_thread_permission() {
+    let mut state = state_with_creator_and_roles();
     let entry = GovernanceEntry::ThreadCreated {
         thread_id: rekindle_types::id::ThreadId([0; 16]),
         parent_channel_id: rekindle_types::id::ChannelId([0; 16]),
@@ -167,8 +169,10 @@ fn regular_member_can_create_thread() {
         forum_tag: None,
         auto_archive_seconds: 86_400,
     };
-    // @everyone has SEND_MESSAGES
-    assert!(validate_write(&pseudo(99), &entry, &state));
+    let member = pseudo(99);
+    assert!(!validate_write(&member, &entry, &state));
+    state.roles.get_mut(&rid(0)).unwrap().permissions |= CREATE_PUBLIC_THREADS;
+    assert!(validate_write(&member, &entry, &state));
 }
 
 #[test]

@@ -31,6 +31,7 @@
     "allow-create-event",
     "allow-create-poll",
     "allow-create-role",
+    "allow-create-forum-post",
     "allow-create-thread",
     "allow-default-media-capabilities",
     "allow-delete-automod-rule",

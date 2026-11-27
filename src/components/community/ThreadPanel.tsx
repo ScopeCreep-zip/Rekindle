@@ -4,12 +4,15 @@ import type { Thread } from "../../stores/community.store";
 import type { Message } from "../../stores/chat.store";
 import MessageBubble from "../chat/MessageBubble";
 import LiveRegion from "../common/LiveRegion";
+import { messageCount } from "../../utils/formatting";
 
 interface ThreadPanelProps {
   thread: Thread | null;
   communityId: string;
   messages: Message[];
   onClose: () => void;
+  /** The Host's reason we may not reply in this thread's channel (SEND_IN_THREADS), or null. */
+  replyDenied: string | null;
   onSend: (communityId: string, threadId: string, body: string) => void;
   onArchive: (communityId: string, threadId: string) => void;
   onUnarchive: (communityId: string, threadId: string) => void;
@@ -65,7 +68,7 @@ const ThreadPanel: Component<ThreadPanelProps> = (props) => {
             <div class="thread-panel-title-group">
               <span class="thread-panel-title">{thread().name}</span>
               <div class="thread-panel-meta">
-                Started by {props.nameOf(thread().creatorPseudonym)} · {thread().messageCount} messages
+                Started by {props.nameOf(thread().creatorPseudonym)} · {messageCount(thread().messageCount)}
                 <Show when={thread().lastMessageAt > 0}>
                   {` · last active ${new Date(thread().lastMessageAt * 1000).toLocaleString()}`}
                 </Show>
@@ -129,6 +132,9 @@ const ThreadPanel: Component<ThreadPanelProps> = (props) => {
             <textarea
               class="message-input message-input-field"
               placeholder={thread().archived ? "Reply to reactivate thread..." : "Reply to thread..."}
+              disabled={props.replyDenied !== null}
+              title={props.replyDenied ?? undefined}
+              aria-description={props.replyDenied ?? undefined}
               value={body()}
               onInput={(e) => setBody(e.currentTarget.value)}
               onKeyDown={handleKeyDown}

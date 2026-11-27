@@ -101,6 +101,21 @@ pub(super) fn check(request: &RichRequest) -> Checked {
             hex16(thread_id, "thread id")?;
             message_body(body)
         }
+        RichRequest::CreateForumPost {
+            community: c,
+            channel_id,
+            title,
+            forum_tag,
+            body,
+        } => {
+            community(c)?;
+            channel(channel_id)?;
+            name(title, "forum post title")?;
+            opt(forum_tag.as_deref(), |tag| {
+                text(tag, MAX_FORUM_TAG_LEN, "forum tag")
+            })?;
+            message_body(body)
+        }
         RichRequest::PollCreate {
             community: c,
             channel_id,

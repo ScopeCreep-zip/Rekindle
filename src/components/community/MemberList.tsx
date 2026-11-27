@@ -2,7 +2,7 @@ import { Component, For, Show, createEffect, createSignal, createMemo, JSX } fro
 import SkinGlyph from "../common/SkinGlyph";
 import { ContextMenu } from "@kobalte/core/context-menu";
 import { Popover } from "@kobalte/core/popover";
-import { EVERYONE_ROLE_ID, Member, Role, RoleTagColours, communityState } from "../../stores/community.store";
+import { EVERYONE_ROLE_ID, Member, type MembersState, Role, RoleTagColours, communityState } from "../../stores/community.store";
 import StatusDot from "../status/StatusDot";
 import type { MemberGroup } from "../../ipc/commands/dto";
 import RoleTag from "./RoleTag";
@@ -24,6 +24,8 @@ import {
 
 interface MemberListProps {
   members: Member[];
+  /** Whether `members` is the Host's list yet; until then no count or rows are shown. */
+  state: MembersState;
   communityId: string;
   roles: Role[];
   myPseudonymKey: string | null;
@@ -379,8 +381,15 @@ const MemberList: Component<MemberListProps> = (props) => {
       }}
     >
       <div class="member-list-header">
-        Members — {props.members.length}
+        <Show when={props.state === "known"} fallback="Members">
+          Members — {props.members.length}
+        </Show>
       </div>
+      <Show when={props.state !== "known"}>
+        <div class="member-list-loading" role="status">
+          {props.state === "loading" ? "Loading members…" : `Couldn't load members: ${(props.state as { failed: string }).failed}`}
+        </div>
+      </Show>
       <div class="member-search-wrapper">
         <input
           class="member-search-input"
