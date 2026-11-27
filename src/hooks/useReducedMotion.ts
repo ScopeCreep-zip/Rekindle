@@ -1,4 +1,4 @@
-import { Accessor, createSignal, onCleanup } from "solid-js";
+import { type Accessor, createSignal, onCleanup } from "solid-js";
 
 /**
  * Architecture §32 a11y — JS-side reduced-motion accessor for animations

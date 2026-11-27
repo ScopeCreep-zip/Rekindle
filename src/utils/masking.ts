@@ -4,12 +4,7 @@
  * Example: maskString("rekindle://abcdefghijklmnop", "rekindle://", 8, 6)
  *          → "rekindle://abcdefgh...klmnop"
  */
-function maskString(
-  value: string,
-  prefix: string,
-  keepStart: number,
-  keepEnd: number,
-): string {
+function maskString(value: string, prefix: string, keepStart: number, keepEnd: number): string {
   if (!value.startsWith(prefix)) return value;
   const body = value.slice(prefix.length);
   if (body.length <= keepStart + keepEnd) return value;

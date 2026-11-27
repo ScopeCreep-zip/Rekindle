@@ -1,9 +1,9 @@
-import { Component, For, Show, createEffect, createSignal, on } from "solid-js";
 import { Dialog } from "@kobalte/core/dialog";
-import { returnFocusToOpener } from "../../utils/dialog_focus";
-import { friendsState } from "../../stores/friends.store";
-import { buddyListUI, setBuddyListUI } from "../../stores/buddylist-ui.store";
+import { type Component, createEffect, createSignal, For, on, Show } from "solid-js";
 import { handleCreateGroupDm } from "../../actions/group-dm.actions";
+import { buddyListUI, setBuddyListUI } from "../../stores/buddylist-ui.store";
+import { friendsState } from "../../stores/friends.store";
+import { returnFocusToOpener } from "../../utils/dialog_focus";
 
 // "New group" (plan E2.6): pick 2–7 friends and a name. The Host checks
 // the roster and the name and shows the review (Consequential); the
@@ -32,8 +32,8 @@ const NewGroupModal: Component = () => {
       (open) => {
         const peer = buddyListUI.newGroupPeer;
         if (open && peer) setPicked([peer]);
-      },
-    ),
+      }
+    )
   );
 
   function toggle(key: string): void {
@@ -69,7 +69,9 @@ const NewGroupModal: Component = () => {
               <Dialog.Title class="modal-title">New Group</Dialog.Title>
             </div>
             <form class="modal-body" onSubmit={(e) => void create(e)}>
-              <label class="form-label" for="new-group-name">Group name</label>
+              <label class="form-label" for="new-group-name">
+                Group name
+              </label>
               <input
                 id="new-group-name"
                 class="form-input"
@@ -81,7 +83,11 @@ const NewGroupModal: Component = () => {
               <div class="group-dm-picker-hint" id="new-group-hint">
                 Choose {MIN_PICKED}–{MAX_PICKED} friends ({count()} chosen)
               </div>
-              <div class="group-dm-picker" role="group" aria-label="Group members" aria-describedby="new-group-hint">
+              <fieldset
+                class="group-dm-picker"
+                aria-label="Group members"
+                aria-describedby="new-group-hint"
+              >
                 <Show
                   when={friends().length > 0}
                   fallback={<div class="empty-placeholder-subtitle">No friends to add</div>}
@@ -93,7 +99,9 @@ const NewGroupModal: Component = () => {
                           type="checkbox"
                           checked={picked().includes(friend.publicKey)}
                           disabled={friend.groupDmBlock !== null}
-                          aria-describedby={friend.groupDmBlock ? `ngb-${friend.publicKey}` : undefined}
+                          aria-describedby={
+                            friend.groupDmBlock ? `ngb-${friend.publicKey}` : undefined
+                          }
                           onChange={() => toggle(friend.publicKey)}
                         />
                         <span class="buddy-name">{friend.displayName}</span>
@@ -108,9 +116,11 @@ const NewGroupModal: Component = () => {
                     )}
                   </For>
                 </Show>
-              </div>
+              </fieldset>
               <Show when={error()}>
-                <div class="form-error" role="alert">{error()}</div>
+                <div class="form-error" role="alert">
+                  {error()}
+                </div>
               </Show>
               <div class="modal-footer">
                 <button type="button" class="form-btn-secondary" onClick={close}>

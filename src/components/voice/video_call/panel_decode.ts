@@ -3,15 +3,15 @@
 // useVideoCallPanel.ts; plain functions of the shared PanelCtx (no
 // SolidJS owner-scoped primitives here).
 
-import { commands } from "../../../ipc/commands";
 import type { Codec } from "../../../ipc/commands";
+import { commands } from "../../../ipc/commands";
 import { videoSessionConfigFor } from "../../../stores/video.store";
 import {
   DEBUG_VIDEO_LATENCY,
+  decodeBase64ToBytes,
   KEYFRAME_REQUEST_MIN_INTERVAL_MS,
   RENDER_REPORT_INTERVAL_MS,
   type RemoteStream,
-  decodeBase64ToBytes,
   releaseRemoteStream,
   wireCodecToWebCodecsString,
 } from "./codec_utils";
@@ -30,7 +30,7 @@ export interface DecodePipeline {
     keyframe: boolean,
     codec: Codec,
     timestamp: number,
-    payloadB64: string,
+    payloadB64: string
   ): void;
   /** Community-only 1 Hz-limited keyframe request for a desynced stream. */
   requestKeyframeFor(streamId: string): void;
@@ -55,11 +55,7 @@ export function createDecodePipeline(ctx: PanelCtx): DecodePipeline {
     const last = keyframeRequestAt.get(streamId) ?? 0;
     if (now - last < KEYFRAME_REQUEST_MIN_INTERVAL_MS) return;
     keyframeRequestAt.set(streamId, now);
-    void commands.sendVideoKeyframeRequest(
-      ctx.props.communityId,
-      ctx.props.channelId,
-      streamId,
-    );
+    void commands.sendVideoKeyframeRequest(ctx.props.communityId, ctx.props.channelId, streamId);
   }
 
   /** Create + configure a WebCodecs decoder onto `r`. Called at stream
@@ -71,7 +67,7 @@ export function createDecodePipeline(ctx: PanelCtx): DecodePipeline {
   function installDecoder(
     r: RemoteStream,
     webCodecsString: string,
-    optimizeForLatency: boolean,
+    optimizeForLatency: boolean
   ): void {
     const decoder = new VideoDecoder({
       output: (frame: VideoFrame) => {
@@ -100,7 +96,7 @@ export function createDecodePipeline(ctx: PanelCtx): DecodePipeline {
             r.senderPseudonym,
             r.streamId,
             false,
-            `${e.message} [codec=${webCodecsString}]`,
+            `${e.message} [codec=${webCodecsString}]`
           );
         }
         recoverDecoder(r.streamId, webCodecsString, optimizeForLatency);
@@ -125,7 +121,7 @@ export function createDecodePipeline(ctx: PanelCtx): DecodePipeline {
           ctx.props.communityId,
           r.senderPseudonym,
           r.streamId,
-          true,
+          true
         );
       }
     } catch (e) {
@@ -137,7 +133,7 @@ export function createDecodePipeline(ctx: PanelCtx): DecodePipeline {
           r.senderPseudonym,
           r.streamId,
           false,
-          errorMessage,
+          errorMessage
         );
       }
     }
@@ -150,7 +146,7 @@ export function createDecodePipeline(ctx: PanelCtx): DecodePipeline {
   function recoverDecoder(
     streamId: string,
     webCodecsString: string,
-    optimizeForLatency: boolean,
+    optimizeForLatency: boolean
   ): void {
     const r = ctx.remotes().find((t) => t.streamId === streamId);
     if (!r) return;
@@ -176,7 +172,7 @@ export function createDecodePipeline(ctx: PanelCtx): DecodePipeline {
     keyframe: boolean,
     codec: Codec,
     timestamp: number,
-    payloadB64: string,
+    payloadB64: string
   ): void {
     const data = decodeBase64ToBytes(payloadB64);
     let remote = ctx.remotes().find((r) => r.streamId === streamId);
@@ -185,7 +181,7 @@ export function createDecodePipeline(ctx: PanelCtx): DecodePipeline {
     // if it's a keyframe, else from the next keyframe.
     if (remote && remote.codec !== codec) {
       console.warn(
-        `codec switch ${remote.codec} → ${codec} on stream ${streamId.slice(0, 8)} — decoder torn down`,
+        `codec switch ${remote.codec} → ${codec} on stream ${streamId.slice(0, 8)} — decoder torn down`
       );
       releaseRemoteStream(remote);
       ctx.setRemotes((prev) => prev.filter((r) => r.streamId !== streamId));
@@ -203,7 +199,7 @@ export function createDecodePipeline(ctx: PanelCtx): DecodePipeline {
         keyframeWaitDrops.set(streamId, dropped);
         if (dropped === 1 || dropped % 30 === 0) {
           console.warn(
-            `dropping delta frames for unknown stream ${streamId.slice(0, 8)} — waiting for keyframe (${dropped} dropped)`,
+            `dropping delta frames for unknown stream ${streamId.slice(0, 8)} — waiting for keyframe (${dropped} dropped)`
           );
         }
         // Every 15th dropped delta, not a one-shot at 15: the request
@@ -302,7 +298,7 @@ export function createDecodePipeline(ctx: PanelCtx): DecodePipeline {
               type: f.keyframe ? "key" : "delta",
               timestamp: f.timestamp,
               data: f.data,
-            }),
+            })
           );
         } catch (e) {
           // decode() threw — no output callback will fire, so drop the stamp
@@ -327,7 +323,7 @@ export function createDecodePipeline(ctx: PanelCtx): DecodePipeline {
         console.debug(
           `[video ${r.streamId.slice(0, 8)}] playoutDelay=${s.playoutDelayMs}ms ` +
             `bufSize=${s.size} decodeQueue=${r.decoder.decodeQueueSize} ` +
-            `lastDecode=${Math.round(r.lastDecodeMs)}ms jitter=${s.jitterMs}ms`,
+            `lastDecode=${Math.round(r.lastDecodeMs)}ms jitter=${s.jitterMs}ms`
         );
       }
       // Congestion feedback is the backend's: the media route's transport

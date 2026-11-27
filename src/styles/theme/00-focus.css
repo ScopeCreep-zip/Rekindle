@@ -1,0 +1,60 @@
+/* Keyboard focus: the global ring, its room inside scroll panes, no ring on
+ * mouse focus, and the inset ring on rows and bars. Imported just before
+ * 00-rules.css, so the cascade order is unchanged. */
+@layer components {
+  /* Architecture §32 a11y — global focus-visible. Every interactive
+   * element gets a 2px accent ring on keyboard focus; mouse focus is
+   * suppressed so the dense Xfire UI stays clean for sighted users.
+   * Per-element overrides can wrap their own ring in a corresponding
+   * `:focus-visible` rule, but the global ring is the safety net so
+   * the audit's "0 focus-visible rules" gap closes in one cascade. */
+  *:focus-visible {
+    outline: 2px solid var(--color-xfire-focus-outline);
+    outline-offset: 2px;
+    border-radius: inherit;
+  }
+  /* The ring above reaches 4px past an element (2px outline + 2px
+   * offset): scrolling an element into view, as focus does, leaves that
+   * room so a scroll pane's edge never cuts the ring. */
+  * {
+    scroll-margin: 4px;
+  }
+  *:focus:not(:focus-visible) {
+    outline: none;
+  }
+
+  /* Rows, tabs and bar buttons fill a clipping list or bar edge to edge, so an outset
+   * ring would be cut; theirs is drawn inside the box (plan E7.12), deep
+   * enough for the 3px ring `prefers-contrast: more` asks for. The rule is
+   * by kind: every row-like role (a tree's nodes, a listbox's options, a
+   * tab list's tabs, a menu's items, a grid's rows) and every full-width
+   * row button, besides the named rows and bars. */
+  [role="treeitem"]:focus-visible,
+  [role="option"]:focus-visible,
+  [role="tab"]:focus-visible,
+  [role="menuitem"]:focus-visible,
+  [role="menuitemradio"]:focus-visible,
+  [role="row"]:focus-visible,
+  .category-header:focus-visible,
+  .thread-list-item:focus-visible,
+  .settings-role-summary:focus-visible,
+  .account-bubble-select:focus-visible,
+  .call-stage-tile-spotlight-btn:focus-visible,
+  .buddy-tab:focus-visible,
+  .form-tab:focus-visible,
+  .menu-bar-item:focus-visible,
+  .header-add-btn:focus-visible,
+  .buddy-item:focus-visible,
+  .channel-item:focus-visible,
+  .xfire-titlebar-btn:focus-visible,
+  .member-item:focus-visible,
+  .group-dm-row:focus-visible,
+  .sidebar-section-more:focus-visible,
+  /* "+ Category" sits at the foot of the channel list, which clips it. */
+  .channel-create-category-btn:focus-visible,
+  /* A message log is the scroller its pane clips (plan E7.3: focusable for
+   * SC 2.1.1), so its ring is drawn inside too. */
+  [role="log"][tabindex]:focus-visible {
+    outline-offset: -3px;
+  }
+}

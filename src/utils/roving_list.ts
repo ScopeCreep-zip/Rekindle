@@ -20,20 +20,21 @@ interface RovingListOptions {
 function attachRovingList(
   list: HTMLElement,
   itemSelector: string,
-  { orientation = "vertical", preferSelected = false }: RovingListOptions = {},
+  { orientation = "vertical", preferSelected = false }: RovingListOptions = {}
 ): () => void {
   let current: HTMLElement | null = null;
   const horizontal = orientation === "horizontal";
   const forward = horizontal ? "ArrowRight" : "ArrowDown";
   const backward = horizontal ? "ArrowLeft" : "ArrowUp";
 
-  const items = (): HTMLElement[] =>
-    Array.from(list.querySelectorAll<HTMLElement>(itemSelector));
+  const items = (): HTMLElement[] => Array.from(list.querySelectorAll<HTMLElement>(itemSelector));
 
   function sync(): void {
     const rows = items();
     if (current && !rows.includes(current)) current = null;
-    const selected = preferSelected ? rows.find((row) => row.getAttribute("aria-selected") === "true") : undefined;
+    const selected = preferSelected
+      ? rows.find((row) => row.getAttribute("aria-selected") === "true")
+      : undefined;
     const active = selected ?? current ?? rows[0] ?? null;
     for (const row of rows) {
       const want = row === active ? "0" : "-1";
@@ -63,7 +64,7 @@ function attachRovingList(
         cancelable: true,
         clientX: rect.left + Math.min(16, rect.width / 2),
         clientY: rect.top + rect.height / 2,
-      }),
+      })
     );
   }
 
@@ -82,7 +83,8 @@ function attachRovingList(
     const at = rows.indexOf(row);
     let next: HTMLElement | undefined;
     if (e.key === forward) next = rows[at + 1] ?? (horizontal ? rows[0] : undefined);
-    else if (e.key === backward) next = rows[at - 1] ?? (horizontal ? rows[rows.length - 1] : undefined);
+    else if (e.key === backward)
+      next = rows[at - 1] ?? (horizontal ? rows[rows.length - 1] : undefined);
     else if (e.key === "Home") next = rows[0];
     else if (e.key === "End") next = rows[rows.length - 1];
     else return;
@@ -108,6 +110,9 @@ function attachRovingList(
 }
 
 /** A `ref` callback that makes the element a roving list for its lifetime. */
-export function rovingList(itemSelector: string, options?: RovingListOptions): (el: HTMLElement) => void {
+export function rovingList(
+  itemSelector: string,
+  options?: RovingListOptions
+): (el: HTMLElement) => void {
   return (el) => onCleanup(attachRovingList(el, itemSelector, options));
 }

@@ -3,7 +3,7 @@ name = "rekindle-gossip"
 version = "0.1.0"
 publish = false
 edition = "2021"
-license = "MIT"
+license.workspace = true
 description = "Transport-agnostic gossip mesh primitives for Rekindle v2.0"
 
 [lints]

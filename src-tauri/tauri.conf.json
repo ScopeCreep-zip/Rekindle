@@ -38,6 +38,11 @@
   },
   "bundle": {
     "active": true,
+    "copyright": "Copyright (c) 2026 Kali Jackson and Kathryn Morgan",
+    "resources": {
+      "../LICENSE-MIT": "LICENSE-MIT",
+      "../LICENSE-APACHE": "LICENSE-APACHE"
+    },
     "targets": "all",
     "icon": [
       "icons/32x32.png",
