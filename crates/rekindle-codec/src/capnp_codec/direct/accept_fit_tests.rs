@@ -18,7 +18,7 @@ fn a_pre_key_init_carrying_friend_accept_fits() {
         },
         chain_record_key: dht_key(),
     }));
-    assert_eq!(DmFrame::decode(&frame.encode()).as_ref(), Ok(&frame));
+    assert_eq!(DmFrame::decode(&frame.encode().unwrap()).as_ref(), Ok(&frame));
     let len = datagram_len(&frame);
     assert!(
         len <= MAX_APP_MESSAGE_LEN,

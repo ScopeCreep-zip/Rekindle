@@ -138,7 +138,7 @@ pub async fn create<D: GroupDmDeps + ?Sized>(
     };
     let invite = group::build_invite(group_id, name, &roster, &key, own_chain, plan, |m| {
         deps.sign_identity(m)
-    });
+    })?;
     let to = roster.others(&me);
     let invites = per_recipient(&invite, to, mint)?;
     let own_slot = group::for_recipient(&invite, &me, mint)?;

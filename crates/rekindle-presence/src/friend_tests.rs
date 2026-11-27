@@ -45,13 +45,14 @@ fn game_info_decodes_the_capnp_game_status() {
         elapsed_seconds: 90,
         server_address: Some(server_address.into()),
     };
-    let parsed = parse_game_info(&encode_game_status(&game("1.2.3.4:27015"))).unwrap();
+    let parsed = parse_game_info(&encode_game_status(&game("1.2.3.4:27015")).unwrap()).unwrap();
     assert_eq!(parsed.game_id, 4181);
     assert_eq!(parsed.game_name, "Counter-Strike 2");
     assert_eq!(parsed.elapsed_seconds, 90);
     assert_eq!(parsed.server_address.as_deref(), Some("1.2.3.4:27015"));
 
-    let hostile = parse_game_info(&encode_game_status(&game("1.2.3.4:27015 +exec x"))).unwrap();
+    let hostile =
+        parse_game_info(&encode_game_status(&game("1.2.3.4:27015 +exec x")).unwrap()).unwrap();
     assert_eq!(hostile.server_address, None);
     assert_eq!(hostile.game_name, "Counter-Strike 2");
 

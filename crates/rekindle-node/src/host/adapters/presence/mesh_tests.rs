@@ -96,3 +96,65 @@ async fn a_drain_takes_the_held_queue() {
     assert_eq!(still_held(&host), Some(0), "a second drain finds it empty");
     host.shutdown().await.unwrap();
 }
+
+/// Diag RC5 (plan E3.4 S5): a dead member route that clears, revived by
+/// its probe or republished, is cached again and the broadcasts the mesh
+/// held for want of peers go then, not only on the member's next beat
+/// move; one still dead caches nothing and sends nothing.
+#[tokio::test]
+async fn a_cleared_dead_route_drains_the_held_broadcasts() {
+    use rekindle_governance::op::OpStamp;
+    use rekindle_governance::state::{GovernanceState, MemberState};
+    use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
+    use rekindle_route::dead_routes::DeadRouteVerdict;
+
+    use crate::host::runtime::tests::{create_ann, offline_host, seed_registry_community};
+
+    let dir = tempfile::tempdir().unwrap();
+    let host = offline_host(&dir).await;
+    let owner = create_ann(&host).await.public_key;
+    seed_registry_community(&host, &owner).await;
+    let governance = HostGovernance::new(std::sync::Arc::clone(&host.ctx));
+    let peer = PseudonymKey([0x42; 32]);
+    let mut state = GovernanceState::default();
+    state.members.insert(
+        peer.clone(),
+        MemberState {
+            member_record: "VLD0:peer".into(),
+            member_record_owner: String::new(),
+            joined: OpStamp::MIN,
+        },
+    );
+    governance.set_governance_state("c1", state);
+    {
+        let mut map = host.ctx.communities.map().write();
+        let c1 = map.get_mut("c1").expect("seeded");
+        let gossip = c1.gossip.get_or_insert_with(Default::default);
+        gossip.pending_mesh_broadcasts.push_back(held());
+        gossip.pending_mesh_broadcasts.push_back(held());
+    }
+    assert!(
+        governance.mesh_peers("c1").is_empty(),
+        "the dead route left the mesh empty"
+    );
+
+    governance.take_route("c1", &peer, 1, vec![7], DeadRouteVerdict::Held, true);
+    assert!(
+        governance.mesh_peers("c1").is_empty(),
+        "still dead: not cached"
+    );
+    assert_eq!(still_held(&host), Some(2), "still dead: nothing sent");
+
+    governance.take_route("c1", &peer, 1, vec![7], DeadRouteVerdict::Cleared, false);
+    assert_eq!(
+        governance.mesh_peers("c1").len(),
+        1,
+        "the cleared route is cached"
+    );
+    assert_eq!(
+        still_held(&host),
+        Some(0),
+        "the clear drained the held broadcasts"
+    );
+    host.shutdown().await.unwrap();
+}

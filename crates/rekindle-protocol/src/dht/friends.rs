@@ -76,7 +76,7 @@ pub async fn write_friend_list(
     key: &str,
     friends: &[FriendEntry],
 ) -> Result<SetOutcome, ProtocolError> {
-    let data = capnp_codec::friend::encode_friend_list(friends);
+    let data = capnp_codec::friend::encode_friend_list(friends)?;
     let lease = pool.acquire(key, None, OpenIntent::Hold).await?;
     let outcome = pool.set_durable(lease, 0, data, None).await;
     pool.release(lease).await;

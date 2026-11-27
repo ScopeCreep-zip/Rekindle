@@ -11,6 +11,7 @@ use rekindle_types::subscription_events::{FriendEvent, SubscriptionEvent};
 
 use super::route;
 use crate::broadcast::node::TransportNode;
+use crate::liveness::dead::Probed;
 use crate::operations::friend::FriendHost;
 
 /// Whether a send of `kind` is answered by the peer (a `DmAck`, a reply or
@@ -87,6 +88,7 @@ async fn suspect_round(host: &dyn FriendHost, node: &TransportNode, to: &str) {
     // republished": it takes the probe path, where the import refuses it;
     // a strictly higher seq than the first read after its death revives it
     // (plan RV1g B1, B3; `rekindle_route::dead_routes`).
+    // A probe it asks for is this round's own probe below.
     live.route_read_at(&blob, u64::from(seq));
     let dead = live.route_declared_dead(&blob);
     match fetched {
@@ -121,29 +123,22 @@ async fn probe(host: &dyn FriendHost, to: &str, blob: Vec<u8>) {
     let Ok(node) = host.node() else {
         return;
     };
-    let live = node.liveness();
     // The probe is the suspect round's one re-test, at most once per round
-    // (S2, S3): it alone imports a blob Veilid declared dead (plan RV1g B1);
-    // every send refuses it (`route::import`).
-    let target = match node.routes().import(&blob) {
-        Ok(target) => target,
-        Err(e) => {
-            tracing::debug!(to = %to, error = %e, "suspect route probe: import failed");
-            route::invalidate_blob(&node, to, &blob);
-            return;
-        }
-    };
-    match node.caller().call_direct(&target, live.peer_probe()).await {
-        Ok(_) => {
+    // (S2, S3).
+    match node.probe_route(&blob).await {
+        Probed::Answered => {
             tracing::info!(to = %to, "suspect route answered its probe");
-            live.route_proven(&blob);
             route::cache(&node, to, blob);
-            if live.probe_answered(to) {
+            if node.liveness().probe_answered(to) {
                 reachability(host, to, true);
             }
         }
-        Err(e) => {
-            tracing::info!(to = %to, error = %e, "suspect route did not answer its probe");
+        Probed::ImportFailed(error) => {
+            tracing::debug!(to = %to, %error, "suspect route probe: import failed");
+            route::invalidate_blob(&node, to, &blob);
+        }
+        Probed::Silent(error) => {
+            tracing::info!(to = %to, %error, "suspect route did not answer its probe");
         }
     }
 }

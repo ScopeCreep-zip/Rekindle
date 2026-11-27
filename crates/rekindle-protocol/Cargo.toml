@@ -42,6 +42,7 @@ veilid-core = { version = "0.5", default-features = true, features = [ "app-life
 
 
 [dev-dependencies]
+proptest = "1"
 # `tests/log_scrub_veilid.rs` checks the log scrubber against the real
 # Display/Debug output of veilid-core key types (this crate is one of the
 # two allowed to depend on veilid-core).

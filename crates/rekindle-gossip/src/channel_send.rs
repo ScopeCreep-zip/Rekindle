@@ -78,7 +78,7 @@ fn sign_for_channel<D: GossipDeps>(
     }
     let mut signed = sign_and_record(deps, community_id, envelope)?;
     signed.ttl = 0;
-    Ok(Some(gossip_datagram(&signed)))
+    Ok(Some(gossip_datagram(&signed)?))
 }
 
 /// Send `data` to every peer concurrently and wait for all of them.

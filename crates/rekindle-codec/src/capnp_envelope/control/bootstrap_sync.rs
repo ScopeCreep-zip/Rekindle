@@ -39,9 +39,9 @@ pub(super) fn write_bootstrap_response_v2(
     };
     check_bounds(frontier.len())?;
     p.set_anchor(anchor);
-    let mut heads = p.init_frontier(len_u32(frontier.len()));
-    for (i, head) in frontier.iter().enumerate() {
-        write_op_ref(heads.reborrow().get(len_u32(i)), head);
+    let mut heads = p.init_frontier(len_u32(frontier.len())?);
+    for (i, head) in (0u32..).zip(frontier.iter()) {
+        write_op_ref(heads.reborrow().get(i), head);
     }
     Ok(())
 }

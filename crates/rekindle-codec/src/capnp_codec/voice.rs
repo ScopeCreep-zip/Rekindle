@@ -20,7 +20,7 @@ pub struct VoiceSignaling {
     pub payload: Vec<u8>,
 }
 
-pub fn encode_signaling(sig: &VoiceSignaling) -> Vec<u8> {
+pub fn encode_signaling(sig: &VoiceSignaling) -> Result<Vec<u8>, CodecError> {
     let mut builder = capnp::message::Builder::new_default();
     {
         let mut root = builder.init_root::<voice_capnp::voice_signaling::Builder<'_>>();

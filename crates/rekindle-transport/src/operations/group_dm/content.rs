@@ -36,18 +36,22 @@ pub fn stream_name(group_id: &str) -> String {
 
 /// The sealed plaintext of a group entry: the kind's typeId (big-endian)
 /// and the [`DmContent`] carrying its body and the author's clock.
-pub fn inner(body: &DirectBody, sent_at_ms: u64, stream_seq: u64) -> Vec<u8> {
+pub fn inner(
+    body: &DirectBody,
+    sent_at_ms: u64,
+    stream_seq: u64,
+) -> Result<Vec<u8>, rekindle_codec::CodecError> {
     let type_id = body.type_id();
     let content = DmContent {
         content_hint: hint_for(type_id),
         sent_at_ms,
-        payload: body.encode(),
+        payload: body.encode()?,
         stream_seq,
         chain_seq: 0,
     };
     let mut out = type_id.as_u16().to_be_bytes().to_vec();
-    out.extend(content.encode());
-    out
+    out.extend(content.encode()?);
+    Ok(out)
 }
 
 /// An [`inner`] read back.
@@ -203,13 +207,10 @@ pub async fn attempt(
             continue;
         }
         match seal_row(host, &id, row).await {
-            Ok(content) => {
+            Ok((content, frame)) => {
                 slots.push(outcomes.len());
                 outcomes.push(None);
-                frames.push((
-                    DirectBody::GroupContent(content.clone()).encode(),
-                    row.stream_seq,
-                ));
+                frames.push(frame);
                 sealed.push(content);
             }
             Err(outcome) => {
@@ -222,7 +223,7 @@ pub async fn attempt(
     // The hints go at once and the appends to the stream's appender
     // ([`append_frames`], the DM pump).
     spawn_hints(host, &id, sealed);
-    for (slot, (frame, _)) in slots.into_iter().zip(frames) {
+    for (slot, frame) in slots.into_iter().zip(frames) {
         outcomes[slot] = Some(Attempt::Appending(frame));
     }
     dm_outbox::finish(outcomes)
@@ -249,7 +250,7 @@ async fn seal_row(
     host: &dyn FriendHost,
     id: &GroupId,
     row: &dm_outbox::RowAttempt<'_>,
-) -> Result<GroupContent, Attempt> {
+) -> Result<(GroupContent, Vec<u8>), Attempt> {
     let body = dm_outbox::decode_payload(row.payload)
         .map_err(|e| Attempt::Wedged(format!("payload: {e}")))?;
     let sent_at_ms = row
@@ -260,13 +261,17 @@ async fn seal_row(
         &body,
         sent_at_ms,
         u64::try_from(row.stream_seq).unwrap_or(0),
-    );
+    )
+    .map_err(|e| dm_outbox::attempt_of(FriendError::from(e)))?;
     let deps = host.group_dm().map_err(dm_outbox::attempt_of)?;
     let content = rekindle_dm::seal_for_send(deps.as_ref(), id, &plain)
         .await
         .map_err(|e| dm_outbox::attempt_of(friend_error(&e)))?;
-    dm_outbox::fits_page(&DirectBody::GroupContent(content.clone()).encode())?;
-    Ok(content)
+    let frame = DirectBody::GroupContent(content.clone())
+        .encode()
+        .map_err(|e| dm_outbox::attempt_of(FriendError::from(e)))?;
+    dm_outbox::fits_page(&frame)?;
+    Ok((content, frame))
 }
 
 /// Append `frames` (sealed entries, each with its `stream_seq`) to our
@@ -395,7 +400,7 @@ async fn send_typing(
         &DirectBody::Typing(Typing { typing }),
         host.clock().now_ms(),
         0,
-    );
+    )?;
     let content = rekindle_dm::seal_for_send(deps.as_ref(), &id, &plain)
         .await
         .map_err(|e| friend_error(&e))?;

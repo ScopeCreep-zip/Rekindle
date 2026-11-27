@@ -30,12 +30,8 @@ mod control;
 mod governance;
 mod sub_types;
 
-/// Convert a `usize` length to a Cap'n Proto-friendly `u32`. Cap'n
-/// Proto lists are bounded by `u32::MAX`; any caller exceeding that is
-/// a real bug, not a silent truncation case.
-pub(super) fn len_u32(n: usize) -> u32 {
-    u32::try_from(n).expect("Cap'n Proto list length must fit in u32")
-}
+/// A list length as Cap'n Proto's `u32` ([`crate::capnp_codec::wire_len`]).
+pub(super) use crate::capnp_codec::wire_len as len_u32;
 
 pub use control::{decode_control_payload, encode_control_payload};
 pub use governance::{decode_governance_entry, encode_governance_entry};
@@ -47,7 +43,7 @@ pub fn encode_community_envelope(env: &CommunityEnvelope) -> Result<Vec<u8>, Cod
     let root =
         builder.init_root::<crate::community_envelope_capnp::community_envelope::Builder<'_>>();
     write_community_envelope(root, env)?;
-    Ok(pack(&builder))
+    pack(&builder)
 }
 
 /// Decode a `CommunityEnvelope` from packed Cap'n Proto bytes.
@@ -80,7 +76,7 @@ pub fn try_decode_community_envelope(
 /// Encode a `SignedEnvelope` into packed Cap'n Proto bytes. The inner
 /// `payload` field is treated as opaque — callers must already have
 /// encoded the inner `CommunityEnvelope` via `encode_community_envelope`.
-pub fn encode_signed_envelope(signed: &SignedEnvelope) -> Vec<u8> {
+pub fn encode_signed_envelope(signed: &SignedEnvelope) -> Result<Vec<u8>, CodecError> {
     let mut builder = capnp::message::Builder::new_default();
     let mut root =
         builder.init_root::<crate::community_envelope_capnp::signed_envelope::Builder<'_>>();

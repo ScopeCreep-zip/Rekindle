@@ -22,6 +22,7 @@ use rekindle_codec::community::envelope::ControlPayload;
 use rekindle_db::repo::threads::{self, ThreadMessageRow};
 use rekindle_lifecycle::SessionScope;
 use rekindle_types::subscription_events::{SocialEvent, SubscriptionEvent};
+use rekindle_types::thread::thread_reply_key;
 
 use super::HostChannel;
 
@@ -75,13 +76,13 @@ impl HostChannel {
         let event = SocialEvent::ThreadMessagePosted {
             community: community_id.to_string(),
             thread_id: thread_id.clone(),
-            message_id: message_id.clone(),
+            message_id: thread_reply_key(&reply.sender_pseudonym, message_id),
             sender_pseudonym: reply.sender_pseudonym,
             body: Some(reply.body),
             timestamp: reply.timestamp_ms / 1000,
             reply_to_id: None,
         };
-        store_reply(&db, owner, &event).await?;
+        store_reply(&db, owner, message_id.clone(), &event).await?;
         Some(event)
     }
 
@@ -102,13 +103,16 @@ impl HostChannel {
         let event = SocialEvent::ThreadMessagePosted {
             community: community_id.to_string(),
             thread_id: thread_id.to_string(),
-            message_id: sent.message_id,
+            message_id: thread_reply_key(&sent.sender_pseudonym, &sent.message_id),
             sender_pseudonym: sent.sender_pseudonym,
             body: Some(body.to_string()),
             timestamp: sent.timestamp,
             reply_to_id: None,
         };
-        if store_reply(&db, owner, &event).await.is_some() {
+        if store_reply(&db, owner, sent.message_id, &event)
+            .await
+            .is_some()
+        {
             self.ctx().publish_event(SubscriptionEvent::Social(event));
         }
     }
@@ -161,17 +165,21 @@ fn sender_reply(
     })
 }
 
-/// Store the reply a `ThreadMessagePosted` carries; `None` when it is no
-/// reply or the row failed.
-async fn store_reply(db: &rekindle_db::Db, owner: String, event: &SocialEvent) -> Option<()> {
+/// Store the reply under its verified author and the raw outbox id.
+async fn store_reply(
+    db: &rekindle_db::Db,
+    owner: String,
+    message_id: String,
+    event: &SocialEvent,
+) -> Option<()> {
     let SocialEvent::ThreadMessagePosted {
         community,
         thread_id,
-        message_id,
         sender_pseudonym,
         body,
         timestamp,
         reply_to_id,
+        ..
     } = event.clone()
     else {
         return None;

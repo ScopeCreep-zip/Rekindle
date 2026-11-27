@@ -22,5 +22,8 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 zeroize = "1"
 
+[dev-dependencies]
+proptest = "1"
+
 [build-dependencies]
 capnpc = { workspace = true }
