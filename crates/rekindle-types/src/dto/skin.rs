@@ -454,6 +454,11 @@ pub enum SkinRule {
     SoundEncode { detail: String },
     #[error("{token} is translucent; text grounds and fills are opaque")]
     TranslucentGround { token: String },
+    /// A pair of the pair model that cannot be measured on the variant: a
+    /// token it reads is not a colour of the sheet, or its value or ground
+    /// is not of the model's grammar (`why` is the measure's own reason).
+    #[error("{rule}: {why}")]
+    UnmeasuredPair { rule: String, why: String },
     #[error(
         "{token}: luminance {luminance_x1000}/1000 is on the wrong side of 179/1000 for base {declared}"
     )]

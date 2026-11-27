@@ -12,7 +12,7 @@
 //! The allowlist names a function, not a line, so it does not go stale
 //! when the file around it changes; an entry that no longer matches any
 //! spawn fails the gate too, so the list cannot rot. Test code (`#[cfg(test)]` modules,
-//! `#[test]`/`#[tokio::test]` functions, `tests/` and `*_tests.rs` files)
+//! `#[test]`/`#[tokio::test]` functions, and the files [`crate::test_code`] knows as test code by declaration)
 //! is not scanned.
 //!
 //! In the Host's trees ([`HOST`]) blocking work goes through
@@ -25,6 +25,7 @@ use std::path::Path;
 use anyhow::{anyhow, Result};
 use syn::visit::Visit;
 
+use crate::test_code::is_test_attr;
 use crate::walk_source_files;
 
 /// The trees whose tasks belong to a session.
@@ -138,17 +139,6 @@ struct Finder<'a> {
     used: std::collections::BTreeSet<usize>,
 }
 
-fn is_test_attr(attr: &syn::Attribute) -> bool {
-    let path = attr.path();
-    if path.is_ident("test") || path.segments.last().is_some_and(|s| s.ident == "test") {
-        return true;
-    }
-    path.is_ident("cfg")
-        && attr
-            .parse_args::<syn::Meta>()
-            .is_ok_and(|meta| meta.path().is_ident("test"))
-}
-
 impl Finder<'_> {
     fn allowed(&mut self) -> bool {
         let function = self.fns.last().map_or("", String::as_str);
@@ -249,11 +239,8 @@ fn scan(rel: &str, src: &str) -> (Vec<String>, std::collections::BTreeSet<usize>
     (finder.hits, finder.used)
 }
 
-fn is_test_file(rel: &str) -> bool {
-    rel.contains("/tests/") || rel.ends_with("_tests.rs") || rel.ends_with("/tests.rs")
-}
-
 pub(crate) fn check_bare_spawn(root: &Path) -> Result<()> {
+    let tests = crate::test_code::TestCode::load(root)?;
     let mut hits = Vec::new();
     let mut used = std::collections::BTreeSet::new();
     for dir in SCANNED {
@@ -263,7 +250,7 @@ pub(crate) fn check_bare_spawn(root: &Path) -> Result<()> {
                 .unwrap_or(&path)
                 .display()
                 .to_string();
-            if is_test_file(&rel) {
+            if tests.is_test(&path) {
                 continue;
             }
             let Ok(src) = std::fs::read_to_string(&path) else {
@@ -294,46 +281,5 @@ pub(crate) fn check_bare_spawn(root: &Path) -> Result<()> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn flags_bare_blocking_work_in_the_host_only() {
-        let src = "fn work() { tokio::task::spawn_blocking(|| ()); std::thread::spawn(|| ()); }";
-        let (hits, _) = scan("crates/rekindle-node/src/host/a.rs", src);
-        assert_eq!(hits.len(), 2, "{hits:?}");
-        assert!(hits[0].contains("run_blocking"), "{hits:?}");
-        let (hits, _) = scan("src-tauri/src/a.rs", src);
-        assert!(hits.is_empty(), "{hits:?}");
-    }
-
-    #[test]
-    fn flags_bare_spawns_and_names_the_function() {
-        let src = "fn work() { tokio::spawn(async {}); tauri::async_runtime::spawn(async {}); }";
-        let (hits, _) = scan("src-tauri/src/x.rs", src);
-        assert_eq!(hits.len(), 2, "{hits:?}");
-        assert!(hits[0].contains("x.rs:1") && hits[0].contains("`work`"));
-    }
-
-    #[test]
-    fn ignores_owned_spawns_and_test_code() {
-        let src = r"
-            fn owned(set: &mut tokio::task::JoinSet<()>) { set.spawn(async {}); }
-            #[cfg(test)]
-            mod tests { fn t() { tokio::spawn(async {}); } }
-            #[tokio::test]
-            async fn t2() { tokio::spawn(async {}); }
-        ";
-        assert!(scan("src-tauri/src/x.rs", src).0.is_empty());
-    }
-
-    #[test]
-    fn allowlist_is_per_function() {
-        let src = "fn start_dispatch_loop() { tauri::async_runtime::spawn(async {}); }
-                   fn other() { tauri::async_runtime::spawn(async {}); }";
-        let (hits, used) = scan("src-tauri/src/services/veilid/lifecycle/dispatch.rs", src);
-        assert_eq!(hits.len(), 1);
-        assert_eq!(used.len(), 1);
-        assert!(hits[0].contains("`other`"));
-    }
-}
+#[path = "bare_spawn_tests.rs"]
+mod tests;

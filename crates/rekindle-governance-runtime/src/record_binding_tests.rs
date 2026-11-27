@@ -96,7 +96,7 @@ fn signed(
         body,
         sig: [0; 64],
     };
-    let unsigned = op_unsigned_bytes(&op);
+    let unsigned = op_unsigned_bytes(&op).unwrap();
     op.sig = key.sign(&op_signing_bytes(ANCHOR, &unsigned)).to_bytes();
     HeldOp {
         hash: op_hash(&unsigned, &op.sig),

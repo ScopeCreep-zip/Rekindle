@@ -1,9 +1,17 @@
-import { Component, createSignal, onMount, For, Show } from "solid-js";
+import { Component, createSignal, onMount, Show } from "solid-js";
 import FormField from "../../components/common/FormField";
+import SettingsSelect, { type SettingsSelectOption } from "../../components/common/SettingsSelect";
 import { settingsState } from "../../stores/settings.store";
 import { handleSaveSettings } from "../../actions/settings.actions";
 import { commands } from "../../ipc/commands";
 import type { NotificationContent, QuietHoursSettings } from "../../ipc/commands/types";
+
+/** What an OS notification shows of a message. */
+const NOTIFICATION_CONTENT_OPTIONS: SettingsSelectOption[] = [
+  { value: "nameAndMessage", label: "Name and message" },
+  { value: "nameOnly", label: "Name only (sender or channel, no text)" },
+  { value: "nothing", label: "No name or message" },
+];
 
 const NotificationsTab: Component = () => {
   // Architecture §17.2 / §17.3 — Do Not Disturb + quiet hours.
@@ -106,6 +114,13 @@ const NotificationsTab: Component = () => {
     return zones.sort();
   };
 
+  // While quiet hours are unknown the zone shows nothing: an empty choice
+  // stands in until they load, never a zone not read.
+  const timezoneOptions = (): SettingsSelectOption[] => [
+    ...(qh() === null ? [{ value: "", label: "" }] : []),
+    ...supportedTimezones().map((zone) => ({ value: zone, label: zone })),
+  ];
+
   return (
     <>
       <div class="settings-section-title">Notifications</div>
@@ -146,6 +161,7 @@ const NotificationsTab: Component = () => {
           max="1"
           step="0.05"
           value={settingsState.ringtoneVolume}
+          style={{ "--range-fill": `${settingsState.ringtoneVolume * 100}%` }}
           onInput={(e) =>
             handleSliderChange(
               "ringtoneVolume",
@@ -168,20 +184,15 @@ const NotificationsTab: Component = () => {
         </span>
       </label>
 
-      <FormField label="Notifications show">
-        <select
-          class="form-select"
+      <FormField label="Notifications show" labelId="settings-notification-content-label">
+        <SettingsSelect
+          labelledBy="settings-notification-content-label"
           value={settingsState.notificationContent}
-          onChange={(e) =>
-            handleSaveSettings({
-              notificationContent: e.currentTarget.value as NotificationContent,
-            })
+          onChange={(value) =>
+            handleSaveSettings({ notificationContent: value as NotificationContent })
           }
-        >
-          <option value="nameAndMessage">Name and message</option>
-          <option value="nameOnly">Name only (sender or channel, no text)</option>
-          <option value="nothing">No name or message</option>
-        </select>
+          options={NOTIFICATION_CONTENT_OPTIONS}
+        />
       </FormField>
 
       {/* Architecture §17.2 — Do Not Disturb suppresses every
@@ -260,20 +271,14 @@ const NotificationsTab: Component = () => {
           }}
         />
       </FormField>
-      <FormField label="Timezone">
-        <select
-          class="form-select"
+      <FormField label="Timezone" labelId="settings-timezone-label">
+        <SettingsSelect
+          labelledBy="settings-timezone-label"
           value={qh()?.timezone ?? ""}
           disabled={qh()?.enabled !== true}
-          onChange={(e) => void editQuietHours({ timezone: e.currentTarget.value })}
-        >
-          <Show when={qh() === null}>
-            <option value="" />
-          </Show>
-          <For each={supportedTimezones()}>
-            {(zone) => <option value={zone}>{zone}</option>}
-          </For>
-        </select>
+          onChange={(zone) => void editQuietHours({ timezone: zone })}
+          options={timezoneOptions()}
+        />
         <div class="settings-hint">
           DST transitions are honored automatically.
           <Show when={qh()}>

@@ -5,7 +5,7 @@ import { SlotMount } from "../../components/skin-tree/slots";
 import { skinShell } from "../../hooks/useSkin";
 import { communityState } from "../../stores/community.store";
 import { removalText } from "../../utils/removal_text";
-import { hasPermission, servedPermissions, MANAGE_MESSAGES } from "../../utils/permissions";
+import { channelDeniedFor } from "../../utils/denied";
 import {
   handleBulkDeleteChannelMessages,
   handleRetryChannelMessage,
@@ -26,9 +26,11 @@ import type { CommunityVm } from "./useCommunityWindow";
 /// inside the voice CallStage's collapsible chat column.
 const ChannelChat: Component<{ vm: CommunityVm }> = (props) => {
   const vm = props.vm;
-  // The Host serves our permissions; it re-checks MANAGE_MESSAGES on the request.
-  const canManageMessages = () =>
-    hasPermission(servedPermissions(communityState.communities[vm.selectedCommunityId()]), MANAGE_MESSAGES);
+  // The Host's verdict for this channel (CAPR `manageMessages`, judged with
+  // its overwrites): the moderator controls are drawn either way, disabled
+  // with the reason. The author's rank is per post, answered on the request.
+  const manageDenied = () =>
+    channelDeniedFor(communityState.communities[vm.selectedCommunityId()], vm.selectedChannelId(), "manageMessages");
   return (
     <>
       <MessageList
@@ -40,7 +42,8 @@ const ChannelChat: Component<{ vm: CommunityVm }> = (props) => {
         memberNames={vm.memberNames()}
         myPseudonymKey={vm.activeCommunity()?.myPseudonymKey}
         threads={communityState.channelThreads[vm.selectedChannelId()] ?? []}
-        canBulkDelete={vm.canManageMessages()}
+        bulkDeleteDenied={manageDenied()}
+        adminDeleteDenied={manageDenied()}
         onBulkDelete={(messageIds) =>
           handleBulkDeleteChannelMessages(
             vm.selectedCommunityId(),
@@ -73,9 +76,7 @@ const ChannelChat: Component<{ vm: CommunityVm }> = (props) => {
         onDelete={(messageId) => {
           void handleDeleteChannelMessage(vm.selectedChannelId(), messageId);
         }}
-        onAdminDelete={canManageMessages()
-          ? (messageId) => void handleAdminDeleteChannelMessage(vm.selectedCommunityId(), vm.selectedChannelId(), messageId)
-          : undefined}
+        onAdminDelete={(messageId) => void handleAdminDeleteChannelMessage(vm.selectedCommunityId(), vm.selectedChannelId(), messageId)}
         onVotePoll={(pollId, selectedAnswers) =>
           handleVotePoll(vm.selectedCommunityId(), vm.selectedChannelId(), pollId, selectedAnswers)
         }

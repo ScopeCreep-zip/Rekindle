@@ -152,7 +152,6 @@ the DHT or `app_message` transport:
 
 Layer 4 in the stack — see [`overview.md`](overview.md).
 
-
 ### Group rendezvous metadata (plan decision 67)
 
 A group's rendezvous record is readable by anyone who learns its key, and

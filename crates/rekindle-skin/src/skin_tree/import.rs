@@ -29,6 +29,7 @@ use super::anchor_client::{client_box, client_inset, to_tile};
 use super::clip::{clip, Art, Images};
 use super::content::{self, Link};
 use super::fit::fit;
+use super::layer::layer_of;
 use super::outdent;
 use super::passes::{by_view, pages, qualify, rows_by_view, tab_views};
 use super::roles::{check_grip, role, with_implied, Facts, Role};
@@ -51,30 +52,6 @@ pub(super) fn bad(detail: impl Into<String>) -> ImportError {
 /// A component's `MinWidth`/`MinHeight`/`MaxWidth`/`MaxHeight`.
 pub(super) fn limit_of(component: Option<&Node>, key: &str) -> Option<u16> {
     component?.attr_ci(key)?.trim().parse().ok()
-}
-
-/// How far a component's `DrawOnTopmost`/`DrawOnBottommost` (spec A9;
-/// `Xfire.exe` UTF-16 strings at 0x2b75a4, 0x2b75c0) lifts its tile out of
-/// its siblings' `Z` order: past every pack `Z` (they run -4..100), so
-/// Classic's `TheX` (`xfirecomponents.xml:147`, `DrawOnTopmost="true"`)
-/// draws above the siblings laid after it.
-const TOPMOST: i16 = 1000;
-
-/// The layer a tile's `component` puts it in (spec A9): [`TOPMOST`] above
-/// its siblings, its negation below them, else 0.
-fn layer_of(component: Option<&Node>) -> i16 {
-    let on = |k: &str| {
-        component
-            .and_then(|c| c.attr_ci(k))
-            .is_some_and(|v| v.trim().eq_ignore_ascii_case("true"))
-    };
-    if on("DrawOnTopmost") {
-        TOPMOST
-    } else if on("DrawOnBottommost") {
-        -TOPMOST
-    } else {
-        0
-    }
 }
 
 /// A state's pieces as decoded, in the pack's order.
@@ -252,7 +229,11 @@ impl Walk<'_> {
                 states.insert(state, encoded);
             }
         }
-        Ok(Some(NodeArt { normal, states }))
+        Ok(Some(NodeArt {
+            normal,
+            states,
+            refused: None,
+        }))
     }
 
     /// One tile's id, role and art, before it is placed.

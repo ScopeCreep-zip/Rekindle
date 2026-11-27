@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE Components SYSTEM "XfireSkin.dtd">
+
+<Components>
+    <!--
+    //////////////////////////////////////////////
+    // Opacity Sliders
+    //////////////////////////////////////////////
+    -->
+    <Component Name="XIGOpacitySlider" Class="SliderControl" MinWidth="67" MaxWidth="67" MinHeight="11" MaxHeight="11" ToolTip="XIGAdjustOpacityTip" ToolTipTile="XIGToolTipPopup" Range="255" Step="1" Type="Opacity" DrawOnTopMost="True" />
+    
+    <Component Name="XIGOpacityTrack" Class="Tile" MinHeight="5" MaxHeight="5" Stretch="ToContent" Type="Track" DrawOnTopMost="True">
+        <Images State="Normal">
+            <Image Type="TopLeft">xig_track_left</Image>
+            <Image Type="Top">xig_track_middle</Image>
+            <Image Type="TopRight">xig_track_right</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="XIGOpacityGripper" Class="Tile" MinWidth="6" MaxWidth="6" MinHeight="11" MaxHeight="11" Stretch="ToContent" Type="Gripper" DrawOnTopMost="True">
+        <Images State="Normal">
+            <Image Type="Middle">xig_track_gripper</Image>
+        </Images>
+    </Component>
+    
+    
+    
+    <!--
+    //////////////////////////////////////////////
+    // Window Draggers
+    //////////////////////////////////////////////
+    -->
+    <Component Name="XIGWindowDragger" Class="Tile" Default="Activate" DrawOnTopMost="True">
+        <Triggers>
+            <Trigger Type="OnLeftButtonDown">AppDragWindow</Trigger>
+            <Trigger Type="OnDoubleClick">AppMaximize</Trigger>
+        </Triggers>
+    </Component>
+    
+    
+    
+    <!--
+    //////////////////////////////////////////////
+    // Websearch
+    //////////////////////////////////////////////
+    -->
+    <Component Name="XIGWebSearchEdit" Class="WebSearchEdit" Stretch="ToContent" ToolTip="XIGWebSearchEditTip" ToolTipTile="XIGToolTipPopup" CaretColor="XIGCaretCG" SelectionSelectorColor="BlackCG" SelectionColor="ListColorSelectedCG" SelectionTextColor="ListColorSelectedTextCG" SelectionColor_InActive="ListColorSelectedCG">
+        <Triggers>
+            <Trigger Type="OnGamePrefBrowserDisabled">State(Disabled)</Trigger>
+        </Triggers>
+        <Fonts>
+            <Font Type="Text" Font="Arial" Size="11" Bold="False" Color="TextFieldTextCG" />
+            <Font Type="DisabledText" Font="Arial" Size="11" Bold="False" Italic="True" Color="DisabledTextCG" />
+        </Fonts>
+    </Component>
+    
+    
+    
+    <!--
+    //////////////////////////////////////////////
+    // List Items
+    //////////////////////////////////////////////
+    -->
+    <Component Name="XIGListItemBG" Class="Tile" />
+    
+    <Component Name="XIGListItemBGSelected" Class="Tile" DrawOnTopMost="True">
+        <Images State="Normal">
+            <Image Type="Middle">xig_list_color_selected_background</Image>
+        </Images>
+    </Component>
+    
+    <Component Name="XIGListItemBGAlert" Class="Tile">
+        <Images State="Normal">
+            <Image Type="Middle">transparent</Image>
+        </Images>
+        <Images State="Disabled">
+            <Image Type="Left">icon_group_chat</Image>
+            <Image Type="Middle">icon_group_chat</Image>
+            <Image Type="Right">icon_group_chat</Image>
+        </Images>
+    </Component>
+    
+    
+    
+    <!--
+    //////////////////////////////////////////////
+    // Scrollbars
+    //////////////////////////////////////////////
+    -->
+    <Component Name="XIGVertScrollBar" Class="VertScrollbar" Stretch="ToContent" Scrollbar="XfireScrollbar" />
+    
+    
+    
+    <!--
+    //////////////////////////////////////////////
+    // Buttons
+    //////////////////////////////////////////////
+    -->
+    <!-- <Component Name="XIGButtonClose" Class="PushButton" MinWidth="19" MaxWidth="19" MinHeight="13" MaxHeight="13" Stretch="ToContent" ToolTip="ButtonCloseTip" TooltipTile="XIGToolTipPopup" DrawOnTopmost="True">
+        <Triggers>
+            <Trigger Type="OnClick">HideWindow</Trigger>
+            <Trigger Type="OnActivate">State(Normal)</Trigger>
+            <Trigger Type="OnDeactivate">State(Disabled)</Trigger>
+        </Triggers>
+        <Images State="Normal">
+            <Image Type="Middle">button_close_norm</Image>
+        </Images>
+        <Images State="Hover">
+            <Image Type="Middle">button_close_hover</Image>
+        </Images>
+        <Images State="Down">
+            <Image Type="Middle">button_close_down</Image>
+        </Images>
+        <Images State="Disabled">
+            <Image Type="Middle">button_close_disabled</Image>
+        </Images>
+    </Component> -->
+</Components>

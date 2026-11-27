@@ -86,3 +86,23 @@ updates:
     commit-message:
       prefix: "deps(actions)"
       include: "scope"
+
+  # The SQL lint job's sqlfluff, hash-pinned in .github/requirements/sqlfluff.txt
+  # (supply-chain policy item 1).
+  - package-ecosystem: "pip"
+    directory: "/.github/requirements"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    # Supply-chain cooldown, as for the other ecosystems.
+    cooldown:
+      default-days: 14
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      prefix: "deps(pip)"
+      include: "scope"

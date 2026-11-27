@@ -8,7 +8,8 @@ import type { NotJoinableReason } from "../ipc/commands/types";
 import type { DeviceStatus } from "../ipc/commands/community";
 import type { Message } from "../stores/chat.store";
 import type { AutoModRule, Community, Channel, Expression, Member, MemberLocation } from "../stores/community.store";
-import type { MemberGroup, TargetModeration } from "../ipc/commands/dto";
+import type { MemberGroup } from "../ipc/commands/dto";
+import type { ChannelDeniedCapabilities, DeniedCapabilities, MemberModeration } from "../ipc/commands/dto_capabilities";
 import type { KeyStatus } from "../ipc/channels/community_subscription_events";
 
 /** Convert a single backend FriendInfo to a frontend Friend. */
@@ -139,8 +140,8 @@ export function transformMessages(msgs: IpcMessage[]): Message[] {
 }
 
 /** Backend channel DTO → store Channel (handles the channelType→type rename+cast). */
-export function transformChannel(ch: { id: string; name: string; channelType: string; categoryId?: string; topic?: string; forumTags?: string[]; stageSpeakers?: string[]; stageModerator?: string | null; slowmodeSeconds?: number; nsfw?: boolean; messageRecordKey?: string; mekGeneration?: number; notificationLevel?: "all" | "mentions" | "nothing"; notificationSoundRef?: string | null; locked?: boolean; lockedReason?: string }): Channel {
-  return { locked: ch.locked ?? false, lockedReason: ch.lockedReason, id: ch.id, name: ch.name, type: ch.channelType as Channel["type"], unreadCount: 0, categoryId: ch.categoryId, topic: ch.topic ?? "", forumTags: ch.forumTags ?? undefined, stageSpeakers: ch.stageSpeakers ?? undefined, stageModerator: ch.stageModerator ?? null, slowmodeSeconds: ch.slowmodeSeconds, nsfw: ch.nsfw, messageRecordKey: ch.messageRecordKey, mekGeneration: ch.mekGeneration, notificationLevel: ch.notificationLevel ?? "all", notificationSoundRef: ch.notificationSoundRef ?? null };
+export function transformChannel(ch: { id: string; name: string; channelType: string; categoryId?: string; topic?: string; forumTags?: string[]; stageSpeakers?: string[]; stageModerator?: string | null; slowmodeSeconds?: number; nsfw?: boolean; messageRecordKey?: string; mekGeneration?: number; notificationLevel?: "all" | "mentions" | "nothing"; notificationSoundRef?: string | null; locked?: boolean; lockedReason?: string; denied?: ChannelDeniedCapabilities }): Channel {
+  return { denied: ch.denied ?? {}, locked: ch.locked ?? false, lockedReason: ch.lockedReason, id: ch.id, name: ch.name, type: ch.channelType as Channel["type"], unreadCount: 0, categoryId: ch.categoryId, topic: ch.topic ?? "", forumTags: ch.forumTags ?? undefined, stageSpeakers: ch.stageSpeakers ?? undefined, stageModerator: ch.stageModerator ?? null, slowmodeSeconds: ch.slowmodeSeconds, nsfw: ch.nsfw, messageRecordKey: ch.messageRecordKey, mekGeneration: ch.mekGeneration, notificationLevel: ch.notificationLevel ?? "all", notificationSoundRef: ch.notificationSoundRef ?? null };
 }
 
 export function transformExpression(expression: ExpressionInfo): Expression {
@@ -206,6 +207,7 @@ export function transformCommunityDetail(c: {
     reason?: string | null;
   } | null;
   keyStatus?: KeyStatus | null;
+  denied?: DeniedCapabilities;
 }): Community {
   return {
     id: c.id, name: c.name, description: c.description ?? null,
@@ -235,6 +237,7 @@ export function transformCommunityDetail(c: {
     myBadges: c.myBadges ?? [],
     removed: c.removed ?? null,
     keyStatus: c.keyStatus ?? null,
+    denied: c.denied ?? {},
   };
 }
 
@@ -257,7 +260,7 @@ export function transformMember(m: {
   location?: MemberLocation | null;
   lastActive?: number;
   group: MemberGroup;
-  canModerateTarget: TargetModeration;
+  moderation: MemberModeration;
   outranks: boolean;
 }): Member {
   return {
@@ -275,7 +278,7 @@ export function transformMember(m: {
     location: m.location ?? null,
     lastActive: m.lastActive ?? 0,
     group: m.group,
-    canModerateTarget: m.canModerateTarget,
+    moderation: m.moderation,
     outranks: m.outranks,
   };
 }

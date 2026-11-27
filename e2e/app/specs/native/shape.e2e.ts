@@ -35,16 +35,15 @@
 //   Linux laptop has neither Xvfb nor xdotool yet, so that check skips,
 //   saying so.
 
-import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, byText, resolveIntent, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
-import { REPO_ROOT } from "../../../walk/launch.ts";
 import { BUDDY, SETTINGS, openSettings } from "../../../walk/nav.ts";
 import { type Peer, startFleet, stopFleet } from "../../fleet.ts";
 import { createIdentity, newUser, openChat, type User } from "../../journeys.ts";
 import { decodePng, encodePng, over, type Rgba } from "../../png.ts";
+import { type Box, type Cut, disagreements, silhouette } from "../../silhouette.ts";
 import { ACCESSIBLE_VARIANT, builtinPacks, type SkinPack } from "../../skin-pack.ts";
 import { befriendFleet } from "../../social.ts";
 import { BUDDY_LIST, sizeWindow } from "../../windows.ts";
@@ -55,19 +54,7 @@ const OUT = path.join(import.meta.dirname, "..", "..", "out", "shape");
 const PACKS = builtinPacks().filter((p) => p.file !== ACCESSIBLE_VARIANT.file);
 const NATIVE_WAYLAND = process.platform === "linux" && Boolean(process.env.WAYLAND_DISPLAY) && process.env.GDK_BACKEND !== "x11";
 
-interface Box {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
 
-interface Cut {
-  alphaOpaque: number;
-  rects: Box[] | null;
-  /** The layout's content rectangle (SK2: the views node's box), logical px; null without a frame. */
-  content: Box | null;
-}
 
 /** Where `a` and `b` differ by more than 1 px on any edge, as text; empty when they agree. */
 function offBy(a: Box, b: Box): string {
@@ -102,36 +89,6 @@ async function pageBoxes(): Promise<{ content: Box; rows: number }> {
     }).length;
     return { content, rows };
   })) as { content: Box; rows: number };
-}
-
-/** The silhouette `pack`'s `frame` cuts a `width × height` window to at `scale` per mille. */
-function silhouette(pack: string, frame: "main" | "chat", width: number, height: number, scale: number): Cut {
-  const out = execFileSync(
-    "cargo",
-    ["run", "-q", "-p", "xtask", "--", "skin-silhouette", "--pack", pack, "--window", frame, "--width", String(width), "--height", String(height), "--scale", String(scale)],
-    { cwd: REPO_ROOT, encoding: "utf8" },
-  );
-  return JSON.parse(out) as Cut;
-}
-
-/** Pixels whose alpha disagrees with `cut`: drawn outside it, or see-through inside it (the window whole when it lays no frame). */
-function disagreements(img: Rgba, cut: Cut): { outsideDrawn: number; insideClear: number; first: string[] } {
-  const inside = new Uint8Array(img.width * img.height);
-  for (const r of cut.rects ?? [{ x: 0, y: 0, width: img.width, height: img.height }]) {
-    for (let y = r.y; y < Math.min(r.y + r.height, img.height); y++) inside.fill(1, y * img.width + r.x, y * img.width + Math.min(r.x + r.width, img.width));
-  }
-  let outsideDrawn = 0;
-  let insideClear = 0;
-  const first: string[] = [];
-  for (let i = 0; i < inside.length; i++) {
-    const alpha = img.data[i * 4 + 3];
-    const drawn = alpha >= cut.alphaOpaque;
-    if (drawn === (inside[i] === 1)) continue;
-    if (drawn) outsideDrawn++;
-    else insideClear++;
-    if (first.length < 6) first.push(`(${i % img.width},${Math.floor(i / img.width)}) alpha ${alpha} ${drawn ? "drawn outside" : "clear inside"}`);
-  }
-  return { outsideDrawn, insideClear, first };
 }
 
 describe("a skinned window is the skin's shape", function () {

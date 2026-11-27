@@ -102,11 +102,11 @@ fn every_builtin_serves_its_community_window_in_its_chat_windows_frame() {
             crate::shape::of_layout("windows", expect.as_ref().unwrap(), &serve::files(&p))
                 .unwrap()
                 .into_iter()
-                .map(|m| (m.width(), m.height(), m.bits().to_vec()))
+                .map(|m| (m.width(), m.height(), m.bits().to_vec(), m.faint().to_vec()))
                 .collect::<Vec<_>>();
         let got_masks = masks
             .iter()
-            .map(|m| (m.width, m.height, m.bits.clone()))
+            .map(|m| (m.width, m.height, m.bits.clone(), m.faint.clone()))
             .collect::<Vec<_>>();
         assert_eq!(got_masks, want_masks, "{id}: frame masks");
         let source_masks = frame(want).unwrap().1;

@@ -3,8 +3,11 @@
 //! A shaped window shows, and passes clicks to, whatever lies behind its
 //! transparent pixels, so a hostile skin could frame another app's button
 //! as Rekindle's (UI redressing; threat model). The rules:
-//! 1. each tile's mask is its image's alpha (≥ [`super::ALPHA_OPAQUE`]),
-//!    derived from the image, never declared: the shape is what is drawn;
+//! 1. each tile's mask is its image's alpha (opaque bits ≥
+//!    [`super::ALPHA_OPAQUE`], faint pixels below it), derived from the
+//!    image, never declared, and the window holds every pixel whose layers
+//!    composite (source-over) to at least the threshold: the shape is what
+//!    is drawn;
 //! 2. no frame tile reaches into the content rectangle (security surfaces
 //!    live there, `@layer sec`), in a layout without a component tree. Under
 //!    SK2 (lead decision 3, 2026-11-20) the pack's tree is the window: its

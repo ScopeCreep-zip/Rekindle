@@ -52,17 +52,13 @@ jobs:
           persist-credentials: false
 
       - uses: ScopeCreep-zip/Rekindle/.github/actions/setup-pnpm@7cf987f7e8b2f5b396fa467a3831db5c1055535b # action content as of 7cf987f7e
+        id: frontend-install
 
-      # The package.json devDependencies for biome / stylelint / knip
-      # are pending; once they land the next steps just work. Until
-      # then this job is skipped at install time. See
-      # docs/contributor/linting.md "Pending devDependencies".
       - name: Biome — check
-        if: ${{ hashFiles('node_modules/.bin/biome') != '' }}
         run: pnpm exec biome check src/
 
       - name: Stylelint — CSS lint
-        if: ${{ hashFiles('node_modules/.bin/stylelint') != '' }}
+        if: ${{ !cancelled() && steps.frontend-install.outcome == 'success' }}
         run: pnpm exec stylelint 'src/styles/**/*.css'
 
       - name: knip — unused exports / files
@@ -216,7 +212,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install sqlfluff
-        run: pip install sqlfluff
+        run: pip install --require-hashes --no-deps -r .github/requirements/sqlfluff.txt
 
       - name: sqlfluff lint
         run: sqlfluff lint crates/rekindle-db/schema/
