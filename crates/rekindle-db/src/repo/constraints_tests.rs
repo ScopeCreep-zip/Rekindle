@@ -184,7 +184,7 @@ fn every_enum_and_json_column_refuses_a_value_outside_its_vocabulary() {
     }
 }
 
-/// A corrupt value that reaches the file anyway (written past the CHECKs)
+/// A corrupt value that reaches the file anyway (written past the CHECK constraints)
 /// is a read error naming its column, never a default.
 #[test]
 fn a_corrupt_json_or_enum_value_is_a_read_error() {

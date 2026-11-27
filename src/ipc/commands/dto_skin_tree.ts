@@ -2,7 +2,7 @@
 /// plan SK2-S2): the served component tree's ids, roles and nesting. It
 /// carries no box: every position is the Host's emitted rule.
 
-import type { SessionStatus } from "./dto";
+import type { SessionStatus } from "./types";
 
 export type ViewKey =
   | "friends"
@@ -65,7 +65,7 @@ export type NodeRole =
 export type SlotKey = "typingNotice" | "chatArea" | "chatEdit" | "chatSend" | "infoviewButton";
 
 /** `rekindle_types::dto::skin_tree_role::WindowButtonKind`. */
-export type WindowButtonKind = "minimize" | "maximize" | "close";
+type WindowButtonKind = "minimize" | "maximize" | "close";
 
 /** `rekindle_types::dto::skin_action::EngineMenu`. */
 export type EngineMenu =
@@ -98,7 +98,7 @@ export type EngineView =
   | "communities";
 
 /** `OverlayPart`. */
-export type OverlayPart =
+type OverlayPart =
   | "fps"
   | "clock"
   | "alert"
@@ -107,7 +107,7 @@ export type OverlayPart =
   | "browser";
 
 /** `SkinSettingsTab`. */
-export type SkinSettingsTab =
+type SkinSettingsTab =
   | "profile"
   | "privacy"
   | "about"
@@ -117,14 +117,14 @@ export type SkinSettingsTab =
   | "appearance";
 
 /** `AnimateSpec`. */
-export interface AnimateSpec {
+interface AnimateSpec {
   delay: number;
   repeat?: number;
   action?: number;
 }
 
 /** `TileRef` (serde `tag = "kind"`, `content = "name"`). */
-export type TileRef = { kind: "this" } | { kind: "named"; name: string };
+type TileRef = { kind: "this" } | { kind: "named"; name: string };
 
 /** `SkinAction` (serde `tag = "kind"`, `content = "arg"`): one engine
  *  action a trigger runs (plan SK2 decision 36). */
@@ -250,7 +250,7 @@ export type Capability =
   | "leaveCommunity";
 
 /** `AppSignal` (serde `tag = "kind"`, `content = "arg"`). */
-export type AppSignal =
+type AppSignal =
   | { kind: "can" | "cannot"; arg: Capability }
   | { kind: "prefEnabled" | "prefDisabled"; arg: OverlayPart }
   | {
@@ -375,7 +375,7 @@ export interface NodeLabel {
 }
 
 /** `LabelStyle`: a source tab's word style (plan SK15). */
-export interface LabelStyle {
+interface LabelStyle {
   sizePx: number;
   weight: number;
   /** `#RRGGBB`. */
@@ -404,7 +404,7 @@ export interface MenuItem {
 }
 
 /** `EngineMenuItems`: one engine menu's items. */
-export interface EngineMenuItems {
+interface EngineMenuItems {
   menu: EngineMenu;
   items: MenuItem[];
 }
@@ -435,26 +435,26 @@ export interface SkinShell {
 /** `Anchor` (serde `tag = "kind"`, `content = "offset"`), as served: a stored pack's
  *  `after` chain (plan SK15b) is resolved by the Host into `start`/`end`/`centre` before any
  *  tree or popup reaches the shell. */
-export type NodeAnchor =
+type NodeAnchor =
   | { kind: "start"; offset: number }
   | { kind: "end"; offset: number }
   | { kind: "centre"; offset: { by: number; before: number; after: number } }
   | { kind: "after"; offset: { sibling: string; gap: number } };
 
 /** `NodeSpan` (serde `tag = "kind"`): one axis of a box, px. */
-export type NodeSpan =
+type NodeSpan =
   | { kind: "fixed"; at: NodeAnchor; size: number }
   | { kind: "stretch"; start: number; end: number }
   | { kind: "share"; at: NodeAnchor; permille: number };
 
 /** `PopupAnchor`: the popup's left side `offset` px from the launching window's `edge`. */
-export interface PopupAnchor {
+interface PopupAnchor {
   edge: "left" | "right";
   offset: number;
 }
 
 /** `ShellPopup`: a popup's name and its placement beside the launching window. */
-export interface ShellPopup {
+interface ShellPopup {
   name: string;
   anchor: PopupAnchor;
   width: number;

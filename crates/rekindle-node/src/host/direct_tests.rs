@@ -57,7 +57,7 @@ pub(super) async fn ann_on(host: Arc<Host>) -> (Arc<Host>, [u8; 32]) {
         host.root(),
         &host.identity_stores(),
         Some("Ann"),
-        "pass",
+        rekindle_test_fixtures::PASSPHRASE,
         1,
         &rekindle_utils::random::OsRandom,
     )
@@ -71,7 +71,7 @@ pub(super) async fn ann_on(host: Arc<Host>) -> (Arc<Host>, [u8; 32]) {
             Caller::shell(),
             IpcRequest::Unlock {
                 identity: ann.clone(),
-                passphrase: "pass".into(),
+                passphrase: rekindle_test_fixtures::PASSPHRASE.into(),
             },
         )
         .await;
@@ -230,6 +230,11 @@ async fn a_friend_accept_whose_store_fails_keeps_its_row() {
         profile_dht_key: String::new(),
         route_blob: Vec::new(),
         mailbox_dht_key: String::new(),
+        friends_key: rekindle_codec::capnp_codec::direct::FriendsKey {
+            epoch: 1,
+            key: [7; 32],
+        },
+        chain_record_key: format!("VLD0:{}", "A".repeat(43)),
     });
     pending(&host, owner, bob, 0, &accept).await;
     let db = host.ctx.db.current().unwrap();
@@ -292,6 +297,7 @@ pub(super) fn sealed_request_with(
             record_key: format!("VLD0:{}", "C".repeat(43)),
             writer: "w".repeat(93),
         },
+        chain_record_key: format!("VLD0:{}", "A".repeat(43)),
     });
     rekindle_transport::operations::dm::frame::seal_presession(from, &to, &body, nonce, sent_at)
         .unwrap()

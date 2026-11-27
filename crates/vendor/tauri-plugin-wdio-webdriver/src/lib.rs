@@ -1,3 +1,10 @@
+// Rekindle vendors only the macOS and Linux back ends (see README.md, change
+// 3); Windows is driven by tauri-driver, which needs no in-app plugin. On
+// every other target this crate is empty, so `cargo check --workspace` passes
+// there; `rekindle-desktop` refuses its `webdriver-test` feature on those
+// targets (`src-tauri/src/lib.rs`).
+#![cfg(any(target_os = "macos", target_os = "linux"))]
+
 use tauri::{
     plugin::{Builder, TauriPlugin},
     Runtime,
@@ -7,11 +14,6 @@ use tauri::{
 // patch; `cargo xtask check-webdriver-release`).
 #[cfg(not(debug_assertions))]
 compile_error!("tauri-plugin-wdio-webdriver is a test driver and never builds in release");
-
-// Rekindle vendors only the macOS and Linux back ends (see README.md); Windows
-// is driven by tauri-driver, which needs no in-app plugin.
-#[cfg(not(any(target_os = "macos", target_os = "linux")))]
-compile_error!("the vendored tauri-plugin-wdio-webdriver supports macOS and Linux only");
 
 mod error;
 #[cfg(target_os = "macos")]

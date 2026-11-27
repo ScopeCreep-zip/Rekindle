@@ -147,6 +147,18 @@ pub fn load_participant_owner(
         .transpose()
 }
 
+/// Remove our dm participant record's owner keypair for the conversation
+/// with `conversation`: the peer's row went (a cancelled or expired
+/// request, a removal), so the record is abandoned and nothing writes it.
+///
+/// # Errors
+/// The vault write failed.
+pub fn forget_participant_owner(vault: &VaultStore, conversation: &str) -> Result<(), VaultError> {
+    vault.delete(&VaultKey::DmParticipantOwner {
+        conversation: conversation.to_string(),
+    })
+}
+
 /// Remove an invite's request inbox owner keypair: the invite left
 /// `pending` and its inbox is dropped.
 ///
@@ -194,7 +206,11 @@ mod tests {
     #[test]
     fn each_record_keeps_its_own_entry() {
         let dir = tempfile::TempDir::new().unwrap();
-        let (vault, _) = VaultStore::create(&dir.path().join("a.vault"), "pass").unwrap();
+        let (vault, _) = VaultStore::create(
+            &dir.path().join("a.vault"),
+            rekindle_test_fixtures::PASSPHRASE,
+        )
+        .unwrap();
         assert_eq!(load_owner(&vault, OwnerKey::Profile).unwrap(), None);
         persist_owner(&vault, OwnerKey::Profile, &entry("k1", "kp1")).unwrap();
         persist_owner(&vault, OwnerKey::Account, &entry("k2", "kp2")).unwrap();
@@ -215,7 +231,11 @@ mod tests {
     #[test]
     fn a_bare_keypair_is_not_an_entry() {
         let dir = tempfile::TempDir::new().unwrap();
-        let (vault, _) = VaultStore::create(&dir.path().join("a.vault"), "pass").unwrap();
+        let (vault, _) = VaultStore::create(
+            &dir.path().join("a.vault"),
+            rekindle_test_fixtures::PASSPHRASE,
+        )
+        .unwrap();
         vault.put(&VaultKey::ProfileOwnerKeypair, b"kp").unwrap();
         assert!(load_owner(&vault, OwnerKey::Profile).is_err());
     }

@@ -10,7 +10,7 @@ import { base } from "./base.conf.ts";
 import { APP_CAPABILITY, type AppCapability } from "./launcher.ts";
 
 /** Past the default 10-minute threshold by far: auto-away holds from unlock. */
-export const IDLE_SECONDS = 100_000;
+const IDLE_SECONDS = 100_000;
 
 export const config: WebdriverIO.Config = {
   ...base,

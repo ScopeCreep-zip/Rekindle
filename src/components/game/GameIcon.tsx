@@ -14,7 +14,7 @@ const ICONS = import.meta.glob<string>("../../assets/game-icons/**/*.png", {
 });
 
 /** The URL of the icon with `key`, or `null` when no file has it. */
-export function gameIconUrl(key: string | null | undefined): string | null {
+function gameIconUrl(key: string | null | undefined): string | null {
   if (!key) return null;
   return ICONS[`../../assets/game-icons/${key}.png`] ?? null;
 }

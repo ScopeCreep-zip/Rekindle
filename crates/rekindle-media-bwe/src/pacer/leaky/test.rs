@@ -314,7 +314,7 @@ fn test_queue_drain() {
 
     assert!(
         pacer.poll_queue().is_none(),
-        "Fifth packet shoud not be relaesed because there's too much debt"
+        "Fifth packet should not be released because there's too much debt"
     );
 }
 

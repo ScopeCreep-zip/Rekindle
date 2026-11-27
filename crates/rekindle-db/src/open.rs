@@ -134,7 +134,7 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 ///
 /// 94 (audit 2026-10-20, F3): `idx_messages_dedup` covers only rows with
 /// no client id (two DMs in one millisecond were one), the client-id index
-/// names the sender; CHECKs on `identity.device_id` (32 hex), the 32-byte
+/// names the sender; CHECK constraints on `identity.device_id` (32 hex), the 32-byte
 /// keys of `signal_identities` and `unprocessed.header_dh`, and the
 /// counters; `unprocessed.quarantined_at`; each vault owner entry holds its
 /// record key with the keypair.
@@ -220,7 +220,7 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// 127 (plan E2.5, R5-5): the DM participant record is DFLT(1): the chain's
 /// retire mark rides in `ChainHead`, the `RETIRE_THROUGH` subkey is gone.
 /// 128 (plan E7.7.2): `app_settings.skin_id` and `sound_bank` with their
-/// GLOB CHECKs, and the identity skin library `skin_packages`.
+/// GLOB CHECK constraints, and the identity skin library `skin_packages`.
 /// 129 (plan E3.2 S7l, F9-1): `outbox.state` and `messages.send_state`
 /// admit `awaiting_key`, a channel post queued until its community key comes.
 /// 130 (plan E3.2 S9, F9-3): `messages.failure_reason`, why our own post
@@ -282,7 +282,7 @@ pub const SCHEMA: &str = include_str!("../schema/001_init.sql");
 /// its body (`'damaged'`): its signed outbox entry names a key we hold and the body does not open.
 /// 165 (plan decision 67 item 3): `group_dm_rendezvous`, each member's place in its group's
 /// rendezvous record.
-pub const SCHEMA_VERSION: i64 = 165;
+pub const SCHEMA_VERSION: i64 = 166;
 
 /// Opening the database failed.
 #[derive(Debug, thiserror::Error)]

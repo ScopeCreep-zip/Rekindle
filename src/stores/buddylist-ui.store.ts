@@ -3,7 +3,7 @@ import { createStore } from "solid-js/store";
 /** The app's own layout's tabs: Xfire's Friends, Servers and Downloads, and Communities. */
 export type BuddyListTab = "friends" | "communities" | "servers" | "files";
 
-export interface BuddyListUIState {
+interface BuddyListUIState {
   activeTab: BuddyListTab;
   searchQuery: string;
   showCreateCommunity: boolean;

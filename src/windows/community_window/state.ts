@@ -253,5 +253,3 @@ export function createCommunityWindowState() {
     sidebarServerList, formatTimeUntilEvent,
   };
 }
-
-export type CommunityWindowState = ReturnType<typeof createCommunityWindowState>;

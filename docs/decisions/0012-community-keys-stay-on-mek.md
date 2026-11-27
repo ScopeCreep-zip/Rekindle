@@ -42,6 +42,7 @@ CRDT-friendly MLS variant has matured.
 ## Decision outcome
 
 **Keep 0002's community-key model:**
+
 - per-channel MEKs (AES-256-GCM) and a community-scope key;
 - rotation by the deterministic rotator;
 - X25519 wraps delivered peer to peer;
@@ -66,6 +67,7 @@ CRDT-friendly MLS variant has matured.
 
 **Revisit trigger (unchanged from 0002, made concrete).** A decentralised group key agreement
 qualifies when it has:
+
 - a published security analysis;
 - an audited implementation under a licence compatible with MIT;
 - support for partition-tolerant, offline-heavy groups.

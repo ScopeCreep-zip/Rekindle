@@ -11,7 +11,7 @@ Each user's identity is an Ed25519 keypair generated locally on first run. The
 public key serves as the user's permanent address. There are no usernames,
 passwords, or email addresses. The private key never leaves the device.
 
-```
+```text
 Identity creation:
   1. Generate Ed25519 keypair
   2. Derive X25519 key for Diffie-Hellman
@@ -24,7 +24,7 @@ Identity creation:
 
 ## 1:1 Message Flow (Friends)
 
-```
+```text
 ┌───────────┐                                              ┌───────────┐
 │  Sender   │                                              │ Receiver  │
 │           │                                              │           │
@@ -72,7 +72,7 @@ A 1:1 datagram is the ingress tag `'D'` followed by one packed Cap'n Proto
 `rekindle-codec::capnp_codec::direct`). Community gossip is tagged `'G'`
 (`rekindle-codec::ingress`). An untagged datagram is dropped.
 
-```
+```text
 DmFrame {
   typeId  :UInt16     // the kind (type_id.rs); decides the body
   sender  :Data       // 32-byte Ed25519 identity (identity == address)
@@ -129,8 +129,8 @@ and the framed DM kinds.
 |---------------|---------|
 | `DmText` (0x0100), `DmEdit`/`DmDelete`/`DmReaction` (0x0110-0x0112) | 1:1 chat message (with optional reply and expiry), edits, deletes, reactions |
 | `Typing` (0x0401) | Ephemeral typing state: the sender's backend sends the start, refreshes it every 3 s while the draft changes, and stops after 3 s idle; the receiver lapses an unrefreshed start after 5 s (`rekindle_events::typing`) |
-| `FriendRequest` (0x0002) | Initial friend contact, sealed, by `app_call`; the reply is its receipt |
-| `FriendAccept` (0x0101) | Accept; travels as the first payload of the PreKeyInit that opens the session |
+| `FriendRequest` (0x0002) | Initial friend contact, sealed, by `app_call` (or written into an invite's inbox); the reply is its receipt. Carries the requester's reply inbox (RV2) and its `chainRecordKey`, the requester's dm participant record to the addressee, whose `HEAD` is published before each attempt; the accepter adopts it only when it accepts (decision 67 item 2). Never a presence key |
+| `FriendAccept` (0x0101) | Accept; travels as the first payload of the PreKeyInit that opens the session, with a durable copy in the requester's reply inbox. Carries the accepter's `friendsKeyEpoch`/`friendsKey` (its presence key; no separate `FriendsKey` row follows) and its `chainRecordKey`, whose `HEAD` is published before each attempt (decision 67 item 2) |
 | (0x0102, retired) | Was `FriendReject`. A decline is silent to the requester (LV23 review L2; Signal's message-request delete syncs only to our own devices); the request expires unanswered. Never reused |
 | `ProfileKeyRotated` (0x0105) | Notify remaining friends of new DHT profile key after block/unfriend |
 | `IdentityRotated` (0x0108) | Identity moved to a new key; signed by both keys over `IDENTITY_ROTATED ‖ old ‖ new ‖ recipient`, sent over the old session (`operations::friend::identity_rotation`) |

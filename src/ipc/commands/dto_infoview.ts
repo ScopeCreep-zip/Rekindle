@@ -37,7 +37,7 @@ export type InfoviewAction =
   | { type: "activityMore"; before: number };
 
 /// A joined community on our own page (`InfoviewCommunityRow`).
-export interface InfoviewCommunityRow {
+interface InfoviewCommunityRow {
   anchor: string;
   name: string;
   unread: number;
@@ -47,7 +47,7 @@ export interface InfoviewCommunityRow {
 }
 
 /// A friend in game (`InfoviewPlayingRow`).
-export interface InfoviewPlayingRow {
+interface InfoviewPlayingRow {
   friend: FriendInfo;
   gameId: number;
   gameName: string;
@@ -58,7 +58,7 @@ export interface InfoviewPlayingRow {
 }
 
 /// A community's game server (`InfoviewServerRow`).
-export interface InfoviewServerRow {
+interface InfoviewServerRow {
   label: string;
   address: string;
   gameId: string;
@@ -66,7 +66,7 @@ export interface InfoviewServerRow {
 }
 
 /// A removal from a community as shown (`display::CommunityRemovalDisplay`).
-export interface InfoviewRemoval {
+interface InfoviewRemoval {
   banned: boolean;
   by: string | null;
   byName: string | null;
@@ -74,7 +74,7 @@ export interface InfoviewRemoval {
 }
 
 /// A pinned channel message (`dto::community::PinnedMessageView`); `pinnedAt` in seconds.
-export interface InfoviewPin {
+interface InfoviewPin {
   messageId: string;
   channelId: string;
   pinnedBy: string;

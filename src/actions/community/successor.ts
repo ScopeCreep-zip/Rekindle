@@ -1,6 +1,7 @@
 import { commands } from "../../ipc/commands";
 import type { SuccessorOffer } from "../../ipc/commands/community";
-import { markSuccessorFollowed } from "../../stores/successor.store";
+import { eventStreamLive } from "../../ipc/channels";
+import { applySuccessorSnapshot, markSuccessorFollowed, successorSeq } from "../../stores/successor.store";
 import { errorMessage } from "../../utils/error";
 
 // Successor communities (ADR 0011, plan E3.2 S7s.4). Every write is a
@@ -19,6 +20,20 @@ export async function handleGetCommunitySuccessors(community: string): Promise<S
     console.warn("successor snapshot not read:", errorMessage(e));
     return null;
   }
+}
+
+const trackedSuccessors = new Set<string>();
+
+/// Read `community`'s successor snapshot once this window's event stream is
+/// live; once per community per window.
+export function trackSuccessors(community: string): void {
+  if (trackedSuccessors.has(community)) return;
+  trackedSuccessors.add(community);
+  void eventStreamLive().then(async () => {
+    const before = successorSeq();
+    const snapshot = await handleGetCommunitySuccessors(community);
+    if (snapshot) applySuccessorSnapshot(snapshot, before);
+  });
 }
 
 /// Re-create `community` under a new anchor with us as its sole creator,

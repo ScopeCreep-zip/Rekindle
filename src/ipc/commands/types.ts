@@ -4,11 +4,10 @@
 
 import type { OwnRecordsPhase, OwnRouteClass, RouteAvailability, RoutePauseCause } from "../channels/notification_events";
 
-export type { IdentitySummary } from "./dto";
 
 /** D22's delivery vocabulary (`rekindle_types::message::SendState`). */
 /** Why a stored message's body could not be read (the Host's words in `reasonText`). */
-export type UndecryptableReason = "damaged";
+type UndecryptableReason = "damaged";
 
 export interface Undecryptable {
   reason: UndecryptableReason;
@@ -311,10 +310,10 @@ export interface CommunityPolicy {
 }
 
 /** How coarse a peer's last-seen timestamp is exposed. */
-export type LastSeenPrecision = "hidden" | "coarse" | "exact";
+type LastSeenPrecision = "hidden" | "coarse" | "exact";
 
 /** Per-signal share scope. Default-deny: "none" hides the signal. */
-export type ShareScope = "none" | "members";
+type ShareScope = "none" | "members";
 
 /**
  * Per-community presence sharing consent (default-deny). Local-only — never
@@ -381,8 +380,6 @@ export type EventLocation =
   | { type: "external"; data: string }
   | { type: "in_game"; data: { gameId: number; serverAddress?: string } };
 
-export type EventStatus = "scheduled" | "active" | "completed" | "cancelled";
-
 export interface CreateEventRequest {
   title: string;
   description: string;
@@ -398,7 +395,7 @@ export interface CreateEventRequest {
   location?: EventLocation;
 }
 
-export interface EventRsvpInfo {
+interface EventRsvpInfo {
   pseudonymKey: string;
   status: string;
 }
@@ -473,3 +470,6 @@ export interface ActiveCall {
   /// Accepted (connecting or active) rather than still ringing out.
   connected: boolean;
 }
+
+/** Our own presence status as the Host states it (`SessionStatus`). */
+export type SessionStatus = "online" | "away" | "busy" | "offline" | "invisible";

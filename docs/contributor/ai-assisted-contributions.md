@@ -18,7 +18,7 @@ AI tool, the commit message **must** include an `Assisted-by:`
 trailer naming the tool and its version (the same place
 `Co-authored-by:` would go):
 
-```
+```text
 Subject line summarising the change
 
 Longer explanation if needed.
@@ -31,7 +31,7 @@ The attestation requirement is modelled on the
 [Linux kernel coding-assistants policy](https://docs.kernel.org/process/coding-assistants.html),
 the [Mozilla Firefox AI coding policy](https://firefox-source-docs.mozilla.org/contributing/ai-coding.html),
 the [OpenInfra Foundation policy](https://openinfra.org/legal/ai-policy/),
-and the [Drupal AI usage disclosure](https://www.drupal.org/about/governance/coding-standards/ai).
+and the [Drupal AI usage disclosure](https://www.drupal.org/docs/develop/issues/issue-procedures-and-etiquette/policy-on-the-use-of-ai-when-contributing-to-drupal).
 
 Why we require attestation rather than detection: **detection is not
 reliable**. Researchers cannot consistently distinguish AI-assisted
@@ -56,13 +56,13 @@ If you are unsure, **disclose**.
 
 The format is one line, the same as `Co-authored-by:`:
 
-```
+```text
 Assisted-by: <tool-name>:<version> [<harness>] [<flags>]
 ```
 
 Examples:
 
-```
+```text
 Assisted-by: claude-opus-4.7 (Claude Code 1.0)
 Assisted-by: github-copilot 1.241.0
 Assisted-by: cursor 0.50.0 (claude-sonnet-4)
@@ -89,7 +89,7 @@ an AI-assisted PR.
 
 ### Frontend tier (TypeScript / SolidJS)
 
-```
+```text
 src/components/  ← presentation only
 src/stores/       ← reactive signals + IPC calls; no business logic
 src/handlers/     ← event subscriptions; dispatch to stores
@@ -116,7 +116,7 @@ rules in `.semgrep.yml` cover the literal-pattern cases.
 
 ### Backend tier (Rust workspace)
 
-```
+```text
 Tier 1 — types          (zero deps)
 Tier 2 — secrets         (sole crypto boundary)
 Tier 3 — codec, records  (DHT, signed envelopes)
@@ -269,7 +269,7 @@ patterns produce better PRs:
 
 - [Linux kernel — Coding-assistants policy](https://docs.kernel.org/process/coding-assistants.html)
 - [Mozilla Firefox — AI coding](https://firefox-source-docs.mozilla.org/contributing/ai-coding.html)
-- [Drupal — AI usage policy](https://www.drupal.org/about/governance/coding-standards/ai)
+- [Drupal — AI usage policy](https://www.drupal.org/docs/develop/issues/issue-procedures-and-etiquette/policy-on-the-use-of-ai-when-contributing-to-drupal)
 - [OpenInfra Foundation — AI policy](https://openinfra.org/legal/ai-policy/)
 - [OpenSSF — Security-focused guide for AI code-assistant instructions](https://best.openssf.org/Security-Focused-Guide-for-AI-Code-Assistant-Instructions)
 - [NIST AI Risk Management Framework](https://www.nist.gov/itl/ai-risk-management-framework)

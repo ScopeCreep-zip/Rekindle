@@ -392,7 +392,8 @@ impl HostGovernance {
     /// other member's status as its beats show it (plan E3.4 S3; a founder
     /// never announces a join, so the gossip mesh never knew her online),
     /// with the gossip overlay's location and last-active; ours from our
-    /// own presence.
+    /// own presence, by the rule the online count uses
+    /// (`beat_view::own_shown`).
     ///
     /// # Errors
     /// No identity is unlocked or the roster could not be read.
@@ -418,7 +419,7 @@ impl HostGovernance {
             .call(move |conn| rekindle_db::repo::members::roster(conn, &owner, &cid))
             .await
             .map_err(|e| format!("community members: {e}"))?;
-        let my_status = self.ctx.own_presence.status().as_wire_str().to_owned();
+        let my_status = beat_view::own_shown(&self.ctx).as_wire_str().to_owned();
         let now = self.ctx.clock.now_secs();
         // Bans, removals and timeouts are the merged governance's (plan
         // E3.1 F2, E3.2): a banned or removed member leaves the list, as the

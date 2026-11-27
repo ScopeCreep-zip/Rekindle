@@ -34,8 +34,8 @@ rekindle-image = { path = "../rekindle-image" }
 resvg = { version = "0.45.1", default-features = false }
 # The same XML reader usvg uses, for the SVG pre-scan (node count, text and
 # reference refusal) before anything is rasterised (MIT OR Apache-2.0).
-roxmltree = "0.20"
 rekindle-types = { path = "../rekindle-types" }
+roxmltree = "0.20"
 serde = { workspace = true }
 serde_json = { workspace = true }
 spdx = "0.10"

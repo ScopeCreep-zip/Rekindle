@@ -12,7 +12,7 @@ import type { SkinShell } from "./dto_skin_tree";
 // same reason: it is the FSM state `setup.rs` emits, and both
 // `lifecycleCurrent()` and the channel subscription need to name it.
 
-import type { NotJoinableReason, SendState } from "./types";
+import type { NotJoinableReason, SendState, SessionStatus } from "./types";
 
 export interface GameInfo {
   gameName: string;
@@ -312,7 +312,7 @@ export type Recipient =
   | { site: { host: string } }
   | { gameServer: { game: string; address: string } };
 
-export type RecipientKind = "site" | "gameServer";
+type RecipientKind = "site" | "gameServer";
 
 /** Why an action can never be taken back (`IrreversibleReason`). */
 export type IrreversibleReason = { disclosureCannotBeRecalled: { to: RecipientKind } };
@@ -417,7 +417,7 @@ export interface IdentityShown {
 
 // ── Our presence (rekindle_types::dto::presence) ──
 
-export type SessionStatus = "online" | "away" | "busy" | "offline" | "invisible";
+export type { SessionStatus } from "./types";
 
 type IdleState = "unavailable" | "active" | "autoAway";
 
@@ -513,7 +513,7 @@ export interface SkinLibrary {
 
 /// One TUI colour role and its opaque sRGB value
 /// (`rekindle_types::dto::skin_library::SkinPaletteColour`).
-export interface SkinPaletteColour {
+interface SkinPaletteColour {
   role: string;
   rgb: [number, number, number];
 }

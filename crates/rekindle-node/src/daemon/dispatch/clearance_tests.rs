@@ -59,7 +59,7 @@ async fn a_client_refused_on_a_locked_daemon_is_told_no_identity_is_unlocked() {
     // stays unlocked.
     let unlock = IpcRequest::Unlock {
         identity: ann,
-        passphrase: "pass".into(),
+        passphrase: rekindle_test_fixtures::PASSPHRASE.into(),
     };
     let answer = host.call(Caller::shell(), unlock).await;
     assert!(!matches!(answer, IpcResponse::Error { .. }), "{answer:?}");

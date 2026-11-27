@@ -18,9 +18,9 @@
 //! is written into the invite's inbox, under the SMPL subkey cap.
 
 use rekindle_codec::capnp_codec::direct::{
-    DirectBody, DmContent, DmFrame, DmTypeId, FrameBody, FriendAccept, FriendRequest, PqPrekey,
-    PreKeyRejected, RegisterPushRelay, RequestAuth, SessionResetDecline, SessionResetRequest,
-    UnregisterPushRelay, WakeNotify,
+    DirectBody, DmContent, DmFrame, DmTypeId, FrameBody, FriendAccept, FriendRequest, FriendsKey,
+    PqPrekey, PreKeyRejected, RegisterPushRelay, RequestAuth, SessionResetDecline,
+    SessionResetRequest, UnregisterPushRelay, WakeNotify,
 };
 use rekindle_db::test_support::Party;
 use rekindle_types::dht_layout::MAX_APP_MESSAGE_LEN;
@@ -125,6 +125,7 @@ async fn friend_request_fits_by_app_call_with_either_admission() {
                 record_key: dht_key(),
                 writer: "w".repeat(93),
             },
+            chain_record_key: dht_key(),
         });
         let len = sealed_len(&alice, &bob, &request);
         assert!(len <= MAX_APP_MESSAGE_LEN, "FriendRequest {auth:?} {len} B");
@@ -150,6 +151,7 @@ fn an_inbox_write_fits_the_smpl_subkey_cap() {
             record_key: dht_key(),
             writer: "w".repeat(93),
         },
+        chain_record_key: dht_key(),
     });
     let len = sealed_len(&alice, &bob, &request);
     let cap = rekindle_types::dht_layout::request_inbox::MAX_SUBKEY_VALUE_LEN;
@@ -214,6 +216,11 @@ async fn friend_accept_fits() {
         profile_dht_key: dht_key(),
         route_blob: vec![0xAB; ROUTE_BLOB_LEN],
         mailbox_dht_key: dht_key(),
+        friends_key: FriendsKey {
+            epoch: 1,
+            key: [7; 32],
+        },
+        chain_record_key: dht_key(),
     });
     let len = init_len(&bob, &alice, &accept).await;
     assert!(

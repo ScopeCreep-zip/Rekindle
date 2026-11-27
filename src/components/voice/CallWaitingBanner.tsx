@@ -66,7 +66,7 @@ const CallWaitingBanner: Component = () => {
               class="form-btn-primary"
               onClick={() => void endCurrentAndAccept(entry().callId)}
             >
-              End current & answer
+              End current &amp; answer
             </button>
             <button
               type="button"

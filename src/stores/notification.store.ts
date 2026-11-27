@@ -43,7 +43,7 @@ export interface Notification {
   callKind?: "audio" | "video";
 }
 
-export interface NotificationState {
+interface NotificationState {
   notifications: Notification[];
 }
 

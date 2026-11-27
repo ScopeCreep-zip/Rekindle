@@ -138,7 +138,7 @@ async fn a_far_cert_that_fails_a_rule_is_not_read_again() {
 /// A follow re-checks both links from the new community's side: the op
 /// here naming the anchor, and the new cert naming this community.
 #[test]
-fn follow_checks_both_links_from_the_new_communitys_side() {
+fn follow_checks_both_links_from_the_new_community_side() {
     use rekindle_governance::successor::SuccessorRefusal;
     let mut state = GovernanceState::default();
     successor(&mut state, 1, Some("VLD0:new"));

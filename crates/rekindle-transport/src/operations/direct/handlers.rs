@@ -92,6 +92,7 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
                 mailbox_dht_key: &r.mailbox_dht_key,
                 auth: &r.auth,
                 reply: &r.reply,
+                chain_record_key: &r.chain_record_key,
             };
             match inbound::on_friend_request(host, &req).await {
                 Ok(()) => {}
@@ -111,6 +112,8 @@ pub(super) async fn apply(host: &dyn FriendHost, opened: Opened) -> Applied {
                 profile_dht_key: &a.profile_dht_key,
                 route_blob: a.route_blob.clone(),
                 mailbox_dht_key: &a.mailbox_dht_key,
+                friends_key: &a.friends_key,
+                chain_record_key: &a.chain_record_key,
             };
             applied = inbound::on_friend_accept(host, &accept).await;
         }

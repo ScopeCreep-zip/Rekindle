@@ -16,15 +16,15 @@ name = "rekindle"
 path = "src/main.rs"
 
 [dependencies]
-parking_lot = { workspace = true }
-base64 = "0.22"
 anyhow = { workspace = true }
+base64 = "0.22"
 chrono = { version = "0.4", features = [ "serde", "clock" ], default-features = false }
 clap = { version = "4", features = [ "derive", "env", "std", "help", "usage", "error-context" ] }
 clap_complete = "4"
 comfy-table = "7"
 dialoguer = "0.11"
 owo-colors = "4"
+parking_lot = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }

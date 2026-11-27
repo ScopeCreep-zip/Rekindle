@@ -42,7 +42,7 @@ A current maintainer PGP key fingerprint will be published here once the
 project has its first signed release. Until then, GitHub's private
 vulnerability reporting flow provides equivalent confidentiality.
 
-```
+```text
 Fingerprint: TBD — first published with v0.1.0 release tag
 ```
 

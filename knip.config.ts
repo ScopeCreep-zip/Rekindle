@@ -23,6 +23,10 @@ const config: KnipConfig = {
     "vite.config.ts",
     // Plan E7.14: WebdriverIO loads the real-app specs by the config's glob.
     "e2e/app/specs/**/*.e2e.ts",
+    // Plan E7.14: each WebdriverIO config is an entry `wdio run <config>`
+    // loads by path (package.json test:app scripts and the per-spec runs:
+    // budget, damage, idle, ...).
+    "e2e/app/wdio.*.conf.ts",
   ],
   project: [
     "src/**/*.{ts,tsx}",

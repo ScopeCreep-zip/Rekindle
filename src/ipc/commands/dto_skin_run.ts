@@ -7,8 +7,6 @@ import type { TransferTarget } from "./dto_transfer";
 
 type ArgOf<K extends SkinAction["kind"]> = Extract<SkinAction, { kind: K; arg: unknown }>["arg"];
 
-export type SkinWindow = "main" | "chat" | "community";
-
 /** `SkinSignalSet`: one window's state signals, computed by the Host
  *  (design §2.5); the window applies the pack triggers they fire. */
 export interface SkinSignalSet {
@@ -50,7 +48,7 @@ export type SkinSelection =
    *  yet; Join takes the first listed). */
   | { kind: "community"; arg: { community: string; channel: string | null; server: string | null } };
 
-export type ShellPanel =
+type ShellPanel =
   | "addFriend"
   | "newChat"
   | "newGroup"
@@ -62,7 +60,7 @@ export type ShellPanel =
   /** The Communities row's New (plan E7.7): a chooser, Create or Join. */
   | "communityStart";
 
-export type CallOp =
+type CallOp =
   | { kind: "voice"; arg: { friend: string } }
   | { kind: "answer"; arg: { callId: string } }
   | { kind: "joinGroup"; arg: { groupId: string; callId: string } }
@@ -77,7 +75,7 @@ export type CallOp =
 
 /** `CallTarget`: the window `ShowVoiceWindow` brings up (plan E7.2 G-item
  *  A), the active call's, else the community voice session's. */
-export type CallTarget =
+type CallTarget =
   | { kind: "call"; arg: { callId: string } }
   | { kind: "voice"; arg: { community: string; channel: string } };
 

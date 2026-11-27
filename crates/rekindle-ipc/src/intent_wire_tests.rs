@@ -31,7 +31,9 @@ fn a_commit_with_a_passphrase_proof_crosses_the_bus() {
     let intent_id = IntentId::v7(1_000, [7; 10]);
     let decoded = round_trip(BusPayload::Request(Box::new(IpcRequest::IntentCommit {
         intent_id,
-        proof: IntentProof::Passphrase("correct horse".to_string().into()),
+        proof: IntentProof::Passphrase(
+            rekindle_test_fixtures::PASSPHRASE_SPOKEN.to_string().into(),
+        ),
     })));
     let BusPayload::Request(request) = decoded else {
         panic!("not a request");
@@ -46,7 +48,7 @@ fn a_commit_with_a_passphrase_proof_crosses_the_bus() {
     assert_eq!(id, intent_id);
     assert_eq!(
         proof,
-        IntentProof::Passphrase("correct horse".to_string().into())
+        IntentProof::Passphrase(rekindle_test_fixtures::PASSPHRASE_SPOKEN.to_string().into())
     );
 }
 

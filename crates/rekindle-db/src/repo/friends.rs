@@ -362,6 +362,7 @@ mod tests {
             invite_id: None,
             reply_inbox_key: "r",
             reply_writer: "w",
+            chain_record_key: "VLD0:chain",
         };
         crate::repo::pending_requests::upsert(&conn, OWNER, &request).unwrap();
         for (peer, open) in [

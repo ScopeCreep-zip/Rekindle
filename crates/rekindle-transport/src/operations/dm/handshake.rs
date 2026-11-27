@@ -221,27 +221,6 @@ pub async fn enqueue_first_contact(
     commit(host, to, client_id(host, kind), payload).await
 }
 
-/// One attempt of a waiting first contact: their bundle read now opens the
-/// session and commits the PreKeyInit as its own receipted row, which
-/// settles this one; a bundle still not readable is attempted again; any
-/// other failure is shown on their row with Retry.
-async fn attempt_first_contact(host: &dyn FriendHost, to: &str, first_type_id: u16) -> Attempt {
-    let Some(kind) = DmTypeId::from_u16(first_type_id) else {
-        return Attempt::Wedged(format!("typeId {first_type_id:#06x}"));
-    };
-    match crate::operations::prekeys::open_first_contact(host, to, kind).await {
-        Ok(()) => Attempt::Sent,
-        Err(e @ (FriendError::NotReady(_) | FriendError::Locked)) => {
-            tracing::debug!(to = %to, ?kind, reason = %e, "first contact still waits for their prekeys");
-            Attempt::Deferred
-        }
-        Err(e) => {
-            crate::operations::prekeys::failed(host, to, kind, e.to_string());
-            Attempt::Wedged(e.to_string())
-        }
-    }
-}
-
 /// The reason an inbox write fails with when the inbox already holds
 /// another requester's request.
 pub const INBOX_TAKEN: &str = "the invite was already used";
@@ -466,7 +445,17 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
             record_key,
             writer,
             frame,
-        } => return attempt_inbox(host, record_key, writer, frame).await,
+        } => {
+            // An inbox row is a friend request (`friend::inbox::redeem`):
+            // the chain it names is published first (decision 67 item 2).
+            let kind = DmTypeId::FriendRequest;
+            if let Some(stopped) =
+                super::first_contact_durable::chain_published(host, to, kind).await
+            {
+                return stopped;
+            }
+            return attempt_inbox(host, record_key, writer, frame).await;
+        }
         Framed::FirstContactDurable {
             datagram,
             record_key,
@@ -479,7 +468,7 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
             return super::group_first_contact::attempt(host, to, datagram, group_id).await;
         }
         Framed::FirstContact { first_type_id } => {
-            return attempt_first_contact(host, to, *first_type_id).await;
+            return super::first_contact_durable::attempt_waiting(host, to, *first_type_id).await;
         }
         Framed::Pending { type_id, body } => {
             return super::group_first_contact::attempt_pending(host, to, *type_id, body).await;
@@ -498,6 +487,9 @@ pub async fn attempt(host: &dyn FriendHost, to: &str, payload: &[u8]) -> Attempt
         super::first_contact_durable::code_request(host, to, &framed, &datagram).await
     {
         return done;
+    }
+    if let Some(stopped) = super::first_contact_durable::chain_published(host, to, kind).await {
+        return stopped;
     }
     if receipted(kind) {
         return attempt_call(host, to, datagram, kind).await;

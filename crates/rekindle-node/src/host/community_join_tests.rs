@@ -30,7 +30,7 @@ async fn a_join_link_is_held_with_its_record_key_fingerprint() {
             Caller::shell(),
             IpcRequest::Unlock {
                 identity: ann,
-                passphrase: "pass".into(),
+                passphrase: rekindle_test_fixtures::PASSPHRASE.into(),
             },
         )
         .await;

@@ -11,12 +11,14 @@ This plan targets **Discord parity**, not legacy Xfire. Discord's 2025/2026 game
 5. **No "Game Server Favorites"** — Discord doesn't have this. The equivalent is the "Join" button on profiles when a game publishes a `joinSecret`.
 
 **What Rekindle already has that maps to Discord:**
+
 - Game detection via process scanning + `default_games.json` (51 games) → matches Discord's approach exactly
 - `RichPresence` struct with server_ip/port/map/player_count → maps to Discord's Activity fields
 - `GameInfo` in presence DHT subkey 4 → maps to Discord's Activity status display
 - Community events with RSVP → maps to Discord's Scheduled Events (missing lifecycle states + recurrence)
 
 **What's broken or missing:**
+
 - `server_address` is always `None` in game detection — presence data pipeline is incomplete
 - `GameServerList` component exists but is **never rendered** (no navigation path)
 - No "Join Game" button anywhere
@@ -39,6 +41,7 @@ The scanner already detects games by process name. On Linux, `platform::linux::r
 **Files to modify:**
 
 `crates/rekindle-game-detect/src/scanner.rs` — Add `rich_presence` field to `DetectedGame`, populate from cmdline:
+
 ```rust
 // Current:
 pub struct DetectedGame {
@@ -61,12 +64,14 @@ pub struct DetectedGame {
 In `scan_once()`, after matching a game, call a new helper to extract presence from the process. The scanner already has `self.system` with refreshed process data — iterate to find the matched PID, then extract cmdline args.
 
 `crates/rekindle-game-detect/src/scanner.rs` — New private helper `extract_rich_presence()`:
+
 - Gets the matched process's PID from `self.system.processes()`
 - Calls platform-specific cmdline reader
 - Parses for known connect patterns: `+connect`, `-connect`, `--connect`, `connect://`
 - Returns `Option<RichPresence>` with `server_ip` and `server_port` populated
 
 `crates/rekindle-game-detect/src/platform/mod.rs` — New public function `read_process_cmdline(pid: u32) -> Option<Vec<String>>`:
+
 - Linux: already exists as `linux::read_cmdline(pid)` — re-export it
 - macOS: use `sysinfo::Process::cmd()` (sysinfo 0.32 exposes this cross-platform)
 - Windows: use `sysinfo::Process::cmd()` (same)
@@ -77,6 +82,7 @@ Actually, `sysinfo::Process` already provides `.cmd()` which returns `&[String]`
 **Revised approach (simpler):** In `scan_once()`, when a game is matched by process name, look up the `sysinfo::Process` from `self.system`, call `.cmd()` to get args, pass to a `parse_connect_args(cmd: &[String]) -> Option<(String, u16)>` helper in `rich_presence.rs`.
 
 `crates/rekindle-game-detect/src/rich_presence.rs` — New function:
+
 ```rust
 /// Parse server connection info from game process command-line arguments.
 /// Recognizes patterns: +connect ip:port, -connect ip:port, --server ip:port
@@ -88,6 +94,7 @@ pub fn parse_connect_args(args: &[String]) -> Option<(String, u16)> {
 This keeps platform code untouched and uses sysinfo's cross-platform `.cmd()`.
 
 `src-tauri/src/services/game_service.rs:41-47` — Wire the new field:
+
 ```rust
 // Current (always None):
 let game_info = detected.as_ref().map(|g| GameInfoState {
@@ -111,12 +118,14 @@ let game_info = detected.as_ref().map(|g| GameInfoState {
 **Our state:** `game_service.rs` publishes to DHT profile subkey 4 (friends see it) but does NOT call `UpdatePresence` for any joined communities. Community members' game status is never updated.
 
 **Two gaps:**
+
 1. The game service doesn't forward to communities
 2. `subscribeCommunityPresenceEvents()` in `presence-events.handlers.ts` doesn't handle `gameChanged` for community members
 
 **Fix — backend approach** (keeps it in one place, avoids frontend round-trip):
 
 `src-tauri/src/services/game_service.rs` — After the DHT publish block (~line 69), add community presence fan-out:
+
 ```rust
 // After publishing to DHT...
 // Fan out to all joined communities
@@ -152,6 +161,7 @@ This requires `game_service.rs` to take a `DbPool` handle (currently it only tak
 **Discord equivalent:** Server member list shows game name under each member.
 
 `src/components/community/MemberList.tsx` — Already shows `member.gameInfo.gameName`. Verify it also shows `serverAddress` when present. Add the server address display:
+
 ```tsx
 <Show when={info().serverAddress}>
   <span class="member-game-server">on {info().serverAddress}</span>
@@ -171,6 +181,7 @@ This requires `game_service.rs` to take a `DbPool` handle (currently it only tak
 ### Fix 2a: Game launch capability
 
 `crates/rekindle-game-detect/src/database.rs` — Extend `GameEntry`:
+
 ```rust
 pub struct GameEntry {
     pub id: u32,
@@ -183,6 +194,7 @@ pub struct GameEntry {
 ```
 
 `crates/rekindle-game-detect/src/default_games.json` — Add launch metadata to entries that support it:
+
 ```json
 {"id": 4181, "name": "Counter-Strike 2", "process_names": ["cs2.exe", "cs2"],
  "icon": "cs2", "steam_app_id": 730, "connect_template": "steam://connect/{addr}"}
@@ -191,6 +203,7 @@ pub struct GameEntry {
 Most popular multiplayer games use `steam://connect/{addr}`. Non-Steam games get `null` — we can't launch what we don't know how to.
 
 `crates/rekindle-game-detect/src/launcher.rs` — NEW module:
+
 ```rust
 use crate::database::GameDatabase;
 use crate::error::GameDetectError;
@@ -222,6 +235,7 @@ pub fn launch_to_server(
 Uses the `open` crate (already in Tauri's dependency tree) to invoke `steam://connect/` URIs cross-platform. Steam handles the rest — launching the game, connecting to the server.
 
 `crates/rekindle-game-detect/src/database.rs` — Add `lookup_by_id()` method:
+
 ```rust
 pub fn lookup_by_id(&self, game_id: u32) -> Option<&GameEntry> {
     self.by_process.values().find(|e| e.id == game_id)
@@ -229,11 +243,13 @@ pub fn lookup_by_id(&self, game_id: u32) -> Option<&GameEntry> {
 ```
 
 `crates/rekindle-game-detect/src/lib.rs` — Add module:
+
 ```rust
 pub mod launcher;
 ```
 
 `crates/rekindle-game-detect/Cargo.toml` — Add dependency:
+
 ```toml
 open = "5"
 ```
@@ -241,6 +257,7 @@ open = "5"
 ### Fix 2b: Tauri command for game launch
 
 `src-tauri/src/commands/game.rs` — Add command:
+
 ```rust
 #[tauri::command]
 pub async fn launch_game_to_server(
@@ -256,6 +273,7 @@ pub async fn launch_game_to_server(
 `src-tauri/src/lib.rs` — Register in `generate_handler![]`.
 
 `src/ipc/commands.ts` — Add:
+
 ```typescript
 launchGameToServer: (gameId: number, address: string) =>
   invoke<void>("launch_game_to_server", { gameId, address }),
@@ -266,6 +284,7 @@ launchGameToServer: (gameId: number, address: string) =>
 **Discord equivalent:** Profile card shows "Join Game" button when friend has a joinable activity.
 
 `src/components/community/MemberProfilePopup.tsx:59-67` — Add button after server address:
+
 ```tsx
 <Show when={props.member.gameInfo}>
   {(info) => (
@@ -298,6 +317,7 @@ launchGameToServer: (gameId: number, address: string) =>
 ### Fix 3a: Add navigation to GameServerList
 
 `src/windows/CommunityWindow.tsx` — Add a "Servers" toggle button alongside the existing "Events" button in the channel header area (near line 335 where `ICON_CALENDAR` toggle exists):
+
 ```tsx
 <button
   class="community-header-btn"
@@ -311,6 +331,7 @@ launchGameToServer: (gameId: number, address: string) =>
 Add signal: `const [showServers, setShowServers] = createSignal(false);`
 
 In the main content area (line ~395), add conditional rendering:
+
 ```tsx
 <Show when={showServers()}>
   <GameServerList
@@ -327,6 +348,7 @@ Import `GameServerList` and wire `handleLoadGameServers` on community select.
 ### Fix 3b: Add "Add Server" form to GameServerList
 
 `src/components/community/GameServerList.tsx` — Add an inline "Add Server" form at the bottom when `canManage` is true:
+
 ```tsx
 <Show when={props.canManage}>
   <div class="game-server-add-form">
@@ -345,6 +367,7 @@ Wire to existing `handleAddGameServer()` handler.
 ### Fix 3c: Add "Join" button per server row
 
 `src/components/community/GameServerList.tsx` — In each `game-server-row`, add a Join button:
+
 ```tsx
 <button
   class="game-server-join"
@@ -366,6 +389,7 @@ Wire to existing `handleAddGameServer()` handler.
 ### Fix 4a: Add `MANAGE_EVENTS` permission bit
 
 `crates/rekindle-protocol/src/dht/community.rs` — Add constant:
+
 ```rust
 pub const MANAGE_EVENTS: u64 = 1 << 14;  // next available bit after existing constants
 ```
@@ -379,6 +403,7 @@ pub const MANAGE_EVENTS: u64 = 1 << 14;  // next available bit after existing co
 **Discord model:** `SCHEDULED(1) → ACTIVE(2) → COMPLETED(3)` or `SCHEDULED(1) → CANCELED(4)`.
 
 `crates/rekindle-protocol/src/messaging/envelope.rs` — Add `status` field to `EventDto`:
+
 ```rust
 pub struct EventDto {
     // ... existing fields ...
@@ -389,6 +414,7 @@ pub struct EventDto {
 `crates/rekindle-server/src/db.rs` — Add `status TEXT NOT NULL DEFAULT 'scheduled'` to `server_events` table. Bump `SERVER_SCHEMA_VERSION`.
 
 `crates/rekindle-server/src/tasks.rs` — Extend `check_event_reminders()` to also:
+
 1. Auto-activate events whose `start_time` has passed and status is "scheduled"
 2. Auto-complete events whose `end_time` has passed and status is "active"
 3. Auto-cancel events that are still "scheduled" 1 hour after their `start_time`
@@ -410,6 +436,7 @@ This matches Discord's behavior for External events.
 ### Fix 4d: Auto-cleanup past events
 
 `crates/rekindle-server/src/tasks.rs` — New function `auto_cleanup_past_events(state)`:
+
 - Delete events with status "completed" or "canceled" that are older than 7 days
 - Run alongside the existing reminder check every 300s
 
@@ -426,12 +453,14 @@ This matches Discord's behavior for External events.
 Create two new files and shrink `events.rs`:
 
 `crates/rekindle-server/src/rpc/audit_log.rs` — NEW (move `handle_get_audit_log` here):
+
 ```rust
 // Move from events.rs: handle_get_audit_log (lines 18-104)
 pub(super) fn handle_get_audit_log(...) -> CommunityResponse { ... }
 ```
 
 `crates/rekindle-server/src/rpc/presence.rs` — NEW (move typing + presence here):
+
 ```rust
 // Move from events.rs: handle_channel_typing (lines 110-143)
 // Move from events.rs: handle_update_presence (lines 145-189)
@@ -442,6 +471,7 @@ pub(super) fn handle_update_presence(...) -> CommunityResponse { ... }
 `crates/rekindle-server/src/rpc/events.rs` — Retains only event CRUD (handle_create_event, handle_edit_event, handle_delete_event, handle_rsvp_event, handle_get_events, load helpers). ~460 lines → focused on one concern.
 
 `crates/rekindle-server/src/rpc/mod.rs` — Update module declarations and dispatch:
+
 ```rust
 mod audit_log;   // NEW
 mod events;      // slimmed
@@ -460,13 +490,17 @@ CommunityRequest::UpdatePresence { .. } => presence::handle_update_presence(...)
 Each step is independently shippable and testable.
 
 ### Step 1: Split events.rs (Issue 5)
+
 Low risk refactor, clears the path for clean event lifecycle changes.
+
 - Create `rpc/audit_log.rs`, `rpc/presence.rs`
 - Move functions, update `rpc/mod.rs` dispatch
 - `cargo clippy --workspace` to verify
 
 ### Step 2: Wire rich presence from game detection (Issue 1a)
+
 Core data pipeline fix.
+
 - Add `rich_presence` to `DetectedGame`
 - Add `parse_connect_args()` to `rich_presence.rs`
 - Use `sysinfo::Process::cmd()` in scanner
@@ -474,14 +508,18 @@ Core data pipeline fix.
 - `cargo test --workspace`
 
 ### Step 3: Community presence fan-out (Issue 1b + 1c)
+
 Makes game status visible in communities.
+
 - Add community RPC fan-out in `game_service.rs`
 - Pass `DbPool` to `start_game_detection()`
 - Add server address display in `MemberList.tsx`
 - Manual test: detect a game, verify community members see it
 
 ### Step 4: Game launch + Join buttons (Issue 2)
+
 The Discord "Join" equivalent.
+
 - Create `launcher.rs` module
 - Add `steam_app_id` + `connect_template` to `GameEntry` + `default_games.json`
 - Add `lookup_by_id()` to `GameDatabase`
@@ -491,14 +529,18 @@ The Discord "Join" equivalent.
 - Manual test: click Join, verify Steam launches
 
 ### Step 5: Wire GameServerList into UI (Issue 3)
+
 Connects the disconnected component.
+
 - Add toggle button in `CommunityWindow.tsx`
 - Add "Add Server" form to `GameServerList.tsx`
 - Add "Join" button per server row
 - Load servers on community select
 
 ### Step 6: Event lifecycle + permissions (Issue 4)
+
 Discord parity for scheduled events.
+
 - Add `MANAGE_EVENTS` permission bit
 - Add `status` field to events (schema bump)
 - Auto-activate/complete/cancel in tasks.rs
@@ -512,6 +554,7 @@ Discord parity for scheduled events.
 ## Files Changed Summary
 
 ### New Files (4)
+
 | File | Purpose |
 |------|---------|
 | `crates/rekindle-game-detect/src/launcher.rs` | Game launch via `steam://connect` or `open` crate |
@@ -520,6 +563,7 @@ Discord parity for scheduled events.
 | *(none in frontend — all changes to existing files)* | |
 
 ### Modified Files — Backend (12)
+
 | File | Change |
 |------|--------|
 | `crates/rekindle-game-detect/src/scanner.rs` | Add `rich_presence` to `DetectedGame`, extract from `Process::cmd()` |
@@ -536,6 +580,7 @@ Discord parity for scheduled events.
 | `crates/rekindle-protocol/src/messaging/envelope.rs` | Add `status` to `EventDto`, add `CancelEvent` variant |
 
 ### Modified Files — Tauri Shell (4)
+
 | File | Change |
 |------|--------|
 | `src-tauri/src/services/game_service.rs` | Wire `rich_presence` → `GameInfoState`, add community fan-out |
@@ -544,6 +589,7 @@ Discord parity for scheduled events.
 | `src-tauri/src/commands/community.rs` | Add `cancel_event` command if needed |
 
 ### Modified Files — Frontend (8)
+
 | File | Change |
 |------|--------|
 | `src/components/community/MemberProfilePopup.tsx` | Add "Join Game" button |
@@ -556,6 +602,7 @@ Discord parity for scheduled events.
 | `src/styles/xfire-theme.css` | Add `.profile-popup-join-btn`, `.member-game-server`, `.game-server-add-form` |
 
 ### Modified Files — Stores/Types (2)
+
 | File | Change |
 |------|--------|
 | `src/stores/community.store.ts` | Add `status` to `CommunityEvent` |

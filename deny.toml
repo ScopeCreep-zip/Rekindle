@@ -115,6 +115,7 @@ ignore = [
 confidence-threshold = 0.93
 allow = [
     "MIT",
+    "MIT-0",
     "Apache-2.0",
     "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",
@@ -190,7 +191,7 @@ deny = [
     #   `libcrypto` dynamically (build.rs:223-226) or, on Windows, panics
     #   without OPENSSL_DIR (build.rs:170-171).
     # Any other crate linking `openssl-sys` still fails here.
-    { crate = "openssl-sys", wrappers = ["libsqlite3-sys"], reason = "Use Rustls / RustCrypto / ring instead; only SQLCipher (libsqlite3-sys) may link it, as its C page-cipher provider on non-Apple targets (Apple: CommonCrypto, checked by xtask check-supply-chain)." },
+    { crate = "openssl-sys", wrappers = [ "libsqlite3-sys" ], reason = "Use Rustls / RustCrypto / ring instead; only SQLCipher (libsqlite3-sys) may link it, as its C page-cipher provider on non-Apple targets (Apple: CommonCrypto, checked by xtask check-supply-chain)." },
 
     # The `ed25519` crate is RustCrypto's signature-type/trait crate. It
     # lets any Ed25519 backend plug in behind one type; only the dalek
@@ -198,7 +199,7 @@ deny = [
     # `ed25519-dalek` may depend on it. Both copies in the tree are
     # dalek's own (ours via ed25519-dalek 2.2, veilid-core-optimized's via
     # ed25519-dalek 3.0, plan SC1).
-    { crate = "ed25519", wrappers = ["ed25519-dalek"], reason = "Only the vetted ed25519-dalek may use the ed25519 signature crate; depend on ed25519-dalek directly." },
+    { crate = "ed25519", wrappers = [ "ed25519-dalek" ], reason = "Only the vetted ed25519-dalek may use the ed25519 signature crate; depend on ed25519-dalek directly." },
 
     # ─── Tier-2 sole crypto boundary (PENDING enforcement) ──────────────
     #

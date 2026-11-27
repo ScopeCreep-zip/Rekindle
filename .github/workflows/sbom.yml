@@ -5,6 +5,15 @@
 # are uploaded as workflow artefacts and (on tag) attached to the
 # GitHub Release. See docs/security/supply-chain-policy.md.
 
+# Our own composite actions (.github/actions/<name>) are referenced as
+# ScopeCreep-zip/Rekindle/.github/actions/<name>@<full 40-char sha>, never
+# ./.github/actions/<name> (zizmor self-repository: a workspace path is not
+# pinned and loads whatever the checkout holds). The sha is the latest
+# commit that touches that action: after changing .github/actions/<name>,
+# push that commit, then set every reference to
+#   git log -1 --format=%H -- .github/actions/<name>
+# in a follow-up commit (the pinned commit must already be on GitHub).
+
 name: SBOM
 
 on:
@@ -12,15 +21,18 @@ on:
     tags: ["v*"]
   workflow_dispatch:
 
-permissions:
-  contents: write   # needed to attach SBOMs to releases
+permissions: {}
 
 jobs:
   cargo-sbom:
     name: CycloneDX (Cargo)
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write   # attach the SBOM to the tag's release
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
       - name: Install cargo-cyclonedx
         run: cargo install cargo-cyclonedx --locked
@@ -35,7 +47,7 @@ jobs:
         # alongside any per-crate SBOMs.
 
       - name: Upload as workflow artefact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: rekindle-cargo-sbom
           path: |
@@ -45,40 +57,42 @@ jobs:
 
       - name: Attach to release (on tag)
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            rekindle-cargo-sbom*.cdx.json
-          fail_on_unmatched_files: false
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          shopt -s nullglob
+          files=(rekindle-cargo-sbom*.cdx.json)
+          scripts/ci/attach-to-release.sh "${GITHUB_REF_NAME}" "${files[@]}"
 
   pnpm-sbom:
     name: CycloneDX (pnpm)
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write   # attach the SBOM to the tag's release
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
 
-      - uses: ./.github/actions/setup-pnpm
-
-      - name: Install @cyclonedx/cdxgen
-        run: npm install -g @cyclonedx/cdxgen
+      - uses: ScopeCreep-zip/Rekindle/.github/actions/setup-pnpm@7cf987f7e8b2f5b396fa467a3831db5c1055535b # action content as of 7cf987f7e
 
       - name: Generate SBOM
+        # cdxgen pinned to an exact release (pnpm dlx fetches that version).
         run: |
-          cdxgen \
+          pnpm dlx @cyclonedx/cdxgen@12.9.0 \
             -t pnpm \
             -o rekindle-pnpm-sbom.cdx.json \
             --spec-version 1.6 \
             .
 
       - name: Upload as workflow artefact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: rekindle-pnpm-sbom
           path: rekindle-pnpm-sbom.cdx.json
 
       - name: Attach to release (on tag)
         if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: rekindle-pnpm-sbom.cdx.json
-          fail_on_unmatched_files: false
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/ci/attach-to-release.sh "${GITHUB_REF_NAME}" rekindle-pnpm-sbom.cdx.json

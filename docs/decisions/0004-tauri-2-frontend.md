@@ -93,7 +93,8 @@ with `rekindle-vault` (SQLCipher-backed; see
 and `sql` with direct `rusqlite` to keep control of the dependency graph.
 
 Frameless transparent windows fall out of `decorations: false`
-+ `transparent: true` in `tauri.conf.json` and the
+
+- `transparent: true` in `tauri.conf.json` and the
 `WebviewWindowBuilder`. The custom titlebar is a SolidJS component
 with `data-tauri-drag-region`.
 

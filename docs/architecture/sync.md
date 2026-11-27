@@ -15,7 +15,7 @@ session store; the record itself is the rendezvous.
 A single DFLT (single-owner, multi-subkey) record per identity, with
 **4 well-known subkeys** mapped to specific concerns:
 
-```
+```text
 DFLT { o_cnt: 4 }
 ├── Subkey 0: Sync manifest
 │       Encrypted directory of communities, friends, DM threads, paired
@@ -52,7 +52,7 @@ Pairing is a short-lived `app_call` handshake gated by a one-time code.
 The existing device displays the code (plus a QR encoding the full
 triple); the new device transcribes or scans it and dials back.
 
-```
+```text
         Existing device                         New device
         ─────────────────                       ──────────
                                                 
@@ -161,6 +161,31 @@ Merge rules per subkey:
 The merge engine lives at `services/cross_device_sync/merge.rs` and is
 exercised by the property tests in
 `services/cross_device_sync/tests.rs`.
+
+## A new friend's DM chain start (decision 67 item 2)
+
+Each direction of a 1:1 conversation is its sender's chain on a dm participant record
+(`operations::dm::stream`). A new friendship names both chains in the handshake itself, so neither
+side's first DM waits on a `StreamRecord` `app_call` (finding F3, the Linux first-DM loss):
+
+- **Request.** Once the requester's friend row exists, `friend::request::named_chain` makes its
+  participant record locally (like the reply inbox) and puts its key in `FriendRequest.chainRecordKey`. Each attempt of the request's row,
+  by `app_call` or into an invite's inbox, first writes the record's empty `HEAD`
+  (`dm::first_contact_durable::chain_published`); a failed write defers the attempt. The accepter
+  stores the key with the pending request (`pending_friend_requests.chain_record_key`) and adopts it
+  only when it accepts (`friend::answer::accept`, or the crossing auto-accept), before its accept can
+  reach the requester: the requester's chain is never watched before consent.
+  A request that ends unanswered (cancelled, expired, or a declined one, which expires silently)
+  or a removed friend releases the record as a removed friend's records are (`unwatch_friend`): the
+  requester's vault forgets its writer (netsim `request_chain`).
+- **Accept.** `dm::send_friend_accept` makes the accepter's record and names it, with the accepter's
+  presence key, in the `FriendAccept` sealed inside the PreKeyInit; its `HEAD` is written before each
+  attempt the same way. The requester applies both when the accept lands, by call or from its reply
+  inbox (RV2).
+- Neither side sends a `StreamRecord` for these records: they are held from the handshake on, so the
+  first append finds them. Whichever side writes first, the other reads it from the chain it already
+  watches (netsim `new_friend_chain`).
+- Only an authenticated answer settles a handshake row (F2); the `HEAD` write never does.
 
 ## Group first-contact rendezvous
 

@@ -43,7 +43,7 @@ fn view_selecting(index: usize) -> ChannelWatchView {
         channel: "gen".into(),
         messages: vec![
             msg("m1", ANN_PSEUDONYM, "hi", false),
-            msg("m2", CAL_PSEUDONYM, "helo", true),
+            msg("m2", CAL_PSEUDONYM, "hey", true),
         ],
     })
     .unwrap();
@@ -87,7 +87,7 @@ fn editing_our_selected_message_submits_an_edit_not_a_new_post() {
     view.update(Action::EditSelected).unwrap();
     assert_eq!(
         view.input_box.content(),
-        "helo",
+        "hey",
         "the input starts from the body"
     );
     view.input_box.set_content("hello");
@@ -113,7 +113,7 @@ fn another_members_message_is_not_edited() {
 }
 
 #[test]
-fn delete_sends_our_delete_for_our_message_and_a_removal_for_anothers() {
+fn delete_sends_our_delete_for_our_message_and_a_removal_for_another_members() {
     let mut view = view_selecting(1);
     let key = crossterm::event::KeyEvent::from(crossterm::event::KeyCode::Char('d'));
     assert!(matches!(

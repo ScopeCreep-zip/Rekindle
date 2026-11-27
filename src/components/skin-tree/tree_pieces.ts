@@ -1,6 +1,6 @@
 import type { Component, JSX } from "solid-js";
 
-export type Attrs = Record<string, unknown>;
+type Attrs = Record<string, unknown>;
 
 /**
  * The parts only some windows' trees lay, given by the window as it gives

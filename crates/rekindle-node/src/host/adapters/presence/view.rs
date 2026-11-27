@@ -13,6 +13,7 @@ use std::time::Duration;
 use rekindle_codec::member_record::{BeatState, PresenceBeat};
 use rekindle_presence::community::Observed;
 use rekindle_types::id::PseudonymKey;
+use rekindle_types::presence::SessionStatus;
 use rekindle_types::subscription_events::{PresenceEvent, PresenceSnapshot, SubscriptionEvent};
 use tokio_util::sync::CancellationToken;
 
@@ -63,14 +64,32 @@ pub(crate) fn shown(ctx: &DaemonContext, community: &str, member: &str) -> BeatS
         .map_or(BeatState::Offline, |c| c.beat_view.shown(member))
 }
 
-/// How many members of `community` its beats show present now (plan
-/// E7.15 IV4, the Infoview's online count).
-pub(crate) fn present_count(ctx: &DaemonContext, community: &str) -> usize {
-    ctx.communities
-        .map()
-        .read()
-        .get(community)
-        .map_or(0, |c| c.beat_view.present_count())
+/// The status our own row shows (finding PR1, plan E3.4 S3): our own
+/// presence's (`host::own_presence`), never our lagging beat, with a hidden
+/// status ([`rekindle_presence::hides_presence`]: Offline or Invisible)
+/// folded to Offline as the wire folds it
+/// ([`SessionStatus::as_wire_str`]), so our row never shows us present
+/// while we hide. The member list draws our row from it and
+/// [`online_count`] counts us by it, so the two never disagree.
+pub(crate) fn own_shown(ctx: &DaemonContext) -> SessionStatus {
+    let status = ctx.own_presence.status();
+    if rekindle_presence::hides_presence(status) {
+        SessionStatus::Offline
+    } else {
+        status
+    }
+}
+
+/// How many members of `community` show present now (plan E7.15 IV4, the
+/// Infoview's online count; finding OC1): those its beats show present,
+/// which never hold us ([`observe`]), plus us when we hold a seat and our
+/// own row shows us present ([`own_shown`]), as Discord and Slack count
+/// yourself online.
+pub(crate) fn online_count(ctx: &DaemonContext, community: &str) -> usize {
+    let me_present = own_shown(ctx) != SessionStatus::Offline;
+    ctx.communities.map().read().get(community).map_or(0, |c| {
+        c.beat_view.present_count() + usize::from(me_present && c.my_pseudonym_key.is_some())
+    })
 }
 
 /// Whether `member` (pseudonym hex) may be present in `community`: no beat

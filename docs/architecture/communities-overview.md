@@ -120,7 +120,7 @@ missed if a watch lapses.
 Gossip carries **notifications**, not cargo. The wire payload is
 metadata:
 
-```
+```text
 MessageNotification {
     channel_id, subkey_index, message_id,
     lamport_ts, sequence, content_hash,

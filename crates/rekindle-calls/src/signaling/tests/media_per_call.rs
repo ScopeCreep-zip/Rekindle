@@ -51,7 +51,7 @@ async fn the_stale_calls_end_never_stops_the_new_calls_media() {
 /// A `CallEnd` for a call still held whose media is not running (the new
 /// call took it) removes that call and stops nothing else.
 #[tokio::test]
-async fn ending_one_call_never_stops_anothers_media() {
+async fn ending_one_call_never_stops_another_calls_media() {
     let deps = MockDeps::new();
     let peer = "bb".repeat(32);
     seed_call(&deps, "old", &peer, CallStatus::Active);

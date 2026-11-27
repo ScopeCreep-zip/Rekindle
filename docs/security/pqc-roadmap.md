@@ -114,17 +114,20 @@ distribution and DM MEK derivation.
 
 - **Community channel MEK delivery (rotator → recipient):**
   Wrap the MEK using a hybrid scheme:
-  ```
+
+  ```text
   shared = X25519(rotator, recipient) ‖ ML-KEM-768(rotator → recipient)
   mek_wrap_key = HKDF-SHA256(shared, info="rekindle-mek-pq-wrap-v1")
   wrapped_mek = XChaCha20-Poly1305(mek_wrap_key, mek)
   ```
+
   Both halves of the shared secret must be broken to compromise the
   MEK — adversary needs both classical X25519 and ML-KEM-768.
 
 - **DM MEK derivation:**
   Today derived as `HKDF(X25519(alice, bob))`. Move to:
-  ```
+
+  ```text
   ikm = X25519(alice, bob) ‖ ML-KEM-768(alice → bob)
   dm_mek = HKDF-SHA256(ikm, salt=SHA256(sorted(pubkeys)), info="rekindle-dm-mek-v2")
   ```

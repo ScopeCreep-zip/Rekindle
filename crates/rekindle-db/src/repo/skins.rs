@@ -1,7 +1,7 @@
 //! The identity's skin library, `skin_packages` (plan E7.7.2): each
 //! package the skin helper validated, as its canonical bytes, keyed by
 //! their BLAKE3 (64 lowercase hex). The Host validates; this module only
-//! stores, and the table's CHECKs refuse a malformed hash, an oversize
+//! stores, and the table's CHECK constraints refuse a malformed hash, an oversize
 //! package or an unknown origin.
 
 use rusqlite::{params, Connection, OptionalExtension as _};

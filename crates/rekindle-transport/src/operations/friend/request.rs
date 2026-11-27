@@ -18,7 +18,10 @@ const ROUTE_WAIT: Duration = Duration::from_secs(5);
 
 /// Our request carrying `message`, admitted by `auth`: it names our
 /// profile, whose device list leads to our prekey record (plan E2.4), our
-/// mailbox, and our live route for the answer when we hold one.
+/// mailbox, and our live route for the answer when we hold one. Our dm
+/// chain record is named by [`named_chain`] once their friend row exists
+/// (the row holds the record's key); it is built before that row, so a
+/// request that cannot be built leaves no row behind.
 ///
 /// A request built while we hold no live route (ours died and its
 /// replacement is not up, live finding LF5) carries none, as an accept
@@ -60,7 +63,28 @@ pub(crate) async fn build(
         mailbox_dht_key: own.mailbox_dht_key,
         auth,
         reply,
+        chain_record_key: String::new(),
     }))
+}
+
+/// `request` (from [`build`]) naming our dm chain record to `to`, now that
+/// their friend row holds it (decision 67 item 2): made locally, like the
+/// reply inbox, its `HEAD` published before each attempt of the request's
+/// row (`dm::first_contact_durable::chain_published`), so the key the
+/// accepter adopts always names a record it finds. No `StreamRecord`
+/// follows: the record is held from here on, so our first append finds it.
+///
+/// # Errors
+/// The record could not be made or stored.
+pub(crate) async fn named_chain(
+    host: &dyn FriendHost,
+    to: &str,
+    mut request: DirectBody,
+) -> Result<DirectBody, FriendError> {
+    if let DirectBody::FriendRequest(r) = &mut request {
+        r.chain_record_key = host.participant_writer(to).await?.record_key;
+    }
+    Ok(request)
 }
 
 /// Record on `peer`'s row the reply inbox `request` carries (plan RV2),

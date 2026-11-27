@@ -329,7 +329,7 @@ mod tests {
     /// shell draws it inline): Symbiosis's 121 x 37 the wordmark, Onyx's
     /// 16 x 16 the small mark, Combat's strip none.
     #[test]
-    fn the_title_logo_takes_its_boxs_glyph() {
+    fn the_title_logo_takes_its_box_glyph() {
         assert_eq!(
             super::title_logo(&served_of("symbiosis")),
             Some(NodeGlyph::RekindleWordmark)
