@@ -54,7 +54,7 @@ jobs:
           persist-credentials: false
 
       - name: Install cargo-deny
-        uses: EmbarkStudios/cargo-deny-action@81891abc19297b21343b15ef67dc61e4aea74fda # v2
+        uses: EmbarkStudios/cargo-deny-action@81891abc19297b21343b15ef67dc61e4aea74fda # v2.1.4
         with:
           command: check
           # All four sub-checks. The deny.toml config drives behaviour.
