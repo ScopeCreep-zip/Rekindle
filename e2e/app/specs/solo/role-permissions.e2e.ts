@@ -78,8 +78,20 @@ describe("the role editor lists the Host's permission catalogue (PN1)", function
       `the Host never listed the role ${ROLE}`,
     );
     console.log(`[roles] saved permissions ${String(saved)} (ticked bit ${String(bit)})`);
-    await shot("role-created");
 
-    expect({ editor: shownGroups, saved: saved === bit }).toEqual({ editor: served, saved: true });
+    // The saved role, reopened from its row: the ticked permission reads checked.
+    await waitUntil(
+      async () => !(await (await browser.$(".modal-container .form-btn-primary*=Creating")).isExisting()),
+      NET_WAIT_MS,
+      "the create form never finished",
+    );
+    await press(browser, await byText(browser, ".settings-role-row", ROLE, NET_WAIT_MS));
+    const ticked = await shown(browser, `label.settings-option[data-permission="${TICKED}"] input`, NET_WAIT_MS);
+    await ticked.scrollIntoView({ block: "center" });
+    const checked = (await ticked.isSelected()) as boolean;
+    console.log(`[roles] reopened ${ROLE}: ${TICKED} checked=${checked}`);
+    await shot("role-saved-ticked");
+
+    expect({ editor: shownGroups, saved: saved === bit, checked }).toEqual({ editor: served, saved: true, checked: true });
   });
 });
