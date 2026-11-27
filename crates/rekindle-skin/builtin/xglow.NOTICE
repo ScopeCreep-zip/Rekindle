@@ -61,6 +61,8 @@ Dropped
     Xglow.ini: [BuddyView] Text.color_selected (line 359)
     Xglow.ini: [BuddyView] Text.color_header (line 363)
     Xglow.ini: [ViewInfo] Skin.X (line 808)
+  bitmaps named but not in the tree, each laying nothing (spec A8) (1):
+    Graphics.Base
   files not read (76):
     InGameMainSkin.ini
     InGameSkin.ini
