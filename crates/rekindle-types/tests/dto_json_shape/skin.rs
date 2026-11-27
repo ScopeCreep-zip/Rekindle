@@ -34,6 +34,13 @@ pub(super) fn samples(add: &mut impl FnMut(&str, Value)) {
         }),
     );
     add(
+        "skin.applyFailure.windowTooSmall",
+        to(SkinApplyFailure::WindowTooSmall {
+            width: 470,
+            height: 380,
+        }),
+    );
+    add(
         "skin.entry.builtin",
         to(SkinEntry {
             id: "builtin:xfire-classic".into(),

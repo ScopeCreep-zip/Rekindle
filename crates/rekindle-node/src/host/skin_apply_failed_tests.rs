@@ -90,6 +90,14 @@ async fn a_report_out_of_bounds_is_refused() {
                 detail: "d".repeat(1025),
             },
         ),
+        failed(
+            REPORTING_WINDOW,
+            builtin::DEFAULT,
+            SkinApplyFailure::WindowTooSmall {
+                width: 0,
+                height: 380,
+            },
+        ),
     ] {
         assert_eq!(
             status_of(&report(&host, request.clone()).await),
@@ -166,6 +174,20 @@ async fn a_skin_on_trial_that_fails_is_reverted_and_logged() {
             .0,
     );
     assert!(chosen.trial.is_some(), "a library skin goes on trial");
+    assert_eq!(shown(&host).await, id);
+
+    let mut size_events = host.ctx.journal.subscribe(None);
+    let constrained = SkinApplyFailure::WindowTooSmall {
+        width: 470,
+        height: 380,
+    };
+    let size_report = report(&host, failed(REPORTING_WINDOW, &id, constrained.clone())).await;
+    assert_eq!(status_of(&size_report), None, "{size_report:?}");
+    assert_eq!(
+        next_failed(&mut size_events).await,
+        (REPORTING_WINDOW.into(), id.clone(), constrained, false)
+    );
+    assert!(library(&host).await.trial.is_some());
     assert_eq!(shown(&host).await, id);
 
     let mut events = host.ctx.journal.subscribe(None);

@@ -25,8 +25,9 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use parking_lot::Mutex;
+use rekindle_ipc::protocol::IpcRequest;
 use rekindle_types::dto::skin::SkinWindow;
-use rekindle_types::dto::skin_library::SkinApplied;
+use rekindle_types::dto::skin_library::{SkinApplied, SkinApplyFailure};
 use tauri::{AppHandle, Manager, WebviewWindow, WindowEvent};
 use tokio::sync::watch;
 
@@ -49,6 +50,7 @@ struct Shaped {
     frame: SkinWindow,
     presented: watch::Sender<Option<SkinApplied>>,
     applied: Mutex<Option<Arc<Generation>>>,
+    unfitted: AtomicU64,
     #[cfg(not(target_os = "linux"))]
     native: Mutex<native::State>,
     #[cfg(not(target_os = "linux"))]
@@ -211,6 +213,51 @@ fn publish(
     shaped.presented.send_replace(skin);
 }
 
+fn report_fit(
+    window: &WebviewWindow,
+    shaped: &Shaped,
+    wanted: &Generation,
+    fits: bool,
+    canvas: (f64, f64),
+) {
+    if fits {
+        shaped.unfitted.store(0, Ordering::Release);
+        return;
+    }
+    if !is_latest(window.app_handle(), wanted) {
+        return;
+    }
+    let Some((layout, _)) = wanted.frames.get(&shaped.frame) else {
+        return;
+    };
+    let Some((width, height)) = rekindle_skin::shape::min_window(layout) else {
+        return;
+    };
+    let Some(skin) = &wanted.skin else { return };
+    if shaped.unfitted.swap(wanted.serial, Ordering::AcqRel) == wanted.serial {
+        return;
+    }
+    let label = window.label().to_owned();
+    tracing::warn!(%label, skin = %skin.id, ?canvas, width, height, "window_skin_too_small");
+    let Some(state) = window
+        .app_handle()
+        .try_state::<SharedState>()
+        .map(|state| Arc::clone(&state))
+    else {
+        return;
+    };
+    let request = IpcRequest::SkinApplyFailed {
+        window: label,
+        skin: skin.id.clone(),
+        cause: SkinApplyFailure::WindowTooSmall { width, height },
+    };
+    tauri::async_runtime::spawn(async move {
+        if let Err(error) = crate::host_call::call::<()>(&state, request).await {
+            tracing::warn!(?error, "window skin size could not be reported");
+        }
+    });
+}
+
 /// Bootstrap a framed webview from its native presentation, including
 /// reloads during a pending switch. Unframed windows query the Host directly.
 pub async fn presented_skin(window: &WebviewWindow) -> Option<SkinApplied> {
@@ -239,6 +286,7 @@ pub fn attach(window: &WebviewWindow, frame: Option<SkinWindow>) {
         frame,
         presented: watch::channel(None).0,
         applied: Mutex::default(),
+        unfitted: AtomicU64::new(0),
         #[cfg(not(target_os = "linux"))]
         native: Mutex::default(),
         #[cfg(not(target_os = "linux"))]

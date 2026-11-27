@@ -110,13 +110,13 @@ describe("a skinned window is the skin's shape", function () {
 
   after(async () => {
     await stopFleet(peers);
-    if (NATIVE_WAYLAND) {
-      const worker = process.env.WDIO_WORKER_ID;
-      if (!worker || !/^\d+-\d+$/.test(worker)) throw new Error("The native run did not name its app log");
-      const log = readFileSync(path.join(WALK_LOGS, `wdio-${worker}.log`), "utf8");
-      const degraded = log.split("\n").filter((line) => line.includes("window_shape_degraded"));
-      expect(degraded).toEqual([]);
-    }
+    const worker = process.env.WDIO_WORKER_ID;
+    if (!worker || !/^\d+-\d+$/.test(worker)) throw new Error("The native run did not name its app log");
+    const log = readFileSync(path.join(WALK_LOGS, `wdio-${worker}.log`), "utf8");
+    const failures = log.split("\n").filter((line) =>
+      line.includes("window_shape_degraded") || line.includes("window_skin_too_small")
+    );
+    expect(failures).toEqual([]);
   });
 
   /** Apply `pack` from Settings → Appearance (its radio, then the intent review). */

@@ -7,7 +7,9 @@ use std::time::{Duration, Instant};
 
 use tauri::{LogicalSize, Manager, WebviewWindow};
 
-use super::{desired, fitting, is_current, is_latest, publish, sizing, skin, Shaped, Silhouette};
+use super::{
+    desired, fitting, is_current, is_latest, publish, report_fit, sizing, skin, Shaped, Silhouette,
+};
 
 const SIZE_WAIT: Duration = Duration::from_millis(250);
 
@@ -111,7 +113,9 @@ fn allocate(window: &WebviewWindow, shaped: &Arc<Shaped>) -> Result<(), String> 
     if size.width == 0 || size.height == 0 || !scale.is_finite() || scale <= 0.0 {
         return Ok(());
     }
-    let actual = size.to_logical::<f64>(scale);
+    // Native clients report rounded device pixels. Compare the round-trip
+    // logical canvas to the integer pack minimum, as the shaper does.
+    let actual = size.to_logical::<u32>(scale);
     let override_size = native
         .request
         .is_some_and(|(want, _)| want.to_physical::<u32>(scale) != size);
@@ -122,7 +126,8 @@ fn allocate(window: &WebviewWindow, shaped: &Arc<Shaped>) -> Result<(), String> 
         return Ok(());
     }
     native.request = None;
-    let fitted = fitting(window, shaped, &generation, (actual.width, actual.height));
+    let canvas = (f64::from(actual.width), f64::from(actual.height));
+    let fitted = fitting(window, shaped, &generation, canvas);
     let stamp = Stamp {
         serial: fitted.as_ref().map_or(0, |fit| fit.serial),
         width: size.width,
@@ -131,26 +136,26 @@ fn allocate(window: &WebviewWindow, shaped: &Arc<Shaped>) -> Result<(), String> 
         fixed,
         surface: surface(window)?,
     };
-    if native.applied == Some(stamp) {
-        publish(window, shaped, &generation, fitted);
-        return Ok(());
+    if native.applied != Some(stamp) {
+        let silhouette = fitted
+            .as_ref()
+            .map(|fit| skin::compute(&fit.frames, Some(shaped.frame), size, scale))
+            .transpose()?;
+        apply(window, shaped, silhouette)?;
+        native.applied = Some(stamp);
+        tracing::debug!(
+            label = window.label(),
+            generation = stamp.serial,
+            ?size,
+            scale,
+            fixed,
+            override_size,
+            "applied native window allocation"
+        );
     }
-    let silhouette = fitted
-        .as_ref()
-        .map(|fit| skin::compute(&fit.frames, Some(shaped.frame), size, scale))
-        .transpose()?;
-    apply(window, shaped, silhouette)?;
-    native.applied = Some(stamp);
-    tracing::debug!(
-        label = window.label(),
-        generation = stamp.serial,
-        ?size,
-        scale,
-        fixed,
-        override_size,
-        "applied native window allocation"
-    );
+    let fits = fitted.is_some();
     publish(window, shaped, &generation, fitted);
+    report_fit(window, shaped, &generation, fits, canvas);
     Ok(())
 }
 

@@ -249,6 +249,13 @@ pub async fn report_skin_apply_failed(
     skin: String,
     cause: SkinApplyFailure,
 ) -> Result<Done<()>, CommandError> {
+    if matches!(cause, SkinApplyFailure::WindowTooSmall { .. }) {
+        return Err(CommandError::Failed {
+            code: 400,
+            message: "Window allocation reports come from the desktop shell".to_owned(),
+            remediation: None,
+        });
+    }
     let window = window.label().to_owned();
     host_call::call(
         &state,

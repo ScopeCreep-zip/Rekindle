@@ -14,8 +14,8 @@ use tauri::{LogicalSize, Manager, WebviewWindow};
 
 use super::super::logical::Margins;
 use super::super::{
-    desired, fitting, is_current, is_latest, logical::LogicalShape, publish, settle, sizing, skin,
-    Shaped,
+    desired, fitting, is_current, is_latest, logical::LogicalShape, publish, report_fit, settle,
+    sizing, skin, Shaped,
 };
 use settle::{Allocation, Failure, Settling, Update, PAINT_WAIT, SIZE_WAIT};
 
@@ -360,12 +360,8 @@ impl Controller {
         ) else {
             return;
         };
-        let fitted = fitting(
-            &self.target,
-            &self.shaped,
-            &generation,
-            (f64::from(canvas.0), f64::from(canvas.1)),
-        );
+        let logical_canvas = (f64::from(canvas.0), f64::from(canvas.1));
+        let fitted = fitting(&self.target, &self.shaped, &generation, logical_canvas);
         let logical = if let Some(fitted) = fitted.as_ref() {
             let size = LogicalSize::new(f64::from(canvas.0), f64::from(canvas.1))
                 .to_physical(f64::from(scale));
@@ -456,6 +452,14 @@ impl Controller {
         if changed || thawed {
             widget.queue_draw();
         }
+        let fits = fitted.is_some();
         publish(&self.target, &self.shaped, &generation, fitted);
+        report_fit(
+            &self.target,
+            &self.shaped,
+            &generation,
+            fits,
+            logical_canvas,
+        );
     }
 }

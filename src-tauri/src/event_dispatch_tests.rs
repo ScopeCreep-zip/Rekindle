@@ -32,6 +32,23 @@ fn the_rectangular_skin_fallback_only_resets_the_allocated_window() {
     );
 }
 
+#[test]
+fn the_skin_minimum_notice_only_reaches_the_constrained_window() {
+    let event =
+        WebviewEvent::Subscription(SubscriptionEvent::System(SystemEvent::SkinApplyFailed {
+            window: "buddy-list".to_owned(),
+            skin: "builtin:total-chaos".to_owned(),
+            cause: rekindle_types::dto::skin_library::SkinApplyFailure::WindowTooSmall {
+                width: 470,
+                height: 380,
+            },
+            reverted: false,
+        }));
+    assert!(event.audience().includes("buddy-list"));
+    assert!(!event.audience().includes("settings"));
+    assert_eq!(event.channel(), "skin-apply-event");
+}
+
 /// Our forget reaches the buddy list and every community window, not only
 /// the window that pressed Leave, nor a chat window.
 #[test]

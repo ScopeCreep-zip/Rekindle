@@ -490,7 +490,8 @@ export interface SkinTrial {
 /// reports it with `report_skin_apply_failed`, and the Host decides.
 export type SkinApplyFailure =
   | { type: "imageDecode"; data: { path: string } }
-  | { type: "sheetError"; data: { detail: string } };
+  | { type: "sheetError"; data: { detail: string } }
+  | { type: "windowTooSmall"; data: { width: number; height: number } };
 
 /// `list_skins`' answer (`SkinLibrary`).
 export interface SkinLibrary {

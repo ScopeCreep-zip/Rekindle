@@ -1,8 +1,9 @@
 import { createSignal, onCleanup } from "solid-js";
-import { subscribeSkinEvents } from "../ipc/channels";
+import { subscribeSkinApplyFailed, subscribeSkinEvents } from "../ipc/channels";
 import { commands } from "../ipc/commands";
 import type { BrandGlyphName, SkinApplied, SkinApplyFailure } from "../ipc/commands/dto";
 import type { SkinShell } from "../ipc/commands/dto_skin_tree";
+import { addToast } from "../stores/toast.store";
 
 /// The shown skin's window outlines (plan SK2-S2): set with the sheet that
 /// places their nodes, so the nested divs and their rules always belong to
@@ -100,6 +101,12 @@ export function useSkin(): void {
     received = true;
     applySkin(skin);
   });
+  const unsubscribeFailure = subscribeSkinApplyFailed(({ cause }) => {
+    if (cause.type === "windowTooSmall" && !document.getElementById(LINK_ID) && !loading) {
+      const { width, height } = cause.data;
+      addToast(`This skin needs a window at least ${width} × ${height} pixels.`);
+    }
+  });
   void commands
     .getSkin()
     .then((skin) => {
@@ -109,6 +116,7 @@ export function useSkin(): void {
   onCleanup(() => {
     stopped = true;
     void unsubscribe.then((unlisten) => unlisten());
+    void unsubscribeFailure.then((unlisten) => unlisten());
   });
 }
 
