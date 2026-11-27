@@ -16,10 +16,11 @@ MenuBar MenuBar
 Content Group
   ExpandButton Button target [-8, -1, 24, 24] art [8, 1, 16, 21] Size
   TabHeader TabStrip
-    TabNormalButton Tab(Friends) target [0, -3, 74, 24] art [0, 3, 74, 17] Size
-    TabServerButton Tab(Servers) target [0, -3, 74, 24] art [0, 3, 74, 17] Size
-    TabDownloadButton Tab(Files) target [0, -3, 74, 24] art [0, 3, 74, 17] Size
-    TabDownloadButton.Communities Tab(Communities) label "Communities" cover [7, 3, 60, 11] target [0, -3, 74, 24] art [0, 3, 74, 17] Size
+    TabNormalButton Tab(Friends) target [0, -3, 74, 22] art [0, 3, 74, 17] Spacing
+    TabServerButton Tab(Servers) target [0, -5, 74, 24] art [0, 5, 74, 17] Size
+    TabDownloadButton Tab(Files) target [0, -3, 74, 22] art [0, 3, 74, 17] Spacing
+    TabDownloadButton.Communities Tab(Communities) label "Communities" cover [7, 3, 60, 11] target [0, -3, 74, 22] art [0, 3, 74, 17] Spacing
+  StatusEdit StatusText target [0, -2, 371, 22] art [0, 2, 371, 20] Spacing
   TabbedControl Views
     BuddyView View(Friends)
     ServerView View(Servers)
