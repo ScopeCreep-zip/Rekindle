@@ -277,6 +277,16 @@ export type ChannelMessageEvent =
         body: string;
       };
     }
+  /** A post's causal admission changed in `streamId` (a channel, or a
+   *  thread when `thread`): the window re-reads that history (contract CP1). */
+  | {
+      postAdmissionChanged: {
+        community: string;
+        streamId: string;
+        thread: boolean;
+        pending: boolean;
+      };
+    }
   /** Deleted for members (plan E3.3 E4); `removedBy` is the moderator
    *  when a moderator removed it (M4), `null` for its author's delete. */
   | { deleted: { community: string; channel: string; messageId: string; removedBy: string | null } }

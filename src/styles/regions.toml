@@ -626,6 +626,8 @@
 '.message-decrypt-failed' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.message-decrypt-failed-icon' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.message-damaged' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.message-held' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
+'.message-held[data-admission="refused"]' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.message-damaged-icon' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"], graphic = true }
 '.key-pending-notice' = { on = ["--color-xfire-accent 20% over --color-xfire-bg-dark"] }
 '.key-pending-since' = { on = ["--color-xfire-accent 20% over --color-xfire-bg-dark"] }

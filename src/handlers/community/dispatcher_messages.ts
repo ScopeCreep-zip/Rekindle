@@ -1,4 +1,5 @@
 import { markChannelReadToLatest } from "../../actions/community/channels";
+import { handleLoadThreadMessages } from "../../actions/community/events_threads";
 import { handleLoadExpressions } from "../../actions/community/lifecycle";
 import { handleLoadChannelMessages } from "../../actions/community/messages";
 import { setTypingUsers } from "../../actions/community/shared";
@@ -353,6 +354,17 @@ export function reduceSubscriptionMessages(event: CommunitySubscriptionEvent): v
         m.attachmentDownloaded.channel,
         m.attachmentDownloaded.attachmentId
       );
+    } else if ("postAdmissionChanged" in m) {
+      // CP1: a held post was judged (or a new one held): re-read the
+      // channel or thread this window holds; the Host's rows are the truth.
+      const a = m.postAdmissionChanged;
+      if (a.thread) {
+        if (communityState.threadMessages[a.streamId]) {
+          void handleLoadThreadMessages(a.community, a.streamId, 100);
+        }
+      } else if (communityState.channelMessages[a.streamId]) {
+        void handleLoadChannelMessages(a.streamId, 100);
+      }
     } else if ("expressionAssetReady" in m) {
       // Architecture §18.4 — the eager fetch landed; re-pull the
       // community's expressions so the picker shows the resolved bytes.

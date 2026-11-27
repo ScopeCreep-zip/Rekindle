@@ -394,46 +394,59 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
         when={!props.message.removedBy}
         fallback={<div class="message-removed">Removed by {removedByName()}</div>}
       >
+        {/* CP1: a post held by the causal permission check has no body; the
+          Host's words stand in its place (waiting, or why it was refused). */}
         <Show
-          when={props.message.decryptionFailed}
+          when={!props.message.admission}
           fallback={
-            <Show
-              when={props.message.automodBlurred && !revealedBlurred()}
-              fallback={
-                <MessageRichBody communityId={props.communityId} body={props.message.body} />
-              }
-            >
-              <div class="message-automod-blur">
-                <div class="message-automod-blur-text">Hidden by AutoMod on this client</div>
-                <button
-                  type="button"
-                  class="message-automod-reveal-btn"
-                  onClick={() => setRevealedBlurred(true)}
-                >
-                  Reveal
-                </button>
-              </div>
-            </Show>
+            <div class="message-held" data-admission={props.message.admission?.status}>
+              {props.message.admission?.status === "refused"
+                ? props.message.admission.reasonText
+                : props.message.admission?.text}
+            </div>
           }
         >
-          {/* KP: a post that does not open under the key it names says so in
-            the Host's words (never "waiting": no key will come); a body
-            missing for another reason keeps the waiting text. */}
           <Show
-            when={props.message.undecryptable}
+            when={props.message.decryptionFailed}
             fallback={
-              <div class="message-decrypt-failed">
-                <SkinGlyph name="lock" class="message-decrypt-failed-icon" />
-                Unable to decrypt — waiting for encryption keys
-              </div>
+              <Show
+                when={props.message.automodBlurred && !revealedBlurred()}
+                fallback={
+                  <MessageRichBody communityId={props.communityId} body={props.message.body} />
+                }
+              >
+                <div class="message-automod-blur">
+                  <div class="message-automod-blur-text">Hidden by AutoMod on this client</div>
+                  <button
+                    type="button"
+                    class="message-automod-reveal-btn"
+                    onClick={() => setRevealedBlurred(true)}
+                  >
+                    Reveal
+                  </button>
+                </div>
+              </Show>
             }
           >
-            {(u) => (
-              <div class="message-damaged" data-reason={u().reason}>
-                <SkinGlyph name="lock" class="message-damaged-icon" />
-                {u().reasonText}
-              </div>
-            )}
+            {/* KP: a post that does not open under the key it names says so in
+            the Host's words (never "waiting": no key will come); a body
+            missing for another reason keeps the waiting text. */}
+            <Show
+              when={props.message.undecryptable}
+              fallback={
+                <div class="message-decrypt-failed">
+                  <SkinGlyph name="lock" class="message-decrypt-failed-icon" />
+                  Unable to decrypt — waiting for encryption keys
+                </div>
+              }
+            >
+              {(u) => (
+                <div class="message-damaged" data-reason={u().reason}>
+                  <SkinGlyph name="lock" class="message-damaged-icon" />
+                  {u().reasonText}
+                </div>
+              )}
+            </Show>
           </Show>
         </Show>
       </Show>

@@ -49,6 +49,18 @@
     color: var(--color-xfire-danger-text);
   }
 
+  /* CP1: a post held without its body by the causal permission check, in the
+   * Host's words: waiting while its cut resolves, the danger tone once refused. */
+  .message-held {
+    padding: 8px 12px;
+    color: var(--color-xfire-text-secondary);
+    font-style: italic;
+  }
+
+  .message-held[data-admission="refused"] {
+    color: var(--color-xfire-danger-text);
+  }
+
   /* FX3: waiting for the community key from a member: a notice, never a block. */
   .key-pending-notice {
     padding: 6px 12px;
