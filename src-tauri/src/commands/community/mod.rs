@@ -232,16 +232,17 @@ pub use reactions_pins::{
     add_reaction, get_channel_pins, pin_message, remove_reaction, unpin_message,
 };
 pub use roles::{
-    __cmd__assign_role, __cmd__create_role, __cmd__delete_role, __cmd__edit_role, __cmd__get_roles,
-    __cmd__self_assign_role, __cmd__self_unassign_role, __cmd__unassign_role,
-    __tauri_command_name_assign_role, __tauri_command_name_create_role,
-    __tauri_command_name_delete_role, __tauri_command_name_edit_role,
+    __cmd__assign_role, __cmd__create_role, __cmd__delete_role, __cmd__edit_role,
+    __cmd__get_permission_catalogue, __cmd__get_roles, __cmd__self_assign_role,
+    __cmd__self_unassign_role, __cmd__unassign_role, __tauri_command_name_assign_role,
+    __tauri_command_name_create_role, __tauri_command_name_delete_role,
+    __tauri_command_name_edit_role, __tauri_command_name_get_permission_catalogue,
     __tauri_command_name_get_roles, __tauri_command_name_self_assign_role,
     __tauri_command_name_self_unassign_role, __tauri_command_name_unassign_role,
 };
 pub use roles::{
-    assign_role, create_role, delete_role, edit_role, get_roles, self_assign_role,
-    self_unassign_role, unassign_role,
+    assign_role, create_role, delete_role, edit_role, get_permission_catalogue, get_roles,
+    self_assign_role, self_unassign_role, unassign_role,
 };
 pub use segments::{
     __cmd__expand_community_segment, __tauri_command_name_expand_community_segment,

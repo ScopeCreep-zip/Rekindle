@@ -2,8 +2,10 @@
 
 use rekindle_ipc::protocol::LifecycleRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, SettingsRequest};
+use rekindle_types::dto::permission_catalogue::PermissionCatalogue;
 
 use crate::cli::CommunityCmd;
+use crate::community_watch::watch;
 use crate::governance;
 use crate::helpers;
 use crate::output::OutputMode;
@@ -146,6 +148,7 @@ pub async fn dispatch(
                 mode,
             )
         }
+        CommunityCmd::Permissions => permissions(client, mode).await,
         CommunityCmd::Info { community, full } => {
             let value = helpers::send(
                 client,
@@ -309,10 +312,23 @@ pub async fn dispatch(
         CommunityCmd::Role(sub) => governance::dispatch_role(sub, client, mode).await,
         CommunityCmd::Moderate(sub) => governance::dispatch_moderate(sub, client, mode).await,
         CommunityCmd::Channel(sub) => crate::channel_overwrite::dispatch(sub, client, mode).await,
-        CommunityCmd::Watch { community } => {
-            crate::community_watch::watch(client, community.as_deref(), mode).await
+        CommunityCmd::Watch { community } => watch(client, community.as_deref(), mode).await,
+    }
+}
+
+async fn permissions(client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
+    let value = helpers::send(client, IpcRequest::PermissionCatalogue).await?;
+    let catalogue: PermissionCatalogue = serde_json::from_value(value)?;
+    if mode.is_structured() {
+        return format::print_structured(&catalogue, mode);
+    }
+    for group in catalogue.groups {
+        format::print_text(&group.name)?;
+        for entry in group.permissions {
+            format::print_text(&format!("  {} ({})", entry.label, entry.key))?;
         }
     }
+    Ok(())
 }
 
 /// `community info --full`: the channel list and the roles with their

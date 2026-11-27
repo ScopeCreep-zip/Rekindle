@@ -12,16 +12,12 @@
 
 use rekindle_types::dto::community_capability::{ChannelCapability, CommunityCapability};
 use rekindle_types::id::{ChannelId, PseudonymKey};
+pub use rekindle_types::permissions::PERMISSION_NAMES;
 use rekindle_types::permissions::{
-    self, ADD_REACTIONS, ADMINISTRATOR, ATTACH_FILES, BAN_MEMBERS, BYPASS_SLOWMODE, CONNECT,
-    CREATE_EVENTS, CREATE_EXPRESSIONS, CREATE_INVITES, CREATE_PRIVATE_THREADS,
-    CREATE_PUBLIC_THREADS, DEAFEN_MEMBERS, EMBED_LINKS, KICK_MEMBERS, MANAGE_CHANNELS,
-    MANAGE_COMMUNITY, MANAGE_EVENTS, MANAGE_EXPRESSIONS, MANAGE_MESSAGES, MANAGE_NICKNAMES,
-    MANAGE_ROLES, MANAGE_THREADS, MENTION_EVERYONE, MOVE_MEMBERS, MUTE_MEMBERS, PIN_MESSAGES,
-    PRIORITY_SPEAKER, READ_HISTORY, REQUEST_TO_SPEAK, SEND_IN_THREADS, SEND_MESSAGES, SEND_POLLS,
-    SEND_TTS, SEND_VOICE_MESSAGES, SPEAK, STREAM, TIMEOUT_MEMBERS, USE_EXTERNAL_EMOJIS,
-    USE_EXTERNAL_SOUNDS, USE_EXTERNAL_STICKERS, USE_SOUNDBOARD, USE_VOICE_ACTIVITY, VIEW_AUDIT_LOG,
-    VIEW_CHANNELS, VIEW_INSIGHTS,
+    self, BAN_MEMBERS, CREATE_EVENTS, CREATE_EXPRESSIONS, CREATE_INVITES, CREATE_PUBLIC_THREADS,
+    KICK_MEMBERS, MANAGE_CHANNELS, MANAGE_COMMUNITY, MANAGE_EVENTS, MANAGE_EXPRESSIONS,
+    MANAGE_MESSAGES, MANAGE_ROLES, SEND_IN_THREADS, TIMEOUT_MEMBERS, USE_SOUNDBOARD,
+    VIEW_AUDIT_LOG, VIEW_INSIGHTS,
 };
 
 use super::{compute_permissions, holds_creator_seat};
@@ -146,55 +142,6 @@ pub fn denied_capabilities(
         })
         .collect()
 }
-
-/// The Host's role-editor labels, indexed by individual permission bit.
-pub const PERMISSION_NAMES: &[(u64, &str)] = &[
-    (VIEW_CHANNELS, "View Channels"),
-    (MANAGE_CHANNELS, "Manage Channels"),
-    (MANAGE_ROLES, "Manage Roles"),
-    (MANAGE_COMMUNITY, "Manage Community"),
-    (CREATE_INVITES, "Create Invites"),
-    (KICK_MEMBERS, "Kick Members"),
-    (BAN_MEMBERS, "Ban Members"),
-    (TIMEOUT_MEMBERS, "Moderate Members"),
-    (MANAGE_NICKNAMES, "Manage Nicknames"),
-    (MANAGE_EXPRESSIONS, "Manage Expressions"),
-    (VIEW_AUDIT_LOG, "View Audit Log"),
-    (VIEW_INSIGHTS, "View Insights"),
-    (CREATE_EXPRESSIONS, "Create Expressions"),
-    (SEND_MESSAGES, "Send Messages"),
-    (EMBED_LINKS, "Embed Links"),
-    (ATTACH_FILES, "Attach Files"),
-    (ADD_REACTIONS, "Add Reactions"),
-    (MENTION_EVERYONE, "Mention Everyone"),
-    (MANAGE_MESSAGES, "Manage Messages"),
-    (READ_HISTORY, "Read Message History"),
-    (SEND_TTS, "Send TTS Messages"),
-    (USE_EXTERNAL_EMOJIS, "Use External Emojis"),
-    (USE_EXTERNAL_STICKERS, "Use External Stickers"),
-    (PIN_MESSAGES, "Pin Messages"),
-    (SEND_VOICE_MESSAGES, "Send Voice Messages"),
-    (SEND_POLLS, "Send Polls"),
-    (BYPASS_SLOWMODE, "Bypass Slowmode"),
-    (CONNECT, "Connect"),
-    (SPEAK, "Speak"),
-    (MUTE_MEMBERS, "Mute Members"),
-    (DEAFEN_MEMBERS, "Deafen Members"),
-    (MOVE_MEMBERS, "Move Members"),
-    (USE_VOICE_ACTIVITY, "Use Voice Activity"),
-    (PRIORITY_SPEAKER, "Priority Speaker"),
-    (USE_SOUNDBOARD, "Use Soundboard"),
-    (USE_EXTERNAL_SOUNDS, "Use External Sounds"),
-    (REQUEST_TO_SPEAK, "Request to Speak"),
-    (STREAM, "Stream"),
-    (MANAGE_THREADS, "Manage Threads"),
-    (CREATE_PUBLIC_THREADS, "Create Public Threads"),
-    (CREATE_PRIVATE_THREADS, "Create Private Threads"),
-    (SEND_IN_THREADS, "Send In Threads"),
-    (MANAGE_EVENTS, "Manage Events"),
-    (CREATE_EVENTS, "Create Events"),
-    (ADMINISTRATOR, "Administrator"),
-];
 
 const fn permission_name(bit: u64) -> &'static str {
     let mut index = 0;

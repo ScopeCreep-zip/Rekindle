@@ -122,7 +122,7 @@ async fn history_of_a_channel_closed_to_us_is_refused() {
     };
     assert_eq!(
         reason,
-        "Read Message History is turned off for you in this channel."
+        "Read History is turned off for you in this channel."
     );
 }
 

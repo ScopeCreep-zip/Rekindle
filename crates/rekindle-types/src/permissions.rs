@@ -73,6 +73,119 @@ permission_bits! {
     ADMINISTRATOR = 50;
 }
 
+/// An individual permission in the role editor.
+pub struct CatalogueEntry {
+    pub key: &'static str,
+    pub label: &'static str,
+    pub bit: u64,
+}
+
+/// A role-editor permission group.
+pub struct CatalogueGroup {
+    pub name: &'static str,
+    pub permissions: &'static [CatalogueEntry],
+}
+
+macro_rules! permission_entries {
+    ($($bit:ident => $label:literal,)*) => {
+        &[$(CatalogueEntry { key: stringify!($bit), label: $label, bit: $bit }),*]
+    };
+}
+
+/// The Host's role-editor groups and entries, in display order.
+pub const PERMISSION_CATALOGUE: &[CatalogueGroup] = &[
+    CatalogueGroup {
+        name: "General",
+        permissions: permission_entries! {
+            VIEW_CHANNELS => "View Channels",
+            MANAGE_CHANNELS => "Manage Channels",
+            MANAGE_ROLES => "Manage Roles",
+            MANAGE_COMMUNITY => "Manage Community",
+            CREATE_INVITES => "Create Invites",
+            KICK_MEMBERS => "Kick Members",
+            BAN_MEMBERS => "Ban Members",
+            TIMEOUT_MEMBERS => "Moderate Members",
+            VIEW_AUDIT_LOG => "View Audit Log",
+            MANAGE_NICKNAMES => "Manage Nicknames",
+            MANAGE_EXPRESSIONS => "Manage Expressions",
+            VIEW_INSIGHTS => "View Insights",
+            CREATE_EXPRESSIONS => "Create Expressions",
+            ADMINISTRATOR => "Administrator",
+        },
+    },
+    CatalogueGroup {
+        name: "Text",
+        permissions: permission_entries! {
+            SEND_MESSAGES => "Send Messages",
+            EMBED_LINKS => "Embed Links",
+            ATTACH_FILES => "Attach Files",
+            ADD_REACTIONS => "Add Reactions",
+            MENTION_EVERYONE => "Mention Everyone",
+            MANAGE_MESSAGES => "Manage Messages",
+            READ_HISTORY => "Read History",
+            PIN_MESSAGES => "Pin Messages",
+            SEND_POLLS => "Send Polls",
+            SEND_TTS => "Send TTS Messages",
+            USE_EXTERNAL_EMOJIS => "Use External Emojis",
+            USE_EXTERNAL_STICKERS => "Use External Stickers",
+            SEND_VOICE_MESSAGES => "Send Voice Messages",
+            BYPASS_SLOWMODE => "Bypass Slowmode",
+        },
+    },
+    CatalogueGroup {
+        name: "Voice",
+        permissions: permission_entries! {
+            CONNECT => "Connect",
+            SPEAK => "Speak",
+            MUTE_MEMBERS => "Mute Members",
+            DEAFEN_MEMBERS => "Deafen Members",
+            MOVE_MEMBERS => "Move Members",
+            USE_VOICE_ACTIVITY => "Use Voice Activity",
+            REQUEST_TO_SPEAK => "Request to Speak",
+            STREAM => "Stream",
+            PRIORITY_SPEAKER => "Priority Speaker",
+            USE_SOUNDBOARD => "Use Soundboard",
+            USE_EXTERNAL_SOUNDS => "Use External Sounds",
+        },
+    },
+    CatalogueGroup {
+        name: "Threads",
+        permissions: permission_entries! {
+            MANAGE_THREADS => "Manage Threads",
+            CREATE_PUBLIC_THREADS => "Create Public Threads",
+            CREATE_PRIVATE_THREADS => "Create Private Threads",
+            SEND_IN_THREADS => "Send In Threads",
+        },
+    },
+    CatalogueGroup {
+        name: "Events",
+        permissions: permission_entries! {
+            MANAGE_EVENTS => "Manage Events",
+            CREATE_EVENTS => "Create Events",
+        },
+    },
+];
+
+/// Role-editor labels indexed in ascending bit order for capability denials.
+pub const PERMISSION_NAMES: &[(u64, &str)] = &permission_names();
+
+const fn permission_names() -> [(u64, &'static str); DEFINED.count_ones() as usize] {
+    let mut names = [(0, ""); DEFINED.count_ones() as usize];
+    let mut group = 0;
+    while group < PERMISSION_CATALOGUE.len() {
+        let entries = PERMISSION_CATALOGUE[group].permissions;
+        let mut index = 0;
+        while index < entries.len() {
+            let entry = &entries[index];
+            let bit_index = (DEFINED & (entry.bit - 1)).count_ones() as usize;
+            names[bit_index] = (entry.bit, entry.label);
+            index += 1;
+        }
+        group += 1;
+    }
+    names
+}
+
 /// Default permissions for the @everyone role in new communities.
 pub const DEFAULT_EVERYONE: u64 = VIEW_CHANNELS
     | SEND_MESSAGES

@@ -26,6 +26,7 @@ use rekindle_types::dto::friends::{
 };
 use rekindle_types::dto::group_dm::{GroupDmView, GroupDmViewMember};
 use rekindle_types::dto::identity::{IdentityShown, IdentitySummary, IdentityView};
+use rekindle_types::dto::permission_catalogue::PermissionCatalogue;
 use rekindle_types::dto::presence::{GameTotalView, HiddenGameView, OwnGame, OwnPresenceView};
 use rekindle_types::dto::{CommandError, Done};
 use rekindle_types::friend::{FriendState, FriendshipState, GameInfoState, NotJoinableReason};
@@ -259,6 +260,7 @@ fn samples() -> Map<String, Value> {
             ..Preferences::default()
         }),
     );
+    add("permissionCatalogue", to(PermissionCatalogue::current()));
     friend_samples(&mut add);
     onboarding::samples(&mut add);
     skin::samples(&mut add);

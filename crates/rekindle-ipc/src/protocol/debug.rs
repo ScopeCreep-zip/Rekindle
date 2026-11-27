@@ -55,6 +55,7 @@ impl std::fmt::Debug for IpcRequest {
             Self::Lock => write!(f, "Lock"),
             Self::Logout => write!(f, "Logout"),
             Self::Status => write!(f, "Status"),
+            Self::PermissionCatalogue => write!(f, "PermissionCatalogue"),
             Self::IdentityList => write!(f, "IdentityList"),
             Self::IdentityShow => write!(f, "IdentityShow"),
             Self::PrekeyStatus => write!(f, "PrekeyStatus"),
