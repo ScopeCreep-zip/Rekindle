@@ -1,5 +1,6 @@
 //! The jscpd check's refusal of ignore markers and its report parsing.
 
+use super::literals::{literals_of, string_values};
 use super::{
     marker_lines, parse_report, refused_suppressions, split_lists, strip_rust, Duplicate, Side,
 };
@@ -31,14 +32,16 @@ fn lines(src: &str, start: usize, end: usize) -> Vec<&str> {
 fn surviving(a: &str, b: &str, spans: &[(usize, usize, usize, usize)]) -> usize {
     let (sa, sb) = (strip_rust(a), strip_rust(b));
     let (la, lb) = (LexedText::new(&sa), LexedText::new(&sb));
+    let (strings_a, strings_b) = (literals_of(&sa, "rust"), literals_of(&sb, "rust"));
     spans
         .iter()
         .filter(|&&(a0, a1, b0, b1)| {
             let kept =
                 lines(&sa, a0, a1) == lines(a, a0, a1) && lines(&sb, b0, b1) == lines(b, b0, b1);
             let floor = la.structural(a0, a1).min(lb.structural(b0, b1));
-            println!("S5 clone {a0}-{a1} <> {b0}-{b1}: lines kept {kept}, structural {floor}");
-            kept && floor >= MIN_STRUCTURAL
+            let same_literals = string_values(&strings_a, a0, a1).eq(string_values(&strings_b, b0, b1));
+            println!("S5 clone {a0}-{a1} <> {b0}-{b1}: lines kept {kept}, structural {floor}, same literals {same_literals}");
+            kept && floor >= MIN_STRUCTURAL && same_literals
         })
         .count()
 }

@@ -30,7 +30,8 @@
 //! clone then counts only when its span in what jscpd read holds at least
 //! `MIN_STRUCTURAL` structural tokens on both sides (`crate::structural`);
 //! the clones under the floor are counted and printed as such, never hidden.
-//! TS/TSX is read as written. Its list class (lead ruling 2026-11-26):
+//! String values remain significant across all formats, including the
+//! similarity pass that normalizes literals internally. TS/TSX is read as written. Its list class (lead ruling 2026-11-26):
 //! a clone whose two sides, in two different files, are each only
 //! independent single-variable declarations is a list match, the TS form of
 //! the Rust import and lint lists; the same run repeated in one file stays a
@@ -46,6 +47,7 @@ use serde::Deserialize;
 use crate::first_party::first_party_files;
 use crate::structural::{LexedText, MIN_STRUCTURAL};
 
+mod literals;
 mod strip;
 mod ts_lists;
 
@@ -282,11 +284,13 @@ pub(crate) fn check_token_clones(root: &Path) -> Result<()> {
     std::fs::create_dir_all(&dir)?;
     let input = dir.join("input");
     mirror(root, &SCAN, &input)?;
+    let input = input.canonicalize()?;
     let present: Vec<&str> = SCAN
         .into_iter()
         .filter(|d| input.join(d).exists())
         .collect();
     let (dups, under) = split_lists(&input, run_jscpd(root, &input, &present, &dir)?)?;
+    let (dups, different) = literals::split_different_literals(&input, dups)?;
     for d in &under {
         println!("    list match (not a clone): {d}");
     }
@@ -300,7 +304,7 @@ pub(crate) fn check_token_clones(root: &Path) -> Result<()> {
         }
     }
     println!(
-        "    token-clones: {} clones (rust {rust}, ts/tsx {ts}), {} list matches, {} refused suppressions",
+        "    token-clones: {} clones (rust {rust}, ts/tsx {ts}), {} list matches, {different} literal mismatches, {} refused suppressions",
         dups.len(),
         under.len(),
         refused.len()
