@@ -6,7 +6,8 @@
 use std::collections::HashMap;
 
 use rekindle_codec::capnp_codec::direct::DirectBody;
-use rekindle_crypto::identity::short_key_fingerprint;
+use rekindle_crypto::identity::{key_fingerprint, short_key_fingerprint};
+use rekindle_types::group_dm::GroupDmRosterMember;
 use rekindle_types::subscription_events::CallParticipant;
 
 use super::mocks::MockDeps;
@@ -19,7 +20,18 @@ use crate::CallError;
 fn rosters(deps: &MockDeps, groups: &[(&str, &[&str])]) {
     *deps.group_rosters.lock() = groups
         .iter()
-        .map(|(g, m)| ((*g).to_owned(), m.iter().map(|k| (*k).to_owned()).collect()))
+        .map(|(g, m)| {
+            (
+                (*g).to_owned(),
+                m.iter()
+                    .map(|&key| GroupDmRosterMember {
+                        identity: key.into(),
+                        display_name: "Roster name".into(),
+                        profile_record_key: String::new(),
+                    })
+                    .collect(),
+            )
+        })
         .collect::<HashMap<_, _>>();
 }
 
@@ -35,6 +47,20 @@ fn incoming_group(deps: &MockDeps) -> Vec<Option<String>> {
             _ => None,
         })
         .collect()
+}
+
+fn incoming_names(deps: &MockDeps) -> (String, Vec<CallParticipant>) {
+    deps.emitted_events()
+        .into_iter()
+        .find_map(|event| match event {
+            CallSignalEvent::IncomingGroupCall {
+                initiator_display_name,
+                participants,
+                ..
+            } => Some((initiator_display_name, participants)),
+            _ => None,
+        })
+        .expect("incoming group call")
 }
 
 #[tokio::test]
@@ -64,6 +90,22 @@ async fn a_group_scoped_start_with_a_non_member_is_refused() {
     start_group_call(&*alice, vec![b.clone(), c.clone()], CallKind::Audio, None)
         .await
         .expect("a buddy-list group call starts");
+    let participants = alice
+        .emitted_events()
+        .into_iter()
+        .find_map(|event| match event {
+            CallSignalEvent::GroupCallStarted { participants, .. } => Some(participants),
+            _ => None,
+        })
+        .expect("outgoing group call");
+    let unknown = participants.iter().find(|row| row.public_key == c).unwrap();
+    assert_eq!(
+        unknown.display_name,
+        short_key_fingerprint(&hex::decode(&c).unwrap())
+    );
+    assert_ne!(unknown.display_name, c);
+    assert!(!unknown.is_self);
+
     let sent = offers(&alice);
     assert_eq!(sent.len(), 2);
     assert!(sent.iter().all(|(_, body)| matches!(body,
@@ -77,7 +119,12 @@ async fn a_call_in_one_of_two_same_member_groups_rings_with_its_own_group_id() {
         MockDeps::with_identity([2; 32]),
     );
     let (a, b) = (alice.owner_key().unwrap(), bob.owner_key().unwrap());
-    alice.friend_names.lock().insert(b.clone(), "Bob".into());
+    *alice.own_name.lock() = "Alice profile".into();
+    *bob.own_name.lock() = "Bob profile".into();
+    alice
+        .friend_names
+        .lock()
+        .insert(a.clone(), "Wrong self alias".into());
     bob.friend_names.lock().insert(a.clone(), "Alice".into());
     let same: &[&str] = &[a.as_str(), b.as_str()];
     rosters(&alice, &[("g1", same), ("g2", same)]);
@@ -108,11 +155,13 @@ async fn a_call_in_one_of_two_same_member_groups_rings_with_its_own_group_id() {
             vec![
                 CallParticipant {
                     public_key: a.clone(),
-                    display_name: short_key_fingerprint(&hex::decode(&a).unwrap()),
+                    display_name: "Alice profile".into(),
+                    is_self: true,
                 },
                 CallParticipant {
                     public_key: b.clone(),
-                    display_name: "Bob".into(),
+                    display_name: "Roster name".into(),
+                    is_self: false,
                 },
             ],
         )]
@@ -121,31 +170,70 @@ async fn a_call_in_one_of_two_same_member_groups_rings_with_its_own_group_id() {
     assert_eq!(to, b);
     handle_group_call_payload(&*bob, &a, offer).await;
     assert_eq!(incoming_group(&bob), vec![Some("g2".to_owned())]);
-    let (caller, participants) = bob
-        .emitted_events()
-        .into_iter()
-        .find_map(|event| match event {
-            CallSignalEvent::IncomingGroupCall {
-                initiator_display_name,
-                participants,
-                ..
-            } => Some((initiator_display_name, participants)),
-            _ => None,
-        })
-        .expect("incoming group call");
+    let (caller, participants) = incoming_names(&bob);
     assert_eq!(caller, "Alice");
     assert_eq!(
         participants,
         [
             CallParticipant {
                 public_key: a,
-                display_name: "Alice".into()
+                display_name: "Alice".into(),
+                is_self: false,
             },
             CallParticipant {
-                display_name: short_key_fingerprint(&hex::decode(&b).unwrap()),
+                display_name: "Bob profile".into(),
+                is_self: true,
                 public_key: b,
             },
         ],
+    );
+}
+
+#[tokio::test]
+async fn incoming_group_names_use_the_receivers_roster_and_fingerprint() {
+    let (alice, bob, carol) = (
+        MockDeps::with_identity([1; 32]),
+        MockDeps::with_identity([2; 32]),
+        MockDeps::with_identity([3; 32]),
+    );
+    let (a, b, c) = (
+        alice.owner_key().unwrap(),
+        bob.owner_key().unwrap(),
+        carol.owner_key().unwrap(),
+    );
+    let members: &[&str] = &[&a, &b, &c];
+    rosters(&alice, &[("g", members)]);
+    rosters(&bob, &[("g", members)]);
+    {
+        let mut rosters = bob.group_rosters.lock();
+        let roster = rosters.get_mut("g").unwrap();
+        roster[0].display_name = "Alice in Bob's roster".into();
+        roster[2].display_name = c.get(..8).unwrap().into();
+    }
+    bob.friend_names.lock().extend([
+        (a.clone(), key_fingerprint(&hex::decode(&a).unwrap())),
+        (c.clone(), c.clone()),
+    ]);
+    start_group_call(
+        &*alice,
+        vec![b.clone(), c.clone()],
+        CallKind::Video,
+        Some("g".into()),
+    )
+    .await
+    .expect("a member starts the group's call");
+    let (_, offer) = offers(&alice)
+        .into_iter()
+        .find(|(to, _)| *to == b)
+        .expect("Bob's offer");
+    handle_group_call_payload(&*bob, &a, offer).await;
+    let (caller, participants) = incoming_names(&bob);
+    assert_eq!(caller, "Alice in Bob's roster");
+    assert_eq!(participants[0].display_name, caller);
+    assert_eq!(participants[2].public_key, c);
+    assert_eq!(
+        participants[2].display_name,
+        short_key_fingerprint(&hex::decode(&c).unwrap())
     );
 }
 
@@ -178,7 +266,7 @@ async fn a_forged_group_id_from_a_non_member_is_refused() {
 
 #[tokio::test]
 async fn a_pending_invitee_is_refused_with_the_reason_its_view_serves() {
-    use rekindle_types::group_dm::{group_call_refused, GroupCallRoster};
+    use rekindle_types::group_dm::group_call_refused;
 
     let (alice, bob, carol) = (
         MockDeps::with_identity([1; 32]),
@@ -229,7 +317,7 @@ async fn a_pending_invitee_is_refused_with_the_reason_its_view_serves() {
 
     // Alone on the roster: the served reason, and the start refuses it too.
     rosters(&bob, &[("g1", &[b.as_str()])]);
-    let alone = group_call_refused(&GroupCallRoster::Held(vec![b.clone()]), &b).unwrap();
+    let alone = group_call_refused(&bob.group_roster("g1").await.unwrap(), &b).unwrap();
     let refused = start_group_call(&*bob, vec![a.clone()], CallKind::Audio, Some("g1".into()))
         .await
         .expect_err("no one else to call");

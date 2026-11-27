@@ -54,6 +54,8 @@ pub struct DirectCallInfo {
 pub struct CallParticipant {
     pub public_key: String,
     pub display_name: String,
+    /// This participant is the identity reading the event.
+    pub is_self: bool,
 }
 
 /// Call lifecycle and in-call signalling.

@@ -130,6 +130,7 @@ mod duplication;
 mod file_sizes;
 mod frontend_boundaries;
 mod frontend_duplication;
+mod frontend_key_slices;
 mod gen_isolation_commands;
 mod gen_skin_registry;
 mod icon_glyphs;
@@ -355,6 +356,10 @@ fn dispatch(cmd: &Command) -> Result<()> {
                 (
                     "frontend-boundaries",
                     Box::new(|| frontend_boundaries::check_frontend_boundaries(&root)),
+                ),
+                (
+                    "frontend-key-slices",
+                    Box::new(|| frontend_key_slices::check(&root)),
                 ),
                 (
                     "file-sizes",

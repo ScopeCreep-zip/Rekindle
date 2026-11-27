@@ -90,6 +90,7 @@ fn sample_events() -> Vec<CallEvent> {
                 .map(|key| CallParticipant {
                     public_key: key.into(),
                     display_name: format!("Name of {key}"),
+                    is_self: key == "me",
                 })
                 .collect(),
             is_group: true,
@@ -114,6 +115,7 @@ fn sample_events() -> Vec<CallEvent> {
                 .map(|key| CallParticipant {
                     public_key: key.into(),
                     display_name: format!("Name of {key}"),
+                    is_self: key == "me",
                 })
                 .collect(),
             group_id: Some("g".into()),

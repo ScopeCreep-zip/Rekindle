@@ -271,15 +271,23 @@ pub(super) async fn start_group_call_untraced<D: CallSignalingDeps + ?Sized>(
     group_id: Option<String>,
 ) -> Result<String, CallError> {
     let initiator_pubkey = deps.owner_key()?;
-    if let Some(group) = group_id.as_deref() {
+    let roster = if let Some(group) = group_id.as_deref() {
         let roster = deps.group_roster(group).await?;
         if let Some(reason) = group_call_refused(&roster, &initiator_pubkey) {
             return Err(CallError::GroupCallRefused(reason));
         }
-        if let GroupCallRoster::Held(keys) = &roster {
-            check_members(keys, group, participant_pubkeys.iter().map(String::as_str))?;
-        }
-    }
+        let GroupCallRoster::Held(members) = roster else {
+            return Err(CallError::NotInGroup(format!("no group {group}")));
+        };
+        check_members(
+            &members,
+            group,
+            participant_pubkeys.iter().map(String::as_str),
+        )?;
+        members
+    } else {
+        Vec::new()
+    };
     let call_id = deps.fresh_call_id();
     let (my_secret, my_pub) = fresh_keypair();
     let expires_at_ms = rekindle_utils::timestamp_ms() + RING_DURATION_MS;
@@ -292,7 +300,7 @@ pub(super) async fn start_group_call_untraced<D: CallSignalingDeps + ?Sized>(
         }
     }
 
-    let participants = named_participants(deps, &all_participants)?;
+    let participants = named_participants(deps, &all_participants, &initiator_pubkey, &roster)?;
 
     // Capture secret bytes for the per-invitee wrap before moving
     // `my_secret` into the registry entry.

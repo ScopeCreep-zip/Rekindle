@@ -197,6 +197,12 @@ interface DirectCallInfo {
   expectedLocalCamera: boolean;
 }
 
+export interface CallParticipant {
+  publicKey: string;
+  displayName: string;
+  isSelf: boolean;
+}
+
 export type CallEvent =
   | {
       incoming: {
@@ -205,7 +211,7 @@ export type CallEvent =
         displayName: string;
         kind: string;
         /** Everyone invited, for a group call. Empty for a 1:1. */
-        participants: string[];
+        participants: CallParticipant[];
         isGroup: boolean;
         /** The group the call is for (GV2); null for a buddy-list call or a 1:1. */
         groupId: string | null;
@@ -227,7 +233,7 @@ export type CallEvent =
       groupStarted: {
         callId: string;
         kind: string;
-        participants: string[];
+        participants: CallParticipant[];
         groupId: string | null;
         expiresAtMs: number;
       };

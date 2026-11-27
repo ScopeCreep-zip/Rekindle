@@ -362,6 +362,7 @@ impl DaemonContext {
     /// Journal one `SubscriptionEvent` for every subscriber (plan D3.2),
     /// through the Host's one journal entry (`host::journal_entry`).
     pub fn publish_event(&self, event: rekindle_types::subscription_events::SubscriptionEvent) {
+        let event = crate::host::journal_entry::with_voice_names(&self.communities, event);
         crate::host::journal_entry::publish(&self.journal, event);
     }
 

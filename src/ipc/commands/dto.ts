@@ -394,6 +394,7 @@ export function isCancelled(e: unknown): boolean {
 /** One identity on this device, for the login picker. */
 export interface IdentitySummary {
   publicKey: string;
+  fingerprint: string;
   displayName: string;
   createdAt: number;
 }
@@ -401,12 +402,14 @@ export interface IdentitySummary {
 /** The identity a create or an unlock opened. */
 export interface IdentityView {
   publicKey: string;
+  fingerprint: string;
   displayName: string;
 }
 
 /** The unlocked identity's public data. */
 export interface IdentityShown {
   publicKey: string;
+  fingerprint: string;
   displayName: string;
   /** Null while not yet held (the own-records stage names each after unlock). */
   profileDhtKey: string | null;

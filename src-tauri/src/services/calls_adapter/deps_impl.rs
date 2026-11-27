@@ -26,6 +26,12 @@ impl CallSignalingDeps for CallsAdapter {
         state_helpers::current_owner_key(&self.state).map_err(|_| CallError::IdentityNotLoaded)
     }
 
+    fn own_display_name(&self) -> Result<String, CallError> {
+        state_helpers::current_identity(&self.state)
+            .map(|identity| identity.display_name)
+            .map_err(|_| CallError::IdentityNotLoaded)
+    }
+
     fn identity_secret(&self) -> Result<[u8; 32], CallError> {
         state_helpers::identity_secret_bytes(&self.state).ok_or(CallError::IdentityNotLoaded)
     }

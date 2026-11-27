@@ -25,6 +25,7 @@ export type VideoCallPanelProps =
       mode: "dm";
       /** Hex-encoded peer Ed25519 public key. */
       peerId: string;
+      peerDisplayName: string;
       visible: boolean;
     };
 

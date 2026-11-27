@@ -1,7 +1,7 @@
 import { Component, For, Show, createEffect, createSignal, onCleanup } from "solid-js";
 import SkinGlyph from "../common/SkinGlyph";
+import type { CallParticipant } from "../../ipc/channels/chat_events";
 import { callsState } from "../../stores/calls.store";
-import { friendsState } from "../../stores/friends.store";
 import {
   handleAcceptGroupCall,
   handleDeclineGroupCall,
@@ -101,9 +101,8 @@ const ActiveGroupCallPanel: Component = () => {
     return `${m}:${s.toString().padStart(2, "0")}`;
   };
 
-  const participantName = (key: string): string => {
-    return friendsState.friends[key]?.displayName ?? key.slice(0, 8) + "…";
-  };
+  const isInCall = (participant: CallParticipant) =>
+    participant.isSelf || call()?.accepted.includes(participant.publicKey);
 
   return (
     <Show when={call()}>
@@ -111,14 +110,14 @@ const ActiveGroupCallPanel: Component = () => {
         <div class="group-call-panel" role="region" aria-label="Group call in progress">
           <div class="group-call-panel-header">
             <span class="group-call-panel-title">
-              Group {c().kind} call · {c().accepted.length}/{c().participants.length}
+              Group {c().kind} call · {c().participants.filter(isInCall).length}/{c().participants.length}
             </span>
             <span class="active-call-timer">{elapsed()}</span>
           </div>
           <div class="group-call-grid">
             <For each={c().participants}>
-              {(pubkey) => {
-                const accepted = () => c().accepted.includes(pubkey);
+              {(participant) => {
+                const accepted = () => isInCall(participant);
                 return (
                   <div
                     class="group-call-tile"
@@ -128,9 +127,11 @@ const ActiveGroupCallPanel: Component = () => {
                     }}
                   >
                     <div class="group-call-tile-avatar">
-                      {participantName(pubkey).slice(0, 1).toUpperCase()}
+                      {participant.displayName.slice(0, 1).toUpperCase()}
                     </div>
-                    <div class="group-call-tile-name">{participantName(pubkey)}</div>
+                    <div class="group-call-tile-name">
+                      {participant.displayName}{participant.isSelf ? " (you)" : ""}
+                    </div>
                     <div class="group-call-tile-status">
                       {accepted() ? "in call" : "ringing…"}
                     </div>

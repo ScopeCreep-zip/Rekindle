@@ -37,8 +37,8 @@ pub const ACCEPT_INVITE_FIRST: &str = "accept the invite first";
 /// What we hold of a group DM, as a group call reads it (plan E4.1).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GroupCallRoster {
-    /// A group we are in: its roster's identity keys.
-    Held(Vec<String>),
+    /// A group we are in: its roster members.
+    Held(Vec<GroupDmRosterMember>),
     /// An invite to it we have not answered.
     Invited,
     /// Neither a group we hold nor an invite to one.
@@ -54,10 +54,10 @@ pub fn group_call_refused(roster: &GroupCallRoster, me: &str) -> Option<String> 
     match roster {
         GroupCallRoster::Invited => Some(ACCEPT_INVITE_FIRST.to_owned()),
         GroupCallRoster::Unknown => Some("the group is not in your list".to_owned()),
-        GroupCallRoster::Held(keys) if !keys.iter().any(|k| k == me) => {
+        GroupCallRoster::Held(members) if !members.iter().any(|member| member.identity == me) => {
             Some("you are not in the group".to_owned())
         }
-        GroupCallRoster::Held(keys) if keys.iter().all(|k| k == me) => {
+        GroupCallRoster::Held(members) if members.iter().all(|member| member.identity == me) => {
             Some("no one else is in the group to call".to_owned())
         }
         GroupCallRoster::Held(_) => None,

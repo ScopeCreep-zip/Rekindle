@@ -1,4 +1,5 @@
 import { Component, For, Show } from "solid-js";
+import { voiceState } from "../../stores/voice.store";
 import { useVideoCallPanel, type VideoCallPanelProps } from "./video_call/useVideoCallPanel";
 
 // Architecture §10.6 — interim video pipeline. The browser captures via
@@ -78,7 +79,11 @@ const VideoCallPanel: Component<VideoCallPanelProps> = (props) => {
                   }
                 }}
               />
-              <div class="video-call-tile-label">{remote.senderPseudonym.slice(0, 8)}</div>
+              <div class="video-call-tile-label">
+                {props.mode === "dm"
+                  ? props.peerDisplayName
+                  : voiceState.participants.find((p) => p.publicKey === remote.senderPseudonym)?.displayName}
+              </div>
             </div>
           )}
         </For>

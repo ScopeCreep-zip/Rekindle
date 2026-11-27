@@ -35,6 +35,7 @@ impl super::Host {
         key: &str,
         event: rekindle_types::subscription_events::SubscriptionEvent,
     ) -> Cursor {
+        let event = super::journal_entry::with_voice_names(&self.ctx.communities, event);
         self.ctx.journal.publish_state(key, event)
     }
 

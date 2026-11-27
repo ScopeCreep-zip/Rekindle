@@ -1,7 +1,15 @@
-use super::{group_call_refused, GroupCallRoster};
+use super::{group_call_refused, GroupCallRoster, GroupDmRosterMember};
 
 fn held(keys: &[&str]) -> GroupCallRoster {
-    GroupCallRoster::Held(keys.iter().map(|k| (*k).to_owned()).collect())
+    GroupCallRoster::Held(
+        keys.iter()
+            .map(|&key| GroupDmRosterMember {
+                identity: key.into(),
+                profile_record_key: String::new(),
+                display_name: key.into(),
+            })
+            .collect(),
+    )
 }
 
 #[test]

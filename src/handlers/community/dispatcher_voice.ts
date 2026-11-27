@@ -26,18 +26,11 @@ function mirrorRosterAdd(
   if (voiceState.activeCallType !== "community" || voiceState.channelId !== channelId) return;
   const community = communityState.communities[communityId];
   const self = community?.myPseudonymKey;
-  // Handshake-carried name wins (it never depends on registry-scan
-  // timing); members store is the fallback; truncated key is last.
-  const nameFor = (pk: string, carried: string | null): string =>
-    carried ??
-    community?.members.find((m) => m.pseudonymKey === pk)?.displayName ??
-    pk.slice(0, 8);
   for (const { pseudonymKey: pk, displayName } of entries) {
     if (pk === self) continue;
     setVoiceState("participants", (prev) => {
       const existing = prev.findIndex((p) => p.publicKey === pk);
       if (existing >= 0) {
-        // Upgrade a truncated-key placeholder with the carried name.
         if (displayName && prev[existing].displayName !== displayName) {
           return prev.map((p, i) => (i === existing ? { ...p, displayName } : p));
         }
@@ -47,7 +40,7 @@ function mirrorRosterAdd(
         ...prev,
         {
           publicKey: pk,
-          displayName: nameFor(pk, displayName),
+          displayName,
           isMuted: false,
           isSpeaking: false,
         },
@@ -72,9 +65,9 @@ export function reduceVoice(event: CommunityEvent): boolean {
     // the call. Backend latches the transition, so this fires once —
     // a single toast, no spam. Voice keeps working.
     const { peers } = event.data;
-    const names = peers.map((p) => p.slice(0, 8)).join(", ");
+    const names = peers.map((p) => p.displayName).join(", ");
     addToast(
-      `Video unavailable: no compatible codec with ${names || "current peers"}`,
+      `Video unavailable: no compatible codec with ${names}`,
       "error",
     );
     return true;
@@ -83,9 +76,9 @@ export function reduceVoice(event: CommunityEvent): boolean {
     // verification at the receive boundary. Surface a warn-level toast
     // so the asymmetric-drop case is observable from the UI without
     // grepping structured logs.
-    const { senderPseudonym, reason } = event.data;
+    const { displayName, reason } = event.data;
     addToast(
-      `Dropped video from ${senderPseudonym.slice(0, 8)}: ${reason}`,
+      `Dropped video from ${displayName}: ${reason}`,
       "error",
     );
     return true;
@@ -313,7 +306,10 @@ if ("soundboardPlayed" in v) {
       if (pendingRequests.includes(requesterPseudonym)) return state;
       return { ...state, pendingRequests: [...pendingRequests, requesterPseudonym] };
     });
-    addToast(`Speak request from ${requesterPseudonym.slice(0, 12)}`, "info");
+    const requester = communityState.communities[scope.community.community]?.members.find(
+      (member) => member.pseudonymKey === requesterPseudonym,
+    );
+    addToast(requester ? `Speak request from ${requester.displayName}` : "New speak request", "info");
     return;
   }
 

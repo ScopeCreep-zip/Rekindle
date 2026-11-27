@@ -173,7 +173,7 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
                   by {(() => {
                     const community = communityState.communities[props.communityId];
                     const member = community?.members.find((m) => m.pseudonymKey === invite.createdBy);
-                    return member?.displayName ?? (invite.createdBy.slice(0, 8) + "...");
+                    return member?.displayName ?? "a member";
                   })()}
                 </span>
                 <span class="invite-fingerprint">

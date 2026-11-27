@@ -68,6 +68,23 @@ pub struct VoiceSessionView {
 }
 
 impl VoiceSessionView {
+    fn name_participant(&mut self, pseudonym: &str, display_name: &str) {
+        if let Some(row) = self
+            .participants
+            .iter_mut()
+            .find(|p| p.pseudonym_key == pseudonym)
+        {
+            display_name.clone_into(&mut row.display_name);
+        } else {
+            self.participants.push(VoiceParticipantRow {
+                pseudonym_key: pseudonym.to_owned(),
+                display_name: display_name.to_owned(),
+                muted: false,
+                deafened: false,
+            });
+        }
+    }
+
     /// Whether a voice event belongs to the call this view is showing.
     ///
     /// A DM call never matches: this view is opened on a community
@@ -218,19 +235,21 @@ impl View for VoiceSessionView {
     fn on_subscription_event(&mut self, event: &SubscriptionEvent) -> Result<()> {
         match event {
             SubscriptionEvent::Voice(VoiceEvent::Joined {
-                scope, pseudonym, ..
+                scope,
+                pseudonym,
+                display_name: Some(display_name),
+                ..
             }) if self.is_this_call(scope) => {
-                if !self
-                    .participants
-                    .iter()
-                    .any(|p| p.pseudonym_key == *pseudonym)
-                {
-                    self.participants.push(VoiceParticipantRow {
-                        pseudonym_key: pseudonym.clone(),
-                        display_name: helpers::abbreviate_key(pseudonym),
-                        muted: false,
-                        deafened: false,
-                    });
+                self.name_participant(pseudonym, display_name);
+            }
+            SubscriptionEvent::Voice(VoiceEvent::RosterUpdated {
+                scope,
+                participants,
+            }) if self.is_this_call(scope) => {
+                for participant in participants {
+                    if let Some(name) = &participant.display_name {
+                        self.name_participant(&participant.pseudonym_key, name);
+                    }
                 }
             }
             SubscriptionEvent::Voice(VoiceEvent::Left { scope, pseudonym })
