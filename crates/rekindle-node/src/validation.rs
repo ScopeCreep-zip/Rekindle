@@ -368,6 +368,7 @@ pub fn validate_request(request: &IpcRequest) -> Checked {
         | IpcRequest::IdentityExport { passphrase: _ }
         | IpcRequest::IdentityRotate { passphrase: _ }
         | IpcRequest::Status
+        | IpcRequest::PermissionCatalogue
         | IpcRequest::Shutdown
         | IpcRequest::IdentityShow
         | IpcRequest::PrekeyStatus

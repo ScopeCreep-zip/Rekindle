@@ -88,6 +88,96 @@ fn hierarchy() -> rekindle_governance::state::GovernanceState {
     gov
 }
 
+fn assert_channel_overwrite_words(bit: u64, key: &str, reason: &str) {
+    use crate::host::adapters::governance::projection::project;
+    use rekindle_governance::{fixture::stamp, merge::apply_entry};
+    use rekindle_types::governance::GovernanceEntry;
+    use rekindle_types::id::{ChannelId, PseudonymKey, RoleId};
+    use rekindle_types::permissions::DEFAULT_EVERYONE;
+
+    let creator = PseudonymKey([1; 32]);
+    let member = PseudonymKey([6; 32]);
+    let member_role = RoleId([2; 16]);
+    let channel = ChannelId([9; 16]);
+    let mut gov = hierarchy();
+    gov.roles.get_mut(&member_role).unwrap().permissions = DEFAULT_EVERYONE | bit;
+    apply_entry(
+        &creator,
+        &GovernanceEntry::ChannelCreated {
+            channel_id: channel,
+            name: "general".into(),
+            channel_type: "text".into(),
+            category_id: None,
+            position: 0,
+            parent_voice_channel_id: None,
+        },
+        stamp(2),
+        &mut gov,
+    );
+
+    let mut state = CommunityState::new("gk");
+    state.my_pseudonym_key = Some(member.to_hex());
+    let denied = |state: &CommunityState| {
+        let view = community_view(state, own_card_view(state, None), 0, None);
+        let json = serde_json::to_value(view).unwrap();
+        json["channels"][0]["denied"].as_object().unwrap().clone()
+    };
+    project(&mut state, gov.clone());
+    let mut expected = denied(&state);
+    assert_eq!(expected.insert(key.to_owned(), reason.into()), None);
+
+    apply_entry(
+        &creator,
+        &GovernanceEntry::PermissionOverwrite {
+            channel_id: channel,
+            target_type: "member".into(),
+            target_id: member.to_hex(),
+            allow: 0,
+            deny: bit,
+        },
+        stamp(3),
+        &mut gov,
+    );
+    project(&mut state, gov);
+    assert_eq!(denied(&state), expected);
+}
+
+#[test]
+fn send_messages_overwrite_is_worded_in_the_channel_view() {
+    assert_channel_overwrite_words(
+        rekindle_types::permissions::SEND_MESSAGES,
+        "sendMessages",
+        "Send Messages is turned off for you in this channel.",
+    );
+}
+
+#[test]
+fn bypass_slowmode_overwrite_is_worded_in_the_channel_view() {
+    assert_channel_overwrite_words(
+        rekindle_types::permissions::BYPASS_SLOWMODE,
+        "bypassSlowmode",
+        "Bypass Slowmode is turned off for you in this channel.",
+    );
+}
+
+#[test]
+fn request_to_speak_overwrite_is_worded_in_the_channel_view() {
+    assert_channel_overwrite_words(
+        rekindle_types::permissions::REQUEST_TO_SPEAK,
+        "requestToSpeak",
+        "Request to Speak is turned off for you in this channel.",
+    );
+}
+
+#[test]
+fn mention_everyone_overwrite_is_worded_in_the_channel_view() {
+    assert_channel_overwrite_words(
+        rekindle_types::permissions::MENTION_EVERYONE,
+        "mentionEveryone",
+        "Mention Everyone is turned off for you in this channel.",
+    );
+}
+
 #[test]
 fn each_member_rows_flags_are_the_validators_verdicts() {
     use rekindle_governance::validate::validate_write;
