@@ -14,16 +14,25 @@ use super::HostGovernance;
 
 impl HostGovernance {
     /// This device's standing in `community` for its view (lead decision
-    /// 63): `NeedsReenrol` when our key is not endorsed for the current
-    /// member record. A community not yet merged or admitted is `Enrolled`
-    /// (nothing to re-enrol against yet).
+    /// 63): `NeedsReenrol` whenever this device must enrol a fresh key,
+    /// which is either our key not endorsed for the current member record,
+    /// or (plan E3.2 S7d-keys.10) our endorsed key retired by another copy
+    /// or found behind a restore, the same check that raises the
+    /// `ReEnrolDevice` review, so the view and the review never disagree.
+    /// A community not yet merged or admitted is `Enrolled` (nothing to
+    /// re-enrol against yet).
     pub(crate) fn device_status(&self, community: &str) -> DeviceStatus {
         let Some(state) = self.governance_state_impl(community) else {
             return DeviceStatus::Enrolled;
         };
-        match device_signer::own_device(self, community, &state) {
-            Ok(OwnDevice::NeedsEnrol) => DeviceStatus::NeedsReenrol,
-            Ok(OwnDevice::Endorsed) | Err(_) => DeviceStatus::Enrolled,
+        let unendorsed = matches!(
+            device_signer::own_device(self, community, &state),
+            Ok(OwnDevice::NeedsEnrol)
+        );
+        if unendorsed || self.needs_re_enrol(community) {
+            DeviceStatus::NeedsReenrol
+        } else {
+            DeviceStatus::Enrolled
         }
     }
 
