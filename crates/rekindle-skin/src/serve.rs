@@ -303,6 +303,7 @@ pub fn frames(bytes: &[u8], address: &str) -> Result<Vec<SkinWindowFrame>, SkinE
                     width: mask.width(),
                     height: mask.height(),
                     bits: mask.bits().to_vec(),
+                    faint: mask.faint().to_vec(),
                 })
                 .collect();
             Ok(SkinWindowFrame {
