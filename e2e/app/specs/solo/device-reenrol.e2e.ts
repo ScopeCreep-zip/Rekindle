@@ -145,6 +145,11 @@ describe("a restored copy re-enrols the device: the original is told and offered
       NET_WAIT_MS,
       "the Host did not hold Dee's session reset while re-enrolment was still open",
     );
+    // The probe really saw the channel (a wrapper on invoke once saw nothing):
+    // every delivery it logged before the gate, by kind.
+    const seen = (await pageLog(browser)).split("\n").filter((l) => /^\+\d+ms /.test(l));
+    console.log(`[reenrol] probe saw ${seen.length} channel deliveries before the gate, ${seen.filter((l) => / event /.test(l)).length} of them acceptSessionReset`);
+    expect(seen.filter((l) => / event /.test(l)).length).toBeGreaterThan(0);
     expect(await reviewSays(browser)).toContain("this device's key in every community");
     await shot("two-held-reviews");
 
