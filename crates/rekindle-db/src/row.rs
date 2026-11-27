@@ -5,6 +5,10 @@
 use rusqlite::types::Type;
 use rusqlite::Row;
 
+mod query;
+
+pub use query::{query_list, query_one, query_opt, FromRow};
+
 /// A column decoded as `T`.
 ///
 /// # Errors
