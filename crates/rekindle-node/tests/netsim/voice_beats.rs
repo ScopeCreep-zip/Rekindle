@@ -23,6 +23,11 @@ use crate::shell_node::{BareShell, SimMode};
 
 const VOICE: &str = "0123456789abcdef0123456789abcdef";
 
+/// Below the model's fastest DHT set (`rekindle_netsim::latency::SET`,
+/// 0.33 s measured): a voice request that awaited its beat's write could
+/// not answer inside it (a live set takes seconds, past the CLI's 5 s).
+const ANSWERS_BEFORE_A_SET: Duration = Duration::from_millis(300);
+
 /// Whether the last roster `shell` was handed for `community` puts
 /// `member` live in `channel` (`None`: in no channel).
 fn last_claim(shell: &BareShell, community: &str, member: &str, channel: Option<&str>) -> bool {
@@ -59,10 +64,7 @@ async fn a_voice_join_and_leave_reach_a_peer_roster_from_beats_alone() {
         .voice
         .lock()
         .insert(anchor.clone(), VOICE.to_owned());
-    community.nodes[1]
-        .host
-        .voice_presence_changed(&anchor)
-        .await;
+    community.nodes[1].host.voice_presence_changed(&anchor);
     assert!(
         eventually(&community.sim, Duration::from_secs(120), || async {
             last_claim(&shells[2], &anchor, &member, Some(VOICE))
@@ -72,10 +74,7 @@ async fn a_voice_join_and_leave_reach_a_peer_roster_from_beats_alone() {
     );
 
     shells[1].session.voice.lock().clear();
-    community.nodes[1]
-        .host
-        .voice_presence_changed(&anchor)
-        .await;
+    community.nodes[1].host.voice_presence_changed(&anchor);
     assert!(
         eventually(&community.sim, Duration::from_secs(120), || async {
             last_claim(&shells[2], &anchor, &member, None)
@@ -104,6 +103,7 @@ async fn a_daemon_members_voice_join_and_leave_reach_a_shell_roster_at_once() {
     let anchor = community.anchor.clone();
     let member = community.pseudonym(1).await;
 
+    let asked = tokio::time::Instant::now();
     let joined = community.nodes[1]
         .ok(IpcRequest::VoiceJoin {
             community: anchor.clone(),
@@ -114,6 +114,11 @@ async fn a_daemon_members_voice_join_and_leave_reach_a_shell_roster_at_once() {
         .await;
     assert_eq!(joined["channel"], VOICE, "the daemon joined the channel");
     assert!(
+        asked.elapsed() < ANSWERS_BEFORE_A_SET,
+        "the join answers once the session is recorded, never after the beat's DHT set ({:?})",
+        asked.elapsed()
+    );
+    assert!(
         eventually(&community.sim, AT_ONCE, || async {
             last_claim(&shell, &anchor, &member, Some(VOICE))
         })
@@ -121,7 +126,13 @@ async fn a_daemon_members_voice_join_and_leave_reach_a_shell_roster_at_once() {
         "the join's own beat puts the daemon member in the shell's voice roster at once"
     );
 
+    let asked = tokio::time::Instant::now();
     let left = community.nodes[1].ok(IpcRequest::VoiceLeave).await;
+    assert!(
+        asked.elapsed() < ANSWERS_BEFORE_A_SET,
+        "the leave answers once the session is cleared, never after the beat's DHT set ({:?})",
+        asked.elapsed()
+    );
     assert_eq!(
         left["channel"], VOICE,
         "the daemon left the channel it was in"

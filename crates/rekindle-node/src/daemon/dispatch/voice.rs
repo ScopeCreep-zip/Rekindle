@@ -10,7 +10,7 @@ use rekindle_ipc::protocol::IpcResponse;
 
 use super::{state_error, DaemonContext};
 
-pub(crate) async fn handle_voice_join(
+pub(crate) fn handle_voice_join(
     ctx: &DaemonContext,
     state: DaemonState,
     community: &str,
@@ -52,14 +52,14 @@ pub(crate) async fn handle_voice_join(
     // beat there stops naming its channel.
     if let Some(replaced) = ctx.own_voice.join(session) {
         if replaced.community_id != joined {
-            voice_changed(ctx, &replaced.community_id).await;
+            voice_changed(ctx, &replaced.community_id);
         }
     }
-    voice_changed(ctx, &joined).await;
+    voice_changed(ctx, &joined);
     IpcResponse::ok(&reply)
 }
 
-pub(crate) async fn handle_voice_leave(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
+pub(crate) fn handle_voice_leave(ctx: &DaemonContext, state: DaemonState) -> IpcResponse {
     if !state.can_write() {
         return state_error(state, "write");
     }
@@ -68,7 +68,7 @@ pub(crate) async fn handle_voice_leave(ctx: &DaemonContext, state: DaemonState) 
     let Some(session) = ctx.own_voice.leave() else {
         return IpcResponse::error(409, "not in a voice channel");
     };
-    voice_changed(ctx, &session.community_id).await;
+    voice_changed(ctx, &session.community_id);
     IpcResponse::ok(&serde_json::json!({
         "left": true,
         "community": session.community_id,

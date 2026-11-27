@@ -41,8 +41,8 @@ impl super::Host {
     /// We joined or left a voice channel in `community_id` (plan E3.4
     /// S8-pre): the shell calls this when its voice session starts or ends,
     /// until E4.1 makes voice the Host's.
-    pub async fn voice_presence_changed(&self, community_id: &str) {
-        super::adapters::presence::voice_changed(&self.ctx, community_id).await;
+    pub fn voice_presence_changed(&self, community_id: &str) {
+        super::adapters::presence::voice_changed(&self.ctx, community_id);
     }
 
     /// Our session in `community_id` as the Host holds it (plan E3.4

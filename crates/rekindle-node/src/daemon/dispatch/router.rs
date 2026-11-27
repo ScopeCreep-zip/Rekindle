@@ -239,8 +239,8 @@ async fn route(
             channel,
             muted,
             deafened,
-        } => voice::handle_voice_join(ctx, state, &community, &channel, muted, deafened).await,
-        IpcRequest::VoiceLeave => voice::handle_voice_leave(ctx, state).await,
+        } => voice::handle_voice_join(ctx, state, &community, &channel, muted, deafened),
+        IpcRequest::VoiceLeave => voice::handle_voice_leave(ctx, state),
 
         // ── Admin / Network ──────────────────────────────────────
         // Subscribe/Unsubscribe are handled server-side in the IPC bus router.
