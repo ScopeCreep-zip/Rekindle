@@ -3,7 +3,10 @@
 // the Host directly, with the same Tauri commands the window uses, what it
 // serves: `get_community_details` (the community's id and our own pseudonym)
 // and `get_community_members` (the member set and each member's status),
-// every 2 s for 30 s, beside the panel's own header. If the Host lists the
+// every 2 s for 30 s, beside the panel's own header and `get_communities`'
+// memberCount (the merged governance's count, independent of the roster):
+// count 0 with no members = the merge never admitted the creator; count 1
+// with no members = the creator's roster row is missing. If the Host lists the
 // creator and the panel does not, the shell dropped it; if the Host lists
 // nobody, the cause is on the Host's side.
 
@@ -18,6 +21,8 @@ interface Served {
   header: string;
   community: string | null;
   me: string | null;
+  /** `get_communities`' memberCount: the merged governance's count (GovernanceState::member_count), independent of the SQLite roster. */
+  governanceCount: number | null;
   members: { key: string; name: string; status: string }[] | string;
 }
 
@@ -28,16 +33,20 @@ async function served(name: string): Promise<Served> {
     try {
       const details = (await call("get_community_details")).value as { id: string; name: string; myPseudonymKey: string | null }[];
       const c = details.find((d) => d.name === communityName);
-      if (!c) return { header, community: null, me: null, members: "community not in get_community_details" };
+      if (!c) return { header, community: null, me: null, governanceCount: null, members: "community not in get_community_details" };
+      // get_communities keys each community by its anchor (the id details use).
+      const list = (await call("get_communities")).value as { anchor: string; memberCount: number }[];
+      const governanceCount = list.find((x) => x.anchor === c.id)?.memberCount ?? null;
       const members = (await call("get_community_members", { communityId: c.id })).value as { pseudonymKey: string; displayName: string; status: string }[];
       return {
         header,
         community: c.id,
         me: c.myPseudonymKey,
+        governanceCount,
         members: members.map((m) => ({ key: m.pseudonymKey.slice(0, 12), name: m.displayName, status: m.status })),
       };
     } catch (e) {
-      return { header, community: null, me: null, members: `error: ${e instanceof Error ? e.message : JSON.stringify(e)}` };
+      return { header, community: null, me: null, governanceCount: null, members: `error: ${e instanceof Error ? e.message : JSON.stringify(e)}` };
     }
   }, name)) as Served;
 }
