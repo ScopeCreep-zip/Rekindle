@@ -7,8 +7,11 @@
 // ReEnrolDevice review at the next unlock (TrustChanging, every word the
 // Host's), and a held deviceReEnrol op shows the Host's label in catch-up.
 //
-// HELD until .10 part 2 lands: its contract names the CLI subcommand and
-// flags that commit ReEnrolDevice (REENROL below) and the review's wording.
+// HELD until .10 part 2 lands. Its contract (lead, 2026-11-26):
+// `rekindle community re-enrol-device` (no community flag: one DeviceReEnrol
+// in every community the data root holds; a TrustChanging intent, so
+// `--force` is refused), the alert "Signing stopped", the review
+// IntentKind::ReEnrolDevice, the catch-up label "Re-enrolling this device".
 
 import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, byText, resolveIntent, waitUntil } from "../../../walk/helpers.ts";
@@ -20,9 +23,8 @@ import { shot } from "../../shots.ts";
 
 const COMMUNITY = "Restore Hall";
 
-/** The CLI subcommand that commits ReEnrolDevice on the copy, for community
- *  `anchor`: named by .10 part 2's contract (set it from there). */
-const REENROL = (anchor: string): string[] => ["community", "reenrol-device", "--community", anchor];
+/** The CLI subcommand that commits ReEnrolDevice on the copy (.10 part 2). */
+const REENROL = ["community", "re-enrol-device"];
 
 describe("a restored copy re-enrols the device: the original is told and offered its own re-enrolment (S7d-keys.10)", function () {
   this.timeout(1_200_000);
@@ -40,13 +42,13 @@ describe("a restored copy re-enrols the device: the original is told and offered
     const dataRoot = (browser.requestedCapabilities as Record<string, unknown>)["rekindle:dataRoot"];
     if (typeof dataRoot !== "string") throw new Error("the launcher handed no rekindle:dataRoot capability");
 
-    // The copy: Ari's own files on a second daemon, unlocked with her passphrase.
+    // The copy: Ari's own files on a second daemon, unlocked with her passphrase;
+    // it must hold the community before it re-enrols in it.
     const copy = await startClone("Ari's copy", { dataRoot, passphrase: me.passphrase });
     peers = [copy];
-    const communities = (await copy.cli(["community", "list"])) as { anchor: string; name: string }[] | null;
-    const anchor = (communities ?? []).find((c) => c.name === COMMUNITY)?.anchor;
-    if (!anchor) throw new Error(`the copy holds no ${COMMUNITY}: ${JSON.stringify(communities).slice(0, 200)}`);
-    await peerReviewed(copy, REENROL(anchor));
+    const communities = (await copy.cli(["community", "list"])) as { name?: string }[] | null;
+    if (!(communities ?? []).some((c) => c.name === COMMUNITY)) throw new Error(`the copy holds no ${COMMUNITY}: ${JSON.stringify(communities).slice(0, 200)}`);
+    await peerReviewed(copy, REENROL);
 
     // The original sees its own key retired: the Host's alert, as served.
     await inBuddy(browser);
