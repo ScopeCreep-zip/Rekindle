@@ -11,6 +11,10 @@ type El = Awaited<ReturnType<Browser["$"]>>;
 export const WAIT_MS = 10_000;
 export const NET_WAIT_MS = 120_000;
 
+/** The skin portals the channel composer into its edit slot. The label
+ * distinguishes it from a thread reply, which can be open beside it. */
+export const CHANNEL_COMPOSER = 'textarea.message-input-field[aria-label^="Message #"]';
+
 /**
  * The network indicator's state label ("Connected", NetworkIndicator.tsx).
  * Not `.network-indicator span`: while the media route is pending a second
