@@ -4,7 +4,7 @@ version = "0.1.0"
 publish = false
 edition = "2021"
 description = "Phase 18 — community lifecycle orchestration (origin / bootstrap / join / segments / apply) layered on top of rekindle-governance's pure CRDT merge"
-license = "MIT"
+license.workspace = true
 
 [lints]
 workspace = true

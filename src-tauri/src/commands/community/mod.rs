@@ -250,16 +250,17 @@ pub use segments::{
     expand_community_segment,
 };
 pub use threads::{
-    __cmd__archive_thread, __cmd__create_thread, __cmd__get_active_threads,
-    __cmd__get_channel_threads, __cmd__get_thread_messages, __cmd__send_thread_message,
-    __cmd__unarchive_thread, __tauri_command_name_archive_thread,
-    __tauri_command_name_create_thread, __tauri_command_name_get_active_threads,
-    __tauri_command_name_get_channel_threads, __tauri_command_name_get_thread_messages,
-    __tauri_command_name_send_thread_message, __tauri_command_name_unarchive_thread,
+    __cmd__archive_thread, __cmd__create_forum_post, __cmd__create_thread,
+    __cmd__get_active_threads, __cmd__get_channel_threads, __cmd__get_thread_messages,
+    __cmd__send_thread_message, __cmd__unarchive_thread, __tauri_command_name_archive_thread,
+    __tauri_command_name_create_forum_post, __tauri_command_name_create_thread,
+    __tauri_command_name_get_active_threads, __tauri_command_name_get_channel_threads,
+    __tauri_command_name_get_thread_messages, __tauri_command_name_send_thread_message,
+    __tauri_command_name_unarchive_thread,
 };
 pub use threads::{
-    archive_thread, create_thread, get_active_threads, get_channel_threads, get_thread_messages,
-    send_thread_message, unarchive_thread,
+    archive_thread, create_forum_post, create_thread, get_active_threads, get_channel_threads,
+    get_thread_messages, send_thread_message, unarchive_thread,
 };
 pub use unread::{
     __cmd__get_unread_counts, __cmd__mark_channel_read, __cmd__set_members_on_screen,

@@ -50,7 +50,9 @@ pub async fn rotate_identity(
     // the old head would show them a false pin mismatch.
     crate::operations::prekeys::publish_landed(
         host,
-        rekindle_crypto::signal::prekey_record::set_values(&set),
+        rekindle_crypto::signal::prekey_record::set_values(&set).map_err(|error| {
+            FriendError::Failed(format!("encoding the rotation prekeys: {error}"))
+        })?,
     )
     .await?;
 

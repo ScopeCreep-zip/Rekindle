@@ -77,7 +77,7 @@ export function applyCoCreatorEvent(friend: FriendEvent): boolean {
       "statuses",
       produce((all) => {
         all[anchor] = { ...(all[anchor] ?? {}), [peerKey]: status };
-      }),
+      })
     );
     return true;
   }
@@ -114,7 +114,7 @@ export function applyCoCreationSnapshot(snapshot: CoCreationSnapshot, before: nu
         s.statuses[creation.anchor] = known;
         s.watching ??= { anchor: creation.anchor, name: creation.name };
       }
-    }),
+    })
   );
 }
 
@@ -124,7 +124,7 @@ export function dropCreatorInvite(anchor: string): void {
     "invites",
     produce((all) => {
       delete all[anchor];
-    }),
+    })
   );
 }
 
@@ -137,7 +137,7 @@ export function watchCreation(anchor: string, name: string, pending: string[]): 
       for (const peer of pending) known[peer] ??= "pending";
       s.statuses[anchor] = known;
       s.watching = { anchor, name };
-    }),
+    })
   );
 }
 
@@ -150,7 +150,7 @@ export function stopWatchingCreation(): void {
         delete s.finished[s.watching.anchor];
       }
       s.watching = null;
-    }),
+    })
   );
 }
 

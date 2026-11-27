@@ -11,6 +11,7 @@
 //! short pseudonym fingerprint, and the verified card cached on the roster
 //! row survives a restart (plan E3.4 S6).
 
+use rekindle_types::dto::community_profile::{CommunityProfilePatch, ProfileField};
 use std::time::Duration;
 
 use rekindle_ipc::protocol::{
@@ -222,13 +223,10 @@ async fn no_card_carries_the_identity_name() {
     community.nodes[1]
         .ok(settings(SettingsRequest::CommunityUpdateProfile {
             community: community.anchor.clone(),
-            bio: None,
-            pronouns: None,
-            theme_color: None,
-            badges: None,
-            avatar_ref: None,
-            banner_ref: None,
-            custom_status: Some("afk".into()),
+            patch: CommunityProfilePatch {
+                custom_status: ProfileField::Set("afk".into()),
+                ..CommunityProfilePatch::default()
+            },
         }))
         .await;
     let status_seen = |e: &SubscriptionEvent| {
@@ -268,7 +266,11 @@ async fn a_set_name_round_trips_through_the_card() {
     let set = |name: &str| {
         settings(SettingsRequest::CommunitySetDisplayName {
             community: community.anchor.clone(),
-            display_name: name.into(),
+            display_name: if name.is_empty() {
+                ProfileField::Clear
+            } else {
+                ProfileField::Set(name.into())
+            },
         })
     };
     community.nodes[1].ok(set("Bea")).await;
@@ -315,18 +317,20 @@ fn profile_update(
 ) -> IpcRequest {
     settings(SettingsRequest::CommunityUpdateProfile {
         community: community.anchor.clone(),
-        bio: bio.map(str::to_owned),
-        pronouns: None,
-        theme_color: None,
-        badges: None,
-        avatar_ref: None,
-        banner_ref: None,
-        custom_status: custom_status.map(str::to_owned),
+        patch: CommunityProfilePatch {
+            bio: bio.map_or(ProfileField::Unchanged, |value| {
+                ProfileField::Set(value.to_owned())
+            }),
+            custom_status: custom_status.map_or(ProfileField::Unchanged, |value| {
+                ProfileField::Set(value.to_owned())
+            }),
+            ..CommunityProfilePatch::default()
+        },
     })
 }
 
-/// `node`'s `(myBio, myCustomStatus)` for the community.
-async fn my_profile(community: &Community, i: usize) -> (Option<String>, Option<String>) {
+/// Read our profile as a newly opened community window sees it.
+async fn my_profile(community: &Community, i: usize) -> [Option<String>; 4] {
     let views = community.nodes[i]
         .ok(IpcRequest::Community(CommunityRequest::Lifecycle(
             LifecycleRequest::CommunityViews,
@@ -336,8 +340,8 @@ async fn my_profile(community: &Community, i: usize) -> (Option<String>, Option<
         .find(|v| v["id"].as_str() == Some(community.anchor.as_str()))
         .cloned()
         .expect("the community's view");
-    let text = |k: &str| view[k].as_str().map(str::to_owned);
-    (text("myBio"), text("myCustomStatus"))
+    ["myBio", "myCustomStatus", "myAvatarRef", "myBannerRef"]
+        .map(|field| view[field].as_str().map(str::to_owned))
 }
 
 /// Plan E3.4 S6: a status-only update keeps our bio, and our whole card
@@ -351,20 +355,35 @@ async fn our_card_survives_a_restart() {
     community.nodes[1]
         .ok(settings(SettingsRequest::CommunitySetDisplayName {
             community: community.anchor.clone(),
-            display_name: "Bea".into(),
+            display_name: ProfileField::Set("Bea".into()),
         }))
         .await;
+    let avatar = "a".repeat(64);
+    let banner = "b".repeat(64);
     community.nodes[1]
-        .ok(profile_update(&community, Some("hi"), None))
+        .ok(settings(SettingsRequest::CommunityUpdateProfile {
+            community: community.anchor.clone(),
+            patch: CommunityProfilePatch {
+                bio: ProfileField::Set("hi".into()),
+                avatar_ref: ProfileField::Set(avatar.clone()),
+                banner_ref: ProfileField::Set(banner.clone()),
+                ..CommunityProfilePatch::default()
+            },
+        }))
         .await;
     community.nodes[1]
         .ok(profile_update(&community, None, Some("afk")))
         .await;
-    let both = (Some("hi".to_owned()), Some("afk".to_owned()));
+    let mut expected = [
+        Some("hi".to_owned()),
+        Some("afk".to_owned()),
+        Some(avatar),
+        Some(banner),
+    ];
     assert_eq!(
         my_profile(&community, 1).await,
-        both,
-        "status-only keeps the bio"
+        expected,
+        "status-only keeps the bio and both pictures"
     );
     community.sim.quiesce().await;
     let key = community.nodes[1].public_key.clone().expect("an identity");
@@ -384,5 +403,16 @@ async fn our_card_survives_a_restart() {
         my_names(&community, 1).await,
         ("Bea".to_owned(), Some("Bea".to_owned()))
     );
-    assert_eq!(my_profile(&community, 1).await, both, "after a restart");
+    assert_eq!(my_profile(&community, 1).await, expected, "after a restart");
+    community.nodes[1]
+        .ok(settings(SettingsRequest::CommunityUpdateProfile {
+            community: community.anchor.clone(),
+            patch: CommunityProfilePatch {
+                banner_ref: ProfileField::Clear,
+                ..CommunityProfilePatch::default()
+            },
+        }))
+        .await;
+    expected[3] = None;
+    assert_eq!(my_profile(&community, 1).await, expected, "banner cleared");
 }

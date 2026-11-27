@@ -5,7 +5,7 @@
 //! ┌─ dev-team ───────────────────────────────────────────────┐
 //! │ Description: Development team coordination               │
 //! │ Members: 12          Channels: 3         Created: 2026…  │
-//! │ Governance: SMPL     MEK generation: 7                   │
+//! │ Active channel: #general (text)                          │
 //! ├─ Channels ───────────────────────────────────────────────┤
 //! │   #general      text                                     │
 //! │   #code-review  text                                     │
@@ -23,7 +23,9 @@ use ratatui::widgets::{Block, Paragraph};
 use ratatui::Frame;
 
 use rekindle_types::display::CommunityDetail;
-use rekindle_types::presence::ShareScope;
+use rekindle_types::dto::community::CommunityMemberView;
+use rekindle_types::presence::{SessionLocation, ShareScope};
+use rekindle_utils::text::sanitize_for_display;
 
 use super::View;
 use crate::action::{Action, CommandResult};
@@ -39,6 +41,7 @@ pub struct CommunityInfoView {
     /// Loaded community detail (None until CommandResult arrives).
     detail: Option<CommunityDetail>,
     share_location: Option<ShareScope>,
+    members: Vec<CommunityMemberView>,
     /// Whether data is loading.
     loading: bool,
     /// Selected channel index for navigation.
@@ -53,6 +56,7 @@ impl CommunityInfoView {
             community,
             detail: None,
             share_location: None,
+            members: Vec::new(),
             loading: true,
             selected_channel: 0,
         }
@@ -61,6 +65,29 @@ impl CommunityInfoView {
     /// The community anchor key.
     pub fn community(&self) -> &str {
         &self.community
+    }
+
+    fn active_channel(&self, detail: &CommunityDetail) -> String {
+        let Some(member) = self
+            .members
+            .iter()
+            .find(|member| member.pseudonym_key == detail.our_pseudonym)
+        else {
+            return "unavailable".into();
+        };
+        let Some(location) = &member.location else {
+            return "none".into();
+        };
+        let id = location.channel_id();
+        let kind = match location {
+            SessionLocation::Text { .. } => "text",
+            SessionLocation::Voice { .. } => "voice",
+        };
+        let name = match detail.channels.iter().find(|channel| channel.id == id) {
+            Some(channel) => format!("#{}", sanitize_for_display(&channel.name)),
+            None => sanitize_for_display(id),
+        };
+        format!("{name} ({kind})")
     }
 
     /// Render the metadata section.
@@ -125,6 +152,10 @@ impl CommunityInfoView {
                     Some(ShareScope::None) => "Off",
                     None => "Unknown",
                 }),
+            ]),
+            Line::from(vec![
+                Span::styled("  Active channel: ", Style::new().dim()),
+                Span::raw(self.active_channel(detail)),
             ]),
         ];
 
@@ -244,7 +275,7 @@ impl View for CommunityInfoView {
         let role_height = role_count.saturating_add(2).min(area.height / 4);
 
         let [meta_area, channels_area, roles_area] = Layout::vertical([
-            Constraint::Length(9),
+            Constraint::Length(10),
             Constraint::Length(channel_height),
             Constraint::Min(role_height),
         ])
@@ -343,6 +374,11 @@ impl View for CommunityInfoView {
                 if community == self.community =>
             {
                 self.share_location = Some(policy.share_location);
+            }
+            CommandResult::CommunityMembersLoaded { community, members }
+                if community == self.community =>
+            {
+                self.members = members;
             }
             _ => {}
         }

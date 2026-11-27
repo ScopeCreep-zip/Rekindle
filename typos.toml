@@ -96,6 +96,9 @@ extend-exclude = [
     "dist/",
     "src-tauri/gen/",
     "legacy/",
+    # Verbatim upstream licence texts are reproduced exactly and never edited
+    # (Nerd Fonts' LICENSE carries upstream's "explict").
+    "src/assets/fonts/LICENSE-NerdFonts.md",
     "*.min.js",
     "*.min.css",
     "*.png",

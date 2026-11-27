@@ -153,7 +153,6 @@ impl App {
                         self.theme.use_unicode(),
                     );
                     self.load_community_info(&gov);
-                    self.load_community_presence_policy(&gov);
                 } else {
                     self.notifications.push(
                         concat!(

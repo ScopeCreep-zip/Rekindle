@@ -29,7 +29,7 @@ export type VoiceScope =
 /** One participant in a voice roster. */
 export interface VoiceParticipant {
   pseudonymKey: string;
-  displayName: string | null;
+  displayName: string;
 }
 
 export type VoiceEvent =
@@ -37,7 +37,7 @@ export type VoiceEvent =
       joined: {
         scope: VoiceScope;
         pseudonym: string;
-        displayName: string | null;
+        displayName: string;
         /**
          * The joiner's private-route blob. The desktop ignores it — its
          * transport resolves the route separately — but a CLI voice

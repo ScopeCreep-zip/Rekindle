@@ -1,5 +1,4 @@
-//! A focus request as sent by `rekindle community focus`, observed by the
-//! second daemon through its served member row and the sealed beat path.
+//! Active-channel dispatch, local focus and peer location sharing over sealed beats.
 
 use rekindle_codec::member_record::BeatState;
 use rekindle_ipc::protocol::{
@@ -50,11 +49,11 @@ async fn served_row(c: &Community, reader: usize, member: &str) -> Option<Commun
         .find(|row| row.pseudonym_key == member)
 }
 
-async fn focus(c: &Community, channel: Option<&str>) {
+async fn focus(c: &Community, community: &str, channel: Option<&str>) {
     c.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Messages(
             ChannelMessageRequest::ChannelSetActive {
-                community: COMMUNITY_NAME.into(),
+                community: community.into(),
                 channel: channel.map(str::to_owned),
                 kind: "text".into(),
             },
@@ -66,11 +65,12 @@ async fn focus(c: &Community, channel: Option<&str>) {
 async fn channel_focus_is_served_only_with_reciprocated_location_consent() {
     let c = Community::of(2, 9371).await;
     let creator = c.pseudonym(0).await;
+    let channel_id = c.general_id(0).await;
     let location = SessionLocation::Text {
-        channel_id: c.general_id(0).await,
+        channel_id: channel_id.clone(),
     };
     assert_eq!(policy(&c, 0).await, PresenceSharingPolicy::default());
-    focus(&c, Some("general")).await;
+    focus(&c, &c.anchor, Some(&channel_id)).await;
     assert_eq!(
         served_row(&c, 0, &creator).await.expect("own row").location,
         Some(location.clone()),
@@ -80,6 +80,15 @@ async fn channel_focus_is_served_only_with_reciprocated_location_consent() {
         .await
         .extras
         .is_none());
+    assert!(
+        eventually(&c.sim, AT_ONCE, || async {
+            served_row(&c, 1, &creator)
+                .await
+                .is_some_and(|row| row.status == "busy" && row.location.is_none())
+        })
+        .await,
+        "the peer sees status without location when sharing is off by default",
+    );
 
     set_field(
         &c,
@@ -102,7 +111,12 @@ async fn channel_focus_is_served_only_with_reciprocated_location_consent() {
         "a peer without reciprocal consent sees the status only"
     );
 
-    focus(&c, None).await;
+    focus(&c, &c.anchor, None).await;
+    assert_eq!(
+        served_row(&c, 0, &creator).await.expect("own row").location,
+        None,
+        "clearing focus removes our own location",
+    );
     set_field(
         &c,
         0,
@@ -125,7 +139,7 @@ async fn channel_focus_is_served_only_with_reciprocated_location_consent() {
         .await
         .extras
         .is_none());
-    focus(&c, Some("general")).await;
+    focus(&c, COMMUNITY_NAME, Some("general")).await;
     assert!(
         eventually(&c.sim, AT_ONCE, || async {
             served_row(&c, 1, &creator)

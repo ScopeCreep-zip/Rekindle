@@ -26,6 +26,7 @@ use serde::Deserialize;
 use crate::limits::MAX_MANIFEST_BYTES;
 use crate::package::{is_root_json, Package, MANIFEST};
 use crate::registry::{IconSlot, SoundCue};
+use crate::skin_tree::dim::Made;
 use text::TextRule;
 
 const NAME: TextRule = TextRule {
@@ -111,13 +112,22 @@ pub fn parse(package: &Package<'_>) -> Result<SkinManifest, SkinError> {
 /// # Errors
 /// As [`parse`].
 pub fn served(package: &Package<'_>) -> Result<SkinManifest, SkinError> {
-    let mut manifest = parse(package)?;
-    place(&mut manifest, package)?;
-    crate::skin_tree::brand::texts(&mut manifest);
-    Ok(manifest)
+    served_made(package).map(|(manifest, _)| manifest)
 }
 
-/// The Host's placements in `manifest` (see [`served`]): each button row's
+/// [`served`] and the images its placements made ([`place`]).
+///
+/// # Errors
+/// As [`parse`].
+pub fn served_made(package: &Package<'_>) -> Result<(SkinManifest, Made), SkinError> {
+    let mut manifest = parse(package)?;
+    let made = place(&mut manifest, package)?;
+    crate::skin_tree::brand::texts(&mut manifest);
+    Ok((manifest, made))
+}
+
+/// The Host's placements in `manifest` (see [`served`]): the ad's own box
+/// ([`crate::skin_tree::ad`]), each button row's
 /// slots unpaged by the views' group ([`crate::skin_tree::row_pages`]), then the cover of
 /// each glyph label from the package's art (plan SK3: the icon the
 /// Communities clone copied, [`crate::skin_tree::cover`]), then every
@@ -126,17 +136,20 @@ pub fn served(package: &Package<'_>) -> Result<SkinManifest, SkinError> {
 /// boxes of small interactive nodes (plan SK7, [`crate::skin_tree::target`])
 /// and who dims each one (plan CR1, [`crate::skin_tree::disabled`]),
 /// then the Community window composed from the pack's own windows (plan
-/// SK17-6, [`crate::skin_tree::compose`]).
+/// SK17-6, [`crate::skin_tree::compose`]). Returns the images it made: the
+/// Disabled copies the serve draws ([`crate::skin_tree::dim`]), served
+/// beside the package's own and never written into it.
 ///
 /// # Errors
 /// A glyph label's or menu title's picture, or a disabled node's Normal or
 /// Disabled piece, missing from `package` or not decoding.
-pub fn place(manifest: &mut SkinManifest, package: &Package<'_>) -> Result<(), SkinError> {
+pub fn place(manifest: &mut SkinManifest, package: &Package<'_>) -> Result<Made, SkinError> {
     // Plan SK15b: content texts sized to the served words and every chain
     // resolved first, so each pass after lays numeric spans.
     for layout in manifest.windows.values_mut() {
         crate::skin_tree::content::serve(layout);
         crate::skin_tree::row_pages::rows(layout);
+        crate::skin_tree::ad::serve(layout);
     }
     if let Some(main) = manifest
         .windows
@@ -154,6 +167,9 @@ pub fn place(manifest: &mut SkinManifest, package: &Package<'_>) -> Result<(), S
         // Plan SK17: the chat title on its text point and the native
         // controls above the art, before the text boxes are laid.
         crate::skin_tree::chat_slots::serve(layout);
+        // Plan E7.7/RV1: a text control above the art-only siblings
+        // that would cover its text.
+        crate::skin_tree::text_top::serve(layout);
         crate::skin_tree::text_box::lay(layout);
         crate::skin_tree::inset::fields(layout);
         crate::skin_tree::target::nodes(layout);
@@ -162,7 +178,7 @@ pub fn place(manifest: &mut SkinManifest, package: &Package<'_>) -> Result<(), S
     // Plan SK17-6: the Community window wears the pack's own frame, the
     // served layout of its room window, else its chat, else its buddy list.
     crate::skin_tree::compose::community(manifest);
-    Ok(())
+    Ok(measured.made())
 }
 
 /// Every `icons` key an icon slot and every `sounds` key a sound cue of

@@ -57,15 +57,16 @@ pub(super) fn write_mek_generation_bump(
     generation: u64,
     trigger_departed: &PseudonymKey,
     cascade_skipped: &[PseudonymKey],
-) {
+) -> Result<(), CodecError> {
     p.set_generation(generation);
     pseudonym_key_to_capnp(p.reborrow().init_trigger_departed(), trigger_departed);
     let mut list = p
         .reborrow()
-        .init_cascade_skipped(len_u32(cascade_skipped.len()));
-    for (i, k) in cascade_skipped.iter().enumerate() {
-        pseudonym_key_to_capnp(list.reborrow().get(len_u32(i)), k);
+        .init_cascade_skipped(len_u32(cascade_skipped.len())?);
+    for (i, k) in (0u32..).zip(cascade_skipped.iter()) {
+        pseudonym_key_to_capnp(list.reborrow().get(i), k);
     }
+    Ok(())
 }
 
 pub(super) fn write_segment_added(

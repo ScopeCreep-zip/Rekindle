@@ -105,6 +105,8 @@
     text-transform: uppercase;
     letter-spacing: 0.05em;
     transition: color var(--motion-duration-fast);
+    width: 100%;
+    text-align: left;
   }
 
   .category-header:hover {
@@ -206,6 +208,13 @@
     display: inline-flex;
     align-items: center;
     gap: 8px;
+  }
+
+  /* Posting denied here: still shown, in the theme's disabled text (never a
+   * fade, ST1), with the Host's reason as its title. */
+  .forum-channel-new-post-btn:disabled {
+    color: var(--color-xfire-text-disabled);
+    cursor: not-allowed;
   }
 
   .forum-channel-tag {

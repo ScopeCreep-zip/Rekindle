@@ -183,14 +183,26 @@ pub async fn join_voice_channel_inner(
     Ok(())
 }
 
+/// The refusal of a server mute with no voice channel named.
+pub const MUTE_NEEDS_VOICE: &str = "Mute is for members in a voice channel.";
+/// The refusal of a server deafen with no voice channel named.
+pub const DEAFEN_NEEDS_VOICE: &str = "Deafen is for members in a voice channel.";
+
+/// The voice channel a server mute or deafen acts in, or the typed
+/// `refusal` when the caller named none: never a silent no-op.
+pub fn voice_channel_or(channel_id: Option<String>, refusal: &str) -> Result<String, String> {
+    channel_id.ok_or_else(|| refusal.to_owned())
+}
+
 pub fn server_mute_member_inner(
     community_id: &str,
-    channel_id: &str,
+    channel_id: Option<String>,
     target_pseudonym: &str,
     muted: bool,
     app: &tauri::AppHandle,
     state: &SharedState,
 ) -> Result<(), String> {
+    let channel_id = voice_channel_or(channel_id, MUTE_NEEDS_VOICE)?;
     crate::commands::community::require_permission(
         state,
         community_id,
@@ -200,9 +212,13 @@ pub fn server_mute_member_inner(
     rekindle_voice::signaling::server_mute_member(
         &deps,
         community_id,
-        channel_id,
+        &channel_id,
         target_pseudonym,
         muted,
     );
     Ok(())
 }
+
+#[cfg(test)]
+#[path = "voice_runtime_tests.rs"]
+mod tests;

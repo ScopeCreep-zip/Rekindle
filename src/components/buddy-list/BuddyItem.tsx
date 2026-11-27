@@ -1,15 +1,15 @@
-import { Component, Show } from "solid-js";
-import { formatDuration } from "../../utils/formatting";
-import StatusDot from "../status/StatusDot";
-import Tooltip from "../common/Tooltip";
-import type { UserStatus } from "../../stores/auth.store";
-import { ICON_VOLUME_HIGH } from "../../icons";
-import { formatRelativeTime } from "../../utils/time";
-import { identityPinMismatchText } from "../../utils/identity_pin";
+import { type Component, Show } from "solid-js";
 import { handleRetryHandshake } from "../../actions/buddy.actions";
-import GameIcon from "../game/GameIcon";
+import { ICON_VOLUME_HIGH } from "../../icons";
 import type { DeliveryRetry } from "../../ipc/channels/chat_events";
+import type { UserStatus } from "../../stores/auth.store";
 import { deliveryRetryText } from "../../utils/delivery_retry";
+import { formatDuration } from "../../utils/formatting";
+import { identityPinMismatchText } from "../../utils/identity_pin";
+import { formatRelativeTime } from "../../utils/time";
+import Tooltip from "../common/Tooltip";
+import GameIcon from "../game/GameIcon";
+import StatusDot from "../status/StatusDot";
 
 interface BuddyItemProps {
   publicKey: string;
@@ -40,6 +40,18 @@ interface BuddyItemProps {
   onSelect: (publicKey: string) => void;
 }
 
+/** The header of the group `row` is listed under: the nearest level-1 node before it. */
+function groupHeaderOf(row: HTMLElement): HTMLElement | null {
+  const tree = row.closest('[role="tree"]');
+  if (!tree) return null;
+  const nodes = Array.from(tree.querySelectorAll<HTMLElement>('[role="treeitem"]'));
+  const at = nodes.indexOf(row);
+  for (let i = at - 1; i >= 0; i--) {
+    if (nodes[i].getAttribute("aria-level") === "1") return nodes[i];
+  }
+  return null;
+}
+
 const BuddyItem: Component<BuddyItemProps> = (props) => {
   function handleDblClick(): void {
     props.onDoubleClick(props.publicKey, props.displayName);
@@ -49,13 +61,20 @@ const BuddyItem: Component<BuddyItemProps> = (props) => {
     props.onSelect(props.publicKey);
   }
 
-  // Plan E7.3: the row is a roving-tabindex list item (`roving_list.ts`):
-  // focusing it selects it, as a click does, and Enter opens the chat, as a
-  // double click does.
+  // Plan E7.3: the row is a roving-tabindex tree node (`roving_list.ts`,
+  // APG Treeview): focusing it selects it, as a click does, Enter opens the
+  // chat, as a double click does, and ArrowLeft moves to its group's header.
   function handleKeyDown(e: KeyboardEvent): void {
-    if (e.key === "Enter" && e.target === e.currentTarget) {
+    if (e.target !== e.currentTarget) return;
+    if (e.key === "Enter") {
       e.preventDefault();
       handleDblClick();
+    } else if (e.key === "ArrowLeft") {
+      const header = groupHeaderOf(e.currentTarget as HTMLElement);
+      if (header) {
+        e.preventDefault();
+        header.focus();
+      }
     }
   }
 
@@ -91,6 +110,10 @@ const BuddyItem: Component<BuddyItemProps> = (props) => {
   return (
     <div
       class={`buddy-item ${props.selected ? "buddy-item-selected" : ""}`}
+      role="treeitem"
+      tabIndex={-1}
+      aria-level={2}
+      aria-selected={props.selected}
       aria-describedby={props.describedBy}
       onClick={handleClick}
       onDblClick={handleDblClick}
@@ -129,7 +152,9 @@ const BuddyItem: Component<BuddyItemProps> = (props) => {
         </Show>
         <Show when={props.identityPinMismatch}>
           <Tooltip text={identityPinMismatchText(props.displayName)}>
-            <div class="buddy-identity-mismatch" role="alert">Identity key mismatch</div>
+            <div class="buddy-identity-mismatch" role="alert">
+              Identity key mismatch
+            </div>
           </Tooltip>
         </Show>
         <Show when={props.unreachable}>
@@ -150,7 +175,9 @@ const BuddyItem: Component<BuddyItemProps> = (props) => {
         </Show>
       </div>
       <Show when={props.voiceChannel}>
-        <span class="buddy-voice-icon nf-icon" title="In voice channel">{ICON_VOLUME_HIGH}</span>
+        <span class="buddy-voice-icon nf-icon" title="In voice channel">
+          {ICON_VOLUME_HIGH}
+        </span>
       </Show>
       <Show when={props.unreadCount > 0}>
         <span class="buddy-unread-badge">{props.unreadCount}</span>

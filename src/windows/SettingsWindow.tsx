@@ -1,24 +1,21 @@
-import { Component, createSignal, For, Show, onMount, onCleanup } from "solid-js";
-import type { UnlistenFn } from "@tauri-apps/api/event";
-import { startEventStream, subscribeSettingsTab } from "../ipc/channels";
-import Titlebar from "../components/titlebar/Titlebar";
-import PushRelaySettingsSection from "../components/settings/PushRelaySettingsSection";
+import { type Component, createSignal, For, onCleanup, onMount, Show, Suspense } from "solid-js";
 import { handleLoadSettings } from "../actions/settings.actions";
-import { hydrateState } from "../stores/hydrate";
+import PushRelaySettingsSection from "../components/settings/PushRelaySettingsSection";
+import Titlebar from "../components/titlebar/Titlebar";
+import { startEventStream, subscribeSettingsTab, type UnlistenFn } from "../ipc/channels";
 import type { SettingsTab } from "../ipc/commands/types";
-import ProfileTab from "./settings/ProfileTab";
-import ApplicationTab from "./settings/ApplicationTab";
-import AppearanceTab from "./settings/AppearanceTab";
-import NotificationsTab from "./settings/NotificationsTab";
-import AudioTab from "./settings/AudioTab";
-import VideoTab from "./settings/VideoTab";
-import PrivacyTab from "./settings/PrivacyTab";
-import DevicesTab from "./settings/DevicesTab";
-import AboutTab from "./settings/AboutTab";
+import { hydrateState } from "../stores/hydrate";
+import { rovingList } from "../utils/roving_list";
 import { setWindowKind } from "../utils/window_kind";
-
-
-const VALID_TABS: SettingsTab[] = ["profile", "application", "appearance", "notifications", "audio", "video", "privacy", "devices", "mobile", "about"];
+import AboutTab from "./settings/AboutTab";
+import AppearanceTab from "./settings/AppearanceTab";
+import ApplicationTab from "./settings/ApplicationTab";
+import AudioTab from "./settings/AudioTab";
+import DevicesTab from "./settings/DevicesTab";
+import NotificationsTab from "./settings/NotificationsTab";
+import PrivacyTab from "./settings/PrivacyTab";
+import ProfileTab from "./settings/ProfileTab";
+import VideoTab from "./settings/VideoTab";
 
 const TAB_LABELS: { id: SettingsTab; label: string }[] = [
   { id: "profile", label: "Profile" },
@@ -34,16 +31,20 @@ const TAB_LABELS: { id: SettingsTab; label: string }[] = [
 ];
 
 function getInitialTab(): SettingsTab {
-  const params = new URLSearchParams(window.location.search);
-  const tab = params.get("tab");
-  if (tab && VALID_TABS.includes(tab as SettingsTab)) {
-    return tab as SettingsTab;
-  }
-  return "profile";
+  const requested = new URLSearchParams(window.location.search).get("tab");
+  return TAB_LABELS.find((tab) => tab.id === requested)?.id ?? "profile";
 }
+
+/** While mounted (a tab's resources still loading), the panel says it is busy. */
+const PanelBusy: Component<{ set: (busy: boolean) => void }> = (props) => {
+  onMount(() => props.set(true));
+  onCleanup(() => props.set(false));
+  return null;
+};
 
 const SettingsWindow: Component = () => {
   const [activeTab, setActiveTab] = createSignal<SettingsTab>(getInitialTab());
+  const [panelBusy, setPanelBusy] = createSignal(false);
 
   let unlistenSwitchTab: Promise<UnlistenFn> | undefined;
 
@@ -64,13 +65,20 @@ const SettingsWindow: Component = () => {
   return (
     <div class="app-frame">
       {/* Architecture §32 a11y — keyboard skip link past tab rail. */}
-      <a href="#main-content" class="skip-link">Skip to settings content</a>
+      <a href="#main-content" class="skip-link">
+        Skip to settings content
+      </a>
       <Titlebar title="Settings" />
       {/* Finding V4: `activeTab` is the one selection; the rail exposes it as
           a WAI-ARIA tablist (WCAG 4.1.2) and the active look keys off
           `aria-selected`, so the painted tab, the read one and the content
           cannot disagree. */}
-      <div class="form-tabs" role="tablist" aria-label="Settings sections">
+      <div
+        ref={rovingList('[role="tab"]', { orientation: "horizontal", preferSelected: true })}
+        class="form-tabs"
+        role="tablist"
+        aria-label="Settings sections"
+      >
         <For each={TAB_LABELS}>
           {(tab) => (
             <button
@@ -80,6 +88,7 @@ const SettingsWindow: Component = () => {
               aria-selected={activeTab() === tab.id}
               aria-controls="main-content"
               class={`form-tab ${activeTab() === tab.id ? "form-tab-active" : ""}`}
+              onFocus={() => setActiveTab(tab.id)}
               onClick={() => setActiveTab(tab.id)}
             >
               {tab.label}
@@ -87,17 +96,49 @@ const SettingsWindow: Component = () => {
           )}
         </For>
       </div>
-      <div class="settings-content" id="main-content" tabindex="-1" role="tabpanel" aria-labelledby={`settings-tab-${activeTab()}`}>
-        <Show when={activeTab() === "profile"}><ProfileTab /></Show>
-        <Show when={activeTab() === "application"}><ApplicationTab /></Show>
-        <Show when={activeTab() === "appearance"}><AppearanceTab /></Show>
-        <Show when={activeTab() === "notifications"}><NotificationsTab /></Show>
-        <Show when={activeTab() === "audio"}><AudioTab /></Show>
-        <Show when={activeTab() === "video"}><VideoTab /></Show>
-        <Show when={activeTab() === "privacy"}><PrivacyTab /></Show>
-        <Show when={activeTab() === "devices"}><DevicesTab /></Show>
-        <Show when={activeTab() === "mobile"}><PushRelaySettingsSection /></Show>
-        <Show when={activeTab() === "about"}><AboutTab /></Show>
+      <div
+        class="settings-content"
+        id="main-content"
+        tabindex="0"
+        role="tabpanel"
+        aria-labelledby={`settings-tab-${activeTab()}`}
+        aria-busy={panelBusy() ? "true" : undefined}
+      >
+        <Show when={activeTab() === "profile"}>
+          {/* Profile's resources load under their own boundary: the rail and
+              this panel stay mounted (focus keeps its place), and the panel
+              is aria-busy until Profile renders. */}
+          <Suspense fallback={<PanelBusy set={setPanelBusy} />}>
+            <ProfileTab />
+          </Suspense>
+        </Show>
+        <Show when={activeTab() === "application"}>
+          <ApplicationTab />
+        </Show>
+        <Show when={activeTab() === "appearance"}>
+          <AppearanceTab />
+        </Show>
+        <Show when={activeTab() === "notifications"}>
+          <NotificationsTab />
+        </Show>
+        <Show when={activeTab() === "audio"}>
+          <AudioTab />
+        </Show>
+        <Show when={activeTab() === "video"}>
+          <VideoTab />
+        </Show>
+        <Show when={activeTab() === "privacy"}>
+          <PrivacyTab />
+        </Show>
+        <Show when={activeTab() === "devices"}>
+          <DevicesTab />
+        </Show>
+        <Show when={activeTab() === "mobile"}>
+          <PushRelaySettingsSection />
+        </Show>
+        <Show when={activeTab() === "about"}>
+          <AboutTab />
+        </Show>
       </div>
     </div>
   );

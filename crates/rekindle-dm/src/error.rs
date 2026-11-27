@@ -13,6 +13,9 @@ pub enum DmError {
     /// The invite's signature is not its creator's over its roster.
     #[error("group invite signature does not verify")]
     BadSignature,
+    /// The canonical group invite could not be encoded.
+    #[error(transparent)]
+    Codec(#[from] rekindle_codec::CodecError),
     /// The sender (or we) is not on the group's roster.
     #[error("{0} is not on the group's roster")]
     NotOnRoster(String),

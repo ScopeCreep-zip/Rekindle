@@ -1,9 +1,13 @@
-//! The window's opaque region at a size (plan SK0 S1 `silhouette`).
+//! The window's opaque region at a size (plan SK0 S1 `silhouette`): a
+//! pixel is in where the composited alpha of every layer laid on it (frame
+//! tiles, then outline node art, source-over, [`super::composite`]) is at
+//! least [`super::ALPHA_OPAQUE`].
 
 use std::collections::HashMap;
 
 use rekindle_types::dto::skin::{TileAxis, WindowLayout};
 
+use super::composite::{self, Laid as LaidFaint};
 use super::{outline_nodes, Mask, ShapeError, MAX_RECTS};
 use crate::skin_tree::pieces;
 
@@ -143,16 +147,21 @@ fn laid_art(layout: &WindowLayout, masks: &[Mask], width: u32, height: u32) -> V
     out
 }
 
-/// Adds scanline `y`'s opaque runs of the laid node art to `row`: in each
-/// piece's band, the copy under `y` and that source row's runs at every
-/// copy across, clipped to the band. A piece's runs across depend only on
-/// its source row, so `cache` keeps them by (piece, source row).
+/// A scanline's opaque runs and laid faint pixels.
+type Row = (Vec<(i64, i64)>, Vec<LaidFaint>);
+
+/// Adds scanline `y`'s opaque runs of the laid node art to `row`, and its
+/// faint pixels to `faint`: in each piece's band, the copy under `y` and
+/// that source row's runs and faint pixels at every copy across, clipped
+/// to the band. A piece's row across depends only on its source row, so
+/// `cache` keeps it by (piece, source row).
 fn art_runs(
     art: &[Laid],
+    masks: &[Mask],
     runs_of: &[Vec<Vec<(u32, u32)>>],
     (scan, width): (i64, i64),
-    cache: &mut HashMap<(usize, usize), Vec<(i64, i64)>>,
-    row: &mut Vec<(i64, i64)>,
+    cache: &mut HashMap<(usize, usize), Row>,
+    (row, faint): (&mut Vec<(i64, i64)>, &mut Vec<LaidFaint>),
 ) {
     for (n, (i, (ox, oy), (pw, ph), laid)) in art.iter().enumerate() {
         let band = laid.band.map(i64::from);
@@ -172,39 +181,45 @@ fn art_runs(
             continue;
         };
         let src = usize::try_from(scan - start).unwrap_or(usize::MAX);
-        if let Some(done) = cache.get(&(n, src)) {
+        if let Some((done, laid_faint)) = cache.get(&(n, src)) {
             row.extend_from_slice(done);
+            faint.extend_from_slice(laid_faint);
             continue;
         }
+        let clip = (left.max(0), (left + band[2]).min(width));
         let mut out = Vec::new();
         let runs = runs_of[*i].get(src).map_or(&[][..], Vec::as_slice);
         // A row opaque across the whole piece joins its copies into one run
         // (the copies abut: [`pieces::lay`] steps by the piece'start width).
         if let ([(0, b)], Some(first), Some(last)) = (runs, laid.xs.first(), laid.xs.last()) {
             if i64::from(*b) == *pw {
-                let a = (ox + i64::from(*first)).max(left).max(0);
-                let b = (ox + i64::from(*last) + pw).min(left + band[2]).min(width);
+                let a = (ox + i64::from(*first)).max(clip.0);
+                let b = (ox + i64::from(*last) + pw).min(clip.1);
                 if a < b {
                     out.push((a, b));
                 }
                 row.extend_from_slice(&out);
-                cache.insert((n, src), out);
+                cache.insert((n, src), (out, Vec::new()));
                 continue;
             }
         }
+        let src_faint = masks[*i].faint_row(u32::try_from(src).unwrap_or(u32::MAX));
+        let mut laid_faint = Vec::new();
         for x in &laid.xs {
             let x = ox + i64::from(*x);
             for &(a, b) in runs {
-                let a = (x + i64::from(a)).max(left).max(0);
-                let b = (x + i64::from(b)).min(left + band[2]).min(width);
+                let a = (x + i64::from(a)).max(clip.0);
+                let b = (x + i64::from(b)).min(clip.1);
                 if a < b {
                     out.push((a, b));
                 }
             }
+            composite::lay(src_faint, (x, *pw), clip, *i, &mut laid_faint);
         }
         let out = merge(out);
         row.extend_from_slice(&out);
-        cache.insert((n, src), out);
+        faint.extend_from_slice(&laid_faint);
+        cache.insert((n, src), (out, laid_faint));
     }
 }
 
@@ -227,10 +242,14 @@ fn device(v: i64, scale: u32) -> u32 {
 
 /// The opaque region of a `width × height` (logical px) window laid by
 /// `layout` with `masks` (one per tile, [`super::of_layout`]), as rectangles in device pixels at `scale` (per mille, see
-/// [`SCALE_ONE`]): the content rectangle, whole, every tile's opaque
-/// pixels where the pack lays it, and every outline node's opaque art
-/// (after the tile masks, [`super::outline_nodes`]) at its box, clipped to
-/// the window. Equal consecutive
+/// [`SCALE_ONE`]): the content rectangle, whole, and every pixel where the
+/// layers laid on it composite to at least [`super::ALPHA_OPAQUE`]
+/// (source-over, `A = 1 − Π(1 − aᵢ)`, [`super::composite`]): every tile
+/// where the pack lays it, then every outline node's art (after the tile
+/// masks, [`super::outline_nodes`]) at its box, clipped to the window. A
+/// pixel opaque in one layer is in on its own; a pixel faint in two or
+/// more layers is in when they composite past the threshold, as the
+/// webview paints it. Equal consecutive
 /// scanlines merge into one rectangle; the rectangles are disjoint and
 /// sorted top to bottom, left to right, so the result is deterministic.
 ///
@@ -264,7 +283,7 @@ pub fn silhouette(
     let w = i64::from(width);
     let art = laid_art(layout, masks, width, height);
     let mut art_cache = HashMap::new();
-    let mut cache: HashMap<Vec<(usize, usize)>, Vec<(i64, i64)>> = HashMap::new();
+    let mut cache: HashMap<Vec<(usize, usize)>, Row> = HashMap::new();
     let mut logical: Vec<(i64, i64, i64, i64)> = Vec::new();
     let mut open: Vec<(i64, i64)> = Vec::new();
     let mut open_from = 0i64;
@@ -283,12 +302,13 @@ pub fn silhouette(
                 })
                 .collect();
             let in_content = y >= content.1 && y < content.1 + content.3 && content.2 > 0;
-            let mut row = cache
+            let (mut row, mut faint) = cache
                 .entry(key)
                 .or_insert_with_key(|key| {
-                    let mut runs = Vec::new();
+                    let (mut runs, mut faint) = (Vec::new(), Vec::new());
                     for &(i, src) in key {
                         let tile_runs = runs_of[i].get(src).map_or(&[][..], Vec::as_slice);
+                        let tile_faint = masks[i].faint_row(u32::try_from(src).unwrap_or(u32::MAX));
                         for &(x, cw) in &axes[i].0 {
                             for &(a, b) in tile_runs {
                                 let (a, b) = (i64::from(a), i64::from(b).min(cw));
@@ -296,13 +316,22 @@ pub fn silhouette(
                                     runs.push(((x + a).max(0), (x + b).min(w)));
                                 }
                             }
+                            composite::lay(tile_faint, (x, cw), (0, w), i, &mut faint);
                         }
                     }
                     runs.retain(|r| r.0 < r.1);
-                    merge(runs)
+                    (merge(runs), faint)
                 })
                 .clone();
-            art_runs(&art, &runs_of, (y, w), &mut art_cache, &mut row);
+            art_runs(
+                &art,
+                masks,
+                &runs_of,
+                (y, w),
+                &mut art_cache,
+                (&mut row, &mut faint),
+            );
+            composite::cover(&mut faint, &mut row);
             if in_content {
                 row.push((content.0.max(0), (content.0 + content.2).min(w)));
             }

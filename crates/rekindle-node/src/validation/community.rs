@@ -183,43 +183,17 @@ pub(super) fn check_settings(request: &SettingsRequest) -> Checked {
     match request {
         SettingsRequest::CommunityUpdateProfile {
             community: key,
-            bio,
-            pronouns,
-            badges,
-            avatar_ref,
-            banner_ref,
-            custom_status,
-            theme_color: _,
+            patch,
         } => {
             community(key)?;
-            if let Some(status) = custom_status {
-                rekindle_types::key_format::text(
-                    status,
-                    rekindle_types::key_format::MAX_STATUS_LEN,
-                )
-                .map_err(|e| IpcResponse::error(400, format!("custom status: {e}")))?;
-            }
-            rekindle_types::presence::limits::validate_profile(
-                bio.as_deref(),
-                pronouns.as_deref(),
-                badges.as_deref().unwrap_or_default(),
-                avatar_ref.as_deref(),
-                banner_ref.as_deref(),
-            )
-            .map_err(|e| IpcResponse::error(400, e))
+            super::community_profile::patch(patch)
         }
         SettingsRequest::CommunitySetDisplayName {
             community: key,
             display_name,
         } => {
             community(key)?;
-            let name = display_name.trim();
-            if name.is_empty() {
-                return Ok(());
-            }
-            rekindle_types::presence::limits::peer_display_name(name)
-                .map_err(|e| IpcResponse::error(400, format!("display name: {e}")))
-                .map(drop)
+            super::community_profile::display_name(display_name)
         }
         SettingsRequest::CommunityPolicyGet { community: key }
         | SettingsRequest::CommunityGetPresencePolicy { community: key }
@@ -522,6 +496,7 @@ pub(super) fn check_rich(request: &RichRequest) -> Checked {
         | RichRequest::ThreadListActive { .. }
         | RichRequest::ThreadMessages { .. }
         | RichRequest::ThreadSend { .. }
+        | RichRequest::CreateForumPost { .. }
         | RichRequest::PollCreate { .. }
         | RichRequest::PollVote { .. }
         | RichRequest::PollClose { .. }

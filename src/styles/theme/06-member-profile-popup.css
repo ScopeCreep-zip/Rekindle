@@ -101,6 +101,17 @@
 
   /* Role management rows in settings */
 
+  /* The role's swatch, tag and position; a button that opens its editor
+   * (a div for @everyone, which has none). */
+  .settings-role-summary {
+    align-items: center;
+    display: flex;
+    flex: 1;
+    gap: 8px;
+    min-width: 0;
+    text-align: left;
+  }
+
   .settings-role-row:hover {
     background: color-mix(in srgb, var(--color-xfire-overlay) 5%, transparent);
   }
@@ -321,6 +332,7 @@
   @media (prefers-reduced-motion: no-preference) {
     .network-banner {
       --pulse-min-opacity: 0.3;
+
       animation: opacity-pulse 2s ease-in-out infinite;
     }
   }

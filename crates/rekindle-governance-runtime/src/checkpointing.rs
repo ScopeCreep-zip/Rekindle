@@ -75,6 +75,7 @@ pub async fn tick<D: GovernanceRuntimeDeps>(
         cert: &cert,
         ops: &set.ops,
         community_id: community,
+        anchor: community_id,
     };
     let prev = outcome.hints.latest();
     let height = prev.map_or(1, |p| p.height + 1);
@@ -104,7 +105,7 @@ pub async fn tick<D: GovernanceRuntimeDeps>(
         return Ok(CheckpointStep::Idle);
     }
     let prev_state = prev_body.map(|p| merge_cut(&cert, &causal_past(&set.ops, &p.cut)).0);
-    if !eligible_set(&cert, prev_state.as_ref()).contains(&me) {
+    if !eligible_set(&cert, community_id, prev_state.as_ref()).contains(&me) {
         return Ok(CheckpointStep::Idle);
     }
     let mut heads = frontier_refs(&cert, &outcome.state, &set);

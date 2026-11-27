@@ -12,6 +12,14 @@
 // and app processes' CPU and state: what the machine was doing while the page
 // gave no answer. Names only: a command's arguments can hold a typed
 // passphrase and are never printed.
+//
+// Run validity (lead, 2026-11-27): a run with a `PAST 30 s` line inside a
+// test (`it`) is invalid, since the stall may have starved that case's
+// assertions. A run counts when every `PAST 30 s` falls in setup (a
+// `before`/`beforeEach` hook, printed as "(before any test)"), every step of
+// every case is under 30 s, and each slow setup step is named here with the
+// load at the time: setup slowness under another job's compile does not
+// touch the cases.
 
 import { execFileSync } from "node:child_process";
 import os from "node:os";

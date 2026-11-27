@@ -5,7 +5,7 @@ name = "rekindle-desktop"
 version = "0.0.1"
 publish = false
 edition = "2021"
-license = "MIT"
+license.workspace = true
 description = "Rekindle — Xfire rebuilt as a decentralized Tauri 2 app"
 
 [lints]
@@ -160,9 +160,8 @@ objc2-av-foundation = { version = "0.3", default-features = false, features = [
 # which wry's permission handler reports only as `Other`. v2_4 gates
 # `set_enable_media_stream`.
 webkit2gtk = { version = "2.0.2", features = [ "v2_4" ] }
-# Shaped windows (plan SK0 S3, `windows/shape/linux.rs`): the GDK window's
-# input and X11 bounding shapes from a cairo region, through gtk's re-exported
-# gdk/cairo/glib. The same gtk 0.18 tauri compiles against, so
+# Shaped windows (plan SK0 S3, `windows/shape/linux.rs`): the GtkWindow's
+# widget input shape from a cairo region, through gtk's re-exported cairo. The same gtk 0.18 tauri compiles against, so
 # `WebviewWindow::gtk_window()` type-matches; already locked, no new crate.
 gtk = "0.18"
 

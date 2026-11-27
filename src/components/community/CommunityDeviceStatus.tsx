@@ -1,4 +1,4 @@
-import { Component, Show, createSignal } from "solid-js";
+import { type Component, createSignal, Show } from "solid-js";
 import { commands } from "../../ipc/commands";
 import { isCommandError } from "../../ipc/commands/dto";
 import { communityState, setCommunityState } from "../../stores/community.store";
@@ -20,7 +20,8 @@ const CommunityDeviceStatus: Component<{ communityId: string; notice?: boolean }
   const [error, setError] = createSignal<string | null>(null);
   // Both places can be open in one window: each names its own elements.
   const reasonId = (): string => `community-device-reason-${props.notice ? "notice" : "settings"}`;
-  const needs = (): boolean => communityState.communities[props.communityId]?.deviceStatus === "needsReenrol";
+  const needs = (): boolean =>
+    communityState.communities[props.communityId]?.deviceStatus === "needsReenrol";
 
   async function enrol(): Promise<void> {
     if (!needs() || busy()) return;
@@ -29,7 +30,8 @@ const CommunityDeviceStatus: Component<{ communityId: string; notice?: boolean }
     try {
       await commands.communityDeviceEnrol(props.communityId);
       const detail = (await commands.getCommunityDetails()).find((d) => d.id === props.communityId);
-      if (detail) setCommunityState("communities", props.communityId, "deviceStatus", detail.deviceStatus);
+      if (detail)
+        setCommunityState("communities", props.communityId, "deviceStatus", detail.deviceStatus);
     } catch (e) {
       if (!(isCommandError(e) && e.type === "cancelled")) setError(errorMessage(e));
     } finally {
@@ -45,9 +47,12 @@ const CommunityDeviceStatus: Component<{ communityId: string; notice?: boolean }
           role={needs() ? "status" : undefined}
           id={reasonId()}
         >
-          {needs() ? "This device can't post here until it is enrolled again." : "This device is enrolled."}
+          {needs()
+            ? "This device can't post here until it is enrolled again."
+            : "This device is enrolled."}
         </span>
         <button
+          type="button"
           class="form-btn-secondary community-device-enrol"
           disabled={!needs() || busy()}
           aria-describedby={reasonId()}

@@ -8,13 +8,13 @@
 // which must start inside the pointer event that began them.
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { commands } from "../ipc/commands";
-import type { TransferRow } from "../ipc/commands/dto_transfer";
-import type { Edge, SkinAction } from "../ipc/commands/dto_skin_tree";
+import { isCancelled } from "../ipc/commands/dto";
 import type { ShellOp, SkinRun, SkinSelection } from "../ipc/commands/dto_skin_run";
+import type { Edge, SkinAction } from "../ipc/commands/dto_skin_tree";
+import type { TransferRow } from "../ipc/commands/dto_transfer";
+import { setLocalSearchScope } from "../stores/local_search.store";
 import { addToast } from "../stores/toast.store";
 import { errorMessage } from "../utils/error";
-import { isCancelled } from "../ipc/commands/dto";
-import { setLocalSearchScope } from "../stores/local_search.store";
 import { handleClose, handleMaximize, handleMinimize } from "./titlebar.actions";
 
 /** Each pack edge's OS resize direction (Tauri `ResizeDirection`). */
@@ -100,7 +100,10 @@ export function runAddressedShellOp(op: ShellOp): void {
 /** The transfer list in one line: how many, and each one's name and state. */
 function transferSummary(rows: TransferRow[]): string {
   if (rows.length === 0) return "No transfers";
-  const each = rows.slice(0, 5).map((r) => `${r.destName} (${r.state})`).join(", ");
+  const each = rows
+    .slice(0, 5)
+    .map((r) => `${r.destName} (${r.state})`)
+    .join(", ");
   return `${rows.length} transfer${rows.length === 1 ? "" : "s"}: ${each}${rows.length > 5 ? ", …" : ""}`;
 }
 
@@ -116,7 +119,10 @@ function isSkinRun(value: unknown): value is SkinRun {
  */
 export async function dispatchSkinAction(node: string, action: SkinAction): Promise<void> {
   if (action.kind === "dragWindow" || action.kind === "resize") {
-    runShellOp(action.kind === "resize" ? { kind: "resize", arg: action.arg } : { kind: "dragWindow" }, node);
+    runShellOp(
+      action.kind === "resize" ? { kind: "resize", arg: action.arg } : { kind: "dragWindow" },
+      node
+    );
     return;
   }
   let answer: unknown;
@@ -137,7 +143,8 @@ export async function dispatchSkinAction(node: string, action: SkinAction): Prom
   }
   // A feature action answered with its request's value. Downloads' info
   // (the transfer list) is shown until its search view (plan G11) takes it.
-  if (action.kind === "downloadInfo" && Array.isArray(answer)) addToast(transferSummary(answer as TransferRow[]), "info");
+  if (action.kind === "downloadInfo" && Array.isArray(answer))
+    addToast(transferSummary(answer as TransferRow[]), "info");
 }
 
 /** This window's selection for its skin's selection-dependent actions and
@@ -147,6 +154,6 @@ export function sendSkinSelection(selection: SkinSelection | null): Promise<void
     () => undefined,
     (e) => {
       addToast(errorMessage(e), "error");
-    },
+    }
   );
 }

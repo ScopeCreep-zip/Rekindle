@@ -48,7 +48,9 @@ export function useMembersOnScreen(communityId: () => string): (list: HTMLElemen
     const observeRows = () => {
       rows.disconnect();
       visible.clear();
-      list.querySelectorAll<HTMLElement>("[data-pseudonym]").forEach((row) => rows.observe(row));
+      list.querySelectorAll<HTMLElement>("[data-pseudonym]").forEach((row) => {
+        rows.observe(row);
+      });
       schedule();
     };
     const changes = new MutationObserver(observeRows);

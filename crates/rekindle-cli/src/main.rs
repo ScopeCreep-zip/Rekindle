@@ -22,6 +22,7 @@ mod channel;
 mod channel_message;
 mod channel_overwrite;
 mod community;
+mod community_ref;
 mod community_watch;
 mod dm;
 mod friend_ref;

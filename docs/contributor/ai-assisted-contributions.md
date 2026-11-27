@@ -172,12 +172,12 @@ register the names and wait — **slopsquatting**.
 5. **Run `cargo deny check`** locally before committing — it will
    catch any package that doesn't satisfy our `[sources]`
    allowlist or `[advisories]` checks.
-6. **Run `cargo audit`** — RustSec advisory database.
 
 ### What CI does
 
-The lint workflow runs `cargo audit`, `cargo deny`, and the
-weekly KEV cross-reference. Together they catch published
+The Audit workflow runs `cargo deny` (RustSec advisories, licenses,
+sources) and `pnpm audit`, and `kev-check.yml` runs the weekly KEV
+cross-reference. Together they catch published
 advisories, license violations, and fabricated git remotes.
 They do **not** catch a perfectly-named slopsquat that hasn't been
 flagged yet — the manual verification above is the only defence.

@@ -50,6 +50,10 @@ pub enum ChannelError {
     #[error("invalid invite/thread/expression id: {0}")]
     InvalidId(String),
 
+    /// A forum post the forum does not take (plan E3.3, FT1).
+    #[error("forum post refused: {0}")]
+    InvalidForumPost(String),
+
     #[error("encrypt failed: {0}")]
     Encrypt(String),
 

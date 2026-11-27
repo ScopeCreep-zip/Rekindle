@@ -1,4 +1,4 @@
-import { Component, Show } from "solid-js";
+import { type Component, Show } from "solid-js";
 import SkinGlyph from "../common/SkinGlyph";
 
 interface ThreadStarterProps {
@@ -13,13 +13,13 @@ interface ThreadStarterProps {
 const ThreadStarter: Component<ThreadStarterProps> = (props) => {
   return (
     <button
+      type="button"
       class="thread-starter-badge"
       classList={{ "thread-starter-archived": props.archived }}
       onClick={props.onClick}
     >
       <SkinGlyph name="thread" />
-      {props.threadName} ({props.messageCount})
-      <Show when={props.archived}>{" · archived"}</Show>
+      {props.threadName} ({props.messageCount})<Show when={props.archived}>{" · archived"}</Show>
     </button>
   );
 };

@@ -4,7 +4,7 @@ version = "0.1.0"
 publish = false
 edition = "2021"
 description = "Rekindle daemon — IPC bus, state management, and Veilid bridge"
-license = "MIT"
+license.workspace = true
 
 [lints]
 workspace = true
@@ -67,6 +67,9 @@ rekindle-outbox = { path = "../rekindle-outbox" }
 # MediaEncryptionKey — the key type `MekDistributeDeps` exchanges.
 rekindle-crypto = { path = "../rekindle-crypto" }
 rekindle-dm = { path = "../rekindle-dm" }
+# Local wall-clock time for the Host's words ("You're timed out until
+# 14:05."): the reason a disabled community control shows (plan E3.2 S9).
+chrono = { version = "0.4", features = [ "clock" ], default-features = false }
 rekindle-idempotency = { path = "../rekindle-idempotency" }
 rekindle-vault = { path = "../rekindle-vault" }
 # Our own presence's stages (plan E1.1): OS idle time for auto-away, the

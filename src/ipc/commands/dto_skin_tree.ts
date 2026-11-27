@@ -27,7 +27,7 @@ export type Edge =
 
 /** `NodeRole` (serde `tag = "kind"`, `content = "key"`; plan SK2-A3: what a
  *  node shows; what it does is its `triggers`). */
-export type NodeRole =
+type NodeRole =
   | { kind: "tab" | "knob" | "view" | "buttonRow"; key: ViewKey }
   | { kind: "lamp"; key: string }
   | { kind: "windowButton"; key: WindowButtonKind }
@@ -98,13 +98,7 @@ export type EngineView =
   | "communities";
 
 /** `OverlayPart`. */
-type OverlayPart =
-  | "fps"
-  | "clock"
-  | "alert"
-  | "webCam"
-  | "voiceOverlay"
-  | "browser";
+type OverlayPart = "fps" | "clock" | "alert" | "webCam" | "voiceOverlay" | "browser";
 
 /** `SkinSettingsTab`. */
 type SkinSettingsTab =
@@ -328,7 +322,7 @@ export interface ShellNode {
   target?: NodeTarget;
   /** Who draws an interactive node's disabled look (plan E7.7 CR1): "pack", its art has a
    *  disabled state image; "shell", none, so the shell dims it. Absent on other nodes. */
-  disabledBy?: "pack" | "shell";
+  disabledBy?: "pack" | "served" | "shell";
 }
 
 /**
@@ -338,14 +332,14 @@ export interface ShellNode {
  * served minimum. `short`: neither 24 px nor the spacing exception holds.
  * `frame`: a window-drag area (no control, so no 2.5.8 rule; plan SK11).
  */
-export interface NodeTarget {
+interface NodeTarget {
   box: [number, number, number, number];
   art: [number, number, number, number];
   rule: "size" | "spacing" | "short" | "frame";
 }
 
 /** `NodeInset`: px from the field's left and right edges (plan SK5). */
-export interface NodeInset {
+interface NodeInset {
   left: number;
   right: number;
   /**
@@ -410,7 +404,7 @@ interface EngineMenuItems {
 }
 
 /** `MenuRegistry`: Rekindle's items for each engine menu a pack opens. */
-export interface MenuRegistry {
+interface MenuRegistry {
   menus: EngineMenuItems[];
 }
 

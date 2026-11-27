@@ -68,7 +68,7 @@ fn a_full_first_page_fits_one_subkey_and_round_trips() {
         pages: (1..MAX_PAGES).map(|i| format!("VLD0:{i:0>43}")).collect(),
         entries,
     };
-    let bytes = encode_invites_page(&page);
+    let bytes = encode_invites_page(&page).unwrap();
     assert!(bytes.len() <= MAX_SUBKEY_SIZE, "{} bytes", bytes.len());
     assert_eq!(decode_invites_page(&bytes).unwrap(), page);
 }

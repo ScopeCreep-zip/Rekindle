@@ -8,8 +8,8 @@ MainBackground Decor target [0, 0, 288, 400] art [0, 0, 288, 400] Frame
       ServerView View(Servers)
       DownloadView View(Files)
       TabbedControl.Communities View(Communities)
-  AdArea AdArea
-    AdView Part
+  AdArea Group
+    AdView AdArea
   WndClose Button target [-1, -6, 24, 24] art [1, 6, 12, 12] Size
   WndMax Button target [-1, -6, 14, 24] art [1, 6, 12, 12] Short
   WndMin Button target [-11, -6, 24, 24] art [11, 6, 12, 12] Size

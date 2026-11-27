@@ -290,7 +290,7 @@ impl GroupDmDeps for HostGroupDm {
         let row = InviteRow {
             group_id: group_id_hex(&invite.invite.group_id),
             from_key: invite.from.clone(),
-            invite: DirectBody::GroupDmInvite(invite.invite.clone()).encode(),
+            invite: DirectBody::GroupDmInvite(invite.invite.clone()).encode()?,
             received_at: self.host.ctx().clock.now_ms_i64(),
         };
         db!(self, "hold invite", |c, o| group_dm_invites::put(

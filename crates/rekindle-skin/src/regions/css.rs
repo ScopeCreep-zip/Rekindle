@@ -184,7 +184,8 @@ fn backing_rule(id: &str, elements: &[String]) -> Result<String, String> {
         ));
     }
     let before: Vec<String> = elements.iter().map(|e| format!("{e}::before")).collect();
-    let [t, r, b, l] = SIDES.map(|side| format!("var({}, 0px)", slice_property(id, side)));
+    // The fallback is also used in calc(<length-percentage>), which needs a typed zero.
+    let [t, r, b, l] = SIDES.map(|side| format!("var({}, 0%)", slice_property(id, side)));
     let fill = format!("linear-gradient(var({0}), var({0}))", backing_property(id));
     Ok(format!(
         "  {} {{\n    content: \"\";\n    position: absolute;\n    inset: 0;\n    z-index: -1;\n    padding: inherit;\n    border-radius: inherit;\n    background:\n      {fill} {l} {t} / calc(100% - {l} - {r}) calc(100% - {t} - {b}) no-repeat padding-box,\n      {fill} no-repeat content-box;\n    pointer-events: none;\n  }}\n",
@@ -397,7 +398,7 @@ fn rules(
     // matches (Selectors 4 §17), so the element rules share one list. A
     // pseudo-element rule stays alone: a list holding a selector the
     // engine does not know is dropped whole (Selectors 4 §4.1).
-    a11y.push_str("  @media (forced-colors: active) {\n");
+    a11y.push_str("\n  @media (forced-colors: active) {\n");
     let (pseudo, plain): (Vec<&String>, Vec<&String>) =
         painted.iter().partition(|l| l.contains("::"));
     if !plain.is_empty() {

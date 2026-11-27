@@ -1,16 +1,19 @@
-import { Component, Show, createEffect, createMemo, createSignal } from "solid-js";
-import SkinGlyph from "../../common/SkinGlyph";
-import type { Community } from "../../../stores/community.store";
-import type { ConfirmOptions } from "./types";
-import { handleRotateMek } from "../../../actions/community.actions";
-import { addToast } from "../../../stores/toast.store";
-import { commands, type CommunityPolicy } from "../../../ipc/commands";
 import {
-  servedPermissions,
-  hasPermission,
-  MANAGE_COMMUNITY,
-} from "../../../ipc/permissions";
+  type Component,
+  createEffect,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  Show,
+} from "solid-js";
+import { handleRotateMek } from "../../../actions/community.actions";
+import { type CommunityPolicy, commands } from "../../../ipc/commands";
+import type { Community } from "../../../stores/community.store";
+import { addToast } from "../../../stores/toast.store";
+import { deniedFor } from "../../../utils/denied";
 import FormField from "../../common/FormField";
+import SkinGlyph from "../../common/SkinGlyph";
+import type { ConfirmOptions } from "./types";
 
 interface SecurityTabProps {
   community: Community;
@@ -18,6 +21,8 @@ interface SecurityTabProps {
 }
 
 const SecurityTab: Component<SecurityTabProps> = (props) => {
+  const defaultNotificationsId = createUniqueId();
+  const communityRulesId = createUniqueId();
   const [rotating, setRotating] = createSignal(false);
   const [expanding, setExpanding] = createSignal(false);
 
@@ -31,12 +36,14 @@ const SecurityTab: Component<SecurityTabProps> = (props) => {
   const [savingPolicy, setSavingPolicy] = createSignal(false);
 
   // Architecture §17.1 tier 2 — community default notification level.
-  const [defaultNotifLevel, setDefaultNotifLevel] = createSignal<"all" | "mentions" | "nothing">("all");
+  const [defaultNotifLevel, setDefaultNotifLevel] = createSignal<"all" | "mentions" | "nothing">(
+    "all"
+  );
   const [savingDefaultLevel, setSavingDefaultLevel] = createSignal(false);
 
-  const canManageCommunity = createMemo(() =>
-    hasPermission(servedPermissions(props.community), MANAGE_COMMUNITY),
-  );
+  // Never-hide: each section is drawn; one we may not change is disabled
+  // with the Host's reason.
+  const manageDenied = createMemo(() => deniedFor(props.community, "manageSecurity"));
 
   // Architecture §15 — Plate Gate scaling: when segment 0 (or the
   // highest segment) is full, an admin can write a SegmentAdded
@@ -47,16 +54,20 @@ const SecurityTab: Component<SecurityTabProps> = (props) => {
 
   createEffect(() => {
     if (props.community.id) {
-      void commands.getCommunityPolicy(props.community.id).then((policy: CommunityPolicy) => {
-        setPolicyText(policy.policyText ?? "");
-        setMaxJoins(policy.maxJoinsPerInterval);
-        setIntervalSecs(policy.joinIntervalSeconds);
-        setPolicyLoaded(true);
-      }).catch((e) => {
-        console.error("Failed to load community policy:", e);
-        setPolicyLoaded(true);
-      });
-      void commands.getCommunityDefaultNotificationLevel(props.community.id)
+      void commands
+        .getCommunityPolicy(props.community.id)
+        .then((policy: CommunityPolicy) => {
+          setPolicyText(policy.policyText ?? "");
+          setMaxJoins(policy.maxJoinsPerInterval);
+          setIntervalSecs(policy.joinIntervalSeconds);
+          setPolicyLoaded(true);
+        })
+        .catch((e) => {
+          console.error("Failed to load community policy:", e);
+          setPolicyLoaded(true);
+        });
+      void commands
+        .getCommunityDefaultNotificationLevel(props.community.id)
         .then((level) => {
           if (level === "all" || level === "mentions" || level === "nothing") {
             setDefaultNotifLevel(level);
@@ -69,7 +80,8 @@ const SecurityTab: Component<SecurityTabProps> = (props) => {
   function confirmRotateKey(): void {
     props.requestConfirm({
       title: "Rotate Encryption Key",
-      message: "Generate a new Media Encryption Key? All members will automatically receive the new key.",
+      message:
+        "Generate a new Media Encryption Key? All members will automatically receive the new key.",
       confirmLabel: "Rotate",
       action: async () => {
         setRotating(true);
@@ -108,7 +120,7 @@ const SecurityTab: Component<SecurityTabProps> = (props) => {
         props.community.id,
         text.length > 0 ? text : null,
         maxJoins(),
-        intervalSecs(),
+        intervalSecs()
       );
       addToast("Community policy saved", "success");
     } catch (e) {
@@ -143,49 +155,65 @@ const SecurityTab: Component<SecurityTabProps> = (props) => {
       </FormField>
       <FormField label="Encryption Key Rotation">
         <div class="settings-hint">
-          Rotating the encryption key generates a new Media Encryption Key (MEK).
-          All members will automatically receive the new key. Messages encrypted
-          with previous keys remain readable.
+          Rotating the encryption key generates a new Media Encryption Key (MEK). All members will
+          automatically receive the new key. Messages encrypted with previous keys remain readable.
         </div>
-        <button class="form-btn-danger" onClick={confirmRotateKey} disabled={rotating()}>
+        <button
+          type="button"
+          class="form-btn-danger"
+          onClick={confirmRotateKey}
+          disabled={rotating()}
+        >
           <SkinGlyph name="key" /> {rotating() ? "Rotating..." : "Rotate Encryption Key"}
         </button>
       </FormField>
       <FormField label="Network Model">
-        <div class="settings-value">
-          Flat SMPL Governance (P2P)
-        </div>
+        <div class="settings-value">Flat SMPL Governance (P2P)</div>
       </FormField>
 
       {/* Architecture §17.1 tier 2 — community-wide default notification level. */}
-      <Show when={canManageCommunity()}>
-        <FormField label="Default Notifications (community-wide)">
+      <fieldset
+        class="settings-fieldset"
+        disabled={manageDenied() !== null}
+        title={manageDenied() ?? undefined}
+        aria-description={manageDenied() ?? undefined}
+      >
+        <FormField
+          label="Default Notifications (community-wide)"
+          controlId={defaultNotificationsId}
+        >
           <div class="settings-hint">
-            Sets the default notification level for every channel in this
-            community. Members can still override per-channel locally
-            (architecture §17.1 tier 1).
+            Sets the default notification level for every channel in this community. Members can
+            still override per-channel locally (architecture §17.1 tier 1).
           </div>
           <select
+            id={defaultNotificationsId}
             class="form-select"
             value={defaultNotifLevel()}
             disabled={savingDefaultLevel()}
-            onChange={(e) => void saveDefaultLevel(e.currentTarget.value as "all" | "mentions" | "nothing")}
+            onChange={(e) =>
+              void saveDefaultLevel(e.currentTarget.value as "all" | "mentions" | "nothing")
+            }
           >
             <option value="all">All messages</option>
             <option value="mentions">Mentions only</option>
             <option value="nothing">Nothing</option>
           </select>
         </FormField>
-      </Show>
+      </fieldset>
 
       {/* Architecture §10.7 + §20.6 — policy editor. */}
-      <Show when={canManageCommunity()}>
+      <fieldset
+        class="settings-fieldset"
+        disabled={manageDenied() !== null}
+        title={manageDenied() ?? undefined}
+        aria-description={manageDenied() ?? undefined}
+      >
         <FormField label="Raid-protection thresholds (architecture §20.6)">
           <div class="settings-hint">
             Each peer alerts moderators when joins exceed
             <strong> {maxJoins()} </strong> in the last
-            <strong> {intervalSecs()} </strong> seconds. Defaults are 20
-            joins per 600 s.
+            <strong> {intervalSecs()} </strong> seconds. Defaults are 20 joins per 600 s.
           </div>
           <div class="form-field-row">
             <input
@@ -206,30 +234,41 @@ const SecurityTab: Component<SecurityTabProps> = (props) => {
             />
           </div>
         </FormField>
-        <FormField label="Community rules (optional Markdown)">
+        <FormField label="Community rules (optional Markdown)" controlId={communityRulesId}>
           <textarea
+            id={communityRulesId}
             class="form-input"
             rows={6}
             value={policyText()}
             disabled={!policyLoaded() || savingPolicy()}
             onInput={(e) => setPolicyText(e.currentTarget.value)}
           />
-          <button class="form-btn-primary" onClick={() => void savePolicy()} disabled={savingPolicy()}>
+          <button
+            type="button"
+            class="form-btn-primary"
+            onClick={() => void savePolicy()}
+            disabled={savingPolicy()}
+          >
             {savingPolicy() ? "Saving..." : "Save policy"}
           </button>
         </FormField>
-      </Show>
+      </fieldset>
 
       {/* Architecture §15 — Plate Gate admin expansion. */}
-      <Show when={canManageCommunity()}>
+      <fieldset
+        class="settings-fieldset"
+        disabled={manageDenied() !== null}
+        title={manageDenied() ?? undefined}
+        aria-description={manageDenied() ?? undefined}
+      >
         <FormField label="Membership Capacity">
           <div class="settings-hint">
-            Each segment holds 255 member slots. When the highest
-            segment fills, expanding writes a `SegmentAdded` governance
-            entry that allocates a new SMPL record so new joiners have a
+            Each segment holds 255 member slots. When the highest segment fills, expanding writes a
+            `SegmentAdded` governance entry that allocates a new SMPL record so new joiners have a
             slot to claim.
           </div>
           <button
+            type="button"
             class="form-btn-secondary"
             onClick={() => void expandSegment()}
             disabled={!isHighestSegmentFull() || expanding()}
@@ -242,7 +281,7 @@ const SecurityTab: Component<SecurityTabProps> = (props) => {
             {expanding() ? "Expanding..." : "Expand to new segment"}
           </button>
         </FormField>
-      </Show>
+      </fieldset>
     </div>
   );
 };

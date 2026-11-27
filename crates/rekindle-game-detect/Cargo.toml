@@ -3,7 +3,7 @@ name = "rekindle-game-detect"
 version = "0.1.0"
 publish = false
 edition = "2021"
-license = "MIT"
+license.workspace = true
 description = "Cross-platform game detection via process scanning for Rekindle"
 
 [lints]

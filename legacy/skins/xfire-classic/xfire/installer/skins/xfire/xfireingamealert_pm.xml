@@ -1,0 +1,199 @@
+<Overlay>
+
+  <Tile Name="AlertWindow" ResizeX="100" ResizeY="100" Features="ContinuousChat" Component="XIGAlert">
+    
+    <Tile Name="OverlayFrame" ResizeX="100" ResizeY="100" X="0" Y="0" Z="10" Component="XIGOverlayFrame">
+
+      <Tile Name="ActiveAlertContainer"
+            ResizeX="100"
+            ResizeY="100"
+            Component="XIGAlertContainer"
+          >
+        <Tile Name="ActiveAlertOutline"
+              ResizeX="100"
+              ResizeY="100"
+              Component="XIGAlertOutline"
+          >
+        </Tile>
+        <Tile Name="ActiveAlertContainerOuter"  
+              ResizeX="100"
+              ResizeY="100"
+              Component="XIGAlertContainerOuter"
+            >
+        </Tile>
+        <Tile Name="ActiveAlertContainerGrippers"
+              ResizeX="100"
+              ResizeY="100"
+              Z="20"
+              Component="XIGAlertContainerGrippers"
+      			>
+        </Tile>
+        <Tile Name="ActiveTitleBG"
+              Z="30" 
+              Y="8" 
+              IndentLeft="8" 
+              IndentRight="8"
+              ResizeX="100"
+              Component="XIGActiveTitleBG"
+              >
+          <Tile Name="TheX"
+                X="4"
+                Y="3"
+                Component="TheX"
+                >
+          </Tile>
+          <Tile Name="AlertTitle"
+                X="TheX.RIGHT+10"
+                Y="5"
+                Component="XIGAlertTitle"
+                Z="3"
+              >
+          </Tile>
+          <Tile Name="OpacitySlider"
+                X="30" 
+                Y="7" 
+                JustX="RIGHT"
+                MinWidth="50" 
+                Component="XIGOpacitySlider"
+                TabOrder="10"
+                ControlId="310"
+                FocusedColor="XIGFocusedRectColor"
+            >
+            <Tile Name="OpacityTrack"
+                  ResizeX="100"
+                  Stretch="ToContent"
+                  Component="XIGSliderTrack"
+              >
+            </Tile>
+            <Tile Name="OpacityGripper"
+                  ResizeY="100"
+                  Stretch="ToContent"
+                  Component="XIGSliderGripper"
+              >
+            </Tile>
+          </Tile>
+          <Tile Name="ThumbTack" 
+                X="5" 
+                Y="AlertTitle.TOP" 
+                JustX="RIGHT" 
+                ControlId="20" 
+                AttachedControlId="20" 
+                Component="XIGThumbTack"
+                TabOrder="20"
+                >
+            <Tile Name="ThumbUnTacked"
+                  Component="XIGThumbUnTacked"
+                >
+            </Tile>
+            <Tile Name="ThumbTacked"
+                  Component="XIGThumbTacked"
+                >
+            </Tile>
+          </Tile>
+        </Tile>
+      </Tile>
+
+    </Tile>
+      
+    <Tile Name="AlertContainer"
+          X="0"
+          Y="17"
+          ResizeX="100"
+          ResizeY="100"
+          Component="XIGAlertContainer"
+          >
+      <Tile Name="AlertOutline"
+            ResizeX="100"
+            ResizeY="100"
+            Component="XIGAlertOutline"
+          >
+      </Tile>
+      <Tile Name="AlertContainerOuter"  
+            ResizeX="100"
+            ResizeY="100"
+            Component="XIGAlertContainerOuter"
+            >
+      </Tile>
+      <Tile Name="AlertContainerBG"
+            ResizeX="100"
+            ResizeY="100"
+            IndentLeft="5"
+            IndentRight="5"
+            IndentBottom="5"
+            IndentTop="5"
+            Z="-1"
+            Component="BvBk"
+            >
+      </Tile>
+      <Tile Name="AlertContainerGrippers"
+            ResizeX="100"
+            ResizeY="100"
+            Z="10"
+            Component="XIGAlertContainerGrippers"
+      			>
+      </Tile>
+    </Tile>
+
+    <Tile Name="AlertTile"
+      X="0"
+      Y="0"
+      Z="100" 
+      ResizeX="100"
+      ResizeY="100"
+      IndentLeft="15"
+      IndentTop="40"
+      IndentBottom="12"
+      IndentRight="15"
+      Component="XIGAlertTile"
+		>
+    </Tile>
+    
+    <Tile Name="BRResizeZone"
+          JustX="RIGHT" 
+          JustY="BOTTOM"
+          Component="XIGBRResizeZone"
+          Z="25"
+          >
+    </Tile>
+    
+    <Tile Name="BLResizeZone"
+          JustY="BOTTOM"
+          Component="XIGBLResizeZone"
+          Z="25"
+          >
+    </Tile>
+    
+    <Tile Name="RightResizeZone"
+          JustX="RIGHT"
+          Z="20"
+          ResizeY="100"
+          Component="XIGRightResizeZone"
+          >
+    </Tile>
+    
+    <Tile Name="LeftResizeZone"
+          ResizeY="100"
+          Z="20"
+          Component="XIGLeftResizeZone"
+          >
+    </Tile>
+
+    <Tile Name="TopResizeZone"
+          JustY="TOP" 
+          ResizeX="100"
+          Z="20"
+          Component="XIGTopResizeZone"
+          >
+    </Tile>
+
+    <Tile Name="BottomResizeZone"
+          JustY="BOTTOM" 
+          ResizeX="100"
+          Z="20"
+          Component="XIGBottomResizeZone"
+          >
+    </Tile>
+
+  </Tile>
+  
+</Overlay>

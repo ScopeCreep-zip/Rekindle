@@ -23,11 +23,11 @@ import { NET_WAIT_MS, press, switchTo, waitUntil } from "../../../walk/helpers.t
 import { BUDDY, SETTINGS, closeSettings, openSettings } from "../../../walk/nav.ts";
 import { createCommunity, createIdentity, newUser, openCommunity, type User } from "../../journeys.ts";
 import { applySkin, skinShown } from "../../journeys_skins.ts";
-import { disabledLookWithBoxes } from "../../disabled-look.ts";
+import { artContribution, disabledLookWithBoxes, ownArt } from "../../disabled-look.ts";
 import { shot } from "../../shots.ts";
 import { builtinPacks } from "../../skin-pack.ts";
 
-const PACKS = ["symbiosis", "onyx", "combat", "alloy", "xslimfire", "simple-x"];
+const PACKS = ["symbiosis", "onyx", "combat", "alloy", "xslimfire", "simple-x", "spacecowboy"];
 
 interface Disabled {
   node: string;
@@ -39,12 +39,12 @@ interface Disabled {
 }
 
 /** The current window's drawn nodes in their Disabled art for `windowInactive`: `aria-disabled` must be absent. */
-async function inactiveNodes(): Promise<{ node: string; ariaDisabled: string | null }[]> {
+async function inactiveNodes(): Promise<{ node: string; ariaDisabled: string | null; by: string | null }[]> {
   return (await browser.execute(() =>
     Array.from(document.querySelectorAll<HTMLElement>('[data-skin-node][data-state-cause="windowInactive"]'))
       .filter((n) => !n.closest("[hidden]") && n.getBoundingClientRect().width > 0)
-      .map((n) => ({ node: n.dataset.skinNode ?? "", ariaDisabled: n.getAttribute("aria-disabled") })),
-  )) as { node: string; ariaDisabled: string | null }[];
+      .map((n) => ({ node: n.dataset.skinNode ?? "", ariaDisabled: n.getAttribute("aria-disabled"), by: n.getAttribute("data-disabled-by") })),
+  )) as { node: string; ariaDisabled: string | null; by: string | null }[];
 }
 
 describe("a disabled node says why (CR1)", function () {
@@ -108,46 +108,34 @@ describe("a disabled node says why (CR1)", function () {
         // Lead: the node's own art's alpha at its box centre (the served
         // image drawn at the node's background size and position), and every
         // node with art under that point (which one draws the button seen).
-        const art = (await browser.execute((nid: string) => new Promise<string>((done) => {
-          const n = document.querySelector<HTMLElement>(`.skin-tree [data-skin-node="${nid}"]`);
-          if (!n) return done("no node");
-          const cs = getComputedStyle(n);
-          const url = /url\("?([^")]+)"?\)/.exec(cs.backgroundImage)?.[1];
-          const r = n.getBoundingClientRect();
-          const under = document
-            .elementsFromPoint(r.left + r.width / 2, r.top + r.height / 2)
-            .map((e) => e.closest<HTMLElement>("[data-skin-node]"))
-            .filter((e, i, all): e is HTMLElement => !!e && all.indexOf(e) === i)
-            .map((e) => `${e.dataset.skinNode}(${e.dataset.skinRole}) art=${getComputedStyle(e).backgroundImage.split("/").pop()?.slice(0, 16) ?? "-"}`);
-          if (!url) return done(`no art; under: ${JSON.stringify(under)}`);
-          const img = new Image();
-          img.onload = () => {
-            const c = document.createElement("canvas");
-            c.width = Math.round(r.width);
-            c.height = Math.round(r.height);
-            const g = c.getContext("2d")!;
-            const [px, py] = cs.backgroundPosition.split(" ").map((v) => parseFloat(v) || 0);
-            const size = cs.backgroundSize.split(" ").map((v) => parseFloat(v));
-            const w = Number.isFinite(size[0]) ? size[0] : img.width;
-            const h = Number.isFinite(size[1]) ? size[1] : img.height;
-            g.drawImage(img, px, py, w, h);
-            const a = g.getImageData(Math.floor(r.width / 2), Math.floor(r.height / 2), 1, 1).data[3];
-            done(`image ${img.width}x${img.height} at ${cs.backgroundPosition} size ${cs.backgroundSize}: alpha at centre ${a}; under: ${JSON.stringify(under)}`);
-          };
-          img.onerror = () => done(`image failed to load; under: ${JSON.stringify(under)}`);
-          img.src = url;
-        }), id)) as string;
+        const art = `${await ownArt(id)} | contribution: ${await artContribution(id)}`;
         console.log(`[cr1] ${file} ${id} own art: ${art}`);
       }
       console.log(`[cr1] ${file} disabled vs enabled self, pixels changed: ${JSON.stringify(look)} (visibly disabled at 20)`);
       const inactive = await inactiveNodes();
       console.log(`[cr1] ${file} windowInactive (pressable, not aria-disabled): ${JSON.stringify(inactive)}`);
+      // DIS3: a window that only lost focus keeps the pack's look. A node
+      // whose pack has Disabled art (Symbiosis's title buttons: OnDeactivate
+      // → State(Disabled), button_close_disabled) shows that art, so it
+      // differs from Normal; one with none draws as Normal (the served
+      // refusal copy and the Shell dim are refusal-only). Which it is comes
+      // from the art the node draws in each state (`data-disabled-by` is a
+      // refusal's, absent here).
+      const inactiveMeasured = await disabledLookWithBoxes(inactive.map((i) => i.node), true);
+      for (const [id, v] of Object.entries(inactiveMeasured)) console.log(`[dis3] ${file} ${id} windowInactive vs Normal (pack Disabled art: ${v.packArt}): ${v.why}`);
+      const inactiveWrong = Object.entries(inactiveMeasured)
+        .filter(([, v]) => (v.packArt ? v.changed < 20 : v.changed >= 20))
+        .map(([id, v]) => `${id} (pack art ${v.packArt}, ${v.changed} px)`);
+      console.log(`[dis3] ${file} windowInactive looks not as their pack art says: ${JSON.stringify(inactiveWrong)}`);
       await shot(`${file}-disabled`);
       expect(nodes.length).toBeGreaterThan(0);
       expect(nodes.filter((d) => d.reason.trim() === "").map((d) => d.node)).toEqual([]);
       expect(nodes.filter((d) => d.title !== d.reason).map((d) => d.node)).toEqual([]);
       expect(nodes.filter((d) => d.by === "shell" && d.opacity !== "0.5").map((d) => d.node)).toEqual([]);
       expect(nodes.filter((d) => d.by === "pack" && d.opacity !== "1").map((d) => d.node)).toEqual([]);
+      // DIS3: a served copy is the pack's art dimmed by the Host, never dimmed again.
+      expect(nodes.filter((d) => d.by === "served" && d.opacity !== "1").map((d) => d.node)).toEqual([]);
+      expect(inactiveWrong).toEqual([]);
       // By cause: every refused node names a refusal cause and who draws it.
       expect(nodes.filter((d) => d.cause === "" || d.cause === "windowInactive" || d.by === "").map((d) => d.node)).toEqual([]);
       expect(inactive.filter((i) => i.ariaDisabled !== null).map((i) => i.node)).toEqual([]);

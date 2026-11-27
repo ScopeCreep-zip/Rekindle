@@ -180,6 +180,7 @@ pub(crate) fn check_duplicate_bodies(root: &Path) -> Result<()> {
 }
 
 pub(crate) fn collect_duplicate_bodies(root: &Path) -> Result<Vec<crate::duplication::Offender>> {
+    let tests = crate::test_code::TestCode::load(root)?;
     let mut by_body: BTreeMap<String, Vec<(String, String, String, usize)>> = BTreeMap::new();
 
     for subdir in ["crates", "src-tauri/src"] {
@@ -189,7 +190,7 @@ pub(crate) fn collect_duplicate_bodies(root: &Path) -> Result<Vec<crate::duplica
                 .unwrap_or(&path)
                 .display()
                 .to_string();
-            if rel.contains("/tests/") || rel.contains("/benches/") {
+            if tests.is_test(&path) {
                 continue;
             }
             let Ok(src) = std::fs::read_to_string(&path) else {

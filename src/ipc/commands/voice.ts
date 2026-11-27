@@ -1,7 +1,5 @@
 import { invoke } from "../invoke";
-import type { ActiveCall,
-  AudioDevices, MissedCallRow,
-} from "./types";
+import type { ActiveCall, AudioDevices, MissedCallRow } from "./types";
 
 export const voiceCommands = {
   // Voice
@@ -12,8 +10,18 @@ export const voiceCommands = {
     invoke<void>("request_to_speak", { communityId, channelId }),
   getStageHandRaises: (communityId: string, channelId: string) =>
     invoke<string[]>("get_stage_hand_raises", { communityId, channelId }),
-  respondToSpeakRequest: (communityId: string, channelId: string, requesterPseudonym: string, granted: boolean) =>
-    invoke<void>("respond_to_speak_request", { communityId, channelId, requesterPseudonym, granted }),
+  respondToSpeakRequest: (
+    communityId: string,
+    channelId: string,
+    requesterPseudonym: string,
+    granted: boolean
+  ) =>
+    invoke<void>("respond_to_speak_request", {
+      communityId,
+      channelId,
+      requesterPseudonym,
+      granted,
+    }),
   setMute: (muted: boolean) => invoke<void>("set_mute", { muted }),
   setDeafen: (deafened: boolean) => invoke<void>("set_deafen", { deafened }),
   /**
@@ -25,9 +33,9 @@ export const voiceCommands = {
    */
   serverMuteMember: (
     communityId: string,
-    channelId: string,
+    channelId: string | null,
     targetPseudonym: string,
-    muted: boolean,
+    muted: boolean
   ) =>
     invoke<void>("server_mute_member", {
       communityId,
@@ -42,9 +50,9 @@ export const voiceCommands = {
    */
   serverDeafenMember: (
     communityId: string,
-    channelId: string,
+    channelId: string | null,
     targetPseudonym: string,
-    deafened: boolean,
+    deafened: boolean
   ) =>
     invoke<void>("server_deafen_member", {
       communityId,
@@ -64,8 +72,7 @@ export const voiceCommands = {
   // Plan §Failure 5 — direct call offer/accept handshake.
   startDmCall: (peerPublicKey: string, video: boolean) =>
     invoke<string>("start_dm_call", { peerPublicKey, video }),
-  acceptDmCall: (callId: string) =>
-    invoke<void>("accept_dm_call", { callId }),
+  acceptDmCall: (callId: string) => invoke<void>("accept_dm_call", { callId }),
   declineDmCall: (callId: string, reason?: string) =>
     invoke<void>("decline_dm_call", { callId, reason: reason ?? null }),
   /// C2 hangup — end an Active call (post-handshake), distinct from
@@ -75,12 +82,7 @@ export const voiceCommands = {
   /// Wave 12 W12.6 — fire-and-forget mid-call media-state ping so the
   /// peer's UI mounts/unmounts video and screen-share tiles in sync
   /// with our local toggle.
-  sendCallMediaState: (
-    callId: string,
-    audio: boolean,
-    video: boolean,
-    screen: boolean,
-  ) =>
+  sendCallMediaState: (callId: string, audio: boolean, video: boolean, screen: boolean) =>
     invoke<void>("send_call_media_state", { callId, audio, video, screen }),
   /// Wave 12 W12.12 — temporarily silence a caller. Future incoming
   /// offers from `peerPublicKey` auto-decline with "user is
@@ -98,8 +100,7 @@ export const voiceCommands = {
    *  Host refuses a participant outside that group's roster. */
   startGroupCall: (participantPubkeys: string[], video: boolean, groupId: string | null) =>
     invoke<string>("start_group_call", { participantPubkeys, video, groupId }),
-  acceptGroupCall: (callId: string) =>
-    invoke<void>("accept_group_call", { callId }),
+  acceptGroupCall: (callId: string) => invoke<void>("accept_group_call", { callId }),
   declineGroupCall: (callId: string, reason?: string) =>
     invoke<void>("decline_group_call", { callId, reason: reason ?? null }),
   endGroupCall: (callId: string, reason?: string) =>

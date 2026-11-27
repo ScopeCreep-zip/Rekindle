@@ -210,6 +210,27 @@ impl HostGovernance {
         }
     }
 
+    /// Judge a torn-down community's removal again on the frontiers as
+    /// published now and, if it still stands, arm its removal watch: at
+    /// unlock and on each heal (`login_stage.rs`), since a removal voided
+    /// while we were away left no watch to notice it (plan E3.2 S9 own
+    /// removal, RM2). Under the removal gate, as [`Self::reconcile_removal`]:
+    /// a rebuild that voids the removal clears the mark, and the reconcile
+    /// it spawns restores the community once the gate is free.
+    pub(super) async fn recheck_removal(&self, community_id: &str) {
+        let Some(gate) = self.ctx.communities.removal_gate(community_id) else {
+            return;
+        };
+        let torn_down = gate.lock().await;
+        if !*torn_down || self.ctx.communities.own_removal(community_id).is_none() {
+            return;
+        }
+        self.catch_up_before_teardown(community_id).await;
+        if self.ctx.communities.own_removal(community_id).is_some() {
+            self.arm_removal_watch(community_id).await;
+        }
+    }
+
     /// Read every member's frontier (the full anti-entropy sweep, plan E3.2
     /// S7) and rebuild, before a removal tears the community down. Under
     /// strong removal a removal concurrent with the remover's own is void,

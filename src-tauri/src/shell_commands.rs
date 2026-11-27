@@ -59,6 +59,7 @@ pub const HOST_CALLS: &[(&str, HostCall)] = &[
     ("archive_thread", HostCall::Request("ThreadArchive")),
     ("unarchive_thread", HostCall::Request("ThreadUnarchive")),
     ("create_thread", HostCall::Request("ThreadCreate")),
+    ("create_forum_post", HostCall::Request("CreateForumPost")),
     ("get_active_threads", HostCall::Request("ThreadListActive")),
     ("get_channel_threads", HostCall::Request("ThreadList")),
     ("get_thread_messages", HostCall::Request("ThreadMessages")),

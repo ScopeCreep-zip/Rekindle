@@ -200,6 +200,8 @@ impl App {
     }
 
     pub(crate) fn load_community_info(&self, community: &str) {
+        self.load_community_members(community);
+        self.load_community_presence_policy(community);
         let tx = self.action_tx.clone();
         let client = Arc::clone(&self.client);
         let community = community.to_string();
@@ -228,7 +230,7 @@ impl App {
         });
     }
 
-    pub(crate) fn load_community_presence_policy(&self, community: &str) {
+    fn load_community_presence_policy(&self, community: &str) {
         use rekindle_ipc::protocol::SettingsRequest;
 
         let tx = self.action_tx.clone();

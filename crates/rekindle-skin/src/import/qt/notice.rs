@@ -23,7 +23,7 @@ pub fn render(id: &str, read: &Read, source: &str, made: &[Change]) -> String {
          (plan E7.7.3 item 5; rekindle-skin::import::qt; source.format {}).\n\n\
          Provenance\n  {what} tree BLAKE3: {source}\n\n\
          Licence\n  The {what}'s palette and images are third-party work.\n  \
-         Rekindle's MIT LICENSE does not cover this pack.\n",
+         Rekindle's MIT OR Apache-2.0 licence does not cover this pack.\n",
         read.front.format()
     );
     let _ = writeln!(s, "Read ({})", read.files.len());

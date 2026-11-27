@@ -28,6 +28,7 @@ pub(crate) const TAURI_LIVE_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("delete_emoji", Some(IntentKind::DeleteEmoji)),
     ("list_expressions", None),
     ("create_thread", Some(IntentKind::CreateThread)),
+    ("create_forum_post", Some(IntentKind::CreateThread)),
     ("get_active_threads", None),
     ("get_channel_threads", None),
     ("send_thread_message", Some(IntentKind::SendThreadMessage)),

@@ -1,0 +1,9 @@
+<Tile Name="xSLIMFIREInGameMainWindow" Component="InGameMainWindow">
+	<Tile Name="MainTitle" X="22" Y="39" ResizeX="100" IndentRight="70" Z="10" Component="InGameMainTitle"></Tile>
+	<Tile Name="MainFooter" X="25" Y="9" JustY="BOTTOM" ResizeX="100" IndentRight="22" Z="10" Component="InGameMainFooter"></Tile>
+	<Tile Name="MainEditArea" X="22" Y="41" JustY="BOTTOM" ResizeX="100" IndentRight="25" Z="10" Component="InGameMainEditArea"></Tile>
+	<Tile Name="MainChatArea" X="22" Y="67" ResizeX="100" ResizeY="100" IndentRight="25" IndentBottom="78" Z="20" Component="InGameMainChatArea"></Tile>
+	<Tile Name="MainClock" Z="20" JustX="RIGHT" X="12" Y="39" Component="InGameMainClock"></Tile>
+	
+	<Tile Name="MainBackground" X="0" Y="0" ResizeX="100" ResizeY="100" Z="2" Component="InGameMainBody"></Tile>
+</Tile>

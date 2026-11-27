@@ -262,6 +262,7 @@ macro_rules! community_commands {
         commands::community::delete_emoji,
         commands::community::list_expressions,
         commands::community::create_thread,
+        commands::community::create_forum_post,
         commands::community::get_active_threads,
         commands::community::get_channel_threads,
         commands::community::send_thread_message,

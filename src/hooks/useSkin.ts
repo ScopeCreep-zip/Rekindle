@@ -1,6 +1,6 @@
 import { createSignal, onCleanup } from "solid-js";
-import { commands } from "../ipc/commands";
 import { subscribeSkinEvents } from "../ipc/channels";
+import { commands } from "../ipc/commands";
 import type { BrandGlyphName, SkinApplied, SkinApplyFailure } from "../ipc/commands/dto";
 import type { SkinShell } from "../ipc/commands/dto_skin_tree";
 
@@ -36,7 +36,7 @@ function setShells(next: SkinShell[]): void {
     next.map((n) => {
       const same = shown.find((s) => s.window === n.window && s.popup?.name === n.popup?.name);
       return same && JSON.stringify(same) === JSON.stringify(n) ? same : n;
-    }),
+    })
   );
 }
 
@@ -68,9 +68,16 @@ function boundShells(shells: SkinShell[]): SkinShell[] {
   }
   // A community window with a community (`/community?id=`, plan SKW1) wears
   // the community frame; the community browser (no `id`) none.
-  const community = path.startsWith("/community") && new URLSearchParams(window.location.search).has("id");
+  const community =
+    path.startsWith("/community") && new URLSearchParams(window.location.search).has("id");
   const kind: SkinShell["window"] | undefined =
-    path === "/buddy-list" ? "main" : path.startsWith("/chat") ? "chat" : community ? "community" : undefined;
+    path === "/buddy-list"
+      ? "main"
+      : path.startsWith("/chat")
+        ? "chat"
+        : community
+          ? "community"
+          : undefined;
   return kind ? shells.filter((s) => s.window === kind && s.popup === undefined) : [];
 }
 
@@ -122,7 +129,7 @@ let loading: HTMLLinkElement | null = null;
  * sheet and the base always belong to the same skin. On any failure the
  * shown skin stays and the error is reported.
  */
-export function applySkin(skin: SkinApplied): void {
+function applySkin(skin: SkinApplied): void {
   const mine = ++generation;
   loading?.remove();
   loading = null;
@@ -135,7 +142,9 @@ export function applySkin(skin: SkinApplied): void {
   // Held until the swap, so the decoded images stay in this document's cache.
   // The shared sheet's images and this window's own trees' (plan SK4): a
   // window never waits on art another window's tree draws.
-  const hrefs = [...new Set([...skin.images, ...boundShells(skin.shells ?? []).flatMap((s) => s.images)])];
+  const hrefs = [
+    ...new Set([...skin.images, ...boundShells(skin.shells ?? []).flatMap((s) => s.images)]),
+  ];
   const loads = hrefs.map((href) => {
     const img = new Image();
     img.src = href;
@@ -146,7 +155,7 @@ export function applySkin(skin: SkinApplied): void {
   const decoded = loads.map(({ href, img }) =>
     img.decode().catch((err: unknown) => {
       throw new SkinImageError(href, err);
-    }),
+    })
   );
   Promise.all(decoded).then(
     () => {
@@ -154,9 +163,12 @@ export function applySkin(skin: SkinApplied): void {
     },
     (err: SkinImageError) => {
       if (mine !== generation) return;
-      console.error(`skin ${skin.id}: ${err.path} failed to decode — the shown skin stays`, err.reason);
+      console.error(
+        `skin ${skin.id}: ${err.path} failed to decode — the shown skin stays`,
+        err.reason
+      );
       report(skin, { type: "imageDecode", data: { path: err.path } });
-    },
+    }
   );
 }
 
@@ -164,7 +176,7 @@ export function applySkin(skin: SkinApplied): void {
 class SkinImageError extends Error {
   constructor(
     readonly path: string,
-    readonly reason: unknown,
+    readonly reason: unknown
   ) {
     super(`${path} failed to decode`);
   }

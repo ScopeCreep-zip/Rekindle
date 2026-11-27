@@ -219,14 +219,7 @@ interface StorageUsage {
   metadataBytes: number;
 }
 
-export type HasFilter =
-  | "link"
-  | "file"
-  | "image"
-  | "video"
-  | "embed"
-  | "poll"
-  | "voice_message";
+export type HasFilter = "link" | "file" | "image" | "video" | "embed" | "poll" | "voice_message";
 
 export type SearchSort = "relevance" | "newest" | "oldest";
 

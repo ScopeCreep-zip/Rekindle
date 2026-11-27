@@ -29,20 +29,6 @@ use rekindle_types::subscription_events::{
 use super::HostGovernance;
 use crate::host::community::CommunityStore;
 
-/// A change to our profile in one community: each `None` keeps the field,
-/// an empty value clears it (plan E3.4 S6).
-#[derive(Debug, Clone, Default)]
-pub(crate) struct ProfileEdit {
-    pub bio: Option<String>,
-    pub pronouns: Option<String>,
-    pub theme_color: Option<u32>,
-    pub badges: Option<Vec<String>>,
-    pub avatar_ref: Option<String>,
-    pub banner_ref: Option<String>,
-    /// Our card's custom status (plan E3.4 S6).
-    pub custom_status: Option<String>,
-}
-
 /// A new community policy.
 #[derive(Debug, Clone)]
 pub(crate) struct PolicyEdit {
@@ -52,75 +38,9 @@ pub(crate) struct PolicyEdit {
 }
 
 impl HostGovernance {
-    /// Apply `edit` to our profile in `community`, field by field (a
-    /// partial update keeps the rest), and store it on our roster row so
-    /// it survives a restart; a custom status goes to our card.
-    ///
-    /// # Errors
-    /// The community is not joined, or the store or card write failed.
-    pub(crate) async fn update_profile(
-        &self,
-        community: &str,
-        edit: ProfileEdit,
-    ) -> Result<(), String> {
-        let set = |field: &mut Option<String>, value: Option<String>| {
-            if let Some(v) = value {
-                *field = (!v.is_empty()).then_some(v);
-            }
-        };
-        let (me, row) = {
-            let mut map = self.ctx.communities.map().write();
-            let c = map.get_mut(community).ok_or("unknown community")?;
-            set(&mut c.my_bio, edit.bio);
-            set(&mut c.my_pronouns, edit.pronouns);
-            set(&mut c.my_avatar_ref, edit.avatar_ref);
-            set(&mut c.my_banner_ref, edit.banner_ref);
-            if let Some(color) = edit.theme_color {
-                c.my_theme_color = Some(color);
-            }
-            if let Some(badges) = edit.badges {
-                c.my_badges = badges;
-            }
-            let row = rekindle_db::repo::members::OwnProfile {
-                bio: c.my_bio.clone(),
-                pronouns: c.my_pronouns.clone(),
-                theme_color: c.my_theme_color,
-                badges: c.my_badges.clone(),
-                avatar_ref: c.my_avatar_ref.clone(),
-                banner_ref: c.my_banner_ref.clone(),
-            };
-            (c.my_pseudonym_key.clone().ok_or("no pseudonym")?, row)
-        };
-        let (owner, db) = self.owner_and_db().ok_or("no identity is unlocked")?;
-        let cid = community.to_owned();
-        db.call(move |conn| {
-            rekindle_db::repo::members::set_own_profile(conn, &owner, &cid, &me, &row)
-        })
-        .await
-        .map_err(|e| format!("profile not stored: {e}"))?;
-        let Some(status) = edit.custom_status else {
-            return Ok(());
-        };
-        let mut text = self.own_card_text(community);
-        text.custom_status = (!status.is_empty()).then_some(status);
-        self.publish_own_card(community, &text).await
-    }
-
-    /// Make `name` our name in `community` (`""` clears it: readers show
-    /// our short pseudonym fingerprint), on our card (plan E3.4 S6).
-    ///
-    /// # Errors
-    /// The community is not joined, or the card write failed.
-    pub(crate) async fn set_display_name(&self, community: &str, name: &str) -> Result<(), String> {
-        let mut text = self.own_card_text(community);
-        let name = name.trim();
-        text.display_name = (!name.is_empty()).then(|| name.to_owned());
-        self.publish_own_card(community, &text).await
-    }
-
     /// What our card says now: its name and custom status from the card
     /// cache, and the game we share there now ([`Self::shared_card_game`]).
-    fn own_card_text(&self, community: &str) -> OwnCardText {
+    pub(super) fn own_card_text(&self, community: &str) -> OwnCardText {
         let card = self.own_cached_card(community).unwrap_or_default();
         OwnCardText {
             display_name: card.display_name,
@@ -182,6 +102,10 @@ impl HostGovernance {
             if self.own_departed(&community) {
                 continue;
             }
+            // The card also carries our name and custom status. Read those
+            // fields after any profile edit that is writing the same card.
+            let lock = self.ctx.communities.profile_write_lock(&community);
+            let _held = lock.lock().await;
             let shared = self.shared_card_game(&community);
             if self.own_cached_card(&community).and_then(|c| c.game) == shared {
                 continue;
@@ -194,7 +118,11 @@ impl HostGovernance {
     }
 
     /// Write `text` to our card, then read it back into the card cache.
-    async fn publish_own_card(&self, community: &str, text: &OwnCardText) -> Result<(), String> {
+    pub(super) async fn publish_own_card(
+        &self,
+        community: &str,
+        text: &OwnCardText,
+    ) -> Result<(), String> {
         let keys = self.own_record_keys(community)?;
         let hpke = {
             let guard = self.ctx.vault.lock();
@@ -400,118 +328,5 @@ fn policy_view(policy: Option<CommunityPolicyState>) -> CommunityPolicyView {
 }
 
 #[cfg(test)]
-mod tests {
-    //! A policy set is the policy read back, through the governance merge.
-
-    use rekindle_governance::fixture::{at, merge_entries, Stamped};
-    use rekindle_types::id::PseudonymKey;
-
-    use super::*;
-
-    fn carded(game: Option<&str>) -> CardText {
-        CardText {
-            game: game.map(|name| GameInfo {
-                game_name: name.into(),
-                game_id: Some("4100".into()),
-                elapsed_seconds: None,
-                server_address: None,
-            }),
-            ..CardText::default()
-        }
-    }
-
-    /// A card whose game started reaches the member list as that game, a
-    /// stopped one as `Idle`, and a re-read of the same game as nothing
-    /// (plan E3.4 S6: the card replaced the gossip `PresenceUpdate`).
-    #[test]
-    fn a_card_game_move_is_one_member_observation() {
-        let playing = game_moved(Some(&carded(None)), &carded(Some("Quake")))
-            .expect("a started game is observed");
-        assert_eq!(playing.status, None, "the beat owns the status");
-        assert!(matches!(
-            playing.game,
-            Some(GameActivity::Playing { ref game_name, game_id: Some(4100), .. })
-                if game_name == "Quake"
-        ));
-        let stopped = game_moved(Some(&carded(Some("Quake"))), &carded(None))
-            .expect("a stopped game is observed");
-        assert_eq!(stopped.game, Some(GameActivity::Idle));
-        assert_eq!(
-            game_moved(Some(&carded(Some("Quake"))), &carded(Some("Quake"))),
-            None
-        );
-        assert_eq!(game_moved(None, &carded(None)), None);
-    }
-
-    /// A member whose card names nobody renders as its short pseudonym
-    /// fingerprint, stated by the Host, never empty and never another name
-    /// (plan E3.4 S6); a card name renders as itself.
-    #[test]
-    fn an_unnamed_member_renders_as_its_short_fingerprint() {
-        let me = PseudonymKey([0xab; 32]);
-        assert_eq!(shown_name(None, &me), "abab abab");
-        assert_eq!(shown_name(Some(String::new()), &me), "abab abab");
-        assert_eq!(shown_name(Some("Kit".into()), &me), "Kit");
-    }
-
-    fn edit() -> PolicyEdit {
-        PolicyEdit {
-            policy_text: Some("Be kind".into()),
-            max_joins_per_interval: 5,
-            join_interval_seconds: 120,
-        }
-    }
-
-    fn meta(lamport: u64) -> Stamped {
-        at(
-            lamport,
-            GovernanceEntry::CommunityMeta {
-                name: Some("C".into()),
-                description: None,
-                icon_hash: None,
-                banner_hash: None,
-            },
-        )
-    }
-
-    #[test]
-    fn the_defaults_are_read_before_any_policy() {
-        let view = policy_view(None);
-        assert_eq!(view.policy_text, None);
-        assert_eq!(
-            view.max_joins_per_interval,
-            CommunityPolicyState::DEFAULT_MAX_JOINS_PER_INTERVAL
-        );
-        assert_eq!(
-            view.join_interval_seconds,
-            CommunityPolicyState::DEFAULT_JOIN_INTERVAL_SECONDS
-        );
-    }
-
-    #[test]
-    fn a_policy_set_is_read_back() {
-        let creator = PseudonymKey([1; 32]);
-        let state = merge_entries(
-            &creator,
-            &[(creator.clone(), vec![meta(1), at(2, policy_entry(edit()))])],
-        );
-        let view = policy_view(state.community_policy);
-        assert_eq!(view.policy_text.as_deref(), Some("Be kind"));
-        assert_eq!(view.max_joins_per_interval, 5);
-        assert_eq!(view.join_interval_seconds, 120);
-    }
-
-    #[test]
-    fn a_policy_without_manage_community_is_not_read() {
-        let creator = PseudonymKey([1; 32]);
-        let member = PseudonymKey([2; 32]);
-        let state = merge_entries(
-            &creator,
-            &[
-                (creator.clone(), vec![meta(1)]),
-                (member, vec![at(2, policy_entry(edit()))]),
-            ],
-        );
-        assert_eq!(policy_view(state.community_policy).policy_text, None);
-    }
-}
+#[path = "community_profile_tests.rs"]
+mod tests;

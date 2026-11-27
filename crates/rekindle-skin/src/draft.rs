@@ -241,7 +241,10 @@ fn suggestion(
     };
     let up = colour::luminance(moved) >= colour::luminance(other);
     let passes = |c| remeasured(base, tokens, m, &token, c).is_some_and(|x| x.passes());
-    let rgb = lightness_walk(original, up, |c| Ok(passes(c))).ok()??;
+    let rgb = lightness_walk(original, up, |c| {
+        Ok::<_, std::convert::Infallible>(passes(c))
+    })
+    .ok()??;
     let ratio = remeasured(base, tokens, m, &token, rgb)?.ratio;
     Some(SkinSuggestion {
         token,

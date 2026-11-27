@@ -193,6 +193,45 @@ fn parse_channel_send() {
 }
 
 #[test]
+fn parse_channel_forum_post() {
+    let args = [
+        "rekindle",
+        "channel",
+        "forum-post",
+        "-c",
+        "Guild",
+        "-C",
+        "ideas",
+        "-t",
+        "Share your maps",
+        "-m",
+        "Here is mine",
+    ];
+    for tag in [None, Some("maps")] {
+        let mut argv = args.to_vec();
+        if let Some(tag) = tag {
+            argv.extend(["--tag", tag]);
+        }
+        let cli = Cli::try_parse_from(argv).unwrap();
+        let Some(Command::Channel(ChannelCmd::ForumPost {
+            community,
+            channel,
+            title,
+            message,
+            tag: parsed_tag,
+        })) = cli.command
+        else {
+            panic!("expected a forum post");
+        };
+        assert_eq!(community, "Guild");
+        assert_eq!(channel, "ideas");
+        assert_eq!(title, "Share your maps");
+        assert_eq!(message, "Here is mine");
+        assert_eq!(parsed_tag.as_deref(), tag);
+    }
+}
+
+#[test]
 fn parse_channel_send_with_spaces() {
     let cli = Cli::try_parse_from([
         "rekindle",
@@ -403,14 +442,44 @@ fn parse_community_set_name() {
     let cli = Cli::try_parse_from(["rekindle", "community", "set-name", "abcd", "Bea"]).unwrap();
     assert!(matches!(
         cli.command,
-        Some(Command::Community(crate::cli::CommunityCmd::SetName { ref community, ref name }))
-            if community == "abcd" && name == "Bea"
+        Some(Command::Community(crate::cli::CommunityCmd::SetName { ref community, ref name, clear }))
+            if community == "abcd" && name.as_deref() == Some("Bea") && !clear
     ));
-    let cli = Cli::try_parse_from(["rekindle", "community", "set-name", "abcd", ""]).unwrap();
+    let cli =
+        Cli::try_parse_from(["rekindle", "community", "set-name", "abcd", "--clear"]).unwrap();
     assert!(matches!(
         cli.command,
-        Some(Command::Community(crate::cli::CommunityCmd::SetName { ref name, .. })) if name.is_empty()
+        Some(Command::Community(crate::cli::CommunityCmd::SetName {
+            name: None,
+            clear: true,
+            ..
+        }))
     ));
+}
+
+#[test]
+fn parse_community_profile_edits() {
+    use rekindle_types::dto::community_profile::ProfileField;
+
+    let cli = Cli::try_parse_from([
+        "rekindle",
+        "community",
+        "profile",
+        "-c",
+        "abcd",
+        "--bio",
+        "At the LAN",
+        "--clear",
+        "banner-ref",
+    ])
+    .unwrap();
+    let Some(Command::Community(crate::cli::CommunityCmd::Profile(args))) = cli.command else {
+        panic!("profile command")
+    };
+    let patch = args.patch().unwrap();
+    assert_eq!(patch.bio, ProfileField::Set("At the LAN".into()));
+    assert_eq!(patch.banner_ref, ProfileField::Clear);
+    assert_eq!(patch.avatar_ref, ProfileField::Unchanged);
 }
 
 /// Friend flags take a display name or nickname as given; `friend_ref`
@@ -459,75 +528,63 @@ fn parse_friend_flags_by_name() {
 }
 
 #[test]
-fn location_settings_map_to_the_host_read_and_field_write() {
-    use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, SettingsRequest};
-    use rekindle_types::presence::{PresencePolicyField, ShareScope};
-
-    for (state, scope) in [("on", ShareScope::Members), ("off", ShareScope::None)] {
-        let cli = Cli::try_parse_from(["rekindle", "settings", "share-location", "Group", state])
-            .unwrap();
-        let Some(Command::Settings(command)) = cli.command else {
-            panic!("expected settings command");
-        };
-        assert!(matches!(
-            crate::presence::settings_request(&command),
-            IpcRequest::Community(CommunityRequest::Settings(
-                SettingsRequest::CommunitySetPresencePolicyField {
-                    community,
-                    field: PresencePolicyField::ShareLocation(actual),
-                }
-            )) if community == "Group" && actual == scope
-        ));
-    }
-
-    let cli = Cli::try_parse_from([
-        "rekindle",
-        "settings",
-        "share-location",
-        "Group",
-        "--format",
-        "json",
-    ])
-    .unwrap();
-    let Some(Command::Settings(command)) = cli.command else {
-        panic!("expected settings command");
-    };
-    assert!(matches!(
-        crate::presence::settings_request(&command),
-        IpcRequest::Community(CommunityRequest::Settings(
-            SettingsRequest::CommunityGetPresencePolicy { community }
-        )) if community == "Group"
-    ));
-}
-
-#[test]
-fn community_focus_maps_text_voice_and_clear_to_host_requests() {
+fn community_focus_maps_arguments_to_the_host_request() {
     use rekindle_ipc::protocol::{ChannelMessageRequest, CommunityRequest, IpcRequest};
+    use rekindle_types::display::CommunityDetail;
 
-    for (args, expected_channel, expected_kind) in [
-        (vec!["general"], Some("general"), "text"),
-        (vec!["lobby", "--voice"], Some("lobby"), "voice"),
-        (vec![], None, "text"),
+    let detail: CommunityDetail = serde_json::from_value(serde_json::json!({
+        "anchor": "anchor-key",
+        "name": "Dev Team",
+        "description": "",
+        "creator_pseudonyms": [],
+        "created_at": 0,
+        "member_count": 1,
+        "our_pseudonym": "member-key",
+        "our_roles": [],
+        "roles": [],
+        "channels": [
+            { "id": "text-id", "name": "General Chat", "kind": "text", "topic": "",
+              "mekGeneration": 0, "sortOrder": 0 },
+            { "id": "voice-id", "name": "Stand-up", "kind": "voice", "topic": "",
+              "mekGeneration": 0, "sortOrder": 1 }
+        ]
+    }))
+    .unwrap();
+
+    for (tail, expected_channel, expected_kind) in [
+        (&["General Chat"][..], Some("text-id"), "text"),
+        (&["voice-id", "--voice"][..], Some("voice-id"), "voice"),
+        (&[][..], None, "text"),
     ] {
-        let cli = Cli::try_parse_from(
-            ["rekindle", "community", "focus", "Group"]
-                .into_iter()
-                .chain(args),
-        )
-        .unwrap();
+        let args = ["rekindle", "community", "focus", "Dev Team"]
+            .into_iter()
+            .chain(tail.iter().copied());
+        let cli = Cli::try_parse_from(args).unwrap();
         let Some(Command::Community(CommunityCmd::Focus {
             community,
             channel,
             voice,
         })) = cli.command
         else {
-            panic!("expected community focus");
+            panic!("expected a focus command");
         };
-        assert!(matches!(
-            crate::community::focus_request(community, channel, voice),
-            IpcRequest::Community(CommunityRequest::Messages(
-                ChannelMessageRequest::ChannelSetActive { community, channel, kind }
-            )) if community == "Group" && channel.as_deref() == expected_channel && kind == expected_kind
-        ));
+        assert_eq!(community, detail.name);
+        let request = crate::community::focus_request(&detail, channel.as_deref(), voice).unwrap();
+        let IpcRequest::Community(CommunityRequest::Messages(
+            ChannelMessageRequest::ChannelSetActive {
+                community,
+                channel,
+                kind,
+            },
+        )) = request
+        else {
+            panic!("expected ChannelSetActive");
+        };
+        assert_eq!(community, detail.anchor);
+        assert_eq!(channel.as_deref(), expected_channel);
+        assert_eq!(kind, expected_kind);
     }
 }
+
+#[path = "presence_command_tests.rs"]
+mod presence_command_tests;

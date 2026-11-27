@@ -1,18 +1,18 @@
-import { Component, Show } from "solid-js";
-import SkinGlyph from "../../components/common/SkinGlyph";
-import CommunityList from "../../components/community/CommunityList";
-import ChannelList from "../../components/community/ChannelList";
-import VoicePanel from "../../components/voice/VoicePanel";
-import CategoryHeader from "../../components/community/CategoryHeader";
-import { voiceState } from "../../stores/voice.store";
-import { commands } from "../../ipc/commands";
-import { handleJoinVoice } from "../../actions/voice.actions";
+import { type Component, Show } from "solid-js";
 import {
-  handleDeleteChannel,
   handleDeleteCategory,
+  handleDeleteChannel,
   handleLeaveCommunity,
   handleSetNotificationOverride,
 } from "../../actions/community.actions";
+import { handleJoinVoice } from "../../actions/voice.actions";
+import SkinGlyph from "../../components/common/SkinGlyph";
+import CategoryHeader from "../../components/community/CategoryHeader";
+import ChannelList from "../../components/community/ChannelList";
+import CommunityList from "../../components/community/CommunityList";
+import VoicePanel from "../../components/voice/VoicePanel";
+import { commands } from "../../ipc/commands";
+import { voiceState } from "../../stores/voice.store";
 import type { CommunityVm } from "./useCommunityWindow";
 
 /// Left navigation rail: community list, channel list, collapsible game
@@ -26,6 +26,7 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
         <span class="community-sidebar-title">Communities</span>
         <span class="header-btn-group">
           <button
+            type="button"
             class="action-bar-btn header-add-btn"
             onClick={() => vm.setShowJoinCommunity(true)}
             title="Join Community"
@@ -33,6 +34,7 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
             <SkinGlyph name="room" />
           </button>
           <button
+            type="button"
             class="action-bar-btn header-add-btn"
             onClick={() => vm.setShowCreateCommunity(true)}
             title="Create Community"
@@ -44,7 +46,10 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
       <CommunityList
         selectedId={vm.selectedCommunityId()}
         onSelect={vm.handleSelectCommunity}
-        onSettings={(id) => { vm.handleSelectCommunity(id); vm.setShowSettings(true); }}
+        onSettings={(id) => {
+          vm.handleSelectCommunity(id);
+          vm.setShowSettings(true);
+        }}
         onLeave={() => void handleLeaveCommunity(vm.selectedCommunityId())}
       />
       <Show when={vm.activeCommunity()}>
@@ -52,38 +57,49 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
           <span class="community-sidebar-title">Channels</span>
           <span class="header-btn-group">
             <button
+              type="button"
               class="action-bar-btn header-add-btn"
               onClick={() => vm.setShowSettings(true)}
               title="Community Settings"
             >
               <SkinGlyph name="settings" />
             </button>
-            <Show when={vm.canManageChannels()}>
-              <button
-                class="action-bar-btn header-add-btn"
-                onClick={() => vm.setShowCreateChannel(true)}
-                title="Create Channel"
-              >
-                <SkinGlyph name="plus-box" />
-              </button>
-            </Show>
+            {/* Never-hide: drawn always, disabled with the Host's reason. */}
+            <button
+              type="button"
+              class="action-bar-btn header-add-btn"
+              onClick={() => vm.setShowCreateChannel(true)}
+              disabled={vm.denied("manageChannels") !== null}
+              title={vm.denied("manageChannels") ?? "Create Channel"}
+              aria-label="Create Channel"
+              aria-description={vm.denied("manageChannels") ?? undefined}
+            >
+              <SkinGlyph name="plus-box" />
+            </button>
           </span>
         </div>
         <ChannelList
           channels={vm.activeCommunity()!.channels}
           categories={vm.activeCommunity()!.categories}
           members={vm.activeCommunity()!.members}
+          myPseudonymKey={vm.activeCommunity()!.myPseudonymKey}
           selectedId={vm.selectedChannelId()}
           communityId={vm.selectedCommunityId()}
-          canManage={vm.canManageChannels()}
+          manageDenied={vm.denied("manageChannels")}
           onSelect={vm.handleSelectChannel}
           onVoiceJoin={(channelId) => handleJoinVoice(channelId, vm.selectedCommunityId())}
           onRename={(channelId, currentName) => vm.setRenameTarget({ channelId, currentName })}
           onDelete={(channelId) => handleDeleteChannel(vm.selectedCommunityId(), channelId)}
-          onRenameCategory={(categoryId, currentName) => vm.setRenameCategoryTarget({ categoryId, currentName })}
-          onDeleteCategory={(categoryId) => handleDeleteCategory(vm.selectedCommunityId(), categoryId)}
+          onRenameCategory={(categoryId, currentName) =>
+            vm.setRenameCategoryTarget({ categoryId, currentName })
+          }
+          onDeleteCategory={(categoryId) =>
+            handleDeleteCategory(vm.selectedCommunityId(), categoryId)
+          }
           onCreateCategory={() => vm.setShowCreateCategory(true)}
-          onSetNotification={(channelId, level) => handleSetNotificationOverride(vm.selectedCommunityId(), channelId, level)}
+          onSetNotification={(channelId, level) =>
+            handleSetNotificationOverride(vm.selectedCommunityId(), channelId, level)
+          }
         />
 
         {/* Sidebar: Game Servers (collapsible). Shown with no servers too:
@@ -102,10 +118,12 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
                   {vm.gameNameCache().get(server.gameId) ?? server.label}
                 </span>
                 <button
+                  type="button"
                   class="sidebar-server-join-btn"
                   onClick={() => {
                     const id = parseInt(server.gameId, 10);
-                    if (!isNaN(id)) void commands.launchGame(id, server.address, "community");
+                    if (!Number.isNaN(id))
+                      void commands.launchGame(id, server.address, "community");
                   }}
                 >
                   Join
@@ -113,8 +131,12 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
               </div>
             ))}
             <button
+              type="button"
               class="sidebar-section-more"
-              onClick={() => { vm.setShowServers(true); vm.setShowEvents(false); }}
+              onClick={() => {
+                vm.setShowServers(true);
+                vm.setShowEvents(false);
+              }}
             >
               All servers
             </button>
@@ -133,12 +155,18 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
             {vm.upcomingEvents().map((event) => (
               <div class="sidebar-event-row">
                 <span class="sidebar-event-title">{event.title}</span>
-                <span class="sidebar-event-countdown">{vm.formatTimeUntilEvent(event.startTime)}</span>
+                <span class="sidebar-event-countdown">
+                  {vm.formatTimeUntilEvent(event.startTime)}
+                </span>
               </div>
             ))}
             <button
+              type="button"
               class="sidebar-section-more"
-              onClick={() => { vm.setShowEvents(true); vm.setShowServers(false); }}
+              onClick={() => {
+                vm.setShowEvents(true);
+                vm.setShowServers(false);
+              }}
             >
               All events
             </button>
@@ -158,6 +186,7 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
            *  channel). Cmd/Ctrl-F still scopes to the active
            *  channel as before. */}
           <button
+            type="button"
             class="community-leave-btn"
             title="Search this community (Cmd/Ctrl+F or Cmd/Ctrl+K searches the open channel)"
             aria-label="Search community"
@@ -169,6 +198,7 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
             <SkinGlyph name="search" /> Search
           </button>
           <button
+            type="button"
             class="community-leave-btn"
             onClick={() => void handleLeaveCommunity(vm.selectedCommunityId())}
           >

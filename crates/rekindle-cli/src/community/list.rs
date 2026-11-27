@@ -1,18 +1,13 @@
 //! The community list served by the Host, rendered for the terminal.
 
 use rekindle_client::DaemonClient;
-use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, LifecycleRequest};
 
 use super::removal_text;
-use crate::helpers;
+use crate::community_ref;
 use crate::output::{format, table, OutputMode};
 
 pub(super) async fn dispatch(client: &DaemonClient, mode: OutputMode) -> anyhow::Result<()> {
-    let value = helpers::send(
-        client,
-        IpcRequest::Community(CommunityRequest::Lifecycle(LifecycleRequest::CommunityList)),
-    )
-    .await?;
+    let value = community_ref::list(client).await?;
     if mode.is_structured() {
         return format::print_structured(&value, mode);
     }

@@ -6,7 +6,7 @@ import type { DisappearingTimerView, DmMessage } from "./dto_dm";
 
 /** One member of a group, labelled by the Host (plan E2.6 GC1): "You", a
  *  friend's name, or the roster's name marked "(not a friend)"; never a key. */
-export interface GroupDmMemberView {
+interface GroupDmMemberView {
   key: string;
   label: string;
 }

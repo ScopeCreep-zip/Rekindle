@@ -1,4 +1,4 @@
-import { Component, Show, createEffect, createSignal } from "solid-js";
+import { type Component, createEffect, createSignal, createUniqueId, Show } from "solid-js";
 import { commands } from "../../../ipc/commands";
 import { isCommandError } from "../../../ipc/commands/dto";
 import { communityState } from "../../../stores/community.store";
@@ -13,6 +13,7 @@ import FormField from "../../common/FormField";
  * the Host's `myDisplayName`. Our identity name is never used here.
  */
 const MyNameSection: Component<{ communityId: string }> = (props) => {
+  const localNameId = createUniqueId();
   const community = () => communityState.communities[props.communityId];
   const [draft, setDraft] = createSignal("");
   const [busy, setBusy] = createSignal(false);
@@ -29,7 +30,12 @@ const MyNameSection: Component<{ communityId: string }> = (props) => {
     setError(null);
     try {
       // The Host publishes our MemberCardChanged; the window takes the name from it.
-      await commands.setCommunityDisplayName(props.communityId, draft().trim());
+      // An emptied name is an explicit clear (PF2): the fingerprint shows.
+      const name = draft().trim();
+      await commands.setCommunityDisplayName(
+        props.communityId,
+        name === "" ? { op: "clear" } : { op: "set", value: name }
+      );
     } catch (err) {
       if (!(isCommandError(err) && err.type === "cancelled")) setError(errorMessage(err));
     } finally {
@@ -39,9 +45,10 @@ const MyNameSection: Component<{ communityId: string }> = (props) => {
 
   return (
     <form class="my-name-section" onSubmit={(e) => void save(e)}>
-      <FormField label="Your name in this community" error={error()}>
+      <FormField label="Your name in this community" error={error()} controlId={localNameId}>
         <div class="form-field-row my-name-row">
           <input
+            id={localNameId}
             class="form-input"
             type="text"
             aria-describedby="my-name-hint"

@@ -4,7 +4,7 @@ version = "0.1.0"
 publish = false
 edition = "2021"
 description = "Rekindle wire types and encodings (Cap'n Proto schemas, envelopes, record pages), with no Veilid"
-license = "MIT"
+license.workspace = true
 
 [lints]
 workspace = true
@@ -21,6 +21,9 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 zeroize = "1"
+
+[dev-dependencies]
+proptest = "1"
 
 [build-dependencies]
 capnpc = { workspace = true }

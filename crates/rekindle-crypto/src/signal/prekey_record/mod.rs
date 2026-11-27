@@ -41,6 +41,8 @@ pub use mint::{
     mint_head, mint_set, mint_slot, sign_head, sign_slot, MintedHead, MintedSet, MintedSlot,
 };
 pub use publish::{prekey_problem, set_values, split_first_contact, Publish};
+/// The encoding error returned when packing a prekey value for publication.
+pub use rekindle_codec::CodecError;
 
 const DAY_MS: i64 = 86_400_000;
 

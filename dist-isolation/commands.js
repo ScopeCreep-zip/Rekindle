@@ -34,6 +34,7 @@ const REKINDLE_ISOLATION_COMMANDS = Object.freeze([
   "create_community",
   "create_community_invite",
   "create_event",
+  "create_forum_post",
   "create_friend_group",
   "create_identity",
   "create_poll",

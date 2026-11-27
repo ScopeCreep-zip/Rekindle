@@ -4,6 +4,16 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::message::SendState;
+
+/// The reply id exposed to readers within a thread. The verified author
+/// is a hex pseudonym, so the first colon unambiguously separates it from
+/// the author-chosen wire id.
+#[must_use]
+pub fn thread_reply_key(author: &str, message_id: &str) -> String {
+    format!("{author}:{message_id}")
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ThreadInfo {
@@ -28,27 +38,26 @@ pub struct ThreadInfo {
     pub message_count: u32,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn thread_info_roundtrip() {
-        let t = ThreadInfo {
-            id: "thr_abcdef".into(),
-            channel_id: "ch_123".into(),
-            name: "design".into(),
-            starter_message_id: "msg_xyz".into(),
-            creator_pseudonym: "abcd".into(),
-            forum_tag: Some("question".into()),
-            created_at: 100,
-            archived: false,
-            auto_archive_seconds: 86_400,
-            last_message_at: 200,
-            message_count: 7,
-        };
-        let json = serde_json::to_string(&t).unwrap();
-        let back: ThreadInfo = serde_json::from_str(&json).unwrap();
-        assert_eq!(t, back);
-    }
+/// The `ThreadSend` answer: our reply's id and its delivery state (D22's
+/// `SendState`): `queued` in our durable `channel_post` outbox when the Host
+/// answers; `ChannelSendStatus` names each later change.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadReplyOutcome {
+    pub message_id: String,
+    pub send_state: SendState,
 }
+
+/// The `CreateForumPost` answer: the thread exists and its starter is in
+/// our outbox (`starter`: its `SendState`, `queued` when the Host answers).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForumPostCreated {
+    pub thread_id: String,
+    pub starter_message_id: String,
+    pub starter: SendState,
+}
+
+#[cfg(test)]
+#[path = "thread_tests.rs"]
+mod tests;

@@ -110,7 +110,10 @@ async fn events(ctx: &DaemonContext, anchor: &str) -> Result<Vec<EventInfo>, Ipc
             events.sort_by_key(|e| e.start_time);
             Ok(events)
         }
-        Err(GovernanceRuntimeError::PermissionDenied) => Ok(Vec::new()),
+        Err(
+            GovernanceRuntimeError::PermissionDenied
+            | GovernanceRuntimeError::PermissionRequired(_),
+        ) => Ok(Vec::new()),
         Err(e) => Err(runtime_refused(&e, "events")),
     }
 }
@@ -250,7 +253,10 @@ async fn community_page(
     sections.push(pinned(ctx, &anchor).await?);
     let servers = match adapter(ctx).game_servers(&anchor).await {
         Ok(servers) => servers,
-        Err(GovernanceRuntimeError::PermissionDenied) => Vec::new(),
+        Err(
+            GovernanceRuntimeError::PermissionDenied
+            | GovernanceRuntimeError::PermissionRequired(_),
+        ) => Vec::new(),
         Err(e) => return Err(runtime_refused(&e, "game servers")),
     };
     sections.push(InfoviewSection::GameServers {
@@ -291,7 +297,10 @@ async fn pinned(ctx: &DaemonContext, anchor: &str) -> Result<InfoviewSection, Ip
     for channel in crate::daemon::dispatch::channel::channel_overviews(ctx, anchor) {
         match host.channel_pins(anchor, &channel.id).await {
             Ok(found) => pins.extend(found),
-            Err(GovernanceRuntimeError::PermissionDenied) => {}
+            Err(
+                GovernanceRuntimeError::PermissionDenied
+                | GovernanceRuntimeError::PermissionRequired(_),
+            ) => {}
             Err(e) => return Err(runtime_refused(&e, "channel pins")),
         }
     }
@@ -301,43 +310,5 @@ async fn pinned(ctx: &DaemonContext, anchor: &str) -> Result<InfoviewSection, Ip
 }
 
 #[cfg(test)]
-mod tests {
-    use rekindle_types::friend::NotJoinableReason;
-
-    use super::*;
-
-    /// A community's server row always carries `Join`, sourced from the
-    /// community, even when its game id is not numeric: then it is not
-    /// joinable and says why; a launchable game on the server is joinable.
-    #[test]
-    fn a_community_server_row_joins_from_the_community() {
-        let info = |game_id: &str| GameServerInfo {
-            id: format!("gs_{}", "0".repeat(32)),
-            game_id: game_id.into(),
-            label: "Frag Night".into(),
-            address: "203.0.113.7:27015".into(),
-            added_by: "ab".repeat(32),
-            created_at: 1,
-        };
-        assert_eq!(
-            server_row(info("4100")).join,
-            InfoviewAction::JoinServer {
-                game_id: Some(4_100),
-                server: Some("203.0.113.7:27015".into()),
-                source: JoinSource::Community,
-                joinable: true,
-                joinable_reason: None,
-            }
-        );
-        assert_eq!(
-            server_row(info("quake")).join,
-            InfoviewAction::JoinServer {
-                game_id: None,
-                server: Some("203.0.113.7:27015".into()),
-                source: JoinSource::Community,
-                joinable: false,
-                joinable_reason: Some(NotJoinableReason::CannotLaunch),
-            }
-        );
-    }
-}
+#[path = "compose_tests.rs"]
+mod tests;

@@ -35,6 +35,13 @@ updates:
       cargo-minor-and-patch:
         applies-to: version-updates
         update-types: ["minor", "patch"]
+      # Majors go in one weekly PR per ecosystem, never one PR each. A
+      # major is grouped, not ignored: an `ignore` rule also applies to
+      # security updates (docs: "ignore those dependencies when it opens
+      # pull requests for version updates and security updates").
+      cargo-major:
+        applies-to: version-updates
+        update-types: ["major"]
 
   # ── npm / pnpm (frontend) ─────────────────────────────────────────
   # Dependabot reads pnpm-lock.yaml as of the v2 schema. Workspace
@@ -65,6 +72,13 @@ updates:
       npm-minor-and-patch:
         applies-to: version-updates
         update-types: ["minor", "patch"]
+      # Majors go in one weekly PR per ecosystem, never one PR each. A
+      # major is grouped, not ignored: an `ignore` rule also applies to
+      # security updates (docs: "ignore those dependencies when it opens
+      # pull requests for version updates and security updates").
+      npm-major:
+        applies-to: version-updates
+        update-types: ["major"]
 
   # ── GitHub Actions ────────────────────────────────────────────────
   - package-ecosystem: "github-actions"
@@ -86,3 +100,43 @@ updates:
     commit-message:
       prefix: "deps(actions)"
       include: "scope"
+    groups:
+      security:
+        applies-to: security-updates
+        patterns: ["*"]
+      actions-minor-and-patch:
+        applies-to: version-updates
+        update-types: ["minor", "patch"]
+      actions-major:
+        applies-to: version-updates
+        update-types: ["major"]
+
+  # The SQL lint job's sqlfluff, hash-pinned in .github/requirements/sqlfluff.txt
+  # (supply-chain policy item 1).
+  - package-ecosystem: "pip"
+    directory: "/.github/requirements"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "Etc/UTC"
+    open-pull-requests-limit: 5
+    # Supply-chain cooldown, as for the other ecosystems.
+    cooldown:
+      default-days: 14
+    labels:
+      - "dependencies"
+      - "python"
+    commit-message:
+      prefix: "deps(pip)"
+      include: "scope"
+    groups:
+      security:
+        applies-to: security-updates
+        patterns: ["*"]
+      pip-minor-and-patch:
+        applies-to: version-updates
+        update-types: ["minor", "patch"]
+      pip-major:
+        applies-to: version-updates
+        update-types: ["major"]

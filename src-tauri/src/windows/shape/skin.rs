@@ -97,7 +97,7 @@ pub fn decode(frames: SkinFrames) -> Result<SkinFrameMap, String> {
             let masks = w
                 .masks
                 .into_iter()
-                .map(|m| Mask::from_bits(m.width, m.height, m.bits))
+                .map(|m| Mask::from_parts(m.width, m.height, m.bits, m.faint))
                 .collect::<Option<Vec<_>>>()
                 .ok_or_else(|| format!("malformed mask in {:?}", w.window))?;
             Ok((w.window, (w.layout, masks)))

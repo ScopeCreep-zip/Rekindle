@@ -50,5 +50,6 @@ fn community_info_draws_the_location_sharing_policy_for_its_community() {
             .map(Cell::symbol)
             .collect::<String>();
         assert!(screen.contains(&format!("Share location: {text}")));
+        assert!(screen.contains("Active channel: unavailable"));
     }
 }
