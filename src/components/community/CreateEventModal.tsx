@@ -1,4 +1,4 @@
-import { type Component, createSignal, createEffect } from "solid-js";
+import { type Component, createSignal, createEffect, createUniqueId } from "solid-js";
 import Modal from "../common/Modal";
 import { handleCreateEvent, handleEditEvent } from "../../actions/community.actions";
 
@@ -26,6 +26,8 @@ function timestampToTime(ts: number): string {
 }
 
 const CreateEventModal: Component<CreateEventModalProps> = (props) => {
+  const startLabelId = createUniqueId();
+  const endLabelId = createUniqueId();
   const [title, setTitle] = createSignal("");
   const [description, setDescription] = createSignal("");
   const [startDate, setStartDate] = createSignal("");
@@ -136,32 +138,36 @@ const CreateEventModal: Component<CreateEventModalProps> = (props) => {
           onInput={(e) => setDescription(e.currentTarget.value)}
           rows={3}
         />
-        <label class="form-label">Start</label>
-        <div class="form-row">
+        <span class="form-label" id={startLabelId}>Start</span>
+        <div class="form-row" role="group" aria-labelledby={startLabelId}>
           <input
             class="form-input"
             type="date"
+            aria-label="Start date"
             value={startDate()}
             onInput={(e) => setStartDate(e.currentTarget.value)}
           />
           <input
             class="form-input"
             type="time"
+            aria-label="Start time"
             value={startTime()}
             onInput={(e) => setStartTime(e.currentTarget.value)}
           />
         </div>
-        <label class="form-label">End (optional)</label>
-        <div class="form-row">
+        <span class="form-label" id={endLabelId}>End (optional)</span>
+        <div class="form-row" role="group" aria-labelledby={endLabelId}>
           <input
             class="form-input"
             type="date"
+            aria-label="End date"
             value={endDate()}
             onInput={(e) => setEndDate(e.currentTarget.value)}
           />
           <input
             class="form-input"
             type="time"
+            aria-label="End time"
             value={endTime()}
             onInput={(e) => setEndTime(e.currentTarget.value)}
           />

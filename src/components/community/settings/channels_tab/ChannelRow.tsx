@@ -1,4 +1,4 @@
-import { type Component, For, Show, createSignal } from "solid-js";
+import { type Component, For, Show, createSignal, createUniqueId } from "solid-js";
 import SkinGlyph from "../../../common/SkinGlyph";
 import type { Channel, Community } from "../../../../stores/community.store";
 import {
@@ -22,6 +22,8 @@ interface ChannelRowProps {
 }
 
 const ChannelRow: Component<ChannelRowProps> = (props) => {
+  const notificationLevelId = createUniqueId();
+  const notificationSoundId = createUniqueId();
   const [renaming, setRenaming] = createSignal(false);
   const [renameValue, setRenameValue] = createSignal("");
   const [editingSlowmode, setEditingSlowmode] = createSignal(false);
@@ -330,9 +332,10 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
           not just admins (it's a personal preference). */}
       <div class="channel-settings-inline">
         <span class="channel-settings-inline-row">
-          <label class="channel-notif-label">Notifications:</label>
+          <label class="channel-notif-label" for={notificationLevelId}>Notifications:</label>
           <select
             class="form-select channel-notif-select"
+            id={notificationLevelId}
             value={props.channel.notificationLevel ?? "all"}
             onChange={(e) => {
               const value = e.currentTarget.value as "all" | "mentions" | "nothing";
@@ -343,9 +346,10 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
             <option value="mentions">Mentions only</option>
             <option value="nothing">Nothing</option>
           </select>
-          <label class="channel-notif-label">Sound:</label>
+          <label class="channel-notif-label" for={notificationSoundId}>Sound:</label>
           <select
             class="form-select channel-notif-select"
+            id={notificationSoundId}
             value={props.channel.notificationSoundRef ?? ""}
             onChange={(e) => changeChannelSound(e.currentTarget.value)}
           >

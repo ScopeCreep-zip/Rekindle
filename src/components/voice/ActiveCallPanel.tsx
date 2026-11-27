@@ -1,4 +1,4 @@
-import { type Component, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import { type Component, Show, createEffect, createMemo, createSignal, createUniqueId, onCleanup } from "solid-js";
 import SkinGlyph from "../common/SkinGlyph";
 import { commands } from "../../ipc/commands";
 import type { CallEntry } from "../../stores/calls.store";
@@ -28,6 +28,8 @@ interface ActiveCallPanelProps {
 //   - quality bars     → reads voiceState.connectionQuality (populated by
 //                        the backend's ConnectionQuality voice event)
 const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
+  const microphoneId = createUniqueId();
+  const speakersId = createUniqueId();
   const [now, setNow] = createSignal(Date.now());
   let interval: ReturnType<typeof setInterval> | undefined;
 
@@ -277,8 +279,9 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
           Audio devices
         </summary>
         <div class="active-call-device-row">
-          <label>Microphone</label>
+          <label for={microphoneId}>Microphone</label>
           <select
+            id={microphoneId}
             value={settingsState.selectedInputDevice ?? ""}
             onChange={(e) => void pickInputDevice(e.currentTarget.value)}
           >
@@ -289,8 +292,9 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
           </select>
         </div>
         <div class="active-call-device-row">
-          <label>Speakers</label>
+          <label for={speakersId}>Speakers</label>
           <select
+            id={speakersId}
             value={settingsState.selectedOutputDevice ?? ""}
             onChange={(e) => void pickOutputDevice(e.currentTarget.value)}
           >
