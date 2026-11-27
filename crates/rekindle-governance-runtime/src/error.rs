@@ -72,6 +72,17 @@ pub enum GovernanceRuntimeError {
     /// nothing is signed under the key again.
     #[error("{community}: this device's key signed seq {last_seq} from another copy of this data")]
     RestoreDetected { community: String, last_seq: u64 },
+    /// The merged device set holds a `DeviceRetired` of this device's own
+    /// op key, retired from seq `retired_from` by another copy of this data
+    /// root or by the user (ADR 0022 rule 4, plan E3.2 S7d-keys.9): this
+    /// device stops signing under it. The text is the notice the plan words,
+    /// shown as the write's refusal (a held write's through
+    /// `GovernanceRuntimeEvent::HeldWriteRefused`).
+    #[error("this device's key was retired by another copy of this data")]
+    OwnKeyRetired {
+        community: String,
+        retired_from: u64,
+    },
     /// A write whose answer needs the op signed (an invite link, which is
     /// handed out only once it landed) while the unlock barrier is still
     /// catching up (plan E3.2 S7d-keys.8): refused at once, nothing signed. The
