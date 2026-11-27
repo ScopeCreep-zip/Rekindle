@@ -1,4 +1,5 @@
-import { setCommunityMembers, communityState } from "../../stores/community.store";
+import { markMembersFailed, setCommunityMembers, communityState } from "../../stores/community.store";
+import { errorMessage } from "../../utils/error";
 import { commands } from "../../ipc/commands";
 import { transformMember } from "../../utils/transformers";
 
@@ -26,7 +27,10 @@ export function refreshCommunityMembers(community: string): void {
         for (const m of members) asked?.delete(m.pseudonymKey);
       }
     })
-    .catch((e) => console.error(`Failed to refresh members for ${community}:`, e))
+    .catch((e) => {
+      console.error(`Failed to refresh members for ${community}:`, e);
+      markMembersFailed(community, errorMessage(e));
+    })
     .finally(() => {
       inFlight.delete(community);
       if (dirty.delete(community)) refreshCommunityMembers(community);
