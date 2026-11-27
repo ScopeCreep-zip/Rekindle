@@ -2,6 +2,7 @@
 //! Host's one game publisher records a session when it ends; the profile
 //! reads the totals per game and when each was last played.
 
+use crate::row::query_list;
 use rusqlite::{params, Connection};
 
 pub use rekindle_types::dto::presence::GameTotal;
@@ -31,19 +32,13 @@ pub fn record(
 /// # Errors
 /// The query failed.
 pub fn totals(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<GameTotal>> {
-    let mut stmt = conn.prepare(
+    query_list(
+        conn,
         "SELECT game_id, SUM(ended_at - started_at) / 1000, MAX(ended_at) \
          FROM game_sessions WHERE owner_key = ?1 \
          GROUP BY game_id ORDER BY MAX(ended_at) DESC, game_id",
-    )?;
-    let rows = stmt.query_map([owner_key], |row| {
-        Ok(GameTotal {
-            game_id: row.get(0)?,
-            total_secs: u64::try_from(row.get::<_, i64>(1)?).unwrap_or(0),
-            last_played: row.get(2)?,
-        })
-    })?;
-    rows.collect()
+        [owner_key],
+    )
 }
 
 #[cfg(test)]

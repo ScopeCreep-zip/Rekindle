@@ -14,6 +14,7 @@
 //! Host offers the user a session re-initiation (plan E2.5 last stage,
 //! ruling Q1), which runs only when they accept.
 
+use crate::row::{query_list, FromRow};
 use std::time::Duration;
 
 use rekindle_crypto::horizon::DELIVERY_HORIZON;
@@ -33,6 +34,15 @@ pub const PEER_WINDOW: Duration = Duration::from_secs(3 * 60 * 60);
 pub struct Due {
     pub msg_id: [u8; 32],
     pub observed_ratchet_key: [u8; 32],
+}
+
+impl FromRow for Due {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(Due {
+            msg_id: row.get(0)?,
+            observed_ratchet_key: row.get(1)?,
+        })
+    }
 }
 
 /// What [`take_due`] hands out.
@@ -102,25 +112,13 @@ pub fn take_due(
          AND pending = 1 AND sent_count >= ?3",
         params![owner, peer, MAX_PER_MESSAGE],
     )?;
-    let due = {
-        let mut stmt = tx.prepare(
-            "SELECT msg_id, observed_ratchet_key FROM retry_requests \
-             WHERE owner_key = ?1 AND peer = ?2 AND pending = 1 \
-             ORDER BY failed_at, rowid LIMIT ?3",
-        )?;
-        let rows = stmt
-            .query_map(
-                params![owner, peer, MAX_PER_PEER.saturating_sub(recent)],
-                |row| {
-                    Ok(Due {
-                        msg_id: row.get(0)?,
-                        observed_ratchet_key: row.get(1)?,
-                    })
-                },
-            )?
-            .collect::<rusqlite::Result<Vec<_>>>()?;
-        rows
-    };
+    let due: Vec<Due> = query_list(
+        &tx,
+        "SELECT msg_id, observed_ratchet_key FROM retry_requests \
+         WHERE owner_key = ?1 AND peer = ?2 AND pending = 1 \
+         ORDER BY failed_at, rowid LIMIT ?3",
+        params![owner, peer, MAX_PER_PEER.saturating_sub(recent)],
+    )?;
     for d in &due {
         tx.execute(
             "UPDATE retry_requests SET pending = 0, sent_count = sent_count + 1 \

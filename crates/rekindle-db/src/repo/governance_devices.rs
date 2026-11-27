@@ -5,7 +5,8 @@
 //! from it, written after each rebuild like `governance_checkpoints`, so the
 //! unlock reads our own keys' standing before the network answers.
 
-use rusqlite::{params, Connection, Row};
+use crate::row::{query_list, FromRow};
+use rusqlite::{params, Connection};
 
 use crate::repo::governance_ops::{hash32, int};
 use crate::row::{get, get_enum, get_u64};
@@ -64,19 +65,21 @@ pub struct DeviceRow {
     pub fork_evidence: Option<[u8; 32]>,
 }
 
-fn device_row(row: &Row<'_>) -> rusqlite::Result<DeviceRow> {
-    let fork: Option<Vec<u8>> = get(row, "fork_evidence")?;
-    Ok(DeviceRow {
-        member: get(row, "member")?,
-        device_key: get(row, "device_key")?,
-        incarnation: get_u64(row, 2)?,
-        device_record: get(row, "device_record")?,
-        state: get_enum(row, "state")?,
-        fork_evidence: match fork {
-            None => None,
-            Some(_) => Some(hash32(row, "fork_evidence")?),
-        },
-    })
+impl FromRow for DeviceRow {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        let fork: Option<Vec<u8>> = get(row, "fork_evidence")?;
+        Ok(DeviceRow {
+            member: get(row, "member")?,
+            device_key: get(row, "device_key")?,
+            incarnation: get_u64(row, 2)?,
+            device_record: get(row, "device_record")?,
+            state: get_enum(row, "state")?,
+            fork_evidence: match fork {
+                None => None,
+                Some(_) => Some(hash32(row, "fork_evidence")?),
+            },
+        })
+    }
 }
 
 /// Replace `community_id`'s device set with `rows`, the set the last merge
@@ -125,14 +128,14 @@ pub fn list(
     community_id: &str,
     member: Option<&str>,
 ) -> rusqlite::Result<Vec<DeviceRow>> {
-    let mut stmt = conn.prepare(
+    query_list(
+        conn,
         "SELECT member, device_key, incarnation, device_record, state, fork_evidence \
          FROM governance_devices \
          WHERE owner_key = ?1 AND community_id = ?2 AND (?3 IS NULL OR member = ?3) \
          ORDER BY member, incarnation, device_key",
-    )?;
-    let rows = stmt.query_map(params![owner_key, community_id, member], device_row)?;
-    rows.collect()
+        params![owner_key, community_id, member],
+    )
 }
 
 #[cfg(test)]

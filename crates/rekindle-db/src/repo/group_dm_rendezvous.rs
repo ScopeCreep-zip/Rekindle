@@ -4,7 +4,8 @@
 //! of its behaviour is `rekindle-dm` (`GroupDmDeps::{put_rendezvous,
 //! rendezvous}`); the row goes with its group (`ON DELETE CASCADE`).
 
-use rusqlite::{params, Connection, OptionalExtension as _};
+use crate::row::{query_list, query_opt, FromRow};
+use rusqlite::{params, Connection};
 
 /// Our place in one group's rendezvous record.
 #[derive(Clone, PartialEq, Eq)]
@@ -17,6 +18,18 @@ pub struct RendezvousRow {
     pub writer: String,
     /// Every member's slot, `(identity, slot)`.
     pub slots: Vec<(String, u8)>,
+}
+
+impl FromRow for RendezvousRow {
+    fn from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(RendezvousRow {
+            group_id: crate::row::get(r, "group_id")?,
+            record_key: crate::row::get(r, "record_key")?,
+            slot: crate::row::get(r, "slot")?,
+            writer: crate::row::get(r, "writer")?,
+            slots: crate::row::get_json(r, "slots")?,
+        })
+    }
 }
 
 /// The writer is never printed.
@@ -67,21 +80,12 @@ pub fn get(
     owner_key: &str,
     group_id: &str,
 ) -> rusqlite::Result<Option<RendezvousRow>> {
-    conn.query_row(
+    query_opt(
+        conn,
         "SELECT group_id, record_key, slot, writer, slots FROM group_dm_rendezvous \
          WHERE owner_key = ?1 AND group_id = ?2",
         params![owner_key, group_id],
-        |r| {
-            Ok(RendezvousRow {
-                group_id: crate::row::get(r, "group_id")?,
-                record_key: crate::row::get(r, "record_key")?,
-                slot: crate::row::get(r, "slot")?,
-                writer: crate::row::get(r, "writer")?,
-                slots: crate::row::get_json(r, "slots")?,
-            })
-        },
     )
-    .optional()
 }
 
 /// Every group's place we hold: the watches the Host holds at unlock.
@@ -89,20 +93,12 @@ pub fn get(
 /// # Errors
 /// The query failed or a row is corrupt.
 pub fn all(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<RendezvousRow>> {
-    let mut stmt = conn.prepare(
+    query_list(
+        conn,
         "SELECT group_id, record_key, slot, writer, slots FROM group_dm_rendezvous \
          WHERE owner_key = ?1 ORDER BY group_id",
-    )?;
-    let rows = stmt.query_map(params![owner_key], |r| {
-        Ok(RendezvousRow {
-            group_id: crate::row::get(r, "group_id")?,
-            record_key: crate::row::get(r, "record_key")?,
-            slot: crate::row::get(r, "slot")?,
-            writer: crate::row::get(r, "writer")?,
-            slots: crate::row::get_json(r, "slots")?,
-        })
-    })?;
-    rows.collect()
+        params![owner_key],
+    )
 }
 
 #[cfg(test)]

@@ -5,6 +5,7 @@
 #[cfg(test)]
 mod tests;
 
+use crate::row::{query_list, FromRow};
 use rusqlite::{params, Connection, OptionalExtension as _};
 
 use rekindle_types::member::MemberInfo;
@@ -25,32 +26,34 @@ pub struct ProfileRow {
     pub banner_ref: Option<String>,
 }
 
+impl FromRow for ProfileRow {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(ProfileRow {
+            community_id: row.get(0)?,
+            pseudonym_key: row.get(1)?,
+            display_name: row.get(2)?,
+            custom_status: row.get(3)?,
+            bio: row.get(4)?,
+            pronouns: row.get(5)?,
+            theme_color: row.get(6)?,
+            badges: crate::row::get_json(row, "badges")?,
+            avatar_ref: row.get(8)?,
+            banner_ref: row.get(9)?,
+        })
+    }
+}
+
 /// Every stored member profile of `owner_key`.
 ///
 /// # Errors
 /// The query failed.
 pub fn load_profiles(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<ProfileRow>> {
-    let mut stmt = conn.prepare(
+    query_list(
+        conn,
         "SELECT community_id, pseudonym_key, display_name, custom_status, bio, pronouns, \
          theme_color, badges, avatar_ref, banner_ref FROM community_members WHERE owner_key = ?1",
-    )?;
-    let rows = stmt
-        .query_map(params![owner_key], |row| {
-            Ok(ProfileRow {
-                community_id: row.get(0)?,
-                pseudonym_key: row.get(1)?,
-                display_name: row.get(2)?,
-                custom_status: row.get(3)?,
-                bio: row.get(4)?,
-                pronouns: row.get(5)?,
-                theme_color: row.get(6)?,
-                badges: crate::row::get_json(row, "badges")?,
-                avatar_ref: row.get(8)?,
-                banner_ref: row.get(9)?,
-            })
-        })?
-        .collect();
-    rows
+        params![owner_key],
+    )
 }
 
 /// A member as the member list shows it.
@@ -58,6 +61,15 @@ pub fn load_profiles(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec
 pub struct RosterRow {
     pub pseudonym_key: String,
     pub display_name: Option<String>,
+}
+
+impl FromRow for RosterRow {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(RosterRow {
+            pseudonym_key: row.get(0)?,
+            display_name: row.get(1)?,
+        })
+    }
 }
 
 /// The community's members, by display name.
@@ -69,19 +81,12 @@ pub fn roster(
     owner_key: &str,
     community_id: &str,
 ) -> rusqlite::Result<Vec<RosterRow>> {
-    let mut stmt = conn.prepare(
+    query_list(
+        conn,
         "SELECT pseudonym_key, display_name FROM community_members \
          WHERE owner_key = ?1 AND community_id = ?2 ORDER BY display_name",
-    )?;
-    let rows = stmt
-        .query_map(params![owner_key, community_id], |row| {
-            Ok(RosterRow {
-                pseudonym_key: row.get(0)?,
-                display_name: row.get(1)?,
-            })
-        })?
-        .collect();
-    rows
+        params![owner_key, community_id],
+    )
 }
 
 /// Store a member unless already stored: a creator or joiner adding
@@ -398,14 +403,10 @@ pub fn display_names(
     owner_key: &str,
     community_id: &str,
 ) -> rusqlite::Result<Vec<(String, String)>> {
-    let mut stmt = conn.prepare(
+    query_list(
+        conn,
         "SELECT pseudonym_key, display_name FROM community_members \
          WHERE owner_key = ?1 AND community_id = ?2 AND display_name IS NOT NULL",
-    )?;
-    let rows = stmt
-        .query_map(params![owner_key, community_id], |row| {
-            Ok((row.get(0)?, row.get(1)?))
-        })?
-        .collect();
-    rows
+        params![owner_key, community_id],
+    )
 }

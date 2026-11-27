@@ -6,11 +6,12 @@
 //! [`MAX_AGE_MS`], pruned on every insert, and a friend's removal or block
 //! purges their rows (Infoview design §3.2–§3.3).
 
+use crate::row::{query_list, FromRow};
 use rekindle_types::activity::{ActivityEntry, ActivityKind};
 
 #[path = "activity_seen.rs"]
 pub mod seen;
-use rusqlite::{params, Connection, OptionalExtension, Row};
+use rusqlite::{params, Connection, OptionalExtension};
 
 /// The most rows the feed keeps per identity.
 pub const MAX_ROWS: i64 = 500;
@@ -23,6 +24,30 @@ pub const MAX_AGE_MS: i64 = 30 * 24 * 60 * 60 * 1000;
 pub struct StoredActivity {
     pub id: i64,
     pub entry: ActivityEntry,
+}
+
+impl FromRow for StoredActivity {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        let kind_column: String = row.get(2)?;
+        let payload: String = row.get(3)?;
+        let kind: ActivityKind = serde_json::from_str(&payload).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(3, rusqlite::types::Type::Text, Box::new(e))
+        })?;
+        if kind.name() != kind_column {
+            return Err(rusqlite::Error::FromSqlConversionFailure(
+                2,
+                rusqlite::types::Type::Text,
+                format!("kind {kind_column:?} holds a {:?} payload", kind.name()).into(),
+            ));
+        }
+        Ok(StoredActivity {
+            id: row.get(0)?,
+            entry: ActivityEntry {
+                at: row.get(1)?,
+                kind,
+            },
+        })
+    }
 }
 
 /// Store `entries`, then prune the feed to the newest [`MAX_ROWS`] rows no
@@ -129,13 +154,13 @@ pub fn page(
         }
     };
     let (at, id) = cursor.unwrap_or((i64::MAX, i64::MAX));
-    let mut stmt = conn.prepare(
+    query_list(
+        conn,
         "SELECT id, at, kind, payload_json FROM activity_log \
          WHERE owner_key = ?1 AND (at, id) < (?2, ?3) \
          ORDER BY at DESC, id DESC LIMIT ?4",
-    )?;
-    let rows = stmt.query_map(params![owner_key, at, id, limit], read_row)?;
-    rows.collect()
+        params![owner_key, at, id, limit],
+    )
 }
 
 /// Remove every entry about `friend_key` (their removal or block).
@@ -160,28 +185,6 @@ pub fn clear(conn: &Connection, owner_key: &str) -> rusqlite::Result<()> {
         params![owner_key],
     )?;
     Ok(())
-}
-
-fn read_row(row: &Row<'_>) -> rusqlite::Result<StoredActivity> {
-    let kind_column: String = row.get(2)?;
-    let payload: String = row.get(3)?;
-    let kind: ActivityKind = serde_json::from_str(&payload).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(3, rusqlite::types::Type::Text, Box::new(e))
-    })?;
-    if kind.name() != kind_column {
-        return Err(rusqlite::Error::FromSqlConversionFailure(
-            2,
-            rusqlite::types::Type::Text,
-            format!("kind {kind_column:?} holds a {:?} payload", kind.name()).into(),
-        ));
-    }
-    Ok(StoredActivity {
-        id: row.get(0)?,
-        entry: ActivityEntry {
-            at: row.get(1)?,
-            kind,
-        },
-    })
 }
 
 #[cfg(test)]

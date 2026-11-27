@@ -11,9 +11,10 @@
 //! the action's own transaction, or [`acknowledge_key_change`] after an
 //! action whose write is not here); marking the new key verified does too.
 
+use crate::row::{query_opt, FromRow};
 use rekindle_crypto::SafetyNumber;
 use rekindle_types::intent::Escalation;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection};
 
 use super::identity_text;
 
@@ -28,6 +29,18 @@ pub struct SignalIdentity {
     pub changed_at: Option<i64>,
 }
 
+impl FromRow for SignalIdentity {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(SignalIdentity {
+            identity_key: row.get(0)?,
+            verified: row.get(1)?,
+            verified_at: row.get(2)?,
+            changed_from_key: row.get(3)?,
+            changed_at: row.get(4)?,
+        })
+    }
+}
+
 /// `peer`'s row, if we hold one.
 ///
 /// # Errors
@@ -37,21 +50,12 @@ pub fn get(
     owner: &[u8; 32],
     peer: &[u8; 32],
 ) -> rusqlite::Result<Option<SignalIdentity>> {
-    conn.query_row(
+    query_opt(
+        conn,
         "SELECT identity_key, verified, verified_at, changed_from_key, changed_at \
          FROM signal_identities WHERE owner_key = ?1 AND peer_identity = ?2",
         params![identity_text(owner), identity_text(peer)],
-        |row| {
-            Ok(SignalIdentity {
-                identity_key: row.get(0)?,
-                verified: row.get(1)?,
-                verified_at: row.get(2)?,
-                changed_from_key: row.get(3)?,
-                changed_at: row.get(4)?,
-            })
-        },
     )
-    .optional()
 }
 
 /// Record `peer`'s key on first contact (trust on first use, unverified);

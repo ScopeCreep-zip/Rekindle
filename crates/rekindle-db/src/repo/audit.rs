@@ -3,6 +3,7 @@
 //! Pure I/O: the caller owns the in-memory `AuditChain` and advances it;
 //! these functions store and read the entries it produces.
 
+use crate::row::{query_list, query_opt, FromRow};
 use rekindle_audit::{AuditEntry, AuditRecord};
 use rusqlite::{params, Connection};
 
@@ -32,12 +33,12 @@ pub fn insert_entry(
 
 /// Load every entry for `owner_key` in cursor order.
 pub fn load_all(conn: &Connection, owner_key: &str) -> Result<Vec<AuditEntry>, rusqlite::Error> {
-    let mut stmt = conn.prepare(
+    query_list(
+        conn,
         "SELECT cursor, prev_mac, mac, payload_json FROM audit_entries \
          WHERE owner_key = ?1 ORDER BY cursor ASC",
-    )?;
-    let rows = stmt.query_map(params![owner_key], row_to_entry)?;
-    rows.collect()
+        params![owner_key],
+    )
 }
 
 /// Load entries with `cursor > since_cursor` for export.
@@ -47,26 +48,23 @@ pub fn load_since(
     since_cursor: u64,
 ) -> Result<Vec<AuditEntry>, rusqlite::Error> {
     let since_i64 = since_cursor.cast_signed();
-    let mut stmt = conn.prepare(
+    query_list(
+        conn,
         "SELECT cursor, prev_mac, mac, payload_json FROM audit_entries \
          WHERE owner_key = ?1 AND cursor > ?2 ORDER BY cursor ASC",
-    )?;
-    let rows = stmt.query_map(params![owner_key, since_i64], row_to_entry)?;
-    rows.collect()
+        params![owner_key, since_i64],
+    )
 }
 
 /// Latest (cursor, mac) for `owner_key`, or `(0, [0u8; 32])` if empty.
 /// Used to initialize the in-memory `AuditChain` on vault unlock.
 pub fn load_tail(conn: &Connection, owner_key: &str) -> Result<(u64, [u8; 32]), rusqlite::Error> {
-    use rusqlite::OptionalExtension as _;
-    let row: Option<(i64, Vec<u8>)> = conn
-        .query_row(
-            "SELECT cursor, mac FROM audit_entries \
+    let row: Option<(i64, Vec<u8>)> = query_opt(
+        conn,
+        "SELECT cursor, mac FROM audit_entries \
              WHERE owner_key = ?1 ORDER BY cursor DESC LIMIT 1",
-            params![owner_key],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
-        .optional()?;
+        params![owner_key],
+    )?;
     let Some((cursor_i64, mac_bytes)) = row else {
         return Ok((0, [0u8; 32]));
     };
@@ -80,37 +78,39 @@ pub fn load_tail(conn: &Connection, owner_key: &str) -> Result<(u64, [u8; 32]), 
     Ok((cursor, mac))
 }
 
-fn row_to_entry(row: &rusqlite::Row<'_>) -> rusqlite::Result<AuditEntry> {
-    let cursor_i64: i64 = row.get(0)?;
-    let prev_mac_bytes: Vec<u8> = row.get(1)?;
-    let mac_bytes: Vec<u8> = row.get(2)?;
-    let payload_json: String = row.get(3)?;
-    let cursor = cursor_i64.cast_unsigned();
-    let record: AuditRecord = serde_json::from_str(&payload_json).map_err(|e| {
-        rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
-    })?;
-    let mut prev_mac = [0u8; 32];
-    let mut mac = [0u8; 32];
-    if prev_mac_bytes.len() != 32 || mac_bytes.len() != 32 {
-        return Err(rusqlite::Error::FromSqlConversionFailure(
-            0,
-            rusqlite::types::Type::Blob,
-            format!(
-                "audit_entries row at cursor {cursor} has malformed MAC blobs (prev_mac={}B, mac={}B)",
-                prev_mac_bytes.len(),
-                mac_bytes.len()
-            )
-            .into(),
-        ));
+impl FromRow for AuditEntry {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        let cursor_i64: i64 = row.get(0)?;
+        let prev_mac_bytes: Vec<u8> = row.get(1)?;
+        let mac_bytes: Vec<u8> = row.get(2)?;
+        let payload_json: String = row.get(3)?;
+        let cursor = cursor_i64.cast_unsigned();
+        let record: AuditRecord = serde_json::from_str(&payload_json).map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(0, rusqlite::types::Type::Text, Box::new(e))
+        })?;
+        let mut prev_mac = [0u8; 32];
+        let mut mac = [0u8; 32];
+        if prev_mac_bytes.len() != 32 || mac_bytes.len() != 32 {
+            return Err(rusqlite::Error::FromSqlConversionFailure(
+                0,
+                rusqlite::types::Type::Blob,
+                format!(
+                    "audit_entries row at cursor {cursor} has malformed MAC blobs (prev_mac={}B, mac={}B)",
+                    prev_mac_bytes.len(),
+                    mac_bytes.len()
+                )
+                .into(),
+            ));
+        }
+        prev_mac.copy_from_slice(&prev_mac_bytes);
+        mac.copy_from_slice(&mac_bytes);
+        Ok(AuditEntry {
+            cursor,
+            prev_mac,
+            mac,
+            record,
+        })
     }
-    prev_mac.copy_from_slice(&prev_mac_bytes);
-    mac.copy_from_slice(&mac_bytes);
-    Ok(AuditEntry {
-        cursor,
-        prev_mac,
-        mac,
-        record,
-    })
 }
 
 #[cfg(test)]

@@ -9,7 +9,8 @@
 //! An op is stored by its hash and never rewritten: its bytes are what its
 //! author signed. Only its `state` moves.
 
-use rusqlite::{params, Connection, OptionalExtension, Row};
+use crate::row::{query_list, query_opt, FromRow};
+use rusqlite::{params, Connection, Row};
 
 use crate::row::{get, get_enum, get_u64};
 
@@ -74,6 +75,12 @@ pub struct StoredOp {
     pub signed_here: bool,
 }
 
+impl FromRow for StoredOp {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        op_at(row, 0)
+    }
+}
+
 /// A device key's newest op seen, and the member record its chain lives
 /// in (ADR 0022 rule 3: one record per device key).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -85,6 +92,18 @@ pub struct DeviceHead {
     pub member_record: String,
     pub head_seq: u64,
     pub frontier_hash: [u8; 32],
+}
+
+impl FromRow for DeviceHead {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(DeviceHead {
+            device_key: get(row, "device_key")?,
+            author: get(row, "author")?,
+            member_record: get(row, "member_record")?,
+            head_seq: get_u64(row, 3)?,
+            frontier_hash: hash32(row, "frontier_hash")?,
+        })
+    }
 }
 
 pub(crate) fn int(value: u64) -> rusqlite::Result<i64> {
@@ -118,10 +137,6 @@ fn op_at(row: &Row<'_>, at: usize) -> rusqlite::Result<StoredOp> {
         state: get_enum(row, "state")?,
         signed_here: get(row, "signed_here")?,
     })
-}
-
-fn op_row(row: &Row<'_>) -> rusqlite::Result<StoredOp> {
-    op_at(row, 0)
 }
 
 /// Store `op` for `community_id`. An op already held keeps its row (its
@@ -167,15 +182,14 @@ pub fn get_op(
     community_id: &str,
     op_hash: &[u8; 32],
 ) -> rusqlite::Result<Option<StoredOp>> {
-    conn.query_row(
+    query_opt(
+        conn,
         &format!(
             "SELECT {OP_COLUMNS} FROM governance_ops \
              WHERE owner_key = ?1 AND community_id = ?2 AND op_hash = ?3"
         ),
         params![owner_key, community_id, op_hash.as_slice()],
-        op_row,
     )
-    .optional()
 }
 
 /// `community_id`'s ops, in `state` when given, by `(lamport, op_hash)`.
@@ -188,16 +202,15 @@ pub fn list(
     community_id: &str,
     state: Option<OpState>,
 ) -> rusqlite::Result<Vec<StoredOp>> {
-    let mut stmt = conn.prepare(&format!(
-        "SELECT {OP_COLUMNS} FROM governance_ops \
+    query_list(
+        conn,
+        &format!(
+            "SELECT {OP_COLUMNS} FROM governance_ops \
          WHERE owner_key = ?1 AND community_id = ?2 AND (?3 IS NULL OR state = ?3) \
          ORDER BY lamport, op_hash"
-    ))?;
-    let rows = stmt.query_map(
+        ),
         params![owner_key, community_id, state.map(OpState::as_str)],
-        op_row,
-    )?;
-    rows.collect()
+    )
 }
 
 /// Every community's ops for `owner_key`, `(community_id, op)` by
@@ -255,20 +268,12 @@ pub fn heads(
     owner_key: &str,
     community_id: &str,
 ) -> rusqlite::Result<Vec<DeviceHead>> {
-    let mut stmt = conn.prepare(
+    query_list(
+        conn,
         "SELECT device_key, author, member_record, head_seq, frontier_hash FROM governance_heads \
          WHERE owner_key = ?1 AND community_id = ?2 ORDER BY device_key",
-    )?;
-    let rows = stmt.query_map(params![owner_key, community_id], |row| {
-        Ok(DeviceHead {
-            device_key: get(row, "device_key")?,
-            author: get(row, "author")?,
-            member_record: get(row, "member_record")?,
-            head_seq: get_u64(row, 3)?,
-            frontier_hash: hash32(row, "frontier_hash")?,
-        })
-    })?;
-    rows.collect()
+        params![owner_key, community_id],
+    )
 }
 
 /// The highest `device_seq` this device signed under `device_key` in

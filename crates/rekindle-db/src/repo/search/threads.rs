@@ -93,23 +93,16 @@ fn fetch_thread_context(
     ts: i64,
     id: i64,
 ) -> (Option<String>, Option<String>) {
-    let before: Option<String> = conn
-        .query_row(
+    super::context::adjacent_bodies(
+        conn,
+        [
             "SELECT body FROM thread_messages \
               WHERE owner_key = ?1 AND thread_id = ?2 AND timestamp < ?3 AND id != ?4 \
               ORDER BY timestamp DESC LIMIT 1",
-            rusqlite::params![owner_key, thread_id, ts, id],
-            |r| r.get(0),
-        )
-        .ok();
-    let after: Option<String> = conn
-        .query_row(
             "SELECT body FROM thread_messages \
               WHERE owner_key = ?1 AND thread_id = ?2 AND timestamp > ?3 AND id != ?4 \
               ORDER BY timestamp ASC LIMIT 1",
-            rusqlite::params![owner_key, thread_id, ts, id],
-            |r| r.get(0),
-        )
-        .ok();
-    (before, after)
+        ],
+        (owner_key, thread_id, ts, id),
+    )
 }

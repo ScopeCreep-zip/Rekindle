@@ -3,6 +3,7 @@
 //! a blocked pseudonym's posts; an identity-key block (`blocked`) cannot
 //! match one without linking pseudonyms (threat model I8, L1, L3).
 
+use crate::row::{query_list, FromRow};
 use rusqlite::{params, Connection};
 
 /// A blocked pseudonym, newest first in [`list`].
@@ -10,6 +11,15 @@ use rusqlite::{params, Connection};
 pub struct CommunityBlock {
     pub pseudonym: String,
     pub blocked_at: i64,
+}
+
+impl FromRow for CommunityBlock {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(CommunityBlock {
+            pseudonym: row.get(0)?,
+            blocked_at: row.get(1)?,
+        })
+    }
 }
 
 /// Block `pseudonym` in `community_id` (a repeat updates the time). The
@@ -65,20 +75,13 @@ pub fn list(
     owner_key: &str,
     community_id: &str,
 ) -> rusqlite::Result<Vec<CommunityBlock>> {
-    let mut stmt = conn.prepare(
+    query_list(
+        conn,
         "SELECT pseudonym, blocked_at FROM community_blocks \
          WHERE owner_key = ?1 AND community_id = ?2 \
          ORDER BY blocked_at DESC, pseudonym ASC",
-    )?;
-    let rows = stmt
-        .query_map(params![owner_key, community_id], |row| {
-            Ok(CommunityBlock {
-                pseudonym: row.get(0)?,
-                blocked_at: row.get(1)?,
-            })
-        })?
-        .collect();
-    rows
+        params![owner_key, community_id],
+    )
 }
 
 #[cfg(test)]

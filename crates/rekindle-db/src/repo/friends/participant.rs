@@ -2,6 +2,7 @@
 //! `participant_record_key` (ours) and `peer_participant_record_key`
 //! (theirs) columns of `friends`.
 
+use crate::row::query_list;
 use rusqlite::{params, Connection, OptionalExtension as _};
 
 /// Store our participant record for the conversation with `public_key`.
@@ -88,17 +89,13 @@ pub fn peer_participant_record_key(
     owner_key: &str,
     public_key: Option<&str>,
 ) -> rusqlite::Result<Vec<(String, String)>> {
-    let mut stmt = conn.prepare(
+    query_list(
+        conn,
         "SELECT public_key, peer_participant_record_key FROM friends \
          WHERE owner_key = ?1 AND friendship_state = 'accepted' \
          AND peer_participant_record_key IS NOT NULL AND (?2 IS NULL OR public_key = ?2)",
-    )?;
-    let rows = stmt
-        .query_map(params![owner_key, public_key], |row| {
-            Ok((row.get(0)?, row.get(1)?))
-        })?
-        .collect();
-    rows
+        params![owner_key, public_key],
+    )
 }
 
 #[cfg(test)]

@@ -3,8 +3,9 @@
 //! we stored it. The governance entry stays the authority for its name,
 //! tag and archive state.
 
+use crate::row::{query_opt, FromRow};
 use rekindle_types::thread::ThreadInfo;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection};
 
 /// Store `thread`, replacing the row of the same id.
 ///
@@ -49,28 +50,13 @@ pub fn get(
     community_id: &str,
     thread_id: &str,
 ) -> rusqlite::Result<Option<ThreadInfo>> {
-    conn.query_row(
+    query_opt(
+        conn,
         "SELECT id, channel_id, name, starter_message_id, creator_pseudonym, created_at, \
          archived, auto_archive_seconds, last_message_at, message_count \
          FROM community_threads WHERE owner_key = ?1 AND community_id = ?2 AND id = ?3",
         params![owner_key, community_id, thread_id],
-        |row| {
-            Ok(ThreadInfo {
-                id: row.get(0)?,
-                channel_id: row.get(1)?,
-                name: row.get(2)?,
-                starter_message_id: row.get(3)?,
-                creator_pseudonym: row.get(4)?,
-                forum_tag: None,
-                created_at: row.get::<_, i64>(5)?.cast_unsigned(),
-                archived: row.get::<_, i32>(6)? != 0,
-                auto_archive_seconds: row.get(7)?,
-                last_message_at: row.get::<_, i64>(8)?.cast_unsigned(),
-                message_count: row.get(9)?,
-            })
-        },
     )
-    .optional()
 }
 
 /// Mark thread `thread_id` archived or open.
@@ -141,4 +127,22 @@ pub fn insert_message(
         )?;
     }
     Ok(())
+}
+
+impl FromRow for ThreadInfo {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(ThreadInfo {
+            id: row.get(0)?,
+            channel_id: row.get(1)?,
+            name: row.get(2)?,
+            starter_message_id: row.get(3)?,
+            creator_pseudonym: row.get(4)?,
+            forum_tag: None,
+            created_at: row.get::<_, i64>(5)?.cast_unsigned(),
+            archived: row.get::<_, i32>(6)? != 0,
+            auto_archive_seconds: row.get(7)?,
+            last_message_at: row.get::<_, i64>(8)?.cast_unsigned(),
+            message_count: row.get(9)?,
+        })
+    }
 }

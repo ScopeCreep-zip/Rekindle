@@ -1,10 +1,11 @@
 //! `transfers` (plan E7.2 G12, SK2-G design §4): the Downloads view's rows
 //! and each one's resume checkpoint. The Host's transfer driver is the
 //! only writer; the skin capabilities (`StartDownload`, `StopDownload`,
-//! `ExecuteDownload`) read the state from here.
+//! `ExecuteDownload`) TransferRow::from_row the state from here.
 
+use crate::row::{query_list, query_opt, FromRow};
 use rekindle_types::dto::transfer::{TransferRow, TransferState, TransferTarget};
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection};
 
 const COLUMNS: &str = "attachment_id, target_json, state, chunks_done, chunk_count, bytes_done, \
                        total, dest_name, dest_path, started_at, finished_at";
@@ -24,25 +25,27 @@ fn stored(n: u64) -> rusqlite::Result<i64> {
         .map_err(|_| rusqlite::Error::ToSqlConversionFailure(format!("byte count {n}").into()))
 }
 
-fn read(row: &rusqlite::Row<'_>) -> rusqlite::Result<TransferRow> {
-    let target: String = crate::row::get(row, "target_json")?;
-    let target: TransferTarget =
-        serde_json::from_str(&target).map_err(|e| bad(format!("transfer target: {e}")))?;
-    let state: String = crate::row::get(row, "state")?;
-    let state = TransferState::parse(&state).ok_or_else(|| bad(format!("state {state}")))?;
-    Ok(TransferRow {
-        attachment_id: crate::row::get(row, "attachment_id")?,
-        target,
-        state,
-        chunks_done: crate::row::get(row, "chunks_done")?,
-        chunk_count: crate::row::get(row, "chunk_count")?,
-        bytes_done: count(crate::row::get(row, "bytes_done")?)?,
-        total: count(crate::row::get(row, "total")?)?,
-        dest_name: crate::row::get(row, "dest_name")?,
-        dest_path: crate::row::get(row, "dest_path")?,
-        started_at: crate::row::get(row, "started_at")?,
-        finished_at: crate::row::get(row, "finished_at")?,
-    })
+impl FromRow for TransferRow {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        let target: String = crate::row::get(row, "target_json")?;
+        let target: TransferTarget =
+            serde_json::from_str(&target).map_err(|e| bad(format!("transfer target: {e}")))?;
+        let state: String = crate::row::get(row, "state")?;
+        let state = TransferState::parse(&state).ok_or_else(|| bad(format!("state {state}")))?;
+        Ok(TransferRow {
+            attachment_id: crate::row::get(row, "attachment_id")?,
+            target,
+            state,
+            chunks_done: crate::row::get(row, "chunks_done")?,
+            chunk_count: crate::row::get(row, "chunk_count")?,
+            bytes_done: count(crate::row::get(row, "bytes_done")?)?,
+            total: count(crate::row::get(row, "total")?)?,
+            dest_name: crate::row::get(row, "dest_name")?,
+            dest_path: crate::row::get(row, "dest_path")?,
+            started_at: crate::row::get(row, "started_at")?,
+            finished_at: crate::row::get(row, "finished_at")?,
+        })
+    }
 }
 
 /// Begin (or restart) the download of `row.attachment_id` as `row.state`.
@@ -129,12 +132,11 @@ pub fn get(
     owner_key: &str,
     attachment_id: &str,
 ) -> rusqlite::Result<Option<TransferRow>> {
-    conn.query_row(
+    query_opt(
+        conn,
         &format!("SELECT {COLUMNS} FROM transfers WHERE owner_key = ?1 AND attachment_id = ?2"),
         params![owner_key, attachment_id],
-        read,
     )
-    .optional()
 }
 
 /// Every transfer, newest first.
@@ -142,12 +144,14 @@ pub fn get(
 /// # Errors
 /// The query failed or a stored row is malformed.
 pub fn list(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<TransferRow>> {
-    let mut stmt = conn.prepare(&format!(
-        "SELECT {COLUMNS} FROM transfers WHERE owner_key = ?1 \
+    query_list(
+        conn,
+        &format!(
+            "SELECT {COLUMNS} FROM transfers WHERE owner_key = ?1 \
          ORDER BY started_at DESC, attachment_id"
-    ))?;
-    let rows = stmt.query_map(params![owner_key], read)?;
-    rows.collect()
+        ),
+        params![owner_key],
+    )
 }
 
 /// A transfer left `active` or `queued` by a Host that stopped (a crash or

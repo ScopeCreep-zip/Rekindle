@@ -2,6 +2,7 @@
 //! one is refused and an answered one is matched to its requester (plan
 //! E2.1).
 
+use crate::row::{query_list, query_opt, FromRow};
 use rekindle_types::dto::friends::OutgoingInvite;
 use rusqlite::{params, Connection, OptionalExtension as _};
 
@@ -60,14 +61,12 @@ pub fn admits_request(
     requester: &str,
     now: i64,
 ) -> rusqlite::Result<bool> {
-    let row: Option<(String, i64, Option<String>)> = conn
-        .query_row(
-            "SELECT status, expires_at, accepted_by FROM outgoing_invites \
+    let row: Option<(String, i64, Option<String>)> = query_opt(
+        conn,
+        "SELECT status, expires_at, accepted_by FROM outgoing_invites \
              WHERE owner_key = ?1 AND invite_id = ?2",
-            params![owner_key, invite_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-        )
-        .optional()?;
+        params![owner_key, invite_id],
+    )?;
     Ok(match row {
         Some((status, expires_at, _)) if status == "pending" => now <= expires_at,
         Some((status, _, by)) if status == "responded" => by.as_deref() == Some(requester),
@@ -124,14 +123,12 @@ pub fn mark_rejected(conn: &Connection, owner_key: &str, invite_id: &str) -> rus
 /// # Errors
 /// The write failed.
 pub fn expire(conn: &Connection, owner_key: &str, now: i64) -> rusqlite::Result<Vec<String>> {
-    let mut stmt = conn.prepare(
+    query_list(
+        conn,
         "UPDATE outgoing_invites SET status = 'expired' \
          WHERE owner_key = ?1 AND status = 'pending' AND expires_at < ?2 RETURNING inbox_key",
-    )?;
-    let rows = stmt
-        .query_map(params![owner_key, now], |row| row.get(0))?
-        .collect();
-    rows
+        params![owner_key, now],
+    )
 }
 
 /// The request inbox of an invite, any state.
@@ -157,13 +154,11 @@ pub fn inbox_of(
 /// # Errors
 /// The query failed.
 pub fn pending_inboxes(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<String>> {
-    let mut stmt = conn.prepare(
+    query_list(
+        conn,
         "SELECT inbox_key FROM outgoing_invites WHERE owner_key = ?1 AND status = 'pending'",
-    )?;
-    let rows = stmt
-        .query_map(params![owner_key], |row| row.get(0))?
-        .collect();
-    rows
+        params![owner_key],
+    )
 }
 
 /// The open invites (pending or responded), newest first.
@@ -171,24 +166,13 @@ pub fn pending_inboxes(conn: &Connection, owner_key: &str) -> rusqlite::Result<V
 /// # Errors
 /// The query failed.
 pub fn open(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<OutgoingInvite>> {
-    let mut stmt = conn.prepare(
+    query_list(
+        conn,
         "SELECT invite_id, url, created_at, expires_at, status, accepted_by \
          FROM outgoing_invites WHERE owner_key = ?1 AND status IN ('pending', 'responded') \
          ORDER BY created_at DESC",
-    )?;
-    let rows = stmt
-        .query_map(params![owner_key], |row| {
-            Ok(OutgoingInvite {
-                invite_id: row.get(0)?,
-                url: row.get(1)?,
-                created_at: row.get(2)?,
-                expires_at: row.get(3)?,
-                status: row.get(4)?,
-                accepted_by: row.get(5)?,
-            })
-        })?
-        .collect();
-    rows
+        params![owner_key],
+    )
 }
 
 /// Our friend code's current request inbox, kept on the identity row
@@ -222,6 +206,19 @@ pub fn set_code_inbox_key(
         params![public_key, record_key],
     )?;
     Ok(())
+}
+
+impl FromRow for OutgoingInvite {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(OutgoingInvite {
+            invite_id: row.get(0)?,
+            url: row.get(1)?,
+            created_at: row.get(2)?,
+            expires_at: row.get(3)?,
+            status: row.get(4)?,
+            accepted_by: row.get(5)?,
+        })
+    }
 }
 
 #[cfg(test)]

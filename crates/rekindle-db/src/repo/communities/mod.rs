@@ -1,5 +1,6 @@
 //! `communities`: one row per community the identity is in.
 
+use crate::row::{query_list, FromRow};
 use rusqlite::{params, Connection, OptionalExtension as _};
 
 pub mod load;
@@ -38,12 +39,36 @@ pub struct CommunityRow {
     pub departing: bool,
 }
 
+impl FromRow for CommunityRow {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(CommunityRow {
+            id: row.get(0)?,
+            name: row.get(1)?,
+            description: row.get(2)?,
+            icon_hash: row.get(3)?,
+            banner_hash: row.get(4)?,
+            my_pseudonym_key: row.get(5)?,
+            mek_generation: crate::row::get_u64(row, 6)?,
+            member_registry_key: row.get(7)?,
+            my_subkey_index: row.get(8)?,
+            my_segment_index: row.get(9)?,
+            onboarding_complete: row.get::<_, i64>(10)? != 0,
+            presence_policy: crate::row::get_json_opt(row, "presence_policy")?,
+            message_clock: crate::row::get_u64(row, 12)?,
+            removed_by_name: row.get(13)?,
+            my_member_record: row.get(14)?,
+            departing: row.get::<_, i64>(15)? != 0,
+        })
+    }
+}
+
 /// Every community of `owner_key`.
 ///
 /// # Errors
 /// The query failed.
 pub fn load_all(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<CommunityRow>> {
-    let mut stmt = conn.prepare(
+    query_list(
+        conn,
         "SELECT c.id, c.name, c.description, c.icon_hash, c.banner_hash, \
          c.my_pseudonym_key, c.mek_generation, \
          c.member_registry_key, c.my_subkey_index, c.my_segment_index, \
@@ -59,30 +84,8 @@ pub fn load_all(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<Comm
           AND cm.community_id = c.id \
           AND cm.pseudonym_key = c.my_pseudonym_key \
          WHERE c.owner_key = ?1",
-    )?;
-    let rows = stmt
-        .query_map(params![owner_key], |row| {
-            Ok(CommunityRow {
-                id: row.get(0)?,
-                name: row.get(1)?,
-                description: row.get(2)?,
-                icon_hash: row.get(3)?,
-                banner_hash: row.get(4)?,
-                my_pseudonym_key: row.get(5)?,
-                mek_generation: crate::row::get_u64(row, 6)?,
-                member_registry_key: row.get(7)?,
-                my_subkey_index: row.get(8)?,
-                my_segment_index: row.get(9)?,
-                onboarding_complete: row.get::<_, i64>(10)? != 0,
-                presence_policy: crate::row::get_json_opt(row, "presence_policy")?,
-                message_clock: crate::row::get_u64(row, 12)?,
-                removed_by_name: row.get(13)?,
-                my_member_record: row.get(14)?,
-                departing: row.get::<_, i64>(15)? != 0,
-            })
-        })?
-        .collect();
-    rows
+        params![owner_key],
+    )
 }
 
 /// A community being created or joined.

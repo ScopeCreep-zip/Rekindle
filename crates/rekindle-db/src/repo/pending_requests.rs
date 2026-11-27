@@ -1,6 +1,7 @@
 //! `pending_friend_requests`: incoming requests not yet accepted or
 //! rejected, one per (owner, requester).
 
+use crate::row::{query_list, query_opt, FromRow};
 use rusqlite::{params, Connection, OptionalExtension as _};
 use serde::{Deserialize, Serialize};
 
@@ -12,6 +13,17 @@ pub struct PendingFriendRequest {
     pub display_name: String,
     pub message: String,
     pub received_at: i64,
+}
+
+impl FromRow for PendingFriendRequest {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(PendingFriendRequest {
+            public_key: row.get(0)?,
+            display_name: row.get(1)?,
+            message: row.get(2)?,
+            received_at: row.get(3)?,
+        })
+    }
 }
 
 /// What answering a request needs: where the requester lives and the
@@ -32,6 +44,20 @@ pub struct Answer {
     /// The requester's dm chain record (decision 67 item 2), adopted once
     /// the request is accepted.
     pub chain_record_key: Option<String>,
+}
+
+impl FromRow for Answer {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(Answer {
+            display_name: Some(row.get(0)?),
+            profile_dht_key: row.get(1)?,
+            mailbox_dht_key: row.get(2)?,
+            route_blob: row.get(3)?,
+            invite_id: row.get(4)?,
+            reply: Some((row.get(5)?, row.get(6)?)),
+            chain_record_key: Some(row.get(7)?),
+        })
+    }
 }
 
 /// A request as it arrives.
@@ -119,21 +145,12 @@ pub fn upsert(
 /// # Errors
 /// The query failed.
 pub fn list(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<PendingFriendRequest>> {
-    let mut stmt = conn.prepare(
+    query_list(
+        conn,
         "SELECT public_key, display_name, message, received_at \
          FROM pending_friend_requests WHERE owner_key = ?1 ORDER BY received_at",
-    )?;
-    let rows = stmt
-        .query_map(params![owner_key], |row| {
-            Ok(PendingFriendRequest {
-                public_key: row.get(0)?,
-                display_name: row.get(1)?,
-                message: row.get(2)?,
-                received_at: row.get(3)?,
-            })
-        })?
-        .collect();
-    rows
+        params![owner_key],
+    )
 }
 
 /// What answering the request from `public_key` needs; `None` when there
@@ -146,24 +163,13 @@ pub fn answer(
     owner_key: &str,
     public_key: &str,
 ) -> rusqlite::Result<Option<Answer>> {
-    conn.query_row(
+    query_opt(
+        conn,
         "SELECT display_name, profile_dht_key, mailbox_dht_key, route_blob, invite_id, \
                     reply_inbox_key, reply_writer, chain_record_key \
              FROM pending_friend_requests WHERE owner_key = ?1 AND public_key = ?2",
         params![owner_key, public_key],
-        |row| {
-            Ok(Answer {
-                display_name: Some(row.get(0)?),
-                profile_dht_key: row.get(1)?,
-                mailbox_dht_key: row.get(2)?,
-                route_blob: row.get(3)?,
-                invite_id: row.get(4)?,
-                reply: Some((row.get(5)?, row.get(6)?)),
-                chain_record_key: Some(row.get(7)?),
-            })
-        },
     )
-    .optional()
 }
 
 /// Delete the request from `public_key`.

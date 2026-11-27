@@ -9,6 +9,8 @@ use rekindle_types::dto::transfer::TransferTarget;
 use rekindle_types::search::{MessageSearch, SearchFilters, SearchSort, MAX_SEARCH_LIMIT};
 use rusqlite::Connection;
 
+use crate::row::{query_list, FromRow};
+
 /// At most this many hits of each kind.
 const LOCAL_HITS_PER_KIND: i64 = 50;
 
@@ -69,9 +71,25 @@ fn like_pattern(query: &str) -> String {
     out
 }
 
+/// The rows of one hit kind: `sql` binds `?1` the owner, `?2` the escaped
+/// `LIKE` pattern and `?3` the per-kind cap.
+fn hits<T: FromRow>(
+    conn: &Connection,
+    sql: &str,
+    owner: &str,
+    pattern: &str,
+) -> rusqlite::Result<Vec<T>> {
+    query_list(
+        conn,
+        sql,
+        rusqlite::params![owner, pattern, LOCAL_HITS_PER_KIND],
+    )
+}
+
 /// Accepted friends by our nickname, their display name or their key.
 fn friends(conn: &Connection, owner: &str, pattern: &str) -> rusqlite::Result<Vec<LocalHit>> {
-    let mut stmt = conn.prepare(
+    let rows: Vec<(String, String)> = hits(
+        conn,
         "SELECT f.public_key, COALESCE(n.nickname, f.display_name, '') AS name \
            FROM friends f \
            LEFT JOIN friend_nicknames n \
@@ -80,63 +98,57 @@ fn friends(conn: &Connection, owner: &str, pattern: &str) -> rusqlite::Result<Ve
             AND (n.nickname LIKE ?2 ESCAPE '\\' OR f.display_name LIKE ?2 ESCAPE '\\' \
                  OR f.public_key LIKE ?2 ESCAPE '\\') \
           ORDER BY name COLLATE NOCASE, f.public_key LIMIT ?3",
+        owner,
+        pattern,
     )?;
-    let rows = stmt.query_map(
-        rusqlite::params![owner, pattern, LOCAL_HITS_PER_KIND],
-        |row| {
-            Ok(LocalHit::Friend {
-                public_key: row.get(0)?,
-                name: row.get(1)?,
-            })
-        },
-    )?;
-    rows.collect()
+    Ok(rows
+        .into_iter()
+        .map(|(public_key, name)| LocalHit::Friend { public_key, name })
+        .collect())
 }
 
 /// Our group DMs by name.
 fn group_dms(conn: &Connection, owner: &str, pattern: &str) -> rusqlite::Result<Vec<LocalHit>> {
-    let mut stmt = conn.prepare(
+    let rows: Vec<(String, String)> = hits(
+        conn,
         "SELECT group_id, name FROM group_dms \
           WHERE owner_key = ?1 AND name LIKE ?2 ESCAPE '\\' \
           ORDER BY name COLLATE NOCASE, group_id LIMIT ?3",
+        owner,
+        pattern,
     )?;
-    let rows = stmt.query_map(
-        rusqlite::params![owner, pattern, LOCAL_HITS_PER_KIND],
-        |row| {
-            Ok(LocalHit::GroupDm {
-                group_id: row.get(0)?,
-                name: row.get(1)?,
-            })
-        },
-    )?;
-    rows.collect()
+    Ok(rows
+        .into_iter()
+        .map(|(group_id, name)| LocalHit::GroupDm { group_id, name })
+        .collect())
 }
 
 /// Community members by their verified card's name (never a peer-supplied
 /// one: `display_name` is written only from the card).
 fn members(conn: &Connection, owner: &str, pattern: &str) -> rusqlite::Result<Vec<LocalHit>> {
-    let mut stmt = conn.prepare(
+    let rows: Vec<(String, String, String)> = hits(
+        conn,
         "SELECT community_id, pseudonym_key, display_name FROM community_members \
           WHERE owner_key = ?1 AND display_name LIKE ?2 ESCAPE '\\' \
           ORDER BY display_name COLLATE NOCASE, community_id, pseudonym_key LIMIT ?3",
+        owner,
+        pattern,
     )?;
-    let rows = stmt.query_map(
-        rusqlite::params![owner, pattern, LOCAL_HITS_PER_KIND],
-        |row| {
-            Ok(LocalHit::Member {
-                community: row.get(0)?,
-                pseudonym: row.get(1)?,
-                name: row.get(2)?,
-            })
-        },
-    )?;
-    rows.collect()
+    Ok(rows
+        .into_iter()
+        .map(|(community, pseudonym, name)| LocalHit::Member {
+            community,
+            pseudonym,
+            name,
+        })
+        .collect())
 }
 
 /// Favourite servers by label or address, then recent servers (not also
 /// favourites) by address, the most recent first.
 fn servers(conn: &Connection, owner: &str, pattern: &str) -> rusqlite::Result<Vec<LocalHit>> {
-    let mut stmt = conn.prepare(
+    let rows: Vec<(u32, String, String)> = hits(
+        conn,
         "SELECT game_id, address, label, 0 AS recent, added_at AS at FROM favourite_servers \
           WHERE owner_key = ?1 AND (label LIKE ?2 ESCAPE '\\' OR address LIKE ?2 ESCAPE '\\') \
          UNION ALL \
@@ -145,18 +157,17 @@ fn servers(conn: &Connection, owner: &str, pattern: &str) -> rusqlite::Result<Ve
             AND NOT EXISTS (SELECT 1 FROM favourite_servers f WHERE f.owner_key = r.owner_key \
                              AND f.game_id = r.game_id AND f.address = r.address) \
           ORDER BY recent, at DESC LIMIT ?3",
+        owner,
+        pattern,
     )?;
-    let rows = stmt.query_map(
-        rusqlite::params![owner, pattern, LOCAL_HITS_PER_KIND],
-        |row| {
-            Ok(LocalHit::Server {
-                game_id: row.get(0)?,
-                address: row.get(1)?,
-                label: row.get(2)?,
-            })
-        },
-    )?;
-    rows.collect()
+    Ok(rows
+        .into_iter()
+        .map(|(game_id, address, label)| LocalHit::Server {
+            game_id,
+            address,
+            label,
+        })
+        .collect())
 }
 
 /// Held attachments (transfers) by the name they save as, newest first.

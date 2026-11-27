@@ -4,6 +4,7 @@
 //! rows carry what it does not (`max_attendees`, `created_at`) and what
 //! arrived over gossip before the next merge.
 
+use crate::row::{query_list, FromRow};
 use rekindle_types::event::EventInfo;
 use rusqlite::{params, Connection};
 
@@ -66,33 +67,16 @@ pub fn list(
     owner_key: &str,
     community_id: &str,
 ) -> rusqlite::Result<Vec<EventInfo>> {
-    let mut stmt = conn.prepare(
+    query_list(
+        conn,
         "SELECT id, title, description, creator_pseudonym, start_time, end_time, \
                 channel_id, max_attendees, created_at, status, \
                 cover_image_ref, recurrence_json, location_json \
          FROM community_events \
          WHERE owner_key = ?1 AND community_id = ?2 \
          ORDER BY start_time ASC, id ASC",
-    )?;
-    let rows = stmt.query_map(params![owner_key, community_id], |row| {
-        Ok(EventInfo {
-            id: row.get(0)?,
-            title: row.get(1)?,
-            description: row.get(2)?,
-            creator_pseudonym: row.get(3)?,
-            start_time: row.get::<_, i64>(4)?.cast_unsigned(),
-            end_time: row.get::<_, Option<i64>>(5)?.map(i64::cast_unsigned),
-            channel_id: row.get(6)?,
-            max_attendees: row.get::<_, Option<u32>>(7)?,
-            created_at: row.get::<_, i64>(8)?.cast_unsigned(),
-            status: row.get(9)?,
-            rsvps: Vec::new(),
-            cover_image_ref: row.get(10)?,
-            recurrence: crate::row::get_json_opt(row, "recurrence_json")?,
-            location: crate::row::get_json_opt(row, "location_json")?,
-        })
-    })?;
-    rows.collect()
+        params![owner_key, community_id],
+    )
 }
 
 /// Drop the event `event_id` and its RSVPs.
@@ -135,4 +119,25 @@ pub fn upsert_rsvp(
         params![owner_key, community_id, event_id, pseudonym_key, status],
     )?;
     Ok(())
+}
+
+impl FromRow for EventInfo {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(EventInfo {
+            id: row.get(0)?,
+            title: row.get(1)?,
+            description: row.get(2)?,
+            creator_pseudonym: row.get(3)?,
+            start_time: row.get::<_, i64>(4)?.cast_unsigned(),
+            end_time: row.get::<_, Option<i64>>(5)?.map(i64::cast_unsigned),
+            channel_id: row.get(6)?,
+            max_attendees: row.get::<_, Option<u32>>(7)?,
+            created_at: row.get::<_, i64>(8)?.cast_unsigned(),
+            status: row.get(9)?,
+            rsvps: Vec::new(),
+            cover_image_ref: row.get(10)?,
+            recurrence: crate::row::get_json_opt(row, "recurrence_json")?,
+            location: crate::row::get_json_opt(row, "location_json")?,
+        })
+    }
 }

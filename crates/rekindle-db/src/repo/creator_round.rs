@@ -6,7 +6,8 @@
 //! by the unlock sweep, which withdraws them). No secret is stored: the
 //! anchor's one-time key lives only in memory (ADR 0011).
 
-use rusqlite::{params, Connection, OptionalExtension as _};
+use crate::row::{query_list, query_opt, FromRow};
+use rusqlite::{params, Connection};
 
 /// A held co-creator invite.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,13 +20,15 @@ pub struct CreatorInviteRow {
     pub received_at: i64,
 }
 
-fn invite_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<CreatorInviteRow> {
-    Ok(CreatorInviteRow {
-        anchor: crate::row::get(r, "anchor")?,
-        inviter_key: crate::row::get(r, "inviter_key")?,
-        community_name: crate::row::get(r, "community_name")?,
-        received_at: crate::row::get(r, "received_at")?,
-    })
+impl FromRow for CreatorInviteRow {
+    fn from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(CreatorInviteRow {
+            anchor: crate::row::get(r, "anchor")?,
+            inviter_key: crate::row::get(r, "inviter_key")?,
+            community_name: crate::row::get(r, "community_name")?,
+            received_at: crate::row::get(r, "received_at")?,
+        })
+    }
 }
 
 /// Hold an invite (a resend replaces the held one).
@@ -58,13 +61,12 @@ pub fn take_invite(
     anchor: &str,
     inviter_key: &str,
 ) -> rusqlite::Result<Option<CreatorInviteRow>> {
-    conn.query_row(
+    query_opt(
+        conn,
         "DELETE FROM creator_invites WHERE owner_key = ?1 AND anchor = ?2 AND inviter_key = ?3 \
          RETURNING anchor, inviter_key, community_name, received_at",
         params![owner_key, anchor, inviter_key],
-        invite_row,
     )
-    .optional()
 }
 
 /// We accepted the held invite to `anchor` from `inviter_key`: it stays
@@ -97,13 +99,12 @@ pub fn take_accepted(
     anchor: &str,
     inviter_key: &str,
 ) -> rusqlite::Result<Option<CreatorInviteRow>> {
-    conn.query_row(
+    query_opt(
+        conn,
         "DELETE FROM creator_invites WHERE owner_key = ?1 AND anchor = ?2 AND inviter_key = ?3 \
          AND accepted = 1 RETURNING anchor, inviter_key, community_name, received_at",
         params![owner_key, anchor, inviter_key],
-        invite_row,
     )
-    .optional()
 }
 
 /// The held invite to `anchor`, any inviter.
@@ -115,13 +116,12 @@ pub fn invite(
     owner_key: &str,
     anchor: &str,
 ) -> rusqlite::Result<Option<CreatorInviteRow>> {
-    conn.query_row(
+    query_opt(
+        conn,
         "SELECT anchor, inviter_key, community_name, received_at FROM creator_invites \
          WHERE owner_key = ?1 AND anchor = ?2",
         params![owner_key, anchor],
-        invite_row,
     )
-    .optional()
 }
 
 /// Every held invite, newest first.
@@ -129,12 +129,12 @@ pub fn invite(
 /// # Errors
 /// The query failed or a row is corrupt.
 pub fn invites(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<CreatorInviteRow>> {
-    let mut stmt = conn.prepare(
+    query_list(
+        conn,
         "SELECT anchor, inviter_key, community_name, received_at FROM creator_invites \
          WHERE owner_key = ?1 ORDER BY received_at DESC, anchor",
-    )?;
-    let rows = stmt.query_map(params![owner_key], invite_row)?;
-    rows.collect()
+        params![owner_key],
+    )
 }
 
 /// Record that our reserved creation of `anchor` waits on `co_creators`.

@@ -6,6 +6,7 @@ pub mod attachments;
 pub mod channel;
 pub mod channel_changes;
 
+use crate::row::{query_list, query_opt, FromRow};
 use rekindle_types::message::SendState;
 use rusqlite::{params, Connection};
 
@@ -59,6 +60,44 @@ pub struct DmRow {
     /// The parent's client id when it is a reply, as its frame carried it,
     /// whether or not the parent is held.
     pub reply_to: Option<String>,
+}
+
+impl FromRow for DmRow {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        let stored: String = row.get(6)?;
+        Ok(DmRow {
+            id: row.get(0)?,
+            peer_key: row.get(1)?,
+            sender_key: row.get(2)?,
+            body: row.get(3)?,
+            timestamp: row.get(4)?,
+            is_read: row.get(5)?,
+            message_id: row.get(7)?,
+            send_state: SendState::parse(&stored).ok_or_else(|| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    6,
+                    rusqlite::types::Type::Text,
+                    format!("unknown send state {stored}").into(),
+                )
+            })?,
+            history_gap_through: row
+                .get::<_, Option<i64>>(8)?
+                .map(|seq| {
+                    u64::try_from(seq).map_err(|e| {
+                        rusqlite::Error::FromSqlConversionFailure(
+                            8,
+                            rusqlite::types::Type::Integer,
+                            Box::new(e),
+                        )
+                    })
+                })
+                .transpose()?,
+            expire_seconds: row.get(9)?,
+            expire_at: row.get(10)?,
+            timer_notice_seconds: row.get(11)?,
+            reply_to: row.get(12)?,
+        })
+    }
 }
 
 /// A direct message to store (plan E2.3): `message_id` is its client id,
@@ -146,42 +185,6 @@ pub fn insert_dm(conn: &Connection, dm: &NewDm<'_>) -> rusqlite::Result<StoredDm
     Ok(StoredDm { id, inserted })
 }
 
-pub(crate) fn dm_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<DmRow> {
-    let stored: String = row.get(6)?;
-    Ok(DmRow {
-        id: row.get(0)?,
-        peer_key: row.get(1)?,
-        sender_key: row.get(2)?,
-        body: row.get(3)?,
-        timestamp: row.get(4)?,
-        is_read: row.get(5)?,
-        message_id: row.get(7)?,
-        send_state: SendState::parse(&stored).ok_or_else(|| {
-            rusqlite::Error::FromSqlConversionFailure(
-                6,
-                rusqlite::types::Type::Text,
-                format!("unknown send state {stored}").into(),
-            )
-        })?,
-        history_gap_through: row
-            .get::<_, Option<i64>>(8)?
-            .map(|seq| {
-                u64::try_from(seq).map_err(|e| {
-                    rusqlite::Error::FromSqlConversionFailure(
-                        8,
-                        rusqlite::types::Type::Integer,
-                        Box::new(e),
-                    )
-                })
-            })
-            .transpose()?,
-        expire_seconds: row.get(9)?,
-        expire_at: row.get(10)?,
-        timer_notice_seconds: row.get(11)?,
-        reply_to: row.get(12)?,
-    })
-}
-
 pub(crate) const DM_COLS: &str =
     "id, conversation_id, sender_key, body, timestamp, is_read, send_state, \
                        message_id, history_gap_through, expire_seconds, expire_at, timer_notice_seconds, \
@@ -206,16 +209,14 @@ pub fn dm_history(
     limit: u32,
     before: Option<i64>,
 ) -> rusqlite::Result<Vec<DmRow>> {
-    let mut stmt = conn.prepare(&format!(
-        "SELECT {DM_COLS} FROM messages WHERE owner_key = ?1 AND conversation_id = ?2 \
+    let mut rows: Vec<DmRow> = query_list(
+        conn,
+        &format!(
+            "SELECT {DM_COLS} FROM messages WHERE owner_key = ?1 AND conversation_id = ?2 \
          AND conversation_type = 'dm' AND timestamp < ?3 ORDER BY {HISTORY_ORDER} LIMIT ?4"
-    ))?;
-    let mut rows = stmt
-        .query_map(
-            params![owner_key, peer_key, before.unwrap_or(i64::MAX), limit],
-            dm_row,
-        )?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
+        ),
+        params![owner_key, peer_key, before.unwrap_or(i64::MAX), limit],
+    )?;
     rows.reverse();
     Ok(rows)
 }
@@ -226,6 +227,15 @@ pub fn dm_history(
 pub struct OwnDm {
     pub row: DmRow,
     pub reply_to: Option<String>,
+}
+
+impl FromRow for OwnDm {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(OwnDm {
+            row: DmRow::from_row(row)?,
+            reply_to: row.get(12)?,
+        })
+    }
 }
 
 /// Our direct message whose client id is `message_id`; `None` when we sent
@@ -249,22 +259,15 @@ pub(crate) fn own_message(
     message_id: &str,
     conversation_type: &str,
 ) -> rusqlite::Result<Option<OwnDm>> {
-    use rusqlite::OptionalExtension as _;
-    conn.query_row(
+    query_opt(
+        conn,
         "SELECT m.id, m.conversation_id, m.sender_key, m.body, m.timestamp, m.is_read, \
          m.send_state, m.message_id, m.history_gap_through, m.expire_seconds, m.expire_at, \
          m.timer_notice_seconds, m.reply_to_client_id FROM messages m \
          WHERE m.owner_key = ?1 AND m.sender_key = ?1 AND m.message_id = ?2 \
          AND m.conversation_type = ?3",
         params![owner_key, message_id, conversation_type],
-        |row| {
-            Ok(OwnDm {
-                row: dm_row(row)?,
-                reply_to: row.get(12)?,
-            })
-        },
     )
-    .optional()
 }
 
 /// The stream seq of `peer_key`'s message `message_id` (its client id),
@@ -309,17 +312,19 @@ pub fn mark_dm_read(conn: &Connection, owner_key: &str, peer_key: &str) -> rusql
 /// # Errors
 /// The query failed.
 pub fn dm_inbox(conn: &Connection, owner_key: &str, limit: u32) -> rusqlite::Result<Vec<DmRow>> {
-    let mut stmt = conn.prepare(&format!(
-        "SELECT {DM_COLS} FROM messages m WHERE owner_key = ?1 AND conversation_type = 'dm' \
+    query_list(
+        conn,
+        &format!(
+            "SELECT {DM_COLS} FROM messages m WHERE owner_key = ?1 AND conversation_type = 'dm' \
          AND id = (SELECT id FROM messages n WHERE n.owner_key = m.owner_key \
                    AND n.conversation_id = m.conversation_id AND n.conversation_type = 'dm' \
                    AND n.history_gap_through IS NULL AND n.timer_notice_seconds IS NULL \
                    ORDER BY n.timestamp DESC, n.sender_key DESC, n.stream_seq DESC, n.id DESC \
                    LIMIT 1) \
          ORDER BY timestamp DESC LIMIT ?2"
-    ))?;
-    let rows = stmt.query_map(params![owner_key, limit], dm_row)?.collect();
-    rows
+        ),
+        params![owner_key, limit],
+    )
 }
 
 /// The conversation a message of ours or a peer's belongs to, named by its

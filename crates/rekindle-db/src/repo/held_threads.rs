@@ -3,6 +3,7 @@
 //! receive a thread is the only time it can be judged, and the hold is
 //! kept here so the unlock loader re-applies it after a restart.
 
+use crate::row::query_list;
 use rusqlite::{params, Connection};
 
 /// Hold `thread_ids` (lowercase hex) of `community_id` from `held_at`;
@@ -35,12 +36,12 @@ pub fn hold(
 /// # Errors
 /// The query failed.
 pub fn load(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<(String, String)>> {
-    let mut stmt = conn.prepare(
+    query_list(
+        conn,
         "SELECT community_id, thread_id FROM community_held_threads \
          WHERE owner_key = ?1 ORDER BY community_id, thread_id",
-    )?;
-    let rows = stmt.query_map(params![owner_key], |row| Ok((row.get(0)?, row.get(1)?)))?;
-    rows.collect()
+        params![owner_key],
+    )
 }
 
 #[cfg(test)]

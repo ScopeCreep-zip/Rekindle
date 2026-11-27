@@ -1,6 +1,7 @@
 //! A channel's pinned messages (architecture §16.4), as each peer accepted
 //! the pins off the mesh and its own.
 
+use crate::row::{query_list, FromRow};
 use rusqlite::{params, Connection};
 
 /// One pinned message.
@@ -10,6 +11,17 @@ pub struct PinRow {
     pub channel_id: String,
     pub pinned_by: String,
     pub pinned_at: u64,
+}
+
+impl FromRow for PinRow {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(PinRow {
+            message_id: row.get(0)?,
+            channel_id: row.get(1)?,
+            pinned_by: row.get(2)?,
+            pinned_at: row.get::<_, i64>(3)?.cast_unsigned(),
+        })
+    }
 }
 
 /// Store a pin; a message already pinned keeps its first pin.
@@ -67,18 +79,11 @@ pub fn list(
     community_id: &str,
     channel_id: &str,
 ) -> rusqlite::Result<Vec<PinRow>> {
-    let mut stmt = conn.prepare(
+    query_list(
+        conn,
         "SELECT message_id, channel_id, pinned_by, pinned_at FROM channel_pins \
          WHERE owner_key = ?1 AND community_id = ?2 AND channel_id = ?3 \
          ORDER BY pinned_at, message_id",
-    )?;
-    let rows = stmt.query_map(params![owner_key, community_id, channel_id], |row| {
-        Ok(PinRow {
-            message_id: row.get(0)?,
-            channel_id: row.get(1)?,
-            pinned_by: row.get(2)?,
-            pinned_at: row.get::<_, i64>(3)?.cast_unsigned(),
-        })
-    })?;
-    rows.collect()
+        params![owner_key, community_id, channel_id],
+    )
 }

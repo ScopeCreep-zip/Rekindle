@@ -2,6 +2,7 @@
 //! in, their signed rosters and our sending epoch, and each member's group
 //! sending key by epoch. The owner of their behaviour is `rekindle-dm`.
 
+use crate::row::{query_list, query_opt, FromRow};
 use rekindle_types::group_dm::GroupDmRosterMember;
 use rusqlite::{params, Connection, OptionalExtension as _};
 
@@ -21,20 +22,22 @@ pub struct GroupDmRow {
     pub favourite: bool,
 }
 
-fn roster_json(roster: &[GroupDmRosterMember]) -> rusqlite::Result<String> {
-    serde_json::to_string(roster).map_err(|e| rusqlite::Error::ToSqlConversionFailure(e.into()))
+impl FromRow for GroupDmRow {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(GroupDmRow {
+            group_id: crate::row::get(row, "group_id")?,
+            name: crate::row::get(row, "name")?,
+            roster: crate::row::get_json(row, "roster")?,
+            epoch: crate::row::get(row, "epoch")?,
+            created_at: crate::row::get(row, "created_at")?,
+            origin_peer: crate::row::get(row, "origin_peer")?,
+            favourite: crate::row::get(row, "favourite")?,
+        })
+    }
 }
 
-fn read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<GroupDmRow> {
-    Ok(GroupDmRow {
-        group_id: crate::row::get(row, "group_id")?,
-        name: crate::row::get(row, "name")?,
-        roster: crate::row::get_json(row, "roster")?,
-        epoch: crate::row::get(row, "epoch")?,
-        created_at: crate::row::get(row, "created_at")?,
-        origin_peer: crate::row::get(row, "origin_peer")?,
-        favourite: crate::row::get(row, "favourite")?,
-    })
+fn roster_json(roster: &[GroupDmRosterMember]) -> rusqlite::Result<String> {
+    serde_json::to_string(roster).map_err(|e| rusqlite::Error::ToSqlConversionFailure(e.into()))
 }
 
 const COLS: &str = "group_id, name, roster, epoch, created_at, origin_peer, favourite";
@@ -71,12 +74,11 @@ pub fn get(
     owner_key: &str,
     group_id: &str,
 ) -> rusqlite::Result<Option<GroupDmRow>> {
-    conn.query_row(
+    query_opt(
+        conn,
         &format!("SELECT {COLS} FROM group_dms WHERE owner_key = ?1 AND group_id = ?2"),
         params![owner_key, group_id],
-        read_row,
     )
-    .optional()
 }
 
 /// What this identity knows of a group's call roster (E4.1): the members'
@@ -111,11 +113,11 @@ pub fn call_roster(
 /// # Errors
 /// The query failed or a row is corrupt.
 pub fn list(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<GroupDmRow>> {
-    let mut stmt = conn.prepare(&format!(
-        "SELECT {COLS} FROM group_dms WHERE owner_key = ?1 ORDER BY created_at, group_id"
-    ))?;
-    let rows = stmt.query_map(params![owner_key], read_row)?;
-    rows.collect()
+    query_list(
+        conn,
+        &format!("SELECT {COLS} FROM group_dms WHERE owner_key = ?1 ORDER BY created_at, group_id"),
+        params![owner_key],
+    )
 }
 
 /// Record the friend whose chat `group_id` was created from (SK2-G §6).

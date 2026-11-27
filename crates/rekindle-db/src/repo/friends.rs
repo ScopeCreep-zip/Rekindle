@@ -3,6 +3,7 @@
 //! `friendship_state` holds the stored form of
 //! [`FriendshipState`]; a value it does not name is a read error.
 
+use crate::row::{query_list, query_opt, FromRow};
 use rekindle_types::friend_store::FriendshipState;
 use rusqlite::{params, Connection, OptionalExtension as _};
 
@@ -47,34 +48,38 @@ pub struct FriendRow {
     pub friendship_state: FriendshipState,
 }
 
+impl FromRow for FriendRow {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(FriendRow {
+            public_key: row.get(0)?,
+            display_name: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
+            nickname: row.get(2)?,
+            group_id: row.get(8)?,
+            group_name: row.get(3)?,
+            dht_record_key: row.get(4)?,
+            last_seen_at: row.get(5)?,
+            mailbox_dht_key: row.get(6)?,
+            friendship_state: crate::row::get_enum(row, "friendship_state")?,
+        })
+    }
+}
+
 /// Every friend of `owner_key`.
 ///
 /// # Errors
 /// The query failed.
 pub fn load_all(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<FriendRow>> {
-    let mut stmt = conn.prepare(&format!(
-        "SELECT f.public_key, f.display_name, {}, g.name, f.dht_record_key, \
+    query_list(
+        conn,
+        &format!(
+            "SELECT f.public_key, f.display_name, {}, g.name, f.dht_record_key, \
          f.last_seen_at, f.mailbox_dht_key, f.friendship_state, f.group_id \
          FROM friends f LEFT JOIN friend_groups g ON f.group_id = g.id \
          WHERE f.owner_key = ?1",
-        nickname::NICKNAME
-    ))?;
-    let rows = stmt
-        .query_map(params![owner_key], |row| {
-            Ok(FriendRow {
-                public_key: row.get(0)?,
-                display_name: row.get::<_, Option<String>>(1)?.unwrap_or_default(),
-                nickname: row.get(2)?,
-                group_id: row.get(8)?,
-                group_name: row.get(3)?,
-                dht_record_key: row.get(4)?,
-                last_seen_at: row.get(5)?,
-                mailbox_dht_key: row.get(6)?,
-                friendship_state: crate::row::get_enum(row, "friendship_state")?,
-            })
-        })?
-        .collect();
-    rows
+            nickname::NICKNAME
+        ),
+        params![owner_key],
+    )
 }
 
 /// Whether our request to `public_key` is outstanding (a `pending_out`
@@ -223,15 +228,14 @@ pub fn names(
     owner_key: &str,
     public_key: &str,
 ) -> rusqlite::Result<Option<(Option<String>, Option<String>)>> {
-    conn.query_row(
+    query_opt(
+        conn,
         &format!(
             "SELECT {}, f.display_name FROM friends f WHERE f.owner_key = ?1 AND f.public_key = ?2",
             nickname::NICKNAME
         ),
         params![owner_key, public_key],
-        |row| Ok((row.get(0)?, row.get(1)?)),
     )
-    .optional()
 }
 
 /// The friend's cached avatar, if any.

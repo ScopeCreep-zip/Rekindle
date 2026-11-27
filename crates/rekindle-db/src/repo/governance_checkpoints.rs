@@ -9,7 +9,8 @@
 //! `usable`, so a snapshot whose checkpoint is later equivocated is never
 //! served again.
 
-use rusqlite::{params, Connection, OptionalExtension, Row};
+use crate::row::{query_list, FromRow};
+use rusqlite::{params, Connection, OptionalExtension};
 
 use crate::repo::governance_ops::{hash32, int};
 use crate::row::{get, get_enum, get_u64};
@@ -61,18 +62,24 @@ pub struct CheckpointRow {
     pub state: CheckpointState,
 }
 
-fn checkpoint_row(row: &Row<'_>) -> rusqlite::Result<CheckpointRow> {
-    let round = get_u64(row, 1)?;
-    Ok(CheckpointRow {
-        height: get_u64(row, 0)?,
-        round: u32::try_from(round).map_err(|e| {
-            rusqlite::Error::FromSqlConversionFailure(1, rusqlite::types::Type::Integer, e.into())
-        })?,
-        digest: hash32(row, "digest")?,
-        op_hash: hash32(row, "op_hash")?,
-        dir_size: get_u64(row, 4)?,
-        state: get_enum(row, "state")?,
-    })
+impl FromRow for CheckpointRow {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        let round = get_u64(row, 1)?;
+        Ok(CheckpointRow {
+            height: get_u64(row, 0)?,
+            round: u32::try_from(round).map_err(|e| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    1,
+                    rusqlite::types::Type::Integer,
+                    e.into(),
+                )
+            })?,
+            digest: hash32(row, "digest")?,
+            op_hash: hash32(row, "op_hash")?,
+            dir_size: get_u64(row, 4)?,
+            state: get_enum(row, "state")?,
+        })
+    }
 }
 
 /// Write `rows` as `community_id`'s checkpoints after a rebuild: each row
@@ -117,12 +124,12 @@ pub fn list(
     owner_key: &str,
     community_id: &str,
 ) -> rusqlite::Result<Vec<CheckpointRow>> {
-    let mut stmt = conn.prepare(
+    query_list(
+        conn,
         "SELECT height, round, digest, op_hash, dir_size, state FROM governance_checkpoints \
          WHERE owner_key = ?1 AND community_id = ?2 ORDER BY height, round, digest",
-    )?;
-    let rows = stmt.query_map(params![owner_key, community_id], checkpoint_row)?;
-    rows.collect()
+        params![owner_key, community_id],
+    )
 }
 
 /// Keep `snapshot`, verified against the checkpoint's `stateRoot`, on the

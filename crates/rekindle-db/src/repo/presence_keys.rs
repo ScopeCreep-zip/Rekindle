@@ -1,20 +1,20 @@
 //! `presence_keys`: our friend-presence key (plan E2.5), the newest epoch
 //! only.
 
-use rusqlite::{params, Connection, OptionalExtension as _};
+use crate::row::query_opt;
+use rusqlite::{params, Connection};
 
 /// Our current key: `(epoch, key)`, or `None` before the first is minted.
 ///
 /// # Errors
 /// The query failed.
 pub fn current(conn: &Connection, owner_key: &str) -> rusqlite::Result<Option<(u32, Vec<u8>)>> {
-    conn.query_row(
+    query_opt(
+        conn,
         "SELECT epoch, key FROM presence_keys WHERE owner_key = ?1 \
          ORDER BY epoch DESC LIMIT 1",
         params![owner_key],
-        |row| Ok((row.get(0)?, row.get(1)?)),
     )
-    .optional()
 }
 
 /// Store the key of `epoch` as our current one; the older epochs go.

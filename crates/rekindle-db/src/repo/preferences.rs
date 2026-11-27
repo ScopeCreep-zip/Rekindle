@@ -1,6 +1,7 @@
 //! The identity's preferences (plan D1): the `app_settings` preference
 //! columns and `app_input_channels`. A missing row is the defaults.
 
+use crate::row::{query_opt, FromRow};
 use std::collections::BTreeMap;
 
 use rekindle_types::preferences::{NotificationContent, Preferences};
@@ -11,9 +12,9 @@ use rusqlite::{params, Connection, OptionalExtension as _};
 /// # Errors
 /// The query failed.
 pub fn load(conn: &Connection, owner_key: &str) -> rusqlite::Result<Preferences> {
-    let stored = conn
-        .query_row(
-            "SELECT notifications_enabled, notification_sound, start_minimized, \
+    let stored: Option<Preferences> = query_opt(
+        conn,
+        "SELECT notifications_enabled, notification_sound, start_minimized, \
              game_detection_enabled, game_scan_interval_secs, input_device, output_device, \
              video_device_id, video_device_label, input_volume, output_volume, \
              noise_suppression, echo_cancellation, auto_away_minutes, \
@@ -21,46 +22,8 @@ pub fn load(conn: &Connection, owner_key: &str) -> rusqlite::Result<Preferences>
              in_call_dnd_auto_enable, read_receipts_enabled, notification_content, \
              share_game_totals, share_current_game, keep_activity_log \
              FROM app_settings WHERE owner_key = ?1",
-            params![owner_key],
-            |row| {
-                Ok(Preferences {
-                    notifications_enabled: row.get(0)?,
-                    notification_sound: row.get(1)?,
-                    start_minimized: row.get(2)?,
-                    game_detection_enabled: row.get(3)?,
-                    game_scan_interval_secs: row.get(4)?,
-                    input_device: row.get(5)?,
-                    output_device: row.get(6)?,
-                    video_device_id: row.get(7)?,
-                    video_device_label: row.get(8)?,
-                    input_volume: row.get(9)?,
-                    output_volume: row.get(10)?,
-                    noise_suppression: row.get(11)?,
-                    echo_cancellation: row.get(12)?,
-                    auto_away_minutes: row.get(13)?,
-                    auto_volunteer_relay_for_new_friends: row.get(14)?,
-                    ringtone_enabled: row.get(15)?,
-                    ringtone_volume: row.get(16)?,
-                    in_call_dnd_auto_enable: row.get(17)?,
-                    read_receipts_enabled: row.get(18)?,
-                    notification_content: {
-                        let text: String = row.get(19)?;
-                        NotificationContent::from_stored(&text).ok_or_else(|| {
-                            rusqlite::Error::FromSqlConversionFailure(
-                                19,
-                                rusqlite::types::Type::Text,
-                                format!("notification_content {text:?}").into(),
-                            )
-                        })?
-                    },
-                    share_game_totals: row.get(20)?,
-                    share_current_game: row.get(21)?,
-                    keep_activity_log: row.get(22)?,
-                    input_channels: BTreeMap::new(),
-                })
-            },
-        )
-        .optional()?;
+        params![owner_key],
+    )?;
     let mut prefs = stored.unwrap_or_default();
     let mut stmt = conn.prepare(
         "SELECT device_name, channel FROM app_input_channels WHERE owner_key = ?1 \
@@ -279,24 +242,26 @@ pub struct SkinChoice {
     pub sound_bank: String,
 }
 
+impl FromRow for SkinChoice {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(SkinChoice {
+            skin_id: row.get(0)?,
+            sound_bank: row.get(1)?,
+        })
+    }
+}
+
 /// The identity's skin and sound bank; the column defaults when no row
 /// was saved.
 ///
 /// # Errors
 /// The query failed.
 pub fn skin_choice(conn: &Connection, owner_key: &str) -> rusqlite::Result<SkinChoice> {
-    let stored = conn
-        .query_row(
-            "SELECT skin_id, sound_bank FROM app_settings WHERE owner_key = ?1",
-            params![owner_key],
-            |row| {
-                Ok(SkinChoice {
-                    skin_id: row.get(0)?,
-                    sound_bank: row.get(1)?,
-                })
-            },
-        )
-        .optional()?;
+    let stored = query_opt(
+        conn,
+        "SELECT skin_id, sound_bank FROM app_settings WHERE owner_key = ?1",
+        params![owner_key],
+    )?;
     match stored {
         Some(choice) => Ok(choice),
         None => conn.query_row(
@@ -328,6 +293,46 @@ pub fn set_skin_id(conn: &Connection, owner_key: &str, skin_id: &str) -> rusqlit
         params![owner_key, skin_id],
     )?;
     Ok(())
+}
+
+impl FromRow for Preferences {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(Preferences {
+            notifications_enabled: row.get(0)?,
+            notification_sound: row.get(1)?,
+            start_minimized: row.get(2)?,
+            game_detection_enabled: row.get(3)?,
+            game_scan_interval_secs: row.get(4)?,
+            input_device: row.get(5)?,
+            output_device: row.get(6)?,
+            video_device_id: row.get(7)?,
+            video_device_label: row.get(8)?,
+            input_volume: row.get(9)?,
+            output_volume: row.get(10)?,
+            noise_suppression: row.get(11)?,
+            echo_cancellation: row.get(12)?,
+            auto_away_minutes: row.get(13)?,
+            auto_volunteer_relay_for_new_friends: row.get(14)?,
+            ringtone_enabled: row.get(15)?,
+            ringtone_volume: row.get(16)?,
+            in_call_dnd_auto_enable: row.get(17)?,
+            read_receipts_enabled: row.get(18)?,
+            notification_content: {
+                let text: String = row.get(19)?;
+                NotificationContent::from_stored(&text).ok_or_else(|| {
+                    rusqlite::Error::FromSqlConversionFailure(
+                        19,
+                        rusqlite::types::Type::Text,
+                        format!("notification_content {text:?}").into(),
+                    )
+                })?
+            },
+            share_game_totals: row.get(20)?,
+            share_current_game: row.get(21)?,
+            keep_activity_log: row.get(22)?,
+            input_channels: BTreeMap::new(),
+        })
+    }
 }
 
 #[cfg(test)]

@@ -2,6 +2,7 @@
 //! `GameTotals` DmFrame (0x0172) stated them. A frame replaces them all;
 //! the friend row's removal (unfriend, block) removes them by cascade.
 
+use crate::row::{query_list, FromRow};
 use rusqlite::{params, Connection};
 
 use super::game_sessions::GameTotal;
@@ -63,18 +64,22 @@ pub fn of(
     owner_key: &str,
     friend_key: &str,
 ) -> rusqlite::Result<Vec<GameTotal>> {
-    let mut stmt = conn.prepare(
+    query_list(
+        conn,
         "SELECT game_id, total_secs, last_played FROM friend_game_totals \
          WHERE owner_key = ?1 AND friend_key = ?2 ORDER BY last_played DESC, game_id",
-    )?;
-    let rows = stmt.query_map(params![owner_key, friend_key], |row| {
+        params![owner_key, friend_key],
+    )
+}
+
+impl FromRow for GameTotal {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
         Ok(GameTotal {
             game_id: row.get(0)?,
             total_secs: u64::try_from(row.get::<_, i64>(1)?).unwrap_or(0),
             last_played: row.get(2)?,
         })
-    })?;
-    rows.collect()
+    }
 }
 
 #[cfg(test)]

@@ -3,6 +3,7 @@
 //! is stored) with the last visit. Only ours: never sent. At most
 //! [`MAX_RECENT`] rows; a new visit past that drops the oldest.
 
+use crate::row::{query_list, FromRow};
 use rusqlite::{params, Connection};
 
 /// How many recent servers we keep (SK2-G §3).
@@ -15,6 +16,16 @@ pub struct RecentServer {
     pub address: String,
     /// Unix seconds.
     pub last_seen: i64,
+}
+
+impl FromRow for RecentServer {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(RecentServer {
+            game_id: row.get(0)?,
+            address: row.get(1)?,
+            last_seen: row.get(2)?,
+        })
+    }
 }
 
 /// Record a visit to `address` for `game_id` at `last_seen`, then keep the
@@ -72,18 +83,12 @@ pub fn clear(conn: &Connection, owner_key: &str) -> rusqlite::Result<()> {
 /// # Errors
 /// The query failed.
 pub fn list(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<RecentServer>> {
-    let mut stmt = conn.prepare(
+    query_list(
+        conn,
         "SELECT game_id, address, last_seen FROM recent_servers \
          WHERE owner_key = ?1 ORDER BY last_seen DESC, game_id, address",
-    )?;
-    let rows = stmt.query_map(params![owner_key], |row| {
-        Ok(RecentServer {
-            game_id: row.get(0)?,
-            address: row.get(1)?,
-            last_seen: row.get(2)?,
-        })
-    })?;
-    rows.collect()
+        params![owner_key],
+    )
 }
 
 #[cfg(test)]

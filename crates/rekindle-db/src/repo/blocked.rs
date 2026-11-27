@@ -1,6 +1,7 @@
 //! `blocked_users`: the identities we refuse (plan E2.1). A blocked sender
 //! reaches nothing: the 1:1 receive gate drops it before any handler.
 
+use crate::row::{query_list, FromRow};
 use rusqlite::{params, Connection, OptionalExtension as _};
 
 /// A blocked identity, newest first in [`list`].
@@ -9,6 +10,16 @@ pub struct BlockEntry {
     pub public_key: String,
     pub display_name: String,
     pub blocked_at: i64,
+}
+
+impl FromRow for BlockEntry {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(BlockEntry {
+            public_key: row.get(0)?,
+            display_name: row.get(1)?,
+            blocked_at: row.get(2)?,
+        })
+    }
 }
 
 /// Whether `public_key` is blocked.
@@ -61,20 +72,12 @@ pub fn delete(conn: &Connection, owner_key: &str, public_key: &str) -> rusqlite:
 /// # Errors
 /// The query failed.
 pub fn list(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<BlockEntry>> {
-    let mut stmt = conn.prepare(
+    query_list(
+        conn,
         "SELECT public_key, display_name, blocked_at FROM blocked_users \
          WHERE owner_key = ?1 ORDER BY blocked_at DESC",
-    )?;
-    let rows = stmt
-        .query_map(params![owner_key], |row| {
-            Ok(BlockEntry {
-                public_key: row.get(0)?,
-                display_name: row.get(1)?,
-                blocked_at: row.get(2)?,
-            })
-        })?
-        .collect();
-    rows
+        params![owner_key],
+    )
 }
 
 #[cfg(test)]

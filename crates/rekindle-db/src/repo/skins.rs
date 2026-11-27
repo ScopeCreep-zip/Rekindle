@@ -4,6 +4,7 @@
 //! stores, and the table's CHECK constraints refuse a malformed hash, an oversize
 //! package or an unknown origin.
 
+use crate::row::{query_list, FromRow};
 use rusqlite::{params, Connection, OptionalExtension as _};
 
 /// How a package entered the library.
@@ -36,6 +37,17 @@ pub struct SkinRow {
     pub manifest_json: String,
     pub imported_at: i64,
     pub origin: String,
+}
+
+impl FromRow for SkinRow {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(SkinRow {
+            hash: row.get(0)?,
+            manifest_json: row.get(1)?,
+            imported_at: row.get(2)?,
+            origin: row.get(3)?,
+        })
+    }
 }
 
 /// A package to store.
@@ -74,19 +86,12 @@ pub fn insert(conn: &Connection, owner_key: &str, skin: &NewSkin<'_>) -> rusqlit
 /// # Errors
 /// The query failed.
 pub fn list(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<SkinRow>> {
-    let mut stmt = conn.prepare(
+    query_list(
+        conn,
         "SELECT hash, manifest_json, imported_at, origin FROM skin_packages \
          WHERE owner_key = ?1 ORDER BY imported_at, hash",
-    )?;
-    let rows = stmt.query_map(params![owner_key], |row| {
-        Ok(SkinRow {
-            hash: row.get(0)?,
-            manifest_json: row.get(1)?,
-            imported_at: row.get(2)?,
-            origin: row.get(3)?,
-        })
-    })?;
-    rows.collect()
+        params![owner_key],
+    )
 }
 
 /// Whether the library holds `hash`.

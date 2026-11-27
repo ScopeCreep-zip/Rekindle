@@ -2,6 +2,7 @@
 //! secrets it names, their consumption once its first message decrypts,
 //! and the last-resort inits seen (B9's replay set).
 
+use crate::row::query_opt;
 use rekindle_crypto::signal::prekey_material::ResponderSecrets;
 use rekindle_crypto::signal::prekey_record::is_prekey_id;
 use rekindle_crypto::signal::{PqPrekeyId, PreKeyInit};
@@ -56,15 +57,13 @@ pub(crate) fn consume_one_time(
     let owner = identity_text(owner);
     let mut refill = Vec::new();
     for (kind, id) in used {
-        let slot: Option<(u32, bool)> = conn
-            .query_row(
-                "UPDATE signal_prekeys SET secret = x'', consumed_at = ?4 \
+        let slot: Option<(u32, bool)> = query_opt(
+            conn,
+            "UPDATE signal_prekeys SET secret = x'', consumed_at = ?4 \
                  WHERE owner_key = ?1 AND kind = ?2 AND id = ?3 AND consumed_at IS NULL \
                  RETURNING published_subkey, retired_at IS NULL",
-                params![owner, kind.as_str(), id, now_ms],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()?;
+            params![owner, kind.as_str(), id, now_ms],
+        )?;
         if let Some((subkey, current)) = slot {
             crate::erase::erased();
             if current && is_slot(subkey) && !refill.contains(&subkey) {

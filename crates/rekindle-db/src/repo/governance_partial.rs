@@ -3,7 +3,8 @@
 //! walk skipped (Synapse `is_partial_state_room`). The row survives a
 //! restart, so a node stopped mid-backfill comes back partial.
 
-use rusqlite::{params, Connection, OptionalExtension};
+use crate::row::{query_opt, FromRow};
+use rusqlite::{params, Connection};
 
 use crate::repo::governance_ops::{hash32, int};
 use crate::row::get_u64;
@@ -17,6 +18,16 @@ pub struct PartialRow {
     pub digest: [u8; 32],
     /// The hinted snapshot's digest (the checkpoint's `stateRoot`).
     pub state_root: [u8; 32],
+}
+
+impl FromRow for PartialRow {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(PartialRow {
+            height: get_u64(row, 0)?,
+            digest: hash32(row, "digest")?,
+            state_root: hash32(row, "state_root")?,
+        })
+    }
 }
 
 /// Mark `community_id` partial, joined from `row`'s hint.
@@ -53,19 +64,12 @@ pub fn get(
     owner_key: &str,
     community_id: &str,
 ) -> rusqlite::Result<Option<PartialRow>> {
-    conn.query_row(
+    query_opt(
+        conn,
         "SELECT height, digest, state_root FROM governance_partial \
          WHERE owner_key = ?1 AND community_id = ?2",
         params![owner_key, community_id],
-        |row| {
-            Ok(PartialRow {
-                height: get_u64(row, 0)?,
-                digest: hash32(row, "digest")?,
-                state_root: hash32(row, "state_root")?,
-            })
-        },
     )
-    .optional()
 }
 
 /// `community_id` is whole: its backfill ended.

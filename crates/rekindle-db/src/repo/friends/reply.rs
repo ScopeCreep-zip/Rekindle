@@ -4,6 +4,7 @@
 //! one their request carried, kept from our accept until our first contact
 //! is committed.
 
+use crate::row::{query_list, query_opt};
 use rusqlite::{params, Connection, OptionalExtension as _};
 
 /// Record `record_key` as the reply inbox our request to `public_key`
@@ -69,15 +70,13 @@ pub fn is_accepted_row(
 /// # Errors
 /// The query failed.
 pub fn reply_inboxes(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<String>> {
-    let mut stmt = conn.prepare(
+    query_list(
+        conn,
         "SELECT reply_inbox_key FROM friends \
          WHERE owner_key = ?1 AND friendship_state = 'pending_out' \
            AND reply_inbox_key IS NOT NULL ORDER BY reply_inbox_key",
-    )?;
-    let keys = stmt
-        .query_map(params![owner_key], |row| row.get(0))?
-        .collect();
-    keys
+        params![owner_key],
+    )
 }
 
 /// Keep the reply inbox `public_key`'s request carried (`record_key`) and
@@ -111,14 +110,12 @@ pub fn take_peer_reply(
     public_key: &str,
 ) -> rusqlite::Result<Option<(String, String)>> {
     super::changes::atomically(conn, |conn| {
-        let held = conn
-            .query_row(
-                "SELECT peer_reply_inbox_key, peer_reply_writer FROM friends \
+        let held = query_opt(
+            conn,
+            "SELECT peer_reply_inbox_key, peer_reply_writer FROM friends \
                  WHERE owner_key = ?1 AND public_key = ?2 AND peer_reply_inbox_key IS NOT NULL",
-                params![owner_key, public_key],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .optional()?;
+            params![owner_key, public_key],
+        )?;
         if held.is_some() {
             conn.execute(
                 "UPDATE friends SET peer_reply_inbox_key = NULL, peer_reply_writer = NULL \

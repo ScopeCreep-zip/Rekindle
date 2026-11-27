@@ -4,6 +4,7 @@
 //! advances (`MAX`). Unread counts are derived here: the messages after the
 //! marker, and of those the ones that mention us (`messages.mentions_me`).
 
+use crate::row::query_one;
 use rusqlite::{params, Connection, OptionalExtension as _};
 
 use super::chain_entries::sql_seq as to_i64;
@@ -170,14 +171,14 @@ pub fn channel_unread(
     channel_id: &str,
     after: u64,
 ) -> rusqlite::Result<Unread> {
-    let (messages, mentions): (i64, i64) = conn.query_row(
+    let (messages, mentions): (i64, i64) = query_one(
+        conn,
         "SELECT COUNT(*), COALESCE(SUM(mentions_me), 0) FROM messages \
          WHERE owner_key = ?1 AND conversation_type = 'channel' AND conversation_id = ?3 \
          AND sender_key IS NOT (SELECT my_pseudonym_key FROM communities \
            WHERE owner_key = ?1 AND id = ?2) \
          AND COALESCE(lamport_ts, 0) > ?4",
         params![owner_key, community_id, channel_id, to_i64(after)?],
-        |row| Ok((row.get(0)?, row.get(1)?)),
     )?;
     Ok(Unread {
         messages: to_u32(messages),

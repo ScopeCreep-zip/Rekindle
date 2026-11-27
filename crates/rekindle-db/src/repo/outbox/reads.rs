@@ -1,6 +1,7 @@
 //! Reading `outbox` rows: what is due, a stream's rows, one row, and when
 //! the engine next has work (plan E2.5, D22).
 
+use crate::row::{query_list, query_opt, FromRow};
 use rekindle_types::message::SendState;
 use rusqlite::{params, Connection, OptionalExtension as _};
 
@@ -109,23 +110,25 @@ pub(super) fn parse_state(stored: &str, column: usize) -> rusqlite::Result<SendS
     })
 }
 
-fn read_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Row> {
-    let stored: String = row.get(5)?;
-    let state = parse_state(&stored, 5)?;
-    Ok(Row {
-        stream: row.get(0)?,
-        stream_seq: row.get(1)?,
-        client_id: row.get(2)?,
-        kind: row.get(3)?,
-        payload: row.get(4)?,
-        state,
-        attempts: row.get(6)?,
-        next_at: row.get(7)?,
-        deadline: row.get(8)?,
-        wedge_reason: row.get(9)?,
-        sent_at: row.get(10)?,
-        depends_on: row.get(11)?,
-    })
+impl FromRow for Row {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        let stored: String = row.get(5)?;
+        let state = parse_state(&stored, 5)?;
+        Ok(Row {
+            stream: row.get(0)?,
+            stream_seq: row.get(1)?,
+            client_id: row.get(2)?,
+            kind: row.get(3)?,
+            payload: row.get(4)?,
+            state,
+            attempts: row.get(6)?,
+            next_at: row.get(7)?,
+            deadline: row.get(8)?,
+            wedge_reason: row.get(9)?,
+            sent_at: row.get(10)?,
+            depends_on: row.get(11)?,
+        })
+    }
 }
 
 fn query_rows(
@@ -133,9 +136,11 @@ fn query_rows(
     filter: &str,
     args: impl rusqlite::Params,
 ) -> rusqlite::Result<Vec<Row>> {
-    let mut stmt = conn.prepare(&format!("SELECT {COLS} FROM outbox o WHERE {filter}"))?;
-    let rows = stmt.query_map(args, read_row)?.collect();
-    rows
+    query_list(
+        conn,
+        &format!("SELECT {COLS} FROM outbox o WHERE {filter}"),
+        args,
+    )
 }
 
 /// The rows to attempt at `now`: unsettled (`queued`, or `sent` and
@@ -242,12 +247,11 @@ pub fn next_wake(
 /// # Errors
 /// The query failed.
 pub fn get(conn: &Connection, owner_key: &str, client_id: &str) -> rusqlite::Result<Option<Row>> {
-    conn.query_row(
+    query_opt(
+        conn,
         &format!("SELECT {COLS} FROM outbox o WHERE o.owner_key = ?1 AND o.client_id = ?2"),
         params![owner_key, client_id],
-        read_row,
     )
-    .optional()
 }
 
 /// The row at `stream_seq` of `stream` (a peer acknowledges by it).
@@ -260,15 +264,14 @@ pub fn get_by_seq(
     stream: &str,
     stream_seq: i64,
 ) -> rusqlite::Result<Option<Row>> {
-    conn.query_row(
+    query_opt(
+        conn,
         &format!(
             "SELECT {COLS} FROM outbox o WHERE o.owner_key = ?1 AND o.stream = ?2 \
              AND o.stream_seq = ?3"
         ),
         params![owner_key, stream, stream_seq],
-        read_row,
     )
-    .optional()
 }
 
 /// The channel posts waiting for their channel's key (`awaiting_key`, plan

@@ -3,6 +3,7 @@
 //! and a label of at most 64 characters. Only ours: never sent, though a
 //! friend's chat window offers each as a `GameInvite`.
 
+use crate::row::{query_list, FromRow};
 use rusqlite::{params, Connection};
 
 /// One stored favourite.
@@ -12,6 +13,17 @@ pub struct FavouriteServer {
     pub address: String,
     pub label: String,
     pub added_at: i64,
+}
+
+impl FromRow for FavouriteServer {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(FavouriteServer {
+            game_id: row.get(0)?,
+            address: row.get(1)?,
+            label: row.get(2)?,
+            added_at: row.get(3)?,
+        })
+    }
 }
 
 /// Add `address` for `game_id`, or relabel it when it is already a
@@ -62,19 +74,12 @@ pub fn remove(
 /// # Errors
 /// The query failed.
 pub fn list(conn: &Connection, owner_key: &str) -> rusqlite::Result<Vec<FavouriteServer>> {
-    let mut stmt = conn.prepare(
+    query_list(
+        conn,
         "SELECT game_id, address, label, added_at FROM favourite_servers \
          WHERE owner_key = ?1 ORDER BY added_at, game_id, address",
-    )?;
-    let rows = stmt.query_map(params![owner_key], |row| {
-        Ok(FavouriteServer {
-            game_id: row.get(0)?,
-            address: row.get(1)?,
-            label: row.get(2)?,
-            added_at: row.get(3)?,
-        })
-    })?;
-    rows.collect()
+        params![owner_key],
+    )
 }
 
 #[cfg(test)]

@@ -5,10 +5,11 @@
 //! its behaviour is `rekindle-dm` (`GroupDmDeps::{stash_invite,
 //! take_invite}`); `invite` is the encoded `GroupDmInvite` body.
 
+use crate::row::{query_list, query_opt, FromRow};
 use std::time::Duration;
 
 use rekindle_crypto::horizon::DELIVERY_HORIZON;
-use rusqlite::{params, Connection, OptionalExtension as _};
+use rusqlite::{params, Connection};
 
 /// How long an unanswered invite is held.
 pub const INVITE_MAX_AGE: Duration = DELIVERY_HORIZON;
@@ -27,6 +28,17 @@ pub struct InviteRow {
     pub invite: Vec<u8>,
     /// Milliseconds.
     pub received_at: i64,
+}
+
+impl FromRow for InviteRow {
+    fn from_row(r: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(InviteRow {
+            group_id: crate::row::get(r, "group_id")?,
+            from_key: crate::row::get(r, "from_key")?,
+            invite: crate::row::get(r, "invite")?,
+            received_at: crate::row::get(r, "received_at")?,
+        })
+    }
 }
 
 /// Hold an invite (a resend of it replaces the held one).
@@ -55,21 +67,12 @@ pub fn take(
     group_id: &str,
     now_ms: i64,
 ) -> rusqlite::Result<Option<InviteRow>> {
-    let row = conn
-        .query_row(
-            "DELETE FROM group_dm_invites WHERE owner_key = ?1 AND group_id = ?2 \
+    let row: Option<InviteRow> = query_opt(
+        conn,
+        "DELETE FROM group_dm_invites WHERE owner_key = ?1 AND group_id = ?2 \
              RETURNING group_id, from_key, invite, received_at",
-            params![owner_key, group_id],
-            |r| {
-                Ok(InviteRow {
-                    group_id: crate::row::get(r, "group_id")?,
-                    from_key: crate::row::get(r, "from_key")?,
-                    invite: crate::row::get(r, "invite")?,
-                    received_at: crate::row::get(r, "received_at")?,
-                })
-            },
-        )
-        .optional()?;
+        params![owner_key, group_id],
+    )?;
     Ok(row.filter(|r| now_ms.saturating_sub(r.received_at) <= max_age_ms()))
 }
 
@@ -79,22 +82,12 @@ pub fn take(
 /// # Errors
 /// The query failed or a row is corrupt.
 pub fn list(conn: &Connection, owner_key: &str, now_ms: i64) -> rusqlite::Result<Vec<InviteRow>> {
-    let mut stmt = conn.prepare(
+    query_list(
+        conn,
         "SELECT group_id, from_key, invite, received_at FROM group_dm_invites \
          WHERE owner_key = ?1 AND received_at >= ?2 ORDER BY received_at DESC",
-    )?;
-    let rows = stmt.query_map(
         params![owner_key, now_ms.saturating_sub(max_age_ms())],
-        |r| {
-            Ok(InviteRow {
-                group_id: crate::row::get(r, "group_id")?,
-                from_key: crate::row::get(r, "from_key")?,
-                invite: crate::row::get(r, "invite")?,
-                received_at: crate::row::get(r, "received_at")?,
-            })
-        },
-    )?;
-    rows.collect()
+    )
 }
 
 /// Delete every invite older than [`INVITE_MAX_AGE`] at `now_ms`.

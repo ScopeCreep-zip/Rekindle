@@ -3,7 +3,8 @@
 
 use rusqlite::{params, Connection};
 
-use super::messages::{dm_row, own_message, DmRow, OwnDm, DM_COLS, HISTORY_ORDER};
+use super::messages::{own_message, DmRow, OwnDm, DM_COLS, HISTORY_ORDER};
+use crate::row::query_list;
 
 /// The newest `limit` messages of group `group_id` before `before` (a
 /// timestamp, ms; all when `None`), oldest first (plan E2.6).
@@ -17,17 +18,15 @@ pub fn group_dm_history(
     limit: u32,
     before: Option<i64>,
 ) -> rusqlite::Result<Vec<DmRow>> {
-    let mut stmt = conn.prepare(&format!(
-        "SELECT {DM_COLS} FROM messages WHERE owner_key = ?1 AND conversation_id = ?2 \
+    let mut rows: Vec<DmRow> = query_list(
+        conn,
+        &format!(
+            "SELECT {DM_COLS} FROM messages WHERE owner_key = ?1 AND conversation_id = ?2 \
          AND conversation_type = 'group_dm' AND timestamp < ?3 \
          ORDER BY {HISTORY_ORDER} LIMIT ?4"
-    ))?;
-    let mut rows = stmt
-        .query_map(
-            params![owner_key, group_id, before.unwrap_or(i64::MAX), limit],
-            dm_row,
-        )?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
+        ),
+        params![owner_key, group_id, before.unwrap_or(i64::MAX), limit],
+    )?;
     rows.reverse();
     Ok(rows)
 }

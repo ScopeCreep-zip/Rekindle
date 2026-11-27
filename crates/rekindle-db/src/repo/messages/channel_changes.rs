@@ -4,7 +4,8 @@
 //! here repeats its guard in SQL, so a row never takes a change the rules
 //! refuse.
 
-use rusqlite::{params, Connection, OptionalExtension as _};
+use crate::row::{query_opt, FromRow};
+use rusqlite::{params, Connection};
 
 /// Readers cap a message at this many edits (plan E3.3 E2).
 pub const MAX_EDITS: u32 = 10;
@@ -22,6 +23,17 @@ pub struct ChangeTargetRow {
     pub deleted: bool,
 }
 
+impl FromRow for ChangeTargetRow {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(ChangeTargetRow {
+            sender_key: row.get(0)?,
+            edit_seq: u64::try_from(row.get::<_, i64>(1)?).unwrap_or(0),
+            edit_count: u32::try_from(row.get::<_, i64>(2)?).unwrap_or(MAX_EDITS),
+            deleted: row.get(3)?,
+        })
+    }
+}
+
 /// The stored channel message `message_id` a change names, when we hold it.
 ///
 /// # Errors
@@ -32,21 +44,13 @@ pub fn change_target(
     channel_id: &str,
     message_id: &str,
 ) -> rusqlite::Result<Option<ChangeTargetRow>> {
-    conn.query_row(
+    query_opt(
+        conn,
         "SELECT sender_key, edit_seq, edit_count, deleted_at IS NOT NULL FROM messages \
          WHERE owner_key = ?1 AND conversation_id = ?2 AND conversation_type = 'channel' \
            AND message_id = ?3 LIMIT 1",
         params![owner_key, channel_id, message_id],
-        |row| {
-            Ok(ChangeTargetRow {
-                sender_key: row.get(0)?,
-                edit_seq: u64::try_from(row.get::<_, i64>(1)?).unwrap_or(0),
-                edit_count: u32::try_from(row.get::<_, i64>(2)?).unwrap_or(MAX_EDITS),
-                deleted: row.get(3)?,
-            })
-        },
     )
-    .optional()
 }
 
 /// One edit to store.

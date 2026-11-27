@@ -32,13 +32,14 @@ mod responder;
 #[cfg(test)]
 mod tests;
 
+use crate::row::{query_opt, FromRow};
 use rekindle_crypto::signal::prekey_material::MintedPrekey;
 use rekindle_crypto::signal::prekey_record::{
     mint_head, mint_slot, random_id, set_values, sign_head, sign_slot, LocalHead, LocalPrekeys,
     MintedSet, MintedSlot, PrekeyAction, Publish, SlotState, OPK_STALE_MS,
 };
 use rekindle_types::dht_layout::prekeys::{is_slot, HEAD};
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection};
 
 pub use archive::{sweep_archive, ArchiveSweep};
 pub(crate) use peers::insert_slot_used;
@@ -325,22 +326,24 @@ struct Row {
     created_at: i64,
 }
 
+impl FromRow for Row {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(Row {
+            id: row.get(0)?,
+            public: row.get(1)?,
+            created_at: row.get(2)?,
+        })
+    }
+}
 /// The current (unretired) key of a long-lived kind.
 fn current(conn: &Connection, owner: &str, kind: PrekeyKind) -> rusqlite::Result<Option<Row>> {
-    conn.query_row(
+    query_opt(
+        conn,
         "SELECT id, public, created_at FROM signal_prekeys \
          WHERE owner_key = ?1 AND kind = ?2 AND retired_at IS NULL \
          ORDER BY created_at DESC, rowid DESC LIMIT 1",
         params![owner, kind.as_str()],
-        |row| {
-            Ok(Row {
-                id: row.get(0)?,
-                public: row.get(1)?,
-                created_at: row.get(2)?,
-            })
-        },
     )
-    .optional()
 }
 
 /// Every slot whose curve and ML-KEM one-time keys are both live, as

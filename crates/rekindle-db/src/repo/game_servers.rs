@@ -1,6 +1,7 @@
 //! A community's game servers (plan E3.1 H1): the entries its members
 //! added, as each peer accepted them off the mesh.
 
+use crate::row::{query_list, FromRow};
 use rekindle_types::game_server::GameServerInfo;
 use rusqlite::{params, Connection, OptionalExtension};
 
@@ -78,11 +79,16 @@ pub fn list(
     owner_key: &str,
     community_id: &str,
 ) -> rusqlite::Result<Vec<GameServerInfo>> {
-    let mut stmt = conn.prepare(
+    query_list(
+        conn,
         "SELECT id, game_id, label, address, added_by, created_at FROM game_servers \
          WHERE owner_key = ?1 AND community_id = ?2 ORDER BY created_at DESC, id ASC",
-    )?;
-    let rows = stmt.query_map(params![owner_key, community_id], |row| {
+        params![owner_key, community_id],
+    )
+}
+
+impl FromRow for GameServerInfo {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
         Ok(GameServerInfo {
             id: row.get(0)?,
             game_id: row.get(1)?,
@@ -91,6 +97,5 @@ pub fn list(
             added_by: row.get(4)?,
             created_at: row.get::<_, i64>(5)?.cast_unsigned(),
         })
-    })?;
-    rows.collect()
+    }
 }

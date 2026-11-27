@@ -1,5 +1,6 @@
 //! `community_invites` — the invites this identity created.
 
+use crate::row::{query_list, FromRow};
 use rusqlite::{params, Connection, OptionalExtension};
 
 /// Store an invite this identity created.
@@ -68,6 +69,17 @@ pub struct OwnInvite {
     pub created_at: i64,
 }
 
+impl FromRow for OwnInvite {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(OwnInvite {
+            code: row.get(0)?,
+            code_hash: row.get(1)?,
+            url: row.get(2)?,
+            created_at: row.get(3)?,
+        })
+    }
+}
+
 /// Every invite this identity minted for `community_id`, by code hash.
 ///
 /// # Errors
@@ -77,17 +89,10 @@ pub fn list(
     owner_key: &str,
     community_id: &str,
 ) -> rusqlite::Result<Vec<OwnInvite>> {
-    let mut stmt = conn.prepare(
+    query_list(
+        conn,
         "SELECT code, code_hash, url, created_at FROM community_invites \
          WHERE owner_key = ?1 AND community_id = ?2 ORDER BY code_hash",
-    )?;
-    let rows = stmt.query_map(params![owner_key, community_id], |row| {
-        Ok(OwnInvite {
-            code: row.get(0)?,
-            code_hash: row.get(1)?,
-            url: row.get(2)?,
-            created_at: row.get(3)?,
-        })
-    })?;
-    rows.collect()
+        params![owner_key, community_id],
+    )
 }

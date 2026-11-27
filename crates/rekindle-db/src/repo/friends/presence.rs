@@ -1,6 +1,7 @@
 //! Each friend's current friend-presence key (plan E2.5): the
 //! `presence_epoch` and `presence_key` columns of `friends`.
 
+use crate::row::query_list;
 use rusqlite::{params, Connection};
 
 /// Store `public_key`'s key of `epoch`, unless the row holds a newer one
@@ -49,14 +50,10 @@ pub fn presence_keys(
     conn: &Connection,
     owner_key: &str,
 ) -> rusqlite::Result<Vec<(String, u32, Vec<u8>)>> {
-    let mut stmt = conn.prepare(
+    query_list(
+        conn,
         "SELECT public_key, presence_epoch, presence_key FROM friends \
          WHERE owner_key = ?1 AND presence_key IS NOT NULL",
-    )?;
-    let rows = stmt
-        .query_map(params![owner_key], |row| {
-            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
-        })?
-        .collect();
-    rows
+        params![owner_key],
+    )
 }

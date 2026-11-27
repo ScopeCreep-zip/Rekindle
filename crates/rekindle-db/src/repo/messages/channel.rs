@@ -2,6 +2,7 @@
 //! hosts (plan E3.1 E2: the desktop's `message_repo` moved here so the
 //! daemon stores channel messages too).
 
+use crate::row::{query_opt, FromRow};
 use rekindle_types::message::SendState;
 use rusqlite::{params, Connection};
 
@@ -217,6 +218,16 @@ pub struct ForwardSource {
     pub reply_to: Option<String>,
 }
 
+impl FromRow for ForwardSource {
+    fn from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<Self> {
+        Ok(ForwardSource {
+            sender_key: row.get(0)?,
+            body: row.get(1)?,
+            reply_to: row.get(2)?,
+        })
+    }
+}
+
 /// Look up a stored channel message by its protocol message id.
 ///
 /// # Errors
@@ -227,22 +238,14 @@ pub fn find_by_message_id(
     channel_id: &str,
     message_id: &str,
 ) -> rusqlite::Result<Option<ForwardSource>> {
-    use rusqlite::OptionalExtension as _;
-    conn.query_row(
+    query_opt(
+        conn,
         "SELECT m.sender_key, m.body, p.message_id FROM messages m \
          LEFT JOIN messages p ON p.id = m.reply_to_id \
          WHERE m.owner_key = ?1 AND m.conversation_id = ?2 AND m.conversation_type = 'channel' \
            AND m.message_id = ?3 LIMIT 1",
         params![owner_key, channel_id, message_id],
-        |row| {
-            Ok(ForwardSource {
-                sender_key: row.get(0)?,
-                body: row.get(1)?,
-                reply_to: row.get(2)?,
-            })
-        },
     )
-    .optional()
 }
 
 /// What a stored received channel message tells the notification gate:
