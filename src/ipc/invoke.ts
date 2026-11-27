@@ -8,9 +8,11 @@
  * shown by the registered undo presenter (a toast with Undo).
  */
 
-import { invoke as tauriInvoke } from "@tauri-apps/api/core";
+import { Channel, invoke as tauriInvoke } from "@tauri-apps/api/core";
 import type { Done, IntentReview, UndoOffer } from "./commands/dto";
 import { isCommandError } from "./commands/dto";
+
+export { Channel };
 
 export async function invoke<T>(
   cmd: string,

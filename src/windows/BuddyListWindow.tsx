@@ -1,6 +1,5 @@
 import { subscribeBackendIntents } from "../handlers/intent.handlers";
 import { type Component, type JSX, onMount, onCleanup, createSignal, Show } from "solid-js";
-import type { UnlistenFn } from "@tauri-apps/api/event";
 import SkinFrame from "../components/common/SkinFrame";
 import SkinTreeWindow from "../components/skin-tree/SkinTreeWindow";
 import NameField from "../components/skin-tree/NameField";
@@ -50,7 +49,7 @@ import { subscribePairingLinkHandler } from "../handlers/pairing-link.handler";
 import { refreshMissedCalls, subscribeCallEvents } from "../handlers/calls.handlers";
 import { subscribeNotificationHandler } from "../handlers/notification-events.handlers";
 import CallController from "../components/voice/CallController";
-import { startEventStream } from "../ipc/channels";
+import { type UnlistenFn, startEventStream } from "../ipc/channels";
 import { handleHydrateRelayState } from "../actions/relay.actions";
 import { hydrateState } from "../stores/hydrate";
 import {

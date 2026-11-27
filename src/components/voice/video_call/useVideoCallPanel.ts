@@ -1,14 +1,13 @@
 import { createEffect, createSignal, onCleanup, onMount } from "solid-js";
-import { Channel } from "@tauri-apps/api/core";
+import { Channel } from "../../../ipc/invoke";
 import { commands } from "../../../ipc/commands";
 import type {
   CommunityVideoFrameMsg,
   DmVideoFrameMsg,
   SessionVideoConfig,
 } from "../../../ipc/commands";
-import { subscribeCommunityEvents, subscribeVoiceEvents } from "../../../ipc/channels";
+import { type UnlistenFn, subscribeCommunityEvents, subscribeVoiceEvents } from "../../../ipc/channels";
 import { isLegacyCommunityEvent } from "../../../ipc/channels/community_subscription_events";
-import type { UnlistenFn } from "@tauri-apps/api/event";
 import { setVoiceState, voiceState } from "../../../stores/voice.store";
 import { probeAndReportLocalVideoCapabilities } from "../../../actions/video.actions";
 import { setDmPeerDecodeCodecs, videoSessionConfigFor } from "../../../stores/video.store";

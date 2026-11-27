@@ -1,5 +1,4 @@
 import { createEffect, onMount, onCleanup } from "solid-js";
-import type { UnlistenFn } from "@tauri-apps/api/event";
 import { communityState, setCommunityState } from "../../stores/community.store";
 import { initVoiceEventListener } from "../../actions/voice.actions";
 import { subscribeCommunityPresenceEvents } from "../../handlers/presence-events.handlers";
@@ -29,7 +28,7 @@ import type { GlyphName } from "../../components/common/glyph_art";
 import type { Message } from "../../stores/chat.store";
 import type { Thread } from "../../stores/community.store";
 import { createCommunityWindowState } from "./state";
-import { startEventStream, subscribeCommunityFocusChannel, subscribeSkinSignals } from "../../ipc/channels";
+import { type UnlistenFn, startEventStream, subscribeCommunityFocusChannel, subscribeSkinSignals } from "../../ipc/channels";
 import { setSkinSignals } from "../../stores/skin-signals.store";
 import { registerShellRunner, sendSkinSelection } from "../../actions/skin.actions";
 import { muteOps } from "../../actions/shell_runners";

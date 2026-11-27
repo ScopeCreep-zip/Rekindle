@@ -1,7 +1,6 @@
 import { batch } from "solid-js";
 import { reconcile } from "solid-js/store";
-import type { UnlistenFn } from "@tauri-apps/api/event";
-import { subscribeChatEvents } from "../ipc/channels";
+import { type UnlistenFn, subscribeChatEvents } from "../ipc/channels";
 import { conversationId } from "../ipc/channels/chat_events";
 import { applyTimerChanged, withoutExpired } from "../actions/disappearing.actions";
 import type { DmHistoryGap, DmSendStatus, FriendEvent } from "../ipc/channels/chat_events";

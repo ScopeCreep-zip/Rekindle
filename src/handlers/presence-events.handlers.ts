@@ -1,5 +1,4 @@
-import type { UnlistenFn } from "@tauri-apps/api/event";
-import { subscribePresenceEvents } from "../ipc/channels";
+import { type UnlistenFn, subscribePresenceEvents } from "../ipc/channels";
 import type {
   PresenceEvent,
   PresenceSnapshot,

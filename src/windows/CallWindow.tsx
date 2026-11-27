@@ -1,12 +1,11 @@
 import { type Component, Show, createMemo, onCleanup, onMount } from "solid-js";
-import type { UnlistenFn } from "@tauri-apps/api/event";
 import Titlebar from "../components/titlebar/Titlebar";
 import ActiveCallPanel from "../components/voice/ActiveCallPanel";
 import { callsState, setCallsState, type CallEntry } from "../stores/calls.store";
 import { subscribeCallEvents } from "../handlers/calls.handlers";
 import { commands } from "../ipc/commands";
 import { setVoiceState } from "../stores/voice.store";
-import { startEventStream } from "../ipc/channels";
+import { type UnlistenFn, startEventStream } from "../ipc/channels";
 import { initVoiceEventListener } from "../actions/voice.actions";
 import { setWindowKind } from "../utils/window_kind";
 

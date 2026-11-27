@@ -3,7 +3,7 @@
 // Extracted from useVideoCallPanel.ts; plain functions of the shared
 // PanelCtx (no SolidJS owner-scoped primitives here).
 
-import { Channel } from "@tauri-apps/api/core";
+import { Channel } from "../../../ipc/invoke";
 import { commands } from "../../../ipc/commands";
 import type { NativePreviewFrameMsg } from "../../../ipc/commands";
 import { videoSessionConfigFor } from "../../../stores/video.store";

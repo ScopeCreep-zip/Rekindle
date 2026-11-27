@@ -1,5 +1,4 @@
-import type { UnlistenFn } from "@tauri-apps/api/event";
-import { subscribeCommunityEvents } from "../../ipc/channels";
+import { type UnlistenFn, subscribeCommunityEvents } from "../../ipc/channels";
 import { isLegacyCommunityEvent } from "../../ipc/channels/community_subscription_events";
 import { reduceSubscriptionMembership } from "./dispatcher_members";
 import { applySuccessorEvent } from "../../stores/successor.store";

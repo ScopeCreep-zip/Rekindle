@@ -1,7 +1,6 @@
 import { type Component, For, Show, createResource, createSignal, onCleanup, onMount } from "solid-js";
-import type { UnlistenFn } from "@tauri-apps/api/event";
 import { commands, type LobbyRefusal, type LobbyVerdict, type LobbyView } from "../../ipc/commands";
-import { subscribeGroupDmEvents } from "../../ipc/channels";
+import { type UnlistenFn, subscribeGroupDmEvents } from "../../ipc/channels";
 import { authState } from "../../stores/auth.store";
 import { errorMessage } from "../../utils/error";
 

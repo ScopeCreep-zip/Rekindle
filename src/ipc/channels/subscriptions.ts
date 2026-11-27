@@ -1,7 +1,5 @@
-import { Channel } from "@tauri-apps/api/core";
-import type { UnlistenFn } from "@tauri-apps/api/event";
 import type { ShellOp } from "../commands/dto_skin_run";
-import { invoke } from "../invoke";
+import { Channel, invoke } from "../invoke";
 import type { TransferEvent } from "../commands/dto_transfer";
 import type { ServersView } from "../commands/dto_servers";
 import type { ChatEvent, GroupDmEvent } from "./chat_events";
@@ -50,6 +48,7 @@ interface OutboundEnvelope {
 const STREAM_CHANNEL = "event-stream";
 
 type Handler = (payload: never) => void;
+export type UnlistenFn = () => void;
 
 /// Handlers by logical channel. Every `subscribe*` function registers
 /// here; the window's one backend stream feeds it.

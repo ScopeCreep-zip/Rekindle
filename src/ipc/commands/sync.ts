@@ -1,5 +1,4 @@
-import type { Channel } from "@tauri-apps/api/core";
-import { hostInvoke, invoke } from "../invoke";
+import { type Channel, hostInvoke, invoke } from "../invoke";
 import type {
   BackgroundSyncReport, Codec, CommunityAnalytics, CommunityVideoFrameMsg, DeviceList, DmVideoFrameMsg, LinkPreview, MediaCapabilities, MessageSearch, NativePreviewFrameMsg, PairingAccept, PairingQrPayload, PairingSession, SearchResult, SendVideoFrameRequest, SyncManifest, SyncPreferences, VideoTopologyReason, VideoTrackLabel,
 } from "./types_sync";

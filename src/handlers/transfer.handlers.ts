@@ -1,6 +1,5 @@
-import type { UnlistenFn } from "@tauri-apps/api/event";
 import { produce } from "solid-js/store";
-import { subscribeTransfers } from "../ipc/channels";
+import { type UnlistenFn, subscribeTransfers } from "../ipc/channels";
 import type { TransferEvent } from "../ipc/commands/dto_transfer";
 import { loadTransfers } from "../actions/transfer.actions";
 import { setTransfersState, transfersState } from "../stores/transfers.store";

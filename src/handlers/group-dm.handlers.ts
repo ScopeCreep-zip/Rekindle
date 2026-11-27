@@ -1,5 +1,4 @@
-import type { UnlistenFn } from "@tauri-apps/api/event";
-import { subscribeChatEvents, subscribeGroupDmEvents } from "../ipc/channels";
+import { type UnlistenFn, subscribeChatEvents, subscribeGroupDmEvents } from "../ipc/channels";
 import {
   conversationId,
   type ChannelMessageEvent,

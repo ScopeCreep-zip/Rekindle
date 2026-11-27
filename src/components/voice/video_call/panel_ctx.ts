@@ -5,7 +5,7 @@
 // primitives of its own (signals are created in the hook; effects and
 // lifecycle callbacks never leave it).
 
-import type { Channel } from "@tauri-apps/api/core";
+import type { Channel } from "../../../ipc/invoke";
 import type { NativePreviewFrameMsg } from "../../../ipc/commands";
 import type { RemoteStream } from "./codec_utils";
 import type { VideoSender } from "./sender_types";

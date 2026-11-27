@@ -1,5 +1,4 @@
-import type { UnlistenFn } from "@tauri-apps/api/event";
-import { subscribeNotificationEvents } from "../ipc/channels";
+import { type UnlistenFn, subscribeNotificationEvents } from "../ipc/channels";
 import { setNotificationState } from "../stores/notification.store";
 import { settingsState } from "../stores/settings.store";
 import { communityState } from "../stores/community.store";

@@ -1,9 +1,8 @@
 import { type Component, Show, onCleanup, onMount } from "solid-js";
-import type { UnlistenFn } from "@tauri-apps/api/event";
 import SkinTreeWindow from "../components/skin-tree/SkinTreeWindow";
 import Infoview from "../components/infoview/Infoview";
 import { popupName, skinPopupShell } from "../hooks/useSkin";
-import { startEventStream, subscribeSkinSignals } from "../ipc/channels";
+import { type UnlistenFn, startEventStream, subscribeSkinSignals } from "../ipc/channels";
 import { setSkinSignals } from "../stores/skin-signals.store";
 import { registerShellRunner } from "../actions/skin.actions";
 import { callOps, chatOpenOps, friendOps, menuOps, transferOps } from "../actions/shell_runners";

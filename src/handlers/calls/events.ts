@@ -1,5 +1,4 @@
-import type { UnlistenFn } from "@tauri-apps/api/event";
-import { subscribeChatEvents } from "../../ipc/channels";
+import { type UnlistenFn, subscribeChatEvents } from "../../ipc/channels";
 import { callsState, setCallsState, type CallEntry } from "../../stores/calls.store";
 import { commands } from "../../ipc/commands";
 import { addToast } from "../../stores/toast.store";
