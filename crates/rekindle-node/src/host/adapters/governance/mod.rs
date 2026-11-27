@@ -36,6 +36,7 @@ mod community_events;
 mod community_info;
 pub(crate) mod community_pictures;
 pub(crate) mod community_profile;
+mod community_profile_edit;
 pub(crate) mod community_sync;
 mod create_leave;
 pub mod deps_impl;

@@ -403,14 +403,44 @@ fn parse_community_set_name() {
     let cli = Cli::try_parse_from(["rekindle", "community", "set-name", "abcd", "Bea"]).unwrap();
     assert!(matches!(
         cli.command,
-        Some(Command::Community(crate::cli::CommunityCmd::SetName { ref community, ref name }))
-            if community == "abcd" && name == "Bea"
+        Some(Command::Community(crate::cli::CommunityCmd::SetName { ref community, ref name, clear }))
+            if community == "abcd" && name.as_deref() == Some("Bea") && !clear
     ));
-    let cli = Cli::try_parse_from(["rekindle", "community", "set-name", "abcd", ""]).unwrap();
+    let cli =
+        Cli::try_parse_from(["rekindle", "community", "set-name", "abcd", "--clear"]).unwrap();
     assert!(matches!(
         cli.command,
-        Some(Command::Community(crate::cli::CommunityCmd::SetName { ref name, .. })) if name.is_empty()
+        Some(Command::Community(crate::cli::CommunityCmd::SetName {
+            name: None,
+            clear: true,
+            ..
+        }))
     ));
+}
+
+#[test]
+fn parse_community_profile_edits() {
+    use rekindle_types::dto::community_profile::ProfileField;
+
+    let cli = Cli::try_parse_from([
+        "rekindle",
+        "community",
+        "profile",
+        "-c",
+        "abcd",
+        "--bio",
+        "At the LAN",
+        "--clear",
+        "banner-ref",
+    ])
+    .unwrap();
+    let Some(Command::Community(crate::cli::CommunityCmd::Profile(args))) = cli.command else {
+        panic!("profile command")
+    };
+    let patch = args.patch().unwrap();
+    assert_eq!(patch.bio, ProfileField::Set("At the LAN".into()));
+    assert_eq!(patch.banner_ref, ProfileField::Clear);
+    assert_eq!(patch.avatar_ref, ProfileField::Unchanged);
 }
 
 /// Friend flags take a display name or nickname as given; `friend_ref`

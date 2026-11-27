@@ -2,6 +2,7 @@
 
 use rekindle_ipc::protocol::LifecycleRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, SettingsRequest};
+use rekindle_types::dto::community_profile::ProfileField;
 
 use crate::cli::CommunityCmd;
 use crate::governance;
@@ -81,18 +82,36 @@ pub async fn dispatch(
             .await?;
             format::print_structured(&value, mode)
         }
-        CommunityCmd::SetName { community, name } => {
-            let value = helpers::send(
+        CommunityCmd::SetName {
+            community,
+            name,
+            clear,
+        } => {
+            let display_name = match (name, clear) {
+                (Some(name), false) => ProfileField::Set(name.clone()),
+                (None, true) => ProfileField::Clear,
+                _ => anyhow::bail!("give a name or --clear"),
+            };
+            settings(
                 client,
-                IpcRequest::Community(CommunityRequest::Settings(
-                    SettingsRequest::CommunitySetDisplayName {
-                        community: community.clone(),
-                        display_name: name.clone(),
-                    },
-                )),
+                mode,
+                SettingsRequest::CommunitySetDisplayName {
+                    community: community.clone(),
+                    display_name,
+                },
             )
-            .await?;
-            format::print_structured(&value, mode)
+            .await
+        }
+        CommunityCmd::Profile(args) => {
+            settings(
+                client,
+                mode,
+                SettingsRequest::CommunityUpdateProfile {
+                    community: args.community.clone(),
+                    patch: args.patch()?,
+                },
+            )
+            .await
         }
         CommunityCmd::Forget { community } => {
             let value = helpers::send(
@@ -562,3 +581,16 @@ async fn lifecycle(
 #[cfg(test)]
 #[path = "community_removal_tests.rs"]
 mod removal_tests;
+
+async fn settings(
+    client: &DaemonClient,
+    mode: OutputMode,
+    request: SettingsRequest,
+) -> anyhow::Result<()> {
+    let value = helpers::send(
+        client,
+        IpcRequest::Community(CommunityRequest::Settings(request)),
+    )
+    .await?;
+    format::print_structured(&value, mode)
+}

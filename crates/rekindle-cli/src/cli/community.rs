@@ -8,6 +8,8 @@ use std::path::PathBuf;
 
 use clap::Subcommand;
 
+use super::community_profile::ProfileArgs;
+
 /// Community lifecycle subcommands.
 #[derive(Subcommand)]
 pub enum CommunityCmd {
@@ -83,15 +85,19 @@ pub enum CommunityCmd {
         community: String,
     },
 
-    /// Set our name in one community (our card, `M`/0); `""` clears it, and
-    /// the community shows our short pseudonym fingerprint instead. Our
-    /// identity name is never shown to a community.
+    /// Set or clear the name on our community card.
     SetName {
-        /// The community's anchor key.
+        /// Community name or anchor key.
         community: String,
-        /// The name, at most 64 bytes; `""` clears it.
-        name: String,
+        #[arg(required_unless_present = "clear", conflicts_with = "clear")]
+        name: Option<String>,
+        /// Restore the short pseudonym fingerprint.
+        #[arg(long)]
+        clear: bool,
     },
+
+    /// Edit our community profile fields.
+    Profile(ProfileArgs),
 
     /// Forget a community you were removed from: its kept history and keys.
     Forget {
