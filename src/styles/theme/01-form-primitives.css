@@ -84,6 +84,22 @@
     color: var(--color-xfire-offline-text);
   }
 
+  /* A composer we may not post from (the Host's reason as placeholder) or
+   * in a slowmode cooldown: shown, in the theme's disabled text (ST1). */
+  .message-input:disabled {
+    color: var(--color-xfire-text-disabled);
+    cursor: not-allowed;
+  }
+  .message-input:disabled::placeholder {
+    color: var(--color-xfire-text-disabled);
+  }
+  .message-input-attach-btn:disabled,
+  .message-input-mic-btn:disabled,
+  .message-input-emoji-btn:disabled {
+    color: var(--color-xfire-text-disabled);
+    cursor: not-allowed;
+  }
+
   /* Status bar */
   .status-bar {
     height: var(--chrome-height);

@@ -118,6 +118,11 @@ const MessageInput: Component<MessageInputProps> = (props) => {
     await handleUploadAttachment(props.communityId, props.peerId);
   }
 
+  // We may not post here (the Host's reason) or a slowmode cooldown runs:
+  // the composer stays, every control disabled with the reason (never-hide).
+  const blocked = (): boolean => slowmode.effectiveDisabled() && !props.editMode;
+  const blockedReason = (): string | undefined => (blocked() ? slowmode.effectiveDisabledMessage() : undefined);
+
   return (
     <div class="message-input-wrapper">
       <Show when={props.editMode}>
@@ -139,19 +144,15 @@ const MessageInput: Component<MessageInputProps> = (props) => {
           onDismiss={() => props.onDismissReply?.()}
         />
       </Show>
-      <Show when={slowmode.effectiveDisabled() && !props.editMode}>
-        <div class="typing-indicator">
-          <span class="typing-label">{slowmode.effectiveDisabledMessage()}</span>
-        </div>
-      </Show>
-      <Show when={!slowmode.effectiveDisabled() || props.editMode}>
-        <div class="message-input-shell">
+      <div class="message-input-shell">
           <Show when={props.communityId && !props.editMode}>
             <button
               class="message-input-attach-btn"
               type="button"
-              title="Attach file"
+              disabled={blocked()}
+              title={blockedReason() ?? "Attach file"}
               aria-label="Attach file"
+              aria-description={blockedReason()}
               onClick={() => void handleAttachClick()}
             >
               <SkinGlyph name="paperclip" />
@@ -161,6 +162,8 @@ const MessageInput: Component<MessageInputProps> = (props) => {
             <button
               class={`message-input-mic-btn ${recorder.recording() ? "message-input-mic-btn-active" : ""}`}
               type="button"
+              disabled={blocked()}
+              aria-description={blockedReason()}
               title={recorder.recording() ? "Release to send (mousedown to record)" : "Hold to record voice"}
               aria-label={recorder.recording() ? "Recording voice — release to send" : "Hold to record a voice message"}
               aria-pressed={recorder.recording()}
@@ -186,7 +189,9 @@ const MessageInput: Component<MessageInputProps> = (props) => {
               as="button"
               class="message-input-emoji-btn"
               type="button"
-              title="Insert emoji"
+              disabled={blocked()}
+              aria-description={blockedReason()}
+              title={blockedReason() ?? "Insert emoji"}
               aria-label="Insert emoji"
               aria-pressed={showEmojiPicker()}
             >
@@ -207,7 +212,9 @@ const MessageInput: Component<MessageInputProps> = (props) => {
           <textarea
             ref={(el) => (textareaRef = el)}
             class={`message-input message-input-field ${props.editMode ? "message-input-editing" : ""}`}
-            placeholder={props.editMode ? "Edit your message..." : "Type a message..."}
+            placeholder={blockedReason() ?? (props.editMode ? "Edit your message..." : "Type a message...")}
+            disabled={blocked()}
+            aria-description={blockedReason()}
             value={body()}
             onInput={onInput}
             onKeyDown={onKeyDown}
@@ -230,7 +237,9 @@ const MessageInput: Component<MessageInputProps> = (props) => {
               <button
                 class="message-input-send-btn"
                 type="button"
-                disabled={!canSend(body())}
+                disabled={blocked() || !canSend(body())}
+                title={blockedReason()}
+                aria-description={blockedReason()}
                 onClick={() => {
                   send();
                   textareaRef?.focus();
@@ -276,8 +285,7 @@ const MessageInput: Component<MessageInputProps> = (props) => {
               </For>
             </ul>
           </Show>
-        </div>
-      </Show>
+      </div>
     </div>
   );
 };

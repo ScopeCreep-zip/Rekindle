@@ -149,6 +149,9 @@
 '.chat-message-timestamp' = { on = ["--color-xfire-bg-dark", "--color-xfire-bg-panel"] }
 '.message-input' = { on = ["--color-xfire-bg-input"] }
 '.message-input::placeholder' = { on = ["--color-xfire-bg-input"] }
+'.message-input:disabled' = { on = ["--color-xfire-bg-input"] }
+'.message-input:disabled::placeholder' = { on = ["--color-xfire-bg-input"] }
+'.message-input-emoji-btn:disabled' = { on = ["--color-xfire-bg-input"] }
 '.status-bar' = { on = ["--color-xfire-bg-status"] }
 '.context-menu-item' = { on = ["--color-xfire-bg-panel"], on_hover = ["--color-xfire-accent 30% over --color-xfire-bg-panel"] }
 '.context-menu-item-danger' = { on = ["--color-xfire-bg-panel"], on_hover = ["--color-xfire-busy 12% over --color-xfire-bg-panel"] }
@@ -564,6 +567,8 @@
 '.message-input-mic-btn' = { on = ["--color-xfire-bg-dark"] }
 '.message-input-attach-btn:hover' = { on = ["--color-xfire-bg-dark"] }
 '.message-input-mic-btn:hover' = { on = ["--color-xfire-bg-dark"] }
+'.message-input-attach-btn:disabled' = { on = ["--color-xfire-bg-dark"] }
+'.message-input-mic-btn:disabled' = { on = ["--color-xfire-bg-dark"] }
 '.message-input-mic-btn-active' = { on = ["--color-xfire-bg-dark"] }
 '.message-input-mic-timer' = { on = ["--color-xfire-bg-dark"] }
 '.message-input-send-btn' = { on = ["--color-xfire-bg-dark"] }

@@ -63,16 +63,40 @@ describe("a channel's denials are the Host's (PN1)", function () {
     await stopFleet(peers);
   });
 
-  it("says the Host's reason where we may not post", async () => {
+  it("keeps the composer shown, disabled with the Host's reason, where we may not post", async () => {
     await selectChannel(browser, QUIET);
-    const label = await shown(browser, ".message-input-wrapper .typing-label", NET_WAIT_MS);
-    const said = (await label.getText()).trim();
-    console.log(`[denials] composer in ${QUIET}: ${said}`);
+    const box = await shown(browser, ".message-input-wrapper textarea.message-input-field", NET_WAIT_MS);
+    const state = (await browser.execute(() => {
+      const probe = document.createElement("span");
+      probe.style.color = "var(--color-xfire-text-disabled)";
+      document.body.appendChild(probe);
+      const disabledColour = getComputedStyle(probe).color;
+      probe.remove();
+      const text = document.querySelector<HTMLTextAreaElement>(".message-input-wrapper textarea.message-input-field");
+      const controls = Array.from(document.querySelectorAll<HTMLButtonElement>(
+        ".message-input-wrapper .message-input-attach-btn, .message-input-wrapper .message-input-mic-btn, .message-input-wrapper .message-input-emoji-btn, .message-input-wrapper .message-input-send-btn",
+      ));
+      return {
+        reason: text?.getAttribute("placeholder") ?? "",
+        described: text?.getAttribute("aria-description") ?? "",
+        disabled: text?.disabled ?? false,
+        controls: controls.map((b) => ({ cls: b.className.split(" ")[0], disabled: b.disabled })),
+        dimmed: !!text && getComputedStyle(text).color === disabledColour,
+      };
+    })) as { reason: string; described: string; disabled: boolean; controls: { cls: string; disabled: boolean }[]; dimmed: boolean };
+    console.log(`[denials] composer in ${QUIET}: ${JSON.stringify(state)}`);
+    // Typing into the disabled box changes nothing.
+    await box.click().catch(() => undefined);
+    await browser.keys("hello".split(""));
+    const typed = await box.getValue();
     await shot("composer-denied");
     expect({
-      reason: said.length > 0 && said !== "You cannot send messages here",
-      noComposer: (await browser.$$(".message-input-wrapper textarea.message-input-field")).length === 0,
-    }).toEqual({ reason: true, noComposer: true });
+      reason: state.reason.length > 0 && state.reason !== "Type a message..." && state.described === state.reason,
+      disabled: state.disabled,
+      controlsDisabled: state.controls.length > 0 && state.controls.every((c) => c.disabled),
+      dimmed: state.dimmed,
+      typed,
+    }).toEqual({ reason: true, disabled: true, controlsDisabled: true, dimmed: true, typed: "" });
   });
 
   it("keeps @everyone listed with the Host's reason where we may not ping, and never inserts it", async () => {
