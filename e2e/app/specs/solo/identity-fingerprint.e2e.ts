@@ -1,14 +1,16 @@
 // Contract VN2 (its addendum): our own identity reads the way peers see it.
-// The buddy list's identity bar and the login window's account card show the
-// Host's fingerprint form (the member list's formatter), never a slice of the
-// key. Ari creates an identity: the identity bar shows `get_identity`'s
-// fingerprint; she logs off, and the login window's account card shows the
-// same fingerprint (her key's first 8 hex in two groups of four). Neither
-// ever shows 8+ hex of her key run together.
+// The buddy list and the login window's account card show the Host's
+// fingerprint form (the member list's formatter), never a slice of the key.
+// Ari creates an identity. Where the buddy list is the app's own layout, its
+// identity bar shows `get_identity`'s fingerprint; under a skin's tree (every
+// built-in pack lays one; the pack's nodes show her name, no key) the window
+// shows no slice of her key. She logs off, and the login window's account
+// card shows the same fingerprint (her key's first 8 hex in two groups of
+// four). Nothing ever shows 8+ hex of her key run together.
 
 import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
-import { LOGIN, inBuddy } from "../../../walk/nav.ts";
+import { LOGIN, inBuddy, underTree } from "../../../walk/nav.ts";
 import { createIdentity, logOut, newUser, type User } from "../../journeys.ts";
 import { shot } from "../../shots.ts";
 
@@ -38,11 +40,19 @@ describe("our own identity reads as peers see it: the Host's fingerprint form (V
     await createIdentity(browser, me);
     await inBuddy(browser);
     const { publicKey, fingerprint } = await served();
-    const bar = await shown(browser, ".identity-bar-key", NET_WAIT_MS);
-    await waitUntil(async () => (await bar.getText()).trim() === fingerprint, NET_WAIT_MS, "the identity bar never showed the Host's fingerprint");
-    const barText = (await bar.getText()).trim();
-    console.log(`[fingerprint] identity bar: ${barText}`);
-    await shot("identity-bar-fingerprint");
+    const tree = await underTree(browser);
+    let barText: string;
+    if (tree) {
+      // The pack's tree: its text is what the window shows of her.
+      barText = ((await browser.execute(() => document.querySelector(".skin-tree")?.textContent ?? "")) as string).replace(/\s+/g, " ").trim();
+      console.log(`[fingerprint] buddy list under the skin's tree (no identity bar): ${barText.slice(0, 160)}`);
+    } else {
+      const bar = await shown(browser, ".identity-bar-key", NET_WAIT_MS);
+      await waitUntil(async () => (await bar.getText()).trim() === fingerprint, NET_WAIT_MS, "the identity bar never showed the Host's fingerprint");
+      barText = (await bar.getText()).trim();
+      console.log(`[fingerprint] identity bar: ${barText}`);
+    }
+    await shot("buddy-list-identity");
 
     await logOut(browser, me);
     await switchTo(browser, LOGIN, NET_WAIT_MS);
@@ -52,7 +62,7 @@ describe("our own identity reads as peers see it: the Host's fingerprint form (V
     await shot("login-card-fingerprint");
 
     expect({
-      bar: barText === fingerprint,
+      bar: tree || barText === fingerprint,
       card: cardText === fingerprint,
       noSlice: !showsKeySlice(barText, publicKey) && !showsKeySlice(cardText, publicKey),
     }).toEqual({ bar: true, card: true, noSlice: true });
