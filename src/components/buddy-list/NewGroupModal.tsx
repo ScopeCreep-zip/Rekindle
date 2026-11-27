@@ -81,7 +81,7 @@ const NewGroupModal: Component = () => {
               <div class="group-dm-picker-hint" id="new-group-hint">
                 Choose {MIN_PICKED}–{MAX_PICKED} friends ({count()} chosen)
               </div>
-              <div class="group-dm-picker" role="group" aria-label="Group members" aria-describedby="new-group-hint">
+              <fieldset class="group-dm-picker" aria-label="Group members" aria-describedby="new-group-hint">
                 <Show
                   when={friends().length > 0}
                   fallback={<div class="empty-placeholder-subtitle">No friends to add</div>}
@@ -108,7 +108,7 @@ const NewGroupModal: Component = () => {
                     )}
                   </For>
                 </Show>
-              </div>
+              </fieldset>
               <Show when={error()}>
                 <div class="form-error" role="alert">{error()}</div>
               </Show>

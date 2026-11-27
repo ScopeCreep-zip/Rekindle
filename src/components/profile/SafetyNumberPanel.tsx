@@ -49,13 +49,12 @@ const SafetyNumberPanel: Component<{
               verified again.
             </p>
           </Show>
-          <div
+          <figure
             class="sec-safety-number-digits"
-            role="group"
             aria-label={`Safety number ${groups().join(" ")}`}
           >
             <For each={groups()}>{(group) => <span aria-hidden="true">{group}</span>}</For>
-          </div>
+          </figure>
           {/* The Host always sends valid rows; if a reply ever does not
               draw, only the code says so, never the digits, the name or
               the badge above. */}

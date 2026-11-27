@@ -85,9 +85,8 @@ const AnalyticsTab: Component<AnalyticsTabProps> = (props) => {
         {(data) => (
           <>
             <div class="settings-section-title" id="analytics-members-heading">Members</div>
-            <div
+            <section
               class="analytics-grid"
-              role="group"
               aria-labelledby="analytics-members-heading"
             >
               <div class="analytics-card">
@@ -116,13 +115,13 @@ const AnalyticsTab: Component<AnalyticsTabProps> = (props) => {
                   {(data().members.retention7Of30 * 100).toFixed(0)}%
                 </div>
               </div>
-            </div>
+            </section>
             <Sparkline series={data().members.activePerDay} label="Active per day (30d)" />
             <Sparkline series={data().members.joinsPerDay} label="Joins per day (30d)" />
             <Sparkline series={data().members.leavesPerDay} label="Leaves per day (30d)" />
 
             <div class="settings-section-title" id="analytics-channels-heading">Channels</div>
-            <div role="group" aria-labelledby="analytics-channels-heading">
+            <section aria-labelledby="analytics-channels-heading">
             <For each={data().channels}>
               {(channel) => {
                 const channelName = createMemo(() =>
@@ -144,7 +143,7 @@ const AnalyticsTab: Component<AnalyticsTabProps> = (props) => {
                 );
               }}
             </For>
-            </div>
+            </section>
 
             <div class="settings-section-title" id="analytics-hours-heading">Activity by hour (UTC)</div>
             <div
@@ -171,9 +170,8 @@ const AnalyticsTab: Component<AnalyticsTabProps> = (props) => {
             </div>
 
             <div class="settings-section-title" id="analytics-storage-heading">Storage</div>
-            <div
+            <section
               class="analytics-grid"
-              role="group"
               aria-labelledby="analytics-storage-heading"
             >
               <div class="analytics-card">
@@ -200,7 +198,7 @@ const AnalyticsTab: Component<AnalyticsTabProps> = (props) => {
                 <div class="analytics-card-label">Metadata</div>
                 <div class="analytics-card-value">{formatBytes(data().storageUsage.metadataBytes)}</div>
               </div>
-            </div>
+            </section>
 
             <div class="settings-hint">
               Computed in {data().computedInMs} ms · local-only, never broadcast.

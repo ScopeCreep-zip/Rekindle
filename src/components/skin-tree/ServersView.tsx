@@ -153,7 +153,7 @@ const ServersView: Component = () => {
       </div>
       <For each={view()?.categories ?? []}>
         {(category) => (
-          <div class="servers-view-section" role="group" aria-label={categoryTitle(category)}>
+          <fieldset class="servers-view-section" aria-label={categoryTitle(category)}>
             <div class="servers-view-title">{categoryTitle(category)}</div>
             <Show when={category.rows.length > 0} fallback={<div class="servers-view-empty">None</div>}>
               <For each={category.rows}>
@@ -193,7 +193,7 @@ const ServersView: Component = () => {
                 )}
               </For>
             </Show>
-          </div>
+          </fieldset>
         )}
       </For>
     </div>

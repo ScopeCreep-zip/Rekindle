@@ -93,7 +93,7 @@ const CreateCommunityModal: Component<CreateCommunityModalProps> = (props) => {
             <div class="group-dm-picker-hint" id="co-creator-hint">
               Co-creators (optional, friends only, up to {MAX_CO_CREATORS}): {picked().length} chosen
             </div>
-            <div class="group-dm-picker" role="group" aria-label="Co-creators" aria-describedby="co-creator-hint">
+            <fieldset class="group-dm-picker" aria-label="Co-creators" aria-describedby="co-creator-hint">
               <Show
                 when={friends().length > 0}
                 fallback={<div class="empty-placeholder-subtitle">No friends to name</div>}
@@ -112,7 +112,7 @@ const CreateCommunityModal: Component<CreateCommunityModalProps> = (props) => {
                   )}
                 </For>
               </Show>
-            </div>
+            </fieldset>
             <Show when={!canCreateCommunity()}>
               <div class="form-hint" role="status">
                 Waiting for the network ({networkLabel()}): {CREATE_WAIT_REASON}.

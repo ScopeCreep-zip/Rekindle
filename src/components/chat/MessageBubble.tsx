@@ -156,10 +156,9 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
     messageAnnouncement(props.message, props.senderName, removedByName);
 
   return (
-    <div
+    <article
       class={`chat-message message-enter ${props.selectable ? "chat-message-selectable" : ""} ${props.selected ? "chat-message-selected" : ""}`}
       data-message-id={props.message.serverMessageId ?? undefined}
-      role="article"
       aria-label={ariaAnnouncement()}
       onClick={handleBubbleClick}
     >
@@ -442,7 +441,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
         myPseudonymKey={props.myPseudonymKey ?? null}
         onToggle={handleReactionToggle}
       />
-    </div>
+    </article>
   );
 };
 

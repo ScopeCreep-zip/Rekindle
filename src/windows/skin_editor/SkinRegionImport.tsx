@@ -56,7 +56,7 @@ const SkinRegionImport: Component<{
   );
 
   return (
-    <div class="skin-region-import" role="group" aria-label="Region images">
+    <section class="skin-region-import" aria-label="Region images">
       <div class="settings-section-title">Regions</div>
       <ul class="skin-regions">
         <For each={Object.entries(props.draft.regions)}>
@@ -115,7 +115,7 @@ const SkinRegionImport: Component<{
       >
         Import image…
       </button>
-    </div>
+    </section>
   );
 };
 

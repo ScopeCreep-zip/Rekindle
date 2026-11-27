@@ -21,7 +21,7 @@ const SkinEditorMeta: Component<{
     return l === "noneStated" ? null : l.text;
   };
   return (
-    <div class="skin-editor-meta" role="group" aria-label="Skin details">
+    <section class="skin-editor-meta" aria-label="Skin details">
       <label class="skin-editor-field">
         <span class="form-label">Name</span>
         <input
@@ -106,7 +106,7 @@ const SkinEditorMeta: Component<{
           )}
         </Show>
       </section>
-    </div>
+    </section>
   );
 };
 

@@ -34,7 +34,7 @@ const GroupDmList: Component = () => {
         </Show>
         <For each={invites()}>
           {(invite) => (
-            <div class="pending-item" role="group" aria-label={`Invite to ${invite.name}`}>
+            <article class="pending-item" aria-label={`Invite to ${invite.name}`}>
               <div class="pending-info">
                 <span class="buddy-name">{invite.name}</span>
                 <span class="pending-message">
@@ -57,7 +57,7 @@ const GroupDmList: Component = () => {
               >
                 Decline
               </button>
-            </div>
+            </article>
           )}
         </For>
         <For each={groups()}>

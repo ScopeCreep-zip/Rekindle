@@ -90,7 +90,7 @@ const IncomingCallModal: Component = () => {
                   </button>
                 </div>
                 <Show when={showDeclineOptions()}>
-                  <div class="incoming-call-decline-options" role="group" aria-label="Decline with reason">
+                  <fieldset class="incoming-call-decline-options" aria-label="Decline with reason">
                     <button
                       type="button"
                       class="form-btn-secondary"
@@ -136,7 +136,7 @@ const IncomingCallModal: Component = () => {
                     >
                       Mute caller for 1 hour
                     </button>
-                  </div>
+                  </fieldset>
                 </Show>
               </Dialog.Content>
             </div>

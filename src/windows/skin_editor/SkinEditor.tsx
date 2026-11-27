@@ -160,7 +160,7 @@ const SkinEditor: Component = () => {
   );
 
   return (
-    <div class="skin-editor" aria-label="Skin editor" role="region">
+    <section class="skin-editor" aria-label="Skin editor">
       <div class="skin-editor-bar">
         <button type="button" class="form-btn-secondary" onClick={() => void startFromCurrent()}>
           Start from the current skin
@@ -232,7 +232,7 @@ const SkinEditor: Component = () => {
       <ul class="skin-pairs">
         <For each={pairs()}>{pairRow}</For>
       </ul>
-    </div>
+    </section>
   );
 };
 

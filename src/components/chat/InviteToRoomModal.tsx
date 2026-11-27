@@ -54,7 +54,7 @@ const InviteToRoomModal: Component<{ groupId: string | null; onClose: () => void
               <div class="group-dm-picker-hint" id="invite-room-hint">
                 Choose friends to invite ({picked().length} chosen). They will not see earlier messages.
               </div>
-              <div class="group-dm-picker" role="group" aria-label="Friends to invite" aria-describedby="invite-room-hint">
+              <fieldset class="group-dm-picker" aria-label="Friends to invite" aria-describedby="invite-room-hint">
                 <Show
                   when={friends().length > 0}
                   fallback={<div class="empty-placeholder-subtitle">Every friend is already in this room</div>}
@@ -81,7 +81,7 @@ const InviteToRoomModal: Component<{ groupId: string | null; onClose: () => void
                     )}
                   </For>
                 </Show>
-              </div>
+              </fieldset>
               <Show when={error()}>
                 <div class="form-error" role="alert">{error()}</div>
               </Show>
