@@ -4,6 +4,7 @@ import { openSettings } from "../../../walk/nav.ts";
 import { createIdentity, newUser, type User } from "../../journeys.ts";
 
 interface HeldSkinList {
+  list: HTMLElement;
   active?: string;
   /** The held reply's skin names, recorded when it was held. */
   heldNames?: string[];
@@ -17,12 +18,22 @@ interface HeldSkinList {
 type ProbeWindow = Window & { heldSkinList?: HeldSkinList };
 
 async function selectSkin(name: string, me: User) {
-  // The names come from the current app's built-in radios.
-  const label = await browser
-    .$$(".skin-row label.skin-choice")
-    .find(async (candidate) => (await (await candidate.$(".skin-name")).getText()) === name);
-  if (!label) throw new Error(`No skin radio named ${name}`);
-  await (await label.$("input[type=radio]")).click();
+  const parts = name.replace(/\s+/g, " ").split('"').map((part) => `"${part}"`);
+  const literal = parts.length === 1 ? parts[0] : `concat(${parts.join(`, '"', `)})`;
+  const row = `//*[contains(concat(" ", normalize-space(@class), " "), " skin-row ")]`;
+  const labelled = `${row}[.//*[contains(concat(" ", normalize-space(@class), " "), " skin-name ") and normalize-space(.)=${literal}]]`;
+  // A refresh replaces radio nodes. Resolve the exact DOM label afresh
+  // on each attempt, as the regular applySkin journey does.
+  await waitUntil(async () => {
+    try {
+      const radio = await browser.$(`${labelled}//input[@type="radio"]`);
+      if (!(await radio.isExisting())) return false;
+      await radio.click();
+      return true;
+    } catch {
+      return false;
+    }
+  }, 10_000, `fixture could not choose the skin radio named ${name}`);
   await resolveIntent(browser, { passphrase: me.passphrase });
 }
 
@@ -50,7 +61,9 @@ describe("Settings Appearance handles a late skin library response", function ()
       const page = window as ProbeWindow;
       const fetch = page.fetch;
       const realFetch = fetch.bind(page);
-      const state: HeldSkinList = { released: false, consumed: false, restore: () => { page.fetch = fetch; } };
+      const list = document.querySelector<HTMLElement>(".skin-list");
+      if (!list) throw new Error("fixture could not arm outside Settings Appearance");
+      const state: HeldSkinList = { list, released: false, consumed: false, restore: () => { page.fetch = fetch; } };
       page.heldSkinList = state;
       page.fetch = async (input, init) => {
         const url = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
@@ -106,10 +119,10 @@ describe("Settings Appearance handles a late skin library response", function ()
       // verdict on the app.
       const fixture = (await browser.execute(() => {
         const held = (window as ProbeWindow).heldSkinList;
-        return { active: held?.active ?? null, names: held?.heldNames ?? [], released: held?.released ?? false, consumed: held?.consumed ?? false };
-      })) as { active: string | null; names: string[]; released: boolean; consumed: boolean };
+        return { active: held?.active ?? null, names: held?.heldNames ?? [], released: held?.released ?? false, consumed: held?.consumed ?? false, sameMount: held?.list.isConnected ?? false };
+      })) as { active: string | null; names: string[]; released: boolean; consumed: boolean; sameMount: boolean };
       console.log(`[stale] held reply: active ${fixture.active}, ${fixture.names.length} skins (${fixture.names.slice(0, 4).join(", ")}…), released ${fixture.released}, consumed ${fixture.consumed}; first ${first}, second ${second}`);
-      if (!fixture.active || fixture.names.length === 0 || !fixture.released || !fixture.consumed) {
+      if (!fixture.active || fixture.names.length === 0 || !fixture.released || !fixture.consumed || !fixture.sameMount) {
         throw new Error(`fixture did not hold: ${JSON.stringify(fixture)}`);
       }
       const shown = await currentSkin();
