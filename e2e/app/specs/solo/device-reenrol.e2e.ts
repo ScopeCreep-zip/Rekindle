@@ -235,10 +235,11 @@ describe("a restored copy re-enrols the device: the original is told and offered
     expect(await reviewSays(browser)).toContain("this device's key in every community");
     await shot("two-held-reviews");
 
-    // Committed: the dialog answers the review it shows (its holdId).
-    const outcome = await resolveIntent(browser, { passphrase: me.passphrase, appearMs: NET_WAIT_MS });
+    // Answered (cancelled): the dialog answers the review it shows (its
+    // holdId). The re-enrolment comes back at the next unlock, below.
+    const outcome = await resolveIntent(browser, { passphrase: me.passphrase, cancel: true, appearMs: NET_WAIT_MS });
     console.log(`[reenrol] review outcome: ${outcome}`);
-    expect(outcome).toBe("committed");
+    expect(outcome).toBe("cancelled");
     // Only the re-enrolment resolved: the session reset is now the review on show.
     let next = "";
     await waitUntil(
@@ -250,17 +251,43 @@ describe("a restored copy re-enrols the device: the original is told and offered
         return next !== "" && !next.includes("this device's key in every community");
       },
       NET_WAIT_MS,
-      "after the re-enrolment was committed the session reset review never showed",
+      "after the re-enrolment was answered the session reset review never showed",
     );
     console.log(`[reenrol] next held review: ${next.slice(0, 300)}`);
-    await shot("session-reset-review-after-commit");
-    // Cancelled, it leaves; the committed re-enrolment does not come back.
+    await shot("session-reset-review-after-answer");
+    // Cancelled, it leaves too.
     expect(await resolveIntent(browser, { passphrase: me.passphrase, cancel: true, appearMs: NET_WAIT_MS })).toBe("cancelled");
     await gone(browser, ".intent-dialog", NET_WAIT_MS);
     await shot("reenrol-review-done");
 
+    // The re-enrolment is committed while the unlock barrier cannot pass:
+    // it passes only on a frontier answer from a known ring peer and retries
+    // with no time limit while none answers (rekindle-node
+    // host/adapters/governance/unlock_barrier_loop.rs:1-12, :134), and a
+    // write is held while it has not passed (rekindle-governance-runtime
+    // unlock_barrier.rs:156-159, apply.rs:265-290). With both ring peers
+    // (Dee and the copy) paused, Ari's third unlock raises the review again
+    // and its commit is held until they resume.
+    await dee.pause();
+    await copy.pause();
+    await unlockAgain();
+    expect(await reviewSays(browser)).toContain("this device's key in every community");
+    expect(await resolveIntent(browser, { passphrase: me.passphrase, appearMs: NET_WAIT_MS })).toBe("committed");
+    await openCommunity(browser, COMMUNITY);
+    const LABEL = "Re-enrolling this device";
+    await waitUntil(async () => (await deviceView())?.held === true, NET_WAIT_MS, "").catch(() => {
+      throw new Error("the committed re-enrolment was never held while every ring peer was paused");
+    });
+    const heldLine = await byText(browser, ".catch-up-notice", LABEL, NET_WAIT_MS);
+    console.log(`[reenrol] held: catch-up line "${(await heldLine.getText()).trim()}"`);
+    await shot("catch-up-reenrolling");
+
+    // The ring peers return: the barrier passes, the op signs and lands.
+    await dee.resume();
+    await copy.resume();
+
     // The Host's "Signing stopped" alert is one alert (de-duplicated by its
-    // id) through the reload and two unlocks.
+    // id) through the reload and three unlocks.
     await inBuddy(browser);
     await showSkinView(browser, "notifications");
     const alerts = (await browser.execute(() =>
@@ -269,40 +296,26 @@ describe("a restored copy re-enrols the device: the original is told and offered
     console.log(`[reenrol] Signing stopped alerts shown: ${alerts}`);
     expect(alerts).toBe(1);
 
-    // Read the normal Host view from the real app after both reviews. The
-    // device is enrolled again and the unlock barrier no longer holds its op.
-    // Meanwhile the community window's catch-up line (S7d-keys.10's shell
-    // half) shows the Host's label exactly while the op is held: each sample
-    // reads the Host's view and the line together, and they must agree.
+    // Read the normal Host view from the real app: the device is enrolled
+    // again and the unlock barrier no longer holds its op; the line, which
+    // showed the label while it was held, is gone. Each sample reads the
+    // Host's view and the line together, and they must agree.
     await openCommunity(browser, COMMUNITY);
-    const LABEL = "Re-enrolling this device";
     const disagreements: string[] = [];
-    let heldSeen = false;
-    let shotHeld = false;
     await waitUntil(
       async () => {
         const view = await deviceView();
         const line = ((await browser.execute(
           () => document.querySelector(".catch-up-notice")?.textContent ?? "",
         )) as string).trim();
-        const shows = line.includes(LABEL);
-        if (view?.held) {
-          heldSeen = true;
-          if (!shows) disagreements.push(`held, line "${line}"`);
-          else if (!shotHeld) {
-            shotHeld = true;
-            await shot("catch-up-reenrolling");
-          }
-        } else if (shows) {
-          disagreements.push(`not held, line "${line}"`);
-        }
+        if (view?.held !== line.includes(LABEL)) disagreements.push(`held ${view?.held}, line "${line}"`);
         return view?.status === "enrolled" && !view.held;
       },
       NET_WAIT_MS * 2,
       "the Host did not restore the device to enrolled and clear its held re-enrolment",
     );
     const lineAfter = ((await browser.execute(() => document.querySelector(".catch-up-notice")?.textContent ?? "")) as string).trim();
-    console.log(`[reenrol] catch-up line: held seen ${heldSeen}; disagreements ${JSON.stringify(disagreements)}; after "${lineAfter}"`);
+    console.log(`[reenrol] catch-up after the peers returned: disagreements ${JSON.stringify(disagreements)}; line "${lineAfter}"`);
     await shot("catch-up-cleared");
     expect({ disagreements, clearedAfter: !lineAfter.includes(LABEL) }).toEqual({ disagreements: [], clearedAfter: true });
   });
