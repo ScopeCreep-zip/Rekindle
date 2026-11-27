@@ -512,6 +512,7 @@ pub(super) async fn route_rich(
         | RichRequest::ThreadListActive { .. }
         | RichRequest::ThreadMessages { .. }
         | RichRequest::ThreadSend { .. }
+        | RichRequest::CreateForumPost { .. }
         | RichRequest::PollCreate { .. }
         | RichRequest::PollVote { .. }
         | RichRequest::PollClose { .. }

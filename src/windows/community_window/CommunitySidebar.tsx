@@ -75,6 +75,7 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
           channels={vm.activeCommunity()!.channels}
           categories={vm.activeCommunity()!.categories}
           members={vm.activeCommunity()!.members}
+          myPseudonymKey={vm.activeCommunity()!.myPseudonymKey}
           selectedId={vm.selectedChannelId()}
           communityId={vm.selectedCommunityId()}
           manageDenied={vm.denied("manageChannels")}

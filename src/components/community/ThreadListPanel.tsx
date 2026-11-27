@@ -1,7 +1,7 @@
 import { Component, For, Show, createSignal, createMemo } from "solid-js";
 import SkinGlyph from "../common/SkinGlyph";
 import type { Thread } from "../../stores/community.store";
-import { formatRelativeTime } from "../../utils/formatting";
+import { formatRelativeTime, messageCount } from "../../utils/formatting";
 
 interface ThreadListPanelProps {
   threads: Thread[];
@@ -34,7 +34,7 @@ const ThreadListPanel: Component<ThreadListPanelProps> = (props) => {
     <div class={`thread-list-item${thread.archived ? " thread-archived" : ""}`} onClick={() => props.onSelectThread(thread.id)}>
       <div class="thread-list-item-name">{thread.name}</div>
       <div class="thread-list-item-meta">
-        {thread.messageCount} messages - {formatRelativeTime(thread.lastMessageAt * 1000)}
+        {messageCount(thread.messageCount)} - {formatRelativeTime(thread.lastMessageAt * 1000)}
       </div>
     </div>
   );

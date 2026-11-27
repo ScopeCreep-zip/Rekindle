@@ -4,7 +4,7 @@ use super::super::action::{Action, SearchMode, ToastLevel};
 use super::super::terminal::Tui;
 use super::App;
 use crate::views::ViewKind;
-use rekindle_ipc::protocol::{ChannelMessageRequest, GroupDmRequest, IpcRequest, ServersRequest};
+use rekindle_ipc::protocol::{ChannelMessageRequest, IpcRequest, ServersRequest};
 use rekindle_types::subscription_events::SubscriptionEvent;
 
 impl App {
@@ -140,50 +140,15 @@ impl App {
                 self.load_channel_history(&community, &channel);
                 self.load_community_members(&community);
             }
-            Action::ShowDmInbox => {
-                self.nav
-                    .navigate(ViewKind::DmInbox, self.theme.use_unicode());
-                self.load_dm_inbox();
-            }
-            Action::ShowDmThread { peer_key } => {
-                self.nav.navigate(
-                    ViewKind::DmThread {
-                        peer_key: peer_key.clone(),
-                    },
-                    self.theme.use_unicode(),
-                );
-                self.load_dm_history(peer_key);
-            }
-            Action::ShowFriendList => {
-                self.nav
-                    .navigate(ViewKind::FriendList, self.theme.use_unicode());
-                self.load_friend_list();
-            }
-            Action::ShowGroupDms => {
-                self.nav
-                    .navigate(ViewKind::GroupDms, self.theme.use_unicode());
-                self.load_group_dms();
-            }
-            Action::ShowGroupMessages { group_id } => self.load_group_messages(group_id),
-            Action::LoadDmHistory { peer_key } => self.load_dm_history(peer_key),
-            Action::AcceptGroupInvite { group_id } => {
-                self.spawn_group_request(
-                    IpcRequest::GroupDm(GroupDmRequest::Accept { group_id }),
-                    "accept group",
-                );
-            }
-            Action::DeclineGroupInvite { group_id } => {
-                self.spawn_group_request(
-                    IpcRequest::GroupDm(GroupDmRequest::Decline { group_id }),
-                    "decline group",
-                );
-            }
-            Action::LeaveGroup { group_id } => {
-                self.spawn_group_request(
-                    IpcRequest::GroupDm(GroupDmRequest::Leave { group_id }),
-                    "leave group",
-                );
-            }
+            action @ (Action::ShowDmInbox
+            | Action::ShowDmThread { .. }
+            | Action::ShowGroupDms
+            | Action::ShowGroupMessages { .. }
+            | Action::LoadDmHistory { .. }
+            | Action::AcceptGroupInvite { .. }
+            | Action::DeclineGroupInvite { .. }
+            | Action::LeaveGroup { .. }
+            | Action::ShowFriendList) => self.reduce_conversations(action),
             Action::ShowVoiceSession { community, channel } => {
                 self.nav.navigate(
                     ViewKind::VoiceSession { community, channel },
@@ -288,6 +253,13 @@ impl App {
             } => {
                 self.spawn_send_channel_message(&community, &channel, text, reply_to);
             }
+            Action::CreateForumPost {
+                community,
+                channel,
+                title,
+                tag,
+                body,
+            } => self.spawn_forum_post(community, channel, title, tag, body),
             Action::EditChannelMessage {
                 channel,
                 message_id,

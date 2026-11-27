@@ -1,6 +1,6 @@
 import { commands } from "../../ipc/commands";
 import { asImageKind } from "../../ipc/commands/system";
-import { setCommunityState, setCommunityMembers, communityState } from "../../stores/community.store";
+import { markMembersFailed, setCommunityState, setCommunityMembers, communityState } from "../../stores/community.store";
 import { onCommunityListed } from "../../handlers/community/community_listed";
 import { addToast } from "../../stores/toast.store";
 import { errorMessage } from "../../utils/error";
@@ -60,6 +60,7 @@ export function handleSelectCommunity(communityId: string): void {
   }).catch((e) => {
     console.error("Failed to load community members:", e);
     addToast("Failed to load members", "error");
+    markMembersFailed(communityId, errorMessage(e));
   });
   // Refresh community details to ensure myPseudonymKey, roles, categories, and mekGeneration are current
   commands.getCommunityDetails().then((details) => {
