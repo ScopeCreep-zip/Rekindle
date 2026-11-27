@@ -124,7 +124,6 @@ export interface Role {
 // Declared once in the IPC layer, which mirrors the Rust contract.
 import type { SoundboardMeta } from "../ipc/commands/types";
 import type { DeviceStatus } from "../ipc/commands/community";
-export type { SoundboardMeta };
 
 export interface Expression {
   id: string;
@@ -166,21 +165,12 @@ export interface EventRsvp {
 // needed them too and src/ipc/ (the dependency-cruiser leaf) couldn't
 // import them back out of this store.
 import type {
-  DayOfWeek,
   EventLocation,
   GameServer,
-  RecurrenceFrequency,
   RecurrenceRule,
   Thread,
 } from "../ipc/commands/types";
-export type {
-  DayOfWeek,
-  EventLocation,
-  GameServer,
-  RecurrenceFrequency,
-  RecurrenceRule,
-  Thread,
-};
+export type { GameServer, Thread };
 import type { KeyStatus } from "../ipc/channels/community_subscription_events";
 
 /**

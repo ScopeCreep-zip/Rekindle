@@ -45,9 +45,7 @@ import type {
   VideoWithRVFC,
 } from "./sender_types";
 
-// Re-exported so existing `from "./video_sender"` imports keep working.
-export { pickEncoderCodec } from "./encoder_config";
-export type { SenderRoute, TrackLabel, VideoSender } from "./sender_types";
+export type { SenderRoute, VideoSender } from "./sender_types";
 
 export function createVideoSender(
   route: SenderRoute,

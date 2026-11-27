@@ -15,12 +15,6 @@ import { SlotMount } from "../skin-tree/slots";
 const ICON_MIC = "\u{F036C}"; // nf-md-microphone
 const ICON_MIC_OFF = "\u{F036D}"; // nf-md-microphone_off
 
-// Declared in ./message_input/types.ts and re-exported here so the
-// existing import sites keep working. `useSlowmode` needs the props
-// type and this file imports `useSlowmode` — declaring it here closed
-// a module cycle.
-export type { EditMode, MessageInputProps } from "./message_input/types";
-
 const MessageInput: Component<MessageInputProps> = (props) => {
   const [body, setBody] = createSignal("");
   const [showEmojiPicker, setShowEmojiPicker] = createSignal(false);

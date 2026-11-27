@@ -4,8 +4,6 @@ import { createStore } from "solid-js/store";
 import type { UserStatus } from "./auth.store";
 import type { GameInfo } from "../ipc/commands/dto";
 
-export type { GameInfo } from "../ipc/commands/dto";
-
 type FriendshipState = "pendingOut" | "accepted";
 
 export interface Friend {
@@ -41,7 +39,7 @@ export interface Friend {
   groupDmBlock: string | null;
 }
 
-export interface PendingRequest {
+interface PendingRequest {
   publicKey: string;
   displayName: string;
   message: string;
