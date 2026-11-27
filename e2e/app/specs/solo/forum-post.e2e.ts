@@ -93,6 +93,16 @@ describe("forum post accepted as one request (FT1)", function () {
     const reason = (await newPost.getAttribute("title")) ?? "";
     const described = (await newPost.getAttribute("aria-description")) ?? "";
     console.log(`[forum] New post's reason: ${reason}`);
+    // It reads disabled: the theme's disabled text colour (ST1), not the toolbar's text.
+    const dimmed = (await browser.execute(() => {
+      const btn = document.querySelector(".forum-channel-new-post-btn");
+      const probe = document.createElement("span");
+      probe.style.color = "var(--color-xfire-text-disabled)";
+      document.body.appendChild(probe);
+      const disabledColour = getComputedStyle(probe).color;
+      probe.remove();
+      return !!btn && getComputedStyle(btn).color === disabledColour;
+    })) as boolean;
     await shot("new-post-disabled");
     // The Host's own refusal, asked directly as the button would: its reason
     // is in words, never a permission bitmask or a channel id (FT1d).
@@ -111,11 +121,12 @@ describe("forum post accepted as one request (FT1)", function () {
     console.log(`[forum] the Host's refusal: ${JSON.stringify(refusal)}`);
     expect({
       disabledWithReason: reason.length > 0 && described === reason,
+      dimmed,
       refused: refusal.code,
       bitmask: /0x[0-9a-f]{4,}/i.test(refusal.message) || /0x[0-9a-f]{4,}/i.test(reason),
       channelId: refusal.message.includes(deniedId) || reason.includes(deniedId),
       cards: (await browser.$$(".forum-channel-thread-card")).length,
-    }).toEqual({ disabledWithReason: true, refused: 403, bitmask: false, channelId: false, cards: 0 });
+    }).toEqual({ disabledWithReason: true, dimmed: true, refused: 403, bitmask: false, channelId: false, cards: 0 });
   });
 
   it("shows the accepted starter once, including after opening the thread again", async () => {
@@ -215,7 +226,9 @@ describe("forum post accepted as one request (FT1)", function () {
     await shot("view-revoked");
     expect({
       closedWithReason: toasts.includes("This thread is no longer available."),
+      // The Host's refusal of the thread list is said once, not per re-read.
+      refusalToasts: toasts.filter((t) => t.startsWith("thread list")).length <= 1,
       cards: (await browser.$$(".forum-channel-thread-card")).length,
-    }).toEqual({ closedWithReason: true, cards: 0 });
+    }).toEqual({ closedWithReason: true, refusalToasts: true, cards: 0 });
   });
 });

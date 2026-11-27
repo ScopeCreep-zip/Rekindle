@@ -499,6 +499,18 @@ function applyGovernance(g: GovernanceEvent): void {
         const detail = details.find((d: { id: string }) => d.id === community);
         if (detail) {
           setCommunityState("communities", community, "roles", detail.roles);
+          // The overwrite moves what we may do in that channel: its served
+          // denied map and lock replace the ones we held (reconcile: a held
+          // capability is absent from the Host's map), so New post, the reply
+          // box and the other controls show the Host's reasons at once.
+          const served = detail.channels.find((c: { id: string }) => c.id === channel);
+          const idx = communityState.communities[community]?.channels.findIndex((c) => c.id === channel) ?? -1;
+          if (served && idx >= 0) {
+            const view = transformChannel(served);
+            setCommunityState("communities", community, "channels", idx, "denied", reconcile(view.denied));
+            setCommunityState("communities", community, "channels", idx, "locked", view.locked);
+            setCommunityState("communities", community, "channels", idx, "lockedReason", view.lockedReason);
+          }
         }
       })
       .catch(() => {});

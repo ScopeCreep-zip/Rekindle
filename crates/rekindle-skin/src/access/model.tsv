@@ -342,6 +342,7 @@
 .forum-channel-composer-title	text	var(--color-xfire-text-primary)	--color-xfire-bg-secondary	1.0	false
 .forum-channel-empty	text	var(--color-xfire-text-secondary)	--color-xfire-bg-dark	1.0	false
 .forum-channel-empty-title	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
+.forum-channel-new-post-btn:disabled	text	var(--color-xfire-text-disabled)	--color-xfire-bg-dark	1.0	false
 .forum-channel-tag	text	var(--color-xfire-text)	--color-xfire-bg-secondary	1.0	false
 .forum-channel-tag-active	text	var(--color-xfire-text-primary)	--color-xfire-accent 15% over --color-xfire-bg-secondary	1.0	false
 .forum-channel-thread-meta	text	var(--color-xfire-text-secondary)	--color-xfire-bg-secondary	1.0	false

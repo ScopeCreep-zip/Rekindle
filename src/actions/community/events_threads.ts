@@ -151,8 +151,11 @@ export async function handleLoadChannelThreads(
     // view overwrite): it lists no threads to us, so none are shown, never
     // the list from before, and its reason is said.
     if (isCommandError(e) && e.type === "failed" && e.data.code === 403) {
+      // Said once, as the threads we showed go: a later re-read of a list
+      // already empty (another permission event) stays quiet.
+      const shown = (communityState.channelThreads[channelId]?.length ?? 0) > 0;
       setCommunityState("channelThreads", channelId, []);
-      addToast(e.data.message, "info");
+      if (shown) addToast(e.data.message, "info");
       return;
     }
     console.error("Failed to load channel threads:", e);
