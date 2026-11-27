@@ -48,7 +48,9 @@ const SettingsSelect: Component<SettingsSelectProps> = (props) => (
       <Select.Value<SettingsSelectOption> class="settings-select-value">
         {(state) => state.selectedOption().label}
       </Select.Value>
-      <Select.Icon class="settings-select-chevron" />
+      {/* The chevron is drawn by CSS (two borders); an explicit empty child
+       *  keeps Kobalte's default "▼" glyph out of it. */}
+      <Select.Icon class="settings-select-chevron">{null}</Select.Icon>
     </Select.Trigger>
     <Select.Portal>
       <Select.Content class="settings-select-content">

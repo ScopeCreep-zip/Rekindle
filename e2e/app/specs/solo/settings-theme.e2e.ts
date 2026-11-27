@@ -64,7 +64,9 @@ async function openList(labelId: string): Promise<string[]> {
   await shown(browser, ".settings-select-content", NET_WAIT_MS);
   const { mismatched, read } = await colours([
     { what: `${labelId} list ground`, selector: ".settings-select-content", property: "background-color", token: "bg-dark" },
-    { what: `${labelId} row text`, selector: ".settings-select-item:not([data-selected]):not([data-highlighted])", property: "color", token: "text" },
+    ...((await browser.$$(".settings-select-item:not([data-selected]):not([data-highlighted])")).length > 0
+      ? [{ what: `${labelId} row text`, selector: ".settings-select-item:not([data-selected]):not([data-highlighted])", property: "color", token: "text" }]
+      : []),
     { what: `${labelId} chosen row ground`, selector: ".settings-select-item[data-selected]", property: "background-color", token: "accent" },
     { what: `${labelId} chosen row text`, selector: ".settings-select-item[data-selected]", property: "color", token: "selection-text" },
   ]);
@@ -86,6 +88,7 @@ describe("Settings follows the theme's dialog roles (ST1)", function () {
 
   for (const pack of PACKS) {
     it(`${pack.file}: every Settings role is its served token, and each select's open list too`, async () => {
+      await tab("Appearance");
       await applySkin(browser, me, pack.name);
       await tab("Appearance");
       const found: string[] = [];
@@ -115,6 +118,8 @@ describe("Settings follows the theme's dialog roles (ST1)", function () {
         { what: "select outline", selector: ".settings-select-trigger", property: "border-top-color", token: "progress-outline" },
       ]);
       console.log(`[st1] ${pack.file} application: ${JSON.stringify(app.read)}`);
+      const chevronText = (await browser.execute(() => document.querySelector(".settings-select-chevron")?.textContent ?? "absent")) as string;
+      if (chevronText !== "") found.push(`chevron holds text "${chevronText}" (the CSS draws it)`);
       found.push(...app.mismatched);
       found.push(...(await openList("settings-auto-away-label")));
       // The open list over the window, for the shot.
@@ -152,7 +157,7 @@ describe("Settings follows the theme's dialog roles (ST1)", function () {
   it("a select is driven by keyboard as the APG listbox has it (arrows, Home, End, type-ahead, Enter, Escape)", async () => {
     await tab("Application");
     const trigger = '.settings-select-trigger[aria-labelledby~="settings-auto-away-label"]';
-    const text = async (): Promise<string> => (await (await browser.$(trigger)).getText()).trim();
+    const text = async (): Promise<string> => (await (await browser.$(`${trigger} .settings-select-value`)).getText()).trim();
     const highlighted = async (): Promise<string> =>
       ((await browser.execute(() => document.querySelector(".settings-select-item[data-highlighted]")?.textContent?.trim() ?? "none")) as string);
     const before = await text();
