@@ -78,14 +78,14 @@ fn follows_imports_reexports_aliases_and_nested_wrappers() {
     let secrets = scope(&["rekindle_secrets"], "pub use self::keys::Secret as Key;");
     let keys = scope(
         &["rekindle_secrets", "keys"],
-        r#"
+        r"
         #[derive(zeroize::ZeroizeOnDrop)]
         pub struct Secret([u8; 32]);
-    "#,
+    ",
     );
     let wrapper = scope(
         &["sample"],
-        r#"
+        r"
         use rekindle_secrets::{self as secrets, Key as Material};
         type Stored = Option<Box<Material>>;
         pub struct Wrapper(Stored);
@@ -95,7 +95,7 @@ fn follows_imports_reexports_aliases_and_nested_wrappers() {
         struct Marker(core::marker::PhantomData<secrets::Key>);
         #[derive(Debug)]
         struct Secret(u32);
-    "#,
+    ",
     );
     assert_eq!(
         findings(&[secrets, keys, wrapper])
