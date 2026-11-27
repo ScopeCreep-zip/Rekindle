@@ -35,8 +35,9 @@
 //   Linux laptop has neither Xvfb nor xdotool yet, so that check skips,
 //   saying so.
 
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createReadStream, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { createInterface } from "node:readline";
 import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, byText, resolveIntent, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
 import { OUT_DIR as WALK_LOGS } from "../../../walk/launch.ts";
@@ -112,11 +113,18 @@ describe("a skinned window is the skin's shape", function () {
     await stopFleet(peers);
     const worker = process.env.WDIO_WORKER_ID;
     if (!worker || !/^\d+-\d+$/.test(worker)) throw new Error("The native run did not name its app log");
-    const log = readFileSync(path.join(WALK_LOGS, `wdio-${worker}.log`), "utf8");
-    const failures = log.split("\n").filter((line) =>
-      line.includes("window_shape_degraded") || line.includes("window_skin_too_small")
-    );
-    expect(failures).toEqual([]);
+    const input = createReadStream(path.join(WALK_LOGS, `wdio-${worker}.log`));
+    const lines = createInterface({ input, crlfDelay: Infinity });
+    try {
+      for await (const line of lines) {
+        if (line.includes("window_shape_degraded") || line.includes("window_skin_too_small")) {
+          throw new Error(`Unexpected native window-shape fallback: ${line}`);
+        }
+      }
+    } finally {
+      lines.close();
+      input.destroy();
+    }
   });
 
   /** Apply `pack` from Settings → Appearance (its radio, then the intent review). */
