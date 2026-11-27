@@ -25,15 +25,60 @@
 // final Host view with the device enrolled and no re-enrolment held.
 
 import { browser, expect } from "@wdio/globals";
-import { NET_WAIT_MS, byText, gone, resolveIntent, shown, switchTo, typeInto, waitUntil } from "../../../walk/helpers.ts";
-import { type Peer, peerJoinCommunity, peerRequestFriend, peerReviewed, startClone, startFleet, stopFleet } from "../../fleet.ts";
-import { acceptRequest, createCommunity, createIdentity, createInvite, friendCode, logOut, newUser, openCommunity, pendingRequest, type User } from "../../journeys.ts";
-import { showSkinView } from "../../journeys_skins.ts";
-import { BUDDY, LOGIN, SETTINGS, inBuddy } from "../../../walk/nav.ts";
-import { shot } from "../../shots.ts";
+import {
+  byText,
+  gone,
+  NET_WAIT_MS,
+  resolveIntent,
+  shown,
+  switchTo,
+  typeInto,
+  waitUntil,
+} from "../../../walk/helpers.ts";
+import { BUDDY, inBuddy, LOGIN, menu, openSettings, SETTINGS } from "../../../walk/nav.ts";
 import { pageLog, recordPage } from "../../../walk/probe.ts";
+import {
+  type Peer,
+  peerJoinCommunity,
+  peerRequestFriend,
+  peerReviewed,
+  startClone,
+  startFleet,
+  stopFleet,
+} from "../../fleet.ts";
+import {
+  acceptRequest,
+  createCommunity,
+  createIdentity,
+  createInvite,
+  friendCode,
+  logOut,
+  newUser,
+  openCommunity,
+  pendingRequest,
+  type User,
+} from "../../journeys.ts";
+import { applySkin, showSkinView, skinShown } from "../../journeys_skins.ts";
+import { painted } from "../../painted.ts";
+import { shot } from "../../shots.ts";
 
 const COMMUNITY = "Restore Hall";
+
+/**
+ * The inbox opened as the pack offers it (contract alerts: Symbiosis's
+ * notifications tab, every main skin's Rekindle menu item, each the Host's
+ * openNotifications), shown and seen (hiding it changes its pixels,
+ * painted.ts): whether it is seen, logged with the pack.
+ */
+async function openInbox(pack: string, how: "tab" | "menu"): Promise<boolean> {
+  await switchTo(browser, BUDDY);
+  if (how === "tab") await showSkinView(browser, "notifications");
+  else await menu(browser, "Rekindle", "Notifications");
+  await shown(browser, ".notification-panel", NET_WAIT_MS);
+  const paint = await painted(browser, ".notification-panel");
+  console.log(`[reenrol] ${pack} inbox (${how}) painted: ${JSON.stringify(paint)}`);
+  return paint.total > 0 && paint.changed >= paint.total / 2;
+}
 /** The channel the original creates after the copy: the governance op the copy lacks. */
 const AFTER_COPY = "after-the-copy";
 /** Long enough for the original's op to reach its own record before the copy unlocks again. */
@@ -51,28 +96,45 @@ async function unlockAgain(): Promise<void> {
 /** Unlock from the login window. */
 async function unlock(): Promise<void> {
   await switchTo(browser, LOGIN, NET_WAIT_MS);
-  await typeInto(await shown(browser, 'form.login-container input[type="password"]'), ME.passphrase);
+  await typeInto(
+    await shown(browser, 'form.login-container input[type="password"]'),
+    ME.passphrase
+  );
   const submit = await browser.$('form.login-container button[type="submit"]');
-  await submit.waitForEnabled({ timeout: NET_WAIT_MS, timeoutMsg: "Unlock stayed disabled (Connecting…)" });
+  await submit.waitForEnabled({
+    timeout: NET_WAIT_MS,
+    timeoutMsg: "Unlock stayed disabled (Connecting…)",
+  });
   await submit.click();
 }
 
 /** What the review the window shows says, once it shows. */
 async function reviewSays(b: typeof browser): Promise<string> {
-  return ((await (await shown(b, ".intent-dialog", NET_WAIT_MS)).getText()) ?? "").replace(/\s+/g, " ");
+  return ((await (await shown(b, ".intent-dialog", NET_WAIT_MS)).getText()) ?? "").replace(
+    /\s+/g,
+    " "
+  );
 }
 
 /** The real Host's device and unlock-barrier view for Restore Hall. */
 async function deviceView() {
   return browser.execute(async (name: string) => {
-    const { invoke } = (window as unknown as {
-      __TAURI_INTERNALS__: {
-        invoke(command: string): Promise<{
-          value: { name: string; deviceStatus: "enrolled" | "needsReenrol"; catchUp?: { pending: { kind: string }[] } }[];
-        }>;
-      };
-    }).__TAURI_INTERNALS__;
-    const community = (await invoke("get_community_details")).value.find((item) => item.name === name);
+    const { invoke } = (
+      window as unknown as {
+        __TAURI_INTERNALS__: {
+          invoke(command: string): Promise<{
+            value: {
+              name: string;
+              deviceStatus: "enrolled" | "needsReenrol";
+              catchUp?: { pending: { kind: string }[] };
+            }[];
+          }>;
+        };
+      }
+    ).__TAURI_INTERNALS__;
+    const community = (await invoke("get_community_details")).value.find(
+      (item) => item.name === name
+    );
     if (!community) return null;
     return {
       status: community.deviceStatus,
@@ -113,10 +175,13 @@ describe("a restored copy re-enrols the device: the original is told and offered
     await waitUntil(
       async () => (await browser.$$(".member-item[data-pseudonym]")).length >= 2,
       NET_WAIT_MS * 2,
-      "Dee's member row never showed in Ari's community",
+      "Dee's member row never showed in Ari's community"
     );
-    const dataRoot = (browser.requestedCapabilities as Record<string, unknown>)["rekindle:dataRoot"];
-    if (typeof dataRoot !== "string") throw new Error("the launcher handed no rekindle:dataRoot capability");
+    const dataRoot = (browser.requestedCapabilities as Record<string, unknown>)[
+      "rekindle:dataRoot"
+    ];
+    if (typeof dataRoot !== "string")
+      throw new Error("the launcher handed no rekindle:dataRoot capability");
 
     // The copy: Ari's own files on a second daemon, unlocked with her
     // passphrase; it must hold the community before it re-enrols in it. A
@@ -129,7 +194,10 @@ describe("a restored copy re-enrols the device: the original is told and offered
     await inBuddy(browser);
     await openCommunity(browser, COMMUNITY);
     const communities = (await copy.cli(["community", "list"])) as { name?: string }[] | null;
-    if (!(communities ?? []).some((c) => c.name === COMMUNITY)) throw new Error(`the copy holds no ${COMMUNITY}: ${JSON.stringify(communities).slice(0, 200)}`);
+    if (!(communities ?? []).some((c) => c.name === COMMUNITY))
+      throw new Error(
+        `the copy holds no ${COMMUNITY}: ${JSON.stringify(communities).slice(0, 200)}`
+      );
 
     // A copy that matches its own published record has nothing to re-enrol
     // (the Host answers "this device's key needs no re-enrolment"). As in the
@@ -160,9 +228,11 @@ describe("a restored copy re-enrols the device: the original is told and offered
         }
       },
       NET_WAIT_MS * 2,
-      "",
+      ""
     ).catch((e) => {
-      throw new Error(`the copy never found itself behind its own record: ${refusal || (e instanceof Error ? e.message : String(e))}`);
+      throw new Error(
+        `the copy never found itself behind its own record: ${refusal || (e instanceof Error ? e.message : String(e))}`
+      );
     });
     console.log("[reenrol] the copy's re-enrolment was accepted");
 
@@ -186,26 +256,46 @@ describe("a restored copy re-enrols the device: the original is told and offered
     expect(await reviewSays(browser)).toContain("this device's key in every community");
     await shot("reenrol-review-after-reload");
     await browser.execute(async () => {
-      const { invoke } = (window as unknown as { __TAURI_INTERNALS__: { invoke(cmd: string, args: unknown): Promise<unknown> } }).__TAURI_INTERNALS__;
+      const { invoke } = (
+        window as unknown as {
+          __TAURI_INTERNALS__: { invoke(cmd: string, args: unknown): Promise<unknown> };
+        }
+      ).__TAURI_INTERNALS__;
       await invoke("open_settings_window", { tab: null });
     });
     await switchTo(browser, SETTINGS, NET_WAIT_MS);
     await shown(browser, ".form-tabs", NET_WAIT_MS);
-    expect(await browser.execute(() => document.querySelector(".intent-dialog") === null)).toBe(true);
+    expect(await browser.execute(() => document.querySelector(".intent-dialog") === null)).toBe(
+      true
+    );
     await shot("reenrol-review-not-in-new-window");
     await switchTo(browser, BUDDY, NET_WAIT_MS);
     expect(await reviewSays(browser)).toContain("this device's key in every community");
 
     // Cancelled, it is gone; the Host raises it again at the next unlock,
     // until it is committed.
-    expect(await resolveIntent(browser, { passphrase: me.passphrase, cancel: true, appearMs: NET_WAIT_MS })).toBe("cancelled");
+    expect(
+      await resolveIntent(browser, {
+        passphrase: me.passphrase,
+        cancel: true,
+        appearMs: NET_WAIT_MS,
+      })
+    ).toBe("cancelled");
     await gone(browser, ".intent-dialog", NET_WAIT_MS);
     await shot("reenrol-review-cancelled");
-    // With the review answered, the Host's alert, as served.
-    await showSkinView(browser, "notifications");
-    const alert = await byText(browser, "[class*=notification]", "Signing stopped", NET_WAIT_MS * 2);
+    // With the review answered, the Host's alert, as served, in the inbox
+    // Symbiosis's notifications tab opens; Escape closes it.
+    const inboxSymbiosis = await openInbox("Symbiosis", "tab");
+    const alert = await byText(
+      browser,
+      ".notification-panel .notification-item",
+      "Signing stopped",
+      NET_WAIT_MS * 2
+    );
     console.log(`[reenrol] alert: ${(await alert.getText()).replace(/\s+/g, " ").slice(0, 200)}`);
     await shot("signing-stopped");
+    await browser.keys("Escape");
+    await gone(browser, ".notification-panel");
     await unlockAgain();
     expect(await reviewSays(browser)).toContain("this device's key in every community");
 
@@ -213,9 +303,14 @@ describe("a restored copy re-enrols the device: the original is told and offered
     // also holds AcceptSessionReset. The dialog shows the first held (the
     // re-enrolment); its answer must resolve that review only (its holdId),
     // and the session reset must then show.
-    const deeFriends = (await dee.cli(["friend", "list"])) as { publicKey?: string; displayName?: string }[] | null;
-    const ariKey = (deeFriends ?? []).find((f) => f.displayName === me.displayName)?.publicKey ?? (deeFriends ?? [])[0]?.publicKey;
-    if (!ariKey) throw new Error(`Dee's friend list has no Ari: ${JSON.stringify(deeFriends).slice(0, 200)}`);
+    const deeFriends = (await dee.cli(["friend", "list"])) as
+      | { publicKey?: string; displayName?: string }[]
+      | null;
+    const ariKey =
+      (deeFriends ?? []).find((f) => f.displayName === me.displayName)?.publicKey ??
+      (deeFriends ?? [])[0]?.publicKey;
+    if (!ariKey)
+      throw new Error(`Dee's friend list has no Ari: ${JSON.stringify(deeFriends).slice(0, 200)}`);
     // The second review is gated on the Host's own event: the window's
     // channel delivers an IntentPending whose review is acceptSessionReset
     // (walk/probe.ts wraps the channel's callback), while the re-enrolment
@@ -225,38 +320,52 @@ describe("a restored copy re-enrols the device: the original is told and offered
     await waitUntil(
       async () => /\+\d+ms event /.test(await pageLog(browser)),
       NET_WAIT_MS,
-      "the Host did not hold Dee's session reset while re-enrolment was still open",
+      "the Host did not hold Dee's session reset while re-enrolment was still open"
     );
     // The probe really saw the channel (a wrapper on invoke once saw nothing):
     // every delivery it logged before the gate, by kind.
     const seen = (await pageLog(browser)).split("\n").filter((l) => /^\+\d+ms /.test(l));
-    console.log(`[reenrol] probe saw ${seen.length} channel deliveries before the gate, ${seen.filter((l) => / event /.test(l)).length} of them acceptSessionReset`);
+    console.log(
+      `[reenrol] probe saw ${seen.length} channel deliveries before the gate, ${seen.filter((l) => / event /.test(l)).length} of them acceptSessionReset`
+    );
     expect(seen.filter((l) => / event /.test(l)).length).toBeGreaterThan(0);
     expect(await reviewSays(browser)).toContain("this device's key in every community");
     await shot("two-held-reviews");
 
     // Answered (cancelled): the dialog answers the review it shows (its
     // holdId). The re-enrolment comes back at the next unlock, below.
-    const outcome = await resolveIntent(browser, { passphrase: me.passphrase, cancel: true, appearMs: NET_WAIT_MS });
+    const outcome = await resolveIntent(browser, {
+      passphrase: me.passphrase,
+      cancel: true,
+      appearMs: NET_WAIT_MS,
+    });
     console.log(`[reenrol] review outcome: ${outcome}`);
     expect(outcome).toBe("cancelled");
     // Only the re-enrolment resolved: the session reset is now the review on show.
     let next = "";
     await waitUntil(
       async () => {
-        next = ((await (await browser.$(".intent-dialog")).getText().catch(() => "")) ?? "").replace(/\s+/g, " ");
+        next = (
+          (await (await browser.$(".intent-dialog")).getText().catch(() => "")) ?? ""
+        ).replace(/\s+/g, " ");
         // The probe above saw the Host hold the session reset (its
         // acceptSessionReset review) while the re-enrolment was on show, so
         // the next review shown is that one: anything but the re-enrolment.
         return next !== "" && !next.includes("this device's key in every community");
       },
       NET_WAIT_MS,
-      "after the re-enrolment was answered the session reset review never showed",
+      "after the re-enrolment was answered the session reset review never showed"
     );
     console.log(`[reenrol] next held review: ${next.slice(0, 300)}`);
     await shot("session-reset-review-after-answer");
     // Cancelled, it leaves too.
-    expect(await resolveIntent(browser, { passphrase: me.passphrase, cancel: true, appearMs: NET_WAIT_MS })).toBe("cancelled");
+    expect(
+      await resolveIntent(browser, {
+        passphrase: me.passphrase,
+        cancel: true,
+        appearMs: NET_WAIT_MS,
+      })
+    ).toBe("cancelled");
     await gone(browser, ".intent-dialog", NET_WAIT_MS);
     await shot("reenrol-review-done");
 
@@ -272,7 +381,9 @@ describe("a restored copy re-enrols the device: the original is told and offered
     await copy.pause();
     await unlockAgain();
     expect(await reviewSays(browser)).toContain("this device's key in every community");
-    expect(await resolveIntent(browser, { passphrase: me.passphrase, appearMs: NET_WAIT_MS })).toBe("committed");
+    expect(await resolveIntent(browser, { passphrase: me.passphrase, appearMs: NET_WAIT_MS })).toBe(
+      "committed"
+    );
     await openCommunity(browser, COMMUNITY);
     const LABEL = "Re-enrolling this device";
     await waitUntil(async () => (await deviceView())?.held === true, NET_WAIT_MS, "").catch(() => {
@@ -287,14 +398,27 @@ describe("a restored copy re-enrols the device: the original is told and offered
     await copy.resume();
 
     // The Host's "Signing stopped" alert is one alert (de-duplicated by its
-    // id) through the reload and three unlocks.
+    // id) through the reload and three unlocks, in the inbox Alloy's
+    // Rekindle menu opens.
     await inBuddy(browser);
-    await showSkinView(browser, "notifications");
-    const alerts = (await browser.execute(() =>
-      Array.from(document.querySelectorAll("[class*=notification]")).filter((n) => (n.textContent ?? "").includes("Signing stopped")).length,
+    await openSettings(browser, "Appearance");
+    const alloy = await applySkin(browser, me, "Alloy");
+    await switchTo(browser, BUDDY);
+    await skinShown(browser, alloy);
+    const inboxAlloy = await openInbox("Alloy", "menu");
+    const alerts = (await browser.execute(
+      () =>
+        Array.from(document.querySelectorAll(".notification-panel .notification-item")).filter(
+          (n) => (n.textContent ?? "").includes("Signing stopped")
+        ).length
     )) as number;
     console.log(`[reenrol] Signing stopped alerts shown: ${alerts}`);
-    expect(alerts).toBe(1);
+    await shot("signing-stopped-alloy");
+    expect({ alerts, inboxSymbiosis, inboxAlloy }).toEqual({
+      alerts: 1,
+      inboxSymbiosis: true,
+      inboxAlloy: true,
+    });
 
     // Read the normal Host view from the real app: the device is enrolled
     // again and the unlock barrier no longer holds its op; the line, which
@@ -305,18 +429,30 @@ describe("a restored copy re-enrols the device: the original is told and offered
     await waitUntil(
       async () => {
         const view = await deviceView();
-        const line = ((await browser.execute(
-          () => document.querySelector(".catch-up-notice")?.textContent ?? "",
-        )) as string).trim();
-        if (view?.held !== line.includes(LABEL)) disagreements.push(`held ${view?.held}, line "${line}"`);
+        const line = (
+          (await browser.execute(
+            () => document.querySelector(".catch-up-notice")?.textContent ?? ""
+          )) as string
+        ).trim();
+        if (view?.held !== line.includes(LABEL))
+          disagreements.push(`held ${view?.held}, line "${line}"`);
         return view?.status === "enrolled" && !view.held;
       },
       NET_WAIT_MS * 2,
-      "the Host did not restore the device to enrolled and clear its held re-enrolment",
+      "the Host did not restore the device to enrolled and clear its held re-enrolment"
     );
-    const lineAfter = ((await browser.execute(() => document.querySelector(".catch-up-notice")?.textContent ?? "")) as string).trim();
-    console.log(`[reenrol] catch-up after the peers returned: disagreements ${JSON.stringify(disagreements)}; line "${lineAfter}"`);
+    const lineAfter = (
+      (await browser.execute(
+        () => document.querySelector(".catch-up-notice")?.textContent ?? ""
+      )) as string
+    ).trim();
+    console.log(
+      `[reenrol] catch-up after the peers returned: disagreements ${JSON.stringify(disagreements)}; line "${lineAfter}"`
+    );
     await shot("catch-up-cleared");
-    expect({ disagreements, clearedAfter: !lineAfter.includes(LABEL) }).toEqual({ disagreements: [], clearedAfter: true });
+    expect({ disagreements, clearedAfter: !lineAfter.includes(LABEL) }).toEqual({
+      disagreements: [],
+      clearedAfter: true,
+    });
   });
 });
