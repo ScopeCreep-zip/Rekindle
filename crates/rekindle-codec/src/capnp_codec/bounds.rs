@@ -82,7 +82,9 @@ impl Bound {
         Self {
             // u16 bounds are at most 65,535 words. The segment table and
             // packed words fit in usize on every supported platform.
-            max_bytes: (max_words + 1) * PACKED_WORD_MAX_BYTES,
+            // A u16 word cap plus its segment header fits with its packed
+            // overhead on the supported 64-bit targets.
+            max_bytes: max_words.saturating_add(1).saturating_mul(PACKED_WORD_MAX_BYTES),
             max_words,
         }
     }
