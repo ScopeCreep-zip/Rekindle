@@ -121,7 +121,8 @@ jobs:
 
       - name: Install system deps (Windows)
         if: matrix.os == 'windows-2022'
-        run: choco install capnproto
+        shell: pwsh
+        run: ./scripts/ci/install-capnp-windows.ps1
 
       # rekindle-video-capture links GStreamer on every OS (gstreamer-sys
       # finds it through pkg-config). Install the official 1.26.8 runtime +
