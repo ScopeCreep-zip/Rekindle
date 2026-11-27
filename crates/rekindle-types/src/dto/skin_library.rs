@@ -128,14 +128,18 @@ pub struct SkinServed {
     pub bytes: Vec<u8>,
 }
 
-/// One frame tile's or tree node art's 1-bit mask (plan SK0 S3, SK2-S1r): rows of `ceil(width / 8)`
-/// bytes, most significant bit first, a set bit an opaque pixel.
+/// One frame tile's or tree node art's mask (plan SK0 S3, SK2-S1r): rows of `ceil(width / 8)`
+/// bytes, most significant bit first, a set bit an opaque pixel; and its
+/// faint pixels, (x, y, alpha) with alpha under `rekindle_skin::shape::ALPHA_OPAQUE`,
+/// sorted by row then column, which the shaper composites with the other
+/// layers laid on them (`rekindle_skin::shape::silhouette`).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SkinTileMask {
     pub width: u32,
     pub height: u32,
     pub bits: Vec<u8>,
+    pub faint: Vec<(u32, u32, u8)>,
 }
 
 /// One window kind's frame layout and its masks: its tiles', in tile order,
