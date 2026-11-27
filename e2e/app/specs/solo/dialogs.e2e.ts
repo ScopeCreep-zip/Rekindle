@@ -23,7 +23,7 @@ import path from "node:path";
 import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, byText, gone, press, resolveIntent, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
 import { BUDDY, underTree } from "../../../walk/nav.ts";
-import { channelCount, createCommunity, createIdentity, friendsView, newUser, openCommunity, postMessage, selectChannel, type User } from "../../journeys.ts";
+import { COMMUNITY_COMPOSER, channelCount, createCommunity, createIdentity, friendsView, newUser, openCommunity, postMessage, selectChannel, type User } from "../../journeys.ts";
 import { shot } from "../../shots.ts";
 
 const SHORTCUTS_RS = path.join(import.meta.dirname, "..", "..", "..", "..", "src-tauri", "src", "shortcuts.rs");
@@ -210,7 +210,7 @@ describe("dialogs take focus, close on Esc and give focus back", function () {
 
   it("Mod+/ opens the shortcuts in a community window; Esc gives focus back to the composer", async () => {
     await browser.switchToWindow(communityHandle);
-    const composer = ".community-main .message-input-field";
+    const composer = COMMUNITY_COMPOSER;
     const el = await shown(browser, composer, NET_WAIT_MS);
     await browser.execute((node: HTMLElement) => node.focus(), el as unknown as HTMLElement);
     const mod = process.platform === "darwin" ? "Meta" : "Control";

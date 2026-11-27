@@ -446,9 +446,18 @@ export async function selectChannel(b: Browser, name: string): Promise<void> {
   );
 }
 
+/**
+ * A community window's channel composer: in the window's main pane, or,
+ * under a pack that lays the community window, in the pack's `chatEdit`
+ * slot (ChannelChat.tsx `SlotMount`), outside the main pane. The posts
+ * themselves stay in the main pane (`chatArea`).
+ */
+export const COMMUNITY_COMPOSER =
+  '.community-main .message-input-field, [data-skin-role="slot:chatEdit"] .message-input-field';
+
 /** In the selected channel, `user` posts `text`, and it shows. */
 export async function postMessage(b: Browser, user: User, text: string): Promise<void> {
-  await typeAndSend(b, ".community-main .message-input-field", text);
+  await typeAndSend(b, COMMUNITY_COMPOSER, text);
   await resolveIntent(b, { passphrase: user.passphrase, appearMs: 1500 });
   await byText(b, ".community-main .chat-message", text.slice(0, 40), NET_WAIT_MS);
 }
