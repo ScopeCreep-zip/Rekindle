@@ -88,11 +88,15 @@ const AppearanceTab: Component = () => {
 
   /** The skin every window shows now: the trial's, else the stored one. */
   const shown = (): string => trial()?.id ?? library()?.active ?? "";
-  // Plan SK14: the shown skin's entry, and the conforming built-in the Host
-  // lists (the accessible variant), both as served.
-  const shownEntry = (): SkinEntry | undefined => library()?.skins.find((s) => s.id === shown());
-  const conformingAlternate = (): SkinEntry | undefined =>
-    library()?.skins.find((s) => s.conforming && s.importedAt === null && s.id !== shown());
+  // Plan SK14: both the current skin and its conforming alternate come from the Host.
+  const alternateHint = () => {
+    const currentId = shown();
+    const skins = library()?.skins ?? [];
+    const current = skins.find((skin) => skin.id === currentId);
+    if (!current || current.conforming) return;
+    const alternate = skins.find((skin) => skin.conforming && skin.importedAt === null);
+    return alternate ? { current, alternate } : undefined;
+  };
   const secondsLeft = (t: SkinTrial): number =>
     Math.max(0, Math.ceil((t.revertsAtMs - now()) / 1000));
 
@@ -186,12 +190,12 @@ const AppearanceTab: Component = () => {
       <div class="settings-section-title">Skin</div>
       {/* A skin whose controls are smaller than 24 px points to the skin that
           meets the size (plan SK14, WCAG 2.2 5.2.1), one action away. */}
-      <Show when={shownEntry() && !shownEntry()!.conforming && conformingAlternate()}>
-        {(alt) => (
+      <Show when={alternateHint()}>
+        {(hint) => (
           <div class="settings-hint skin-alternate">
-            {`${shownEntry()!.name} has ${shownEntry()!.shortTargets} control${shownEntry()!.shortTargets === 1 ? "" : "s"} under 24 px. ${alt().name} meets target sizes.`}{" "}
-            <button type="button" class="skin-row-btn skin-action" onClick={() => void run(() => commands.selectSkin(alt().id))}>
-              Use {alt().name}
+            {`${hint().current.name} has ${hint().current.shortTargets} control${hint().current.shortTargets === 1 ? "" : "s"} under 24 px. ${hint().alternate.name} meets target sizes.`}{" "}
+            <button type="button" class="skin-row-btn skin-action" onClick={() => void run(() => commands.selectSkin(hint().alternate.id))}>
+              Use {hint().alternate.name}
             </button>
           </div>
         )}
