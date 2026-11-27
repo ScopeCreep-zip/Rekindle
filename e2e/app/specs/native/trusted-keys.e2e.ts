@@ -6,6 +6,7 @@ interface ProbeEvent {
   type: "keydown" | "keyup";
   key: string;
   trusted: boolean;
+  shift: boolean;
 }
 
 async function probeState() {
@@ -26,7 +27,12 @@ async function clearEvents() {
   });
 }
 
-async function waitForKey(key: string, trusted: boolean, focus: string, activations = 0) {
+async function waitForKey(
+  key: string,
+  trusted: boolean,
+  focus: string,
+  { activations = 0, shift = false }: { activations?: number; shift?: boolean } = {}
+) {
   // The Actions response means the toolkit accepted the event. WebKit delivers
   // it to the page asynchronously before applying the key's default action.
   let state: Awaited<ReturnType<typeof probeState>> | undefined;
@@ -40,7 +46,11 @@ async function waitForKey(key: string, trusted: boolean, focus: string, activati
           state.activations === activations &&
           ["keydown", "keyup"].every((type) =>
             events.some(
-              (event) => event.type === type && event.key === key && event.trusted === trusted
+              (event) =>
+                event.type === type &&
+                event.key === key &&
+                event.trusted === trusted &&
+                event.shift === shift
             )
           )
         );
@@ -49,7 +59,7 @@ async function waitForKey(key: string, trusted: boolean, focus: string, activati
     );
   } catch (cause) {
     throw new Error(
-      `Expected ${JSON.stringify({ key, trusted, focus, activations })}, observed ${JSON.stringify(state)}. ${String(cause)}`
+      `Expected ${JSON.stringify({ key, trusted, shift, focus, activations })}, observed ${JSON.stringify(state)}. ${String(cause)}`
     );
   }
 }
@@ -98,7 +108,7 @@ describe("Native WebDriver keys", () => {
       for (const type of ["keydown", "keyup"] as const) {
         probe.addEventListener(type, (event) => {
           const events = JSON.parse(probe.dataset.events ?? "[]");
-          events.push({ type, key: event.key, trusted: event.isTrusted });
+          events.push({ type, key: event.key, trusted: event.isTrusted, shift: event.shiftKey });
           probe.dataset.events = JSON.stringify(events);
         });
       }
@@ -132,7 +142,7 @@ describe("Native WebDriver keys", () => {
 
       await clearEvents();
       await browser.action("key").down(Key.Shift).down(Key.Tab).up(Key.Tab).up(Key.Shift).perform();
-      await waitForKey("Tab", true, "native-key-first");
+      await waitForKey("Tab", true, "native-key-first", { shift: true });
       await shot("native-shift-tab-focuses-first-control");
     } else {
       await browser.execute(() => document.getElementById("native-key-first")?.focus());
@@ -140,12 +150,12 @@ describe("Native WebDriver keys", () => {
 
     await clearEvents();
     await browser.keys(Key.Enter);
-    await waitForKey("Enter", true, "native-key-first", 1);
+    await waitForKey("Enter", true, "native-key-first", { activations: 1 });
     await shot("native-enter-activates-first-control");
 
     await clearEvents();
     await browser.keys(" ");
-    await waitForKey(" ", true, "native-key-first", 2);
+    await waitForKey(" ", true, "native-key-first", { activations: 2 });
     await shot("native-space-activates-first-control");
   });
 });

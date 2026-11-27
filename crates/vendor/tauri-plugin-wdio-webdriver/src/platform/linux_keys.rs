@@ -1,7 +1,11 @@
 //! Route a test key to the selected GTK webview through the normal GTK event path.
 
 use glib::translate::{ToGlibPtr, ToGlibPtrMut};
-use gtk::gdk::{self, keys::constants, EventType, ModifierType};
+use gtk::gdk::{
+    self,
+    keys::{constants, Key},
+    EventType, ModifierType,
+};
 use gtk::prelude::*;
 
 use super::{ModifierState, NativeKey};
@@ -27,7 +31,7 @@ pub(super) fn dispatch(
     if display.device_is_grabbed(&keyboard) || webview.device_is_shadowed(&keyboard) {
         return Err("A GTK keyboard grab prevents delivery to the selected webview");
     }
-    let base = *match key {
+    let base = match key {
         NativeKey::Tab => constants::Tab,
         NativeKey::Enter => constants::Return,
         NativeKey::NumpadEnter => constants::KP_Enter,
@@ -41,19 +45,20 @@ pub(super) fn dispatch(
         NativeKey::ShiftRight => constants::Shift_R,
     };
     let keymap = gdk::Keymap::for_display(&display).ok_or("The GTK keyboard has no keymap")?;
-    let entries = keymap.entries_for_keyval(base);
+    let entries = keymap.entries_for_keyval(*base);
     let entry = entries
         .first()
         .ok_or("The GTK keymap has no entry for this key")?;
-    let keyval = if key == NativeKey::Tab && modifiers.shift {
-        *constants::ISO_Left_Tab
-    } else {
-        base
-    };
+    let state = modifier_mask(modifiers);
+    // GDK 3 gdkkeymap.c: gdk_keymap_translate_keyboard_state translates
+    // this physical key with its modifiers and group for the active display.
+    let (translated, group, _, _) = keymap
+        .translate_keyboard_state(entry.keycode(), state, entry.group())
+        .ok_or("The GTK keymap could not translate this key")?;
+    let keyval = webkit_keyval(base, translated);
     let hardware =
         u16::try_from(entry.keycode()).map_err(|_| "The GDK keycode exceeds the event field")?;
-    let group =
-        u8::try_from(entry.group()).map_err(|_| "The GDK key group exceeds the event field")?;
+    let group = u8::try_from(group).map_err(|_| "The GDK key group exceeds the event field")?;
     let time = (glib::monotonic_time() / 1_000).rem_euclid(i64::from(u32::MAX) + 1);
     let time = u32::try_from(time).map_err(|_| "The GDK event timestamp is invalid")?;
     let kind = if down {
@@ -71,7 +76,7 @@ pub(super) fn dispatch(
         event_key.window = window.to_glib_full();
         event_key.send_event = 1;
         event_key.time = time;
-        event_key.state = modifier_mask(modifiers).bits();
+        event_key.state = state.bits();
         event_key.keyval = keyval;
         event_key.hardware_keycode = hardware;
         event_key.group = group;
@@ -82,6 +87,18 @@ pub(super) fn dispatch(
     Ok(())
 }
 
+/// WebKitGTK 2.50's PlatformKeyboardEventGtk.cpp:91–93 assigns the `Tab`
+/// DOM key to the named symbol, while its separate virtual-key mapping
+/// accepts the shifted symbol too. Keep named keys canonical and preserve
+/// their modifier mask. Printable keys use GDK's translated character.
+fn webkit_keyval(base: Key, translated: u32) -> u32 {
+    if base.to_unicode().is_some_and(|value| !value.is_control()) {
+        translated
+    } else {
+        *base
+    }
+}
+
 fn modifier_mask(modifiers: ModifierState) -> ModifierType {
     let mut mask = ModifierType::empty();
     mask.set(ModifierType::SHIFT_MASK, modifiers.shift);
@@ -89,4 +106,39 @@ fn modifier_mask(modifiers: ModifierState) -> ModifierType {
     mask.set(ModifierType::MOD1_MASK, modifiers.alt);
     mask.set(ModifierType::META_MASK, modifiers.meta);
     mask
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gtk_translated_keys_preserve_named_keys_and_shifted_text() {
+        for (base, state, translated, expected) in [
+            (
+                constants::Tab,
+                ModifierType::empty(),
+                constants::Tab,
+                constants::Tab,
+            ),
+            (
+                constants::Tab,
+                ModifierType::SHIFT_MASK,
+                constants::ISO_Left_Tab,
+                constants::Tab,
+            ),
+            (
+                constants::a,
+                ModifierType::SHIFT_MASK,
+                constants::A,
+                constants::A,
+            ),
+        ] {
+            assert_eq!(
+                webkit_keyval(base, *translated),
+                *expected,
+                "{base:?} with {state:?}"
+            );
+        }
+    }
 }
