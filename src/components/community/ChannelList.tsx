@@ -11,6 +11,8 @@ interface ChannelListProps {
   channels: Channel[];
   categories: Category[];
   members: Member[];
+  /** Our own pseudonym in this community, as the Host serves it: the presence badge counts the others. */
+  myPseudonymKey: string | null;
   selectedId?: string;
   communityId: string;
   canManage: boolean;
@@ -22,6 +24,11 @@ interface ChannelListProps {
   onDeleteCategory?: (categoryId: string) => void;
   onCreateCategory?: () => void;
   onSetNotification?: (channelId: string, level: "all" | "mentions" | "nothing") => void;
+}
+
+/** The presence badge's meaning in words, so its number never reads as unread. */
+function membersHere(n: number): string {
+  return `${n} ${n === 1 ? "member" : "members"} here`;
 }
 
 const ChannelList: Component<ChannelListProps> = (props) => {
@@ -40,13 +47,15 @@ const ChannelList: Component<ChannelListProps> = (props) => {
     [...props.categories].sort((a, b) => a.sortOrder - b.sortOrder),
   );
 
-  // Roster grouping: count members focused on each channel. Drives the
-  // "● N" presence indicator. Only members who share their location have
+  // Roster grouping: count the other members focused on each channel. Drives
+  // the "● N" presence indicator. Only members who share their location have
   // a non-null `location` (default-deny), so this naturally reflects
-  // exactly what peers consented to expose.
+  // exactly what peers consented to expose. We are not counted: "1 here"
+  // with only ourselves in the channel says nothing.
   const presenceByChannel = createMemo(() => {
     const counts: Record<string, number> = {};
     for (const m of props.members) {
+      if (m.pseudonymKey === props.myPseudonymKey) continue;
       const loc = m.location;
       if (loc) counts[loc.channelId] = (counts[loc.channelId] ?? 0) + 1;
     }
@@ -158,7 +167,8 @@ const ChannelList: Component<ChannelListProps> = (props) => {
           {(presenceByChannel()[channel.id] ?? 0) > 0 && (
             <span
               class="channel-presence-badge"
-              title={`${presenceByChannel()[channel.id]} here`}
+              title={membersHere(presenceByChannel()[channel.id])}
+              aria-label={membersHere(presenceByChannel()[channel.id])}
             >
               <span class="channel-presence-dot" aria-hidden="true">●</span>
               {presenceByChannel()[channel.id]}

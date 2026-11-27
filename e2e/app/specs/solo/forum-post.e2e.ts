@@ -136,5 +136,9 @@ describe("forum post accepted as one request (FT1)", function () {
       "the post's card never read 1 message",
     );
     await shot("starter-sent");
+    // Ari is the only one in the forum: the channel's presence badge counts the
+    // other members here, so it shows nothing (it read "1" with a dot, Ari
+    // herself, like an unread count).
+    expect(await browser.$$(".channel-presence-badge")).toHaveLength(0);
   });
 });
