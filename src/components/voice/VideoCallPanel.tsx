@@ -1,4 +1,4 @@
-import { Component, For, Show } from "solid-js";
+import { type Component, For, Show } from "solid-js";
 import { useVideoCallPanel, type VideoCallPanelProps } from "./video_call/useVideoCallPanel";
 
 // Architecture §10.6 — interim video pipeline. The browser captures via

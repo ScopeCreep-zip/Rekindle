@@ -1,4 +1,4 @@
-import { Component, For, Show, createMemo, createSignal, onMount } from "solid-js";
+import { type Component, For, Show, createMemo, createSignal, onMount } from "solid-js";
 import { commands } from "../../ipc/commands";
 import type { HiddenGameView } from "../../ipc/commands";
 import type { GameTotalView } from "../../ipc/commands/dto";

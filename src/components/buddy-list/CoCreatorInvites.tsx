@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal } from "solid-js";
+import { type Component, For, Show, createSignal } from "solid-js";
 import { coCreatorState } from "../../stores/co-creator.store";
 import { friendsState } from "../../stores/friends.store";
 import { handleAnswerCreatorInvite, trackCoCreation } from "../../actions/community/co_create";

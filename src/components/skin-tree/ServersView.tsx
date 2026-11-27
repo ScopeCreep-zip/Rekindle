@@ -1,4 +1,4 @@
-import { Component, For, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
+import { type Component, For, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { handleLaunchGame } from "../../actions/game.actions";
 import { sendSkinSelection } from "../../actions/skin.actions";
 import { subscribeServersView } from "../../ipc/channels";

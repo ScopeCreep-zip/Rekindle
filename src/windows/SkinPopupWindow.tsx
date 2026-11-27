@@ -1,4 +1,4 @@
-import { Component, Show, onCleanup, onMount } from "solid-js";
+import { type Component, Show, onCleanup, onMount } from "solid-js";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import SkinTreeWindow from "../components/skin-tree/SkinTreeWindow";
 import Infoview from "../components/infoview/Infoview";

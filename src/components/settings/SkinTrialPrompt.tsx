@@ -1,4 +1,4 @@
-import { Component } from "solid-js";
+import type { Component } from "solid-js";
 import type { SkinTrial } from "../../ipc/commands/dto";
 
 /**

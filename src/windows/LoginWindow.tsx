@@ -1,9 +1,9 @@
-import { Component, createSignal, onMount, onCleanup, For, Show } from "solid-js";
+import { type Component, createSignal, onMount, onCleanup, For, Show } from "solid-js";
 import Titlebar from "../components/titlebar/Titlebar";
 import Avatar from "../components/common/Avatar";
 import LoadingButton from "../components/common/LoadingButton";
 import { handleLogin, handleCreateIdentity } from "../actions/auth.actions";
-import { commands, IdentitySummary } from "../ipc/commands";
+import { commands, type IdentitySummary } from "../ipc/commands";
 import { isCancelled } from "../ipc/commands/dto";
 import { canUnlock, setLifecycleState } from "../stores/lifecycle.store";
 import { subscribeLifecycleEvents } from "../ipc/channels/subscriptions";

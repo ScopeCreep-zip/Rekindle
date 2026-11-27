@@ -1,4 +1,4 @@
-import { Component, JSX, Show } from "solid-js";
+import { type Component, type JSX, Show } from "solid-js";
 
 interface FormFieldProps {
   label?: string;

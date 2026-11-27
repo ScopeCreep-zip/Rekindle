@@ -1,4 +1,4 @@
-import { Component, Show } from "solid-js";
+import { type Component, Show } from "solid-js";
 import { formatDuration } from "../../utils/formatting";
 import StatusDot from "../status/StatusDot";
 import Tooltip from "../common/Tooltip";

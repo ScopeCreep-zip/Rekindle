@@ -1,4 +1,4 @@
-import { Component, For, Show } from "solid-js";
+import { type Component, For, Show } from "solid-js";
 import type { SkinDraft, SkinDraftReport } from "../../ipc/commands/dto_skin_draft";
 
 /**

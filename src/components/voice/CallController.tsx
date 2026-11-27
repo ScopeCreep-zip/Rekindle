@@ -1,4 +1,4 @@
-import { Component } from "solid-js";
+import type { Component } from "solid-js";
 import IncomingCallModal from "./IncomingCallModal";
 import CallWaitingBanner from "./CallWaitingBanner";
 import OutgoingCallPanel from "./OutgoingCallPanel";

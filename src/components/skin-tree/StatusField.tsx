@@ -1,4 +1,4 @@
-import { Component, For, JSX, Show, createEffect, createSignal } from "solid-js";
+import { type Component, For, type JSX, Show, createEffect, createSignal } from "solid-js";
 import { DropdownMenu } from "@kobalte/core/dropdown-menu";
 import { authState } from "../../stores/auth.store";
 import { handleSetStatusMessage } from "../../actions/auth.actions";

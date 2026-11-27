@@ -1,4 +1,4 @@
-import { Component, createSignal, createEffect, createMemo, For, Show } from "solid-js";
+import { type Component, createSignal, createEffect, createMemo, For, Show } from "solid-js";
 import Modal from "../common/Modal";
 import {
   handleCreateChannel,

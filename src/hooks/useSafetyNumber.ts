@@ -1,4 +1,4 @@
-import { Accessor, createSignal, onCleanup, onMount } from "solid-js";
+import { type Accessor, createSignal, onCleanup, onMount } from "solid-js";
 import { commands } from "../ipc/commands";
 import { subscribeChatEvents } from "../ipc/channels";
 import type { SafetyNumberView } from "../ipc/commands/dto";

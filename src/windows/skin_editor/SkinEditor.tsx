@@ -1,4 +1,4 @@
-import { Component, For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { type Component, For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { commands } from "../../ipc/commands";
 import SkinEditorMeta from "./SkinEditorMeta";
 import SkinRegionImport from "./SkinRegionImport";

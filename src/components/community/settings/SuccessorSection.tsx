@@ -1,4 +1,4 @@
-import { Component, For, Show, createEffect, createSignal } from "solid-js";
+import { type Component, For, Show, createEffect, createSignal } from "solid-js";
 import { successorsOf } from "../../../stores/successor.store";
 import { communityState } from "../../../stores/community.store";
 import { handlePublishSuccessor, trackSuccessors } from "../../../actions/community/successor";

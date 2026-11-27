@@ -1,4 +1,4 @@
-import { Component, Show, For, createSignal } from "solid-js";
+import { type Component, Show, For, createSignal } from "solid-js";
 import { friendsState } from "../../stores/friends.store";
 import {
   handleGenerateInvite,

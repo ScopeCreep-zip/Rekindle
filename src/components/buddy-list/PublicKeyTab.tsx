@@ -1,4 +1,4 @@
-import { Component, Show, createSignal, onMount } from "solid-js";
+import { type Component, Show, createSignal, onMount } from "solid-js";
 import type { FriendCodeView } from "../../ipc/commands/dto";
 import {
   handleAddFriendFromCode,

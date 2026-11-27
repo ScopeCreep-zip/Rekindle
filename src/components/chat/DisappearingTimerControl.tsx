@@ -1,4 +1,4 @@
-import { Component, For, Show, createMemo, createSignal } from "solid-js";
+import { type Component, For, Show, createMemo, createSignal } from "solid-js";
 import SkinGlyph from "../common/SkinGlyph";
 import { disappearingState } from "../../stores/disappearing.store";
 import { handleSetDisappearingTimer } from "../../actions/disappearing.actions";

@@ -1,8 +1,8 @@
-import { Component, For, Show, createEffect, createSignal, createMemo, JSX } from "solid-js";
+import { type Component, For, Show, createEffect, createSignal, createMemo, type JSX } from "solid-js";
 import SkinGlyph from "../common/SkinGlyph";
 import { ContextMenu } from "@kobalte/core/context-menu";
 import { Popover } from "@kobalte/core/popover";
-import { EVERYONE_ROLE_ID, Member, Role, RoleTagColours, communityState } from "../../stores/community.store";
+import { EVERYONE_ROLE_ID, type Member, type Role, type RoleTagColours, communityState } from "../../stores/community.store";
 import StatusDot from "../status/StatusDot";
 import type { MemberGroup } from "../../ipc/commands/dto";
 import RoleTag from "./RoleTag";

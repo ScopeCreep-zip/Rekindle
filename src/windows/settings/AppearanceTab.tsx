@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal, onCleanup, onMount } from "solid-js";
+import { type Component, For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { commands } from "../../ipc/commands";
 import { subscribeSkinApplyFailed, subscribeSkinEvents, subscribeSkinTrial, type SkinApplyFailed } from "../../ipc/channels";
 import type { SkinEntry, SkinLibrary, SkinTrial } from "../../ipc/commands/dto";

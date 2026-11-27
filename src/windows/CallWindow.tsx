@@ -1,4 +1,4 @@
-import { Component, Show, createMemo, onCleanup, onMount } from "solid-js";
+import { type Component, Show, createMemo, onCleanup, onMount } from "solid-js";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import Titlebar from "../components/titlebar/Titlebar";
 import ActiveCallPanel from "../components/voice/ActiveCallPanel";

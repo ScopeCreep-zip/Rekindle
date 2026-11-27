@@ -1,4 +1,4 @@
-import { Component, For } from "solid-js";
+import { type Component, For } from "solid-js";
 import { callsState } from "../../stores/calls.store";
 import { removeCallReaction } from "../../actions/calls.actions";
 

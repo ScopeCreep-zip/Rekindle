@@ -1,4 +1,4 @@
-import { Component, Show, createEffect, createSignal } from "solid-js";
+import { type Component, Show, createEffect, createSignal } from "solid-js";
 import { commands } from "../../../ipc/commands";
 import { isCommandError } from "../../../ipc/commands/dto";
 import { communityState } from "../../../stores/community.store";

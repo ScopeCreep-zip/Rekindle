@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal, createEffect, onCleanup } from "solid-js";
+import { type Component, For, Show, createSignal, createEffect, onCleanup } from "solid-js";
 import {
   handleCreateCommunityInvite,
   handleRevokeCommunityInvite,

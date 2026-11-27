@@ -1,4 +1,4 @@
-import { Component, JSX, Show, createSignal, createEffect } from "solid-js";
+import { type Component, type JSX, Show, createSignal, createEffect } from "solid-js";
 import Modal from "./Modal";
 import LoadingButton from "./LoadingButton";
 

@@ -1,4 +1,4 @@
-import { Component, For } from "solid-js";
+import { type Component, For } from "solid-js";
 import { buddyListUI, switchTab, type BuddyListTab } from "../../stores/buddylist-ui.store";
 
 /** The app's own layout's tabs (a skin's tree switches its views itself):

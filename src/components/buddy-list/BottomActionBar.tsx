@@ -1,4 +1,4 @@
-import { Component, Show, createSignal } from "solid-js";
+import { type Component, Show, createSignal } from "solid-js";
 import { handleToggleAddFriend } from "../../actions/buddy.actions";
 import { handleLogout } from "../../actions/auth.actions";
 import { setFriendsState } from "../../stores/friends.store";

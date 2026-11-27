@@ -1,4 +1,4 @@
-import { Component, For, onCleanup, onMount } from "solid-js";
+import { type Component, For, onCleanup, onMount } from "solid-js";
 import Modal from "./Modal";
 import { SHORTCUT_SECTIONS, isHelpChord, keyLabel } from "../../utils/keyboard_shortcuts";
 import { setShortcutsHelpOpen, shortcutsHelpOpen } from "../../stores/shortcuts_help.store";

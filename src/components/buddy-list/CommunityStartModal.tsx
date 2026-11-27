@@ -1,4 +1,4 @@
-import { Component } from "solid-js";
+import type { Component } from "solid-js";
 import Modal from "../common/Modal";
 import { handleToggleCreateCommunity, handleToggleJoinCommunity } from "./BottomActionBar";
 

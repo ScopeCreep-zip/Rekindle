@@ -1,4 +1,4 @@
-import { Component, For, Show, createMemo, createSignal } from "solid-js";
+import { type Component, For, Show, createMemo, createSignal } from "solid-js";
 
 import Modal from "../common/Modal";
 import LoadingButton from "../common/LoadingButton";

@@ -1,4 +1,4 @@
-import { Component, Show } from "solid-js";
+import { type Component, Show } from "solid-js";
 import SkinGlyph from "../../components/common/SkinGlyph";
 import ChannelChat from "./ChannelChat";
 import CallStage from "./CallStage";

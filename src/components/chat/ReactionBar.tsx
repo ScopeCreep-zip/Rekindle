@@ -1,4 +1,4 @@
-import { Component, For, Show } from "solid-js";
+import { type Component, For, Show } from "solid-js";
 import type { ReactionGroup } from "../../stores/chat.store";
 import { communityState } from "../../stores/community.store";
 

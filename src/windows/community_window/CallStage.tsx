@@ -1,4 +1,4 @@
-import { Component, For, Show } from "solid-js";
+import { type Component, For, Show } from "solid-js";
 import SkinGlyph from "../../components/common/SkinGlyph";
 import ParticipantTile from "../../components/voice/call_stage/ParticipantTile";
 import CallControlBar from "../../components/voice/call_stage/CallControlBar";

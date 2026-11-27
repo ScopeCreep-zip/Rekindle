@@ -1,4 +1,4 @@
-import { Component, createSignal } from "solid-js";
+import { type Component, createSignal } from "solid-js";
 import FilesView from "../skin-tree/FilesView";
 import { isCommandError } from "../../ipc/commands/dto";
 import type { Capability } from "../../ipc/commands/dto_skin_tree";

@@ -1,4 +1,4 @@
-import { Component, Show, createMemo, createSignal, onCleanup } from "solid-js";
+import { type Component, Show, createMemo, createSignal, onCleanup } from "solid-js";
 import SkinGlyph from "../common/SkinGlyph";
 import { remainingShort, remainingText } from "../../utils/disappearing";
 

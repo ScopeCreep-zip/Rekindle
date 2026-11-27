@@ -1,4 +1,4 @@
-import { Component, createSignal, createEffect } from "solid-js";
+import { type Component, createSignal, createEffect } from "solid-js";
 import Modal from "../common/Modal";
 import { handleCreateEvent, handleEditEvent } from "../../actions/community.actions";
 

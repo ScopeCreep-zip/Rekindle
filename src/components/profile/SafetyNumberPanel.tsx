@@ -1,4 +1,4 @@
-import { Component, createMemo, createSignal, ErrorBoundary, For, Show } from "solid-js";
+import { type Component, createMemo, createSignal, ErrorBoundary, For, Show } from "solid-js";
 import type { SafetyNumberView } from "../../ipc/commands/dto";
 import { handleSetVerified } from "../../actions/verification.actions";
 import { addToast } from "../../stores/toast.store";

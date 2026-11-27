@@ -1,4 +1,4 @@
-import { Component, For, Show, createEffect, createSignal } from "solid-js";
+import { type Component, For, Show, createEffect, createSignal } from "solid-js";
 
 import { coCreatorState, stopWatchingCreation } from "../../stores/co-creator.store";
 import { friendsState } from "../../stores/friends.store";

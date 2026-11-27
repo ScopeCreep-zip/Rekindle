@@ -1,5 +1,5 @@
 import { createEffect, onMount, onCleanup } from "solid-js";
-import { type UnlistenFn } from "@tauri-apps/api/event";
+import type { UnlistenFn } from "@tauri-apps/api/event";
 import { communityState, setCommunityState } from "../../stores/community.store";
 import { initVoiceEventListener } from "../../actions/voice.actions";
 import { subscribeCommunityPresenceEvents } from "../../handlers/presence-events.handlers";

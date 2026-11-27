@@ -1,4 +1,4 @@
-import { Component, createSignal, createEffect } from "solid-js";
+import { type Component, createSignal, createEffect } from "solid-js";
 import Modal from "../common/Modal";
 
 // Architecture §32 Phase 6 W19 line 4065 — auto-archive timeout choices.

@@ -1,4 +1,4 @@
-import { Component, createSignal, createResource, For, Show } from "solid-js";
+import { type Component, createSignal, createResource, For, Show } from "solid-js";
 import Avatar from "../../components/common/Avatar";
 import FormField from "../../components/common/FormField";
 import { authState, setAuthState } from "../../stores/auth.store";

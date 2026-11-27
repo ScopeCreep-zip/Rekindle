@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal, createEffect, createMemo } from "solid-js";
+import { type Component, For, Show, createSignal, createEffect, createMemo } from "solid-js";
 import Modal from "../common/Modal";
 import ConfirmDialog from "../common/ConfirmDialog";
 import type { Community } from "../../stores/community.store";

@@ -1,4 +1,4 @@
-import { Component, For, Show, onMount } from "solid-js";
+import { type Component, For, Show, onMount } from "solid-js";
 import type { Community } from "../../../stores/community.store";
 import { commands } from "../../../ipc/commands";
 import { handleLoadExpressions } from "../../../actions/community.actions";

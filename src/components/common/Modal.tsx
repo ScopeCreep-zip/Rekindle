@@ -1,4 +1,4 @@
-import { Component, JSX, Show } from "solid-js";
+import { type Component, type JSX, Show } from "solid-js";
 import SkinGlyph from "./SkinGlyph";
 import { Dialog } from "@kobalte/core/dialog";
 import { returnFocusToOpener } from "../../utils/dialog_focus";

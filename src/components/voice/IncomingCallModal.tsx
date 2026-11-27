@@ -1,4 +1,4 @@
-import { Component, Show, createEffect, createSignal, onCleanup } from "solid-js";
+import { type Component, Show, createEffect, createSignal, onCleanup } from "solid-js";
 import { Dialog } from "@kobalte/core/dialog";
 import { returnFocusToOpener } from "../../utils/dialog_focus";
 import { callsState } from "../../stores/calls.store";

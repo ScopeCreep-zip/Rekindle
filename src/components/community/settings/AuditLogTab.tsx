@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal, createEffect } from "solid-js";
+import { type Component, For, Show, createSignal, createEffect } from "solid-js";
 import { handleGetAuditLog } from "../../../actions/community.actions";
 import { formatDateTimeSecs, formatAction } from "../../../utils/formatting";
 import type { CommunityAuditEntry } from "../../../ipc/commands/dto";

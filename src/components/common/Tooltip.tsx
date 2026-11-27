@@ -1,4 +1,4 @@
-import { Component, JSX, createSignal, Show } from "solid-js";
+import { type Component, type JSX, createSignal, Show } from "solid-js";
 
 interface TooltipProps {
   text: string;
