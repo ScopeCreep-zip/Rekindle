@@ -39,12 +39,19 @@ const NotificationPanel: Component = () => {
     if (panel && target && !panel.contains(target) && !target.closest(".notification-bell"))
       close();
   };
+  // Escape belongs to the topmost layer: a review or other dialog the shell
+  // opened over the panel (Kobalte's own layer, intent dialogs, modals)
+  // takes it first, so one press never closes both. Listening in the
+  // capture phase, registered when the panel opened, this runs before any
+  // dialog raised later handles the key, while that dialog is still shown.
+  const otherDialogOpen = (): boolean =>
+    Array.from(document.querySelectorAll('[role="dialog"], [role="alertdialog"]')).some(
+      (d) => d !== panel
+    );
   const onKey = (e: KeyboardEvent): void => {
-    if (e.key === "Escape") {
-      e.preventDefault();
-      e.stopPropagation();
-      close();
-    }
+    if (e.key !== "Escape" || e.defaultPrevented || otherDialogOpen()) return;
+    e.preventDefault();
+    close();
   };
   createEffect(
     on(
@@ -56,11 +63,11 @@ const NotificationPanel: Component = () => {
         // restoring its button) has run by then, so focus stays in the panel.
         const frame = requestAnimationFrame(() => panel?.focus());
         document.addEventListener("mousedown", onPointer);
-        document.addEventListener("keydown", onKey);
+        document.addEventListener("keydown", onKey, true);
         onCleanup(() => {
           cancelAnimationFrame(frame);
           document.removeEventListener("mousedown", onPointer);
-          document.removeEventListener("keydown", onKey);
+          document.removeEventListener("keydown", onKey, true);
         });
       }
     )
