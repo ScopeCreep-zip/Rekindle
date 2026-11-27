@@ -102,6 +102,16 @@ pub fn render(
     for r in &read.repeated {
         let _ = writeln!(s, "    {r}");
     }
+    if !read.absent.is_empty() {
+        let _ = writeln!(
+            s,
+            "  bitmaps named but not in the tree, each laying nothing (spec A8) ({}):",
+            read.absent.len()
+        );
+        for a in &read.absent {
+            let _ = writeln!(s, "    {a}");
+        }
+    }
     let _ = writeln!(s, "  files not read ({}):", read.unread.len());
     for f in &read.unread {
         let _ = writeln!(s, "    {f}");

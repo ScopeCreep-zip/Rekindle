@@ -3,6 +3,7 @@
 //! complete, one image per complete state ([`super::STATES`]), each piece
 //! shifted by its section's `<State>.ColorGroup` and keyed.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 
 use rekindle_image::RgbaImage;
@@ -118,7 +119,14 @@ fn state_pieces(
     }
     let mut pieces: Vec<RgbaImage> = Vec::with_capacity(9);
     for (s, value) in named {
-        let (file, bytes) = resolve(tree, value, aliases)?;
+        let (file, bytes) = match resolve(tree, value, aliases) {
+            Err(ImportError::UndefinedBitmap { name }) => {
+                return Ok(Err(vec![format!(
+                    "{name}: an undefined bitmap, not in the tree (spec A8)"
+                )]));
+            }
+            other => other?,
+        };
         files.insert(file.to_owned());
         let mut img = bitmap::decode(file, bytes)?;
         // An undefined group is the identity shift (d1 §3.1).
@@ -143,11 +151,12 @@ pub(super) fn read_frame(
     skin: &Ini,
     colours: &[ColourRow],
     aliases: &BTreeMap<String, String>,
+    absent: &RefCell<BTreeSet<String>>,
 ) -> Result<Option<Frame>, ImportError> {
     for shape in SHAPES {
         if let Some(mut f) = read_shape(tree, skin, shape, colours, aliases)? {
             if let Some(main) = skin.section("MainWindow") {
-                f.backgrounds = backgrounds(tree, skin, main, colours, aliases)?;
+                f.backgrounds = backgrounds(tree, skin, main, colours, aliases, absent)?;
                 f.views = views_insets(skin, main);
             }
             return Ok(Some(f));
@@ -271,6 +280,7 @@ fn backgrounds(
     main: &Section,
     colours: &[ColourRow],
     aliases: &BTreeMap<String, String>,
+    absent: &RefCell<BTreeSet<String>>,
 ) -> Result<Vec<Background>, ImportError> {
     let mut out = Vec::new();
     for entry in &main.entries {
@@ -300,7 +310,13 @@ fn backgrounds(
         ) else {
             continue;
         };
-        let (file, bytes) = resolve(tree, value, aliases)?;
+        let (file, bytes) = match resolve(tree, value, aliases) {
+            Err(ImportError::UndefinedBitmap { name }) => {
+                absent.borrow_mut().insert(name);
+                continue;
+            }
+            other => other?,
+        };
         let mut image = bitmap::decode(file, bytes)?;
         let by = section
             .get("Graphics.ColorGroup")

@@ -106,6 +106,9 @@ pub struct Read {
     pub tally: StateTally,
     /// The colour roles the sections name ([`refs`]).
     pub refs: Vec<refs::RefsApplied>,
+    /// Every named image the tree lacks, by alias or path: an undefined
+    /// bitmap, laying nothing (spec A8).
+    pub absent: Vec<String>,
 }
 
 /// The names `comments` credit: the text after the last ` by ` of each
@@ -239,7 +242,9 @@ fn read_theme(
 }
 
 /// An image value: a path (it holds a `.`), else a theme `Graphics.<NAME>`
-/// alias, read through [`lookup`].
+/// alias, read through [`lookup`]. An alias the theme never defines, or a
+/// file the tree lacks, is an undefined bitmap: it lays nothing (spec A8),
+/// and the reader that skips it records it.
 pub(crate) fn resolve<'t>(
     tree: &'t Tree,
     value: &str,
@@ -251,11 +256,14 @@ pub(crate) fn resolve<'t>(
         aliases
             .get(&value.to_ascii_uppercase())
             .map(String::as_str)
-            .ok_or_else(|| ImportError::MissingFile {
-                file: format!("Graphics.{value}"),
+            .ok_or_else(|| ImportError::UndefinedBitmap {
+                name: format!("Graphics.{value}"),
             })?
     };
-    lookup(tree, path)
+    lookup(tree, path).map_err(|e| match e {
+        ImportError::MissingFile { file } => ImportError::UndefinedBitmap { name: file },
+        e => e,
+    })
 }
 
 /// Every key of the skin file the importer does not use, by kind.
@@ -330,18 +338,23 @@ pub fn read(tree: &Tree, folder: &str) -> Result<Read, ImportError> {
     let mut dropped = BTreeMap::new();
     let (colours, mut tokens, aliases) =
         read_theme(section(&theme, theme_key, "default")?, &mut dropped)?;
-    let frame = read_frame(tree, &skin, &colours, &aliases)?;
     let images = controls::Images {
         tree,
         colours: &colours,
         aliases: &aliases,
         files: std::cell::RefCell::default(),
+        absent: std::cell::RefCell::default(),
     };
+    let frame = read_frame(tree, &skin, &colours, &aliases, &images.absent)?;
     let (mut controls, mut tally, control_sections) = controls::read(&skin, &images)?;
     let mut main_layout = frame.as_ref().map(frame::main_layout).transpose()?;
     let (popup_nodes, popup_keys) = popups(tree, skin_key, &skin)?;
     let decode = |value: &str, group: Option<&str>| {
-        let (file, bytes) = resolve(tree, value, &aliases)?;
+        let (file, bytes) = resolve(tree, value, &aliases).inspect_err(|e| {
+            if let ImportError::UndefinedBitmap { name } = e {
+                images.absent.borrow_mut().insert(name.clone());
+            }
+        })?;
         images.files.borrow_mut().insert(file.to_owned());
         let mut img = bitmap::decode(file, bytes)?;
         let by = group
@@ -387,6 +400,7 @@ pub fn read(tree: &Tree, folder: &str) -> Result<Read, ImportError> {
     )?;
     let refs = refs::apply(&found, &colours, &mut tokens);
     let control_files = images.files.into_inner();
+    let absent = images.absent.into_inner().into_iter().collect();
     let repeated = [
         (version_key, &version),
         (skin_key, &skin),
@@ -425,6 +439,7 @@ pub fn read(tree: &Tree, folder: &str) -> Result<Read, ImportError> {
         controls,
         tally,
         refs,
+        absent,
     })
 }
 

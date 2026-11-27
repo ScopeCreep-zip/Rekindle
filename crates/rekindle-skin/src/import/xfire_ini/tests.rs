@@ -479,3 +479,37 @@ fn the_sections_naming_a_colour_give_its_role_and_the_accent() {
         .iter()
         .any(|a| a.token == "bg.primary" && a.kept.is_some()));
 }
+
+/// SKC2 (spec A8): an alias the theme never defines, or a file the tree
+/// lacks, is an undefined bitmap.
+#[test]
+fn resolve_reads_a_missing_alias_or_file_as_an_undefined_bitmap() {
+    let t = tree();
+    let aliases = BTreeMap::from([("GONE".to_owned(), "main\\gone.png".to_owned())]);
+    for v in ["NOALIAS", "GONE", "main\\gone.png"] {
+        assert!(
+            matches!(
+                resolve(&t, v, &aliases),
+                Err(ImportError::UndefinedBitmap { .. })
+            ),
+            "{v}"
+        );
+    }
+    assert!(resolve(&t, "main\\top.png", &aliases).is_ok());
+}
+
+/// SKC2 (spec A8): a frame piece naming a file the tree lacks lays
+/// nothing (its state is not emitted), and the NOTICE names the file.
+#[test]
+fn a_named_file_the_tree_lacks_lays_nothing_and_is_recorded() {
+    let mut t = tree();
+    let skin = skin_ini().replacen(
+        "Hover.topleft=main\\topleft.png",
+        "Hover.topleft=main\\gone.png",
+        1,
+    );
+    assert_ne!(skin, skin_ini());
+    t.insert("Fixture.ini".into(), skin.into_bytes());
+    let notice = settled(import(&t, FOLDER, "fixture", None).unwrap()).notice;
+    assert!(notice.contains("main/gone.png"), "{notice}");
+}
