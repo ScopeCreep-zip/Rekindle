@@ -114,6 +114,10 @@ function connect(where: string, caps: AppCaps, conn: Connection, app: App): void
   caps.browserName = "webkit";
   caps["wdio:enforceWebDriverClassic"] = true;
   (caps as Record<string, unknown>)["wdio:tauriServiceOptions"] = { windowLabel: wanted.window };
+  // The app's data root, for a spec that copies the user's identity to a
+  // peer (fleet.ts startClone; plan E3.2 S7d-keys.10): an extension
+  // capability (W3C "rekindle:" prefix), read back from requestedCapabilities.
+  (caps as Record<string, unknown>)["rekindle:dataRoot"] = app.dataRoot;
   conn.hostname = "127.0.0.1";
   conn.port = app.port;
   conn.protocol = "http";
