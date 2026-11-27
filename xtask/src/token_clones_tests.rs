@@ -2,7 +2,8 @@
 
 use super::literals::{literals_of, string_values};
 use super::{
-    marker_lines, parse_report, refused_suppressions, split_lists, strip_rust, Duplicate, Side,
+    marker_lines, parse_report, refused_suppressions, split_lists, strip_rust, Duplicate, Location,
+    Side,
 };
 use crate::structural::test_fixture_sources::{
     LINT_LIST, S5_DESKTOP_DEPS, S5_DESKTOP_SETUP, S5_HOST_DEPS, S5_HOST_SETUP, VARIANT_LIST,
@@ -27,6 +28,14 @@ fn lines(src: &str, start: usize, end: usize) -> Vec<&str> {
     src.lines().skip(start - 1).take(end + 1 - start).collect()
 }
 
+fn byte_span(src: &str, start: usize, end: usize) -> std::ops::Range<usize> {
+    let mut starts =
+        std::iter::once(0).chain(src.match_indices('\n').map(|(position, _)| position + 1));
+    let from = starts.nth(start - 1).expect("fixture has that line");
+    let to = starts.nth(end - start).unwrap_or(src.len());
+    from..to
+}
+
 /// The clones of `spans` that survive the calibration: stripping leaves
 /// their lines as jscpd matched them, and both sides meet the floor.
 fn surviving(a: &str, b: &str, spans: &[(usize, usize, usize, usize)]) -> usize {
@@ -39,7 +48,8 @@ fn surviving(a: &str, b: &str, spans: &[(usize, usize, usize, usize)]) -> usize 
             let kept =
                 lines(&sa, a0, a1) == lines(a, a0, a1) && lines(&sb, b0, b1) == lines(b, b0, b1);
             let floor = la.structural(a0, a1).min(lb.structural(b0, b1));
-            let same_literals = string_values(&strings_a, a0, a1).eq(string_values(&strings_b, b0, b1));
+            let same_literals = string_values(&strings_a, byte_span(&sa, a0, a1))
+                .eq(string_values(&strings_b, byte_span(&sb, b0, b1)));
             println!("S5 clone {a0}-{a1} <> {b0}-{b1}: lines kept {kept}, structural {floor}, same literals {same_literals}");
             kept && floor >= MIN_STRUCTURAL && same_literals
         })
@@ -64,6 +74,8 @@ fn a_lint_list_and_a_variant_list_fall_under_the_floor() {
         name: name.to_owned(),
         start,
         end,
+        start_loc: Location { position: 0 },
+        end_loc: Location { position: 0 },
     };
     let clone = Duplicate {
         format: "rust".to_owned(),
@@ -112,8 +124,8 @@ fn a_marker_in_a_scanned_tree_and_a_config_file_are_refused() {
 #[test]
 fn the_report_parses() {
     let json = r#"{"duplicates":[{"format":"rust","kind":"renamed","lines":12,"tokens":56,
-        "firstFile":{"name":"a.rs","start":108,"end":119},
-        "secondFile":{"name":"b.rs","start":131,"end":142}}],"statistics":{}}"#;
+        "firstFile":{"name":"a.rs","start":108,"end":119,"startLoc":{"position":200},"endLoc":{"position":300}},
+        "secondFile":{"name":"b.rs","start":131,"end":142,"startLoc":{"position":350},"endLoc":{"position":500}}}],"statistics":{}}"#;
     let dups = parse_report(json).expect("parse");
     assert_eq!(dups.len(), 1);
     assert_eq!(
@@ -133,6 +145,8 @@ fn ts_clone(a: (&str, usize, usize), b: (&str, usize, usize)) -> Duplicate {
         name: name.to_owned(),
         start,
         end,
+        start_loc: Location { position: 0 },
+        end_loc: Location { position: 0 },
     };
     Duplicate {
         format: "tsx".to_owned(),

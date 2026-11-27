@@ -3,6 +3,7 @@
 
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::ops::Range;
 use std::path::Path;
 
 use anyhow::Result;
@@ -11,8 +12,7 @@ use super::{Duplicate, Side};
 use crate::rust_lex;
 
 pub(super) struct Literal {
-    line: usize,
-    last_line: usize,
+    span: Range<usize>,
     value: Vec<u8>,
 }
 
@@ -26,26 +26,13 @@ fn rust_value(text: &str) -> Option<Vec<u8>> {
 }
 
 fn rust_literals(source: &str) -> Vec<Literal> {
-    let mut lines = source
-        .match_indices('\n')
-        .map(|(position, _)| position)
-        .peekable();
-    let mut line = 1;
     rust_lex::lex(source)
         .literals
         .into_iter()
         .filter_map(|span| {
             let text = &source[span.clone()];
             let value = rust_value(text)?;
-            while lines.peek().is_some_and(|next| *next < span.start) {
-                line += 1;
-                lines.next();
-            }
-            Some(Literal {
-                line,
-                last_line: line + text.matches('\n').count(),
-                value,
-            })
+            Some(Literal { span, value })
         })
         .collect()
 }
@@ -65,7 +52,7 @@ fn quoted_end(src: &str, from: usize, quote: char) -> Option<usize> {
 }
 
 fn ts_literals(mut source: &str) -> Vec<Literal> {
-    let mut line = 1;
+    let mut offset = 0;
     let mut found = Vec::new();
     while let Some(first) = source.chars().next() {
         let consumed = if source.starts_with("//") {
@@ -76,8 +63,7 @@ fn ts_literals(mut source: &str) -> Vec<Literal> {
             if let Some(end) = quoted_end(source, 1, first) {
                 let content = &source[1..end];
                 found.push(Literal {
-                    line,
-                    last_line: line + content.matches('\n').count(),
+                    span: offset..offset + end + 1,
                     value: content.as_bytes().to_vec(),
                 });
                 end + 1
@@ -87,7 +73,7 @@ fn ts_literals(mut source: &str) -> Vec<Literal> {
         } else {
             first.len_utf8()
         };
-        line += source[..consumed].matches('\n').count();
+        offset += consumed;
         source = &source[consumed..];
     }
     found
@@ -103,28 +89,25 @@ pub(super) fn literals_of(source: &str, format: &str) -> Vec<Literal> {
 
 pub(super) fn string_values(
     literals: &[Literal],
-    start: usize,
-    end: usize,
+    matched: Range<usize>,
 ) -> impl Iterator<Item = &[u8]> {
     literals
         .iter()
-        .filter(move |literal| literal.line <= end && literal.last_line >= start)
+        .filter(move |literal| literal.span.start < matched.end && matched.start < literal.span.end)
         .map(|literal| literal.value.as_slice())
 }
 
-fn cached<'a>(
-    cache: &'a mut HashMap<String, Vec<Literal>>,
+fn load(
+    cache: &mut HashMap<String, Vec<Literal>>,
     root: &Path,
     side: &Side,
     format: &str,
-) -> Result<&'a [Literal]> {
-    Ok(match cache.entry(side.name.clone()) {
-        Entry::Occupied(held) => held.into_mut(),
-        Entry::Vacant(slot) => {
-            let source = std::fs::read_to_string(root.join(&side.name))?;
-            slot.insert(literals_of(&source, format))
-        }
-    })
+) -> Result<()> {
+    if let Entry::Vacant(slot) = cache.entry(side.name.clone()) {
+        let source = std::fs::read_to_string(root.join(&side.name))?;
+        slot.insert(literals_of(&source, format));
+    }
+    Ok(())
 }
 
 pub(super) fn split_different_literals(
@@ -137,18 +120,11 @@ pub(super) fn split_different_literals(
     for candidate in candidates {
         let first = &candidate.first;
         let second = &candidate.second;
-        let left: Vec<_> = string_values(
-            cached(&mut files, root, first, &candidate.format)?,
-            first.start,
-            first.end,
-        )
-        .map(<[u8]>::to_vec)
-        .collect();
-        let right = cached(&mut files, root, second, &candidate.format)?;
-        if left
-            .iter()
-            .map(Vec::as_slice)
-            .eq(string_values(right, second.start, second.end))
+        load(&mut files, root, first, &candidate.format)?;
+        load(&mut files, root, second, &candidate.format)?;
+        let matched = |side: &Side| side.start_loc.position..side.end_loc.position;
+        if string_values(&files[&first.name], matched(first))
+            .eq(string_values(&files[&second.name], matched(second)))
         {
             kept.push(candidate);
         } else {

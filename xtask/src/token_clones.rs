@@ -84,10 +84,19 @@ pub(crate) struct Duplicate {
 }
 
 #[derive(Deserialize)]
+struct Location {
+    position: usize,
+}
+
+#[derive(Deserialize)]
 pub(crate) struct Side {
     pub(crate) name: String,
     pub(crate) start: usize,
     pub(crate) end: usize,
+    #[serde(rename = "startLoc")]
+    start_loc: Location,
+    #[serde(rename = "endLoc")]
+    end_loc: Location,
 }
 
 impl std::fmt::Display for Duplicate {
