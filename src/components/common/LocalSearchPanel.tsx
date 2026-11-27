@@ -1,4 +1,4 @@
-import { Component, For, Show, createEffect, createSignal, on, onCleanup } from "solid-js";
+import { type Component, For, Show, createEffect, createSignal, on, onCleanup } from "solid-js";
 import Modal from "./Modal";
 import { commands } from "../../ipc/commands";
 import { transferCommands } from "../../ipc/commands/dto_transfer";

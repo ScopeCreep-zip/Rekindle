@@ -1,4 +1,4 @@
-import { Component, Show, createEffect, createMemo, createSignal } from "solid-js";
+import { type Component, Show, createEffect, createMemo, createSignal } from "solid-js";
 import SkinGlyph from "../../common/SkinGlyph";
 import type { Community } from "../../../stores/community.store";
 import type { ConfirmOptions } from "./types";

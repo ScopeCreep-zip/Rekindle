@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal } from "solid-js";
+import { type Component, For, Show, createSignal } from "solid-js";
 import SkinGlyph from "../../common/SkinGlyph";
 import StatusDot from "../../status/StatusDot";
 import RoleTag from "../RoleTag";

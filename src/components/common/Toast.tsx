@@ -1,4 +1,4 @@
-import { Component, For } from "solid-js";
+import { type Component, For } from "solid-js";
 import { toastState, removeToast, type Toast } from "../../stores/toast.store";
 
 /** One toast. Clicking it dismisses it; its action, if any, runs and dismisses. */

@@ -1,4 +1,4 @@
-import { Component, For } from "solid-js";
+import { type Component, For } from "solid-js";
 import { DropdownMenu } from "@kobalte/core/dropdown-menu";
 import { commands } from "../../ipc/commands";
 import { setAuthState } from "../../stores/auth.store";

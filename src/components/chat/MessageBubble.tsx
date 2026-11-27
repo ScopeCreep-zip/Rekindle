@@ -1,4 +1,4 @@
-import { Component, Show, createSignal } from "solid-js";
+import { type Component, Show, createSignal } from "solid-js";
 import SkinGlyph from "../common/SkinGlyph";
 import type { Message } from "../../stores/chat.store";
 import ExpiryIndicator from "./ExpiryIndicator";

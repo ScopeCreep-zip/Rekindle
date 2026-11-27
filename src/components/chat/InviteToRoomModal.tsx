@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal } from "solid-js";
+import { type Component, For, Show, createSignal } from "solid-js";
 import { Dialog } from "@kobalte/core/dialog";
 import { returnFocusToOpener } from "../../utils/dialog_focus";
 import { friendsState } from "../../stores/friends.store";

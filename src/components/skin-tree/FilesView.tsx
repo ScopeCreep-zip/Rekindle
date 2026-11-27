@@ -1,4 +1,4 @@
-import { Component, For, Show, createEffect, createSignal, onMount } from "solid-js";
+import { type Component, For, Show, createEffect, createSignal, onMount } from "solid-js";
 import { sendSkinSelection } from "../../actions/skin.actions";
 import type { TransferRow, TransferState } from "../../ipc/commands/dto_transfer";
 import { loadTransfers } from "../../actions/transfer.actions";

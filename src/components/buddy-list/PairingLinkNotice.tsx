@@ -1,4 +1,4 @@
-import { Component, Show } from "solid-js";
+import { type Component, Show } from "solid-js";
 import { pairingLinkRefused, setPairingLinkRefused } from "../../stores/pairing-link.store";
 
 /// The in-panel notice for a pairing link the shell refused: a link from a

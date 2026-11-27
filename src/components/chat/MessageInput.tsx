@@ -1,4 +1,4 @@
-import { Component, For, createSignal, createEffect, Show } from "solid-js";
+import { type Component, For, createSignal, createEffect, Show } from "solid-js";
 import SkinGlyph from "../common/SkinGlyph";
 import { Popover } from "@kobalte/core/popover";
 import { canSend } from "../../actions/chat.actions";

@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal } from "solid-js";
+import { type Component, For, Show, createSignal } from "solid-js";
 import { commands } from "../../ipc/commands";
 import { communityState } from "../../stores/community.store";
 

@@ -1,4 +1,4 @@
-import { Component, Match, Switch, onCleanup, onMount } from "solid-js";
+import { type Component, Match, Switch, onCleanup, onMount } from "solid-js";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { subscribeSkinSignals } from "../ipc/channels";
 import { setSkinSignals } from "../stores/skin-signals.store";

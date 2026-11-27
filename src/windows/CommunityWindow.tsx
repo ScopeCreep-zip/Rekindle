@@ -1,4 +1,4 @@
-import { Component, Show } from "solid-js";
+import { type Component, Show } from "solid-js";
 import Titlebar from "../components/titlebar/Titlebar";
 import SkinTreeWindow from "../components/skin-tree/SkinTreeWindow";
 import { SlotMount, SlotProvider } from "../components/skin-tree/slots";

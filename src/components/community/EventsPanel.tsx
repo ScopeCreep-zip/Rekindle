@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal, createMemo, onMount } from "solid-js";
+import { type Component, For, Show, createSignal, createMemo, onMount } from "solid-js";
 import { communityState } from "../../stores/community.store";
 import type { EventRsvp, ScheduledEvent } from "../../stores/community.store";
 import { formatEventCountdown } from "../../utils/time";

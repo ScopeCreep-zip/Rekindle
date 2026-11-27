@@ -1,4 +1,4 @@
-import { Component, For, JSX, Show, createContext, useContext } from "solid-js";
+import { type Component, For, type JSX, Show, createContext, useContext } from "solid-js";
 import { Menubar } from "@kobalte/core/menubar";
 import { ContextMenu } from "@kobalte/core/context-menu";
 import type { EngineMenu, MenuItem } from "../../ipc/commands/dto_skin_tree";

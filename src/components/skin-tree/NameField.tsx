@@ -1,4 +1,4 @@
-import { Component, JSX, Show, createEffect, createSignal } from "solid-js";
+import { type Component, type JSX, Show, createEffect, createSignal } from "solid-js";
 import { authState } from "../../stores/auth.store";
 import { handleSetDisplayName } from "../../actions/auth.actions";
 

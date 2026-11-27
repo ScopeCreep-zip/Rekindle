@@ -1,4 +1,4 @@
-import { Component, For, Show, createMemo, createSignal, createEffect } from "solid-js";
+import { type Component, For, Show, createMemo, createSignal, createEffect } from "solid-js";
 import SkinGlyph from "../common/SkinGlyph";
 import type { GameServer } from "../../stores/community.store";
 import { commands } from "../../ipc/commands";

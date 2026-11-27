@@ -1,4 +1,4 @@
-import { Component, onCleanup } from "solid-js";
+import { type Component, onCleanup } from "solid-js";
 
 import {
   announce,

@@ -1,4 +1,4 @@
-import { Component, Match, Switch } from "solid-js";
+import { type Component, Match, Switch } from "solid-js";
 import type { SafetyNumberView } from "../../ipc/commands/dto";
 import { ICON_CHECK, ICON_KEY } from "../../icons";
 

@@ -1,4 +1,4 @@
-import { Component, For, Match, Show, Switch, createSignal, onCleanup, onMount } from "solid-js";
+import { type Component, For, Match, Show, Switch, createSignal, onCleanup, onMount } from "solid-js";
 import { commands } from "../../ipc/commands";
 import { subscribeInfoview } from "../../ipc/channels";
 import type { InfoviewAction, InfoviewRequest, InfoviewSection, InfoviewView } from "../../ipc/commands/dto_infoview";

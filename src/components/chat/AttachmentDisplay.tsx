@@ -1,4 +1,4 @@
-import { Component, Show, createMemo, createSignal } from "solid-js";
+import { type Component, Show, createMemo, createSignal } from "solid-js";
 import SkinGlyph from "../common/SkinGlyph";
 import type { MessageAttachment } from "../../stores/chat.store";
 import {

@@ -1,4 +1,4 @@
-import { Component, Show } from "solid-js";
+import { type Component, Show } from "solid-js";
 import ForwardMessageDialog from "../../components/chat/ForwardMessageDialog";
 import CreateCommunityModal from "../../components/community/CreateCommunityModal";
 import CreateChannelModal from "../../components/community/CreateChannelModal";

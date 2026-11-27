@@ -1,4 +1,4 @@
-import { Component, For, Show, createEffect, createSignal, onCleanup } from "solid-js";
+import { type Component, For, Show, createEffect, createSignal, onCleanup } from "solid-js";
 import SkinGlyph from "../common/SkinGlyph";
 import { callsState } from "../../stores/calls.store";
 import { friendsState } from "../../stores/friends.store";

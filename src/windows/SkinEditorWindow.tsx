@@ -1,4 +1,4 @@
-import { Component, onMount } from "solid-js";
+import { type Component, onMount } from "solid-js";
 import Titlebar from "../components/titlebar/Titlebar";
 import { startEventStream } from "../ipc/channels";
 import SkinEditor from "./skin_editor/SkinEditor";

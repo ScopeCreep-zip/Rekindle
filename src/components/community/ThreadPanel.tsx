@@ -1,4 +1,4 @@
-import { Component, Show, For, createSignal, createEffect } from "solid-js";
+import { type Component, Show, For, createSignal, createEffect } from "solid-js";
 import SkinGlyph from "../common/SkinGlyph";
 import type { Thread } from "../../stores/community.store";
 import type { Message } from "../../stores/chat.store";

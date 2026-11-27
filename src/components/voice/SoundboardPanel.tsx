@@ -1,4 +1,4 @@
-import { Component, For, Show, createMemo, createSignal } from "solid-js";
+import { type Component, For, Show, createMemo, createSignal } from "solid-js";
 import { communityState } from "../../stores/community.store";
 import { voiceState } from "../../stores/voice.store";
 import { handlePlaySoundboard } from "../../actions/community.actions";

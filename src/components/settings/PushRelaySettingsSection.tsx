@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal, onMount } from "solid-js";
+import { type Component, For, Show, createSignal, onMount } from "solid-js";
 import { commands } from "../../ipc/commands";
 import FormField from "../common/FormField";
 

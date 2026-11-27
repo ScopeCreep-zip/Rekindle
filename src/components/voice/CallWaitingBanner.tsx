@@ -1,4 +1,4 @@
-import { Component, Show, createEffect, createSignal, onCleanup } from "solid-js";
+import { type Component, Show, createEffect, createSignal, onCleanup } from "solid-js";
 import { callsState } from "../../stores/calls.store";
 import {
   handleAcceptIncomingCall,

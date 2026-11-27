@@ -1,4 +1,4 @@
-import { Component, For, createEffect, createSignal } from "solid-js";
+import { type Component, For, createEffect, createSignal } from "solid-js";
 import Modal from "../common/Modal";
 import { handleCreatePoll } from "../../actions/community.actions";
 

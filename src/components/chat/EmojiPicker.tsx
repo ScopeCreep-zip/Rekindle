@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal, createMemo, onMount, onCleanup } from "solid-js";
+import { type Component, For, Show, createSignal, createMemo, onMount, onCleanup } from "solid-js";
 
 import ExpressionPicker from "../community/ExpressionPicker";
 import { useReducedMotion } from "../../hooks/useReducedMotion";

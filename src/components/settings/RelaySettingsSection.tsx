@@ -1,4 +1,4 @@
-import { Component, For, Show, createMemo, onMount } from "solid-js";
+import { type Component, For, Show, createMemo, onMount } from "solid-js";
 import { friendsState } from "../../stores/friends.store";
 import {
   handleHydrateRelayState,

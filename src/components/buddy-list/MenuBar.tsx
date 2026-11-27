@@ -1,4 +1,4 @@
-import { Component } from "solid-js";
+import type { Component } from "solid-js";
 import { Menubar } from "@kobalte/core/menubar";
 import { handleOpenDocs, handleQuit, handleReportBug, openSettingsTab } from "../../actions/app_menu.actions";
 import { setBuddyListUI } from "../../stores/buddylist-ui.store";

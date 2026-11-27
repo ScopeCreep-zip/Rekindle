@@ -1,4 +1,4 @@
-import { Component, For, Show, createEffect, createMemo, createSignal } from "solid-js";
+import { type Component, For, Show, createEffect, createMemo, createSignal } from "solid-js";
 import { communityState } from "../../stores/community.store";
 import { buddyListUI } from "../../stores/buddylist-ui.store";
 import { commands } from "../../ipc/commands";

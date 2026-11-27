@@ -1,5 +1,5 @@
 import { addToast } from "../../stores/toast.store";
-import { Component, createEffect, createMemo, createSignal, For, JSX, Show } from "solid-js";
+import { type Component, createEffect, createMemo, createSignal, For, type JSX, Show } from "solid-js";
 import { ContextMenu } from "@kobalte/core/context-menu";
 import { friendsState } from "../../stores/friends.store";
 import { buddyListUI } from "../../stores/buddylist-ui.store";

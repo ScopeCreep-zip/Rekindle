@@ -1,4 +1,4 @@
-import { Component, For, Show, onMount, onCleanup } from "solid-js";
+import { type Component, For, Show, onMount, onCleanup } from "solid-js";
 import { buddyListUI, setBuddyListUI } from "../../stores/buddylist-ui.store";
 import {
   notificationState,

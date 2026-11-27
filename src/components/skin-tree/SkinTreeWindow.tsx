@@ -1,4 +1,4 @@
-import { Component, For, JSX, Match, Show, Switch, createContext, createEffect, createSignal, onCleanup, untrack, useContext } from "solid-js";
+import { type Component, For, type JSX, Match, Show, Switch, createContext, createEffect, createSignal, onCleanup, untrack, useContext } from "solid-js";
 import { createStore, produce } from "solid-js/store";
 import { Dynamic } from "solid-js/web";
 import type { EngineMenu, MenuItem, NodeGlyph, NodeLabel, ShellNode, SkinAction, SkinShell, SlotKey, ViewKey } from "../../ipc/commands/dto_skin_tree";

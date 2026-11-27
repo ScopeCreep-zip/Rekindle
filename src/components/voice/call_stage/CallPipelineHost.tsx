@@ -1,4 +1,4 @@
-import { Component, Show, createMemo, onMount, onCleanup } from "solid-js";
+import { type Component, Show, createMemo, onMount, onCleanup } from "solid-js";
 import { voiceState } from "../../../stores/voice.store";
 import { useVideoCallPanel } from "../video_call/useVideoCallPanel";
 import { setActivePipeline } from "./pipeline_store";

@@ -1,4 +1,4 @@
-import { Component, For, createEffect, createSignal } from "solid-js";
+import { type Component, For, createEffect, createSignal } from "solid-js";
 import type { Community } from "../../../stores/community.store";
 import { commands } from "../../../ipc/commands";
 import type { OnboardingConfig, OnboardingConfigEdit, WelcomeChannelEntry, WelcomeScreen } from "../../../ipc/commands/dto";

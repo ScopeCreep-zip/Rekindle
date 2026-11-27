@@ -1,4 +1,4 @@
-import { Component, For, Show, createMemo } from "solid-js";
+import { type Component, For, Show, createMemo } from "solid-js";
 import SkinGlyph from "../common/SkinGlyph";
 import type { Message } from "../../stores/chat.store";
 import MessageBubble from "../chat/MessageBubble";

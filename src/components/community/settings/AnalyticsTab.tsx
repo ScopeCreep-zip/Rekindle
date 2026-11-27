@@ -1,4 +1,4 @@
-import { Component, For, Show, createMemo, createResource } from "solid-js";
+import { type Component, For, Show, createMemo, createResource } from "solid-js";
 import type { Community } from "../../../stores/community.store";
 import { commands, type CommunityAnalytics, type DailyTimeseries } from "../../../ipc/commands";
 

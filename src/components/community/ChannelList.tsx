@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal, createMemo, JSX } from "solid-js";
+import { type Component, For, Show, createSignal, createMemo, type JSX } from "solid-js";
 import SkinGlyph from "../common/SkinGlyph";
 import { ContextMenu } from "@kobalte/core/context-menu";
 import type { Channel, Category, Member } from "../../stores/community.store";

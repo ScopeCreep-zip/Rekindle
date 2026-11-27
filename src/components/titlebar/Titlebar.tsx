@@ -1,4 +1,4 @@
-import { Component, Show } from "solid-js";
+import { type Component, Show } from "solid-js";
 import { titleLogo } from "../../hooks/useSkin";
 import { BrandGlyph } from "../skin-tree/BrandGlyphs";
 import {

@@ -1,4 +1,4 @@
-import { Component } from "solid-js";
+import type { Component } from "solid-js";
 import SimpleInputModal from "../common/SimpleInputModal";
 import { friendsState, setFriendsState } from "../../stores/friends.store";
 import { commands } from "../../ipc/commands";

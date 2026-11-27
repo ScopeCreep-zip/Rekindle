@@ -1,4 +1,4 @@
-import { Component, For, Show, createEffect, createMemo, onMount, onCleanup } from "solid-js";
+import { type Component, For, Show, createEffect, createMemo, onMount, onCleanup } from "solid-js";
 import type { Message } from "../../stores/chat.store";
 import {
   bulkSelection,

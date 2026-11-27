@@ -1,4 +1,4 @@
-import { Component, createSignal, For, Show, onMount, onCleanup } from "solid-js";
+import { type Component, createSignal, For, Show, onMount, onCleanup } from "solid-js";
 import type { UnlistenFn } from "@tauri-apps/api/event";
 import { startEventStream, subscribeSettingsTab } from "../ipc/channels";
 import Titlebar from "../components/titlebar/Titlebar";

@@ -1,4 +1,4 @@
-import { Component, Show } from "solid-js";
+import { type Component, Show } from "solid-js";
 import { commands } from "../../ipc/commands";
 import type { SkinEntry } from "../../ipc/commands/dto";
 

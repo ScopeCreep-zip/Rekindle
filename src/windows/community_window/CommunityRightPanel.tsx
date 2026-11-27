@@ -1,4 +1,4 @@
-import { Component, Show, Switch, Match } from "solid-js";
+import { type Component, Show, Switch, Match } from "solid-js";
 import MemberList from "../../components/community/MemberList";
 import ThreadPanel from "../../components/community/ThreadPanel";
 import ThreadListPanel from "../../components/community/ThreadListPanel";

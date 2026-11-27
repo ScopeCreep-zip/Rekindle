@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal, onCleanup, onMount } from "solid-js";
+import { type Component, For, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { subscribeChatEvents } from "../../ipc/channels";
 import { commands } from "../../ipc/commands";
 import { handleLaunchGame } from "../../actions/game.actions";

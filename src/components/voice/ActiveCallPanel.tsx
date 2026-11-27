@@ -1,4 +1,4 @@
-import { Component, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
+import { type Component, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import SkinGlyph from "../common/SkinGlyph";
 import { commands } from "../../ipc/commands";
 import { callsState, type CallEntry } from "../../stores/calls.store";

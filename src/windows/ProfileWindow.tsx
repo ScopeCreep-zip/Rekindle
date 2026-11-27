@@ -1,4 +1,4 @@
-import { Component, createMemo, createResource, createSignal, For, onMount, onCleanup, Show } from "solid-js";
+import { type Component, createMemo, createResource, createSignal, For, onMount, onCleanup, Show } from "solid-js";
 import { formatDuration, formatRelativeTime } from "../utils/formatting";
 import Titlebar from "../components/titlebar/Titlebar";
 import Avatar from "../components/common/Avatar";

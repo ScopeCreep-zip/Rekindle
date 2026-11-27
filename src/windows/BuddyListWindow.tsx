@@ -1,6 +1,6 @@
 import { subscribeBackendIntents } from "../handlers/intent.handlers";
-import { Component, JSX, onMount, onCleanup, createSignal, Show } from "solid-js";
-import { type UnlistenFn } from "@tauri-apps/api/event";
+import { type Component, type JSX, onMount, onCleanup, createSignal, Show } from "solid-js";
+import type { UnlistenFn } from "@tauri-apps/api/event";
 import SkinFrame from "../components/common/SkinFrame";
 import SkinTreeWindow from "../components/skin-tree/SkinTreeWindow";
 import NameField from "../components/skin-tree/NameField";

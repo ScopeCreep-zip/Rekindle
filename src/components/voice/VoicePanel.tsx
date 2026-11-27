@@ -1,4 +1,4 @@
-import { Component, For, Show } from "solid-js";
+import { type Component, For, Show } from "solid-js";
 import SkinGlyph from "../common/SkinGlyph";
 import { voiceState } from "../../stores/voice.store";
 import VoiceParticipantItem from "./VoiceParticipant";

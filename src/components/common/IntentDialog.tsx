@@ -1,4 +1,4 @@
-import { Component, createEffect, createSignal, For, Match, Show, Switch } from "solid-js";
+import { type Component, createEffect, createSignal, For, Match, Show, Switch } from "solid-js";
 import { Dialog } from "@kobalte/core/dialog";
 import { returnFocusToOpener } from "../../utils/dialog_focus";
 import OwnRecordsWait from "./OwnRecordsWait";

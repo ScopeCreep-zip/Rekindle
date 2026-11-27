@@ -1,4 +1,4 @@
-import { Component, For, Show } from "solid-js";
+import { type Component, For, Show } from "solid-js";
 import type { OpQuarantineReason } from "../../ipc/channels/community_subscription_events";
 import { communityState } from "../../stores/community.store";
 

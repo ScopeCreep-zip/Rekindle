@@ -1,5 +1,5 @@
 import { asImageKind } from "../../ipc/commands/system";
-import { Component, Show, For, createEffect, createSignal } from "solid-js";
+import { type Component, Show, For, createEffect, createSignal } from "solid-js";
 import { colorIntToHex, parseColorHex } from "../../utils/color";
 import { Popover } from "@kobalte/core/popover";
 import LoadingButton from "../common/LoadingButton";

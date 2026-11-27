@@ -1,4 +1,4 @@
-import { Component, For, Show, createSignal, createEffect } from "solid-js";
+import { type Component, For, Show, createSignal, createEffect } from "solid-js";
 import SkinGlyph from "../../common/SkinGlyph";
 import { handleGetBanList, handleUnbanMember } from "../../../actions/community.actions";
 import type { CommunityBanView } from "../../../ipc/commands/dto";

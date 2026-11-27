@@ -1,4 +1,4 @@
-import { Component, Show, createSignal, onCleanup, onMount } from "solid-js";
+import { type Component, Show, createSignal, onCleanup, onMount } from "solid-js";
 import { subscribeQuickWipe } from "../../ipc/channels";
 import { commands } from "../../ipc/commands";
 import { errorMessage } from "../../utils/error";

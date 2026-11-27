@@ -1,4 +1,4 @@
-import { Component, For, Show, createMemo, createSignal } from "solid-js";
+import { type Component, For, Show, createMemo, createSignal } from "solid-js";
 import { commands } from "../../ipc/commands";
 import type { InfoviewAction } from "../../ipc/commands/dto_infoview";
 import type { ActivityKind, ActivityListItem } from "../../ipc/commands/types";

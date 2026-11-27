@@ -1,4 +1,4 @@
-import { Component, createSignal, onCleanup, onMount, For, Show } from "solid-js";
+import { type Component, createSignal, onCleanup, onMount, For, Show } from "solid-js";
 import { subscribeChatEvents } from "../../ipc/channels";
 import FormField from "../../components/common/FormField";
 import RelaySettingsSection from "../../components/settings/RelaySettingsSection";

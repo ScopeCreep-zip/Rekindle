@@ -1,4 +1,4 @@
-import { Component } from "solid-js";
+import type { Component } from "solid-js";
 import FormField from "../../components/common/FormField";
 import FavouriteServersSection from "../../components/settings/FavouriteServersSection";
 import { settingsState } from "../../stores/settings.store";
