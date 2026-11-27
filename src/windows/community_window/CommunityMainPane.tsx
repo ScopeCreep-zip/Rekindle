@@ -29,6 +29,23 @@ import type { CommunityVm } from "./useCommunityWindow";
 /// composer). Reactive driven entirely off the `vm` view model.
 const CommunityMainPane: Component<{ vm: CommunityVm }> = (props) => {
   const vm = props.vm;
+  // The inline topic editor. Opening it replaces the focused topic button, so
+  // focus moves into its input rather than falling to the body (WCAG 2.4.3;
+  // WAI-ARIA APG "Developing a Keyboard Interface", focus is never lost when
+  // the focused element goes). Enter saves and Escape cancels, each returning
+  // focus to the topic button that opened it (the APG's Escape-closes,
+  // focus-returns rule); leaving by pointer saves and leaves focus where the
+  // user put it. One close per open: removing the focused input may blur it.
+  let topicButton: HTMLButtonElement | undefined;
+  let topicClosed = false;
+  const closeTopic = (save: boolean, refocus: boolean): void => {
+    if (topicClosed) return;
+    topicClosed = true;
+    if (save)
+      handleSetChannelTopic(vm.selectedCommunityId(), vm.selectedChannelId(), vm.topicDraft());
+    vm.setEditingTopic(false);
+    if (refocus) queueMicrotask(() => topicButton?.focus());
+  };
   return (
     <div class="community-main" id="main-content" tabindex="-1">
       <Show when={vm.activeCommunity()}>
@@ -77,6 +94,9 @@ const CommunityMainPane: Component<{ vm: CommunityVm }> = (props) => {
                         when={vm.editingTopic()}
                         fallback={
                           <button
+                            ref={(el) => {
+                              topicButton = el;
+                            }}
                             type="button"
                             class={`channel-topic ${vm.denied("setTopic") === null ? "channel-topic-editable" : "channel-topic-denied"}`}
                             title={vm.denied("setTopic") ?? undefined}
@@ -85,6 +105,7 @@ const CommunityMainPane: Component<{ vm: CommunityVm }> = (props) => {
                             onClick={() => {
                               if (vm.denied("setTopic") === null) {
                                 vm.setTopicDraft(vm.activeChannel()?.topic ?? "");
+                                topicClosed = false;
                                 vm.setEditingTopic(true);
                               }
                             }}
@@ -94,31 +115,24 @@ const CommunityMainPane: Component<{ vm: CommunityVm }> = (props) => {
                         }
                       >
                         <input
+                          ref={(el) => queueMicrotask(() => el.focus())}
                           class="form-input channel-topic-header-input"
                           type="text"
+                          aria-label="Channel topic"
                           value={vm.topicDraft()}
                           onInput={(e) => vm.setTopicDraft(e.currentTarget.value)}
                           onKeyDown={(e) => {
                             if (e.key === "Enter") {
-                              handleSetChannelTopic(
-                                vm.selectedCommunityId(),
-                                vm.selectedChannelId(),
-                                vm.topicDraft()
-                              );
-                              vm.setEditingTopic(false);
+                              e.preventDefault();
+                              closeTopic(true, true);
                             }
                             if (e.key === "Escape") {
-                              vm.setEditingTopic(false);
+                              e.preventDefault();
+                              e.stopPropagation();
+                              closeTopic(false, true);
                             }
                           }}
-                          onBlur={() => {
-                            handleSetChannelTopic(
-                              vm.selectedCommunityId(),
-                              vm.selectedChannelId(),
-                              vm.topicDraft()
-                            );
-                            vm.setEditingTopic(false);
-                          }}
+                          onBlur={() => closeTopic(true, false)}
                           placeholder="Channel topic..."
                         />
                       </Show>
