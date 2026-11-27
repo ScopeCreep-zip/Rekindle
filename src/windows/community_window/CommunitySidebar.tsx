@@ -110,7 +110,7 @@ const CommunitySidebar: Component<{ vm: CommunityVm }> = (props) => {
                   class="sidebar-server-join-btn"
                   onClick={() => {
                     const id = parseInt(server.gameId, 10);
-                    if (!isNaN(id)) void commands.launchGame(id, server.address, "community");
+                    if (!Number.isNaN(id)) void commands.launchGame(id, server.address, "community");
                   }}
                 >
                   Join

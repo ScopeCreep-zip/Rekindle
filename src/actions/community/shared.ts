@@ -46,7 +46,7 @@ export function transformEvent(e: EventInfo): ScheduledEvent {
 export async function refreshStageHandRaises(communityId: string, channelId: string): Promise<void> {
   const community = communityState.communities[communityId];
   const channel = community?.channels.find((item) => item.id === channelId);
-  if (!channel || channel.type !== "stage") {
+  if (channel?.type !== "stage") {
     return;
   }
 

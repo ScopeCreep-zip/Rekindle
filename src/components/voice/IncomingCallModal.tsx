@@ -113,9 +113,9 @@ const IncomingCallModal: Component = () => {
                       type="button"
                       class="form-btn-secondary"
                       onClick={() => {
-                        const reason = window.prompt("Decline reason:");
-                        if (reason && reason.trim()) {
-                          void handleDeclineIncomingCall(entry().callId, reason.trim());
+                        const reason = window.prompt("Decline reason:")?.trim();
+                        if (reason) {
+                          void handleDeclineIncomingCall(entry().callId, reason);
                         }
                       }}
                     >

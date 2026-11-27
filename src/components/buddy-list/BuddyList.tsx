@@ -34,8 +34,7 @@ const AWAITING_RESPONSE = "Awaiting Response";
 function matchesSearch(friend: Friend, query: string): boolean {
   const q = query.toLowerCase();
   if (friend.displayName.toLowerCase().includes(q)) return true;
-  if (friend.nickname && friend.nickname.toLowerCase().includes(q)) return true;
-  return false;
+  return friend.nickname?.toLowerCase().includes(q) ?? false;
 }
 
 

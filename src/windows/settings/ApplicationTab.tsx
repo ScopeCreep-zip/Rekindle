@@ -48,7 +48,7 @@ const ApplicationTab: Component = () => {
           class="form-select"
           value={settingsState.autoAwayMinutes}
           onChange={(e) =>
-            handleSetAutoAway(parseInt(e.currentTarget.value))
+            handleSetAutoAway(parseInt(e.currentTarget.value, 10))
           }
         >
           <option value={0}>Disabled</option>

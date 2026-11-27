@@ -80,7 +80,7 @@ export async function handleRetryChannelMessage(
   const messages = communityState.channelMessages[channelId];
   if (!messages) return;
   const message = messages.find((m) => m.id === messageId);
-  if (!message || message.status !== "failed") return;
+  if (message?.status !== "failed") return;
 
   setCommunityState("channelMessages", channelId, (msgs) =>
     msgs.map((m) => (m.id === messageId ? { ...m, status: "sending" as const } : m)),

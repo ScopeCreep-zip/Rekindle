@@ -268,7 +268,7 @@ const ChannelRow: Component<ChannelRowProps> = (props) => {
                 type="number"
                 min="0"
                 value={slowmodeValue()}
-                onInput={(e) => setSlowmodeValue(parseInt(e.currentTarget.value) || 0)}
+                onInput={(e) => setSlowmodeValue(parseInt(e.currentTarget.value, 10) || 0)}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") submitSlowmode();
                   if (e.key === "Escape") cancelSlowmode();

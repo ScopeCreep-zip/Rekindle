@@ -71,7 +71,7 @@ const CreateEventModal: Component<CreateEventModalProps> = (props) => {
   function parseTimestamp(date: string, time: string): number | undefined {
     if (!date || !time) return undefined;
     const d = new Date(`${date}T${time}`);
-    if (isNaN(d.getTime())) return undefined;
+    if (Number.isNaN(d.getTime())) return undefined;
     return Math.floor(d.getTime() / 1000);
   }
 
@@ -103,7 +103,7 @@ const CreateEventModal: Component<CreateEventModalProps> = (props) => {
         start,
         end,
         undefined,
-        max && !isNaN(max) ? max : undefined,
+        max && !Number.isNaN(max) ? max : undefined,
       );
     } else {
       await handleCreateEvent(props.communityId, {
@@ -111,7 +111,7 @@ const CreateEventModal: Component<CreateEventModalProps> = (props) => {
         description: description().trim(),
         startTime: start,
         endTime: end,
-        maxAttendees: max && !isNaN(max) ? max : undefined,
+        maxAttendees: max && !Number.isNaN(max) ? max : undefined,
       });
     }
     props.onClose();
