@@ -16,10 +16,10 @@ import type { TypingContext, UnreadChanged } from "./chat_events";
 import type { EventInfo, GameServer, Thread } from "../commands/types";
 
 /** Why an inviter refused a join (`rekindle_types::join_refusal::JoinRefusal`). */
-export type JoinRefusal = "INVITE_USED_UP" | "INVITE_NO_LONGER_VALID" | "INVITE_UNKNOWN" | "NOT_ADMITTED";
+type JoinRefusal = "INVITE_USED_UP" | "INVITE_NO_LONGER_VALID" | "INVITE_UNKNOWN" | "NOT_ADMITTED";
 
 /** Membership events from the daemon vocabulary. */
-export type MembershipEvent =
+type MembershipEvent =
   /**
    * Our join was withdrawn after it returned: the inviter refused it on a
    * retried exchange and the Host forgot the community (plan E3.1/JN1).
@@ -85,7 +85,7 @@ export type MembershipEvent =
     };
 
 /** System-level signals from the daemon vocabulary. */
-export type SystemEvent =
+type SystemEvent =
   /** **This peer's** own observation of the join rate. */
   | {
       raidDetected: {
@@ -315,7 +315,7 @@ export type OpPublicationState =
   | { kind: "failed"; reason: string };
 
 /** Social events — reactions, pins, threads, scheduled events, servers. */
-export type SocialEvent =
+type SocialEvent =
   | {
       reactionAdded: {
         community: string;

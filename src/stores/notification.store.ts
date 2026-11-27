@@ -1,6 +1,6 @@
 import { createStore } from "solid-js/store";
 
-export interface Notification {
+interface Notification {
   id: string;
   /**
    * Wave 12 W12.8 — `missed_call` rows surface in the notification panel

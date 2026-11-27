@@ -12,7 +12,7 @@ export interface VoiceParticipant {
   isConfirmed?: boolean;
 }
 
-export interface VoiceState {
+interface VoiceState {
   isConnected: boolean;
   channelId: string | null;
   isMuted: boolean;

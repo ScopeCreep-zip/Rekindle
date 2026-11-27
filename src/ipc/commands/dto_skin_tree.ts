@@ -27,7 +27,7 @@ export type Edge =
 
 /** `NodeRole` (serde `tag = "kind"`, `content = "key"`; plan SK2-A3: what a
  *  node shows; what it does is its `triggers`). */
-export type NodeRole =
+type NodeRole =
   | { kind: "tab" | "knob" | "view" | "buttonRow"; key: ViewKey }
   | { kind: "lamp"; key: string }
   | { kind: "windowButton"; key: WindowButtonKind }
@@ -410,7 +410,7 @@ interface EngineMenuItems {
 }
 
 /** `MenuRegistry`: Rekindle's items for each engine menu a pack opens. */
-export interface MenuRegistry {
+interface MenuRegistry {
   menus: EngineMenuItems[];
 }
 

@@ -150,7 +150,7 @@ export interface FriendInfo {
   groupDmBlock: string | null;
 }
 
-export interface GameStatus {
+interface GameStatus {
   gameId: number;
   gameName: string;
   serverInfo: string | null;
