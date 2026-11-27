@@ -165,48 +165,11 @@ struct Finder<'a> {
     hits: Vec<String>,
 }
 
-fn collect_uses(
-    tree: &syn::UseTree,
-    prefix: &mut Vec<String>,
-    out: &mut BTreeMap<String, Vec<String>>,
-) {
-    match tree {
-        syn::UseTree::Path(p) => {
-            prefix.push(p.ident.to_string());
-            collect_uses(&p.tree, prefix, out);
-            prefix.pop();
-        }
-        syn::UseTree::Name(n) => {
-            let mut full = prefix.clone();
-            full.push(n.ident.to_string());
-            if n.ident == "self" {
-                full.pop();
-                if let Some(last) = full.last().cloned() {
-                    out.insert(last, full);
-                }
-            } else {
-                out.insert(n.ident.to_string(), full);
-            }
-        }
-        syn::UseTree::Rename(r) => {
-            let mut full = prefix.clone();
-            full.push(r.ident.to_string());
-            out.insert(r.rename.to_string(), full);
-        }
-        syn::UseTree::Group(g) => {
-            for t in &g.items {
-                collect_uses(t, prefix, out);
-            }
-        }
-        syn::UseTree::Glob(_) => {}
-    }
-}
-
 struct UseCollector(BTreeMap<String, Vec<String>>);
 
 impl<'ast> Visit<'ast> for UseCollector {
     fn visit_item_use(&mut self, item: &'ast syn::ItemUse) {
-        collect_uses(&item.tree, &mut Vec::new(), &mut self.0);
+        crate::rust_uses::collect_uses(&item.tree, &mut Vec::new(), &mut self.0, &mut |_| {});
     }
 }
 
@@ -277,7 +240,7 @@ impl<'ast> Visit<'ast> for Finder<'_> {
     fn visit_item_use(&mut self, item: &'ast syn::ItemUse) {
         if !matches!(item.vis, syn::Visibility::Inherited) {
             let mut uses = BTreeMap::new();
-            collect_uses(&item.tree, &mut Vec::new(), &mut uses);
+            crate::rust_uses::collect_uses(&item.tree, &mut Vec::new(), &mut uses, &mut |_| {});
             for full in uses.values() {
                 if is_utils_helper(full) {
                     let needle = full.last().cloned().unwrap_or_default();

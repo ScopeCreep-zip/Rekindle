@@ -84,6 +84,7 @@
 //!                                      banks (plan E7.7.3).
 //!     cargo xtask check-inline-modules No inline `mod name { … }` (gate item 1).
 //!     cargo xtask check-panic-lints    Peer-input crates deny the panic lints (gate item 3(a)).
+//!     cargo xtask check-secret-debug  Secret types keep fields out of Debug (gate item 3(d)).
 //!     cargo xtask outline-modules [--crate <name>]
 //!                                      Move each inline module body to
 //!                                      `<stem>_<name>.rs` (the fixer).
@@ -154,8 +155,10 @@ mod platform_floor;
 mod release_build;
 mod role_ids;
 mod rust_lex;
+mod rust_uses;
 mod sec_styles;
 mod sec_surfaces;
+mod secret_debug;
 mod sidecars;
 mod skin_silhouette;
 mod sqlite;
@@ -313,6 +316,8 @@ enum Command {
     CheckInlineModules,
     /// Verify the peer-input crates deny the panic-class clippy lints.
     CheckPanicLints,
+    /// Verify secret types never derive Debug or format instance data.
+    CheckSecretDebug,
     /// Move each inline module body to `<stem>_<name>.rs` beside its parent.
     OutlineModules {
         /// Only this workspace member (package name).
@@ -372,6 +377,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
                     "panic-lints",
                     Box::new(|| panic_lints::check_panic_lints(&root)),
                 ),
+                ("secret-debug", Box::new(|| secret_debug::check(&root))),
                 (
                     "duplicate-constants",
                     Box::new(|| duplicate_constants::check_duplicate_constants(&root)),
@@ -582,6 +588,7 @@ fn dispatch(cmd: &Command) -> Result<()> {
         Command::CheckWorkspaceLints => duplication::check_workspace_lints(&root),
         Command::CheckInlineModules => inline_modules::check_inline_modules(&root),
         Command::CheckPanicLints => panic_lints::check_panic_lints(&root),
+        Command::CheckSecretDebug => secret_debug::check(&root),
         Command::OutlineModules { krate } => {
             outline_modules::outline_modules(&root, krate.as_deref())
         }
