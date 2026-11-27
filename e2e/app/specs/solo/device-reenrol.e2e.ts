@@ -7,9 +7,11 @@
 // ReEnrolDevice review at the next unlock (TrustChanging, every word the
 // Host's), and a held deviceReEnrol op shows the Host's label in catch-up.
 //
-// Also the held review's standing (part 2b): it survives a reload and shows
-// in a window opened later, a cancel clears it everywhere and the Host
-// raises it again at the next unlock, and the alert is shown once. With a
+// Also the held review's standing (part 2b): it survives a reload; it is the
+// buddy list's (the Host addresses backend reviews to the buddy list alone,
+// event_dispatch audience), so a window opened later shows no copy of it; a
+// cancel clears it and the Host raises it again at the next unlock, and the
+// alert is shown once. With a
 // second held review (Dee, a CLI friend, resets her session: the Host holds
 // AcceptSessionReset), the answer to the review on show resolves that one
 // only (its holdId), and the other shows next.
@@ -157,8 +159,9 @@ describe("a restored copy re-enrols the device: the original is told and offered
     expect(said).toContain("this device's key is retired at seq");
 
     // The review is the Host's, held (standing heldReviews on every subscribe
-    // and resume): a reload of the window shows it again, and a window opened
-    // now shows it on its first subscribe.
+    // and resume): a reload of the buddy list shows it again. It is the
+    // buddy list's alone, so a window opened now shows no copy of it, and the
+    // buddy list still does.
     await browser.refresh();
     expect(await reviewSays(browser)).toContain("this device's key in every community");
     await shot("reenrol-review-after-reload");
@@ -167,14 +170,15 @@ describe("a restored copy re-enrols the device: the original is told and offered
       await invoke("open_settings_window", { tab: null });
     });
     await switchTo(browser, SETTINGS, NET_WAIT_MS);
-    expect(await reviewSays(browser)).toContain("this device's key in every community");
-    await shot("reenrol-review-in-new-window");
-
-    // Cancelled from the new window, it is gone from every window; the Host
-    // raises it again at the next unlock, until it is committed.
-    expect(await resolveIntent(browser, { passphrase: me.passphrase, cancel: true, appearMs: NET_WAIT_MS })).toBe("cancelled");
-    await gone(browser, ".intent-dialog", NET_WAIT_MS);
+    await shown(browser, ".form-tabs", NET_WAIT_MS);
+    expect(await (await browser.$(".intent-dialog")).isDisplayed().catch(() => false)).toBe(false);
+    await shot("reenrol-review-not-in-new-window");
     await switchTo(browser, BUDDY, NET_WAIT_MS);
+    expect(await reviewSays(browser)).toContain("this device's key in every community");
+
+    // Cancelled, it is gone; the Host raises it again at the next unlock,
+    // until it is committed.
+    expect(await resolveIntent(browser, { passphrase: me.passphrase, cancel: true, appearMs: NET_WAIT_MS })).toBe("cancelled");
     await gone(browser, ".intent-dialog", NET_WAIT_MS);
     await shot("reenrol-review-cancelled");
     // With the review answered, the Host's alert, as served.
@@ -236,7 +240,7 @@ describe("a restored copy re-enrols the device: the original is told and offered
     await shot("reenrol-review-done");
 
     // The Host's "Signing stopped" alert is one alert (de-duplicated by its
-    // id) through the reload, the new window and two unlocks.
+    // id) through the reload and two unlocks.
     await inBuddy(browser);
     await showSkinView(browser, "notifications");
     const alerts = (await browser.execute(() =>
