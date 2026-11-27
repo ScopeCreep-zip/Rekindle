@@ -37,12 +37,16 @@ const b = browser;
 const PLACE = "Layer Hall";
 const PACKS = ["Symbiosis", "Alloy"];
 
-/** `selector` shown, then whether it is seen (≥ half its box changes when hidden), logged. */
+/** `selector` shown, then whether it is seen (hiding it changes its pixels: ≥ 5% of its box and 50 px), logged. */
 async function seen(pack: string, selector: string): Promise<boolean> {
   await shown(b, selector, NET_WAIT_MS);
   const paint = await painted(b, selector);
   console.log(`[layers] ${pack} ${selector}: ${JSON.stringify(paint)}`);
-  return paint.total > 0 && paint.changed >= paint.total / 2;
+  // A surface painted under the tree changes next to no pixels when hidden.
+  // A text strip on the same ground as the area beneath it (the publication
+  // banner) changes only its glyphs, about a tenth of its box, and is seen;
+  // so seen is at least 5% of the box and 50 px, never half of it.
+  return paint.total > 0 && paint.changed >= Math.max(50, paint.total * 0.05);
 }
 
 describe("Host surfaces paint above a skin tree (layer contract)", function () {
