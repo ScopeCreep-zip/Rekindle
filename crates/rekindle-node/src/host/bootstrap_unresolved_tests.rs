@@ -91,7 +91,7 @@ fn joiner_citing(dep: &HeldOp) -> BootstrapJoiner {
         },
         sig: [0; 64],
     };
-    let unsigned = op_unsigned_bytes(&op);
+    let unsigned = op_unsigned_bytes(&op).unwrap();
     op.sig =
         rekindle_secrets::derive::sign_with_pseudonym(&key, &op_signing_bytes("c1", &unsigned));
     let hash = op_hash(&unsigned, &op.sig);

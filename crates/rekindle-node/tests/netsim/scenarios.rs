@@ -35,7 +35,7 @@ pub(crate) fn vld0(bytes: &[u8; 32]) -> String {
 /// `op` signed by `key` over the anchor-bound signing bytes, encoded as the
 /// op log and `governanceOp @74` carry it, with its hash.
 pub(crate) fn signed(anchor: &str, key: &SigningKey, mut op: GovernanceOp) -> (Vec<u8>, OpHash) {
-    let unsigned = op_unsigned_bytes(&op);
+    let unsigned = op_unsigned_bytes(&op).unwrap();
     op.sig = key.sign(&op_signing_bytes(anchor, &unsigned)).to_bytes();
     (
         encode_op(&op).expect("encodes"),
