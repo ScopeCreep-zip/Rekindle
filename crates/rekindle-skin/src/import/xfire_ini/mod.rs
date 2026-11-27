@@ -109,6 +109,8 @@ pub struct Read {
     /// Every named image the tree lacks, by alias or path: an undefined
     /// bitmap, laying nothing (spec A8).
     pub absent: Vec<String>,
+    /// Every value read only after a normalisation, `file: what`.
+    pub normalised: Vec<String>,
 }
 
 /// The names `comments` credit: the text after the last ` by ` of each
@@ -419,6 +421,14 @@ pub fn read(tree: &Tree, folder: &str) -> Result<Read, ImportError> {
         })
         .cloned()
         .collect();
+    let normalised = [
+        (version_key, &version),
+        (skin_key, &skin),
+        (theme_key, &theme),
+    ]
+    .into_iter()
+    .flat_map(|(f, i)| i.normalised.iter().map(move |r| format!("{f}: {r}")))
+    .collect();
     let info = BTreeMap::from([
         ("LongName", long),
         ("Version (the skin's own revision)", revision),
@@ -440,6 +450,7 @@ pub fn read(tree: &Tree, folder: &str) -> Result<Read, ImportError> {
         tally,
         refs,
         absent,
+        normalised,
     })
 }
 

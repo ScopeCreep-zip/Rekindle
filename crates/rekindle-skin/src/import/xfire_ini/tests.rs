@@ -513,3 +513,24 @@ fn a_named_file_the_tree_lacks_lays_nothing_and_is_recorded() {
     let notice = settled(import(&t, FOLDER, "fixture", None).unwrap()).notice;
     assert!(notice.contains("main/gone.png"), "{notice}");
 }
+
+/// SKC2: a DEL byte is dropped and recorded (Xfire, Inc.'s stock
+/// `XfireThemes.ini` holds two); every other control character refuses.
+#[test]
+fn a_del_byte_is_dropped_and_recorded_other_controls_refuse() {
+    let mut t = tree();
+    let theme = format!(
+        "{THEME}\r\n[Ruby Red]\r\nColorGroup.ScrollbarColor=RGBA(88,-76,-76\u{7f}\u{7f})\r\n"
+    );
+    t.insert("FixThemes.ini".into(), theme.into_bytes());
+    let notice = settled(import(&t, FOLDER, "fixture", None).unwrap()).notice;
+    assert!(notice.contains("FixThemes.ini: line"), "{notice}");
+    assert!(notice.contains("2 DEL (0x7F) byte(s) dropped"), "{notice}");
+    let mut t = tree();
+    let theme = format!("{THEME}\r\n[Ruby Red]\r\nX=1\u{1}\r\n");
+    t.insert("FixThemes.ini".into(), theme.into_bytes());
+    assert!(matches!(
+        import(&t, FOLDER, "fixture", None),
+        Err(ImportError::Format { .. })
+    ));
+}
