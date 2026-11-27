@@ -211,7 +211,7 @@ Dropped
   layout tiles: 0
   sounds, strings, popups, other bitmaps and the in-game overlay (XIG) are not read.
 
-Contrast changes (minimal Oklab-lightness walk) (9 made)
+Contrast changes (minimal Oklab-lightness walk) (10 made)
   accent.text: #0264b4 -> #2d80d2 (1.4.3 accent.text on bg.dark: 3.08:1 -> 4.53:1, required 4.50:1)
   text.status: #6a6a6a -> #7d7d7d (1.4.3 text.status on bg.dark: 3.43:1 -> 4.51:1, required 4.50:1)
   link: #0264b4 -> #2d80d2 (1.4.3 link on bg.dark: 3.08:1 -> 4.53:1, required 4.50:1)
@@ -221,6 +221,7 @@ Contrast changes (minimal Oklab-lightness walk) (9 made)
   bg.primary: #0d0d0d -> #0d0d0c (1.4.3 .channel-voice-join-btn text.on-fill on status.online tint.fill over bg.dark: 4.49:1 -> passes, required 4.50:1)
   danger.text: #ff5955 -> #ff5d58 (1.4.3 .removal-banner danger.text on status.busy 30% over bg.dark: 4.40:1 -> passes, required 4.50:1)
   menubar.text: #0264b4 -> #287cce (1.4.3 menubar.text on menubar.bg: 3.22:1 -> 4.50:1, required 4.50:1)
+  menubar.text: #287cce -> #2e82d4 (1.4.3 .form-tab hovered menubar.text on accent.fill 12% over menubar.bg: 4.18:1 -> 4.52:1, required 4.50:1)
 
 Source corrections (our copy of the pack source differs from the author's)
   xSLIMFIREpopups.xml:5 MainInfoViewPopup X: "MainRightOuterEdge.RIGHT-15" -> "ResizeRight.RIGHT-15". xSLIMFIRE's main window has no MainRightOuterEdge tile (Xfire's own loader refuses a missing anchor tile: "XML Skin matching component (%ws) not found"); its right outer edge tile is ResizeRight (xSLIMFIREmainwindow.xml:38, JustX=RIGHT ResizeY=100). Plan SK2 lead decision 54.

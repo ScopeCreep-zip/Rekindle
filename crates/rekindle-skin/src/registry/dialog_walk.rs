@@ -23,11 +23,15 @@
 //! `#000b00`), the role loses chroma: its Oklab a and b shrink toward the
 //! achromatic axis at its own hue, the direction CSS Color 4's gamut
 //! mapping takes in OKLCh, keeping the most chroma at which some lightness
-//! passes; pure black or white ends that path ([`reduced`]). The base walk
+//! passes; pure black or white ends that path ([`reduced`]). A move never
+//! breaks a pair that passed before it: a role drawn on two grounds (XGlow's
+//! `selection.text` on `accent.fill` and on the hovered primary button's
+//! darker ground) settles at the colour both accept, never alternating
+//! between one pair's smallest move and the other's. The base walk
 //! (`import::walk`) never crosses and never reduces chroma. Each walk has
 //! its own limit of [`MAX_CHANGES`].
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::convert::Infallible;
 
 use rekindle_types::dto::skin::TokenValue;
@@ -86,6 +90,11 @@ fn same(a: &Measured, b: &Measured) -> bool {
     a.rule == b.rule && a.fg == b.fg && a.ground == b.ground
 }
 
+/// A pair's identity: its rule, text and ground.
+fn key(m: &Measured) -> (&str, &str, &str) {
+    (&m.rule, &m.fg, &m.ground)
+}
+
 fn rgb_of(tokens: &BTreeMap<String, TokenValue>, base: Base, id: &str) -> Option<[u8; 3]> {
     resolve_unwalked(ENTRIES, base, tokens)
         .into_iter()
@@ -139,9 +148,10 @@ fn reduced(
         .flatten()
 }
 
-/// The smallest move that settles `m`: every side away from the other
-/// colour first, then every side through it, at the side's own chroma;
-/// only then the same with chroma reduced ([`reduced`]).
+/// The smallest move that settles `m` and keeps every pair that passes
+/// now passing: every side away from the other colour first, then every
+/// side through it, at the side's own chroma; only then the same with
+/// chroma reduced ([`reduced`]).
 fn first_move(
     tokens: &BTreeMap<String, TokenValue>,
     base: Base,
@@ -149,6 +159,9 @@ fn first_move(
     movable: &dyn Fn(&str) -> bool,
 ) -> Option<(String, [u8; 3], [u8; 3])> {
     let sides = sides(m, movable);
+    let now = pairs(tokens, base);
+    let passing: BTreeSet<(&str, &str, &str)> =
+        now.iter().filter(|p| p.passes()).map(key).collect();
     for (reduce, cross) in [(false, false), (false, true), (true, false), (true, true)] {
         for (token, other) in &sides {
             let Some(original) = rgb_of(tokens, base, token) else {
@@ -158,7 +171,11 @@ fn first_move(
             let mut trial = tokens.clone();
             let mut passes = |c: [u8; 3]| {
                 trial.insert(token.clone(), lightness::color(c));
-                pairs(&trial, base).iter().any(|p| same(p, m) && p.passes())
+                let after = pairs(&trial, base);
+                after.iter().any(|p| same(p, m) && p.passes())
+                    && after
+                        .iter()
+                        .all(|p| p.passes() || !passing.contains(&key(p)))
             };
             let walked = if reduce {
                 reduced(original, away != cross, passes)
