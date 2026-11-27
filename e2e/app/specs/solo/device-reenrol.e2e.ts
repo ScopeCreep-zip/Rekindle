@@ -22,7 +22,7 @@
 // holds; TrustChanging, so `--force` is refused), the alert "Signing
 // stopped", the review IntentKind::ReEnrolDevice raised by the Host at the
 // unlock barrier (subject "this device's key in every community"), and the
-// catch-up label "Re-enrolling this device".
+// final Host view with the device enrolled and no re-enrolment held.
 
 import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, byText, gone, resolveIntent, shown, switchTo, typeInto, waitUntil } from "../../../walk/helpers.ts";
@@ -60,6 +60,25 @@ async function unlock(): Promise<void> {
 /** What the review the window shows says, once it shows. */
 async function reviewSays(b: typeof browser): Promise<string> {
   return ((await (await shown(b, ".intent-dialog", NET_WAIT_MS)).getText()) ?? "").replace(/\s+/g, " ");
+}
+
+/** The real Host's device and unlock-barrier view for Restore Hall. */
+async function deviceView() {
+  return browser.execute(async (name: string) => {
+    const { invoke } = (window as unknown as {
+      __TAURI_INTERNALS__: {
+        invoke(command: string): Promise<{
+          value: { name: string; deviceStatus: "enrolled" | "needsReenrol"; catchUp?: { pending: { kind: string }[] } }[];
+        }>;
+      };
+    }).__TAURI_INTERNALS__;
+    const community = (await invoke("get_community_details")).value.find((item) => item.name === name);
+    if (!community) return null;
+    return {
+      status: community.deviceStatus,
+      held: community.catchUp?.pending.some((op) => op.kind === "deviceReEnrol") ?? false,
+    };
+  }, COMMUNITY);
 }
 
 const ME: User = { ...newUser("restore"), displayName: "Ari" };
@@ -157,6 +176,7 @@ describe("a restored copy re-enrols the device: the original is told and offered
     await shot("reenrol-review");
     expect(said).toContain("this device's key in every community");
     expect(said).toContain("this device's key is retired at seq");
+    expect((await deviceView())?.status).toBe("needsReenrol");
 
     // The review is the Host's, held (standing heldReviews on every subscribe
     // and resume): a reload of the buddy list shows it again. It is the
@@ -249,12 +269,15 @@ describe("a restored copy re-enrols the device: the original is told and offered
     console.log(`[reenrol] Signing stopped alerts shown: ${alerts}`);
     expect(alerts).toBe(1);
 
-    // Its held op shows the Host's label in the community's catch-up status
-    // until it lands, and is gone after.
+    // Read the normal Host view from the real app after both reviews. The
+    // device is enrolled again and the unlock barrier no longer holds its op.
     await waitUntil(
-      async () => !(await browser.$("*=Re-enrolling this device").isExisting()),
+      async () => {
+        const view = await deviceView();
+        return view?.status === "enrolled" && !view.held;
+      },
       NET_WAIT_MS * 2,
-      "the re-enrolment never landed (its catch-up label stayed)",
+      "the Host did not restore the device to enrolled and clear its held re-enrolment",
     );
   });
 });
