@@ -8,7 +8,8 @@
 import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, byText, waitUntil } from "../../../walk/helpers.ts";
 import { type Peer, peerAssignRole, peerBan, peerCreateCommunity, peerCreateRole, peerInvite, peerJoinCommunity, peerMemberCount, peerOwnPseudonym, startFleet, stopFleet } from "../../fleet.ts";
-import { communitySettings, createIdentity, joinCommunity, newUser, openCommunity, ownCommunityPseudonym, type User } from "../../journeys.ts";
+import { communitySettings, createIdentity, joinCommunity, newUser, openCommunity, type User } from "../../journeys.ts";
+import { ownCommunityPseudonym } from "../../journeys_members.ts";
 import { shot } from "../../shots.ts";
 
 const COMMUNITY = `Ban Watch ${Date.now() % 100000}`;

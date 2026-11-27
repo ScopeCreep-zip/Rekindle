@@ -9,7 +9,8 @@
 import { browser } from "@wdio/globals";
 import { NET_WAIT_MS, waitUntil } from "../../../walk/helpers.ts";
 import { type Peer, peerAssignRole, peerCreateCommunity, peerCreateRole, peerInvite, peerMemberCount, peerUnassignRole, startFleet, stopFleet } from "../../fleet.ts";
-import { createIdentity, joinCommunity, newUser, openCommunity, ownCommunityPseudonym, selectChannel, type User } from "../../journeys.ts";
+import { createIdentity, joinCommunity, newUser, openCommunity, selectChannel, type User } from "../../journeys.ts";
+import { ownCommunityPseudonym } from "../../journeys_members.ts";
 import { shot } from "../../shots.ts";
 
 const COMMUNITY = `Perm Watch ${Date.now() % 100000}`;
