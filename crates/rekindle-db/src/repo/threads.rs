@@ -142,3 +142,21 @@ pub fn insert_message(
     }
     Ok(())
 }
+
+/// How many reply rows `thread_id` of `community_id` holds for `owner_key`.
+///
+/// # Errors
+/// The query failed.
+pub fn message_rows(
+    conn: &Connection,
+    owner_key: &str,
+    community_id: &str,
+    thread_id: &str,
+) -> rusqlite::Result<u32> {
+    conn.query_row(
+        "SELECT COUNT(*) FROM thread_messages \
+         WHERE owner_key = ?1 AND community_id = ?2 AND thread_id = ?3",
+        params![owner_key, community_id, thread_id],
+        |row| row.get(0),
+    )
+}
