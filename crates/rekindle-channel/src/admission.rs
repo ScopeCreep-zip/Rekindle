@@ -20,9 +20,15 @@ pub fn authorize_post(
     if !state.members.contains_key(author) || state.is_departed(author) {
         return Err(PostRefusal::NotMember);
     }
-    if crate::ingest::timed_out_until(state, author, sent_at_secs).is_some() {
-        return Err(PostRefusal::TimedOut);
-    }
+    let permission_time = match state.timeouts.get(author) {
+        Some(timeout) if sent_at_secs < timeout.started_at => {
+            // The permission evaluator checks expiry. Evaluate outside the
+            // interval when the signed post predates the timeout's start.
+            timeout.started_at.saturating_add(timeout.duration_seconds)
+        }
+        Some(timeout) if !timeout.is_expired(sent_at_secs) => return Err(PostRefusal::TimedOut),
+        _ => sent_at_secs,
+    };
     let (channel, needed) = if thread {
         let thread = state
             .threads
@@ -35,7 +41,7 @@ pub fn authorize_post(
     if !state.channels.contains_key(&channel) {
         return Err(PostRefusal::UnknownStream);
     }
-    let effective = compute_permissions(author, Some(&channel), state, sent_at_secs);
+    let effective = compute_permissions(author, Some(&channel), state, permission_time);
     has_capability(effective, needed)
         .then_some(())
         .ok_or(PostRefusal::MissingPermission)

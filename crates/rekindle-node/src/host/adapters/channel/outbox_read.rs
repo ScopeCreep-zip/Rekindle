@@ -9,10 +9,9 @@
 //! post goes through the one ingest path (D26), its body opened at
 //! `{anchor, channel, author, streamSeq}`. An entry we cannot verify or
 //! link, or whose body no key we hold opens, still advances the cursor:
-//! the chain covers ciphertext. The one exception is a joiner before its
-//! first community key: no entry's tag maps yet, so the entry is held
-//! ([`Held::Pending`], not an error) and the cursor stays; the key's
-//! install catches every outbox up again, and when that catch-up lands
+//! the chain covers ciphertext. An entry that awaits its key or signed
+//! governance cut is held ([`Held::Pending`]) and the cursor stays. Key
+//! installation and governance projection retry the hold. When a trigger lands
 //! while this read still runs, the engine reads again instead of
 //! dropping it (finding CB1: a failed pass drops a trigger that landed
 //! during it).
@@ -133,7 +132,7 @@ impl HostChannel {
                 (OUTBOX, known_head),
             )
             .await;
-        // An entry waiting for its key leaves the read short of the head.
+        // A held entry leaves the read short of the head.
         let waiting = diffed.as_ref().is_ok_and(|d| d.pending.is_some());
         let applied = diffed.as_ref().map_or(0, |d| d.applied);
         match diffed {
@@ -156,7 +155,7 @@ impl HostChannel {
             }
         }
         if waiting {
-            tracing::debug!(community_id, author = %writer, "channel outbox entry waits for its key");
+            tracing::debug!(community_id, author = %writer, "channel outbox entry is held");
             return applied;
         }
         if known_head > 0 {
@@ -406,20 +405,23 @@ impl HostChannel {
             message,
             forwarded_from_author,
         };
-        if self
-            .require_channel_permission(
-                community_id,
-                Some(parent.as_deref().unwrap_or(&channel_id)),
-                rekindle_types::permissions::VIEW_CHANNELS,
-            )
-            .is_err()
+        let author = PseudonymKey(*author);
+        let Some(state) = self.governance_state(community_id) else {
+            return Ok(Held::Stored);
+        };
+        let viewed_channel = parent.as_deref().unwrap_or(&channel_id);
+        if state.bans.contains(&author)
+            || (read.departed && read.departure_head.is_none())
+            || !self.we_may_view(&state, community_id, viewed_channel)
         {
+            self.set_post_admission(&post, read.member_record, None, parent.is_some())
+                .await?;
             return Ok(Held::Stored);
         }
         let status = self
             .record_post_admission(
                 &post,
-                &PseudonymKey(*author),
+                &author,
                 &decoded.governance_cut,
                 read.member_record,
                 parent.is_some(),
@@ -428,9 +430,13 @@ impl HostChannel {
         if let Some(held) = status {
             return Ok(held);
         }
-        if parent.is_some() {
-            self.set_post_admission(&post, read.member_record, None, true)
-                .await?;
+        if let Some(parent) = parent {
+            if self
+                .set_post_admission(&post, read.member_record, None, true)
+                .await?
+            {
+                self.publish_admitted_reply(&post, &parent).await;
+            }
             return Ok(Held::Stored);
         }
         let ingested = self.ingest_authorized(post.clone(), read.backfill).await?;

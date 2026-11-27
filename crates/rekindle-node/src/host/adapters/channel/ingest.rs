@@ -169,7 +169,7 @@ impl HostChannel {
             tracing::debug!(community, channel = %post.channel_id, ?reason, "post dropped");
             return Ok(Ingested::Dropped(reason));
         }
-        if !self.we_may_view(&inputs, community, &post.channel_id) {
+        if !self.we_may_view(&inputs.gov, community, &post.channel_id) {
             tracing::info!(community, channel = %post.channel_id, "channel post withheld: we may not view its channel");
             return Ok(Ingested::Withheld);
         }
@@ -384,14 +384,19 @@ impl HostChannel {
         ingest::author_refusal(&self.gate_item(post), &inputs.gov, &inputs.blocked)
     }
 
-    /// Whether we hold `VIEW_CHANNELS` on `channel_id` in `inputs`' merged
+    /// Whether we hold `VIEW_CHANNELS` on `channel_id` in the merged
     /// state (plan E3.2 SEC; `compute_permissions` with the channel's
     /// overwrites). This is a reader-side gate: every channel's posts are
     /// sealed under the community key we hold, so until E3.5's per-channel
     /// keys (D11) make it cryptographic, this check is what keeps a channel
     /// an overwrite closes to us unread. An own key not known yet is judged
     /// as no member's: `@everyone` and its overwrites alone.
-    fn we_may_view(&self, inputs: &GateInputs, community_id: &str, channel_id: &str) -> bool {
+    pub(super) fn we_may_view(
+        &self,
+        state: &GovernanceState,
+        community_id: &str,
+        channel_id: &str,
+    ) -> bool {
         let me =
             PseudonymKey::from_hex_lossy(&self.my_pseudonym_impl(community_id).unwrap_or_default());
         let Some(channel) = ChannelId::from_hex(channel_id) else {
@@ -401,7 +406,7 @@ impl HostChannel {
         let perms = rekindle_governance::permissions::compute_permissions(
             &me,
             Some(&channel),
-            &inputs.gov,
+            state,
             now_secs,
         );
         perms & VIEW_CHANNELS != 0

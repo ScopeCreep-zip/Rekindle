@@ -8,6 +8,7 @@ use rekindle_sync::stream::Held;
 use rekindle_types::dto::channel_message::{PostAdmission, PostRefusal};
 use rekindle_types::governance::OpRef;
 use rekindle_types::id::{ChannelId, PseudonymKey};
+use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent};
 
 use super::{ingest::ReceivedPost, HostChannel};
 
@@ -62,9 +63,6 @@ impl HostChannel {
                 post.message.timestamp,
             )
         };
-        let Some(status) = judge().await? else {
-            return Ok(None);
-        };
         if self
             .blocked_members(&post.community_id)
             .await?
@@ -73,6 +71,9 @@ impl HostChannel {
             self.set_post_admission(post, record, None, thread).await?;
             return Ok(Some(Held::Stored));
         }
+        let Some(status) = judge().await? else {
+            return Ok(None);
+        };
         let changed = self
             .set_post_admission(post, record, Some(status), thread)
             .await?;
@@ -124,7 +125,6 @@ impl HostChannel {
             .await
             .map_err(|e| ChannelError::Adapter(e.to_string()))?;
         if changed {
-            use rekindle_types::subscription_events::{ChannelMessageEvent, SubscriptionEvent};
             self.ctx().publish_event(SubscriptionEvent::ChannelMessage(
                 ChannelMessageEvent::PostAdmissionChanged {
                     community: post.community_id.clone(),

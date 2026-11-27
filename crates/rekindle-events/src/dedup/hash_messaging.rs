@@ -19,18 +19,8 @@ pub(super) fn hash_channel_message(h: &mut blake3::Hasher, msg: &ChannelMessageE
             h.update(b"|");
             h.update(message_id.as_bytes());
         }
-        ChannelMessageEvent::PostAdmissionChanged {
-            community,
-            stream_id,
-            thread,
-            pending,
-        } => {
-            h.update(b"post_admission|");
-            h.update(community.as_bytes());
-            h.update(b"|");
-            h.update(stream_id.as_bytes());
-            h.update(&[u8::from(*thread), u8::from(*pending)]);
-        }
+        // EventDedup::check emits these without hashing.
+        ChannelMessageEvent::PostAdmissionChanged { .. } => {}
         ChannelMessageEvent::Edited {
             community,
             channel,

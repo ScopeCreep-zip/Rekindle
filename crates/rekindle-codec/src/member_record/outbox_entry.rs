@@ -97,7 +97,8 @@ impl OutboxEntry {
         put_lp(&mut out, sealed)?;
         if !self.governance_cut.is_empty() {
             let count = self.governance_cut.len();
-            if count > MAX_FRONTIER_REFS
+            if !matches!(kind, OutboxEntryKind::Message | OutboxEntryKind::Forward)
+                || count > MAX_FRONTIER_REFS
                 || self
                     .governance_cut
                     .windows(2)

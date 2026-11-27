@@ -18,18 +18,78 @@
 //! E3.2 S8-E).
 
 use rekindle_channel::ThreadMessageView;
+use rekindle_channel::{error::ChannelError, ChannelMessagingDeps as _};
 use rekindle_codec::community::envelope::ControlPayload;
 use rekindle_db::repo::threads::{self, ThreadMessageRow};
 use rekindle_lifecycle::SessionScope;
+use rekindle_types::id::ChannelId;
 use rekindle_types::subscription_events::{SocialEvent, SubscriptionEvent};
 use rekindle_types::thread::thread_reply_key;
 
-use super::HostChannel;
+use super::{received::ReceivedPost, HostChannel};
 
 /// The most replies one read of the thread record looks through.
 const REPLY_SCAN: u32 = 200;
 
 impl HostChannel {
+    /// Deliver a reply whose original mesh notice could not open its body
+    /// while the cut was held.
+    pub(super) async fn publish_admitted_reply(&self, post: &ReceivedPost, parent: &str) {
+        if let Err(error) = self.deliver_admitted_reply(post, parent).await {
+            tracing::warn!(%error, "admitted thread reply projection failed");
+        }
+    }
+
+    async fn deliver_admitted_reply(
+        &self,
+        post: &ReceivedPost,
+        parent: &str,
+    ) -> Result<(), ChannelError> {
+        let (Some(parent), Some(message_id)) =
+            (ChannelId::from_hex(parent), &post.message.message_id)
+        else {
+            return Err(ChannelError::InvalidId(post.channel_id.clone()));
+        };
+        let author =
+            rekindle_types::id::PseudonymKey::from_hex_lossy(&post.message.sender_pseudonym);
+        let keys = self.keys();
+        let at = post.body_at();
+        let position = rekindle_channel::send::BodyPosition {
+            anchor: at.anchor,
+            channel_id: &post.channel_id,
+            author: &author.0,
+            stream_seq: at.stream_seq,
+        };
+        let Some(body) = rekindle_channel::outbox_seal::open_entry_body(
+            &*keys,
+            &post.community_id,
+            keys.scope_for_text(&post.community_id, parent),
+            post.message.mek_generation,
+            position,
+            &post.message.ciphertext,
+        )
+        .and_then(|body| String::from_utf8(body).ok()) else {
+            return Ok(());
+        };
+        let event = SocialEvent::ThreadMessagePosted {
+            community: post.community_id.clone(),
+            thread_id: post.channel_id.clone(),
+            message_id: thread_reply_key(&post.message.sender_pseudonym, message_id),
+            sender_pseudonym: post.message.sender_pseudonym.clone(),
+            body: Some(body),
+            timestamp: post.message.timestamp / 1000,
+            reply_to_id: None,
+        };
+        let (owner, db) = self.owner_and_db()?;
+        let inserted = store_reply(&db, owner, message_id.clone(), &event)
+            .await
+            .ok_or_else(|| ChannelError::Adapter("thread reply was not stored".into()))?;
+        if inserted {
+            self.ctx().publish_event(SubscriptionEvent::Social(event));
+        }
+        Ok(())
+    }
+
     /// Store one thread control message of `community_id` from its
     /// authenticated `sender`; the event the shell shows, or `None` when it
     /// is no thread message, its row could not be stored, or no verified
@@ -82,8 +142,9 @@ impl HostChannel {
             timestamp: reply.timestamp_ms / 1000,
             reply_to_id: None,
         };
-        store_reply(&db, owner, message_id.clone(), &event).await?;
-        Some(event)
+        store_reply(&db, owner, message_id.clone(), &event)
+            .await?
+            .then_some(event)
     }
 
     /// Publish our durably queued reply to our own frontends. Its local
@@ -175,7 +236,7 @@ async fn store_reply(
     owner: String,
     message_id: String,
     event: &SocialEvent,
-) -> Option<()> {
+) -> Option<bool> {
     let SocialEvent::ThreadMessagePosted {
         community,
         thread_id,
