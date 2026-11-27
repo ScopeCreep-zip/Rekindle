@@ -96,6 +96,11 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
         "CommunitySetDisplayName",
         Some(IntentKind::SetCommunityDisplayName),
     ),
+    ("CommunityGetPresencePolicy", None),
+    (
+        "CommunitySetPresencePolicyField",
+        Some(IntentKind::SetPresencePolicy),
+    ),
     (
         "CommunitySetPresencePolicy",
         Some(IntentKind::SetPresencePolicy),

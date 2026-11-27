@@ -457,3 +457,77 @@ fn parse_friend_flags_by_name() {
         assert_eq!(friend, "alice", "{args:?}");
     }
 }
+
+#[test]
+fn location_settings_map_to_the_host_read_and_field_write() {
+    use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, SettingsRequest};
+    use rekindle_types::presence::{PresencePolicyField, ShareScope};
+
+    for (state, scope) in [("on", ShareScope::Members), ("off", ShareScope::None)] {
+        let cli = Cli::try_parse_from(["rekindle", "settings", "share-location", "Group", state])
+            .unwrap();
+        let Some(Command::Settings(command)) = cli.command else {
+            panic!("expected settings command");
+        };
+        assert!(matches!(
+            crate::presence::settings_request(&command),
+            IpcRequest::Community(CommunityRequest::Settings(
+                SettingsRequest::CommunitySetPresencePolicyField {
+                    community,
+                    field: PresencePolicyField::ShareLocation(actual),
+                }
+            )) if community == "Group" && actual == scope
+        ));
+    }
+
+    let cli = Cli::try_parse_from([
+        "rekindle",
+        "settings",
+        "share-location",
+        "Group",
+        "--format",
+        "json",
+    ])
+    .unwrap();
+    let Some(Command::Settings(command)) = cli.command else {
+        panic!("expected settings command");
+    };
+    assert!(matches!(
+        crate::presence::settings_request(&command),
+        IpcRequest::Community(CommunityRequest::Settings(
+            SettingsRequest::CommunityGetPresencePolicy { community }
+        )) if community == "Group"
+    ));
+}
+
+#[test]
+fn community_focus_maps_text_voice_and_clear_to_host_requests() {
+    use rekindle_ipc::protocol::{ChannelMessageRequest, CommunityRequest, IpcRequest};
+
+    for (args, expected_channel, expected_kind) in [
+        (vec!["general"], Some("general"), "text"),
+        (vec!["lobby", "--voice"], Some("lobby"), "voice"),
+        (vec![], None, "text"),
+    ] {
+        let cli = Cli::try_parse_from(
+            ["rekindle", "community", "focus", "Group"]
+                .into_iter()
+                .chain(args),
+        )
+        .unwrap();
+        let Some(Command::Community(CommunityCmd::Focus {
+            community,
+            channel,
+            voice,
+        })) = cli.command
+        else {
+            panic!("expected community focus");
+        };
+        assert!(matches!(
+            crate::community::focus_request(community, channel, voice),
+            IpcRequest::Community(CommunityRequest::Messages(
+                ChannelMessageRequest::ChannelSetActive { community, channel, kind }
+            )) if community == "Group" && channel.as_deref() == expected_channel && kind == expected_kind
+        ));
+    }
+}

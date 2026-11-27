@@ -1,12 +1,63 @@
 //! The identity's settings, each an on/off switch.
 
 use clap::{Subcommand, ValueEnum};
+use rekindle_types::presence::{LastSeenPrecision, PresencePolicyField, ShareScope};
 
 /// On or off.
 #[derive(Clone, Copy, ValueEnum)]
 pub enum Switch {
     On,
     Off,
+}
+
+impl Switch {
+    fn enabled(self) -> bool {
+        matches!(self, Self::On)
+    }
+
+    pub(crate) fn members(self) -> ShareScope {
+        if self.enabled() {
+            ShareScope::Members
+        } else {
+            ShareScope::None
+        }
+    }
+}
+
+/// A single field of community presence consent.
+#[derive(Subcommand)]
+pub enum PolicyFieldCmd {
+    /// Let the community see that we are online.
+    ShareOnline { state: Switch },
+    /// Let members see our focused channel.
+    ShareLocation { state: Switch },
+    /// Let members see our current activity.
+    ShareActivity { state: Switch },
+    /// Set last-seen precision.
+    LastSeen { precision: SeenPrecision },
+}
+
+/// Last-seen choices accepted by the CLI.
+#[derive(Clone, Copy, ValueEnum)]
+pub enum SeenPrecision {
+    Hidden,
+    Coarse,
+    Exact,
+}
+
+impl From<&PolicyFieldCmd> for PresencePolicyField {
+    fn from(field: &PolicyFieldCmd) -> Self {
+        match field {
+            PolicyFieldCmd::ShareOnline { state } => Self::ShareOnline(state.enabled()),
+            PolicyFieldCmd::ShareLocation { state } => Self::ShareLocation(state.members()),
+            PolicyFieldCmd::ShareActivity { state } => Self::ShareActivity(state.members()),
+            PolicyFieldCmd::LastSeen { precision } => Self::LastSeen(match precision {
+                SeenPrecision::Hidden => LastSeenPrecision::Hidden,
+                SeenPrecision::Coarse => LastSeenPrecision::Coarse,
+                SeenPrecision::Exact => LastSeenPrecision::Exact,
+            }),
+        }
+    }
 }
 
 /// The identity's settings.
@@ -36,6 +87,20 @@ pub enum SettingsCmd {
     ShareGame {
         /// `on` or `off`.
         state: Switch,
+    },
+    /// Share which channel you're in. Omit the state to read the community policy.
+    ShareLocation {
+        /// Community name or anchor key.
+        community: String,
+        /// `on` or `off`.
+        state: Option<Switch>,
+    },
+    /// Change a single community presence consent field.
+    PresencePolicy {
+        /// Community name or anchor key.
+        community: String,
+        #[command(subcommand)]
+        field: PolicyFieldCmd,
     },
     /// Auto-away after this many idle minutes (0 off, at most 1440);
     /// turning it off while auto-away holds us Away restores our status.

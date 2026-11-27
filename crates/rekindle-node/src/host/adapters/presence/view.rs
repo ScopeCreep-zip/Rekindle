@@ -19,7 +19,7 @@ use rekindle_codec::member_record::{BeatState, PresenceBeat, RecordScope, Sealed
 use rekindle_presence::community::Observed;
 use rekindle_types::channel_keys::KeyScope;
 use rekindle_types::id::PseudonymKey;
-use rekindle_types::presence::SessionStatus;
+use rekindle_types::presence::{SessionLocation, SessionStatus, ShareScope};
 use rekindle_types::subscription_events::{PresenceEvent, PresenceSnapshot, SubscriptionEvent};
 use tokio_util::sync::CancellationToken;
 
@@ -106,6 +106,27 @@ pub(crate) fn shown(ctx: &DaemonContext, community: &str, member: &str) -> BeatS
         .read()
         .get(community)
         .map_or(BeatState::Offline, |c| c.beat_view.shown(member))
+}
+
+/// Read the peer's status and reciprocated location from the same beat.
+pub(crate) fn shown_location(
+    ctx: &DaemonContext,
+    community: &str,
+    member: &str,
+) -> (BeatState, Option<SessionLocation>) {
+    let map = ctx.communities.map().read();
+    let Some(state) = map.get(community) else {
+        return (BeatState::Offline, None);
+    };
+    let shown = state.beat_view.shown(member);
+    let location = state
+        .beat_view
+        .extras(member)
+        .filter(|_| {
+            shown.is_present() && state.presence_policy.share_location == ShareScope::Members
+        })
+        .and_then(|extras| extras.location.clone());
+    (shown, location)
 }
 
 /// The status our own row shows (finding PR1, plan E3.4 S3): our own

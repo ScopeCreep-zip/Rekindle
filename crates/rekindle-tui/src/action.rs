@@ -298,6 +298,10 @@ pub enum CommandResult {
     CommunityInfoLoaded {
         detail: rekindle_types::display::CommunityDetail,
     },
+    CommunityPresencePolicyLoaded {
+        community: String,
+        policy: rekindle_types::presence::PresenceSharingPolicy,
+    },
     FriendListLoaded {
         friends: Vec<rekindle_types::dto::friends::Friend>,
     },

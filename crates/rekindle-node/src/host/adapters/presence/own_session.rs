@@ -30,8 +30,14 @@ pub(crate) fn own_session(ctx: &DaemonContext, community: &str) -> MemberSession
 /// Our sharing consent in `community`; default-deny in a community we do
 /// not hold.
 pub(crate) fn presence_policy(ctx: &DaemonContext, community: &str) -> PresenceSharingPolicy {
-    (ctx.communities.map().read())
+    stored_policy(ctx, community).unwrap_or_default()
+}
+
+/// The policy held for a joined community.
+pub(crate) fn stored_policy(ctx: &DaemonContext, community: &str) -> Option<PresenceSharingPolicy> {
+    ctx.communities
+        .map()
+        .read()
         .get(community)
         .map(|c| c.presence_policy.clone())
-        .unwrap_or_default()
 }

@@ -426,6 +426,15 @@ Every frontend command builds an `IpcRequest`, sends it, and renders the
 response. No frontend touches `TransportNode`, `Session` or an
 identity's vault.
 
+`rekindle community focus <community> [<channel>] [--voice]` records a
+focused channel for presence sharing. Omit the channel to clear focus.
+`rekindle settings share-location <community> on|off` changes sharing
+for that community. Omit the switch and use `--format json` to read the
+current policy. `rekindle settings presence-policy <community>` also
+accepts `share-online`, `share-location`, and `share-activity` with
+`on|off`, or `last-seen` with `hidden|coarse|exact`. TUI Community Info
+shows the location-sharing setting.
+
 Input follows clig.dev:
 
 - prompts appear only when stdin is a terminal and `--no-input` was not

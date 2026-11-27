@@ -14,7 +14,7 @@
 //!   explicit write does not move the schedule: beats go out at the same
 //!   rate whatever the user does.
 //! - **Voice** (plan E3.4 S8-pre): a voice join or leave
-//!   ([`BeatEngine::voice_changed`]) writes that community's beat at once;
+//!   ([`BeatEngine::refresh_community`]) writes that community's beat at once;
 //!   the sink fills its `voiceChannel`.
 //! - **Invisible.** A status that hides presence
 //!   ([`crate::hides_presence`]) writes one `Offline` beat when picked (the
@@ -118,7 +118,7 @@ impl BeatEngine {
         self.explicit.notify_one();
     }
 
-    /// We joined or left a voice channel in `community`: its beat is
+    /// Our session or consent changed in `community`: its beat is
     /// written at once, saying the status we hold (an explicit action, plan
     /// E3.4 "Constant rate"). Nothing is written while a hiding status
     /// holds, after our `Departed` beat, or in a community we hold no
@@ -126,7 +126,7 @@ impl BeatEngine {
     ///
     /// # Errors
     /// The beat was not written.
-    pub async fn voice_changed(&self, community: &str) -> Result<(), String> {
+    pub async fn refresh_community(&self, community: &str) -> Result<(), String> {
         let mut schedule = self.schedule.lock().await;
         self.reconcile(&mut schedule);
         if schedule.hidden || !schedule.due.contains_key(community) {

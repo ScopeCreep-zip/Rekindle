@@ -289,13 +289,13 @@ async fn the_quit_reaches_a_community_joined_since_the_last_check() {
 async fn a_voice_change_writes_a_beat_at_once() {
     let sink = Sink::new(&["c1", "c2"]);
     let engine = BeatEngine::new(sink.clone(), Arc::new(Seeded::new(7)));
-    engine.voice_changed("c1").await.unwrap();
+    engine.refresh_community("c1").await.unwrap();
     assert_eq!(
         sink.writes(),
         vec![(Duration::ZERO, "c1".to_owned(), BeatState::Online)]
     );
-    engine.voice_changed("gone").await.unwrap();
+    engine.refresh_community("gone").await.unwrap();
     *sink.status.lock() = SessionStatus::Invisible;
-    engine.voice_changed("c2").await.unwrap();
+    engine.refresh_community("c2").await.unwrap();
     assert_eq!(sink.writes().len(), 1);
 }

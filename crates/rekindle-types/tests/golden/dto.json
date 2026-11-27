@@ -683,6 +683,24 @@
     "status": "busy",
     "statusMessage": "fragging"
   },
+  "presencePolicyField.lastSeen": {
+    "lastSeen": "coarse"
+  },
+  "presencePolicyField.shareActivity": {
+    "shareActivity": "none"
+  },
+  "presencePolicyField.shareLocation": {
+    "shareLocation": "members"
+  },
+  "presencePolicyField.shareOnline": {
+    "shareOnline": false
+  },
+  "presenceSharingPolicy": {
+    "lastSeen": "hidden",
+    "shareActivity": "none",
+    "shareLocation": "none",
+    "shareOnline": true
+  },
   "serversView": {
     "categories": [
       {

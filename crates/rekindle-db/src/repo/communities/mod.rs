@@ -246,13 +246,41 @@ pub fn set(
     column: Column,
     value: impl rusqlite::ToSql,
 ) -> rusqlite::Result<()> {
+    update_column(conn, owner_key, id, column, value).map(drop)
+}
+
+fn update_column(
+    conn: &Connection,
+    owner_key: &str,
+    id: &str,
+    column: Column,
+    value: impl rusqlite::ToSql,
+) -> rusqlite::Result<usize> {
     conn.execute(
         &format!(
             "UPDATE communities SET {} = ?1 WHERE owner_key = ?2 AND id = ?3",
             column.name()
         ),
         params![value, owner_key, id],
-    )?;
+    )
+}
+
+/// Persist our presence consent on a joined community's row.
+///
+/// # Errors
+/// The policy could not serialize, the row was missing, or the write failed.
+pub fn set_presence_policy(
+    conn: &Connection,
+    owner_key: &str,
+    id: &str,
+    policy: &rekindle_types::presence::PresenceSharingPolicy,
+) -> rusqlite::Result<()> {
+    let json = serde_json::to_string(policy)
+        .map_err(|error| rusqlite::Error::ToSqlConversionFailure(Box::new(error)))?;
+    let changed = update_column(conn, owner_key, id, Column::PresencePolicy, json)?;
+    if changed == 0 {
+        return Err(rusqlite::Error::QueryReturnedNoRows);
+    }
     Ok(())
 }
 

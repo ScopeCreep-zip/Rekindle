@@ -223,6 +223,7 @@ macro_rules! community_commands {
         commands::community::set_active_channel,
         commands::community::set_presence_policy,
         commands::community::get_presence_policy,
+        commands::community::set_presence_policy_field,
         commands::community::update_community_profile,
         commands::community::set_community_display_name,
         commands::community::get_older_channel_messages,

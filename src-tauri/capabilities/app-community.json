@@ -145,6 +145,7 @@
     "allow-set-notification-sound",
     "allow-set-onboarding-config",
     "allow-set-presence-policy",
+    "allow-set-presence-policy-field",
     "allow-set-slowmode",
     "allow-set-voice-mode",
     "allow-set-welcome-screen",

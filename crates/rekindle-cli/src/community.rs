@@ -1,5 +1,7 @@
 //! Community commands: create, join, leave, list, info.
 
+mod list;
+
 use rekindle_ipc::protocol::LifecycleRequest;
 use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, SettingsRequest};
 
@@ -106,46 +108,19 @@ pub async fn dispatch(
             .await?;
             format::print_structured(&value, mode)
         }
-        CommunityCmd::List => {
+        CommunityCmd::Focus {
+            community,
+            channel,
+            voice,
+        } => {
             let value = helpers::send(
                 client,
-                IpcRequest::Community(CommunityRequest::Lifecycle(LifecycleRequest::CommunityList)),
+                focus_request(community.clone(), channel.clone(), *voice),
             )
             .await?;
-            if mode.is_structured() {
-                return format::print_structured(&value, mode);
-            }
-            let rows = value
-                .as_array()
-                .map(|arr| {
-                    arr.iter()
-                        .map(|c| {
-                            vec![
-                                c.get("name")
-                                    .and_then(|v| v.as_str())
-                                    .unwrap_or("?")
-                                    .to_string(),
-                                c.get("memberCount")
-                                    .and_then(serde_json::Value::as_u64)
-                                    .map_or("?".into(), |n| n.to_string()),
-                                c.get("channelCount")
-                                    .and_then(serde_json::Value::as_u64)
-                                    .map_or("?".into(), |n| n.to_string()),
-                                rekindle_client::fmt::abbreviate_key(
-                                    c.get("anchor").and_then(|v| v.as_str()).unwrap_or("?"),
-                                ),
-                                removal_text(c.get("removed")),
-                            ]
-                        })
-                        .collect::<Vec<_>>()
-                })
-                .unwrap_or_default();
-            table::print_table(
-                &["Name", "Members", "Channels", "Key", "Standing"],
-                &rows,
-                mode,
-            )
+            format::print_structured(&value, mode)
         }
+        CommunityCmd::List => list::dispatch(client, mode).await,
         CommunityCmd::Info { community, full } => {
             let value = helpers::send(
                 client,
@@ -313,6 +288,19 @@ pub async fn dispatch(
             crate::community_watch::watch(client, community.as_deref(), mode).await
         }
     }
+}
+
+/// The request sent by `community focus`; the Host resolves both references.
+pub(crate) fn focus_request(community: String, channel: Option<String>, voice: bool) -> IpcRequest {
+    use rekindle_ipc::protocol::ChannelMessageRequest;
+
+    IpcRequest::Community(CommunityRequest::Messages(
+        ChannelMessageRequest::ChannelSetActive {
+            community,
+            channel,
+            kind: if voice { "voice" } else { "text" }.into(),
+        },
+    ))
 }
 
 /// `community info --full`: the channel list and the roles with their

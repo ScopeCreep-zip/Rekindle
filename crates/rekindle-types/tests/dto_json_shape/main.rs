@@ -9,6 +9,7 @@ mod dm;
 mod json;
 mod lobby;
 mod local_search;
+mod presence;
 mod servers;
 mod skin;
 
@@ -85,6 +86,7 @@ fn samples() -> Map<String, Value> {
     let mut add = |id: &str, value: Value| {
         assert!(out.insert(id.to_owned(), value).is_none(), "duplicate {id}");
     };
+    presence::samples(&mut add);
     add(
         "channel.message",
         to(rekindle_types::dto::channel_message::ChannelMessageView {

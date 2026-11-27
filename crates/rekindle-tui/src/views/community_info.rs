@@ -23,6 +23,7 @@ use ratatui::widgets::{Block, Paragraph};
 use ratatui::Frame;
 
 use rekindle_types::display::CommunityDetail;
+use rekindle_types::presence::ShareScope;
 
 use super::View;
 use crate::action::{Action, CommandResult};
@@ -37,6 +38,7 @@ pub struct CommunityInfoView {
     community: String,
     /// Loaded community detail (None until CommandResult arrives).
     detail: Option<CommunityDetail>,
+    share_location: Option<ShareScope>,
     /// Whether data is loading.
     loading: bool,
     /// Selected channel index for navigation.
@@ -50,6 +52,7 @@ impl CommunityInfoView {
             focus: FocusRing::new(vec![FocusId::CommunityInfoPanel]),
             community,
             detail: None,
+            share_location: None,
             loading: true,
             selected_channel: 0,
         }
@@ -61,7 +64,7 @@ impl CommunityInfoView {
     }
 
     /// Render the metadata section.
-    fn render_metadata(frame: &mut Frame, area: Rect, detail: &CommunityDetail) {
+    fn render_metadata(&self, frame: &mut Frame, area: Rect, detail: &CommunityDetail) {
         let gov_short = helpers::abbreviate_key(&detail.anchor);
         let owner_short = (detail.creator_pseudonyms.iter())
             .map(|c| helpers::abbreviate_key(c))
@@ -114,6 +117,14 @@ impl CommunityInfoView {
                 Span::raw(our_key),
                 Span::styled("  Roles: ", Style::new().dim()),
                 Span::raw(roles_str),
+            ]),
+            Line::from(vec![
+                Span::styled("  Share location: ", Style::new().dim()),
+                Span::raw(match self.share_location {
+                    Some(ShareScope::Members) => "On",
+                    Some(ShareScope::None) => "Off",
+                    None => "Unknown",
+                }),
             ]),
         ];
 
@@ -233,13 +244,13 @@ impl View for CommunityInfoView {
         let role_height = role_count.saturating_add(2).min(area.height / 4);
 
         let [meta_area, channels_area, roles_area] = Layout::vertical([
-            Constraint::Length(8),
+            Constraint::Length(9),
             Constraint::Length(channel_height),
             Constraint::Min(role_height),
         ])
         .areas(area);
 
-        Self::render_metadata(frame, meta_area, detail);
+        self.render_metadata(frame, meta_area, detail);
         self.render_channels(frame, channels_area, detail);
         Self::render_roles(frame, roles_area, detail);
 
@@ -323,11 +334,17 @@ impl View for CommunityInfoView {
     }
 
     fn on_command_result(&mut self, result: CommandResult) -> Result<()> {
-        if let CommandResult::CommunityInfoLoaded { detail } = result {
-            if detail.anchor == self.community {
+        match result {
+            CommandResult::CommunityInfoLoaded { detail } if detail.anchor == self.community => {
                 self.detail = Some(detail);
                 self.loading = false;
             }
+            CommandResult::CommunityPresencePolicyLoaded { community, policy }
+                if community == self.community =>
+            {
+                self.share_location = Some(policy.share_location);
+            }
+            _ => {}
         }
         Ok(())
     }
@@ -336,3 +353,7 @@ impl View for CommunityInfoView {
         &mut self.focus
     }
 }
+
+#[cfg(test)]
+#[path = "community_info_tests.rs"]
+mod tests;

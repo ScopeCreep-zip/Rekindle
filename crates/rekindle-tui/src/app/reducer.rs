@@ -229,6 +229,7 @@ impl App {
                 };
                 self.nav.navigate(kind, self.theme.use_unicode());
                 self.load_community_info(&community);
+                self.load_community_presence_policy(&community);
             }
 
             // Overlays

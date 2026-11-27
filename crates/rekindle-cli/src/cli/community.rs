@@ -100,6 +100,17 @@ pub enum CommunityCmd {
         community: String,
     },
 
+    /// Set the focused channel for presence sharing, or omit it to clear focus.
+    Focus {
+        /// Community name or anchor key.
+        community: String,
+        /// Channel name or id.
+        channel: Option<String>,
+        /// Record a voice channel focus.
+        #[arg(long, requires = "channel")]
+        voice: bool,
+    },
+
     /// List joined communities.
     List,
 

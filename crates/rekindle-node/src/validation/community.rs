@@ -222,6 +222,8 @@ pub(super) fn check_settings(request: &SettingsRequest) -> Checked {
                 .map(drop)
         }
         SettingsRequest::CommunityPolicyGet { community: key }
+        | SettingsRequest::CommunityGetPresencePolicy { community: key }
+        | SettingsRequest::CommunitySetPresencePolicyField { community: key, .. }
         | SettingsRequest::CommunitySetPresencePolicy { community: key, .. } => community(key),
         SettingsRequest::CommunitySetAvatar {
             community: key,
