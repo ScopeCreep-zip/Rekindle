@@ -20,7 +20,7 @@ fn pending_slots_coalesce_and_remain_bounded() {
                 .iter()
                 .copied()
                 .filter(|slot| layout::slots(2).contains(slot)),
-        )
+        );
     };
     add(&[1, 2]);
     add(&[2, 10]);
