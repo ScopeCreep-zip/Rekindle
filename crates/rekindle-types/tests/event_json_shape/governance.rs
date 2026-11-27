@@ -18,6 +18,7 @@ pub const NAMES: &[&str] = &[
     "inviteUsed",
     "inviteRevoked",
     "inviteExpired",
+    "inviteJoinInboxChanged",
     "channelPermissionsChanged",
     "effectivePermissionsChanged",
     "governanceRebuilt",
@@ -41,6 +42,7 @@ pub fn variant_name(e: &GovernanceEvent) -> &'static str {
         GovernanceEvent::InviteUsed { .. } => "inviteUsed",
         GovernanceEvent::InviteRevoked { .. } => "inviteRevoked",
         GovernanceEvent::InviteExpired { .. } => "inviteExpired",
+        GovernanceEvent::InviteJoinInboxChanged { .. } => "inviteJoinInboxChanged",
         GovernanceEvent::ChannelPermissionsChanged { .. } => "channelPermissionsChanged",
         GovernanceEvent::EffectivePermissionsChanged { .. } => "effectivePermissionsChanged",
         GovernanceEvent::GovernanceRebuilt { .. } => "governanceRebuilt",
@@ -258,6 +260,13 @@ fn invites_and_subkeys() -> Vec<Sample> {
             GovernanceEvent::InviteExpired {
                 community: community(),
                 code_hash: invite_hash(),
+            },
+        ),
+        ev(
+            "inviteJoinInboxChanged",
+            GovernanceEvent::InviteJoinInboxChanged {
+                community: community(),
+                invite_id: "0a".repeat(16),
             },
         ),
         ev(

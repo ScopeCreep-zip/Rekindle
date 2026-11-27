@@ -741,6 +741,14 @@
       }
     }
   },
+  "governance.inviteJoinInboxChanged": {
+    "governance": {
+      "inviteJoinInboxChanged": {
+        "community": "VLD0:ggggggggggggggggggggggggggggggggggggggggggg",
+        "inviteId": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a"
+      }
+    }
+  },
   "governance.inviteRevoked": {
     "governance": {
       "inviteRevoked": {
