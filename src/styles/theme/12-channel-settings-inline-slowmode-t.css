@@ -300,14 +300,6 @@
     letter-spacing: 0.5px;
   }
 
-  /* The community profile editor fills its dialog's body (it had a top
-   * rule to part it from the card when it grew inside the popup). */
-  .profile-editor-form {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
   .profile-editor-label {
     display: flex;
     flex-direction: column;

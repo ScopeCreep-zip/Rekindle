@@ -540,8 +540,11 @@
     justify-content: space-between;
     padding: 2px 12px;
   }
+  /* The community profile editor fills its dialog's body (it had a top
+   * rule to part it from the card when it grew inside the popup). */
   .onboarding-options,
-  .stage-panel-heading {
+  .stage-panel-heading,
+  .profile-editor-form {
     display: flex;
     flex-direction: column;
     gap: 6px;
