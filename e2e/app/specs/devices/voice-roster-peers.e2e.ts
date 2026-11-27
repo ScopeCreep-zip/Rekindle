@@ -17,6 +17,7 @@ import type { Browser } from "webdriverio";
 import { NET_WAIT_MS, byText, gone, press, resolveIntent, shown, switchTo, typeInto, waitUntil } from "../../../walk/helpers.ts";
 import { BUDDY, setValue } from "../../../walk/nav.ts";
 import { joinFromStage, voiceNames } from "../../../walk/rows-voice.ts";
+import { appLogPath, countInLog, RECONCILE_RESENT } from "../../host_log.ts";
 import { createCommunity, createIdentity, createInvite, joinCommunity, newUser, openCommunity, type User } from "../../journeys.ts";
 
 const app = (name: "alice" | "bob"): Browser => multiRemoteBrowser.getInstance(name) as unknown as Browser;
@@ -87,9 +88,13 @@ describe("voice join, leave and quit reach the roster by beat, both members in r
     await openCommunity(a, COMMUNITY);
     await joinVoice(c);
 
-    // 1. Ari joins; Cara, already in, is listed within a beat.
+    // 1. Ari joins; Cara, already in, is listed within a beat. Ari's own Host
+    // trace says whether its presence reconcile had to re-send the join.
+    const ariLog = appLogPath("alice");
+    const resentBefore = countInLog(ariLog, RECONCILE_RESENT);
     await joinVoice(a);
     const joinTook = await listsWithin(a, 2, BEAT_MS, "Ari joins with Cara already in");
+    console.log(`[beats] Ari's presence reconcile re-sent her voice join ${countInLog(ariLog, RECONCILE_RESENT) - resentBefore} time(s) before Cara was listed`);
 
     // 2. Cara leaves from her own control; Ari's panel drops her.
     await leaveVoice(c);

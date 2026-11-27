@@ -1,48 +1,34 @@
-// Plan E3.4 S8-pre (contract-s8pre-2026-11-26.md, its real-app checks 1–3):
-// a member's voice claim reaches the others through its beat, not the old
-// registry poll. Ari (the app) creates a community and a voice channel;
-// Cara (fleet) joins it by invite and joins the voice channel by CLI.
-//   1. Ari then joins: Ari's voice panel lists Cara at once (Ari's join
-//      hands the roster what Cara's beat shows), not after the 60 s poll.
-//   2. Cara leaves: Ari's panel drops her within one beat delivery, not
-//      after the 180 s registry TTL.
-//   3. Cara joins again, then her daemon stops (a quit): her quit beat is
-//      offline, so it claims no channel, and Ari's panel drops her.
-// A fleet member with no community name is listed by fingerprint, so the
-// panel is read by count (Ari plus Cara). Joining voice opens the
-// microphone: Linux only (no TCC prompt may be raised on the Mac).
+// Plan E3.4 S8-pre, its daemon half (contract-s8pre-2026-11-26.md): a member
+// in voice through the CLI daemon reaches the others through its beat. Ari
+// (the app) is in a voice channel; Cara (fleet) joins it by CLI.
+//   - Within a few seconds of Cara's `voice join`, Ari's Host re-announces
+//     its voice join to her (the presence reconcile, from her beat's claim),
+//     read from Ari's own Host trace.
+//   - After Cara's `voice leave`, her beat claims no channel, and Ari's Host
+//     stops re-announcing.
+// No voice-panel claim: the panel lists the voice transport's roster, which
+// admits a peer once its voice engine answers, and the daemon has none
+// before E4.1. Both members in real apps are voice-roster-peers. Joining
+// voice opens the microphone: Linux only (no TCC prompt on the Mac).
 
 import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, byText, gone, resolveIntent, shown, typeInto, waitUntil } from "../../../walk/helpers.ts";
 import { setValue } from "../../../walk/nav.ts";
-import { joinFromStage, voiceNames } from "../../../walk/rows-voice.ts";
+import { joinFromStage } from "../../../walk/rows-voice.ts";
 import { type Peer, peerChannelId, peerJoinCommunity, peerVoiceJoin, peerVoiceLeave, startFleet, stopFleet } from "../../fleet.ts";
+import { appLogPath, countInLog, RECONCILE_RESENT } from "../../host_log.ts";
 import { createCommunity, createIdentity, createInvite, newUser, openCommunity, type User } from "../../journeys.ts";
 import { shot } from "../../shots.ts";
 
 const COMMUNITY = `Beat Hall ${Date.now() % 100000}`;
 const VOICE = "beat-call";
-/** Beats are delivered within seconds; the poll this replaces waited 60 s and the registry TTL 180 s. */
-const BEAT_MS = 45_000;
+/** A beat reaches Ari within seconds; Linux saw the first re-announce 1.5 s after the join. */
+const ANNOUNCE_MS = 15_000;
+/** Long enough for Cara's leave beat to arrive, then a quiet window in which no re-announce may follow. */
+const SETTLE_MS = 15_000;
+const QUIET_MS = 20_000;
 
-/** How many members Ari's voice panel lists. */
-async function listed(): Promise<number> {
-  const names = await voiceNames(browser);
-  return names === "" ? 0 : names.split(" | ").length;
-}
-
-/** Wait until Ari's panel lists `count` members, within `ms`; how long it took. */
-async function listsWithin(count: number, ms: number, what: string): Promise<number> {
-  const from = Date.now();
-  await waitUntil(async () => (await listed()) === count, ms, "").catch(async () => {
-    throw new Error(`${what}: after ${ms} ms Ari's voice panel lists ${await listed()} (${await voiceNames(browser)}), not ${count}`);
-  });
-  const took = Date.now() - from;
-  console.log(`[beats] ${what}: ${count} listed after ${took} ms (${await voiceNames(browser)})`);
-  return took;
-}
-
-describe("voice join and leave reach the roster by beat (S8-pre)", function () {
+describe("a CLI member's voice claim reaches the Host by beat (S8-pre, daemon half)", function () {
   this.timeout(1_800_000);
   const me: User = { ...newUser("beats"), displayName: "Ari" };
   let peers: Peer[] = [];
@@ -51,7 +37,7 @@ describe("voice join and leave reach the roster by beat (S8-pre)", function () {
     await stopFleet(peers);
   });
 
-  it("a member already in voice is listed at once, and dropped on leave and on quit", async () => {
+  it("Ari's Host re-announces to Cara after her CLI join, and stops after her leave", async () => {
     await createIdentity(browser, me);
     await createCommunity(browser, me, COMMUNITY);
     await openCommunity(browser, COMMUNITY);
@@ -64,35 +50,34 @@ describe("voice join and leave reach the roster by beat (S8-pre)", function () {
     await gone(browser, 'input[placeholder="Channel name..."]', NET_WAIT_MS);
 
     peers = await startFleet(["Cara"]);
-    const cara = peers[0];
+    const cara = peers[0]!;
     await peerJoinCommunity(cara, await createInvite(browser, me, 1));
     await openCommunity(browser, COMMUNITY);
-    // The voice commands take the channel's id: Cara resolves it from her own list.
-    const voiceId = await peerChannelId(cara, COMMUNITY, VOICE);
-    await peerVoiceJoin(cara, COMMUNITY, voiceId);
-
-    // 1. Ari joins; Cara, already in, is listed at once.
+    // Ari is in voice first, so her Host reconciles its roster against beats.
     await (await byText(browser, ".channel-item", VOICE, NET_WAIT_MS)).click();
     await joinFromStage(browser);
-    const joinTook = await listsWithin(2, BEAT_MS, "Ari joins with Cara already in");
-    await shot("joined-cara-listed");
+    const log = appLogPath();
 
-    // 2. Cara leaves; Ari's panel drops her within a beat.
-    await peerVoiceLeave(cara);
-    const leaveTook = await listsWithin(1, BEAT_MS, "Cara leaves");
-    await shot("cara-left");
-
-    // 3. Cara joins again, then her daemon stops: her quit beat claims no channel.
+    // Cara joins by CLI (the voice commands take the channel's id).
+    const voiceId = await peerChannelId(cara, COMMUNITY, VOICE);
+    const before = countInLog(log, RECONCILE_RESENT);
+    const joinedAt = Date.now();
     await peerVoiceJoin(cara, COMMUNITY, voiceId);
-    await listsWithin(2, BEAT_MS, "Cara joins again");
-    await cara.pause();
-    const quitTook = await listsWithin(1, BEAT_MS, "Cara quits");
-    await shot("cara-quit");
-
-    expect({ joinTook: joinTook < BEAT_MS, leaveTook: leaveTook < BEAT_MS, quitTook: quitTook < BEAT_MS }).toEqual({
-      joinTook: true,
-      leaveTook: true,
-      quitTook: true,
+    await waitUntil(async () => countInLog(log, RECONCILE_RESENT) > before, ANNOUNCE_MS, "").catch(() => {
+      throw new Error(`Ari's Host did not re-announce to Cara within ${ANNOUNCE_MS / 1000} s of her CLI voice join (no "${RECONCILE_RESENT}" in ${log})`);
     });
+    const announceTook = Date.now() - joinedAt;
+    console.log(`[beats] Ari's Host re-announced ${announceTook} ms after Cara's CLI voice join`);
+    await shot("cara-joined-by-cli");
+
+    // Cara leaves; once her leave beat is in, no further re-announce.
+    await peerVoiceLeave(cara);
+    await browser.pause(SETTLE_MS);
+    const settled = countInLog(log, RECONCILE_RESENT);
+    await browser.pause(QUIET_MS);
+    const after = countInLog(log, RECONCILE_RESENT);
+    console.log(`[beats] re-announces: ${settled - before} while Cara was in voice and settling, ${after - settled} in the ${QUIET_MS / 1000} s after`);
+
+    expect({ announced: announceTook < ANNOUNCE_MS, quietAfterLeave: after - settled }).toEqual({ announced: true, quietAfterLeave: 0 });
   });
 });
