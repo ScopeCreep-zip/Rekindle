@@ -3,7 +3,8 @@
 // stacked title rows once (Total Chaos declares one title row with a 1 px
 // left outdent; the merged pack painted a second, un-outdented row). In
 // Total Chaos and in Alloy, the buddy list at its served minimum (squeezed
-// below it, the shell grows it back: window-fit) and resized larger:
+// below it, then the pack applied: the shell grows it to the minimum,
+// window-fit) and resized larger:
 //   1. its four 16 px edges agree with the shaper's own silhouette at that
 //      size (cargo xtask skin-silhouette, silhouette.ts): no gap the CSS
 //      leaves, no art outside the cut;
@@ -89,13 +90,19 @@ describe("a pack's tiles join at its minimum and when resized larger (SKC4c)", f
     await createIdentity(browser, ada);
     const faults: string[] = [];
     for (const pack of PACKS) {
+      // Squeezed below any pack's minimum first: applying the pack grows the
+      // window to the minimum the Host serves for it (window-fit; macOS does
+      // not clamp WebDriver's resize, and a window squeezed after the skin is
+      // applied is not grown back until a skin is applied again).
+      await switchTo(browser, BUDDY);
+      await browser.setWindowSize(200, 300);
       await openSettings(browser, "Appearance");
       const href = await applySkin(browser, ada, pack.name);
       await switchTo(browser, BUDDY);
       await skinShown(browser, href);
-      // Below the minimum, then larger than it.
-      await browser.setWindowSize(200, 300);
       const min = await settledSize();
+      if (min[0] <= 200 || min[1] <= 300)
+        faults.push(`${pack.name}: the window never grew to its minimum (${min.join("x")})`);
       const sizes: [string, () => Promise<void>][] = [
         ["minimum", async () => undefined],
         ["larger", async () => browser.setWindowSize(min[0] + 160, min[1] + 120)],
