@@ -51,6 +51,7 @@
     border: 1px solid var(--color-xfire-border);
     border-radius: 3px;
     box-shadow: 0 4px 12px var(--color-xfire-shadow);
+    min-inline-size: 0;
   }
 
   .chat-disappearing-help {
@@ -64,6 +65,7 @@
     display: grid;
     grid-template-columns: 1fr 1fr;
     gap: 4px;
+    min-inline-size: 0;
   }
 
   .chat-disappearing-preset {
@@ -83,7 +85,7 @@
     background: color-mix(in srgb, var(--color-xfire-overlay) 5%, transparent);
   }
 
-  .chat-disappearing-preset[aria-checked="true"] {
+  .chat-disappearing-preset[aria-pressed="true"] {
     border-color: var(--color-xfire-accent);
     font-weight: 600;
   }

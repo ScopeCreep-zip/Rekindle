@@ -1,4 +1,13 @@
 {
+  "ForumPostCreated.queued": {
+    "starter": "queued",
+    "starterMessageId": "abababababababababababababababababababababababababababababababab:tmsg_4567",
+    "threadId": "abababababababababababababababab"
+  },
+  "ThreadReplyOutcome.queued": {
+    "messageId": "abababababababababababababababababababababababababababababababab:tmsg_0123",
+    "sendState": "queued"
+  },
   "audit.entry": {
     "actorPub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "atMs": 1700000000000,
@@ -134,6 +143,18 @@
     "displayName": "Bea",
     "pseudonymKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
   },
+  "community.channelView": {
+    "channelType": "forum",
+    "denied": {
+      "createPublicThreads": "You need the Create Public Threads permission.",
+      "sendInThreads": "You need the Send In Threads permission."
+    },
+    "id": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c",
+    "locked": false,
+    "lockedReason": "",
+    "name": "Ideas",
+    "notificationLevel": "default"
+  },
   "community.denied": {
     "manageChannels": "You need the Manage Channels permission.",
     "offerSuccessor": "Only a creator of this community can offer a successor community."
@@ -182,6 +203,34 @@
     ],
     "status": "online",
     "timeoutUntil": null
+  },
+  "community.profilePatch": {
+    "avatarRef": {
+      "op": "set",
+      "value": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "badges": {
+      "op": "unchanged"
+    },
+    "bannerRef": {
+      "op": "clear"
+    },
+    "bio": {
+      "op": "set",
+      "value": "At the LAN"
+    },
+    "customStatus": {
+      "op": "unchanged"
+    },
+    "displayName": {
+      "op": "unchanged"
+    },
+    "pronouns": {
+      "op": "unchanged"
+    },
+    "themeColor": {
+      "op": "clear"
+    }
   },
   "dm.disappearingTimer": {
     "maxSeconds": 2419200,

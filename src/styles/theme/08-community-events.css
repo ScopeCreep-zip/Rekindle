@@ -83,6 +83,11 @@
     display: contents;
   }
 
+  .toast-message {
+    cursor: pointer;
+    text-align: left;
+  }
+
   .toast-item {
     padding: 8px 14px;
     border-radius: 4px;
@@ -289,6 +294,7 @@
     text-overflow: ellipsis;
     white-space: nowrap;
     transition: color var(--motion-duration-fast);
+    text-align: left;
   }
 
   .identity-bar-status-msg:hover {

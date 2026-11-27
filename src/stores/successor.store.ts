@@ -13,7 +13,7 @@
  */
 
 import { createStore, produce } from "solid-js/store";
-import type { GovernanceEvent } from "../ipc/channels/community_subscription_events";
+import type { GovernanceEvent } from "../ipc/channels/community_governance_events";
 import type { SuccessorOffer } from "../ipc/commands/community";
 
 interface SuccessorState {
@@ -43,7 +43,7 @@ function putOffer(offer: SuccessorOffer): void {
     "offers",
     produce((all) => {
       all[offer.community] = { ...(all[offer.community] ?? {}), [offer.newAnchor]: offer };
-    }),
+    })
   );
 }
 
@@ -87,4 +87,3 @@ export function openSuccessorOffers(): SuccessorOffer[] {
 export function successorsOf(community: string): SuccessorOffer[] {
   return Object.values(successorState.offers[community] ?? {});
 }
-

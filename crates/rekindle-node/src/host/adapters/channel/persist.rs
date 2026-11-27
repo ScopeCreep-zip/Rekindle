@@ -97,7 +97,7 @@ impl HostChannel {
         })
     }
 
-    fn channel_posts(&self) -> Result<ChannelPosts, ChannelError> {
+    pub(super) fn channel_posts(&self) -> Result<ChannelPosts, ChannelError> {
         (self.ctx().outbox.channel_posts())
             .ok_or_else(|| ChannelError::Adapter("no unlocked outbox".into()))
     }

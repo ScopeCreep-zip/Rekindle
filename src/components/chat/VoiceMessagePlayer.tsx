@@ -1,7 +1,7 @@
-import { Component, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
-import SkinGlyph from "../common/SkinGlyph";
-import type { MessageAttachment } from "../../stores/chat.store";
+import { type Component, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js";
 import { handleLoadVoiceMessage } from "../../actions/community.actions";
+import type { MessageAttachment } from "../../stores/chat.store";
+import SkinGlyph from "../common/SkinGlyph";
 
 interface VoiceMessagePlayerProps {
   communityId: string;
@@ -52,7 +52,7 @@ const VoiceMessagePlayer: Component<VoiceMessagePlayerProps> = (props) => {
         props.communityId,
         props.channelId,
         props.attachment.attachmentId,
-        props.attachment.mimeType,
+        props.attachment.mimeType
       );
       if (!loadedNote) return null;
       setDurationMs(loadedNote.durationMs);
@@ -108,6 +108,7 @@ const VoiceMessagePlayer: Component<VoiceMessagePlayerProps> = (props) => {
   return (
     <div class="voice-message">
       <button
+        type="button"
         class="voice-message-play-btn"
         onClick={() => void togglePlay()}
         disabled={fetching()}
@@ -120,13 +121,13 @@ const VoiceMessagePlayer: Component<VoiceMessagePlayerProps> = (props) => {
           <SkinGlyph name="download" />
         </Show>
       </button>
-      <div class="voice-message-waveform" aria-label="voice message waveform">
+      <div class="voice-message-waveform" role="img" aria-label="voice message waveform">
         {Array.from({ length: totalBars() }, (_v, i) => {
           const peak = waveform()[i] ?? 0;
           const heightPx =
-            PEAK_HEIGHT_MIN_PX +
-            ((PEAK_HEIGHT_MAX_PX - PEAK_HEIGHT_MIN_PX) * peak) / 255;
-          const klass = i < playedBars() ? "voice-message-bar voice-message-bar-played" : "voice-message-bar";
+            PEAK_HEIGHT_MIN_PX + ((PEAK_HEIGHT_MAX_PX - PEAK_HEIGHT_MIN_PX) * peak) / 255;
+          const klass =
+            i < playedBars() ? "voice-message-bar voice-message-bar-played" : "voice-message-bar";
           return (
             <span
               class={klass}

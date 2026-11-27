@@ -5,7 +5,15 @@
  */
 
 import type {
-  Escalation, Fact, IntentKind, IntentReview, Notifies, IrreversibleReason, Recipient, Reversibility, Subject,
+  Escalation,
+  Fact,
+  IntentKind,
+  IntentReview,
+  IrreversibleReason,
+  Notifies,
+  Recipient,
+  Reversibility,
+  Subject,
 } from "../ipc/commands/dto";
 import { groupDigits } from "./safety_number";
 
@@ -91,7 +99,8 @@ export function factText(fact: Fact): string {
   if (fact === "noHistoryCopied") {
     return "No history is copied; this community stays readable.";
   }
-  if ("ipAddressLeaves" in fact) return `${recipientText(fact.ipAddressLeaves.to)} will see your IP address.`;
+  if ("ipAddressLeaves" in fact)
+    return `${recipientText(fact.ipAddressLeaves.to)} will see your IP address.`;
   if ("newCreatorSet" in fact) {
     return `The new community's creators: ${fact.newCreatorSet.creators.join(", ")}.`;
   }
@@ -113,13 +122,17 @@ export function factText(fact: Fact): string {
   }
   if ("safetyNumberChanged" in fact) {
     const { oldSafetyNumber, newSafetyNumber } = fact.safetyNumberChanged;
-    return `Their key changed. Safety number was ${groupDigits(oldSafetyNumber).join(" ")}; ` +
-      `it becomes ${groupDigits(newSafetyNumber).join(" ")}.`;
+    return (
+      `Their key changed. Safety number was ${groupDigits(oldSafetyNumber).join(" ")}; ` +
+      `it becomes ${groupDigits(newSafetyNumber).join(" ")}.`
+    );
   }
   if ("keyChanged" in fact) {
     const { oldFingerprint, newFingerprint } = fact.keyChanged;
-    return `Warning: their key changed. It was ${oldFingerprint}; it becomes ${newFingerprint}. ` +
-      "Confirming does not verify it.";
+    return (
+      `Warning: their key changed. It was ${oldFingerprint}; it becomes ${newFingerprint}. ` +
+      "Confirming does not verify it."
+    );
   }
   if ("membersAffected" in fact) return `${fact.membersAffected.count} members are affected.`;
   // The Host words this fact itself (Fact::device_re_enrolment, the plan's
@@ -129,7 +142,8 @@ export function factText(fact: Fact): string {
 }
 
 export function escalationText(escalation: Escalation): string {
-  if (escalation === "firstMediaInCall") return "This is the first time your camera or screen goes to this call.";
+  if (escalation === "firstMediaInCall")
+    return "This is the first time your camera or screen goes to this call.";
   if (escalation === "lastAdmin") return "You are the last admin.";
   if (escalation === "soleMember") return "You are the only member.";
   if (escalation === "startsMekBallot") return "This starts a new channel key for every member.";

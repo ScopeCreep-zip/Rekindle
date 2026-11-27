@@ -1,3 +1,4 @@
+use rekindle_types::dto::community_profile::{CommunityProfilePatch, ProfileField};
 use tauri::State;
 
 use crate::services::community_presence_runtime::get_presence_policy_inner;
@@ -92,35 +93,23 @@ pub async fn get_community_members(
 #[tauri::command]
 pub async fn update_community_profile(
     community_id: String,
-    bio: Option<String>,
-    pronouns: Option<String>,
-    theme_color: Option<u32>,
-    badges: Option<Vec<String>>,
-    avatar_ref: Option<String>,
-    banner_ref: Option<String>,
-    custom_status: Option<String>,
+    patch: CommunityProfilePatch,
     state: State<'_, SharedState>,
 ) -> Result<Done<()>, CommandError> {
     let request = IpcRequest::Community(CommunityRequest::Settings(
         SettingsRequest::CommunityUpdateProfile {
             community: community_id,
-            bio,
-            pronouns,
-            theme_color,
-            badges,
-            avatar_ref,
-            banner_ref,
-            custom_status,
+            patch,
         },
     ));
     crate::host_call::call(&state, request).await
 }
 
-/// Our name in one community, on our card (plan E3.4 S6); `""` clears it.
+/// The name on our per-community card (plan E3.4 S6).
 #[tauri::command]
 pub async fn set_community_display_name(
     community_id: String,
-    display_name: String,
+    display_name: ProfileField<String>,
     state: State<'_, SharedState>,
 ) -> Result<Done<()>, CommandError> {
     let request = IpcRequest::Community(CommunityRequest::Settings(

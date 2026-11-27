@@ -70,7 +70,8 @@ fn notice(covers: &str, inputs: &[(&str, &[u8])]) -> String {
     s.push_str(
         "\nLicence\n  \
          This is Xfire, Inc. content; Xfire is defunct. The project owner ruled on 2026-10-15\n  \
-         that Xfire's own assets may be used in Rekindle. Rekindle's MIT LICENSE does not cover\n  \
+         that Xfire's own assets may be used in Rekindle. Rekindle's MIT OR Apache-2.0 \
+         licence does not cover\n  \
          it.\n",
     );
     s

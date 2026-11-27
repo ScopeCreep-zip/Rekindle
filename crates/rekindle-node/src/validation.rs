@@ -556,6 +556,7 @@ mod community;
 mod community_events;
 mod community_fields;
 mod community_onboarding;
+mod community_profile;
 mod expressions;
 mod friends;
 mod group_dm;

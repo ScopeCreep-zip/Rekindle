@@ -7,7 +7,10 @@ import { errorMessage } from "../utils/error";
 /// number, and its checkbox is the user saying they compared it. Returns
 /// null when it ran or the user cancelled the review, else the error for
 /// the caller's toast.
-export async function handleSetVerified(peerKey: string, verified: boolean): Promise<string | null> {
+export async function handleSetVerified(
+  peerKey: string,
+  verified: boolean
+): Promise<string | null> {
   try {
     if (verified) {
       await commands.markIdentityVerified(peerKey);

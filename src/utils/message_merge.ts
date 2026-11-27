@@ -13,7 +13,7 @@ export function mergeRead(existing: Message[], read: Message[]): Message[] {
   const later = existing.filter(
     (m) =>
       !(m.serverMessageId !== undefined && ids.has(m.serverMessageId)) &&
-      (m.serverMessageId === undefined || m.timestamp > newest),
+      (m.serverMessageId === undefined || m.timestamp > newest)
   );
   return [...read, ...later];
 }

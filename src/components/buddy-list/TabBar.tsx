@@ -1,5 +1,5 @@
-import { Component, For } from "solid-js";
-import { buddyListUI, switchTab, type BuddyListTab } from "../../stores/buddylist-ui.store";
+import { type Component, For } from "solid-js";
+import { type BuddyListTab, buddyListUI, switchTab } from "../../stores/buddylist-ui.store";
 
 /** The app's own layout's tabs (a skin's tree switches its views itself):
  *  Xfire's Friends, Servers and Downloads, and Rekindle's Communities. */
@@ -15,6 +15,7 @@ const TabBar: Component = () => (
     <For each={TABS}>
       {(t, i) => (
         <button
+          type="button"
           class={`buddy-tab ${buddyListUI.activeTab === t.tab ? "buddy-tab-active" : ""}`}
           role="tab"
           aria-selected={buddyListUI.activeTab === t.tab}

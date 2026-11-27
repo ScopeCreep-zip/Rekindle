@@ -6,7 +6,7 @@
 // (theme/10-thread-list-panel.css:120-132), so they are pressed in the page.
 
 import type { Browser } from "webdriverio";
-import { NET_WAIT_MS, Skip, WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, sleep, switchTo, typeAndSend, typeInto, communityWindowLabel, waitUntil } from "./helpers.ts";
+import { CHANNEL_COMPOSER, NET_WAIT_MS, Skip, WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, sleep, switchTo, typeAndSend, typeInto, communityWindowLabel, waitUntil } from "./helpers.ts";
 import { inBuddy, setValue } from "./nav.ts";
 import { pageLog, recordPage } from "./probe.ts";
 import type { Row } from "./rows.ts";
@@ -203,7 +203,7 @@ export const COMMUNITY_ROWS: Row[] = [
     id: "M42",
     title: "Send message",
     async run({ b, s, shot }) {
-      await typeAndSend(b, ".community-main .message-input-field", MSG);
+      await typeAndSend(b, CHANNEL_COMPOSER, MSG);
       await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });
       await lastMessage(b, MSG);
       await shot();
@@ -319,7 +319,7 @@ export const COMMUNITY_ROWS: Row[] = [
     async run({ b, s, shot }) {
       // A message with a thread offers no poll (MessageList.tsx: onCreatePoll
       // only when !thread()), and M51 threaded EDITED: poll a fresh message.
-      await typeAndSend(b, ".community-main .message-input-field", POLL_HOST);
+      await typeAndSend(b, CHANNEL_COMPOSER, POLL_HOST);
       await resolveIntent(b, { passphrase: s.passphrase, appearMs: 1500 });
       await msgAction(b, POLL_HOST, "Create poll");
       await typeInto(await shown(b, 'input[placeholder="Poll question..."]'), "walk poll?");

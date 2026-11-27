@@ -31,7 +31,7 @@ pub fn render(id: &str, read: &Read, source: &str, made: &[Change]) -> String {
          (plan E7.7.3 item 3; rekindle-skin::import::winamp).\n\n\
          Provenance\n  archive BLAKE3: {source}\n\n\
          Licence\n  The skin art and palette are third-party work.\n  \
-         Rekindle's MIT LICENSE does not cover this pack.\n"
+         Rekindle's MIT OR Apache-2.0 licence does not cover this pack.\n"
     );
     let _ = writeln!(s, "Colours ({} read)", read.colours.len());
     for c in &read.colours {

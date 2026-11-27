@@ -19,18 +19,18 @@ export type RegionFit =
   | { type: "nineSlice"; data: { top: number; right: number; bottom: number; left: number } };
 
 /// A skin's licence (`SkinLicense`): an SPDX expression or its full text.
-export type SkinLicense = { spdx: string } | { text: string };
+type SkinLicense = { spdx: string } | { text: string };
 
 /// One imported region (`SkinDraftRegion`): an image the Host reads and
 /// the validator checks.
-export interface SkinDraftRegion {
+interface SkinDraftRegion {
   path: string;
   fit: RegionFit;
   textBacking: string | null;
 }
 
 /// A registry region an image may be imported for (`SkinRegionSlot`).
-export interface SkinRegionSlot {
+interface SkinRegionSlot {
   id: string;
   carriesText: boolean;
 }
@@ -54,7 +54,7 @@ export interface SkinDraft {
 }
 
 /// One themeable registry key, resolved (`SkinDraftToken`).
-export interface SkinDraftToken {
+interface SkinDraftToken {
   id: string;
   css: string;
   value: TokenValue;
@@ -62,7 +62,7 @@ export interface SkinDraftToken {
 }
 
 /// A passing colour for a failing pair (`SkinSuggestion`).
-export interface SkinSuggestion {
+interface SkinSuggestion {
   token: string;
   rgb: [number, number, number];
   ratioX100: number;

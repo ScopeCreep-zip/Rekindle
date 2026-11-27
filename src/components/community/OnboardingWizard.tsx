@@ -1,9 +1,8 @@
-import { Component, For, Show, createMemo, createSignal } from "solid-js";
-
-import Modal from "../common/Modal";
-import LoadingButton from "../common/LoadingButton";
+import { type Component, createMemo, createSignal, For, Show } from "solid-js";
 import { handleSubmitOnboarding } from "../../actions/community.actions";
-import type { OnboardingConfig, OnboardingAnswer } from "../../ipc/commands/dto";
+import type { OnboardingAnswer, OnboardingConfig } from "../../ipc/commands/dto";
+import LoadingButton from "../common/LoadingButton";
+import Modal from "../common/Modal";
 
 interface OnboardingWizardProps {
   communityId: string;
@@ -29,9 +28,7 @@ const OnboardingWizard: Component<OnboardingWizardProps> = (props) => {
   const [rulesAcknowledged, setRulesAcknowledged] = createSignal(false);
 
   const isGated = createMemo(() => props.config.mode === "gated");
-  const showRulesStep = createMemo(
-    () => isGated() && Boolean(props.config.welcomeMessage),
-  );
+  const showRulesStep = createMemo(() => isGated() && Boolean(props.config.welcomeMessage));
 
   const totalSteps = () => {
     let count = 0;
@@ -42,12 +39,10 @@ const OnboardingWizard: Component<OnboardingWizardProps> = (props) => {
     return Math.max(count, 1);
   };
 
-  const welcomeOffset = () =>
-    showRulesStep() || props.config.welcomeMessage ? 1 : 0;
+  const welcomeOffset = () => (showRulesStep() || props.config.welcomeMessage ? 1 : 0);
   const questionsEnd = () => welcomeOffset() + props.config.questions.length;
 
-  const isWelcomeStep = () =>
-    !showRulesStep() && props.config.welcomeMessage && step() === 0;
+  const isWelcomeStep = () => !showRulesStep() && props.config.welcomeMessage && step() === 0;
   const isRulesStep = () => showRulesStep() && step() === 0;
   const isQuestionStep = () => {
     const s = step();
@@ -108,11 +103,7 @@ const OnboardingWizard: Component<OnboardingWizardProps> = (props) => {
         selectedOptions: answers()[q.questionId] || [],
       }));
       const ack = isGated() ? rulesAcknowledged() : undefined;
-      const success = await handleSubmitOnboarding(
-        props.communityId,
-        onboardingAnswers,
-        ack,
-      );
+      const success = await handleSubmitOnboarding(props.communityId, onboardingAnswers, ack);
       if (success) {
         props.onComplete();
       }
@@ -138,8 +129,8 @@ const OnboardingWizard: Component<OnboardingWizardProps> = (props) => {
       <div class="onboarding-wizard">
         <Show when={isGated()}>
           <div class="onboarding-wizard-gated-banner" role="status">
-            This community requires onboarding before you can participate.
-            Complete the steps below to continue.
+            This community requires onboarding before you can participate. Complete the steps below
+            to continue.
           </div>
         </Show>
         <div class="onboarding-wizard-header">
@@ -184,6 +175,7 @@ const OnboardingWizard: Component<OnboardingWizardProps> = (props) => {
                         (answers()[q().questionId] || []).includes(opt.optionId);
                       return (
                         <button
+                          type="button"
                           class="onboarding-option"
                           classList={{ selected: selected() }}
                           onClick={() =>
@@ -222,7 +214,7 @@ const OnboardingWizard: Component<OnboardingWizardProps> = (props) => {
 
         <div class="onboarding-wizard-footer">
           <Show when={step() > 0}>
-            <button class="form-btn-secondary" onClick={() => setStep(step() - 1)}>
+            <button type="button" class="form-btn-secondary" onClick={() => setStep(step() - 1)}>
               Back
             </button>
           </Show>

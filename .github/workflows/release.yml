@@ -52,7 +52,8 @@ jobs:
 
       - name: Install Windows dependencies
         if: matrix.platform == 'windows-latest'
-        run: choco install capnproto
+        shell: pwsh
+        run: ./scripts/ci/install-capnp-windows.ps1
 
       - name: Setup Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4

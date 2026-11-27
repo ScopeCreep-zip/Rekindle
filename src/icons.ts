@@ -1,79 +1,32 @@
 // Nerd Font icon constants: codepoints in the shipped src/assets/fonts/SymbolsNerdFontMono-Regular.woff2
-// (its name table: "Version 001.000;Nerd Fonts 3.3.0"). scripts/skin_glyphs.py draws the ones a skinned
-// window shows as SVG (plan SK17-7a) and records each one's icon set and licence in src/assets/icons/NOTICE.md.
+// (its name table: "Version 001.000;Nerd Fonts 3.3.0"), the ones the app shows as font glyphs.
+// scripts/skin_glyphs.py draws a skinned window's icons as SVG (plan SK17-7a) from these and from its own
+// codepoints for icons only a skinned window shows, and records each one's icon set and licence in
+// src/assets/icons/NOTICE.md.
 
 // Action bar
-export const ICON_NEW_CHAT = "\u{F140F}";       // nf-md-chat_plus
-export const ICON_ADD_FRIEND = "\u{F0014}";      // nf-md-account_plus
-export const ICON_COMMUNITIES = "\u{F0849}";     // nf-md-account_group
-export const ICON_SETTINGS = "\u{F0493}";        // nf-md-cog
-export const ICON_LOGOUT = "\u{F0343}";          // nf-md-logout
-export const ICON_SEARCH = "\u{F0349}";          // nf-md-magnify
-export const ICON_KEYBOARD = "\u{F030C}";        // nf-md-keyboard
+export const ICON_NEW_CHAT = "\u{F140F}"; // nf-md-chat_plus
+export const ICON_ADD_FRIEND = "\u{F0014}"; // nf-md-account_plus
+export const ICON_COMMUNITIES = "\u{F0849}"; // nf-md-account_group
+export const ICON_LOGOUT = "\u{F0343}"; // nf-md-logout
+export const ICON_KEYBOARD = "\u{F030C}"; // nf-md-keyboard
 
 // Notifications
-export const ICON_BELL = "\u{F009A}";            // nf-md-bell
-export const ICON_CHECK = "\u{F012C}";           // nf-md-check
-export const ICON_CHECK_ALL = "\u{F012D}";       // nf-md-check_all
-export const ICON_EYE = "\u{F0208}";             // nf-md-eye
+export const ICON_BELL = "\u{F009A}"; // nf-md-bell
+export const ICON_CHECK = "\u{F012C}"; // nf-md-check
 
 // Voice
-export const ICON_MIC = "\u{F036C}";             // nf-md-microphone
-export const ICON_MIC_OFF = "\u{F036D}";         // nf-md-microphone_off
-export const ICON_HEADPHONES = "\u{F02CB}";      // nf-md-headphones
-export const ICON_HEADPHONES_OFF = "\u{F07CE}";  // nf-md-headphones_off
-export const ICON_HANGUP = "\u{F03F5}";          // nf-md-phone_hangup
-export const ICON_PHONE = "\u{F03F2}";           // nf-md-phone
-export const ICON_VOLUME_HIGH = "\u{F057E}";     // nf-md-volume_high
-export const ICON_VOLUME_OFF = "\u{F0581}";      // nf-md-volume_off (the shell's speaker.muted glyph, plan SK17-7a)
-export const ICON_PLAY = "\u{F040A}";            // nf-md-play
-export const ICON_PAUSE = "\u{F03E4}";           // nf-md-pause
-export const ICON_LOCK = "\u{F033E}";            // nf-md-lock
-export const ICON_VIDEO = "\u{F0567}";            // nf-md-video
-export const ICON_VIDEO_OFF = "\u{F0568}";        // nf-md-video_off
-export const ICON_SCREEN_SHARE = "\u{F1483}";     // nf-md-monitor_share
-// Wave 12 W12.7 — pop-out / picture-in-picture controls.
-export const ICON_OPEN_IN_NEW = "\u{F03CC}";       // nf-md-open_in_new
-export const ICON_PIP = "\u{F0E57}";               // nf-md-picture_in_picture_bottom_right
+export const ICON_HANGUP = "\u{F03F5}"; // nf-md-phone_hangup
+export const ICON_PHONE = "\u{F03F2}"; // nf-md-phone
+export const ICON_VOLUME_HIGH = "\u{F057E}"; // nf-md-volume_high
+export const ICON_VIDEO = "\u{F0567}"; // nf-md-video
 
 // Chat
-export const ICON_SEND = "\u{F048A}";            // nf-md-send
-export const ICON_ACCOUNT_REMOVE = "\u{F0015}";  // nf-md-account_remove
-export const ICON_DOTS = "\u{F01D8}";            // nf-md-dots_horizontal
-export const ICON_CLOSE_CIRCLE = "\u{F0159}";    // nf-md-close_circle
-export const ICON_REFRESH = "\u{F0450}";         // nf-md-refresh
+export const ICON_SEND = "\u{F048A}"; // nf-md-send
+export const ICON_ACCOUNT_REMOVE = "\u{F0015}"; // nf-md-account_remove
 
 // Community
-export const ICON_PLUS = "\u{F0415}";            // nf-md-plus — create community/group, new post (beside a label)
-export const ICON_PLUS_BOX = "\u{F0416}";        // nf-md-plus_box — create channel/role
-export const ICON_PENCIL = "\u{F03EB}";           // nf-md-pencil
-export const ICON_DELETE = "\u{F01B4}";           // nf-md-delete
-export const ICON_COPY = "\u{F018F}";             // nf-md-content_copy
-export const ICON_SAVE = "\u{F0193}";             // nf-md-content_save
-export const ICON_CLOSE = "\u{F0156}";            // nf-md-close
-export const ICON_CHANNEL_TEXT = "\u{F0423}";     // nf-md-pound
-export const ICON_MEGAPHONE = "\u{F00E6}";        // nf-md-bullhorn
-export const ICON_REPLY = "\u{F045A}";            // nf-md-reply
-export const ICON_EMOTICON = "\u{F01F2}";         // nf-md-emoticon_outline (emoji picker, add reaction)
-export const ICON_PIN = "\u{F0403}";              // nf-md-pin
-export const ICON_THREAD = "\u{F0367}";           // nf-md-message_reply
-export const ICON_CHEVRON_DOWN = "\u{F0140}";     // nf-md-chevron_down
-export const ICON_CHEVRON_RIGHT = "\u{F0142}";    // nf-md-chevron_right
-export const ICON_ARCHIVE = "\u{F003C}";          // nf-md-archive
-export const ICON_GAMEPAD = "\u{F0297}";          // nf-md-gamepad_variant
-export const ICON_SERVER = "\u{F048B}";           // nf-md-server
-export const ICON_BAN = "\u{F029B}";              // nf-md-gavel
-export const ICON_TIMEOUT = "\u{F0954}";          // nf-md-clock (queued message, member timed out)
-export const ICON_TIMER_SAND = "\u{F051F}";       // nf-md-timer_sand (disappearing messages)
-export const ICON_SHIELD = "\u{F088F}";           // nf-md-shield_account
-export const ICON_KEY = "\u{F0306}";              // nf-md-key
-export const ICON_PERMS = "\u{F099D}";            // nf-md-shield_lock
-export const ICON_ARROW_UP = "\u{F005D}";          // nf-md-arrow_up
-export const ICON_ARROW_DOWN = "\u{F0045}";        // nf-md-arrow_down
-export const ICON_FORWARD = "\u{F0496}";           // nf-md-share (forward action)
-export const ICON_PAPERCLIP = "\u{F03E2}";         // nf-md-paperclip (attach file)
-export const ICON_DOWNLOAD = "\u{F01DA}";          // nf-md-download
-export const ICON_FILE = "\u{F0214}";              // nf-md-file (filled, as file_image)
-export const ICON_FILE_IMAGE = "\u{F021F}";        // nf-md-file_image
-export const ICON_FOLDER_OPEN = "\u{F0770}";       // nf-md-folder_open
-export const ICON_FOLDER = "\u{F024B}";             // nf-md-folder
+export const ICON_PLUS = "\u{F0415}"; // nf-md-plus — create community/group, new post (beside a label)
+export const ICON_GAMEPAD = "\u{F0297}"; // nf-md-gamepad_variant
+export const ICON_SHIELD = "\u{F088F}"; // nf-md-shield_account
+export const ICON_KEY = "\u{F0306}"; // nf-md-key

@@ -4,7 +4,7 @@ version = "0.1.0"
 publish = false
 edition = "2021"
 description = "Lost Cargo file sharing — chunking, Merkle, FEK, local cache for Rekindle v2.0"
-license = "MIT"
+license.workspace = true
 
 [lints]
 workspace = true

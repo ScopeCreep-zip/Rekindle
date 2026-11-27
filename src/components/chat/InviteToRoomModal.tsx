@@ -1,9 +1,9 @@
-import { Component, For, Show, createSignal } from "solid-js";
 import { Dialog } from "@kobalte/core/dialog";
-import { returnFocusToOpener } from "../../utils/dialog_focus";
+import { type Component, createSignal, For, Show } from "solid-js";
+import { handleInviteToGroupDm } from "../../actions/group-dm.actions";
 import { friendsState } from "../../stores/friends.store";
 import { groupDmState } from "../../stores/group-dm.store";
-import { handleInviteToGroupDm } from "../../actions/group-dm.actions";
+import { returnFocusToOpener } from "../../utils/dialog_focus";
 
 // "Invite to room" (plan E7.2 G8): pick friends to add to a group we
 // created. Every friend not already in it is listed; one the Host cannot
@@ -52,12 +52,21 @@ const InviteToRoomModal: Component<{ groupId: string | null; onClose: () => void
             </div>
             <form class="modal-body" onSubmit={(e) => void invite(e)}>
               <div class="group-dm-picker-hint" id="invite-room-hint">
-                Choose friends to invite ({picked().length} chosen). They will not see earlier messages.
+                Choose friends to invite ({picked().length} chosen). They will not see earlier
+                messages.
               </div>
-              <div class="group-dm-picker" role="group" aria-label="Friends to invite" aria-describedby="invite-room-hint">
+              <fieldset
+                class="group-dm-picker"
+                aria-label="Friends to invite"
+                aria-describedby="invite-room-hint"
+              >
                 <Show
                   when={friends().length > 0}
-                  fallback={<div class="empty-placeholder-subtitle">Every friend is already in this room</div>}
+                  fallback={
+                    <div class="empty-placeholder-subtitle">
+                      Every friend is already in this room
+                    </div>
+                  }
                 >
                   <For each={friends()}>
                     {(friend) => (
@@ -66,7 +75,9 @@ const InviteToRoomModal: Component<{ groupId: string | null; onClose: () => void
                           type="checkbox"
                           checked={picked().includes(friend.publicKey)}
                           disabled={friend.groupDmBlock !== null}
-                          aria-describedby={friend.groupDmBlock ? `irb-${friend.publicKey}` : undefined}
+                          aria-describedby={
+                            friend.groupDmBlock ? `irb-${friend.publicKey}` : undefined
+                          }
                           onChange={() => toggle(friend.publicKey)}
                         />
                         <span class="buddy-name">{friend.displayName}</span>
@@ -81,15 +92,21 @@ const InviteToRoomModal: Component<{ groupId: string | null; onClose: () => void
                     )}
                   </For>
                 </Show>
-              </div>
+              </fieldset>
               <Show when={error()}>
-                <div class="form-error" role="alert">{error()}</div>
+                <div class="form-error" role="alert">
+                  {error()}
+                </div>
               </Show>
               <div class="modal-footer">
                 <button type="button" class="form-btn-secondary" onClick={close}>
                   Cancel
                 </button>
-                <button type="submit" class="form-btn-primary" disabled={busy() || picked().length === 0}>
+                <button
+                  type="submit"
+                  class="form-btn-primary"
+                  disabled={busy() || picked().length === 0}
+                >
                   {busy() ? "Inviting…" : "Invite"}
                 </button>
               </div>

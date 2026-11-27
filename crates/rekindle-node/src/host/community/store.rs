@@ -76,6 +76,8 @@ pub struct CommunityStore {
     /// SU1): the check, the store and the invite's used-up revoke of one
     /// join never interleave with another's.
     admissions: CommunityLocks,
+    /// Profile saves and game rewrites both modify our card.
+    profile_writes: CommunityLocks,
     /// The post-rebuild follow-up per community (S7l): at most one runs,
     /// and the rebuilds that finish meanwhile only mark it dirty.
     follow_ups: Arc<parking_lot::Mutex<BTreeMap<String, FollowUp>>>,
@@ -104,6 +106,7 @@ impl CommunityStore {
             successor_judgements: Arc::default(),
             frontier_writes: Arc::default(),
             admissions: Arc::default(),
+            profile_writes: Arc::default(),
             follow_ups: Arc::default(),
             card_refreshes: Arc::default(),
             held_changes: Arc::default(),

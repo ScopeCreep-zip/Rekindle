@@ -1,9 +1,9 @@
-import { Component, For, Show, createEffect, createSignal, on } from "solid-js";
 import { Dialog } from "@kobalte/core/dialog";
-import { returnFocusToOpener } from "../../utils/dialog_focus";
-import { friendsState } from "../../stores/friends.store";
+import { type Component, createEffect, createSignal, For, on, Show } from "solid-js";
 import { handleStartGroupCall } from "../../actions/calls.actions";
 import type { GroupCallInvitee } from "../../ipc/commands/dto_skin_run";
+import { friendsState } from "../../stores/friends.store";
+import { returnFocusToOpener } from "../../utils/dialog_focus";
 
 // Wave 12 W12.10 — friend multi-select dialog for starting a group
 // call. Audio/video toggle + checkbox list + Call button. Closes on
@@ -32,9 +32,10 @@ const StartGroupCallModal: Component<StartGroupCallModalProps> = (props) => {
     on(
       () => [props.isOpen, props.group] as const,
       ([open, group]) => {
-        if (open && group) setSelected(Object.fromEntries(group.members.map((m) => [m.pubkey, true])));
-      },
-    ),
+        if (open && group)
+          setSelected(Object.fromEntries(group.members.map((m) => [m.pubkey, true])));
+      }
+    )
   );
 
   function toggle(key: string): void {
@@ -64,7 +65,8 @@ const StartGroupCallModal: Component<StartGroupCallModalProps> = (props) => {
   // the friends.
   const friendList = (): { publicKey: string; displayName: string }[] => {
     const group = props.group;
-    if (group) return group.members.map((m) => ({ publicKey: m.pubkey, displayName: m.displayName }));
+    if (group)
+      return group.members.map((m) => ({ publicKey: m.pubkey, displayName: m.displayName }));
     return Object.values(friendsState.friends).filter((f) => f.friendshipState !== "pendingOut");
   };
 
@@ -84,7 +86,9 @@ const StartGroupCallModal: Component<StartGroupCallModalProps> = (props) => {
         <div class="modal-overlay-positioner">
           <Dialog.Content class="modal-container modal-container-md" {...returnFocusToOpener()}>
             <div class="modal-header">
-              <Dialog.Title class="modal-title">{props.group ? `Call ${props.group.groupName}` : "Start Group Call"}</Dialog.Title>
+              <Dialog.Title class="modal-title">
+                {props.group ? `Call ${props.group.groupName}` : "Start Group Call"}
+              </Dialog.Title>
             </div>
             <div class="modal-body">
               <div class="form-row" style="gap: 12px; align-items: center;">
@@ -135,9 +139,7 @@ const StartGroupCallModal: Component<StartGroupCallModalProps> = (props) => {
               <button
                 type="button"
                 class="form-btn-primary"
-                disabled={
-                  busy() || Object.values(selected()).filter(Boolean).length === 0
-                }
+                disabled={busy() || Object.values(selected()).filter(Boolean).length === 0}
                 onClick={() => void startCall()}
               >
                 {busy() ? "Calling…" : "Call"}

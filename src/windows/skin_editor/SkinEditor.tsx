@@ -1,14 +1,14 @@
-import { Component, For, Show, createMemo, createSignal, onCleanup, onMount } from "solid-js";
+import { type Component, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js";
 import { commands } from "../../ipc/commands";
-import SkinEditorMeta from "./SkinEditorMeta";
-import SkinRegionImport from "./SkinRegionImport";
+import { isCommandError } from "../../ipc/commands/dto";
 import type {
   SkinDraft,
   SkinDraftReport,
   SkinPairCheck,
   TokenValue,
 } from "../../ipc/commands/dto_skin_draft";
-import { isCommandError } from "../../ipc/commands/dto";
+import SkinEditorMeta from "./SkinEditorMeta";
+import SkinRegionImport from "./SkinRegionImport";
 
 /** `#rrggbb` of an sRGB triple. */
 function hex([r, g, b]: [number, number, number]): string {
@@ -107,17 +107,24 @@ const SkinEditor: Component = () => {
   onMount(() => void startFromCurrent());
   onCleanup(() => style.remove());
 
+  const editorInput = createMemo(() => {
+    const currentDraft = draft();
+    const currentReport = report();
+    return currentDraft && currentReport
+      ? { draft: currentDraft, report: currentReport }
+      : undefined;
+  });
   const matches = (text: string): boolean =>
     text.toLowerCase().includes(query().trim().toLowerCase());
   const tokens = createMemo(() =>
     (report()?.tokens ?? []).filter(
-      (t) => t.value.type === "color" && (matches(t.id) || matches(t.css)),
-    ),
+      (t) => t.value.type === "color" && (matches(t.id) || matches(t.css))
+    )
   );
   /** Failing pairs first, then the rest; each filtered by the search. */
   const pairs = createMemo(() => {
     const shown = (report()?.pairs ?? []).filter(
-      (p) => matches(p.fg) || matches(p.ground) || matches(p.rule),
+      (p) => matches(p.fg) || matches(p.ground) || matches(p.rule)
     );
     return [...shown.filter((p) => !p.pass), ...shown.filter((p) => p.pass)];
   });
@@ -146,6 +153,7 @@ const SkinEditor: Component = () => {
       <Show when={p.suggestion}>
         {(s) => (
           <button
+            type="button"
             class="form-btn-secondary skin-suggest"
             aria-label={`Use ${hex(s().rgb)} for ${s().token} (${ratio(s().ratioX100)})`}
             onClick={() => set(s().token, colour(hex(s().rgb)))}
@@ -159,19 +167,20 @@ const SkinEditor: Component = () => {
   );
 
   return (
-    <div class="skin-editor" aria-label="Skin editor" role="region">
+    <section class="skin-editor" aria-label="Skin editor">
       <div class="skin-editor-bar">
-        <button class="form-btn-secondary" onClick={() => void startFromCurrent()}>
+        <button type="button" class="form-btn-secondary" onClick={() => void startFromCurrent()}>
           Start from the current skin
         </button>
         <button
+          type="button"
           class="form-btn-secondary"
           disabled={!report()?.exportable}
           onClick={() => void exportDraft()}
         >
           Export…
         </button>
-        <button class="form-btn-secondary" onClick={() => void exportSchema()}>
+        <button type="button" class="form-btn-secondary" onClick={() => void exportSchema()}>
           Export JSON Schema…
         </button>
       </div>
@@ -181,16 +190,28 @@ const SkinEditor: Component = () => {
         <Show when={schemaSaved()}>{" JSON Schema saved."}</Show>
       </div>
       <Show when={error()}>
-        {(m) => <div class="settings-hint skin-error" role="alert">{m()}</div>}
+        {(m) => (
+          <div class="settings-hint skin-error" role="alert">
+            {m()}
+          </div>
+        )}
       </Show>
-      <Show when={draft() && report()}>
-        <SkinEditorMeta draft={draft()!} report={report()!} onChange={(d) => void check(d)} />
-        <SkinRegionImport
-          draft={draft()!}
-          report={report()!}
-          onImported={(d) => void check(d)}
-          onError={(m) => setError(m)}
-        />
+      <Show when={editorInput()}>
+        {(input) => (
+          <>
+            <SkinEditorMeta
+              draft={input().draft}
+              report={input().report}
+              onChange={(d) => void check(d)}
+            />
+            <SkinRegionImport
+              draft={input().draft}
+              report={input().report}
+              onImported={(d) => void check(d)}
+              onError={(m) => setError(m)}
+            />
+          </>
+        )}
       </Show>
       <input
         class="form-input skin-editor-search"
@@ -230,7 +251,7 @@ const SkinEditor: Component = () => {
       <ul class="skin-pairs">
         <For each={pairs()}>{pairRow}</For>
       </ul>
-    </div>
+    </section>
   );
 };
 

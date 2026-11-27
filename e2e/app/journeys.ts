@@ -3,7 +3,7 @@
 
 import { expect } from "@wdio/globals";
 import type { Browser } from "webdriverio";
-import { NET_WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, switchTo, typeAndSend, typeInto, untilPublished, communityWindowLabel, waitForHandle, waitUntil } from "../walk/helpers.ts";
+import { CHANNEL_COMPOSER, NET_WAIT_MS, byText, doubleClick, gone, present, press, resolveIntent, shown, switchTo, typeAndSend, typeInto, untilPublished, communityWindowLabel, waitForHandle, waitUntil } from "../walk/helpers.ts";
 import { BUDDY, LOGIN, chooseSetting, closeModal, closeSettings, inBuddy, menu, openAddFriend, openSettings, setValue, settingShown, submitJoin, underTree } from "../walk/nav.ts";
 import { showSkinView, skinViewShown } from "./journeys_skins.ts";
 import type { User } from "./user.ts";
@@ -448,7 +448,7 @@ export async function selectChannel(b: Browser, name: string): Promise<void> {
 
 /** In the selected channel, `user` posts `text`, and it shows. */
 export async function postMessage(b: Browser, user: User, text: string): Promise<void> {
-  await typeAndSend(b, ".community-main .message-input-field", text);
+  await typeAndSend(b, CHANNEL_COMPOSER, text);
   await resolveIntent(b, { passphrase: user.passphrase, appearMs: 1500 });
   await byText(b, ".community-main .chat-message", text.slice(0, 40), NET_WAIT_MS);
 }
