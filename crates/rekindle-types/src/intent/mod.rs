@@ -436,6 +436,17 @@ pub struct IntentReview {
     pub cancel_sends: bool,
 }
 
+/// A review the backend holds (plan E3.2 S7d-keys.10): the review as it
+/// stands now, under `hold_id`, the id it was first published with, which
+/// stays the same when a commit refreshes its facts and the review's own
+/// `intent_id` changes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HeldReview {
+    pub review: IntentReview,
+    pub hold_id: IntentId,
+}
+
 /// The proof a commit carries (step 3).
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

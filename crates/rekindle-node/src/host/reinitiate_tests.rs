@@ -16,7 +16,7 @@ use super::direct_tests::{ann, befriend};
 use super::Host;
 
 /// Ann with Bob an accepted friend in her projection (the unlock loads it).
-async fn ann_and_bob(dir: &tempfile::TempDir) -> (std::sync::Arc<Host>, String, String) {
+pub(super) async fn ann_and_bob(dir: &tempfile::TempDir) -> (std::sync::Arc<Host>, String, String) {
     let (host, owner) = ann(dir).await;
     let bob = rekindle_crypto::Identity::generate().public_key_bytes();
     befriend(&host, owner, bob).await;
@@ -100,7 +100,7 @@ async fn next_review(stream: &mut rekindle_events::journal::EventStream) -> Inte
             .expect("an event")
             .expect("the stream");
         if let StreamFrame::Event(sequenced) = frame {
-            if let SubscriptionEvent::IntentPending(review) = sequenced.event {
+            if let SubscriptionEvent::IntentPending { review, .. } = sequenced.event {
                 return review;
             }
         }

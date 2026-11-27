@@ -112,6 +112,7 @@ enum NotRun {
 
 struct Pending<A, O> {
     owner: O,
+    original_id: IntentId,
     selection: Selection,
     review: IntentReview,
     action: A,
@@ -238,6 +239,7 @@ impl<A, O: GateOwner, R: Clone + Send + Sync + 'static> IntentGate<A, O, R> {
             review.intent_id,
             Pending {
                 owner,
+                original_id: id,
                 selection,
                 review: review.clone(),
                 action,
@@ -356,6 +358,25 @@ impl<A, O: GateOwner, R: Clone + Send + Sync + 'static> IntentGate<A, O, R> {
             .await
             .filter(|(ran_for, _)| owner.may_act_for(ran_for))
             .map(|(_, result)| result)
+    }
+
+    /// Every unexpired review held for exactly `owner` (a backend hold's
+    /// owner has no connection), each with its publication id: the id it
+    /// was first held under, which a refresh of its facts keeps while the
+    /// commit id changes. Ordered by publication id (time-ordered). A
+    /// committed, cancelled or replaced hold is no longer pending, so it
+    /// is not here.
+    #[must_use]
+    pub fn held_reviews(&self, owner: &O, now_ms: u64) -> Vec<(IntentId, IntentReview)> {
+        let mut held: Vec<_> = self
+            .pending
+            .lock()
+            .values()
+            .filter(|p| p.owner == *owner && p.review.expires_at_ms > now_ms)
+            .map(|p| (p.original_id, p.review.clone()))
+            .collect();
+        held.sort_by_key(|(id, _)| *id);
+        held
     }
 
     /// The held action's selection, for recomputing its facts at commit.

@@ -107,6 +107,7 @@ async fn a_system_alert_is_shown_as_a_warning_toast() {
     let (_dir, mut app) = app_on_test_bus().await;
     let action = app.subscription_event_to_action(SubscriptionEvent::Notification(
         NotificationEvent::SystemAlert {
+            id: "a".into(),
             title: "Memory lock refused".into(),
             body: "Secrets may be swapped to disk.".into(),
             subject: None,
@@ -133,6 +134,7 @@ async fn a_standing_alert_raised_before_the_tui_connected_is_shown() {
     journal.begin();
     journal.publish_standing(SubscriptionEvent::Notification(
         NotificationEvent::SystemAlert {
+            id: "a".into(),
             title: "Keys not in locked memory".into(),
             body: "raise ulimit -l".into(),
             subject: None,

@@ -518,6 +518,7 @@ impl VoiceSessionDeps for VoiceAdapter {
         crate::event_dispatch::emit_notification(
             &self.app_handle,
             rekindle_types::subscription_events::NotificationEvent::SystemAlert {
+                id: uuid::Uuid::new_v4().to_string(),
                 title,
                 body,
                 subject: None,

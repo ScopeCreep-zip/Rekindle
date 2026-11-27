@@ -113,6 +113,7 @@ pub fn os_notification_for(
                 title,
                 body,
                 subject,
+                ..
             } => Some(match (inputs.content, subject) {
                 (NotificationContent::Nothing, Some(subject)) => {
                     OsNotification::new(title, subject.unnamed_body.clone())
@@ -209,24 +210,28 @@ mod tests {
         let name = "Rae Winters";
         let alerts = [
             NotificationEvent::contact_alert(
+                "a".into(),
                 "Friend request declined",
                 name,
                 format!("{name} declined your friend request"),
                 "A contact declined your friend request",
             ),
             NotificationEvent::contact_alert(
+                "a".into(),
                 "Session Reset Declined",
                 name,
                 format!("{name} declined your secure session reset request."),
                 "A contact declined your secure session reset request.",
             ),
             NotificationEvent::contact_alert(
+                "a".into(),
                 "Secure session re-established",
                 name,
                 format!("A new secure session with {name} is active."),
                 "A new secure session with a contact is active.",
             ),
             NotificationEvent::SystemAlert {
+                id: "a".into(),
                 title: "Network".into(),
                 body: "Veilid network attached".into(),
                 subject: None,

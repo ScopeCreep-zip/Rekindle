@@ -71,7 +71,7 @@ async fn a_rotation_whose_set_cannot_land_tells_no_friend() {
     );
     settle(&sim).await;
     assert!(
-        !bea_events.any(|e| matches!(e, SubscriptionEvent::IntentPending(_))),
+        !bea_events.any(|e| matches!(e, SubscriptionEvent::IntentPending { .. })),
         "Bea holds no rotation for review"
     );
     assert!(nodes[1].call(accept_rotation(&ann, &ann)).await.is_err());

@@ -28,6 +28,9 @@ pub struct OutboundEnvelope {
     pub cursor: Option<rekindle_types::subscription_events::Cursor>,
     pub channel: &'static str,
     pub payload: serde_json::Value,
+    /// Part of a standing snapshot (`crate::event_snapshot`), not a live
+    /// or replayed event.
+    pub standing: bool,
 }
 
 /// The channel of the stream's own frames: `{"invalidSession": null}` (the
@@ -42,6 +45,7 @@ impl OutboundEnvelope {
             cursor: None,
             channel: STREAM_CHANNEL,
             payload: serde_json::json!({ "invalidSession": null }),
+            standing: false,
         }
     }
 
@@ -52,6 +56,16 @@ impl OutboundEnvelope {
             cursor: Some(cursor),
             channel: STREAM_CHANNEL,
             payload: serde_json::json!({ "resumed": cursor }),
+            standing: false,
+        }
+    }
+
+    /// This envelope as part of a standing snapshot.
+    #[must_use]
+    pub fn into_standing(self) -> Self {
+        Self {
+            standing: true,
+            ..self
         }
     }
 }

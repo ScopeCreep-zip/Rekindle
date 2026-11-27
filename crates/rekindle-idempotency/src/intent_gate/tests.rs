@@ -4,6 +4,8 @@ use zeroize::Zeroizing;
 
 use super::*;
 
+mod held;
+
 /// A connection of an identity.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct Who {

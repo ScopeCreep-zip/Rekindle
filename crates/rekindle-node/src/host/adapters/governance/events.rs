@@ -120,6 +120,7 @@ impl HostGovernance {
                 have_manage_community,
             } => Some(SubscriptionEvent::Notification(
                 NotificationEvent::SystemAlert {
+                    id: self.ctx.alert_id(),
                     title: "Joining community…".to_string(),
                     subject: None,
                     body: if *have_manage_community {
@@ -132,6 +133,7 @@ impl HostGovernance {
             )),
             GovernanceRuntimeEvent::HeldWriteRefused { label, reason, .. } => Some(
                 SubscriptionEvent::Notification(NotificationEvent::SystemAlert {
+                    id: self.ctx.alert_id(),
                     title: "Change not made".to_string(),
                     subject: None,
                     body: match label {
@@ -142,6 +144,7 @@ impl HostGovernance {
             ),
             GovernanceRuntimeEvent::OwnKeyRetired { notice, .. } => Some(
                 SubscriptionEvent::Notification(NotificationEvent::SystemAlert {
+                    id: self.ctx.alert_id(),
                     title: "Signing stopped".to_string(),
                     subject: None,
                     body: notice.clone(),

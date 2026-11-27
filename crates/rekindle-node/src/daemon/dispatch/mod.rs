@@ -371,6 +371,14 @@ impl DaemonContext {
     pub fn publish_standing(&self, event: rekindle_types::subscription_events::SubscriptionEvent) {
         self.journal.publish_standing(event);
     }
+
+    /// A fresh `SystemAlert` id from the Host's clock and RNG (C9.2).
+    #[must_use]
+    pub fn alert_id(&self) -> String {
+        let mut random = [0u8; 10];
+        self.rng.fill(&mut random);
+        rekindle_types::subscription_events::alert_id(self.clock.now_ms(), random)
+    }
 }
 
 /// The duress passphrase's wipe, for the host's intent gate (plan E7.1).

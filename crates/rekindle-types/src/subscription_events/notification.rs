@@ -45,6 +45,10 @@ pub enum NotificationEvent {
     /// ([`NotificationEvent::contact_alert`]), so the notification policy
     /// can leave them out without reading the text.
     SystemAlert {
+        /// Minted by the backend when the alert is made ([`alert_id`]):
+        /// the same in the live event, the journal and the standing
+        /// snapshot, so a window keeps one copy of it.
+        id: String,
         title: String,
         body: String,
         subject: Option<AlertSubject>,
@@ -82,17 +86,29 @@ pub struct AlertSubject {
     pub unnamed_body: String,
 }
 
+/// A fresh [`NotificationEvent::SystemAlert`] id: a time-ordered UUID
+/// (v7) from the caller's clock (`now_ms`) and 10 bytes of its RNG, so no
+/// wall clock or OS randomness is read here.
+#[must_use]
+pub fn alert_id(now_ms: u64, random: [u8; 10]) -> String {
+    uuid::Builder::from_unix_timestamp_millis(now_ms, &random)
+        .into_uuid()
+        .to_string()
+}
+
 impl NotificationEvent {
     /// A [`Self::SystemAlert`] about one contact: `named` is the text with
     /// `display_name` in it, `unnamed` the same text naming no one.
     #[must_use]
     pub fn contact_alert(
+        id: String,
         title: impl Into<String>,
         display_name: impl Into<String>,
         named: impl Into<String>,
         unnamed: impl Into<String>,
     ) -> Self {
         Self::SystemAlert {
+            id,
             title: title.into(),
             body: named.into(),
             subject: Some(AlertSubject {
@@ -118,6 +134,7 @@ mod tests {
                 sound_ref: Some("ping".into()),
             },
             NotificationEvent::SystemAlert {
+                id: "a".into(),
                 title: "t".into(),
                 subject: None,
                 body: "b".into(),

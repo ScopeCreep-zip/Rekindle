@@ -1,6 +1,8 @@
 //! Backend-originated intents (ADR 0019): a review the Host raises itself,
 //! with no window asking, held in the intent gate and announced as
-//! `IntentPending` to every frontend. The friend adapter's session-reset,
+//! `IntentPending` to every frontend, and handed in the held set
+//! (`SubscriptionEvent::HeldReviews`) to every window that subscribes
+//! while it is held. The friend adapter's session-reset,
 //! re-initiation and identity-rotation holds and the community
 //! `ReEnrolDevice` review (plan E3.2 S7d-keys.10) share it.
 
@@ -68,6 +70,9 @@ pub(crate) async fn raise(
             now,
         )
         .map_err(|e| HoldRefused::Gate(e.to_string()))?;
-    ctx.publish_event(SubscriptionEvent::IntentPending(review));
+    // Live to the windows open now; a window that subscribes later (or
+    // resumes) is handed the held set instead (`Host::held_reviews`).
+    let hold_id = Some(review.intent_id);
+    ctx.publish_event(SubscriptionEvent::IntentPending { review, hold_id });
     Ok(())
 }

@@ -378,7 +378,7 @@ const EXPECTED: &[(&str, usize)] = &[
     ("intentClass", 5),
     ("proofRequired", 5),
     ("escalation", 11),
-    ("fact", 19),
+    ("fact", 20),
     ("subject", 8),
     ("recipient", 2),
     ("reversibility", 5),

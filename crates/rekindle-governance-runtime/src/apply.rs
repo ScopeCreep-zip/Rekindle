@@ -3,19 +3,17 @@
 //! (`op_log`), the state re-merged, and the UI snapshot events emitted.
 //! All side effects flow through the `GovernanceRuntimeDeps` trait.
 
-use rekindle_governance::op::VerifiedOp;
 use rekindle_governance::state::GovernanceState;
 use rekindle_governance::{merge, validate};
-use rekindle_secrets::derive;
-use rekindle_types::governance::{GenesisCert, GovernanceEntry};
+use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::PseudonymKey;
-use zeroize::Zeroizing;
 
 use crate::deps::{GovernanceRuntimeDeps, OpLanding, OpOutcome};
 use crate::device_signer;
 use crate::error::GovernanceRuntimeError;
 use crate::event::GovernanceRuntimeEvent;
 use crate::op_log;
+use crate::own_op;
 use crate::unlock_hold;
 use rekindle_types::display_catch_up::{PendingGovKind, PendingGovOp, PendingGovTarget};
 
@@ -397,14 +395,14 @@ async fn write_signed<D: GovernanceRuntimeDeps>(
             &deps.op_store().governance_ops(community_id).await?,
         ),
     };
-    let ours = Ours {
+    let ours = own_op::Ours {
         community_id,
         cert: &cert,
         state: &gov_state,
         set: &set,
         author: pseudo,
     };
-    let (op, encoded) = sign_ours(deps, ours, &mut entry, op_deps)?;
+    let (op, encoded) = own_op::sign_ours(deps, ours, &mut entry, op_deps)?;
     // The record this device's op chain lives on, resolved from the signed
     // op as the publish path resolves it (`device_signer::op_record_of`,
     // ADR 0022 rules 3 and 10): a `MemberJoined` under the endorsement it
@@ -448,53 +446,6 @@ async fn write_signed<D: GovernanceRuntimeDeps>(
 
     // The outbox lands it on our `M`/2 and `M`/3; `landing` says how long we wait.
     publication.landed().await.map(Written::Op)
-}
-
-/// What our op is built on: the community, its pinned cert, the locked
-/// state and the verified op set, and our pseudonym `p` (its author).
-struct Ours<'a> {
-    community_id: &'a str,
-    cert: &'a GenesisCert,
-    state: &'a GovernanceState,
-    set: &'a op_log::VerifiedSet,
-    author: PseudonymKey,
-}
-
-/// Our op for `entry`, signed by this device's op key under `p` (ADR 0022
-/// rule 1); a `MemberJoined`, this device's first op here, gets `p`'s
-/// endorsement of the key written into `entry` (rule 3). Kept off
-/// the async path: the device key and `p`'s secret never live across an
-/// await, so `write_with`'s future holds neither.
-///
-/// # Errors
-/// No identity secret, no stored device key for a later op, or
-/// [`op_log::build_op`]'s.
-fn sign_ours<D: GovernanceRuntimeDeps>(
-    deps: &D,
-    ours: Ours<'_>,
-    entry: &mut GovernanceEntry,
-    op_deps: op_log::Deps,
-) -> Result<(VerifiedOp, Vec<u8>), GovernanceRuntimeError> {
-    let identity_secret = Zeroizing::new(
-        deps.identity_secret()
-            .ok_or(GovernanceRuntimeError::IdentitySecretUnavailable)?,
-    );
-    let key = derive::derive_community_pseudonym(&identity_secret, ours.community_id);
-    let first_op = matches!(entry, GovernanceEntry::MemberJoined { .. });
-    let device = device_signer::device_op_key(deps, ours.community_id, first_op)?;
-    device_signer::carry_first_device(entry, &key, ours.community_id, &device, ours.state);
-    let signer =
-        device_signer::OpSigner::checked(ours.community_id, ours.state, ours.author, &device)?;
-    op_log::build_op(
-        ours.community_id,
-        ours.cert,
-        ours.state,
-        ours.set,
-        signer,
-        entry.clone(),
-        op_deps,
-        deps.clock().now_secs(),
-    )
 }
 
 /// Every reader drops an entry outside its value bounds (plan E3.0), so the

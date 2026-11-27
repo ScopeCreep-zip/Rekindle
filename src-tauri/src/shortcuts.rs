@@ -186,9 +186,11 @@ pub async fn apply_panic_chord(app: &tauri::AppHandle, state: &SharedState, chor
     };
     // Standing: a security alert stays for the session, so a window that
     // subscribes later still shows it (`SessionJournal::publish_standing`).
-    state.host.get().await.publish_standing(
+    let host = state.host.get().await;
+    host.publish_standing(
         rekindle_types::subscription_events::SubscriptionEvent::Notification(
             rekindle_types::subscription_events::NotificationEvent::SystemAlert {
+                id: host.alert_id(),
                 title: alert.0.into(),
                 subject: None,
                 body: alert.1,

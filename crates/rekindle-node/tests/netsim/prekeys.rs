@@ -49,7 +49,7 @@ fn mismatch(event: &FriendEvent) -> Option<&str> {
 /// Whether `node` holds a session reset request for its review.
 async fn holds_review(sim: &Netsim, events: &crate::harness::Events) -> bool {
     eventually(sim, LIMIT, || async {
-        events.any(|e| matches!(e, SubscriptionEvent::IntentPending(_)))
+        events.any(|e| matches!(e, SubscriptionEvent::IntentPending { .. }))
     })
     .await
 }

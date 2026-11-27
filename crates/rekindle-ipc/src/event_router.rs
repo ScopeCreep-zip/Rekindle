@@ -347,6 +347,7 @@ mod tests {
         assert!(router.matches(
             1,
             &SubscriptionEvent::Notification(NotificationEvent::SystemAlert {
+                id: "a".into(),
                 title: "t".into(),
                 subject: None,
                 body: "b".into(),

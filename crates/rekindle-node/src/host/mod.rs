@@ -59,6 +59,8 @@ mod group_rendezvous_tests;
 mod group_reply_tests;
 pub mod hardening;
 #[cfg(test)]
+mod held_reviews_tests;
+#[cfg(test)]
 mod history_order_tests;
 #[cfg(test)]
 mod horizon_tests;

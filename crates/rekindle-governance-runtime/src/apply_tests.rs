@@ -1,5 +1,8 @@
 use super::*;
+use rekindle_secrets::derive;
+use rekindle_types::governance::GenesisCert;
 use rekindle_types::id::ChannelId;
+use zeroize::Zeroizing;
 
 #[test]
 fn out_of_bounds_entries_are_refused_by_field() {

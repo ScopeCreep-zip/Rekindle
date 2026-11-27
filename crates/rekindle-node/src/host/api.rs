@@ -6,7 +6,10 @@ use rekindle_events::EventStream;
 use rekindle_ipc::error::IpcError;
 use rekindle_ipc::protocol::{IpcRequest, IpcResponse};
 use rekindle_ipc::{Caller, HostApi};
-use rekindle_types::subscription_events::Cursor;
+use rekindle_types::intent::HeldReview;
+use rekindle_types::subscription_events::{Cursor, SubscriptionEvent};
+
+use super::gate::IntentOwner;
 
 impl super::Host {
     /// Where the unlocked identity's own-records stage is (plan E2.5 FC3),
@@ -48,6 +51,39 @@ impl super::Host {
     #[must_use]
     pub fn standing(&self) -> Vec<rekindle_types::subscription_events::Sequenced> {
         self.ctx.journal.standing()
+    }
+
+    /// The complete set of reviews the backend holds for the unlocked
+    /// identity (plan E3.2 S7d-keys.10): unexpired, neither committed,
+    /// cancelled nor replaced, each under its publication id; empty while
+    /// locked. A window is handed it with the standing events on every
+    /// subscribe and resume, so a review raised before it subscribed (the
+    /// unlock barrier's `ReEnrolDevice`) still reaches it.
+    #[must_use]
+    pub fn held_reviews(&self) -> SubscriptionEvent {
+        let held = self.ctx.require_owner().map_or_else(
+            |_| Vec::new(),
+            |identity| {
+                let owner = IntentOwner {
+                    conn: None,
+                    identity,
+                };
+                self.ctx
+                    .intents
+                    .held_reviews(&owner, self.ctx.clock.now_ms())
+                    .into_iter()
+                    .map(|(hold_id, review)| HeldReview { review, hold_id })
+                    .collect()
+            },
+        );
+        SubscriptionEvent::HeldReviews(held)
+    }
+
+    /// A fresh `SystemAlert` id, for an alert the shell raises through
+    /// the Host ([`Self::publish_standing`]).
+    #[must_use]
+    pub fn alert_id(&self) -> String {
+        self.ctx.alert_id()
     }
 }
 
