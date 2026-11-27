@@ -216,8 +216,8 @@ fn manifest(tree: &Tree, id: &str, read: &Read, source: &str, base: SkinBase) ->
         name: id.to_owned(),
         description: format!("Imported from a {what}; see the NOTICE beside the package."),
         license: SkinLicense::Text(format!(
-            "Third-party {what}. Not covered by Rekindle's MIT licence; provenance and every \
-             change are in the NOTICE beside the package."
+            "Third-party {what}. Not covered by Rekindle's MIT OR Apache-2.0 licence; \
+             provenance and every change are in the NOTICE beside the package."
         )),
         source: Some(SkinSource {
             format: read.front.format().to_owned(),

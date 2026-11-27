@@ -4,7 +4,7 @@ version = "0.1.0"
 publish = false
 edition = "2021"
 description = "Unified network transport layer for Rekindle, over the Veilid-free record, route and message ports"
-license = "MIT"
+license.workspace = true
 
 [lints]
 workspace = true
