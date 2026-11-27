@@ -15,6 +15,7 @@ use webkit2gtk::{
 };
 
 use crate::platform::alert_state::{AlertStateManager, AlertType, PendingAlert};
+use crate::platform::executor_util::within_script_timeout;
 use crate::platform::{wrap_script_for_frame_context, FrameId, PlatformExecutor, PrintOptions};
 use crate::server::response::WebDriverErrorResponse;
 use crate::webdriver::Timeouts;
@@ -332,16 +333,18 @@ impl<R: Runtime + 'static> PlatformExecutor<R> for LinuxExecutor<R> {
             ));
         }
 
-        let timeout = std::time::Duration::from_millis(self.timeouts.script);
-        match tokio::time::timeout(timeout, rx).await {
-            Ok(Ok(Ok(value))) => Ok(value),
-            Ok(Ok(Err(error))) => Err(WebDriverErrorResponse::javascript_error(&error, None)),
-            Ok(Err(_)) => Err(WebDriverErrorResponse::unknown_error("Channel closed")),
-            Err(_) => {
-                tracing::debug!(id, window = %label, elapsed = ?queued.elapsed(), "async call timed out waiting for its answer");
-                Err(WebDriverErrorResponse::script_timeout())
+        let answer = async {
+            match rx.await {
+                Ok(Ok(value)) => Ok(value),
+                Ok(Err(error)) => Err(WebDriverErrorResponse::javascript_error(&error, None)),
+                Err(_) => Err(WebDriverErrorResponse::unknown_error("Channel closed")),
             }
+        };
+        let result = within_script_timeout(self.script_timeout_ms(), answer).await;
+        if matches!(&result, Err(e) if e.error == "script timeout") {
+            tracing::debug!(id, window = %label, elapsed = ?queued.elapsed(), "async call timed out waiting for its answer");
         }
+        result
     }
 
     // =========================================================================
