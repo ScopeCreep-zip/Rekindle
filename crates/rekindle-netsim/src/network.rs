@@ -112,6 +112,9 @@ pub(crate) struct Faults {
     pub link_failure: HashSet<usize>,
     /// Own routes dead from outside, by route id ([`crate::Fault::OutsideDead`]).
     pub outside_dead: HashSet<String>,
+    /// (importer, route id): the importer's next remote route test of the
+    /// route loses its answer ([`crate::Fault::RemoteTestLost`]).
+    pub test_lost: HashSet<(usize, String)>,
     /// The (node, class) whose allocations fail their route test
     /// ([`crate::Fault::AllocationTestFails`]).
     pub allocation_test_fails: HashSet<(usize, rekindle_records::port::RouteClass)>,

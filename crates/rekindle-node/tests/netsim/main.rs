@@ -96,6 +96,7 @@ mod invite_join_leave;
 mod invite_route_refresh;
 mod invite_unpublished;
 mod join_alone;
+mod join_dead_route_probe;
 mod join_from_hint;
 mod join_reads_outboxes;
 mod join_withdrawn;
