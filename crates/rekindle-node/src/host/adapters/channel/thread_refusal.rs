@@ -7,17 +7,16 @@
 
 use rekindle_channel::error::ChannelError;
 use rekindle_channel::ingest::timed_out_until;
-use rekindle_governance::permissions::{channel_permission_name, CapabilityDenial};
+use rekindle_governance::permissions::{
+    channel_permission_bit, channel_permission_name, CapabilityDenial,
+};
 use rekindle_governance::state::GovernanceState;
-use rekindle_governance_runtime::deps::GovernanceRuntimeDeps as _;
 use rekindle_types::dto::community_capability::ChannelCapability;
 use rekindle_types::governance::GovernanceEntry;
 use rekindle_types::id::{ChannelId, PseudonymKey};
 
 use super::HostChannel;
-use crate::host::adapters::governance::capability_words::{
-    channel_denied_of, denial_words, joined_pseudonym, NOT_LOADED,
-};
+use crate::host::adapters::governance::capability_words::denial_words;
 
 impl HostChannel {
     /// Check a thread control against the same rule used in the channel view.
@@ -30,19 +29,13 @@ impl HostChannel {
         self.refuse_removed(community)?;
         let channel = ChannelId::from_hex(channel)
             .ok_or_else(|| ChannelError::InvalidId("Invalid parent channel.".into()))?;
-        let (Some(state), Some(me)) = (
-            self.gov.governance_state(community),
-            self.my_pseudonym_impl(community)
-                .as_deref()
-                .and_then(joined_pseudonym),
-        ) else {
-            return Err(ChannelError::PermissionDenied(NOT_LOADED.into()));
-        };
-        let now = self.ctx().clock.now_secs();
-        match channel_denied_of(&me, &channel, &state, now).remove(&capability) {
-            Some(reason) => Err(ChannelError::PermissionDenied(reason)),
-            None => Ok(()),
-        }
+        self.gov
+            .require_own_permissions(
+                community,
+                Some(&channel),
+                channel_permission_bit(capability),
+            )
+            .map_err(ChannelError::PermissionDenied)
     }
 }
 
@@ -70,7 +63,10 @@ pub(super) fn refuse_timed_out_thread(
     }
     match timed_out_until(gov, writer, now_secs) {
         Some(until_secs) => Err(ChannelError::PermissionDenied(denial_words(
-            CapabilityDenial::TimedOut { until_secs },
+            CapabilityDenial::TimedOut {
+                until_secs,
+                permission: channel_permission_name(ChannelCapability::CreatePublicThreads),
+            },
             now_secs,
         ))),
         None => Ok(()),

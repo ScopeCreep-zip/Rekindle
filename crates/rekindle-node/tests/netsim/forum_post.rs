@@ -12,7 +12,7 @@ use rekindle_ipc::protocol::{
 };
 use rekindle_netsim::Fault;
 use rekindle_types::message::SendState;
-use rekindle_types::permissions::{CREATE_PUBLIC_THREADS, SEND_IN_THREADS};
+use rekindle_types::permissions::{CREATE_PUBLIC_THREADS, SEND_IN_THREADS, VIEW_CHANNELS};
 use rekindle_types::subscription_events::{ChannelMessageEvent, SocialEvent, SubscriptionEvent};
 use serde_json::Value;
 
@@ -88,9 +88,9 @@ async fn reply(
         .await
 }
 
-async fn threads(community: &Community, i: usize, forum: &str) -> Value {
+async fn threads(community: &Community, i: usize, forum: &str) -> Result<Value, Refused> {
     community.nodes[i]
-        .ok(IpcRequest::Community(CommunityRequest::Rich(
+        .call(IpcRequest::Community(CommunityRequest::Rich(
             RichRequest::ThreadList {
                 community: community.anchor.clone(),
                 channel_id: forum.to_owned(),
@@ -103,6 +103,7 @@ async fn threads(community: &Community, i: usize, forum: &str) -> Value {
 async fn titles(community: &Community, i: usize, forum: &str) -> Vec<String> {
     threads(community, i, forum)
         .await
+        .expect("thread list allowed")
         .as_array()
         .expect("a thread list")
         .iter()
@@ -303,6 +304,24 @@ async fn forum_post_channel_view_names_each_denied_control() {
 }
 
 #[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn forum_post_thread_list_explains_the_view_overwrite() {
+    let community = Community::of(2, 252).await;
+    let forum = forum(&community).await;
+    let bea = community.pseudonym(1).await;
+    assert!(threads(&community, 1, &forum).await.is_ok());
+
+    deny(&community, &forum, &bea, VIEW_CHANNELS).await;
+    let refused = threads(&community, 1, &forum)
+        .await
+        .expect_err("the view overwrite closes the thread list");
+    assert_eq!(refused.code, 403);
+    assert_eq!(
+        refused.message,
+        "thread list: permission denied: View Channels is turned off for you in this channel."
+    );
+}
+
+#[tokio::test(flavor = "current_thread", start_paused = true)]
 async fn thread_without_replies_uses_created_at() {
     let community = Community::of(2, 253).await;
     let forum = forum(&community).await;
@@ -322,8 +341,12 @@ async fn thread_without_replies_uses_created_at() {
         .await,
         "a peer sees the new empty thread as active"
     );
-    let local = threads(&community, 0, &forum).await;
-    let remote = threads(&community, 1, &forum).await;
+    let local = threads(&community, 0, &forum)
+        .await
+        .expect("thread list allowed");
+    let remote = threads(&community, 1, &forum)
+        .await
+        .expect("thread list allowed");
     for list in [&local, &remote] {
         let thread = &list[0];
         assert!(thread["createdAt"].as_u64().unwrap() > 1_000_000_000);
@@ -345,7 +368,9 @@ async fn forum_post_pending_rows_match_thread_activity() {
         .await
         .expect("queued starter");
     let thread = thread_of(&created);
-    let listed = threads(&community, 0, &forum).await;
+    let listed = threads(&community, 0, &forum)
+        .await
+        .expect("thread list allowed");
     let page = messages(&community, 0, &thread).await.unwrap();
     assert_eq!(listed[0]["messageCount"], 1);
     assert_eq!(page.as_array().unwrap().len(), 1);
@@ -379,7 +404,9 @@ async fn forum_post_pending_rows_match_thread_activity() {
     .await
     .unwrap();
 
-    let listed = threads(&community, 0, &forum).await;
+    let listed = threads(&community, 0, &forum)
+        .await
+        .expect("thread list allowed");
     let page = messages(&community, 0, &thread).await.unwrap();
     assert_eq!(listed[0]["messageCount"], 2);
     assert_eq!(page.as_array().unwrap().len(), 2);

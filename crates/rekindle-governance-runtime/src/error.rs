@@ -61,6 +61,10 @@ pub enum GovernanceRuntimeError {
     #[error("insufficient permission for this governance operation")]
     PermissionDenied,
 
+    /// The Host's reason for refusing a permission check.
+    #[error("{0}")]
+    PermissionRequired(String),
+
     /// The Host refused the forum starter during the atomic write.
     #[error("{0}")]
     ForumStarterRefused(String),

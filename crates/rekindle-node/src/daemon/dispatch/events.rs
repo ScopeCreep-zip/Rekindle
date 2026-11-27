@@ -73,9 +73,10 @@ fn answer<T: serde::Serialize>(
 ) -> IpcResponse {
     match result {
         Ok(value) => IpcResponse::ok(&value),
-        Err(e @ GovernanceRuntimeError::PermissionDenied) => {
-            IpcResponse::error(403, format!("{what}: {e}"))
-        }
+        Err(
+            e @ (GovernanceRuntimeError::PermissionDenied
+            | GovernanceRuntimeError::PermissionRequired(_)),
+        ) => IpcResponse::error(403, format!("{what}: {e}")),
         Err(e) => IpcResponse::error(500, format!("{what}: {e}")),
     }
 }

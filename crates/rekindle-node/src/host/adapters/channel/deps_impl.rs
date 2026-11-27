@@ -339,20 +339,15 @@ impl ChannelMessagingDeps for HostChannel {
         channel_id: Option<&str>,
         perm_bits: u64,
     ) -> Result<(), ChannelError> {
-        let Some(channel_id) = channel_id else {
-            return (self.gov.require_permission(community_id, perm_bits))
-                .map_err(|e| ChannelError::PermissionDenied(e.to_string()));
-        };
-        let channel = ChannelId::from_hex(channel_id)
-            .ok_or_else(|| ChannelError::InvalidId(format!("channel {channel_id}")))?;
-        let perms = self.compute_my_channel_permissions_impl(community_id, Some(&channel));
-        if rekindle_governance::permissions::has_capability(perms, perm_bits) {
-            Ok(())
-        } else {
-            Err(ChannelError::PermissionDenied(format!(
-                "permission {perm_bits:#x} not held on channel {channel_id}"
-            )))
-        }
+        let channel = channel_id
+            .map(|id| {
+                ChannelId::from_hex(id)
+                    .ok_or_else(|| ChannelError::InvalidId("Invalid channel.".into()))
+            })
+            .transpose()?;
+        self.gov
+            .require_own_permissions(community_id, channel.as_ref(), perm_bits)
+            .map_err(ChannelError::PermissionDenied)
     }
 
     // ---------- Events ----------
