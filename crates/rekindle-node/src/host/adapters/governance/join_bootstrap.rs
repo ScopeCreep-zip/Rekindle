@@ -13,6 +13,7 @@
 
 use rekindle_governance_runtime::op_log::HeldOp;
 use rekindle_governance_runtime::{BootstrapJoiner, GovernanceRuntimeError};
+use rekindle_route::dead_routes::Observed;
 use rekindle_types::governance::OpRef;
 use rekindle_types::id::PseudonymKey;
 use rekindle_types::join_refusal::JoinRefusal;
@@ -138,7 +139,7 @@ impl HostGovernance {
     /// The inviter's current route from its `M`/6 (forced: it changes when
     /// the inviter comes back); `None` while it holds none or it does not
     /// verify. The read's seq goes to the transport's dead-route rule (plan
-    /// RV1g B3).
+    /// RV1g B3, RH1r-c S2/S3).
     pub(crate) async fn inviter_route(
         &self,
         community: &str,
@@ -164,9 +165,17 @@ impl HostGovernance {
         )
         .await;
         match read {
+            // Taken into the member route cache as every `M`/6 read is
+            // (plan E3.4 S4); a dead route still published one re-fetch
+            // gap after its death is probed here, before this attempt
+            // decides whether it may call (plan RH1r-c S2/S3).
             Ok(Some((seq, route))) => {
-                self.route_read_at(&route, seq);
-                Some(route).filter(|r| !r.is_empty())
+                let route = Some(route).filter(|r| !r.is_empty())?;
+                if self.observe_route(community, &inviter, seq, route.clone()) == Observed::Probe {
+                    self.probe_member_route(community, &inviter, seq, route.clone())
+                        .await;
+                }
+                Some(route)
             }
             Ok(None) => None,
             Err(error) => {

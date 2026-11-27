@@ -22,13 +22,21 @@ fn only_a_strictly_higher_seq_after_the_baseline_clears_a_dead_blob() {
     let t0 = Instant::now();
     let mut dead = DeadRoutes::default();
     dead.declare(b"A", t0);
-    assert!(!dead.observe(b"A", 7), "the first read is the baseline");
-    assert!(!dead.observe(b"A", 7), "the same record");
-    assert!(!dead.observe(b"A", 6), "a lagging replica");
+    assert_eq!(
+        dead.observe(b"A", 7, t0),
+        Observed::Held,
+        "the first read is the baseline"
+    );
+    assert_eq!(dead.observe(b"A", 7, t0), Observed::Held, "the same record");
+    assert_eq!(
+        dead.observe(b"A", 6, t0),
+        Observed::Held,
+        "a lagging replica"
+    );
     assert!(dead.is_dead(b"A", t0));
-    assert!(dead.observe(b"A", 8), "republished");
+    assert_eq!(dead.observe(b"A", 8, t0), Observed::Cleared, "republished");
     assert!(!dead.is_dead(b"A", t0));
-    assert!(!dead.observe(b"B", 9), "never dead");
+    assert_eq!(dead.observe(b"B", 9, t0), Observed::NotDead, "never dead");
 }
 
 #[test]
@@ -39,4 +47,51 @@ fn an_answered_call_proves_a_dead_blob() {
     assert!(dead.proven(b"A"));
     assert!(!dead.is_dead(b"A", t0));
     assert!(!dead.proven(b"A"), "no longer dead");
+}
+
+/// Plan RH1r-c S2/S3 for a peer that never republishes (inventory item
+/// 25): its blob read again at the same seq one `REFETCH_GAP` after the
+/// death is probed once, once per gap, never before the gap, never at a
+/// lagging seq, and not past the failure cache.
+#[test]
+fn the_same_seq_one_refetch_gap_after_the_death_asks_for_one_probe() {
+    let t0 = Instant::now();
+    let second = Duration::from_secs(1);
+    let mut dead = DeadRoutes::default();
+    dead.declare(b"A", t0);
+    assert_eq!(dead.observe(b"A", 7, t0), Observed::Held, "the baseline");
+    let early = t0 + REFETCH_GAP.saturating_sub(second);
+    assert_eq!(
+        dead.observe(b"A", 7, early),
+        Observed::Held,
+        "inside the gap"
+    );
+    let gap = t0 + REFETCH_GAP;
+    assert_eq!(
+        dead.observe(b"A", 6, gap),
+        Observed::Held,
+        "a lagging replica"
+    );
+    assert_eq!(
+        dead.observe(b"A", 7, gap),
+        Observed::Probe,
+        "one gap after the death"
+    );
+    assert_eq!(
+        dead.observe(b"A", 7, gap),
+        Observed::Held,
+        "one probe per gap"
+    );
+    assert!(dead.is_dead(b"A", gap), "a probe does not clear it");
+    let next = gap + REFETCH_GAP.saturating_sub(second);
+    assert_eq!(
+        dead.observe(b"A", 7, next),
+        Observed::Held,
+        "the next gap not up"
+    );
+    assert_eq!(
+        dead.observe(b"A", 7, t0 + FAILURE_CACHE),
+        Observed::NotDead,
+        "expired"
+    );
 }

@@ -8,10 +8,23 @@
 //! same code over their route ports, and every import of a peer blob
 //! (`TransportNode::import_route`) already passes here.
 
+use rekindle_route::dead_routes::Observed;
 use tokio::time::Instant;
 
 use super::Liveness;
+use crate::broadcast::node::TransportNode;
 use crate::route_trace;
+
+/// How a one-call probe of a peer's route ended ([`TransportNode::probe_route`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Probed {
+    /// It answered (a NAK too): it delivers, and it is no longer dead.
+    Answered,
+    /// The blob did not import.
+    ImportFailed(String),
+    /// No answer came: it stays as it was.
+    Silent(String),
+}
 
 impl Liveness {
     /// Veilid declared the routes imported from `blobs` dead (B1). The
@@ -39,14 +52,46 @@ impl Liveness {
         }
     }
 
-    /// A read of the peer's record returned `blob` at DHT `seq` (B3).
-    pub fn route_read_at(&self, blob: &[u8], seq: u64) {
-        if self.dead.lock().observe(blob, seq) {
-            tracing::info!(
+    /// A read of the peer's record returned `blob` at DHT `seq` (B3): what
+    /// it means for a dead blob, a probe due included (plan RH1r-c S2/S3,
+    /// [`Observed::Probe`]).
+    pub fn route_read_at(&self, blob: &[u8], seq: u64) -> Observed {
+        let seen = self.dead.lock().observe(blob, seq, Instant::now());
+        match seen {
+            Observed::Cleared => tracing::info!(
                 blob = %route_trace::blob_tag(blob),
                 seq,
                 "a dead peer route was republished: usable again"
-            );
+            ),
+            Observed::Probe => tracing::info!(
+                blob = %route_trace::blob_tag(blob),
+                seq,
+                "a dead peer route is still published one re-fetch gap later: probing it"
+            ),
+            Observed::NotDead | Observed::Held => {}
+        }
+        seen
+    }
+}
+
+impl TransportNode {
+    /// Probe the peer route `blob` once with an `app_call` (plan RH1r-c
+    /// S2): the probe alone imports a blob Veilid declared dead (RV1g B1;
+    /// every send refuses it, `import_live`), which Veilid allows and tests
+    /// again (0.5.8 `route_remote.rs:21-40`). Any answer, a NAK included,
+    /// proves it delivers and clears it from the dead routes.
+    pub async fn probe_route(&self, blob: &[u8]) -> Probed {
+        let live = self.liveness();
+        let target = match self.routes().import(blob) {
+            Ok(target) => target,
+            Err(e) => return Probed::ImportFailed(e.to_string()),
+        };
+        match self.caller().call_direct(&target, live.peer_probe()).await {
+            Ok(_) => {
+                live.route_proven(blob);
+                Probed::Answered
+            }
+            Err(e) => Probed::Silent(e.to_string()),
         }
     }
 }
