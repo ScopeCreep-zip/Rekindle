@@ -98,7 +98,10 @@ impl OutboxEntry {
         if !self.governance_cut.is_empty() {
             let count = self.governance_cut.len();
             if count > MAX_FRONTIER_REFS
-                || self.governance_cut.windows(2).any(|w| w[0].op_hash >= w[1].op_hash)
+                || self
+                    .governance_cut
+                    .windows(2)
+                    .any(|w| matches!(w, [a, b] if a.op_hash >= b.op_hash))
             {
                 return Err(CodecError::Serialization("invalid outbox governance cut".into()));
             }
