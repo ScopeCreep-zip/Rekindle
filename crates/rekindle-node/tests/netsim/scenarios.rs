@@ -230,18 +230,9 @@ impl ForgedLog {
     }
 }
 
-/// The strong-removal chain (fixed in E3.2; plan E3.2 S3 decision (a)).
-/// Under the hierarchy (target rank < writer rank) a mutual kick of two
-/// managers is refused on both sides, so the Verify item is the chain: the
-/// creator A removes the moderator B concurrently with B removing the
-/// member C. B's removal of C is invalidated (p2panda-auth transitive
-/// invalidation), so on every remaining node B is gone and C stays, and
-/// C's later post is read, while B's is not: every reader's ingest gate
-/// drops a departed author's post (`GateReason::NotMember`, register FX1).
-#[tokio::test(flavor = "current_thread", start_paused = true)]
-async fn a_removal_concurrent_with_the_removers_own_is_void_everywhere() {
-    let community = Community::of(3, 42).await;
-    let (bea, cal) = (community.pseudonym(1).await, community.pseudonym(2).await);
+/// The creator gives node `i` a role holding Kick Members, and node `i`
+/// learns it.
+pub(crate) async fn seat_moderator(community: &Community, i: usize) {
     let role = community.nodes[0]
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::RoleCreate {
@@ -261,15 +252,30 @@ async fn a_removal_concurrent_with_the_removers_own_is_void_everywhere() {
         .ok(IpcRequest::Community(CommunityRequest::Members(
             MemberRequest::RoleAssign {
                 community: community.anchor.clone(),
-                member_pseudonym: bea.clone(),
+                member_pseudonym: community.pseudonym(i).await,
                 role_id: role_id.clone(),
             },
         )))
         .await;
     assert!(
-        community.holds_role(1, &role_id).await,
+        community.holds_role(i, &role_id).await,
         "the moderator learns its role"
     );
+}
+
+/// The strong-removal chain (fixed in E3.2; plan E3.2 S3 decision (a)).
+/// Under the hierarchy (target rank < writer rank) a mutual kick of two
+/// managers is refused on both sides, so the Verify item is the chain: the
+/// creator A removes the moderator B concurrently with B removing the
+/// member C. B's removal of C is invalidated (p2panda-auth transitive
+/// invalidation), so on every remaining node B is gone and C stays, and
+/// C's later post is read, while B's is not: every reader's ingest gate
+/// drops a departed author's post (`GateReason::NotMember`, register FX1).
+#[tokio::test(flavor = "current_thread", start_paused = true)]
+async fn a_removal_concurrent_with_the_removers_own_is_void_everywhere() {
+    let community = Community::of(3, 42).await;
+    let (bea, cal) = (community.pseudonym(1).await, community.pseudonym(2).await);
+    seat_moderator(&community, 1).await;
     let limit = Duration::from_secs(120);
     assert!(
         eventually(&community.sim, limit, || async {

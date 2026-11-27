@@ -280,6 +280,16 @@
 }
 
 @layer base {
+  /* Never-hide groups controls in a fieldset to disable them with one
+   * reason: no browser border, margin, padding or min-width, at no
+   * specificity, so a component's own box rules apply. */
+  :where(fieldset) {
+    border: 0;
+    margin: 0;
+    padding: 0;
+    min-width: 0;
+  }
+
   html,
   body {
     margin: 0;

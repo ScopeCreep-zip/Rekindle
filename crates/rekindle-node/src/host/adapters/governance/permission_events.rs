@@ -6,7 +6,7 @@
 //! state last projected and the state just merged, like membership
 //! (`member_events.rs`):
 //!
-//! - `EffectivePermissionsChanged { member }` for each member whose base or
+//! - `EffectivePermissionsChanged { member, denied }` for each member whose base or
 //!   any channel's effective permissions differ, ours included: our own
 //!   windows re-read their permission flags from it (the frontend computes
 //!   no policy, plan E6.11), and Discord likewise recomputes a member's
@@ -24,13 +24,18 @@
 use rekindle_governance::diff::GovernanceDiff;
 use rekindle_governance::permissions::{compute_permissions, holds_creator_seat};
 use rekindle_governance::state::GovernanceState;
+use rekindle_types::dto::community_capability::DeniedCapabilities;
 use rekindle_types::id::{ChannelId, PseudonymKey};
+
+use super::capability_words::denied_of;
 
 /// What changed in permissions between `prev` and `next`, at `now_secs`.
 #[derive(Debug, Default, PartialEq, Eq)]
 pub(super) struct PermissionTransitions {
-    /// Members (pseudonym hex) whose effective permissions changed, in order.
-    pub members: Vec<String>,
+    /// Members (pseudonym hex, in order) whose effective permissions
+    /// changed, each with its denied capabilities under `next`, worded
+    /// (`capability_words`): what its `EffectivePermissionsChanged` carries.
+    pub members: std::collections::BTreeMap<String, DeniedCapabilities>,
     /// Channels (id hex) whose overwrite set changed, in order.
     pub channels: Vec<String>,
 }
@@ -75,7 +80,7 @@ pub(super) fn permission_transitions(
             perms_of(prev, m) != perms_of(next, m)
                 || holds_creator_seat(m, prev) != holds_creator_seat(m, next)
         })
-        .map(PseudonymKey::to_hex)
+        .map(|m| (m.to_hex(), denied_of(m, next, now_secs)))
         .collect();
     let channels = (diff.channel_overwrites.iter())
         .map(|c| hex::encode(c.0))
@@ -110,11 +115,12 @@ impl super::HostGovernance {
                 },
             ));
         }
-        for member in changes.members {
+        for (member, denied) in changes.members {
             self.ctx.publish_event(SubscriptionEvent::Governance(
                 GovernanceEvent::EffectivePermissionsChanged {
                     community: community_id.to_string(),
                     member,
+                    denied,
                 },
             ));
         }
