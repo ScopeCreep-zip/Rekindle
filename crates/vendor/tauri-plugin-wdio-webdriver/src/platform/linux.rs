@@ -268,10 +268,15 @@ impl<R: Runtime + 'static> PlatformExecutor<R> for LinuxExecutor<R> {
                 // the page's own alpha (WebKitGTK otherwise paints its default
                 // background under it), as WKWebView's snapshot does on macOS:
                 // a shaped window's outline is its alpha (plan E7.14 on SK0).
+                // INCLUDE_SELECTION_HIGHLIGHTING: WebKitGTK leaves the
+                // selection highlight out of a snapshot unless asked, while
+                // WKWebView's includes it; without it a Linux shot shows no
+                // selected-text band at all (plan ST1's pixel check).
                 let result = webview
                     .snapshot_future(
                         SnapshotRegion::Visible,
-                        SnapshotOptions::TRANSPARENT_BACKGROUND,
+                        SnapshotOptions::TRANSPARENT_BACKGROUND
+                            | SnapshotOptions::INCLUDE_SELECTION_HIGHLIGHTING,
                     )
                     .await;
 

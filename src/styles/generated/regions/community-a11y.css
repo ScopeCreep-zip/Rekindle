@@ -21,6 +21,7 @@
       border-image: var(--skin-region-community-member-group-header--still, var(--skin-region-community-member-group-header));
     }
   }
+
   @media (forced-colors: active) {
     .community-window .community-sidebar-header,
     .community-window .channel-list .category-header,

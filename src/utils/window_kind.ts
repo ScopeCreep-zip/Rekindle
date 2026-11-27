@@ -1,3 +1,5 @@
+import { trackWindowFocus } from "./window_focus";
+
 /**
  * The window kinds (plan SB1): the G11b `WindowLabel` variants, without ids.
  * The Host scopes each pack's art to the kinds the pack defines, on the
@@ -17,7 +19,9 @@ export type WindowKind =
   | "profile"
   | "popup";
 
-/** Name this window's kind on its document root (`<html data-window>`), the one place the Host's sheet reads it. */
+/** Name this window's kind on its document root (`<html data-window>`), the one place the Host's sheet reads it;
+ *  every window calls it, so it also starts the window's focus state (`window_focus.ts`). */
 export function setWindowKind(kind: WindowKind): void {
   document.documentElement.dataset.window = kind;
+  trackWindowFocus();
 }

@@ -3,7 +3,7 @@
 // menu bar, the Settings window and modals.
 
 import type { Browser } from "webdriverio";
-import { NET_WAIT_MS, WAIT_MS, byText, gone, present, press, resolveIntent, shown, switchTo, typeInto, waitUntil } from "./helpers.ts";
+import { NET_WAIT_MS, WAIT_MS, byText, gone, present, press, resolveIntent, shown, switchTo, typeInto, waitUntil, xpathString } from "./helpers.ts";
 
 export const LOGIN = "login";
 export const BUDDY = "buddy-list";
@@ -182,6 +182,40 @@ export async function flipPersisted(b: Browser, tab: string, text: string, passp
 }
 
 /** Set a `<select>` / `<input>` value the way a user's choice does: the value, then `input` and `change`. */
+/** A Settings select's trigger (SettingsSelect.tsx, plan ST1), named by its label's id. */
+function settingsSelect(labelId: string): string {
+  return `.settings-select-trigger[aria-labelledby~="${labelId}"]`;
+}
+
+/**
+ * Choose `option` (its exact label) in the Settings select named by
+ * `labelId`: ST1 made Settings' selects a Kobalte Select, whose trigger opens
+ * on pointerdown and whose open list is DOM, so it is pressed, not set.
+ */
+export async function chooseSetting(b: Browser, labelId: string, option: string): Promise<void> {
+  await press(b, await shown(b, settingsSelect(labelId)));
+  await shown(b, ".settings-select-content", NET_WAIT_MS);
+  await press(b, await shown(b, `//*[contains(@class,"settings-select-item")][normalize-space(.)=${xpathString(option)}]`));
+  await gone(b, ".settings-select-content");
+}
+
+/** Every option label the Settings select named by `labelId` offers (opened, read, closed with Escape). */
+export async function settingOptions(b: Browser, labelId: string): Promise<string[]> {
+  await press(b, await shown(b, settingsSelect(labelId)));
+  await shown(b, ".settings-select-content", NET_WAIT_MS);
+  const labels = (await b.execute(() =>
+    Array.from(document.querySelectorAll(".settings-select-content .settings-select-item")).map((o) => (o.textContent ?? "").trim()),
+  )) as string[];
+  await b.keys("Escape");
+  await gone(b, ".settings-select-content");
+  return labels;
+}
+
+/** The option the Settings select named by `labelId` shows as chosen. */
+export async function settingShown(b: Browser, labelId: string): Promise<string> {
+  return (await (await shown(b, `${settingsSelect(labelId)} .settings-select-value`)).getText()).trim();
+}
+
 export async function setValue(b: Browser, selector: string, value: string): Promise<void> {
   const el = await shown(b, selector);
   await b.execute(

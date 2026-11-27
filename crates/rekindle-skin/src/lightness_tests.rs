@@ -1,4 +1,5 @@
 use super::*;
+use crate::colour;
 
 #[test]
 fn oklab_round_trips_and_walks_minimally() {
@@ -6,8 +7,8 @@ fn oklab_round_trips_and_walks_minimally() {
         assert_eq!(from_oklab(oklab(c)), c);
     }
     let ground = [22, 22, 22];
-    let new = lightness_walk([12, 51, 87], true, |c| {
-        Ok(colour::contrast(c, ground) >= 4.5)
+    let new = walk([12, 51, 87], true, |c| {
+        Ok::<_, std::convert::Infallible>(colour::contrast(c, ground) >= 4.5)
     })
     .unwrap()
     .unwrap();

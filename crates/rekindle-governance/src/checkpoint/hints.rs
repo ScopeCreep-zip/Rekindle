@@ -191,12 +191,16 @@ fn count(
     let mut electorates: HashMap<Option<[u8; 32]>, Vec<PseudonymKey>> = HashMap::new();
     let mut usable = Vec::new();
     for ((height, prev, round), group) in groups {
+        let Some(first) = group.first() else {
+            continue;
+        };
+        let anchor = first.op.anchor();
         let electorate = electorates.entry(prev).or_insert_with(|| {
             let prev_body = prev
                 .and_then(|d| all.iter().find(|e| e.digest == d))
                 .map(|e| e.body);
             let state = prev_body.map(|b| merge_cut(cert, &causal_past(ops, &b.cut)).0);
-            eligible_set(cert, state.as_ref())
+            eligible_set(cert, anchor, state.as_ref())
         });
         let votes = tally(electorate, group.iter().map(|e| (e.op.author(), e.body)));
         for (digest, endorsers) in votes {

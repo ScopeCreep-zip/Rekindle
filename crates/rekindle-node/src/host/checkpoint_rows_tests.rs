@@ -49,7 +49,7 @@ fn signed(key: &SigningKey, prev: &HeldOp, deps: &[&HeldOp], body: GovernanceEnt
         body,
         sig: [0; 64],
     };
-    let unsigned = op_unsigned_bytes(&op);
+    let unsigned = op_unsigned_bytes(&op).unwrap();
     op.sig = rekindle_secrets::derive::sign_with_pseudonym(key, &op_signing_bytes("c1", &unsigned));
     HeldOp {
         hash: op_hash(&unsigned, &op.sig),
@@ -80,7 +80,7 @@ pub(super) fn height_one(cert: &GenesisCert, first: &[HeldOp]) -> (Checkpoint, V
         state_root: state_root(&at_cut, &cut),
         state_size: u32::try_from(preimage.len()).expect("fits"),
         mek_generation: 0,
-        eligible_set_hash: eligible_set_hash(&eligible_set(cert, None)),
+        eligible_set_hash: eligible_set_hash(&eligible_set(cert, "VLD0:anchor", None)),
         pages: Vec::new(),
     };
     (checkpoint, preimage)

@@ -12,7 +12,8 @@ import { addToast } from "../../../stores/toast.store";
 interface InvitesTabProps {
   communityId: string;
   canCreateInvite: boolean;
-  canManage: boolean;
+  /** Why we may not revoke invites, in the Host's words, or null (never-hide). */
+  revokeDenied: string | null;
 }
 
 /** The redemptions an invite may allow (IJ1): explicit choices, never a
@@ -39,7 +40,7 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
   onCleanup(() => clearInterval(expiryTimer));
 
   createEffect(() => {
-    if ((props.canManage || props.canCreateInvite) && !loaded()) {
+    if ((props.revokeDenied === null || props.canCreateInvite) && !loaded()) {
       setLoaded(true);
       handleListCommunityInvites(props.communityId);
     }
@@ -204,15 +205,15 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
                   </button>
                   )}
                 </Show>
-                <Show when={props.canManage}>
-                  <button
-                    class="form-btn-secondary"
-                    onClick={() => revokeInvite(invite.inviteId)}
-                    disabled={revokingHash() === invite.inviteId}
-                  >
-                    {revokingHash() === invite.inviteId ? "Revoking..." : "Revoke"}
-                  </button>
-                </Show>
+                <button
+                  class="form-btn-secondary"
+                  onClick={() => revokeInvite(invite.inviteId)}
+                  disabled={revokingHash() === invite.inviteId || props.revokeDenied !== null}
+                  title={props.revokeDenied ?? undefined}
+                  aria-description={props.revokeDenied ?? undefined}
+                >
+                  {revokingHash() === invite.inviteId ? "Revoking..." : "Revoke"}
+                </button>
               </div>
             </div>
           )}

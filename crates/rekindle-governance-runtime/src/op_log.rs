@@ -323,7 +323,7 @@ pub fn build_op(
         body,
         sig: [0; 64],
     };
-    let unsigned = op_unsigned_bytes(&op);
+    let unsigned = op_unsigned_bytes(&op)?;
     op.sig = key.sign(&op_signing_bytes(anchor, &unsigned)).to_bytes();
     let encoded = encode_op(&op).map_err(|e| GovernanceRuntimeError::Encoding(e.to_string()))?;
     let verified = VerifiedOp::verify(anchor, op, &unsigned, |h| known.get(h).copied())

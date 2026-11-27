@@ -324,10 +324,7 @@ fn joined_op(
     let hint = walked.hint.as_ref();
     let deps = Deps::Join(join_deps(cert, set, outcome, hint, &joiner, inviter)?);
     let state = &outcome.state;
-    let signer = device_signer::OpSigner {
-        author: joiner,
-        device,
-    };
+    let signer = device_signer::OpSigner::checked(anchor, state, joiner, device)?;
     let (op, encoded) = op_log::build_op(anchor, cert, state, set, signer, body, deps, now_secs)?;
     Ok(op_log::held(
         &op,

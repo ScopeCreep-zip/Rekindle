@@ -10,25 +10,53 @@ use rekindle_types::governance::{Checkpoint, GenesisCert};
 use rekindle_types::id::PseudonymKey;
 
 use super::shape::checkpoint_digest;
+use crate::device_judge::{judge_key, KeyJudgement};
 use crate::state::GovernanceState;
 
-/// The electorate of the checkpoint after `prev_cut_state`: the admitted,
-/// non-removed members of the state at the previous checkpoint's cut,
-/// sorted; at height 1 (no previous checkpoint) the cert's creator set.
+/// The electorate of the checkpoint after `prev_cut_state` in community
+/// `anchor`: the admitted, non-removed members of the state at the
+/// previous checkpoint's cut that hold a device key effective there (plan
+/// E3.2 S7d-keys.12, the ADR 0018 electorate rule), sorted; at height 1 (no
+/// previous checkpoint) the cert's creator set.
 #[must_use]
 pub fn eligible_set(
     cert: &GenesisCert,
+    anchor: &str,
     prev_cut_state: Option<&GovernanceState>,
 ) -> Vec<PseudonymKey> {
     let mut set: Vec<PseudonymKey> = match prev_cut_state {
         None => cert.creator_set().into_iter().collect(),
         Some(state) => (state.members.keys())
-            .filter(|m| !state.is_departed(m))
+            .filter(|m| !state.is_departed(m) && holds_effective_key(cert, anchor, state, m))
             .cloned()
             .collect(),
     };
     set.sort_by_key(|m| m.0);
     set
+}
+
+/// Whether `member` holds a device key judged effective at `state` for
+/// its member record (ADR 0022 rules 4–6: a key retired or forked at any
+/// seq signs nothing from there, so it is judged at the highest seq). A
+/// member with no device key in the view signs under the interim
+/// pseudonym binding (lead decision K4b Q1, `merge::judge::pseudonym_signed`,
+/// which the merge judges effective) and counts until S7d-keys.5 removes
+/// that binding; a member with any endorsed key is judged by its keys.
+fn holds_effective_key(
+    cert: &GenesisCert,
+    anchor: &str,
+    state: &GovernanceState,
+    member: &PseudonymKey,
+) -> bool {
+    let Some(md) = (state.devices.member(member)).filter(|md| !md.endorsements.is_empty()) else {
+        return true;
+    };
+    let Some(record) = state.author_record(cert, member) else {
+        return false;
+    };
+    (md.endorsements.values()).any(|e| {
+        judge_key(md, member, anchor, &record, &e.device_key, u64::MAX) == KeyJudgement::Effective
+    })
 }
 
 /// `eligibleSetHash`: BLAKE3 `derive_key(GOV_CHECKPOINT_ELIGIBLE)` over
