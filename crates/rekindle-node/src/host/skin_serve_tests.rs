@@ -210,9 +210,13 @@ async fn skin_frames_are_the_shown_skins_validated_layouts() {
         !shown.windows.is_empty(),
         "the default skin frames its windows"
     );
+    // Compared as the wire carries them: a node's served refusal copy
+    // (`NodeArt::refused`, DIS3) is `#[serde(skip)]`, so the Host never sends
+    // it over IPC and the shell draws it from the served stylesheet instead.
+    let expected = serve::frames(&canonical.bytes, &canonical.address()).unwrap();
     assert_eq!(
-        shown.windows,
-        serve::frames(&canonical.bytes, &canonical.address()).unwrap()
+        serde_json::to_value(&shown.windows).unwrap(),
+        serde_json::to_value(&expected).unwrap()
     );
 }
 
