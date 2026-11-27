@@ -16,7 +16,7 @@ import { browser, expect } from "@wdio/globals";
 import { NET_WAIT_MS, byText, gone, resolveIntent, shown, typeInto, waitUntil } from "../../../walk/helpers.ts";
 import { setValue } from "../../../walk/nav.ts";
 import { joinFromStage, voiceNames } from "../../../walk/rows-voice.ts";
-import { type Peer, peerJoinCommunity, startFleet, stopFleet } from "../../fleet.ts";
+import { type Peer, peerChannelId, peerJoinCommunity, peerVoiceJoin, peerVoiceLeave, startFleet, stopFleet } from "../../fleet.ts";
 import { createCommunity, createIdentity, createInvite, newUser, openCommunity, type User } from "../../journeys.ts";
 import { shot } from "../../shots.ts";
 
@@ -67,7 +67,9 @@ describe("voice join and leave reach the roster by beat (S8-pre)", function () {
     const cara = peers[0];
     await peerJoinCommunity(cara, await createInvite(browser, me, 1));
     await openCommunity(browser, COMMUNITY);
-    await cara.cli(["voice", "join", "--community", COMMUNITY, "--channel", VOICE]);
+    // The voice commands take the channel's id: Cara resolves it from her own list.
+    const voiceId = await peerChannelId(cara, COMMUNITY, VOICE);
+    await peerVoiceJoin(cara, COMMUNITY, voiceId);
 
     // 1. Ari joins; Cara, already in, is listed at once.
     await (await byText(browser, ".channel-item", VOICE, NET_WAIT_MS)).click();
@@ -76,12 +78,12 @@ describe("voice join and leave reach the roster by beat (S8-pre)", function () {
     await shot("joined-cara-listed");
 
     // 2. Cara leaves; Ari's panel drops her within a beat.
-    await cara.cli(["voice", "leave"]);
+    await peerVoiceLeave(cara);
     const leaveTook = await listsWithin(1, BEAT_MS, "Cara leaves");
     await shot("cara-left");
 
     // 3. Cara joins again, then her daemon stops: her quit beat claims no channel.
-    await cara.cli(["voice", "join", "--community", COMMUNITY, "--channel", VOICE]);
+    await peerVoiceJoin(cara, COMMUNITY, voiceId);
     await listsWithin(2, BEAT_MS, "Cara joins again");
     await cara.pause();
     const quitTook = await listsWithin(1, BEAT_MS, "Cara quits");
