@@ -569,7 +569,7 @@ export interface TargetModeration {
  *  `queued`, never an error). Later changes come as `ChannelSendStatus`. */
 export interface ThreadReplyOutcome {
   messageId: string;
-  delivery: SendState;
+  sendState: SendState;
 }
 
 /** `create_forum_post`'s answer (`rekindle_types::thread::ForumPostCreated`): the

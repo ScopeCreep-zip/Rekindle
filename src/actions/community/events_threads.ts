@@ -141,6 +141,24 @@ export async function handleCreateForumPost(
   // created, or refused with nothing created and the Host's reason shown.
   try {
     const created = await commands.createForumPost(communityId, channelId, name, body.trim(), forumTag);
+    // The starter is ours and the Host named it: shown at once with its send
+    // state (queued until the outbox writes it), so an empty first page of
+    // the thread does not hide it; the page and our own event merge into it
+    // by its id.
+    const early = takeEarlySendState(created.starterMessageId);
+    const starter: Message = {
+      id: Date.now(),
+      senderId: communityState.communities[communityId]?.myPseudonymKey ?? "",
+      body: body.trim(),
+      timestamp: Date.now(),
+      isOwn: true,
+      serverMessageId: created.starterMessageId,
+      status: (early?.state ?? created.starter) as Message["status"],
+      failureReason: early?.reason,
+    };
+    setCommunityState("threadMessages", created.threadId, (prev) =>
+      (prev ?? []).some((m) => m.serverMessageId === created.starterMessageId) ? prev : [...(prev ?? []), starter],
+    );
     await handleLoadChannelThreads(communityId, channelId);
     return created.threadId;
   } catch (e) {
@@ -183,7 +201,7 @@ export async function handleSendThreadMessage(
     setCommunityState("threadMessages", threadId, (msgs) =>
       msgs.map((m) =>
         m.id === tempId
-          ? { ...m, serverMessageId: sent.messageId, status: (early?.state ?? sent.delivery) as Message["status"], failureReason: early?.reason }
+          ? { ...m, serverMessageId: sent.messageId, status: (early?.state ?? sent.sendState) as Message["status"], failureReason: early?.reason }
           : m,
       ),
     );

@@ -101,16 +101,15 @@ export function reduceSubscriptionContent(event: CommunitySubscriptionEvent): vo
 
     if (c?.myPseudonymKey === senderPseudonym) {
       // Our own reply, which the Host publishes since the mesh never
-      // echoes it (plan E7.13 M76): confirm the bubble waiting for it,
-      // or show it when none waits (sent from another window, or the
-      // bubble was replaced).
+      // echoes it (plan E7.13 M76), queued or sent alike (plan FT1): it
+      // names the bubble waiting for it, whose state stays the Host's
+      // send answer or ChannelSendStatus; shown anew when none waits
+      // (sent from another window, or the bubble was replaced).
       const waiting = existing.findIndex(
-        (m) => m.isOwn && m.status === "sending" && (body === null || m.body === body),
+        (m) => m.isOwn && !m.serverMessageId && m.status === "sending" && (body === null || m.body === body),
       );
       if (waiting >= 0) {
-        setCommunityState("threadMessages", threadId, waiting, (m) => ({
-          ...m, serverMessageId: messageId, status: "sent" as const,
-        }));
+        setCommunityState("threadMessages", threadId, waiting, "serverMessageId", messageId);
         return;
       }
     }
