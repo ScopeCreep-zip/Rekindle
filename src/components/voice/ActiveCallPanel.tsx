@@ -1,7 +1,7 @@
 import { type Component, Show, createEffect, createMemo, createSignal, onCleanup } from "solid-js";
 import SkinGlyph from "../common/SkinGlyph";
 import { commands } from "../../ipc/commands";
-import { callsState, type CallEntry } from "../../stores/calls.store";
+import type { CallEntry } from "../../stores/calls.store";
 import { voiceState, setVoiceState } from "../../stores/voice.store";
 import { settingsState, setSettingsState } from "../../stores/settings.store";
 import { friendsState } from "../../stores/friends.store";
@@ -306,15 +306,3 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
 };
 
 export default ActiveCallPanel;
-
-/// Convenience wrapper for inline mounts where the caller has only a
-/// peerKey and the active-call store entry needs lookup.
-export const ActiveDmCallPanel: Component<{ peerKey: string }> = (props) => {
-  const active = createMemo(() => {
-    const a = callsState.activeCall;
-    return a && a.peerKey === props.peerKey ? a : null;
-  });
-  return (
-    <Show when={active()}>{(call) => <ActiveCallPanel call={call()} mode="inline" />}</Show>
-  );
-};

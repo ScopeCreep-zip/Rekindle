@@ -355,9 +355,9 @@ export interface NetworkStatus {
 }
 
 // Architecture §21 — scheduled-event metadata.
-export type RecurrenceFrequency = "daily" | "weekly" | "monthly";
+type RecurrenceFrequency = "daily" | "weekly" | "monthly";
 
-export type DayOfWeek =
+type DayOfWeek =
   | "sunday"
   | "monday"
   | "tuesday"
