@@ -338,7 +338,7 @@ export interface ShellNode {
  * served minimum. `short`: neither 24 px nor the spacing exception holds.
  * `frame`: a window-drag area (no control, so no 2.5.8 rule; plan SK11).
  */
-export interface NodeTarget {
+interface NodeTarget {
   box: [number, number, number, number];
   art: [number, number, number, number];
   rule: "size" | "spacing" | "short" | "frame";

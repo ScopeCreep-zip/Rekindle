@@ -37,7 +37,7 @@ export function pickEncoderCodec(
  *  wire floor applies, but ONLY when we can actually encode it —
  *  otherwise wait (`null`); the store write from the caps fetch
  *  re-runs this via the pump. */
-export function pickDmEncoderCodec(peerId: string): Codec | null {
+function pickDmEncoderCodec(peerId: string): Codec | null {
   const local = localVideoCapabilities();
   if (!local) return null;
   const peerDecode = dmPeerDecodeCodecsFor(peerId);

@@ -15,7 +15,7 @@
 // buffer lives at ~50–200ms and libwebrtc's low-latency start delay is
 // ~30–40ms. The 500ms/×3 streaming defaults pinned delay near the
 // ceiling on bursty gossip arrival and put video ~1s behind live.
-export const PLAYOUT_MIN_DELAY_MS = 40; // libwebrtc low-latency start delay
+const PLAYOUT_MIN_DELAY_MS = 40; // libwebrtc low-latency start delay
 const PLAYOUT_MAX_DELAY_MS = 180; // WebRTC video jitter-buffer ceiling
 const PLAYOUT_JITTER_MULTIPLIER = 2.5;
 const PLAYOUT_MAX_FRAMES = 30; // ~2s @15fps — a runaway guard, not a buffer
