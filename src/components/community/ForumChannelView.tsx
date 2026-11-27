@@ -19,7 +19,12 @@ const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
   // A forum post is a new thread and its starter, so it needs both thread
   // capabilities (plan FT1d); each lacking one carries the Host's reason.
   // The controls stay shown, disabled with the reasons (owner: never hidden).
+  // A channel we may not read (the Host's lock, e.g. a view overwrite) is
+  // shown locked with the Host's words, never as an empty forum.
+  const lockReason = (): string | null => (props.channel.locked ? (props.channel.lockedReason ?? "") : null);
   const postDenied = (): string | null => {
+    const lock = lockReason();
+    if (lock !== null) return lock;
     const denied = props.channel.denied ?? {};
     const reasons = [denied.createPublicThreads, denied.sendInThreads].filter((r): r is string => !!r);
     return reasons.length > 0 ? reasons.join(" ") : null;
@@ -156,10 +161,18 @@ const ForumChannelView: Component<ForumChannelViewProps> = (props) => {
 
       <div class="forum-channel-thread-list">
         <Show when={visibleThreads().length > 0} fallback={
-          <div class="forum-channel-empty">
-            <div class="forum-channel-empty-title">No posts yet</div>
-            <div class="forum-channel-empty-subtitle">Start the first thread for this forum channel.</div>
-          </div>
+          <Show when={lockReason() !== null} fallback={
+            <div class="forum-channel-empty">
+              <div class="forum-channel-empty-title">No posts yet</div>
+              <div class="forum-channel-empty-subtitle">Start the first thread for this forum channel.</div>
+            </div>
+          }>
+            <div class="forum-channel-empty forum-channel-locked" role="status">
+              <SkinGlyph name="lock" />
+              <div class="forum-channel-empty-title">This forum is locked</div>
+              <div class="forum-channel-empty-subtitle">{lockReason()}</div>
+            </div>
+          </Show>
         }>
           <For each={visibleThreads()}>
             {(thread) => (

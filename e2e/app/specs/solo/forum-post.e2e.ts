@@ -221,6 +221,12 @@ describe("forum post accepted as one request (FT1)", function () {
       throw new Error(`the open thread still shows ${KEY_WAIT_MS / 1000} s after Cara denied everyone the forum's view`);
     });
     console.log(`[forum] the thread closed ${Math.round((Date.now() - from) / 1000)} s after the view deny`);
+    // The forum stays listed, shown locked with the Host's reason (its served
+    // lock), never as an empty forum; New post is disabled with that reason.
+    const locked = await shown(browser, ".forum-channel-locked", NET_WAIT_MS);
+    const lockText = (await locked.getText()).trim();
+    const newPostAfter = await shown(browser, ".forum-channel-new-post-btn");
+    console.log(`[forum] locked forum reads: ${JSON.stringify(lockText)}`);
     const toasts = (await browser.execute(() => (window as unknown as { __toasts?: string[] }).__toasts ?? [])) as string[];
     console.log(`[forum] toasts: ${JSON.stringify(toasts)}`);
     await shot("view-revoked");
@@ -229,6 +235,8 @@ describe("forum post accepted as one request (FT1)", function () {
       // The Host's refusal of the thread list is said once, not per re-read.
       refusalToasts: toasts.filter((t) => t.startsWith("thread list")).length <= 1,
       cards: (await browser.$$(".forum-channel-thread-card")).length,
-    }).toEqual({ closedWithReason: true, refusalToasts: true, cards: 0 });
+      lockedWithReason: lockText.replace("This forum is locked", "").trim().length > 0,
+      newPostDisabled: !(await newPostAfter.isEnabled()),
+    }).toEqual({ closedWithReason: true, refusalToasts: true, cards: 0, lockedWithReason: true, newPostDisabled: true });
   });
 });
