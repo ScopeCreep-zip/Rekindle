@@ -43,7 +43,7 @@ fn rust_literals(source: &str) -> Vec<Literal> {
             }
             Some(Literal {
                 line,
-                last_line: line + text.bytes().filter(|byte| *byte == b'\n').count(),
+                last_line: line + text.matches('\n').count(),
                 value,
             })
         })
@@ -77,7 +77,7 @@ fn ts_literals(mut source: &str) -> Vec<Literal> {
                 let content = &source[1..end];
                 found.push(Literal {
                     line,
-                    last_line: line + content.bytes().filter(|byte| *byte == b'\n').count(),
+                    last_line: line + content.matches('\n').count(),
                     value: content.as_bytes().to_vec(),
                 });
                 end + 1
@@ -87,10 +87,7 @@ fn ts_literals(mut source: &str) -> Vec<Literal> {
         } else {
             first.len_utf8()
         };
-        line += source.as_bytes()[..consumed]
-            .iter()
-            .filter(|byte| **byte == b'\n')
-            .count();
+        line += source[..consumed].matches('\n').count();
         source = &source[consumed..];
     }
     found
