@@ -263,11 +263,11 @@ fn component(section: &Section) -> Node {
         // packs' `<Text>FriendsTitle</Text>` body (StreamEngine's
         // `[WindowTitle]` `Text.text=ChatTitle`, `chat.ini:115-122`).
         let mut face = node("Text", text, Vec::new());
-        face.text = section
+        section
             .get("Text.text")
             .unwrap_or_default()
             .trim()
-            .to_owned();
+            .clone_into(&mut face.text);
         children.push(face);
     }
     if let Some(t) = triggers(section) {
