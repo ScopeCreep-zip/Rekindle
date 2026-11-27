@@ -7,6 +7,27 @@ import { transformMessages } from "../../utils/transformers";
 import { transformEvent } from "./shared";
 import { errorMessage } from "../../utils/error";
 import { takeEarlySendState } from "../../handlers/community/dispatcher_messages";
+import type { SendState } from "../../ipc/commands/types";
+
+/**
+ * Our own thread post's state once the Host's answer names it (plan FT1),
+ * newest fact first: a ChannelSendStatus held because it came before the
+ * row knew the id, else a state the Host already applied to the row (its
+ * own event named the row, then a status reached it directly), else the
+ * answer's own `queued`. A late answer never undoes a newer `failed` or
+ * `sent`, nor erases a failure's reason.
+ */
+function ownPostState(row: Message | undefined, messageId: string, answered: SendState): Pick<Message, "status" | "failureReason"> {
+  const early = takeEarlySendState(messageId);
+  if (early) {
+    if (early.state === "failed") addToast(early.reason ?? "Message not delivered. Resend it.", "error");
+    return { status: early.state as Message["status"], failureReason: early.reason };
+  }
+  if (row?.serverMessageId === messageId && row.status !== undefined && row.status !== "sending") {
+    return { status: row.status, failureReason: row.failureReason };
+  }
+  return { status: answered as Message["status"], failureReason: undefined };
+}
 
 export async function handleLoadEvents(communityId: string): Promise<void> {
   try {
@@ -145,7 +166,8 @@ export async function handleCreateForumPost(
     // state (queued until the outbox writes it), so an empty first page of
     // the thread does not hide it; the page and our own event merge into it
     // by its id.
-    const early = takeEarlySendState(created.starterMessageId);
+    const prior = (communityState.threadMessages[created.threadId] ?? []).find((m) => m.serverMessageId === created.starterMessageId);
+    const state = ownPostState(prior, created.starterMessageId, created.starter);
     const starter: Message = {
       id: Date.now(),
       senderId: communityState.communities[communityId]?.myPseudonymKey ?? "",
@@ -153,11 +175,11 @@ export async function handleCreateForumPost(
       timestamp: Date.now(),
       isOwn: true,
       serverMessageId: created.starterMessageId,
-      status: (early?.state ?? created.starter) as Message["status"],
-      failureReason: early?.reason,
+      ...state,
     };
+    // Our own event may have shown the starter first: merged by its id.
     setCommunityState("threadMessages", created.threadId, (prev) =>
-      (prev ?? []).some((m) => m.serverMessageId === created.starterMessageId) ? prev : [...(prev ?? []), starter],
+      prior ? (prev ?? []).map((m) => (m.serverMessageId === created.starterMessageId ? { ...m, ...state } : m)) : [...(prev ?? []), starter],
     );
     await handleLoadChannelThreads(communityId, channelId);
     return created.threadId;
@@ -196,14 +218,10 @@ export async function handleSendThreadMessage(
     // refusal is the only error. A later change arrives as ChannelSendStatus
     // by this id, and one that came before this answer wins over it.
     const sent = await commands.sendThreadMessage(communityId, threadId, trimmed);
-    const early = takeEarlySendState(sent.messageId);
-    if (early?.state === "failed") addToast(early.reason ?? "Message not delivered. Resend it.", "error");
+    const row = (communityState.threadMessages[threadId] ?? []).find((m) => m.id === tempId);
+    const state = ownPostState(row, sent.messageId, sent.sendState);
     setCommunityState("threadMessages", threadId, (msgs) =>
-      msgs.map((m) =>
-        m.id === tempId
-          ? { ...m, serverMessageId: sent.messageId, status: (early?.state ?? sent.sendState) as Message["status"], failureReason: early?.reason }
-          : m,
-      ),
+      msgs.map((m) => (m.id === tempId ? { ...m, serverMessageId: sent.messageId, ...state } : m)),
     );
     // A reply after the archive revives the thread (the Host's listing,
     // `is_thread_archived`): re-read it rather than decide it here.
