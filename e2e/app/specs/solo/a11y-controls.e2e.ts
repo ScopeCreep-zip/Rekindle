@@ -68,8 +68,20 @@ async function tabTo(selector: string, text = ""): Promise<{ ring: string }> {
     if (!focused) throw new Error(`${selector}${text ? ` "${text}"` : ""} could not take focus`);
     return { ring: "macOS: focused directly" };
   }
+  // Keyboard focus in the page first, as a user clicks into a window before
+  // tabbing: a click on the channel header's name (no control), then Tab.
+  await (await shown(b, ".community-channel-header-name")).click();
+  const trail: string[] = [];
   for (let i = 0; i < 80; i++) {
     await b.keys("Tab");
+    trail.push(
+      (await b.execute(() => {
+        const el = document.activeElement as HTMLElement | null;
+        if (!el || el === document.body) return `body(hasFocus=${document.hasFocus()})`;
+        const cls = typeof el.className === "string" ? el.className.split(/\s+/).slice(0, 2).join(".") : "";
+        return `${el.tagName.toLowerCase()}${cls ? `.${cls}` : ""}`;
+      })) as string,
+    );
     const at = (await b.execute(
       (sel: string, want: string) => {
         const el = document.activeElement as HTMLElement | null;
@@ -88,7 +100,7 @@ async function tabTo(selector: string, text = ""): Promise<{ ring: string }> {
       return { ring: at.ring };
     }
   }
-  throw new Error(`Tab never reached ${selector}${text ? ` "${text}"` : ""}`);
+  throw new Error(`Tab never reached ${selector}${text ? ` "${text}"` : ""}; focus after each Tab: ${trail.join(" > ")}`);
 }
 
 describe("converted controls (FE-LINT slice C)", function () {
