@@ -257,8 +257,11 @@
     transition: background var(--motion-duration-fast);
   }
 
+  /* Hover rings the button in the selected text (gated 4.5:1 on the selected
+   * fill): its label keeps the one ground the theme gates for it, where a
+   * darker fill left the theme's selection.text under 3:1 in some packs. */
   .form-btn-primary:hover {
-    background: color-mix(in srgb, var(--color-xfire-accent) 80%, var(--color-xfire-fill-shade));
+    box-shadow: inset 0 0 0 1px var(--color-xfire-selection-text);
   }
 
   /* Disabled is the theme's disabled text on the secondary ground (plan
@@ -392,8 +395,11 @@
     flex-shrink: 0;
   }
 
+  /* Hover marks the tab's underline in the accent (Xfire's tab cue), never
+   * a tint under its label: the label stays menubar.text on menubar.bg, the
+   * one pair the theme gates for it. */
   .form-tab:hover:not(.form-tab-active) {
-    background: color-mix(in srgb, var(--color-xfire-accent) 12%, transparent);
+    border-bottom-color: color-mix(in srgb, var(--color-xfire-accent) 60%, transparent);
   }
 
   /* The chosen tab is drawn as Xfire's selected row: the selected fill with

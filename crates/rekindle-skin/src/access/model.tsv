@@ -309,10 +309,8 @@
 .form-btn-danger:disabled	text	var(--color-xfire-text-disabled)	--color-xfire-bg-secondary	1.0	false
 .form-btn-primary	icon	var(--color-xfire-selection-text)	--color-xfire-accent 100% over --color-xfire-bg-dark	0.7	true
 .form-btn-primary	icon	var(--color-xfire-selection-text)	--color-xfire-accent 100% over --color-xfire-bg-panel	0.7	true
-.form-btn-primary	icon hovered	var(--color-xfire-selection-text)	--color-xfire-accent 80% over --color-xfire-fill-shade	0.7	true
 .form-btn-primary	text	var(--color-xfire-selection-text)	--color-xfire-accent 100% over --color-xfire-bg-dark	1.0	false
 .form-btn-primary	text	var(--color-xfire-selection-text)	--color-xfire-accent 100% over --color-xfire-bg-panel	1.0	false
-.form-btn-primary	text hovered	var(--color-xfire-selection-text)	--color-xfire-accent 80% over --color-xfire-fill-shade	1.0	false
 .form-btn-primary:disabled	text	var(--color-xfire-text-disabled)	--color-xfire-bg-secondary	1.0	false
 .form-btn-secondary	icon	var(--color-xfire-text)	--color-xfire-bg-secondary	0.7	true
 .form-btn-secondary	icon hovered	var(--color-xfire-text)	--color-xfire-accent 12% over --color-xfire-bg-secondary	0.7	true
@@ -335,7 +333,6 @@
 .form-select	text	var(--color-xfire-input-text)	--color-xfire-input-bg	1.0	false
 .form-select:disabled	text	var(--color-xfire-text-disabled)	--color-xfire-input-bg	1.0	false
 .form-tab	text	var(--color-xfire-menubar-text)	--color-xfire-menubar-bg	1.0	false
-.form-tab	text hovered	var(--color-xfire-menubar-text)	--color-xfire-accent 12% over --color-xfire-menubar-bg	1.0	false
 .form-tab-active	text	var(--color-xfire-selection-text)	--color-xfire-accent 100% over --color-xfire-menubar-bg	1.0	false
 .form-tab.active	text	var(--color-xfire-selection-text)	--color-xfire-accent 100% over --color-xfire-menubar-bg	1.0	false
 .form-tab[aria-selected="true"]	text	var(--color-xfire-selection-text)	--color-xfire-accent 100% over --color-xfire-menubar-bg	1.0	false
