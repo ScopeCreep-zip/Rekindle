@@ -166,6 +166,13 @@
     cursor: pointer;
   }
 
+  /* A topic we may not set: still drawn, in the theme's disabled text (never
+   * a fade, ST1), with the Host's reason as its title. */
+  .channel-topic-denied {
+    color: var(--color-xfire-text-disabled);
+    cursor: not-allowed;
+  }
+
   .channel-topic-editable:hover {
     text-decoration: underline;
     text-decoration-style: dotted;
