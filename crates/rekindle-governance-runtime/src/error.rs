@@ -60,6 +60,17 @@ pub enum GovernanceRuntimeError {
 
     #[error("insufficient permission for this governance operation")]
     PermissionDenied,
+
+    /// The Host's reason for refusing a permission check.
+    #[error("{0}")]
+    PermissionRequired(String),
+
+    /// The Host refused the forum starter during the atomic write.
+    #[error("{0}")]
+    ForumStarterRefused(String),
+
+    #[error("membership ended while preparing the forum starter")]
+    ForumStarterRemoved { banned: bool },
     /// No `GenesisCert` is pinned for the community (S5 writes it at
     /// origin, S6 pins it at join).
     #[error("no genesis certificate is pinned for community {0}")]

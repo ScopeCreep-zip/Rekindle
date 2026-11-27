@@ -82,7 +82,7 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
   }
 
   function truncateHash(hash: string): string {
-    if (hash.length > 12) return hash.slice(0, 12) + "...";
+    if (hash.length > 12) return `${hash.slice(0, 12)}...`;
     return hash;
   }
 
@@ -92,7 +92,7 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
         <Show
           when={creatingInvite()}
           fallback={
-            <button class="form-btn-primary" onClick={() => setCreatingInvite(true)}>
+            <button type="button" class="form-btn-primary" onClick={() => setCreatingInvite(true)}>
               Create Invite
             </button>
           }
@@ -123,10 +123,14 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
               <option value="86400">1 day</option>
               <option value="604800">7 days</option>
             </select>
-            <button class="form-btn-primary" onClick={submitInvite}>
+            <button type="button" class="form-btn-primary" onClick={submitInvite}>
               Create
             </button>
-            <button class="form-btn-secondary" onClick={() => setCreatingInvite(false)}>
+            <button
+              type="button"
+              class="form-btn-secondary"
+              onClick={() => setCreatingInvite(false)}
+            >
               Cancel
             </button>
           </div>
@@ -143,10 +147,14 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
             value={createdLink()!}
             onClick={(e) => e.currentTarget.select()}
           />
-          <button class="form-btn-primary" onClick={() => copyToClipboard(createdLink()!)}>
+          <button
+            type="button"
+            class="form-btn-primary"
+            onClick={() => copyToClipboard(createdLink()!)}
+          >
             Copy Link
           </button>
-          <button class="form-btn-secondary" onClick={() => setCreatedLink(null)}>
+          <button type="button" class="form-btn-secondary" onClick={() => setCreatedLink(null)}>
             Dismiss
           </button>
         </div>
@@ -188,6 +196,7 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
               </div>
               <div class="settings-list-actions">
                 <button
+                  type="button"
                   class="form-btn-secondary"
                   onClick={() => copyToClipboard(invite.fingerprint, undefined, "Fingerprint")}
                 >
@@ -196,6 +205,7 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
                 <Show when={invite.url}>
                   {(url) => (
                     <button
+                      type="button"
                       class="form-btn-secondary"
                       onClick={() => copyToClipboard(url(), invite.codeHash)}
                     >
@@ -204,6 +214,7 @@ const InvitesTab: Component<InvitesTabProps> = (props) => {
                   )}
                 </Show>
                 <button
+                  type="button"
                   class="form-btn-secondary"
                   onClick={() => revokeInvite(invite.inviteId)}
                   disabled={revokingHash() === invite.inviteId || props.revokeDenied !== null}

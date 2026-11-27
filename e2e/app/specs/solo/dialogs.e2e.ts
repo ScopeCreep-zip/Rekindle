@@ -21,9 +21,9 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { browser, expect } from "@wdio/globals";
-import { NET_WAIT_MS, byText, gone, press, resolveIntent, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
+import { CHANNEL_COMPOSER, NET_WAIT_MS, byText, gone, press, resolveIntent, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
 import { BUDDY, underTree } from "../../../walk/nav.ts";
-import { COMMUNITY_COMPOSER, channelCount, createCommunity, createIdentity, friendsView, newUser, openCommunity, postMessage, selectChannel, type User } from "../../journeys.ts";
+import { channelCount, createCommunity, createIdentity, friendsView, newUser, openCommunity, postMessage, selectChannel, type User } from "../../journeys.ts";
 import { shot } from "../../shots.ts";
 
 const SHORTCUTS_RS = path.join(import.meta.dirname, "..", "..", "..", "..", "src-tauri", "src", "shortcuts.rs");
@@ -210,8 +210,7 @@ describe("dialogs take focus, close on Esc and give focus back", function () {
 
   it("Mod+/ opens the shortcuts in a community window; Esc gives focus back to the composer", async () => {
     await browser.switchToWindow(communityHandle);
-    const composer = COMMUNITY_COMPOSER;
-    const el = await shown(browser, composer, NET_WAIT_MS);
+    const el = await shown(browser, CHANNEL_COMPOSER, NET_WAIT_MS);
     await browser.execute((node: HTMLElement) => node.focus(), el as unknown as HTMLElement);
     const mod = process.platform === "darwin" ? "Meta" : "Control";
     await browser.keys([mod, "/"]);
@@ -219,6 +218,6 @@ describe("dialogs take focus, close on Esc and give focus back", function () {
     await shown(browser, '[role="dialog"]', NET_WAIT_MS);
     await browser.keys(["Escape"]);
     await gone(browser, '[role="dialog"]', NET_WAIT_MS);
-    await waitUntil(() => focused(composer), NET_WAIT_MS, "focus did not return to the composer");
+    await waitUntil(() => focused(CHANNEL_COMPOSER), NET_WAIT_MS, "focus did not return to the composer");
   });
 });

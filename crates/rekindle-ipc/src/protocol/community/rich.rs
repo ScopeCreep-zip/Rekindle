@@ -74,6 +74,16 @@ pub enum RichRequest {
         body: String,
     },
 
+    /// Open a forum post: a thread in a forum channel and its starter, one
+    /// outcome (plan E3.3, FT1); answered with `ForumPostCreated`.
+    CreateForumPost {
+        community: String,
+        channel_id: String,
+        title: String,
+        forum_tag: Option<String>,
+        body: String,
+    },
+
     /// Attach a poll to our message; answered with the poll's id.
     PollCreate {
         community: String,
@@ -128,6 +138,7 @@ impl RichRequest {
             Self::ThreadListActive { .. } => ("ThreadListActive", Query, Authenticated),
             Self::ThreadMessages { .. } => ("ThreadMessages", Query, Authenticated),
             Self::ThreadSend { .. } => ("ThreadSend", Write, Authenticated),
+            Self::CreateForumPost { .. } => ("CreateForumPost", Write, Authenticated),
             Self::PollCreate { .. } => ("PollCreate", Write, Authenticated),
             Self::PollVote { .. } => ("PollVote", Write, Authenticated),
             Self::PollClose { .. } => ("PollClose", Write, Authenticated),
@@ -151,6 +162,7 @@ impl RichRequest {
             | Self::ThreadArchive { .. }
             | Self::ThreadUnarchive { .. }
             | Self::ThreadSend { .. }
+            | Self::CreateForumPost { .. }
             | Self::PollCreate { .. }
             | Self::PollVote { .. }
             | Self::PollClose { .. } => C::ChatWrite,

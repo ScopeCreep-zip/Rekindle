@@ -108,7 +108,7 @@ const ActiveGroupCallPanel: Component = () => {
   return (
     <Show when={call()}>
       {(c) => (
-        <div class="group-call-panel" role="region" aria-label="Group call in progress">
+        <section class="group-call-panel" aria-label="Group call in progress">
           <div class="group-call-panel-header">
             <span class="group-call-panel-title">
               Group {c().kind} call · {c().participants.filter(isInCall).length}/
@@ -150,7 +150,7 @@ const ActiveGroupCallPanel: Component = () => {
               <SkinGlyph name="hangup" />
             </button>
           </div>
-        </div>
+        </section>
       )}
     </Show>
   );

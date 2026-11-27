@@ -107,7 +107,7 @@ export type TypingContext =
 
 /** A group member as an event names them (our nickname or fingerprint,
  *  never a name their payload carries). */
-export interface GroupDmMember {
+interface GroupDmMember {
   publicKey: string;
   displayName: string;
 }
@@ -203,14 +203,6 @@ export type FriendEvent =
    *  written, otherwise it failed (plan E3.2 S7s.3g). */
   | { coCreationFinished: { anchor: string; created: boolean } };
 
-/** Peer on the other end of a direct call; absent for a group call. */
-interface DirectCallInfo {
-  kind: string;
-  peerKey: string;
-  peerDisplayName: string;
-  expectedLocalCamera: boolean;
-}
-
 /** A group call's member: its key and the Host's name for it (the friend's
  *  shown name, else the fingerprint form; contract VN2). */
 export interface CallParticipant {
@@ -220,7 +212,15 @@ export interface CallParticipant {
   isSelf: boolean;
 }
 
-export type CallEvent =
+/** Peer on the other end of a direct call; absent for a group call. */
+interface DirectCallInfo {
+  kind: string;
+  peerKey: string;
+  peerDisplayName: string;
+  expectedLocalCamera: boolean;
+}
+
+type CallEvent =
   | {
       incoming: {
         callId: string;

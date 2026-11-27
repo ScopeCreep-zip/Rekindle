@@ -301,8 +301,8 @@ pub trait GovernanceRuntimeDeps: Send + Sync + 'static {
 
     // ---------- Permissions ----------
 
-    /// Wrap `commands::community::require_permission` — returns
-    /// `Err(PermissionDenied)` if the caller doesn't hold `perm_bits`.
+    /// Require every bit in `perm_bits` from the Host's merged community
+    /// state and return a user-facing reason if the check is refused.
     fn require_permission(
         &self,
         community_id: &str,

@@ -1,7 +1,7 @@
-import { Component, For, Show, createSignal, onCleanup, onMount } from "solid-js";
+import { type Component, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { handleLaunchGame } from "../../actions/game.actions";
 import { subscribeChatEvents } from "../../ipc/channels";
 import { commands } from "../../ipc/commands";
-import { handleLaunchGame } from "../../actions/game.actions";
 
 interface Invite {
   gameId: number;
@@ -25,7 +25,10 @@ const GameInviteList: Component<{ peerId: string; peerName: string }> = (props) 
       const { gameId, server } = friend.gameInvite;
       void commands.getGameName(gameId).then((gameName) => {
         // The newest invite for a game replaces an older one.
-        setInvites((list) => [...list.filter((i) => i.gameId !== gameId), { gameId, server, gameName }]);
+        setInvites((list) => [
+          ...list.filter((i) => i.gameId !== gameId),
+          { gameId, server, gameName },
+        ]);
       });
     });
   });

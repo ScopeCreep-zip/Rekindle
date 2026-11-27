@@ -4,7 +4,7 @@ version = "0.1.0"
 publish = false
 edition = "2021"
 description = "The one limited image decoder: declared kind checked against the magic bytes, decoded under limits, re-encoded (plan E7.11)"
-license = "MIT"
+license.workspace = true
 
 [lints]
 workspace = true

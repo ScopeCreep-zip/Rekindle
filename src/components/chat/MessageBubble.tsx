@@ -142,12 +142,6 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
     }
   }
 
-  function handleBubbleClick(): void {
-    if (props.selectable && props.onToggleSelect) {
-      props.onToggleSelect();
-    }
-  }
-
   /** A voice message: the Host decodes its duration and waveform from the
    *  audio (plan E5.1), so nothing is read from the message body. */
   const isVoice = createMemo(
@@ -168,21 +162,22 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
     messageAnnouncement(props.message, props.senderName, removedByName);
 
   return (
-    <div
+    <article
       class={`chat-message message-enter ${props.selectable ? "chat-message-selectable" : ""} ${props.selected ? "chat-message-selected" : ""}`}
       data-message-id={props.message.serverMessageId ?? undefined}
-      role="article"
       aria-label={ariaAnnouncement()}
-      onClick={handleBubbleClick}
     >
       <Show when={props.selectable}>
-        <input
-          type="checkbox"
-          class="chat-message-select-checkbox"
-          checked={props.selected ?? false}
-          onChange={() => props.onToggleSelect?.()}
-          onClick={(e) => e.stopPropagation()}
-        />
+        {/* The whole bubble is the checkbox's label: a click anywhere on it selects. */}
+        <label class="chat-message-select-hit">
+          <input
+            type="checkbox"
+            class="chat-message-select-checkbox"
+            aria-label="Select message"
+            checked={props.selected ?? false}
+            onChange={() => props.onToggleSelect?.()}
+          />
+        </label>
       </Show>
       <div class="chat-message-header">
         <span class={senderClass()}>{props.senderName}</span>
@@ -223,6 +218,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
         </Show>
         <Show when={props.message.status === "failed"}>
           <button
+            type="button"
             class="message-retry-btn"
             onClick={handleRetryClick}
             title="Click to retry"
@@ -232,6 +228,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
           </button>
           <Show when={props.onDiscard}>
             <button
+              type="button"
               class="message-discard-btn"
               onClick={handleDiscardClick}
               title="Discard"
@@ -247,6 +244,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
         <div class="message-actions">
           <Show when={props.onReply}>
             <button
+              type="button"
               class="message-action-btn"
               title="Reply"
               aria-label="Reply"
@@ -283,6 +281,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
           </Show>
           <Show when={props.onPin && props.message.serverMessageId}>
             <button
+              type="button"
               class="message-action-btn"
               title={props.message.pinned ? "Unpin" : "Pin"}
               aria-label={props.message.pinned ? "Unpin message" : "Pin message"}
@@ -293,6 +292,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
           </Show>
           <Show when={props.onCreateThread && props.message.serverMessageId}>
             <button
+              type="button"
               class="message-action-btn"
               title="Create Thread"
               aria-label="Create thread"
@@ -303,6 +303,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
           </Show>
           <Show when={props.onCreatePoll && props.message.serverMessageId && !props.message.poll}>
             <button
+              type="button"
               class="message-action-btn"
               title="Create Poll"
               aria-label="Create poll"
@@ -313,6 +314,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
           </Show>
           <Show when={props.onForward && props.message.serverMessageId}>
             <button
+              type="button"
               class="message-action-btn"
               title="Forward"
               aria-label="Forward message"
@@ -323,6 +325,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
           </Show>
           <Show when={props.message.isOwn && props.onEdit && props.message.serverMessageId}>
             <button
+              type="button"
               class="message-action-btn"
               title="Edit"
               aria-label="Edit message"
@@ -333,6 +336,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
           </Show>
           <Show when={props.onDelete && props.message.serverMessageId}>
             <button
+              type="button"
               class="message-action-btn"
               title="Delete"
               aria-label="Delete message"
@@ -343,6 +347,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
           </Show>
           <Show when={!props.message.isOwn && props.onAdminDelete && props.message.serverMessageId}>
             <button
+              type="button"
               class="message-action-btn"
               title={props.adminDeleteDenied ?? "Remove as moderator"}
               aria-label="Remove message as moderator"
@@ -373,7 +378,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
         {(replyMsg) => (
           <div class="reply-snippet">
             <span class="reply-snippet-sender">{props.replyToSender ?? ""}</span>
-            {replyMsg().body.length > 60 ? replyMsg().body.slice(0, 60) + "..." : replyMsg().body}
+            {replyMsg().body.length > 60 ? `${replyMsg().body.slice(0, 60)}...` : replyMsg().body}
           </div>
         )}
       </Show>
@@ -398,7 +403,11 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
             >
               <div class="message-automod-blur">
                 <div class="message-automod-blur-text">Hidden by AutoMod on this client</div>
-                <button class="message-automod-reveal-btn" onClick={() => setRevealedBlurred(true)}>
+                <button
+                  type="button"
+                  class="message-automod-reveal-btn"
+                  onClick={() => setRevealedBlurred(true)}
+                >
                   Reveal
                 </button>
               </div>
@@ -508,7 +517,7 @@ const MessageBubble: Component<MessageBubbleProps> = (props) => {
         myPseudonymKey={props.myPseudonymKey ?? null}
         onToggle={handleReactionToggle}
       />
-    </div>
+    </article>
   );
 };
 

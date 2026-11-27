@@ -1,12 +1,12 @@
-import { Component, Show } from "solid-js";
-import { titleLogo } from "../../hooks/useSkin";
-import { BrandGlyph } from "../skin-tree/BrandGlyphs";
+import { type Component, Show } from "solid-js";
 import {
-  handleMinimize,
   handleClose,
   handleHide,
   handleMaximize,
+  handleMinimize,
 } from "../../actions/titlebar.actions";
+import { titleLogo } from "../../hooks/useSkin";
+import { BrandGlyph } from "../skin-tree/BrandGlyphs";
 
 interface TitlebarProps {
   title: string;
@@ -29,27 +29,36 @@ const Titlebar: Component<TitlebarProps> = (props) => {
       </span>
       <div class="xfire-titlebar-spacer" data-tauri-drag-region />
       <button
+        type="button"
         class="xfire-titlebar-btn xfire-titlebar-btn-minimize"
         onClick={handleMinimize}
         aria-label="Minimize window"
       >
-        <span class="xfire-titlebar-glyph" aria-hidden="true">&#x2014;</span>
+        <span class="xfire-titlebar-glyph" aria-hidden="true">
+          &#x2014;
+        </span>
       </button>
       {props.showMaximize && (
         <button
+          type="button"
           class="xfire-titlebar-btn xfire-titlebar-btn-maximize"
           onClick={handleMaximize}
           aria-label="Maximize window"
         >
-          <span class="xfire-titlebar-glyph" aria-hidden="true">&#x25A1;</span>
+          <span class="xfire-titlebar-glyph" aria-hidden="true">
+            &#x25A1;
+          </span>
         </button>
       )}
       <button
+        type="button"
         class="xfire-titlebar-btn xfire-titlebar-btn-close"
         onClick={props.hideOnClose ? handleHide : handleClose}
         aria-label={props.hideOnClose ? "Hide window" : "Close window"}
       >
-        <span class="xfire-titlebar-glyph" aria-hidden="true">&#x2715;</span>
+        <span class="xfire-titlebar-glyph" aria-hidden="true">
+          &#x2715;
+        </span>
       </button>
     </div>
   );

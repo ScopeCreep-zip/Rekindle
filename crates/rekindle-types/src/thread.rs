@@ -4,6 +4,8 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::message::SendState;
+
 /// The reply id exposed to readers within a thread. The verified author
 /// is a hex pseudonym, so the first colon unambiguously separates it from
 /// the author-chosen wire id.
@@ -34,6 +36,26 @@ pub struct ThreadInfo {
     pub auto_archive_seconds: u32,
     pub last_message_at: u64,
     pub message_count: u32,
+}
+
+/// The `ThreadSend` answer: our reply's id and its delivery state (D22's
+/// `SendState`): `queued` in our durable `channel_post` outbox when the Host
+/// answers; `ChannelSendStatus` names each later change.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThreadReplyOutcome {
+    pub message_id: String,
+    pub send_state: SendState,
+}
+
+/// The `CreateForumPost` answer: the thread exists and its starter is in
+/// our outbox (`starter`: its `SendState`, `queued` when the Host answers).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ForumPostCreated {
+    pub thread_id: String,
+    pub starter_message_id: String,
+    pub starter: SendState,
 }
 
 #[cfg(test)]

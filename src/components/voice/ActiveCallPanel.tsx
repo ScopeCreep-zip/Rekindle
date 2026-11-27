@@ -1,7 +1,15 @@
-import { type Component, createEffect, createMemo, createSignal, onCleanup, Show } from "solid-js";
+import {
+  type Component,
+  createEffect,
+  createMemo,
+  createSignal,
+  createUniqueId,
+  onCleanup,
+  Show,
+} from "solid-js";
 import { handleEndDmCall } from "../../actions/calls.actions";
 import { commands } from "../../ipc/commands";
-import { type CallEntry, callsState } from "../../stores/calls.store";
+import type { CallEntry } from "../../stores/calls.store";
 import { friendsState } from "../../stores/friends.store";
 import { setSettingsState, settingsState } from "../../stores/settings.store";
 import { setVoiceState, voiceState } from "../../stores/voice.store";
@@ -53,6 +61,8 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
 
   const isVideoCall = createMemo(() => props.call.kind === "video");
 
+  const microphoneId = createUniqueId();
+  const speakersId = createUniqueId();
   const peerSpeaking = createMemo(
     () =>
       voiceState.participants.find((p) => p.publicKey === props.call.peerKey)?.isSpeaking ?? false
@@ -166,7 +176,7 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
             <span class={`active-call-status active-call-status-${peerStatus()}`}>
               {peerStatus()}
             </span>
-            <span class="active-call-timer" aria-label="Call duration">
+            <span class="active-call-timer" role="timer" aria-label="Call duration">
               {elapsedLabel()}
             </span>
           </div>
@@ -286,8 +296,9 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
           Audio devices
         </summary>
         <div class="active-call-device-row">
-          <label>Microphone</label>
+          <label for={microphoneId}>Microphone</label>
           <select
+            id={microphoneId}
             value={settingsState.selectedInputDevice ?? ""}
             onChange={(e) => void pickInputDevice(e.currentTarget.value)}
           >
@@ -298,8 +309,9 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
           </select>
         </div>
         <div class="active-call-device-row">
-          <label>Speakers</label>
+          <label for={speakersId}>Speakers</label>
           <select
+            id={speakersId}
             value={settingsState.selectedOutputDevice ?? ""}
             onChange={(e) => void pickOutputDevice(e.currentTarget.value)}
           >
@@ -315,13 +327,3 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
 };
 
 export default ActiveCallPanel;
-
-/// Convenience wrapper for inline mounts where the caller has only a
-/// peerKey and the active-call store entry needs lookup.
-export const ActiveDmCallPanel: Component<{ peerKey: string }> = (props) => {
-  const active = createMemo(() => {
-    const a = callsState.activeCall;
-    return a && a.peerKey === props.peerKey ? a : null;
-  });
-  return <Show when={active()}>{(call) => <ActiveCallPanel call={call()} mode="inline" />}</Show>;
-};

@@ -96,13 +96,25 @@ pub fn tokens_css() -> String {
 /// typed `var(--…)` accessor.
 #[must_use]
 pub fn tokens_ts() -> String {
-    let mut out = format!("// {HEADER}\n\n/** A token id of the closed skin registry. */\nexport type SkinTokenId =\n");
+    let mut out = format!(
+        "// {HEADER}\n\n/** A token id of the closed skin registry. */\nexport type SkinTokenId ="
+    );
     for e in ENTRIES {
-        let _ = writeln!(out, "  | \"{}\"", e.id);
+        let _ = write!(out, "\n  | \"{}\"", e.id);
     }
     out.push_str(";\n\nconst CSS_PROPERTY: Readonly<Record<SkinTokenId, string>> = {\n");
     for e in ENTRIES {
-        let _ = writeln!(out, "  \"{}\": \"{}\",", e.id, e.css);
+        // Match the frontend formatter's bare property spelling for identifiers.
+        let mut bytes = e.id.bytes();
+        let bare = bytes
+            .next()
+            .is_some_and(|b| b.is_ascii_alphabetic() || matches!(b, b'_' | b'$'))
+            && bytes.all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'$'));
+        if bare {
+            let _ = writeln!(out, "  {}: \"{}\",", e.id, e.css);
+        } else {
+            let _ = writeln!(out, "  \"{}\": \"{}\",", e.id, e.css);
+        }
     }
     out.push_str(
         "};\n\n/** `var(--…)` of a registry token, for inline custom properties. */\n\

@@ -49,8 +49,10 @@ pub struct ThreadMessageView {
     pub decryption_failed: bool,
     pub timestamp_ms: u64,
     pub is_own: bool,
+    pub send_state: rekindle_types::message::SendState,
     pub server_message_id: Option<String>,
-    pub mek_generation: u64,
+    /// A sealed reply names its key generation. Pending replies are unsealed.
+    pub mek_generation: Option<u64>,
     /// Its author's stream seq in the thread (the body's position).
     pub stream_seq: u64,
 }

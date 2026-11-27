@@ -77,7 +77,7 @@ pub(super) fn thread_creations(
                 archived: thread.archived.is_some(),
                 auto_archive_seconds: u32::try_from(thread.auto_archive_seconds)
                     .unwrap_or(u32::MAX),
-                last_message_at: 0,
+                last_message_at: now_secs,
                 message_count: 0,
             }),
         })

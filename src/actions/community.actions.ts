@@ -9,12 +9,12 @@
 // See `.dependency-cruiser.cjs`: components and windows may import
 // `src/actions/`; only the app bootstrap imports `src/handlers/`.
 
-export * from "./community/lifecycle";
 export * from "./community/channels";
+export * from "./community/events_threads";
+export * from "./community/invites";
+export * from "./community/lifecycle";
 export * from "./community/messages";
 export * from "./community/moderation";
-export * from "./community/roles";
-export * from "./community/invites";
 export * from "./community/profile";
-export * from "./community/events_threads";
-export { typingUsers, type TypingUser } from "./community/shared";
+export * from "./community/roles";
+export { typingUsers } from "./community/shared";

@@ -1,5 +1,5 @@
 import { type Component, For, Show } from "solid-js";
-import type { OpQuarantineReason } from "../../ipc/channels/community_subscription_events";
+import type { OpQuarantineReason } from "../../ipc/channels/community_governance_events";
 import { communityState } from "../../stores/community.store";
 
 const QUARANTINE_TEXT: Record<OpQuarantineReason, string> = {
@@ -33,6 +33,10 @@ const quarantinesCommunity = (reason: OpQuarantineReason) =>
  * one notice says so, with the reason, above the rest.
  */
 const GovernancePublicationStatus: Component<{ communityId: string }> = (props) => {
+  const authorName = (pseudonym: string) =>
+    communityState.communities[props.communityId]?.members.find(
+      (member) => member.pseudonymKey === pseudonym
+    )?.displayName ?? "a member";
   const states = () => Object.values(communityState.opPublications[props.communityId] ?? {});
   const pending = () => states().filter((s) => s.kind === "pending").length;
   const failures = () => states().flatMap((s) => (s.kind === "failed" ? [s.reason] : []));
@@ -41,10 +45,6 @@ const GovernancePublicationStatus: Component<{ communityId: string }> = (props) 
   const unreadable = () => held().filter((op) => quarantinesCommunity(op.reason));
   const mismatch = () => communityState.snapshotMismatch[props.communityId] === true;
   const name = () => communityState.communities[props.communityId]?.name ?? "This community";
-  const authorName = (pseudonym: string) =>
-    communityState.communities[props.communityId]?.members.find(
-      (member) => member.pseudonymKey === pseudonym
-    )?.displayName ?? "a member";
   return (
     <Show when={mismatch() || pending() > 0 || failures().length > 0 || held().length > 0}>
       <div class="governance-publication" role="status" aria-live="polite">

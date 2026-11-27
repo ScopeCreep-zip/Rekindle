@@ -1,7 +1,7 @@
-import { Component, For, Show, createSignal, createEffect } from "solid-js";
+import { type Component, createEffect, createSignal, For, Show } from "solid-js";
 import { handleGetAuditLog } from "../../../actions/community.actions";
-import { formatDateTimeSecs, formatAction } from "../../../utils/formatting";
 import type { CommunityAuditEntry } from "../../../ipc/commands/dto";
+import { formatAction, formatDateTimeSecs } from "../../../utils/formatting";
 
 interface AuditLogTabProps {
   communityId: string;
@@ -64,7 +64,7 @@ const AuditLogTab: Component<AuditLogTabProps> = (props) => {
         </For>
       </div>
       <Show when={hasMore() && entries().length > 0}>
-        <button class="form-btn-secondary" onClick={loadMore} disabled={loading()}>
+        <button type="button" class="form-btn-secondary" onClick={loadMore} disabled={loading()}>
           {loading() ? "Loading..." : "Load More"}
         </button>
       </Show>

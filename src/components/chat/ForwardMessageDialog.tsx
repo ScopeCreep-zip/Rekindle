@@ -1,9 +1,9 @@
-import { Component, For, Show, createMemo, createSignal } from "solid-js";
-import SkinGlyph from "../common/SkinGlyph";
-import { communityState } from "../../stores/community.store";
-import { handleForwardChannelMessage } from "../../actions/community.actions";
 import { Dialog } from "@kobalte/core/dialog";
+import { type Component, createMemo, createSignal, For, Show } from "solid-js";
+import { handleForwardChannelMessage } from "../../actions/community.actions";
+import { communityState } from "../../stores/community.store";
 import { returnFocusToOpener } from "../../utils/dialog_focus";
+import SkinGlyph from "../common/SkinGlyph";
 
 interface ForwardMessageDialogProps {
   sourceCommunityId: string;
@@ -23,8 +23,7 @@ const ForwardMessageDialog: Component<ForwardMessageDialogProps> = (props) => {
     const community = communityState.communities[destCommunityId()];
     if (!community) return [];
     return community.channels.filter(
-      (ch) =>
-        ch.type === "text" || ch.type === "announcement" || ch.type === "dm",
+      (ch) => ch.type === "text" || ch.type === "announcement" || ch.type === "dm"
     );
   });
 
@@ -41,7 +40,7 @@ const ForwardMessageDialog: Component<ForwardMessageDialogProps> = (props) => {
       props.sourceChannelId,
       props.sourceMessageId,
       destCommunityId(),
-      destChannelId(),
+      destChannelId()
     );
     setSubmitting(false);
     if (ok) props.onClose();
@@ -57,70 +56,68 @@ const ForwardMessageDialog: Component<ForwardMessageDialogProps> = (props) => {
   return (
     <Dialog open={true} onOpenChange={handleOpenChange} modal={true}>
       <Dialog.Portal>
-      <div class="forward-dialog-overlay">
-      <Dialog.Content class="forward-dialog" {...returnFocusToOpener()}>
-        <div class="forward-dialog-header">
-          <Dialog.Title class="forward-dialog-title">Forward message</Dialog.Title>
-          <Dialog.CloseButton
-            class="forward-dialog-close"
-            disabled={submitting()}
-            aria-label="Close forward dialog"
-          >
-            <SkinGlyph name="close" />
-          </Dialog.CloseButton>
+        <div class="forward-dialog-overlay">
+          <Dialog.Content class="forward-dialog" {...returnFocusToOpener()}>
+            <div class="forward-dialog-header">
+              <Dialog.Title class="forward-dialog-title">Forward message</Dialog.Title>
+              <Dialog.CloseButton
+                class="forward-dialog-close"
+                disabled={submitting()}
+                aria-label="Close forward dialog"
+              >
+                <SkinGlyph name="close" />
+              </Dialog.CloseButton>
+            </div>
+            <form class="forward-dialog-body" onSubmit={(e) => void handleSubmit(e)}>
+              <label class="forward-dialog-label">
+                <span>Community</span>
+                <select
+                  class="forward-dialog-select"
+                  value={destCommunityId()}
+                  onInput={(e) => {
+                    setDestCommunityId(e.currentTarget.value);
+                    setDestChannelId("");
+                  }}
+                >
+                  <For each={communities()}>{(c) => <option value={c.id}>{c.name}</option>}</For>
+                </select>
+              </label>
+              <label class="forward-dialog-label">
+                <span>Channel</span>
+                <select
+                  class="forward-dialog-select"
+                  value={destChannelId()}
+                  onInput={(e) => setDestChannelId(e.currentTarget.value)}
+                >
+                  <option value="">Select a channel…</option>
+                  <For each={channelsInDest()}>
+                    {(ch) => <option value={ch.id}>#{ch.name}</option>}
+                  </For>
+                </select>
+              </label>
+              <Show when={channelsInDest().length === 0}>
+                <div class="forward-dialog-hint">No text channels available in this community.</div>
+              </Show>
+              <div class="forward-dialog-actions">
+                <button
+                  type="button"
+                  class="forward-dialog-btn"
+                  onClick={props.onClose}
+                  disabled={submitting()}
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  class="forward-dialog-btn forward-dialog-btn-primary"
+                  disabled={!isValid()}
+                >
+                  {submitting() ? "Forwarding…" : "Forward"}
+                </button>
+              </div>
+            </form>
+          </Dialog.Content>
         </div>
-        <form class="forward-dialog-body" onSubmit={(e) => void handleSubmit(e)}>
-          <label class="forward-dialog-label">
-            <span>Community</span>
-            <select
-              class="forward-dialog-select"
-              value={destCommunityId()}
-              onInput={(e) => {
-                setDestCommunityId(e.currentTarget.value);
-                setDestChannelId("");
-              }}
-            >
-              <For each={communities()}>
-                {(c) => <option value={c.id}>{c.name}</option>}
-              </For>
-            </select>
-          </label>
-          <label class="forward-dialog-label">
-            <span>Channel</span>
-            <select
-              class="forward-dialog-select"
-              value={destChannelId()}
-              onInput={(e) => setDestChannelId(e.currentTarget.value)}
-            >
-              <option value="">Select a channel…</option>
-              <For each={channelsInDest()}>
-                {(ch) => <option value={ch.id}>#{ch.name}</option>}
-              </For>
-            </select>
-          </label>
-          <Show when={channelsInDest().length === 0}>
-            <div class="forward-dialog-hint">No text channels available in this community.</div>
-          </Show>
-          <div class="forward-dialog-actions">
-            <button
-              type="button"
-              class="forward-dialog-btn"
-              onClick={props.onClose}
-              disabled={submitting()}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              class="forward-dialog-btn forward-dialog-btn-primary"
-              disabled={!isValid()}
-            >
-              {submitting() ? "Forwarding…" : "Forward"}
-            </button>
-          </div>
-        </form>
-      </Dialog.Content>
-      </div>
       </Dialog.Portal>
     </Dialog>
   );

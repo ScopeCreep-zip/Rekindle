@@ -6,9 +6,8 @@
 // the send), so a clear that fast is the Host's stop, not a timer.
 
 import { multiRemoteBrowser } from "@wdio/globals";
-import { NET_WAIT_MS, present, resolveIntent, shown, typeAndSend, typeInto, waitUntil } from "../../../walk/helpers.ts";
+import { CHANNEL_COMPOSER, NET_WAIT_MS, present, resolveIntent, shown, typeAndSend, typeInto, waitUntil } from "../../../walk/helpers.ts";
 import {
-  COMMUNITY_COMPOSER,
   createCommunity,
   createIdentity,
   createInvite,
@@ -43,13 +42,13 @@ describe("channel typing from the Host (E3.4 S9)", function () {
     await selectChannel(b, CHANNEL);
 
     // Bob types without sending: Alice sees someone typing.
-    await typeInto(await shown(b, COMMUNITY_COMPOSER), "on my way");
+    await typeInto(await shown(b, CHANNEL_COMPOSER), "on my way");
     await shown(a, ".community-main .typing-indicator", NET_WAIT_MS);
 
     // Bob sends straight after typing (his last typing start is at the
     // send): the Host ends his typing with the message. The old window
     // timer would have held the indicator about 5 s past this point.
-    await typeAndSend(b, COMMUNITY_COMPOSER, "on my way, two minutes");
+    await typeAndSend(b, CHANNEL_COMPOSER, "on my way, two minutes");
     const sent = Date.now();
     await resolveIntent(b, { passphrase: bob.passphrase, appearMs: 1500 });
     // Within 3.5 s of the send itself, wherever the review wait above ended.

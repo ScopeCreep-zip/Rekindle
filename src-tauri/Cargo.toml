@@ -5,7 +5,7 @@ name = "rekindle-desktop"
 version = "0.0.1"
 publish = false
 edition = "2021"
-license = "MIT"
+license.workspace = true
 description = "Rekindle — Xfire rebuilt as a decentralized Tauri 2 app"
 
 [lints]

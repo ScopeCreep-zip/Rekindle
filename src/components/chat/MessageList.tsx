@@ -1,4 +1,4 @@
-import { Component, For, Show, createEffect, createMemo, onMount, onCleanup } from "solid-js";
+import { type Component, createEffect, createMemo, For, onCleanup, onMount, Show } from "solid-js";
 import type { Message } from "../../stores/chat.store";
 import {
   bulkSelection,
@@ -7,10 +7,10 @@ import {
   toggleBulkSelected,
 } from "../../stores/chat.store";
 import type { Thread } from "../../stores/community.store";
-import MessageBubble from "./MessageBubble";
+import { timerNoticeText } from "../../utils/disappearing";
 import LiveRegion from "../common/LiveRegion";
 import ChatAnnouncer from "./ChatAnnouncer";
-import { timerNoticeText } from "../../utils/disappearing";
+import MessageBubble from "./MessageBubble";
 
 interface MessageListProps {
   communityId?: string;
@@ -91,7 +91,7 @@ const MessageList: Component<MessageListProps> = (props) => {
             props.onLoadOlder();
           }
         },
-        { root: containerRef, threshold: 0.1 },
+        { root: containerRef, threshold: 0.1 }
       );
       observer.observe(sentinelRef);
     }
@@ -142,119 +142,148 @@ const MessageList: Component<MessageListProps> = (props) => {
 
   return (
     <>
-    <LiveRegion
-      class="chat-message-area"
-      announces={props.historyReady === undefined}
-      ref={(el) => (containerRef = el)}
-      label={props.channelId ? "Channel messages" : "Direct message conversation"}
-    >
-      {/* Sentinel for infinite scroll — triggers onLoadOlder when visible */}
-      <div ref={sentinelRef} class="messages-scroll-sentinel">
-        <Show when={props.isLoadingOlder}>
-          <div class="messages-loading-spinner">Loading older messages...</div>
+      <LiveRegion
+        class="chat-message-area"
+        announces={props.historyReady === undefined}
+        ref={(el) => (containerRef = el)}
+        label={props.channelId ? "Channel messages" : "Direct message conversation"}
+      >
+        {/* Sentinel for infinite scroll — triggers onLoadOlder when visible */}
+        <div ref={sentinelRef} class="messages-scroll-sentinel">
+          <Show when={props.isLoadingOlder}>
+            <div class="messages-loading-spinner">Loading older messages...</div>
+          </Show>
+        </div>
+        <Show when={selectionActive()}>
+          <div class="message-list-selection-toolbar">
+            <span class="message-list-selection-count">{selectedCount()} selected</span>
+            <button
+              type="button"
+              class="message-list-selection-btn message-list-selection-btn-danger"
+              disabled={selectedCount() === 0}
+              onClick={handleConfirmBulkDelete}
+            >
+              Delete
+            </button>
+            <button
+              type="button"
+              class="message-list-selection-btn"
+              onClick={() => clearBulkSelection()}
+            >
+              Cancel
+            </button>
+          </div>
         </Show>
-      </div>
-      <Show when={selectionActive()}>
-        <div class="message-list-selection-toolbar">
-          <span class="message-list-selection-count">
-            {selectedCount()} selected
-          </span>
-          <button
-            class="message-list-selection-btn message-list-selection-btn-danger"
-            disabled={selectedCount() === 0}
-            onClick={handleConfirmBulkDelete}
-          >
-            Delete
-          </button>
-          <button
-            class="message-list-selection-btn"
-            onClick={() => clearBulkSelection()}
-          >
-            Cancel
-          </button>
-        </div>
-      </Show>
-      <Show when={!selectionActive() && props.bulkDeleteDenied !== undefined && props.channelId}>
-        <div class="message-list-mod-toolbar">
-          <button
-            class="message-list-mod-btn"
-            onClick={handleEnterSelection}
-            disabled={props.bulkDeleteDenied != null}
-            title={props.bulkDeleteDenied ?? "Enter bulk-delete selection mode"}
-            aria-description={props.bulkDeleteDenied ?? undefined}
-          >
-            Select messages…
-          </button>
-        </div>
-      </Show>
-      <For each={props.messages}>
-        {(msg) => {
-          // A DM history-gap row (plan E2.5, D23) is a gap line, not a bubble.
-          if (msg.historyGapThrough !== undefined) {
+        <Show when={!selectionActive() && props.bulkDeleteDenied !== undefined && props.channelId}>
+          <div class="message-list-mod-toolbar">
+            <button
+              type="button"
+              class="message-list-mod-btn"
+              onClick={handleEnterSelection}
+              disabled={props.bulkDeleteDenied != null}
+              title={props.bulkDeleteDenied ?? "Enter bulk-delete selection mode"}
+              aria-description={props.bulkDeleteDenied ?? undefined}
+            >
+              Select messages…
+            </button>
+          </div>
+        </Show>
+        <For each={props.messages}>
+          {(msg) => {
+            // A DM history-gap row (plan E2.5, D23) is a gap line, not a bubble.
+            if (msg.historyGapThrough !== undefined) {
+              return (
+                <div class="dm-history-gap" role="note">
+                  Some earlier messages could not be delivered
+                </div>
+              );
+            }
+            // A disappearing-timer change (plan E7.1) is a notice line.
+            if (msg.timerNotice !== undefined) {
+              return (
+                <div class="dm-timer-notice" role="note">
+                  {timerNoticeText(senderNameOf(msg), msg.isOwn, msg.timerNotice.seconds)}
+                </div>
+              );
+            }
+            const thread = () =>
+              msg.serverMessageId ? threadByStarterMessage().get(msg.serverMessageId) : undefined;
+            const isSelectable = () => selectionActive() && Boolean(msg.serverMessageId);
+            const isSelected = () => {
+              const sel = selectionForChannel();
+              return Boolean(
+                sel && msg.serverMessageId && sel.selectedIds.has(msg.serverMessageId)
+              );
+            };
             return (
-              <div class="dm-history-gap" role="note">
-                Some earlier messages could not be delivered
-              </div>
+              <MessageBubble
+                communityId={props.communityId}
+                channelId={props.channelId}
+                message={msg}
+                senderName={senderNameOf(msg)}
+                myPseudonymKey={props.myPseudonymKey}
+                replyToMessage={msg.replyToId ? (messageMap().get(msg.replyToId) ?? null) : null}
+                replyToSender={
+                  msg.replyToId && messageMap().get(msg.replyToId)
+                    ? senderNameOf(messageMap().get(msg.replyToId)!)
+                    : undefined
+                }
+                replyUnavailable={Boolean(msg.replyToId) && !messageMap().get(msg.replyToId!)}
+                threadInfo={
+                  thread()
+                    ? {
+                        name: thread()!.name,
+                        messageCount: thread()!.messageCount,
+                        threadId: thread()!.id,
+                        archived: thread()!.archived,
+                      }
+                    : undefined
+                }
+                onRetry={props.onRetry}
+                onDiscard={props.onDiscard}
+                onReply={selectionActive() ? undefined : props.onReply}
+                onReaction={
+                  !selectionActive() && msg.serverMessageId
+                    ? (emoji) => props.onReaction?.(msg.serverMessageId!, emoji)
+                    : undefined
+                }
+                onRemoveReaction={
+                  !selectionActive() && msg.serverMessageId
+                    ? (emoji) => props.onRemoveReaction?.(msg.serverMessageId!, emoji)
+                    : undefined
+                }
+                onPin={selectionActive() ? undefined : props.onPin}
+                onCreateThread={!selectionActive() && !thread() ? props.onCreateThread : undefined}
+                onCreatePoll={!selectionActive() && !thread() ? props.onCreatePoll : undefined}
+                onOpenThread={
+                  !selectionActive() && thread() ? () => props.onOpenThread?.(thread()!) : undefined
+                }
+                onEdit={selectionActive() ? undefined : props.onEdit}
+                onDelete={selectionActive() ? undefined : props.onDelete}
+                onAdminDelete={selectionActive() ? undefined : props.onAdminDelete}
+                adminDeleteDenied={props.adminDeleteDenied ?? null}
+                onVotePoll={selectionActive() ? undefined : props.onVotePoll}
+                onClosePoll={selectionActive() ? undefined : props.onClosePoll}
+                onForward={selectionActive() ? undefined : props.onForward}
+                selectable={isSelectable()}
+                selected={isSelected()}
+                onToggleSelect={
+                  isSelectable() && msg.serverMessageId
+                    ? () => toggleBulkSelected(msg.serverMessageId!)
+                    : undefined
+                }
+              />
             );
-          }
-          // A disappearing-timer change (plan E7.1) is a notice line.
-          if (msg.timerNotice !== undefined) {
-            return (
-              <div class="dm-timer-notice" role="note">
-                {timerNoticeText(senderNameOf(msg), msg.isOwn, msg.timerNotice.seconds)}
-              </div>
-            );
-          }
-          const thread = () => msg.serverMessageId ? threadByStarterMessage().get(msg.serverMessageId) : undefined;
-          const isSelectable = () => selectionActive() && Boolean(msg.serverMessageId);
-          const isSelected = () => {
-            const sel = selectionForChannel();
-            return Boolean(sel && msg.serverMessageId && sel.selectedIds.has(msg.serverMessageId));
-          };
-          return (
-            <MessageBubble
-              communityId={props.communityId}
-              channelId={props.channelId}
-              message={msg}
-              senderName={senderNameOf(msg)}
-              myPseudonymKey={props.myPseudonymKey}
-              replyToMessage={msg.replyToId ? messageMap().get(msg.replyToId) ?? null : null}
-              replyToSender={msg.replyToId && messageMap().get(msg.replyToId) ? senderNameOf(messageMap().get(msg.replyToId)!) : undefined}
-              replyUnavailable={Boolean(msg.replyToId) && !messageMap().get(msg.replyToId!)}
-              threadInfo={thread() ? { name: thread()!.name, messageCount: thread()!.messageCount, threadId: thread()!.id, archived: thread()!.archived } : undefined}
-              onRetry={props.onRetry}
-              onDiscard={props.onDiscard}
-              onReply={selectionActive() ? undefined : props.onReply}
-              onReaction={!selectionActive() && msg.serverMessageId ? (emoji) => props.onReaction?.(msg.serverMessageId!, emoji) : undefined}
-              onRemoveReaction={!selectionActive() && msg.serverMessageId ? (emoji) => props.onRemoveReaction?.(msg.serverMessageId!, emoji) : undefined}
-              onPin={selectionActive() ? undefined : props.onPin}
-              onCreateThread={!selectionActive() && !thread() ? props.onCreateThread : undefined}
-              onCreatePoll={!selectionActive() && !thread() ? props.onCreatePoll : undefined}
-              onOpenThread={!selectionActive() && thread() ? () => props.onOpenThread?.(thread()!) : undefined}
-              onEdit={selectionActive() ? undefined : props.onEdit}
-              onDelete={selectionActive() ? undefined : props.onDelete}
-              onAdminDelete={selectionActive() ? undefined : props.onAdminDelete}
-              adminDeleteDenied={props.adminDeleteDenied ?? null}
-              onVotePoll={selectionActive() ? undefined : props.onVotePoll}
-              onClosePoll={selectionActive() ? undefined : props.onClosePoll}
-              onForward={selectionActive() ? undefined : props.onForward}
-              selectable={isSelectable()}
-              selected={isSelected()}
-              onToggleSelect={isSelectable() && msg.serverMessageId
-                ? () => toggleBulkSelected(msg.serverMessageId!)
-                : undefined}
-            />
-          );
-        }}
-      </For>
-    </LiveRegion>
-    <Show when={props.historyReady !== undefined}>
-      <ChatAnnouncer
-        messages={props.messages}
-        historyReady={props.historyReady === true}
-        senderName={senderNameOf}
-      />
-    </Show>
+          }}
+        </For>
+      </LiveRegion>
+      <Show when={props.historyReady !== undefined}>
+        <ChatAnnouncer
+          messages={props.messages}
+          historyReady={props.historyReady === true}
+          senderName={senderNameOf}
+        />
+      </Show>
     </>
   );
 };

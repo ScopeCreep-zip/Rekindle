@@ -75,10 +75,6 @@ impl ShellHooks for ShellSession {
         );
     }
 
-    fn require_permission(&self, community_id: &str, perm_bits: u64) -> Result<(), String> {
-        crate::commands::community::require_permission(&self.state, community_id, perm_bits)
-    }
-
     fn on_governance_projected(&self, community_id: &str, projected: &GovernanceProjected) {
         governance::on_projected(&self.state, community_id, projected);
     }

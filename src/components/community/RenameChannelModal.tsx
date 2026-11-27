@@ -1,6 +1,6 @@
-import { Component } from "solid-js";
-import SimpleInputModal from "../common/SimpleInputModal";
+import type { Component } from "solid-js";
 import { handleRenameChannel } from "../../actions/community.actions";
+import SimpleInputModal from "../common/SimpleInputModal";
 
 interface RenameChannelModalProps {
   isOpen: boolean;
@@ -19,7 +19,7 @@ const RenameChannelModal: Component<RenameChannelModalProps> = (props) => (
     placeholder="Channel name..."
     submitLabel="Rename"
     initialValue={props.currentName}
-    validate={(name) => name === props.currentName ? "Name is unchanged" : null}
+    validate={(name) => (name === props.currentName ? "Name is unchanged" : null)}
   />
 );
 

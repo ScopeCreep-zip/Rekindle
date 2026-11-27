@@ -1,6 +1,5 @@
-import type { UnlistenFn } from "@tauri-apps/api/event";
 import { startRing, stopActiveRing } from "../../actions/calls_ring";
-import { subscribeChatEvents } from "../../ipc/channels";
+import { subscribeChatEvents, type UnlistenFn } from "../../ipc/channels";
 import { commands } from "../../ipc/commands";
 import { type CallEntry, callsState, setCallsState } from "../../stores/calls.store";
 import { setNotificationState } from "../../stores/notification.store";

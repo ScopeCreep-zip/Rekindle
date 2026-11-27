@@ -1,7 +1,7 @@
-import { Component, For, Show, createSignal } from "solid-js";
+import { type Component, createSignal, For, Show } from "solid-js";
 import { commands } from "../../ipc/commands";
-import type { RegionFit, SkinDraft, SkinDraftReport } from "../../ipc/commands/dto_skin_draft";
 import { isCommandError } from "../../ipc/commands/dto";
+import type { RegionFit, SkinDraft, SkinDraftReport } from "../../ipc/commands/dto_skin_draft";
 
 type FitKind = RegionFit["type"];
 
@@ -25,7 +25,9 @@ const SkinRegionImport: Component<{
   const colours = () => props.report.tokens.filter((t) => t.value.type === "color");
 
   const fitValue = (): RegionFit =>
-    fit() === "nineSlice" ? { type: "nineSlice", data: insets() } : { type: fit() as "stretch" | "tile" };
+    fit() === "nineSlice"
+      ? { type: "nineSlice", data: insets() }
+      : { type: fit() as "stretch" | "tile" };
 
   async function importRegion(): Promise<void> {
     try {
@@ -33,7 +35,7 @@ const SkinRegionImport: Component<{
         props.draft,
         region(),
         fitValue(),
-        slot()?.carriesText ? backing() || null : null,
+        slot()?.carriesText ? backing() || null : null
       );
       if (next) props.onImported(next);
     } catch (e) {
@@ -56,7 +58,7 @@ const SkinRegionImport: Component<{
   );
 
   return (
-    <div class="skin-region-import" role="group" aria-label="Region images">
+    <section class="skin-region-import" aria-label="Region images">
       <div class="settings-section-title">Regions</div>
       <ul class="skin-regions">
         <For each={Object.entries(props.draft.regions)}>
@@ -108,13 +110,14 @@ const SkinRegionImport: Component<{
         </select>
       </Show>
       <button
+        type="button"
         class="form-btn-secondary"
         disabled={!region()}
         onClick={() => void importRegion()}
       >
         Import image…
       </button>
-    </div>
+    </section>
   );
 };
 

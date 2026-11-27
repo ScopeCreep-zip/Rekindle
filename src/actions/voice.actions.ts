@@ -5,12 +5,10 @@
 // subscription are different tiers; sharing a module made every
 // component that renders a call control import the subscription wiring.
 
-import type { UnlistenFn } from "@tauri-apps/api/event";
-import { subscribeVoiceEvents } from "../ipc/channels";
+import { subscribeVoiceEvents, type UnlistenFn } from "../ipc/channels";
 import { callType, sessionKey } from "../ipc/channels/voice_events";
 import { commands } from "../ipc/commands";
 import { communityState } from "../stores/community.store";
-import { friendsState } from "../stores/friends.store";
 import { addToast } from "../stores/toast.store";
 import { setVoiceState, voiceState } from "../stores/voice.store";
 import { errorMessage } from "../utils/error";

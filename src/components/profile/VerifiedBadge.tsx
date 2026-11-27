@@ -1,6 +1,6 @@
-import { Component, Match, Switch } from "solid-js";
-import type { SafetyNumberView } from "../../ipc/commands/dto";
+import { type Component, Match, Switch } from "solid-js";
 import { ICON_CHECK, ICON_KEY } from "../../icons";
+import type { SafetyNumberView } from "../../ipc/commands/dto";
 
 /**
  * A peer's key trust at a glance (plan E2.3): "Verified" once the user
@@ -14,12 +14,18 @@ const VerifiedBadge: Component<{ view: SafetyNumberView | null }> = (props) => (
   <Switch>
     <Match when={props.view?.changed}>
       <span class="sec-key-changed-badge" role="status">
-        <span class="sec-badge-icon" aria-hidden="true">{ICON_KEY}</span> Key changed
+        <span class="sec-badge-icon" aria-hidden="true">
+          {ICON_KEY}
+        </span>{" "}
+        Key changed
       </span>
     </Match>
     <Match when={props.view?.verified}>
       <span class="sec-verified-badge" role="status">
-        <span class="sec-badge-icon" aria-hidden="true">{ICON_CHECK}</span> Verified
+        <span class="sec-badge-icon" aria-hidden="true">
+          {ICON_CHECK}
+        </span>{" "}
+        Verified
       </span>
     </Match>
   </Switch>

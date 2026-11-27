@@ -26,7 +26,7 @@ pub fn render(id: &str, read: &Read, source: &str, changes: &[Change]) -> String
     let _ = writeln!(
         s,
         "\nLicence\n  The skin art and palette are third-party work under their author's terms.\n  \
-         Rekindle's MIT LICENSE does not cover this pack.\n"
+         Rekindle's MIT OR Apache-2.0 licence does not cover this pack.\n"
     );
     let _ = writeln!(s, "Colours ({} defined)", read.colours.len());
     for c in &read.colours {

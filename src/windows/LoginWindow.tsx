@@ -1,14 +1,14 @@
-import { Component, createSignal, onMount, onCleanup, For, Show } from "solid-js";
-import Titlebar from "../components/titlebar/Titlebar";
+import { type Component, createSignal, For, onCleanup, onMount, Show } from "solid-js";
+import { handleCreateIdentity, handleLogin } from "../actions/auth.actions";
 import Avatar from "../components/common/Avatar";
 import LoadingButton from "../components/common/LoadingButton";
-import { handleLogin, handleCreateIdentity } from "../actions/auth.actions";
-import { commands, IdentitySummary } from "../ipc/commands";
+import Titlebar from "../components/titlebar/Titlebar";
+import { startEventStream } from "../ipc/channels";
+import { subscribeLifecycleEvents } from "../ipc/channels/subscriptions";
+import { commands, type IdentitySummary } from "../ipc/commands";
 import { isCancelled } from "../ipc/commands/dto";
 import { canUnlock, setLifecycleState } from "../stores/lifecycle.store";
-import { subscribeLifecycleEvents } from "../ipc/channels/subscriptions";
 import { errorMessage } from "../utils/error";
-import { startEventStream } from "../ipc/channels";
 import { setWindowKind } from "../utils/window_kind";
 
 type Mode = "picker" | "login" | "create";
@@ -159,10 +159,17 @@ const LoginWindow: Component = () => {
           <div class="account-bubble-grid">
             <For each={identities()}>
               {(id) => (
-                <div class="account-bubble" onClick={() => selectAccount(id)}>
-                  <Avatar displayName={id.displayName} size={64} />
-                  <div class="account-bubble-name">{id.displayName}</div>
+                <div class="account-bubble">
                   <button
+                    type="button"
+                    class="account-bubble-select"
+                    onClick={() => selectAccount(id)}
+                  >
+                    <Avatar displayName={id.displayName} size={64} />
+                    <span class="account-bubble-name">{id.displayName}</span>
+                  </button>
+                  <button
+                    type="button"
                     class="account-bubble-delete"
                     aria-label={`Delete ${id.displayName}`}
                     onClick={(e: MouseEvent) => void deleteIdentity(id, e)}
@@ -174,9 +181,20 @@ const LoginWindow: Component = () => {
             </For>
           </div>
           <Show when={error() !== null}>
-            <div class="form-error" role="alert">{error()}</div>
+            <div class="form-error" role="alert">
+              {error()}
+            </div>
           </Show>
-          <button class="account-create-btn" onClick={() => { setPassphrase(""); setDisplayName(""); setError(null); setMode("create"); }}>
+          <button
+            type="button"
+            class="account-create-btn"
+            onClick={() => {
+              setPassphrase("");
+              setDisplayName("");
+              setError(null);
+              setMode("create");
+            }}
+          >
             + Create New Identity
           </button>
         </div>
@@ -253,7 +271,6 @@ const LoginWindow: Component = () => {
           </LoadingButton>
         </form>
       </Show>
-
     </div>
   );
 };
