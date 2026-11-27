@@ -299,12 +299,12 @@
     letter-spacing: 0.5px;
   }
 
+  /* The community profile editor fills its dialog's body (it had a top
+   * rule to part it from the card when it grew inside the popup). */
   .profile-editor-form {
     display: flex;
     flex-direction: column;
     gap: 6px;
-    padding: 8px;
-    border-top: 1px solid color-mix(in srgb, var(--color-xfire-offline) 20%, transparent);
   }
 
   .profile-editor-label {
