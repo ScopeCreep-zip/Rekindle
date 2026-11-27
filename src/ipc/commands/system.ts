@@ -1,16 +1,37 @@
 import { hostInvoke, invoke } from "../invoke";
 import type {
-  ActivityListItem, FavouriteServerView, HiddenGameView, InstalledGameView, JoinSource, NetworkStatus, Preferences, QuickWipeState, SettingsTab,
-} from "./types";
-import type { OnboardingConfig, OnboardingConfigEdit, WelcomeScreen, OnboardingAnswer, GossipDiagnostics } from "./dto";
-import type {
-  AuditExported, AuditVerified, GameTotalView, LifecycleState, OwnGame, OwnPresenceView, SessionStatus,
-  SkinApplied, SkinApplyFailure, SkinEntry, SkinLibrary,
+  AuditExported,
+  AuditVerified,
+  GameTotalView,
+  GossipDiagnostics,
+  LifecycleState,
+  OnboardingAnswer,
+  OnboardingConfig,
+  OnboardingConfigEdit,
+  OwnGame,
+  OwnPresenceView,
+  SessionStatus,
+  SkinApplied,
+  SkinApplyFailure,
+  SkinEntry,
+  SkinLibrary,
+  WelcomeScreen,
 } from "./dto";
-import type { RegionFit, SkinDraft, SkinDraftReport } from "./dto_skin_draft";
 import type { InfoviewRequest, InfoviewView } from "./dto_infoview";
+import type { RegionFit, SkinDraft, SkinDraftReport } from "./dto_skin_draft";
 import type { SkinSelection } from "./dto_skin_run";
 import type { SkinAction } from "./dto_skin_tree";
+import type {
+  ActivityListItem,
+  FavouriteServerView,
+  HiddenGameView,
+  InstalledGameView,
+  JoinSource,
+  NetworkStatus,
+  Preferences,
+  QuickWipeState,
+  SettingsTab,
+} from "./types";
 
 /// The picture formats the Host accepts (`rekindle_types::ImageKind`,
 /// serialized as its MIME type).
@@ -66,8 +87,12 @@ export const systemCommands = {
   exportSkinDraft: (draft: SkinDraft) => hostInvoke<string | null>("export_skin_draft", { draft }),
   // Region import: the shell asks for the image, the Host validates the
   // draft with it; the draft with the region, or `null` if cancelled.
-  importSkinRegion: (draft: SkinDraft, region: string, fit: RegionFit, textBacking: string | null) =>
-    hostInvoke<SkinDraft | null>("import_skin_region", { draft, region, fit, textBacking }),
+  importSkinRegion: (
+    draft: SkinDraft,
+    region: string,
+    fit: RegionFit,
+    textBacking: string | null
+  ) => hostInvoke<SkinDraft | null>("import_skin_region", { draft, region, fit, textBacking }),
   // The token file's JSON Schema for DTCG tools; `false` if cancelled.
   exportSkinSchema: () => hostInvoke<boolean>("export_skin_schema"),
   // A skin node's trigger (plan SK2-A4): a feature answers its own
@@ -117,8 +142,7 @@ export const systemCommands = {
     hostInvoke<Preferences>("set_share_game_totals", { enabled }),
   setGameDetection: (enabled: boolean) =>
     hostInvoke<Preferences>("set_game_detection", { enabled }),
-  setAutoAway: (minutes: number) =>
-    hostInvoke<Preferences>("set_auto_away", { minutes }),
+  setAutoAway: (minutes: number) => hostInvoke<Preferences>("set_auto_away", { minutes }),
   // The local activity feed (plan E7.15): one page, newest first, after
   // row `before`; keeping it or not (off clears it). Host calls.
   activityList: (before: number | null, limit: number) =>
@@ -131,8 +155,7 @@ export const systemCommands = {
   quickWipeArm: (duressPassphrase: string, shortcut: string | null) =>
     hostInvoke<QuickWipeState>("quick_wipe_arm", { duressPassphrase, shortcut }),
   quickWipeDisarm: () => hostInvoke<QuickWipeState>("quick_wipe_disarm"),
-  setPreferences: (prefs: Preferences) =>
-    invoke<void>("set_preferences", { prefs }),
+  setPreferences: (prefs: Preferences) => invoke<void>("set_preferences", { prefs }),
   checkForUpdates: () => invoke<boolean>("check_for_updates"),
 
   // Notifications — backend command instead of the plugin's `sendNotification`,
@@ -157,11 +180,13 @@ export const systemCommands = {
   /// `communityId` absent opens the community browser; `channel` shows that
   /// channel, in a new window or the open one (plan E7.2 A).
   openCommunityWindow: (communityId?: string, channel?: string) =>
-    invoke<void>("open_community_window", { communityId: communityId ?? null, channel: channel ?? null }),
+    invoke<void>("open_community_window", {
+      communityId: communityId ?? null,
+      channel: channel ?? null,
+    }),
   openProfileWindow: (publicKey: string) => invoke<void>("open_profile_window", { publicKey }),
   /// Wave 12 W12.7 — pop the active call into its own webview window.
-  openCallWindow: (callId: string) =>
-    invoke<void>("open_call_window", { callId }),
+  openCallWindow: (callId: string) => invoke<void>("open_call_window", { callId }),
   getNetworkStatus: () => invoke<NetworkStatus>("get_network_status"),
   /// Open an https link: the Host's review says the site will see our IP
   /// address; its commit opens the link. Resolves with the normalized URL.
@@ -187,7 +212,7 @@ export const systemCommands = {
   submitOnboardingAnswers: (
     communityId: string,
     answers: OnboardingAnswer[],
-    acknowledgedRules?: boolean,
+    acknowledgedRules?: boolean
   ) =>
     hostInvoke<void>("submit_onboarding_answers", {
       communityId,

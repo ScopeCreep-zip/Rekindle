@@ -2,8 +2,12 @@
 // former monolithic commands.ts; re-exported by ../commands.ts so
 // existing `import { ... } from "../ipc/commands"` call sites work.
 
-import type { OwnRecordsPhase, OwnRouteClass, RouteAvailability, RoutePauseCause } from "../channels/notification_events";
-
+import type {
+  OwnRecordsPhase,
+  OwnRouteClass,
+  RouteAvailability,
+  RoutePauseCause,
+} from "../channels/notification_events";
 
 /** D22's delivery vocabulary (`rekindle_types::message::SendState`). */
 /** Why a stored message's body could not be read (the Host's words in `reasonText`). */
@@ -150,7 +154,7 @@ export interface FriendInfo {
   groupDmBlock: string | null;
 }
 
-export interface GameStatus {
+interface GameStatus {
   gameId: number;
   gameName: string;
   serverInfo: string | null;
@@ -271,7 +275,14 @@ export interface HiddenGameView {
 
 /** Where a launch's server came from (`JoinSource`, lead decision (50)):
  *  the Host reviews a peer's server first, naming it. */
-export type JoinSource = "installed" | "favourite" | "recent" | "friendPresence" | "invite" | "community" | "lobby";
+export type JoinSource =
+  | "installed"
+  | "favourite"
+  | "recent"
+  | "friendPresence"
+  | "invite"
+  | "community"
+  | "lobby";
 
 /** A game we can launch (`InstalledGamesGet`, plan E7.15 IV3). */
 export interface InstalledGameView {
@@ -295,10 +306,7 @@ export interface FavouriteServerView {
   invitable: boolean;
 }
 
-export type ExclusionGroupEdit =
-  | { set: string }
-  | "clear"
-  | "unchanged";
+export type ExclusionGroupEdit = { set: string } | "clear" | "unchanged";
 
 export interface CommunityPolicy {
   /** Optional Markdown rules text (architecture §10.7 line 724). */
@@ -355,16 +363,9 @@ export interface NetworkStatus {
 }
 
 // Architecture §21 — scheduled-event metadata.
-export type RecurrenceFrequency = "daily" | "weekly" | "monthly";
+type RecurrenceFrequency = "daily" | "weekly" | "monthly";
 
-export type DayOfWeek =
-  | "sunday"
-  | "monday"
-  | "tuesday"
-  | "wednesday"
-  | "thursday"
-  | "friday"
-  | "saturday";
+type DayOfWeek = "sunday" | "monday" | "tuesday" | "wednesday" | "thursday" | "friday" | "saturday";
 
 export interface RecurrenceRule {
   frequency: RecurrenceFrequency;

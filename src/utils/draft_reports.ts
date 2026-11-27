@@ -52,7 +52,7 @@ export function afterDraftReports<T>(key: string, send: () => Promise<T>): Promi
   const result = (chains.get(key) ?? Promise.resolve()).then(send);
   const settled = result.then(
     () => undefined,
-    () => undefined,
+    () => undefined
   );
   chains.set(key, settled);
   void settled.then(() => {

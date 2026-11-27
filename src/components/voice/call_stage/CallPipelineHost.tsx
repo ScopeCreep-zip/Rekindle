@@ -1,4 +1,4 @@
-import { Component, Show, createMemo, onMount, onCleanup } from "solid-js";
+import { type Component, createMemo, onCleanup, onMount, Show } from "solid-js";
 import { voiceState } from "../../../stores/voice.store";
 import { useVideoCallPanel } from "../video_call/useVideoCallPanel";
 import { setActivePipeline } from "./pipeline_store";
@@ -28,18 +28,16 @@ const CallPipelineHost: Component<{ communityId: string }> = (props) => {
   // the inner instance. Returns null when no community call is active.
   const activeChannelId = createMemo(() => {
     const connected =
-      voiceState.isConnected
-      && voiceState.activeCallType === "community"
-      && voiceState.channelId != null
-      && props.communityId !== "";
+      voiceState.isConnected &&
+      voiceState.activeCallType === "community" &&
+      voiceState.channelId != null &&
+      props.communityId !== "";
     return connected ? voiceState.channelId : null;
   });
 
   return (
     <Show when={activeChannelId()} keyed>
-      {(channelId) => (
-        <PipelineInstance communityId={props.communityId} channelId={channelId} />
-      )}
+      {(channelId) => <PipelineInstance communityId={props.communityId} channelId={channelId} />}
     </Show>
   );
 };

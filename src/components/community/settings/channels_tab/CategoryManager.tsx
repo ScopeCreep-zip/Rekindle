@@ -1,12 +1,12 @@
-import { Component, For, Show, createSignal } from "solid-js";
-import SkinGlyph from "../../../common/SkinGlyph";
-import type { Community } from "../../../../stores/community.store";
+import { type Component, createSignal, For, Show } from "solid-js";
 import {
-  handleReorderCategories,
   handleCreateCategory,
   handleDeleteCategory,
   handleRenameCategory,
+  handleReorderCategories,
 } from "../../../../actions/community.actions";
+import type { Community } from "../../../../stores/community.store";
+import SkinGlyph from "../../../common/SkinGlyph";
 
 interface CategoryManagerProps {
   community: Community;
@@ -69,9 +69,10 @@ const CategoryManager: Component<CategoryManagerProps> = (props) => {
         {(cat, index) => (
           <div class="channel-manage-row">
             <SkinGlyph name="folder" class="channel-manage-icon" />
-            <Show when={renamingCategoryId() === cat.id} fallback={
-              <span class="channel-manage-name">{cat.name}</span>
-            }>
+            <Show
+              when={renamingCategoryId() === cat.id}
+              fallback={<span class="channel-manage-name">{cat.name}</span>}
+            >
               <input
                 class="form-input channel-rename-input"
                 type="text"
@@ -85,6 +86,7 @@ const CategoryManager: Component<CategoryManagerProps> = (props) => {
             </Show>
             <Show when={renamingCategoryId() !== cat.id}>
               <button
+                type="button"
                 class="form-btn-secondary channel-manage-btn"
                 onClick={() => startCategoryRename(cat)}
                 title="Rename"
@@ -94,6 +96,7 @@ const CategoryManager: Component<CategoryManagerProps> = (props) => {
             </Show>
             <Show when={renamingCategoryId() === cat.id}>
               <button
+                type="button"
                 class="form-btn-primary channel-manage-btn"
                 onClick={() => submitCategoryRename(cat.id)}
                 title="Save"
@@ -102,6 +105,7 @@ const CategoryManager: Component<CategoryManagerProps> = (props) => {
               </button>
             </Show>
             <button
+              type="button"
               class="form-btn-danger channel-manage-btn"
               onClick={() => deleteCategory(cat)}
               title="Delete"
@@ -109,6 +113,7 @@ const CategoryManager: Component<CategoryManagerProps> = (props) => {
               <SkinGlyph name="delete" />
             </button>
             <button
+              type="button"
               class="form-btn-secondary channel-manage-btn"
               onClick={() => moveCategoryUp(index())}
               disabled={index() === 0}
@@ -117,6 +122,7 @@ const CategoryManager: Component<CategoryManagerProps> = (props) => {
               <SkinGlyph name="arrow-up" />
             </button>
             <button
+              type="button"
               class="form-btn-secondary channel-manage-btn"
               onClick={() => moveCategoryDown(index())}
               disabled={index() === sortedCategories().length - 1}
@@ -127,14 +133,14 @@ const CategoryManager: Component<CategoryManagerProps> = (props) => {
           </div>
         )}
       </For>
-      <Show when={showNewCategory()} fallback={
-        <button
-          class="form-btn-secondary"
-          onClick={() => setShowNewCategory(true)}
-        >
-          <SkinGlyph name="plus-box" /> Create Category
-        </button>
-      }>
+      <Show
+        when={showNewCategory()}
+        fallback={
+          <button type="button" class="form-btn-secondary" onClick={() => setShowNewCategory(true)}>
+            <SkinGlyph name="plus-box" /> Create Category
+          </button>
+        }
+      >
         <div class="channel-create-inline">
           <input
             class="form-input"
@@ -148,6 +154,7 @@ const CategoryManager: Component<CategoryManagerProps> = (props) => {
             }}
           />
           <button
+            type="button"
             class="form-btn-primary"
             onClick={handleCreateCat}
             disabled={!newCategoryName().trim()}
@@ -155,6 +162,7 @@ const CategoryManager: Component<CategoryManagerProps> = (props) => {
             Create
           </button>
           <button
+            type="button"
             class="form-btn-secondary"
             onClick={() => setShowNewCategory(false)}
           >

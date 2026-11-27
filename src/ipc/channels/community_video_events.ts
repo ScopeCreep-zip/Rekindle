@@ -1,4 +1,4 @@
-import type { Codec, ScalabilityMode, SessionVideoConfig } from "../commands/types_sync";
+import type { SessionVideoConfig } from "../commands/types_sync";
 
 /// Architecture §10.6 — community video / screen-share signalling. Split
 /// out of the `CommunityEvent` union (and folded back in via

@@ -1,7 +1,14 @@
-import { Component, For, Show, createResource, createSignal, onCleanup, onMount } from "solid-js";
-import type { UnlistenFn } from "@tauri-apps/api/event";
+import {
+  type Component,
+  createResource,
+  createSignal,
+  For,
+  onCleanup,
+  onMount,
+  Show,
+} from "solid-js";
+import { subscribeGroupDmEvents, type UnlistenFn } from "../../ipc/channels";
 import { commands, type LobbyRefusal, type LobbyVerdict, type LobbyView } from "../../ipc/commands";
-import { subscribeGroupDmEvents } from "../../ipc/channels";
 import { authState } from "../../stores/auth.store";
 import { errorMessage } from "../../utils/error";
 
@@ -29,7 +36,9 @@ const refusal = (v: LobbyVerdict): string | null => (v.allowed ? null : REFUSAL[
  * the game we are shown in). `lobby_get` on mount, then the `groupDm`
  * `lobby` event.
  */
-const GameLobbyCard: Component<{ groupId: string; memberNames: Record<string, string> }> = (props) => {
+const GameLobbyCard: Component<{ groupId: string; memberNames: Record<string, string> }> = (
+  props
+) => {
   const [lobby, setLobby] = createSignal<LobbyView | null>(null);
   const [error, setError] = createSignal<string | null>(null);
   // The server a launch names (host:port); blank lets the Host take our
@@ -37,9 +46,10 @@ const GameLobbyCard: Component<{ groupId: string; memberNames: Record<string, st
   const [server, setServer] = createSignal("");
   const [gameName] = createResource(
     () => lobby()?.gameId,
-    async (id) => (await commands.getGameName(id)) ?? `Game ${id}`,
+    async (id) => (await commands.getGameName(id)) ?? `Game ${id}`
   );
-  const label = (key: string): string => props.memberNames[key] ?? (key === authState.publicKey ? "You" : "A member");
+  const label = (key: string): string =>
+    props.memberNames[key] ?? (key === authState.publicKey ? "You" : "A member");
   const reasonId = (action: string): string => `lobby-${action}-reason-${props.groupId}`;
 
   let unlisten: UnlistenFn | undefined;
@@ -74,9 +84,15 @@ const GameLobbyCard: Component<{ groupId: string; memberNames: Record<string, st
     }
   }
 
-  const ActionButton: Component<{ action: string; text: string; verdict: LobbyVerdict; run: () => Promise<LobbyView | null> }> = (b) => (
+  const ActionButton: Component<{
+    action: string;
+    text: string;
+    verdict: LobbyVerdict;
+    run: () => Promise<LobbyView | null>;
+  }> = (b) => (
     <>
       <button
+        type="button"
         class="form-btn-secondary group-chat-action"
         aria-disabled={refusal(b.verdict) !== null ? "true" : undefined}
         aria-describedby={refusal(b.verdict) !== null ? reasonId(b.action) : undefined}
@@ -85,7 +101,9 @@ const GameLobbyCard: Component<{ groupId: string; memberNames: Record<string, st
       >
         {b.text}
       </button>
-      <span class="sr-only" id={reasonId(b.action)}>{refusal(b.verdict)}</span>
+      <span class="sr-only" id={reasonId(b.action)}>
+        {refusal(b.verdict)}
+      </span>
     </>
   );
 
@@ -94,7 +112,11 @@ const GameLobbyCard: Component<{ groupId: string; memberNames: Record<string, st
       <Show
         when={lobby()}
         fallback={
-          <button class="form-btn-secondary group-chat-action" onClick={() => void act(() => commands.lobbyHost(props.groupId))}>
+          <button
+            type="button"
+            class="form-btn-secondary group-chat-action"
+            onClick={() => void act(() => commands.lobbyHost(props.groupId))}
+          >
             Host a game lobby
           </button>
         }
@@ -106,18 +128,37 @@ const GameLobbyCard: Component<{ groupId: string; memberNames: Record<string, st
               <span class="game-lobby-host">hosted by {label(view().hostKey)}</span>
             </div>
             <ul class="game-lobby-members" aria-label="In the lobby">
-              <For each={view().members}>{(key) => <li class="game-lobby-member">{label(key)}</li>}</For>
+              <For each={view().members}>
+                {(key) => <li class="game-lobby-member">{label(key)}</li>}
+              </For>
             </ul>
             <div class="game-lobby-actions">
-              <ActionButton action="join" text="Join" verdict={view().join} run={() => commands.lobbyJoin(props.groupId, view().lobbyId)} />
-              <ActionButton action="leave" text="Leave" verdict={view().leave} run={() => commands.lobbyLeave(props.groupId, view().lobbyId)} />
+              <ActionButton
+                action="join"
+                text="Join"
+                verdict={view().join}
+                run={() => commands.lobbyJoin(props.groupId, view().lobbyId)}
+              />
+              <ActionButton
+                action="leave"
+                text="Leave"
+                verdict={view().leave}
+                run={() => commands.lobbyLeave(props.groupId, view().lobbyId)}
+              />
               <ActionButton
                 action="launch"
                 text="Launch"
                 verdict={view().launch}
-                run={() => commands.lobbyLaunch(props.groupId, view().lobbyId, server().trim() || null)}
+                run={() =>
+                  commands.lobbyLaunch(props.groupId, view().lobbyId, server().trim() || null)
+                }
               />
-              <ActionButton action="close" text="Stop Hosting" verdict={view().close} run={() => commands.lobbyClose(props.groupId, view().lobbyId)} />
+              <ActionButton
+                action="close"
+                text="Stop Hosting"
+                verdict={view().close}
+                run={() => commands.lobbyClose(props.groupId, view().lobbyId)}
+              />
               <Show when={view().launch.allowed}>
                 <input
                   class="form-input game-lobby-server"
@@ -128,11 +169,21 @@ const GameLobbyCard: Component<{ groupId: string; memberNames: Record<string, st
                 />
               </Show>
             </div>
-            <Show when={view().state.kind === "launched" && view().hostKey !== authState.publicKey ? (view().state as { server: string }).server : null}>
+            <Show
+              when={
+                view().state.kind === "launched" && view().hostKey !== authState.publicKey
+                  ? (view().state as { server: string }).server
+                  : null
+              }
+            >
               {(server) => (
                 <div class="game-lobby-launched" role="status">
                   <span>The game is on at {server()}</span>
-                  <button class="form-btn-primary group-chat-action" onClick={() => void joinGame(view(), server())}>
+                  <button
+                    type="button"
+                    class="form-btn-primary group-chat-action"
+                    onClick={() => void joinGame(view(), server())}
+                  >
                     Join the game
                   </button>
                 </div>
@@ -141,7 +192,13 @@ const GameLobbyCard: Component<{ groupId: string; memberNames: Record<string, st
           </>
         )}
       </Show>
-      <Show when={error()}>{(message) => <div class="form-error game-lobby-error" role="alert">{message()}</div>}</Show>
+      <Show when={error()}>
+        {(message) => (
+          <div class="form-error game-lobby-error" role="alert">
+            {message()}
+          </div>
+        )}
+      </Show>
     </section>
   );
 };

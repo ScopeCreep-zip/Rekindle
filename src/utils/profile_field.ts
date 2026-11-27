@@ -10,7 +10,7 @@ function fieldOp<T>(
   next: T | null,
   baseline: T | null,
   isEmpty: (v: T) => boolean,
-  same: (a: T | null, b: T | null) => boolean,
+  same: (a: T | null, b: T | null) => boolean
 ): ProfileField<T> {
   if (same(next, baseline)) return { op: "unchanged" };
   if (next === null || isEmpty(next)) return { op: "clear" };
@@ -37,7 +37,12 @@ export function colourField(next: number | null, baseline: number | null): Profi
 
 /** The badge list: an empty list clears. */
 export function listField(next: string[], baseline: string[]): ProfileField<string[]> {
-  return fieldOp(next, baseline, (v) => v.length === 0, (a, b) => a !== null && b !== null && a.length === b.length && a.every((x, i) => x === b[i]));
+  return fieldOp(
+    next,
+    baseline,
+    (v) => v.length === 0,
+    (a, b) => a !== null && b !== null && a.length === b.length && a.every((x, i) => x === b[i])
+  );
 }
 
 /**
@@ -47,6 +52,10 @@ export function listField(next: string[], baseline: string[]): ProfileField<stri
  * colour shown as a default, badges re-split, text trimmed) is never sent
  * as an edit; otherwise `op` builds the edit.
  */
-export function editedField<T>(draft: string, shownAtStart: string, op: () => ProfileField<T>): ProfileField<T> {
+export function editedField<T>(
+  draft: string,
+  shownAtStart: string,
+  op: () => ProfileField<T>
+): ProfileField<T> {
   return draft === shownAtStart ? { op: "unchanged" } : op();
 }

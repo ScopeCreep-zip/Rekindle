@@ -1,4 +1,4 @@
-import { Component, Index } from "solid-js";
+import { type Component, Index } from "solid-js";
 
 /// The tile slots a skin's window frame draws into (plan SK0 S2). Equal to
 /// `rekindle-skin` `shape::MAX_FRAME_TILES`; a test there reads this line.

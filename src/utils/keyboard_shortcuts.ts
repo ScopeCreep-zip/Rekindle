@@ -29,7 +29,9 @@ export const SHORTCUT_SECTIONS: ShortcutSection[] = [
   {
     // src/hooks/useAppearanceChord.ts: in every window but the login.
     title: "Any window",
-    rows: [{ keys: [["Mod", ","]], action: "Appearance settings: skins, among them an accessible one" }],
+    rows: [
+      { keys: [["Mod", ","]], action: "Appearance settings: skins, among them an accessible one" },
+    ],
   },
   {
     // src/windows/BuddyListWindow.tsx handleKeyboardShortcuts.
@@ -50,7 +52,15 @@ export const SHORTCUT_SECTIONS: ShortcutSection[] = [
   {
     // src/windows/community_window/useCommunityWindow.ts.
     title: "Community",
-    rows: [{ keys: [["Mod", "F"], ["Mod", "K"]], action: "Search messages" }],
+    rows: [
+      {
+        keys: [
+          ["Mod", "F"],
+          ["Mod", "K"],
+        ],
+        action: "Search messages",
+      },
+    ],
   },
   {
     // src/utils/roving_list.ts: buddy, channel and member lists.

@@ -15,7 +15,9 @@ import type { Message } from "../stores/chat.store";
  * come through the same events, so they still move it.
  */
 export function withOwnRow(messages: Message[], row: Message): Message[] {
-  const held = row.serverMessageId ? messages.find((m) => m.serverMessageId === row.serverMessageId) : undefined;
+  const held = row.serverMessageId
+    ? messages.find((m) => m.serverMessageId === row.serverMessageId)
+    : undefined;
   const next: Message = held ? { ...row, status: held.status, retry: held.retry } : row;
   const rest = held ? messages.filter((m) => m !== held) : messages;
   return [...rest, next].sort((x, y) => x.timestamp - y.timestamp);
