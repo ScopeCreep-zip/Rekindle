@@ -7,23 +7,51 @@
 //!
 //! Tier 3 — depends on `rekindle-types`, `rekindle-secrets` and
 //! `rekindle-utils`.
+//!
+//! Every byte this crate decodes may come from a remote peer, so a panic here
+//! is a remote crash (gate hardening 3(a); ANSSI LANG-LIMIT-PANIC,
+//! LANG-ARRINDEXING, LANG-ARITH): non-test code may not index, slice, do
+//! unchecked arithmetic, unwrap, expect or panic. The lints sit on every
+//! hand-written module through [`peer_input_module!`] rather than on the
+//! crate, since a crate attribute would also reach the generated Cap'n Proto
+//! modules below, which are not ours to change. `cargo xtask
+//! check-panic-lints` keeps every root module declared through it.
 
-pub mod capnp_codec;
-pub mod capnp_envelope;
-pub mod checkpoint_hint;
-pub mod checkpoint_state;
-pub mod community;
-pub mod dedup;
-pub mod envelope;
-pub mod error;
-pub mod friend;
-pub mod frontier_request;
-pub mod governance_op;
-pub mod ingress;
-pub mod member_record;
-pub mod message;
-pub mod presence_row;
-pub mod successor_invites;
+/// Declare a hand-written module with the panic lints at `deny` for its
+/// non-test code.
+macro_rules! peer_input_module {
+    ($module:ident) => {
+        #[cfg_attr(
+            not(test),
+            deny(
+                clippy::indexing_slicing,
+                clippy::arithmetic_side_effects,
+                clippy::unwrap_used,
+                clippy::expect_used,
+                clippy::panic,
+                clippy::string_slice
+            )
+        )]
+        pub mod $module;
+    };
+}
+
+peer_input_module!(capnp_codec);
+peer_input_module!(capnp_envelope);
+peer_input_module!(checkpoint_hint);
+peer_input_module!(checkpoint_state);
+peer_input_module!(community);
+peer_input_module!(dedup);
+peer_input_module!(envelope);
+peer_input_module!(error);
+peer_input_module!(friend);
+peer_input_module!(frontier_request);
+peer_input_module!(governance_op);
+peer_input_module!(ingress);
+peer_input_module!(member_record);
+peer_input_module!(message);
+peer_input_module!(presence_row);
+peer_input_module!(successor_invites);
 
 pub use error::CodecError;
 

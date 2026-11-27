@@ -133,7 +133,11 @@ fn packed_literal(segment: &[u8]) -> Result<Vec<u8>, CodecError> {
     })?;
     let mut header = 0u32.to_le_bytes().to_vec();
     header.extend_from_slice(&words.to_le_bytes());
-    let mut out = Vec::with_capacity(segment.len() + segment.len() / 1024 + 14);
+    // A capacity hint: the segment, its run counts and the header.
+    let mut out = Vec::with_capacity(segment
+        .len()
+        .saturating_add(segment.len() / 1024)
+        .saturating_add(14));
     // The reader takes the segment table apart from the segment, so no run
     // crosses from one into the other.
     for run in std::iter::once(header.as_slice()).chain(segment.chunks(256 * 8)) {
@@ -253,7 +257,7 @@ fn received_unsigned(r: governance_op::Reader<'_>) -> capnp::Result<Vec<u8>> {
 fn canonical(r: governance_op::Reader<'_>) -> capnp::Result<Vec<u8>> {
     // One first segment that holds it all (plus the root pointer): the
     // canonical form is a single segment.
-    let words = u32::try_from(r.total_size()?.word_count + 1).unwrap_or(u32::MAX);
+    let words = u32::try_from(r.total_size()?.word_count.saturating_add(1)).unwrap_or(u32::MAX);
     let mut out = capnp::message::Builder::new(
         capnp::message::HeapAllocator::new().first_segment_words(words),
     );

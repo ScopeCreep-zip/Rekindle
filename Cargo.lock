@@ -7184,6 +7184,7 @@ dependencies = [
  "capnp 0.20.6",
  "capnpc 0.20.1",
  "hex",
+ "proptest",
  "rekindle-secrets",
  "rekindle-types",
  "rekindle-utils",

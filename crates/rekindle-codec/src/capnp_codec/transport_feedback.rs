@@ -35,16 +35,14 @@ impl TransportFeedback {
     /// every field but the signature.
     #[must_use]
     pub fn signing_bytes(&self) -> Vec<u8> {
-        let mut out = Vec::with_capacity(
-            TRANSPORT_FEEDBACK.len() + self.reporter_key.len() + 12 + self.arrivals.len() * 2,
-        );
-        out.extend_from_slice(TRANSPORT_FEEDBACK.as_bytes());
-        out.extend_from_slice(&self.reporter_key);
-        out.extend_from_slice(&self.begin_seq.to_le_bytes());
-        out.extend_from_slice(&self.report_time_ms.to_le_bytes());
-        for a in &self.arrivals {
-            out.extend_from_slice(&a.to_le_bytes());
-        }
+        let mut out = [
+            TRANSPORT_FEEDBACK.as_bytes(),
+            &self.reporter_key,
+            &self.begin_seq.to_le_bytes(),
+            &self.report_time_ms.to_le_bytes(),
+        ]
+        .concat();
+        out.extend(self.arrivals.iter().flat_map(|a| a.to_le_bytes()));
         out
     }
 

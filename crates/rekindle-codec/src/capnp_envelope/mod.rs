@@ -30,12 +30,8 @@ mod control;
 mod governance;
 mod sub_types;
 
-/// Convert a `usize` length to a Cap'n Proto-friendly `u32`. Cap'n
-/// Proto lists are bounded by `u32::MAX`; any caller exceeding that is
-/// a real bug, not a silent truncation case.
-pub(super) fn len_u32(n: usize) -> u32 {
-    u32::try_from(n).expect("Cap'n Proto list length must fit in u32")
-}
+/// A list length as Cap'n Proto's `u32` ([`crate::capnp_codec::wire_len`]).
+pub(super) use crate::capnp_codec::wire_len as len_u32;
 
 pub use control::{decode_control_payload, encode_control_payload};
 pub use governance::{decode_governance_entry, encode_governance_entry};

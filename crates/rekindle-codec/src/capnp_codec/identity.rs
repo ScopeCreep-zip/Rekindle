@@ -109,9 +109,7 @@ pub fn encode_prekey_record_list(list: &PrekeyRecordList) -> Vec<u8> {
     let mut builder = capnp::message::Builder::new_default();
     {
         let root = builder.init_root::<identity_capnp::prekey_record_list::Builder<'_>>();
-        let mut devices = root.init_devices(
-            u32::try_from(list.devices.len()).expect("a device list fits a u32 index"),
-        );
+        let mut devices = root.init_devices(super::wire_len(list.devices.len()));
         for (i, device) in (0u32..).zip(&list.devices) {
             let mut entry = devices.reborrow().get(i);
             entry.set_device_id(&device.device_id);

@@ -54,10 +54,7 @@ pub fn classify(datagram: &[u8]) -> Ingress<'_> {
 #[must_use]
 pub fn gossip_datagram(signed: &SignedEnvelope) -> Vec<u8> {
     let encoded = encode_signed_envelope(signed);
-    let mut datagram = Vec::with_capacity(encoded.len() + 1);
-    datagram.push(GOSSIP_TAG);
-    datagram.extend_from_slice(&encoded);
-    datagram
+    [&[GOSSIP_TAG], encoded.as_slice()].concat()
 }
 
 #[cfg(test)]

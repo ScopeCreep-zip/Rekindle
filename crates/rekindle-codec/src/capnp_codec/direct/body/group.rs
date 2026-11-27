@@ -63,8 +63,7 @@ impl std::fmt::Debug for GroupDmInvite {
 
 /// Append `bytes` with its length (u32 big-endian) in front.
 fn put_len_prefixed(out: &mut Vec<u8>, bytes: &[u8]) {
-    let len = u32::try_from(bytes.len()).expect("a group invite field fits a u32 length");
-    out.extend_from_slice(&len.to_be_bytes());
+    out.extend_from_slice(&crate::capnp_codec::wire_len(bytes.len()).to_be_bytes());
     out.extend_from_slice(bytes);
 }
 
@@ -99,10 +98,8 @@ impl GroupDmInvite {
         b.set_group_id(&self.group_id);
         b.set_name(&self.name);
         let mut roster = b.reborrow().init_roster(list_len(&self.roster));
-        for (i, member) in self.roster.iter().enumerate() {
-            let mut m = roster
-                .reborrow()
-                .get(u32::try_from(i).expect("a roster index fits a u32"));
+        for (i, member) in (0u32..).zip(&self.roster) {
+            let mut m = roster.reborrow().get(i);
             m.set_identity(&member.identity);
             m.set_profile_record_key(&member.profile_record_key);
             m.set_display_name(&member.display_name);

@@ -87,10 +87,16 @@ pub(crate) fn ed25519_verify(
         .map_err(|e| CodecError::Verification(format!("{what} signature: {e}")))
 }
 
-pub(crate) fn pack(builder: &capnp::message::Builder<capnp::message::HeapAllocator>) -> Vec<u8> {
-    let mut output = Vec::new();
-    capnp::serialize_packed::write_message(&mut output, builder).expect("write to Vec never fails");
-    output
+pub(crate) use packing::pack;
+
+/// A list or field length as Cap'n Proto's `u32` (lists index by `u32`). A
+/// length past `u32::MAX` belongs to a value over 4 GiB, which no carrier
+/// takes (an `app_message` is at most `MAX_APP_MESSAGE_LEN`, a subkey
+/// `MAX_SUBKEY_SIZE`, both enforced by Veilid), so such an encoding is
+/// refused before it leaves; the length saturates there instead of
+/// panicking. Every decoded value is far below it (its traversal bound).
+pub(crate) fn wire_len(n: usize) -> u32 {
+    u32::try_from(n).unwrap_or(u32::MAX)
 }
 
 /// The deepest pointer nesting a decoder follows (security roadmap 2.11;
@@ -191,6 +197,7 @@ pub mod chain;
 pub mod direct;
 pub mod friend;
 pub mod identity;
+mod packing;
 pub mod presence;
 pub mod transport_feedback;
 pub mod voice;

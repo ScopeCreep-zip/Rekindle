@@ -66,12 +66,13 @@ pub enum InviteSealError {
 }
 
 fn aad(old_anchor: &str, new_anchor: &str, member: &PseudonymKey) -> Vec<u8> {
-    let mut out = Vec::with_capacity(old_anchor.len() + new_anchor.len() + 33);
-    out.extend_from_slice(old_anchor.as_bytes());
-    out.push(0);
-    out.extend_from_slice(new_anchor.as_bytes());
-    out.extend_from_slice(&member.0);
-    out
+    [
+        old_anchor.as_bytes(),
+        &[0],
+        new_anchor.as_bytes(),
+        member.0.as_slice(),
+    ]
+    .concat()
 }
 
 /// Seal `invite` to `member`'s card `hpke_key`.

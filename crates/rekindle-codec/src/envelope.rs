@@ -41,12 +41,7 @@ const SIGNATURE_DOMAIN: &[u8] = b"rekindle-gossip-envelope:v1:";
 /// length, so the concatenation cannot alias.
 #[must_use]
 pub fn signing_input(message_id: &[u8; MESSAGE_ID_LEN], envelope_bytes: &[u8]) -> Vec<u8> {
-    let mut input =
-        Vec::with_capacity(SIGNATURE_DOMAIN.len() + MESSAGE_ID_LEN + envelope_bytes.len());
-    input.extend_from_slice(SIGNATURE_DOMAIN);
-    input.extend_from_slice(message_id);
-    input.extend_from_slice(envelope_bytes);
-    input
+    [SIGNATURE_DOMAIN, message_id.as_slice(), envelope_bytes].concat()
 }
 
 /// A signed gossip envelope ready for network transmission.

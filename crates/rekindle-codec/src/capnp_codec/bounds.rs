@@ -44,7 +44,8 @@ use rekindle_types::dht_layout::{member_record, prekeys, MAX_APP_MESSAGE_LEN, MA
 /// four times that many bytes, as 8-byte words.
 #[must_use]
 pub const fn words_for(max_bytes: usize) -> usize {
-    max_bytes / 8 * 4
+    // At most `max_bytes / 2`, so the product never saturates.
+    (max_bytes / 8).saturating_mul(4)
 }
 
 /// The most packed bytes one word can take: a tag, its eight bytes and the
@@ -78,7 +79,11 @@ impl Bound {
     #[must_use]
     pub const fn schema(max_words: usize) -> Self {
         Self {
-            max_bytes: (max_words + 1) * PACKED_WORD_MAX_BYTES,
+            // Schema bounds are a few hundred words; a bound past
+            // `usize::MAX` bytes would refuse nothing anyway.
+            max_bytes: max_words
+                .saturating_add(1)
+                .saturating_mul(PACKED_WORD_MAX_BYTES),
             max_words,
         }
     }

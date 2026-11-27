@@ -281,8 +281,9 @@ impl PresenceBeat {
             if out.len() == PRESENCE_BEAT_BYTES {
                 return Ok(out);
             }
-            cost = (cost + PRESENCE_BEAT_BYTES)
-                .checked_sub(out.len())
+            cost = cost
+                .checked_add(PRESENCE_BEAT_BYTES)
+                .and_then(|c| c.checked_sub(out.len()))
                 .filter(|c| *c >= beat_padding::MIN_COST)
                 .ok_or_else(|| {
                     CodecError::Serialization(format!(

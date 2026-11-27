@@ -148,7 +148,8 @@ impl DmFrame {
         if bytes.len() >= MAX_APP_MESSAGE_LEN {
             return Err(CodecError::Deserialization(format!(
                 "a {}-byte frame is over the {MAX_APP_MESSAGE_LEN}-byte message cap",
-                bytes.len() + 1
+                // A slice is at most `isize::MAX` bytes: never saturates.
+                bytes.len().saturating_add(1)
             )));
         }
         let frame = decode_root::<dm_frame::Owned, _>(bytes, |root| {
