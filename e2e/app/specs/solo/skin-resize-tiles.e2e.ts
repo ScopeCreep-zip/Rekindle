@@ -8,10 +8,16 @@
 //   1. its four 16 px edges agree with the shaper's own silhouette at that
 //      size (cargo xtask skin-silhouette, silhouette.ts): no gap the CSS
 //      leaves, no art outside the cut;
-//   2. no art is painted twice: no two painted skin nodes draw the same
-//      image at the same position and size over overlapping boxes. The
-//      silhouette is shared by the serve side, so a doubled row it shares
-//      would not show there; this check is the one that sees it.
+//   2. no row is painted twice: no displayed frame-layer tile
+//      (`.skin-frame > i`) draws a `row-*`/`node-*` image for a row the skin
+//      tree also paints. The pre-fix importer served Total Chaos's title row
+//      both as the tree's `MainTitleBar` (OutdentLeft 1) and as three
+//      un-outdented frame tiles (`row-maintitlebar-left`, `node-maintitlebar-
+//      middle`, `node-maintitlebar-right`, 52 px tall at x 0): a 1 px
+//      difference no pixel check holds reliably, and a serve-side error the
+//      silhouette shares, so this structural check is the one that sees it.
+//   3. no two painted skin nodes draw the same image at the same position
+//      and size over overlapping boxes.
 
 import { browser, expect } from "@wdio/globals";
 import { switchTo, waitUntil } from "../../../walk/helpers.ts";
@@ -47,6 +53,28 @@ async function settledSize(): Promise<[number, number]> {
     "the window never held its size"
   );
   return size;
+}
+
+/** Displayed frame tiles drawing a row the skin tree also paints: a tile's
+ *  `row-<row>-*` / `node-<row>-*` image names a node the tree lays (case
+ *  aside: `MainTitleBar` is `maintitlebar`). */
+async function rowTilesTwice(): Promise<string[]> {
+  return (await browser.execute(() => {
+    const treeNodes = new Set(
+      Array.from(document.querySelectorAll<HTMLElement>(".skin-tree [data-skin-node]")).map((el) =>
+        (el.getAttribute("data-skin-node") ?? "").toLowerCase()
+      )
+    );
+    const out: string[] = [];
+    for (const tile of Array.from(document.querySelectorAll<HTMLElement>(".skin-frame > i"))) {
+      const st = getComputedStyle(tile);
+      if (st.display === "none" || st.backgroundImage === "none") continue;
+      const file = /([^/"]+)\.png/.exec(st.backgroundImage)?.[1] ?? "";
+      const row = /^(?:row|node)-([a-z0-9]+)-/.exec(file)?.[1];
+      if (row && treeNodes.has(row)) out.push(file);
+    }
+    return out;
+  })) as string[];
 }
 
 /** Pairs of painted skin nodes drawing the same art in the same place. */
@@ -128,13 +156,16 @@ describe("a pack's tiles join at its minimum and when resized larger (SKC4c)", f
           ]
         );
         const doubled = await doubledArt();
+        const twice = await rowTilesTwice();
         console.log(
-          `[resize-tiles] ${pack.name} ${label} ${w}x${h}: edges drawn outside ${off.outsideDrawn}, clear inside ${off.insideClear} ${JSON.stringify(off.first)}; doubled art ${JSON.stringify(doubled)}`
+          `[resize-tiles] ${pack.name} ${label} ${w}x${h}: edges drawn outside ${off.outsideDrawn}, clear inside ${off.insideClear} ${JSON.stringify(off.first)}; doubled art ${JSON.stringify(doubled)}; frame tiles repeating a tree row ${JSON.stringify(twice)}`
         );
         await shot(`${pack.file}-${label}`);
         if (off.outsideDrawn + off.insideClear > 0)
           faults.push(`${pack.name} ${label}: edges ${off.outsideDrawn}/${off.insideClear}`);
         if (doubled.length > 0) faults.push(`${pack.name} ${label}: doubled ${doubled.join(", ")}`);
+        if (twice.length > 0)
+          faults.push(`${pack.name} ${label}: frame tiles repeat a tree row: ${twice.join(", ")}`);
       }
     }
     expect(faults).toEqual([]);
