@@ -125,9 +125,15 @@ const AppearanceTab: Component = () => {
       <Show when={library()?.login === skin.id}>
         <span class="skin-badge">Login skin</span>
       </Show>
+      {/* Every built-in is listed (skin catalogue ruling 5): the list is one
+          Tab stop (the radio group's arrows choose), and only the row in use
+          (the one the arrows chose) keeps its actions in the Tab order, so the
+          keyboard path stays three or four stops at any pack count. A pointer
+          reaches every row's actions. */}
       <div class="skin-actions">
         <button
           class="skin-row-btn skin-info"
+          tabIndex={shown() === skin.id ? 0 : -1}
           aria-label={`Credits for ${skin.name}`}
           aria-expanded={creditsOf() === skin.id}
           aria-controls={`skin-credits-${index()}`}
@@ -138,12 +144,16 @@ const AppearanceTab: Component = () => {
         <Show when={library()?.login !== skin.id}>
           <button
             class="skin-row-btn skin-action"
+            tabIndex={shown() === skin.id ? 0 : -1}
             onClick={() => void run(() => commands.setLoginSkin(skin.id))}
           >
             Use as login skin
           </button>
         </Show>
         <Show when={skin.importedAt !== null}>
+          {/* Remove stays in the Tab order on every imported row (a user's
+              own few): arrowing to one makes it the skin in use, where it is
+              disabled, so roving would leave it out of reach. */}
           <button
             class="skin-row-btn skin-action"
             disabled={shown() === skin.id || library()?.active === skin.id}
