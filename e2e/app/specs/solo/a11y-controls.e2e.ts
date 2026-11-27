@@ -15,7 +15,7 @@
 import { browser, expect } from "@wdio/globals";
 import type { Browser } from "webdriverio";
 import { NET_WAIT_MS, byText, gone, resolveIntent, shown, typeInto, waitUntil } from "../../../walk/helpers.ts";
-import { communitySettings, createCommunity, createIdentity, openCommunity, selectChannel, setCommunityName, setLocationSharing, type User } from "../../journeys.ts";
+import { communitySettings, createCommunity, createIdentity, newUser, openCommunity, selectChannel, setCommunityName, setLocationSharing, type User } from "../../journeys.ts";
 import { applySkin, skinShown } from "../../journeys_skins.ts";
 import { openSettings } from "../../../walk/nav.ts";
 import { shot } from "../../shots.ts";
@@ -23,7 +23,8 @@ import { builtinPacks } from "../../skin-pack.ts";
 
 const b = browser as unknown as Browser;
 // Fixed names: the before and after runs draw the same text.
-const ada: User = { displayName: "Ada", passphrase: "a11y-controls-passphrase-1" };
+// A fixed display name (the shots show it); a generated passphrase (they never do).
+const ada: User = { ...newUser("a11y"), displayName: "Ada" };
 const PLACE = "Keyboard Hall";
 const ROLE = "Greeter";
 const PACKS = builtinPacks();
