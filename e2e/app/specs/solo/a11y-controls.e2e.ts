@@ -19,12 +19,14 @@ import { communitySettings, createCommunity, createIdentity, openCommunity, sele
 import { applySkin, skinShown } from "../../journeys_skins.ts";
 import { openSettings } from "../../../walk/nav.ts";
 import { shot } from "../../shots.ts";
+import { builtinPacks } from "../../skin-pack.ts";
 
 const b = browser as unknown as Browser;
 // Fixed names: the before and after runs draw the same text.
 const ada: User = { displayName: "Ada", passphrase: "a11y-controls-passphrase-1" };
 const PLACE = "Keyboard Hall";
 const ROLE = "Greeter";
+const PACKS = builtinPacks();
 
 /** Close Community Settings, back to the window. */
 async function closeSettings(): Promise<void> {
@@ -32,69 +34,51 @@ async function closeSettings(): Promise<void> {
   await gone(b, ".modal-container .form-tabs", NET_WAIT_MS);
 }
 
-/** The community window's content ground: the first opaque background under
- *  the middle of the message area, the element that paints it, and every
- *  theme colour token that resolves to that colour in this window. */
-interface Ground {
-  bg: string;
-  painter: string;
-  tokens: Record<string, string>;
-}
-
-async function groundOfContent(): Promise<Ground> {
-  return (await b.execute(() => {
-    const area = document.querySelector(".community-main")!.getBoundingClientRect();
-    let el: Element | null = document.elementFromPoint(area.left + area.width / 2, area.top + area.height / 2);
-    let bg = "";
-    for (; el; el = el.parentElement) {
-      const c = getComputedStyle(el).backgroundColor;
-      if (c && !/rgba\([^)]*,\s*0\)$/.test(c) && c !== "transparent") {
-        bg = c;
-        break;
-      }
-    }
-    const painter = el ? `${el.tagName.toLowerCase()}.${typeof el.className === "string" ? el.className.split(/\s+/).slice(0, 2).join(".") : ""}` : "none";
-    // Every --color-xfire-* token the sheets name, resolved in this window.
-    const names = new Set<string>();
-    for (const sheet of Array.from(document.styleSheets)) {
-      let rules: CSSRuleList;
-      try {
-        rules = sheet.cssRules;
-      } catch {
-        continue;
-      }
-      for (const m of Array.from(rules).map((r) => r.cssText).join("\n").matchAll(/--color-xfire-[a-z0-9-]+/g)) names.add(m[0]);
-    }
-    const probe = document.createElement("span");
-    document.body.appendChild(probe);
-    const tokens: Record<string, string> = {};
-    for (const name of names) {
-      probe.style.color = `var(${name})`;
-      tokens[name] = getComputedStyle(probe).color;
-    }
-    probe.remove();
-    return { bg, painter, tokens };
-  })) as Ground;
-}
-
-/** The community window and its Roles tab, saved under `skin`'s name. */
-async function shotsIn(skin: string, href: string): Promise<Ground> {
-  await openCommunity(b, PLACE);
+/** Compare the visible message-list ground to the pack's declared bg.panel token. */
+async function groundMatches(skin: string, href: string): Promise<void> {
+  const pack = PACKS.find((entry) => entry.name === skin);
+  const declared = pack?.variants[0]?.colours["bg.panel"];
+  if (!declared) throw new Error(`${skin} has no declared bg.panel in its token sheet`);
+  // Wait only for the linked sheet. A wrong ground after that is a rendering failure.
   await skinShown(b, href);
+  const colours = await b.execute((expected: string) => {
+    const ground = document.querySelector(".community-main .chat-message-area");
+    if (!ground) throw new Error("community message ground is missing");
+    const probe = document.createElement("span");
+    probe.style.color = expected;
+    document.body.append(probe);
+    try {
+      return {
+        href: document.getElementById("rekindle-skin")?.getAttribute("href") ?? "",
+        declared: getComputedStyle(probe).color,
+        shown: getComputedStyle(ground).backgroundColor,
+      };
+    } finally {
+      probe.remove();
+    }
+  }, declared);
+  console.log(`[a11y] ${skin} community sheet ${colours.href}; message ground ${colours.shown}, declared ${colours.declared} (${declared})`);
+  expect(colours.href).toBe(href);
+  expect(colours.shown).toBe(colours.declared);
+}
+
+/** The community window and its Roles tab, saved under the skin's name. */
+async function shotsIn(skin: string, href: string): Promise<void> {
+  await openCommunity(b, PLACE);
   await selectChannel(b, "general");
   await shown(b, ".category-header");
   await byText(b, ".member-item .member-name", ada.displayName, NET_WAIT_MS);
   await byText(b, ".channel-presence-badge", "1", NET_WAIT_MS);
   await gone(b, ".governance-publication", NET_WAIT_MS);
   await gone(b, ".toast-item", NET_WAIT_MS);
-  const ground = await groundOfContent();
-  await shot(`community-${skin}`);
+  await shown(b, ".community-main .chat-message-area", NET_WAIT_MS);
+  await groundMatches(skin, href);
+  await shot(`community-${skin.toLowerCase()}`);
   await communitySettings(b, "Roles");
   await byText(b, ".settings-role-row", ROLE, NET_WAIT_MS);
   await gone(b, ".toast-item", NET_WAIT_MS);
-  await shot(`roles-${skin}`);
+  await shot(`roles-${skin.toLowerCase()}`);
   await closeSettings();
-  return ground;
 }
 
 /** Whether the app runs on macOS, where Tab skips buttons (see the header). */
@@ -173,25 +157,11 @@ describe("converted controls (FE-LINT slice C)", function () {
 
     await openSettings(b, "Appearance");
     const symbiosis = await applySkin(b, ada, "Symbiosis");
-    const darkGround = await shotsIn("symbiosis", symbiosis);
+    await shotsIn("Symbiosis", symbiosis);
     await openSettings(b, "Appearance");
     const alloy = await applySkin(b, ada, "Alloy");
     expect(alloy).not.toBe(symbiosis);
-    const lightGround = await shotsIn("alloy", alloy);
-
-    // The content's ground follows its token under each skin: the tokens that
-    // paint it under Symbiosis must paint it under Alloy too, at Alloy's
-    // values. A ground that stays Symbiosis's while its token changed is the
-    // window not taking the skin (a product fault, not capture timing).
-    const paintedBy = Object.keys(darkGround.tokens).filter((t) => darkGround.tokens[t] === darkGround.bg);
-    const follows = paintedBy.filter((t) => lightGround.tokens[t] === lightGround.bg);
-    const changed = paintedBy.filter((t) => lightGround.tokens[t] !== darkGround.tokens[t]);
-    console.log(
-      `[a11y] content ground: Symbiosis ${darkGround.bg} (${darkGround.painter}), Alloy ${lightGround.bg} (${lightGround.painter}); ` +
-        `painted by ${JSON.stringify(paintedBy)}; Alloy's values ${JSON.stringify(Object.fromEntries(paintedBy.map((t) => [t, lightGround.tokens[t]])))}; ` +
-        `following under Alloy ${JSON.stringify(follows)}; changed by Alloy ${JSON.stringify(changed)}`,
-    );
-    expect({ paintedByAToken: paintedBy.length > 0, followsUnderAlloy: follows.length > 0 }).toEqual({ paintedByAToken: true, followsUnderAlloy: true });
+    await shotsIn("Alloy", alloy);
   });
 
   it("are reached by Tab with a visible ring and work with Enter and Space", async () => {
