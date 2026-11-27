@@ -40,7 +40,7 @@ fn piece(path: &str) -> RgbaImage {
     RgbaImage::from_pixel(w.parse().unwrap(), h.parse().unwrap(), ON)
 }
 
-fn imported(xml: &[u8]) -> Result<(WindowLayout, SkinTree), crate::import::ImportError> {
+pub(super) fn imported(xml: &[u8]) -> Result<(WindowLayout, SkinTree), crate::import::ImportError> {
     imported_with(xml, PARTS)
 }
 

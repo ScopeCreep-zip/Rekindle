@@ -43,6 +43,8 @@ pub mod validate;
 pub mod wired;
 
 #[cfg(test)]
+mod anchor_moving_tests;
+#[cfg(test)]
 mod anchor_tests;
 #[cfg(test)]
 mod chat_tests;

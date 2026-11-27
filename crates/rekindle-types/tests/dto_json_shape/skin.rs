@@ -285,6 +285,19 @@ fn content_samples(add: &mut impl FnMut(&str, Value)) {
             end: 19,
         }),
     );
+    // SKC4c: a stretch from a centred sibling's far edge to 20 px short of
+    // the far side (Bionical's chat `Rightlines`, `biochat.ini:113-124`).
+    add(
+        "skin.nodeSpan.shareAfterMoving",
+        to(NodeSpan::Share {
+            at: Anchor::After {
+                sibling: "SendButton".into(),
+                gap: 0,
+            },
+            permille: 1000,
+            end: 20,
+        }),
+    );
     add(
         "skin.contentFit",
         to(ContentFit {

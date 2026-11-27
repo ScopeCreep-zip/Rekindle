@@ -1,6 +1,6 @@
 //! The names a tile's anchors see ([`Sibs`]) and a name's span on one axis.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use rekindle_types::dto::skin_tree::NodeSpan;
 
@@ -23,6 +23,10 @@ pub(super) struct Sibs {
     /// A sibling laid on one axis (x, y) and not yet the other (SKC3,
     /// [`super::place_order`]): what that axis's anchors see of it.
     half: BTreeMap<String, [Option<NodeSpan>; 2]>,
+    /// The tiles laid in this frame's own parent (never a name seen from
+    /// an outer frame): the siblings `SkinTree::boxes` and the stylesheet
+    /// can place a chain from (SKC4c).
+    here: BTreeSet<String>,
 }
 
 impl Sibs {
@@ -41,7 +45,14 @@ impl Sibs {
     /// `name` laid on axis `i` (0 x, 1 y) only; [`Self::insert`] lays it
     /// whole once both are known.
     pub(super) fn insert_axis(&mut self, name: String, i: usize, span: NodeSpan) {
+        self.here.insert(name.clone());
         self.half.entry(name).or_default()[i] = Some(span);
+    }
+
+    /// Whether `name` is a tile of this frame's own parent, laid on at
+    /// least one axis.
+    pub(super) fn laid_here(&self, name: &str) -> bool {
+        self.here.contains(&name.trim().to_ascii_lowercase())
     }
 }
 

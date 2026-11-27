@@ -73,7 +73,13 @@ pub enum NodeSpan {
         /// the edit, its 14 px divider and 6 px of edit), and `ChatEdit`
         /// `Y=ChatDivider.BOTTOM ResizeY=100 IndentBottom=19` the rest less
         /// the 19 px under it. Combat's `ChatArea` (`Y=0`, no inset) is 80%
-        /// of its whole area. Zero is left out of the JSON.
+        /// of its whole area. Zero is left out of the JSON. After a
+        /// sibling whose box moves with the window (SKC4c: centred, or
+        /// anchored at the end) it runs from that sibling's laid edge:
+        /// Bionical's chat `Rightlines` `X=SendButton.RIGHT ResizeX=100
+        /// IndentRight=20` beside the centred `SendButton`
+        /// (`biochat.ini:113-124`) is `After { SendButton, 0 }`, `permille`
+        /// 1000, `end` 20.
         #[serde(default, skip_serializing_if = "is_zero")]
         end: i16,
     },

@@ -22,8 +22,8 @@ pub(super) struct Axis {
     resize: &'static str,
     pub(super) indent: [&'static str; 2],
     pub(super) outdent: [&'static str; 2],
-    far: &'static str,
-    near: &'static str,
+    pub(super) far: &'static str,
+    pub(super) near: &'static str,
     size: &'static str,
     end_just: &'static str,
 }
@@ -386,19 +386,32 @@ pub(super) fn axis(
     let ind = |k| expr(tile.attr_ci(k), (sibs, sizes), ax);
     let start_in = ind(ax.indent[0])? - ind(ax.outdent[0])?;
     let end_in = ind(ax.indent[1])? - ind(ax.outdent[1])?;
-    let pos = match pos {
-        Pos::After(sibling, by) => {
-            return super::anchor_share::chained(
-                (sibling, by),
-                size,
-                resize(tile, ax),
-                (start_in, end_in, max),
-                (at_end, centred),
-                ax,
-            )
-        }
-        pos => pos,
+    // SKC4c: a `Resize*` tile from an edge of a sibling that moves with
+    // the window (centred, or for a share end-anchored) chains on it
+    // (Bionical's `Rightlines` `X=SendButton.RIGHT ResizeX=100
+    // IndentRight=20` beside the centred `SendButton`, `biochat.ini:
+    // 113-124`); a stretch from an end-anchored edge stays `from_far`.
+    let moves = matches!(
+        (&pos, resize(tile, ax)),
+        (Pos::Ref(At::Centre(_)), Some(_)) | (Pos::Ref(At::End(_)), Some(1..=99))
+    ) && !at_end
+        && !centred
+        && max.is_none();
+    let link = match &pos {
+        Pos::After(sibling, by) => Some((sibling.clone(), *by)),
+        _ if moves => super::anchor_share::moving(tile, ax, sibs),
+        _ => None,
     };
+    if let Some(link) = link {
+        return super::anchor_share::chained(
+            link,
+            size,
+            resize(tile, ax),
+            (start_in, end_in, max),
+            (at_end, centred),
+            ax,
+        );
+    }
     if let Some(pct @ 1..=99) = resize(tile, ax) {
         return super::anchor_share::share(
             pos,
