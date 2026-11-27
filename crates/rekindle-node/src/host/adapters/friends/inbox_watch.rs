@@ -26,7 +26,15 @@ pub(super) async fn hold(
     record_key: &str,
     lease: LeaseId,
 ) {
-    hold_in(&host.ctx().friend_watches.inboxes, pool, record_key, lease).await;
+    hold_in(
+        host,
+        &host.ctx().friend_watches.inboxes,
+        pool,
+        record_key,
+        lease,
+        InboxKind::Invite,
+    )
+    .await;
 }
 
 /// Hold `lease` on our request's reply inbox `record_key` and watch its
@@ -37,7 +45,15 @@ pub(super) async fn hold_reply(
     record_key: &str,
     lease: LeaseId,
 ) {
-    hold_in(&host.ctx().friend_watches.replies, pool, record_key, lease).await;
+    hold_in(
+        host,
+        &host.ctx().friend_watches.replies,
+        pool,
+        record_key,
+        lease,
+        InboxKind::Reply,
+    )
+    .await;
 }
 
 /// Hold `lease` on our friend code's request inbox `record_key` and watch
@@ -48,7 +64,15 @@ pub(super) async fn hold_code(
     record_key: &str,
     lease: LeaseId,
 ) {
-    hold_in(&host.ctx().friend_watches.codes, pool, record_key, lease).await;
+    hold_in(
+        host,
+        &host.ctx().friend_watches.codes,
+        pool,
+        record_key,
+        lease,
+        InboxKind::Code,
+    )
+    .await;
 }
 
 /// Stop watching our friend code's inbox `record_key` (rolled).
@@ -60,19 +84,55 @@ pub(super) async fn release_code(host: &HostFriends, record_key: &str) {
     }
 }
 
+#[derive(Clone, Copy)]
+enum InboxKind {
+    Invite,
+    Reply,
+    Code,
+}
+
+impl InboxKind {
+    async fn open(self, host: &HostFriends, value: &[u8]) {
+        match self {
+            Self::Invite => inbox::received(host, value).await,
+            Self::Reply | Self::Code => inbox::received_reply(host, value).await,
+        }
+    }
+
+    async fn roll_if_code(self, host: &HostFriends, key: &str) {
+        if matches!(self, Self::Code) {
+            roll_code(host, key).await;
+        }
+    }
+}
+
 async fn hold_in(
+    host: &HostFriends,
     map: &parking_lot::Mutex<std::collections::BTreeMap<String, LeaseId>>,
     pool: &Arc<dyn RecordPort>,
     record_key: &str,
     lease: LeaseId,
+    kind: InboxKind,
 ) {
+    let previous = map.lock().insert(record_key.to_string(), lease);
     if let Err(e) = pool.watch(lease, &[request_inbox::REQUEST]).await {
         tracing::warn!(error = %e, "request inbox not watched");
     }
-    let previous = map.lock().insert(record_key.to_string(), lease);
     if let Some(previous) = previous.filter(|p| *p != lease) {
         pool.release(previous).await;
     }
+
+    // The watch reports changes, not a snapshot. A write while this
+    // device was away remains in the record, so read once on this hold.
+    let host = host.clone();
+    let key = record_key.to_owned();
+    let scope = host.scope();
+    scope.spawn_or_drop("catch up invite inbox", async move {
+        if let Some(value) = read(&host, lease).await {
+            kind.open(&host, &value).await;
+            kind.roll_if_code(&host, &key).await;
+        }
+    });
 }
 
 /// Stop watching the inbox `record_key`: releasing its lease closes the
@@ -186,12 +246,13 @@ impl HostFriends {
             .get(record_key)
             .copied();
         // A code's request is a first contact's durable copy, as a reply is.
-        let (lease, is_reply) = match (invite, reply.or(code)) {
-            (Some(lease), _) => (lease, false),
-            (None, Some(lease)) => (lease, true),
-            (None, None) => return false,
+        let (lease, kind) = match (invite, reply, code) {
+            (Some(lease), _, _) => (lease, InboxKind::Invite),
+            (None, reply, Some(code)) => (reply.unwrap_or(code), InboxKind::Code),
+            (None, Some(lease), None) => (lease, InboxKind::Reply),
+            (None, None, None) => return false,
         };
-        let rolls = code.is_some().then(|| record_key.to_owned());
+        let key = record_key.to_owned();
         if !subkeys.contains(&request_inbox::REQUEST) {
             return true;
         }
@@ -204,28 +265,17 @@ impl HostFriends {
                 // The carried value first; the network read always runs, so
                 // Veilid's report mark clears (`ValueChange`'s contract), and
                 // a newer request it finds is handled too.
-                let open = |value: Vec<u8>| {
-                    let host = host.clone();
-                    async move {
-                        if is_reply {
-                            inbox::received_reply(&host, &value).await;
-                        } else {
-                            inbox::received(&host, &value).await;
-                        }
-                    }
-                };
                 if let Some(value) = &inline {
-                    open(value.clone()).await;
+                    kind.open(&host, value).await;
                 }
                 if let Some(value) = read(&host, lease).await {
                     if inline.as_ref() != Some(&value) {
-                        open(value).await;
+                        kind.open(&host, &value).await;
                     }
                 }
-                // The slot took its one write: the next redeemer's is a new one.
-                if let Some(slot) = rolls {
-                    roll_code(&host, &slot).await;
-                }
+                // The notification says its slot took a write; the
+                // next redeemer of a reusable code needs a new slot.
+                kind.roll_if_code(&host, &key).await;
             });
         true
     }
