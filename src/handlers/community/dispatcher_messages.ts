@@ -273,8 +273,14 @@ function applyChannelUnread(u: UnreadChanged): void {
 /// a `failed` one carries the backend's `reason` when its key never came.
 function applySendStatus(channel: string, messageId: string, state: string, reason?: string): void {
   // A thread reply's `channel` is its thread (plan FT1): its rows are the thread's.
-  const list = communityState.channelMessages[channel] ? "channelMessages" : communityState.threadMessages[channel] ? "threadMessages" : null;
-  const idx = list ? communityState[list][channel].findIndex((m) => m.serverMessageId === messageId) : -1;
+  const list = communityState.channelMessages[channel]
+    ? "channelMessages"
+    : communityState.threadMessages[channel]
+      ? "threadMessages"
+      : null;
+  const idx = list
+    ? communityState[list][channel].findIndex((m) => m.serverMessageId === messageId)
+    : -1;
   if (list === null || idx < 0) {
     // Our own reply whose send answer has not come back yet: its row has no
     // server id to match, so the state waits for that answer (either order).
@@ -308,7 +314,9 @@ const EARLY_SEND_STATES_MAX = 256;
  * knew that id (FT1: `ChannelSendStatus` may beat the send's own answer),
  * taken once; undefined when none came first.
  */
-export function takeEarlySendState(messageId: string): { state: string; reason?: string } | undefined {
+export function takeEarlySendState(
+  messageId: string
+): { state: string; reason?: string } | undefined {
   const early = earlySendStates.get(messageId);
   earlySendStates.delete(messageId);
   return early;

@@ -176,6 +176,7 @@ const ChannelList: Component<ChannelListProps> = (props) => {
           {(presenceByChannel()[channel.id] ?? 0) > 0 && (
             <span
               class="channel-presence-badge"
+              role="img"
               title={membersHere(presenceByChannel()[channel.id])}
               aria-label={membersHere(presenceByChannel()[channel.id])}
             >
