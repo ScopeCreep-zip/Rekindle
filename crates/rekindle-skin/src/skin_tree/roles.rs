@@ -234,16 +234,22 @@ fn edge(rest: &str) -> Option<Edge> {
 /// the old `_ => BottomRight` default misread five Symbiosis grips). A
 /// grip the pack wires itself (XGlow's `[Gripper]`, Combat's
 /// `[ResizeUlbr]`: `Action.lbtndown=ResizeBR`) needs no edge from its
-/// name.
+/// name. A tile holding tiles is their container, not a grip: Xfire's
+/// grip is the tile its `Resize<edge>` press runs on (`ResizeT`/`B`/`L`/
+/// `R`/`UL`/`UR`/`BL`/`BR`, [`super::triggers`]), and StreamEngine's
+/// `[ResizeTile]` and WoW TBC's `[Resize]` are `Class=Tile
+/// events=Transparent` holders of their grip windows (`chat.ini:223-231`,
+/// `Chat.ini:420-428`), which take no press themselves (SKC4).
 ///
 /// # Errors
 /// The refusal, naming the tile and the grip's key.
 pub fn check_grip(
     name: &str,
     component: Option<&str>,
+    children: &[String],
     triggers: &[NodeTrigger],
 ) -> Result<(), String> {
-    if triggers.iter().any(NodeTrigger::presses) {
+    if !children.is_empty() || triggers.iter().any(NodeTrigger::presses) {
         return Ok(());
     }
     [Some(name), component]
@@ -543,8 +549,15 @@ pub fn role(
                 .and_then(|()| view(name))
                 .map(|v| Role::Shows(R::Tab(v)))
         })
-        .or_else(|| resize(&name_k))
-        .or_else(|| comp.as_deref().and_then(resize));
+        // A tile holding tiles is their container, never itself a grip
+        // ([`check_grip`]).
+        .or_else(|| f.children.is_empty().then(|| resize(&name_k)).flatten())
+        .or_else(|| {
+            f.children
+                .is_empty()
+                .then(|| comp.as_deref().and_then(resize))
+                .flatten()
+        });
     let found = match found {
         Some(Role::Shows(R::ButtonRow(_))) => {
             view(name).map(|v| Role::Shows(R::ButtonRow(v))).or(found)

@@ -349,7 +349,7 @@ impl Walk<'_> {
         } else {
             own_triggers?
         };
-        check_grip(&id, component, &triggers).map_err(bad)?;
+        check_grip(&id, component, &children, &triggers).map_err(bad)?;
         let fit = content::fit_of(comp, !pieces.is_empty());
         Ok(Read {
             tile,
