@@ -4,15 +4,24 @@
 // incoming-call banner was laid out but unseen beside Symbiosis's tree; this
 // proves the other surfaces a skinned window raises are seen, by the owner's
 // rule (hiding the part changes its pixels, painted.ts), in Symbiosis and in
-// Alloy. One intent in a community window raises three of them: the channel
-// topic's review (the intent dialog, every window's own), the undo offer it
-// leaves (a toast), and the publication banner (in the pack's chat area
-// slot) while the change waits for the network.
+// Alloy. In a community window, a role made (a Routine intent, which runs
+// without review and leaves a toast) then deleted (Consequential: the
+// intent dialog's review, every window's own) raises all three, the
+// deletion's op showing the publication banner (in the pack's chat area
+// slot) while it waits for the network.
 
 import { browser, expect } from "@wdio/globals";
-import { gone, NET_WAIT_MS, resolveIntent, shown, typeInto } from "../../../walk/helpers.ts";
+import {
+  byText,
+  gone,
+  NET_WAIT_MS,
+  resolveIntent,
+  shown,
+  typeInto,
+} from "../../../walk/helpers.ts";
 import { openSettings } from "../../../walk/nav.ts";
 import {
+  communitySettings,
   createCommunity,
   createIdentity,
   newUser,
@@ -40,7 +49,7 @@ describe("Host surfaces paint above a skin tree (layer contract)", function () {
   this.timeout(900_000);
   const ada: User = { ...newUser("layers"), displayName: "Ada" };
 
-  it("the intent review, its undo toast and the publication banner are seen in Symbiosis and Alloy", async () => {
+  it("a toast, the intent review and the publication banner are seen in Symbiosis and Alloy", async () => {
     await createIdentity(b, ada);
     await createCommunity(b, ada, PLACE);
     const unseen: string[] = [];
@@ -53,14 +62,22 @@ describe("Host surfaces paint above a skin tree (layer contract)", function () {
       await gone(b, ".governance-publication", NET_WAIT_MS);
       await gone(b, ".toast-item", NET_WAIT_MS);
 
-      // The topic's review, then the undo offer and the publication it leaves.
-      await (await shown(b, ".channel-topic")).click();
-      await typeInto(await shown(b, ".channel-topic-header-input"), `${pack} topic`);
-      await b.keys("Enter");
+      // A role made (Routine: no review; it leaves a toast), then deleted
+      // (Consequential: the review), its op publishing in the chat area.
+      const role = `${pack} role`;
+      await communitySettings(b, "Roles");
+      await (await byText(b, ".modal-container .form-btn-secondary", "Create Role")).click();
+      await typeInto(await shown(b, 'input[placeholder="Role name..."]'), role);
+      await (await byText(b, ".modal-container .form-btn-primary", "Create")).click();
+      await resolveIntent(b, { passphrase: ada.passphrase, appearMs: 3000 });
+      if (!(await seen(pack, ".toast-item"))) unseen.push(`${pack} toast`);
+      const row = await byText(b, ".settings-role-row", role, NET_WAIT_MS);
+      await (await row.$('button[title="Delete Role"]')).click();
       if (!(await seen(pack, ".intent-dialog"))) unseen.push(`${pack} intent review`);
       await shot(`review-${pack.toLowerCase()}`);
       await resolveIntent(b, { passphrase: ada.passphrase, appearMs: 3000 });
-      if (!(await seen(pack, ".toast-item"))) unseen.push(`${pack} toast`);
+      await (await shown(b, ".modal-container .modal-close-btn")).click();
+      await gone(b, ".modal-container");
       if (!(await seen(pack, ".governance-publication"))) unseen.push(`${pack} publication banner`);
       await shot(`publication-${pack.toLowerCase()}`);
     }

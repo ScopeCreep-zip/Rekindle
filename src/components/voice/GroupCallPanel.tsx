@@ -6,6 +6,7 @@ import {
 } from "../../actions/calls.actions";
 import type { CallParticipant } from "../../ipc/channels/chat_events";
 import { callsState } from "../../stores/calls.store";
+import { initials } from "../../utils/initials";
 import SkinGlyph from "../common/SkinGlyph";
 
 // Wave 12 W12.10 — group call surfaces.
@@ -127,9 +128,7 @@ const ActiveGroupCallPanel: Component = () => {
                       "group-call-tile-ringing": !accepted(),
                     }}
                   >
-                    <div class="group-call-tile-avatar">
-                      {participant.displayName.slice(0, 1).toUpperCase()}
-                    </div>
+                    <div class="group-call-tile-avatar">{initials(participant.displayName)}</div>
                     <div class="group-call-tile-name">
                       {participant.displayName}
                       {participant.isSelf ? " (you)" : ""}

@@ -1,6 +1,7 @@
 // Contract VN2 (call and video names): a community call's video tile is
 // labelled with its sender's name as the Host serves it, the voice roster's
-// shown name (VideoCallPanel.tsx senderName), never empty and never a key.
+// shown name, never empty and never a key: the community call stage's
+// tile (call_stage/ParticipantTile.tsx) names it over the video.
 // Under ADR 0016 a frame decodes only with the sender-owned key the Host
 // hands out on roster admission, so a drawn tile's sender is already in the
 // served roster; an empty label would be a UI ordering gap. Every sample
@@ -44,9 +45,6 @@ const app = (name: "alice" | "bob"): Browser =>
 
 const PLACE = "Video Hall";
 const VOICE = "Lounge";
-/** The local preview tile's label (VideoCallPanel.tsx); every other tile is a remote one. */
-const SELF_LABEL = "You · camera";
-
 /** `b` joins the voice channel from the call stage's Join button (CallStage.tsx). */
 async function joinVoice(b: Browser): Promise<void> {
   await (await byText(b, ".channel-item", VOICE, NET_WAIT_MS)).click();
@@ -54,14 +52,20 @@ async function joinVoice(b: Browser): Promise<void> {
   await shown(b, ".voice-panel", NET_WAIT_MS);
 }
 
-/** The labels of the remote video tiles `b` draws (the preview excluded). */
+/** The names on the remote video tiles of `b`'s call stage (ParticipantTile:
+ *  a stage tile with a decoder canvas that is not mirrored; only our own
+ *  camera mirrors). Each tile's name is counted, empty or not. */
 async function remoteLabels(b: Browser): Promise<string[]> {
-  return (await b.execute(
-    (self: string) =>
-      Array.from(document.querySelectorAll(".video-call-tile-label"))
-        .map((n) => (n.textContent ?? "").replace(/\s+/g, " ").trim())
-        .filter((t) => t !== self),
-    SELF_LABEL
+  return (await b.execute(() =>
+    Array.from(document.querySelectorAll(".call-stage-tile"))
+      .filter(
+        (t) =>
+          t.querySelector(".call-stage-tile-canvas") !== null &&
+          !t.classList.contains("call-stage-tile-mirror")
+      )
+      .map((t) =>
+        (t.querySelector(".call-stage-tile-name")?.textContent ?? "").replace(/\s+/g, " ").trim()
+      )
   )) as string[];
 }
 

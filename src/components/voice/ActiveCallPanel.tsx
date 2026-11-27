@@ -5,6 +5,7 @@ import { type CallEntry, callsState } from "../../stores/calls.store";
 import { friendsState } from "../../stores/friends.store";
 import { setSettingsState, settingsState } from "../../stores/settings.store";
 import { setVoiceState, voiceState } from "../../stores/voice.store";
+import { initials } from "../../utils/initials";
 import SkinGlyph from "../common/SkinGlyph";
 import ReactionFloater from "./ReactionFloater";
 import ReactionsTray from "./ReactionsTray";
@@ -156,7 +157,7 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
           class={`active-call-peer-avatar${peerSpeaking() ? " active-call-peer-avatar-speaking" : ""}`}
           aria-hidden="true"
         >
-          {props.call.displayName.slice(0, 1).toUpperCase()}
+          {initials(props.call.displayName)}
         </div>
         <div class="active-call-peer-info">
           <div class="active-call-peer-name">{props.call.displayName}</div>

@@ -284,8 +284,28 @@ describe("a group call names its members as the Host serves them (VN2)", functio
         return out;
       };
       const found: { el: string[]; visible: number[] }[] = [];
+      // Visually hidden for screen readers only, by its computed style (a
+      // zero clip, an inset(50%|100%) clip-path, or the 1 px absolute
+      // overflow-hidden box), on it or an ancestor: never drawn, so no
+      // sliver. Any other element under 4 px still counts.
+      const srOnly = (el: Element): boolean => {
+        for (let e: Element | null = el; e; e = e.parentElement) {
+          const st = getComputedStyle(e);
+          if (/rect\(0(px)?,? 0(px)?,? 0(px)?,? 0(px)?\)/.test(st.clip)) return true;
+          if (/inset\((50|100)%/.test(st.clipPath)) return true;
+          const r = e.getBoundingClientRect();
+          if (
+            st.position === "absolute" &&
+            st.overflow === "hidden" &&
+            r.width <= 1 &&
+            r.height <= 1
+          )
+            return true;
+        }
+        return false;
+      };
       for (const el of Array.from(document.body.querySelectorAll("*"))) {
-        if (getComputedStyle(el).visibility === "hidden" || !shows(el)) continue;
+        if (getComputedStyle(el).visibility === "hidden" || !shows(el) || srOnly(el)) continue;
         const v = visible(el);
         if (v && v.height > 0 && v.height < 4)
           found.push({

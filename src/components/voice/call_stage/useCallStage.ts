@@ -27,7 +27,11 @@ export interface CallTile {
   canvas?: HTMLCanvasElement;
   /// Local-preview binder, for the self camera / screen tiles.
   bindVideo?: (el: HTMLVideoElement | null) => void;
+  /// What the tile's label reads ("Alice (you)", "Your screen").
   displayName: string;
+  /// The person's name as the Host serves it, for the avatar's initials:
+  /// never the label made from it.
+  servedName: string;
   avatarUrl?: string;
   publicKey?: string;
   isLocal: boolean;
@@ -81,7 +85,8 @@ export function useCallStage() {
       // been created yet we therefore show the avatar under a DIFFERENT
       // key ("self-avatar"); the key swap forces a fresh row that mounts
       // the canvas the moment it exists.
-      const selfName = `${community?.myDisplayName ?? authState.displayName ?? "You"} (you)`;
+      const selfServed = community?.myDisplayName ?? authState.displayName ?? "You";
+      const selfName = `${selfServed} (you)`;
       if (pipe && camOn) {
         if (pipe.nativeCapture?.()) {
           const nativeCanvas = pipe.nativeSelfCanvas?.() ?? null;
@@ -89,6 +94,7 @@ export function useCallStage() {
             put(out, "self-camera", {
               canvas: nativeCanvas,
               displayName: selfName,
+              servedName: selfServed,
               isLocal: true,
               isScreen: false,
               mirror: true,
@@ -96,6 +102,7 @@ export function useCallStage() {
           } else {
             put(out, "self-avatar", {
               displayName: selfName,
+              servedName: selfServed,
               avatarUrl: authState.avatarUrl ?? undefined,
               isLocal: true,
               isScreen: false,
@@ -105,6 +112,7 @@ export function useCallStage() {
           put(out, "self-camera", {
             bindVideo: pipe.bindCameraVideo,
             displayName: selfName,
+            servedName: selfServed,
             isLocal: true,
             isScreen: false,
           });
@@ -114,6 +122,7 @@ export function useCallStage() {
         put(out, "self-screen", {
           bindVideo: pipe.bindScreenVideo,
           displayName: "Your screen",
+          servedName: selfServed,
           isLocal: true,
           isScreen: true,
         });
@@ -121,6 +130,7 @@ export function useCallStage() {
       if (!camOn && !scrOn) {
         put(out, "self-avatar", {
           displayName: selfName,
+          servedName: selfServed,
           avatarUrl: authState.avatarUrl ?? undefined,
           isLocal: true,
           isScreen: false,
@@ -139,6 +149,7 @@ export function useCallStage() {
       put(out, `remote-${r.streamId}`, {
         canvas: r.canvas,
         displayName: p?.displayName ?? "",
+        servedName: p?.displayName ?? "",
         publicKey: r.senderPseudonym,
         isLocal: false,
         isScreen: false,
@@ -156,6 +167,7 @@ export function useCallStage() {
       if (withVideo.has(p.publicKey)) continue;
       put(out, `participant-${p.publicKey}`, {
         displayName: p.displayName ?? "",
+        servedName: p.displayName ?? "",
         publicKey: p.publicKey,
         isLocal: false,
         isScreen: false,

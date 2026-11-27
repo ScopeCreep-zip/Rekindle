@@ -186,16 +186,22 @@
     color: var(--color-xfire-scrim-danger-text);
   }
 
-  /* Footer control bar, centred over the gallery (Element Call pattern). */
+  /* Footer control bar, centred over the gallery (Element Call pattern).
+   * Its groups never shrink or clip: narrower than all of them, the bar
+   * wraps them onto a second row (it grows up from the bottom), inside the
+   * stage's own width, so the hang-up button is never cut. */
   .call-control-bar {
     position: absolute;
     bottom: 10px;
     left: 0;
     width: 100%;
+    box-sizing: border-box;
+    padding-inline: 8px;
     display: flex;
+    flex-wrap: wrap;
     justify-content: center;
     align-items: center;
-    gap: 12px;
+    gap: 8px 12px;
     pointer-events: none;
   }
 
@@ -210,6 +216,7 @@
     background: color-mix(in srgb, var(--color-xfire-bg-dark) 88%, transparent);
     border: 1px solid var(--color-xfire-border);
     box-shadow: 0 4px 14px color-mix(in srgb, var(--color-xfire-shadow) 35%, transparent);
+    flex-shrink: 0;
   }
 
   .call-control-bar .voice-btn {
@@ -223,6 +230,7 @@
     color: var(--color-xfire-text-dim);
     text-transform: capitalize;
     box-shadow: none;
+    white-space: nowrap;
   }
 
   .call-control-quality-dot {
