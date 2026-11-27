@@ -58,7 +58,9 @@ impl RoleRefusal {
     #[must_use]
     pub fn code(&self) -> u16 {
         match self {
-            Self::NotPermitted | Self::NotSelfAssignable(_) => 403,
+            Self::NotPermitted
+            | Self::NotSelfAssignable(_)
+            | Self::Failed(GovernanceRuntimeError::PermissionRequired(_)) => 403,
             Self::UnknownRole(_) | Self::NotAMember => 404,
             Self::BadExclusionGroup(_) => 400,
             Self::Failed(_) => 500,
@@ -74,6 +76,7 @@ impl fmt::Display for RoleRefusal {
             Self::UnknownRole(id) => write!(f, "role not found: {}", id.to_hex()),
             Self::NotAMember => f.write_str("no pseudonym for this community"),
             Self::BadExclusionGroup(why) => write!(f, "exclusion_group {why}"),
+            Self::Failed(GovernanceRuntimeError::PermissionRequired(reason)) => f.write_str(reason),
             Self::Failed(e) => write!(f, "role write: {e}"),
         }
     }

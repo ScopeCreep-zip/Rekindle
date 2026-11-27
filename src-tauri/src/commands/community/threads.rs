@@ -8,7 +8,7 @@ use tauri::State;
 use crate::host_call;
 use crate::state::SharedState;
 use rekindle_types::dto::channel_message::ChannelMessageView;
-use rekindle_types::thread::ThreadInfo;
+use rekindle_types::thread::{ForumPostCreated, ThreadInfo, ThreadReplyOutcome};
 
 /// Open a thread off a channel message (`CommunityRequest::ThreadCreate`).
 #[tauri::command]
@@ -76,12 +76,36 @@ pub async fn send_thread_message(
     community_id: String,
     thread_id: String,
     body: String,
-) -> Result<Done<serde_json::Value>, CommandError> {
+) -> Result<Done<ThreadReplyOutcome>, CommandError> {
     host_call::call(
         &state,
         IpcRequest::Community(CommunityRequest::Rich(RichRequest::ThreadSend {
             community: community_id,
             thread_id,
+            body,
+        })),
+    )
+    .await
+}
+
+/// Open a forum post: the thread and its starter, one outcome
+/// (`CommunityRequest::CreateForumPost`, plan E3.3 FT1).
+#[tauri::command]
+pub async fn create_forum_post(
+    state: State<'_, SharedState>,
+    community_id: String,
+    channel_id: String,
+    title: String,
+    forum_tag: Option<String>,
+    body: String,
+) -> Result<Done<ForumPostCreated>, CommandError> {
+    host_call::call(
+        &state,
+        IpcRequest::Community(CommunityRequest::Rich(RichRequest::CreateForumPost {
+            community: community_id,
+            channel_id,
+            title,
+            forum_tag,
             body,
         })),
     )

@@ -3,15 +3,24 @@
 // stable attributes, and the tree's parents and views. Pure reads of the
 // served tree, shared by the window's nodes (SkinTreeWindow).
 
-import type { EngineMenu, NodeTrigger, ShellNode, SkinAction, SkinEvent } from "../../ipc/commands/dto_skin_tree";
+import type {
+  EngineMenu,
+  NodeTrigger,
+  ShellNode,
+  SkinAction,
+  SkinEvent,
+} from "../../ipc/commands/dto_skin_tree";
 
 export function hasFriendsView(nodes: ShellNode[]): boolean {
   return nodes.some(
-    (n) => (n.role.kind === "view" && n.role.key === "friends") || hasFriendsView(n.children ?? []),
+    (n) => (n.role.kind === "view" && n.role.key === "friends") || hasFriendsView(n.children ?? [])
   );
 }
 
-export function parents(nodes: ShellNode[], into = new Map<string, ShellNode>()): Map<string, ShellNode> {
+export function parents(
+  nodes: ShellNode[],
+  into = new Map<string, ShellNode>()
+): Map<string, ShellNode> {
   for (const n of nodes) {
     for (const c of n.children ?? []) into.set(c.id, n);
     parents(n.children ?? [], into);
@@ -27,21 +36,28 @@ export function pointerTriggers(n: ShellNode, on: PointerEvent): NodeTrigger[] {
 }
 
 export function isPointer(on: SkinEvent): on is { kind: PointerEvent } {
-  return on.kind === "click" || on.kind === "doubleClick" || on.kind === "leftDown" || on.kind === "rightDown" || on.kind === "rightClick";
+  return (
+    on.kind === "click" ||
+    on.kind === "doubleClick" ||
+    on.kind === "leftDown" ||
+    on.kind === "rightDown" ||
+    on.kind === "rightClick"
+  );
 }
 
 /** Whether any node under `n` takes a press (its own pointer trigger),
  *  menu titles included: a control inside `n`. */
 export function holdsControls(n: ShellNode): boolean {
-  return (n.children ?? []).some((c) => (c.triggers ?? []).some((t) => isPointer(t.on)) || holdsControls(c));
+  return (n.children ?? []).some(
+    (c) => (c.triggers ?? []).some((t) => isPointer(t.on)) || holdsControls(c)
+  );
 }
 
 /** Whether a node under `n` takes a press but is no menu title: what an
  *  ARIA menubar may not own (Onyx lays its tab strip inside its MenuBar). */
 export function holdsNonMenuControls(n: ShellNode): boolean {
   return (n.children ?? []).some(
-    (c) =>
-      (c.role.kind !== "menuTitle" && pressAction(c) !== undefined) || holdsNonMenuControls(c),
+    (c) => (c.role.kind !== "menuTitle" && pressAction(c) !== undefined) || holdsNonMenuControls(c)
   );
 }
 
@@ -49,13 +65,18 @@ export function holdsNonMenuControls(n: ShellNode): boolean {
  *  resize): what it does, for its accessible name and `data-skin-action`. */
 export function pressAction(n: ShellNode): SkinAction | undefined {
   return (n.triggers ?? []).find(
-    (t) => (t.on.kind === "click" || t.on.kind === "leftDown" || t.on.kind === "doubleClick") && t.run.kind !== "dragWindow" && t.run.kind !== "resize",
+    (t) =>
+      (t.on.kind === "click" || t.on.kind === "leftDown" || t.on.kind === "doubleClick") &&
+      t.run.kind !== "dragWindow" &&
+      t.run.kind !== "resize"
   )?.run;
 }
 
 export function rightMenu(n: ShellNode): EngineMenu | undefined {
   const t = (n.triggers ?? []).find(
-    (t) => (t.on.kind === "rightClick" || t.on.kind === "rightDown") && (t.run.kind === "menu" || t.run.kind === "contextMenu"),
+    (t) =>
+      (t.on.kind === "rightClick" || t.on.kind === "rightDown") &&
+      (t.run.kind === "menu" || t.run.kind === "contextMenu")
   );
   return t && (t.run.kind === "menu" || t.run.kind === "contextMenu") ? t.run.arg : undefined;
 }

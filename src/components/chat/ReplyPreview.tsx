@@ -1,4 +1,4 @@
-import { Component, Show } from "solid-js";
+import { type Component, Show } from "solid-js";
 import SkinGlyph from "../common/SkinGlyph";
 
 interface ReplyPreviewProps {
@@ -14,9 +14,12 @@ const ReplyPreview: Component<ReplyPreviewProps> = (props) => {
           <SkinGlyph name="reply" class="reply-preview-icon" />
           <div class="reply-preview-content">
             <span class="reply-preview-sender">{reply().senderName}</span>
-            <span class="reply-preview-body">{reply().body.length > 80 ? reply().body.slice(0, 80) + "..." : reply().body}</span>
+            <span class="reply-preview-body">
+              {reply().body.length > 80 ? `${reply().body.slice(0, 80)}...` : reply().body}
+            </span>
           </div>
           <button
+            type="button"
             class="reply-preview-close"
             onClick={props.onDismiss}
             title="Cancel reply"

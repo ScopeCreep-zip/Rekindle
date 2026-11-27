@@ -65,7 +65,7 @@ export type NotificationSubscriptionEvent = { notification: NotificationEvent };
  * plan F9-A) to carry what this already had, and `mediaRoute` for the
  * media-class route voice needs (plan C7.9c).
  */
-export type NetworkEvent =
+type NetworkEvent =
   | {
       attachmentChanged: {
         attachmentState: string;

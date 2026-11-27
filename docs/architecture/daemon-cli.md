@@ -404,6 +404,12 @@ The shape of every variant is pinned by
 C7.26); before C7.26 the inner families printed PascalCase variants and
 snake_case fields.
 
+| Command | Effect |
+|---|---|
+| `rekindle community focus <community> [<channel>] [--voice]` | Set the active text channel or use `--voice` for a voice channel. Omit the channel to clear focus. Accepts names or IDs and lists the matching IDs for ambiguous names. |
+
+The TUI Community Info view shows your active channel from the daemon's member list.
+
 ### Configuration
 
 One `config.toml` schema (`rekindle_types::config::user::UserConfig`)

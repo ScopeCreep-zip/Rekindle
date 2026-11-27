@@ -1,6 +1,6 @@
-import { createMemo, createSignal, type Accessor, type Setter } from "solid-js";
+import { type Accessor, createMemo, createSignal, type Setter } from "solid-js";
+import { hasPermission, MENTION_EVERYONE, servedPermissions } from "../../../ipc/permissions";
 import { communityState } from "../../../stores/community.store";
-import { servedPermissions, hasPermission, MENTION_EVERYONE } from "../../../ipc/permissions";
 
 // Architecture §28.5 — mentions: `@user`, `@role`, `@everyone`,
 // `@here`. Backend resolves by display-name (members) or role-name
@@ -29,7 +29,7 @@ export function useMentionAutocomplete(args: MentionAutocompleteArgs) {
   // `mentionQuery == null` means no active picker (last keystroke wasn't
   // preceded by a `@` token).
   const [mentionQuery, setMentionQuery] = createSignal<string | null>(null);
-  const [mentionSelected, setMentionSelected] = createSignal(0);
+  const [selectedIndex, setMentionSelected] = createSignal(0);
 
   // Build the candidate list once per query change. Limited to 8 rows so
   // the popover never overruns the input.
@@ -40,8 +40,7 @@ export function useMentionAutocomplete(args: MentionAutocompleteArgs) {
     const community = communityState.communities[communityId];
     if (!community) return [];
     const lc = q.toLowerCase();
-    const matches = (text: string): boolean =>
-      lc.length === 0 || text.toLowerCase().startsWith(lc);
+    const matches = (text: string): boolean => lc.length === 0 || text.toLowerCase().startsWith(lc);
 
     const candidates: MentionCandidate[] = [];
 
@@ -72,7 +71,11 @@ export function useMentionAutocomplete(args: MentionAutocompleteArgs) {
     if (candidates.length < 8) {
       for (const member of community.members ?? []) {
         if (matches(member.displayName)) {
-          candidates.push({ token: member.displayName, label: `@${member.displayName}`, kind: "member" });
+          candidates.push({
+            token: member.displayName,
+            label: `@${member.displayName}`,
+            kind: "member",
+          });
           if (candidates.length >= 8) break;
         }
       }
@@ -80,6 +83,9 @@ export function useMentionAutocomplete(args: MentionAutocompleteArgs) {
 
     return candidates;
   });
+
+  const mentionSelected = () =>
+    Math.min(selectedIndex(), Math.max(0, mentionCandidates().length - 1));
 
   function findMentionContext(value: string, caretIndex: number): string | null {
     // Look back from caret for the start of the active mention token. A
@@ -90,7 +96,7 @@ export function useMentionAutocomplete(args: MentionAutocompleteArgs) {
       const ch = value[i];
       if (ch === "@") {
         const prev = i > 0 ? value[i - 1] : "";
-        if (i === 0 || /[\s.,;:!?(){}\[\]]/.test(prev)) {
+        if (i === 0 || /[\s.,;:!?(){}[\]]/.test(prev)) {
           // Reject if there's a space between @ and caret — that means the
           // user has moved past a completed mention.
           const slice = value.slice(i + 1, caretIndex);
@@ -147,12 +153,12 @@ export function useMentionAutocomplete(args: MentionAutocompleteArgs) {
     if (candidates.length > 0) {
       if (e.key === "ArrowDown") {
         e.preventDefault();
-        setMentionSelected((i) => (i + 1) % candidates.length);
+        setMentionSelected((mentionSelected() + 1) % candidates.length);
         return true;
       }
       if (e.key === "ArrowUp") {
         e.preventDefault();
-        setMentionSelected((i) => (i - 1 + candidates.length) % candidates.length);
+        setMentionSelected((mentionSelected() - 1 + candidates.length) % candidates.length);
         return true;
       }
       if (e.key === "Enter" || e.key === "Tab") {

@@ -5,7 +5,7 @@
 import type { ActivityListItem, EventInfo, FriendInfo, NotJoinableReason } from "./types";
 
 /// What a window's Infoview shows (`InfoviewSubject`).
-export type InfoviewSubject =
+type InfoviewSubject =
   | { type: "own" }
   | { type: "friend"; publicKey: string }
   | { type: "friendGroup"; groupId: number | null }
@@ -17,7 +17,7 @@ export type InfoviewSubject =
 export type InfoviewRequest = InfoviewSubject | { type: "selection" };
 
 /// Where a Join row's server came from, stated by the Host (`JoinSource`).
-export type JoinSource = "friendPresence" | "community";
+type JoinSource = "friendPresence" | "community";
 
 /// What a row's link does (`InfoviewAction`): sent like any other action.
 export type InfoviewAction =

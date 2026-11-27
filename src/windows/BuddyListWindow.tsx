@@ -1,4 +1,7 @@
-import type { UnlistenFn } from "@tauri-apps/api/event";
+import { subscribeBackendIntents } from "../handlers/intent.handlers";
+
+// The intent handler loads the store that registers the review and undo presenters.
+
 import { type Component, createSignal, type JSX, onCleanup, onMount, Show } from "solid-js";
 import { handleLoadPendingRequests, handleToggleAddFriend } from "../actions/buddy.actions";
 import { handleLoadGroupDms } from "../actions/group-dm.actions";
@@ -57,7 +60,6 @@ import { refreshMissedCalls, subscribeCallEvents } from "../handlers/calls.handl
 import { subscribeBuddyListChatEvents } from "../handlers/chat-events.handlers";
 import { subscribeBuddyListCommunityEvents } from "../handlers/community/buddy_list_communities";
 import { subscribeBuddyListGroupDmEvents } from "../handlers/group-dm.handlers";
-import { subscribeBackendIntents } from "../handlers/intent.handlers";
 import { subscribeNotificationHandler } from "../handlers/notification-events.handlers";
 import { subscribePairingLinkHandler } from "../handlers/pairing-link.handler";
 import { subscribeBuddyListPresenceEvents } from "../handlers/presence-events.handlers";
@@ -72,6 +74,7 @@ import {
   subscribeProfileUpdates,
   subscribeSkinShell,
   subscribeSkinSignals,
+  type UnlistenFn,
 } from "../ipc/channels";
 import { commands } from "../ipc/commands";
 import type { ShellOp } from "../ipc/commands/dto_skin_run";

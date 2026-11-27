@@ -52,7 +52,7 @@ export interface Peer {
 const started = new Set<Peer>();
 
 /** What `Peer.review` saw: the command ran (its answer), or it was refused (what it printed). */
-export type Reviewed = { ran: true; value: unknown } | { ran: false; refusal: { error?: { message?: string } } | null };
+type Reviewed = { ran: true; value: unknown } | { ran: false; refusal: { error?: { message?: string } } | null };
 
 /**
  * The last JSON value a CLI run printed. A reviewed action prints its

@@ -60,6 +60,12 @@ fn stop(tasks: &SingleTasks, community_id: &str) {
 }
 
 impl CommunityStore {
+    /// The lock that serializes edits to our profile and published card.
+    #[must_use]
+    pub fn profile_write_lock(&self, community_id: &str) -> Arc<tokio::sync::Mutex<()>> {
+        community_lock(&self.profile_writes, community_id)
+    }
+
     /// The lock that serializes `community_id`'s watch-ring moves.
     #[must_use]
     pub fn ring_move_lock(&self, community_id: &str) -> Arc<tokio::sync::Mutex<()>> {
@@ -179,6 +185,7 @@ impl CommunityStore {
         self.successor_judgements.lock().remove(community_id);
         self.frontier_writes.lock().remove(community_id);
         self.admissions.lock().remove(community_id);
+        self.profile_writes.lock().remove(community_id);
         self.follow_ups.lock().remove(community_id);
         self.card_refreshes.lock().remove(community_id);
         self.member_cards
@@ -196,6 +203,7 @@ impl CommunityStore {
         self.successor_judgements.lock().clear();
         self.frontier_writes.lock().clear();
         self.admissions.lock().clear();
+        self.profile_writes.lock().clear();
         self.follow_ups.lock().clear();
         self.card_refreshes.lock().clear();
         self.member_cards.write().clear();

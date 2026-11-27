@@ -1,8 +1,12 @@
-import { Component, For, Show } from "solid-js";
-import SkinGlyph from "../common/SkinGlyph";
+import { type Component, For, Show } from "solid-js";
+import {
+  handleLeaveVoice,
+  handleToggleDeafen,
+  handleToggleMute,
+} from "../../actions/voice.actions";
 import { voiceState } from "../../stores/voice.store";
+import SkinGlyph from "../common/SkinGlyph";
 import VoiceParticipantItem from "./VoiceParticipant";
-import { handleToggleMute, handleToggleDeafen, handleLeaveVoice } from "../../actions/voice.actions";
 
 /// Compact sidebar "connected" strip. Quick mute / deafen / leave plus the
 /// participant list — reachable from any channel while in a call. The full
@@ -33,6 +37,7 @@ const VoicePanel: Component = () => {
         <Show when={voiceState.isConnected}>
           <div class="voice-panel-controls">
             <button
+              type="button"
               class={`voice-btn ${voiceState.isMuted ? "voice-btn-active" : ""}`}
               onClick={handleToggleMute}
               title={voiceState.isMuted ? "Unmute" : "Mute"}
@@ -42,6 +47,7 @@ const VoicePanel: Component = () => {
               <SkinGlyph name={voiceState.isMuted ? "mic.off" : "mic.on"} />
             </button>
             <button
+              type="button"
               class={`voice-btn ${voiceState.isDeafened ? "voice-btn-active" : ""}`}
               onClick={handleToggleDeafen}
               title={voiceState.isDeafened ? "Undeafen" : "Deafen"}
@@ -51,6 +57,7 @@ const VoicePanel: Component = () => {
               <SkinGlyph name={voiceState.isDeafened ? "speaker.off" : "speaker.on"} />
             </button>
             <button
+              type="button"
               class="voice-btn voice-btn-disconnect"
               onClick={handleLeaveVoice}
               title="Disconnect"

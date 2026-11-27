@@ -1,4 +1,4 @@
-import { Component, createMemo, createSignal, Show } from "solid-js";
+import { type Component, createMemo, createSignal, Show } from "solid-js";
 import type { FriendCodeView } from "../../ipc/commands/dto";
 import { qrPath, qrSize } from "../../utils/qr";
 

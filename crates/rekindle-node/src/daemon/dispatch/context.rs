@@ -126,7 +126,8 @@ pub(crate) fn runtime_refused(
     what: &str,
 ) -> IpcResponse {
     match e {
-        rekindle_governance_runtime::GovernanceRuntimeError::PermissionDenied => {
+        rekindle_governance_runtime::GovernanceRuntimeError::PermissionDenied
+        | rekindle_governance_runtime::GovernanceRuntimeError::PermissionRequired(_) => {
             IpcResponse::error(403, format!("{what}: {e}"))
         }
         rekindle_governance_runtime::GovernanceRuntimeError::Malformed

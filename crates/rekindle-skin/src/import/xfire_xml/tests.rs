@@ -156,7 +156,9 @@ fn xfire_own_skins_carry_the_owner_ruling() {
     let own = import(&t, "fixture", None).unwrap();
     assert!(own.notice.contains("Xfire, Inc.'s own work"));
     assert!(own.notice.contains("2026-10-15"));
-    assert!(own.notice.contains("MIT LICENSE does not cover"));
+    assert!(own
+        .notice
+        .contains("MIT OR Apache-2.0 licence does not cover"));
     let manifest =
         crate::manifest::parse(&crate::package::read(&own.canonical.bytes).unwrap()).unwrap();
     assert!(matches!(

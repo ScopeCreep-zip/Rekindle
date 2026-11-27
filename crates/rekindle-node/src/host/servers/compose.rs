@@ -162,7 +162,10 @@ pub(crate) async fn compose(ctx: &DaemonContext) -> Result<ServersView, IpcRespo
         } else {
             match adapter(ctx).game_servers(&overview.anchor).await {
                 Ok(servers) => servers,
-                Err(GovernanceRuntimeError::PermissionDenied) => Vec::new(),
+                Err(
+                    GovernanceRuntimeError::PermissionDenied
+                    | GovernanceRuntimeError::PermissionRequired(_),
+                ) => Vec::new(),
                 Err(e) => return Err(runtime_refused(&e, "game servers")),
             }
         };

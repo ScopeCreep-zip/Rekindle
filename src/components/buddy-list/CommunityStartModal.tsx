@@ -1,4 +1,4 @@
-import { Component } from "solid-js";
+import type { Component } from "solid-js";
 import Modal from "../common/Modal";
 import { handleToggleCreateCommunity, handleToggleJoinCommunity } from "./BottomActionBar";
 
@@ -16,10 +16,18 @@ const CommunityStartModal: Component<{ isOpen: boolean; onClose: () => void }> =
   return (
     <Modal isOpen={props.isOpen} onClose={props.onClose} title="New community" size="sm">
       <div class="community-start-choices">
-        <button type="button" class="form-btn-primary" onClick={() => choose(handleToggleCreateCommunity)}>
+        <button
+          type="button"
+          class="form-btn-primary"
+          onClick={() => choose(handleToggleCreateCommunity)}
+        >
           Create a community
         </button>
-        <button type="button" class="form-btn-secondary" onClick={() => choose(handleToggleJoinCommunity)}>
+        <button
+          type="button"
+          class="form-btn-secondary"
+          onClick={() => choose(handleToggleJoinCommunity)}
+        >
           Join with an invite
         </button>
       </div>

@@ -1,5 +1,4 @@
-import type { UnlistenFn } from "@tauri-apps/api/event";
-import { subscribeIntentEvents } from "../ipc/channels";
+import { subscribeIntentEvents, type UnlistenFn } from "../ipc/channels";
 import { applyHeldReviews, presentHeldReview, presentReview } from "../stores/intent.store";
 
 /**

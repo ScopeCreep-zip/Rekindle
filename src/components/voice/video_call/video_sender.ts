@@ -16,13 +16,14 @@
 // hazard); and scheduling prefers requestVideoFrameCallback, which —
 // unlike requestAnimationFrame — keeps firing while the window is
 // occluded on macOS.
-import { commands } from "../../../ipc/commands";
-import type { Codec } from "../../../ipc/commands";
+
 import { localVideoCapabilities } from "../../../actions/video.actions";
+import type { Codec } from "../../../ipc/commands";
+import { commands } from "../../../ipc/commands";
 import {
+  bytesToBase64,
   KEYFRAME_INTERVAL_MS,
   KEYFRAME_MIN_INTERVAL_MS,
-  bytesToBase64,
   randomStreamIdHex,
 } from "./codec_utils";
 import {
@@ -32,11 +33,6 @@ import {
   pickEncoderCodec,
   reportEncoderStatus,
 } from "./encoder_config";
-import {
-  FIRST_CHUNK_DEADLINE_MS,
-  RECREATE_COOLDOWN_MS,
-  freshTrack,
-} from "./sender_types";
 import type {
   SenderRoute,
   TrackLabel,
@@ -44,15 +40,11 @@ import type {
   VideoSender,
   VideoWithRVFC,
 } from "./sender_types";
+import { FIRST_CHUNK_DEADLINE_MS, freshTrack, RECREATE_COOLDOWN_MS } from "./sender_types";
 
-// Re-exported so existing `from "./video_sender"` imports keep working.
-export { pickEncoderCodec } from "./encoder_config";
-export type { SenderRoute, TrackLabel, VideoSender } from "./sender_types";
+export type { SenderRoute, VideoSender } from "./sender_types";
 
-export function createVideoSender(
-  route: SenderRoute,
-  onError: (msg: string) => void,
-): VideoSender {
+export function createVideoSender(route: SenderRoute, onError: (msg: string) => void): VideoSender {
   const tracks: Record<TrackLabel, TrackState> = {
     camera: freshTrack(),
     screen: freshTrack(),
@@ -209,8 +201,8 @@ export function createVideoSender(
           buildEncoderConfig(
             constraints,
             effectiveBitrate(configuredKbps, appliedShape().fps),
-            appliedShape(),
-          ),
+            appliedShape()
+          )
         );
         currentCodec = constraints.codec;
         ts.lastKeyframeMs = 0; // force a keyframe so receivers re-sync
@@ -235,8 +227,8 @@ export function createVideoSender(
         buildEncoderConfig(
           constraints,
           effectiveBitrate(configuredKbps, appliedShape().fps),
-          appliedShape(),
-        ),
+          appliedShape()
+        )
       );
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -340,8 +332,8 @@ export function createVideoSender(
               buildEncoderConfig(
                 constraints!,
                 effectiveBitrate(configuredKbps, appliedShape().fps),
-                appliedShape(),
-              ),
+                appliedShape()
+              )
             );
             currentCodec = constraints!.codec;
             ts.lastKeyframeMs = performance.now();
@@ -385,8 +377,8 @@ export function createVideoSender(
               buildEncoderConfig(
                 constraints!,
                 effectiveBitrate(configuredKbps, appliedShape().fps),
-                appliedShape(),
-              ),
+                appliedShape()
+              )
             );
             ts.lastKeyframeMs = now; // reconfigure already emits a keyframe
           } catch (e) {
@@ -451,7 +443,7 @@ export function createVideoSender(
         route.channelId,
         streamIdHex,
         null,
-        "initial",
+        "initial"
       );
     }
 

@@ -1,6 +1,21 @@
-import { Component, Show } from "solid-js";
+import { type Component, Show } from "solid-js";
 import { commands } from "../../ipc/commands";
 import type { SkinEntry } from "../../ipc/commands/dto";
+import { createScrollFocus } from "../../utils/scroll_focus";
+
+const LicenceText: Component<{ text: string }> = (props) => {
+  const scrollFocus = createScrollFocus<HTMLElement>();
+  return (
+    <section
+      class="skin-credits-licence"
+      aria-label="Licence text"
+      ref={scrollFocus.setElement}
+      tabIndex={scrollFocus.tabIndex()}
+    >
+      {props.text}
+    </section>
+  );
+};
 
 /**
  * A skin's credits (plan E7.7.3d): its name, original authors,
@@ -42,6 +57,7 @@ const SkinCredits: Component<{ skin: SkinEntry; id: string }> = (props) => {
                     <>
                       <span class="skin-credits-url">{url()}</span>
                       <button
+                        type="button"
                         class="skin-row-btn skin-action"
                         aria-label={`Open the source of ${props.skin.name}`}
                         onClick={() => void commands.openExternalUrl(url())}
@@ -59,9 +75,7 @@ const SkinCredits: Component<{ skin: SkinEntry; id: string }> = (props) => {
                   return licence === "noneStated" ? (
                     "No licence stated"
                   ) : (
-                    <div class="skin-credits-licence" tabIndex={0} aria-label="Licence text">
-                      {licence.text}
-                    </div>
+                    <LicenceText text={licence.text} />
                   );
                 })()}
               </dd>

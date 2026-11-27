@@ -1,40 +1,44 @@
-import { createEffect, onMount, onCleanup } from "solid-js";
-import { type UnlistenFn } from "@tauri-apps/api/event";
-import { communityState, setCommunityState } from "../../stores/community.store";
-import { initVoiceEventListener } from "../../actions/voice.actions";
-import { subscribeCommunityPresenceEvents } from "../../handlers/presence-events.handlers";
+import { createEffect, onCleanup, onMount } from "solid-js";
+import {
+  handleArchiveThread,
+  handleGetChannelPins,
+  handleLoadChannelMessages,
+  handleLoadChannelThreads,
+  handleLoadEvents,
+  handleLoadGameServers,
+  handleLoadOlderMessages,
+  handleLoadOnboardingConfig,
+  handleLoadThreadMessages,
+  handleLoadWelcomeScreen,
+  handleSendChannelMessage,
+  handleSendChannelTyping,
+  handleSelectChannel as storeSyncSelectChannel,
+  handleSelectCommunity as storeSyncSelectCommunity,
+} from "../../actions/community.actions";
+import { muteOps } from "../../actions/shell_runners";
+import { registerShellRunner, sendSkinSelection } from "../../actions/skin.actions";
+import { handleJoinVoice, initVoiceEventListener } from "../../actions/voice.actions";
+import type { GlyphName } from "../../components/common/glyph_art";
 import {
   subscribeCommunityEventDispatcher,
   subscribeCommunityVoiceEvents,
 } from "../../handlers/community.handlers";
-import { hydrateState } from "../../stores/hydrate";
+import { subscribeCommunityPresenceEvents } from "../../handlers/presence-events.handlers";
 import {
-  handleLoadChannelMessages,
-  handleLoadOlderMessages,
-  handleSendChannelMessage,
-  handleSelectCommunity as storeSyncSelectCommunity,
-  handleSelectChannel as storeSyncSelectChannel,
-  handleGetChannelPins,
-  handleSendChannelTyping,
-  handleLoadThreadMessages,
-  handleArchiveThread,
-  handleLoadChannelThreads,
-  handleLoadGameServers,
-  handleLoadEvents,
-  handleLoadOnboardingConfig,
-  handleLoadWelcomeScreen,
-} from "../../actions/community.actions";
+  startEventStream,
+  subscribeCommunityFocusChannel,
+  subscribeSkinSignals,
+  type UnlistenFn,
+} from "../../ipc/channels";
 import { commands } from "../../ipc/commands";
-import type { GlyphName } from "../../components/common/glyph_art";
+import type { ShellOp } from "../../ipc/commands/dto_skin_run";
 import type { Message } from "../../stores/chat.store";
 import type { Thread } from "../../stores/community.store";
-import { createCommunityWindowState } from "./state";
-import { startEventStream, subscribeCommunityFocusChannel, subscribeSkinSignals } from "../../ipc/channels";
+import { communityState, setCommunityState } from "../../stores/community.store";
+import { hydrateState } from "../../stores/hydrate";
 import { setSkinSignals } from "../../stores/skin-signals.store";
-import { registerShellRunner, sendSkinSelection } from "../../actions/skin.actions";
-import { muteOps } from "../../actions/shell_runners";
-import { handleJoinVoice } from "../../actions/voice.actions";
-import type { ShellOp } from "../../ipc/commands/dto_skin_run";
+import { addToast } from "../../stores/toast.store";
+import { createCommunityWindowState } from "./state";
 
 /// Orchestrating view-model hook for `CommunityWindow`. Owns the effects,
 /// event handlers, and Veilid subscription lifecycle on top of the signals
@@ -43,13 +47,35 @@ import type { ShellOp } from "../../ipc/commands/dto_skin_run";
 export function useCommunityWindow() {
   const s = createCommunityWindowState();
   const {
-    getCommunityFromUrl, getChannelFromUrl, selectedCommunityId, setSelectedCommunityId,
-    selectedChannelId, setSelectedChannelId, activeCommunity, activeChannel,
-    channelMessages, gameServers, gameNameCache, setGameNameCache,
-    setShowWelcomeForCommunity, setActiveThread, setShowEvents, setShowServers,
-    setRightPanel, rightPanel, setReplyTo, setEditState, setHasMoreOlder, setPins,
-    hasMoreOlder, isLoadingOlder, setIsLoadingOlder, createThreadTarget,
-    setCreateThreadTarget, setSearchInitialChannel, setShowSearch,
+    getCommunityFromUrl,
+    getChannelFromUrl,
+    selectedCommunityId,
+    setSelectedCommunityId,
+    selectedChannelId,
+    setSelectedChannelId,
+    activeCommunity,
+    activeChannel,
+    channelMessages,
+    gameServers,
+    gameNameCache,
+    setGameNameCache,
+    setShowWelcomeForCommunity,
+    setActiveThread,
+    setShowEvents,
+    setShowServers,
+    setRightPanel,
+    rightPanel,
+    setReplyTo,
+    setEditState,
+    setHasMoreOlder,
+    setPins,
+    hasMoreOlder,
+    isLoadingOlder,
+    setIsLoadingOlder,
+    createThreadTarget,
+    setCreateThreadTarget,
+    setSearchInitialChannel,
+    setShowSearch,
   } = s;
 
   // Resolve game names for sidebar servers
@@ -109,8 +135,9 @@ export function useCommunityWindow() {
     storeSyncSelectCommunity(id);
     const community = communityState.communities[id];
     if (community?.channels.length) {
-      const firstText = community.channels.find((c) =>
-        c.type === "text" || c.type === "announcement" || c.type === "forum");
+      const firstText = community.channels.find(
+        (c) => c.type === "text" || c.type === "announcement" || c.type === "forum"
+      );
       if (firstText) {
         setSelectedChannelId(firstText.id);
         storeSyncSelectChannel(firstText.id);
@@ -176,6 +203,15 @@ export function useCommunityWindow() {
     setRightPanel(rightPanel() === "members" ? null : "members");
   }
 
+  // An open thread the Host stops listing (deleted, or our access to it
+  // lost) closes its panel with the reason, rather than showing the old copy.
+  createEffect(() => {
+    if (s.openedThread() && !s.activeThread()) {
+      handleCloseThread();
+      addToast("This thread is no longer available.", "info");
+    }
+  });
+
   function handleOpenThread(thread: Thread): void {
     setActiveThread(thread);
     setRightPanel("thread");
@@ -188,10 +224,7 @@ export function useCommunityWindow() {
     setRightPanel("members");
   }
 
-  async function handleArchiveActiveThread(
-    communityId: string,
-    threadId: string,
-  ): Promise<void> {
+  async function handleArchiveActiveThread(communityId: string, threadId: string): Promise<void> {
     await handleArchiveThread(communityId, threadId);
     if (s.activeThread()?.id === threadId) {
       handleCloseThread();
@@ -215,13 +248,14 @@ export function useCommunityWindow() {
       name,
       target.starterMessageId,
       undefined,
-      autoArchiveSeconds,
+      autoArchiveSeconds
     );
     if (!threadId) {
       throw new Error("Failed to create thread");
     }
-    const thread = (communityState.channelThreads[selectedChannelId()] ?? [])
-      .find((item) => item.id === threadId);
+    const thread = (communityState.channelThreads[selectedChannelId()] ?? []).find(
+      (item) => item.id === threadId
+    );
     if (thread) {
       handleOpenThread(thread);
     }
@@ -248,7 +282,9 @@ export function useCommunityWindow() {
 
   function handleReply(message: Message): void {
     setReplyTo({
-      senderName: message.isOwn ? (activeCommunity()?.myDisplayName ?? "Member") : s.memberName(message.senderId),
+      senderName: message.isOwn
+        ? (activeCommunity()?.myDisplayName ?? "Member")
+        : s.memberName(message.senderId),
       body: message.body,
       messageId: message.serverMessageId,
     });
@@ -284,7 +320,10 @@ export function useCommunityWindow() {
       handleSelectCommunity(urlId);
       // Opened on a channel (the skin's Show Voice, plan E7.2 A): that one.
       const urlChannel = getChannelFromUrl();
-      if (urlChannel && communityState.communities[urlId].channels.some((c) => c.id === urlChannel)) {
+      if (
+        urlChannel &&
+        communityState.communities[urlId].channels.some((c) => c.id === urlChannel)
+      ) {
         handleSelectChannel(urlChannel);
       }
     } else {
@@ -305,8 +344,9 @@ export function useCommunityWindow() {
     unlisteners.push(
       subscribeCommunityFocusChannel((channel) => {
         const id = selectedCommunityId();
-        if (communityState.communities[id]?.channels.some((c) => c.id === channel)) handleSelectChannel(channel);
-      }),
+        if (communityState.communities[id]?.channels.some((c) => c.id === channel))
+          handleSelectChannel(channel);
+      })
     );
     void startEventStream(() => void hydrateState());
 
@@ -337,7 +377,10 @@ export function useCommunityWindow() {
   createEffect(() => {
     const community = selectedCommunityId();
     if (!community) return;
-    void sendSkinSelection({ kind: "community", arg: { community, channel: selectedChannelId() || null, server: null } });
+    void sendSkinSelection({
+      kind: "community",
+      arg: { community, channel: selectedChannelId() || null, server: null },
+    });
   });
 
   // What the Host maps a community window's presses to (plan E7.7 HSC1):
@@ -368,10 +411,22 @@ export function useCommunityWindow() {
 
   return {
     ...s,
-    handleDraftChanged, handleSelectCommunity, handleSelectChannel, handleTogglePins,
-    handleToggleThreadList, handleToggleMembers, handleOpenThread, handleCloseThread,
-    handleArchiveActiveThread, openCreateThreadModal, handleSubmitCreateThread,
-    handleLoadOlder, handleReply, handleChannelSend, channelHeaderIcon, handleJumpToMessage,
+    handleDraftChanged,
+    handleSelectCommunity,
+    handleSelectChannel,
+    handleTogglePins,
+    handleToggleThreadList,
+    handleToggleMembers,
+    handleOpenThread,
+    handleCloseThread,
+    handleArchiveActiveThread,
+    openCreateThreadModal,
+    handleSubmitCreateThread,
+    handleLoadOlder,
+    handleReply,
+    handleChannelSend,
+    channelHeaderIcon,
+    handleJumpToMessage,
   };
 }
 

@@ -76,6 +76,7 @@
     white-space: nowrap;
     max-width: 140px;
     transition: color var(--motion-duration-fast);
+    text-align: left;
   }
 
   .invite-url-masked:hover {

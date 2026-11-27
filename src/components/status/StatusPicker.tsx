@@ -1,10 +1,10 @@
-import { Component, For } from "solid-js";
 import { DropdownMenu } from "@kobalte/core/dropdown-menu";
+import { type Component, For } from "solid-js";
 import { commands } from "../../ipc/commands";
+import type { UserStatus } from "../../stores/auth.store";
 import { setAuthState } from "../../stores/auth.store";
 import { addToast } from "../../stores/toast.store";
 import { errorMessage } from "../../utils/error";
-import type { UserStatus } from "../../stores/auth.store";
 import StatusDot from "./StatusDot";
 
 interface StatusOption {
@@ -34,7 +34,6 @@ export function handleSelectStatus(value: string): void {
 }
 
 const StatusPicker: Component<StatusPickerProps> = (props) => {
-
   return (
     <DropdownMenu placement="top-start">
       <DropdownMenu.Trigger class="buddy-item status-picker">
@@ -53,7 +52,11 @@ const StatusPicker: Component<StatusPickerProps> = (props) => {
                 // A radio item keeps its menu open by default (Kobalte
                 // `MenuRadioItem`, closeOnSelect false): choosing a status
                 // closes the picker, as Xfire's did.
-                <DropdownMenu.RadioItem class="context-menu-item" value={option.value} closeOnSelect>
+                <DropdownMenu.RadioItem
+                  class="context-menu-item"
+                  value={option.value}
+                  closeOnSelect
+                >
                   <StatusDot status={option.value} />
                   <span class="status-picker-label">{option.label}</span>
                 </DropdownMenu.RadioItem>

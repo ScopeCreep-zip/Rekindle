@@ -29,20 +29,6 @@ use rekindle_types::subscription_events::{
 use super::HostGovernance;
 use crate::host::community::CommunityStore;
 
-/// A change to our profile in one community: each `None` keeps the field,
-/// an empty value clears it (plan E3.4 S6).
-#[derive(Debug, Clone, Default)]
-pub(crate) struct ProfileEdit {
-    pub bio: Option<String>,
-    pub pronouns: Option<String>,
-    pub theme_color: Option<u32>,
-    pub badges: Option<Vec<String>>,
-    pub avatar_ref: Option<String>,
-    pub banner_ref: Option<String>,
-    /// Our card's custom status (plan E3.4 S6).
-    pub custom_status: Option<String>,
-}
-
 /// A new community policy.
 #[derive(Debug, Clone)]
 pub(crate) struct PolicyEdit {
@@ -52,75 +38,9 @@ pub(crate) struct PolicyEdit {
 }
 
 impl HostGovernance {
-    /// Apply `edit` to our profile in `community`, field by field (a
-    /// partial update keeps the rest), and store it on our roster row so
-    /// it survives a restart; a custom status goes to our card.
-    ///
-    /// # Errors
-    /// The community is not joined, or the store or card write failed.
-    pub(crate) async fn update_profile(
-        &self,
-        community: &str,
-        edit: ProfileEdit,
-    ) -> Result<(), String> {
-        let set = |field: &mut Option<String>, value: Option<String>| {
-            if let Some(v) = value {
-                *field = (!v.is_empty()).then_some(v);
-            }
-        };
-        let (me, row) = {
-            let mut map = self.ctx.communities.map().write();
-            let c = map.get_mut(community).ok_or("unknown community")?;
-            set(&mut c.my_bio, edit.bio);
-            set(&mut c.my_pronouns, edit.pronouns);
-            set(&mut c.my_avatar_ref, edit.avatar_ref);
-            set(&mut c.my_banner_ref, edit.banner_ref);
-            if let Some(color) = edit.theme_color {
-                c.my_theme_color = Some(color);
-            }
-            if let Some(badges) = edit.badges {
-                c.my_badges = badges;
-            }
-            let row = rekindle_db::repo::members::OwnProfile {
-                bio: c.my_bio.clone(),
-                pronouns: c.my_pronouns.clone(),
-                theme_color: c.my_theme_color,
-                badges: c.my_badges.clone(),
-                avatar_ref: c.my_avatar_ref.clone(),
-                banner_ref: c.my_banner_ref.clone(),
-            };
-            (c.my_pseudonym_key.clone().ok_or("no pseudonym")?, row)
-        };
-        let (owner, db) = self.owner_and_db().ok_or("no identity is unlocked")?;
-        let cid = community.to_owned();
-        db.call(move |conn| {
-            rekindle_db::repo::members::set_own_profile(conn, &owner, &cid, &me, &row)
-        })
-        .await
-        .map_err(|e| format!("profile not stored: {e}"))?;
-        let Some(status) = edit.custom_status else {
-            return Ok(());
-        };
-        let mut text = self.own_card_text(community);
-        text.custom_status = (!status.is_empty()).then_some(status);
-        self.publish_own_card(community, &text).await
-    }
-
-    /// Make `name` our name in `community` (`""` clears it: readers show
-    /// our short pseudonym fingerprint), on our card (plan E3.4 S6).
-    ///
-    /// # Errors
-    /// The community is not joined, or the card write failed.
-    pub(crate) async fn set_display_name(&self, community: &str, name: &str) -> Result<(), String> {
-        let mut text = self.own_card_text(community);
-        let name = name.trim();
-        text.display_name = (!name.is_empty()).then(|| name.to_owned());
-        self.publish_own_card(community, &text).await
-    }
-
     /// What our card says now: its name and custom status from the card
     /// cache, and the game we share there now ([`Self::shared_card_game`]).
-    fn own_card_text(&self, community: &str) -> OwnCardText {
+    pub(super) fn own_card_text(&self, community: &str) -> OwnCardText {
         let card = self.own_cached_card(community).unwrap_or_default();
         OwnCardText {
             display_name: card.display_name,
@@ -186,6 +106,10 @@ impl HostGovernance {
             if self.own_departed(&community) {
                 continue;
             }
+            // The card also carries our name and custom status. Read those
+            // fields after any profile edit that is writing the same card.
+            let lock = self.ctx.communities.profile_write_lock(&community);
+            let _held = lock.lock().await;
             let shared = self.shared_card_game(&community);
             if self.own_cached_card(&community).and_then(|c| c.game) == shared {
                 continue;
@@ -215,7 +139,11 @@ impl HostGovernance {
     }
 
     /// Write `text` to our card, then read it back into the card cache.
-    async fn publish_own_card(&self, community: &str, text: &OwnCardText) -> Result<(), String> {
+    pub(super) async fn publish_own_card(
+        &self,
+        community: &str,
+        text: &OwnCardText,
+    ) -> Result<(), String> {
         let keys = self.own_record_keys(community)?;
         let hpke = {
             let guard = self.ctx.vault.lock();
