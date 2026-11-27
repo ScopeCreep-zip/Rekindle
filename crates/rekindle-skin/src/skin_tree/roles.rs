@@ -352,7 +352,9 @@ fn named_shown(k: &str, f: &Facts<'_>) -> Option<NodeRole> {
         "menubackground" if f.children.iter().any(|c| key(c) == "menubar") => Some(R::Decor),
         "menubar" | "menubackground" | "menubg" => Some(R::MenuBar),
         "statusedit" | "status" => Some(R::StatusText),
-        "downarrow" | "statusbtn" | "buttonstatuschanger" => Some(R::StatusList),
+        // Guild Wars UI's `StatusArrow` `Class="Menu"` runs `MenuStatus`
+        // (`gwcomponents.xml:572-580`), the status list's arrow.
+        "downarrow" | "statusbtn" | "buttonstatuschanger" | "statusarrow" => Some(R::StatusList),
         // The ad's container and its view: the inner one is its part
         // (Symbiosis's `AdViewContainer` > `AdView`, Total Chaos's
         // `AdBar` > `AdArea`).
@@ -567,13 +569,16 @@ pub fn role(
         {
             shows(R::Part)
         }
-        (None, _) => {
-            let classless = f.class.is_none_or(|c| {
-                ["tile", "image", "bitmap", "background"]
-                    .iter()
-                    .any(|t| c.trim().eq_ignore_ascii_case(t))
-            });
-            (f.has_art && classless).then_some(Role::Shows(R::Decor))
-        }
+        (None, _) => (f.has_art && classless(f)).then_some(Role::Shows(R::Decor)),
     }
+}
+
+/// Whether the tile's class is plain art (`Tile`, `Image`, `Bitmap`,
+/// `Background`) or absent.
+pub(super) fn classless(f: &Facts<'_>) -> bool {
+    f.class.is_none_or(|c| {
+        ["tile", "image", "bitmap", "background"]
+            .iter()
+            .any(|t| c.trim().eq_ignore_ascii_case(t))
+    })
 }

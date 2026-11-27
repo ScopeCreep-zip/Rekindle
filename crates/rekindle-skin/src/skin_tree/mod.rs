@@ -38,6 +38,7 @@ pub mod text_box;
 pub mod titles;
 mod triggers;
 pub mod validate;
+pub mod wired;
 
 #[cfg(test)]
 mod anchor_tests;
@@ -85,3 +86,5 @@ mod tests;
 mod text_box_tests;
 #[cfg(test)]
 mod triggers_tests;
+#[cfg(test)]
+mod wired_tests;

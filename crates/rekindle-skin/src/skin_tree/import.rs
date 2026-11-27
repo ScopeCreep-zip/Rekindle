@@ -32,7 +32,10 @@ use super::fit::fit;
 use super::outdent;
 use super::passes::{by_view, pages, qualify, rows_by_view, tab_views};
 use super::roles::{check_grip, role, with_implied, Facts, Role};
-use super::triggers::{self, Pack};
+use super::{
+    triggers::{self, Pack},
+    wired,
+};
 use crate::import::tree::Node;
 use crate::import::xfire_xml::title::{component_pieces, Decode};
 use crate::import::ImportError;
@@ -309,6 +312,11 @@ impl Walk<'_> {
                     .map(str::to_owned)
             })
             .collect();
+        let pack = Pack {
+            popups: &self.popups,
+            groups: &self.group_ids,
+        };
+        let own_triggers = triggers::read(tile, comp, &id, &pack);
         let facts = Facts {
             has_art: !pieces.is_empty(),
             class: comp.and_then(|c| c.attr_ci("Class")),
@@ -320,6 +328,7 @@ impl Walk<'_> {
             .flatten();
         let role = chat
             .or_else(|| role(&id, component, parent, &facts))
+            .or_else(|| wired::role(&facts, own_triggers.as_deref().unwrap_or_default()))
             .ok_or_else(|| {
                 bad(format!(
                     "{id}: component {} has no role",
@@ -331,17 +340,13 @@ impl Walk<'_> {
             .and_then(|c| c.attr_ci("ControlGroupId"))
             .or(tile.attr_ci("ControlGroupId"))
             .map(|g| g.trim().to_owned());
-        let pack = Pack {
-            popups: &self.popups,
-            groups: &self.group_ids,
-        };
         // A slot is a box the shell mounts its own control into (plan
         // SK17-2): the pack's engine triggers on it (the InfoView toggle's
         // `LaunchSkin` of a chat popup) are the control's, not the box's.
         let triggers = if matches!(role.shown(), NodeRole::Slot(_)) {
             Vec::new()
         } else {
-            triggers::read(tile, comp, &id, &pack)?
+            own_triggers?
         };
         check_grip(&id, component, &triggers).map_err(bad)?;
         let fit = content::fit_of(comp, !pieces.is_empty());
