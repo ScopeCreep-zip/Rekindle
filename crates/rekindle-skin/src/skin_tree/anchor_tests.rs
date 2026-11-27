@@ -421,3 +421,32 @@ fn draw_on_topmost_lifts_a_tile_out_of_its_siblings_order() {
     let z: Vec<i16> = root.iter().map(|n| n.z).collect();
     assert_eq!(z, vec![1002, 100, -1000]);
 }
+
+/// Plan SKW3 (lead ruling b): xfire-classic's chat `ChatEdit`
+/// (`xfirechatwindow.xml:211-238`: `Y=Divider.BOTTOM ResizeY=100
+/// IndentBottom=19`, after `ChatArea` `ResizeY=80` and a 14 px divider)
+/// stretches past the moving divider and keeps its 19 px end inset, where
+/// the importer once refused it.
+#[test]
+fn a_stretch_chained_past_a_moving_edge_keeps_its_end_inset() {
+    let span = super::anchor_share::chained(
+        ("Divider".to_owned(), 0),
+        0,
+        Some(100),
+        (0, 19, None),
+        (false, false),
+        &super::anchor::Y,
+    )
+    .unwrap();
+    assert_eq!(
+        span,
+        NodeSpan::Share {
+            at: Anchor::After {
+                sibling: "Divider".into(),
+                gap: 0,
+            },
+            permille: 1000,
+            end: 19,
+        }
+    );
+}

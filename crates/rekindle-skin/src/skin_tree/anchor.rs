@@ -550,16 +550,20 @@ fn shift(span: &NodeSpan, inner: &NodeSpan) -> Option<NodeSpan> {
         NodeSpan::Share {
             at: Anchor::Start(off),
             permille,
+            end: held,
         } => NodeSpan::Share {
             at: Anchor::Start(by(off, start)?),
             permille,
+            end: held,
         },
         NodeSpan::Share {
             at: Anchor::End(off),
             permille,
+            end: held,
         } => NodeSpan::Share {
             at: Anchor::End(by(off, end)?),
             permille,
+            end: held,
         },
         NodeSpan::Share { .. }
         | NodeSpan::Fixed {
