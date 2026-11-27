@@ -1,7 +1,7 @@
-import { Component, For, Show, createMemo, createSignal } from "solid-js";
+import { type Component, createMemo, createSignal, For, Show } from "solid-js";
+import { handlePlaySoundboard } from "../../actions/community.actions";
 import { communityState } from "../../stores/community.store";
 import { voiceState } from "../../stores/voice.store";
-import { handlePlaySoundboard } from "../../actions/community.actions";
 import { channelDeniedFor } from "../../utils/denied";
 
 /// Plan §Failure 6 — soundboard panel rendered alongside the voice
@@ -26,7 +26,9 @@ const SoundboardPanel: Component = () => {
   });
 
   // The Host's verdict for the voice channel we are in, or null when we may.
-  const useDenied = createMemo(() => channelDeniedFor(community(), voiceState.channelId, "useSoundboard"));
+  const useDenied = createMemo(() =>
+    channelDeniedFor(community(), voiceState.channelId, "useSoundboard")
+  );
 
   function play(expressionId: string): void {
     const c = community();
@@ -48,23 +50,24 @@ const SoundboardPanel: Component = () => {
           <span class="soundboard-panel-count">{sounds().length}</span>
         </button>
         <Show when={!collapsed()}>
-          <div class="soundboard-panel-grid" role="list">
+          <ul class="soundboard-panel-grid">
             <For each={sounds()}>
               {(s) => (
-                <button
-                  type="button"
-                  role="listitem"
-                  class="soundboard-panel-clip"
-                  title={useDenied() ?? s.name}
-                  aria-description={useDenied() ?? undefined}
-                  disabled={useDenied() !== null}
-                  onClick={() => play(s.id)}
-                >
-                  <span class="soundboard-panel-clip-name">{s.name}</span>
-                </button>
+                <li class="soundboard-panel-item">
+                  <button
+                    type="button"
+                    class="soundboard-panel-clip"
+                    title={useDenied() ?? s.name}
+                    aria-description={useDenied() ?? undefined}
+                    disabled={useDenied() !== null}
+                    onClick={() => play(s.id)}
+                  >
+                    <span class="soundboard-panel-clip-name">{s.name}</span>
+                  </button>
+                </li>
               )}
             </For>
-          </div>
+          </ul>
         </Show>
       </div>
     </Show>

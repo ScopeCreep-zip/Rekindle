@@ -10,7 +10,7 @@ export function formatDateFromSecs(ts: number): string {
 
 /** Truncate a key to first 8 + ellipsis + last 8 chars (e.g. "abc12345\u2026xyz12345"). */
 export function truncateKey(key: string): string {
-  if (key.length > 16) return key.slice(0, 8) + "\u2026" + key.slice(-8);
+  if (key.length > 16) return `${key.slice(0, 8)}\u2026${key.slice(-8)}`;
   return key;
 }
 
@@ -66,4 +66,9 @@ export function formatSize(bytes: number): string {
   if (bytes < KB) return `${bytes} B`;
   if (bytes < MB) return `${(bytes / KB).toFixed(1)} KB`;
   return `${(bytes / MB).toFixed(1)} MB`;
+}
+
+/** A thread's message count as words: "1 message", "3 messages". */
+export function messageCount(n: number): string {
+  return `${n} ${n === 1 ? "message" : "messages"}`;
 }

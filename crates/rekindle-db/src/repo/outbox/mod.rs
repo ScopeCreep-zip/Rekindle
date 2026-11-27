@@ -20,8 +20,8 @@ pub struct NewRow<'a> {
     pub payload: &'a [u8],
     pub next_at: i64,
     pub deadline: i64,
-    /// The client id of the row of the same stream this one waits for
-    /// (plan HOL1, decision 47; `friend_handshake` streams only).
+    /// The client id this row waits for: a handshake in its stream, or
+    /// the governance op that creates a forum starter's thread.
     pub depends_on: Option<&'a str>,
 }
 
@@ -43,7 +43,7 @@ pub struct Row {
     /// it by when it was written, not by the attempt that reached them
     /// (E2.B F3); `None` for a send with no echo.
     pub sent_at: Option<i64>,
-    /// The row of the same stream this one waits for (plan HOL1).
+    /// The client id of a row this one waits for.
     pub depends_on: Option<String>,
 }
 
@@ -81,12 +81,17 @@ pub fn enqueue_with_echo(
 ///
 /// # Errors
 /// A write failed; nothing is stored.
-pub fn enqueue_all(conn: &Connection, rows: &[NewRow<'_>]) -> rusqlite::Result<Vec<i64>> {
+pub fn enqueue_all(
+    conn: &Connection,
+    rows: &[NewRow<'_>],
+    additional_writes: impl FnOnce(&Connection) -> rusqlite::Result<()>,
+) -> rusqlite::Result<Vec<i64>> {
     let tx = conn.unchecked_transaction()?;
     let seqs = rows
         .iter()
         .map(|row| append(&tx, row, None))
         .collect::<rusqlite::Result<Vec<i64>>>()?;
+    additional_writes(&tx)?;
     tx.commit()?;
     Ok(seqs)
 }
@@ -344,6 +349,21 @@ pub fn update(
     change: &Update<'_>,
 ) -> rusqlite::Result<Option<Updated>> {
     let tx = conn.unchecked_transaction()?;
+    let updated = update_in(&tx, owner_key, client_id, change)?;
+    tx.commit()?;
+    Ok(updated)
+}
+
+/// Store a row update in the caller's transaction.
+///
+/// # Errors
+/// The row or its echo could not be updated.
+pub fn update_in(
+    tx: &rusqlite::Transaction<'_>,
+    owner_key: &str,
+    client_id: &str,
+    change: &Update<'_>,
+) -> rusqlite::Result<Option<Updated>> {
     let acked: Option<Option<String>> = tx
         .query_row(
             "UPDATE outbox SET state = ?3, attempts = ?4, next_at = ?5, deadline = ?6, \
@@ -361,9 +381,8 @@ pub fn update(
         )
         .optional()?;
     if acked.is_some() {
-        project(&tx, owner_key, client_id, change.state)?;
+        project(tx, owner_key, client_id, change.state)?;
     }
-    tx.commit()?;
     acked
         .map(|ack| {
             Ok(Updated {
@@ -386,13 +405,28 @@ pub fn settle(
     state: SendState,
 ) -> rusqlite::Result<bool> {
     let tx = conn.unchecked_transaction()?;
-    project(&tx, owner_key, client_id, state)?;
-    let found = tx.execute(
-        "DELETE FROM outbox WHERE owner_key = ?1 AND client_id = ?2",
-        params![owner_key, client_id],
-    )? > 0;
+    let found = settle_in(&tx, owner_key, client_id, state)?.is_some();
     tx.commit()?;
     Ok(found)
+}
+
+/// Settle in the caller's transaction. Returns the deleted row's kind.
+///
+/// # Errors
+/// The row or its echo could not be updated.
+pub fn settle_in(
+    tx: &rusqlite::Transaction<'_>,
+    owner_key: &str,
+    client_id: &str,
+    state: SendState,
+) -> rusqlite::Result<Option<String>> {
+    project(tx, owner_key, client_id, state)?;
+    tx.query_row(
+        "DELETE FROM outbox WHERE owner_key = ?1 AND client_id = ?2 RETURNING kind",
+        params![owner_key, client_id],
+        |row| row.get(0),
+    )
+    .optional()
 }
 
 /// Record that `client_id` from `stream` was applied. `true` the first
@@ -429,14 +463,16 @@ pub fn unsettled_count(conn: &Connection, owner_key: &str) -> rusqlite::Result<i
 mod reads;
 use reads::parse_state;
 pub use reads::{
-    due, expired, get, get_by_seq, latest_with_prefix, next_wake, prefix_rows, stored_state,
-    stream_rows, waiting_for_key,
+    due, expired, get, get_by_seq, latest_with_prefix, next_wake, pending_stream_rows, prefix_rows,
+    stored_state, stream_rows, waiting_for_key,
 };
 
 mod waiting;
 pub use waiting::{enqueue_waiting_for_message, release_waiting};
 
 mod ending;
+mod forum_starters;
+pub use forum_starters::{abandon_forum_starters, release_forum_starters};
 mod receipts;
 mod takeover;
 pub use ending::{

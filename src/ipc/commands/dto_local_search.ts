@@ -26,5 +26,6 @@ export interface LocalSearchResult {
 
 export const localSearchCommands = {
   /** Search this device's own data in `scope` for `query` (SQLite only, `IpcRequest::LocalSearch`). */
-  search: (scope: LocalSearchScope, query: string) => hostInvoke<LocalSearchResult>("local_search", { scope, query }),
+  search: (scope: LocalSearchScope, query: string) =>
+    hostInvoke<LocalSearchResult>("local_search", { scope, query }),
 };

@@ -103,6 +103,11 @@
     flex-shrink: 0;
   }
 
+  .call-stage-tile-spotlight-btn {
+    position: absolute;
+    inset: 0;
+  }
+
   .call-stage-tile {
     position: relative;
     aspect-ratio: 16 / 9;

@@ -61,8 +61,8 @@ If a section does not apply, write "n/a" instead of deleting it.
       `Assisted-by:` trailer naming the tool and version.
 - [ ] No fabricated dependencies — every new package was verified on
       its registry page (crates.io / npmjs.com), checked for
-      maintainer history, and run through `cargo audit` /
-      `cargo deny` / `pnpm audit` locally.
+      maintainer history, and run through `cargo deny check` /
+      `pnpm audit` locally.
 - [ ] No new `#[allow(...)]` directives without an inline `reason = "…"`
       explaining why the lint is being silenced.
 - [ ] No new tier-boundary violations (frontend imports of

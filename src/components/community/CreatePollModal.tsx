@@ -1,6 +1,6 @@
-import { Component, For, createEffect, createSignal } from "solid-js";
-import Modal from "../common/Modal";
+import { type Component, createEffect, createSignal, For } from "solid-js";
 import { handleCreatePoll } from "../../actions/community.actions";
+import Modal from "../common/Modal";
 
 interface CreatePollModalProps {
   isOpen: boolean;
@@ -28,7 +28,9 @@ const CreatePollModal: Component<CreatePollModalProps> = (props) => {
   });
 
   function updateAnswer(index: number, value: string): void {
-    setAnswers((prev) => prev.map((answer, answerIndex) => (answerIndex === index ? value : answer)));
+    setAnswers((prev) =>
+      prev.map((answer, answerIndex) => (answerIndex === index ? value : answer))
+    );
   }
 
   function addAnswer(): void {
@@ -36,13 +38,17 @@ const CreatePollModal: Component<CreatePollModalProps> = (props) => {
   }
 
   function removeAnswer(index: number): void {
-    setAnswers((prev) => (prev.length <= 2 ? prev : prev.filter((_, answerIndex) => answerIndex !== index)));
+    setAnswers((prev) =>
+      prev.length <= 2 ? prev : prev.filter((_, answerIndex) => answerIndex !== index)
+    );
   }
 
   async function handleSubmit(e: Event): Promise<void> {
     e.preventDefault();
     const trimmedQuestion = question().trim();
-    const trimmedAnswers = answers().map((answer) => answer.trim()).filter(Boolean);
+    const trimmedAnswers = answers()
+      .map((answer) => answer.trim())
+      .filter(Boolean);
     if (!trimmedQuestion) {
       setValidationError("Question is required");
       return;
@@ -69,7 +75,7 @@ const CreatePollModal: Component<CreatePollModalProps> = (props) => {
       trimmedQuestion,
       trimmedAnswers,
       multiSelect(),
-      durationSeconds,
+      durationSeconds
     );
     if (pollId) {
       props.onClose();

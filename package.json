@@ -3,6 +3,7 @@
   "version": "0.0.1",
   "packageManager": "pnpm@10.28.1",
   "private": true,
+  "license": "MIT OR Apache-2.0",
   "type": "module",
   "engines": {
     "node": "^22.18.0 || >=23.6.0"
@@ -25,7 +26,7 @@
     "@kobalte/core": "^0.13.11",
     "@tauri-apps/api": "^2.12.1",
     "qr-scanner": "^1.4.2",
-    "solid-js": "^1.9.0"
+    "solid-js": "^1.9.20"
   },
   "devDependencies": {
     "@biomejs/biome": "2.4.16",

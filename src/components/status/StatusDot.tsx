@@ -1,4 +1,4 @@
-import { Component, Match, Switch } from "solid-js";
+import { type Component, Match, Switch } from "solid-js";
 import type { UserStatus } from "../../stores/auth.store";
 
 interface StatusDotProps {
@@ -28,7 +28,6 @@ const statusShapeMap: Record<string, DotShape> = {
   invisible: "ring",
 };
 
-
 const statusLabels: Record<string, string> = {
   online: "Online",
   away: "Away",
@@ -57,13 +56,16 @@ const StatusDot: Component<StatusDotProps> = (props) => {
   const label = (): string => `Status: ${statusLabels[status()] ?? "Offline"}`;
 
   const ring = (): boolean => shape() === "ring";
-  const iconClass = (): string =>
-    `status-icon-${statusShapeMap[status()] ? status() : "offline"}`;
+  const iconClass = (): string => `status-icon-${statusShapeMap[status()] ? status() : "offline"}`;
 
   return (
     <span class={`${cls()} ${iconClass()}`} role="img" aria-label={label()}>
       {/* A skin's status icon (plan E7.7.7 S4), clipped to this shape. */}
-      <span class={ring() ? "status-dot-fill status-dot-fill-ring" : "status-dot-fill status-dot-fill-disc"} />
+      <span
+        class={
+          ring() ? "status-dot-fill status-dot-fill-ring" : "status-dot-fill status-dot-fill-disc"
+        }
+      />
       <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true">
         <Switch>
           <Match when={shape() === "filled"}>

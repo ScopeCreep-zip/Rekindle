@@ -9,11 +9,12 @@ use rekindle_types::dto::community::{
     CommunityView, MemberGroup, MemberModeration,
 };
 use rekindle_types::dto::member_groups::{group_members, GroupRole};
-use rekindle_types::id::PseudonymKey;
+use rekindle_types::id::{ChannelId, PseudonymKey};
 use rekindle_types::presence::SessionLocation;
 
 use rekindle_skin::role_tag::SkinGrounds;
 
+use super::capability_words::joined_pseudonym;
 use super::HostGovernance;
 use crate::host::adapters::presence::view as beat_view;
 use crate::host::community::{display_role_name, CommunityState, RoleDefinition};
@@ -42,9 +43,7 @@ fn my_permissions(
     use rekindle_governance::permissions::compute_permissions;
     let (Some(gov), Some(me)) = (
         c.governance_state.as_ref(),
-        (c.my_pseudonym_key.as_deref())
-            .and_then(|hex| hex::decode(hex).ok()?.try_into().ok())
-            .map(PseudonymKey),
+        c.my_pseudonym_key.as_deref().and_then(joined_pseudonym),
     ) else {
         return ("0".into(), std::collections::BTreeMap::new());
     };
@@ -69,9 +68,7 @@ fn my_denied(
     c: &CommunityState,
     now_secs: u64,
 ) -> rekindle_types::dto::community_capability::DeniedCapabilities {
-    let me = (c.my_pseudonym_key.as_deref())
-        .and_then(|hex| hex::decode(hex).ok()?.try_into().ok())
-        .map(PseudonymKey);
+    let me = c.my_pseudonym_key.as_deref().and_then(joined_pseudonym);
     match (c.governance_state.as_ref(), me) {
         (Some(gov), Some(me)) => super::capability_words::denied_of(&me, gov, now_secs),
         _ => (rekindle_types::dto::community_capability::CommunityCapability::ALL)
@@ -84,9 +81,7 @@ fn my_denied(
 /// Whether we hold a creator seat in `c`'s merged governance (plan E3.2
 /// S7s, `holds_creator_seat`); false before the first merge.
 fn we_are_creator(c: &CommunityState) -> bool {
-    let me = (c.my_pseudonym_key.as_deref())
-        .and_then(|hex| hex::decode(hex).ok()?.try_into().ok())
-        .map(PseudonymKey);
+    let me = c.my_pseudonym_key.as_deref().and_then(joined_pseudonym);
     match (c.governance_state.as_ref(), me) {
         (Some(gov), Some(me)) => rekindle_governance::permissions::holds_creator_seat(&me, gov),
         _ => false,
@@ -117,13 +112,8 @@ pub(crate) fn channel_lock(c: &CommunityState, channel: &str, now_secs: u64) -> 
     use rekindle_governance::permissions::{compute_permissions, is_restricted};
     use rekindle_types::permissions::VIEW_CHANNELS;
     let gov = c.governance_state.as_ref()?;
-    let me = (c.my_pseudonym_key.as_deref())
-        .and_then(|hex| hex::decode(hex).ok()?.try_into().ok())
-        .map(PseudonymKey)?;
-    let id = hex::decode(channel)
-        .ok()
-        .and_then(|b| <[u8; 16]>::try_from(b).ok())
-        .map(rekindle_types::id::ChannelId)?;
+    let me = c.my_pseudonym_key.as_deref().and_then(joined_pseudonym)?;
+    let id = ChannelId::from_hex(channel)?;
     if compute_permissions(&me, Some(&id), gov, now_secs) & VIEW_CHANNELS != 0 {
         return None;
     }
@@ -142,12 +132,8 @@ fn channel_denied(
     now_secs: u64,
 ) -> rekindle_types::dto::community_capability::ChannelDeniedCapabilities {
     use rekindle_types::dto::community_capability::ChannelCapability;
-    let me = (c.my_pseudonym_key.as_deref())
-        .and_then(|hex| hex::decode(hex).ok()?.try_into().ok())
-        .map(PseudonymKey);
-    let id = (hex::decode(channel).ok())
-        .and_then(|b| <[u8; 16]>::try_from(b).ok())
-        .map(rekindle_types::id::ChannelId);
+    let me = c.my_pseudonym_key.as_deref().and_then(joined_pseudonym);
+    let id = ChannelId::from_hex(channel);
     match (c.governance_state.as_ref(), me, id) {
         (Some(gov), Some(me), Some(id)) => {
             super::capability_words::channel_denied_of(&me, &id, gov, now_secs)

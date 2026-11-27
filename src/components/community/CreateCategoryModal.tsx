@@ -1,8 +1,7 @@
-import { Component, createEffect, createSignal } from "solid-js";
-
-import Modal from "../common/Modal";
-import LoadingButton from "../common/LoadingButton";
+import { type Component, createEffect, createSignal } from "solid-js";
 import { handleCreateCategory } from "../../actions/community.actions";
+import LoadingButton from "../common/LoadingButton";
+import Modal from "../common/Modal";
 
 interface CreateCategoryModalProps {
   isOpen: boolean;

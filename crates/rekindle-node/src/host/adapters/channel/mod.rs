@@ -39,6 +39,7 @@ mod outbox_hold;
 mod outbox_read;
 mod outbox_unmapped;
 pub(crate) use outbox_read::outbox_stream;
+mod forum_post;
 pub(crate) mod outbox_send;
 mod persist;
 mod received;
@@ -187,7 +188,8 @@ pub(crate) fn key_did_not_arrive_text() -> String {
     format!("Not sent: {}", rekindle_outbox::KEY_DID_NOT_ARRIVE)
 }
 
-/// Tell the windows of each post that waited past its deadline for its
+/// Publish thread delivery status and tell the windows of each post that
+/// waited past its deadline for its
 /// channel's key (the outbox engine fails it with
 /// [`rekindle_outbox::KEY_DID_NOT_ARRIVE`]), with the reason they show.
 /// Runs on the unlock scope.
@@ -203,7 +205,7 @@ pub(crate) fn start_key_deadline(
     };
     let channel = HostChannel::new(ctx);
     let mut changes = posts.changes();
-    scope.spawn_with_token("channel post key deadline", |stop| async move {
+    scope.spawn_with_token("channel post status", |stop| async move {
         loop {
             let change = match stop.run_until_cancelled(changes.recv()).await {
                 None | Some(Err(tokio::sync::broadcast::error::RecvError::Closed)) => return,
@@ -213,6 +215,9 @@ pub(crate) fn start_key_deadline(
                 }
                 Some(Ok(change)) => change,
             };
+            if channel.thread_send_status(&change) {
+                continue;
+            }
             let expired = change.kind == rekindle_outbox::StreamKind::ChannelPost
                 && change.state == rekindle_types::message::SendState::Failed
                 && change.wedge_reason.as_deref() == Some(rekindle_outbox::KEY_DID_NOT_ARRIVE);

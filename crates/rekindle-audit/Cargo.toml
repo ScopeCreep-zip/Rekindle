@@ -3,7 +3,7 @@ name = "rekindle-audit"
 version = "0.1.0"
 publish = false
 edition = "2021"
-license = "MIT"
+license.workspace = true
 description = "BLAKE3 keyed hash chain for tamper-evident audit logging in Rekindle"
 
 [lints]

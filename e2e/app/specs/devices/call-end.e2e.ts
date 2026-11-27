@@ -68,7 +68,7 @@ async function rings(b: Browser, from: User, timeout = NET_WAIT_MS): Promise<voi
   await waitUntil(async () => (await modal.getText()).includes(from.displayName), WAIT_MS, `the ringing call is not from ${from.displayName}`);
 }
 
-/** In the DM window `b` is on, the call with its peer is connected (ActiveDmCallPanel shows only an active call). */
+/** Wait for the active call panel in the current window. */
 async function connected(b: Browser): Promise<void> {
   await shown(b, ".active-call-panel", NET_WAIT_MS).catch(async () => {
     throw new Error(`the call never connected; the window says: ${(await windowSays(b)) || "nothing"}`);

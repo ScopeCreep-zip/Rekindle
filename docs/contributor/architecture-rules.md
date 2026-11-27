@@ -82,7 +82,7 @@ Daemon / CLI track:
 | B9 | `parking_lot::Mutex` / `RwLock` over `std::sync::Mutex` / `RwLock` | `clippy.toml` `disallowed-methods` | Active |
 | B10 | `rekindle-utils::time::now_*` over `std::time::SystemTime::now` | `clippy.toml` `disallowed-methods` | Active |
 | B11 | Cap'n Proto generated modules go at the consuming crate's root (`pub mod foo_capnp { include!(…); }`) | Project convention | Review |
-| B12 | New dependency must be verified on its registry page (slopsquatting defence) | `cargo audit` + `cargo deny [sources]` + Semgrep `rekindle-no-suspicious-extern-crate` | Active |
+| B12 | New dependency must be verified on its registry page (slopsquatting defence) | `cargo deny` (`[advisories]`, `[sources]`) + Semgrep `rekindle-no-suspicious-extern-crate` | Active |
 | B13 | DB schema is a single file (`crates/rekindle-db/schema/001_init.sql`); bump `SCHEMA_VERSION` in `crates/rekindle-db/src/open.rs` on change. Queries on shared tables live in `rekindle_db::repo`; SQL and SQLite driver dependencies outside `rekindle-db`, `rekindle-vault`, `rekindle-asql` (plus a shrinking list the E phase empties) fail the gate | Project convention + `cargo xtask check-sqlite` (syn walk + manifest scan) | Active |
 | B14 | No legacy compatibility shims (project is pre-release) | Project convention | Review |
 | B15 | Pure CRDT logic lives in `rekindle-governance`; async lifecycle (origin / bootstrap / join / segments / apply) lives in `rekindle-governance-runtime`. No I/O in the pure crate. | Code review + per-crate `Cargo.toml` excludes | Active |
@@ -227,7 +227,7 @@ owner. As maintainers are added, the file will expand.
 | P5 | AI attestation hint on PRs with AI tells but no `Assisted-by:` trailer | `.github/workflows/ai-attestation.yml` | Active (warn-only) |
 | P6 | Dep-review on every PR | `.github/workflows/dependency-review.yml` | Active |
 | P7 | Lint workflow (Biome / Semgrep / dep-cruiser / file-size / Stylelint / TOML / Markdown / lychee / shellcheck / Nix / typos / gitleaks / Cap'n Proto / Semgrep / actionlint / zizmor) | `.github/workflows/lint.yml` | Active |
-| P8 | Audit workflow (cargo-audit / cargo-deny / pnpm audit) | `.github/workflows/audit.yml` daily + per-PR | Active |
+| P8 | Audit workflow (cargo-deny / pnpm audit) | `.github/workflows/audit.yml` daily + per-PR | Active |
 | P9 | KEV catalog cross-reference (Cargo) | `.github/workflows/kev-check.yml` weekly | Active |
 | P10 | WebView CVE check | `.github/workflows/webview-cve-check.yml` weekly | Active |
 

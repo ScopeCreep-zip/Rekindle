@@ -3,9 +3,9 @@
 // Extracted from useVideoCallPanel.ts; plain functions of the shared
 // PanelCtx (no SolidJS owner-scoped primitives here).
 
-import { Channel } from "@tauri-apps/api/core";
-import { commands } from "../../../ipc/commands";
 import type { NativePreviewFrameMsg } from "../../../ipc/commands";
+import { commands } from "../../../ipc/commands";
+import { Channel } from "../../../ipc/invoke";
 import { videoSessionConfigFor } from "../../../stores/video.store";
 import { decodeBase64ToBytes } from "./codec_utils";
 import type { PanelCtx } from "./panel_ctx";
@@ -62,7 +62,7 @@ async function resolveSavedCamera(): Promise<string | undefined> {
     }
     void commands.reportMediaCaptureError(
       "camera-saved-device",
-      `saved camera not in device list (id=${savedId ?? "-"}, label=${savedLabel ?? "-"}) — using default`,
+      `saved camera not in device list (id=${savedId ?? "-"}, label=${savedLabel ?? "-"}) — using default`
     );
   } catch {
     // Preference read / enumeration unavailable — default camera.
@@ -81,7 +81,7 @@ export function createCaptureController(ctx: PanelCtx): CaptureController {
     // (the probe is OnceLock-cached backend-side — this is cheap).
     if (!ctx.nativeCaptureAvailable() && ctx.props.mode === "community") {
       ctx.setNativeCaptureAvailable(
-        await commands.nativeVideoCaptureAvailable().catch(() => false),
+        await commands.nativeVideoCaptureAvailable().catch(() => false)
       );
     }
     if (ctx.nativeCaptureAvailable() && ctx.props.mode === "community") {
@@ -111,7 +111,7 @@ export function createCaptureController(ctx: PanelCtx): CaptureController {
             const m = e instanceof Error ? e.message : String(e);
             void commands.reportMediaCaptureError(
               "camera-native-preview",
-              `self-view createImageBitmap failed: ${m}`,
+              `self-view createImageBitmap failed: ${m}`
             );
           })
           .finally(() => {
@@ -127,7 +127,7 @@ export function createCaptureController(ctx: PanelCtx): CaptureController {
           ctx.props.communityId,
           ctx.props.channelId,
           "camera",
-          prefs.videoDeviceLabel ?? null,
+          prefs.videoDeviceLabel ?? null
         );
         ctx.setCameraOn(true);
       } catch (e) {
@@ -165,7 +165,7 @@ export function createCaptureController(ctx: PanelCtx): CaptureController {
         const firstMsg = first instanceof Error ? first.message : String(first);
         void commands.reportMediaCaptureError(
           "camera-saved-device",
-          `saved camera unavailable (${firstMsg}) — retrying default`,
+          `saved camera unavailable (${firstMsg}) — retrying default`
         );
         stream = await open(undefined);
         ctx.setError("Saved camera unavailable — using default camera");
@@ -189,7 +189,7 @@ export function createCaptureController(ctx: PanelCtx): CaptureController {
         void commands.reportMediaCaptureError(
           "camera-settings",
           `delivered ${s.width}x${s.height}@${s.frameRate ?? "?"}fps ` +
-            `(wanted ${width}x${height}@${frameRate})`,
+            `(wanted ${width}x${height}@${frameRate})`
         );
       }
       ctx.cameraStream = stream;
@@ -206,7 +206,9 @@ export function createCaptureController(ctx: PanelCtx): CaptureController {
       const msg = e instanceof Error ? e.message : String(e);
       ctx.setError(`Camera failed: ${msg}`);
       void commands.reportMediaCaptureError("camera", msg);
-      ctx.cameraStream?.getTracks().forEach((t) => t.stop());
+      ctx.cameraStream?.getTracks().forEach((track) => {
+        track.stop();
+      });
       ctx.cameraStream = null;
       ctx.setCameraCapture(null);
     }
@@ -228,7 +230,9 @@ export function createCaptureController(ctx: PanelCtx): CaptureController {
       return;
     }
     ctx.sender.stop("camera");
-    ctx.cameraStream?.getTracks().forEach((t) => t.stop());
+    ctx.cameraStream?.getTracks().forEach((track) => {
+      track.stop();
+    });
     ctx.cameraStream = null;
     ctx.setCameraCapture(null);
     if (ctx.localCameraVideoRef.value) {
@@ -261,7 +265,9 @@ export function createCaptureController(ctx: PanelCtx): CaptureController {
       const msg = e instanceof Error ? e.message : String(e);
       ctx.setError(`Screen share failed: ${msg}`);
       void commands.reportMediaCaptureError("screen", msg);
-      ctx.screenStream?.getTracks().forEach((t) => t.stop());
+      ctx.screenStream?.getTracks().forEach((track) => {
+        track.stop();
+      });
       ctx.screenStream = null;
       ctx.setScreenCapture(null);
     }
@@ -269,7 +275,9 @@ export function createCaptureController(ctx: PanelCtx): CaptureController {
 
   async function stopScreen(): Promise<void> {
     ctx.sender.stop("screen");
-    ctx.screenStream?.getTracks().forEach((t) => t.stop());
+    ctx.screenStream?.getTracks().forEach((track) => {
+      track.stop();
+    });
     ctx.screenStream = null;
     ctx.setScreenCapture(null);
     if (ctx.localScreenVideoRef.value) {

@@ -26,7 +26,7 @@ pub async fn host_on(
     dir: &tempfile::TempDir,
     shell: Option<Arc<dyn ShellHooks>>,
     mode: SimMode,
-) -> Arc<Host> {
+) -> (Arc<Host>, Arc<rekindle_db::DbHandle>) {
     let root = rekindle_db::paths::DataRoot::under(dir.path());
     let storage_dir = root.data.join("veilid").display().to_string();
     let index = node.index;
@@ -35,6 +35,7 @@ pub async fn host_on(
         ..Default::default()
     };
     let stores = HostStores::default();
+    let db = Arc::clone(&stores.db);
     let rng = Arc::clone(&node.rng) as Arc<dyn rekindle_utils::RandomSource>;
     let clock = Arc::clone(&node.clock) as Arc<dyn rekindle_utils::Clock>;
     let (transport, inbound, shell) = match mode {
@@ -86,7 +87,7 @@ pub async fn host_on(
     if let Some(inbound) = inbound {
         inbound.attach(&host);
     }
-    host
+    (host, db)
 }
 
 impl SimNode {
@@ -108,11 +109,12 @@ impl SimNode {
         tokio::time::sleep(down).await;
         let node = sim.start_node(index);
         let routes = Arc::clone(&node.ports.routes);
-        let host = host_on(node, &dir, None, mode).await;
+        let (host, db) = host_on(node, &dir, None, mode).await;
         sim.quiesce().await;
         Self {
             index,
             host,
+            db,
             public_key,
             routes,
             dir,

@@ -154,8 +154,10 @@ Read it once before submitting an AI-assisted PR.
    to understand the change.
 
 We don't currently require a Developer Certificate of Origin sign-off or a
-Contributor License Agreement. By submitting a PR you agree your
-contribution is licensed under the project's MIT license.
+Contributor License Agreement. Unless you explicitly state otherwise, any
+contribution intentionally submitted for inclusion in the work by you, as
+defined in the Apache-2.0 license, shall be dual licensed under the MIT license
+and the Apache License 2.0, without any additional terms or conditions.
 
 ## Where to find help
 

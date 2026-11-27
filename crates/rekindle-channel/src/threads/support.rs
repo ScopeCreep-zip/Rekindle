@@ -1,10 +1,12 @@
 //! Shared private helpers for the thread pipeline.
 
+use std::collections::HashSet;
+
 use rekindle_codec::community::channel_record::{ChannelMessage, ChannelRecordEntry};
 use rekindle_types::channel_keys::KeyScope;
 use rekindle_types::id::ChannelId;
 
-use crate::deps::{ChannelMessagingDeps, OutboxItem};
+use crate::deps::{ChannelMessagingDeps, OutboxItem, PendingThreadReply};
 use crate::error::ChannelError;
 use crate::outbox_seal::open_entry_body;
 use crate::send::BodyPosition;
@@ -50,14 +52,31 @@ pub(super) fn thread_scope<D: ChannelMessagingDeps>(
     Some(deps.keys().scope_for_text(community_id, channel))
 }
 
+pub(super) struct ThreadReplies {
+    pub verified: Vec<(OutboxItem, ChannelMessage)>,
+    pub pending: Vec<PendingThreadReply>,
+    pub my_pseudonym: Option<String>,
+}
+
 /// The replies of `thread_id`: each message entry of the thread's stream
-/// across its authors' outboxes, naming its own author.
+/// across its authors' outboxes, naming its own author. A verified entry
+/// may still need causal admission.
 pub(super) async fn thread_replies<D: ChannelMessagingDeps>(
     deps: &D,
     community_id: &str,
     thread_id: &str,
-) -> Vec<(OutboxItem, ChannelMessage)> {
-    (deps.read_outbox_entries(community_id, thread_id).await)
+) -> Result<ThreadReplies, ChannelError> {
+    let my_pseudonym = deps.my_pseudonym_hex(community_id);
+    // Read the durable echoes before the network, so a reply landing
+    // during the read remains visible. Prefer its verified copy if read.
+    let mut pending = if my_pseudonym.is_some() {
+        deps.pending_thread_replies(community_id, thread_id).await?
+    } else {
+        Vec::new()
+    };
+    let verified: Vec<_> = deps
+        .read_outbox_entries(community_id, thread_id)
+        .await
         .into_iter()
         .filter_map(|item| match &item.entry {
             ChannelRecordEntry::Message(m) if m.sender_pseudonym == hex::encode(item.author.0) => {
@@ -66,7 +85,20 @@ pub(super) async fn thread_replies<D: ChannelMessagingDeps>(
             }
             _ => None,
         })
-        .collect()
+        .collect();
+    if !pending.is_empty() {
+        let own_ids: HashSet<_> = verified
+            .iter()
+            .filter(|(_, message)| my_pseudonym.as_deref() == Some(&message.sender_pseudonym))
+            .filter_map(|(_, message)| message.message_id.as_deref())
+            .collect();
+        pending.retain(|reply| !own_ids.contains(reply.message_id.as_str()));
+    }
+    Ok(ThreadReplies {
+        verified,
+        pending,
+        my_pseudonym,
+    })
 }
 
 /// A reply's body, opened under exactly its generation of the parent
@@ -99,7 +131,7 @@ pub(super) fn open_thread_body<D: ChannelMessagingDeps>(
 
 /// A thread's activity as its replies leave it.
 pub(super) struct ThreadActivity {
-    /// The newest reply's commit time, seconds.
+    /// The newest counted reply's activity time in seconds, or creation time.
     pub last_activity: u64,
     pub message_count: u32,
     /// A reply names the standing archive passed in: the thread is live.
@@ -113,21 +145,31 @@ pub(super) async fn thread_activity<D: ChannelMessagingDeps>(
     community_id: &str,
     thread_id: &str,
     archived_op: Option<&str>,
-) -> ThreadActivity {
-    let mut replies = thread_replies(deps, community_id, thread_id).await;
-    replies.retain(|(item, _)| item.admission.is_none());
-    let last_activity = (replies.iter())
+    created_at: u64,
+) -> Result<ThreadActivity, ChannelError> {
+    let mut replies = thread_replies(deps, community_id, thread_id).await?;
+    replies
+        .verified
+        .retain(|(item, _)| item.admission.is_none());
+    let last_activity = replies
+        .verified
+        .iter()
         .map(|(item, _)| item.committed_at / 1000)
+        .chain(replies.pending.iter().map(|reply| reply.sent_at_ms / 1000))
         .max()
-        .unwrap_or(0);
+        .unwrap_or(created_at);
     let revived = archived_op.is_some_and(|op| {
-        (replies.iter()).any(|(_, message)| message.revives.as_deref() == Some(op))
+        replies
+            .verified
+            .iter()
+            .any(|(_, message)| message.revives.as_deref() == Some(op))
     });
-    ThreadActivity {
+    Ok(ThreadActivity {
         last_activity,
-        message_count: u32::try_from(replies.len()).unwrap_or(u32::MAX),
+        message_count: u32::try_from(replies.verified.len() + replies.pending.len())
+            .unwrap_or(u32::MAX),
         revived,
-    }
+    })
 }
 
 pub(super) fn uuid_simple() -> String {

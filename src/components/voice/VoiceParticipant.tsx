@@ -1,5 +1,5 @@
-import { Component } from "solid-js";
-import { VoiceParticipant as VoiceParticipantType } from "../../stores/voice.store";
+import type { Component } from "solid-js";
+import type { VoiceParticipant as VoiceParticipantType } from "../../stores/voice.store";
 
 interface VoiceParticipantProps {
   participant: VoiceParticipantType;

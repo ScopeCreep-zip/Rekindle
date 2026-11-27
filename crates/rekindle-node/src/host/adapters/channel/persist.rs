@@ -97,7 +97,7 @@ impl HostChannel {
         })
     }
 
-    fn channel_posts(&self) -> Result<ChannelPosts, ChannelError> {
+    pub(super) fn channel_posts(&self) -> Result<ChannelPosts, ChannelError> {
         (self.ctx().outbox.channel_posts())
             .ok_or_else(|| ChannelError::Adapter("no unlocked outbox".into()))
     }
@@ -138,10 +138,13 @@ impl HostChannel {
     async fn with_post_cut(&self, post: &ChannelPost) -> Result<ChannelPost, ChannelError> {
         let mut post = post.clone();
         if post.entry.needs_governance_cut() {
-            post.governance_cut =
-                rekindle_governance_runtime::post_cut::capture_post_cut(&self.gov, &post.community)
-                    .await
-                    .map_err(stored)?;
+            post.governance_cut = rekindle_governance_runtime::post_cut::capture_post_cut(
+                &self.gov,
+                &post.community,
+                None,
+            )
+            .await
+            .map_err(stored)?;
         }
         Ok(post)
     }

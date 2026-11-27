@@ -1,4 +1,13 @@
 {
+  "ForumPostCreated.queued": {
+    "starter": "queued",
+    "starterMessageId": "abababababababababababababababababababababababababababababababab:tmsg_4567",
+    "threadId": "abababababababababababababababab"
+  },
+  "ThreadReplyOutcome.queued": {
+    "messageId": "abababababababababababababababababababababababababababababababab:tmsg_0123",
+    "sendState": "queued"
+  },
   "audit.entry": {
     "actorPub": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
     "atMs": 1700000000000,
@@ -133,6 +142,18 @@
   "community.banView": {
     "displayName": "Bea",
     "pseudonymKey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+  },
+  "community.channelView": {
+    "channelType": "forum",
+    "denied": {
+      "createPublicThreads": "You need the Create Public Threads permission.",
+      "sendInThreads": "You need the Send In Threads permission."
+    },
+    "id": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c",
+    "locked": false,
+    "lockedReason": "",
+    "name": "Ideas",
+    "notificationLevel": "default"
   },
   "community.denied": {
     "manageChannels": "You need the Manage Channels permission.",

@@ -1,7 +1,7 @@
 //! Channel commands.
 
 use rekindle_ipc::protocol::{ChannelMessageRequest, ChannelRequest};
-use rekindle_ipc::protocol::{CommunityRequest, IpcRequest};
+use rekindle_ipc::protocol::{CommunityRequest, IpcRequest, RichRequest};
 
 use crate::channel_message;
 use crate::cli::ChannelCmd;
@@ -130,6 +130,27 @@ pub async fn dispatch(
                         reply_to: reply_to.clone(),
                     },
                 )),
+            )
+            .await?;
+            format::print_structured(&value, mode)
+        }
+        ChannelCmd::ForumPost {
+            community,
+            channel,
+            title,
+            message,
+            tag,
+        } => {
+            let (anchor, channel_id) = resolve_channel(client, community, channel).await?;
+            let value = helpers::send(
+                client,
+                IpcRequest::Community(CommunityRequest::Rich(RichRequest::CreateForumPost {
+                    community: anchor,
+                    channel_id,
+                    title: title.clone(),
+                    forum_tag: tag.clone(),
+                    body: message.clone(),
+                })),
             )
             .await?;
             format::print_structured(&value, mode)

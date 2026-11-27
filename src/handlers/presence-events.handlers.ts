@@ -1,16 +1,12 @@
-import type { UnlistenFn } from "@tauri-apps/api/event";
-import { subscribePresenceEvents } from "../ipc/channels";
-import type {
-  PresenceEvent,
-  PresenceSnapshot,
-} from "../ipc/channels/presence_events";
+import { subscribePresenceEvents, type UnlistenFn } from "../ipc/channels";
+import type { PresenceEvent, PresenceSnapshot } from "../ipc/channels/presence_events";
 import { gameName } from "../ipc/channels/presence_events";
-import { friendsState, setFriendsState } from "../stores/friends.store";
-import { communityState, setCommunityState } from "../stores/community.store";
-import { authState, setAuthState } from "../stores/auth.store";
 import type { UserStatus } from "../stores/auth.store";
-import { refreshCommunityMembers, refreshForUnlistedMember } from "./community/members_refresh";
+import { authState, setAuthState } from "../stores/auth.store";
+import { communityState, setCommunityState } from "../stores/community.store";
+import { friendsState, setFriendsState } from "../stores/friends.store";
 import { transformGameInfo } from "../utils/transformers";
+import { refreshCommunityMembers, refreshForUnlistedMember } from "./community/members_refresh";
 
 /**
  * Who the event is about, and what was observed about them.
@@ -85,7 +81,7 @@ function applyToFriend(publicKey: string, snapshot: PresenceSnapshot): void {
           iconKey: playing?.iconKey ?? null,
           joinable: playing?.joinable ?? false,
           joinableReason: playing?.joinableReason ?? null,
-        }),
+        })
       );
     }
   }
@@ -106,12 +102,12 @@ function applyToSelf(snapshot: PresenceSnapshot): void {
       playing === null
         ? null
         : {
-          gameId: playing.gameId ?? 0,
-          gameName: playing.gameName,
-          elapsedSeconds: playing.elapsedSeconds ?? 0,
-          serverAddress: playing.serverAddress,
-          iconKey: playing.iconKey,
-        },
+            gameId: playing.gameId ?? 0,
+            gameName: playing.gameName,
+            elapsedSeconds: playing.elapsedSeconds ?? 0,
+            serverAddress: playing.serverAddress,
+            iconKey: playing.iconKey,
+          }
     );
   }
 }
@@ -143,7 +139,8 @@ export function subscribeCommunityPresenceEvents(): Promise<UnlistenFn> {
       // again, and the Host builds our row there from its one own-presence
       // source (views.rs), status and group alike; nothing is written here.
       if (snapshot.status === null) return;
-      for (const communityId of Object.keys(communityState.communities)) refreshCommunityMembers(communityId);
+      for (const communityId of Object.keys(communityState.communities))
+        refreshCommunityMembers(communityId);
       return;
     }
 
@@ -170,15 +167,18 @@ export function subscribeCommunityPresenceEvents(): Promise<UnlistenFn> {
 
       if (snapshot.status !== null) {
         setCommunityState(
-          "communities", communityId, "members", memberIdx, "status", snapshot.status,
+          "communities",
+          communityId,
+          "members",
+          memberIdx,
+          "status",
+          snapshot.status
         );
         // A member that just went offline is no longer "in" any channel —
         // clear their location so the channel presence badge stops counting
         // them without waiting for the next full members re-fetch.
         if (snapshot.status === "offline") {
-          setCommunityState(
-            "communities", communityId, "members", memberIdx, "location", null,
-          );
+          setCommunityState("communities", communityId, "members", memberIdx, "location", null);
         }
         // Presence moves a member between the Host's groups.
         refreshCommunityMembers(communityId);
@@ -190,7 +190,11 @@ export function subscribeCommunityPresenceEvents(): Promise<UnlistenFn> {
         const name = gameName(snapshot);
         const playing = snapshot.game === "idle" ? null : snapshot.game.playing;
         setCommunityState(
-          "communities", communityId, "members", memberIdx, "gameInfo",
+          "communities",
+          communityId,
+          "members",
+          memberIdx,
+          "gameInfo",
           name === null
             ? null
             : {
@@ -201,16 +205,14 @@ export function subscribeCommunityPresenceEvents(): Promise<UnlistenFn> {
                 iconKey: playing?.iconKey ?? null,
                 joinable: playing?.joinable ?? false,
                 joinableReason: playing?.joinableReason ?? null,
-              },
+              }
         );
       }
     }
   });
 }
 
-export function subscribeProfilePresenceEvents(
-  publicKey: string,
-): Promise<UnlistenFn> {
+export function subscribeProfilePresenceEvents(publicKey: string): Promise<UnlistenFn> {
   return subscribePresenceEvents((event) => {
     const observed = subject(event);
     if (observed === null) return;
