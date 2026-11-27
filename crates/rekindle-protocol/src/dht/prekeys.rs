@@ -134,6 +134,13 @@ pub async fn read_device_list(
     super::profile::read_profile_subkey(pool, profile_key, PREKEY_RECORDS, force_refresh).await
 }
 
+/// The record's head followed by every one-time slot.
+fn record_subkeys() -> Vec<u32> {
+    std::iter::once(layout::HEAD)
+        .chain(layout::FIRST_SLOT..layout::SUBKEY_COUNT)
+        .collect()
+}
+
 /// Our own prekey record read back: the head and every slot it holds, the
 /// subkeys the network holds newer fetched from it (B1's reconcile). A
 /// peer's record is read with [`PeerRecord`], one slot at a time.
@@ -142,10 +149,7 @@ pub async fn read_device_list(
 /// The record could not be opened or read.
 pub async fn read_record(pool: &dyn RecordPort, key: &str) -> Result<RecordRead, ProtocolError> {
     let lease = pool.acquire(key, None, OpenIntent::Check).await?;
-    // The head, then each slot `FIRST_SLOT..FIRST_SLOT + SLOT_COUNT`.
-    let subkeys: Vec<u32> = std::iter::once(layout::HEAD)
-        .chain((0..layout::SLOT_COUNT).map(|i| layout::FIRST_SLOT + i))
-        .collect();
+    let subkeys = record_subkeys();
     let values = pool.read_changed(lease, &subkeys).await;
     pool.release(lease).await;
     let mut read = RecordRead::default();
@@ -187,9 +191,7 @@ impl<'a> PeerRecord<'a> {
     /// The record could not be opened, or no node answered the inspect.
     pub async fn open(pool: &'a dyn RecordPort, key: &str) -> Result<Self, ProtocolError> {
         let lease = pool.acquire(key, None, OpenIntent::Check).await?;
-        let subkeys: Vec<u32> = std::iter::once(layout::HEAD)
-            .chain((0..layout::SLOT_COUNT).map(|i| layout::FIRST_SLOT + i))
-            .collect();
+        let subkeys = record_subkeys();
         let report = match pool
             .inspect(lease, Some(&subkeys), ReportScope::UpdateGet)
             .await
