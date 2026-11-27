@@ -17,7 +17,8 @@ use rekindle_types::id::PseudonymKey;
 
 use crate::harness::{eventually, Community};
 
-fn holds_member(community: &Community, i: usize, pseudonym: &str) -> bool {
+/// Whether node `i`'s merged state holds `pseudonym` as a member.
+pub(crate) fn holds_member(community: &Community, i: usize, pseudonym: &str) -> bool {
     (community.nodes[i].host.governance())
         .governance_state(&community.anchor)
         .is_some_and(|state| (state.members).contains_key(&PseudonymKey::from_hex_lossy(pseudonym)))
