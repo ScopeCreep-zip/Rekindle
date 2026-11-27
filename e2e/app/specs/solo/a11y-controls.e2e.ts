@@ -6,7 +6,11 @@
 //    light Alloy, saved by name so a run before the change and a run after
 //    it compare shot by shot (only the look; run alone on the old tree).
 // 2. The keyboard: Tab reaches each control with a visible focus ring, and
-//    Enter and Space work it as a click does.
+//    Enter and Space work it as a click does. On macOS, WebKit's Tab reaches
+//    only text fields and lists unless the system's Keyboard navigation is on
+//    (AppleKeyboardUIMode), an OS setting this suite leaves alone: there each
+//    control is focused directly and Enter/Space are proven, and Tab reach
+//    with the ring is the Linux run's (WebKitGTK tabs to every control).
 
 import { browser, expect } from "@wdio/globals";
 import type { Browser } from "webdriverio";
@@ -39,12 +43,31 @@ async function shotsIn(skin: string): Promise<void> {
   await closeSettings();
 }
 
+/** Whether the app runs on macOS, where Tab skips buttons (see the header). */
+async function onMac(): Promise<boolean> {
+  return (await b.execute(() => navigator.platform.startsWith("Mac"))) as boolean;
+}
+
 /**
- * Tab from where focus is until `selector` (optionally holding `text`) has
- * it, at most 80 presses; its focus ring must show (`:focus-visible` with a
- * drawn outline).
+ * Bring focus to `selector` (optionally holding `text`): by Tab from where
+ * focus is, at most 80 presses, with its focus ring showing (`:focus-visible`
+ * and a drawn outline); on macOS by focusing it directly (Tab reach is the
+ * Linux run's), its ring then reported as `macOS: focused directly`.
  */
 async function tabTo(selector: string, text = ""): Promise<{ ring: string }> {
+  if (await onMac()) {
+    const focused = (await b.execute(
+      (sel: string, want: string) => {
+        const el = Array.from(document.querySelectorAll<HTMLElement>(sel)).find((e) => (e.textContent ?? "").includes(want));
+        el?.focus();
+        return el !== undefined && document.activeElement === el;
+      },
+      selector,
+      text,
+    )) as boolean;
+    if (!focused) throw new Error(`${selector}${text ? ` "${text}"` : ""} could not take focus`);
+    return { ring: "macOS: focused directly" };
+  }
   for (let i = 0; i < 80; i++) {
     await b.keys("Tab");
     const at = (await b.execute(
