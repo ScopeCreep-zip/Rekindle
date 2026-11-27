@@ -184,12 +184,12 @@ async function pressNode(b: Browser, id: string): Promise<string> {
 }
 
 /**
- * Under a skin's tree, press the pack's control for `view` wherever the Host
- * placed it (plan SK2-N4) and wait for the view: a tab or knob node; a knob
- * whose stops share one box (Combat), pressed round to the view; or a control
- * in a pack popup (StealthX's MainMenuPopup rail), pressed in the popup.
+ * Press the main window's control for `view` as the pack offers it: its tab
+ * or knob, the knob cycled until the view shows, or the item in the pack's
+ * popup rail. What the press opens is the caller's to wait for (a view, or a
+ * panel such as the notifications inbox, which Symbiosis's tab toggles).
  */
-export async function showSkinView(b: Browser, view: string): Promise<void> {
+export async function pressSkinControl(b: Browser, view: string): Promise<void> {
   await switchTo(b, BUDDY);
   const control = await visibleSkinNode(b, `[data-skin-role="tab:${view}"], [data-skin-role="knob:${view}"]`);
   if (control) {
@@ -220,5 +220,15 @@ export async function showSkinView(b: Browser, view: string): Promise<void> {
     await press(b, await b.$(`[data-skin-node="${await pressNode(b, id)}"]`));
     await switchTo(b, BUDDY);
   }
+}
+
+/**
+ * Under a skin's tree, press the pack's control for `view` wherever the Host
+ * placed it (plan SK2-N4) and wait for the view: a tab or knob node; a knob
+ * whose stops share one box (Combat), pressed round to the view; or a control
+ * in a pack popup (StealthX's MainMenuPopup rail), pressed in the popup.
+ */
+export async function showSkinView(b: Browser, view: string): Promise<void> {
+  await pressSkinControl(b, view);
   await waitUntil(() => skinViewShown(b, view), 10_000, `the ${view} view did not show`);
 }

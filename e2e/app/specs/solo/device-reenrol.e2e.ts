@@ -58,7 +58,7 @@ import {
   pendingRequest,
   type User,
 } from "../../journeys.ts";
-import { applySkin, showSkinView, skinShown } from "../../journeys_skins.ts";
+import { applySkin, pressSkinControl, skinShown } from "../../journeys_skins.ts";
 import { painted } from "../../painted.ts";
 import { shot } from "../../shots.ts";
 
@@ -72,7 +72,8 @@ const COMMUNITY = "Restore Hall";
  */
 async function openInbox(pack: string, how: "tab" | "menu"): Promise<boolean> {
   await switchTo(browser, BUDDY);
-  if (how === "tab") await showSkinView(browser, "notifications");
+  // The tab toggles the inbox panel (S7d-keys.10), no view of its own.
+  if (how === "tab") await pressSkinControl(browser, "notifications");
   else await menu(browser, "Rekindle", "Notifications");
   await shown(browser, ".notification-panel", NET_WAIT_MS);
   const paint = await painted(browser, ".notification-panel");
