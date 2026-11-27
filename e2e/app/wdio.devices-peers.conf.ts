@@ -11,6 +11,6 @@ const user = { capabilities: { [APP_CAPABILITY]: { window: "login", display: "x1
 
 export const config: WebdriverIO.MultiRemoteConfig = {
   ...base,
-  specs: ["./specs/devices/call-end.e2e.ts"],
+  specs: ["./specs/devices/call-end.e2e.ts", "./specs/devices/group-call-names.e2e.ts"],
   capabilities: { alice: user, bob: structuredClone(user), carol: structuredClone(user) },
 };
