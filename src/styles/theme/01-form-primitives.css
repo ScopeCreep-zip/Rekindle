@@ -394,6 +394,15 @@
     overflow-wrap: anywhere;
   }
 
+  /* A pack's credit line (skin catalogue ruling 5), under its name in the
+   * row's own text colour. */
+  .skin-credit-line {
+    flex-basis: 100%;
+    padding-left: 24px;
+    font-size: 11px;
+    overflow-wrap: anywhere;
+  }
+
   /* A skin's target sizes (plan SK14), on its own line under the name. */
   .skin-access {
     flex-basis: 100%;

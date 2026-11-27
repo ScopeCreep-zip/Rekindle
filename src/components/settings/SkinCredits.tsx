@@ -1,4 +1,4 @@
-import { Component, Show } from "solid-js";
+import { Component, For, Show } from "solid-js";
 import { commands } from "../../ipc/commands";
 import type { SkinEntry } from "../../ipc/commands/dto";
 
@@ -67,6 +67,15 @@ const SkinCredits: Component<{ skin: SkinEntry; id: string }> = (props) => {
               </dd>
             </>
           )}
+        </Show>
+        {/* The pack's NOTICE facts, as the Host serves them (ruling 5). */}
+        <Show when={(props.skin.notice?.length ?? 0) > 0}>
+          <dt class="skin-credits-term">Notice</dt>
+          <dd class="skin-credits-value">
+            <ul class="skin-credits-notice">
+              <For each={props.skin.notice}>{(fact) => <li>{fact}</li>}</For>
+            </ul>
+          </dd>
         </Show>
       </dl>
     </section>

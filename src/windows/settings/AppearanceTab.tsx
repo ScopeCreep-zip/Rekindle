@@ -113,6 +113,11 @@ const AppearanceTab: Component = () => {
         />
         <span class="buddy-name skin-name">{skin.name}</span>
       </label>
+      {/* The pack's credit line as the Host reads it from its NOTICE (ruling
+          5); nothing is shown for a pack without one. */}
+      <Show when={skin.creditLine}>
+        {(line) => <span class="skin-credit-line">{line()}</span>}
+      </Show>
       {/* How the skin sizes its controls (plan SK14): a faithful skin keeps
           its art's small controls; a conforming one serves none under 24 px.
           An imported pack is the author's, unchecked by us. */}

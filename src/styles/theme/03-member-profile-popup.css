@@ -13,7 +13,10 @@
     color: var(--color-xfire-danger-fg);
   }
 
-  .voice-participants {
+  /* A stacked list: voice participants, and a skin's NOTICE facts (one per
+   * line, in the credits value cell's own colour). */
+  .voice-participants,
+  .skin-credits-notice {
     display: flex;
     flex-direction: column;
     gap: 2px;

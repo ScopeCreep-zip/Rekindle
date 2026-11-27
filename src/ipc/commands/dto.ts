@@ -472,6 +472,12 @@ export interface SkinEntry {
   shortTargets: number;
   /// `shortTargets === 0`: every control meets SC 2.5.8.
   conforming: boolean;
+  /// The pack's credit line, read by the Host from its own NOTICE (skin
+  /// catalogue ruling 5, SKC5); absent before SKC5 and for a pack with none.
+  creditLine?: string | null;
+  /// The NOTICE's facts, one sentence each, in the Host's words (sources,
+  /// tree hash, each normalisation or missing bitmap); absent before SKC5.
+  notice?: string[];
 }
 
 /// A skin's human credits (`rekindle_types::dto::skin::SkinCredits`).
