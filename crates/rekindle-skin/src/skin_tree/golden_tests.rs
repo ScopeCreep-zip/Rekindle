@@ -504,3 +504,65 @@ fn no_button_text_part_is_left_blank() {
     }
     assert!(left.is_empty(), "{left:?}");
 }
+
+/// Whether the built-in `id`'s source tree (`legacy/skins/<id>`) declares a
+/// `StatusView` component (its layout files read without whitespace,
+/// quotes or the NULs of a UTF-16 file).
+fn declares_status_view(id: &str) -> bool {
+    let mut stack =
+        vec![std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join(format!("../../legacy/skins/{id}"))];
+    while let Some(dir) = stack.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let path = entry.unwrap().path();
+            if path.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            let layout = path
+                .extension()
+                .is_some_and(|x| x.eq_ignore_ascii_case("xml") || x.eq_ignore_ascii_case("ini"));
+            if !layout {
+                continue;
+            }
+            let text: String = String::from_utf8_lossy(&std::fs::read(&path).unwrap())
+                .to_ascii_lowercase()
+                .chars()
+                .filter(|c| !c.is_whitespace() && !matches!(c, '"' | '\0'))
+                .collect();
+            if text.contains("class=statusview") {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+fn status_fields(nodes: &[SkinNode]) -> usize {
+    nodes
+        .iter()
+        .map(|n| usize::from(n.role == NodeRole::StatusText) + status_fields(&n.children))
+        .sum()
+}
+
+/// Plan SKW3 (lead ruling a): every function works in every layout, so a
+/// built-in whose source declares a `StatusView` component lays exactly
+/// one status field in its main window (or a popup it launches): Total
+/// Chaos declares `StatusEdit` (`components.xml:898-902`) and places none,
+/// so the importer lays it before the views tile.
+#[test]
+fn every_declared_status_field_is_laid_once() {
+    let declared: Vec<_> = builtin::PACKS
+        .iter()
+        .map(|b| b.id)
+        .filter(|id| declares_status_view(id))
+        .collect();
+    assert!(declared.contains(&"total-chaos"), "{declared:?}");
+    for id in declared {
+        let laid: usize = main_and_popup_trees(id)
+            .iter()
+            .map(|t| status_fields(&t.root))
+            .sum();
+        assert_eq!(laid, 1, "{id}: {laid} status fields");
+    }
+}

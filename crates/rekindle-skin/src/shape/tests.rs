@@ -485,11 +485,14 @@ fn total_chaos_lays_its_content_region() {
     // `TabbedControl` keeps its place, x = -1 + 50 = 49; lead decision 27:
     // the `BottomBar` is clipped to the 61 px under `Content` at the
     // window's bottom edge, so bottom 61, the row's `IndentBottom`.
+    // SKW3 ruling (a): the pack declares a `StatusView` (`components.xml:898-902`,
+    // MinHeight 20) but lays none, so the import lays it before the views
+    // tile at `TabHeader.BOTTOM` and the views start under it: 203 + 20 = 223.
     let (_, b) = builtin::find("builtin:total-chaos").unwrap();
     let m = manifest::parse(&package::read(b.bytes).unwrap()).unwrap();
     let main = &m.windows[&SkinWindow::Main];
     let c = main.content;
-    assert_eq!((c.top, c.right, c.bottom, c.left), (203, 50, 61, 49));
+    assert_eq!((c.top, c.right, c.bottom, c.left), (223, 50, 61, 49));
 }
 
 /// Lead decision 3 (plan SK2, 2026-11-20): under the pack's component tree

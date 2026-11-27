@@ -239,3 +239,18 @@ fn the_community_content_slot_reaches_the_composer() {
         }
     }
 }
+
+/// Plan SKW3: xfire-classic's served Community window, composed from its
+/// group chat (`xfiregroupchatwindow.xml`, whose `ChatEdit` keeps its end
+/// inset past the divider), against its golden.
+#[test]
+fn xfire_classics_community_tree_matches_its_golden() {
+    let (tree, _) = community("xfire-classic");
+    let mut got = String::new();
+    super::golden_tests::lines(&tree.root, 0, &mut got);
+    assert_eq!(
+        got,
+        include_str!("goldens/community-xfire-classic.txt"),
+        "=== community-xfire-classic begin\n{got}=== community-xfire-classic end"
+    );
+}

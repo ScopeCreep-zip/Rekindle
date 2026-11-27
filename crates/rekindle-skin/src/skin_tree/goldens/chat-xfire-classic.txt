@@ -1,0 +1,36 @@
+ChatTitleBar TitleBar target [0, 0, 330, 51] art [0, 0, 330, 51] Frame
+  ChatVent Decor
+  TheChatX Decor
+    TheChatXCover Decor target [0, -2, 32, 24] art [0, 2, 32, 19] Size
+  ChatUserNameField ChatTitle
+    ChatUserNameText Part
+    ChatWindowTitle Part
+  MinimizeChatBox WindowButton(Minimize) target [-6, -3, 24, 24] art [6, 3, 18, 17] Size
+  CloseChatBox WindowButton(Close) target [0, -3, 24, 24] art [0, 3, 18, 17] Size
+  ResizeChatUp Button target [0, 0, 330, 24] art [0, 0, 330, 5] Size
+ChatGripperTopLeft Button target [0, 0, 24, 24] art [0, 0, 25, 44] Size
+ChatGripperTopRight Button target [1, 0, 24, 24] art [-1, 0, 25, 44] Size
+ChatBaseBoard Group
+  SendChatButton Slot(ChatSend)
+  ResizeChatDown Button target [0, -19, 332, 24] art [0, 19, 332, 5] Size
+  ChatTypingMessage Slot(TypingNotice)
+ChatLeftOuterEdge Decor target [0, 0, 24, 155] art [0, 0, 9, 155] Size
+ChatRightOuterEdge Decor target [-15, 0, 24, 155] art [15, 0, 9, 155] Size
+ChatGripperBottomLeft Decor target [0, 19, 24, 24] art [0, -19, 24, 43] Size
+ChatGripperBottomRight Decor target [1, 19, 24, 24] art [-1, -19, 25, 43] Size
+ChatInnerBevel Decor
+  ChatTopBevel Decor
+  ChatBottomBevel Decor
+  ChatMiddleBevel Decor
+  InnerBevelBG Decor
+  ChatMenuBar MenuBar
+    SystemMenuText MenuTitle label "System"
+      SystemMenu Part target [0, 0, 43, 24] art [0, 0, 43, 23] Size
+    ActionsMenuText MenuTitle label "Actions"
+      ActionsMenu Part target [0, 0, 44, 24] art [0, 0, 44, 23] Size
+    HelpMenuText MenuTitle label "Help"
+      HelpMenu Part target [0, 0, 28, 24] art [0, 0, 28, 23] Size
+  ChatArea Slot(ChatArea)
+  ChatDivider Decor
+  ChatEdit Slot(ChatEdit)
+InfoViewButton Slot(InfoviewButton)
