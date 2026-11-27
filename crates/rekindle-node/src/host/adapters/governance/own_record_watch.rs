@@ -108,7 +108,7 @@ impl HostGovernance {
         {
             self.report_own_retirement(
                 community,
-                GovernanceRuntimeError::OwnKeyRetired {
+                &GovernanceRuntimeError::OwnKeyRetired {
                     community: community.to_owned(),
                     retired_from,
                 },
@@ -116,7 +116,7 @@ impl HostGovernance {
         }
     }
 
-    fn report_own_retirement(&self, community: &str, error: GovernanceRuntimeError) {
+    fn report_own_retirement(&self, community: &str, error: &GovernanceRuntimeError) {
         let first = self
             .ctx
             .communities
@@ -160,7 +160,7 @@ impl HostGovernance {
         {
             Ok(()) => {}
             Err(error @ GovernanceRuntimeError::OwnKeyRetired { .. }) => {
-                self.report_own_retirement(community_id, error);
+                self.report_own_retirement(community_id, &error);
             }
             Err(error) => {
                 tracing::debug!(community_id, record, %error, "own record change not read");
