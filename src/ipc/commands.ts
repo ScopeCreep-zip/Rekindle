@@ -9,6 +9,8 @@ export * from "./commands/types_sync";
 
 import { accountCommands } from "./commands/account";
 import { communityCommands } from "./commands/community";
+import { communityAdminCommands } from "./commands/community_admin";
+import { communityContentCommands } from "./commands/community_content";
 import { lobbyCommands } from "./commands/dto_lobby";
 import { governanceCommands } from "./commands/governance";
 import { groupDmCommands } from "./commands/group_dm";
@@ -22,6 +24,8 @@ export type { GroupDmView } from "./commands/group_dm";
 export const commands = {
   ...accountCommands,
   ...communityCommands,
+  ...communityContentCommands,
+  ...communityAdminCommands,
   ...governanceCommands,
   ...voiceCommands,
   ...systemCommands,

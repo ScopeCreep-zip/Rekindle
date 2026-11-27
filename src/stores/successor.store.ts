@@ -13,7 +13,7 @@
  */
 
 import { createStore, produce } from "solid-js/store";
-import type { GovernanceEvent } from "../ipc/channels/community_subscription_events";
+import type { GovernanceEvent } from "../ipc/channels/community_governance_events";
 import type { SuccessorOffer } from "../ipc/commands/community";
 
 interface SuccessorState {

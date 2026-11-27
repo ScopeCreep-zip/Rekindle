@@ -7,10 +7,8 @@ import {
   handleResolveCommunityImageDataUrls,
 } from "../../actions/community/lifecycle";
 import type { CommunityEvent } from "../../ipc/channels";
-import type {
-  CommunitySubscriptionEvent,
-  GovernanceEvent,
-} from "../../ipc/channels/community_subscription_events";
+import type { GovernanceEvent } from "../../ipc/channels/community_governance_events";
+import type { CommunitySubscriptionEvent } from "../../ipc/channels/community_subscription_events";
 import { commands } from "../../ipc/commands";
 import {
   type Community,

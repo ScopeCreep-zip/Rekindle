@@ -2,7 +2,7 @@ import { createStore, produce, reconcile } from "solid-js/store";
 import type {
   OpPublicationState,
   OpQuarantineReason,
-} from "../ipc/channels/community_subscription_events";
+} from "../ipc/channels/community_governance_events";
 import type {
   GameInfo,
   InviteDto,
@@ -189,7 +189,7 @@ import type { EventLocation, GameServer, RecurrenceRule, Thread } from "../ipc/c
 
 export type { GameServer, Thread };
 
-import type { KeyStatus } from "../ipc/channels/community_subscription_events";
+import type { KeyStatus } from "../ipc/channels/community_governance_events";
 
 /**
  * A scheduled community event (architecture §21) — the calendar entry

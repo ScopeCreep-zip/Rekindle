@@ -1,5 +1,5 @@
 import type { DmHistoryGap } from "../ipc/channels/chat_events";
-import type { KeyStatus } from "../ipc/channels/community_subscription_events";
+import type { KeyStatus } from "../ipc/channels/community_governance_events";
 import type { ExpressionInfo, FriendInfo, Message as IpcMessage } from "../ipc/commands";
 import type { DeviceStatus } from "../ipc/commands/community";
 import type { GameInfo, MemberGroup } from "../ipc/commands/dto";
