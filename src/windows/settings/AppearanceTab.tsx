@@ -1,4 +1,5 @@
 import { Component, For, Show, createSignal, onCleanup, onMount } from "solid-js";
+import { createStore, reconcile } from "solid-js/store";
 import { commands } from "../../ipc/commands";
 import { subscribeSkinApplyFailed, subscribeSkinEvents, subscribeSkinTrial, type SkinApplyFailed } from "../../ipc/channels";
 import type { SkinEntry, SkinLibrary, SkinTrial } from "../../ipc/commands/dto";
@@ -34,7 +35,8 @@ function failureText(f: SkinApplyFailed, name: string): string {
  * the user's answer; the Host reverts the skin when the trial runs out.
  */
 const AppearanceTab: Component = () => {
-  const [library, setLibrary] = createSignal<SkinLibrary | null>(null);
+  const [state, setState] = createStore<{ library: SkinLibrary | null }>({ library: null });
+  const library = (): SkinLibrary | null => state.library;
   const [trial, setTrial] = createSignal<SkinTrial | null>(null);
   const [now, setNow] = createSignal(Date.now());
   const [error, setError] = createSignal<string | null>(null);
@@ -45,7 +47,8 @@ const AppearanceTab: Component = () => {
   let fileInput: HTMLInputElement | undefined;
 
   const apply = (lib: SkinLibrary): void => {
-    setLibrary(lib);
+    // Keep the same radio and credit controls in the DOM across Host refreshes.
+    setState("library", reconcile(lib, { key: "id" }));
     setTrial(lib.trial);
   };
 
