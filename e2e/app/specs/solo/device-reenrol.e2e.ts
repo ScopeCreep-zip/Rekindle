@@ -71,7 +71,7 @@ describe("a restored copy re-enrols the device: the original is told and offered
     await stopFleet(peers);
   });
 
-  it("the copy's re-enrolment retires the shared key: Signing stopped, then the Host's re-enrol review", async () => {
+  it("the copy's re-enrolment retires the shared key: the Host's re-enrol review at once, and Signing stopped", async () => {
     await createIdentity(browser, me);
     // Dee, a friend over the CLI: later her session reset is a second
     // review the Host holds, beside the re-enrolment.
@@ -145,17 +145,11 @@ describe("a restored copy re-enrols the device: the original is told and offered
     });
     console.log("[reenrol] the copy's re-enrolment was accepted");
 
-    // The original sees its own key retired: the Host's alert, as served.
+    // The original's own-record watch finds its key retired: the Host raises
+    // its ReEnrolDevice review (TrustChanging) at once, over the buddy list,
+    // in the Host's words (and its "Signing stopped" alert, seen once the
+    // review is answered).
     await inBuddy(browser);
-    await showSkinView(browser, "notifications");
-    const alert = await byText(browser, "[class*=notification]", "Signing stopped", NET_WAIT_MS * 2);
-    console.log(`[reenrol] alert: ${(await alert.getText()).replace(/\s+/g, " ").slice(0, 200)}`);
-    await shot("signing-stopped");
-
-    // The Host raises its ReEnrolDevice review (TrustChanging) at the unlock
-    // barrier: log off, unlock, and the review is there before the buddy
-    // list, in the Host's words.
-    await unlockAgain();
     const said = await reviewSays(browser);
     console.log(`[reenrol] review: ${said.slice(0, 400)}`);
     await shot("reenrol-review");
@@ -183,6 +177,11 @@ describe("a restored copy re-enrols the device: the original is told and offered
     await switchTo(browser, BUDDY, NET_WAIT_MS);
     await gone(browser, ".intent-dialog", NET_WAIT_MS);
     await shot("reenrol-review-cancelled");
+    // With the review answered, the Host's alert, as served.
+    await showSkinView(browser, "notifications");
+    const alert = await byText(browser, "[class*=notification]", "Signing stopped", NET_WAIT_MS * 2);
+    console.log(`[reenrol] alert: ${(await alert.getText()).replace(/\s+/g, " ").slice(0, 200)}`);
+    await shot("signing-stopped");
     await unlockAgain();
     expect(await reviewSays(browser)).toContain("this device's key in every community");
 
