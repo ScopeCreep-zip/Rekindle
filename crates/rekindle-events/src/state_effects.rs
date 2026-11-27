@@ -63,9 +63,12 @@ pub fn apply(
         SubscriptionEvent::Voice(VoiceEvent::Joined {
             scope: VoiceScope::Community { community, channel },
             pseudonym,
+            display_name,
             ..
         }) => {
-            state.voice.join(community, channel, pseudonym, now_ms);
+            state
+                .voice
+                .join(community, channel, pseudonym, display_name, now_ms);
         }
 
         // ── Voice: leave ────────────────────────────────────────

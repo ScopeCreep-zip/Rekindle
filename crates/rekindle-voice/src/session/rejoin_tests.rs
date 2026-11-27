@@ -9,7 +9,6 @@
 //! dropped it, and every presence-reconcile re-send after it.
 
 use std::collections::BTreeMap;
-use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -153,9 +152,6 @@ impl VoiceSessionDeps for Joiner {
     async fn resolve_peer_route(&self, _: &str) -> Option<Vec<u8>> {
         unreachable!("not on the leave path")
     }
-    async fn load_member_names(&self, _: Option<&str>) -> HashMap<String, String> {
-        unreachable!("not on the leave path")
-    }
     fn broadcast_media_capabilities(&self, _: &str, _: &str) {
         unreachable!("not on the leave path")
     }
@@ -168,7 +164,6 @@ impl VoiceSessionDeps for Joiner {
         _: Arc<tokio::sync::Mutex<VoiceTransport>>,
         _: Arc<AtomicBool>,
         _: Arc<AtomicBool>,
-        _: HashMap<String, String>,
     ) -> Result<(), VoiceError> {
         unreachable!("not on the leave path")
     }

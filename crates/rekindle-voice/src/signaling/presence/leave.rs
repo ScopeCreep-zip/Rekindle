@@ -11,6 +11,8 @@ use crate::topology;
 use crate::transport::VoiceTransport;
 use crate::VoiceMode;
 
+use super::roster::named_roster;
+
 pub(in crate::signaling) fn handle_voice_leave(
     deps: &Arc<dyn VoiceSignalingDeps>,
     community_id: &str,
@@ -105,12 +107,7 @@ async fn voice_leave_apply(
     let (removed, peer_count, current_mode, members) = {
         let mut t = transport.lock().await;
         let removed = t.remove_peer(&sender_key);
-        (
-            removed,
-            t.peer_count(),
-            t.mode().clone(),
-            t.roster_participants(),
-        )
+        (removed, t.peer_count(), t.mode().clone(), t.peer_keys())
     };
     if removed {
         deps.emit_event(CommunityVoiceEvent::VoiceRosterChanged {
@@ -118,8 +115,8 @@ async fn voice_leave_apply(
             channel_id: channel_id.to_string(),
             pseudonym_key: sender_key.clone(),
             present: false,
-            display_name: None,
-            roster: members,
+            display_name: deps.member_shown_name(community_id, &sender_key),
+            roster: named_roster(&**deps, community_id, members),
         });
         // Plans C7.20, C7.29 — it must not read what follows.
         crate::signaling::media_keys::on_peer_removed(

@@ -183,7 +183,6 @@ pub async fn change_audio_devices<D: VoiceSessionDeps + ?Sized>(
     deps.set_voice_engine_devices(Some(targets.input.id), Some(targets.output.id));
     deps.set_voice_engine_input_channels(prefs.input_channels);
     crate::session::restart_loops(deps)
-        .await
         .inspect_err(|e| crate::session::device_monitor::report_reopen_failure(deps, e))?;
     Ok(())
 }

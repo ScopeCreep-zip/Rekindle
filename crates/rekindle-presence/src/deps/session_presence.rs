@@ -26,7 +26,6 @@ pub trait SessionPresence: Send + Sync + 'static {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct VoicePresenceRow {
     pub pseudonym_hex: String,
-    pub display_name: Option<String>,
     /// The cleartext voice channel claim on the row. The row carries no
     /// media route (plan C7.15): the reconcile introduces us through the
     /// call's signaling instead.
@@ -45,7 +44,6 @@ impl VoicePresenceRow {
     pub fn claim(pseudonym_hex: String, voice_channel_id: Option<String>, fresh: bool) -> Self {
         Self {
             pseudonym_hex,
-            display_name: None,
             voice_channel_id,
             fresh,
         }

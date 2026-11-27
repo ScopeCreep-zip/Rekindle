@@ -324,15 +324,6 @@ pub trait VoiceSessionDeps: MediaKeySource + Send + Sync + 'static {
     /// (caller must convert to CallDecline / CallEnd).
     async fn resolve_peer_route(&self, peer_pubkey_hex: &str) -> Option<Vec<u8>>;
 
-    /// Load member display names for a community into a
-    /// `pseudonym_hex → display_name` map. Used by the receive loop
-    /// to surface friendly names on UserJoined events. Empty map for
-    /// 1:1 calls.
-    async fn load_member_names(
-        &self,
-        community_id: Option<&str>,
-    ) -> std::collections::HashMap<String, String>;
-
     /// §10.6 — broadcast our media decode capabilities to a community
     /// voice channel so other senders cap their VP9 bitrate at the
     /// lowest common denominator. Best-effort: errors log but don't
@@ -354,7 +345,7 @@ pub trait VoiceSessionDeps: MediaKeySource + Send + Sync + 'static {
     /// create one), pull capture_rx + playback_tx + (noise_supp,
     /// echo_cancel) off the engine handle, spawn the three loops
     /// (send / receive / device_monitor) using the deps + transport
-    /// + member_names, store all shutdown senders + JoinHandles
+    /// and store all shutdown senders + JoinHandles
     /// back on the engine handle.
     ///
     /// All AppState mutation lives here. The crate's `start_session`
@@ -366,7 +357,6 @@ pub trait VoiceSessionDeps: MediaKeySource + Send + Sync + 'static {
         transport: std::sync::Arc<tokio::sync::Mutex<crate::transport::VoiceTransport>>,
         muted_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
         deafened_flag: std::sync::Arc<std::sync::atomic::AtomicBool>,
-        member_names: std::collections::HashMap<String, String>,
     ) -> Result<(), VoiceError>;
 
     // ── Restart-loops (hot-swap path) deps (Phase 14.l-restart) ─────
@@ -395,7 +385,7 @@ pub trait VoiceSessionDeps: MediaKeySource + Send + Sync + 'static {
     >;
 
     /// Currently bound community_id (or `None` for 1:1 calls / no
-    /// engine). Used by restart_loops to re-fetch member_names.
+    /// engine).
     fn active_community_id(&self) -> Option<String>;
 
     /// Snapshot of the active engine's (channel_id, community_id).
@@ -550,10 +540,7 @@ pub struct SendLinkStats {
 #[derive(Debug, Clone)]
 pub enum VoiceSessionEvent {
     /// A new participant joined the voice channel.
-    UserJoined {
-        peer_pubkey: String,
-        display_name: String,
-    },
+    UserJoined { peer_pubkey: String },
     /// A participant left.
     UserLeft { peer_pubkey: String },
     /// A participant started/stopped speaking (VAD edge).

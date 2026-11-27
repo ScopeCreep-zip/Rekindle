@@ -43,13 +43,7 @@ fn roster_event(
 ) -> SubscriptionEvent {
     SubscriptionEvent::Voice(VoiceEvent::RosterUpdated {
         scope: community_scope(community, channel),
-        participants: roster
-            .into_iter()
-            .map(|p| rekindle_types::subscription_events::VoiceParticipant {
-                pseudonym_key: p.pseudonym_key,
-                display_name: p.display_name,
-            })
-            .collect(),
+        participants: roster,
     })
 }
 
@@ -180,18 +174,9 @@ pub(super) fn emit(
             channel_id,
             participants,
         } => {
-            crate::event_dispatch::emit_voice(
+            crate::event_dispatch::emit_subscription(
                 app_handle,
-                rekindle_types::subscription_events::VoiceEvent::RosterUpdated {
-                    scope: community_scope(community_id, channel_id),
-                    participants: participants
-                        .into_iter()
-                        .map(|p| rekindle_types::subscription_events::VoiceParticipant {
-                            pseudonym_key: p.pseudonym_key,
-                            display_name: p.display_name,
-                        })
-                        .collect(),
-                },
+                &roster_event(community_id, channel_id, participants),
             );
         }
         CommunityVoiceEvent::VoiceModeSwitch {

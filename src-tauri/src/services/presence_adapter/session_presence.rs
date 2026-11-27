@@ -61,7 +61,6 @@ impl rekindle_presence::SessionPresence for DesktopSessionPresence {
             .into_iter()
             .map(|r| rekindle_voice::signaling::PresencePeerView {
                 pseudonym_hex: r.pseudonym_hex,
-                display_name: r.display_name,
                 voice_channel_id: r.voice_channel_id,
                 fresh: r.fresh,
             })

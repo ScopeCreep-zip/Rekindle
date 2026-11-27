@@ -11,7 +11,7 @@ use crate::signaling::stage::reconcile_stage_transport;
 use crate::transport::VoiceTransport;
 
 use super::mcu::maybe_switch_to_mcu;
-use super::roster::roster_entries;
+use super::roster::{named_roster, roster_entries};
 
 pub(in crate::signaling) fn handle_voice_join(
     deps: &Arc<dyn VoiceSignalingDeps>,
@@ -19,7 +19,6 @@ pub(in crate::signaling) fn handle_voice_join(
     sender_pseudonym: &str,
     channel_id: String,
     route_blob: Vec<u8>,
-    display_name: Option<String>,
 ) {
     // §10.5 rotation moved into `voice_join_apply`, gated on the
     // roster ACTUALLY changing: VoiceJoin re-announces (every route
@@ -35,58 +34,32 @@ pub(in crate::signaling) fn handle_voice_join(
     // for any other channel (or while we're not in voice at all) is
     // pure UI signaling: adding the peer would pollute our roster and
     // leak our channel's media to members of a different channel.
+    let display_name = deps.member_shown_name(community_id, sender_pseudonym);
     let transport = if deps.voice_engine_bound_to(community_id, &channel_id) {
         deps.transport_handle()
     } else {
         None
     };
+    deps.emit_event(CommunityVoiceEvent::VoiceJoin {
+        community_id: community_id.to_string(),
+        channel_id: channel_id.clone(),
+        pseudonym_key: sender_pseudonym.to_string(),
+        route_blob: route_blob.clone(),
+        display_name,
+    });
     let Some(transport) = transport else {
-        deps.emit_event(CommunityVoiceEvent::VoiceJoin {
-            community_id: community_id.to_string(),
-            channel_id,
-            pseudonym_key: sender_pseudonym.to_string(),
-            route_blob,
-            display_name,
-        });
         return;
     };
 
-    let my_pk = deps.my_pseudonym(community_id).unwrap_or_default();
-    let sender_key = sender_pseudonym.to_string();
-    let blob = route_blob.clone();
-
-    {
-        let deps_task = Arc::clone(deps);
-        let cid = community_id.to_string();
-        let ch_id = channel_id.clone();
-        let transport = Arc::clone(&transport);
-        let sender_key = sender_key.clone();
-        let blob = blob.clone();
-        let my_pk = my_pk.clone();
-        let joiner_name = display_name.clone();
-        deps.scope().spawn_or_drop("voice join apply", async move {
-            voice_join_apply(
-                &deps_task,
-                &cid,
-                &ch_id,
-                transport,
-                JoinApply {
-                    sender_key,
-                    blob,
-                    joiner_name,
-                    my_pk,
-                },
-            )
-            .await;
-        });
-    }
-
-    deps.emit_event(CommunityVoiceEvent::VoiceJoin {
-        community_id: community_id.to_string(),
-        channel_id,
-        pseudonym_key: sender_pseudonym.to_string(),
-        route_blob,
-        display_name,
+    let deps_task = Arc::clone(deps);
+    let cid = community_id.to_string();
+    let join = JoinApply {
+        sender_key: sender_pseudonym.to_string(),
+        blob: route_blob,
+        my_pk: deps.my_pseudonym(community_id).unwrap_or_default(),
+    };
+    deps.scope().spawn_or_drop("voice join apply", async move {
+        voice_join_apply(&deps_task, &cid, &channel_id, transport, join).await;
     });
 }
 
@@ -96,7 +69,6 @@ pub(in crate::signaling) fn handle_voice_join(
 struct JoinApply {
     sender_key: String,
     blob: Vec<u8>,
-    joiner_name: Option<String>,
     my_pk: String,
 }
 
@@ -110,7 +82,6 @@ async fn voice_join_apply(
     let JoinApply {
         sender_key,
         blob,
-        joiner_name,
         my_pk,
     } = join;
     let is_stage = deps
@@ -119,9 +90,10 @@ async fn voice_join_apply(
 
     let (newly_added, members) = {
         let mut t = transport.lock().await;
-        let newly = t.add_peer(&sender_key, &blob, joiner_name.as_deref());
-        (newly, t.roster_participants())
+        let newly = t.add_peer(&sender_key, &blob);
+        (newly, t.peer_keys())
     };
+    let joiner_name = deps.member_shown_name(community_id, &sender_key);
     if newly_added {
         deps.emit_event(CommunityVoiceEvent::VoiceRosterChanged {
             community_id: community_id.to_string(),
@@ -129,7 +101,7 @@ async fn voice_join_apply(
             pseudonym_key: sender_key.clone(),
             present: true,
             display_name: joiner_name.clone(),
-            roster: members.clone(),
+            roster: named_roster(&**deps, community_id, members),
         });
         // Plan C7.20 — a genuine membership change (this peer was not on
         // the roster) gets it our media key, ratcheted past what it
@@ -177,7 +149,7 @@ async fn voice_join_apply(
             channel_id: channel_id.to_string(),
             state: "seen".to_string(),
             peer: Some(sender_key.clone()),
-            display_name: joiner_name.clone(),
+            display_name: Some(joiner_name),
         });
         send_confirmed_if_first(&**deps, community_id, channel_id, &transport).await;
     }

@@ -83,8 +83,6 @@ pub async fn start_session<D: VoiceSessionDeps + ?Sized>(
     let startup =
         deps.init_voice_session(&prefs, channel_id, community_id, peer_route.as_deref())?;
 
-    let member_names = deps.load_member_names(community_id).await;
-
     // init_voice_session installed the engine handle and started the
     // cpal devices. If loop spawn fails now, tear that down — leaving
     // it would block the next join with "already in a different voice
@@ -94,7 +92,6 @@ pub async fn start_session<D: VoiceSessionDeps + ?Sized>(
         startup.transport,
         startup.muted_flag,
         startup.deafened_flag,
-        member_names,
     ) {
         deps.stop_devices_and_clear_engine();
         return Err(e);

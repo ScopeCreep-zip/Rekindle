@@ -6,7 +6,6 @@
 //! `spawn_voice_loops`). Each is a free fn taking explicit
 //! references so the deps_impl method bodies stay short.
 
-use std::collections::HashMap;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
@@ -281,7 +280,6 @@ pub(super) fn spawn_voice_loops_impl(
     transport: &Arc<tokio::sync::Mutex<rekindle_voice::transport::VoiceTransport>>,
     muted_flag: &Arc<AtomicBool>,
     deafened_flag: &Arc<AtomicBool>,
-    member_names: HashMap<String, String>,
 ) -> Result<(), String> {
     use tokio::sync::{broadcast, mpsc};
 
@@ -421,7 +419,6 @@ pub(super) fn spawn_voice_loops_impl(
         } else {
             Some(voice_channel_id)
         },
-        member_names,
         jitter_base_ms: bundle.jitter_base_ms,
         report_signing_key,
         media_liveness,

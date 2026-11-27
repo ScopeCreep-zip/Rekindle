@@ -33,12 +33,8 @@ pub struct StageChannelInfo {
     pub moderator: Option<String>,
 }
 
-/// One roster-event participant: pseudonym + handshake-carried name.
-#[derive(Debug, Clone)]
-pub struct VoiceRosterParticipant {
-    pub pseudonym_key: String,
-    pub display_name: Option<String>,
-}
+/// One roster-event participant: pseudonym + the Host's shown name.
+pub use rekindle_types::subscription_events::VoiceParticipant as VoiceRosterParticipant;
 
 /// Frontend events the signaling handlers emit. The adapter maps each
 /// variant to its concrete src-tauri `CommunityEvent` payload and
@@ -50,9 +46,8 @@ pub enum CommunityVoiceEvent {
         channel_id: String,
         pseudonym_key: String,
         route_blob: Vec<u8>,
-        /// Name carried by the handshake — frontends render it without
-        /// waiting for the registry scan.
-        display_name: Option<String>,
+        /// The member's shown name from the Host.
+        display_name: String,
     },
     VoiceLeave {
         community_id: String,
@@ -80,7 +75,7 @@ pub enum CommunityVoiceEvent {
         channel_id: String,
         pseudonym_key: String,
         present: bool,
-        display_name: Option<String>,
+        display_name: String,
         roster: Vec<VoiceRosterParticipant>,
     },
     /// Local three-way join handshake progressed (announced → seen →
@@ -315,6 +310,9 @@ pub trait VoiceSignalingDeps: Send + Sync + 'static {
     /// Our self-sovereign display name, carried in VoiceJoinAck so the
     /// joiner learns who saw them without a registry-scan round trip.
     fn my_display_name(&self) -> Option<String>;
+
+    /// The name shown by the Host for this member in this community.
+    fn member_shown_name(&self, community_id: &str, pseudonym: &str) -> String;
 
     /// Persist our own hand-raise state on a SpeakResponse. Phase 19
     /// (rekindle-channel) eventually owns this; today the adapter

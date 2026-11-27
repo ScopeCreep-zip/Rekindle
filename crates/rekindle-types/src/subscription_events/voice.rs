@@ -73,8 +73,8 @@ impl VoiceScope {
 #[serde(rename_all = "camelCase")]
 pub struct VoiceParticipant {
     pub pseudonym_key: String,
-    /// Absent when the roster row carried no name to resolve.
-    pub display_name: Option<String>,
+    /// The member’s shown name from the Host.
+    pub display_name: String,
 }
 
 /// Voice channel activity, and the local session's own state.
@@ -86,9 +86,8 @@ pub enum VoiceEvent {
     Joined {
         scope: VoiceScope,
         pseudonym: String,
-        /// Carried when the joiner is known to us by name. Gossip
-        /// supplies only the pseudonym; a local join supplies both.
-        display_name: Option<String>,
+        /// The joiner's shown name from the Host.
+        display_name: String,
         /// The joiner's private-route blob, when their announcement
         /// carried one.
         ///
@@ -375,7 +374,7 @@ mod tests {
             scope: community_scope(),
             participants: vec![VoiceParticipant {
                 pseudonym_key: "p".into(),
-                display_name: Some("Ada".into()),
+                display_name: "Ada".into(),
             }],
         };
         assert_eq!(event.community(), Some("c"));
@@ -390,7 +389,7 @@ mod tests {
             VoiceEvent::Joined {
                 scope: community_scope(),
                 pseudonym: "p".into(),
-                display_name: Some("Ada".into()),
+                display_name: "Ada".into(),
                 route_blob: Some(vec![1, 2, 3]),
             },
             VoiceEvent::Left {
@@ -416,7 +415,7 @@ mod tests {
                 scope: community_scope(),
                 participants: vec![VoiceParticipant {
                     pseudonym_key: "p".into(),
-                    display_name: None,
+                    display_name: "abab abab".into(),
                 }],
             },
             VoiceEvent::JoinHandshake {
@@ -530,12 +529,12 @@ mod tests {
                 peer_key: "peer".into(),
             },
             pseudonym: "p".into(),
-            display_name: None,
+            display_name: "Ada".into(),
             route_blob: None,
         };
         assert_eq!(
             serde_json::to_string(&dm).unwrap(),
-            r#"{"joined":{"scope":{"dm":{"peerKey":"peer"}},"pseudonym":"p","displayName":null,"routeBlob":null}}"#
+            r#"{"joined":{"scope":{"dm":{"peerKey":"peer"}},"pseudonym":"p","displayName":"Ada","routeBlob":null}}"#
         );
     }
 }
