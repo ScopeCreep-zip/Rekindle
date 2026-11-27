@@ -2,7 +2,7 @@
 // importer chains a resize tile on a moving sibling's edge and paints
 // stacked title rows once (Total Chaos declares one title row with a 1 px
 // left outdent; the merged pack painted a second, un-outdented row). In
-// Total Chaos and in Alloy, the buddy list at its served minimum (squeezed
+// every built-in pack the Host lists, the buddy list at its served minimum (squeezed
 // below it, then the pack applied: the shell grows it to the minimum,
 // window-fit) and resized larger:
 //   1. its four 16 px edges agree with the shaper's own silhouette at that
@@ -30,10 +30,27 @@ import { decodePng } from "../../png.ts";
 import { shot } from "../../shots.ts";
 import { disagreements, silhouette } from "../../silhouette.ts";
 
-const PACKS: { name: string; file: string }[] = [
-  { name: "Total Chaos", file: "total-chaos" },
-  { name: "Alloy", file: "alloy" },
-];
+/**
+ * Every built-in pack the Host ships, as its library lists it (`list_skins`):
+ * the predicates are general, so the spec walks them all rather than a list of
+ * the packs a fault was first seen in. `file` is the pack id the silhouette
+ * tool reads (`builtin:<id>`).
+ */
+async function builtinPacks(): Promise<{ name: string; file: string }[]> {
+  const library = (await browser.execute(async () => {
+    const { invoke } = (
+      window as unknown as {
+        __TAURI_INTERNALS__: {
+          invoke(cmd: string): Promise<{ skins: { id: string; name: string }[] }>;
+        };
+      }
+    ).__TAURI_INTERNALS__;
+    return invoke("list_skins");
+  })) as { skins: { id: string; name: string }[] };
+  return library.skins
+    .filter((s) => s.id.startsWith("builtin:"))
+    .map((s) => ({ name: s.name, file: s.id.slice("builtin:".length) }));
+}
 
 /** The buddy list's inner size, once it holds still for a second. */
 async function settledSize(): Promise<[number, number]> {
@@ -156,13 +173,16 @@ async function doubledArt(): Promise<string[]> {
 }
 
 describe("a pack's tiles join at its minimum and when resized larger (SKC4c)", function () {
-  this.timeout(900_000);
+  this.timeout(2_700_000);
   const ada: User = { ...newUser("resize-tiles"), displayName: "Ada" };
 
-  it("Total Chaos and Alloy: edges match the silhouette and no art is painted twice, at both sizes", async () => {
+  it("every built-in pack: edges match the silhouette and no art is painted twice, at both sizes", async () => {
     await createIdentity(browser, ada);
+    const packs = await builtinPacks();
+    console.log(`[resize-tiles] built-in packs: ${packs.map((p) => p.file).join(", ")}`);
+    expect(packs.length).toBeGreaterThan(0);
     const faults: string[] = [];
-    for (const pack of PACKS) {
+    for (const pack of packs) {
       // Squeezed below any pack's minimum first: applying the pack grows the
       // window to the minimum the Host serves for it (window-fit; macOS does
       // not clamp WebDriver's resize, and a window squeezed after the skin is
