@@ -2,7 +2,9 @@
 // never hidden. Cara owns the community and a stage channel, and denies
 // everyone REQUEST_TO_SPEAK there (the bit her own catalogue names). Ari
 // joins the stage as audience: "Request to speak" is shown, disabled, with
-// the Host's reason as its title, in the theme's disabled text. Joining a
+// the Host's reason as its title, in the theme's disabled text. At the
+// default window size, the Audience header and Ari's own row show without a
+// scroll: inside every clipping ancestor's box and the window. Joining a
 // stage opens the microphone: Linux only (no TCC prompt on the Mac).
 
 import { browser, expect } from "@wdio/globals";
@@ -61,8 +63,43 @@ describe("a stage's raise hand is shown, disabled with the Host's reason (PN1)",
       };
     })) as { disabled: boolean; reason: string; dimmed: boolean };
     console.log(`[stage] Request to speak: disabled=${state.disabled} reason=${state.reason}`);
+
+    // The Audience header and our own row are in view, unscrolled: each
+    // inside the box every clipping ancestor (and the window) leaves visible.
+    await shown(browser, ".stage-panel-section .stage-panel-member-card", NET_WAIT_MS);
+    const fit = (await browser.execute(() => {
+      const clip = (el: Element): DOMRect => {
+        let box = new DOMRect(0, 0, window.innerWidth, window.innerHeight);
+        for (let a = el.parentElement; a; a = a.parentElement) {
+          const s = getComputedStyle(a);
+          if (s.overflowX === "visible" && s.overflowY === "visible") continue;
+          const r = a.getBoundingClientRect();
+          const left = Math.max(box.left, r.left);
+          const top = Math.max(box.top, r.top);
+          box = new DOMRect(left, top, Math.min(box.right, r.right) - left, Math.min(box.bottom, r.bottom) - top);
+        }
+        return box;
+      };
+      const inside = (el: Element | null | undefined): { inside: boolean; el: number[]; clip: number[] } => {
+        if (!el) return { inside: false, el: [], clip: [] };
+        const r = el.getBoundingClientRect();
+        const c = clip(el);
+        const round = (b: DOMRect) => [b.left, b.top, b.right, b.bottom].map(Math.round);
+        return { inside: r.top >= c.top - 0.5 && r.bottom <= c.bottom + 0.5 && r.left >= c.left - 0.5 && r.right <= c.right + 0.5, el: round(r), clip: round(c) };
+      };
+      const sections = Array.from(document.querySelectorAll(".stage-panel-grid .stage-panel-section"));
+      const audience = sections.find((s) => (s.querySelector(".stage-panel-section-title")?.textContent ?? "").includes("Audience"));
+      return {
+        header: inside(audience?.querySelector(".stage-panel-section-title")),
+        row: inside(audience?.querySelector(".stage-panel-member-card")),
+        scrolled: document.querySelector(".stage-panel")?.scrollTop ?? -1,
+        window: [window.innerWidth, window.innerHeight],
+      };
+    })) as { header: { inside: boolean; el: number[]; clip: number[] }; row: { inside: boolean; el: number[]; clip: number[] }; scrolled: number; window: number[] };
+    console.log(`[stage] window ${fit.window.join("x")}, panel scrolled ${fit.scrolled}; Audience header ${JSON.stringify(fit.header)}; our row ${JSON.stringify(fit.row)}`);
     await shot("request-to-speak-denied");
     expect({ shown: await request.isDisplayed(), disabled: state.disabled, reason: state.reason.length > 0, dimmed: state.dimmed })
       .toEqual({ shown: true, disabled: true, reason: true, dimmed: true });
+    expect({ scrolled: fit.scrolled, header: fit.header.inside, row: fit.row.inside }).toEqual({ scrolled: 0, header: true, row: true });
   });
 });
