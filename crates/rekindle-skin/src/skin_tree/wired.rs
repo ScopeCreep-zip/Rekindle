@@ -74,6 +74,7 @@ pub fn role(f: &Facts<'_>, triggers: &[NodeTrigger]) -> Option<Role> {
     if (control && pressed.next().is_some()) || resizes {
         return Some(Role::Acts(NodeRole::Button, None));
     }
-    (f.children.is_empty() && triggers.is_empty() && (control || classless(f)))
+    // A tile whose component the pack never defines stays refused (rule 1).
+    (f.class.is_some() && f.children.is_empty() && triggers.is_empty() && (control || classless(f)))
         .then_some(Role::Shows(NodeRole::Decor))
 }

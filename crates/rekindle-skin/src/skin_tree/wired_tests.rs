@@ -89,7 +89,10 @@ fn a_wired_menu_is_a_button_a_menu_title_or_the_system_menu_logo() {
         Some(Role::Acts(NodeRole::MenuTitle, None))
     );
     assert_eq!(
-        wired::role(&facts(Some("PushButton"), true, &[]), &menu(EngineMenu::Tool)),
+        wired::role(
+            &facts(Some("PushButton"), true, &[]),
+            &menu(EngineMenu::Tool)
+        ),
         Some(Role::Acts(NodeRole::MenuTitle, None))
     );
     assert_eq!(
@@ -118,5 +121,6 @@ fn an_unwired_childless_picture_or_control_is_decor() {
     let decor = Some(Role::Shows(NodeRole::Decor));
     assert_eq!(wired::role(&facts(Some("Menu"), true, &[]), &[]), decor);
     assert_eq!(wired::role(&facts(Some("Tile"), false, &[]), &[]), decor);
-    assert_eq!(wired::role(&facts(None, false, &[]), &[]), decor);
+    // A component the pack never defines has no role (rule 1).
+    assert_eq!(wired::role(&facts(None, false, &[]), &[]), None);
 }

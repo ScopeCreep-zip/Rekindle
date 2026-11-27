@@ -58,7 +58,10 @@ fn an_unknown_edge_is_refused_unless_the_pack_wires_the_grip() {
         on: SkinEvent::LeftDown,
         run: SkinAction::Resize(Edge::BottomRight),
     }];
-    assert_eq!(check_grip("ResizeUlbr", Some("ResizeUlbr"), &[], &wired), Ok(()));
+    assert_eq!(
+        check_grip("ResizeUlbr", Some("ResizeUlbr"), &[], &wired),
+        Ok(())
+    );
     // Never a guessed corner: the name implies no trigger at all.
     assert_eq!(implied("Gripper"), Some(Role::Acts(NodeRole::Button, None)));
 }
@@ -86,7 +89,11 @@ fn info_popup_grippers_are_corner_art() {
             Some(Role::Shows(NodeRole::Decor)),
             "{name} {component}"
         );
-        assert_eq!(check_grip(name, Some(component), &[], &[]), Ok(()), "{name}");
+        assert_eq!(
+            check_grip(name, Some(component), &[], &[]),
+            Ok(()),
+            "{name}"
+        );
     }
     assert_eq!(implied("InfoInfoResizeRight"), Some(resizes(Edge::Right)));
 }
