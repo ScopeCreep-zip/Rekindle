@@ -271,7 +271,8 @@ async fn a_status_published_before_the_watch_is_shown_after_it() {
         server_info: None,
         elapsed_seconds: 30,
         server_address: None,
-    });
+    })
+    .unwrap();
     let deps = Arc::new(MockDeps {
         state: Mutex::new(MockState {
             friends_with_dht: vec![("alice".into(), "dht1".into())],

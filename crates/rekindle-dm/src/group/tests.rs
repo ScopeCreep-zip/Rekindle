@@ -71,6 +71,7 @@ fn signed(creator: &SigningKey) -> GroupDmInvite {
         plan,
         |m| creator.sign(m).to_bytes(),
     )
+    .unwrap()
 }
 
 #[test]
@@ -132,7 +133,8 @@ fn invite_signature_verifies_and_tampering_fails() {
             slots: &[0, 1, 2],
         },
         |m| signer(2).sign(m).to_bytes(),
-    );
+    )
+    .unwrap();
     assert!(matches!(
         verify_invite(&forged, &from),
         Err(DmError::BadSignature)

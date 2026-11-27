@@ -15,7 +15,7 @@ use rekindle_types::id::ChannelId;
 pub(super) fn write_onboarding_config(
     mut p: schema_pkg::onboarding_config_entry::Builder<'_>,
     e: &GovernanceEntry,
-) {
+) -> Result<(), CodecError> {
     let GovernanceEntry::OnboardingConfig {
         enabled,
         mode,
@@ -33,34 +33,36 @@ pub(super) fn write_onboarding_config(
     p.set_mode(mode);
     let mut chans = p
         .reborrow()
-        .init_default_channels(len_u32(default_channels.len()));
-    for (i, c) in default_channels.iter().enumerate() {
-        uuid16_to_capnp(chans.reborrow().get(len_u32(i)), &c.0);
+        .init_default_channels(len_u32(default_channels.len())?);
+    for (i, c) in (0u32..).zip(default_channels.iter()) {
+        uuid16_to_capnp(chans.reborrow().get(i), &c.0);
     }
-    let mut q_list = p.reborrow().init_questions(len_u32(questions.len()));
-    for (i, q) in questions.iter().enumerate() {
-        write_onboarding_question(q_list.reborrow().get(len_u32(i)), q);
+    let mut q_list = p.reborrow().init_questions(len_u32(questions.len())?);
+    for (i, q) in (0u32..).zip(questions.iter()) {
+        write_onboarding_question(q_list.reborrow().get(i), q)?;
     }
     p.set_has_welcome_message(welcome_message.is_some());
     if let Some(m) = welcome_message {
         p.set_welcome_message(m);
     }
-    let mut steps = p.reborrow().init_guide_steps(len_u32(guide_steps.len()));
-    for (i, s) in guide_steps.iter().enumerate() {
-        write_guide_step(steps.reborrow().get(len_u32(i)), s);
+    let mut steps = p.reborrow().init_guide_steps(len_u32(guide_steps.len())?);
+    for (i, s) in (0u32..).zip(guide_steps.iter()) {
+        write_guide_step(steps.reborrow().get(i), s);
     }
+    Ok(())
 }
 
 pub(super) fn write_welcome_screen(
     mut p: schema_pkg::welcome_screen_entry::Builder<'_>,
     description: &str,
     channels: &[WelcomeChannel],
-) {
+) -> Result<(), CodecError> {
     p.set_description(description);
-    let mut list = p.reborrow().init_channels(len_u32(channels.len()));
-    for (i, c) in channels.iter().enumerate() {
-        write_welcome_channel(list.reborrow().get(len_u32(i)), c);
+    let mut list = p.reborrow().init_channels(len_u32(channels.len())?);
+    for (i, c) in (0u32..).zip(channels.iter()) {
+        write_welcome_channel(list.reborrow().get(i), c);
     }
+    Ok(())
 }
 
 pub(super) fn read_onboarding_config(

@@ -53,14 +53,16 @@ pub fn encode_genesis(signed: &SignedGenesis) -> Result<Vec<u8>, CodecError> {
         signed.cert.additional_creators.len(),
         MAX_ADDITIONAL_CREATORS,
     )?;
-    let out = encode(&signed.cert, &signed.anchor_owner, Some(signed));
+    let out = encode(&signed.cert, &signed.anchor_owner, Some(signed))?;
     check_len("genesis cert", out.len(), GENESIS_CERT_MAX_BYTES)?;
     Ok(out)
 }
 
 /// The canonical unsigned bytes of `cert` under anchor owner `anchor_owner`.
-#[must_use]
-pub fn genesis_unsigned_bytes(cert: &GenesisCert, anchor_owner: &[u8; 32]) -> Vec<u8> {
+pub fn genesis_unsigned_bytes(
+    cert: &GenesisCert,
+    anchor_owner: &[u8; 32],
+) -> Result<Vec<u8>, CodecError> {
     encode(cert, anchor_owner, None)
 }
 
@@ -135,7 +137,7 @@ pub fn decode_genesis(data: &[u8]) -> Result<DecodedGenesis, CodecError> {
         },
     };
     let anchor_owner = fixed(data_field(r.get_anchor_owner())?, "genesis anchor owner")?;
-    let unsigned = genesis_unsigned_bytes(&cert, &anchor_owner);
+    let unsigned = genesis_unsigned_bytes(&cert, &anchor_owner)?;
     let signed = SignedGenesis {
         anchor_sig: fixed(data_field(r.get_anchor_sig())?, "genesis anchor sig")?,
         creator_sig: fixed(data_field(r.get_creator_sig())?, "genesis creator sig")?,
@@ -146,7 +148,7 @@ pub fn decode_genesis(data: &[u8]) -> Result<DecodedGenesis, CodecError> {
 }
 
 /// One encoder for both forms, so they differ only in the signatures.
-fn encode(cert: &GenesisCert, anchor_owner: &[u8; 32], sigs: Option<&SignedGenesis>) -> Vec<u8> {
+fn encode(cert: &GenesisCert, anchor_owner: &[u8; 32], sigs: Option<&SignedGenesis>) -> Result<Vec<u8>, CodecError> {
     let mut builder = capnp::message::Builder::new_default();
     let mut b = builder.init_root::<genesis_cert::Builder<'_>>();
     b.set_name(cert.name.as_str());
@@ -154,7 +156,7 @@ fn encode(cert: &GenesisCert, anchor_owner: &[u8; 32], sigs: Option<&SignedGenes
         AdmissionMode::Open => WireMode::Open,
         AdmissionMode::ApprovalRequired => WireMode::ApprovalRequired,
     });
-    let count = u32::try_from(cert.initial_roles.len()).unwrap_or(u32::MAX);
+    let count = crate::capnp_codec::wire_len(cert.initial_roles.len())?;
     let mut roles = b.reborrow().init_initial_roles(count);
     for (i, role) in (0..count).zip(&cert.initial_roles) {
         roles.set(i, &role.0);
@@ -164,7 +166,7 @@ fn encode(cert: &GenesisCert, anchor_owner: &[u8; 32], sigs: Option<&SignedGenes
     b.set_creator_member_record_owner(cert.creator_member_record_owner.as_str());
     b.set_created_at(cert.created_at);
     b.set_anchor_owner(anchor_owner);
-    let count = u32::try_from(cert.additional_creators.len()).unwrap_or(u32::MAX);
+    let count = crate::capnp_codec::wire_len(cert.additional_creators.len())?;
     let mut creators = b.reborrow().init_additional_creators(count);
     for (i, key) in (0..count).zip(&cert.additional_creators) {
         creators.set(i, &key.0);
@@ -173,7 +175,7 @@ fn encode(cert: &GenesisCert, anchor_owner: &[u8; 32], sigs: Option<&SignedGenes
         b.set_predecessor(predecessor.as_str());
     }
     if let Some(device) = &cert.creator_device {
-        super::write_device_key(b.reborrow().init_creator_device(), device);
+        super::write_device_key(b.reborrow().init_creator_device(), device)?;
     }
     if let Some(signed) = sigs {
         b.set_anchor_sig(&signed.anchor_sig);

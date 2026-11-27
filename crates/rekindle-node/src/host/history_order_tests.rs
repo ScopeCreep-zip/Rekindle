@@ -19,9 +19,10 @@ async fn arrived(host: &Host, owner: [u8; 32], bob: [u8; 32], seq: u8, sent_at_m
         chain_seq: 0,
         content_hint: ContentHint::Default,
         sent_at_ms,
-        payload: text(seq).encode(),
+        payload: text(seq).encode().unwrap(),
     }
-    .encode();
+    .encode()
+    .unwrap();
     let key = UnprocessedKey {
         peer_identity: bob,
         header_dh: [7; 32],

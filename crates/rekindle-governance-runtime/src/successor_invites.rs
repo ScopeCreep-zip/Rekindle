@@ -88,13 +88,13 @@ pub async fn write_invites<D: GovernanceRuntimeDeps>(
     let first = pages.remove(0);
     let mut keys = Vec::with_capacity(pages.len());
     for page in &pages {
-        keys.push(write_page(deps, encode_invites_page(page)).await?);
+        keys.push(write_page(deps, encode_invites_page(page)?).await?);
     }
     let first = InvitesPage {
         pages: keys,
         entries: first.entries,
     };
-    write_page(deps, encode_invites_page(&first)).await
+    write_page(deps, encode_invites_page(&first)?).await
 }
 
 /// Create a DFLT(1) page, write it once and drop its owner keypair, which

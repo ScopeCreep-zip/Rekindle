@@ -166,6 +166,10 @@ pub enum TransportError {
     #[error("serialization failed: {reason}")]
     SerializationFailed { reason: String },
 
+    /// A value exceeds the serializer's representable range.
+    #[error("too large to encode: {0}")]
+    TooLargeToEncode(usize),
+
     // ── Operations (high-level orchestrators) ─────────────────────────
     /// Community creation failed.
     #[error("community creation failed: {reason}")]
@@ -273,6 +277,7 @@ impl From<rekindle_protocol::error::ProtocolError> for TransportError {
             P::DhtError(reason) => Self::DhtError { reason },
             P::DhtRecordUnreachable(key) => Self::RecordNotOpen { key },
             P::Serialization(reason) => Self::SerializationFailed { reason },
+            P::TooLargeToEncode(len) => Self::TooLargeToEncode(len),
             P::Deserialization(reason) => Self::DeserializationFailed {
                 // The protocol layer reports failures on already-framed
                 // bytes, so there is no payload type tag to carry.
@@ -364,6 +369,7 @@ impl From<rekindle_records::port::PortError> for TransportError {
             },
             P::Node(reason) => Self::AttachFailed { reason },
             P::Codec(reason) => Self::DeserializationFailed { type_id: 0, reason },
+            P::TooLargeToEncode(len) => Self::TooLargeToEncode(len),
             P::Crypto(reason) => Self::SignalProtocol { reason },
         }
     }
