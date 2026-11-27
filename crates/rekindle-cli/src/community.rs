@@ -1,9 +1,7 @@
 //! Community commands: create, join, leave, list, info.
 
 use rekindle_ipc::protocol::LifecycleRequest;
-use rekindle_ipc::protocol::{
-    ChannelMessageRequest, CommunityRequest, IpcRequest, SettingsRequest,
-};
+use rekindle_ipc::protocol::{ChannelMessageRequest, CommunityRequest, IpcRequest};
 use rekindle_types::display::CommunityDetail;
 
 use crate::cli::CommunityCmd;
@@ -13,6 +11,8 @@ use crate::helpers;
 use crate::output::OutputMode;
 use crate::output::{format, table};
 use rekindle_client::DaemonClient;
+
+mod profile;
 
 pub async fn dispatch(
     cmd: &CommunityCmd,
@@ -85,19 +85,12 @@ pub async fn dispatch(
             .await?;
             format::print_structured(&value, mode)
         }
-        CommunityCmd::SetName { community, name } => {
-            let value = helpers::send(
-                client,
-                IpcRequest::Community(CommunityRequest::Settings(
-                    SettingsRequest::CommunitySetDisplayName {
-                        community: community.clone(),
-                        display_name: name.clone(),
-                    },
-                )),
-            )
-            .await?;
-            format::print_structured(&value, mode)
-        }
+        CommunityCmd::SetName {
+            community,
+            name,
+            clear,
+        } => profile::set_name(client, mode, community, name.as_deref(), *clear).await,
+        CommunityCmd::Profile(args) => profile::update(client, mode, args).await,
         CommunityCmd::Forget { community } => {
             let value = helpers::send(
                 client,

@@ -251,3 +251,7 @@ pub fn collect_frontend_duplication(root: &Path) -> Result<Vec<Offender>> {
 
     Ok(offenders)
 }
+
+#[cfg(test)]
+#[path = "frontend_duplication_tests.rs"]
+mod tests;

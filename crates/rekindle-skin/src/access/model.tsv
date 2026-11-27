@@ -608,6 +608,12 @@
 .poll-create-remove-btn	text hovered	var(--color-xfire-text-primary)	--color-xfire-accent 12% over --color-xfire-bg-panel	1.0	false
 .profile-bio	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
 .profile-display-name	text	var(--color-xfire-text)	--color-xfire-bg-dark	1.0	false
+.profile-editor-btn	text	var(--color-xfire-text)	--color-xfire-accent 15% over --color-xfire-bg-panel	1.0	false
+.profile-editor-btn	text hovered	var(--color-xfire-text)	--color-xfire-accent 25% over --color-xfire-bg-panel	1.0	false
+.profile-editor-image-placeholder	text	var(--color-xfire-text-dim)	--color-xfire-bg-secondary	1.0	false
+.profile-editor-input	text	var(--color-xfire-text)	--color-xfire-bg 80% over --color-xfire-bg-panel	1.0	false
+.profile-editor-label	text	var(--color-xfire-text-dim)	--color-xfire-bg-panel	1.0	false
+.profile-editor-textarea	text	var(--color-xfire-text)	--color-xfire-bg 80% over --color-xfire-bg-panel	1.0	false
 .profile-empty-hint	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .profile-game-elapsed	text	var(--color-xfire-text-dim)	--color-xfire-bg-dark	1.0	false
 .profile-game-name	text	var(--color-xfire-ingame-text)	--color-xfire-bg-dark	1.0	false
@@ -619,12 +625,6 @@
 .profile-popup-badge	text	var(--color-xfire-text)	--color-xfire-accent 15% over --color-xfire-bg-primary	1.0	false
 .profile-popup-bio	text	var(--color-xfire-text-dim)	--color-xfire-bg-primary	1.0	false
 .profile-popup-custom-status	text	var(--color-xfire-text)	--color-xfire-bg-primary	1.0	false
-.profile-popup-edit-btn	text	var(--color-xfire-text)	--color-xfire-accent 15% over --color-xfire-bg-primary	1.0	false
-.profile-popup-edit-btn	text hovered	var(--color-xfire-text)	--color-xfire-accent 25% over --color-xfire-bg-primary	1.0	false
-.profile-popup-edit-image-placeholder	text	var(--color-xfire-text-dim)	--color-xfire-bg-secondary	1.0	false
-.profile-popup-edit-input	text	var(--color-xfire-text)	--color-xfire-bg 80% over --color-xfire-bg-primary	1.0	false
-.profile-popup-edit-label	text	var(--color-xfire-text-dim)	--color-xfire-bg-primary	1.0	false
-.profile-popup-edit-textarea	text	var(--color-xfire-text)	--color-xfire-bg 80% over --color-xfire-bg-primary	1.0	false
 .profile-popup-empty-hint	text	var(--color-xfire-text-secondary)	--color-xfire-bg-primary	1.0	false
 .profile-popup-game-name	text	var(--color-xfire-ingame-text)	--color-xfire-bg-primary	1.0	false
 .profile-popup-game-server	text	var(--color-xfire-text-dim)	--color-xfire-bg-primary	1.0	false
