@@ -79,6 +79,28 @@ impl HostChannel {
         ));
     }
 
+    /// Row-less thread replies use the same status event as other posts.
+    /// The event is keyed by the thread id from the composite stream scope.
+    pub(super) fn thread_send_status(&self, change: &rekindle_outbox::StateChange) -> bool {
+        if change.kind != rekindle_outbox::StreamKind::ChannelPost
+            || !rekindle_channel::is_thread_reply_id(&change.client_id)
+        {
+            return false;
+        }
+        if let Some((community, thread)) = change
+            .stream
+            .strip_prefix("channel_post:")
+            .and_then(|scope| scope.rsplit_once(':'))
+        {
+            let reason = match (&change.wedge_reason, change.state) {
+                (None, SendState::Failed) => Some("the thread reply was discarded".to_owned()),
+                (reason, _) => reason.clone(),
+            };
+            self.send_state_impl(community, thread, &change.client_id, change.state, reason);
+        }
+        true
+    }
+
     /// A poll op of `poll_id` in `channel_id` landed on our outbox or was
     /// read from an author's: the poll's aggregate changed (plan E3.3 8c,
     /// `rekindle_channel::history::poll_states`), and a frontend re-reads

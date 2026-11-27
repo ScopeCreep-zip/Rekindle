@@ -520,6 +520,7 @@ pub(super) fn check_rich(request: &RichRequest) -> Checked {
         | RichRequest::ThreadListActive { .. }
         | RichRequest::ThreadMessages { .. }
         | RichRequest::ThreadSend { .. }
+        | RichRequest::CreateForumPost { .. }
         | RichRequest::PollCreate { .. }
         | RichRequest::PollVote { .. }
         | RichRequest::PollClose { .. }

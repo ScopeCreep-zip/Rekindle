@@ -2,6 +2,8 @@
 //! with its own database, and a bundle assembled from a party's published
 //! prekey record the way an initiator assembles it (plan E2.4).
 
+pub mod forum_posts;
+
 use std::sync::Arc;
 
 use parking_lot::Mutex;

@@ -350,6 +350,7 @@ pub(crate) const DAEMON_ROWS: &[(&str, Option<IntentKind>)] = &[
     ("ReactionAdd", Some(IntentKind::AddReaction)),
     ("ReactionRemove", Some(IntentKind::RemoveReaction)),
     ("ThreadCreate", Some(IntentKind::CreateThread)),
+    ("CreateForumPost", Some(IntentKind::CreateThread)),
     ("ThreadArchive", Some(IntentKind::ArchiveThread)),
     ("ThreadUnarchive", Some(IntentKind::UnarchiveThread)),
     ("ThreadList", None),

@@ -85,6 +85,28 @@ pub enum ChannelCmd {
         reply_to: Option<String>,
     },
 
+    /// Open a forum post: a thread in a forum channel and its starter, one
+    /// outcome (plan E3.3, FT1).
+    ///
+    /// Example: rekindle channel forum-post -c "my community" -C ideas -t "Maps" -m "post yours"
+    ForumPost {
+        /// Community name or anchor key.
+        #[arg(long, short = 'c')]
+        community: String,
+        /// Forum channel name or ID.
+        #[arg(long, short = 'C')]
+        channel: String,
+        /// The post's title.
+        #[arg(long, short = 't')]
+        title: String,
+        /// The starter message.
+        #[arg(long, short = 'm')]
+        message: String,
+        /// One of the forum's tags.
+        #[arg(long)]
+        tag: Option<String>,
+    },
+
     /// Edit one of our messages (plan E3.3 E1: only its author edits; the
     /// latest edit wins).
     ///

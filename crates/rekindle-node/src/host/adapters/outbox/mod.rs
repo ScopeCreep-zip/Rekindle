@@ -4,12 +4,14 @@
 //! Host's clock and randomness, and each state change on a broadcast the
 //! Host's event mapping subscribes to.
 
+mod batch;
 mod bootstrap;
 #[cfg(test)]
 mod bootstrap_tests;
 mod channel_post;
 pub(crate) mod dht_write;
 mod dm;
+mod forum_starters;
 mod governance_op;
 mod governance_publication;
 mod media_key;
@@ -180,47 +182,6 @@ impl HostOutbox {
         Ok(true)
     }
 
-    /// Store `rows` in one transaction (all or none), publish each as
-    /// `queued`; the caller wakes the engine (review RV4 M3).
-    ///
-    /// # Errors
-    /// The storage failed; nothing was stored.
-    pub(super) async fn insert_all(&self, rows: Vec<NewOutboxRow>) -> Result<(), OutboxError> {
-        let (db, owner) = self.db()?;
-        let stored = rows.clone();
-        let seqs = db
-            .call(move |conn| {
-                let new: Vec<repo::NewRow<'_>> = stored
-                    .iter()
-                    .map(|row| repo::NewRow {
-                        owner_key: &owner,
-                        stream: &row.stream,
-                        client_id: &row.client_id,
-                        kind: row.kind.as_str(),
-                        payload: &row.payload,
-                        next_at: row.next_at,
-                        deadline: row.deadline,
-                        depends_on: None,
-                    })
-                    .collect();
-                repo::enqueue_all(conn, &new)
-            })
-            .await
-            .map_err(|e| storage(&e))?;
-        for (row, stream_seq) in rows.into_iter().zip(seqs) {
-            let _ = self.changes.send(StateChange {
-                stream: row.stream,
-                stream_seq,
-                client_id: row.client_id,
-                kind: row.kind,
-                state: SendState::Queued,
-                wedge_reason: None,
-                retry: None,
-            });
-        }
-        Ok(())
-    }
-
     /// The open database and the owner its rows belong to.
     fn db(&self) -> Result<(Db, String), OutboxError> {
         let db = self.db.current().map_err(|e| storage(&e))?;
@@ -385,16 +346,16 @@ impl OutboxDeps for HostOutbox {
         };
         // One storage call reads the row as it is now and writes it: the
         // state merges against that, never the row an attempt began from.
+        let changes = self.changes.clone();
         db.call(move |c| {
             let Some((write, moved)) = repo::stored_state(c, &owner, &id)?
                 .map(|row| apply(stored_of(row), update.state, step))
             else {
                 return Ok(None);
             };
-            match write {
-                Write::Settle(state) => {
-                    repo::settle(c, &owner, &id, state)?;
-                }
+            let tx = c.unchecked_transaction()?;
+            let abandoned = match write {
+                Write::Settle(state) => forum_starters::settle(&tx, &owner, &id, state)?,
                 Write::Store(state) => {
                     let change = repo::Update {
                         state,
@@ -403,9 +364,12 @@ impl OutboxDeps for HostOutbox {
                         deadline: update.deadline,
                         wedge_reason: update.wedge_reason.as_deref(),
                     };
-                    repo::update(c, &owner, &id, &change)?;
+                    repo::update_in(&tx, &owner, &id, &change)?;
+                    forum_starters::on_update(&tx, &owner, &id, state)?
                 }
-            }
+            };
+            tx.commit()?;
+            forum_starters::publish_abandoned(&changes, abandoned, forum_starters::CREATION_FAILED);
             Ok(Some(moved))
         })
         .await
@@ -502,6 +466,7 @@ impl OutboxDeps for HostOutbox {
     ) -> Result<Option<Moved>, OutboxError> {
         let (db, owner) = self.db()?;
         let id = client_id.to_owned();
+        let changes = self.changes.clone();
         db.call(move |c| {
             let Some((write, moved)) = repo::stored_state(c, &owner, &id)?
                 .map(|row| apply(stored_of(row), state, Step::Settle))
@@ -509,7 +474,10 @@ impl OutboxDeps for HostOutbox {
                 return Ok(None);
             };
             let (Write::Settle(state) | Write::Store(state)) = write;
-            repo::settle(c, &owner, &id, state)?;
+            let tx = c.unchecked_transaction()?;
+            let abandoned = forum_starters::settle(&tx, &owner, &id, state)?;
+            tx.commit()?;
+            forum_starters::publish_abandoned(&changes, abandoned, forum_starters::CREATION_FAILED);
             Ok(Some(moved))
         })
         .await
