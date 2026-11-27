@@ -84,9 +84,28 @@ async function save(b: Browser, user: string, file: string): Promise<void> {
   writeFileSync(index, `${JSON.stringify(entries, null, 2)}\n`);
 }
 
-/** The state a spec asserts mid-test (a dialog open, a toast shown): each user's current window, as `<user>-<name>.png`. */
+/** Whether session `b`'s app is still running: false only when its driver is
+ *  gone (the app quit, as a spec's quit step does); any other failure throws. */
+async function running(b: Browser): Promise<boolean> {
+  return b.getWindowHandles().then(
+    () => true,
+    (e: unknown) => {
+      if (/ECONNREFUSED|ECONNRESET|invalid session id|session deleted/i.test(String(e))) return false;
+      throw e;
+    },
+  );
+}
+
+/** The state a spec asserts mid-test (a dialog open, a toast shown): each running user's current window,
+ *  as `<user>-<name>.png`; a user whose app has quit has no window to shoot. */
 export async function shot(name: string): Promise<void> {
-  for (const [user, b] of sessions()) await save(b, user, `${user}-${slug(name)}.png`);
+  for (const [user, b] of sessions()) {
+    if (!(await running(b))) {
+      console.log(`[shot] ${user}: the app has quit, no "${name}" shot`);
+      continue;
+    }
+    await save(b, user, `${user}-${slug(name)}.png`);
+  }
 }
 
 /**
