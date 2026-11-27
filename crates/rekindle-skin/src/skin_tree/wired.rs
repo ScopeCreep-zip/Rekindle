@@ -8,7 +8,8 @@
 use rekindle_types::dto::skin_action::{EngineMenu, NodeTrigger, SkinAction};
 use rekindle_types::dto::skin_tree::NodeRole;
 
-use super::roles::{classless, Facts, Role};
+use super::roles::{classless, view, Facts, Role};
+use crate::import::tree::Node;
 
 /// The role of a tile from its class, art, children and own `triggers`:
 ///
@@ -77,4 +78,44 @@ pub fn role(f: &Facts<'_>, triggers: &[NodeTrigger]) -> Option<Role> {
     // A tile whose component the pack never defines stays refused (rule 1).
     (f.class.is_some() && f.children.is_empty() && triggers.is_empty() && (control || classless(f)))
         .then_some(Role::Shows(NodeRole::Decor))
+}
+
+/// The role of a `Class=Text` tile from the string its face shows, where
+/// that string names one (SKC4, ruling 3: "from the component's class and
+/// function"). A text's string is a resource id of the Xfire binary
+/// (`strings.xml:21`) that the engine draws, so it says what the text is:
+///
+/// * a view's title (`FriendsTitle`, `ServerTitle`, `DownloadTitle`) on a
+///   text holding its tab button is that view's tab, as Classic's
+///   `TabNormalText` `Class="Text"` `<Text>FriendsTitle</Text>` over its
+///   nested `TabNormalButton` (`xfirecomponents.xml:1071-1079`,
+///   `xfiremainwindow.xml:73-74`): Guild Wars UI's `FriendsText`
+///   `Class="Text"` `<Text>FriendsTitle</Text>` holds the sticky
+///   `FriendsTab` running `GroupMessage(0)` (`gwcomponents.xml:711-741`,
+///   `gwmainwindow.xml:43-45`), its `ServerText` and `FilesText` the
+///   Servers and Files tabs (`:764-771`, `:802`);
+/// * in a chat window, the conversation's title string is the chat title:
+///   StreamEngine's `[WindowTitle]` `Class=Text Text.text=ChatTitle`
+///   (`chat.ini:115-122`; `groupchat.ini:121-128` `GroupChatTitle`), as
+///   StealthX's `UserNameText` ([`super::chat_roles`]).
+#[must_use]
+pub fn text_role(f: &Facts<'_>, component: Option<&Node>, chat: bool) -> Option<Role> {
+    if !f
+        .class
+        .is_some_and(|c| c.trim().eq_ignore_ascii_case("Text"))
+    {
+        return None;
+    }
+    let face = component?.children_named("Text").next()?;
+    let string = face.text.trim().to_ascii_lowercase();
+    if chat
+        && matches!(
+            string.as_str(),
+            "chattitle" | "groupchattitle" | "usernametext"
+        )
+    {
+        return Some(Role::Shows(NodeRole::ChatTitle));
+    }
+    let tab = view(string.strip_suffix("title")?)?;
+    (!f.children.is_empty()).then_some(Role::Shows(NodeRole::Tab(tab)))
 }

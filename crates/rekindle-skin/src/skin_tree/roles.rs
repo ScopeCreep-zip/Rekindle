@@ -96,7 +96,7 @@ pub(super) fn key(name: &str) -> String {
         .to_ascii_lowercase()
 }
 
-fn view(name: &str) -> Option<ViewKey> {
+pub(super) fn view(name: &str) -> Option<ViewKey> {
     let n = name.to_ascii_lowercase();
     [
         ("chatroom", ViewKey::ChatRooms),

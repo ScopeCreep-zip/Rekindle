@@ -330,6 +330,7 @@ impl Walk<'_> {
         let role = chat
             .or_else(|| role(&id, component, parent, &facts))
             .or_else(|| wired::role(&facts, own_triggers.as_deref().unwrap_or_default()))
+            .or_else(|| wired::text_role(&facts, comp, self.window == SkinWindow::Chat))
             .ok_or_else(|| {
                 bad(format!(
                     "{id}: component {} has no role",

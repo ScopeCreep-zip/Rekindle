@@ -183,3 +183,20 @@ fn combat_surfaces_import_from_the_skin_and_its_chat_files() {
         "dropped [CombatDragBar (buddylist.infobar)] Disabled: the slot has no such state"
     ));
 }
+
+/// SKC4: an INI face carries its `Text.text=` string, as the XML packs'
+/// `<Text>` body (StreamEngine's chat `[WindowTitle]`, `chat.ini:115-122`).
+#[test]
+fn an_ini_face_carries_its_string() {
+    let chat = "[MainWindow]\r\nClass=MainWindow\r\nWindow1.Name=WindowTitle\r\n\
+[WindowTitle]\r\nClass=Text\r\nText.text= ChatTitle\r\nText.font=Arial\r\n";
+    let ini = ini::parse("chat.ini", chat.as_bytes()).unwrap();
+    let (_, components) = title::tree(&ini, "MainWindow").unwrap();
+    let face = components
+        .children
+        .iter()
+        .find(|c| c.attr("Name") == Some("WindowTitle"))
+        .and_then(|c| c.children_named("Text").next())
+        .unwrap();
+    assert_eq!(face.text, "ChatTitle");
+}

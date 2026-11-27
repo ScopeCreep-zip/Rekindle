@@ -2,10 +2,11 @@
 //! the name rows the census's unknown components added.
 
 use rekindle_types::dto::skin_action::{EngineMenu, NodeTrigger, PackUrl, SkinAction, SkinEvent};
-use rekindle_types::dto::skin_tree::{Edge, NodeRole, SlotKey};
+use rekindle_types::dto::skin_tree::{Edge, NodeRole, SlotKey, ViewKey};
 
 use super::roles::{Facts, Role};
 use super::{chat_roles, roles, wired};
+use crate::import::tree::Node;
 
 fn facts<'a>(class: Option<&'a str>, has_art: bool, children: &'a [String]) -> Facts<'a> {
     Facts {
@@ -123,4 +124,61 @@ fn an_unwired_childless_picture_or_control_is_decor() {
     assert_eq!(wired::role(&facts(Some("Tile"), false, &[]), &[]), decor);
     // A component the pack never defines has no role (rule 1).
     assert_eq!(wired::role(&facts(None, false, &[]), &[]), None);
+}
+
+/// A component whose `<Text>` face shows `string`.
+fn face(string: &str) -> Node {
+    let text = Node {
+        name: "Text".to_owned(),
+        attrs: std::collections::BTreeMap::new(),
+        text: string.to_owned(),
+        children: Vec::new(),
+    };
+    Node {
+        name: "Component".to_owned(),
+        attrs: std::collections::BTreeMap::new(),
+        text: String::new(),
+        children: vec![text],
+    }
+}
+
+/// SKC4: Guild Wars UI's `FriendsText` (`<Text>FriendsTitle</Text>` over
+/// its `FriendsTab`) and StreamEngine's chat `[WindowTitle]`
+/// (`Text.text=ChatTitle`) take the roles their strings name.
+#[test]
+fn a_text_takes_the_role_its_string_names() {
+    let tab = ["FriendsTab".to_owned()];
+    let text = |kids| facts(Some("Text"), false, kids);
+    let role = |f: &Facts<'_>, s: &str, chat| wired::text_role(f, Some(&face(s)), chat);
+    let shows = |r| Some(Role::Shows(r));
+    assert_eq!(
+        role(&text(&tab), "FriendsTitle", false),
+        shows(NodeRole::Tab(ViewKey::Friends))
+    );
+    assert_eq!(
+        role(&text(&tab), "ServerTitle", false),
+        shows(NodeRole::Tab(ViewKey::Servers))
+    );
+    assert_eq!(
+        role(&text(&tab), "DownloadTitle", false),
+        shows(NodeRole::Tab(ViewKey::Files))
+    );
+    // A view's title on a text holding no tab button is no tab.
+    assert_eq!(role(&text(&[]), "FriendsTitle", false), None);
+    // The conversation's title, only in a chat window.
+    assert_eq!(
+        role(&text(&[]), " ChatTitle ", true),
+        shows(NodeRole::ChatTitle)
+    );
+    assert_eq!(
+        role(&text(&[]), "GroupChatTitle", true),
+        shows(NodeRole::ChatTitle)
+    );
+    assert_eq!(role(&text(&[]), "ChatTitle", false), None);
+    // Only a text: art showing the same string is not one.
+    assert_eq!(
+        role(&facts(Some("Tile"), false, &tab), "FriendsTitle", false),
+        None
+    );
+    assert_eq!(role(&text(&[]), "%displayuser%", true), None);
 }
