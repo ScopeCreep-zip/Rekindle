@@ -127,12 +127,14 @@ function settle(entry: Pending): void {
 /**
  * Whether an answer still belongs to `entry`: it was sent for `sent`, and the
  * entry may since have taken a refreshed review (a new id) or left the queue.
- * A stale answer only frees the dialog for the review it now shows; it
- * neither settles nor replaces the entry.
+ * A stale answer neither settles nor replaces the entry; if the entry is
+ * the one on show, the dialog now shows its refreshed review (new facts, a
+ * fresh proof), so an acknowledgement is never carried to facts the user
+ * has not seen.
  */
 function answerIsCurrent(entry: Pending, sent: string): boolean {
   if (queue.includes(entry) && entry.review.intentId === sent) return true;
-  if (queue[0] === entry) setIntentState({ busy: false });
+  if (queue[0] === entry) showFirst();
   return false;
 }
 
