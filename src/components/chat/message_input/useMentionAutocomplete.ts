@@ -90,7 +90,7 @@ export function useMentionAutocomplete(args: MentionAutocompleteArgs) {
       const ch = value[i];
       if (ch === "@") {
         const prev = i > 0 ? value[i - 1] : "";
-        if (i === 0 || /[\s.,;:!?(){}\[\]]/.test(prev)) {
+        if (i === 0 || /[\s.,;:!?(){}[\]]/.test(prev)) {
           // Reject if there's a space between @ and caret — that means the
           // user has moved past a completed mention.
           const slice = value.slice(i + 1, caretIndex);
