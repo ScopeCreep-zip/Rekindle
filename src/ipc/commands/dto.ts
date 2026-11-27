@@ -563,15 +563,13 @@ export interface TargetModeration {
   timeout: boolean;
 }
 
-/** Plan FT1: how a thread reply left us: `queued` in our durable outbox
- *  (it sends it later), or `delivered`, also handed to the mesh. A mesh
- *  failure after the queue is `queued`, never an error. */
-export type ThreadDelivery = "queued" | "delivered";
-
-/** `send_thread_message`'s answer (`rekindle_types::thread::ThreadReplyOutcome`). */
+/** `send_thread_message`'s answer (`rekindle_types::thread::ThreadReplyOutcome`,
+ *  plan FT1): the reply's id and its send state (D22's `SendState`: `queued` in
+ *  our durable outbox, `sent` once written; a mesh failure after the queue is
+ *  `queued`, never an error). Later changes come as `ChannelSendStatus`. */
 export interface ThreadReplyOutcome {
   messageId: string;
-  delivery: ThreadDelivery;
+  delivery: SendState;
 }
 
 /** `create_forum_post`'s answer (`rekindle_types::thread::ForumPostCreated`): the
@@ -579,5 +577,5 @@ export interface ThreadReplyOutcome {
 export interface ForumPostCreated {
   threadId: string;
   starterMessageId: string;
-  starter: ThreadDelivery;
+  starter: SendState;
 }

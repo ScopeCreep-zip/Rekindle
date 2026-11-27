@@ -6,12 +6,7 @@ import type { CreateEventRequest } from "../../ipc/commands";
 import { transformMessages } from "../../utils/transformers";
 import { transformEvent } from "./shared";
 import { errorMessage } from "../../utils/error";
-import type { ThreadDelivery } from "../../ipc/commands/dto";
-
-/** A reply's row status from how the Host says it left us (plan FT1). */
-function deliveryStatus(delivery: ThreadDelivery): "queued" | "sent" {
-  return delivery === "queued" ? "queued" : "sent";
-}
+import { takeEarlySendState } from "../../handlers/community/dispatcher_messages";
 
 export async function handleLoadEvents(communityId: string): Promise<void> {
   try {
@@ -179,10 +174,18 @@ export async function handleSendThreadMessage(
     .flat()
     .find((t) => t.id === threadId && t.archived)?.channelId;
   try {
-    // Queued in the outbox or delivered (plan FT1); a refusal is the only error.
+    // The Host's send state (plan FT1): queued in the outbox or sent; a
+    // refusal is the only error. A later change arrives as ChannelSendStatus
+    // by this id, and one that came before this answer wins over it.
     const sent = await commands.sendThreadMessage(communityId, threadId, trimmed);
+    const early = takeEarlySendState(sent.messageId);
+    if (early?.state === "failed") addToast(early.reason ?? "Message not delivered. Resend it.", "error");
     setCommunityState("threadMessages", threadId, (msgs) =>
-      msgs.map((m) => (m.id === tempId ? { ...m, status: deliveryStatus(sent.delivery) } : m)),
+      msgs.map((m) =>
+        m.id === tempId
+          ? { ...m, serverMessageId: sent.messageId, status: (early?.state ?? sent.delivery) as Message["status"], failureReason: early?.reason }
+          : m,
+      ),
     );
     // A reply after the archive revives the thread (the Host's listing,
     // `is_thread_archived`): re-read it rather than decide it here.
