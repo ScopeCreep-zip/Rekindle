@@ -12,11 +12,17 @@ pub fn insert(
     community_id: &str,
     (code, code_hash, url): (&str, &str, &str),
     created_at: i64,
+    inbox: Option<&JoinInbox>,
 ) -> rusqlite::Result<()> {
     conn.execute(
-        "INSERT INTO community_invites (owner_key, community_id, code, code_hash, url, created_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-        params![owner_key, community_id, code, code_hash, url, created_at],
+        "INSERT INTO community_invites
+         (owner_key, community_id, code, code_hash, url, created_at, join_inbox_key, join_inbox_invite_id, max_uses, expires_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        params![
+            owner_key, community_id, code, code_hash, url, created_at,
+            inbox.map(|i| i.key.as_str()), inbox.map(|i| i.invite_id.as_str()),
+            inbox.map_or(0, |i| i.slots), inbox.and_then(|i| i.expires_at),
+        ],
     )?;
     Ok(())
 }
@@ -53,7 +59,7 @@ pub fn delete(
 ) -> rusqlite::Result<usize> {
     conn.execute(
         "DELETE FROM community_invites \
-         WHERE owner_key = ?1 AND community_id = ?2 AND code_hash = ?3",
+         WHERE owner_key = ?1 AND community_id = ?2 AND code_hash = ?3 AND join_inbox_key IS NULL",
         params![owner_key, community_id, code_hash],
     )
 }
@@ -66,6 +72,7 @@ pub struct OwnInvite {
     /// The link as minted (plan IV1b).
     pub url: String,
     pub created_at: i64,
+    pub join_inbox: Option<JoinInbox>,
 }
 
 /// Every invite this identity minted for `community_id`, by code hash.
@@ -78,7 +85,7 @@ pub fn list(
     community_id: &str,
 ) -> rusqlite::Result<Vec<OwnInvite>> {
     let mut stmt = conn.prepare(
-        "SELECT code, code_hash, url, created_at FROM community_invites \
+        "SELECT code, code_hash, url, created_at, join_inbox_key, join_inbox_invite_id, max_uses, expires_at FROM community_invites \
          WHERE owner_key = ?1 AND community_id = ?2 ORDER BY code_hash",
     )?;
     let rows = stmt.query_map(params![owner_key, community_id], |row| {
@@ -87,7 +94,42 @@ pub fn list(
             code_hash: row.get(1)?,
             url: row.get(2)?,
             created_at: row.get(3)?,
+            join_inbox: match (row.get(4)?, row.get(5)?) {
+                (Some(key), Some(invite_id)) => Some(JoinInbox {
+                    key,
+                    invite_id,
+                    slots: row.get(6)?,
+                    expires_at: row.get(7)?,
+                }),
+                _ => None,
+            },
         })
     })?;
     rows.collect()
+}
+
+/// An invite's owner record, retained until its final read.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct JoinInbox {
+    pub key: String,
+    pub invite_id: String,
+    pub slots: u8,
+    pub expires_at: Option<u64>,
+}
+
+/// Delete a retired invite after its inbox has received its final read.
+/// # Errors
+/// The update failed.
+pub fn retire_inbox(
+    conn: &Connection,
+    owner: &str,
+    community: &str,
+    invite_id: &str,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "DELETE FROM community_invites
+         WHERE owner_key = ?1 AND community_id = ?2 AND join_inbox_invite_id = ?3",
+        params![owner, community, invite_id],
+    )?;
+    Ok(())
 }

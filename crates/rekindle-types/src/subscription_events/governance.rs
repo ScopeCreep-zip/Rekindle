@@ -222,6 +222,11 @@ pub enum GovernanceEvent {
         recipient: String,
         new_anchor: String,
     },
+    /// The minting device's local join inbox availability changed.
+    InviteJoinInboxChanged {
+        community: String,
+        invite_id: String,
+    },
 }
 
 /// Why a governance op is quarantined
@@ -295,6 +300,7 @@ impl GovernanceEvent {
             | Self::InviteUsed { community, .. }
             | Self::InviteRevoked { community, .. }
             | Self::InviteExpired { community, .. }
+            | Self::InviteJoinInboxChanged { community, .. }
             | Self::ChannelPermissionsChanged { community, .. }
             | Self::EffectivePermissionsChanged { community, .. }
             | Self::GovernanceRebuilt { community }

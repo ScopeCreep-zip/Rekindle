@@ -114,17 +114,45 @@ impl HostGovernance {
             url.clone(),
         );
         let now = self.ctx.clock.now_ms_i64();
-        db.call(move |c| {
-            rekindle_db::repo::community_invites::insert(
-                c,
-                &owner,
-                &cid,
-                (&code, &hash, &link),
-                now,
-            )
-        })
-        .await
-        .map_err(|e| format!("invite minted but not stored: {e}"))?;
+        let inbox_owner_key = rekindle_vault::VaultKey::JoinInboxOwnerKeypair {
+            invite_id: hex::encode(invite.invite_id),
+        };
+        self.ctx
+            .vault
+            .lock()
+            .as_ref()
+            .ok_or_else(|| InviteRefusal::Failed("the vault is locked".into()))?
+            .put(&inbox_owner_key, invite.join_inbox.owner_keypair.as_bytes())
+            .map_err(|e| format!("join inbox owner not stored: {e}"))?;
+        let inbox = rekindle_db::repo::community_invites::JoinInbox {
+            key: invite.join_inbox.record_key.clone(),
+            invite_id: hex::encode(invite.invite_id),
+            slots: u8::try_from(max_uses).map_err(|e| e.to_string())?,
+            expires_at: invite.expires_at,
+        };
+        let stored_inbox = inbox.clone();
+        let stored = db
+            .call(move |c| {
+                rekindle_db::repo::community_invites::insert(
+                    c,
+                    &owner,
+                    &cid,
+                    (&code, &hash, &link),
+                    now,
+                    Some(&stored_inbox),
+                )
+            })
+            .await;
+        if let Err(e) = stored {
+            if let Some(vault) = self.ctx.vault.lock().as_ref() {
+                if let Err(error) = vault.delete(&inbox_owner_key) {
+                    tracing::warn!(%error, "unlisted join inbox owner could not be forgotten");
+                }
+            }
+            return Err(format!("invite minted but not stored: {e}").into());
+        }
+        self.arm_join_inbox(community, &invite.code_hash, inbox)
+            .await;
         let created_by = self
             .ctx
             .communities
@@ -204,6 +232,19 @@ impl HostGovernance {
                     created_at: own.map(|o| o.created_at),
                     url: own.map(|o| o.url.clone()),
                     fingerprint: fingerprint.clone(),
+                    inbox_jammed: own
+                        .and_then(|o| o.join_inbox.as_ref())
+                        .and_then(|inbox| {
+                            self.ctx
+                                .communities
+                                .map()
+                                .read()
+                                .get(community)?
+                                .join_inboxes
+                                .get(&inbox.key)
+                                .cloned()
+                        })
+                        .is_some_and(|watch| watch.is_jammed()),
                 }
             })
             .collect())
@@ -228,6 +269,7 @@ impl HostGovernance {
         rekindle_governance_runtime::invites::revoke_invite(self, community, invite_id)
             .await
             .map_err(|e| format!("invite revoke: {e}"))?;
+        self.retire_ended_join_inboxes(community);
         if let (Ok(owner), Ok(db)) = (self.ctx.require_owner(), self.ctx.db.current()) {
             let (cid, hash) = (community.to_owned(), code_hash.clone());
             if let Err(e) = db

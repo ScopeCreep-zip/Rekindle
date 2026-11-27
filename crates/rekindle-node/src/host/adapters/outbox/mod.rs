@@ -12,6 +12,7 @@ pub(crate) mod dht_write;
 mod dm;
 mod governance_op;
 mod governance_publication;
+mod join_inbox;
 mod media_key;
 pub(crate) mod mek_transfer;
 mod senders;

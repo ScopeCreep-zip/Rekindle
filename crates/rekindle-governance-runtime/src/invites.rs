@@ -34,6 +34,7 @@ use crate::apply;
 use crate::deps::GovernanceRuntimeDeps;
 use crate::error::GovernanceRuntimeError;
 use crate::invite_secrets::publish_invite_secrets;
+use crate::join_inbox::{self, MintedJoinInbox};
 
 /// A freshly minted invite.
 #[derive(Debug, Clone)]
@@ -53,6 +54,7 @@ pub struct MintedInvite {
     pub invite_op: rekindle_types::governance::OpHash,
     pub invite_op_seq: u64,
     pub frontier_seq: u32,
+    pub join_inbox: MintedJoinInbox,
 }
 
 /// Mint an invite and announce it in governance.
@@ -127,12 +129,14 @@ pub async fn create_invite<D: GovernanceRuntimeDeps>(
     ));
     let code_hash = rekindle_secrets::invite::hash_invite_code(&code);
 
+    let (join_capability, join_inbox) = join_inbox::mint(deps, max_uses).await?;
     let secrets = InviteSecrets {
         anchor: community_id.to_string(),
         inviter_member_record,
         registry_key,
         inviter_pseudonym: hex::encode(me.0),
         slot_seed,
+        join_inbox: Some(join_capability),
         // From merged governance, not the local membership record: the
         // name a joiner is shown before joining should be the one the
         // community agrees on, not whatever this peer cached.
@@ -142,8 +146,10 @@ pub async fn create_invite<D: GovernanceRuntimeDeps>(
             .map(|m| m.name.clone())
             .unwrap_or_default(),
     };
-    let secrets_json = serde_json::to_vec(&secrets)
-        .map_err(|e| GovernanceRuntimeError::Encoding(format!("serialize invite secrets: {e}")))?;
+    let secrets_json =
+        zeroize::Zeroizing::new(serde_json::to_vec(&secrets).map_err(|e| {
+            GovernanceRuntimeError::Encoding(format!("serialize invite secrets: {e}"))
+        })?);
     let encrypted = rekindle_secrets::invite::encrypt_invite_secrets(&code, &secrets_json)
         .map_err(|e| GovernanceRuntimeError::Crypto(format!("encrypt invite secrets: {e}")))?;
     let encrypted_b64 = {
@@ -199,6 +205,7 @@ pub async fn create_invite<D: GovernanceRuntimeDeps>(
         invite_op,
         invite_op_seq,
         frontier_seq,
+        join_inbox,
     })
 }
 

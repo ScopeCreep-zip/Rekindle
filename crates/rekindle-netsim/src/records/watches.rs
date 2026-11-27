@@ -160,7 +160,12 @@ pub(crate) fn desire(
 /// Renew `node`'s watch where it is held and the replica is reachable, and
 /// place it on more reachable replicas until [`GET_COUNT`] hold it.
 fn place(inner: &mut Inner, node: usize, key: &str, now: u64) {
-    if !online(inner, node) {
+    if !online(inner, node)
+        || inner
+            .faults
+            .paused_watch_placement
+            .contains(&(node, key.to_owned()))
+    {
         return;
     }
     let Some(Some(d)) = inner.nodes[node].watches.get(key).cloned() else {

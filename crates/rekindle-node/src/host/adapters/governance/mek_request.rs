@@ -181,20 +181,21 @@ impl HostGovernance {
     ) where
         D: MekDistributeDeps + Sync + ?Sized,
     {
+        if joiner.route.is_empty() {
+            tracing::warn!(community = %community_id, "joiner key not queued: the joiner sent no route");
+            return;
+        }
         if let Err(error) = self.queue_key_for_joiner(deps, community_id, joiner).await {
             tracing::warn!(community = %community_id, %error, "joiner key not queued");
         }
     }
 
-    async fn queue_key_for_joiner<D: MekDistributeDeps + Sync + ?Sized>(
+    pub(super) async fn queue_key_for_joiner<D: MekDistributeDeps + Sync + ?Sized>(
         &self,
         deps: &D,
         community_id: &str,
         joiner: &rekindle_governance_runtime::BootstrapJoiner,
     ) -> Result<(), String> {
-        if joiner.route.is_empty() {
-            return Err("the joiner sent no route".into());
-        }
         if !self.member_reads_keys(community_id, &joiner.pseudonym) {
             return Err(format!("{} is not a member", joiner.pseudonym));
         }

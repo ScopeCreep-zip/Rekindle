@@ -123,7 +123,9 @@ pub(crate) async fn run(
                 let list = super::adapters::outbox::dht_write::HostListWriter(
                     super::adapters::friends::HostFriends::of(ctx),
                 );
-                ctx.outbox.restore_unsent(pool, Arc::new(list)).await;
+                ctx.outbox
+                    .restore_unsent(pool, Arc::new(list), crate::daemon::dispatch::adapter(ctx))
+                    .await;
             }
             Err(e) => {
                 tracing::warn!(error = %e, "record pool not started — staying locked");

@@ -42,6 +42,8 @@ pub struct CommunityInviteView {
     /// The fingerprint the joiner's review shows for this invite, so the
     /// two can be compared out of band like a safety number (plan E7.15).
     pub fingerprint: String,
+    /// The minting device found its durable join path unavailable.
+    pub inbox_jammed: bool,
 }
 
 /// A community this identity just created (plan E3.1 D1b).

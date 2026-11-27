@@ -112,5 +112,6 @@ impl HostGovernance {
         {
             tracing::warn!(community = %invite.community, error = %e, "expired invite's revocation not written");
         }
+        self.retire_ended_join_inboxes(&invite.community);
     }
 }

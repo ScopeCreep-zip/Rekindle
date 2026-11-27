@@ -358,6 +358,8 @@ labels! {
     /// Keyed-BLAKE3 input prefix, then `:`, the scope's directory name, `:`
     /// and the attachment id: an attachment's directory name.
     FILE_CACHE_ATTACHMENT = "rekindle-file-cache-attachment-v1";
+    /// HPKE Base info for an invite-scoped sealed join locator.
+    JOIN_LOCATOR = "rekindle-join-locator-v1";
     // ── PRE_FORMAT: predate the naming rule; bytes kept until removal ──
     /// HKDF info prefix + decimal slot index: SMPL member-slot keypair.
     /// Renamed to the `-v<N>` form in step 22 (governance op DAG).

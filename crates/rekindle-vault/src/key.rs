@@ -73,6 +73,10 @@ pub enum VaultKey {
     MemberRecordOwner {
         community: String,
     },
+    /// Owner keypair of a community invite's durable join inbox.
+    JoinInboxOwnerKeypair {
+        invite_id: String,
+    },
     /// Our member card's X25519 HPKE secret in a community (plan E3.2, the
     /// card's `hpkeKey`) — `("communities", "member_hpke_secret_{community}")`.
     MemberHpkeSecret {
@@ -159,6 +163,7 @@ impl VaultKey {
             | Self::RegistryKeypair { .. }
             | Self::SlotSeed { .. }
             | Self::MemberRecordOwner { .. }
+            | Self::JoinInboxOwnerKeypair { .. }
             | Self::MemberHpkeSecret { .. } => "communities",
             Self::AuditMacKey | Self::AuditTail => "audit",
             Self::DeviceOpKey { .. } => "device",
@@ -224,6 +229,9 @@ impl VaultKey {
             Self::RegistryKeypair { community } => ("registry_keypair", vec![s(community)]),
             Self::SlotSeed { community } => ("slot_seed", vec![s(community)]),
             Self::MemberRecordOwner { community } => ("member_record_owner", vec![s(community)]),
+            Self::JoinInboxOwnerKeypair { invite_id } => {
+                ("join_inbox_owner_keypair", vec![s(invite_id)])
+            }
             Self::MemberHpkeSecret { community } => ("member_hpke_secret", vec![s(community)]),
             Self::DeviceVaultSecret => ("device_vault_key", vec![]),
             Self::DeviceOpKey { community } => ("device_op_key", vec![s(community)]),
@@ -302,6 +310,9 @@ impl VaultKey {
             },
             ("slot_seed", [c]) => Self::SlotSeed {
                 community: c.clone(),
+            },
+            ("join_inbox_owner_keypair", [id]) => Self::JoinInboxOwnerKeypair {
+                invite_id: id.clone(),
             },
             ("member_record_owner", [c]) => Self::MemberRecordOwner {
                 community: c.clone(),

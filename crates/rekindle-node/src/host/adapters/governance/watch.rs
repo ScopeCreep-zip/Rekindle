@@ -46,6 +46,9 @@ impl HostGovernance {
     /// is dispatched by subkey ([`rebuilds_on`]): only a frontier change
     /// that names a head we lack rebuilds the community.
     pub async fn on_watched_change(&self, record: &str, subkeys: &[u32]) -> bool {
+        if self.join_inbox_changed(record, subkeys) {
+            return true;
+        }
         if let Some(community) = self.community_of_key_drop(record) {
             if subkeys.is_empty() || subkeys.contains(&super::key_drop::KEY_DROP) {
                 self.read_key_drop(&community).await;

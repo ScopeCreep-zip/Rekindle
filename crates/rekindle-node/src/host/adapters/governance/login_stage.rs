@@ -179,6 +179,7 @@ async fn community(governance: &HostGovernance, community_id: &str, stop: &Cance
     // Still keyless after a restart: watch our inviter's key drop again
     // (plan RV2d; the watch is not persisted).
     governance.rearm_key_drop(community_id).await;
+    governance.rearm_join_inboxes(community_id).await;
     // Our own op pages beyond the checkpoint the rebuild applied, held
     // again from our local op log (plan E3.2 S7 record warming).
     governance.rewarm_own_op_pages(community_id).await;

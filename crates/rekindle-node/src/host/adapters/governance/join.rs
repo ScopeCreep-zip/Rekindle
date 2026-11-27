@@ -153,6 +153,9 @@ impl HostGovernance {
                 self.announce_standing_join(&id, &outcome);
             }
         }
+        if let Err(error) = self.queue_join_inbox_locator(&id, &outcome).await {
+            tracing::warn!(community = %id, %error, "durable join locator was not queued");
+        }
         // The inviter's key drop (plan RV2d): the durable copy of our key,
         // watched until we hold one, whichever path brings it.
         self.arm_key_drop(&id, inviter_record).await;
@@ -251,7 +254,7 @@ impl HostGovernance {
     }
 
     /// Our latest held `MemberJoined` of `id` (`mine` is our pseudonym).
-    pub(super) async fn latest_own_joined(
+    pub(crate) async fn latest_own_joined(
         &self,
         id: &str,
         mine: &rekindle_types::id::PseudonymKey,
@@ -268,6 +271,71 @@ impl HostGovernance {
                     )
             })
             .max_by_key(rekindle_governance::op::VerifiedOp::lamport)
+    }
+
+    async fn queue_join_inbox_locator(
+        &self,
+        community: &str,
+        outcome: &rekindle_governance_runtime::join_flow::JoinStagesOutcome,
+    ) -> Result<(), String> {
+        use rekindle_codec::{
+            governance_op::{read_op, ReadOp},
+            join_locator::JoinLocator,
+        };
+        use rekindle_types::{
+            governance::{GovernanceEntry, OpRef},
+            key_format,
+        };
+
+        let Some(capability) = outcome.invite.join_inbox.clone() else {
+            return Ok(());
+        };
+        let joined = &outcome.joined;
+        let ReadOp::Known(decoded) = read_op(&joined.encoded).map_err(|e| e.to_string())? else {
+            return Err("unreadable MemberJoined".into());
+        };
+        let GovernanceEntry::MemberJoined {
+            invite_proof: Some(proof),
+            ..
+        } = decoded.op.body
+        else {
+            return Err("the join's op has no invite proof".into());
+        };
+        let (&invite_id, invite) = outcome
+            .gov_state
+            .invites
+            .iter()
+            .find(|(_, invite)| invite.code_hash == proof.code_hash)
+            .ok_or("join invite not in merged state")?;
+        if u32::from(capability.join_inbox_slots) != invite.max_uses {
+            return Err("slot count does not match the invite".into());
+        }
+        let inviter = key_format::pseudonym_hex(&outcome.invite.inviter_pseudonym)
+            .map_err(|e| e.to_string())?
+            .to_bytes();
+        let locator = JoinLocator {
+            joined_op: OpRef {
+                op_hash: joined.hash,
+                author: joined.author.clone(),
+                author_record: joined.author_record.clone(),
+                author_seq: joined.seq,
+                device_key: joined.device_key,
+            },
+        };
+        let sealed = locator
+            .seal(&inviter, &invite_id)
+            .map_err(|e| e.to_string())?;
+        self.ctx
+            .outbox
+            .queue_join_inbox(
+                community,
+                capability,
+                locator.joined_op,
+                sealed,
+                invite.expires_at,
+            )
+            .await
+            .map_err(|e| format!("join locator in {community}: {e}"))
     }
 
     /// Our `M` in §4.4's order: the card (`M`/0), our `MemberJoined` on

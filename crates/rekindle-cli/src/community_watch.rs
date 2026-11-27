@@ -365,6 +365,9 @@ fn governance(event: &GovernanceEvent) -> String {
         GovernanceEvent::InviteRevoked { code_hash, .. } => {
             format!("invite {} revoked", abbreviate_key(code_hash))
         }
+        GovernanceEvent::InviteJoinInboxChanged { invite_id, .. } => {
+            format!("invite {} join inbox changed", abbreviate_key(invite_id))
+        }
         GovernanceEvent::InviteExpired { code_hash, .. } => {
             format!("invite {} expired", abbreviate_key(code_hash))
         }

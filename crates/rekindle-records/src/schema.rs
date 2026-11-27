@@ -91,6 +91,18 @@ pub fn request_inbox(one_time_writer: &[u8; 32]) -> RecordSchema {
     }
 }
 
+/// One owner marker and the bounded locator range an invite grants.
+#[must_use]
+pub fn join_inbox(writer: &[u8; 32], slots: u8) -> Option<RecordSchema> {
+    layout::join_inbox::valid_slots(slots).then(|| RecordSchema::Smpl {
+        owner_subkeys: layout::join_inbox::OWNER_SUBKEY_COUNT,
+        members: vec![SchemaMember {
+            key: *writer,
+            subkeys: u16::from(slots),
+        }],
+    })
+}
+
 /// A group DM's rendezvous record (plan decision 67, item 3): one owner
 /// subkey, then a row of [`ROW_LEN`](layout::group_rendezvous::ROW_LEN)
 /// subkeys for each of the eight one-time writers, in slot order (writer

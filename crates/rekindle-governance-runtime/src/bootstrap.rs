@@ -138,8 +138,39 @@ async fn build_bootstrap_response_v2<D: GovernanceRuntimeDeps>(
     }
     let op = op_log::held_from_encoded(&joiner.member_joined, joiner.member_joined_op.clone())
         .ok_or_else(|| adapter("bootstrap: the op does not match the joiner's OpRef"))?;
+    admit_joiner(deps, anchor, &joiner.member_joined, op).await?;
+    let state = deps
+        .governance_state(anchor)
+        .ok_or_else(|| GovernanceRuntimeError::GovernanceStateMissing(anchor.to_owned()))?;
+    let cert = deps
+        .genesis_cert(anchor)
+        .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(anchor.to_owned()))?;
+    let set =
+        op_log::verify_held_with(deps, anchor, &deps.op_store().governance_ops(anchor).await?);
+    let payload = ControlPayload::BootstrapResponseV2 {
+        anchor: anchor.to_owned(),
+        frontier: op_log::frontier_refs(&cert, &state, &set),
+    };
+    let bytes = encode_response(payload)?;
+    deps.emit_event(GovernanceRuntimeEvent::BootstrapResponseBuilt {
+        community_id: anchor.to_owned(),
+        joiner_pseudonym_hex: joiner.pseudonym.clone(),
+        bytes: bytes.len(),
+    });
+    Ok(bytes)
+}
+
+/// Admit a member op from either the live exchange or a durable join
+/// locator after the caller has fetched and checked the referenced op.
+pub(crate) async fn admit_joiner<D: GovernanceRuntimeDeps>(
+    deps: &D,
+    anchor: &str,
+    locator: &OpRef,
+    op: op_log::HeldOp,
+) -> Result<(), GovernanceRuntimeError> {
+    let author = &locator.author;
     let before = deps.governance_state(anchor).unwrap_or_default();
-    if !is_joiners_member_joined(&op, &joiner.member_joined, &before) {
+    if !is_joiners_member_joined(&op, locator, &before) {
         return Err(adapter(
             "bootstrap: the op is not the joiner's MemberJoined (op #0, or a re-join after its departure)",
         ));
@@ -163,25 +194,7 @@ async fn build_bootstrap_response_v2<D: GovernanceRuntimeDeps>(
     }
     revoke_if_used_up(deps, anchor, &joined_op, &state).await?;
     drop(admitting);
-    let state = deps
-        .governance_state(anchor)
-        .ok_or_else(|| GovernanceRuntimeError::GovernanceStateMissing(anchor.to_owned()))?;
-    let cert = deps
-        .genesis_cert(anchor)
-        .ok_or_else(|| GovernanceRuntimeError::GenesisCertMissing(anchor.to_owned()))?;
-    let set =
-        op_log::verify_held_with(deps, anchor, &deps.op_store().governance_ops(anchor).await?);
-    let payload = ControlPayload::BootstrapResponseV2 {
-        anchor: anchor.to_owned(),
-        frontier: op_log::frontier_refs(&cert, &state, &set),
-    };
-    let bytes = encode_response(payload)?;
-    deps.emit_event(GovernanceRuntimeEvent::BootstrapResponseBuilt {
-        community_id: anchor.to_owned(),
-        joiner_pseudonym_hex: joiner.pseudonym.clone(),
-        bytes: bytes.len(),
-    });
-    Ok(bytes)
+    Ok(())
 }
 
 /// The deps `op` cites that we do not hold, when the merge of our op set,
