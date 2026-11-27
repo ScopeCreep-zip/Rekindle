@@ -117,6 +117,10 @@ export const communityCommands = {
       opPublications?: Record<string, OpPublicationState>;
       /** Whether this device may write here (`CommunityView::device_status`, ADR 0022 rule 4). */
       deviceStatus: DeviceStatus;
+      /** While this device, a re-enrolled copy, still has the old device's
+       *  retirement pointer to publish and confirm: the Host's words, else
+       *  null (`CommunityView::retirement_notice`, plan S7d-keys.9p2). */
+      retirementNotice: string | null;
       /** The unlock barrier's held governance writes (`CommunityView::catch_up`); later changes arrive as `catchUp`. */
       catchUp?: CatchUpView;
       /** Our community key, as the Host states it (`CommunityView::key_status`); changes arrive as `keyStatus`. */

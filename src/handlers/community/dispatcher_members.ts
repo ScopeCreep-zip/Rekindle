@@ -310,12 +310,19 @@ function governanceRowCommunity(g: GovernanceEvent): string | null {
   if ("effectivePermissionsChanged" in g) return g.effectivePermissionsChanged.community;
   if ("governanceRebuilt" in g) return g.governanceRebuilt.community;
   if ("keyStatus" in g) return g.keyStatus.community;
+  if ("retirementNoticeChanged" in g) return g.retirementNoticeChanged.community;
   if ("bansChanged" in g) return g.bansChanged.community;
   return null;
 }
 
 /** One governance event; a row-writing one only against a row the window holds. */
 function applyGovernance(g: GovernanceEvent): void {
+  // S7d-keys.9p2: the old copy's retirement still reaching the network.
+  if ("retirementNoticeChanged" in g) {
+    const { community, retirementNotice } = g.retirementNoticeChanged;
+    if (communityState.communities[community]) setCommunityState("communities", community, "retirementNotice", retirementNotice);
+    return;
+  }
   // FX3: the community key we hold, current or waiting on a key holder.
   if ("keyStatus" in g) {
     const { community, status } = g.keyStatus;

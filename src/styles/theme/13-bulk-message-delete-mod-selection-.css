@@ -482,6 +482,13 @@
     color: var(--color-xfire-danger-text);
   }
 
+  /* A re-enrolled copy still publishing the old device's retirement
+   * (S7d-keys.9p2): an informational line of its own under the row. */
+  .community-device-retirement {
+    flex-basis: 100%;
+    color: var(--color-xfire-text-secondary);
+  }
+
   /* This device's standing (CommunityDeviceStatus.tsx, ADR 0022 rule 4):
    * the notice and its action on one line, wrapping when narrow. */
   .community-device-status {

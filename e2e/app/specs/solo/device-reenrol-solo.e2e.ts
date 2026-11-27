@@ -1,0 +1,43 @@
+// Plan E3.2 S7d-keys.9p2 (lead's ruling, 2026-11-27): a member alone in her
+// community still learns that a copy of her device re-enrolled. Ari is the
+// only member; her locked data root is copied to a second daemon, the copy
+// falls behind its own record and re-enrols by CLI. The re-enrolment does not
+// write the old record, and no other member carries it: the copy also writes
+// a retirement pointer into the old device's own record (M(p,d)/2), so Ari's
+// own-record watch fires and her Host shows "Signing stopped" with no
+// carrier. Without the pointer the original keeps signing with a retired key,
+// silently (the case the ruling refuses).
+
+import { browser, expect } from "@wdio/globals";
+import { type Peer, stopFleet } from "../../fleet.ts";
+import { createCommunity, createIdentity, newUser, openCommunity, type User } from "../../journeys.ts";
+import { copyDivergesAndReEnrols, signingStoppedShown } from "../../reenrol.ts";
+import { shot } from "../../shots.ts";
+
+const COMMUNITY = "Solo Hall";
+
+describe("a solo member's original device learns its re-enrolment from its own record (S7d-keys.9p2)", function () {
+  this.timeout(1_200_000);
+  const me: User = { ...newUser("solo"), displayName: "Ari" };
+  let peers: Peer[] = [];
+
+  after(async () => {
+    await stopFleet(peers);
+  });
+
+  it("Ari, alone, sees Signing stopped after her copy re-enrols", async () => {
+    await createIdentity(browser, me);
+    await createCommunity(browser, me, COMMUNITY);
+    await openCommunity(browser, COMMUNITY);
+    // Ari is the only member: nobody else can carry the retirement.
+    expect(await browser.$$(".member-item[data-pseudonym]")).toHaveLength(1);
+
+    const copy = await copyDivergesAndReEnrols(browser, me, COMMUNITY, "Ari's copy");
+    peers = [copy];
+
+    const alert = await signingStoppedShown(browser);
+    console.log(`[reenrol] solo alert: ${alert.slice(0, 200)}`);
+    await shot("solo-signing-stopped");
+    expect(alert).toContain("Signing stopped");
+  });
+});

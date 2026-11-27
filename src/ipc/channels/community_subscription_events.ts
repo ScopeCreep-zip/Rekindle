@@ -241,6 +241,9 @@ export type GovernanceEvent =
     }
   | { inviteUsed: { community: string; codeHash: string; uses: number } }
   | { inviteRevoked: { community: string; codeHash: string } }
+  /** The old copy's retirement pointer started or stopped waiting to reach
+   *  the network (S7d-keys.9p2): the Host's words, or null once confirmed. */
+  | { retirementNoticeChanged: { community: string; retirementNotice: string | null } }
   | { inviteExpired: { community: string; codeHash: string } }
   | { channelPermissionsChanged: { community: string; channel: string } }
   | { effectivePermissionsChanged: { community: string; member: string; denied: DeniedCapabilities } }

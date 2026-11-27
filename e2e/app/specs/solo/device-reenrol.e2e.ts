@@ -23,36 +23,21 @@
 // catch-up label "Re-enrolling this device".
 
 import { browser, expect } from "@wdio/globals";
-import { NET_WAIT_MS, byText, gone, resolveIntent, shown, switchTo, typeInto, waitUntil } from "../../../walk/helpers.ts";
-import { type Peer, peerJoinCommunity, peerRequestFriend, peerReviewed, startClone, startFleet, stopFleet } from "../../fleet.ts";
+import { NET_WAIT_MS, gone, resolveIntent, shown, switchTo, waitUntil } from "../../../walk/helpers.ts";
+import { type Peer, peerJoinCommunity, peerRequestFriend, startFleet, stopFleet } from "../../fleet.ts";
 import { acceptRequest, createCommunity, createIdentity, createInvite, friendCode, logOut, newUser, openCommunity, pendingRequest, type User } from "../../journeys.ts";
 import { showSkinView } from "../../journeys_skins.ts";
-import { BUDDY, LOGIN, SETTINGS, inBuddy } from "../../../walk/nav.ts";
+import { BUDDY, SETTINGS, inBuddy } from "../../../walk/nav.ts";
 import { shot } from "../../shots.ts";
 import { pageLog, recordPage } from "../../../walk/probe.ts";
+import { copyDivergesAndReEnrols, signingStoppedShown, unlock } from "../../reenrol.ts";
 
 const COMMUNITY = "Restore Hall";
-/** The channel the original creates after the copy: the governance op the copy lacks. */
-const AFTER_COPY = "after-the-copy";
-/** Long enough for the original's op to reach its own record before the copy unlocks again. */
-const PUBLISH_MS = 30_000;
-
-/** The CLI subcommand that commits ReEnrolDevice on the copy (.10 part 2). */
-const REENROL = ["community", "re-enrol-device"];
 
 /** Log off and unlock again (the Host raises held reviews at the unlock barrier). */
 async function unlockAgain(): Promise<void> {
   await logOut(browser, ME);
-  await unlock();
-}
-
-/** Unlock from the login window. */
-async function unlock(): Promise<void> {
-  await switchTo(browser, LOGIN, NET_WAIT_MS);
-  await typeInto(await shown(browser, 'form.login-container input[type="password"]'), ME.passphrase);
-  const submit = await browser.$('form.login-container button[type="submit"]');
-  await submit.waitForEnabled({ timeout: NET_WAIT_MS, timeoutMsg: "Unlock stayed disabled (Connecting…)" });
-  await submit.click();
+  await unlock(browser, ME);
 }
 
 /** What the review the window shows says, once it shows. */
@@ -94,62 +79,13 @@ describe("a restored copy re-enrols the device: the original is told and offered
       NET_WAIT_MS * 2,
       "Dee's member row never showed in Ari's community",
     );
-    const dataRoot = (browser.requestedCapabilities as Record<string, unknown>)["rekindle:dataRoot"];
-    if (typeof dataRoot !== "string") throw new Error("the launcher handed no rekindle:dataRoot capability");
-
-    // The copy: Ari's own files on a second daemon, unlocked with her
-    // passphrase; it must hold the community before it re-enrols in it. A
-    // backup is taken of a locked root (as the netsim locks the node before
-    // its snapshot): copying the live one raced Veilid's own files (ENOENT).
-    await logOut(browser, me);
-    const copy = await startClone("Ari's copy", { dataRoot, passphrase: me.passphrase });
+    // The copy, left behind its own record by an op of Ari's, re-enrols
+    // (reenrol.ts: the locked root copied, as the netsim's cloned-root case).
+    const copy = await copyDivergesAndReEnrols(browser, me, COMMUNITY, "Ari's copy");
     peers = [...peers, copy];
-    await unlock();
-    await inBuddy(browser);
-    await openCommunity(browser, COMMUNITY);
-    const communities = (await copy.cli(["community", "list"])) as { name?: string }[] | null;
-    if (!(communities ?? []).some((c) => c.name === COMMUNITY)) throw new Error(`the copy holds no ${COMMUNITY}: ${JSON.stringify(communities).slice(0, 200)}`);
-
-    // A copy that matches its own published record has nothing to re-enrol
-    // (the Host answers "this device's key needs no re-enrolment"). As in the
-    // netsim's cloned-root case, the original moves on while the copy is
-    // offline: a governance op of her own (a new channel) puts the copy
-    // behind its own record, so at its next unlock its Host finds the copy
-    // and holds the re-enrolment, and the CLI commits it.
-    await copy.pause();
-    await (await shown(browser, '[title="Create Channel"]')).click();
-    await typeInto(await shown(browser, 'input[placeholder="Channel name..."]'), AFTER_COPY);
-    await (await browser.$('.modal-container button[type="submit"]')).click();
-    await resolveIntent(browser, { passphrase: me.passphrase, appearMs: 3000 });
-    await gone(browser, 'input[placeholder="Channel name..."]', NET_WAIT_MS);
-    await byText(browser, ".channel-item", AFTER_COPY, NET_WAIT_MS);
-    // Its op published before the copy is back.
-    await browser.pause(PUBLISH_MS);
-    await copy.resume();
-    let refusal = "";
-    await waitUntil(
-      async () => {
-        try {
-          await peerReviewed(copy, REENROL);
-          return true;
-        } catch (e) {
-          refusal = e instanceof Error ? e.message : String(e);
-          if (!refusal.includes("needs no re-enrolment")) throw e;
-          return false;
-        }
-      },
-      NET_WAIT_MS * 2,
-      "",
-    ).catch((e) => {
-      throw new Error(`the copy never found itself behind its own record: ${refusal || (e instanceof Error ? e.message : String(e))}`);
-    });
-    console.log("[reenrol] the copy's re-enrolment was accepted");
 
     // The original sees its own key retired: the Host's alert, as served.
-    await inBuddy(browser);
-    await showSkinView(browser, "notifications");
-    const alert = await byText(browser, "[class*=notification]", "Signing stopped", NET_WAIT_MS * 2);
-    console.log(`[reenrol] alert: ${(await alert.getText()).replace(/\s+/g, " ").slice(0, 200)}`);
+    console.log(`[reenrol] alert: ${(await signingStoppedShown(browser)).slice(0, 200)}`);
     await shot("signing-stopped");
 
     // The Host raises its ReEnrolDevice review (TrustChanging) at the unlock

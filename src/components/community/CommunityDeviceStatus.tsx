@@ -21,6 +21,7 @@ const CommunityDeviceStatus: Component<{ communityId: string; notice?: boolean }
   // Both places can be open in one window: each names its own elements.
   const reasonId = (): string => `community-device-reason-${props.notice ? "notice" : "settings"}`;
   const needs = (): boolean => communityState.communities[props.communityId]?.deviceStatus === "needsReenrol";
+  const retirement = (): string | null => communityState.communities[props.communityId]?.retirementNotice ?? null;
 
   async function enrol(): Promise<void> {
     if (!needs() || busy()) return;
@@ -61,6 +62,11 @@ const CommunityDeviceStatus: Component<{ communityId: string; notice?: boolean }
               {message()}
             </span>
           )}
+        </Show>
+        {/* The Settings row only: while this copy still has the old device's
+            retirement to publish and confirm, the Host's words. */}
+        <Show when={!props.notice && retirement()}>
+          {(text) => <span class="community-device-retirement" role="status">{text()}</span>}
         </Show>
       </div>
     </Show>

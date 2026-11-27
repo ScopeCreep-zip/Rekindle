@@ -195,6 +195,7 @@ export function transformCommunityDetail(c: {
   onboardingComplete?: boolean;
   weAreCreator: boolean;
   deviceStatus: DeviceStatus;
+  retirementNotice: string | null;
   myDisplayName: string;
   myCardName?: string;
   myCustomStatus?: string;
@@ -226,6 +227,7 @@ export function transformCommunityDetail(c: {
     onboardingComplete: c.onboardingComplete ?? true,
     weAreCreator: c.weAreCreator,
     deviceStatus: c.deviceStatus,
+    retirementNotice: c.retirementNotice,
     myDisplayName: c.myDisplayName,
     myCardName: c.myCardName ?? null,
     myCustomStatus: c.myCustomStatus ?? null,

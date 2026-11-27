@@ -269,6 +269,8 @@ export interface Community {
   weAreCreator: boolean;
   /** Whether this device may write here, as the Host states it (`CommunityView::device_status`). */
   deviceStatus: DeviceStatus;
+  /** The old copy's retirement still reaching the network, in the Host's words, or null (S7d-keys.9p2). */
+  retirementNotice: string | null;
   /** Our name in this community, never empty, as the Host states it (plan E3.4 S6); never our identity name. */
   myDisplayName: string;
   /** Our per-community name as set, or null (the set-name form's prefill). */
