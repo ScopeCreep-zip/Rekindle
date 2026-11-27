@@ -87,7 +87,7 @@ const SkinEditorMeta: Component<{
           }
         />
       </label>
-      <div class="skin-editor-credits" aria-label="Credits the export carries">
+      <section class="skin-editor-credits" aria-label="Credits the export carries">
         <span class="form-label">Credits</span>
         <ul>
           <For each={props.report.credits.authors}>
@@ -105,7 +105,7 @@ const SkinEditorMeta: Component<{
             </details>
           )}
         </Show>
-      </div>
+      </section>
     </div>
   );
 };

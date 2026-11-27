@@ -121,7 +121,7 @@ const VoiceMessagePlayer: Component<VoiceMessagePlayerProps> = (props) => {
           <SkinGlyph name="download" />
         </Show>
       </button>
-      <div class="voice-message-waveform" aria-label="voice message waveform">
+      <div class="voice-message-waveform" role="img" aria-label="voice message waveform">
         {Array.from({ length: totalBars() }, (_v, i) => {
           const peak = waveform()[i] ?? 0;
           const heightPx =

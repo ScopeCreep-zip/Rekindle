@@ -163,7 +163,7 @@ const ActiveCallPanel: Component<ActiveCallPanelProps> = (props) => {
             <span class={`active-call-status active-call-status-${peerStatus()}`}>
               {peerStatus()}
             </span>
-            <span class="active-call-timer" aria-label="Call duration">
+            <span class="active-call-timer" role="timer" aria-label="Call duration">
               {elapsedLabel()}
             </span>
           </div>

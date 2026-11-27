@@ -60,9 +60,9 @@ const SkinCredits: Component<{ skin: SkinEntry; id: string }> = (props) => {
                   return licence === "noneStated" ? (
                     "No licence stated"
                   ) : (
-                    <div class="skin-credits-licence" tabIndex={0} aria-label="Licence text">
+                    <section class="skin-credits-licence" tabIndex={0} aria-label="Licence text">
                       {licence.text}
-                    </div>
+                    </section>
                   );
                 })()}
               </dd>

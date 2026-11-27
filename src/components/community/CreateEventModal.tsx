@@ -1,4 +1,4 @@
-import { type Component, createSignal, createEffect, createUniqueId } from "solid-js";
+import { type Component, createSignal, createEffect } from "solid-js";
 import Modal from "../common/Modal";
 import { handleCreateEvent, handleEditEvent } from "../../actions/community.actions";
 
@@ -26,8 +26,6 @@ function timestampToTime(ts: number): string {
 }
 
 const CreateEventModal: Component<CreateEventModalProps> = (props) => {
-  const startLabelId = createUniqueId();
-  const endLabelId = createUniqueId();
   const [title, setTitle] = createSignal("");
   const [description, setDescription] = createSignal("");
   const [startDate, setStartDate] = createSignal("");
@@ -138,8 +136,8 @@ const CreateEventModal: Component<CreateEventModalProps> = (props) => {
           onInput={(e) => setDescription(e.currentTarget.value)}
           rows={3}
         />
-        <span class="form-label" id={startLabelId}>Start</span>
-        <div class="form-row" role="group" aria-labelledby={startLabelId}>
+        <span class="form-label">Start</span>
+        <div class="form-row">
           <input
             class="form-input"
             type="date"
@@ -155,8 +153,8 @@ const CreateEventModal: Component<CreateEventModalProps> = (props) => {
             onInput={(e) => setStartTime(e.currentTarget.value)}
           />
         </div>
-        <span class="form-label" id={endLabelId}>End (optional)</span>
-        <div class="form-row" role="group" aria-labelledby={endLabelId}>
+        <span class="form-label">End (optional)</span>
+        <div class="form-row">
           <input
             class="form-input"
             type="date"

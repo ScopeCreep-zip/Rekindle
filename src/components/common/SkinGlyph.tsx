@@ -36,7 +36,7 @@ const SkinGlyph: Component<{ name: GlyphName; class?: string; title?: string; la
       data-glyph={props.name}
       style={served() ? { "--skin-glyph-image": `var(${served()})` } : undefined}
       title={props.title}
-      role={props.label ? "img" : undefined}
+      role="img"
       aria-label={props.label}
       aria-hidden={props.label ? undefined : "true"}
     >
