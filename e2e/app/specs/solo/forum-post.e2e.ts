@@ -234,9 +234,11 @@ describe("forum post accepted as one request (FT1)", function () {
       closedWithReason: toasts.includes("This thread is no longer available."),
       // The Host's refusal of the thread list is said once, not per re-read.
       refusalToasts: toasts.filter((t) => t.startsWith("thread list")).length <= 1,
+      // The Host's refusal is in words (FT1e): never a permission mask or a 32-hex id.
+      rawRefusal: toasts.filter((t) => /0x[0-9a-f]+/i.test(t) || /\b[0-9a-f]{32}\b/i.test(t)),
       cards: (await browser.$$(".forum-channel-thread-card")).length,
       lockedWithReason: lockText.replace("This forum is locked", "").trim().length > 0,
       newPostDisabled: !(await newPostAfter.isEnabled()),
-    }).toEqual({ closedWithReason: true, refusalToasts: true, cards: 0, lockedWithReason: true, newPostDisabled: true });
+    }).toEqual({ closedWithReason: true, refusalToasts: true, rawRefusal: [], cards: 0, lockedWithReason: true, newPostDisabled: true });
   });
 });
