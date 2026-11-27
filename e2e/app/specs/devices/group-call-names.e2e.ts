@@ -4,10 +4,13 @@
 // daemon places no call before E4.1. Bob, friends with both, starts a group
 // voice call to Alice and Carol through the Host (`start_group_call`, the
 // command the Start Group Call panel sends; the call's own UI is what is
-// tested here). Alice's incoming banner names Bob; she accepts, and her call
-// grid names Bob and Carol by the names the Host serves, with no run of 8+
-// hex anywhere in the call's UI. Accepting a call opens the microphone:
-// Linux only (no TCC prompt on the Mac).
+// tested here). Alice's incoming banner names Bob and sits inside her narrow
+// buddy list without covering its chrome; she accepts, and her call grid
+// names Bob, Carol (not her friend: the group DM roster's name, addendum 2)
+// and herself with "(you)" (the Host's isSelf), with no run of 8+ hex
+// anywhere in the call's UI, and nothing in the window shows as a sliver
+// (a text or status element visible at under 4 px tall). Accepting a call
+// opens the microphone: Linux only (no TCC prompt on the Mac).
 
 import { expect, multiRemoteBrowser } from "@wdio/globals";
 import type { Browser } from "webdriverio";
@@ -61,6 +64,23 @@ describe("a group call names its members as the Host serves them (VN2)", functio
     const banner = await shown(a, ".group-call-incoming-banner", NET_WAIT_MS);
     const bannerText = (await banner.getText()).replace(/\s+/g, " ");
     console.log(`[group-call] Alice's banner: ${bannerText}`);
+    const place = (await a.execute(() => {
+      const box = document.querySelector(".group-call-incoming-banner")!.getBoundingClientRect();
+      const chrome = Array.from(
+        document.querySelectorAll('.titlebar, .menu-bar, [data-skin-action="minimize"], [data-skin-action="maximize"], [data-skin-action="close"], [data-skin-action^="menu:"]'),
+      ).filter((e) => (e as HTMLElement).offsetParent !== null);
+      const chromeBottom = Math.max(0, ...chrome.map((e) => e.getBoundingClientRect().bottom));
+      const meta = document.querySelector(".group-call-banner-meta")?.getBoundingClientRect();
+      return {
+        inWindow: box.left >= 0 && box.top >= 0 && box.right <= window.innerWidth && box.bottom <= window.innerHeight,
+        belowChrome: box.top >= chromeBottom,
+        metaClear: meta ? box.bottom - meta.bottom >= 8 : false,
+        box: [box.left, box.top, box.right, box.bottom].map(Math.round),
+        chromeBottom: Math.round(chromeBottom),
+        window: [window.innerWidth, window.innerHeight],
+      };
+    })) as { inWindow: boolean; belowChrome: boolean; metaClear: boolean; box: number[]; chromeBottom: number; window: number[] };
+    console.log(`[group-call] banner ${JSON.stringify(place)}`);
     await shot("group-call-incoming");
 
     // She accepts: her call grid names each member.
@@ -71,12 +91,12 @@ describe("a group call names its members as the Host serves them (VN2)", functio
         names = (await a.execute(() =>
           Array.from(document.querySelectorAll(".group-call-tile-name")).map((n) => (n.textContent ?? "").trim()),
         )) as string[];
-        return names.includes("Bob") && names.includes("Carol");
+        return names.includes("Bob") && names.includes("Carol") && names.includes("Alice (you)");
       },
       NET_WAIT_MS,
       "",
     ).catch(() => {
-      throw new Error(`Alice's call grid never named Bob and Carol (it shows ${JSON.stringify(names)})`);
+      throw new Error(`Alice's call grid never named Bob, Carol and Alice (you) (it shows ${JSON.stringify(names)})`);
     });
     const callText = (await a.execute(() =>
       Array.from(document.querySelectorAll(".group-call-incoming-banner, .group-call-grid, .active-call-panel"))
@@ -85,9 +105,54 @@ describe("a group call names its members as the Host serves them (VN2)", functio
     )) as string;
     const hexRuns = callText.toLowerCase().match(/[0-9a-f]{8,}/g) ?? [];
     console.log(`[group-call] Alice's grid: ${JSON.stringify(names)}; hex runs in the call's UI: ${hexRuns.length}`);
+    const slivers = (await a.execute(() => {
+      const visible = (el: Element): DOMRect | null => {
+        let box = el.getBoundingClientRect();
+        if (box.width === 0 || box.height === 0) return null;
+        for (let p = el.parentElement; p; p = p.parentElement) {
+          const st = getComputedStyle(p);
+          if (st.overflowX === "visible" && st.overflowY === "visible") continue;
+          const r = p.getBoundingClientRect();
+          const top = Math.max(box.top, r.top);
+          const bottom = Math.min(box.bottom, r.bottom);
+          const left = Math.max(box.left, r.left);
+          const right = Math.min(box.right, r.right);
+          if (bottom <= top || right <= left) return null;
+          box = new DOMRect(left, top, right - left, bottom - top);
+        }
+        return box;
+      };
+      const shows = (el: Element): boolean =>
+        /status-dot|dot/.test(typeof el.className === "string" ? el.className : "") ||
+        Array.from(el.childNodes).some((n) => n.nodeType === Node.TEXT_NODE && (n.textContent ?? "").trim() !== "");
+      const chain = (el: Element): string[] => {
+        const out: string[] = [];
+        for (let p: Element | null = el; p && out.length < 6; p = p.parentElement) {
+          const r = p.getBoundingClientRect();
+          const cls = typeof p.className === "string" ? p.className.split(/\s+/).slice(0, 2).join(".") : "";
+          out.push(`${p.tagName.toLowerCase()}${cls ? `.${cls}` : ""}[${Math.round(r.top)}-${Math.round(r.bottom)}]`);
+        }
+        return out;
+      };
+      const found: { el: string[]; visible: number[] }[] = [];
+      for (const el of Array.from(document.body.querySelectorAll("*"))) {
+        if (getComputedStyle(el).visibility === "hidden" || !shows(el)) continue;
+        const v = visible(el);
+        if (v && v.height > 0 && v.height < 4) found.push({ el: chain(el), visible: [v.left, v.top, v.right, v.bottom].map(Math.round) });
+      }
+      return found;
+    })) as { el: string[]; visible: number[] }[];
+    console.log(`[group-call] slivers (visible under 4 px tall): ${JSON.stringify(slivers)}`);
     await shot("group-call-grid");
 
-    expect({ caller: bannerText.includes("Bob"), names: names.includes("Bob") && names.includes("Carol"), hexRuns })
-      .toEqual({ caller: true, names: true, hexRuns: [] });
+    expect({
+      caller: bannerText.includes("Bob"),
+      names: names.includes("Bob") && names.includes("Carol") && names.includes("Alice (you)"),
+      hexRuns,
+      bannerInWindow: place.inWindow,
+      bannerBelowChrome: place.belowChrome,
+      bannerTextClear: place.metaClear,
+      slivers,
+    }).toEqual({ caller: true, names: true, hexRuns: [], bannerInWindow: true, bannerBelowChrome: true, bannerTextClear: true, slivers: [] });
   });
 });

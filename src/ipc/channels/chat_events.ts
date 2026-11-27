@@ -202,6 +202,8 @@ interface DirectCallInfo {
 export interface CallParticipant {
   publicKey: string;
   displayName: string;
+  /** Our own participant (contract VN2 addendum 2): the shell adds "(you)". */
+  isSelf: boolean;
 }
 
 export type CallEvent =

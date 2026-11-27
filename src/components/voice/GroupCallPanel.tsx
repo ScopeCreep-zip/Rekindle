@@ -125,7 +125,10 @@ const ActiveGroupCallPanel: Component = () => {
                     <div class="group-call-tile-avatar">
                       {member.displayName.slice(0, 1).toUpperCase()}
                     </div>
-                    <div class="group-call-tile-name">{member.displayName}</div>
+                    <div class="group-call-tile-name">
+                      {member.displayName}
+                      {member.isSelf ? " (you)" : ""}
+                    </div>
                     <div class="group-call-tile-status">
                       {accepted() ? "in call" : "ringing…"}
                     </div>
