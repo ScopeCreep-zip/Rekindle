@@ -12,11 +12,6 @@ const UserIdentityBar: Component = () => {
   const [editingStatus, setEditingStatus] = createSignal(false);
   const [statusEditValue, setStatusEditValue] = createSignal("");
 
-  function truncatedKey(): string {
-    const key = authState.publicKey;
-    if (!key) return "";
-    return key.slice(0, 8) + "..." + key.slice(-6);
-  }
 
   function startEditing(): void {
     setEditValue(authState.displayName ?? "");
@@ -78,7 +73,7 @@ const UserIdentityBar: Component = () => {
           </span>
         </Show>
         <span class="identity-bar-key" onClick={handleCopyPublicKey} title="Click to copy public key">
-          {truncatedKey()}
+          {authState.fingerprint ?? ""}
         </span>
         <Show when={authState.gameInfo}>
           {(game) => (

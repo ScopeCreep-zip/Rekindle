@@ -10,6 +10,8 @@ import type { OwnGame } from "../ipc/commands/dto";
 interface AuthState {
   isLoggedIn: boolean;
   publicKey: string | null;
+  /** Our identity's fingerprint form, as the Host serves it (contract VN2). */
+  fingerprint: string | null;
   displayName: string | null;
   avatarUrl: string | null;
   status: UserStatus;
@@ -20,6 +22,7 @@ interface AuthState {
 const [authState, setAuthState] = createStore<AuthState>({
   isLoggedIn: false,
   publicKey: null,
+  fingerprint: null,
   displayName: null,
   avatarUrl: null,
   status: "offline",
