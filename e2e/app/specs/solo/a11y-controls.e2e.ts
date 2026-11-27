@@ -43,6 +43,7 @@ const b = browser as unknown as Browser;
 // A fixed display name (the shots show it); a generated passphrase (they never do).
 const ada: User = { ...newUser("a11y"), displayName: "Ada" };
 const PLACE = "Keyboard Hall";
+const TOPIC = "Keyboard topic";
 const ROLE = "Greeter";
 const PACKS = builtinPacks();
 
@@ -298,6 +299,18 @@ describe("converted controls (FE-LINT slice C)", function () {
       `[a11y] channel topic: editor focused on open ${editorFocused}; Escape closes it, focus back on the topic ${backOnTopic}`
     );
     expect({ editorFocused, backOnTopic }).toEqual({ editorFocused: true, backOnTopic: true });
+
+    // Enter reopens the editor and, typed into, Enter saves: the topic is the
+    // Host's once the intent passes, and the editor is closed.
+    await b.keys("Enter");
+    await shown(b, ".channel-topic-header-input");
+    await b.keys(TOPIC.split(""));
+    await b.keys("Enter");
+    await resolveIntent(b, { passphrase: ada.passphrase, appearMs: 3000 });
+    await byText(b, ".channel-topic", TOPIC, NET_WAIT_MS);
+    await gone(b, ".channel-topic-header-input");
+    console.log(`[a11y] channel topic: Enter saves the typed topic (the Host serves it back)`);
+    await shot("keyboard-topic-saved");
 
     // A role's summary opens its editor on Space.
     // The Roles tab click leaves focus inside the modal for Tab navigation.
