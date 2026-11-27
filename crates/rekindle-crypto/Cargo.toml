@@ -34,7 +34,7 @@ rekindle-types = { path = "../rekindle-types" }
 # API mints come from the caller's generator.
 rekindle-utils = { path = "../rekindle-utils" }
 serde = { workspace = true }
-sha2 = "0.10"
+sha2 = "0.11"
 thiserror = { workspace = true }
 tracing = { workspace = true }
 x25519-dalek = { version = "2", features = [ "static_secrets" ] }
